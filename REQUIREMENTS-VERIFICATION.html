@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veggie 蔬菜批发系统 - 需求验证清单</title>
+<style>
+  :root {
+    --p0: #dc2626;
+    --p1: #ea580c;
+    --p2: #2563eb;
+    --p3: #6b7280;
+    --done: #16a34a;
+    --partial: #d97706;
+    --missing: #dc2626;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text2: #475569;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: var(--text2); margin-bottom: 24px; font-size: 14px; }
+  .stats-bar { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px 24px; flex: 1; min-width: 120px; }
+  .stat .num { font-size: 32px; font-weight: 700; }
+  .stat .label { font-size: 13px; color: var(--text2); }
+  .stat.total .num { color: var(--text); }
+  .stat.p0 .num { color: var(--p0); }
+  .stat.p1 .num { color: var(--p1); }
+  .stat.p2 .num { color: var(--p2); }
+  .stat.p3 .num { color: var(--p3); }
+  .stat.progress .num { color: var(--done); }
+
+  .module { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 24px; overflow: hidden; }
+  .module-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+  .module-header:hover { background: #f1f5f9; }
+  .module-title { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 12px; }
+  .module-icon { font-size: 24px; }
+  .module-badge { display: flex; gap: 6px; }
+  .module-progress { font-size: 13px; color: var(--text2); margin-right: 12px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+  .badge-p0 { background: #fef2f2; color: var(--p0); border: 1px solid #fecaca; }
+  .badge-p1 { background: #fff7ed; color: var(--p1); border: 1px solid #fed7aa; }
+  .badge-p2 { background: #eff6ff; color: var(--p2); border: 1px solid #bfdbfe; }
+  .badge-p3 { background: #f9fafb; color: var(--p3); border: 1px solid #e5e7eb; }
+  .chevron { transition: transform 0.2s; font-size: 20px; color: var(--text2); }
+  .module.collapsed .chevron { transform: rotate(-90deg); }
+  .module.collapsed .module-body { display: none; }
+  .module-body { padding: 0; }
+
+  .req-group { border-bottom: 1px solid var(--border); }
+  .req-group:last-child { border-bottom: none; }
+  .req-group-header { padding: 12px 24px; background: #f8fafc; font-weight: 600; font-size: 14px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+
+  .req { padding: 12px 24px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #f1f5f9; }
+  .req:last-child { border-bottom: none; }
+  .req:hover { background: #fafbfd; }
+  .req.checked { opacity: 0.55; }
+  .req input[type="checkbox"] { margin-top: 4px; width: 18px; height: 18px; cursor: pointer; accent-color: var(--done); flex-shrink: 0; }
+  .req-content { flex: 1; }
+  .req-title { font-weight: 500; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .req-desc { font-size: 13px; color: var(--text2); margin-top: 4px; }
+  .req-source { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+  .priority { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+  .priority-p0 { background: var(--p0); color: white; }
+  .priority-p1 { background: var(--p1); color: white; }
+  .priority-p2 { background: var(--p2); color: white; }
+  .priority-p3 { background: var(--p3); color: white; }
+
+  .progress-bar { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--done); border-radius: 3px; transition: width 0.3s; }
+
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
+  .filter-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+  .filter-btn:hover { background: #f1f5f9; }
+  .filter-btn.active { background: var(--text); color: white; border-color: var(--text); }
+  .filter-sep { width: 1px; height: 24px; background: var(--border); }
+
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
+  .toc h3 { font-size: 16px; margin-bottom: 12px; }
+  .toc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+  .toc-item { font-size: 14px; color: var(--text2); cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+  .toc-item:hover { background: #f1f5f9; color: var(--text); }
+  .toc-count { font-size: 12px; color: #94a3b8; }
+
+  @media (max-width: 768px) {
+    .container { padding: 16px; }
+    .stats-bar { flex-direction: column; }
+    .req { flex-direction: column; }
+    .toc-list { grid-template-columns: 1fr; }
+  }
+
+  @media print {
+    .filter-bar { display: none; }
+    .module { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Veggie 蔬菜批发系统 · 需求验证清单</h1>
+  <p class="subtitle">生成日期：2026-05-23 | 来源文档：DEV-PLAN.md、DEV-PLAN-REPORTING.md、DEV-PLAN-orderline.md、ODOO-REPLICATION-PLAN.md、WORKFLOW-PRD.md、BUSINESS-FLOW.md、pricing-module-prd.md、2026-05-22 会议纪要、业务流程文档</p>
+
+  <div class="stats-bar" id="statsBar">
+    <div class="stat total"><div class="num" id="totalCount">0</div><div class="label">需求总数</div></div>
+    <div class="stat p0"><div class="num" id="p0Count">0</div><div class="label">P0 紧急</div></div>
+    <div class="stat p1"><div class="num" id="p1Count">0</div><div class="label">P1 重要</div></div>
+    <div class="stat p2"><div class="num" id="p2Count">0</div><div class="label">P2 计划中</div></div>
+    <div class="stat p3"><div class="num" id="p3Count">0</div><div class="label">P3 未来</div></div>
+    <div class="stat progress"><div class="num" id="doneCount">0</div><div class="label">已验证通过</div></div>
+  </div>
+
+  <div class="progress-bar" style="margin-bottom:24px;height:10px;"><div class="progress-fill" id="globalProgress" style="width:0%"></div></div>
+
+  <div class="filter-bar">
+    <button class="filter-btn active" data-filter="all">全部</button>
+    <button class="filter-btn" data-filter="p0">仅 P0</button>
+    <button class="filter-btn" data-filter="p1">仅 P1</button>
+    <button class="filter-btn" data-filter="p2">仅 P2</button>
+    <button class="filter-btn" data-filter="p3">仅 P3</button>
+    <div class="filter-sep"></div>
+    <button class="filter-btn" data-filter="unchecked">未验证</button>
+    <button class="filter-btn" data-filter="checked">已验证</button>
+  </div>
+
+  <div class="toc" id="toc">
+    <h3>模块目录</h3>
+    <div class="toc-list" id="tocList"></div>
+  </div>
+
+  <div id="modules">
+
+    <!-- ============================================================ -->
+    <!-- 模块 1：销售订单 / 报价单 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-orders">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128203;</span> 1. 销售订单 / 报价单</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p0">P0</span> 紧急</div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">订单直接编辑（无需取消重建）</div>
+              <div class="req-desc">已确认但未验证的订单允许：修改数量、删除行项、新增行项。自动调整虚拟库存。无需先取消再重新创建。</div>
+              <div class="req-source">来源：2026-05-22 会议 #4、ODOO-REPLICATION P1-6</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">低库存告警（醒目弹窗/徽章）</div>
+              <div class="req-desc">当商品库存低于安全阈值（默认：20）时，在下单页面显示醒目的告警提示。当前实现存在但不够醒目。</div>
+              <div class="req-source">来源：2026-05-22 会议 #3、BUSINESS-FLOW P0</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">批次级别缺货预警</div>
+              <div class="req-desc">接口：GET /api/waves/[id]/shortage。对比批次总需求量 vs 当前库存。显示缺货商品及缺口数量。</div>
+              <div class="req-source">来源：DEV-PLAN P0-1、BUSINESS-FLOW P0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">报价单详情页（Odoo 1:1 复刻）</div>
+              <div class="req-desc">8 个区域：面包屑、操作栏、状态流、主信息、标签页（订单行/可选项/备注）、17 列订单行表格、合计栏、Chatter。所有状态共用统一模板。</div>
+              <div class="req-source">来源：ODOO-REPLICATION 11.9</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">运营操作下拉菜单（Action）</div>
+              <div class="req-desc">操作项：确认报价单、取消、批量验证、批量编辑。共用统一操作栏。</div>
+              <div class="req-source">来源：ODOO-REPLICATION P1</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">订单审计日志 UI（时间线）</div>
+              <div class="req-desc">显示谁在什么时间修改了哪个字段。订单详情页上的时间线组件。Chatter 组件支持"发送消息"/"记录备注"/"安排活动"。</div>
+              <div class="req-source">来源：DEV-PLAN P1-5、ODOO-REPLICATION Chatter</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">确认后安全编辑（字段级权限）</div>
+              <div class="req-desc">字段级权限矩阵：每个状态下哪些字段可编辑。防止意外修改已锁定的字段。</div>
+              <div class="req-source">来源：DEV-PLAN P1-6</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">批量确认报价单</div>
+              <div class="req-desc">选择多个待处理（PENDING）报价单，一键确认为已确认（CONFIRMED）。记录 confirmationDate。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 3、业务流程文档</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">已确认回退为待处理</div>
+              <div class="req-desc">允许运营将已确认的订单回退为报价单（PENDING）状态以便重新编辑。</div>
+              <div class="req-source">来源：业务流程文档 第 3 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">实时库存锁定（多销售员并发）</div>
+              <div class="req-desc">销售员录入订单时，显示已被其他订单锁定的库存。例如：在手 1107，已锁定 1105，可用 = 2。</div>
+              <div class="req-source">来源：2026-05-22 会议 #3</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p2">P2</span> 计划中</div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">批量编辑对话框</div>
+              <div class="req-desc">跨选中订单批量修改字段：配送批次、配送日期、付款方式。</div>
+              <div class="req-source">来源：ODOO-REPLICATION P2</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">批量验证配送</div>
+              <div class="req-desc">一次性验证多个订单的配送。从当前 20 单上限提高到 50-100 单。</div>
+              <div class="req-source">来源：ODOO-REPLICATION P2、2026-05-22 会议 #6</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">订单状态扩展：LOCKED + CANCELLED</div>
+              <div class="req-desc">新增 LOCKED（开票后锁定）和 CANCELLED（已取消）状态枚举。sentAt、lockedAt 时间戳字段。</div>
+              <div class="req-source">来源：ODOO-REPLICATION Schema</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 2：订单行（OrderLine）重构 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-orderline">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128196;</span> 2. 订单行（OrderLine）表重构</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">独立 OrderLine 模型</div>
+              <div class="req-desc">新建表：OrderLine，包含 orderedQty、deliveredQty、invoicedQty、unitPrice、taxRate、sequence 字段。替换 Order.items JSON 数组。</div>
+              <div class="req-source">来源：DEV-PLAN-orderline.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">双写策略（向后兼容）</div>
+              <div class="req-desc">同时写入 OrderLine 表和 Order.items JSON。逐步迁移读取到 OrderLine。</div>
+              <div class="req-source">来源：DEV-PLAN-orderline.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">预测数量公式</div>
+              <div class="req-desc">预测量 = 在手数量 + 入库待处理 - 出库已预留。在商品/库存页面展示。</div>
+              <div class="req-source">来源：DEV-PLAN-orderline.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">五列数量展示（订单详情）</div>
+              <div class="req-desc">每行显示：已订购 / 预测 / 在手 / 已配送 / 已开票。</div>
+              <div class="req-source">来源：DEV-PLAN-orderline.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">历史数据回填</div>
+              <div class="req-desc">迁移脚本：从现有 Order.items JSON 填充 OrderLine 表，覆盖所有历史订单。</div>
+              <div class="req-source">来源：DEV-PLAN-orderline.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">配送实际数量回写</div>
+              <div class="req-desc">司机标记配送完成时，将实际配送数量回写到 OrderLine.deliveredQty。</div>
+              <div class="req-source">来源：DEV-PLAN-orderline.md</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 3：定价引擎 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-pricing">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128176;</span> 3. 定价引擎 / 价格表</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p0">P0</span> 紧急</div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">三级定价优先级</div>
+              <div class="req-desc">优先级：客户专属价（CustomerSpecialPrice）> 价格表项（PricelistItem）> 商品基础价（Product.listPrice）。提供 resolvePrice() 和 resolveCustomerPrice() 接口。</div>
+              <div class="req-source">来源：pricing-module-prd.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">客户专属价（CustomerSpecialPrice）</div>
+              <div class="req-desc">按客户、按商品设置固定价格覆盖。提供管理专属价的增删改查 UI。</div>
+              <div class="req-source">来源：pricing-module-prd.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">价格表项（多种计算类型）</div>
+              <div class="req-desc">PricelistItem：适用范围（全局/分类/商品/变体）x 计算类型（固定价/百分比/公式）。条件：最低数量、开始日期、结束日期。</div>
+              <div class="req-source">来源：pricing-module-prd.md</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">公式定价（基准 x 折扣 + 加价）</div>
+              <div class="req-desc">公式：基准价（列表价/标准价/价格表）x (1-折扣%) + 加价，支持利润保护（最低利润 min_margin）。</div>
+              <div class="req-source">来源：pricing-module-prd.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">价格表管理 UI（Odoo 紫色主题）</div>
+              <div class="req-desc">经典 Odoo 风格的价格表增删改查页面。列表视图 + 详情视图。</div>
+              <div class="req-source">来源：pricing-module-prd.md</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">下单时自动填充价格</div>
+              <div class="req-desc">添加商品到订单时，自动从定价引擎解析价格并预填单价字段。</div>
+              <div class="req-source">来源：pricing-module-prd.md、业务流程文档</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 4：采购 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-purchasing">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128230;</span> 4. 采购管理</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p0">P0</span> 紧急</div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">采购建议引擎（自动生成）</div>
+              <div class="req-desc">PurchaseSuggestion 模型。根据需求量 vs 库存自动生成采购建议。接口：GET /api/purchase-suggestions。</div>
+              <div class="req-source">来源：DEV-PLAN P0-2</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">采购单 PDF/Excel 导入</div>
+              <div class="req-desc">上传供应商发票/送货单的 PDF 或 Excel，系统自动识别并生成采购单草稿。人工审核后确认。</div>
+              <div class="req-source">来源：2026-05-22 会议 #1</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">从历史采购单"再次采购"</div>
+              <div class="req-desc">复制上一次采购单，保留供应商和商品列表，仅修改数量。</div>
+              <div class="req-source">来源：2026-05-22 会议 #1</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">采购单完整工作流</div>
+              <div class="req-desc">完整采购单生命周期：草稿 > 已发送 > 已确认 > 已收货 > 已开票。包含状态流转和库存联动。</div>
+              <div class="req-source">来源：2026-05-22 会议 #2、业务流程文档</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">采购确认自动更新库存</div>
+              <div class="req-desc">确认采购单 -> 增加预测量。验证收货 -> 增加在手量。验证后，采购单锁定（仅能通过退货/报废编辑）。</div>
+              <div class="req-source">来源：2026-05-22 会议 #2</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">供应商管理（isVendor 标记）</div>
+              <div class="req-desc">Customer 模型增加 isVendor=true 标记供应商。供应商增删改查，关联采购单。</div>
+              <div class="req-source">来源：ODOO-REPLICATION、业务流程文档</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p2">P2</span> 计划中</div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">采购单计划日期（到货日 vs 创建日）</div>
+              <div class="req-desc">采购单创建日期和实际到货日期可以不同。库存批次日期应跟随计划日期，而非采购单创建日期。</div>
+              <div class="req-source">来源：2026-05-22 会议 #12</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 5：库存管理 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-inventory">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128230;</span> 5. 库存管理</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p0">P0</span> 紧急</div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">库存操作：确认=扣减，回退=恢复，退货=增加</div>
+              <div class="req-desc">订单确认扣减在手量，回退恢复，退货增加。原子操作并记录审计日志。</div>
+              <div class="req-source">来源：ODOO-REPLICATION 库存操作</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">库存变动全链路追踪</div>
+              <div class="req-desc">追踪所有库存变化：采购入库、销售出库、退货入库、报废、手动调整。每条记录关联源单据。</div>
+              <div class="req-source">来源：2026-05-22 会议 #9</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">手动调整 + 审计日志</div>
+              <div class="req-desc">盘点差异调整。限制操作权限。完整操作日志。与自动变动区分。</div>
+              <div class="req-source">来源：2026-05-22 会议 #9</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">滞销商品检测</div>
+              <div class="req-desc">自动标记 3 天无销售的商品。在库存看板上展示。</div>
+              <div class="req-source">来源：业务流程文档 第 5 节</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p2">P2</span> 计划中</div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">批号 / 批次 + 保质期管理</div>
+              <div class="req-desc">批号来自扫码或自动生成。每批次记录保质期/有效期。临期商品在看板告警。</div>
+              <div class="req-source">来源：2026-05-22 会议 #10</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">报废处理（损坏/过期）</div>
+              <div class="req-desc">报废流程：选择商品 -> 记录原因 -> 扣减库存。关联原批号/批次。</div>
+              <div class="req-source">来源：2026-05-22 会议 #2、#9</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 6：仓库 / 拣货 / 波次 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-warehouse">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#127970;</span> 6. 仓库 / 拣货 / 波次</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">从已确认订单生成波次</div>
+              <div class="req-desc">选择 2 个以上已确认订单 -> 合并生成波次。按商品区域（叶菜/根茎等）自动汇总。订单状态 -> WAVE_ASSIGNED。自动创建待指派行程占位。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 4</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">拣货员界面：填写实际拣货数量</div>
+              <div class="req-desc">/picker 角色页面。查看分配的波次 -> 逐项填写实际拣货数量 -> 标记完成。波次状态 -> PICKED。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 5</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">分货/司机界面：按客户分配</div>
+              <div class="req-desc">查看已拣货波次 -> 按餐馆分配商品。司机核验数量。波次 -> SORTED。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 6、业务流程文档 第 8 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">货物核验界面（逐项清单）</div>
+              <div class="req-desc">司机端清单 UI。逐项标记已核验。标记差异并记录备注。DEV-PLAN P1-7。</div>
+              <div class="req-source">来源：DEV-PLAN P1-7</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">差异处理流程</div>
+              <div class="req-desc">拣货数量与下单数量不符时：记录差异类型（缺货/替代/重量差异），自动更新订单。DEV-PLAN P1-8。</div>
+              <div class="req-source">来源：DEV-PLAN P1-8、2026-05-22 会议 #5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p2">P2</span> 计划中</div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">小数数量支持（拆箱）</div>
+              <div class="req-desc">支持非整数数量：1 箱 = 10 个，给 6 个 = 0.6 箱。无需单位换算。</div>
+              <div class="req-source">来源：2026-05-22 会议 #5</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">称重商品（千克单位）</div>
+              <div class="req-desc">计量单位为 kg 的商品，拣货后需录入实际重量。未来：电子秤对接。</div>
+              <div class="req-source">来源：2026-05-22 会议 #5</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 7：配送 / 行程 / 司机 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-delivery">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128666;</span> 7. 配送 / 行程 / 司机</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">行程创建向导（4 步）</div>
+              <div class="req-desc">1. 选择配送时段（上午/下午） 2. 选择餐馆/订单 3. 选择司机 4. 确认。司机在 /driver 页面看到任务。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 7</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">司机行程视图 + 出发</div>
+              <div class="req-desc">/driver 界面：查看今日行程，核验地址和商品列表，点击"出发"。行程状态 -> IN_PROGRESS。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 8</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">每家餐馆配送确认</div>
+              <div class="req-desc">正常：确认货物 -> "订单完成" -> 拍照签收。异常：选择类型（无人收货/拒收/部分退货）-> 原因 + 拍照。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 9</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">客户-司机默认绑定</div>
+              <div class="req-desc">Customer.defaultDriverSlotId：自动将客户订单分配到其首选司机时段。DEV-PLAN P1-4。</div>
+              <div class="req-source">来源：DEV-PLAN P1-4</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">司机结算（现金/在线代收）</div>
+              <div class="req-desc">司机记录每笔配送代收的现金金额。财务核对。DEV-PLAN P1-10。</div>
+              <div class="req-source">来源：DEV-PLAN P1-10</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">DriverSlot 批次模型</div>
+              <div class="req-desc">DriverSlot：司机名 + 时段（上午/下午）+ 批次号（1-5）。Order.driverSlotId 外键。报价单列表上的批次分配面板。</div>
+              <div class="req-source">来源：业务流程文档 第 4 节、ODOO-REPLICATION</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p2">P2</span> 计划中</div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">电子签名（配送签收）</div>
+              <div class="req-desc">移动端签名板，客户在配送时签字确认。</div>
+              <div class="req-source">来源：业务流程文档 第 9 节</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 8：打印 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-printing">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128424;</span> 8. 打印（拣货单/送货单/汇总单）</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">拣货单（按商品汇总，给拣货员）</div>
+              <div class="req-desc">按批次内所有订单的商品汇总。区分整箱和散装。打印友好排版。</div>
+              <div class="req-source">来源：业务流程文档 第 6 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">送货单（按客户，给司机+客户）</div>
+              <div class="req-desc">每个客户一张，列出所有已订商品、数量、价格。客户签收留底。</div>
+              <div class="req-source">来源：业务流程文档 第 6 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">汇总单（按批次）</div>
+              <div class="req-desc">批次级汇总：总重量、总金额、客户数。供管理层概览。</div>
+              <div class="req-source">来源：业务流程文档 第 6 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">配送打印日期范围筛选</div>
+              <div class="req-desc">生成打印批次时支持按配送日期范围筛选订单。批次订单回退机制。</div>
+              <div class="req-source">来源：Git commit: ee419b5</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 9：退货 / 退款 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-returns">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128259;</span> 9. 退货 / 退款 / 贷项通知单</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p0">P0</span> 紧急</div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">退货日期默认为当天（非原订单日期）</div>
+              <div class="req-desc">贷项通知单日期必须默认为处理日期，而非原订单日期。修复 Sage 上传日期不匹配问题。</div>
+              <div class="req-source">来源：2026-05-22 会议 #7</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p0">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">跨订单合并贷项通知单</div>
+              <div class="req-desc">同一客户从 3 个不同订单退货 -> 生成 1 张合并的贷项通知单，而非 3 张。</div>
+              <div class="req-source">来源：2026-05-22 会议 #7</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">退货处理流程</div>
+              <div class="req-desc">司机记录异常 -> 自动生成退货记录 -> 运营审核（批准/拒绝）-> 退款方式（按比例/固定金额）。DEV-PLAN P1-9。</div>
+              <div class="req-source">来源：DEV-PLAN P1-9、WORKFLOW-PRD 步骤 10</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">退货自动恢复库存</div>
+              <div class="req-desc">批准的退货自动增加退回商品的在手库存。</div>
+              <div class="req-source">来源：2026-05-22 会议 #7</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">小数精度退货（拆箱退货）</div>
+              <div class="req-desc">支持退还 0.3333 箱。正确扣减配送数量而非清零整个配送。合规修正路径（不直接修改数据库）。</div>
+              <div class="req-source">来源：2026-05-22 会议 #11</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 10：财务 / 会计 / 开票 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-finance">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128181;</span> 10. 财务 / 会计 / 开票</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">财务对账（Statement 模型）</div>
+              <div class="req-desc">替换模拟数据为真实 Statement 模型。每日对账工作流。DEV-PLAN P1-1。</div>
+              <div class="req-source">来源：DEV-PLAN P1-1</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">会计核验页面（扫码 + 批量核验）</div>
+              <div class="req-desc">条码扫描多选已回单订单。批量核验配合批量编辑模式。/api/orders/bulk 的 mark_returned + confirm 操作。</div>
+              <div class="req-source">来源：ODOO-REPLICATION P0（会计）</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">从已完成订单生成发票</div>
+              <div class="req-desc">选择已完成订单 -> 合并开票。发票状态：草稿 -> 已确认 -> 已付款。包含金额、税额明细、到期日。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 12</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">财务看板（5 个 KPI 卡片）</div>
+              <div class="req-desc">当日现金/在线代收、未结订单、客户欠款汇总、销售提成计算。</div>
+              <div class="req-source">来源：业务流程文档 第 10 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">司机现金结算确认</div>
+              <div class="req-desc">司机交回现金。财务核对金额与系统一致。标记订单为现金已结算。</div>
+              <div class="req-source">来源：DEV-PLAN P1-10、业务流程文档</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p2">P2</span> 计划中</div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">Sage 导出格式</div>
+              <div class="req-desc">导出发票/贷项通知单为 Sage 兼容的 Excel 格式。支持按周或按月汇总导出。待客户提供 Sage 模板。</div>
+              <div class="req-source">来源：2026-05-22 会议 #8</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">销售提成自动计算</div>
+              <div class="req-desc">根据订单金额计算销售员提成。在财务看板展示。</div>
+              <div class="req-source">来源：业务流程文档 第 10 节</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 11：客户门户 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-customer">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#127869;</span> 11. 客户门户 / 自助下单</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">客户自助下单页面</div>
+              <div class="req-desc">商品浏览、购物车、选择付款方式、提交订单。RESTAURANT 角色。DEV-PLAN P1-2。</div>
+              <div class="req-source">来源：DEV-PLAN P1-2、业务流程文档</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">销售员-客户绑定（SALES 角色）</div>
+              <div class="req-desc">每个客户关联一个销售员。销售员管理自己的客户群。DEV-PLAN P1-3。</div>
+              <div class="req-source">来源：DEV-PLAN P1-3</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">客户数据库（增删改查 + 价格表绑定）</div>
+              <div class="req-desc">餐馆信息、联系方式、地址、付款条件（即时/周结/月结）、关联价格表、关联销售员。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 0、ODOO-REPLICATION</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">CSV 批量导入订单</div>
+              <div class="req-desc">基于模板的 CSV 批量导入订单。导入前校验商品和客户是否存在。</div>
+              <div class="req-source">来源：业务流程文档 第 2 节</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 12：通知 / 告警 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-notifications">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128276;</span> 12. 通知 / 告警</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">缺货自动通知</div>
+              <div class="req-desc">Notification 模型 + 铃铛图标组件。检测到缺货时自动通知相关角色。DEV-PLAN P1-11。</div>
+              <div class="req-source">来源：DEV-PLAN P1-11</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">系统内通知展示（优先于邮件）</div>
+              <div class="req-desc">通知直接在系统 UI 中显示，不通过邮件。看板告警：临期商品、低库存等。</div>
+              <div class="req-source">来源：2026-05-22 会议 #10</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 13：报表 / 数据分析 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-reporting">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128200;</span> 13. 报表 / 数据分析</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">销售报表（veggie_sales_report 视图）</div>
+              <div class="req-desc">维度：日期、客户、商品、分类、销售员、付款方式、司机。度量：营收、数量、均价、订单数、行数。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">采购报表（veggie_purchasing_report 视图）</div>
+              <div class="req-desc">维度：日期、供应商、商品、分类。度量：成本、数量、均价、采购单数。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">物流报表（veggie_logistics_report 视图）</div>
+              <div class="req-desc">维度：日期、司机、客户、商品。度量：配送次数、平均配送时长、总重量、总营收。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">动态 SQL 构建器（白名单校验）</div>
+              <div class="req-desc">服务端 SQL 构建器用于报表查询。维度/度量/筛选条件白名单校验。防止 SQL 注入。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">透视表组件</div>
+              <div class="req-desc">Odoo 风格透视表，支持展开/折叠行、列度量。支持多维度分组。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">图表视图（柱状图、折线图、饼图）</div>
+              <div class="req-desc">ReportBarChart、ReportLineChart、ReportPieChart。chart-utils 配色方案。支持切换图表类型。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">8 个预设报表</div>
+              <div class="req-desc">预配置的常用分析场景组合。一键加载预设的维度/度量/筛选条件。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">Excel 导出（SheetJS）</div>
+              <div class="req-desc">将当前报表视图导出为 Excel。包含所有可见维度和度量。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">分组选择器（维度选择）</div>
+              <div class="req-desc">下拉菜单选择分组维度。支持多级分组。Odoo 风格工具栏集成。</div>
+              <div class="req-source">来源：DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 14：商品 / 目录 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-products">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#129382;</span> 14. 商品 / 目录</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">完整商品模型（Odoo 兼容）</div>
+              <div class="req-desc">ProductTemplate + Product（变体）。字段：名称、列表价、标准价、分类、计量单位、商品类型（整箱/散装）、类型（实物/消耗品/服务）。</div>
+              <div class="req-source">来源：ODOO-REPLICATION、业务流程文档</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">商品增删改查管理页面</div>
+              <div class="req-desc">列表视图 + 详情视图。创建、编辑、归档商品。分类管理。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 步骤 0</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">计量单位（UOM）系统</div>
+              <div class="req-desc">Uom 模型：千克、箱、个、捆等。Product.uomId 外键。支持大小单位换算（1 箱 = N 个）。</div>
+              <div class="req-source">来源：2026-05-22 会议 #11、ODOO-REPLICATION</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 15：老板看板 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-boss">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128188;</span> 15. 老板看板 / KPI</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">KPI 卡片（销售额、订单数、客户数、客单价）</div>
+              <div class="req-desc">营收、订单数、活跃客户数、平均订单金额。支持今日/本周/本月切换。</div>
+              <div class="req-source">来源：业务流程文档 第 12 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">趋势图表（日/周/月）</div>
+              <div class="req-desc">销售趋势折线图。可配置时间范围。</div>
+              <div class="req-source">来源：业务流程文档 第 12 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">排行榜（客户/商品/司机排名）</div>
+              <div class="req-desc">按营收排名的 Top 客户、按销量排名的 Top 商品、司机效率排名。</div>
+              <div class="req-source">来源：业务流程文档 第 12 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">利润分析（按客户/商品/时段）</div>
+              <div class="req-desc">营收 vs 成本拆分。利润率分析。支持按客户、商品或时间段筛选。</div>
+              <div class="req-source">来源：业务流程文档 第 12 节</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 16：Odoo UI/UX 复刻 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-odoo-ui">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#127912;</span> 16. Odoo UI/UX 复刻</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">紫色主题（Odoo 经典）</div>
+              <div class="req-desc">/classic 路由使用 Odoo 紫色配色方案。与绿色新风格页面区分。</div>
+              <div class="req-source">来源：ODOO-REPLICATION</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">Odoo 风格工具栏（度量/分组/筛选/收藏）</div>
+              <div class="req-desc">ReportingToolbar 包含维度/度量/筛选选择器。Odoo 风格分段按钮切换视图（列表/透视表/图表）。</div>
+              <div class="req-source">来源：ODOO-REPLICATION、DEV-PLAN-REPORTING</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">状态流指示条</div>
+              <div class="req-desc">详情页上的可视化状态进度条：报价单 -> 销售订单 -> 完成。当前状态高亮显示。</div>
+              <div class="req-source">来源：ODOO-REPLICATION 11.9</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">OdooNav 侧边栏导航</div>
+              <div class="req-desc">匹配 Odoo 菜单结构的侧边栏导航。模块分组：销售、库存、采购、报表。</div>
+              <div class="req-source">来源：ODOO-REPLICATION</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p2">P2</span> 计划中</div>
+
+          <div class="req" data-p="p2">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">Chatter 组件（发消息/记日志/安排活动）</div>
+              <div class="req-desc">OrderChatter.tsx：评论线程、内部备注、计划活动。Odoo 风格布局。</div>
+              <div class="req-source">来源：ODOO-REPLICATION Chatter</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 模块 17：RBAC / 认证 -->
+    <!-- ============================================================ -->
+    <div class="module" id="mod-rbac">
+      <div class="module-header" onclick="toggleModule(this)">
+        <div class="module-title"><span class="module-icon">&#128274;</span> 17. 权限控制 / 认证</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="module-progress"></span>
+          <div class="module-badge"></div>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="module-body">
+        <div class="req-group">
+          <div class="req-group-header"><span class="priority priority-p1">P1</span> 重要</div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">八角色 RBAC 系统</div>
+              <div class="req-desc">角色：运营（OPERATOR）、销售（SALES）、餐馆（RESTAURANT）、拣货员（PICKER）、司机（DRIVER）、老板（BOSS）、财务（FINANCE）、仓库（WAREHOUSE）。强制角色-页面访问矩阵。</div>
+              <div class="req-source">来源：ODOO-REPLICATION、业务流程文档 第 15 节</div>
+            </div>
+          </div>
+
+          <div class="req" data-p="p1">
+            <input type="checkbox"><div class="req-content">
+              <div class="req-title">基于角色的页面访问控制</div>
+              <div class="req-desc">每个角色仅看到其有权访问的页面。中间件层强制执行。/operator、/picker、/driver、/boss、/accounting 路由。</div>
+              <div class="req-source">来源：WORKFLOW-PRD 角色-页面对应表</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end #modules -->
+
+  <div style="text-align:center; padding: 40px 0; color: var(--text2); font-size: 13px;">
+    共 9 份来源文档 | Veggie 蔬菜批发供应链系统
+  </div>
+</div>
+
+<script>
+function toggleModule(header) {
+  header.closest('.module').classList.toggle('collapsed');
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.dataset.filter;
+
+    document.querySelectorAll('.req').forEach(req => {
+      const p = req.dataset.p;
+      const checked = req.querySelector('input[type="checkbox"]').checked;
+      let show = true;
+
+      if (filter === 'p0') show = p === 'p0';
+      else if (filter === 'p1') show = p === 'p1';
+      else if (filter === 'p2') show = p === 'p2';
+      else if (filter === 'p3') show = p === 'p3';
+      else if (filter === 'unchecked') show = !checked;
+      else if (filter === 'checked') show = checked;
+
+      req.style.display = show ? '' : 'none';
+    });
+
+    document.querySelectorAll('.req-group').forEach(group => {
+      const visible = group.querySelectorAll('.req:not([style*="display: none"])').length;
+      group.style.display = visible > 0 ? '' : 'none';
+    });
+
+    document.querySelectorAll('.module').forEach(mod => {
+      const visible = mod.querySelectorAll('.req:not([style*="display: none"])').length;
+      if (filter !== 'all' && visible === 0) {
+        mod.style.display = 'none';
+      } else {
+        mod.style.display = '';
+      }
+    });
+  });
+});
+
+function updateStats() {
+  let counts = { p0: 0, p1: 0, p2: 0, p3: 0, total: 0, done: 0 };
+  document.querySelectorAll('.req').forEach(req => {
+    const p = req.dataset.p;
+    if (counts[p] !== undefined) counts[p]++;
+    counts.total++;
+    if (req.querySelector('input[type="checkbox"]').checked) counts.done++;
+  });
+  document.getElementById('totalCount').textContent = counts.total;
+  document.getElementById('p0Count').textContent = counts.p0;
+  document.getElementById('p1Count').textContent = counts.p1;
+  document.getElementById('p2Count').textContent = counts.p2;
+  document.getElementById('p3Count').textContent = counts.p3;
+  document.getElementById('doneCount').textContent = counts.done;
+
+  const pct = counts.total ? Math.round(counts.done / counts.total * 100) : 0;
+  document.getElementById('globalProgress').style.width = pct + '%';
+}
+
+function buildTOC() {
+  const tocList = document.getElementById('tocList');
+  document.querySelectorAll('.module').forEach(mod => {
+    const title = mod.querySelector('.module-title').textContent.trim();
+    const count = mod.querySelectorAll('.req').length;
+    const div = document.createElement('div');
+    div.className = 'toc-item';
+    div.innerHTML = `${title} <span class="toc-count">(${count})</span>`;
+    div.onclick = () => {
+      mod.classList.remove('collapsed');
+      mod.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    tocList.appendChild(div);
+  });
+}
+
+function updateModuleBadges() {
+  document.querySelectorAll('.module').forEach(mod => {
+    const badge = mod.querySelector('.module-badge');
+    const progress = mod.querySelector('.module-progress');
+    let counts = { p0: 0, p1: 0, p2: 0, p3: 0 };
+    let total = 0, done = 0;
+    mod.querySelectorAll('.req').forEach(req => {
+      const p = req.dataset.p;
+      if (counts[p] !== undefined) counts[p]++;
+      total++;
+      if (req.querySelector('input[type="checkbox"]').checked) {
+        done++;
+        req.classList.add('checked');
+      } else {
+        req.classList.remove('checked');
+      }
+    });
+    let html = '';
+    if (counts.p0) html += `<span class="badge badge-p0">P0:${counts.p0}</span>`;
+    if (counts.p1) html += `<span class="badge badge-p1">P1:${counts.p1}</span>`;
+    if (counts.p2) html += `<span class="badge badge-p2">P2:${counts.p2}</span>`;
+    if (counts.p3) html += `<span class="badge badge-p3">P3:${counts.p3}</span>`;
+    badge.innerHTML = html;
+    progress.textContent = `${done}/${total}`;
+  });
+}
+
+function saveState() {
+  const state = [];
+  document.querySelectorAll('.req input[type="checkbox"]').forEach((cb, i) => {
+    state.push(cb.checked ? 1 : 0);
+  });
+  localStorage.setItem('veggie-req-state-v2', JSON.stringify(state));
+}
+
+function loadState() {
+  const raw = localStorage.getItem('veggie-req-state-v2');
+  if (!raw) return;
+  try {
+    const state = JSON.parse(raw);
+    document.querySelectorAll('.req input[type="checkbox"]').forEach((cb, i) => {
+      if (state[i] !== undefined) cb.checked = !!state[i];
+    });
+  } catch(e) {}
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target.type === 'checkbox') {
+    saveState();
+    updateStats();
+    updateModuleBadges();
+  }
+});
+
+loadState();
+updateStats();
+buildTOC();
+updateModuleBadges();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+-- Add Quotation Sent / Locked / Cancelled lifecycle support
+ALTER TYPE "OrderStatus" ADD VALUE IF NOT EXISTS 'LOCKED';
+ALTER TYPE "OrderStatus" ADD VALUE IF NOT EXISTS 'CANCELLED';
+
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "sentAt"   TIMESTAMP(3);
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "lockedAt" TIMESTAMP(3);

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>退款单 Mockup — Veggie Supply</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --purple: #875A7B; }
+  .btn-purple { background: #875A7B; color: #fff; }
+  .btn-purple:hover { opacity: .9; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+  .badge-draft { background: #f3f4f6; color: #374151; }
+  .badge-confirmed { background: #ede9fe; color: #7c3aed; }
+  .badge-settled { background: #d1fae5; color: #059669; }
+  .badge-cancelled { background: #fee2e2; color: #dc2626; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .tab-btn { cursor: pointer; padding: 6px 16px; border-radius: 6px; font-size: 14px; }
+  .tab-btn.active { background: #875A7B; color: #fff; }
+  .tab-btn:not(.active) { background: #f3f4f6; color: #374151; }
+  .nav-item { padding: 8px 16px; cursor: pointer; border-radius: 6px; font-size: 14px; }
+  .nav-item:hover { background: #f9f5f7; }
+  .nav-item.active { background: #f3eff5; color: #875A7B; font-weight: 600; }
+  .mockup-note { background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #92400e; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- 顶部导航条 -->
+<div style="background:#875A7B" class="text-white px-6 py-2 flex items-center justify-between text-sm">
+  <div class="flex items-center gap-6">
+    <span class="font-bold text-base">Veggie Supply</span>
+    <span class="nav-item text-white/80" onclick="showPage('list')">退款单</span>
+    <span class="nav-item text-white/80" onclick="showPage('trip-trigger')">行程退货入口</span>
+  </div>
+  <div class="flex items-center gap-4">
+    <span>Mockup 演示</span>
+  </div>
+</div>
+
+<!-- 页面切换按钮 -->
+<div class="max-w-6xl mx-auto px-4 pt-4">
+  <div class="mockup-note">
+    <strong>Mockup 说明：</strong>点击下方按钮切换不同页面视图。这不是真实功能，仅用于确认 UI 设计方向。
+  </div>
+  <div class="flex gap-2 mb-4">
+    <button class="tab-btn active" id="tab-list" onclick="showPage('list')">1. 退款单列表</button>
+    <button class="tab-btn" id="tab-detail" onclick="showPage('detail')">2. 退款单详情</button>
+    <button class="tab-btn" id="tab-trip-trigger" onclick="showPage('trip-trigger')">3. 触发入口（行程页）</button>
+    <button class="tab-btn" id="tab-generate" onclick="showPage('generate')">4. 从退货生成弹窗</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- PAGE 1: 退款单列表 -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="page-list" class="page active max-w-6xl mx-auto px-4 pb-8">
+  <!-- Odoo 控制面板 -->
+  <div class="bg-white rounded-xl border border-gray-200 mb-4">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-gray-900">退款单 (Credit Notes)</h1>
+        <span class="text-sm text-gray-400">共 5 条</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn-purple px-4 py-2 rounded-lg text-sm font-medium" onclick="showPage('generate')">
+          + 从退货生成退款单
+        </button>
+      </div>
+    </div>
+    <!-- 筛选栏 -->
+    <div class="flex items-center gap-3 px-5 py-2 bg-gray-50/50">
+      <input type="text" placeholder="搜索退款单号 / 客户名..." class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-purple-200">
+      <select class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
+        <option>全部状态</option>
+        <option>草稿</option>
+        <option>已确认</option>
+        <option>已结算</option>
+        <option>已取消</option>
+      </select>
+      <select class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
+        <option>分组：无</option>
+        <option>按客户</option>
+        <option>按状态</option>
+        <option>按日期</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- 列表表格 -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-gray-100 text-xs text-gray-500 uppercase">
+          <th class="text-left px-4 py-3 font-medium">退款单号</th>
+          <th class="text-left px-4 py-3 font-medium">客户</th>
+          <th class="text-center px-4 py-3 font-medium">日期</th>
+          <th class="text-center px-4 py-3 font-medium">行数</th>
+          <th class="text-right px-4 py-3 font-medium">金额</th>
+          <th class="text-center px-4 py-3 font-medium">状态</th>
+          <th class="text-center px-4 py-3 font-medium">来源</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        <tr class="hover:bg-gray-50 cursor-pointer" onclick="showPage('detail')">
+          <td class="px-4 py-3 font-medium text-purple-700">CN-20260527-0001</td>
+          <td class="px-4 py-3 text-gray-800">Dublin Chinese Restaurant</td>
+          <td class="px-4 py-3 text-center text-gray-600">27/05/2026</td>
+          <td class="px-4 py-3 text-center">4</td>
+          <td class="px-4 py-3 text-right font-medium">€127.50</td>
+          <td class="px-4 py-3 text-center"><span class="badge badge-confirmed">已确认</span></td>
+          <td class="px-4 py-3 text-center text-xs text-gray-400">3 个订单退货合并</td>
+        </tr>
+        <tr class="hover:bg-gray-50 cursor-pointer">
+          <td class="px-4 py-3 font-medium text-purple-700">CN-20260527-0002</td>
+          <td class="px-4 py-3 text-gray-800">Jade Palace</td>
+          <td class="px-4 py-3 text-center text-gray-600">27/05/2026</td>
+          <td class="px-4 py-3 text-center">2</td>
+          <td class="px-4 py-3 text-right font-medium">€45.80</td>
+          <td class="px-4 py-3 text-center"><span class="badge badge-draft">草稿</span></td>
+          <td class="px-4 py-3 text-center text-xs text-gray-400">1 个订单退货</td>
+        </tr>
+        <tr class="hover:bg-gray-50 cursor-pointer">
+          <td class="px-4 py-3 font-medium text-purple-700">CN-20260526-0001</td>
+          <td class="px-4 py-3 text-gray-800">Golden Dragon</td>
+          <td class="px-4 py-3 text-center text-gray-600">26/05/2026</td>
+          <td class="px-4 py-3 text-center">3</td>
+          <td class="px-4 py-3 text-right font-medium">€89.00</td>
+          <td class="px-4 py-3 text-center"><span class="badge badge-settled">已结算</span></td>
+          <td class="px-4 py-3 text-center text-xs text-gray-400">2 个订单退货合并</td>
+        </tr>
+        <tr class="hover:bg-gray-50 cursor-pointer">
+          <td class="px-4 py-3 font-medium text-purple-700">CN-20260525-0001</td>
+          <td class="px-4 py-3 text-gray-800">Szechuan House</td>
+          <td class="px-4 py-3 text-center text-gray-600">25/05/2026</td>
+          <td class="px-4 py-3 text-center">1</td>
+          <td class="px-4 py-3 text-right font-medium">€22.00</td>
+          <td class="px-4 py-3 text-center"><span class="badge badge-cancelled">已取消</span></td>
+          <td class="px-4 py-3 text-center text-xs text-gray-400">1 个订单退货</td>
+        </tr>
+        <tr class="hover:bg-gray-50 cursor-pointer">
+          <td class="px-4 py-3 font-medium text-purple-700">CN-20260524-0003</td>
+          <td class="px-4 py-3 text-gray-800">Dublin Chinese Restaurant</td>
+          <td class="px-4 py-3 text-center text-gray-600">24/05/2026</td>
+          <td class="px-4 py-3 text-center">5</td>
+          <td class="px-4 py-3 text-right font-medium">€203.40</td>
+          <td class="px-4 py-3 text-center"><span class="badge badge-settled">已结算</span></td>
+          <td class="px-4 py-3 text-center text-xs text-gray-400">4 个订单退货合并</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- PAGE 2: 退款单详情 -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="page-detail" class="page max-w-3xl mx-auto px-4 pb-8">
+  <!-- 顶部操作栏 -->
+  <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center gap-3">
+      <button onclick="showPage('list')" class="text-sm text-gray-500 hover:text-gray-700">← 返回退款单列表</button>
+      <h1 class="text-2xl font-bold text-gray-900">CN-20260527-0001</h1>
+      <span class="badge badge-confirmed">已确认</span>
+    </div>
+    <div class="flex gap-2">
+      <!-- 已确认状态下的操作按钮 -->
+      <button class="px-3 py-1.5 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50">↓ 下载 PDF</button>
+      <button class="btn-purple px-4 py-1.5 rounded-md text-sm font-medium">标记已结算</button>
+    </div>
+  </div>
+
+  <!-- 基本信息 -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wide">客户</p>
+        <p class="mt-1 font-semibold text-gray-900">Dublin Chinese Restaurant</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wide">退款日期</p>
+        <p class="mt-1 text-gray-700">27/05/2026</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wide">来源</p>
+        <p class="mt-1 text-gray-600 text-sm">3 个订单退货合并<br>
+          <span class="text-xs text-gray-400">行程 TRIP-0527-001</span>
+        </p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wide">创建人</p>
+        <p class="mt-1 text-gray-700">operator@veggie.com</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wide">创建时间</p>
+        <p class="mt-1 text-gray-700">27/05/2026 09:32</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wide">备注</p>
+        <p class="mt-1 text-gray-600 text-sm">从退货自动生成 — 1个行程</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 退款明细 -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
+    <div class="px-5 py-3 border-b border-gray-200" style="background: #f3eff5">
+      <h2 class="font-semibold text-gray-700">退款明细</h2>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="border-b border-gray-100">
+        <tr class="text-xs text-gray-500 uppercase">
+          <th class="text-left px-4 py-2 font-medium">商品</th>
+          <th class="text-left px-4 py-2 font-medium">退货原因</th>
+          <th class="text-center px-4 py-2 font-medium">数量</th>
+          <th class="text-right px-4 py-2 font-medium">单价</th>
+          <th class="text-right px-4 py-2 font-medium">小计</th>
+          <th class="text-left px-4 py-2 font-medium">来源订单</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3">
+            <p class="font-medium text-gray-800">白菜 / 箱</p>
+            <p class="text-xs text-gray-400">P-001</p>
+          </td>
+          <td class="px-4 py-3 text-gray-600 text-xs">烂了一半</td>
+          <td class="px-4 py-3 text-center">2</td>
+          <td class="px-4 py-3 text-right">€12.00</td>
+          <td class="px-4 py-3 text-right font-medium">€24.00</td>
+          <td class="px-4 py-3 text-xs text-gray-400">SO-0525-003</td>
+        </tr>
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3">
+            <p class="font-medium text-gray-800">豆腐 / 箱</p>
+            <p class="text-xs text-gray-400">P-015</p>
+          </td>
+          <td class="px-4 py-3 text-gray-600 text-xs">过期</td>
+          <td class="px-4 py-3 text-center">3</td>
+          <td class="px-4 py-3 text-right">€8.50</td>
+          <td class="px-4 py-3 text-right font-medium">€25.50</td>
+          <td class="px-4 py-3 text-xs text-gray-400">SO-0524-007</td>
+        </tr>
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3">
+            <p class="font-medium text-gray-800">酱油 / 瓶</p>
+            <p class="text-xs text-gray-400">P-042</p>
+          </td>
+          <td class="px-4 py-3 text-gray-600 text-xs">送错了</td>
+          <td class="px-4 py-3 text-center">5</td>
+          <td class="px-4 py-3 text-right">€6.00</td>
+          <td class="px-4 py-3 text-right font-medium">€30.00</td>
+          <td class="px-4 py-3 text-xs text-gray-400">SO-0526-001</td>
+        </tr>
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3">
+            <p class="font-medium text-gray-800">鸡蛋 / 箱</p>
+            <p class="text-xs text-gray-400">P-008</p>
+          </td>
+          <td class="px-4 py-3 text-gray-600 text-xs">破损</td>
+          <td class="px-4 py-3 text-center">4</td>
+          <td class="px-4 py-3 text-right">€12.00</td>
+          <td class="px-4 py-3 text-right font-medium">€48.00</td>
+          <td class="px-4 py-3 text-xs text-gray-400">SO-0525-003</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 汇总 -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="space-y-2">
+      <div class="flex justify-between text-sm text-gray-600">
+        <span>税前小计</span>
+        <span>€127.50</span>
+      </div>
+      <div class="flex justify-between text-sm text-gray-600">
+        <span>VAT 合计</span>
+        <span>€0.00</span>
+      </div>
+      <div class="flex justify-between text-base font-bold text-gray-900 border-t border-gray-200 pt-2 mt-2">
+        <span>退款总额</span>
+        <span class="text-red-600">-€127.50</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态流转说明 -->
+  <div class="mt-4 p-3 rounded-lg text-xs border bg-purple-50 border-purple-100 text-purple-700">
+    <strong>状态流转：</strong>
+    草稿(DRAFT) → 点击「确认」→ 已确认(CONFIRMED) → 点击「标记已结算」→ 已结算(SETTLED)。
+    草稿/已确认状态可取消。
+  </div>
+
+  <!-- 草稿状态下的按钮（注释展示） -->
+  <div class="mt-4 p-4 rounded-lg border border-dashed border-gray-300 bg-gray-50">
+    <p class="text-xs text-gray-500 mb-2 font-semibold">如果是草稿状态，操作栏显示：</p>
+    <div class="flex gap-2">
+      <button class="px-3 py-1.5 rounded-md border border-red-200 text-sm text-red-600 hover:bg-red-50">取消退款单</button>
+      <button class="btn-purple px-4 py-1.5 rounded-md text-sm font-medium">确认退款单</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- PAGE 3: 触发入口 —— 行程退货审批页面中的按钮 -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="page-trip-trigger" class="page max-w-4xl mx-auto px-4 pb-8">
+  <div class="mockup-note">
+    <strong>设计说明：</strong>这是行程详情页的退货区域。当有已审批（APPROVED）的退货时，底部出现「生成退款单」按钮。
+    点击后调用 <code>/api/credit-notes/generate-from-returns</code>，按客户合并生成退款单。
+  </div>
+
+  <!-- 模拟行程详情页的退货区域 -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
+    <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between" style="background:#f3eff5">
+      <h2 class="font-semibold text-gray-700">行程 TRIP-0527-001 — 退货记录</h2>
+      <span class="text-sm text-gray-500">3 条已审批待处理</span>
+    </div>
+
+    <!-- 餐厅 A 的退货 -->
+    <div class="border-b border-gray-100">
+      <div class="px-5 py-2 bg-gray-50 flex items-center justify-between">
+        <span class="font-medium text-gray-700 text-sm">Dublin Chinese Restaurant</span>
+        <span class="text-xs text-gray-400">订单 SO-0525-003, SO-0526-001</span>
+      </div>
+      <table class="w-full text-sm">
+        <tbody class="divide-y divide-gray-50">
+          <tr class="hover:bg-gray-50">
+            <td class="px-5 py-2.5 w-8"><input type="checkbox" checked class="rounded"></td>
+            <td class="py-2.5 font-medium text-gray-800">白菜 / 箱</td>
+            <td class="py-2.5 text-center">×2</td>
+            <td class="py-2.5 text-gray-500 text-xs">烂了一半</td>
+            <td class="py-2.5 text-right pr-5">€24.00</td>
+            <td class="py-2.5"><span class="badge badge-confirmed text-xs">APPROVED</span></td>
+          </tr>
+          <tr class="hover:bg-gray-50">
+            <td class="px-5 py-2.5 w-8"><input type="checkbox" checked class="rounded"></td>
+            <td class="py-2.5 font-medium text-gray-800">酱油 / 瓶</td>
+            <td class="py-2.5 text-center">×5</td>
+            <td class="py-2.5 text-gray-500 text-xs">送错了</td>
+            <td class="py-2.5 text-right pr-5">€30.00</td>
+            <td class="py-2.5"><span class="badge badge-confirmed text-xs">APPROVED</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 餐厅 B 的退货 -->
+    <div>
+      <div class="px-5 py-2 bg-gray-50 flex items-center justify-between">
+        <span class="font-medium text-gray-700 text-sm">Jade Palace</span>
+        <span class="text-xs text-gray-400">订单 SO-0524-007</span>
+      </div>
+      <table class="w-full text-sm">
+        <tbody>
+          <tr class="hover:bg-gray-50">
+            <td class="px-5 py-2.5 w-8"><input type="checkbox" checked class="rounded"></td>
+            <td class="py-2.5 font-medium text-gray-800">豆腐 / 箱</td>
+            <td class="py-2.5 text-center">×3</td>
+            <td class="py-2.5 text-gray-500 text-xs">过期</td>
+            <td class="py-2.5 text-right pr-5">€25.50</td>
+            <td class="py-2.5"><span class="badge badge-confirmed text-xs">APPROVED</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 底部操作栏 —— 关键触发入口 -->
+  <div class="bg-white rounded-xl border-2 border-purple-300 p-4 flex items-center justify-between">
+    <div>
+      <p class="text-sm text-gray-700">
+        <strong>已审批退货：</strong>3 条（来自 2 个客户）
+      </p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        将按客户合并生成退款单 — Dublin Chinese Restaurant 1张，Jade Palace 1张
+      </p>
+    </div>
+    <button class="btn-purple px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm" onclick="alert('调用 POST /api/credit-notes/generate-from-returns\n\n请求体: { tripIds: [&quot;trip-0527-001&quot;] }\n\n结果: 生成 2 张退款单\n- CN-20260527-0001 (Dublin Chinese Restaurant) €54.00\n- CN-20260527-0002 (Jade Palace) €25.50\n\n退货状态更新: APPROVED → SETTLED')">
+      生成退款单（2 张）
+    </button>
+  </div>
+
+  <!-- 已处理的退货 -->
+  <div class="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden opacity-60">
+    <div class="px-5 py-2 bg-gray-50 flex items-center justify-between">
+      <span class="font-medium text-gray-500 text-sm">已处理的退货</span>
+    </div>
+    <table class="w-full text-sm text-gray-400">
+      <tbody>
+        <tr>
+          <td class="px-5 py-2">鸡蛋 / 箱 ×4</td>
+          <td class="py-2 text-xs">破损</td>
+          <td class="py-2 text-right pr-5">€48.00</td>
+          <td class="py-2"><span class="badge badge-settled text-xs">SETTLED</span></td>
+          <td class="py-2 text-xs">→ CN-20260526-0001</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- PAGE 4: 从退货生成弹窗 -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="page-generate" class="page max-w-6xl mx-auto px-4 pb-8">
+  <div class="mockup-note">
+    <strong>设计说明：</strong>从退款单列表页点击「从退货生成退款单」打开此弹窗。
+    选择包含已审批退货的行程 → 预览按客户合并的结果 → 一键生成。
+  </div>
+
+  <!-- 模拟弹窗 -->
+  <div class="bg-white rounded-2xl border border-gray-200 shadow-xl max-w-2xl mx-auto">
+    <!-- 弹窗标题 -->
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+      <h2 class="text-lg font-bold text-gray-900">从退货生成退款单</h2>
+      <button class="text-gray-400 hover:text-gray-600 text-xl" onclick="showPage('list')">✕</button>
+    </div>
+
+    <!-- Step 1: 选择行程 -->
+    <div class="px-6 py-4 border-b border-gray-100">
+      <p class="text-sm font-semibold text-gray-700 mb-3">第 1 步：选择包含已审批退货的行程</p>
+      <div class="space-y-2">
+        <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox" checked class="rounded">
+          <div class="flex-1">
+            <span class="font-medium text-gray-800 text-sm">TRIP-0527-001</span>
+            <span class="text-xs text-gray-400 ml-2">27/05/2026 — 司机张三</span>
+          </div>
+          <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">3 条待处理</span>
+        </label>
+        <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox" class="rounded">
+          <div class="flex-1">
+            <span class="font-medium text-gray-800 text-sm">TRIP-0526-002</span>
+            <span class="text-xs text-gray-400 ml-2">26/05/2026 — 司机李四</span>
+          </div>
+          <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">1 条待处理</span>
+        </label>
+        <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer opacity-50">
+          <input type="checkbox" disabled class="rounded">
+          <div class="flex-1">
+            <span class="font-medium text-gray-500 text-sm">TRIP-0525-001</span>
+            <span class="text-xs text-gray-400 ml-2">25/05/2026 — 司机王五</span>
+          </div>
+          <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">无待处理</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Step 2: 预览合并结果 -->
+    <div class="px-6 py-4 border-b border-gray-100">
+      <p class="text-sm font-semibold text-gray-700 mb-3">第 2 步：预览合并结果</p>
+      <div class="bg-gray-50 rounded-lg p-4 space-y-3">
+        <!-- 客户 A -->
+        <div class="bg-white rounded-lg border border-gray-200 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-gray-800 text-sm">Dublin Chinese Restaurant</span>
+            <span class="font-bold text-red-600 text-sm">-€54.00</span>
+          </div>
+          <div class="text-xs text-gray-500 space-y-1">
+            <p>• 白菜 / 箱 ×2 = €24.00 <span class="text-gray-300">← SO-0525-003（烂了一半）</span></p>
+            <p>• 酱油 / 瓶 ×5 = €30.00 <span class="text-gray-300">← SO-0526-001（送错了）</span></p>
+          </div>
+        </div>
+        <!-- 客户 B -->
+        <div class="bg-white rounded-lg border border-gray-200 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-gray-800 text-sm">Jade Palace</span>
+            <span class="font-bold text-red-600 text-sm">-€25.50</span>
+          </div>
+          <div class="text-xs text-gray-500 space-y-1">
+            <p>• 豆腐 / 箱 ×3 = €25.50 <span class="text-gray-300">← SO-0524-007（过期）</span></p>
+          </div>
+        </div>
+      </div>
+      <p class="text-xs text-gray-400 mt-2">
+        将生成 <strong>2 张</strong> 退款单，退货状态将从 APPROVED 更新为 SETTLED
+      </p>
+    </div>
+
+    <!-- 底部操作 -->
+    <div class="px-6 py-4 flex items-center justify-end gap-3">
+      <button class="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50" onclick="showPage('list')">取消</button>
+      <button class="btn-purple px-6 py-2 rounded-lg text-sm font-semibold" onclick="alert('成功生成 2 张退款单！\n\nCN-20260527-0001 — Dublin Chinese Restaurant — €54.00\nCN-20260527-0002 — Jade Palace — €25.50'); showPage('list')">
+        确认生成（2 张退款单）
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.getElementById('tab-' + id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+</script>
+</body>
+</html>

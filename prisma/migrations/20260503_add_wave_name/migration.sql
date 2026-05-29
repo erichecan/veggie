@@ -1,0 +1,1 @@
+ALTER TABLE "PickingWave" ADD COLUMN IF NOT EXISTS "name" TEXT;

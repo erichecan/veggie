@@ -1,0 +1,1049 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OPERATOR
+  RESTAURANT
+  PICKER
+  SORTER
+  DRIVER
+  BOSS
+  FINANCE
+  WAREHOUSE
+  SALES
+}
+
+enum ProductType {
+  PRODUCT
+  CONSU
+  SERVICE
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  WAVE_ASSIGNED
+  IN_DELIVERY
+  COMPLETED
+  LOCKED       // 锁定（开票后会计置此态，不可改）
+  CANCELLED    // 取消（客户撤销报价 / 业务员废弃）
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+}
+
+enum WaveStatus {
+  PENDING
+  PICKING
+  PICKED
+  SORTING
+  SORTED
+}
+
+enum TripStatus {
+  PENDING
+  PENDING_ASSIGNMENT
+  VERIFYING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  POSTED
+  PAID
+  CANCELLED
+}
+
+enum StockMoveType {
+  IN
+  OUT
+  ADJUSTMENT
+  RETURN
+  SCRAP
+}
+
+enum UomType {
+  /// 参考单位：每个 Category 必须有且只有一个
+  REFERENCE
+  /// 比参考单位小，factor < 1 (例如 g vs kg factor=0.001)
+  SMALLER
+  /// 比参考单位大，factor > 1 (例如 CASE of 10KG，factor=10)
+  BIGGER
+}
+
+enum PurchaseOrderStatus {
+  /// 询价单，尚未发出
+  DRAFT
+  /// 已发给供应商但未确认
+  SENT
+  /// 待审批（大额采购需老板确认）
+  TO_APPROVE
+  /// 供应商已确认接单
+  CONFIRMED
+  /// 已收货（全部或部分，通过 GoodsReceipt 追踪）
+  RECEIVED
+  /// 已收到供应商账单（VendorBill）
+  INVOICED
+  /// 已锁定（收货+开票完成，不可再编辑）
+  LOCKED
+  /// 取消
+  CANCELLED
+}
+
+enum VendorBillStatus {
+  DRAFT
+  POSTED
+  PAID
+  CANCELLED
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+  /// Accounts Receivable（应收）
+  RECEIVABLE
+  /// Accounts Payable（应付）
+  PAYABLE
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  /// 主角色（兼容旧字段；权限判断优先看 roles[]，roles[] 为空时回退此字段）
+  role         Role
+  /// 多角色集合 — 一个账号可同时是 OPERATOR + SALES 等。
+  /// 字符串数组（不是 enum 数组），值必须是 Role 枚举的字符串形式。
+  roles        String[] @default([])
+  name         String
+  customerId   String?
+  isActive     Boolean  @default(true)
+  /// MFA 秘钥（TOTP base32），为空表示未启用
+  mfaSecret    String?
+  mfaEnabled   Boolean  @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  /// 反向关系：该用户作为创建者的订单
+  ordersCreated Order[] @relation("OrderCreator")
+
+  @@index([role])
+  @@index([customerId])
+  @@index([isActive])
+}
+
+model ProductCategory {
+  id         String             @id @default(cuid())
+  name       String
+  nameZh     String?
+  externalId String?
+  templates  ProductTemplate[]
+  products   Product[]
+}
+
+model ProductAttribute {
+  id       String                   @id @default(cuid())
+  name     String
+  sequence Int                      @default(0)
+  values   ProductAttributeValue[]
+}
+
+model ProductAttributeValue {
+  id          String           @id @default(cuid())
+  name        String
+  sequence    Int              @default(0)
+  attributeId String
+  attribute   ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+}
+
+model ProductTemplate {
+  id               String    @id @default(cuid())
+  name             String
+  internalRef      String?
+  categoryId       String?
+  category         ProductCategory? @relation(fields: [categoryId], references: [id])
+  listPrice        Decimal   @default(0) @db.Decimal(12, 2)
+  standardPrice    Decimal   @default(0) @db.Decimal(12, 2)
+  customerTaxRate  Decimal   @default(0) @db.Decimal(6, 4)
+  type             ProductType @default(PRODUCT)
+  canBeSold        Boolean   @default(true)
+  canBePurchased   Boolean   @default(true)
+  description      String?
+  saleDescription  String?
+  images           String[]
+  attributeLines   Json      @default("[]")
+  status           ProductStatus @default(ACTIVE)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  externalId       String?
+  sequence         Int?
+  weight           Decimal?  @db.Decimal(10, 3)
+  volume           Decimal?  @db.Decimal(10, 3)
+  commissionPrice  Decimal?  @db.Decimal(12, 2)
+  isPackaging      Boolean?
+  canBeExpensed    Boolean?
+  /// 销售单位（Odoo uom_id）。新的外键字段，指向 Uom。
+  uomId            String?
+  uom              Uom?      @relation("SaleUom", fields: [uomId], references: [id])
+  /// 采购单位（Odoo uom_po_id）
+  purchaseUomId    String?
+  purchaseUom      Uom?      @relation("PurchaseUom", fields: [purchaseUomId], references: [id])
+  /// 兼容保留：老的 String 字段，逐步迁移到 uomId
+  unitOfMeasure    String?
+  purchaseUoM      String?
+  tracking         String?
+  websitePublished Boolean?
+  websiteName      String?
+  vendorTaxRate    Decimal?  @db.Decimal(6, 4)
+  forecastQty      Decimal?  @db.Decimal(14, 3)
+  createdBy        String?
+  updatedBy        String?
+  barcode          String?
+  products         Product[]
+
+  @@index([categoryId])
+  @@index([sequence])
+  @@index([status])
+}
+
+model Product {
+  id                String    @id @default(cuid())
+  templateId        String
+  template          ProductTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name              String
+  variantAttributes Json      @default("[]")
+  internalRef       String?
+  listPrice         Decimal?  @db.Decimal(12, 2)
+  standardPrice     Decimal?  @db.Decimal(12, 2)
+  qtyOnHand         Decimal   @default(0) @db.Decimal(14, 3)
+  active            Boolean   @default(true)
+  categoryId        String?
+  category          ProductCategory? @relation(fields: [categoryId], references: [id])
+  customerTaxRate   Decimal?  @db.Decimal(6, 4)
+  commissionPrice   Decimal?  @db.Decimal(12, 2)
+  images            String[]
+  spec              String?
+  price             Decimal?  @db.Decimal(12, 2)
+  stock             Decimal?  @db.Decimal(14, 3)
+  /// 安全库存下限（低于此值触发缺货预警）
+  safetyStockMin    Decimal?  @default(0) @db.Decimal(14, 3)
+  status            ProductStatus @default(ACTIVE)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  externalId        String?
+  sequence          Int?
+  supplierInfos     ProductSupplierInfo[]
+  orderLines        OrderLine[]
+
+  @@index([templateId])
+  @@index([categoryId])
+  @@index([sequence])
+}
+
+model Customer {
+  id              String    @id @default(cuid())
+  name            String
+  /// 兼容旧数据：合并后的整体地址（仍由后端自动维护，前端不直接编辑）
+  address         String    @default("")
+  /// 街道 1（独立保存，不再与 street2 合并到 address）
+  street          String    @default("")
+  /// 街道 2（Bug 修复 #3B：保存后保持独立字段，不再合并到 address）
+  street2         String    @default("")
+  /// 州/省（拆分自旧的 address 字段）
+  state           String    @default("")
+  /// 邮编
+  zip             String    @default("")
+  /// 国家（默认空，可在前端下拉选择）
+  country         String    @default("")
+  phone           String    @default("")
+  email           String    @default("")
+  vatNumber       String    @default("")
+  paymentTerm     String    @default("monthly")
+  creditLimit     Decimal?  @db.Decimal(12, 2)
+  /// 司机送货给此客户的佣金比率（0-1），例如 0.05 = 司机拿 5%
+  commissionRate  Decimal?  @db.Decimal(6, 4)
+  /// 司机送货给此客户的固定佣金（EUR / 单）
+  commissionFixed Decimal?  @db.Decimal(10, 2)
+  createdAt       DateTime  @default(now())
+  externalId      String?
+  city            String?
+  notes           String?
+  pricelistId     String?
+  /// 定价模式：multi=走价格表引擎, default=直接用牌价, last=用最近一次售价
+  priceType       String    @default("multi")
+  isActive        Boolean   @default(true)
+  /// 是否是客户（Odoo res.partner.is_customer）
+  isCustomer      Boolean   @default(true)
+  /// 是否是供应商（Odoo res.partner.is_vendor），两者可同时为 true
+  isVendor        Boolean   @default(false)
+  /// 供应商专属：采购税率
+  vendorTaxRate   Decimal?  @db.Decimal(6, 4)
+  /// 供应商专属：供应商付款条款
+  supplierPaymentTerm String?
+  /// 关联业务员姓名
+  salesman        String?
+  /// 经纬度（Google Geocoding API 填充）
+  latitude        Float?
+  longitude       Float?
+  /// 默认配送批次（P1-4：客户↔司机绑定）
+  defaultDriverSlotId String?
+  defaultDriverSlot   DriverSlot? @relation("CustomerDefaultSlot", fields: [defaultDriverSlotId], references: [id], onDelete: SetNull)
+  specialPrices   CustomerSpecialPrice[]
+  supplierInfos   ProductSupplierInfo[]   @relation("PartnerSupplierInfos")
+
+  @@index([isCustomer])
+  @@index([isVendor])
+  @@index([pricelistId])
+  @@index([defaultDriverSlotId])
+}
+
+/**
+ * UoM Category（计量单位族，对应 Odoo uom.category）
+ * ================================================================================
+ * 同一 Category 内的单位可以互相换算（通过 reference 单位作为桥梁）。
+ * 不同 Category 之间不能换算（例如"重量"和"体积"是独立的族）。
+ */
+model UomCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  nameZh    String?
+  createdAt DateTime @default(now())
+  uoms      Uom[]
+}
+
+/**
+ * Unit of Measure（计量单位，对应 Odoo uom.uom）
+ * ================================================================================
+ * factor 表示"1 个本单位 = factor 个参考单位"。
+ * 例如 Category="Weight" 参考单位 kg：
+ *   - kg: factor=1, type=REFERENCE
+ *   - g:  factor=0.001, type=SMALLER
+ *   - CASE (10kg BAG): factor=10, type=BIGGER
+ *
+ * 换算公式：qty_in_ref = qty_in_uom × factor
+ *         qty_in_uom = qty_in_ref / factor
+ */
+model Uom {
+  id          String       @id @default(cuid())
+  name        String
+  nameZh      String?
+  categoryId  String
+  category    UomCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  type        UomType      @default(BIGGER)
+  factor      Decimal      @default(1) @db.Decimal(14, 6)
+  /// 四舍五入精度：订单数量会对齐到这个精度（如 0.01 表示两位小数）
+  rounding    Decimal      @default(0.01) @db.Decimal(14, 6)
+  /// 货物类型："BULK"（大货）/ "LOOSE"（散货）。司机备货分拣单按此分组。可空=未分类。
+  goodsType   String?
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  saleTemplates     ProductTemplate[] @relation("SaleUom")
+  purchaseTemplates ProductTemplate[] @relation("PurchaseUom")
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+  @@index([active])
+}
+
+/**
+ * 商品-供应商关联（Odoo product.supplierinfo）
+ * 一个商品可以从多个供应商进货，每个供应商有自己的进货价、最小起订量、到货天数
+ */
+model ProductSupplierInfo {
+  id              String    @id @default(cuid())
+  productId       String
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplierId      String
+  supplier        Customer  @relation("PartnerSupplierInfos", fields: [supplierId], references: [id], onDelete: Cascade)
+  productCode     String?   // 供应商方的商品编码
+  productName     String?   // 供应商方的商品名
+  /// 采购单价（EUR）
+  price           Decimal   @db.Decimal(12, 4)
+  /// 最小起订量
+  minQty          Decimal   @default(0) @db.Decimal(12, 4)
+  /// 交货天数
+  delay           Int       @default(1)
+  /// 优先级：1=最优先（默认供应商），数字越小越优先
+  sequence        Int       @default(10)
+  dateStart       DateTime?
+  dateEnd         DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([productId])
+  @@index([supplierId])
+  @@unique([productId, supplierId], name: "uniq_product_supplier")
+}
+
+model CustomerSpecialPrice {
+  id          String    @id @default(cuid())
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId   String
+  minQty      Decimal   @default(0) @db.Decimal(14, 3)
+  fixedPrice  Decimal   @db.Decimal(12, 2)
+  dateStart   String?
+  dateEnd     String?
+  note        String?
+
+  @@index([customerId])
+  @@index([productId])
+}
+
+model OdooPricelist {
+  id              String    @id @default(cuid())
+  externalId      String?   @unique
+  name            String
+  currency        String    @default("EUR")
+  items           Json      @default("[]")
+  sequence        Int       @default(0)
+  selectable      Boolean   @default(true)
+  active          Boolean   @default(true)
+  updatedAt       DateTime  @updatedAt
+  promotionalCode String?
+  notes           String?
+  website         String?
+  countryGroups   Json      @default("[]")
+
+  @@index([active])
+  @@index([sequence])
+}
+
+model Order {
+  id               String        @id @default(cuid())
+  /// 业务编号：创建者缩写-YYMMDD-NNN（如 CJ-260424-001），历史订单可为空
+  code             String?       @unique
+  /// 创建者用户 ID（历史订单可为空）
+  createdById      String?
+  createdBy        User?         @relation("OrderCreator", fields: [createdById], references: [id])
+  /// 创建者姓名快照（避免日后改名影响历史显示）
+  createdByName    String?
+  restaurantId     String
+  restaurantName   String
+  items            Json          @default("[]")
+  totalAmount      Decimal       @default(0) @db.Decimal(12, 2)
+  status           OrderStatus   @default(PENDING)
+  paymentMethod    PaymentMethod @default(ONLINE)
+  externalRef      String?
+  createdAt        DateTime      @default(now())
+  /// 下单时快照客户的价格表 ID（对应 Odoo sale.order.pricelist_id）
+  pricelistId      String?
+  /// 下单时快照客户的定价模式（multi/default/last）
+  priceType        String?
+  /// 下单时快照司机佣金率（commissionRate）
+  commissionRate   Decimal?      @db.Decimal(6, 4)
+  /// 内部备注（最多 30 字符）
+  internalNote     String?
+  /// 业务员姓名（下单时快照，对应 Odoo sale.order.user_id）
+  salesman         String?
+  /// 报价日期（创建时自动设置）
+  quotationDate    DateTime?
+  /// 确认日期（确认时自动设置）
+  confirmationDate DateTime?
+  /// 交货日期（手动选择）
+  deliveryDate     DateTime?
+  /// 发票日期（跟随交货日期，可手动覆盖）
+  invoiceDate      DateTime?
+  /// 送货单是否已回（司机送完货带回签收单，会计核销时标记）
+  orderReturn      Boolean   @default(false)
+  /// 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧合并字段，逐步弃用）
+  deliveryBatch    String?
+  /// 关联 DriverSlot（拆分后的配送批次），替代 deliveryBatch 字符串
+  driverSlotId     String?
+  driverSlot       DriverSlot? @relation(fields: [driverSlotId], references: [id])
+  /// 报价单发送给客户的时间（PENDING + sentAt → "Quotation Sent" 子状态）
+  sentAt           DateTime?
+  /// 锁定时间（开票后置 LOCKED 状态时回填）
+  lockedAt         DateTime?
+  /// CONFIRMED后编辑是否需要老板审批（P1-6）
+  editApprovalRequired Boolean @default(false)
+
+  auditLogs    OrderAuditLog[]
+  deliverySlip DeliverySlip?
+  lines        OrderLine[]
+
+  @@index([restaurantId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([pricelistId])
+  @@index([createdById])
+  @@index([driverSlotId])
+}
+
+/// 订单行（Odoo 对齐）— 每条记录对应一种商品的一行明细，含 ordered/delivered/invoiced 三个数量
+model OrderLine {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product? @relation(fields: [productId], references: [id])
+  productName  String
+  spec         String?
+  uomId        String?
+  uomName      String?
+  unitPrice    Decimal  @db.Decimal(12, 2)
+  taxRate      Decimal? @db.Decimal(6, 4)
+  /// 报价/订购数量（quotation 保存时填）
+  orderedQty   Decimal  @db.Decimal(14, 3)
+  /// 已交货数量（Trip 标记送达时回写）
+  deliveredQty Decimal  @default(0) @db.Decimal(14, 3)
+  /// 已开票数量（生成发票时回写，等于发票时的 deliveredQty）
+  invoicedQty  Decimal  @default(0) @db.Decimal(14, 3)
+  /// unitPrice × orderedQty 快照
+  subtotal     Decimal  @db.Decimal(12, 2)
+  sequence     Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+/// 订单操作审计日志
+model OrderAuditLog {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId        String
+  action        String   // created | confirmed | withdrawn | cancelled | updated
+  changedFields Json?
+  totalBefore   Decimal? @db.Decimal(12, 2)
+  totalAfter    Decimal? @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+/// 送货单（每张订单对应一张，确认订单时生成）
+model DeliverySlip {
+  id           String    @id @default(cuid())
+  orderId      String    @unique
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId   String
+  customerName String
+  deliveryDate DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([customerId])
+  @@index([createdAt])
+}
+
+model PickingWave {
+  id           String     @id @default(cuid())
+  name         String?
+  orderIds     String[]
+  zones        Json       @default("[]")
+  status       WaveStatus @default(PENDING)
+  createdAt    DateTime   @default(now())
+  waveDate     DateTime?  @db.Date
+  waveNumber   Int?
+  waveType     String?
+  driverSlotId String?
+  driverName   String?
+
+  @@unique([waveDate, driverSlotId])
+  @@index([status])
+  @@index([waveDate])
+  @@index([driverSlotId])
+  @@index([createdAt])
+}
+
+model Trip {
+  id                  String      @id @default(cuid())
+  /// 关联拣货波次（手动创建的行程可为空）
+  waveId              String?
+  /// 行程名称，如"上午 · 王师傅 · 4家餐馆"
+  name                String?
+  /// 配送时段：AM（上午）或 PM（下午）
+  timeSlot            String?
+  driverId            String?
+  driverName          String?
+  departTime          String?
+  status              TripStatus  @default(PENDING)
+  restaurants         Json        @default("[]")
+  totalPayment        Decimal     @default(0) @db.Decimal(12, 2)
+  /// 本次配送司机总佣金（按每家客户 commissionRate × subtotal 累加）
+  driverCommission    Decimal?    @db.Decimal(12, 2)
+  /// 司机交账：现金收款金额（P1-10）
+  cashCollected       Decimal?    @db.Decimal(12, 2) @default(0)
+  /// 司机交账：在线收款金额
+  onlineCollected     Decimal?    @db.Decimal(12, 2) @default(0)
+  /// 交账状态：pending | submitted | confirmed
+  settlementStatus    String?     @default("pending")
+  /// 交账确认时间
+  settledAt           DateTime?
+  /// 交账确认人
+  settledBy           String?
+  /// 交账备注
+  settlementNote      String?
+  createdAt           DateTime    @default(now())
+
+  @@index([driverId])
+  @@index([status])
+  @@index([waveId])
+  @@index([timeSlot])
+  @@index([settlementStatus])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  name           String
+  customerId     String
+  customerName   String
+  saleOrderIds   String[]
+  lines          Json          @default("[]")
+  subtotalExTax  Decimal       @default(0) @db.Decimal(12, 2)
+  totalTax       Decimal       @default(0) @db.Decimal(12, 2)
+  totalIncTax    Decimal       @default(0) @db.Decimal(12, 2)
+  amountPaid     Decimal       @default(0) @db.Decimal(12, 2)
+  amountDue      Decimal       @default(0) @db.Decimal(12, 2)
+  status         InvoiceStatus @default(DRAFT)
+  paymentTerms   String        @default("monthly")
+  dueDate        String?
+  createdAt      DateTime      @default(now())
+  postedAt       String?
+  paidAt         String?
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@unique([name])
+}
+
+model StockMove {
+  id          String        @id @default(cuid())
+  productId   String
+  productName String
+  type        StockMoveType
+  qty         Decimal       @db.Decimal(14, 3)
+  note        String?
+  /// 来源单据类型：SO / PO / RETURN / ADJUSTMENT / CREDIT_NOTE
+  sourceType  String?
+  /// 来源单据 ID
+  sourceId    String?
+  /// 来源单据编号（如 SO-00001, PO-00003）
+  sourceRef   String?
+  createdAt   DateTime      @default(now())
+
+  @@index([productId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([sourceType, sourceId])
+}
+
+model PurchaseRecord {
+  id          String   @id @default(cuid())
+  productId   String
+  productName String
+  spec        String   @default("")
+  quantity    Decimal  @db.Decimal(14, 3)
+  unitCost    Decimal  @db.Decimal(12, 4)
+  /// 外键指向 Customer(isVendor=true)；兼容老数据保留 supplier 文本
+  supplierId  String?
+  supplier    String
+  arrivedAt   String
+  createdAt   DateTime @default(now())
+
+  @@index([productId])
+  @@index([supplierId])
+  @@index([createdAt])
+}
+
+enum ActionType {
+  LOGIN
+  CREATE
+  UPDATE
+  DELETE
+}
+
+model ActionLog {
+  id           String     @id @default(cuid())
+  userId       String
+  userEmail    String
+  userName     String
+  action       ActionType
+  resource     String
+  resourceId   String?
+  detail       String?
+  /// 字段级变更前后快照（JSON），例如 {"price":{"before":10,"after":12}}
+  changes      Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime   @default(now())
+
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+/**
+ * 采购订单（对应 Odoo purchase.order）
+ * 从 RFQ → Sent → Confirmed → Received → Invoiced 完整工作流
+ */
+model PurchaseOrder {
+  id             String              @id @default(cuid())
+  name           String              @unique    // PO-00001
+  supplierId     String
+  status         PurchaseOrderStatus @default(DRAFT)
+  orderDate      DateTime            @default(now())
+  /// 预计到货日期
+  expectedDate   DateTime?
+  /// 货币（默认与公司主币一致）
+  currency       String              @default("EUR")
+  /// 不含税总金额
+  subtotalExTax  Decimal             @default(0) @db.Decimal(12, 2)
+  totalTax       Decimal             @default(0) @db.Decimal(12, 2)
+  totalIncTax    Decimal             @default(0) @db.Decimal(12, 2)
+  /// 备注
+  notes          String?
+  createdBy      String?
+  confirmedAt    DateTime?
+  cancelledAt    DateTime?
+  /// 锁定时间（LOCKED 状态时记录）
+  lockedAt       DateTime?
+  /// 编辑审批标记（CONFIRMED+ 状态下非安全字段被编辑时设置）
+  editApprovalRequired Boolean       @default(false)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  lines          PurchaseOrderLine[]
+  receipts       GoodsReceipt[]
+  bills          VendorBill[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([orderDate])
+}
+
+/**
+ * 采购订单行（对应 Odoo purchase.order.line）
+ * 一个 PO 包含多条商品行，每行记录 orderedQty 和 receivedQty 分别。
+ */
+model PurchaseOrderLine {
+  id            String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId     String
+  productName   String
+  /// 采购 UoM ID（可空，兼容）
+  uomId         String?
+  /// 订购数量（采购 UoM 下）
+  orderedQty    Decimal       @db.Decimal(14, 3)
+  /// 已收数量（采购 UoM 下）
+  receivedQty   Decimal       @default(0) @db.Decimal(14, 3)
+  /// 已开票数量
+  invoicedQty   Decimal       @default(0) @db.Decimal(14, 3)
+  /// 采购 UoM 下的单价
+  unitCost      Decimal       @db.Decimal(12, 4)
+  /// 行税率
+  taxRate       Decimal       @default(0) @db.Decimal(6, 4)
+  subtotalExTax Decimal       @db.Decimal(12, 2)
+  taxAmount     Decimal       @db.Decimal(12, 2)
+  subtotalIncTax Decimal      @db.Decimal(12, 2)
+  /// 保质期（最佳食用日期）
+  bestBefore    DateTime?
+  sequence      Int           @default(10)
+  createdAt     DateTime      @default(now())
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+}
+
+/**
+ * 收货单（对应 Odoo stock.picking type=incoming）
+ * 一个 PO 可以产生多张 Receipt（分批到货）
+ */
+model GoodsReceipt {
+  id              String        @id @default(cuid())
+  name            String        @unique   // GR-00001
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  /// 到货日期
+  arrivedAt       DateTime
+  /// 签收人
+  receivedBy      String?
+  /// JSON: [{productId, productName, qty, uomId, condition:'ok'|'damaged'}]
+  lines           Json          @default("[]")
+  notes           String?
+  createdAt       DateTime      @default(now())
+
+  @@index([purchaseOrderId])
+  @@index([arrivedAt])
+}
+
+/**
+ * 会计科目（对应 Odoo account.account）
+ * ================================================================================
+ * code 通常是 4 位数字，例如：
+ *   1100 Accounts Receivable (RECEIVABLE)
+ *   2100 Accounts Payable (PAYABLE)
+ *   2200 VAT Payable (LIABILITY)
+ *   4000 Sales Revenue (INCOME)
+ *   5000 Cost of Goods Sold (EXPENSE)
+ *   1200 Bank (ASSET)
+ */
+model Account {
+  id         String      @id @default(cuid())
+  code       String      @unique
+  name       String
+  nameZh     String?
+  type       AccountType
+  active     Boolean     @default(true)
+  /// 是否接受手动过账；false 表示只通过系统自动生成（如 AR/AP）
+  allowManual Boolean    @default(false)
+  createdAt  DateTime    @default(now())
+  lines      JournalEntryLine[]
+
+  @@index([type])
+  @@index([active])
+}
+
+/**
+ * 日记账凭证（Odoo account.move）
+ * ================================================================================
+ * 一张凭证 = 一个完整的双式记账事件。必须满足 Σdebit = Σcredit。
+ * 来源事件包括：发票过账 / 收款 / 供应商账单 / 付款 / 手动调整。
+ */
+model JournalEntry {
+  id            String               @id @default(cuid())
+  name          String               @unique      // JE-00001
+  date          DateTime             @default(now())
+  narration     String                            // 简要说明
+  /// 来源类型：invoice / vendor_bill / payment / manual
+  sourceType    String?
+  /// 来源单据 ID
+  sourceId      String?
+  status        JournalEntryStatus   @default(DRAFT)
+  totalDebit    Decimal              @default(0) @db.Decimal(14, 2)
+  totalCredit   Decimal              @default(0) @db.Decimal(14, 2)
+  createdBy     String?
+  postedAt      DateTime?
+  createdAt     DateTime             @default(now())
+
+  lines         JournalEntryLine[]
+
+  @@index([date])
+  @@index([sourceType, sourceId])
+  @@index([status])
+}
+
+/**
+ * 凭证行（Odoo account.move.line）
+ * debit / credit 至少有一个为 0；两者之和 > 0
+ */
+model JournalEntryLine {
+  id        String       @id @default(cuid())
+  entryId   String
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account      @relation(fields: [accountId], references: [id])
+  description String?
+  /// 借方金额
+  debit     Decimal      @default(0) @db.Decimal(14, 2)
+  /// 贷方金额
+  credit    Decimal      @default(0) @db.Decimal(14, 2)
+  /// 关联的合作伙伴（客户/供应商）
+  partnerId String?
+  sequence  Int          @default(10)
+
+  @@index([entryId])
+  @@index([accountId])
+  @@index([partnerId])
+}
+
+/**
+ * 供应商账单（Odoo account.move type=in_invoice）
+ * 一个 PO 可以收到多张账单；账单金额 ≤ PO 金额
+ */
+model VendorBill {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id])
+  supplierId      String
+  billDate        DateTime         @default(now())
+  dueDate         DateTime?
+  lines           Json             @default("[]")
+  subtotalExTax   Decimal          @default(0) @db.Decimal(12, 2)
+  totalTax        Decimal          @default(0) @db.Decimal(12, 2)
+  totalIncTax     Decimal          @default(0) @db.Decimal(12, 2)
+  amountPaid      Decimal          @default(0) @db.Decimal(12, 2)
+  amountDue       Decimal          @default(0) @db.Decimal(12, 2)
+  status          VendorBillStatus @default(DRAFT)
+  notes           String?
+  createdAt       DateTime         @default(now())
+  postedAt        DateTime?
+  paidAt          DateTime?
+
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+  @@index([status])
+  @@index([billDate])
+}
+
+/**
+ * 司机配送批次配置
+ * timeOfDay: "am" | "pm"，batchNum: 1-5
+ * 合并为 deliveryBatch 字符串格式 "1 am BAO"
+ */
+model DriverSlot {
+  id         String   @id @default(cuid())
+  timeOfDay  String   // "am" | "pm"
+  batchNum   Int      // 1-5
+  driverName String
+  archived   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  orders     Order[]
+  defaultCustomers Customer[] @relation("CustomerDefaultSlot")
+
+  @@unique([driverName])
+}
+
+/// 采购建议（P0-2：系统根据需求-库存自动生成）
+model PurchaseSuggestion {
+  id             String    @id @default(cuid())
+  tenantId       String    @default("test-company")
+  productId      String
+  productName    String
+  currentStock   Decimal   @default(0) @db.Decimal(14, 3)
+  demandQty      Decimal   @default(0) @db.Decimal(14, 3)
+  suggestedQty   Decimal   @default(0) @db.Decimal(14, 3)
+  supplierId     String?
+  supplierName   String?
+  estimatedCost  Decimal?  @db.Decimal(12, 2)
+  /// 优先级：critical / high / normal / low
+  priority       String    @default("normal")
+  /// 状态：pending / approved / rejected / ordered
+  status         String    @default("pending")
+  purchaseOrderId String?
+  generatedAt    DateTime  @default(now())
+  resolvedAt     DateTime?
+  resolvedBy     String?
+
+  @@index([productId])
+  @@index([status])
+  @@index([generatedAt])
+}
+
+/// 通知（P1-11：缺货自动通知等）
+model Notification {
+  id        String   @id @default(cuid())
+  tenantId  String   @default("test-company")
+  userId    String
+  /// 通知类型：shortage / order_update / system
+  type      String
+  title     String
+  body      String
+  data      Json     @default("{}")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+}
+
+/// 财务对账单（P1-1：按客户、周期汇总应收应付）
+model Statement {
+  id             String   @id @default(cuid())
+  tenantId       String   @default("test-company")
+  customerId     String
+  customerName   String
+  periodStart    DateTime @db.Date
+  periodEnd      DateTime @db.Date
+  openingBalance Decimal  @default(0) @db.Decimal(12, 2)
+  totalSales     Decimal  @default(0) @db.Decimal(12, 2)
+  totalPayments  Decimal  @default(0) @db.Decimal(12, 2)
+  closingBalance Decimal  @default(0) @db.Decimal(12, 2)
+  orderIds       String[] @default([])
+  invoiceIds     String[] @default([])
+  /// 状态：draft / confirmed / sent
+  status         String   @default("draft")
+  createdAt      DateTime @default(now())
+  sentAt         DateTime?
+
+  @@index([customerId])
+  @@index([status])
+  @@index([periodStart])
+}
+
+/// 贷记单 / Credit Note（P0-3：退货退款凭证，支持跨单合并）
+model CreditNote {
+  id            String          @id @default(cuid())
+  name          String          @unique
+  customerId    String
+  customerName  String
+  creditDate    DateTime        @default(now())
+  currency      String          @default("EUR")
+  subtotalExTax Decimal         @default(0) @db.Decimal(12, 2)
+  totalTax      Decimal         @default(0) @db.Decimal(12, 2)
+  totalIncTax   Decimal         @default(0) @db.Decimal(12, 2)
+  /// 状态：DRAFT / CONFIRMED / APPLIED / CANCELLED
+  status        String          @default("DRAFT")
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  lines         CreditNoteLine[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([creditDate])
+}
+
+/// 贷记单行项（退款明细，包含来源订单/行程引用）
+model CreditNoteLine {
+  id             String     @id @default(cuid())
+  creditNoteId   String
+  creditNote     CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  productId      String
+  productName    String
+  quantity       Decimal    @db.Decimal(14, 3)
+  unitPrice      Decimal    @default(0) @db.Decimal(12, 2)
+  taxRate        Decimal    @default(0) @db.Decimal(6, 4)
+  subtotalExTax  Decimal    @default(0) @db.Decimal(12, 2)
+  taxAmount      Decimal    @default(0) @db.Decimal(12, 2)
+  subtotalIncTax Decimal    @default(0) @db.Decimal(12, 2)
+  reason         String?
+  /// 来源销售订单 ID
+  sourceOrderId  String?
+  /// 来源行程 ID
+  sourceTripId   String?
+  sequence       Int        @default(0)
+  createdAt      DateTime   @default(now())
+
+  @@index([creditNoteId])
+  @@index([productId])
+  @@index([sourceOrderId])
+}

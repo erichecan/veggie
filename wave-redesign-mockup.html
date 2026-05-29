@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>波次管理 — UI 原型</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f3f4f6; color: #1f2937; font-size: 13px; }
+
+  /* ── Odoo-style top bar ── */
+  .top-bar { background: #875A7B; color: #fff; padding: 8px 16px; display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .top-bar .breadcrumb { opacity: .85; }
+  .top-bar .breadcrumb span { cursor: pointer; }
+  .top-bar .breadcrumb span:hover { text-decoration: underline; }
+  .top-bar .sep { opacity: .5; }
+
+  /* ── Control panel ── */
+  .control-panel {
+    background: #fff; border-bottom: 1px solid #e5e7eb; padding: 10px 16px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .control-panel label { font-size: 13px; color: #6b7280; }
+  .control-panel input[type="date"] {
+    border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px;
+  }
+  .btn {
+    padding: 6px 14px; border-radius: 4px; font-size: 13px; cursor: pointer;
+    border: 1px solid #d1d5db; background: #fff; color: #374151; transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #f9fafb; border-color: #9ca3af; }
+  .btn-primary { background: #875A7B; color: #fff; border-color: #875A7B; }
+  .btn-primary:hover { background: #764d6b; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-success { background: #059669; color: #fff; border-color: #059669; }
+  .btn-success:hover { background: #047857; }
+
+  /* ── Main layout ── */
+  .main { display: flex; gap: 16px; padding: 16px; min-height: calc(100vh - 90px); }
+
+  /* ── Left panel: unassigned orders ── */
+  .left-panel { width: 440px; flex-shrink: 0; }
+  .panel-header {
+    background: #fff; border: 1px solid #e5e7eb; border-bottom: none;
+    border-radius: 6px 6px 0 0; padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel-header h3 { font-size: 14px; font-weight: 600; }
+  .panel-header .badge {
+    background: #fee2e2; color: #dc2626; font-size: 11px; padding: 2px 8px;
+    border-radius: 10px; font-weight: 600;
+  }
+  .order-list {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 0 0 6px 6px;
+    max-height: calc(100vh - 200px); overflow-y: auto;
+  }
+  .order-item {
+    padding: 10px 14px; border-bottom: 1px solid #f3f4f6;
+    display: flex; align-items: flex-start; gap: 10px; cursor: pointer; transition: background .1s;
+  }
+  .order-item:hover { background: #faf5ff; }
+  .order-item.selected { background: #f3e8ff; }
+  .order-item input[type="checkbox"] { accent-color: #875A7B; width: 16px; height: 16px; cursor: pointer; margin-top: 2px; }
+  .order-info { flex: 1; min-width: 0; }
+  .order-top-row { display: flex; align-items: center; gap: 8px; }
+  .order-code { font-size: 13px; font-weight: 600; color: #1f2937; }
+  .order-restaurant { font-size: 13px; color: #374151; }
+  .order-detail-row { font-size: 12px; color: #6b7280; margin-top: 3px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .order-detail-row span { display: flex; align-items: center; gap: 3px; }
+  .order-slot-tag {
+    font-size: 11px; padding: 2px 6px; border-radius: 3px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .order-slot-tag.slot-1 { background: #ede9fe; color: #6d28d9; }
+  .order-slot-tag.slot-2 { background: #fef3c7; color: #92400e; }
+  .order-slot-tag.slot-3 { background: #d1fae5; color: #065f46; }
+  .order-slot-tag.slot-4 { background: #dbeafe; color: #1e40af; }
+  .order-slot-tag.slot-5 { background: #fce7f3; color: #9d174d; }
+  .order-empty { padding: 40px; text-align: center; color: #9ca3af; font-size: 13px; }
+
+  /* ── Right panel: wave cards ── */
+  .right-panel { flex: 1; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+
+  .wave-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    overflow: hidden; transition: box-shadow .15s;
+  }
+  .wave-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+  .wave-card.bulk-card { border-left: 4px solid #f59e0b; }
+  .wave-card.loose-card { border-left: 4px solid #875A7B; }
+
+  .wave-card-header {
+    padding: 10px 14px; display: flex; align-items: center; gap: 10px;
+  }
+  .wave-num {
+    width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 18px; color: #fff; flex-shrink: 0;
+  }
+  .wave-num.bulk { background: linear-gradient(135deg, #f59e0b, #d97706); }
+  .wave-num.loose { background: linear-gradient(135deg, #875A7B, #6d4564); }
+  .wave-header-info { flex: 1; }
+  .wave-title { font-size: 14px; font-weight: 600; }
+  .wave-subtitle { font-size: 12px; color: #6b7280; margin-top: 1px; }
+  .wave-type-badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+  }
+  .wave-type-badge.bulk { background: #fef3c7; color: #92400e; }
+  .wave-type-badge.loose { background: #f3e8ff; color: #6b21a8; }
+  .wave-stats {
+    display: flex; gap: 16px; font-size: 12px; color: #6b7280;
+  }
+  .wave-stats .stat-val { font-weight: 700; color: #1f2937; font-size: 14px; }
+  .wave-actions { display: flex; gap: 6px; }
+
+  /* orders inside wave card */
+  .wave-card-body { padding: 0 14px 10px; }
+  .wave-order-table { width: 100%; border-collapse: collapse; }
+  .wave-order-table th {
+    text-align: left; font-size: 11px; color: #9ca3af; font-weight: 500;
+    padding: 6px 8px; border-bottom: 1px solid #f3f4f6; text-transform: uppercase; letter-spacing: .3px;
+  }
+  .wave-order-table td {
+    padding: 7px 8px; border-bottom: 1px solid #f9fafb; font-size: 12px;
+  }
+  .wave-order-table tr:last-child td { border-bottom: none; }
+  .wave-order-table .restaurant-name { font-weight: 500; color: #1f2937; }
+  .wave-order-table .order-id-cell { color: #875A7B; font-weight: 600; font-size: 12px; }
+  .wave-order-table .items-cell { color: #6b7280; }
+  .wave-order-table .amount-cell { font-weight: 600; color: #1f2937; text-align: right; }
+  .wave-order-table .remove-btn {
+    color: #d1d5db; cursor: pointer; font-size: 16px; border: none; background: none; padding: 2px 6px; border-radius: 3px;
+  }
+  .wave-order-table .remove-btn:hover { color: #ef4444; background: #fef2f2; }
+  .wave-order-total {
+    display: flex; justify-content: flex-end; gap: 20px; padding: 8px 8px 0;
+    font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; margin-top: 4px;
+  }
+  .wave-order-total strong { color: #1f2937; }
+
+  .wave-empty { font-size: 12px; color: #d1d5db; padding: 16px 0; text-align: center; }
+
+  .wave-card-footer {
+    padding: 8px 14px; display: flex; align-items: center; justify-content: space-between;
+    background: #fafafa; border-top: 1px solid #f3f4f6;
+  }
+  .wave-footer-status { display: flex; align-items: center; gap: 6px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-dot.pending { background: #d1d5db; }
+  .status-dot.picking { background: #f59e0b; }
+  .status-dot.picked { background: #10b981; }
+  .status-label { font-size: 12px; color: #6b7280; }
+
+  /* ── Assign overlay ── */
+  .assign-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #fff; border-top: 2px solid #875A7B;
+    padding: 12px 20px; display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 -4px 12px rgba(0,0,0,.1); z-index: 100;
+    transform: translateY(100%); transition: transform .25s ease;
+  }
+  .assign-bar.visible { transform: translateY(0); }
+  .assign-bar-left { font-size: 14px; color: #374151; }
+  .assign-bar-left strong { color: #875A7B; font-size: 16px; }
+  .assign-bar-right { display: flex; gap: 8px; flex-wrap: wrap; }
+  .assign-wave-btn {
+    padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    border: 2px solid; background: #fff; font-weight: 600; transition: all .15s;
+  }
+  .assign-wave-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,.1); }
+  .assign-wave-btn.bulk { border-color: #f59e0b; color: #92400e; }
+  .assign-wave-btn.bulk:hover { background: #fffbeb; }
+  .assign-wave-btn.loose { border-color: #875A7B; color: #875A7B; }
+  .assign-wave-btn.loose:hover { background: #faf5ff; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; top: 16px; right: 16px; background: #065f46; color: #fff;
+    padding: 10px 18px; border-radius: 6px; font-size: 13px; z-index: 200;
+    transform: translateY(-60px); opacity: 0; transition: all .25s;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  /* ── Summary bar ── */
+  .summary-bar {
+    background: #fff; border-bottom: 1px solid #e5e7eb; padding: 6px 16px;
+    display: flex; gap: 24px; font-size: 12px; color: #6b7280;
+  }
+  .summary-bar .s-item { display: flex; align-items: center; gap: 4px; }
+  .summary-bar .s-val { font-weight: 700; color: #1f2937; font-size: 13px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 1000px) {
+    .main { flex-direction: column; }
+    .left-panel { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="top-bar">
+  <div class="breadcrumb">
+    <span>仓库</span> <span class="sep">/</span> <span style="font-weight:600">波次管理</span>
+  </div>
+</div>
+
+<!-- Control panel -->
+<div class="control-panel">
+  <label>配送日期：</label>
+  <input type="date" id="dateInput" />
+  <button class="btn btn-primary" onclick="generateWaves()">生成今日波次</button>
+  <span style="flex:1"></span>
+  <span style="font-size:12px;color:#059669;font-weight:500" id="genStatus">&#10003; 5 个波次已就绪</span>
+</div>
+
+<!-- Summary bar -->
+<div class="summary-bar">
+  <div class="s-item">总订单: <span class="s-val" id="summaryTotal">18</span></div>
+  <div class="s-item">已分配: <span class="s-val" style="color:#059669" id="summaryAssigned">12</span></div>
+  <div class="s-item">待分配: <span class="s-val" style="color:#dc2626" id="summaryUnassigned">6</span></div>
+  <div class="s-item">总金额: <span class="s-val" id="summaryAmount">$5,842.30</span></div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <!-- Left: unassigned orders -->
+  <div class="left-panel">
+    <div class="panel-header">
+      <h3>待分配订单</h3>
+      <span class="badge" id="unassignedCount">6</span>
+    </div>
+    <div class="order-list" id="orderList"></div>
+  </div>
+
+  <!-- Right: wave cards -->
+  <div class="right-panel" id="waveCards"></div>
+</div>
+
+<!-- Assign bar -->
+<div class="assign-bar" id="assignBar">
+  <div class="assign-bar-left">
+    已选 <strong id="selectedCount">0</strong> 个订单，分配到：
+  </div>
+  <div class="assign-bar-right" id="assignButtons"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const TODAY = new Date().toISOString().slice(0, 10);
+document.getElementById('dateInput').value = TODAY;
+
+const DRIVER_SLOTS = [
+  { id: 'ds1', batchNum: 1, driverName: 'AFZAAL', timeOfDay: 'am' },
+  { id: 'ds2', batchNum: 2, driverName: 'HAMZA', timeOfDay: 'am' },
+  { id: 'ds3', batchNum: 3, driverName: 'ALI', timeOfDay: 'pm' },
+  { id: 'ds4', batchNum: 4, driverName: 'BILAL', timeOfDay: 'pm' },
+  { id: 'ds5', batchNum: 5, driverName: 'OMAR', timeOfDay: 'pm' },
+];
+
+const DEMO_ORDERS = [
+  // ── 已分配到 Wave 1 (AFZAAL, 散货 am) ──
+  { id: 'o1',  code: 'SO-0527-001', restaurant: 'Dragon Palace 龙宫',     items: 8,  total: 342.50,  slotNum: 1, address: '12 Henry St, Dublin 1',    products: 'Bok Choy x20, Tofu x15, Rice Noodle x10...' },
+  { id: 'o2',  code: 'SO-0527-002', restaurant: 'Golden Wok 金锅',        items: 5,  total: 186.00,  slotNum: 1, address: '45 Parnell St, Dublin 1',   products: 'Bean Sprouts x30, Soy Sauce x8, Sesame Oil x5' },
+  { id: 'o3',  code: 'SO-0527-003', restaurant: 'Silk Road 丝路',         items: 4,  total: 128.80,  slotNum: 1, address: '8 Capel St, Dublin 1',      products: 'Dumpling Wrapper x20, Ginger x5kg' },
+
+  // ── 已分配到 Wave 2 (HAMZA, 大货 am) ──
+  { id: 'o4',  code: 'SO-0527-004', restaurant: 'Lucky Garden 福园',       items: 12, total: 1520.00, slotNum: 2, address: '23 Camden St, Dublin 2',    products: 'Rice 25kg x20, Flour 25kg x15, Oil 20L x10' },
+  { id: 'o5',  code: 'SO-0527-005', restaurant: 'Pearl River 珠江',       items: 8,  total: 980.00,  slotNum: 2, address: '67 Aungier St, Dublin 2',   products: 'Rice 25kg x12, Sugar 25kg x8, Salt 25kg x6' },
+
+  // ── 已分配到 Wave 3 (ALI, 散货 pm) ──
+  { id: 'o6',  code: 'SO-0527-006', restaurant: 'Bamboo House 竹屋',      items: 6,  total: 278.20,  slotNum: 3, address: '34 Dame St, Dublin 2',      products: 'Chili Paste x15, Oyster Sauce x10, Vinegar x8' },
+  { id: 'o7',  code: 'SO-0527-007', restaurant: 'Jade Emperor 玉皇',      items: 9,  total: 412.00,  slotNum: 3, address: '91 Thomas St, Dublin 8',    products: 'Frozen Dumplings x30, Spring Rolls x20, Wonton x15' },
+  { id: 'o8',  code: 'SO-0527-008', restaurant: 'Ming Court 明阁',        items: 3,  total: 95.80,   slotNum: 3, address: '56 Francis St, Dublin 8',   products: 'Tofu x10, Mushroom x5kg, Corn Starch x8' },
+
+  // ── 已分配到 Wave 4 (BILAL, 散货 pm) ──
+  { id: 'o9',  code: 'SO-0527-009', restaurant: 'Happy Valley 欢乐谷',    items: 7,  total: 310.00,  slotNum: 4, address: '12 Clanbrassil St, Dublin 8', products: 'Noodles x25, Rice Stick x15, Glass Noodle x10' },
+  { id: 'o10', code: 'SO-0527-010', restaurant: 'Lotus Pond 荷塘',        items: 11, total: 480.00,  slotNum: 4, address: '78 Wexford St, Dublin 2',   products: 'Frozen Shrimp x20, Fish Ball x15, Squid x10' },
+
+  // ── 已分配到 Wave 5 (OMAR, 散货 pm) ── 暂空
+
+  // ── 待分配（未分配到任何波次） ──
+  { id: 'o11', code: 'SO-0527-011', restaurant: 'Red Lantern 红灯笼',     items: 6,  total: 245.00,  slotNum: null, address: '33 George St, Dublin 2',   products: 'Bean Curd x12, Seaweed x8, Miso Paste x6' },
+  { id: 'o12', code: 'SO-0527-012', restaurant: 'Green Tea 绿茶',         items: 4,  total: 168.50,  slotNum: null, address: '22 Talbot St, Dublin 1',   products: 'Matcha Powder x5, Green Tea x20, Jasmine Tea x10' },
+  { id: 'o13', code: 'SO-0527-013', restaurant: 'Cloud Nine 九霄',        items: 9,  total: 520.00,  slotNum: null, address: '45 Dorset St, Dublin 1',   products: 'Frozen Duck x8, Char Siu Sauce x10, Hoisin x12' },
+  { id: 'o14', code: 'SO-0527-014', restaurant: 'Spice Garden 香料园',    items: 3,  total: 87.50,   slotNum: null, address: '67 Manor St, Dublin 7',    products: 'Five Spice x10, Star Anise x5kg, Szechuan Pepper x3kg' },
+  { id: 'o15', code: 'SO-0527-015', restaurant: 'Moon River 月河',        items: 7,  total: 356.00,  slotNum: null, address: '89 Stoneybatter, Dublin 7', products: 'Enoki Mushroom x15, Shiitake x10, King Oyster x8' },
+  { id: 'o16', code: 'SO-0527-016', restaurant: 'Fortune Cat 招财猫',     items: 5,  total: 232.00,  slotNum: null, address: '11 Bolton St, Dublin 1',   products: 'Wok x5, Bamboo Steamer x8, Chopsticks x50pkt' },
+];
+
+// Initial wave state — pre-assigned based on slotNum
+let waves = DRIVER_SLOTS.map(s => ({
+  id: 'w' + s.batchNum,
+  waveNumber: s.batchNum,
+  waveType: s.batchNum === 2 ? 'bulk' : 'loose',
+  driverName: s.driverName,
+  driverSlotId: s.id,
+  timeOfDay: s.timeOfDay,
+  orderIds: DEMO_ORDERS.filter(o => o.slotNum === s.batchNum).map(o => o.id),
+  status: s.batchNum <= 2 ? 'picking' : 'pending',
+}));
+
+let selectedOrders = new Set();
+
+function getUnassignedOrders() {
+  const assigned = new Set(waves.flatMap(w => w.orderIds));
+  return DEMO_ORDERS.filter(o => !assigned.has(o.id));
+}
+
+function getOrderById(id) { return DEMO_ORDERS.find(o => o.id === id); }
+function fmt(n) { return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+function toggleSelect(orderId) {
+  if (selectedOrders.has(orderId)) selectedOrders.delete(orderId);
+  else selectedOrders.add(orderId);
+  render();
+}
+
+function toggleSelectAll() {
+  const unassigned = getUnassignedOrders();
+  if (selectedOrders.size === unassigned.length) selectedOrders.clear();
+  else unassigned.forEach(o => selectedOrders.add(o.id));
+  render();
+}
+
+function assignToWave(waveId) {
+  const wave = waves.find(w => w.id === waveId);
+  if (!wave) return;
+  const ids = Array.from(selectedOrders);
+  waves.forEach(w => { w.orderIds = w.orderIds.filter(id => !ids.includes(id)); });
+  wave.orderIds.push(...ids);
+  selectedOrders.clear();
+  render();
+  showToast(`${ids.length} 个订单已分配到 Wave ${wave.waveNumber} (${wave.driverName})`);
+}
+
+function unassignOrder(waveId, orderId) {
+  const wave = waves.find(w => w.id === waveId);
+  if (!wave) return;
+  wave.orderIds = wave.orderIds.filter(id => id !== orderId);
+  render();
+  showToast('已移除订单');
+}
+
+function generateWaves() { showToast('今日波次已存在（幂等操作）'); }
+
+function updateSummary() {
+  const unassigned = getUnassignedOrders();
+  const assigned = DEMO_ORDERS.length - unassigned.length;
+  const totalAmt = DEMO_ORDERS.reduce((s, o) => s + o.total, 0);
+  document.getElementById('summaryTotal').textContent = DEMO_ORDERS.length;
+  document.getElementById('summaryAssigned').textContent = assigned;
+  document.getElementById('summaryUnassigned').textContent = unassigned.length;
+  document.getElementById('summaryAmount').textContent = fmt(totalAmt);
+}
+
+function render() {
+  renderOrders();
+  renderWaves();
+  renderAssignBar();
+  updateSummary();
+}
+
+function renderOrders() {
+  const list = document.getElementById('orderList');
+  const unassigned = getUnassignedOrders();
+  document.getElementById('unassignedCount').textContent = unassigned.length;
+
+  if (unassigned.length === 0) {
+    list.innerHTML = '<div class="order-empty">&#127881; All orders have been assigned</div>';
+    return;
+  }
+
+  const allSelected = selectedOrders.size === unassigned.length && unassigned.length > 0;
+  list.innerHTML = `
+    <div class="order-item" style="background:#f9fafb;border-bottom:2px solid #e5e7eb" onclick="toggleSelectAll()">
+      <input type="checkbox" ${allSelected ? 'checked' : ''} onclick="event.stopPropagation();toggleSelectAll()" />
+      <div class="order-info">
+        <div class="order-top-row"><span class="order-code" style="color:#6b7280">全选 (${unassigned.length})</span></div>
+      </div>
+    </div>
+  ` + unassigned.map(o => `
+    <div class="order-item ${selectedOrders.has(o.id) ? 'selected' : ''}" onclick="toggleSelect('${o.id}')">
+      <input type="checkbox" ${selectedOrders.has(o.id) ? 'checked' : ''} onclick="event.stopPropagation();toggleSelect('${o.id}')" />
+      <div class="order-info">
+        <div class="order-top-row">
+          <span class="order-code">${o.code}</span>
+          <span class="order-restaurant">${o.restaurant}</span>
+        </div>
+        <div class="order-detail-row">
+          <span>&#128230; ${o.items} items</span>
+          <span>&#128176; ${fmt(o.total)}</span>
+          <span>&#128205; ${o.address}</span>
+        </div>
+        <div class="order-detail-row" style="color:#9ca3af;font-size:11px;margin-top:1px">
+          ${o.products}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderWaves() {
+  const container = document.getElementById('waveCards');
+  container.innerHTML = waves.map(w => {
+    const isBulk = w.waveType === 'bulk';
+    const orders = w.orderIds.map(getOrderById).filter(Boolean);
+    const totalItems = orders.reduce((s, o) => s + o.items, 0);
+    const totalAmt = orders.reduce((s, o) => s + o.total, 0);
+    const statusLabel = { pending: '待拣货', picking: '拣货中', picked: '已拣完' }[w.status] || w.status;
+    const statusClass = w.status;
+
+    const orderRows = orders.length > 0 ? `
+      <div class="wave-card-body">
+        <table class="wave-order-table">
+          <thead>
+            <tr>
+              <th style="width:110px">订单号</th>
+              <th>餐馆</th>
+              <th>地址</th>
+              <th style="width:60px;text-align:center">商品数</th>
+              <th style="width:80px;text-align:right">金额</th>
+              <th style="width:30px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orders.map(o => `
+              <tr>
+                <td class="order-id-cell">${o.code}</td>
+                <td class="restaurant-name">${o.restaurant}</td>
+                <td style="color:#6b7280;font-size:11px">${o.address}</td>
+                <td class="items-cell" style="text-align:center">${o.items}</td>
+                <td class="amount-cell">${fmt(o.total)}</td>
+                <td><button class="remove-btn" onclick="unassignOrder('${w.id}','${o.id}')" title="移除此订单">&#10005;</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="wave-order-total">
+          <span>合计: <strong>${orders.length} 单</strong></span>
+          <span>商品: <strong>${totalItems} 项</strong></span>
+          <span>金额: <strong>${fmt(totalAmt)}</strong></span>
+        </div>
+      </div>
+    ` : `
+      <div class="wave-card-body">
+        <div class="wave-empty">暂无订单 &mdash; 从左侧勾选后点击「分配选中」</div>
+      </div>
+    `;
+
+    return `
+      <div class="wave-card ${isBulk ? 'bulk-card' : 'loose-card'}">
+        <div class="wave-card-header">
+          <div class="wave-num ${isBulk ? 'bulk' : 'loose'}">${w.waveNumber}</div>
+          <div class="wave-header-info">
+            <div class="wave-title">Wave ${w.waveNumber} &middot; ${w.driverName}</div>
+            <div class="wave-subtitle">${w.timeOfDay === 'am' ? '上午' : '下午'}配送</div>
+          </div>
+          <span class="wave-type-badge ${isBulk ? 'bulk' : 'loose'}">${isBulk ? '大货 &#128666;' : '散货'}</span>
+          <div class="wave-stats">
+            <div><div class="stat-val">${orders.length}</div>订单</div>
+            <div><div class="stat-val">${totalItems}</div>商品</div>
+            <div><div class="stat-val">${fmt(totalAmt)}</div></div>
+          </div>
+          <div class="wave-actions">
+            ${selectedOrders.size > 0
+              ? `<button class="btn btn-primary btn-sm" onclick="assignToWave('${w.id}')">&#8592; 分配选中</button>`
+              : `<button class="btn btn-sm" onclick="showToast('进入 Wave ${w.waveNumber} 详情页')">查看详情</button>`
+            }
+            <button class="btn btn-sm" onclick="showToast('打印 Wave ${w.waveNumber} 拣货单')">&#128424;</button>
+          </div>
+        </div>
+        ${orderRows}
+        <div class="wave-card-footer">
+          <div class="wave-footer-status">
+            <span class="status-dot ${statusClass}"></span>
+            <span class="status-label">${statusLabel}</span>
+          </div>
+          ${orders.length > 0 ? `<button class="btn btn-success btn-sm" onclick="showToast('创建 Wave ${w.waveNumber} 配送任务 (Trip)')">创建配送任务</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderAssignBar() {
+  const bar = document.getElementById('assignBar');
+  const count = selectedOrders.size;
+  if (count === 0) { bar.classList.remove('visible'); return; }
+  bar.classList.add('visible');
+  document.getElementById('selectedCount').textContent = count;
+  document.getElementById('assignButtons').innerHTML = waves.map(w => {
+    const isBulk = w.waveType === 'bulk';
+    return `<button class="assign-wave-btn ${isBulk ? 'bulk' : 'loose'}" onclick="assignToWave('${w.id}')">
+      Wave ${w.waveNumber} &middot; ${w.driverName}
+    </button>`;
+  }).join('');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── init ──
+render();
+</script>
+</body>
+</html>

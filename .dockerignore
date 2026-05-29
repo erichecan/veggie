@@ -1,0 +1,49 @@
+# 不打包进 Docker 镜像的文件
+
+# 依赖（镜像内会 npm ci 重新安装）
+node_modules
+
+# Next.js 构建产物（镜像内会重新 build）
+.next
+out
+build
+
+# 环境变量（绝对不能打包进镜像！通过 Cloud Run 环境变量/Secret Manager 注入）
+.env
+.env.*
+.env.local
+.env.*.local
+
+# 编辑器/系统
+.DS_Store
+.idea
+.vscode
+*.pem
+
+# 日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript 缓存
+*.tsbuildinfo
+
+# Prisma 生成文件（npm ci 时会重新生成）
+lib/generated/
+
+# Git
+.git
+.gitignore
+.gcloudignore
+
+# 文档和图片资源（不影响运行）
+pic
+docs
+*.md
+AGENTS.md
+CLAUDE.md
+CODEBASE-GUIDE.md
+DEMO-GUIDE.md
+UPGRADE-PLAN.md
+ODOO-REPLICATION-PLAN.md
+README.md

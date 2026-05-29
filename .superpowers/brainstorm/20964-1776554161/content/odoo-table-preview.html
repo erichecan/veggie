@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Odoo 风格界面原型</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; color: #333; background: #f0eeeb; }
+
+  /* ── Top Menu Bar ── */
+  .o-menu-bar {
+    background: #875A7B;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 4px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .o-menu-bar .home-icon {
+    color: #fff;
+    font-size: 18px;
+    padding: 4px 8px;
+    cursor: pointer;
+    opacity: 0.9;
+    margin-right: 8px;
+    display: flex; align-items: center;
+  }
+  .o-menu-bar .app-menu {
+    display: flex;
+    gap: 2px;
+    flex: 1;
+  }
+  .o-menu-bar .app-item {
+    color: rgba(255,255,255,0.85);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .o-menu-bar .app-item:hover,
+  .o-menu-bar .app-item.active {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+  }
+  .o-menu-bar .app-item.active {
+    background: rgba(0,0,0,0.15);
+  }
+  .o-menu-bar .right-icons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .o-menu-bar .right-icons .icon-btn {
+    color: rgba(255,255,255,0.85);
+    padding: 4px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .o-menu-bar .right-icons .icon-btn:hover {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+  }
+  .o-menu-bar .user-btn {
+    color: rgba(255,255,255,0.85);
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .o-menu-bar .user-btn:hover { background: rgba(255,255,255,0.15); color:#fff; }
+
+  /* ── Secondary Nav (sub-menu) ── */
+  .o-sub-nav {
+    background: #7a5070;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 2px;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+  }
+  .o-sub-nav .sub-item {
+    color: rgba(255,255,255,0.8);
+    font-size: 12px;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .o-sub-nav .sub-item:hover { background: rgba(255,255,255,0.1); color:#fff; }
+  .o-sub-nav .sub-item.active { background: rgba(255,255,255,0.18); color:#fff; font-weight:600; }
+
+  /* ── Breadcrumb + Title ── */
+  .o-breadcrumb {
+    background: #fff;
+    padding: 8px 16px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #888;
+    border-bottom: none;
+  }
+  .o-breadcrumb .crumb { cursor: pointer; }
+  .o-breadcrumb .crumb:hover { color: #875A7B; }
+  .o-breadcrumb .sep { color: #ccc; }
+  .o-breadcrumb .current { color: #333; font-weight: 600; }
+
+  /* ── Control Panel ── */
+  .o-control-panel {
+    background: #fff;
+    padding: 8px 16px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #e0ddd8;
+    flex-wrap: wrap;
+  }
+  .o-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .o-btn-primary {
+    background: #875A7B;
+    color: #fff;
+    border-color: #6d4863;
+  }
+  .o-btn-primary:hover { background: #7a5070; }
+  .o-btn-secondary {
+    background: #fff;
+    color: #555;
+    border-color: #d0ccc8;
+  }
+  .o-btn-secondary:hover { background: #f5f3f0; border-color: #b0aba5; }
+  .o-btn-danger {
+    background: #fff;
+    color: #d9534f;
+    border-color: #d9534f;
+  }
+
+  .o-search-container {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    border: 1px solid #d0ccc8;
+    border-radius: 3px;
+    background: #fff;
+    overflow: hidden;
+    min-width: 280px;
+  }
+  .o-search-input {
+    border: none;
+    outline: none;
+    padding: 5px 10px;
+    font-size: 12px;
+    flex: 1;
+    background: transparent;
+    color: #333;
+  }
+  .o-search-btn {
+    padding: 5px 10px;
+    background: #f0eeeb;
+    border-left: 1px solid #d0ccc8;
+    color: #888;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .o-filter-btn, .o-groupby-btn {
+    font-size: 12px;
+    color: #555;
+    padding: 5px 10px;
+    border-right: 1px solid #d0ccc8;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 3px;
+    background: #f0eeeb;
+  }
+  .o-filter-btn:hover, .o-groupby-btn:hover { background: #e5e2de; color: #333; }
+
+  /* ── View Switcher ── */
+  .o-view-switcher {
+    display: flex;
+    border: 1px solid #d0ccc8;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .o-view-btn {
+    padding: 5px 9px;
+    font-size: 13px;
+    cursor: pointer;
+    background: #fff;
+    color: #888;
+    border-right: 1px solid #d0ccc8;
+  }
+  .o-view-btn:last-child { border-right: none; }
+  .o-view-btn.active { background: #875A7B; color: #fff; }
+  .o-view-btn:not(.active):hover { background: #f0eeeb; }
+
+  /* ── Count badge ── */
+  .o-count { font-size: 12px; color: #888; padding: 0 4px; }
+
+  /* ── List View Table ── */
+  .o-list-view {
+    background: #fff;
+    margin: 0;
+  }
+  .o-list-header {
+    display: grid;
+    grid-template-columns: 32px 1fr 140px 100px 80px 120px 80px 80px;
+    padding: 0 16px;
+    border-bottom: 2px solid #e0ddd8;
+    background: #f9f7f5;
+  }
+  .o-list-header th {
+    padding: 8px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .o-list-header th:hover { color: #875A7B; }
+  .o-list-header th.sorted { color: #875A7B; }
+  .o-list-header th .sort-icon { font-size: 9px; margin-left: 2px; }
+
+  .o-list-row {
+    display: grid;
+    grid-template-columns: 32px 1fr 140px 100px 80px 120px 80px 80px;
+    padding: 0 16px;
+    border-bottom: 1px solid #f0eeeb;
+    align-items: center;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .o-list-row:hover { background: #f5f0fa; }
+  .o-list-row.selected { background: #f0e8f5; }
+  .o-list-row td {
+    padding: 9px 6px;
+    font-size: 12px;
+    color: #444;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .o-list-row td.name { color: #875A7B; font-weight: 600; cursor: pointer; }
+  .o-list-row td.name:hover { text-decoration: underline; }
+
+  .o-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+  .o-badge-success { background: #d4edda; color: #155724; }
+  .o-badge-warning { background: #fff3cd; color: #856404; }
+  .o-badge-info    { background: #d1ecf1; color: #0c5460; }
+  .o-badge-muted   { background: #e8e5e0; color: #666; }
+
+  .o-checkbox {
+    width: 14px; height: 14px;
+    border: 1px solid #aaa;
+    border-radius: 2px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+  }
+  .o-checkbox.checked { background: #875A7B; border-color: #875A7B; color: #fff; }
+
+  /* ── Footer / Pager ── */
+  .o-pager {
+    background: #fff;
+    padding: 8px 16px;
+    border-top: 1px solid #e0ddd8;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    font-size: 12px;
+    color: #666;
+  }
+  .o-pager .pager-btn {
+    padding: 3px 8px;
+    border: 1px solid #d0ccc8;
+    border-radius: 3px;
+    cursor: pointer;
+    background: #fff;
+    color: #666;
+    font-size: 12px;
+  }
+  .o-pager .pager-btn:hover { background: #f0eeeb; }
+  .o-pager .pager-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Status bar ── */
+  .o-status-bar {
+    background: #f9f7f5;
+    padding: 5px 16px;
+    font-size: 11px;
+    color: #888;
+    border-top: 1px solid #e0ddd8;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .o-tag {
+    display: inline-block;
+    background: #e8e2f0;
+    color: #875A7B;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid #d4c8e0;
+    cursor: pointer;
+  }
+  .o-tag .remove { margin-left: 4px; opacity: 0.6; }
+
+  .note {
+    text-align: center;
+    padding: 20px;
+    color: #aaa;
+    font-size: 12px;
+    font-style: italic;
+    border-top: 1px solid #f0eeeb;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Top Menu Bar ── -->
+<div class="o-menu-bar">
+  <div class="home-icon">⊞</div>
+  <div class="app-menu">
+    <div class="app-item active">销售</div>
+    <div class="app-item">采购</div>
+    <div class="app-item">库存</div>
+    <div class="app-item">发票</div>
+    <div class="app-item">配送</div>
+    <div class="app-item">报表</div>
+    <div class="app-item">设置</div>
+  </div>
+  <div class="right-icons">
+    <div class="icon-btn">💬</div>
+    <div class="icon-btn">🔔</div>
+    <div class="user-btn">运营 操作员 ▾</div>
+  </div>
+</div>
+
+<!-- ── Secondary Nav ── -->
+<div class="o-sub-nav">
+  <div class="sub-item active">客户</div>
+  <div class="sub-item">订单</div>
+  <div class="sub-item">报价单</div>
+  <div class="sub-item">价格表</div>
+  <div class="sub-item">发票</div>
+</div>
+
+<!-- ── Breadcrumb ── -->
+<div class="o-breadcrumb">
+  <span class="crumb">销售</span>
+  <span class="sep">›</span>
+  <span class="current">客户</span>
+</div>
+
+<!-- ── Control Panel ── -->
+<div class="o-control-panel">
+  <button class="o-btn o-btn-primary">＋ 新建</button>
+  <button class="o-btn o-btn-secondary">操作 ▾</button>
+  <button class="o-btn o-btn-secondary">导入</button>
+
+  <span class="o-count">1–20 / 47</span>
+
+  <!-- Search box -->
+  <div class="o-search-container">
+    <div class="o-filter-btn">筛选 ▾</div>
+    <div class="o-groupby-btn">分组 ▾</div>
+    <input class="o-search-input" placeholder="搜索..." value="月结" />
+    <div class="o-search-btn">🔍</div>
+  </div>
+
+  <!-- View switcher -->
+  <div class="o-view-switcher">
+    <div class="o-view-btn active" title="列表视图">☰</div>
+    <div class="o-view-btn" title="看板视图">⊞</div>
+    <div class="o-view-btn" title="地图视图">🗺</div>
+  </div>
+</div>
+
+<!-- Active filter tags -->
+<div class="o-status-bar">
+  <span style="color:#555; font-weight:600;">筛选条件：</span>
+  <span class="o-tag">结算方式：月结 <span class="remove">✕</span></span>
+  <span style="color:#aaa; margin-left:auto; font-size:11px;">显示 20 条，共 47 条客户</span>
+</div>
+
+<!-- ── List Table ── -->
+<div class="o-list-view">
+  <!-- Header -->
+  <div class="o-list-header" style="display:grid;">
+    <table style="width:100%; border-collapse:collapse;">
+      <colgroup>
+        <col style="width:36px">
+        <col style="width:30%">
+        <col style="width:16%">
+        <col style="width:11%">
+        <col style="width:10%">
+        <col style="width:14%">
+        <col style="width:10%">
+        <col style="width:9%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th style="padding:8px 6px;"><div class="o-checkbox" style="margin:auto;">✓</div></th>
+          <th style="padding:8px 6px; font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">客户名称 <span style="font-size:9px;">▲</span></th>
+          <th style="padding:8px 6px; font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">地址</th>
+          <th style="padding:8px 6px; font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">税号</th>
+          <th style="padding:8px 6px; font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">结算方式</th>
+          <th style="padding:8px 6px; font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">价格表</th>
+          <th style="padding:8px 6px; font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">信用额度</th>
+          <th style="padding:8px 6px; font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">状态</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+
+  <!-- Rows -->
+  <table style="width:100%; border-collapse:collapse;">
+    <colgroup>
+      <col style="width:36px">
+      <col style="width:30%">
+      <col style="width:16%">
+      <col style="width:11%">
+      <col style="width:10%">
+      <col style="width:14%">
+      <col style="width:10%">
+      <col style="width:9%">
+    </colgroup>
+    <tbody>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer;" onmouseover="this.style.background='#f5f0fa'" onmouseout="this.style.background=''">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox" style="margin:auto;"></div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">Hang Dai Chinese</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">20 Camden St, Dublin 2</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE3456789T</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">VIP 价格表</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">€ 5,000</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-success">活跃</span></td>
+      </tr>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer;" onmouseover="this.style.background='#f5f0fa'" onmouseout="this.style.background=''">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox" style="margin:auto;"></div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">Yamamori Sushi</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">71 South Great Georges</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE7654321B</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">标准价格表</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">€ 3,000</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-success">活跃</span></td>
+      </tr>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer; background:#f0e8f5;" onmouseover="this.style.background='#eadff2'" onmouseout="this.style.background='#f0e8f5'">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox checked" style="margin:auto;">✓</div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">Lucky Dragon Restaurant</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">12 Parnell St, Dublin 1</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE1122334W</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">— 牌价 —</td>
+        <td style="padding:9px 6px; font-size:12px; color:#aaa;">无限额</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-success">活跃</span></td>
+      </tr>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer;" onmouseover="this.style.background='#f5f0fa'" onmouseout="this.style.background=''">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox" style="margin:auto;"></div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">The Silk Road Café</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">Chester Beatty Library</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE9988776A</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">中型客户价</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">€ 2,000</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-muted">暂停</span></td>
+      </tr>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer;" onmouseover="this.style.background='#f5f0fa'" onmouseout="this.style.background=''">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox" style="margin:auto;"></div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">Kimchi Kitchen</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">45 Ranelagh Village</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE5544332F</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">VIP 价格表</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">€ 8,000</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-success">活跃</span></td>
+      </tr>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer;" onmouseover="this.style.background='#f5f0fa'" onmouseout="this.style.background=''">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox" style="margin:auto;"></div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">Masa Mexican</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">21 Drury St, Dublin 2</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE6677889M</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">标准价格表</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">€ 1,500</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-success">活跃</span></td>
+      </tr>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer;" onmouseover="this.style.background='#f5f0fa'" onmouseout="this.style.background=''">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox" style="margin:auto;"></div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">Pearl River Dim Sum</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">88 Mary St, Dublin 1</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE2233445P</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">VIP 价格表</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">€ 6,000</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-success">活跃</span></td>
+      </tr>
+      <tr class="o-list-row" style="display:table-row; border-bottom:1px solid #f0eeeb; cursor:pointer;" onmouseover="this.style.background='#f5f0fa'" onmouseout="this.style.background=''">
+        <td style="padding:9px 6px; text-align:center;"><div class="o-checkbox" style="margin:auto;"></div></td>
+        <td style="padding:9px 6px; color:#875A7B; font-weight:600; font-size:12px;">Mumbai Spice</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">33 Capel Street, D1</td>
+        <td style="padding:9px 6px; font-size:12px; color:#555; font-family:monospace;">IE4455667I</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-warning">月结</span></td>
+        <td style="padding:9px 6px; font-size:12px; color:#555;">中型客户价</td>
+        <td style="padding:9px 6px; font-size:12px; color:#aaa;">无限额</td>
+        <td style="padding:9px 6px;"><span class="o-badge o-badge-info">新客户</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Pager -->
+  <div class="o-pager">
+    <span>1–20 / 47</span>
+    <button class="pager-btn" disabled>‹</button>
+    <button class="pager-btn">›</button>
+  </div>
+</div>
+
+<div class="note">👆 以上为 Odoo 经典界面的高保真原型 —— 紫色主题 (#875A7B)、表格视图、筛选标签、分页器。发现任何需要调整的细节请告知。</div>
+
+</body>
+</html>

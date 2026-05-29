@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客户会议需求总结 — 2026-05-22</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: #333; line-height: 1.7; }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+  h1 { font-size: 28px; margin-bottom: 8px; color: #1a1a1a; }
+  .subtitle { color: #666; font-size: 14px; margin-bottom: 32px; border-bottom: 2px solid #e0e0e0; padding-bottom: 16px; }
+  .section { background: #fff; border-radius: 12px; padding: 24px 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .section h2 { font-size: 20px; color: #1a1a1a; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+  .section h2 .tag { font-size: 12px; padding: 2px 10px; border-radius: 20px; font-weight: 500; }
+  .tag-pain { background: #fff1f0; color: #cf1322; }
+  .tag-feature { background: #e6f7ff; color: #0050b3; }
+  .tag-improvement { background: #f6ffed; color: #389e0d; }
+  .tag-critical { background: #fff0f6; color: #c41d7d; }
+  h3 { font-size: 16px; color: #555; margin: 14px 0 8px; }
+  p, li { font-size: 15px; color: #444; }
+  ul { padding-left: 20px; }
+  ul li { margin-bottom: 6px; }
+  .pain-point { background: #fffbe6; border-left: 3px solid #faad14; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 14px; }
+  .solution { background: #f0f9eb; border-left: 3px solid #52c41a; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 14px; }
+  .note { background: #f0f5ff; border-left: 3px solid #597ef7; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th { background: #fafafa; text-align: left; padding: 10px 12px; border-bottom: 2px solid #e8e8e8; font-weight: 600; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+  tr:hover td { background: #fafafa; }
+  .priority-high { color: #cf1322; font-weight: 600; }
+  .priority-medium { color: #d48806; font-weight: 600; }
+  .priority-low { color: #389e0d; font-weight: 600; }
+  .toc { background: #fff; border-radius: 12px; padding: 20px 28px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .toc h2 { font-size: 18px; margin-bottom: 12px; }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin-bottom: 4px; }
+  .toc a { color: #1890ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .workflow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .workflow .step { background: #e6f7ff; border: 1px solid #91d5ff; padding: 6px 14px; border-radius: 6px; font-size: 13px; white-space: nowrap; }
+  .workflow .arrow { color: #bbb; font-size: 18px; }
+  .participants { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+  .participant { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 8px 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>客户会议需求总结</h1>
+<p class="subtitle">日期：2026 年 5 月 22 日 &nbsp;|&nbsp; 参会角色：运营/采购人员、财务人员、管理层 &nbsp;|&nbsp; 系统：从 Odoo 迁移到新系统 (Veggie)</p>
+
+<div class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">采购单录入 — 减少重复输入</a></li>
+    <li><a href="#s2">采购单工作流与库存联动</a></li>
+    <li><a href="#s3">客户订单处理 — 库存预警与锁定</a></li>
+    <li><a href="#s4">订单改单流程优化</a></li>
+    <li><a href="#s5">仓库拣货异常处理（缺货/替换/称重）</a></li>
+    <li><a href="#s6">库存出库批量处理 (Inventory Validate)</a></li>
+    <li><a href="#s7">退货处理优化</a></li>
+    <li><a href="#s8">财务对账与 Sage 导出</a></li>
+    <li><a href="#s9">库存移动全链路追踪</a></li>
+    <li><a href="#s10">批次号 (Lot) 与保质期管理</a></li>
+    <li><a href="#s11">大小单位与小数退货问题</a></li>
+    <li><a href="#s12">采购预定日期与库存批次</a></li>
+  </ol>
+</div>
+
+<!-- ====== 1. 采购单录入 ====== -->
+<div class="section" id="s1">
+  <h2><span class="tag tag-critical">核心痛点</span> 1. 采购单录入 — 减少重复输入</h2>
+
+  <div class="pain-point">
+    <strong>痛点：</strong>当前每次采购都需要手工逐条输入供应商、产品名称、数量等信息，效率低且容易出错。大多数采购是从同一供应商重复采购相同的产品，仅数量有变化。
+  </div>
+
+  <h3>客户期望的解决方案</h3>
+  <ul>
+    <li><strong>供应商单据导入：</strong>供应商通常会提供 PDF 或 Excel 格式的送货单/发票。客户希望直接上传该文件，系统自动识别并生成采购单草稿，人工检查确认即可。</li>
+    <li><strong>"再来一单" 功能：</strong>基于历史采购单快速复制，保留供应商和产品列表，仅修改数量即可。</li>
+  </ul>
+
+  <div class="solution">
+    <strong>已达成共识：</strong>优先实现"上传 PDF/Excel → 自动生成采购单"功能。同时支持从历史订单快速复制。
+  </div>
+</div>
+
+<!-- ====== 2. 采购单工作流 ====== -->
+<div class="section" id="s2">
+  <h2><span class="tag tag-feature">功能需求</span> 2. 采购单工作流与库存联动</h2>
+
+  <h3>工作流程</h3>
+  <div class="workflow">
+    <span class="step">创建草稿 (Draft)</span>
+    <span class="arrow">→</span>
+    <span class="step">等待供应商送货</span>
+    <span class="arrow">→</span>
+    <span class="step">核对/修改数量与产品</span>
+    <span class="arrow">→</span>
+    <span class="step">确认 (Confirm)</span>
+    <span class="arrow">→</span>
+    <span class="step">库存自动更新 (Forecast + On Hand)</span>
+  </div>
+
+  <ul>
+    <li>采购单创建后为草稿状态，供应商送货到仓后进行核对</li>
+    <li>如果数量或产品有变更，在草稿阶段直接修改</li>
+    <li>确认 (Confirm) 后，系统自动更新 Forecast 和 On Hand 库存</li>
+    <li>确认后的采购单不可再编辑，如需修改只能走退货 (Return) 或报废 (Scrap)</li>
+  </ul>
+
+  <div class="note">
+    <strong>业务规则：</strong>分两个阶段 — Confirm 前可自由编辑；Validate（实际入库）后数据锁定，只能做 Return 或 Scrap。
+  </div>
+</div>
+
+<!-- ====== 3. 客户订单处理 ====== -->
+<div class="section" id="s3">
+  <h2><span class="tag tag-critical">核心痛点</span> 3. 客户订单处理 — 库存预警与锁定</h2>
+
+  <div class="pain-point">
+    <strong>痛点：</strong>多个销售人员同时下单时，无法实时看到库存已被其他订单锁定。导致仓库拣货时频繁发现缺货，需要反复改单。
+  </div>
+
+  <h3>需求</h3>
+  <ul>
+    <li><strong>实时库存锁定：</strong>销售录入订单时，被其他订单锁定的库存应即时扣减显示。例如 On Hand 1107，其他销售已锁定 1105，则当前销售仅能看到剩余 2。</li>
+    <li><strong>醒目的库存预警弹窗：</strong>当产品库存低于安全阈值时，在订单录入界面以弹窗或醒目标识提醒（当前系统有此功能但不够明显）。</li>
+  </ul>
+</div>
+
+<!-- ====== 4. 改单流程 ====== -->
+<div class="section" id="s4">
+  <h2><span class="tag tag-critical">核心痛点</span> 4. 订单改单流程优化</h2>
+
+  <div class="pain-point">
+    <strong>痛点：</strong>Odoo 中已确认的 Quotation 不允许直接删除产品行或修改数量（仅能改价格）。当前流程：Cancel 整个 Quotation → 重新创建 → 重新录入。产生大量冗余订单和 Delivery Slip，容易搞混。
+  </div>
+
+  <h3>期望行为</h3>
+  <ul>
+    <li>在出库 (Validate) 之前，订单应允许直接编辑：修改数量、删除产品行、新增产品行</li>
+    <li>编辑时系统自动调整虚拟库存（释放被删除产品的锁定库存，锁定新增产品的库存）</li>
+    <li>无需 Cancel → 重建的繁琐流程</li>
+    <li>出库 (Validate) 后订单锁定，修改只能通过退货 (Return) 或报废 (Scrap)</li>
+  </ul>
+
+  <div class="solution">
+    <strong>已达成共识：</strong>新系统直接支持编辑已确认但未出库的订单，自动处理库存增减。避免产生冗余订单。
+  </div>
+
+  <h3>改单原因汇总</h3>
+  <table>
+    <tr><th>原因</th><th>说明</th><th>处理方式</th></tr>
+    <tr><td>缺货</td><td>仓库拣货时发现库存不足</td><td>减少数量或删除产品行</td></tr>
+    <tr><td>替换产品</td><td>缺货时用替代品</td><td>删除原产品，新增替代品</td></tr>
+    <tr><td>称重差异</td><td>如西瓜按颗卖，需录入实际重量(kg)</td><td>修改数量为实际称重值</td></tr>
+    <tr><td>客户临时变更</td><td>客户在送货前修改需求</td><td>直接编辑订单</td></tr>
+  </table>
+</div>
+
+<!-- ====== 5. 仓库拣货异常 ====== -->
+<div class="section" id="s5">
+  <h2><span class="tag tag-feature">功能需求</span> 5. 仓库拣货异常处理</h2>
+
+  <h3>异常类型</h3>
+  <table>
+    <tr><th>类型</th><th>场景举例</th><th>期望处理方式</th></tr>
+    <tr><td>缺货</td><td>订单要 10 箱洋葱，仓库只有 6 箱</td><td>修改数量为 6，或标记缺货</td></tr>
+    <tr><td>产品替换</td><td>A 品牌没有，用 B 品牌替代</td><td>删除 A，新增 B</td></tr>
+    <tr><td>称重 (按重量计)</td><td>客户要 1 颗西瓜，需称重录入实际 kg 数</td><td>拣货后录入实际重量</td></tr>
+    <tr><td>非整数出货</td><td>1 箱=10 颗，只能给 6 颗 → 0.6 箱</td><td>数量支持小数（不改变计量单位）</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>关于称重产品：</strong>产品的计量单位为 kg 时，拣货后需录入实际称重值。未来考虑对接电子秤自动回传重量（暂不实现，后续评估）。
+  </div>
+</div>
+
+<!-- ====== 6. 批量出库 ====== -->
+<div class="section" id="s6">
+  <h2><span class="tag tag-improvement">优化需求</span> 6. 库存出库批量处理 (Inventory Validate)</h2>
+
+  <div class="pain-point">
+    <strong>痛点：</strong>当天 148 个订单需要做出库操作 (Inventory Validate)，当前系统只能每次处理 20 个，每次等待 2-3 分钟。通常要等到凌晨 3 点司机出发后才能开始处理。
+  </div>
+
+  <h3>需求</h3>
+  <ul>
+    <li>批量处理数量从 20 提升到 50（最多 100，考虑数据库性能）</li>
+    <li>处理过程中偶尔出现莫名失败（非库存冲突原因），需要有操作日志便于排查</li>
+    <li>系统需防止重复操作（如用户以为处理完了但后台还在执行）</li>
+  </ul>
+
+  <div class="solution">
+    <strong>已达成共识：</strong>批量上限提高到 50-100，需有明确的进度反馈和完成状态提示。超过 100 不建议（等待时间过长且易出错）。
+  </div>
+</div>
+
+<!-- ====== 7. 退货处理 ====== -->
+<div class="section" id="s7">
+  <h2><span class="tag tag-critical">核心痛点</span> 7. 退货处理优化</h2>
+
+  <h3>当前流程 (Odoo)</h3>
+  <div class="workflow">
+    <span class="step">找到原始 Sales Order</span>
+    <span class="arrow">→</span>
+    <span class="step">进入 Delivery</span>
+    <span class="arrow">→</span>
+    <span class="step">点 Return</span>
+    <span class="arrow">→</span>
+    <span class="step">选择退货产品和数量</span>
+    <span class="arrow">→</span>
+    <span class="step">确认退货</span>
+    <span class="arrow">→</span>
+    <span class="step">库存恢复</span>
+  </div>
+
+  <div class="pain-point">
+    <strong>痛点 1 — 多单合并：</strong>同一客户退回的商品可能来自 3 个不同的原始订单。当前需要分别在 3 个原单上做 Return，生成 3 张 Credit Note。客户希望收到 1 张合并的 Credit Note。
+  </div>
+
+  <div class="pain-point">
+    <strong>痛点 2 — 日期错误：</strong>做 Return/Credit Note 时，系统自动使用原始订单的日期。但如果原单是 2-3 个月前的，Credit Note 的日期也变成旧日期，导致上传 Sage 时账期错误、单据"丢失"。
+  </div>
+
+  <h3>期望行为</h3>
+  <ul>
+    <li>退货/Credit Note 的日期默认使用<strong>当天日期</strong>（即实际处理退货的日期），而非原始订单日期</li>
+    <li>支持<strong>跨订单合并退货</strong>：同一客户从多个原始订单退回的商品，可以合并生成 1 张 Credit Note</li>
+    <li>退货后库存自动恢复</li>
+  </ul>
+</div>
+
+<!-- ====== 8. 财务 Sage 导出 ====== -->
+<div class="section" id="s8">
+  <h2><span class="tag tag-feature">功能需求</span> 8. 财务对账与 Sage 导出</h2>
+
+  <h3>当前流程</h3>
+  <div class="workflow">
+    <span class="step">Sales Order 确认</span>
+    <span class="arrow">→</span>
+    <span class="step">出库 (Validate)</span>
+    <span class="arrow">→</span>
+    <span class="step">回单确认（纸质单据回收）</span>
+    <span class="arrow">→</span>
+    <span class="step">生成 Draft Invoice</span>
+    <span class="arrow">→</span>
+    <span class="step">确认 Invoice</span>
+    <span class="arrow">→</span>
+    <span class="step">导出表格上传 Sage</span>
+  </div>
+
+  <h3>需求</h3>
+  <ul>
+    <li>需要了解 Sage 要求的导出格式（待客户提供模板）</li>
+    <li>导出的日期字段需要正确（参见退货日期问题）</li>
+    <li>周结或月结汇总导出</li>
+  </ul>
+
+  <div class="note">
+    <strong>待办：</strong>客户将提供 Sage 上传的 Excel 模板，据此设计导出格式。
+  </div>
+</div>
+
+<!-- ====== 9. 库存移动追踪 ====== -->
+<div class="section" id="s9">
+  <h2><span class="tag tag-feature">功能需求</span> 9. 库存移动全链路追踪</h2>
+
+  <h3>需要追踪的库存变动类型</h3>
+  <table>
+    <tr><th>类型</th><th>说明</th><th>对库存的影响</th></tr>
+    <tr><td>采购入库</td><td>供应商送货 → 确认入库</td><td>On Hand +</td></tr>
+    <tr><td>销售出库</td><td>订单确认 → 拣货 → 出库</td><td>On Hand −</td></tr>
+    <tr><td>退货入库</td><td>客户退货回仓</td><td>On Hand +</td></tr>
+    <tr><td>报废 (Scrap)</td><td>损坏/过期产品报废</td><td>On Hand −</td></tr>
+    <tr><td>手动调节</td><td>人工盘点差异调整</td><td>On Hand ±</td></tr>
+  </table>
+
+  <ul>
+    <li>所有类型的库存变动都必须在 Inventory Movement 记录中可查</li>
+    <li>每条记录关联到源单据（采购单号/销售单号/退货单号等）</li>
+    <li>手动调节与系统自动变动需明确区分</li>
+    <li>采购记录需关联供应商和采购价格</li>
+  </ul>
+
+  <div class="note">
+    <strong>关键需求：</strong>手动调节的路径可以不对所有人开放，但系统必须保留此功能入口，并有完整的操作日志。
+  </div>
+</div>
+
+<!-- ====== 10. 批次号与保质期 ====== -->
+<div class="section" id="s10">
+  <h2><span class="tag tag-feature">功能需求</span> 10. 批次号 (Lot/Batch) 与保质期管理</h2>
+
+  <ul>
+    <li><strong>批次号来源：</strong>扫描枪扫描（优先）或系统自动生成</li>
+    <li><strong>保质期 (BBD / End of Life)：</strong>每个批次需记录保质期截止日期</li>
+    <li><strong>到期预警：</strong>临近保质期的产品需要在系统内直接提醒（优先于邮件通知），希望在界面上直观显示</li>
+    <li>后续考虑对接扫描枪硬件（当前阶段暂不实现）</li>
+  </ul>
+</div>
+
+<!-- ====== 11. 大小单位 ====== -->
+<div class="section" id="s11">
+  <h2><span class="tag tag-pain">已知缺陷</span> 11. 大小单位与小数退货问题</h2>
+
+  <div class="pain-point">
+    <strong>痛点：</strong>产品存在大小单位关系（如 虾饺 1箱 = 5×2.5kg）。退货非整数时（如退 0.3333 箱），Odoo 的退货逻辑会将整个 Delivery 的数量清零，而非精确扣减。当前只能通过直接修改数据库解决，操作不规范。
+  </div>
+
+  <h3>期望</h3>
+  <ul>
+    <li>退货支持小数精度，正确处理部分退货</li>
+    <li>退货后 Delivery 数量应精确扣减（不是清零）</li>
+    <li>系统提供合规的修正路径（而非直接改数据库），该路径可限制权限但必须存在</li>
+  </ul>
+</div>
+
+<!-- ====== 12. 采购预定日期 ====== -->
+<div class="section" id="s12">
+  <h2><span class="tag tag-feature">功能需求</span> 12. 采购预定日期与库存批次</h2>
+
+  <ul>
+    <li>采购单创建日期与实际到货日期 (Scheduled Date) 可能不同（如今天下单，下月到货）</li>
+    <li>到货入库时，库存批次的日期应跟随 Scheduled Date，而非采购单创建日期</li>
+    <li>系统需正确维护 Scheduled Date 字段，并在入库时使用该日期记录批次</li>
+  </ul>
+</div>
+
+<!-- ====== 优先级总结 ====== -->
+<div class="section" style="border-left: 4px solid #1890ff;">
+  <h2>需求优先级总结</h2>
+  <table>
+    <tr><th>优先级</th><th>需求</th><th>原因</th></tr>
+    <tr><td class="priority-high">P0 — 必须</td><td>订单直接编辑（取消"Cancel→重建"流程）</td><td>每日高频操作，当前流程极其低效</td></tr>
+    <tr><td class="priority-high">P0 — 必须</td><td>采购单 PDF/Excel 导入</td><td>每日重复录入，效率瓶颈</td></tr>
+    <tr><td class="priority-high">P0 — 必须</td><td>退货日期修正 + 跨单合并 Credit Note</td><td>影响财务准确性</td></tr>
+    <tr><td class="priority-high">P0 — 必须</td><td>库存预警（低库存醒目提示）</td><td>减少缺货导致的改单</td></tr>
+    <tr><td class="priority-medium">P1 — 重要</td><td>实时库存锁定（多销售并发）</td><td>减少拣货阶段缺货</td></tr>
+    <tr><td class="priority-medium">P1 — 重要</td><td>批量出库提升到 50-100 单</td><td>减少凌晨加班时间</td></tr>
+    <tr><td class="priority-medium">P1 — 重要</td><td>库存移动全链路追踪</td><td>业务透明度</td></tr>
+    <tr><td class="priority-medium">P1 — 重要</td><td>小数退货精确处理</td><td>消除数据库手动修改</td></tr>
+    <tr><td class="priority-low">P2 — 计划</td><td>批次号 + 保质期管理</td><td>后续扫描枪对接前置</td></tr>
+    <tr><td class="priority-low">P2 — 计划</td><td>Sage 导出格式</td><td>待客户提供模板</td></tr>
+    <tr><td class="priority-low">P2 — 计划</td><td>电子秤自动回传称重</td><td>硬件对接，暂缓</td></tr>
+  </table>
+</div>
+
+<!-- ====== 待确认事项 ====== -->
+<div class="section" style="border-left: 4px solid #faad14;">
+  <h2>待确认事项</h2>
+  <ul>
+    <li>客户需提供 Sage 上传的 Excel 模板（确定导出字段和格式）</li>
+    <li>每个产品的安全库存阈值如何初始化？（建议：逐步积累，每次采购时设定）</li>
+    <li>电子秤对接方案待后续与硬件供应商确认</li>
+    <li>扫描枪/批次号功能的具体使用场景待进一步细化</li>
+    <li>库存手动调节功能的权限范围（哪些角色可以操作）</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

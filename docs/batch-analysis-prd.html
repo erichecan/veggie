@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批次分析增强 — 产品需求文档</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; padding: 24px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 28px; margin-bottom: 8px; color: #0f172a; }
+  .subtitle { font-size: 14px; color: #64748b; margin-bottom: 32px; }
+  h2 { font-size: 22px; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; color: #0f172a; }
+  h3 { font-size: 17px; margin: 20px 0 10px; color: #334155; }
+  h4 { font-size: 15px; margin: 14px 0 8px; color: #475569; }
+  p { margin: 8px 0; font-size: 15px; }
+  ul, ol { margin: 8px 0 8px 24px; font-size: 15px; }
+  li { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
+  th { background: #f1f5f9; font-weight: 600; color: #334155; }
+  tr:nth-child(even) { background: #f8fafc; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .badge-exist { background: #dcfce7; color: #166534; }
+  .badge-new { background: #dbeafe; color: #1e40af; }
+  .badge-p0 { background: #fef3c7; color: #92400e; }
+  .badge-p1 { background: #e0e7ff; color: #3730a3; }
+  .badge-p2 { background: #f1f5f9; color: #64748b; }
+  .card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .highlight { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 14px; }
+  .scope-out { background: #fef2f2; border-left: 4px solid #ef4444; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 14px; }
+  .priority-table td:first-child { font-weight: 600; }
+  .workload-green { color: #16a34a; font-weight: 600; }
+  .workload-yellow { color: #d97706; font-weight: 600; }
+  .workload-red { color: #dc2626; font-weight: 600; }
+  .mock { background: #f1f5f9; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 16px; margin: 12px 0; font-size: 13px; color: #64748b; }
+  .mock-title { font-weight: 600; color: #475569; margin-bottom: 8px; }
+  .flex-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .flex-row > * { flex: 1; min-width: 280px; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .toc { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 32px; }
+  .toc a { color: #2563eb; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ul { list-style: none; margin-left: 0; }
+  .toc > ul > li { margin: 6px 0; }
+  .toc ul ul { margin-left: 20px; }
+  .toc ul ul li { margin: 3px 0; font-size: 14px; color: #64748b; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>批次分析增强 — 产品需求文档</h1>
+<p class="subtitle">Veggie Supply Chain &middot; 版本 1.0 &middot; 2026-05-27</p>
+
+<!-- 目录 -->
+<div class="toc">
+  <strong>目录</strong>
+  <ul>
+    <li><a href="#background">1. 背景与目标</a></li>
+    <li><a href="#current">2. 现有能力盘点</a></li>
+    <li>
+      <a href="#feature-a">3. Feature A：地图聚类视图增强</a>
+      <ul>
+        <li><a href="#a1">A1 多批次颜色标注</a></li>
+        <li><a href="#a2">A2 凸包覆盖区域</a></li>
+        <li><a href="#a3">A3 地图交互优化</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#feature-b">4. Feature B：路线预估总览</a>
+      <ul>
+        <li><a href="#b1">B1 一键全量计算</a></li>
+        <li><a href="#b2">B2 批次卡片路线摘要</a></li>
+        <li><a href="#b3">B3 批次对比总览表</a></li>
+      </ul>
+    </li>
+    <li><a href="#priority">5. 优先级与排期</a></li>
+    <li><a href="#api-cost">6. API 调用成本估算</a></li>
+    <li><a href="#scope-out">7. 不在本期范围</a></li>
+    <li><a href="#tech">8. 技术要点</a></li>
+  </ul>
+</div>
+
+<!-- 1. 背景 -->
+<h2 id="background">1. 背景与目标</h2>
+<div class="card">
+  <p><strong>痛点：</strong>运营目前只能凭记忆和经验判断每个批次的送货路线是否合理。如果一个批次把城市南北两端的餐馆混在一起，司机会多跑很多冤枉路，但运营在排批时很难发现这个问题。</p>
+  <p style="margin-top: 12px;"><strong>目标：</strong></p>
+  <ol>
+    <li><strong>地图聚类视图</strong> — 把每个批次的送货地址在地图上标出来，不同批次用不同颜色，运营一眼就能看到某个批次是否地理分布不合理。</li>
+    <li><strong>路线预估</strong> — 用 Google Maps Distance Matrix API 算出每个批次的总行驶距离和预计时间，直接显示在批次卡片上（如 "批次 A：5 家店，预计 42km / 1.5h"），让排批有数字依据。</li>
+  </ol>
+</div>
+
+<!-- 2. 现有能力 -->
+<h2 id="current">2. 现有能力盘点</h2>
+<table>
+  <thead>
+    <tr><th>能力</th><th>状态</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>多批次地图标点</td><td><span class="badge badge-exist">已有</span></td><td>BatchMap 组件，不同批次不同颜色圆形 marker，支持 Google Maps / Leaflet 双引擎</td></tr>
+    <tr><td>批次图例</td><td><span class="badge badge-exist">已有</span></td><td>地图上方显示各批次颜色标签</td></tr>
+    <tr><td>单批次路线计算</td><td><span class="badge badge-exist">已有</span></td><td>每个批次卡片上有"计算路线"按钮，调用 Distance Matrix API 逐段计算</td></tr>
+    <tr><td>缺坐标提示 + 自动解析</td><td><span class="badge badge-exist">已有</span></td><td>检测缺坐标的餐馆，提供"自动解析地址"按钮（Geocoding API）</td></tr>
+    <tr><td>凸包覆盖区域</td><td><span class="badge badge-new">待开发</span></td><td>用半透明多边形圈出每个批次的地理范围</td></tr>
+    <tr><td>一键全量计算</td><td><span class="badge badge-new">待开发</span></td><td>一次性计算所有批次路线，无需逐个点击</td></tr>
+    <tr><td>批次对比总览表</td><td><span class="badge badge-new">待开发</span></td><td>横向对比各批次的距离、时间、工作量评估</td></tr>
+  </tbody>
+</table>
+
+<!-- 3. Feature A -->
+<h2 id="feature-a">3. Feature A：地图聚类视图增强</h2>
+
+<h3 id="a1">A1 多批次颜色标注</h3>
+<div class="card">
+  <div class="card-header">
+    <span>标注与图例</span>
+    <div>
+      <span class="badge badge-exist">A1.1 已有</span>
+      <span class="badge badge-exist">A1.2 已有</span>
+      <span class="badge badge-new">A1.3 新增</span>
+      <span class="badge badge-new">A1.4 新增</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>编号</th><th>需求</th><th>状态</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>A1.1</td><td>每个批次用唯一颜色的圆形 marker</td><td><span class="badge badge-exist">已有</span></td><td>10 色循环，序号标注</td></tr>
+      <tr><td>A1.2</td><td>地图上方显示颜色图例</td><td><span class="badge badge-exist">已有</span></td><td>色块 + 批次标签</td></tr>
+      <tr><td>A1.3</td><td>点击图例可切换该批次的显示/隐藏</td><td><span class="badge badge-new">新增</span></td><td>方便单独查看某个批次的分布</td></tr>
+      <tr><td>A1.4</td><td>Marker 弹窗增加地址信息</td><td><span class="badge badge-new">新增</span></td><td>现有弹窗只显示批次名，增加街道地址</td></tr>
+    </tbody>
+  </table>
+  <div class="mock">
+    <div class="mock-title">A1.3 交互示意</div>
+    <p>图例项 = 色块 + 批次名 + 餐馆数。默认全选高亮。</p>
+    <p>点击某项 → 该批次 marker 隐藏，图例项变灰色半透明。再点恢复。</p>
+    <p>适用于 Google Maps 和 Leaflet 两个引擎。</p>
+  </div>
+</div>
+
+<h3 id="a2">A2 凸包覆盖区域</h3>
+<div class="card">
+  <div class="card-header">
+    <span>批次地理范围可视化</span>
+    <span class="badge badge-new">全部新增</span>
+  </div>
+  <table>
+    <thead><tr><th>编号</th><th>需求</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>A2.1</td><td>每个批次的 marker 外围绘制凸包多边形</td><td>半透明填充（opacity 0.15），边框线（opacity 0.5, 2px）</td></tr>
+      <tr><td>A2.2</td><td>多边形颜色与批次 marker 颜色一致</td><td>复用 getBatchColor()</td></tr>
+      <tr><td>A2.3</td><td>两个批次覆盖区域重叠时，重叠区域高亮为红色</td><td>提示运营：这两个批次可能需要调整</td></tr>
+      <tr><td>A2.4</td><td>凸包跟随图例的显示/隐藏切换</td><td>隐藏批次时凸包一起消失</td></tr>
+    </tbody>
+  </table>
+  <div class="mock">
+    <div class="mock-title">A2 视觉示意</div>
+    <pre style="font-family: monospace; font-size: 12px; line-height: 1.4; margin-top: 8px;">
+    ┌─────────────────────────────────────┐
+    │                                     │
+    │    ╔═══╗  (红色批次凸包)             │
+    │   ╔╝ 1 ╚╗                           │
+    │  ║  2  3 ║                           │
+    │   ╚╗ 4 ╔╝    ┌───┐ (蓝色批次凸包)    │
+    │    ╚═══╝  ┌──┤5  │                  │
+    │           │ 6│ 7 │                  │
+    │           └──┤ 8 │                  │
+    │              └───┘                  │
+    │                                     │
+    └─────────────────────────────────────┘
+    数字 = marker 编号，区域 = 半透明凸包
+    </pre>
+  </div>
+  <div class="highlight">
+    <strong>算法：</strong>凸包使用 Graham Scan 或 Andrew's Monotone Chain 算法，纯前端计算，无需后端支持。Marker 数量 &lt; 3 时不画凸包（点/线段无面积）。
+  </div>
+</div>
+
+<h3 id="a3">A3 地图交互优化</h3>
+<div class="card">
+  <div class="card-header">
+    <span>地图尺寸与交互</span>
+    <span class="badge badge-new">新增</span>
+  </div>
+  <table>
+    <thead><tr><th>编号</th><th>需求</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>A3.1</td><td>地图默认高度从 350px 增加到 500px</td><td>更大的可视区域，提升查看体验</td></tr>
+      <tr><td>A3.2</td><td>增加全屏按钮</td><td>Google Maps 已有原生 fullscreen，Leaflet 引擎需补充实现</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 4. Feature B -->
+<h2 id="feature-b">4. Feature B：路线预估总览</h2>
+
+<h3 id="b1">B1 一键全量计算</h3>
+<div class="card">
+  <div class="card-header">
+    <span>批量路线计算</span>
+    <span class="badge badge-new">全部新增</span>
+  </div>
+  <table>
+    <thead><tr><th>编号</th><th>需求</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>B1.1</td><td>地图区域上方增加"计算所有路线"按钮</td><td>一次性触发所有批次的路线计算</td></tr>
+      <tr><td>B1.2</td><td>计算进度指示器</td><td>显示 "正在计算 3/7 批次…"，每完成一个批次更新</td></tr>
+      <tr><td>B1.3</td><td>自动跳过坐标不足的批次</td><td>有效坐标 &lt; 2 的批次跳过，不中断整体计算</td></tr>
+      <tr><td>B1.4</td><td>计算完成后自动展示 B3 对比总览表</td><td>全量计算完成后在地图下方渲染对比表</td></tr>
+    </tbody>
+  </table>
+  <div class="mock">
+    <div class="mock-title">B1 按钮状态</div>
+    <p><strong>空闲态：</strong><code>[📊 计算所有路线]</code></p>
+    <p><strong>计算中：</strong><code>[⏳ 正在计算 3/7 批次…]</code>（按钮禁用，显示进度）</p>
+    <p><strong>完成态：</strong><code>[🔄 重新计算所有路线]</code>（文字变化，可再次触发）</p>
+  </div>
+  <div class="highlight">
+    <strong>实现策略：</strong>各批次顺序请求（非并行），避免触发 Google API 速率限制。每个批次计算完成后立即更新该批次卡片上的路线信息。
+  </div>
+</div>
+
+<h3 id="b2">B2 批次卡片路线摘要</h3>
+<div class="card">
+  <div class="card-header">
+    <span>卡片内路线展示</span>
+    <div>
+      <span class="badge badge-exist">B2.1 已有</span>
+      <span class="badge badge-new">B2.2 新增</span>
+      <span class="badge badge-new">B2.3 新增</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>编号</th><th>需求</th><th>状态</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>B2.1</td><td>显示总距离 + 总时间</td><td><span class="badge badge-exist">已有</span></td><td>格式："42.3 km / 1.5 h" 或 "8.2 km / 15 min"</td></tr>
+      <tr><td>B2.2</td><td>显示平均每站距离</td><td><span class="badge badge-new">新增</span></td><td>总距离 / 站点数，帮助评估站点密集程度</td></tr>
+      <tr><td>B2.3</td><td>工作量标签</td><td><span class="badge badge-new">新增</span></td><td>根据总距离和总时间给出评估标签（见 B3 规则）</td></tr>
+    </tbody>
+  </table>
+  <div class="mock">
+    <div class="mock-title">B2 卡片示意</div>
+    <pre style="font-family: monospace; font-size: 12px; line-height: 1.4; margin-top: 8px;">
+┌─ 🔴 批次 1 上午 王师傅 ─── 5 家餐馆 ───────────┐
+│                                                 │
+│  📍 42.3 km / 1.5 h    ⚡ 平均 8.5 km/站         │
+│  🏷️ 工作量：中等                                 │
+│                                                 │
+│  ▸ 展开路线详情                                   │
+│                                                 │
+│  1. 🔴 好味道火锅    Rue de la Loi 42, Brussels  │
+│  2. 🔴 大龙虾        Avenue Louise 100           │
+│  3. 🔴 老北京        Chaussee de Wavre 58        │
+│  4. 🔴 川味楼        Rue Haute 200               │
+│  5. 🔴 金筷子        Boulevard Anspach 50        │
+└─────────────────────────────────────────────────┘
+    </pre>
+  </div>
+</div>
+
+<h3 id="b3">B3 批次对比总览表</h3>
+<div class="card">
+  <div class="card-header">
+    <span>横向对比表</span>
+    <span class="badge badge-new">全部新增</span>
+  </div>
+  <table>
+    <thead><tr><th>编号</th><th>需求</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>B3.1</td><td>全量计算完成后显示对比表</td><td>位于地图下方、批次卡片上方</td></tr>
+      <tr><td>B3.2</td><td>表格列：批次、餐馆数、总距离、预计时间、平均每站距离、工作量评估</td><td>按批次排列</td></tr>
+      <tr><td>B3.3</td><td>工作量评估规则</td><td>见下方规则表</td></tr>
+      <tr><td>B3.4</td><td>异常预警</td><td>某批次总距离超过所有批次平均值 2 倍时，标红提示</td></tr>
+    </tbody>
+  </table>
+
+  <h4>工作量评估规则</h4>
+  <table>
+    <thead><tr><th>级别</th><th>总距离</th><th>预计时间</th><th>显示</th></tr></thead>
+    <tbody>
+      <tr><td><span class="workload-green">轻松</span></td><td>&lt; 30 km</td><td>&lt; 1 小时</td><td>绿色标签 ✅ 轻松</td></tr>
+      <tr><td><span class="workload-yellow">中等</span></td><td>30 - 60 km</td><td>1 - 2 小时</td><td>黄色标签 ⚠️ 中等</td></tr>
+      <tr><td><span class="workload-red">偏重</span></td><td>&gt; 60 km</td><td>&gt; 2 小时</td><td>红色标签 🔴 偏重</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size: 13px; color: #64748b; margin-top: 4px;">* 判定规则：距离和时间任一达到更高级别即升级。例如 25km 但 1.5h → 中等</p>
+
+  <div class="mock">
+    <div class="mock-title">B3 对比表示意</div>
+    <table>
+      <thead>
+        <tr>
+          <th>批次</th>
+          <th>餐馆数</th>
+          <th>总距离</th>
+          <th>预计时间</th>
+          <th>平均/站</th>
+          <th>工作量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>🔴 1 上午 王师傅</td><td>5</td><td>42.3 km</td><td>1.5 h</td><td>8.5 km</td><td><span class="workload-yellow">⚠️ 中等</span></td></tr>
+        <tr><td>🔵 2 上午 李师傅</td><td>3</td><td>18.7 km</td><td>0.8 h</td><td>6.2 km</td><td><span class="workload-green">✅ 轻松</span></td></tr>
+        <tr><td>🟢 3 下午 张师傅</td><td>6</td><td>78.5 km</td><td>2.5 h</td><td>13.1 km</td><td style="background:#fef2f2;"><span class="workload-red">🔴 偏重 ⚠️</span></td></tr>
+        <tr style="background: #f1f5f9; font-weight: 600;"><td>平均</td><td>4.7</td><td>46.5 km</td><td>1.6 h</td><td>9.3 km</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; color: #dc2626; margin-top: 4px;">⚠️ 批次 3 总距离 (78.5 km) 超过平均值 (46.5 km) 的 2 倍，建议检查地理分布</p>
+  </div>
+</div>
+
+<!-- 5. 优先级 -->
+<h2 id="priority">5. 优先级与排期</h2>
+<table class="priority-table">
+  <thead><tr><th>优先级</th><th>功能</th><th>编号</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-p0">P0 必做</span></td><td>一键全量计算</td><td>B1</td><td>核心价值：一键获取所有批次的距离和时间数据</td></tr>
+    <tr><td><span class="badge badge-p0">P0 必做</span></td><td>批次卡片增强</td><td>B2</td><td>在已有基础上增加平均距离和工作量标签</td></tr>
+    <tr><td><span class="badge badge-p0">P0 必做</span></td><td>批次对比总览表</td><td>B3</td><td>横向对比是决策的核心依据</td></tr>
+    <tr><td><span class="badge badge-p1">P1 应做</span></td><td>凸包覆盖区域</td><td>A2</td><td>可视化每个批次的地理范围和重叠</td></tr>
+    <tr><td><span class="badge badge-p1">P1 应做</span></td><td>图例切换显隐</td><td>A1.3</td><td>方便单独查看某个批次</td></tr>
+    <tr><td><span class="badge badge-p1">P1 应做</span></td><td>弹窗增加地址</td><td>A1.4</td><td>Marker 弹窗信息更完整</td></tr>
+    <tr><td><span class="badge badge-p2">P2 可选</span></td><td>地图高度增加</td><td>A3.1</td><td>350px → 500px，改一行代码</td></tr>
+    <tr><td><span class="badge badge-p2">P2 可选</span></td><td>Leaflet 全屏</td><td>A3.2</td><td>Google Maps 已有原生全屏</td></tr>
+  </tbody>
+</table>
+
+<div class="highlight">
+  <strong>建议开发顺序：</strong>B1 + B2（一键计算 + 卡片增强）→ B3（对比总览表）→ A2（凸包）→ A1.3/A1.4（图例交互 + 弹窗）→ A3（地图优化）
+</div>
+
+<!-- 6. API 成本 -->
+<h2 id="api-cost">6. API 调用成本估算</h2>
+<div class="card">
+  <h4>Distance Matrix API</h4>
+  <table>
+    <thead><tr><th>参数</th><th>估算值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>每次全量计算的 API 调用数</td><td>~28 次</td><td>7 个批次 × 平均 4 段路线（leg）</td></tr>
+      <tr><td>每次 API 调用包含的元素数</td><td>1</td><td>逐段计算（1 origin × 1 destination）</td></tr>
+      <tr><td>Google 免费额度</td><td>$200/月</td><td>每月 $200 免费额度，足以覆盖</td></tr>
+      <tr><td>每元素价格（超出免费额度后）</td><td>$0.005</td><td>$5 / 1000 elements</td></tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top: 16px;">月度成本估算</h4>
+  <table>
+    <thead><tr><th>使用频率</th><th>月调用数</th><th>月费用</th></tr></thead>
+    <tbody>
+      <tr><td>每天计算 1 次</td><td>~840 次</td><td>在 $200 免费额度内，<strong>$0</strong></td></tr>
+      <tr><td>每天计算 5 次</td><td>~4,200 次</td><td>在 $200 免费额度内，<strong>$0</strong></td></tr>
+      <tr><td>每天计算 30 次</td><td>~25,200 次</td><td>~<strong>$0.13</strong>（超出部分）</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size: 13px; color: #64748b; margin-top: 8px;">* Geocoding API 按需调用，仅在"自动解析地址"时触发，成本可忽略。</p>
+</div>
+
+<!-- 7. 不在范围 -->
+<h2 id="scope-out">7. 不在本期范围</h2>
+<div class="scope-out">
+  <ul>
+    <li><strong>TSP / VRP 最优路线计算</strong> — 本期只计算已有顺序的距离，不做路线优化</li>
+    <li><strong>拖拽调整批次分配</strong> — 不支持在地图上把某家餐馆从一个批次拖到另一个批次</li>
+    <li><strong>实时路况数据</strong> — 使用 Distance Matrix 标准模式，不加实时路况（避免额外费用）</li>
+    <li><strong>Directions API 路线画线</strong> — 本期不在地图上画出实际行车路线，只用凸包表示范围</li>
+    <li><strong>自动批次建议</strong> — 不自动建议"应该把 X 餐馆移到 Y 批次"</li>
+  </ul>
+</div>
+
+<!-- 8. 技术要点 -->
+<h2 id="tech">8. 技术要点</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>项目</th><th>方案</th></tr></thead>
+    <tbody>
+      <tr><td>地图引擎</td><td>Google Maps（主）+ Leaflet/OSM（备），已有双引擎架构不变</td></tr>
+      <tr><td>凸包算法</td><td>前端纯计算，Andrew's Monotone Chain，O(n log n)</td></tr>
+      <tr><td>凸包绘制 — Google Maps</td><td><code>google.maps.Polygon</code></td></tr>
+      <tr><td>凸包绘制 — Leaflet</td><td><code>L.polygon</code></td></tr>
+      <tr><td>重叠检测</td><td>Turf.js <code>intersect</code> 或手写射线法（依赖项大小权衡）</td></tr>
+      <tr><td>Distance Matrix</td><td>复用现有 <code>lib/google-maps.ts</code> 的 <code>getRouteDistance()</code></td></tr>
+      <tr><td>全量计算并发</td><td>顺序执行（for-await），避免 API rate limit</td></tr>
+      <tr><td>状态管理</td><td>组件内 useState，路线数据缓存在 <code>routeInfoMap</code></td></tr>
+      <tr><td>后端变更</td><td>无需新增 API，复用 <code>POST /api/distance-matrix</code></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 48px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #94a3b8; text-align: center;">
+  Veggie Supply Chain &middot; Batch Analysis Enhancement PRD &middot; v1.0
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,6 @@
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="300" fill="#f3f4f6"/>
+  <rect x="150" y="90" width="100" height="80" rx="8" fill="#e5e7eb"/>
+  <circle cx="200" cy="130" r="28" fill="#d1d5db"/>
+  <text x="200" y="200" text-anchor="middle" fill="#9ca3af" font-size="13" font-family="sans-serif">暂无图片</text>
+</svg>

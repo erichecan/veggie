@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEV-PLAN：P0 + P1 功能实现计划 — Veggie 餐饮供应链</title>
+<style>
+  :root {
+    --green-50: #f0fdf4; --green-100: #dcfce7; --green-200: #bbf7d0;
+    --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d; --green-800: #166534;
+    --red-50: #fef2f2; --red-100: #fee2e2; --red-500: #ef4444; --red-600: #dc2626;
+    --amber-50: #fffbeb; --amber-100: #fef3c7; --amber-500: #f59e0b; --amber-600: #d97706;
+    --blue-50: #eff6ff; --blue-100: #dbeafe; --blue-500: #3b82f6; --blue-600: #2563eb;
+    --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0;
+    --slate-300: #cbd5e1; --slate-400: #94a3b8; --slate-500: #64748b;
+    --slate-600: #475569; --slate-700: #334155; --slate-800: #1e293b; --slate-900: #0f172a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: var(--slate-50); color: var(--slate-800); line-height: 1.7;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+  header {
+    background: linear-gradient(135deg, var(--green-700), var(--green-600));
+    color: #fff; padding: 2.5rem 0; text-align: center;
+  }
+  header h1 { font-size: 2rem; font-weight: 700; margin-bottom: .4rem; }
+  header .subtitle { font-size: .95rem; opacity: .85; }
+  header .meta { font-size: .8rem; opacity: .65; margin-top: .8rem; }
+
+  /* --- TOC --- */
+  nav.toc {
+    background: #fff; border: 1px solid var(--slate-200); border-radius: 10px;
+    padding: 1.5rem 2rem; margin: 2rem 0;
+  }
+  nav.toc h2 { font-size: 1.1rem; margin-bottom: .6rem; color: var(--green-700); }
+  nav.toc ol { padding-left: 1.2rem; }
+  nav.toc li { margin: .25rem 0; }
+  nav.toc a { color: var(--blue-600); text-decoration: none; font-size: .92rem; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  /* --- sections --- */
+  section { background: #fff; border-radius: 10px; border: 1px solid var(--slate-200); padding: 1.8rem 2rem; margin: 1.5rem 0; }
+  section h2 { font-size: 1.35rem; color: var(--green-800); border-bottom: 2px solid var(--green-200); padding-bottom: .4rem; margin-bottom: 1rem; }
+  section h3 { font-size: 1.08rem; color: var(--slate-700); margin: 1.2rem 0 .5rem; }
+  section h4 { font-size: .98rem; color: var(--slate-600); margin: 1rem 0 .4rem; }
+
+  /* --- tables --- */
+  table { width: 100%; border-collapse: collapse; margin: .8rem 0 1.2rem; font-size: .9rem; }
+  th { background: var(--green-50); color: var(--green-800); font-weight: 600; text-align: left;
+       padding: .55rem .7rem; border: 1px solid var(--slate-200); white-space: nowrap; }
+  td { padding: .5rem .7rem; border: 1px solid var(--slate-200); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--slate-50); }
+
+  /* --- badges --- */
+  .badge { display: inline-block; padding: .15rem .5rem; border-radius: 9999px; font-size: .75rem; font-weight: 600; }
+  .badge-p0 { background: var(--red-100); color: var(--red-600); }
+  .badge-p1 { background: var(--amber-100); color: var(--amber-600); }
+  .badge-new { background: var(--blue-100); color: var(--blue-600); }
+  .badge-mod { background: var(--green-100); color: var(--green-700); }
+
+  /* --- code --- */
+  pre { background: var(--slate-800); color: #e2e8f0; border-radius: 8px; padding: 1rem 1.2rem;
+        overflow-x: auto; font-size: .82rem; line-height: 1.6; margin: .6rem 0 1rem; }
+  code { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Menlo', monospace; }
+  p code, li code, td code { background: var(--slate-100); color: var(--red-600); padding: .1rem .35rem; border-radius: 4px; font-size: .85em; }
+
+  /* --- timeline --- */
+  .timeline { position: relative; padding-left: 2rem; }
+  .timeline::before { content: ''; position: absolute; left: .45rem; top: .2rem; bottom: .2rem; width: 2px; background: var(--green-200); }
+  .tl-phase { position: relative; margin-bottom: 1.2rem; }
+  .tl-phase::before {
+    content: ''; position: absolute; left: -1.72rem; top: .35rem;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--green-500); border: 2px solid #fff; box-shadow: 0 0 0 2px var(--green-200);
+  }
+  .tl-phase .phase-title { font-weight: 700; color: var(--green-700); font-size: .95rem; }
+  .tl-phase .phase-est { font-size: .8rem; color: var(--slate-400); margin-left: .5rem; }
+  .tl-phase ul { margin: .3rem 0 0 1rem; font-size: .9rem; }
+  .tl-phase li { margin: .15rem 0; }
+
+  /* --- callout --- */
+  .callout { padding: .8rem 1rem; border-radius: 8px; margin: .8rem 0; font-size: .9rem; }
+  .callout-warn { background: var(--amber-50); border-left: 4px solid var(--amber-500); }
+  .callout-info { background: var(--blue-50); border-left: 4px solid var(--blue-500); }
+  .callout-danger { background: var(--red-50); border-left: 4px solid var(--red-500); }
+
+  /* --- risk table --- */
+  .risk-high { background: var(--red-50); }
+  .risk-med { background: var(--amber-50); }
+
+  /* --- feature card --- */
+  .feature-card { border: 1px solid var(--slate-200); border-radius: 8px; padding: 1.2rem 1.4rem; margin: 1rem 0; }
+  .feature-card h4 { margin-top: 0; font-size: 1.05rem; color: var(--slate-800); }
+  .feature-card .fc-goal { color: var(--slate-500); font-size: .88rem; margin-bottom: .6rem; }
+
+  /* --- footer --- */
+  footer { text-align: center; padding: 2rem 0; color: var(--slate-400); font-size: .8rem; }
+
+  @media (max-width: 640px) {
+    .container { padding: 1rem; }
+    section { padding: 1.2rem; }
+    table { font-size: .8rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <h1>DEV-PLAN：P0 + P1 功能实现计划</h1>
+    <div class="subtitle">Veggie 餐饮供应链管理系统 — 爱尔兰蔬菜批发行</div>
+    <div class="meta">参考文档：BUSINESS-FLOW.md · Veggie-业务流程文档.html · prisma/schema.prisma &nbsp;|&nbsp; 生成日期：2026-05-21</div>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- TOC -->
+<nav class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#overview">功能总览（13 项）</a></li>
+    <li><a href="#infra">现有基础设施盘点</a></li>
+    <li><a href="#schema">数据库 Schema 变更</a></li>
+    <li><a href="#api">新增 / 修改 API 路由</a></li>
+    <li><a href="#pages">新增 / 修改页面</a></li>
+    <li><a href="#rbac">权限系统变更</a></li>
+    <li><a href="#sequence">实现顺序</a></li>
+    <li><a href="#design">各功能详细设计</a></li>
+    <li><a href="#risk">风险评估</a></li>
+    <li><a href="#test">测试验证计划</a></li>
+  </ol>
+</nav>
+
+<!-- 1. Overview -->
+<section id="overview">
+  <h2>一、功能总览（13 项）</h2>
+
+  <h3><span class="badge badge-p0">P0</span> 关键 — 阻塞日常运营</h3>
+  <table>
+    <thead><tr><th>#</th><th>功能</th><th>简述</th></tr></thead>
+    <tbody>
+      <tr><td>P0-1</td><td>批次级缺货预警</td><td>批次分析面板对比需求 vs 库存，缺货商品红色高亮</td></tr>
+      <tr><td>P0-2</td><td>采购模块自动生成采购建议</td><td>根据订单需求 + 库存水位，自动推荐要买什么、买多少、找哪家供应商</td></tr>
+    </tbody>
+  </table>
+
+  <h3><span class="badge badge-p1">P1</span> 重要 — 近期必须上线</h3>
+  <table>
+    <thead><tr><th>#</th><th>功能</th><th>简述</th></tr></thead>
+    <tbody>
+      <tr><td>P1-1</td><td>财务对账模块</td><td>月度/批次生成客户对账单、发票，替换 MOCK 数据</td></tr>
+      <tr><td>P1-2</td><td>客户小程序下单</td><td>餐厅角色自助下单完整体验（商品浏览→加购→提交→订单跟踪）</td></tr>
+      <tr><td>P1-3</td><td>业务员↔客户绑定</td><td>SALES 角色加入权限矩阵，业务员只看自己负责的客户和订单</td></tr>
+      <tr><td>P1-4</td><td>客户↔司机默认绑定</td><td>常配客户自动匹配固定司机/批次</td></tr>
+      <tr><td>P1-5</td><td>订单修改日志 UI</td><td>OrderAuditLog 已有后端，补全前端 UI 展示</td></tr>
+      <tr><td>P1-6</td><td>CONFIRMED 后安全编辑</td><td>定义哪些字段确认后仍可改、哪些需审批</td></tr>
+      <tr><td>P1-7</td><td>核货确认界面</td><td>司机逐项核对货物，标记差异</td></tr>
+      <tr><td>P1-8</td><td>差异处理流程</td><td>核货/配送中数量不符时的标准处理机制</td></tr>
+      <tr><td>P1-9</td><td>拒收/退货处理</td><td>客户现场拒收的标准流程 + 库存回退</td></tr>
+      <tr><td>P1-10</td><td>司机交账确认</td><td>配送结束后现金/转账核对，财务确认</td></tr>
+      <tr><td>P1-11</td><td>缺货自动通知</td><td>缺货时推送通知给相关业务员/客户</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 2. Existing Infra -->
+<section id="infra">
+  <h2>二、现有基础设施盘点</h2>
+  <p style="color:var(--slate-500);font-size:.9rem;margin-bottom:.8rem;">只列出对本次开发有直接帮助的已有能力，避免重复建设。</p>
+  <table>
+    <thead><tr><th>已有能力</th><th>所在位置</th><th>可复用于</th></tr></thead>
+    <tbody>
+      <tr><td><code>OrderAuditLog</code> model + <code>writeLog</code>/<code>diffChanges</code></td><td>schema + <code>lib/action-log.ts</code></td><td>P1-5</td></tr>
+      <tr><td><code>Order.salesman</code> + <code>Customer.salesman</code></td><td>schema</td><td>P1-3</td></tr>
+      <tr><td><code>Customer.commissionRate/commissionFixed</code></td><td>schema</td><td>P1-10</td></tr>
+      <tr><td><code>DriverSlot</code> model + <code>Order.driverSlotId</code></td><td>schema</td><td>P1-4</td></tr>
+      <tr><td><code>ProductSupplierInfo</code> (price/minQty/delay/sequence)</td><td>schema</td><td>P0-2</td></tr>
+      <tr><td><code>PurchaseOrder/Line</code> + <code>GoodsReceipt</code></td><td>schema + API</td><td>P0-2</td></tr>
+      <tr><td><code>Account</code> + <code>JournalEntry</code> + <code>JournalEntryLine</code></td><td>schema + <code>lib/accounting.ts</code></td><td>P1-1</td></tr>
+      <tr><td><code>Invoice</code> (DRAFT→POSTED→PAID→CANCELLED)</td><td>schema + API</td><td>P1-1</td></tr>
+      <tr><td>Trip.restaurants JSON (cargoVerified, returns[], pods[], payment)</td><td>schema + driver trip page</td><td>P1-7/8/9/10</td></tr>
+      <tr><td>ALLOWED_TRANSITIONS 状态机</td><td><code>app/api/orders/[id]/route.ts</code></td><td>P1-6</td></tr>
+      <tr><td><code>Product.qtyOnHand</code> + <code>StockMove</code></td><td>schema + API</td><td>P0-1</td></tr>
+      <tr><td><code>MOCK_HISTORICAL_DEBT</code></td><td><code>lib/mock-data.ts</code></td><td>P1-1 需替换</td></tr>
+      <tr><td><code>can(ability, action, subject)</code> RBAC</td><td><code>lib/permissions.ts</code></td><td>P1-3</td></tr>
+      <tr><td>异常报告 modal (exception reasons + return/exchange)</td><td>driver trip page</td><td>P1-8/9</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 3. Schema -->
+<section id="schema">
+  <h2>三、数据库 Schema 变更</h2>
+  <div class="callout callout-warn">⚠️ 遵循 DB Migration Rules：手写 SQL → <code>prisma migrate resolve --applied</code> → psql 执行。<strong>不用</strong> <code>prisma db push</code> 或 <code>prisma migrate dev</code>。</div>
+
+  <h3>3.1 新增字段</h3>
+  <pre><code>-- Customer 新增默认司机绑定（P1-4）
+ALTER TABLE "Customer" ADD COLUMN "defaultDriverSlotId" TEXT;
+ALTER TABLE "Customer" ADD CONSTRAINT "Customer_defaultDriverSlotId_fkey"
+  FOREIGN KEY ("defaultDriverSlotId") REFERENCES "DriverSlot"("id") ON DELETE SET NULL;
+CREATE INDEX "Customer_defaultDriverSlotId_idx" ON "Customer"("defaultDriverSlotId");
+
+-- Order 新增编辑锁定标记（P1-6）
+ALTER TABLE "Order" ADD COLUMN "editApprovalRequired" BOOLEAN NOT NULL DEFAULT false;
+
+-- Trip 新增交账字段（P1-10）
+ALTER TABLE "Trip" ADD COLUMN "cashCollected" DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE "Trip" ADD COLUMN "onlineCollected" DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE "Trip" ADD COLUMN "settlementStatus" TEXT DEFAULT 'pending';
+ALTER TABLE "Trip" ADD COLUMN "settledAt" TIMESTAMP;
+ALTER TABLE "Trip" ADD COLUMN "settledBy" TEXT;
+ALTER TABLE "Trip" ADD COLUMN "settlementNote" TEXT;</code></pre>
+
+  <h3>3.2 新增 Model</h3>
+
+  <h4>PurchaseSuggestion（P0-2 采购建议）</h4>
+  <pre><code>CREATE TABLE "PurchaseSuggestion" (
+  "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+  "productId" TEXT NOT NULL,
+  "productName" TEXT NOT NULL,
+  "currentStock" DECIMAL(14,3) NOT NULL DEFAULT 0,
+  "demandQty" DECIMAL(14,3) NOT NULL DEFAULT 0,
+  "suggestedQty" DECIMAL(14,3) NOT NULL DEFAULT 0,
+  "supplierId" TEXT,
+  "supplierName" TEXT,
+  "estimatedCost" DECIMAL(12,2),
+  "priority" TEXT NOT NULL DEFAULT 'normal',
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "purchaseOrderId" TEXT,
+  "generatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+  "resolvedAt" TIMESTAMP,
+  "resolvedBy" TEXT,
+  CONSTRAINT "PurchaseSuggestion_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "PurchaseSuggestion_productId_idx" ON "PurchaseSuggestion"("productId");
+CREATE INDEX "PurchaseSuggestion_status_idx" ON "PurchaseSuggestion"("status");
+CREATE INDEX "PurchaseSuggestion_generatedAt_idx" ON "PurchaseSuggestion"("generatedAt");</code></pre>
+
+  <h4>Notification（P1-11 通知）</h4>
+  <pre><code>CREATE TABLE "Notification" (
+  "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+  "userId" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "body" TEXT NOT NULL,
+  "data" JSONB DEFAULT '{}',
+  "read" BOOLEAN NOT NULL DEFAULT false,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+  CONSTRAINT "Notification_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "Notification_userId_idx" ON "Notification"("userId");
+CREATE INDEX "Notification_read_idx" ON "Notification"("read");
+CREATE INDEX "Notification_createdAt_idx" ON "Notification"("createdAt");</code></pre>
+
+  <h4>Statement（P1-1 对账单）</h4>
+  <pre><code>CREATE TABLE "Statement" (
+  "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+  "customerId" TEXT NOT NULL,
+  "customerName" TEXT NOT NULL,
+  "periodStart" DATE NOT NULL,
+  "periodEnd" DATE NOT NULL,
+  "openingBalance" DECIMAL(12,2) NOT NULL DEFAULT 0,
+  "totalSales" DECIMAL(12,2) NOT NULL DEFAULT 0,
+  "totalPayments" DECIMAL(12,2) NOT NULL DEFAULT 0,
+  "closingBalance" DECIMAL(12,2) NOT NULL DEFAULT 0,
+  "orderIds" TEXT[] DEFAULT '{}',
+  "invoiceIds" TEXT[] DEFAULT '{}',
+  "status" TEXT NOT NULL DEFAULT 'draft',
+  "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+  "sentAt" TIMESTAMP,
+  CONSTRAINT "Statement_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "Statement_customerId_idx" ON "Statement"("customerId");
+CREATE INDEX "Statement_periodEnd_idx" ON "Statement"("periodEnd");
+CREATE INDEX "Statement_status_idx" ON "Statement"("status");</code></pre>
+
+  <h3>3.3 Prisma schema 同步</h3>
+  <p>SQL 执行后，同步更新 <code>prisma/schema.prisma</code> 添加对应 model 定义，然后执行 <code>npx prisma generate</code> 重新生成客户端。</p>
+</section>
+
+<!-- 4. API Routes -->
+<section id="api">
+  <h2>四、新增 / 修改 API 路由</h2>
+
+  <h3>新增路由</h3>
+  <table>
+    <thead><tr><th>路由</th><th>方法</th><th>功能</th><th>关联</th></tr></thead>
+    <tbody>
+      <tr><td><code>/api/purchase-suggestions</code></td><td>GET</td><td>查询采购建议列表</td><td><span class="badge badge-p0">P0-2</span></td></tr>
+      <tr><td><code>/api/purchase-suggestions</code></td><td>POST</td><td>触发生成采购建议</td><td><span class="badge badge-p0">P0-2</span></td></tr>
+      <tr><td><code>/api/purchase-suggestions/[id]</code></td><td>PUT</td><td>确认/驳回/转为 PO</td><td><span class="badge badge-p0">P0-2</span></td></tr>
+      <tr><td><code>/api/waves/[id]/shortage</code></td><td>GET</td><td>批次缺货分析数据</td><td><span class="badge badge-p0">P0-1</span></td></tr>
+      <tr><td><code>/api/orders/shortage-check</code></td><td>POST</td><td>批量检查订单库存缺口</td><td><span class="badge badge-p0">P0-1</span></td></tr>
+      <tr><td><code>/api/statements</code></td><td>GET</td><td>对账单列表</td><td><span class="badge badge-p1">P1-1</span></td></tr>
+      <tr><td><code>/api/statements</code></td><td>POST</td><td>生成对账单</td><td><span class="badge badge-p1">P1-1</span></td></tr>
+      <tr><td><code>/api/statements/[id]</code></td><td>GET/PUT</td><td>查看/更新对账单</td><td><span class="badge badge-p1">P1-1</span></td></tr>
+      <tr><td><code>/api/notifications</code></td><td>GET</td><td>当前用户通知列表</td><td><span class="badge badge-p1">P1-11</span></td></tr>
+      <tr><td><code>/api/notifications/[id]</code></td><td>PUT</td><td>标记通知已读</td><td><span class="badge badge-p1">P1-11</span></td></tr>
+      <tr><td><code>/api/notifications/read-all</code></td><td>POST</td><td>全部标记已读</td><td><span class="badge badge-p1">P1-11</span></td></tr>
+      <tr><td><code>/api/trips/[id]/settlement</code></td><td>POST</td><td>司机提交交账</td><td><span class="badge badge-p1">P1-10</span></td></tr>
+      <tr><td><code>/api/trips/[id]/settlement</code></td><td>PUT</td><td>财务确认交账</td><td><span class="badge badge-p1">P1-10</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>修改现有路由</h3>
+  <table>
+    <thead><tr><th>路由</th><th>修改内容</th><th>关联</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /api/orders</code></td><td>自动匹配客户默认司机批次</td><td><span class="badge badge-p1">P1-4</span></td></tr>
+      <tr><td><code>PUT /api/orders/[id]</code></td><td>CONFIRMED 后字段级编辑权限校验</td><td><span class="badge badge-p1">P1-6</span></td></tr>
+      <tr><td><code>PUT /api/orders/[id]</code></td><td>库存变动时触发缺货通知</td><td><span class="badge badge-p1">P1-11</span></td></tr>
+      <tr><td><code>GET /api/orders</code></td><td>支持 salesman 过滤（SALES 角色）</td><td><span class="badge badge-p1">P1-3</span></td></tr>
+      <tr><td><code>GET /api/customers</code></td><td>支持 salesman 过滤</td><td><span class="badge badge-p1">P1-3</span></td></tr>
+      <tr><td><code>PUT /api/trips/[id]</code></td><td>扩展 restaurants JSON：逐项核货 + 差异处理</td><td><span class="badge badge-p1">P1-7/8/9</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 5. Pages -->
+<section id="pages">
+  <h2>五、新增 / 修改页面</h2>
+
+  <h3><span class="badge badge-new">新页面</span></h3>
+  <table>
+    <thead><tr><th>页面路径</th><th>功能</th><th>关联</th></tr></thead>
+    <tbody>
+      <tr><td><code>classic/operator/purchase-suggestions/page.tsx</code></td><td>采购建议列表（一键生成、确认、转PO）</td><td>P0-2</td></tr>
+      <tr><td><code>classic/operator/waves/[id]/shortage/page.tsx</code></td><td>批次缺货分析面板</td><td>P0-1</td></tr>
+      <tr><td><code>classic/finance/statements/page.tsx</code></td><td>对账单列表 + 生成</td><td>P1-1</td></tr>
+      <tr><td><code>classic/finance/statements/[id]/page.tsx</code></td><td>对账单详情</td><td>P1-1</td></tr>
+      <tr><td><code>classic/restaurant/orders/page.tsx</code></td><td>完整自助下单流程（增强）</td><td>P1-2</td></tr>
+      <tr><td><code>classic/driver/trip/[id]/settlement/page.tsx</code></td><td>司机交账界面</td><td>P1-10</td></tr>
+    </tbody>
+  </table>
+
+  <h3><span class="badge badge-mod">修改现有页面</span></h3>
+  <table>
+    <thead><tr><th>页面</th><th>修改内容</th><th>关联</th></tr></thead>
+    <tbody>
+      <tr><td><code>classic/operator/waves/[id]/page.tsx</code></td><td>添加缺货预警标记（红色高亮）</td><td>P0-1</td></tr>
+      <tr><td><code>classic/operator/orders/[id]/page.tsx</code></td><td>审计日志面板 + CONFIRMED 安全编辑逻辑</td><td>P1-5, P1-6</td></tr>
+      <tr><td><code>classic/operator/customers/[id]/page.tsx</code></td><td>默认司机绑定、业务员绑定下拉</td><td>P1-3, P1-4</td></tr>
+      <tr><td><code>classic/finance/page.tsx</code></td><td>替换 MOCK 数据，接真实对账 API</td><td>P1-1</td></tr>
+      <tr><td><code>classic/driver/trip/[id]/page.tsx</code></td><td>核货界面：逐项确认 + 差异标记 + 交账入口</td><td>P1-7/8/9/10</td></tr>
+      <tr><td><code>classic/restaurant/page.tsx</code></td><td>商品浏览 + 购物车 + 下单 + 订单追踪</td><td>P1-2</td></tr>
+      <tr><td>全局 Nav 组件</td><td>通知铃铛 + 未读计数</td><td>P1-11</td></tr>
+    </tbody>
+  </table>
+
+  <h3>新组件</h3>
+  <table>
+    <thead><tr><th>组件</th><th>功能</th><th>关联</th></tr></thead>
+    <tbody>
+      <tr><td><code>components/shared/shortage-badge.tsx</code></td><td>缺货预警标记</td><td>P0-1</td></tr>
+      <tr><td><code>components/shared/notification-bell.tsx</code></td><td>顶部通知铃铛 + 下拉面板</td><td>P1-11</td></tr>
+      <tr><td><code>components/shared/audit-log-timeline.tsx</code></td><td>时间线形式显示订单修改日志</td><td>P1-5</td></tr>
+      <tr><td><code>components/shared/cargo-checklist.tsx</code></td><td>核货逐项确认组件</td><td>P1-7</td></tr>
+      <tr><td><code>components/shared/settlement-form.tsx</code></td><td>交账表单组件</td><td>P1-10</td></tr>
+      <tr><td><code>components/restaurant/product-catalog.tsx</code></td><td>餐厅自助商品目录</td><td>P1-2</td></tr>
+      <tr><td><code>components/restaurant/cart.tsx</code></td><td>购物车组件</td><td>P1-2</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 6. RBAC -->
+<section id="rbac">
+  <h2>六、权限系统变更</h2>
+  <pre><code>// lib/permissions.ts 新增 SALES 角色到 MATRIX
+SALES: {
+  order:    ['read', 'create', 'update'],     // 只看自己负责客户的
+  customer: ['read', 'update'],                // 只看自己负责的
+  product:  ['read'],
+  invoice:  ['read'],
+  pricelist: ['read'],
+}
+
+// Role type 新增 SALES
+export type Role =
+  | 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER'
+  | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE' | 'SALES'
+
+// Subject type 新增
+export type Subject = ... | 'statement' | 'purchase_suggestion' | 'notification'
+
+// Action type 新增
+export type Action = ... | 'settle' | 'approve_edit'</code></pre>
+</section>
+
+<!-- 7. Sequence -->
+<section id="sequence">
+  <h2>七、实现顺序</h2>
+  <div class="timeline">
+    <div class="tl-phase">
+      <span class="phase-title">阶段 1 — 基础设施 + P0</span><span class="phase-est">~2-3 天</span>
+      <ul>
+        <li>1.1 数据库迁移：全部新表 + 新字段</li>
+        <li>1.2 Prisma schema 同步 + generate</li>
+        <li>1.3 权限系统更新（SALES 角色 + 新 Subject/Action）</li>
+        <li>1.4 <strong>P0-1</strong>：缺货预警 API + 批次面板 UI</li>
+        <li>1.5 <strong>P0-2</strong>：采购建议引擎 + 管理 UI</li>
+      </ul>
+    </div>
+    <div class="tl-phase">
+      <span class="phase-title">阶段 2 — P1 核心模块</span><span class="phase-est">~3-4 天</span>
+      <ul>
+        <li>2.1 <strong>P1-1</strong>：财务对账（Statement API + 对账页面 + 替换 MOCK）</li>
+        <li>2.2 <strong>P1-3</strong>：业务员绑定（SALES 过滤 + 客户页面）</li>
+        <li>2.3 <strong>P1-4</strong>：客户↔司机默认绑定（Customer 字段 + 下单自动匹配）</li>
+        <li>2.4 <strong>P1-5</strong>：订单修改日志 UI（timeline 组件 + 订单详情嵌入）</li>
+        <li>2.5 <strong>P1-6</strong>：CONFIRMED 后安全编辑（字段级权限 + 后端校验）</li>
+      </ul>
+    </div>
+    <div class="tl-phase">
+      <span class="phase-title">阶段 3 — 配送与售后</span><span class="phase-est">~2-3 天</span>
+      <ul>
+        <li>3.1 <strong>P1-7</strong>：核货确认界面（cargo-checklist 组件 + Trip API 扩展）</li>
+        <li>3.2 <strong>P1-8</strong>：差异处理流程（数量修正 + 库存回调）</li>
+        <li>3.3 <strong>P1-9</strong>：拒收/退货处理（退货流程 + StockMove RETURN）</li>
+        <li>3.4 <strong>P1-10</strong>：司机交账确认（settlement API + 财务确认）</li>
+      </ul>
+    </div>
+    <div class="tl-phase">
+      <span class="phase-title">阶段 4 — 辅助功能</span><span class="phase-est">~2 天</span>
+      <ul>
+        <li>4.1 <strong>P1-2</strong>：客户小程序下单（商品目录 + 购物车 + 下单流程）</li>
+        <li>4.2 <strong>P1-11</strong>：缺货自动通知（Notification 系统 + 铃铛组件）</li>
+        <li>4.3 全局集成测试 + 种子数据更新</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 8. Feature Design -->
+<section id="design">
+  <h2>八、各功能详细设计</h2>
+
+  <!-- P0-1 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p0">P0-1</span> 批次级缺货预警</h4>
+    <div class="fc-goal">操作员在批次分析面板中一目了然看到哪些商品库存不足。</div>
+    <p><strong>实现思路：</strong></p>
+    <ol>
+      <li>新 API <code>GET /api/waves/[id]/shortage</code>：查询 wave 含的所有 orderIds → 汇总各商品 orderedQty → 对比 <code>Product.qtyOnHand</code> → 返回 <code>{ productId, productName, demandQty, stockQty, shortageQty, shortageRate }[]</code></li>
+      <li>在 <code>operator/waves/[id]</code> 页面嵌入缺货预警面板：缺货行红色背景 + 缺货数量，汇总「缺货商品数 / 总商品数」，可跳转至采购建议</li>
+    </ol>
+    <div class="callout callout-info">不需要 schema 变更：纯计算逻辑，基于已有 Order.lines + Product.qtyOnHand。</div>
+  </div>
+
+  <!-- P0-2 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p0">P0-2</span> 采购模块自动生成采购建议</h4>
+    <div class="fc-goal">系统根据未完成订单需求与库存水位自动推荐采购方案。</div>
+    <p><strong>算法：</strong></p>
+    <pre><code>对于每个 active Product:
+  demand = SUM(orderLines.orderedQty) WHERE order.status IN (CONFIRMED, WAVE_ASSIGNED)
+  available = product.qtyOnHand
+  shortage = max(0, demand - available)
+  IF shortage > 0:
+    找到最优供应商 = ProductSupplierInfo WHERE sequence 最小
+    suggestedQty = max(shortage, supplier.minQty)  // 不低于最小起订量
+    estimatedCost = suggestedQty × supplier.price
+    priority = shortage/demand > 0.5 ? 'urgent' : 'normal'
+    写入 PurchaseSuggestion</code></pre>
+    <p><strong>API：</strong></p>
+    <ul>
+      <li><code>POST /api/purchase-suggestions</code> — 触发生成（清除旧 pending，重新计算）</li>
+      <li><code>GET /api/purchase-suggestions</code> — 列表查询（筛选 status/priority）</li>
+      <li><code>PUT /api/purchase-suggestions/[id]</code> — 确认→自动创建 PO / 驳回 / 调整数量</li>
+    </ul>
+    <p><strong>UI：</strong><code>classic/operator/purchase-suggestions/page.tsx</code> — 表格展示商品名、当前库存、需求量、建议采购量、推荐供应商、预估成本、优先级；操作含批量确认→自动生成 PO、单条编辑、驳回。</p>
+  </div>
+
+  <!-- P1-1 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-1</span> 财务对账模块</h4>
+    <div class="fc-goal">替换 MOCK 数据，实现真实的客户对账。</div>
+    <p><strong>核心逻辑：</strong></p>
+    <ol>
+      <li><code>Statement</code> model 按客户 + 月度区间生成对账快照</li>
+      <li><code>openingBalance</code> = 上期 closingBalance（首期为 0）</li>
+      <li><code>totalSales</code> = 期内该客户 COMPLETED/LOCKED 订单总额</li>
+      <li><code>totalPayments</code> = 期内该客户已收款金额（Trip.restaurants 里的 payment 汇总）</li>
+      <li><code>closingBalance</code> = openingBalance + totalSales - totalPayments</li>
+    </ol>
+    <p>Finance 页面替换 <code>MOCK_HISTORICAL_DEBT</code>，DrillPanel 展示各客户对账详情，支持按月度生成、导出、标记已发送。</p>
+  </div>
+
+  <!-- P1-2 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-2</span> 客户小程序下单</h4>
+    <div class="fc-goal">餐厅角色完整自助下单体验。</div>
+    <ol>
+      <li>商品目录组件：分类浏览、搜索、按客户价格表显示专属价格</li>
+      <li>购物车组件：增减数量、删除、小计自动计算</li>
+      <li>提交订单：调用 <code>POST /api/orders</code>，自动带入 restaurantId/pricelistId/salesman</li>
+      <li>订单追踪：查看自己的订单状态变更历史</li>
+      <li>下单截止时间提示：05:00 截单倒计时</li>
+    </ol>
+  </div>
+
+  <!-- P1-3 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-3</span> 业务员↔客户绑定</h4>
+    <div class="fc-goal">SALES 角色只看自己负责的客户和订单。</div>
+    <p>已有基础：<code>Customer.salesman</code> 和 <code>Order.salesman</code> 字段已存在。</p>
+    <ol>
+      <li>权限矩阵添加 SALES 角色</li>
+      <li><code>GET /api/orders</code> 增加后端过滤：SALES 角色自动加 <code>WHERE salesman = user.name</code></li>
+      <li><code>GET /api/customers</code> 同理</li>
+      <li>客户编辑页面：增加业务员下拉框</li>
+      <li>订单创建时自动快照 <code>Customer.salesman → Order.salesman</code></li>
+    </ol>
+  </div>
+
+  <!-- P1-4 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-4</span> 客户↔司机默认绑定</h4>
+    <div class="fc-goal">常配客户下单时自动分配到固定司机批次。</div>
+    <ol>
+      <li><code>Customer.defaultDriverSlotId</code> 新字段（外键→DriverSlot）</li>
+      <li>客户编辑页面增加「默认配送批次」下拉</li>
+      <li><code>POST /api/orders</code>：创建订单时若客户有 defaultDriverSlotId，自动设置 <code>order.driverSlotId</code></li>
+      <li>操作员分配批次时，已有默认绑定的订单自动预填</li>
+    </ol>
+  </div>
+
+  <!-- P1-5 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-5</span> 订单修改日志 UI</h4>
+    <div class="fc-goal">在订单详情页展示完整修改历史。</div>
+    <p>已有基础：<code>OrderAuditLog</code> model + <code>writeLog/diffChanges</code> + <code>GET /api/orders/[id]/audit</code> API。</p>
+    <ol>
+      <li>新组件 <code>audit-log-timeline.tsx</code>：时间线形式展示每条记录的操作人、操作时间、操作类型、字段变更（旧值→新值）、行级变更</li>
+      <li>嵌入 <code>operator/orders/[id]</code> 页面，作为可折叠面板</li>
+    </ol>
+  </div>
+
+  <!-- P1-6 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-6</span> CONFIRMED 后安全编辑</h4>
+    <div class="fc-goal">订单确认后，限制可修改的字段。</div>
+    <table>
+      <thead><tr><th>级别</th><th>字段</th><th>CONFIRMED 后行为</th></tr></thead>
+      <tbody>
+        <tr><td>自由编辑</td><td>internalNote, deliveryDate</td><td>任何人可改</td></tr>
+        <tr><td>受限编辑</td><td>订单行数量、单价</td><td>OPERATOR/BOSS 可改，自动写 audit log</td></tr>
+        <tr><td>需审批</td><td>新增/删除订单行、修改客户</td><td>仅 BOSS</td></tr>
+        <tr><td>禁止</td><td>status 回退到 PENDING</td><td>仅 BOSS 可执行"退回"</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- P1-7 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-7</span> 核货确认界面</h4>
+    <div class="fc-goal">司机逐项核对货物，精确标记每个商品的实际数量。</div>
+    <ol>
+      <li><code>cargo-checklist.tsx</code> 组件：每行一个商品——名称、订购数量、实收数量（可输入），数量一致绿色 ✓，不一致红色高亮，底部汇总已核/总数</li>
+      <li>Trip API 扩展：restaurants 每个 item 增加 <code>verifiedQty</code> 字段</li>
+      <li>全部核完才允许标记 <code>cargoVerified = true</code></li>
+    </ol>
+  </div>
+
+  <!-- P1-8 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-8</span> 差异处理流程</h4>
+    <div class="fc-goal">核货或配送中发现数量不符时的标准处理。</div>
+    <ol>
+      <li>核货发现差异 → 自动创建差异记录（存入 <code>restaurants[].discrepancies</code>）</li>
+      <li>差异类型：多货、少货、破损</li>
+      <li>少货 → 自动通知操作员补货或修改订单数量</li>
+      <li>多货 → 标记退回仓库</li>
+      <li>差异确认后 → 自动调整 <code>OrderLine.deliveredQty</code>、触发 <code>StockMove</code></li>
+    </ol>
+  </div>
+
+  <!-- P1-9 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-9</span> 拒收/退货处理</h4>
+    <div class="fc-goal">客户现场拒收的标准流程 + 库存回退。</div>
+    <ol>
+      <li>退货后自动创建 <code>StockMove(type=RETURN)</code>，库存回退</li>
+      <li>退货金额自动从 Trip.totalPayment 中扣除</li>
+      <li>退货原因标准化 + 可拍照存证（已有 pods[] 机制）</li>
+      <li>退货记录同步到 Order 的 deliveredQty</li>
+    </ol>
+  </div>
+
+  <!-- P1-10 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-10</span> 司机交账确认</h4>
+    <div class="fc-goal">配送结束后，司机上报收款明细，财务核对确认。</div>
+    <p><strong>司机端：</strong>Trip 完成后进入交账页面 → 自动汇总各餐厅现金/转账金额 → 司机确认总额，上传收据照片 → 提交交账</p>
+    <p><strong>财务端：</strong>交账列表页面 → 查看各司机待核对的 Trip → 对比系统应收 vs 司机上报 → 确认/驳回</p>
+  </div>
+
+  <!-- P1-11 -->
+  <div class="feature-card">
+    <h4><span class="badge badge-p1">P1-11</span> 缺货自动通知</h4>
+    <div class="fc-goal">缺货预警触发时推送通知。</div>
+    <ol>
+      <li><code>Notification</code> model 存储通知</li>
+      <li>触发点：P0-1 缺货分析发现缺货 → 通知负责该客户的 SALES 用户；操作员手动标记缺货 → 通知对应客户的 RESTAURANT 用户</li>
+      <li>前端通知铃铛组件：轮询 <code>/api/notifications</code>，显示未读计数 + 下拉面板</li>
+      <li>通知类型：shortage（缺货）、order_update（订单变更）、settlement（交账提醒）</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 9. Risk -->
+<section id="risk">
+  <h2>九、风险评估</h2>
+  <table>
+    <thead><tr><th>风险</th><th>影响</th><th>缓解措施</th></tr></thead>
+    <tbody>
+      <tr class="risk-high"><td>DB 迁移与 TMS 共享库冲突</td><td>新表/字段可能影响 TMS 查询</td><td>所有新表名前缀明确，字段加 NULL default</td></tr>
+      <tr class="risk-med"><td>Trip.restaurants JSON 结构膨胀</td><td>核货、差异、退货数据嵌套层级深</td><td>定义清晰的 TypeScript interface，存储前验证</td></tr>
+      <tr class="risk-med"><td>SALES 角色过滤遗漏</td><td>未加过滤的 API 可能泄露其他业务员的数据</td><td>每个 API 统一检查，写集成测试</td></tr>
+      <tr><td>采购建议算法初期不准</td><td>首批建议可能偏大偏小</td><td>设计为「建议→人工确认→生成 PO」，不自动下单</td></tr>
+      <tr><td>通知轮询频率</td><td>频繁轮询增加 DB 压力</td><td>默认 30s 间隔，后续可升级 SSE/WebSocket</td></tr>
+      <tr><td>客户下单截止时间时区</td><td>爱尔兰时区 GMT/IST 切换</td><td>服务端统一用 UTC，前端按 Europe/Dublin 展示</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 10. Test -->
+<section id="test">
+  <h2>十、测试验证计划</h2>
+  <p>每个阶段完成后执行：</p>
+  <ol>
+    <li><strong>API 测试</strong>：curl 验证每个新/修改端点的 200 / 401 / 403 / 404 / 500 场景</li>
+    <li><strong>权限测试</strong>：用不同角色 token 访问受限 API，确认隔离</li>
+    <li><strong>数据一致性</strong>：缺货数量 = 需求 − 库存（不允许负库存）</li>
+    <li><strong>UI 走查</strong>：每个新页面/组件可交互、无死按钮</li>
+    <li><strong>回归测试</strong>：现有订单流程（PENDING→COMPLETED）不受影响</li>
+  </ol>
+</section>
+
+</div>
+
+<footer>
+  Veggie 餐饮供应链管理系统 &mdash; DEV-PLAN &copy; 2026
+</footer>
+
+</body>
+</html>

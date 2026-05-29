@@ -1,0 +1,362 @@
+{
+  "nav": {
+    "brand": "🥬 Veggie Wholesale",
+    "changePwd": "Change Password",
+    "logout": "Sign Out",
+    "switchLang": "中文",
+    "pwdDialog": {
+      "title": "Change Password",
+      "currentPwd": "Current Password",
+      "newPwd": "New Password",
+      "newPwdHint": "(min. 6 characters)",
+      "confirmPwd": "Confirm New Password",
+      "currentPwdPlaceholder": "Enter current password",
+      "newPwdPlaceholder": "Enter new password",
+      "confirmPwdPlaceholder": "Re-enter new password",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "saving": "Saving…"
+    },
+    "pwdErrors": {
+      "currentRequired": "Please enter your current password",
+      "tooShort": "New password must be at least 6 characters",
+      "mismatch": "New passwords do not match",
+      "success": "Password updated. Please sign in again.",
+      "failed": "Update failed"
+    }
+  },
+  "roles": {
+    "operator": "🏭 Operator",
+    "restaurant": "🍜 Restaurant",
+    "picker": "📦 Picker",
+    "sorter": "🗂️ Sorter",
+    "driver": "🚚 Driver",
+    "boss": "👑 Boss",
+    "finance": "💰 Finance",
+    "warehouse": "🏗️ Warehouse"
+  },
+  "enter": {
+    "title": "Veggie Wholesale System",
+    "subtitle": "Supply Chain Demo",
+    "demoTitle": "Demo Accounts — One-Click Login",
+    "manualTitle": "Or enter manually",
+    "emailPlaceholder": "Email",
+    "passwordPlaceholder": "Password",
+    "loginBtn": "Sign In",
+    "loggingIn": "Signing in...",
+    "networkError": "Network error. Please try again.",
+    "roles": {
+      "operator": "Operator",
+      "restaurant": "Restaurant",
+      "picker": "Picker",
+      "sorter": "Sorter",
+      "driver": "Driver",
+      "boss": "Boss",
+      "finance": "Finance",
+      "warehouse": "Warehouse"
+    }
+  },
+  "operator": {
+    "links": {
+      "placeOrder": "Place Order",
+      "products": "Products",
+      "customers": "Customers",
+      "orders": "Orders",
+      "waves": "Pick Waves",
+      "sorting": "Sorting",
+      "trips": "Deliveries",
+      "pricing": "Pricing",
+      "pricelists": "Price Lists",
+      "invoices": "Invoices",
+      "returns": "Returns",
+      "uoms": "Units of Measure",
+      "users": "👥 Users",
+      "home": "Home",
+      "flow": "Business Flow",
+      "help": "Help"
+    },
+    "sorting": {
+      "list": {
+        "title": "Sorting",
+        "wavesCount": "{count} waves pending sorting (picked / sorting)",
+        "loading": "Loading...",
+        "noData": "No waves pending sorting",
+        "noDataHint": "Waves appear here once picking is complete",
+        "createdAt": "Created:",
+        "restaurants": "restaurants",
+        "orders": "orders",
+        "picked": "pcs picked",
+        "viewDetail": "View sorting details →",
+        "description": "Sorting: split picked goods by restaurant after picking is done. Operators dispatch here; sorters work in /sorter."
+      },
+      "detail": {
+        "breadcrumb": "Sorting",
+        "startSorting": "Start Sorting",
+        "finishSorting": "Confirm Sorting Complete",
+        "loading": "Loading...",
+        "restaurantCount": "Restaurants",
+        "orderCount": "Orders",
+        "totalItems": "Total Items",
+        "createdAt": "Created",
+        "byRestaurant": "Split by Restaurant",
+        "noOrders": "No orders in this wave (please check data)",
+        "orders": "orders",
+        "lines": "lines",
+        "pieces": "pcs",
+        "startedMsg": "Sorting started",
+        "completedMsg": "Sorting complete — ready for driver",
+        "th": {
+          "product": "Product",
+          "spec": "Spec",
+          "qty": "Qty",
+          "price": "Unit Price",
+          "subtotal": "Subtotal"
+        },
+        "description": "Operator's sorting view — grouped by restaurant to show what goes in each box. Sorters execute this list in /sorter."
+      }
+    },
+    "orders": {
+      "title": "Order Management",
+      "tabs": {
+        "all": "All",
+        "pending": "Pending",
+        "wave_assigned": "Wave Assigned",
+        "in_delivery": "In Delivery",
+        "completed": "Completed",
+        "cancelled": "Cancelled",
+        "to_invoice": "To Invoice"
+      },
+      "generateWave": "Generate Pick Wave",
+      "generating": "Generating…",
+      "noSelected": "Please select orders with 'Pending' status first",
+      "waveSuccess": "Pick wave generated",
+      "waveError": "Generation failed",
+      "loadError": "Failed to load data",
+      "th": {
+        "check": "",
+        "time": "Order Time",
+        "restaurant": "Restaurant",
+        "items": "Items",
+        "amount": "Amount",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "pieces": "pcs",
+      "viewDetail": "View"
+    },
+    "products": {
+      "title": "Product Management",
+      "searchPlaceholder": "Search products…",
+      "statusAll": "All Status",
+      "statusActive": "Active",
+      "statusArchived": "Archived",
+      "newProduct": "New Product",
+      "loadError": "Failed to load products",
+      "th": {
+        "product": "Product",
+        "category": "Category",
+        "price": "Cost Price",
+        "listPrice": "List Price",
+        "status": "Status",
+        "actions": ""
+      },
+      "edit": "Edit",
+      "total": "{total} products total"
+    },
+    "customers": {
+      "title": "Customer Management",
+      "newCustomer": "New Customer",
+      "searchPlaceholder": "Search customers…",
+      "loadError": "Failed to load customers",
+      "th": {
+        "name": "Name",
+        "email": "Email",
+        "creditLimit": "Credit Limit",
+        "actions": ""
+      },
+      "edit": "Edit",
+      "noData": "No customers yet"
+    },
+    "waves": {
+      "title": "Pick Waves",
+      "noData": "No waves yet",
+      "zones": "zones",
+      "items": "SKUs",
+      "done": "done"
+    },
+    "trips": {
+      "title": "Deliveries",
+      "noData": "No trips yet",
+      "newTrip": "New Trip",
+      "restaurants": "restaurants",
+      "delivered": "delivered"
+    },
+    "invoices": {
+      "title": "Invoice Management",
+      "newInvoice": "Create Invoice",
+      "noData": "No invoices yet"
+    },
+    "users": {
+      "title": "User Management",
+      "newUser": "New User",
+      "noData": "No users yet"
+    }
+  },
+  "restaurant": {
+    "links": {
+      "shop": "Shop",
+      "orders": "My Orders"
+    },
+    "shop": {
+      "title": "Shop",
+      "cart": "🛒 Cart",
+      "addToCart": "Add to Cart",
+      "cartTitle": "Cart",
+      "emptyCart": "Your cart is empty",
+      "submit": "Place Order",
+      "confirmTitle": "Confirm Payment",
+      "kinds": "items,",
+      "pieces": "pcs total",
+      "demoNote": "🔔 Demo mode · Clicking confirm simulates a successful payment",
+      "payOnline": "💳 Online Payment",
+      "payCash": "💵 Pay on Delivery",
+      "cancel": "Cancel",
+      "confirmPay": "Confirm Payment",
+      "paying": "Submitting…",
+      "success": "Payment successful! Order placed.",
+      "addSuccess": "Added to cart",
+      "total": "Total",
+      "orderError": "Order failed. Please try again."
+    },
+    "orders": {
+      "title": "My Orders",
+      "noData": "No orders yet",
+      "detailTitle": "Order Details",
+      "orderId": "Order ID",
+      "orderTime": "Order Time",
+      "deliveryStatus": "Delivery Status",
+      "itemDetail": "Items",
+      "total": "Total"
+    }
+  },
+  "picker": {
+    "links": {
+      "list": "Pick List"
+    },
+    "list": {
+      "title": "Pick List",
+      "noData": "No waves pending",
+      "zones": "zones",
+      "items": "SKUs",
+      "done": "done"
+    },
+    "wave": {
+      "title": "Pick Details",
+      "complete": "Complete Picking",
+      "completing": "Submitting…",
+      "back": "Back to List"
+    }
+  },
+  "sorter": {
+    "links": {
+      "list": "Sort Tasks"
+    },
+    "list": {
+      "title": "Sort Task List",
+      "noData": "No sorting tasks · Waiting for pickers to complete",
+      "restaurants": "restaurants",
+      "items": "items"
+    },
+    "sort": {
+      "title": "Sort Details",
+      "executing": "Sorting Execute",
+      "complete": "Complete Sorting",
+      "completing": "Completing…",
+      "back": "Back to List",
+      "noWave": "Wave not found",
+      "confirmIncomplete": "{count} restaurants not yet done, confirm submit?",
+      "done": "Sorting complete! Driver notified.",
+      "markDone": "Mark Done",
+      "markedDone": "✓ Packed",
+      "total": "Total",
+      "th": {
+        "product": "Product",
+        "spec": "Spec",
+        "qty": "Qty",
+        "subtotal": "Subtotal"
+      }
+    }
+  },
+  "driver": {
+    "links": {
+      "trips": "My Trips"
+    },
+    "list": {
+      "title": "My Trips",
+      "noData": "No trips assigned yet",
+      "restaurants": "restaurants",
+      "delivered": "delivered",
+      "collected": "collected"
+    },
+    "trip": {
+      "title": "Trip Details",
+      "complete": "Confirm Delivery",
+      "back": "Back to List",
+      "collectCash": "Collect Payment"
+    }
+  },
+  "boss": {
+    "links": {
+      "overview": "Overview"
+    },
+    "page": {
+      "title": "Business Overview"
+    }
+  },
+  "finance": {
+    "links": {
+      "overview": "Overview"
+    },
+    "page": {
+      "title": "Finance Overview"
+    }
+  },
+  "warehouse": {
+    "links": {
+      "overview": "Overview"
+    },
+    "page": {
+      "title": "Warehouse Overview"
+    }
+  },
+  "common": {
+    "loading": "Loading…",
+    "noData": "No data",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "edit": "Edit",
+    "delete": "Delete",
+    "back": "Back",
+    "close": "Close",
+    "search": "Search",
+    "status": {
+      "pending": "Pending",
+      "wave_assigned": "Wave Assigned",
+      "picking": "Picking",
+      "picked": "Picked",
+      "sorting": "Sorting",
+      "sorted": "Sorted",
+      "in_delivery": "In Delivery",
+      "completed": "Completed",
+      "delivered": "Delivered",
+      "cancelled": "Cancelled",
+      "active": "Active",
+      "archived": "Archived",
+      "draft": "Draft",
+      "paid": "Paid",
+      "unpaid": "Unpaid"
+    }
+  }
+}

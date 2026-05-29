@@ -1,0 +1,4 @@
+{"type":"server-started","port":54460,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:54460","screen_dir":"/Volumes/datacenter/ericworkspace/supply/veggie-demo/.superpowers/brainstorm/20964-1776554161/content","state_dir":"/Volumes/datacenter/ericworkspace/supply/veggie-demo/.superpowers/brainstorm/20964-1776554161/state"}
+{"type":"screen-added","file":"/Volumes/datacenter/ericworkspace/supply/veggie-demo/.superpowers/brainstorm/20964-1776554161/content/login-split.html"}
+{"type":"screen-added","file":"/Volumes/datacenter/ericworkspace/supply/veggie-demo/.superpowers/brainstorm/20964-1776554161/content/odoo-table-preview.html"}
+{"type":"server-stopped","reason":"idle timeout"}

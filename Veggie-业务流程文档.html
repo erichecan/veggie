@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veggie 餐饮供应链管理系统 — 完整业务流程文档</title>
+<style>
+  :root {
+    --green-50: #f0fdf4;
+    --green-100: #dcfce7;
+    --green-200: #bbf7d0;
+    --green-300: #86efac;
+    --green-400: #4ade80;
+    --green-500: #22c55e;
+    --green-600: #16a34a;
+    --green-700: #15803d;
+    --green-800: #166534;
+    --green-900: #14532d;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-500: #6b7280;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+    --blue-50: #eff6ff;
+    --blue-100: #dbeafe;
+    --blue-500: #3b82f6;
+    --blue-600: #2563eb;
+    --red-50: #fef2f2;
+    --red-100: #fee2e2;
+    --red-500: #ef4444;
+    --red-600: #dc2626;
+    --amber-50: #fffbeb;
+    --amber-100: #fef3c7;
+    --amber-500: #f59e0b;
+    --amber-600: #d97706;
+    --purple-50: #faf5ff;
+    --purple-100: #f3e8ff;
+    --purple-500: #a855f7;
+    --purple-600: #9333ea;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+    color: var(--gray-800);
+    background: var(--gray-50);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  /* ========= COVER ========= */
+  .cover {
+    background: linear-gradient(135deg, var(--green-700) 0%, var(--green-500) 50%, #34d399 100%);
+    color: white;
+    padding: 80px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 60%);
+  }
+  .cover h1 {
+    font-size: 3em;
+    font-weight: 800;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .cover .subtitle {
+    font-size: 1.25em;
+    opacity: 0.9;
+    font-weight: 400;
+    position: relative;
+  }
+  .cover .meta {
+    margin-top: 32px;
+    font-size: 0.9em;
+    opacity: 0.7;
+    position: relative;
+  }
+
+  /* ========= NAV / TOC ========= */
+  .toc {
+    max-width: 900px;
+    margin: 24px auto;
+    padding: 0 24px;
+  }
+  .toc h2 {
+    font-size: 1.1em;
+    color: var(--green-700);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--green-200);
+  }
+  .toc-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+  }
+  .toc-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: white;
+    border-radius: 14px;
+    border: 1px solid var(--gray-200);
+    text-decoration: none;
+    color: var(--gray-700);
+    font-size: 0.82em;
+    transition: all 0.2s;
+  }
+  .toc-item:hover {
+    border-color: var(--green-400);
+    background: var(--green-50);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .toc-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--green-100);
+    color: var(--green-700);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.75em;
+    flex-shrink: 0;
+  }
+
+  /* ========= MAIN CONTENT ========= */
+  .content {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px 60px;
+  }
+
+  /* Section */
+  .section {
+    margin-top: 48px;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .section-header {
+    background: linear-gradient(135deg, var(--green-600), var(--green-500));
+    color: white;
+    padding: 20px 28px;
+  }
+  .section-header h2 {
+    font-size: 1.5em;
+    font-weight: 700;
+  }
+  .section-header .section-desc {
+    opacity: 0.85;
+    font-size: 0.9em;
+    margin-top: 4px;
+  }
+  .section-body {
+    padding: 28px;
+  }
+
+  /* Sub-section */
+  .subsection {
+    margin-top: 28px;
+  }
+  .subsection:first-child { margin-top: 0; }
+  .subsection h3 {
+    font-size: 1.15em;
+    color: var(--green-700);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--green-100);
+  }
+
+  /* Voice quote */
+  .voice-quote {
+    background: var(--amber-50);
+    border-left: 4px solid var(--amber-500);
+    padding: 14px 18px;
+    margin: 12px 0;
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+    color: var(--gray-700);
+    font-size: 0.95em;
+  }
+  .voice-quote::before {
+    content: "🎙 客户语音原文：";
+    display: block;
+    font-style: normal;
+    font-weight: 600;
+    color: var(--amber-600);
+    margin-bottom: 6px;
+    font-size: 0.85em;
+  }
+
+  /* Info box */
+  .info-box {
+    background: var(--blue-50);
+    border: 1px solid var(--blue-100);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  .info-box h4 {
+    color: var(--blue-600);
+    font-size: 0.95em;
+    margin-bottom: 8px;
+  }
+  .info-box ul {
+    padding-left: 20px;
+    color: var(--gray-700);
+  }
+  .info-box li { margin-bottom: 4px; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.92em;
+  }
+  thead th {
+    background: var(--gray-100);
+    color: var(--gray-700);
+    font-weight: 600;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 2px solid var(--gray-200);
+  }
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--gray-100);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: var(--gray-50); }
+
+  /* Status badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 600;
+  }
+  .badge-done { background: var(--green-100); color: var(--green-700); }
+  .badge-partial { background: var(--amber-100); color: var(--amber-600); }
+  .badge-missing { background: var(--red-100); color: var(--red-600); }
+  .badge-p0 { background: var(--red-100); color: var(--red-600); }
+  .badge-p1 { background: var(--amber-100); color: var(--amber-600); }
+  .badge-p2 { background: var(--blue-100); color: var(--blue-600); }
+  .badge-p3 { background: var(--purple-100); color: var(--purple-600); }
+
+  /* Role cards */
+  .role-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+    margin: 16px 0;
+  }
+  .role-card {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    transition: transform 0.2s;
+  }
+  .role-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .role-icon { font-size: 2em; margin-bottom: 8px; }
+  .role-name { font-weight: 700; color: var(--gray-800); font-size: 1em; }
+  .role-code { font-size: 0.75em; color: var(--gray-500); font-family: monospace; }
+  .role-desc { font-size: 0.85em; color: var(--gray-600); margin-top: 6px; line-height: 1.5; }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    padding-left: 40px;
+    margin: 20px 0;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, var(--green-400), var(--green-200));
+    border-radius: 2px;
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+    padding: 14px 18px;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -33px;
+    top: 18px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--green-500);
+    border: 3px solid white;
+    box-shadow: 0 0 0 2px var(--green-300);
+  }
+  .timeline-time {
+    font-weight: 700;
+    color: var(--green-700);
+    font-size: 0.9em;
+  }
+  .timeline-title {
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .timeline-desc {
+    color: var(--gray-600);
+    font-size: 0.9em;
+    margin-top: 4px;
+  }
+
+  /* Flow diagram */
+  .flow-diagram {
+    background: var(--gray-800);
+    color: #e5e7eb;
+    padding: 24px;
+    border-radius: 10px;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.82em;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 16px 0;
+  }
+  .flow-diagram .highlight { color: var(--green-400); font-weight: 700; }
+  .flow-diagram .arrow { color: var(--amber-400); }
+  .flow-diagram .status { color: #93c5fd; }
+  .flow-diagram .cancel { color: var(--red-500); }
+
+  /* Data model */
+  .data-model {
+    background: var(--gray-900);
+    color: #d1d5db;
+    padding: 24px;
+    border-radius: 10px;
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 0.82em;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 16px 0;
+  }
+  .data-model .entity { color: #67e8f9; font-weight: 700; }
+  .data-model .field { color: #fde68a; }
+  .data-model .relation { color: var(--green-400); }
+  .data-model .comment { color: var(--gray-500); font-style: italic; }
+
+  /* Priority section */
+  .priority-group {
+    margin: 20px 0;
+    padding: 20px;
+    border-radius: 10px;
+  }
+  .priority-group.p0 { background: var(--red-50); border: 1px solid var(--red-100); }
+  .priority-group.p1 { background: var(--amber-50); border: 1px solid var(--amber-100); }
+  .priority-group.p2 { background: var(--blue-50); border: 1px solid var(--blue-100); }
+  .priority-group.p3 { background: var(--purple-50); border: 1px solid var(--purple-100); }
+  .priority-group h4 { margin-bottom: 12px; }
+
+  /* Tech stack */
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .tech-card {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+  }
+  .tech-card .tech-name { font-weight: 700; color: var(--gray-800); }
+  .tech-card .tech-desc { font-size: 0.85em; color: var(--gray-500); margin-top: 4px; }
+
+  /* Print styles */
+  @media print {
+    body { background: white; font-size: 12px; }
+    .cover { padding: 40px 20px; }
+    .cover h1 { font-size: 2em; }
+    .section { break-inside: avoid; box-shadow: none; }
+    .toc-item:hover { transform: none; box-shadow: none; }
+  }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .cover { padding: 48px 20px; }
+    .cover h1 { font-size: 2em; }
+    .section-body { padding: 16px; }
+    .role-grid { grid-template-columns: repeat(2, 1fr); }
+    .tech-grid { grid-template-columns: repeat(2, 1fr); }
+    .timeline { padding-left: 30px; }
+  }
+
+  /* Separator */
+  .separator {
+    height: 1px;
+    background: var(--gray-200);
+    margin: 24px 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== COVER ===================== -->
+<div class="cover">
+  <h1>Veggie 餐饮供应链管理系统</h1>
+  <div class="subtitle">爱尔兰蔬菜批发行 · 从接单到配送的全流程数字化管理</div>
+  <div class="meta">基于客户语音描述及系统实现 | 2026年5月</div>
+</div>
+
+<!-- ===================== TOC ===================== -->
+<div class="toc">
+  <h2>目录</h2>
+  <div class="toc-grid">
+    <a class="toc-item" href="#timeline"><span class="toc-num">1</span>日常运营时间线</a>
+    <a class="toc-item" href="#ordering"><span class="toc-num">2</span>接单阶段</a>
+    <a class="toc-item" href="#confirm"><span class="toc-num">3</span>确认阶段</a>
+    <a class="toc-item" href="#batch"><span class="toc-num">4</span>排批次与分配司机</a>
+    <a class="toc-item" href="#stock"><span class="toc-num">5</span>检查库存与缺货处理</a>
+    <a class="toc-item" href="#print"><span class="toc-num">6</span>打印阶段</a>
+    <a class="toc-item" href="#picking"><span class="toc-num">7</span>仓库拣货</a>
+    <a class="toc-item" href="#sorting"><span class="toc-num">8</span>司机分货核货装车</a>
+    <a class="toc-item" href="#delivery"><span class="toc-num">9</span>配送</a>
+    <a class="toc-item" href="#finance"><span class="toc-num">10</span>收款与对账</a>
+    <a class="toc-item" href="#purchase"><span class="toc-num">11</span>采购与入库</a>
+    <a class="toc-item" href="#boss"><span class="toc-num">12</span>老板视角</a>
+    <a class="toc-item" href="#lifecycle"><span class="toc-num">13</span>订单全生命周期</a>
+    <a class="toc-item" href="#datamodel"><span class="toc-num">14</span>核心数据模型</a>
+    <a class="toc-item" href="#roles"><span class="toc-num">15</span>系统角色</a>
+  </div>
+</div>
+
+<!-- ===================== CONTENT ===================== -->
+<div class="content">
+
+  <!-- ===== 1. TIMELINE ===== -->
+  <div class="section" id="timeline">
+    <div class="section-header">
+      <h2>一、日常运营时间线</h2>
+      <div class="section-desc">从下午接单到次日配送的完整一天工作流程</div>
+    </div>
+    <div class="section-body">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-time">14:00 ~ 次日 05:00</div>
+          <div class="timeline-title">客户下单 / 业务员录单</div>
+          <div class="timeline-desc">餐厅通过小程序、微信、WhatsApp、电话等渠道下单，业务员在系统中逐条录入商品、数量、单价，订单状态为 PENDING</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-time">05:00</div>
+          <div class="timeline-title">截单</div>
+          <div class="timeline-desc">系统自动截单，不再接收新的报价单</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-time">05:00 ~ 07:00</div>
+          <div class="timeline-title">操作员确认订单 · 排批次 · 分配司机 · 检查库存</div>
+          <div class="timeline-desc">操作员逐单审核，确认后状态变 CONFIRMED；创建 DriverSlot 配送批次绑定司机；检查库存是否充足，处理缺货</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-time">07:00</div>
+          <div class="timeline-title">打印拣货单 · 送货单 · 汇总单</div>
+          <div class="timeline-desc">三种单据：拣货单（按商品汇总给拣货员）、送货单（按客户分给司机和客户）、汇总单（按批次汇总），大货 BULK 和散货 LOOSE 分开打印</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-time">07:00 ~ 09:00</div>
+          <div class="timeline-title">仓库拣货</div>
+          <div class="timeline-desc">拣货员按拣货单从货架取货，按商品汇总提高效率，大货散货分开拣对应不同区域</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-time">08:00 ~ 09:00</div>
+          <div class="timeline-title">司机分货 · 核货 · 装车</div>
+          <div class="timeline-desc">司机自己按送货单将货物按客户分装（没有专门分货员），核对数量确认无误后装车</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-time">09:00 ~ 下午</div>
+          <div class="timeline-title">按路线配送 · 客户签收</div>
+          <div class="timeline-desc">司机按路线依次配送，客户核对签收，退换货当场处理，司机当场收款（现金客户）</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-time">配送结束后</div>
+          <div class="timeline-title">收款对账 · 财务核销</div>
+          <div class="timeline-desc">司机交账，财务定期对账，月结客户统一结算</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 2. ORDERING ===== -->
+  <div class="section" id="ordering">
+    <div class="section-header">
+      <h2>二、接单阶段（14:00 ~ 次日 05:00）</h2>
+      <div class="section-desc">餐厅下单 → 业务员录入 → 系统生成报价单</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        我们从接到订单开始，也就是从微信、WhatsApp、打电话、或者用油烟机（客户自助终端）收到订单。有些客户会通过微信群发语音或者发图片下单，业务员需要手工整理。
+      </div>
+
+      <div class="subsection">
+        <h3>客户下单渠道</h3>
+        <div class="info-box">
+          <h4>📱 多渠道接单</h4>
+          <ul>
+            <li>餐馆客户通过微信群、WhatsApp、电话、自助终端等多种渠道下单</li>
+            <li>有专门的业务员（Sales）负责对接客户，一个业务员对接多个客户</li>
+            <li>部分客户有固定的下单模式（每天差不多的品种和数量）</li>
+            <li>系统支持客户专属报价单（Pricelist），不同客户价格可以不同</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="subsection">
+        <h3>业务员录入报价</h3>
+        <div class="voice-quote">
+          业务员把客户的订单输入到系统里，先作为报价单。可能一个客户下了好几个品种，业务员要逐条录入商品、数量、单价。有些客户有自己的专属价格。
+        </div>
+        <div class="info-box">
+          <h4>📋 报价单说明</h4>
+          <ul>
+            <li>订单首先以"报价单"（PENDING 状态）进入系统</li>
+            <li>报价单 ≠ 正式订单，还可以修改</li>
+            <li>一个报价单属于一个客户，包含多个商品行</li>
+            <li>05:00 自动截单，不再接收新的报价单</li>
+          </ul>
+        </div>
+        <table>
+          <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>餐馆自助下单页面</td><td><span class="badge badge-done">已实现</span></td><td>产品浏览、加购物车、选支付方式、提交订单</td></tr>
+            <tr><td>客户专属价格</td><td><span class="badge badge-done">已实现</span></td><td>Pricelist 引擎自动匹配客户报价</td></tr>
+            <tr><td>操作员手工录入报价</td><td><span class="badge badge-done">已实现</span></td><td>逐条录入商品、数量、单价</td></tr>
+            <tr><td>CSV 批量导入</td><td><span class="badge badge-done">已实现</span></td><td>按模板格式批量导入报价单</td></tr>
+            <tr><td>行内编辑</td><td><span class="badge badge-done">已实现</span></td><td>数量、单价实时修改</td></tr>
+            <tr><td>批量指定配送批次</td><td><span class="badge badge-done">已实现</span></td><td>为多条订单同时指定 DriverSlot</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="subsection">
+        <h3>数据模型</h3>
+        <div class="data-model"><span class="entity">Order</span> (status=PENDING)
+├── <span class="field">customerId</span>      <span class="relation">→ Customer</span>
+├── <span class="field">createdById</span>     <span class="relation">→ User</span> <span class="comment">(业务员)</span>
+├── <span class="field">deliveryDate</span>
+├── <span class="field">driverSlotId</span>    <span class="relation">→ DriverSlot</span> <span class="comment">(可选，配送批次)</span>
+├── <span class="field">paymentMethod</span>   <span class="comment">(ONLINE / CASH)</span>
+├── <span class="field">internalNote</span>
+└── <span class="field">lines[]</span>         <span class="relation">→ OrderLine</span>
+    ├── <span class="field">productId</span>   <span class="relation">→ Product</span>
+    ├── <span class="field">orderedQty</span>
+    ├── <span class="field">unitPrice</span>
+    ├── <span class="field">taxRate</span>
+    └── <span class="field">sequence</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 3. CONFIRM ===== -->
+  <div class="section" id="confirm">
+    <div class="section-header">
+      <h2>三、确认阶段（05:00 ~ 07:00）</h2>
+      <div class="section-desc">操作员审核报价单 → 确认为正式订单</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        截单时间到了以后（一般早上五点），主管把所有报价单确认，变成正式订单。确认之后客户就不能再改了。主管会看一下有没有漏单、价格有没有问题。
+      </div>
+      <div class="info-box">
+        <h4>✅ 确认流程</h4>
+        <ul>
+          <li>截单后，操作员逐单审核检查商品数量和价格</li>
+          <li>可修改订单内容后再确认</li>
+          <li>批量将 PENDING → CONFIRMED，记录确认日期</li>
+          <li>确认后客户端不可修改，但操作员可在特殊情况下回退到 PENDING</li>
+          <li>所有操作记录操作日志</li>
+        </ul>
+      </div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>批量确认</td><td><span class="badge badge-done">已实现</span></td><td>选中多条报价单一键确认</td></tr>
+          <tr><td>单条确认</td><td><span class="badge badge-done">已实现</span></td><td>行级操作逐条确认</td></tr>
+          <tr><td>回退到报价</td><td><span class="badge badge-done">已实现</span></td><td>CONFIRMED → PENDING 回退</td></tr>
+          <tr><td>确认日期记录</td><td><span class="badge badge-done">已实现</span></td><td>confirmationDate 字段</td></tr>
+          <tr><td>订单修改日志</td><td><span class="badge badge-missing">未实现</span></td><td>追踪谁改了什么字段</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 4. BATCH ===== -->
+  <div class="section" id="batch">
+    <div class="section-header">
+      <h2>四、排批次与分配司机（05:00 ~ 07:00）</h2>
+      <div class="section-desc">创建配送批次 → 绑定司机 → 订单分配到批次</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        确认了以后，主管要安排批次。一天可能有好几批，早上一批、中午一批、下午一批。每一批指定一个司机。主管根据订单量和客户位置来分，有些客户固定跟某个司机。
+      </div>
+      <div class="info-box">
+        <h4>🚚 DriverSlot 配送批次模型</h4>
+        <ul>
+          <li>配送批次 = DriverSlot（司机 + 时段 + 批次号的组合）</li>
+          <li>例：<code>1 am 张三</code> = 张三司机上午第 1 批</li>
+          <li>批次号范围：1~5，时段：am / pm</li>
+          <li>同一天同一批次的所有订单由同一个司机配送</li>
+          <li>订单分配到批次后状态变为 WAVE_ASSIGNED</li>
+          <li>支持拖拽调整、批次间转移</li>
+        </ul>
+      </div>
+      <div class="data-model"><span class="entity">DriverSlot</span>
+├── <span class="field">id</span>
+├── <span class="field">driverName</span>     <span class="comment">("张三")</span>
+├── <span class="field">timeOfDay</span>      <span class="comment">("am" / "pm")</span>
+├── <span class="field">batchNum</span>       <span class="comment">(1~5)</span>
+└── <span class="field">archived</span>       <span class="comment">(软删除)</span>
+
+<span class="entity">Order</span>.<span class="field">driverSlotId</span> <span class="relation">→ DriverSlot</span>  <span class="comment">(FK 关联)</span></div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>司机时段管理</td><td><span class="badge badge-done">已实现</span></td><td>DriverSlot 增删改查</td></tr>
+          <tr><td>订单分配批次</td><td><span class="badge badge-done">已实现</span></td><td>行内 dropdown 选择批次</td></tr>
+          <tr><td>批次分析面板</td><td><span class="badge badge-done">已实现</span></td><td>按批次统计重量和金额</td></tr>
+          <tr><td>批次间转移订单</td><td><span class="badge badge-done">已实现</span></td><td>拖拽调整订单所属批次</td></tr>
+          <tr><td>未分配订单面板</td><td><span class="badge badge-done">已实现</span></td><td>展示未分配批次的订单</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 5. STOCK ===== -->
+  <div class="section" id="stock">
+    <div class="section-header">
+      <h2>五、检查库存与缺货处理（05:00 ~ 07:00）</h2>
+      <div class="section-desc">核查库存 → 处理缺货 → 修改订单</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        确认订单以后，要查一下库存够不够。有些东西可能昨天卖完了，或者今天供货商没到。缺货的品种要通知业务员，业务员再跟客户沟通，看是换品还是减量。
+      </div>
+      <div class="info-box">
+        <h4>📊 库存检查要点</h4>
+        <ul>
+          <li>操作员/仓管需要逐批次核查：该批次总需求量 vs 当前库存</li>
+          <li>显示当前库存量、已分配量、可用量</li>
+          <li>缺货时可修改数量、替换商品或联系客户取消</li>
+          <li>低库存预警阈值：20</li>
+          <li>慢动品检测：3 天无销售自动标记</li>
+        </ul>
+      </div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>仓库库存总览</td><td><span class="badge badge-done">已实现</span></td><td>库存面板展示所有商品库存情况</td></tr>
+          <tr><td>低库存预警</td><td><span class="badge badge-done">已实现</span></td><td>低于阈值标红警示</td></tr>
+          <tr><td>库存调整记录</td><td><span class="badge badge-done">已实现</span></td><td>完整的调整历史</td></tr>
+          <tr><td>行内编辑订单</td><td><span class="badge badge-done">已实现</span></td><td>修改数量和单价</td></tr>
+          <tr><td>批次级缺货预警</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p0">P0</span> 批次内需求 vs 库存对比</td></tr>
+          <tr><td>订单修改日志</td><td><span class="badge badge-missing">未实现</span></td><td>追踪修改记录</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 6. PRINT ===== -->
+  <div class="section" id="print">
+    <div class="section-header">
+      <h2>六、打印阶段（07:00）</h2>
+      <div class="section-desc">拣货单 · 送货单 · 汇总单，三种单据按需打印</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        确认完了就要打印。打印有好几种：拣货单是给仓库的，要按大货和散货分开打；送货单是每个客户一张，给司机带着送货签字用的；还有一个汇总单，就是这一批所有东西加在一起多少。
+      </div>
+      <table>
+        <thead><tr><th>打印类型</th><th>用途</th><th>受众</th><th>分类方式</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>拣货单<br>Picking List</strong></td>
+            <td>仓库拣货依据</td>
+            <td>拣货员</td>
+            <td>按商品汇总（同一商品所有客户的需求量合计），大货 BULK / 散货 LOOSE 分开</td>
+          </tr>
+          <tr>
+            <td><strong>送货单<br>Delivery Slip</strong></td>
+            <td>客户签收凭据</td>
+            <td>司机 → 客户</td>
+            <td>按客户拆分（每个客户一张），含品名、数量、单价、小计</td>
+          </tr>
+          <tr>
+            <td><strong>汇总单<br>Summary</strong></td>
+            <td>批次装车清单</td>
+            <td>司机 / 主管</td>
+            <td>按批次汇总所有商品总量</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="info-box">
+        <h4>🖨 打印说明</h4>
+        <ul>
+          <li>所有打印入口在<strong>批次分析面板</strong>中，支持按批次打印</li>
+          <li>大货（BULK）和散货（LOOSE）分开打印，对应仓库不同区域</li>
+          <li>送货单支持双语（中文 + 英文 "DELIVERY SLIP"）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 7. PICKING ===== -->
+  <div class="section" id="picking">
+    <div class="section-header">
+      <h2>七、仓库拣货（07:00 ~ 09:00）</h2>
+      <div class="section-desc">生成拣货波次 → 拣货员按单从各区域取货</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        拣货单打好以后，仓库的人就开始拣货。一般按批次来，一个批次生成一个拣货波次。拣货的人拿着单子去各个区域拿货，拿完一样勾一样。
+      </div>
+      <div class="info-box">
+        <h4>📦 拣货流程</h4>
+        <ul>
+          <li>操作员选中 CONFIRMED 订单，生成拣货波次（Wave）</li>
+          <li>波次将订单中的商品按仓库区域（Zone）重新组织</li>
+          <li>按商品汇总提高效率——同一商品的需求量合并</li>
+          <li>大货和散货分开拣，对应仓库不同区域</li>
+          <li>拣货员逐项填入实际拣货数量，勾选完成</li>
+          <li>支持"全部标记完成"的批量操作</li>
+          <li>完成后波次状态变为 PICKED</li>
+        </ul>
+      </div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>单条/批量生成波次</td><td><span class="badge badge-done">已实现</span></td><td>选中订单自动生成波次</td></tr>
+          <tr><td>拣货员波次列表</td><td><span class="badge badge-done">已实现</span></td><td>拣货员看到待拣波次</td></tr>
+          <tr><td>按区域分组展示</td><td><span class="badge badge-done">已实现</span></td><td>Zone 卡片分组显示</td></tr>
+          <tr><td>逐项标记完成</td><td><span class="badge badge-done">已实现</span></td><td>填入实际拣货数量</td></tr>
+          <tr><td>拣货进度显示</td><td><span class="badge badge-done">已实现</span></td><td>done items / total items</td></tr>
+        </tbody>
+      </table>
+      <div class="flow-diagram"><span class="status">Wave 状态</span>: <span class="highlight">PENDING</span> <span class="arrow">──开始拣货──→</span> <span class="highlight">PICKING</span> <span class="arrow">──完成拣货──→</span> <span class="highlight">PICKED</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 8. SORTING ===== -->
+  <div class="section" id="sorting">
+    <div class="section-header">
+      <h2>八、司机分货、核货与装车（08:00 ~ 09:00）</h2>
+      <div class="section-desc">司机按客户分装 → 核对数量 → 装车出发</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        拣完以后就是分货。拣货是按品种拣的，一个品种可能要分给好几个客户。分货就是把每个客户的东西放到一起，一家一堆。分完以后每堆贴上客户名字的标签。
+      </div>
+      <div class="info-box" style="background:var(--amber-50); border-color:var(--amber-100);">
+        <h4>⚠️ 重要：没有专门的分货员</h4>
+        <ul>
+          <li>在爱尔兰的实际业务中，<strong>司机自己负责分货</strong></li>
+          <li>司机来到仓库后，按自己批次的客户逐个分拣</li>
+          <li>拣货是"按商品"聚合的，分货是"按客户"分发的</li>
+        </ul>
+      </div>
+      <div class="voice-quote">
+        分好以后司机来核货。司机拿着汇总单，一样一样对，数量对不对、品种对不对。有时候还要称重，大货称总重，散货一样一样称。核完没问题就装车。
+      </div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>分货页面（司机使用）</td><td><span class="badge badge-done">已实现</span></td><td>逐商品按客户分配数量</td></tr>
+          <tr><td>排序管理</td><td><span class="badge badge-done">已实现</span></td><td>操作员视角管理分货进度</td></tr>
+          <tr><td>司机配送列表</td><td><span class="badge badge-done">已实现</span></td><td>Trip 列表展示</td></tr>
+          <tr><td>核货确认界面</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p1">P1</span> 司机逐项核对差异标注</td></tr>
+          <tr><td>称重记录</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p2">P2</span> 实际重量 vs 订单重量</td></tr>
+        </tbody>
+      </table>
+      <div class="flow-diagram"><span class="status">Wave 状态</span>: <span class="highlight">PICKED</span> <span class="arrow">──司机开始分货──→</span> <span class="highlight">SORTING</span> <span class="arrow">──分货完成──→</span> <span class="highlight">SORTED</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 9. DELIVERY ===== -->
+  <div class="section" id="delivery">
+    <div class="section-header">
+      <h2>九、配送（09:00 ~ 下午）</h2>
+      <div class="section-desc">按路线逐家配送 → 客户签收 → 收款</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        司机就按路线一家一家送。到了客户那里，客户验货、签字。有些客户是现金结，司机当场收钱；有些是月结的，不用收钱。
+      </div>
+      <div class="info-box">
+        <h4>🚛 配送流程</h4>
+        <ul>
+          <li>司机按 Trip 中的客户列表逐家配送</li>
+          <li>每送完一家，在系统中标记"已送达"</li>
+          <li>客户核对商品后签收</li>
+          <li>退换货当场处理</li>
+          <li>配送完成后状态变为 COMPLETED</li>
+        </ul>
+      </div>
+      <table>
+        <thead><tr><th>收款方式</th><th>支付条款</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>CASH（现金）</td><td>immediate（当场结）</td><td>司机当场收现金</td></tr>
+          <tr><td>ONLINE（线上支付）</td><td>immediate</td><td>线上转账</td></tr>
+          <tr><td>月结</td><td>monthly</td><td>月底统一结算，不用当场收款</td></tr>
+          <tr><td>周结</td><td>weekly</td><td>每周结算一次</td></tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>Trip 配送列表</td><td><span class="badge badge-done">已实现</span></td><td>司机查看配送任务</td></tr>
+          <tr><td>逐家标记已送达</td><td><span class="badge badge-done">已实现</span></td><td>delivered flag</td></tr>
+          <tr><td>收款金额跟踪</td><td><span class="badge badge-done">已实现</span></td><td>totalPayment 统计</td></tr>
+          <tr><td>配送进度</td><td><span class="badge badge-done">已实现</span></td><td>delivered / total</td></tr>
+          <tr><td>退换货处理</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p1">P1</span> 拒收退货流程</td></tr>
+          <tr><td>电子签收</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p2">P2</span> 手机签字确认</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 10. FINANCE ===== -->
+  <div class="section" id="finance">
+    <div class="section-header">
+      <h2>十、收款与对账</h2>
+      <div class="section-desc">司机交账 → 财务对账 → 月结客户结算</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        司机送完回来要交账。现金收了多少，哪些客户签了单。财务每天要对一下，现金的当天清，月结的记到客户欠款里。到了月底，月结客户要催款和对账。
+      </div>
+      <div class="info-box">
+        <h4>💰 收款对账流程</h4>
+        <ul>
+          <li>支持现金、转账、月结三种收款方式</li>
+          <li>司机当场收款后录入系统</li>
+          <li>财务定期对账，核对现金与系统记录</li>
+          <li>月结客户月底统一结算，出具对账单</li>
+          <li>销售佣金自动计算</li>
+        </ul>
+      </div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>财务看板</td><td><span class="badge badge-done">已实现</span></td><td>5 个财务指标卡片</td></tr>
+          <tr><td>今日现金/线上收款统计</td><td><span class="badge badge-done">已实现</span></td><td>实时统计</td></tr>
+          <tr><td>未结款订单明细</td><td><span class="badge badge-done">已实现</span></td><td>按客户分组展示</td></tr>
+          <tr><td>客户欠款汇总</td><td><span class="badge badge-done">已实现</span></td><td>按付款条款分类</td></tr>
+          <tr><td>销售佣金计算</td><td><span class="badge badge-done">已实现</span></td><td>应付佣金统计</td></tr>
+          <tr><td>发票/对账单生成</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p1">P1</span></td></tr>
+          <tr><td>司机交账确认</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p1">P1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 11. PURCHASE ===== -->
+  <div class="section" id="purchase">
+    <div class="section-header">
+      <h2>十一、采购与入库</h2>
+      <div class="section-desc">采购计划 → 供货商送货 → 验收入库</div>
+    </div>
+    <div class="section-body">
+      <div class="voice-quote">
+        另外一条线就是采购。看库存不够了，或者预计明天要用多少，就跟供货商下采购单。供货商送到以后要验收入库。
+      </div>
+      <div class="info-box">
+        <h4>📥 采购流程</h4>
+        <ul>
+          <li>根据订单需求和库存情况制定采购计划</li>
+          <li>向供货商下采购订单</li>
+          <li>供货商送到后验收入库，记录批次、数量、成本价</li>
+          <li>库存实时更新，支持盘点</li>
+        </ul>
+      </div>
+      <div class="flow-diagram"><span class="status">采购状态</span>: <span class="highlight">DRAFT</span> <span class="arrow">→</span> <span class="highlight">SENT</span> <span class="arrow">→</span> <span class="highlight">CONFIRMED</span> <span class="arrow">→</span> <span class="highlight">RECEIVED</span> <span class="arrow">→</span> <span class="highlight">INVOICED</span>
+                                                              <span class="arrow">↘</span> <span class="cancel">CANCELLED</span></div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>采购订单管理</td><td><span class="badge badge-done">已实现</span></td><td>创建、编辑、发送采购单</td></tr>
+          <tr><td>采购订单详情</td><td><span class="badge badge-done">已实现</span></td><td>商品明细与状态跟踪</td></tr>
+          <tr><td>收货验收</td><td><span class="badge badge-done">已实现</span></td><td>入库记录批次数量成本价</td></tr>
+          <tr><td>供货商管理</td><td><span class="badge badge-done">已实现</span></td><td>Customer 模型 isVendor=true</td></tr>
+          <tr><td>自动采购建议</td><td><span class="badge badge-missing">未实现</span></td><td><span class="badge badge-p0">P0</span> 根据需求自动生成采购建议</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 12. BOSS ===== -->
+  <div class="section" id="boss">
+    <div class="section-header">
+      <h2>十二、老板视角</h2>
+      <div class="section-desc">Dashboard 核心指标 · 经营分析 · 决策支持</div>
+    </div>
+    <div class="section-body">
+      <div class="info-box">
+        <h4>📊 Dashboard 核心指标</h4>
+        <ul>
+          <li><strong>KPI 指标</strong>：销售额、订单量、客户数、平均客单价</li>
+          <li><strong>司机效率</strong>：配送完成率、收款情况</li>
+          <li><strong>库存周转</strong>：缺货预警、慢动品检测</li>
+          <li><strong>趋势图表</strong>：每日/每周/每月销售趋势</li>
+          <li><strong>排行榜</strong>：客户排名、商品排名、司机排名</li>
+          <li><strong>利润分析</strong>：按客户、按商品、按时段</li>
+        </ul>
+      </div>
+      <table>
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>Boss 仪表盘</td><td><span class="badge badge-done">已实现</span></td><td>综合看板</td></tr>
+          <tr><td>KPI 指标卡片</td><td><span class="badge badge-done">已实现</span></td><td>核心经营数据</td></tr>
+          <tr><td>趋势图表</td><td><span class="badge badge-done">已实现</span></td><td>可视化图表</td></tr>
+          <tr><td>排行榜</td><td><span class="badge badge-done">已实现</span></td><td>多维度排名</td></tr>
+          <tr><td>日销售报表</td><td><span class="badge badge-done">已实现</span></td><td>每日明细</td></tr>
+          <tr><td>销售报表页面</td><td><span class="badge badge-done">已实现</span></td><td>完整销售分析</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== 13. LIFECYCLE ===== -->
+  <div class="section" id="lifecycle">
+    <div class="section-header">
+      <h2>十三、订单全生命周期状态图</h2>
+      <div class="section-desc">Order · Wave · Trip 三条状态流转线</div>
+    </div>
+    <div class="section-body">
+      <div class="subsection">
+        <h3>Order 订单状态</h3>
+        <div class="flow-diagram">
+  <span class="highlight">PENDING</span> <span class="arrow">──确认──→</span> <span class="highlight">CONFIRMED</span> <span class="arrow">──生成波次──→</span> <span class="highlight">WAVE_ASSIGNED</span> <span class="arrow">──配送中──→</span> <span class="highlight">IN_DELIVERY</span>
+     <span class="comment">│(报价)</span>          <span class="comment">│(已确认)</span>              <span class="comment">(已派波次)</span>              <span class="comment">(配送中)</span>
+     <span class="comment">│</span>                  <span class="comment">│ 可回退到 PENDING</span>                               <span class="comment">│</span>
+     <span class="comment">│ 取消</span>                                                                <span class="comment">│ 完成配送</span>
+     <span class="comment">▼</span>                                                                    <span class="comment">▼</span>
+  <span class="cancel">CANCELLED</span>                                                         <span class="highlight">COMPLETED</span> <span class="arrow">──开票锁定──→</span> <span class="highlight">LOCKED</span>
+  <span class="comment">(已取消)</span>                                                           <span class="comment">(已完成)</span>                 <span class="comment">(已锁定)</span>
+
+  <span class="comment">* 任何阶段均可取消 → CANCELLED</span></div>
+      </div>
+
+      <div class="subsection">
+        <h3>Wave 波次状态</h3>
+        <div class="flow-diagram"><span class="highlight">PENDING</span> <span class="arrow">→</span> <span class="highlight">PICKING</span> <span class="arrow">→</span> <span class="highlight">PICKED</span> <span class="arrow">→</span> <span class="highlight">SORTING</span> <span class="arrow">→</span> <span class="highlight">SORTED</span></div>
+      </div>
+
+      <div class="subsection">
+        <h3>Trip 配送行程状态</h3>
+        <div class="flow-diagram"><span class="highlight">PENDING</span> <span class="arrow">→</span> <span class="highlight">PENDING_ASSIGNMENT</span> <span class="arrow">→</span> <span class="highlight">VERIFYING</span> <span class="arrow">→</span> <span class="highlight">IN_PROGRESS</span> <span class="arrow">→</span> <span class="highlight">COMPLETED</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 14. DATA MODEL ===== -->
+  <div class="section" id="datamodel">
+    <div class="section-header">
+      <h2>十四、核心数据模型关系图</h2>
+      <div class="section-desc">系统核心实体及关联关系</div>
+    </div>
+    <div class="section-body">
+      <div class="data-model"><span class="entity">Customer</span> <span class="relation">──1:N──→</span> <span class="entity">Order</span> <span class="relation">──1:N──→</span> <span class="entity">OrderLine</span> <span class="relation">──N:1──→</span> <span class="entity">Product</span>
+    <span class="comment">│</span>                <span class="comment">│</span>                                   <span class="comment">│</span>
+    <span class="comment">│</span>                <span class="comment">├──</span> <span class="field">driverSlotId</span> <span class="relation">→ DriverSlot</span>        <span class="comment">├──</span> <span class="field">templateId</span> <span class="relation">→ ProductTemplate</span>
+    <span class="comment">│</span>                <span class="comment">│</span>                                   <span class="comment">│</span>                    <span class="comment">│</span>
+    <span class="comment">│</span>                <span class="comment">├──</span> <span class="field">createdById</span> <span class="relation">→ User</span> <span class="comment">(业务员)</span>       <span class="comment">│</span>                    <span class="comment">├──</span> <span class="field">uomId</span> <span class="relation">→ Uom</span>
+    <span class="comment">│</span>                <span class="comment">│</span>                                   <span class="comment">│</span>                    <span class="comment">│</span>    <span class="comment">└── goodsType (BULK/LOOSE)</span>
+    <span class="comment">│</span>                <span class="comment">└──</span> <span class="field">waveId</span> <span class="relation">→ PickingWave</span>              <span class="comment">│</span>                    <span class="comment">│</span>
+    <span class="comment">│</span>                        <span class="comment">│</span>                           <span class="comment">│</span>                    <span class="comment">└──</span> <span class="field">type</span> <span class="comment">(PRODUCT/CONSU/SERVICE)</span>
+    <span class="comment">│</span>                        <span class="comment">├── zones[] → Zone</span>          <span class="comment">│</span>
+    <span class="comment">│</span>                        <span class="comment">│    └── items[]</span>            <span class="comment">│</span>
+    <span class="comment">│</span>                        <span class="comment">└── status (PENDING→SORTED)</span> <span class="comment">│</span>
+    <span class="comment">│</span>                                                     <span class="comment">│</span>
+    <span class="comment">└──</span> <span class="field">pricelistId</span> <span class="relation">→ PriceList ──→ PriceRule</span> <span class="comment">──→ 客户专属价格</span>
+
+<span class="entity">DriverSlot</span>                          <span class="entity">Trip</span> <span class="comment">(配送行程)</span>
+<span class="comment">├──</span> <span class="field">driverName</span>                       <span class="comment">├──</span> <span class="field">driverName</span>
+<span class="comment">├──</span> <span class="field">timeOfDay</span> <span class="comment">(am/pm)</span>                <span class="comment">├──</span> <span class="field">timeSlot</span>
+<span class="comment">├──</span> <span class="field">batchNum</span> <span class="comment">(1~5)</span>                   <span class="comment">├──</span> <span class="field">restaurants[]</span> <span class="comment">(送货目标)</span>
+<span class="comment">└──</span> <span class="comment">一天一个批次 = 一组待配送订单</span>       <span class="comment">└──</span> <span class="field">totalPayment</span> <span class="comment">(收款总额)</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 15. ROLES ===== -->
+  <div class="section" id="roles">
+    <div class="section-header">
+      <h2>十五、系统角色</h2>
+      <div class="section-desc">8 个核心角色，覆盖从接单到配送的全流程</div>
+    </div>
+    <div class="section-body">
+      <div class="role-grid">
+        <div class="role-card">
+          <div class="role-icon">👨‍💼</div>
+          <div class="role-name">操作员</div>
+          <div class="role-code">OPERATOR</div>
+          <div class="role-desc">确认订单、排批次、分配司机、管理库存、打印单据</div>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">💼</div>
+          <div class="role-name">业务员</div>
+          <div class="role-code">SALES</div>
+          <div class="role-desc">录入订单、维护客户关系、维护客户报价</div>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">🍽</div>
+          <div class="role-name">餐厅</div>
+          <div class="role-code">RESTAURANT</div>
+          <div class="role-desc">小程序自助下单、查看历史订单</div>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">📦</div>
+          <div class="role-name">拣货员</div>
+          <div class="role-code">PICKER</div>
+          <div class="role-desc">按拣货单从仓库各区域取货</div>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">🚛</div>
+          <div class="role-name">司机</div>
+          <div class="role-code">DRIVER</div>
+          <div class="role-desc">分货、核货、装车、配送、收款（没有专门分货员）</div>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">👔</div>
+          <div class="role-name">老板</div>
+          <div class="role-code">BOSS</div>
+          <div class="role-desc">查看经营数据、审批关键操作、经营决策</div>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">💰</div>
+          <div class="role-name">财务</div>
+          <div class="role-code">FINANCE</div>
+          <div class="role-desc">对账核销、应收应付管理、佣金结算</div>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">🏭</div>
+          <div class="role-name">仓管</div>
+          <div class="role-code">WAREHOUSE</div>
+          <div class="role-desc">入库验收、盘点库存、采购管理</div>
+        </div>
+      </div>
+      <div class="info-box" style="margin-top:16px;">
+        <h4>💡 重要说明</h4>
+        <ul>
+          <li><strong>没有专门的分货员角色</strong>——在爱尔兰的实际业务中，司机自己负责分货和核货</li>
+          <li>操作员是核心调度角色，负责从接单到发车的全流程管理</li>
+          <li>业务员和操作员可以是同一个人（小规模运营时）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== FOOTER ===================== -->
+<div style="text-align:center; padding:40px 20px; color:var(--gray-500); font-size:0.85em; border-top:1px solid var(--gray-200); margin-top:40px;">
+  Veggie 餐饮供应链管理系统 &mdash; 爱尔兰蔬菜批发行<br>
+  基于客户语音描述、产品文档及代码实现整理 &bull; 2026年5月
+</div>
+
+</body>
+</html>

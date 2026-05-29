@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>波次分配 — 拖拽版</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f3f4f6; color: #1f2937; height: 100vh; overflow: hidden; }
+
+  /* ── Layout ───────────────────────────────────────── */
+  .top-bar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 10px 20px; display: flex; align-items: center; gap: 16px; }
+  .top-bar h1 { font-size: 15px; font-weight: 600; color: #875A7B; }
+  .top-bar .stats { font-size: 12px; color: #6b7280; display: flex; gap: 16px; margin-left: auto; }
+  .top-bar .stats strong { color: #1f2937; }
+
+  .main { display: flex; height: calc(100vh - 45px); }
+
+  /* ── Left: Unassigned ─────────────────────────────── */
+  .left-panel {
+    width: 380px; min-width: 320px; background: #fff; border-right: 1px solid #e5e7eb;
+    display: flex; flex-direction: column;
+  }
+  .left-header {
+    padding: 14px 16px; border-bottom: 1px solid #e5e7eb;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .left-header h2 { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .left-header .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 22px; padding: 0 6px;
+    border-radius: 11px; background: #fef3c7; color: #92400e;
+    font-size: 11px; font-weight: 700;
+  }
+  .left-search {
+    margin: 10px 16px; padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px;
+    font-size: 13px; outline: none; width: calc(100% - 32px);
+  }
+  .left-search:focus { border-color: #875A7B; box-shadow: 0 0 0 2px rgba(135,90,123,0.1); }
+
+  .order-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+
+  .order-card {
+    margin: 4px 12px; padding: 10px 12px; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 8px; cursor: grab; transition: all 0.15s;
+    position: relative;
+  }
+  .order-card:hover { border-color: #c4b5fd; background: #faf5ff; }
+  .order-card:active { cursor: grabbing; }
+  .order-card.dragging { opacity: 0.4; transform: scale(0.97); }
+  .order-card .top-row { display: flex; align-items: center; gap: 6px; }
+  .order-card .code { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; color: #875A7B; font-weight: 600; }
+  .order-card .meta-inline { font-size: 10px; color: #6b7280; margin-left: auto; white-space: nowrap; }
+  .order-card .meta-inline .amount { font-weight: 600; color: #374151; }
+  .order-card .name-addr { font-size: 12px; color: #1f2937; margin-top: 3px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .order-card .name-addr .rname { font-weight: 500; }
+  .order-card .name-addr .addr { color: #9ca3af; font-size: 11px; }
+  .order-card .products { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; max-height: 110px; overflow: hidden; transition: max-height 0.25s ease; }
+  .order-card .products.expanded { max-height: 500px; }
+  .order-card .products span {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #f3f4f6; color: #6b7280;
+  }
+  .order-card .expand-btn {
+    display: none; font-size: 10px; color: #875A7B; cursor: pointer; margin-top: 4px;
+    background: none; border: none; padding: 0; font-weight: 500;
+  }
+  .order-card .expand-btn:hover { text-decoration: underline; }
+
+  /* ── Right: Driver Slots ──────────────────────────── */
+  .right-panel { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 16px; }
+
+  .driver-slot {
+    width: calc(50% - 8px); min-height: 200px; background: #fff; border-radius: 10px;
+    border: 1px solid #e5e7eb; overflow: hidden; display: flex; flex-direction: column;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .driver-slot.drag-over {
+    border-color: #875A7B; box-shadow: 0 0 0 3px rgba(135,90,123,0.15);
+  }
+
+  .slot-header {
+    padding: 12px 16px; border-bottom: 1px solid #f3f4f6;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .slot-badge {
+    width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 18px; flex-shrink: 0;
+  }
+  .slot-info { flex: 1; }
+  .slot-info .name { font-size: 14px; font-weight: 600; color: #1f2937; }
+  .slot-info .detail { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+  .slot-type {
+    font-size: 10px; padding: 3px 8px; border-radius: 10px; font-weight: 600;
+  }
+  .slot-stats { font-size: 11px; color: #6b7280; display: flex; gap: 12px; }
+  .slot-stats strong { color: #374151; }
+
+  .slot-body {
+    flex: 1; padding: 8px; min-height: 80px; position: relative;
+  }
+  .slot-body.empty-hint::after {
+    content: '拖拽订单到这里';
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 12px; color: #d1d5db; pointer-events: none;
+  }
+
+  .slot-order {
+    padding: 8px 10px; margin-bottom: 4px; background: #f9fafb; border: 1px solid #e5e7eb;
+    border-radius: 6px; display: flex; align-items: center; gap: 8px;
+    cursor: grab; transition: all 0.15s; font-size: 12px;
+  }
+  .slot-order:hover { background: #faf5ff; border-color: #c4b5fd; }
+  .slot-order:active { cursor: grabbing; }
+  .slot-order.dragging { opacity: 0.4; }
+  .slot-order .info { flex: 1; min-width: 0; }
+  .slot-order .info .top-line { display: flex; align-items: center; gap: 6px; }
+  .slot-order .info .code { font-family: 'SF Mono', Monaco, monospace; font-size: 10px; color: #875A7B; font-weight: 600; }
+  .slot-order .info .rname { font-size: 12px; font-weight: 500; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot-order .info .addr-line { font-size: 10px; color: #9ca3af; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot-order .info .stats { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+  .slot-order .remove-btn {
+    width: 20px; height: 20px; border: none; background: none; color: #d1d5db;
+    cursor: pointer; font-size: 14px; border-radius: 4px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .slot-order .remove-btn:hover { color: #ef4444; background: #fef2f2; }
+
+  .slot-footer {
+    padding: 8px 16px; border-top: 1px solid #f3f4f6; display: flex; align-items: center; justify-content: space-between;
+  }
+  .slot-footer .total { font-size: 11px; color: #6b7280; }
+  .slot-footer .total strong { color: #374151; }
+  .slot-footer .print-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 5px; border: 1px solid #e5e7eb;
+    background: #fff; color: #6b7280; cursor: pointer; transition: all 0.15s;
+  }
+  .slot-footer .print-btn:hover { background: #f9fafb; color: #374151; }
+
+  /* ── Drag ghost ───────────────────────────────────── */
+  .drag-ghost {
+    position: fixed; pointer-events: none; z-index: 9999;
+    padding: 8px 14px; background: #875A7B; color: #fff; border-radius: 8px;
+    font-size: 12px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    display: none; white-space: nowrap;
+  }
+
+  /* ── Drop indicator ───────────────────────────────── */
+  .drop-indicator {
+    height: 3px; background: #875A7B; border-radius: 2px; margin: 2px 0;
+    display: none;
+  }
+  .drop-indicator.visible { display: block; }
+
+  /* ── Toast ─────────────────────────────────────────── */
+  .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+  .toast {
+    padding: 10px 16px; background: #1f2937; color: #fff; border-radius: 8px;
+    font-size: 13px; margin-top: 8px; opacity: 0; transform: translateY(10px);
+    animation: toastIn 0.3s forwards;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  @keyframes toastIn { to { opacity: 1; transform: translateY(0); } }
+
+  /* ── Scrollbar ─────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <h1>📦 波次分配</h1>
+  <div style="font-size:12px; color:#6b7280;">2026-05-28</div>
+  <div class="stats">
+    <span>总订单: <strong id="statTotal">0</strong></span>
+    <span>已分配: <strong id="statAssigned" style="color:#059669">0</strong></span>
+    <span>未分配: <strong id="statUnassigned" style="color:#d97706">0</strong></span>
+    <span>总金额: <strong id="statAmount">€0.00</strong></span>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Left: Unassigned Orders -->
+  <div class="left-panel">
+    <div class="left-header">
+      <h2>待分配订单 <span class="badge" id="unassignedBadge">0</span></h2>
+    </div>
+    <input class="left-search" type="text" placeholder="搜索餐馆名称或订单号..." id="searchInput" oninput="renderUnassigned()">
+    <div class="order-list" id="orderList"></div>
+  </div>
+
+  <!-- Right: Driver Slots -->
+  <div class="right-panel" id="slotsPanel"></div>
+</div>
+
+<div class="drag-ghost" id="dragGhost"></div>
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ── Mock Data ──────────────────────────────────────────
+const DRIVERS = [
+  { id: 'd1', name: 'Kevin', timeOfDay: 'am', batchNum: 1 },
+  { id: 'd2', name: 'David', timeOfDay: 'am', batchNum: 1 },
+  { id: 'd3', name: 'Sean',  timeOfDay: 'am', batchNum: 1 },
+  { id: 'd4', name: 'Mike',  timeOfDay: 'pm', batchNum: 2 },
+  { id: 'd5', name: 'Tony',  timeOfDay: 'pm', batchNum: 2 },
+  { id: 'd6', name: 'Brian', timeOfDay: 'pm', batchNum: 2 },
+];
+
+const SLOT_PALETTE = [
+  { bg: '#ede9fe', text: '#6d28d9', border: '#875A7B', badge: 'linear-gradient(135deg,#7c3aed,#6d28d9)' },
+  { bg: '#fef3c7', text: '#92400e', border: '#f59e0b', badge: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+  { bg: '#d1fae5', text: '#065f46', border: '#10b981', badge: 'linear-gradient(135deg,#10b981,#059669)' },
+  { bg: '#dbeafe', text: '#1e40af', border: '#3b82f6', badge: 'linear-gradient(135deg,#3b82f6,#2563eb)' },
+  { bg: '#fce7f3', text: '#9d174d', border: '#ec4899', badge: 'linear-gradient(135deg,#ec4899,#db2777)' },
+  { bg: '#fff7ed', text: '#9a3412', border: '#f97316', badge: 'linear-gradient(135deg,#f97316,#ea580c)' },
+];
+
+const RESTAURANTS = [
+  { name: '川味坊',       address: '12 Parnell St, Dublin 1' },
+  { name: '金龙酒楼',     address: '45 Capel St, Dublin 7' },
+  { name: '湘菜馆',       address: '78 Camden St, Dublin 2' },
+  { name: '粤式茶餐厅',   address: '23 Clanbrassil St, Dublin 8' },
+  { name: '东北饺子王',   address: '91 Dorset St, Dublin 1' },
+  { name: '火锅城',       address: '56 Abbey St, Dublin 1' },
+  { name: '兰州拉面',     address: '34 Mary St, Dublin 1' },
+  { name: '老北京烤鸭',   address: '67 Talbot St, Dublin 1' },
+  { name: '江南水乡',     address: '15 Aungier St, Dublin 2' },
+  { name: '蜀香阁',       address: '89 Thomas St, Dublin 8' },
+  { name: '潮州菜馆',     address: '42 Wexford St, Dublin 2' },
+  { name: '上海小笼包',   address: '28 Harcourt St, Dublin 2' },
+  { name: '成都串串香',   address: '55 South Great Georges St, Dublin 2' },
+  { name: '西安小吃',     address: '73 Ranelagh Rd, Dublin 6' },
+  { name: '福建海鲜楼',   address: '19 Rathmines Rd, Dublin 6' },
+  { name: '台湾卤肉饭',   address: '31 Baggot St, Dublin 4' },
+  { name: '日式拉面屋',   address: '8 Dawson St, Dublin 2' },
+  { name: '韩国烤肉',     address: '64 Dame St, Dublin 2' },
+];
+
+const PRODUCTS = [
+  '大白菜', '小油菜', '西蓝花', '胡萝卜', '土豆', '洋葱', '大葱', '生姜',
+  '蒜头', '青椒', '红椒', '茄子', '豆角', '番茄', '黄瓜', '韭菜',
+  '芹菜', '莲藕', '冬瓜', '南瓜', '菠菜', '生菜', '豆腐', '腐竹',
+];
+
+function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function randomItems(arr, n) { const shuffled = [...arr].sort(() => Math.random() - 0.5); return shuffled.slice(0, n); }
+
+// Generate 18 orders
+let orders = RESTAURANTS.map((r, i) => {
+  const prods = randomItems(PRODUCTS, randomInt(3, 8));
+  const items = prods.map(p => ({ name: p, qty: randomInt(1, 20) }));
+  const amount = Math.round((randomInt(80, 450) + Math.random()) * 100) / 100;
+  return {
+    id: `o${i + 1}`,
+    code: `ORD-${String(2840 + i).padStart(4, '0')}`,
+    restaurantName: r.name,
+    address: r.address,
+    items,
+    itemCount: items.reduce((s, it) => s + it.qty, 0),
+    totalAmount: amount,
+    slotId: null, // which driver slot this is assigned to
+  };
+});
+
+// Pre-assign a few orders to make it look realistic
+orders[0].slotId = 'd1';
+orders[1].slotId = 'd1';
+orders[5].slotId = 'd2';
+orders[8].slotId = 'd3';
+orders[9].slotId = 'd4';
+orders[10].slotId = 'd4';
+orders[11].slotId = 'd4';
+
+// ── State ───────────────────────────────────────────
+let dragOrderId = null;
+let dragSourceSlotId = null; // null = from unassigned
+
+// ── Render ──────────────────────────────────────────
+function updateStats() {
+  const total = orders.length;
+  const assigned = orders.filter(o => o.slotId).length;
+  const unassigned = total - assigned;
+  const totalAmount = orders.reduce((s, o) => s + o.totalAmount, 0);
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statAssigned').textContent = assigned;
+  document.getElementById('statUnassigned').textContent = unassigned;
+  document.getElementById('statAmount').textContent = `€${totalAmount.toFixed(2)}`;
+  document.getElementById('unassignedBadge').textContent = unassigned;
+}
+
+function renderUnassigned() {
+  const query = document.getElementById('searchInput').value.trim().toLowerCase();
+  const list = document.getElementById('orderList');
+  const unassigned = orders.filter(o => !o.slotId);
+  const filtered = query
+    ? unassigned.filter(o => o.restaurantName.toLowerCase().includes(query) || o.code.toLowerCase().includes(query) || o.address.toLowerCase().includes(query))
+    : unassigned;
+
+  list.innerHTML = filtered.map(o => {
+    const prodId = `prods-${o.id}`;
+    return `
+    <div class="order-card" draggable="true" data-order-id="${o.id}"
+         ondragstart="onDragStartUnassigned(event, '${o.id}')"
+         ondragend="onDragEnd(event)">
+      <div class="top-row">
+        <span class="code">${o.code}</span>
+        <span class="meta-inline">${o.items.length}种/${o.itemCount}件 <span class="amount">€${o.totalAmount.toFixed(2)}</span></span>
+      </div>
+      <div class="name-addr"><span class="rname">${o.restaurantName}</span> <span class="addr">${o.address}</span></div>
+      <div class="products" id="${prodId}">
+        ${o.items.map(it => `<span>${it.name} x${it.qty}</span>`).join('')}
+      </div>
+      <button class="expand-btn" id="btn-${o.id}" onclick="toggleExpand(event, '${o.id}')">展开全部 ▾</button>
+    </div>`;
+  }).join('');
+
+  // Check which cards need expand buttons
+  requestAnimationFrame(() => {
+    filtered.forEach(o => {
+      const el = document.getElementById(`prods-${o.id}`);
+      const btn = document.getElementById(`btn-${o.id}`);
+      if (el && btn && el.scrollHeight > el.clientHeight + 2) {
+        btn.style.display = 'inline';
+      }
+    });
+  });
+
+  updateStats();
+}
+
+function renderSlots() {
+  const panel = document.getElementById('slotsPanel');
+  panel.innerHTML = DRIVERS.map((d, i) => {
+    const sc = SLOT_PALETTE[i % SLOT_PALETTE.length];
+    const isBulk = d.timeOfDay === 'pm';
+    const slotOrders = orders.filter(o => o.slotId === d.id);
+    const totalAmount = slotOrders.reduce((s, o) => s + o.totalAmount, 0);
+    const totalItems = slotOrders.reduce((s, o) => s + o.items.length, 0);
+
+    return `
+      <div class="driver-slot" id="slot-${d.id}"
+           ondragover="onDragOverSlot(event, '${d.id}')"
+           ondragleave="onDragLeaveSlot(event, '${d.id}')"
+           ondrop="onDropSlot(event, '${d.id}')"
+           style="border-left: 4px solid ${isBulk ? '#f59e0b' : '#875A7B'}">
+        <div class="slot-header">
+          <div class="slot-badge" style="background: ${sc.badge}">${i + 1}</div>
+          <div class="slot-info">
+            <div class="name">${d.name}</div>
+            <div class="detail">Wave ${i + 1} · ${isBulk ? '下午 · 大货' : '上午 · 散货'}</div>
+          </div>
+          <span class="slot-type" style="background:${sc.bg}; color:${sc.text}">
+            ${isBulk ? '大货' : '散货'}
+          </span>
+          <div class="slot-stats">
+            <span><strong>${slotOrders.length}</strong> 单</span>
+            <span><strong>${totalItems}</strong> 品</span>
+          </div>
+        </div>
+        <div class="slot-body ${slotOrders.length === 0 ? 'empty-hint' : ''}" id="slot-body-${d.id}">
+          ${slotOrders.map(o => `
+            <div class="slot-order" draggable="true" data-order-id="${o.id}"
+                 ondragstart="onDragStartSlot(event, '${o.id}', '${d.id}')"
+                 ondragend="onDragEnd(event)">
+              <div class="info">
+                <div class="top-line">
+                  <span class="code">${o.code}</span>
+                  <span class="rname">${o.restaurantName}</span>
+                </div>
+                <div class="addr-line">${o.address}</div>
+                <div class="stats">${o.items.length} 种 / ${o.itemCount} 件 · €${o.totalAmount.toFixed(2)}</div>
+              </div>
+              <button class="remove-btn" title="移回待分配" onclick="removeOrder('${o.id}')">✕</button>
+            </div>
+          `).join('')}
+        </div>
+        <div class="slot-footer">
+          <div class="total"><strong>${slotOrders.length}</strong> 单 · €${totalAmount.toFixed(2)}</div>
+          <button class="print-btn" onclick="showToast('打印 ${d.name} 拣货单...')">🖨 打印拣货单</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function render() {
+  renderUnassigned();
+  renderSlots();
+}
+
+// ── Drag & Drop ─────────────────────────────────────
+function onDragStartUnassigned(e, orderId) {
+  dragOrderId = orderId;
+  dragSourceSlotId = null;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', orderId);
+  e.target.classList.add('dragging');
+
+  // Custom ghost
+  const order = orders.find(o => o.id === orderId);
+  const ghost = document.getElementById('dragGhost');
+  ghost.textContent = `📦 ${order.restaurantName}`;
+  ghost.style.display = 'block';
+  ghost.style.left = e.clientX + 12 + 'px';
+  ghost.style.top = e.clientY + 12 + 'px';
+
+  // Use transparent image as native ghost
+  const img = new Image();
+  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  e.dataTransfer.setDragImage(img, 0, 0);
+
+  document.addEventListener('dragover', moveGhost);
+}
+
+function onDragStartSlot(e, orderId, slotId) {
+  dragOrderId = orderId;
+  dragSourceSlotId = slotId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', orderId);
+  e.target.classList.add('dragging');
+
+  const order = orders.find(o => o.id === orderId);
+  const ghost = document.getElementById('dragGhost');
+  ghost.textContent = `📦 ${order.restaurantName}`;
+  ghost.style.display = 'block';
+  ghost.style.left = e.clientX + 12 + 'px';
+  ghost.style.top = e.clientY + 12 + 'px';
+
+  const img = new Image();
+  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  e.dataTransfer.setDragImage(img, 0, 0);
+
+  document.addEventListener('dragover', moveGhost);
+}
+
+function moveGhost(e) {
+  const ghost = document.getElementById('dragGhost');
+  ghost.style.left = e.clientX + 12 + 'px';
+  ghost.style.top = e.clientY + 12 + 'px';
+}
+
+function onDragEnd(e) {
+  e.target.classList.remove('dragging');
+  document.getElementById('dragGhost').style.display = 'none';
+  document.removeEventListener('dragover', moveGhost);
+  // Clean up all drag-over states
+  document.querySelectorAll('.driver-slot').forEach(s => s.classList.remove('drag-over'));
+  document.querySelector('.left-panel')?.classList.remove('drag-over');
+  dragOrderId = null;
+  dragSourceSlotId = null;
+}
+
+function onDragOverSlot(e, slotId) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const slot = document.getElementById(`slot-${slotId}`);
+  slot.classList.add('drag-over');
+}
+
+function onDragLeaveSlot(e, slotId) {
+  const slot = document.getElementById(`slot-${slotId}`);
+  // Only remove if we're truly leaving (not entering a child)
+  if (!slot.contains(e.relatedTarget)) {
+    slot.classList.remove('drag-over');
+  }
+}
+
+function onDropSlot(e, slotId) {
+  e.preventDefault();
+  const orderId = e.dataTransfer.getData('text/plain');
+  const order = orders.find(o => o.id === orderId);
+  if (!order) return;
+
+  const driver = DRIVERS.find(d => d.id === slotId);
+  const fromSlotId = dragSourceSlotId;
+
+  if (order.slotId === slotId) {
+    // Dropped back to same slot — no-op
+    return;
+  }
+
+  order.slotId = slotId;
+  render();
+
+  if (fromSlotId) {
+    const fromDriver = DRIVERS.find(d => d.id === fromSlotId);
+    showToast(`${order.restaurantName} 从 ${fromDriver.name} 移到 ${driver.name}`);
+  } else {
+    showToast(`${order.restaurantName} 分配给 ${driver.name}`);
+  }
+}
+
+// Allow dropping back to unassigned panel
+const leftPanel = document.querySelector('.left-panel');
+leftPanel.addEventListener('dragover', e => {
+  if (dragSourceSlotId) { // only accept from a slot
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    leftPanel.style.background = '#faf5ff';
+  }
+});
+leftPanel.addEventListener('dragleave', e => {
+  if (!leftPanel.contains(e.relatedTarget)) {
+    leftPanel.style.background = '#fff';
+  }
+});
+leftPanel.addEventListener('drop', e => {
+  e.preventDefault();
+  leftPanel.style.background = '#fff';
+  const orderId = e.dataTransfer.getData('text/plain');
+  const order = orders.find(o => o.id === orderId);
+  if (order && order.slotId) {
+    const fromDriver = DRIVERS.find(d => d.id === order.slotId);
+    order.slotId = null;
+    render();
+    showToast(`${order.restaurantName} 已移回待分配`);
+  }
+});
+
+function toggleExpand(e, orderId) {
+  e.stopPropagation();
+  e.preventDefault();
+  const el = document.getElementById(`prods-${orderId}`);
+  const btn = document.getElementById(`btn-${orderId}`);
+  if (!el || !btn) return;
+  const expanded = el.classList.toggle('expanded');
+  btn.textContent = expanded ? '收起 ▴' : '展开全部 ▾';
+}
+
+function removeOrder(orderId) {
+  const order = orders.find(o => o.id === orderId);
+  if (!order) return;
+  order.slotId = null;
+  render();
+  showToast(`${order.restaurantName} 已移回待分配`);
+}
+
+// ── Toast ───────────────────────────────────────────
+function showToast(msg) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; }, 2000);
+  setTimeout(() => toast.remove(), 2500);
+}
+
+// ── Init ────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>

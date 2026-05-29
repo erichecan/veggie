@@ -1,0 +1,41 @@
+# 此文件告诉 gcloud 哪些文件不需要上传到 Cloud Build
+# 类似 .dockerignore，但作用于 gcloud builds submit 的上传阶段
+
+# 依赖（Cloud Build 内会重新 npm ci）
+node_modules/
+
+# Next.js 构建产物（Cloud Build 内会重新 build）
+.next/
+out/
+build/
+
+# 环境变量（敏感！通过 Secret Manager 注入，绝不上传）
+.env
+.env.local
+.env*.local
+.env.production
+.env.development
+
+# 编辑器/系统文件
+.DS_Store
+.idea/
+.vscode/
+*.pem
+
+# 日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript 缓存
+*.tsbuildinfo
+
+# Prisma 生成文件（会在 npm ci 时重新生成）
+lib/generated/
+
+# 本地文档（不影响运行）
+pic/
+
+# Git
+.git/
+.gitignore

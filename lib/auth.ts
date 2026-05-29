@@ -1,0 +1,113 @@
+import { NextResponse } from 'next/server'
+import { SignJWT, jwtVerify } from 'jose'
+
+// ─── JWT_SECRET 懒加载 ───────────────────────────────────────────────────────
+// 不在模块加载时 throw：Docker build 期间 Secret Manager 的值尚未注入，
+// 模块级 throw 会导致 next build 的静态分析阶段崩溃。
+// 改为在第一次实际调用 getSecret() 时校验，确保只在真正处理请求时失败。
+let _secret: Uint8Array | null = null
+
+function getSecret(): Uint8Array {
+  if (_secret) return _secret
+  const rawSecret = process.env.JWT_SECRET
+  if (!rawSecret || rawSecret.length < 32) {
+    const msg = '[auth] JWT_SECRET is missing or shorter than 32 chars. ' +
+      'Set it in .env.local or GCP Secret Manager.'
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(msg)
+    }
+    // 开发环境：warning + 随机值（只影响本次进程）
+    console.warn(msg)
+    _secret = new TextEncoder().encode(
+      'dev-only-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
+    )
+  } else {
+    _secret = new TextEncoder().encode(rawSecret)
+  }
+  return _secret
+}
+
+export interface JwtPayload {
+  userId: string
+  email: string
+  /** 主角色（兼容旧客户端 / 老 token） */
+  role: string
+  /** 全部角色 — 一个账号可同时是 OPERATOR + SALES 等。空数组时回退到 role */
+  roles?: string[]
+  name: string
+  customerId?: string | null
+}
+
+/** 把 user 拍平成"该用户拥有的角色集合"，供 withAuth / 前端做权限判断 */
+export function effectiveRoles(p: { role?: string | null; roles?: string[] | null }): string[] {
+  const arr = Array.isArray(p.roles) ? p.roles.filter(Boolean).map(String) : []
+  if (arr.length > 0) return arr
+  return p.role ? [String(p.role)] : []
+}
+
+export async function signToken(payload: JwtPayload): Promise<string> {
+  return new SignJWT(payload as unknown as Record<string, unknown>)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('7d')
+    .sign(getSecret())
+}
+
+export async function verifyToken(token: string): Promise<JwtPayload> {
+  const { payload } = await jwtVerify(token, getSecret())
+  return payload as unknown as JwtPayload
+}
+
+/**
+ * tryAuth — 尝试解析 JWT，不抛错。用于可选认证场景（如 GET 接口根据角色自动过滤）
+ */
+export async function tryAuth(request: Request): Promise<JwtPayload | null> {
+  const authHeader = request.headers.get('Authorization')
+  if (!authHeader?.startsWith('Bearer ')) return null
+  try {
+    return await verifyToken(authHeader.slice(7))
+  } catch {
+    return null
+  }
+}
+
+export async function requireAuth(request: Request): Promise<JwtPayload> {
+  const authHeader = request.headers.get('Authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
+    throw Object.assign(new Error('未授权访问'), { status: 401 })
+  }
+  const token = authHeader.slice(7)
+  try {
+    return await verifyToken(token)
+  } catch {
+    throw Object.assign(new Error('Token 无效或已过期'), { status: 401 })
+  }
+}
+
+/**
+ * withAuth — 统一认证包装器
+ * 在执行任何业务逻辑之前先验证 JWT，验证失败直接返回 401/403。
+ *
+ * @param request      原始请求对象
+ * @param handler      认证通过后执行的处理函数，接收当前用户信息
+ * @param allowedRoles 可选：限定允许的角色列表（如 ['OPERATOR']）
+ */
+export async function withAuth(
+  request: Request,
+  handler: (user: JwtPayload) => Promise<Response>,
+  allowedRoles?: string[]
+): Promise<Response> {
+  let user: JwtPayload
+  try {
+    user = await requireAuth(request)
+  } catch {
+    return NextResponse.json({ error: '未授权访问，请先登录' }, { status: 401 })
+  }
+  if (allowedRoles && allowedRoles.length > 0) {
+    const own = effectiveRoles(user)
+    const hasRole = own.some(r => allowedRoles.includes(r))
+    if (!hasRole) {
+      return NextResponse.json({ error: `权限不足，需要角色: ${allowedRoles.join(' / ')}` }, { status: 403 })
+    }
+  }
+  return handler(user)
+}

@@ -1,0 +1,362 @@
+{
+  "nav": {
+    "brand": "🥬 蔬菜批发",
+    "changePwd": "修改密码",
+    "logout": "退出登录",
+    "switchLang": "English",
+    "pwdDialog": {
+      "title": "修改密码",
+      "currentPwd": "当前密码",
+      "newPwd": "新密码",
+      "newPwdHint": "（至少 6 位）",
+      "confirmPwd": "确认新密码",
+      "currentPwdPlaceholder": "输入当前密码",
+      "newPwdPlaceholder": "输入新密码",
+      "confirmPwdPlaceholder": "再次输入新密码",
+      "cancel": "取消",
+      "confirm": "确认修改",
+      "saving": "保存中…"
+    },
+    "pwdErrors": {
+      "currentRequired": "请输入当前密码",
+      "tooShort": "新密码至少 6 位",
+      "mismatch": "两次新密码不一致",
+      "success": "密码已修改，请重新登录",
+      "failed": "修改失败"
+    }
+  },
+  "roles": {
+    "operator": "🏭 运营",
+    "restaurant": "🍜 餐馆",
+    "picker": "📦 拣货",
+    "sorter": "🗂️ 分货",
+    "driver": "🚚 司机",
+    "boss": "👑 老板",
+    "finance": "🧾 会计",
+    "warehouse": "🏗️ 仓管"
+  },
+  "enter": {
+    "title": "蔬菜批发系统",
+    "subtitle": "Veggie Wholesale",
+    "demoTitle": "演示账号 — 一键登录",
+    "manualTitle": "或手动输入",
+    "emailPlaceholder": "邮箱",
+    "passwordPlaceholder": "密码",
+    "loginBtn": "登录",
+    "loggingIn": "登录中...",
+    "networkError": "网络错误，请稍后重试",
+    "roles": {
+      "operator": "运营",
+      "restaurant": "餐馆",
+      "picker": "拣货",
+      "sorter": "分货",
+      "driver": "司机",
+      "boss": "老板",
+      "finance": "会计",
+      "warehouse": "仓库"
+    }
+  },
+  "operator": {
+    "links": {
+      "placeOrder": "下单",
+      "products": "商品管理",
+      "customers": "客户管理",
+      "orders": "订单管理",
+      "waves": "拣货波次",
+      "sorting": "分货",
+      "trips": "配送行程",
+      "pricing": "客户定价",
+      "pricelists": "价格表",
+      "invoices": "发票",
+      "returns": "退换货",
+      "uoms": "计量单位",
+      "users": "👥 用户管理",
+      "home": "首页",
+      "flow": "业务流程图",
+      "help": "帮助中心"
+    },
+    "sorting": {
+      "list": {
+        "title": "分货",
+        "wavesCount": "{count} 个波次待分货（picked / sorting 状态）",
+        "loading": "加载中...",
+        "noData": "暂无待分货的波次",
+        "noDataHint": "拣货员完成拣货后，波次会自动出现在这里",
+        "createdAt": "创建：",
+        "restaurants": "家餐馆",
+        "orders": "张订单",
+        "picked": "件已拣",
+        "viewDetail": "点击进入分货详情 →",
+        "description": "说明：分货是拣货完成后按客户拆分的环节。运营在这里调度分货员；分货员在 /sorter 页面看自己被分配的任务。"
+      },
+      "detail": {
+        "breadcrumb": "分货",
+        "startSorting": "开始分货",
+        "finishSorting": "确认分货完成",
+        "loading": "加载中...",
+        "restaurantCount": "餐馆数",
+        "orderCount": "订单数",
+        "totalItems": "总件数",
+        "createdAt": "创建时间",
+        "byRestaurant": "按餐馆拆分",
+        "noOrders": "该波次下没有订单（请检查数据）",
+        "orders": "订单",
+        "lines": "行",
+        "pieces": "件",
+        "startedMsg": "已开始分货",
+        "completedMsg": "分货完成，可以交给司机",
+        "th": {
+          "product": "商品",
+          "spec": "规格",
+          "qty": "数量",
+          "price": "单价",
+          "subtotal": "小计"
+        },
+        "description": "说明：此页面是运营看到的分货视角——按餐馆分组展示每家要装什么箱。分货员在 /sorter 页面按此清单执行装箱。"
+      }
+    },
+    "orders": {
+      "title": "订单管理",
+      "tabs": {
+        "all": "全部",
+        "pending": "待处理",
+        "wave_assigned": "已分配波次",
+        "in_delivery": "配送中",
+        "completed": "已完成",
+        "cancelled": "已取消",
+        "to_invoice": "待开票"
+      },
+      "generateWave": "生成拣货波次",
+      "generating": "生成中…",
+      "noSelected": "请先勾选「待处理」状态的订单",
+      "waveSuccess": "拣货波次已生成",
+      "waveError": "生成失败",
+      "loadError": "加载数据失败",
+      "th": {
+        "check": "",
+        "time": "下单时间",
+        "restaurant": "餐馆",
+        "items": "商品数",
+        "amount": "金额",
+        "status": "状态",
+        "actions": "操作"
+      },
+      "pieces": "件",
+      "viewDetail": "查看详情"
+    },
+    "products": {
+      "title": "商品管理",
+      "searchPlaceholder": "搜索商品…",
+      "statusAll": "全部状态",
+      "statusActive": "上架",
+      "statusArchived": "下架",
+      "newProduct": "新增商品",
+      "loadError": "加载商品失败",
+      "th": {
+        "product": "商品",
+        "category": "品类",
+        "price": "标准价",
+        "listPrice": "挂牌价",
+        "status": "状态",
+        "actions": ""
+      },
+      "edit": "编辑",
+      "total": "共 {total} 个商品"
+    },
+    "customers": {
+      "title": "客户管理",
+      "newCustomer": "新增客户",
+      "searchPlaceholder": "搜索客户…",
+      "loadError": "加载客户失败",
+      "th": {
+        "name": "客户名",
+        "email": "邮箱",
+        "creditLimit": "信用额度",
+        "actions": ""
+      },
+      "edit": "编辑",
+      "noData": "暂无客户"
+    },
+    "waves": {
+      "title": "拣货波次",
+      "noData": "暂无波次",
+      "zones": "个分区",
+      "items": "种商品",
+      "done": "已完成"
+    },
+    "trips": {
+      "title": "配送行程",
+      "noData": "暂无行程",
+      "newTrip": "新建行程",
+      "restaurants": "家餐馆",
+      "delivered": "已送达"
+    },
+    "invoices": {
+      "title": "发票管理",
+      "newInvoice": "开具发票",
+      "noData": "暂无发票"
+    },
+    "users": {
+      "title": "用户管理",
+      "newUser": "新增用户",
+      "noData": "暂无用户"
+    }
+  },
+  "restaurant": {
+    "links": {
+      "shop": "商品选购",
+      "orders": "我的订单"
+    },
+    "shop": {
+      "title": "商品选购",
+      "cart": "🛒 购物车",
+      "addToCart": "加入购物车",
+      "cartTitle": "购物车",
+      "emptyCart": "购物车是空的",
+      "submit": "提交订单",
+      "confirmTitle": "确认付款",
+      "kinds": "种商品，共",
+      "pieces": "件",
+      "demoNote": "🔔 Demo 演示 · 点击确认即模拟付款成功",
+      "payOnline": "💳 线上支付",
+      "payCash": "💵 司机现收",
+      "cancel": "取消",
+      "confirmPay": "确认付款",
+      "paying": "提交中…",
+      "success": "付款成功！订单已生成",
+      "addSuccess": "已加入购物车",
+      "total": "合计",
+      "orderError": "下单失败，请重试"
+    },
+    "orders": {
+      "title": "我的订单",
+      "noData": "暂无订单",
+      "detailTitle": "订单详情",
+      "orderId": "订单号",
+      "orderTime": "下单时间",
+      "deliveryStatus": "配送状态",
+      "itemDetail": "商品明细",
+      "total": "合计"
+    }
+  },
+  "picker": {
+    "links": {
+      "list": "拣货单列表"
+    },
+    "list": {
+      "title": "拣货单列表",
+      "noData": "暂无待拣货波次",
+      "zones": "个分区",
+      "items": "种商品",
+      "done": "已完成"
+    },
+    "wave": {
+      "title": "拣货详情",
+      "complete": "完成拣货",
+      "completing": "提交中…",
+      "back": "返回列表"
+    }
+  },
+  "sorter": {
+    "links": {
+      "list": "分货任务"
+    },
+    "list": {
+      "title": "分货任务列表",
+      "noData": "暂无待分货任务 · 等待拣货人员完成拣货",
+      "restaurants": "家餐馆",
+      "items": "件商品"
+    },
+    "sort": {
+      "title": "分货详情",
+      "executing": "分货执行",
+      "complete": "完成分货",
+      "completing": "提交中…",
+      "back": "返回列表",
+      "noWave": "波次不存在",
+      "confirmIncomplete": "还有 {count} 家餐馆未完成分货，确认提交？",
+      "done": "分货完成！已通知司机",
+      "markDone": "标记完成",
+      "markedDone": "✓ 已完成装箱",
+      "total": "合计",
+      "th": {
+        "product": "商品",
+        "spec": "规格",
+        "qty": "数量",
+        "subtotal": "小计"
+      }
+    }
+  },
+  "driver": {
+    "links": {
+      "trips": "我的行程"
+    },
+    "list": {
+      "title": "我的行程",
+      "noData": "暂无配送行程 · 等待运营人员分配",
+      "restaurants": "家餐馆",
+      "delivered": "已送达",
+      "collected": "已收"
+    },
+    "trip": {
+      "title": "行程详情",
+      "complete": "确认送达",
+      "back": "返回列表",
+      "collectCash": "收款"
+    }
+  },
+  "boss": {
+    "links": {
+      "overview": "经营总览"
+    },
+    "page": {
+      "title": "经营总览"
+    }
+  },
+  "finance": {
+    "links": {
+      "overview": "财务总览"
+    },
+    "page": {
+      "title": "财务总览"
+    }
+  },
+  "warehouse": {
+    "links": {
+      "overview": "仓库总览"
+    },
+    "page": {
+      "title": "仓库总览"
+    }
+  },
+  "common": {
+    "loading": "加载中…",
+    "noData": "暂无数据",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "confirm": "确认",
+    "edit": "编辑",
+    "delete": "删除",
+    "back": "返回",
+    "close": "关闭",
+    "search": "搜索",
+    "status": {
+      "pending": "待处理",
+      "wave_assigned": "已分配波次",
+      "picking": "拣货中",
+      "picked": "已拣货",
+      "sorting": "分货中",
+      "sorted": "已分货",
+      "in_delivery": "配送中",
+      "completed": "已完成",
+      "delivered": "已送达",
+      "cancelled": "已取消",
+      "active": "上架",
+      "archived": "下架",
+      "draft": "草稿",
+      "paid": "已支付",
+      "unpaid": "未支付"
+    }
+  }
+}

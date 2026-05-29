@@ -1,0 +1,1216 @@
+'use client'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
+import { useRouter } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
+import { toast } from 'sonner'
+import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/api'
+import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
+import type { Order, OrderStatus, Invoice, Customer, Trip } from '@/lib/types'
+import { displayOrderCode } from '@/lib/order-code'
+import { DateWithDay } from '@/components/shared/date-with-day'
+import { formatDateTimeShort } from '@/lib/format-date'
+import { buildOrderHtml } from '../../print/[id]/page'
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const FAV_KEY = 'veggie_quotations_favourites'
+
+const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六']
+
+const STATUS_LABEL: Record<string, string> = {
+  pending:       'Quotation',
+  confirmed:     'Sales Order',
+  wave_assigned: 'Sales Order',
+  in_delivery:   'Sales Order',
+  completed:     'Done',
+}
+const STATUS_COLOR: Record<string, string> = {
+  pending:       'bg-gray-100 text-gray-600',
+  confirmed:     'bg-green-50 text-green-700',
+  wave_assigned: 'bg-green-50 text-green-700',
+  in_delivery:   'bg-purple-50 text-purple-700',
+  completed:     'bg-blue-50 text-blue-700',
+}
+
+const INV_LABEL: Record<string, string> = {
+  nothing:   'Nothing to Invoice',
+  to_invoice:'To Invoice',
+  invoiced:  'Fully Invoiced',
+}
+const INV_COLOR: Record<string, string> = {
+  nothing:   'text-gray-400',
+  to_invoice:'text-orange-600 font-medium',
+  invoiced:  'text-green-700 font-medium',
+}
+
+type GroupByField = 'none' | 'customer' | 'salesman' | 'salesTeam' | 'status' | 'weekday'
+type TabValue = 'all' | 'quotations'
+
+interface SavedFavourite {
+  name: string
+  colFilters: ColFilters
+  tab: TabValue
+  orderTodayActive: boolean
+  groupBy: GroupByField
+}
+
+interface ColFilters {
+  code: string
+  quotationDateFrom: string
+  quotationDateTo: string
+  customer: string
+  createdBy: string
+  salesman: string
+  deliveryBatch: string
+  salesTeam: string
+  invoiceStatus: string
+  status: string
+  orderReturn: string
+  internalNote: string
+  createdAtFrom: string
+  createdAtTo: string
+  weekday: string
+}
+
+const EMPTY_CF: ColFilters = {
+  code: '', quotationDateFrom: '', quotationDateTo: '',
+  customer: '', createdBy: '', salesman: '', deliveryBatch: '',
+  salesTeam: '', invoiceStatus: '', status: '', orderReturn: '', internalNote: '',
+  createdAtFrom: '', createdAtTo: '', weekday: '',
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function norm(s: string | null | undefined): string {
+  return s ? s.toLowerCase().trim() : ''
+}
+
+function getField(o: Order, key: string): string {
+  return ((o as unknown as Record<string, unknown>)[key] as string) ?? ''
+}
+
+function invoiceStatus(o: Order, invoicedIds: Set<string>): 'nothing' | 'to_invoice' | 'invoiced' {
+  if (invoicedIds.has(o.id)) return 'invoiced'
+  if (o.status === 'completed') return 'to_invoice'
+  return 'nothing'
+}
+
+function isSameDay(dateStr: string, today: string) {
+  return dateStr.slice(0, 10) === today
+}
+
+function DateCell({ iso }: { iso: string | null | undefined }) {
+  return (
+    <span title={formatDateTimeShort(iso)}>
+      <DateWithDay date={iso} />
+    </span>
+  )
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+export default function ClassicQuotationsPage() {
+  const router = useRouter()
+  const locale = useLocale()
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+
+  const [orders, setOrders] = useState<Order[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [trips, setTrips] = useState<Trip[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const [search, setSearch] = useState('')
+  const [activeTab, setActiveTab] = useState<TabValue>('all')
+  const [orderTodayActive, setOrderTodayActive] = useState(false)
+  const [sortField, setSortField] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [colFilters, setColFilters] = useState<ColFilters>({ ...EMPTY_CF })
+  const [groupBy, setGroupBy] = useState<GroupByField>('none')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const [showFiltersBar, setShowFiltersBar] = useState(false)
+  const [editBatchId, setEditBatchId] = useState<string | null>(null)
+  const [editBatchVal, setEditBatchVal] = useState('')
+  const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
+
+  useEffect(() => {
+    apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
+  }, [])
+  const [editItemsId, setEditItemsId] = useState<string | null>(null)
+  const [editItemsLines, setEditItemsLines] = useState<Array<{ id?: string; productId: string; productName: string; spec: string; quantity: number; price: number; uomName?: string }>>([])
+  const [savingItems, setSavingItems] = useState(false)
+  const [bulkConfirming, setBulkConfirming] = useState(false)
+  const [bulkPrinting, setBulkPrinting] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+
+  // ── View mode (Edit vs Read) ──────────────────────────────────────────────
+  const [isReadMode, setIsReadMode] = useState(true)
+
+  // ── Import modal ─────────────────────────────────────────────────────────
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importParsed, setImportParsed] = useState<Array<Record<string, string>>>([])
+  const [importLoading, setImportLoading] = useState(false)
+  const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
+
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), [])
+
+  // ── Batch quick-edit ─────────────────────────────────────────────────────
+
+  async function saveBatch(orderId: string, slotId: string) {
+    const slot = driverSlots.find(s => s.id === slotId)
+    const deliveryBatch = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : ''
+    try {
+      await apiPut(`/api/orders/${orderId}`, { driverSlotId: slotId || null, deliveryBatch })
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, deliveryBatch, driverSlotId: slotId || null } as Order : o))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update batch')
+    }
+    setEditBatchId(null)
+  }
+
+  async function startEditItems(o: Order) {
+    setEditItemsId(o.id)
+    if (!o.lines || o.lines.length === 0) {
+      try {
+        const full = await apiGet<Order>(`/api/orders/${o.id}`)
+        const lines = full.lines ?? []
+        setOrders(prev => prev.map(x => x.id === o.id ? { ...x, lines } : x))
+        setEditItemsLines(lines.map(l => ({
+          id: l.id,
+          productId: l.productId,
+          productName: l.productName,
+          spec: l.spec ?? '',
+          quantity: l.orderedQty,
+          price: l.unitPrice,
+          uomName: l.uomName ?? undefined,
+        })))
+      } catch {
+        setEditItemsLines(o.items.map(it => ({
+          productId: it.productId,
+          productName: it.productName,
+          spec: it.spec,
+          quantity: it.quantity,
+          price: it.price,
+          uomName: it.uomName,
+        })))
+      }
+    } else {
+      setEditItemsLines(o.lines.map(l => ({
+        id: l.id,
+        productId: l.productId,
+        productName: l.productName,
+        spec: l.spec ?? '',
+        quantity: l.orderedQty,
+        price: l.unitPrice,
+        uomName: l.uomName ?? undefined,
+      })))
+    }
+  }
+
+  async function saveItems(orderId: string) {
+    setSavingItems(true)
+    try {
+      const hasLineIds = editItemsLines.length > 0 && editItemsLines.every(l => l.id)
+      if (hasLineIds) {
+        const linesPayload = editItemsLines.map(line => ({
+          id: line.id!,
+          orderedQty: line.quantity,
+          unitPrice: line.price,
+          subtotal: line.quantity * line.price,
+        }))
+        await apiPut(`/api/orders/${orderId}`, { lines: linesPayload })
+        const totalAmount = linesPayload.reduce((s, l) => s + l.subtotal, 0)
+        setOrders(prev => prev.map(o => {
+          if (o.id !== orderId) return o
+          const newLines = (o.lines ?? []).map(l => {
+            const upd = linesPayload.find(p => p.id === l.id)
+            return upd ? { ...l, unitPrice: upd.unitPrice, orderedQty: upd.orderedQty, subtotal: upd.subtotal } : l
+          })
+          return { ...o, lines: newLines, totalAmount }
+        }))
+      } else {
+        // Fallback for legacy orders without OrderLine records
+        const origOrder = orders.find(o => o.id === orderId)
+        const updatedItems = editItemsLines.map(line => {
+          const orig = origOrder?.items.find(it => it.productId === line.productId)
+          return { ...(orig ?? {}), ...line, subtotal: line.quantity * line.price }
+        })
+        const totalAmount = updatedItems.reduce((s, it) => s + it.subtotal, 0)
+        await apiPut(`/api/orders/${orderId}`, { totalAmount })
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, totalAmount } : o))
+      }
+      setEditItemsId(null)
+      toast.success('已更新商品明细')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSavingItems(false)
+    }
+  }
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+
+  async function load() {
+    setLoading(true)
+    try {
+      const [rawOrders, rawCustomers, rawInvoices, rawTrips] = await Promise.all([
+        apiGet<Record<string, unknown>[]>('/api/orders?status=PENDING&include_lines=false'),
+        apiGet<Customer[]>('/api/customers?slim=1').catch(() => [] as Customer[]),
+        apiGet<Invoice[]>('/api/invoices?slim=1').catch(() => [] as Invoice[]),
+        apiGet<Trip[]>('/api/trips').catch(() => [] as Trip[]),
+      ])
+      setOrders(rawOrders.map(o => ({
+        ...(o as unknown as Order),
+        status: (norm(o.status as string) || 'pending') as OrderStatus,
+      })))
+      setCustomers(rawCustomers)
+      setInvoices(rawInvoices)
+      setTrips(rawTrips)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+
+  // ── CSV import helpers ────────────────────────────────────────────────────
+
+  const CSV_HEADERS = ['餐馆名称', '商品名称', '规格', '数量', '单价', '配送批次', '内部备注']
+  const CSV_TEMPLATE = CSV_HEADERS.join(',') + '\nRestaurant A,白菜,500g,10,2.50,Batch 1,'
+
+  function parseCSV(text: string): Array<Record<string, string>> {
+    const lines = text.trim().split('\n').filter(l => l.trim())
+    if (lines.length < 2) return []
+    const headers = lines[0].split(',').map(h => h.trim())
+    return lines.slice(1).map(line => {
+      const cells = line.split(',').map(c => c.trim())
+      const row: Record<string, string> = {}
+      headers.forEach((h, i) => { row[h] = cells[i] ?? '' })
+      return row
+    })
+  }
+
+  function handleImportFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = e => {
+      const text = e.target?.result as string
+      setImportParsed(parseCSV(text))
+      setImportResult(null)
+    }
+    reader.readAsText(file, 'utf-8')
+  }
+
+  async function handleImportSubmit() {
+    if (!importParsed.length) return
+    setImportLoading(true)
+    setImportResult(null)
+
+    // 加载商品列表用于名称匹配
+    let products: Array<{ id: string; name: string; spec?: string; listPrice?: number }> = []
+    try {
+      products = await apiGet<typeof products>('/api/products')
+    } catch { /* ignore */ }
+
+    // 按餐馆名分组，构建订单
+    const groups = new Map<string, typeof importParsed>()
+    for (const row of importParsed) {
+      const key = row['餐馆名称']?.trim()
+      if (!key) continue
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(row)
+    }
+
+    let success = 0
+    const errors: string[] = []
+
+    for (const [restaurantName, rows] of groups) {
+      const cust = customers.find(c => norm(c.name) === norm(restaurantName))
+      if (!cust) { errors.push(`找不到餐馆: ${restaurantName}`); continue }
+
+      const items = rows.map(row => {
+        const productName = row['商品名称']?.trim() || ''
+        const spec = row['规格']?.trim() || ''
+        const quantity = parseFloat(row['数量']) || 1
+        const price = parseFloat(row['单价']) || 0
+        const matched = products.find(p =>
+          norm(p.name) === norm(productName) ||
+          (norm(p.name) === norm(productName) && norm(p.spec ?? '') === norm(spec))
+        )
+        return {
+          productId: matched?.id ?? '',
+          productName: productName,
+          spec,
+          quantity,
+          price,
+          subtotal: quantity * price,
+        }
+      }).filter(it => it.productName)
+
+      const deliveryBatch = rows[0]['配送批次']?.trim() || ''
+      const internalNote = rows[0]['内部备注']?.trim() || ''
+
+      if (!items.length) { errors.push(`${restaurantName}: 无有效商品行`); continue }
+
+      const missingProducts = items.filter(it => !it.productId)
+      if (missingProducts.length) {
+        errors.push(`${restaurantName}: 商品未找到 — ${missingProducts.map(i => i.productName).join(', ')}`)
+        continue
+      }
+
+      try {
+        await apiPost('/api/orders', {
+          restaurantId: cust.id,
+          restaurantName: cust.name,
+          items,
+          deliveryBatch: deliveryBatch || undefined,
+          internalNote: internalNote || undefined,
+        })
+        success++
+      } catch (e) {
+        errors.push(`${restaurantName}: ${e instanceof Error ? e.message : '创建失败'}`)
+      }
+    }
+
+    setImportResult({ success, failed: errors.length, errors })
+    setImportLoading(false)
+    if (success > 0) {
+      toast.success(`成功导入 ${success} 个订单`)
+      load()
+    }
+  }
+
+
+  // ── Derived maps ─────────────────────────────────────────────────────────
+
+  const invoicedIds = useMemo(() => new Set(invoices.flatMap(inv => inv.saleOrderIds)), [invoices])
+  const customerMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
+
+  const orderDriverMap = useMemo(() => {
+    const m = new Map<string, string>()
+    trips.forEach(t => {
+      if (!t.driverName) return
+      t.restaurants?.forEach((r: { orderIds: string[] }) => r.orderIds.forEach(id => m.set(id, t.driverName!)))
+    })
+    return m
+  }, [trips])
+
+  // ── Filter pipeline ───────────────────────────────────────────────────────
+
+  const filtered = useMemo(() => {
+    let result = [...orders]
+
+    // Quotations page only shows pending orders
+    result = result.filter(o => o.status === 'pending')
+
+    // tab (all = default, quotations = alias for all pending)
+    if (activeTab === 'quotations') { /* already filtered to pending above */ }
+
+    // order today
+    if (orderTodayActive) {
+      result = result.filter(o => {
+        const qd = getField(o, 'quotationDate')
+        const ca = o.createdAt ?? ''
+        return isSameDay(qd, today) || isSameDay(ca, today)
+      })
+    }
+
+    // global search
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      result = result.filter(o =>
+        o.restaurantName.toLowerCase().includes(q) ||
+        (o.code ?? '').toLowerCase().includes(q) ||
+        o.id.toLowerCase().includes(q) ||
+        (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(q)
+      )
+    }
+
+    // column filters
+    const cf = colFilters
+    if (cf.code) result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(cf.code.toLowerCase()))
+    if (cf.quotationDateFrom) result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) >= cf.quotationDateFrom)
+    if (cf.quotationDateTo)   result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) <= cf.quotationDateTo)
+    if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
+    if (cf.createdBy)   result = result.filter(o => getField(o, 'createdByName').toLowerCase().includes(cf.createdBy.toLowerCase()))
+    if (cf.salesman)      result = result.filter(o => (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(cf.salesman.toLowerCase()))
+    if (cf.deliveryBatch) result = result.filter(o => formatDriverSlotFromOrder(o).toLowerCase().includes(cf.deliveryBatch.toLowerCase()))
+    if (cf.salesTeam)     result = result.filter(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(cf.salesTeam.toLowerCase()))
+    if (cf.status) {
+      // Odoo state value → internal OrderStatus
+      const map: Record<string, OrderStatus[]> = {
+        draft:  ['pending'],
+        sent:   [],
+        sale:   ['confirmed', 'wave_assigned', 'in_delivery'],
+        done:   ['completed'],
+        cancel: [],
+      }
+      const allowed = map[cf.status] ?? []
+      result = result.filter(o => allowed.includes(o.status))
+    }
+    if (cf.invoiceStatus) {
+      // Odoo invoice_status value → internal label key
+      const map: Record<string, string> = {
+        upselling:    'upselling',
+        invoiced:     'invoiced',
+        'to invoice': 'to_invoice',
+        no:           'nothing',
+      }
+      const target = map[cf.invoiceStatus] ?? cf.invoiceStatus
+      result = result.filter(o => invoiceStatus(o, invoicedIds) === target)
+    }
+    if (cf.orderReturn) {
+      const want = cf.orderReturn === 'true'
+      result = result.filter(o => !!(o as unknown as Record<string, unknown>).orderReturn === want)
+    }
+    if (cf.internalNote) result = result.filter(o => getField(o, 'internalNote').toLowerCase().includes(cf.internalNote.toLowerCase()))
+    if (cf.createdAtFrom) result = result.filter(o => (o.createdAt ?? '').slice(0, 10) >= cf.createdAtFrom)
+    if (cf.createdAtTo)   result = result.filter(o => (o.createdAt ?? '').slice(0, 10) <= cf.createdAtTo)
+    if (cf.weekday) result = result.filter(o => {
+      const dd = getField(o, 'deliveryDate')
+      if (!dd) return false
+      return String(new Date(dd).getDay()) === cf.weekday
+    })
+
+    // sort
+    if (sortField) {
+      result = [...result].sort((a, b) => {
+        let av: string | number = ''
+        let bv: string | number = ''
+        if (sortField === 'code') { av = a.code ?? a.id; bv = b.code ?? b.id }
+        else if (sortField === 'quotationDate') { av = getField(a, 'quotationDate'); bv = getField(b, 'quotationDate') }
+        else if (sortField === 'customer') { av = a.restaurantName; bv = b.restaurantName }
+        else if (sortField === 'createdBy') { av = getField(a, 'createdByName'); bv = getField(b, 'createdByName') }
+        else if (sortField === 'salesman') { av = customerMap.get(a.restaurantId)?.salesman ?? ''; bv = customerMap.get(b.restaurantId)?.salesman ?? '' }
+        else if (sortField === 'deliveryBatch') { av = formatDriverSlotFromOrder(a); bv = formatDriverSlotFromOrder(b) }
+        else if (sortField === 'total') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
+        else if (sortField === 'invoiceStatus') { av = invoiceStatus(a, invoicedIds); bv = invoiceStatus(b, invoicedIds) }
+        else if (sortField === 'status') { av = a.status; bv = b.status }
+        else if (sortField === 'internalNote') { av = getField(a, 'internalNote'); bv = getField(b, 'internalNote') }
+        else if (sortField === 'createdAt') { av = a.createdAt ?? ''; bv = b.createdAt ?? '' }
+        if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av
+        return sortDir === 'asc'
+          ? String(av).localeCompare(String(bv))
+          : String(bv).localeCompare(String(av))
+      })
+    }
+
+    return result
+  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir])
+
+  // ── Group By ─────────────────────────────────────────────────────────────
+
+  const grouped = useMemo(() => {
+    if (groupBy === 'none') return null
+    const groups = new Map<string, Order[]>()
+    filtered.forEach(o => {
+      let key = '—'
+      if (groupBy === 'customer') key = o.restaurantName
+      else if (groupBy === 'salesman') key = customerMap.get(o.restaurantId)?.salesman ?? '—'
+      else if (groupBy === 'salesTeam') key = orderDriverMap.get(o.id) ?? '—'
+      else if (groupBy === 'status') key = STATUS_LABEL[o.status] ?? o.status
+      else if (groupBy === 'weekday') {
+        const dd = getField(o, 'deliveryDate')
+        key = dd ? `周${WEEKDAY_NAMES[new Date(dd).getDay()]}` : '无日期'
+      }
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(o)
+    })
+    return groups
+  }, [filtered, groupBy, customerMap, orderDriverMap])
+
+  const paginated = filtered
+
+  // ── Tabs ─────────────────────────────────────────────────────────────────
+
+  const toInvoiceCount = useMemo(() => orders.filter(o => o.status === 'completed' && !invoicedIds.has(o.id)).length, [orders, invoicedIds])
+
+  const TABS: { value: TabValue; label: string; count?: number }[] = [
+    { value: 'all',        label: '全部' },
+    { value: 'quotations', label: 'Quotations', count: orders.filter(o => o.status === 'pending').length },
+  ]
+
+  // ── Select helpers ────────────────────────────────────────────────────────
+
+  const allSelected = paginated.length > 0 && paginated.every(o => selected.has(o.id))
+  function toggleAll() {
+    if (allSelected) setSelected(prev => { const n = new Set(prev); paginated.forEach(o => n.delete(o.id)); return n })
+    else setSelected(prev => { const n = new Set(prev); paginated.forEach(o => n.add(o.id)); return n })
+  }
+
+  // ── Bulk confirm ─────────────────────────────────────────────────────────
+
+  async function handleBulkConfirm() {
+    const ids = [...selected]
+    const pendingIds = ids.filter(id => {
+      const o = orders.find(o => o.id === id)
+      return o?.status === 'pending'
+    })
+    if (pendingIds.length === 0) {
+      toast.info('所选订单均已确认，无需操作')
+      return
+    }
+    setBulkConfirming(true)
+    const results = await Promise.allSettled(
+      pendingIds.map(id => apiPut(`/api/orders/${id}`, { status: 'CONFIRMED' }))
+    )
+    const successCount = results.filter(r => r.status === 'fulfilled').length
+    const failCount = results.filter(r => r.status === 'rejected').length
+    setBulkConfirming(false)
+    setSelected(new Set())
+    if (failCount === 0) {
+      toast.success(`已确认 ${successCount} 条报价单`)
+    } else {
+      toast.warning(`成功 ${successCount} 条，失败 ${failCount} 条`)
+    }
+    load()
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selected]
+    if (!confirm(`确认删除 ${ids.length} 条报价单？此操作不可撤销。`)) return
+    setBulkDeleting(true)
+    const results = await Promise.allSettled(
+      ids.map(id => apiDelete(`/api/orders/${id}`))
+    )
+    const successCount = results.filter(r => r.status === 'fulfilled').length
+    const failCount = results.filter(r => r.status === 'rejected').length
+    setBulkDeleting(false)
+    setSelected(new Set())
+    if (failCount === 0) {
+      toast.success(`已删除 ${successCount} 条报价单`)
+    } else {
+      toast.warning(`成功 ${successCount} 条，失败 ${failCount} 条`)
+    }
+    load()
+  }
+
+  async function handleDuplicate() {
+    const id = [...selected][0]
+    const original = orders.find(o => o.id === id)
+    if (!original) return
+    setDuplicating(true)
+    try {
+      const detail = await apiGet<{ id: string; restaurantId: string; restaurantName: string; items: Array<{ productId: string; productName: string; spec?: string; quantity: number; price: number }>; deliveryBatch?: string; internalNote?: string; deliveryDate?: string }>(`/api/orders/${id}`)
+      await apiPost('/api/orders', {
+        restaurantId: detail.restaurantId,
+        restaurantName: detail.restaurantName,
+        items: detail.items,
+        deliveryBatch: detail.deliveryBatch ?? undefined,
+        internalNote: detail.internalNote ?? undefined,
+        deliveryDate: detail.deliveryDate ?? undefined,
+      })
+      toast.success('报价单已复制')
+      setSelected(new Set())
+      load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '复制失败')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
+  async function handleBulkPrint() {
+    const ids = [...selected]
+    setBulkPrinting(true)
+    try {
+      const fetched = await Promise.all(
+        ids.map(id => apiGet<Order & { code?: string; deliveryDate?: string; internalNote?: string; salesman?: string; deliveryBatch?: string }>(`/api/orders/${id}`))
+      )
+
+      const orderSections = fetched.map((o, idx) => {
+        const customer = customerMap.get(o.restaurantId) ?? null
+        return buildOrderHtml(o, customer, { pageBreakAfter: idx < fetched.length - 1 })
+      }).join('')
+
+      const orderCodes = fetched.map(o => o.code ?? o.id.slice(-8).toUpperCase())
+      const barcodeInits = orderCodes.map(code => {
+        const safe = code.replace(/['"\\]/g, '')
+        return `try { JsBarcode('#bc-${safe}', ${JSON.stringify(code)}, { format:'CODE128', width:1.5, height:45, displayValue:false, margin:0 }); } catch(e){}`
+      }).join('\n  ')
+
+      const CSS = `
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; background:#fff; }
+.page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 12mm 22mm; position: relative; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7mm; padding-bottom: 3mm; border-bottom: 2px solid #1a3a2a; }
+.company-name { font-size: 26pt; font-weight: bold; font-style: italic; color: #1a3a2a; }
+.company-addr { text-align: right; font-size: 8.5pt; color: #444; line-height: 1.6; }
+.info-table { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
+.info-table td { border: 1px solid #bbb; padding: 3mm 4mm; vertical-align: top; width: 25%; }
+.info-head { font-size: 7pt; font-weight: bold; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2mm; }
+.info-val  { font-size: 9pt; color: #111; line-height: 1.6; }
+.barcode-cell { text-align: center; }
+.barcode-svg { max-width: 100%; height: 22mm; display: block; margin: 0 auto; }
+.barcode-code { font-size: 9pt; font-weight: bold; margin-top: 1mm; letter-spacing: 1px; }
+.lines-table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
+.lines-table thead tr { background: #1a3a2a; color: #fff; }
+.lines-table thead th { padding: 2.5mm 3mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
+.lines-table tbody tr.row-even { background: #fff; }
+.lines-table tbody tr.row-odd  { background: #f7f7f7; }
+.lines-table tbody td { padding: 2mm 3mm; font-size: 9pt; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
+.col-qty   { text-align: right; width: 10%; }
+.col-unit  { text-align: left;  width: 9%; }
+.col-desc  { text-align: left;  width: 43%; }
+.col-price { text-align: right; width: 12%; }
+.col-vat   { text-align: center; width: 7%; }
+.col-incl  { text-align: right; width: 13%; }
+.prod-name { font-weight: normal; }
+.prod-spec { color: #666; font-size: 8pt; margin-top: 1px; }
+.totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; }
+.totals-table { width: 260px; border-collapse: collapse; border: 1px solid #ccc; }
+.totals-table tr td { padding: 2mm 4mm; font-size: 9.5pt; border-bottom: 1px solid #e0e0e0; }
+.total-label { color: #555; }
+.total-value { text-align: right; }
+.total-grand td { font-weight: bold; font-size: 11pt; color: #111; border-top: 2px solid #333; border-bottom: none; }
+.footer-block { margin-top: 8mm; border-top: 1px solid #ccc; padding-top: 2mm; }
+.footer-lines { font-size: 7.5pt; color: #666; line-height: 1.6; }
+.footer-page-row { display: flex; justify-content: space-between; font-size: 7.5pt; color: #666; margin-top: 1mm; }
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { padding: 8mm 12mm 18mm; }
+}
+`
+
+      const footerHtml = `
+<div class="footer-block">
+  <div class="footer-lines">
+    Tel: (01) 830 8065 / 018308068 / 0879318299 &nbsp;&nbsp; Mail: info@johnstonebros.ie | johnstoneveg@gmail.com<br/>
+    Web: https://m.johnstonebros.ie/ &nbsp;&nbsp; VAT: IE9739451J
+  </div>
+  <div class="footer-page-row">
+    <span>Page: 1 / ${fetched.length}</span>
+    <span>Print at: <span id="bulk-print-ts"></span></span>
+  </div>
+</div>`
+
+      const win = window.open('', '_blank')
+      if (!win) { toast.error('弹窗被拦截，请允许弹出窗口'); return }
+      win.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>批量打印 (${ids.length})</title>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
+<style>${CSS}</style>
+</head>
+<body>
+${orderSections}
+${footerHtml}
+<script>
+  ${barcodeInits}
+  var ts = new Date();
+  var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
+  document.getElementById('bulk-print-ts').textContent =
+    ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
+    ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
+  window.print();
+<\/script>
+</body>
+</html>`)
+      win.document.close()
+      win.focus()
+    } catch {
+      toast.error('批量打印失败')
+    } finally {
+      setBulkPrinting(false)
+    }
+  }
+
+
+  function setCf(key: keyof ColFilters, value: string) {
+    setColFilters(prev => ({ ...prev, [key]: value }))
+  }
+
+  const hasActiveFilters = Object.values(colFilters).some(v => v !== '')
+  const activeFiltersCount = Object.values(colFilters).filter(v => v !== '').length + (orderTodayActive ? 1 : 0)
+
+  // ── Row renderer ──────────────────────────────────────────────────────────
+
+  function renderRow(o: Order) {
+    const cust = customerMap.get(o.restaurantId)
+    const quotationDate = getField(o, 'quotationDate')
+    const createdByName = getField(o, 'createdByName')
+    const internalNote = getField(o, 'internalNote')
+    const invStatus = invoiceStatus(o, invoicedIds)
+    const isSelected = selected.has(o.id)
+    const isEditingItems = editItemsId === o.id
+    const canEditItems = o.status === 'pending' && !isReadMode
+
+    return (
+      <>
+        <tr
+          key={o.id}
+          className={`border-b border-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-amber-50' : isEditingItems ? 'bg-[#875A7B]/20' : 'hover:bg-gray-50'}`}
+          onClick={() => router.push(`${prefix}/classic/operator/quotations/${o.id}`)}
+        >
+          <td className="pl-3 pr-1 py-2" onClick={e => e.stopPropagation()}>
+            <input type="checkbox" checked={isSelected}
+              onChange={() => setSelected(prev => { const n = new Set(prev); isSelected ? n.delete(o.id) : n.add(o.id); return n })}
+              className="w-3.5 h-3.5 accent-purple-600 cursor-pointer" />
+          </td>
+          {/* Quotation Number */}
+          <td className="px-2 py-2 whitespace-nowrap">
+            <span className="text-sm" style={{ color: '#875A7B' }}>{displayOrderCode(o)}</span>
+          </td>
+          {/* Quotation Date */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={quotationDate} /></td>
+          {/* Customer */}
+          <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
+          {/* Created by */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{createdByName || '—'}</td>
+          {/* Salesperson */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
+          {/* Delivery Batch */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+            {!isReadMode && editBatchId === o.id ? (
+              <select
+                autoFocus
+                value={editBatchVal}
+                onChange={e => setEditBatchVal(e.target.value)}
+                onBlur={() => saveBatch(o.id, editBatchVal)}
+                className="border border-purple-400 rounded px-1 py-0.5 text-xs bg-white focus:outline-none"
+              >
+                <option value="">— unassigned —</option>
+                {driverSlots.map(s => <option key={s.id} value={s.id}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
+              </select>
+            ) : (
+              <span
+                className={isReadMode ? '' : 'cursor-pointer hover:text-purple-700 hover:underline'}
+                style={{ color: formatDriverSlotFromOrder(o) ? '#875A7B' : undefined }}
+                onClick={isReadMode ? undefined : () => { setEditBatchId(o.id); setEditBatchVal((o as unknown as { driverSlotId?: string }).driverSlotId ?? '') }}
+              >
+                {formatDriverSlotFromOrder(o) || '—'}
+              </span>
+            )}
+          </td>
+          {/* Total — clickable for Quotations to open item editor */}
+          <td className="px-2 py-2 text-right text-sm text-gray-800 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+            {canEditItems ? (
+              <button
+                onClick={() => isEditingItems ? setEditItemsId(null) : startEditItems(o)}
+                className={`tabular-nums hover:underline ${isEditingItems ? 'text-purple-700 font-medium' : 'hover:text-purple-700'}`}
+                title="点击编辑商品数量/单价"
+              >
+                € {o.totalAmount.toFixed(2)} ✎
+              </button>
+            ) : (
+              <span className="tabular-nums">€ {o.totalAmount.toFixed(2)}</span>
+            )}
+          </td>
+          {/* Order Return */}
+          <td className="px-2 py-2 text-center">
+            <input type="checkbox" checked={!!(o as unknown as Record<string, unknown>).orderReturn} readOnly className="w-3.5 h-3.5 accent-purple-600 cursor-default" />
+          </td>
+          {/* Invoice Status */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{INV_LABEL[invStatus]}</td>
+          {/* Status */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{STATUS_LABEL[o.status] ?? o.status}</td>
+          {/* Internal Notes */}
+          <td className="px-2 py-2 text-sm text-gray-700 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
+          {/* Creation Date */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <DateCell iso={o.createdAt} />
+              {canEditItems && (
+                <button
+                  onClick={async e => {
+                    e.stopPropagation()
+                    if (!confirm(`确认删除报价单 ${displayOrderCode(o)}？此操作不可撤销。`)) return
+                    try {
+                      await apiDelete(`/api/orders/${o.id}`)
+                      toast.success('报价单已删除')
+                      load()
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : '删除失败')
+                    }
+                  }}
+                  className="px-2 py-0.5 text-xs rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
+                  删除
+                </button>
+              )}
+            </div>
+          </td>
+        </tr>
+        {isEditingItems && (
+          <tr key={`${o.id}-items`}>
+            <td colSpan={13} className="px-4 py-3 bg-[#875A7B]/15 border-b border-[#875A7B]/20">
+              <div className="border border-purple-200 rounded bg-white overflow-hidden shadow-sm">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-[#875A7B]/15 border-b border-[#875A7B]/20">
+                      <th className="px-3 py-1.5 text-left text-gray-600 font-medium">商品名称</th>
+                      <th className="px-3 py-1.5 text-left text-gray-500 font-normal">规格</th>
+                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">数量</th>
+                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">单价 (€)</th>
+                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">小计</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editItemsLines.map((line, idx) => (
+                      <tr key={line.productId} className="border-b border-gray-50 last:border-0">
+                        <td className="px-3 py-1.5 text-gray-800">{line.productName}</td>
+                        <td className="px-3 py-1.5 text-gray-500">{line.spec || '—'}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          <span className="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.quantity}
+                              onChange={e => {
+                                const v = parseFloat(e.target.value) || 0
+                                setEditItemsLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: v } : l))
+                              }}
+                              className="w-20 text-right border border-purple-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-500 tabular-nums"
+                            />
+                            {line.uomName && <span className="text-gray-400">{line.uomName}</span>}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={line.price}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value) || 0
+                              setEditItemsLines(prev => prev.map((l, i) => i === idx ? { ...l, price: v } : l))
+                            }}
+                            className="w-24 text-right border border-purple-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-500 tabular-nums"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-medium text-gray-800 tabular-nums">
+                          € {(line.quantity * line.price).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-[#875A7B]/20 bg-[#875A7B]/15">
+                      <td colSpan={4} className="px-3 py-1.5 text-right text-gray-600 font-medium">合计</td>
+                      <td className="px-3 py-1.5 text-right font-semibold text-gray-900 tabular-nums">
+                        € {editItemsLines.reduce((s, l) => s + l.quantity * l.price, 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+                <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[#875A7B]/20 bg-[#875A7B]/15">
+                  <button
+                    onClick={() => setEditItemsId(null)}
+                    className="px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={() => saveItems(o.id)}
+                    disabled={savingItems}
+                    className="px-4 py-1 text-xs rounded text-white disabled:opacity-60"
+                    style={{ background: '#875A7B' }}
+                  >
+                    {savingItems ? '保存中…' : '保存'}
+                  </button>
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </>
+    )
+  }
+
+  // ── Column filter row ─────────────────────────────────────────────────────
+
+  const inputCls = 'w-full border-0 border-b border-gray-200 bg-transparent text-xs px-1 py-0.5 focus:outline-none focus:border-purple-400'
+  const selectCls = 'w-full border-0 border-b border-gray-200 bg-transparent text-xs px-1 py-0.5 focus:outline-none focus:border-purple-400'
+
+  function filterRow() {
+    const dateLabelCell = (fromKey: keyof ColFilters, toKey: keyof ColFilters) => (
+      <td className="px-2 py-1 align-top">
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-400 w-9">From:</span>
+          <input type="date" value={colFilters[fromKey]} onChange={e => setCf(fromKey, e.target.value)} className={inputCls} />
+        </div>
+        <div className="flex items-center gap-1 mt-0.5">
+          <span className="text-[10px] text-gray-400 w-9">To:</span>
+          <input type="date" value={colFilters[toKey]} onChange={e => setCf(toKey, e.target.value)} className={inputCls} />
+        </div>
+      </td>
+    )
+    return (
+      <tr className="bg-white text-gray-500 border-b border-gray-200">
+        <td className="pl-3 pr-1 py-1 text-gray-300">✎</td>
+        <td className="px-2 py-1"><input value={colFilters.code} onChange={e => setCf('code', e.target.value)} className={inputCls} /></td>
+        {dateLabelCell('quotationDateFrom', 'quotationDateTo')}
+        <td className="px-2 py-1"><input value={colFilters.customer}  onChange={e => setCf('customer', e.target.value)}  className={inputCls} /></td>
+        <td className="px-2 py-1"><input value={colFilters.createdBy} onChange={e => setCf('createdBy', e.target.value)} className={inputCls} /></td>
+        <td className="px-2 py-1"><input value={colFilters.salesman}      onChange={e => setCf('salesman', e.target.value)}      className={inputCls} /></td>
+        <td className="px-2 py-1"><input value={colFilters.deliveryBatch} onChange={e => setCf('deliveryBatch', e.target.value)} className={inputCls} /></td>
+        <td className="px-2 py-1" />
+        <td className="px-2 py-1">
+          <select value={colFilters.orderReturn} onChange={e => setCf('orderReturn', e.target.value)} className={selectCls}>
+            <option value=""></option>
+            <option value="false">False</option>
+            <option value="true">True</option>
+          </select>
+        </td>
+        <td className="px-2 py-1">
+          <select value={colFilters.invoiceStatus} onChange={e => setCf('invoiceStatus', e.target.value)} className={selectCls}>
+            <option value=""></option>
+            <option value="upselling">Upselling Opportunity</option>
+            <option value="invoiced">Fully Invoiced</option>
+            <option value="to invoice">To Invoice</option>
+            <option value="no">Nothing to Invoice</option>
+          </select>
+        </td>
+        <td className="px-2 py-1">
+          <select value={colFilters.status} onChange={e => setCf('status', e.target.value)} className={selectCls}>
+            <option value=""></option>
+            <option value="draft">Quotation</option>
+            <option value="sent">Quotation Sent</option>
+            <option value="sale">Sales Order</option>
+            <option value="done">Locked</option>
+            <option value="cancel">Cancelled</option>
+          </select>
+        </td>
+        <td className="px-2 py-1" />
+        {dateLabelCell('createdAtFrom', 'createdAtTo')}
+      </tr>
+    )
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const GROUP_BY_OPTIONS: { value: GroupByField; label: string }[] = [
+    { value: 'none',      label: '不分组' },
+    { value: 'customer',  label: '按客户' },
+    { value: 'salesman',  label: '按业务员' },
+    { value: 'salesTeam', label: '按司机/批次' },
+    { value: 'status',    label: '按状态' },
+    { value: 'weekday',   label: '按交货星期' },
+  ]
+
+  return (
+    <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
+      {/* ── Header ── */}
+      <OdooControlPanel
+        breadcrumb={['销售', 'Quotations']}
+        permanentActions={[
+          { label: 'Create', onClick: () => router.push(`${prefix}/classic/operator/place-order`), primary: true },
+          { label: 'Import', onClick: () => { setShowImportModal(true); setImportParsed([]); setImportResult(null) } },
+          ...(isReadMode
+            ? [
+                { label: 'Mode', onClick: () => setIsReadMode(false) },
+                { label: 'Read', onClick: () => {}, primary: true },
+              ]
+            : [
+                { label: 'Edit', onClick: () => {}, primary: true },
+                { label: 'Mode', onClick: () => { setIsReadMode(true); setEditBatchId(null); setEditItemsId(null) } },
+              ]),
+          ...(selected.size >= 2 ? [{ label: bulkConfirming ? '确认中...' : `批量确认 (${selected.size})`, onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
+          ...(selected.size >= 2 ? [{ label: bulkDeleting ? '删除中...' : `批量删除 (${selected.size})`, onClick: handleBulkDelete, primary: true, style: 'red' as const, disabled: bulkDeleting }] : []),
+          ...(selected.size === 1 ? [{ label: duplicating ? '复制中...' : 'Duplicate', onClick: handleDuplicate, primary: true, disabled: duplicating }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkPrinting ? '生成中...' : `批量打印 (${selected.size})`, onClick: handleBulkPrint, primary: true, disabled: bulkPrinting }] : []),
+        ]}
+        searchValue={search}
+        onSearch={v => { setSearch(v) }}
+        filterOptions={[
+          { label: 'Order Today', value: '__order_today__' },
+          { label: 'Column filters…', value: '__column_filters__' },
+        ]}
+        onFilterSelect={v => {
+          if (v === '__order_today__') { setOrderTodayActive(x => !x) }
+          else if (v === '__column_filters__') setShowFiltersBar(x => !x)
+          else { setActiveTab(v as TabValue) }
+        }}
+        activeFilters={[
+          ...(orderTodayActive ? [{ label: 'Order Today', onRemove: () => { setOrderTodayActive(false) } }] : []),
+          ...(activeTab !== 'all' ? [{ label: 'Quotations only', onRemove: () => { setActiveTab('all') } }] : []),
+        ]}
+        groupByOptions={GROUP_BY_OPTIONS}
+        groupByValue={groupBy}
+        onGroupByChange={v => { setGroupBy(v as GroupByField) }}
+        storageKey={FAV_KEY}
+        favouriteState={{ colFilters, tab: activeTab, orderTodayActive, groupBy }}
+        onFavouriteApply={state => {
+          const s = state as unknown as SavedFavourite
+          if (s.colFilters) setColFilters(s.colFilters)
+          if (s.tab) setActiveTab(s.tab)
+          setOrderTodayActive(s.orderTodayActive ?? false)
+          if (s.groupBy) setGroupBy(s.groupBy)
+        }}
+        total={filtered.length}
+      />
+
+      {/* ── Table ── */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm bg-white">
+          <thead>
+            <tr className="border-b border-gray-200 text-left text-sm font-bold text-gray-700 align-bottom">
+              <th className="pl-3 pr-1 py-3 w-8">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-3.5 h-3.5 accent-purple-600 cursor-pointer" />
+              </th>
+              {(
+                [
+                  { field: 'code',          label: 'Quotation\nNumber', right: false },
+                  { field: 'quotationDate', label: 'Quotation\nDate',   right: false },
+                  { field: 'customer',      label: 'Customer',          right: false },
+                  { field: 'createdBy',     label: 'Created\nby',       right: false },
+                  { field: 'salesman',      label: 'Salesperson',       right: false },
+                  { field: 'deliveryBatch', label: 'Delivery\nBatch',   right: false },
+                  { field: 'total',         label: 'Total',             right: true  },
+                  { field: null,            label: 'Order\nReturn',     right: false },
+                  { field: 'invoiceStatus', label: 'Invoice\nStatus',   right: false },
+                  { field: 'status',        label: 'Status',            right: false },
+                  { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
+                  { field: 'createdAt',     label: 'Creation\nDate',    right: false },
+                ] as { field: string | null; label: string; right: boolean }[]
+              ).map(({ field, label, right }, i) => {
+                const lines = label.split('\n')
+                return (
+                  <th
+                    key={i}
+                    className={`px-2 py-3 ${field ? 'cursor-pointer select-none hover:bg-gray-50' : ''} ${right ? 'text-right' : ''}`}
+                    onClick={field ? () => {
+                      if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+                      else { setSortField(field); setSortDir('asc') }
+                    } : undefined}
+                  >
+                    <div className="leading-tight flex items-end gap-1">
+                      <span>{lines.length > 1 ? <>{lines[0]}<br/>{lines[1]}</> : lines[0]}</span>
+                      {field && sortField === field && (
+                        <span className="text-[10px] text-[#875A7B]">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                      )}
+                    </div>
+                  </th>
+                )
+              })}
+            </tr>
+            {filterRow()}
+          </thead>
+          <tbody>
+            {loading && (
+              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">加载中…</td></tr>
+            )}
+            {!loading && filtered.length === 0 && (
+              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">暂无数据</td></tr>
+            )}
+            {!loading && grouped ? (
+              Array.from(grouped.entries()).map(([groupName, groupOrders]) => (
+                <Fragment key={groupName}>
+                  <tr className="bg-gray-100 border-b border-gray-200">
+                    <td colSpan={13} className="px-4 py-1.5 text-xs font-semibold text-gray-600">
+                      {groupName} <span className="ml-2 text-gray-400">({groupOrders.length})</span>
+                    </td>
+                  </tr>
+                  {groupOrders.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
+                </Fragment>
+              ))
+            ) : (
+              !loading && paginated.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Import Modal ── */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowImportModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-base font-semibold text-gray-900">导入订单 (CSV)</h2>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              {/* Template download */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">1. 下载模板，填写数据后上传</span>
+                <button
+                  onClick={() => {
+                    const blob = new Blob(['﻿' + CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' })
+                    const a = document.createElement('a')
+                    a.href = URL.createObjectURL(blob)
+                    a.download = 'import_template.csv'
+                    a.click()
+                  }}
+                  className="px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                >
+                  ↓ 下载模板
+                </button>
+              </div>
+
+              {/* File input */}
+              <div>
+                <span className="text-sm text-gray-600 block mb-2">2. 选择 CSV 文件</span>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="text-sm text-gray-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border file:border-gray-300 file:bg-white file:text-xs file:text-gray-700 file:hover:bg-gray-50 file:cursor-pointer"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f) }}
+                />
+              </div>
+
+              {/* Preview table */}
+              {importParsed.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">预览（前 5 行，共 {importParsed.length} 行）：</p>
+                  <div className="overflow-x-auto border rounded">
+                    <table className="text-xs w-full">
+                      <thead>
+                        <tr className="bg-gray-50 border-b">
+                          {CSV_HEADERS.map(h => <th key={h} className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importParsed.slice(0, 5).map((row, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            {CSV_HEADERS.map(h => <td key={h} className="px-2 py-1 text-gray-700 whitespace-nowrap">{row[h] || '—'}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Import result */}
+              {importResult && (
+                <div className={`rounded-lg px-4 py-3 text-sm ${importResult.failed === 0 ? 'bg-green-50 text-green-800' : 'bg-yellow-50 text-yellow-800'}`}>
+                  <p className="font-medium">成功 {importResult.success} 个订单，失败 {importResult.failed} 个</p>
+                  {importResult.errors.length > 0 && (
+                    <ul className="mt-1 list-disc list-inside text-xs space-y-0.5 text-red-700">
+                      {importResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                关闭
+              </button>
+              <button
+                onClick={handleImportSubmit}
+                disabled={importParsed.length === 0 || importLoading}
+                className="px-4 py-2 text-sm rounded text-white disabled:opacity-50"
+                style={{ background: '#875A7B' }}
+              >
+                {importLoading ? '导入中…' : `导入 ${importParsed.length} 行`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}

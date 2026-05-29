@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批次分析 — UI Mockup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f1f5f9; color: #1e293b; }
+
+  /* ── top bar ── */
+  .topbar { background: white; border-bottom: 1px solid #e2e8f0; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+  .topbar h1 { font-size: 20px; font-weight: 700; }
+  .topbar .actions { display: flex; gap: 10px; align-items: center; }
+
+  .btn { padding: 8px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 6px; transition: all .15s; }
+  .btn-primary { background: #2563eb; color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  .btn-outline { background: white; color: #374151; border: 1px solid #d1d5db; }
+  .btn-outline:hover { background: #f9fafb; }
+  .btn-sm { padding: 5px 12px; font-size: 13px; }
+
+  /* ── layout ── */
+  .main { max-width: 1400px; margin: 0 auto; padding: 24px 32px 60px; }
+
+  /* ── map section ── */
+  .map-section { background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+  .map-header { padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f1f5f9; }
+  .map-header h2 { font-size: 16px; font-weight: 600; }
+
+  .legend { display: flex; gap: 6px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all .15s; user-select: none; border: 1px solid transparent; }
+  .legend-item:hover { background: #f8fafc; }
+  .legend-item.dimmed { opacity: .35; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .legend-count { color: #94a3b8; font-size: 12px; }
+
+  .map-placeholder { height: 520px; background: #e8f0fe; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .map-placeholder .grid-bg { position: absolute; inset: 0; background-image: linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px); background-size: 60px 60px; opacity: .25; }
+
+  /* fake map markers */
+  .fake-marker { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; color: white; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 2; }
+  /* fake convex hull */
+  .fake-hull { position: absolute; border-radius: 20% 40% 30% 50%; z-index: 1; }
+
+  /* ── overview table ── */
+  .overview-section { background: white; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.04); overflow: hidden; }
+  .overview-header { padding: 16px 20px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+  .overview-header h2 { font-size: 16px; font-weight: 600; }
+
+  .overview-table { width: 100%; border-collapse: collapse; }
+  .overview-table th { background: #f8fafc; padding: 12px 16px; text-align: left; font-size: 13px; font-weight: 600; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+  .overview-table td { padding: 14px 16px; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+  .overview-table tr:last-child td { border-bottom: none; }
+  .overview-table .batch-name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .overview-table .avg-row { background: #f8fafc; font-weight: 600; }
+  .overview-table .warn-row td { background: #fef2f2; }
+
+  .workload { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+  .workload-easy { background: #dcfce7; color: #166534; }
+  .workload-mid  { background: #fef3c7; color: #92400e; }
+  .workload-heavy { background: #fee2e2; color: #991b1b; }
+
+  .warn-tag { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 2px 8px; border-radius: 4px; background: #fef2f2; color: #dc2626; font-size: 12px; font-weight: 600; }
+
+  /* ── batch cards grid ── */
+  .cards-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .cards-section-header h2 { font-size: 16px; font-weight: 600; }
+  .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; margin-bottom: 24px; }
+
+  .batch-card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04); transition: box-shadow .15s; }
+  .batch-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .batch-card-top { padding: 16px 20px; display: flex; align-items: flex-start; justify-content: space-between; }
+  .batch-card-title { display: flex; align-items: center; gap: 10px; }
+  .batch-color-bar { width: 4px; height: 40px; border-radius: 2px; flex-shrink: 0; }
+  .batch-card-title h3 { font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .batch-card-title .sub { font-size: 13px; color: #94a3b8; font-weight: 400; }
+
+  .route-summary { margin: 0 20px; padding: 14px 16px; background: #eff6ff; border-radius: 10px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  .route-stat { display: flex; flex-direction: column; }
+  .route-stat .val { font-size: 20px; font-weight: 700; color: #1e40af; line-height: 1.2; }
+  .route-stat .lbl { font-size: 12px; color: #64748b; }
+  .route-divider { width: 1px; height: 32px; background: #bfdbfe; }
+
+  .route-legs { margin: 12px 20px 0; border-top: 1px solid #f1f5f9; }
+  .route-legs-toggle { padding: 10px 0; font-size: 13px; color: #2563eb; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+  .route-legs-toggle:hover { color: #1d4ed8; }
+  .legs-list { padding-bottom: 12px; }
+  .leg-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+  .leg-num { width: 20px; height: 20px; border-radius: 50%; background: #e0e7ff; color: #3730a3; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .leg-arrow { color: #94a3b8; }
+  .leg-meta { margin-left: auto; color: #64748b; font-size: 12px; white-space: nowrap; }
+
+  .restaurant-list { padding: 12px 20px 16px; }
+  .restaurant-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
+  .restaurant-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .restaurant-addr { margin-left: auto; color: #94a3b8; font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .no-coord { color: #f59e0b; font-size: 12px; margin-left: 4px; }
+
+  /* ── missing coords banner ── */
+  .missing-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
+  .missing-banner .info { font-size: 14px; color: #92400e; }
+  .missing-banner .info strong { font-weight: 600; }
+  .btn-amber { background: #f59e0b; color: white; }
+  .btn-amber:hover { background: #d97706; }
+
+  /* ── progress bar ── */
+  .progress-container { display: flex; align-items: center; gap: 12px; }
+  .progress-bar { width: 160px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #2563eb; border-radius: 3px; transition: width .3s; }
+  .progress-text { font-size: 13px; color: #64748b; }
+
+  /* ── responsive ── */
+  @media (max-width: 900px) {
+    .main { padding: 16px; }
+    .cards-grid { grid-template-columns: 1fr; }
+    .map-placeholder { height: 360px; }
+    .topbar { padding: 12px 16px; }
+    .overview-table { font-size: 13px; }
+    .overview-table th, .overview-table td { padding: 10px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ TOP BAR ═══ -->
+<div class="topbar">
+  <h1>批次路线分析</h1>
+  <div class="actions">
+    <!-- 计算状态 —— 3 种状态切换演示 -->
+    <div class="progress-container" id="progress" style="display:none;">
+      <div class="progress-bar"><div class="progress-fill" style="width:43%"></div></div>
+      <span class="progress-text">正在计算 3/7 批次…</span>
+    </div>
+    <button class="btn btn-primary" id="calcBtn" onclick="toggleCalc()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 17V7m0 10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m0 10a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m0 10V7m0 10a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2"/></svg>
+      计算所有路线
+    </button>
+    <button class="btn btn-outline" onclick="window.location.reload()">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h5M20 20v-5h-5"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L4 4m16 16l-1.64-1.64A9 9 0 0 1 3.51 15"/></svg>
+      刷新数据
+    </button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ═══ MISSING COORDS WARNING ═══ -->
+  <div class="missing-banner">
+    <div class="info">
+      <strong>3 家餐馆缺少坐标</strong> — 无法参与路线计算：翠华酒楼 (批次2)、新疆菜馆 (批次3)、潮汕牛肉 (批次3)
+    </div>
+    <button class="btn btn-sm btn-amber">自动解析地址</button>
+  </div>
+
+  <!-- ═══ MAP ═══ -->
+  <div class="map-section">
+    <div class="map-header">
+      <h2>配送地图</h2>
+      <div class="legend">
+        <div class="legend-item" onclick="this.classList.toggle('dimmed')">
+          <span class="legend-dot" style="background:#e74c3c"></span>
+          1 上午 王师傅
+          <span class="legend-count">5</span>
+        </div>
+        <div class="legend-item" onclick="this.classList.toggle('dimmed')">
+          <span class="legend-dot" style="background:#3498db"></span>
+          2 上午 李师傅
+          <span class="legend-count">3</span>
+        </div>
+        <div class="legend-item" onclick="this.classList.toggle('dimmed')">
+          <span class="legend-dot" style="background:#2ecc71"></span>
+          3 下午 张师傅
+          <span class="legend-count">6</span>
+        </div>
+        <div class="legend-item" onclick="this.classList.toggle('dimmed')">
+          <span class="legend-dot" style="background:#f39c12"></span>
+          4 下午 刘师傅
+          <span class="legend-count">4</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="map-placeholder">
+      <div class="grid-bg"></div>
+      <!-- fake convex hulls -->
+      <div class="fake-hull" style="left:8%;top:12%;width:260px;height:200px;background:rgba(231,76,60,.12);border:2px solid rgba(231,76,60,.4);"></div>
+      <div class="fake-hull" style="left:50%;top:8%;width:220px;height:180px;background:rgba(52,152,219,.12);border:2px solid rgba(52,152,219,.4);border-radius:30% 50% 40% 20%;"></div>
+      <div class="fake-hull" style="left:30%;top:52%;width:320px;height:210px;background:rgba(46,204,113,.12);border:2px solid rgba(46,204,113,.4);border-radius:50% 30% 20% 40%;"></div>
+      <div class="fake-hull" style="left:65%;top:55%;width:200px;height:170px;background:rgba(243,156,18,.12);border:2px solid rgba(243,156,18,.4);border-radius:20% 50% 30% 40%;"></div>
+
+      <!-- fake markers — batch 1 (red) -->
+      <div class="fake-marker" style="background:#e74c3c;left:12%;top:18%">1</div>
+      <div class="fake-marker" style="background:#e74c3c;left:18%;top:28%">2</div>
+      <div class="fake-marker" style="background:#e74c3c;left:10%;top:38%">3</div>
+      <div class="fake-marker" style="background:#e74c3c;left:22%;top:22%">4</div>
+      <div class="fake-marker" style="background:#e74c3c;left:25%;top:34%">5</div>
+
+      <!-- batch 2 (blue) -->
+      <div class="fake-marker" style="background:#3498db;left:55%;top:14%">1</div>
+      <div class="fake-marker" style="background:#3498db;left:62%;top:24%">2</div>
+      <div class="fake-marker" style="background:#3498db;left:58%;top:30%">3</div>
+
+      <!-- batch 3 (green) -->
+      <div class="fake-marker" style="background:#2ecc71;left:34%;top:58%">1</div>
+      <div class="fake-marker" style="background:#2ecc71;left:42%;top:66%">2</div>
+      <div class="fake-marker" style="background:#2ecc71;left:38%;top:76%">3</div>
+      <div class="fake-marker" style="background:#2ecc71;left:50%;top:62%">4</div>
+      <div class="fake-marker" style="background:#2ecc71;left:46%;top:72%">5</div>
+      <div class="fake-marker" style="background:#2ecc71;left:52%;top:80%">6</div>
+
+      <!-- batch 4 (orange) -->
+      <div class="fake-marker" style="background:#f39c12;left:70%;top:60%">1</div>
+      <div class="fake-marker" style="background:#f39c12;left:78%;top:68%">2</div>
+      <div class="fake-marker" style="background:#f39c12;left:74%;top:78%">3</div>
+      <div class="fake-marker" style="background:#f39c12;left:82%;top:72%">4</div>
+
+      <div style="z-index:3;text-align:center;color:#94a3b8;font-size:13px;pointer-events:none;">
+        <div style="font-size:32px;margin-bottom:8px;">🗺️</div>
+        此处为真实 Google Maps / OSM 地图<br>
+        圆形 = marker，半透明色块 = 凸包覆盖区域
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ OVERVIEW TABLE ═══ -->
+  <div class="overview-section">
+    <div class="overview-header">
+      <h2>批次对比总览</h2>
+      <span style="font-size:13px;color:#94a3b8;">按工作量从高到低排列</span>
+    </div>
+    <table class="overview-table">
+      <thead>
+        <tr>
+          <th style="min-width:200px;">批次</th>
+          <th>餐馆数</th>
+          <th>总距离</th>
+          <th>预计时间</th>
+          <th>平均/站</th>
+          <th>工作量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="warn-row">
+          <td>
+            <div class="batch-name">
+              <span class="legend-dot" style="background:#2ecc71"></span>
+              3 下午 张师傅
+              <span class="warn-tag">距离超平均 2x</span>
+            </div>
+          </td>
+          <td>6</td>
+          <td><strong>78.5 km</strong></td>
+          <td>2 h 32 min</td>
+          <td>13.1 km</td>
+          <td><span class="workload workload-heavy">偏重</span></td>
+        </tr>
+        <tr>
+          <td><div class="batch-name"><span class="legend-dot" style="background:#e74c3c"></span>1 上午 王师傅</div></td>
+          <td>5</td>
+          <td>42.3 km</td>
+          <td>1 h 28 min</td>
+          <td>8.5 km</td>
+          <td><span class="workload workload-mid">中等</span></td>
+        </tr>
+        <tr>
+          <td><div class="batch-name"><span class="legend-dot" style="background:#f39c12"></span>4 下午 刘师傅</div></td>
+          <td>4</td>
+          <td>35.1 km</td>
+          <td>1 h 05 min</td>
+          <td>8.8 km</td>
+          <td><span class="workload workload-mid">中等</span></td>
+        </tr>
+        <tr>
+          <td><div class="batch-name"><span class="legend-dot" style="background:#3498db"></span>2 上午 李师傅</div></td>
+          <td>3</td>
+          <td>18.7 km</td>
+          <td>42 min</td>
+          <td>6.2 km</td>
+          <td><span class="workload workload-easy">轻松</span></td>
+        </tr>
+        <tr class="avg-row">
+          <td>平均值</td>
+          <td>4.5</td>
+          <td>43.7 km</td>
+          <td>1 h 27 min</td>
+          <td>9.2 km</td>
+          <td style="color:#94a3b8;">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══ BATCH CARDS ═══ -->
+  <div class="cards-section-header">
+    <h2>批次详情</h2>
+  </div>
+
+  <div class="cards-grid">
+
+    <!-- Card 1 — 红色 王师傅 -->
+    <div class="batch-card">
+      <div class="batch-card-top">
+        <div class="batch-card-title">
+          <div class="batch-color-bar" style="background:#e74c3c"></div>
+          <div>
+            <h3>1 上午 王师傅</h3>
+            <span class="sub">5 家餐馆 · 全部有坐标</span>
+          </div>
+        </div>
+        <span class="workload workload-mid">中等</span>
+      </div>
+      <div class="route-summary">
+        <div class="route-stat">
+          <span class="val">42.3 km</span>
+          <span class="lbl">总距离</span>
+        </div>
+        <div class="route-divider"></div>
+        <div class="route-stat">
+          <span class="val">1 h 28 min</span>
+          <span class="lbl">预计时间</span>
+        </div>
+        <div class="route-divider"></div>
+        <div class="route-stat">
+          <span class="val">8.5 km</span>
+          <span class="lbl">平均/站</span>
+        </div>
+      </div>
+      <div class="route-legs">
+        <div class="route-legs-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+          展开路线详情
+        </div>
+        <div class="legs-list" style="display:none;">
+          <div class="leg-item"><span class="leg-num">1</span> 好味道火锅 <span class="leg-arrow">&rarr;</span> 大龙虾 <span class="leg-meta">8.2 km &middot; 18 min</span></div>
+          <div class="leg-item"><span class="leg-num">2</span> 大龙虾 <span class="leg-arrow">&rarr;</span> 老北京 <span class="leg-meta">12.1 km &middot; 25 min</span></div>
+          <div class="leg-item"><span class="leg-num">3</span> 老北京 <span class="leg-arrow">&rarr;</span> 川味楼 <span class="leg-meta">9.5 km &middot; 20 min</span></div>
+          <div class="leg-item"><span class="leg-num">4</span> 川味楼 <span class="leg-arrow">&rarr;</span> 金筷子 <span class="leg-meta">12.5 km &middot; 25 min</span></div>
+        </div>
+      </div>
+      <div class="restaurant-list">
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#e74c3c"></span>1. 好味道火锅<span class="restaurant-addr">Rue de la Loi 42, Brussels</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#e74c3c"></span>2. 大龙虾<span class="restaurant-addr">Avenue Louise 100, Brussels</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#e74c3c"></span>3. 老北京<span class="restaurant-addr">Chaussee de Wavre 58</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#e74c3c"></span>4. 川味楼<span class="restaurant-addr">Rue Haute 200, Brussels</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#e74c3c"></span>5. 金筷子<span class="restaurant-addr">Boulevard Anspach 50</span></div>
+      </div>
+    </div>
+
+    <!-- Card 2 — 蓝色 李师傅 -->
+    <div class="batch-card">
+      <div class="batch-card-top">
+        <div class="batch-card-title">
+          <div class="batch-color-bar" style="background:#3498db"></div>
+          <div>
+            <h3>2 上午 李师傅</h3>
+            <span class="sub">3 家餐馆 · 1 家缺坐标</span>
+          </div>
+        </div>
+        <span class="workload workload-easy">轻松</span>
+      </div>
+      <div class="route-summary">
+        <div class="route-stat">
+          <span class="val">18.7 km</span>
+          <span class="lbl">总距离</span>
+        </div>
+        <div class="route-divider"></div>
+        <div class="route-stat">
+          <span class="val">42 min</span>
+          <span class="lbl">预计时间</span>
+        </div>
+        <div class="route-divider"></div>
+        <div class="route-stat">
+          <span class="val">6.2 km</span>
+          <span class="lbl">平均/站</span>
+        </div>
+      </div>
+      <div class="route-legs">
+        <div class="route-legs-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+          展开路线详情
+        </div>
+        <div class="legs-list" style="display:none;">
+          <div class="leg-item"><span class="leg-num">1</span> 湘菜馆 <span class="leg-arrow">&rarr;</span> 粤港茶餐厅 <span class="leg-meta">10.3 km &middot; 22 min</span></div>
+          <div class="leg-item"><span class="leg-num">2</span> 粤港茶餐厅 <span class="leg-arrow">&rarr;</span> 寿司之家 <span class="leg-meta">8.4 km &middot; 20 min</span></div>
+        </div>
+      </div>
+      <div class="restaurant-list">
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#3498db"></span>1. 湘菜馆<span class="restaurant-addr">Rue Neuve 32, Brussels</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#3498db"></span>2. 粤港茶餐厅<span class="restaurant-addr">Place du Grand Sablon 15</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#d1d5db"></span>3. 翠华酒楼<span class="no-coord">(无坐标)</span></div>
+      </div>
+    </div>
+
+    <!-- Card 3 — 绿色 张师傅 (偏重警告) -->
+    <div class="batch-card" style="border-color:#fecaca;">
+      <div class="batch-card-top">
+        <div class="batch-card-title">
+          <div class="batch-color-bar" style="background:#2ecc71"></div>
+          <div>
+            <h3>3 下午 张师傅</h3>
+            <span class="sub">6 家餐馆 · 2 家缺坐标</span>
+          </div>
+        </div>
+        <span class="workload workload-heavy">偏重</span>
+      </div>
+      <div class="route-summary" style="background:#fef2f2;">
+        <div class="route-stat">
+          <span class="val" style="color:#dc2626;">78.5 km</span>
+          <span class="lbl">总距离</span>
+        </div>
+        <div class="route-divider" style="background:#fecaca;"></div>
+        <div class="route-stat">
+          <span class="val" style="color:#dc2626;">2 h 32 min</span>
+          <span class="lbl">预计时间</span>
+        </div>
+        <div class="route-divider" style="background:#fecaca;"></div>
+        <div class="route-stat">
+          <span class="val" style="color:#dc2626;">13.1 km</span>
+          <span class="lbl">平均/站</span>
+        </div>
+      </div>
+      <div style="margin: 10px 20px 0; padding: 8px 12px; background: #fef2f2; border-radius: 8px; font-size: 13px; color: #dc2626; display: flex; align-items: center; gap: 6px;">
+        <svg width="16" height="16" fill="#dc2626" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" clip-rule="evenodd"/></svg>
+        总距离超过平均值 2 倍，建议检查地理分布是否合理
+      </div>
+      <div class="route-legs">
+        <div class="route-legs-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+          展开路线详情
+        </div>
+        <div class="legs-list" style="display:none;">
+          <div class="leg-item"><span class="leg-num">1</span> 福临门 <span class="leg-arrow">&rarr;</span> 上海人家 <span class="leg-meta">15.2 km &middot; 28 min</span></div>
+          <div class="leg-item"><span class="leg-num">2</span> 上海人家 <span class="leg-arrow">&rarr;</span> 麻辣烫 <span class="leg-meta">22.8 km &middot; 42 min</span></div>
+          <div class="leg-item"><span class="leg-num">3</span> 麻辣烫 <span class="leg-arrow">&rarr;</span> 兰州拉面 <span class="leg-meta">18.3 km &middot; 35 min</span></div>
+          <div class="leg-item"><span class="leg-num">4</span> 兰州拉面 <span class="leg-arrow">&rarr;</span> 东北饺子 <span class="leg-meta">22.2 km &middot; 47 min</span></div>
+        </div>
+      </div>
+      <div class="restaurant-list">
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#2ecc71"></span>1. 福临门<span class="restaurant-addr">Rue du Midi 88, Brussels</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#2ecc71"></span>2. 上海人家<span class="restaurant-addr">Avenue de Tervueren 300</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#2ecc71"></span>3. 麻辣烫<span class="restaurant-addr">Chaussee de Louvain 120</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#2ecc71"></span>4. 兰州拉面<span class="restaurant-addr">Rue de Flandre 55</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#d1d5db"></span>5. 新疆菜馆<span class="no-coord">(无坐标)</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#d1d5db"></span>6. 潮汕牛肉<span class="no-coord">(无坐标)</span></div>
+      </div>
+    </div>
+
+    <!-- Card 4 — 橙色 刘师傅 -->
+    <div class="batch-card">
+      <div class="batch-card-top">
+        <div class="batch-card-title">
+          <div class="batch-color-bar" style="background:#f39c12"></div>
+          <div>
+            <h3>4 下午 刘师傅</h3>
+            <span class="sub">4 家餐馆 · 全部有坐标</span>
+          </div>
+        </div>
+        <span class="workload workload-mid">中等</span>
+      </div>
+      <div class="route-summary">
+        <div class="route-stat">
+          <span class="val">35.1 km</span>
+          <span class="lbl">总距离</span>
+        </div>
+        <div class="route-divider"></div>
+        <div class="route-stat">
+          <span class="val">1 h 05 min</span>
+          <span class="lbl">预计时间</span>
+        </div>
+        <div class="route-divider"></div>
+        <div class="route-stat">
+          <span class="val">8.8 km</span>
+          <span class="lbl">平均/站</span>
+        </div>
+      </div>
+      <div class="route-legs">
+        <div class="route-legs-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+          展开路线详情
+        </div>
+        <div class="legs-list" style="display:none;">
+          <div class="leg-item"><span class="leg-num">1</span> 鼎泰丰 <span class="leg-arrow">&rarr;</span> 云南过桥米线 <span class="leg-meta">11.6 km &middot; 22 min</span></div>
+          <div class="leg-item"><span class="leg-num">2</span> 云南过桥米线 <span class="leg-arrow">&rarr;</span> 重庆小面 <span class="leg-meta">9.8 km &middot; 18 min</span></div>
+          <div class="leg-item"><span class="leg-num">3</span> 重庆小面 <span class="leg-arrow">&rarr;</span> 台湾卤肉饭 <span class="leg-meta">13.7 km &middot; 25 min</span></div>
+        </div>
+      </div>
+      <div class="restaurant-list">
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#f39c12"></span>1. 鼎泰丰<span class="restaurant-addr">Place Flagey 18, Ixelles</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#f39c12"></span>2. 云南过桥米线<span class="restaurant-addr">Rue de Namur 72</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#f39c12"></span>3. 重庆小面<span class="restaurant-addr">Avenue de la Toison d'Or 38</span></div>
+        <div class="restaurant-item"><span class="restaurant-dot" style="background:#f39c12"></span>4. 台湾卤肉饭<span class="restaurant-addr">Rue du Bailli 60, Ixelles</span></div>
+      </div>
+    </div>
+
+  </div><!-- /cards-grid -->
+
+</div><!-- /main -->
+
+<script>
+  let calcState = 0; // 0=idle, 1=running, 2=done
+  function toggleCalc() {
+    const btn = document.getElementById('calcBtn');
+    const prog = document.getElementById('progress');
+    if (calcState === 0) {
+      calcState = 1;
+      btn.disabled = true;
+      btn.innerHTML = '计算中…';
+      prog.style.display = 'flex';
+      // simulate progress
+      let step = 0;
+      const iv = setInterval(() => {
+        step++;
+        prog.querySelector('.progress-fill').style.width = (step / 7 * 100) + '%';
+        prog.querySelector('.progress-text').textContent = `正在计算 ${step}/7 批次…`;
+        if (step >= 7) {
+          clearInterval(iv);
+          calcState = 2;
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h5M20 20v-5h-5"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L4 4m16 16l-1.64-1.64A9 9 0 0 1 3.51 15"/></svg> 重新计算所有路线';
+          prog.style.display = 'none';
+        }
+      }, 600);
+    } else {
+      calcState = 0;
+      toggleCalc();
+    }
+  }
+</script>
+</body>
+</html>
