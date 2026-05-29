@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
       const before = await prisma.order.findMany({
         where: { id: { in: ids } },
-        select: { id: true, status: true, restaurantName: true, orderReturn: true },
+        select: { id: true, status: true, restaurantName: true, orderReturn: true, deliveryDate: true },
       })
       if (before.length === 0) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
@@ -123,6 +123,7 @@ export async function POST(req: Request) {
                 productName: line.productName ?? '',
                 type: 'IN',
                 qty,
+                movedAt: ord.deliveryDate ? new Date(ord.deliveryDate as unknown as string) : new Date(),
                 note: `批量取消订单释放库存`,
                 sourceType: 'ORDER',
                 sourceId: ord.id,
@@ -186,6 +187,8 @@ export async function POST(req: Request) {
 
         // P1-2: 批量确认时同时做库存预留（每单逐行扣减 qtyOnHand）
         for (const ordId of pendingIds) {
+          const ord = before.find(o => o.id === ordId)
+          const bulkMovedAt = ord?.deliveryDate ? new Date(ord.deliveryDate) : new Date()
           const lines = await prisma.orderLine.findMany({
             where: { orderId: ordId },
             include: { product: { include: { template: { select: { type: true } } } } },
@@ -204,6 +207,7 @@ export async function POST(req: Request) {
                 productName: line.productName ?? '',
                 type: 'OUT',
                 qty: -qty,
+                movedAt: bulkMovedAt,
                 note: `批量确认订单预留库存`,
                 sourceType: 'ORDER',
                 sourceId: ordId,

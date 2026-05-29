@@ -81,12 +81,16 @@ export async function POST(req: Request) {
       const grCount = await p.goodsReceipt.count()
       const grName = `GR-${String(grCount + 1).padStart(5, '0')}`
 
+      // 库存批次日期：优先用 PO 的预期到货日（expectedDate），其次用 GR 实际到货日（arrivedAt）
+      const grArrivedAt = data.arrivedAt ? new Date(data.arrivedAt) : new Date()
+      const batchDate: Date = po.expectedDate ?? grArrivedAt
+
       const result = await p.$transaction(async (tx: typeof p) => {
         const gr = await tx.goodsReceipt.create({
           data: {
             name: grName,
             purchaseOrderId: poId,
-            arrivedAt: data.arrivedAt ? new Date(data.arrivedAt) : new Date(),
+            arrivedAt: grArrivedAt,
             receivedBy: user.name,
             lines: lines.map((l) => ({
               productId: l.productId,
@@ -99,9 +103,12 @@ export async function POST(req: Request) {
           },
         })
 
-        // 更新每条 PO line 的 receivedQty + StockMove + Product.qtyOnHand
+        // 批次编号计数器
+        let lotSeq = await tx.lot.count()
+
+        // 更新每条 PO line 的 receivedQty + Lot + StockMove + Product.qtyOnHand
         for (const l of lines) {
-          const poLine = po.lines.find((pl: { productId: string }) => pl.productId === l.productId)
+          const poLine = po.lines.find((pl: { productId: string; bestBefore?: Date | null }) => pl.productId === l.productId)
           if (!poLine) continue
           const qty = Number(l.qty)
           if (qty <= 0) continue
@@ -115,13 +122,33 @@ export async function POST(req: Request) {
               where: { id: l.productId },
               data: { qtyOnHand: { increment: qty } },
             })
+
+            // 创建批次
+            lotSeq++
+            const lotNumber = `LOT-${String(lotSeq).padStart(5, '0')}`
+            const lot = await tx.lot.create({
+              data: {
+                lotNumber,
+                productId: l.productId,
+                initialQty: qty,
+                currentQty: qty,
+                sourceType: 'GOODS_RECEIPT',
+                sourceId: gr.id,
+                sourceRef: grName,
+                bestBefore: poLine.bestBefore ?? null,
+                arrivedAt: batchDate,
+              },
+            })
+
             await tx.stockMove.create({
               data: {
                 productId: l.productId,
                 productName: l.productName ?? poLine.productName,
                 type: 'IN',
                 qty,
-                note: `收货 ${grName} / PO ${po.name}`,
+                lotId: lot.id,
+                movedAt: batchDate,
+                note: `收货 ${grName} / PO ${po.name} / 批次 ${lotNumber}`,
                 sourceType: 'GOODS_RECEIPT',
                 sourceId: gr.id,
                 sourceRef: grName,

@@ -259,6 +259,7 @@ model Product {
   sequence          Int?
   supplierInfos     ProductSupplierInfo[]
   orderLines        OrderLine[]
+  lots              Lot[]
 
   @@index([templateId])
   @@index([categoryId])
@@ -485,9 +486,10 @@ model Order {
   /// CONFIRMED后编辑是否需要老板审批（P1-6）
   editApprovalRequired Boolean @default(false)
 
-  auditLogs    OrderAuditLog[]
-  deliverySlip DeliverySlip?
-  lines        OrderLine[]
+  auditLogs     OrderAuditLog[]
+  deliverySlip  DeliverySlip?
+  lines         OrderLine[]
+  discrepancies OrderDiscrepancy[]
 
   @@index([restaurantId])
   @@index([status])
@@ -524,6 +526,49 @@ model OrderLine {
 
   @@index([orderId])
   @@index([productId])
+}
+
+/// 拣货差异记录（拣货数量与下单数量不符时由运营记录）
+model OrderDiscrepancy {
+  id              String   @id @default(cuid())
+  /// 差异编号：DISC-00001
+  code            String   @unique
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLineId     String
+  productId       String
+  productName     String
+  /// 原始下单数量
+  orderedQty      Decimal  @db.Decimal(14, 3)
+  /// 实际拣货数量
+  pickedQty       Decimal  @db.Decimal(14, 3)
+  /// 差异数量（orderedQty - pickedQty，正数表示缺少）
+  diffQty         Decimal  @db.Decimal(14, 3)
+  /// 差异类型：SHORTAGE=缺货, SUBSTITUTE=替代, WEIGHT_DIFF=重量差异
+  type            String
+  /// 处理状态：PENDING=待处理, RESOLVED=已处理, CANCELLED=已取消
+  status          String   @default("PENDING")
+  /// 处理方式：ADJUST_QTY=调整数量, SUBSTITUTE=替代商品, CANCEL_LINE=取消该行, REPLENISH=补货
+  resolution      String?
+  /// 替代商品 ID（当 resolution=SUBSTITUTE 时填写）
+  substituteProductId   String?
+  substituteProductName String?
+  substituteQty         Decimal? @db.Decimal(14, 3)
+  substituteUnitPrice   Decimal? @db.Decimal(12, 2)
+  /// 运营备注
+  note            String?
+  /// 上报人（拣货员）
+  reportedBy      String?
+  reportedByName  String?
+  /// 处理人（运营）
+  resolvedBy      String?
+  resolvedByName  String?
+  resolvedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 /// 订单操作审计日志
@@ -638,6 +683,44 @@ model Invoice {
   @@unique([name])
 }
 
+/**
+ * 库存批次（Lot）
+ * ================================================================================
+ * 每次入库（采购收货、手动调整入库、退货入库）产生一个 Lot。
+ * 报废/出库时关联到具体 Lot，实现先进先出追溯。
+ */
+model Lot {
+  id            String   @id @default(cuid())
+  /// 批号：LOT-00001
+  lotNumber     String   @unique
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// 入库时的初始数量
+  initialQty    Decimal  @db.Decimal(14, 3)
+  /// 当前剩余数量（入库后被报废/出库消耗后递减）
+  currentQty    Decimal  @db.Decimal(14, 3)
+  /// 来源类型：GOODS_RECEIPT / PURCHASE_ORDER / ADJUSTMENT / RETURN
+  sourceType    String
+  /// 来源单据 ID
+  sourceId      String?
+  /// 来源单据编号（如 GR-00001, PO-00003）
+  sourceRef     String?
+  /// 保质期（最佳食用日期）
+  bestBefore    DateTime?
+  /// 批次日期（业务归属日期，对应 PO 的 expectedDate 或实际到货日）
+  arrivedAt     DateTime  @default(now())
+  /// 状态：AVAILABLE=有库存可用, DEPLETED=已耗尽
+  status        String    @default("AVAILABLE")
+  createdAt     DateTime  @default(now())
+
+  stockMoves    StockMove[]
+
+  @@index([productId])
+  @@index([status])
+  @@index([arrivedAt])
+  @@index([sourceType, sourceId])
+}
+
 model StockMove {
   id          String        @id @default(cuid())
   productId   String
@@ -651,9 +734,17 @@ model StockMove {
   sourceId    String?
   /// 来源单据编号（如 SO-00001, PO-00003）
   sourceRef   String?
+  /// 关联批次（报废/出库时指向消耗的 Lot）
+  lotId       String?
+  lot         Lot?          @relation(fields: [lotId], references: [id])
+  /// 业务日期（库存批次归属日期）：采购入库=PO.expectedDate或GR.arrivedAt，销售出库=订单交付日，手动调整=操作日
+  /// 与 createdAt（记录创建时间）分开，确保库存按实际业务日期归批
+  movedAt     DateTime      @default(now())
   createdAt   DateTime      @default(now())
 
   @@index([productId])
+  @@index([lotId])
+  @@index([movedAt])
   @@index([createdAt])
   @@index([type])
   @@index([sourceType, sourceId])

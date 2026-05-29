@@ -14,6 +14,7 @@ interface OverviewStats {
   orders: { pending: number; confirmed: number; total: number }
   adjustments: { total: number; thisMonth: number }
   scrap: { total: number; thisMonth: number }
+  discrepancies: { pending: number; total: number }
 }
 
 function StatCard({
@@ -82,23 +83,25 @@ export default function InventoryPage() {
         const now = new Date()
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-        const [recentReceipts, pendingOrders, confirmedOrders, inDeliveryOrders, completedOrders, adjustMoves] = await Promise.all([
+        const [recentReceipts, pendingOrders, confirmedOrders, inDeliveryOrders, completedOrders, adjustMoves, discPending, discAll] = await Promise.all([
           apiGet<{ total: number }>(`/api/goods-receipts?limit=1`),
           apiGet<{ total?: number } | unknown[]>('/api/orders?pageSize=1&page=1&status=PENDING'),
           apiGet<{ total?: number } | unknown[]>('/api/orders?pageSize=1&page=1&status=CONFIRMED'),
           apiGet<{ total?: number } | unknown[]>('/api/orders?pageSize=1&page=1&status=IN_DELIVERY'),
           apiGet<{ total?: number } | unknown[]>('/api/orders?pageSize=1&page=1&status=COMPLETED'),
           apiGet<unknown[]>('/api/stock-moves?limit=1000'),
+          apiGet<{ total: number }>('/api/order-discrepancies?status=PENDING&limit=0'),
+          apiGet<{ total: number }>('/api/order-discrepancies?limit=0'),
         ])
 
         const getTotal = (r: { total?: number } | unknown[]) =>
           Array.isArray(r) ? (r as unknown[]).length : ((r as { total?: number }).total ?? 0)
 
-        const allMoves = Array.isArray(adjustMoves) ? adjustMoves as Array<{ type: string; createdAt: string }> : []
+        const allMoves = Array.isArray(adjustMoves) ? adjustMoves as Array<{ type: string; movedAt?: string; createdAt: string }> : []
         const adjTotal = allMoves.filter((m) => m.type === 'ADJUSTMENT').length
-        const adjMonth = allMoves.filter((m) => m.type === 'ADJUSTMENT' && m.createdAt >= monthStart).length
+        const adjMonth = allMoves.filter((m) => m.type === 'ADJUSTMENT' && (m.movedAt ?? m.createdAt) >= monthStart).length
         const scrapTotal = allMoves.filter((m) => m.type === 'SCRAP').length
-        const scrapMonth = allMoves.filter((m) => m.type === 'SCRAP' && m.createdAt >= monthStart).length
+        const scrapMonth = allMoves.filter((m) => m.type === 'SCRAP' && (m.movedAt ?? m.createdAt) >= monthStart).length
 
         setStats({
           receipts: {
@@ -117,6 +120,10 @@ export default function InventoryPage() {
           },
           adjustments: { total: adjTotal, thisMonth: adjMonth },
           scrap: { total: scrapTotal, thisMonth: scrapMonth },
+          discrepancies: {
+            pending: (discPending as { total: number }).total ?? 0,
+            total: (discAll as { total: number }).total ?? 0,
+          },
         })
       } catch {
         setStats({
@@ -125,6 +132,7 @@ export default function InventoryPage() {
           orders: { pending: 0, confirmed: 0, total: 0 },
           adjustments: { total: 0, thisMonth: 0 },
           scrap: { total: 0, thisMonth: 0 },
+          discrepancies: { pending: 0, total: 0 },
         })
       } finally {
         setLoading(false)
@@ -147,7 +155,7 @@ export default function InventoryPage() {
           ))}
         </div>
       ) : stats ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             title="收货单"
             icon="📦"
@@ -196,6 +204,15 @@ export default function InventoryPage() {
               { label: '历史记录', value: stats.scrap.total },
             ]}
           />
+          <StatCard
+            title="拣货差异"
+            icon="⚠️"
+            href={`${prefix}/classic/operator/inventory/discrepancies`}
+            stats={[
+              { label: '待处理', value: stats.discrepancies.pending, highlight: stats.discrepancies.pending > 0 },
+              { label: '全部记录', value: stats.discrepancies.total },
+            ]}
+          />
         </div>
       ) : null}
 
@@ -206,6 +223,7 @@ export default function InventoryPage() {
             { label: '查看发货单列表', href: `${prefix}/classic/operator/inventory/deliveries` },
             { label: '库存调整记录', href: `${prefix}/classic/operator/inventory/adjustments` },
             { label: '报废管理', href: `${prefix}/classic/operator/inventory/scrap` },
+            { label: '拣货差异处理', href: `${prefix}/classic/operator/inventory/discrepancies` },
           ]},
           { title: '关联模块', links: [
             { label: '采购订单', href: `${prefix}/classic/operator/purchases` },

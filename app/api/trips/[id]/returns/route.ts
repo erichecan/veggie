@@ -330,6 +330,7 @@ export async function PUT(
               productName: sm.productName,
               type: 'RETURN' as const,
               qty: sm.qty,
+              movedAt: new Date(),
               note: sm.note,
               sourceType: sm.sourceType,
               sourceId: sm.sourceId,

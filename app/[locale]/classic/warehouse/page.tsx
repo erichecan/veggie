@@ -16,7 +16,18 @@ const PURPLE = '#875A7B'
 
 type Tab = 'incoming' | 'outgoing' | 'inventory' | 'purchases'
 
-type CardKey = 'incoming' | 'outgoing' | 'lowStock' | 'active'
+type CardKey = 'incoming' | 'outgoing' | 'lowStock' | 'active' | 'expiring'
+
+interface ExpiringLot {
+  id: string
+  lotNumber: string
+  productId: string
+  currentQty: string | number
+  bestBefore: string
+  isExpired: boolean
+  daysRemaining: number
+  product?: { id: string; name: string; spec?: string | null }
+}
 
 const TAB_LABELS: { id: Tab; label: string; icon: string }[] = [
   { id: 'incoming', label: '今日到货', icon: '📥' },
@@ -59,10 +70,13 @@ export default function ClassicWarehousePage() {
   const [adjustForm, setAdjustForm] = useState<AdjustForm>({ productId: '', qty: '', note: '' })
   const [adjustSaving, setAdjustSaving] = useState(false)
 
+  const [expiringLots, setExpiringLots] = useState<ExpiringLot[]>([])
+
   function load() {
     apiGet<Product[]>('/api/products').then(data => setProducts(data)).catch(() => {})
     apiGet<Order[]>('/api/orders?status=COMPLETED&include_lines=false').then(data => setOrders(data)).catch(() => {})
     apiGet<PurchaseRecord[]>('/api/purchases').then(data => setPurchases(data)).catch(() => {})
+    apiGet<ExpiringLot[]>('/api/lots/expiring?days=3').then(data => setExpiringLots(Array.isArray(data) ? data : [])).catch(() => {})
   }
 
   useEffect(() => { load() }, [])
@@ -178,7 +192,7 @@ export default function ClassicWarehousePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <MiniCard
           label="今日到货批次"
           value={`${todayIncoming.length} 批`}
@@ -204,6 +218,14 @@ export default function ClassicWarehousePage() {
           onClick={() => setActiveCard(prev => prev === 'lowStock' ? null : 'lowStock')}
         />
         <MiniCard
+          label="临期/过期批次"
+          value={`${expiringLots.length} 批`}
+          icon="🕐"
+          color={expiringLots.some(l => l.isExpired) ? 'text-red-700' : 'text-orange-700'}
+          active={activeCard === 'expiring'}
+          onClick={() => setActiveCard(prev => prev === 'expiring' ? null : 'expiring')}
+        />
+        <MiniCard
           label="在售商品"
           value={`${activeProducts.length} 种`}
           icon="🥬"
@@ -220,6 +242,7 @@ export default function ClassicWarehousePage() {
         todayOutgoing={todayOutgoing}
         lowStockProducts={activeProducts.filter(p => (p.qtyOnHand ?? p.stock ?? 0) <= LOW_STOCK_THRESHOLD)}
         activeProducts={activeProducts}
+        expiringLots={expiringLots}
         switchTab={setTab}
         openAdjust={(productId) => { setAdjustForm({ productId, qty: '', note: '' }); setAdjustOpen(true) }}
       />
@@ -651,7 +674,7 @@ function MiniCard({ label, value, icon, color, active, onClick }: {
 interface OutgoingItem { productName: string; spec: string; quantity: number }
 
 function WarehouseDrillPanel({
-  activeCard, close, todayIncoming, todayOutgoing, lowStockProducts, activeProducts, switchTab, openAdjust,
+  activeCard, close, todayIncoming, todayOutgoing, lowStockProducts, activeProducts, expiringLots, switchTab, openAdjust,
 }: {
   activeCard: CardKey | null
   close: () => void
@@ -659,6 +682,7 @@ function WarehouseDrillPanel({
   todayOutgoing: Record<string, OutgoingItem>
   lowStockProducts: Product[]
   activeProducts: Product[]
+  expiringLots: ExpiringLot[]
   switchTab: (t: Tab) => void
   openAdjust: (productId: string) => void
 }) {
@@ -719,6 +743,55 @@ function WarehouseDrillPanel({
             切换到「今日出货」页签 →
           </button>
         </div>
+      </div>
+    )
+  }
+
+  if (activeCard === 'expiring') {
+    const cols: DrillColumn<ExpiringLot>[] = [
+      {
+        key: 'product', label: '商品', render: l =>
+          <span className="font-medium text-gray-800">{l.product?.name ?? '未知商品'}</span>,
+      },
+      {
+        key: 'lot', label: '批号', render: l =>
+          <span className="text-xs font-mono text-gray-600">{l.lotNumber}</span>,
+      },
+      {
+        key: 'qty', label: '剩余库存', align: 'right', render: l =>
+          <span className="font-bold text-gray-900">{Number(l.currentQty)}</span>,
+      },
+      {
+        key: 'bestBefore', label: '保质期', render: l => {
+          const d = new Date(l.bestBefore)
+          return (
+            <span className={`text-xs font-medium ${l.isExpired ? 'text-red-600' : 'text-orange-600'}`}>
+              {d.toLocaleDateString('zh-CN')}
+              {l.isExpired
+                ? ` (已过期 ${Math.abs(l.daysRemaining)} 天)`
+                : ` (剩 ${l.daysRemaining} 天)`}
+            </span>
+          )
+        },
+      },
+      {
+        key: 'status', label: '状态', align: 'center', render: l =>
+          l.isExpired
+            ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">已过期</span>
+            : <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">临期</span>,
+      },
+    ]
+    const sorted = [...expiringLots].sort((a, b) => a.daysRemaining - b.daysRemaining)
+    return (
+      <div className="mb-6">
+        <DrillPanel<ExpiringLot>
+          title="临期/过期批次"
+          columns={cols}
+          rows={sorted}
+          rowKey={l => l.id}
+          onClose={close}
+          emptyText="暂无临期或过期批次"
+        />
       </div>
     )
   }

@@ -29,8 +29,11 @@ export async function GET(req: Request) {
     const p = prisma as any
     const moves = await p.stockMove.findMany({
       where: { type: 'SCRAP' },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { movedAt: 'desc' },
       take: limit,
+      include: {
+        lot: { select: { lotNumber: true, arrivedAt: true, sourceRef: true } },
+      },
     })
     return NextResponse.json(serializeApi(moves))
   } catch (error) {
@@ -49,6 +52,7 @@ export async function POST(req: Request) {
       const qty = Number(data.qty)
       const reason = data.reason?.toString().trim() ?? ''
       const notes = data.notes?.toString().trim().slice(0, 500) ?? ''
+      const lotId = data.lotId?.toString().trim() || null
 
       if (!productId) return NextResponse.json({ error: '商品 ID 不能为空' }, { status: 400 })
       if (!Number.isFinite(qty) || qty <= 0 || qty > 100000) {
@@ -76,19 +80,51 @@ export async function POST(req: Request) {
         }, { status: 409 })
       }
 
+      // 如果指定了批次，校验批次归属和余量
+      let lotNumber: string | null = null
+      if (lotId) {
+        const lot = await p.lot.findUnique({ where: { id: lotId } })
+        if (!lot) return NextResponse.json({ error: '批次不存在' }, { status: 404 })
+        if (lot.productId !== productId) {
+          return NextResponse.json({ error: '批次与商品不匹配' }, { status: 400 })
+        }
+        if (toNum(lot.currentQty) < qty) {
+          return NextResponse.json({
+            error: `批次 ${lot.lotNumber} 剩余 ${toNum(lot.currentQty)}，不足报废 ${qty}`,
+          }, { status: 409 })
+        }
+        lotNumber = lot.lotNumber
+      }
+
       // Generate scrap reference
       const scrapCount = await p.stockMove.count({ where: { type: 'SCRAP' } })
       const scrapRef = `SCRAP-${String(scrapCount + 1).padStart(5, '0')}`
 
       const reasonLabel = REASON_LABEL[reason] ?? reason
+      const lotLabel = lotNumber ? ` / 批次 ${lotNumber}` : ''
       const noteText = [reasonLabel, notes].filter(Boolean).join(' - ')
 
-      // Atomic: decrement stock + create scrap move
+      // Atomic: decrement stock + update lot + create scrap move
       const result = await p.$transaction(async (tx: typeof p) => {
         await tx.product.update({
           where: { id: productId },
           data: { qtyOnHand: { decrement: qty } },
         })
+
+        // 扣减批次余量
+        if (lotId) {
+          const updatedLot = await tx.lot.update({
+            where: { id: lotId },
+            data: { currentQty: { decrement: qty } },
+          })
+          // 耗尽则标记 DEPLETED
+          if (toNum(updatedLot.currentQty) <= 0) {
+            await tx.lot.update({
+              where: { id: lotId },
+              data: { status: 'DEPLETED' },
+            })
+          }
+        }
 
         const move = await tx.stockMove.create({
           data: {
@@ -96,7 +132,9 @@ export async function POST(req: Request) {
             productName: productName || product.name || '未知商品',
             type: 'SCRAP',
             qty: -qty,
-            note: noteText || `报废 ${scrapRef}`,
+            lotId,
+            movedAt: new Date(),
+            note: (noteText || `报废 ${scrapRef}`) + lotLabel,
             sourceType: 'SCRAP',
             sourceId: null,
             sourceRef: scrapRef,
@@ -108,7 +146,7 @@ export async function POST(req: Request) {
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'scrap', resourceId: result.id,
-        detail: `报废 ${scrapRef}: ${productName ?? product.name} x${qty} (${reasonLabel})`,
+        detail: `报废 ${scrapRef}: ${productName ?? product.name} x${qty} (${reasonLabel})${lotLabel}`,
       })
 
       return NextResponse.json(serializeApi(result), { status: 201 })

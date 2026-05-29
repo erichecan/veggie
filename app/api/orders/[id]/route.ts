@@ -73,6 +73,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // Determine new status
       const newStatus = status ? String(status).toUpperCase() : undefined
 
+      // 库存批次日期：优先用交付日期，无则用当前时间
+      const orderMovedAt: Date = deliveryDate ? new Date(deliveryDate)
+        : orderBefore.deliveryDate ? new Date(orderBefore.deliveryDate as unknown as string)
+        : new Date()
+
       // ── 状态流转守卫 ──────────────────────────────────────────────────────
       if (newStatus && newStatus !== String(orderBefore.status)) {
         const currentStatus = String(orderBefore.status).toUpperCase()
@@ -226,6 +231,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 productName: oldLine.productName ?? '',
                 type: 'IN',
                 qty: releaseQty,
+                movedAt: orderMovedAt,
                 note: `订单 ${orderBefore.code ?? id} ${statusLabel}删除行释放`,
                 sourceType: 'ORDER',
                 sourceId: id,
@@ -256,6 +262,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                   productName: String(l.productName ?? ''),
                   type: 'OUT',
                   qty: -qty,
+                  movedAt: orderMovedAt,
                   note: `订单 ${orderBefore.code ?? id} ${statusLabel}新增行扣减`,
                   sourceType: 'ORDER',
                   sourceId: id,
@@ -283,6 +290,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                     productName: oldLine.productName ?? '',
                     type: 'OUT',
                     qty: -delta,
+                    movedAt: orderMovedAt,
                     note: `订单 ${orderBefore.code ?? id} ${statusLabel}增量 ${oldQty}→${newQty}`,
                     sourceType: 'ORDER',
                     sourceId: id,
@@ -302,6 +310,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                     productName: oldLine.productName ?? '',
                     type: 'IN',
                     qty: release,
+                    movedAt: orderMovedAt,
                     note: `订单 ${orderBefore.code ?? id} ${statusLabel}减量 ${oldQty}→${newQty}`,
                     sourceType: 'ORDER',
                     sourceId: id,
@@ -461,6 +470,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               productName: line.productName ?? '',
               type: 'OUT',
               qty: -qty,
+              movedAt: orderMovedAt,
               note: `订单 ${orderBefore.code ?? id} 确认预留`,
               sourceType: 'ORDER',
               sourceId: id,
@@ -524,6 +534,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               productName: line.productName ?? '',
               type: 'IN',
               qty,
+              movedAt: orderMovedAt,
               note: `订单 ${orderBefore.code ?? id} 撤回释放预留`,
               sourceType: 'ORDER',
               sourceId: id,
@@ -569,6 +580,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 productName: line.productName ?? '',
                 type: 'IN',
                 qty,
+                movedAt: orderMovedAt,
                 note: `订单 ${orderBefore.code ?? id} 取消释放库存（原状态: ${prevStatus}）`,
                 sourceType: 'ORDER',
                 sourceId: id,

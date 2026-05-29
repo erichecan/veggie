@@ -19,6 +19,8 @@ interface StockMove {
   sourceType?: string | null
   sourceId?: string | null
   sourceRef?: string | null
+  lotId?: string | null
+  lot?: { lotNumber: string; bestBefore?: string | null } | null
   createdAt: string
 }
 
@@ -151,10 +153,11 @@ export default function InventoryAdjustmentsPage() {
 
       <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
         <div className="grid gap-3 px-4 py-2.5 text-xs font-semibold border-b"
-          style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '1fr 80px 100px 120px 1fr 120px' }}>
+          style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '1fr 80px 100px 110px 100px 1fr 120px' }}>
           <span>商品名称</span>
           <span>类型</span>
           <span className="text-right">数量</span>
+          <span>批号</span>
           <span>源单据</span>
           <span>备注</span>
           <span>时间</span>
@@ -175,7 +178,7 @@ export default function InventoryAdjustmentsPage() {
             <div
               key={move.id}
               className="grid gap-3 px-4 py-3 border-b last:border-b-0 items-center"
-              style={{ borderColor: '#f0e4ee', gridTemplateColumns: '1fr 80px 100px 120px 1fr 120px' }}
+              style={{ borderColor: '#f0e4ee', gridTemplateColumns: '1fr 80px 100px 110px 100px 1fr 120px' }}
             >
               <span className="text-sm font-medium text-gray-800">{move.productName}</span>
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium w-fit ${TYPE_COLOR[move.type] ?? 'bg-gray-100 text-gray-600'}`}>
@@ -183,6 +186,9 @@ export default function InventoryAdjustmentsPage() {
               </span>
               <span className={`text-sm font-mono text-right font-semibold ${Number(move.qty) > 0 ? 'text-green-600' : 'text-red-500'}`}>
                 {Number(move.qty) > 0 ? '+' : ''}{Number(move.qty).toFixed(2)}
+              </span>
+              <span className="text-xs font-mono text-gray-500 truncate" title={move.lot?.bestBefore ? `保质期: ${new Date(move.lot.bestBefore).toLocaleDateString('zh-CN')}` : undefined}>
+                {move.lot?.lotNumber ?? <span className="text-gray-300">—</span>}
               </span>
               <span className="text-xs truncate">
                 {sourceHref ? (

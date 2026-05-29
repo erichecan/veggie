@@ -16,6 +16,9 @@ interface ScrapRecord {
   qty: number | string
   note?: string | null
   sourceRef?: string | null
+  lotId?: string | null
+  lot?: { lotNumber: string; arrivedAt: string; sourceRef?: string | null } | null
+  movedAt?: string
   createdAt: string
 }
 
@@ -25,6 +28,15 @@ interface ProductOption {
   qtyOnHand?: number | string
   templateId?: string
   template?: { type: string }
+}
+
+interface LotOption {
+  id: string
+  lotNumber: string
+  currentQty: number | string
+  arrivedAt: string
+  sourceRef?: string | null
+  bestBefore?: string | null
 }
 
 const SCRAP_REASONS = [
@@ -37,6 +49,10 @@ const SCRAP_REASONS = [
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
 export default function ScrapPage() {
@@ -57,6 +73,11 @@ export default function ScrapPage() {
   const [notes, setNotes] = useState('')
   const [productSearch, setProductSearch] = useState('')
 
+  // Lot state
+  const [lots, setLots] = useState<LotOption[]>([])
+  const [selectedLotId, setSelectedLotId] = useState('')
+  const [lotsLoading, setLotsLoading] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -71,6 +92,28 @@ export default function ScrapPage() {
 
   useEffect(() => { load() }, [load])
 
+  // 选择商品后，加载该商品的可用批次
+  useEffect(() => {
+    if (!selectedProductId) {
+      setLots([])
+      setSelectedLotId('')
+      return
+    }
+    let cancelled = false
+    setLotsLoading(true)
+    apiGet<LotOption[]>(`/api/lots?productId=${selectedProductId}&status=AVAILABLE`)
+      .then(data => {
+        if (cancelled) return
+        setLots(Array.isArray(data) ? data : [])
+        setSelectedLotId('')
+      })
+      .catch(() => {
+        if (!cancelled) setLots([])
+      })
+      .finally(() => { if (!cancelled) setLotsLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedProductId])
+
   async function openDialog() {
     setShowDialog(true)
     setSelectedProductId('')
@@ -78,6 +121,8 @@ export default function ScrapPage() {
     setReason('WAREHOUSE_EXPIRY')
     setNotes('')
     setProductSearch('')
+    setSelectedLotId('')
+    setLots([])
     try {
       const prods = await apiGet<ProductOption[]>('/api/products?status=ACTIVE')
       const physicalProducts = (Array.isArray(prods) ? prods : []).filter(
@@ -90,6 +135,7 @@ export default function ScrapPage() {
   }
 
   const selectedProduct = products.find(p => p.id === selectedProductId)
+  const selectedLot = lots.find(l => l.id === selectedLotId)
   const filteredProducts = products.filter(p =>
     !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase())
   )
@@ -105,6 +151,7 @@ export default function ScrapPage() {
         qty: Number(qty),
         reason,
         notes,
+        lotId: selectedLotId || undefined,
       })
       toast.success('报废记录已创建')
       setShowDialog(false)
@@ -141,14 +188,14 @@ export default function ScrapPage() {
       <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
         <div
           className="grid gap-3 px-4 py-2.5 text-xs font-semibold border-b"
-          style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '1fr 120px 100px 1fr 100px 120px' }}
+          style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '1fr 100px 100px 100px 1fr 90px' }}
         >
           <span>商品名称</span>
           <span>报废编号</span>
+          <span>关联批次</span>
           <span className="text-right">数量</span>
           <span>备注/原因</span>
           <span>时间</span>
-          <span></span>
         </div>
 
         {loading && <div className="py-12 text-center text-sm text-gray-400">加载中...</div>}
@@ -161,16 +208,18 @@ export default function ScrapPage() {
           <div
             key={r.id}
             className="grid gap-3 px-4 py-3 border-b last:border-b-0 items-center"
-            style={{ borderColor: '#f0e4ee', gridTemplateColumns: '1fr 120px 100px 1fr 100px 120px' }}
+            style={{ borderColor: '#f0e4ee', gridTemplateColumns: '1fr 100px 100px 100px 1fr 90px' }}
           >
             <span className="text-sm font-medium text-gray-800">{r.productName}</span>
             <span className="text-xs font-mono text-gray-500">{r.sourceRef ?? '—'}</span>
+            <span className="text-xs font-mono text-purple-600">
+              {r.lot?.lotNumber ?? '—'}
+            </span>
             <span className="text-sm font-mono text-right font-semibold text-red-500">
               {Math.abs(Number(r.qty)).toFixed(2)}
             </span>
             <span className="text-xs text-gray-500 truncate">{r.note ?? '—'}</span>
-            <span className="text-xs text-gray-400">{fmtDate(r.createdAt)}</span>
-            <span></span>
+            <span className="text-xs text-gray-400">{fmtDate(r.movedAt ?? r.createdAt)}</span>
           </div>
         ))}
       </div>
@@ -215,6 +264,63 @@ export default function ScrapPage() {
                 )}
               </div>
 
+              {/* Lot selector */}
+              {selectedProductId && (
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">
+                    关联批次
+                    <span className="text-gray-400 font-normal ml-1">（可选，选择要报废的入库批次）</span>
+                  </label>
+                  {lotsLoading && <p className="text-xs text-gray-400">加载批次中...</p>}
+                  {!lotsLoading && lots.length === 0 && (
+                    <p className="text-xs text-gray-400">该商品暂无可用批次记录（历史入库未生成批次）</p>
+                  )}
+                  {!lotsLoading && lots.length > 0 && (
+                    <div className="border rounded max-h-36 overflow-y-auto" style={{ borderColor: BORDER }}>
+                      {/* 不选批次选项 */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLotId('')}
+                        className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center border-b ${!selectedLotId ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
+                        style={{ borderColor: '#f0e4ee' }}
+                      >
+                        <span className="text-gray-400">不指定批次</span>
+                      </button>
+                      {lots.map(lot => (
+                        <button
+                          key={lot.id}
+                          type="button"
+                          onClick={() => setSelectedLotId(lot.id)}
+                          className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center border-b last:border-b-0 ${selectedLotId === lot.id ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
+                          style={{ borderColor: '#f0e4ee' }}
+                        >
+                          <div>
+                            <span className="font-mono text-purple-700 font-medium">{lot.lotNumber}</span>
+                            <span className="text-gray-400 ml-2 text-xs">
+                              入库 {fmtShortDate(lot.arrivedAt)}
+                              {lot.sourceRef ? ` / ${lot.sourceRef}` : ''}
+                            </span>
+                            {lot.bestBefore && (
+                              <span className="text-orange-500 ml-2 text-xs">
+                                保质期 {fmtShortDate(lot.bestBefore)}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs font-mono text-gray-600">
+                            余 {Number(lot.currentQty).toFixed(1)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedLot && (
+                    <p className="text-xs mt-1" style={{ color: PURPLE }}>
+                      已选: {selectedLot.lotNumber}（余量 {Number(selectedLot.currentQty).toFixed(1)}）
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Qty */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">报废数量</label>
@@ -222,9 +328,10 @@ export default function ScrapPage() {
                   type="number"
                   step="0.01"
                   min="0.01"
+                  max={selectedLot ? Number(selectedLot.currentQty) : undefined}
                   value={qty}
                   onChange={e => setQty(e.target.value)}
-                  placeholder="输入数量"
+                  placeholder={selectedLot ? `最多 ${Number(selectedLot.currentQty).toFixed(1)}` : '输入数量'}
                   className="w-full border rounded px-3 py-2 text-sm outline-none"
                   style={{ borderColor: BORDER }}
                   required

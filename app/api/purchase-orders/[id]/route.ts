@@ -239,9 +239,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         include: { lines: true },
       })
 
-      // On CONFIRMED: increment stock (IN)
+      // 库存批次日期：采购单的预期到货日，无则用当前时间
+      const poBatchDate: Date = po.expectedDate ?? new Date()
+
+      // On CONFIRMED: increment stock (IN) + create Lot
       if (targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED') {
-        const lines = po.lines as Array<{ productId: string | null; productName: string; orderedQty: unknown }>
+        let lotSeq = await p.lot.count()
+        const lines = po.lines as Array<{ productId: string | null; productName: string; orderedQty: unknown; bestBefore?: Date | null }>
         for (const line of lines) {
           if (!line.productId) continue
           const qty = toNum(line.orderedQty)
@@ -255,13 +259,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             where: { id: line.productId },
             data: { qtyOnHand: { increment: qty } },
           })
+
+          // 创建批次
+          lotSeq++
+          const lotNumber = `LOT-${String(lotSeq).padStart(5, '0')}`
+          const lot = await p.lot.create({
+            data: {
+              lotNumber,
+              productId: line.productId,
+              initialQty: qty,
+              currentQty: qty,
+              sourceType: 'PURCHASE_ORDER',
+              sourceId: id,
+              sourceRef: po.name,
+              bestBefore: line.bestBefore ?? null,
+              arrivedAt: poBatchDate,
+            },
+          })
+
           await p.stockMove.create({
             data: {
               productId: line.productId,
               productName: line.productName ?? '',
               type: 'IN',
               qty,
-              note: `采购单 ${po.name} 确认入库`,
+              lotId: lot.id,
+              movedAt: poBatchDate,
+              note: `采购单 ${po.name} 确认入库 / 批次 ${lotNumber}`,
               sourceType: 'PURCHASE_ORDER',
               sourceId: id,
               sourceRef: po.name,
@@ -292,6 +316,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
               productName: line.productName ?? '',
               type: 'OUT',
               qty: -qty,
+              movedAt: poBatchDate,
               note: `采购单 ${po.name} 取消释放库存`,
               sourceType: 'PURCHASE_ORDER',
               sourceId: id,

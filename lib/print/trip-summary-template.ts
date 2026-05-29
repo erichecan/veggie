@@ -1,8 +1,8 @@
 /**
- * Trip 送货汇总单 — 单页汇总表，每行一个订单
+ * Trip 汇总单 — 批次级汇总，含条形码
  *
- * 列：Sale No. | Customer | Team | Amount | Total VAT
- * 底部：Total 行 + 客户数
+ * 列：条形码 | Sale No. | Customer | Amount | Total VAT
+ * 底部：总重量、总金额、客户数
  */
 
 import {
@@ -59,24 +59,38 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 
   const orderRows = orders.map(o => {
     let vat = 0
+    let totalWeight = 0
     for (const l of o.lines) {
       vat += l.subtotal * normalizeRate(l.taxRate)
+      totalWeight += l.orderedQty
     }
-    return { order: o, vat }
+    return { order: o, vat, totalWeight }
   })
 
   const uniqueCustomers = new Set(orders.map(o => o.customerId)).size
   const totalVat = orderRows.reduce((s, r) => s + r.vat, 0)
+  const totalAmount = orderRows.reduce((s, r) => s + r.order.totalAmount, 0)
+  const totalWeight = orderRows.reduce((s, r) => s + r.totalWeight, 0)
 
-  const rowsHtml = orderRows.map(({ order: o, vat }) => `
+  const rowsHtml = orderRows.map(({ order: o, vat }) => {
+    const code = o.code ?? o.id.slice(0, 8).toUpperCase()
+    const safeCode = code.replace(/['"\\]/g, '')
+    return `
     <tr>
-      <td>${escapeHtml(o.code ?? o.id.slice(0, 8).toUpperCase())}</td>
+      <td class="bc-cell"><svg id="bc-s-${safeCode}" class="bc-svg"></svg></td>
+      <td>${escapeHtml(code)}</td>
       <td>${escapeHtml(o.customerName)}</td>
       <td>${escapeHtml(teamStr)}</td>
       <td class="num">${fmtAmt(o.totalAmount)}</td>
       <td class="num">${fmtAmt(vat)}</td>
-    </tr>
-  `).join('')
+    </tr>`
+  }).join('')
+
+  const barcodeInits = orders.map(o => {
+    const code = o.code ?? o.id.slice(0, 8).toUpperCase()
+    const safeCode = code.replace(/['"\\]/g, '')
+    return `try{JsBarcode('#bc-s-${safeCode}',${JSON.stringify(code)},{format:'CODE128',width:1.2,height:28,displayValue:false,margin:0});}catch(e){}`
+  }).join('\n')
 
   const now = fmtTimestamp(new Date().toISOString())
 
@@ -85,6 +99,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <head>
 <meta charset="utf-8" />
 <title>Summary</title>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; background: #fff; }
@@ -126,16 +141,31 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     font-size: 11px;
   }
   table.summary th.num { text-align: right; }
+  table.summary th.bc { text-align: center; width: 120px; }
   table.summary td {
     border: 1px solid #999;
     padding: 3px 8px;
-    vertical-align: top;
+    vertical-align: middle;
   }
   table.summary td.num { text-align: right; }
+  table.summary td.bc-cell { text-align: center; padding: 2px 4px; }
   table.summary tr.total-row td {
     font-weight: 700;
     border-top: 2px solid #000;
   }
+
+  .bc-svg { max-width: 110px; height: 24px; display: block; margin: 0 auto; }
+
+  .stats-row {
+    margin-top: 10px;
+    display: flex;
+    gap: 24px;
+    font-size: 11px;
+    padding: 6px 8px;
+    background: #f5f5f5;
+    border-radius: 3px;
+  }
+  .stats-row .num { font-weight: 700; }
 
   @media print {
     body { padding: 0; }
@@ -146,7 +176,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <body>
   <div class="page-header">
     <div class="left">${now}</div>
-    <div class="center">Johnstone Fruit &amp; Veg Ltd</div>
+    <div class="center">Johnstone Fruit &amp; Veg Ltd — 汇总单</div>
     <div class="right">1 / 1</div>
   </div>
 
@@ -154,12 +184,12 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     <div class="item"><span class="label">Start Date : </span>${fmtDateUK(startDate)}</div>
     <div class="item"><span class="label">End Date : </span>${fmtDateUK(endDate)}</div>
     <div class="item"><span class="label">Sales Team : </span>${escapeHtml(teamStr)}</div>
-    <div class="item"><span class="label">Salesman : </span></div>
   </div>
 
   <table class="summary">
     <thead>
       <tr>
+        <th class="bc">条形码</th>
         <th>Sale No.</th>
         <th>Customer</th>
         <th>Team</th>
@@ -168,18 +198,29 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
       </tr>
     </thead>
     <tbody>
-      ${rowsHtml || '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
+      ${rowsHtml || '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
       <tr class="total-row">
+        <td></td>
         <td>Total</td>
         <td>No of Customer : ${uniqueCustomers}</td>
         <td></td>
-        <td class="num"></td>
+        <td class="num">${fmtAmt(totalAmount)}</td>
         <td class="num">${fmtAmt(totalVat)}</td>
       </tr>
     </tbody>
   </table>
 
-<script>window.print();<\/script>
+  <div class="stats-row">
+    <span>客户数：<span class="num">${uniqueCustomers}</span></span>
+    <span>订单数：<span class="num">${orders.length}</span></span>
+    <span>总金额：<span class="num">&euro; ${fmtAmt(totalAmount)}</span></span>
+    <span>总 VAT：<span class="num">&euro; ${fmtAmt(totalVat)}</span></span>
+  </div>
+
+<script>
+  ${barcodeInits}
+  window.print();
+<\/script>
 </body>
 </html>`
 }

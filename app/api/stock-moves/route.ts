@@ -11,8 +11,9 @@ export async function GET(req: Request) {
     const limit = Math.min(1000, Math.max(1, parseInt(searchParams.get('limit') ?? '1000', 10)))
     const moves = await prisma.stockMove.findMany({
       where: productId ? { productId } : undefined,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { movedAt: 'desc' },
       take: limit,
+      include: { lot: { select: { lotNumber: true, bestBefore: true } } },
     })
     return NextResponse.json(serializeApi(moves))
   } catch (error) {
@@ -41,21 +42,71 @@ export async function POST(req: Request) {
       const sourceId = data.sourceId?.toString().trim() || null
       const sourceRef = data.sourceRef?.toString().trim().slice(0, 100) || null
 
-      const move = await prisma.stockMove.create({
-        data: {
-          productId,
-          productName: productName || '未知商品',
-          qty,
-          note,
-          type: data.type?.toString().toUpperCase() ?? 'ADJUSTMENT',
-          sourceType,
-          sourceId,
-          sourceRef,
-        },
+      const movedAt = data.movedAt ? new Date(data.movedAt) : new Date()
+      const lotId = data.lotId?.toString().trim() || null
+      const moveType: string = data.type?.toString().toUpperCase() ?? 'ADJUSTMENT'
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = prisma as any
+
+      // 出库/报废/负向调整时，如果指定了 lotId，扣减 Lot.currentQty
+      const isConsumption = lotId && qty < 0
+      if (isConsumption) {
+        const lot = await p.lot.findUnique({ where: { id: lotId } })
+        if (!lot) return NextResponse.json({ error: '批次不存在' }, { status: 404 })
+        if (lot.productId !== productId) {
+          return NextResponse.json({ error: '批次与商品不匹配' }, { status: 400 })
+        }
+        const absQty = Math.abs(qty)
+        if (Number(lot.currentQty) < absQty) {
+          return NextResponse.json({ error: `批次剩余库存不足（剩余 ${lot.currentQty}）` }, { status: 400 })
+        }
+      }
+
+      const move = await p.$transaction(async (tx: typeof p) => {
+        const created = await tx.stockMove.create({
+          data: {
+            productId,
+            productName: productName || '未知商品',
+            qty,
+            note,
+            type: moveType,
+            movedAt,
+            lotId,
+            sourceType,
+            sourceId,
+            sourceRef,
+          },
+        })
+
+        if (isConsumption) {
+          const absQty = Math.abs(qty)
+          const updated = await tx.lot.update({
+            where: { id: lotId },
+            data: { currentQty: { decrement: absQty } },
+          })
+          if (Number(updated.currentQty) <= 0) {
+            await tx.lot.update({
+              where: { id: lotId },
+              data: { status: 'DEPLETED' },
+            })
+          }
+        }
+
+        // 正向入库且指定了 lotId，增加 Lot.currentQty
+        if (lotId && qty > 0) {
+          await tx.lot.update({
+            where: { id: lotId },
+            data: { currentQty: { increment: qty } },
+          })
+        }
+
+        return created
       })
+
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'stock-move', resourceId: move.id,
-        detail: `创建库存移动: ${move.id}` })
+        detail: `创建库存移动: ${move.id}${lotId ? ` (批次 ${lotId})` : ''}` })
       return NextResponse.json(serializeApi(move), { status: 201 })
     } catch (error) {
       console.error('[POST /api/stock-moves]', error)
