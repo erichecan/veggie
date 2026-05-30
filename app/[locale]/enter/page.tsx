@@ -14,21 +14,18 @@ export default function EnterPage() {
   const ROLE_PATHS: Record<string, string> = {
     OPERATOR: `${prefix}/classic/operator`,
     RESTAURANT: `${prefix}/customer-portal`,
-    SORTER: `${prefix}/classic/operator`,
+    SORTER: `${prefix}/classic/sorter`,
     DRIVER: `${prefix}/classic/driver`,
-    BOSS: `${prefix}/classic/operator`,
-    FINANCE: `${prefix}/classic/operator`,
-    WAREHOUSE: `${prefix}/classic/operator`,
+    BOSS: `${prefix}/classic/boss`,
+    FINANCE: `${prefix}/classic/accounting`,
+    WAREHOUSE: `${prefix}/classic/warehouse`,
   }
 
   const DEMO_ACCOUNTS = [
     { labelKey: 'operator' as const, email: 'operator@veggie.com' },
-    { labelKey: 'restaurant' as const, email: 'restaurant1@veggie.com' },
-    { labelKey: 'sorter' as const, email: 'sorter@veggie.com' },
     { labelKey: 'driver' as const, email: 'driver@veggie.com' },
     { labelKey: 'boss' as const, email: 'boss@veggie.com' },
     { labelKey: 'finance' as const, email: 'finance@veggie.com' },
-    { labelKey: 'warehouse' as const, email: 'warehouse@veggie.com' },
   ]
 
   const PASSWORD = 'Demo1234!'

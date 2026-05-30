@@ -1,5 +1,4 @@
 steps:
-  # 构建 Docker 镜像（从 supply/ 根目录提交，context = veggie/）
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -7,9 +6,7 @@ steps:
       - 'gcr.io/$PROJECT_ID/veggie:$BUILD_ID'
       - '-t'
       - 'gcr.io/$PROJECT_ID/veggie:latest'
-      - '-f'
-      - 'veggie/Dockerfile'
-      - 'veggie'
+      - '.'
 
   # 推送镜像到 Container Registry
   - name: 'gcr.io/cloud-builders/docker'

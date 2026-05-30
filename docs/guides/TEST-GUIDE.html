@@ -1,0 +1,1822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Veggie 蔬菜供应链系统 · 完整测试指南</title>
+  <style>
+    :root {
+      --green: #16a34a;
+      --green-light: #dcfce7;
+      --orange: #ea580c;
+      --orange-light: #fff7ed;
+      --blue: #2563eb;
+      --blue-light: #eff6ff;
+      --purple: #7c3aed;
+      --purple-light: #f5f3ff;
+      --yellow: #ca8a04;
+      --yellow-light: #fefce8;
+      --red: #dc2626;
+      --red-light: #fef2f2;
+      --gray: #6b7280;
+      --gray-light: #f9fafb;
+      --border: #e5e7eb;
+      --text: #111827;
+      --text-muted: #6b7280;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: #f3f4f6;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .banner {
+      background: linear-gradient(135deg, #14532d 0%, #166534 50%, #15803d 100%);
+      color: white;
+      padding: 48px 40px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    .banner::before {
+      content: '🥬';
+      position: absolute;
+      right: 60px;
+      top: 20px;
+      font-size: 120px;
+      opacity: 0.08;
+    }
+    .banner h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .banner .subtitle { font-size: 16px; opacity: 0.85; margin-bottom: 20px; }
+    .banner .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+    .banner .meta span {
+      background: rgba(255,255,255,0.15);
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 80px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 48px 0 20px;
+    }
+    .section-header .icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .section-header h2 { font-size: 22px; font-weight: 700; }
+    .section-header .desc { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+    .info-box {
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      border: 1px solid transparent;
+    }
+    .info-box.blue { background: var(--blue-light); border-color: #bfdbfe; }
+    .info-box.yellow { background: var(--yellow-light); border-color: #fde68a; }
+    .info-box.green { background: var(--green-light); border-color: #bbf7d0; }
+    .info-box p { font-size: 14px; line-height: 1.7; }
+    .info-box p + p { margin-top: 6px; }
+    .info-box strong { font-weight: 600; }
+
+    /* Login cards */
+    .login-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .login-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      border: 2px solid var(--border);
+      transition: border-color 0.2s;
+    }
+    .login-card:hover { border-color: #9ca3af; }
+    .login-card .role-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .login-card .email {
+      font-size: 14px;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      color: var(--blue);
+      word-break: break-all;
+      margin-bottom: 4px;
+    }
+    .login-card .pwd {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .login-card .url {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      font-family: monospace;
+      background: var(--gray-light);
+      padding: 3px 8px;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+
+    /* Flow cards */
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+      gap: 20px;
+    }
+    .flow-card {
+      background: white;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .flow-card .flow-header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .flow-card .flow-header .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .flow-card .flow-header h3 { font-size: 15px; font-weight: 700; }
+    .flow-card .flow-body { padding: 4px 0 12px; }
+    .flow-step {
+      display: flex;
+      gap: 12px;
+      padding: 7px 18px;
+      font-size: 13px;
+    }
+    .flow-step .num {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .flow-step .content { flex: 1; }
+    .flow-step .content .actor {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 2px;
+    }
+    .flow-step .content .action { color: var(--text); }
+    .flow-step .content .check {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .flow-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 8px 18px;
+    }
+
+    /* Feature tables */
+    .feat-card {
+      background: white;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .feat-card-header {
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .feat-card-header:hover { background: var(--gray-light); }
+    .feat-card-header h3 { font-size: 15px; font-weight: 700; flex: 1; }
+    .feat-card-header .count {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--gray-light);
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .feat-card-header .chevron {
+      font-size: 12px;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+    .feat-card-header.open .chevron { transform: rotate(180deg); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      background: var(--gray-light);
+      padding: 9px 14px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tag-p0 { background: #fef2f2; color: #b91c1c; }
+    .tag-p1 { background: #fff7ed; color: #c2410c; }
+    .tag-p2 { background: var(--blue-light); color: #1d4ed8; }
+
+    .role-op { background: #dbeafe; color: #1e40af; }
+    .role-driver { background: #d1fae5; color: #065f46; }
+    .role-boss { background: #f3e8ff; color: #6b21a8; }
+    .role-finance { background: #fef9c3; color: #854d0e; }
+
+    .step-op { background: #dbeafe; }
+    .step-driver { background: #d1fae5; }
+    .step-boss { background: #f3e8ff; }
+    .step-finance { background: #fef9c3; }
+
+    .flow-op { background: #eff6ff; }
+    .flow-driver { background: #f0fdf4; }
+    .flow-boss { background: #faf5ff; }
+    .flow-finance { background: #fefce8; }
+
+    .check-box {
+      width: 16px; height: 16px;
+      border: 2px solid #d1d5db;
+      border-radius: 3px;
+      display: inline-block;
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .pill-pending { background: #f1f5f9; color: #475569; }
+    .pill-active { background: #dcfce7; color: #15803d; }
+    .pill-done { background: #dbeafe; color: #1d4ed8; }
+
+    .mono { font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; }
+
+    .collapse-body { overflow: hidden; }
+    .collapse-body.hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- ── Banner ── -->
+<div class="banner">
+  <h1>Veggie 蔬菜供应链系统 · 完整测试指南</h1>
+  <p class="subtitle">供测试人员逐步验证系统核心功能的操作手册 · 4 个角色 · 4 条闭环流程</p>
+  <div class="meta">
+    <span>🌐 生产环境：veggie-549968261036.europe-west1.run.app</span>
+    <span>🔑 统一密码：Demo1234!</span>
+    <span>👤 4 个角色</span>
+    <span>🔄 4 条闭环流程</span>
+    <span>📋 60+ 功能测试项</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ── 第一节：快速登录 ── -->
+  <div class="section-header">
+    <div class="icon" style="background:#dbeafe">🔐</div>
+    <div>
+      <h2>第一节：角色登录入口</h2>
+      <div class="desc">4 个预置 Demo 账号，统一密码 Demo1234!，系统会自动跳转到对应角色界面</div>
+    </div>
+  </div>
+
+  <div class="info-box blue">
+    <p><strong>登录地址：</strong><span class="mono">https://veggie-549968261036.europe-west1.run.app/enter</span></p>
+    <p>进入登录页后，可点击"一键登录"按钮直接进入对应角色，无需手动输入账号密码。</p>
+  </div>
+
+  <div class="login-grid">
+    <div class="login-card">
+      <div class="role-badge role-op">运营 OPERATOR</div>
+      <div class="email">operator@veggie.com</div>
+      <div class="pwd">密码：Demo1234!</div>
+      <div class="url">/classic/operator</div>
+    </div>
+    <div class="login-card">
+      <div class="role-badge role-driver">司机 DRIVER</div>
+      <div class="email">driver@veggie.com</div>
+      <div class="pwd">密码：Demo1234!</div>
+      <div class="url">/classic/driver</div>
+    </div>
+    <div class="login-card">
+      <div class="role-badge role-boss">老板 BOSS</div>
+      <div class="email">boss@veggie.com</div>
+      <div class="pwd">密码：Demo1234!</div>
+      <div class="url">/classic/boss</div>
+    </div>
+    <div class="login-card">
+      <div class="role-badge role-finance">会计 FINANCE</div>
+      <div class="email">finance@veggie.com</div>
+      <div class="pwd">密码：Demo1234!</div>
+      <div class="url">/classic/accounting</div>
+    </div>
+  </div>
+
+  <!-- ── 第二节：4 条核心闭环流程 ── -->
+  <div class="section-header">
+    <div class="icon" style="background:#dcfce7">🔄</div>
+    <div>
+      <h2>第二节：核心闭环流程（P0 / P1）</h2>
+      <div class="desc">测试前请先走通这 4 条流程，确保系统主干路径无误</div>
+    </div>
+  </div>
+
+  <div class="info-box yellow">
+    <p><strong>P0 流程</strong>是业务必须走通的主干路径，任何 P0 断裂即视为严重故障。<strong>P1 流程</strong>是重要但可容忍短暂中断的辅助流程。</p>
+  </div>
+
+  <div class="flow-grid">
+
+    <!-- 流程 1 -->
+    <div class="flow-card">
+      <div class="flow-header flow-op">
+        <span class="badge tag-p0">P0</span>
+        <h3>完整订单生命周期</h3>
+      </div>
+      <div class="flow-body">
+        <div class="flow-step">
+          <div class="num step-op">1</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">进入「下单」，选择客户，添加商品，选择价格模式（多价目表 / 上次价 / 默认价），确认报价单</div>
+            <div class="check">✓ 报价单状态变为 CONFIRMED，总价计算正确</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-op">2</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">进入「订单列表」，找到该订单，点击「生成波次」，系统创建新波次</div>
+            <div class="check">✓ 订单状态变为 WAVE_ASSIGNED，波次编号可见</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-op">3</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">进入「波次管理」，将波次拖拽到司机时间槽（AM/PM + 批次 + 司机名），完成分配</div>
+            <div class="check">✓ 波次状态流转至 PICKING → PICKED → SORTING → SORTED</div>
+          </div>
+        </div>
+        <div class="flow-divider"></div>
+        <div class="flow-step">
+          <div class="num step-op">4</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">进入「行程」，使用 3 步向导创建行程（选批次 → 勾选订单 → 确认），分配给司机</div>
+            <div class="check">✓ 行程状态变为 PENDING_ASSIGNMENT</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-driver">5</div>
+          <div class="content">
+            <div class="actor role-driver">司机</div>
+            <div class="action">进入「我的行程」，查看待配送行程，开始配送并核验货物</div>
+            <div class="check">✓ 行程状态变为 IN_PROGRESS</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-driver">6</div>
+          <div class="content">
+            <div class="actor role-driver">司机</div>
+            <div class="action">完成配送，上传 POD 照片（送货证明），行程标记完成</div>
+            <div class="check">✓ 订单状态变为 IN_DELIVERY → COMPLETED</div>
+          </div>
+        </div>
+        <div class="flow-divider"></div>
+        <div class="flow-step">
+          <div class="num step-op">7</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">进入「发票」，生成客户发票（选客户 → 选订单 → 确认），完成结算</div>
+            <div class="check">✓ 订单状态变为 LOCKED，发票可打印</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流程 2 -->
+    <div class="flow-card">
+      <div class="flow-header flow-driver">
+        <span class="badge tag-p0">P0</span>
+        <h3>司机结算与对账闭环</h3>
+      </div>
+      <div class="flow-body">
+        <div class="flow-step">
+          <div class="num step-driver">1</div>
+          <div class="content">
+            <div class="actor role-driver">司机</div>
+            <div class="action">进入「结算中心」，查看当前行程的应收账款，填入实际现金收款金额和线上收款金额</div>
+            <div class="check">✓ 系统实时计算差额（实收 - 应收）</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-driver">2</div>
+          <div class="content">
+            <div class="actor role-driver">司机</div>
+            <div class="action">确认无误后提交结算申请，状态从 PENDING 变为 SUBMITTED</div>
+            <div class="check">✓ 提交后司机端不能再修改</div>
+          </div>
+        </div>
+        <div class="flow-divider"></div>
+        <div class="flow-step">
+          <div class="num step-finance">3</div>
+          <div class="content">
+            <div class="actor role-finance">会计</div>
+            <div class="action">进入「对账管理」，扫描条形码或按批次筛选，找到该司机的结算记录</div>
+            <div class="check">✓ 可看到司机汇总：现金 + 线上 + 差额</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-finance">4</div>
+          <div class="content">
+            <div class="actor role-finance">会计</div>
+            <div class="action">核对金额，批量标记已退货商品，确认对账，状态变为 CONFIRMED</div>
+            <div class="check">✓ 司机结算闭环完成，数据进入报表</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流程 3 -->
+    <div class="flow-card">
+      <div class="flow-header flow-op">
+        <span class="badge tag-p1">P1</span>
+        <h3>采购入库与库存更新</h3>
+      </div>
+      <div class="flow-body">
+        <div class="flow-step">
+          <div class="num step-op">1</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">进入「采购」，导入采购单（支持 PDF / Excel / CSV），系统自动模糊匹配商品</div>
+            <div class="check">✓ 匹配率显示，未匹配商品需人工确认</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-op">2</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">确认采购单内容，提交后状态流转（草稿 → 已确认 → 已入库）</div>
+            <div class="check">✓ 商品库存数量相应增加</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-op">3</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">进入「商品管理」，查看负库存或低库存商品（系统标红 / 橙色预警）</div>
+            <div class="check">✓ 库存预警正确反映采购前后变化</div>
+          </div>
+        </div>
+        <div class="flow-divider"></div>
+        <div class="flow-step">
+          <div class="num step-boss">4</div>
+          <div class="content">
+            <div class="actor role-boss">老板</div>
+            <div class="action">进入「采购分析」，查看本次采购的供应商 / 商品 / 状态维度数据</div>
+            <div class="check">✓ 采购金额、数量在分析页面正确反映</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流程 4 -->
+    <div class="flow-card">
+      <div class="flow-header flow-finance">
+        <span class="badge tag-p1">P1</span>
+        <h3>客户对账单生成与发送</h3>
+      </div>
+      <div class="flow-body">
+        <div class="flow-step">
+          <div class="num step-op">1</div>
+          <div class="content">
+            <div class="actor role-op">运营</div>
+            <div class="action">确认本周期所有客户订单已完成（状态 COMPLETED / LOCKED），并生成发票</div>
+            <div class="check">✓ 发票列表中可见对应客户的发票记录</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-finance">2</div>
+          <div class="content">
+            <div class="actor role-finance">会计</div>
+            <div class="action">进入「对账单」，点击「生成对账单」，选择客户和账期，确认生成</div>
+            <div class="check">✓ 对账单状态为 DRAFT，金额汇总正确</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-finance">3</div>
+          <div class="content">
+            <div class="actor role-finance">会计</div>
+            <div class="action">核对对账单明细（订单金额、折扣、税额），确认无误后点击「确认」</div>
+            <div class="check">✓ 状态变为 CONFIRMED，锁定不可修改</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="num step-finance">4</div>
+          <div class="content">
+            <div class="actor role-finance">会计</div>
+            <div class="action">点击「发送」，对账单以邮件形式发送给客户，状态变为 SENT</div>
+            <div class="check">✓ 状态变为 SENT，发送时间记录正确</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /flow-grid -->
+
+  <!-- ── 第三节：运营功能测试表 ── -->
+  <div class="section-header">
+    <div class="icon" style="background:#dbeafe">👩‍💼</div>
+    <div>
+      <h2>第三节：运营功能测试表（OPERATOR）</h2>
+      <div class="desc">运营是系统核心角色，负责订单、波次、行程、采购、发票、商品等全链路管理</div>
+    </div>
+  </div>
+
+  <div class="info-box blue">
+    <p><strong>登录账号：</strong>operator@veggie.com &nbsp;|&nbsp; <strong>密码：</strong>Demo1234!</p>
+    <p>登录后进入 /classic/operator，左侧导航包含：订单、下单、波次、分货、行程、商品、客户、采购、报价单、发票、司机、价目表、报表等模块。</p>
+  </div>
+
+  <!-- 订单管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>📦</span>
+      <h3>订单管理</h3>
+      <span class="count">8 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>订单列表加载</td>
+            <td>进入「订单」页，列表应显示所有订单，默认按日期降序，每页 500 条</td>
+            <td>列表正常渲染，无空白页</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>多状态筛选</td>
+            <td>点击状态筛选器，勾选 PENDING / CONFIRMED / WAVE_ASSIGNED / IN_DELIVERY / COMPLETED / LOCKED，分别查看各状态订单</td>
+            <td>筛选后仅显示对应状态订单</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>按日期筛选</td>
+            <td>使用日期选择器筛选特定配送日期，如「今天」、「本周」</td>
+            <td>仅显示该日期的订单</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>订单详情查看</td>
+            <td>点击任意订单，进入详情页，查看 Lines / Optional Products / Automation / Other Info 等 Tab</td>
+            <td>各 Tab 数据正确显示，无 500 错误</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>订单编辑模式</td>
+            <td>在订单详情页进入编辑模式，修改商品数量或备注，保存</td>
+            <td>保存成功，数据更新，审计日志记录变更</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>批量生成波次</td>
+            <td>在订单列表勾选多个 CONFIRMED 状态的订单，点击「生成波次」</td>
+            <td>波次创建成功，订单状态变为 WAVE_ASSIGNED</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>CSV 导出</td>
+            <td>在订单列表点击「导出 CSV」，下载后用 Excel 打开</td>
+            <td>文件下载成功，包含订单编号、客户、金额等字段</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>按日汇报视图</td>
+            <td>切换到「按日汇报」视图，查看各日期的订单统计</td>
+            <td>汇报数据与订单列表一致</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 下单 / 报价单 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🛒</span>
+      <h3>下单与报价单</h3>
+      <span class="count">7 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>创建报价单（多价目表模式）</td>
+            <td>进入「下单」，选择客户，价格模式选「多价目表」，添加商品，确认金额</td>
+            <td>价格按客户绑定的价目表计算，金额正确</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>创建报价单（上次价模式）</td>
+            <td>下单时价格模式选「上次价」，系统自动填入该客户上次购买此商品的单价</td>
+            <td>单价与历史记录一致</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>创建报价单（默认价模式）</td>
+            <td>下单时价格模式选「默认价」，商品使用商品表中的默认售价</td>
+            <td>单价与商品默认售价一致</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>发送报价邮件</td>
+            <td>在报价单详情页点击「发送邮件」，填写收件人（或使用客户默认邮箱）</td>
+            <td>邮件发送成功，报价单 PDF 附件正确</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>打印报价单 PDF</td>
+            <td>在报价单详情页点击「打印」或「导出 PDF」</td>
+            <td>PDF 格式正确，包含商品明细和总价</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>CSV 批量导入报价单</td>
+            <td>在报价单列表点击「CSV 导入」，上传准备好的 CSV 文件</td>
+            <td>解析成功，预览后确认创建多张报价单</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>批量操作报价单</td>
+            <td>勾选多张报价单，使用批量操作：批量确认 / 批量删除 / 批量复制</td>
+            <td>批量操作执行成功，状态正确变更</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 波次管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🌊</span>
+      <h3>波次管理</h3>
+      <span class="count">6 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>波次看板加载</td>
+            <td>进入「波次管理」，日历看板显示当前周各时间槽（AM/PM × 批次 × 司机）</td>
+            <td>看板正常渲染，波次卡片可见</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>拖拽分配波次</td>
+            <td>从「未分配」区域将波次卡片拖拽到指定司机时间槽</td>
+            <td>拖拽成功，波次分配到该司机，界面即时更新</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>日期选择器</td>
+            <td>使用波次看板上方的日期选择器切换到其他日期</td>
+            <td>看板切换到所选日期的波次数据</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>自动生成波次</td>
+            <td>点击「自动生成」按钮，系统根据订单自动创建波次</td>
+            <td>波次按规则创建，无手动操作</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>波次详情查看</td>
+            <td>点击波次卡片，进入波次详情页，查看缺货预警（含缺货百分比）和分区汇总</td>
+            <td>缺货商品标红，百分比显示正确，分区汇总清晰</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>打印波次单</td>
+            <td>在波次详情页点击「打印」，使用打印优化布局输出</td>
+            <td>打印预览显示优化过的表格布局</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 分货管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🗂️</span>
+      <h3>分货管理（Sorting）</h3>
+      <span class="count">4 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>分货列表状态筛选</td>
+            <td>进入「分货」，使用状态筛选器，依次查看 PICKED / SORTING / SORTED 状态的波次</td>
+            <td>各状态筛选结果正确</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>按餐馆分组查看</td>
+            <td>在分货列表或详情页，切换到「按餐馆（客户）分组」视图</td>
+            <td>商品按客户分组展示，便于装箱</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>分货状态流转</td>
+            <td>将波次从 PICKED 手动推进到 SORTING，再推进到 SORTED</td>
+            <td>状态正确流转，时间戳记录</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>差异处理</td>
+            <td>在分货过程中标记实际分货数量与波次数量不符的商品</td>
+            <td>差异记录保存，可在波次详情中查看</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 行程管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🚚</span>
+      <h3>行程管理（Trips）</h3>
+      <span class="count">7 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>3 步创建向导</td>
+            <td>点击「新建行程」，完成 3 步向导：①选择批次 → ②勾选要包含的订单 → ③确认行程信息</td>
+            <td>行程创建成功，状态为 PENDING</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>分配司机</td>
+            <td>创建行程后，在行程详情页选择司机，确认分配</td>
+            <td>行程状态变为 PENDING_ASSIGNMENT，司机端可见</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>行程状态追踪</td>
+            <td>在行程列表查看各状态：PENDING / PENDING_ASSIGNMENT / VERIFYING / IN_PROGRESS / COMPLETED</td>
+            <td>状态标签颜色区分明确，数量统计正确</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>货物核验页面</td>
+            <td>进入行程详情，查看「货物核验」Tab，确认待配送商品清单</td>
+            <td>商品清单与订单明细一致</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>异常记录查看</td>
+            <td>查看已有异常记录的行程，进入异常详情（包含原因、处理方式、照片）</td>
+            <td>异常信息完整显示，照片可预览</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>退货记录查看</td>
+            <td>查看含退货的行程，退货商品列表和原因清晰展示</td>
+            <td>退货数据完整，不影响其他订单</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>POD 照片查看</td>
+            <td>进入已完成行程，查看司机上传的 POD（送货证明）照片</td>
+            <td>照片可正常加载和预览</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 商品管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🥦</span>
+      <h3>商品管理</h3>
+      <span class="count">5 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>库存预警显示</td>
+            <td>进入「商品」列表，查看负库存（标红）和低库存（标橙）商品</td>
+            <td>预警颜色正确，数量显示准确</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>快速编辑模式</td>
+            <td>在商品列表进入「快速编辑」模式，直接在列表内修改商品价格或库存</td>
+            <td>修改即时保存，无需进入详情页</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>分组查看</td>
+            <td>使用「分组」功能，按类别或供应商对商品分组</td>
+            <td>分组展示正确，折叠/展开功能正常</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>商品搜索</td>
+            <td>在搜索框输入商品名称关键字，查看搜索结果</td>
+            <td>搜索结果准确，支持中文和拼音</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>商品详情编辑</td>
+            <td>进入商品详情，修改默认售价、单位、库存预警阈值，保存</td>
+            <td>修改保存成功，列表视图实时更新</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 客户管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🏪</span>
+      <h3>客户管理</h3>
+      <span class="count">5 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>客户列表加载</td>
+            <td>进入「客户」模块，查看客户列表，包含客户名、信用条款、绑定价目表</td>
+            <td>列表正常显示，字段齐全</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>绑定价目表</td>
+            <td>进入客户详情，修改客户绑定的价目表，保存后在下单时验证价格</td>
+            <td>下单时价格自动使用新绑定的价目表</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>信用条款设置</td>
+            <td>修改客户信用条款（如：现付、月结 30 天），保存</td>
+            <td>信用条款保存成功，显示在客户详情</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>归档客户</td>
+            <td>选择一个测试客户，点击「归档」，客户从活跃列表移除</td>
+            <td>客户状态变为归档，不再出现在下单选择中</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>恢复归档客户</td>
+            <td>在「已归档」筛选下找到刚才归档的客户，点击「恢复」</td>
+            <td>客户重新出现在活跃列表中</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 采购管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>📥</span>
+      <h3>采购管理</h3>
+      <span class="count">5 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>文件导入（Excel）</td>
+            <td>进入「采购」，点击「导入」，上传 Excel 格式的采购清单</td>
+            <td>解析成功，商品模糊匹配，显示匹配率</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>文件导入（PDF）</td>
+            <td>上传 PDF 格式的供应商采购单</td>
+            <td>PDF 解析后提取商品和数量</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>模糊匹配商品</td>
+            <td>导入后查看未自动匹配的商品，手动选择正确商品完成匹配</td>
+            <td>手动匹配保存，后续相同商品自动记忆</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>确认采购单</td>
+            <td>核对采购单内容后点击「确认」，状态从草稿变为已确认</td>
+            <td>状态流转正确，库存数量相应增加</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>采购状态工作流</td>
+            <td>追踪采购单从「草稿 → 已确认 → 已入库」的完整状态流转</td>
+            <td>每步状态变更正确，可在列表中筛选</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 发票管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🧾</span>
+      <h3>发票管理</h3>
+      <span class="count">4 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>生成发票（3 步弹窗）</td>
+            <td>点击「生成发票」，在弹窗中：①选择客户 → ②勾选要包含的订单 → ③确认生成</td>
+            <td>发票创建成功，自动汇总所选订单金额</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>多订单聚合</td>
+            <td>同一客户选择多张订单生成一张发票，验证金额汇总</td>
+            <td>总金额 = 各订单金额之和，明细正确</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>打印发票</td>
+            <td>在发票详情页点击「打印」</td>
+            <td>打印预览格式正确，包含客户信息和金额明细</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>发票状态与订单联动</td>
+            <td>生成发票后，查看对应订单状态</td>
+            <td>订单状态变为 LOCKED，不可再修改</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 司机管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🧑‍✈️</span>
+      <h3>司机管理</h3>
+      <span class="count">4 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>时间槽管理</td>
+            <td>进入「司机」，查看各司机的 AM/PM 时间槽和批次编号配置</td>
+            <td>时间槽配置正确显示，与波次看板一致</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>新增时间槽</td>
+            <td>为某司机新增一个时间槽（选择 AM/PM、填入批次名、司机姓名）</td>
+            <td>新槽位出现在波次看板中</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>归档司机</td>
+            <td>选择测试司机，执行归档操作</td>
+            <td>司机从活跃列表移除，时间槽在波次看板中隐藏</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>恢复归档司机</td>
+            <td>在「已归档」视图恢复刚才归档的司机</td>
+            <td>司机重新出现在活跃列表</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 价目表管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>💰</span>
+      <h3>价目表管理</h3>
+      <span class="count">3 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>价目表列表</td>
+            <td>进入「价目表」，查看所有价目表（每页 80 条），包含名称和是否可选标志</td>
+            <td>列表正常显示，可选标志（★）清晰</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>价目表详情</td>
+            <td>点击价目表，查看该价目表下每个商品的单价设置</td>
+            <td>商品价格列表正确展示</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>打印价目表</td>
+            <td>在价目表详情页点击「打印」</td>
+            <td>打印预览格式正确，适合交给客户参考</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 报表 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>📊</span>
+      <h3>运营报表</h3>
+      <span class="count">4 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>销售报表</td>
+            <td>进入「报表 → 销售报表」，选择日期范围和客户，查看汇总数据</td>
+            <td>报表数据正确，筛选有效</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>采购报表</td>
+            <td>进入「报表 → 采购报表」，选择供应商和日期，查看采购金额</td>
+            <td>采购数据与采购单记录一致</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>物流报表</td>
+            <td>进入「报表 → 物流报表」，查看各司机配送次数、行程里程等</td>
+            <td>物流数据展示正确</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>报表导出</td>
+            <td>在任意报表页点击「导出」按钮，下载 CSV 或 PDF</td>
+            <td>文件下载成功，数据与页面一致</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── 第四节：司机功能测试表 ── -->
+  <div class="section-header">
+    <div class="icon" style="background:#d1fae5">🚛</div>
+    <div>
+      <h2>第四节：司机功能测试表（DRIVER）</h2>
+      <div class="desc">司机负责配送执行、异常上报、退货记录和结算申请</div>
+    </div>
+  </div>
+
+  <div class="info-box green">
+    <p><strong>登录账号：</strong>driver@veggie.com &nbsp;|&nbsp; <strong>密码：</strong>Demo1234!</p>
+    <p>登录后进入 /classic/driver，包含：我的行程、结算中心两个模块。</p>
+  </div>
+
+  <!-- 司机-我的行程 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🗺️</span>
+      <h3>我的行程</h3>
+      <span class="count">7 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>行程列表</td>
+            <td>进入「我的行程」，查看分配给当前司机的行程列表，按状态分类</td>
+            <td>仅显示该司机的行程，状态正确</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>货物核验</td>
+            <td>进入待配送行程，点击「货物核验」，逐一确认装车商品</td>
+            <td>核验后行程状态变为 VERIFYING</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>开始配送</td>
+            <td>货物核验通过后，点击「开始配送」</td>
+            <td>行程状态变为 IN_PROGRESS，出发时间记录</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>提交异常（Exception Modal）</td>
+            <td>配送途中点击「上报异常」，填写异常原因、处理方式，上传照片，提交</td>
+            <td>异常记录保存，运营端可见</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>记录退货（Return Modal）</td>
+            <td>点击「退货」，选择退货商品和数量，填写退货原因，可上传退货照片</td>
+            <td>退货记录保存，影响结算金额</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>上传 POD 照片</td>
+            <td>配送到客户后，上传签收照片（POD）作为送达证明</td>
+            <td>照片上传成功，与订单关联</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>完成行程</td>
+            <td>所有订单配送完毕后，点击「完成行程」</td>
+            <td>行程状态变为 COMPLETED，触发结算流程</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 司机-结算中心 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>💵</span>
+      <h3>结算中心</h3>
+      <span class="count">5 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>查看应收账款</td>
+            <td>进入「结算中心」，查看当前行程的应收总金额（来自已完成订单）</td>
+            <td>应收金额与订单合计一致</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>填写现金收款</td>
+            <td>在现金栏填入实际收到的现金金额</td>
+            <td>差额（实收 - 应收）实时计算并显示</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>填写线上收款</td>
+            <td>在线上支付栏填入微信/支付宝等线上收款金额</td>
+            <td>现金 + 线上合计与应收对比，差额更新</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>提交结算</td>
+            <td>确认金额无误后点击「提交结算」</td>
+            <td>状态从 PENDING 变为 SUBMITTED，司机端不可再修改</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>结算确认通知</td>
+            <td>会计在对账管理确认后，查看结算状态是否更新为 CONFIRMED</td>
+            <td>状态变为 CONFIRMED，结算完成</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── 第五节：老板功能测试表 ── -->
+  <div class="section-header">
+    <div class="icon" style="background:#f3e8ff">👔</div>
+    <div>
+      <h2>第五节：老板功能测试表（BOSS）</h2>
+      <div class="desc">老板视角聚焦数据分析：销售、采购、物流多维度 KPI 和报表</div>
+    </div>
+  </div>
+
+  <div class="info-box" style="background:#faf5ff; border-color:#e9d5ff;">
+    <p><strong>登录账号：</strong>boss@veggie.com &nbsp;|&nbsp; <strong>密码：</strong>Demo1234!</p>
+    <p>登录后进入 /classic/boss，包含：仪表盘、销售分析、采购分析、销售报表四个模块（只读视图，无操作权限）。</p>
+  </div>
+
+  <!-- 仪表盘 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>📈</span>
+      <h3>仪表盘</h3>
+      <span class="count">3 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>KPI 卡片</td>
+            <td>进入仪表盘，查看今日/本周/本月的核心 KPI：营业额、订单数、客户数</td>
+            <td>数字正确加载，无空白或 NaN</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>趋势图表</td>
+            <td>查看销售趋势折线图和商品销量柱状图</td>
+            <td>图表正常渲染，数据有意义</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>客户/商品排行榜</td>
+            <td>查看销售额排名前 N 的客户和商品榜单</td>
+            <td>排行榜数据正确，排序准确</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 销售分析 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>📉</span>
+      <h3>销售分析（11 指标 × 3 维度）</h3>
+      <span class="count">6 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>11 个指标切换</td>
+            <td>进入「销售分析」，依次切换指标：销售额、订单数、客户数、商品数量、平均客单价、退货金额、退货数量、毛利、毛利率、税额、折扣</td>
+            <td>每个指标切换后数据正确更新</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>3 个维度切换</td>
+            <td>切换分析维度：按业务员 / 按商品 / 按客户</td>
+            <td>维度切换后排行榜和图表正确重组</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>5 个日期范围</td>
+            <td>切换日期范围：今天 / 本周 / 本月 / 本季 / 本年</td>
+            <td>数据随日期范围正确变化</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>饼图视图</td>
+            <td>切换到「饼图」视图，查看各维度的占比分布</td>
+            <td>饼图正常渲染，百分比之和为 100%</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>柱状图视图</td>
+            <td>切换到「柱状图」视图</td>
+            <td>柱状图正常渲染，与列表数据一致</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>列表视图</td>
+            <td>切换到「列表」视图，查看数据表格</td>
+            <td>列表数据可排序，数字精度正确</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 采购分析 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🧮</span>
+      <h3>采购分析</h3>
+      <span class="count">4 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>5 个采购指标</td>
+            <td>进入「采购分析」，切换：采购金额 / 采购数量 / 采购订单数 / 平均单价 / 供应商数</td>
+            <td>各指标数据正确反映采购记录</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>3 个分析维度</td>
+            <td>切换维度：按供应商 / 按商品 / 按状态</td>
+            <td>维度切换后数据重新分组展示</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>4 个日期范围</td>
+            <td>切换：本周 / 本月 / 本季 / 本年</td>
+            <td>数据随时间范围正确变化</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>KPI 卡片</td>
+            <td>查看页面顶部的采购 KPI 汇总卡片</td>
+            <td>总采购额、供应商数等卡片数据准确</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 销售报表 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>📄</span>
+      <h3>销售报表</h3>
+      <span class="count">4 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>自定义筛选</td>
+            <td>进入「销售报表」，设置日期范围、客户、商品等筛选条件，点击查询</td>
+            <td>报表数据按筛选条件正确过滤</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>摘要打印格式</td>
+            <td>选择「摘要」打印模式，点击打印预览</td>
+            <td>摘要格式仅显示汇总行，不含明细</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>多行打印格式</td>
+            <td>选择「多行」打印模式，查看打印预览</td>
+            <td>每张订单展开为多行商品明细</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>按订单打印格式</td>
+            <td>选择「按订单」打印模式</td>
+            <td>每张订单独立一页或分组显示</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── 第六节：会计功能测试表 ── -->
+  <div class="section-header">
+    <div class="icon" style="background:#fef9c3">💼</div>
+    <div>
+      <h2>第六节：会计功能测试表（FINANCE）</h2>
+      <div class="desc">会计负责司机对账审核和客户对账单生成发送</div>
+    </div>
+  </div>
+
+  <div class="info-box yellow">
+    <p><strong>登录账号：</strong>finance@veggie.com &nbsp;|&nbsp; <strong>密码：</strong>Demo1234!</p>
+    <p>登录后进入 /classic/accounting，包含：对账管理（Reconciliation）、对账单（Statements）两个模块。</p>
+  </div>
+
+  <!-- 对账管理 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🔍</span>
+      <h3>对账管理（司机结算审核）</h3>
+      <span class="count">6 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>对账列表加载</td>
+            <td>进入「对账管理」，查看所有待审核的司机结算记录</td>
+            <td>列表正常显示，包含司机名、行程、金额差额</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>条形码扫描定位</td>
+            <td>使用扫码枪或手机摄像头扫描司机行程单的条形码，系统自动定位对应结算记录</td>
+            <td>扫码后自动选中对应行，无需手动搜索</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>按批次筛选</td>
+            <td>使用批次过滤器选择特定 AM/PM 批次，缩小对账范围</td>
+            <td>仅显示该批次的结算记录</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>司机付款汇总</td>
+            <td>查看页面底部（或侧边）的司机付款汇总：现金总计、线上总计、差额合计</td>
+            <td>三项数字正确汇总，与各行数据之和一致</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>批量标记退货</td>
+            <td>勾选多条有退货的对账记录，点击「批量标记已退货」</td>
+            <td>退货状态更新，影响对应结算金额</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>确认对账</td>
+            <td>核对无误后，点击「确认」完成对账审核</td>
+            <td>状态变为 CONFIRMED，数据锁定，进入财务报表</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 对账单 -->
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>📑</span>
+      <h3>对账单管理（客户账期）</h3>
+      <span class="count">6 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>对账单列表</td>
+            <td>进入「对账单」，查看所有客户对账单，按状态分类（草稿 / 已确认 / 已发送）</td>
+            <td>列表正常显示，状态标签颜色区分明确</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>生成对账单（弹窗）</td>
+            <td>点击「生成对账单」，在弹窗中选择客户和账期（开始日期 - 结束日期），确认</td>
+            <td>对账单创建成功，状态为 DRAFT，金额汇总正确</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>对账单明细核查</td>
+            <td>点击对账单，查看明细：各订单金额、折扣、税额、净额</td>
+            <td>明细与发票记录一致，财务计算正确</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>确认对账单</td>
+            <td>核对对账单无误后，点击「确认」</td>
+            <td>状态变为 CONFIRMED，不可再修改</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>发送对账单</td>
+            <td>在已确认的对账单上点击「发送」</td>
+            <td>状态变为 SENT，发送时间戳记录，客户可收到邮件</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>状态不可逆验证</td>
+            <td>对已发送（SENT）的对账单，尝试修改</td>
+            <td>修改按钮不可点击，状态锁定</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── 第七节：通用边界测试 ── -->
+  <div class="section-header">
+    <div class="icon" style="background:#fee2e2">⚠️</div>
+    <div>
+      <h2>第七节：通用边界与安全测试</h2>
+      <div class="desc">这些场景需要每次系统变更后验证，防止回归</div>
+    </div>
+  </div>
+
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🔒</span>
+      <h3>鉴权与访问控制</h3>
+      <span class="count">5 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>未登录跳转</td>
+            <td>清除 Cookie 和 localStorage，直接访问 /classic/operator</td>
+            <td>自动跳转到 /enter 登录页</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>错误密码拒绝</td>
+            <td>在登录页手动输入账号，密码填写错误</td>
+            <td>返回错误提示，不进入系统</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>跨角色访问拒绝</td>
+            <td>以司机账号登录后，手动访问 /classic/operator（运营路由）</td>
+            <td>403 或跳转回登录页，不能访问运营功能</td>
+            <td><span class="tag tag-p0">P0</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>Token 过期处理</td>
+            <td>等待 token 过期（或手动删除 Cookie 后刷新页面）</td>
+            <td>自动跳转登录页，不出现白屏或 500</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>会计无操作权限</td>
+            <td>以会计账号登录，尝试访问订单编辑、波次操作等运营功能</td>
+            <td>功能不可见或按钮禁用</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="feat-card">
+    <div class="feat-card-header open" onclick="toggleCard(this)">
+      <span>🌐</span>
+      <h3>网络与错误处理</h3>
+      <span class="count">4 项</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="collapse-body">
+      <table>
+        <thead><tr><th style="width:30px"></th><th style="width:180px">测试项目</th><th>操作步骤</th><th style="width:100px">预期结果</th><th style="width:50px">优先级</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>空数据状态</td>
+            <td>使用日期筛选器选择一个没有数据的日期，查看列表</td>
+            <td>显示空状态提示文字，不出现空白页</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>表单必填验证</td>
+            <td>在下单/创建行程时，不填写必填字段直接提交</td>
+            <td>表单验证提示，不提交，无 500 错误</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>访问不存在资源</td>
+            <td>手动访问一个不存在的订单 ID，如 /classic/operator/orders/nonexistent</td>
+            <td>404 页面或返回列表，不出现白屏</td>
+            <td><span class="tag tag-p1">P1</span></td>
+          </tr>
+          <tr>
+            <td><span class="check-box"></span></td>
+            <td>页面刷新保持状态</td>
+            <td>在订单列表设置筛选条件后刷新页面</td>
+            <td>筛选条件通过 URL 参数保留，不丢失</td>
+            <td><span class="tag tag-p2">P2</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── 页脚 ── -->
+  <div style="margin-top: 60px; padding: 24px; background: white; border-radius: 12px; border: 1px solid var(--border); text-align: center;">
+    <p style="color: var(--text-muted); font-size: 13px;">
+      Veggie 蔬菜供应链系统测试指南 &nbsp;·&nbsp; 4 个角色 &nbsp;·&nbsp; 4 条闭环流程 &nbsp;·&nbsp; 60+ 功能测试项
+    </p>
+    <p style="color: var(--text-muted); font-size: 12px; margin-top: 6px;">
+      生产环境：<span class="mono">https://veggie-549968261036.europe-west1.run.app/enter</span>
+      &nbsp;|&nbsp; 统一密码：<span class="mono">Demo1234!</span>
+    </p>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  function toggleCard(header) {
+    header.classList.toggle('open');
+    const body = header.nextElementSibling;
+    body.classList.toggle('hidden');
+  }
+</script>
+
+</body>
+</html>
