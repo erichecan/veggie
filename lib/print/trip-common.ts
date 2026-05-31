@@ -16,6 +16,8 @@ export interface TripBasic {
   driverName: string | null
   departTime: string | null
   createdAt: string
+  /// 顶部提示横幅（如订单被截断时显示），无则为 null */
+  notice?: string | null
 }
 
 export interface TripCustomer {
@@ -116,4 +118,34 @@ export function timeSlotLabel(slot?: string | null): string {
 export function fullAddress(c: TripCustomer): string {
   return [c.street, c.street2, [c.city, c.state, c.zip].filter(Boolean).join(' '), c.country]
     .filter(Boolean).join('，')
+}
+
+const num = (v: unknown): number => {
+  if (v == null) return 0
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * 旧版 Order.items JSON 回退：当订单没有 OrderLine 记录时，用 items JSON 构造打印行。
+ * items 形态：[{ productId, productName, spec, price, quantity, subtotal, uom? }]
+ * 历史迁移订单 items 为空数组 → 返回 []（明细确实不存在，只在 Odoo）。
+ */
+export function buildLinesFromItems(items: unknown): TripLine[] {
+  if (!Array.isArray(items)) return []
+  return items.map((raw, i) => {
+    const it = (raw ?? {}) as Record<string, unknown>
+    return {
+      productId: String(it.productId ?? `item-${i}`),
+      productName: String(it.productName ?? ''),
+      spec: typeof it.spec === 'string' && it.spec ? it.spec : null,
+      uomId: null,
+      uomName: typeof it.uom === 'string' ? it.uom : (typeof it.uomName === 'string' ? it.uomName : null),
+      goodsType: null,
+      orderedQty: num(it.quantity),
+      unitPrice: num(it.price),
+      taxRate: num(it.taxRate),
+      subtotal: num(it.subtotal),
+    }
+  })
 }

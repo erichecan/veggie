@@ -7,12 +7,16 @@
 
 import 'server-only'
 import { prisma } from '@/lib/db'
-import type {
-  GoodsType,
-  TripCustomer,
-  TripOrder,
-  TripPrintDataWire,
+import {
+  buildLinesFromItems,
+  type GoodsType,
+  type TripCustomer,
+  type TripOrder,
+  type TripPrintDataWire,
 } from './trip-common'
+
+/** 单批次打印的最大订单数，超出则截断并在打印顶部提示 */
+const MAX_PRINT_ORDERS = 50
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0
@@ -105,6 +109,11 @@ export async function loadDispatchPrintData(
 
   if (orders.length === 0) return null
 
+  // 截断保护：单批次累积大量历史订单时，避免一次渲染上千页发票
+  const totalMatched = orders.length
+  const truncated = totalMatched > MAX_PRINT_ORDERS
+  if (truncated) orders = orders.slice(0, MAX_PRINT_ORDERS)
+
   const customerIds = [...new Set(orders.map(o => o.restaurantId))]
   const customerRows = customerIds.length > 0
     ? await prisma.customer.findMany({ where: { id: { in: customerIds } } })
@@ -137,18 +146,21 @@ export async function loadDispatchPrintData(
     totalAmount: toNum(o.totalAmount),
     internalNote: o.internalNote,
     deliveryDate: toIso(o.deliveryDate),
-    lines: o.lines.map(l => ({
-      productId: l.productId,
-      productName: l.productName,
-      spec: l.spec ?? null,
-      uomId: l.uomId,
-      uomName: l.uomName,
-      goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
-      orderedQty: toNum(l.orderedQty),
-      unitPrice: toNum(l.unitPrice),
-      taxRate: toNum(l.taxRate),
-      subtotal: toNum(l.subtotal),
-    })),
+    // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
+    lines: o.lines.length > 0
+      ? o.lines.map(l => ({
+          productId: l.productId,
+          productName: l.productName,
+          spec: l.spec ?? null,
+          uomId: l.uomId,
+          uomName: l.uomName,
+          goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
+          orderedQty: toNum(l.orderedQty),
+          unitPrice: toNum(l.unitPrice),
+          taxRate: toNum(l.taxRate),
+          subtotal: toNum(l.subtotal),
+        }))
+      : buildLinesFromItems(o.items),
   }))
 
   const timeSlotMap: Record<string, string> = { am: 'AM', pm: 'PM' }
@@ -161,6 +173,9 @@ export async function loadDispatchPrintData(
       driverName: slot.driverName,
       departTime: null,
       createdAt: new Date().toISOString(),
+      notice: truncated
+        ? `本批次共 ${totalMatched} 张订单，已截断显示前 ${MAX_PRINT_ORDERS} 张。请用日期过滤缩小范围。`
+        : null,
     },
     orders: printOrders,
     customers,

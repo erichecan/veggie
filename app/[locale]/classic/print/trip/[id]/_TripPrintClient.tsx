@@ -27,8 +27,8 @@ const TITLES: Record<PrintType, string> = {
 /**
  * Trip 打印客户端组件
  * - apiGet 拿 print-data JSON
- * - 渲染对应模板（模板末尾内嵌 <script>window.print()</script>）
- * - dangerouslySetInnerHTML 注入，浏览器自动弹打印对话框
+ * - 渲染对应模板（模板末尾内嵌 <script>JsBarcode + window.print()</script>）
+ * - 用 iframe srcDoc 注入，脚本可执行：条形码渲染 + 自动弹打印对话框
  */
 export default function TripPrintClient({
   params,
@@ -75,5 +75,13 @@ export default function TripPrintClient({
     )
   }
 
-  return <div dangerouslySetInnerHTML={{ __html: html }} style={{ all: 'unset' }} />
+  // 用 iframe srcDoc 渲染：通过 dangerouslySetInnerHTML 注入的 <script>（JsBarcode、
+  // window.print）浏览器不会执行；iframe 会把它当完整文档解析，脚本正常运行。
+  return (
+    <iframe
+      title={TITLES[type]}
+      srcDoc={html}
+      style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', border: 'none' }}
+    />
+  )
 }

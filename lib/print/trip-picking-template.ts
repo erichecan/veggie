@@ -27,6 +27,12 @@ function fmtQty(v: number): string {
   return v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 
+interface CustomerBreakdown {
+  customerId: string
+  customerName: string
+  qty: number
+}
+
 interface AggProduct {
   productId: string
   productName: string
@@ -35,6 +41,7 @@ interface AggProduct {
   totalQty: number
   isBulk: boolean
   orderCodes: string[]
+  byCustomer: Map<string, CustomerBreakdown>
 }
 
 function isBulkItem(uomName: string, goodsType: string | null): boolean {
@@ -66,24 +73,33 @@ export function generateTripPickingHtml(data: TripPrintData): string {
   const aggMap = new Map<string, AggProduct>()
   for (const order of orders) {
     const orderCode = order.code ?? order.id.slice(0, 8).toUpperCase()
+    const customerId = order.customerId ?? orderCode
+    const customerName = order.customerName ?? orderCode
     for (const line of order.lines) {
       const key = line.productId
-      const existing = aggMap.get(key)
-      if (existing) {
-        existing.totalQty += line.orderedQty
-        if (!existing.orderCodes.includes(orderCode)) {
-          existing.orderCodes.push(orderCode)
-        }
-      } else {
-        aggMap.set(key, {
+      let agg = aggMap.get(key)
+      if (!agg) {
+        agg = {
           productId: line.productId,
           productName: line.productName,
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',
-          totalQty: line.orderedQty,
+          totalQty: 0,
           isBulk: isBulkItem(line.uomName ?? '', line.goodsType),
-          orderCodes: [orderCode],
-        })
+          orderCodes: [],
+          byCustomer: new Map<string, CustomerBreakdown>(),
+        }
+        aggMap.set(key, agg)
+      }
+      agg.totalQty += line.orderedQty
+      if (!agg.orderCodes.includes(orderCode)) {
+        agg.orderCodes.push(orderCode)
+      }
+      const bd = agg.byCustomer.get(customerId)
+      if (bd) {
+        bd.qty += line.orderedQty
+      } else {
+        agg.byCustomer.set(customerId, { customerId, customerName, qty: line.orderedQty })
       }
     }
   }
@@ -94,8 +110,22 @@ export function generateTripPickingHtml(data: TripPrintData): string {
 
   function productTableHtml(title: string, products: AggProduct[], icon: string): string {
     if (products.length === 0) return ''
-    const rows = products.map((p, i) => `
-      <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
+    const rows = products.map((p, i) => {
+      const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
+      const breakdown = Array.from(p.byCustomer.values())
+        .sort((a, b) => b.qty - a.qty || a.customerName.localeCompare(b.customerName))
+      const bdRows = breakdown.length >= 2
+        ? breakdown.map(c => `
+      <tr class="${rowClass} row-bd">
+        <td class="col-seq"></td>
+        <td class="col-name bd-name">↳ ${escapeHtml(c.customerName)}</td>
+        <td class="col-qty bd-qty">${fmtQty(c.qty)}</td>
+        <td class="col-uom"></td>
+        <td class="col-check"></td>
+      </tr>`).join('')
+        : ''
+      return `
+      <tr class="${rowClass}">
         <td class="col-seq">${i + 1}</td>
         <td class="col-name">
           ${escapeHtml(p.productName)}
@@ -104,8 +134,8 @@ export function generateTripPickingHtml(data: TripPrintData): string {
         <td class="col-qty">${fmtQty(p.totalQty)}</td>
         <td class="col-uom">${escapeHtml(p.uomName)}</td>
         <td class="col-check"></td>
-      </tr>
-    `).join('')
+      </tr>${bdRows}`
+    }).join('')
 
     return `
     <div class="section-header">${icon} ${escapeHtml(title)}（${products.length} 种）</div>
@@ -146,7 +176,7 @@ export function generateTripPickingHtml(data: TripPrintData): string {
 <head>
 <meta charset="utf-8"/>
 <title>拣货单 — ${escapeHtml(teamStr)}</title>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
+<script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background:#fff}
@@ -174,6 +204,10 @@ export function generateTripPickingHtml(data: TripPrintData): string {
   .col-check{width:40px;text-align:center;border:1px solid #ccc!important}
 
   .spec{display:block;font-size:9px;color:#888;margin-top:1px}
+
+  tr.row-bd td{border-bottom:1px dashed #e0e0e0;padding-top:2px;padding-bottom:2px}
+  .bd-name{padding-left:26px!important;color:#555;font-size:10px}
+  .bd-qty{font-weight:600!important;font-size:11px!important;color:#555}
 
   .orders-section{margin-top:16px;padding-top:10px;border-top:2px solid #1a3a2a}
   .orders-title{font-size:12px;font-weight:700;color:#1a3a2a;margin-bottom:8px}

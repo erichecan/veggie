@@ -99,7 +99,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <head>
 <meta charset="utf-8" />
 <title>Summary</title>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
+<script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; background: #fff; }

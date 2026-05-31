@@ -75,5 +75,13 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
     )
   }
 
-  return <div dangerouslySetInnerHTML={{ __html: html }} style={{ all: 'unset' }} />
+  // 用 iframe srcDoc 渲染：通过 dangerouslySetInnerHTML 注入的 <script>（JsBarcode、
+  // window.print）浏览器不会执行；iframe 会把它当完整文档解析，脚本正常运行。
+  return (
+    <iframe
+      title={TITLES[type]}
+      srcDoc={html}
+      style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', border: 'none' }}
+    />
+  )
 }

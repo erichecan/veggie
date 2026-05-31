@@ -34,7 +34,8 @@ function buildDeliveryOrderHtml(
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
   const lines = order.lines ?? []
-  const subtotal = lines.reduce((s, l) => s + l.subtotal, 0)
+  const hasLines = lines.length > 0
+  const lineSubtotal = lines.reduce((s, l) => s + l.subtotal, 0)
 
   const vatGroups: Record<string, { base: number; vat: number }> = {}
   for (const l of lines) {
@@ -47,7 +48,10 @@ function buildDeliveryOrderHtml(
     vatGroups[key].vat += vatAmt
   }
   const totalVat = Object.values(vatGroups).reduce((s, g) => s + g.vat, 0)
-  const total = subtotal + totalVat
+  // 无逐行明细（历史迁移订单）时回退到订单总额，避免显示 €0.00
+  const orderTotal = Number(order.totalAmount) || 0
+  const subtotal = hasLines ? lineSubtotal : orderTotal
+  const total = hasLines ? lineSubtotal + totalVat : orderTotal
 
   const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
   const safeCode = orderCode.replace(/['"\\]/g, '')
@@ -139,7 +143,7 @@ function buildDeliveryOrderHtml(
       </tr>
     </thead>
     <tbody>
-      ${linesHtml || '<tr><td colspan="6" style="text-align:center;padding:6mm;color:#999">No items</td></tr>'}
+      ${linesHtml || `<tr><td colspan="6" style="text-align:center;padding:6mm;color:#999">${orderTotal > 0 ? '明细未迁移（仅显示订单总额）— Line items not migrated' : 'No items'}</td></tr>`}
     </tbody>
   </table>
 
@@ -250,16 +254,21 @@ export function generateTripDeliveryHtml(data: TripPrintData): string {
     } catch(e) { console.warn('Barcode error for ${safeCode}:', e); }`
   }).join('\n')
 
+  const noticeHtml = trip.notice
+    ? `<div style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:3mm 5mm;margin:0 auto 5mm;max-width:210mm;font-size:9pt;font-weight:bold;">⚠ ${escapeHtml(trip.notice)}</div>`
+    : ''
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Delivery Orders</title>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
+<script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>${CSS}</style>
 </head>
 <body>
+${noticeHtml}
 ${pagesHtml}
 
 <div class="footer-fixed">

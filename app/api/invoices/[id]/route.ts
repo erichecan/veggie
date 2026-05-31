@@ -49,7 +49,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/invoices/[id]]', error)
       return NextResponse.json({ error: '更新发票失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'FINANCE', 'BOSS'])
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -65,5 +65,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/invoices/[id]]', error)
       return NextResponse.json({ error: '删除发票失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'FINANCE', 'BOSS'])
 }

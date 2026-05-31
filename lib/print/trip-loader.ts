@@ -9,11 +9,12 @@
 
 import 'server-only'
 import { prisma } from '@/lib/db'
-import type {
-  GoodsType,
-  TripCustomer,
-  TripOrder,
-  TripPrintDataWire,
+import {
+  buildLinesFromItems,
+  type GoodsType,
+  type TripCustomer,
+  type TripOrder,
+  type TripPrintDataWire,
 } from './trip-common'
 
 const toNum = (v: unknown): number => {
@@ -104,18 +105,21 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     totalAmount: toNum(o.totalAmount),
     internalNote: o.internalNote,
     deliveryDate: toIso(o.deliveryDate),
-    lines: o.lines.map(l => ({
-      productId: l.productId,
-      productName: l.productName,
-      spec: l.spec ?? null,
-      uomId: l.uomId,
-      uomName: l.uomName,
-      goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
-      orderedQty: toNum(l.orderedQty),
-      unitPrice: toNum(l.unitPrice),
-      taxRate: toNum(l.taxRate),
-      subtotal: toNum(l.subtotal),
-    })),
+    // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
+    lines: o.lines.length > 0
+      ? o.lines.map(l => ({
+          productId: l.productId,
+          productName: l.productName,
+          spec: l.spec ?? null,
+          uomId: l.uomId,
+          uomName: l.uomName,
+          goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
+          orderedQty: toNum(l.orderedQty),
+          unitPrice: toNum(l.unitPrice),
+          taxRate: toNum(l.taxRate),
+          subtotal: toNum(l.subtotal),
+        }))
+      : buildLinesFromItems(o.items),
   }))
 
   return {

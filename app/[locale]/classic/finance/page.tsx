@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import type { Order, Customer } from '@/lib/types'
-import { MOCK_HISTORICAL_DEBT } from '@/lib/mock-data'
 import { DrillPanel, type DrillColumn } from '@/components/shared/drill-panel'
 
 const PURPLE = '#875A7B'
@@ -48,11 +47,13 @@ export default function ClassicFinancePage() {
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [historicalDebt, setHistoricalDebt] = useState<Record<string, number>>({})
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
 
   useEffect(() => {
     apiGet<Order[]>('/api/orders?include_lines=false').then(data => setOrders(data)).catch(() => {})
     apiGet<Customer[]>('/api/customers').then(data => setCustomers(data)).catch(() => {})
+    apiGet<Record<string, number>>('/api/finance/historical-debt').then(setHistoricalDebt).catch(() => {})
   }, [])
 
   const today = todayStart()
@@ -80,13 +81,13 @@ export default function ClassicFinancePage() {
         customer: c,
         orders: cOrders,
         totalOwed: cOrders.reduce((s, o) => s + o.totalAmount, 0),
-        historicalDebt: MOCK_HISTORICAL_DEBT[c.id] ?? 0,
+        historicalDebt: historicalDebt[c.id] ?? 0,
       }
     })
     .filter(g => g.orders.length > 0 || g.historicalDebt > 0)
 
   const totalUnpaid = unpaidGroups.reduce((s, g) => s + g.totalOwed + g.historicalDebt, 0)
-  const totalHistoricalDebt = Object.values(MOCK_HISTORICAL_DEBT).reduce((s, v) => s + v, 0)
+  const totalHistoricalDebt = Object.values(historicalDebt).reduce((s, v) => s + v, 0)
   const totalCurrentUnpaid = unpaidGroups.reduce((s, g) => s + g.totalOwed, 0)
 
   const commissionGroups: CommissionGroup[] = customers

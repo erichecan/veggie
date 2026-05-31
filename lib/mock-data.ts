@@ -206,13 +206,6 @@ export const DEMO_DRIVERS = [
   { id: 'driver_002', name: 'Driver - Liu Yang' },
 ]
 
-// 历史欠款（mock 固定值，用于财务视角展示上期未清）
-export const MOCK_HISTORICAL_DEBT: Record<string, number> = {
-  rest_001: 128.50,  // Hang Dai Chinese 上期欠款
-  rest_002: 245.00,  // Good World 上期欠款
-  rest_004: 89.20,   // Ka Shing 上期欠款
-}
-
 // 采购记录（近7天，6种商品，3个供应商）
 const d = (daysAgo: number, hour = 9) => {
   const dt = new Date('2026-04-11T00:00:00.000Z')

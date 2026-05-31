@@ -5,24 +5,30 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import type { OrderItem, TripRestaurant } from '@/lib/types'
 
-// GET /api/trips — 行程列表，可选 driverId 过滤
+// GET /api/trips — 行程列表，可选 driverId / waveId / status / settlementStatus 过滤
 export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url)
-    const driverId = searchParams.get('driverId')
-    const waveId = searchParams.get('waveId')
-    const trips = await prisma.trip.findMany({
-      where: {
-        ...(driverId ? { driverId } : {}),
-        ...(waveId ? { waveId } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-    return NextResponse.json(serializeApi(trips))
-  } catch (error) {
-    console.error('[GET /api/trips]', error)
-    return NextResponse.json({ error: '获取行程失败' }, { status: 500 })
-  }
+  return withAuth(req, async () => {
+    try {
+      const { searchParams } = new URL(req.url)
+      const driverId = searchParams.get('driverId')
+      const waveId = searchParams.get('waveId')
+      const status = searchParams.get('status')
+      const settlementStatus = searchParams.get('settlementStatus')
+      const trips = await prisma.trip.findMany({
+        where: {
+          ...(driverId ? { driverId } : {}),
+          ...(waveId ? { waveId } : {}),
+          ...(status ? { status: status.toUpperCase() as never } : {}),
+          ...(settlementStatus ? { settlementStatus } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      return NextResponse.json(serializeApi(trips))
+    } catch (error) {
+      console.error('[GET /api/trips]', error)
+      return NextResponse.json({ error: '获取行程失败' }, { status: 500 })
+    }
+  })
 }
 
 // POST /api/trips — 手动创建行程
