@@ -181,6 +181,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             subtotal: Number(l.subtotal),
           }
           if (l.taxRate !== undefined) lineData.taxRate = Number(l.taxRate)
+          if (l.sequence !== undefined) lineData.sequence = Number(l.sequence)
 
           if (l.id) {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type

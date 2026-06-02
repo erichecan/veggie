@@ -224,7 +224,10 @@ export async function POST(req: Request) {
         pricelistId,
         priceType,
         warnings,
-      } = await resolveOrderLines({ prisma, restaurantId }, submittedItems)
+      } = await resolveOrderLines({ prisma, restaurantId }, submittedItems, {
+        pricelistId: data.pricelistId ?? undefined,
+        priceType: data.priceType ?? undefined,
+      })
 
       // 2) 预加载商品数据（用于后续事务；报价单阶段不做库存检查）
       //    库存充足性检查推迟到「确认订单」时执行（Odoo 行为：PENDING 阶段不占用库存）

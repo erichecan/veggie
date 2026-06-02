@@ -334,8 +334,9 @@ export default function ClassicPlaceOrderPage() {
   // 优先使用懒加载的完整客户对象（含 specialPrices），确保定价引擎拿到特殊价格。
   const effectiveCustomer = useMemo(() => {
     const base = selectedCustomerFull?.id === customerId ? selectedCustomerFull : customer
-    return base ? { ...base, priceType } : null
-  }, [customer, selectedCustomerFull, customerId, priceType])
+    // 本单选定的价格表优先于客户档案默认值（操作员可临时切换价格体系）
+    return base ? { ...base, priceType, pricelistId: pricelistId || base.pricelistId } : null
+  }, [customer, selectedCustomerFull, customerId, priceType, pricelistId])
 
   const filteredCustomers = useMemo(() => {
     const q = custSearch.trim().toLowerCase()
@@ -693,8 +694,9 @@ export default function ClassicPlaceOrderPage() {
     patchLine(lineId, { orderedQty: qty, unitPrice })
   }
 
-  // ── 当 priceType / customerId / lastPrices 变化时，重算所有已添加 line。
+  // ── 当 priceType / pricelistId / customerId / lastPrices 变化时，重算所有已添加 line。
   // - 切下拉 Multi/Default/Last → 立即生效
+  // - 切价格表（本单选其他价格体系）→ 现有行立即按新价格表重算
   // - 切客户 → effectiveCustomer 重建，价格重算
   // - 后台批量拉到 lastPrice → 现有行立即用上历史价
   useEffect(() => {
@@ -720,7 +722,7 @@ export default function ClassicPlaceOrderPage() {
       return changed ? next : prev
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceType, customerId, lastPrices])
+  }, [priceType, pricelistId, customerId, lastPrices])
 
   // 切客户后，对当前已有行批量拉一次 lastPrice
   useEffect(() => {
@@ -761,6 +763,8 @@ export default function ClassicPlaceOrderPage() {
       totalAmount:    total,
       status:         statusOverride,
       paymentMethod:  'online',
+      pricelistId:    pricelistId || null,
+      priceType,
       salesman:       salesTeam || null,
       internalNote:   internalNotes || null,
       quotationDate:  orderDate ? new Date(orderDate).toISOString() : null,

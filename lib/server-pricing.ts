@@ -178,6 +178,11 @@ export async function resolveOrderLines(
     uomName?: string
     taxRate?: number
   }>,
+  /**
+   * 本单临时覆盖：操作员可在下单页选择不同于客户档案默认的价格表/定价模式。
+   * 仅当字段存在时才覆盖（undefined = 沿用客户档案；null = 本单明确不用价格表）。
+   */
+  overrides?: { pricelistId?: string | null; priceType?: string | null },
 ): Promise<{
   lines: ResolvedLine[]
   totalAmount: number
@@ -189,6 +194,13 @@ export async function resolveOrderLines(
   const customer = await loadCustomerFromRestaurantId(ctx.prisma, ctx.restaurantId)
   if (!customer) {
     throw Object.assign(new Error(`客户不存在（restaurantId=${ctx.restaurantId}）`), { status: 400 })
+  }
+
+  // 本单覆盖：用操作员选定的价格表/定价模式参与权威定价（不写回客户档案）
+  const effectiveCustomer: CustomerType = {
+    ...customer,
+    pricelistId: overrides?.pricelistId !== undefined ? overrides.pricelistId ?? undefined : customer.pricelistId,
+    priceType: (overrides?.priceType ?? customer.priceType) as CustomerType['priceType'],
   }
 
   // 拉所有 pricelist（支持嵌套 formulaBase='pricelist'）
@@ -257,7 +269,7 @@ export async function resolveOrderLines(
     // priceType='last' 或 'multi' 时均需查历史成交价：
     //   last  → 直接作为定价结果（无则回退牌价）
     //   multi → 价格表规则 → lastPrice → listPrice（三级优先级）
-    const normalizedPriceType = (customer.priceType ?? 'multi').toLowerCase()
+    const normalizedPriceType = (effectiveCustomer.priceType ?? 'multi').toLowerCase()
     let lastPrice: number | undefined
     if (normalizedPriceType === 'last' || normalizedPriceType === 'multi') {
       lastPrice = await queryLastSoldPrice(ctx.prisma, customer.id, item.productId)
@@ -265,7 +277,7 @@ export async function resolveOrderLines(
 
     const resolution = resolveCustomerPrice(
       productForEngine,
-      customer,
+      effectiveCustomer,
       allPricelists,
       qty,
       lastPrice,
@@ -304,8 +316,8 @@ export async function resolveOrderLines(
     lines,
     totalAmount: Math.round(total * 100) / 100,
     customer,
-    pricelistId: customer.pricelistId ?? null,
-    priceType: customer.priceType ?? null,
+    pricelistId: effectiveCustomer.pricelistId ?? null,
+    priceType: effectiveCustomer.priceType ?? null,
     warnings,
   }
 }

@@ -67,6 +67,9 @@ export default function QuotationDetailPage() {
 
   type EditLine = NonNullable<Order['lines']>[number] & { commissionPrice?: number }
   const [editLines, setEditLines] = useState<EditLine[]>([])
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
+  const [handleActive, setHandleActive] = useState(false)
 
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
   const [addLineQuery, setAddLineQuery] = useState('')
@@ -136,6 +139,16 @@ export default function QuotationDetailPage() {
     setEditLines(prev => prev.filter((_, i) => i !== idx))
   }
 
+  function moveLine(from: number, to: number) {
+    setEditLines(prev => {
+      if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
   function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'commissionPrice', value: number) {
     setEditLines(prev => {
       const next = [...prev]
@@ -154,11 +167,12 @@ export default function QuotationDetailPage() {
     if (!order) return
     try {
       const newTotalAmount = Math.round(editLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
+      const orderedLines = editLines.map((l, idx) => ({ ...l, sequence: idx }))
       await apiPut(`/api/orders/${order.id}`, {
         internalNote, salesman,
         driverSlotId: driverSlotId || null,
         deliveryBatch: driverSlotId ? (() => { const s = driverSlots.find(x => x.id === driverSlotId); return s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : deliveryBatch })() : deliveryBatch,
-        lines: editLines,
+        lines: orderedLines,
         totalAmount: newTotalAmount,
       })
       toast.success('Saved')
@@ -526,11 +540,24 @@ export default function QuotationDetailPage() {
                     const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
                     const inputCls = 'w-20 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
                     return (
-                      <tr key={l.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <tr key={l.id}
+                        draggable={editing && handleActive}
+                        onDragStart={editing ? () => setDragIndex(i) : undefined}
+                        onDragOver={editing ? (e) => { e.preventDefault(); if (overIndex !== i) setOverIndex(i) } : undefined}
+                        onDrop={editing ? (e) => { e.preventDefault(); if (dragIndex !== null) moveLine(dragIndex, i); setDragIndex(null); setOverIndex(null); setHandleActive(false) } : undefined}
+                        onDragEnd={() => { setDragIndex(null); setOverIndex(null); setHandleActive(false) }}
+                        className={`border-b border-gray-100 hover:bg-gray-50 ${dragIndex === i ? 'opacity-40' : ''} ${editing && overIndex === i && dragIndex !== null && dragIndex !== i ? 'border-t-2 border-t-[#875A7B]' : ''}`}>
                         <td className="px-2 py-2">
-                          {editing
-                            ? <button onClick={() => deleteLine(i)} className="text-red-400 hover:text-red-600 text-sm leading-none">✕</button>
-                            : <span className="text-gray-300">▶</span>}
+                          {editing ? (
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                title="拖动以调整顺序"
+                                onMouseDown={() => setHandleActive(true)}
+                                onMouseUp={() => setHandleActive(false)}
+                                className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none leading-none">☰</span>
+                              <button onClick={() => deleteLine(i)} className="text-red-400 hover:text-red-600 text-sm leading-none">✕</button>
+                            </div>
+                          ) : <span className="text-gray-300 select-none" title="编辑后可拖动调整顺序">☰</span>}
                         </td>
                         <td className="px-2 py-2 text-gray-700">{i + 1}</td>
                         <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
