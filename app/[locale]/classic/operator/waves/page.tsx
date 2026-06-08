@@ -202,14 +202,21 @@ export default function WaveManagementPage() {
     requestAnimationFrame(() => { target.style.opacity = '0.4' })
   }
 
-  function endDrag(e: React.DragEvent) {
-    (e.currentTarget as HTMLElement).style.opacity = '1'
+  // 统一清理拖拽视觉状态：隐藏 ghost、移除 dragover 监听、复位高亮与拖拽 ref。
+  // 必须在 drop 里也调用——拖放成功后源卡片被乐观重渲染卸载，dragend 可能不触发，
+  // 否则紫色 ghost 会残留到下一次拖拽。
+  function cleanupDrag() {
     if (ghostRef.current) ghostRef.current.style.display = 'none'
     document.removeEventListener('dragover', moveGhost)
     setDragOverSlotId(null)
     setLeftPanelDragOver(false)
     dragOrderIdRef.current = null
     dragSourceWaveIdRef.current = null
+  }
+
+  function endDrag(e: React.DragEvent) {
+    (e.currentTarget as HTMLElement).style.opacity = '1'
+    cleanupDrag()
   }
 
   /* ── Optimistic assign / unassign / move ──────────────────────────────── */
@@ -271,13 +278,10 @@ export default function WaveManagementPage() {
 
   function handleSlotDrop(e: React.DragEvent, slotId: string) {
     e.preventDefault()
-    setDragOverSlotId(null)
     const orderId = dragOrderIdRef.current
-    if (!orderId) return
     const sourceWaveId = dragSourceWaveIdRef.current
-
-    if (sourceWaveId === slotId) return
-
+    cleanupDrag()
+    if (!orderId || sourceWaveId === slotId) return
     if (sourceWaveId) {
       moveBetweenSlots(sourceWaveId, slotId, orderId)
     } else {
@@ -303,9 +307,9 @@ export default function WaveManagementPage() {
 
   function handleLeftDrop(e: React.DragEvent) {
     e.preventDefault()
-    setLeftPanelDragOver(false)
     const orderId = dragOrderIdRef.current
     const sourceWaveId = dragSourceWaveIdRef.current
+    cleanupDrag()
     if (orderId && sourceWaveId) {
       unassignFromSlot(sourceWaveId, orderId)
     }
