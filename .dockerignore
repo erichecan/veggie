@@ -47,3 +47,6 @@ DEMO-GUIDE.md
 UPGRADE-PLAN.md
 ODOO-REPLICATION-PLAN.md
 README.md
+
+# 本地数据库备份
+backups

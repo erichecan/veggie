@@ -8,8 +8,10 @@ import { toNum } from '@/lib/decimal-helpers'
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
   'confirmationDate', 'deliveryDate', 'invoiceDate', 'quotationDate',
-  'internalNote', 'pricelistId', 'restaurantName',
+  'internalNote', 'pricelistId', 'priceType', 'restaurantName',
 ]
+
+const VALID_PRICE_TYPES = new Set(['multi', 'default', 'last'])
 
 // ── P1-6: CONFIRMED 状态下允许安全编辑的字段 ──────────────────────────────
 const CONFIRMED_SAFE_FIELDS = new Set([
@@ -68,7 +70,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (!orderBefore) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
       // Strip non-schema fields before passing to Prisma
-      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, status, paymentMethod, salesman, deliveryBatch, driverSlotId, lines: linesPayload, totalAmount: totalAmountPayload } = data
+      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, status, paymentMethod, salesman, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
 
       // Determine new status
       const newStatus = status ? String(status).toUpperCase() : undefined
@@ -133,6 +135,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (invoiceDate !== undefined) updateData.invoiceDate = invoiceDate ? new Date(invoiceDate) : null
       if (quotationDate !== undefined) updateData.quotationDate = quotationDate ? new Date(quotationDate) : null
       if (internalNote !== undefined) updateData.internalNote = internalNote ? String(internalNote).slice(0, 30) : null
+      if (pricelistId !== undefined) updateData.pricelistId = pricelistId ? String(pricelistId) : null
+      if (priceType !== undefined) {
+        const pt = String(priceType).toLowerCase()
+        if (!VALID_PRICE_TYPES.has(pt)) {
+          return NextResponse.json({ error: `priceType 无效：${priceType}` }, { status: 400 })
+        }
+        updateData.priceType = pt
+      }
 
       // Auto-set confirmationDate when confirming
       if (newStatus === 'CONFIRMED' && !confirmationDate) {

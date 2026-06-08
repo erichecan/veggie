@@ -52,6 +52,7 @@ export default function QuotationDetailPage() {
   const [order, setOrder] = useState<Order | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [pricelist, setPricelist] = useState<Pricelist | null>(null)
+  const [pricelists, setPricelists] = useState<Pricelist[]>([])
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('lines')
@@ -62,6 +63,8 @@ export default function QuotationDetailPage() {
   const [salesman, setSalesman] = useState('')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
+  const [pricelistId, setPricelistId] = useState('')
+  const [priceType, setPriceType] = useState('multi')
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
   useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
 
@@ -89,12 +92,15 @@ export default function QuotationDetailPage() {
       setSalesman((ord as unknown as { salesman?: string }).salesman ?? '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
       setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
+      setPricelistId(ord.pricelistId ?? '')
+      setPriceType((ord as unknown as { priceType?: string }).priceType ?? 'multi')
 
       const [cs, pls] = await Promise.all([
         apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
         apiGet<Pricelist[]>('/api/pricelists').catch(() => [] as Pricelist[]),
       ])
       setCustomer(cs.find(c => c.id === ord.restaurantId) ?? null)
+      setPricelists(pls)
       if (ord.pricelistId) setPricelist(pls.find(p => p.id === ord.pricelistId) ?? null)
 
       const productIds = Array.from(new Set((ord.lines ?? []).map(l => l.productId).filter(Boolean)))
@@ -172,6 +178,8 @@ export default function QuotationDetailPage() {
         internalNote, salesman,
         driverSlotId: driverSlotId || null,
         deliveryBatch: driverSlotId ? (() => { const s = driverSlots.find(x => x.id === driverSlotId); return s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : deliveryBatch })() : deliveryBatch,
+        pricelistId: pricelistId || null,
+        priceType,
         lines: orderedLines,
         totalAmount: newTotalAmount,
       })
@@ -464,9 +472,15 @@ export default function QuotationDetailPage() {
                   </select>
                 ) : <div style={{ color: PURPLE }}>{formatDriverSlotFromOrder(order) || '—'}</div>}
               </div>
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Pricelist</div>
-                <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Pricelist</div>
+                {editing ? (
+                  <select value={pricelistId} onChange={e => setPricelistId(e.target.value)}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300">
+                    <option value="">— none —</option>
+                    {pricelists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                ) : <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>}
               </div>
               <div className="flex">
                 <div className="w-32 font-bold text-gray-700">Payment Terms</div>
@@ -476,13 +490,20 @@ export default function QuotationDetailPage() {
                 <div className="w-32 font-bold text-gray-700">Signature</div>
                 <div className="text-gray-400">—</div>
               </div>
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Price Type</div>
-                <div className="text-gray-800">{
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>
+                {editing ? (
+                  <select value={priceType} onChange={e => setPriceType(e.target.value)}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300">
+                    <option value="multi">Multi-Pricelist</option>
+                    <option value="default">Default Price</option>
+                    <option value="last">Last Price</option>
+                  </select>
+                ) : <div className="text-gray-800">{
                   order.priceType === 'multi' ? 'Multi-Pricelist'
                   : order.priceType === 'last' ? 'Last Price'
                   : 'Default Price'
-                }</div>
+                }</div>}
               </div>
             </div>
           </div>

@@ -39,3 +39,6 @@ pic/
 # Git
 .git/
 .gitignore
+
+# 本地数据库备份（不上传）
+backups/
