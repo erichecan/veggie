@@ -52,19 +52,51 @@ async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType
   return map
 }
 
+/** 批次选择器：用 DriverSlot id，或回退到批次字符串 "2 pm AFZAAL"（无 DriverSlot 记录时） */
+export interface DispatchSelector {
+  driverSlotId?: string | null
+  batchLabel?: string | null
+}
+
 export async function loadDispatchPrintData(
   date: string,
-  driverSlotId: string,
+  selector: DispatchSelector,
   fromDate?: string,
 ): Promise<TripPrintDataWire | null> {
-  const slot = await prisma.driverSlot.findUnique({ where: { id: driverSlotId } })
-  if (!slot) return null
+  // Resolve batch identity from either the DriverSlot record or the label string
+  let slot = selector.driverSlotId
+    ? await prisma.driverSlot.findUnique({ where: { id: selector.driverSlotId } })
+    : null
+
+  let batchNum: number
+  let timeOfDay: string
+  let driverName: string
+  let slotLabel: string
+
+  if (slot) {
+    batchNum = slot.batchNum
+    timeOfDay = slot.timeOfDay
+    driverName = slot.driverName
+    slotLabel = `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}`
+  } else if (selector.batchLabel) {
+    const parts = selector.batchLabel.trim().split(/\s+/)
+    batchNum = parseInt(parts[0] ?? '0', 10) || 0
+    timeOfDay = (parts[1] ?? '').toLowerCase()
+    driverName = parts.slice(2).join(' ')
+    slotLabel = selector.batchLabel
+    // Resolve a matching slot so orders linked only by driverSlotId are still found
+    slot = await prisma.driverSlot.findFirst({ where: { batchNum, timeOfDay, driverName } })
+  } else {
+    return null
+  }
 
   const rangeStart = new Date(`${fromDate ?? date}T00:00:00.000Z`)
   const dayEnd = new Date(`${date}T23:59:59.999Z`)
 
   // Match by driverSlotId OR legacy deliveryBatch string (some orders only have the string)
-  const slotLabel = `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}`
+  const batchMatch = slot
+    ? [{ driverSlotId: slot.id }, { deliveryBatch: slotLabel }]
+    : [{ deliveryBatch: slotLabel }]
 
   const statusFilter: Array<'CONFIRMED' | 'WAVE_ASSIGNED' | 'IN_DELIVERY' | 'COMPLETED'> = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED']
 
@@ -79,12 +111,7 @@ export async function loadDispatchPrintData(
             { deliveryDate: null, createdAt: { gte: rangeStart, lte: dayEnd } },
           ],
         },
-        {
-          OR: [
-            { driverSlotId },
-            { deliveryBatch: slotLabel },
-          ],
-        },
+        { OR: batchMatch },
       ],
     },
     include: { lines: { orderBy: { sequence: 'asc' } } },
@@ -97,10 +124,7 @@ export async function loadDispatchPrintData(
     orders = await prisma.order.findMany({
       where: {
         status: { in: statusFilter },
-        OR: [
-          { driverSlotId },
-          { deliveryBatch: slotLabel },
-        ],
+        OR: batchMatch,
       },
       include: { lines: { orderBy: { sequence: 'asc' } } },
       orderBy: { restaurantName: 'asc' },
@@ -167,10 +191,10 @@ export async function loadDispatchPrintData(
 
   return {
     trip: {
-      id: `dispatch-${driverSlotId}-${date}`,
-      name: `${slot.driverName} #${slot.batchNum} ${slot.timeOfDay.toUpperCase()}`,
-      timeSlot: timeSlotMap[slot.timeOfDay] ?? slot.timeOfDay,
-      driverName: slot.driverName,
+      id: `dispatch-${slot?.id ?? slotLabel}-${date}`,
+      name: `${driverName} #${batchNum} ${timeOfDay.toUpperCase()}`,
+      timeSlot: timeSlotMap[timeOfDay] ?? timeOfDay,
+      driverName: driverName,
       departTime: null,
       createdAt: new Date().toISOString(),
       notice: truncated

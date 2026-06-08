@@ -273,6 +273,7 @@ export async function POST(req: Request) {
                     productId: l.productId,
                     productName: l.productName,
                     spec: l.spec ?? null,
+                    note: l.note ?? null,
                     uomId: l.uomId ?? null,
                     uomName: l.uomName ?? null,
                     unitPrice: l.authoritativeUnitPrice,

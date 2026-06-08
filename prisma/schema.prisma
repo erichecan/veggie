@@ -508,6 +508,8 @@ model OrderLine {
   product      Product? @relation(fields: [productId], references: [id])
   productName  String
   spec         String?
+  /// 行级备注（商品级 note，如"free"赠品/注意事项），下单时由操作员填写
+  note         String?
   uomId        String?
   uomName      String?
   unitPrice    Decimal  @db.Decimal(12, 2)

@@ -33,6 +33,7 @@ export interface ResolvedLine {
   productId: string
   productName: string
   spec: string
+  note?: string
   quantity: number
   authoritativeUnitPrice: number  // 服务端计算出的权威单价
   submittedUnitPrice: number       // 前端提交的单价
@@ -172,6 +173,7 @@ export async function resolveOrderLines(
     productId: string
     productName?: string
     spec?: string
+    note?: string         // 行级备注（商品级 note）
     price?: number        // 前端传入的参考价格
     quantity: number
     uomId?: string
@@ -300,6 +302,7 @@ export async function resolveOrderLines(
       productId: dbProduct.id,
       productName: (item.productName ?? dbProduct.name).trim().slice(0, 200),
       spec: (item.spec ?? '').trim().slice(0, 100),
+      note: item.note ? item.note.trim().slice(0, 200) : undefined,
       quantity: qty,
       authoritativeUnitPrice: authoritative,
       submittedUnitPrice: submittedUnit,
@@ -328,6 +331,7 @@ export function toOrderItems(lines: ResolvedLine[]): OrderItem[] {
     productId: l.productId,
     productName: l.productName,
     spec: l.spec,
+    note: l.note,
     price: l.authoritativeUnitPrice,
     quantity: l.quantity,
     subtotal: l.subtotal,

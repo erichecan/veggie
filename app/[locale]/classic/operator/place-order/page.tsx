@@ -24,6 +24,7 @@ type QuotationLine = {
   productId: string
   productName: string
   description: string
+  note: string
   orderedQty: number
   forecastQty: number | null
   qtyOnHand: number
@@ -503,8 +504,10 @@ export default function ClassicPlaceOrderPage() {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (activeLineId && items[lineHighlight]) {
+        // 回车选中商品后立即开下一个商品行，支持连续录入（再次回车进下一个产品）
         selectProduct(activeLineId, items[lineHighlight])
         setDropRect(null)
+        addLine()
       }
     } else if (e.key === 'Escape') {
       e.preventDefault()
@@ -514,13 +517,12 @@ export default function ClassicPlaceOrderPage() {
     } else if (e.key === 'Tab') {
       e.preventDefault()
       if (activeLineId && items[lineHighlight]) {
-        // Select the highlighted product, then focus the qty input of that line
+        // Tab 选中商品后聚焦到该行第一个字段（备注），再 Tab 依次到 数量→价格→税率
         const targetLineId = activeLineId
         selectProduct(activeLineId, items[lineHighlight])
         setDropRect(null)
         setTimeout(() => {
-          const qtyInput = document.querySelector<HTMLInputElement>(`[data-qty-line="${targetLineId}"]`)
-          qtyInput?.focus()
+          document.querySelector<HTMLInputElement>(`[data-desc-line="${targetLineId}"]`)?.focus()
         }, 50)
       } else if (activeLineId && lineSearch.trim() === '') {
         // Empty product field — close the line
@@ -528,6 +530,18 @@ export default function ClassicPlaceOrderPage() {
         setLineSearch('')
         setDropRect(null)
       }
+    }
+  }
+
+  // 订单行字段内的键盘流：回车 → 进入下一个商品（开新行）；在最后一个字段(税率) Tab → 同样进下一个商品
+  function handleFieldKey(e: React.KeyboardEvent, opts?: { last?: boolean }) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      ;(e.currentTarget as HTMLElement).blur()
+      addLine()
+    } else if (e.key === 'Tab' && opts?.last && !e.shiftKey) {
+      e.preventDefault()
+      addLine()
     }
   }
 
@@ -662,7 +676,7 @@ export default function ClassicPlaceOrderPage() {
     setLines(prev => [
       ...prev,
       {
-        id: newId, productId: '', productName: '', description: '',
+        id: newId, productId: '', productName: '', description: '', note: '',
         orderedQty: 1, forecastQty: null, qtyOnHand: 0, uom: '', uomId: undefined,
         unitPrice: 0, cost: 0, priceLabel: 'Price', taxRate: 0, cmsPrice: 0,
       },
@@ -752,6 +766,7 @@ export default function ClassicPlaceOrderPage() {
         productId:   l.productId,
         productName: l.productName,
         spec:        l.description,
+        note:        l.note || undefined,
         price:       l.unitPrice,
         quantity:    Math.max(0.001, Number(l.orderedQty)),
         subtotal:    l.unitPrice * l.orderedQty,
@@ -1358,6 +1373,7 @@ export default function ClassicPlaceOrderPage() {
                       <th className="px-2 py-2 text-left"  style={{ width: 40  }}>NO</th>
                       <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
                       <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
+                      <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
                       <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
                       <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
                       <th className="px-2 py-2 text-right" style={{ width: 100 }} title="可承诺量 = 在手量 - 待履行量">ATP</th>
@@ -1374,7 +1390,7 @@ export default function ClassicPlaceOrderPage() {
                   <tbody className="divide-y divide-gray-100">
                     {lines.length === 0 && (
                       <tr>
-                        <td colSpan={14} className="px-4 py-10 text-center text-sm text-gray-400">
+                        <td colSpan={15} className="px-4 py-10 text-center text-sm text-gray-400">
                           暂无订单行，点击下方 "+ Add a product" 开始添加
                         </td>
                       </tr>
@@ -1437,9 +1453,24 @@ export default function ClassicPlaceOrderPage() {
                           <td className="px-2 py-1">
                             <input
                               type="text"
+                              data-desc-line={line.id}
                               value={line.description}
                               onChange={e => patchLine(line.id, { description: e.target.value })}
+                              onKeyDown={e => handleFieldKey(e)}
                               className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                            />
+                          </td>
+
+                          {/* Note 行级备注（如 free / 注意事项） */}
+                          <td className="px-2 py-1">
+                            <input
+                              type="text"
+                              data-note-line={line.id}
+                              value={line.note}
+                              onChange={e => patchLine(line.id, { note: e.target.value })}
+                              onKeyDown={e => handleFieldKey(e)}
+                              placeholder="备注…"
+                              className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent placeholder:text-gray-300"
                             />
                           </td>
 
@@ -1464,12 +1495,7 @@ export default function ClassicPlaceOrderPage() {
                                 updateQty(line.id, committed)
                                 setQtyRawMap(prev => { const next = { ...prev }; delete next[line.id]; return next })
                               }}
-                              onKeyDown={e => {
-                                if (e.key === 'Tab') {
-                                  e.preventDefault()
-                                  addLine() // Tab from Qty → new product row
-                                }
-                              }}
+                              onKeyDown={e => handleFieldKey(e)}
                               className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                             />
                           </td>
@@ -1509,6 +1535,7 @@ export default function ClassicPlaceOrderPage() {
                               step="0.01"
                               value={line.unitPrice}
                               onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0 })}
+                              onKeyDown={e => handleFieldKey(e)}
                               className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                             />
                           </td>
@@ -1538,6 +1565,7 @@ export default function ClassicPlaceOrderPage() {
                             <select
                               value={line.taxRate}
                               onChange={e => patchLine(line.id, { taxRate: Number(e.target.value) })}
+                              onKeyDown={e => handleFieldKey(e, { last: true })}
                               className="w-full text-xs px-1 py-0.5 border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent cursor-pointer"
                             >
                               <option value={0}>0%</option>

@@ -199,6 +199,8 @@ export interface OrderItem {
   productId: string
   productName: string
   spec: string
+  /** 行级备注（商品级 note，如"free"赠品/注意事项） */
+  note?: string
   price: number
   quantity: number
   subtotal: number

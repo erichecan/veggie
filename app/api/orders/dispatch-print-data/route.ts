@@ -13,16 +13,17 @@ export async function GET(req: Request) {
     const date = searchParams.get('date')
     const fromDate = searchParams.get('fromDate') ?? undefined
     const driverSlotId = searchParams.get('driverSlotId')
+    const batchLabel = searchParams.get('batchLabel')
 
-    if (!date || !driverSlotId) {
+    if (!date || (!driverSlotId && !batchLabel)) {
       return NextResponse.json(
-        { error: '缺少参数 date 或 driverSlotId' },
+        { error: '缺少参数 date 以及 driverSlotId 或 batchLabel' },
         { status: 400 },
       )
     }
 
     try {
-      const data = await loadDispatchPrintData(date, driverSlotId, fromDate)
+      const data = await loadDispatchPrintData(date, { driverSlotId, batchLabel }, fromDate)
       if (!data) {
         return NextResponse.json({ error: '该批次无订单数据' }, { status: 404 })
       }

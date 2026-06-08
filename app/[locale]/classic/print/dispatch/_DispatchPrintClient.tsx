@@ -30,19 +30,22 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
   const date = searchParams.get('date')
   const fromDate = searchParams.get('fromDate')
   const driverSlotId = searchParams.get('driverSlotId')
+  const batchLabel = searchParams.get('batchLabel')
 
   const [html, setHtml] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!date || !driverSlotId) {
-      setError('缺少参数 date 或 driverSlotId')
+    if (!date || (!driverSlotId && !batchLabel)) {
+      setError('缺少参数 date 以及 driverSlotId 或 batchLabel')
       return
     }
     let cancelled = false
     async function load() {
       try {
-        const params = new URLSearchParams({ date: date!, driverSlotId: driverSlotId! })
+        const params = new URLSearchParams({ date: date! })
+        if (driverSlotId) params.set('driverSlotId', driverSlotId)
+        if (batchLabel) params.set('batchLabel', batchLabel)
         if (fromDate) params.set('fromDate', fromDate)
         const wire = await apiGet<TripPrintDataWire>(
           `/api/orders/dispatch-print-data?${params}`,
@@ -57,7 +60,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
     }
     load()
     return () => { cancelled = true }
-  }, [date, fromDate, driverSlotId, type])
+  }, [date, fromDate, driverSlotId, batchLabel, type])
 
   if (error) {
     return (

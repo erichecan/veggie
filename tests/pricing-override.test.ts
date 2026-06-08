@@ -48,13 +48,15 @@ before(async () => {
 after(async () => { await prisma.$disconnect() })
 
 test('选定 CITY CENTRE 价格表覆盖后，Red Onion 单价应为 2.2', async () => {
+  // 业务确认价：CITY CENTRE 的 Red Onion = 2.2（variant 固定价，覆盖 Odoo 源的 9.5；牌价为 11）。
+  // 本用例验证「选价格表覆盖」机制生效——命中价格表规则、不回退牌价，并持久化所选 pricelistId。
   const { lines, pricelistId } = await resolveOrderLines(
     { prisma, restaurantId: customerId },
     [{ productId: redOnionId, quantity: 1, price: 11 }],
     { pricelistId: CITY_CENTRE_PL },
   )
   assert.equal(lines.length, 1)
-  assert.equal(lines[0].authoritativeUnitPrice, 2.2, '覆盖价格表后应命中 CITY CENTRE 的 2.2 规则')
+  assert.equal(lines[0].authoritativeUnitPrice, 2.2, '覆盖价格表后应命中 CITY CENTRE 的 2.2 规则（业务确认价）')
   assert.equal(pricelistId, CITY_CENTRE_PL, '返回的 pricelistId 应为本单选定值，用于持久化到订单')
 })
 

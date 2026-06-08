@@ -3,7 +3,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
-import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
 
 type PrintMode = 'day' | 'multiline' | 'summary'
 
@@ -348,7 +348,10 @@ function DayWiseReportInner() {
   const toDate = searchParams.get('to') ?? ''
   const customerIds = searchParams.get('customerIds')?.split(',').filter(Boolean) ?? []
   const productNames = searchParams.get('productNames')?.split(',').filter(Boolean) ?? []
-  const driverBatch = searchParams.get('driverBatch') ?? ''
+  // Driver / AM-PM / Batch multi-select filters (empty list = all)
+  const drivers = searchParams.get('drivers')?.split(',').filter(Boolean) ?? []
+  const times = searchParams.get('times')?.split(',').filter(Boolean) ?? []
+  const batchNums = searchParams.get('batchNums')?.split(',').map(Number).filter(n => !isNaN(n)) ?? []
   const categoryId = searchParams.get('categoryId') ?? ''
   const salesman = searchParams.get('salesman') ?? ''
 
@@ -362,7 +365,6 @@ function DayWiseReportInner() {
         if (fromDate) params.set('fromDate', fromDate)
         if (toDate) params.set('toDate', toDate)
         if (customerIds.length > 0) params.set('restaurantIds', customerIds.join(','))
-        if (driverBatch) params.set('deliveryBatch', driverBatch)
         if (categoryId) params.set('categoryId', categoryId)
         if (salesman) params.set('salesman', salesman)
 
@@ -370,6 +372,13 @@ function DayWiseReportInner() {
 
         const lines: ReportLine[] = []
         for (const order of orders) {
+          // Driver / AM-PM / Batch multi-select filter (empty list = all)
+          if (drivers.length > 0 || times.length > 0 || batchNums.length > 0) {
+            const p = parseDriverSlotKey(formatDriverSlotFromOrder(order))
+            if (drivers.length > 0 && !drivers.includes(p.driver)) continue
+            if (times.length > 0 && !times.includes(p.time)) continue
+            if (batchNums.length > 0 && !batchNums.includes(p.num)) continue
+          }
           const dateKey = (order as unknown as { deliveryDate?: string }).deliveryDate ?? order.createdAt
           const date = dateKey.slice(0, 10)
 
@@ -416,7 +425,12 @@ function DayWiseReportInner() {
         const dateLabel = fromDate && toDate ? `${fromDate} → ${toDate}` : fromDate || toDate || 'All dates'
         const custLabel = customerIds.length > 0 ? `${customerIds.length} customer(s) selected` : 'All customers'
         const prodLabel = productNames.length > 0 ? `${productNames.length} product(s) selected` : 'All products'
-        const batchLabel = driverBatch ? `Batch: ${driverBatch}` : 'All batches'
+        const batchFilterParts = [
+          drivers.length > 0 ? `Drivers: ${drivers.join(', ')}` : '',
+          times.length > 0 ? `${times.map(t => t.toUpperCase()).join('/')}` : '',
+          batchNums.length > 0 ? `Batch# ${batchNums.join(', ')}` : '',
+        ].filter(Boolean)
+        const batchLabel = batchFilterParts.length > 0 ? batchFilterParts.join(' · ') : 'All batches'
         const meta = `Period: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}  |  ${batchLabel}  |  ${lines.length} lines`
 
         const TITLES: Record<PrintMode, string> = {
@@ -441,7 +455,7 @@ function DayWiseReportInner() {
       }
     }
     load()
-  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), driverBatch, categoryId, salesman])
+  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), drivers.join(','), times.join(','), batchNums.join(','), categoryId, salesman])
 
   if (!ready) {
     return (

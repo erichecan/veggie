@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPut, apiPost } from '@/lib/api'
-import { formatDriverSlot, formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
+import { formatDriverSlot, formatDriverSlotFromOrder, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, OrderItem, OrderLine } from '@/lib/types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -66,13 +66,60 @@ function lineWeight(l: BatchLine): number {
   return w * Number(l.orderedQty)
 }
 
-function parseBatch(key: string): { num: number; time: string; driver: string } {
-  const parts = key.trim().split(/\s+/)
-  return {
-    num: parseInt(parts[0] ?? '0', 10) || 0,
-    time: parts[1]?.toLowerCase() ?? '',
-    driver: parts.slice(2).join(' ') || key,
-  }
+function toggleValue<T>(arr: T[], v: T): T[] {
+  return arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+}
+
+// ─── Chip multi-select (留空 = 全部) ─────────────────────────────────────────
+
+function ChipMultiSelect<T extends string | number>({
+  options,
+  selected,
+  onToggle,
+  onClear,
+  renderLabel,
+  allLabel,
+}: {
+  options: T[]
+  selected: T[]
+  onToggle: (v: T) => void
+  onClear: () => void
+  renderLabel?: (v: T) => string
+  allLabel: string
+}) {
+  const allActive = selected.length === 0
+  return (
+    <div className="flex gap-1.5 flex-wrap items-center">
+      <button
+        type="button"
+        onClick={onClear}
+        className="px-2.5 py-1 text-xs rounded-full border transition-colors"
+        style={allActive
+          ? { background: '#875A7B', color: '#fff', borderColor: '#875A7B' }
+          : { background: '#fff', color: '#9ca3af', borderColor: '#e5e7eb' }}
+        title="清除选择 = 全部"
+      >
+        {allLabel}
+      </button>
+      {options.map(opt => {
+        const active = selected.includes(opt)
+        return (
+          <button
+            key={String(opt)}
+            type="button"
+            onClick={() => onToggle(opt)}
+            className="px-2.5 py-1 text-xs rounded-full border transition-colors"
+            style={active
+              ? { background: '#875A7B', color: '#fff', borderColor: '#875A7B' }
+              : { background: '#fff', color: '#875A7B', borderColor: '#d4b8d0' }}
+          >
+            {renderLabel ? renderLabel(opt) : String(opt)}
+          </button>
+        )
+      })}
+      {options.length === 0 && <span className="text-xs text-gray-300">无可选项</span>}
+    </div>
+  )
 }
 
 // ─── Inline search row (Odoo-style "+ Add a line") ───────────────────────────
@@ -453,6 +500,7 @@ function BatchCard({
   onTransfer,
   onRemove,
   onLinesUpdated,
+  onPrint,
 }: {
   group: BatchGroup
   customerMap: Map<string, CustomerRow>
@@ -461,36 +509,63 @@ function BatchCard({
   onTransfer: (orderId: string, newSlotId: string) => void
   onRemove: (orderId: string) => void
   onLinesUpdated: (orderId: string) => void
+  onPrint: (batchKey: string, type: 'picking' | 'delivery' | 'summary') => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showRoute, setShowRoute] = useState(false)
   const { batchKey, orders: bOrders, totalAmount, untaxTotal, totalWeight } = group
   const customerCount = new Set(bOrders.map(o => o.restaurantId)).size
+  const canPrint = !!batchKey
   return (
     <div className="border rounded-lg overflow-hidden" style={{ borderColor: '#d4b8d0' }}>
-      <button
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#875A7B]/20 transition-colors"
+      <div
+        className="w-full flex items-center justify-between px-4 py-3"
         style={{ background: expanded ? '#f5f0f8' : '#faf5fc' }}
-        onClick={() => setExpanded(v => !v)}
       >
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold" style={{ color: '#4a2545' }}>{batchKey || '（未分配批次）'}</span>
-          <span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ background: '#875A7B' }}>{bOrders.length} 单</span>
-          <span className="text-xs text-gray-400">{customerCount} 家客户</span>
+        <button
+          className="flex items-center gap-3 text-left flex-1 min-w-0"
+          onClick={() => setExpanded(v => !v)}
+        >
+          <span className="text-sm font-semibold truncate" style={{ color: '#4a2545' }}>{batchKey || '（未分配批次）'}</span>
+          <span className="text-xs px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: '#875A7B' }}>{bOrders.length} 单</span>
+          <span className="text-xs text-gray-400 shrink-0">{customerCount} 家客户</span>
           {totalWeight > 0 && (
-            <span className="text-xs px-2 py-0.5 rounded border" style={{ color: '#875A7B', borderColor: '#d4b8d0' }}>
+            <span className="text-xs px-2 py-0.5 rounded border shrink-0" style={{ color: '#875A7B', borderColor: '#d4b8d0' }}>
               {fmtWeight(totalWeight)} kg
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-4">
+        </button>
+        <div className="flex items-center gap-3 shrink-0 pl-3">
+          {/* Per-batch print buttons — each picking/delivery/summary sheet is for this exact batch */}
+          {canPrint && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => onPrint(batchKey, 'picking')}
+                className="px-2.5 py-1 rounded text-[11px] font-semibold text-white transition-colors"
+                style={{ background: '#ea580c' }}
+                title="打印该批次拣货单"
+              >拣货单</button>
+              <button
+                onClick={() => onPrint(batchKey, 'delivery')}
+                className="px-2.5 py-1 rounded text-[11px] font-semibold text-white transition-colors"
+                style={{ background: '#1e40af' }}
+                title="打印该批次订单"
+              >订单</button>
+              <button
+                onClick={() => onPrint(batchKey, 'summary')}
+                className="px-2.5 py-1 rounded text-[11px] font-semibold text-white transition-colors"
+                style={{ background: '#16a34a' }}
+                title="打印该批次送货汇总单"
+              >汇总单</button>
+            </div>
+          )}
           {untaxTotal > 0 && (
             <span className="text-xs text-gray-400">未税 €{fmtMoney(untaxTotal)}</span>
           )}
           <span className="text-sm font-bold" style={{ color: '#875A7B' }}>€{fmtMoney(totalAmount)}</span>
-          <span className="text-gray-400 text-sm">{expanded ? '▲' : '▼'}</span>
+          <button onClick={() => setExpanded(v => !v)} className="text-gray-400 text-sm">{expanded ? '▲' : '▼'}</button>
         </div>
-      </button>
+      </div>
       {expanded && (
         <div className="border-t" style={{ borderColor: '#e8d8e8' }}>
           {bOrders.map((o, idx) => (
@@ -660,7 +735,10 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
   // selected filters (shared)
   const [selectedCustomers, setSelectedCustomers] = useState<CustomerRow[]>([])
   const [selectedProducts, setSelectedProducts] = useState<ProductRow[]>([])
-  const [selectedDriverBatch, setSelectedDriverBatch] = useState('')
+  // Driver / AM-PM / Batch are now three independent multi-select filters (留空 = 全部)
+  const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
+  const [selectedTimes, setSelectedTimes] = useState<string[]>([])
+  const [selectedBatchNums, setSelectedBatchNums] = useState<number[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedSalesman, setSelectedSalesman] = useState('')
 
@@ -713,24 +791,38 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
       .finally(() => setBatchLoading(false))
   }, [fromDate, toDate])
 
-  // Derive batch drivers from loaded orders
-  const allBatchDrivers = useMemo(() => {
-    const s = new Set<string>()
-    batchOrders.forEach(o => { const v = formatDriverSlotFromOrder(o); if (v) s.add(v) })
-    return Array.from(s).sort()
+  // Derive available 司机 / AM-PM / 批次 options from the actual orders' batches
+  // (driverSlots config records may be incomplete — orders are the source of truth)
+  const batchFilterOptions = useMemo(() => {
+    const drivers = new Set<string>()
+    const times = new Set<string>()
+    const nums = new Set<number>()
+    batchOrders.forEach(o => {
+      const key = formatDriverSlotFromOrder(o)
+      if (!key) return
+      const p = parseDriverSlotKey(key)
+      if (p.driver) drivers.add(p.driver)
+      if (p.time) times.add(p.time)
+      if (p.num) nums.add(p.num)
+    })
+    return {
+      drivers: Array.from(drivers).sort((a, b) => a.localeCompare(b)),
+      times: Array.from(times).sort(),
+      nums: Array.from(nums).sort((a, b) => a - b),
+    }
   }, [batchOrders])
 
-  // Filter batch orders by DOW and selected driver
+  // Filter batch orders by DOW + the three independent batch filters (empty = all)
   const filteredBatchOrders = useMemo(() => batchOrders.filter(o => {
     if (!o.deliveryDate) return false
     const d = String(o.deliveryDate).slice(0, 10)
     if (selectedDOW.length > 0 && !selectedDOW.includes(getDateDOW(d))) return false
-    if (selectedDriverBatch) {
-      const slot = driverSlots.find(s => s.id === selectedDriverBatch)
-      if (slot && formatDriverSlotFromOrder(o) !== formatDriverSlot(slot)) return false
-    }
+    const p = parseDriverSlotKey(formatDriverSlotFromOrder(o))
+    if (selectedDrivers.length > 0 && !selectedDrivers.includes(p.driver)) return false
+    if (selectedTimes.length > 0 && !selectedTimes.includes(p.time)) return false
+    if (selectedBatchNums.length > 0 && !selectedBatchNums.includes(p.num)) return false
     return true
-  }), [batchOrders, selectedDOW, selectedDriverBatch, driverSlots])
+  }), [batchOrders, selectedDOW, selectedDrivers, selectedTimes, selectedBatchNums])
 
   // Group and sort batches
   const batchGroups = useMemo((): BatchGroup[] => {
@@ -756,12 +848,12 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
 
     if (sortMode === 'driver') {
       list.sort((a, b) => {
-        const pa = parseBatch(a.batchKey), pb = parseBatch(b.batchKey)
+        const pa = parseDriverSlotKey(a.batchKey), pb = parseDriverSlotKey(b.batchKey)
         return pa.driver.localeCompare(pb.driver) || (pa.time === pb.time ? pa.num - pb.num : pa.time.localeCompare(pb.time))
       })
     } else if (sortMode === 'time') {
       list.sort((a, b) => {
-        const pa = parseBatch(a.batchKey), pb = parseBatch(b.batchKey)
+        const pa = parseDriverSlotKey(a.batchKey), pb = parseDriverSlotKey(b.batchKey)
         const timeCmp = (pa.time === 'am' ? 0 : 1) - (pb.time === 'am' ? 0 : 1)
         return timeCmp || pa.driver.localeCompare(pb.driver) || pa.num - pb.num
       })
@@ -835,18 +927,22 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
     const params = new URLSearchParams({ mode, from: fromDate, to: toDate })
     if (selectedCustomers.length > 0) params.set('customerIds', selectedCustomers.map(c => c.id).join(','))
     if (selectedProducts.length > 0) params.set('productNames', selectedProducts.map(p => p.name).join(','))
-    if (selectedDriverBatch) {
-      const slot = driverSlots.find(s => s.id === selectedDriverBatch)
-      if (slot) params.set('driverBatch', formatDriverSlot(slot))
-    }
+    if (selectedDrivers.length > 0) params.set('drivers', selectedDrivers.join(','))
+    if (selectedTimes.length > 0) params.set('times', selectedTimes.join(','))
+    if (selectedBatchNums.length > 0) params.set('batchNums', selectedBatchNums.join(','))
     if (selectedCategory) params.set('categoryId', selectedCategory)
     if (selectedSalesman) params.set('salesman', selectedSalesman)
     return `${prefix}/classic/print/day-wise-report?${params.toString()}`
   }
 
-  function buildDispatchUrl(type: 'picking' | 'delivery' | 'summary') {
-    const params = new URLSearchParams({ date: toDate, fromDate, driverSlotId: selectedDriverBatch })
-    return `${prefix}/classic/print/dispatch/${type}?${params.toString()}`
+  // Per-batch dispatch print: prefer the DriverSlot id; fall back to the batch
+  // label string for batches that only exist as a legacy deliveryBatch string.
+  function handlePrintBatch(batchKey: string, type: 'picking' | 'delivery' | 'summary') {
+    const slotId = slotKeyToId.get(batchKey)
+    const params = new URLSearchParams({ date: toDate, fromDate })
+    if (slotId) params.set('driverSlotId', slotId)
+    else params.set('batchLabel', batchKey)
+    window.open(`${prefix}/classic/print/dispatch/${type}?${params.toString()}`, '_blank')
   }
 
   // Close on Escape key
@@ -890,26 +986,23 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
         </div>
 
         {/* Filter grid (shared between tabs) */}
-        <div className="p-5 border-b border-gray-200 shrink-0">
+        <div className="p-5 border-b border-gray-200 shrink-0 space-y-3">
+          {/* Dates + report-only selects */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-            {/* Left column */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <label className="w-32 text-xs text-gray-500 shrink-0">From</label>
-                <input type="date" value={fromDate} max={toDate}
-                  onChange={e => setFromDate(e.target.value)}
-                  className={selectCls} />
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="w-32 text-xs text-gray-500 shrink-0">Driver / Batch</label>
-                <select value={selectedDriverBatch}
-                  onChange={e => setSelectedDriverBatch(e.target.value)}
-                  className={selectCls}>
-                  <option value="">全部批次</option>
-                  {driverSlots.map(s => <option key={s.id} value={s.id}>{s.timeOfDay.toUpperCase()} #{s.batchNum} — {s.driverName}</option>)}
-                </select>
-              </div>
-              {tab === 'report' && (
+            <div className="flex items-center gap-3">
+              <label className="w-32 text-xs text-gray-500 shrink-0">From</label>
+              <input type="date" value={fromDate} max={toDate}
+                onChange={e => setFromDate(e.target.value)}
+                className={selectCls} />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-36 text-xs text-gray-500 shrink-0">To</label>
+              <input type="date" value={toDate} min={fromDate}
+                onChange={e => setToDate(e.target.value)}
+                className={selectCls} />
+            </div>
+            {tab === 'report' && (
+              <>
                 <div className="flex items-center gap-3">
                   <label className="w-32 text-xs text-gray-500 shrink-0">Salesman</label>
                   <select value={selectedSalesman}
@@ -919,18 +1012,6 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
                     {allSalesmen.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
                   </select>
                 </div>
-              )}
-            </div>
-
-            {/* Right column */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <label className="w-36 text-xs text-gray-500 shrink-0">To</label>
-                <input type="date" value={toDate} min={fromDate}
-                  onChange={e => setToDate(e.target.value)}
-                  className={selectCls} />
-              </div>
-              {tab === 'report' && (
                 <div className="flex items-center gap-3">
                   <label className="w-36 text-xs text-gray-500 shrink-0">Product Category</label>
                   <select value={selectedCategory}
@@ -940,27 +1021,65 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
                     {allCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
-              )}
-              {tab === 'batch' && (
-                <div className="flex items-center gap-3">
-                  <label className="w-36 text-xs text-gray-500 shrink-0">按星期筛选</label>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {WEEKDAYS.map((label, dow) => {
-                      const active = selectedDOW.includes(dow)
-                      return (
-                        <button key={dow}
-                          onClick={() => setSelectedDOW(prev => active ? prev.filter(d => d !== dow) : [...prev, dow])}
-                          className="px-2.5 py-1 text-xs rounded-full border transition-colors"
-                          style={active ? { background: '#875A7B', color: '#fff', borderColor: '#875A7B' }
-                            : { background: '#fff', color: '#875A7B', borderColor: '#d4b8d0' }}
-                        >{label}</button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
+              </>
+            )}
+          </div>
+
+          {/* 司机 / AM-PM / 批次 — three independent multi-select filters (留空 = 全部) */}
+          <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
+            <div className="flex items-start gap-3">
+              <label className="w-32 text-xs text-gray-500 shrink-0 pt-1.5">司机</label>
+              <ChipMultiSelect
+                options={batchFilterOptions.drivers}
+                selected={selectedDrivers}
+                onToggle={v => setSelectedDrivers(prev => toggleValue(prev, v))}
+                onClear={() => setSelectedDrivers([])}
+                allLabel="全部司机"
+              />
+            </div>
+            <div className="flex items-start gap-3">
+              <label className="w-32 text-xs text-gray-500 shrink-0 pt-1.5">AM / PM</label>
+              <ChipMultiSelect
+                options={batchFilterOptions.times}
+                selected={selectedTimes}
+                onToggle={v => setSelectedTimes(prev => toggleValue(prev, v))}
+                onClear={() => setSelectedTimes([])}
+                renderLabel={t => t.toUpperCase()}
+                allLabel="全部时段"
+              />
+            </div>
+            <div className="flex items-start gap-3">
+              <label className="w-32 text-xs text-gray-500 shrink-0 pt-1.5">批次</label>
+              <ChipMultiSelect
+                options={batchFilterOptions.nums}
+                selected={selectedBatchNums}
+                onToggle={v => setSelectedBatchNums(prev => toggleValue(prev, v))}
+                onClear={() => setSelectedBatchNums([])}
+                renderLabel={n => `#${n}`}
+                allLabel="全部批次"
+              />
             </div>
           </div>
+
+          {/* 按星期筛选 (batch tab only) */}
+          {tab === 'batch' && (
+            <div className="flex items-start gap-3 pt-1">
+              <label className="w-32 text-xs text-gray-500 shrink-0 pt-1.5">按星期筛选</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {WEEKDAYS.map((label, dow) => {
+                  const active = selectedDOW.includes(dow)
+                  return (
+                    <button key={dow}
+                      onClick={() => setSelectedDOW(prev => active ? prev.filter(d => d !== dow) : [...prev, dow])}
+                      className="px-2.5 py-1 text-xs rounded-full border transition-colors"
+                      style={active ? { background: '#875A7B', color: '#fff', borderColor: '#875A7B' }
+                        : { background: '#fff', color: '#875A7B', borderColor: '#d4b8d0' }}
+                    >{label}</button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Scrollable body */}
@@ -1012,6 +1131,7 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
                       onTransfer={handleTransfer}
                       onRemove={handleRemove}
                       onLinesUpdated={handleLinesUpdated}
+                      onPrint={handlePrintBatch}
                     />
                   ))}
                 </div>
@@ -1114,38 +1234,17 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
 
         {/* ── Footer buttons ── */}
         <div className="px-6 py-4 border-t border-gray-200 shrink-0 bg-white rounded-b-xl space-y-3">
-          {/* Row 1: dispatch print buttons */}
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400 shrink-0">配送日期: {toDate}</span>
-            <button
-              disabled={!selectedDriverBatch}
-              onClick={() => window.open(buildDispatchUrl('picking'), '_blank')}
-              className="px-5 py-2 text-sm font-semibold text-white rounded disabled:opacity-40"
-              style={{ background: '#ea580c' }}>
-              打印拣货单
-            </button>
-            <button
-              disabled={!selectedDriverBatch}
-              onClick={() => window.open(buildDispatchUrl('delivery'), '_blank')}
-              className="px-5 py-2 text-sm font-semibold text-white rounded disabled:opacity-40"
-              style={{ background: '#1e40af' }}>
-              打印订单
-            </button>
-            <button
-              disabled={!selectedDriverBatch}
-              onClick={() => window.open(buildDispatchUrl('summary'), '_blank')}
-              className="px-5 py-2 text-sm font-semibold text-white rounded disabled:opacity-40"
-              style={{ background: '#16a34a' }}>
-              打印送货汇总单
-            </button>
-            {!selectedDriverBatch && (
-              <span className="text-xs text-gray-400 italic">← 请先选择 Driver / Batch</span>
-            )}
-          </div>
+          {/* Batch tab: dispatch printing now lives on each batch card */}
+          {tab === 'batch' && (
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span className="shrink-0">配送日期: {toDate}</span>
+              <span className="italic">— 拣货单 / 订单 / 送货汇总单 请在对应批次行右侧点击打印</span>
+            </div>
+          )}
 
-          {/* Row 2: report print buttons */}
+          {/* Report tab: report print buttons */}
           {tab === 'report' && (
-            <div className="flex items-center gap-3 pt-2 border-t border-dashed border-gray-200">
+            <div className="flex items-center gap-3">
               <button onClick={() => window.open(buildUrl('day'), '_blank')}
                 className="px-5 py-2 text-sm font-semibold text-white rounded"
                 style={{ background: '#875A7B' }}>

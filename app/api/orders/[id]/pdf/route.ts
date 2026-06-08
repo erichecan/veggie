@@ -64,6 +64,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const linesHtml = lines.map((l, i) => {
       const spec = (l as unknown as { spec?: string }).spec
+      const note = (l as unknown as { note?: string }).note
       const taxRate = Number(l.taxRate ?? 0)
       const inclVat = Number(l.subtotal) * (1 + taxRate / 100)
       return `
@@ -73,6 +74,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         <td class="col-desc">
           <div class="prod-name">${l.productName}</div>
           ${spec ? `<div class="prod-spec">${spec}</div>` : ''}
+          ${note ? `<div class="prod-note">📝 ${note}</div>` : ''}
         </td>
         <td class="col-price">${eur(l.unitPrice)}</td>
         <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
@@ -136,6 +138,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   .prod-name { font-weight: 600; }
   .prod-spec { color: #c00; font-size: 8pt; margin-top: 1px; }
+  .prod-note { color: #875A7B; font-size: 8pt; margin-top: 1px; font-style: italic; }
 
   /* Totals */
   .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; }

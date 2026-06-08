@@ -117,9 +117,17 @@ async function main() {
   }
   console.log(`✅ 会计科目: ${STANDARD_ACCOUNTS.length} 条`)
 
-  // Products — load 1,681 rows from pic/product.product.csv
+  // Products — bulk import from pic/product.product.csv
+  // ⚠️ 防重复守卫：本 CSV 导入使用 p{num} 体系，与生产库已去重的 cuid25 正版不同；
+  //    在已有数据的库上重复运行会制造重复商品/客户。因此：已有商品时默认跳过 CSV 批量导入。
+  //    仅在空库初始化、或确需强制重导时设 SEED_FORCE_BULK=1。
   const BATCH = 100
-  const csvProducts = loadCsvProducts()
+  const existingProductCount = await prisma.product.count()
+  const skipBulkMaster = existingProductCount > 0 && process.env.SEED_FORCE_BULK !== '1'
+  if (skipBulkMaster) {
+    console.log(`⏭️  已存在 ${existingProductCount} 个商品 → 跳过 CSV 批量商品/客户导入（防重复）。如需强制：SEED_FORCE_BULK=1`)
+  }
+  const csvProducts = skipBulkMaster ? [] : loadCsvProducts()
 
   // 1. ProductTemplate (one per CSV row — CSV is product.product = variant level,
   //    but each product in this dataset is a single-variant template)
@@ -255,8 +263,8 @@ async function main() {
   }
   console.log(`✅ Demo 客户: ${SEED_DEMO_CUSTOMERS.length} 条`)
 
-  // Customers — bulk import from pic/res.partner.csv (1,466 Odoo records)
-  const csvCustomers = loadCsvCustomers()
+  // Customers — bulk import from pic/res.partner.csv (受同一防重复守卫控制，见上方 skipBulkMaster)
+  const csvCustomers = skipBulkMaster ? [] : loadCsvCustomers()
   let csvImported = 0
   for (let i = 0; i < csvCustomers.length; i += BATCH) {
     const batch = csvCustomers.slice(i, i + BATCH)
