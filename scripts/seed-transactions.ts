@@ -44,6 +44,11 @@ function daysAgo(d: number, hour = 9): Date {
   return new Date(base.getTime() - d * DAY)
 }
 const ymd = (d: Date) => d.toISOString().slice(0, 10)
+// 本地日历日（与波次页 todayStr / 波次 API 的 new Date(dateStr+'T00:00:00Z') 约定一致）。
+// 注意：种子机若在 UTC+ 时区，toISOString 会把"今天"算成 UTC 的昨天，故波次日期必须用本地分量。
+const localYmd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const waveDateOf = (d: Date) => new Date(localYmd(d) + 'T00:00:00Z')
 const yymmdd = (d: Date) => d.toISOString().slice(2, 10).replace(/-/g, '')
 
 // ─── 类型 ──────────────────────────────────────────────────────────────────
@@ -178,8 +183,10 @@ function buildAssignments(slots: Slot[], custCount: number): Assign[] {
   }
 
   interface Batch { status: OrderStatus; slot: Slot; date: Date; size: number; members: number[] }
+  // 配送波次（CONFIRMED + 已排司机）：全部落在「今天」，每批用不同 am 司机，
+  // 这样波次页（按日期过滤、仅取 CONFIRMED 订单）当天能看到多个司机，每个司机卡片里有已分配订单。
   const specs: Array<[OrderStatus, number, number]> = [
-    ['WAVE_ASSIGNED', 4, -rint(0, 2)], ['WAVE_ASSIGNED', 3, -rint(0, 2)], ['WAVE_ASSIGNED', 2, -rint(0, 2)], ['WAVE_ASSIGNED', 1, -rint(0, 2)],
+    ['CONFIRMED', 4, 0], ['CONFIRMED', 3, 0], ['CONFIRMED', 2, 0], ['CONFIRMED', 1, 0],
     ['IN_DELIVERY', 4, rint(0, 2)], ['IN_DELIVERY', 3, rint(0, 2)], ['IN_DELIVERY', 2, rint(0, 2)], ['IN_DELIVERY', 1, rint(0, 2)],
     ['COMPLETED', 5, rint(3, 12)], ['COMPLETED', 3, rint(3, 12)], ['COMPLETED', 2, rint(3, 12)], ['COMPLETED', 1, rint(3, 12)], ['COMPLETED', 1, rint(3, 12)],
   ]
@@ -216,7 +223,7 @@ function buildAssignments(slots: Slot[], custCount: number): Assign[] {
   if (amShuf.length > 0 && pmSlots.length > 0) {
     const am = nextAm()
     const pm = pmSlots[rint(0, pmSlots.length - 1)]
-    let date = daysAgo(-rint(0, 2)); let tries = 0
+    let date = daysAgo(0); let tries = 0
     while ((usedKey.has(`${ymd(date)}|${am.id}`) || usedKey.has(`${ymd(date)}|${pm.id}`)) && tries < 90) { date = new Date(date.getTime() + DAY); tries++ }
     usedKey.add(`${ymd(date)}|${am.id}`); usedKey.add(`${ymd(date)}|${pm.id}`)
     const used = new Set<number>()
@@ -225,7 +232,7 @@ function buildAssignments(slots: Slot[], custCount: number): Assign[] {
       while (used.has(c) && g < custCount) { c = nextFresh(); g++ }
       used.add(c)
       const slot = i < 2 ? am : pm
-      A.push({ status: 'WAVE_ASSIGNED', slotId: slot.id, driverName: slot.driverName, createdAt: new Date(date.getTime() - rint(1, 3) * DAY), deliveryDate: date, custIdx: c, crossGroup: 1 })
+      A.push({ status: 'CONFIRMED', slotId: slot.id, driverName: slot.driverName, createdAt: new Date(date.getTime() - rint(1, 3) * DAY), deliveryDate: date, custIdx: c, crossGroup: 1 })
     }
   }
 
@@ -365,11 +372,11 @@ async function main() {
   }
   console.log(`✅ 送货单：${slipN} 条`)
 
-  // ── 3c. PickingWave（WAVE_ASSIGNED + IN_DELIVERY 按 日期+司机 分组；跨 AM/PM 单独处理）──
+  // ── 3c. PickingWave（CONFIRMED+已排司机 按 日期+司机 分组；跨 AM/PM 单独处理）──
   const waveGroups = new Map<string, { date: Date; slotId: string; driver: string; orderIds: string[] }>()
   for (const o of built) {
     if (o.crossGroup) continue // 跨 AM/PM 订单不进单时段波次
-    if ((o.status !== 'WAVE_ASSIGNED' && o.status !== 'IN_DELIVERY') || !o.driverSlotId) continue
+    if (o.status !== 'CONFIRMED' || !o.driverSlotId) continue // 波次订单保持 CONFIRMED（波次页只取 CONFIRMED 池）
     const key = `${ymd(o.deliveryDate)}__${o.driverSlotId}`
     if (!waveGroups.has(key)) waveGroups.set(key, { date: o.deliveryDate, slotId: o.driverSlotId, driver: o.driverName!, orderIds: [] })
     waveGroups.get(key)!.orderIds.push(o.id)
@@ -382,7 +389,7 @@ async function main() {
   const takenWave = new Set(existingWaves.map(w => `${ymd(w.waveDate!)}|${w.driverSlotId}`))
   let waveN = 0
   for (const g of waveGroups.values()) {
-    let date = new Date(ymd(g.date))
+    let date = waveDateOf(g.date) // 本地日历日 → UTC 零点，匹配波次 API 过滤
     for (let tries = 0; takenWave.has(`${ymd(date)}|${g.slotId}`) && tries < 90; tries++)
       date = new Date(date.getTime() + DAY)
     if (takenWave.has(`${ymd(date)}|${g.slotId}`)) continue // 实在无空位则跳过该波次
@@ -413,7 +420,7 @@ async function main() {
         name: `${WAVE_PREFIX}整日(AM+PM) ${drivers}`,
         orderIds: crossOrders.map(o => o.id),
         status: 'PENDING' as never,
-        waveDate: new Date(ymd(crossOrders[0].deliveryDate)),
+        waveDate: waveDateOf(crossOrders[0].deliveryDate),
         waveNumber: waveN,
         waveType: 'FULL_DAY',
         driverSlotId: null,
