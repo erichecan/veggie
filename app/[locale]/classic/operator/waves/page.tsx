@@ -411,9 +411,20 @@ export default function WaveManagementPage() {
                   >
                     {/* Top row: code + meta */}
                     <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[11px] font-semibold" style={{ color: '#875A7B' }}>
+                      <button
+                        type="button"
+                        draggable={false}
+                        onClick={e => {
+                          e.stopPropagation()
+                          const seg = o.status === 'pending' ? 'quotations' : 'orders'
+                          window.open(`${prefix}/classic/operator/${seg}/${o.id}`, '_blank')
+                        }}
+                        className="font-mono text-[11px] font-semibold hover:underline cursor-pointer bg-transparent border-none p-0"
+                        style={{ color: '#875A7B' }}
+                        title="查看订单详情（新标签页）"
+                      >
                         {displayOrderCode(o)}
-                      </span>
+                      </button>
                       <span className="ml-auto text-[10px] text-gray-500 whitespace-nowrap">
                         {o.items.length}种/{itemCount}件{' '}
                         <span className="font-semibold text-gray-700">€{(o.totalAmount ?? 0).toFixed(2)}</span>
