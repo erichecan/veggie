@@ -10,6 +10,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
+import { rankByRelevance } from '@/lib/search-rank'
 import type { Product, Customer, OdooPricelist, CustomerPriceType } from '@/lib/types'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -339,28 +340,20 @@ export default function ClassicPlaceOrderPage() {
     return base ? { ...base, priceType, pricelistId: pricelistId || base.pricelistId } : null
   }, [customer, selectedCustomerFull, customerId, priceType, pricelistId])
 
-  const filteredCustomers = useMemo(() => {
-    const q = custSearch.trim().toLowerCase()
-    if (!q) return customers
-    return customers.filter(c => c.name.toLowerCase().includes(q))
-  }, [customers, custSearch])
+  const filteredCustomers = useMemo(
+    () => rankByRelevance(customers, custSearch, c => c.name),
+    [customers, custSearch],
+  )
 
   const filteredPricelists = useMemo(() => {
-    const q = plSearch.trim().toLowerCase()
     const active = pricelists.filter(p => p.active !== false)
-    if (!q) return active
-    return active.filter(p => p.name.toLowerCase().includes(q))
+    return rankByRelevance(active, plSearch, p => p.name)
   }, [pricelists, plSearch])
 
-  const filteredProducts = useMemo(() => {
-    const q = lineSearch.trim().toLowerCase()
-    if (!q) return products
-    return products.filter(
-      p =>
-        p.name.toLowerCase().includes(q) ||
-        (p.internalRef ?? '').toLowerCase().includes(q),
-    )
-  }, [products, lineSearch])
+  const filteredProducts = useMemo(
+    () => rankByRelevance(products, lineSearch, p => [p.name, p.internalRef]),
+    [products, lineSearch],
+  )
 
   // ── Click-outside handler (all dropdowns) ─────────────────────────────────
   useEffect(() => {
