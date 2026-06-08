@@ -613,13 +613,7 @@ export default function QuotationDetailPage() {
                               onChange={e => updateLine(i, 'taxRate', Number(e.target.value))} />
                           ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                         </td>
-                        <td className="px-2 py-2 text-right">
-                          {editing ? (
-                            <input type="number" step="0.01" min="0" className={inputCls}
-                              value={cms}
-                              onChange={e => updateLine(i, 'commissionPrice', Number(e.target.value))} />
-                          ) : cms.toFixed(2)}
-                        </td>
+                        <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
                         <td className="px-2 py-2 text-right" style={{ color: PURPLE }}>€ {(cms * Number(l.orderedQty)).toFixed(2)}</td>
                         <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
                       </tr>

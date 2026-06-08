@@ -71,6 +71,7 @@ export default function SalesOrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [pricelist, setPricelist] = useState<Pricelist | null>(null)
+  const [pricelists, setPricelists] = useState<Pricelist[]>([])
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('lines')
@@ -79,6 +80,8 @@ export default function SalesOrderDetailPage() {
   const [internalNote, setInternalNote] = useState('')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
+  const [pricelistId, setPricelistId] = useState('')
+  const [priceType, setPriceType] = useState('multi')
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
 
   useEffect(() => {
@@ -106,12 +109,15 @@ export default function SalesOrderDetailPage() {
       setInternalNote(ord.internalNote ?? '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
       setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
+      setPricelistId(ord.pricelistId ?? '')
+      setPriceType((ord as unknown as { priceType?: string }).priceType ?? 'multi')
 
       const [cs, pls] = await Promise.all([
         apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
         apiGet<Pricelist[]>('/api/pricelists').catch(() => [] as Pricelist[]),
       ])
       setCustomer(cs.find(c => c.id === ord.restaurantId) ?? null)
+      setPricelists(pls)
       if (ord.pricelistId) setPricelist(pls.find(p => p.id === ord.pricelistId) ?? null)
 
       const productIds = Array.from(new Set((ord.lines ?? []).map(l => l.productId).filter(Boolean)))
@@ -166,6 +172,7 @@ export default function SalesOrderDetailPage() {
       const batchStr = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : deliveryBatch
       await apiPut(`/api/orders/${order.id}`, {
         internalNote, deliveryBatch: batchStr, driverSlotId: driverSlotId || null,
+        pricelistId: pricelistId || null, priceType,
         ...(editLines.length > 0 && { lines: editLines, totalAmount: newTotalAmount }),
       })
       toast.success('已保存')
@@ -474,21 +481,34 @@ export default function SalesOrderDetailPage() {
                   </select>
                 ) : <div style={{ color: PURPLE }}>{(order ? formatDriverSlotFromOrder(order) : deliveryBatch) || '—'}</div>}
               </div>
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Pricelist</div>
-                <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Pricelist</div>
+                {editing ? (
+                  <select value={pricelistId} onChange={e => setPricelistId(e.target.value)}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none">
+                    <option value="">— none —</option>
+                    {pricelists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                ) : <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>}
               </div>
               <div className="flex">
                 <div className="w-32 font-bold text-gray-700">Payment Terms</div>
                 <div className="text-gray-800">{customer?.paymentTerm ?? '—'}</div>
               </div>
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Price Type</div>
-                <div className="text-gray-800">{
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>
+                {editing ? (
+                  <select value={priceType} onChange={e => setPriceType(e.target.value)}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none">
+                    <option value="multi">Multi-Pricelist</option>
+                    <option value="default">Default Price</option>
+                    <option value="last">Last Price</option>
+                  </select>
+                ) : <div className="text-gray-800">{
                   order.priceType === 'multi' ? 'Multi-Pricelist'
                   : order.priceType === 'last' ? 'Last Price'
                   : 'Default Price'
-                }</div>
+                }</div>}
               </div>
             </div>
           </div>
@@ -587,13 +607,7 @@ export default function SalesOrderDetailPage() {
                               onChange={e => updateLine(i, 'taxRate', Number(e.target.value))} />
                           ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                         </td>
-                        <td className="px-2 py-2 text-right">
-                          {editing ? (
-                            <input type="number" step="0.01" min="0" className={inputCls}
-                              value={cms}
-                              onChange={e => updateLine(i, 'commissionPrice', Number(e.target.value))} />
-                          ) : cms.toFixed(2)}
-                        </td>
+                        <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
                         <td className="px-2 py-2 text-right" style={{ color: PURPLE }}>€ {(cms * Number(l.orderedQty)).toFixed(2)}</td>
                         <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
                       </tr>
