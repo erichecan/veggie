@@ -1,0 +1,48 @@
+name: Deploy to Cloud Run
+
+# 推送到 main 自动部署；也可在 Actions 页手动触发。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一时刻只跑一次部署，新推送取消正在进行的旧部署。
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # Workload Identity 联合换取 OIDC token 所需
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # 复用现有 cloudbuild.yaml：Cloud Build 内构建镜像 + 推送 + 部署到 Cloud Run
+      # （含 min-instances=0 等配置，密钥由 Secret Manager 注入，仓库内不存任何凭据）
+      - name: Build & Deploy via Cloud Build
+        run: |
+          gcloud builds submit \
+            --config=cloudbuild.yaml \
+            --project="${{ vars.GCP_PROJECT_ID }}"
+
+      - name: Show deployed URL
+        run: |
+          gcloud run services describe veggie \
+            --region=europe-west1 \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --format='value(status.url)'
