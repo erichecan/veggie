@@ -37,6 +37,10 @@ export async function GET(req: Request) {
     if (!includeArchived) {
       andConditions.push({ isActive: true })
     }
+    const isVendorParam = searchParams.get('isVendor')
+    if (isVendorParam === 'true' || isVendorParam === '1') {
+      andConditions.push({ isVendor: true })
+    }
     if (search) {
       andConditions.push({
         OR: [
