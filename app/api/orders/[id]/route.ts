@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
+import { notifyLowStockAfterConfirm } from '@/lib/notify'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
@@ -627,6 +628,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           : `更新订单: ${id}${newStatus ? ` → 状态: ${newStatus}` : ''}`,
         changes: Object.keys(changes).length > 0 ? changes : undefined,
       })
+
+      // 订单确认后低库存提醒(旁路,失败不影响主流程)
+      if (newStatus === 'CONFIRMED' && String(orderBefore.status).toUpperCase() !== 'CONFIRMED') {
+        const items = (order.items as unknown as { productId?: string }[]) ?? []
+        await notifyLowStockAfterConfirm(
+          items.map(it => it.productId).filter((v): v is string => !!v),
+          (order as { code?: string | null }).code ?? id,
+        )
+      }
       return NextResponse.json(serializeApi(order))
     } catch (error) {
       console.error('[PUT /api/orders/[id]]', error)

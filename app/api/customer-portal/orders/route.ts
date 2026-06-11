@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
+import { notifyRole } from '@/lib/notify'
 import { serializeApi } from '@/lib/api-serializer'
 import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
@@ -276,6 +277,14 @@ export async function POST(req: Request) {
         resource: 'order',
         resourceId: order.id,
         detail: `客户自助下单: ${order.code ?? order.id}, 金额 €${totalAmount}, ${lines.length}项商品`,
+      })
+
+      // 通知运营:有新的自助订单待确认(旁路,失败不影响下单)
+      await notifyRole(['OPERATOR'], {
+        type: 'order_update',
+        title: `新订单待确认:${restaurantName}`,
+        body: `${restaurantName} 自助下单 ${order.code ?? order.id},${lines.length} 项商品,金额 €${totalAmount.toFixed(2)},请到报价单页确认。`,
+        data: { orderId: order.id, orderCode: order.code },
       })
 
       const response = {
