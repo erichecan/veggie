@@ -9,6 +9,7 @@ import { Pagination } from '@/components/ui/pagination'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
+import CsvImportDialog from '@/components/classic/CsvImportDialog'
 
 const PAGE_SIZE = 20
 
@@ -30,6 +31,7 @@ export default function ClassicCustomersPage() {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [isReadMode, setIsReadMode] = useState(true)
   const [groupBy, setGroupBy] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
 
   async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived) {
     setLoading(true)
@@ -129,7 +131,7 @@ export default function ClassicCustomersPage() {
         breadcrumb={['销售', '客户']}
         onNew={openAdd}
         permanentActions={[
-          { label: 'Import', onClick: () => toast.info('导入功能即将推出') },
+          { label: 'Import', onClick: () => setImportOpen(true) },
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },
@@ -216,6 +218,26 @@ export default function ClassicCustomersPage() {
         <Pagination page={page} totalPages={Math.ceil(total / PAGE_SIZE)} onPageChange={p => loadPage(p, searchInput)} />
       </div>
 
+      <CsvImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="批量导入客户(CSV)"
+        templateName="customers-import-template"
+        endpoint="/api/customers/bulk"
+        columns={[
+          { key: 'name', label: '名称', required: true },
+          { key: 'phone', label: '电话' },
+          { key: 'email', label: '邮箱' },
+          { key: 'address', label: '地址' },
+          { key: 'city', label: '城市' },
+          { key: 'zip', label: '邮编' },
+          { key: 'paymentTerm', label: '账期' },
+          { key: 'salesman', label: '业务员' },
+          { key: 'vatNumber', label: '税号' },
+          { key: 'notes', label: '备注' },
+        ]}
+        onDone={() => loadPage(1, searchInput)}
+      />
     </div>
   )
 }

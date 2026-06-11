@@ -1,7 +1,39 @@
 /**
  * lib/csv-export.ts
- * 统一 CSV 导出 —— 带 UTF-8 BOM,Excel 双击直接打开不乱码。
+ * 统一 CSV 导出/解析 —— 导出带 UTF-8 BOM,Excel 双击直接打开不乱码。
  */
+
+/**
+ * 解析 CSV 文本为行数组(支持引号包裹、内嵌逗号/换行、CRLF、BOM)。
+ */
+export function parseCsv(text: string): string[][] {
+  const s = text.replace(/^\ufeff/, '')
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let inQuotes = false
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (s[i + 1] === '"') { cell += '"'; i++ } else inQuotes = false
+      } else cell += ch
+    } else if (ch === '"') {
+      inQuotes = true
+    } else if (ch === ',') {
+      row.push(cell); cell = ''
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && s[i + 1] === '\n') i++
+      row.push(cell); cell = ''
+      rows.push(row); row = []
+    } else {
+      cell += ch
+    }
+  }
+  if (cell.length > 0 || row.length > 0) { row.push(cell); rows.push(row) }
+  // 去掉全空行
+  return rows.filter(r => r.some(c => c.trim() !== ''))
+}
 
 function escapeCell(v: unknown): string {
   if (v === null || v === undefined) return ''

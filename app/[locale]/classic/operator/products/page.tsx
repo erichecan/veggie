@@ -8,6 +8,7 @@ import { apiGet, apiPut } from '@/lib/api'
 import type { ProductTemplate, Product, ProductCategory } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
+import CsvImportDialog from '@/components/classic/CsvImportDialog'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
 import { Pagination } from '@/components/ui/pagination'
 
@@ -63,6 +64,7 @@ export default function ClassicProductsPage() {
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [alertDismissed, setAlertDismissed] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   async function loadPage(p: number, q: string) {
     setLoading(true)
@@ -408,7 +410,7 @@ export default function ClassicProductsPage() {
         breadcrumb={['库存', '商品']}
         onNew={() => router.push(`${prefix}/classic/operator/products/new`)}
         permanentActions={[
-          { label: '导入', onClick: () => toast.info('导入功能即将推出') },
+          { label: '导入', onClick: () => setImportOpen(true) },
           { label: '导出', onClick: () => toast.info('导出功能即将推出') },
           ...(isReadMode
             ? [
@@ -635,6 +637,24 @@ export default function ClassicProductsPage() {
       </div>
 
       <Pagination page={page} totalPages={Math.ceil(total / PAGE_SIZE)} onPageChange={p => loadPage(p, searchInput)} />
+
+      <CsvImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="批量导入商品(CSV)"
+        templateName="products-import-template"
+        endpoint="/api/products/bulk"
+        columns={[
+          { key: 'name', label: '名称', required: true },
+          { key: 'spec', label: '规格' },
+          { key: 'price', label: '售价' },
+          { key: 'stock', label: '库存' },
+          { key: 'taxRate', label: '税率' },
+          { key: 'commissionPrice', label: '佣金价' },
+          { key: 'internalRef', label: '内部编号' },
+        ]}
+        onDone={() => loadPage(1, searchInput)}
+      />
     </div>
   )
 }
