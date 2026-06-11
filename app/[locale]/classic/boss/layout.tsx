@@ -18,6 +18,8 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     { href: `${prefix}/classic/boss`, label: '经营总览' },
     { href: `${prefix}/classic/boss/sales-analysis`, label: '销售分析' },
     { href: `${prefix}/classic/boss/purchase-analysis`, label: '采购分析' },
+    { href: `${prefix}/classic/boss/sales-report`, label: '销售报表' },
+    { href: `${prefix}/classic/finance`, label: '财务总览' },
   ]
 
   useEffect(() => {

@@ -86,3 +86,55 @@ model Lot {
 1. GoodsReceipt.lines 是 JSON 字段，无法 Prisma relation 直接关联 Lot，需业务层处理
 2. 现有 StockMove 数据 lotId 为 null，兼容无影响
 3. FEFO（先到期先出）本次仅支持手动指定批次，自动 FEFO 排序后续优化
+
+---
+
+# 追加计划：角色功能补全(2026-06-11)
+
+> 来源:docs/role-feature-matrix.html 盘点 + 用户确认的优先级。
+> 不做:利润分析、路线规划、账龄分析、损耗报表、客户健康、实时地图、税务报表、物流分析充实、手机端适配。
+
+## 实施范围(8 项,按实施顺序)
+
+| # | 事项 | 规模 | 改动面 |
+|---|------|------|--------|
+| 1 | #11 老板欠款入口 | 小 | boss KPI 卡 + 导航项 |
+| 2 | #9 角色工作台/导航重组 | 大 | operator 首页工作台 + operator/accounting 导航补全 |
+| 3 | #4 报表导出 CSV | 中 | lib/csv-export.ts + 3 处导出按钮 |
+| 4 | #13 信用票管理页 | 中 | 新页面(API 已完整) |
+| 5 | #12 供应商账单页 | 中 | 新页面 + vendor-bills/[id] PUT |
+| 6 | #10 分笔收款核销 | 大 | Prisma Payment 模型 + /api/payments + 发票详情收款 UI |
+| 7 | #15 商品/客户批量导入 | 中 | CSV 导入对话框 + bulk API |
+| 8 | #14 通知触达 | 中 | lib/notify helper + 下单/低库存触发 |
+
+## 关键设计决策
+
+### #9 工作台
+- `operator/page.tsx` 由 redirect 改为「今日工作台」:待确认报价单 / 今日待分配 / 配送中 / 待开票 / 待审退货 / 低库存,每卡片显示数量并直达对应页面。
+- operator 导航第一项加「工作台」。
+- accounting 导航补全:核销管理 + 财务总览 + 司机交账 + 客户对账单(现状 bug:FINANCE 角色无法从导航到达 finance 页面)。
+
+### #10 Payment(唯一 schema 变更,纯新增表,无破坏)
+- Payment { id, invoiceId, customerId, amount, method(cash|transfer|other), paidAt, note, createdBy }
+- POST /api/payments:创建收款并原子更新 Invoice.amountPaid/amountDue/status(amountDue<=0 → PAID)。
+- 发票详情页加「收款记录」区块 + 记收款对话框。
+
+### #4 导出
+- CSV(带 BOM,Excel 直接打开),统一 helper `lib/csv-export.ts`。
+- 挂载点:boss/sales-report、ReportingToolbar(透视表)、finance 未结款明细。
+
+### #15 导入
+- 客户:CSV → POST /api/customers/bulk。
+- 商品:CSV → POST /api/products/bulk(服务端自动创建 ProductTemplate)。
+
+### #14 通知
+- `lib/notify.ts`:notifyRole(roles, type, title, body)。
+- 触发点:customer-portal 下单成功 → 通知 OPERATOR;订单确认后 ATP 低于安全库存 → 低库存通知。
+
+## 架构/质量/性能评估(大改三问)
+1. **架构**:新页面全部复用现有 layout+OdooNav 模式与 withAuth 鉴权,无新边界;Payment 为唯一新表,与 Invoice 单向关联,无单点风险。
+2. **质量**:信用票/供应商账单复用现有列表页模式;导出统一走一个 helper,避免三处重复实现。
+3. **性能**:工作台统计用 prisma count/groupBy 聚合,不拉全量订单;批量导入走单次事务批插入,不循环单条 API。
+
+## 验证
+- 每项完成后 preview 实测 + 控制台无错;全部完成后 npm run build,更新 docs/role-feature-matrix.html 状态,分项 commit。

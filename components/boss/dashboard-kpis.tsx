@@ -47,7 +47,10 @@ function KpiCard({
   )
 }
 
-export function DashboardKpis({ orders, pos }: { orders: Order[]; pos: PO[] }) {
+export function DashboardKpis({ orders, pos, debt, debtHref }: {
+  orders: Order[]; pos: PO[]
+  debt?: number | null; debtHref?: string
+}) {
   const now = new Date()
   const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
   const ystStart = new Date(todayStart); ystStart.setDate(ystStart.getDate() - 1)
@@ -91,7 +94,7 @@ export function DashboardKpis({ orders, pos }: { orders: Order[]; pos: PO[] }) {
   const wkOk = thisWkSales >= lastWkSales
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       <KpiCard label="今日营业额" value={fmt(todaySales)}
         badge={todayDelta} badgeOk={todayOk} sub="对比昨日" />
       <KpiCard label="本周营业额" value={fmt(thisWkSales)}
@@ -121,6 +124,28 @@ export function DashboardKpis({ orders, pos }: { orders: Order[]; pos: PO[] }) {
         badgeOk={unconfirmedPOs <= 3}
         accent={unconfirmedPOs > 3}
       />
+      {debt !== undefined && (
+        debtHref ? (
+          <a href={debtHref} className="block">
+            <KpiCard
+              label="欠款总额(含上期)"
+              value={debt !== null ? fmt(debt) : '—'}
+              sub="点击查看财务明细 →"
+              badge={debt !== null && debt > 0 ? '待收' : '无欠款'}
+              badgeOk={debt !== null ? debt <= 0 : undefined}
+              accent={debt !== null && debt > 0}
+            />
+          </a>
+        ) : (
+          <KpiCard
+            label="欠款总额(含上期)"
+            value={debt !== null ? fmt(debt) : '—'}
+            badge={debt !== null && debt > 0 ? '待收' : '无欠款'}
+            badgeOk={debt !== null ? debt <= 0 : undefined}
+            accent={debt !== null && debt > 0}
+          />
+        )
+      )}
     </div>
   )
 }
