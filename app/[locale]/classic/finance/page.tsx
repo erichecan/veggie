@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiGet } from '@/lib/api'
+import { downloadCsv } from '@/lib/csv-export'
 import type { Order, Customer } from '@/lib/types'
 import { DrillPanel, type DrillColumn } from '@/components/shared/drill-panel'
 
@@ -106,6 +107,35 @@ export default function ClassicFinancePage() {
 
   function toggleCard(key: CardKey) {
     setActiveCard(prev => (prev === key ? null : key))
+  }
+
+  function exportUnpaidCsv() {
+    const rows: unknown[][] = []
+    for (const g of unpaidGroups) {
+      for (const o of g.orders) {
+        rows.push([
+          g.customer.name, TERM_LABEL[g.customer.paymentTerm] ?? g.customer.paymentTerm,
+          o.code ?? o.id.slice(-8), new Date(o.createdAt).toLocaleString('en-GB'),
+          o.paymentMethod === 'cash' ? '现收' : '转账',
+          STATUS_LABEL[o.status.toLowerCase()] ?? o.status, o.totalAmount.toFixed(2), '',
+        ])
+      }
+      if (g.historicalDebt > 0) {
+        rows.push([g.customer.name, TERM_LABEL[g.customer.paymentTerm] ?? g.customer.paymentTerm,
+          '上期结转欠款', '', '', '', '', g.historicalDebt.toFixed(2)])
+      }
+    }
+    downloadCsv('unpaid-by-customer',
+      ['客户', '账期', '订单号', '下单时间', '支付方式', '状态', '订单金额', '历史欠款'], rows)
+  }
+
+  function exportCommissionCsv() {
+    downloadCsv('sales-commission',
+      ['客户', '已完成订单额', '佣金率', '应付佣金'],
+      commissionGroups.map(g => [
+        g.customer.name, g.completedTotal.toFixed(2),
+        `${(g.commissionRate * 100).toFixed(1)}%`, g.commission.toFixed(2),
+      ]))
   }
 
   // ─── 列定义 ─────────────────────────────────────────────────────────────────
@@ -286,6 +316,14 @@ export default function ClassicFinancePage() {
           <span className="text-lg">📋</span>
           <h2 className="font-bold text-gray-800">未结款明细（按客户）</h2>
           <span className="ml-auto text-xs text-gray-500">仅展示周结 / 月结客户</span>
+          {unpaidGroups.length > 0 && (
+            <button
+              onClick={exportUnpaidCsv}
+              className="text-xs px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-600 hover:border-gray-500"
+            >
+              ⬇ 导出 CSV
+            </button>
+          )}
         </div>
 
         {unpaidGroups.length === 0 ? (
@@ -363,6 +401,14 @@ export default function ClassicFinancePage() {
           <span className="text-lg">🤝</span>
           <h2 className="font-bold text-gray-800">销售佣金明细</h2>
           <span className="ml-auto text-xs text-gray-500">仅统计已完成订单</span>
+          {commissionGroups.length > 0 && (
+            <button
+              onClick={exportCommissionCsv}
+              className="text-xs px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-600 hover:border-gray-500"
+            >
+              ⬇ 导出 CSV
+            </button>
+          )}
         </div>
         {commissionGroups.length === 0 ? (
           <div className="py-10 text-center text-gray-400 text-sm">暂无已完成订单，佣金数据为 0</div>

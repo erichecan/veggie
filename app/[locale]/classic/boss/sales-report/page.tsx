@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { apiGet } from '@/lib/api'
+import { downloadCsv } from '@/lib/csv-export'
 import type { Order, OrderItem } from '@/lib/types'
 
 type SaleOrder = Order & { salesman?: string | null }
@@ -266,6 +267,25 @@ export default function SalesReportPage() {
       </table>`)
   }
 
+  function exportCsv() {
+    const rows: unknown[][] = []
+    filtered.forEach(o => {
+      const date = fmtDate(o.confirmationDate ?? o.quotationDate)
+      const code = o.code ?? o.id.slice(0, 8)
+      ;(o.items ?? []).forEach((it: OrderItem) => {
+        rows.push([
+          date, code, o.restaurantName ?? '', o.salesman ?? '', String(o.status ?? ''),
+          it.productName ?? '', it.quantity ?? '',
+          it.price != null ? Number(it.price).toFixed(2) : '',
+          it.subtotal != null ? Number(it.subtotal).toFixed(2) : '',
+        ])
+      })
+    })
+    const range = [dateFrom, dateTo].filter(Boolean).join('_') || 'all'
+    downloadCsv(`sales-report-${range}`,
+      ['日期', '单号', '客户', '业务员', '状态', '产品', '数量', '单价', '小计'], rows)
+  }
+
   function printOrders() {
     const rows = filtered.map(o => `<tr>
       <td>${fmtDate(o.confirmationDate ?? o.quotationDate)}</td>
@@ -402,6 +422,15 @@ export default function SalesReportPage() {
               onClick={printOrders}
             >
               Print
+            </button>
+            <button
+              className={BTN}
+              style={BTN_STYLE}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = BTN_HOVER }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = BTN_STYLE.background }}
+              onClick={exportCsv}
+            >
+              导出 CSV
             </button>
           </div>
 
