@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veggie 蔬菜批发系统 · 角色功能盘点</title>
+<style>
+  :root {
+    --done: #16a34a; --done-bg: #f0fdf4;
+    --part: #d97706; --part-bg: #fffbeb;
+    --todo: #dc2626; --todo-bg: #fef2f2;
+    --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb;
+    --dispatch: #7c3aed; --ops: #0891b2; --boss: #b45309; --acct: #be185d;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--ink); margin: 0; background: #f9fafb; line-height: 1.6; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.doc { border-bottom: 3px solid var(--ink); padding-bottom: 16px; margin-bottom: 24px; }
+  header.doc h1 { margin: 0 0 4px; font-size: 26px; }
+  header.doc .meta { color: var(--muted); font-size: 13px; }
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+  .sum-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .sum-card .num { font-size: 26px; font-weight: 700; }
+  .sum-card .lbl { font-size: 13px; color: var(--muted); }
+  .legend { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .b-done { color: var(--done); background: var(--done-bg); border: 1px solid #bbf7d0; }
+  .b-part { color: var(--part); background: var(--part-bg); border: 1px solid #fde68a; }
+  .b-todo { color: var(--todo); background: var(--todo-bg); border: 1px solid #fecaca; }
+  section.role { background: #fff; border: 1px solid var(--line); border-radius: 12px; margin: 28px 0; overflow: hidden; }
+  section.role > .head { padding: 16px 20px; color: #fff; }
+  section.role > .head h2 { margin: 0; font-size: 20px; }
+  section.role > .head p { margin: 4px 0 0; font-size: 13px; opacity: .92; }
+  .r-dispatch .head { background: var(--dispatch); }
+  .r-ops .head { background: var(--ops); }
+  .r-boss .head { background: var(--boss); }
+  .r-acct .head { background: var(--acct); }
+  .body { padding: 8px 20px 20px; }
+  h3 { font-size: 15px; margin: 20px 0 8px; padding-left: 10px; border-left: 4px solid var(--ink); }
+  .r-dispatch h3 { border-color: var(--dispatch); }
+  .r-ops h3 { border-color: var(--ops); }
+  .r-boss h3 { border-color: var(--boss); }
+  .r-acct h3 { border-color: var(--acct); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 2px solid var(--line); background: #fafafa; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.fn { font-weight: 600; width: 200px; }
+  td.st { width: 86px; }
+  code { background: #f3f4f6; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 12px; color: #374151; font-family: ui-monospace, Menlo, monospace; }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 4px; }
+  .step { background: #f3f4f6; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+  .step b { display: block; font-size: 13px; }
+  .arrow { color: var(--muted); font-size: 14px; }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .gap { background: var(--todo-bg); border: 1px solid #fecaca; border-radius: 10px; padding: 12px 16px; margin-top: 16px; font-size: 13.5px; }
+  .gap b { color: var(--todo); }
+  footer { margin-top: 40px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+  @media print {
+    body { background: #fff; }
+    section.role { break-inside: avoid; border: 1px solid #999; }
+  }
+  @media (max-width: 720px) { .summary { grid-template-columns: repeat(2, 1fr); } td.fn { width: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>🥬 Veggie 蔬菜批发管理系统 · 角色功能盘点</h1>
+  <div class="meta">按 4 个角色梳理:应有功能 / 已实现 / 未实现 · 生成 2026-06-08 · 更新 2026-06-11(8 项补全完成) · 基于代码库实际页面与 API 盘点</div>
+</header>
+
+<div class="summary">
+  <div class="sum-card"><div class="num" style="color:var(--done)">37</div><div class="lbl">✅ 已完成功能(+8)</div></div>
+  <div class="sum-card"><div class="num" style="color:var(--part)">2</div><div class="lbl">🟡 部分完成</div></div>
+  <div class="sum-card"><div class="num" style="color:var(--todo)">7</div><div class="lbl">❌ 未做(均已确认暂不做)</div></div>
+  <div class="sum-card"><div class="num">4</div><div class="lbl">覆盖角色(调度/运营/老板/会计)</div></div>
+</div>
+
+<div class="legend">
+  状态说明:<span class="badge b-done">✅ 已完成</span> 功能可用、已验证 ·
+  <span class="badge b-part">🟡 部分</span> 框架已有但不完整,或仅有后端 API 没有页面 ·
+  <span class="badge b-todo">❌ 未做</span> 代码中不存在
+</div>
+
+<!-- ═══════════════ 1. 司机调度 ═══════════════ -->
+<section class="role r-dispatch">
+  <div class="head">
+    <h2>🚚 司机调度</h2>
+    <p>职责:把当天确认的订单分给司机、安排拣货与装车、跟踪配送过程、处理途中异常</p>
+  </div>
+  <div class="body">
+
+  <h3>典型一天的工作流(每步对应的页面)</h3>
+  <div class="flow">
+    <div class="step"><b>① 查看待配订单</b>拣货波次页左侧「待分配」</div><span class="arrow">→</span>
+    <div class="step"><b>② 分配订单给司机</b>拖拽到司机波次卡片</div><span class="arrow">→</span>
+    <div class="step"><b>③ 打印拣货单</b>波次卡片「🖨 打印拣货单」</div><span class="arrow">→</span>
+    <div class="step"><b>④ 监督分货装车</b>分货页(按波次)</div><span class="arrow">→</span>
+    <div class="step"><b>⑤ 发车跟踪</b>配送单(Trips)页</div><span class="arrow">→</span>
+    <div class="step"><b>⑥ 处理退货/异常</b>退换货页</div>
+  </div>
+
+  <h3>功能清单</h3>
+  <table>
+    <tr><th>功能</th><th>状态</th><th>现状说明 / 页面入口</th></tr>
+    <tr><td class="fn">司机与时段配置</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>维护司机名单、上午/下午班次、批次号。入口:<code>司机配置</code>(/classic/operator/drivers)</td></tr>
+    <tr><td class="fn">波次分配(订单→司机)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>按日期查看待分配订单,拖拽分给司机;支持移回、跨上午/下午整日波次。入口:<code>拣货波次</code>(/classic/operator/waves)</td></tr>
+    <tr><td class="fn">波次详情 + 拣货单打印</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>每波次可看品项汇总,打印拣货单/送货单/汇总单。入口:波次卡片内按钮(/classic/print/dispatch/*)</td></tr>
+    <tr><td class="fn">分货(按客户拆分)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>拣货完成后按波次进入分货,把货分到每家餐馆。入口:<code>分货</code>(/classic/operator/sorting)</td></tr>
+    <tr><td class="fn">配送行程管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>行程列表、发车、按餐馆查看送达/收款状态。入口:<code>配送单</code>(/classic/operator/trips)</td></tr>
+    <tr><td class="fn">司机端执行页(App)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>司机自己登录:货物核查→出发→逐家送达→收款→拍照 POD→记录退货→交账。入口:/classic/driver</td></tr>
+    <tr><td class="fn">配送异常 / 退换货处理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>司机上报缺货/拒收,调度端审核批准。入口:<code>退换货</code>(/classic/operator/returns)</td></tr>
+    <tr><td class="fn">路线规划 / 送货顺序优化</td><td class="st"><span class="badge b-todo">❌ 未做</span></td><td>后端有距离矩阵 / 地理编码 API,但没有「按地址自动排送货顺序」的页面</td></tr>
+    <tr><td class="fn">配送实时地图看板</td><td class="st"><span class="badge b-todo">❌ 未做</span></td><td>无司机位置上报与地图跟踪;目前只能在配送单页看「已送/未送」状态</td></tr>
+    <tr><td class="fn">物流分析报表</td><td class="st"><span class="badge b-part">🟡 部分</span></td><td>页面框架已有(准点率/单量等),数据维度待充实。入口:<code>物流分析</code>(/classic/operator/reports/logistics)</td></tr>
+  </table>
+
+  <div class="gap"><b>主要缺口:</b>路线排序与实时跟踪。司机多、点位密时,目前只能凭经验排送货顺序;建议优先补「波次内按地址自动排序 + 打印顺序同步」,地图实时跟踪可后置。</div>
+  </div>
+</section>
+
+<!-- ═══════════════ 2. 运营人员 ═══════════════ -->
+<section class="role r-ops">
+  <div class="head">
+    <h2>📦 运营人员</h2>
+    <p>职责:接单/代客下单、维护商品与价格、管库存、下采购单、开发票——系统的主操作者</p>
+  </div>
+  <div class="body">
+
+  <h3>典型一天的工作流</h3>
+  <div class="flow">
+    <div class="step"><b>① 接单/代客下单</b>下单页(选客户→价格表→商品)</div><span class="arrow">→</span>
+    <div class="step"><b>② 确认报价单</b>报价单列表 → 确认转销售单</div><span class="arrow">→</span>
+    <div class="step"><b>③ 移交调度</b>销售单进入拣货波次池</div><span class="arrow">→</span>
+    <div class="step"><b>④ 补货</b>采购建议 → 下采购单 → 入库</div><span class="arrow">→</span>
+    <div class="step"><b>⑤ 配送完成后开票</b>发票页批量生成</div>
+  </div>
+
+  <h3>功能清单</h3>
+  <table>
+    <tr><th>功能</th><th>状态</th><th>现状说明 / 页面入口</th></tr>
+    <tr><td class="fn">代客下单</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>客户/价格表/商品搜索(相关性排序)、库存不足告警、上次价格参考。入口:<code>下单</code>(/classic/operator/place-order)</td></tr>
+    <tr><td class="fn">报价单管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>列表+详情,编辑模式可改价格表/价格类型/数量(佣金价只读),确认后转销售单。入口:<code>销售单→报价单</code></td></tr>
+    <tr><td class="fn">销售单管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>全状态列表、详情编辑、改价审批、操作日志。入口:<code>销售单</code>(/classic/operator/orders)</td></tr>
+    <tr><td class="fn">客户管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>客户档案、地址、绑定价格表、历史价格。入口:<code>客户</code></td></tr>
+    <tr><td class="fn">商品管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>商品档案、规格/单位、分类、在售状态。入口:<code>商品</code></td></tr>
+    <tr><td class="fn">价格表管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>多价格表、行项维护、打印报价。入口:<code>价格表</code> + 定价页</td></tr>
+    <tr><td class="fn">库存管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>在手/可承诺量、入库、出库、调整、报损、差异。入口:<code>库存管理</code>(含 5 个子页)</td></tr>
+    <tr><td class="fn">采购管理 + 采购建议</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>缺货自动建议→一键转采购单→收货入库。入口:<code>采购</code> / <code>采购建议</code></td></tr>
+    <tr><td class="fn">发票开具</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>按客户/周期批量生成、确认、打印。入口:<code>发票</code></td></tr>
+    <tr><td class="fn">退换货审核</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>司机上报的退货在此批准/拒绝/结算,可生成信用票。入口:<code>退换货</code></td></tr>
+    <tr><td class="fn">销售 / 采购报表</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>多维度透视(按客户/商品/业务员)。入口:<code>销售分析</code> / <code>采购分析</code></td></tr>
+    <tr><td class="fn">系统用户管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>建账号、分角色、重置密码、MFA。入口:<code>系统用户管理</code></td></tr>
+    <tr><td class="fn">餐厅自助下单门户</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>客户自己登录下单,运营侧自动收到报价单。入口:/customer-portal(独立入口)</td></tr>
+    <tr><td class="fn">通知中心</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>客户自助下单 → 通知运营「新订单待确认」;订单确认后低库存自动提醒。顶栏铃铛查看</td></tr>
+    <tr><td class="fn">批量导入(商品/客户)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>商品页「导入」/客户页「Import」:下载 CSV 模板 → 选文件预览 → 一键导入,重名自动跳过</td></tr>
+    <tr><td class="fn">今日工作台</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>运营首页:待确认/待分配/配送中/待开票/待审退货/低库存 6 张待办卡直达 + 业务流程速查。入口:<code>工作台</code>(导航第一项)</td></tr>
+  </table>
+
+  <div class="gap"><b>已解决(2026-06-11):</b>「入口太多、按流程找不到功能」的核心痛点已通过<b>今日工作台</b>解决——运营登录即见今日待办数字,点卡片直达对应环节;导航同步补全了信用票、供应商账单入口。</div>
+  </div>
+</section>
+
+<!-- ═══════════════ 3. 老板 ═══════════════ -->
+<section class="role r-boss">
+  <div class="head">
+    <h2>📊 老板视角</h2>
+    <p>职责:不做操作,只看生意——今天卖了多少、赚不赚钱、谁欠款、什么货走得快</p>
+  </div>
+  <div class="body">
+
+  <h3>典型使用场景</h3>
+  <div class="flow">
+    <div class="step"><b>① 早上看总览</b>经营总览(今日订单/金额 KPI)</div><span class="arrow">→</span>
+    <div class="step"><b>② 看卖了什么</b>销售分析(按商品/客户/业务员)</div><span class="arrow">→</span>
+    <div class="step"><b>③ 看买了什么</b>采购分析(按供应商)</div><span class="arrow">→</span>
+    <div class="step"><b>④ 月底打报表</b>销售报表(筛选+打印)</div>
+  </div>
+
+  <h3>功能清单</h3>
+  <table>
+    <tr><th>功能</th><th>状态</th><th>现状说明 / 页面入口</th></tr>
+    <tr><td class="fn">经营总览 Dashboard</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>当日 KPI、订单/采购趋势图、转化漏斗、客户与商品排行。入口:/classic/boss</td></tr>
+    <tr><td class="fn">销售分析</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>销售额/数量/佣金多度量,按业务员/商品/客户分组,饼图/柱图/列表切换,今日/本周/本月筛选。入口:<code>销售分析</code></td></tr>
+    <tr><td class="fn">采购分析</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>采购单数/总额/已收货 KPI,按供应商/商品/状态分析。入口:<code>采购分析</code></td></tr>
+    <tr><td class="fn">销售报表(可打印)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>按日期/业务员/客户/商品筛选,摘要/多行/详细三种打印格式。入口:<code>销售报表</code></td></tr>
+    <tr><td class="fn">利润 / 毛利分析</td><td class="st"><span class="badge b-todo">❌ 未做</span></td><td>数据结构里有 margin 字段但无成本核算逻辑——<b>这是老板视角最大的缺口</b>:目前只能看流水,看不到赚多少</td></tr>
+    <tr><td class="fn">应收欠款总览</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>经营总览新增「欠款总额(含上期)」卡片,点击直达财务总览;老板导航补「销售报表」「财务总览」入口</td></tr>
+    <tr><td class="fn">库存价值 / 损耗报表</td><td class="st"><span class="badge b-todo">❌ 未做</span></td><td>报损记录有,但没有「这个月损耗了多少钱」的汇总视角</td></tr>
+    <tr><td class="fn">客户经营健康</td><td class="st"><span class="badge b-todo">❌ 未做</span></td><td>无新增/流失/下单频次下降预警;目前只能看排行榜</td></tr>
+    <tr><td class="fn">手机端适配</td><td class="st"><span class="badge b-part">🟡 部分</span></td><td>页面可在手机打开但未针对老板「随手看一眼」优化</td></tr>
+  </table>
+
+  <div class="gap"><b>主要缺口:</b>利润视角(已确认暂不做)。欠款总额卡片已于 2026-06-11 上线。</div>
+  </div>
+</section>
+
+<!-- ═══════════════ 4. 会计 ═══════════════ -->
+<section class="role r-acct">
+  <div class="head">
+    <h2>🧾 会计</h2>
+    <p>职责:对钱——核对司机收回来的钱、确认交账、给客户对账开票、追欠款</p>
+  </div>
+  <div class="body">
+
+  <h3>典型一天的工作流</h3>
+  <div class="flow">
+    <div class="step"><b>① 司机回来交账</b>财务→司机交账确认</div><span class="arrow">→</span>
+    <div class="step"><b>② 扫码核销送货单</b>会计页(扫码枪批量核销)</div><span class="arrow">→</span>
+    <div class="step"><b>③ 核对现金/转账</b>财务总览 KPI</div><span class="arrow">→</span>
+    <div class="step"><b>④ 周期对账</b>客户对账单(生成→发送)</div><span class="arrow">→</span>
+    <div class="step"><b>⑤ 开票收款</b>发票(确认→已付)</div>
+  </div>
+
+  <h3>功能清单</h3>
+  <table>
+    <tr><th>功能</th><th>状态</th><th>现状说明 / 页面入口</th></tr>
+    <tr><td class="fn">送货单核销(扫码)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>扫码枪自动选单、批量核销、漏单统计、按司机分组现金/转账汇总。入口:<code>会计</code>(/classic/accounting)</td></tr>
+    <tr><td class="fn">司机交账确认</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>司机提交现金+在线收款,财务确认或拒绝,差额自动计算。入口:<code>财务→司机交账</code></td></tr>
+    <tr><td class="fn">财务总览</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>今日现金/转账/未结款/欠款总额/佣金 5 个 KPI,可点开看明细。入口:/classic/finance</td></tr>
+    <tr><td class="fn">客户对账单</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>按周期生成对账单(含历史欠款期初余额),编辑/发送/删除。入口:<code>财务→对账单</code></td></tr>
+    <tr><td class="fn">发票管理</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>批量生成、确认入账、标记已付、打印。入口:<code>发票</code>(目前挂在运营导航下)</td></tr>
+    <tr><td class="fn">信用票(退款凭证)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>独立管理页:列表/详情/确认/结算/作废,「从退货生成」一键扫描已批准退货。入口:<code>信用票</code>(运营导航)</td></tr>
+    <tr><td class="fn">收款核销(分笔)</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>发票详情「收款记录」:逐笔登记(金额/现金转账/备注/经办人),超额校验,付清自动转已付款</td></tr>
+    <tr><td class="fn">应付 / 供应商账单</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>新建账单(多行明细)→ 确认入账 → 登记付款(付清自动转已付)。入口:<code>供应商账单</code>(运营导航)</td></tr>
+    <tr><td class="fn">欠款催收提醒</td><td class="st"><span class="badge b-todo">❌ 未做</span></td><td>欠款能看到,但无账龄分析(30/60/90 天)和催收提醒(已确认暂不做)</td></tr>
+    <tr><td class="fn">财务数据导出 Excel</td><td class="st"><span class="badge b-done">✅ 已完成</span></td><td>销售报表、财务未结款明细、销售佣金明细均可导出 CSV(Excel 直接打开);透视分析原有导出 Excel</td></tr>
+    <tr><td class="fn">税务报表(VAT)</td><td class="st"><span class="badge b-todo">❌ 未做</span></td><td>发票行有税率/税额字段,但没有按期汇总的税务申报报表(已确认暂不做)</td></tr>
+  </table>
+
+  <div class="gap"><b>已解决(2026-06-11):</b>分笔收款核销、信用票管理页、供应商账单、CSV 导出均已上线;账龄分析与税务报表按确认暂不做。</div>
+  </div>
+</section>
+
+<!-- ═══════════════ 总结 ═══════════════ -->
+<section class="role" style="border-color:#9ca3af">
+  <div class="head" style="background:#374151">
+    <h2>📌 实施结果(2026-06-11)</h2>
+    <p>经确认的优先级范围已全部实施完毕</p>
+  </div>
+  <div class="body">
+  <table>
+    <tr><th>状态</th><th>事项</th><th>说明</th></tr>
+    <tr><td class="fn">✅ 已上线</td><td>今日工作台 + 导航补全</td><td>运营首页 6 张待办卡直达;补信用票/供应商账单/财务/销售报表入口;修复 FINANCE 角色无法到达财务页的问题</td></tr>
+    <tr><td class="fn">✅ 已上线</td><td>老板欠款入口</td><td>经营总览「欠款总额」卡片,点击直达财务总览</td></tr>
+    <tr><td class="fn">✅ 已上线</td><td>分笔收款核销</td><td>Payment 流水表 + 发票详情逐笔登记,付清自动转已付款</td></tr>
+    <tr><td class="fn">✅ 已上线</td><td>信用票管理页 / 供应商账单页</td><td>完整状态机操作 + 从退货一键生成 / 新建账单与付款登记</td></tr>
+    <tr><td class="fn">✅ 已上线</td><td>CSV 导出 / 批量导入</td><td>销售报表与财务明细导出;商品/客户 CSV 模板导入(重名跳过)</td></tr>
+    <tr><td class="fn">✅ 已上线</td><td>通知触达</td><td>客户自助下单通知运营;订单确认后低库存自动提醒</td></tr>
+    <tr><td class="fn">⏸ 暂不做(已确认)</td><td>利润分析、路线规划、账龄、损耗报表、客户健康、实时地图、税务报表、物流分析、手机端适配</td><td>2026-06-11 与客户确认后移出范围,后续可重新排期</td></tr>
+  </table>
+  </div>
+</section>
+
+<footer>
+  本文档由代码库静态盘点生成(69 个页面 / 85+ API 路由),状态以 2026-06-11 main 分支为准。生产环境:veggie-549968261036.europe-west1.run.app
+</footer>
+
+</div>
+</body>
+</html>
