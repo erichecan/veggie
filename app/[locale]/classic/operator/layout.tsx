@@ -30,6 +30,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/trips`,     label: en ? 'Deliveries'    : '配送单' },
     { href: `${prefix}/classic/operator/invoices`,  label: en ? 'Invoices'      : '发票' },
     { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },
+    { href: `${prefix}/classic/operator/credit-notes`, label: en ? 'Credit Notes' : '信用票' },
     { href: `${prefix}/classic/operator/purchases`, label: en ? 'Purchases'     : '采购' },
     { href: `${prefix}/classic/operator/purchases/suggestions`, label: en ? 'Purchase Suggestions' : '采购建议' },
     { href: `${prefix}/classic/operator/inventory`, label: en ? 'Inventory'     : '库存管理', activePaths: [`${prefix}/classic/operator/inventory`] },
