@@ -4,13 +4,24 @@ import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet, apiPut, apiPost } from '@/lib/api'
 import type { Invoice } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import ActionLogPanel from '@/components/shared/action-log-panel'
 import Link from 'next/link'
 
 const PURPLE = '#875A7B'
+
+interface PaymentRow {
+  id: string
+  amount: number
+  method: string
+  paidAt: string
+  note?: string | null
+  createdBy?: string | null
+}
+
+const METHOD_LABEL: Record<string, string> = { cash: '现金', transfer: '转账', other: '其他' }
 
 const STATUS_LABEL: Record<Invoice['status'], string> = {
   draft: '草稿',
@@ -32,18 +43,47 @@ export default function ClassicInvoiceDetailPage() {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [inv, setInv] = useState<Invoice | null>(null)
+  const [payments, setPayments] = useState<PaymentRow[]>([])
+  const [payAmount, setPayAmount] = useState('')
+  const [payMethod, setPayMethod] = useState('transfer')
+  const [payNote, setPayNote] = useState('')
+  const [payBusy, setPayBusy] = useState(false)
 
   async function load() {
     try {
       const found = await apiGet<Invoice>(`/api/invoices/${params.id}`)
       if (!found) { setInv(null); return }
       setInv({ ...found, status: found.status?.toLowerCase() as Invoice['status'] ?? found.status })
+      apiGet<PaymentRow[]>(`/api/payments?invoiceId=${params.id}`)
+        .then(setPayments)
+        .catch(() => {})
     } catch {
       setInv(null)
     }
   }
 
   useEffect(() => { load() }, [params.id])
+
+  async function addPayment(amount: number) {
+    if (!inv) return
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('请输入有效的收款金额')
+      return
+    }
+    setPayBusy(true)
+    try {
+      await apiPost('/api/payments', {
+        invoiceId: inv.id, amount, method: payMethod, note: payNote || undefined,
+      })
+      toast.success(`已登记收款 €${amount.toFixed(2)}`)
+      setPayAmount(''); setPayNote('')
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '登记收款失败')
+    } finally {
+      setPayBusy(false)
+    }
+  }
 
   async function handlePost() {
     if (!inv) return
@@ -61,22 +101,10 @@ export default function ClassicInvoiceDetailPage() {
     }
   }
 
+  // 全额收款:走 payments API 留分笔流水,付清后服务端自动转 PAID
   async function handlePay() {
     if (!inv) return
-    const updated: Invoice = {
-      ...inv,
-      status: 'paid',
-      amountPaid: inv.totalIncTax,
-      amountDue: 0,
-      paidAt: new Date().toISOString(),
-    }
-    try {
-      await apiPut(`/api/invoices/${inv.id}`, { ...updated, status: 'paid' })
-      setInv(updated)
-      toast.success('已标记为已付款')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '操作失败')
-    }
+    await addPayment(inv.amountDue)
   }
 
   async function handleCancel() {
@@ -146,10 +174,11 @@ export default function ClassicInvoiceDetailPage() {
           {inv.status === 'posted' && (
             <Button
               onClick={handlePay}
+              disabled={payBusy}
               style={{ background: PURPLE, borderColor: PURPLE }}
               className="text-white hover:opacity-90"
             >
-              标记已收款
+              全额收款
             </Button>
           )}
         </div>
@@ -255,9 +284,82 @@ export default function ClassicInvoiceDetailPage() {
         </div>
       </div>
 
+      {/* 收款记录 */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
+        <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between" style={{ background: '#f3eff5' }}>
+          <h2 className="font-semibold text-gray-700">收款记录</h2>
+          <span className="text-xs text-gray-500">
+            已收 €{inv.amountPaid.toFixed(2)} / 共 €{inv.totalIncTax.toFixed(2)}
+          </span>
+        </div>
+
+        {payments.length === 0 ? (
+          <div className="px-5 py-6 text-center text-sm text-gray-400">暂无收款流水</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="border-b border-gray-100">
+              <tr className="text-xs text-gray-500 uppercase">
+                <th className="text-left px-4 py-2 font-medium">收款时间</th>
+                <th className="text-center px-4 py-2 font-medium">方式</th>
+                <th className="text-right px-4 py-2 font-medium">金额</th>
+                <th className="text-left px-4 py-2 font-medium">备注</th>
+                <th className="text-left px-4 py-2 font-medium">经办人</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {payments.map(p => (
+                <tr key={p.id}>
+                  <td className="px-4 py-2.5 text-gray-700">{new Date(p.paidAt).toLocaleString('en-GB')}</td>
+                  <td className="px-4 py-2.5 text-center">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      p.method === 'cash' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {METHOD_LABEL[p.method] ?? p.method}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-green-700">€{Number(p.amount).toFixed(2)}</td>
+                  <td className="px-4 py-2.5 text-gray-500 text-xs">{p.note ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-500 text-xs">{p.createdBy ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {inv.status === 'posted' && inv.amountDue > 0 && (
+          <div className="px-5 py-3 border-t border-gray-100 bg-amber-50 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-amber-700">记一笔收款 €</span>
+            <input
+              type="number" min="0.01" step="0.01"
+              value={payAmount}
+              onChange={e => setPayAmount(e.target.value)}
+              placeholder={inv.amountDue.toFixed(2)}
+              className="w-28 border border-amber-300 rounded px-2 py-1 text-sm"
+            />
+            <select
+              value={payMethod}
+              onChange={e => setPayMethod(e.target.value)}
+              className="border border-amber-300 rounded px-2 py-1 text-sm bg-white"
+            >
+              <option value="transfer">转账</option>
+              <option value="cash">现金</option>
+              <option value="other">其他</option>
+            </select>
+            <input
+              value={payNote}
+              onChange={e => setPayNote(e.target.value)}
+              placeholder="备注(可选)"
+              className="flex-1 min-w-32 border border-amber-300 rounded px-2 py-1 text-sm"
+            />
+            <Button size="sm" disabled={payBusy} onClick={() => addPayment(Number(payAmount))}>登记</Button>
+            <span className="text-[11px] text-amber-600">付清后自动转「已付款」</span>
+          </div>
+        )}
+      </div>
+
       {/* Demo 提示 */}
       <div className="mt-4 p-3 rounded-lg text-xs border bg-purple-50 border-purple-100 text-purple-700">
-        <strong>Demo 演示：</strong>草稿 → 点击「确认发票」→ 点击「标记已收款」，模拟 Odoo 发票完整生命周期。
+        <strong>Demo 演示：</strong>草稿 → 点击「确认发票」→ 分笔登记收款或「全额收款」，付清自动转已付款。
       </div>
       <ActionLogPanel resource="invoice" resourceId={String(params.id)} />
     </div>
