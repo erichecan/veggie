@@ -10,6 +10,7 @@ const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
   'confirmationDate', 'deliveryDate', 'invoiceDate', 'quotationDate',
   'internalNote', 'pricelistId', 'priceType', 'restaurantName',
+  'driverSlotId', 'deliveryBatch',
 ]
 
 const VALID_PRICE_TYPES = new Set(['multi', 'default', 'last'])

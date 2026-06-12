@@ -107,6 +107,9 @@ export default function ClassicOrdersPage() {
   const [isReadMode, setIsReadMode] = useState(true)
   const [editBatchId, setEditBatchId] = useState<string | null>(null)
   const [editBatchVal, setEditBatchVal] = useState('')
+  // 编辑模式下司机批次的本地暂存(orderId → slotId,'' 为取消分配),点「保存」统一提交
+  const [pendingBatch, setPendingBatch] = useState<Record<string, string>>({})
+  const [savingBatch, setSavingBatch] = useState(false)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
 
   useEffect(() => {
@@ -211,18 +214,55 @@ export default function ClassicOrdersPage() {
     })
   }, [filtered, sortField, sortDir, customerMap, invoicedOrderIds])
 
-  async function saveBatch(orderId: string, slotId: string) {
-    const slot = driverSlots.find(s => s.id === slotId)
-    const deliveryBatch = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : ''
-    try {
-      await apiPut(`/api/orders/${orderId}`, { driverSlotId: slotId || null, deliveryBatch })
-      // update local state without full refetch
-      // (rawOrders is managed by useServerList; we optimistically update via refresh)
-      refresh()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update batch')
-    }
+  // 选择司机批次只做本地暂存,不触发保存/刷新,避免打断连续编辑
+  function stageBatch(orderId: string, slotId: string, originalSlotId: string) {
+    setPendingBatch(prev => {
+      if (slotId === originalSlotId) {
+        const next = { ...prev }
+        delete next[orderId]
+        return next
+      }
+      return { ...prev, [orderId]: slotId }
+    })
     setEditBatchId(null)
+  }
+
+  const pendingCount = Object.keys(pendingBatch).length
+
+  async function saveAllBatches() {
+    const entries = Object.entries(pendingBatch)
+    if (entries.length === 0 || savingBatch) return
+    setSavingBatch(true)
+    const failed: string[] = []
+    await Promise.all(entries.map(async ([orderId, slotId]) => {
+      const slot = driverSlots.find(s => s.id === slotId)
+      const deliveryBatch = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : ''
+      try {
+        await apiPut(`/api/orders/${orderId}`, { driverSlotId: slotId || null, deliveryBatch })
+      } catch {
+        failed.push(orderId)
+      }
+    }))
+    setSavingBatch(false)
+    if (failed.length === 0) {
+      toast.success(`已保存 ${entries.length} 个订单的司机批次`)
+      setPendingBatch({})
+    } else {
+      toast.error(`${failed.length} 个订单保存失败,已保留待重试`)
+      setPendingBatch(prev => {
+        const next: Record<string, string> = {}
+        for (const id of failed) if (id in prev) next[id] = prev[id]
+        return next
+      })
+    }
+    refresh()
+  }
+
+  function exitEditMode() {
+    if (pendingCount > 0 && !confirm(`有 ${pendingCount} 项未保存的司机批次修改,放弃并退出编辑?`)) return
+    setIsReadMode(true)
+    setEditBatchId(null)
+    setPendingBatch({})
   }
 
   async function generateWaveForOrder(order: Order, e: React.MouseEvent) {
@@ -344,26 +384,41 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{createdByName || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-          {!isReadMode && editBatchId === o.id ? (
-            <select
-              autoFocus
-              value={editBatchVal}
-              onChange={e => setEditBatchVal(e.target.value)}
-              onBlur={() => saveBatch(o.id, editBatchVal)}
-              className="border border-purple-400 rounded px-1 py-0.5 text-xs bg-white focus:outline-none"
-            >
-              <option value="">— unassigned —</option>
-              {driverSlots.map(s => <option key={s.id} value={s.id}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
-            </select>
-          ) : (
-            <span
-              className={isReadMode ? '' : 'cursor-pointer hover:text-purple-700 hover:underline'}
-              style={{ color: formatDriverSlotFromOrder(o) ? '#875A7B' : undefined }}
-              onClick={isReadMode ? undefined : () => { setEditBatchId(o.id); setEditBatchVal((o as unknown as { driverSlotId?: string }).driverSlotId ?? '') }}
-            >
-              {formatDriverSlotFromOrder(o) || '—'}
-            </span>
-          )}
+          {(() => {
+            const originalSlotId = (o as unknown as { driverSlotId?: string }).driverSlotId ?? ''
+            const pendingVal = pendingBatch[o.id]
+            const hasPending = pendingVal !== undefined
+            const slotLabel = (id: string) => {
+              const s = driverSlots.find(x => x.id === id)
+              return s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : ''
+            }
+            const display = hasPending ? slotLabel(pendingVal) : formatDriverSlotFromOrder(o)
+            if (!isReadMode && editBatchId === o.id) {
+              return (
+                <select
+                  autoFocus
+                  value={editBatchVal}
+                  onChange={e => { setEditBatchVal(e.target.value); stageBatch(o.id, e.target.value, originalSlotId) }}
+                  onBlur={() => setEditBatchId(null)}
+                  className="border border-purple-400 rounded px-1 py-0.5 text-xs bg-white focus:outline-none"
+                >
+                  <option value="">— unassigned —</option>
+                  {driverSlots.map(s => <option key={s.id} value={s.id}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
+                </select>
+              )
+            }
+            return (
+              <span
+                className={isReadMode ? '' : 'cursor-pointer hover:text-purple-700 hover:underline'}
+                style={{ color: hasPending ? '#d97706' : display ? '#875A7B' : undefined }}
+                title={hasPending ? '未保存,点顶部「保存」提交' : undefined}
+                onClick={isReadMode ? undefined : () => { setEditBatchId(o.id); setEditBatchVal(hasPending ? pendingVal : originalSlotId) }}
+              >
+                {display || '—'}
+                {hasPending && <span className="ml-1 text-amber-500">●</span>}
+              </span>
+            )
+          })()}
         </td>
         <td className="px-2 py-2 text-right text-sm text-gray-800 whitespace-nowrap tabular-nums">
           € {o.totalAmount.toFixed(2)}
@@ -427,7 +482,10 @@ export default function ClassicOrdersPage() {
               ]
             : [
                 { label: 'Edit', onClick: () => {}, primary: true },
-                { label: 'Mode', onClick: () => { setIsReadMode(true); setEditBatchId(null) } },
+                ...(pendingCount > 0
+                  ? [{ label: savingBatch ? '保存中…' : `保存 (${pendingCount})`, onClick: saveAllBatches, primary: true }]
+                  : []),
+                { label: 'Mode', onClick: exitEditMode },
               ]),
           ...(selectedConfirmedCount > 0 ? [{
             label: generatingWave ? '生成中…' : `生成拣货波次 (${selectedConfirmedCount})`,
