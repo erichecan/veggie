@@ -10,6 +10,8 @@
     "test": "node --test --import=tsx tests/*.test.ts",
     "test:watch": "node --test --watch --import=tsx tests/*.test.ts",
     "db:seed": "npx tsx --env-file=.env.local prisma/seed.ts",
+    "db:seed:events": "npx tsx --env-file=.env.local prisma/seed-events/index.ts",
+    "db:validate": "npx tsx --env-file=.env.local scripts/validate-data.ts",
     "db:push": "npx dotenv -e .env.local prisma db push",
     "db:migrate": "npx dotenv -e .env.local prisma migrate deploy",
     "db:migrate:dev": "npx dotenv -e .env.local prisma migrate dev",
