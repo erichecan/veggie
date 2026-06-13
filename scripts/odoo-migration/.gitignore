@@ -1,0 +1,8 @@
+# 绝不提交：连接信息、数据库 dump、客户 PII 导出
+config.env
+*.dump
+*.tgz
+*.sha256
+odoo-backup/
+odoo-api-export/
+filestore/
