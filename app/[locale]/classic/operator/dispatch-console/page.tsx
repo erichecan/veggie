@@ -1,9 +1,11 @@
 'use client'
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import DriversPage from '../drivers/page'
-import TripsPage from '../trips/page'
 import BatchTab from './_components/BatchTab'
 import DriverDispatchTab from './_components/DriverDispatchTab'
+
+const BatchAnalysis = dynamic(() => import('@/components/shared/BatchAnalysis'), { ssr: false })
 
 const PURPLE = '#875A7B'
 
@@ -66,7 +68,7 @@ export default function DispatchConsolePage() {
       {/* Tab 内容 */}
       {tab === 'waves' && <BatchTab date={date} />}
       {tab === 'dispatch' && <DriverDispatchTab date={date} />}
-      {tab === 'trips' && <TripsPage />}
+      {tab === 'trips' && <BatchAnalysis />}
       {tab === 'config' && <DriversPage />}
     </div>
   )
