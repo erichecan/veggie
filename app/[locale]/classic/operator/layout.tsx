@@ -28,6 +28,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/waves`,     label: en ? 'Pick Waves'    : '拣货波次' },
     // { href: `${prefix}/classic/operator/sorting`,   label: en ? 'Sorting'       : '分货' },
     { href: `${prefix}/classic/operator/trips`,     label: en ? 'Deliveries'    : '配送单' },
+    { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch Console' : '配送调度中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
     { href: `${prefix}/classic/operator/invoices`,  label: en ? 'Invoices'      : '发票' },
     { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },
     { href: `${prefix}/classic/operator/credit-notes`, label: en ? 'Credit Notes' : '信用票' },

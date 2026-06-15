@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>配送调度中心 · 布局原型 v2</title>
+<style>
+  :root{
+    --green:#16a34a; --green-d:#15803d; --green-l:#dcfce7;
+    --ink:#1f2937; --sub:#6b7280; --line:#e5e7eb; --bg:#f6f7f9;
+    --amber:#d97706; --amber-l:#fef3c7; --red:#dc2626; --blue:#2563eb;
+    --purple:#7c3aed; --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--ink);font-size:14px}
+  .wrap{max-width:1320px;margin:0 auto;padding:20px}
+
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .page-head h1{font-size:20px;margin:0;display:flex;align-items:center;gap:8px}
+  .page-head .crumb{color:var(--sub);font-size:12px;margin-top:4px}
+  .date-pick{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);
+             padding:6px 10px;border-radius:8px;font-size:13px}
+  .date-pick input{border:none;font-size:13px;outline:none;font-family:inherit}
+
+  .tabs{display:flex;gap:4px;background:#fff;padding:5px;border-radius:12px;
+        border:1px solid var(--line);margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .tab{flex:1;text-align:center;padding:11px 8px;border-radius:8px;cursor:pointer;
+       font-weight:600;color:var(--sub);display:flex;align-items:center;justify-content:center;gap:7px;
+       transition:.15s;user-select:none}
+  .tab .ico{font-size:16px}
+  .tab .badge{background:var(--line);color:var(--sub);border-radius:10px;font-size:11px;
+              padding:1px 7px;font-weight:700}
+  .tab:hover{background:var(--bg)}
+  .tab.on{background:var(--green);color:#fff;box-shadow:0 2px 6px rgba(22,163,74,.3)}
+  .tab.on .badge{background:rgba(255,255,255,.25);color:#fff}
+
+  .panel{display:none;animation:fade .2s}
+  .panel.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+        box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card-h{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;
+          align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  .card-h h3{margin:0;font-size:15px}
+  .card-b{padding:16px}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .stat .n{font-size:24px;font-weight:700}
+  .stat .l{color:var(--sub);font-size:12px;margin-top:2px}
+  .stat.g .n{color:var(--green)} .stat.a .n{color:var(--amber)} .stat.b .n{color:var(--blue)}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--sub);font-weight:600;background:#fafafa}
+  tbody tr:hover{background:#fafbfc}
+  tfoot td{font-weight:700;background:#f9fafb}
+
+  .btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 12px;
+       font-size:13px;cursor:pointer;font-family:inherit;color:var(--ink)}
+  .btn:hover{background:var(--bg)}
+  .btn.p{background:var(--green);border-color:var(--green);color:#fff}
+  .btn.p:hover{background:var(--green-d)}
+  .btn.sm{padding:3px 9px;font-size:12px}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .search{border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:13px;
+          width:200px;font-family:inherit;outline:none}
+  select{border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:13px;font-family:inherit}
+
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill.am{background:#e0f2fe;color:#0369a1} .pill.pm{background:#fef3c7;color:#92400e}
+  .pill.ok{background:var(--green-l);color:var(--green-d)}
+  .pill.wait{background:#f3f4f6;color:var(--sub)}
+  .pill.go{background:#dbeafe;color:#1d4ed8}
+  .pill.done{background:var(--green-l);color:var(--green-d)}
+
+  /* 波次分配双栏 */
+  .split{display:grid;grid-template-columns:5fr 7fr;gap:16px}
+  .order-row{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;
+             cursor:grab;background:#fff}
+  .order-row:hover{border-color:var(--green);box-shadow:0 1px 4px rgba(22,163,74,.12)}
+  .order-row .top{display:flex;justify-content:space-between;align-items:center}
+  .order-row .code{font-weight:600;color:var(--green-d)}
+  .order-row .meta{color:var(--sub);font-size:12px;margin-top:3px}
+  .wave-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .wave-card{border:1.5px dashed var(--line);border-radius:10px;padding:12px;min-height:120px;cursor:pointer}
+  .wave-card.filled{border-style:solid;border-color:var(--green)}
+  .wave-card.sel{border-color:var(--green);box-shadow:0 0 0 2px var(--green-l)}
+  .wave-card .wh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .wave-card .wname{font-weight:700}
+  .mini{font-size:12px;color:var(--sub);margin:2px 0}
+  .chip{display:inline-block;background:var(--green-l);color:var(--green-d);border-radius:6px;
+        padding:2px 7px;font-size:11px;margin:2px 3px 0 0}
+
+  /* 托盘编排 */
+  .pallet-wrap{margin-top:16px;border:1px solid var(--green);border-radius:12px;overflow:hidden}
+  .pallet-head{background:var(--green-l);padding:11px 16px;display:flex;justify-content:space-between;
+               align-items:center;flex-wrap:wrap;gap:8px}
+  .pallet-head .t{font-weight:700;color:var(--green-d);display:flex;align-items:center;gap:8px}
+  .route-bar{display:flex;align-items:center;gap:4px;padding:12px 16px;background:#fbfdfb;
+             border-bottom:1px solid var(--line);overflow-x:auto;font-size:12px}
+  .stop{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);
+        border-radius:20px;padding:4px 11px;white-space:nowrap}
+  .stop .num{background:var(--green);color:#fff;width:18px;height:18px;border-radius:50%;
+             text-align:center;line-height:18px;font-size:11px;font-weight:700}
+  .arrow{color:#9ca3af}
+  .pallets{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:16px}
+  .pallet{border:1px solid var(--line);border-radius:10px;background:#fff}
+  .pallet-t{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;
+            justify-content:space-between;align-items:center;background:#f9fafb;border-radius:10px 10px 0 0}
+  .pallet-t .pn{font-weight:700;display:flex;align-items:center;gap:6px}
+  .pallet-t .seq{background:var(--purple);color:#fff;width:20px;height:20px;border-radius:6px;
+                 text-align:center;line-height:20px;font-size:11px;font-weight:700}
+  .pallet-b{padding:8px 10px;min-height:60px}
+  .goods{display:flex;justify-content:space-between;font-size:12px;padding:5px 6px;border-radius:6px;cursor:grab}
+  .goods::before{content:"⠿";color:#cbd5e1;margin-right:6px;align-self:center}
+  .goods span:not(.src){flex:1}
+  .goods:hover{background:var(--bg);box-shadow:inset 0 0 0 1px var(--green-l)}
+  .goods .q{font-weight:600}
+  .goods .src{color:var(--sub);font-size:11px}
+  .pallet-foot{padding:7px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--sub);
+               display:flex;justify-content:space-between}
+  .load-note{padding:8px 16px;background:#fffbeb;border-top:1px solid #fde68a;font-size:11px;color:#92400e}
+  .src-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;flex:none}
+  .pool{margin:0 16px 12px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;padding:10px 12px}
+  .pool .pt{font-size:12px;font-weight:600;color:var(--sub);margin-bottom:7px;display:flex;justify-content:space-between}
+  .pool-goods{display:flex;flex-wrap:wrap;gap:6px}
+  .gchip{display:flex;align-items:center;background:#fff;border:1px solid var(--line);border-radius:7px;
+         padding:4px 9px;font-size:12px;cursor:grab}
+  .gchip .q{font-weight:600;margin-left:3px}
+  .pallet.drop{border:1.5px dashed var(--green);background:#f6fdf8}
+  .pallet-del{color:#b91c1c;cursor:pointer;font-size:12px;border:none;background:none}
+  .src-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--sub);padding:0 16px 10px}
+  .src-legend span{display:flex;align-items:center}
+  .grip{color:#9ca3af;margin-right:6px;font-size:12px;cursor:grab}
+
+  /* 打印拣货单弹窗 */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;
+        justify-content:center;z-index:50;padding:28px;overflow:auto}
+  .mask.on{display:flex}
+  .sheet{background:#fff;width:100%;max-width:660px;border-radius:12px;overflow:hidden}
+  .sheet-top{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;
+             justify-content:space-between;align-items:center}
+  .sheet-top h3{margin:0;font-size:16px}
+  .sheet-body{padding:20px;max-height:70vh;overflow:auto}
+  .sheet-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--sub);
+              margin-bottom:16px;padding-bottom:12px;border-bottom:1px dashed var(--line)}
+  .sheet-meta b{color:var(--ink)}
+  .psec{border:1px solid var(--line);border-radius:9px;margin-bottom:12px;overflow:hidden}
+  .psec-h{background:#f3f4f6;padding:8px 12px;font-weight:700;display:flex;
+          justify-content:space-between;align-items:center}
+  .psec-h .seq{background:var(--purple);color:#fff;width:20px;height:20px;border-radius:6px;
+               display:inline-flex;align-items:center;justify-content:center;font-size:11px;margin-right:7px}
+  .pln{display:flex;align-items:center;padding:7px 12px;border-top:1px solid var(--line);font-size:13px}
+  .pln .box{width:15px;height:15px;border:1.5px solid #9ca3af;border-radius:3px;margin-right:10px;flex:none}
+  .pln .nm{flex:1}
+  .pln .qy{font-weight:700;margin:0 14px}
+  .pln .sr{color:var(--sub);font-size:11px;width:64px;text-align:right;display:flex;align-items:center;justify-content:flex-end}
+  .sheet-foot{padding:12px 20px;border-top:1px solid var(--line);display:flex;
+              justify-content:space-between;align-items:center;font-size:12px;color:var(--sub)}
+
+  /* 规模化：全局看板 + 司机泳道 */
+  .board{display:flex;align-items:center;gap:20px;background:#fff;border:1px solid var(--line);
+         border-radius:10px;padding:12px 20px;margin-bottom:14px;flex-wrap:wrap}
+  .board .bi .n{font-size:22px;font-weight:700;line-height:1}
+  .board .bi .l{font-size:11px;color:var(--sub);margin-top:3px}
+  .board .bi.g .n{color:var(--green)} .board .bi.a .n{color:var(--amber)}
+  .board .sep{width:1px;align-self:stretch;background:var(--line)}
+  .board .bgrow{flex:1}
+  .lanes-hint{font-size:12px;color:var(--sub);margin-bottom:8px;display:flex;justify-content:space-between}
+  .group-title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;margin:14px 0 8px}
+  .group-title .cnt{font-size:12px;color:var(--sub);font-weight:500}
+  .group-title.pm{color:#92400e}
+  .lanes{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px}
+  .batch-row{display:flex;gap:14px;align-items:flex-start}
+  .batch-right{flex:1;min-width:0}
+  .batch-right .group-title:first-child{margin-top:0}
+  .lane.unassigned{flex:0 0 220px;max-height:620px;position:sticky;top:10px}
+  .lane{flex:0 0 232px;background:#fff;border:1px solid var(--line);border-radius:11px;
+        display:flex;flex-direction:column;max-height:560px}
+  .lane.unassigned{background:#fafafa;border-style:dashed}
+  .lane-head{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:11px 11px 0 0}
+  .lane-head:hover{background:var(--bg)}
+  .lane-head .r1{display:flex;justify-content:space-between;align-items:center}
+  .lane-head .nm{font-weight:700;display:flex;align-items:center;gap:7px;font-size:13px}
+  .lane-head .r2{font-size:11px;color:var(--sub);margin-top:4px}
+  .lane-prog{height:5px;border-radius:3px;background:var(--line);margin-top:8px;overflow:hidden}
+  .lane-prog i{display:block;height:100%;background:var(--green)}
+  .lane-body{padding:9px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+  .ptile{border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer;background:#fff}
+  .ptile:hover{border-color:var(--green);box-shadow:0 1px 4px rgba(22,163,74,.12)}
+  .ptile .pr1{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+  .ptile .seq2{background:var(--purple);color:#fff;width:18px;height:18px;border-radius:5px;
+               display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-right:6px}
+  .ptile .bar{display:flex;gap:2px;margin-top:6px;height:6px}
+  .ptile .bar i{border-radius:2px}
+  .ptile .pr2{font-size:11px;color:var(--sub);margin-top:5px}
+  .add-pallet{border:1px dashed #cbd5e1;border-radius:8px;padding:8px;text-align:center;
+              color:var(--sub);font-size:12px;cursor:pointer}
+  .add-pallet:hover{border-color:var(--green);color:var(--green-d)}
+  .omini{border:1px solid var(--line);border-radius:8px;padding:8px 9px;background:#fff;cursor:grab;font-size:12px}
+  .omini:hover{border-color:var(--amber)}
+  .omini .oc{font-weight:600;color:var(--amber)}
+  .omini .om{color:var(--sub);font-size:11px;margin-top:2px}
+  .editor-big{max-width:920px}
+
+  /* 地图 */
+  .map{height:300px;border-radius:10px;background:linear-gradient(135deg,#e8f5e9,#e3f2fd);
+       position:relative;overflow:hidden;border:1px solid var(--line)}
+  .map .dot{position:absolute;width:20px;height:20px;border-radius:50%;border:2px solid #fff;
+            box-shadow:0 1px 3px rgba(0,0,0,.3);font-size:10px;color:#fff;text-align:center;
+            line-height:16px;font-weight:700}
+  .map .label{position:absolute;background:rgba(255,255,255,.85);padding:3px 8px;border-radius:6px;
+              font-size:11px;font-weight:600;top:12px;left:12px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:12px}
+  .legend span{display:flex;align-items:center;gap:5px}
+  .legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .hint{font-size:12px;color:var(--sub);margin-top:8px}
+  .avatar{width:24px;height:24px;border-radius:50%;background:var(--green);color:#fff;
+          display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="page-head">
+    <div>
+      <h1>🚚 配送调度中心</h1>
+      <div class="crumb">运营 / 配送调度中心 · 批次 → 调度 → 行程 → 配置 一页统管</div>
+    </div>
+    <div class="date-pick">📅 <input type="date" value="2026-06-13" /></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" data-t="waves"><span class="ico">📦</span>批次管理 <span class="badge">5</span></div>
+    <div class="tab" data-t="dispatch"><span class="ico">🧑‍✈️</span>司机调度 <span class="badge">5</span></div>
+    <div class="tab" data-t="trips"><span class="ico">🗺️</span>行程管理 <span class="badge">4</span></div>
+    <div class="tab" data-t="config"><span class="ico">⚙️</span>司机配置 <span class="badge">8</span></div>
+  </div>
+
+  <!-- ============ 1. 批次管理（司机泳道总览 + 托盘细编排弹窗） ============ -->
+  <div class="panel on" id="waves">
+    <!-- 全局看板 -->
+    <div class="board">
+      <div class="bi"><div class="n">300</div><div class="l">待派送订单</div></div>
+      <div class="sep"></div>
+      <div class="bi g"><div class="n">285</div><div class="l">已入批</div></div>
+      <div class="bi a"><div class="n">15</div><div class="l">待分配</div></div>
+      <div class="sep"></div>
+      <div class="bi"><div class="n">15</div><div class="l">司机批次</div></div>
+      <div class="bi"><div class="n">6/15</div><div class="l">拣货单已打</div></div>
+      <div class="bgrow"></div>
+      <div class="toolbar">
+        <select><option>全部时段</option><option>上午</option><option>下午</option></select>
+        <input class="search" placeholder="搜索司机 / 餐馆 / 订单" />
+        <button class="btn sm">⚙ 重新自动分批</button>
+        <button class="btn p sm">🖨 批量打印全部拣货单</button>
+      </div>
+    </div>
+
+    <div class="lanes-hint">
+      <span>已自动分批 · 共 <b>15</b> 个批次，下面只需审阅微调 · 点托盘进细编排</span>
+      <span>每行内 ← 横向滚动 →</span>
+    </div>
+
+    <div class="batch-row">
+      <!-- 待分配竖条（左侧，跨上午/下午两行） -->
+      <div class="lane unassigned">
+        <div class="lane-head">
+          <div class="r1"><span class="nm">📥 待分配</span><span class="pill wait">15 单</span></div>
+          <div class="r2">自动没分掉 / 临时插单，拖到右侧任意司机批次</div>
+        </div>
+        <div class="lane-body">
+          <div class="omini"><div class="oc">运营-260613-188</div><div class="om">川味轩 · 12 项 · Drogheda · €690</div></div>
+          <div class="omini"><div class="oc">运营-260613-201</div><div class="om">海角小厨 · 4 项 · 缺坐标 · €230</div></div>
+          <div class="omini"><div class="oc">运营-260613-205</div><div class="om">福满楼（加单）· 3 项 · €175</div></div>
+        </div>
+      </div>
+
+      <!-- 右栏：上午行 + 下午行 -->
+      <div class="batch-right">
+
+    <!-- 上午行 -->
+    <div class="group-title"><span class="pill am">上午</span>上午班 <span class="cnt">· 8 个批次</span></div>
+    <div class="lanes">
+      <!-- 司机泳道：老陈 -->
+      <div class="lane">
+        <div class="lane-head" onclick="document.getElementById('editor').classList.add('on')">
+          <div class="r1"><span class="nm"><span class="avatar">陈</span>老陈 <span class="pill am">上午</span></span><span class="pill go">理货中</span></div>
+          <div class="r2">批次1 · 20 单 · 3 盘 · €2,150</div>
+          <div class="lane-prog"><i style="width:66%"></i></div>
+        </div>
+        <div class="lane-body">
+          <div class="ptile" onclick="document.getElementById('editor').classList.add('on')">
+            <div class="pr1"><span><span class="seq2">①</span>托盘 1</span><span>75 件</span></div>
+            <div class="bar"><i style="background:#16a34a;flex:2"></i><i style="background:#2563eb;flex:1"></i></div>
+            <div class="pr2">2 家 · 3 SKU</div>
+          </div>
+          <div class="ptile" onclick="document.getElementById('editor').classList.add('on')">
+            <div class="pr1"><span><span class="seq2">②</span>托盘 2</span><span>60 件</span></div>
+            <div class="bar"><i style="background:#2563eb;flex:1"></i><i style="background:#d97706;flex:1"></i></div>
+            <div class="pr2">2 家 · 2 SKU</div>
+          </div>
+          <div class="ptile" onclick="document.getElementById('editor').classList.add('on')">
+            <div class="pr1"><span><span class="seq2">③</span>托盘 3</span><span>40 件</span></div>
+            <div class="bar"><i style="background:#d97706;flex:1"></i></div>
+            <div class="pr2">1 家 · 3 SKU</div>
+          </div>
+          <div class="add-pallet" onclick="document.getElementById('editor').classList.add('on')">+ 添加托盘</div>
+        </div>
+      </div>
+
+      <!-- 阿强 -->
+      <div class="lane">
+        <div class="lane-head" onclick="document.getElementById('editor').classList.add('on')">
+          <div class="r1"><span class="nm"><span class="avatar">强</span>阿强 <span class="pill am">上午</span></span><span class="pill ok">已就绪</span></div>
+          <div class="r2">批次2 · 18 单 · 4 盘 · €1,480</div>
+          <div class="lane-prog"><i style="width:100%"></i></div>
+        </div>
+        <div class="lane-body">
+          <div class="ptile"><div class="pr1"><span><span class="seq2">①</span>托盘 1</span><span>52 件</span></div><div class="bar"><i style="background:#16a34a;flex:1"></i><i style="background:#7c3aed;flex:1"></i></div><div class="pr2">2 家 · 4 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">②</span>托盘 2</span><span>44 件</span></div><div class="bar"><i style="background:#7c3aed;flex:1"></i></div><div class="pr2">1 家 · 3 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">③</span>托盘 3</span><span>30 件</span></div><div class="bar"><i style="background:#16a34a;flex:1"></i></div><div class="pr2">1 家 · 2 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">④</span>托盘 4</span><span>18 件</span></div><div class="bar"><i style="background:#dc2626;flex:1"></i></div><div class="pr2">1 家 · 1 SKU</div></div>
+        </div>
+      </div>
+
+      <!-- 大刘 -->
+      <div class="lane">
+        <div class="lane-head" onclick="document.getElementById('editor').classList.add('on')">
+          <div class="r1"><span class="nm"><span class="avatar">刘</span>大刘 <span class="pill am">上午</span></span><span class="pill wait">待理货</span></div>
+          <div class="r2">批次3 · 22 单 · 2 盘 · €2,640</div>
+          <div class="lane-prog"><i style="width:20%"></i></div>
+        </div>
+        <div class="lane-body">
+          <div class="ptile"><div class="pr1"><span><span class="seq2">①</span>托盘 1</span><span>88 件</span></div><div class="bar"><i style="background:#2563eb;flex:2"></i><i style="background:#d97706;flex:1"></i></div><div class="pr2">2 家 · 5 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">②</span>托盘 2</span><span>61 件</span></div><div class="bar"><i style="background:#16a34a;flex:1"></i></div><div class="pr2">1 家 · 4 SKU</div></div>
+          <div class="add-pallet">+ 添加托盘</div>
+        </div>
+      </div>
+
+      <!-- bao 第一趟 -->
+      <div class="lane">
+        <div class="lane-head" onclick="document.getElementById('editor').classList.add('on')">
+          <div class="r1"><span class="nm"><span class="avatar">包</span>bao <span class="pill am">上午</span></span><span class="pill ok">已就绪</span></div>
+          <div class="r2">批次4（第1趟）· 14 单 · 2 盘 · €760</div>
+          <div class="lane-prog"><i style="width:100%"></i></div>
+        </div>
+        <div class="lane-body">
+          <div class="ptile"><div class="pr1"><span><span class="seq2">①</span>托盘 1</span><span>40 件</span></div><div class="bar"><i style="background:#16a34a;flex:1"></i><i style="background:#2563eb;flex:1"></i></div><div class="pr2">2 家 · 3 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">②</span>托盘 2</span><span>22 件</span></div><div class="bar"><i style="background:#d97706;flex:1"></i></div><div class="pr2">1 家 · 2 SKU</div></div>
+        </div>
+      </div>
+
+      <!-- bao 第二趟 -->
+      <div class="lane">
+        <div class="lane-head" onclick="document.getElementById('editor').classList.add('on')">
+          <div class="r1"><span class="nm"><span class="avatar">包</span>bao <span class="pill am">上午</span></span><span class="pill go">理货中</span></div>
+          <div class="r2">批次5（第2趟）· 17 单 · 3 盘 · €890</div>
+          <div class="lane-prog"><i style="width:50%"></i></div>
+        </div>
+        <div class="lane-body">
+          <div class="ptile"><div class="pr1"><span><span class="seq2">①</span>托盘 1</span><span>35 件</span></div><div class="bar"><i style="background:#7c3aed;flex:1"></i></div><div class="pr2">1 家 · 2 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">②</span>托盘 2</span><span>48 件</span></div><div class="bar"><i style="background:#16a34a;flex:1"></i><i style="background:#dc2626;flex:1"></i></div><div class="pr2">2 家 · 4 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">③</span>托盘 3</span><span>12 件</span></div><div class="bar"><i style="background:#2563eb;flex:1"></i></div><div class="pr2">1 家 · 1 SKU</div></div>
+        </div>
+      </div>
+
+      <!-- 上午占位 -->
+      <div class="lane" style="align-items:center;justify-content:center;color:#9ca3af;font-size:13px;min-height:160px">
+        … 上午还有 3 个批次<br/>横向滚动 →
+      </div>
+    </div>
+
+    <!-- 下午行 -->
+    <div class="group-title pm"><span class="pill pm">下午</span>下午班 <span class="cnt">· 7 个批次</span></div>
+    <div class="lanes">
+      <!-- 小王 -->
+      <div class="lane">
+        <div class="lane-head" onclick="document.getElementById('editor').classList.add('on')">
+          <div class="r1"><span class="nm"><span class="avatar">王</span>小王 <span class="pill pm">下午</span></span><span class="pill wait">待指派</span></div>
+          <div class="r2">批次1 · 16 单 · 3 盘 · €980</div>
+          <div class="lane-prog"><i style="width:10%"></i></div>
+        </div>
+        <div class="lane-body">
+          <div class="ptile"><div class="pr1"><span><span class="seq2">①</span>托盘 1</span><span>54 件</span></div><div class="bar"><i style="background:#16a34a;flex:2"></i><i style="background:#d97706;flex:1"></i></div><div class="pr2">2 家 · 4 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">②</span>托盘 2</span><span>33 件</span></div><div class="bar"><i style="background:#2563eb;flex:1"></i></div><div class="pr2">1 家 · 3 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">③</span>托盘 3</span><span>20 件</span></div><div class="bar"><i style="background:#7c3aed;flex:1"></i></div><div class="pr2">1 家 · 2 SKU</div></div>
+          <div class="add-pallet">+ 添加托盘</div>
+        </div>
+      </div>
+
+      <!-- 老周 -->
+      <div class="lane">
+        <div class="lane-head" onclick="document.getElementById('editor').classList.add('on')">
+          <div class="r1"><span class="nm"><span class="avatar">周</span>老周 <span class="pill pm">下午</span></span><span class="pill done">已完成</span></div>
+          <div class="r2">批次2 · 24 单 · 5 盘 · €3,100</div>
+          <div class="lane-prog"><i style="width:100%"></i></div>
+        </div>
+        <div class="lane-body">
+          <div class="ptile"><div class="pr1"><span><span class="seq2">①</span>托盘 1</span><span>70 件</span></div><div class="bar"><i style="background:#16a34a;flex:1"></i><i style="background:#2563eb;flex:1"></i></div><div class="pr2">2 家 · 5 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">②</span>托盘 2</span><span>62 件</span></div><div class="bar"><i style="background:#d97706;flex:1"></i></div><div class="pr2">1 家 · 4 SKU</div></div>
+          <div class="ptile"><div class="pr1"><span><span class="seq2">③</span>托盘 3</span><span>50 件</span></div><div class="bar"><i style="background:#7c3aed;flex:1"></i><i style="background:#16a34a;flex:1"></i></div><div class="pr2">2 家 · 3 SKU</div></div>
+        </div>
+      </div>
+
+      <!-- 下午占位 -->
+      <div class="lane" style="align-items:center;justify-content:center;color:#9ca3af;font-size:13px;min-height:160px">
+        … 下午还有 5 个批次<br/>横向滚动 →
+      </div>
+    </div>
+
+      </div><!-- /batch-right -->
+    </div><!-- /batch-row -->
+  </div>
+
+  <!-- ============ 2. 司机调度（日销售报表式汇总） ============ -->
+  <div class="panel" id="dispatch">
+    <div class="card">
+      <div class="card-h">
+        <h3>司机调度总览 · 每个司机送多少家、多少单</h3>
+        <div class="toolbar">
+          <select><option>全部时段</option><option>上午</option><option>下午</option></select>
+          <input class="search" placeholder="搜索司机 / 餐馆" />
+          <button class="btn sm">导出</button>
+          <button class="btn p sm">刷新</button>
+        </div>
+      </div>
+      <div class="card-b">
+        <table>
+          <thead><tr>
+            <th>司机</th><th>时段</th><th>批次</th><th>餐馆数</th><th>订单数</th><th>品项数</th><th>总金额</th><th>状态</th>
+          </tr></thead>
+          <tbody>
+            <tr><td><span class="avatar">陈</span>老陈</td><td><span class="pill am">上午</span></td><td>批次 1</td><td>3</td><td>6</td><td>38</td><td>€2,150</td><td><span class="pill go">配送中</span></td></tr>
+            <tr><td><span class="avatar">强</span>阿强</td><td><span class="pill am">上午</span></td><td>批次 2</td><td>2</td><td>5</td><td>22</td><td>€1,480</td><td><span class="pill ok">货物核验</span></td></tr>
+            <tr><td><span class="avatar">王</span>小王</td><td><span class="pill pm">下午</span></td><td>批次 1</td><td>4</td><td>4</td><td>19</td><td>€980</td><td><span class="pill wait">待指派</span></td></tr>
+            <tr><td><span class="avatar">包</span>bao</td><td><span class="pill am">上午</span></td><td>批次 1</td><td>3</td><td>3</td><td>14</td><td>€760</td><td><span class="pill done">已完成</span></td></tr>
+            <tr><td><span class="avatar">包</span>bao</td><td><span class="pill am">上午</span></td><td>批次 2</td><td>2</td><td>4</td><td>17</td><td>€890</td><td><span class="pill go">配送中</span></td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td>合计 4 名司机 · 5 趟</td><td></td><td></td><td>14</td><td>22</td><td>110</td><td>€6,260</td><td></td></tr>
+          </tfoot>
+        </table>
+        <p class="hint">这张表跟「日销售报表」共用搜索/汇总口径：bao 出现两行（上午批次1 + 批次2）说明他上午跑了两趟。点司机行可下钻到具体餐馆和订单。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 3. 行程管理（带地图） ============ -->
+  <div class="panel" id="trips">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-h">
+        <h3>配送地图 · 当日各批次路线</h3>
+        <div class="toolbar">
+          <button class="btn sm">自动解析缺失坐标</button>
+          <button class="btn p sm">计算所有路线</button>
+        </div>
+      </div>
+      <div class="card-b">
+        <div class="map">
+          <div class="label">配送热力 · 上午 3 批次</div>
+          <div class="dot" style="background:#16a34a;top:40%;left:30%">1</div>
+          <div class="dot" style="background:#16a34a;top:52%;left:38%">2</div>
+          <div class="dot" style="background:#16a34a;top:46%;left:24%">3</div>
+          <div class="dot" style="background:#2563eb;top:30%;left:58%">1</div>
+          <div class="dot" style="background:#2563eb;top:42%;left:66%">2</div>
+          <div class="dot" style="background:#d97706;top:64%;left:50%">1</div>
+          <div class="dot" style="background:#d97706;top:72%;left:60%">2</div>
+        </div>
+        <div class="legend">
+          <span><i style="background:#16a34a"></i>批次 1 · 老陈（18.4km / 52min）</span>
+          <span><i style="background:#2563eb"></i>批次 2 · 阿强（31.7km / 78min）</span>
+          <span><i style="background:#d97706"></i>批次 3 · 大刘（54.2km / 121min）</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <h3>配送行程</h3>
+        <div class="toolbar">
+          <input class="search" placeholder="搜索行程 / 司机" />
+          <button class="btn p sm">+ 新建行程</button>
+        </div>
+      </div>
+      <div class="card-b">
+        <table>
+          <thead><tr><th>时段</th><th>行程名称</th><th>餐馆数</th><th>总距离</th><th>总金额</th><th>状态</th><th style="width:170px">操作</th></tr></thead>
+          <tbody>
+            <tr><td><span class="pill am">上午</span></td><td>老陈 · 3 家餐馆</td><td>3</td><td>18.4 km</td><td>€2,150</td><td><span class="pill go">配送中</span></td><td><button class="btn sm">详情</button> <button class="btn sm">🖨 送货单</button></td></tr>
+            <tr><td><span class="pill am">上午</span></td><td>阿强 · 2 家餐馆</td><td>2</td><td>31.7 km</td><td>€1,480</td><td><span class="pill ok">货物核验</span></td><td><button class="btn sm">详情</button> <button class="btn sm">🖨 送货单</button></td></tr>
+            <tr><td><span class="pill pm">下午</span></td><td>小王 · 4 家餐馆</td><td>4</td><td>22.0 km</td><td>€980</td><td><span class="pill wait">待指派司机</span></td><td><button class="btn sm">详情</button> <button class="btn sm">🖨 送货单</button></td></tr>
+            <tr><td><span class="pill pm">下午</span></td><td>老周 · 7 家餐馆</td><td>7</td><td>54.2 km</td><td>€3,100</td><td><span class="pill done">已完成</span></td><td><button class="btn sm">详情</button> <button class="btn sm">🖨 汇总</button></td></tr>
+          </tbody>
+        </table>
+        <p class="hint">地图与列表联动：点行程行高亮地图对应路线。新建行程走 3 步：选司机批次 → 勾订单/餐馆 → 确认生成。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 4. 司机配置 ============ -->
+  <div class="panel" id="config">
+    <div class="card">
+      <div class="card-h">
+        <h3>司机配置 · 时段 × 批次号 = 一个槽位（同司机可占多槽 = 多趟）</h3>
+        <div class="toolbar">
+          <button class="btn sm">查看归档</button>
+          <button class="btn sm">+ 新增</button>
+          <button class="btn p sm">保存</button>
+        </div>
+      </div>
+      <div class="card-b">
+        <table>
+          <thead><tr><th>时段</th><th>批次编号</th><th>司机名字</th><th style="width:160px">操作</th></tr></thead>
+          <tbody>
+            <tr><td><span class="pill am">上午</span></td><td>1</td><td>bao</td><td><button class="btn sm">修改</button> <button class="btn sm">归档</button></td></tr>
+            <tr><td><span class="pill am">上午</span></td><td>2</td><td>bao</td><td><button class="btn sm">修改</button> <button class="btn sm">归档</button></td></tr>
+            <tr><td><span class="pill am">上午</span></td><td>3</td><td>老陈</td><td><button class="btn sm">修改</button> <button class="btn sm">归档</button></td></tr>
+            <tr><td><span class="pill pm">下午</span></td><td>1</td><td>小王</td><td><button class="btn sm">修改</button> <button class="btn sm">归档</button></td></tr>
+            <tr><td><span class="pill pm">下午</span></td><td>2</td><td>老周</td><td><button class="btn sm">修改</button> <button class="btn sm">归档</button></td></tr>
+          </tbody>
+        </table>
+        <p class="hint">前两行同为 <b>bao</b>（上午批次1 + 上午批次2），表示 bao 上午跑两趟。这里的槽位是「批次管理」批次卡片和「司机调度」汇总的数据来源。</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 打印拣货单（按司机批次出一张，盘内逐项可勾） -->
+<div class="mask" id="sheet">
+  <div class="sheet">
+    <div class="sheet-top">
+      <h3>🖨 拣货单 · 批次 1 · 老陈</h3>
+      <button class="btn sm" onclick="document.getElementById('sheet').classList.remove('on')">关闭</button>
+    </div>
+    <div class="sheet-body">
+      <div class="sheet-meta">
+        <span>日期：<b>2026-06-14</b></span>
+        <span>时段：<b>上午</b></span>
+        <span>司机：<b>老陈</b></span>
+        <span>类型：<b>大货</b></span>
+        <span>托盘：<b>3</b></span>
+        <span>合计：<b>7 SKU · 165 件</b></span>
+      </div>
+
+      <div class="psec">
+        <div class="psec-h"><span><span class="seq">①</span>托盘 1</span><span>3 SKU · 75 件</span></div>
+        <div class="pln"><span class="box"></span><span class="nm">青椒</span><span class="qy">×20</span><span class="sr"><i class="src-dot" style="background:#16a34a"></i>王记</span></div>
+        <div class="pln"><span class="box"></span><span class="nm">娃娃菜</span><span class="qy">×15</span><span class="sr"><i class="src-dot" style="background:#16a34a"></i>王记</span></div>
+        <div class="pln"><span class="box"></span><span class="nm">大白菜</span><span class="qy">×40</span><span class="sr"><i class="src-dot" style="background:#2563eb"></i>老北京</span></div>
+      </div>
+
+      <div class="psec">
+        <div class="psec-h"><span><span class="seq">②</span>托盘 2</span><span>2 SKU · 60 件</span></div>
+        <div class="pln"><span class="box"></span><span class="nm">土豆</span><span class="qy">×50</span><span class="sr"><i class="src-dot" style="background:#2563eb"></i>老北京</span></div>
+        <div class="pln"><span class="box"></span><span class="nm">香菜</span><span class="qy">×10</span><span class="sr"><i class="src-dot" style="background:#d97706"></i>蜀都</span></div>
+      </div>
+
+      <div class="psec">
+        <div class="psec-h"><span><span class="seq">③</span>托盘 3</span><span>2 SKU · 30 件</span></div>
+        <div class="pln"><span class="box"></span><span class="nm">豆芽</span><span class="qy">×25</span><span class="sr"><i class="src-dot" style="background:#d97706"></i>蜀都</span></div>
+        <div class="pln"><span class="box"></span><span class="nm">花椒</span><span class="qy">×5</span><span class="sr"><i class="src-dot" style="background:#d97706"></i>蜀都</span></div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <span>拣货员签名：____________</span>
+      <div class="toolbar">
+        <button class="btn sm">上一张批次</button>
+        <button class="btn sm">下一张批次</button>
+        <button class="btn p sm">🖨 打印本批次</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 托盘细编排弹窗（点泳道列头 / 托盘打开） -->
+<div class="mask" id="editor">
+  <div class="sheet editor-big">
+    <div class="sheet-top">
+      <h3><span class="avatar">陈</span>批次 1 · 老陈 · 托盘编排</h3>
+      <div class="toolbar">
+        <button class="btn p sm">+ 添加托盘</button>
+        <button class="btn sm" onclick="document.getElementById('sheet').classList.add('on')">🖨 打印拣货单</button>
+        <button class="btn sm" onclick="document.getElementById('editor').classList.remove('on')">关闭</button>
+      </div>
+    </div>
+    <div class="sheet-body" style="padding:0">
+      <div class="src-legend" style="padding:12px 16px 8px">
+        <span><i class="src-dot" style="background:#16a34a"></i>王记川菜馆</span>
+        <span><i class="src-dot" style="background:#2563eb"></i>老北京</span>
+        <span><i class="src-dot" style="background:#d97706"></i>蜀都</span>
+        <span style="color:#9ca3af">· 颜色 = 货来自哪家；一盘可混装多家，货可在盘间互拖</span>
+      </div>
+      <div class="pool">
+        <div class="pt"><span>待分盘商品池（拖到下方任意托盘）</span><span>剩 3 项</span></div>
+        <div class="pool-goods">
+          <span class="gchip"><i class="src-dot" style="background:#16a34a"></i>豆腐<span class="q">×30</span></span>
+          <span class="gchip"><i class="src-dot" style="background:#d97706"></i>豆芽<span class="q">×25</span></span>
+          <span class="gchip"><i class="src-dot" style="background:#d97706"></i>花椒<span class="q">×5</span></span>
+        </div>
+      </div>
+      <div class="pallets">
+        <div class="pallet">
+          <div class="pallet-t"><span class="pn"><span class="seq">①</span>托盘 1</span><button class="pallet-del">✕ 删盘</button></div>
+          <div class="pallet-b">
+            <div class="goods"><span><i class="src-dot" style="background:#16a34a"></i>青椒 <span class="q">×20</span></span><span class="src">王记</span></div>
+            <div class="goods"><span><i class="src-dot" style="background:#16a34a"></i>娃娃菜 <span class="q">×15</span></span><span class="src">王记</span></div>
+            <div class="goods"><span><i class="src-dot" style="background:#2563eb"></i>大白菜 <span class="q">×40</span></span><span class="src">老北京</span></div>
+          </div>
+          <div class="pallet-foot"><span>2 家 · 3 SKU</span><span>75 件</span></div>
+        </div>
+        <div class="pallet">
+          <div class="pallet-t"><span class="pn"><span class="seq">②</span>托盘 2</span><button class="pallet-del">✕ 删盘</button></div>
+          <div class="pallet-b">
+            <div class="goods"><span><i class="src-dot" style="background:#2563eb"></i>土豆 <span class="q">×50</span></span><span class="src">老北京</span></div>
+            <div class="goods"><span><i class="src-dot" style="background:#d97706"></i>香菜 <span class="q">×10</span></span><span class="src">蜀都</span></div>
+          </div>
+          <div class="pallet-foot"><span>2 家 · 2 SKU</span><span>60 件</span></div>
+        </div>
+        <div class="pallet drop">
+          <div class="pallet-t"><span class="pn"><span class="seq">③</span>托盘 3</span><button class="pallet-del">✕ 删盘</button></div>
+          <div class="pallet-b" style="display:flex;align-items:center;justify-content:center;color:#9ca3af;min-height:70px">拖商品到此盘</div>
+          <div class="pallet-foot"><span>空盘</span><span>0 件</span></div>
+        </div>
+      </div>
+      <div class="load-note">
+        🚐 装车 / 卸货顺序：托盘按 ①②③ 排序，①最先卸（装车门口最易取处），序号越大越往车厢里装。货可在盘间互拖，一盘可拼多家。
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.addEventListener('click',()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+      document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+      t.classList.add('on');
+      document.getElementById(t.dataset.t).classList.add('on');
+    });
+  });
+  document.querySelectorAll('.mask').forEach(m=>{
+    m.addEventListener('click',e=>{ if(e.target===m) m.classList.remove('on'); });
+  });
+</script>
+</body>
+</html>

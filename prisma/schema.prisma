@@ -615,12 +615,29 @@ model PickingWave {
   waveType     String?
   driverSlotId String?
   driverName   String?
+  pallets      Pallet[]
 
   @@unique([waveDate, driverSlotId])
   @@index([status])
   @@index([waveDate])
   @@index([driverSlotId])
   @@index([createdAt])
+}
+
+/// 托盘：司机车上的自由拼货容器，可跨餐馆混装，seq=卸货/装车顺序
+model Pallet {
+  id        String      @id @default(cuid())
+  waveId    String
+  wave      PickingWave @relation(fields: [waveId], references: [id], onDelete: Cascade)
+  seq       Int
+  label     String?
+  /// [{ orderId, restaurantId, restaurantName, productId, productName, qty, uomName }]
+  items     Json        @default("[]")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([waveId, seq])
+  @@index([waveId])
 }
 
 model Trip {
