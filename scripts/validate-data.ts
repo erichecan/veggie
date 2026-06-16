@@ -15,6 +15,7 @@
  *   6 状态机自洽  COMPLETED/LOCKED 订单行 deliveredQty == orderedQty
  *   7 对账闭环    每对账单 closing == opening + sales - payments
  *   8 软引用完整  payments/发票 saleOrderIds 指向真实存在的记录
+ *   9 库存非负    在售商品 qtyOnHand >= 0（不得卖超库存）
  */
 import 'dotenv/config'
 import { neonConfig } from '@neondatabase/serverless'
@@ -186,6 +187,23 @@ async function main(): Promise<void> {
       }
     }
     record('软引用完整  发票 saleOrderIds 指向真实订单', bad, invoices.length, ex)
+  }
+
+  // 9. 库存非负：在售商品不得负库存（卖超 = 业务不自洽）
+  {
+    const products = await prisma.product.findMany({
+      where: { active: true, status: 'ACTIVE' },
+      select: { name: true, qtyOnHand: true },
+    })
+    const ex: string[] = []
+    let bad = 0
+    for (const p of products) {
+      if (n(p.qtyOnHand) < -QTY_EPS) {
+        bad++
+        if (ex.length < 3) ex.push(`${p.name}: onHand=${n(p.qtyOnHand)}`)
+      }
+    }
+    record('库存非负  在售商品 qtyOnHand >= 0', bad, products.length, ex)
   }
 
   // 输出报告

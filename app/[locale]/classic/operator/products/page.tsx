@@ -66,10 +66,10 @@ export default function ClassicProductsPage() {
   const [alertDismissed, setAlertDismissed] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
-  async function loadPage(p: number, q: string) {
+  async function loadPage(p: number, q: string, size: number = PAGE_SIZE) {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) })
+      const params = new URLSearchParams({ page: String(p), pageSize: String(size) })
       if (q) params.set('search', q)
       const [res, products, cats] = await Promise.all([
         apiGet<{ data: ProductTemplate[]; items: ProductTemplate[]; total: number; page: number }>(`/api/product-templates?${params}`),
@@ -98,13 +98,22 @@ export default function ClassicProductsPage() {
     }
   }
 
+  // 库存告警筛选时需跨页统计 → 一次性拉全量模板，使徽标数与表格行数一致
+  const ALERT_SIZE = 10000
+  const pageSizeFor = (f: StockAlertFilter) => (f === 'all' ? PAGE_SIZE : ALERT_SIZE)
+
   useEffect(() => { loadPage(1, '') }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => loadPage(1, searchInput), 400)
+    const timer = setTimeout(() => loadPage(1, searchInput, pageSizeFor(stockAlertFilter)), 400)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
+
+  useEffect(() => {
+    loadPage(1, searchInput, pageSizeFor(stockAlertFilter))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockAlertFilter])
 
   // ─── 库存告警计数（来自全量 variantMap，跨页面准确） ───
   const alertCounts = useMemo(() => {
@@ -120,12 +129,13 @@ export default function ClassicProductsPage() {
     let rows = templates
     if (canBeSoldFilter) rows = rows.filter(t => t.canBeSold)
     if (productTypeFilter) rows = rows.filter(t => t.type === productTypeFilter)
-    // 库存告警筛选
+    // 库存告警筛选（仅统计有库存记录的模板，与徽标 alertCounts 同口径）
     if (stockAlertFilter === 'negative') {
-      rows = rows.filter(t => (variantMap.get(t.id) ?? 0) < 0)
+      rows = rows.filter(t => variantMap.has(t.id) && variantMap.get(t.id)! < 0)
     } else if (stockAlertFilter === 'low') {
       rows = rows.filter(t => {
-        const qty = variantMap.get(t.id) ?? 0
+        if (!variantMap.has(t.id)) return false
+        const qty = variantMap.get(t.id)!
         return qty >= 0 && qty < LOW_STOCK_THRESHOLD
       })
     }
@@ -460,9 +470,9 @@ export default function ClassicProductsPage() {
           setPage(1)
         }}
         storageKey="classic_products_favs"
-        total={total}
-        page={page}
-        pageSize={PAGE_SIZE}
+        total={stockAlertFilter === 'all' ? total : filteredTemplates.length}
+        page={stockAlertFilter === 'all' ? page : 1}
+        pageSize={stockAlertFilter === 'all' ? PAGE_SIZE : Math.max(filteredTemplates.length, 1)}
         onPageChange={p => loadPage(p, searchInput)}
       />
 
@@ -608,7 +618,7 @@ export default function ClassicProductsPage() {
             })
           }}
           onRowClick={row => router.push(`${prefix}/classic/operator/products/${String(row.id)}`)}
-          emptyText={stockAlertFilter === 'negative' ? '当前页无负库存商品' : stockAlertFilter === 'low' ? '当前页无低库存商品' : '暂无商品数据'}
+          emptyText={stockAlertFilter === 'negative' ? '无负库存商品' : stockAlertFilter === 'low' ? '无低库存商品' : '暂无商品数据'}
           columnFilters={columnFilters}
           onColumnFilterChange={(key, val) => setColumnFilters(prev => ({ ...prev, [key]: val }))}
           columnMultiFilters={columnMultiFilters}

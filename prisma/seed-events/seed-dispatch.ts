@@ -14,7 +14,7 @@ import { neonConfig } from '@neondatabase/serverless'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import ws from 'ws'
 import { PrismaClient } from '../../lib/generated/prisma/client'
-import { recomputeOnHand } from './inventory'
+import { recomputeOnHand, ensureNonNegativeStock } from './inventory'
 
 neonConfig.webSocketConstructor = ws
 const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
@@ -245,6 +245,10 @@ async function main(): Promise<void> {
   const rest = customers.slice(ci)
   let poolCount = 0
   for (const c of rest) { await makeOrder(operator.id, operator.name, seq++, c, products, null); poolCount++ }
+
+  // 今日配送扣库存后，对卖超的商品做期初库存补足，保证 0 负库存
+  const topped = await ensureNonNegativeStock(prisma, new Date(day.getTime() - 30 * 86_400_000))
+  if (topped > 0) console.log(`📥 期初库存补足 ${topped} 个商品（避免卖超负库存）`)
 
   console.log('🧮 重算库存（守恒）...')
   await recomputeOnHand(prisma)

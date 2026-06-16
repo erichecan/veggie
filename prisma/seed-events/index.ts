@@ -20,8 +20,9 @@ import { runPurchasing } from './events/purchase'
 import { runSales } from './events/sales'
 import { runBilling } from './events/billing'
 import { runScenarios } from './events/scenarios'
-import { recomputeOnHand } from './inventory'
+import { recomputeOnHand, ensureNonNegativeStock } from './inventory'
 import { runAssertions } from './assert'
+import { DAY } from './shared'
 
 neonConfig.webSocketConstructor = ws
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
@@ -108,6 +109,11 @@ async function main(): Promise<void> {
   await runBilling(ctx, completed)
   console.log('⚠️  异常场景...')
   await runScenarios(ctx, allOrders, completed)
+
+  // 期初库存补足：销售估算与实际有方差，少数商品会卖超；回填 IN 调整保证 0 负库存
+  const periodStart = new Date(ctx.now.getTime() - scale.monthsBack * 30 * DAY)
+  const topped = await ensureNonNegativeStock(prisma, periodStart)
+  if (topped > 0) console.log(`📥 期初库存补足 ${topped} 个商品（避免卖超负库存）`)
 
   console.log('🧮 重算库存 qtyOnHand（从流水汇总）...')
   await recomputeOnHand(prisma)

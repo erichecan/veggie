@@ -10,8 +10,8 @@ export async function GET(req: Request) {
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
     // Accept both ?pageSize=N (new) and ?limit=N (legacy); default 20
     const rawSize = searchParams.get('pageSize') ?? searchParams.get('limit') ?? '20'
-    // 上限 5000：pricelist item 弹窗要列出全部 ~1700 条商品供选择
-    const limit = Math.min(5000, Math.max(1, parseInt(rawSize, 10)))
+    // 上限 10000：商品页库存告警筛选需一次性拉全部模板（~5400 条）跨页统计
+    const limit = Math.min(10000, Math.max(1, parseInt(rawSize, 10)))
     const search = searchParams.get('search') ?? ''
     const status = searchParams.get('status') ?? ''
 

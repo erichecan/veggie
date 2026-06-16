@@ -200,7 +200,7 @@ export async function runPurchasing(ctx: Ctx): Promise<void> {
   const need = new Map<string, number>()
   for (const p of ctx.personas) {
     const orders = p.ordersPerMonth * ctx.scale.monthsBack
-    const avgQty = 6
+    const avgQty = 8 // 与销售实际 rng.int(2,14) 均值对齐（原 6 偏低导致卖超）
     const perBasket = (orders * ((p.linesPerOrder[0] + p.linesPerOrder[1]) / 2) * avgQty) / p.basket.length
     for (const prod of p.basket) need.set(prod.id, (need.get(prod.id) ?? 0) + perBasket)
   }
@@ -211,7 +211,7 @@ export async function runPurchasing(ctx: Ctx): Promise<void> {
   for (const [pid, qty] of need) {
     const prod = productById.get(pid)
     if (!prod) continue
-    const buyQty = Math.max(20, Math.ceil((qty * 1.4) / 5) * 5)
+    const buyQty = Math.max(20, Math.ceil((qty * 1.5) / 5) * 5)
     if (!bySupplier.has(prod.supplierId)) bySupplier.set(prod.supplierId, [])
     bySupplier.get(prod.supplierId)!.push({ product: prod, qty: buyQty })
   }
