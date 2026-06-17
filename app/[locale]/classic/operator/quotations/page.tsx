@@ -397,7 +397,7 @@ export default function ClassicQuotationsPage() {
     const m = new Map<string, string>()
     trips.forEach(t => {
       if (!t.driverName) return
-      t.restaurants?.forEach((r: { orderIds: string[] }) => r.orderIds.forEach(id => m.set(id, t.driverName!)))
+      t.restaurants?.forEach((r: { orderIds?: string[] }) => r.orderIds?.forEach(id => m.set(id, t.driverName!)))
     })
     return m
   }, [trips])
@@ -1178,6 +1178,31 @@ ${footerHtml}
                       </tbody>
                     </table>
                   </div>
+                  {(() => {
+                    const seen = new Map<string, { rest: string; product: string; count: number }>()
+                    for (const row of importParsed) {
+                      const rest = (row['餐馆名称'] ?? '').trim()
+                      const product = (row['商品名称'] ?? '').trim()
+                      const spec = (row['规格'] ?? '').trim()
+                      if (!rest || !product) continue
+                      const key = `${rest.toLowerCase()}|${product.toLowerCase()}|${spec.toLowerCase()}`
+                      const e = seen.get(key)
+                      if (e) e.count++
+                      else seen.set(key, { rest, product, count: 1 })
+                    }
+                    const dups = [...seen.values()].filter(d => d.count > 1)
+                    if (dups.length === 0) return null
+                    return (
+                      <div className="mt-2 rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-xs text-purple-700">
+                        🔁 <span className="font-semibold">重复商品提醒：</span>
+                        {dups.length} 项在同一餐馆被重复添加 —
+                        <span className="text-purple-600 ml-1">
+                          {dups.map(d => `${d.rest} / ${d.product} ×${d.count}`).join('；')}
+                        </span>
+                        <span className="text-gray-500 ml-1">请确认是否重复下单</span>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
 

@@ -279,6 +279,19 @@ export default function ClassicOrdersPage() {
     }
   }
 
+  // 打印送货单/销售单并记录打印状态（时间/打印人/类型/次数）
+  async function printOrder(orderId: string, type: 'DELIVERY' | 'SALES') {
+    const doc = type === 'DELIVERY' ? 'delivery' : 'sales'
+    // 同步打开窗口（保留用户手势，避免被弹窗拦截）
+    window.open(`${prefix}/classic/print/${orderId}?doc=${doc}`, '_blank')
+    try {
+      await apiPost(`/api/orders/${orderId}/mark-printed`, { type })
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '记录打印状态失败')
+    }
+  }
+
   async function generateBatchWave() {
     if (generatingWave) return
     // check status only against current page orders
@@ -352,6 +365,7 @@ export default function ClassicOrdersPage() {
             <option value="cancelled">已取消</option>
           </select>
         </td>
+        <td className="px-2 py-1" />
         <td className="px-2 py-1" />
         {dateLabelCell('createdAtFrom', 'createdAtTo')}
         <td className="px-2 py-1" />
@@ -434,10 +448,35 @@ export default function ClassicOrdersPage() {
             )}
           </div>
         </td>
+        <td className="px-2 py-2">
+          {(() => {
+            if (!o.printedAt) return <span className="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500">未打印</span>
+            const cnt = o.printCount ?? 0
+            const typeLabel = o.printType === 'DELIVERY' ? '送货单' : o.printType === 'SALES' ? '销售单' : ''
+            return (
+              <div className="text-xs leading-tight">
+                <span className="inline-block px-2 py-0.5 rounded bg-green-50 text-green-700">已打印 ✓{cnt > 1 ? ` ×${cnt}` : ''}</span>
+                <div className="text-gray-500 mt-0.5 whitespace-nowrap">
+                  {formatDateTimeShort(o.printedAt)}{o.printedByName ? ` · ${o.printedByName}` : ''}{typeLabel ? ` · ${typeLabel}` : ''}
+                </div>
+              </div>
+            )
+          })()}
+        </td>
         <td className="px-2 py-2 text-sm text-gray-500 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={o.createdAt} /></td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1">
+            <select
+              defaultValue=""
+              onChange={e => { const t = e.target.value; e.currentTarget.value = ''; if (t) printOrder(o.id, t as 'DELIVERY' | 'SALES') }}
+              className="px-1.5 py-1 text-xs rounded border border-gray-300 text-gray-600 bg-white cursor-pointer hover:border-purple-400"
+              title="打印并记录打印状态"
+            >
+              <option value="" disabled>🖨 打印…</option>
+              <option value="DELIVERY">送货单</option>
+              <option value="SALES">销售单</option>
+            </select>
             {o.status === 'confirmed' && (
               <button
                 onClick={e => generateWaveForOrder(o, e)}
@@ -551,6 +590,7 @@ export default function ClassicOrdersPage() {
                   { field: 'totalAmount',   label: 'Total',             right: true  },
                   { field: 'invoiceStatus', label: 'Invoice\nStatus',   right: false },
                   { field: 'status',        label: 'Status',            right: false },
+                  { field: 'printedAt',     label: 'Print\nStatus',     right: false },
                   { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
                   { field: 'createdAt',     label: 'Creation\nDate',    right: false },
                   { field: null,            label: '',                   right: false },
@@ -580,10 +620,10 @@ export default function ClassicOrdersPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">加载中…</td></tr>
+              <tr><td colSpan={15} className="text-center py-12 text-gray-400 text-sm">加载中…</td></tr>
             )}
             {!loading && sorted.length === 0 && (
-              <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">暂无订单数据</td></tr>
+              <tr><td colSpan={15} className="text-center py-12 text-gray-400 text-sm">暂无订单数据</td></tr>
             )}
             {!loading && sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>

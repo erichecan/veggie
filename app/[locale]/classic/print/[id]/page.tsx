@@ -20,8 +20,9 @@ function eur(v: unknown): string {
 export function buildOrderHtml(
   order: Order & { code?: string; deliveryDate?: string; internalNote?: string; salesman?: string; deliveryBatch?: string },
   customer: Customer | null,
-  opts: { pageBreakAfter?: boolean } = {}
+  opts: { pageBreakAfter?: boolean; docType?: 'delivery' | 'sales' } = {}
 ): string {
+  const docNoLabel = opts.docType === 'delivery' ? 'Delivery NO' : opts.docType === 'sales' ? 'Sale Order NO' : 'Invoice NO'
   const lines = order.lines ?? []
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)
 
@@ -106,7 +107,7 @@ export function buildOrderHtml(
         </div>
       </td>
       <td class="barcode-cell">
-        <div class="info-head">Invoice NO</div>
+        <div class="info-head">${docNoLabel}</div>
         <svg id="bc-${safeCode}" class="barcode-svg"></svg>
         <div class="barcode-code">${orderCode}</div>
       </td>
@@ -223,6 +224,10 @@ export default function PrintPage() {
   useEffect(() => {
     async function load() {
       try {
+        const docParam = new URLSearchParams(window.location.search).get('doc')
+        const docType: 'delivery' | 'sales' | undefined =
+          docParam === 'delivery' ? 'delivery' : docParam === 'sales' ? 'sales' : undefined
+        const docTitle = docType === 'delivery' ? 'Delivery Note' : docType === 'sales' ? 'Sale Order' : 'Invoice'
         const [order, customers] = await Promise.all([
           apiGet<Order & { code?: string; deliveryDate?: string; internalNote?: string; salesman?: string; deliveryBatch?: string }>(`/api/orders/${id}`),
           apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
@@ -231,14 +236,14 @@ export default function PrintPage() {
         const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
         const safeCode = orderCode.replace(/['"\\]/g, '')
 
-        const bodyHtml = buildOrderHtml(order, customer)
+        const bodyHtml = buildOrderHtml(order, customer, { docType })
 
         setHtml(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Invoice ${orderCode}</title>
+<title>${docTitle} ${orderCode}</title>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
 <style>${CSS}</style>
 </head>

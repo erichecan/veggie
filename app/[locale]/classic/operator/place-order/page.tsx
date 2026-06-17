@@ -266,6 +266,13 @@ export default function ClassicPlaceOrderPage() {
   // key = productId, value = 所有未出库订单已占用量
   const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
 
+  // 重复商品检测：同一 productId 在订单行中出现多次（客户/录单员可能重复添加）
+  const duplicateCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const l of lines) if (l.productId) counts.set(l.productId, (counts.get(l.productId) ?? 0) + 1)
+    return counts
+  }, [lines])
+
   // ── Last-price cache ──────────────────────────────────────────────────────
   // key = productId, value = 最近一次成交单价（€）
   // 仅本客户当前会话有效，切客户时清空。Object 中没有的 productId 表示"无历史"。
@@ -1358,6 +1365,28 @@ export default function ClassicPlaceOrderPage() {
                 )
               })()}
 
+              {/* 重复商品提醒 banner */}
+              {(() => {
+                const dups = [...duplicateCounts.entries()].filter(([, c]) => c > 1)
+                if (dups.length === 0) return null
+                const nameOf = (pid: string) => lines.find(l => l.productId === pid)?.productName ?? pid
+                return (
+                  <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
+                    <span className="text-lg leading-none mt-0.5">🔁</span>
+                    <div className="text-sm">
+                      <span className="font-semibold text-purple-700">重复商品提醒：</span>
+                      <span className="text-purple-600">
+                        {dups.length} 个商品被重复添加
+                        <span className="text-xs text-purple-500 ml-1">
+                          ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join('、')})
+                        </span>
+                      </span>
+                      <span className="text-xs text-gray-500 ml-1">— 请确认是否合并或保留</span>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* Horizontally scrollable 14-column table */}
               <div className="overflow-x-auto">
                 <table className="text-xs border-collapse" style={{ minWidth: '1340px', width: '100%' }}>
@@ -1396,6 +1425,7 @@ export default function ClassicPlaceOrderPage() {
                       const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
                       const isOutOfStock = line.productId && lineAtp <= 0
                       const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
+                      const isDuplicate  = !!line.productId && (duplicateCounts.get(line.productId) ?? 0) > 1
 
                       return (
                         <tr
@@ -1403,11 +1433,15 @@ export default function ClassicPlaceOrderPage() {
                           className="group align-middle"
                           style={{
                             background: isOutOfStock ? '#fee2e2' : isLowStock ? '#fffbeb' : undefined,
+                            boxShadow: isDuplicate ? 'inset 3px 0 0 0 #875A7B' : undefined,
                           }}
                         >
 
                           {/* NO */}
-                          <td className="px-2 py-1 text-gray-400 select-none">{idx + 1}</td>
+                          <td className="px-2 py-1 text-gray-400 select-none">
+                            {idx + 1}
+                            {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
+                          </td>
 
                           {/* Product — inline search */}
                           <td className="px-2 py-1 relative">

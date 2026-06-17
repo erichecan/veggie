@@ -485,6 +485,16 @@ model Order {
   lockedAt         DateTime?
   /// CONFIRMED后编辑是否需要老板审批（P1-6）
   editApprovalRequired Boolean @default(false)
+  /// 最近一次打印时间（销售单打印追踪）
+  printedAt        DateTime?
+  /// 最近一次打印人用户 ID
+  printedById      String?
+  /// 最近一次打印人姓名快照
+  printedByName    String?
+  /// 最近一次打印的单据类型：DELIVERY | SALES
+  printType        String?
+  /// 累计打印次数
+  printCount       Int       @default(0)
 
   auditLogs     OrderAuditLog[]
   deliverySlip  DeliverySlip?

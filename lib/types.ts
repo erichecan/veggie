@@ -280,6 +280,16 @@ export interface Order {
   sentAt?: string | null
   /** 锁定时间（LOCKED 状态时不空） */
   lockedAt?: string | null
+  /** 最近一次打印时间（销售单打印追踪） */
+  printedAt?: string | null
+  /** 最近一次打印人用户 ID */
+  printedById?: string | null
+  /** 最近一次打印人姓名快照 */
+  printedByName?: string | null
+  /** 最近一次打印的单据类型：DELIVERY | SALES */
+  printType?: string | null
+  /** 累计打印次数 */
+  printCount?: number
 }
 
 // ─── 订单审计日志 ────────────────────────────────────────────────────────────
