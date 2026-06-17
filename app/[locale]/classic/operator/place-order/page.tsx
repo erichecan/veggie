@@ -262,6 +262,13 @@ export default function ClassicPlaceOrderPage() {
   // ── Order lines ───────────────────────────────────────────────────────────
   const [lines, setLines] = useState<QuotationLine[]>([])
 
+  // ── 复制历史订单 ──────────────────────────────────────────────────────────
+  type HistoryLine = { productId: string; productName: string; orderedQty: number | string; note?: string | null }
+  type HistoryOrder = { id: string; code?: string | null; createdAt: string; totalAmount: number | string; lines?: HistoryLine[]; items?: HistoryLine[] }
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyOrders, setHistoryOrders] = useState<HistoryOrder[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
   // ── Pending demand (ATP) ────────────────────────────────────────────────────
   // key = productId, value = 所有未出库订单已占用量
   const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
@@ -663,6 +670,71 @@ export default function ClassicPlaceOrderPage() {
         }
       })
     }
+  }
+
+  // ── 复制历史订单 ──────────────────────────────────────────────────────────
+  async function openHistory() {
+    if (!customerId) { toast.warning('请先选择客户，再复制历史订单'); setCustOpen(true); return }
+    setShowHistory(true)
+    setHistoryLoading(true)
+    try {
+      const data = await apiGet<HistoryOrder[] | { data: HistoryOrder[] }>(
+        `/api/orders?restaurantId=${customerId}&include_lines=true&pageSize=5`,
+      )
+      const arr = Array.isArray(data) ? data : (data.data ?? [])
+      setHistoryOrders(arr.slice(0, 5))
+    } catch {
+      toast.error('加载历史订单失败')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  // 用当前价格表/lastPrice 为历史行的商品重算价格，构造一条订单行
+  function buildHistoryLine(p: Product, qty: number, note: string, cache: Record<string, number>): QuotationLine {
+    const lastPrice = getLastPrice(p.id, cache)
+    const res = effectiveCustomer ? resolveCustomerPrice(p, effectiveCustomer, pricelists, qty, lastPrice) : null
+    const unitPrice = res?.price ?? (p.listPrice ?? p.price ?? 0)
+    const priceLabel = res?.isSpecialPrice ? 'Special' : res && !res.isFallback ? 'PriceList' : 'Price'
+    return {
+      id: uid(), productId: p.id, productName: p.name,
+      description: p.spec ?? p.name, note,
+      orderedQty: qty, forecastQty: null, qtyOnHand: p.qtyOnHand ?? 0,
+      uom: (p as Product & { uomName?: string }).uomName ?? 'Unit(s)',
+      uomId: (p as Product & { uomId?: string }).uomId ?? undefined,
+      unitPrice, cost: p.standardPrice ?? 0, priceLabel,
+      taxRate: (p.customerTaxRate ?? 0) * 100, cmsPrice: p.commissionPrice ?? 0,
+    }
+  }
+
+  function importHistoryOrder(order: HistoryOrder) {
+    const histLines = order.lines ?? order.items ?? []
+    const newLines: QuotationLine[] = []
+    const missing: string[] = []
+    for (const hl of histLines) {
+      const p = products.find(pp => pp.id === hl.productId)
+      if (!p) { missing.push(hl.productName); continue }
+      newLines.push(buildHistoryLine(p, Number(hl.orderedQty) || 1, hl.note ?? '', lastPrices))
+    }
+    if (newLines.length === 0) { toast.error('该订单商品均已下架，无法导入'); return }
+    setLines(prev => [...prev, ...newLines])
+    setShowHistory(false)
+    // 异步拉 lastPrice 后重算价格（与手动选品体验一致）
+    const ids = newLines.map(l => l.productId).filter(id => !(id in lastPrices))
+    if (effectiveCustomer && ids.length > 0) {
+      void fetchLastPrices(ids).then(merged => {
+        setLines(prev => prev.map(l => {
+          if (!ids.includes(l.productId)) return l
+          const p = products.find(pp => pp.id === l.productId)
+          if (!p || !effectiveCustomer) return l
+          const res = resolveCustomerPrice(p, effectiveCustomer, pricelists, l.orderedQty, getLastPrice(p.id, merged))
+          if (!res) return l
+          return { ...l, unitPrice: res.price ?? l.unitPrice, priceLabel: res.isSpecialPrice ? 'Special' : !res.isFallback ? 'PriceList' : 'Price' }
+        }))
+      })
+    }
+    toast.success(`已导入 ${newLines.length} 个商品` + (missing.length ? `，${missing.length} 个已下架已跳过` : ''))
+    if (missing.length) toast.warning(`跳过下架商品：${missing.join('、')}`)
   }
 
   // ── Line CRUD ─────────────────────────────────────────────────────────────
@@ -1327,6 +1399,47 @@ export default function ClassicPlaceOrderPage() {
           {/* ── Order Lines tab ──────────────────────────────────────────── */}
           {activeTab === 'lines' && (
             <div>
+              {/* 复制历史订单工具条 */}
+              <div className="px-3 pt-3 flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={openHistory}
+                  className="px-3 py-1.5 rounded text-sm font-medium text-white inline-flex items-center gap-1.5"
+                  style={{ background: '#875A7B' }}
+                >
+                  📋 复制历史订单
+                </button>
+                <span className="text-xs text-gray-400">按所选客户最近 5 单复制商品到当前订单，导入后可继续增删改</span>
+              </div>
+
+              {showHistory && createPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowHistory(false)}>
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                      <h2 className="text-base font-semibold" style={{ color: '#875A7B' }}>复制历史订单 · 最近 5 单</h2>
+                      <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+                    </div>
+                    <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-2">
+                      {historyLoading && <div className="py-10 text-center text-sm text-gray-400">加载中…</div>}
+                      {!historyLoading && historyOrders.length === 0 && <div className="py-10 text-center text-sm text-gray-400">该客户暂无历史订单</div>}
+                      {!historyLoading && historyOrders.map(o => {
+                        const hl = o.lines ?? o.items ?? []
+                        return (
+                          <div key={o.id} className="border rounded-lg px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: '#e5e7eb' }}>
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium" style={{ color: '#875A7B' }}>{o.code ?? o.id.slice(0, 8)}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">{new Date(o.createdAt).toLocaleDateString('en-GB')} · {hl.length} 项 · €{Number(o.totalAmount).toFixed(2)}</div>
+                              <div className="text-xs text-gray-400 mt-0.5 truncate">{hl.slice(0, 3).map(x => x.productName).join('、')}{hl.length > 3 ? ` 等 ${hl.length} 项` : ''}</div>
+                            </div>
+                            <button onClick={() => importHistoryOrder(o)} className="px-3 py-1.5 rounded text-sm font-medium text-white shrink-0" style={{ background: '#875A7B' }}>导入</button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>,
+                document.body,
+              )}
+
               {/* Low stock alert banner (based on ATP) */}
               {(() => {
                 const linesWithAtp = lines.filter(l => l.productId).map(l => ({
