@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -72,6 +72,17 @@ export default function InventoryAdjustmentsPage() {
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
 
+  // 手动库存调整
+  type ProductLite = { id: string; name: string; qtyOnHand?: number; uomName?: string }
+  const [showAdjust, setShowAdjust] = useState(false)
+  const [products, setProducts] = useState<ProductLite[]>([])
+  const [prodSearch, setProdSearch] = useState('')
+  const [selProduct, setSelProduct] = useState<ProductLite | null>(null)
+  const [direction, setDirection] = useState<'in' | 'out'>('in')
+  const [adjQty, setAdjQty] = useState('')
+  const [adjNote, setAdjNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -90,6 +101,51 @@ export default function InventoryAdjustmentsPage() {
     e.preventDefault()
     setSearch(searchInput)
   }
+
+  function resetAdjust() {
+    setProdSearch(''); setSelProduct(null); setDirection('in'); setAdjQty(''); setAdjNote('')
+  }
+
+  async function openAdjust() {
+    setShowAdjust(true)
+    if (products.length === 0) {
+      try {
+        const d = await apiGet<ProductLite[]>('/api/products')
+        setProducts(Array.isArray(d) ? d : [])
+      } catch {
+        toast.error('加载商品列表失败')
+      }
+    }
+  }
+
+  async function submitAdjust() {
+    if (!selProduct) { toast.error('请先选择商品'); return }
+    const n = Number(adjQty)
+    if (!Number.isFinite(n) || n <= 0) { toast.error('请输入大于 0 的调整数量'); return }
+    const qty = direction === 'in' ? n : -n
+    setSubmitting(true)
+    try {
+      await apiPost('/api/stock-moves', {
+        productId: selProduct.id,
+        productName: selProduct.name,
+        qty,
+        type: 'ADJUSTMENT',
+        note: adjNote.trim() || (direction === 'in' ? '手动盘盈' : '手动盘亏'),
+      })
+      toast.success('库存调整成功')
+      setShowAdjust(false)
+      resetAdjust()
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '调整失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const prodMatches = prodSearch.trim()
+    ? products.filter(p => p.name.toLowerCase().includes(prodSearch.trim().toLowerCase())).slice(0, 8)
+    : []
 
   const filtered = moves.filter((m) => {
     if (activeTab !== 'all' && m.type !== activeTab) return false
@@ -112,6 +168,9 @@ export default function InventoryAdjustmentsPage() {
 
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>库存流水记录</h1>
+        <button onClick={openAdjust} className="px-4 py-1.5 rounded text-sm font-medium text-white" style={{ background: PURPLE }}>
+          + 手动调整
+        </button>
       </div>
 
       {/* Type tabs */}
@@ -210,6 +269,73 @@ export default function InventoryAdjustmentsPage() {
       </div>
 
       <p className="text-xs text-gray-400">显示最近 {PAGE_SIZE} 条记录</p>
+
+      {showAdjust && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (!submitting) { setShowAdjust(false); resetAdjust() } }}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: BORDER }}>
+              <h2 className="text-base font-semibold" style={{ color: PURPLE }}>手动库存调整</h2>
+              <button onClick={() => { setShowAdjust(false); resetAdjust() }} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              {/* 商品选择 */}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">商品 *</label>
+                {selProduct ? (
+                  <div className="flex items-center justify-between border rounded px-3 py-2 text-sm" style={{ borderColor: BORDER }}>
+                    <span>
+                      <span className="font-medium">{selProduct.name}</span>
+                      <span className="text-xs text-gray-400 ml-2">当前库存：{selProduct.qtyOnHand ?? 0}{selProduct.uomName ? ' ' + selProduct.uomName : ''}</span>
+                    </span>
+                    <button onClick={() => { setSelProduct(null); setProdSearch('') }} className="text-xs text-purple-600 hover:underline shrink-0 ml-2">更换</button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input autoFocus value={prodSearch} onChange={e => setProdSearch(e.target.value)} placeholder="搜索商品名称…" className="border rounded px-3 py-2 text-sm w-full outline-none" style={{ borderColor: BORDER }} />
+                    {prodMatches.length > 0 && (
+                      <div className="absolute z-10 mt-1 w-full bg-white border rounded shadow-lg max-h-56 overflow-y-auto" style={{ borderColor: BORDER }}>
+                        {prodMatches.map(p => (
+                          <button key={p.id} onClick={() => { setSelProduct(p); setProdSearch('') }} className="block w-full text-left px-3 py-2 text-sm hover:bg-purple-50">
+                            <span className="font-medium">{p.name}</span>
+                            <span className="text-xs text-gray-400 ml-2">库存 {p.qtyOnHand ?? 0}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* 方向 */}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">调整方向 *</label>
+                <div className="flex gap-2">
+                  <button onClick={() => setDirection('in')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={direction === 'in' ? { background: '#dcfce7', borderColor: '#16a34a', color: '#15803d' } : { borderColor: BORDER, color: '#6b7280' }}>盘盈（+ 增加）</button>
+                  <button onClick={() => setDirection('out')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={direction === 'out' ? { background: '#fee2e2', borderColor: '#dc2626', color: '#b91c1c' } : { borderColor: BORDER, color: '#6b7280' }}>盘亏（− 减少）</button>
+                </div>
+              </div>
+              {/* 数量 */}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">调整数量 *</label>
+                <input type="number" min="0" step="any" value={adjQty} onChange={e => setAdjQty(e.target.value)} placeholder="输入数量（正数）" className="border rounded px-3 py-2 text-sm w-full outline-none" style={{ borderColor: BORDER }} />
+                {selProduct && Number(adjQty) > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    调整后库存：{selProduct.qtyOnHand ?? 0} → <span className="font-semibold" style={{ color: PURPLE }}>{(selProduct.qtyOnHand ?? 0) + (direction === 'in' ? 1 : -1) * Number(adjQty)}</span>
+                  </p>
+                )}
+              </div>
+              {/* 原因 */}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">调整原因 / 备注</label>
+                <input value={adjNote} onChange={e => setAdjNote(e.target.value)} placeholder="如：盘点差异、损耗、期初录入…" className="border rounded px-3 py-2 text-sm w-full outline-none" style={{ borderColor: BORDER }} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t" style={{ borderColor: BORDER }}>
+              <button onClick={() => { setShowAdjust(false); resetAdjust() }} className="px-4 py-2 text-sm rounded border" style={{ borderColor: BORDER, color: '#6b7280' }}>取消</button>
+              <button onClick={submitAdjust} disabled={submitting} className="px-4 py-2 text-sm rounded text-white font-medium disabled:opacity-50" style={{ background: PURPLE }}>{submitting ? '提交中…' : '确认调整'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

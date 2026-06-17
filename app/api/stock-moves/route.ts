@@ -49,6 +49,10 @@ export async function POST(req: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
 
+      // 校验商品存在（库存调整需更新其在手量）
+      const product = await p.product.findUnique({ where: { id: productId }, select: { id: true, name: true } })
+      if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
+
       // 出库/报废/负向调整时，如果指定了 lotId，扣减 Lot.currentQty
       const isConsumption = lotId && qty < 0
       if (isConsumption) {
@@ -67,7 +71,7 @@ export async function POST(req: Request) {
         const created = await tx.stockMove.create({
           data: {
             productId,
-            productName: productName || '未知商品',
+            productName: productName || product.name || '未知商品',
             qty,
             note,
             type: moveType,
@@ -100,6 +104,12 @@ export async function POST(req: Request) {
             data: { currentQty: { increment: qty } },
           })
         }
+
+        // 同步商品在手库存：move 数量正增负减（手动调整/入库/出库统一在此回写）
+        await tx.product.update({
+          where: { id: productId },
+          data: { qtyOnHand: { increment: qty } },
+        })
 
         return created
       })
