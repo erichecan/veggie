@@ -12,7 +12,7 @@ export default function EnterPage() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const ROLE_PATHS: Record<string, string> = {
-    OPERATOR: `${prefix}/classic/operator`,
+    OPERATOR: `${prefix}/classic/operator/quotations`,
     RESTAURANT: `${prefix}/customer-portal`,
     SORTER: `${prefix}/classic/sorter`,
     DRIVER: `${prefix}/classic/driver`,

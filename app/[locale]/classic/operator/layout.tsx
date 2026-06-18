@@ -22,7 +22,8 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
   const en = locale !== routing.defaultLocale
   const MENU_ITEMS = [
     // Group A
-    { href: `${prefix}/classic/operator`, label: en ? 'Workbench' : '工作台' },
+    // 工作台已下线，隐藏导航入口（/classic/operator 会重定向到下单页）
+    // { href: `${prefix}/classic/operator`, label: en ? 'Workbench' : '工作台' },
     { href: `${prefix}/classic/operator/quotations`, label: en ? 'Place Order' : '下单', activePaths: [`${prefix}/classic/operator/place-order`] },
     { href: `${prefix}/classic/operator/orders`,    label: en ? 'Sales Orders'  : '销售单' },
     // 拣货波次、配送单已整合进「配送调度中心」，隐藏独立入口
