@@ -1,10 +1,11 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { rankByRelevance } from '@/lib/search-rank'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -82,6 +83,9 @@ export default function InventoryAdjustmentsPage() {
   const [adjQty, setAdjQty] = useState('')
   const [adjNote, setAdjNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [prodHighlight, setProdHighlight] = useState(0)
+  const adjInputRef = useRef<HTMLInputElement>(null)
+  const adjListRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,7 +107,19 @@ export default function InventoryAdjustmentsPage() {
   }
 
   function resetAdjust() {
-    setProdSearch(''); setSelProduct(null); setDirection('in'); setAdjQty(''); setAdjNote('')
+    setProdSearch(''); setSelProduct(null); setDirection('in'); setAdjQty(''); setAdjNote(''); setProdHighlight(0)
+  }
+
+  function selectAdjProduct(p: ProductLite) {
+    setSelProduct(p); setProdSearch(''); setProdHighlight(0)
+  }
+
+  function handleAdjKey(e: React.KeyboardEvent) {
+    const items = prodMatches
+    if (e.key === 'ArrowDown') { e.preventDefault(); setProdHighlight(i => Math.min(i + 1, items.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setProdHighlight(i => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); if (items[prodHighlight]) selectAdjProduct(items[prodHighlight]) }
+    else if (e.key === 'Escape') { e.preventDefault(); setProdSearch(''); setProdHighlight(0) }
   }
 
   async function openAdjust() {
@@ -143,9 +159,15 @@ export default function InventoryAdjustmentsPage() {
     }
   }
 
-  const prodMatches = prodSearch.trim()
-    ? products.filter(p => p.name.toLowerCase().includes(prodSearch.trim().toLowerCase())).slice(0, 8)
+  const prodMatches: ProductLite[] = prodSearch.trim()
+    ? rankByRelevance(products, prodSearch, p => p.name).slice(0, 30)
     : []
+
+  // 高亮项滚动到可视区
+  useEffect(() => {
+    const el = adjListRef.current?.querySelector(`[data-idx="${prodHighlight}"]`) as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [prodHighlight])
 
   const filtered = moves.filter((m) => {
     if (activeTab !== 'all' && m.type !== activeTab) return false
@@ -291,14 +313,29 @@ export default function InventoryAdjustmentsPage() {
                   </div>
                 ) : (
                   <div className="relative">
-                    <input autoFocus value={prodSearch} onChange={e => setProdSearch(e.target.value)} placeholder="搜索商品名称…" className="border rounded px-3 py-2 text-sm w-full outline-none" style={{ borderColor: BORDER }} />
+                    <input
+                      ref={adjInputRef}
+                      autoFocus
+                      value={prodSearch}
+                      onChange={e => { setProdSearch(e.target.value); setProdHighlight(0) }}
+                      onKeyDown={handleAdjKey}
+                      placeholder="搜索商品名称…（↑↓ 选择，回车确认）"
+                      className="border rounded px-3 py-2 text-sm w-full outline-none"
+                      style={{ borderColor: BORDER }}
+                    />
                     {prodMatches.length > 0 && (
-                      <div className="absolute z-10 mt-1 w-full bg-white border rounded shadow-lg max-h-56 overflow-y-auto" style={{ borderColor: BORDER }}>
-                        {prodMatches.map(p => (
-                          <button key={p.id} onClick={() => { setSelProduct(p); setProdSearch('') }} className="block w-full text-left px-3 py-2 text-sm hover:bg-purple-50">
-                            <span className="font-medium">{p.name}</span>
-                            <span className="text-xs text-gray-400 ml-2">库存 {p.qtyOnHand ?? 0}</span>
-                          </button>
+                      <div ref={adjListRef} className="absolute z-10 mt-1 w-full bg-white border rounded shadow-lg max-h-56 overflow-y-auto" style={{ borderColor: BORDER }}>
+                        {prodMatches.map((p, idx) => (
+                          <div
+                            key={p.id}
+                            data-idx={idx}
+                            onMouseEnter={() => setProdHighlight(idx)}
+                            onMouseDown={e => { e.preventDefault(); selectAdjProduct(p) }}
+                            className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer ${idx === prodHighlight ? 'bg-purple-100' : 'hover:bg-purple-50'}`}
+                          >
+                            <span className="font-medium truncate">{p.name}</span>
+                            <span className="text-xs text-gray-400 ml-2 shrink-0">库存 {p.qtyOnHand ?? 0}</span>
+                          </div>
                         ))}
                       </div>
                     )}
