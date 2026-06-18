@@ -9,17 +9,22 @@ export async function GET(req: Request) {
   return withAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
-      const dateStr = searchParams.get('date')
-      if (!dateStr) return NextResponse.json({ error: '缺少 date 参数' }, { status: 400 })
+      // 支持日期范围 ?from=&to=（兼容旧的 ?date=单日）
+      const fromStr = searchParams.get('from') ?? searchParams.get('date')
+      const toStr = searchParams.get('to') ?? searchParams.get('date') ?? fromStr
+      if (!fromStr) return NextResponse.json({ error: '缺少 from/date 参数' }, { status: 400 })
 
-      const day = new Date(`${dateStr}T00:00:00.000Z`)
-      const next = new Date(day)
-      next.setUTCDate(day.getUTCDate() + 1)
+      const from = new Date(`${fromStr}T00:00:00.000Z`)
+      const toBase = new Date(`${toStr}T00:00:00.000Z`)
+      const to = new Date(toBase)
+      to.setUTCDate(toBase.getUTCDate() + 1)
+
+      const emptyTotals = { restaurantCount: 0, orderCount: 0, totalQty: 0, totalAmount: 0 }
 
       const waves = await prisma.pickingWave.findMany({
-        where: { waveDate: { gte: day, lt: next } },
+        where: { waveDate: { gte: from, lt: to } },
       })
-      if (waves.length === 0) return NextResponse.json({ date: dateStr, rows: [] })
+      if (waves.length === 0) return NextResponse.json({ from: fromStr, to: toStr, rows: [], totals: emptyTotals })
 
       const slotIds = Array.from(
         new Set(waves.map(w => w.driverSlotId).filter(Boolean) as string[]),
@@ -54,6 +59,7 @@ export async function GET(req: Request) {
           for (const it of (o.items as OrderItemRaw[]) ?? []) totalQty += it.quantity
         }
         const slot = w.driverSlotId ? slotMap.get(w.driverSlotId) : null
+        const wd = w.waveDate ? new Date(w.waveDate) : null
         return {
           waveId: w.id,
           driverName: w.driverName ?? slot?.driverName ?? '',
@@ -64,6 +70,8 @@ export async function GET(req: Request) {
           totalQty: Math.round(totalQty * 1000) / 1000,
           totalAmount: Math.round(totalAmount * 100) / 100,
           status: w.status,
+          waveDate: wd ? wd.toISOString().slice(0, 10) : null,
+          weekday: wd ? wd.getUTCDay() : null,
         }
       })
 
@@ -83,7 +91,7 @@ export async function GET(req: Request) {
         { restaurantCount: 0, orderCount: 0, totalQty: 0, totalAmount: 0 },
       )
 
-      return NextResponse.json({ date: dateStr, rows, totals })
+      return NextResponse.json({ from: fromStr, to: toStr, rows, totals })
     } catch (error) {
       console.error('[GET /api/dispatch/driver-summary]', error)
       return NextResponse.json({ error: '获取司机汇总失败' }, { status: 500 })
