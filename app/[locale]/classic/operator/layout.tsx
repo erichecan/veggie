@@ -33,7 +33,8 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch Console' : '配送调度中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
     { href: `${prefix}/classic/operator/invoices`,  label: en ? 'Invoices'      : '发票' },
     { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },
-    { href: `${prefix}/classic/operator/credit-notes`, label: en ? 'Credit Notes' : '信用票' },
+    // 信用票已隐藏导航入口
+    // { href: `${prefix}/classic/operator/credit-notes`, label: en ? 'Credit Notes' : '信用票' },
     { href: `${prefix}/classic/operator/purchases`, label: en ? 'Purchases'     : '采购' },
     { href: `${prefix}/classic/operator/purchases/suggestions`, label: en ? 'Purchase Suggestions' : '采购建议' },
     { href: `${prefix}/classic/operator/vendor-bills`, label: en ? 'Vendor Bills' : '供应商账单' },
@@ -45,7 +46,8 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/customers`, label: en ? 'Customers'     : '客户' },
     { href: `${prefix}/classic/operator/pricelists`,label: en ? 'Pricelists'    : '价格表' },
     { href: `${prefix}/classic/operator/settings/units`, label: en ? 'Units of Measure' : '计量单位' },
-    { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },
+    // 司机配置已并入「配送调度中心」，隐藏独立导航入口
+    // { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },
     // divider
     { href: '', label: '│' },
     // Group C – 分析
