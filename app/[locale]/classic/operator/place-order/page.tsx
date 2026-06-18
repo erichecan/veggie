@@ -318,8 +318,6 @@ export default function ClassicPlaceOrderPage() {
   // ── UI state ──────────────────────────────────────────────────────────────
   const [qtyRawMap, setQtyRawMap]     = useState<Record<string, string>>({})
   const [activeTab, setActiveTab]     = useState<'lines' | 'optional' | 'auto' | 'other'>('lines')
-  const [chatterTab, setChatterTab]   = useState<'message' | 'note' | 'activity'>('message')
-  const [chatterMsg, setChatterMsg]   = useState('')
   const [logs, setLogs]               = useState<ChatterEntry[]>([
     { type: 'system', text: 'Creating a new record...', time: new Date().toLocaleString('en-GB') },
   ])
@@ -714,7 +712,10 @@ export default function ClassicPlaceOrderPage() {
     for (const hl of histLines) {
       const p = products.find(pp => pp.id === hl.productId)
       if (!p) { missing.push(hl.productName); continue }
-      newLines.push(buildHistoryLine(p, Number(hl.orderedQty) || 1, hl.note ?? '', lastPrices))
+      const rawQty = Number(hl.orderedQty) || 1
+      // 历史脏数据（如 0.001 占位值）规整为 1，避免把不合理小数带入新订单
+      const qty = rawQty > 0 && rawQty < 0.01 ? 1 : rawQty
+      newLines.push(buildHistoryLine(p, qty, hl.note ?? '', lastPrices))
     }
     if (newLines.length === 0) { toast.error('该订单商品均已下架，无法导入'); return }
     setLines(prev => [...prev, ...newLines])
@@ -735,6 +736,27 @@ export default function ClassicPlaceOrderPage() {
     }
     toast.success(`已导入 ${newLines.length} 个商品` + (missing.length ? `，${missing.length} 个已下架已跳过` : ''))
     if (missing.length) toast.warning(`跳过下架商品：${missing.join('、')}`)
+  }
+
+  // 合并重复商品：同一 productId 的行合并为一行，数量相加，保留第一行的价格等
+  function mergeDuplicates() {
+    setLines(prev => {
+      const seen = new Map<string, QuotationLine>()
+      const result: QuotationLine[] = []
+      for (const l of prev) {
+        if (!l.productId) { result.push(l); continue }
+        const existing = seen.get(l.productId)
+        if (existing) {
+          existing.orderedQty += l.orderedQty
+        } else {
+          const copy = { ...l }
+          seen.set(l.productId, copy)
+          result.push(copy)
+        }
+      }
+      return result
+    })
+    toast.success('已合并重复商品')
   }
 
   // ── Line CRUD ─────────────────────────────────────────────────────────────
@@ -911,15 +933,6 @@ export default function ClassicPlaceOrderPage() {
     setInternalNotes('')
     setTermsConditions('')
     setStatus('draft')
-  }
-
-  function addChatterEntry() {
-    if (!chatterMsg.trim()) return
-    setLogs(prev => [
-      ...prev,
-      { type: chatterTab, text: chatterMsg.trim(), time: new Date().toLocaleString('en-GB') },
-    ])
-    setChatterMsg('')
   }
 
   // ── Preview / Print / Email handlers ─────────────────────────────────────
@@ -1378,9 +1391,7 @@ export default function ClassicPlaceOrderPage() {
           <div className="flex border-b border-gray-200 overflow-x-auto">
             {([
               { key: 'lines',    label: 'Order Lines' },
-              { key: 'optional', label: 'Optional Products' },
-              { key: 'auto',     label: 'Automation Information' },
-              { key: 'other',    label: 'Other Information' },
+              // 以下 tab 已隐藏：Optional Products / Automation Information / Other Information
             ] as { key: typeof activeTab; label: string }[]).map(tab => (
               <button
                 key={tab.key}
@@ -1486,7 +1497,7 @@ export default function ClassicPlaceOrderPage() {
                 return (
                   <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
                     <span className="text-lg leading-none mt-0.5">🔁</span>
-                    <div className="text-sm">
+                    <div className="text-sm flex-1">
                       <span className="font-semibold text-purple-700">重复商品提醒：</span>
                       <span className="text-purple-600">
                         {dups.length} 个商品被重复添加
@@ -1494,8 +1505,15 @@ export default function ClassicPlaceOrderPage() {
                           ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join('、')})
                         </span>
                       </span>
-                      <span className="text-xs text-gray-500 ml-1">— 请确认是否合并或保留</span>
+                      <span className="text-xs text-gray-500 ml-1">— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整</span>
                     </div>
+                    <button
+                      onClick={mergeDuplicates}
+                      className="shrink-0 px-3 py-1 rounded text-xs font-medium text-white"
+                      style={{ background: '#875A7B' }}
+                    >
+                      合并重复项
+                    </button>
                   </div>
                 )
               })()}
@@ -1714,17 +1732,9 @@ export default function ClassicPlaceOrderPage() {
                             </select>
                           </td>
 
-                          {/* Cms Price — 需求10: read-only */}
-                          <td className="px-2 py-1">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.cmsPrice}
-                              readOnly
-                              tabIndex={-1}
-                              className="w-full text-right px-1.5 py-0.5 text-xs border border-gray-100 rounded bg-gray-50 text-gray-400 cursor-default select-none"
-                            />
+                          {/* Cms Price — 只读纯文本展示（不可修改） */}
+                          <td className="px-2 py-1 text-right text-gray-500">
+                            {line.cmsPrice > 0 ? eur(line.cmsPrice) : '—'}
                           </td>
 
                           {/* Cms Sub (computed, read-only) */}
@@ -1835,50 +1845,7 @@ export default function ClassicPlaceOrderPage() {
 
         {/* ══ Chatter ═══════════════════════════════════════════════════════ */}
         <div className="bg-white rounded border border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Chatter</h3>
-
-          {/* Chatter tab buttons */}
-          <div className="flex gap-2 mb-3">
-            {([
-              { key: 'message',  label: 'Send message' },
-              { key: 'note',     label: 'Log note' },
-              { key: 'activity', label: 'Schedule activity' },
-            ] as { key: typeof chatterTab; label: string }[]).map(t => (
-              <button
-                key={t.key}
-                onClick={() => setChatterTab(t.key)}
-                className={`px-3 py-1.5 text-xs rounded border transition-colors ${
-                  chatterTab === t.key
-                    ? 'border-[#875A7B] bg-[#875A7B] text-white'
-                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Message input */}
-          <div className="flex gap-2 items-end">
-            <textarea
-              rows={2}
-              value={chatterMsg}
-              onChange={e => setChatterMsg(e.target.value)}
-              placeholder={
-                chatterTab === 'message'  ? '输入消息…'
-                : chatterTab === 'note'   ? '输入内部备注…'
-                : '活动描述…'
-              }
-              className="flex-1 text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 resize-none"
-            />
-            <button
-              onClick={addChatterEntry}
-              className="px-3 py-2 text-xs rounded font-medium text-white"
-              style={{ background: '#875A7B' }}
-            >
-              Add
-            </button>
-          </div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">操作日志</h3>
 
           {/* Log entries */}
           <div className="mt-4 space-y-0 divide-y divide-gray-50">
