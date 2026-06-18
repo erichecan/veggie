@@ -15,6 +15,7 @@ interface OverviewStats {
   adjustments: { total: number; thisMonth: number }
   scrap: { total: number; thisMonth: number }
   discrepancies: { pending: number; total: number }
+  suggestions: { pending: number }
 }
 
 function StatCard({
@@ -83,7 +84,7 @@ export default function InventoryPage() {
         const now = new Date()
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-        const [recentReceipts, pendingOrders, confirmedOrders, inDeliveryOrders, completedOrders, adjustMoves, discPending, discAll] = await Promise.all([
+        const [recentReceipts, pendingOrders, confirmedOrders, inDeliveryOrders, completedOrders, adjustMoves, discPending, discAll, suggPending] = await Promise.all([
           apiGet<{ total: number }>(`/api/goods-receipts?limit=1`),
           apiGet<{ total?: number } | unknown[]>('/api/orders?pageSize=1&page=1&status=PENDING'),
           apiGet<{ total?: number } | unknown[]>('/api/orders?pageSize=1&page=1&status=CONFIRMED'),
@@ -92,6 +93,7 @@ export default function InventoryPage() {
           apiGet<unknown[]>('/api/stock-moves?limit=1000'),
           apiGet<{ total: number }>('/api/order-discrepancies?status=PENDING&limit=0'),
           apiGet<{ total: number }>('/api/order-discrepancies?limit=0'),
+          apiGet<{ total?: number }>('/api/purchase-suggestions?status=pending&pageSize=1').catch(() => ({ total: 0 })),
         ])
 
         const getTotal = (r: { total?: number } | unknown[]) =>
@@ -124,6 +126,7 @@ export default function InventoryPage() {
             pending: (discPending as { total: number }).total ?? 0,
             total: (discAll as { total: number }).total ?? 0,
           },
+          suggestions: { pending: (suggPending as { total?: number }).total ?? 0 },
         })
       } catch {
         setStats({
@@ -133,6 +136,7 @@ export default function InventoryPage() {
           adjustments: { total: 0, thisMonth: 0 },
           scrap: { total: 0, thisMonth: 0 },
           discrepancies: { pending: 0, total: 0 },
+          suggestions: { pending: 0 },
         })
       } finally {
         setLoading(false)
@@ -167,23 +171,11 @@ export default function InventoryPage() {
             ]}
           />
           <StatCard
-            title="发货单"
-            icon="🚚"
-            href={`${prefix}/classic/operator/inventory/deliveries`}
+            title="采购建议"
+            icon="🛒"
+            href={`${prefix}/classic/operator/purchases/suggestions`}
             stats={[
-              { label: '待发货', value: stats.deliveries.toProcess, highlight: stats.deliveries.toProcess > 0 },
-              { label: '配送中', value: stats.deliveries.inDelivery, highlight: stats.deliveries.inDelivery > 0 },
-              { label: '已完成', value: stats.deliveries.completed },
-            ]}
-          />
-          <StatCard
-            title="销售订单"
-            icon="🧾"
-            href={`${prefix}/classic/operator/inventory/deliveries`}
-            stats={[
-              { label: '待确认', value: stats.orders.pending, highlight: stats.orders.pending > 0 },
-              { label: '已确认', value: stats.orders.confirmed },
-              { label: '全部订单', value: stats.orders.total },
+              { label: '待处理建议', value: stats.suggestions.pending, highlight: stats.suggestions.pending > 0 },
             ]}
           />
           <StatCard
@@ -215,38 +207,6 @@ export default function InventoryPage() {
           />
         </div>
       ) : null}
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {[
-          { title: '快速导航', links: [
-            { label: '查看收货单列表', href: `${prefix}/classic/operator/inventory/receipts` },
-            { label: '查看发货单列表', href: `${prefix}/classic/operator/inventory/deliveries` },
-            { label: '库存调整记录', href: `${prefix}/classic/operator/inventory/adjustments` },
-            { label: '报废管理', href: `${prefix}/classic/operator/inventory/scrap` },
-            { label: '拣货差异处理', href: `${prefix}/classic/operator/inventory/discrepancies` },
-          ]},
-          { title: '关联模块', links: [
-            { label: '采购订单', href: `${prefix}/classic/operator/purchases` },
-            { label: '销售订单', href: `${prefix}/classic/operator/orders` },
-            { label: '配送单', href: `${prefix}/classic/operator/trips` },
-          ]},
-        ].map((section) => (
-          <div key={section.title} className="bg-white rounded-xl border p-4" style={{ borderColor: BORDER }}>
-            <h4 className="text-xs font-semibold mb-3" style={{ color: PURPLE }}>{section.title}</h4>
-            <div className="space-y-1">
-              {section.links.map((l) => (
-                <a
-                  key={l.href}
-                  href={l.href}
-                  className="block text-sm text-gray-600 hover:text-purple-700 py-1 hover:underline"
-                >
-                  {l.label}
-                </a>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
