@@ -4,7 +4,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet, apiPut, apiPost } from '@/lib/api'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import type { ProductTemplate, ProductCategory, Order } from '@/lib/types'
@@ -146,6 +146,15 @@ export default function ClassicProductDetailPage() {
   const [soldAmount, setSoldAmount] = useState(0)
   const [onHandQty, setOnHandQty] = useState(0)
 
+  // 手动库存调整（针对本商品的库存单元 variant）
+  const [variants, setVariants] = useState<{ id: string; name: string; qtyOnHand: number; uomName?: string }[]>([])
+  const [showAdjust, setShowAdjust] = useState(false)
+  const [adjVariantId, setAdjVariantId] = useState('')
+  const [adjDir, setAdjDir] = useState<'in' | 'out'>('in')
+  const [adjQty, setAdjQty] = useState('')
+  const [adjNote, setAdjNote] = useState('')
+  const [adjSubmitting, setAdjSubmitting] = useState(false)
+
   // Extra local state (not in ProductTemplate)
   const [vendorLines, setVendorLines] = useState<VendorLine[]>([])
   const [availableInPos, setAvailableInPos] = useState(false)
@@ -198,9 +207,11 @@ export default function ClassicProductDetailPage() {
         setSoldCount(count)
         setSoldAmount(amount)
         try {
-          const allProducts = await apiGet<Array<{ templateId: string; qtyOnHand: number }>>('/api/products')
-          const qty = allProducts.filter(p => p.templateId === templateId).reduce((s, p) => s + (p.qtyOnHand ?? 0), 0)
-          setOnHandQty(qty)
+          const allProducts = await apiGet<Array<{ id: string; name: string; templateId: string; qtyOnHand: number; uomName?: string }>>('/api/products')
+          const mine = allProducts.filter(p => p.templateId === templateId)
+          setOnHandQty(mine.reduce((s, p) => s + (p.qtyOnHand ?? 0), 0))
+          setVariants(mine.map(p => ({ id: p.id, name: p.name, qtyOnHand: p.qtyOnHand ?? 0, uomName: p.uomName })))
+          if (mine.length === 1) setAdjVariantId(mine[0].id)
         } catch { /* ignore */ }
       }
       setCategories(cats)
@@ -210,6 +221,32 @@ export default function ClassicProductDetailPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  async function submitAdjust() {
+    const vid = adjVariantId || variants[0]?.id
+    if (!vid) { toast.error('该商品暂无可调整的库存单元'); return }
+    const n = Number(adjQty)
+    if (!Number.isFinite(n) || n <= 0) { toast.error('请输入大于 0 的调整数量'); return }
+    const qty = adjDir === 'in' ? n : -n
+    const v = variants.find(x => x.id === vid)
+    setAdjSubmitting(true)
+    try {
+      await apiPost('/api/stock-moves', {
+        productId: vid,
+        productName: v?.name ?? tmpl?.name ?? '商品',
+        qty,
+        type: 'ADJUSTMENT',
+        note: adjNote.trim() || (adjDir === 'in' ? '手动盘盈' : '手动盘亏'),
+      })
+      toast.success('库存调整成功')
+      setShowAdjust(false); setAdjQty(''); setAdjNote(''); setAdjDir('in')
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '调整失败')
+    } finally {
+      setAdjSubmitting(false)
+    }
+  }
 
   function setField<K extends keyof ProductTemplate>(key: K, value: ProductTemplate[K]) {
     setTmpl(prev => prev ? { ...prev, [key]: value } : null)
@@ -775,7 +812,14 @@ export default function ClassicProductDetailPage() {
 
           {/* ── Inventory ── */}
           {activeTab === 'inventory' && (
-            editMode ? (
+            <div>
+              {!isNew && (
+                <div className="mb-4 pb-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+                  <button onClick={() => setShowAdjust(true)} className="px-3 py-1.5 rounded text-sm font-medium text-white" style={{ background: '#875A7B' }}>＋ 手动调整库存</button>
+                  <span className="text-xs text-gray-400">当前在手合计 {onHandQty.toFixed(2)}</span>
+                </div>
+              )}
+              {editMode ? (
               <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-xl">
                 <Row label="Weight (kg)">
                   <NumericInput step="0.001" min={0} value={tmpl.weight ?? 0} onChange={e => setField('weight', parseFloat(e.target.value) || undefined)} className={fieldClass} style={focusStyle} />
@@ -800,7 +844,8 @@ export default function ClassicProductDetailPage() {
                   tmpl.tracking === 'serial' ? 'By Serial Number' : 'No Tracking'
                 } />
               </div>
-            )
+            )}
+            </div>
           )}
 
         </div>
@@ -808,11 +853,7 @@ export default function ClassicProductDetailPage() {
 
       {/* ── Chatter ──────────────────────────────────────────────────────────── */}
       <div className="mx-4 mb-4 bg-white border border-gray-200 rounded p-4">
-        <div className="flex items-center gap-4 pb-3 border-b border-gray-100">
-          <button className="text-sm text-gray-500 hover:text-gray-700 font-medium">Send message</button>
-          <button className="text-sm text-gray-500 hover:text-gray-700">Log note</button>
-          <button className="text-sm text-gray-500 hover:text-gray-700">Schedule activity</button>
-        </div>
+        <h3 className="text-sm font-semibold text-gray-700 pb-3 border-b border-gray-100">操作日志</h3>
 
         <div className="pt-4">
           <ChatterFeed
@@ -824,6 +865,54 @@ export default function ClassicProductDetailPage() {
           />
         </div>
       </div>
+
+      {showAdjust && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (!adjSubmitting) setShowAdjust(false) }}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>手动库存调整 · {tmpl?.name}</h2>
+              <button onClick={() => setShowAdjust(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0 ml-2">✕</button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              {variants.length > 1 ? (
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">库存单元 *</label>
+                  <select value={adjVariantId} onChange={e => setAdjVariantId(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none">
+                    <option value="">— 选择库存单元 —</option>
+                    {variants.map(v => <option key={v.id} value={v.id}>{v.name}（在手 {v.qtyOnHand}）</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div className="text-xs text-gray-500">当前在手：{variants[0]?.qtyOnHand ?? onHandQty}{variants[0]?.uomName ? ' ' + variants[0].uomName : ''}</div>
+              )}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">调整方向 *</label>
+                <div className="flex gap-2">
+                  <button onClick={() => setAdjDir('in')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={adjDir === 'in' ? { background: '#dcfce7', borderColor: '#16a34a', color: '#15803d' } : { borderColor: '#d1d5db', color: '#6b7280' }}>盘盈（+ 增加）</button>
+                  <button onClick={() => setAdjDir('out')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={adjDir === 'out' ? { background: '#fee2e2', borderColor: '#dc2626', color: '#b91c1c' } : { borderColor: '#d1d5db', color: '#6b7280' }}>盘亏（− 减少）</button>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">调整数量 *</label>
+                <input type="number" min="0" step="any" value={adjQty} onChange={e => setAdjQty(e.target.value)} placeholder="输入数量（正数）" className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none" />
+                {Number(adjQty) > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    调整后在手：{(variants.find(v => v.id === (adjVariantId || variants[0]?.id))?.qtyOnHand ?? onHandQty)} → <span className="font-semibold" style={{ color: '#875A7B' }}>{(variants.find(v => v.id === (adjVariantId || variants[0]?.id))?.qtyOnHand ?? onHandQty) + (adjDir === 'in' ? 1 : -1) * Number(adjQty)}</span>
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">调整原因 / 备注</label>
+                <input value={adjNote} onChange={e => setAdjNote(e.target.value)} placeholder="如：盘点差异、损耗、期初录入…" className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button onClick={() => setShowAdjust(false)} className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-600">取消</button>
+              <button onClick={submitAdjust} disabled={adjSubmitting} className="px-4 py-2 text-sm rounded text-white font-medium disabled:opacity-50" style={{ background: '#875A7B' }}>{adjSubmitting ? '提交中…' : '确认调整'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 
