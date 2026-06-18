@@ -81,9 +81,9 @@ export default function OperatorWorkbench() {
         <TodoCard icon="📝" count={c('pendingQuotations')} label="待确认报价单"
           desc="确认后进入拣货配送流程" href={`${p}/quotations`} />
         <TodoCard icon="🚦" count={c('unassignedConfirmed')} label="今日待分配订单"
-          desc="去拣货波次分给司机" href={`${p}/waves`} />
+          desc="去配送调度中心分给司机" href={`${p}/dispatch-console`} />
         <TodoCard icon="🚚" count={c('inDelivery')} label="配送中订单"
-          desc="查看配送行程进度" href={`${p}/trips`} warnAt={9999} />
+          desc="在配送调度中心查看行程" href={`${p}/dispatch-console`} warnAt={9999} />
         <TodoCard icon="🧾" count={c('uninvoicedCompleted')} label="已完成待开票"
           desc="去发票页批量生成" href={`${p}/invoices`} />
         <TodoCard icon="↩️" count={c('pendingReturns')} label="待审核退货"
@@ -98,9 +98,8 @@ export default function OperatorWorkbench() {
           {[
             ['下单', `${p}/place-order`],
             ['报价单确认', `${p}/quotations`],
-            ['波次分配', `${p}/waves`],
-            ['分货', `${p}/sorting`],
-            ['配送', `${p}/trips`],
+            ['波次分配', `${p}/dispatch-console`],
+            ['配送', `${p}/dispatch-console`],
             ['开票', `${p}/invoices`],
             ['对账', `${prefix}/classic/finance/statements`],
           ].map(([label, href], i, arr) => (
