@@ -31,13 +31,14 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // { href: `${prefix}/classic/operator/sorting`,   label: en ? 'Sorting'       : '分货' },
     // { href: `${prefix}/classic/operator/trips`,     label: en ? 'Deliveries'    : '配送单' },
     { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch Console' : '配送调度中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
-    { href: `${prefix}/classic/operator/invoices`,  label: en ? 'Invoices'      : '发票' },
+    // 发票 + 供应商账单合并到「会计」tab 式页面
+    { href: `${prefix}/classic/operator/accounting`, label: en ? 'Accounting' : '会计', activePaths: [`${prefix}/classic/operator/accounting`] },
     { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },
     // 信用票已隐藏导航入口
     // { href: `${prefix}/classic/operator/credit-notes`, label: en ? 'Credit Notes' : '信用票' },
     { href: `${prefix}/classic/operator/purchases`, label: en ? 'Purchases'     : '采购' },
-    { href: `${prefix}/classic/operator/purchases/suggestions`, label: en ? 'Purchase Suggestions' : '采购建议' },
-    { href: `${prefix}/classic/operator/vendor-bills`, label: en ? 'Vendor Bills' : '供应商账单' },
+    // 采购建议已整合进「库存管理」tab，供应商账单已移至发票旁，隐藏/移除此处入口
+    // { href: `${prefix}/classic/operator/purchases/suggestions`, label: en ? 'Purchase Suggestions' : '采购建议' },
     { href: `${prefix}/classic/operator/inventory`, label: en ? 'Inventory'     : '库存管理', activePaths: [`${prefix}/classic/operator/inventory`] },
     // divider
     { href: '', label: '│' },
