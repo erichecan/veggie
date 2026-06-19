@@ -17,6 +17,8 @@ enum Role {
   FINANCE
   WAREHOUSE
   SALES
+  DISPATCH
+  OTHER
 }
 
 enum ProductType {
