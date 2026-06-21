@@ -238,18 +238,18 @@ export default function ClassicInvoiceDetailPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {inv.lines.map((line, i) => (
+            {(inv.lines ?? []).map((line, i) => (
               <tr key={i} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <p className="font-medium text-gray-800">{line.productName}</p>
                   <p className="text-xs text-gray-400">{line.spec}</p>
                 </td>
-                <td className="px-4 py-3 text-center">{line.qty}</td>
-                <td className="px-4 py-3 text-right">€{line.unitPrice.toFixed(2)}</td>
-                <td className="px-4 py-3 text-center text-gray-500">{(line.taxRate * 100).toFixed(1)}%</td>
-                <td className="px-4 py-3 text-right">€{line.subtotalExTax.toFixed(2)}</td>
-                <td className="px-4 py-3 text-right text-gray-500">€{line.taxAmount.toFixed(2)}</td>
-                <td className="px-4 py-3 text-right font-medium">€{line.subtotalIncTax.toFixed(2)}</td>
+                <td className="px-4 py-3 text-center">{Number(line.qty ?? 0)}</td>
+                <td className="px-4 py-3 text-right">€{Number(line.unitPrice ?? 0).toFixed(2)}</td>
+                <td className="px-4 py-3 text-center text-gray-500">{(Number(line.taxRate ?? 0) * 100).toFixed(1)}%</td>
+                <td className="px-4 py-3 text-right">€{Number(line.subtotalExTax ?? 0).toFixed(2)}</td>
+                <td className="px-4 py-3 text-right text-gray-500">€{Number(line.taxAmount ?? 0).toFixed(2)}</td>
+                <td className="px-4 py-3 text-right font-medium">€{Number(line.subtotalIncTax ?? 0).toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -261,25 +261,25 @@ export default function ClassicInvoiceDetailPage() {
         <div className="space-y-2">
           <div className="flex justify-between text-sm text-gray-600">
             <span>税前小计</span>
-            <span>€{inv.subtotalExTax.toFixed(2)}</span>
+            <span>€{Number(inv.subtotalExTax ?? 0).toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
             <span>VAT 合计</span>
-            <span>€{inv.totalTax.toFixed(2)}</span>
+            <span>€{Number(inv.totalTax ?? 0).toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-base font-bold text-gray-900 border-t border-gray-200 pt-2 mt-2">
             <span>含税总额</span>
-            <span>€{inv.totalIncTax.toFixed(2)}</span>
+            <span>€{Number(inv.totalIncTax ?? 0).toFixed(2)}</span>
           </div>
-          {inv.amountPaid > 0 && (
+          {Number(inv.amountPaid ?? 0) > 0 && (
             <div className="flex justify-between text-sm text-green-600">
               <span>已付款</span>
-              <span>€{inv.amountPaid.toFixed(2)}</span>
+              <span>€{Number(inv.amountPaid ?? 0).toFixed(2)}</span>
             </div>
           )}
-          <div className={`flex justify-between text-base font-bold ${inv.amountDue > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+          <div className={`flex justify-between text-base font-bold ${Number(inv.amountDue ?? 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>
             <span>待收款</span>
-            <span>€{inv.amountDue.toFixed(2)}</span>
+            <span>€{Number(inv.amountDue ?? 0).toFixed(2)}</span>
           </div>
         </div>
       </div>

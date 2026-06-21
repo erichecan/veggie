@@ -76,7 +76,7 @@ export default function SalesOrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('lines')
   const [editing, setEditing] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [internalNote, setInternalNote] = useState('')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
@@ -208,22 +208,17 @@ export default function SalesOrderDetailPage() {
     }
   }
 
-  async function handleGenerateWave() {
-    if (!order || generating) return
-    setGenerating(true)
+  async function handlePrint() {
+    if (!order || printing) return
+    setPrinting(true)
     try {
-      const wave = await apiPost('/api/waves', { orderIds: [order.id], status: 'PENDING' })
-      await apiPut(`/api/orders/${order.id}`, { status: 'WAVE_ASSIGNED' })
-      toast.success('拣货单已生成')
-      const waveId = (wave as { id?: string }).id
-      if (waveId) {
-        router.push(`${prefix}/classic/operator/waves/${waveId}`)
-      } else {
-        router.push(`${prefix}/classic/operator/waves`)
-      }
+      await apiPost(`/api/orders/${order.id}/mark-printed`, { type: 'SALES' })
+      window.open(`${prefix}/classic/print/${order.id}`, '_blank')
+      await load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '生成失败')
-      setGenerating(false)
+      toast.error(e instanceof Error ? e.message : '打印失败')
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -379,19 +374,11 @@ export default function SalesOrderDetailPage() {
             )}
             <div className="h-5 w-px bg-gray-200 mx-1" />
             <button
-              onClick={() => window.open(`${prefix}/classic/print/${order.id}`, '_blank')}
-              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+              onClick={handlePrint}
+              disabled={printing}
+              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">
               Print
             </button>
-            {isConfirmed && (
-              <button
-                onClick={handleGenerateWave}
-                disabled={generating}
-                className="h-8 px-4 text-sm rounded text-white font-medium disabled:opacity-50"
-                style={{ background: PURPLE }}>
-                {generating ? '生成中…' : '生成拣货单'}
-              </button>
-            )}
             {isConfirmed && !editing && (
               <button onClick={handleWithdraw}
                 className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">

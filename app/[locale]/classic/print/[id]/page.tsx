@@ -296,9 +296,10 @@ ${bodyHtml}
   }
 
   return (
-    <div
-      dangerouslySetInnerHTML={{ __html: html }}
-      style={{ all: 'unset' }}
+    <iframe
+      srcDoc={html}
+      title="print"
+      style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', border: 'none' }}
     />
   )
 }

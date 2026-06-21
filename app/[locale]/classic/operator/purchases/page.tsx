@@ -82,7 +82,6 @@ export default function PurchasesPage() {
   const [newSupplierId, setNewSupplierId] = useState('')
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [isReadMode, setIsReadMode] = useState(true)
   const [groupBy, setGroupBy] = useState('')
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importSupplierId, setImportSupplierId] = useState('')
@@ -163,6 +162,17 @@ export default function PurchasesPage() {
     }
   }
 
+  function downloadCsvTemplate() {
+    const content = '商品名称,数量,单价\n示例商品A,10,5.50\n示例商品B,20,3.20\n'
+    const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '采购导入模板.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   async function handleImport() {
     if (!importSupplierId) { toast.error('请选择供应商'); return }
     if (!importFile) { toast.error('请选择文件'); return }
@@ -203,15 +213,6 @@ export default function PurchasesPage() {
         permanentActions={[
           { label: '新建', onClick: () => setShowNewDialog(true), primary: true },
           { label: 'Import', onClick: () => { setShowImportDialog(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
-          ...(isReadMode
-            ? [
-                { label: 'Mode', onClick: () => setIsReadMode(false) },
-                { label: 'Read', onClick: () => {}, primary: true },
-              ]
-            : [
-                { label: 'Edit', onClick: () => {}, primary: true },
-                { label: 'Mode', onClick: () => setIsReadMode(true) },
-              ]),
         ]}
         searchValue={searchInput}
         onSearch={v => setSearchInput(v)}
@@ -419,7 +420,17 @@ export default function PurchasesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">文件（PDF / Excel / CSV，最大 10MB）</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-gray-500">文件（PDF / Excel / CSV，最大 10MB）</label>
+                    <button
+                      type="button"
+                      onClick={downloadCsvTemplate}
+                      className="text-xs font-medium hover:underline"
+                      style={{ color: '#875A7B' }}
+                    >
+                      ↓ 下载 CSV 模板
+                    </button>
+                  </div>
                   <input
                     type="file"
                     accept=".pdf,.xlsx,.xls,.csv"
@@ -429,6 +440,7 @@ export default function PurchasesPage() {
                   {importFile && (
                     <p className="mt-1 text-xs text-gray-400">{importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)</p>
                   )}
+                  <p className="mt-1 text-xs text-gray-400">表头列：商品名称、数量、单价（顺序不限，无表头时按前三列识别）</p>
                 </div>
                 <div className="flex gap-2 pt-2">
                   <button

@@ -155,7 +155,6 @@ export default function ClassicInvoicesPage() {
   const [page, setPage] = useState(1)
   const [sortKey, setSortKey] = useState('createdAt')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [isReadMode, setIsReadMode] = useState(true)
   const [statusFilter, setStatusFilter] = useState<Invoice['status'] | ''>('')
   const [groupBy, setGroupBy] = useState('')
 
@@ -250,15 +249,6 @@ export default function ClassicInvoicesPage() {
         breadcrumb={['财务', '发票']}
         permanentActions={[
           { label: '新建', onClick: () => { setGenOpen(true); setSelectedCustomerId(''); setSelectedOrderIds([]) }, primary: true },
-          ...(isReadMode
-            ? [
-                { label: 'Mode', onClick: () => setIsReadMode(false) },
-                { label: 'Read', onClick: () => {}, primary: true },
-              ]
-            : [
-                { label: 'Edit', onClick: () => {}, primary: true },
-                { label: 'Mode', onClick: () => setIsReadMode(true) },
-              ]),
         ]}
         searchValue={searchInput}
         onSearch={v => { setSearchInput(v); setPage(1) }}
