@@ -265,20 +265,6 @@ export default function ClassicOrdersPage() {
     setPendingBatch({})
   }
 
-  async function generateWaveForOrder(order: Order, e: React.MouseEvent) {
-    e.stopPropagation()
-    try {
-      const wave = await apiPost('/api/waves', { orderIds: [order.id], status: 'PENDING' })
-      await apiPut(`/api/orders/${order.id}`, { status: 'WAVE_ASSIGNED' })
-      toast.success('拣货单已生成')
-      const waveId = (wave as { id?: string }).id
-      if (waveId) router.push(`${prefix}/classic/operator/waves/${waveId}`)
-      else { router.push(`${prefix}/classic/operator/waves`); refresh() }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '生成失败')
-    }
-  }
-
   // 打印送货单/销售单并记录打印状态（时间/打印人/类型/次数）
   async function printOrder(orderId: string, type: 'DELIVERY' | 'SALES') {
     const doc = type === 'DELIVERY' ? 'delivery' : 'sales'
@@ -477,13 +463,6 @@ export default function ClassicOrdersPage() {
               <option value="DELIVERY">送货单</option>
               <option value="SALES">销售单</option>
             </select>
-            {o.status === 'confirmed' && (
-              <button
-                onClick={e => generateWaveForOrder(o, e)}
-                className="px-2 py-1 text-xs rounded border border-indigo-300 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 whitespace-nowrap">
-                生成拣货单
-              </button>
-            )}
             {!isReadMode && o.status === 'confirmed' && (
               <button
                 onClick={async e => {

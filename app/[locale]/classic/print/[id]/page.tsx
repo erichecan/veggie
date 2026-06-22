@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import type { Order, Customer } from '@/lib/types'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import JsBarcode from 'jsbarcode'
 
 function fmtDate(iso?: string | Date | null): string {
   if (!iso) return '—'
@@ -15,6 +16,19 @@ function fmtDate(iso?: string | Date | null): string {
 function eur(v: unknown): string {
   const n = Number(v)
   return isNaN(n) ? '0.00' : n.toFixed(2)
+}
+
+// 预渲染 CODE128 条形码为内嵌 SVG（不依赖外部 CDN，规避 CSP 拦截）
+function barcodeSvg(code: string): string {
+  if (typeof document === 'undefined' || !code) return ''
+  try {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    JsBarcode(svg, code, { format: 'CODE128', width: 1.5, height: 45, displayValue: false, margin: 0 })
+    svg.setAttribute('class', 'barcode-svg')
+    return new XMLSerializer().serializeToString(svg)
+  } catch {
+    return ''
+  }
 }
 
 export function buildOrderHtml(
@@ -40,7 +54,6 @@ export function buildOrderHtml(
   const total = subtotal + totalVat
 
   const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
-  const safeCode = orderCode.replace(/['"\\]/g, '')
 
   const customerAddr = [
     customer?.street || customer?.address,
@@ -108,7 +121,7 @@ export function buildOrderHtml(
       </td>
       <td class="barcode-cell">
         <div class="info-head">${docNoLabel}</div>
-        <svg id="bc-${safeCode}" class="barcode-svg"></svg>
+        ${barcodeSvg(orderCode)}
         <div class="barcode-code">${orderCode}</div>
       </td>
       <td>
@@ -234,7 +247,6 @@ export default function PrintPage() {
         ])
         const customer = customers.find(c => c.id === order.restaurantId) ?? null
         const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
-        const safeCode = orderCode.replace(/['"\\]/g, '')
 
         const bodyHtml = buildOrderHtml(order, customer, { docType })
 
@@ -244,7 +256,6 @@ export default function PrintPage() {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${docTitle} ${orderCode}</title>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
 <style>${CSS}</style>
 </head>
 <body>
@@ -263,13 +274,6 @@ ${bodyHtml}
 </div>
 
 <script>
-  JsBarcode('#bc-${safeCode}', ${JSON.stringify(orderCode)}, {
-    format: 'CODE128',
-    width: 1.5,
-    height: 45,
-    displayValue: false,
-    margin: 0,
-  });
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
   document.getElementById('print-ts').textContent =
