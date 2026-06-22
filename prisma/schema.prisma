@@ -1074,7 +1074,7 @@ model DriverSlot {
   orders     Order[]
   defaultCustomers Customer[] @relation("CustomerDefaultSlot")
 
-  @@unique([driverName])
+  @@unique([timeOfDay, batchNum, driverName])
 }
 
 /// 采购建议（P0-2：系统根据需求-库存自动生成）

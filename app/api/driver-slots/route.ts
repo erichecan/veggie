@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes('Unique constraint')) {
-      return NextResponse.json({ error: '该司机名字已存在' }, { status: 409 })
+      return NextResponse.json({ error: '该司机已在相同时段和批次中（若在归档里请先恢复）' }, { status: 409 })
     }
     console.error('[driver-slots POST]', e)
     return NextResponse.json({ error: 'Failed to create driver slot' }, { status: 500 })

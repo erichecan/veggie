@@ -52,8 +52,8 @@ async function setupDrivers(): Promise<Slot[]> {
   const out: Slot[] = []
   for (const d of FIXED_DRIVERS) {
     const s = await prisma.driverSlot.upsert({
-      where: { driverName: d.driverName },
-      update: { timeOfDay: d.timeOfDay, batchNum: d.batchNum, archived: false },
+      where: { timeOfDay_batchNum_driverName: { timeOfDay: d.timeOfDay, batchNum: d.batchNum, driverName: d.driverName } },
+      update: { archived: false },
       create: d,
       select: { id: true, driverName: true, timeOfDay: true, batchNum: true },
     })

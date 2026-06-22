@@ -128,7 +128,7 @@ export default function DriversPage() {
       toast.success('已保存')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      toast.error(msg.includes('409') || msg.includes('已存在') ? '该司机名字已存在' : '保存失败')
+      toast.error(msg.includes('409') || msg.includes('已存在') || msg.includes('相同时段') ? '该司机已在相同时段和批次中（若在归档里请先恢复）' : '保存失败')
     } finally {
       setSaving(s => ({ ...s, [key]: false }))
     }

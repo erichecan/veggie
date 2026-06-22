@@ -117,6 +117,7 @@ export default function ClassicOrdersPage() {
   }, [])
   const [groupBy, setGroupBy] = useState('')
   const [showDayWise, setShowDayWise] = useState(false)
+  const [printHistFor, setPrintHistFor] = useState<string | null>(null)
 
   // Build status param from active filter — changes trigger server refetch via useServerList
   const statusParam = useMemo(() => {
@@ -424,45 +425,77 @@ export default function ClassicOrdersPage() {
           € {o.totalAmount.toFixed(2)}
         </td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{INV_LABEL[invStatus]}</td>
-        <td className="px-2 py-2">
+        <td className="px-2 py-2 min-w-[72px]">
           <div className="flex items-center gap-1.5">
-            <span className={`inline-block px-2 py-0.5 rounded text-xs ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
+            <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
               {STATUS_LABEL[o.status] ?? String(o.status)}
             </span>
             {!!(o as unknown as Record<string, unknown>).orderReturn && (
-              <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-600 font-medium">有退货</span>
+              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-600 font-medium">有退货</span>
             )}
           </div>
         </td>
-        <td className="px-2 py-2">
-          {(() => {
-            if (!o.printedAt) return <span className="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500">未打印</span>
-            const cnt = o.printCount ?? 0
-            const typeLabel = o.printType === 'DELIVERY' ? '送货单' : o.printType === 'SALES' ? '销售单' : ''
-            return (
-              <div className="text-xs leading-tight">
-                <span className="inline-block px-2 py-0.5 rounded bg-green-50 text-green-700">已打印 ✓{cnt > 1 ? ` ×${cnt}` : ''}</span>
-                <div className="text-gray-500 mt-0.5 whitespace-nowrap">
-                  {formatDateTimeShort(o.printedAt)}{o.printedByName ? ` · ${o.printedByName}` : ''}{typeLabel ? ` · ${typeLabel}` : ''}
-                </div>
-              </div>
-            )
-          })()}
+        <td className="px-2 py-2 min-w-[180px]" onClick={e => e.stopPropagation()}>
+          {!o.printedAt ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => printOrder(o.id, 'SALES')}
+                className="px-2 py-0.5 text-xs rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 whitespace-nowrap"
+                title="打印销售单"
+              >销售单</button>
+              <button
+                onClick={() => printOrder(o.id, 'DELIVERY')}
+                className="px-2 py-0.5 text-xs rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 whitespace-nowrap"
+                title="打印送货单"
+              >送货单</button>
+            </div>
+          ) : (
+            <div className="relative flex items-center gap-1.5">
+              <span className="inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-400">
+                已打印{(o.printCount ?? 0) > 1 ? ` ×${o.printCount}` : ''}
+              </span>
+              <button
+                onClick={() => setPrintHistFor(printHistFor === o.id ? null : o.id)}
+                className="inline-flex items-center text-gray-400 hover:text-purple-600"
+                title="查看打印记录"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M12 7v5l4 2" />
+                </svg>
+              </button>
+              {printHistFor === o.id && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setPrintHistFor(null)} />
+                  <div className="absolute left-0 top-full mt-1 z-30 w-56 rounded-lg border bg-white shadow-lg p-3 text-xs" style={{ borderColor: '#e5d5e2' }}>
+                    <div className="font-semibold text-gray-700 mb-1.5">打印记录</div>
+                    <div className="space-y-1 text-gray-600">
+                      <div>时间：{formatDateTimeShort(o.printedAt)}</div>
+                      <div>打印人：{o.printedByName || '—'}</div>
+                      <div>文件：{o.printType === 'DELIVERY' ? '送货单' : o.printType === 'SALES' ? '销售单' : '—'}</div>
+                      <div>共打印：{o.printCount ?? 0} 次</div>
+                    </div>
+                    <div className="flex gap-1.5 mt-2.5 pt-2 border-t" style={{ borderColor: '#f0e4ee' }}>
+                      <button
+                        onClick={() => { setPrintHistFor(null); printOrder(o.id, 'SALES') }}
+                        className="px-2 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                      >重印销售单</button>
+                      <button
+                        onClick={() => { setPrintHistFor(null); printOrder(o.id, 'DELIVERY') }}
+                        className="px-2 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                      >重印送货单</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </td>
         <td className="px-2 py-2 text-sm text-gray-500 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={o.createdAt} /></td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1">
-            <select
-              defaultValue=""
-              onChange={e => { const t = e.target.value; e.currentTarget.value = ''; if (t) printOrder(o.id, t as 'DELIVERY' | 'SALES') }}
-              className="px-1.5 py-1 text-xs rounded border border-gray-300 text-gray-600 bg-white cursor-pointer hover:border-purple-400"
-              title="打印并记录打印状态"
-            >
-              <option value="" disabled>🖨 打印…</option>
-              <option value="DELIVERY">送货单</option>
-              <option value="SALES">销售单</option>
-            </select>
             {!isReadMode && o.status === 'confirmed' && (
               <button
                 onClick={async e => {

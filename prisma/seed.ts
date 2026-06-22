@@ -374,7 +374,7 @@ async function main() {
   const driverSlotMap = new Map<string, string>()
   for (const d of demoDrivers) {
     const slot = await prisma.driverSlot.upsert({
-      where: { driverName: d.driverName },
+      where: { timeOfDay_batchNum_driverName: { timeOfDay: d.timeOfDay, batchNum: d.batchNum, driverName: d.driverName } },
       update: {},
       create: { driverName: d.driverName, batchNum: d.batchNum, timeOfDay: d.timeOfDay },
     })

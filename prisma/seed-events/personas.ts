@@ -61,7 +61,7 @@ async function ensureDriverSlots(
   for (const d of defaults) {
     if (existing.some((e) => e.driverName === d.driverName)) continue
     const created = await prisma.driverSlot.upsert({
-      where: { driverName: d.driverName },
+      where: { timeOfDay_batchNum_driverName: { timeOfDay: d.timeOfDay, batchNum: d.batchNum, driverName: d.driverName } },
       update: {},
       create: d,
       select: { id: true, driverName: true },
