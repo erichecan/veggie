@@ -23,8 +23,24 @@ export async function POST(req: Request) {
     if (!timeOfDay || !batchNum || !driverName?.trim()) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    const name = driverName.trim()
+    const num = Number(batchNum)
+    // 唯一约束含归档：撞到归档记录则自动恢复（复活），撞到活跃记录才报冲突
+    const existing = await prisma.driverSlot.findUnique({
+      where: { timeOfDay_batchNum_driverName: { timeOfDay, batchNum: num, driverName: name } },
+    })
+    if (existing) {
+      if (existing.archived) {
+        const restored = await prisma.driverSlot.update({
+          where: { id: existing.id },
+          data: { archived: false },
+        })
+        return NextResponse.json(restored, { status: 200 })
+      }
+      return NextResponse.json({ error: '该司机已在相同时段和批次中' }, { status: 409 })
+    }
     const slot = await prisma.driverSlot.create({
-      data: { timeOfDay, batchNum: Number(batchNum), driverName: driverName.trim() },
+      data: { timeOfDay, batchNum: num, driverName: name },
     })
     return NextResponse.json(slot, { status: 201 })
   } catch (e: unknown) {

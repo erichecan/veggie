@@ -36,6 +36,24 @@ export default function DriversPage() {
   const [archiving, setArchiving] = useState<Record<string, boolean>>({})
   const newNameRef = useRef<HTMLInputElement>(null)
 
+  type SortKey = 'timeOfDay' | 'batchNum' | 'driverName'
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [filterTime, setFilterTime] = useState('')
+  const [filterBatch, setFilterBatch] = useState('')
+  const [filterName, setFilterName] = useState('')
+
+  function toggleSort(key: SortKey) {
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); return }
+    if (sortDir === 'asc') { setSortDir('desc'); return }
+    setSortKey(null)
+  }
+
+  function sortArrow(key: SortKey) {
+    if (sortKey !== key) return <span className="text-gray-300">⇅</span>
+    return <span>{sortDir === 'asc' ? '▲' : '▼'}</span>
+  }
+
   async function load() {
     try {
       const data = await apiGet<DriverSlot[]>('/api/driver-slots')
@@ -128,7 +146,7 @@ export default function DriversPage() {
       toast.success('已保存')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      toast.error(msg.includes('409') || msg.includes('已存在') || msg.includes('相同时段') ? '该司机已在相同时段和批次中（若在归档里请先恢复）' : '保存失败')
+      toast.error(msg.includes('409') || msg.includes('已存在') || msg.includes('相同时段') ? '该司机已在相同时段和批次中' : '保存失败')
     } finally {
       setSaving(s => ({ ...s, [key]: false }))
     }
@@ -170,6 +188,24 @@ export default function DriversPage() {
   const focusStyle = { '--tw-ring-color': PURPLE } as React.CSSProperties
   const hasDirty = rows.some(r => r.dirty)
 
+  const displayed = rows
+    .map((row, idx) => ({ row, idx }))
+    .filter(({ row }) => {
+      if (row.editing) return true
+      if (filterTime && row.timeOfDay !== filterTime) return false
+      if (filterBatch && row.batchNum !== filterBatch) return false
+      if (filterName && !row.driverName.toLowerCase().includes(filterName.toLowerCase())) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (!sortKey) return 0
+      let cmp = 0
+      if (sortKey === 'batchNum') cmp = Number(a.row.batchNum) - Number(b.row.batchNum)
+      else if (sortKey === 'timeOfDay') cmp = a.row.timeOfDay.localeCompare(b.row.timeOfDay)
+      else cmp = a.row.driverName.localeCompare(b.row.driverName, 'zh')
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-4">
       {/* 页头 */}
@@ -210,10 +246,59 @@ export default function DriversPage() {
       <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
         {/* Table header */}
         <div className="grid grid-cols-[120px_100px_1fr_auto] gap-3 px-4 py-2.5 text-xs font-semibold border-b" style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb' }}>
-          <span>时段（上午/下午）</span>
-          <span>批次编号</span>
-          <span>司机名字</span>
+          <button type="button" onClick={() => toggleSort('timeOfDay')} className="flex items-center gap-1 text-left hover:opacity-70">
+            时段（上午/下午）{sortArrow('timeOfDay')}
+          </button>
+          <button type="button" onClick={() => toggleSort('batchNum')} className="flex items-center gap-1 text-left hover:opacity-70">
+            批次编号{sortArrow('batchNum')}
+          </button>
+          <button type="button" onClick={() => toggleSort('driverName')} className="flex items-center gap-1 text-left hover:opacity-70">
+            司机名字{sortArrow('driverName')}
+          </button>
           <span className="w-32" />
+        </div>
+
+        {/* Filter row */}
+        <div className="grid grid-cols-[120px_100px_1fr_auto] gap-3 px-4 py-2 border-b items-center" style={{ borderColor: '#f0e4ee', background: '#fdfbfd' }}>
+          <select
+            value={filterTime}
+            onChange={e => setFilterTime(e.target.value)}
+            className="border rounded px-2 py-1 text-xs outline-none focus:ring-1 w-full"
+            style={{ ...inputStyle, ...focusStyle }}
+          >
+            <option value="">全部时段</option>
+            <option value="am">上午</option>
+            <option value="pm">下午</option>
+          </select>
+          <select
+            value={filterBatch}
+            onChange={e => setFilterBatch(e.target.value)}
+            className="border rounded px-2 py-1 text-xs outline-none focus:ring-1 w-full"
+            style={{ ...inputStyle, ...focusStyle }}
+          >
+            <option value="">全部</option>
+            {BATCH_OPTIONS.map(n => <option key={n} value={String(n)}>{n}</option>)}
+          </select>
+          <input
+            type="text"
+            value={filterName}
+            onChange={e => setFilterName(e.target.value)}
+            placeholder="搜索司机名字…"
+            className="border rounded px-2 py-1 text-xs outline-none focus:ring-1 w-full"
+            style={{ ...inputStyle, ...focusStyle }}
+          />
+          <div className="w-32 flex justify-end">
+            {(filterTime || filterBatch || filterName || sortKey) && (
+              <button
+                type="button"
+                onClick={() => { setFilterTime(''); setFilterBatch(''); setFilterName(''); setSortKey(null) }}
+                className="px-2 py-1 rounded text-xs font-medium border"
+                style={{ borderColor: BORDER, color: '#666' }}
+              >
+                清除
+              </button>
+            )}
+          </div>
         </div>
 
         {rows.length === 0 && (
@@ -222,7 +307,13 @@ export default function DriversPage() {
           </div>
         )}
 
-        {rows.map((row, idx) => {
+        {rows.length > 0 && displayed.length === 0 && (
+          <div className="py-12 text-center text-sm text-gray-400">
+            无匹配结果
+          </div>
+        )}
+
+        {displayed.map(({ row, idx }) => {
           const key = row.id ?? `new-${idx}`
           const isSaving = saving[key]
           const isArchiving = archiving[key]

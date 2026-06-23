@@ -135,7 +135,29 @@ closingBalance = openingBalance + totalSales - totalPayments
 
 ---
 
-## 12. 代码缺口汇总（设计种子必读）
+## 12. 司机配置（DriverSlot）批次与改名规则
+
+**模型**：`prisma/schema.prisma:1067` `model DriverSlot`，唯一约束 `@@unique([timeOfDay, batchNum, driverName])`（schema:1079）。
+**配置页**：`app/[locale]/classic/operator/drivers/page.tsx`（支持三列排序 + 时段/批次/司机名筛选）。
+**API**：`app/api/driver-slots/route.ts`、`.../[id]/route.ts`。
+
+### 规则 1 · 归档冲突自动复活（2026-06-22 上线）
+唯一约束**不含 `archived`**，归档记录仍占用 `(timeOfDay, batchNum, driverName)` 组合。
+POST 新增时（route.ts POST）：
+- 命中**归档**的同组合 → 自动 `archived:false` 复活，返回 200（用户体感=可直接新增，不产生重复数据）。
+- 命中**活跃**的同组合 → 409「该司机已在相同时段和批次中」。
+- 无命中 → 正常 create，返回 201。
+
+### 规则 2 · 改名只对未来生效（设计决策，无需级联代码）
+订单/销售单通过外键 `Order.driverSlotId` 关联 slot，改名时 **slot id 不变**。司机名有两种读取方式：
+- **实时关联**（跟随新名）：客户门户、各处下拉、客户默认批次等读 `driverSlot.driverName`。
+- **字符串快照**（保留旧名，不更新）：`Order.deliveryBatch`、`PickingWave.driverName`（schema:629 区）、`Trip.driverName`（schema:666 区）—— 下单/生成波次/行程时固化。
+
+**决策**：允许改名，历史快照保留旧名（符合「历史单据反映当时事实」），改名只影响之后新建的单据。**不做级联同步**。若未来需要历史一致，改为「改名时同步进行中（未完成配送）的订单/波次快照」。
+
+---
+
+## 13. 代码缺口汇总（设计种子必读）
 
 | 能力 | 状态 | 影响种子 |
 |---|---|---|
