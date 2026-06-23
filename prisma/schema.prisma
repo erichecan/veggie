@@ -627,6 +627,8 @@ model PickingWave {
   waveType     String?
   driverSlotId String?
   driverName   String?
+  /// 确认出发时间：操作员点「确认出发」后回填，标记该批次已发车（防重复出发 + 追溯）
+  dispatchedAt DateTime?
   pallets      Pallet[]
 
   @@unique([waveDate, driverSlotId])

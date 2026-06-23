@@ -41,8 +41,8 @@ type ActiveFilter = 'all' | 'to_invoice' | OrderStatus
 
 type ColFilters = {
   code: string
-  quotationDateFrom: string
-  quotationDateTo: string
+  deliveryDateFrom: string
+  deliveryDateTo: string
   customer: string
   createdBy: string
   salesman: string
@@ -54,7 +54,7 @@ type ColFilters = {
 }
 
 const EMPTY_FILTERS: ColFilters = {
-  code: '', quotationDateFrom: '', quotationDateTo: '',
+  code: '', deliveryDateFrom: '', deliveryDateTo: '',
   customer: '', createdBy: '', salesman: '', deliveryBatch: '',
   invoiceStatus: '', status: '', createdAtFrom: '', createdAtTo: '',
 }
@@ -181,8 +181,8 @@ export default function ClassicOrdersPage() {
 
     const cf = colFilters
     if (cf.code) result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(cf.code.toLowerCase()))
-    if (cf.quotationDateFrom) result = result.filter(o => (o.quotationDate ?? o.createdAt ?? '').slice(0, 10) >= cf.quotationDateFrom)
-    if (cf.quotationDateTo)   result = result.filter(o => (o.quotationDate ?? o.createdAt ?? '').slice(0, 10) <= cf.quotationDateTo)
+    if (cf.deliveryDateFrom) result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) >= cf.deliveryDateFrom)
+    if (cf.deliveryDateTo)   result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) <= cf.deliveryDateTo)
     if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
     if (cf.createdBy)   result = result.filter(o => getField(o, 'createdByName').toLowerCase().includes(cf.createdBy.toLowerCase()))
     if (cf.salesman)    result = result.filter(o => (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(cf.salesman.toLowerCase()))
@@ -328,7 +328,7 @@ export default function ClassicOrdersPage() {
       <tr className="bg-white text-gray-500 border-b border-gray-200">
         <td className="pl-3 pr-1 py-1 text-gray-300">✎</td>
         <td className="px-2 py-1"><input value={colFilters.code}         onChange={e => setCf('code', e.target.value)}         className={inputCls} /></td>
-        {dateLabelCell('quotationDateFrom', 'quotationDateTo')}
+        {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
         <td className="px-2 py-1"><input value={colFilters.customer}     onChange={e => setCf('customer', e.target.value)}     className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.createdBy}    onChange={e => setCf('createdBy', e.target.value)}    className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.salesman}     onChange={e => setCf('salesman', e.target.value)}     className={inputCls} /></td>
@@ -380,7 +380,7 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-2 whitespace-nowrap">
           <span className="text-sm" style={{ color: '#875A7B' }}>{displayOrderCode(o)}</span>
         </td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={o.createdAt} /></td>
+        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{o.deliveryDate ? <DateCell iso={o.deliveryDate} /> : <span className="text-gray-300">—</span>}</td>
         <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{createdByName || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
@@ -594,7 +594,7 @@ export default function ClassicOrdersPage() {
               {(
                 [
                   { field: 'code',          label: 'Quotation\nNumber', right: false },
-                  { field: 'createdAt',     label: 'Quotation\nDate',   right: false },
+                  { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'restaurantName',label: 'Customer',          right: false },
                   { field: 'createdBy',     label: 'Created\nby',       right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },

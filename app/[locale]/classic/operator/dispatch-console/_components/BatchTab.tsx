@@ -18,6 +18,7 @@ interface Order {
 interface Wave {
   id: string; name: string | null; orderIds: string[]; status: string
   waveType: string | null; waveNumber: number | null; driverSlotId: string | null; driverName: string | null
+  dispatchedAt: string | null
 }
 interface PalletItem {
   orderId: string; restaurantId: string; restaurantName: string
@@ -75,7 +76,7 @@ export default function BatchTab({ date }: { date: string }) {
     try {
       const [slotData, orderData] = await Promise.all([
         apiGet<DriverSlot[]>('/api/driver-slots'),
-        apiGet<Order[]>('/api/orders?status=CONFIRMED&include_lines=false&limit=500'),
+        apiGet<Order[]>('/api/orders?status=CONFIRMED,IN_DELIVERY&include_lines=false&limit=500'),
       ])
       let waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
       if (waveData.length === 0 && slotData.length > 0) {
@@ -97,15 +98,16 @@ export default function BatchTab({ date }: { date: string }) {
 
   useEffect(() => { load() }, [load])
 
-  const ordersById = new Map(orders.map(o => [o.id, o]))
+  const ordersById = new Map(orders.map(o => [o.id, o])) // 含 IN_DELIVERY，供已出发批次渲染
+  const confirmedOrders = orders.filter(o => o.status === 'CONFIRMED') // 仅可派送（未出发）
   const assigned = new Set(waves.flatMap(w => w.orderIds))
-  const unassigned = orders.filter(o => !assigned.has(o.id))
+  const unassigned = confirmedOrders.filter(o => !assigned.has(o.id))
   const amSlots = slots.filter(s => s.timeOfDay === 'am')
   const pmSlots = slots.filter(s => s.timeOfDay === 'pm')
   const waveForSlot = (slotId: string) => waves.find(w => w.driverSlotId === slotId)
 
-  const confirmedCount = orders.length
-  const assignedCount = orders.filter(o => assigned.has(o.id)).length
+  const confirmedCount = confirmedOrders.length
+  const assignedCount = confirmedOrders.filter(o => assigned.has(o.id)).length
 
   /* ── 乐观分配 / 移除 / 移动（参考 waves 页，不整页 reload）── */
   async function assignToWave(waveId: string, orderId: string) {
@@ -159,6 +161,18 @@ export default function BatchTab({ date }: { date: string }) {
     } catch (e) { toast.error(e instanceof Error ? e.message : '移动失败'); load() }
   }
 
+  // 确认出发：回填交货日期(=排程日期)，订单转 IN_DELIVERY，波次标记已出发
+  async function dispatchWave(waveId: string) {
+    const wave = waves.find(w => w.id === waveId)
+    if (!wave || wave.orderIds.length === 0) return
+    if (!confirm(`确认「${wave.driverName ?? ''}」批次出发？\n该批次 ${wave.orderIds.length} 个订单将进入「配送中」，交货日期填为 ${date}。`)) return
+    try {
+      await apiPut(`/api/waves/${waveId}/dispatch`, { date })
+      toast.success('已确认出发')
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : '确认出发失败') }
+  }
+
   function startDrag(e: React.DragEvent, orderId: string, sourceWaveId: string | null) {
     e.dataTransfer.setData('text/plain', orderId)
     e.dataTransfer.setData(SRC, sourceWaveId ?? '')
@@ -170,6 +184,7 @@ export default function BatchTab({ date }: { date: string }) {
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
     if (!orderId || src === waveId) return
+    if (waves.find(w => w.id === waveId)?.dispatchedAt) { toast.error('该批次已出发，不能再分配'); return }
     if (src) moveWave(src, waveId, orderId)
     else assignToWave(waveId, orderId)
   }
@@ -209,13 +224,14 @@ export default function BatchTab({ date }: { date: string }) {
     const pallets = palletsByWave[wave.id] ?? []
     const st = WAVE_STATUS[wave.status] ?? { text: wave.status, cls: 'bg-gray-100 text-gray-500', pct: 0 }
     const laneOrders = wave.orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
-    const over = dragOverWave === wave.id
+    const dispatched = !!wave.dispatchedAt
+    const over = !dispatched && dragOverWave === wave.id
 
     return (
       <div
         className="flex-none w-[236px] bg-white border rounded-xl flex flex-col max-h-[600px]"
-        style={{ borderColor: over ? PURPLE : '#e5e7eb', boxShadow: over ? `0 0 0 2px ${PURPLE}33` : undefined }}
-        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverWave(wave.id) }}
+        style={{ borderColor: over ? PURPLE : (dispatched ? '#bbf7d0' : '#e5e7eb'), boxShadow: over ? `0 0 0 2px ${PURPLE}33` : undefined }}
+        onDragOver={e => { e.preventDefault(); if (dispatched) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverWave(wave.id) }}
         onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverWave(p => p === wave.id ? null : p) }}
         onDrop={e => dropToWave(e, wave.id)}
       >
@@ -225,7 +241,9 @@ export default function BatchTab({ date }: { date: string }) {
               <Avatar name={slot.driverName} />{slot.driverName}
               <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
             </span>
-            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.text}</span>
+            {dispatched
+              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700">🚚 已出发</span>
+              : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.text}</span>}
           </div>
           <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.restaurantCount}家 · {pallets.length}盘 · €{m.amount.toLocaleString()}</div>
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${st.pct}%`, background: PURPLE }} /></div>
@@ -241,11 +259,11 @@ export default function BatchTab({ date }: { date: string }) {
           {laneOrders.map(o => (
             <div
               key={o.id}
-              draggable
-              onDragStart={e => startDrag(e, o.id, wave.id)}
-              className="border rounded-lg px-2 py-1.5 bg-white cursor-grab text-xs hover:border-purple-300"
+              draggable={!dispatched}
+              onDragStart={e => { if (dispatched) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
+              className={`border rounded-lg px-2 py-1.5 bg-white text-xs ${dispatched ? 'cursor-default' : 'cursor-grab hover:border-purple-300'}`}
               style={{ borderColor: '#eee' }}
-              title="拖回左侧=移出；拖到别的司机=换车"
+              title={dispatched ? '已出发，不可调整' : '拖回左侧=移出；拖到别的司机=换车'}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium flex items-center gap-1.5 truncate">
@@ -269,6 +287,18 @@ export default function BatchTab({ date }: { date: string }) {
             className="mt-1 border border-dashed rounded-lg py-1.5 text-xs text-gray-500 hover:border-purple-400 hover:text-purple-700"
             style={{ borderColor: '#cbd5e1' }}
           >🧱 编排托盘{pallets.length ? `（${pallets.length}）` : ''}</button>
+
+          {dispatched ? (
+            <div className="mt-1 rounded-lg py-1.5 text-xs text-center font-semibold text-green-700 bg-green-50 border border-green-200">
+              ✅ 已出发 · 交货 {date}
+            </div>
+          ) : laneOrders.length > 0 ? (
+            <button
+              onClick={() => dispatchWave(wave.id)}
+              className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
+              style={{ background: '#16a34a' }}
+            >🚚 确认出发（{laneOrders.length}单）</button>
+          ) : null}
         </div>
       </div>
     )
