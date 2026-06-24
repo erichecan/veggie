@@ -81,7 +81,8 @@ export async function POST(req: Request) {
             totalIncTax: subtotalExTax,
             amountPaid: 0,
             amountDue: subtotalExTax,
-            lines: { create: lineCreates },
+            // VendorBill.lines 是 Json 列(无 VendorBillLine 模型),直接存数组,不能用关系 create(P1-6)
+            lines: lineCreates,
           },
         })
         createdBill = { id: bill.id, name: bill.name }

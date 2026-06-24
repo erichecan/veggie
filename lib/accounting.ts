@@ -32,8 +32,15 @@ async function findAccountByCode(tx: TxClient, code: string): Promise<{ id: stri
 }
 
 async function genEntryName(tx: TxClient): Promise<string> {
-  const count = await tx.journalEntry.count()
-  return `JE-${String(count + 1).padStart(5, '0')}`
+  // 用最大序号+1 而非 count():count 在删除/与 seed 混用时会撞 @unique(name)。
+  // 零填充使字符串降序排序等价于数值降序;并发下若仍撞,事务唯一约束失败由调用方重试。
+  const last = await tx.journalEntry.findFirst({
+    where: { name: { startsWith: 'JE-' } },
+    orderBy: { name: 'desc' },
+    select: { name: true },
+  })
+  const lastNum = last ? (parseInt(last.name.slice(3), 10) || 0) : 0
+  return `JE-${String(lastNum + 1).padStart(5, '0')}`
 }
 
 /** 发票过账：Dr AR / Cr Revenue + VAT */
@@ -160,6 +167,76 @@ export async function postVendorBillToJournal(
     select: { id: true, name: true },
   })
   return entry
+}
+
+/** 客户收款过账：Dr Bank / Cr AR（之前缺失,导致总账 AR 只增不减、永久虚高 — P1-6） */
+export async function postPaymentToJournal(
+  tx: TxClient,
+  payment: { id: string; invoiceName: string; customerId: string; amount: unknown },
+  userId: string,
+): Promise<{ id: string; name: string } | null> {
+  const bank = await findAccountByCode(tx, '1200')
+  const ar = await findAccountByCode(tx, '1100')
+  if (!bank || !ar) return null
+  const amt = Number(payment.amount)
+  if (!(amt > 0)) return null
+
+  const name = await genEntryName(tx)
+  return tx.journalEntry.create({
+    data: {
+      name,
+      narration: `Payment received for ${payment.invoiceName}`,
+      sourceType: 'payment',
+      sourceId: payment.id,
+      status: 'POSTED',
+      totalDebit: amt,
+      totalCredit: amt,
+      createdBy: userId,
+      postedAt: new Date(),
+      lines: {
+        create: [
+          { accountId: bank.id, description: `Bank - ${payment.invoiceName}`, debit: amt, credit: 0, sequence: 10 },
+          { accountId: ar.id, description: `AR settle - ${payment.invoiceName}`, debit: 0, credit: amt, partnerId: payment.customerId, sequence: 20 },
+        ],
+      },
+    },
+    select: { id: true, name: true },
+  })
+}
+
+/** 供应商付款过账：Dr AP / Cr Bank */
+export async function postVendorPaymentToJournal(
+  tx: TxClient,
+  payment: { id: string; billName: string; supplierId: string; amount: unknown },
+  userId: string,
+): Promise<{ id: string; name: string } | null> {
+  const ap = await findAccountByCode(tx, '2100')
+  const bank = await findAccountByCode(tx, '1200')
+  if (!ap || !bank) return null
+  const amt = Number(payment.amount)
+  if (!(amt > 0)) return null
+
+  const name = await genEntryName(tx)
+  return tx.journalEntry.create({
+    data: {
+      name,
+      narration: `Vendor payment for ${payment.billName}`,
+      sourceType: 'vendor_payment',
+      sourceId: payment.id,
+      status: 'POSTED',
+      totalDebit: amt,
+      totalCredit: amt,
+      createdBy: userId,
+      postedAt: new Date(),
+      lines: {
+        create: [
+          { accountId: ap.id, description: `AP settle - ${payment.billName}`, debit: amt, credit: 0, partnerId: payment.supplierId, sequence: 10 },
+          { accountId: bank.id, description: `Bank - ${payment.billName}`, debit: 0, credit: amt, sequence: 20 },
+        ],
+      },
+    },
+    select: { id: true, name: true },
+  })
 }
 
 /** 预置标准会计科目（seed 用） */

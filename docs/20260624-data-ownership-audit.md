@@ -201,4 +201,18 @@
 
 ---
 
-*本审计始于只读分析;P0-3 已落地(见第七节)。下一步:P0-1/P0-2(调度统一归 wave + Trip 仅保留交账)。*
+## 八、实施进度(2026-06-24 持续)
+
+- ✅ **P0-3** 订单明细 SSOT(见第七节)— commit 84f2574
+- ✅ **P1-7** 权限 role/roles[] 统一 — commit 580a39a
+- ✅ **P1-5** 库存权威归 qtyOnHand + 销售出库 FIFO 扣批次 — commit ce701e0
+- ✅ **P1-6** 会计金额/AR/凭证(部分):
+  - Invoice PUT 旁路关闭(amountPaid 不可篡改,状态流转走专用接口)
+  - 发票过账改走 /post(生成凭证 + 回写 invoicedQty),不再用 PUT 直接改状态绕过
+  - Invoice DELETE 守卫(只删 DRAFT/CANCELLED)
+  - 新增收款凭证 Dr Bank/Cr AR、供应商账单/付款凭证(postVendorBillToJournal 不再是死函数)
+  - 修 vendor-bills/import 的 Json lines 嵌套 create bug;JE 编号改 max+1 防撞
+  - 验证:三类凭证双式平衡、编号唯一
+  - ⏸ **待业务确认(未改)**:① finance 页"本期欠款"口径仍用 Order.totalAmount(正确口径应为 Σ未付发票 amountDue 或总账 1100,取决于是否每单都开票)② Statement 的 PARTIAL 状态从未设置导致 totalPayments 漏算 ③ CreditNote 游离总账(退款不冲 AR/不生成凭证)。这三项属报表语义/较大功能,改错比不改更糟,需先定义口径。
+
+*本审计始于只读分析。已完成 P0-3/P1-5/P1-6/P1-7;剩余:P0-1/P0-2(调度统一归 wave)、P1-4(状态机)、P2(死字段清理)、不变量护栏。*

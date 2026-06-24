@@ -87,15 +87,12 @@ export default function ClassicInvoiceDetailPage() {
 
   async function handlePost() {
     if (!inv) return
-    const updated: Invoice = {
-      ...inv,
-      status: 'posted',
-      postedAt: new Date().toISOString(),
-    }
     try {
-      await apiPut(`/api/invoices/${inv.id}`, { ...updated, status: 'posted' })
-      setInv(updated)
-      toast.success('发票已确认（Posted）')
+      // 走专用过账接口:生成会计凭证 + 回写 invoicedQty(不能用 PUT 直接改状态绕过)
+      const res = await apiPost<{ warning?: string }>(`/api/invoices/${inv.id}/post`, {})
+      setInv({ ...inv, status: 'posted', postedAt: new Date().toISOString() })
+      toast.success(res?.warning ? `已确认,但${res.warning}` : '发票已确认（Posted）')
+      await load()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '操作失败')
     }

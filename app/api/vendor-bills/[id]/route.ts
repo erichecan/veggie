@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { postVendorBillToJournal, postVendorPaymentToJournal } from '@/lib/accounting'
 
 /**
  * /api/vendor-bills/[id]
@@ -94,7 +95,29 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         return NextResponse.json({ error: '没有可更新的字段' }, { status: 400 })
       }
 
-      const bill = await p.vendorBill.update({ where: { id }, data: updateData })
+      // SSOT: 过账/付款同步生成总账凭证(此前 postVendorBillToJournal 是死函数,真实 AP 入账无凭证 — P1-6)
+      const willPost = updateData.status === 'POSTED'
+      const oldPaid = Number(existing.amountPaid)
+      const newPaid = updateData.amountPaid !== undefined ? Number(updateData.amountPaid) : oldPaid
+      const paymentDelta = round2(newPaid - oldPaid)
+
+      const bill = await p.$transaction(async (tx: typeof p) => {
+        const updated = await tx.vendorBill.update({ where: { id }, data: updateData })
+        if (willPost) {
+          const e = await postVendorBillToJournal(tx, {
+            id: existing.id, name: existing.name, supplierId: existing.supplierId,
+            subtotalExTax: existing.subtotalExTax, totalTax: existing.totalTax, totalIncTax: existing.totalIncTax,
+          }, user.userId)
+          if (e) detail.push(`凭证 ${e.name}`)
+        }
+        if (paymentDelta > 0.005) {
+          const e = await postVendorPaymentToJournal(tx, {
+            id: `${id}-pay-${newPaid}`, billName: existing.name, supplierId: existing.supplierId, amount: paymentDelta,
+          }, user.userId)
+          if (e) detail.push(`付款凭证 ${e.name}`)
+        }
+        return updated
+      })
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,

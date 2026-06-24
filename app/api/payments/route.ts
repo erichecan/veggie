@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { postPaymentToJournal } from '@/lib/accounting'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 
 /**
@@ -96,7 +97,13 @@ export async function POST(req: Request) {
               : {}),
           },
         })
-        return { payment, invoice: invoiceAfter }
+        // SSOT: 生成收款凭证 Dr Bank / Cr AR(此前缺失,致总账 AR 永久虚高 — P1-6)
+        const entry = await postPaymentToJournal(
+          tx as never,
+          { id: payment.id, invoiceName: invoice.name, customerId: invoice.customerId, amount },
+          user.userId,
+        )
+        return { payment, invoice: invoiceAfter, journalEntry: entry }
       })
 
       await writeLog({
