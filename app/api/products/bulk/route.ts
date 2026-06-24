@@ -74,7 +74,6 @@ export async function POST(req: Request) {
                 spec: r.spec,
                 price: r.price,
                 listPrice: r.price,
-                stock: r.stock,
                 qtyOnHand: r.stock ?? 0,
                 customerTaxRate: r.taxRate,
                 commissionPrice: r.commissionPrice,

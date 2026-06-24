@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
+import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
 import { toNum } from '@/lib/decimal-helpers'
 
 /**
@@ -117,6 +118,7 @@ export async function POST(req: Request) {
               where: { id: line.productId },
               data: { qtyOnHand: { increment: qty } },
             })
+            await restoreLotsFIFO(prismaAny, line.productId, qty)
             await prismaAny.stockMove.create({
               data: {
                 productId: line.productId,
@@ -201,6 +203,7 @@ export async function POST(req: Request) {
               where: { id: line.productId },
               data: { qtyOnHand: { decrement: qty } },
             })
+            await consumeLotsFIFO(prismaAny, line.productId, qty)
             await prismaAny.stockMove.create({
               data: {
                 productId: line.productId,

@@ -5,6 +5,7 @@ import { notifyLowStockAfterConfirm } from '@/lib/notify'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, orderItemsFromLines } from '@/lib/order-items'
+import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
 import { toNum } from '@/lib/decimal-helpers'
 
 const ORDER_TRACKED_FIELDS = [
@@ -478,6 +479,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: line.productId },
             data: { qtyOnHand: { decrement: qty } },
           })
+          // SSOT: 同步 FIFO 扣减批次余量,避免 Lot 虚高(P1-5)
+          await consumeLotsFIFO(prismaAny, line.productId, qty)
           await prismaAny.stockMove.create({
             data: {
               productId: line.productId,
@@ -545,6 +548,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: line.productId },
             data: { qtyOnHand: { increment: qty } },
           })
+          // SSOT: 撤回时回补批次余量(P1-5)
+          await restoreLotsFIFO(prismaAny, line.productId, qty)
           await prismaAny.stockMove.create({
             data: {
               productId: line.productId,

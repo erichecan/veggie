@@ -211,7 +211,7 @@ export default function ClassicWarehousePage() {
         />
         <MiniCard
           label="低库存预警"
-          value={`${activeProducts.filter(p => (p.qtyOnHand ?? p.stock ?? 0) <= LOW_STOCK_THRESHOLD).length} 种`}
+          value={`${activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length} 种`}
           icon="⚠️"
           color="text-amber-700"
           active={activeCard === 'lowStock'}
@@ -240,7 +240,7 @@ export default function ClassicWarehousePage() {
         close={() => setActiveCard(null)}
         todayIncoming={todayIncoming}
         todayOutgoing={todayOutgoing}
-        lowStockProducts={activeProducts.filter(p => (p.qtyOnHand ?? p.stock ?? 0) <= LOW_STOCK_THRESHOLD)}
+        lowStockProducts={activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD)}
         activeProducts={activeProducts}
         expiringLots={expiringLots}
         switchTab={setTab}
@@ -344,19 +344,19 @@ export default function ClassicWarehousePage() {
 
       {tab === 'inventory' && (
         <div className="space-y-3">
-          {activeProducts.filter(p => (p.qtyOnHand ?? p.stock ?? 0) <= LOW_STOCK_THRESHOLD).length > 0 && (
+          {activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length > 0 && (
             <div className="rounded-xl p-4" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
               <h3 className="font-semibold mb-3" style={{ color: PURPLE }}>⚠️ 低库存预警（≤{LOW_STOCK_THRESHOLD}件）</h3>
               <div className="space-y-2">
                 {activeProducts
-                  .filter(p => (p.qtyOnHand ?? p.stock ?? 0) <= LOW_STOCK_THRESHOLD)
+                  .filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD)
                   .map(p => (
                     <div key={p.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-gray-200">
                       <span className="font-medium text-gray-900">{p.name}</span>
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-gray-500">{p.spec}</span>
                         <span className="text-sm font-bold px-2 py-0.5 rounded-full" style={{ background: '#f3eff5', color: PURPLE }}>
-                          剩余 {(p.qtyOnHand ?? p.stock ?? 0)} 件
+                          剩余 {(p.qtyOnHand ?? 0)} 件
                         </span>
                         <button
                           onClick={() => { setAdjustForm({ productId: p.id, qty: '', note: '补货入库' }); setAdjustOpen(true) }}
@@ -393,14 +393,14 @@ export default function ClassicWarehousePage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {products.map(p => {
-                  const isLow = (p.qtyOnHand ?? p.stock ?? 0) <= LOW_STOCK_THRESHOLD && p.status === 'active'
+                  const isLow = (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD && p.status === 'active'
                   const isSlow = !recentSoldIds.has(p.id) && p.status === 'active'
                   return (
                     <tr key={p.id} className="hover:bg-gray-50" style={isLow ? { background: '#fdf8ff' } : {}}>
                       <td className="px-4 py-3 font-medium">{p.name}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{p.spec}</td>
                       <td className={`px-4 py-3 text-right font-bold ${isLow ? '' : 'text-gray-900'}`} style={isLow ? { color: PURPLE } : {}}>
-                        {(p.qtyOnHand ?? p.stock ?? 0)}
+                        {(p.qtyOnHand ?? 0)}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-500 text-xs">
                         {p.standardPrice != null ? `€${p.standardPrice.toFixed(2)}` : '-'}
@@ -593,7 +593,7 @@ export default function ClassicWarehousePage() {
               >
                 <option value="">请选择商品...</option>
                 {products.map(p => {
-                  const qty = p.qtyOnHand ?? p.stock ?? 0
+                  const qty = p.qtyOnHand ?? 0
                   return (
                     <option key={p.id} value={p.id}>{p.name} (当前库存: {qty})</option>
                   )
@@ -799,14 +799,14 @@ function WarehouseDrillPanel({
   if (activeCard === 'lowStock' || activeCard === 'active') {
     const isLow = activeCard === 'lowStock'
     const rows = isLow
-      ? [...lowStockProducts].sort((a, b) => (a.qtyOnHand ?? a.stock ?? 0) - (b.qtyOnHand ?? b.stock ?? 0))
+      ? [...lowStockProducts].sort((a, b) => (a.qtyOnHand ?? 0) - (b.qtyOnHand ?? 0))
       : activeProducts
     const cols: DrillColumn<Product>[] = [
       { key: 'name', label: '商品', render: p => <span className="font-medium text-gray-800">{p.name}</span> },
       { key: 'spec', label: '规格', render: p => <span className="text-xs text-gray-500">{p.spec}</span> },
       {
         key: 'qty', label: '库存', align: 'right', render: p => {
-          const q = p.qtyOnHand ?? p.stock ?? 0
+          const q = p.qtyOnHand ?? 0
           return <span className={`font-bold ${q <= 20 ? 'text-amber-700' : 'text-gray-900'}`}>{q}</span>
         },
       },

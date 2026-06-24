@@ -86,7 +86,7 @@ export async function GET(req: Request) {
           images: p.images,
           spec: p.spec ?? undefined,
           price: toNumOpt(p.price),
-          stock: toNumOpt(p.stock),
+          stock: toNumOpt(p.qtyOnHand),
           status: (p.status?.toLowerCase() as ProductType['status']) ?? 'active',
           createdAt: p.createdAt.toISOString(),
           updatedAt: p.updatedAt.toISOString(),

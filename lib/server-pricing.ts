@@ -260,7 +260,7 @@ export async function resolveOrderLines(
       images: dbProduct.images,
       spec: dbProduct.spec ?? undefined,
       price: toNumOpt(dbProduct.price),
-      stock: toNumOpt(dbProduct.stock),
+      stock: toNumOpt(dbProduct.qtyOnHand),
       status: (dbProduct.status?.toLowerCase() as ProductType['status']) ?? 'active',
       createdAt: dbProduct.createdAt.toISOString(),
       updatedAt: dbProduct.updatedAt.toISOString(),
