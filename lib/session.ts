@@ -7,7 +7,9 @@
 export interface UserSession {
   userId: string
   email: string
-  role: string  // 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER' | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE'
+  role: string  // 兼容字段(单角色);权限判定优先看 roles[]
+  /** 全部角色(多角色账号),login 接口已返回。前端 can()/useAbility 按此并集判权限。 */
+  roles?: string[]
   name: string
   customerId?: string | null
 }

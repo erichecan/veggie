@@ -35,8 +35,16 @@ export type Subject =
 
 export interface Ability {
   role: Role
+  /** 全部角色(多角色账号)。非空时按并集判权限,与后端 effectiveRoles 口径一致;空则回退 role。 */
+  roles?: Role[]
   userId?: string
   customerId?: string | null
+}
+
+/** 取生效角色集合:roles[] 优先,空则回退单 role。与 lib/auth.ts effectiveRoles 对齐。 */
+function effectiveAbilityRoles(ability: Ability): Role[] {
+  if (Array.isArray(ability?.roles) && ability.roles.length > 0) return ability.roles
+  return ability?.role ? [ability.role] : []
 }
 
 /**
@@ -127,10 +135,10 @@ const MATRIX: Record<Role, Partial<Record<Subject, Action[]>>> = {
  * 检查当前能力是否允许执行 (action, subject)。
  */
 export function can(ability: Ability, action: Action, subject: Subject): boolean {
-  if (!ability?.role) return false
-  if (ability.role === 'BOSS') return true
-  const allowed = MATRIX[ability.role]?.[subject] ?? []
-  return allowed.includes(action)
+  const roles = effectiveAbilityRoles(ability)
+  if (roles.length === 0) return false
+  if (roles.includes('BOSS')) return true
+  return roles.some((r) => (MATRIX[r]?.[subject] ?? []).includes(action))
 }
 
 /**
@@ -149,7 +157,10 @@ export function useAbility(): Ability {
         : null
       if (raw) {
         const u = JSON.parse(raw)
-        setAbility({ role: u.role as Role, userId: u.userId, customerId: u.customerId })
+        const roles = Array.isArray(u.roles) && u.roles.length > 0
+          ? (u.roles as Role[])
+          : [u.role as Role]
+        setAbility({ role: u.role as Role, roles, userId: u.userId, customerId: u.customerId })
       }
     } catch { /* ignore */ }
   }, [])

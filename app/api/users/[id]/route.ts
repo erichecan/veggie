@@ -12,15 +12,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (me) => {
     try {
-      const { name, role, isActive, newPassword } = await req.json()
+      const { name, role, roles, isActive, newPassword } = await req.json()
 
-      const VALID_ROLES = ['OPERATOR', 'RESTAURANT', 'PICKER', 'SORTER', 'DRIVER', 'BOSS', 'FINANCE', 'WAREHOUSE']
+      const VALID_ROLES = ['OPERATOR', 'RESTAURANT', 'PICKER', 'SORTER', 'DRIVER', 'BOSS', 'FINANCE', 'WAREHOUSE', 'SALES', 'DISPATCH', 'OTHER']
 
       const updateData: Record<string, unknown> = {}
       if (name !== undefined) updateData.name = String(name).trim().slice(0, 100)
-      if (role !== undefined) {
+      // SSOT: role 与 roles[] 必须同步,否则前端按 role、后端按 roles[] 判权限会分裂。
+      // 显式传 roles[] → 以它为准,role 取首项;只传 role → roles=[role]。
+      if (Array.isArray(roles)) {
+        const cleaned = roles.map(String).filter((r: string) => VALID_ROLES.includes(r))
+        if (cleaned.length === 0) return NextResponse.json({ error: '无效角色' }, { status: 400 })
+        updateData.roles = cleaned
+        updateData.role = cleaned[0]
+      } else if (role !== undefined) {
         if (!VALID_ROLES.includes(role)) return NextResponse.json({ error: '无效角色' }, { status: 400 })
         updateData.role = role
+        updateData.roles = [role]
       }
       if (isActive !== undefined) updateData.isActive = Boolean(isActive)
       if (newPassword !== undefined) {
