@@ -268,9 +268,11 @@ export interface Order {
   invoiceDate?: string
   /** 送货单是否已回（会计核销标记） */
   orderReturn?: boolean
-  /** 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧字段，逐步弃用） */
+  /** 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧字段，已弃用，显示改用 deliveryBatchDisplay） */
   deliveryBatch?: string
-  /** 关联 DriverSlot ID（替代 deliveryBatch 字符串） */
+  /** 调度归属显示（由所属 PickingWave + 实时 DriverSlot 派生，单一真相，SSOT P0-1） */
+  deliveryBatchDisplay?: string | null
+  /** 关联 DriverSlot ID（下单意向；实际 wave 归属见 deliveryBatchDisplay） */
   driverSlotId?: string | null
   /** 关联 DriverSlot 详情（API include 时返回） */
   driverSlot?: { id: string; batchNum: number; timeOfDay: string; driverName: string } | null

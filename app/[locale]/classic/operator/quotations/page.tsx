@@ -165,8 +165,9 @@ export default function ClassicQuotationsPage() {
     const slot = driverSlots.find(s => s.id === slotId)
     const deliveryBatch = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : ''
     try {
-      await apiPut(`/api/orders/${orderId}`, { driverSlotId: slotId || null, deliveryBatch })
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, deliveryBatch, driverSlotId: slotId || null } as Order : o))
+      await apiPut(`/api/orders/${orderId}`, { driverSlotId: slotId || null })
+      // SSOT(P0-1): 显示走 deliveryBatchDisplay(所属 wave 派生),乐观更新同步设置
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, deliveryBatchDisplay: deliveryBatch, driverSlotId: slotId || null } as Order : o))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to update batch')
     }

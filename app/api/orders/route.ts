@@ -7,6 +7,17 @@ import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItemsList } from '@/lib/order-items'
+import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
+
+// SSOT: 调度归属显示一律由「所属 wave + 实时 DriverSlot」派生(P0-1)。
+// formatDriverSlotFromOrder 优先读 deliveryBatchDisplay,故在此注入即全站统一,无需改各页。
+async function attachWaveDisplay<T extends { id: string; deliveryBatchDisplay?: string | null }>(orders: T[]): Promise<T[]> {
+  const map = await getOrderWaveDisplayMap(orders.map((o) => o.id))
+  for (const o of orders) {
+    if (map[o.id]) o.deliveryBatchDisplay = map[o.id]
+  }
+  return orders
+}
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { getInitials, nextOrderCode } from '@/lib/order-code'
 
@@ -149,7 +160,7 @@ export async function GET(req: Request) {
         pageSize,
         totalPages: Math.ceil(total / pageSize),
       })
-      payload.data = deriveOrderItemsList(payload.data)
+      payload.data = await attachWaveDisplay(deriveOrderItemsList(payload.data))
       return NextResponse.json(payload)
     }
 
@@ -163,7 +174,7 @@ export async function GET(req: Request) {
       take: limit,
       include,
     })
-    return NextResponse.json(deriveOrderItemsList(serializeApi(orders)))
+    return NextResponse.json(await attachWaveDisplay(deriveOrderItemsList(serializeApi(orders))))
   } catch (error) {
     console.error('[GET /api/orders]', error)
     return NextResponse.json({ error: '获取订单失败' }, { status: 500 })

@@ -6,6 +6,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, orderItemsFromLines } from '@/lib/order-items'
 import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
+import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import { toNum } from '@/lib/decimal-helpers'
 
 const ORDER_TRACKED_FIELDS = [
@@ -49,8 +50,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     })
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
     // Flatten product fields onto each line so UI can read l.commissionPrice / l.cost
+    const waveDisplay = await getOrderWaveDisplayMap([order.id])
     const enrichedOrder = {
       ...order,
+      // SSOT(P0-1): 调度归属显示由所属 wave 派生
+      deliveryBatchDisplay: waveDisplay[order.id] ?? null,
       lines: order.lines.map(({ product, ...line }) => ({
         ...line,
         commissionPrice: toNum(product?.commissionPrice),
@@ -131,7 +135,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (flagApproval) updateData.editApprovalRequired = true
       if (newStatus) updateData.status = newStatus
       if (salesman !== undefined) updateData.salesman = salesman ? String(salesman) : null
-      if (deliveryBatch !== undefined) updateData.deliveryBatch = deliveryBatch ? String(deliveryBatch) : null
+      // SSOT(P0-1): deliveryBatch 字符串弃用,不再写入;调度归属真相在 wave。
+      // driverSlotId 保留为「下单意向」列,实际 wave 归属在 update 之后经 wave-assign 同步(双向一致)。
       if (driverSlotId !== undefined) updateData.driverSlotId = driverSlotId || null
       if (paymentMethod) updateData.paymentMethod = String(paymentMethod).toUpperCase()
       if (confirmationDate !== undefined) updateData.confirmationDate = confirmationDate ? new Date(confirmationDate) : null
@@ -352,6 +357,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
         },
       })
+
+      // SSOT(P0-1): 销售单改批次同步到 wave.orderIds(与调度台拖拽同一写入逻辑,双向一致)
+      if (driverSlotId !== undefined) {
+        if (driverSlotId) await assignOrderToWave(id, String(driverSlotId)).catch((e) => console.error('[assignOrderToWave]', e))
+        else await removeOrderFromAllWaves(id).catch((e) => console.error('[removeOrderFromAllWaves]', e))
+      }
 
       // Determine audit action
       let auditAction = 'updated'
