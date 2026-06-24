@@ -206,6 +206,27 @@ async function main(): Promise<void> {
     record('库存非负  在售商品 qtyOnHand >= 0', bad, products.length, ex)
   }
 
+  // 10. 调度单一归属：一张订单至多属一个 wave（SSOT P0-1，wave.orderIds 是唯一真相）
+  {
+    const waves = await prisma.pickingWave.findMany({ select: { name: true, orderIds: true } })
+    const seen = new Map<string, string>()
+    const dupOrders = new Set<string>()
+    const ex: string[] = []
+    for (const w of waves) {
+      for (const oid of (w.orderIds as string[])) {
+        if (seen.has(oid)) {
+          if (!dupOrders.has(oid)) {
+            dupOrders.add(oid)
+            if (ex.length < 3) ex.push(`订单 ${oid} 同时在「${seen.get(oid)}」和「${w.name}」`)
+          }
+        } else {
+          seen.set(oid, w.name ?? '?')
+        }
+      }
+    }
+    record('调度单一归属  一单至多属一个 wave', dupOrders.size, seen.size, ex)
+  }
+
   // 输出报告
   console.log('──── 校验报告 ────')
   let failed = 0
