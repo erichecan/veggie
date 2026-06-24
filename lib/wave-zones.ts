@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '@/lib/generated/prisma/client'
 
 export interface ZoneItem {
   productId: string

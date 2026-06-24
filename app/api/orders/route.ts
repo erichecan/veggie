@@ -6,6 +6,7 @@ import { sendOrderConfirmation } from '@/lib/email'
 import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
 import { serializeApi } from '@/lib/api-serializer'
+import { deriveOrderItemsList } from '@/lib/order-items'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { getInitials, nextOrderCode } from '@/lib/order-code'
 
@@ -107,6 +108,13 @@ export async function GET(req: Request) {
       where.lines = { some: { product: { categoryId } } }
     }
 
+    // SSOT: items 一律由 lines 实时投影。include_lines=false 时仍拉精简行(只取投影所需字段),
+    // 既保留列表页轻量,又确保 items 永远新鲜(不读已腐化的 Order.items 列)。见 lib/order-items.ts。
+    const leanLineSelect = {
+      id: true, productId: true, productName: true, spec: true, note: true,
+      uomId: true, uomName: true, unitPrice: true, taxRate: true,
+      orderedQty: true, deliveredQty: true, invoicedQty: true, subtotal: true, sequence: true,
+    } as const
     const include = includeLines ? {
       lines: {
         orderBy: { sequence: 'asc' as const },
@@ -119,7 +127,9 @@ export async function GET(req: Request) {
         },
       },
       driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
-    } : undefined
+    } : {
+      lines: { orderBy: { sequence: 'asc' as const }, select: leanLineSelect },
+    }
 
     if (paginated) {
       const [total, orders] = await Promise.all([
@@ -132,13 +142,15 @@ export async function GET(req: Request) {
           include,
         }),
       ])
-      return NextResponse.json(serializeApi({
+      const payload = serializeApi({
         data: orders,
         total,
         page,
         pageSize,
         totalPages: Math.ceil(total / pageSize),
-      }))
+      })
+      payload.data = deriveOrderItemsList(payload.data)
+      return NextResponse.json(payload)
     }
 
     // Legacy: flat array. When date range is provided, allow up to 5000 rows (for print reports).
@@ -151,7 +163,7 @@ export async function GET(req: Request) {
       take: limit,
       include,
     })
-    return NextResponse.json(serializeApi(orders))
+    return NextResponse.json(deriveOrderItemsList(serializeApi(orders)))
   } catch (error) {
     console.error('[GET /api/orders]', error)
     return NextResponse.json({ error: '获取订单失败' }, { status: 500 })

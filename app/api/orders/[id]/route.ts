@@ -4,6 +4,7 @@ import { writeLog, diffChanges } from '@/lib/action-log'
 import { notifyLowStockAfterConfirm } from '@/lib/notify'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { deriveOrderItems, orderItemsFromLines } from '@/lib/order-items'
 import { toNum } from '@/lib/decimal-helpers'
 
 const ORDER_TRACKED_FIELDS = [
@@ -56,7 +57,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         internalRef: product?.internalRef ?? null,
       })),
     }
-    return NextResponse.json(serializeApi(enrichedOrder))
+    return NextResponse.json(deriveOrderItems(serializeApi(enrichedOrder)))
   } catch (error) {
     console.error('[GET /api/orders/[id]]', error)
     return NextResponse.json({ error: '获取订单失败' }, { status: 500 })
@@ -507,6 +508,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           }).catch((e: unknown) => console.error('[DeliverySlip create]', e))
         }
         // Create a PENDING_ASSIGNMENT trip so dispatch can assign a driver
+        // SSOT: 用当前 OrderLine 实时投影,绝不灌入腐化的 orderBefore.items 列
+        const tripLines = await prisma.orderLine.findMany({ where: { orderId: id }, orderBy: { sequence: 'asc' } })
+        const tripItems = orderItemsFromLines(serializeApi(tripLines) as unknown as Parameters<typeof orderItemsFromLines>[0])
         await prismaAny.trip.create({
           data: {
             status: 'PENDING_ASSIGNMENT',
@@ -514,7 +518,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               restaurantId: orderBefore.restaurantId,
               restaurantName: orderBefore.restaurantName,
               orderIds: [id],
-              items: orderBefore.items,
+              items: tripItems,
               delivered: false,
               returns: [],
               pods: [],

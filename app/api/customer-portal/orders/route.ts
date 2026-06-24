@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { notifyRole } from '@/lib/notify'
 import { serializeApi } from '@/lib/api-serializer'
+import { deriveOrderItemsList } from '@/lib/order-items'
 import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
 import { getInitials, nextOrderCode } from '@/lib/order-code'
@@ -115,13 +116,15 @@ export async function GET(req: Request) {
         }),
       ])
 
-      return NextResponse.json(serializeApi({
+      const payload = serializeApi({
         data: orders,
         total,
         page,
         pageSize,
         totalPages: Math.ceil(total / pageSize),
-      }))
+      })
+      payload.data = deriveOrderItemsList(payload.data)
+      return NextResponse.json(payload)
     } catch (error) {
       console.error('[GET /api/customer-portal/orders]', error)
       return NextResponse.json({ error: '获取订单列表失败' }, { status: 500 })
