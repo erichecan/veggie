@@ -13,7 +13,9 @@ export function formatDriverSlot(slot: DriverSlotInfo | null | undefined): strin
 export function formatDriverSlotFromOrder(order: {
   driverSlot?: DriverSlotInfo | null
   deliveryBatch?: string | null
+  deliveryBatchDisplay?: string | null
 }): string {
+  if (order.deliveryBatchDisplay) return order.deliveryBatchDisplay
   if (order.driverSlot) return formatDriverSlot(order.driverSlot)
   return order.deliveryBatch ?? ''
 }

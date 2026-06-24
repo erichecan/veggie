@@ -236,10 +236,8 @@ export default function ClassicOrdersPage() {
     setSavingBatch(true)
     const failed: string[] = []
     await Promise.all(entries.map(async ([orderId, slotId]) => {
-      const slot = driverSlots.find(s => s.id === slotId)
-      const deliveryBatch = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : ''
       try {
-        await apiPut(`/api/orders/${orderId}`, { driverSlotId: slotId || null, deliveryBatch })
+        await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId: slotId || null })
       } catch {
         failed.push(orderId)
       }
@@ -386,7 +384,7 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
           {(() => {
-            const originalSlotId = (o as unknown as { driverSlotId?: string }).driverSlotId ?? ''
+            const originalSlotId = (o as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? ''
             const pendingVal = pendingBatch[o.id]
             const hasPending = pendingVal !== undefined
             const slotLabel = (id: string) => {
