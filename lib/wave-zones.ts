@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { Prisma } from '@prisma/client'
 
 export interface ZoneItem {
   productId: string
@@ -21,8 +22,8 @@ export interface Zone {
  * 按餐厅分组生成拣货分区快照（zones）。
  * 从 assign/unassign 路由中抽出的共享实现，供波次分配相关写入点复用（DRY）。
  */
-export async function buildZonesByRestaurant(orderIds: string[]): Promise<Zone[]> {
-  if (orderIds.length === 0) return []
+export async function buildZonesByRestaurant(orderIds: string[]): Promise<Prisma.InputJsonValue> {
+  if (orderIds.length === 0) return [] as Prisma.InputJsonValue
 
   const orders = await prisma.order.findMany({
     where: { id: { in: orderIds } },
@@ -92,5 +93,5 @@ export async function buildZonesByRestaurant(orderIds: string[]): Promise<Zone[]
     zone.items.sort((a, b) => a.productName.localeCompare(b.productName, 'zh-CN'))
   }
 
-  return zones
+  return zones as unknown as Prisma.InputJsonValue
 }
