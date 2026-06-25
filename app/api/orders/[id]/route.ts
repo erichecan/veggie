@@ -194,10 +194,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
 
         for (const l of linesPayload as Record<string, unknown>[]) {
+          // SSOT: subtotal 服务端按 unitPrice×orderedQty 重算,不信前端传值(防金额被篡改/算错)
           const lineData: Record<string, unknown> = {
             orderedQty: Number(l.orderedQty),
             unitPrice: Number(l.unitPrice),
-            subtotal: Number(l.subtotal),
+            subtotal: Math.round(Number(l.orderedQty) * Number(l.unitPrice) * 100) / 100,
           }
           if (l.taxRate !== undefined) lineData.taxRate = Number(l.taxRate)
           if (l.sequence !== undefined) lineData.sequence = Number(l.sequence)
@@ -342,10 +343,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           }
         }
 
-        const computedTotal = (linesPayload as Record<string, unknown>[]).reduce((s, l) => s + Number(l.subtotal), 0)
-        updateData.totalAmount = computedTotal
+        // SSOT: totalAmount 服务端重算 = Σ含税(line.subtotal=unitPrice×qty 为不含税,
+        // totalAmount 为含税,与下单口径一致)。taxRate 兼容百分比(>1)与分数两种存法。不信前端传值。
+        const normTax = (t: unknown) => { const x = Number(t ?? 0); return x > 1 ? x / 100 : x }
+        const computedTotal = (linesPayload as Record<string, unknown>[]).reduce((s, l) => {
+          const exTax = Math.round(Number(l.orderedQty) * Number(l.unitPrice) * 100) / 100
+          return s + exTax * (1 + normTax(l.taxRate))
+        }, 0)
+        updateData.totalAmount = Math.round(computedTotal * 100) / 100
       } else if (totalAmountPayload !== undefined) {
-        updateData.totalAmount = Number(totalAmountPayload)
+        // 未改行只改总额:也不信前端,从当前 OrderLine 含税重算
+        const normTax = (t: unknown) => { const x = Number(t ?? 0); return x > 1 ? x / 100 : x }
+        const dbLines = await prisma.orderLine.findMany({ where: { orderId: id }, select: { orderedQty: true, unitPrice: true, taxRate: true } })
+        const recomputed = dbLines.reduce((s, l) => {
+          const exTax = Math.round(toNum(l.orderedQty) * toNum(l.unitPrice) * 100) / 100
+          return s + exTax * (1 + normTax(l.taxRate))
+        }, 0)
+        updateData.totalAmount = Math.round(recomputed * 100) / 100
       }
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
