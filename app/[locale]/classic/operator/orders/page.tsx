@@ -14,6 +14,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { useServerList } from '@/hooks/use-server-list'
 import DayWiseReportDialog from '@/components/classic/DayWiseReportDialog'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
+import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 
 const PAGE_SIZE = 500
 
@@ -44,7 +45,6 @@ type ColFilters = {
   deliveryDateFrom: string
   deliveryDateTo: string
   customer: string
-  createdBy: string
   salesman: string
   deliveryBatch: string
   invoiceStatus: string
@@ -55,7 +55,7 @@ type ColFilters = {
 
 const EMPTY_FILTERS: ColFilters = {
   code: '', deliveryDateFrom: '', deliveryDateTo: '',
-  customer: '', createdBy: '', salesman: '', deliveryBatch: '',
+  customer: '', salesman: '', deliveryBatch: '',
   invoiceStatus: '', status: '', createdAtFrom: '', createdAtTo: '',
 }
 
@@ -184,7 +184,6 @@ export default function ClassicOrdersPage() {
     if (cf.deliveryDateFrom) result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) >= cf.deliveryDateFrom)
     if (cf.deliveryDateTo)   result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) <= cf.deliveryDateTo)
     if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
-    if (cf.createdBy)   result = result.filter(o => getField(o, 'createdByName').toLowerCase().includes(cf.createdBy.toLowerCase()))
     if (cf.salesman)    result = result.filter(o => (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(cf.salesman.toLowerCase()))
     if (cf.deliveryBatch) result = result.filter(o => formatDriverSlotFromOrder(o).toLowerCase().includes(cf.deliveryBatch.toLowerCase()))
     if (cf.invoiceStatus) result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
@@ -202,7 +201,6 @@ export default function ClassicOrdersPage() {
       if (sortField === 'code') { av = a.code ?? a.id; bv = b.code ?? b.id }
       else if (sortField === 'createdAt') { av = a.createdAt ?? ''; bv = b.createdAt ?? '' }
       else if (sortField === 'restaurantName') { av = a.restaurantName; bv = b.restaurantName }
-      else if (sortField === 'createdBy') { av = getField(a, 'createdByName'); bv = getField(b, 'createdByName') }
       else if (sortField === 'salesman') { av = customerMap.get(a.restaurantId)?.salesman ?? ''; bv = customerMap.get(b.restaurantId)?.salesman ?? '' }
       else if (sortField === 'deliveryBatch') { av = formatDriverSlotFromOrder(a); bv = formatDriverSlotFromOrder(b) }
       else if (sortField === 'totalAmount') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
@@ -306,8 +304,8 @@ export default function ClassicOrdersPage() {
 
   const selectedConfirmedCount = Array.from(selected).filter(id => orders.find(x => x.id === id)?.status === 'confirmed').length
 
-  const inputCls = 'w-full border-0 border-b border-gray-200 bg-transparent text-xs px-1 py-0.5 focus:outline-none focus:border-purple-400'
-  const selectCls = 'w-full border-0 border-b border-gray-200 bg-transparent text-xs px-1 py-0.5 focus:outline-none focus:border-purple-400'
+  const inputCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
+  const selectCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
 
   function filterRow() {
     const dateLabelCell = (fromKey: keyof ColFilters, toKey: keyof ColFilters) => (
@@ -328,7 +326,6 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-1"><input value={colFilters.code}         onChange={e => setCf('code', e.target.value)}         className={inputCls} /></td>
         {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
         <td className="px-2 py-1"><input value={colFilters.customer}     onChange={e => setCf('customer', e.target.value)}     className={inputCls} /></td>
-        <td className="px-2 py-1"><input value={colFilters.createdBy}    onChange={e => setCf('createdBy', e.target.value)}    className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.salesman}     onChange={e => setCf('salesman', e.target.value)}     className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.deliveryBatch} onChange={e => setCf('deliveryBatch', e.target.value)} className={inputCls} /></td>
         <td className="px-2 py-1" />
@@ -360,7 +357,6 @@ export default function ClassicOrdersPage() {
 
   function renderRow(o: Order) {
     const cust = customerMap.get(o.restaurantId)
-    const createdByName = getField(o, 'createdByName')
     const internalNote = getField(o, 'internalNote')
     const invStatus = invoiceStatusFor(o, invoicedOrderIds)
     const isSelected = selected.has(o.id)
@@ -380,7 +376,6 @@ export default function ClassicOrdersPage() {
         </td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{o.deliveryDate ? <DateCell iso={o.deliveryDate} /> : <span className="text-gray-300">—</span>}</td>
         <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{createdByName || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
           {(() => {
@@ -394,16 +389,12 @@ export default function ClassicOrdersPage() {
             const display = hasPending ? slotLabel(pendingVal) : formatDriverSlotFromOrder(o)
             if (!isReadMode && editBatchId === o.id) {
               return (
-                <select
-                  autoFocus
+                <DriverSlotCombobox
+                  slots={driverSlots}
                   value={editBatchVal}
-                  onChange={e => { setEditBatchVal(e.target.value); stageBatch(o.id, e.target.value, originalSlotId) }}
-                  onBlur={() => setEditBatchId(null)}
-                  className="border border-purple-400 rounded px-1 py-0.5 text-xs bg-white focus:outline-none"
-                >
-                  <option value="">— unassigned —</option>
-                  {driverSlots.map(s => <option key={s.id} value={s.id}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
-                </select>
+                  onSelect={slotId => { setEditBatchVal(slotId); stageBatch(o.id, slotId, originalSlotId); setEditBatchId(null) }}
+                  onClose={() => setEditBatchId(null)}
+                />
               )
             }
             return (
@@ -594,7 +585,6 @@ export default function ClassicOrdersPage() {
                   { field: 'code',          label: 'Quotation\nNumber', right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'restaurantName',label: 'Customer',          right: false },
-                  { field: 'createdBy',     label: 'Created\nby',       right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
                   { field: 'deliveryBatch', label: 'Delivery\nBatch',   right: false },
                   { field: 'totalAmount',   label: 'Total',             right: true  },
