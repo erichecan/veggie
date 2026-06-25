@@ -50,7 +50,6 @@ interface ColFilters {
   quotationDateFrom: string
   quotationDateTo: string
   customer: string
-  createdBy: string
   salesman: string
   deliveryDateFrom: string
   deliveryDateTo: string
@@ -64,7 +63,7 @@ interface ColFilters {
 
 const EMPTY_CF: ColFilters = {
   code: '', quotationDateFrom: '', quotationDateTo: '',
-  customer: '', createdBy: '', salesman: '',
+  customer: '', salesman: '',
   deliveryDateFrom: '', deliveryDateTo: '',
   salesTeam: '', status: '', internalNote: '',
   createdAtFrom: '', createdAtTo: '', weekday: '',
@@ -417,7 +416,6 @@ export default function ClassicQuotationsPage() {
     if (cf.quotationDateFrom) result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) >= cf.quotationDateFrom)
     if (cf.quotationDateTo)   result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) <= cf.quotationDateTo)
     if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
-    if (cf.createdBy)   result = result.filter(o => getField(o, 'createdByName').toLowerCase().includes(cf.createdBy.toLowerCase()))
     if (cf.salesman)      result = result.filter(o => (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(cf.salesman.toLowerCase()))
     if (cf.deliveryDateFrom) result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d >= cf.deliveryDateFrom })
     if (cf.deliveryDateTo)   result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d <= cf.deliveryDateTo })
@@ -451,7 +449,6 @@ export default function ClassicQuotationsPage() {
         if (sortField === 'code') { av = a.code ?? a.id; bv = b.code ?? b.id }
         else if (sortField === 'quotationDate') { av = getField(a, 'quotationDate'); bv = getField(b, 'quotationDate') }
         else if (sortField === 'customer') { av = a.restaurantName; bv = b.restaurantName }
-        else if (sortField === 'createdBy') { av = getField(a, 'createdByName'); bv = getField(b, 'createdByName') }
         else if (sortField === 'salesman') { av = customerMap.get(a.restaurantId)?.salesman ?? ''; bv = customerMap.get(b.restaurantId)?.salesman ?? '' }
         else if (sortField === 'deliveryDate') { av = getField(a, 'deliveryDate'); bv = getField(b, 'deliveryDate') }
         else if (sortField === 'total') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
@@ -700,7 +697,6 @@ ${footerHtml}
   function renderRow(o: Order) {
     const cust = customerMap.get(o.restaurantId)
     const quotationDate = getField(o, 'quotationDate')
-    const createdByName = getField(o, 'createdByName')
     const internalNote = getField(o, 'internalNote')
     const isSelected = selected.has(o.id)
     const isEditingItems = editItemsId === o.id
@@ -726,8 +722,6 @@ ${footerHtml}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={quotationDate} /></td>
           {/* Customer */}
           <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
-          {/* Created by */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{createdByName || '—'}</td>
           {/* Salesperson */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
           {/* Delivery Date */}
@@ -904,7 +898,6 @@ ${footerHtml}
         <td className="px-2 py-1"><input value={colFilters.code} onChange={e => setCf('code', e.target.value)} className={inputCls} /></td>
         {dateLabelCell('quotationDateFrom', 'quotationDateTo')}
         <td className="px-2 py-1"><input value={colFilters.customer}  onChange={e => setCf('customer', e.target.value)}  className={inputCls} /></td>
-        <td className="px-2 py-1"><input value={colFilters.createdBy} onChange={e => setCf('createdBy', e.target.value)} className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.salesman}      onChange={e => setCf('salesman', e.target.value)}      className={inputCls} /></td>
         {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
         <td className="px-2 py-1" />
@@ -1000,7 +993,6 @@ ${footerHtml}
                   { field: 'code',          label: 'Quotation\nNumber', right: false },
                   { field: 'quotationDate', label: 'Quotation\nDate',   right: false },
                   { field: 'customer',      label: 'Customer',          right: false },
-                  { field: 'createdBy',     label: 'Created\nby',       right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'total',         label: 'Total',             right: true  },

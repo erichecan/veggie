@@ -9,6 +9,7 @@ import { apiGet, apiPut } from '@/lib/api'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
+import { formatDateTimeShort } from '@/lib/format-date'
 import { OrderChatter } from '@/components/order/OrderChatter'
 
 const PURPLE = '#875A7B'
@@ -58,6 +59,8 @@ export default function QuotationDetailPage() {
   const [tab, setTab] = useState<Tab>('lines')
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [auditLogs, setAuditLogs] = useState<{ id: string; action: string; detail?: string; userName?: string; createdAt: string }[]>([])
+  const [showAuditLog, setShowAuditLog] = useState(false)
   // Editable buffer
   const [internalNote, setInternalNote] = useState('')
   const [salesman, setSalesman] = useState('')
@@ -103,6 +106,8 @@ export default function QuotationDetailPage() {
       setPricelists(pls)
       if (ord.pricelistId) setPricelist(pls.find(p => p.id === ord.pricelistId) ?? null)
 
+      apiGet<typeof auditLogs>(`/api/orders/${id}/audit`).then(setAuditLogs).catch(() => {})
+
       const productIds = Array.from(new Set((ord.lines ?? []).map(l => l.productId).filter(Boolean)))
       if (productIds.length > 0) {
         apiGet<ForecastRow[]>(`/api/products/forecast?ids=${productIds.join(',')}`)
@@ -124,6 +129,15 @@ export default function QuotationDetailPage() {
   useEffect(() => {
     apiGet<AllProduct[]>('/api/products?limit=500').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
   }, [])
+
+  // 操作历史:动作中文标签 + 兜底创建人条目(导入订单可能无 created 审计记录)
+  const ACTION_LABEL: Record<string, string> = { created: '创建', confirmed: '确认', withdrawn: '撤回', cancelled: '取消', updated: '修改' }
+  const displayLogs = useMemo(() => {
+    if (!order) return auditLogs
+    if (auditLogs.some(l => l.action === 'created')) return auditLogs
+    const name = (order as unknown as { createdByName?: string }).createdByName
+    return [...auditLogs, { id: '__created__', action: 'created', userName: name, createdAt: String(order.createdAt) }]
+  }, [auditLogs, order])
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -712,6 +726,39 @@ export default function QuotationDetailPage() {
               <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{displayTotal.toFixed(2)}</span></div>
             </div>
           </div>
+        </div>
+
+        {/* 修改日志 / 操作历史 */}
+        <div className="bg-white rounded-xl border border-gray-200 mb-4">
+          <button
+            onClick={() => setShowAuditLog(!showAuditLog)}
+            className="w-full flex items-center justify-between px-6 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
+          >
+            <span>修改日志 ({displayLogs.length})</span>
+            <span className="text-gray-400">{showAuditLog ? '▲' : '▼'}</span>
+          </button>
+          {showAuditLog && (
+            <div className="border-t border-gray-200 px-6 py-4">
+              {displayLogs.length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-4">暂无修改记录</p>
+              ) : (
+                <div className="space-y-3">
+                  {displayLogs.map(log => (
+                    <div key={log.id} className="flex items-start gap-3 text-sm">
+                      <div className="w-2 h-2 rounded-full bg-purple-400 mt-1.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-800">{log.userName || '系统'}</span>
+                          <span className="text-gray-400 text-xs">{formatDateTimeShort(log.createdAt)}</span>
+                        </div>
+                        <div className="text-gray-600 mt-0.5">{ACTION_LABEL[log.action] ?? log.action}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Region 7: Chatter */}
