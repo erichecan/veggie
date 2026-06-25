@@ -112,21 +112,15 @@ export async function POST(req: Request) {
         0,
       )
 
-      // 3. 查该周期内该客户已付款的发票
-      const invoices = await prisma.invoice.findMany({
-        where: {
-          customerId,
-          status: { in: ['PAID', 'PARTIAL'] as never[] },
-          createdAt: { gte: start, lte: end },
-        },
-        select: { id: true, amountPaid: true },
+      // 3. 期内实收 = 该客户期内 Payment 流水之和(按 paidAt)。
+      //    旧实现按 invoice.status∈{PAID,PARTIAL} 求 amountPaid,但 PARTIAL 从未被设置→
+      //    部分付款的 POSTED 发票被漏算;且按发票创建日而非收款日,跨期会错(P1-6/P2)。
+      const periodPayments = await prisma.payment.findMany({
+        where: { customerId, paidAt: { gte: start, lte: end } },
+        select: { amount: true, invoiceId: true },
       })
-
-      const invoiceIds = invoices.map(i => i.id)
-      const totalPayments = invoices.reduce(
-        (sum, i) => sum + toNum(i.amountPaid),
-        0,
-      )
+      const totalPayments = periodPayments.reduce((sum, p) => sum + toNum(p.amount), 0)
+      const invoiceIds = [...new Set(periodPayments.map(p => p.invoiceId))]
 
       // 4. closingBalance = openingBalance + totalSales - totalPayments
       const closingBalance = openingBalance + totalSales - totalPayments

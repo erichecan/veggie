@@ -239,6 +239,46 @@ export async function postVendorPaymentToJournal(
   })
 }
 
+/** 贷记单(退货退款)过账：Dr Revenue + VAT / Cr AR（冲减应收,反向发票;此前 CreditNote 游离总账 — P1-6） */
+export async function postCreditNoteToJournal(
+  tx: TxClient,
+  cn: { id: string; name: string; customerId: string; subtotalExTax: unknown; totalTax: unknown; totalIncTax: unknown },
+  userId: string,
+): Promise<{ id: string; name: string } | null> {
+  const ar = await findAccountByCode(tx, '1100')
+  const rev = await findAccountByCode(tx, '4000')
+  const vatOut = await findAccountByCode(tx, '2200')
+  if (!ar || !rev) return null
+
+  const sub = Number(cn.subtotalExTax)
+  const tax = Number(cn.totalTax)
+  const total = Number(cn.totalIncTax)
+  if (!(total > 0)) return null
+
+  const name = await genEntryName(tx)
+  return tx.journalEntry.create({
+    data: {
+      name,
+      narration: `Credit Note ${cn.name}`,
+      sourceType: 'credit_note',
+      sourceId: cn.id,
+      status: 'POSTED',
+      totalDebit: total,
+      totalCredit: total,
+      createdBy: userId,
+      postedAt: new Date(),
+      lines: {
+        create: [
+          { accountId: rev.id, description: `Sales return - ${cn.name}`, debit: sub, credit: 0, sequence: 10 },
+          ...(tax > 0 && vatOut ? [{ accountId: vatOut.id, description: `VAT reversal - ${cn.name}`, debit: tax, credit: 0, sequence: 20 }] : []),
+          { accountId: ar.id, description: `AR credit - ${cn.name}`, debit: 0, credit: total, partnerId: cn.customerId, sequence: 30 },
+        ],
+      },
+    },
+    select: { id: true, name: true },
+  })
+}
+
 /** 预置标准会计科目（seed 用） */
 export const STANDARD_ACCOUNTS: Array<{ code: string; name: string; nameZh: string; type:
   'RECEIVABLE' | 'PAYABLE' | 'ASSET' | 'LIABILITY' | 'INCOME' | 'EXPENSE' | 'EQUITY'

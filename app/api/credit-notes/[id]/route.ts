@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { postCreditNoteToJournal } from '@/lib/accounting'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 
 /**
@@ -117,10 +118,22 @@ export async function PUT(
       }
 
       updateData.updatedAt = new Date()
-      const updated = await prisma.creditNote.update({
-        where: { id },
-        data: updateData,
-        include: { lines: { orderBy: { sequence: 'asc' } } },
+      // SSOT: 确认贷记单时生成总账凭证 Dr Revenue+VAT / Cr AR(此前 CreditNote 游离总账 — P1-6)
+      const willConfirm = updateData.status === 'CONFIRMED'
+      const updated = await prisma.$transaction(async (tx) => {
+        const u = await tx.creditNote.update({
+          where: { id },
+          data: updateData,
+          include: { lines: { orderBy: { sequence: 'asc' } } },
+        })
+        if (willConfirm) {
+          await postCreditNoteToJournal(
+            tx as never,
+            { id: u.id, name: u.name, customerId: u.customerId, subtotalExTax: u.subtotalExTax, totalTax: u.totalTax, totalIncTax: u.totalIncTax },
+            user.userId,
+          )
+        }
+        return u
       })
 
       await writeLog({
