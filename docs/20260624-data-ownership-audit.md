@@ -219,4 +219,23 @@
 - ⏸ **P0-2 Trip 退化(暂缓,需专项)**:Trip 深度嵌入司机端执行流(列表/核货/退货/交账/差异),将其退化为「只管交账、配送从 wave 派生」是一次司机端重构,必须配合司机端 UX 实测,不宜在自动化批量中盲改。设计已在第三节决策表锁定;落地需:① 停在订单确认建 per-order Trip ② 改在 wave「确认出发」时按波次建 Trip ③ 司机端列表改读 wave 派生。**未动司机端代码。**
 - ⏸ **P1-4 状态机**:死的 WaveStatus / 无写入的 WAVE_ASSIGNED 清理归入 P2;Order/Trip/Wave 状态协同依赖 P0-2,随之暂缓。
 
-*本审计始于只读分析。已完成 P0-1/P0-3/P1-5/P1-6/P1-7;暂缓 P0-2/P1-4(需专项+司机端实测);进行中 P2 死字段清理 + 不变量护栏。*
+## 九、第二轮实施(2026-06-24,续 7 commits)
+
+- ✅ 改单金额服务端含税重算(3be3e14)— 修"信前端 subtotal/丢税"
+- ✅ 模板改价传播到变体(da2527a)— 修"改价被静默忽略"
+- ✅ Customer.address 后端派生 + 改址清 geocode + Order.commissionRate 下单快照(ce084a8)
+- ✅ DeliverySlip 出发同步 + 移除弃用 deliveryBatch 筛选(77ce4fb)
+- ✅ Statement 实收按 Payment 流水 + CreditNote 入账 Dr Revenue/Cr AR(b343c33)
+
+⏸ **仍暂缓(需专项/业务口径/用户确认)**:
+- P0-2 Trip 退化(司机端重构 + 实测)
+- finance 页"本期欠款"口径(整页订单模型→发票模型重构 + 业务定义)
+- invoicedQty 部分开票精确回写(需发票行带 orderLineId)
+- 物理删死列 Product.stock / Order.deliveryBatch(删生产列数据,按全局规则需用户确认)
+- salesman 三处口径(place-order 控件标签歧义,需产品判断)
+- 收货回写 standardPrice(需定加权/最近成本口径)
+- WaveStatus/WAVE_ASSIGNED 死枚举(防御性引用,删值 destructive 低价值)
+
+⚠️ db:validate 2 项预存失败(qtyOnHand==ΣStockMove 895、完成单 deliveredQty 53)= Odoo 导入历史数据缺口,非本次回归。
+
+*已完成 P0-1/P0-3/P1-5/P1-6(全部确定性 bug)/P1-7 + 第二轮 5 项;其余暂缓项均有明确理由,见上。*
