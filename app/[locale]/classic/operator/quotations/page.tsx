@@ -6,7 +6,6 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/api'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
-import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, OrderStatus, Invoice, Customer, Trip } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { DateWithDay } from '@/components/shared/date-with-day'
@@ -34,16 +33,6 @@ const STATUS_COLOR: Record<string, string> = {
   completed:     'bg-blue-50 text-blue-700',
 }
 
-const INV_LABEL: Record<string, string> = {
-  nothing:   'Nothing to Invoice',
-  to_invoice:'To Invoice',
-  invoiced:  'Fully Invoiced',
-}
-const INV_COLOR: Record<string, string> = {
-  nothing:   'text-gray-400',
-  to_invoice:'text-orange-600 font-medium',
-  invoiced:  'text-green-700 font-medium',
-}
 
 type GroupByField = 'none' | 'customer' | 'salesman' | 'salesTeam' | 'status' | 'weekday'
 type TabValue = 'all' | 'quotations'
@@ -63,11 +52,10 @@ interface ColFilters {
   customer: string
   createdBy: string
   salesman: string
-  deliveryBatch: string
+  deliveryDateFrom: string
+  deliveryDateTo: string
   salesTeam: string
-  invoiceStatus: string
   status: string
-  orderReturn: string
   internalNote: string
   createdAtFrom: string
   createdAtTo: string
@@ -76,8 +64,9 @@ interface ColFilters {
 
 const EMPTY_CF: ColFilters = {
   code: '', quotationDateFrom: '', quotationDateTo: '',
-  customer: '', createdBy: '', salesman: '', deliveryBatch: '',
-  salesTeam: '', invoiceStatus: '', status: '', orderReturn: '', internalNote: '',
+  customer: '', createdBy: '', salesman: '',
+  deliveryDateFrom: '', deliveryDateTo: '',
+  salesTeam: '', status: '', internalNote: '',
   createdAtFrom: '', createdAtTo: '', weekday: '',
 }
 
@@ -91,11 +80,6 @@ function getField(o: Order, key: string): string {
   return ((o as unknown as Record<string, unknown>)[key] as string) ?? ''
 }
 
-function invoiceStatus(o: Order, invoicedIds: Set<string>): 'nothing' | 'to_invoice' | 'invoiced' {
-  if (invoicedIds.has(o.id)) return 'invoiced'
-  if (o.status === 'completed') return 'to_invoice'
-  return 'nothing'
-}
 
 function isSameDay(dateStr: string, today: string) {
   return dateStr.slice(0, 10) === today
@@ -132,13 +116,8 @@ export default function ClassicQuotationsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const [showFiltersBar, setShowFiltersBar] = useState(false)
-  const [editBatchId, setEditBatchId] = useState<string | null>(null)
-  const [editBatchVal, setEditBatchVal] = useState('')
-  const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
-
-  useEffect(() => {
-    apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
-  }, [])
+  const [editDateId, setEditDateId] = useState<string | null>(null)
+  const [editDateVal, setEditDateVal] = useState('')
   const [editItemsId, setEditItemsId] = useState<string | null>(null)
   const [editItemsLines, setEditItemsLines] = useState<Array<{ id?: string; productId: string; productName: string; spec: string; quantity: number; price: number; uomName?: string }>>([])
   const [savingItems, setSavingItems] = useState(false)
@@ -161,17 +140,15 @@ export default function ClassicQuotationsPage() {
 
   // ── Batch quick-edit ─────────────────────────────────────────────────────
 
-  async function saveBatch(orderId: string, slotId: string) {
-    const slot = driverSlots.find(s => s.id === slotId)
-    const deliveryBatch = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : ''
+  async function saveDeliveryDate(orderId: string, date: string) {
     try {
-      await apiPut(`/api/orders/${orderId}`, { driverSlotId: slotId || null })
-      // SSOT(P0-1): 显示走 deliveryBatchDisplay(所属 wave 派生),乐观更新同步设置
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, deliveryBatchDisplay: deliveryBatch, driverSlotId: slotId || null } as Order : o))
+      await apiPut(`/api/orders/${orderId}`, { deliveryDate: date || null })
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, deliveryDate: date || null } as Order : o))
+      toast.success(date ? '已安排送货日期' : '已清除送货日期')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update batch')
+      toast.error(e instanceof Error ? e.message : 'Failed to update delivery date')
     }
-    setEditBatchId(null)
+    setEditDateId(null)
   }
 
   async function startEditItems(o: Order) {
@@ -442,7 +419,8 @@ export default function ClassicQuotationsPage() {
     if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
     if (cf.createdBy)   result = result.filter(o => getField(o, 'createdByName').toLowerCase().includes(cf.createdBy.toLowerCase()))
     if (cf.salesman)      result = result.filter(o => (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(cf.salesman.toLowerCase()))
-    if (cf.deliveryBatch) result = result.filter(o => formatDriverSlotFromOrder(o).toLowerCase().includes(cf.deliveryBatch.toLowerCase()))
+    if (cf.deliveryDateFrom) result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d >= cf.deliveryDateFrom })
+    if (cf.deliveryDateTo)   result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d <= cf.deliveryDateTo })
     if (cf.salesTeam)     result = result.filter(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(cf.salesTeam.toLowerCase()))
     if (cf.status) {
       // Odoo state value → internal OrderStatus
@@ -455,21 +433,6 @@ export default function ClassicQuotationsPage() {
       }
       const allowed = map[cf.status] ?? []
       result = result.filter(o => allowed.includes(o.status))
-    }
-    if (cf.invoiceStatus) {
-      // Odoo invoice_status value → internal label key
-      const map: Record<string, string> = {
-        upselling:    'upselling',
-        invoiced:     'invoiced',
-        'to invoice': 'to_invoice',
-        no:           'nothing',
-      }
-      const target = map[cf.invoiceStatus] ?? cf.invoiceStatus
-      result = result.filter(o => invoiceStatus(o, invoicedIds) === target)
-    }
-    if (cf.orderReturn) {
-      const want = cf.orderReturn === 'true'
-      result = result.filter(o => !!(o as unknown as Record<string, unknown>).orderReturn === want)
     }
     if (cf.internalNote) result = result.filter(o => getField(o, 'internalNote').toLowerCase().includes(cf.internalNote.toLowerCase()))
     if (cf.createdAtFrom) result = result.filter(o => (o.createdAt ?? '').slice(0, 10) >= cf.createdAtFrom)
@@ -490,9 +453,8 @@ export default function ClassicQuotationsPage() {
         else if (sortField === 'customer') { av = a.restaurantName; bv = b.restaurantName }
         else if (sortField === 'createdBy') { av = getField(a, 'createdByName'); bv = getField(b, 'createdByName') }
         else if (sortField === 'salesman') { av = customerMap.get(a.restaurantId)?.salesman ?? ''; bv = customerMap.get(b.restaurantId)?.salesman ?? '' }
-        else if (sortField === 'deliveryBatch') { av = formatDriverSlotFromOrder(a); bv = formatDriverSlotFromOrder(b) }
+        else if (sortField === 'deliveryDate') { av = getField(a, 'deliveryDate'); bv = getField(b, 'deliveryDate') }
         else if (sortField === 'total') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
-        else if (sortField === 'invoiceStatus') { av = invoiceStatus(a, invoicedIds); bv = invoiceStatus(b, invoicedIds) }
         else if (sortField === 'status') { av = a.status; bv = b.status }
         else if (sortField === 'internalNote') { av = getField(a, 'internalNote'); bv = getField(b, 'internalNote') }
         else if (sortField === 'createdAt') { av = a.createdAt ?? ''; bv = b.createdAt ?? '' }
@@ -740,7 +702,6 @@ ${footerHtml}
     const quotationDate = getField(o, 'quotationDate')
     const createdByName = getField(o, 'createdByName')
     const internalNote = getField(o, 'internalNote')
-    const invStatus = invoiceStatus(o, invoicedIds)
     const isSelected = selected.has(o.id)
     const isEditingItems = editItemsId === o.id
     const canEditItems = o.status === 'pending' && !isReadMode
@@ -769,26 +730,24 @@ ${footerHtml}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{createdByName || '—'}</td>
           {/* Salesperson */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
-          {/* Delivery Batch */}
+          {/* Delivery Date */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-            {!isReadMode && editBatchId === o.id ? (
-              <select
+            {!isReadMode && editDateId === o.id ? (
+              <input
+                type="date"
                 autoFocus
-                value={editBatchVal}
-                onChange={e => setEditBatchVal(e.target.value)}
-                onBlur={() => saveBatch(o.id, editBatchVal)}
+                value={editDateVal}
+                onChange={e => setEditDateVal(e.target.value)}
+                onBlur={() => saveDeliveryDate(o.id, editDateVal)}
                 className="border border-purple-400 rounded px-1 py-0.5 text-xs bg-white focus:outline-none"
-              >
-                <option value="">— unassigned —</option>
-                {driverSlots.map(s => <option key={s.id} value={s.id}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
-              </select>
+              />
             ) : (
               <span
                 className={isReadMode ? '' : 'cursor-pointer hover:text-purple-700 hover:underline'}
-                style={{ color: formatDriverSlotFromOrder(o) ? '#875A7B' : undefined }}
-                onClick={isReadMode ? undefined : () => { setEditBatchId(o.id); setEditBatchVal((o as unknown as { driverSlotId?: string }).driverSlotId ?? '') }}
+                style={{ color: getField(o, 'deliveryDate') ? '#875A7B' : undefined }}
+                onClick={isReadMode ? undefined : () => { setEditDateId(o.id); setEditDateVal(getField(o, 'deliveryDate').slice(0, 10)) }}
               >
-                {formatDriverSlotFromOrder(o) || '—'}
+                {getField(o, 'deliveryDate') ? <DateCell iso={getField(o, 'deliveryDate')} /> : '—'}
               </span>
             )}
           </td>
@@ -806,12 +765,6 @@ ${footerHtml}
               <span className="tabular-nums">€ {o.totalAmount.toFixed(2)}</span>
             )}
           </td>
-          {/* Order Return */}
-          <td className="px-2 py-2 text-center">
-            <input type="checkbox" checked={!!(o as unknown as Record<string, unknown>).orderReturn} readOnly className="w-3.5 h-3.5 accent-purple-600 cursor-default" />
-          </td>
-          {/* Invoice Status */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{INV_LABEL[invStatus]}</td>
           {/* Status */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{STATUS_LABEL[o.status] ?? o.status}</td>
           {/* Internal Notes */}
@@ -929,8 +882,8 @@ ${footerHtml}
 
   // ── Column filter row ─────────────────────────────────────────────────────
 
-  const inputCls = 'w-full border-0 border-b border-gray-200 bg-transparent text-xs px-1 py-0.5 focus:outline-none focus:border-purple-400'
-  const selectCls = 'w-full border-0 border-b border-gray-200 bg-transparent text-xs px-1 py-0.5 focus:outline-none focus:border-purple-400'
+  const inputCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
+  const selectCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
 
   function filterRow() {
     const dateLabelCell = (fromKey: keyof ColFilters, toKey: keyof ColFilters) => (
@@ -953,24 +906,8 @@ ${footerHtml}
         <td className="px-2 py-1"><input value={colFilters.customer}  onChange={e => setCf('customer', e.target.value)}  className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.createdBy} onChange={e => setCf('createdBy', e.target.value)} className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.salesman}      onChange={e => setCf('salesman', e.target.value)}      className={inputCls} /></td>
-        <td className="px-2 py-1"><input value={colFilters.deliveryBatch} onChange={e => setCf('deliveryBatch', e.target.value)} className={inputCls} /></td>
+        {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
         <td className="px-2 py-1" />
-        <td className="px-2 py-1">
-          <select value={colFilters.orderReturn} onChange={e => setCf('orderReturn', e.target.value)} className={selectCls}>
-            <option value=""></option>
-            <option value="false">False</option>
-            <option value="true">True</option>
-          </select>
-        </td>
-        <td className="px-2 py-1">
-          <select value={colFilters.invoiceStatus} onChange={e => setCf('invoiceStatus', e.target.value)} className={selectCls}>
-            <option value=""></option>
-            <option value="upselling">Upselling Opportunity</option>
-            <option value="invoiced">Fully Invoiced</option>
-            <option value="to invoice">To Invoice</option>
-            <option value="no">Nothing to Invoice</option>
-          </select>
-        </td>
         <td className="px-2 py-1">
           <select value={colFilters.status} onChange={e => setCf('status', e.target.value)} className={selectCls}>
             <option value=""></option>
@@ -1013,7 +950,7 @@ ${footerHtml}
               ]
             : [
                 { label: 'Edit', onClick: () => {}, primary: true },
-                { label: 'Mode', onClick: () => { setIsReadMode(true); setEditBatchId(null); setEditItemsId(null) } },
+                { label: 'Mode', onClick: () => { setIsReadMode(true); setEditDateId(null); setEditItemsId(null) } },
               ]),
           ...(selected.size >= 2 ? [{ label: bulkConfirming ? '确认中...' : `批量确认 (${selected.size})`, onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
           ...(selected.size >= 2 ? [{ label: bulkDeleting ? '删除中...' : `批量删除 (${selected.size})`, onClick: handleBulkDelete, primary: true, style: 'red' as const, disabled: bulkDeleting }] : []),
@@ -1065,10 +1002,8 @@ ${footerHtml}
                   { field: 'customer',      label: 'Customer',          right: false },
                   { field: 'createdBy',     label: 'Created\nby',       right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
-                  { field: 'deliveryBatch', label: 'Delivery\nBatch',   right: false },
+                  { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'total',         label: 'Total',             right: true  },
-                  { field: null,            label: 'Order\nReturn',     right: false },
-                  { field: 'invoiceStatus', label: 'Invoice\nStatus',   right: false },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
                   { field: 'createdAt',     label: 'Creation\nDate',    right: false },
