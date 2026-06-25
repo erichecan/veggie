@@ -47,6 +47,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           ? { create: specialPrices.map(({ id: _id, customerId: _cid, ...sp }: Record<string, unknown>) => sp) }
           : undefined,
       }
+      // SSOT: address 由地址组件后端派生(前端不再权威拼接),保证与 street/.. 一致(P2)
+      const b = before as unknown as Record<string, unknown>
+      const pick = (k: string) => (data[k] !== undefined ? data[k] : b[k])
+      updateData.address = ['street', 'street2', 'city', 'state', 'zip', 'country']
+        .map((k) => String(pick(k) ?? '').trim()).filter(Boolean).join(', ')
+      // 地址组件变更 → 清空经纬度,触发重新 geocode(否则坐标陈旧)
+      const addrChanged = ['street', 'street2', 'city', 'state', 'zip', 'country']
+        .some((k) => data[k] !== undefined && String(data[k] ?? '') !== String(b[k] ?? ''))
+      if (addrChanged) { updateData.latitude = null; updateData.longitude = null }
       const customer = await prisma.customer.update({
         where: { id },
         data: updateData as Parameters<typeof prisma.customer.update>[0]['data'],

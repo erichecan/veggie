@@ -230,14 +230,14 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '订单商品不能为空' }, { status: 400 })
       }
 
-      // P1-4: 自动获取客户默认司机（如果前端未指定 driverSlotId）
+      // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
+      const custDefaults = await prisma.customer.findUnique({
+        where: { id: restaurantId },
+        select: { defaultDriverSlotId: true, commissionRate: true },
+      })
       let resolvedDriverSlotId = data.driverSlotId || null
-      if (!resolvedDriverSlotId) {
-        const cust = await prisma.customer.findUnique({
-          where: { id: restaurantId },
-          select: { defaultDriverSlotId: true },
-        })
-        if (cust?.defaultDriverSlotId) resolvedDriverSlotId = cust.defaultDriverSlotId
+      if (!resolvedDriverSlotId && custDefaults?.defaultDriverSlotId) {
+        resolvedDriverSlotId = custDefaults.defaultDriverSlotId
       }
 
       // 1) 服务端权威定价（同步查 customer / products / pricelists / last-price）
@@ -286,6 +286,8 @@ export async function POST(req: Request) {
                 paymentMethod: normalizePaymentMethod(data.paymentMethod),
                 pricelistId,
                 priceType,
+                // SSOT: 下单时快照客户佣金率(此前 schema 注释承诺但从不写,恒 null)(P2)
+                commissionRate: custDefaults?.commissionRate ?? null,
                 quotationDate: normalizeDateOnly(data.quotationDate) ?? new Date(),
                 deliveryDate: normalizeDateOnly(data.deliveryDate),
                 driverSlotId: resolvedDriverSlotId,
