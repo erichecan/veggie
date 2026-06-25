@@ -142,7 +142,7 @@ function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, 
             <td style={cell}>
               <div style={{ fontWeight: 'bold' }}>{customer?.name ?? '—'}</div>
               {customer?.address && <div style={{ color: '#555', marginTop: 2, fontSize: 11 }}>{customer.address}</div>}
-              {salesTeam && <div style={{ marginTop: 4 }}>Driver: {salesTeam}</div>}
+              {/* salesTeam 是业务员(Salesman),不是司机;司机由配送批次(wave)决定。旧 Odoo 用 salesteam 代司机已废弃。 */}
             </td>
             <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle' }}>
               <SimpleBarcode value={quotationNo} />

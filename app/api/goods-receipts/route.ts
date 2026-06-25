@@ -108,7 +108,7 @@ export async function POST(req: Request) {
 
         // 更新每条 PO line 的 receivedQty + Lot + StockMove + Product.qtyOnHand
         for (const l of lines) {
-          const poLine = po.lines.find((pl: { productId: string; bestBefore?: Date | null }) => pl.productId === l.productId)
+          const poLine = po.lines.find((pl: { productId: string; bestBefore?: Date | null; unitCost?: unknown }) => pl.productId === l.productId)
           if (!poLine) continue
           const qty = Number(l.qty)
           if (qty <= 0) continue
@@ -118,9 +118,18 @@ export async function POST(req: Request) {
           })
           // damaged 的货不入库
           if ((l.condition ?? 'ok') === 'ok') {
+            // SSOT(成本): 收货按加权平均回写 standardPrice(此前收货从不回写,成本陈旧 — P2)
+            // newStd = (max(oldQty,0)×oldStd + qty×收货价) / (max(oldQty,0)+qty);负库存按 0 计权
+            const recvCost = Number((poLine as { unitCost?: unknown }).unitCost ?? 0)
+            const prod = await tx.product.findUnique({ where: { id: l.productId }, select: { qtyOnHand: true, standardPrice: true } })
+            const oldQty = Math.max(Number(prod?.qtyOnHand ?? 0), 0)
+            const oldStd = Number(prod?.standardPrice ?? 0)
+            const newStd = recvCost > 0 && (oldQty + qty) > 0
+              ? Math.round(((oldQty * oldStd + qty * recvCost) / (oldQty + qty)) * 100) / 100
+              : oldStd
             await tx.product.update({
               where: { id: l.productId },
-              data: { qtyOnHand: { increment: qty } },
+              data: { qtyOnHand: { increment: qty }, ...(newStd !== oldStd ? { standardPrice: newStd } : {}) },
             })
 
             // 创建批次
