@@ -65,6 +65,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           status: data.status?.toUpperCase() ?? undefined,
         },
       })
+      // SSOT(定价): 定价引擎读 Product.listPrice(product-first),UI 只编辑模板 →
+      // 必须把模板的价格字段传播到其所有变体,否则改价被静默忽略(P2 定价)。
+      const priceProp: Record<string, unknown> = {}
+      if (data.listPrice !== undefined) priceProp.listPrice = Number(data.listPrice)
+      if (data.standardPrice !== undefined) priceProp.standardPrice = Number(data.standardPrice)
+      if (data.customerTaxRate !== undefined) priceProp.customerTaxRate = Number(data.customerTaxRate)
+      if (data.commissionPrice !== undefined) priceProp.commissionPrice = data.commissionPrice === null ? null : Number(data.commissionPrice)
+      if (Object.keys(priceProp).length > 0) {
+        await prisma.product.updateMany({ where: { templateId: id }, data: priceProp })
+      }
+
       const isArchive = data.status?.toUpperCase() === 'ARCHIVED'
       const isRestore = data.status?.toUpperCase() === 'ACTIVE'
       const logDetail = isArchive
