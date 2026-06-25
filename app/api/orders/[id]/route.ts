@@ -7,6 +7,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, orderItemsFromLines } from '@/lib/order-items'
 import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap } from '@/lib/wave-assign'
+import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum } from '@/lib/decimal-helpers'
 
 const ORDER_TRACKED_FIELDS = [
@@ -536,6 +537,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             },
           }).catch((e: unknown) => console.error('[DeliverySlip create]', e))
         }
+      }
+
+      // On COMPLETED: 自动生成 DRAFT 发票(幂等),保证每张完成单都有发票供应收口径用(finance)
+      if (newStatus === 'COMPLETED') {
+        await createDraftInvoiceForOrder(prismaAny, id).catch((e: unknown) => console.error('[auto draft invoice]', e))
       }
 
       // On WITHDRAWN (CONFIRMED → PENDING): 恢复库存预留

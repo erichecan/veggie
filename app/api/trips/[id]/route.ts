@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 
 const TRIP_TRACKED_FIELDS = [
   'name', 'status', 'driverId', 'driverName', 'departTime', 'timeSlot',
@@ -58,6 +59,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'] } },
             data: { status: 'COMPLETED' },
           }).catch((e: unknown) => console.error('[trip→order status]', e))
+          // 完成即自动生成 DRAFT 发票(幂等),供 finance 应收口径用
+          for (const oid of orderIds) {
+            await createDraftInvoiceForOrder(prismaAny, oid).catch((e: unknown) => console.error('[auto draft invoice]', e))
+          }
         }
       }
 

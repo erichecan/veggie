@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
-import type { Order, Customer } from '@/lib/types'
+import type { Order, Customer, Invoice } from '@/lib/types'
 import { DrillPanel, type DrillColumn } from '@/components/shared/drill-panel'
 
 const PURPLE = '#875A7B'
@@ -48,14 +48,26 @@ export default function ClassicFinancePage() {
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [historicalDebt, setHistoricalDebt] = useState<Record<string, number>>({})
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
 
   useEffect(() => {
     apiGet<Order[]>('/api/orders?include_lines=false').then(data => setOrders(data)).catch(() => {})
     apiGet<Customer[]>('/api/customers').then(data => setCustomers(data)).catch(() => {})
+    apiGet<Invoice[]>('/api/invoices').then(data => setInvoices(Array.isArray(data) ? data : [])).catch(() => {})
     apiGet<Record<string, number>>('/api/finance/historical-debt').then(setHistoricalDebt).catch(() => {})
   }, [])
+
+  // SSOT(应收口径,P1-6): 本期欠款 = Σ未付发票 amountDue(DRAFT+POSTED;PAID=0;排除 CANCELLED)。
+  // 配合"完成订单自动建 DRAFT 发票",每张送达单都有发票,口径不漏单且与发票/收款挂钩。
+  const arByCustomer: Record<string, number> = {}
+  for (const inv of invoices) {
+    const st = String(inv.status).toUpperCase()
+    if (st === 'DRAFT' || st === 'POSTED') {
+      arByCustomer[inv.customerId] = (arByCustomer[inv.customerId] ?? 0) + Number(inv.amountDue ?? 0)
+    }
+  }
 
   const today = todayStart()
 
@@ -81,11 +93,12 @@ export default function ClassicFinancePage() {
       return {
         customer: c,
         orders: cOrders,
-        totalOwed: cOrders.reduce((s, o) => s + o.totalAmount, 0),
+        // 应收以未付发票为准(不再用订单额估算);orders 列表仅作近期活动上下文
+        totalOwed: arByCustomer[c.id] ?? 0,
         historicalDebt: historicalDebt[c.id] ?? 0,
       }
     })
-    .filter(g => g.orders.length > 0 || g.historicalDebt > 0)
+    .filter(g => g.totalOwed > 0 || g.historicalDebt > 0)
 
   const totalUnpaid = unpaidGroups.reduce((s, g) => s + g.totalOwed + g.historicalDebt, 0)
   const totalHistoricalDebt = Object.values(historicalDebt).reduce((s, v) => s + v, 0)
