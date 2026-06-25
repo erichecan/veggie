@@ -91,10 +91,7 @@ export async function GET(req: Request) {
       where[field] = range
     }
 
-    // ?deliveryBatch=1 am BAO — filter by delivery batch
-    const deliveryBatch = searchParams.get('deliveryBatch')
-    if (deliveryBatch) where.deliveryBatch = deliveryBatch
-
+    // deliveryBatch 字符串已弃用(调度归属归 wave,P0-1);按批次筛选用 driverSlotId
     const driverSlotId = searchParams.get('driverSlotId')
     if (driverSlotId) where.driverSlotId = driverSlotId
 

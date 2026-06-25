@@ -37,6 +37,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
           data: { deliveryDate, status: 'IN_DELIVERY' },
         }),
+        // SSOT: 同步刷新送货单交货日期(确认出发改期后 DeliverySlip 不再陈旧)(P2)
+        prisma.deliverySlip.updateMany({
+          where: { orderId: { in: orderIds } },
+          data: { deliveryDate },
+        }),
         prisma.pickingWave.update({
           where: { id },
           data: { dispatchedAt: new Date() },
