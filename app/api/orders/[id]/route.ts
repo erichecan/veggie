@@ -522,7 +522,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
-      // On CONFIRMED: create DeliverySlip + PENDING_ASSIGNMENT Trip if not exists
+      // On CONFIRMED: 仅建送货单。Trip 不再在确认时建(P0-2/A):配送调度统一归 wave,
+      // Trip 改在 wave「确认出发」时按波次生成(见 waves/[id]/dispatch + lib/trip-from-wave)。
       if (newStatus === 'CONFIRMED') {
         const existingSlip = await prismaAny.deliverySlip.findUnique({ where: { orderId: id } }).catch(() => null)
         if (!existingSlip) {
@@ -535,26 +536,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             },
           }).catch((e: unknown) => console.error('[DeliverySlip create]', e))
         }
-        // Create a PENDING_ASSIGNMENT trip so dispatch can assign a driver
-        // SSOT: 用当前 OrderLine 实时投影,绝不灌入腐化的 orderBefore.items 列
-        const tripLines = await prisma.orderLine.findMany({ where: { orderId: id }, orderBy: { sequence: 'asc' } })
-        const tripItems = orderItemsFromLines(serializeApi(tripLines) as unknown as Parameters<typeof orderItemsFromLines>[0])
-        await prismaAny.trip.create({
-          data: {
-            status: 'PENDING_ASSIGNMENT',
-            restaurants: [{
-              restaurantId: orderBefore.restaurantId,
-              restaurantName: orderBefore.restaurantName,
-              orderIds: [id],
-              items: tripItems,
-              delivered: false,
-              returns: [],
-              pods: [],
-              cargoVerified: false,
-            }],
-            totalPayment: toNum(orderBefore.totalAmount),
-          },
-        }).catch((e: unknown) => console.error('[Trip PENDING_ASSIGNMENT create]', e))
       }
 
       // On WITHDRAWN (CONFIRMED → PENDING): 恢复库存预留

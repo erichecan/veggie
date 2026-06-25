@@ -5,7 +5,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const { id } = await params
     const body = await req.json()
-    const { timeOfDay, batchNum, driverName, archived } = body
+    const { timeOfDay, batchNum, driverName, archived, userId } = body
+
+    // 仅绑定/解绑系统用户(司机配置页下拉)
+    if (timeOfDay === undefined && batchNum === undefined && driverName === undefined && userId !== undefined) {
+      const slot = await prisma.driverSlot.update({
+        where: { id },
+        data: { userId: userId ? String(userId) : null },
+      })
+      return NextResponse.json(slot)
+    }
 
     if (archived !== undefined) {
       const slot = await prisma.driverSlot.update({
@@ -20,7 +29,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
     const slot = await prisma.driverSlot.update({
       where: { id },
-      data: { timeOfDay, batchNum: Number(batchNum), driverName: driverName.trim() },
+      data: {
+        timeOfDay, batchNum: Number(batchNum), driverName: driverName.trim(),
+        ...(userId !== undefined ? { userId: userId ? String(userId) : null } : {}),
+      },
     })
     return NextResponse.json(slot)
   } catch (e: unknown) {

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { createTripFromWave } from '@/lib/trip-from-wave'
 
 /**
  * 确认出发：将波次内订单的交货日期(deliveryDate)回填为排程日期，
@@ -32,21 +33,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '缺少排程日期，无法确定交货日期' }, { status: 400 })
       }
 
-      const [updated] = await prisma.$transaction([
-        prisma.order.updateMany({
+      // 确认出发:回填订单交货日期+状态、刷新送货单、标记 dispatchedAt,并按波次生成司机行程(P0-2/A)
+      const { updated, trip } = await prisma.$transaction(async (tx) => {
+        const upd = await tx.order.updateMany({
           where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
           data: { deliveryDate, status: 'IN_DELIVERY' },
-        }),
-        // SSOT: 同步刷新送货单交货日期(确认出发改期后 DeliverySlip 不再陈旧)(P2)
-        prisma.deliverySlip.updateMany({
+        })
+        await tx.deliverySlip.updateMany({
           where: { orderId: { in: orderIds } },
           data: { deliveryDate },
-        }),
-        prisma.pickingWave.update({
-          where: { id },
-          data: { dispatchedAt: new Date() },
-        }),
-      ])
+        })
+        await tx.pickingWave.update({ where: { id }, data: { dispatchedAt: new Date() } })
+        // SSOT(P0-2/A): Trip 在此按波次生成,司机身份取自 DriverSlot.userId
+        const t = await createTripFromWave(tx as never, id)
+        return { updated: upd, trip: t }
+      })
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
@@ -55,7 +56,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       })
 
       const fresh = await prisma.pickingWave.findUnique({ where: { id } })
-      return NextResponse.json(serializeApi({ ...fresh, dispatchedCount: updated.count }))
+      return NextResponse.json(serializeApi({ ...fresh, dispatchedCount: updated.count, tripId: trip?.id ?? null }))
     } catch (error) {
       console.error('[PUT /api/waves/[id]/dispatch]', error)
       return NextResponse.json({ error: '确认出发失败' }, { status: 500 })

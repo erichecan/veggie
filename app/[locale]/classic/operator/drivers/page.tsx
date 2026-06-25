@@ -11,6 +11,7 @@ interface DriverSlot {
   timeOfDay: string
   batchNum: number
   driverName: string
+  userId?: string | null
   archived: boolean
 }
 
@@ -19,6 +20,7 @@ interface DraftRow {
   timeOfDay: string
   batchNum: string
   driverName: string
+  userId: string
   editing: boolean
   dirty: boolean
   original?: { timeOfDay: string; batchNum: string; driverName: string }
@@ -34,6 +36,7 @@ export default function DriversPage() {
   const [archivedRows, setArchivedRows] = useState<DriverSlot[]>([])
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [archiving, setArchiving] = useState<Record<string, boolean>>({})
+  const [driverUsers, setDriverUsers] = useState<{ id: string; name: string }[]>([])
   const newNameRef = useRef<HTMLInputElement>(null)
 
   type SortKey = 'timeOfDay' | 'batchNum' | 'driverName'
@@ -63,6 +66,7 @@ export default function DriversPage() {
           timeOfDay: s.timeOfDay,
           batchNum: String(s.batchNum),
           driverName: s.driverName,
+          userId: s.userId ?? '',
           editing: false,
           dirty: false,
         }))
@@ -70,6 +74,13 @@ export default function DriversPage() {
     } catch {
       toast.error('加载失败')
     }
+  }
+
+  async function loadDriverUsers() {
+    try {
+      const us = await apiGet<{ id: string; name: string }[]>('/api/users?role=DRIVER')
+      setDriverUsers(Array.isArray(us) ? us : [])
+    } catch { /* ignore */ }
   }
 
   async function loadArchived() {
@@ -81,13 +92,13 @@ export default function DriversPage() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(); loadDriverUsers() }, [])
   useEffect(() => { if (showArchived) loadArchived() }, [showArchived])
 
   function addRow() {
     setRows(prev => [
       ...prev,
-      { id: null, timeOfDay: 'am', batchNum: '1', driverName: '', editing: true, dirty: true },
+      { id: null, timeOfDay: 'am', batchNum: '1', driverName: '', userId: '', editing: true, dirty: true },
     ])
     setTimeout(() => newNameRef.current?.focus(), 50)
   }
@@ -129,17 +140,18 @@ export default function DriversPage() {
         timeOfDay: row.timeOfDay,
         batchNum: Number(row.batchNum),
         driverName: row.driverName.trim(),
+        userId: row.userId || null,
       }
       if (row.id) {
         const updated = await apiPut<DriverSlot>(`/api/driver-slots/${row.id}`, body)
         setRows(prev => prev.map((r, i) => i === idx
-          ? { id: updated.id, timeOfDay: updated.timeOfDay, batchNum: String(updated.batchNum), driverName: updated.driverName, editing: false, dirty: false }
+          ? { id: updated.id, timeOfDay: updated.timeOfDay, batchNum: String(updated.batchNum), driverName: updated.driverName, userId: updated.userId ?? '', editing: false, dirty: false }
           : r
         ))
       } else {
         const created = await apiPost<DriverSlot>('/api/driver-slots', body)
         setRows(prev => prev.map((r, i) => i === idx
-          ? { id: created.id, timeOfDay: created.timeOfDay, batchNum: String(created.batchNum), driverName: created.driverName, editing: false, dirty: false }
+          ? { id: created.id, timeOfDay: created.timeOfDay, batchNum: String(created.batchNum), driverName: created.driverName, userId: created.userId ?? '', editing: false, dirty: false }
           : r
         ))
       }
@@ -245,7 +257,7 @@ export default function DriversPage() {
 
       <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
         {/* Table header */}
-        <div className="grid grid-cols-[120px_100px_1fr_auto] gap-3 px-4 py-2.5 text-xs font-semibold border-b" style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb' }}>
+        <div className="grid grid-cols-[110px_80px_1fr_170px_auto] gap-3 px-4 py-2.5 text-xs font-semibold border-b" style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb' }}>
           <button type="button" onClick={() => toggleSort('timeOfDay')} className="flex items-center gap-1 text-left hover:opacity-70">
             时段（上午/下午）{sortArrow('timeOfDay')}
           </button>
@@ -255,11 +267,12 @@ export default function DriversPage() {
           <button type="button" onClick={() => toggleSort('driverName')} className="flex items-center gap-1 text-left hover:opacity-70">
             司机名字{sortArrow('driverName')}
           </button>
+          <span>绑定系统用户</span>
           <span className="w-32" />
         </div>
 
         {/* Filter row */}
-        <div className="grid grid-cols-[120px_100px_1fr_auto] gap-3 px-4 py-2 border-b items-center" style={{ borderColor: '#f0e4ee', background: '#fdfbfd' }}>
+        <div className="grid grid-cols-[110px_80px_1fr_170px_auto] gap-3 px-4 py-2 border-b items-center" style={{ borderColor: '#f0e4ee', background: '#fdfbfd' }}>
           <select
             value={filterTime}
             onChange={e => setFilterTime(e.target.value)}
@@ -287,6 +300,7 @@ export default function DriversPage() {
             className="border rounded px-2 py-1 text-xs outline-none focus:ring-1 w-full"
             style={{ ...inputStyle, ...focusStyle }}
           />
+          <span />
           <div className="w-32 flex justify-end">
             {(filterTime || filterBatch || filterName || sortKey) && (
               <button
@@ -321,7 +335,7 @@ export default function DriversPage() {
           return (
             <div
               key={key}
-              className="grid grid-cols-[120px_100px_1fr_auto] gap-3 items-center px-4 py-3 border-b last:border-b-0"
+              className="grid grid-cols-[110px_80px_1fr_170px_auto] gap-3 items-center px-4 py-3 border-b last:border-b-0"
               style={{ borderColor: '#f0e4ee', background: row.dirty ? '#fffbfe' : '#fff' }}
               onDoubleClick={() => { if (!row.editing) startEdit(idx) }}
             >
@@ -370,6 +384,25 @@ export default function DriversPage() {
                 />
               ) : (
                 <span className="text-sm px-2 py-1.5 font-medium">{row.driverName}</span>
+              )}
+
+              {/* 绑定系统用户(P0-2/A2):配送出发建 Trip 取此 userId 作司机身份 */}
+              {row.editing ? (
+                <select
+                  value={row.userId}
+                  onChange={e => updateRow(idx, 'userId', e.target.value)}
+                  className={inputCls}
+                  style={{ ...inputStyle, ...focusStyle }}
+                >
+                  <option value="">— 未绑定 —</option>
+                  {driverUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-sm px-2 py-1.5" style={{ color: row.userId ? '#333' : '#c00' }}>
+                  {row.userId ? (driverUsers.find(u => u.id === row.userId)?.name ?? '(已绑定)') : '未绑定 ⚠'}
+                </span>
               )}
 
               {/* 操作按钮 */}

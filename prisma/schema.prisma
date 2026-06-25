@@ -153,6 +153,8 @@ model User {
 
   /// 反向关系：该用户作为创建者的订单
   ordersCreated Order[] @relation("OrderCreator")
+  /// 反向关系：绑定到该用户的司机配送批次(DriverSlot.userId)
+  driverSlots   DriverSlot[] @relation("DriverSlotUser")
 
   @@index([role])
   @@index([customerId])
@@ -1069,6 +1071,10 @@ model DriverSlot {
   timeOfDay  String   // "am" | "pm"
   batchNum   Int      // 1-5
   driverName String
+  /// 绑定的系统 DRIVER 用户(SSOT P0-2/A2):配送出发建 Trip 时以此为 driverId,
+  /// 司机端按 userId 查自己的行程。driverName 仅作显示快照,身份以 userId 为准。
+  userId     String?
+  driverUser User?    @relation("DriverSlotUser", fields: [userId], references: [id], onDelete: SetNull)
   archived   Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -1077,6 +1083,7 @@ model DriverSlot {
   defaultCustomers Customer[] @relation("CustomerDefaultSlot")
 
   @@unique([timeOfDay, batchNum, driverName])
+  @@index([userId])
 }
 
 /// 采购建议（P0-2：系统根据需求-库存自动生成）
