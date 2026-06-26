@@ -55,6 +55,10 @@ export default function BatchTab({ date }: { date: string }) {
   const [dragOverLeft, setDragOverLeft] = useState(false)
   const [editorWaveId, setEditorWaveId] = useState<string | null>(null)
   const [printWaveId, setPrintWaveId] = useState<string | null>(null)
+  // ② 调度交互：先选司机,右侧只显示选中的;AM/PM 可折叠;"确定"=收工清场
+  const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set())
+  const [amCollapsed, setAmCollapsed] = useState(false)
+  const [pmCollapsed, setPmCollapsed] = useState(false)
 
   const loadPallets = useCallback(async (wvs: Wave[]) => {
     const entries = await Promise.all(
@@ -105,6 +109,24 @@ export default function BatchTab({ date }: { date: string }) {
   const amSlots = slots.filter(s => s.timeOfDay === 'am')
   const pmSlots = slots.filter(s => s.timeOfDay === 'pm')
   const waveForSlot = (slotId: string) => waves.find(w => w.driverSlotId === slotId)
+
+  // 司机名去重(一个司机可有 am+pm 多个 slot) + 今日已分配单数(其所有 slot 的 wave 合计)
+  const driverNames = [...new Set(slots.map(s => s.driverName))].sort((a, b) => a.localeCompare(b))
+  const orderCountByDriver = new Map<string, number>()
+  for (const s of slots) {
+    const w = waveForSlot(s.id)
+    if (w) orderCountByDriver.set(s.driverName, (orderCountByDriver.get(s.driverName) ?? 0) + w.orderIds.length)
+  }
+  const selAmSlots = amSlots.filter(s => selectedDrivers.has(s.driverName))
+  const selPmSlots = pmSlots.filter(s => selectedDrivers.has(s.driverName))
+  const allSelected = driverNames.length > 0 && selectedDrivers.size === driverNames.length
+
+  function toggleDriver(name: string) {
+    setSelectedDrivers(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
+  }
+  function toggleAll() {
+    setSelectedDrivers(allSelected ? new Set() : new Set(driverNames))
+  }
 
   const confirmedCount = confirmedOrders.length
   const assignedCount = confirmedOrders.filter(o => assigned.has(o.id)).length
@@ -317,6 +339,29 @@ export default function BatchTab({ date }: { date: string }) {
         <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>刷新</button>
       </div>
 
+      {/* ② 司机多选 chip 条：选几个司机右侧就显示几个 */}
+      {!loading && driverNames.length > 0 && (
+        <div className="flex items-center gap-2 bg-white border rounded-lg px-4 py-3 mb-3.5 flex-wrap" style={{ borderColor: '#e5e7eb' }}>
+          <span className="text-sm font-medium text-gray-600 mr-1">司机</span>
+          <DriverChip label="全部司机" active={allSelected} onClick={toggleAll} />
+          {driverNames.map(name => {
+            const cnt = orderCountByDriver.get(name) ?? 0
+            return (
+              <DriverChip key={name} label={name} count={cnt} active={selectedDrivers.has(name)} onClick={() => toggleDriver(name)} />
+            )
+          })}
+          <div className="flex-1" />
+          {selectedDrivers.size > 0 && (
+            <button
+              onClick={() => setSelectedDrivers(new Set())}
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white hover:opacity-90"
+              style={{ background: '#16a34a' }}
+              title="收工清场：清空选中的司机,画面变整洁(已拖拽的分配已保存)"
+            >✅ 完成（清空选中）</button>
+          )}
+        </div>
+      )}
+
       {loading && <div className="text-center text-gray-400 py-10">加载中…</div>}
 
       {!loading && (
@@ -354,16 +399,28 @@ export default function BatchTab({ date }: { date: string }) {
           </div>
 
           <div className="flex-1 min-w-0">
-            <GroupTitle time="am" count={amSlots.length} />
-            <div className="flex gap-3 overflow-x-auto pb-2.5">
-              {amSlots.map(s => <Lane key={s.id} slot={s} />)}
-              {amSlots.length === 0 && <Empty text="上午无司机配置" />}
-            </div>
-            <GroupTitle time="pm" count={pmSlots.length} />
-            <div className="flex gap-3 overflow-x-auto pb-2.5">
-              {pmSlots.map(s => <Lane key={s.id} slot={s} />)}
-              {pmSlots.length === 0 && <Empty text="下午无司机配置" />}
-            </div>
+            {selectedDrivers.size === 0 ? (
+              <div className="flex items-center justify-center text-gray-400 text-sm min-h-[200px] border border-dashed rounded-xl" style={{ borderColor: '#e5e7eb' }}>
+                ← 请从上方选择司机
+              </div>
+            ) : (
+              <>
+                <GroupTitle time="am" count={selAmSlots.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} />
+                {!amCollapsed && (
+                  <div className="flex gap-3 overflow-x-auto pb-2.5">
+                    {selAmSlots.map(s => <Lane key={s.id} slot={s} />)}
+                    {selAmSlots.length === 0 && <Empty text="选中司机无上午班" />}
+                  </div>
+                )}
+                <GroupTitle time="pm" count={selPmSlots.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} />
+                {!pmCollapsed && (
+                  <div className="flex gap-3 overflow-x-auto pb-2.5">
+                    {selPmSlots.map(s => <Lane key={s.id} slot={s} />)}
+                    {selPmSlots.length === 0 && <Empty text="选中司机无下午班" />}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -387,13 +444,28 @@ function Avatar({ name }: { name: string }) {
 function Board({ n, l, color }: { n: number; l: string; color?: string }) {
   return <div><div className="text-[22px] font-bold leading-none" style={{ color: color ?? '#1f2937' }}>{n}</div><div className="text-[11px] text-gray-500 mt-1">{l}</div></div>
 }
-function GroupTitle({ time, count }: { time: 'am' | 'pm'; count: number }) {
+function GroupTitle({ time, count, collapsed, onToggle }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void }) {
   const am = time === 'am'
   return (
-    <div className="flex items-center gap-2 font-bold text-sm mt-3.5 mb-2" style={{ color: am ? '#1f2937' : '#92400e' }}>
+    <button onClick={onToggle} className="flex items-center gap-2 font-bold text-sm mt-3.5 mb-2 hover:opacity-80" style={{ color: am ? '#1f2937' : '#92400e' }}>
+      <span className="text-gray-400 text-xs w-3 inline-block">{collapsed ? '▸' : '▾'}</span>
       <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${am ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{am ? '上午' : '下午'}</span>
       {am ? '上午班' : '下午班'} <span className="text-xs text-gray-400 font-normal">· {count} 个批次</span>
-    </div>
+    </button>
+  )
+}
+function DriverChip({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors flex items-center gap-1.5 ${active ? 'text-white' : 'text-gray-600 bg-white hover:bg-gray-50'}`}
+      style={{ background: active ? PURPLE : undefined, borderColor: active ? PURPLE : '#e5e7eb' }}
+    >
+      {label}
+      {count != null && count > 0 && (
+        <span className={`px-1.5 rounded-full text-[11px] font-semibold ${active ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'}`}>{count}</span>
+      )}
+    </button>
   )
 }
 function Empty({ text }: { text: string }) {
