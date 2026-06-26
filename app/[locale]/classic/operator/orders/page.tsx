@@ -65,8 +65,6 @@ const INV_LABEL: Record<string, string> = {
   nothing:    'Nothing to Invoice',
 }
 
-interface CustomerInfo { salesman?: string }
-
 function normalizeStatus(s: string | null | undefined): OrderStatus {
   if (!s) return 'pending'
   return s.toLowerCase() as OrderStatus
@@ -96,7 +94,6 @@ export default function ClassicOrdersPage() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [customerMap, setCustomerMap] = useState<Map<string, CustomerInfo>>(new Map())
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_FILTERS)
   const [showFiltersBar, setShowFiltersBar] = useState(true)
@@ -152,19 +149,6 @@ export default function ClassicOrdersPage() {
     apiGet<Invoice[]>('/api/invoices?slim=1').catch(() => [] as Invoice[]).then(setInvoices)
   }, [])
 
-  useEffect(() => {
-    apiGet<{ items?: Array<{ id: string; salesman?: string }> } | Array<{ id: string; salesman?: string }>>('/api/customers?slim=1')
-      .then(data => {
-        const arr: Array<{ id: string; salesman?: string }> = Array.isArray(data)
-          ? data
-          : ((data as { items?: Array<{ id: string; salesman?: string }> }).items ?? [])
-        const map = new Map<string, CustomerInfo>()
-        arr.forEach(c => map.set(c.id, { salesman: c.salesman }))
-        setCustomerMap(map)
-      })
-      .catch(() => {})
-  }, [])
-
   const invoicedOrderIds = useMemo(() => new Set(invoices.flatMap(inv => inv.saleOrderIds)), [invoices])
 
   function setCf(key: keyof ColFilters, value: string) {
@@ -184,7 +168,7 @@ export default function ClassicOrdersPage() {
     if (cf.deliveryDateFrom) result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) >= cf.deliveryDateFrom)
     if (cf.deliveryDateTo)   result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) <= cf.deliveryDateTo)
     if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
-    if (cf.salesman)    result = result.filter(o => (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(cf.salesman.toLowerCase()))
+    if (cf.salesman)    result = result.filter(o => getField(o, 'salesman').toLowerCase().includes(cf.salesman.toLowerCase()))
     if (cf.deliveryBatch) result = result.filter(o => formatDriverSlotFromOrder(o).toLowerCase().includes(cf.deliveryBatch.toLowerCase()))
     if (cf.invoiceStatus) result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
     if (cf.status) result = result.filter(o => o.status === cf.status)
@@ -192,7 +176,7 @@ export default function ClassicOrdersPage() {
     if (cf.createdAtTo)   result = result.filter(o => (o.createdAt ?? '').slice(0, 10) <= cf.createdAtTo)
 
     return result
-  }, [orders, activeFilter, invoicedOrderIds, colFilters, customerMap])
+  }, [orders, activeFilter, invoicedOrderIds, colFilters])
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -201,7 +185,7 @@ export default function ClassicOrdersPage() {
       if (sortField === 'code') { av = a.code ?? a.id; bv = b.code ?? b.id }
       else if (sortField === 'createdAt') { av = a.createdAt ?? ''; bv = b.createdAt ?? '' }
       else if (sortField === 'restaurantName') { av = a.restaurantName; bv = b.restaurantName }
-      else if (sortField === 'salesman') { av = customerMap.get(a.restaurantId)?.salesman ?? ''; bv = customerMap.get(b.restaurantId)?.salesman ?? '' }
+      else if (sortField === 'salesman') { av = getField(a, 'salesman'); bv = getField(b, 'salesman') }
       else if (sortField === 'deliveryBatch') { av = formatDriverSlotFromOrder(a); bv = formatDriverSlotFromOrder(b) }
       else if (sortField === 'totalAmount') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
       else if (sortField === 'invoiceStatus') { av = invoiceStatusFor(a, invoicedOrderIds); bv = invoiceStatusFor(b, invoicedOrderIds) }
@@ -211,7 +195,7 @@ export default function ClassicOrdersPage() {
       if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av
       return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
     })
-  }, [filtered, sortField, sortDir, customerMap, invoicedOrderIds])
+  }, [filtered, sortField, sortDir, invoicedOrderIds])
 
   // 选择司机批次只做本地暂存,不触发保存/刷新,避免打断连续编辑
   function stageBatch(orderId: string, slotId: string, originalSlotId: string) {
@@ -356,7 +340,6 @@ export default function ClassicOrdersPage() {
   }
 
   function renderRow(o: Order) {
-    const cust = customerMap.get(o.restaurantId)
     const internalNote = getField(o, 'internalNote')
     const invStatus = invoiceStatusFor(o, invoicedOrderIds)
     const isSelected = selected.has(o.id)
@@ -376,7 +359,8 @@ export default function ClassicOrdersPage() {
         </td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{o.deliveryDate ? <DateCell iso={o.deliveryDate} /> : <span className="text-gray-300">—</span>}</td>
         <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
+        {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
+        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'salesman') || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
           {(() => {
             const originalSlotId = (o as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? ''

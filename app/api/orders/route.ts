@@ -230,7 +230,7 @@ export async function POST(req: Request) {
       // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
       const custDefaults = await prisma.customer.findUnique({
         where: { id: restaurantId },
-        select: { defaultDriverSlotId: true, commissionRate: true },
+        select: { defaultDriverSlotId: true, commissionRate: true, salesman: true },
       })
       let resolvedDriverSlotId = data.driverSlotId || null
       if (!resolvedDriverSlotId && custDefaults?.defaultDriverSlotId) {
@@ -289,7 +289,8 @@ export async function POST(req: Request) {
                 deliveryDate: normalizeDateOnly(data.deliveryDate),
                 driverSlotId: resolvedDriverSlotId,
                 internalNote: data.internalNote ? String(data.internalNote).slice(0, 30) : undefined,
-                salesman: data.salesman ? String(data.salesman).slice(0, 100) : undefined,
+                // SSOT: 业务员下单时快照。优先手选值,未选则回退客户默认业务员(Customer.salesman)。
+                salesman: ((data.salesman ? String(data.salesman) : custDefaults?.salesman ?? '').trim().slice(0, 100)) || undefined,
                 lines: {
                   create: lines.map((l, idx) => ({
                     productId: l.productId,

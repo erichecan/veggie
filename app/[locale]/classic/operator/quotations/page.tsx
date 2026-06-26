@@ -406,7 +406,7 @@ export default function ClassicQuotationsPage() {
         o.restaurantName.toLowerCase().includes(q) ||
         (o.code ?? '').toLowerCase().includes(q) ||
         o.id.toLowerCase().includes(q) ||
-        (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(q)
+        getField(o, 'salesman').toLowerCase().includes(q)
       )
     }
 
@@ -416,7 +416,7 @@ export default function ClassicQuotationsPage() {
     if (cf.quotationDateFrom) result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) >= cf.quotationDateFrom)
     if (cf.quotationDateTo)   result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) <= cf.quotationDateTo)
     if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
-    if (cf.salesman)      result = result.filter(o => (customerMap.get(o.restaurantId)?.salesman ?? '').toLowerCase().includes(cf.salesman.toLowerCase()))
+    if (cf.salesman)      result = result.filter(o => getField(o, 'salesman').toLowerCase().includes(cf.salesman.toLowerCase()))
     if (cf.deliveryDateFrom) result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d >= cf.deliveryDateFrom })
     if (cf.deliveryDateTo)   result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d <= cf.deliveryDateTo })
     if (cf.salesTeam)     result = result.filter(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(cf.salesTeam.toLowerCase()))
@@ -449,7 +449,7 @@ export default function ClassicQuotationsPage() {
         if (sortField === 'code') { av = a.code ?? a.id; bv = b.code ?? b.id }
         else if (sortField === 'quotationDate') { av = getField(a, 'quotationDate'); bv = getField(b, 'quotationDate') }
         else if (sortField === 'customer') { av = a.restaurantName; bv = b.restaurantName }
-        else if (sortField === 'salesman') { av = customerMap.get(a.restaurantId)?.salesman ?? ''; bv = customerMap.get(b.restaurantId)?.salesman ?? '' }
+        else if (sortField === 'salesman') { av = getField(a, 'salesman'); bv = getField(b, 'salesman') }
         else if (sortField === 'deliveryDate') { av = getField(a, 'deliveryDate'); bv = getField(b, 'deliveryDate') }
         else if (sortField === 'total') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
         else if (sortField === 'status') { av = a.status; bv = b.status }
@@ -473,7 +473,7 @@ export default function ClassicQuotationsPage() {
     filtered.forEach(o => {
       let key = '—'
       if (groupBy === 'customer') key = o.restaurantName
-      else if (groupBy === 'salesman') key = customerMap.get(o.restaurantId)?.salesman ?? '—'
+      else if (groupBy === 'salesman') key = getField(o, 'salesman') || '—'
       else if (groupBy === 'salesTeam') key = orderDriverMap.get(o.id) ?? '—'
       else if (groupBy === 'status') key = STATUS_LABEL[o.status] ?? o.status
       else if (groupBy === 'weekday') {
@@ -695,7 +695,6 @@ ${footerHtml}
   // ── Row renderer ──────────────────────────────────────────────────────────
 
   function renderRow(o: Order) {
-    const cust = customerMap.get(o.restaurantId)
     const quotationDate = getField(o, 'quotationDate')
     const internalNote = getField(o, 'internalNote')
     const isSelected = selected.has(o.id)
@@ -722,8 +721,8 @@ ${footerHtml}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={quotationDate} /></td>
           {/* Customer */}
           <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
-          {/* Salesperson */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{cust?.salesman || '—'}</td>
+          {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
+          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'salesman') || '—'}</td>
           {/* Delivery Date */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             {!isReadMode && editDateId === o.id ? (

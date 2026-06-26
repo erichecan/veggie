@@ -563,6 +563,8 @@ export default function ClassicPlaceOrderPage() {
     if (c.pricelistId) setPricelistId(c.pricelistId)
     if (c.paymentTerm) setPaymentTerms(c.paymentTerm)
     if (c.priceType)   setPriceType(c.priceType)
+    // 业务员默认带入客户绑定的业务员(可手动改);下单时会快照进 Order.salesman
+    if (c.salesman)    setSalesTeam(c.salesman)
     // 切客户必须清空 lastPrice 缓存，否则会把旧客户的成交价用到新客户身上
     setLastPrices({})
     // 异步拉取含 specialPrices 的完整客户对象，供定价引擎使用
