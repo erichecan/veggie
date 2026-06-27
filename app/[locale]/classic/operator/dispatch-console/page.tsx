@@ -32,7 +32,7 @@ export default function DispatchConsolePage() {
       {/* 页头 */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-xs text-gray-400">运营 / 配送调度中心</p>
+          <p className="text-xs text-gray-400">销售 / 配送调度中心</p>
           <h1 className="text-lg font-semibold flex items-center gap-2" style={{ color: PURPLE }}>
             🚚 配送调度中心
           </h1>

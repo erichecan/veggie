@@ -11,11 +11,11 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 
 const PURPLE = '#875A7B'
 
-// 新建用户可选角色：运营/司机/销售/餐馆/老板/调度/财务/其他
+// 新建用户可选角色：销售/司机/销售助理/餐馆/老板/调度/财务/其他
 const ALL_ROLES: UserRole[] = ['OPERATOR', 'DRIVER', 'SALES', 'RESTAURANT', 'BOSS', 'DISPATCH', 'FINANCE', 'OTHER']
 
 const ROLE_LABEL: Record<UserRole, string> = {
-  OPERATOR: '运营',
+  OPERATOR: '销售',
   RESTAURANT: '餐馆',
   PICKER: '拣货员',
   SORTER: '分拣员',
@@ -23,7 +23,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
   BOSS: '老板',
   FINANCE: '财务',
   WAREHOUSE: '仓管',
-  SALES: '销售',
+  SALES: '销售助理',
   DISPATCH: '调度',
   OTHER: '其他',
 }

@@ -19,7 +19,7 @@ export default function AccountingPage() {
     <div className="p-5 max-w-[1320px] mx-auto">
       {/* 页头 */}
       <div className="mb-4">
-        <p className="text-xs text-gray-400">运营 / 会计</p>
+        <p className="text-xs text-gray-400">销售 / 会计</p>
         <h1 className="text-lg font-semibold flex items-center gap-2" style={{ color: PURPLE }}>
           🧮 会计
         </h1>

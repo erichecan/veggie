@@ -23,13 +23,13 @@ const FLOW_STEPS: FlowStep[] = [
     id: 'order',
     emoji: '🛒',
     title: '接收 / 代客下单',
-    who: '运营',
+    who: '销售',
     whoColor: ODOO_PURPLE,
-    desc: '餐馆通过采购平台自助下单，或由运营人员代替餐馆下单。',
+    desc: '餐馆通过采购平台自助下单，或由销售人员代替餐馆下单。',
     href: '/classic/operator/orders',
     details: [
       '餐馆在线选购商品并提交订单',
-      '运营可在「下单」页面代客操作',
+      '销售可在「下单」页面代客操作',
       '订单自动进入「待处理」状态',
     ],
   },
@@ -37,9 +37,9 @@ const FLOW_STEPS: FlowStep[] = [
     id: 'wave',
     emoji: '🗂️',
     title: '生成拣货波次',
-    who: '运营',
+    who: '销售',
     whoColor: ODOO_PURPLE,
-    desc: '运营勾选一批待处理订单，合并生成一个拣货波次，分配给仓库拣货员。',
+    desc: '销售勾选一批待处理订单，合并生成一个拣货波次，分配给仓库拣货员。',
     href: '/classic/operator/waves',
     details: [
       '勾选订单 → 点「生成拣货波次」',
@@ -65,7 +65,7 @@ const FLOW_STEPS: FlowStep[] = [
     id: 'sort',
     emoji: '🔀',
     title: '分货装箱',
-    who: '运营',
+    who: '销售',
     whoColor: ODOO_PURPLE,
     desc: '按各餐馆订单将拣好的商品分装，生成每车次的配送清单。',
     href: '/classic/operator/sorting',
@@ -79,9 +79,9 @@ const FLOW_STEPS: FlowStep[] = [
     id: 'trip',
     emoji: '🚛',
     title: '指派司机配送',
-    who: '运营',
+    who: '销售',
     whoColor: ODOO_PURPLE,
-    desc: '运营在配送单页面为行程指定司机和出发时间，司机登录后即可查看行程。',
+    desc: '销售在配送单页面为行程指定司机和出发时间，司机登录后即可查看行程。',
     href: '/classic/operator/trips',
     details: [
       '在「配送单」找到橙色待指定行程',
@@ -107,9 +107,9 @@ const FLOW_STEPS: FlowStep[] = [
     id: 'invoice',
     emoji: '🧾',
     title: '开票与对账',
-    who: '运营 / 财务',
+    who: '销售 / 财务',
     whoColor: '#047857',
-    desc: '系统根据实际送达数量自动生成发票草稿，运营确认后发送给餐馆。',
+    desc: '系统根据实际送达数量自动生成发票草稿，销售确认后发送给餐馆。',
     href: '/classic/operator/invoices',
     details: [
       '配送完成后系统生成发票草稿',
@@ -128,7 +128,7 @@ export default function ClassicFlowPage() {
       {/* Page header */}
       <div className="px-6 py-5 border-b border-gray-200" style={{ background: ODOO_PURPLE }}>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-white/60 text-xs">运营控制台</span>
+          <span className="text-white/60 text-xs">销售控制台</span>
           <span className="text-white/40 text-xs">›</span>
           <span className="text-white text-xs font-medium">业务流程图</span>
         </div>
@@ -142,7 +142,7 @@ export default function ClassicFlowPage() {
         <div className="flex flex-wrap gap-4 mb-8 text-xs">
           <span className="font-semibold text-gray-500">角色说明：</span>
           {[
-            { who: '运营', color: ODOO_PURPLE },
+            { who: '销售', color: ODOO_PURPLE },
             { who: '拣货员', color: '#1d4ed8' },
             { who: '司机', color: '#be123c' },
             { who: '财务', color: '#047857' },

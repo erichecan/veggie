@@ -25,7 +25,7 @@ export default function InventoryPage() {
     <div className="p-5 max-w-[1320px] mx-auto">
       {/* 页头 */}
       <div className="mb-4">
-        <p className="text-xs text-gray-400">运营 / 库存管理</p>
+        <p className="text-xs text-gray-400">销售 / 库存管理</p>
         <h1 className="text-lg font-semibold flex items-center gap-2" style={{ color: PURPLE }}>
           📦 库存管理
         </h1>
