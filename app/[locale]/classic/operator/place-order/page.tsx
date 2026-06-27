@@ -626,6 +626,15 @@ export default function ClassicPlaceOrderPage() {
 
     const { unitPrice, priceLabel } = computeLine(lastPrices)
 
+    // ATP 检查：无库存时阻止添加
+    const onHand = p.qtyOnHand ?? 0
+    const demand = pendingDemand[p.id] ?? 0
+    const atp = onHand - demand
+    if (atp <= 0) {
+      toast.error(`⚠️ 库存警告：「${p.name}」可承诺量为 ${atp.toFixed(1)}（在手 ${onHand} - 待出 ${demand}），无可用库存！`, { duration: 5000 })
+      return
+    }
+
     setLines(prev =>
       prev.map(l =>
         l.id !== lineId
@@ -650,16 +659,6 @@ export default function ClassicPlaceOrderPage() {
     )
     setActiveLineId(null)
     setLineSearch('')
-
-    // 低库存告警：基于 ATP（可承诺量）= 在手量 - 待履行量
-    const onHand = p.qtyOnHand ?? 0
-    const demand = pendingDemand[p.id] ?? 0
-    const atp = onHand - demand
-    if (atp <= 0) {
-      toast.error(`⚠️ 库存警告：「${p.name}」可承诺量为 ${atp.toFixed(1)}（在手 ${onHand} - 待出 ${demand}），无可用库存！`, { duration: 5000 })
-    } else if (atp < LOW_STOCK_THRESHOLD) {
-      toast.warning(`⚠️ 低库存提醒：「${p.name}」可承诺量仅 ${atp.toFixed(1)}（在手 ${onHand} - 待出 ${demand}）`, { duration: 4000 })
-    }
 
     // 后台拉 lastPrice，回来后如有变化再 patch 一次
     if (effectiveCustomer && !(p.id in lastPrices)) {
