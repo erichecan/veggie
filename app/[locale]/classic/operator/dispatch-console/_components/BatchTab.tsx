@@ -232,7 +232,7 @@ export default function BatchTab({ date }: { date: string }) {
 
     if (!wave) {
       return (
-        <div className="flex-none w-[236px] bg-gray-50 border border-dashed rounded-xl p-3 text-xs text-gray-400" style={{ borderColor: '#d1d5db' }}>
+        <div className="bg-gray-50 border border-dashed rounded-xl p-3 text-xs text-gray-400" style={{ borderColor: '#d1d5db' }}>
           <div className="font-semibold text-gray-600 flex items-center gap-1.5">
             <Avatar name={slot.driverName} /> {slot.driverName}
             <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
@@ -251,7 +251,7 @@ export default function BatchTab({ date }: { date: string }) {
 
     return (
       <div
-        className="flex-none w-[236px] bg-white border rounded-xl flex flex-col max-h-[600px]"
+        className="bg-white border rounded-xl flex flex-col max-h-[600px]"
         style={{ borderColor: over ? PURPLE : (dispatched ? '#bbf7d0' : '#e5e7eb'), boxShadow: over ? `0 0 0 2px ${PURPLE}33` : undefined }}
         onDragOver={e => { e.preventDefault(); if (dispatched) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverWave(wave.id) }}
         onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverWave(p => p === wave.id ? null : p) }}
@@ -407,14 +407,14 @@ export default function BatchTab({ date }: { date: string }) {
               <>
                 <GroupTitle time="am" count={selAmSlots.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} />
                 {!amCollapsed && (
-                  <div className="flex gap-3 overflow-x-auto pb-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
                     {selAmSlots.map(s => <Lane key={s.id} slot={s} />)}
                     {selAmSlots.length === 0 && <Empty text="选中司机无上午班" />}
                   </div>
                 )}
                 <GroupTitle time="pm" count={selPmSlots.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} />
                 {!pmCollapsed && (
-                  <div className="flex gap-3 overflow-x-auto pb-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
                     {selPmSlots.map(s => <Lane key={s.id} slot={s} />)}
                     {selPmSlots.length === 0 && <Empty text="选中司机无下午班" />}
                   </div>
