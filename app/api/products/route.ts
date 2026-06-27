@@ -12,18 +12,19 @@ export async function GET(req: Request) {
     const products = await prisma.product.findMany({
       where,
       orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
-      include: { template: { select: { images: true, uomId: true, uom: { select: { id: true, name: true } }, customerTaxRate: true } } },
+      include: { template: { select: { images: true, uomId: true, uom: { select: { id: true, name: true } }, customerTaxRate: true, internalRef: true } } },
     })
     // 商品自身没有图片时使用模板图片；同时把模板 UoM 提升到顶层
-    // customerTaxRate：变体自身可空，兜底用模板的值
+    // customerTaxRate / internalRef：变体自身可空，兜底用模板的值
     const result = products.map(({ template, ...p }) => ({
       ...p,
       images: (p.images as string[]).length > 0
         ? p.images
         : (template?.images ?? []),
-      uomId:          template?.uom?.id   ?? template?.uomId ?? null,
-      uomName:        template?.uom?.name ?? null,
+      uomId:           template?.uom?.id   ?? template?.uomId ?? null,
+      uomName:         template?.uom?.name ?? null,
       customerTaxRate: p.customerTaxRate ?? template?.customerTaxRate ?? 0,
+      internalRef:     p.internalRef ?? template?.internalRef ?? null,
     }))
     return NextResponse.json(serializeApi(result))
   } catch (error) {
