@@ -13,7 +13,7 @@ import { toNum } from '@/lib/decimal-helpers'
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
   'confirmationDate', 'deliveryDate', 'invoiceDate', 'quotationDate',
-  'internalNote', 'pricelistId', 'priceType', 'restaurantName',
+  'internalNote', 'externalNote', 'pricelistId', 'priceType', 'restaurantName',
   'driverSlotId', 'deliveryBatch',
 ]
 
@@ -21,7 +21,7 @@ const VALID_PRICE_TYPES = new Set(['multi', 'default', 'last'])
 
 // ── P1-6: CONFIRMED 状态下允许安全编辑的字段 ──────────────────────────────
 const CONFIRMED_SAFE_FIELDS = new Set([
-  'deliveryDate', 'internalNote', 'driverSlotId', 'salesman',
+  'deliveryDate', 'internalNote', 'externalNote', 'driverSlotId', 'salesman',
   'deliveryBatch', 'paymentMethod', 'confirmationDate', 'invoiceDate', 'quotationDate',
 ])
 
@@ -79,7 +79,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (!orderBefore) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
       // Strip non-schema fields before passing to Prisma
-      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, status, paymentMethod, salesman, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
+      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, status, paymentMethod, salesman, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
 
       // Determine new status
       const newStatus = status ? String(status).toUpperCase() : undefined
@@ -145,6 +145,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (invoiceDate !== undefined) updateData.invoiceDate = invoiceDate ? new Date(invoiceDate) : null
       if (quotationDate !== undefined) updateData.quotationDate = quotationDate ? new Date(quotationDate) : null
       if (internalNote !== undefined) updateData.internalNote = internalNote ? String(internalNote).slice(0, 30) : null
+      if (externalNote !== undefined) updateData.externalNote = externalNote ? String(externalNote) : null
       if (pricelistId !== undefined) updateData.pricelistId = pricelistId ? String(pricelistId) : null
       if (priceType !== undefined) {
         const pt = String(priceType).toLowerCase()
@@ -412,6 +413,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
       if (internalNote !== undefined && internalNote !== (orderBefore as unknown as Record<string, unknown>).internalNote) {
         auditChangedFields.internalNote = { before: (orderBefore as unknown as Record<string, unknown>).internalNote ?? null, after: internalNote || null }
+      }
+      if (externalNote !== undefined && externalNote !== (orderBefore as unknown as Record<string, unknown>).externalNote) {
+        auditChangedFields.externalNote = { before: (orderBefore as unknown as Record<string, unknown>).externalNote ?? null, after: externalNote || null }
       }
 
       // Line-level changes: added, deleted, modified

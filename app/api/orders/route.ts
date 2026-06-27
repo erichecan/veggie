@@ -289,6 +289,7 @@ export async function POST(req: Request) {
                 deliveryDate: normalizeDateOnly(data.deliveryDate),
                 driverSlotId: resolvedDriverSlotId,
                 internalNote: data.internalNote ? String(data.internalNote).slice(0, 30) : undefined,
+                externalNote: data.externalNote ? String(data.externalNote) : undefined,
                 // SSOT: 业务员下单时快照。优先手选值,未选则回退客户默认业务员(Customer.salesman)。
                 salesman: ((data.salesman ? String(data.salesman) : custDefaults?.salesman ?? '').trim().slice(0, 100)) || undefined,
                 lines: {

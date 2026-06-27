@@ -32,7 +32,7 @@ function barcodeSvg(code: string): string {
 }
 
 export function buildOrderHtml(
-  order: Order & { code?: string; deliveryDate?: string; internalNote?: string; salesman?: string; deliveryBatch?: string },
+  order: Order & { code?: string; deliveryDate?: string; internalNote?: string; externalNote?: string; salesman?: string; deliveryBatch?: string },
   customer: Customer | null,
   opts: { pageBreakAfter?: boolean; docType?: 'delivery' | 'sales' } = {}
 ): string {
@@ -167,6 +167,11 @@ export function buildOrderHtml(
       </tr>
     </table>
   </div>
+
+  ${order.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
+    <div style="font-weight:600;margin-bottom:4px;">备注</div>
+    <div style="white-space:pre-wrap;">${order.externalNote}</div>
+  </div>` : ''}
 </div>`
 }
 
@@ -242,7 +247,7 @@ export default function PrintPage() {
           docParam === 'delivery' ? 'delivery' : docParam === 'sales' ? 'sales' : undefined
         const docTitle = docType === 'delivery' ? 'Delivery Note' : docType === 'sales' ? 'Sale Order' : 'Invoice'
         const [order, customers] = await Promise.all([
-          apiGet<Order & { code?: string; deliveryDate?: string; internalNote?: string; salesman?: string; deliveryBatch?: string }>(`/api/orders/${id}`),
+          apiGet<Order & { code?: string; deliveryDate?: string; internalNote?: string; externalNote?: string; salesman?: string; deliveryBatch?: string }>(`/api/orders/${id}`),
           apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
         ])
         const customer = customers.find(c => c.id === order.restaurantId) ?? null

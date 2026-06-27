@@ -466,6 +466,8 @@ model Order {
   commissionRate   Decimal?      @db.Decimal(6, 4)
   /// 内部备注（最多 30 字符）
   internalNote     String?
+  /// 外部备注（打印在报价单/送货单上，客户可见）
+  externalNote     String?
   /// 业务员姓名（下单时快照，对应 Odoo sale.order.user_id）
   salesman         String?
   /// 报价日期（创建时自动设置）

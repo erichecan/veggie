@@ -79,6 +79,8 @@ export default function SalesOrderDetailPage() {
   const [editing, setEditing] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [internalNote, setInternalNote] = useState('')
+  const [externalNote, setExternalNote] = useState('')
+  const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
   const [pricelistId, setPricelistId] = useState('')
@@ -108,6 +110,7 @@ export default function SalesOrderDetailPage() {
       const ord = await apiGet<Order>(`/api/orders/${id}`)
       setOrder(ord)
       setInternalNote(ord.internalNote ?? '')
+      setExternalNote((ord as unknown as { externalNote?: string }).externalNote ?? '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
       setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
       setPricelistId(ord.pricelistId ?? '')
@@ -181,7 +184,7 @@ export default function SalesOrderDetailPage() {
       const slot = driverSlots.find(s => s.id === driverSlotId)
       const batchStr = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : deliveryBatch
       await apiPut(`/api/orders/${order.id}`, {
-        internalNote, deliveryBatch: batchStr, driverSlotId: driverSlotId || null,
+        internalNote, externalNote: externalNote || null, deliveryBatch: batchStr, driverSlotId: driverSlotId || null,
         pricelistId: pricelistId || null, priceType,
         ...(editLines.length > 0 && { lines: editLines, totalAmount: newTotalAmount }),
       })
@@ -453,12 +456,28 @@ export default function SalesOrderDetailPage() {
                 <div className="w-32 font-bold text-gray-700">Balance</div>
                 <div className={balance < 0 ? 'text-red-600' : 'text-gray-800'}>€ {balance.toFixed(2)}</div>
               </div>
-              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
-                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Internal Notes</div>
-                {editing ? (
-                  <input value={internalNote} onChange={e => setInternalNote(e.target.value)}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none" maxLength={30} />
-                ) : <div className="text-gray-700">{internalNote || '—'}</div>}
+              <div className={`rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="flex border-b border-gray-200 mb-1">
+                  {(['internal', 'external'] as const).map(tab => (
+                    <button key={tab} onClick={() => setNoteTab(tab)}
+                      className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                      {tab === 'internal' ? '内部备注' : '外部备注'}
+                    </button>
+                  ))}
+                </div>
+                {noteTab === 'internal' ? (
+                  editing ? (
+                    <input value={internalNote} onChange={e => setInternalNote(e.target.value)}
+                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none" maxLength={30}
+                      placeholder="仅内部可见，不会打印给客户" />
+                  ) : <div className="text-sm text-gray-700">{internalNote || '—'}</div>
+                ) : (
+                  editing ? (
+                    <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
+                      rows={3} placeholder="会打印在报价单和送货单上，客户可见"
+                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none" />
+                  ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{externalNote || '—'}</div>
+                )}
               </div>
             </div>
 

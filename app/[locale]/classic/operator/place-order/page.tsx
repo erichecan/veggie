@@ -257,6 +257,8 @@ export default function ClassicPlaceOrderPage() {
   const [paymentTerms, setPaymentTerms] = useState('')
   const [priceType, setPriceType]     = useState<CustomerPriceType>('multi')
   const [internalNotes, setInternalNotes]     = useState('')
+  const [externalNote, setExternalNote]       = useState('')
+  const [noteTab, setNoteTab]                 = useState<'internal' | 'external'>('internal')
   const [termsConditions, setTermsConditions] = useState('')
 
   // ── Order lines ───────────────────────────────────────────────────────────
@@ -877,6 +879,7 @@ export default function ClassicPlaceOrderPage() {
       priceType,
       salesman:       salesTeam || null,
       internalNote:   internalNotes || null,
+      externalNote:   externalNote || null,
       quotationDate:  orderDate ? new Date(orderDate).toISOString() : null,
       deliveryDate:   deliveryDate ? new Date(deliveryDate).toISOString() : null,
     }
@@ -1215,21 +1218,41 @@ export default function ClassicPlaceOrderPage() {
                 </div>
               )}
 
-              {/* Internal Notes */}
+              {/* Notes Tabs */}
               <div className="flex items-start gap-3">
-                <label className="text-sm text-gray-600 w-36 pt-1 shrink-0">Internal Notes</label>
-                <div className="flex-1 relative">
-                  <textarea
-                    rows={2}
-                    maxLength={30}
-                    value={internalNotes}
-                    onChange={e => setInternalNotes(e.target.value.slice(0, 30))}
-                    placeholder="内部备注…"
-                    className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 resize-none"
-                  />
-                  <span className="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none">
-                    {internalNotes.length}/30
-                  </span>
+                <label className="text-sm text-gray-600 w-36 pt-1 shrink-0">备注</label>
+                <div className="flex-1">
+                  <div className="flex border-b border-gray-200 mb-1">
+                    {(['internal', 'external'] as const).map(tab => (
+                      <button key={tab} onClick={() => setNoteTab(tab)}
+                        className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                        {tab === 'internal' ? '内部备注' : '外部备注'}
+                      </button>
+                    ))}
+                  </div>
+                  {noteTab === 'internal' ? (
+                    <div className="relative">
+                      <textarea
+                        rows={2}
+                        maxLength={30}
+                        value={internalNotes}
+                        onChange={e => setInternalNotes(e.target.value.slice(0, 30))}
+                        placeholder="仅内部可见，不会打印给客户"
+                        className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 resize-none"
+                      />
+                      <span className="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none">
+                        {internalNotes.length}/30
+                      </span>
+                    </div>
+                  ) : (
+                    <textarea
+                      rows={3}
+                      value={externalNote}
+                      onChange={e => setExternalNote(e.target.value)}
+                      placeholder="会打印在报价单和送货单上，客户可见"
+                      className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 resize-none"
+                    />
+                  )}
                 </div>
               </div>
             </div>
