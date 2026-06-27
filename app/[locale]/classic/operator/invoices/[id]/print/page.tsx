@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import JsBarcode from 'jsbarcode'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -35,6 +36,15 @@ export default function InvoicePrintPage() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [inv, setInv] = useState<Invoice | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const barcodeRef = useRef<SVGSVGElement>(null)
+
+  useEffect(() => {
+    if (!barcodeRef.current || !inv) return
+    const code = /^[\x00-\x7F]+$/.test(inv.name) ? inv.name : inv.id
+    try {
+      JsBarcode(barcodeRef.current, code, { format: 'CODE128', width: 1.5, height: 40, displayValue: false, margin: 0 })
+    } catch {}
+  }, [inv])
 
   useEffect(() => {
     apiGet<Invoice>(`/api/invoices/${params.id}`)
@@ -102,6 +112,9 @@ export default function InvoicePrintPage() {
           </div>
           <div className="text-right">
             <p className="text-xl font-bold text-gray-900">发票 INVOICE</p>
+            <div className="flex justify-end mt-2">
+              <svg ref={barcodeRef} style={{ maxWidth: 140 }} />
+            </div>
             <p className="text-sm font-mono text-gray-600 mt-1">{inv.name}</p>
             <span className="inline-block mt-2 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
               {STATUS_LABEL[inv.status]}

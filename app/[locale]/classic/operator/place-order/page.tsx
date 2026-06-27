@@ -12,6 +12,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { rankByRelevance } from '@/lib/search-rank'
 import type { Product, Customer, OdooPricelist, CustomerPriceType } from '@/lib/types'
+import JsBarcode from 'jsbarcode'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const LOW_STOCK_THRESHOLD = 20
@@ -60,33 +61,23 @@ function nowLocal() {
   return d.toISOString().slice(0, 16)
 }
 
-// ─── SimpleBarcode (visual only, not real Code128) ────────────────────────────
+// ─── Code128Barcode (real scannable Code128 via JsBarcode) ───────────────────
 
-function SimpleBarcode({ value }: { value: string }) {
-  const bars: { x: number; w: number }[] = []
-  let x = 0
-  for (let i = 0; i < value.length; i++) {
-    const c = value.charCodeAt(i)
-    // encode each char as 4 alternating black/white bars
-    const widths = [
-      ((c >> 4) & 3) + 1,
-      ((c >> 2) & 3) + 1,
-      (c & 3) + 1,
-      2,
-    ]
-    widths.forEach((w, j) => {
-      if (j % 2 === 0) bars.push({ x, w })
-      x += w
-    })
-    x += 1 // small gap between chars
-  }
-  return (
-    <svg width={x} height={36} viewBox={`0 0 ${x} 36`} style={{ maxWidth: 130, display: 'block', margin: '0 auto' }}>
-      {bars.map((b, i) => (
-        <rect key={i} x={b.x} y={0} width={b.w} height={36} fill="#111" />
-      ))}
-    </svg>
-  )
+function Code128Barcode({ value }: { value: string }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  useEffect(() => {
+    if (!svgRef.current || !value) return
+    try {
+      JsBarcode(svgRef.current, value, {
+        format: 'CODE128',
+        width: 1.5,
+        height: 36,
+        displayValue: false,
+        margin: 0,
+      })
+    } catch {}
+  }, [value])
+  return <svg ref={svgRef} style={{ maxWidth: 130, display: 'block', margin: '0 auto' }} />
 }
 
 // ─── QuotationContent (shared by Preview modal + Print window) ────────────────
@@ -145,7 +136,7 @@ function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, 
               {/* salesTeam 是业务员(Salesman),不是司机;司机由配送批次(wave)决定。旧 Odoo 用 salesteam 代司机已废弃。 */}
             </td>
             <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle' }}>
-              <SimpleBarcode value={quotationNo} />
+              <Code128Barcode value={quotationNo} />
               <div style={{ fontSize: 15, fontWeight: 'bold', letterSpacing: 3, marginTop: 4 }}>{quotationNo}</div>
             </td>
             <td style={cell}>
