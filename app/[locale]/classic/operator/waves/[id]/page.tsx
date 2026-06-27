@@ -64,7 +64,7 @@ export default function ClassicWaveDetailPage() {
   useEffect(() => { load() }, [id])
 
   function handlePrint() {
-    window.print()
+    setTimeout(() => window.print(), 0)
   }
 
   if (loading) {

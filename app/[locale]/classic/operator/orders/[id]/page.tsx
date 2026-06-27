@@ -227,12 +227,12 @@ export default function SalesOrderDetailPage() {
     try {
       await apiPost(`/api/orders/${order.id}/mark-printed`, { type: 'SALES' })
       window.open(`${prefix}/classic/print/${order.id}`, '_blank')
-      await load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '打印失败')
     } finally {
       setPrinting(false)
     }
+    load().catch(() => {})
   }
 
   async function handleApproveEdit(approved: boolean) {

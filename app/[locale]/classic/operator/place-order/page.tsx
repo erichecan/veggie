@@ -944,16 +944,15 @@ export default function ClassicPlaceOrderPage() {
   function handlePrint() {
     const el = document.getElementById('quotation-print-source')
     if (!el) return
-    const w = window.open('', '_blank', 'width=900,height=720')
+    const w = window.open('', '_blank', 'noopener,width=900,height=720')
     if (!w) { toast.error('请允许弹出窗口以打印'); return }
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Quotation ${quotationNo}</title><style>
       *{margin:0;padding:0;box-sizing:border-box}
       body{font-family:Arial,sans-serif;background:#fff}
       @media print{@page{margin:1cm;size:A4 portrait}}
-    </style></head><body>${el.innerHTML}</body></html>`)
+    </style></head><body>${el.innerHTML}<script>window.print();<\/script></body></html>`)
     w.document.close()
     w.focus()
-    setTimeout(() => { w.print() }, 400)
   }
 
   function openEmailDialog() {

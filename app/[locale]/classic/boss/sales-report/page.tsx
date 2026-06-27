@@ -113,7 +113,7 @@ function LineSelector({
 }
 
 function openPrintWindow(title: string, html: string) {
-  const win = window.open('', '_blank')
+  const win = window.open('', '_blank', 'noopener')
   if (!win) return
   win.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
 <style>
@@ -125,10 +125,9 @@ function openPrintWindow(title: string, html: string) {
   tr:nth-child(even) td { background: #faf5ff; }
   .total-row td { font-weight: bold; border-top: 2px solid #875A7B; }
   @media print { body { margin: 0; } }
-</style></head><body>${html}</body></html>`)
+</style></head><body>${html}<script>window.print();<\/script></body></html>`)
   win.document.close()
   win.focus()
-  setTimeout(() => win.print(), 300)
 }
 
 function fmt(n: number) {
