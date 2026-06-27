@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
+import { Trash2 } from 'lucide-react'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
@@ -563,8 +564,8 @@ export default function SalesOrderDetailPage() {
                     return (
                       <tr key={l.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="px-2 py-2">
-                          {editing
-                            ? <button onClick={() => deleteLine(i)} className="text-red-400 hover:text-red-600 text-sm leading-none">✕</button>
+                          {editing && l.productId
+                            ? <button onClick={() => deleteLine(i)} className="text-red-400 hover:text-red-600 leading-none"><Trash2 className="h-3.5 w-3.5" /></button>
                             : <span className="text-gray-300">▶</span>}
                         </td>
                         <td className="px-2 py-2 text-gray-700">{i + 1}</td>

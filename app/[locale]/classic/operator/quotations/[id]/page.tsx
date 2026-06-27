@@ -6,6 +6,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
+import { Trash2 } from 'lucide-react'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
@@ -590,7 +591,9 @@ export default function QuotationDetailPage() {
                                 onMouseDown={() => setHandleActive(true)}
                                 onMouseUp={() => setHandleActive(false)}
                                 className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none leading-none">☰</span>
-                              <button onClick={() => deleteLine(i)} className="text-red-400 hover:text-red-600 text-sm leading-none">✕</button>
+                              {l.productId && (
+                                <button onClick={() => deleteLine(i)} className="text-red-400 hover:text-red-600 leading-none"><Trash2 className="h-3.5 w-3.5" /></button>
+                              )}
                             </div>
                           ) : <span className="text-gray-300 select-none" title="编辑后可拖动调整顺序">☰</span>}
                         </td>
