@@ -67,6 +67,13 @@ export function buildOrderHtml(
   const customerPhone = customer?.phone ?? order.internalNote ?? ''
   const deliveryDate = fmtDate(order.deliveryDate ?? order.quotationDate)
 
+  const paymentTerm = customer?.paymentTerm ?? ''
+  const paymentLabel = paymentTerm === 'cash' ? 'Immediate Payment' : paymentTerm === 'weekly' ? 'Weekly' : paymentTerm === 'monthly' ? 'Monthly' : ''
+  const isImmediatePayment = paymentTerm === 'cash'
+  const paymentColor = isImmediatePayment ? '#dc2626' : '#15803d'
+  const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
+  const paymentBorder = isImmediatePayment ? '#ef4444' : '#16a34a'
+
   const linesHtml = lines.map((l, i) => {
     const spec = (l as unknown as { spec?: string }).spec
     const uomName = (l as unknown as { uomName?: string }).uomName ?? ''
@@ -132,8 +139,11 @@ export function buildOrderHtml(
         </div>
       </td>
       <td>
-        <div class="info-head">Comment</div>
-        <div class="info-val">${customerPhone || '—'}</div>
+        <div class="info-head">Payment</div>
+        <div class="info-val">
+          ${paymentLabel ? `<div style="font-weight:bold;color:${paymentColor};font-size:9.5pt;">${paymentLabel}</div>` : '<div style="color:#999;">—</div>'}
+          ${customerPhone ? `<div style="margin-top:2mm;font-size:8.5pt;color:#555;">${customerPhone}</div>` : ''}
+        </div>
       </td>
     </tr>
   </table>
@@ -167,6 +177,10 @@ export function buildOrderHtml(
       </tr>
     </table>
   </div>
+
+  ${paymentLabel ? `<div style="margin-top:12px;padding:8px 14px;border-radius:6px;border:2px solid ${paymentBorder};background:${paymentBg};display:inline-block;">
+    <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">PAYMENT: ${paymentLabel}</span>
+  </div>` : ''}
 
   ${order.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
     <div style="font-weight:600;margin-bottom:4px;">备注</div>
