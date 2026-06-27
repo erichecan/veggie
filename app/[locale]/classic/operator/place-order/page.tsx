@@ -71,13 +71,13 @@ function Code128Barcode({ value }: { value: string }) {
       JsBarcode(svgRef.current, value, {
         format: 'CODE128',
         width: 1.5,
-        height: 36,
+        height: 32,
         displayValue: false,
         margin: 0,
       })
     } catch {}
   }, [value])
-  return <svg ref={svgRef} style={{ maxWidth: 130, display: 'block', margin: '0 auto' }} />
+  return <svg ref={svgRef} style={{ width: '100%', maxWidth: 130, display: 'block', margin: '0 auto' }} />
 }
 
 // ─── QuotationContent (shared by Preview modal + Print window) ────────────────
@@ -136,8 +136,8 @@ function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, 
               {/* salesTeam 是业务员(Salesman),不是司机;司机由配送批次(wave)决定。旧 Odoo 用 salesteam 代司机已废弃。 */}
             </td>
             <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle' }}>
+              <div style={{ fontSize: 15, fontWeight: 'bold', letterSpacing: 3 }}>{quotationNo}</div>
               <Code128Barcode value={quotationNo} />
-              <div style={{ fontSize: 15, fontWeight: 'bold', letterSpacing: 3, marginTop: 4 }}>{quotationNo}</div>
             </td>
             <td style={cell}>
               <div>{deliveryDate}</div>

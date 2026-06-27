@@ -42,7 +42,7 @@ export default function InvoicePrintPage() {
     if (!barcodeRef.current || !inv) return
     const code = /^[\x00-\x7F]+$/.test(inv.name) ? inv.name : inv.id
     try {
-      JsBarcode(barcodeRef.current, code, { format: 'CODE128', width: 1.5, height: 40, displayValue: false, margin: 0 })
+      JsBarcode(barcodeRef.current, code, { format: 'CODE128', width: 1.5, height: 32, displayValue: false, margin: 0 })
     } catch {}
   }, [inv])
 
@@ -112,10 +112,10 @@ export default function InvoicePrintPage() {
           </div>
           <div className="text-right">
             <p className="text-xl font-bold text-gray-900">发票 INVOICE</p>
-            <div className="flex justify-end mt-2">
-              <svg ref={barcodeRef} style={{ maxWidth: 140 }} />
-            </div>
             <p className="text-sm font-mono text-gray-600 mt-1">{inv.name}</p>
+            <div className="flex justify-end mt-1">
+              <svg ref={barcodeRef} style={{ maxWidth: 140, display: 'block' }} />
+            </div>
             <span className="inline-block mt-2 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
               {STATUS_LABEL[inv.status]}
             </span>
