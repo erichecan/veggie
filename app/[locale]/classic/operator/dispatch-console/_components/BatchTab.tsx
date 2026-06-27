@@ -18,7 +18,7 @@ interface Order {
 interface Wave {
   id: string; name: string | null; orderIds: string[]; status: string
   waveType: string | null; waveNumber: number | null; driverSlotId: string | null; driverName: string | null
-  dispatchedAt: string | null
+  dispatchedAt: string | null; completedAt: string | null
 }
 interface PalletItem {
   orderId: string; restaurantId: string; restaurantName: string
@@ -195,6 +195,16 @@ export default function BatchTab({ date }: { date: string }) {
     } catch (e) { toast.error(e instanceof Error ? e.message : '确认出发失败') }
   }
 
+  async function completeWave(waveId: string) {
+    const wave = waves.find(w => w.id === waveId)
+    if (!confirm(`确认「${wave?.driverName ?? ''}」已完成配送？卡片将从调度台移除。`)) return
+    try {
+      await apiPut(`/api/waves/${waveId}/complete`, {})
+      toast.success('已标记完成')
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : '标记完成失败') }
+  }
+
   function startDrag(e: React.DragEvent, orderId: string, sourceWaveId: string | null) {
     e.dataTransfer.setData('text/plain', orderId)
     e.dataTransfer.setData(SRC, sourceWaveId ?? '')
@@ -230,14 +240,14 @@ export default function BatchTab({ date }: { date: string }) {
     const timeCls = slot.timeOfDay === 'am' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
     const timeText = slot.timeOfDay === 'am' ? '上午' : '下午'
 
-    if (!wave) {
+    if (!wave || wave.completedAt) {
       return (
         <div className="bg-gray-50 border border-dashed rounded-xl p-3 text-xs text-gray-400" style={{ borderColor: '#d1d5db' }}>
           <div className="font-semibold text-gray-600 flex items-center gap-1.5">
             <Avatar name={slot.driverName} /> {slot.driverName}
             <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
           </div>
-          <div className="text-center py-8">批次 {slot.batchNum} · 未生成</div>
+          <div className="text-center py-8">{!wave ? `批次 ${slot.batchNum} · 未生成` : '✅ 已完成配送'}</div>
         </div>
       )
     }
@@ -248,11 +258,14 @@ export default function BatchTab({ date }: { date: string }) {
     const laneOrders = wave.orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
     const dispatched = !!wave.dispatchedAt
     const over = !dispatched && dragOverWave === wave.id
+    const departTime = wave.dispatchedAt
+      ? new Date(wave.dispatchedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+      : ''
 
     return (
       <div
-        className="bg-white border rounded-xl flex flex-col max-h-[600px]"
-        style={{ borderColor: over ? PURPLE : (dispatched ? '#bbf7d0' : '#e5e7eb'), boxShadow: over ? `0 0 0 2px ${PURPLE}33` : undefined }}
+        className={`${dispatched ? 'bg-gray-50' : 'bg-white'} border rounded-xl flex flex-col max-h-[600px]`}
+        style={{ borderColor: over ? PURPLE : (dispatched ? '#bfdbfe' : '#e5e7eb'), boxShadow: over ? `0 0 0 2px ${PURPLE}33` : undefined }}
         onDragOver={e => { e.preventDefault(); if (dispatched) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverWave(wave.id) }}
         onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverWave(p => p === wave.id ? null : p) }}
         onDrop={e => dropToWave(e, wave.id)}
@@ -264,10 +277,11 @@ export default function BatchTab({ date }: { date: string }) {
               <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
             </span>
             {dispatched
-              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700">🚚 已出发</span>
+              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700">🚚 在途</span>
               : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.text}</span>}
           </div>
           <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.restaurantCount}家 · {pallets.length}盘 · €{m.amount.toLocaleString()}</div>
+          {dispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${st.pct}%`, background: PURPLE }} /></div>
         </div>
 
@@ -311,9 +325,10 @@ export default function BatchTab({ date }: { date: string }) {
           >🧱 编排托盘{pallets.length ? `（${pallets.length}）` : ''}</button>
 
           {dispatched ? (
-            <div className="mt-1 rounded-lg py-1.5 text-xs text-center font-semibold text-green-700 bg-green-50 border border-green-200">
-              ✅ 已出发 · 交货 {date}
-            </div>
+            <button
+              onClick={() => completeWave(wave.id)}
+              className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 hover:bg-gray-100 w-full"
+            >✓ 标记完成</button>
           ) : laneOrders.length > 0 ? (
             <button
               onClick={() => dispatchWave(wave.id)}
