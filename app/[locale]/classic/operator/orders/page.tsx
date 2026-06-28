@@ -12,7 +12,6 @@ import { formatDateTimeShort } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { Pagination } from '@/components/ui/pagination'
 import { useServerList } from '@/hooks/use-server-list'
-import DayWiseReportDialog from '@/components/classic/DayWiseReportDialog'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 
@@ -113,7 +112,6 @@ export default function ClassicOrdersPage() {
     apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
   const [groupBy, setGroupBy] = useState('')
-  const [showDayWise, setShowDayWise] = useState(false)
   const [printHistFor, setPrintHistFor] = useState<string | null>(null)
 
   // Build status param from active filter — changes trigger server refetch via useServerList
@@ -492,7 +490,6 @@ export default function ClassicOrdersPage() {
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
-      {showDayWise && <DayWiseReportDialog onClose={() => setShowDayWise(false)} />}
       <OdooControlPanel
         breadcrumb={['销售', '订单']}
         permanentActions={[
@@ -513,7 +510,6 @@ export default function ClassicOrdersPage() {
             label: generatingWave ? '生成中…' : `生成拣货波次 (${selectedConfirmedCount})`,
             onClick: generateBatchWave,
           }] : []),
-          { label: '日销售报表', onClick: () => setShowDayWise(true) },
           { label: '导出', onClick: () => toast.info('导出功能即将推出') },
         ]}
         searchValue={search}
