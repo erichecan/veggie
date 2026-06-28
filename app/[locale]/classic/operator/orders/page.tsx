@@ -333,7 +333,6 @@ export default function ClassicOrdersPage() {
         </td>
         <td className="px-2 py-1" />
         <td className="px-2 py-1" />
-        {dateLabelCell('createdAtFrom', 'createdAtTo')}
         <td className="px-2 py-1" />
       </tr>
     )
@@ -466,7 +465,6 @@ export default function ClassicOrdersPage() {
           )}
         </td>
         <td className="px-2 py-2 text-sm text-gray-500 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={o.createdAt} /></td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1">
             {!isReadMode && o.status === 'confirmed' && (
@@ -570,13 +568,12 @@ export default function ClassicOrdersPage() {
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'restaurantName',label: 'Customer',          right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
-                  { field: 'deliveryBatch', label: 'Delivery\nBatch',   right: false },
+                  { field: 'deliveryBatch', label: '司机',              right: false },
                   { field: 'totalAmount',   label: 'Total',             right: true  },
                   { field: 'invoiceStatus', label: 'Invoice\nStatus',   right: false },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: 'printedAt',     label: 'Print\nStatus',     right: false },
                   { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
-                  { field: 'createdAt',     label: 'Creation\nDate',    right: false },
                   { field: null,            label: '',                   right: false },
                 ] as { field: string | null; label: string; right: boolean }[]
               ).map(({ field, label, right }, i) => {
