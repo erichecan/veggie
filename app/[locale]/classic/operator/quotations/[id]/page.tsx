@@ -68,6 +68,7 @@ export default function QuotationDetailPage() {
   const [externalNote, setExternalNote] = useState('')
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
   const [salesman, setSalesman] = useState('')
+  const [deliveryDate, setDeliveryDate] = useState('')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
   const [pricelistId, setPricelistId] = useState('')
@@ -98,6 +99,7 @@ export default function QuotationDetailPage() {
       setInternalNote(ord.internalNote ?? '')
       setExternalNote((ord as unknown as { externalNote?: string }).externalNote ?? '')
       setSalesman((ord as unknown as { salesman?: string }).salesman ?? '')
+      setDeliveryDate(ord.deliveryDate ? new Date(ord.deliveryDate).toISOString().slice(0, 10) : '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
       setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
       setPricelistId(ord.pricelistId ?? '')
@@ -195,6 +197,7 @@ export default function QuotationDetailPage() {
       const orderedLines = editLines.map((l, idx) => ({ ...l, sequence: idx }))
       await apiPut(`/api/orders/${order.id}`, {
         internalNote, externalNote: externalNote || null, salesman,
+        deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
         driverSlotId: driverSlotId || null,
         deliveryBatch: driverSlotId ? (() => { const s = driverSlots.find(x => x.id === driverSlotId); return s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : deliveryBatch })() : deliveryBatch,
         pricelistId: pricelistId || null,
@@ -500,9 +503,16 @@ export default function QuotationDetailPage() {
 
             {/* Right col */}
             <div className="space-y-3 text-sm">
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Order Date</div>
-                <div className="text-gray-800">{formatDate(order.quotationDate ?? order.createdAt)}</div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Date</div>
+                {editing ? (
+                  <input
+                    type="date"
+                    value={deliveryDate}
+                    onChange={e => setDeliveryDate(e.target.value)}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                ) : <div className="text-gray-800">{deliveryDate || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Batch</div>
@@ -528,9 +538,17 @@ export default function QuotationDetailPage() {
                 <div className="w-32 font-bold text-gray-700">Payment Terms</div>
                 <div className="text-gray-800">{customer?.paymentTerm ?? '—'}</div>
               </div>
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Signature</div>
-                <div className="text-gray-400">—</div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={salesman}
+                    onChange={e => setSalesman(e.target.value)}
+                    placeholder="业务员姓名"
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                ) : <div className="text-gray-800">{salesman || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>
