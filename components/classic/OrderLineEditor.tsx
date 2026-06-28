@@ -1,7 +1,7 @@
 'use client'
-import { type ReactNode, type CSSProperties, useRef, useState, useMemo, useEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { type ReactNode, type CSSProperties, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
+import ProductSearchInput from './ProductSearchInput'
 
 export const AMBER_INPUT = 'w-20 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
 
@@ -64,50 +64,12 @@ export default function OrderLineEditor<
   const [overIndex, setOverIndex] = useState<number | null>(null)
   const [handleActive, setHandleActive] = useState(false)
   const [query, setQuery] = useState('')
-  const [open, setOpen] = useState(false)
-  const [highlight, setHighlight] = useState(-1)
-  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
 
-  const containerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const portalRef = useRef<HTMLDivElement>(null)
-
-  const filteredProducts = useMemo(
-    () => (products ?? []).filter(p => p.name.toLowerCase().includes(query.toLowerCase())).slice(0, 20),
-    [products, query],
-  )
-
-  function updateRect() {
-    if (inputRef.current) {
-      const r = inputRef.current.getBoundingClientRect()
-      setRect({ top: r.bottom + window.scrollY, left: r.left + window.scrollX, width: r.width })
-    }
-  }
+  const psInputRef = useRef<HTMLInputElement>(null)
 
   function focusSearch() {
-    setOpen(true)
-    updateRect()
-    inputRef.current?.focus()
+    psInputRef.current?.focus()
   }
-
-  function selectProduct(p: P) {
-    onAddProduct?.(p)
-    setQuery('')
-    setOpen(false)
-    setHighlight(-1)
-  }
-
-  useEffect(() => {
-    function onMouseDown(e: MouseEvent) {
-      if (
-        !containerRef.current?.contains(e.target as Node) &&
-        !portalRef.current?.contains(e.target as Node)
-      )
-        setOpen(false)
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [])
 
   const canDrag = editing && !!onReorder
 
@@ -207,81 +169,16 @@ export default function OrderLineEditor<
               <tr>
                 <td className="px-2 py-2" />
                 <td className="px-2 py-2" colSpan={searchColSpan}>
-                  <div ref={containerRef}>
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      value={query}
-                      placeholder="Add a product"
-                      onChange={e => {
-                        setQuery(e.target.value)
-                        setHighlight(-1)
-                        setOpen(true)
-                        updateRect()
-                      }}
-                      onFocus={() => {
-                        setOpen(true)
-                        updateRect()
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Escape') {
-                          setOpen(false)
-                          setHighlight(-1)
-                          return
-                        }
-                        if (e.key === 'Tab') {
-                          setOpen(false)
-                          return
-                        }
-                        if (!open || filteredProducts.length === 0) return
-                        if (e.key === 'ArrowDown') {
-                          e.preventDefault()
-                          setHighlight(h => Math.min(h + 1, filteredProducts.length - 1))
-                        } else if (e.key === 'ArrowUp') {
-                          e.preventDefault()
-                          setHighlight(h => Math.max(h - 1, 0))
-                        } else if (e.key === 'Enter') {
-                          e.preventDefault()
-                          const idx = highlight >= 0 ? highlight : 0
-                          if (filteredProducts[idx]) selectProduct(filteredProducts[idx])
-                        }
-                      }}
-                      className="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-72"
-                    />
-                  </div>
-                  {open &&
-                    filteredProducts.length > 0 &&
-                    rect &&
-                    typeof document !== 'undefined' &&
-                    createPortal(
-                      <div
-                        ref={portalRef}
-                        style={{
-                          position: 'absolute',
-                          top: rect.top + 2,
-                          left: rect.left,
-                          width: Math.max(rect.width, 288),
-                          zIndex: 9999,
-                        }}
-                        className="bg-white border border-gray-200 rounded shadow-lg max-h-52 overflow-y-auto"
-                      >
-                        {filteredProducts.map((p, idx) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onMouseDown={() => {
-                              selectProduct(p)
-                              setHighlight(-1)
-                            }}
-                            onMouseEnter={() => setHighlight(idx)}
-                            className={`w-full text-left px-3 py-2 text-sm text-gray-700 ${idx === highlight ? 'bg-[#875A7B]/20' : 'hover:bg-[#875A7B]/20'}`}
-                          >
-                            {p.name}
-                          </button>
-                        ))}
-                      </div>,
-                      document.body,
-                    )}
+                  <ProductSearchInput
+                    value={query}
+                    onChange={setQuery}
+                    onSelect={p => { onAddProduct(p); setQuery('') }}
+                    products={products ?? []}
+                    placeholder="Add a product"
+                    inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-72"
+                    portalDropdown={true}
+                    externalRef={psInputRef}
+                  />
                 </td>
               </tr>
             )}

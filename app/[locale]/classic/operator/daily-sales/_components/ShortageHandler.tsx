@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { today, fmtMoney } from './shared'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
 
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string }
 
@@ -54,12 +55,6 @@ export default function ShortageHandler() {
       .catch(() => setOrders([]))
       .finally(() => setOrdersLoading(false))
   }, [date])
-
-  const productOptions = useMemo(() => {
-    if (!productSearch) return allProducts.slice(0, 20)
-    const q = productSearch.toLowerCase()
-    return allProducts.filter(p => p.name.toLowerCase().includes(q)).slice(0, 20)
-  }, [allProducts, productSearch])
 
   const affectedLines: AffectedLine[] = useMemo(() => {
     if (!selectedProduct) return []
@@ -147,29 +142,15 @@ export default function ShortageHandler() {
       {/* Product search */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
         <div className="text-sm font-medium text-gray-700 mb-2">搜索缺货商品</div>
-        <div className="relative">
-          <input
-            type="text"
-            value={productSearch}
-            onChange={e => { setProductSearch(e.target.value); setSelectedProduct(null) }}
-            placeholder="输入商品名称..."
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#875A7B]"
-          />
-          {productSearch && !selectedProduct && productOptions.length > 0 && (
-            <div className="absolute z-20 mt-1 bg-white border border-gray-200 rounded shadow-lg w-full max-h-56 overflow-y-auto">
-              {productOptions.map(p => (
-                <button
-                  key={p.id}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-purple-50 hover:text-[#875A7B]"
-                  onClick={() => handleSelectProduct(p)}
-                >
-                  <span className="font-medium">{p.name}</span>
-                  {p.category && <span className="ml-2 text-xs text-gray-400">{p.category}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ProductSearchInput
+          value={productSearch}
+          onChange={v => { setProductSearch(v); setSelectedProduct(null) }}
+          onSelect={handleSelectProduct}
+          products={allProducts}
+          placeholder="输入商品名称..."
+          showOnEmptyQuery={false}
+          inputClassName="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#875A7B]"
+        />
       </div>
 
       {/* Affected orders */}
