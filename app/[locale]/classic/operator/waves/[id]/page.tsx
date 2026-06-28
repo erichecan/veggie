@@ -64,7 +64,64 @@ export default function ClassicWaveDetailPage() {
   useEffect(() => { load() }, [id])
 
   function handlePrint() {
-    setTimeout(() => window.print(), 0)
+    if (!wave) return
+    const w = window.open('', '_blank', 'noopener,width=900,height=720')
+    if (!w) { toast.error('请允许弹出窗口以打印'); return }
+    const wLabel = wave.name ?? `Wave ${wave.waveNumber ?? '?'}`
+    const dLabel = wave.driverName ?? '未指定'
+    const isBulk = wave.waveType === 'bulk'
+    const zonesHtml = wave.zones.length === 0
+      ? '<p style="color:#999;text-align:center;padding:32px;">暂无拣货明细</p>'
+      : wave.zones.map(z => `
+          <div style="border:1px solid #e0e0e0;border-radius:6px;overflow:hidden;margin-bottom:12px;background:#fff;">
+            <div style="padding:8px 14px;background:#f3eff5;color:#875A7B;font-weight:600;font-size:13px;border-bottom:1px solid #e0e0e0;">
+              📦 ${z.name} <span style="font-weight:400;color:#888;font-size:12px;">${z.items.length} 种商品</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead>
+                <tr style="background:#f8f8f8;border-bottom:1px solid #e0e0e0;">
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">商品</th>
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">规格</th>
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">单位</th>
+                  <th style="padding:6px 12px;text-align:right;font-weight:500;color:#555;font-size:12px;">需拣量</th>
+                  <th style="padding:6px 12px;text-align:center;font-weight:500;color:#555;font-size:12px;">完成</th>
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">涉及餐馆</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${z.items.map((it, i) => `
+                  <tr style="border-bottom:1px solid #e8e8e8;background:${i % 2 === 1 ? '#fafafa' : '#fff'};">
+                    <td style="padding:7px 12px;color:#333;">${it.productName}</td>
+                    <td style="padding:7px 12px;color:#888;">${it.spec ?? ''}</td>
+                    <td style="padding:7px 12px;color:#888;">${it.uomName ?? ''}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:bold;color:#111;">${isKgUom(it.uomName) ? Number(it.requiredQty).toFixed(2) : it.requiredQty}</td>
+                    <td style="padding:7px 12px;text-align:center;color:#ccc;font-size:16px;">☐</td>
+                    <td style="padding:7px 12px;font-size:11px;color:#888;">${it.restaurants.join('、')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `).join('')
+    w.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>${wLabel} 拣货单</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;padding:20px}@media print{@page{margin:1cm}body{padding:0}}</style>
+</head><body>
+<div style="margin-bottom:16px;">
+  <h1 style="font-size:18px;font-weight:bold;color:#111;">${wLabel} — 拣货单</h1>
+  <p style="font-size:13px;color:#555;margin-top:4px;">
+    司机：<strong>${dLabel}</strong>
+    <span style="margin-left:16px;">类型：<strong>${isBulk ? '大货' : '散货'}</strong></span>
+    <span style="margin-left:16px;">打印时间：${new Date().toLocaleString('en-GB')}</span>
+  </p>
+</div>
+${zonesHtml}
+<script>window.print();<\/script>
+</body></html>`)
+    w.document.close()
+    w.focus()
   }
 
   if (loading) {
