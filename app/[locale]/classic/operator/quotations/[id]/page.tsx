@@ -11,6 +11,8 @@ import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { formatDateTimeShort } from '@/lib/format-date'
 import { OrderChatter } from '@/components/order/OrderChatter'
+import { getSession, type UserSession } from '@/lib/session'
+import { resolveCustomerPrice } from '@/lib/pricing-engine'
 
 const PURPLE = '#875A7B'
 
@@ -24,6 +26,15 @@ interface AllProduct {
   customerTaxRate?: number
   uomName?: string
   uomId?: string
+}
+
+interface CreditInfo {
+  outstandingBalance: number
+  overdueAmount: number
+  paymentTerm: string
+  creditLimit: number
+  canOrder: boolean
+  blockReason?: string
 }
 
 function formatDate(iso?: string | null): string {
@@ -78,6 +89,9 @@ export default function QuotationDetailPage() {
   type EditLine = NonNullable<Order['lines']>[number] & { commissionPrice?: number }
   const [editLines, setEditLines] = useState<EditLine[]>([])
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
+  const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
 
   async function load() {
     setLoading(true)
@@ -100,6 +114,9 @@ export default function QuotationDetailPage() {
       setCustomer(cs.find(c => c.id === ord.restaurantId) ?? null)
       setPricelists(pls)
       if (ord.pricelistId) setPricelist(pls.find(p => p.id === ord.pricelistId) ?? null)
+      if (ord.restaurantId) {
+        apiGet<CreditInfo>(`/api/customers/${ord.restaurantId}/credit`).then(setCreditInfo).catch(() => {})
+      }
 
       apiGet<typeof auditLogs>(`/api/orders/${id}/audit`).then(setAuditLogs).catch(() => {})
 
@@ -154,13 +171,13 @@ export default function QuotationDetailPage() {
     })
   }
 
-  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'commissionPrice', value: number) {
+  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'commissionPrice' | 'spec', value: number | string) {
     setEditLines(prev => {
       const next = [...prev]
       const line: EditLine = { ...next[idx], [field]: value }
       if (field === 'orderedQty' || field === 'unitPrice') {
-        const qty = field === 'orderedQty' ? value : Number(next[idx].orderedQty)
-        const price = field === 'unitPrice' ? value : Number(next[idx].unitPrice)
+        const qty = field === 'orderedQty' ? Number(value) : Number(next[idx].orderedQty)
+        const price = field === 'unitPrice' ? Number(value) : Number(next[idx].unitPrice)
         line.subtotal = Math.round(qty * price * 100) / 100
       }
       next[idx] = line
@@ -271,6 +288,8 @@ export default function QuotationDetailPage() {
 
   const statusUp = order.status.toUpperCase()
   const isQuotation = statusUp === 'PENDING'
+  const canOverrideCredit = session?.roles?.includes('BOSS') || session?.roles?.includes('FINANCE') || session?.role === 'BOSS' || session?.role === 'FINANCE'
+  const creditBlocked = creditInfo?.canOrder === false && !canOverrideCredit
   const isSalesOrder = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED'].includes(statusUp)
   const isLocked = statusUp === 'LOCKED' || statusUp === 'CANCELLED'
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
@@ -282,7 +301,10 @@ export default function QuotationDetailPage() {
     : Number(order.totalAmount)
 
   function addProductLine(p: AllProduct) {
-    const price = Number(p.listPrice ?? 0)
+    const resolution = customer
+      ? resolveCustomerPrice(p as never, customer, pricelists)
+      : null
+    const price = resolution ? resolution.price : Number(p.listPrice ?? 0)
     const newLine = {
       id: '',
       orderId: order!.id,
@@ -365,11 +387,16 @@ export default function QuotationDetailPage() {
               Print
             </button>
             {isQuotation && (
-              <button onClick={handleConfirm} disabled={confirming}
-                className="h-8 px-3 text-sm rounded border border-gray-300 bg-white disabled:opacity-50"
-                style={{ color: PURPLE }}>
-                {confirming ? 'Confirming…' : 'Confirm'}
-              </button>
+              <>
+                <button onClick={handleConfirm} disabled={confirming || creditBlocked}
+                  className="h-8 px-3 text-sm rounded border border-gray-300 bg-white disabled:opacity-50"
+                  style={{ color: PURPLE }}>
+                  {confirming ? 'Confirming…' : 'Confirm'}
+                </button>
+                {creditBlocked && (
+                  <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 font-medium border border-red-200">信用冻结</span>
+                )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-1 text-sm text-gray-500">
@@ -447,6 +474,35 @@ export default function QuotationDetailPage() {
                 <div className="w-32 font-bold text-gray-700">Balance</div>
                 <div className={balance < 0 ? 'text-red-600' : 'text-gray-800'}>€ {balance.toFixed(2)}</div>
               </div>
+              {creditInfo && (
+                <div className={`flex flex-wrap gap-3 py-2 px-3 rounded-lg text-xs ${creditInfo.canOrder === false ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-200'}`}>
+                  <div>
+                    <span className="text-gray-500">欠款余额</span>
+                    <span className={`ml-1 font-medium ${creditInfo.outstandingBalance > 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                      € {creditInfo.outstandingBalance.toFixed(2)}
+                    </span>
+                  </div>
+                  {creditInfo.creditLimit > 0 && (
+                    <div>
+                      <span className="text-gray-500">信用额度</span>
+                      <span className="ml-1 font-medium text-gray-800">€ {creditInfo.creditLimit.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {creditInfo.paymentTerm && (
+                    <div>
+                      <span className="text-gray-500">付款条件</span>
+                      <span className="ml-1 font-medium text-gray-800">{creditInfo.paymentTerm}</span>
+                    </div>
+                  )}
+                  {creditInfo.canOrder === false && (
+                    <div className="w-full flex items-center gap-1 text-red-700 font-medium">
+                      <span>⚠️</span>
+                      <span>{creditInfo.blockReason || '信用冻结，无法确认'}</span>
+                      {canOverrideCredit && <span className="text-gray-500 font-normal">(已用管理员权限覆盖)</span>}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className={`rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="flex border-b border-gray-200 mb-1">
                   {(['internal', 'external'] as const).map(tab => (
@@ -611,7 +667,16 @@ export default function QuotationDetailPage() {
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
-                    <td className="px-2 py-2 text-gray-600 text-xs">{l.spec || ''}</td>
+                    <td className="px-2 py-2 text-gray-600 text-xs">
+                      {editing ? (
+                        <input
+                          type="text"
+                          className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
+                          value={l.spec ?? ''}
+                          onChange={e => updateLine(i, 'spec', e.target.value)}
+                        />
+                      ) : (l.spec || '')}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}

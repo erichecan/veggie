@@ -1,15 +1,41 @@
 'use client'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import { usePathname } from 'next/navigation'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
-import { ChipMultiSelect, toggleValue, today } from './shared'
+import { toggleValue, today } from './shared'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string }
 interface UserRow { id: string; name: string }
 interface CategoryRow { id: string; name: string }
+interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; subtotal?: number | null }
+
+// ─── Chart helpers ─────────────────────────────────────────────────────────────
+
+const CHART_COLORS = ['#875A7B', '#4B6BFB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6']
+
+function dateGroupKey(d: string, g: 'day' | 'week' | 'month'): string {
+  if (g === 'day') return d
+  if (g === 'month') return d.slice(0, 7)
+  const dt = new Date(d + 'T12:00:00Z')
+  const dow = dt.getUTCDay() || 7
+  dt.setUTCDate(dt.getUTCDate() - dow + 1)
+  return dt.toISOString().slice(0, 10)
+}
+
+function dateGroupLabel(key: string, g: 'day' | 'week' | 'month'): string {
+  if (g === 'day') return key.slice(5).replace('-', '/')
+  if (g === 'month') {
+    return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(key.slice(5)) - 1] ?? key
+  }
+  const dt = new Date(key + 'T12:00:00Z')
+  return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
+}
 
 // ─── Table-embedded inline search ─────────────────────────────────────────────
 
@@ -122,6 +148,12 @@ export default function SalesStats() {
   const [allCategories, setAllCategories] = useState<CategoryRow[]>([])
   const [orders, setOrders] = useState<Order[]>([])
 
+  // Independent 28-day stats fetch for trend charts
+  const [statsOrders, setStatsOrders] = useState<Order[]>([])
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day')
+  const [showCategoryOverlay, setShowCategoryOverlay] = useState(false)
+
   // Load reference data once
   useEffect(() => {
     apiGet<CustomerRow[]>('/api/customers?limit=500').then(d => setAllCustomers(Array.isArray(d) ? d : [])).catch(() => {})
@@ -139,6 +171,21 @@ export default function SalesStats() {
       .then(d => setOrders(Array.isArray(d) ? d : []))
       .catch(() => setOrders([]))
   }, [fromDate, toDate])
+
+  // Load past 28 days for trend analysis (independent, loads once)
+  useEffect(() => {
+    const to = today()
+    const fromDt = new Date()
+    fromDt.setDate(fromDt.getDate() - 27)
+    const from = fromDt.toISOString().slice(0, 10)
+    setStatsLoading(true)
+    apiGet<Order[]>(
+      `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED&dateField=deliveryDate&fromDate=${from}&toDate=${to}`
+    )
+      .then(d => setStatsOrders(Array.isArray(d) ? d : []))
+      .catch(() => setStatsOrders([]))
+      .finally(() => setStatsLoading(false))
+  }, [])
 
   const batchFilterOptions = useMemo(() => {
     const drivers = new Set<string>()
@@ -159,6 +206,112 @@ export default function SalesStats() {
     }
   }, [orders])
 
+  // product id → ProductRow map for category lookup
+  const productMap = useMemo(() => {
+    const m = new Map<string, ProductRow>()
+    for (const p of allProducts) m.set(p.id, p)
+    return m
+  }, [allProducts])
+
+  // Top 5 categories by 28-day revenue
+  const topCategories = useMemo(() => {
+    const rev = new Map<string, number>()
+    for (const o of statsOrders) {
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        const cat = (l.productId ? productMap.get(l.productId)?.category : null) ?? '未分类'
+        rev.set(cat, (rev.get(cat) ?? 0) + Number(l.subtotal ?? 0))
+      }
+    }
+    return [...rev.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name)
+  }, [statsOrders, productMap])
+
+  // Chart data aggregated by granularity
+  const chartData = useMemo(() => {
+    const buckets = new Map<string, { total: number; cats: Record<string, number> }>()
+    for (const o of statsOrders) {
+      const date = (o.deliveryDate as string | undefined)?.slice(0, 10) ?? ''
+      if (!date) continue
+      const key = dateGroupKey(date, granularity)
+      if (!buckets.has(key)) buckets.set(key, { total: 0, cats: {} })
+      const b = buckets.get(key)!
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        const sub = Number(l.subtotal ?? 0)
+        b.total += sub
+        if (showCategoryOverlay) {
+          const cat = (l.productId ? productMap.get(l.productId)?.category : null) ?? '未分类'
+          if (topCategories.includes(cat)) b.cats[cat] = (b.cats[cat] ?? 0) + sub
+        }
+      }
+    }
+    return [...buckets.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, b]) => ({
+        label: dateGroupLabel(key, granularity),
+        total: Math.round(b.total),
+        ...Object.fromEntries(topCategories.map(c => [c, Math.round(b.cats[c] ?? 0)])),
+      }))
+  }, [statsOrders, granularity, showCategoryOverlay, topCategories, productMap])
+
+  // Category ranking over the 28-day period
+  const catRanking = useMemo(() => {
+    const rev = new Map<string, { qty: number; amount: number }>()
+    for (const o of statsOrders) {
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        const cat = (l.productId ? productMap.get(l.productId)?.category : null) ?? '未分类'
+        const cur = rev.get(cat) ?? { qty: 0, amount: 0 }
+        cur.qty += Number(l.orderedQty ?? 0)
+        cur.amount += Number(l.subtotal ?? 0)
+        rev.set(cat, cur)
+      }
+    }
+    const total = [...rev.values()].reduce((s, v) => s + v.amount, 0)
+    return [...rev.entries()]
+      .sort(([, a], [, b]) => b.amount - a.amount)
+      .map(([name, v]) => ({ name, qty: v.qty, amount: v.amount, pct: total > 0 ? v.amount / total : 0 }))
+  }, [statsOrders, productMap])
+
+  // Purchase suggestions: past 14 days only, ceil(avgDaily * 7 * 1.1)
+  const purchaseSuggestions = useMemo(() => {
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 13)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const recent = statsOrders.filter(o => {
+      const d = (o.deliveryDate as string | undefined)?.slice(0, 10) ?? ''
+      return d >= cutoffStr
+    })
+    const prodQty = new Map<string, { name: string; category: string; qty: number }>()
+    for (const o of recent) {
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        if (!l.productId) continue
+        const cat = productMap.get(l.productId)?.category ?? '未分类'
+        const name = l.productName ?? productMap.get(l.productId)?.name ?? l.productId
+        const cur = prodQty.get(l.productId) ?? { name, category: cat, qty: 0 }
+        cur.qty += Number(l.orderedQty ?? 0)
+        prodQty.set(l.productId, cur)
+      }
+    }
+    return [...prodQty.entries()]
+      .map(([id, v]) => ({
+        id,
+        name: v.name,
+        category: v.category,
+        suggested: Math.ceil((v.qty / 14) * 7 * 1.1),
+      }))
+      .sort((a, b) => a.category.localeCompare(b.category) || b.suggested - a.suggested)
+  }, [statsOrders, productMap])
+
+  function exportSuggestions() {
+    const header = '品类,商品名称,建议采购量\n'
+    const rows = purchaseSuggestions.map(r => `${r.category},${r.name},${r.suggested}`).join('\n')
+    const blob = new Blob(['﻿' + header + rows], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `purchase-suggestions-${today()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function buildUrl(mode: 'day' | 'multiline' | 'summary') {
     const params = new URLSearchParams({ mode, from: fromDate, to: toDate })
     if (selectedCustomers.length > 0) params.set('customerIds', selectedCustomers.map(c => c.id).join(','))
@@ -178,7 +331,6 @@ export default function SalesStats() {
 
       {/* Filters */}
       <div className="p-5 border-b border-gray-200 space-y-3">
-        {/* Date range + selects */}
         <div className="grid grid-cols-2 gap-x-8 gap-y-3">
           <div className="flex items-center gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0">From</label>
@@ -358,7 +510,7 @@ export default function SalesStats() {
       </div>
 
       {/* Print buttons */}
-      <div className="px-6 py-4 flex items-center gap-3">
+      <div className="px-6 py-4 flex items-center gap-3 border-b border-gray-200">
         <button
           onClick={() => window.open(buildUrl('day'), '_blank')}
           className="px-5 py-2 text-sm font-semibold text-white rounded"
@@ -379,6 +531,145 @@ export default function SalesStats() {
         >
           Print Sale Summary
         </button>
+      </div>
+
+      {/* ── Sales Trend Chart ── */}
+      <div className="border-b border-gray-200">
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            近 28 天销售趋势
+            {statsLoading && <span className="ml-2 font-normal text-gray-400 normal-case">加载中…</span>}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCategoryOverlay(v => !v)}
+              className={`px-2.5 py-1 text-xs rounded border transition-colors ${showCategoryOverlay ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-600'}`}
+            >
+              品类分层
+            </button>
+            <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
+              {(['day', 'week', 'month'] as const).map(g => (
+                <button
+                  key={g}
+                  onClick={() => setGranularity(g)}
+                  className={`px-2.5 py-1 transition-colors ${granularity === g ? 'bg-[#875A7B] text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  {g === 'day' ? '日' : g === 'week' ? '周' : '月'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="p-4">
+          {chartData.length === 0 && !statsLoading ? (
+            <div className="h-40 flex items-center justify-center text-gray-400 text-sm">暂无数据</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={v => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                <Tooltip formatter={(v) => [`$${Number(v ?? 0).toFixed(0)}`, '']} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line type="monotone" dataKey="total" name="总销售额" stroke={CHART_COLORS[0]} strokeWidth={2} dot={false} />
+                {showCategoryOverlay && topCategories.map((cat, i) => (
+                  <Line key={cat} type="monotone" dataKey={cat} name={cat} stroke={CHART_COLORS[i + 1] ?? '#999'} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* ── Category Ranking ── */}
+      <div className="border-b border-gray-200">
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">品类销售排名（近 28 天）</span>
+        </div>
+        {catRanking.length === 0 ? (
+          <div className="px-5 py-6 text-gray-400 text-sm text-center">暂无数据</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400">品类</th>
+                <th className="px-5 py-2 text-right text-xs font-medium text-gray-400">销量</th>
+                <th className="px-5 py-2 text-right text-xs font-medium text-gray-400">销售额</th>
+                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400 w-40">占比</th>
+              </tr>
+            </thead>
+            <tbody>
+              {catRanking.map(row => (
+                <tr key={row.name} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="px-5 py-2 text-gray-800">{row.name}</td>
+                  <td className="px-5 py-2 text-right text-gray-600">{row.qty.toFixed(0)}</td>
+                  <td className="px-5 py-2 text-right text-gray-600">${row.amount.toFixed(0)}</td>
+                  <td className="px-5 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-[#875A7B]" style={{ width: `${(row.pct * 100).toFixed(1)}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-400 w-10 text-right">{(row.pct * 100).toFixed(1)}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ── Purchase Suggestions ── */}
+      <div>
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">采购建议</span>
+            <span className="ml-2 text-xs text-gray-400">（近 14 天均量 × 7 × 1.1）</span>
+          </div>
+          {purchaseSuggestions.length > 0 && (
+            <button
+              onClick={exportSuggestions}
+              className="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:border-[#875A7B] hover:text-[#875A7B] transition-colors"
+            >
+              导出 CSV
+            </button>
+          )}
+        </div>
+        {purchaseSuggestions.length === 0 ? (
+          <div className="px-5 py-6 text-gray-400 text-sm text-center">暂无数据</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400">品类</th>
+                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400">商品</th>
+                <th className="px-5 py-2 text-right text-xs font-medium text-gray-400">建议采购量</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchaseSuggestions.map((row, idx) => {
+                const prevCat = idx > 0 ? purchaseSuggestions[idx - 1].category : null
+                const showCat = row.category !== prevCat
+                return (
+                  <Fragment key={row.id}>
+                    {showCat && (
+                      <tr>
+                        <td colSpan={3} className="px-5 pt-3 pb-1 text-xs font-semibold text-[#875A7B] bg-purple-50">
+                          {row.category}
+                        </td>
+                      </tr>
+                    )}
+                    <tr className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-5 py-2 text-gray-400 text-xs" />
+                      <td className="px-5 py-2 text-gray-800">{row.name}</td>
+                      <td className="px-5 py-2 text-right font-mono text-gray-700">{row.suggested}</td>
+                    </tr>
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )
