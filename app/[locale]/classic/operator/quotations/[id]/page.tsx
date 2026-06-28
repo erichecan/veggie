@@ -588,6 +588,7 @@ export default function QuotationDetailPage() {
 
           {/* Region 5: order lines table */}
           {tab === 'lines' && (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -651,7 +652,8 @@ export default function QuotationDetailPage() {
                           {editing ? (
                             <input type="number" step="0.001" min="0" className={inputCls}
                               value={Number(l.orderedQty)}
-                              onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))} />
+                              onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLineInputRef.current?.focus() } }} />
                           ) : Number(l.orderedQty).toFixed(3)}
                         </td>
                         <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(3) : '—'}</td>
@@ -663,7 +665,8 @@ export default function QuotationDetailPage() {
                           {editing ? (
                             <input type="number" step="0.01" min="0" className={inputCls}
                               value={Number(l.unitPrice)}
-                              onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))} />
+                              onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLineInputRef.current?.focus() } }} />
                           ) : Number(l.unitPrice).toFixed(2)}
                         </td>
                         <td className="px-2 py-2 text-right text-gray-400">{cost.toFixed(2)}</td>
@@ -672,7 +675,8 @@ export default function QuotationDetailPage() {
                           {editing ? (
                             <input type="number" step="0.1" min="0" className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                               value={Number(l.taxRate ?? 0)}
-                              onChange={e => updateLine(i, 'taxRate', Number(e.target.value))} />
+                              onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLineInputRef.current?.focus() } }} />
                           ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                         </td>
                         <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
@@ -690,7 +694,7 @@ export default function QuotationDetailPage() {
                             ref={addLineInputRef}
                             type="text"
                             value={addLineQuery}
-                            placeholder="Add a line"
+                            placeholder="Add a product"
                             onChange={e => {
                               setAddLineQuery(e.target.value)
                               setAddLineHighlight(-1)
@@ -708,6 +712,15 @@ export default function QuotationDetailPage() {
                               }
                             }}
                             onKeyDown={e => {
+                              if (e.key === 'Escape') {
+                                setAddLineOpen(false)
+                                setAddLineHighlight(-1)
+                                return
+                              }
+                              if (e.key === 'Tab') {
+                                setAddLineOpen(false)
+                                return
+                              }
                               if (!addLineOpen || filteredProducts.length === 0) return
                               if (e.key === 'ArrowDown') {
                                 e.preventDefault()
@@ -719,9 +732,6 @@ export default function QuotationDetailPage() {
                                 e.preventDefault()
                                 const idx = addLineHighlight >= 0 ? addLineHighlight : 0
                                 if (filteredProducts[idx]) addProductLine(filteredProducts[idx])
-                              } else if (e.key === 'Escape') {
-                                setAddLineOpen(false)
-                                setAddLineHighlight(-1)
                               }
                             }}
                             className="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-72"
@@ -753,6 +763,18 @@ export default function QuotationDetailPage() {
                 </tbody>
               </table>
             </div>
+            {editing && (
+              <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setAddLineOpen(true); addLineInputRef.current?.focus() }}
+                  className="text-sm text-[#875A7B] hover:underline font-medium"
+                >
+                  + Add a product
+                </button>
+              </div>
+            )}
+            </>
           )}
 
           {tab !== 'lines' && (
