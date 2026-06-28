@@ -179,7 +179,7 @@ export default function SalesStats() {
 
   // New views state
   const [statsView, setStatsView] = useState<'daily' | 'weekly'>('daily')
-  const [dailyDate, setDailyDate] = useState(today)
+  const [selectedDate, setSelectedDate] = useState(today)
   const [selectedStatsCats, setSelectedStatsCats] = useState<string[]>([])
   const [dailyOrders, setDailyOrders] = useState<Order[]>([])
   const [dailyLoading, setDailyLoading] = useState(false)
@@ -203,12 +203,19 @@ export default function SalesStats() {
       .catch(() => setOrders([]))
   }, [fromDate, toDate])
 
-  // Initialize dashboard dates on mount
+  // Auto-compute dashboard date range from selectedDate (current week + 4 past weeks)
   useEffect(() => {
-    const [f, t] = periodDates('4weeks')
-    setDashFrom(f)
-    setDashTo(t)
-  }, [])
+    const dt = new Date(selectedDate + 'T12:00:00Z')
+    const dow = (dt.getUTCDay() + 6) % 7
+    const mon = new Date(dt)
+    mon.setUTCDate(dt.getUTCDate() - dow)
+    const from = new Date(mon)
+    from.setUTCDate(mon.getUTCDate() - 28)
+    const to = new Date(mon)
+    to.setUTCDate(mon.getUTCDate() + 6)
+    setDashFrom(from.toISOString().slice(0, 10))
+    setDashTo(to.toISOString().slice(0, 10))
+  }, [selectedDate])
 
   // Reload dashboard orders when date range changes
   useEffect(() => {
@@ -226,12 +233,12 @@ export default function SalesStats() {
   useEffect(() => {
     setDailyLoading(true)
     apiGet<Order[]>(
-      `/api/orders?status=CONFIRMED&dateField=deliveryDate&fromDate=${dailyDate}&toDate=${dailyDate}`
+      `/api/orders?status=CONFIRMED&dateField=deliveryDate&fromDate=${selectedDate}&toDate=${selectedDate}`
     )
       .then(d => setDailyOrders(Array.isArray(d) ? d : []))
       .catch(() => setDailyOrders([]))
       .finally(() => setDailyLoading(false))
-  }, [dailyDate])
+  }, [selectedDate])
 
   const batchFilterOptions = useMemo(() => {
     const drivers = new Set<string>()
@@ -418,11 +425,11 @@ export default function SalesStats() {
 
   const weeklyChartData = useMemo(() => {
     const DOW_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const now = new Date()
-    const nowDow = (now.getDay() + 6) % 7
+    const now = new Date(selectedDate + 'T12:00:00Z')
+    const nowDow = (now.getUTCDay() + 6) % 7
     const thisMon = new Date(now)
-    thisMon.setDate(now.getDate() - nowDow)
-    thisMon.setHours(0, 0, 0, 0)
+    thisMon.setUTCDate(now.getUTCDate() - nowDow)
+    thisMon.setUTCHours(0, 0, 0, 0)
     const currentWeek = Array(7).fill(0) as number[]
     const pastWeeks: number[][] = Array.from({ length: 4 }, () => Array(7).fill(0))
     for (const o of dashOrders) {
@@ -446,7 +453,7 @@ export default function SalesStats() {
     return DOW_LABELS.map((day, i) => ({
       day, current: Math.round(currentWeek[i]), avg: pastAvg[i],
     }))
-  }, [dashOrders])
+  }, [dashOrders, selectedDate])
 
   const weeklyConclusion = useMemo(() => {
     const nonZero = weeklyChartData.filter(d => d.current > 0)
@@ -460,6 +467,52 @@ export default function SalesStats() {
       : ''
     return `本周峰值在${peak.day}（€${peak.current.toFixed(0)}）；本周合计 €${total.toFixed(0)}${diffText}。`
   }, [weeklyChartData])
+
+  function handleDailyPrint() {
+    const w = window.open('', '_blank', 'noopener,width=800,height=700')
+    if (!w) return
+    const catsHtml = filteredDailyStats.map(cat => `
+      <div style="margin-bottom:16px;">
+        <div style="background:#f3f4f6;padding:6px 12px;font-weight:bold;font-size:13px;border-radius:4px 4px 0 0;">${cat.catName} <span style="font-weight:normal;font-size:11px;color:#6b7280;">${cat.products.length} SKU</span></div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:#f9fafb;">
+              <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">产品名称</th>
+              <th style="text-align:center;padding:6px 8px;border-bottom:1px solid #e5e7eb;">单位</th>
+              <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">确认量</th>
+              <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">ATP</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${cat.products.map(p => {
+              const atp = p.qtyOnHand - p.qty
+              const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#EF4444'
+              return `<tr style="border-bottom:1px solid #f3f4f6;">
+                <td style="padding:5px 8px;">${p.name}</td>
+                <td style="padding:5px 8px;text-align:center;color:#6b7280;">${p.uomName || '—'}</td>
+                <td style="padding:5px 8px;text-align:right;font-weight:500;">${p.qty % 1 === 0 ? p.qty.toFixed(0) : p.qty.toFixed(2)}</td>
+                <td style="padding:5px 8px;text-align:right;color:${color};font-weight:500;">${atp % 1 === 0 ? atp.toFixed(0) : atp.toFixed(2)}</td>
+              </tr>`
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `).join('')
+    w.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>今日总量 · ${selectedDate}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;padding:20px}@media print{@page{margin:1cm}body{padding:0}}</style>
+</head><body>
+<div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px dashed #e5e7eb;font-size:12px;color:#6b7280;">
+  <b style="font-size:15px;color:#111;">今日总量</b>&nbsp;&nbsp;日期：<b style="color:#111;">${selectedDate}</b>&nbsp;&nbsp;合计：<b style="color:#111;">${dailySummary.totalSku} SKU · ${dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件</b>
+</div>
+${catsHtml}
+<script>window.print();<\/script>
+</body></html>`)
+    w.document.close()
+    w.focus()
+  }
 
   function buildUrl(mode: 'day' | 'multiline' | 'summary') {
     const params = new URLSearchParams({ mode, from: fromDate, to: toDate })
@@ -685,40 +738,46 @@ export default function SalesStats() {
       {/* ── New Views: 当日分类总量 / 周销售趋势 ── */}
       <div className="border-t border-gray-200">
 
-        {/* View toggle */}
-        <div className="px-5 py-3 flex items-center gap-2 bg-gray-50 border-b border-gray-200">
-          {(['daily', 'weekly'] as const).map(v => (
-            <button
-              key={v}
-              onClick={() => setStatsView(v)}
-              className={`px-4 py-1.5 text-xs font-medium rounded border transition-colors ${
-                statsView === v ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#875A7B]'
-              }`}
-            >
-              {v === 'daily' ? '当日分类总量' : '周销售趋势'}
-            </button>
-          ))}
+        {/* Shared header: date picker + view toggle */}
+        <div className="px-5 py-3 flex items-center gap-4 bg-gray-50 border-b border-gray-200">
+          <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className={selectCls} />
+          <div className="flex items-center gap-2">
+            {(['daily', 'weekly'] as const).map(v => (
+              <button
+                key={v}
+                onClick={() => setStatsView(v)}
+                className={`px-4 py-1.5 text-xs font-medium rounded border transition-colors ${
+                  statsView === v ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#875A7B]'
+                }`}
+              >
+                {v === 'daily' ? '今日总量' : '周趋势'}
+              </button>
+            ))}
+          </div>
+          {dailyLoading && statsView === 'daily' && <span className="text-xs text-gray-400">加载中…</span>}
+          {dashLoading && statsView === 'weekly' && <span className="text-xs text-gray-400">数据加载中…</span>}
         </div>
 
-        {/* View 1: 当日分类总量 */}
+        {/* View 1: 今日总量 */}
         {statsView === 'daily' && (
           <div className="p-5 space-y-4">
-            <div className="flex items-center gap-3">
-              <label className="text-xs text-gray-500 shrink-0">配送日期</label>
-              <input type="date" value={dailyDate} onChange={e => setDailyDate(e.target.value)} className={selectCls} />
-              {dailyLoading && <span className="text-xs text-gray-400">加载中…</span>}
-            </div>
             {dailyStats.length > 0 && (
-              <div className="flex items-start gap-2">
-                <label className="text-xs text-gray-500 shrink-0 pt-1">分类</label>
-                <div className="flex gap-1.5 flex-wrap">
-                  <button onClick={() => setSelectedStatsCats([])} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedStatsCats.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`}>全部</button>
-                  {dailyStats.map(c => (
-                    <button key={c.catName} onClick={() => setSelectedStatsCats(prev => toggleValue(prev, c.catName))}
-                      className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedStatsCats.includes(c.catName) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`}
-                    >{c.catName}</button>
-                  ))}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2 flex-1 min-w-0">
+                  <label className="text-xs text-gray-500 shrink-0 pt-1">分类</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <button onClick={() => setSelectedStatsCats([])} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedStatsCats.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`}>全部</button>
+                    {dailyStats.map(c => (
+                      <button key={c.catName} onClick={() => setSelectedStatsCats(prev => toggleValue(prev, c.catName))}
+                        className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedStatsCats.includes(c.catName) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`}
+                      >{c.catName}</button>
+                    ))}
+                  </div>
                 </div>
+                <button
+                  onClick={handleDailyPrint}
+                  className="px-3 py-1.5 text-xs rounded border border-gray-300 text-gray-600 hover:border-[#875A7B] hover:text-[#875A7B] transition-colors shrink-0"
+                >打印</button>
               </div>
             )}
             {filteredDailyStats.length === 0 ? (
@@ -772,14 +831,13 @@ export default function SalesStats() {
           </div>
         )}
 
-        {/* View 2: 周销售趋势 */}
+        {/* View 2: 周趋势 */}
         {statsView === 'weekly' && (
           <div className="p-5 space-y-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setShowWeeklyAvg(v => !v)} className={`px-3 py-1.5 text-xs rounded border transition-colors ${showWeeklyAvg ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'}`}>
                 {showWeeklyAvg ? '隐藏' : '显示'}过去4周均值
               </button>
-              {dashLoading && <span className="text-xs text-gray-400">数据加载中…</span>}
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={weeklyChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
