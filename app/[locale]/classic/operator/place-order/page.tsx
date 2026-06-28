@@ -1780,7 +1780,7 @@ export default function ClassicPlaceOrderPage() {
               <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3 flex-wrap">
                 <button
                   onClick={addLine}
-                  className="text-xs text-[#875A7B] hover:underline font-medium"
+                  className="text-sm text-[#875A7B] hover:underline font-medium"
                 >
                   + Add a product
                 </button>
