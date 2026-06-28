@@ -59,6 +59,7 @@ export default function BatchTab({ date }: { date: string }) {
   const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set())
   const [amCollapsed, setAmCollapsed] = useState(false)
   const [pmCollapsed, setPmCollapsed] = useState(false)
+  const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set())
 
   const loadPallets = useCallback(async (wvs: Wave[]) => {
     const entries = await Promise.all(
@@ -120,6 +121,8 @@ export default function BatchTab({ date }: { date: string }) {
   const selAmSlots = amSlots.filter(s => selectedDrivers.has(s.driverName))
   const selPmSlots = pmSlots.filter(s => selectedDrivers.has(s.driverName))
   const allSelected = driverNames.length > 0 && selectedDrivers.size === driverNames.length
+  const amPendingCount = selAmSlots.filter(s => { const w = waveForSlot(s.id); return w && !w.dispatchedAt && w.orderIds.length > 0 }).length
+  const pmPendingCount = selPmSlots.filter(s => { const w = waveForSlot(s.id); return w && !w.dispatchedAt && w.orderIds.length > 0 }).length
 
   function toggleDriver(name: string) {
     setSelectedDrivers(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
@@ -187,7 +190,6 @@ export default function BatchTab({ date }: { date: string }) {
   async function dispatchWave(waveId: string) {
     const wave = waves.find(w => w.id === waveId)
     if (!wave || wave.orderIds.length === 0) return
-    if (!confirm(`确认「${wave.driverName ?? ''}」批次出发？\n该批次 ${wave.orderIds.length} 个订单将进入「配送中」，交货日期填为 ${date}。`)) return
     try {
       await apiPut(`/api/waves/${waveId}/dispatch`, { date })
       toast.success('已确认出发')
@@ -203,6 +205,21 @@ export default function BatchTab({ date }: { date: string }) {
       toast.success('已标记完成')
       load()
     } catch (e) { toast.error(e instanceof Error ? e.message : '标记完成失败') }
+  }
+
+  async function handleBatchDepart(time: 'am' | 'pm') {
+    const slotsForTime = time === 'am' ? selAmSlots : selPmSlots
+    const pendingWaves = slotsForTime
+      .map(s => waveForSlot(s.id))
+      .filter((w): w is Wave => !!w && !w.dispatchedAt && w.orderIds.length > 0)
+    if (pendingWaves.length === 0) return
+    try {
+      await Promise.all(pendingWaves.map(w => apiPut(`/api/waves/${w.id}/dispatch`, { date })))
+      toast.success(`已确认 ${pendingWaves.length} 个批次出发`)
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '批次出发失败')
+    }
   }
 
   function startDrag(e: React.DragEvent, orderId: string, sourceWaveId: string | null) {
@@ -235,7 +252,7 @@ export default function BatchTab({ date }: { date: string }) {
     return { orderCount: wave.orderIds.length, restaurantCount: restaurants.size, amount }
   }
 
-  function Lane({ slot }: { slot: DriverSlot }) {
+  function Lane({ slot, collapsed, onToggleCollapse }: { slot: DriverSlot; collapsed: boolean; onToggleCollapse: () => void }) {
     const wave = waveForSlot(slot.id)
     const timeCls = slot.timeOfDay === 'am' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
     const timeText = slot.timeOfDay === 'am' ? '上午' : '下午'
@@ -262,6 +279,24 @@ export default function BatchTab({ date }: { date: string }) {
       ? new Date(wave.dispatchedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
       : ''
 
+    if (collapsed) {
+      return (
+        <div
+          className={`flex items-center gap-2 ${dispatched ? 'bg-gray-50' : 'bg-white'} border rounded-xl px-3 py-2.5 cursor-pointer hover:border-purple-300`}
+          style={{ borderColor: dispatched ? '#bfdbfe' : '#e5e7eb' }}
+          onClick={onToggleCollapse}
+        >
+          <Avatar name={slot.driverName} />
+          <span className="font-bold text-[13px]">{slot.driverName}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
+          <span className="text-xs text-gray-500">{m.orderCount}单</span>
+          {dispatched
+            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto">🚚 在途</span>
+            : <span className="ml-auto text-gray-400 text-[10px]">▾ 展开</span>}
+        </div>
+      )
+    }
+
     return (
       <div
         className={`${dispatched ? 'bg-gray-50' : 'bg-white'} border rounded-xl flex flex-col max-h-[600px]`}
@@ -276,9 +311,16 @@ export default function BatchTab({ date }: { date: string }) {
               <Avatar name={slot.driverName} />{slot.driverName}
               <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
             </span>
-            {dispatched
-              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700">🚚 在途</span>
-              : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.text}</span>}
+            <div className="flex items-center gap-1.5">
+              {dispatched
+                ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700">🚚 在途</span>
+                : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.text}</span>}
+              <button
+                onClick={e => { e.stopPropagation(); onToggleCollapse() }}
+                className="px-1.5 py-0.5 rounded text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                title="收起"
+              >▴</button>
+            </div>
           </div>
           <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.restaurantCount}家 · {pallets.length}盘 · €{m.amount.toLocaleString()}</div>
           {dispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
@@ -420,17 +462,31 @@ export default function BatchTab({ date }: { date: string }) {
               </div>
             ) : (
               <>
-                <GroupTitle time="am" count={selAmSlots.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} />
+                <GroupTitle time="am" count={selAmSlots.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} pendingCount={amPendingCount} onBatchDepart={() => handleBatchDepart('am')} />
                 {!amCollapsed && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
-                    {selAmSlots.map(s => <Lane key={s.id} slot={s} />)}
+                    {selAmSlots.map(s => (
+                      <Lane
+                        key={s.id}
+                        slot={s}
+                        collapsed={collapsedLanes.has(s.id)}
+                        onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n })}
+                      />
+                    ))}
                     {selAmSlots.length === 0 && <Empty text="选中司机无上午班" />}
                   </div>
                 )}
-                <GroupTitle time="pm" count={selPmSlots.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} />
+                <GroupTitle time="pm" count={selPmSlots.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} pendingCount={pmPendingCount} onBatchDepart={() => handleBatchDepart('pm')} />
                 {!pmCollapsed && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
-                    {selPmSlots.map(s => <Lane key={s.id} slot={s} />)}
+                    {selPmSlots.map(s => (
+                      <Lane
+                        key={s.id}
+                        slot={s}
+                        collapsed={collapsedLanes.has(s.id)}
+                        onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n })}
+                      />
+                    ))}
                     {selPmSlots.length === 0 && <Empty text="选中司机无下午班" />}
                   </div>
                 )}
@@ -459,14 +515,23 @@ function Avatar({ name }: { name: string }) {
 function Board({ n, l, color }: { n: number; l: string; color?: string }) {
   return <div><div className="text-[22px] font-bold leading-none" style={{ color: color ?? '#1f2937' }}>{n}</div><div className="text-[11px] text-gray-500 mt-1">{l}</div></div>
 }
-function GroupTitle({ time, count, collapsed, onToggle }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void }) {
+function GroupTitle({ time, count, collapsed, onToggle, pendingCount, onBatchDepart }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void; pendingCount?: number; onBatchDepart?: () => void }) {
   const am = time === 'am'
   return (
-    <button onClick={onToggle} className="flex items-center gap-2 font-bold text-sm mt-3.5 mb-2 hover:opacity-80" style={{ color: am ? '#1f2937' : '#92400e' }}>
-      <span className="text-gray-400 text-xs w-3 inline-block">{collapsed ? '▸' : '▾'}</span>
-      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${am ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{am ? '上午' : '下午'}</span>
-      {am ? '上午班' : '下午班'} <span className="text-xs text-gray-400 font-normal">· {count} 个批次</span>
-    </button>
+    <div className="flex items-center gap-3 mt-3.5 mb-2">
+      <button onClick={onToggle} className="flex items-center gap-2 font-bold text-sm hover:opacity-80" style={{ color: am ? '#1f2937' : '#92400e' }}>
+        <span className="text-gray-400 text-xs w-3 inline-block">{collapsed ? '▸' : '▾'}</span>
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${am ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{am ? '上午' : '下午'}</span>
+        {am ? '上午班' : '下午班'} <span className="text-xs text-gray-400 font-normal">· {count} 个批次</span>
+      </button>
+      {!!onBatchDepart && !!pendingCount && pendingCount > 0 && (
+        <button
+          onClick={onBatchDepart}
+          className="px-3 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90"
+          style={{ background: '#16a34a' }}
+        >🚚 全员出发（{pendingCount}）</button>
+      )}
+    </div>
   )
 }
 function DriverChip({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) {
