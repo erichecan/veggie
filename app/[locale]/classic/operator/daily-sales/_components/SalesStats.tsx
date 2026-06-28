@@ -1,8 +1,8 @@
 'use client'
-import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LineChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
@@ -36,6 +36,26 @@ function dateGroupLabel(key: string, g: 'day' | 'week' | 'month'): string {
   const dt = new Date(key + 'T12:00:00Z')
   return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
 }
+
+function periodDates(p: 'week' | 'month' | '4weeks'): [string, string] {
+  const t = today()
+  if (p === 'week') {
+    const dt = new Date()
+    const dow = dt.getDay() || 7
+    dt.setDate(dt.getDate() - dow + 1)
+    return [dt.toISOString().slice(0, 10), t]
+  }
+  if (p === 'month') {
+    const dt = new Date()
+    dt.setDate(1)
+    return [dt.toISOString().slice(0, 10), t]
+  }
+  const dt = new Date()
+  dt.setDate(dt.getDate() - 27)
+  return [dt.toISOString().slice(0, 10), t]
+}
+
+const eur = (v: number) => `€${v.toFixed(2)}`
 
 // ─── Table-embedded inline search ─────────────────────────────────────────────
 
@@ -148,10 +168,13 @@ export default function SalesStats() {
   const [allCategories, setAllCategories] = useState<CategoryRow[]>([])
   const [orders, setOrders] = useState<Order[]>([])
 
-  // Independent 28-day stats fetch for trend charts
-  const [statsOrders, setStatsOrders] = useState<Order[]>([])
-  const [statsLoading, setStatsLoading] = useState(false)
-  const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day')
+  // Dashboard analytics state
+  const [dashPeriod, setDashPeriod] = useState<'week' | 'month' | '4weeks' | 'custom'>('4weeks')
+  const [dashFrom, setDashFrom] = useState<string>('')
+  const [dashTo, setDashTo] = useState<string>('')
+  const [dashOrders, setDashOrders] = useState<Order[]>([])
+  const [dashLoading, setDashLoading] = useState(false)
+  const [dashGranularity, setDashGranularity] = useState<'day' | 'week' | 'month'>('day')
   const [showCategoryOverlay, setShowCategoryOverlay] = useState(false)
 
   // Load reference data once
@@ -172,20 +195,24 @@ export default function SalesStats() {
       .catch(() => setOrders([]))
   }, [fromDate, toDate])
 
-  // Load past 28 days for trend analysis (independent, loads once)
+  // Initialize dashboard dates on mount
   useEffect(() => {
-    const to = today()
-    const fromDt = new Date()
-    fromDt.setDate(fromDt.getDate() - 27)
-    const from = fromDt.toISOString().slice(0, 10)
-    setStatsLoading(true)
-    apiGet<Order[]>(
-      `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED&dateField=deliveryDate&fromDate=${from}&toDate=${to}`
-    )
-      .then(d => setStatsOrders(Array.isArray(d) ? d : []))
-      .catch(() => setStatsOrders([]))
-      .finally(() => setStatsLoading(false))
+    const [f, t] = periodDates('4weeks')
+    setDashFrom(f)
+    setDashTo(t)
   }, [])
+
+  // Reload dashboard orders when date range changes
+  useEffect(() => {
+    if (!dashFrom || !dashTo) return
+    setDashLoading(true)
+    apiGet<Order[]>(
+      `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED&dateField=deliveryDate&fromDate=${dashFrom}&toDate=${dashTo}`
+    )
+      .then(d => setDashOrders(Array.isArray(d) ? d : []))
+      .catch(() => setDashOrders([]))
+      .finally(() => setDashLoading(false))
+  }, [dashFrom, dashTo])
 
   const batchFilterOptions = useMemo(() => {
     const drivers = new Set<string>()
@@ -213,25 +240,91 @@ export default function SalesStats() {
     return m
   }, [allProducts])
 
-  // Top 5 categories by 28-day revenue
-  const topCategories = useMemo(() => {
-    const rev = new Map<string, number>()
-    for (const o of statsOrders) {
+  // ── Dashboard analytics ───────────────────────────────────────────────────────
+
+  const productTop10 = useMemo(() => {
+    const map = new Map<string, { name: string; category: string; qty: number; exTax: number; incTax: number; customers: Set<string> }>()
+    for (const o of dashOrders) {
       for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
-        const cat = (l.productId ? productMap.get(l.productId)?.category : null) ?? '未分类'
-        rev.set(cat, (rev.get(cat) ?? 0) + Number(l.subtotal ?? 0))
+        if (!l.productId) continue
+        const cat = productMap.get(l.productId)?.category ?? '未分类'
+        const e = map.get(l.productId) ?? { name: l.productName ?? l.productId, category: cat, qty: 0, exTax: 0, incTax: 0, customers: new Set<string>() }
+        e.qty += Number(l.orderedQty ?? 0)
+        e.exTax += Number(l.subtotal ?? 0)
+        e.incTax += Number(l.subtotal ?? 0) * (1 + Number((l as OrderLine & { taxRate?: number | null }).taxRate ?? 0))
+        e.customers.add(o.restaurantId)
+        map.set(l.productId, e)
       }
     }
-    return [...rev.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name)
-  }, [statsOrders, productMap])
+    return [...map.values()]
+      .map(v => ({ ...v, avgUnitPrice: v.qty > 0 ? v.exTax / v.qty : 0, avgPerCustomer: v.customers.size > 0 ? v.qty / v.customers.size : 0, customerCount: v.customers.size }))
+      .sort((a, b) => b.exTax - a.exTax)
+      .slice(0, 10)
+  }, [dashOrders, productMap])
 
-  // Chart data aggregated by granularity
+  const categoryTop10 = useMemo(() => {
+    const map = new Map<string, { productIds: Set<string>; qty: number; exTax: number; incTax: number }>()
+    for (const o of dashOrders) {
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        const cat = (l.productId ? productMap.get(l.productId)?.category : null) ?? '未分类'
+        const e = map.get(cat) ?? { productIds: new Set<string>(), qty: 0, exTax: 0, incTax: 0 }
+        if (l.productId) e.productIds.add(l.productId)
+        e.qty += Number(l.orderedQty ?? 0)
+        e.exTax += Number(l.subtotal ?? 0)
+        e.incTax += Number(l.subtotal ?? 0) * (1 + Number((l as OrderLine & { taxRate?: number | null }).taxRate ?? 0))
+        map.set(cat, e)
+      }
+    }
+    const totalExTax = [...map.values()].reduce((s, v) => s + v.exTax, 0)
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, productCount: v.productIds.size, qty: v.qty, exTax: v.exTax, incTax: v.incTax, pct: totalExTax > 0 ? v.exTax / totalExTax : 0 }))
+      .sort((a, b) => b.exTax - a.exTax)
+      .slice(0, 10)
+  }, [dashOrders, productMap])
+
+  const customerTop10 = useMemo(() => {
+    const map = new Map<string, { name: string; orderCount: number; qty: number; exTax: number; incTax: number }>()
+    for (const o of dashOrders) {
+      const e = map.get(o.restaurantId) ?? { name: o.restaurantName, orderCount: 0, qty: 0, exTax: 0, incTax: 0 }
+      e.orderCount += 1
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        e.qty += Number(l.orderedQty ?? 0)
+        e.exTax += Number(l.subtotal ?? 0)
+        e.incTax += Number(l.subtotal ?? 0) * (1 + Number((l as OrderLine & { taxRate?: number | null }).taxRate ?? 0))
+      }
+      map.set(o.restaurantId, e)
+    }
+    return [...map.values()]
+      .map(v => ({ ...v, avgOrderValue: v.orderCount > 0 ? v.exTax / v.orderCount : 0 }))
+      .sort((a, b) => b.exTax - a.exTax)
+      .slice(0, 10)
+  }, [dashOrders])
+
+  const weekdayData = useMemo(() => {
+    const DOW_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+    const buckets = Array.from({ length: 7 }, (_, i) => ({ day: DOW_LABELS[i], orderCount: 0, exTax: 0, qty: 0 }))
+    for (const o of dashOrders) {
+      const d = (o.deliveryDate as string | undefined)?.slice(0, 10)
+      if (!d) continue
+      const dt = new Date(d + 'T12:00:00Z')
+      const dow = (dt.getUTCDay() + 6) % 7
+      buckets[dow].orderCount += 1
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        buckets[dow].exTax += Number(l.subtotal ?? 0)
+        buckets[dow].qty += Number(l.orderedQty ?? 0)
+      }
+    }
+    return buckets.map(b => ({ ...b, avgUnitPrice: b.qty > 0 ? b.exTax / b.qty : 0 }))
+  }, [dashOrders])
+
+  const topCategories = useMemo(() => categoryTop10.slice(0, 5).map(c => c.name), [categoryTop10])
+
   const chartData = useMemo(() => {
     const buckets = new Map<string, { total: number; cats: Record<string, number> }>()
-    for (const o of statsOrders) {
+    for (const o of dashOrders) {
       const date = (o.deliveryDate as string | undefined)?.slice(0, 10) ?? ''
       if (!date) continue
-      const key = dateGroupKey(date, granularity)
+      const key = dateGroupKey(date, dashGranularity)
       if (!buckets.has(key)) buckets.set(key, { total: 0, cats: {} })
       const b = buckets.get(key)!
       for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
@@ -246,71 +339,11 @@ export default function SalesStats() {
     return [...buckets.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, b]) => ({
-        label: dateGroupLabel(key, granularity),
+        label: dateGroupLabel(key, dashGranularity),
         total: Math.round(b.total),
         ...Object.fromEntries(topCategories.map(c => [c, Math.round(b.cats[c] ?? 0)])),
       }))
-  }, [statsOrders, granularity, showCategoryOverlay, topCategories, productMap])
-
-  // Category ranking over the 28-day period
-  const catRanking = useMemo(() => {
-    const rev = new Map<string, { qty: number; amount: number }>()
-    for (const o of statsOrders) {
-      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
-        const cat = (l.productId ? productMap.get(l.productId)?.category : null) ?? '未分类'
-        const cur = rev.get(cat) ?? { qty: 0, amount: 0 }
-        cur.qty += Number(l.orderedQty ?? 0)
-        cur.amount += Number(l.subtotal ?? 0)
-        rev.set(cat, cur)
-      }
-    }
-    const total = [...rev.values()].reduce((s, v) => s + v.amount, 0)
-    return [...rev.entries()]
-      .sort(([, a], [, b]) => b.amount - a.amount)
-      .map(([name, v]) => ({ name, qty: v.qty, amount: v.amount, pct: total > 0 ? v.amount / total : 0 }))
-  }, [statsOrders, productMap])
-
-  // Purchase suggestions: past 14 days only, ceil(avgDaily * 7 * 1.1)
-  const purchaseSuggestions = useMemo(() => {
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - 13)
-    const cutoffStr = cutoff.toISOString().slice(0, 10)
-    const recent = statsOrders.filter(o => {
-      const d = (o.deliveryDate as string | undefined)?.slice(0, 10) ?? ''
-      return d >= cutoffStr
-    })
-    const prodQty = new Map<string, { name: string; category: string; qty: number }>()
-    for (const o of recent) {
-      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
-        if (!l.productId) continue
-        const cat = productMap.get(l.productId)?.category ?? '未分类'
-        const name = l.productName ?? productMap.get(l.productId)?.name ?? l.productId
-        const cur = prodQty.get(l.productId) ?? { name, category: cat, qty: 0 }
-        cur.qty += Number(l.orderedQty ?? 0)
-        prodQty.set(l.productId, cur)
-      }
-    }
-    return [...prodQty.entries()]
-      .map(([id, v]) => ({
-        id,
-        name: v.name,
-        category: v.category,
-        suggested: Math.ceil((v.qty / 14) * 7 * 1.1),
-      }))
-      .sort((a, b) => a.category.localeCompare(b.category) || b.suggested - a.suggested)
-  }, [statsOrders, productMap])
-
-  function exportSuggestions() {
-    const header = '品类,商品名称,建议采购量\n'
-    const rows = purchaseSuggestions.map(r => `${r.category},${r.name},${r.suggested}`).join('\n')
-    const blob = new Blob(['﻿' + header + rows], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `purchase-suggestions-${today()}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  }, [dashOrders, dashGranularity, showCategoryOverlay, topCategories, productMap])
 
   function buildUrl(mode: 'day' | 'multiline' | 'summary') {
     const params = new URLSearchParams({ mode, from: fromDate, to: toDate })
@@ -533,143 +566,239 @@ export default function SalesStats() {
         </button>
       </div>
 
-      {/* ── Sales Trend Chart ── */}
-      <div className="border-b border-gray-200">
-        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            近 28 天销售趋势
-            {statsLoading && <span className="ml-2 font-normal text-gray-400 normal-case">加载中…</span>}
-          </span>
-          <div className="flex items-center gap-2">
+      {/* ── Dashboard ── */}
+      <div className="p-5 space-y-4 bg-gray-50">
+
+        {/* Period selector */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {(['week', 'month', '4weeks', 'custom'] as const).map(p => (
             <button
-              onClick={() => setShowCategoryOverlay(v => !v)}
-              className={`px-2.5 py-1 text-xs rounded border transition-colors ${showCategoryOverlay ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-600'}`}
+              key={p}
+              onClick={() => {
+                if (p === 'custom') return
+                setDashPeriod(p)
+                const [f, t] = periodDates(p)
+                setDashFrom(f)
+                setDashTo(t)
+              }}
+              className={`px-3 py-1.5 text-xs rounded border transition-colors ${dashPeriod === p ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#875A7B]'}`}
             >
-              品类分层
+              {p === 'week' ? '本周' : p === 'month' ? '本月' : p === '4weeks' ? '过去4周' : '自定义'}
             </button>
-            <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
-              {(['day', 'week', 'month'] as const).map(g => (
-                <button
-                  key={g}
-                  onClick={() => setGranularity(g)}
-                  className={`px-2.5 py-1 transition-colors ${granularity === g ? 'bg-[#875A7B] text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                  {g === 'day' ? '日' : g === 'week' ? '周' : '月'}
-                </button>
-              ))}
+          ))}
+          {dashPeriod === 'custom' && (
+            <>
+              <input type="date" value={dashFrom} max={dashTo} onChange={e => setDashFrom(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-xs bg-white" />
+              <span className="text-gray-400 text-xs">–</span>
+              <input type="date" value={dashTo} min={dashFrom} onChange={e => setDashTo(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-xs bg-white" />
+            </>
+          )}
+          {dashLoading && <span className="text-xs text-gray-400 ml-2">加载中…</span>}
+        </div>
+
+        {/* 2-col grid */}
+        <div className="grid grid-cols-2 gap-4">
+
+          {/* Card 1: 产品 Top 10 */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">产品 Top 10</span>
+            </div>
+            {productTop10.length === 0 ? (
+              <div className="p-6 text-center text-gray-400 text-sm">暂无数据</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="px-3 py-2 text-center text-gray-400 w-6">#</th>
+                      <th className="px-3 py-2 text-left text-gray-400">产品</th>
+                      <th className="px-3 py-2 text-left text-gray-400">类目</th>
+                      <th className="px-3 py-2 text-right text-gray-400">数量</th>
+                      <th className="px-3 py-2 text-right text-gray-400">均价</th>
+                      <th className="px-3 py-2 text-right text-gray-400">税前</th>
+                      <th className="px-3 py-2 text-right text-gray-400">税后</th>
+                      <th className="px-3 py-2 text-right text-gray-400">客均量</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productTop10.map((r, i) => (
+                      <tr key={r.name} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
+                        <td className="px-3 py-2 text-center text-gray-400">{i + 1}</td>
+                        <td className="px-3 py-2 text-gray-800 max-w-[120px] truncate" title={r.name}>{r.name}</td>
+                        <td className="px-3 py-2 text-gray-500">{r.category}</td>
+                        <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{r.qty.toFixed(0)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{eur(r.avgUnitPrice)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{eur(r.exTax)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{eur(r.incTax)}</td>
+                        <td className="px-3 py-2 text-right text-gray-500 tabular-nums">{r.avgPerCustomer.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Card 2: 类目 Top 10 */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">类目 Top 10</span>
+            </div>
+            {categoryTop10.length === 0 ? (
+              <div className="p-6 text-center text-gray-400 text-sm">暂无数据</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="px-3 py-2 text-center text-gray-400 w-6">#</th>
+                    <th className="px-3 py-2 text-left text-gray-400">类目</th>
+                    <th className="px-3 py-2 text-right text-gray-400">品数</th>
+                    <th className="px-3 py-2 text-right text-gray-400">总量</th>
+                    <th className="px-3 py-2 text-right text-gray-400">税前</th>
+                    <th className="px-3 py-2 text-right text-gray-400">税后</th>
+                    <th className="px-3 py-2 text-right text-gray-400">占比%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categoryTop10.map((r, i) => (
+                    <tr key={r.name} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
+                      <td className="px-3 py-2 text-center text-gray-400">{i + 1}</td>
+                      <td className="px-3 py-2 text-gray-800">{r.name}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{r.productCount}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{r.qty.toFixed(0)}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{eur(r.exTax)}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{eur(r.incTax)}</td>
+                      <td className="px-3 py-2 text-right text-gray-500 tabular-nums">{(r.pct * 100).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Card 3: 客户 Top 10 */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">客户 Top 10</span>
+            </div>
+            {customerTop10.length === 0 ? (
+              <div className="p-6 text-center text-gray-400 text-sm">暂无数据</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="px-3 py-2 text-center text-gray-400 w-6">#</th>
+                    <th className="px-3 py-2 text-left text-gray-400">客户</th>
+                    <th className="px-3 py-2 text-right text-gray-400">订单数</th>
+                    <th className="px-3 py-2 text-right text-gray-400">总量</th>
+                    <th className="px-3 py-2 text-right text-gray-400">税前</th>
+                    <th className="px-3 py-2 text-right text-gray-400">税后</th>
+                    <th className="px-3 py-2 text-right text-gray-400">均单额</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customerTop10.map((r, i) => (
+                    <tr key={r.name} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
+                      <td className="px-3 py-2 text-center text-gray-400">{i + 1}</td>
+                      <td className="px-3 py-2 text-gray-800 max-w-[120px] truncate" title={r.name}>{r.name}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{r.orderCount}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{r.qty.toFixed(0)}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{eur(r.exTax)}</td>
+                      <td className="px-3 py-2 text-right text-gray-700 tabular-nums">{eur(r.incTax)}</td>
+                      <td className="px-3 py-2 text-right text-gray-500 tabular-nums">{eur(r.avgOrderValue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Card 4: 星期销售分布 */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">星期销售分布</span>
+            </div>
+            <div className="p-3">
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={weekdayData} layout="vertical" margin={{ top: 0, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                  <YAxis type="category" dataKey="day" tick={{ fontSize: 10 }} width={28} />
+                  <Tooltip formatter={(v) => [`€${Number(v ?? 0).toFixed(0)}`, '税前销售额']} />
+                  <Bar dataKey="exTax" fill="#875A7B" radius={[0, 2, 2, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+              <table className="w-full text-xs mt-2">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="py-1 text-left text-gray-400">星期</th>
+                    <th className="py-1 text-right text-gray-400">订单</th>
+                    <th className="py-1 text-right text-gray-400">销售额</th>
+                    <th className="py-1 text-right text-gray-400">均价</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weekdayData.map(r => (
+                    <tr key={r.day} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
+                      <td className="py-1 text-gray-700">{r.day}</td>
+                      <td className="py-1 text-right text-gray-600 tabular-nums">{r.orderCount}</td>
+                      <td className="py-1 text-right text-gray-700 tabular-nums">{eur(r.exTax)}</td>
+                      <td className="py-1 text-right text-gray-500 tabular-nums">{eur(r.avgUnitPrice)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-        <div className="p-4">
-          {chartData.length === 0 && !statsLoading ? (
-            <div className="h-40 flex items-center justify-center text-gray-400 text-sm">暂无数据</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={v => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
-                <Tooltip formatter={(v) => [`$${Number(v ?? 0).toFixed(0)}`, '']} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Line type="monotone" dataKey="total" name="总销售额" stroke={CHART_COLORS[0]} strokeWidth={2} dot={false} />
-                {showCategoryOverlay && topCategories.map((cat, i) => (
-                  <Line key={cat} type="monotone" dataKey={cat} name={cat} stroke={CHART_COLORS[i + 1] ?? '#999'} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+
+        {/* Card 5: 周期趋势 (全宽) */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">周期趋势</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCategoryOverlay(v => !v)}
+                className={`px-2.5 py-1 text-xs rounded border transition-colors ${showCategoryOverlay ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-600'}`}
+              >
+                品类分层
+              </button>
+              <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
+                {(['day', 'week', 'month'] as const).map(g => (
+                  <button
+                    key={g}
+                    onClick={() => setDashGranularity(g)}
+                    className={`px-2.5 py-1 transition-colors ${dashGranularity === g ? 'bg-[#875A7B] text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    {g === 'day' ? '日' : g === 'week' ? '周' : '月'}
+                  </button>
                 ))}
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      {/* ── Category Ranking ── */}
-      <div className="border-b border-gray-200">
-        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">品类销售排名（近 28 天）</span>
-        </div>
-        {catRanking.length === 0 ? (
-          <div className="px-5 py-6 text-gray-400 text-sm text-center">暂无数据</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400">品类</th>
-                <th className="px-5 py-2 text-right text-xs font-medium text-gray-400">销量</th>
-                <th className="px-5 py-2 text-right text-xs font-medium text-gray-400">销售额</th>
-                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400 w-40">占比</th>
-              </tr>
-            </thead>
-            <tbody>
-              {catRanking.map(row => (
-                <tr key={row.name} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-5 py-2 text-gray-800">{row.name}</td>
-                  <td className="px-5 py-2 text-right text-gray-600">{row.qty.toFixed(0)}</td>
-                  <td className="px-5 py-2 text-right text-gray-600">${row.amount.toFixed(0)}</td>
-                  <td className="px-5 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-[#875A7B]" style={{ width: `${(row.pct * 100).toFixed(1)}%` }} />
-                      </div>
-                      <span className="text-xs text-gray-400 w-10 text-right">{(row.pct * 100).toFixed(1)}%</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* ── Purchase Suggestions ── */}
-      <div>
-        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">采购建议</span>
-            <span className="ml-2 text-xs text-gray-400">（近 14 天均量 × 7 × 1.1）</span>
+              </div>
+            </div>
           </div>
-          {purchaseSuggestions.length > 0 && (
-            <button
-              onClick={exportSuggestions}
-              className="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:border-[#875A7B] hover:text-[#875A7B] transition-colors"
-            >
-              导出 CSV
-            </button>
-          )}
+          <div className="p-4">
+            {chartData.length === 0 ? (
+              <div className="h-40 flex items-center justify-center text-gray-400 text-sm">暂无数据</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={v => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                  <Tooltip formatter={(v) => [`€${Number(v ?? 0).toFixed(0)}`, '']} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line type="monotone" dataKey="total" name="总销售额" stroke={CHART_COLORS[0]} strokeWidth={2} dot={false} />
+                  {showCategoryOverlay && topCategories.map((cat, i) => (
+                    <Line key={cat} type="monotone" dataKey={cat} name={cat} stroke={CHART_COLORS[i + 1] ?? '#999'} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
-        {purchaseSuggestions.length === 0 ? (
-          <div className="px-5 py-6 text-gray-400 text-sm text-center">暂无数据</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400">品类</th>
-                <th className="px-5 py-2 text-left text-xs font-medium text-gray-400">商品</th>
-                <th className="px-5 py-2 text-right text-xs font-medium text-gray-400">建议采购量</th>
-              </tr>
-            </thead>
-            <tbody>
-              {purchaseSuggestions.map((row, idx) => {
-                const prevCat = idx > 0 ? purchaseSuggestions[idx - 1].category : null
-                const showCat = row.category !== prevCat
-                return (
-                  <Fragment key={row.id}>
-                    {showCat && (
-                      <tr>
-                        <td colSpan={3} className="px-5 pt-3 pb-1 text-xs font-semibold text-[#875A7B] bg-purple-50">
-                          {row.category}
-                        </td>
-                      </tr>
-                    )}
-                    <tr className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-5 py-2 text-gray-400 text-xs" />
-                      <td className="px-5 py-2 text-gray-800">{row.name}</td>
-                      <td className="px-5 py-2 text-right font-mono text-gray-700">{row.suggested}</td>
-                    </tr>
-                  </Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
       </div>
     </div>
   )
