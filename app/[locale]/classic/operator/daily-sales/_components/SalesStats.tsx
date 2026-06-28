@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import {
-  LineChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LineChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
 } from 'recharts'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
@@ -10,10 +10,10 @@ import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot
 import { toggleValue, today } from './shared'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
-interface ProductRow { id: string; name: string; salePrice?: number; category?: string }
+interface ProductRow { id: string; name: string; salePrice?: number; category?: string; qtyOnHand?: number; uomName?: string }
 interface UserRow { id: string; name: string }
 interface CategoryRow { id: string; name: string }
-interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; subtotal?: number | null }
+interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; subtotal?: number | null; uomName?: string | null }
 
 // ─── Chart helpers ─────────────────────────────────────────────────────────────
 
@@ -177,6 +177,14 @@ export default function SalesStats() {
   const [dashGranularity, setDashGranularity] = useState<'day' | 'week' | 'month'>('day')
   const [showCategoryOverlay, setShowCategoryOverlay] = useState(false)
 
+  // New views state
+  const [statsView, setStatsView] = useState<'daily' | 'weekly'>('daily')
+  const [dailyDate, setDailyDate] = useState(today)
+  const [selectedStatsCats, setSelectedStatsCats] = useState<string[]>([])
+  const [dailyOrders, setDailyOrders] = useState<Order[]>([])
+  const [dailyLoading, setDailyLoading] = useState(false)
+  const [showWeeklyAvg, setShowWeeklyAvg] = useState(false)
+
   // Load reference data once
   useEffect(() => {
     apiGet<CustomerRow[]>('/api/customers?limit=500').then(d => setAllCustomers(Array.isArray(d) ? d : [])).catch(() => {})
@@ -213,6 +221,17 @@ export default function SalesStats() {
       .catch(() => setDashOrders([]))
       .finally(() => setDashLoading(false))
   }, [dashFrom, dashTo])
+
+  // Load daily orders for View 1
+  useEffect(() => {
+    setDailyLoading(true)
+    apiGet<Order[]>(
+      `/api/orders?status=CONFIRMED&dateField=deliveryDate&fromDate=${dailyDate}&toDate=${dailyDate}`
+    )
+      .then(d => setDailyOrders(Array.isArray(d) ? d : []))
+      .catch(() => setDailyOrders([]))
+      .finally(() => setDailyLoading(false))
+  }, [dailyDate])
 
   const batchFilterOptions = useMemo(() => {
     const drivers = new Set<string>()
@@ -344,6 +363,103 @@ export default function SalesStats() {
         ...Object.fromEntries(topCategories.map(c => [c, Math.round(b.cats[c] ?? 0)])),
       }))
   }, [dashOrders, dashGranularity, showCategoryOverlay, topCategories, productMap])
+
+  // ── View 1: 当日分类总量 ─────────────────────────────────────────────────────
+
+  const dailyStats = useMemo(() => {
+    const catMap = new Map<string, {
+      catName: string
+      products: Map<string, { productId: string; name: string; uomName: string; qty: number; qtyOnHand: number }>
+    }>()
+    for (const o of dailyOrders) {
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        const pid = l.productId ?? ''
+        const prod = pid ? productMap.get(pid) : undefined
+        const catName = prod?.category ?? '未分类'
+        if (!catMap.has(catName)) catMap.set(catName, { catName, products: new Map() })
+        const catEntry = catMap.get(catName)!
+        const existing = catEntry.products.get(pid)
+        if (existing) {
+          existing.qty += Number(l.orderedQty ?? 0)
+        } else {
+          catEntry.products.set(pid, {
+            productId: pid,
+            name: l.productName ?? pid,
+            uomName: l.uomName ?? prod?.uomName ?? '',
+            qty: Number(l.orderedQty ?? 0),
+            qtyOnHand: Number(prod?.qtyOnHand ?? 0),
+          })
+        }
+      }
+    }
+    return [...catMap.entries()]
+      .map(([catName, entry]) => ({
+        catName,
+        products: [...entry.products.values()].sort((a, b) => b.qty - a.qty),
+      }))
+      .sort((a, b) => a.catName.localeCompare(b.catName))
+  }, [dailyOrders, productMap])
+
+  const filteredDailyStats = useMemo(() => {
+    if (selectedStatsCats.length === 0) return dailyStats
+    return dailyStats.filter(c => selectedStatsCats.includes(c.catName))
+  }, [dailyStats, selectedStatsCats])
+
+  const dailySummary = useMemo(() => {
+    let totalSku = 0; let totalQty = 0
+    for (const cat of filteredDailyStats) {
+      totalSku += cat.products.length
+      for (const p of cat.products) totalQty += p.qty
+    }
+    return { totalSku, totalQty }
+  }, [filteredDailyStats])
+
+  // ── View 2: 周销售趋势 ──────────────────────────────────────────────────────
+
+  const weeklyChartData = useMemo(() => {
+    const DOW_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+    const now = new Date()
+    const nowDow = (now.getDay() + 6) % 7
+    const thisMon = new Date(now)
+    thisMon.setDate(now.getDate() - nowDow)
+    thisMon.setHours(0, 0, 0, 0)
+    const currentWeek = Array(7).fill(0) as number[]
+    const pastWeeks: number[][] = Array.from({ length: 4 }, () => Array(7).fill(0))
+    for (const o of dashOrders) {
+      const d = (o.deliveryDate as string | undefined)?.slice(0, 10)
+      if (!d) continue
+      const dt = new Date(d + 'T12:00:00Z')
+      const weekday = (dt.getUTCDay() + 6) % 7
+      const orderMon = new Date(dt)
+      orderMon.setUTCDate(dt.getUTCDate() - (dt.getUTCDay() + 6) % 7)
+      orderMon.setUTCHours(0, 0, 0, 0)
+      const msPerWeek = 7 * 24 * 60 * 60 * 1000
+      const weeksBack = Math.round((thisMon.getTime() - orderMon.getTime()) / msPerWeek)
+      const orderTotal = ((o as Order & { lines?: OrderLine[] }).lines ?? [])
+        .reduce((s, l) => s + Number(l.subtotal ?? 0), 0)
+      if (weeksBack === 0) currentWeek[weekday] += orderTotal
+      else if (weeksBack >= 1 && weeksBack <= 4) pastWeeks[weeksBack - 1][weekday] += orderTotal
+    }
+    const pastAvg = Array(7).fill(0).map((_, i) =>
+      Math.round(pastWeeks.reduce((s, w) => s + w[i], 0) / 4)
+    )
+    return DOW_LABELS.map((day, i) => ({
+      day, current: Math.round(currentWeek[i]), avg: pastAvg[i],
+    }))
+  }, [dashOrders])
+
+  const weeklyConclusion = useMemo(() => {
+    const nonZero = weeklyChartData.filter(d => d.current > 0)
+    if (nonZero.length === 0) return ''
+    const total = weeklyChartData.reduce((s, d) => s + d.current, 0)
+    const avgTotal = weeklyChartData.reduce((s, d) => s + d.avg, 0)
+    const peak = nonZero.reduce((max, d) => d.current > max.current ? d : max)
+    const diffPct = avgTotal > 0 ? ((total - avgTotal) / avgTotal * 100) : null
+    const diffText = diffPct !== null
+      ? `，较过去4周同期${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(0)}%`
+      : ''
+    return `本周峰值在${peak.day}（€${peak.current.toFixed(0)}）；本周合计 €${total.toFixed(0)}${diffText}。`
+  }, [weeklyChartData])
 
   function buildUrl(mode: 'day' | 'multiline' | 'summary') {
     const params = new URLSearchParams({ mode, from: fromDate, to: toDate })
@@ -566,8 +682,125 @@ export default function SalesStats() {
         </button>
       </div>
 
-      {/* ── Dashboard ── */}
-      <div className="p-5 space-y-4 bg-gray-50">
+      {/* ── New Views: 当日分类总量 / 周销售趋势 ── */}
+      <div className="border-t border-gray-200">
+
+        {/* View toggle */}
+        <div className="px-5 py-3 flex items-center gap-2 bg-gray-50 border-b border-gray-200">
+          {(['daily', 'weekly'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setStatsView(v)}
+              className={`px-4 py-1.5 text-xs font-medium rounded border transition-colors ${
+                statsView === v ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#875A7B]'
+              }`}
+            >
+              {v === 'daily' ? '当日分类总量' : '周销售趋势'}
+            </button>
+          ))}
+        </div>
+
+        {/* View 1: 当日分类总量 */}
+        {statsView === 'daily' && (
+          <div className="p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-500 shrink-0">配送日期</label>
+              <input type="date" value={dailyDate} onChange={e => setDailyDate(e.target.value)} className={selectCls} />
+              {dailyLoading && <span className="text-xs text-gray-400">加载中…</span>}
+            </div>
+            {dailyStats.length > 0 && (
+              <div className="flex items-start gap-2">
+                <label className="text-xs text-gray-500 shrink-0 pt-1">分类</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  <button onClick={() => setSelectedStatsCats([])} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedStatsCats.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`}>全部</button>
+                  {dailyStats.map(c => (
+                    <button key={c.catName} onClick={() => setSelectedStatsCats(prev => toggleValue(prev, c.catName))}
+                      className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedStatsCats.includes(c.catName) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`}
+                    >{c.catName}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {filteredDailyStats.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">该日期暂无已确认订单</div>
+            ) : (
+              <div className="space-y-4">
+                {filteredDailyStats.map(cat => (
+                  <div key={cat.catName} className="rounded-lg border border-gray-100 overflow-hidden">
+                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">{cat.catName}</span>
+                      <span className="text-xs text-gray-400">{cat.products.length} SKU</span>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="px-3 py-2 text-left text-gray-400 font-normal">产品名称</th>
+                          <th className="px-3 py-2 text-center text-gray-400 font-normal w-16">单位</th>
+                          <th className="px-3 py-2 text-right text-gray-400 font-normal w-20">确认量</th>
+                          <th className="px-3 py-2 text-right text-gray-400 font-normal w-24">ATP 库存</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cat.products.map(p => {
+                          const atp = p.qtyOnHand - p.qty
+                          const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#EF4444'
+                          return (
+                            <tr key={p.productId} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
+                              <td className="px-3 py-2 text-gray-800">{p.name}</td>
+                              <td className="px-3 py-2 text-center text-gray-500">{p.uomName || '—'}</td>
+                              <td className="px-3 py-2 text-right text-gray-700 tabular-nums font-medium">{p.qty % 1 === 0 ? p.qty.toFixed(0) : p.qty.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                <span className="inline-flex items-center gap-1.5 justify-end">
+                                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+                                  <span style={{ color }}>{atp % 1 === 0 ? atp.toFixed(0) : atp.toFixed(2)}</span>
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )}
+            {filteredDailyStats.length > 0 && (
+              <div className="text-xs text-gray-500 pt-2 border-t border-gray-100">
+                合计：{dailySummary.totalSku} SKU · {dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* View 2: 周销售趋势 */}
+        {statsView === 'weekly' && (
+          <div className="p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowWeeklyAvg(v => !v)} className={`px-3 py-1.5 text-xs rounded border transition-colors ${showWeeklyAvg ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'}`}>
+                {showWeeklyAvg ? '隐藏' : '显示'}过去4周均值
+              </button>
+              {dashLoading && <span className="text-xs text-gray-400">数据加载中…</span>}
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={weeklyChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={v => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                <Tooltip formatter={(v, name) => [`€${Number(v ?? 0).toFixed(0)}`, name === 'current' ? '本周' : '过去4周均值']} />
+                <Legend formatter={name => name === 'current' ? '本周' : '过去4周均值'} />
+                <Bar dataKey="current" name="current" fill="#875A7B" radius={[2, 2, 0, 0]} />
+                {showWeeklyAvg && <Line type="monotone" dataKey="avg" name="avg" stroke="#F59E0B" strokeWidth={2} dot={{ fill: '#F59E0B', r: 3 }} strokeDasharray="4 2" />}
+              </ComposedChart>
+            </ResponsiveContainer>
+            {weeklyConclusion && (
+              <div className="text-xs text-gray-600 bg-gray-50 rounded-lg px-4 py-2.5 border border-gray-100">{weeklyConclusion}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Dashboard（已隐藏）── */}
+      {false && <div className="p-5 space-y-4 bg-gray-50">
 
         {/* Period selector */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -799,7 +1032,7 @@ export default function SalesStats() {
             )}
           </div>
         </div>
-      </div>
+      </div>}
     </div>
   )
 }
