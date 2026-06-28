@@ -230,8 +230,28 @@ export async function POST(req: Request) {
       // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
       const custDefaults = await prisma.customer.findUnique({
         where: { id: restaurantId },
-        select: { defaultDriverSlotId: true, commissionRate: true, salesman: true },
+        select: { defaultDriverSlotId: true, commissionRate: true, salesman: true, paymentTerm: true, creditLimit: true },
       })
+
+      // 服务端信用管控校验
+      if (custDefaults && custDefaults.paymentTerm !== 'cash') {
+        const creditInvoices = await prisma.invoice.findMany({
+          where: { customerId: restaurantId, status: 'POSTED' },
+          select: { amountDue: true, dueDate: true },
+        })
+        const outstandingBalance = creditInvoices.reduce((s, inv) => s + Number(inv.amountDue), 0)
+        const today = new Date().toISOString().slice(0, 10)
+        const overdueAmount = creditInvoices
+          .filter(inv => inv.dueDate && inv.dueDate < today)
+          .reduce((s, inv) => s + Number(inv.amountDue), 0)
+        const creditLimit = Number(custDefaults.creditLimit ?? 0)
+        let blocked = false
+        if (creditLimit > 0 && outstandingBalance >= creditLimit) blocked = true
+        if (overdueAmount > 0 && custDefaults.paymentTerm === 'monthly') blocked = true
+        if (blocked && !['BOSS', 'FINANCE'].includes(user.role)) {
+          return NextResponse.json({ error: '客户信用冻结，请联系财务或主管特批' }, { status: 403 })
+        }
+      }
       let resolvedDriverSlotId = data.driverSlotId || null
       if (!resolvedDriverSlotId && custDefaults?.defaultDriverSlotId) {
         resolvedDriverSlotId = custDefaults.defaultDriverSlotId

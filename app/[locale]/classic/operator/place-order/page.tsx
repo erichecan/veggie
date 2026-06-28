@@ -9,6 +9,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { getSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { rankByRelevance } from '@/lib/search-rank'
 import type { Product, Customer, OdooPricelist, CustomerPriceType } from '@/lib/types'
@@ -20,6 +21,15 @@ const LOW_STOCK_THRESHOLD = 20
 // ─── Local types ──────────────────────────────────────────────────────────────
 
 type QuotationStatus = 'draft' | 'sent' | 'sale' | 'cancel'
+
+type CreditInfo = {
+  paymentTerm: string
+  creditLimit: number
+  outstandingBalance: number
+  overdueAmount: number
+  canOrder: boolean
+  blockReason?: string
+}
 
 type QuotationLine = {
   id: string
@@ -308,6 +318,10 @@ export default function ClassicPlaceOrderPage() {
   const priceTypeRef = useRef<HTMLSelectElement>(null)
   const qtyInputRef  = useRef<HTMLInputElement>(null)
 
+  // ── Credit control ────────────────────────────────────────────────────────
+  const [userRole,   setUserRole]   = useState<string>('')
+  const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
+
   // ── UI state ──────────────────────────────────────────────────────────────
   const [qtyRawMap, setQtyRawMap]     = useState<Record<string, string>>({})
   const [activeTab, setActiveTab]     = useState<'lines' | 'optional' | 'auto' | 'other'>('lines')
@@ -377,6 +391,12 @@ export default function ClassicPlaceOrderPage() {
     }
     document.addEventListener('mousedown', onMouse)
     return () => document.removeEventListener('mousedown', onMouse)
+  }, [])
+
+  // ── Load user role for credit-control bypass check ────────────────────────
+  useEffect(() => {
+    const s = getSession()
+    setUserRole(s?.role ?? '')
   }, [])
 
   // ── Keyboard highlight — reset on search change ────────────────────────────
@@ -560,10 +580,15 @@ export default function ClassicPlaceOrderPage() {
     if (c.salesman)    setSalesTeam(c.salesman)
     // 切客户必须清空 lastPrice 缓存，否则会把旧客户的成交价用到新客户身上
     setLastPrices({})
+    setCreditInfo(null)
     // 异步拉取含 specialPrices 的完整客户对象，供定价引擎使用
     apiGet<Customer>(`/api/customers/${c.id}`)
       .then(full => setSelectedCustomerFull(full))
       .catch(() => {/* 静默失败 — 引擎会回退到标准价 */})
+    // 异步拉取信用信息
+    apiGet<CreditInfo>(`/api/customers/${c.id}/credit`)
+      .then(info => setCreditInfo(info))
+      .catch(() => setCreditInfo(null))
   }
 
   // ── Last-price fetcher ────────────────────────────────────────────────────
@@ -928,6 +953,7 @@ export default function ClassicPlaceOrderPage() {
     setInternalNotes('')
     setTermsConditions('')
     setStatus('draft')
+    setCreditInfo(null)
   }
 
   // ── Preview / Print / Email handlers ─────────────────────────────────────
@@ -1043,7 +1069,7 @@ export default function ClassicPlaceOrderPage() {
           </button>
           <button
             onClick={handleConfirm}
-            disabled={submitting || status === 'sale'}
+            disabled={submitting || status === 'sale' || (!!creditInfo && !creditInfo.canOrder && !['BOSS', 'FINANCE'].includes(userRole))}
             className="h-8 px-3 text-sm rounded text-white disabled:opacity-50 transition-colors"
             style={{ background: '#875A7B' }}
             onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = '#7a5070')}
@@ -1192,13 +1218,40 @@ export default function ClassicPlaceOrderPage() {
                 </div>
               </div>
 
-              {/* Balance (read-only) */}
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600 w-36 shrink-0">Balance</span>
-                <span className="text-sm text-gray-500">
-                  {customer?.creditLimit != null ? eur(customer.creditLimit) : '—'}
-                </span>
-              </div>
+              {/* Credit Info */}
+              {customerId && (
+                <div className={`rounded px-3 py-2 text-xs ${
+                  creditInfo
+                    ? !creditInfo.canOrder
+                      ? 'bg-red-50 border border-red-200 text-red-700'
+                      : creditInfo.overdueAmount > 0
+                        ? 'bg-amber-50 border border-amber-200 text-amber-700'
+                        : 'bg-green-50 border border-green-200 text-green-700'
+                    : 'bg-gray-50 border border-gray-200 text-gray-400'
+                }`}>
+                  {!creditInfo ? (
+                    <span>加载信用信息...</span>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="font-medium">
+                          {!creditInfo.canOrder ? '⛔ 信用冻结' : creditInfo.overdueAmount > 0 ? '⚠️ 有逾期欠款' : '✅ 信用正常'}
+                        </span>
+                        <span>
+                          欠款 €{creditInfo.outstandingBalance.toFixed(2)}
+                          {creditInfo.creditLimit > 0 && ` / 额度 €${creditInfo.creditLimit.toFixed(2)}`}
+                        </span>
+                      </div>
+                      {!creditInfo.canOrder && creditInfo.blockReason && (
+                        <div className="mt-1">{creditInfo.blockReason}</div>
+                      )}
+                      {!creditInfo.canOrder && !['BOSS', 'FINANCE'].includes(userRole) && (
+                        <div className="mt-1 font-medium">需 BOSS 或财务特批</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Customer Address (read-only, shown after customer selected) */}
               {customer?.address && (
