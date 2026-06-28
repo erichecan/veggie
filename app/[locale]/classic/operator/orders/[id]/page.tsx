@@ -10,6 +10,7 @@ import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slo
 import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { OrderChatter } from '@/components/order/OrderChatter'
+import { resolveCustomerPrice } from '@/lib/pricing-engine'
 
 const PURPLE = '#875A7B'
 
@@ -295,12 +296,12 @@ export default function SalesOrderDetailPage() {
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing && editLines.length > 0 ? editLines : lines
-  const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal) / (1 + Number(l.taxRate ?? 0) / 100), 0)
+  const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
   const displayTotal = editing && editLines.length > 0
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
     : Number(order.totalAmount)
 
-  const totalTax = displayTotal - subtotalExTax
+  const totalTax = displayLines.reduce((s, l) => s + Number(l.subtotal) * (Number(l.taxRate ?? 0) / 100), 0)
   const margin = displayLines.reduce((s, l) => {
     const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
     return s + (Number(l.unitPrice) - cost) * Number(l.orderedQty)
@@ -309,6 +310,32 @@ export default function SalesOrderDetailPage() {
     const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
     return s + cms * Number(l.orderedQty)
   }, 0)
+
+  function addProductLine(p: AllProduct) {
+    const resolution = customer
+      ? resolveCustomerPrice(p as never, customer, pricelists)
+      : null
+    const price = resolution ? resolution.price : Number(p.listPrice ?? 0)
+    const newLine = {
+      id: '',
+      orderId: order!.id,
+      productId: p.id,
+      productName: p.name,
+      spec: null,
+      uomId: p.uomId ?? null,
+      uomName: p.uomName ?? 'Unit(s)',
+      unitPrice: price,
+      orderedQty: 1,
+      deliveredQty: 0,
+      invoicedQty: 0,
+      subtotal: Math.round(price * 100) / 100,
+      taxRate: Number(p.customerTaxRate ?? 0) * 100,
+      sequence: editLines.length,
+      commissionPrice: Number(p.commissionPrice ?? 0),
+      cost: Number(p.standardPrice ?? 0),
+    } as unknown as EditLine
+    setEditLines(prev => [...prev, newLine])
+  }
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
@@ -553,6 +580,9 @@ export default function SalesOrderDetailPage() {
               editing={editing}
               onDeleteLine={(_lineId, i) => deleteLine(i)}
               emptyColSpan={19}
+              products={allProducts}
+              onAddProduct={addProductLine}
+              addProductLabel="+ Add a product"
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
                   <th className="px-2 py-3 w-6"></th>
@@ -576,7 +606,7 @@ export default function SalesOrderDetailPage() {
                   <th className="px-2 py-3 text-right">Total</th>
                 </tr>
               )}
-              renderRow={(l, i, { inputCls, deleteButton }) => {
+              renderRow={(l, i, { inputCls, deleteButton, focusSearch }) => {
                 const fc = forecastMap.get(l.productId)
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
                 const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
@@ -595,7 +625,8 @@ export default function SalesOrderDetailPage() {
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}
                           value={Number(l.orderedQty)}
-                          onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))} />
+                          onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
                       ) : Number(l.orderedQty).toFixed(3)}
                     </td>
                     <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(3) : '—'}</td>
@@ -607,7 +638,8 @@ export default function SalesOrderDetailPage() {
                       {editing ? (
                         <input type="number" step="0.01" min="0" className={inputCls}
                           value={Number(l.unitPrice)}
-                          onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))} />
+                          onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
                       ) : Number(l.unitPrice).toFixed(2)}
                     </td>
                     <td className="px-2 py-2 text-right text-gray-400">{cost.toFixed(2)}</td>
@@ -616,10 +648,13 @@ export default function SalesOrderDetailPage() {
                     </td>
                     <td className="px-2 py-2 text-center">
                       {editing ? (
-                        <input type="number" step="0.1" min="0"
-                          className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        <select className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none"
                           value={Number(l.taxRate ?? 0)}
-                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))} />
+                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}>
+                          <option value={0}>0%</option>
+                          <option value={13.5}>13.5%</option>
+                          <option value={23}>23%</option>
+                        </select>
                       ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                     </td>
                     <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
@@ -645,9 +680,9 @@ export default function SalesOrderDetailPage() {
               <div className="flex justify-between"><span className="text-gray-600">Untaxed Amount:</span><span className="text-gray-800">€ {subtotalExTax.toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Taxes:</span><span className="text-gray-800">€ {totalTax.toFixed(2)}</span></div>
               <div className="border-t border-gray-200 my-1" />
-              <div className="flex justify-between text-base"><span className="font-bold text-gray-700">Total:</span><span className="font-bold text-gray-900">€ {displayTotal.toFixed(2)}</span></div>
+              <div className="flex justify-between text-base"><span className="font-bold text-gray-700">Total:</span><span className="font-bold text-gray-900">€ {(subtotalExTax + totalTax).toFixed(2)}</span></div>
               <div className="flex justify-between text-xs"><span className="text-gray-500">Margin:</span><span className="text-gray-500">€ {margin.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{displayTotal.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{(subtotalExTax + totalTax).toFixed(2)}</span></div>
             </div>
           </div>
         </div>

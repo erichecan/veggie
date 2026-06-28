@@ -889,7 +889,7 @@ export default function ClassicPlaceOrderPage() {
         taxRate:     l.taxRate,
         commissionPrice: l.cmsPrice || undefined,
       })),
-      totalAmount:    total,
+      totalAmount:    untaxed,
       status:         statusOverride,
       paymentMethod:  'online',
       pricelistId:    pricelistId || null,

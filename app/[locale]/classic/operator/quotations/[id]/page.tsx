@@ -295,7 +295,7 @@ export default function QuotationDetailPage() {
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing ? editLines : lines
-  const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal) / (1 + Number(l.taxRate ?? 0) / 100), 0)
+  const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
   const displayTotal = editing
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
     : Number(order.totalAmount)
@@ -318,14 +318,14 @@ export default function QuotationDetailPage() {
       deliveredQty: 0,
       invoicedQty: 0,
       subtotal: Math.round(price * 100) / 100,
-      taxRate: Number(p.customerTaxRate ?? 0),
+      taxRate: Number(p.customerTaxRate ?? 0) * 100,
       sequence: editLines.length,
       commissionPrice: Number(p.commissionPrice ?? 0),
       cost: Number(p.standardPrice ?? 0),
     } as unknown as EditLine
     setEditLines(prev => [...prev, newLine])
   }
-  const totalTax = displayTotal - subtotalExTax
+  const totalTax = displayLines.reduce((s, l) => s + Number(l.subtotal) * (Number(l.taxRate ?? 0) / 100), 0)
   const margin = displayLines.reduce((s, l) => {
     const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
     return s + (Number(l.unitPrice) - cost) * Number(l.orderedQty)
@@ -702,10 +702,13 @@ export default function QuotationDetailPage() {
                     <td className="px-2 py-2 text-center"><button className="px-2 py-0.5 border border-gray-300 rounded text-xs text-gray-500">Price</button></td>
                     <td className="px-2 py-2 text-center">
                       {editing ? (
-                        <input type="number" step="0.1" min="0" className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        <select className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                           value={Number(l.taxRate ?? 0)}
-                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
+                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}>
+                          <option value={0}>0%</option>
+                          <option value={13.5}>13.5%</option>
+                          <option value={23}>23%</option>
+                        </select>
                       ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                     </td>
                     <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
@@ -731,9 +734,9 @@ export default function QuotationDetailPage() {
               <div className="flex justify-between"><span className="text-gray-600">Untaxed Amount:</span><span className="text-gray-800">€ {subtotalExTax.toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Taxes:</span><span className="text-gray-800">€ {totalTax.toFixed(2)}</span></div>
               <div className="border-t border-gray-200 my-1" />
-              <div className="flex justify-between text-base"><span className="font-bold text-gray-700">Total:</span><span className="font-bold text-gray-900">€ {displayTotal.toFixed(2)}</span></div>
+              <div className="flex justify-between text-base"><span className="font-bold text-gray-700">Total:</span><span className="font-bold text-gray-900">€ {(subtotalExTax + totalTax).toFixed(2)}</span></div>
               <div className="flex justify-between text-xs"><span className="text-gray-500">Margin:</span><span className="text-gray-500">€ {margin.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{displayTotal.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{(subtotalExTax + totalTax).toFixed(2)}</span></div>
             </div>
           </div>
         </div>
