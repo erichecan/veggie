@@ -721,8 +721,6 @@ ${footerHtml}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap"><DateCell iso={quotationDate} /></td>
           {/* Customer */}
           <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
-          {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
-          <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'salesman') || '—'}</td>
           {/* Delivery Date */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             {!isReadMode && editDateId === o.id ? (
@@ -762,10 +760,10 @@ ${footerHtml}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{STATUS_LABEL[o.status] ?? o.status}</td>
           {/* Internal Notes */}
           <td className="px-2 py-2 text-sm text-gray-700 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
-          {/* Creation Date */}
+          {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2">
-              <DateCell iso={o.createdAt} />
+              <span>{getField(o, 'salesman') || '—'}</span>
               {canEditItems && (
                 <button
                   onClick={async e => {
@@ -897,7 +895,6 @@ ${footerHtml}
         <td className="px-2 py-1"><input value={colFilters.code} onChange={e => setCf('code', e.target.value)} className={inputCls} /></td>
         {dateLabelCell('quotationDateFrom', 'quotationDateTo')}
         <td className="px-2 py-1"><input value={colFilters.customer}  onChange={e => setCf('customer', e.target.value)}  className={inputCls} /></td>
-        <td className="px-2 py-1"><input value={colFilters.salesman}      onChange={e => setCf('salesman', e.target.value)}      className={inputCls} /></td>
         {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
         <td className="px-2 py-1" />
         <td className="px-2 py-1">
@@ -911,7 +908,7 @@ ${footerHtml}
           </select>
         </td>
         <td className="px-2 py-1" />
-        {dateLabelCell('createdAtFrom', 'createdAtTo')}
+        <td className="px-2 py-1"><input value={colFilters.salesman} onChange={e => setCf('salesman', e.target.value)} className={inputCls} /></td>
       </tr>
     )
   }
@@ -992,12 +989,11 @@ ${footerHtml}
                   { field: 'code',          label: 'Quotation\nNumber', right: false },
                   { field: 'quotationDate', label: 'Quotation\nDate',   right: false },
                   { field: 'customer',      label: 'Customer',          right: false },
-                  { field: 'salesman',      label: 'Salesperson',       right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'total',         label: 'Total',             right: true  },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
-                  { field: 'createdAt',     label: 'Creation\nDate',    right: false },
+                  { field: 'salesman',      label: 'Salesperson',       right: false },
                 ] as { field: string | null; label: string; right: boolean }[]
               ).map(({ field, label, right }, i) => {
                 const lines = label.split('\n')
