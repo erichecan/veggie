@@ -24,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   wave_assigned: 'Sales Order',
   in_delivery:   'Sales Order',
   completed:     'Done',
+  cancelled:     '已取消',
 }
 const STATUS_COLOR: Record<string, string> = {
   pending:       'bg-gray-100 text-gray-600',
@@ -31,6 +32,7 @@ const STATUS_COLOR: Record<string, string> = {
   wave_assigned: 'bg-green-50 text-green-700',
   in_delivery:   'bg-purple-50 text-purple-700',
   completed:     'bg-blue-50 text-blue-700',
+  cancelled:     'bg-red-50 text-red-600',
 }
 
 
@@ -236,7 +238,7 @@ export default function ClassicQuotationsPage() {
     setLoading(true)
     try {
       const [rawOrders, rawCustomers, rawInvoices, rawTrips] = await Promise.all([
-        apiGet<Record<string, unknown>[]>('/api/orders?status=PENDING&include_lines=false'),
+        apiGet<Record<string, unknown>[]>('/api/orders?status=PENDING,CANCELLED&include_lines=false'),
         apiGet<Customer[]>('/api/customers?slim=1').catch(() => [] as Customer[]),
         apiGet<Invoice[]>('/api/invoices?slim=1').catch(() => [] as Invoice[]),
         apiGet<Trip[]>('/api/trips').catch(() => [] as Trip[]),
@@ -427,7 +429,7 @@ export default function ClassicQuotationsPage() {
         sent:   [],
         sale:   ['confirmed', 'wave_assigned', 'in_delivery'],
         done:   ['completed'],
-        cancel: [],
+        cancel: ['cancelled'],
       }
       const allowed = map[cf.status] ?? []
       result = result.filter(o => allowed.includes(o.status))
@@ -535,17 +537,17 @@ export default function ClassicQuotationsPage() {
 
   async function handleBulkDelete() {
     const ids = [...selected]
-    if (!confirm(`确认删除 ${ids.length} 条报价单？此操作不可撤销。`)) return
+    if (!confirm(`确认取消 ${ids.length} 条报价单？取消后可在「已取消」筛选中查看。`)) return
     setBulkDeleting(true)
     const results = await Promise.allSettled(
-      ids.map(id => apiDelete(`/api/orders/${id}`))
+      ids.map(id => apiPut(`/api/orders/${id}`, { status: 'CANCELLED' }))
     )
     const successCount = results.filter(r => r.status === 'fulfilled').length
     const failCount = results.filter(r => r.status === 'rejected').length
     setBulkDeleting(false)
     setSelected(new Set())
     if (failCount === 0) {
-      toast.success(`已删除 ${successCount} 条报价单`)
+      toast.success(`已取消 ${successCount} 条报价单`)
     } else {
       toast.warning(`成功 ${successCount} 条，失败 ${failCount} 条`)
     }
@@ -768,17 +770,17 @@ ${footerHtml}
                 <button
                   onClick={async e => {
                     e.stopPropagation()
-                    if (!confirm(`确认删除报价单 ${displayOrderCode(o)}？此操作不可撤销。`)) return
+                    if (!confirm(`确认取消报价单 ${displayOrderCode(o)}？取消后可在「已取消」筛选中查看。`)) return
                     try {
-                      await apiDelete(`/api/orders/${o.id}`)
-                      toast.success('报价单已删除')
+                      await apiPut(`/api/orders/${o.id}`, { status: 'CANCELLED' })
+                      toast.success('报价单已取消')
                       load()
                     } catch (err) {
-                      toast.error(err instanceof Error ? err.message : '删除失败')
+                      toast.error(err instanceof Error ? err.message : '取消失败')
                     }
                   }}
                   className="px-2 py-0.5 text-xs rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
-                  删除
+                  取消
                 </button>
               )}
             </div>
@@ -942,7 +944,7 @@ ${footerHtml}
                 { label: 'Mode', onClick: () => { setIsReadMode(true); setEditDateId(null); setEditItemsId(null) } },
               ]),
           ...(selected.size >= 2 ? [{ label: bulkConfirming ? '确认中...' : `批量确认 (${selected.size})`, onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
-          ...(selected.size >= 2 ? [{ label: bulkDeleting ? '删除中...' : `批量删除 (${selected.size})`, onClick: handleBulkDelete, primary: true, style: 'red' as const, disabled: bulkDeleting }] : []),
+          ...(selected.size >= 2 ? [{ label: bulkDeleting ? '取消中...' : `批量取消 (${selected.size})`, onClick: handleBulkDelete, primary: true, style: 'red' as const, disabled: bulkDeleting }] : []),
           ...(selected.size === 1 ? [{ label: duplicating ? '复制中...' : 'Duplicate', onClick: handleDuplicate, primary: true, disabled: duplicating }] : []),
           ...(selected.size >= 1 ? [{ label: bulkPrinting ? '生成中...' : `批量打印 (${selected.size})`, onClick: handleBulkPrint, primary: true, disabled: bulkPrinting }] : []),
         ]}

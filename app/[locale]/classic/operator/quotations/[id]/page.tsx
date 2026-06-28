@@ -62,6 +62,7 @@ export default function QuotationDetailPage() {
   const [confirming, setConfirming] = useState(false)
   const [auditLogs, setAuditLogs] = useState<{ id: string; action: string; detail?: string; userName?: string; createdAt: string }[]>([])
   const [showAuditLog, setShowAuditLog] = useState(false)
+  const [cancelModalOpen, setCancelModalOpen] = useState(false)
   // Editable buffer
   const [internalNote, setInternalNote] = useState('')
   const [externalNote, setExternalNote] = useState('')
@@ -234,15 +235,21 @@ export default function QuotationDetailPage() {
     }
   }
 
-  async function handleCancel() {
+  function handleCancel() {
     if (!order) return
-    if (!confirm(`确认取消报价单 ${displayOrderCode(order)}？取消后订单将无法恢复。`)) return
+    setCancelModalOpen(true)
+  }
+
+  async function handleConfirmCancel() {
+    if (!order) return
     try {
       await apiPut(`/api/orders/${order.id}`, { status: 'CANCELLED' })
       toast.success('报价单已取消')
       router.push(`${prefix}/classic/operator/quotations`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '取消失败')
+    } finally {
+      setCancelModalOpen(false)
     }
   }
 
@@ -390,10 +397,6 @@ export default function QuotationDetailPage() {
                 {confirming ? 'Confirming…' : 'Confirm'}
               </button>
             )}
-            <button onClick={handleCancel} disabled={isLocked}
-              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50">
-              Cancel
-            </button>
           </div>
           <div className="flex items-center gap-1 text-sm text-gray-500">
             <span>1 / 40</span>
@@ -420,6 +423,11 @@ export default function QuotationDetailPage() {
                 await load()
               }}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Unlock</button>
+            <div className="w-px h-5 bg-gray-300 mx-1" />
+            <button onClick={handleCancel} disabled={isLocked}
+              className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed">
+              取消报价单
+            </button>
           </div>
           <div className="flex items-center gap-1">
             <StatusPill label="Quotation" active={flowSegment === 'quotation'} dim={flowSegment !== 'quotation'} />
@@ -786,6 +794,29 @@ export default function QuotationDetailPage() {
         {/* Region 7: Chatter */}
         <OrderChatter orderId={order.id} status={order.status} />
       </div>
+
+      {cancelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">确认取消此报价单？</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              取消后订单状态将变为「已取消」，可在列表中查看，但无法恢复为报价中。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setCancelModalOpen(false)}
+                className="h-9 px-4 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                取消操作
+              </button>
+              <button
+                onClick={handleConfirmCancel}
+                className="h-9 px-4 text-sm rounded bg-red-600 text-white hover:bg-red-700 font-medium">
+                确认取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
