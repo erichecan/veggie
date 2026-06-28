@@ -5,7 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
-import { Trash2 } from 'lucide-react'
+import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
@@ -548,93 +548,87 @@ export default function SalesOrderDetailPage() {
           </div>
 
           {tab === 'lines' && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
-                    <th className="px-2 py-3 w-6"></th>
-                    <th className="px-2 py-3 text-left">NO</th>
-                    <th className="px-2 py-3 text-left"><div className="leading-tight">Product<br/>Code</div></th>
-                    <th className="px-2 py-3 text-left">Product</th>
-                    <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
-                    <th className="px-2 py-3 text-left">Description</th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
-                    <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
-                    <th className="px-2 py-3 text-right">Cost</th>
-                    <th className="px-2 py-3 text-center">Price</th>
-                    <th className="px-2 py-3 text-center">Taxes</th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Price</div></th>
-                    <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Sub</div></th>
-                    <th className="px-2 py-3 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayLines.map((l, i) => {
-                    const fc = forecastMap.get(l.productId)
-                    const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
-                    const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
-                    const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
-                    const inputCls = 'w-20 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
-                    return (
-                      <tr key={l.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="px-2 py-2">
-                          {editing && l.productId
-                            ? <button onClick={() => deleteLine(i)} className="text-red-400 hover:text-red-600 leading-none"><Trash2 className="h-3.5 w-3.5" /></button>
-                            : <span className="text-gray-300">▶</span>}
-                        </td>
-                        <td className="px-2 py-2 text-gray-700">{i + 1}</td>
-                        <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
-                        <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
-                        <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
-                        <td className="px-2 py-2 text-gray-600 text-xs">{l.spec || ''}</td>
-                        <td className="px-2 py-2 text-right">
-                          {editing ? (
-                            <input type="number" step="0.001" min="0" className={inputCls}
-                              value={Number(l.orderedQty)}
-                              onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))} />
-                          ) : Number(l.orderedQty).toFixed(3)}
-                        </td>
-                        <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(3) : '—'}</td>
-                        <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(3) : '—'}</td>
-                        <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(3)}</td>
-                        <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(3)}</td>
-                        <td className="px-2 py-2 text-gray-600">{l.uomName ?? 'Unit(s)'}</td>
-                        <td className="px-2 py-2 text-right">
-                          {editing ? (
-                            <input type="number" step="0.01" min="0" className={inputCls}
-                              value={Number(l.unitPrice)}
-                              onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))} />
-                          ) : Number(l.unitPrice).toFixed(2)}
-                        </td>
-                        <td className="px-2 py-2 text-right text-gray-400">{cost.toFixed(2)}</td>
-                        <td className="px-2 py-2 text-center">
-                          <button className="px-2 py-0.5 border border-gray-300 rounded text-xs text-gray-500">Price</button>
-                        </td>
-                        <td className="px-2 py-2 text-center">
-                          {editing ? (
-                            <input type="number" step="0.1" min="0"
-                              className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              value={Number(l.taxRate ?? 0)}
-                              onChange={e => updateLine(i, 'taxRate', Number(e.target.value))} />
-                          ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
-                        </td>
-                        <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: PURPLE }}>€ {(cms * Number(l.orderedQty)).toFixed(2)}</td>
-                        <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
-                      </tr>
-                    )
-                  })}
-                  {displayLines.length === 0 && (
-                    <tr><td colSpan={19} className="px-3 py-8 text-center text-gray-400">暂无明细</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <OrderLineEditor
+              lines={displayLines}
+              editing={editing}
+              onDeleteLine={(_lineId, i) => deleteLine(i)}
+              emptyColSpan={19}
+              renderHeaders={() => (
+                <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
+                  <th className="px-2 py-3 w-6"></th>
+                  <th className="px-2 py-3 text-left">NO</th>
+                  <th className="px-2 py-3 text-left"><div className="leading-tight">Product<br/>Code</div></th>
+                  <th className="px-2 py-3 text-left">Product</th>
+                  <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
+                  <th className="px-2 py-3 text-left">Description</th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
+                  <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
+                  <th className="px-2 py-3 text-right">Cost</th>
+                  <th className="px-2 py-3 text-center">Price</th>
+                  <th className="px-2 py-3 text-center">Taxes</th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Price</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Sub</div></th>
+                  <th className="px-2 py-3 text-right">Total</th>
+                </tr>
+              )}
+              renderRow={(l, i, { inputCls, deleteButton }) => {
+                const fc = forecastMap.get(l.productId)
+                const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
+                const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
+                const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
+                return (
+                  <>
+                    <td className="px-2 py-2">
+                      {deleteButton ?? <span className="text-gray-300">▶</span>}
+                    </td>
+                    <td className="px-2 py-2 text-gray-700">{i + 1}</td>
+                    <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
+                    <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
+                    <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
+                    <td className="px-2 py-2 text-gray-600 text-xs">{l.spec || ''}</td>
+                    <td className="px-2 py-2 text-right">
+                      {editing ? (
+                        <input type="number" step="0.001" min="0" className={inputCls}
+                          value={Number(l.orderedQty)}
+                          onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))} />
+                      ) : Number(l.orderedQty).toFixed(3)}
+                    </td>
+                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(3) : '—'}</td>
+                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(3) : '—'}</td>
+                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(3)}</td>
+                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(3)}</td>
+                    <td className="px-2 py-2 text-gray-600">{l.uomName ?? 'Unit(s)'}</td>
+                    <td className="px-2 py-2 text-right">
+                      {editing ? (
+                        <input type="number" step="0.01" min="0" className={inputCls}
+                          value={Number(l.unitPrice)}
+                          onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))} />
+                      ) : Number(l.unitPrice).toFixed(2)}
+                    </td>
+                    <td className="px-2 py-2 text-right text-gray-400">{cost.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-center">
+                      <button className="px-2 py-0.5 border border-gray-300 rounded text-xs text-gray-500">Price</button>
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      {editing ? (
+                        <input type="number" step="0.1" min="0"
+                          className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          value={Number(l.taxRate ?? 0)}
+                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))} />
+                      ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
+                    </td>
+                    <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right" style={{ color: PURPLE }}>€ {(cms * Number(l.orderedQty)).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
+                  </>
+                )
+              }}
+            />
           )}
 
           {tab !== 'lines' && (

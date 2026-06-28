@@ -14,6 +14,7 @@ import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { rankByRelevance } from '@/lib/search-rank'
 import type { Product, Customer, OdooPricelist, CustomerPriceType } from '@/lib/types'
 import JsBarcode from 'jsbarcode'
+import OrderLineEditor from '@/components/classic/OrderLineEditor'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const LOW_STOCK_THRESHOLD = 20
@@ -1586,264 +1587,257 @@ export default function ClassicPlaceOrderPage() {
               })()}
 
               {/* Horizontally scrollable 14-column table */}
-              <div className="overflow-x-auto">
-                <table className="text-xs border-collapse" style={{ minWidth: '1340px', width: '100%' }}>
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
-                      <th className="px-2 py-2 text-left"  style={{ width: 40  }}>NO</th>
-                      <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
-                      <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
-                      <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 100 }} title="可承诺量 = 在手量 - 待履行量">ATP</th>
-                      <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cost</th>
-                      <th className="px-2 py-2 text-left"  style={{ width: 80  }}>Price</th>
-                      <th className="px-2 py-2 text-left"  style={{ width: 70  }}>Taxes</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cms Price</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 70  }}>Cms Sub</th>
-                      <th className="px-2 py-2 text-right" style={{ width: 100 }}>Cms Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {lines.length === 0 && (
-                      <tr>
-                        <td colSpan={15} className="px-4 py-10 text-center text-sm text-gray-400">
-                          暂无订单行，点击下方 "+ Add a product" 开始添加
-                        </td>
-                      </tr>
-                    )}
+              <OrderLineEditor
+                lines={lines}
+                editing={true}
+                tableClassName="text-xs border-collapse"
+                tableStyle={{ minWidth: '1340px', width: '100%' }}
+                tbodyClassName="divide-y divide-gray-100"
+                emptyColSpan={15}
+                emptyMessage='暂无订单行，点击下方 "+ Add a product" 开始添加'
+                renderHeaders={() => (
+                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
+                    <th className="px-2 py-2 text-left"  style={{ width: 40  }}>NO</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title="可承诺量 = 在手量 - 待履行量">ATP</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cost</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 80  }}>Price</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 70  }}>Taxes</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cms Price</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 70  }}>Cms Sub</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Cms Total</th>
+                  </tr>
+                )}
+                renderRow={(line, idx) => {
+                  const cmsSub    = line.cmsPrice  * line.orderedQty
+                  const lineTotal = line.unitPrice * line.orderedQty
+                  const isActive  = activeLineId === line.id
+                  const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
+                  const isOutOfStock = line.productId && lineAtp <= 0
+                  const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
+                  const isDuplicate  = !!line.productId && (duplicateCounts.get(line.productId) ?? 0) > 1
+                  return (
+                    <>
+                      {/* NO */}
+                      <td className="px-2 py-1 text-gray-400 select-none">
+                        {idx + 1}
+                        {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
+                      </td>
 
-                    {lines.map((line, idx) => {
-                      const cmsSub   = line.cmsPrice  * line.orderedQty
-                      const lineTotal = line.unitPrice * line.orderedQty
-                      const isActive  = activeLineId === line.id
-                      const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
-                      const isOutOfStock = line.productId && lineAtp <= 0
-                      const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
-                      const isDuplicate  = !!line.productId && (duplicateCounts.get(line.productId) ?? 0) > 1
+                      {/* Product — inline search */}
+                      <td className="px-2 py-1 relative">
+                        {isActive ? (
+                          <div ref={lineDropRef}>
+                            <input
+                              ref={lineInputRef}
+                              autoFocus
+                              type="text"
+                              value={lineSearch}
+                              onChange={e => setLineSearch(e.target.value)}
+                              onKeyDown={handleLineKey}
+                              placeholder="搜索商品…"
+                              className="w-full border border-[#875A7B] rounded px-2 py-0.5 text-xs focus:outline-none"
+                              onClick={e => e.stopPropagation()}
+                              onFocus={() => {
+                                const r = lineInputRef.current?.getBoundingClientRect()
+                                if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => { setActiveLineId(line.id); setLineSearch('') }}
+                            className={`px-2 py-0.5 rounded cursor-pointer hover:bg-[#875A7B]/20 min-h-[22px] truncate ${
+                              line.productName ? 'text-[#875A7B] underline-offset-2' : 'text-gray-400 italic'
+                            }`}
+                            title={line.productName || '点击选择商品'}
+                          >
+                            {line.productName || '点击选择商品…'}
+                          </div>
+                        )}
+                      </td>
 
-                      return (
-                        <tr
-                          key={line.id}
-                          className="group align-middle"
-                          style={{
-                            background: isOutOfStock ? '#fee2e2' : isLowStock ? '#fffbeb' : undefined,
-                            boxShadow: isDuplicate ? 'inset 3px 0 0 0 #875A7B' : undefined,
+                      {/* Description */}
+                      <td className="px-2 py-1">
+                        <input
+                          type="text"
+                          data-desc-line={line.id}
+                          value={line.description}
+                          onChange={e => patchLine(line.id, { description: e.target.value })}
+                          onKeyDown={e => handleFieldKey(e)}
+                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                        />
+                      </td>
+
+                      {/* Note */}
+                      <td className="px-2 py-1">
+                        <input
+                          type="text"
+                          data-note-line={line.id}
+                          value={line.note}
+                          onChange={e => patchLine(line.id, { note: e.target.value })}
+                          onKeyDown={e => handleFieldKey(e)}
+                          placeholder="备注…"
+                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent placeholder:text-gray-300"
+                        />
+                      </td>
+
+                      {/* Ordered Qty */}
+                      <td className="px-2 py-1">
+                        <input
+                          ref={isActive ? qtyInputRef : undefined}
+                          data-qty-line={line.id}
+                          type="text"
+                          inputMode="decimal"
+                          value={qtyRawMap[line.id] ?? String(line.orderedQty)}
+                          onChange={e => {
+                            const raw = e.target.value
+                            setQtyRawMap(prev => ({ ...prev, [line.id]: raw }))
+                            const n = parseFloat(raw)
+                            if (!isNaN(n) && n >= 0) updateQty(line.id, n)
                           }}
+                          onBlur={() => {
+                            const raw = qtyRawMap[line.id] ?? ''
+                            const n = parseFloat(raw)
+                            const committed = isNaN(n) || n < 0 ? 0 : n
+                            updateQty(line.id, committed)
+                            setQtyRawMap(prev => { const next = { ...prev }; delete next[line.id]; return next })
+                          }}
+                          onKeyDown={e => handleFieldKey(e)}
+                          className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                        />
+                      </td>
+
+                      {/* Forecast Qty */}
+                      <td className="px-2 py-1 text-right text-gray-400">
+                        {line.forecastQty != null ? line.forecastQty.toFixed(3) : '—'}
+                      </td>
+
+                      {/* ATP */}
+                      <td className="px-2 py-1 text-right" title={line.productId ? `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 可承诺: ${lineAtp.toFixed(1)}` : ''}>
+                        {isOutOfStock ? (
+                          <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
+                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                            {lineAtp.toFixed(1)}
+                          </span>
+                        ) : isLowStock ? (
+                          <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" />
+                            {lineAtp.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">
+                            {lineAtp > 0 ? lineAtp.toFixed(1) : '—'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* UoM */}
+                      <td className="px-2 py-1 text-gray-500 truncate">{line.uom || '—'}</td>
+
+                      {/* Unit Price */}
+                      <td className="px-2 py-1">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unitPrice}
+                          onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0 })}
+                          onKeyDown={e => handleFieldKey(e)}
+                          className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                        />
+                      </td>
+
+                      {/* Cost */}
+                      <td className="px-2 py-1 text-right text-gray-500">
+                        {line.cost > 0 ? eur(line.cost) : '—'}
+                      </td>
+
+                      {/* Price label */}
+                      <td className="px-2 py-1">
+                        {line.productId ? (
+                          <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            line.priceLabel === 'Special'
+                              ? 'bg-green-100 text-green-700'
+                              : line.priceLabel === 'PriceList'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {line.priceLabel}
+                          </span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+
+                      {/* Taxes */}
+                      <td className="px-2 py-1">
+                        <select
+                          value={line.taxRate}
+                          onChange={e => patchLine(line.id, { taxRate: Number(e.target.value) })}
+                          onKeyDown={e => handleFieldKey(e, { last: true })}
+                          className="w-full text-xs px-1 py-0.5 border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent cursor-pointer"
                         >
+                          <option value={0}>0%</option>
+                          <option value={13.5}>13.5%</option>
+                          <option value={23}>23%</option>
+                        </select>
+                      </td>
 
-                          {/* NO */}
-                          <td className="px-2 py-1 text-gray-400 select-none">
-                            {idx + 1}
-                            {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
-                          </td>
+                      {/* Cms Price */}
+                      <td className="px-2 py-1 text-right text-gray-500">
+                        {line.cmsPrice > 0 ? eur(line.cmsPrice) : '—'}
+                      </td>
 
-                          {/* Product — inline search */}
-                          <td className="px-2 py-1 relative">
-                            {isActive ? (
-                              <div ref={lineDropRef}>
-                                <input
-                                  ref={lineInputRef}
-                                  autoFocus
-                                  type="text"
-                                  value={lineSearch}
-                                  onChange={e => setLineSearch(e.target.value)}
-                                  onKeyDown={handleLineKey}
-                                  placeholder="搜索商品…"
-                                  className="w-full border border-[#875A7B] rounded px-2 py-0.5 text-xs focus:outline-none"
-                                  onClick={e => e.stopPropagation()}
-                                  onFocus={() => {
-                                    const r = lineInputRef.current?.getBoundingClientRect()
-                                    if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
-                                  }}
-                                />
-                              </div>
-                            ) : (
-                              <div
-                                onClick={() => { setActiveLineId(line.id); setLineSearch('') }}
-                                className={`px-2 py-0.5 rounded cursor-pointer hover:bg-[#875A7B]/20 min-h-[22px] truncate ${
-                                  line.productName ? 'text-[#875A7B] underline-offset-2' : 'text-gray-400 italic'
-                                }`}
-                                title={line.productName || '点击选择商品'}
-                              >
-                                {line.productName || '点击选择商品…'}
-                              </div>
-                            )}
-                          </td>
+                      {/* Cms Sub */}
+                      <td className="px-2 py-1 text-right text-gray-500">
+                        {cmsSub > 0 ? eur(cmsSub) : '—'}
+                      </td>
 
-                          {/* Description */}
-                          <td className="px-2 py-1">
-                            <input
-                              type="text"
-                              data-desc-line={line.id}
-                              value={line.description}
-                              onChange={e => patchLine(line.id, { description: e.target.value })}
-                              onKeyDown={e => handleFieldKey(e)}
-                              className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
-                            />
-                          </td>
-
-                          {/* Note 行级备注（如 free / 注意事项） */}
-                          <td className="px-2 py-1">
-                            <input
-                              type="text"
-                              data-note-line={line.id}
-                              value={line.note}
-                              onChange={e => patchLine(line.id, { note: e.target.value })}
-                              onKeyDown={e => handleFieldKey(e)}
-                              placeholder="备注…"
-                              className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent placeholder:text-gray-300"
-                            />
-                          </td>
-
-                          {/* Ordered Qty */}
-                          <td className="px-2 py-1">
-                            <input
-                              ref={isActive ? qtyInputRef : undefined}
-                              data-qty-line={line.id}
-                              type="text"
-                              inputMode="decimal"
-                              value={qtyRawMap[line.id] ?? String(line.orderedQty)}
-                              onChange={e => {
-                                const raw = e.target.value
-                                setQtyRawMap(prev => ({ ...prev, [line.id]: raw }))
-                                const n = parseFloat(raw)
-                                if (!isNaN(n) && n >= 0) updateQty(line.id, n)
-                              }}
-                              onBlur={() => {
-                                const raw = qtyRawMap[line.id] ?? ''
-                                const n = parseFloat(raw)
-                                const committed = isNaN(n) || n < 0 ? 0 : n
-                                updateQty(line.id, committed)
-                                setQtyRawMap(prev => { const next = { ...prev }; delete next[line.id]; return next })
-                              }}
-                              onKeyDown={e => handleFieldKey(e)}
-                              className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
-                            />
-                          </td>
-
-                          {/* Forecast Qty (read-only, from template) */}
-                          <td className="px-2 py-1 text-right text-gray-400">
-                            {line.forecastQty != null ? line.forecastQty.toFixed(3) : '—'}
-                          </td>
-
-                          {/* Qty On Hand → ATP */}
-                          <td className="px-2 py-1 text-right" title={line.productId ? `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 可承诺: ${lineAtp.toFixed(1)}` : ''}>
-                            {isOutOfStock ? (
-                              <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                {lineAtp.toFixed(1)}
-                              </span>
-                            ) : isLowStock ? (
-                              <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                                <span className="w-2 h-2 rounded-full bg-amber-500" />
-                                {lineAtp.toFixed(1)}
-                              </span>
-                            ) : (
-                              <span className="text-gray-500">
-                                {lineAtp > 0 ? lineAtp.toFixed(1) : '—'}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* UoM */}
-                          <td className="px-2 py-1 text-gray-500 truncate">{line.uom || '—'}</td>
-
-                          {/* Unit Price */}
-                          <td className="px-2 py-1">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.unitPrice}
-                              onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0 })}
-                              onKeyDown={e => handleFieldKey(e)}
-                              className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
-                            />
-                          </td>
-
-                          {/* Cost (read-only) */}
-                          <td className="px-2 py-1 text-right text-gray-500">
-                            {line.cost > 0 ? eur(line.cost) : '—'}
-                          </td>
-
-                          {/* Price label (source badge) */}
-                          <td className="px-2 py-1">
-                            {line.productId ? (
-                              <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                line.priceLabel === 'Special'
-                                  ? 'bg-green-100 text-green-700'
-                                  : line.priceLabel === 'PriceList'
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : 'bg-gray-100 text-gray-600'
-                              }`}>
-                                {line.priceLabel}
-                              </span>
-                            ) : <span className="text-gray-300">—</span>}
-                          </td>
-
-                          {/* Taxes — 需求9: editable dropdown */}
-                          <td className="px-2 py-1">
-                            <select
-                              value={line.taxRate}
-                              onChange={e => patchLine(line.id, { taxRate: Number(e.target.value) })}
-                              onKeyDown={e => handleFieldKey(e, { last: true })}
-                              className="w-full text-xs px-1 py-0.5 border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent cursor-pointer"
-                            >
-                              <option value={0}>0%</option>
-                              <option value={13.5}>13.5%</option>
-                              <option value={23}>23%</option>
-                            </select>
-                          </td>
-
-                          {/* Cms Price — 只读纯文本展示（不可修改） */}
-                          <td className="px-2 py-1 text-right text-gray-500">
-                            {line.cmsPrice > 0 ? eur(line.cmsPrice) : '—'}
-                          </td>
-
-                          {/* Cms Sub (computed, read-only) */}
-                          <td className="px-2 py-1 text-right text-gray-500">
-                            {cmsSub > 0 ? eur(cmsSub) : '—'}
-                          </td>
-
-                          {/* Cms Total + delete */}
-                          <td className="px-2 py-1 text-right">
-                            <span className="font-medium text-gray-700">
-                              {lineTotal > 0 ? eur(lineTotal) : '—'}
-                            </span>
-                            <button
-                              onClick={() => removeLine(line.id)}
-                              className="ml-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity align-middle"
-                              title="删除此行"
-                            >
-                              🗑
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Table footer actions */}
-              <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3 flex-wrap">
-                <button
-                  onClick={addLine}
-                  className="text-sm text-[#875A7B] hover:underline font-medium"
-                >
-                  + Add a product
-                </button>
-                <span className="text-gray-300 text-xs">|</span>
-                <button className="text-xs text-gray-400 hover:text-gray-600">Configure a product</button>
-                <span className="text-gray-300 text-xs">|</span>
-                <button className="text-xs text-gray-400 hover:text-gray-600">Add a section</button>
-                <span className="text-gray-300 text-xs">|</span>
-                <button className="text-xs text-gray-400 hover:text-gray-600">Add a note</button>
-              </div>
+                      {/* Cms Total + delete */}
+                      <td className="px-2 py-1 text-right">
+                        <span className="font-medium text-gray-700">
+                          {lineTotal > 0 ? eur(lineTotal) : '—'}
+                        </span>
+                        <button
+                          onClick={() => removeLine(line.id)}
+                          className="ml-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity align-middle"
+                          title="删除此行"
+                        >
+                          🗑
+                        </button>
+                      </td>
+                    </>
+                  )
+                }}
+                rowStyle={(line) => ({
+                  background: (line.productId && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) <= 0) ? '#fee2e2'
+                    : (line.productId && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) > 0 && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) < LOW_STOCK_THRESHOLD) ? '#fffbeb'
+                    : undefined,
+                  boxShadow: (!!line.productId && (duplicateCounts.get(line.productId) ?? 0) > 1) ? 'inset 3px 0 0 0 #875A7B' : undefined,
+                })}
+                defaultRowCls="group align-middle"
+                footer={
+                  <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3 flex-wrap">
+                    <button
+                      onClick={addLine}
+                      className="text-sm text-[#875A7B] hover:underline font-medium"
+                    >
+                      + Add a product
+                    </button>
+                    <span className="text-gray-300 text-xs">|</span>
+                    <button className="text-xs text-gray-400 hover:text-gray-600">Configure a product</button>
+                    <span className="text-gray-300 text-xs">|</span>
+                    <button className="text-xs text-gray-400 hover:text-gray-600">Add a section</button>
+                    <span className="text-gray-300 text-xs">|</span>
+                    <button className="text-xs text-gray-400 hover:text-gray-600">Add a note</button>
+                  </div>
+                }
+              />
             </div>
           )}
 
