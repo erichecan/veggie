@@ -26,12 +26,12 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // { href: `${prefix}/classic/operator`, label: en ? 'Workbench' : '工作台' },
     { href: `${prefix}/classic/operator/quotations`, label: en ? 'Place Order' : '下单', activePaths: [`${prefix}/classic/operator/place-order`] },
     { href: `${prefix}/classic/operator/orders`,    label: en ? 'Sales Orders'  : '销售单' },
-    { href: `${prefix}/classic/operator/daily-sales`, label: en ? 'Daily Sales Center' : '日销售中心' },
-    // 拣货波次、配送单已整合进「配送调度中心」，隐藏独立入口
+    // 拣货波次、配送单已整合进「配送中心」，隐藏独立入口
     // { href: `${prefix}/classic/operator/waves`,     label: en ? 'Pick Waves'    : '拣货波次' },
     // { href: `${prefix}/classic/operator/sorting`,   label: en ? 'Sorting'       : '分货' },
     // { href: `${prefix}/classic/operator/trips`,     label: en ? 'Deliveries'    : '配送单' },
-    { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch Console' : '配送调度中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
+    { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch' : '配送中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
+    { href: `${prefix}/classic/operator/daily-sales`, label: en ? 'Daily Sales' : '日销售中心' },
     // 发票 + 供应商账单合并到「会计」tab 式页面
     { href: `${prefix}/classic/operator/accounting`, label: en ? 'Accounting' : '会计', activePaths: [`${prefix}/classic/operator/accounting`] },
     { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },
