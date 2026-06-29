@@ -645,13 +645,12 @@ export default function ClassicPlaceOrderPage() {
 
     const { unitPrice, priceLabel } = computeLine(lastPrices)
 
-    // ATP 检查：无库存时阻止添加
+    // ATP 警告：库存不足时提示但不阻止添加
     const onHand = p.qtyOnHand ?? 0
     const demand = pendingDemand[p.id] ?? 0
     const atp = onHand - demand
     if (atp <= 0) {
-      toast.error(`⚠️ 库存警告：「${p.name}」可承诺量为 ${atp.toFixed(1)}（在手 ${onHand} - 待出 ${demand}），无可用库存！`, { duration: 5000 })
-      return
+      toast.warning(`⚠ 该产品库存不足，已添加至订单，请注意备货`, { duration: 5000 })
     }
 
     setLines(prev =>
