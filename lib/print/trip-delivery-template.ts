@@ -73,6 +73,7 @@ function buildDeliveryOrderHtml(
       <td class="col-desc">
         <div class="prod-name">${escapeHtml(l.productName)}</div>
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
+        ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
       <td class="col-price">${eur(l.unitPrice)}</td>
       <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
@@ -160,6 +161,14 @@ function buildDeliveryOrderHtml(
       </tr>
     </table>
   </div>
+  ${customer?.externalNote ? `<div class="note-box">
+    <div class="note-head">客户备注 / Customer Note</div>
+    <div class="note-body">${escapeHtml(customer.externalNote)}</div>
+  </div>` : ''}
+  ${order.externalNote ? `<div class="note-box">
+    <div class="note-head">订单备注 / Order Note</div>
+    <div class="note-body">${escapeHtml(order.externalNote)}</div>
+  </div>` : ''}
 </div>`
 }
 
@@ -196,6 +205,11 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 
 .prod-name { font-weight: normal; }
 .prod-spec { color: #666; font-size: 8pt; margin-top: 1px; }
+.prod-note { color: #b45309; font-size: 8pt; font-style: italic; margin-top: 1px; }
+
+.note-box { margin-top: 4mm; padding: 2.5mm 4mm; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; }
+.note-head { font-size: 8pt; font-weight: bold; color: #374151; margin-bottom: 1mm; }
+.note-body { font-size: 9pt; color: #111; line-height: 1.5; white-space: pre-wrap; }
 
 .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; }
 .totals-table { width: 260px; border-collapse: collapse; border: 1px solid #ccc; }

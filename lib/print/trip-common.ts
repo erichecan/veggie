@@ -32,6 +32,8 @@ export interface TripCustomer {
   phone: string
   vatNumber: string
   paymentTerm: string
+  /** 客户级外部备注（客户可见，打印在送货单上） */
+  externalNote: string | null
 }
 
 export interface TripLine {
@@ -43,6 +45,8 @@ export interface TripLine {
   goodsType: GoodsType
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType?: string | null
+  /** 行级备注（商品级 note，如"free"赠品/注意事项），客户可见，打印在明细行下 */
+  note: string | null
   orderedQty: number
   unitPrice: number
   taxRate: number
@@ -56,6 +60,8 @@ export interface TripOrder {
   customerName: string
   totalAmount: number
   internalNote: string | null
+  /** 订单级外部备注（客户可见，打印在送货单上） */
+  externalNote: string | null
   deliveryDate: string | null
   lines: TripLine[]
 }
@@ -145,6 +151,7 @@ export function buildLinesFromItems(items: unknown): TripLine[] {
       uomName: typeof it.uom === 'string' ? it.uom : (typeof it.uomName === 'string' ? it.uomName : null),
       goodsType: null,
       productType: null,
+      note: typeof it.note === 'string' && it.note ? it.note : null,
       orderedQty: num(it.quantity),
       unitPrice: num(it.price),
       taxRate: num(it.taxRate),

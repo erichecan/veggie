@@ -86,6 +86,7 @@ export function buildOrderHtml(
       <td class="col-desc">
         <div class="prod-name">${l.productName}</div>
         ${spec ? `<div class="prod-spec">${spec}</div>` : ''}
+        ${l.note ? `<div class="prod-note">${l.note}</div>` : ''}
       </td>
       <td class="col-price">${eur(l.unitPrice)}</td>
       <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
@@ -182,6 +183,11 @@ export function buildOrderHtml(
     <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">PAYMENT: ${paymentLabel}</span>
   </div>` : ''}
 
+  ${(opts.docType === 'sales' || opts.docType === 'delivery') && customer?.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
+    <div style="font-weight:600;margin-bottom:4px;">客户备注 / Customer Note</div>
+    <div style="white-space:pre-wrap;">${customer.externalNote}</div>
+  </div>` : ''}
+
   ${order.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
     <div style="font-weight:600;margin-bottom:4px;">备注</div>
     <div style="white-space:pre-wrap;">${order.externalNote}</div>
@@ -222,6 +228,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 
 .prod-name { font-weight: normal; }
 .prod-spec { color: #666; font-size: 8pt; margin-top: 1px; }
+.prod-note { color: #b45309; font-size: 8pt; font-style: italic; margin-top: 1px; }
 
 .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; }
 .totals-table { width: 260px; border-collapse: collapse; border: 1px solid #ccc; }

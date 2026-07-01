@@ -94,17 +94,18 @@ function Code128Barcode({ value }: { value: string }) {
 // ─── QuotationContent (shared by Preview modal + Print window) ────────────────
 
 type QDocProps = {
-  customer: { name: string; address?: string; phone?: string; email?: string } | null
-  lines: { productId: string; productName: string; description: string; orderedQty: number; uom: string; unitPrice: number; taxRate: number }[]
+  customer: { name: string; address?: string; phone?: string; email?: string; externalNote?: string | null } | null
+  lines: { productId: string; productName: string; description: string; note?: string; orderedQty: number; uom: string; unitPrice: number; taxRate: number }[]
   orderDate: string
   salesTeam: string
   quotationNo: string
   untaxed: number
   total: number
-  termsConditions: string
+  /** 订单级外部备注（客户可见，打印在报价单上） */
+  externalNote: string
 }
 
-function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, untaxed, total, termsConditions }: QDocProps) {
+function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, untaxed, total, externalNote }: QDocProps) {
   const validLines = lines.filter(l => l.productId)
   const printAt = new Date().toLocaleString('en-GB', {
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -183,7 +184,10 @@ function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, 
                   <tr key={i}>
                     <td style={cell}>{line.orderedQty}</td>
                     <td style={cell}>{line.uom}</td>
-                    <td style={cell}>{desc}</td>
+                    <td style={cell}>
+                      {desc}
+                      {line.note && <div style={{ color: '#b45309', fontStyle: 'italic', fontSize: 11, marginTop: 2 }}>{line.note}</div>}
+                    </td>
                     <td style={{ ...cell, textAlign: 'right' }}>€{line.unitPrice.toFixed(2)}</td>
                     <td style={{ ...cell, textAlign: 'right' }}>{line.taxRate > 0 ? `${line.taxRate}%` : ''}</td>
                     <td style={{ ...cell, textAlign: 'right' }}>€{inclVat.toFixed(2)}</td>
@@ -210,9 +214,17 @@ function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, 
         </table>
       </div>
 
-      {termsConditions && (
-        <div style={{ fontSize: 11, color: '#555', marginBottom: 20, borderTop: '1px solid #eee', paddingTop: 8 }}>
-          {termsConditions}
+      {customer?.externalNote && (
+        <div style={{ fontSize: 11, color: '#374151', marginBottom: 12, padding: '8px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 4, whiteSpace: 'pre-wrap' }}>
+          <div style={{ fontWeight: 600, marginBottom: 3 }}>客户备注 / Customer Note</div>
+          {customer.externalNote}
+        </div>
+      )}
+
+      {externalNote && (
+        <div style={{ fontSize: 11, color: '#374151', marginBottom: 20, padding: '8px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 4, whiteSpace: 'pre-wrap' }}>
+          <div style={{ fontWeight: 600, marginBottom: 3 }}>备注 / Order Note</div>
+          {externalNote}
         </div>
       )}
 
@@ -261,7 +273,6 @@ export default function ClassicPlaceOrderPage() {
   const [internalNotes, setInternalNotes]     = useState('')
   const [externalNote, setExternalNote]       = useState('')
   const [noteTab, setNoteTab]                 = useState<'internal' | 'external'>('internal')
-  const [termsConditions, setTermsConditions] = useState('')
 
   // ── Order lines ───────────────────────────────────────────────────────────
   const [lines, setLines] = useState<QuotationLine[]>([])
@@ -359,6 +370,9 @@ export default function ClassicPlaceOrderPage() {
     // 本单选定的价格表优先于客户档案默认值（操作员可临时切换价格体系）
     return base ? { ...base, priceType, pricelistId: pricelistId || base.pricelistId } : null
   }, [customer, selectedCustomerFull, customerId, priceType, pricelistId])
+
+  // 客户级外部备注：仅完整客户对象携带该字段（slim 列表不含），选中客户后读出
+  const customerExternalNote = (selectedCustomerFull?.id === customerId ? selectedCustomerFull?.externalNote : null) ?? ''
 
   const filteredCustomers = useMemo(
     () => rankByRelevance(customers, custSearch, c => c.name),
@@ -961,7 +975,6 @@ export default function ClassicPlaceOrderPage() {
     setPricelistId('')
     setPaymentTerms('')
     setInternalNotes('')
-    setTermsConditions('')
     setStatus('draft')
     setCreditInfo(null)
   }
@@ -1870,14 +1883,17 @@ export default function ClassicPlaceOrderPage() {
               <span className="font-medium text-gray-700">{eur(cmsTotal)}</span>
             </div>
             <div>
-              <label className="text-sm text-gray-600 block mb-1">Terms &amp; Conditions</label>
-              <textarea
-                rows={4}
-                value={termsConditions}
-                onChange={e => setTermsConditions(e.target.value)}
-                placeholder="合同条款与条件…"
-                className="w-full text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 resize-none"
-              />
+              <label className="text-sm text-gray-600 block mb-1">客户外部备注 / Customer Note</label>
+              {customerExternalNote ? (
+                <div className="w-full text-sm border border-gray-200 rounded px-3 py-2 bg-gray-50 text-gray-700 whitespace-pre-wrap min-h-[3.5rem]">
+                  {customerExternalNote}
+                </div>
+              ) : (
+                <div className="w-full text-sm border border-gray-200 rounded px-3 py-2 bg-gray-50 text-gray-400 min-h-[3.5rem]">
+                  {customerId ? '该客户暂无外部备注（可在客户档案 Internal Notes 页录入）' : '选择客户后显示其外部备注'}
+                </div>
+              )}
+              <p className="text-xs text-gray-400 mt-1">只读，会打印在报价单/送货单上。修改请到客户档案页。</p>
             </div>
           </div>
 
@@ -1940,14 +1956,14 @@ export default function ClassicPlaceOrderPage() {
       {/* ── Hidden print source (always rendered, invisible on screen) ────────── */}
       <div id="quotation-print-source" style={{ display: 'none' }}>
         <QuotationContent
-          customer={customer}
+          customer={customer ? { ...customer, externalNote: customerExternalNote } : null}
           lines={lines}
           orderDate={orderDate}
           salesTeam={salesTeam}
           quotationNo={quotationNo}
           untaxed={untaxed}
           total={total}
-          termsConditions={termsConditions}
+          externalNote={externalNote}
         />
       </div>
 
@@ -1980,14 +1996,14 @@ export default function ClassicPlaceOrderPage() {
             {/* PDF layout */}
             <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
               <QuotationContent
-                customer={customer}
+                customer={customer ? { ...customer, externalNote: customerExternalNote } : null}
                 lines={lines}
                 orderDate={orderDate}
                 salesTeam={salesTeam}
                 quotationNo={quotationNo}
                 untaxed={untaxed}
                 total={total}
-                termsConditions={termsConditions}
+                externalNote={externalNote}
               />
             </div>
           </div>

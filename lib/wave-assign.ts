@@ -10,7 +10,7 @@ import { buildZonesByRestaurant } from '@/lib/wave-zones'
  * 见 docs/20260624-data-ownership-audit.md(P0-1)。
  */
 
-function dateOnlyUTC(d: Date): Date {
+export function dateOnlyUTC(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
 }
 function todayUTC(): Date {

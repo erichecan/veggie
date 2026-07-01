@@ -7,6 +7,7 @@
 
 import 'server-only'
 import { prisma } from '@/lib/db'
+import { dateOnlyUTC } from '@/lib/wave-assign'
 import {
   buildLinesFromItems,
   type GoodsType,
@@ -111,43 +112,59 @@ export async function loadDispatchPrintData(
 
   const rangeStart = new Date(`${fromDate ?? date}T00:00:00.000Z`)
   const dayEnd = new Date(`${date}T23:59:59.999Z`)
-
-  // Match by driverSlotId OR legacy deliveryBatch string (some orders only have the string)
-  const batchMatch = slot
-    ? [{ driverSlotId: slot.id }, { deliveryBatch: slotLabel }]
-    : [{ deliveryBatch: slotLabel }]
-
   const statusFilter: Array<'CONFIRMED' | 'WAVE_ASSIGNED' | 'IN_DELIVERY' | 'COMPLETED'> = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED']
 
-  // Try with date filter first (deliveryDate or createdAt), fall back to no date filter
-  let orders = await prisma.order.findMany({
-    where: {
-      status: { in: statusFilter },
-      AND: [
-        {
-          OR: [
-            { deliveryDate: { gte: rangeStart, lte: dayEnd } },
-            { deliveryDate: null, createdAt: { gte: rangeStart, lte: dayEnd } },
-          ],
-        },
-        { OR: batchMatch },
-      ],
-    },
-    include: { lines: { orderBy: { sequence: 'asc' } } },
-    orderBy: { restaurantName: 'asc' },
-  })
+  // SSOT: 订单归属批次以 PickingWave.orderIds 为准（P0-1），driverSlotId/deliveryBatch 是历史遗留兜底字段。
+  // 拖拽调度台只写 wave.orderIds，不回填 Order.driverSlotId，所以必须先查 wave。
+  // 见 lib/wave-assign.ts、docs/20260624-data-ownership-audit.md。
+  let orders: Awaited<ReturnType<typeof prisma.order.findMany<{ include: { lines: true } }>>> = []
+  if (slot) {
+    const wave = await prisma.pickingWave.findUnique({
+      where: { waveDate_driverSlotId: { waveDate: dateOnlyUTC(new Date(`${date}T00:00:00.000Z`)), driverSlotId: slot.id } },
+    })
+    if (wave && wave.orderIds.length > 0) {
+      orders = await prisma.order.findMany({
+        where: { id: { in: wave.orderIds }, status: { in: statusFilter } },
+        include: { lines: { orderBy: { sequence: 'asc' } } },
+        orderBy: { restaurantName: 'asc' },
+      })
+    }
+  }
 
-  // Fallback: if no orders found with date filter, load all orders for this slot
-  // (many orders have deliveryDate=null and may have been created on a different day)
+  // Fallback: legacy orders without a wave record — match by driverSlotId / deliveryBatch string
   if (orders.length === 0) {
+    const batchMatch = slot
+      ? [{ driverSlotId: slot.id }, { deliveryBatch: slotLabel }]
+      : [{ deliveryBatch: slotLabel }]
+
     orders = await prisma.order.findMany({
       where: {
         status: { in: statusFilter },
-        OR: batchMatch,
+        AND: [
+          {
+            OR: [
+              { deliveryDate: { gte: rangeStart, lte: dayEnd } },
+              { deliveryDate: null, createdAt: { gte: rangeStart, lte: dayEnd } },
+            ],
+          },
+          { OR: batchMatch },
+        ],
       },
       include: { lines: { orderBy: { sequence: 'asc' } } },
       orderBy: { restaurantName: 'asc' },
     })
+
+    // Fallback further: ignore date filter entirely (deliveryDate=null orders created on another day)
+    if (orders.length === 0) {
+      orders = await prisma.order.findMany({
+        where: {
+          status: { in: statusFilter },
+          OR: batchMatch,
+        },
+        include: { lines: { orderBy: { sequence: 'asc' } } },
+        orderBy: { restaurantName: 'asc' },
+      })
+    }
   }
 
   if (orders.length === 0) return null
@@ -185,6 +202,7 @@ export async function loadDispatchPrintData(
     phone: c.phone ?? '',
     vatNumber: c.vatNumber ?? '',
     paymentTerm: c.paymentTerm ?? '',
+    externalNote: c.externalNote ?? null,
   }))
 
   const printOrders: TripOrder[] = orders.map(o => ({
@@ -194,6 +212,7 @@ export async function loadDispatchPrintData(
     customerName: o.restaurantName,
     totalAmount: toNum(o.totalAmount),
     internalNote: o.internalNote,
+    externalNote: o.externalNote,
     deliveryDate: toIso(o.deliveryDate),
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0
@@ -205,6 +224,7 @@ export async function loadDispatchPrintData(
           uomName: l.uomName,
           goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
           productType: productTypeMap.get(l.productId) ?? null,
+          note: l.note ?? null,
           orderedQty: toNum(l.orderedQty),
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),

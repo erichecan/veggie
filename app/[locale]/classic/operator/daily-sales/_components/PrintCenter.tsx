@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { usePathname } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
@@ -274,8 +275,8 @@ function savePrintedKeys(date: string, keys: Set<string>) {
 }
 
 export default function PrintCenter() {
-  const pathname = usePathname()
-  const prefix = pathname.match(/^(\/[a-z]{2}(-[A-Z]{2})?)/)?.[1] ?? ''
+  const locale = useLocale()
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const [date, setDate] = useState(today)
   const [orders, setOrders] = useState<Order[]>([])

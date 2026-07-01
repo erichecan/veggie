@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { usePathname } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import {
   LineChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
 } from 'recharts'
@@ -149,8 +150,8 @@ function TableInlineSearch<T extends { id: string; name: string }>({
 // ─── SalesStats ───────────────────────────────────────────────────────────────
 
 export default function SalesStats() {
-  const pathname = usePathname()
-  const prefix = pathname.match(/^(\/[a-z]{2}(-[A-Z]{2})?)/)?.[1] ?? ''
+  const locale = useLocale()
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const [fromDate, setFromDate] = useState(today)
   const [toDate, setToDate] = useState(today)

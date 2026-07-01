@@ -67,6 +67,7 @@ interface FormState {
   barcode: string
   fiscalPosition: string
   notes: string
+  externalNote: string
 }
 
 function emptyForm(): FormState {
@@ -85,6 +86,7 @@ function emptyForm(): FormState {
     isVendor: false, supplierPaymentTerm: '', supplierCurrency: '',
     internalReference: '', barcode: '', fiscalPosition: '',
     notes: '',
+    externalNote: '',
   }
 }
 
@@ -131,6 +133,7 @@ function customerToForm(c: Customer): FormState {
     barcode: '',
     fiscalPosition: '',
     notes: c.notes ?? '',
+    externalNote: c.externalNote ?? '',
   }
 }
 
@@ -304,6 +307,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       creditLimit,
       commissionRate,
       notes: form.notes.trim() || undefined,
+      externalNote: form.externalNote.trim() || undefined,
       priceType: priceTypeMap[form.priceType] ?? 'default',
       salesman: form.salesperson || null,
       defaultDriverSlotId: form.defaultDriverSlotId || null,
@@ -722,15 +726,32 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             </div>
           )}
 
-          {/* Internal Notes */}
+          {/* Internal Notes + External Note */}
           {activeTab === 'notes' && (
-            <textarea
-              value={form.notes}
-              onChange={e => setField('notes', e.target.value)}
-              rows={6}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-[#875A7B] resize-none"
-              placeholder="Internal notes..."
-            />
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Internal Notes</label>
+                <p className="text-xs text-gray-400 mb-1.5">仅内部可见，不会打印给客户</p>
+                <textarea
+                  value={form.notes}
+                  onChange={e => setField('notes', e.target.value)}
+                  rows={5}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-[#875A7B] resize-none"
+                  placeholder="Internal notes..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">External Note / 客户外部备注</label>
+                <p className="text-xs text-gray-400 mb-1.5">客户可见，会打印在该客户的报价单和送货单上（如收货注意事项、结算方式、后门密码等）</p>
+                <textarea
+                  value={form.externalNote}
+                  onChange={e => setField('externalNote', e.target.value)}
+                  rows={4}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-[#875A7B] resize-none"
+                  placeholder="例如：讲广东话；现金结算；后门密码 1234…"
+                />
+              </div>
+            </div>
           )}
 
           {/* Sales & Purchases */}

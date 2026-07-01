@@ -8,7 +8,7 @@ const TRACKED_FIELDS = [
   'name', 'address', 'street', 'street2', 'city', 'state', 'zip', 'country',
   'phone', 'email', 'vatNumber', 'paymentTerm', 'creditLimit',
   'commissionRate', 'commissionFixed', 'pricelistId', 'priceType',
-  'isActive', 'isCustomer', 'isVendor', 'notes',
+  'isActive', 'isCustomer', 'isVendor', 'notes', 'externalNote',
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
 ]
 

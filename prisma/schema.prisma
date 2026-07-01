@@ -298,6 +298,8 @@ model Customer {
   externalId      String?
   city            String?
   notes           String?
+  /// 客户级外部备注（客户可见，打印在报价单/送货单上，如收货注意事项、结算方式）；与内部 notes 区分
+  externalNote    String?
   pricelistId     String?
   /// 定价模式：multi=走价格表引擎, default=直接用牌价, last=用最近一次售价
   priceType       String    @default("multi")

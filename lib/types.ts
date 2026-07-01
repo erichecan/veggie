@@ -228,6 +228,8 @@ export interface OrderLine {
   spec?: string | null
   uomId?: string | null
   uomName?: string | null
+  /** 行级备注（商品级 note，如"free"赠品/注意事项），客户可见，打印在明细行下 */
+  note?: string | null
   unitPrice: number
   taxRate?: number | null
   orderedQty: number

@@ -95,6 +95,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     phone: c.phone ?? '',
     vatNumber: c.vatNumber ?? '',
     paymentTerm: c.paymentTerm ?? '',
+    externalNote: c.externalNote ?? null,
   }))
 
   const printOrders: TripOrder[] = orders.map(o => ({
@@ -104,6 +105,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     customerName: o.restaurantName,
     totalAmount: toNum(o.totalAmount),
     internalNote: o.internalNote,
+    externalNote: o.externalNote,
     deliveryDate: toIso(o.deliveryDate),
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0
@@ -114,6 +116,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
           uomId: l.uomId,
           uomName: l.uomName,
           goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
+          note: l.note ?? null,
           orderedQty: toNum(l.orderedQty),
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),
