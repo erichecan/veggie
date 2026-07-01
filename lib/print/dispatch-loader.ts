@@ -35,6 +35,25 @@ const toIso = (v: unknown): string | null => {
   return null
 }
 
+async function loadProductTypeMap(productIds: string[]): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>()
+  if (productIds.length === 0) return map
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string; type: string | null }>>`
+      SELECT p.id, pt.type
+      FROM "Product" p
+      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
+      WHERE p.id = ANY(${productIds})
+    `
+    for (const r of rows) {
+      map.set(r.id, r.type ?? null)
+    }
+  } catch (e) {
+    console.warn('[dispatch-print] ProductTemplate.type not available:', (e as Error).message)
+  }
+  return map
+}
+
 async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType>> {
   const map = new Map<string, GoodsType>()
   if (uomIds.length === 0) return map
@@ -146,7 +165,13 @@ export async function loadDispatchPrintData(
   const uomIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.uomId).filter((x): x is string => !!x),
   )]
-  const goodsTypeMap = await loadGoodsTypeMap(uomIds)
+  const productIds = [...new Set(
+    orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
+  )]
+  const [goodsTypeMap, productTypeMap] = await Promise.all([
+    loadGoodsTypeMap(uomIds),
+    loadProductTypeMap(productIds),
+  ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
     id: c.id,
@@ -179,6 +204,7 @@ export async function loadDispatchPrintData(
           uomId: l.uomId,
           uomName: l.uomName,
           goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
+          productType: productTypeMap.get(l.productId) ?? null,
           orderedQty: toNum(l.orderedQty),
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),

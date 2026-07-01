@@ -1,10 +1,10 @@
 /**
- * Trip 拣货单 — 按商品汇总，区分整箱/散装，给拣货员使用
+ * Trip 拣货单 — 按商品汇总，区分实物商品/耗材，给拣货员使用
  *
  * 布局：
  *   顶部：批次信息 + 日期 + 司机
- *   整箱商品表格（goodsType=BULK 或箱装 UOM）
- *   散装商品表格（其余商品）
+ *   实物商品表格（ProductTemplate.type === 'PRODUCT'，或 type 未知）
+ *   耗材表格（ProductTemplate.type === 'CONSU'）
  *   底部：所有订单号 + 条形码（供扫码枪扫描）
  */
 
@@ -39,17 +39,10 @@ interface AggProduct {
   spec: string
   uomName: string
   totalQty: number
-  isBulk: boolean
+  /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
+  productType: string | null
   orderCodes: string[]
   byCustomer: Map<string, CustomerBreakdown>
-}
-
-function isBulkItem(uomName: string, goodsType: string | null): boolean {
-  if (goodsType === 'BULK') return true
-  const lower = (uomName || '').toLowerCase()
-  return lower.includes('case') || lower.includes('box') || lower.includes('bag')
-    || lower.includes('箱') || lower.includes('bag') || lower.includes('sack')
-    || lower.includes('tray') || lower.includes('crate')
 }
 
 export function generateTripPickingHtml(data: TripPrintData): string {
@@ -85,7 +78,7 @@ export function generateTripPickingHtml(data: TripPrintData): string {
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',
           totalQty: 0,
-          isBulk: isBulkItem(line.uomName ?? '', line.goodsType),
+          productType: line.productType ?? null,
           orderCodes: [],
           byCustomer: new Map<string, CustomerBreakdown>(),
         }
@@ -105,8 +98,8 @@ export function generateTripPickingHtml(data: TripPrintData): string {
   }
 
   const allProducts = Array.from(aggMap.values())
-  const bulkProducts = allProducts.filter(p => p.isBulk).sort((a, b) => a.productName.localeCompare(b.productName))
-  const looseProducts = allProducts.filter(p => !p.isBulk).sort((a, b) => a.productName.localeCompare(b.productName))
+  const consumableProducts = allProducts.filter(p => p.productType === 'CONSU').sort((a, b) => a.productName.localeCompare(b.productName))
+  const storableProducts = allProducts.filter(p => p.productType !== 'CONSU').sort((a, b) => a.productName.localeCompare(b.productName))
 
   function productTableHtml(title: string, products: AggProduct[], icon: string): string {
     if (products.length === 0) return ''
@@ -241,12 +234,12 @@ export function generateTripPickingHtml(data: TripPrintData): string {
     <div class="item"><span class="label">客户数：</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
 
-  ${productTableHtml('整箱商品 CASE/BULK', bulkProducts, '📦')}
-  ${productTableHtml('散装商品 LOOSE', looseProducts, '🥬')}
+  ${productTableHtml('实物商品 STORABLE', storableProducts, '📦')}
+  ${productTableHtml('耗材 CONSUMABLE', consumableProducts, '🧴')}
 
   <div class="stats">
-    <span>整箱 <span class="num">${bulkProducts.length}</span> 种</span>
-    <span>散装 <span class="num">${looseProducts.length}</span> 种</span>
+    <span>实物 <span class="num">${storableProducts.length}</span> 种</span>
+    <span>耗材 <span class="num">${consumableProducts.length}</span> 种</span>
     <span>合计 <span class="num">${allProducts.length}</span> 种</span>
   </div>
 

@@ -1,273 +1,415 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
-import { apiGet, apiPost } from '@/lib/api'
-import type { Order, OrderLine } from '@/lib/types'
-import { today, fmtMoney } from './shared'
-import ProductSearchInput from '@/components/classic/ProductSearchInput'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
+import { apiGet, apiPatch } from '@/lib/api'
+import type { Order } from '@/lib/types'
+import { today } from './shared'
 
-interface ProductRow { id: string; name: string; salePrice?: number; category?: string }
-
-interface AffectedLine {
+interface FlatLine {
   lineId: string
   orderId: string
   orderCode: string
-  restaurantName: string
-  orderedQty: number
-  unitPrice: number
-  subtotal: number
-}
-
-type ShortageAction = 'DELETE_ALL' | 'DISTRIBUTE_EVEN' | 'DISTRIBUTE_MANUAL'
-
-interface ApplyBody {
+  customerName: string
   productId: string
   productName: string
-  date: string
-  action: ShortageAction
-  availableQty?: number
-  manual?: Array<{ orderId: string; lineId: string; newQty: number }>
+  uomName: string | null
+  driverName: string | null
+  timeOfDay: string | null
+  orderedQty: number
+}
+
+type TimeFilter = 'all' | 'am' | 'pm'
+
+interface ActionLog {
+  id: string
+  userName: string | null
+  userEmail: string | null
+  action: string
+  resourceId: string | null
+  detail: string | null
+  createdAt: string
 }
 
 export default function ShortageHandler() {
-  const [date, setDate] = useState(today)
-  const [allProducts, setAllProducts] = useState<ProductRow[]>([])
-  const [productSearch, setProductSearch] = useState('')
-  const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null)
-  const [orders, setOrders] = useState<Order[]>([])
-  const [ordersLoading, setOrdersLoading] = useState(false)
-  const [action, setAction] = useState<ShortageAction>('DELETE_ALL')
-  const [availableQty, setAvailableQty] = useState('')
-  const [manualQtys, setManualQtys] = useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = useState(false)
-  const [resultMsg, setResultMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const locale = useLocale()
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
-  useEffect(() => {
-    apiGet<ProductRow[]>('/api/products?limit=500').then(d => setAllProducts(Array.isArray(d) ? d : [])).catch(() => {})
-  }, [])
+  const [date, setDate] = useState(today)
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
+  const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
+  const [productTags, setProductTags] = useState<string[]>([])
+  const [productTagInput, setProductTagInput] = useState('')
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(false)
+  const [newQtys, setNewQtys] = useState<Record<string, string>>({})
+  const [savedLineIds, setSavedLineIds] = useState<Set<string>>(new Set())
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<ActionLog[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const tagInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!date) return
-    setOrdersLoading(true)
+    setLoading(true)
+    setNewQtys({})
+    setSavedLineIds(new Set())
+    setSaveMsg(null)
+    setSelectedDrivers([])
     apiGet<Order[]>(
       `/api/orders?include_lines=true&status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&dateField=deliveryDate&fromDate=${date}&toDate=${date}`
     )
       .then(d => setOrders(Array.isArray(d) ? d : []))
       .catch(() => setOrders([]))
-      .finally(() => setOrdersLoading(false))
+      .finally(() => setLoading(false))
   }, [date])
 
-  const affectedLines: AffectedLine[] = useMemo(() => {
-    if (!selectedProduct) return []
-    const result: AffectedLine[] = []
+  const allLines: FlatLine[] = useMemo(() => {
+    const lines: FlatLine[] = []
     for (const o of orders) {
       for (const l of (o.lines ?? [])) {
-        if ((l as OrderLine).productId === selectedProduct.id || (l as OrderLine).productName === selectedProduct.name) {
-          result.push({
-            lineId: l.id,
-            orderId: o.id,
-            orderCode: o.code ?? o.id.slice(-6),
-            restaurantName: o.restaurantName,
-            orderedQty: Number((l as OrderLine).orderedQty),
-            unitPrice: Number((l as OrderLine).unitPrice),
-            subtotal: Number((l as OrderLine).subtotal),
-          })
-        }
+        lines.push({
+          lineId: l.id,
+          orderId: o.id,
+          orderCode: o.code ?? o.id.slice(-6).toUpperCase(),
+          customerName: o.restaurantName,
+          productId: l.productId,
+          productName: l.productName,
+          uomName: l.uomName ?? null,
+          driverName: o.driverSlot?.driverName ?? null,
+          timeOfDay: o.driverSlot?.timeOfDay?.toLowerCase() ?? null,
+          orderedQty: Number(l.orderedQty),
+        })
       }
     }
-    return result
-  }, [orders, selectedProduct])
+    return lines
+  }, [orders])
 
-  const totalQty = affectedLines.reduce((s, l) => s + l.orderedQty, 0)
+  const availableDrivers = useMemo(() => {
+    const set = new Set<string>()
+    for (const l of allLines) {
+      if (l.driverName) set.add(l.driverName)
+    }
+    return Array.from(set).sort()
+  }, [allLines])
 
-  function handleSelectProduct(p: ProductRow) {
-    setSelectedProduct(p)
-    setProductSearch(p.name)
-    setResultMsg(null)
-    setManualQtys({})
-    setAvailableQty('')
+  const filteredLines = useMemo(() => {
+    return allLines.filter(l => {
+      if (timeFilter !== 'all' && l.timeOfDay !== timeFilter) return false
+      if (selectedDrivers.length > 0 && (!l.driverName || !selectedDrivers.includes(l.driverName))) return false
+      if (productTags.length > 0) {
+        const name = l.productName.toLowerCase()
+        if (!productTags.some(tag => name.includes(tag.toLowerCase()))) return false
+      }
+      return true
+    })
+  }, [allLines, timeFilter, selectedDrivers, productTags])
+
+  const modifiedLines = useMemo(
+    () => filteredLines.filter(l => (newQtys[l.lineId]?.trim() ?? '') !== ''),
+    [filteredLines, newQtys]
+  )
+
+  function toggleDriver(driver: string) {
+    setSelectedDrivers(prev =>
+      prev.includes(driver) ? prev.filter(d => d !== driver) : [...prev, driver]
+    )
   }
 
-  async function handleApply() {
-    if (!selectedProduct || affectedLines.length === 0) return
-    setSubmitting(true)
-    setResultMsg(null)
+  function addProductTag() {
+    const tag = productTagInput.trim()
+    if (tag && !productTags.includes(tag)) setProductTags(prev => [...prev, tag])
+    setProductTagInput('')
+    tagInputRef.current?.focus()
+  }
+
+  function removeProductTag(tag: string) {
+    setProductTags(prev => prev.filter(t => t !== tag))
+  }
+
+  function getLineStatus(lineId: string) {
+    if (savedLineIds.has(lineId)) return 'saved'
+    if ((newQtys[lineId]?.trim() ?? '') !== '') return 'pending'
+    return 'none'
+  }
+
+  async function handleSave() {
+    if (modifiedLines.length === 0) return
+    setSaving(true)
+    setSaveMsg(null)
+    const newSaved = new Set(savedLineIds)
+    let successCount = 0
+    let failCount = 0
+    for (const l of modifiedLines) {
+      const newQty = Number(newQtys[l.lineId]!.trim())
+      if (!Number.isFinite(newQty) || newQty < 0) { failCount++; continue }
+      try {
+        await apiPatch(`/api/orders/${l.orderId}/lines/${l.lineId}`, { newQty })
+        newSaved.add(l.lineId)
+        successCount++
+      } catch {
+        failCount++
+      }
+    }
+    setSavedLineIds(newSaved)
+    setSaving(false)
+    setSaveMsg({
+      ok: failCount === 0,
+      text: failCount === 0
+        ? `${successCount} 条已保存`
+        : `${successCount} 条成功，${failCount} 条失败`,
+    })
+  }
+
+  function handlePrint() {
+    const orderIds = new Set<string>()
+    for (const l of filteredLines) {
+      if (savedLineIds.has(l.lineId)) orderIds.add(l.orderId)
+    }
+    for (const orderId of orderIds) {
+      window.open(`${prefix}/classic/print/${orderId}?doc=delivery`, '_blank')
+    }
+  }
+
+  async function loadHistory() {
+    setHistoryLoading(true)
     try {
-      const body: ApplyBody = {
-        productId: selectedProduct.id,
-        productName: selectedProduct.name,
-        date,
-        action,
-      }
-      if (action === 'DISTRIBUTE_EVEN') {
-        body.availableQty = Number(availableQty)
-      }
-      if (action === 'DISTRIBUTE_MANUAL') {
-        body.manual = affectedLines.map(l => ({
-          orderId: l.orderId,
-          lineId: l.lineId,
-          newQty: Number(manualQtys[l.lineId] ?? l.orderedQty),
-        }))
-      }
-      await apiPost('/api/daily-sales/shortage/apply', body)
-      setResultMsg({ ok: true, text: `操作成功：已处理 ${affectedLines.length} 条订单行` })
-      // refresh orders
-      const fresh = await apiGet<Order[]>(
-        `/api/orders?include_lines=true&status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&dateField=deliveryDate&fromDate=${date}&toDate=${date}`
-      )
-      setOrders(Array.isArray(fresh) ? fresh : [])
-      setSelectedProduct(null)
-      setProductSearch('')
-    } catch (err) {
-      setResultMsg({ ok: false, text: err instanceof Error ? err.message : '操作失败' })
+      const res = await apiGet<{ logs: ActionLog[] } | ActionLog[]>('/api/action-logs?resource=order&take=100')
+      const logs: ActionLog[] = Array.isArray(res) ? res : (res as { logs: ActionLog[] }).logs ?? []
+      setHistory(logs.filter(log => log.createdAt.startsWith(date)))
+    } catch {
+      setHistory([])
     } finally {
-      setSubmitting(false)
+      setHistoryLoading(false)
     }
   }
+
+  function toggleHistory() {
+    if (!historyOpen) loadHistory()
+    setHistoryOpen(prev => !prev)
+  }
+
+  const printableOrderCount = new Set(
+    filteredLines.filter(l => savedLineIds.has(l.lineId)).map(l => l.orderId)
+  ).size
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      {/* Date picker */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-4">
-        <label className="text-sm text-gray-600">配送日期</label>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#875A7B]"
-        />
-        {ordersLoading && <span className="text-xs text-gray-400">加载中...</span>}
-        {!ordersLoading && <span className="text-xs text-gray-400">共 {orders.length} 单</span>}
-      </div>
-
-      {/* Product search */}
+    <div className="space-y-4">
+      {/* Filter bar */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
-        <div className="text-sm font-medium text-gray-700 mb-2">搜索缺货商品</div>
-        <ProductSearchInput
-          value={productSearch}
-          onChange={v => { setProductSearch(v); setSelectedProduct(null) }}
-          onSelect={handleSelectProduct}
-          products={allProducts}
-          placeholder="输入商品名称..."
-          showOnEmptyQuery={false}
-          inputClassName="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#875A7B]"
-        />
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">配送日期</label>
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#875A7B]"
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            {(['all', 'am', 'pm'] as TimeFilter[]).map(t => (
+              <button
+                key={t}
+                onClick={() => setTimeFilter(t)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  timeFilter === t
+                    ? 'bg-[#875A7B] text-white border-[#875A7B]'
+                    : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'
+                }`}
+              >
+                {t === 'all' ? '全部' : t.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-gray-400">
+            {loading ? '加载中...' : `${filteredLines.length} / ${allLines.length} 行`}
+          </span>
+        </div>
+
+        {availableDrivers.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500 shrink-0">司机</span>
+            {availableDrivers.map(d => (
+              <button
+                key={d}
+                onClick={() => toggleDriver(d)}
+                className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                  selectedDrivers.includes(d)
+                    ? 'bg-[#875A7B] text-white border-[#875A7B]'
+                    : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'
+                }`}
+              >
+                {d}
+              </button>
+            ))}
+            {selectedDrivers.length > 0 && (
+              <button onClick={() => setSelectedDrivers([])} className="text-xs text-gray-400 hover:text-gray-600">
+                清除
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 shrink-0">商品</span>
+          {productTags.map(tag => (
+            <span key={tag} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
+              {tag}
+              <button onClick={() => removeProductTag(tag)} className="hover:text-red-500 leading-none">×</button>
+            </span>
+          ))}
+          <input
+            ref={tagInputRef}
+            value={productTagInput}
+            onChange={e => setProductTagInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProductTag() } }}
+            placeholder="输入商品名 + Enter"
+            className="border border-gray-300 rounded px-2 py-0.5 text-xs w-36 focus:outline-none focus:border-[#875A7B]"
+          />
+          {productTags.length > 0 && (
+            <button onClick={() => setProductTags([])} className="text-xs text-gray-400 hover:text-gray-600">
+              清除
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Affected orders */}
-      {selectedProduct && (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-            <div>
-              <span className="font-medium text-gray-800">{selectedProduct.name}</span>
-              <span className="ml-2 text-xs text-gray-400">
-                影响 {affectedLines.length} 单 · 总计 {totalQty} 件
-              </span>
-            </div>
+      {/* Lines table */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        {filteredLines.length === 0 ? (
+          <div className="px-4 py-10 text-center text-gray-400 text-sm">
+            {loading ? '加载中...' : '暂无订单行'}
           </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">单号</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">客户名</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">产品名</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">司机</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">时段</th>
+                  <th className="px-3 py-2 text-right text-xs text-gray-400 font-medium">原始数量</th>
+                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">单位</th>
+                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">新数量</th>
+                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLines.map((l, i) => {
+                  const status = getLineStatus(l.lineId)
+                  return (
+                    <tr
+                      key={l.lineId}
+                      className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} hover:bg-purple-50/20`}
+                    >
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500">{l.orderCode}</td>
+                      <td className="px-3 py-2 text-xs text-gray-800 max-w-[130px] truncate" title={l.customerName}>{l.customerName}</td>
+                      <td className="px-3 py-2 text-xs text-gray-800 max-w-[180px] truncate" title={l.productName}>{l.productName}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{l.driverName ?? '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">
+                        {l.timeOfDay === 'am' ? 'AM' : l.timeOfDay === 'pm' ? 'PM' : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs font-medium text-gray-700">{l.orderedQty}</td>
+                      <td className="px-3 py-2 text-center text-xs text-gray-500">{l.uomName ?? ''}</td>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={newQtys[l.lineId] ?? ''}
+                          onChange={e => setNewQtys(prev => ({ ...prev, [l.lineId]: e.target.value }))}
+                          placeholder="不改"
+                          disabled={status === 'saved'}
+                          className="w-20 border border-gray-300 rounded px-2 py-0.5 text-xs text-right focus:outline-none focus:border-[#875A7B] disabled:bg-gray-100 disabled:text-gray-400"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-center text-xs">
+                        {status === 'saved' && <span className="text-green-600 font-medium">已保存 ✓</span>}
+                        {status === 'pending' && <span className="text-amber-500">待保存</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-          {affectedLines.length === 0 ? (
-            <div className="px-4 py-8 text-center text-gray-400 text-sm">该日期没有包含此商品的订单</div>
-          ) : (
-            <>
-              {/* Lines table */}
-              <table className="w-full text-sm">
+        <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-3 flex-wrap bg-gray-50/50">
+          <button
+            onClick={handleSave}
+            disabled={saving || modifiedLines.length === 0}
+            className="px-4 py-1.5 text-sm font-medium rounded bg-[#875A7B] text-white hover:bg-[#6d4764] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving
+              ? '保存中...'
+              : modifiedLines.length > 0
+                ? `保存修改（${modifiedLines.length} 条）`
+                : '保存修改'}
+          </button>
+          <button
+            onClick={handlePrint}
+            disabled={printableOrderCount === 0}
+            className="px-4 py-1.5 text-sm font-medium rounded border border-[#875A7B] text-[#875A7B] hover:bg-[#f3edf7] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            批量打印更新版 Delivery Note
+            {printableOrderCount > 0 && `（${printableOrderCount} 单）`}
+          </button>
+          {saveMsg && (
+            <span className={`text-xs ${saveMsg.ok ? 'text-green-600' : 'text-red-600'}`}>
+              {saveMsg.text}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Operation history */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <button
+          onClick={toggleHistory}
+          className="w-full px-4 py-3 text-left flex items-center justify-between text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          <span className="font-medium">操作记录（今日）</span>
+          <span className="text-gray-400 text-xs">{historyOpen ? '▲ 收起' : '▼ 展开'}</span>
+        </button>
+        {historyOpen && (
+          <div className="border-t border-gray-100">
+            {historyLoading ? (
+              <div className="px-4 py-6 text-center text-xs text-gray-400">加载中...</div>
+            ) : history.length === 0 ? (
+              <div className="px-4 py-6 text-center text-xs text-gray-400">今日暂无操作记录</div>
+            ) : (
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="px-4 py-2 text-left text-xs text-gray-400">订单</th>
-                    <th className="px-4 py-2 text-left text-xs text-gray-400">客户</th>
-                    <th className="px-4 py-2 text-right text-xs text-gray-400">订量</th>
-                    <th className="px-4 py-2 text-right text-xs text-gray-400">小计</th>
-                    {action === 'DISTRIBUTE_MANUAL' && (
-                      <th className="px-4 py-2 text-right text-xs text-gray-400">新数量</th>
-                    )}
+                  <tr className="border-b border-gray-50 bg-gray-50">
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">时间</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">操作人</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">操作说明</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {affectedLines.map(l => (
-                    <tr key={l.lineId} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-2 font-mono text-xs text-gray-500">{l.orderCode}</td>
-                      <td className="px-4 py-2 text-gray-800">{l.restaurantName}</td>
-                      <td className="px-4 py-2 text-right text-gray-600">{l.orderedQty}</td>
-                      <td className="px-4 py-2 text-right text-gray-600">${fmtMoney(l.subtotal)}</td>
-                      {action === 'DISTRIBUTE_MANUAL' && (
-                        <td className="px-4 py-2 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={manualQtys[l.lineId] ?? l.orderedQty}
-                            onChange={e => setManualQtys(prev => ({ ...prev, [l.lineId]: e.target.value }))}
-                            className="w-20 border border-gray-300 rounded px-2 py-0.5 text-sm text-right focus:outline-none focus:border-[#875A7B]"
-                          />
-                        </td>
-                      )}
+                  {history.map(log => (
+                    <tr key={log.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                        {new Date(log.createdAt).toLocaleTimeString('zh-CN', {
+                          hour: '2-digit', minute: '2-digit', second: '2-digit',
+                        })}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">{log.userName ?? log.userEmail ?? '—'}</td>
+                      <td className="px-3 py-2 text-gray-700">{log.detail ?? log.action}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-
-              {/* Action selection */}
-              <div className="p-4 border-t border-gray-100 space-y-4">
-                <div className="flex gap-3">
-                  {(['DELETE_ALL', 'DISTRIBUTE_EVEN', 'DISTRIBUTE_MANUAL'] as ShortageAction[]).map(a => (
-                    <button
-                      key={a}
-                      onClick={() => { setAction(a); setManualQtys({}) }}
-                      className={`px-3 py-1.5 text-xs rounded border transition-colors ${
-                        action === a ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'
-                      }`}
-                    >
-                      {a === 'DELETE_ALL' ? '全部删除' : a === 'DISTRIBUTE_EVEN' ? '平均分配' : '手动分配'}
-                    </button>
-                  ))}
-                </div>
-
-                {action === 'DELETE_ALL' && (
-                  <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">
-                    将从以上 {affectedLines.length} 个订单中删除「{selectedProduct.name}」这一行，并重新计算订单金额。
-                  </p>
-                )}
-
-                {action === 'DISTRIBUTE_EVEN' && (
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-gray-600">可用数量（总计）</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={availableQty}
-                      onChange={e => setAvailableQty(e.target.value)}
-                      placeholder={`原始共 ${totalQty}`}
-                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#875A7B]"
-                    />
-                    <span className="text-xs text-gray-400">
-                      每单约 {availableQty ? (Number(availableQty) / affectedLines.length).toFixed(2) : '—'} 件
-                    </span>
-                  </div>
-                )}
-
-                {action === 'DISTRIBUTE_MANUAL' && (
-                  <p className="text-xs text-gray-500">请在上方表格中逐行填写新数量（填 0 则删除该行）。</p>
-                )}
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleApply}
-                    disabled={submitting || (action === 'DISTRIBUTE_EVEN' && !availableQty)}
-                    className="px-4 py-2 text-sm font-medium rounded bg-[#875A7B] text-white hover:bg-[#6d4764] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {submitting ? '处理中...' : '确认执行'}
-                  </button>
-                  {resultMsg && (
-                    <span className={`text-sm ${resultMsg.ok ? 'text-green-600' : 'text-red-600'}`}>
-                      {resultMsg.text}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

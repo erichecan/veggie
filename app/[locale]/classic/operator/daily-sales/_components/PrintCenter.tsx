@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
@@ -41,11 +41,15 @@ function BatchCard({
   slotKeyToId,
   prefix,
   date,
+  isPrinted,
+  onPrint,
 }: {
   group: BatchGroup
   slotKeyToId: Map<string, string>
   prefix: string
   date: string
+  isPrinted: boolean
+  onPrint: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const { batchKey, orders, totalAmount, untaxTotal } = group
@@ -55,10 +59,11 @@ function BatchCard({
 
   function print(type: 'picking' | 'delivery' | 'summary') {
     window.open(buildPrintUrl(prefix, type, date, slotId, batchKey), '_blank')
+    onPrint()
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <div className={`bg-white rounded-lg border overflow-hidden ${isPrinted ? 'border-green-300' : 'border-gray-200'}`}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3">
         <button
@@ -86,6 +91,11 @@ function BatchCard({
             <span className="text-xs text-gray-400">
               {orders.length} 单 · {uniqueCustomers} 客户
             </span>
+            {isPrinted && (
+              <span className="text-xs text-green-600 font-medium bg-green-50 rounded px-1.5 py-0.5">
+                ✓ 已打印
+              </span>
+            )}
           </div>
         </button>
 
@@ -162,7 +172,106 @@ function UnassignedPanel({ orders }: { orders: Order[] }) {
   )
 }
 
+// ─── BatchSections ────────────────────────────────────────────────────────────
+
+function BatchSections({
+  batchGroups,
+  slotKeyToId,
+  prefix,
+  date,
+  printedKeys,
+  onPrint,
+  unassignedOrders,
+}: {
+  batchGroups: BatchGroup[]
+  slotKeyToId: Map<string, string>
+  prefix: string
+  date: string
+  printedKeys: Set<string>
+  onPrint: (batchKey: string) => void
+  unassignedOrders: Order[]
+}) {
+  const amGroups = batchGroups.filter(g => parseDriverSlotKey(g.batchKey).time === 'am')
+  const pmGroups = batchGroups.filter(g => parseDriverSlotKey(g.batchKey).time === 'pm')
+  const otherGroups = batchGroups.filter(g => {
+    const t = parseDriverSlotKey(g.batchKey).time
+    return t !== 'am' && t !== 'pm'
+  })
+
+  function renderGroup(g: BatchGroup) {
+    return (
+      <BatchCard
+        key={g.batchKey}
+        group={g}
+        slotKeyToId={slotKeyToId}
+        prefix={prefix}
+        date={date}
+        isPrinted={printedKeys.has(g.batchKey)}
+        onPrint={() => onPrint(g.batchKey)}
+      />
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {amGroups.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">AM 上午</span>
+            <span className="text-xs text-gray-400">{amGroups.length} 批次</span>
+            <div className="flex-1 h-px bg-blue-100" />
+          </div>
+          {amGroups.map(renderGroup)}
+        </div>
+      )}
+      {pmGroups.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-orange-500 uppercase tracking-wider">PM 下午</span>
+            <span className="text-xs text-gray-400">{pmGroups.length} 批次</span>
+            <div className="flex-1 h-px bg-orange-100" />
+          </div>
+          {pmGroups.map(renderGroup)}
+        </div>
+      )}
+      {otherGroups.length > 0 && (
+        <div className="space-y-2">
+          {(amGroups.length > 0 || pmGroups.length > 0) && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">其他</span>
+              <span className="text-xs text-gray-400">{otherGroups.length} 批次</span>
+              <div className="flex-1 h-px bg-gray-100" />
+            </div>
+          )}
+          {otherGroups.map(renderGroup)}
+        </div>
+      )}
+      <UnassignedPanel orders={unassignedOrders} />
+    </div>
+  )
+}
+
 // ─── PrintCenter ──────────────────────────────────────────────────────────────
+
+const STORAGE_PREFIX = 'veggie-printed-batches-'
+
+function loadPrintedKeys(date: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + date)
+    const arr = raw ? (JSON.parse(raw) as string[]) : []
+    return new Set(arr)
+  } catch {
+    return new Set()
+  }
+}
+
+function savePrintedKeys(date: string, keys: Set<string>) {
+  try {
+    localStorage.setItem(STORAGE_PREFIX + date, JSON.stringify([...keys]))
+  } catch {
+    // localStorage unavailable
+  }
+}
 
 export default function PrintCenter() {
   const pathname = usePathname()
@@ -175,6 +284,25 @@ export default function PrintCenter() {
   const [driverFilter, setDriverFilter] = useState<string[]>([])
   const [timeFilter, setTimeFilter] = useState<string[]>([])
   const [batchFilter, setBatchFilter] = useState<string[]>([])
+  const [printedKeys, setPrintedKeys] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    setPrintedKeys(loadPrintedKeys(date))
+  }, [date])
+
+  const markPrinted = useCallback((batchKey: string) => {
+    setPrintedKeys(prev => {
+      const next = new Set(prev)
+      next.add(batchKey)
+      savePrintedKeys(date, next)
+      return next
+    })
+  }, [date])
+
+  const clearPrinted = useCallback(() => {
+    setPrintedKeys(new Set())
+    savePrintedKeys(date, new Set())
+  }, [date])
 
   useEffect(() => {
     setLoading(true)
@@ -281,7 +409,17 @@ export default function PrintCenter() {
             {loading ? (
               <span>加载中...</span>
             ) : (
-              <span>共 {orders.length} 单 · {batchGroups.length} 批次 · ${fmtMoney(grandTotal)}</span>
+              <>
+                <span>共 {orders.length} 单 · {batchGroups.length} 批次 · ${fmtMoney(grandTotal)}</span>
+                {printedKeys.size > 0 && (
+                  <button
+                    onClick={clearPrinted}
+                    className="ml-2 text-xs text-gray-400 hover:text-gray-600 underline"
+                  >
+                    清除已打印记录（{printedKeys.size}）
+                  </button>
+                )}
+              </>
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -345,18 +483,15 @@ export default function PrintCenter() {
           {date} 没有待配送订单
         </div>
       ) : (
-        <div className="space-y-3">
-          {batchGroups.map(g => (
-            <BatchCard
-              key={g.batchKey}
-              group={g}
-              slotKeyToId={slotKeyToId}
-              prefix={prefix}
-              date={date}
-            />
-          ))}
-          <UnassignedPanel orders={unassignedOrders} />
-        </div>
+        <BatchSections
+          batchGroups={batchGroups}
+          slotKeyToId={slotKeyToId}
+          prefix={prefix}
+          date={date}
+          printedKeys={printedKeys}
+          onPrint={markPrinted}
+          unassignedOrders={unassignedOrders}
+        />
       )}
     </div>
   )

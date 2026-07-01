@@ -526,7 +526,7 @@ export default function ClassicPlaceOrderPage() {
         // 回车选中商品后立即开下一个商品行，支持连续录入（再次回车进下一个产品）
         selectProduct(activeLineId, items[lineHighlight])
         setDropRect(null)
-        addLine()
+        addLine({ force: true })
       }
     } else if (e.key === 'Escape') {
       e.preventDefault()
@@ -779,11 +779,21 @@ export default function ClassicPlaceOrderPage() {
   }
 
   // ── Line CRUD ─────────────────────────────────────────────────────────────
-  function addLine() {
+  function addLine(opts?: { force?: boolean }) {
     if (!customerId) {
       toast.warning('请先选择客户，再添加商品')
       setCustOpen(true)
       return
+    }
+    // 守卫：末行还没选商品时不再新增空行，直接聚焦到该空行的商品搜索
+    // （force 仅用于「选中商品后连续录入」场景，此时该行商品已确定要新增下一行）
+    if (!opts?.force) {
+      const last = lines[lines.length - 1]
+      if (last && !last.productId) {
+        setActiveLineId(last.id)
+        setLineSearch('')
+        return
+      }
     }
     const newId = uid()
     setLines(prev => [
@@ -1823,7 +1833,7 @@ export default function ClassicPlaceOrderPage() {
                 footer={
                   <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3 flex-wrap">
                     <button
-                      onClick={addLine}
+                      onClick={() => addLine()}
                       className="text-sm text-[#875A7B] hover:underline font-medium"
                     >
                       + Add a product

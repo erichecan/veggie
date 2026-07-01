@@ -55,6 +55,7 @@ export default function BatchTab({ date }: { date: string }) {
   const [dragOverLeft, setDragOverLeft] = useState(false)
   const [editorWaveId, setEditorWaveId] = useState<string | null>(null)
   const [printWaveId, setPrintWaveId] = useState<string | null>(null)
+  const [printedWaveIds, setPrintedWaveIds] = useState<Set<string>>(new Set())
   // ② 调度交互：先选司机,右侧只显示选中的;AM/PM 可折叠;"确定"=收工清场
   const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set())
   const [amCollapsed, setAmCollapsed] = useState(false)
@@ -234,8 +235,15 @@ export default function BatchTab({ date }: { date: string }) {
     const src = e.dataTransfer.getData(SRC)
     if (!orderId || src === waveId) return
     if (waves.find(w => w.id === waveId)?.dispatchedAt) { toast.error('该批次已出发，不能再分配'); return }
-    if (src) moveWave(src, waveId, orderId)
-    else assignToWave(waveId, orderId)
+    if (src) {
+      if (printedWaveIds.has(src)) {
+        const srcWave = waves.find(w => w.id === src)
+        if (!confirm(`司机「${srcWave?.driverName ?? ''}」的拣货单已打印，换司机后需重新打印。确认移动？`)) return
+      }
+      moveWave(src, waveId, orderId)
+    } else {
+      assignToWave(waveId, orderId)
+    }
   }
   function dropToLeft(e: React.DragEvent) {
     e.preventDefault()
@@ -501,7 +509,12 @@ export default function BatchTab({ date }: { date: string }) {
           waveId={editorWaveId}
           onClose={() => setEditorWaveId(null)}
           onSaved={() => { setEditorWaveId(null); loadPallets(waves) }}
-          onPrint={() => { setPrintWaveId(editorWaveId); setEditorWaveId(null) }}
+          onPrint={() => {
+            const wvId = editorWaveId!
+            setPrintedWaveIds(prev => { const n = new Set(prev); n.add(wvId); return n })
+            setPrintWaveId(wvId)
+            setEditorWaveId(null)
+          }}
         />
       )}
       {printWaveId && <PickSheetModal waveId={printWaveId} onClose={() => setPrintWaveId(null)} />}

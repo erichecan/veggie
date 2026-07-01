@@ -386,11 +386,11 @@ export default function ClassicQuotationsPage() {
   const filtered = useMemo(() => {
     let result = [...orders]
 
-    // Quotations page only shows pending orders
-    result = result.filter(o => o.status === 'pending')
-
-    // tab (all = default, quotations = alias for all pending)
-    if (activeTab === 'quotations') { /* already filtered to pending above */ }
+    // Quotations page defaults to pending; honor the Status column filter when set
+    // (so choosing "Cancelled" actually surfaces cancelled quotations)
+    if (!colFilters.status) {
+      result = result.filter(o => o.status === 'pending')
+    }
 
     // order today
     if (orderTodayActive) {
@@ -909,7 +909,7 @@ ${footerHtml}
             <option value="cancel">Cancelled</option>
           </select>
         </td>
-        <td className="px-2 py-1" />
+        <td className="px-2 py-1"><input value={colFilters.internalNote} onChange={e => setCf('internalNote', e.target.value)} className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.salesman} onChange={e => setCf('salesman', e.target.value)} className={inputCls} /></td>
       </tr>
     )

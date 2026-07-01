@@ -41,6 +41,8 @@ export interface TripLine {
   uomId: string | null
   uomName: string | null
   goodsType: GoodsType
+  /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
+  productType?: string | null
   orderedQty: number
   unitPrice: number
   taxRate: number
@@ -142,6 +144,7 @@ export function buildLinesFromItems(items: unknown): TripLine[] {
       uomId: null,
       uomName: typeof it.uom === 'string' ? it.uom : (typeof it.uomName === 'string' ? it.uomName : null),
       goodsType: null,
+      productType: null,
       orderedQty: num(it.quantity),
       unitPrice: num(it.price),
       taxRate: num(it.taxRate),
