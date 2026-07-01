@@ -13,7 +13,7 @@ type InvoiceTx = {
     findFirst: (a: unknown) => Promise<{ id: string; name?: string } | null>
     create: (a: unknown) => Promise<{ id: string }>
   }
-  order: { findUnique: (a: unknown) => Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown }> } | null> }
+  order: { findUnique: (a: unknown) => Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown }> } | null> }
   customer: { findUnique: (a: unknown) => Promise<{ name: string } | null> }
 }
 
@@ -53,6 +53,8 @@ export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string)
     subEx += ex
     tax += ta
     lines.push({
+      // B-2: 发票行携带 orderLineId,供过账时按行精确回写 invoicedQty(部分/多次开票不误刷全单)
+      orderLineId: l.id,
       productId: l.productId, productName: l.productName, spec: l.spec ?? '',
       qty, unitPrice: unit, taxRate: trn,
       subtotalExTax: ex, taxAmount: ta, subtotalIncTax: round2(ex + ta),

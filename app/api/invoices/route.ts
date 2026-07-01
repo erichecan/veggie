@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { writebackInvoicedQty } from '@/lib/invoice-invoiced-qty'
 
 export async function GET(req: Request) {
   try {
@@ -44,6 +45,7 @@ function round2(n: number): number {
 }
 
 interface InboundLine {
+  orderLineId?: string
   productId?: string
   productName?: string
   spec?: string
@@ -93,6 +95,8 @@ export async function POST(req: Request) {
         subtotalExTax += exTax
         totalTax += taxAmt
         return {
+          // B-2: 保留前端传入的 orderLineId(若有),供过账按行回写 invoicedQty
+          ...(raw.orderLineId ? { orderLineId: String(raw.orderLineId) } : {}),
           productId: String(raw.productId ?? ''),
           productName: String(raw.productName ?? '').trim().slice(0, 200),
           spec: String(raw.spec ?? '').trim().slice(0, 100),
@@ -130,15 +134,9 @@ export async function POST(req: Request) {
           },
         })
 
-        // 回写：开票数量 = 已交货数量
-        if (saleOrderIds.length > 0) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const txAny = tx as any
-          await txAny.$executeRawUnsafe(
-            `UPDATE "OrderLine" SET "invoicedQty" = "deliveredQty", "updatedAt" = NOW() WHERE "orderId" IN (${saleOrderIds.map((_, i) => `$${i + 1}`).join(',')})`,
-            ...saleOrderIds,
-          )
-        }
+        // 回写：开票数量 = 已交货数量(B-2: 优先按发票行 orderLineId 精确到行,回退整单)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await writebackInvoicedQty(tx as any, recomputedLines, saleOrderIds)
 
         return created
       })

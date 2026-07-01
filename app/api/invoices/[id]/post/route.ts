@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { postInvoiceToJournal } from '@/lib/accounting'
 import { serializeApi } from '@/lib/api-serializer'
+import { writebackInvoicedQty } from '@/lib/invoice-invoiced-qty'
 
 /**
  * POST /api/invoices/:id/post
@@ -33,14 +34,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           where: { id },
           data: { status: 'POSTED', postedAt: new Date().toISOString() },
         })
-        // 回写 OrderLine.invoicedQty：发票过账时将关联订单行的 invoicedQty 设为 deliveredQty
-        if (Array.isArray(inv.saleOrderIds) && inv.saleOrderIds.length > 0) {
-          await tx.$executeRawUnsafe(
-            `UPDATE "OrderLine" SET "invoicedQty" = "deliveredQty", "updatedAt" = NOW()
-             WHERE "orderId" = ANY($1::text[])`,
-            inv.saleOrderIds,
-          )
-        }
+        // 回写 OrderLine.invoicedQty=deliveredQty(B-2: 优先按发票行 orderLineId 精确到行,回退整单)
+        await writebackInvoicedQty(tx, inv.lines, Array.isArray(inv.saleOrderIds) ? inv.saleOrderIds : [])
         return { invoice: updated, entry }
       })
 
