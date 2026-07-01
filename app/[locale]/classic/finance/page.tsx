@@ -110,9 +110,10 @@ export default function ClassicFinancePage() {
   const commissionGroups: CommissionGroup[] = customers
     .filter(c => c.commissionRate != null && c.commissionRate > 0)
     .map(c => {
+      // 佣金基数按税后(含税)——与销售额同口径(B-1 决策)
       const completedTotal = orders
         .filter(o => o.restaurantId === c.id && o.status.toLowerCase() === 'completed')
-        .reduce((s, o) => s + o.totalAmount, 0)
+        .reduce((s, o) => s + incTax(o), 0)
       const commission = completedTotal * (c.commissionRate ?? 0)
       return { customer: c, completedTotal, commissionRate: c.commissionRate!, commission }
     })
