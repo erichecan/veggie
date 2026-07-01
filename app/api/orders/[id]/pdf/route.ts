@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import { barcodeValue } from '@/lib/barcode'
 
 function fmt(iso?: string | Date | null): string {
   if (!iso) return '—'
@@ -246,7 +247,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 </div>
 
 <script>
-  JsBarcode('#barcode', ${JSON.stringify(orderCode)}, {
+  JsBarcode('#barcode', ${JSON.stringify(barcodeValue(orderCode, order.id))}, {
     format: 'CODE128',
     width: 1.5,
     height: 50,

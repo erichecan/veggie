@@ -5,6 +5,7 @@ import { apiGet } from '@/lib/api'
 import type { Order, Customer } from '@/lib/types'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import JsBarcode from 'jsbarcode'
+import { barcodeValue } from '@/lib/barcode'
 
 function fmtDate(iso?: string | Date | null): string {
   if (!iso) return '—'
@@ -129,7 +130,7 @@ export function buildOrderHtml(
       </td>
       <td class="barcode-cell">
         <div class="info-head">${docNoLabel}</div>
-        ${barcodeSvg(orderCode)}
+        ${barcodeSvg(barcodeValue(orderCode, order.id))}
         <div class="barcode-code">${orderCode}</div>
       </td>
       <td>

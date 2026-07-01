@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
+import { barcodeValue } from '@/lib/barcode'
 import type { Invoice } from '@/lib/types'
 
 const PURPLE = '#875A7B'
@@ -40,7 +41,7 @@ export default function InvoicePrintPage() {
 
   useEffect(() => {
     if (!barcodeRef.current || !inv) return
-    const code = /^[\x00-\x7F]+$/.test(inv.name) ? inv.name : inv.id
+    const code = barcodeValue(inv.name, inv.id)
     try {
       JsBarcode(barcodeRef.current, code, { format: 'CODE128', width: 1.5, height: 32, displayValue: false, margin: 0 })
     } catch {}
