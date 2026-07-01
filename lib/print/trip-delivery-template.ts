@@ -8,6 +8,7 @@
  *   Fixed footer with contact info
  */
 
+import { barcodeValue } from '@/lib/barcode'
 import {
   type TripPrintData,
   type TripOrder,
@@ -258,7 +259,7 @@ export function generateTripDeliveryHtml(data: TripPrintData): string {
     const safeCode = orderCode.replace(/['"\\]/g, '')
     return `
     try {
-      JsBarcode('#bc-${safeCode}', ${JSON.stringify(orderCode)}, {
+      JsBarcode('#bc-${safeCode}', ${JSON.stringify(barcodeValue(orderCode, order.id))}, {
         format: 'CODE128',
         width: 1.5,
         height: 45,

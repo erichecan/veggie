@@ -8,6 +8,7 @@
  *   底部：所有订单号 + 条形码（供扫码枪扫描）
  */
 
+import { barcodeValue } from '@/lib/barcode'
 import {
   type TripPrintData,
   escapeHtml,
@@ -161,7 +162,7 @@ export function generateTripPickingHtml(data: TripPrintData): string {
   const barcodeInits = orders.map(o => {
     const code = o.code ?? o.id.slice(0, 8).toUpperCase()
     const safeCode = code.replace(/['"\\]/g, '')
-    return `try{JsBarcode('#bc-${safeCode}',${JSON.stringify(code)},{format:'CODE128',width:1.5,height:40,displayValue:false,margin:0});}catch(e){}`
+    return `try{JsBarcode('#bc-${safeCode}',${JSON.stringify(barcodeValue(code, o.id))},{format:'CODE128',width:1.5,height:40,displayValue:false,margin:0});}catch(e){}`
   }).join('\n')
 
   return `<!doctype html>
