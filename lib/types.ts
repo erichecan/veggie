@@ -177,6 +177,8 @@ export interface Customer {
   city?: string
   zip?: string
   notes?: string
+  /** 客户级外部备注（客户可见，打印在报价单/送货单上）；与内部 notes 区分 */
+  externalNote?: string
   /** 关联价格表 ID（Odoo property_product_pricelist） */
   pricelistId?: string
   /**
@@ -248,7 +250,10 @@ export interface Order {
   restaurantId: string
   restaurantName: string
   items: OrderItem[]
+  /** 税前总额（SSOT，= Σ行 subtotal，见 docs/20260701 A-2） */
   totalAmount: number
+  /** 税后总额（派生，财务/对账「销售额」用；无行的历史订单退回 totalAmount，见 B-1） */
+  totalAmountIncTax?: number
   status: OrderStatus
   paymentMethod: PaymentMethod
   createdAt: string

@@ -71,15 +71,18 @@ export default function ClassicFinancePage() {
 
   const today = todayStart()
 
+  // B-1: 财务「销售额/收款」按税后(含税)展示——客户实付即含税额;totalAmount 本身是税前(SSOT)
+  const incTax = (o: Order) => o.totalAmountIncTax ?? o.totalAmount
+
   const todayCashOrders = orders.filter(o =>
     o.status.toLowerCase() === 'completed' && o.paymentMethod === 'cash' && o.createdAt >= today
   )
-  const todayCash = todayCashOrders.reduce((s, o) => s + o.totalAmount, 0)
+  const todayCash = todayCashOrders.reduce((s, o) => s + incTax(o), 0)
 
   const todayOnlineOrders = orders.filter(o =>
     o.status.toLowerCase() === 'completed' && o.paymentMethod === 'online' && o.createdAt >= today
   )
-  const todayOnline = todayOnlineOrders.reduce((s, o) => s + o.totalAmount, 0)
+  const todayOnline = todayOnlineOrders.reduce((s, o) => s + incTax(o), 0)
 
   const unpaidOrders = orders.filter(o =>
     o.status.toLowerCase() !== 'completed' &&
@@ -179,7 +182,7 @@ export default function ClassicFinancePage() {
     },
     {
       key: 'amount', label: '金额', align: 'right', render: o =>
-        <span className="font-semibold text-gray-900">€{o.totalAmount.toFixed(2)}</span>,
+        <span className="font-semibold text-gray-900">€{(o.totalAmountIncTax ?? o.totalAmount).toFixed(2)}</span>,
     },
   ]
 
@@ -389,7 +392,7 @@ export default function ClassicFinancePage() {
                             <td className="px-3 py-1.5 text-gray-500">
                               {STATUS_LABEL[o.status.toLowerCase()] ?? o.status}
                             </td>
-                            <td className="px-3 py-1.5 text-right font-medium text-gray-900">€{o.totalAmount.toFixed(2)}</td>
+                            <td className="px-3 py-1.5 text-right font-medium text-gray-900">€{(o.totalAmountIncTax ?? o.totalAmount).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>

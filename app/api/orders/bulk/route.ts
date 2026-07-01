@@ -21,7 +21,8 @@ import { toNum } from '@/lib/decimal-helpers'
 const ALLOWED_ACTIONS = ['cancel', 'delete', 'mark_returned', 'confirm', 'start_delivery', 'mass_edit'] as const
 type BulkAction = typeof ALLOWED_ACTIONS[number]
 
-const MASS_EDIT_ALLOWED_FIELDS = new Set(['deliveryBatch', 'deliveryDate', 'paymentMethod', 'driverSlotId'])
+// C-1: 移除 deliveryBatch — 配送批次真相单一归 wave.orderIds(P0-1),不再允许批量写字符串副本
+const MASS_EDIT_ALLOWED_FIELDS = new Set(['deliveryDate', 'paymentMethod', 'driverSlotId'])
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {

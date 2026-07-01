@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
+import { orderIncTaxTotal } from '@/lib/order-items'
 
 /**
  * P1-1: 财务对账单
@@ -103,12 +104,14 @@ export async function POST(req: Request) {
           status: { in: validStatuses as never[] },
           createdAt: { gte: start, lte: end },
         },
-        select: { id: true, totalAmount: true },
+        select: { id: true, lines: { select: { subtotal: true, taxRate: true } } },
       })
 
       const orderIds = orders.map(o => o.id)
+      // B-1: 对账「销售额」按税后(含税)。totalAmount 是税前(SSOT),此处由行实时派生含税额,
+      //      与实收(客户付含税额)同口径,closingBalance 才能对平。
       const totalSales = orders.reduce(
-        (sum, o) => sum + toNum(o.totalAmount),
+        (sum, o) => sum + orderIncTaxTotal(o.lines),
         0,
       )
 
