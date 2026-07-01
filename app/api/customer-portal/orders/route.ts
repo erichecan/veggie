@@ -186,7 +186,7 @@ export async function POST(req: Request) {
       } = await resolveOrderLines({ prisma, restaurantId }, submittedItems)
 
       // 事务创建订单 + P2002 重试
-      const initials = getInitials(restaurantName)
+      const initials = getInitials(restaurantName, user.email)
       const now = new Date()
       const MAX_RETRY = 5
       let order: Awaited<ReturnType<typeof prisma.order.create>> | null = null

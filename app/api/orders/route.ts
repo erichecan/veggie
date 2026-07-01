@@ -281,7 +281,7 @@ export async function POST(req: Request) {
       // 3) 事务：仅创建订单，不扣库存（报价单阶段）
       // 业务编号：创建者缩写-YYMMDD-NNN（CJ-260424-001）。
       // 唯一索引 + P2002 重试，应对并发场景下两个事务计算到同一序号的极端情况。
-      const initials = getInitials(user.name)
+      const initials = getInitials(user.name, user.email)
       const now = new Date()
       const MAX_RETRY = 5
       let order: Awaited<ReturnType<typeof prisma.order.create>> | null = null

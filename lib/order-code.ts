@@ -18,22 +18,32 @@ import type * as Prisma from '@/lib/generated/prisma/internal/prismaNamespace'
  * - "Edwin"          → "ED"（单个 token 时取前两个字母补齐）
  * - 含中文：取前两个字符大写化，例 "张敏" → "张敏"（保留原样，避免空字符）
  */
-export function getInitials(rawName: string | null | undefined): string {
+/**
+ * 订单编码前缀：始终返回 2 位 ASCII（A-Z/0-9），永不含中文。
+ * - ASCII 名 → 首/末两段首字母（"Xiaohui Weng" → "XW"，"Edwin" → "ED"）
+ * - 中文名 → 回退用 email 本地部分前两个字母（"运营主管" + operator@… → "OP"）
+ * - 都无 ASCII 字母可取 → "NA"
+ */
+export function getInitials(rawName: string | null | undefined, fallbackEmail?: string | null): string {
   const name = (rawName ?? '').trim()
-  if (!name) return 'NA'
   // 去掉括号内容（"Xiaohui Weng(Evelyn)" → "Xiaohui Weng"）
   const cleaned = name.replace(/\(.*?\)/g, '').trim()
-  // ASCII letters → 取空格分割的前两段首字母
+  // ASCII 姓名 → 取空格分割的前两段首字母
   if (/^[A-Za-z][A-Za-z\s.'-]*$/.test(cleaned)) {
     const parts = cleaned.split(/\s+/).filter(Boolean)
     if (parts.length >= 2) {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     }
-    // 单 token，例 "Edwin" → "ED"
     return cleaned.slice(0, 2).toUpperCase().padEnd(2, 'X')
   }
-  // 含非 ASCII（中文等）：取前两个字符
-  return cleaned.replace(/\s+/g, '').slice(0, 2).toUpperCase()
+  // 含非 ASCII（中文等）：回退用 email 本地部分的 ASCII 字母
+  const local = (fallbackEmail ?? '').split('@')[0]
+  const emailAlpha = (local.match(/[A-Za-z]/g) ?? []).join('')
+  if (emailAlpha.length >= 2) return emailAlpha.slice(0, 2).toUpperCase()
+  if (emailAlpha.length === 1) return (emailAlpha + 'X').toUpperCase()
+  // 最后兜底：名字里若有 ASCII 字母/数字取之，再不行 NA（绝不返回非 ASCII）
+  const nameAscii = (cleaned.match(/[A-Za-z0-9]/g) ?? []).join('')
+  return nameAscii ? nameAscii.slice(0, 2).toUpperCase().padEnd(2, 'X') : 'NA'
 }
 
 /** 把 Date 格式化为 YYMMDD（本地时区） */
