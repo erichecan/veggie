@@ -465,13 +465,18 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-2 text-sm text-gray-500 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1">
-            {!isReadMode && o.status === 'confirmed' && (
+            {!isReadMode && o.status === 'confirmed' && pendingBatch[o.id] !== undefined && (
               <button
                 onClick={async e => {
                   e.stopPropagation()
                   if (!confirm(`确认将订单 ${displayOrderCode(o)} 撤回到报价单？`)) return
                   try {
                     await apiPut(`/api/orders/${o.id}`, { status: 'PENDING', confirmationDate: null })
+                    setPendingBatch(prev => {
+                      const next = { ...prev }
+                      delete next[o.id]
+                      return next
+                    })
                     toast.success('已撤回到报价单')
                     refresh()
                   } catch (err) {
