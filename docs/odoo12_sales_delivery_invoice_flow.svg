@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="2820" viewBox="0 0 2400 2820">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8f7fb"/>
+      <stop offset="1" stop-color="#eef3f8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#26394d" flood-opacity="0.13"/>
+    </filter>
+    <marker id="arrow" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L11,6.5 L0,13 z" fill="#6688ad"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L11,6.5 L0,13 z" fill="#74536f"/>
+    </marker>
+    <style>
+      .title{font:700 47px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#352b3b}
+      .subtitle{font:400 22px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#647282}
+      .lane{font:700 25px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#fff;letter-spacing:1px}
+      .h1{font:700 27px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#263746}
+      .h2{font:700 22px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#263746}
+      .body{font:400 19px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#425565}
+      .small{font:400 17px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#536778}
+      .tech{font:600 17px Consolas,'Microsoft YaHei',monospace;fill:#674b64}
+      .tag{font:700 16px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#fff}
+      .label{font:700 18px 'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#4b5d6d}
+      .node{stroke:#7598bf;stroke-width:3;rx:18;filter:url(#shadow)}
+      .sales{fill:#eee7ef;stroke:#74536f}
+      .stock{fill:#e6f1f8;stroke:#4f84a4}
+      .account{fill:#fff4db;stroke:#c6973e}
+      .decision{fill:#dfeafa;stroke:#668bc1;stroke-width:3;filter:url(#shadow)}
+      .terminal{fill:#e3f3e8;stroke:#4e9468;stroke-width:3;filter:url(#shadow)}
+      .cancel{fill:#f9e6e4;stroke:#ba655e;stroke-width:3;filter:url(#shadow)}
+      .arrow{fill:none;stroke:#6688ad;stroke-width:4;marker-end:url(#arrow)}
+      .arrow2{fill:none;stroke:#74536f;stroke-width:4;marker-end:url(#arrowPurple)}
+      .dash{fill:none;stroke:#7e95ab;stroke-width:3;stroke-dasharray:11 9;marker-end:url(#arrow)}
+      .thin{fill:none;stroke:#9aacbc;stroke-width:2.5}
+    </style>
+  </defs>
+
+  <rect width="2400" height="2820" fill="url(#bg)"/>
+  <rect x="0" y="0" width="2400" height="154" fill="#fff"/>
+  <rect x="0" y="151" width="2400" height="3" fill="#74536f"/>
+  <text x="90" y="74" class="title">Odoo 12 销售 · 发货 · 开票 · 收款完整流程</text>
+  <text x="92" y="117" class="subtitle">含初始状态、中间状态、最终状态，以及按订购量 / 按交付量开票、部分交付、欠货与部分付款</text>
+  <g transform="translate(1800,45)">
+    <rect width="150" height="35" rx="17" fill="#74536f"/><text x="75" y="24" class="tag" text-anchor="middle">初始状态</text>
+    <rect x="165" width="150" height="35" rx="17" fill="#668bc1"/><text x="240" y="24" class="tag" text-anchor="middle">中间状态</text>
+    <rect x="330" width="150" height="35" rx="17" fill="#4e9468"/><text x="405" y="24" class="tag" text-anchor="middle">最终状态</text>
+    <rect x="165" y="49" width="150" height="35" rx="17" fill="#ba655e"/><text x="240" y="73" class="tag" text-anchor="middle">取消终态</text>
+  </g>
+
+  <!-- lane headers -->
+  <rect x="70" y="184" width="2260" height="54" rx="14" fill="#74536f"/>
+  <text x="1200" y="220" class="lane" text-anchor="middle">销售阶段 · sale.order</text>
+
+  <!-- quotation -->
+  <rect x="720" y="280" width="960" height="164" class="node sales"/>
+  <rect x="748" y="302" width="126" height="31" rx="15" fill="#74536f"/>
+  <text x="811" y="324" class="tag" text-anchor="middle">初始状态</text>
+  <text x="1200" y="337" class="h1" text-anchor="middle">1. 创建销售报价单</text>
+  <text x="1200" y="374" class="tech" text-anchor="middle">sale.order.state = 'draft'（Quotation）</text>
+  <text x="1200" y="408" class="body" text-anchor="middle">录入客户 / 发票与送货地址 / 产品 / 数量 / 价目表 / 税 / 付款条款 / 有效期 / 交货策略</text>
+
+  <path d="M1200 444 L1200 500" class="arrow2"/>
+  <rect x="720" y="500" width="960" height="150" class="node sales"/>
+  <rect x="748" y="522" width="126" height="31" rx="15" fill="#668bc1"/>
+  <text x="811" y="544" class="tag" text-anchor="middle">中间状态</text>
+  <text x="1200" y="553" class="h1" text-anchor="middle">2. 发送报价单</text>
+  <text x="1200" y="591" class="tech" text-anchor="middle">draft → sent（Quotation Sent）</text>
+  <text x="1200" y="622" class="body" text-anchor="middle">邮件 / 打印 / 客户门户；可启用在线签名或在线支付确认</text>
+
+  <path d="M1200 650 L1200 706" class="arrow2"/>
+  <polygon points="1200,706 1480,828 1200,950 920,828" class="decision"/>
+  <text x="1200" y="804" class="h1" text-anchor="middle">客户是否接受报价？</text>
+  <text x="1200" y="841" class="body" text-anchor="middle">销售员点击“确认”</text>
+  <text x="1200" y="873" class="small" text-anchor="middle">或门户签名 / 支付触发确认</text>
+
+  <!-- cancellation -->
+  <path d="M1480 828 L1785 828" class="arrow"/>
+  <text x="1608" y="808" class="label">否 / 过期 / 拒绝</text>
+  <rect x="1785" y="730" width="530" height="196" class="cancel" rx="18"/>
+  <rect x="1813" y="752" width="126" height="31" rx="15" fill="#ba655e"/>
+  <text x="1876" y="774" class="tag" text-anchor="middle">取消终态</text>
+  <text x="2050" y="800" class="h1" text-anchor="middle">取消报价 / 订单</text>
+  <text x="2050" y="838" class="tech" text-anchor="middle">draft | sent | sale → cancel</text>
+  <text x="2050" y="872" class="small" text-anchor="middle">已生成的出库单、发票需分别取消或冲销</text>
+  <text x="2050" y="900" class="small" text-anchor="middle">cancel 为终态；可回到草稿的范围取决于当前单据</text>
+
+  <path d="M1200 950 L1200 1005" class="arrow2"/>
+  <text x="1230" y="983" class="label">是</text>
+  <rect x="720" y="1005" width="960" height="178" class="node sales"/>
+  <rect x="748" y="1027" width="126" height="31" rx="15" fill="#668bc1"/>
+  <text x="811" y="1049" class="tag" text-anchor="middle">中间状态</text>
+  <text x="1200" y="1062" class="h1" text-anchor="middle">3. 确认报价，生成销售订单</text>
+  <text x="1200" y="1100" class="tech" text-anchor="middle">draft | sent → sale（Sales Order）</text>
+  <text x="1200" y="1134" class="body" text-anchor="middle">记录 confirmation_date；库存商品生成出库单；订单行开始计算交付量与可开票量</text>
+  <text x="1200" y="1163" class="small" text-anchor="middle">sale.order.invoice_status：no → to invoice → invoiced（另有 upselling）</text>
+
+  <!-- parallel split -->
+  <path d="M1200 1183 L1200 1234" class="arrow2"/>
+  <rect x="170" y="1234" width="2060" height="70" rx="18" fill="#fff" stroke="#92a7b9" stroke-width="3"/>
+  <text x="1200" y="1278" class="h2" text-anchor="middle">销售订单确认后：仓库履约与开票条件并行推进</text>
+  <path d="M550 1304 L550 1370" class="arrow"/>
+  <path d="M1740 1304 L1740 1370" class="arrow"/>
+
+  <!-- lower lane headers -->
+  <rect x="70" y="1330" width="960" height="54" rx="14" fill="#4f84a4"/>
+  <text x="550" y="1366" class="lane" text-anchor="middle">仓库交付 · stock.picking</text>
+  <rect x="1070" y="1330" width="1260" height="54" rx="14" fill="#c6973e"/>
+  <text x="1700" y="1366" class="lane" text-anchor="middle">客户开票与收款 · account.invoice / account.payment</text>
+
+  <!-- warehouse -->
+  <rect x="120" y="1420" width="860" height="150" class="node stock"/>
+  <text x="550" y="1463" class="h1" text-anchor="middle">4A. 创建出库单与库存移动</text>
+  <text x="550" y="1501" class="tech" text-anchor="middle">stock.picking：draft（短暂初始态）</text>
+  <text x="550" y="1535" class="body" text-anchor="middle">确认需求、计算计划日期、按路线 / 补货规则准备库存移动</text>
+
+  <path d="M550 1570 L550 1618" class="arrow"/>
+  <rect x="120" y="1618" width="860" height="210" class="node stock"/>
+  <rect x="148" y="1640" width="126" height="31" rx="15" fill="#668bc1"/>
+  <text x="211" y="1662" class="tag" text-anchor="middle">中间状态</text>
+  <text x="550" y="1669" class="h1" text-anchor="middle">5A. 等待前置作业 / 等待库存 / 完成预留</text>
+  <text x="550" y="1711" class="tech" text-anchor="middle">waiting → confirmed → assigned</text>
+  <text x="550" y="1747" class="small" text-anchor="middle">waiting：等待另一操作　|　confirmed：等待可用库存　|　assigned：已预留、可调拨</text>
+  <text x="550" y="1781" class="small" text-anchor="middle">若库存立即可用，单据可能直接进入 assigned；无前置环节时可跳过 waiting</text>
+  <text x="550" y="1810" class="small" text-anchor="middle">操作：检查可用性、填写批次/序列号/包装、设置完成数量 qty_done</text>
+
+  <path d="M550 1828 L550 1872" class="arrow"/>
+  <polygon points="550,1872 830,1975 550,2078 270,1975" class="decision"/>
+  <text x="550" y="1953" class="h1" text-anchor="middle">验证交货时是否全部完成？</text>
+  <text x="550" y="1990" class="body" text-anchor="middle">比较 qty_done 与需求数量</text>
+  <text x="550" y="2022" class="small" text-anchor="middle">点击“验证”完成库存过账</text>
+
+  <path d="M270 1975 L115 1975 L115 2140 L260 2140" class="arrow"/>
+  <text x="142" y="1952" class="label">是</text>
+  <rect x="260" y="2080" width="580" height="145" class="terminal" rx="18"/>
+  <rect x="286" y="2102" width="126" height="31" rx="15" fill="#4e9468"/>
+  <text x="349" y="2124" class="tag" text-anchor="middle">最终状态</text>
+  <text x="550" y="2140" class="h1" text-anchor="middle">出库完成</text>
+  <text x="550" y="2178" class="tech" text-anchor="middle">assigned → done</text>
+  <text x="550" y="2207" class="small" text-anchor="middle">写入 date_done；更新销售订单行 qty_delivered</text>
+
+  <path d="M830 1975 L950 1975 L950 2300 L835 2300" class="arrow"/>
+  <text x="861" y="1952" class="label">否：部分交付</text>
+  <rect x="260" y="2260" width="575" height="178" class="node stock"/>
+  <text x="548" y="2303" class="h1" text-anchor="middle">完成本次出库 + 创建欠货单</text>
+  <text x="548" y="2341" class="tech" text-anchor="middle">当前单：done；backorder：confirmed / assigned</text>
+  <text x="548" y="2376" class="small" text-anchor="middle">剩余数量进入新 stock.picking，重新预留、拣货、验证</text>
+  <text x="548" y="2407" class="small" text-anchor="middle">每次完成都会累计 qty_delivered，并可能产生下一张部分发票</text>
+  <path d="M260 2349 L85 2349 L85 1718 L120 1718" class="dash"/>
+
+  <!-- invoicing policy decision -->
+  <polygon points="1740,1410 2030,1525 1740,1640 1450,1525" class="decision"/>
+  <text x="1740" y="1499" class="h1" text-anchor="middle">产品开票策略？</text>
+  <text x="1740" y="1537" class="tech" text-anchor="middle">product.invoice_policy</text>
+  <text x="1740" y="1570" class="small" text-anchor="middle">按订购数量 / 按交付数量</text>
+
+  <path d="M1450 1525 L1215 1525 L1215 1692" class="arrow"/>
+  <text x="1250" y="1500" class="label">ordered quantities</text>
+  <rect x="1090" y="1692" width="520" height="170" class="node account"/>
+  <text x="1350" y="1736" class="h2" text-anchor="middle">4B-1. 按订购数量可开票</text>
+  <text x="1350" y="1774" class="tech" text-anchor="middle">qty_to_invoice = ordered − invoiced</text>
+  <text x="1350" y="1808" class="small" text-anchor="middle">确认订单后即可开票，不必等待出库完成</text>
+  <text x="1350" y="1838" class="tech" text-anchor="middle">invoice_status：no → to invoice</text>
+
+  <path d="M2030 1525 L2225 1525 L2225 1692" class="arrow"/>
+  <text x="2055" y="1500" class="label">delivered quantities</text>
+  <rect x="1840" y="1692" width="510" height="170" class="node account"/>
+  <text x="2095" y="1736" class="h2" text-anchor="middle">4B-2. 按交付数量等待交货</text>
+  <text x="2095" y="1774" class="tech" text-anchor="middle">qty_to_invoice = delivered − invoiced</text>
+  <text x="2095" y="1808" class="small" text-anchor="middle">交付前：Nothing to Invoice；创建发票会报无可开票行</text>
+  <text x="2095" y="1838" class="tech" text-anchor="middle">交付后：no → to invoice</text>
+  <path d="M840 2150 L1010 2150 L1010 1885 L2095 1885 L2095 1862" class="dash"/>
+  <text x="1430" y="1915" class="small">出库 done 更新 qty_delivered，释放可开票数量（支持部分交付）</text>
+
+  <!-- invoice merge -->
+  <path d="M1350 1862 L1350 1982 L1695 1982" class="arrow"/>
+  <path d="M2095 1862 L2095 1982 L1775 1982" class="arrow"/>
+  <circle cx="1735" cy="1982" r="38" fill="#fff" stroke="#c6973e" stroke-width="4"/>
+  <text x="1735" y="1990" class="h2" text-anchor="middle">汇合</text>
+  <path d="M1735 2020 L1735 2060" class="arrow"/>
+
+  <rect x="1090" y="2060" width="1260" height="164" class="node account"/>
+  <rect x="1118" y="2082" width="126" height="31" rx="15" fill="#668bc1"/>
+  <text x="1181" y="2104" class="tag" text-anchor="middle">中间状态</text>
+  <text x="1720" y="2113" class="h1" text-anchor="middle">5B. 创建客户发票</text>
+  <text x="1720" y="2151" class="tech" text-anchor="middle">account.invoice.state = 'draft'</text>
+  <text x="1720" y="2185" class="body" text-anchor="middle">可选普通发票 / 固定额预付款 / 百分比预付款；发票行来自 qty_to_invoice</text>
+
+  <path d="M1720 2224 L1720 2272" class="arrow"/>
+  <rect x="1090" y="2272" width="1260" height="164" class="node account"/>
+  <text x="1720" y="2320" class="h1" text-anchor="middle">6B. 验证并发送客户发票</text>
+  <text x="1720" y="2358" class="tech" text-anchor="middle">draft → open（生成发票号与会计凭证）</text>
+  <text x="1720" y="2392" class="body" text-anchor="middle">发送邮件不改变 state；部分开票后销售订单仍可能保持 to invoice</text>
+  <path d="M2350 2354 L2380 2354 L2380 2165 L2350 2165" class="thin"/>
+
+  <path d="M1720 2436 L1720 2480" class="arrow"/>
+  <polygon points="1720,2480 1960,2568 1720,2656 1480,2568" class="decision"/>
+  <text x="1720" y="2548" class="h1" text-anchor="middle">收款是否足额并完成核销？</text>
+  <text x="1720" y="2584" class="small" text-anchor="middle">登记客户付款 / 银行对账</text>
+  <text x="1720" y="2615" class="tech" text-anchor="middle">account.payment：draft → posted → reconciled</text>
+
+  <!-- partial and paid -->
+  <path d="M1480 2568 L1210 2568 L1210 2700" class="arrow"/>
+  <text x="1280" y="2544" class="label">否：未付 / 部分付款</text>
+  <rect x="820" y="2680" width="780" height="116" class="node account"/>
+  <text x="1210" y="2724" class="h2" text-anchor="middle">发票保持 open（余额 residual &gt; 0）</text>
+  <text x="1210" y="2762" class="small" text-anchor="middle">继续催款 / 登记后续付款；在途付款可短暂显示 in_payment</text>
+
+  <path d="M1960 2568 L2110 2568 L2110 2700" class="arrow"/>
+  <text x="1980" y="2544" class="label">是</text>
+  <rect x="1680" y="2680" width="720" height="116" class="terminal" rx="18"/>
+  <rect x="1705" y="2700" width="126" height="31" rx="15" fill="#4e9468"/>
+  <text x="1768" y="2722" class="tag" text-anchor="middle">最终状态</text>
+  <text x="2060" y="2725" class="h2" text-anchor="middle">客户发票：open → in_payment → paid</text>
+  <text x="2060" y="2763" class="small" text-anchor="middle">residual = 0；销售订单发票状态最终为 invoiced</text>
+
+  <!-- footer notes -->
+  <rect x="70" y="2803" width="2260" height="1" fill="#aebac6"/>
+  <text x="90" y="2819" class="small">终结销售订单：交付与开票完成后，可点击“锁定”使 sale.order.state：sale → done；解锁则 done → sale。退款使用客户贷项通知单（out_refund）按 draft → open → paid / cancel 单独流转。</text>
+</svg>

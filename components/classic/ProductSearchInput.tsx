@@ -14,6 +14,8 @@ interface Props<P extends { id: string; name: string; category?: string | null; 
   maxResults?: number
   showOnEmptyQuery?: boolean
   externalRef?: React.RefObject<HTMLInputElement | null>
+  /** Tab 键选中当前高亮/首个匹配项，无匹配则照常跳到下一个控件（默认 false，保持原有 Tab=跳过行为） */
+  selectOnTab?: boolean
 }
 
 export default function ProductSearchInput<
@@ -30,6 +32,7 @@ export default function ProductSearchInput<
   maxResults = 20,
   showOnEmptyQuery = true,
   externalRef,
+  selectOnTab = false,
 }: Props<P>) {
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
@@ -112,7 +115,14 @@ export default function ProductSearchInput<
         }}
         onKeyDown={e => {
           if (e.key === 'Escape') { setOpen(false); setHighlight(-1); return }
-          if (e.key === 'Tab') { setOpen(false); return }
+          if (e.key === 'Tab') {
+            if (selectOnTab && open && filtered.length > 0) {
+              select(filtered[highlight >= 0 ? highlight : 0])
+            } else {
+              setOpen(false)
+            }
+            return
+          }
           if (!open || filtered.length === 0) return
           if (e.key === 'ArrowDown') {
             e.preventDefault()

@@ -2,10 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
-import PalletEditor from './PalletEditor'
-import PickSheetModal from './PickSheetModal'
 import { restaurantColor } from './colors'
-import { fmtQty } from './num'
 
 const PURPLE = '#875A7B'
 
@@ -19,19 +16,6 @@ interface Wave {
   id: string; name: string | null; orderIds: string[]; status: string
   waveType: string | null; waveNumber: number | null; driverSlotId: string | null; driverName: string | null
   dispatchedAt: string | null; completedAt: string | null
-}
-interface PalletItem {
-  orderId: string; restaurantId: string; restaurantName: string
-  productId: string; productName: string; qty: number; uomName?: string
-}
-interface Pallet { id: string; seq: number; label: string | null; items: PalletItem[] }
-
-/** 从托盘组里剔除某订单的所有货，删空盘并重排序号 */
-function stripOrder(pallets: Pallet[], orderId: string): Pallet[] {
-  return pallets
-    .map(p => ({ ...p, items: p.items.filter(it => it.orderId !== orderId) }))
-    .filter(p => p.items.length > 0)
-    .map((p, i) => ({ ...p, seq: i + 1 }))
 }
 
 const WAVE_STATUS: Record<string, { text: string; cls: string; pct: number }> = {
@@ -49,32 +33,14 @@ export default function BatchTab({ date }: { date: string }) {
   const [slots, setSlots] = useState<DriverSlot[]>([])
   const [waves, setWaves] = useState<Wave[]>([])
   const [orders, setOrders] = useState<Order[]>([])
-  const [palletsByWave, setPalletsByWave] = useState<Record<string, Pallet[]>>({})
   const [loading, setLoading] = useState(false)
   const [dragOverWave, setDragOverWave] = useState<string | null>(null)
   const [dragOverLeft, setDragOverLeft] = useState(false)
-  const [editorWaveId, setEditorWaveId] = useState<string | null>(null)
-  const [printWaveId, setPrintWaveId] = useState<string | null>(null)
-  const [printedWaveIds, setPrintedWaveIds] = useState<Set<string>>(new Set())
   // ② 调度交互：先选司机,右侧只显示选中的;AM/PM 可折叠;"确定"=收工清场
   const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set())
   const [amCollapsed, setAmCollapsed] = useState(false)
   const [pmCollapsed, setPmCollapsed] = useState(false)
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set())
-
-  const loadPallets = useCallback(async (wvs: Wave[]) => {
-    const entries = await Promise.all(
-      wvs.map(async w => {
-        try {
-          const r = await apiGet<{ pallets: Pallet[] }>(`/api/waves/${w.id}/pallets`)
-          return [w.id, r.pallets] as const
-        } catch {
-          return [w.id, []] as const
-        }
-      }),
-    )
-    setPalletsByWave(Object.fromEntries(entries))
-  }, [])
 
   const load = useCallback(async () => {
     if (!date) return
@@ -94,13 +60,12 @@ export default function BatchTab({ date }: { date: string }) {
       setSlots(slotData)
       setOrders(orderData)
       setWaves(waveData)
-      await loadPallets(waveData)
     } catch {
       toast.error('加载批次数据失败')
     } finally {
       setLoading(false)
     }
-  }, [date, loadPallets])
+  }, [date])
 
   useEffect(() => { load() }, [load])
 
@@ -143,47 +108,23 @@ export default function BatchTab({ date }: { date: string }) {
       toast.success('已分配')
     } catch (e) { toast.error(e instanceof Error ? e.message : '分配失败'); load() }
   }
-  async function savePallets(waveId: string, pallets: Pallet[]) {
-    await apiPut(`/api/waves/${waveId}/pallets`, {
-      pallets: pallets.map(p => ({ seq: p.seq, label: p.label, items: p.items })),
-    })
-  }
-  // 移回待分配：订单离开波次，其在托盘里的货一并移除（货随订单走）
   async function unassignFromWave(waveId: string, orderId: string) {
-    const newPallets = stripOrder(palletsByWave[waveId] ?? [], orderId)
     setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, orderIds: w.orderIds.filter(id => id !== orderId) } : w)))
-    setPalletsByWave(prev => ({ ...prev, [waveId]: newPallets }))
     try {
       await apiPut(`/api/waves/${waveId}/unassign`, { orderIds: [orderId] })
-      await savePallets(waveId, newPallets)
       toast.success('已移回待分配')
     } catch (e) { toast.error(e instanceof Error ? e.message : '移除失败'); load() }
   }
-  // 换司机：订单 + 它在旧波次托盘里的货，一起搬到新司机（保留托盘分组，追加为新盘）
   async function moveWave(fromId: string, toId: string, orderId: string) {
-    const fromPallets = palletsByWave[fromId] ?? []
-    const toPallets = palletsByWave[toId] ?? []
-    const movedGroups = fromPallets
-      .map(p => p.items.filter(it => it.orderId === orderId))
-      .filter(g => g.length > 0)
-    const newFromPallets = stripOrder(fromPallets, orderId)
-    let seq = toPallets.length
-    const newToPallets: Pallet[] = [
-      ...toPallets,
-      ...movedGroups.map(items => { seq += 1; return { id: `tmp-${seq}`, seq, label: null, items } }),
-    ]
     setWaves(prev => prev.map(w => {
       if (w.id === fromId) return { ...w, orderIds: w.orderIds.filter(id => id !== orderId) }
       if (w.id === toId) return { ...w, orderIds: [...w.orderIds, orderId] }
       return w
     }))
-    setPalletsByWave(prev => ({ ...prev, [fromId]: newFromPallets, [toId]: newToPallets }))
     try {
       await apiPut(`/api/waves/${fromId}/unassign`, { orderIds: [orderId] })
       await apiPut(`/api/waves/${toId}/assign`, { orderIds: [orderId] })
-      await savePallets(fromId, newFromPallets)
-      await savePallets(toId, newToPallets)
-      toast.success(movedGroups.length ? '已移动（含托盘）' : '已移动')
+      toast.success('已移动')
     } catch (e) { toast.error(e instanceof Error ? e.message : '移动失败'); load() }
   }
 
@@ -236,10 +177,6 @@ export default function BatchTab({ date }: { date: string }) {
     if (!orderId || src === waveId) return
     if (waves.find(w => w.id === waveId)?.dispatchedAt) { toast.error('该批次已出发，不能再分配'); return }
     if (src) {
-      if (printedWaveIds.has(src)) {
-        const srcWave = waves.find(w => w.id === src)
-        if (!confirm(`司机「${srcWave?.driverName ?? ''}」的拣货单已打印，换司机后需重新打印。确认移动？`)) return
-      }
       moveWave(src, waveId, orderId)
     } else {
       assignToWave(waveId, orderId)
@@ -278,7 +215,6 @@ export default function BatchTab({ date }: { date: string }) {
     }
 
     const m = laneMetrics(wave)
-    const pallets = palletsByWave[wave.id] ?? []
     const st = WAVE_STATUS[wave.status] ?? { text: wave.status, cls: 'bg-gray-100 text-gray-500', pct: 0 }
     const laneOrders = wave.orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
     const dispatched = !!wave.dispatchedAt
@@ -313,7 +249,7 @@ export default function BatchTab({ date }: { date: string }) {
         onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverWave(p => p === wave.id ? null : p) }}
         onDrop={e => dropToWave(e, wave.id)}
       >
-        <div className="p-2.5 border-b cursor-pointer hover:bg-gray-50 rounded-t-xl" style={{ borderColor: '#e5e7eb' }} onClick={() => setEditorWaveId(wave.id)}>
+        <div className="p-2.5 border-b rounded-t-xl" style={{ borderColor: '#e5e7eb' }}>
           <div className="flex items-center justify-between">
             <span className="font-bold text-[13px] flex items-center gap-1.5">
               <Avatar name={slot.driverName} />{slot.driverName}
@@ -330,7 +266,7 @@ export default function BatchTab({ date }: { date: string }) {
               >▴</button>
             </div>
           </div>
-          <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.restaurantCount}家 · {pallets.length}盘 · €{m.amount.toLocaleString()}</div>
+          <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.restaurantCount}家 · €{m.amount.toLocaleString()}</div>
           {dispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${st.pct}%`, background: PURPLE }} /></div>
         </div>
@@ -360,19 +296,6 @@ export default function BatchTab({ date }: { date: string }) {
               </div>
             </div>
           ))}
-
-          {/* 托盘摘要 */}
-          {pallets.length > 0 && (
-            <div className="mt-1 pt-1.5 border-t" style={{ borderColor: '#f0f0f0' }}>
-              {pallets.map(p => <PalletTile key={p.id} pallet={p} onClick={() => setEditorWaveId(wave.id)} />)}
-            </div>
-          )}
-
-          <button
-            onClick={() => setEditorWaveId(wave.id)}
-            className="mt-1 border border-dashed rounded-lg py-1.5 text-xs text-gray-500 hover:border-purple-400 hover:text-purple-700"
-            style={{ borderColor: '#cbd5e1' }}
-          >🧱 编排托盘{pallets.length ? `（${pallets.length}）` : ''}</button>
 
           {dispatched ? (
             <button
@@ -504,20 +427,6 @@ export default function BatchTab({ date }: { date: string }) {
         </div>
       )}
 
-      {editorWaveId && (
-        <PalletEditor
-          waveId={editorWaveId}
-          onClose={() => setEditorWaveId(null)}
-          onSaved={() => { setEditorWaveId(null); loadPallets(waves) }}
-          onPrint={() => {
-            const wvId = editorWaveId!
-            setPrintedWaveIds(prev => { const n = new Set(prev); n.add(wvId); return n })
-            setPrintWaveId(wvId)
-            setEditorWaveId(null)
-          }}
-        />
-      )}
-      {printWaveId && <PickSheetModal waveId={printWaveId} onClose={() => setPrintWaveId(null)} />}
     </div>
   )
 }
@@ -563,27 +472,4 @@ function DriverChip({ label, count, active, onClick }: { label: string; count?: 
 }
 function Empty({ text }: { text: string }) {
   return <div className="flex-none w-[236px] flex items-center justify-center text-gray-400 text-sm min-h-[120px] border border-dashed rounded-xl" style={{ borderColor: '#e5e7eb' }}>{text}</div>
-}
-function PalletTile({ pallet, onClick }: { pallet: Pallet; onClick: () => void }) {
-  const items = pallet.items ?? []
-  const qty = items.reduce((s, it) => s + it.qty, 0)
-  const restaurants = new Set(items.map(it => it.restaurantName))
-  const byRest = new Map<string, number>()
-  for (const it of items) byRest.set(it.restaurantName, (byRest.get(it.restaurantName) ?? 0) + it.qty)
-  const seqCh = '①②③④⑤⑥⑦⑧⑨⑩'[pallet.seq - 1] ?? `${pallet.seq}`
-  return (
-    <div onClick={onClick} className="border rounded-lg p-2 cursor-pointer hover:border-purple-400 mb-1.5" style={{ borderColor: '#e5e7eb' }}>
-      <div className="flex justify-between items-center text-xs">
-        <span className="flex items-center gap-1.5">
-          <span className="w-[18px] h-[18px] rounded text-white inline-flex items-center justify-center text-[10px] font-bold" style={{ background: '#7c3aed' }}>{seqCh}</span>托盘 {pallet.seq}
-        </span>
-        <span>{fmtQty(qty)} 件</span>
-      </div>
-      <div className="flex gap-0.5 mt-1.5 h-1.5">
-        {[...byRest.entries()].map(([r, q]) => <span key={r} className="rounded" style={{ flex: q, background: restaurantColor(r) }} />)}
-        {byRest.size === 0 && <span className="rounded flex-1 bg-gray-200" />}
-      </div>
-      <div className="text-[11px] text-gray-500 mt-1.5">{restaurants.size} 家 · {items.length} SKU</div>
-    </div>
-  )
 }

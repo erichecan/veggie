@@ -311,7 +311,9 @@ export async function resolveOrderLines(
       resolution,
       uomId: item.uomId,
       uomName: item.uomName,
-      taxRate: item.taxRate,
+      // SSOT 护栏(A-1): OrderLine.taxRate 一律存百分数(如 23)。历史小数(0.23)与
+      // 前端偶发小数在此归一;IE VAT 档位 0/4.8/9/13.5/23 在 (0,1) 无合法值,判别无歧义。
+      taxRate: item.taxRate != null && item.taxRate > 0 && item.taxRate < 1 ? item.taxRate * 100 : item.taxRate,
     })
   }
 

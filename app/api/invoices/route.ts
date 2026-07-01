@@ -75,7 +75,9 @@ export async function POST(req: Request) {
       const recomputedLines = rawLines.map((raw: InboundLine) => {
         const qty = Number(raw.qty ?? raw.quantity ?? 0)
         const unitPrice = Number(raw.unitPrice ?? 0)
-        const taxRate = Number(raw.taxRate ?? 0)
+        // taxRate 兼容两种存法：百分数(>1，如 23)归一为小数(0.23)；发票内部一律以小数计税
+        const taxRateRaw = Number(raw.taxRate ?? 0)
+        const taxRate = taxRateRaw > 1 ? taxRateRaw / 100 : taxRateRaw
         if (!Number.isFinite(qty) || qty <= 0 || qty > 100_000) {
           throw Object.assign(new Error(`发票行数量无效：${raw.productName ?? raw.productId}`), { status: 400 })
         }

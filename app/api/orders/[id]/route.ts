@@ -345,21 +345,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           }
         }
 
-        // SSOT: totalAmount 服务端重算 = Σ含税(line.subtotal=unitPrice×qty 为不含税,
-        // totalAmount 为含税,与下单口径一致)。taxRate 兼容百分比(>1)与分数两种存法。不信前端传值。
-        const normTax = (t: unknown) => { const x = Number(t ?? 0); return x > 1 ? x / 100 : x }
+        // SSOT: totalAmount 服务端重算 = Σ税前(line.subtotal=unitPrice×qty 税前,
+        // totalAmount 亦为税前,与下单 server-pricing.ts / 加行 lines/route.ts 口径一致)。不信前端传值。
         const computedTotal = (linesPayload as Record<string, unknown>[]).reduce((s, l) => {
           const exTax = Math.round(Number(l.orderedQty) * Number(l.unitPrice) * 100) / 100
-          return s + exTax * (1 + normTax(l.taxRate))
+          return s + exTax
         }, 0)
         updateData.totalAmount = Math.round(computedTotal * 100) / 100
       } else if (totalAmountPayload !== undefined) {
-        // 未改行只改总额:也不信前端,从当前 OrderLine 含税重算
-        const normTax = (t: unknown) => { const x = Number(t ?? 0); return x > 1 ? x / 100 : x }
-        const dbLines = await prisma.orderLine.findMany({ where: { orderId: id }, select: { orderedQty: true, unitPrice: true, taxRate: true } })
+        // 未改行只改总额:也不信前端,从当前 OrderLine 税前重算
+        const dbLines = await prisma.orderLine.findMany({ where: { orderId: id }, select: { orderedQty: true, unitPrice: true } })
         const recomputed = dbLines.reduce((s, l) => {
           const exTax = Math.round(toNum(l.orderedQty) * toNum(l.unitPrice) * 100) / 100
-          return s + exTax * (1 + normTax(l.taxRate))
+          return s + exTax
         }, 0)
         updateData.totalAmount = Math.round(recomputed * 100) / 100
       }

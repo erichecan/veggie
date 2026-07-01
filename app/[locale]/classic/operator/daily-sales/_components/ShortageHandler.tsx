@@ -1,10 +1,16 @@
 'use client'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPatch } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { today } from './shared'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
+
+interface ProductOption {
+  id: string
+  name: string
+}
 
 interface FlatLine {
   lineId: string
@@ -38,8 +44,9 @@ export default function ShortageHandler() {
   const [date, setDate] = useState(today)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
-  const [productTags, setProductTags] = useState<string[]>([])
-  const [productTagInput, setProductTagInput] = useState('')
+  const [allProducts, setAllProducts] = useState<ProductOption[]>([])
+  const [selectedProducts, setSelectedProducts] = useState<ProductOption[]>([])
+  const [productQuery, setProductQuery] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [newQtys, setNewQtys] = useState<Record<string, string>>({})
@@ -49,7 +56,6 @@ export default function ShortageHandler() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState<ActionLog[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
-  const tagInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!date) return
@@ -65,6 +71,12 @@ export default function ShortageHandler() {
       .catch(() => setOrders([]))
       .finally(() => setLoading(false))
   }, [date])
+
+  useEffect(() => {
+    apiGet<ProductOption[]>('/api/products?limit=500')
+      .then(d => setAllProducts(Array.isArray(d) ? d : []))
+      .catch(() => setAllProducts([]))
+  }, [])
 
   const allLines: FlatLine[] = useMemo(() => {
     const lines: FlatLine[] = []
@@ -99,13 +111,10 @@ export default function ShortageHandler() {
     return allLines.filter(l => {
       if (timeFilter !== 'all' && l.timeOfDay !== timeFilter) return false
       if (selectedDrivers.length > 0 && (!l.driverName || !selectedDrivers.includes(l.driverName))) return false
-      if (productTags.length > 0) {
-        const name = l.productName.toLowerCase()
-        if (!productTags.some(tag => name.includes(tag.toLowerCase()))) return false
-      }
+      if (selectedProducts.length > 0 && !selectedProducts.some(p => p.id === l.productId)) return false
       return true
     })
-  }, [allLines, timeFilter, selectedDrivers, productTags])
+  }, [allLines, timeFilter, selectedDrivers, selectedProducts])
 
   const modifiedLines = useMemo(
     () => filteredLines.filter(l => (newQtys[l.lineId]?.trim() ?? '') !== ''),
@@ -118,15 +127,13 @@ export default function ShortageHandler() {
     )
   }
 
-  function addProductTag() {
-    const tag = productTagInput.trim()
-    if (tag && !productTags.includes(tag)) setProductTags(prev => [...prev, tag])
-    setProductTagInput('')
-    tagInputRef.current?.focus()
+  function addProduct(p: ProductOption) {
+    setSelectedProducts(prev => (prev.some(sp => sp.id === p.id) ? prev : [...prev, p]))
+    setProductQuery('')
   }
 
-  function removeProductTag(tag: string) {
-    setProductTags(prev => prev.filter(t => t !== tag))
+  function removeProduct(id: string) {
+    setSelectedProducts(prev => prev.filter(p => p.id !== id))
   }
 
   function getLineStatus(lineId: string) {
@@ -255,22 +262,24 @@ export default function ShortageHandler() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-500 shrink-0">商品</span>
-          {productTags.map(tag => (
-            <span key={tag} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
-              {tag}
-              <button onClick={() => removeProductTag(tag)} className="hover:text-red-500 leading-none">×</button>
+          {selectedProducts.map(p => (
+            <span key={p.id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
+              {p.name}
+              <button onClick={() => removeProduct(p.id)} className="hover:text-red-500 leading-none">×</button>
             </span>
           ))}
-          <input
-            ref={tagInputRef}
-            value={productTagInput}
-            onChange={e => setProductTagInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProductTag() } }}
-            placeholder="输入商品名 + Enter"
-            className="border border-gray-300 rounded px-2 py-0.5 text-xs w-36 focus:outline-none focus:border-[#875A7B]"
+          <ProductSearchInput
+            value={productQuery}
+            onChange={setProductQuery}
+            onSelect={addProduct}
+            products={allProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
+            placeholder="输入商品名搜索"
+            inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-40 focus:outline-none focus:border-[#875A7B]"
+            showOnEmptyQuery={false}
+            selectOnTab
           />
-          {productTags.length > 0 && (
-            <button onClick={() => setProductTags([])} className="text-xs text-gray-400 hover:text-gray-600">
+          {selectedProducts.length > 0 && (
+            <button onClick={() => setSelectedProducts([])} className="text-xs text-gray-400 hover:text-gray-600">
               清除
             </button>
           )}
