@@ -409,6 +409,11 @@ export default function QuotationDetailPage() {
         {/* Region 2: secondary actions + status flow */}
         <div className="flex items-center justify-between mt-3">
           <div className="flex items-center gap-2">
+            <button onClick={handleCancel} disabled={isLocked}
+              className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed">
+              取消报价单
+            </button>
+            <div className="w-px h-5 bg-gray-300 mx-1" />
             <button disabled={!isSalesOrder}
               onClick={() => router.push(`${prefix}/operator/orders/${order.id}#invoice`)}
               className="h-8 px-3 text-sm rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
@@ -424,11 +429,6 @@ export default function QuotationDetailPage() {
                 await load()
               }}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Unlock</button>
-            <div className="w-px h-5 bg-gray-300 mx-1" />
-            <button onClick={handleCancel} disabled={isLocked}
-              className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed">
-              取消报价单
-            </button>
           </div>
           <div className="flex items-center gap-1">
             <StatusPill label="Quotation" active={flowSegment === 'quotation'} dim={flowSegment !== 'quotation'} />
@@ -514,10 +514,11 @@ export default function QuotationDetailPage() {
                 </div>
                 {noteTab === 'internal' ? (
                   editing ? (
-                    <input value={internalNote} onChange={e => setInternalNote(e.target.value)}
-                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none" maxLength={30}
+                    <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
+                      rows={3} maxLength={30}
+                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
                       placeholder="仅内部可见，不会打印给客户" />
-                  ) : <div className="text-sm text-gray-700">{internalNote || '—'}</div>
+                  ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
                 ) : (
                   editing ? (
                     <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
