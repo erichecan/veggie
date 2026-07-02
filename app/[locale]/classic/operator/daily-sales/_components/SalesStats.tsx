@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import {
@@ -9,6 +9,8 @@ import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
 import { toggleValue, today } from './shared'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
+import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; qtyOnHand?: number; uomName?: string }
@@ -58,95 +60,6 @@ function periodDates(p: 'week' | 'month' | '4weeks'): [string, string] {
 
 const eur = (v: number) => `€${v.toFixed(2)}`
 
-// ─── Table-embedded inline search ─────────────────────────────────────────────
-
-function TableInlineSearch<T extends { id: string; name: string }>({
-  allItems,
-  selectedIds,
-  onAdd,
-  placeholder,
-  colSpan,
-}: {
-  allItems: T[]
-  selectedIds: string[]
-  onAdd: (item: T) => void
-  placeholder: string
-  colSpan: number
-}) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const [focused, setFocused] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const containerRef = useRef<HTMLTableRowElement>(null)
-
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase()
-    return allItems
-      .filter(i => !selectedIds.includes(i.id) && (q === '' || i.name.toLowerCase().includes(q)))
-      .slice(0, 12)
-  }, [allItems, selectedIds, query])
-
-  useEffect(() => {
-    if (!open) return
-    function onOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false); setQuery('')
-      }
-    }
-    document.addEventListener('mousedown', onOutside)
-    return () => document.removeEventListener('mousedown', onOutside)
-  }, [open])
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setFocused(f => Math.min(f + 1, filtered.length - 1)) }
-    if (e.key === 'ArrowUp') { e.preventDefault(); setFocused(f => Math.max(f - 1, 0)) }
-    if (e.key === 'Enter' && filtered[focused]) {
-      onAdd(filtered[focused]); setQuery(''); setFocused(0)
-    }
-    if (e.key === 'Escape') { setOpen(false); setQuery('') }
-  }
-
-  return (
-    <tr ref={containerRef}>
-      <td colSpan={colSpan + 1} className="px-4 py-2">
-        {!open ? (
-          <button
-            className="text-xs text-[#875A7B] hover:underline"
-            onClick={() => { setOpen(true); setTimeout(() => inputRef.current?.focus(), 0) }}
-          >
-            + 添加筛选项
-          </button>
-        ) : (
-          <div className="relative">
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={e => { setQuery(e.target.value); setFocused(0) }}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              className="border border-[#875A7B] rounded px-2 py-0.5 text-xs w-52 focus:outline-none"
-            />
-            {filtered.length > 0 && (
-              <div className="absolute z-50 mt-1 bg-white border border-gray-200 rounded shadow-lg min-w-[220px] max-h-60 overflow-y-auto">
-                {filtered.map((item, i) => (
-                  <button
-                    key={item.id}
-                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-purple-50 ${i === focused ? 'bg-purple-50' : ''}`}
-                    onMouseEnter={() => setFocused(i)}
-                    onClick={() => { onAdd(item); setQuery(''); setFocused(0) }}
-                  >
-                    {item.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </td>
-    </tr>
-  )
-}
-
 // ─── SalesStats ───────────────────────────────────────────────────────────────
 
 export default function SalesStats() {
@@ -162,8 +75,9 @@ export default function SalesStats() {
   const [selectedBatchNums, setSelectedBatchNums] = useState<number[]>([])
   const [selectedCustomers, setSelectedCustomers] = useState<CustomerRow[]>([])
   const [selectedProducts, setSelectedProducts] = useState<ProductRow[]>([])
+  const [customerQuery, setCustomerQuery] = useState('')
+  const [productQuery, setProductQuery] = useState('')
 
-  const [allCustomers, setAllCustomers] = useState<CustomerRow[]>([])
   const [allProducts, setAllProducts] = useState<ProductRow[]>([])
   const [allSalesmen, setAllSalesmen] = useState<UserRow[]>([])
   const [allCategories, setAllCategories] = useState<CategoryRow[]>([])
@@ -180,7 +94,6 @@ export default function SalesStats() {
 
   // New views state
   const [statsView, setStatsView] = useState<'daily' | 'weekly'>('daily')
-  const [selectedDate, setSelectedDate] = useState(today)
   const [selectedStatsCats, setSelectedStatsCats] = useState<string[]>([])
   const [dailyOrders, setDailyOrders] = useState<Order[]>([])
   const [dailyLoading, setDailyLoading] = useState(false)
@@ -188,7 +101,6 @@ export default function SalesStats() {
 
   // Load reference data once
   useEffect(() => {
-    apiGet<CustomerRow[]>('/api/customers?limit=500').then(d => setAllCustomers(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<ProductRow[]>('/api/products?limit=500').then(d => setAllProducts(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<UserRow[]>('/api/users').then(d => setAllSalesmen(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<CategoryRow[]>('/api/product-categories').then(d => setAllCategories(Array.isArray(d) ? d : [])).catch(() => {})
@@ -204,9 +116,9 @@ export default function SalesStats() {
       .catch(() => setOrders([]))
   }, [fromDate, toDate])
 
-  // Auto-compute dashboard date range from selectedDate (current week + 4 past weeks)
+  // Auto-compute dashboard date range from fromDate (current week + 4 past weeks)
   useEffect(() => {
-    const dt = new Date(selectedDate + 'T12:00:00Z')
+    const dt = new Date(fromDate + 'T12:00:00Z')
     const dow = (dt.getUTCDay() + 6) % 7
     const mon = new Date(dt)
     mon.setUTCDate(dt.getUTCDate() - dow)
@@ -216,7 +128,7 @@ export default function SalesStats() {
     to.setUTCDate(mon.getUTCDate() + 6)
     setDashFrom(from.toISOString().slice(0, 10))
     setDashTo(to.toISOString().slice(0, 10))
-  }, [selectedDate])
+  }, [fromDate])
 
   // Reload dashboard orders when date range changes
   useEffect(() => {
@@ -231,15 +143,18 @@ export default function SalesStats() {
   }, [dashFrom, dashTo])
 
   // Load daily orders for View 1
+  // 状态集需与批次/看板查询一致：订单确认后一旦被排线，状态会推进到 WAVE_ASSIGNED/IN_DELIVERY/COMPLETED，
+  // 只查 CONFIRMED 会漏掉当天已排线/已配送的订单，导致「今日总量」看起来是空的。
   useEffect(() => {
+    if (!fromDate) return
     setDailyLoading(true)
     apiGet<Order[]>(
-      `/api/orders?status=CONFIRMED&dateField=deliveryDate&fromDate=${selectedDate}&toDate=${selectedDate}`
+      `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED&dateField=deliveryDate&fromDate=${fromDate}&toDate=${fromDate}`
     )
       .then(d => setDailyOrders(Array.isArray(d) ? d : []))
       .catch(() => setDailyOrders([]))
       .finally(() => setDailyLoading(false))
-  }, [selectedDate])
+  }, [fromDate])
 
   const batchFilterOptions = useMemo(() => {
     const drivers = new Set<string>()
@@ -426,7 +341,7 @@ export default function SalesStats() {
 
   const weeklyChartData = useMemo(() => {
     const DOW_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const now = new Date(selectedDate + 'T12:00:00Z')
+    const now = new Date(fromDate + 'T12:00:00Z')
     const nowDow = (now.getUTCDay() + 6) % 7
     const thisMon = new Date(now)
     thisMon.setUTCDate(now.getUTCDate() - nowDow)
@@ -454,7 +369,7 @@ export default function SalesStats() {
     return DOW_LABELS.map((day, i) => ({
       day, current: Math.round(currentWeek[i]), avg: pastAvg[i],
     }))
-  }, [dashOrders, selectedDate])
+  }, [dashOrders, fromDate])
 
   const weeklyConclusion = useMemo(() => {
     const nonZero = weeklyChartData.filter(d => d.current > 0)
@@ -502,11 +417,11 @@ export default function SalesStats() {
     w.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
-<title>今日总量 · ${selectedDate}</title>
+<title>今日总量 · ${fromDate}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;padding:20px}@media print{@page{margin:1cm}body{padding:0}}</style>
 </head><body>
 <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px dashed #e5e7eb;font-size:12px;color:#6b7280;">
-  <b style="font-size:15px;color:#111;">今日总量</b>&nbsp;&nbsp;日期：<b style="color:#111;">${selectedDate}</b>&nbsp;&nbsp;合计：<b style="color:#111;">${dailySummary.totalSku} SKU · ${dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件</b>
+  <b style="font-size:15px;color:#111;">今日总量</b>&nbsp;&nbsp;日期：<b style="color:#111;">${fromDate}</b>&nbsp;&nbsp;合计：<b style="color:#111;">${dailySummary.totalSku} SKU · ${dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件</b>
 </div>
 ${catsHtml}
 <script>window.print();<\/script>
@@ -624,92 +539,58 @@ ${catsHtml}
         </div>
       </div>
 
-      {/* Customers table */}
-      <div className="border-b border-gray-200">
-        <div className="px-5 py-2 bg-gray-50 border-b border-gray-200">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customers</span>
-          {selectedCustomers.length === 0 && (
-            <span className="ml-2 text-xs text-gray-400">（留空 = 全部客户）</span>
+      {/* Customers chip filter */}
+      <div className="px-5 py-3 border-b border-gray-200">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider shrink-0">Customers</span>
+          {selectedCustomers.map(c => (
+            <span key={c.id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
+              {c.name}
+              <button onClick={() => setSelectedCustomers(prev => prev.filter(x => x.id !== c.id))} className="hover:text-red-500 leading-none">×</button>
+            </span>
+          ))}
+          <CustomerSearchInput<CustomerRow>
+            value={customerQuery}
+            onChange={setCustomerQuery}
+            onSelect={c => setSelectedCustomers(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c])}
+            excludeIds={selectedCustomers.map(c => c.id)}
+            placeholder="搜索客户…"
+            inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-40 focus:outline-none focus:border-[#875A7B]"
+          />
+          {selectedCustomers.length === 0 ? (
+            <span className="text-xs text-gray-400">（留空 = 全部客户）</span>
+          ) : (
+            <button onClick={() => setSelectedCustomers([])} className="text-xs text-gray-400 hover:text-gray-600">清除</button>
           )}
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100">
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 w-8" />
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400">Name</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400">Street</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400">City</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400">Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {selectedCustomers.map(c => (
-              <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                <td className="px-4 py-2 text-center">
-                  <button
-                    onClick={() => setSelectedCustomers(prev => prev.filter(x => x.id !== c.id))}
-                    className="text-gray-300 hover:text-red-400 text-base leading-none"
-                  >×</button>
-                </td>
-                <td className="px-4 py-2 text-gray-800">{c.name}</td>
-                <td className="px-4 py-2 text-gray-400">{c.street ?? '–'}</td>
-                <td className="px-4 py-2 text-gray-400">{c.city ?? '–'}</td>
-                <td className="px-4 py-2 text-gray-400">{c.notes ?? '–'}</td>
-              </tr>
-            ))}
-            <TableInlineSearch<CustomerRow>
-              allItems={allCustomers}
-              selectedIds={selectedCustomers.map(c => c.id)}
-              onAdd={item => setSelectedCustomers(prev => [...prev, item])}
-              placeholder="搜索客户…"
-              colSpan={4}
-            />
-          </tbody>
-        </table>
       </div>
 
-      {/* Products table */}
-      <div className="border-b border-gray-200">
-        <div className="px-5 py-2 bg-gray-50 border-b border-gray-200">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Products</span>
-          {selectedProducts.length === 0 && (
-            <span className="ml-2 text-xs text-gray-400">（留空 = 全部商品）</span>
+      {/* Products chip filter */}
+      <div className="px-5 py-3 border-b border-gray-200">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider shrink-0">Products</span>
+          {selectedProducts.map(p => (
+            <span key={p.id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
+              {p.name}
+              <button onClick={() => setSelectedProducts(prev => prev.filter(x => x.id !== p.id))} className="hover:text-red-500 leading-none">×</button>
+            </span>
+          ))}
+          <ProductSearchInput<ProductRow>
+            value={productQuery}
+            onChange={setProductQuery}
+            onSelect={p => setSelectedProducts(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p])}
+            products={allProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
+            placeholder="搜索商品…"
+            inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-40 focus:outline-none focus:border-[#875A7B]"
+            showOnEmptyQuery={false}
+            selectOnTab
+          />
+          {selectedProducts.length === 0 ? (
+            <span className="text-xs text-gray-400">（留空 = 全部商品）</span>
+          ) : (
+            <button onClick={() => setSelectedProducts([])} className="text-xs text-gray-400 hover:text-gray-600">清除</button>
           )}
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100">
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 w-8" />
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400">Name</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-gray-400">Sale Price</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-400">Category</th>
-            </tr>
-          </thead>
-          <tbody>
-            {selectedProducts.map(p => (
-              <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
-                <td className="px-4 py-2 text-center">
-                  <button
-                    onClick={() => setSelectedProducts(prev => prev.filter(x => x.id !== p.id))}
-                    className="text-gray-300 hover:text-red-400 text-base leading-none"
-                  >×</button>
-                </td>
-                <td className="px-4 py-2 text-gray-800">{p.name}</td>
-                <td className="px-4 py-2 text-right text-gray-600">
-                  {p.salePrice != null ? `$${Number(p.salePrice).toFixed(2)}` : '–'}
-                </td>
-                <td className="px-4 py-2 text-gray-400">{p.category ?? '–'}</td>
-              </tr>
-            ))}
-            <TableInlineSearch<ProductRow>
-              allItems={allProducts}
-              selectedIds={selectedProducts.map(p => p.id)}
-              onAdd={item => setSelectedProducts(prev => [...prev, item])}
-              placeholder="搜索商品…"
-              colSpan={3}
-            />
-          </tbody>
-        </table>
       </div>
 
       {/* Print buttons */}
@@ -739,9 +620,8 @@ ${catsHtml}
       {/* ── New Views: 当日分类总量 / 周销售趋势 ── */}
       <div className="border-t border-gray-200">
 
-        {/* Shared header: date picker + view toggle */}
+        {/* Shared header: view toggle (date follows the From picker above) */}
         <div className="px-5 py-3 flex items-center gap-4 bg-gray-50 border-b border-gray-200">
-          <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className={selectCls} />
           <div className="flex items-center gap-2">
             {(['daily', 'weekly'] as const).map(v => (
               <button
@@ -755,6 +635,7 @@ ${catsHtml}
               </button>
             ))}
           </div>
+          <span className="text-xs text-gray-400">以上方 From 日期（{fromDate}）为准</span>
           {dailyLoading && statsView === 'daily' && <span className="text-xs text-gray-400">加载中…</span>}
           {dashLoading && statsView === 'weekly' && <span className="text-xs text-gray-400">数据加载中…</span>}
         </div>

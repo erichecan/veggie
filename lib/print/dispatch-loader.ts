@@ -18,6 +18,8 @@ import {
 
 /** 单批次打印的最大订单数，超出则截断并在打印顶部提示 */
 const MAX_PRINT_ORDERS = 50
+/** 整日全部批次打印的最大订单数（拣货单截断会丢商品，上限放宽） */
+const MAX_PRINT_ORDERS_ALL = 200
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0
@@ -72,7 +74,7 @@ async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType
   return map
 }
 
-/** 批次选择器：用 DriverSlot id，或回退到批次字符串 "2 pm AFZAAL"（无 DriverSlot 记录时） */
+/** 批次选择器：用 DriverSlot id，或回退到批次字符串 "2 pm AFZAAL"；两者皆空 = 整日全部批次 */
 export interface DispatchSelector {
   driverSlotId?: string | null
   batchLabel?: string | null
@@ -92,6 +94,7 @@ export async function loadDispatchPrintData(
   let timeOfDay: string
   let driverName: string
   let slotLabel: string
+  let allBatches = false
 
   if (slot) {
     batchNum = slot.batchNum
@@ -107,7 +110,12 @@ export async function loadDispatchPrintData(
     // Resolve a matching slot so orders linked only by driverSlotId are still found
     slot = await prisma.driverSlot.findFirst({ where: { batchNum, timeOfDay, driverName } })
   } else {
-    return null
+    // 整日全部批次模式（打印中心「全部打印」入口）
+    allBatches = true
+    batchNum = 0
+    timeOfDay = ''
+    driverName = ''
+    slotLabel = '全部批次'
   }
 
   const rangeStart = new Date(`${fromDate ?? date}T00:00:00.000Z`)
@@ -118,7 +126,25 @@ export async function loadDispatchPrintData(
   // 拖拽调度台只写 wave.orderIds，不回填 Order.driverSlotId，所以必须先查 wave。
   // 见 lib/wave-assign.ts、docs/20260624-data-ownership-audit.md。
   let orders: Awaited<ReturnType<typeof prisma.order.findMany<{ include: { lines: true } }>>> = []
-  if (slot) {
+  if (allBatches) {
+    // 当天所有波次的订单 ∪ 当天 deliveryDate 的订单（含未分配批次）
+    const waves = await prisma.pickingWave.findMany({
+      where: { waveDate: dateOnlyUTC(new Date(`${date}T00:00:00.000Z`)) },
+      select: { orderIds: true },
+    })
+    const waveOrderIds = [...new Set(waves.flatMap(w => w.orderIds))]
+    orders = await prisma.order.findMany({
+      where: {
+        status: { in: statusFilter },
+        OR: [
+          ...(waveOrderIds.length > 0 ? [{ id: { in: waveOrderIds } }] : []),
+          { deliveryDate: { gte: rangeStart, lte: dayEnd } },
+        ],
+      },
+      include: { lines: { orderBy: { sequence: 'asc' } } },
+      orderBy: { restaurantName: 'asc' },
+    })
+  } else if (slot) {
     const wave = await prisma.pickingWave.findUnique({
       where: { waveDate_driverSlotId: { waveDate: dateOnlyUTC(new Date(`${date}T00:00:00.000Z`)), driverSlotId: slot.id } },
     })
@@ -132,7 +158,7 @@ export async function loadDispatchPrintData(
   }
 
   // Fallback: legacy orders without a wave record — match by driverSlotId / deliveryBatch string
-  if (orders.length === 0) {
+  if (!allBatches && orders.length === 0) {
     const batchMatch = slot
       ? [{ driverSlotId: slot.id }, { deliveryBatch: slotLabel }]
       : [{ deliveryBatch: slotLabel }]
@@ -170,9 +196,10 @@ export async function loadDispatchPrintData(
   if (orders.length === 0) return null
 
   // 截断保护：单批次累积大量历史订单时，避免一次渲染上千页发票
+  const maxOrders = allBatches ? MAX_PRINT_ORDERS_ALL : MAX_PRINT_ORDERS
   const totalMatched = orders.length
-  const truncated = totalMatched > MAX_PRINT_ORDERS
-  if (truncated) orders = orders.slice(0, MAX_PRINT_ORDERS)
+  const truncated = totalMatched > maxOrders
+  if (truncated) orders = orders.slice(0, maxOrders)
 
   const customerIds = [...new Set(orders.map(o => o.restaurantId))]
   const customerRows = customerIds.length > 0
@@ -237,14 +264,14 @@ export async function loadDispatchPrintData(
 
   return {
     trip: {
-      id: `dispatch-${slot?.id ?? slotLabel}-${date}`,
-      name: `${driverName} #${batchNum} ${timeOfDay.toUpperCase()}`,
+      id: allBatches ? `dispatch-all-${date}` : `dispatch-${slot?.id ?? slotLabel}-${date}`,
+      name: allBatches ? `全部批次 ${date}` : `${driverName} #${batchNum} ${timeOfDay.toUpperCase()}`,
       timeSlot: timeSlotMap[timeOfDay] ?? timeOfDay,
       driverName: driverName,
       departTime: null,
       createdAt: new Date().toISOString(),
       notice: truncated
-        ? `本批次共 ${totalMatched} 张订单，已截断显示前 ${MAX_PRINT_ORDERS} 张。请用日期过滤缩小范围。`
+        ? `本批次共 ${totalMatched} 张订单，已截断显示前 ${maxOrders} 张。请用日期过滤缩小范围。`
         : null,
     },
     orders: printOrders,

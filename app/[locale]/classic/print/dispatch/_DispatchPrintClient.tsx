@@ -36,8 +36,9 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!date || (!driverSlotId && !batchLabel)) {
-      setError('缺少参数 date 以及 driverSlotId 或 batchLabel')
+    // driverSlotId / batchLabel 皆空 = 整日全部批次打印
+    if (!date) {
+      setError('缺少参数 date')
       return
     }
     let cancelled = false

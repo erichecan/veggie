@@ -185,7 +185,11 @@ export default function ShortageHandler() {
     try {
       const res = await apiGet<{ logs: ActionLog[] } | ActionLog[]>('/api/action-logs?resource=order&take=100')
       const logs: ActionLog[] = Array.isArray(res) ? res : (res as { logs: ActionLog[] }).logs ?? []
-      setHistory(logs.filter(log => log.createdAt.startsWith(date)))
+      // 只显示缺货处理产生的记录（行数量修改/删行），其余订单操作日志不属于本页
+      setHistory(logs.filter(log =>
+        log.createdAt.startsWith(date) &&
+        (log.detail?.startsWith('修改订单行数量') || log.detail?.startsWith('删除订单行'))
+      ))
     } catch {
       setHistory([])
     } finally {

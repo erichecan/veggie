@@ -15,9 +15,10 @@ export async function GET(req: Request) {
     const driverSlotId = searchParams.get('driverSlotId')
     const batchLabel = searchParams.get('batchLabel')
 
-    if (!date || (!driverSlotId && !batchLabel)) {
+    // driverSlotId / batchLabel 皆空 = 整日全部批次打印
+    if (!date) {
       return NextResponse.json(
-        { error: '缺少参数 date 以及 driverSlotId 或 batchLabel' },
+        { error: '缺少参数 date' },
         { status: 400 },
       )
     }

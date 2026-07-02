@@ -110,10 +110,10 @@ export default function ClassicFinancePage() {
   const commissionGroups: CommissionGroup[] = customers
     .filter(c => c.commissionRate != null && c.commissionRate > 0)
     .map(c => {
-      // 佣金基数按税后(含税)——与销售额同口径(B-1 决策)
+      // 佣金(CMS)基数按税前——CMS 用于考核司机工作量，不含税（与报表视图 commission_amount 同口径）
       const completedTotal = orders
         .filter(o => o.restaurantId === c.id && o.status.toLowerCase() === 'completed')
-        .reduce((s, o) => s + incTax(o), 0)
+        .reduce((s, o) => s + Number(o.totalAmount), 0)
       const commission = completedTotal * (c.commissionRate ?? 0)
       return { customer: c, completedTotal, commissionRate: c.commissionRate!, commission }
     })
@@ -148,7 +148,7 @@ export default function ClassicFinancePage() {
 
   function exportCommissionCsv() {
     downloadCsv('sales-commission',
-      ['客户', '已完成订单额', '佣金率', '应付佣金'],
+      ['客户', '已完成订单额(税前)', '佣金率', '应付佣金'],
       commissionGroups.map(g => [
         g.customer.name, g.completedTotal.toFixed(2),
         `${(g.commissionRate * 100).toFixed(1)}%`, g.commission.toFixed(2),
@@ -218,7 +218,7 @@ export default function ClassicFinancePage() {
   const commissionColumns: DrillColumn<CommissionGroup>[] = [
     { key: 'name', label: '客户', render: g => <span className="text-gray-800 font-medium">{g.customer.name}</span> },
     {
-      key: 'completed', label: '已完成订单额', align: 'right', render: g =>
+      key: 'completed', label: '已完成订单额(税前)', align: 'right', render: g =>
         <span className="text-gray-700">€{g.completedTotal.toFixed(2)}</span>,
     },
     {
@@ -434,7 +434,7 @@ export default function ClassicFinancePage() {
             <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
               <tr>
                 <th className="text-left px-5 py-2.5 text-xs font-medium text-gray-600">客户</th>
-                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">已完成订单额</th>
+                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">已完成订单额(税前)</th>
                 <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">佣金率</th>
                 <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">应付佣金</th>
               </tr>
