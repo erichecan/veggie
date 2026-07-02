@@ -578,7 +578,7 @@ ${catsHtml}
           <ProductSearchInput<ProductRow>
             value={productQuery}
             onChange={setProductQuery}
-            onSelect={p => setSelectedProducts(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p])}
+            onSelect={p => { setSelectedProducts(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p]); setProductQuery('') }}
             products={allProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
             placeholder="搜索商品…"
             inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-40 focus:outline-none focus:border-[#875A7B]"
