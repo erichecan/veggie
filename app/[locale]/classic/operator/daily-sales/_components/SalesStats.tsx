@@ -523,7 +523,7 @@ ${catsHtml}
     if (selectedTimes.length > 0) params.set('times', selectedTimes.join(','))
     if (selectedBatchNums.length > 0) params.set('batchNums', selectedBatchNums.join(','))
     if (selectedCategory) params.set('categoryId', selectedCategory)
-    if (selectedSalesman) params.set('salesman', selectedSalesman)
+    if (selectedSalesman) params.set('salesUserId', selectedSalesman)
     return `${prefix}/classic/print/day-wise-report?${params.toString()}`
   }
 
@@ -559,7 +559,7 @@ ${catsHtml}
             <label className="w-28 text-xs text-gray-500 shrink-0">Salesman</label>
             <select value={selectedSalesman} onChange={e => setSelectedSalesman(e.target.value)} className={`${selectCls} flex-1`}>
               <option value="">全部业务员</option>
-              {allSalesmen.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+              {allSalesmen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-3">

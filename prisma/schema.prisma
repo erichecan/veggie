@@ -153,6 +153,10 @@ model User {
 
   /// 反向关系：该用户作为创建者的订单
   ordersCreated Order[] @relation("OrderCreator")
+  /// 反向关系：该用户作为业务员的订单
+  ordersAsSalesUser Order[] @relation("OrderSalesUser")
+  /// 反向关系：该用户作为默认业务员的客户
+  customersAsSalesUser Customer[] @relation("CustomerSalesUser")
   /// 反向关系：绑定到该用户的司机配送批次(DriverSlot.userId)
   driverSlots   DriverSlot[] @relation("DriverSlotUser")
 
@@ -312,8 +316,9 @@ model Customer {
   vendorTaxRate   Decimal?  @db.Decimal(6, 4)
   /// 供应商专属：供应商付款条款
   supplierPaymentTerm String?
-  /// 关联业务员姓名
-  salesman        String?
+  /// 默认业务员用户 ID（下单时作为 Order.salesUserId 的默认来源）
+  salesUserId     String?
+  salesUser       User?     @relation("CustomerSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
   /// 经纬度（Google Geocoding API 填充）
   latitude        Float?
   longitude       Float?
@@ -327,6 +332,7 @@ model Customer {
   @@index([isVendor])
   @@index([pricelistId])
   @@index([defaultDriverSlotId])
+  @@index([salesUserId])
 }
 
 /**
@@ -470,8 +476,9 @@ model Order {
   internalNote     String?
   /// 外部备注（打印在报价单/送货单上，客户可见）
   externalNote     String?
-  /// 业务员姓名（下单时快照，对应 Odoo sale.order.user_id）
-  salesman         String?
+  /// 业务员用户 ID（对应 Odoo sale.order.user_id）
+  salesUserId      String?
+  salesUser        User?     @relation("OrderSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
   /// 报价日期（创建时自动设置）
   quotationDate    DateTime?
   /// 确认日期（确认时自动设置）
@@ -515,6 +522,7 @@ model Order {
   @@index([pricelistId])
   @@index([createdById])
   @@index([driverSlotId])
+  @@index([salesUserId])
 }
 
 /// 订单行（Odoo 对齐）— 每条记录对应一种商品的一行明细，含 ordered/delivered/invoiced 三个数量

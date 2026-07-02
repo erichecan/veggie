@@ -21,7 +21,7 @@ const VALID_PRICE_TYPES = new Set(['multi', 'default', 'last'])
 
 // ── P1-6: CONFIRMED 状态下允许安全编辑的字段 ──────────────────────────────
 const CONFIRMED_SAFE_FIELDS = new Set([
-  'deliveryDate', 'internalNote', 'externalNote', 'driverSlotId', 'salesman',
+  'deliveryDate', 'internalNote', 'externalNote', 'driverSlotId', 'salesUserId',
   'deliveryBatch', 'paymentMethod', 'confirmationDate', 'invoiceDate', 'quotationDate',
 ])
 
@@ -47,6 +47,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           include: { product: { select: { commissionPrice: true, standardPrice: true, internalRef: true } } },
         },
         driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
+        salesUser: { select: { id: true, name: true } },
       },
     })
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
@@ -54,6 +55,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const waveDisplay = await getOrderWaveDisplayMap([order.id])
     const enrichedOrder = {
       ...order,
+      // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
+      salesman: order.salesUser?.name ?? null,
       // SSOT(P0-1): 调度归属显示由所属 wave 派生
       deliveryBatchDisplay: waveDisplay[order.id] ?? null,
       lines: order.lines.map(({ product, ...line }) => ({
@@ -79,7 +82,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (!orderBefore) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
       // Strip non-schema fields before passing to Prisma
-      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, status, paymentMethod, salesman, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
+      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, status, paymentMethod, salesUserId, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
 
       // Determine new status
       const newStatus = status ? String(status).toUpperCase() : undefined
@@ -135,7 +138,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const updateData: Record<string, unknown> = {}
       if (flagApproval) updateData.editApprovalRequired = true
       if (newStatus) updateData.status = newStatus
-      if (salesman !== undefined) updateData.salesman = salesman ? String(salesman) : null
+      if (salesUserId !== undefined) updateData.salesUserId = salesUserId ? String(salesUserId) : null
       // SSOT(P0-1): deliveryBatch 字符串弃用,不再写入;调度归属真相在 wave。
       // driverSlotId 保留为「下单意向」列,实际 wave 归属在 update 之后经 wave-assign 同步(双向一致)。
       if (driverSlotId !== undefined) updateData.driverSlotId = driverSlotId || null
@@ -401,8 +404,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (paymentMethod && String(paymentMethod).toUpperCase() !== String(orderBefore.paymentMethod)) {
         auditChangedFields.paymentMethod = { before: orderBefore.paymentMethod, after: String(paymentMethod).toUpperCase() }
       }
-      if (salesman !== undefined && salesman !== (orderBefore as unknown as Record<string, unknown>).salesman) {
-        auditChangedFields.salesman = { before: (orderBefore as unknown as Record<string, unknown>).salesman ?? null, after: salesman || null }
+      if (salesUserId !== undefined && salesUserId !== (orderBefore as unknown as Record<string, unknown>).salesUserId) {
+        auditChangedFields.salesUserId = { before: (orderBefore as unknown as Record<string, unknown>).salesUserId ?? null, after: salesUserId || null }
       }
       if (deliveryDate !== undefined) {
         const oldDd = orderBefore.deliveryDate ? new Date(orderBefore.deliveryDate).toISOString().slice(0, 10) : null

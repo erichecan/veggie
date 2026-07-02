@@ -96,7 +96,7 @@ function applyRoleFilters(
   if (!body.filters) body.filters = []
 
   if (roles.includes('SALES') && reportType === 'sales') {
-    body.filters.push({ field: 'salesman', operator: '=', value: user.name })
+    body.filters.push({ field: 'sales_user_id', operator: '=', value: user.userId })
   }
   if (roles.includes('DRIVER') && reportType === 'logistics') {
     body.filters.push({ field: 'driver_name', operator: '=', value: user.name })

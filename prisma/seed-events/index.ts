@@ -12,10 +12,11 @@ import 'dotenv/config'
 import { neonConfig } from '@neondatabase/serverless'
 import { PrismaNeon } from '@prisma/adapter-neon'
 import { PrismaClient } from '../../lib/generated/prisma/client'
+import bcrypt from 'bcryptjs'
 import ws from 'ws'
 import { Rng } from './rng'
 import { Counter, MARK, SCALE_CONFIG, type Ctx, type Scale } from './context'
-import { buildPersonas } from './personas'
+import { buildPersonas, SALESMEN } from './personas'
 import { runPurchasing } from './events/purchase'
 import { runSales } from './events/sales'
 import { runBilling } from './events/billing'
@@ -72,6 +73,20 @@ async function main(): Promise<void> {
   const driver = await prisma.user.findFirst({ where: { role: 'DRIVER' }, select: { id: true } })
   if (!operator) throw new Error('缺少 OPERATOR 用户，请先 npm run db:seed')
 
+  // 种子内造的 SALES 账号(幂等 upsert,email 固定,重跑不重复创建)
+  const seedPasswordHash = await bcrypt.hash('Demo1234!', 10)
+  const salesUserIdByName: Record<string, string> = {}
+  for (const name of SALESMEN) {
+    const email = `seed-evt-${name.toLowerCase().replace(/\s+/g, '.')}@veggie.demo`
+    const u = await prisma.user.upsert({
+      where: { email },
+      update: {},
+      create: { email, name, passwordHash: seedPasswordHash, role: 'SALES', roles: ['OPERATOR', 'SALES'], isActive: true },
+      select: { id: true },
+    })
+    salesUserIdByName[name] = u.id
+  }
+
   const { products, personas, supplierIds, driverSlots } = await buildPersonas(prisma, scale.customers)
   console.log(`👥 画像：${personas.length} 客户 · ${products.length} 商品 · ${supplierIds.length} 供应商 · ${driverSlots.length} 司机`)
 
@@ -84,6 +99,7 @@ async function main(): Promise<void> {
     operatorName: operator.name,
     financeId: finance?.id ?? operator.id,
     driverUserId: driver?.id ?? null,
+    salesUserIdByName,
     lot: new Counter(),
     po: new Counter(),
     gr: new Counter(),

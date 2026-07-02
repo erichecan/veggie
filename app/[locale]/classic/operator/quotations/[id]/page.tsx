@@ -77,7 +77,9 @@ export default function QuotationDetailPage() {
   const [internalNote, setInternalNote] = useState('')
   const [externalNote, setExternalNote] = useState('')
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
-  const [salesman, setSalesman] = useState('')
+  const [salesUserId, setSalesUserId] = useState('')
+  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=SALES').then(setSalesUsers).catch(() => {}) }, [])
   const [deliveryDate, setDeliveryDate] = useState('')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
@@ -100,7 +102,7 @@ export default function QuotationDetailPage() {
       setOrder(ord)
       setInternalNote(ord.internalNote ?? '')
       setExternalNote((ord as unknown as { externalNote?: string }).externalNote ?? '')
-      setSalesman((ord as unknown as { salesman?: string }).salesman ?? '')
+      setSalesUserId((ord as unknown as { salesUserId?: string }).salesUserId ?? '')
       setDeliveryDate(ord.deliveryDate ? new Date(ord.deliveryDate).toISOString().slice(0, 10) : '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
       setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
@@ -191,7 +193,7 @@ export default function QuotationDetailPage() {
       const newTotalAmount = Math.round(editLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
       const orderedLines = editLines.map((l, idx) => ({ ...l, sequence: idx }))
       await apiPut(`/api/orders/${order.id}`, {
-        internalNote, externalNote: externalNote || null, salesman,
+        internalNote, externalNote: externalNote || null, salesUserId: salesUserId || null,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
         driverSlotId: driverSlotId || null,
         deliveryBatch: driverSlotId ? (() => { const s = driverSlots.find(x => x.id === driverSlotId); return s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : deliveryBatch })() : deliveryBatch,
@@ -569,14 +571,15 @@ export default function QuotationDetailPage() {
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>
                 {editing ? (
-                  <input
-                    type="text"
-                    value={salesman}
-                    onChange={e => setSalesman(e.target.value)}
-                    placeholder="业务员姓名"
+                  <select
+                    value={salesUserId}
+                    onChange={e => setSalesUserId(e.target.value)}
                     className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
-                  />
-                ) : <div className="text-gray-800">{salesman || '—'}</div>}
+                  >
+                    <option value="">— none —</option>
+                    {salesUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                ) : <div className="text-gray-800">{(order as unknown as { salesman?: string })?.salesman || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>

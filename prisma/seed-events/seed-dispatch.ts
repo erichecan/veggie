@@ -26,6 +26,20 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 const round3 = (n: number) => Math.round(n * 1000) / 1000
 const pick = <T>(arr: T[], n: number): T[] => [...arr].sort(() => Math.random() - 0.5).slice(0, n)
 
+// 种子内造的 SALES 账号(幂等 upsert + 内存缓存,同进程多次调用只查一次)
+let _kevinLeeIdPromise: Promise<string> | null = null
+function getKevinLeeId(): Promise<string> {
+  if (!_kevinLeeIdPromise) {
+    _kevinLeeIdPromise = prisma.user.upsert({
+      where: { email: 'seed-evt-kevin.lee@veggie.demo' },
+      update: {},
+      create: { email: 'seed-evt-kevin.lee@veggie.demo', name: 'Kevin Lee', passwordHash: '$2a$10$invalidSeedOnlyHashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', role: 'SALES', roles: ['OPERATOR', 'SALES'], isActive: true },
+      select: { id: true },
+    }).then(u => u.id)
+  }
+  return _kevinLeeIdPromise
+}
+
 // 固定司机集：上午 3 + 下午 3
 const FIXED_DRIVERS = [
   { timeOfDay: 'am', batchNum: 1, driverName: 'BAO' },
@@ -126,13 +140,14 @@ async function makeOrder(
   const palletItems: PItem[] = chosen.map((p, idx) => ({ orderId: id, restaurantId: cust.id, restaurantName: cust.name, productId: p.id, productName: p.name, qty: lineData[idx].orderedQty, uomName: p.uomName }))
 
   const day = dayStartUTC()
+  const salesUserId = await getKevinLeeId()
   await prisma.$transaction([
     prisma.order.create({
       data: {
         id, code, createdById: operatorId, createdByName: operatorName,
         restaurantId: cust.id, restaurantName: cust.name, items, totalAmount: total,
         status: 'CONFIRMED', paymentMethod: pay, externalRef: DISP_REF, priceType: 'multi',
-        commissionRate: 0.03, salesman: 'Kevin Lee', driverSlotId: slotId,
+        commissionRate: 0.03, salesUserId, driverSlotId: slotId,
         quotationDate: day, confirmationDate: todayAt(9), deliveryDate: day, createdAt: todayAt(8),
         lines: { create: lineData },
       },

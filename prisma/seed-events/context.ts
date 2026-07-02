@@ -85,6 +85,8 @@ export interface Ctx {
   operatorName: string
   financeId: string
   driverUserId: string | null
+  /** 业务员姓名 → User.id（种子内造的 SALES 账号，Order/Customer.salesUserId 用） */
+  salesUserIdByName: Record<string, string>
   /** 订单流水号自增（生成唯一 EVT-SO-NNNNNN code） */
   _orderSeq: number
   // 发号器

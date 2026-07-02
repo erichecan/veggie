@@ -353,7 +353,7 @@ function DayWiseReportInner() {
   const times = searchParams.get('times')?.split(',').filter(Boolean) ?? []
   const batchNums = searchParams.get('batchNums')?.split(',').map(Number).filter(n => !isNaN(n)) ?? []
   const categoryId = searchParams.get('categoryId') ?? ''
-  const salesman = searchParams.get('salesman') ?? ''
+  const salesUserId = searchParams.get('salesUserId') ?? ''
 
   const [html, setHtml] = useState<string>('')
   const [ready, setReady] = useState(false)
@@ -366,7 +366,7 @@ function DayWiseReportInner() {
         if (toDate) params.set('toDate', toDate)
         if (customerIds.length > 0) params.set('restaurantIds', customerIds.join(','))
         if (categoryId) params.set('categoryId', categoryId)
-        if (salesman) params.set('salesman', salesman)
+        if (salesUserId) params.set('salesUserId', salesUserId)
 
         const orders = await apiGet<Order[]>(`/api/orders?${params}`)
 
@@ -455,7 +455,7 @@ function DayWiseReportInner() {
       }
     }
     load()
-  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), drivers.join(','), times.join(','), batchNums.join(','), categoryId, salesman])
+  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), drivers.join(','), times.join(','), batchNums.join(','), categoryId, salesUserId])
 
   if (!ready) {
     return (

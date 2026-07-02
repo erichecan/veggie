@@ -121,7 +121,7 @@ function customerToForm(c: Customer): FormState {
     commissionFixed: '0.00',
     priceType: c.priceType === 'multi' ? 'Multi Price' : c.priceType === 'last' ? 'Last Purchase Price' : 'Default Price',
     isCustomer: true,
-    salesperson: (cAny.salesman ?? '') as string,
+    salesperson: (cAny.salesUserId ?? '') as string,
     salesTeam: '',
     paymentTerm: c.paymentTerm ?? '',
     pricelistId: c.pricelistId ?? '',
@@ -309,7 +309,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       notes: form.notes.trim() || undefined,
       externalNote: form.externalNote.trim() || undefined,
       priceType: priceTypeMap[form.priceType] ?? 'default',
-      salesman: form.salesperson || null,
+      salesUserId: form.salesperson || null,
       defaultDriverSlotId: form.defaultDriverSlotId || null,
       specialPrices,
     }
@@ -771,7 +771,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                 <OdooField label="Salesperson">
                   <select value={form.salesperson} onChange={e => setField('salesperson', e.target.value)} className={selectCls}>
                     <option value=""></option>
-                    {salesUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                    {salesUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </OdooField>
                 <OdooField label="Default Driver">

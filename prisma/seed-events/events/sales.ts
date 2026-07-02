@@ -101,7 +101,7 @@ async function placeOrder(ctx: Ctx, persona: Persona, date: Date, specs: LineSpe
         externalRef: MARK.orderRef,
         priceType: 'multi',
         commissionRate: persona.commissionRate,
-        salesman: persona.salesman,
+        salesUserId: ctx.salesUserIdByName[persona.salesman] ?? null,
         driverSlotId: persona.driverSlotId,
         quotationDate: date,
         createdAt: date,

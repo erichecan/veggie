@@ -189,7 +189,9 @@ export interface Customer {
   priceType?: CustomerPriceType
   /** 客户专属特殊价格（优先级最高，覆盖价格表规则） */
   specialPrices?: CustomerSpecialPrice[]
-  /** 关联业务员 */
+  /** 关联业务员用户 ID（写入用） */
+  salesUserId?: string | null
+  /** 关联业务员姓名（只读展示，由 API 从 salesUserId 关联展平） */
   salesman?: string
 }
 

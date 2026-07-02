@@ -591,8 +591,8 @@ export default function ClassicPlaceOrderPage() {
     if (c.pricelistId) setPricelistId(c.pricelistId)
     if (c.paymentTerm) setPaymentTerms(c.paymentTerm)
     if (c.priceType)   setPriceType(c.priceType)
-    // 业务员默认带入客户绑定的业务员(可手动改);下单时会快照进 Order.salesman
-    if (c.salesman)    setSalesTeam(c.salesman)
+    // 业务员默认带入客户绑定的业务员(可手动改);下单时写入 Order.salesUserId
+    if (c.salesUserId) setSalesTeam(c.salesUserId)
     // 切客户必须清空 lastPrice 缓存，否则会把旧客户的成交价用到新客户身上
     setLastPrices({})
     setCreditInfo(null)
@@ -884,6 +884,9 @@ export default function ClassicPlaceOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
 
+  // salesTeam 存的是 salesUserId,打印/预览要显示姓名
+  const salesTeamName = salesUsers.find(u => u.id === salesTeam)?.name ?? ''
+
   // ── Totals ────────────────────────────────────────────────────────────────
   const untaxed   = lines.reduce((s, l) => s + l.unitPrice * l.orderedQty, 0)
   const taxes     = lines.reduce((s, l) => s + l.unitPrice * l.orderedQty * (l.taxRate / 100), 0)
@@ -917,7 +920,7 @@ export default function ClassicPlaceOrderPage() {
       paymentMethod:  'online',
       pricelistId:    pricelistId || null,
       priceType,
-      salesman:       salesTeam || null,
+      salesUserId:    salesTeam || null,
       internalNote:   internalNotes || null,
       externalNote:   externalNote || null,
       quotationDate:  orderDate ? new Date(orderDate).toISOString() : null,
@@ -1372,7 +1375,7 @@ export default function ClassicPlaceOrderPage() {
                 >
                   <option value="">— 选择业务员 —</option>
                   {salesUsers.map(u => (
-                    <option key={u.id} value={u.name}>{u.name}</option>
+                    <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
               </div>
@@ -1959,7 +1962,7 @@ export default function ClassicPlaceOrderPage() {
           customer={customer ? { ...customer, externalNote: customerExternalNote } : null}
           lines={lines}
           orderDate={orderDate}
-          salesTeam={salesTeam}
+          salesTeam={salesTeamName}
           quotationNo={quotationNo}
           untaxed={untaxed}
           total={total}
@@ -1999,7 +2002,7 @@ export default function ClassicPlaceOrderPage() {
                 customer={customer ? { ...customer, externalNote: customerExternalNote } : null}
                 lines={lines}
                 orderDate={orderDate}
-                salesTeam={salesTeam}
+                salesTeam={salesTeamName}
                 quotationNo={quotationNo}
                 untaxed={untaxed}
                 total={total}

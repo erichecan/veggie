@@ -4,6 +4,11 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth, tryAuth, effectiveRoles } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 
+// 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
+function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: string } | null }>(customers: T[]): (T & { salesman: string | null })[] {
+  return customers.map((c) => ({ ...c, salesman: c.salesUser?.name ?? null }))
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
@@ -65,7 +70,7 @@ export async function GET(req: Request) {
     if (caller) {
       const roles = effectiveRoles(caller)
       if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
-        andConditions.push({ salesman: caller.name })
+        andConditions.push({ salesUserId: caller.userId })
       }
     }
 
@@ -99,24 +104,24 @@ export async function GET(req: Request) {
       if (slim) {
         const customers = await prisma.customer.findMany({
           where,
-          select: { id: true, name: true, email: true, phone: true, address: true, street: true, street2: true, city: true, zip: true, paymentTerm: true, pricelistId: true, priceType: true, creditLimit: true, isActive: true, salesman: true },
+          select: { id: true, name: true, email: true, phone: true, address: true, street: true, street2: true, city: true, zip: true, paymentTerm: true, pricelistId: true, priceType: true, creditLimit: true, isActive: true, salesUserId: true, salesUser: { select: { id: true, name: true } } },
           orderBy: { name: 'asc' },
         })
-        return NextResponse.json(serializeApi(customers))
+        return NextResponse.json(serializeApi(attachSalesmanDisplay(customers)))
       }
       const customers = await prisma.customer.findMany({
         where,
-        include: { specialPrices: true },
+        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
         orderBy: { name: 'asc' },
       })
-      return NextResponse.json(serializeApi(customers))
+      return NextResponse.json(serializeApi(attachSalesmanDisplay(customers)))
     }
 
     const [total, customers] = await Promise.all([
       prisma.customer.count({ where }),
       prisma.customer.findMany({
         where,
-        include: { specialPrices: true },
+        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -124,7 +129,7 @@ export async function GET(req: Request) {
     ])
 
     return NextResponse.json(serializeApi({
-      data: customers,
+      data: attachSalesmanDisplay(customers),
       total,
       page,
       pageSize,
@@ -147,12 +152,12 @@ export async function POST(req: Request) {
             ? { create: specialPrices.map(({ id: _id, customerId: _cid, ...sp }: any) => sp) }
             : undefined,
         },
-        include: { specialPrices: true },
+        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
       })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'customer', resourceId: customer.id,
         detail: `创建客户: ${data.name || '未命名'}` })
-      return NextResponse.json(serializeApi(customer), { status: 201 })
+      return NextResponse.json(serializeApi(attachSalesmanDisplay([customer])[0]), { status: 201 })
     } catch (error) {
       console.error('[POST /api/customers]', error)
       return NextResponse.json({ error: '创建客户失败' }, { status: 500 })

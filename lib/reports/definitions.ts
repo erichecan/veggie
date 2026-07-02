@@ -9,6 +9,7 @@ export const SALES_DIMENSIONS: Record<string, DimensionMeta> = {
   product_name:      { field: 'product_name',       label: 'Product',        labelZh: '商品',       type: 'string' },
   category_name:     { field: 'category_name',      label: 'Category',       labelZh: '商品分类',   type: 'string' },
   salesman:          { field: 'salesman',            label: 'Salesperson',    labelZh: '业务员',     type: 'string' },
+  sales_user_id:     { field: 'sales_user_id',        label: 'Salesperson ID', labelZh: '业务员(内部ID)', type: 'string' },
   driver_name:       { field: 'driver_name',         label: 'Driver',         labelZh: '司机',       type: 'string' },
   time_of_day:       { field: 'time_of_day',         label: 'AM/PM',          labelZh: '上午/下午',  type: 'enum',
     options: [{ value: 'am', label: '上午' }, { value: 'pm', label: '下午' }] },

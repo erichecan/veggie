@@ -24,6 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       include: {
         lines: { orderBy: { sequence: 'asc' } },
         driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
+        salesUser: { select: { id: true, name: true } },
       },
     })
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -92,7 +93,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       </tr>`).join('')
 
     const internalNote = (order as unknown as { internalNote?: string }).internalNote ?? ''
-    const salesman = (order as unknown as { salesman?: string }).salesman ?? ''
+    const salesman = order.salesUser?.name ?? ''
     const deliveryBatch = formatDriverSlotFromOrder(order as unknown as { driverSlot?: { id: string; batchNum: number; timeOfDay: string; driverName: string } | null; deliveryBatch?: string | null })
 
     const html = `<!DOCTYPE html>

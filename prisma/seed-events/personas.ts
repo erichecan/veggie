@@ -10,7 +10,7 @@ import type { PrismaClient } from '../../lib/generated/prisma/client'
 import { Rng, strHash, stableFloat, round2 } from './rng'
 import { MARK, type Ctx, type Persona, type ProductInfo, type Tier } from './context'
 
-const SALESMEN = ['Kevin Lee', 'Sophie Wang', 'Marco Chen', 'Lucia Zhao', 'David Wu']
+export const SALESMEN = ['Kevin Lee', 'Sophie Wang', 'Marco Chen', 'Lucia Zhao', 'David Wu']
 const SUPPLIER_NAMES = [
   '都柏林蔬菜批发', 'Green Farm Wholesale', '东方冻品厂', '南海水产',
   '华丰豆制品', '川味干货行', '本地有机农场', '亚洲食品进口',

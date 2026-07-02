@@ -10,6 +10,7 @@ const TRACKED_FIELDS = [
   'commissionRate', 'commissionFixed', 'pricelistId', 'priceType',
   'isActive', 'isCustomer', 'isVendor', 'notes', 'externalNote',
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
+  'salesUserId',
 ]
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -17,10 +18,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const customer = await prisma.customer.findUnique({
       where: { id },
-      include: { specialPrices: true },
+      include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
     })
     if (!customer) return NextResponse.json({ error: '客户不存在' }, { status: 404 })
-    return NextResponse.json(serializeApi(customer))
+    return NextResponse.json(serializeApi({ ...customer, salesman: customer.salesUser?.name ?? null }))
   } catch (error) {
     console.error('[GET /api/customers/[id]]', error)
     return NextResponse.json({ error: '获取客户失败' }, { status: 500 })
@@ -59,7 +60,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const customer = await prisma.customer.update({
         where: { id },
         data: updateData as Parameters<typeof prisma.customer.update>[0]['data'],
-        include: { specialPrices: true },
+        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
       })
       const changes = diffChanges(
         before as unknown as Record<string, unknown>,
@@ -70,7 +71,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         action: 'UPDATE', resource: 'customer', resourceId: id,
         detail: `更新客户: ${data.name || id}`,
         changes: Object.keys(changes).length > 0 ? changes : undefined })
-      return NextResponse.json(serializeApi(customer))
+      return NextResponse.json(serializeApi({ ...customer, salesman: customer.salesUser?.name ?? null }))
     } catch (error) {
       console.error('[PUT /api/customers/[id]]', error)
       return NextResponse.json({ error: '更新客户失败' }, { status: 500 })

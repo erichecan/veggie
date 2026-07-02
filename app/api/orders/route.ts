@@ -18,6 +18,12 @@ async function attachWaveDisplay<T extends { id: string; deliveryBatchDisplay?: 
   }
   return orders
 }
+
+// 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面(报表/打印/列表)
+// 不用改动就能继续显示业务员姓名。写入路径一律走 salesUserId,不读这个字段。
+function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: string } | null }>(orders: T[]): (T & { salesman: string | null })[] {
+  return orders.map((o) => ({ ...o, salesman: o.salesUser?.name ?? null }))
+}
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { getInitials, nextOrderCode } from '@/lib/order-code'
 
@@ -95,17 +101,17 @@ export async function GET(req: Request) {
     const driverSlotId = searchParams.get('driverSlotId')
     if (driverSlotId) where.driverSlotId = driverSlotId
 
-    // ?salesman=John — filter by salesman name
-    const salesman = searchParams.get('salesman')
-    if (salesman) where.salesman = salesman
+    // ?salesUserId=xxx — filter by salesperson
+    const salesUserId = searchParams.get('salesUserId')
+    if (salesUserId) where.salesUserId = salesUserId
 
     // P1-3: SALES 角色自动过滤 — 只看自己名下的订单
-    if (!salesman) {
+    if (!salesUserId) {
       const caller = await tryAuth(req)
       if (caller) {
         const roles = effectiveRoles(caller)
         if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
-          where.salesman = caller.name
+          where.salesUserId = caller.userId
         }
       }
     }
@@ -135,8 +141,10 @@ export async function GET(req: Request) {
         },
       },
       driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
+      salesUser: { select: { id: true, name: true } },
     } : {
       lines: { orderBy: { sequence: 'asc' as const }, select: leanLineSelect },
+      salesUser: { select: { id: true, name: true } },
     }
 
     if (paginated) {
@@ -157,7 +165,7 @@ export async function GET(req: Request) {
         pageSize,
         totalPages: Math.ceil(total / pageSize),
       })
-      payload.data = await attachWaveDisplay(deriveOrderItemsList(payload.data))
+      payload.data = attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(payload.data)))
       return NextResponse.json(payload)
     }
 
@@ -171,7 +179,7 @@ export async function GET(req: Request) {
       take: limit,
       include,
     })
-    return NextResponse.json(await attachWaveDisplay(deriveOrderItemsList(serializeApi(orders))))
+    return NextResponse.json(attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(orders)))))
   } catch (error) {
     console.error('[GET /api/orders]', error)
     return NextResponse.json({ error: '获取订单失败' }, { status: 500 })
@@ -230,7 +238,7 @@ export async function POST(req: Request) {
       // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
       const custDefaults = await prisma.customer.findUnique({
         where: { id: restaurantId },
-        select: { defaultDriverSlotId: true, commissionRate: true, salesman: true, paymentTerm: true, creditLimit: true },
+        select: { defaultDriverSlotId: true, commissionRate: true, salesUserId: true, paymentTerm: true, creditLimit: true },
       })
 
       // 服务端信用管控校验
@@ -310,8 +318,8 @@ export async function POST(req: Request) {
                 driverSlotId: resolvedDriverSlotId,
                 internalNote: data.internalNote ? String(data.internalNote).slice(0, 30) : undefined,
                 externalNote: data.externalNote ? String(data.externalNote) : undefined,
-                // SSOT: 业务员下单时快照。优先手选值,未选则回退客户默认业务员(Customer.salesman)。
-                salesman: ((data.salesman ? String(data.salesman) : custDefaults?.salesman ?? '').trim().slice(0, 100)) || undefined,
+                // SSOT: 业务员关联用户。优先手选值,未选则回退客户默认业务员(Customer.salesUserId)。
+                salesUserId: (data.salesUserId ? String(data.salesUserId) : custDefaults?.salesUserId) || undefined,
                 lines: {
                   create: lines.map((l, idx) => ({
                     productId: l.productId,
