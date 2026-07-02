@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import type { Order, Customer } from '@/lib/types'
@@ -261,10 +261,16 @@ export default function PrintPage() {
   const [html, setHtml] = useState<string>('')
   const [ready, setReady] = useState(false)
 
+  const [isPreview, setIsPreview] = useState(false)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
   useEffect(() => {
     async function load() {
       try {
-        const docParam = new URLSearchParams(window.location.search).get('doc')
+        const search = new URLSearchParams(window.location.search)
+        const docParam = search.get('doc')
+        const preview = search.get('preview') === '1'
+        setIsPreview(preview)
         const docType: 'delivery' | 'sales' | undefined =
           docParam === 'delivery' ? 'delivery' : docParam === 'sales' ? 'sales' : undefined
         const docTitle = docType === 'delivery' ? 'Delivery Note' : docType === 'sales' ? 'Sale Order' : 'Invoice'
@@ -306,7 +312,7 @@ ${bodyHtml}
   document.getElementById('print-ts').textContent =
     ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
-  window.print();
+  ${preview ? '' : 'window.print();'}
 <\/script>
 </body>
 </html>`)
@@ -327,10 +333,26 @@ ${bodyHtml}
   }
 
   return (
-    <iframe
-      srcDoc={html}
-      title="print"
-      style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', border: 'none' }}
-    />
+    <>
+      <iframe
+        ref={iframeRef}
+        srcDoc={html}
+        title="print"
+        style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', border: 'none' }}
+      />
+      {isPreview && (
+        <button
+          onClick={() => iframeRef.current?.contentWindow?.print()}
+          style={{
+            position: 'fixed', top: 12, right: 12, zIndex: 10,
+            padding: '8px 16px', fontSize: 14, fontWeight: 600,
+            background: '#875A7B', color: '#fff', border: 'none', borderRadius: 6,
+            cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          }}
+        >
+          🖨 Print
+        </button>
+      )}
+    </>
   )
 }

@@ -421,7 +421,7 @@ export default function QuotationDetailPage() {
               className="h-8 px-3 text-sm rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: PURPLE }}>Create Invoice</button>
             <button
-              onClick={() => window.open(`${prefix}/classic/print/${order?.id}`, '_blank')}
+              onClick={() => window.open(`${prefix}/classic/print/${order?.id}?preview=1`, '_blank')}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Preview</button>
             <button disabled={!isLocked}
               onClick={async () => {
