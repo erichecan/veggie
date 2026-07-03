@@ -190,11 +190,13 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
         <div className="flex items-center gap-4 text-sm">
           <button
             onClick={() => { setShowSend(showSend === 'message' ? null : 'message'); setText('') }}
-            className="font-medium" style={{ color: '#875A7B' }}
+            className={showSend === 'note' ? 'text-gray-500 hover:text-gray-700' : 'font-medium'}
+            style={showSend === 'note' ? undefined : { color: '#875A7B' }}
           >Send message</button>
           <button
             onClick={() => { setShowSend(showSend === 'note' ? null : 'note'); setText('') }}
-            className="text-gray-500 hover:text-gray-700"
+            className={showSend === 'note' ? 'font-medium' : 'text-gray-500 hover:text-gray-700'}
+            style={showSend === 'note' ? { color: '#875A7B' } : undefined}
           >Log note</button>
         </div>
         <div className="flex items-center gap-3 text-sm text-gray-500">
