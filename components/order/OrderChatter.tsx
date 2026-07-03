@@ -196,9 +196,6 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
             onClick={() => { setShowSend(showSend === 'note' ? null : 'note'); setText('') }}
             className="text-gray-500 hover:text-gray-700"
           >Log note</button>
-          <button className="text-gray-500 hover:text-gray-700" disabled>
-            Schedule activity
-          </button>
         </div>
         <div className="flex items-center gap-3 text-sm text-gray-500">
           <span className="flex items-center gap-1"><span>📎</span><span>0</span></span>

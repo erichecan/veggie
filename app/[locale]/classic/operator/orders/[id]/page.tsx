@@ -82,6 +82,10 @@ export default function SalesOrderDetailPage() {
   const [internalNote, setInternalNote] = useState('')
   const [externalNote, setExternalNote] = useState('')
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
+  const [deliveryDate, setDeliveryDate] = useState('')
+  const [salesUserId, setSalesUserId] = useState('')
+  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=SALES').then(setSalesUsers).catch(() => {}) }, [])
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
   const [pricelistId, setPricelistId] = useState('')
@@ -112,6 +116,8 @@ export default function SalesOrderDetailPage() {
       setOrder(ord)
       setInternalNote(ord.internalNote ?? '')
       setExternalNote((ord as unknown as { externalNote?: string }).externalNote ?? '')
+      setDeliveryDate(ord.deliveryDate ? new Date(ord.deliveryDate).toISOString().slice(0, 10) : '')
+      setSalesUserId((ord as unknown as { salesUserId?: string }).salesUserId ?? '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
       setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
       setPricelistId(ord.pricelistId ?? '')
@@ -185,7 +191,9 @@ export default function SalesOrderDetailPage() {
       const slot = driverSlots.find(s => s.id === driverSlotId)
       const batchStr = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : deliveryBatch
       await apiPut(`/api/orders/${order.id}`, {
-        internalNote, externalNote: externalNote || null, deliveryBatch: batchStr, driverSlotId: driverSlotId || null,
+        internalNote, externalNote: externalNote || null, salesUserId: salesUserId || null,
+        deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
+        deliveryBatch: batchStr, driverSlotId: driverSlotId || null,
         pricelistId: pricelistId || null, priceType,
         ...(editLines.length > 0 && { lines: editLines, totalAmount: newTotalAmount }),
       })
@@ -227,7 +235,7 @@ export default function SalesOrderDetailPage() {
     setPrinting(true)
     try {
       await apiPost(`/api/orders/${order.id}/mark-printed`, { type: 'SALES' })
-      window.open(`${prefix}/classic/print/${order.id}`, '_blank')
+      window.open(`${prefix}/classic/print/${order.id}`, '_blank', 'noopener,noreferrer')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '打印失败')
     } finally {
@@ -306,11 +314,6 @@ export default function SalesOrderDetailPage() {
     const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
     return s + (Number(l.unitPrice) - cost) * Number(l.orderedQty)
   }, 0)
-  const commissionTotal = displayLines.reduce((s, l) => {
-    const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
-    return s + cms * Number(l.orderedQty)
-  }, 0)
-
   function addProductLine(p: AllProduct) {
     const resolution = customer
       ? resolveCustomerPrice(p as never, customer, pricelists)
@@ -494,10 +497,11 @@ export default function SalesOrderDetailPage() {
                 </div>
                 {noteTab === 'internal' ? (
                   editing ? (
-                    <input value={internalNote} onChange={e => setInternalNote(e.target.value)}
-                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none" maxLength={30}
+                    <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
+                      rows={3} maxLength={30}
+                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
                       placeholder="仅内部可见，不会打印给客户" />
-                  ) : <div className="text-sm text-gray-700">{internalNote || '—'}</div>
+                  ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
                 ) : (
                   editing ? (
                     <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
@@ -510,9 +514,16 @@ export default function SalesOrderDetailPage() {
 
             {/* Right col */}
             <div className="space-y-3 text-sm">
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Order Date</div>
-                <div className="text-gray-800">{formatDate(order.quotationDate ?? order.createdAt)}</div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Date</div>
+                {editing ? (
+                  <input
+                    type="date"
+                    value={deliveryDate}
+                    onChange={e => setDeliveryDate(e.target.value)}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                ) : <div className="text-gray-800">{deliveryDate || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Batch</div>
@@ -537,6 +548,19 @@ export default function SalesOrderDetailPage() {
               <div className="flex">
                 <div className="w-32 font-bold text-gray-700">Payment Terms</div>
                 <div className="text-gray-800">{customer?.paymentTerm ?? '—'}</div>
+              </div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>
+                {editing ? (
+                  <select
+                    value={salesUserId}
+                    onChange={e => setSalesUserId(e.target.value)}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  >
+                    <option value="">— none —</option>
+                    {salesUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                ) : <div className="text-gray-800">{(order as unknown as { salesman?: string })?.salesman || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>
@@ -579,15 +603,14 @@ export default function SalesOrderDetailPage() {
               lines={displayLines}
               editing={editing}
               onDeleteLine={(_lineId, i) => deleteLine(i)}
-              emptyColSpan={19}
+              emptyColSpan={16}
+              searchColSpan={15}
               products={allProducts}
               onAddProduct={addProductLine}
-              addProductLabel="+ Add a product"
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
                   <th className="px-2 py-3 w-6"></th>
                   <th className="px-2 py-3 text-left">NO</th>
-                  <th className="px-2 py-3 text-left"><div className="leading-tight">Product<br/>Code</div></th>
                   <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="px-2 py-3 text-left">Description</th>
@@ -601,15 +624,12 @@ export default function SalesOrderDetailPage() {
                   <th className="px-2 py-3 text-right">Cost</th>
                   <th className="px-2 py-3 text-center">Price</th>
                   <th className="px-2 py-3 text-center">Taxes</th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Price</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Sub</div></th>
                   <th className="px-2 py-3 text-right">Total</th>
                 </tr>
               )}
               renderRow={(l, i, { inputCls, deleteButton, focusSearch }) => {
                 const fc = forecastMap.get(l.productId)
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
-                const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
                 return (
                   <>
@@ -617,7 +637,6 @@ export default function SalesOrderDetailPage() {
                       {deleteButton ?? <span className="text-gray-300">▶</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-700">{i + 1}</td>
-                    <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2 text-gray-600 text-xs">{l.spec || ''}</td>
@@ -657,8 +676,6 @@ export default function SalesOrderDetailPage() {
                         </select>
                       ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                     </td>
-                    <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right" style={{ color: PURPLE }}>€ {(cms * Number(l.orderedQty)).toFixed(2)}</td>
                     <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
                   </>
                 )
@@ -671,11 +688,7 @@ export default function SalesOrderDetailPage() {
           )}
 
           {/* Totals */}
-          <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-between bg-gray-50">
-            <div className="text-sm text-gray-600">
-              <span className="font-bold">Commission Total</span>
-              <span className="ml-3">€ {commissionTotal.toFixed(2)}</span>
-            </div>
+          <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-end bg-gray-50">
             <div className="text-sm text-right space-y-1 min-w-[260px]">
               <div className="flex justify-between"><span className="text-gray-600">Untaxed Amount:</span><span className="text-gray-800">€ {subtotalExTax.toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Taxes:</span><span className="text-gray-800">€ {totalTax.toFixed(2)}</span></div>

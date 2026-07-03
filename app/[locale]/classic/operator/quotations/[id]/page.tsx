@@ -332,11 +332,6 @@ export default function QuotationDetailPage() {
     const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
     return s + (Number(l.unitPrice) - cost) * Number(l.orderedQty)
   }, 0)
-  const commissionTotal = displayLines.reduce((s, l) => {
-    const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
-    return s + cms * Number(l.orderedQty)
-  }, 0)
-
   function StatusPill({ label, active, dim }: { label: string; active?: boolean; dim?: boolean }) {
     return (
       <span className={`px-3 py-1 text-xs rounded-full ${active ? 'text-white font-medium' : dim ? 'text-gray-400' : 'text-gray-600'}`}
@@ -384,7 +379,7 @@ export default function QuotationDetailPage() {
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Create</button>
             <div className="h-5 w-px bg-gray-200 mx-1" />
             <button
-              onClick={() => window.open(`${prefix}/classic/print/${order.id}`, '_blank')}
+              onClick={() => window.open(`${prefix}/classic/print/${order.id}`, '_blank', 'noopener,noreferrer')}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
               Print
             </button>
@@ -421,7 +416,7 @@ export default function QuotationDetailPage() {
               className="h-8 px-3 text-sm rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: PURPLE }}>Create Invoice</button>
             <button
-              onClick={() => window.open(`${prefix}/classic/print/${order?.id}?preview=1`, '_blank')}
+              onClick={() => window.open(`${prefix}/classic/print/${order?.id}?preview=1`, '_blank', 'noopener,noreferrer')}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Preview</button>
             <button disabled={!isLocked}
               onClick={async () => {
@@ -626,14 +621,12 @@ export default function QuotationDetailPage() {
               onDeleteLine={(_lineId, i) => deleteLine(i)}
               products={allProducts}
               onAddProduct={addProductLine}
-              searchColSpan={18}
-              addProductLabel="+ Add a product"
-              emptyColSpan={19}
+              searchColSpan={15}
+              emptyColSpan={16}
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
                   <th className="px-2 py-3 w-6"></th>
                   <th className="px-2 py-3 text-left">NO</th>
-                  <th className="px-2 py-3 text-left"><div className="leading-tight">Product<br/>Code</div></th>
                   <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="px-2 py-3 text-left">Description</th>
@@ -647,15 +640,12 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 text-right">Cost</th>
                   <th className="px-2 py-3 text-center">Price</th>
                   <th className="px-2 py-3 text-center">Taxes</th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Price</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Cms<br/>Sub</div></th>
                   <th className="px-2 py-3 text-right">Total</th>
                 </tr>
               )}
               renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch }) => {
                 const fc = forecastMap.get(l.productId)
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
-                const cms = Number((l as unknown as { commissionPrice?: number }).commissionPrice ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
                 return (
                   <>
@@ -668,7 +658,6 @@ export default function QuotationDetailPage() {
                       ) : <span className="text-gray-300 select-none" title="编辑后可拖动调整顺序">☰</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-700">{i + 1}</td>
-                    <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2 text-gray-600 text-xs">
@@ -715,8 +704,6 @@ export default function QuotationDetailPage() {
                         </select>
                       ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                     </td>
-                    <td className="px-2 py-2 text-right text-gray-600">{cms.toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right" style={{ color: PURPLE }}>€ {(cms * Number(l.orderedQty)).toFixed(2)}</td>
                     <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
                   </>
                 )
@@ -729,11 +716,7 @@ export default function QuotationDetailPage() {
           )}
 
           {/* Region 6: totals */}
-          <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-between bg-gray-50">
-            <div className="text-sm text-gray-600">
-              <span className="font-bold">Commission Total</span>
-              <span className="ml-3">€ {commissionTotal.toFixed(2)}</span>
-            </div>
+          <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-end bg-gray-50">
             <div className="text-sm text-right space-y-1 min-w-[260px]">
               <div className="flex justify-between"><span className="text-gray-600">Untaxed Amount:</span><span className="text-gray-800">€ {subtotalExTax.toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Taxes:</span><span className="text-gray-800">€ {totalTax.toFixed(2)}</span></div>

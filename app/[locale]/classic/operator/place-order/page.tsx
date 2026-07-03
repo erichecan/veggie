@@ -891,7 +891,6 @@ export default function ClassicPlaceOrderPage() {
   const untaxed   = lines.reduce((s, l) => s + l.unitPrice * l.orderedQty, 0)
   const taxes     = lines.reduce((s, l) => s + l.unitPrice * l.orderedQty * (l.taxRate / 100), 0)
   const total     = untaxed + taxes
-  const cmsTotal  = lines.reduce((s, l) => s + l.cmsPrice * l.orderedQty, 0)
   const cost      = lines.reduce((s, l) => s + l.cost * l.orderedQty, 0)
   const margin    = untaxed - cost
 
@@ -972,14 +971,8 @@ export default function ClassicPlaceOrderPage() {
   }
 
   function handleDiscard() {
-    if ((lines.length > 0 || customerId) && !confirm('放弃当前修改？')) return
-    setLines([])
-    setCustomerId('')
-    setPricelistId('')
-    setPaymentTerms('')
-    setInternalNotes('')
-    setStatus('draft')
-    setCreditInfo(null)
+    if ((lines.length > 0 || customerId) && !confirm('放弃当前修改并返回列表？')) return
+    router.push(`${prefix}/classic/operator/quotations`)
   }
 
   // ── Preview / Print / Email handlers ─────────────────────────────────────
@@ -1616,9 +1609,9 @@ export default function ClassicPlaceOrderPage() {
                 lines={lines}
                 editing={true}
                 tableClassName="text-xs border-collapse"
-                tableStyle={{ minWidth: '1340px', width: '100%' }}
+                tableStyle={{ minWidth: '1190px', width: '100%' }}
                 tbodyClassName="divide-y divide-gray-100"
-                emptyColSpan={15}
+                emptyColSpan={13}
                 emptyMessage='暂无订单行，点击下方 "+ Add a product" 开始添加'
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
@@ -1634,13 +1627,10 @@ export default function ClassicPlaceOrderPage() {
                     <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cost</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 80  }}>Price</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>Taxes</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cms Price</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 70  }}>Cms Sub</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Cms Total</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Total</th>
                   </tr>
                 )}
                 renderRow={(line, idx) => {
-                  const cmsSub    = line.cmsPrice  * line.orderedQty
                   const lineTotal = line.unitPrice * line.orderedQty
                   const isActive  = activeLineId === line.id
                   const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
@@ -1813,17 +1803,7 @@ export default function ClassicPlaceOrderPage() {
                         </select>
                       </td>
 
-                      {/* Cms Price */}
-                      <td className="px-2 py-1 text-right text-gray-500">
-                        {line.cmsPrice > 0 ? eur(line.cmsPrice) : '—'}
-                      </td>
-
-                      {/* Cms Sub */}
-                      <td className="px-2 py-1 text-right text-gray-500">
-                        {cmsSub > 0 ? eur(cmsSub) : '—'}
-                      </td>
-
-                      {/* Cms Total + delete */}
+                      {/* Total + delete */}
                       <td className="px-2 py-1 text-right">
                         <span className="font-medium text-gray-700">
                           {lineTotal > 0 ? eur(lineTotal) : '—'}
@@ -1881,10 +1861,6 @@ export default function ClassicPlaceOrderPage() {
 
           {/* Left: commission total + terms */}
           <div className="bg-white rounded border border-gray-200 p-4 space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Commission Total</span>
-              <span className="font-medium text-gray-700">{eur(cmsTotal)}</span>
-            </div>
             <div>
               <label className="text-sm text-gray-600 block mb-1">客户外部备注 / Customer Note</label>
               {customerExternalNote ? (

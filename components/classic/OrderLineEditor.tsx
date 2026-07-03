@@ -15,7 +15,7 @@ export interface RowRenderOpts {
 
 interface Props<
   L extends { id: string; productId?: string | null },
-  P extends { id: string; name: string }
+  P extends { id: string; name: string; internalRef?: string | null }
 > {
   lines: L[]
   editing?: boolean
@@ -27,7 +27,6 @@ interface Props<
   products?: P[]
   onAddProduct?: (p: P) => void
   searchColSpan?: number
-  addProductLabel?: string
   onDeleteLine?: (lineId: string, index: number) => void
   renderHeaders: () => ReactNode
   renderRow: (line: L, index: number, opts: RowRenderOpts) => ReactNode
@@ -39,7 +38,7 @@ interface Props<
 
 export default function OrderLineEditor<
   L extends { id: string; productId?: string | null },
-  P extends { id: string; name: string }
+  P extends { id: string; name: string; internalRef?: string | null }
 >({
   lines,
   editing = false,
@@ -51,7 +50,6 @@ export default function OrderLineEditor<
   products,
   onAddProduct,
   searchColSpan = 18,
-  addProductLabel,
   onDeleteLine,
   renderHeaders,
   renderRow,
@@ -185,18 +183,6 @@ export default function OrderLineEditor<
           </tbody>
         </table>
       </div>
-
-      {editing && addProductLabel && onAddProduct && (
-        <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={focusSearch}
-            className="text-sm text-[#875A7B] hover:underline font-medium"
-          >
-            {addProductLabel}
-          </button>
-        </div>
-      )}
 
       {footer}
     </>

@@ -1,8 +1,9 @@
 'use client'
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { rankByRelevance } from '@/lib/search-rank'
 
-interface Props<P extends { id: string; name: string; category?: string | null; qtyOnHand?: number | null }> {
+interface Props<P extends { id: string; name: string; internalRef?: string | null; category?: string | null; qtyOnHand?: number | null }> {
   value: string
   onChange: (v: string) => void
   onSelect: (p: P) => void
@@ -19,7 +20,7 @@ interface Props<P extends { id: string; name: string; category?: string | null; 
 }
 
 export default function ProductSearchInput<
-  P extends { id: string; name: string; category?: string | null; qtyOnHand?: number | null }
+  P extends { id: string; name: string; internalRef?: string | null; category?: string | null; qtyOnHand?: number | null }
 >({
   value,
   onChange,
@@ -44,9 +45,8 @@ export default function ProductSearchInput<
   const portalRef = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => {
-    const q = value.toLowerCase()
-    if (!showOnEmptyQuery && !q) return []
-    return products.filter(p => p.name.toLowerCase().includes(q)).slice(0, maxResults)
+    if (!showOnEmptyQuery && !value.trim()) return []
+    return rankByRelevance(products, value, p => [p.name, p.internalRef]).slice(0, maxResults)
   }, [products, value, showOnEmptyQuery, maxResults])
 
   function updateRect() {
@@ -86,6 +86,7 @@ export default function ProductSearchInput<
       className={`w-full text-left px-3 py-2 text-sm text-gray-700 ${idx === highlight ? 'bg-[#875A7B]/20' : 'hover:bg-[#875A7B]/20'}`}
     >
       <span className="font-medium">{p.name}</span>
+      {p.internalRef && <span className="ml-2 text-[10px] text-gray-400">[{p.internalRef}]</span>}
       {p.category && <span className="ml-2 text-xs text-gray-400">{p.category}</span>}
       {showAtp && p.qtyOnHand != null && (
         <span className={`ml-2 text-xs ${Number(p.qtyOnHand) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -98,7 +99,7 @@ export default function ProductSearchInput<
   return (
     <div ref={containerRef} className="relative">
       <input
-        ref={localInputRef}
+        ref={inputRef}
         type="text"
         value={value}
         placeholder={placeholder}

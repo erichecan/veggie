@@ -248,7 +248,7 @@ export default function ClassicOrdersPage() {
   async function printOrder(orderId: string, type: 'DELIVERY' | 'SALES') {
     const doc = type === 'DELIVERY' ? 'delivery' : 'sales'
     // 同步打开窗口（保留用户手势，避免被弹窗拦截）
-    window.open(`${prefix}/classic/print/${orderId}?doc=${doc}`, '_blank')
+    window.open(`${prefix}/classic/print/${orderId}?doc=${doc}`, '_blank', 'noopener,noreferrer')
     try {
       await apiPost(`/api/orders/${orderId}/mark-printed`, { type })
       refresh()
