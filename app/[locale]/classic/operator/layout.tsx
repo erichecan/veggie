@@ -34,8 +34,9 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch' : '配送中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
     { href: `${prefix}/classic/operator/daily-sales`, label: en ? 'Daily Sales' : '日销售中心' },
     // 数据分析中心：临时先屏蔽权限校验，让 OPERATOR 直接进入老板视角的分析页面（见 boss/layout.tsx + 相关 API 的 allowedRoles）
+    // newTab: 老板视角是独立的导航体系，没有返回入口，新标签页打开避免用户回不去
     { href: `${prefix}/classic/boss`,   label: en ? 'Analytics Center' : '数据分析中心',
-      activePaths: [`${prefix}/classic/boss`] },
+      newTab: true },
     // 发票 + 供应商账单合并到「会计」tab 式页面
     { href: `${prefix}/classic/operator/accounting`, label: en ? 'Accounting' : '会计', activePaths: [`${prefix}/classic/operator/accounting`] },
     { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },

@@ -19,6 +19,8 @@ interface MenuItem {
   href: string
   label: string
   activePaths?: string[]
+  /** true 时在新标签页打开（用于跳去另一个独立模块，避免用户进去后回不来） */
+  newTab?: boolean
 }
 
 interface OdooNavProps {
@@ -271,6 +273,27 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                 )
               )
             )
+            if (item.newTab) {
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 h-11 flex items-center gap-1 text-sm whitespace-nowrap transition-colors flex-shrink-0"
+                  style={{ color: 'white' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.08)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                >
+                  {item.label}
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.7">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              )
+            }
             return (
               <Link
                 key={item.href}
