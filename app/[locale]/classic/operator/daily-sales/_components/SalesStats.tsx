@@ -13,7 +13,7 @@ import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
-interface ProductRow { id: string; name: string; salePrice?: number; category?: string; qtyOnHand?: number; uomName?: string }
+interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string }
 interface UserRow { id: string; name: string }
 interface CategoryRow { id: string; name: string }
 interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; unitPrice?: number | null; subtotal?: number | null; uomName?: string | null }
@@ -131,6 +131,8 @@ export default function SalesStats() {
   const [dailyOrders, setDailyOrders] = useState<Order[]>([])
   const [dailyLoading, setDailyLoading] = useState(false)
   const [showWeeklyAvg, setShowWeeklyAvg] = useState(false)
+  // 周趋势度量：销售员订货按数量决策，默认看量；金额留作参考
+  const [weeklyMeasure, setWeeklyMeasure] = useState<'qty' | 'amount'>('qty')
 
   // Load reference data once
   useEffect(() => {
@@ -452,6 +454,7 @@ export default function SalesStats() {
 
   // ── View 2: 周销售趋势 ──────────────────────────────────────────────────────
 
+  // 周趋势吃上方的商品/分类筛选：销售员选中要订的货，看它周一~周日各卖多少
   const weeklyChartData = useMemo(() => {
     const DOW_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
     const now = new Date(fromDate + 'T12:00:00Z')
@@ -459,6 +462,8 @@ export default function SalesStats() {
     const thisMon = new Date(now)
     thisMon.setUTCDate(now.getUTCDate() - nowDow)
     thisMon.setUTCHours(0, 0, 0, 0)
+    const prodNames = new Set(selectedProducts.map(p => p.name))
+    const round1 = (v: number) => Math.round(v * 10) / 10
     const currentWeek = Array(7).fill(0) as number[]
     const pastWeeks: number[][] = Array.from({ length: 4 }, () => Array(7).fill(0))
     for (const o of dashOrders) {
@@ -471,18 +476,25 @@ export default function SalesStats() {
       orderMon.setUTCHours(0, 0, 0, 0)
       const msPerWeek = 7 * 24 * 60 * 60 * 1000
       const weeksBack = Math.round((thisMon.getTime() - orderMon.getTime()) / msPerWeek)
-      const orderTotal = ((o as Order & { lines?: OrderLine[] }).lines ?? [])
-        .reduce((s, l) => s + Number(l.subtotal ?? 0), 0)
+      let orderTotal = 0
+      for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
+        if (prodNames.size > 0 && !prodNames.has(l.productName ?? '')) continue
+        if (selectedCategory) {
+          const cid = l.productId ? productMap.get(l.productId)?.categoryId : null
+          if (cid !== selectedCategory) continue
+        }
+        orderTotal += weeklyMeasure === 'qty' ? Number(l.orderedQty ?? 0) : Number(l.subtotal ?? 0)
+      }
       if (weeksBack === 0) currentWeek[weekday] += orderTotal
       else if (weeksBack >= 1 && weeksBack <= 4) pastWeeks[weeksBack - 1][weekday] += orderTotal
     }
     const pastAvg = Array(7).fill(0).map((_, i) =>
-      Math.round(pastWeeks.reduce((s, w) => s + w[i], 0) / 4)
+      round1(pastWeeks.reduce((s, w) => s + w[i], 0) / 4)
     )
     return DOW_LABELS.map((day, i) => ({
-      day, current: Math.round(currentWeek[i]), avg: pastAvg[i],
+      day, current: round1(currentWeek[i]), avg: pastAvg[i],
     }))
-  }, [dashOrders, fromDate])
+  }, [dashOrders, fromDate, selectedProducts, selectedCategory, productMap, weeklyMeasure])
 
   const weeklyConclusion = useMemo(() => {
     const nonZero = weeklyChartData.filter(d => d.current > 0)
@@ -494,8 +506,9 @@ export default function SalesStats() {
     const diffText = diffPct !== null
       ? `，较过去4周同期${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(0)}%`
       : ''
-    return `本周峰值在${peak.day}（€${peak.current.toFixed(0)}）；本周合计 €${total.toFixed(0)}${diffText}。`
-  }, [weeklyChartData])
+    const fmt = (v: number) => weeklyMeasure === 'qty' ? `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)} 件` : `€${v.toFixed(0)}`
+    return `本周峰值在${peak.day}（${fmt(peak.current)}）；本周合计 ${fmt(total)}${diffText}。`
+  }, [weeklyChartData, weeklyMeasure])
 
   function handleDailyPrint() {
     const w = window.open('', '_blank', 'noopener,width=800,height=700')
@@ -515,7 +528,7 @@ export default function SalesStats() {
           <tbody>
             ${cat.products.map(p => {
               const atp = p.qtyOnHand - p.qty
-              const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#EF4444'
+              const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#8B5CF6'
               return `<tr style="border-bottom:1px solid #f3f4f6;">
                 <td style="padding:5px 8px;">${p.name}</td>
                 <td style="padding:5px 8px;text-align:center;color:#6b7280;">${p.uomName || '—'}</td>
@@ -534,7 +547,8 @@ export default function SalesStats() {
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;padding:20px}@media print{@page{margin:1cm}body{padding:0}}</style>
 </head><body>
 <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px dashed #e5e7eb;font-size:12px;color:#6b7280;">
-  <b style="font-size:15px;color:#111;">今日总量</b>&nbsp;&nbsp;日期：<b style="color:#111;">${fromDate}</b>&nbsp;&nbsp;合计：<b style="color:#111;">${dailySummary.totalSku} SKU · ${dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件</b>
+  <b style="font-size:15px;color:#111;">今日总量</b>&nbsp;&nbsp;日期：<b style="color:#111;">${fromDate}</b>&nbsp;&nbsp;分类：<b style="color:#111;">${selectedStatsCats.length > 0 ? selectedStatsCats.join('、') : '全部分类'}</b>&nbsp;&nbsp;合计：<b style="color:#111;">${dailySummary.totalSku} SKU · ${dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件</b>
+  <div style="margin-top:4px;">ATP 色标：<span style="color:#10B981;">正数 = 有余量</span> · <span style="color:#F59E0B;">零 = 刚好用完</span> · <span style="color:#8B5CF6;">负数 ≠ 缺货（可能当天到货或可临时调货）</span></div>
 </div>
 ${catsHtml}
 <script>window.print();<\/script>
@@ -880,7 +894,7 @@ ${catsHtml}
                       <tbody>
                         {cat.products.map(p => {
                           const atp = p.qtyOnHand - p.qty
-                          const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#EF4444'
+                          const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#8B5CF6'
                           return (
                             <tr key={p.productId} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
                               <td className="px-3 py-2 text-gray-800">{p.name}</td>
@@ -902,8 +916,11 @@ ${catsHtml}
               </div>
             )}
             {filteredDailyStats.length > 0 && (
-              <div className="text-xs text-gray-500 pt-2 border-t border-gray-100">
-                合计：{dailySummary.totalSku} SKU · {dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件
+              <div className="text-xs text-gray-500 pt-2 border-t border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                <span>合计：{dailySummary.totalSku} SKU · {dailySummary.totalQty % 1 === 0 ? dailySummary.totalQty.toFixed(0) : dailySummary.totalQty.toFixed(2)} 件</span>
+                <span className="text-gray-400">
+                  ATP 色标：<span className="text-emerald-600">正数=有余量</span> · <span className="text-amber-500">零=刚好用完</span> · <span className="text-violet-500">负数≠缺货（可能当天到货或可临时调货）</span>
+                </span>
               </div>
             )}
           </div>
@@ -912,17 +929,41 @@ ${catsHtml}
         {/* View 2: 周趋势 */}
         {statsView === 'weekly' && (
           <div className="p-5 space-y-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
+                {(['qty', 'amount'] as const).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setWeeklyMeasure(m)}
+                    className={`px-3 py-1.5 transition-colors ${weeklyMeasure === m ? 'bg-[#875A7B] text-white' : 'text-gray-500 hover:bg-gray-50 bg-white'}`}
+                  >
+                    {m === 'qty' ? '按数量' : '按金额'}
+                  </button>
+                ))}
+              </div>
               <button onClick={() => setShowWeeklyAvg(v => !v)} className={`px-3 py-1.5 text-xs rounded border transition-colors ${showWeeklyAvg ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'}`}>
                 {showWeeklyAvg ? '隐藏' : '显示'}过去4周均值
               </button>
+              <span className="text-xs text-gray-400">
+                {selectedProducts.length > 0
+                  ? `已聚焦商品：${selectedProducts.map(p => p.name).join('、')}`
+                  : selectedCategory
+                    ? `已聚焦分类：${allCategories.find(c => c.id === selectedCategory)?.name ?? ''}`
+                    : '未选商品/分类 = 全店（可在上方 Products / Product Category 选择要订的货）'}
+              </span>
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={weeklyChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={v => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
-                <Tooltip formatter={(v, name) => [`€${Number(v ?? 0).toFixed(0)}`, name === 'current' ? '本周' : '过去4周均值']} />
+                <YAxis tick={{ fontSize: 11 }} width={56}
+                  tickFormatter={v => weeklyMeasure === 'qty'
+                    ? `${v}`
+                    : `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                <Tooltip formatter={(v, name) => [
+                  weeklyMeasure === 'qty' ? `${Number(v ?? 0)} 件` : `€${Number(v ?? 0).toFixed(0)}`,
+                  name === 'current' ? '本周' : '过去4周均值',
+                ]} />
                 <Legend formatter={name => name === 'current' ? '本周' : '过去4周均值'} />
                 <Bar dataKey="current" name="current" fill="#875A7B" radius={[2, 2, 0, 0]} />
                 {showWeeklyAvg && <Line type="monotone" dataKey="avg" name="avg" stroke="#F59E0B" strokeWidth={2} dot={{ fill: '#F59E0B', r: 3 }} strokeDasharray="4 2" />}
