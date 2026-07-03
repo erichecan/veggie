@@ -87,6 +87,7 @@ export default function SalesStats() {
   const [selectedProducts, setSelectedProducts] = useState<ProductRow[]>([])
   const [customerQuery, setCustomerQuery] = useState('')
   const [productQuery, setProductQuery] = useState('')
+  const [categoryQuery, setCategoryQuery] = useState('')
 
   const [allProducts, setAllProducts] = useState<ProductRow[]>([])
   const [allSalesmen, setAllSalesmen] = useState<UserRow[]>([])
@@ -381,18 +382,26 @@ ${catsHtml}
           </div>
           <div className="flex items-start gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0 pt-1.5">分类（多选）</label>
-            <div className="flex gap-1.5 flex-wrap">
-              <button
-                className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedCategories.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`}
-                onClick={() => setSelectedCategories([])}
-              >全部分类</button>
-              {allCategories.map(c => (
-                <button
-                  key={c.id}
-                  className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedCategories.includes(c.id) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`}
-                  onClick={() => setSelectedCategories(prev => toggleValue(prev, c.id))}
-                >{c.name}</button>
+            <div className="flex items-center gap-1.5 flex-wrap flex-1">
+              {selectedCategories.map(id => (
+                <span key={id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
+                  {allCategories.find(c => c.id === id)?.name ?? id}
+                  <button onClick={() => setSelectedCategories(prev => prev.filter(x => x !== id))} className="hover:text-red-500 leading-none">×</button>
+                </span>
               ))}
+              <ProductSearchInput<CategoryRow>
+                value={categoryQuery}
+                onChange={setCategoryQuery}
+                onSelect={c => { setSelectedCategories(prev => prev.includes(c.id) ? prev : [...prev, c.id]); setCategoryQuery('') }}
+                products={allCategories.filter(c => !selectedCategories.includes(c.id))}
+                placeholder="搜索分类…"
+                inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-36 focus:outline-none focus:border-[#875A7B]"
+                showOnEmptyQuery={false}
+                selectOnTab
+              />
+              {selectedCategories.length === 0
+                ? <span className="text-xs text-gray-400">（留空 = 全部分类）</span>
+                : <button onClick={() => setSelectedCategories([])} className="text-xs text-gray-400 hover:text-gray-600">清除</button>}
             </div>
           </div>
         </div>
