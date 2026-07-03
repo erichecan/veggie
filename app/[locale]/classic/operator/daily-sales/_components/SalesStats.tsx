@@ -7,10 +7,11 @@ import {
 } from 'recharts'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
-import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
+import { formatDriverSlotFromOrder, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import { toggleValue, today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
+import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string }
@@ -87,13 +88,13 @@ export default function SalesStats() {
   const [selectedProducts, setSelectedProducts] = useState<ProductRow[]>([])
   const [customerQuery, setCustomerQuery] = useState('')
   const [productQuery, setProductQuery] = useState('')
-  const [categoryQuery, setCategoryQuery] = useState('')
 
   const [allProducts, setAllProducts] = useState<ProductRow[]>([])
   const [allSalesmen, setAllSalesmen] = useState<UserRow[]>([])
   const [allCategories, setAllCategories] = useState<CategoryRow[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+  const [allDriverSlots, setAllDriverSlots] = useState<DriverSlotInfo[]>([])
 
   // ── 查看方式 + 度量 ──────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('customer')
@@ -104,6 +105,7 @@ export default function SalesStats() {
     apiGet<ProductRow[]>('/api/products?limit=5000').then(d => setAllProducts(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<UserRow[]>('/api/users').then(d => setAllSalesmen(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<CategoryRow[]>('/api/product-categories').then(d => setAllCategories(Array.isArray(d) ? d : [])).catch(() => {})
+    apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setAllDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
 
   // 唯一的订单请求：只按日期区间拉，其余筛选全部在前端做 → 四种查看方式共用这一份数据
@@ -118,25 +120,22 @@ export default function SalesStats() {
       .finally(() => setOrdersLoading(false))
   }, [fromDate, toDate])
 
-  // 司机/时段/批次 chip 选项：从当前区间订单里提取
+  // 司机/时段/批次选项：来自司机配置（稳定全集），不依赖当前区间是否已排线
   const batchFilterOptions = useMemo(() => {
     const drivers = new Set<string>()
     const times = new Set<string>()
     const nums = new Set<number>()
-    for (const o of orders) {
-      const key = formatDriverSlotFromOrder(o)
-      if (!key) continue
-      const p = parseDriverSlotKey(key)
-      if (p.driver) drivers.add(p.driver)
-      if (p.time) times.add(p.time)
-      if (p.num) nums.add(p.num)
+    for (const s of allDriverSlots) {
+      if (s.driverName) drivers.add(s.driverName)
+      if (s.timeOfDay) times.add(s.timeOfDay.toLowerCase())
+      if (s.batchNum != null) nums.add(Number(s.batchNum))
     }
     return {
       drivers: [...drivers].sort(),
       times: [...times].sort(),
       nums: [...nums].sort((a, b) => a - b),
     }
-  }, [orders])
+  }, [allDriverSlots])
 
   const productMap = useMemo(() => {
     const m = new Map<string, ProductRow>()
@@ -383,25 +382,20 @@ ${catsHtml}
           <div className="flex items-start gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0 pt-1.5">分类（多选）</label>
             <div className="flex items-center gap-1.5 flex-wrap flex-1">
+              <MultiSelectPopover
+                label="分类"
+                options={allCategories.map(c => ({ value: c.id, label: c.name }))}
+                selected={selectedCategories}
+                onChange={setSelectedCategories}
+                searchable
+                searchPlaceholder="搜索分类…"
+              />
               {selectedCategories.map(id => (
                 <span key={id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
                   {allCategories.find(c => c.id === id)?.name ?? id}
                   <button onClick={() => setSelectedCategories(prev => prev.filter(x => x !== id))} className="hover:text-red-500 leading-none">×</button>
                 </span>
               ))}
-              <ProductSearchInput<CategoryRow>
-                value={categoryQuery}
-                onChange={setCategoryQuery}
-                onSelect={c => { setSelectedCategories(prev => prev.includes(c.id) ? prev : [...prev, c.id]); setCategoryQuery('') }}
-                products={allCategories.filter(c => !selectedCategories.includes(c.id))}
-                placeholder="搜索分类…"
-                inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-36 focus:outline-none focus:border-[#875A7B]"
-                showOnEmptyQuery={false}
-                selectOnTab
-              />
-              {selectedCategories.length === 0
-                ? <span className="text-xs text-gray-400">（留空 = 全部分类）</span>
-                : <button onClick={() => setSelectedCategories([])} className="text-xs text-gray-400 hover:text-gray-600">清除</button>}
             </div>
           </div>
         </div>
@@ -410,10 +404,20 @@ ${catsHtml}
         <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
           <div className="flex items-start gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0 pt-1">司机</label>
-            <div className="flex gap-1.5 flex-wrap">
-              <button className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedDrivers.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`} onClick={() => setSelectedDrivers([])}>全部司机</button>
-              {batchFilterOptions.drivers.map(d => (
-                <button key={d} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedDrivers.includes(d) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`} onClick={() => setSelectedDrivers(prev => toggleValue(prev, d))}>{d}</button>
+            <div className="flex items-center gap-1.5 flex-wrap flex-1">
+              <MultiSelectPopover
+                label="司机"
+                options={batchFilterOptions.drivers.map(d => ({ value: d, label: d }))}
+                selected={selectedDrivers}
+                onChange={setSelectedDrivers}
+                searchable
+                searchPlaceholder="搜索司机…"
+              />
+              {selectedDrivers.map(d => (
+                <span key={d} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
+                  {d}
+                  <button onClick={() => setSelectedDrivers(prev => prev.filter(x => x !== d))} className="hover:text-red-500 leading-none">×</button>
+                </span>
               ))}
             </div>
           </div>
