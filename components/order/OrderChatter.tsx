@@ -139,7 +139,6 @@ interface OrderChatterProps {
 export function OrderChatter({ orderId }: OrderChatterProps) {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
-  const [showSend, setShowSend] = useState<'message' | 'note' | null>(null)
   const [text, setText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [followers] = useState(3)
@@ -160,14 +159,13 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
   useEffect(() => { load() }, [orderId])
 
   async function submit() {
-    if (!showSend || !text.trim()) return
+    if (!text.trim() || submitting) return
     setSubmitting(true)
     try {
-      await apiPost<AuditLog>(`/api/orders/${orderId}/audit`, { action: showSend, detail: text.trim() })
+      await apiPost<AuditLog>(`/api/orders/${orderId}/audit`, { action: 'message', detail: text.trim() })
       setText('')
-      setShowSend(null)
       await load()
-      toast.success(showSend === 'message' ? 'Message sent' : 'Note logged')
+      toast.success('Message sent')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed')
     } finally {
@@ -185,20 +183,9 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-      {/* Top action bar */}
+      {/* Top bar */}
       <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-        <div className="flex items-center gap-4 text-sm">
-          <button
-            onClick={() => { setShowSend(showSend === 'message' ? null : 'message'); setText('') }}
-            className={showSend === 'note' ? 'text-gray-500 hover:text-gray-700' : 'font-medium'}
-            style={showSend === 'note' ? undefined : { color: '#875A7B' }}
-          >Send message</button>
-          <button
-            onClick={() => { setShowSend(showSend === 'note' ? null : 'note'); setText('') }}
-            className={showSend === 'note' ? 'font-medium' : 'text-gray-500 hover:text-gray-700'}
-            style={showSend === 'note' ? { color: '#875A7B' } : undefined}
-          >Log note</button>
-        </div>
+        <span className="text-sm font-semibold text-gray-700">操作日志</span>
         <div className="flex items-center gap-3 text-sm text-gray-500">
           <span className="flex items-center gap-1"><span>📎</span><span>0</span></span>
           <button className="px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50">Follow</button>
@@ -206,30 +193,24 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
         </div>
       </div>
 
-      {/* Compose form */}
-      {showSend && (
-        <div className="mt-3 mb-3 border border-gray-200 rounded-lg p-3 bg-gray-50">
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder={showSend === 'message' ? 'Send a message to followers…' : 'Log an internal note…'}
-            className="w-full bg-white border border-gray-200 rounded p-2 text-sm focus:outline-none focus:border-purple-400"
-            rows={3}
-            autoFocus
-          />
-          <div className="flex justify-end gap-2 mt-2">
-            <button onClick={() => { setShowSend(null); setText('') }}
-              className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-100">
-              Discard
-            </button>
-            <button onClick={submit} disabled={submitting || !text.trim()}
-              className="px-4 py-1 text-sm text-white rounded disabled:opacity-50"
-              style={{ background: '#875A7B' }}>
-              {submitting ? '...' : (showSend === 'message' ? 'Send' : 'Log')}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Always-visible message compose */}
+      <div className="mt-3 flex items-start gap-2">
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+          }}
+          placeholder="Send message…（Enter 发送，Shift+Enter 换行）"
+          className="flex-1 bg-white border border-gray-200 rounded p-2 text-sm focus:outline-none focus:border-purple-400 resize-none"
+          rows={2}
+        />
+        <button onClick={submit} disabled={submitting || !text.trim()}
+          className="px-4 py-2 text-sm text-white rounded disabled:opacity-50 shrink-0"
+          style={{ background: '#875A7B' }}>
+          {submitting ? '...' : 'Send'}
+        </button>
+      </div>
 
       {/* Timeline */}
       {loading && <p className="text-center text-gray-400 text-sm py-6">Loading…</p>}
