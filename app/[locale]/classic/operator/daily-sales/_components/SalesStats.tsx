@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import {
@@ -16,7 +16,8 @@ interface CustomerRow { id: string; name: string; street?: string; city?: string
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; qtyOnHand?: number; uomName?: string }
 interface UserRow { id: string; name: string }
 interface CategoryRow { id: string; name: string }
-interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; subtotal?: number | null; uomName?: string | null }
+interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; unitPrice?: number | null; subtotal?: number | null; uomName?: string | null }
+interface ReportLine { date: string; customerId: string; customerName: string; productName: string; qty: number; unitPrice: number; amount: number }
 
 // ─── Chart helpers ─────────────────────────────────────────────────────────────
 
@@ -59,6 +60,38 @@ function periodDates(p: 'week' | 'month' | '4weeks'): [string, string] {
 }
 
 const eur = (v: number) => `€${v.toFixed(2)}`
+
+// 筛选结果表：单个日期分组（日期头 → 客户 → 商品行 → 日小计）
+function FragmentRows({ day }: { day: { date: string; dateQty: number; dateAmt: number; customers: ReportLine[][] } }) {
+  return (
+    <>
+      <tr className="bg-gray-100">
+        <td colSpan={4} className="px-4 py-1.5 font-bold text-gray-700">{day.date}</td>
+      </tr>
+      {day.customers.map(custLines => (
+        <Fragment key={day.date + custLines[0].customerId}>
+          <tr className="bg-gray-50/60">
+            <td colSpan={4} className="px-4 py-1 font-medium text-[#875A7B]">{custLines[0].customerName}</td>
+          </tr>
+          {custLines.map((l, i) => (
+            <tr key={i} className="border-b border-gray-50 hover:bg-purple-50/30">
+              <td className="px-4 py-1.5 pl-8 text-gray-700">{l.productName}</td>
+              <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{l.qty.toFixed(3)}</td>
+              <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(l.unitPrice)}</td>
+              <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(l.amount)}</td>
+            </tr>
+          ))}
+        </Fragment>
+      ))}
+      <tr className="border-b border-gray-200 bg-gray-50 font-medium text-gray-600">
+        <td className="px-4 py-1.5">小计 {day.date}</td>
+        <td className="px-4 py-1.5 text-right tabular-nums">{day.dateQty.toFixed(3)}</td>
+        <td />
+        <td className="px-4 py-1.5 text-right tabular-nums">{eur(day.dateAmt)}</td>
+      </tr>
+    </>
+  )
+}
 
 // ─── SalesStats ───────────────────────────────────────────────────────────────
 
@@ -106,15 +139,23 @@ export default function SalesStats() {
     apiGet<CategoryRow[]>('/api/product-categories').then(d => setAllCategories(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
 
-  // Load orders whenever date range changes (for batch chip population)
+  // Load orders (with lines) whenever range/salesman/category changes — drives batch chips + on-screen result table
+  const [ordersLoading, setOrdersLoading] = useState(false)
   useEffect(() => {
     if (!fromDate || !toDate) return
-    apiGet<Order[]>(
-      `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED&dateField=deliveryDate&fromDate=${fromDate}&toDate=${toDate}`
-    )
+    const params = new URLSearchParams({
+      status: 'CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED',
+      dateField: 'deliveryDate', fromDate, toDate,
+      include_lines: 'true', limit: '5000',
+    })
+    if (selectedCategory) params.set('categoryId', selectedCategory)
+    if (selectedSalesman) params.set('salesUserId', selectedSalesman)
+    setOrdersLoading(true)
+    apiGet<Order[]>(`/api/orders?${params}`)
       .then(d => setOrders(Array.isArray(d) ? d : []))
       .catch(() => setOrders([]))
-  }, [fromDate, toDate])
+      .finally(() => setOrdersLoading(false))
+  }, [fromDate, toDate, selectedCategory, selectedSalesman])
 
   // Auto-compute dashboard date range from fromDate (current week + 4 past weeks)
   useEffect(() => {
@@ -181,6 +222,62 @@ export default function SalesStats() {
     for (const p of allProducts) m.set(p.id, p)
     return m
   }, [allProducts])
+
+  // ── 筛选结果（与 day-wise-report 打印页同口径）───────────────────────────────
+  const reportLines = useMemo(() => {
+    const custSet = new Set(selectedCustomers.map(c => c.id))
+    const prodNames = new Set(selectedProducts.map(p => p.name))
+    const out: ReportLine[] = []
+    for (const o of orders) {
+      if (custSet.size > 0 && !custSet.has(o.restaurantId)) continue
+      if (selectedDrivers.length > 0 || selectedTimes.length > 0 || selectedBatchNums.length > 0) {
+        const p = parseDriverSlotKey(formatDriverSlotFromOrder(o))
+        if (selectedDrivers.length > 0 && !selectedDrivers.includes(p.driver)) continue
+        if (selectedTimes.length > 0 && !selectedTimes.includes(p.time)) continue
+        if (selectedBatchNums.length > 0 && !selectedBatchNums.includes(p.num)) continue
+      }
+      const date = ((o as Order & { deliveryDate?: string }).deliveryDate ?? String(o.createdAt)).slice(0, 10)
+      const ls = (o as Order & { lines?: OrderLine[] }).lines ?? []
+      for (const l of ls) {
+        const name = l.productName ?? ''
+        if (prodNames.size > 0 && !prodNames.has(name)) continue
+        out.push({
+          date,
+          customerId: o.restaurantId,
+          customerName: o.restaurantName,
+          productName: name,
+          qty: Number(l.orderedQty ?? 0),
+          unitPrice: Number(l.unitPrice ?? 0),
+          amount: Number(l.subtotal ?? 0),
+        })
+      }
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date) || a.customerName.localeCompare(b.customerName))
+  }, [orders, selectedCustomers, selectedProducts, selectedDrivers, selectedTimes, selectedBatchNums])
+
+  // 日期 → 客户 → 行 的层级分组（屏幕展示用）
+  const groupedReport = useMemo(() => {
+    const byDate = new Map<string, Map<string, ReportLine[]>>()
+    for (const l of reportLines) {
+      if (!byDate.has(l.date)) byDate.set(l.date, new Map())
+      const byCust = byDate.get(l.date)!
+      if (!byCust.has(l.customerId)) byCust.set(l.customerId, [])
+      byCust.get(l.customerId)!.push(l)
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, byCust]) => ({
+        date,
+        dateQty: [...byCust.values()].flat().reduce((s, l) => s + l.qty, 0),
+        dateAmt: [...byCust.values()].flat().reduce((s, l) => s + l.amount, 0),
+        customers: [...byCust.values()],
+      }))
+  }, [reportLines])
+
+  const reportTotal = useMemo(() => ({
+    qty: reportLines.reduce((s, l) => s + l.qty, 0),
+    amount: reportLines.reduce((s, l) => s + l.amount, 0),
+  }), [reportLines])
 
   // ── Dashboard analytics ───────────────────────────────────────────────────────
 
@@ -593,28 +690,66 @@ ${catsHtml}
         </div>
       </div>
 
-      {/* Print buttons */}
-      <div className="px-6 py-4 flex items-center gap-3 border-b border-gray-200">
-        <button
-          onClick={() => window.open(buildUrl('day'), '_blank')}
-          className="px-5 py-2 text-sm font-semibold text-white rounded"
-          style={{ background: '#875A7B' }}
-        >
-          Print
-        </button>
-        <button
-          onClick={() => window.open(buildUrl('multiline'), '_blank')}
-          className="px-5 py-2 text-sm font-semibold rounded border"
-          style={{ borderColor: '#875A7B', color: '#875A7B' }}
-        >
-          Print Multi Line
-        </button>
-        <button
-          onClick={() => window.open(buildUrl('summary'), '_blank')}
-          className="px-5 py-2 text-sm font-semibold rounded border border-gray-300 text-gray-600"
-        >
-          Print Sale Summary
-        </button>
+      {/* 筛选结果（屏幕预览，与打印同口径） */}
+      <div className="border-b border-gray-200">
+        <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap bg-gray-50 border-b border-gray-100">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            筛选结果
+            <span className="ml-2 font-normal normal-case text-gray-400">
+              {ordersLoading ? '加载中…' : `${reportLines.length} 行 · 合计 ${eur(reportTotal.amount)}`}
+            </span>
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">打印：</span>
+            <button
+              onClick={() => window.open(buildUrl('day'), '_blank', 'noopener,noreferrer')}
+              disabled={reportLines.length === 0}
+              className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40"
+              style={{ borderColor: '#875A7B', color: '#875A7B' }}
+            >日报（按客户）</button>
+            <button
+              onClick={() => window.open(buildUrl('multiline'), '_blank', 'noopener,noreferrer')}
+              disabled={reportLines.length === 0}
+              className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40"
+              style={{ borderColor: '#875A7B', color: '#875A7B' }}
+            >明细清单</button>
+            <button
+              onClick={() => window.open(buildUrl('summary'), '_blank', 'noopener,noreferrer')}
+              disabled={reportLines.length === 0}
+              className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40"
+              style={{ borderColor: '#875A7B', color: '#875A7B' }}
+            >商品×星期汇总</button>
+          </div>
+        </div>
+        {reportLines.length === 0 ? (
+          <div className="px-5 py-8 text-center text-gray-400 text-sm">
+            {ordersLoading ? '加载中…' : '当前筛选条件下没有订单行'}
+          </div>
+        ) : (
+          <div className="max-h-[480px] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white shadow-sm">
+                <tr className="border-b border-gray-200">
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">产品</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">数量</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">单价</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">金额</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupedReport.map(day => (
+                  <FragmentRows key={day.date} day={day} />
+                ))}
+                <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
+                  <td className="px-4 py-2">总计</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(3)}</td>
+                  <td className="px-4 py-2" />
+                  <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ── New Views: 当日分类总量 / 周销售趋势 ── */}
