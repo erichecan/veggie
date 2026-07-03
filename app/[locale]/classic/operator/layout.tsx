@@ -18,6 +18,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
   //   Group A - 业务主流程：订单 → 拣货波次 → 分货 → 配送单 → 发票
   //   Group B - 主数据：商品 → 客户 → 价格表 → 计量单位
   //   Group C - 系统管理：用户
+  // 数据分析中心插在「日销售中心」后面（Group A 内），不再单独分组
   // 空 href 的 `│` 作分隔符渲染（OdooNav 支持）
   const en = locale !== routing.defaultLocale
   const MENU_ITEMS = [
@@ -32,6 +33,9 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // { href: `${prefix}/classic/operator/trips`,     label: en ? 'Deliveries'    : '配送单' },
     { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch' : '配送中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
     { href: `${prefix}/classic/operator/daily-sales`, label: en ? 'Daily Sales' : '日销售中心' },
+    // 数据分析中心：临时先屏蔽权限校验，让 OPERATOR 直接进入老板视角的分析页面（见 boss/layout.tsx + 相关 API 的 allowedRoles）
+    { href: `${prefix}/classic/boss`,   label: en ? 'Analytics Center' : '数据分析中心',
+      activePaths: [`${prefix}/classic/boss`] },
     // 发票 + 供应商账单合并到「会计」tab 式页面
     { href: `${prefix}/classic/operator/accounting`, label: en ? 'Accounting' : '会计', activePaths: [`${prefix}/classic/operator/accounting`] },
     { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },
@@ -52,16 +56,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },
     // divider
     { href: '', label: '│' },
-    // Group C – 分析
-    { href: `${prefix}/classic/operator/reports/sales`,       label: en ? 'Sales Analysis'  : '销售分析',
-      activePaths: [`${prefix}/classic/operator/reports/sales`] },
-    { href: `${prefix}/classic/operator/reports/purchasing`,  label: en ? 'Purchase Analysis' : '采购分析',
-      activePaths: [`${prefix}/classic/operator/reports/purchasing`] },
-    { href: `${prefix}/classic/operator/reports/logistics`,   label: en ? 'Logistics Analysis' : '物流分析',
-      activePaths: [`${prefix}/classic/operator/reports/logistics`] },
-    // divider
-    { href: '', label: '│' },
-    // Group D
+    // Group C
     { href: `${prefix}/classic/operator/users`,     label: en ? 'User Management' : '系统用户管理' },
   ]
 

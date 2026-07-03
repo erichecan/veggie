@@ -21,7 +21,7 @@ export default function ClassicWarehouseLayout({ children }: { children: React.R
 
   useEffect(() => {
     const user = getSession()
-    if (!user || !['WAREHOUSE', 'OPERATOR'].includes(user.role)) {
+    if (!user || !['WAREHOUSE', 'OPERATOR', 'BOSS'].includes(user.role)) {
       router.push(`${prefix}/enter`)
       return
     }
