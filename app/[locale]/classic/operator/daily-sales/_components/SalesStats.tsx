@@ -279,6 +279,22 @@ export default function SalesStats() {
     amount: reportLines.reduce((s, l) => s + l.amount, 0),
   }), [reportLines])
 
+  // 按商品汇总视图：跨区间聚合每个商品的量/额/客户数
+  const [reportGroupBy, setReportGroupBy] = useState<'customer' | 'product'>('customer')
+  const productReport = useMemo(() => {
+    const m = new Map<string, { name: string; qty: number; amount: number; customers: Set<string> }>()
+    for (const l of reportLines) {
+      const e = m.get(l.productName) ?? { name: l.productName, qty: 0, amount: 0, customers: new Set<string>() }
+      e.qty += l.qty
+      e.amount += l.amount
+      e.customers.add(l.customerId)
+      m.set(l.productName, e)
+    }
+    return [...m.values()]
+      .map(v => ({ name: v.name, qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0 }))
+      .sort((a, b) => b.amount - a.amount)
+  }, [reportLines])
+
   // ── Dashboard analytics ───────────────────────────────────────────────────────
 
   const productTop10 = useMemo(() => {
@@ -693,12 +709,25 @@ ${catsHtml}
       {/* 筛选结果（屏幕预览，与打印同口径） */}
       <div className="border-b border-gray-200">
         <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap bg-gray-50 border-b border-gray-100">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            筛选结果
-            <span className="ml-2 font-normal normal-case text-gray-400">
-              {ordersLoading ? '加载中…' : `${reportLines.length} 行 · 合计 ${eur(reportTotal.amount)}`}
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              筛选结果
+              <span className="ml-2 font-normal normal-case text-gray-400">
+                {ordersLoading ? '加载中…' : `${reportLines.length} 行 · 合计 ${eur(reportTotal.amount)}`}
+              </span>
             </span>
-          </span>
+            <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
+              {(['customer', 'product'] as const).map(g => (
+                <button
+                  key={g}
+                  onClick={() => setReportGroupBy(g)}
+                  className={`px-2.5 py-1 transition-colors ${reportGroupBy === g ? 'bg-[#875A7B] text-white' : 'text-gray-500 hover:bg-gray-50 bg-white'}`}
+                >
+                  {g === 'customer' ? '按客户' : '按商品'}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">打印：</span>
             <button
@@ -725,7 +754,7 @@ ${catsHtml}
           <div className="px-5 py-8 text-center text-gray-400 text-sm">
             {ordersLoading ? '加载中…' : '当前筛选条件下没有订单行'}
           </div>
-        ) : (
+        ) : reportGroupBy === 'customer' ? (
           <div className="max-h-[480px] overflow-y-auto">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-white shadow-sm">
@@ -742,6 +771,38 @@ ${catsHtml}
                 ))}
                 <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
                   <td className="px-4 py-2">总计</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(3)}</td>
+                  <td className="px-4 py-2" />
+                  <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="max-h-[480px] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white shadow-sm">
+                <tr className="border-b border-gray-200">
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">产品</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-20">客户数</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">数量合计</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">均价</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">金额合计</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productReport.map(p => (
+                  <tr key={p.name} className="border-b border-gray-50 hover:bg-purple-50/30">
+                    <td className="px-4 py-1.5 text-gray-700">{p.name}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{p.customerCount}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{p.qty.toFixed(3)}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(p.avgPrice)}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(p.amount)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
+                  <td className="px-4 py-2">总计</td>
+                  <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(3)}</td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
