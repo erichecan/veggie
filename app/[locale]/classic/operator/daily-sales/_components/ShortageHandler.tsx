@@ -10,6 +10,7 @@ import ProductSearchInput from '@/components/classic/ProductSearchInput'
 interface ProductOption {
   id: string
   name: string
+  internalRef?: string | null
 }
 
 interface FlatLine {
@@ -107,11 +108,13 @@ export default function ShortageHandler() {
     return Array.from(set).sort()
   }, [allLines])
 
+  // 缺货商品由仓库报上来，必须先搜索选中商品才展示对应订单行
   const filteredLines = useMemo(() => {
+    if (selectedProducts.length === 0) return []
     return allLines.filter(l => {
       if (timeFilter !== 'all' && l.timeOfDay !== timeFilter) return false
       if (selectedDrivers.length > 0 && (!l.driverName || !selectedDrivers.includes(l.driverName))) return false
-      if (selectedProducts.length > 0 && !selectedProducts.some(p => p.id === l.productId)) return false
+      if (!selectedProducts.some(p => p.id === l.productId)) return false
       return true
     })
   }, [allLines, timeFilter, selectedDrivers, selectedProducts])
@@ -236,7 +239,11 @@ export default function ShortageHandler() {
             ))}
           </div>
           <span className="text-xs text-gray-400">
-            {loading ? '加载中...' : `${filteredLines.length} / ${allLines.length} 行`}
+            {loading
+              ? '加载中...'
+              : selectedProducts.length === 0
+                ? `当天共 ${allLines.length} 行，先选择商品`
+                : `${filteredLines.length} / ${allLines.length} 行`}
           </span>
         </div>
 
@@ -277,8 +284,8 @@ export default function ShortageHandler() {
             onChange={setProductQuery}
             onSelect={addProduct}
             products={allProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
-            placeholder="输入商品名搜索"
-            inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-40 focus:outline-none focus:border-[#875A7B]"
+            placeholder="输入商品名 / Internal Reference 搜索"
+            inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-56 focus:outline-none focus:border-[#875A7B]"
             showOnEmptyQuery={false}
             selectOnTab
           />
@@ -294,7 +301,11 @@ export default function ShortageHandler() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         {filteredLines.length === 0 ? (
           <div className="px-4 py-10 text-center text-gray-400 text-sm">
-            {loading ? '加载中...' : '暂无订单行'}
+            {loading
+              ? '加载中...'
+              : selectedProducts.length === 0
+                ? '请先在上方搜索并选择缺货商品（支持商品名 / Internal Reference），选中后显示当天订购该商品的订单行'
+                : '当天没有订购所选商品的订单行'}
           </div>
         ) : (
           <div className="overflow-x-auto">
