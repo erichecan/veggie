@@ -146,6 +146,8 @@ export async function POST(req: Request) {
                 sourceRef: grName,
                 bestBefore: poLine.bestBefore ?? null,
                 arrivedAt: batchDate,
+                // SSOT(成本): 批次成本 = PO 行真实采购价，毛利/损耗分析按批次计成本
+                unitCost: recvCost > 0 ? recvCost : null,
               },
             })
 

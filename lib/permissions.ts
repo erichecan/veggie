@@ -32,6 +32,7 @@ export type Subject =
   | 'customer' | 'supplier' | 'purchase_order' | 'goods_receipt' | 'vendor_bill'
   | 'wave' | 'trip' | 'stock_move' | 'user' | 'uom' | 'uom_category'
   | 'statement' | 'purchase_suggestion' | 'notification'
+  | 'analytics' | 'stock_take'
 
 export interface Ability {
   role: Role
@@ -76,6 +77,8 @@ const MATRIX: Record<Role, Partial<Record<Subject, Action[]>>> = {
     purchase_suggestion: ['read', 'create', 'update'],
     notification:        ['read'],
     statement:           ['read'],
+    analytics:           ['read'],
+    stock_take:          ['read', 'create', 'update'],
   },
 
   FINANCE: {
@@ -88,6 +91,7 @@ const MATRIX: Record<Role, Partial<Record<Subject, Action[]>>> = {
     statement:        ['read', 'create', 'update', 'delete'],
     trip:             ['read', 'settle'],
     notification:     ['read'],
+    analytics:        ['read'],
   },
 
   WAREHOUSE: {
@@ -99,6 +103,7 @@ const MATRIX: Record<Role, Partial<Record<Subject, Action[]>>> = {
     trip:                ['read'],
     purchase_suggestion: ['read'],
     notification:        ['read'],
+    stock_take:          ['read', 'create', 'update'],
   },
 
   RESTAURANT: {

@@ -785,6 +785,8 @@ model Lot {
   arrivedAt     DateTime  @default(now())
   /// 状态：AVAILABLE=有库存可用, DEPLETED=已耗尽
   status        String    @default("AVAILABLE")
+  /// 参考单位下的单位成本（收货时从 PO 行 unitCost 写入；历史批次由 backfill-lot-cost 回填，回填不到为 null）
+  unitCost      Decimal?  @db.Decimal(12, 4)
   createdAt     DateTime  @default(now())
 
   stockMoves    StockMove[]
@@ -1216,4 +1218,93 @@ model CreditNoteLine {
   @@index([creditNoteId])
   @@index([productId])
   @@index([sourceOrderId])
+}
+
+/// 盘点单状态
+enum StockTakeStatus {
+  DRAFT
+  DONE
+  CANCELLED
+}
+
+/**
+ * 库存盘点单（Stock Take）
+ * ================================================================================
+ * 建单时对选中商品快照 systemQty；录入实盘 countedQty；完成时对 diff ≠ 0 的行
+ * 生成 StockMove(type=ADJUSTMENT, sourceType='STOCK_TAKE') 并同步 Product.qtyOnHand。
+ */
+model StockTake {
+  id            String          @id @default(cuid())
+  /// 编号：STK-00001
+  name          String          @unique
+  status        StockTakeStatus @default(DRAFT)
+  /// 盘点业务日期
+  takenAt       DateTime
+  /// 创建人（姓名快照，与 GoodsReceipt.receivedBy 同风格）
+  createdBy     String?
+  notes         String?
+  lines         StockTakeLine[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([status])
+  @@index([takenAt])
+}
+
+model StockTakeLine {
+  id          String    @id @default(cuid())
+  stockTakeId String
+  stockTake   StockTake @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+  productId   String
+  productName String
+  /// 建单时系统库存快照
+  systemQty   Decimal   @db.Decimal(14, 3)
+  /// 实盘数量（未录入为 null）
+  countedQty  Decimal?  @db.Decimal(14, 3)
+  /// countedQty − systemQty（完成时固化）
+  diffQty     Decimal?  @db.Decimal(14, 3)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([stockTakeId])
+  @@index([productId])
+}
+
+/**
+ * 每日经营快照（数据分析中心地基）
+ * ================================================================================
+ * 惰性生成（打开分析中心补齐缺失日期，幂等 upsert）；当天实时算不写快照；
+ * 订正数据后通过 POST /api/analytics/snapshots 重算。口径见 lib/analytics/metrics.ts。
+ */
+model DailyBusinessSnapshot {
+  id               String   @id @default(cuid())
+  snapshotDate     DateTime @unique @db.Date
+  /// 销售额（税前，销售口径 = confirmationDate）
+  salesExTax       Decimal  @default(0) @db.Decimal(14, 2)
+  /// 销售额（税后）
+  salesIncTax      Decimal  @default(0) @db.Decimal(14, 2)
+  /// 毛利（税前）
+  grossProfit      Decimal  @default(0) @db.Decimal(14, 2)
+  /// 实际批次成本覆盖率 0~1
+  costCoverageRate Decimal  @default(0) @db.Decimal(6, 4)
+  orderCount       Int      @default(0)
+  activeCustomers  Int      @default(0)
+  /// 缺货行数（物流口径）
+  shortageLines    Int      @default(0)
+  /// 订单行数（物流口径，缺货率分母）
+  orderLines       Int      @default(0)
+  /// 退货额（税前）
+  creditNoteAmount Decimal  @default(0) @db.Decimal(14, 2)
+  /// 损耗额（SCRAP + 盘亏，按成本计）
+  scrapAmount      Decimal  @default(0) @db.Decimal(14, 2)
+  /// 采购额（税前，按 PO 确认日）
+  purchaseExTax    Decimal  @default(0) @db.Decimal(14, 2)
+  /// 当日应收余额快照（POSTED 且 amountDue > 0）
+  arBalance        Decimal  @default(0) @db.Decimal(14, 2)
+  /// 其中已逾期部分
+  arOverdue        Decimal  @default(0) @db.Decimal(14, 2)
+  /// 快照生成时间（订正后重算会更新）
+  computedAt       DateTime @default(now())
+
+  @@index([snapshotDate])
 }
