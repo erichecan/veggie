@@ -641,6 +641,8 @@ model PickingWave {
   waveType     String?
   driverSlotId String?
   driverName   String?
+  /// 分配完成标记时间：调度员点「分配完成」后回填，纯进度标记，可反悔；订单一变动即清空
+  assignmentDoneAt DateTime?
   /// 确认出发时间：操作员点「确认出发」后回填，标记该批次已发车（防重复出发 + 追溯）
   dispatchedAt DateTime?
   /// 标记完成时间：司机回仓后操作员点「标记完成」，卡片从调度台归档

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { waveStage } from '@/lib/wave-stage'
 import { restaurantColor } from './colors'
 
 const PURPLE = '#875A7B'
@@ -15,7 +16,7 @@ interface Order {
 interface Wave {
   id: string; name: string | null; orderIds: string[]; status: string
   waveType: string | null; waveNumber: number | null; driverSlotId: string | null; driverName: string | null
-  dispatchedAt: string | null; completedAt: string | null
+  dispatchedAt: string | null; completedAt: string | null; assignmentDoneAt: string | null
 }
 
 const WAVE_STATUS: Record<string, { text: string; cls: string; pct: number }> = {
@@ -99,17 +100,18 @@ export default function BatchTab({ date }: { date: string }) {
 
   const confirmedCount = confirmedOrders.length
   const assignedCount = confirmedOrders.filter(o => assigned.has(o.id)).length
+  const assignmentDoneCount = waves.filter(w => waveStage(w) === 'assignment_done').length
 
   /* ── 乐观分配 / 移除 / 移动（参考 waves 页，不整页 reload）── */
   async function assignToWave(waveId: string, orderId: string) {
-    setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, orderIds: [...w.orderIds, orderId] } : w)))
+    setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, orderIds: [...w.orderIds, orderId], assignmentDoneAt: null } : w)))
     try {
       await apiPut(`/api/waves/${waveId}/assign`, { orderIds: [orderId] })
       toast.success('已分配')
     } catch (e) { toast.error(e instanceof Error ? e.message : '分配失败'); load() }
   }
   async function unassignFromWave(waveId: string, orderId: string) {
-    setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, orderIds: w.orderIds.filter(id => id !== orderId) } : w)))
+    setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, orderIds: w.orderIds.filter(id => id !== orderId), assignmentDoneAt: null } : w)))
     try {
       await apiPut(`/api/waves/${waveId}/unassign`, { orderIds: [orderId] })
       toast.success('已移回待分配')
@@ -117,8 +119,8 @@ export default function BatchTab({ date }: { date: string }) {
   }
   async function moveWave(fromId: string, toId: string, orderId: string) {
     setWaves(prev => prev.map(w => {
-      if (w.id === fromId) return { ...w, orderIds: w.orderIds.filter(id => id !== orderId) }
-      if (w.id === toId) return { ...w, orderIds: [...w.orderIds, orderId] }
+      if (w.id === fromId) return { ...w, orderIds: w.orderIds.filter(id => id !== orderId), assignmentDoneAt: null }
+      if (w.id === toId) return { ...w, orderIds: [...w.orderIds, orderId], assignmentDoneAt: null }
       return w
     }))
     try {
@@ -147,6 +149,15 @@ export default function BatchTab({ date }: { date: string }) {
       toast.success('已标记完成')
       load()
     } catch (e) { toast.error(e instanceof Error ? e.message : '标记完成失败') }
+  }
+
+  // 分配完成：纯进度标记，可反悔。不改订单状态/交货日期，不触发下游
+  async function markAssignmentDone(waveId: string, done: boolean) {
+    setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, assignmentDoneAt: done ? new Date().toISOString() : null } : w)))
+    try {
+      await apiPut(`/api/waves/${waveId}/assignment-done`, { done })
+      toast.success(done ? '已标记分配完成' : '已撤销')
+    } catch (e) { toast.error(e instanceof Error ? e.message : '操作失败'); load() }
   }
 
   async function handleBatchDepart(time: 'am' | 'pm') {
@@ -217,7 +228,9 @@ export default function BatchTab({ date }: { date: string }) {
     const m = laneMetrics(wave)
     const st = WAVE_STATUS[wave.status] ?? { text: wave.status, cls: 'bg-gray-100 text-gray-500', pct: 0 }
     const laneOrders = wave.orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
-    const dispatched = !!wave.dispatchedAt
+    const stage = waveStage(wave)
+    const dispatched = stage === 'in_transit'
+    const assignmentDone = stage === 'assignment_done'
     const over = !dispatched && dragOverWave === wave.id
     const departTime = wave.dispatchedAt
       ? new Date(wave.dispatchedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -236,6 +249,8 @@ export default function BatchTab({ date }: { date: string }) {
           <span className="text-xs text-gray-500">{m.orderCount}单</span>
           {dispatched
             ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto">🚚 在途</span>
+            : assignmentDone
+            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 ml-auto">✅ 分配完成</span>
             : <span className="ml-auto text-gray-400 text-[10px]">▾ 展开</span>}
         </div>
       )
@@ -258,6 +273,8 @@ export default function BatchTab({ date }: { date: string }) {
             <div className="flex items-center gap-1.5">
               {dispatched
                 ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700">🚚 在途</span>
+                : assignmentDone
+                ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700">✅ 分配完成</span>
                 : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.text}</span>}
               <button
                 onClick={e => { e.stopPropagation(); onToggleCollapse() }}
@@ -302,12 +319,31 @@ export default function BatchTab({ date }: { date: string }) {
               onClick={() => completeWave(wave.id)}
               className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 hover:bg-gray-100 w-full"
             >✓ 标记完成</button>
+          ) : assignmentDone ? (
+            <div className="mt-1 flex flex-col gap-1.5">
+              <button
+                onClick={() => dispatchWave(wave.id)}
+                className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                style={{ background: '#16a34a' }}
+              >🚚 确认出发（{laneOrders.length}单）</button>
+              <button
+                onClick={() => markAssignmentDone(wave.id, false)}
+                className="rounded-lg py-1 text-[11px] font-medium text-gray-500 bg-white border border-gray-300 hover:bg-gray-100"
+              >↩︎ 撤销分配完成</button>
+            </div>
           ) : laneOrders.length > 0 ? (
-            <button
-              onClick={() => dispatchWave(wave.id)}
-              className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
-              style={{ background: '#16a34a' }}
-            >🚚 确认出发（{laneOrders.length}单）</button>
+            <div className="mt-1 flex flex-col gap-1.5">
+              <button
+                onClick={() => markAssignmentDone(wave.id, true)}
+                className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                style={{ background: '#875A7B' }}
+              >✅ 分配完成</button>
+              <button
+                onClick={() => dispatchWave(wave.id)}
+                className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                style={{ background: '#16a34a' }}
+              >🚚 确认出发（{laneOrders.length}单）</button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -320,6 +356,7 @@ export default function BatchTab({ date }: { date: string }) {
         <Board n={confirmedCount} l="待派送订单" />
         <div className="w-px self-stretch bg-gray-200" />
         <Board n={assignedCount} l="已入批" color="#16a34a" />
+        <Board n={assignmentDoneCount} l="已排完" color="#875A7B" />
         <Board n={unassigned.length} l="待分配" color="#d97706" />
         <div className="w-px self-stretch bg-gray-200" />
         <Board n={waves.length} l="司机批次" />
