@@ -21,7 +21,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const updated = await prisma.pickingWave.update({
         where: { id },
-        data: { orderIds: remaining, zones },
+        data: { orderIds: remaining, zones, assignmentDoneAt: null },
       })
 
       await writeLog({
