@@ -22,16 +22,16 @@ interface BatchGroup {
   totalWeight: number
 }
 
+// SSOT: 打印一律以批次字符串(wave 归属)为准，不用 Order.driverSlotId(下单意向,
+// 拖拽调度不回填,会串到别的司机)。后端按 batchLabel 反查 wave,与卡片显示一致。
 function buildPrintUrl(
   prefix: string,
   type: 'picking' | 'delivery' | 'summary',
   date: string,
-  slotId?: string,
   batchKey?: string,
 ): string {
   const params = new URLSearchParams({ date, fromDate: date })
-  if (slotId) params.set('driverSlotId', slotId)
-  else if (batchKey) params.set('batchLabel', batchKey)
+  if (batchKey) params.set('batchLabel', batchKey)
   return `${prefix}/classic/print/dispatch/${type}?${params.toString()}`
 }
 
@@ -39,14 +39,12 @@ function buildPrintUrl(
 
 function BatchCard({
   group,
-  slotKeyToId,
   prefix,
   date,
   isPrinted,
   onPrint,
 }: {
   group: BatchGroup
-  slotKeyToId: Map<string, string>
   prefix: string
   date: string
   isPrinted: boolean
@@ -54,12 +52,11 @@ function BatchCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const { batchKey, orders, totalAmount, untaxTotal } = group
-  const slotId = slotKeyToId.get(batchKey)
   const parsed = parseDriverSlotKey(batchKey)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
 
   function print(type: 'picking' | 'delivery' | 'summary') {
-    window.open(buildPrintUrl(prefix, type, date, slotId, batchKey), '_blank')
+    window.open(buildPrintUrl(prefix, type, date, batchKey), '_blank')
     onPrint()
   }
 
@@ -177,7 +174,6 @@ function UnassignedPanel({ orders }: { orders: Order[] }) {
 
 function BatchSections({
   batchGroups,
-  slotKeyToId,
   prefix,
   date,
   printedKeys,
@@ -185,7 +181,6 @@ function BatchSections({
   unassignedOrders,
 }: {
   batchGroups: BatchGroup[]
-  slotKeyToId: Map<string, string>
   prefix: string
   date: string
   printedKeys: Set<string>
@@ -204,7 +199,6 @@ function BatchSections({
       <BatchCard
         key={g.batchKey}
         group={g}
-        slotKeyToId={slotKeyToId}
         prefix={prefix}
         date={date}
         isPrinted={printedKeys.has(g.batchKey)}
@@ -314,16 +308,6 @@ export default function PrintCenter() {
       .catch(() => setOrders([]))
       .finally(() => setLoading(false))
   }, [date])
-
-  const slotKeyToId = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const o of orders) {
-      if (o.driverSlot?.id) {
-        m.set(formatDriverSlotFromOrder(o), o.driverSlot.id)
-      }
-    }
-    return m
-  }, [orders])
 
   const filterOptions = useMemo(() => {
     const drivers = new Set<string>()
@@ -486,7 +470,6 @@ export default function PrintCenter() {
       ) : (
         <BatchSections
           batchGroups={batchGroups}
-          slotKeyToId={slotKeyToId}
           prefix={prefix}
           date={date}
           printedKeys={printedKeys}
