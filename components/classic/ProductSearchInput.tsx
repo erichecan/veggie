@@ -118,6 +118,10 @@ export default function ProductSearchInput<
           if (e.key === 'Escape') { setOpen(false); setHighlight(-1); return }
           if (e.key === 'Tab') {
             if (selectOnTab && open && filtered.length > 0) {
+              // 阻止默认跳格与外层容器的 Tab 焦点管理(handleTabNav),
+              // 让 Tab 与 Enter 一致:选中当前项后焦点留在搜索框,便于连续录入
+              e.preventDefault()
+              e.stopPropagation()
               select(filtered[highlight >= 0 ? highlight : 0])
             } else {
               setOpen(false)

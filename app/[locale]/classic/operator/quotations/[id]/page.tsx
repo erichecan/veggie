@@ -621,6 +621,7 @@ export default function QuotationDetailPage() {
               onDeleteLine={(_lineId, i) => deleteLine(i)}
               products={allProducts}
               onAddProduct={addProductLine}
+              selectOnTab
               searchColSpan={15}
               emptyColSpan={16}
               renderHeaders={() => (

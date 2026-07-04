@@ -1718,10 +1718,14 @@ export default function ClassicPlaceOrderPage() {
                             if (!isNaN(n) && n >= 0) updateQty(line.id, n)
                           }}
                           onBlur={() => {
-                            const raw = qtyRawMap[line.id] ?? ''
-                            const n = parseFloat(raw)
-                            const committed = isNaN(n) || n < 0 ? 0 : n
-                            updateQty(line.id, committed)
+                            const raw = qtyRawMap[line.id]
+                            // 未编辑过(仅 Tab 跳过)→ 保持原数量,不提交 0
+                            if (raw !== undefined) {
+                              const n = parseFloat(raw)
+                              // 空/非法/非正数 → 回退为 1(数量至少 1),不允许变成 0
+                              const committed = isNaN(n) || n <= 0 ? 1 : n
+                              updateQty(line.id, committed)
+                            }
                             setQtyRawMap(prev => { const next = { ...prev }; delete next[line.id]; return next })
                           }}
                           onKeyDown={e => handleFieldKey(e)}

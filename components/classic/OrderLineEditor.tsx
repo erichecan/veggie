@@ -26,6 +26,8 @@ interface Props<
   onReorder?: (from: number, to: number) => void
   products?: P[]
   onAddProduct?: (p: P) => void
+  /** 允许 Tab 键选中「Add a product」搜索框中当前高亮/首个匹配项(默认 false) */
+  selectOnTab?: boolean
   searchColSpan?: number
   onDeleteLine?: (lineId: string, index: number) => void
   renderHeaders: () => ReactNode
@@ -49,6 +51,7 @@ export default function OrderLineEditor<
   onReorder,
   products,
   onAddProduct,
+  selectOnTab = false,
   searchColSpan = 18,
   onDeleteLine,
   renderHeaders,
@@ -176,6 +179,7 @@ export default function OrderLineEditor<
                     inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-72"
                     portalDropdown={true}
                     externalRef={psInputRef}
+                    selectOnTab={selectOnTab}
                   />
                 </td>
               </tr>

@@ -607,6 +607,7 @@ export default function SalesOrderDetailPage() {
               searchColSpan={15}
               products={allProducts}
               onAddProduct={addProductLine}
+              selectOnTab
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
                   <th className="px-2 py-3 w-6"></th>
