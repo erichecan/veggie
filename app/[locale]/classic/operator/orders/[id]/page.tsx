@@ -20,7 +20,6 @@ interface AllProduct {
   internalRef?: string | null
   listPrice?: number
   standardPrice?: number
-  commissionPrice?: number
   customerTaxRate?: number
   uomName?: string
   uomId?: string
@@ -96,7 +95,7 @@ export default function SalesOrderDetailPage() {
     apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
 
-  type EditLine = NonNullable<Order['lines']>[number] & { commissionPrice?: number }
+  type EditLine = NonNullable<Order['lines']>[number]
   const [editLines, setEditLines] = useState<EditLine[]>([])
   // 重复商品检测：同一 productId 在编辑缓冲区中出现多次（与 place-order 创建页一致）
   const duplicateCounts = useMemo(() => {
@@ -174,13 +173,13 @@ export default function SalesOrderDetailPage() {
     setEditLines(prev => prev.filter((_, i) => i !== idx))
   }
 
-  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'commissionPrice', value: number) {
+  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec', value: number | string) {
     setEditLines(prev => {
       const next = [...prev]
       const line: EditLine = { ...next[idx], [field]: value }
       if (field === 'orderedQty' || field === 'unitPrice') {
-        const qty = field === 'orderedQty' ? value : Number(next[idx].orderedQty)
-        const price = field === 'unitPrice' ? value : Number(next[idx].unitPrice)
+        const qty = field === 'orderedQty' ? Number(value) : Number(next[idx].orderedQty)
+        const price = field === 'unitPrice' ? Number(value) : Number(next[idx].unitPrice)
         line.subtotal = Math.round(qty * price * 100) / 100
       }
       next[idx] = line
@@ -340,7 +339,6 @@ export default function SalesOrderDetailPage() {
       subtotal: Math.round(price * 100) / 100,
       taxRate: Number(p.customerTaxRate ?? 0) * 100,
       sequence: editLines.length,
-      commissionPrice: Number(p.commissionPrice ?? 0),
       cost: Number(p.standardPrice ?? 0),
     } as unknown as EditLine
     setEditLines(prev => [...prev, newLine])
@@ -428,7 +426,6 @@ export default function SalesOrderDetailPage() {
                 setEditLines(lines.map(l => ({
                   ...l,
                   subtotal: Math.round(Number(l.orderedQty) * Number(l.unitPrice) * 100) / 100,
-                  commissionPrice: (l as unknown as { commissionPrice?: number }).commissionPrice ?? 0,
                 })))
                 setEditing(true)
               }} disabled={isLocked}
@@ -700,7 +697,16 @@ export default function SalesOrderDetailPage() {
                     </td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
-                    <td className="px-2 py-2 text-gray-600 text-xs">{l.spec || ''}</td>
+                    <td className="px-2 py-2 text-gray-600 text-xs">
+                      {editing ? (
+                        <input
+                          type="text"
+                          className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
+                          value={l.spec ?? ''}
+                          onChange={e => updateLine(i, 'spec', e.target.value)}
+                        />
+                      ) : (l.spec || '')}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}

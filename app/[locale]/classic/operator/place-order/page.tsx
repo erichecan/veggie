@@ -47,7 +47,6 @@ type QuotationLine = {
   cost: number
   priceLabel: string       // 'Price' | 'PriceList' | 'Special'
   taxRate: number          // %
-  cmsPrice: number
 }
 
 type ChatterEntry = {
@@ -685,7 +684,6 @@ export default function ClassicPlaceOrderPage() {
               cost:        p.standardPrice ?? 0,
               priceLabel,
               taxRate:     (p.customerTaxRate ?? 0) * 100,
-              cmsPrice:    p.commissionPrice ?? 0,
             },
       ),
     )
@@ -734,7 +732,7 @@ export default function ClassicPlaceOrderPage() {
       uom: (p as Product & { uomName?: string }).uomName ?? 'Unit(s)',
       uomId: (p as Product & { uomId?: string }).uomId ?? undefined,
       unitPrice, cost: p.standardPrice ?? 0, priceLabel,
-      taxRate: (p.customerTaxRate ?? 0) * 100, cmsPrice: p.commissionPrice ?? 0,
+      taxRate: (p.customerTaxRate ?? 0) * 100,
     }
   }
 
@@ -815,7 +813,7 @@ export default function ClassicPlaceOrderPage() {
       {
         id: newId, productId: '', productName: '', description: '', note: '',
         orderedQty: 1, forecastQty: null, qtyOnHand: 0, uom: '', uomId: undefined,
-        unitPrice: 0, cost: 0, priceLabel: 'Price', taxRate: 0, cmsPrice: 0,
+        unitPrice: 0, cost: 0, priceLabel: 'Price', taxRate: 0,
       },
     ])
     // Auto-activate the search for the new row
@@ -912,7 +910,6 @@ export default function ClassicPlaceOrderPage() {
         uomId:       l.uomId || undefined,
         uomName:     l.uom || undefined,
         taxRate:     l.taxRate,
-        commissionPrice: l.cmsPrice || undefined,
       })),
       totalAmount:    untaxed,
       status:         statusOverride,

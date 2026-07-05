@@ -22,7 +22,6 @@ interface AllProduct {
   internalRef?: string | null
   listPrice?: number
   standardPrice?: number
-  commissionPrice?: number
   customerTaxRate?: number
   uomName?: string
   uomId?: string
@@ -88,7 +87,7 @@ export default function QuotationDetailPage() {
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
   useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
 
-  type EditLine = NonNullable<Order['lines']>[number] & { commissionPrice?: number }
+  type EditLine = NonNullable<Order['lines']>[number]
   const [editLines, setEditLines] = useState<EditLine[]>([])
   // 重复商品检测：同一 productId 在编辑缓冲区中出现多次（与 place-order 创建页一致）
   const duplicateCounts = useMemo(() => {
@@ -179,7 +178,7 @@ export default function QuotationDetailPage() {
     })
   }
 
-  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'commissionPrice' | 'spec', value: number | string) {
+  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec', value: number | string) {
     setEditLines(prev => {
       const next = [...prev]
       const line: EditLine = { ...next[idx], [field]: value }
@@ -328,7 +327,6 @@ export default function QuotationDetailPage() {
       subtotal: Math.round(price * 100) / 100,
       taxRate: Number(p.customerTaxRate ?? 0) * 100,
       sequence: editLines.length,
-      commissionPrice: Number(p.commissionPrice ?? 0),
       cost: Number(p.standardPrice ?? 0),
     } as unknown as EditLine
     setEditLines(prev => [...prev, newLine])
@@ -387,7 +385,6 @@ export default function QuotationDetailPage() {
                   return {
                     ...l,
                     subtotal: Math.round(qty * price * 100) / 100,
-                    commissionPrice: (l as unknown as { commissionPrice?: number }).commissionPrice ?? 0,
                   }
                 }))
                 setEditing(true)
