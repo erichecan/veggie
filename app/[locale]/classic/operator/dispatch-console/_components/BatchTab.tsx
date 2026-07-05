@@ -49,7 +49,7 @@ export default function BatchTab({ date }: { date: string }) {
     try {
       const [slotData, orderData] = await Promise.all([
         apiGet<DriverSlot[]>('/api/driver-slots'),
-        apiGet<Order[]>('/api/orders?status=CONFIRMED,IN_DELIVERY&include_lines=false&limit=500'),
+        apiGet<Order[]>(`/api/orders?status=CONFIRMED,IN_DELIVERY&include_lines=false&limit=500&dateField=deliveryDate&fromDate=${date}&toDate=${date}`),
       ])
       let waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
       if (waveData.length === 0 && slotData.length > 0) {
