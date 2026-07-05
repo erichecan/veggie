@@ -510,6 +510,12 @@ model Order {
   printType        String?
   /// 累计打印次数
   printCount       Int       @default(0)
+  /// 下单时快照客户的固定佣金（EUR / 单）
+  commissionFixed        Decimal?   @db.Decimal(10, 2)
+  /// 冻结后的司机提成总额（Trip 核实交账时写入，写入后不再随实时计算变动）
+  driverCommissionTotal  Decimal?   @db.Decimal(10, 2)
+  /// 提成冻结时间（写入 driverCommissionTotal 时回填）
+  commissionFrozenAt     DateTime?
 
   auditLogs     OrderAuditLog[]
   deliverySlip  DeliverySlip?
@@ -548,6 +554,8 @@ model OrderLine {
   invoicedQty  Decimal  @default(0) @db.Decimal(14, 3)
   /// unitPrice × orderedQty 快照
   subtotal     Decimal  @db.Decimal(12, 2)
+  /// 下单时快照该商品的件提成单价（来自 Product/ProductTemplate.commissionPrice）
+  commissionPrice  Decimal?  @db.Decimal(10, 4)
   sequence     Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

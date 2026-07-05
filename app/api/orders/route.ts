@@ -282,9 +282,13 @@ export async function POST(req: Request) {
       const productIds = lines.map((l) => l.productId)
       const productsForStock = await prisma.product.findMany({
         where: { id: { in: productIds } },
-        include: { template: { select: { type: true } } },
+        include: { template: { select: { type: true, commissionPrice: true } } },
       })
       const stockMap = new Map(productsForStock.map((p) => [p.id, p]))
+      // 件提成单价：优先取 Product.commissionPrice，fallback 到 ProductTemplate.commissionPrice
+      const commissionPriceMap = new Map(
+        productsForStock.map((p) => [p.id, p.commissionPrice ?? p.template?.commissionPrice ?? null])
+      )
 
       // 3) 事务：仅创建订单，不扣库存（报价单阶段）
       // 业务编号：创建者缩写-YYMMDD-NNN（CJ-260424-001）。
@@ -334,6 +338,7 @@ export async function POST(req: Request) {
                     deliveredQty: 0,
                     invoicedQty: 0,
                     subtotal: Number((l.authoritativeUnitPrice * l.quantity).toFixed(2)),
+                    commissionPrice: commissionPriceMap.get(l.productId) ?? null,
                     sequence: idx,
                   })),
                 },
