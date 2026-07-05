@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { buildZonesByRestaurant } from '@/lib/wave-zones'
+import { assertWaveNotPickLocked } from '@/lib/wave-pick-lock'
 
 /**
  * 调度单一真相 = PickingWave.orderIds[]（P0-1）
@@ -23,6 +24,7 @@ export async function removeOrderFromAllWaves(orderId: string): Promise<number> 
   const currentWaves = await prisma.pickingWave.findMany({ where: { orderIds: { has: orderId } } })
   const ops = []
   for (const w of currentWaves) {
+    await assertWaveNotPickLocked(w.id)
     const remaining = (w.orderIds as string[]).filter((oid) => oid !== orderId)
     const zones = await buildZonesByRestaurant(remaining)
     ops.push(prisma.pickingWave.update({ where: { id: w.id }, data: { orderIds: remaining, zones } }))
@@ -45,6 +47,7 @@ export async function assignOrderToWave(
   let wave = await prisma.pickingWave.findUnique({
     where: { waveDate_driverSlotId: { waveDate, driverSlotId } },
   })
+  if (wave) await assertWaveNotPickLocked(wave.id)
   if (!wave) {
     const existing = await prisma.pickingWave.findMany({ where: { waveDate }, select: { waveNumber: true } })
     const nextNumber = existing.length > 0 ? Math.max(...existing.map((w) => w.waveNumber ?? 0)) + 1 : 1
@@ -69,6 +72,7 @@ export async function assignOrderToWave(
     where: { id: { not: wave.id }, orderIds: { has: orderId } },
   })
   for (const ow of otherWaves) {
+    await assertWaveNotPickLocked(ow.id)
     const remaining = (ow.orderIds as string[]).filter((oid) => oid !== orderId)
     const zones = await buildZonesByRestaurant(remaining)
     ops.push(prisma.pickingWave.update({ where: { id: ow.id }, data: { orderIds: remaining, zones } }))

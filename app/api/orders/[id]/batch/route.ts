@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { assignOrderToWave, removeOrderFromAllWaves } from '@/lib/wave-assign'
+import { WavePickLockedError } from '@/lib/wave-pick-lock'
 
 /**
  * 销售单列表分配/清空交货批次。
@@ -40,6 +41,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       })
       return NextResponse.json({ ok: true, driverSlotId, waveId: result.waveId, driverName: result.driverName })
     } catch (error) {
+      if (error instanceof WavePickLockedError) {
+        return NextResponse.json({ error: error.message }, { status: 409 })
+      }
       console.error('[PUT /api/orders/[id]/batch]', error)
       return NextResponse.json({ error: '分配批次失败' }, { status: 500 })
     }

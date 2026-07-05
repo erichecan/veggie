@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 
 /**
  * 分配完成标记：纯进度标记，可反悔。
@@ -18,6 +19,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const wave = await prisma.pickingWave.findUnique({ where: { id } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
+      await assertWaveNotPickLocked(id)
       if (wave.dispatchedAt) {
         return NextResponse.json({ error: '该批次已确认出发，无法更改分配完成标记' }, { status: 400 })
       }
@@ -38,6 +40,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
+      if (error instanceof WavePickLockedError) {
+        return NextResponse.json({ error: error.message }, { status: 409 })
+      }
       console.error('[PUT /api/waves/[id]/assignment-done]', error)
       return NextResponse.json({ error: '操作失败' }, { status: 500 })
     }

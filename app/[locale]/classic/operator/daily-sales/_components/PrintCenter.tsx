@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useLocale } from 'next-intl'
+import { toast } from 'sonner'
 import { routing } from '@/i18n/routing'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
+import { useAbility } from '@/lib/permissions'
 import type { Order, OrderLine } from '@/lib/types'
 import { formatDriverSlot, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
@@ -57,22 +59,55 @@ function BatchCard({
   prefix,
   date,
   isPrinted,
+  canUnlock,
   onPrint,
+  onLockChange,
 }: {
   group: BatchGroup
   prefix: string
   date: string
   isPrinted: boolean
+  canUnlock: boolean
   onPrint: () => void
+  onLockChange: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const { batchKey, orders, totalAmount, untaxTotal } = group
+  const [busy, setBusy] = useState(false)
+  const { batchKey, waveId, pickLockedAt, pickLockedBy, orders, totalAmount, untaxTotal } = group
   const parsed = parseDriverSlotKey(batchKey)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
 
-  function print(type: 'picking' | 'delivery' | 'summary') {
+  function print(type: 'delivery' | 'summary') {
     window.open(buildPrintUrl(prefix, type, date, batchKey), '_blank')
     onPrint()
+  }
+
+  // Feature C：打印拣货单即触发批次锁定（重打=重新上锁）；锁定失败则不打印，避免"打印了但没锁"
+  async function printPicking() {
+    setBusy(true)
+    try {
+      await apiPost(`/api/waves/${waveId}/pick-lock`, {})
+      window.open(buildPrintUrl(prefix, 'picking', date, batchKey), '_blank')
+      onPrint()
+      onLockChange()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '锁定批次失败，未打印')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function unlock() {
+    setBusy(true)
+    try {
+      await apiPost(`/api/waves/${waveId}/pick-unlock`, {})
+      toast.success('已解锁')
+      onLockChange()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '解锁失败')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -109,15 +144,30 @@ function BatchCard({
                 ✓ 已打印
               </span>
             )}
+            {pickLockedAt && (
+              <span className="text-xs text-amber-700 font-medium bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                🔒 拣货中{pickLockedBy ? ` · ${pickLockedBy}` : ''}
+              </span>
+            )}
           </div>
         </button>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-sm font-semibold text-gray-900 mr-2">${fmtMoney(totalAmount)}</span>
           <span className="text-xs text-gray-400 mr-3">未税 ${fmtMoney(untaxTotal)}</span>
+          {pickLockedAt && canUnlock && (
+            <button
+              onClick={unlock}
+              disabled={busy}
+              className="px-2.5 py-1 text-xs rounded border border-amber-400 text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-40"
+            >
+              解锁
+            </button>
+          )}
           <button
-            onClick={() => print('picking')}
-            className="px-2.5 py-1 text-xs rounded border border-orange-400 text-orange-600 hover:bg-orange-50 transition-colors"
+            onClick={printPicking}
+            disabled={busy}
+            className="px-2.5 py-1 text-xs rounded border border-orange-400 text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-40"
           >
             拣货单
           </button>
@@ -162,13 +212,17 @@ function BatchSections({
   prefix,
   date,
   printedKeys,
+  canUnlock,
   onPrint,
+  onLockChange,
 }: {
   batchGroups: BatchGroup[]
   prefix: string
   date: string
   printedKeys: Set<string>
+  canUnlock: boolean
   onPrint: (batchKey: string) => void
+  onLockChange: () => void
 }) {
   const amGroups = batchGroups.filter(g => parseDriverSlotKey(g.batchKey).time === 'am')
   const pmGroups = batchGroups.filter(g => parseDriverSlotKey(g.batchKey).time === 'pm')
@@ -185,7 +239,9 @@ function BatchSections({
         prefix={prefix}
         date={date}
         isPrinted={printedKeys.has(g.batchKey)}
+        canUnlock={canUnlock}
         onPrint={() => onPrint(g.batchKey)}
+        onLockChange={onLockChange}
       />
     )
   }
@@ -253,6 +309,8 @@ function savePrintedKeys(date: string, keys: Set<string>) {
 export default function PrintCenter() {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const ability = useAbility()
+  const canUnlock = (ability.roles?.length ? ability.roles : [ability.role]).some(r => r === 'BOSS' || r === 'WAREHOUSE')
 
   const [date, setDate] = useState(today)
   const [slots, setSlots] = useState<DriverSlotInfo[]>([])
@@ -291,31 +349,26 @@ export default function PrintCenter() {
 
   // Feature B：打印中心按批次阶段取数（assignmentDoneAt 或 dispatchedAt 已回填、且未 completed 的 wave），
   // 分配完成即可见，不必等「确认出发」回填 deliveryDate。
-  useEffect(() => {
+  const load = useCallback(async () => {
     setLoading(true)
-    let cancelled = false
-    async function load() {
-      try {
-        const waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
-        const visible = waveData.filter(w => (w.assignmentDoneAt || w.dispatchedAt) && !w.completedAt)
-        const orderIds = Array.from(new Set(visible.flatMap(w => w.orderIds)))
-        const ordersData = orderIds.length > 0
-          ? await apiGet<Order[]>(`/api/orders?include_lines=true&ids=${orderIds.join(',')}`)
-          : []
-        if (cancelled) return
-        setWaves(visible)
-        setOrders(Array.isArray(ordersData) ? ordersData : [])
-      } catch {
-        if (cancelled) return
-        setWaves([])
-        setOrders([])
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+    try {
+      const waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
+      const visible = waveData.filter(w => (w.assignmentDoneAt || w.dispatchedAt) && !w.completedAt)
+      const orderIds = Array.from(new Set(visible.flatMap(w => w.orderIds)))
+      const ordersData = orderIds.length > 0
+        ? await apiGet<Order[]>(`/api/orders?include_lines=true&ids=${orderIds.join(',')}`)
+        : []
+      setWaves(visible)
+      setOrders(Array.isArray(ordersData) ? ordersData : [])
+    } catch {
+      setWaves([])
+      setOrders([])
+    } finally {
+      setLoading(false)
     }
-    load()
-    return () => { cancelled = true }
   }, [date])
+
+  useEffect(() => { load() }, [load])
 
   const slotMap = useMemo(() => new Map(slots.map(s => [s.id, s])), [slots])
   const ordersById = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])
@@ -382,8 +435,20 @@ export default function PrintCenter() {
     })
   }, [filteredWaveGroups, sortMode])
 
-  function bulkPrint(type: 'picking' | 'delivery') {
+  function bulkPrint(type: 'delivery') {
     window.open(buildPrintUrl(prefix, type, date), '_blank')
+  }
+
+  // Feature C：「全部打印拣货单」= 对所有当前可见批次批量上锁，锁定失败的批次不阻断其余批次打印
+  async function bulkPrintPicking() {
+    const results = await Promise.allSettled(
+      batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, {}))
+    )
+    const failed = results.filter(r => r.status === 'rejected').length
+    window.open(buildPrintUrl(prefix, 'picking', date), '_blank')
+    for (const g of batchGroups) markPrinted(g.batchKey)
+    if (failed > 0) toast.error(`${failed} 个批次锁定失败`)
+    load()
   }
 
   const grandTotal = batchGroups.reduce((s, g) => s + g.totalAmount, 0)
@@ -421,7 +486,7 @@ export default function PrintCenter() {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={() => bulkPrint('picking')}
+              onClick={bulkPrintPicking}
               className="px-3 py-1.5 text-xs rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors"
             >
               全部打印拣货单
@@ -485,7 +550,9 @@ export default function PrintCenter() {
           prefix={prefix}
           date={date}
           printedKeys={printedKeys}
+          canUnlock={canUnlock}
           onPrint={markPrinted}
+          onLockChange={load}
         />
       )}
     </div>

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -15,6 +16,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const wave = await prisma.pickingWave.findUnique({ where: { id } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
+      await assertWaveNotPickLocked(id)
 
       const remaining = (wave.orderIds as string[]).filter(oid => !orderIds.includes(oid))
       const zones = await buildZonesForOrders(remaining)
@@ -32,6 +34,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
+      if (error instanceof WavePickLockedError) {
+        return NextResponse.json({ error: error.message }, { status: 409 })
+      }
       console.error('[PUT /api/waves/[id]/unassign]', error)
       return NextResponse.json({ error: '移除订单失败' }, { status: 500 })
     }

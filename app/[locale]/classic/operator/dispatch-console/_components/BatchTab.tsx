@@ -19,6 +19,7 @@ interface Wave {
   id: string; name: string | null; orderIds: string[]; status: string
   waveType: string | null; waveNumber: number | null; driverSlotId: string | null; driverName: string | null
   dispatchedAt: string | null; completedAt: string | null; assignmentDoneAt: string | null
+  pickLockedAt: string | null; pickLockedBy: string | null
 }
 
 const WAVE_STATUS: Record<string, { text: string; cls: string; pct: number }> = {
@@ -189,6 +190,8 @@ export default function BatchTab({ date }: { date: string }) {
     const src = e.dataTransfer.getData(SRC)
     if (!orderId || src === waveId) return
     if (waves.find(w => w.id === waveId)?.dispatchedAt) { toast.error('该批次已出发，不能再分配'); return }
+    if (waves.find(w => w.id === waveId)?.pickLockedAt) { toast.error('该批次拣货中已锁定，请找打印员解锁'); return }
+    if (src && waves.find(w => w.id === src)?.pickLockedAt) { toast.error('原批次拣货中已锁定，请找打印员解锁'); return }
     if (src) {
       moveWave(src, waveId, orderId)
     } else {
@@ -200,7 +203,9 @@ export default function BatchTab({ date }: { date: string }) {
     setDragOverLeft(false)
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
-    if (orderId && src) unassignFromWave(src, orderId)
+    if (!orderId || !src) return
+    if (waves.find(w => w.id === src)?.pickLockedAt) { toast.error('该批次拣货中已锁定，请找打印员解锁'); return }
+    unassignFromWave(src, orderId)
   }
 
   function laneMetrics(wave: Wave) {
@@ -235,7 +240,8 @@ export default function BatchTab({ date }: { date: string }) {
     const stage = waveStage(wave)
     const dispatched = stage === 'in_transit'
     const assignmentDone = stage === 'assignment_done'
-    const over = !dispatched && dragOverWave === wave.id
+    const locked = !!wave.pickLockedAt
+    const over = !dispatched && !locked && dragOverWave === wave.id
     const departTime = wave.dispatchedAt
       ? new Date(wave.dispatchedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
       : ''
@@ -256,6 +262,7 @@ export default function BatchTab({ date }: { date: string }) {
             : assignmentDone
             ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 ml-auto">✅ 分配完成</span>
             : <span className="ml-auto text-gray-400 text-[10px]">▾ 展开</span>}
+          {locked && <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">🔒</span>}
         </div>
       )
     }
@@ -264,7 +271,7 @@ export default function BatchTab({ date }: { date: string }) {
       <div
         className={`${dispatched ? 'bg-gray-50' : 'bg-white'} border rounded-xl flex flex-col max-h-[600px]`}
         style={{ borderColor: over ? PURPLE : (dispatched ? '#bfdbfe' : '#e5e7eb'), boxShadow: over ? `0 0 0 2px ${PURPLE}33` : undefined }}
-        onDragOver={e => { e.preventDefault(); if (dispatched) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverWave(wave.id) }}
+        onDragOver={e => { e.preventDefault(); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverWave(wave.id) }}
         onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverWave(p => p === wave.id ? null : p) }}
         onDrop={e => dropToWave(e, wave.id)}
       >
@@ -275,6 +282,11 @@ export default function BatchTab({ date }: { date: string }) {
               <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
             </span>
             <div className="flex items-center gap-1.5">
+              {locked && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700" title={wave.pickLockedBy ? `打印员：${wave.pickLockedBy}` : undefined}>
+                  🔒 拣货中
+                </span>
+              )}
               {dispatched
                 ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700">🚚 在途</span>
                 : assignmentDone
@@ -302,11 +314,11 @@ export default function BatchTab({ date }: { date: string }) {
           {laneOrders.map(o => (
             <div
               key={o.id}
-              draggable={!dispatched}
-              onDragStart={e => { if (dispatched) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
-              className={`border rounded-lg px-2 py-1.5 bg-white text-xs ${dispatched ? 'cursor-default' : 'cursor-grab hover:border-purple-300'}`}
+              draggable={!dispatched && !locked}
+              onDragStart={e => { if (dispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
+              className={`border rounded-lg px-2 py-1.5 bg-white text-xs ${dispatched || locked ? 'cursor-default' : 'cursor-grab hover:border-purple-300'}`}
               style={{ borderColor: '#eee' }}
-              title={dispatched ? '已出发，不可调整' : '拖回左侧=移出；拖到别的司机=换车'}
+              title={dispatched ? '已出发，不可调整' : locked ? '拣货中已锁定，请找打印员解锁' : '拖回左侧=移出；拖到别的司机=换车'}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium flex items-center gap-1.5 truncate">
@@ -332,7 +344,9 @@ export default function BatchTab({ date }: { date: string }) {
               >🚚 确认出发（{laneOrders.length}单）</button>
               <button
                 onClick={() => markAssignmentDone(wave.id, false)}
-                className="rounded-lg py-1 text-[11px] font-medium text-gray-500 bg-white border border-gray-300 hover:bg-gray-100"
+                disabled={locked}
+                title={locked ? '拣货中已锁定，请找打印员解锁' : undefined}
+                className="rounded-lg py-1 text-[11px] font-medium text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
               >↩︎ 撤销分配完成</button>
             </div>
           ) : laneOrders.length > 0 ? (
