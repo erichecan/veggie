@@ -80,10 +80,17 @@ export default function ShortageHandler() {
   }, [])
 
   const allLines: FlatLine[] = useMemo(() => {
-    const lines: FlatLine[] = []
+    // 同一订单可能有多条含相同商品的行（如重复录入），按 orderId+productId 合并，避免同一订单号在表格中重复出现
+    const map = new Map<string, FlatLine>()
     for (const o of orders) {
       for (const l of (o.lines ?? [])) {
-        lines.push({
+        const key = `${o.id}:${l.productId}`
+        const existing = map.get(key)
+        if (existing) {
+          existing.orderedQty += Number(l.orderedQty)
+          continue
+        }
+        map.set(key, {
           lineId: l.id,
           orderId: o.id,
           orderCode: o.code ?? o.id.slice(-6).toUpperCase(),
@@ -97,7 +104,7 @@ export default function ShortageHandler() {
         })
       }
     }
-    return lines
+    return Array.from(map.values())
   }, [orders])
 
   const availableDrivers = useMemo(() => {
@@ -109,6 +116,7 @@ export default function ShortageHandler() {
   }, [allLines])
 
   // 缺货商品由仓库报上来，必须先搜索选中商品才展示对应订单行
+  // allLines 已按 orderId+productId 合并去重，这里只需按条件过滤
   const filteredLines = useMemo(() => {
     if (selectedProducts.length === 0) return []
     return allLines.filter(l => {
@@ -348,8 +356,7 @@ export default function ShortageHandler() {
                           value={newQtys[l.lineId] ?? ''}
                           onChange={e => setNewQtys(prev => ({ ...prev, [l.lineId]: e.target.value }))}
                           placeholder="不改"
-                          disabled={status === 'saved'}
-                          className="w-20 border border-gray-300 rounded px-2 py-0.5 text-xs text-right focus:outline-none focus:border-[#875A7B] disabled:bg-gray-100 disabled:text-gray-400"
+                          className="w-20 border border-gray-300 rounded px-2 py-0.5 text-xs text-right focus:outline-none focus:border-[#875A7B]"
                         />
                       </td>
                       <td className="px-3 py-2 text-center text-xs">
