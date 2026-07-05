@@ -9,9 +9,11 @@ const PURPLE = '#875A7B'
 
 interface DriverSlot { id: string; timeOfDay: string; batchNum: number; driverName: string }
 interface OrderItem { productId: string; productName: string; quantity: number; uomName?: string }
+interface OrderLine { orderedQty: number | string; product?: { template?: { weight?: number | null } | null } | null }
 interface Order {
   id: string; code: string | null; restaurantId: string; restaurantName: string
   items: OrderItem[]; totalAmount: number | string; status: string
+  lines?: OrderLine[]
 }
 interface Wave {
   id: string; name: string | null; orderIds: string[]; status: string
@@ -49,7 +51,7 @@ export default function BatchTab({ date }: { date: string }) {
     try {
       const [slotData, orderData] = await Promise.all([
         apiGet<DriverSlot[]>('/api/driver-slots'),
-        apiGet<Order[]>(`/api/orders?status=CONFIRMED,IN_DELIVERY&include_lines=false&limit=500&dateField=deliveryDate&fromDate=${date}&toDate=${date}`),
+        apiGet<Order[]>(`/api/orders?status=CONFIRMED,IN_DELIVERY&include_lines=true&limit=500&dateField=deliveryDate&fromDate=${date}&toDate=${date}`),
       ])
       let waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
       if (waveData.length === 0 && slotData.length > 0) {
@@ -203,9 +205,11 @@ export default function BatchTab({ date }: { date: string }) {
 
   function laneMetrics(wave: Wave) {
     const ws = wave.orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
-    const restaurants = new Set(ws.map(o => o.restaurantName))
+    const lines = ws.flatMap(o => o.lines ?? [])
+    const itemCount = lines.reduce((s, l) => s + num(l.orderedQty), 0)
+    const weight = Math.round(lines.reduce((s, l) => s + num(l.orderedQty) * num(l.product?.template?.weight ?? 0), 0) * 10) / 10
     const amount = Math.round(ws.reduce((s, o) => s + num(o.totalAmount), 0) * 100) / 100
-    return { orderCount: wave.orderIds.length, restaurantCount: restaurants.size, amount }
+    return { orderCount: wave.orderIds.length, itemCount, weight, amount }
   }
 
   function Lane({ slot, collapsed, onToggleCollapse }: { slot: DriverSlot; collapsed: boolean; onToggleCollapse: () => void }) {
@@ -283,7 +287,7 @@ export default function BatchTab({ date }: { date: string }) {
               >▴</button>
             </div>
           </div>
-          <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.restaurantCount}家 · €{m.amount.toLocaleString()}</div>
+          <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.itemCount}件 · {m.weight}kg · €{m.amount.toLocaleString()}</div>
           {dispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${st.pct}%`, background: PURPLE }} /></div>
         </div>
