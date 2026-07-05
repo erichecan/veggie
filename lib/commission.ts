@@ -73,13 +73,65 @@ export async function calcOrderCommission(orderId: string): Promise<{
 }
 
 /**
- * 冻结某 Trip 下所有订单的提成总额，写入 order.driverCommissionTotal。
- * TODO: Stage 4 实现，由 app/api/trips/[id]/verify/route.ts 的 POST 事务调用。
+ * 冻结某 Trip 下所有订单的提成总额，写入 order.driverCommissionTotal + commissionFrozenAt。
+ * 由 app/api/trips/[id]/verify/route.ts 的 POST 事务调用。
  */
 export async function freezeTripCommission(
   tripId: string,
-  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+  tx: Prisma.TransactionClient
 ): Promise<void> {
-  // Stage 4 实现
-  throw new Error('freezeTripCommission not yet implemented — see Stage 4')
+  const trip = await tx.trip.findUnique({
+    where: { id: tripId },
+    select: { restaurants: true },
+  })
+  const restaurants = (trip?.restaurants ?? []) as unknown as Array<{ orderIds?: string[] }>
+  const orderIds = restaurants.flatMap(r => r.orderIds ?? [])
+  if (orderIds.length === 0) return
+
+  const orders = await tx.order.findMany({
+    where: {
+      id: { in: orderIds },
+      status: 'COMPLETED',
+    },
+    select: {
+      id: true,
+      commissionRate: true,
+      commissionFixed: true,
+      lines: {
+        select: {
+          commissionPrice: true,
+          deliveredQty: true,
+          unitPrice: true,
+        },
+      },
+    },
+  })
+
+  for (const order of orders) {
+    let itemTotal = new Decimal(0)
+    let deliveredSubtotal = new Decimal(0)
+
+    for (const line of order.lines) {
+      const dQty = new Decimal(line.deliveredQty ?? 0)
+      if (line.commissionPrice) {
+        itemTotal = itemTotal.add(line.commissionPrice.mul(dQty))
+      }
+      if (line.unitPrice) {
+        deliveredSubtotal = deliveredSubtotal.add(line.unitPrice.mul(dQty))
+      }
+    }
+
+    const fixedFee = order.commissionFixed ?? new Decimal(0)
+    const rate = order.commissionRate ?? new Decimal(0)
+    const rateTotal = deliveredSubtotal.mul(rate)
+    const grandTotal = itemTotal.add(fixedFee).add(rateTotal)
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: {
+        driverCommissionTotal: grandTotal,
+        commissionFrozenAt: new Date(),
+      },
+    })
+  }
 }

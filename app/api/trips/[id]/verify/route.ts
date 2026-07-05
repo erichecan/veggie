@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { freezeTripCommission } from '@/lib/commission'
 import type { TripRestaurant, OrderItem } from '@/lib/types'
 
 /**
@@ -148,12 +149,18 @@ export async function POST(
         ? 'IN_PROGRESS'
         : (String(trip.status) === 'PENDING' ? 'VERIFYING' : undefined)
 
-      const updated = await prisma.trip.update({
-        where: { id },
-        data: {
-          restaurants: restaurants as never,
-          ...(newStatus ? { status: newStatus } : {}),
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        const trip = await tx.trip.update({
+          where: { id },
+          data: {
+            restaurants: restaurants as never,
+            ...(newStatus ? { status: newStatus } : {}),
+          },
+        })
+
+        await freezeTripCommission(id, tx)
+
+        return trip
       })
 
       const discrepancyNote = discrepancies.length > 0
