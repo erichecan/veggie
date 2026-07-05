@@ -90,6 +90,12 @@ export default function QuotationDetailPage() {
 
   type EditLine = NonNullable<Order['lines']>[number] & { commissionPrice?: number }
   const [editLines, setEditLines] = useState<EditLine[]>([])
+  // 重复商品检测：同一 productId 在编辑缓冲区中出现多次（与 place-order 创建页一致）
+  const duplicateCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const l of editLines) if (l.productId) counts.set(l.productId, (counts.get(l.productId) ?? 0) + 1)
+    return counts
+  }, [editLines])
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
   const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
   const [session, setSession] = useState<UserSession | null>(null)
@@ -326,6 +332,28 @@ export default function QuotationDetailPage() {
       cost: Number(p.standardPrice ?? 0),
     } as unknown as EditLine
     setEditLines(prev => [...prev, newLine])
+  }
+  // 合并重复商品：同一 productId 的行合并为一行，数量相加（与 place-order 创建页一致）
+  function mergeDuplicateLines() {
+    setEditLines(prev => {
+      const seen = new Map<string, EditLine>()
+      const result: EditLine[] = []
+      for (const l of prev) {
+        if (!l.productId) { result.push(l); continue }
+        const existing = seen.get(l.productId)
+        if (existing) {
+          const qty = Number(existing.orderedQty) + Number(l.orderedQty)
+          existing.orderedQty = qty
+          existing.subtotal = Math.round(Number(existing.unitPrice) * qty * 100) / 100
+        } else {
+          const copy = { ...l }
+          seen.set(l.productId, copy)
+          result.push(copy)
+        }
+      }
+      return result
+    })
+    toast.success('已合并重复商品')
   }
   const totalTax = displayLines.reduce((s, l) => s + Number(l.subtotal) * (Number(l.taxRate ?? 0) / 100), 0)
   const margin = displayLines.reduce((s, l) => {
@@ -614,6 +642,34 @@ export default function QuotationDetailPage() {
 
           {/* Region 5: order lines table */}
           {tab === 'lines' && (
+            <>
+            {editing && (() => {
+              const dups = [...duplicateCounts.entries()].filter(([, c]) => c > 1)
+              if (dups.length === 0) return null
+              const nameOf = (pid: string) => editLines.find(l => l.productId === pid)?.productName ?? pid
+              return (
+                <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
+                  <span className="text-lg leading-none mt-0.5">🔁</span>
+                  <div className="text-sm flex-1">
+                    <span className="font-semibold text-purple-700">重复商品提醒：</span>
+                    <span className="text-purple-600">
+                      {dups.length} 个商品被重复添加
+                      <span className="text-xs text-purple-500 ml-1">
+                        ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join('、')})
+                      </span>
+                    </span>
+                    <span className="text-xs text-gray-500 ml-1">— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整</span>
+                  </div>
+                  <button
+                    onClick={mergeDuplicateLines}
+                    className="shrink-0 px-3 py-1 rounded text-xs font-medium text-white"
+                    style={{ background: PURPLE }}
+                  >
+                    合并重复项
+                  </button>
+                </div>
+              )
+            })()}
             <OrderLineEditor
               lines={displayLines}
               editing={editing}
@@ -644,10 +700,11 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 text-right">Total</th>
                 </tr>
               )}
-              renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch }) => {
+              renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef }) => {
                 const fc = forecastMap.get(l.productId)
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
+                const isDuplicate = !!l.productId && (duplicateCounts.get(l.productId) ?? 0) > 1
                 return (
                   <>
                     <td className="px-2 py-2">
@@ -658,7 +715,10 @@ export default function QuotationDetailPage() {
                         </div>
                       ) : <span className="text-gray-300 select-none" title="编辑后可拖动调整顺序">☰</span>}
                     </td>
-                    <td className="px-2 py-2 text-gray-700">{i + 1}</td>
+                    <td className="px-2 py-2 text-gray-700">
+                      {i + 1}
+                      {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
+                    </td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2 text-gray-600 text-xs">
@@ -674,6 +734,7 @@ export default function QuotationDetailPage() {
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}
+                          ref={firstFieldRef as React.Ref<HTMLInputElement>}
                           value={Number(l.orderedQty)}
                           onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
@@ -710,6 +771,7 @@ export default function QuotationDetailPage() {
                 )
               }}
             />
+            </>
           )}
 
           {tab !== 'lines' && (

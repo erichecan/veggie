@@ -17,6 +17,8 @@ interface Props<P extends { id: string; name: string; internalRef?: string | nul
   externalRef?: React.RefObject<HTMLInputElement | null>
   /** Tab 键选中当前高亮/首个匹配项，无匹配则照常跳到下一个控件（默认 false，保持原有 Tab=跳过行为） */
   selectOnTab?: boolean
+  /** 通过 Tab 键选中项目时触发（区别于 Enter/点击选中），供外层把焦点移到新增行的下一个字段 */
+  onTabSelect?: (p: P) => void
 }
 
 export default function ProductSearchInput<
@@ -34,6 +36,7 @@ export default function ProductSearchInput<
   showOnEmptyQuery = true,
   externalRef,
   selectOnTab = false,
+  onTabSelect,
 }: Props<P>) {
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
@@ -118,11 +121,14 @@ export default function ProductSearchInput<
           if (e.key === 'Escape') { setOpen(false); setHighlight(-1); return }
           if (e.key === 'Tab') {
             if (selectOnTab && open && filtered.length > 0) {
-              // 阻止默认跳格与外层容器的 Tab 焦点管理(handleTabNav),
-              // 让 Tab 与 Enter 一致:选中当前项后焦点留在搜索框,便于连续录入
+              // 阻止默认跳格与外层容器的 Tab 焦点管理(handleTabNav)。
+              // Tab 与 Enter 的选中逻辑相同,但 Tab 之后要把焦点交给 onTabSelect
+              // (通常是新增行的数量字段),而不是留在搜索框里
               e.preventDefault()
               e.stopPropagation()
-              select(filtered[highlight >= 0 ? highlight : 0])
+              const p = filtered[highlight >= 0 ? highlight : 0]
+              select(p)
+              onTabSelect?.(p)
             } else {
               setOpen(false)
             }

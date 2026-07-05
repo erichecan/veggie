@@ -11,6 +11,8 @@ export interface RowRenderOpts {
   dragHandle: ReactNode
   deleteButton: ReactNode
   focusSearch: () => void
+  /** 附加到「选完产品后应该获得焦点」的字段（通常是数量框），用于 Tab 键从搜索框跳入新行 */
+  firstFieldRef: (el: HTMLElement | null) => void
 }
 
 interface Props<
@@ -67,6 +69,7 @@ export default function OrderLineEditor<
   const [query, setQuery] = useState('')
 
   const psInputRef = useRef<HTMLInputElement>(null)
+  const firstFieldRefs = useRef<Map<number, HTMLElement>>(new Map())
 
   function focusSearch() {
     psInputRef.current?.focus()
@@ -111,6 +114,10 @@ export default function OrderLineEditor<
                 dragHandle,
                 deleteButton,
                 focusSearch,
+                firstFieldRef: el => {
+                  if (el) firstFieldRefs.current.set(i, el)
+                  else firstFieldRefs.current.delete(i)
+                },
               }
 
               const cls = [
@@ -174,6 +181,12 @@ export default function OrderLineEditor<
                     value={query}
                     onChange={setQuery}
                     onSelect={p => { onAddProduct(p); setQuery('') }}
+                    onTabSelect={() => {
+                      const newRowIndex = lines.length
+                      requestAnimationFrame(() => {
+                        firstFieldRefs.current.get(newRowIndex)?.focus()
+                      })
+                    }}
                     products={products ?? []}
                     placeholder="Add a product"
                     inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-72"
