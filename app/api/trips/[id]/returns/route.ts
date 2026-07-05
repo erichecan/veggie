@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum, round2 } from '@/lib/decimal-helpers'
+import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import type { TripRestaurant, ReturnItem, OrderItem } from '@/lib/types'
 
 /**
@@ -354,6 +355,13 @@ export async function PUT(
             })
           }
         }
+
+        // 提成重算：deliveredQty 变了，受影响订单的司机提成快照需要重新覆盖（不再信旧快照）
+        const affectedOrderIds = Array.from(new Set(orderLineUpdates.map(u => u.orderId)))
+        for (const orderId of affectedOrderIds) {
+          await recalcOrderCommission(orderId, tx)
+        }
+        await recalcTripDriverCommission(id, tx)
       })
 
       await writeLog({
