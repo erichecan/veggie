@@ -4,7 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
-import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
+import { formatDriverSlot, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
 
 type BatchLine = OrderLine & { product?: { template?: { weight?: number | null } | null } | null }
@@ -14,8 +14,23 @@ function lineWeight(l: BatchLine): number {
   return w * Number(l.orderedQty)
 }
 
+interface Wave {
+  id: string
+  orderIds: string[]
+  driverSlotId: string | null
+  driverName: string | null
+  assignmentDoneAt: string | null
+  dispatchedAt: string | null
+  completedAt: string | null
+  pickLockedAt: string | null
+  pickLockedBy: string | null
+}
+
 interface BatchGroup {
   batchKey: string
+  waveId: string
+  pickLockedAt: string | null
+  pickLockedBy: string | null
   orders: Order[]
   totalAmount: number
   untaxTotal: number
@@ -140,36 +155,6 @@ function BatchCard({
   )
 }
 
-// ─── UnassignedPanel ──────────────────────────────────────────────────────────
-
-function UnassignedPanel({ orders }: { orders: Order[] }) {
-  const [expanded, setExpanded] = useState(false)
-  if (orders.length === 0) return null
-  return (
-    <div className="bg-yellow-50 rounded-lg border border-yellow-200 overflow-hidden">
-      <button
-        className="flex items-center gap-2 w-full px-4 py-3 text-left"
-        onClick={() => setExpanded(e => !e)}
-      >
-        <span className="text-yellow-500">{expanded ? '▾' : '▸'}</span>
-        <span className="text-sm font-medium text-yellow-800">未分配批次</span>
-        <span className="text-xs text-yellow-600 ml-1">({orders.length} 单)</span>
-      </button>
-      {expanded && (
-        <div className="border-t border-yellow-200">
-          {orders.map(o => (
-            <div key={o.id} className="flex items-center gap-3 px-5 py-2 border-b border-yellow-100">
-              <span className="text-xs font-mono text-gray-500 w-36">{o.code ?? o.id.slice(-6)}</span>
-              <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
-              <span className="text-sm font-medium text-gray-900">${fmtMoney(Number(o.totalAmount))}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── BatchSections ────────────────────────────────────────────────────────────
 
 function BatchSections({
@@ -178,14 +163,12 @@ function BatchSections({
   date,
   printedKeys,
   onPrint,
-  unassignedOrders,
 }: {
   batchGroups: BatchGroup[]
   prefix: string
   date: string
   printedKeys: Set<string>
   onPrint: (batchKey: string) => void
-  unassignedOrders: Order[]
 }) {
   const amGroups = batchGroups.filter(g => parseDriverSlotKey(g.batchKey).time === 'am')
   const pmGroups = batchGroups.filter(g => parseDriverSlotKey(g.batchKey).time === 'pm')
@@ -197,7 +180,7 @@ function BatchSections({
   function renderGroup(g: BatchGroup) {
     return (
       <BatchCard
-        key={g.batchKey}
+        key={g.waveId}
         group={g}
         prefix={prefix}
         date={date}
@@ -241,7 +224,6 @@ function BatchSections({
           {otherGroups.map(renderGroup)}
         </div>
       )}
-      <UnassignedPanel orders={unassignedOrders} />
     </div>
   )
 }
@@ -273,6 +255,8 @@ export default function PrintCenter() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const [date, setDate] = useState(today)
+  const [slots, setSlots] = useState<DriverSlotInfo[]>([])
+  const [waves, setWaves] = useState<Wave[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [sortMode, setSortMode] = useState<'batch' | 'driver' | 'time'>('batch')
@@ -300,21 +284,62 @@ export default function PrintCenter() {
   }, [date])
 
   useEffect(() => {
+    apiGet<DriverSlotInfo[]>('/api/driver-slots')
+      .then(data => setSlots(Array.isArray(data) ? data : []))
+      .catch(() => setSlots([]))
+  }, [])
+
+  // Feature B：打印中心按批次阶段取数（assignmentDoneAt 或 dispatchedAt 已回填、且未 completed 的 wave），
+  // 分配完成即可见，不必等「确认出发」回填 deliveryDate。
+  useEffect(() => {
     setLoading(true)
-    apiGet<Order[]>(
-      `/api/orders?include_lines=true&status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&dateField=deliveryDate&fromDate=${date}&toDate=${date}`
-    )
-      .then(data => setOrders(Array.isArray(data) ? data : []))
-      .catch(() => setOrders([]))
-      .finally(() => setLoading(false))
+    let cancelled = false
+    async function load() {
+      try {
+        const waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
+        const visible = waveData.filter(w => (w.assignmentDoneAt || w.dispatchedAt) && !w.completedAt)
+        const orderIds = Array.from(new Set(visible.flatMap(w => w.orderIds)))
+        const ordersData = orderIds.length > 0
+          ? await apiGet<Order[]>(`/api/orders?include_lines=true&ids=${orderIds.join(',')}`)
+          : []
+        if (cancelled) return
+        setWaves(visible)
+        setOrders(Array.isArray(ordersData) ? ordersData : [])
+      } catch {
+        if (cancelled) return
+        setWaves([])
+        setOrders([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
   }, [date])
+
+  const slotMap = useMemo(() => new Map(slots.map(s => [s.id, s])), [slots])
+  const ordersById = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])
+
+  // 每张卡片 = 一个 wave，与调度台一一对应；batchKey 仅用于沿用既有排序/筛选/打印 URL 格式
+  const waveGroups = useMemo(() => {
+    return waves
+      .map(w => {
+        const slot = w.driverSlotId ? slotMap.get(w.driverSlotId) : undefined
+        const batchKey = slot
+          ? formatDriverSlot(slot)
+          : (w.driverName ? formatDriverSlot({ id: '', batchNum: 0, timeOfDay: '', driverName: w.driverName }) : '')
+        const ords = w.orderIds.map(id => ordersById.get(id)).filter((o): o is Order => !!o)
+        return { wave: w, batchKey, orders: ords }
+      })
+      .filter(g => g.orders.length > 0)
+  }, [waves, slotMap, ordersById])
 
   const filterOptions = useMemo(() => {
     const drivers = new Set<string>()
     const times = new Set<string>()
     const batches = new Set<string>()
-    for (const o of orders) {
-      const p = parseDriverSlotKey(formatDriverSlotFromOrder(o))
+    for (const g of waveGroups) {
+      const p = parseDriverSlotKey(g.batchKey)
       if (p.driver) drivers.add(p.driver)
       if (p.time) times.add(p.time)
       if (p.num > 0) batches.add(String(p.num))
@@ -324,37 +349,24 @@ export default function PrintCenter() {
       times: [...times].sort(),
       batches: [...batches].sort((a, b) => Number(a) - Number(b)),
     }
-  }, [orders])
+  }, [waveGroups])
 
-  const assignedOrders = useMemo(
-    () => orders.filter(o => !!formatDriverSlotFromOrder(o)),
-    [orders]
-  )
-  const unassignedOrders = useMemo(
-    () => orders.filter(o => !formatDriverSlotFromOrder(o)),
-    [orders]
-  )
-
-  const filteredOrders = useMemo(() => {
-    return assignedOrders.filter(o => {
-      const key = formatDriverSlotFromOrder(o)
-      const p = parseDriverSlotKey(key)
+  const filteredWaveGroups = useMemo(() => {
+    return waveGroups.filter(g => {
+      const p = parseDriverSlotKey(g.batchKey)
       if (driverFilter.length > 0 && !driverFilter.includes(p.driver)) return false
       if (timeFilter.length > 0 && !timeFilter.includes(p.time)) return false
       if (batchFilter.length > 0 && !batchFilter.includes(String(p.num))) return false
       return true
     })
-  }, [assignedOrders, driverFilter, timeFilter, batchFilter])
+  }, [waveGroups, driverFilter, timeFilter, batchFilter])
 
   const batchGroups: BatchGroup[] = useMemo(() => {
-    const grouped = new Map<string, Order[]>()
-    for (const o of filteredOrders) {
-      const key = formatDriverSlotFromOrder(o)
-      if (!grouped.has(key)) grouped.set(key, [])
-      grouped.get(key)!.push(o)
-    }
-    const groups = Array.from(grouped.entries()).map(([batchKey, ords]) => ({
+    const groups = filteredWaveGroups.map(({ wave, batchKey, orders: ords }) => ({
       batchKey,
+      waveId: wave.id,
+      pickLockedAt: wave.pickLockedAt,
+      pickLockedBy: wave.pickLockedBy,
       orders: ords,
       totalAmount: ords.reduce((s, o) => s + Number(o.totalAmount), 0),
       untaxTotal: ords.reduce((s, o) => s + (o.lines ?? []).reduce((ls, l) => ls + lineUntax(l), 0), 0),
@@ -368,7 +380,7 @@ export default function PrintCenter() {
       if (sortMode === 'time') return pa.time.localeCompare(pb.time) || pa.num - pb.num || pa.driver.localeCompare(pb.driver)
       return pa.driver.localeCompare(pb.driver) || pa.num - pb.num
     })
-  }, [filteredOrders, sortMode])
+  }, [filteredWaveGroups, sortMode])
 
   function bulkPrint(type: 'picking' | 'delivery') {
     window.open(buildPrintUrl(prefix, type, date), '_blank')
@@ -463,9 +475,9 @@ export default function PrintCenter() {
       {/* Batch cards */}
       {loading ? (
         <div className="text-center text-gray-400 py-16 text-sm">加载中...</div>
-      ) : batchGroups.length === 0 && unassignedOrders.length === 0 ? (
+      ) : batchGroups.length === 0 ? (
         <div className="text-center text-gray-400 py-16 text-sm">
-          {date} 没有待配送订单
+          {date} 没有已分配完成的批次
         </div>
       ) : (
         <BatchSections
@@ -474,7 +486,6 @@ export default function PrintCenter() {
           date={date}
           printedKeys={printedKeys}
           onPrint={markPrinted}
-          unassignedOrders={unassignedOrders}
         />
       )}
     </div>

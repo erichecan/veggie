@@ -55,6 +55,9 @@ export async function GET(req: Request) {
     // ?restaurantIds=id1,id2,id3 — multi-customer filter (used by print reports)
     const restaurantIdsParam = searchParams.get('restaurantIds')
     const restaurantIds = restaurantIdsParam ? restaurantIdsParam.split(',').filter(Boolean) : null
+    // ?ids=id1,id2,id3 — explicit order id filter (used by print center, driven off wave.orderIds)
+    const idsParam = searchParams.get('ids')
+    const ids = idsParam ? idsParam.split(',').filter(Boolean) : null
     const includeLines = searchParams.get('include_lines') !== 'false'
 
     // ?status=PENDING or ?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED
@@ -82,6 +85,7 @@ export async function GET(req: Request) {
     const where: Record<string, unknown> = {}
     if (restaurantId) where.restaurantId = restaurantId
     if (restaurantIds && restaurantIds.length > 0) where.restaurantId = { in: restaurantIds }
+    if (ids && ids.length > 0) where.id = { in: ids }
     if (statusFilter && statusFilter.length > 0) where.status = { in: statusFilter }
     if (search) {
       where.OR = [
