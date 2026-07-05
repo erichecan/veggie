@@ -239,7 +239,7 @@ export async function POST(req: Request) {
       // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
       const custDefaults = await prisma.customer.findUnique({
         where: { id: restaurantId },
-        select: { defaultDriverSlotId: true, commissionRate: true, salesUserId: true, paymentTerm: true, creditLimit: true },
+        select: { defaultDriverSlotId: true, commissionRate: true, commissionFixed: true, salesUserId: true, paymentTerm: true, creditLimit: true },
       })
 
       // 服务端信用管控校验
@@ -318,6 +318,8 @@ export async function POST(req: Request) {
                 priceType,
                 // SSOT: 下单时快照客户佣金率(此前 schema 注释承诺但从不写,恒 null)(P2)
                 commissionRate: custDefaults?.commissionRate ?? null,
+                // SSOT: 下单时快照客户固定辛苦费(此前 select 未取该字段,恒 null)
+                commissionFixed: custDefaults?.commissionFixed ?? null,
                 quotationDate: normalizeDateOnly(data.quotationDate) ?? new Date(),
                 deliveryDate: normalizeDateOnly(data.deliveryDate),
                 driverSlotId: resolvedDriverSlotId,

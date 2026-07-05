@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
+import { resolveCommissionPrice } from '@/lib/commission'
 
 /**
  * POST /api/orders/:id/lines
@@ -41,6 +42,8 @@ export async function POST(
       } = body
 
       const subtotal = Math.round(Number(unitPrice) * Number(orderedQty) * 100) / 100
+      // SSOT: 追加行同样要写件提成快照,否则该行提成恒为 null
+      const commissionPrice = await resolveCommissionPrice(String(productId))
 
       const newLine = await prisma.orderLine.create({
         data: {
@@ -56,6 +59,7 @@ export async function POST(
           subtotal,
           taxRate: taxRate != null ? Number(taxRate) : null,
           sequence: sequence ?? 0,
+          commissionPrice,
         },
       })
 

@@ -202,6 +202,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           txOps.push(prisma.orderLine.deleteMany({ where: { id: { in: toDelete } } }))
         }
 
+        // SSOT: 新增行同样要写件提成快照,否则该行提成恒为 null
+        const newLineProductIds = (linesPayload as Record<string, unknown>[])
+          .filter(l => !l.id)
+          .map(l => String(l.productId ?? ''))
+          .filter(Boolean)
+        const newLineProducts = newLineProductIds.length > 0
+          ? await prisma.product.findMany({
+              where: { id: { in: newLineProductIds } },
+              include: { template: { select: { commissionPrice: true } } },
+            })
+          : []
+        const newLineCommissionMap = new Map(
+          newLineProducts.map(p => [p.id, p.commissionPrice ?? p.template?.commissionPrice ?? null])
+        )
+
         for (const l of linesPayload as Record<string, unknown>[]) {
           // SSOT: subtotal 服务端按 unitPrice×orderedQty 重算,不信前端传值(防金额被篡改/算错)
           const lineData: Record<string, unknown> = {
@@ -232,6 +247,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 deliveredQty: 0,
                 invoicedQty: 0,
                 sequence: Number(l.sequence ?? 0),
+                commissionPrice: newLineCommissionMap.get(String(l.productId ?? '')) ?? null,
               },
             }))
           }
