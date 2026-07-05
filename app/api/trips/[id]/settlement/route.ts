@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import type { TripRestaurant } from '@/lib/types'
 
 /**
  * P1-10: 司机交账确认
@@ -50,10 +51,23 @@ export async function GET(
       const totalPayment = trip.totalPayment.toNumber()
       const difference = totalCollected - totalPayment
 
+      // 司机提成明细：每单读冻结快照 driverCommissionTotal（不实时重算），供结算页分项展示
+      const restaurants = (trip.restaurants ?? []) as unknown as TripRestaurant[]
+      const orderIds = restaurants.flatMap(r => r.orderIds ?? [])
+      const commissionOrders = orderIds.length > 0
+        ? await prisma.order.findMany({
+            where: { id: { in: orderIds } },
+            select: { id: true, code: true, restaurantName: true, driverCommissionTotal: true, commissionFrozenAt: true },
+          })
+        : []
+      const commissionTotal = commissionOrders.reduce((s, o) => s + (o.driverCommissionTotal?.toNumber() ?? 0), 0)
+
       return NextResponse.json(serializeApi({
         ...trip,
         totalCollected,
         difference,
+        commissionOrders,
+        commissionTotal,
       }))
     } catch (error) {
       console.error('[GET /api/trips/[id]/settlement]', error)

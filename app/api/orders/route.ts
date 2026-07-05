@@ -128,6 +128,7 @@ export async function GET(req: Request) {
       id: true, productId: true, productName: true, spec: true, note: true,
       uomId: true, uomName: true, unitPrice: true, taxRate: true,
       orderedQty: true, deliveredQty: true, invoicedQty: true, subtotal: true, sequence: true,
+      commissionPrice: true,
     } as const
     const include = includeLines ? {
       lines: {

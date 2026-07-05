@@ -25,6 +25,7 @@ type LineLike = {
   subtotal?: number | string | null
   uomId?: string | null
   uomName?: string | null
+  commissionPrice?: number | string | null
 }
 
 const num = (v: unknown): number => {
@@ -48,6 +49,7 @@ export function lineToOrderItem(l: LineLike): OrderItem {
     taxRate: l.taxRate == null ? undefined : num(l.taxRate),
     deliveredQty: num(l.deliveredQty),
     invoicedQty: num(l.invoicedQty),
+    commissionPrice: l.commissionPrice == null ? undefined : num(l.commissionPrice),
   }
 }
 

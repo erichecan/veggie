@@ -8,6 +8,14 @@ import { apiGet, apiPost, apiPut } from '@/lib/api'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { getSession } from '@/lib/session'
 
+interface CommissionOrder {
+  id: string
+  code: string | null
+  restaurantName: string
+  driverCommissionTotal: number | null
+  commissionFrozenAt: string | null
+}
+
 interface TripSettlement {
   id: string
   name: string
@@ -25,6 +33,8 @@ interface TripSettlement {
   settledBy: string | null
   settlementNote: string | null
   restaurants: unknown[]
+  commissionOrders: CommissionOrder[]
+  commissionTotal: number
 }
 
 const SETTLEMENT_LABEL: Record<string, string> = {
@@ -154,6 +164,23 @@ export default function DriverSettlementPage() {
                     </div>
                   </div>
                 </div>
+
+                {t.commissionOrders.length > 0 && (
+                  <div className="mb-3 border border-gray-100 rounded">
+                    <div className="px-3 py-1.5 bg-gray-50 text-[10px] text-gray-400 flex justify-between">
+                      <span>提成明细</span>
+                      <span>合计工钱 €{t.commissionTotal.toFixed(2)}</span>
+                    </div>
+                    {t.commissionOrders.map(o => (
+                      <div key={o.id} className="px-3 py-1 flex justify-between text-xs border-t border-gray-100">
+                        <span className="text-gray-500">{o.code ?? o.id.slice(-8)} · {o.restaurantName}</span>
+                        <span className={o.driverCommissionTotal == null ? 'text-gray-300' : 'text-gray-700 font-medium'}>
+                          {o.driverCommissionTotal == null ? '未冻结' : `€${o.driverCommissionTotal.toFixed(2)}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {t.cashCollected != null && t.onlineCollected != null && (
                   <div className="flex gap-4 text-xs text-gray-500 mb-3">

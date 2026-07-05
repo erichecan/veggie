@@ -110,11 +110,11 @@ export default function ClassicFinancePage() {
   const commissionGroups: CommissionGroup[] = customers
     .filter(c => c.commissionRate != null && c.commissionRate > 0)
     .map(c => {
+      const completedOrders = orders.filter(o => o.restaurantId === c.id && o.status.toLowerCase() === 'completed')
       // 佣金(CMS)基数按税前——CMS 用于考核司机工作量，不含税（与报表视图 commission_amount 同口径）
-      const completedTotal = orders
-        .filter(o => o.restaurantId === c.id && o.status.toLowerCase() === 'completed')
-        .reduce((s, o) => s + Number(o.totalAmount), 0)
-      const commission = completedTotal * (c.commissionRate ?? 0)
+      const completedTotal = completedOrders.reduce((s, o) => s + Number(o.totalAmount), 0)
+      // SSOT: 司机提成 = 送达时冻结的 driverCommissionTotal 之和(件提成+固定费+抽成),不再按订单额×抽成率实时估算
+      const commission = completedOrders.reduce((s, o) => s + Number(o.driverCommissionTotal ?? 0), 0)
       return { customer: c, completedTotal, commissionRate: c.commissionRate!, commission }
     })
     .filter(g => g.completedTotal > 0)

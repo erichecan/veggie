@@ -239,6 +239,8 @@ export interface OrderLine {
   invoicedQty: number
   subtotal: number
   sequence: number
+  /** 商品件提成单价·下单快照（不下发到下单/报价/销售单详情页，见 PRD 20260703） */
+  commissionPrice?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -301,6 +303,14 @@ export interface Order {
   printType?: string | null
   /** 累计打印次数 */
   printCount?: number
+  /** 客户抽成率·下单快照 */
+  commissionRate?: number | null
+  /** 客户固定辛苦费·下单快照（EUR/单） */
+  commissionFixed?: number | null
+  /** 每单最终司机提成金额（EUR）——送达时按实送量冻结，结算/财务/利润分析共用此数 */
+  driverCommissionTotal?: number | null
+  /** 提成冻结时间 */
+  commissionFrozenAt?: string | null
 }
 
 // ─── 订单审计日志 ────────────────────────────────────────────────────────────

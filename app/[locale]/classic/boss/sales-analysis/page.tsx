@@ -106,7 +106,8 @@ function measureOrder(
     case 'unitPrice':     return items.reduce((s, i) => s + (i.price ?? 0), 0) / Math.max(items.length, 1)
     case 'margin':        return 0
     case 'discountAmount':return 0
-    case 'commissionTotal': return items.reduce((s, i) => s + ((i.commissionPrice ?? 0) * (i.quantity ?? 0)), 0)
+    // SSOT: 司机提成读送达时冻结的 driverCommissionTotal（件提成+固定费+抽成），不再按下单量实时估算
+    case 'commissionTotal': return o.driverCommissionTotal ?? 0
   }
 }
 
@@ -129,7 +130,8 @@ function measureItem(
     case 'unitPrice':     return item.price ?? 0
     case 'margin':        return 0
     case 'discountAmount':return 0
-    case 'commissionTotal': return (item.commissionPrice ?? 0) * (item.quantity ?? 0)
+    // 按商品拆分时只能展示件提成分项(不含客户固定费/抽成，那两项是整单维度、无法按商品分摊)；口径与实送量一致
+    case 'commissionTotal': return (item.commissionPrice ?? 0) * (item.deliveredQty ?? 0)
   }
 }
 
