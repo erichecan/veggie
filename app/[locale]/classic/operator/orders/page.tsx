@@ -327,7 +327,7 @@ export default function ClassicOrdersPage() {
           <select value={colFilters.status} onChange={e => setCf('status', e.target.value)} className={selectCls}>
             <option value=""></option>
             <option value="confirmed">已确认</option>
-            <option value="wave_assigned">已生成拣货单</option>
+            <option value="wave_assigned">司机分配结束</option>
             <option value="in_delivery">配送中</option>
             <option value="completed">已完成</option>
             <option value="cancelled">已取消</option>
@@ -527,7 +527,7 @@ export default function ClassicOrdersPage() {
         filterOptions={[
           { label: '待开票', value: 'to_invoice' },
           { label: '已确认', value: 'confirmed' },
-          { label: '已生成拣货单', value: 'wave_assigned' },
+          { label: '司机分配结束', value: 'wave_assigned' },
           { label: '配送中', value: 'in_delivery' },
           { label: '已完成', value: 'completed' },
           { label: 'Column filters…', value: '__column_filters__' },
