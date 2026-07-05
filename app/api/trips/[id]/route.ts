@@ -4,6 +4,7 @@ import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
+import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 
 const TRIP_TRACKED_FIELDS = [
   'name', 'status', 'driverId', 'driverName', 'departTime', 'timeSlot',
@@ -63,6 +64,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           for (const oid of orderIds) {
             await createDraftInvoiceForOrder(prismaAny, oid).catch((e: unknown) => console.error('[auto draft invoice]', e))
           }
+          // 送达冻结司机提成快照（deliveredQty 刚落到 orderedQty，status 已 COMPLETED）
+          for (const oid of orderIds) {
+            await recalcOrderCommission(oid, prisma).catch((e: unknown) => console.error('[commission freeze]', e))
+          }
+          await recalcTripDriverCommission(id, prisma).catch((e: unknown) => console.error('[trip commission sync]', e))
         }
       }
 
