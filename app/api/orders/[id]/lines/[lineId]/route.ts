@@ -31,7 +31,7 @@ export async function PATCH(
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },
-        select: { id: true, orderId: true, productName: true, orderedQty: true, unitPrice: true },
+        select: { id: true, orderId: true, productId: true, productName: true, orderedQty: true, unitPrice: true },
       })
       if (!line || line.orderId !== id) {
         return NextResponse.json({ error: '订单行不存在' }, { status: 404 })
@@ -44,26 +44,37 @@ export async function PATCH(
       }
 
       const oldQty = Number(line.orderedQty)
+      // 少供退库、多供扣库：确认订单时已按 orderedQty 扣过库存，改量在此把差额补回/补扣
+      const qtyDelta = oldQty - newQty
 
-      if (newQty === 0) {
-        await prisma.orderLine.delete({ where: { id: lineId } })
-      } else {
-        const unitPrice = Number(line.unitPrice)
-        const subtotal = Math.round(unitPrice * newQty * 100) / 100
-        await prisma.orderLine.update({
-          where: { id: lineId },
-          data: { orderedQty: newQty, subtotal },
+      await prisma.$transaction(async (tx) => {
+        if (newQty === 0) {
+          await tx.orderLine.delete({ where: { id: lineId } })
+        } else {
+          const unitPrice = Number(line.unitPrice)
+          const subtotal = Math.round(unitPrice * newQty * 100) / 100
+          await tx.orderLine.update({
+            where: { id: lineId },
+            data: { orderedQty: newQty, subtotal },
+          })
+        }
+
+        if (qtyDelta !== 0) {
+          await tx.product.update({
+            where: { id: line.productId },
+            data: { qtyOnHand: { increment: qtyDelta } },
+          })
+        }
+
+        const remaining = await tx.orderLine.findMany({
+          where: { orderId: id },
+          select: { subtotal: true },
         })
-      }
-
-      const remaining = await prisma.orderLine.findMany({
-        where: { orderId: id },
-        select: { subtotal: true },
-      })
-      const newTotal = remaining.reduce((s, l) => s + Number(l.subtotal), 0)
-      await prisma.order.update({
-        where: { id },
-        data: { totalAmount: Math.round(newTotal * 100) / 100 },
+        const newTotal = remaining.reduce((s, l) => s + Number(l.subtotal), 0)
+        await tx.order.update({
+          where: { id },
+          data: { totalAmount: Math.round(newTotal * 100) / 100 },
+        })
       })
 
       await writeLog({
@@ -117,22 +128,33 @@ export async function DELETE(
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },
-        select: { id: true, orderId: true, productName: true, orderedQty: true },
+        select: { id: true, orderId: true, productId: true, productName: true, orderedQty: true },
       })
       if (!line || line.orderId !== id) {
         return NextResponse.json({ error: '订单行不存在' }, { status: 404 })
       }
 
-      await prisma.orderLine.delete({ where: { id: lineId } })
+      const oldQty = Number(line.orderedQty)
 
-      const remaining = await prisma.orderLine.findMany({
-        where: { orderId: id },
-        select: { subtotal: true },
-      })
-      const newTotal = remaining.reduce((s, l) => s + Number(l.subtotal), 0)
-      await prisma.order.update({
-        where: { id },
-        data: { totalAmount: Math.round(newTotal * 100) / 100 },
+      await prisma.$transaction(async (tx) => {
+        await tx.orderLine.delete({ where: { id: lineId } })
+
+        if (oldQty !== 0) {
+          await tx.product.update({
+            where: { id: line.productId },
+            data: { qtyOnHand: { increment: oldQty } },
+          })
+        }
+
+        const remaining = await tx.orderLine.findMany({
+          where: { orderId: id },
+          select: { subtotal: true },
+        })
+        const newTotal = remaining.reduce((s, l) => s + Number(l.subtotal), 0)
+        await tx.order.update({
+          where: { id },
+          data: { totalAmount: Math.round(newTotal * 100) / 100 },
+        })
       })
 
       await writeLog({
