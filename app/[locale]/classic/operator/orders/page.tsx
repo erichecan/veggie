@@ -215,11 +215,13 @@ export default function ClassicOrdersPage() {
     if (entries.length === 0 || savingBatch) return
     setSavingBatch(true)
     const failed: string[] = []
+    const failMessages = new Set<string>()
     await Promise.all(entries.map(async ([orderId, slotId]) => {
       try {
         await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId: slotId || null })
-      } catch {
+      } catch (e) {
         failed.push(orderId)
+        failMessages.add(e instanceof Error ? e.message : '保存失败')
       }
     }))
     setSavingBatch(false)
@@ -227,7 +229,9 @@ export default function ClassicOrdersPage() {
       toast.success(`已保存 ${entries.length} 个订单的司机批次`)
       setPendingBatch({})
     } else {
-      toast.error(`${failed.length} 个订单保存失败,已保留待重试`)
+      // 失败原因一致（如批次已锁定）时直接显示具体原因，而非笼统的"N 个失败"
+      const detail = failMessages.size === 1 ? [...failMessages][0] : `${failed.length} 个订单保存失败`
+      toast.error(`${detail},已保留待重试`)
       setPendingBatch(prev => {
         const next: Record<string, string> = {}
         for (const id of failed) if (id in prev) next[id] = prev[id]
