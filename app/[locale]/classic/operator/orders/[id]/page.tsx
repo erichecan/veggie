@@ -109,11 +109,6 @@ export default function SalesOrderDetailPage() {
   const [auditLogs, setAuditLogs] = useState<{ id: string; action: string; detail?: string; userName?: string; createdAt: string }[]>([])
   const [showAuditLog, setShowAuditLog] = useState(false)
 
-  // P1-6: edit approval
-  const [approving, setApproving] = useState(false)
-  const [rejectReason, setRejectReason] = useState('')
-  const [showRejectInput, setShowRejectInput] = useState(false)
-
   async function load() {
     setLoading(true)
     try {
@@ -249,25 +244,6 @@ export default function SalesOrderDetailPage() {
     load().catch(() => {})
   }
 
-  async function handleApproveEdit(approved: boolean) {
-    if (!order) return
-    setApproving(true)
-    try {
-      await apiPut(`/api/orders/${order.id}/approve-edit`, {
-        approved,
-        ...(!approved && rejectReason ? { reason: rejectReason } : {}),
-      })
-      toast.success(approved ? '已批准编辑' : '已驳回编辑')
-      setShowRejectInput(false)
-      setRejectReason('')
-      await load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
-    } finally {
-      setApproving(false)
-    }
-  }
-
   const productRefMap = useMemo(() => {
     const m = new Map<string, string>()
     allProducts.forEach(p => { if (p.internalRef) m.set(p.id, p.internalRef) })
@@ -368,49 +344,6 @@ export default function SalesOrderDetailPage() {
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
-      {/* P1-6: Edit approval banner */}
-      {(order as unknown as { editApprovalRequired?: boolean }).editApprovalRequired && (
-        <div className="bg-amber-50 border-b border-amber-300 px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-amber-800">
-              <span className="text-lg">⚠️</span>
-              <span className="font-medium text-sm">此订单已在确认后被修改，需要审批</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {showRejectInput ? (
-                <>
-                  <input
-                    value={rejectReason}
-                    onChange={e => setRejectReason(e.target.value)}
-                    placeholder="驳回原因（可选）"
-                    className="border border-amber-400 rounded px-2 py-1 text-sm w-48 focus:outline-none"
-                  />
-                  <button onClick={() => handleApproveEdit(false)} disabled={approving}
-                    className="h-8 px-3 text-sm rounded bg-red-600 text-white font-medium disabled:opacity-50">
-                    确认驳回
-                  </button>
-                  <button onClick={() => setShowRejectInput(false)}
-                    className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700">
-                    取消
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => handleApproveEdit(true)} disabled={approving}
-                    className="h-8 px-4 text-sm rounded bg-green-600 text-white font-medium disabled:opacity-50">
-                    批准
-                  </button>
-                  <button onClick={() => setShowRejectInput(true)} disabled={approving}
-                    className="h-8 px-3 text-sm rounded bg-red-600 text-white font-medium disabled:opacity-50">
-                    驳回
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Action bar */}
       <div className="bg-white border-b border-gray-200 px-6 pt-3 pb-2">
         <div className="text-sm">

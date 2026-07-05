@@ -347,13 +347,13 @@ export default function PrintCenter() {
       .catch(() => setSlots([]))
   }, [])
 
-  // Feature B：打印中心按批次阶段取数（assignmentDoneAt 或 dispatchedAt 已回填、且未 completed 的 wave），
+  // Feature B：打印中心按批次阶段取数（仅 assignmentDoneAt 已回填、且未 completed 的 wave），
   // 分配完成即可见，不必等「确认出发」回填 deliveryDate。
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
-      const visible = waveData.filter(w => (w.assignmentDoneAt || w.dispatchedAt) && !w.completedAt)
+      const visible = waveData.filter(w => w.assignmentDoneAt != null && !w.completedAt)
       const orderIds = Array.from(new Set(visible.flatMap(w => w.orderIds)))
       const ordersData = orderIds.length > 0
         ? await apiGet<Order[]>(`/api/orders?include_lines=true&ids=${orderIds.join(',')}`)

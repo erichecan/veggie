@@ -20,7 +20,7 @@ const PAGE_SIZE = 500
 const STATUS_LABEL: Record<OrderStatus, string> = {
   pending:       '待处理',
   confirmed:     '已确认',
-  wave_assigned: '已生成拣货单',
+  wave_assigned: '司机分配结束',
   in_delivery:   '配送中',
   completed:     '已完成',
   locked:        '已锁定',
