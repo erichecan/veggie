@@ -498,8 +498,6 @@ model Order {
   sentAt           DateTime?
   /// 锁定时间（开票后置 LOCKED 状态时回填）
   lockedAt         DateTime?
-  /// CONFIRMED后编辑是否需要老板审批（P1-6）
-  editApprovalRequired Boolean @default(false)
   /// 最近一次打印时间（销售单打印追踪）
   printedAt        DateTime?
   /// 最近一次打印人用户 ID

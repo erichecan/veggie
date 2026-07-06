@@ -20,12 +20,6 @@ const ORDER_TRACKED_FIELDS = [
 
 const VALID_PRICE_TYPES = new Set(['multi', 'default', 'last'])
 
-// ── P1-6: CONFIRMED 状态下允许安全编辑的字段 ──────────────────────────────
-const CONFIRMED_SAFE_FIELDS = new Set([
-  'deliveryDate', 'internalNote', 'externalNote', 'driverSlotId', 'salesUserId',
-  'deliveryBatch', 'paymentMethod', 'confirmationDate', 'invoiceDate', 'quotationDate',
-])
-
 // ── 状态流转白名单 ─────────────────────────────────────────────────────────
 const ALLOWED_TRANSITIONS: Record<string, Set<string>> = {
   PENDING: new Set(['CONFIRMED', 'CANCELLED']),
@@ -117,30 +111,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         )
       }
 
-      // ── P0-1 + P1-6: CONFIRMED/WAVE_ASSIGNED 安全编辑 + 库存差额调整 ─────────
-      // CONFIRMED 以上状态（非 PENDING）：如果修改了行（lines）或价格等非安全字段，
-      // 不阻断操作，但自动标记 editApprovalRequired=true，等待管理层复核。
-      // P0-1: 行修改同时计算库存差额（复用 IN_DELIVERY 的差额逻辑）。
+      // ── P0-1: CONFIRMED/WAVE_ASSIGNED 状态下编辑行需要计算库存差额（已扣过库存）──
       const currentStatus = String(orderBefore.status).toUpperCase()
       const postConfirmStatuses = new Set(['CONFIRMED', 'WAVE_ASSIGNED'])
-      let flagApproval = false
-      // P0-1: 标记是否需要做库存差额调整（CONFIRMED/WAVE_ASSIGNED 已扣过库存）
       const needStockDelta = postConfirmStatuses.has(currentStatus) && !newStatus && Array.isArray(data.lines)
-
-      if (postConfirmStatuses.has(currentStatus) && !newStatus) {
-        // 有行修改 → 标记需审批
-        if (Array.isArray(data.lines)) {
-          flagApproval = true
-        }
-        // 检查是否有非安全字段被修改
-        const incomingKeys = Object.keys(data).filter(k => k !== 'lines' && k !== 'totalAmount' && data[k] !== undefined)
-        const hasUnsafeField = incomingKeys.some(k => !CONFIRMED_SAFE_FIELDS.has(k))
-        if (hasUnsafeField) flagApproval = true
-      }
 
       // Build update payload — only include defined values (never spread unknown fields)
       const updateData: Record<string, unknown> = {}
-      if (flagApproval) updateData.editApprovalRequired = true
       if (newStatus) updateData.status = newStatus
       if (salesUserId !== undefined) updateData.salesUserId = salesUserId ? String(salesUserId) : null
       // SSOT(P0-1): deliveryBatch 字符串弃用,不再写入;调度归属真相在 wave。
@@ -403,8 +380,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // Determine audit action
       let auditAction = 'updated'
-      if (flagApproval) auditAction = 'edited_post_confirm'
-      else if (newStatus === 'CONFIRMED') auditAction = 'confirmed'
+      if (newStatus === 'CONFIRMED') auditAction = 'confirmed'
       else if (newStatus === 'PENDING' && String(orderBefore.status) === 'CONFIRMED') auditAction = 'withdrawn'
       else if (newStatus === 'COMPLETED') auditAction = 'completed'
       else if (newStatus === 'CANCELLED') auditAction = 'cancelled'
