@@ -25,10 +25,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '部分订单不存在' }, { status: 400 })
       }
 
-      const nonConfirmed = orders.filter(o => o.status !== 'CONFIRMED')
-      if (nonConfirmed.length > 0) {
+      // 可分配的入站状态：CONFIRMED（首次分配）或 WAVE_ASSIGNED（跨波次移动）。
+      // 已出发(IN_DELIVERY)/已完成(COMPLETED)/未确认(PENDING) 不可分配。
+      const notAssignable = orders.filter(o => o.status !== 'CONFIRMED' && o.status !== 'WAVE_ASSIGNED')
+      if (notAssignable.length > 0) {
         return NextResponse.json({
-          error: `以下订单状态不是"已确认"，无法分配: ${nonConfirmed.map(o => o.code || o.id).join(', ')}`,
+          error: `以下订单状态无法分配（需为已确认或待分配）: ${notAssignable.map(o => o.code || o.id).join(', ')}`,
         }, { status: 400 })
       }
 
@@ -40,20 +42,36 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       })
       for (const ow of otherWaves) {
         await assertWaveNotPickLocked(ow.id)
-        const remaining = (ow.orderIds as string[]).filter(oid => !orderIds.includes(oid))
-        const zones = await buildZonesByRestaurant(remaining)
-        await prisma.pickingWave.update({
-          where: { id: ow.id },
-          data: { orderIds: remaining, zones },
-        })
       }
 
+      // 预先计算各波次的 zones（读操作放事务外），写操作再统一进事务保证原子。
+      const otherWaveUpdates = await Promise.all(
+        otherWaves.map(async (ow) => {
+          const remaining = (ow.orderIds as string[]).filter(oid => !orderIds.includes(oid))
+          return { id: ow.id, remaining, zones: await buildZonesByRestaurant(remaining) }
+        }),
+      )
       const merged = Array.from(new Set([...(wave.orderIds as string[]), ...orderIds]))
-      const zones = await buildZonesByRestaurant(merged)
+      const mergedZones = await buildZonesByRestaurant(merged)
 
-      const updated = await prisma.pickingWave.update({
-        where: { id },
-        data: { orderIds: merged, zones, assignmentDoneAt: null },
+      // 原子：从其他波次移除 + 并入本波次 + 回写订单状态（进入波次即 WAVE_ASSIGNED，
+      // 仅升级 CONFIRMED，move 过来的 WAVE_ASSIGNED 保持不变，IN_DELIVERY/COMPLETED 不动）。
+      const updated = await prisma.$transaction(async (tx) => {
+        for (const u of otherWaveUpdates) {
+          await tx.pickingWave.update({
+            where: { id: u.id },
+            data: { orderIds: u.remaining, zones: u.zones },
+          })
+        }
+        const w = await tx.pickingWave.update({
+          where: { id },
+          data: { orderIds: merged, zones: mergedZones, assignmentDoneAt: null },
+        })
+        await tx.order.updateMany({
+          where: { id: { in: orderIds }, status: 'CONFIRMED' },
+          data: { status: 'WAVE_ASSIGNED' },
+        })
+        return w
       })
 
       await writeLog({

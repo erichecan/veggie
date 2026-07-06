@@ -21,9 +21,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const remaining = (wave.orderIds as string[]).filter(oid => !orderIds.includes(oid))
       const zones = await buildZonesForOrders(remaining)
 
-      const updated = await prisma.pickingWave.update({
-        where: { id },
-        data: { orderIds: remaining, zones, assignmentDoneAt: null },
+      // 原子：移出波次 + 回写订单状态（移出即退回 CONFIRMED，仅回退 WAVE_ASSIGNED，
+      // 已出发(IN_DELIVERY)/已完成(COMPLETED) 不回退）。
+      const updated = await prisma.$transaction(async (tx) => {
+        const w = await tx.pickingWave.update({
+          where: { id },
+          data: { orderIds: remaining, zones, assignmentDoneAt: null },
+        })
+        await tx.order.updateMany({
+          where: { id: { in: orderIds }, status: 'WAVE_ASSIGNED' },
+          data: { status: 'CONFIRMED' },
+        })
+        return w
       })
 
       await writeLog({

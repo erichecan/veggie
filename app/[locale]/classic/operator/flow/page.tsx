@@ -40,7 +40,7 @@ const FLOW_STEPS: FlowStep[] = [
     who: '销售',
     whoColor: ODOO_PURPLE,
     desc: '销售勾选一批待处理订单，合并生成一个拣货波次，分配给仓库拣货员。',
-    href: '/classic/operator/waves',
+    href: '/classic/operator/dispatch-console',
     details: [
       '勾选订单 → 点「生成拣货波次」',
       '系统汇总所有商品拣货清单',
@@ -54,7 +54,7 @@ const FLOW_STEPS: FlowStep[] = [
     who: '拣货员',
     whoColor: '#1d4ed8',
     desc: '拣货员按波次清单在仓库逐行拣货，填写实际数量并提交完成。',
-    href: '/classic/operator/waves',
+    href: '/classic/operator/dispatch-console',
     details: [
       '拣货员登录后查看分配的波次',
       '按商品清单逐行拣货并填写数量',

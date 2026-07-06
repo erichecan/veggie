@@ -75,7 +75,7 @@ export default function AccountingPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await apiGet<Order[]>('/api/orders?status=CONFIRMED,COMPLETED,IN_DELIVERY&include_lines=false')
+      const data = await apiGet<Order[]>('/api/orders?status=CONFIRMED,WAVE_ASSIGNED,COMPLETED,IN_DELIVERY&include_lines=false')
       setOrders(data ?? [])
     } finally {
       setLoading(false)
@@ -565,10 +565,12 @@ export default function AccountingPage() {
                     <td className="px-4 py-2.5 text-center">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs ${
                         String(o.status).toUpperCase() === 'CONFIRMED' ? 'bg-blue-50 text-blue-700' :
+                        String(o.status).toUpperCase() === 'WAVE_ASSIGNED' ? 'bg-amber-50 text-amber-700' :
                         String(o.status).toUpperCase() === 'IN_DELIVERY' ? 'bg-purple-50 text-purple-700' :
                         'bg-green-50 text-green-700'
                       }`}>
                         {String(o.status).toUpperCase() === 'CONFIRMED' ? '已确认' :
+                         String(o.status).toUpperCase() === 'WAVE_ASSIGNED' ? '司机分配结束' :
                          String(o.status).toUpperCase() === 'IN_DELIVERY' ? '配送中' : '已完成'}
                       </span>
                     </td>

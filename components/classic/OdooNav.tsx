@@ -32,7 +32,7 @@ interface OdooNavProps {
 const APPS_ZH = [
   { label: '运营', icon: '📦', href: '/classic/operator/place-order' },
   { label: '销售单', icon: '🛒', href: '/classic/operator/orders' },
-  { label: '拣货', icon: '🏭', href: '/classic/operator/waves' },
+  { label: '拣货', icon: '🏭', href: '/classic/operator/dispatch-console' },
   { label: '仓库', icon: '🏪', href: '/classic/warehouse' },
   { label: '配送', icon: '🚚', href: '/classic/operator/trips' },
   { label: '发票', icon: '🧾', href: '/classic/operator/invoices' },
@@ -50,7 +50,7 @@ const APPS_ZH = [
 const APPS_EN = [
   { label: 'Operations', icon: '📦', href: '/classic/operator/customers' },
   { label: 'Orders', icon: '🛒', href: '/classic/operator/orders' },
-  { label: 'Picking', icon: '🏭', href: '/classic/operator/waves' },
+  { label: 'Picking', icon: '🏭', href: '/classic/operator/dispatch-console' },
   { label: 'Warehouse', icon: '🏪', href: '/classic/warehouse' },
   { label: 'Delivery', icon: '🚚', href: '/classic/operator/trips' },
   { label: 'Invoices', icon: '🧾', href: '/classic/operator/invoices' },

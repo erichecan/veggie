@@ -115,14 +115,26 @@ export async function POST(req: Request) {
       }
 
       const waveCode = await nextWaveCode(prisma, new Date())
-      const wave = await prisma.pickingWave.create({
-        data: {
-          ...data,
-          name: waveCode,
-          status: data.status?.toUpperCase() ?? 'PENDING',
-          orderIds: data.orderIds ?? [],
-          zones,
-        },
+      // 原子：建波次 + 回写订单状态。波次带 orderIds 时，SSOT=wave.orderIds，
+      // 订单 status 是其派生镜像，进入波次即由 CONFIRMED 升级为 WAVE_ASSIGNED。
+      const wave = await prisma.$transaction(async (tx) => {
+        const w = await tx.pickingWave.create({
+          data: {
+            ...data,
+            name: waveCode,
+            status: data.status?.toUpperCase() ?? 'PENDING',
+            orderIds: data.orderIds ?? [],
+            zones,
+          },
+        })
+        const oids = (data.orderIds ?? []) as string[]
+        if (oids.length > 0) {
+          await tx.order.updateMany({
+            where: { id: { in: oids }, status: 'CONFIRMED' },
+            data: { status: 'WAVE_ASSIGNED' },
+          })
+        }
+        return w
       })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'picking-wave', resourceId: wave.id,

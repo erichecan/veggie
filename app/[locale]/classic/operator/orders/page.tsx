@@ -268,13 +268,12 @@ export default function ClassicOrdersPage() {
     if (confirmedIds.length === 0) { toast.error('请先选择已确认的销售单'); return }
     setGeneratingWave(true)
     try {
-      const wave = await apiPost('/api/waves', { orderIds: confirmedIds, status: 'PENDING' })
-      await Promise.all(confirmedIds.map(id => apiPut(`/api/orders/${id}`, { status: 'WAVE_ASSIGNED' })))
+      // waves POST 已在事务内原子回写订单状态(CONFIRMED→WAVE_ASSIGNED)，无需再逐个 PUT。
+      await apiPost('/api/waves', { orderIds: confirmedIds, status: 'PENDING' })
       toast.success(`拣货波次已生成，包含 ${confirmedIds.length} 张订单`)
       setSelected(new Set())
-      const waveId = (wave as { id?: string }).id
-      if (waveId) router.push(`${prefix}/classic/operator/waves/${waveId}`)
-      else { router.push(`${prefix}/classic/operator/waves`); refresh() }
+      // 分配统一在「配送调度中心」进行（波次管理列表页已废弃）。
+      router.push(`${prefix}/classic/operator/dispatch-console`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '生成失败')
     } finally {
