@@ -101,6 +101,20 @@ function BatchCard({
     }
   }
 
+  // 显式手动上锁(不打印):人人可锁,配合下方「解锁」形成锁定/解锁切换。打印拣货单仍会自动上锁。
+  async function lock() {
+    setBusy(true)
+    try {
+      await apiPost(`/api/waves/${waveId}/pick-lock`, {})
+      toast.success('已锁定')
+      onLockChange()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '锁定失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function unlock() {
     setBusy(true)
     try {
@@ -159,13 +173,24 @@ function BatchCard({
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-sm font-semibold text-gray-900 mr-2">${fmtMoney(totalAmount)}</span>
           <span className="text-xs text-gray-400 mr-3">未税 ${fmtMoney(untaxTotal)}</span>
+          {!pickLockedAt && (
+            <button
+              onClick={lock}
+              disabled={busy}
+              className="px-2.5 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+              title="锁定该批次，防止调度台再改动（打印拣货单也会自动上锁）"
+            >
+              🔓 锁定
+            </button>
+          )}
           {pickLockedAt && canUnlock && (
             <button
               onClick={unlock}
               disabled={busy}
               className="px-2.5 py-1 text-xs rounded border border-amber-400 text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-40"
+              title="解锁该批次（仅 BOSS / WAREHOUSE 可操作）"
             >
-              解锁
+              🔒 解锁
             </button>
           )}
           <span className="inline-flex rounded border border-orange-400 overflow-hidden">
