@@ -50,7 +50,7 @@ export default function BatchTab({ date }: { date: string }) {
     if (!date) return
     setLoading(true)
     try {
-      const [slotData, orderData] = await Promise.all([
+      const [slotData, candidateOrders] = await Promise.all([
         apiGet<DriverSlot[]>('/api/driver-slots'),
         apiGet<Order[]>(`/api/orders?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&include_lines=true&limit=500&dateField=deliveryDate&fromDate=${date}&toDate=${date}`),
       ])
@@ -61,8 +61,16 @@ export default function BatchTab({ date }: { date: string }) {
           waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
         } catch { /* 生成失败不阻断展示 */ }
       }
+      // 调度台以 wave.waveDate 为口径:车里的订单按 wave.orderIds 直接补拉,
+      // 不受 deliveryDate 限制(deliveryDate 只在「确认出发」时才回填,分配阶段为空)。
+      // 否则销售单已排司机的订单(deliveryDate 为空)在此看不到,角标也对不上卡片计数。
+      const candidateIds = new Set(candidateOrders.map(o => o.id))
+      const missingIds = [...new Set(waveData.flatMap(w => w.orderIds))].filter(id => !candidateIds.has(id))
+      const waveOrders = missingIds.length
+        ? await apiGet<Order[]>(`/api/orders?ids=${missingIds.join(',')}&include_lines=true&limit=500`)
+        : []
       setSlots(slotData)
-      setOrders(orderData)
+      setOrders([...candidateOrders, ...waveOrders])
       setWaves(waveData)
     } catch {
       toast.error('加载批次数据失败')
@@ -101,8 +109,8 @@ export default function BatchTab({ date }: { date: string }) {
     setSelectedDrivers(allSelected ? new Set() : new Set(driverNames))
   }
 
-  const confirmedCount = confirmedOrders.length
-  const assignedCount = confirmedOrders.filter(o => assigned.has(o.id)).length
+  // 已入批(单):当天所有批次内订单去重数 = 下方各司机角标之和(assigned 与 orderCountByDriver 同源)
+  const inBatchCount = assigned.size
   const assignmentDoneCount = waves.filter(w => waveStage(w) === 'assignment_done').length
 
   /* ── 乐观分配 / 移除 / 移动（参考 waves 页，不整页 reload）── */
@@ -371,13 +379,17 @@ export default function BatchTab({ date }: { date: string }) {
   return (
     <div>
       <div className="flex items-center gap-5 bg-white border rounded-lg px-5 py-3 mb-3.5 flex-wrap" style={{ borderColor: '#e5e7eb' }}>
-        <Board n={confirmedCount} l="待派送订单" />
+        <div className="flex items-center gap-4">
+          <span className="text-[10px] font-bold text-gray-400 tracking-wide">订单<br />（单）</span>
+          <Board n={unassigned.length} l="待分配" color="#d97706" hint="已确认、还没拖进任何司机批次的订单数" />
+          <Board n={inBatchCount} l="已入批" color="#16a34a" hint="已进司机批次的订单数，等于下方各司机名后角标之和" />
+        </div>
         <div className="w-px self-stretch bg-gray-200" />
-        <Board n={assignedCount} l="已入批" color="#16a34a" />
-        <Board n={assignmentDoneCount} l="已排完" color="#875A7B" />
-        <Board n={unassigned.length} l="待分配" color="#d97706" />
-        <div className="w-px self-stretch bg-gray-200" />
-        <Board n={waves.length} l="司机批次" />
+        <div className="flex items-center gap-4">
+          <span className="text-[10px] font-bold text-gray-400 tracking-wide">批次<br />（车）</span>
+          <Board n={assignmentDoneCount} l="已排完" color="#875A7B" hint="点过「✅分配完成」、锁定不再改的车次数" />
+          <Board n={waves.length} l="司机批次" hint="当天生成的司机车次总数（含空车），数的是「车」不是「单」，与已入批不同维度" />
+        </div>
         <div className="flex-1" />
         <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>刷新</button>
       </div>
@@ -489,8 +501,8 @@ export default function BatchTab({ date }: { date: string }) {
 function Avatar({ name }: { name: string }) {
   return <span className="w-6 h-6 rounded-full text-white inline-flex items-center justify-center text-[11px] font-bold" style={{ background: PURPLE }}>{name?.[0] ?? '?'}</span>
 }
-function Board({ n, l, color }: { n: number; l: string; color?: string }) {
-  return <div><div className="text-[22px] font-bold leading-none" style={{ color: color ?? '#1f2937' }}>{n}</div><div className="text-[11px] text-gray-500 mt-1">{l}</div></div>
+function Board({ n, l, color, hint }: { n: number; l: string; color?: string; hint?: string }) {
+  return <div title={hint} className={hint ? 'cursor-help' : undefined}><div className="text-[22px] font-bold leading-none" style={{ color: color ?? '#1f2937' }}>{n}</div><div className="text-[11px] text-gray-500 mt-1">{l}</div></div>
 }
 function GroupTitle({ time, count, collapsed, onToggle, pendingCount, onBatchDepart }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void; pendingCount?: number; onBatchDepart?: () => void }) {
   const am = time === 'am'
