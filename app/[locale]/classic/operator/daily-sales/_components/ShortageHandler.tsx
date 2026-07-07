@@ -107,6 +107,13 @@ export default function ShortageHandler() {
     return Array.from(map.values())
   }, [orders])
 
+  // 操作记录里只有订单 id（ActionLog.resourceId），客户名靠当天订单映射补上
+  const orderCustomerMap = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const o of orders) m.set(o.id, o.restaurantName)
+    return m
+  }, [orders])
+
   const availableDrivers = useMemo(() => {
     const set = new Set<string>()
     for (const l of allLines) {
@@ -182,13 +189,13 @@ export default function ShortageHandler() {
   }
 
   function handlePrint() {
-    const orderIds = new Set<string>()
-    for (const l of filteredLines) {
-      if (savedLineIds.has(l.lineId)) orderIds.add(l.orderId)
-    }
-    for (const orderId of orderIds) {
-      window.open(`${prefix}/classic/print/${orderId}?doc=delivery`, '_blank')
-    }
+    // 一次点击里连开多个 window.open 会被浏览器弹窗拦截器拦掉，只剩第一个，
+    // 所以改成单个 window.open 打开批量打印页，一份文档内按订单分页打印全部
+    const orderIds = [...new Set(
+      filteredLines.filter(l => savedLineIds.has(l.lineId)).map(l => l.orderId)
+    )]
+    if (orderIds.length === 0) return
+    window.open(`${prefix}/classic/print/batch?ids=${orderIds.join(',')}&doc=delivery`, '_blank')
   }
 
   async function loadHistory() {
@@ -419,6 +426,7 @@ export default function ShortageHandler() {
                 <thead>
                   <tr className="border-b border-gray-50 bg-gray-50">
                     <th className="px-3 py-2 text-left text-gray-400 font-medium">时间</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">客户名</th>
                     <th className="px-3 py-2 text-left text-gray-400 font-medium">操作人</th>
                     <th className="px-3 py-2 text-left text-gray-400 font-medium">操作说明</th>
                   </tr>
@@ -427,9 +435,14 @@ export default function ShortageHandler() {
                   {history.map(log => (
                     <tr key={log.id} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
-                        {new Date(log.createdAt).toLocaleTimeString('zh-CN', {
+                        {new Date(log.createdAt).toLocaleString('zh-CN', {
+                          year: 'numeric', month: '2-digit', day: '2-digit',
                           hour: '2-digit', minute: '2-digit', second: '2-digit',
+                          hour12: false,
                         })}
+                      </td>
+                      <td className="px-3 py-2 text-gray-700 max-w-[160px] truncate" title={orderCustomerMap.get(log.resourceId ?? '') ?? undefined}>
+                        {orderCustomerMap.get(log.resourceId ?? '') ?? '—'}
                       </td>
                       <td className="px-3 py-2 text-gray-600">{log.userName ?? log.userEmail ?? '—'}</td>
                       <td className="px-3 py-2 text-gray-700">{log.detail ?? log.action}</td>

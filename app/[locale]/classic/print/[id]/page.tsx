@@ -196,7 +196,7 @@ export function buildOrderHtml(
 </div>`
 }
 
-const CSS = `
+export const CSS = `
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; background:#fff; }
 .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 12mm 22mm; position: relative; }
