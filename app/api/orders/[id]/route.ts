@@ -4,7 +4,7 @@ import { writeLog, diffChanges } from '@/lib/action-log'
 import { notifyLowStockAfterConfirm } from '@/lib/notify'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { deriveOrderItems, orderItemsFromLines } from '@/lib/order-items'
+import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
 import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
@@ -352,6 +352,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           return s + exTax
         }, 0)
         updateData.totalAmount = Math.round(computedTotal * 100) / 100
+        // 改动 OrderLine 后同步 items 快照(随本次 order.update 一并写),
+        // 下游直接读 items 列的端点(波次/配送/司机汇总/核货)拿到新数量
+        updateData.items = (await buildOrderItemsSnapshot(prisma, id)) as unknown as object
       } else if (totalAmountPayload !== undefined) {
         // 未改行只改总额:也不信前端,从当前 OrderLine 税前重算
         const dbLines = await prisma.orderLine.findMany({ where: { orderId: id }, select: { orderedQty: true, unitPrice: true } })

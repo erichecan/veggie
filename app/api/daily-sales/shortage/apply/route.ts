@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { syncOrderItemsSnapshot } from '@/lib/order-items'
 
 type ShortageAction = 'DELETE_ALL' | 'DISTRIBUTE_EVEN' | 'DISTRIBUTE_MANUAL'
 
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
               totalAfter: orderTotalAfter,
             },
           })
+          // 改动 OrderLine 后回写 items 快照,下游(波次/配送/司机汇总)读到新数量
+          await syncOrderItemsSnapshot(tx, order.id)
         }
 
       } else if (action === 'DISTRIBUTE_EVEN') {
@@ -90,6 +93,7 @@ export async function POST(req: NextRequest) {
               totalAfter: newTotal,
             },
           })
+          await syncOrderItemsSnapshot(tx, order.id)
         }
 
       } else if (action === 'DISTRIBUTE_MANUAL') {
@@ -131,6 +135,7 @@ export async function POST(req: NextRequest) {
               totalAfter: newTotal,
             },
           })
+          await syncOrderItemsSnapshot(tx, orderId)
         }
       }
     })

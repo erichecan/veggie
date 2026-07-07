@@ -1,4 +1,6 @@
 import type { OrderItem } from './types'
+import type { Prisma, PrismaClient } from './generated/prisma/client'
+import { serializeApi } from './api-serializer'
 
 /**
  * 订单明细统一读取口(SSOT)
@@ -96,4 +98,26 @@ export function deriveOrderItems<T extends { lines?: unknown; items?: unknown }>
 /** 列表场景:对订单数组逐个派生 items */
 export function deriveOrderItemsList<T extends { lines?: unknown; items?: unknown }>(orders: T[]): T[] {
   return orders.map(deriveOrderItems)
+}
+
+type OrderItemsDbClient = Prisma.TransactionClient | PrismaClient
+
+/**
+ * 从库中读该订单当前 OrderLine,生成 items 快照(不写回)。
+ * PUT 主改单把它塞进既有 updateData 一并写;shortage/apply 走 syncOrderItemsSnapshot。
+ */
+export async function buildOrderItemsSnapshot(db: OrderItemsDbClient, orderId: string): Promise<OrderItem[]> {
+  const lines = await db.orderLine.findMany({ where: { orderId }, orderBy: { sequence: 'asc' } })
+  return orderItemsFromLines(serializeApi(lines) as unknown as Parameters<typeof orderItemsFromLines>[0])
+}
+
+/**
+ * 回写 Order.items 派生快照。凡在写入端改动了 OrderLine(增/删/改数量),都应在同一事务内调用,
+ * 把 items 列同步为 lines 的当前投影——避免下游 waves/trips/dispatch 等直接读 items 列的端点
+ * (尚未落地 deriveOrderItems)吃到旧数量。本函数是「items 双存」现实下的一致性兜底,
+ * 待下游读取端全部改 derive 后可移除。见本文件头 SSOT 说明。
+ */
+export async function syncOrderItemsSnapshot(db: OrderItemsDbClient, orderId: string): Promise<void> {
+  const items = await buildOrderItemsSnapshot(db, orderId)
+  await db.order.update({ where: { id: orderId }, data: { items: items as unknown as object } })
 }
