@@ -29,8 +29,11 @@ export async function removeOrderFromAllWaves(orderId: string): Promise<number> 
     const zones = await buildZonesByRestaurant(remaining)
     ops.push(prisma.pickingWave.update({ where: { id: w.id }, data: { orderIds: remaining, zones } }))
   }
-  if (ops.length) await prisma.$transaction(ops)
-  return ops.length
+  // 移出波次即退回待分配:仅回退 WAVE_ASSIGNED→CONFIRMED(IN_DELIVERY/COMPLETED/PENDING 不动),
+  // 与调度台 unassign 口径一致,避免"已移出但订单仍是 WAVE_ASSIGNED"的孤儿状态。
+  ops.push(prisma.order.updateMany({ where: { id: orderId, status: 'WAVE_ASSIGNED' }, data: { status: 'CONFIRMED' } }))
+  await prisma.$transaction(ops)
+  return currentWaves.length
 }
 
 /** 把订单分配到 (deliveryDate ?? 今天, driverSlot) 的 wave;不存在则建。保证一单至多属一个 wave。 */
@@ -80,6 +83,9 @@ export async function assignOrderToWave(
   const merged = Array.from(new Set([...(wave.orderIds as string[]), orderId]))
   const targetZones = await buildZonesByRestaurant(merged)
   ops.push(prisma.pickingWave.update({ where: { id: wave.id }, data: { orderIds: merged, zones: targetZones } }))
+  // 进入波次即 WAVE_ASSIGNED:仅升级 CONFIRMED(IN_DELIVERY/COMPLETED/PENDING 不动),
+  // 与调度台 assign 口径一致,避免"已入批但订单仍是 CONFIRMED"导致销售单列表状态列不同步。
+  ops.push(prisma.order.updateMany({ where: { id: orderId, status: 'CONFIRMED' }, data: { status: 'WAVE_ASSIGNED' } }))
   await prisma.$transaction(ops)
 
   return { waveId: wave.id, driverName: slot.driverName }

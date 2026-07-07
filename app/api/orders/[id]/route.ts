@@ -381,6 +381,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         else await removeOrderFromAllWaves(id).catch((e) => console.error('[removeOrderFromAllWaves]', e))
       }
 
+      // 撤回报价单(PENDING)/取消(CANCELLED):订单退出配送流程,同步移出所属波次,
+      // 否则调度台/打印中心会残留"幽灵单"(报价单却出现在波次里,数量对不上销售单列表)。
+      if (newStatus === 'PENDING' || newStatus === 'CANCELLED') {
+        await removeOrderFromAllWaves(id).catch((e) => console.error('[removeOrderFromAllWaves on status change]', e))
+      }
+
       // Determine audit action
       let auditAction = 'updated'
       if (newStatus === 'CONFIRMED') auditAction = 'confirmed'
