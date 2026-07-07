@@ -8,15 +8,19 @@ import {
   toMemoryShape,
 } from '@/lib/print/trip-common'
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
-import { generateTripPickingHtml } from '@/lib/print/trip-picking-template'
+import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
 
 type PrintType = 'summary' | 'picking' | 'delivery'
 
-const RENDERERS: Record<PrintType, (d: TripPrintData) => string> = {
+const RENDERERS: Record<PrintType, (d: TripPrintData, variant?: PickingVariant) => string> = {
   summary: generateTripSummaryHtml,
   picking: generateTripPickingHtml,
   delivery: generateTripDeliveryHtml,
+}
+
+function parsePickingVariant(v: string | null): PickingVariant {
+  return v === 'storable' || v === 'consumable' ? v : 'all'
 }
 
 const TITLES: Record<PrintType, string> = {
@@ -31,6 +35,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
   const fromDate = searchParams.get('fromDate')
   const driverSlotId = searchParams.get('driverSlotId')
   const batchLabel = searchParams.get('batchLabel')
+  const variant = parsePickingVariant(searchParams.get('variant'))
 
   const [html, setHtml] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
@@ -53,7 +58,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
         )
         if (cancelled) return
         const data = toMemoryShape(wire)
-        setHtml(RENDERERS[type](data))
+        setHtml(RENDERERS[type](data, variant))
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : '加载失败')
@@ -61,7 +66,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
     }
     load()
     return () => { cancelled = true }
-  }, [date, fromDate, driverSlotId, batchLabel, type])
+  }, [date, fromDate, driverSlotId, batchLabel, type, variant])
 
   if (error) {
     return (

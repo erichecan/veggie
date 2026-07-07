@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, use } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import {
   type TripPrintData,
@@ -7,15 +8,19 @@ import {
   toMemoryShape,
 } from '@/lib/print/trip-common'
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
-import { generateTripPickingHtml } from '@/lib/print/trip-picking-template'
+import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
 
 type PrintType = 'summary' | 'picking' | 'delivery'
 
-const RENDERERS: Record<PrintType, (d: TripPrintData) => string> = {
+const RENDERERS: Record<PrintType, (d: TripPrintData, variant?: PickingVariant) => string> = {
   summary: generateTripSummaryHtml,
   picking: generateTripPickingHtml,
   delivery: generateTripDeliveryHtml,
+}
+
+function parsePickingVariant(v: string | null): PickingVariant {
+  return v === 'storable' || v === 'consumable' ? v : 'all'
 }
 
 const TITLES: Record<PrintType, string> = {
@@ -38,6 +43,8 @@ export default function TripPrintClient({
   type: PrintType
 }) {
   const { id } = use(params)
+  const searchParams = useSearchParams()
+  const variant = parsePickingVariant(searchParams.get('variant'))
   const [html, setHtml] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
 
@@ -49,7 +56,7 @@ export default function TripPrintClient({
         if (cancelled) return
         const data = toMemoryShape(wire)
         const renderer = RENDERERS[type]
-        setHtml(renderer(data))
+        setHtml(renderer(data, variant))
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : '加载失败')
@@ -57,7 +64,7 @@ export default function TripPrintClient({
     }
     load()
     return () => { cancelled = true }
-  }, [id, type])
+  }, [id, type, variant])
 
   if (error) {
     return (

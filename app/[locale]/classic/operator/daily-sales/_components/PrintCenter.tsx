@@ -7,6 +7,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import { useAbility } from '@/lib/permissions'
 import type { Order, OrderLine } from '@/lib/types'
 import { formatDriverSlot, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
+import type { PickingVariant } from '@/lib/print/trip-picking-template'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
 
 type BatchLine = OrderLine & { product?: { template?: { weight?: number | null } | null } | null }
@@ -46,9 +47,11 @@ function buildPrintUrl(
   type: 'picking' | 'delivery' | 'summary',
   date: string,
   batchKey?: string,
+  variant?: PickingVariant,
 ): string {
   const params = new URLSearchParams({ date, fromDate: date })
   if (batchKey) params.set('batchLabel', batchKey)
+  if (variant && variant !== 'all') params.set('variant', variant)
   return `${prefix}/classic/print/dispatch/${type}?${params.toString()}`
 }
 
@@ -83,11 +86,12 @@ function BatchCard({
   }
 
   // Feature C：打印拣货单即触发批次锁定（重打=重新上锁）；锁定失败则不打印，避免"打印了但没锁"
-  async function printPicking() {
+  // 拣货单分实物(storable)/耗材(consumable)两份，供两个拣货员分开作业
+  async function printPicking(variant: 'storable' | 'consumable') {
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, {})
-      window.open(buildPrintUrl(prefix, 'picking', date, batchKey), '_blank')
+      window.open(buildPrintUrl(prefix, 'picking', date, batchKey, variant), '_blank')
       onPrint()
       onLockChange()
     } catch (e) {
@@ -164,13 +168,24 @@ function BatchCard({
               解锁
             </button>
           )}
-          <button
-            onClick={printPicking}
-            disabled={busy}
-            className="px-2.5 py-1 text-xs rounded border border-orange-400 text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-40"
-          >
-            拣货单
-          </button>
+          <span className="inline-flex rounded border border-orange-400 overflow-hidden">
+            <button
+              onClick={() => printPicking('storable')}
+              disabled={busy}
+              title="实物拣货单（整箱整袋）"
+              className="px-2.5 py-1 text-xs text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-40"
+            >
+              📦 实物
+            </button>
+            <button
+              onClick={() => printPicking('consumable')}
+              disabled={busy}
+              title="耗材拣货单（零散货）"
+              className="px-2.5 py-1 text-xs text-orange-600 border-l border-orange-400 hover:bg-orange-50 transition-colors disabled:opacity-40"
+            >
+              🧴 耗材
+            </button>
+          </span>
           <button
             onClick={() => print('delivery')}
             className="px-2.5 py-1 text-xs rounded border border-blue-400 text-blue-600 hover:bg-blue-50 transition-colors"
@@ -440,12 +455,13 @@ export default function PrintCenter() {
   }
 
   // Feature C：「全部打印拣货单」= 对所有当前可见批次批量上锁，锁定失败的批次不阻断其余批次打印
-  async function bulkPrintPicking() {
+  // 分实物/耗材两份，供两个拣货员分开作业
+  async function bulkPrintPicking(variant: 'storable' | 'consumable') {
     const results = await Promise.allSettled(
       batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, {}))
     )
     const failed = results.filter(r => r.status === 'rejected').length
-    window.open(buildPrintUrl(prefix, 'picking', date), '_blank')
+    window.open(buildPrintUrl(prefix, 'picking', date, undefined, variant), '_blank')
     for (const g of batchGroups) markPrinted(g.batchKey)
     if (failed > 0) toast.error(`${failed} 个批次锁定失败`)
     load()
@@ -485,12 +501,22 @@ export default function PrintCenter() {
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={bulkPrintPicking}
-              className="px-3 py-1.5 text-xs rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors"
-            >
-              全部打印拣货单
-            </button>
+            <span className="inline-flex rounded overflow-hidden">
+              <button
+                onClick={() => bulkPrintPicking('storable')}
+                title="全部批次 · 实物拣货单（整箱整袋）"
+                className="px-3 py-1.5 text-xs bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+              >
+                全部拣货单 📦 实物
+              </button>
+              <button
+                onClick={() => bulkPrintPicking('consumable')}
+                title="全部批次 · 耗材拣货单（零散货）"
+                className="px-3 py-1.5 text-xs bg-orange-500 text-white border-l border-orange-300 hover:bg-orange-600 transition-colors"
+              >
+                🧴 耗材
+              </button>
+            </span>
             <button
               onClick={() => bulkPrint('delivery')}
               className="px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"

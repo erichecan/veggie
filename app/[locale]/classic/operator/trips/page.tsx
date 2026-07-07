@@ -293,14 +293,24 @@ export default function ClassicTripsPage() {
           e.stopPropagation()
           window.open(`${prefix}/classic/print/trip/${id}/${type}`, '_blank')
         }
+        const openPicking = (variant: 'storable' | 'consumable') => (e: React.MouseEvent) => {
+          e.stopPropagation()
+          window.open(`${prefix}/classic/print/trip/${id}/picking?variant=${variant}`, '_blank')
+        }
         return (
           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
             <button
               type="button"
-              onClick={open('picking')}
-              title="拣货单（按大货/散货分组，无价）"
+              onClick={openPicking('storable')}
+              title="实物拣货单（整箱整袋，无价）"
               className="text-xs px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
-            >📦 备货</button>
+            >📦 实物</button>
+            <button
+              type="button"
+              onClick={openPicking('consumable')}
+              title="耗材拣货单（零散货，无价）"
+              className="text-xs px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+            >🧴 耗材</button>
             <button
               type="button"
               onClick={open('delivery')}
