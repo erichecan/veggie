@@ -12,6 +12,7 @@
     "db:seed": "npx tsx --env-file=.env.local prisma/seed.ts",
     "db:seed:events": "npx tsx --env-file=.env.local prisma/seed-events/index.ts",
     "db:seed:dispatch": "npx tsx --env-file=.env.local prisma/seed-events/seed-dispatch.ts",
+    "db:seed:shortage-demo": "npx tsx --env-file=.env.local prisma/seed-events/seed-shortage-demo.ts",
     "db:validate": "npx tsx --env-file=.env.local scripts/validate-data.ts",
     "db:push": "npx dotenv -e .env.local prisma db push",
     "db:migrate": "npx dotenv -e .env.local prisma migrate deploy",
