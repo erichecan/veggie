@@ -1,5 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { waveStage } from '@/lib/wave-stage'
@@ -53,6 +55,16 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const [amCollapsed, setAmCollapsed] = useState(false)
   const [pmCollapsed, setPmCollapsed] = useState(false)
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(new Set())
+  // 顶部统计卡点击联动:右侧车次区/左侧待分配竖条的滚动锚点 + 左侧短暂高亮
+  const rightPanelRef = useRef<HTMLDivElement>(null)
+  const leftPanelRef = useRef<HTMLDivElement>(null)
+  const [flashLeft, setFlashLeft] = useState(false)
+
+  const locale = useLocale()
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  function openOrder(id: string) {
+    window.open(`${prefix}/classic/operator/orders/${id}`, '_blank', 'noopener,noreferrer')
+  }
 
   const load = useCallback(async () => {
     if (!date) return
@@ -135,6 +147,41 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   }
   function toggleAll() {
     setSelectedDrivers(allSelected ? new Set() : new Set(driverNames))
+  }
+
+  // ── 顶部统计卡点击联动 ──
+  function focusRightPanel() {
+    requestAnimationFrame(() => rightPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  // 司机批次:选中全部司机,右侧展开当天全部车次
+  function showAllDriverWaves() {
+    if (driverNames.length === 0) return
+    setSelectedDrivers(new Set(driverNames))
+    focusRightPanel()
+  }
+  // 已入批:选中有订单的司机(角标>0),右侧展开这些车次(订单在卡片内)
+  function showInBatchDrivers() {
+    const names = driverNames.filter(n => (orderCountByDriver.get(n) ?? 0) > 0)
+    if (names.length === 0) { toast.info('当前没有已入批的订单'); return }
+    setSelectedDrivers(new Set(names))
+    focusRightPanel()
+  }
+  // 已排完:选中「分配完成」车次对应的司机,右侧只留这些车次
+  function showAssignmentDoneDrivers() {
+    const names = new Set<string>()
+    for (const s of slots) {
+      const w = waveForSlot(s.id)
+      if (w && waveStage(w) === 'assignment_done') names.add(s.driverName)
+    }
+    if (names.size === 0) { toast.info('还没有「分配完成」的车次'); return }
+    setSelectedDrivers(names)
+    focusRightPanel()
+  }
+  // 待分配:滚到左侧竖条并短暂高亮(待分配订单卡片就列在那里)
+  function focusUnassigned() {
+    requestAnimationFrame(() => leftPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+    setFlashLeft(true)
+    window.setTimeout(() => setFlashLeft(false), 1600)
   }
 
   // 已入批(单):当天所有批次内订单去重数 = 下方各司机角标之和(assigned 与 orderCountByDriver 同源)
@@ -352,9 +399,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               key={o.id}
               draggable={!dispatched && !locked}
               onDragStart={e => { if (dispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
-              className={`border rounded-lg px-2 py-1.5 bg-white text-xs ${dispatched || locked ? 'cursor-default' : 'cursor-grab hover:border-purple-300'}`}
+              onClick={() => openOrder(o.id)}
+              className={`border rounded-lg px-2 py-1.5 bg-white text-xs hover:border-purple-300 ${dispatched || locked ? 'cursor-pointer' : 'cursor-grab'}`}
               style={{ borderColor: '#eee' }}
-              title={dispatched ? '已出发，不可调整' : locked ? '拣货中已锁定，请找打印员解锁' : '拖回左侧=移出；拖到别的司机=换车'}
+              title={dispatched ? '点击查看订单详情（已出发，不可调整）' : locked ? '点击查看订单详情（拣货中已锁定，请找打印员解锁）' : '点击查看订单详情；拖回左侧=移出，拖到别的司机=换车'}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium flex items-center gap-1.5 truncate">
@@ -409,14 +457,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       <div className="flex items-center gap-5 bg-white border rounded-lg px-5 py-3 mb-3.5 flex-wrap" style={{ borderColor: '#e5e7eb' }}>
         <div className="flex items-center gap-4">
           <span className="text-[10px] font-bold text-gray-400 tracking-wide">订单<br />（单）</span>
-          <Board n={unassigned.length} l="待分配" color="#d97706" hint="已确认、还没拖进任何司机批次的订单数" />
-          <Board n={inBatchCount} l="已入批" color="#16a34a" hint="已进司机批次的订单数，等于下方各司机名后角标之和" />
+          <Board n={unassigned.length} l="待分配" color="#d97706" hint="点击：滚到左侧「待分配」竖条查看这些订单" onClick={focusUnassigned} />
+          <Board n={inBatchCount} l="已入批" color="#16a34a" hint="点击：选中有订单的司机，右侧展开这些车次" onClick={showInBatchDrivers} />
         </div>
         <div className="w-px self-stretch bg-gray-200" />
         <div className="flex items-center gap-4">
           <span className="text-[10px] font-bold text-gray-400 tracking-wide">批次<br />（车）</span>
-          <Board n={assignmentDoneCount} l="已排完" color="#875A7B" hint="点过「✅分配完成」、锁定不再改的车次数" />
-          <Board n={waves.length} l="司机批次" hint="当天生成的司机车次总数（含空车），数的是「车」不是「单」，与已入批不同维度" />
+          <Board n={assignmentDoneCount} l="已排完" color="#875A7B" hint="点击：只选中「分配完成」的车次司机" onClick={showAssignmentDoneDrivers} />
+          <Board n={waves.length} l="司机批次" hint="点击：选中全部司机，右侧展开当天全部车次" onClick={showAllDriverWaves} />
         </div>
         <div className="flex-1" />
         <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>刷新</button>
@@ -469,8 +517,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         <div className="flex gap-3.5 items-start">
           {/* 待分配竖条（可接收拖回） */}
           <div
-            className="flex-none w-[220px] bg-gray-50 border border-dashed rounded-xl sticky top-2.5 max-h-[640px] flex flex-col"
-            style={{ borderColor: dragOverLeft ? PURPLE : '#cbd5e1', boxShadow: dragOverLeft ? `0 0 0 2px ${PURPLE}33` : undefined }}
+            ref={leftPanelRef}
+            className="flex-none w-[220px] bg-gray-50 border border-dashed rounded-xl sticky top-2.5 max-h-[640px] flex flex-col transition-shadow"
+            style={{ borderColor: (dragOverLeft || flashLeft) ? PURPLE : '#cbd5e1', boxShadow: (dragOverLeft || flashLeft) ? `0 0 0 2px ${PURPLE}33` : undefined }}
             onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverLeft(true) }}
             onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverLeft(false) }}
             onDrop={dropToLeft}
@@ -489,8 +538,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   key={o.id}
                   draggable
                   onDragStart={e => startDrag(e, o.id, null)}
+                  onClick={() => openOrder(o.id)}
                   className="border rounded-lg p-2 bg-white cursor-grab text-xs hover:border-amber-400"
                   style={{ borderColor: '#e5e7eb' }}
+                  title="点击查看订单详情；拖到右侧司机批次可分配"
                 >
                   <div className="font-semibold text-amber-700">{o.code ?? o.id.slice(0, 8)}</div>
                   <div className="text-gray-500 mt-0.5">{o.restaurantName} · {o.items?.length ?? 0}项 · €{num(o.totalAmount).toLocaleString()}</div>
@@ -499,7 +550,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             </div>
           </div>
 
-          <div className="flex-1 min-w-0">
+          <div ref={rightPanelRef} className="flex-1 min-w-0 scroll-mt-3">
             {selectedDrivers.size === 0 ? (
               <div className="flex items-center justify-center text-gray-400 text-sm min-h-[200px] border border-dashed rounded-xl" style={{ borderColor: '#e5e7eb' }}>
                 ← 请从上方选择司机
@@ -547,8 +598,20 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
 function Avatar({ name }: { name: string }) {
   return <span className="w-6 h-6 rounded-full text-white inline-flex items-center justify-center text-[11px] font-bold" style={{ background: PURPLE }}>{name?.[0] ?? '?'}</span>
 }
-function Board({ n, l, color, hint }: { n: number; l: string; color?: string; hint?: string }) {
-  return <div title={hint} className={hint ? 'cursor-help' : undefined}><div className="text-[22px] font-bold leading-none" style={{ color: color ?? '#1f2937' }}>{n}</div><div className="text-[11px] text-gray-500 mt-1">{l}</div></div>
+function Board({ n, l, color, hint, onClick }: { n: number; l: string; color?: string; hint?: string; onClick?: () => void }) {
+  return (
+    <div
+      title={hint}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } : undefined}
+      className={onClick ? 'cursor-pointer select-none rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-gray-50 transition-colors' : hint ? 'cursor-help' : undefined}
+    >
+      <div className="text-[22px] font-bold leading-none" style={{ color: color ?? '#1f2937' }}>{n}</div>
+      <div className="text-[11px] text-gray-500 mt-1 flex items-center gap-0.5">{l}{onClick && <span className="text-[9px] text-gray-300">›</span>}</div>
+    </div>
+  )
 }
 function GroupTitle({ time, count, collapsed, onToggle, pendingCount, onBatchDepart }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void; pendingCount?: number; onBatchDepart?: () => void }) {
   const am = time === 'am'
