@@ -121,7 +121,18 @@ export default function ClassicOrdersPage() {
     return activeFilter.toUpperCase()
   }, [activeFilter])
 
-  const baseUrl = `/api/orders?status=${statusParam}&include_lines=false`
+  // 交货日期过滤下推到服务端:改日期即触发 useServerList 重查(回第 1 页),
+  // 避免"只筛当前页"——某天订单不在当前页时被误判为空
+  const baseUrl = useMemo(() => {
+    const params = new URLSearchParams({ status: statusParam, include_lines: 'false' })
+    // 交货日期过滤走服务端分页分支认的参数:dateField=deliveryDate + fromDate/toDate
+    if (colFilters.deliveryDateFrom || colFilters.deliveryDateTo) {
+      params.set('dateField', 'deliveryDate')
+      if (colFilters.deliveryDateFrom) params.set('fromDate', colFilters.deliveryDateFrom)
+      if (colFilters.deliveryDateTo) params.set('toDate', colFilters.deliveryDateTo)
+    }
+    return `/api/orders?${params.toString()}`
+  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo])
 
   const {
     data: rawOrders,
@@ -163,8 +174,7 @@ export default function ClassicOrdersPage() {
 
     const cf = colFilters
     if (cf.code) result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(cf.code.toLowerCase()))
-    if (cf.deliveryDateFrom) result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) >= cf.deliveryDateFrom)
-    if (cf.deliveryDateTo)   result = result.filter(o => (o.deliveryDate ?? '').slice(0, 10) <= cf.deliveryDateTo)
+    // 交货日期已由服务端过滤(见 baseUrl),此处不再客户端二次筛选
     if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
     if (cf.salesman)    result = result.filter(o => getField(o, 'salesman').toLowerCase().includes(cf.salesman.toLowerCase()))
     if (cf.deliveryBatch) result = result.filter(o => formatDriverSlotFromOrder(o).toLowerCase().includes(cf.deliveryBatch.toLowerCase()))

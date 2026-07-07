@@ -123,13 +123,15 @@ export default function SalesOrderDetailPage() {
       setPricelistId(ord.pricelistId ?? '')
       setPriceType((ord as unknown as { priceType?: string }).priceType ?? 'multi')
 
-      const [cs, pls] = await Promise.all([
-        apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
-        apiGet<Pricelist[]>('/api/pricelists').catch(() => [] as Pricelist[]),
-      ])
-      setCustomer(cs.find(c => c.id === ord.restaurantId) ?? null)
-      setPricelists(pls)
-      if (ord.pricelistId) setPricelist(pls.find(p => p.id === ord.pricelistId) ?? null)
+      // 首屏只依赖订单本身:拿到订单即渲染,客户/价格表异步补(不再为一条订单 await 全量客户表)
+      if (ord.restaurantId) {
+        apiGet<Customer>(`/api/customers/${ord.restaurantId}`).then(setCustomer).catch(() => {})
+      }
+      apiGet<Pricelist[]>('/api/pricelists')
+        .then(pls => {
+          setPricelists(pls)
+          if (ord.pricelistId) setPricelist(pls.find(p => p.id === ord.pricelistId) ?? null)
+        }).catch(() => {})
 
       const productIds = Array.from(new Set((ord.lines ?? []).map(l => l.productId).filter(Boolean)))
       if (productIds.length > 0) {
