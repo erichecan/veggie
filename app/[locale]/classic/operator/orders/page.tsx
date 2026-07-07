@@ -23,7 +23,7 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   wave_assigned: '司机分配结束',
   in_delivery:   '配送中',
   completed:     '已完成',
-  locked:        '已锁定',
+  locked:        '拣货中',
   cancelled:     '已取消',
 }
 
@@ -56,12 +56,6 @@ const EMPTY_FILTERS: ColFilters = {
   code: '', deliveryDateFrom: '', deliveryDateTo: '',
   customer: '', salesman: '', deliveryBatch: '',
   invoiceStatus: '', status: '', createdAtFrom: '', createdAtTo: '',
-}
-
-const INV_LABEL: Record<string, string> = {
-  invoiced:   'Fully Invoiced',
-  to_invoice: 'To Invoice',
-  nothing:    'Nothing to Invoice',
 }
 
 function normalizeStatus(s: string | null | undefined): OrderStatus {
@@ -112,7 +106,6 @@ export default function ClassicOrdersPage() {
     apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
   const [groupBy, setGroupBy] = useState('')
-  const [printHistFor, setPrintHistFor] = useState<string | null>(null)
 
   // Build status param from active filter — changes trigger server refetch via useServerList
   const statusParam = useMemo(() => {
@@ -258,19 +251,6 @@ export default function ClassicOrdersPage() {
     setPendingBatch({})
   }
 
-  // 打印送货单/销售单并记录打印状态（时间/打印人/类型/次数）
-  async function printOrder(orderId: string, type: 'DELIVERY' | 'SALES') {
-    const doc = type === 'DELIVERY' ? 'delivery' : 'sales'
-    // 同步打开窗口（保留用户手势，避免被弹窗拦截）
-    window.open(`${prefix}/classic/print/${orderId}?doc=${doc}`, '_blank', 'noopener,noreferrer')
-    try {
-      await apiPost(`/api/orders/${orderId}/mark-printed`, { type })
-      refresh()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '记录打印状态失败')
-    }
-  }
-
   async function generateBatchWave() {
     if (generatingWave) return
     // check status only against current page orders
@@ -321,37 +301,26 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-1"><input value={colFilters.code}         onChange={e => setCf('code', e.target.value)}         className={inputCls} /></td>
         {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
         <td className="px-2 py-1"><input value={colFilters.customer}     onChange={e => setCf('customer', e.target.value)}     className={inputCls} /></td>
-        <td className="px-2 py-1"><input value={colFilters.salesman}     onChange={e => setCf('salesman', e.target.value)}     className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.deliveryBatch} onChange={e => setCf('deliveryBatch', e.target.value)} className={inputCls} /></td>
         <td className="px-2 py-1" />
-        <td className="px-2 py-1">
-          <select value={colFilters.invoiceStatus} onChange={e => setCf('invoiceStatus', e.target.value)} className={selectCls}>
-            <option value=""></option>
-            <option value="invoiced">Fully Invoiced</option>
-            <option value="to_invoice">To Invoice</option>
-            <option value="nothing">Nothing to Invoice</option>
-          </select>
-        </td>
         <td className="px-2 py-1">
           <select value={colFilters.status} onChange={e => setCf('status', e.target.value)} className={selectCls}>
             <option value=""></option>
             <option value="confirmed">已确认</option>
             <option value="wave_assigned">司机分配结束</option>
             <option value="in_delivery">配送中</option>
+            <option value="locked">拣货中</option>
             <option value="completed">已完成</option>
             <option value="cancelled">已取消</option>
           </select>
         </td>
-        <td className="px-2 py-1" />
-        <td className="px-2 py-1" />
+        <td className="px-2 py-1"><input value={colFilters.salesman}     onChange={e => setCf('salesman', e.target.value)}     className={inputCls} /></td>
         <td className="px-2 py-1" />
       </tr>
     )
   }
 
   function renderRow(o: Order) {
-    const internalNote = getField(o, 'internalNote')
-    const invStatus = invoiceStatusFor(o, invoicedOrderIds)
     const isSelected = selected.has(o.id)
 
     return (
@@ -369,8 +338,6 @@ export default function ClassicOrdersPage() {
         </td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{o.deliveryDate ? <DateCell iso={o.deliveryDate} /> : <span className="text-gray-300">—</span>}</td>
         <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
-        {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'salesman') || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
           {(() => {
             const originalSlotId = (o as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? ''
@@ -407,7 +374,6 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-2 text-right text-sm text-gray-800 whitespace-nowrap tabular-nums">
           € {o.totalAmount.toFixed(2)}
         </td>
-        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{INV_LABEL[invStatus]}</td>
         <td className="px-2 py-2 min-w-[72px]">
           <div className="flex items-center gap-1.5">
             <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
@@ -418,64 +384,8 @@ export default function ClassicOrdersPage() {
             )}
           </div>
         </td>
-        <td className="px-2 py-2 min-w-[180px]" onClick={e => e.stopPropagation()}>
-          {!o.printedAt ? (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => printOrder(o.id, 'SALES')}
-                className="px-2 py-0.5 text-xs rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 whitespace-nowrap"
-                title="打印销售单"
-              >销售单</button>
-              <button
-                onClick={() => printOrder(o.id, 'DELIVERY')}
-                className="px-2 py-0.5 text-xs rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 whitespace-nowrap"
-                title="打印送货单"
-              >送货单</button>
-            </div>
-          ) : (
-            <div className="relative flex items-center gap-1.5">
-              <span className="inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-400">
-                已打印{(o.printCount ?? 0) > 1 ? ` ×${o.printCount}` : ''}
-              </span>
-              <button
-                onClick={() => setPrintHistFor(printHistFor === o.id ? null : o.id)}
-                className="inline-flex items-center text-gray-400 hover:text-purple-600"
-                title="查看打印记录"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M12 7v5l4 2" />
-                </svg>
-              </button>
-              {printHistFor === o.id && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setPrintHistFor(null)} />
-                  <div className="absolute left-0 top-full mt-1 z-30 w-56 rounded-lg border bg-white shadow-lg p-3 text-xs" style={{ borderColor: '#e5d5e2' }}>
-                    <div className="font-semibold text-gray-700 mb-1.5">打印记录</div>
-                    <div className="space-y-1 text-gray-600">
-                      <div>时间：{formatDateTimeShort(o.printedAt)}</div>
-                      <div>打印人：{o.printedByName || '—'}</div>
-                      <div>文件：{o.printType === 'DELIVERY' ? '送货单' : o.printType === 'SALES' ? '销售单' : '—'}</div>
-                      <div>共打印：{o.printCount ?? 0} 次</div>
-                    </div>
-                    <div className="flex gap-1.5 mt-2.5 pt-2 border-t" style={{ borderColor: '#f0e4ee' }}>
-                      <button
-                        onClick={() => { setPrintHistFor(null); printOrder(o.id, 'SALES') }}
-                        className="px-2 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                      >重印销售单</button>
-                      <button
-                        onClick={() => { setPrintHistFor(null); printOrder(o.id, 'DELIVERY') }}
-                        className="px-2 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
-                      >重印送货单</button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </td>
-        <td className="px-2 py-2 text-sm text-gray-500 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
+        {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
+        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'salesman') || '—'}</td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1">
             {!isReadMode && o.status === 'confirmed' && pendingBatch[o.id] !== undefined && (
@@ -581,13 +491,10 @@ export default function ClassicOrdersPage() {
                   { field: 'code',          label: 'Quotation\nNumber', right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'restaurantName',label: 'Customer',          right: false },
-                  { field: 'salesman',      label: 'Salesperson',       right: false },
                   { field: 'deliveryBatch', label: '司机',              right: false },
                   { field: 'totalAmount',   label: 'Total',             right: true  },
-                  { field: 'invoiceStatus', label: 'Invoice\nStatus',   right: false },
                   { field: 'status',        label: 'Status',            right: false },
-                  { field: 'printedAt',     label: 'Print\nStatus',     right: false },
-                  { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
+                  { field: 'salesman',      label: 'Salesperson',       right: false },
                   { field: null,            label: '',                   right: false },
                 ] as { field: string | null; label: string; right: boolean }[]
               ).map(({ field, label, right }, i) => {
@@ -615,10 +522,10 @@ export default function ClassicOrdersPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={15} className="text-center py-12 text-gray-400 text-sm">加载中…</td></tr>
+              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">加载中…</td></tr>
             )}
             {!loading && sorted.length === 0 && (
-              <tr><td colSpan={15} className="text-center py-12 text-gray-400 text-sm">暂无订单数据</td></tr>
+              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">暂无订单数据</td></tr>
             )}
             {!loading && sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>
