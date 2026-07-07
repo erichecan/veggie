@@ -33,11 +33,19 @@ const WAVE_STATUS: Record<string, { text: string; cls: string; pct: number }> = 
 const num = (v: number | string) => (typeof v === 'number' ? v : Number(v) || 0)
 const SRC = 'application/x-source-wave'
 
-export default function BatchTab({ date }: { date: string }) {
+function shiftDate(base: string, days: number) {
+  const d = new Date(base + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+export default function BatchTab({ date, onPickDate }: { date: string; onPickDate?: (d: string) => void }) {
   const [slots, setSlots] = useState<DriverSlot[]>([])
   const [waves, setWaves] = useState<Wave[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
+  // 其他日期(≠当前所选)仍有已排订单的分布,用于顶部提示条,避免「排完切到调度台一片空」
+  const [otherDates, setOtherDates] = useState<{ date: string; orders: number }[]>([])
   const [dragOverWave, setDragOverWave] = useState<string | null>(null)
   const [dragOverLeft, setDragOverLeft] = useState(false)
   // ② 调度交互：先选司机,右侧只显示选中的;AM/PM 可折叠;"确定"=收工清场
@@ -80,6 +88,26 @@ export default function BatchTab({ date }: { date: string }) {
   }, [date])
 
   useEffect(() => { load() }, [load])
+
+  // 拉 ±45 天内各 waveDate 的已排单量,排除当前日期,得到「其他日期还有单」提示。复用 driver-summary,不改后端。
+  useEffect(() => {
+    if (!date) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const from = shiftDate(date, -45), to = shiftDate(date, 45)
+        const sum = await apiGet<{ rows: { waveDate: string | null; orderCount: number }[] }>(
+          `/api/dispatch/driver-summary?from=${from}&to=${to}`,
+        )
+        const byDate = new Map<string, number>()
+        for (const r of sum.rows) if (r.waveDate) byDate.set(r.waveDate, (byDate.get(r.waveDate) ?? 0) + r.orderCount)
+        byDate.delete(date)
+        const others = [...byDate].filter(([, n]) => n > 0).map(([d, n]) => ({ date: d, orders: n })).sort((a, b) => a.date.localeCompare(b.date))
+        if (!cancelled) setOtherDates(others)
+      } catch { /* 提示条失败不影响主看板 */ }
+    })()
+    return () => { cancelled = true }
+  }, [date])
 
   const ordersById = new Map(orders.map(o => [o.id, o])) // 含 IN_DELIVERY，供已出发批次渲染
   const confirmedOrders = orders.filter(o => o.status === 'CONFIRMED') // 仅可派送（未出发）
@@ -393,6 +421,24 @@ export default function BatchTab({ date }: { date: string }) {
         <div className="flex-1" />
         <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>刷新</button>
       </div>
+
+      {/* 其他日期提示条：别的交货日还有已排订单时列出,点一下跳过去(销售单排司机后单落在其 deliveryDate 那天) */}
+      {otherDates.length > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 mb-3.5 flex-wrap text-sm">
+          <span className="font-medium text-amber-800">📅 其他日期还有已排订单：</span>
+          {otherDates.map(o => (
+            <button
+              key={o.date}
+              onClick={() => onPickDate?.(o.date)}
+              className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white border border-amber-300 text-amber-800 hover:bg-amber-100"
+              title="点击切换到该日期查看批次"
+            >
+              {o.date}（{o.orders}单）
+            </button>
+          ))}
+          <span className="text-[11px] text-amber-600 ml-1">销售单排的司机，单会落在它的交货日；点日期即可跳转</span>
+        </div>
+      )}
 
       {/* ② 司机多选 chip 条：选几个司机右侧就显示几个 */}
       {!loading && driverNames.length > 0 && (

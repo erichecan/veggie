@@ -66,7 +66,7 @@ export default function DispatchConsolePage() {
       </div>
 
       {/* Tab 内容 */}
-      {tab === 'waves' && <BatchTab date={date} />}
+      {tab === 'waves' && <BatchTab date={date} onPickDate={setDate} />}
       {tab === 'dispatch' && <DriverDispatchTab date={date} />}
       {tab === 'trips' && <BatchAnalysis />}
       {tab === 'config' && <DriversPage />}
