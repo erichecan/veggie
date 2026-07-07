@@ -172,18 +172,18 @@ function BatchCard({
             <button
               onClick={() => printPicking('storable')}
               disabled={busy}
-              title="实物拣货单（整箱整袋）"
+              title="整箱整袋拣货单"
               className="px-2.5 py-1 text-xs text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-40"
             >
-              📦 实物
+              📦 整箱整袋
             </button>
             <button
               onClick={() => printPicking('consumable')}
               disabled={busy}
-              title="耗材拣货单（零散货）"
+              title="零散货拣货单"
               className="px-2.5 py-1 text-xs text-orange-600 border-l border-orange-400 hover:bg-orange-50 transition-colors disabled:opacity-40"
             >
-              🧴 耗材
+              🧴 零散货
             </button>
           </span>
           <button
@@ -504,17 +504,17 @@ export default function PrintCenter() {
             <span className="inline-flex rounded overflow-hidden">
               <button
                 onClick={() => bulkPrintPicking('storable')}
-                title="全部批次 · 实物拣货单（整箱整袋）"
+                title="全部批次 · 整箱整袋拣货单"
                 className="px-3 py-1.5 text-xs bg-orange-500 text-white hover:bg-orange-600 transition-colors"
               >
-                全部拣货单 📦 实物
+                全部拣货单 📦 整箱整袋
               </button>
               <button
                 onClick={() => bulkPrintPicking('consumable')}
-                title="全部批次 · 耗材拣货单（零散货）"
+                title="全部批次 · 零散货拣货单"
                 className="px-3 py-1.5 text-xs bg-orange-500 text-white border-l border-orange-300 hover:bg-orange-600 transition-colors"
               >
-                🧴 耗材
+                🧴 零散货
               </button>
             </span>
             <button

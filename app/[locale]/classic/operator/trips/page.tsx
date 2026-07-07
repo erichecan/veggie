@@ -302,15 +302,15 @@ export default function ClassicTripsPage() {
             <button
               type="button"
               onClick={openPicking('storable')}
-              title="实物拣货单（整箱整袋，无价）"
+              title="整箱整袋拣货单（无价）"
               className="text-xs px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
-            >📦 实物</button>
+            >📦 整箱整袋</button>
             <button
               type="button"
               onClick={openPicking('consumable')}
-              title="耗材拣货单（零散货，无价）"
+              title="零散货拣货单（无价）"
               className="text-xs px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
-            >🧴 耗材</button>
+            >🧴 零散货</button>
             <button
               type="button"
               onClick={open('delivery')}

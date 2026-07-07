@@ -119,8 +119,8 @@ export function generateTripPickingHtml(
     (showStorable ? storableProducts.length : 0) +
     (showConsumable ? consumableProducts.length : 0)
   const variantLabel =
-    variant === 'storable' ? '实物 STORABLE'
-    : variant === 'consumable' ? '耗材 CONSUMABLE'
+    variant === 'storable' ? '整箱整袋 STORABLE'
+    : variant === 'consumable' ? '零散货 CONSUMABLE'
     : ''
 
   function productTableHtml(title: string, products: AggProduct[], icon: string): string {
@@ -257,12 +257,12 @@ export function generateTripPickingHtml(
     <div class="item"><span class="label">客户数：</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
 
-  ${showStorable ? productTableHtml('实物商品 STORABLE', storableProducts, '📦') : ''}
-  ${showConsumable ? productTableHtml('耗材 CONSUMABLE', consumableProducts, '🧴') : ''}
+  ${showStorable ? productTableHtml('整箱整袋 STORABLE', storableProducts, '📦') : ''}
+  ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableProducts, '🧴') : ''}
 
   <div class="stats">
-    ${showStorable ? `<span>实物 <span class="num">${storableProducts.length}</span> 种</span>` : ''}
-    ${showConsumable ? `<span>耗材 <span class="num">${consumableProducts.length}</span> 种</span>` : ''}
+    ${showStorable ? `<span>整箱整袋 <span class="num">${storableProducts.length}</span> 种</span>` : ''}
+    ${showConsumable ? `<span>零散货 <span class="num">${consumableProducts.length}</span> 种</span>` : ''}
     ${variant === 'all' ? `<span>合计 <span class="num">${allProducts.length}</span> 种</span>` : ''}
   </div>
 
