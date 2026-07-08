@@ -297,7 +297,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
 
     if (!wave) return null
 
-    if (wave.completedAt) {
+    // 关灯期(司机端未上线):completed 属于配送生命周期,与 dispatched 同源一并关灯——
+    // 完成态波次回退为普通排货卡(照常显示订单),与顶部/chip 角标(orderCountByDriver 恒按
+    // orderIds 计数)对齐,消除「角标>0 但卡片空」。司机端上线(DRIVER_APP_ENABLED=true)后恢复灰色完成 stub。
+    if (wave.completedAt && DRIVER_APP_ENABLED) {
       return (
         <div className="bg-gray-50 border border-dashed rounded-xl p-3 text-xs text-gray-400" style={{ borderColor: '#d1d5db' }}>
           <div className="font-semibold text-gray-600 flex items-center gap-1.5">
@@ -467,6 +470,15 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           <Board n={waves.length} l="司机批次" hint="点击：选中全部司机，右侧展开当天全部车次" onClick={showAllDriverWaves} />
         </div>
         <div className="flex-1" />
+        <label className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm" style={{ borderColor: '#e5e7eb' }} title="选择配送日期">
+          📅
+          <input
+            type="date"
+            value={date}
+            onChange={e => onPickDate?.(e.target.value)}
+            className="outline-none text-sm"
+          />
+        </label>
         <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>刷新</button>
       </div>
 

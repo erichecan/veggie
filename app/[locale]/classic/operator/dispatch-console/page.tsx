@@ -29,23 +29,12 @@ export default function DispatchConsolePage() {
 
   return (
     <div className="p-5 max-w-[1320px] mx-auto">
-      {/* 页头 */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <p className="text-xs text-gray-400">销售 / 配送调度中心</p>
-          <h1 className="text-lg font-semibold flex items-center gap-2" style={{ color: PURPLE }}>
-            🚚 配送调度中心
-          </h1>
-        </div>
-        <label className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm" style={{ borderColor: '#e5e7eb' }}>
-          📅
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            className="outline-none text-sm"
-          />
-        </label>
+      {/* 页头（日期选择器已下移到批次管理工具栏） */}
+      <div className="mb-4">
+        <p className="text-xs text-gray-400">销售 / 配送调度中心</p>
+        <h1 className="text-lg font-semibold flex items-center gap-2" style={{ color: PURPLE }}>
+          🚚 配送调度中心
+        </h1>
       </div>
 
       {/* Tab 条 */}
