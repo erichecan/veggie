@@ -5,6 +5,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { waveStage } from '@/lib/wave-stage'
+import { DRIVER_APP_ENABLED } from '@/lib/features'
 import { restaurantColor } from './colors'
 
 const PURPLE = '#875A7B'
@@ -311,7 +312,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const st = WAVE_STATUS[wave.status] ?? { text: wave.status, cls: 'bg-gray-100 text-gray-500', pct: 0 }
     const laneOrders = wave.orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
     const stage = waveStage(wave)
-    const dispatched = stage === 'in_transit'
+    // 关灯期(司机端未上线):在途相关 UI 全部隐藏——在途徽章、出发时间、「标记完成」按钮
+    // 都挂在 dispatched 分支下,dispatched 恒 false 即一并关掉。后端 dispatch/complete 逻辑不动。
+    const dispatched = DRIVER_APP_ENABLED && stage === 'in_transit'
     const assignmentDone = stage === 'assignment_done'
     const locked = !!wave.pickLockedAt
     const over = !dispatched && !locked && dragOverWave === wave.id
@@ -425,11 +428,13 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             >✓ 标记完成</button>
           ) : assignmentDone ? (
             <div className="mt-1 flex flex-col gap-1.5">
-              <button
-                onClick={() => dispatchWave(wave.id)}
-                className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
-                style={{ background: '#16a34a' }}
-              >🚚 确认出发（{laneOrders.length}单）</button>
+              {DRIVER_APP_ENABLED && (
+                <button
+                  onClick={() => dispatchWave(wave.id)}
+                  className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                  style={{ background: '#16a34a' }}
+                >🚚 确认出发（{laneOrders.length}单）</button>
+              )}
               <button
                 onClick={() => markAssignmentDone(wave.id, false)}
                 disabled={locked}
