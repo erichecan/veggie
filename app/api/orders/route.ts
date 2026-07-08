@@ -126,6 +126,33 @@ export async function GET(req: Request) {
       where.lines = { some: { product: { categoryId } } }
     }
 
+    // 分面聚焦搜索(facet)：每个维度一个参数，彼此 AND，可与全局 search / 时间 / My 叠加。
+    // 用 where.AND 数组组合，避免与全局 search 的 where.OR、categoryId 的 where.lines 键冲突。
+    const facetAnd: Record<string, unknown>[] = []
+    const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
+    const fCode     = searchParams.get('f_code')?.trim()
+    const fCustomer = searchParams.get('f_customer')?.trim()
+    const fSalesman = searchParams.get('f_salesman')?.trim()
+    const fProduct  = searchParams.get('f_product')?.trim()
+    const fDriver   = searchParams.get('f_driver')?.trim()
+    if (fCode)     facetAnd.push({ code: like(fCode) })
+    if (fCustomer) facetAnd.push({ restaurantName: like(fCustomer) })
+    if (fSalesman) facetAnd.push({ salesUser: { name: like(fSalesman) } })
+    if (fProduct)  facetAnd.push({ lines: { some: { productName: like(fProduct) } } })
+    if (fDriver)   facetAnd.push({ driverSlot: { driverName: like(fDriver) } })
+
+    // 时间快捷筛选(Today/This Week…)固定按下单时间 createdAt，与交货日期列筛选(deliveryDate)
+    // 互不干扰：走独立的 createdFrom/createdTo，放进 AND 数组，避免覆盖 where.createdAt。
+    const createdFrom = searchParams.get('createdFrom')
+    const createdTo = searchParams.get('createdTo')
+    if (createdFrom || createdTo) {
+      const range: Record<string, Date> = {}
+      if (createdFrom) range.gte = new Date(createdFrom + 'T00:00:00Z')
+      if (createdTo) range.lte = new Date(createdTo + 'T23:59:59Z')
+      facetAnd.push({ createdAt: range })
+    }
+    if (facetAnd.length > 0) where.AND = facetAnd
+
     // SSOT: items 一律由 lines 实时投影。include_lines=false 时仍拉精简行(只取投影所需字段),
     // 既保留列表页轻量,又确保 items 永远新鲜(不读已腐化的 Order.items 列)。见 lib/order-items.ts。
     const leanLineSelect = {

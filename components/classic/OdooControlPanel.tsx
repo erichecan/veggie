@@ -11,6 +11,13 @@ interface FilterOption {
   value: string
 }
 
+interface FacetField {
+  /** query 维度 key，如 code/customer/salesman/product/driver/all */
+  key: string
+  /** 下拉里显示的维度名，如 "客户"、"产品" */
+  label: string
+}
+
 interface ActionItem {
   label: string
   onClick: () => void
@@ -32,6 +39,9 @@ interface OdooControlPanelProps {
   searchValue: string
   onSearch: (v: string) => void
   onSearchSubmit?: () => void
+  /** 传入后启用 Odoo 式分面搜索：输入关键词→下拉选维度→onFacetAdd 生成 chip */
+  facetFields?: FacetField[]
+  onFacetAdd?: (key: string, value: string) => void
   activeFilters?: ActiveFilter[]
   filterOptions?: FilterOption[]
   groupByOptions?: FilterOption[]
@@ -65,6 +75,8 @@ export default function OdooControlPanel({
   searchValue,
   onSearch,
   onSearchSubmit,
+  facetFields,
+  onFacetAdd,
   activeFilters = [],
   filterOptions = [],
   groupByOptions = [],
@@ -94,6 +106,24 @@ export default function OdooControlPanel({
   const groupByRef = useRef<HTMLDivElement>(null)
   const favRef = useRef<HTMLDivElement>(null)
 
+  // ── 分面搜索（Odoo 式）本地态 ──────────────────────────────────────────────
+  const facetMode = !!(facetFields && facetFields.length > 0 && onFacetAdd)
+  const [draft, setDraft] = useState('')
+  const [facetOpen, setFacetOpen] = useState(false)
+  const [highlight, setHighlight] = useState(0)
+  const searchBoxRef = useRef<HTMLDivElement>(null)
+
+  function commitFacet(idx: number) {
+    const v = draft.trim()
+    if (!v || !facetFields || !onFacetAdd) return
+    const field = facetFields[idx] ?? facetFields[0]
+    if (!field) return
+    onFacetAdd(field.key, v)
+    setDraft('')
+    setFacetOpen(false)
+    setHighlight(0)
+  }
+
   useEffect(() => {
     if (!storageKey) return
     try {
@@ -108,6 +138,7 @@ export default function OdooControlPanel({
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
       if (groupByRef.current && !groupByRef.current.contains(e.target as Node)) setGroupByOpen(false)
       if (favRef.current && !favRef.current.contains(e.target as Node)) { setFavOpen(false); setShowFavInput(false) }
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) setFacetOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -225,35 +256,68 @@ export default function OdooControlPanel({
         {/* 右侧：搜索 + 筛选工具 + 分页 */}
         <div className="flex items-center gap-1 flex-1 justify-end min-w-0">
 
-          {/* 搜索框（含 active filter chip） */}
-          <div className="flex items-center border border-gray-300 rounded h-8 bg-white overflow-hidden flex-1 max-w-xl min-w-[160px]">
-            {activeFilters.map((f, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-0.5 ml-1.5 px-2 py-0.5 rounded text-xs border shrink-0"
-                style={{ background: '#f3eff5', borderColor: '#d4b8d0', color: '#6d4a66' }}
+          {/* 搜索框（含 active filter / facet chip） */}
+          <div ref={searchBoxRef} className="relative flex-1 max-w-xl min-w-[160px]">
+            <div className="flex items-center border border-gray-300 rounded h-8 bg-white overflow-hidden">
+              {activeFilters.map((f, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-0.5 ml-1.5 px-2 py-0.5 rounded text-xs border shrink-0 whitespace-nowrap"
+                  style={{ background: '#f3eff5', borderColor: '#d4b8d0', color: '#6d4a66' }}
+                >
+                  {f.label}
+                  <button onClick={f.onRemove} className="hover:opacity-70 ml-0.5 leading-none">×</button>
+                </span>
+              ))}
+              <input
+                type="text"
+                value={facetMode ? draft : searchValue}
+                onChange={e => {
+                  if (facetMode) { setDraft(e.target.value); setFacetOpen(!!e.target.value); setHighlight(0) }
+                  else onSearch(e.target.value)
+                }}
+                onFocus={() => { if (facetMode && draft) setFacetOpen(true) }}
+                onKeyDown={e => {
+                  if (!facetMode) { if (e.key === 'Enter') onSearchSubmit?.(); return }
+                  if (!facetOpen || !facetFields) { if (e.key === 'Enter' && draft.trim()) commitFacet(0); return }
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, facetFields.length - 1)) }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)) }
+                  else if (e.key === 'Enter') { e.preventDefault(); commitFacet(highlight) }
+                  else if (e.key === 'Escape') { setFacetOpen(false) }
+                }}
+                placeholder="Search..."
+                className="flex-1 px-2 py-1 text-sm outline-none bg-transparent min-w-0"
+              />
+              <button
+                onClick={() => { if (facetMode) { if (draft.trim()) commitFacet(highlight) } else onSearchSubmit?.() }}
+                className="px-2 h-full bg-gray-50 border-l border-gray-200 hover:bg-gray-100 transition-colors shrink-0"
               >
-                {f.label}
-                <button onClick={f.onRemove} className="hover:opacity-70 ml-0.5 leading-none">×</button>
-              </span>
-            ))}
-            <input
-              type="text"
-              value={searchValue}
-              onChange={e => onSearch(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && onSearchSubmit?.()}
-              placeholder="Search..."
-              className="flex-1 px-2 py-1 text-sm outline-none bg-transparent min-w-0"
-            />
-            <button
-              onClick={onSearchSubmit}
-              className="px-2 h-full bg-gray-50 border-l border-gray-200 hover:bg-gray-100 transition-colors shrink-0"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <circle cx="6" cy="6" r="4" stroke="#888" strokeWidth="1.5"/>
-                <path d="M9 9l3 3" stroke="#888" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </button>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <circle cx="6" cy="6" r="4" stroke="#888" strokeWidth="1.5"/>
+                  <path d="M9 9l3 3" stroke="#888" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* 分面下拉：Search {维度} for: {关键词} */}
+            {facetMode && facetOpen && draft.trim() && facetFields && (
+              <div className="absolute left-0 top-full mt-1 w-full bg-white rounded border border-gray-200 shadow-lg z-40 py-1 text-sm">
+                {facetFields.map((f, i) => (
+                  <button
+                    key={f.key}
+                    onMouseEnter={() => setHighlight(i)}
+                    onClick={() => commitFacet(i)}
+                    className="w-full text-left px-3 py-1.5 flex items-center gap-1"
+                    style={{ background: i === highlight ? '#f3eff5' : 'transparent' }}
+                  >
+                    <span className="text-gray-500">Search</span>
+                    <span className="font-medium" style={{ color: '#875A7B' }}>{f.label}</span>
+                    <span className="text-gray-500">for:</span>
+                    <span className="font-semibold text-gray-800 truncate">{draft.trim()}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Filters 下拉 */}

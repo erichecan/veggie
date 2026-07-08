@@ -14,6 +14,8 @@ import { Pagination } from '@/components/ui/pagination'
 import { useServerList } from '@/hooks/use-server-list'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
+import { getSession } from '@/lib/session'
+import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
 
 const PAGE_SIZE = 500
 
@@ -89,6 +91,11 @@ export default function ClassicOrdersPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_FILTERS)
+  // 分面搜索 + 快捷筛选(My / 时间)
+  const [facets, setFacets] = useState<Facet[]>([])
+  const [myActive, setMyActive] = useState(false)
+  const [timeKey, setTimeKey] = useState('')
+  const currentUser = useMemo(() => getSession(), [])
   const [showFiltersBar, setShowFiltersBar] = useState(true)
   const [sortField, setSortField] = useState('createdAt')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
@@ -124,8 +131,15 @@ export default function ClassicOrdersPage() {
       if (colFilters.deliveryDateFrom) params.set('fromDate', colFilters.deliveryDateFrom)
       if (colFilters.deliveryDateTo) params.set('toDate', colFilters.deliveryDateTo)
     }
+    // 分面聚焦搜索 → f_* / search
+    applyFacets(params, facets)
+    // My Sales Order → 按当前登录用户(业务员)过滤
+    if (myActive && currentUser?.userId) params.set('salesUserId', currentUser.userId)
+    // 时间快捷(Today/This Week…) → createdFrom/createdTo(按下单时间)
+    const range = timeKey ? computeTimeRange(timeKey) : null
+    if (range) { params.set('createdFrom', range.from); params.set('createdTo', range.to) }
     return `/api/orders?${params.toString()}`
-  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo])
+  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, facets, myActive, currentUser, timeKey])
 
   const {
     data: rawOrders,
@@ -155,6 +169,19 @@ export default function ClassicOrdersPage() {
 
   function setCf(key: keyof ColFilters, value: string) {
     setColFilters(prev => ({ ...prev, [key]: value }))
+  }
+
+  function addFacet(key: string, value: string) {
+    const field = ORDER_FACET_FIELDS.find(f => f.key === key)
+    if (!field) return
+    // 同一维度只保留一个值(后加覆盖先前)
+    setFacets(prev => [...prev.filter(f => f.key !== key), { key, label: field.label, value }])
+  }
+  function removeFacet(idx: number) {
+    setFacets(prev => prev.filter((_, i) => i !== idx))
+  }
+  function facetChipLabel(f: Facet) {
+    return f.key === 'all' ? f.value : `${f.label}: ${f.value}`
   }
 
   // Client-side column filters applied to current page data
@@ -443,7 +470,11 @@ export default function ClassicOrdersPage() {
         searchValue={search}
         onSearch={v => { setServerSearch(v) }}
         onSearchSubmit={() => {}}
+        facetFields={ORDER_FACET_FIELDS}
+        onFacetAdd={addFacet}
         filterOptions={[
+          { label: myActive ? '✓ My Sales Order' : 'My Sales Order', value: '__my__' },
+          ...TIME_QUICK_OPTIONS.map(o => ({ label: timeKey === o.value ? `✓ ${o.label}` : o.label, value: `__time__${o.value}` })),
           { label: '待开票', value: 'to_invoice' },
           { label: '已确认', value: 'confirmed' },
           { label: '司机分配结束', value: 'wave_assigned' },
@@ -453,9 +484,14 @@ export default function ClassicOrdersPage() {
         ]}
         onFilterSelect={v => {
           if (v === '__column_filters__') { setShowFiltersBar(x => !x); return }
+          if (v === '__my__') { setMyActive(x => !x); return }
+          if (v.startsWith('__time__')) { const k = v.slice(8); setTimeKey(prev => prev === k ? '' : k); return }
           setActiveFilter(v as ActiveFilter)
         }}
         activeFilters={[
+          ...facets.map((f, i) => ({ label: facetChipLabel(f), onRemove: () => removeFacet(i) })),
+          ...(myActive ? [{ label: 'My Sales Order', onRemove: () => setMyActive(false) }] : []),
+          ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(activeFilter !== 'all' ? [{
             label: activeFilter === 'to_invoice' ? '待开票' : (STATUS_LABEL[activeFilter as OrderStatus] ?? activeFilter),
             onRemove: () => setActiveFilter('all'),
@@ -468,11 +504,14 @@ export default function ClassicOrdersPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ search, activeFilter, groupBy }}
+        favouriteState={{ search, activeFilter, groupBy, facets, myActive, timeKey }}
         onFavouriteApply={s => {
           setServerSearch(String(s.search ?? ''))
           setActiveFilter((s.activeFilter as ActiveFilter) ?? 'all')
           setGroupBy(String(s.groupBy ?? ''))
+          setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
+          setMyActive(Boolean(s.myActive))
+          setTimeKey(String(s.timeKey ?? ''))
         }}
         storageKey="classic_orders_favs"
         total={total}

@@ -11,6 +11,8 @@ import { displayOrderCode } from '@/lib/order-code'
 import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
 import { buildOrderHtml } from '../../print/[id]/page'
+import { getSession } from '@/lib/session'
+import { type Facet, ORDER_FACET_FIELDS, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,9 @@ interface SavedFavourite {
   tab: TabValue
   orderTodayActive: boolean
   groupBy: GroupByField
+  facets?: Facet[]
+  myActive?: boolean
+  timeKey?: string
 }
 
 interface ColFilters {
@@ -110,6 +115,12 @@ export default function ClassicQuotationsPage() {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabValue>('all')
   const [orderTodayActive, setOrderTodayActive] = useState(false)
+  // 分面搜索 + 快捷筛选(My / 时间)。产品维度需服务端数据，走 productFacetIds 桥接；其余客户端过滤。
+  const [facets, setFacets] = useState<Facet[]>([])
+  const [myActive, setMyActive] = useState(false)
+  const [timeKey, setTimeKey] = useState('')
+  const [productFacetIds, setProductFacetIds] = useState<Set<string> | null>(null)
+  const currentUser = useMemo(() => getSession(), [])
   const [sortField, setSortField] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [colFilters, setColFilters] = useState<ColFilters>({ ...EMPTY_CF })
@@ -258,6 +269,30 @@ export default function ClassicQuotationsPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // 产品分面走服务端：拉匹配订单 id 集合，与客户端展示数据取交集(见 filtered)。
+  // 其余维度(单号/客户/销售/司机)客户端已有数据，无需服务端。
+  useEffect(() => {
+    const productVals = facets.filter(f => f.key === 'product').map(f => f.value.trim()).filter(Boolean)
+    if (productVals.length === 0) { setProductFacetIds(null); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const sets = await Promise.all(productVals.map(async v => {
+          const params = new URLSearchParams({ status: 'PENDING,CANCELLED', include_lines: 'false', f_product: v, limit: '2000' })
+          const res = await apiGet<Array<{ id: string }>>(`/api/orders?${params}`)
+          return new Set((Array.isArray(res) ? res : []).map(o => o.id))
+        }))
+        if (cancelled) return
+        // 多个产品条件取交集
+        const inter = sets.reduce<Set<string> | null>((acc, s) => acc === null ? s : new Set([...acc].filter(x => s.has(x))), null)
+        setProductFacetIds(inter ?? new Set<string>())
+      } catch {
+        if (!cancelled) setProductFacetIds(new Set<string>())
+      }
+    })()
+    return () => { cancelled = true }
+  }, [facets])
 
 
   // ── CSV import helpers ────────────────────────────────────────────────────
@@ -412,6 +447,44 @@ export default function ClassicQuotationsPage() {
       )
     }
 
+    // My Quotations — 按当前登录用户(业务员)过滤
+    if (myActive && currentUser?.userId) {
+      result = result.filter(o => getField(o, 'salesUserId') === currentUser.userId)
+    }
+
+    // 时间快捷(Today/This Week…) — 按下单时间 createdAt
+    const timeRange = timeKey ? computeTimeRange(timeKey) : null
+    if (timeRange) {
+      result = result.filter(o => {
+        const c = (o.createdAt ?? '').slice(0, 10)
+        return c !== '' && c >= timeRange.from && c <= timeRange.to
+      })
+    }
+
+    // 分面聚焦搜索(可叠加 AND)。产品维度用服务端 productFacetIds 交集,其余客户端字段匹配。
+    for (const f of facets) {
+      const v = f.value.trim().toLowerCase()
+      if (!v) continue
+      if (f.key === 'all') {
+        result = result.filter(o =>
+          o.restaurantName.toLowerCase().includes(v) ||
+          (o.code ?? '').toLowerCase().includes(v) ||
+          o.id.toLowerCase().includes(v) ||
+          getField(o, 'salesman').toLowerCase().includes(v))
+      } else if (f.key === 'code') {
+        result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(v))
+      } else if (f.key === 'customer') {
+        result = result.filter(o => o.restaurantName.toLowerCase().includes(v))
+      } else if (f.key === 'salesman') {
+        result = result.filter(o => getField(o, 'salesman').toLowerCase().includes(v))
+      } else if (f.key === 'driver') {
+        result = result.filter(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(v))
+      } else if (f.key === 'product') {
+        const ids = productFacetIds
+        result = ids ? result.filter(o => ids.has(o.id)) : []
+      }
+    }
+
     // column filters
     const cf = colFilters
     if (cf.code) result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(cf.code.toLowerCase()))
@@ -465,7 +538,7 @@ export default function ClassicQuotationsPage() {
     }
 
     return result
-  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir])
+  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, productFacetIds, currentUser])
 
   // ── Group By ─────────────────────────────────────────────────────────────
 
@@ -689,6 +762,18 @@ ${footerHtml}
 
   function setCf(key: keyof ColFilters, value: string) {
     setColFilters(prev => ({ ...prev, [key]: value }))
+  }
+
+  function addFacet(key: string, value: string) {
+    const field = ORDER_FACET_FIELDS.find(f => f.key === key)
+    if (!field) return
+    setFacets(prev => [...prev.filter(f => f.key !== key), { key, label: field.label, value }])
+  }
+  function removeFacet(idx: number) {
+    setFacets(prev => prev.filter((_, i) => i !== idx))
+  }
+  function facetChipLabel(f: Facet) {
+    return f.key === 'all' ? f.value : `${f.label}: ${f.value}`
   }
 
   const hasActiveFilters = Object.values(colFilters).some(v => v !== '')
@@ -950,16 +1035,25 @@ ${footerHtml}
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v) }}
+        facetFields={ORDER_FACET_FIELDS}
+        onFacetAdd={addFacet}
         filterOptions={[
+          { label: myActive ? '✓ My Quotations' : 'My Quotations', value: '__my__' },
+          ...TIME_QUICK_OPTIONS.map(o => ({ label: timeKey === o.value ? `✓ ${o.label}` : o.label, value: `__time__${o.value}` })),
           { label: 'Order Today', value: '__order_today__' },
           { label: 'Column filters…', value: '__column_filters__' },
         ]}
         onFilterSelect={v => {
           if (v === '__order_today__') { setOrderTodayActive(x => !x) }
           else if (v === '__column_filters__') setShowFiltersBar(x => !x)
+          else if (v === '__my__') { setMyActive(x => !x) }
+          else if (v.startsWith('__time__')) { const k = v.slice(8); setTimeKey(prev => prev === k ? '' : k) }
           else { setActiveTab(v as TabValue) }
         }}
         activeFilters={[
+          ...facets.map((f, i) => ({ label: facetChipLabel(f), onRemove: () => removeFacet(i) })),
+          ...(myActive ? [{ label: 'My Quotations', onRemove: () => setMyActive(false) }] : []),
+          ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(orderTodayActive ? [{ label: 'Order Today', onRemove: () => { setOrderTodayActive(false) } }] : []),
           ...(activeTab !== 'all' ? [{ label: 'Quotations only', onRemove: () => { setActiveTab('all') } }] : []),
         ]}
@@ -967,13 +1061,16 @@ ${footerHtml}
         groupByValue={groupBy}
         onGroupByChange={v => { setGroupBy(v as GroupByField) }}
         storageKey={FAV_KEY}
-        favouriteState={{ colFilters, tab: activeTab, orderTodayActive, groupBy }}
+        favouriteState={{ colFilters, tab: activeTab, orderTodayActive, groupBy, facets, myActive, timeKey }}
         onFavouriteApply={state => {
           const s = state as unknown as SavedFavourite
           if (s.colFilters) setColFilters(s.colFilters)
           if (s.tab) setActiveTab(s.tab)
           setOrderTodayActive(s.orderTodayActive ?? false)
           if (s.groupBy) setGroupBy(s.groupBy)
+          setFacets(Array.isArray(s.facets) ? s.facets : [])
+          setMyActive(Boolean(s.myActive))
+          setTimeKey(String(s.timeKey ?? ''))
         }}
         total={filtered.length}
       />
