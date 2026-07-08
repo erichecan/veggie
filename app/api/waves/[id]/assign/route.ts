@@ -71,6 +71,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           where: { id: { in: orderIds }, status: 'CONFIRMED' },
           data: { status: 'WAVE_ASSIGNED' },
         })
+        // 分配即回写订单交货日期=波次排程日,保持「订单 deliveryDate ⟺ 所在波次 waveDate」一致
+        // (否则销售单列表按 deliveryDate 计数与配送中心按 wave.orderIds 计数对不上)。
+        // 与「确认出发」(dispatch)同口径,只是提前到分配阶段。可分配订单均未出发、尚无 deliverySlip,
+        // 故此处只回写 Order.deliveryDate;slip 在出发时才建并带上正确日期。
+        if (wave.waveDate) {
+          await tx.order.updateMany({
+            where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
+            data: { deliveryDate: wave.waveDate },
+          })
+        }
         return w
       })
 

@@ -28,9 +28,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           where: { id },
           data: { orderIds: remaining, zones, assignmentDoneAt: null },
         })
+        // 移出波次即退回 CONFIRMED 并清空交货日期(退回未排程),保持
+        // 「订单 deliveryDate ⟺ 所在波次 waveDate」一致,避免销售单列表按旧 deliveryDate
+        // 仍显示、而配送中心已无此单的反向错配。状态守卫确保只动未出发订单;
+        // 未出发订单此时尚无 deliverySlip(出发才建),故无需清 slip。
         await tx.order.updateMany({
           where: { id: { in: orderIds }, status: 'WAVE_ASSIGNED' },
-          data: { status: 'CONFIRMED' },
+          data: { status: 'CONFIRMED', deliveryDate: null },
         })
         return w
       })
