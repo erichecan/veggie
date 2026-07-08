@@ -11,6 +11,8 @@ import { serializeApi } from '@/lib/api-serializer'
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  // reason 区分锁定来源，让操作记录文案准确：'manual'=手动点锁定，'print'=打印拣货单触发
+  const body = await req.json().catch(() => ({})) as { reason?: 'manual' | 'print'; variant?: string }
   return withAuth(req, async (user) => {
     try {
       const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true } })
@@ -21,10 +23,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         data: { pickLockedAt: new Date(), pickLockedBy: user.name || user.email },
       })
 
+      const variantLabel = body.variant === 'storable' ? '整箱整袋' : body.variant === 'consumable' ? '零散货' : ''
+      const detail = body.reason === 'manual'
+        ? `锁定批次 ${wave.name ?? id}`
+        : `打印拣货单${variantLabel ? `（${variantLabel}）` : ''}，锁定批次 ${wave.name ?? id}`
+
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `打印拣货单，锁定批次 ${wave.name ?? id}`,
+        detail,
       })
 
       return NextResponse.json(serializeApi(updated))

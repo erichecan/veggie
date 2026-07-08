@@ -57,6 +57,9 @@ export default function ShortageHandler() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState<ActionLog[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  // 操作记录引用的订单信息（订单号+客户名），按日志 resourceId 直接拉取，
+  // 不依赖当天缺货订单列表，保证记录里一定能显示是哪个订单、并可点击进详情。
+  const [logOrderInfo, setLogOrderInfo] = useState<Map<string, { customer: string; code: string }>>(new Map())
 
   useEffect(() => {
     if (!date) return
@@ -107,10 +110,11 @@ export default function ShortageHandler() {
     return Array.from(map.values())
   }, [orders])
 
-  // 操作记录里只有订单 id（ActionLog.resourceId），客户名靠当天订单映射补上
-  const orderCustomerMap = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const o of orders) m.set(o.id, o.restaurantName)
+  // 操作记录里只有订单 id（ActionLog.resourceId），客户名/订单号靠当天订单映射补上，
+  // 并把 resourceId 直接当作订单 id 链到订单详情（新标签打开）。
+  const orderInfoMap = useMemo(() => {
+    const m = new Map<string, { customer: string; code: string }>()
+    for (const o of orders) m.set(o.id, { customer: o.restaurantName, code: o.code ?? o.id.slice(-6).toUpperCase() })
     return m
   }, [orders])
 
@@ -204,10 +208,29 @@ export default function ShortageHandler() {
       const res = await apiGet<{ logs: ActionLog[] } | ActionLog[]>('/api/action-logs?resource=order&take=100')
       const logs: ActionLog[] = Array.isArray(res) ? res : (res as { logs: ActionLog[] }).logs ?? []
       // 只显示缺货处理产生的记录（行数量修改/删行），其余订单操作日志不属于本页
-      setHistory(logs.filter(log =>
+      const filtered = logs.filter(log =>
         log.createdAt.startsWith(date) &&
         (log.detail?.startsWith('修改订单行数量') || log.detail?.startsWith('删除订单行'))
-      ))
+      )
+      setHistory(filtered)
+      // 按记录里的订单 id 补齐订单号+客户名（这些订单可能不在当天缺货列表里）
+      const ids = Array.from(new Set(filtered.map(l => l.resourceId).filter((v): v is string => !!v)))
+      if (ids.length > 0) {
+        try {
+          const ords = await apiGet<Array<{ id: string; code?: string | null; restaurantName?: string | null }>>(
+            `/api/orders?ids=${ids.join(',')}`
+          )
+          const m = new Map<string, { customer: string; code: string }>()
+          for (const o of Array.isArray(ords) ? ords : []) {
+            m.set(o.id, { customer: o.restaurantName ?? '', code: o.code ?? o.id.slice(-6).toUpperCase() })
+          }
+          setLogOrderInfo(m)
+        } catch {
+          setLogOrderInfo(new Map())
+        }
+      } else {
+        setLogOrderInfo(new Map())
+      }
     } catch {
       setHistory([])
     } finally {
@@ -426,7 +449,7 @@ export default function ShortageHandler() {
                 <thead>
                   <tr className="border-b border-gray-50 bg-gray-50">
                     <th className="px-3 py-2 text-left text-gray-400 font-medium">时间</th>
-                    <th className="px-3 py-2 text-left text-gray-400 font-medium">客户名</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">订单 / 客户</th>
                     <th className="px-3 py-2 text-left text-gray-400 font-medium">操作人</th>
                     <th className="px-3 py-2 text-left text-gray-400 font-medium">操作说明</th>
                   </tr>
@@ -441,8 +464,25 @@ export default function ShortageHandler() {
                           hour12: false,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-gray-700 max-w-[160px] truncate" title={orderCustomerMap.get(log.resourceId ?? '') ?? undefined}>
-                        {orderCustomerMap.get(log.resourceId ?? '') ?? '—'}
+                      <td className="px-3 py-2 max-w-[220px]">
+                        {log.resourceId ? (() => {
+                          const info = logOrderInfo.get(log.resourceId) ?? orderInfoMap.get(log.resourceId)
+                          const code = info?.code ?? log.resourceId.slice(-6).toUpperCase()
+                          return (
+                            <a
+                              href={`${prefix}/classic/operator/orders/${log.resourceId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#875A7B] hover:underline"
+                              title={`打开订单详情：${info?.customer ?? code}`}
+                            >
+                              <span className="font-mono">{code}</span>
+                              {info?.customer && <span className="text-gray-500"> · {info.customer}</span>}
+                            </a>
+                          )
+                        })() : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-gray-600">{log.userName ?? log.userEmail ?? '—'}</td>
                       <td className="px-3 py-2 text-gray-700">{log.detail ?? log.action}</td>

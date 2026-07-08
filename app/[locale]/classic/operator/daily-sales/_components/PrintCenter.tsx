@@ -39,6 +39,15 @@ interface BatchGroup {
   totalWeight: number
 }
 
+interface ActionLogRow {
+  id: string
+  userName: string | null
+  userEmail: string | null
+  detail: string | null
+  action: string
+  createdAt: string
+}
+
 // SSOT: 打印一律以批次字符串(wave 归属)为准，不用 Order.driverSlotId(下单意向,
 // 拖拽调度不回填,会串到别的司机)。后端按 batchLabel 反查 wave,与卡片显示一致。
 function buildPrintUrl(
@@ -79,9 +88,14 @@ function BatchCard({
   const parsed = parseDriverSlotKey(batchKey)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
 
-  function print(type: 'delivery' | 'summary') {
+  async function print(type: 'delivery' | 'summary') {
     window.open(buildPrintUrl(prefix, type, date, batchKey), '_blank')
     onPrint()
+    // 记录打印动作到操作记录（失败不影响打印）
+    try {
+      await apiPost('/api/waves/print-log', { date, type, scope: 'batch', batchLabel: batchKey, waveId })
+      onLockChange()
+    } catch { /* 日志失败静默 */ }
   }
 
   // Feature C：打印拣货单即触发批次锁定（重打=重新上锁）；锁定失败则不打印，避免"打印了但没锁"
@@ -89,7 +103,7 @@ function BatchCard({
   async function printPicking(variant: 'storable' | 'consumable') {
     setBusy(true)
     try {
-      await apiPost(`/api/waves/${waveId}/pick-lock`, {})
+      await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       window.open(buildPrintUrl(prefix, 'picking', date, batchKey, variant), '_blank')
       onPrint()
       onLockChange()
@@ -104,7 +118,7 @@ function BatchCard({
   async function lock() {
     setBusy(true)
     try {
-      await apiPost(`/api/waves/${waveId}/pick-lock`, {})
+      await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'manual' })
       toast.success('已锁定')
       onLockChange()
     } catch (e) {
@@ -362,6 +376,7 @@ export default function PrintCenter() {
   const [timeFilter, setTimeFilter] = useState<string[]>([])
   const [batchFilter, setBatchFilter] = useState<string[]>([])
   const [printedKeys, setPrintedKeys] = useState<Set<string>>(new Set())
+  const [logs, setLogs] = useState<ActionLogRow[]>([])
 
   useEffect(() => {
     setPrintedKeys(loadPrintedKeys(date))
@@ -408,7 +423,22 @@ export default function PrintCenter() {
     }
   }, [date])
 
+  // 操作记录：锁定/解锁/打印都写在 resource=picking-wave，detail 里带配送日期，
+  // 按当前选中的配送日期过滤，只显示屏幕上这批批次的操作。
+  const loadLogs = useCallback(async () => {
+    try {
+      const res = await apiGet<{ logs: ActionLogRow[] } | ActionLogRow[]>('/api/action-logs?resource=picking-wave&take=100')
+      const arr: ActionLogRow[] = Array.isArray(res) ? res : (res.logs ?? [])
+      setLogs(arr.filter(l => l.detail?.includes(date)))
+    } catch {
+      setLogs([])
+    }
+  }, [date])
+
+  const refresh = useCallback(() => { load(); loadLogs() }, [load, loadLogs])
+
   useEffect(() => { load() }, [load])
+  useEffect(() => { loadLogs() }, [loadLogs])
 
   const slotMap = useMemo(() => new Map(slots.map(s => [s.id, s])), [slots])
   const ordersById = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])
@@ -475,21 +505,25 @@ export default function PrintCenter() {
     })
   }, [filteredWaveGroups, sortMode])
 
-  function bulkPrint(type: 'delivery') {
+  async function bulkPrint(type: 'delivery') {
     window.open(buildPrintUrl(prefix, type, date), '_blank')
+    try {
+      await apiPost('/api/waves/print-log', { date, type, scope: 'bulk', count: batchGroups.length })
+      loadLogs()
+    } catch { /* 日志失败静默 */ }
   }
 
   // Feature C：「全部打印拣货单」= 对所有当前可见批次批量上锁，锁定失败的批次不阻断其余批次打印
   // 分实物/耗材两份，供两个拣货员分开作业
   async function bulkPrintPicking(variant: 'storable' | 'consumable') {
     const results = await Promise.allSettled(
-      batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, {}))
+      batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, { reason: 'print', variant }))
     )
     const failed = results.filter(r => r.status === 'rejected').length
     window.open(buildPrintUrl(prefix, 'picking', date, undefined, variant), '_blank')
     for (const g of batchGroups) markPrinted(g.batchKey)
     if (failed > 0) toast.error(`${failed} 个批次锁定失败`)
-    load()
+    refresh()
   }
 
   const grandTotal = batchGroups.reduce((s, g) => s + g.totalAmount, 0)
@@ -603,8 +637,52 @@ export default function PrintCenter() {
           printedKeys={printedKeys}
           canUnlock={canUnlock}
           onPrint={markPrinted}
-          onLockChange={load}
+          onLockChange={refresh}
         />
+      )}
+
+      {/* 操作记录（当前配送日期）：锁定 / 解锁 / 打印 */}
+      <OperationLog logs={logs} />
+    </div>
+  )
+}
+
+// ─── OperationLog ─────────────────────────────────────────────────────────────
+
+function OperationLog({ logs }: { logs: ActionLogRow[] }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+        <span className="text-sm font-medium text-gray-900">操作记录（当前配送日期）</span>
+        <span className="text-xs text-gray-400">共 {logs.length} 条 · 锁定 / 解锁 / 打印</span>
+      </div>
+      {logs.length === 0 ? (
+        <div className="px-4 py-6 text-center text-xs text-gray-400">该配送日期暂无操作记录</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                <th className="px-4 py-2 font-medium w-44">时间</th>
+                <th className="px-3 py-2 font-medium w-32">操作人</th>
+                <th className="px-3 py-2 font-medium">操作内容</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map(log => (
+                <tr key={log.id} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2 text-gray-500 whitespace-nowrap">
+                    {new Date(log.createdAt).toLocaleString('zh-CN', {
+                      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    })}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600">{log.userName ?? log.userEmail ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-700">{log.detail ?? log.action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
