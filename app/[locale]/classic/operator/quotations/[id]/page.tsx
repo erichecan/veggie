@@ -565,7 +565,7 @@ export default function QuotationDetailPage() {
                 ) : <div className="text-gray-800">{deliveryDate || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
-                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Batch</div>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Driver</div>
                 {editing ? (
                   <select value={driverSlotId} onChange={e => { setDriverSlotId(e.target.value); const s = driverSlots.find(x => x.id === e.target.value); setDeliveryBatch(s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : '') }}
                     className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300">

@@ -4,7 +4,6 @@ import { useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
-import { useAbility } from '@/lib/permissions'
 import type { Order, OrderLine } from '@/lib/types'
 import { formatDriverSlot, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { PickingVariant } from '@/lib/print/trip-picking-template'
@@ -349,8 +348,9 @@ function savePrintedKeys(date: string, keys: Set<string>) {
 export default function PrintCenter() {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
-  const ability = useAbility()
-  const canUnlock = (ability.roles?.length ? ability.roles : [ability.role]).some(r => r === 'BOSS' || r === 'WAREHOUSE')
+  // 解锁权限的唯一开关：当前先全部放开（能进打印中心的人都可解锁）。
+  // 日后要收口到某个具体用户，把这里换成 useAbility() 判断即可（如 ability.userId === 'xxx'）。
+  const canUnlock = true
 
   const [date, setDate] = useState(today)
   const [slots, setSlots] = useState<DriverSlotInfo[]>([])

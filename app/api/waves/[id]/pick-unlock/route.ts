@@ -7,7 +7,8 @@ import { serializeApi } from '@/lib/api-serializer'
 /**
  * POST /api/waves/[id]/pick-unlock
  * 解除拣货锁定：调度改完后，打印员重打拣货单会再次上锁（POST pick-lock）。
- * 仅 BOSS / WAREHOUSE 可操作——本次不做「申请解锁」审批流，调度口头找打印员即可。
+ * 权限：当前先全部放开（任何已登录用户可解锁）。日后要收口到某个具体用户，
+ * 在 withAuth 第三参恢复角色白名单、或在 handler 内加 userId 判断即可。
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -36,5 +37,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/waves/[id]/pick-unlock]', error)
       return NextResponse.json({ error: '解锁批次失败' }, { status: 500 })
     }
-  }, ['BOSS', 'WAREHOUSE'])
+  })
 }
