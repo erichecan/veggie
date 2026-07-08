@@ -23,7 +23,12 @@ export function DriverSlotCombobox({ slots, value, onSelect, onClose }: Props) {
   const [highlight, setHighlight] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const wrapRef = useRef<HTMLSpanElement>(null)
-  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null)
+  const [rect, setRect] = useState<
+    { left: number; width: number; maxHeight: number } & (
+      | { top: number; bottom?: undefined }
+      | { bottom: number; top?: undefined }
+    )
+  | null>(null)
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -42,7 +47,17 @@ export function DriverSlotCombobox({ slots, value, onSelect, onClose }: Props) {
     const el = wrapRef.current
     if (el) {
       const r = el.getBoundingClientRect()
-      setRect({ left: r.left, top: r.bottom + 2, width: Math.max(r.width, 220) })
+      const width = Math.max(r.width, 220)
+      const gap = 2
+      const margin = 8
+      const spaceBelow = window.innerHeight - r.bottom
+      const spaceAbove = r.top
+      // 下方空间不足且上方更充裕时向上弹出;两种方向都限制 maxHeight 保证不越出视口
+      if (spaceBelow < 240 && spaceAbove > spaceBelow) {
+        setRect({ left: r.left, bottom: window.innerHeight - r.top + gap, width, maxHeight: Math.max(120, spaceAbove - gap - margin) })
+      } else {
+        setRect({ left: r.left, top: r.bottom + gap, width, maxHeight: Math.max(120, spaceBelow - gap - margin) })
+      }
     }
     setTimeout(() => inputRef.current?.focus(), 0)
   }, [])
@@ -84,8 +99,15 @@ export function DriverSlotCombobox({ slots, value, onSelect, onClose }: Props) {
       {rect && createPortal(
         <div
           id="driver-slot-dropdown"
-          style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, zIndex: 60 }}
-          className="bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto text-xs"
+          style={{
+            position: 'fixed',
+            left: rect.left,
+            ...(rect.top !== undefined ? { top: rect.top } : { bottom: rect.bottom }),
+            width: rect.width,
+            maxHeight: rect.maxHeight,
+            zIndex: 60,
+          }}
+          className="bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto text-xs"
           onMouseDown={e => e.preventDefault()}
         >
           {items.length === 0 ? (
