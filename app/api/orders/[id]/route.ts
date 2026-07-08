@@ -6,7 +6,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
 import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
-import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap } from '@/lib/wave-assign'
+import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, getOrderWaveDriverSlotMap } from '@/lib/wave-assign'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
@@ -48,6 +48,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
     // Flatten product fields onto each line so UI can read l.cost
     const waveDisplay = await getOrderWaveDisplayMap([order.id])
+    // 编辑态司机下拉框预选值:与显示态同源(所属 wave),订单不在任何 wave 时回退下单意向列
+    const waveDriverSlot = await getOrderWaveDriverSlotMap([order.id])
     // 下单/报价/销售单详情页不展示提成字段(PRD 20260703 Stage 8)：整单剔除 commission* 快照
     const { commissionRate: _commissionRate, commissionFixed: _commissionFixed,
       driverCommissionTotal: _driverCommissionTotal, commissionFrozenAt: _commissionFrozenAt,
@@ -58,6 +60,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       salesman: order.salesUser?.name ?? null,
       // SSOT(P0-1): 调度归属显示由所属 wave 派生
       deliveryBatchDisplay: waveDisplay[order.id] ?? null,
+      // 编辑态下拉框预选:所属 wave 的 driverSlotId(真相),回退到下单意向列
+      currentDriverSlotId: waveDriverSlot[order.id] ?? order.driverSlotId ?? null,
       lines: order.lines.map(({ product, commissionPrice: _commissionPrice, ...line }) => ({
         ...line,
         cost: toNum(product?.standardPrice),

@@ -119,7 +119,9 @@ export default function SalesOrderDetailPage() {
       setDeliveryDate(ord.deliveryDate ? new Date(ord.deliveryDate).toISOString().slice(0, 10) : '')
       setSalesUserId((ord as unknown as { salesUserId?: string }).salesUserId ?? '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
-      setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
+      // 编辑态司机预选与显示态同源:优先用所属 wave 派生的 currentDriverSlotId,回退下单意向列
+      setDriverSlotId((ord as unknown as { currentDriverSlotId?: string; driverSlotId?: string }).currentDriverSlotId
+        ?? (ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
       setPricelistId(ord.pricelistId ?? '')
       setPriceType((ord as unknown as { priceType?: string }).priceType ?? 'multi')
 

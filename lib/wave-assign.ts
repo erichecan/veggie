@@ -123,3 +123,26 @@ export async function getOrderWaveDisplayMap(orderIds: string[]): Promise<Record
   }
   return map
 }
+
+/**
+ * 取一批订单的「所属 wave 的 driverSlotId」:orderId → driverSlotId。
+ * 与 getOrderWaveDisplayMap 同源(wave 是调度唯一真相),供编辑态下拉框预选,
+ * 保证「编辑时预选的司机」= 「显示的司机」,不再读 Order.driverSlotId 的下单意向存量。
+ * 未进任何 wave 的订单不在返回 map 中(调用方回退到 Order.driverSlotId)。
+ */
+export async function getOrderWaveDriverSlotMap(orderIds: string[]): Promise<Record<string, string>> {
+  if (orderIds.length === 0) return {}
+  const waves = await prisma.pickingWave.findMany({
+    where: { orderIds: { hasSome: orderIds } },
+    select: { orderIds: true, driverSlotId: true },
+  })
+  const idSet = new Set(orderIds)
+  const map: Record<string, string> = {}
+  for (const w of waves) {
+    if (!w.driverSlotId) continue
+    for (const oid of w.orderIds as string[]) {
+      if (idSet.has(oid)) map[oid] = w.driverSlotId
+    }
+  }
+  return map
+}
