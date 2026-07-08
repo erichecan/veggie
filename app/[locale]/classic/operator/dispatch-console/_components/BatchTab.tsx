@@ -329,16 +329,16 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           style={{ borderColor: dispatched ? '#bfdbfe' : '#e5e7eb' }}
           onClick={onToggleCollapse}
         >
-          <Avatar name={slot.driverName} />
-          <span className="font-bold text-[13px]">{slot.driverName}</span>
-          <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
-          <span className="text-xs text-gray-500">{m.orderCount}单</span>
+          <span className="flex-none"><Avatar name={slot.driverName} /></span>
+          <span className="font-bold text-[13px] truncate min-w-0" title={slot.driverName}>{slot.driverName}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${timeCls}`}>{timeText}</span>
+          <span className="text-xs text-gray-500 whitespace-nowrap flex-none">{m.orderCount}单</span>
           {dispatched
-            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto">🚚 在途</span>
+            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto whitespace-nowrap flex-none">🚚 在途</span>
             : assignmentDone
-            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 ml-auto">✅ 分配完成</span>
-            : <span className="ml-auto text-gray-400 text-[10px]">▾ 展开</span>}
-          {locked && <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">🔒</span>}
+            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 ml-auto whitespace-nowrap flex-none">✅ 分配完成</span>
+            : <span className="ml-auto text-gray-400 text-[10px] whitespace-nowrap flex-none">▾ 展开</span>}
+          {locked && <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 whitespace-nowrap flex-none">🔒</span>}
         </div>
       )
     }
@@ -365,28 +365,25 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           </div>
         )}
         <div className="p-2.5 border-b rounded-t-xl" style={{ borderColor: '#e5e7eb' }}>
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-[13px] flex items-center gap-1.5">
-              <Avatar name={slot.driverName} />{slot.driverName}
-              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
-            </span>
-            <div className="flex items-center gap-1.5">
-              {locked && (
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700" title={wave.pickLockedBy ? `打印员：${wave.pickLockedBy}` : undefined}>
-                  🔒 拣货中
-                </span>
-              )}
-              {dispatched
-                ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700">🚚 在途</span>
-                : assignmentDone
-                ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700">✅ 分配完成</span>
-                : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.text}</span>}
-              <button
-                onClick={e => { e.stopPropagation(); onToggleCollapse() }}
-                className="px-1.5 py-0.5 rounded text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                title="收起"
-              >▴</button>
-            </div>
+          <div className="flex items-center gap-1.5">
+            <span className="flex-none"><Avatar name={slot.driverName} /></span>
+            <span className="font-bold text-[13px] truncate min-w-0 flex-1" title={slot.driverName}>{slot.driverName}</span>
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${timeCls}`}>{timeText}</span>
+            {locked && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-amber-100 text-amber-700" title={wave.pickLockedBy ? `打印员：${wave.pickLockedBy}` : undefined}>
+                🔒 拣货中
+              </span>
+            )}
+            {dispatched
+              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-blue-100 text-blue-700">🚚 在途</span>
+              : assignmentDone
+              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-purple-100 text-purple-700">✅ 分配完成</span>
+              : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${st.cls}`}>{st.text}</span>}
+            <button
+              onClick={e => { e.stopPropagation(); onToggleCollapse() }}
+              className="px-1.5 py-0.5 rounded text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex-none"
+              title="收起"
+            >▴</button>
           </div>
           <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.itemCount}件 · {m.weight}kg · €{m.amount.toLocaleString()}</div>
           {dispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
