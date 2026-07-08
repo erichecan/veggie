@@ -50,6 +50,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const [otherDates, setOtherDates] = useState<{ date: string; orders: number }[]>([])
   const [dragOverWave, setDragOverWave] = useState<string | null>(null)
   const [dragOverLeft, setDragOverLeft] = useState(false)
+  // 拖拽进行中：拖起订单卡即置真，落下/结束置假。用于给锁定/已出发的车盖「不可拖入」遮罩，
+  // 让「拖不进去」有明确原因，而不是浏览器静默拒绝（dropEffect='none' 时 drop 事件不触发）。
+  const [dragging, setDragging] = useState(false)
   // ② 调度交互：先选司机,右侧只显示选中的;AM/PM 可折叠;"确定"=收工清场
   const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set())
   const [amCollapsed, setAmCollapsed] = useState(false)
@@ -139,9 +142,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const selAmSlots = amSlots.filter(s => selectedDrivers.has(s.driverName))
   const selPmSlots = pmSlots.filter(s => selectedDrivers.has(s.driverName))
   const allSelected = driverNames.length > 0 && selectedDrivers.size === driverNames.length
-  // 「全员出发」只统计已「分配完成」的车：确认出发是不可逆动作，未审核完（未点分配完成）的车不该被批量发走
-  const amPendingCount = selAmSlots.filter(s => { const w = waveForSlot(s.id); return w && waveStage(w) === 'assignment_done' }).length
-  const pmPendingCount = selPmSlots.filter(s => { const w = waveForSlot(s.id); return w && waveStage(w) === 'assignment_done' }).length
 
   function toggleDriver(name: string) {
     setSelectedDrivers(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
@@ -247,29 +247,16 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     } catch (e) { toast.error(e instanceof Error ? e.message : '操作失败'); load() }
   }
 
-  async function handleBatchDepart(time: 'am' | 'pm') {
-    const slotsForTime = time === 'am' ? selAmSlots : selPmSlots
-    const pendingWaves = slotsForTime
-      .map(s => waveForSlot(s.id))
-      .filter((w): w is Wave => !!w && waveStage(w) === 'assignment_done')
-    if (pendingWaves.length === 0) return
-    try {
-      await Promise.all(pendingWaves.map(w => apiPut(`/api/waves/${w.id}/dispatch`, { date })))
-      toast.success(`已确认 ${pendingWaves.length} 个批次出发`)
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '批次出发失败')
-    }
-  }
-
   function startDrag(e: React.DragEvent, orderId: string, sourceWaveId: string | null) {
     e.dataTransfer.setData('text/plain', orderId)
     e.dataTransfer.setData(SRC, sourceWaveId ?? '')
     e.dataTransfer.effectAllowed = 'move'
+    setDragging(true)
   }
   function dropToWave(e: React.DragEvent, waveId: string) {
     e.preventDefault()
     setDragOverWave(null)
+    setDragging(false)
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
     if (!orderId || src === waveId) return
@@ -285,6 +272,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   function dropToLeft(e: React.DragEvent) {
     e.preventDefault()
     setDragOverLeft(false)
+    setDragging(false)
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
     if (!orderId || !src) return
@@ -306,14 +294,15 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const timeCls = slot.timeOfDay === 'am' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
     const timeText = slot.timeOfDay === 'am' ? '上午' : '下午'
 
-    if (!wave || wave.completedAt) {
+    if (!wave) return null
+
+    if (wave.completedAt) {
       return (
         <div className="bg-gray-50 border border-dashed rounded-xl p-3 text-xs text-gray-400" style={{ borderColor: '#d1d5db' }}>
           <div className="font-semibold text-gray-600 flex items-center gap-1.5">
             <Avatar name={slot.driverName} /> {slot.driverName}
             <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${timeCls}`}>{timeText}</span>
           </div>
-          <div className="text-center py-8">{!wave ? `批次 ${slot.batchNum} · 未生成` : '✅ 已完成配送'}</div>
         </div>
       )
     }
@@ -351,14 +340,27 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       )
     }
 
+    // 拖拽进行中且本车不可接收(锁定/已出发)时盖一层遮罩，明确告诉调度员"为什么拖不进去"
+    const blockDrop = dragging && (locked || dispatched)
+
     return (
       <div
-        className={`${dispatched ? 'bg-gray-50' : 'bg-white'} border rounded-xl flex flex-col max-h-[600px]`}
+        className={`${dispatched ? 'bg-gray-50' : 'bg-white'} border rounded-xl flex flex-col max-h-[600px] relative`}
         style={{ borderColor: over ? PURPLE : (dispatched ? '#bfdbfe' : '#e5e7eb'), boxShadow: over ? `0 0 0 2px ${PURPLE}33` : undefined }}
         onDragOver={e => { e.preventDefault(); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverWave(wave.id) }}
         onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverWave(p => p === wave.id ? null : p) }}
         onDrop={e => dropToWave(e, wave.id)}
       >
+        {blockDrop && (
+          <div
+            className="absolute inset-0 z-10 rounded-xl flex items-center justify-center pointer-events-none"
+            style={{ background: 'rgba(107,114,128,0.55)', backdropFilter: 'grayscale(1)' }}
+          >
+            <span className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow" style={{ background: locked ? '#b45309' : '#1d4ed8' }}>
+              {locked ? '🔒 已锁定，不能拖入（请到打印中心解锁）' : '🚚 已出发，不能再分配'}
+            </span>
+          </div>
+        )}
         <div className="p-2.5 border-b rounded-t-xl" style={{ borderColor: '#e5e7eb' }}>
           <div className="flex items-center justify-between">
             <span className="font-bold text-[13px] flex items-center gap-1.5">
@@ -400,6 +402,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               key={o.id}
               draggable={!dispatched && !locked}
               onDragStart={e => { if (dispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
+              onDragEnd={() => setDragging(false)}
               onClick={() => openOrder(o.id)}
               className={`border rounded-lg px-2 py-1.5 bg-white text-xs hover:border-purple-300 ${dispatched || locked ? 'cursor-pointer' : 'cursor-grab'}`}
               style={{ borderColor: '#eee' }}
@@ -533,6 +536,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   key={o.id}
                   draggable
                   onDragStart={e => startDrag(e, o.id, null)}
+                  onDragEnd={() => setDragging(false)}
                   onClick={() => openOrder(o.id)}
                   className="border rounded-lg p-2 bg-white cursor-grab text-xs hover:border-amber-400"
                   style={{ borderColor: '#e5e7eb' }}
@@ -552,7 +556,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               </div>
             ) : (
               <>
-                <GroupTitle time="am" count={selAmSlots.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} pendingCount={amPendingCount} onBatchDepart={() => handleBatchDepart('am')} />
+                <GroupTitle time="am" count={selAmSlots.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} />
                 {!amCollapsed && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
                     {selAmSlots.map(s => (
@@ -566,7 +570,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                     {selAmSlots.length === 0 && <Empty text="选中司机无上午班" />}
                   </div>
                 )}
-                <GroupTitle time="pm" count={selPmSlots.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} pendingCount={pmPendingCount} onBatchDepart={() => handleBatchDepart('pm')} />
+                <GroupTitle time="pm" count={selPmSlots.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} />
                 {!pmCollapsed && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
                     {selPmSlots.map(s => (
@@ -608,7 +612,7 @@ function Board({ n, l, color, hint, onClick }: { n: number; l: string; color?: s
     </div>
   )
 }
-function GroupTitle({ time, count, collapsed, onToggle, pendingCount, onBatchDepart }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void; pendingCount?: number; onBatchDepart?: () => void }) {
+function GroupTitle({ time, count, collapsed, onToggle }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void }) {
   const am = time === 'am'
   return (
     <div className="flex items-center gap-3 mt-3.5 mb-2">
@@ -617,14 +621,6 @@ function GroupTitle({ time, count, collapsed, onToggle, pendingCount, onBatchDep
         <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${am ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{am ? '上午' : '下午'}</span>
         {am ? '上午班' : '下午班'} <span className="text-xs text-gray-400 font-normal">· {count} 个批次</span>
       </button>
-      {!!onBatchDepart && !!pendingCount && pendingCount > 0 && (
-        <button
-          onClick={onBatchDepart}
-          title="一键把本时段所有「已分配完成」的车确认出发；未分配完成的车不受影响"
-          className="px-3 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90"
-          style={{ background: '#16a34a' }}
-        >🚚 全员出发（{pendingCount}）</button>
-      )}
     </div>
   )
 }

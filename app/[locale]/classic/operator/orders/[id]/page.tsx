@@ -286,6 +286,8 @@ export default function SalesOrderDetailPage() {
   const statusUp = order.status.toUpperCase()
   const isConfirmed = statusUp === 'CONFIRMED'
   const isLocked = statusUp === 'LOCKED' || statusUp === 'CANCELLED'
+  // 已出发及以后:司机归属由调度台管，详情页不可改派(后端亦拒绝)，编辑态司机字段只读
+  const driverLocked = ['IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED'].includes(statusUp)
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing && editLines.length > 0 ? editLines : lines
@@ -487,15 +489,20 @@ export default function SalesOrderDetailPage() {
                   />
                 ) : <div className="text-gray-800">{deliveryDate || '—'}</div>}
               </div>
-              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+              <div className={`flex items-center rounded ${editing && !driverLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Driver</div>
-                {editing ? (
+                {editing && !driverLocked ? (
                   <select value={driverSlotId} onChange={e => { setDriverSlotId(e.target.value); const s = driverSlots.find(x => x.id === e.target.value); setDeliveryBatch(s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : '') }}
                     className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none">
                     <option value="">— unassigned —</option>
                     {driverSlots.map(s => <option key={s.id} value={s.id}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
                   </select>
-                ) : <div style={{ color: PURPLE }}>{(order ? formatDriverSlotFromOrder(order) : deliveryBatch) || '—'}</div>}
+                ) : (
+                  <div className="flex-1">
+                    <span style={{ color: PURPLE }}>{(order ? formatDriverSlotFromOrder(order) : deliveryBatch) || '—'}</span>
+                    {editing && driverLocked && <span className="ml-2 text-xs text-gray-400">已出发，改派请到调度台</span>}
+                  </div>
+                )}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Pricelist</div>

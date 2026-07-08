@@ -1,0 +1,40 @@
+🔎 波次成员 ↔ 订单 deliveryDate 一致性诊断（只读）
+
+波次总数(有 waveDate): 319｜被波次引用的订单: 67
+❗ deliveryDate ≠ waveDate 的错配订单: 29
+
+  波次日 2026-07-03（27 单）:
+    D152165  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #6 Moazzam
+    D152159  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #6 Moazzam
+    D152099  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #6 Moazzam
+    D152103  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #6 Moazzam
+    D152161  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #3 BAO
+    D152164  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #3 BAO
+    D152168  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #3 BAO
+    D152269  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #2 ASHWIN
+    D152267  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-27  波次=2026-07-03 #5 John
+    D151938  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-29  波次=2026-07-03 #5 John
+    OP-260628-005  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-28  波次=2026-07-03 #12 kris tom
+    D152289  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-28  波次=2026-07-03 #12 kris tom
+    D152266  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-28  波次=2026-07-03 #12 kris tom
+    D152163  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #12 kris tom
+    D151655  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-21  波次=2026-07-03 #12 kris tom
+    D152268  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #12 kris tom
+    D152135  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #11 john
+    D152132  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #11 john
+    D152169  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #11 john
+    D152073  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-26  波次=2026-07-03 #11 john
+    OP-260628-006  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-28  波次=2026-07-03 #10 hansung
+    D151953  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #10 hansung
+    D151685  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #13 ALI
+    D151649  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #13 ALI
+    D151870  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #13 ALI
+    D151936  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #15 BAO
+    D151645  状态=WAVE_ASSIGNED  订单deliveryDate=NULL  波次=2026-07-03 #15 BAO
+  波次日 2026-07-04（2 单）:
+    D152292  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-28  波次=2026-07-04 #1 ANDRIUS
+    OP-260628-003  状态=WAVE_ASSIGNED  订单deliveryDate=2026-06-28  波次=2026-07-04 #9 hanhua
+
+可修复(未出发 CONFIRMED/WAVE_ASSIGNED 且不歧义): 29｜跳过(已出发/歧义): 0
+
+只读模式，未改动任何数据。确认无误后加 --fix 执行回写。

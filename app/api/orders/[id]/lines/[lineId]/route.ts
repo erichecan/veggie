@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
+import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 
 /**
  * PATCH /api/orders/:id/lines/:lineId
@@ -28,6 +29,7 @@ export async function PATCH(
       if (lockedStatuses.includes(order.status)) {
         return NextResponse.json({ error: '该订单状态不允许修改明细' }, { status: 403 })
       }
+      await assertOrderNotPickLocked(id)
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },
@@ -91,6 +93,9 @@ export async function PATCH(
 
       return NextResponse.json({ ok: true })
     } catch (e) {
+      if (e instanceof WavePickLockedError) {
+        return NextResponse.json({ error: e.message }, { status: 409 })
+      }
       console.error('[PATCH order line]', e)
       return NextResponse.json(
         { error: e instanceof Error ? e.message : '修改失败' },
@@ -125,6 +130,7 @@ export async function DELETE(
       if (lockedStatuses.includes(order.status)) {
         return NextResponse.json({ error: '该订单状态不允许修改明细' }, { status: 403 })
       }
+      await assertOrderNotPickLocked(id)
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },
@@ -169,6 +175,9 @@ export async function DELETE(
 
       return NextResponse.json({ ok: true })
     } catch (e) {
+      if (e instanceof WavePickLockedError) {
+        return NextResponse.json({ error: e.message }, { status: 409 })
+      }
       console.error('[DELETE order line]', e)
       return NextResponse.json(
         { error: e instanceof Error ? e.message : '删除失败' },

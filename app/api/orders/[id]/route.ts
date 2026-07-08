@@ -10,6 +10,7 @@ import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, get
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
+import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
@@ -113,6 +114,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           { error: `${orderBefore.status} 状态的订单不可修改` },
           { status: 409 },
         )
+      }
+
+      // ── 已出发及以后(IN_DELIVERY/COMPLETED/LOCKED/CANCELLED)订单禁止改派司机 ──
+      // 调度归属真相在 wave,这些订单的 wave 已锁定/出发。若放行:order.driverSlotId 写脏值,
+      // 而 wave 同步(assignOrderToWave)被 pick-lock 挡回并静默吞掉,造成显示/编辑分叉且误报"已保存"。
+      // 要改派须走调度台重排。比较基准取 wave 派生真值(非 order.driverSlotId,后者可能是历史脏值)。
+      const driverLockedStatuses = new Set(['IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED'])
+      if (driverSlotId !== undefined && driverLockedStatuses.has(String(orderBefore.status).toUpperCase())) {
+        const waveSlot = (await getOrderWaveDriverSlotMap([id]))[id] ?? orderBefore.driverSlotId ?? null
+        if ((driverSlotId || null) !== waveSlot) {
+          return NextResponse.json(
+            { error: `${orderBefore.status} 状态的订单不可改派司机，请到调度台调整` },
+            { status: 409 },
+          )
+        }
+      }
+
+      // ── 拣货锁：订单在已锁定波次里时，禁止改内容(明细/合计)。锁定=拣货作业进行中，
+      // 不许再动这张单。仅拦内容编辑，不拦纯状态流转(确认出发/完成/撤回走其它路径需放行)。
+      if (Array.isArray(linesPayload) || totalAmountPayload !== undefined) {
+        await assertOrderNotPickLocked(id)
       }
 
       // ── P0-1: CONFIRMED/WAVE_ASSIGNED 状态下编辑行需要计算库存差额（已扣过库存）──
@@ -380,9 +402,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       })
 
       // SSOT(P0-1): 销售单改批次同步到 wave.orderIds(与调度台拖拽同一写入逻辑,双向一致)
+      // wave 同步失败(如目标波次已锁定/出发)不再静默吞掉:回滚刚写入的 order.driverSlotId
+      // 避免与 wave 分叉,并让保存整体失败(前端收到 409,不再误报"已保存")。
       if (driverSlotId !== undefined) {
-        if (driverSlotId) await assignOrderToWave(id, String(driverSlotId)).catch((e) => console.error('[assignOrderToWave]', e))
-        else await removeOrderFromAllWaves(id).catch((e) => console.error('[removeOrderFromAllWaves]', e))
+        try {
+          if (driverSlotId) await assignOrderToWave(id, String(driverSlotId))
+          else await removeOrderFromAllWaves(id)
+        } catch (e) {
+          console.error('[wave sync failed → rollback driverSlotId]', e)
+          await prisma.order.update({ where: { id }, data: { driverSlotId: orderBefore.driverSlotId } }).catch(() => {})
+          return NextResponse.json(
+            { error: '司机分配失败：目标波次可能已锁定或出发，请到调度台调整' },
+            { status: 409 },
+          )
+        }
       }
 
       // 撤回报价单(PENDING)/取消(CANCELLED):订单退出配送流程,同步移出所属波次,
@@ -684,6 +717,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
       return NextResponse.json(serializeApi(order))
     } catch (error) {
+      if (error instanceof WavePickLockedError) {
+        return NextResponse.json({ error: error.message }, { status: 409 })
+      }
       console.error('[PUT /api/orders/[id]]', error)
       return NextResponse.json({ error: '更新订单失败' }, { status: 500 })
     }

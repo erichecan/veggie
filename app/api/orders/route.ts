@@ -141,15 +141,15 @@ export async function GET(req: Request) {
     if (fProduct)  facetAnd.push({ lines: { some: { productName: like(fProduct) } } })
     if (fDriver)   facetAnd.push({ driverSlot: { driverName: like(fDriver) } })
 
-    // 时间快捷筛选(Today/This Week…)固定按下单时间 createdAt，与交货日期列筛选(deliveryDate)
-    // 互不干扰：走独立的 createdFrom/createdTo，放进 AND 数组，避免覆盖 where.createdAt。
-    const createdFrom = searchParams.get('createdFrom')
-    const createdTo = searchParams.get('createdTo')
-    if (createdFrom || createdTo) {
+    // 时间快捷筛选(Today/This Week…)按交货日期 deliveryDate(与销售单第二列/列筛口径一致)。
+    // 走独立的 deliveryFrom/deliveryTo 放进 AND 数组，与交货日期列筛(where.deliveryDate)取交集、互不覆盖。
+    const deliveryFrom = searchParams.get('deliveryFrom')
+    const deliveryTo = searchParams.get('deliveryTo')
+    if (deliveryFrom || deliveryTo) {
       const range: Record<string, Date> = {}
-      if (createdFrom) range.gte = new Date(createdFrom + 'T00:00:00Z')
-      if (createdTo) range.lte = new Date(createdTo + 'T23:59:59Z')
-      facetAnd.push({ createdAt: range })
+      if (deliveryFrom) range.gte = new Date(deliveryFrom + 'T00:00:00Z')
+      if (deliveryTo) range.lte = new Date(deliveryTo + 'T23:59:59Z')
+      facetAnd.push({ deliveryDate: range })
     }
     if (facetAnd.length > 0) where.AND = facetAnd
 

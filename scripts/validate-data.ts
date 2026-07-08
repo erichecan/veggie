@@ -146,16 +146,26 @@ async function main(): Promise<void> {
     record('借贷平衡  Σdebit == Σcredit', bad, entries.length, ex)
   }
 
-  // 6. 状态机自洽
+  // 6. 状态机自洽（仅本系统产生的完成单）
+  //    本系统订单走到 COMPLETED 时代码回填 deliveredQty=orderedQty，故此不变量成立。
+  //    但 Odoo 导入的 LOCKED 历史单不走本系统状态机：其 deliveredQty 是 Odoo 真实
+  //    qty_delivered（合法存在部分交付/未交付，且按订单量开票），强制 ==orderedQty
+  //    会篡改真实历史，故豁免 externalRef 以 __export__.sale_order 开头的历史导入单。
   {
+    const EXCLUDE_ODOO = `COALESCE(o."externalRef", '') NOT LIKE '\\_\\_export\\_\\_.sale\\_order%' ESCAPE '\\'`
     const rows = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
       `SELECT COUNT(*)::bigint AS cnt FROM "OrderLine" ol
        JOIN "Order" o ON o.id = ol."orderId"
-       WHERE o.status IN ('COMPLETED','LOCKED') AND ol."deliveredQty" <> ol."orderedQty"`,
+       WHERE o.status IN ('COMPLETED','LOCKED') AND ol."deliveredQty" <> ol."orderedQty"
+         AND ${EXCLUDE_ODOO}`,
     )
     const bad = Number(rows[0]?.cnt ?? 0)
-    const tot = await prisma.order.count({ where: { status: { in: ['COMPLETED', 'LOCKED'] } } })
-    record('状态机自洽  完成单 deliveredQty == orderedQty', bad, tot, bad ? [`${bad} 行不一致`] : [])
+    const totRows = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+      `SELECT COUNT(*)::bigint AS cnt FROM "Order" o
+       WHERE o.status IN ('COMPLETED','LOCKED') AND ${EXCLUDE_ODOO}`,
+    )
+    const tot = Number(totRows[0]?.cnt ?? 0)
+    record('状态机自洽  完成单 deliveredQty == orderedQty（本系统单）', bad, tot, bad ? [`${bad} 行不一致`] : [])
   }
 
   // 7. 对账闭环

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { resolveCommissionPrice } from '@/lib/commission'
+import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 
 /**
  * POST /api/orders/:id/lines
@@ -29,6 +30,7 @@ export async function POST(
       if (lockedStatuses.includes(order.status)) {
         return NextResponse.json({ error: '该订单状态不允许修改明细' }, { status: 403 })
       }
+      await assertOrderNotPickLocked(id)
 
       const {
         productId,
@@ -85,6 +87,9 @@ export async function POST(
 
       return NextResponse.json(newLine, { status: 201 })
     } catch (e) {
+      if (e instanceof WavePickLockedError) {
+        return NextResponse.json({ error: e.message }, { status: 409 })
+      }
       console.error('[POST order line]', e)
       return NextResponse.json(
         { error: e instanceof Error ? e.message : '添加失败' },

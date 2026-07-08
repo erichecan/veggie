@@ -452,12 +452,12 @@ export default function ClassicQuotationsPage() {
       result = result.filter(o => getField(o, 'salesUserId') === currentUser.userId)
     }
 
-    // 时间快捷(Today/This Week…) — 按下单时间 createdAt
+    // 时间快捷(Today/This Week…) — 按交货日期 deliveryDate(与销售单口径一致；未排交货日的报价单不计入)
     const timeRange = timeKey ? computeTimeRange(timeKey) : null
     if (timeRange) {
       result = result.filter(o => {
-        const c = (o.createdAt ?? '').slice(0, 10)
-        return c !== '' && c >= timeRange.from && c <= timeRange.to
+        const d = getField(o, 'deliveryDate').slice(0, 10)
+        return d !== '' && d >= timeRange.from && d <= timeRange.to
       })
     }
 

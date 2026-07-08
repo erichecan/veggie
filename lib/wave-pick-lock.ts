@@ -21,3 +21,16 @@ export async function assertWaveNotPickLocked(waveId: string): Promise<void> {
   })
   if (wave?.pickLockedAt) throw new WavePickLockedError(waveId)
 }
+
+/**
+ * 订单维度的拣货锁校验：订单只要落在任一「已锁定」波次里，就禁止改其内容/明细。
+ * 锁定的语义是「拣货作业进行中，不许再动这张单」——不仅不许换车(归属)，也不许改量(内容)。
+ * 用于订单编辑/加行/改量/删行等写接口，与 assertWaveNotPickLocked(改归属) 形成完整闭环。
+ */
+export async function assertOrderNotPickLocked(orderId: string): Promise<void> {
+  const wave = await prisma.pickingWave.findFirst({
+    where: { orderIds: { has: orderId }, pickLockedAt: { not: null } },
+    select: { id: true },
+  })
+  if (wave) throw new WavePickLockedError(wave.id)
+}

@@ -135,9 +135,9 @@ export default function ClassicOrdersPage() {
     applyFacets(params, facets)
     // My Sales Order → 按当前登录用户(业务员)过滤
     if (myActive && currentUser?.userId) params.set('salesUserId', currentUser.userId)
-    // 时间快捷(Today/This Week…) → createdFrom/createdTo(按下单时间)
+    // 时间快捷(Today/This Week…) → deliveryFrom/deliveryTo(按交货日期，与第二列/交货日期列筛口径一致)
     const range = timeKey ? computeTimeRange(timeKey) : null
-    if (range) { params.set('createdFrom', range.from); params.set('createdTo', range.to) }
+    if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     return `/api/orders?${params.toString()}`
   }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, facets, myActive, currentUser, timeKey])
 
