@@ -139,8 +139,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const selAmSlots = amSlots.filter(s => selectedDrivers.has(s.driverName))
   const selPmSlots = pmSlots.filter(s => selectedDrivers.has(s.driverName))
   const allSelected = driverNames.length > 0 && selectedDrivers.size === driverNames.length
-  const amPendingCount = selAmSlots.filter(s => { const w = waveForSlot(s.id); return w && !w.dispatchedAt && w.orderIds.length > 0 }).length
-  const pmPendingCount = selPmSlots.filter(s => { const w = waveForSlot(s.id); return w && !w.dispatchedAt && w.orderIds.length > 0 }).length
+  // 「全员出发」只统计已「分配完成」的车：确认出发是不可逆动作，未审核完（未点分配完成）的车不该被批量发走
+  const amPendingCount = selAmSlots.filter(s => { const w = waveForSlot(s.id); return w && waveStage(w) === 'assignment_done' }).length
+  const pmPendingCount = selPmSlots.filter(s => { const w = waveForSlot(s.id); return w && waveStage(w) === 'assignment_done' }).length
 
   function toggleDriver(name: string) {
     setSelectedDrivers(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
@@ -250,7 +251,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const slotsForTime = time === 'am' ? selAmSlots : selPmSlots
     const pendingWaves = slotsForTime
       .map(s => waveForSlot(s.id))
-      .filter((w): w is Wave => !!w && !w.dispatchedAt && w.orderIds.length > 0)
+      .filter((w): w is Wave => !!w && waveStage(w) === 'assignment_done')
     if (pendingWaves.length === 0) return
     try {
       await Promise.all(pendingWaves.map(w => apiPut(`/api/waves/${w.id}/dispatch`, { date })))
@@ -434,18 +435,12 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               >↩︎ 撤销分配完成</button>
             </div>
           ) : laneOrders.length > 0 ? (
-            <div className="mt-1 flex flex-col gap-1.5">
-              <button
-                onClick={() => markAssignmentDone(wave.id, true)}
-                className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
-                style={{ background: '#875A7B' }}
-              >✅ 分配完成</button>
-              <button
-                onClick={() => dispatchWave(wave.id)}
-                className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
-                style={{ background: '#16a34a' }}
-              >🚚 确认出发（{laneOrders.length}单）</button>
-            </div>
+            // 分配中：只给「分配完成」。确认出发藏到分配完成之后才出现，避免拖拽审核时误发不可逆的车
+            <button
+              onClick={() => markAssignmentDone(wave.id, true)}
+              className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90 w-full"
+              style={{ background: '#875A7B' }}
+            >✅ 分配完成</button>
           ) : null}
         </div>
       </div>
@@ -625,6 +620,7 @@ function GroupTitle({ time, count, collapsed, onToggle, pendingCount, onBatchDep
       {!!onBatchDepart && !!pendingCount && pendingCount > 0 && (
         <button
           onClick={onBatchDepart}
+          title="一键把本时段所有「已分配完成」的车确认出发；未分配完成的车不受影响"
           className="px-3 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90"
           style={{ background: '#16a34a' }}
         >🚚 全员出发（{pendingCount}）</button>
