@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
+import FieldTip from '@/components/ui/FieldTip'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -92,7 +93,8 @@ export default function DriversPage() {
     }
   }
 
-  useEffect(() => { load(); loadDriverUsers() }, [])
+  // 归档数据在挂载时就拉一次:新增撞归档要靠它判断是否「自动复活」并提示
+  useEffect(() => { load(); loadDriverUsers(); loadArchived() }, [])
   useEffect(() => { if (showArchived) loadArchived() }, [showArchived])
 
   function addRow() {
@@ -133,13 +135,37 @@ export default function DriversPage() {
   async function saveRow(idx: number) {
     const row = rows[idx]
     if (!row.driverName.trim()) { toast.error('请填写司机名字'); return }
+    const name = row.driverName.trim()
+    const num = Number(row.batchNum)
+
+    // 新增撞归档:后端会自动「复活」那条归档记录而非新建,先让用户知情确认。
+    // 唯一键是 时段+批次+司机名 三者组合,只有名字相同(时段/批次不同)不算冲突。
+    let revivingFromArchive = false
+    if (!row.id) {
+      const archivedMatch = archivedRows.find(
+        a => a.timeOfDay === row.timeOfDay && a.batchNum === num && a.driverName === name
+      )
+      if (archivedMatch) {
+        revivingFromArchive = true
+        const timeLabel = row.timeOfDay === 'pm' ? '下午' : '上午'
+        let msg = `「${name}」已存在于归档中（${timeLabel} · 批次${num}）。\n继续将恢复这条归档记录（保留其历史行程 / 默认客户关联），而不是新建一条。`
+        // 复活会用当前表单的绑定覆盖原绑定:留空则清除原来绑定的账号,提示用户
+        if (archivedMatch.userId && !row.userId) {
+          const boundName = driverUsers.find(u => u.id === archivedMatch.userId)?.name ?? '原账号'
+          msg += `\n\n⚠️ 该归档司机原绑定系统用户「${boundName}」；你当前未选绑定用户，恢复后将清除原绑定。如需保留请先在下拉里选回该用户。`
+        }
+        msg += `\n\n是否继续恢复？`
+        if (!confirm(msg)) return
+      }
+    }
+
     const key = row.id ?? `new-${idx}`
     setSaving(s => ({ ...s, [key]: true }))
     try {
       const body = {
         timeOfDay: row.timeOfDay,
-        batchNum: Number(row.batchNum),
-        driverName: row.driverName.trim(),
+        batchNum: num,
+        driverName: name,
         userId: row.userId || null,
       }
       if (row.id) {
@@ -154,8 +180,9 @@ export default function DriversPage() {
           ? { id: created.id, timeOfDay: created.timeOfDay, batchNum: String(created.batchNum), driverName: created.driverName, userId: created.userId ?? '', editing: false, dirty: false }
           : r
         ))
+        if (revivingFromArchive) loadArchived() // 复活后从归档集移除,保持匹配数据最新
       }
-      toast.success('已保存')
+      toast.success(revivingFromArchive ? '已从归档恢复该司机' : '已保存')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       toast.error(msg.includes('409') || msg.includes('已存在') || msg.includes('相同时段') ? '该司机已在相同时段和批次中' : '保存失败')
@@ -173,7 +200,7 @@ export default function DriversPage() {
       await apiPut(`/api/driver-slots/${row.id}`, { archived: true })
       setRows(prev => prev.filter((_, i) => i !== idx))
       toast.success('已归档')
-      if (showArchived) loadArchived()
+      loadArchived() // 始终刷新归档集,保证再次添加同名时能触发复活提示
     } catch {
       toast.error('归档失败')
     } finally {
@@ -267,7 +294,10 @@ export default function DriversPage() {
           <button type="button" onClick={() => toggleSort('driverName')} className="flex items-center gap-1 text-left hover:opacity-70">
             司机名字{sortArrow('driverName')}
           </button>
-          <span>绑定系统用户</span>
+          <span className="flex items-center gap-1">
+            绑定系统用户
+            <FieldTip tip="把该批次/司机关联到一个 DRIVER 角色登录账号。派车生成行程单时以此账号为司机身份（Trip.driverId），未来司机端也按它登录查「我的行程」，提成也据此归属。司机名字只是显示快照，身份以此账号为准；不绑不影响打单派车。" />
+          </span>
           <span className="w-32" />
         </div>
 
