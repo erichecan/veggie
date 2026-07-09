@@ -56,9 +56,11 @@ function buildPrintUrl(
   date: string,
   batchKey?: string,
   variant?: PickingVariant,
+  waveIds?: string[],
 ): string {
   const params = new URLSearchParams({ date, fromDate: date })
   if (batchKey) params.set('batchLabel', batchKey)
+  if (waveIds && waveIds.length > 0) params.set('waveIds', waveIds.join(','))
   if (variant && variant !== 'all') params.set('variant', variant)
   return `${prefix}/classic/print/dispatch/${type}?${params.toString()}`
 }
@@ -511,22 +513,26 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
     })
   }, [filteredWaveGroups, sortMode])
 
+  // 顶部「全部打印」跟随筛选：无筛选=整日全部；有筛选=只打屏幕上可见的这批批次（传 waveIds）
+  const isFiltered = driverFilter.length > 0 || timeFilter.length > 0 || batchFilter.length > 0
+  const filteredWaveIds = isFiltered ? batchGroups.map(g => g.waveId) : undefined
+
   async function bulkPrint(type: 'delivery') {
-    window.open(buildPrintUrl(prefix, type, date), '_blank')
+    window.open(buildPrintUrl(prefix, type, date, undefined, undefined, filteredWaveIds), '_blank')
     try {
-      await apiPost('/api/waves/print-log', { date, type, scope: 'bulk', count: batchGroups.length })
+      await apiPost('/api/waves/print-log', { date, type, scope: isFiltered ? 'filtered' : 'bulk', count: batchGroups.length })
       loadLogs()
     } catch { /* 日志失败静默 */ }
   }
 
-  // Feature C：「全部打印拣货单」= 对所有当前可见批次批量上锁，锁定失败的批次不阻断其余批次打印
-  // 分实物/耗材两份，供两个拣货员分开作业
+  // Feature C：「打印拣货单」= 对当前可见批次批量上锁，锁定失败的批次不阻断其余批次打印
+  // 分实物/耗材两份，供两个拣货员分开作业；打印范围与锁定范围一致（跟随筛选）
   async function bulkPrintPicking(variant: 'storable' | 'consumable') {
     const results = await Promise.allSettled(
       batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, { reason: 'print', variant }))
     )
     const failed = results.filter(r => r.status === 'rejected').length
-    window.open(buildPrintUrl(prefix, 'picking', date, undefined, variant), '_blank')
+    window.open(buildPrintUrl(prefix, 'picking', date, undefined, variant, filteredWaveIds), '_blank')
     for (const g of batchGroups) markPrinted(g.batchKey)
     if (failed > 0) toast.error(`${failed} 个批次锁定失败`)
     refresh()
@@ -566,27 +572,36 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {isFiltered && (
+              <span className="text-xs text-[#875A7B] font-medium" title="顶部打印按钮已切换为「仅打印当前筛选结果」">
+                已筛选 · 打印 {batchGroups.length} 批次
+              </span>
+            )}
             <span className="inline-flex rounded overflow-hidden">
               <button
                 onClick={() => bulkPrintPicking('storable')}
-                title="全部批次 · 整箱整袋拣货单"
-                className="px-3 py-1.5 text-xs bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                disabled={batchGroups.length === 0}
+                title={isFiltered ? '当前筛选批次 · 整箱整袋拣货单' : '全部批次 · 整箱整袋拣货单'}
+                className="px-3 py-1.5 text-xs bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:hover:bg-orange-500"
               >
-                全部拣货单 📦 整箱整袋
+                {isFiltered ? '筛选拣货单' : '全部拣货单'} 📦 整箱整袋
               </button>
               <button
                 onClick={() => bulkPrintPicking('consumable')}
-                title="全部批次 · 零散货拣货单"
-                className="px-3 py-1.5 text-xs bg-orange-500 text-white border-l border-orange-300 hover:bg-orange-600 transition-colors"
+                disabled={batchGroups.length === 0}
+                title={isFiltered ? '当前筛选批次 · 零散货拣货单' : '全部批次 · 零散货拣货单'}
+                className="px-3 py-1.5 text-xs bg-orange-500 text-white border-l border-orange-300 hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:hover:bg-orange-500"
               >
                 🧴 零散货
               </button>
             </span>
             <button
               onClick={() => bulkPrint('delivery')}
-              className="px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+              disabled={batchGroups.length === 0}
+              title={isFiltered ? '仅打印当前筛选批次的送货单' : '打印全部批次的送货单'}
+              className="px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:hover:bg-blue-500"
             >
-              全部打印送货单
+              {isFiltered ? '打印筛选送货单' : '全部打印送货单'}
             </button>
           </div>
         </div>

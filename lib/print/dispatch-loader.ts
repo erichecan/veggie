@@ -74,10 +74,16 @@ async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType
   return map
 }
 
-/** 批次选择器：用 DriverSlot id，或回退到批次字符串 "2 pm AFZAAL"；两者皆空 = 整日全部批次 */
+/**
+ * 批次选择器（优先级从高到低）：
+ * - waveIds 非空 → 多批次筛选打印（打印中心筛选后「打印筛选结果」）
+ * - driverSlotId / batchLabel → 单批次
+ * - 三者皆空 → 整日全部批次
+ */
 export interface DispatchSelector {
   driverSlotId?: string | null
   batchLabel?: string | null
+  waveIds?: string[] | null
 }
 
 export async function loadDispatchPrintData(
@@ -85,8 +91,11 @@ export async function loadDispatchPrintData(
   selector: DispatchSelector,
   fromDate?: string,
 ): Promise<TripPrintDataWire | null> {
+  const selectedWaveIds = (selector.waveIds ?? []).filter(Boolean)
+  const multiMode = selectedWaveIds.length > 0
+
   // Resolve batch identity from either the DriverSlot record or the label string
-  let slot = selector.driverSlotId
+  let slot = (!multiMode && selector.driverSlotId)
     ? await prisma.driverSlot.findUnique({ where: { id: selector.driverSlotId } })
     : null
 
@@ -96,7 +105,13 @@ export async function loadDispatchPrintData(
   let slotLabel: string
   let allBatches = false
 
-  if (slot) {
+  if (multiMode) {
+    // 多批次筛选：不解析单一 slot 身份，命名走「筛选批次」
+    batchNum = 0
+    timeOfDay = ''
+    driverName = ''
+    slotLabel = '筛选批次'
+  } else if (slot) {
     batchNum = slot.batchNum
     timeOfDay = slot.timeOfDay
     driverName = slot.driverName
@@ -126,7 +141,21 @@ export async function loadDispatchPrintData(
   // 拖拽调度台只写 wave.orderIds，不回填 Order.driverSlotId，所以必须先查 wave。
   // 见 lib/wave-assign.ts、docs/20260624-data-ownership-audit.md。
   let orders: Awaited<ReturnType<typeof prisma.order.findMany<{ include: { lines: true } }>>> = []
-  if (allBatches) {
+  if (multiMode) {
+    // 筛选打印：只取选中波次的订单（union orderIds），与打印中心屏幕上可见批次一致
+    const waves = await prisma.pickingWave.findMany({
+      where: { id: { in: selectedWaveIds } },
+      select: { orderIds: true },
+    })
+    const ids = [...new Set(waves.flatMap(w => w.orderIds))]
+    orders = ids.length > 0
+      ? await prisma.order.findMany({
+          where: { id: { in: ids }, status: { in: statusFilter } },
+          include: { lines: { orderBy: { sequence: 'asc' } } },
+          orderBy: { restaurantName: 'asc' },
+        })
+      : []
+  } else if (allBatches) {
     // 当天所有波次的订单 ∪ 当天 deliveryDate 的订单（含未分配批次）
     const waves = await prisma.pickingWave.findMany({
       where: { waveDate: dateOnlyUTC(new Date(`${date}T00:00:00.000Z`)) },
@@ -158,7 +187,8 @@ export async function loadDispatchPrintData(
   }
 
   // Fallback: legacy orders without a wave record — match by driverSlotId / deliveryBatch string
-  if (!allBatches && orders.length === 0) {
+  // 多批次筛选模式走精确 wave.orderIds，不套用单批次兜底
+  if (!allBatches && !multiMode && orders.length === 0) {
     const batchMatch = slot
       ? [{ driverSlotId: slot.id }, { deliveryBatch: slotLabel }]
       : [{ deliveryBatch: slotLabel }]
@@ -196,7 +226,7 @@ export async function loadDispatchPrintData(
   if (orders.length === 0) return null
 
   // 截断保护：单批次累积大量历史订单时，避免一次渲染上千页发票
-  const maxOrders = allBatches ? MAX_PRINT_ORDERS_ALL : MAX_PRINT_ORDERS
+  const maxOrders = (allBatches || multiMode) ? MAX_PRINT_ORDERS_ALL : MAX_PRINT_ORDERS
   const totalMatched = orders.length
   const truncated = totalMatched > maxOrders
   if (truncated) orders = orders.slice(0, maxOrders)
@@ -264,8 +294,8 @@ export async function loadDispatchPrintData(
 
   return {
     trip: {
-      id: allBatches ? `dispatch-all-${date}` : `dispatch-${slot?.id ?? slotLabel}-${date}`,
-      name: allBatches ? `全部批次 ${date}` : `${driverName} #${batchNum} ${timeOfDay.toUpperCase()}`,
+      id: multiMode ? `dispatch-filtered-${date}` : allBatches ? `dispatch-all-${date}` : `dispatch-${slot?.id ?? slotLabel}-${date}`,
+      name: multiMode ? `筛选批次 ${date}` : allBatches ? `全部批次 ${date}` : `${driverName} #${batchNum} ${timeOfDay.toUpperCase()}`,
       timeSlot: timeSlotMap[timeOfDay] ?? timeOfDay,
       driverName: driverName,
       departTime: null,

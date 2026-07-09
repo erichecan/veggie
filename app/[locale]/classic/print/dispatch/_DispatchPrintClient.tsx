@@ -35,6 +35,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
   const fromDate = searchParams.get('fromDate')
   const driverSlotId = searchParams.get('driverSlotId')
   const batchLabel = searchParams.get('batchLabel')
+  const waveIds = searchParams.get('waveIds')
   const variant = parsePickingVariant(searchParams.get('variant'))
 
   const [html, setHtml] = useState<string>('')
@@ -52,6 +53,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
         const params = new URLSearchParams({ date: date! })
         if (driverSlotId) params.set('driverSlotId', driverSlotId)
         if (batchLabel) params.set('batchLabel', batchLabel)
+        if (waveIds) params.set('waveIds', waveIds)
         if (fromDate) params.set('fromDate', fromDate)
         const wire = await apiGet<TripPrintDataWire>(
           `/api/orders/dispatch-print-data?${params}`,
@@ -66,7 +68,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
     }
     load()
     return () => { cancelled = true }
-  }, [date, fromDate, driverSlotId, batchLabel, type, variant])
+  }, [date, fromDate, driverSlotId, batchLabel, waveIds, type, variant])
 
   if (error) {
     return (
