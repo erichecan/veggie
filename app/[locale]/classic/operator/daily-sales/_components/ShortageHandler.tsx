@@ -4,8 +4,17 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPatch } from '@/lib/api'
 import type { Order } from '@/lib/types'
+import type { DriverSlotInfo } from '@/lib/driver-slot'
 import { today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
+
+// SSOT：订单归属司机/时段以 PickingWave.orderIds 为准（拖拽调度不回填 Order.driverSlotId），
+// 与配送调度中心、打印中心口径一致；只看 Order.driverSlot 会漏掉只拖拽分配的司机。
+interface Wave {
+  orderIds: string[]
+  driverSlotId: string | null
+  driverName: string | null
+}
 
 interface ProductOption {
   id: string
@@ -46,6 +55,8 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
   const [allProducts, setAllProducts] = useState<ProductOption[]>([])
+  const [slots, setSlots] = useState<DriverSlotInfo[]>([])
+  const [waves, setWaves] = useState<Wave[]>([])
   const [selectedProducts, setSelectedProducts] = useState<ProductOption[]>([])
   const [productQuery, setProductQuery] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
@@ -68,12 +79,16 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     setSavedLineIds(new Set())
     setSaveMsg(null)
     setSelectedDrivers([])
-    apiGet<Order[]>(
-      `/api/orders?include_lines=true&status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&dateField=deliveryDate&fromDate=${date}&toDate=${date}`
-    )
-      .then(d => setOrders(Array.isArray(d) ? d : []))
-      .catch(() => setOrders([]))
-      .finally(() => setLoading(false))
+    Promise.all([
+      apiGet<Order[]>(
+        `/api/orders?include_lines=true&status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&dateField=deliveryDate&fromDate=${date}&toDate=${date}`
+      )
+        .then(d => setOrders(Array.isArray(d) ? d : []))
+        .catch(() => setOrders([])),
+      apiGet<Wave[]>(`/api/waves?date=${date}`)
+        .then(d => setWaves(Array.isArray(d) ? d : []))
+        .catch(() => setWaves([])),
+    ]).finally(() => setLoading(false))
   }, [date])
 
   useEffect(() => { loadOrders() }, [loadOrders])
@@ -88,12 +103,34 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     apiGet<ProductOption[]>('/api/products?limit=500')
       .then(d => setAllProducts(Array.isArray(d) ? d : []))
       .catch(() => setAllProducts([]))
+    apiGet<DriverSlotInfo[]>('/api/driver-slots')
+      .then(d => setSlots(Array.isArray(d) ? d : []))
+      .catch(() => setSlots([]))
   }, [])
+
+  // orderId → 司机/时段（按 wave 归属，SSOT）；覆盖只拖拽分配、未回填 Order.driverSlotId 的订单
+  const orderDriverMap = useMemo(() => {
+    const slotMap = new Map(slots.map(s => [s.id, s]))
+    const m = new Map<string, { driver: string | null; time: string | null }>()
+    for (const w of waves) {
+      const slot = w.driverSlotId ? slotMap.get(w.driverSlotId) : undefined
+      const driver = slot?.driverName ?? w.driverName ?? null
+      const time = slot?.timeOfDay ? slot.timeOfDay.toLowerCase() : null
+      for (const id of w.orderIds) {
+        if (!m.has(id)) m.set(id, { driver, time })
+      }
+    }
+    return m
+  }, [waves, slots])
 
   const allLines: FlatLine[] = useMemo(() => {
     // 同一订单可能有多条含相同商品的行（如重复录入），按 orderId+productId 合并，避免同一订单号在表格中重复出现
     const map = new Map<string, FlatLine>()
     for (const o of orders) {
+      // 司机/时段优先按 wave 归属(SSOT)，回退到 Order.driverSlot(旧数据兜底)
+      const wd = orderDriverMap.get(o.id)
+      const driverName = wd?.driver ?? o.driverSlot?.driverName ?? null
+      const timeOfDay = wd?.time ?? (o.driverSlot?.timeOfDay?.toLowerCase() ?? null)
       for (const l of (o.lines ?? [])) {
         const key = `${o.id}:${l.productId}`
         const existing = map.get(key)
@@ -109,14 +146,14 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
           productId: l.productId,
           productName: l.productName,
           uomName: l.uomName ?? null,
-          driverName: o.driverSlot?.driverName ?? null,
-          timeOfDay: o.driverSlot?.timeOfDay?.toLowerCase() ?? null,
+          driverName,
+          timeOfDay,
           orderedQty: Number(l.orderedQty),
         })
       }
     }
     return Array.from(map.values())
-  }, [orders])
+  }, [orders, orderDriverMap])
 
   // 操作记录里只有订单 id（ActionLog.resourceId），客户名/订单号靠当天订单映射补上，
   // 并把 resourceId 直接当作订单 id 链到订单详情（新标签打开）。
@@ -210,44 +247,50 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     window.open(`${prefix}/classic/print/batch?ids=${orderIds.join(',')}&doc=delivery`, '_blank')
   }
 
-  async function loadHistory() {
+  // 「操作记录」= 缺货处理产生的改量/删行记录，按记录对应订单的 deliveryDate 归到「所选配送日」
+  // （而非按操作发生时间过滤——改动往往在配送日之前几天做，用发生时间会一条都对不上）。
+  const loadHistory = useCallback(async () => {
     setHistoryLoading(true)
     try {
       const res = await apiGet<{ logs: ActionLog[] } | ActionLog[]>('/api/action-logs?resource=order&take=100')
       const logs: ActionLog[] = Array.isArray(res) ? res : (res as { logs: ActionLog[] }).logs ?? []
-      // 只显示缺货处理产生的记录（行数量修改/删行），其余订单操作日志不属于本页
-      const filtered = logs.filter(log =>
-        log.createdAt.startsWith(date) &&
-        (log.detail?.startsWith('修改订单行数量') || log.detail?.startsWith('删除订单行'))
+      const shortageLogs = logs.filter(log =>
+        log.detail?.startsWith('修改订单行数量') || log.detail?.startsWith('删除订单行')
       )
-      setHistory(filtered)
-      // 按记录里的订单 id 补齐订单号+客户名（这些订单可能不在当天缺货列表里）
-      const ids = Array.from(new Set(filtered.map(l => l.resourceId).filter((v): v is string => !!v)))
+      // 拉这些日志对应订单的 deliveryDate + 展示信息，只保留归属所选配送日的记录
+      const ids = Array.from(new Set(shortageLogs.map(l => l.resourceId).filter((v): v is string => !!v)))
+      const info = new Map<string, { customer: string; code: string; deliveryDate: string }>()
       if (ids.length > 0) {
         try {
-          const ords = await apiGet<Array<{ id: string; code?: string | null; restaurantName?: string | null }>>(
+          const ords = await apiGet<Array<{ id: string; code?: string | null; restaurantName?: string | null; deliveryDate?: string | null }>>(
             `/api/orders?ids=${ids.join(',')}`
           )
-          const m = new Map<string, { customer: string; code: string }>()
           for (const o of Array.isArray(ords) ? ords : []) {
-            m.set(o.id, { customer: o.restaurantName ?? '', code: o.code ?? o.id.slice(-6).toUpperCase() })
+            info.set(o.id, {
+              customer: o.restaurantName ?? '',
+              code: o.code ?? o.id.slice(-6).toUpperCase(),
+              deliveryDate: o.deliveryDate ? String(o.deliveryDate).slice(0, 10) : '',
+            })
           }
-          setLogOrderInfo(m)
-        } catch {
-          setLogOrderInfo(new Map())
-        }
-      } else {
-        setLogOrderInfo(new Map())
+        } catch { /* 补齐失败：下方过滤将得到空集 */ }
       }
+      const filtered = shortageLogs.filter(l => l.resourceId && info.get(l.resourceId)?.deliveryDate === date)
+      setHistory(filtered)
+      setLogOrderInfo(new Map([...info].map(([k, v]) => [k, { customer: v.customer, code: v.code }])))
     } catch {
       setHistory([])
+      setLogOrderInfo(new Map())
     } finally {
       setHistoryLoading(false)
     }
-  }
+  }, [date])
+
+  // 展开时加载；展开状态下切换配送日自动重拉
+  useEffect(() => {
+    if (historyOpen) loadHistory()
+  }, [historyOpen, loadHistory])
 
   function toggleHistory() {
-    if (!historyOpen) loadHistory()
     setHistoryOpen(prev => !prev)
   }
 
@@ -443,7 +486,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
           onClick={toggleHistory}
           className="w-full px-4 py-3 text-left flex items-center justify-between text-sm text-gray-700 hover:bg-gray-50 transition-colors"
         >
-          <span className="font-medium">操作记录（今日）</span>
+          <span className="font-medium">操作记录（本配送日）</span>
           <span className="text-gray-400 text-xs">{historyOpen ? '▲ 收起' : '▼ 展开'}</span>
         </button>
         {historyOpen && (
@@ -451,7 +494,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             {historyLoading ? (
               <div className="px-4 py-6 text-center text-xs text-gray-400">加载中...</div>
             ) : history.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-gray-400">今日暂无操作记录</div>
+              <div className="px-4 py-6 text-center text-xs text-gray-400">该配送日暂无缺货改动记录</div>
             ) : (
               <table className="w-full text-xs">
                 <thead>
