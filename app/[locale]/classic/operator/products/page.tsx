@@ -235,12 +235,14 @@ export default function ClassicProductsPage() {
     {
       key: 'externalId',
       label: 'ID',
+      filterType: 'text',
       sortable: true,
       render: (v) => <span className="text-xs text-gray-500 font-mono">{v ? String(v) : '—'}</span>,
     },
     {
       key: 'sequence',
       label: 'Sequence',
+      filterType: 'text',
       sortable: true,
       editable: true,
       editType: 'number',
@@ -281,6 +283,7 @@ export default function ClassicProductsPage() {
     {
       key: 'listPrice',
       label: 'Sale Price',
+      filterType: 'text',
       sortable: true,
       editable: true,
       editType: 'number',
@@ -289,9 +292,11 @@ export default function ClassicProductsPage() {
     {
       key: 'customerTaxRate',
       label: 'Customer Taxes',
+      filterType: 'multi-select',
       editable: true,
       editType: 'select',
       editOptions: TAX_OPTIONS,
+      filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : '（空）'),
       render: (v) => (
         <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
           {TAX_LABEL[String(v)] ?? `${(Number(v) * 100).toFixed(0)}%`}
@@ -301,6 +306,7 @@ export default function ClassicProductsPage() {
     {
       key: 'standardPrice',
       label: 'Cost',
+      filterType: 'text',
       sortable: true,
       editable: true,
       editType: 'number',
@@ -309,9 +315,11 @@ export default function ClassicProductsPage() {
     {
       key: 'vendorTaxRate',
       label: 'Vendor Taxes',
+      filterType: 'multi-select',
       editable: true,
       editType: 'select',
       editOptions: [{ value: '', label: '—' }, ...TAX_OPTIONS],
+      filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : '（空）'),
       render: (v) => v != null ? (
         <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
           {TAX_LABEL[String(v)] ?? `${(Number(v) * 100).toFixed(0)}%`}
@@ -321,12 +329,15 @@ export default function ClassicProductsPage() {
     {
       key: 'weight',
       label: 'Weight',
+      filterType: 'text',
       sortable: true,
       editable: true,
       editType: 'number',
       render: (v) => v != null ? <span className="text-xs">{Number(v).toFixed(3)} kg</span> : <span className="text-gray-400">—</span>,
     },
     {
+      // Quantity On Hand 是实时计算值(variantMap 按 productId 聚合，不是 t['id'] 本身)，
+      // 没有稳定的原始字段可供通用文本筛选匹配，故此列不给筛选框(Odoo 原版这一列同样没有)。
       key: 'id',
       label: 'Quantity On Hand',
       render: (_, row) => {
@@ -352,6 +363,7 @@ export default function ClassicProductsPage() {
     {
       key: 'forecastQty',
       label: 'Forecast Quantity',
+      filterType: 'text',
       render: (v) => v != null ? <span>{Number(v).toFixed(2)}</span> : <span className="text-gray-400">0.00</span>,
     },
     {
@@ -388,6 +400,7 @@ export default function ClassicProductsPage() {
     {
       key: 'commissionPrice',
       label: 'Commission Price',
+      filterType: 'text',
       editable: true,
       editType: 'number',
       render: (v) => v != null ? <span>€{Number(v).toFixed(2)}</span> : <span className="text-gray-400">—</span>,
