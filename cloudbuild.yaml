@@ -15,6 +15,9 @@ steps:
   # 迁移生产库（在部署新镜像之前）：从 Secret Manager 取生产库连接串跑 prisma migrate deploy。
   # 幂等；失败则 set -e 中止整个部署，避免"镜像 client 期望新列、生产库还没列"的 ColumnNotFound 500。
   # 加列这类增量变更"先迁移后部署"是安全顺序（旧代码对多出的可空列前向兼容）。
+  # ⚠️ 迁移必须用 Neon 的 direct(非池化)连接:pooler(pgbouncer 事务模式)不支持 migrate 需要的
+  #    会话级 pg_advisory_lock,会 P1002 超时甚至把锁泄漏在复用连接上。去掉 host 里的 -pooler 即为
+  #    direct 端点(真实 1:1 会话,断开即释放锁)。app 运行时仍用 pooler 串(Cloud Run 的 --set-secrets)。
   - name: 'node:20'
     id: migrate-prod-db
     entrypoint: bash
@@ -23,6 +26,8 @@ steps:
       - |
         set -e
         npm ci --prefer-offline --no-audit
+        # $$ 转义:让 Cloud Build 把字面量 ${...} 传给 bash(而非当作替换变量),bash 再对 secretEnv 注入的 DATABASE_URL 做去 -pooler 展开
+        export DATABASE_URL="$${DATABASE_URL/-pooler/}"
         npx prisma migrate deploy
     secretEnv: ['DATABASE_URL']
 
