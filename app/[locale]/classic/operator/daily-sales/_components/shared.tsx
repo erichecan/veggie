@@ -22,10 +22,11 @@ export function fmtWeight(n: number): string {
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
+// 行税前(未税)金额。OrderLine.subtotal 恒 = unitPrice×orderedQty,本身已经是税前快照
+// (SSOT,见 docs/20260701 审计 + lib/order-items.ts orderIncTaxTotal)，直接返回即可——
+// 不能再除以 (1+taxRate)，那样会把已经是税前的金额按税率二次打折，导致界面"未税"数字系统性偏小。
 export function lineUntax(l: { subtotal: number; taxRate?: number | null }): number {
-  const taxRate = Number(l.taxRate ?? 0)
-  const rate = taxRate > 1 ? taxRate / 100 : taxRate
-  return Number(l.subtotal) / (1 + rate)
+  return Number(l.subtotal)
 }
 
 export function toggleValue<T>(arr: T[], v: T): T[] {

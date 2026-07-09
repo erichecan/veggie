@@ -55,10 +55,11 @@ function getDateDOW(d: string) { return new Date(d + 'T00:00:00').getDay() }
 function fmtMoney(n: number) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function fmtWeight(n: number) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }
 
+// 行税前(未税)金额。OrderLine.subtotal 恒 = unitPrice×orderedQty,本身已经是税前快照
+// (SSOT,见 docs/20260701 审计 + lib/order-items.ts orderIncTaxTotal)，直接返回即可——
+// 不能再除以 (1+taxRate)，那样会把已经是税前的金额按税率二次打折，导致界面"未税"数字系统性偏小。
 function lineUntax(l: { subtotal: number; taxRate?: number | null }): number {
-  const taxRate = Number(l.taxRate ?? 0)
-  const rate = taxRate > 1 ? taxRate / 100 : taxRate
-  return Number(l.subtotal) / (1 + rate)
+  return Number(l.subtotal)
 }
 
 function lineWeight(l: BatchLine): number {
@@ -398,7 +399,6 @@ function BatchOrderDetailRow({
                 <th className="px-3 py-1.5 text-right font-medium" style={{ color: '#875A7B' }}>数量</th>
                 <th className="px-3 py-1.5 text-right font-medium" style={{ color: '#875A7B' }}>重量(kg)</th>
                 <th className="px-3 py-1.5 text-right font-medium" style={{ color: '#875A7B' }}>单价</th>
-                <th className="px-3 py-1.5 text-right font-medium" style={{ color: '#875A7B' }}>未税小计</th>
                 <th className="px-3 py-1.5 text-right font-medium" style={{ color: '#875A7B' }}>小计</th>
                 <th className="px-3 py-1.5 w-8" />
               </tr>
@@ -438,7 +438,6 @@ function BatchOrderDetailRow({
                     </td>
                     <td className="px-3 py-1 text-right">{wt > 0 ? fmtWeight(wt) : '—'}</td>
                     <td className="px-3 py-1 text-right">€{fmtMoney(Number(l.unitPrice ?? 0))}</td>
-                    <td className="px-3 py-1 text-right">€{fmtMoney(lineUntax(l))}</td>
                     <td className="px-3 py-1 text-right">€{fmtMoney(Number(l.subtotal ?? 0))}</td>
                     <td className="px-1 py-1 text-center">
                       <button
@@ -456,7 +455,6 @@ function BatchOrderDetailRow({
                   <td className="px-3 py-1 text-right">{it.quantity} {it.uomName ?? ''}</td>
                   <td className="px-3 py-1 text-right">—</td>
                   <td className="px-3 py-1 text-right">€{fmtMoney(Number(it.price ?? 0))}</td>
-                  <td className="px-3 py-1 text-right">—</td>
                   <td className="px-3 py-1 text-right">€{fmtMoney(Number(it.subtotal ?? 0))}</td>
                   <td />
                 </tr>
