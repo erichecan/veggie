@@ -120,7 +120,7 @@ export function generateTripPickingHtml(
     (showStorable ? storableProducts.length : 0) +
     (showConsumable ? consumableProducts.length : 0)
   const variantLabel =
-    variant === 'storable' ? '整箱整袋 STORABLE'
+    variant === 'storable' ? '整箱整袋 STOCKABLE'
     : variant === 'consumable' ? '零散货 CONSUMABLE'
     : ''
 
@@ -128,18 +128,6 @@ export function generateTripPickingHtml(
     if (products.length === 0) return ''
     const rows = products.map((p, i) => {
       const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
-      const breakdown = Array.from(p.byCustomer.values())
-        .sort((a, b) => b.qty - a.qty || a.customerName.localeCompare(b.customerName))
-      const bdRows = breakdown.length >= 2
-        ? breakdown.map(c => `
-      <tr class="${rowClass} row-bd">
-        <td class="col-seq"></td>
-        <td class="col-name bd-name">↳ ${escapeHtml(c.customerName)}</td>
-        <td class="col-qty bd-qty">${fmtQty(c.qty)}</td>
-        <td class="col-uom"></td>
-        <td class="col-check"></td>
-      </tr>`).join('')
-        : ''
       return `
       <tr class="${rowClass}">
         <td class="col-seq">${i + 1}</td>
@@ -150,7 +138,7 @@ export function generateTripPickingHtml(
         <td class="col-qty">${fmtQty(p.totalQty)}</td>
         <td class="col-uom">${escapeHtml(p.uomName)}</td>
         <td class="col-check"></td>
-      </tr>${bdRows}`
+      </tr>`
     }).join('')
 
     return `
@@ -258,7 +246,7 @@ export function generateTripPickingHtml(
     <div class="item"><span class="label">客户数：</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
 
-  ${showStorable ? productTableHtml('整箱整袋 STORABLE', storableProducts, '📦') : ''}
+  ${showStorable ? productTableHtml('整箱整袋 STOCKABLE', storableProducts, '📦') : ''}
   ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableProducts, '🧴') : ''}
 
   <div class="stats">
