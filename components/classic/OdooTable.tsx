@@ -288,6 +288,48 @@ export default function OdooTable<T extends Record<string, unknown>>({
               )
             })}
           </tr>
+          {hasFilters && (
+            <tr style={{ background: '#fff', borderBottom: '1px solid #e0e0e0' }}>
+              {showCheckbox && <td className="w-8 px-2 py-1" />}
+              {columns.map(col => (
+                <td key={`filter-${col.key}`} className="px-2 py-1 align-top">
+                  {col.filterType === 'text' && onColumnFilterChange && (
+                    <input
+                      type="text"
+                      value={columnFilters?.[col.key] ?? ''}
+                      onChange={e => onColumnFilterChange(col.key, e.target.value)}
+                      className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                      style={{ fontSize: '11px' }}
+                    />
+                  )}
+                  {col.filterType === 'date-range' && onColumnFilterChange && (
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '9px' }}>From:</span>
+                        <input
+                          type="date"
+                          value={columnFilters?.[`${col.key}_from`] ?? ''}
+                          onChange={e => onColumnFilterChange(`${col.key}_from`, e.target.value)}
+                          className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                          style={{ fontSize: '10px' }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '9px' }}>To:</span>
+                        <input
+                          type="date"
+                          value={columnFilters?.[`${col.key}_to`] ?? ''}
+                          onChange={e => onColumnFilterChange(`${col.key}_to`, e.target.value)}
+                          className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                          style={{ fontSize: '10px' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </td>
+              ))}
+            </tr>
+          )}
         </thead>
         <tbody>
           {loading && (

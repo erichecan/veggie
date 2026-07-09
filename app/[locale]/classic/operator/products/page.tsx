@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -98,22 +98,33 @@ export default function ClassicProductsPage() {
     }
   }
 
-  // 库存告警筛选时需跨页统计 → 一次性拉全量模板，使徽标数与表格行数一致
+  // 表头列筛选(text/date-range/multi-select)只对已加载到本地的 templates 生效，
+  // 分页模式下默认每页只有 20 条 → 一旦筛选就得跟库存告警筛选一样先拉全量，否则筛选看起来"没反应"。
+  const hasColumnFilters =
+    Object.values(columnFilters).some(v => !!v) ||
+    Object.values(columnMultiFilters).some(vs => (vs?.length ?? 0) > 0)
+
+  // 库存告警筛选/列筛选时需跨页统计或全量匹配 → 一次性拉全量模板
   const ALERT_SIZE = 10000
-  const pageSizeFor = (f: StockAlertFilter) => (f === 'all' ? PAGE_SIZE : ALERT_SIZE)
+  const pageSizeFor = (f: StockAlertFilter, hasFilters: boolean) => (f === 'all' && !hasFilters ? PAGE_SIZE : ALERT_SIZE)
 
   useEffect(() => { loadPage(1, '') }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => loadPage(1, searchInput, pageSizeFor(stockAlertFilter)), 400)
+    const timer = setTimeout(() => loadPage(1, searchInput, pageSizeFor(stockAlertFilter, hasColumnFilters)), 400)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
 
+  // stockAlertFilter 切换 / 列筛选从"无"变"有"(或反过来)时才重新拉取——避免每敲一个字符都
+  // 发请求；一旦全量加载完，后续按字符筛选走 filteredTemplates 的本地过滤，不再触发网络请求。
+  // 用 mountedRef 跳过首次挂载，因为初始加载已由上面那个空依赖 effect 负责。
+  const mountedRef = useRef(false)
   useEffect(() => {
-    loadPage(1, searchInput, pageSizeFor(stockAlertFilter))
+    if (!mountedRef.current) { mountedRef.current = true; return }
+    loadPage(1, searchInput, pageSizeFor(stockAlertFilter, hasColumnFilters))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stockAlertFilter])
+  }, [stockAlertFilter, hasColumnFilters])
 
   // ─── 库存告警计数（来自全量 variantMap，跨页面准确） ───
   const alertCounts = useMemo(() => {
