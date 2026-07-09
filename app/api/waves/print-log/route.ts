@@ -12,7 +12,7 @@ import { writeLog } from '@/lib/action-log'
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as {
     date?: string
-    type?: 'delivery' | 'summary'
+    type?: 'delivery' | 'summary' | 'sales'
     scope?: 'batch' | 'bulk'
     batchLabel?: string
     waveId?: string
@@ -20,11 +20,11 @@ export async function POST(req: Request) {
   }
   return withAuth(req, async (user) => {
     const { date, type, scope, batchLabel, waveId, count } = body
-    if (!date || (type !== 'delivery' && type !== 'summary')) {
+    if (!date || (type !== 'delivery' && type !== 'summary' && type !== 'sales')) {
       return NextResponse.json({ error: '参数不完整' }, { status: 400 })
     }
 
-    const typeLabel = type === 'delivery' ? '送货单' : '汇总单'
+    const typeLabel = type === 'delivery' ? '送货单' : type === 'sales' ? '销售单' : '汇总单'
     const detail = scope === 'bulk'
       ? `批量打印${typeLabel} · 全部批次（${count ?? 0} 批次） · ${date}`
       : `打印${typeLabel} · ${batchLabel || '未分配'} · ${date}`

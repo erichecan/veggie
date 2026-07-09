@@ -52,7 +52,7 @@ interface ActionLogRow {
 // 拖拽调度不回填,会串到别的司机)。后端按 batchLabel 反查 wave,与卡片显示一致。
 function buildPrintUrl(
   prefix: string,
-  type: 'picking' | 'delivery' | 'summary',
+  type: 'picking' | 'delivery' | 'summary' | 'sales',
   date: string,
   batchKey?: string,
   variant?: PickingVariant,
@@ -90,7 +90,7 @@ function BatchCard({
   const parsed = parseDriverSlotKey(batchKey)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
 
-  async function print(type: 'delivery' | 'summary') {
+  async function print(type: 'delivery' | 'summary' | 'sales') {
     window.open(buildPrintUrl(prefix, type, date, batchKey), '_blank')
     onPrint()
     // 记录打印动作到操作记录（失败不影响打印）
@@ -102,14 +102,20 @@ function BatchCard({
 
   // Feature C：打印拣货单即触发批次锁定（重打=重新上锁）；锁定失败则不打印，避免"打印了但没锁"
   // 拣货单分实物(storable)/耗材(consumable)两份，供两个拣货员分开作业
+  // 先在点击的同一调用栈里同步 window.open('') 占好新标签页，再在锁定成功后导航过去——
+  // 若改成"await 锁定接口再 window.open"，脱离了用户手势的同步上下文，浏览器会静默拦截弹窗，
+  // 页面看起来像"卡住/锁定了"其实是没打开任何东西。
   async function printPicking(variant: 'storable' | 'consumable') {
+    const win = window.open('', '_blank')
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
-      window.open(buildPrintUrl(prefix, 'picking', date, batchKey, variant), '_blank')
+      if (win) win.location.href = buildPrintUrl(prefix, 'picking', date, batchKey, variant)
+      else toast.error('浏览器拦截了弹出窗口，请允许弹窗后重试')
       onPrint()
       onLockChange()
     } catch (e) {
+      win?.close()
       toast.error(e instanceof Error ? e.message : '锁定批次失败，未打印')
     } finally {
       setBusy(false)
@@ -226,6 +232,13 @@ function BatchCard({
               🧴 零散货
             </button>
           </span>
+          <button
+            onClick={() => print('sales')}
+            title="打印该批次销售单(含价格) Sales Order"
+            className="px-2.5 py-1 text-xs rounded border border-purple-400 text-purple-700 hover:bg-purple-50 transition-colors"
+          >
+            🧾 销售单
+          </button>
           <button
             onClick={() => print('delivery')}
             title="打印该批次送货单 Delivery Note"
@@ -519,7 +532,7 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
   const isFiltered = driverFilter.length > 0 || timeFilter.length > 0 || batchFilter.length > 0
   const filteredWaveIds = isFiltered ? batchGroups.map(g => g.waveId) : undefined
 
-  async function bulkPrint(type: 'delivery') {
+  async function bulkPrint(type: 'delivery' | 'sales') {
     window.open(buildPrintUrl(prefix, type, date, undefined, undefined, filteredWaveIds), '_blank')
     try {
       await apiPost('/api/waves/print-log', { date, type, scope: isFiltered ? 'filtered' : 'bulk', count: batchGroups.length })
@@ -529,12 +542,15 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
 
   // Feature C：「打印拣货单」= 对当前可见批次批量上锁，锁定失败的批次不阻断其余批次打印
   // 分实物/耗材两份，供两个拣货员分开作业；打印范围与锁定范围一致（跟随筛选）
+  // 同 printPicking：先同步占好新标签页，锁定结果出来后再导航，避免弹窗被浏览器静默拦截。
   async function bulkPrintPicking(variant: 'storable' | 'consumable') {
+    const win = window.open('', '_blank')
     const results = await Promise.allSettled(
       batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, { reason: 'print', variant }))
     )
     const failed = results.filter(r => r.status === 'rejected').length
-    window.open(buildPrintUrl(prefix, 'picking', date, undefined, variant, filteredWaveIds), '_blank')
+    if (win) win.location.href = buildPrintUrl(prefix, 'picking', date, undefined, variant, filteredWaveIds)
+    else toast.error('浏览器拦截了弹出窗口，请允许弹窗后重试')
     for (const g of batchGroups) markPrinted(g.batchKey)
     if (failed > 0) toast.error(`${failed} 个批次锁定失败`)
     refresh()
@@ -597,6 +613,14 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
                 🧴 零散货
               </button>
             </span>
+            <button
+              onClick={() => bulkPrint('sales')}
+              disabled={batchGroups.length === 0}
+              title={isFiltered ? '仅打印当前筛选批次的销售单(含价格)' : '打印全部批次的销售单(含价格)'}
+              className="px-3 py-1.5 text-xs rounded bg-purple-500 text-white hover:bg-purple-600 transition-colors disabled:opacity-40 disabled:hover:bg-purple-500"
+            >
+              {isFiltered ? '打印筛选销售单' : '全部打印销售单'}
+            </button>
             <button
               onClick={() => bulkPrint('delivery')}
               disabled={batchGroups.length === 0}
