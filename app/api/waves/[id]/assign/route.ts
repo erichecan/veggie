@@ -4,6 +4,7 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
+import { assertWaveNotDispatched, WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -17,6 +18,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const wave = await prisma.pickingWave.findUnique({ where: { id } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
       await assertWaveNotPickLocked(id)
+      await assertWaveNotDispatched(id)
 
       const orders = await prisma.order.findMany({
         where: { id: { in: orderIds } },
@@ -42,6 +44,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       })
       for (const ow of otherWaves) {
         await assertWaveNotPickLocked(ow.id)
+        await assertWaveNotDispatched(ow.id)
       }
 
       // 预先计算各波次的 zones（读操作放事务外），写操作再统一进事务保证原子。
@@ -92,7 +95,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       return NextResponse.json(serializeApi(updated))
     } catch (error) {
-      if (error instanceof WavePickLockedError) {
+      if (error instanceof WavePickLockedError || error instanceof WaveDispatchedError) {
         return NextResponse.json({ error: error.message }, { status: 409 })
       }
       console.error('[PUT /api/waves/[id]/assign]', error)

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { buildZonesByRestaurant } from '@/lib/wave-zones'
 import { assertWaveNotPickLocked } from '@/lib/wave-pick-lock'
+import { assertWaveNotDispatched } from '@/lib/wave-dispatch-lock'
 
 /**
  * 调度单一真相 = PickingWave.orderIds[]（P0-1）
@@ -76,6 +77,7 @@ export async function assignOrderToWave(
   })
   for (const ow of otherWaves) {
     await assertWaveNotPickLocked(ow.id)
+    await assertWaveNotDispatched(ow.id)
     const remaining = (ow.orderIds as string[]).filter((oid) => oid !== orderId)
     const zones = await buildZonesByRestaurant(remaining)
     ops.push(prisma.pickingWave.update({ where: { id: ow.id }, data: { orderIds: remaining, zones } }))

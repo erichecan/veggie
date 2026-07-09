@@ -263,6 +263,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     if (!orderId || src === waveId) return
     if (waves.find(w => w.id === waveId)?.dispatchedAt) { toast.error('该批次已出发，不能再分配'); return }
     if (waves.find(w => w.id === waveId)?.pickLockedAt) { toast.error('该批次拣货中已锁定，请找打印员解锁'); return }
+    if (src && waves.find(w => w.id === src)?.dispatchedAt) { toast.error('原批次已出发，不能移出'); return }
     if (src && waves.find(w => w.id === src)?.pickLockedAt) { toast.error('原批次拣货中已锁定，请找打印员解锁'); return }
     if (src) {
       moveWave(src, waveId, orderId)
@@ -277,6 +278,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
     if (!orderId || !src) return
+    if (waves.find(w => w.id === src)?.dispatchedAt) { toast.error('该批次已出发，不能移出'); return }
     if (waves.find(w => w.id === src)?.pickLockedAt) { toast.error('该批次拣货中已锁定，请找打印员解锁'); return }
     unassignFromWave(src, orderId)
   }
@@ -318,6 +320,18 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     // 关灯期(司机端未上线):在途相关 UI 全部隐藏——在途徽章、出发时间、「标记完成」按钮
     // 都挂在 dispatched 分支下,dispatched 恒 false 即一并关掉。后端 dispatch/complete 逻辑不动。
     const dispatched = DRIVER_APP_ENABLED && stage === 'in_transit'
+    // 不受关灯期开关影响的真实"已出发"判断:只用于拖拽权限(能不能拖)这条数据安全线,
+    // 不用于徽章/灰卡等视觉展示(那些维持关灯期原有简化,是产品决定,不在本次改动范围)。
+    // 否则关灯期会把已出发波次画成普通空闲车,允许拖走里面的订单,波次归属被静默破坏。
+    const reallyDispatched = !!wave.dispatchedAt
+    // 状态徽章的真实兜底:关灯期 dispatched/assignmentDone 两个 gated 分支都不命中时,
+    // 不能再落到 wave.status(建波次时的初始值,dispatch/complete 从不回写,永远是 PENDING)
+    // 撑出"待理货"这个假象——已出发/已完成的波次必须诚实标出来,不受开关影响。
+    const realLabel = wave.completedAt
+      ? { text: '✅ 已完成', cls: 'bg-gray-200 text-gray-600' }
+      : reallyDispatched
+      ? { text: '🚚 已出发', cls: 'bg-blue-100 text-blue-700' }
+      : null
     const assignmentDone = stage === 'assignment_done'
     const locked = !!wave.pickLockedAt
     const over = !dispatched && !locked && dragOverWave === wave.id
@@ -340,6 +354,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto whitespace-nowrap flex-none">🚚 在途</span>
             : assignmentDone
             ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 ml-auto whitespace-nowrap flex-none">✅ 分配完成</span>
+            : realLabel
+            ? <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-semibold ml-auto whitespace-nowrap flex-none ${realLabel.cls}`}>{realLabel.text}</span>
             : <span className="ml-auto text-gray-400 text-[10px] whitespace-nowrap flex-none">▾ 展开</span>}
           {locked && <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 whitespace-nowrap flex-none">🔒</span>}
         </div>
@@ -381,6 +397,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-blue-100 text-blue-700">🚚 在途</span>
               : assignmentDone
               ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-purple-100 text-purple-700">✅ 分配完成</span>
+              : realLabel
+              ? <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${realLabel.cls}`}>{realLabel.text}</span>
               : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${st.cls}`}>{st.text}</span>}
             <button
               onClick={e => { e.stopPropagation(); onToggleCollapse() }}
@@ -389,27 +407,27 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             >▴</button>
           </div>
           <div className="text-[11px] text-gray-500 mt-1">批次{slot.batchNum} · {m.orderCount}单 · {m.itemCount}件 · {m.weight}kg · €{m.amount.toLocaleString()}</div>
-          {dispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
-          <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${st.pct}%`, background: PURPLE }} /></div>
+          {reallyDispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
+          <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${realLabel ? 100 : st.pct}%`, background: PURPLE }} /></div>
         </div>
 
         <div className="p-2 overflow-y-auto flex flex-col gap-1.5">
           {/* 已分配订单 */}
           {laneOrders.length === 0 && (
             <div className="text-center text-[11px] text-gray-400 py-5 border border-dashed rounded-lg" style={{ borderColor: '#e5e7eb' }}>
-              拖订单到此
+              {reallyDispatched ? '🚚 已出发（无订单）' : '拖订单到此'}
             </div>
           )}
           {laneOrders.map(o => (
             <div
               key={o.id}
-              draggable={!dispatched && !locked}
-              onDragStart={e => { if (dispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
+              draggable={!reallyDispatched && !locked}
+              onDragStart={e => { if (reallyDispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
               onDragEnd={() => setDragging(false)}
               onClick={() => openOrder(o.id)}
-              className={`border rounded-lg px-2 py-1.5 bg-white text-xs hover:border-purple-300 ${dispatched || locked ? 'cursor-pointer' : 'cursor-grab'}`}
+              className={`border rounded-lg px-2 py-1.5 bg-white text-xs hover:border-purple-300 ${reallyDispatched || locked ? 'cursor-pointer' : 'cursor-grab'}`}
               style={{ borderColor: '#eee' }}
-              title={dispatched ? '点击查看订单详情（已出发，不可调整）' : locked ? '点击查看订单详情（拣货中已锁定，请找打印员解锁）' : '点击查看订单详情；拖回左侧=移出，拖到别的司机=换车'}
+              title={reallyDispatched ? '点击查看订单详情（已出发，不可调整）' : locked ? '点击查看订单详情（拣货中已锁定，请找打印员解锁）' : '点击查看订单详情；拖回左侧=移出，拖到别的司机=换车'}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium flex items-center gap-1.5 truncate">
@@ -442,8 +460,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 className="rounded-lg py-1 text-[11px] font-medium text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
               >↩︎ 撤销分配完成</button>
             </div>
-          ) : laneOrders.length > 0 ? (
-            // 分配中：只给「分配完成」。确认出发藏到分配完成之后才出现，避免拖拽审核时误发不可逆的车
+          ) : laneOrders.length > 0 && !reallyDispatched ? (
+            // 分配中：只给「分配完成」。确认出发藏到分配完成之后才出现，避免拖拽审核时误发不可逆的车。
+            // reallyDispatched 已经出发的车不会走到这——不然点了会被后端 400 拒绝(已确认出发,
+            // 无法更改分配完成标记),关灯期这里如果不挡,用户会点到一个注定失败的按钮。
             <button
               onClick={() => markAssignmentDone(wave.id, true)}
               className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90 w-full"
