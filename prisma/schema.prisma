@@ -476,6 +476,8 @@ model Order {
   internalNote     String?
   /// 外部备注（打印在报价单/送货单上，客户可见）
   externalNote     String?
+  /// 第三方送货备注（第三方替我们送货时的具体信息，打印在送货单上）
+  deliveryNote     String?
   /// 业务员用户 ID（对应 Odoo sale.order.user_id）
   salesUserId      String?
   salesUser        User?     @relation("OrderSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
