@@ -504,7 +504,7 @@ export default function ClassicOrdersPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ search, activeFilter, groupBy, facets, myActive, timeKey }}
+        favouriteState={{ search, activeFilter, groupBy, facets, myActive, timeKey, colFilters }}
         onFavouriteApply={s => {
           setServerSearch(String(s.search ?? ''))
           setActiveFilter((s.activeFilter as ActiveFilter) ?? 'all')
@@ -512,6 +512,8 @@ export default function ClassicOrdersPage() {
           setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
           setMyActive(Boolean(s.myActive))
           setTimeKey(String(s.timeKey ?? ''))
+          // 列级筛选(含 Delivery Date From/To)也纳入收藏,否则点收藏日期区间不恢复(客户反馈)
+          setColFilters({ ...EMPTY_FILTERS, ...(s.colFilters as Partial<ColFilters> ?? {}) })
         }}
         storageKey="classic_orders_favs"
         total={total}
