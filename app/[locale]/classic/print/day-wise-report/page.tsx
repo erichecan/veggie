@@ -53,6 +53,10 @@ tr.flat-row:nth-child(even) td { background:#f9f9f9; }
 tr.sum-row td { padding:2mm 3mm; font-size:9pt; border-bottom:1px solid #eee; }
 tr.sum-row:nth-child(even) td { background:#f9f9f9; }
 
+/* 商品×星期汇总:完整网格线,便于逐格对照 */
+table.grid th, table.grid td { border:1px solid #cfcfcf; }
+table.grid th { border-color:#2f5a44; }
+
 tr.order-row td { padding:2mm 3mm; font-size:9pt; border-bottom:1px solid #eee; }
 tr.order-row:nth-child(even) td { background:#f9f9f9; }
 
@@ -258,30 +262,27 @@ function buildMultilineHtml(lines: ReportLine[], title: string, meta: string): s
 
 // ─── Summary mode: Product × Day-of-Week (Mon-Sun) like Odoo ────────────────
 function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): string {
-  // Group by product → accumulate qty per day-of-week and total amount
-  const prodMap = new Map<string, { dayQty: number[]; totalQty: number; totalAmt: number }>()
+  // Group by product → accumulate qty per day-of-week（金额列已按需求移除，按总数量降序排）
+  const prodMap = new Map<string, { dayQty: number[]; totalQty: number }>()
 
   for (const l of lines) {
     const dow = dayOfWeek(l.date)
     let entry = prodMap.get(l.productName)
     if (!entry) {
-      entry = { dayQty: [0, 0, 0, 0, 0, 0, 0], totalQty: 0, totalAmt: 0 }
+      entry = { dayQty: [0, 0, 0, 0, 0, 0, 0], totalQty: 0 }
       prodMap.set(l.productName, entry)
     }
     entry.dayQty[dow] += l.qty
     entry.totalQty += l.qty
-    entry.totalAmt += l.amount
   }
 
-  const sorted = Array.from(prodMap.entries()).sort((a, b) => b[1].totalAmt - a[1].totalAmt)
+  const sorted = Array.from(prodMap.entries()).sort((a, b) => b[1].totalQty - a[1].totalQty)
 
   let grandQty = 0
-  let grandAmt = 0
   const grandDayQty = [0, 0, 0, 0, 0, 0, 0]
 
-  const rows = sorted.map(([name, { dayQty, totalQty, totalAmt }]) => {
+  const rows = sorted.map(([name, { dayQty, totalQty }]) => {
     grandQty += totalQty
-    grandAmt += totalAmt
     for (let i = 0; i < 7; i++) grandDayQty[i] += dayQty[i]
 
     const dayCells = dayQty.map(q => `<td class="r">${q > 0 ? q.toFixed(3) : ''}</td>`).join('')
@@ -289,7 +290,6 @@ function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): str
       <td>${name}</td>
       ${dayCells}
       <td class="r" style="font-weight:bold">${totalQty.toFixed(3)}</td>
-      <td class="r" style="font-weight:bold">${eur(totalAmt)}</td>
     </tr>`
   }).join('')
 
@@ -297,12 +297,11 @@ function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): str
   const dayHeaders = DAY_NAMES.map(d => `<th class="r">${d}</th>`).join('')
 
   return wrapHtml(title, meta, `
-    <table>
+    <table class="grid">
       <thead><tr>
         <th>Product</th>
         ${dayHeaders}
         <th class="r">Total Qty</th>
-        <th class="r">Total Amount</th>
       </tr></thead>
       <tbody>
         ${rows}
@@ -310,7 +309,6 @@ function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): str
           <td>Grand Total</td>
           ${grandDayCells}
           <td class="r">${grandQty.toFixed(3)}</td>
-          <td class="r">${eur(grandAmt)}</td>
         </tr>
       </tbody>
     </table>`)
