@@ -6,6 +6,7 @@ import type { Order, Customer } from '@/lib/types'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import JsBarcode from 'jsbarcode'
 import { barcodeValue } from '@/lib/barcode'
+import { docBadge } from '@/lib/print/doc-badge'
 
 function fmtDate(iso?: string | Date | null): string {
   if (!iso) return '—'
@@ -38,6 +39,8 @@ export function buildOrderHtml(
   opts: { pageBreakAfter?: boolean; docType?: 'delivery' | 'sales' } = {}
 ): string {
   const docNoLabel = opts.docType === 'delivery' ? 'Delivery NO' : opts.docType === 'sales' ? 'Sale Order NO' : 'Invoice NO'
+  // 送货单不含价格:隐藏单价/税/金额列与合计(价格在销售订单/发票上体现)
+  const hidePrice = opts.docType === 'delivery'
   const lines = order.lines ?? []
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)
 
@@ -89,9 +92,9 @@ export function buildOrderHtml(
         ${spec ? `<div class="prod-spec">${spec}</div>` : ''}
         ${l.note ? `<div class="prod-note">${l.note}</div>` : ''}
       </td>
-      <td class="col-price">${eur(l.unitPrice)}</td>
+      ${hidePrice ? '' : `<td class="col-price">${eur(l.unitPrice)}</td>
       <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
-      <td class="col-incl">€ ${eur(inclVat)}</td>
+      <td class="col-incl">€ ${eur(inclVat)}</td>`}
     </tr>`
   }).join('')
 
@@ -109,7 +112,8 @@ export function buildOrderHtml(
 <div class="page" style="${pageBreak}">
   <div class="header">
     <div>
-      <div class="company-name">JohnstoneBros</div>
+      ${docBadge(opts.docType === 'delivery' ? 'delivery' : opts.docType === 'sales' ? 'salesOrder' : 'invoice')}
+      <div class="company-name" style="margin-top:6px;">JohnstoneBros</div>
     </div>
     <div class="company-addr">
       141 Slaney Close<br/>
@@ -156,17 +160,17 @@ export function buildOrderHtml(
         <th class="col-qty">QTY</th>
         <th class="col-unit">UNIT</th>
         <th class="col-desc">DESCRIPTION</th>
-        <th class="col-price">PRICE</th>
+        ${hidePrice ? '' : `<th class="col-price">PRICE</th>
         <th class="col-vat">VAT</th>
-        <th class="col-incl">INCL VAT</th>
+        <th class="col-incl">INCL VAT</th>`}
       </tr>
     </thead>
     <tbody>
-      ${linesHtml || '<tr><td colspan="6" style="text-align:center;padding:6mm;color:#999">No items</td></tr>'}
+      ${linesHtml || `<tr><td colspan="${hidePrice ? 3 : 6}" style="text-align:center;padding:6mm;color:#999">No items</td></tr>`}
     </tbody>
   </table>
 
-  <div class="totals-wrap">
+  ${hidePrice ? '' : `<div class="totals-wrap">
     <table class="totals-table">
       <tr>
         <td class="total-label">Subtotal</td>
@@ -178,7 +182,7 @@ export function buildOrderHtml(
         <td class="total-value">€ ${eur(total)}</td>
       </tr>
     </table>
-  </div>
+  </div>`}
 
   ${paymentLabel ? `<div style="margin-top:12px;padding:8px 14px;border-radius:6px;border:2px solid ${paymentBorder};background:${paymentBg};display:inline-block;">
     <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">PAYMENT: ${paymentLabel}</span>

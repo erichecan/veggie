@@ -15,17 +15,13 @@ import {
   type TripCustomer,
   escapeHtml,
 } from './trip-common'
+import { docBadge } from './doc-badge'
 
 function fmtDateUK(v?: string | Date | null): string {
   if (!v) return '—'
   const d = new Date(v as string)
   if (Number.isNaN(d.getTime())) return '—'
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-}
-
-function eur(v: unknown): string {
-  const n = Number(v)
-  return isNaN(n) ? '0.00' : n.toFixed(2)
 }
 
 function buildDeliveryOrderHtml(
@@ -35,24 +31,6 @@ function buildDeliveryOrderHtml(
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
   const lines = order.lines ?? []
-  const hasLines = lines.length > 0
-  const lineSubtotal = lines.reduce((s, l) => s + l.subtotal, 0)
-
-  const vatGroups: Record<string, { base: number; vat: number }> = {}
-  for (const l of lines) {
-    const rate = l.taxRate > 1 ? l.taxRate : l.taxRate * 100
-    const key = rate.toFixed(2)
-    const base = l.subtotal
-    const vatAmt = base * (rate / 100)
-    if (!vatGroups[key]) vatGroups[key] = { base: 0, vat: 0 }
-    vatGroups[key].base += base
-    vatGroups[key].vat += vatAmt
-  }
-  const totalVat = Object.values(vatGroups).reduce((s, g) => s + g.vat, 0)
-  // 无逐行明细（历史迁移订单）时回退到订单总额，避免显示 €0.00
-  const orderTotal = Number(order.totalAmount) || 0
-  const subtotal = hasLines ? lineSubtotal : orderTotal
-  const total = hasLines ? lineSubtotal + totalVat : orderTotal
 
   const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
   const safeCode = orderCode.replace(/['"\\]/g, '')
@@ -64,10 +42,8 @@ function buildDeliveryOrderHtml(
   const customerPhone = customer?.phone ?? order.internalNote ?? ''
   const deliveryDate = fmtDateUK(order.deliveryDate)
 
-  const linesHtml = lines.map((l, i) => {
-    const taxRate = l.taxRate > 1 ? l.taxRate : l.taxRate * 100
-    const inclVat = l.subtotal * (1 + taxRate / 100)
-    return `
+  // 送货单不含价格:只列数量/单位/品名,不显示单价/税/金额(价格在发票上体现)
+  const linesHtml = lines.map((l, i) => `
     <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
       <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
       <td class="col-unit">${escapeHtml((l.uomName ?? '').toUpperCase())}</td>
@@ -76,18 +52,6 @@ function buildDeliveryOrderHtml(
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
-      <td class="col-price">${eur(l.unitPrice)}</td>
-      <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
-      <td class="col-incl">&euro; ${eur(inclVat)}</td>
-    </tr>`
-  }).join('')
-
-  const vatRowsHtml = Object.entries(vatGroups)
-    .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
-    .map(([rate, { base, vat }]) => `
-    <tr>
-      <td class="total-label">VAT ${parseFloat(rate).toFixed(2)}% on &euro; ${eur(base)}</td>
-      <td class="total-value">&euro; ${eur(vat)}</td>
     </tr>`).join('')
 
   const pageBreak = opts.pageBreakAfter ? 'page-break-after: always;' : ''
@@ -96,7 +60,8 @@ function buildDeliveryOrderHtml(
 <div class="page" style="${pageBreak}">
   <div class="header">
     <div>
-      <div class="company-name">JohnstoneBros</div>
+      ${docBadge('delivery')}
+      <div class="company-name" style="margin-top:2mm;">JohnstoneBros</div>
     </div>
     <div class="company-addr">
       141 Slaney Close<br/>
@@ -116,7 +81,7 @@ function buildDeliveryOrderHtml(
         </div>
       </td>
       <td class="barcode-cell">
-        <div class="info-head">Invoice NO</div>
+        <div class="info-head">Delivery NO</div>
         <svg id="bc-${safeCode}" class="barcode-svg"></svg>
         <div class="barcode-code">${escapeHtml(orderCode)}</div>
       </td>
@@ -139,29 +104,13 @@ function buildDeliveryOrderHtml(
         <th class="col-qty">QTY</th>
         <th class="col-unit">UNIT</th>
         <th class="col-desc">DESCRIPTION</th>
-        <th class="col-price">PRICE</th>
-        <th class="col-vat">VAT</th>
-        <th class="col-incl">INCL VAT</th>
       </tr>
     </thead>
     <tbody>
-      ${linesHtml || `<tr><td colspan="6" style="text-align:center;padding:6mm;color:#999">${orderTotal > 0 ? '明细未迁移（仅显示订单总额）— Line items not migrated' : 'No items'}</td></tr>`}
+      ${linesHtml || `<tr><td colspan="3" style="text-align:center;padding:6mm;color:#999">No items</td></tr>`}
     </tbody>
   </table>
 
-  <div class="totals-wrap">
-    <table class="totals-table">
-      <tr>
-        <td class="total-label">Subtotal</td>
-        <td class="total-value">&euro; ${eur(subtotal)}</td>
-      </tr>
-      ${vatRowsHtml}
-      <tr class="total-grand">
-        <td class="total-label">Total</td>
-        <td class="total-value">&euro; ${eur(total)}</td>
-      </tr>
-    </table>
-  </div>
   ${customer?.externalNote ? `<div class="note-box">
     <div class="note-head">客户备注 / Customer Note</div>
     <div class="note-body">${escapeHtml(customer.externalNote)}</div>

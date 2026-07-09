@@ -228,15 +228,17 @@ function BatchCard({
           </span>
           <button
             onClick={() => print('delivery')}
+            title="打印该批次送货单 Delivery Note"
             className="px-2.5 py-1 text-xs rounded border border-blue-400 text-blue-600 hover:bg-blue-50 transition-colors"
           >
-            订单
+            🚚 送货单
           </button>
           <button
             onClick={() => print('summary')}
+            title="打印该批次送货汇总单 Delivery Summary"
             className="px-2.5 py-1 text-xs rounded border border-green-500 text-green-700 hover:bg-green-50 transition-colors"
           >
-            汇总单
+            📋 汇总单
           </button>
         </div>
       </div>

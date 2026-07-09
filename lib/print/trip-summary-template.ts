@@ -9,6 +9,7 @@ import {
   type TripPrintData,
   escapeHtml,
 } from './trip-common'
+import { docBadge } from './doc-badge'
 
 function fmtDateUK(v?: string | null): string {
   if (!v) return ''
@@ -174,6 +175,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 </style>
 </head>
 <body>
+  <div style="margin-bottom:3mm;">${docBadge('deliverySummary')}</div>
   <div class="page-header">
     <div class="left">${now}</div>
     <div class="center">Johnstone Fruit &amp; Veg Ltd — 汇总单</div>

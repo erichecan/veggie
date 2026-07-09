@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
+import { docBadge } from '@/lib/print/doc-badge'
 
 interface EnrichedItem {
   id: string
@@ -252,6 +253,7 @@ export default function PricelistPrintPage() {
 </head>
 <body>
 <div class="page-wrap">
+<div style="margin-bottom:4mm;">${docBadge('pricelist')}</div>
 ${body}
 </div>
 </body>

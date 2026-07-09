@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
+import { docBadge, type DocKind } from '@/lib/print/doc-badge'
 
 type PrintMode = 'day' | 'multiline' | 'summary'
 
@@ -321,6 +322,9 @@ function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): str
 }
 
 function wrapHtml(title: string, meta: string, body: string): string {
+  const badgeKind: DocKind = title.includes('Multi Line') ? 'reportMultiline'
+    : title.includes('Sale Summary') ? 'reportSummary'
+    : 'reportDay'
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -330,6 +334,7 @@ function wrapHtml(title: string, meta: string, body: string): string {
 </head>
 <body>
 <div class="page">
+  <div style="margin-bottom:3mm;">${docBadge(badgeKind)}</div>
   <div class="header">
     <div class="co-name">${COMPANY}</div>
     <div class="co-addr">${COMPANY_ADDR}</div>

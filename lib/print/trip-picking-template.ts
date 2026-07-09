@@ -19,6 +19,7 @@ import {
   type TripPrintData,
   escapeHtml,
 } from './trip-common'
+import { docBadge } from './doc-badge'
 
 function fmtDateUK(v?: string | null): string {
   if (!v) return ''
@@ -244,7 +245,7 @@ export function generateTripPickingHtml(
 </head>
 <body>
   <div class="page-header">
-    <div class="title">拣货单 PICKING LIST${variantLabel ? `<span class="variant-tag">${escapeHtml(variantLabel)}</span>` : ''}</div>
+    ${docBadge('picking', variantLabel ? escapeHtml(variantLabel) : undefined)}
     <div class="meta">
       ${fmtDateUK(new Date().toISOString())}<br/>
       共 ${orders.length} 单 · ${visibleCount} 种商品
