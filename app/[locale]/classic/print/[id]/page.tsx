@@ -82,7 +82,7 @@ export function buildOrderHtml(
     const inclVat = Number(l.subtotal) * (1 + taxRate / 100)
     return `
     <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
-      <td class="col-qty">${Number(l.orderedQty).toFixed(3)}</td>
+      <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
       <td class="col-unit">${uomName.toUpperCase()}</td>
       <td class="col-desc">
         <div class="prod-name">${l.productName}</div>

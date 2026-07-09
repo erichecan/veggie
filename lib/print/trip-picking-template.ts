@@ -31,7 +31,7 @@ function fmtDateUK(v?: string | null): string {
 
 function fmtQty(v: number): string {
   if (v === Math.floor(v)) return String(v)
-  return v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+  return v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
 }
 
 interface CustomerBreakdown {

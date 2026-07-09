@@ -53,8 +53,9 @@ tr.flat-row:nth-child(even) td { background:#f9f9f9; }
 tr.sum-row td { padding:2mm 3mm; font-size:9pt; border-bottom:1px solid #eee; }
 tr.sum-row:nth-child(even) td { background:#f9f9f9; }
 
-/* 商品×星期汇总:完整网格线,便于逐格对照 */
-table.grid th, table.grid td { border:1px solid #cfcfcf; }
+/* 商品×星期汇总:固定列宽(配合 colgroup)确保表头与表体严格对齐 + 完整网格线 */
+table.grid { table-layout:fixed; }
+table.grid th, table.grid td { border:1px solid #cfcfcf; word-wrap:break-word; overflow-wrap:break-word; }
 table.grid th { border-color:#2f5a44; }
 
 tr.order-row td { padding:2mm 3mm; font-size:9pt; border-bottom:1px solid #eee; }
@@ -195,7 +196,7 @@ function buildDayHtml(lines: ReportLine[], title: string, meta: string): string 
       for (const l of custLines) {
         tbody += `<tr class="line-row">
           <td>${l.productName}</td>
-          <td class="r">${l.qty.toFixed(3)}</td>
+          <td class="r">${l.qty.toFixed(2)}</td>
           <td class="r">${eur(l.unitPrice)}</td>
           <td class="r">${eur(l.amount)}</td>
         </tr>`
@@ -206,7 +207,7 @@ function buildDayHtml(lines: ReportLine[], title: string, meta: string): string 
 
     tbody += `<tr class="date-total">
       <td>Total for ${fmtDate(date)}</td>
-      <td class="r">${dateQty.toFixed(3)}</td>
+      <td class="r">${dateQty.toFixed(2)}</td>
       <td></td>
       <td class="r">${eur(dateAmt)}</td>
     </tr>`
@@ -214,7 +215,7 @@ function buildDayHtml(lines: ReportLine[], title: string, meta: string): string 
 
   tbody += `<tr class="grand-total">
     <td>Grand Total</td>
-    <td class="r">${grandQty.toFixed(3)}</td>
+    <td class="r">${grandQty.toFixed(2)}</td>
     <td></td>
     <td class="r">${eur(grandAmt)}</td>
   </tr>`
@@ -238,7 +239,7 @@ function buildMultilineHtml(lines: ReportLine[], title: string, meta: string): s
       <td>${fmtDate(l.date)}</td>
       <td>${l.customerName}</td>
       <td>${l.productName}</td>
-      <td class="r">${l.qty.toFixed(3)}</td>
+      <td class="r">${l.qty.toFixed(2)}</td>
       <td class="r">${eur(l.unitPrice)}</td>
       <td class="r">${eur(l.amount)}</td>
     </tr>`
@@ -285,19 +286,24 @@ function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): str
     grandQty += totalQty
     for (let i = 0; i < 7; i++) grandDayQty[i] += dayQty[i]
 
-    const dayCells = dayQty.map(q => `<td class="r">${q > 0 ? q.toFixed(3) : ''}</td>`).join('')
+    const dayCells = dayQty.map(q => `<td class="r">${q > 0 ? q.toFixed(2) : ''}</td>`).join('')
     return `<tr class="sum-row">
       <td>${name}</td>
       ${dayCells}
-      <td class="r" style="font-weight:bold">${totalQty.toFixed(3)}</td>
+      <td class="r" style="font-weight:bold">${totalQty.toFixed(2)}</td>
     </tr>`
   }).join('')
 
-  const grandDayCells = grandDayQty.map(q => `<td class="r">${q > 0 ? q.toFixed(3) : ''}</td>`).join('')
+  const grandDayCells = grandDayQty.map(q => `<td class="r">${q > 0 ? q.toFixed(2) : ''}</td>`).join('')
   const dayHeaders = DAY_NAMES.map(d => `<th class="r">${d}</th>`).join('')
 
   return wrapHtml(title, meta, `
     <table class="grid">
+      <colgroup>
+        <col style="width:22%" />
+        <col span="7" style="width:9%" />
+        <col style="width:15%" />
+      </colgroup>
       <thead><tr>
         <th>Product</th>
         ${dayHeaders}
@@ -308,7 +314,7 @@ function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): str
         <tr class="grand-total">
           <td>Grand Total</td>
           ${grandDayCells}
-          <td class="r">${grandQty.toFixed(3)}</td>
+          <td class="r">${grandQty.toFixed(2)}</td>
         </tr>
       </tbody>
     </table>`)
@@ -463,7 +469,16 @@ function DayWiseReportInner() {
     )
   }
 
-  return <div dangerouslySetInnerHTML={{ __html: html }} style={{ all: 'unset' }} />
+  // 用 iframe srcDoc 渲染整份文档:dangerouslySetInnerHTML 把完整 <html> 文档塞进 div 会被
+  // fragment 解析弄坏表格布局(table-layout/colgroup 失效致表头表体错位),且注入的 window.print
+  // 脚本不执行。iframe 把它当独立文档解析,表格正常对齐、CSS 生效、自动打印可用。
+  return (
+    <iframe
+      title="报表"
+      srcDoc={html}
+      style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', border: 'none' }}
+    />
+  )
 }
 
 export default function DayWiseReportPage() {

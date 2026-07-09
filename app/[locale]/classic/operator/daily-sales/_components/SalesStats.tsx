@@ -53,7 +53,7 @@ function FragmentRows({ day }: { day: { date: string; dateQty: number; dateAmt: 
           {custLines.map((l, i) => (
             <tr key={i} className="border-b border-gray-50 hover:bg-purple-50/30">
               <td className="px-4 py-1.5 pl-8 text-gray-700">{l.productName}</td>
-              <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{l.qty.toFixed(3)}</td>
+              <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{l.qty.toFixed(2)}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(l.unitPrice)}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(l.amount)}</td>
             </tr>
@@ -62,7 +62,7 @@ function FragmentRows({ day }: { day: { date: string; dateQty: number; dateAmt: 
       ))}
       <tr className="border-b border-gray-200 bg-gray-50 font-medium text-gray-600">
         <td className="px-4 py-1.5">小计 {day.date}</td>
-        <td className="px-4 py-1.5 text-right tabular-nums">{day.dateQty.toFixed(3)}</td>
+        <td className="px-4 py-1.5 text-right tabular-nums">{day.dateQty.toFixed(2)}</td>
         <td />
         <td className="px-4 py-1.5 text-right tabular-nums">{eur(day.dateAmt)}</td>
       </tr>
@@ -560,7 +560,7 @@ ${catsHtml}
                 {groupedReport.map(day => <FragmentRows key={day.date} day={day} />)}
                 <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
                   <td className="px-4 py-2">总计</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(3)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
                 </tr>
@@ -585,7 +585,7 @@ ${catsHtml}
                   <tr key={p.name} className="border-b border-gray-50 hover:bg-purple-50/30">
                     <td className="px-4 py-1.5 text-gray-700">{p.name}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{p.customerCount}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{p.qty.toFixed(3)}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{p.qty.toFixed(2)}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{eur(p.avgPrice)}</td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{eur(p.amount)}</td>
                   </tr>
@@ -593,7 +593,7 @@ ${catsHtml}
                 <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
                   <td className="px-4 py-2">总计</td>
                   <td className="px-4 py-2" />
-                  <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(3)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
                 </tr>
