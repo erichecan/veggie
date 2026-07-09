@@ -8,6 +8,8 @@ type Tab = 'print' | 'shortage' | 'stats'
 
 export default function DailySalesPage() {
   const [tab, setTab] = useState<Tab>('print')
+  // 页头统一刷新：递增 refreshKey → 当前挂载的 Tab 重新拉取数据（保留其日期/筛选）
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const tabCls = (t: Tab) =>
     `px-5 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
@@ -20,7 +22,17 @@ export default function DailySalesPage() {
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200">
         <div className="px-6 pt-5 pb-0">
-          <h1 className="text-lg font-semibold text-gray-900 mb-3">日销售管理中心</h1>
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-lg font-semibold text-gray-900">日销售管理中心</h1>
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
+              style={{ background: '#875A7B' }}
+              title="重新拉取当前标签页的数据"
+            >
+              🔄 刷新
+            </button>
+          </div>
           <div className="flex">
             <button className={tabCls('print')} onClick={() => setTab('print')}>打印中心</button>
             <button className={tabCls('shortage')} onClick={() => setTab('shortage')}>缺货处理</button>
@@ -29,9 +41,9 @@ export default function DailySalesPage() {
         </div>
       </div>
       <div className="px-6 py-6">
-        {tab === 'print' && <PrintCenter />}
-        {tab === 'shortage' && <ShortageHandler />}
-        {tab === 'stats' && <SalesStats />}
+        {tab === 'print' && <PrintCenter refreshKey={refreshKey} />}
+        {tab === 'shortage' && <ShortageHandler refreshKey={refreshKey} />}
+        {tab === 'stats' && <SalesStats refreshKey={refreshKey} />}
       </div>
     </div>
   )

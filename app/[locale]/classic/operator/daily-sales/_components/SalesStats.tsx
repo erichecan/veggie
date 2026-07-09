@@ -1,5 +1,5 @@
 'use client'
-import { Fragment, useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import {
@@ -72,7 +72,7 @@ function FragmentRows({ day }: { day: { date: string; dateQty: number; dateAmt: 
 
 type ViewMode = 'customer' | 'product' | 'category' | 'weekday'
 
-export default function SalesStats() {
+export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
@@ -109,7 +109,7 @@ export default function SalesStats() {
   }, [])
 
   // 唯一的订单请求：只按日期区间拉，其余筛选全部在前端做 → 四种查看方式共用这一份数据
-  useEffect(() => {
+  const loadOrders = useCallback(() => {
     if (!fromDate || !toDate) return
     setOrdersLoading(true)
     apiGet<Order[]>(
@@ -119,6 +119,14 @@ export default function SalesStats() {
       .catch(() => setOrders([]))
       .finally(() => setOrdersLoading(false))
   }, [fromDate, toDate])
+
+  useEffect(() => { loadOrders() }, [loadOrders])
+
+  // 页头「刷新」：跳过首次挂载，之后 refreshKey 变化按当前区间重拉订单
+  useEffect(() => {
+    if (refreshKey === 0) return
+    loadOrders()
+  }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 司机/时段/批次选项：来自司机配置（稳定全集），不依赖当前区间是否已排线
   const batchFilterOptions = useMemo(() => {

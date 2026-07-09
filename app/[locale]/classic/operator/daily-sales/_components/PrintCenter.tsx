@@ -359,7 +359,7 @@ function savePrintedKeys(date: string, keys: Set<string>) {
   }
 }
 
-export default function PrintCenter() {
+export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number }) {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   // 解锁权限的唯一开关：当前先全部放开（能进打印中心的人都可解锁）。
@@ -439,6 +439,12 @@ export default function PrintCenter() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => { loadLogs() }, [loadLogs])
+
+  // 页头「刷新」：跳过首次挂载，之后每次 refreshKey 变化重拉当前日期的批次+日志
+  useEffect(() => {
+    if (refreshKey === 0) return
+    refresh()
+  }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const slotMap = useMemo(() => new Map(slots.map(s => [s.id, s])), [slots])
   const ordersById = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])

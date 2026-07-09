@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPatch } from '@/lib/api'
@@ -38,7 +38,7 @@ interface ActionLog {
   createdAt: string
 }
 
-export default function ShortageHandler() {
+export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: number }) {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
@@ -61,7 +61,7 @@ export default function ShortageHandler() {
   // 不依赖当天缺货订单列表，保证记录里一定能显示是哪个订单、并可点击进详情。
   const [logOrderInfo, setLogOrderInfo] = useState<Map<string, { customer: string; code: string }>>(new Map())
 
-  useEffect(() => {
+  const loadOrders = useCallback(() => {
     if (!date) return
     setLoading(true)
     setNewQtys({})
@@ -75,6 +75,14 @@ export default function ShortageHandler() {
       .catch(() => setOrders([]))
       .finally(() => setLoading(false))
   }, [date])
+
+  useEffect(() => { loadOrders() }, [loadOrders])
+
+  // 页头「刷新」：跳过首次挂载，之后 refreshKey 变化重拉当天缺货订单
+  useEffect(() => {
+    if (refreshKey === 0) return
+    loadOrders()
+  }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     apiGet<ProductOption[]>('/api/products?limit=500')
