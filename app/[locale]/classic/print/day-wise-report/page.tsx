@@ -278,7 +278,8 @@ function buildSummaryHtml(lines: ReportLine[], title: string, meta: string): str
     entry.totalQty += l.qty
   }
 
-  const sorted = Array.from(prodMap.entries()).sort((a, b) => b[1].totalQty - a[1].totalQty)
+  // 按商品名字母顺序 A→Z（a[0] 为 productName）
+  const sorted = Array.from(prodMap.entries()).sort((a, b) => a[0].localeCompare(b[0], 'en'))
 
   let grandQty = 0
   const grandDayQty = [0, 0, 0, 0, 0, 0, 0]
