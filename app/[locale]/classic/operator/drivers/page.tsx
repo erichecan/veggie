@@ -449,6 +449,15 @@ export default function DriversPage() {
         })}
       </div>
 
+      {/* 表格底部快捷新增：长表格时无需滚回顶部工具栏 */}
+      <button
+        onClick={addRow}
+        className="mt-3 w-full py-2 rounded-lg border border-dashed text-sm font-medium transition-colors hover:bg-[#faf5fb]"
+        style={{ borderColor: BORDER, color: PURPLE }}
+      >
+        + 新增司机配置
+      </button>
+
       {/* 归档区域 */}
       <div className="pt-2">
         <button
