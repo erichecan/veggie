@@ -17,6 +17,7 @@
     "db:push": "npx dotenv -e .env.local prisma db push",
     "db:migrate": "npx dotenv -e .env.local prisma migrate deploy",
     "db:migrate:dev": "npx dotenv -e .env.local prisma migrate dev",
+    "db:migrate:test": "npx dotenv -e .env.test prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "npx dotenv -e .env.local prisma studio",
     "images:fetch": "npx tsx --env-file=.env.local scripts/fetch-product-images.ts",

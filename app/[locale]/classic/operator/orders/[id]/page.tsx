@@ -80,6 +80,9 @@ export default function SalesOrderDetailPage() {
   const [printing, setPrinting] = useState(false)
   const [internalNote, setInternalNote] = useState('')
   const [externalNote, setExternalNote] = useState('')
+  const [deliveryNote, setDeliveryNote] = useState('')
+  const [showDeliveryNoteModal, setShowDeliveryNoteModal] = useState(false)
+  const [savingDeliveryNote, setSavingDeliveryNote] = useState(false)
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
   const [deliveryDate, setDeliveryDate] = useState('')
   const [salesUserId, setSalesUserId] = useState('')
@@ -116,6 +119,7 @@ export default function SalesOrderDetailPage() {
       setOrder(ord)
       setInternalNote(ord.internalNote ?? '')
       setExternalNote((ord as unknown as { externalNote?: string }).externalNote ?? '')
+      setDeliveryNote((ord as unknown as { deliveryNote?: string }).deliveryNote ?? '')
       setDeliveryDate(ord.deliveryDate ? new Date(ord.deliveryDate).toISOString().slice(0, 10) : '')
       setSalesUserId((ord as unknown as { salesUserId?: string }).salesUserId ?? '')
       setDeliveryBatch(ord.deliveryBatch ?? '')
@@ -246,6 +250,21 @@ export default function SalesOrderDetailPage() {
       setPrinting(false)
     }
     load().catch(() => {})
+  }
+
+  async function handleSaveDeliveryNote() {
+    if (!order || savingDeliveryNote) return
+    setSavingDeliveryNote(true)
+    try {
+      await apiPut(`/api/orders/${order.id}`, { deliveryNote: deliveryNote || null })
+      toast.success('Delivery Note 已保存')
+      setShowDeliveryNoteModal(false)
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSavingDeliveryNote(false)
+    }
   }
 
   const productRefMap = useMemo(() => {
@@ -752,6 +771,41 @@ export default function SalesOrderDetailPage() {
         {/* Chatter */}
         <OrderChatter orderId={order.id} status={order.status} />
       </div>
+      {showDeliveryNoteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !savingDeliveryNote && setShowDeliveryNoteModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-200">
+              <h3 className="text-base font-semibold text-gray-900">Delivery Note</h3>
+              <p className="text-xs text-gray-500 mt-0.5">记录第三方替我们送货时的具体信息（会打印在送货单上）</p>
+            </div>
+            <div className="px-5 py-4">
+              <textarea
+                value={deliveryNote}
+                onChange={e => setDeliveryNote(e.target.value)}
+                rows={5}
+                placeholder="例如：由 XX 物流代送，联系人 XX，电话 XXX，送货时间 XX…"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#714b67]/40 resize-y"
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeliveryNoteModal(false)}
+                disabled={savingDeliveryNote}
+                className="px-4 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveDeliveryNote}
+                disabled={savingDeliveryNote}
+                className="px-4 py-1.5 bg-[#714b67] text-white rounded text-sm font-medium hover:bg-[#5d3d55] disabled:opacity-40"
+              >
+                {savingDeliveryNote ? '保存中…' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
