@@ -85,6 +85,9 @@ ${bodyHtml}
   document.getElementById('print-ts').textContent =
     ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
+  // 打印在本文档(iframe)自己的脚本里触发，父页面只 postMessage 通知，不直接调用
+  // contentWindow.print()——后者是同步跨窗口调用，会连带卡住父页面的事件循环。
+  window.addEventListener('message', function(e){ if (e.data === 'print' && e.source === window.parent) window.print(); });
   ${preview ? '' : 'window.print();'}
 <\/script>
 </body>
@@ -116,7 +119,7 @@ ${bodyHtml}
       />
       {isPreview && (
         <button
-          onClick={() => iframeRef.current?.contentWindow?.print()}
+          onClick={() => iframeRef.current?.contentWindow?.postMessage('print', '*')}
           style={{
             position: 'fixed', top: 12, right: 12, zIndex: 10,
             padding: '8px 16px', fontSize: 14, fontWeight: 600,

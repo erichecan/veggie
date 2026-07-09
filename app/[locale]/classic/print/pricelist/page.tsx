@@ -256,6 +256,11 @@ export default function PricelistPrintPage() {
 <div style="margin-bottom:4mm;">${docBadge('pricelist')}</div>
 ${body}
 </div>
+<script>
+  // 打印在本文档(iframe)自己的脚本里触发，父页面只 postMessage 通知，不直接调用
+  // contentWindow.print()——后者是同步跨窗口调用，会连带卡住父页面的事件循环。
+  window.addEventListener('message', function(e){ if (e.data === 'print' && e.source === window.parent) window.print(); });
+<\/script>
 </body>
 </html>`)
         setReady(true)
@@ -294,7 +299,7 @@ ${body}
         display: 'flex', alignItems: 'center', gap: '12px',
       }}>
         <button
-          onClick={() => (document.getElementById('print-frame') as HTMLIFrameElement)?.contentWindow?.print()}
+          onClick={() => (document.getElementById('print-frame') as HTMLIFrameElement)?.contentWindow?.postMessage('print', '*')}
           style={{
             background: '#fff', color: '#1a3a2a', border: 'none',
             padding: '6px 18px', borderRadius: '4px', fontWeight: 'bold',
