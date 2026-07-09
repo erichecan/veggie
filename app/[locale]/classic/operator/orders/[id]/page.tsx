@@ -438,11 +438,19 @@ export default function SalesOrderDetailPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
           <div className="flex items-start justify-between">
             <h1 className="text-3xl font-bold text-gray-800">{displayOrderCode(order)}</h1>
-            <div className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100">
-              <span className="text-xl">🚚</span>
-              <div className="text-xs">
-                <div className="font-bold text-gray-800">{deliveryBatch ? 1 : 0}</div>
-                <div className="text-gray-500">Delivery</div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowDeliveryNoteModal(true)}
+                title="记录第三方替我们送货的信息，会打印在送货单上"
+                className={`h-9 px-3 text-sm rounded border ${deliveryNote ? 'border-[#fdba74] bg-[#fff7ed] text-[#9a3412]' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
+                🚚 Delivery Note{deliveryNote ? ' ●' : ''}
+              </button>
+              <div className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100">
+                <span className="text-xl">🚚</span>
+                <div className="text-xs">
+                  <div className="font-bold text-gray-800">{deliveryBatch ? 1 : 0}</div>
+                  <div className="text-gray-500">Delivery</div>
+                </div>
               </div>
             </div>
           </div>

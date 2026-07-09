@@ -15,7 +15,7 @@ import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-l
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
   'confirmationDate', 'deliveryDate', 'invoiceDate', 'quotationDate',
-  'internalNote', 'externalNote', 'pricelistId', 'priceType', 'restaurantName',
+  'internalNote', 'externalNote', 'deliveryNote', 'pricelistId', 'priceType', 'restaurantName',
   'driverSlotId', 'deliveryBatch',
 ]
 
@@ -85,7 +85,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (!orderBefore) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
       // Strip non-schema fields before passing to Prisma
-      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, status, paymentMethod, salesUserId, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
+      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, deliveryNote, status, paymentMethod, salesUserId, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
 
       // Determine new status
       const newStatus = status ? String(status).toUpperCase() : undefined
@@ -156,6 +156,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (quotationDate !== undefined) updateData.quotationDate = quotationDate ? new Date(quotationDate) : null
       if (internalNote !== undefined) updateData.internalNote = internalNote ? String(internalNote).slice(0, 30) : null
       if (externalNote !== undefined) updateData.externalNote = externalNote ? String(externalNote) : null
+      if (deliveryNote !== undefined) updateData.deliveryNote = deliveryNote ? String(deliveryNote) : null
       if (pricelistId !== undefined) updateData.pricelistId = pricelistId ? String(pricelistId) : null
       if (priceType !== undefined) {
         const pt = String(priceType).toLowerCase()

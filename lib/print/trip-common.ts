@@ -62,6 +62,8 @@ export interface TripOrder {
   internalNote: string | null
   /** 订单级外部备注（客户可见，打印在送货单上） */
   externalNote: string | null
+  /** 第三方送货备注（第三方替我们送货时的具体信息，打印在送货单上） */
+  deliveryNote: string | null
   deliveryDate: string | null
   lines: TripLine[]
 }

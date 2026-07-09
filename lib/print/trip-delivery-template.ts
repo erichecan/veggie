@@ -170,6 +170,10 @@ function buildDeliveryOrderHtml(
     <div class="note-head">订单备注 / Order Note</div>
     <div class="note-body">${escapeHtml(order.externalNote)}</div>
   </div>` : ''}
+  ${order.deliveryNote ? `<div class="note-box note-box-delivery">
+    <div class="note-head">🚚 送货备注 / Delivery Note</div>
+    <div class="note-body">${escapeHtml(order.deliveryNote)}</div>
+  </div>` : ''}
 </div>`
 }
 
@@ -209,6 +213,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 .prod-note { color: #b45309; font-size: 8pt; font-style: italic; margin-top: 1px; }
 
 .note-box { margin-top: 4mm; padding: 2.5mm 4mm; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; }
+.note-box-delivery { background: #fff7ed; border-color: #fdba74; }
 .note-head { font-size: 8pt; font-weight: bold; color: #374151; margin-bottom: 1mm; }
 .note-body { font-size: 9pt; color: #111; line-height: 1.5; white-space: pre-wrap; }
 

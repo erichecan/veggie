@@ -270,6 +270,7 @@ export async function loadDispatchPrintData(
     totalAmount: toNum(o.totalAmount),
     internalNote: o.internalNote,
     externalNote: o.externalNote,
+    deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
     deliveryDate: toIso(o.deliveryDate),
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0

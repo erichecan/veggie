@@ -269,6 +269,10 @@ export interface Order {
   priceType?: CustomerPriceType
   /** 内部备注（最多 30 字符） */
   internalNote?: string
+  /** 外部备注（打印在报价单/送货单上，客户可见） */
+  externalNote?: string
+  /** 第三方送货备注（第三方替我们送货时的具体信息，打印在送货单上） */
+  deliveryNote?: string | null
   /** 报价日期 */
   quotationDate?: string
   /** 确认日期 */
