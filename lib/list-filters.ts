@@ -5,7 +5,7 @@
  */
 
 export interface Facet {
-  /** 维度 key：all/code/customer/salesman/product/driver */
+  /** 维度 key：all/code/customer/salesman/product/category/driver */
   key: string
   /** chip 上显示的维度名 */
   label: string
@@ -20,6 +20,7 @@ export const ORDER_FACET_FIELDS: { key: string; label: string }[] = [
   { key: 'customer', label: '客户' },
   { key: 'salesman', label: '销售' },
   { key: 'product',  label: '产品' },
+  { key: 'category', label: '产品类目' },
   { key: 'driver',   label: '司机' },
 ]
 

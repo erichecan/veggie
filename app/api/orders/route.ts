@@ -126,20 +126,28 @@ export async function GET(req: Request) {
       where.lines = { some: { product: { categoryId } } }
     }
 
-    // 分面聚焦搜索(facet)：每个维度一个参数，彼此 AND，可与全局 search / 时间 / My 叠加。
+    // 分面聚焦搜索(facet)：多个维度的 chip 彼此 OR(命中任一即可,如 司机:bao 或 单号:260)，
+    // 整体作为一块再与全局 search / 时间 / My 叠加(AND)。
     // 用 where.AND 数组组合，避免与全局 search 的 where.OR、categoryId 的 where.lines 键冲突。
     const facetAnd: Record<string, unknown>[] = []
+    const facetOr: Record<string, unknown>[] = []
     const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
     const fCode     = searchParams.get('f_code')?.trim()
     const fCustomer = searchParams.get('f_customer')?.trim()
     const fSalesman = searchParams.get('f_salesman')?.trim()
     const fProduct  = searchParams.get('f_product')?.trim()
+    const fCategory = searchParams.get('f_category')?.trim()
     const fDriver   = searchParams.get('f_driver')?.trim()
-    if (fCode)     facetAnd.push({ code: like(fCode) })
-    if (fCustomer) facetAnd.push({ restaurantName: like(fCustomer) })
-    if (fSalesman) facetAnd.push({ salesUser: { name: like(fSalesman) } })
-    if (fProduct)  facetAnd.push({ lines: { some: { productName: like(fProduct) } } })
-    if (fDriver)   facetAnd.push({ driverSlot: { driverName: like(fDriver) } })
+    if (fCode)     facetOr.push({ code: like(fCode) })
+    if (fCustomer) facetOr.push({ restaurantName: like(fCustomer) })
+    if (fSalesman) facetOr.push({ salesUser: { name: like(fSalesman) } })
+    if (fProduct)  facetOr.push({ lines: { some: { productName: like(fProduct) } } })
+    if (fCategory) facetOr.push({ lines: { some: { product: { category: { OR: [
+      { name: like(fCategory) },
+      { nameZh: like(fCategory) },
+    ] } } } } })
+    if (fDriver)   facetOr.push({ driverSlot: { driverName: like(fDriver) } })
+    if (facetOr.length > 0) facetAnd.push(facetOr.length === 1 ? facetOr[0] : { OR: facetOr })
 
     // 时间快捷筛选(Today/This Week…)按交货日期 deliveryDate(与销售单第二列/列筛口径一致)。
     // 走独立的 deliveryFrom/deliveryTo 放进 AND 数组，与交货日期列筛(where.deliveryDate)取交集、互不覆盖。

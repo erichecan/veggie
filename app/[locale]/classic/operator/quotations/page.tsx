@@ -115,11 +115,12 @@ export default function ClassicQuotationsPage() {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabValue>('all')
   const [orderTodayActive, setOrderTodayActive] = useState(false)
-  // 分面搜索 + 快捷筛选(My / 时间)。产品维度需服务端数据，走 productFacetIds 桥接；其余客户端过滤。
+  // 分面搜索 + 快捷筛选(My / 时间)。产品/产品类目维度需服务端数据，走 xxxFacetIds 桥接；其余客户端过滤。
   const [facets, setFacets] = useState<Facet[]>([])
   const [myActive, setMyActive] = useState(false)
   const [timeKey, setTimeKey] = useState('')
   const [productFacetIds, setProductFacetIds] = useState<Set<string> | null>(null)
+  const [categoryFacetIds, setCategoryFacetIds] = useState<Set<string> | null>(null)
   const currentUser = useMemo(() => getSession(), [])
   const [sortField, setSortField] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -270,27 +271,29 @@ export default function ClassicQuotationsPage() {
 
   useEffect(() => { load() }, [])
 
-  // 产品分面走服务端：拉匹配订单 id 集合，与客户端展示数据取交集(见 filtered)。
+  // 产品/产品类目分面走服务端：拉匹配订单 id 集合，与客户端展示数据取交集(见 filtered)。
   // 其余维度(单号/客户/销售/司机)客户端已有数据，无需服务端。
   useEffect(() => {
-    const productVals = facets.filter(f => f.key === 'product').map(f => f.value.trim()).filter(Boolean)
-    if (productVals.length === 0) { setProductFacetIds(null); return }
     let cancelled = false
-    ;(async () => {
+    async function bridge(facetKey: 'product' | 'category', paramName: 'f_product' | 'f_category', setIds: (s: Set<string> | null) => void) {
+      const vals = facets.filter(f => f.key === facetKey).map(f => f.value.trim()).filter(Boolean)
+      if (vals.length === 0) { setIds(null); return }
       try {
-        const sets = await Promise.all(productVals.map(async v => {
-          const params = new URLSearchParams({ status: 'PENDING,CANCELLED', include_lines: 'false', f_product: v, limit: '2000' })
+        const sets = await Promise.all(vals.map(async v => {
+          const params = new URLSearchParams({ status: 'PENDING,CANCELLED', include_lines: 'false', [paramName]: v, limit: '2000' })
           const res = await apiGet<Array<{ id: string }>>(`/api/orders?${params}`)
           return new Set((Array.isArray(res) ? res : []).map(o => o.id))
         }))
         if (cancelled) return
-        // 多个产品条件取交集
+        // 同维度多个条件取交集
         const inter = sets.reduce<Set<string> | null>((acc, s) => acc === null ? s : new Set([...acc].filter(x => s.has(x))), null)
-        setProductFacetIds(inter ?? new Set<string>())
+        setIds(inter ?? new Set<string>())
       } catch {
-        if (!cancelled) setProductFacetIds(new Set<string>())
+        if (!cancelled) setIds(new Set<string>())
       }
-    })()
+    }
+    bridge('product', 'f_product', setProductFacetIds)
+    bridge('category', 'f_category', setCategoryFacetIds)
     return () => { cancelled = true }
   }, [facets])
 
@@ -461,27 +464,37 @@ export default function ClassicQuotationsPage() {
       })
     }
 
-    // 分面聚焦搜索(可叠加 AND)。产品维度用服务端 productFacetIds 交集,其余客户端字段匹配。
-    for (const f of facets) {
-      const v = f.value.trim().toLowerCase()
-      if (!v) continue
-      if (f.key === 'all') {
-        result = result.filter(o =>
-          o.restaurantName.toLowerCase().includes(v) ||
-          (o.code ?? '').toLowerCase().includes(v) ||
-          o.id.toLowerCase().includes(v) ||
-          getField(o, 'salesman').toLowerCase().includes(v))
-      } else if (f.key === 'code') {
-        result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(v))
-      } else if (f.key === 'customer') {
-        result = result.filter(o => o.restaurantName.toLowerCase().includes(v))
-      } else if (f.key === 'salesman') {
-        result = result.filter(o => getField(o, 'salesman').toLowerCase().includes(v))
-      } else if (f.key === 'driver') {
-        result = result.filter(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(v))
-      } else if (f.key === 'product') {
-        const ids = productFacetIds
-        result = ids ? result.filter(o => ids.has(o.id)) : []
+    // 分面聚焦搜索：多个 chip 之间 OR(命中任一即可，如 司机:bao 或 单号:260)。
+    // 产品/产品类目维度用服务端 xxxFacetIds 交集判定,其余客户端字段直接匹配。
+    {
+      const facetPredicates: Array<(o: Order) => boolean> = []
+      for (const f of facets) {
+        const v = f.value.trim().toLowerCase()
+        if (!v) continue
+        if (f.key === 'all') {
+          facetPredicates.push(o =>
+            o.restaurantName.toLowerCase().includes(v) ||
+            (o.code ?? '').toLowerCase().includes(v) ||
+            o.id.toLowerCase().includes(v) ||
+            getField(o, 'salesman').toLowerCase().includes(v))
+        } else if (f.key === 'code') {
+          facetPredicates.push(o => (o.code ?? o.id).toLowerCase().includes(v))
+        } else if (f.key === 'customer') {
+          facetPredicates.push(o => o.restaurantName.toLowerCase().includes(v))
+        } else if (f.key === 'salesman') {
+          facetPredicates.push(o => getField(o, 'salesman').toLowerCase().includes(v))
+        } else if (f.key === 'driver') {
+          facetPredicates.push(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(v))
+        } else if (f.key === 'product') {
+          const ids = productFacetIds
+          facetPredicates.push(o => ids ? ids.has(o.id) : false)
+        } else if (f.key === 'category') {
+          const ids = categoryFacetIds
+          facetPredicates.push(o => ids ? ids.has(o.id) : false)
+        }
+      }
+      if (facetPredicates.length > 0) {
+        result = result.filter(o => facetPredicates.some(p => p(o)))
       }
     }
 
@@ -538,7 +551,7 @@ export default function ClassicQuotationsPage() {
     }
 
     return result
-  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, productFacetIds, currentUser])
+  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, productFacetIds, categoryFacetIds, currentUser])
 
   // ── Group By ─────────────────────────────────────────────────────────────
 
