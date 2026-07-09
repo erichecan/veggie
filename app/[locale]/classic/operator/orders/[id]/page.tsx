@@ -25,19 +25,6 @@ interface AllProduct {
   uomId?: string
 }
 
-function formatDate(iso?: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '—'
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yyyy = d.getFullYear()
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  const ss = String(d.getSeconds()).padStart(2, '0')
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss}`
-}
-
 type Tab = 'lines' | 'optional' | 'automation' | 'other'
 
 interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
@@ -109,8 +96,6 @@ export default function SalesOrderDetailPage() {
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
 
   // P1-5: audit log
-  const [auditLogs, setAuditLogs] = useState<{ id: string; action: string; detail?: string; userName?: string; createdAt: string }[]>([])
-  const [showAuditLog, setShowAuditLog] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -149,7 +134,6 @@ export default function SalesOrderDetailPage() {
           }).catch(() => {})
       }
 
-      apiGet<typeof auditLogs>(`/api/orders/${id}/audit`).then(setAuditLogs).catch(() => {})
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '加载失败')
     } finally {
@@ -158,15 +142,6 @@ export default function SalesOrderDetailPage() {
   }
 
   useEffect(() => { load() }, [id])
-
-  // 操作历史:动作中文标签 + 兜底创建人条目(导入订单可能无 created 审计记录)
-  const ACTION_LABEL: Record<string, string> = { created: '创建', confirmed: '确认', withdrawn: '撤回', cancelled: '取消', updated: '修改' }
-  const displayLogs = useMemo(() => {
-    if (!order) return auditLogs
-    if (auditLogs.some(l => l.action === 'created')) return auditLogs
-    const name = (order as unknown as { createdByName?: string }).createdByName
-    return [...auditLogs, { id: '__created__', action: 'created', userName: name, createdAt: String(order.createdAt) }]
-  }, [auditLogs, order])
 
   useEffect(() => {
     apiGet<AllProduct[]>('/api/products?limit=500').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
@@ -738,42 +713,6 @@ export default function SalesOrderDetailPage() {
               <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{(subtotalExTax + totalTax).toFixed(2)}</span></div>
             </div>
           </div>
-        </div>
-
-        {/* P1-5: Audit Log */}
-        <div className="bg-white rounded-xl border border-gray-200 mb-4">
-          <button
-            onClick={() => setShowAuditLog(!showAuditLog)}
-            className="w-full flex items-center justify-between px-6 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
-          >
-            <span>修改日志 ({displayLogs.length})</span>
-            <span className="text-gray-400">{showAuditLog ? '▲' : '▼'}</span>
-          </button>
-          {showAuditLog && (
-            <div className="border-t border-gray-200 px-6 py-4">
-              {displayLogs.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">暂无修改记录</p>
-              ) : (
-                <div className="space-y-3">
-                  {displayLogs.map(log => (
-                    <div key={log.id} className="flex items-start gap-3 text-sm">
-                      <div className="w-2 h-2 rounded-full bg-purple-400 mt-1.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-800">{log.userName || '系统'}</span>
-                          <span className="text-gray-400 text-xs">{formatDate(log.createdAt)}</span>
-                        </div>
-                        <div className="text-gray-600 mt-0.5">{ACTION_LABEL[log.action] ?? log.action}</div>
-                        {log.detail && (
-                          <pre className="text-xs text-gray-500 mt-1 whitespace-pre-wrap bg-gray-50 rounded p-2">{log.detail}</pre>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Chatter */}
