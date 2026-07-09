@@ -372,7 +372,10 @@ function DayWiseReportInner() {
         if (categoryId) params.set('categoryId', categoryId)
         if (salesUserId) params.set('salesUserId', salesUserId)
 
-        const orders = await apiGet<Order[]>(`/api/orders?${params}`)
+        const allOrders = await apiGet<Order[]>(`/api/orders?${params}`)
+        // 已取消订单不计入销售报表(金额/数量/订单数)。仅本报表口径,不改后端 /api/orders 默认行为。
+        // 运行时 status 为 Prisma 大写枚举(CANCELLED);lib/types 误标为小写,故按字符串比较。
+        const orders = allOrders.filter(o => String(o.status).toUpperCase() !== 'CANCELLED')
 
         const lines: ReportLine[] = []
         for (const order of orders) {
@@ -435,7 +438,9 @@ function DayWiseReportInner() {
           batchNums.length > 0 ? `Batch# ${batchNums.join(', ')}` : '',
         ].filter(Boolean)
         const batchLabel = batchFilterParts.length > 0 ? batchFilterParts.join(' · ') : 'All batches'
-        const meta = `Period: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}  |  ${batchLabel}  |  ${lines.length} lines`
+        // day 模式表格按订单聚合(一单一行),计数用订单数与表格行数一致;其余模式按明细行。
+        const countLabel = mode === 'day' ? `${orders.length} orders` : `${lines.length} lines`
+        const meta = `Period: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}  |  ${batchLabel}  |  ${countLabel}`
 
         const TITLES: Record<PrintMode, string> = {
           day: 'Order Summary Report',
