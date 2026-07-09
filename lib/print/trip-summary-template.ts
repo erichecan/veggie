@@ -1,8 +1,8 @@
 /**
- * Trip 汇总单 — 批次级汇总，含条形码
+ * Trip 汇总单 — 批次级客户清单（一个司机一个时段送哪些客户），按客户名字母序去重排列
  *
- * 列：条形码 | Sale No. | Customer | Amount | Total VAT
- * 底部：总重量、总金额、客户数
+ * 顶部：序号 | 客户名称（去重，不重复列同一客户的多笔订单）
+ * 底部：客户详情（地址/电话/备注），供司机核对
  */
 
 import {
@@ -32,14 +32,8 @@ function fmtTimestamp(v?: string | null): string {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
 }
 
-function fmtAmt(v: number): string {
-  return v.toLocaleString('en-IE', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
-}
-
-const normalizeRate = (r: number) => (r > 1 ? r / 100 : r)
-
 export function generateTripSummaryHtml(data: TripPrintData): string {
-  const { trip, orders } = data
+  const { trip, orders, customers } = data
 
   const teamParts = [
     trip.timeSlot?.toLowerCase() ?? '',
@@ -58,40 +52,37 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     ? deliveryDates.reduce((a, b) => (a > b ? a : b))
     : trip.departTime
 
-  const orderRows = orders.map(o => {
-    let vat = 0
-    let totalWeight = 0
-    for (const l of o.lines) {
-      vat += l.subtotal * normalizeRate(l.taxRate)
-      totalWeight += l.orderedQty
-    }
-    return { order: o, vat, totalWeight }
-  })
+  // 按 customerId 去重(同一客户当天多笔订单只列一次)，按客户名字母序排列
+  const customerIds = [...new Set(orders.map(o => o.customerId))]
+  const customerList = customerIds
+    .map(id => ({
+      id,
+      name: customers.get(id)?.name ?? orders.find(o => o.customerId === id)?.customerName ?? '',
+      customer: customers.get(id),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
 
-  const uniqueCustomers = new Set(orders.map(o => o.customerId)).size
-  const totalVat = orderRows.reduce((s, r) => s + r.vat, 0)
-  const totalAmount = orderRows.reduce((s, r) => s + r.order.totalAmount, 0)
-  const totalWeight = orderRows.reduce((s, r) => s + r.totalWeight, 0)
-
-  const rowsHtml = orderRows.map(({ order: o, vat }) => {
-    const code = o.code ?? o.id.slice(0, 8).toUpperCase()
-    const safeCode = code.replace(/['"\\]/g, '')
-    return `
+  const nameRowsHtml = customerList.map((c, i) => `
     <tr>
-      <td class="bc-cell"><svg id="bc-s-${safeCode}" class="bc-svg"></svg></td>
-      <td>${escapeHtml(code)}</td>
-      <td>${escapeHtml(o.customerName)}</td>
-      <td>${escapeHtml(teamStr)}</td>
-      <td class="num">${fmtAmt(o.totalAmount)}</td>
-      <td class="num">${fmtAmt(vat)}</td>
-    </tr>`
-  }).join('')
+      <td class="col-seq">${i + 1}</td>
+      <td>${escapeHtml(c.name)}</td>
+    </tr>`).join('')
 
-  const barcodeInits = orders.map(o => {
-    const code = o.code ?? o.id.slice(0, 8).toUpperCase()
-    const safeCode = code.replace(/['"\\]/g, '')
-    return `try{JsBarcode('#bc-s-${safeCode}',${JSON.stringify(code)},{format:'CODE128',width:1.2,height:28,displayValue:false,margin:0});}catch(e){}`
-  }).join('\n')
+  // 客户详情放最下面，只列有地址/电话/备注可核对的客户，避免全空行占版面
+  const detailBlocksHtml = customerList.map(c => {
+    const cust = c.customer
+    const addr = cust ? [cust.street, cust.street2, cust.city, cust.zip].filter(Boolean).join(', ') : ''
+    const phone = cust?.phone ?? ''
+    const note = cust?.externalNote ?? ''
+    if (!addr && !phone && !note) return ''
+    return `
+    <div class="detail-block">
+      <div class="detail-name">${escapeHtml(c.name)}</div>
+      ${addr ? `<div class="detail-line">地址：${escapeHtml(addr)}</div>` : ''}
+      ${phone ? `<div class="detail-line">电话：${escapeHtml(phone)}</div>` : ''}
+      ${note ? `<div class="detail-line">备注：${escapeHtml(note)}</div>` : ''}
+    </div>`
+  }).join('')
 
   const now = fmtTimestamp(new Date().toISOString())
 
@@ -142,20 +133,13 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     font-size: 11px;
   }
   table.summary th.num { text-align: right; }
-  table.summary th.bc { text-align: center; width: 120px; }
+  table.summary th.col-seq { text-align: center; width: 40px; }
   table.summary td {
     border: 1px solid #999;
     padding: 3px 8px;
     vertical-align: middle;
   }
-  table.summary td.num { text-align: right; }
-  table.summary td.bc-cell { text-align: center; padding: 2px 4px; }
-  table.summary tr.total-row td {
-    font-weight: 700;
-    border-top: 2px solid #000;
-  }
-
-  .bc-svg { max-width: 110px; height: 24px; display: block; margin: 0 auto; }
+  table.summary td.col-seq { text-align: center; color: #666; }
 
   .stats-row {
     margin-top: 10px;
@@ -167,6 +151,18 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     border-radius: 3px;
   }
   .stats-row .num { font-weight: 700; }
+
+  .detail-section { margin-top: 16px; }
+  .detail-section .detail-title {
+    font-size: 12px;
+    font-weight: 700;
+    border-bottom: 1px solid #000;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+  .detail-block { padding: 4px 0; border-bottom: 1px dashed #ccc; }
+  .detail-block .detail-name { font-weight: 700; font-size: 11px; }
+  .detail-block .detail-line { font-size: 10px; color: #333; margin-top: 1px; }
 
   @media print {
     body { padding: 0; }
@@ -191,36 +187,27 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   <table class="summary">
     <thead>
       <tr>
-        <th class="bc">条形码</th>
-        <th>Sale No.</th>
+        <th class="col-seq">#</th>
         <th>Customer</th>
-        <th>Team</th>
-        <th class="num">Amount</th>
-        <th class="num">Total VAT</th>
       </tr>
     </thead>
     <tbody>
-      ${rowsHtml || '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
-      <tr class="total-row">
-        <td></td>
-        <td>Total</td>
-        <td>No of Customer : ${uniqueCustomers}</td>
-        <td></td>
-        <td class="num">${fmtAmt(totalAmount)}</td>
-        <td class="num">${fmtAmt(totalVat)}</td>
-      </tr>
+      ${nameRowsHtml || '<tr><td colspan="2" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
     </tbody>
   </table>
 
   <div class="stats-row">
-    <span>客户数：<span class="num">${uniqueCustomers}</span></span>
+    <span>客户数：<span class="num">${customerList.length}</span></span>
     <span>订单数：<span class="num">${orders.length}</span></span>
-    <span>总金额：<span class="num">&euro; ${fmtAmt(totalAmount)}</span></span>
-    <span>总 VAT：<span class="num">&euro; ${fmtAmt(totalVat)}</span></span>
   </div>
 
+  ${detailBlocksHtml ? `
+  <div class="detail-section">
+    <div class="detail-title">客户详情</div>
+    ${detailBlocksHtml}
+  </div>` : ''}
+
 <script>
-  ${barcodeInits}
   window.print();
 <\/script>
 </body>
