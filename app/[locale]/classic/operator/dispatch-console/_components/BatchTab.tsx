@@ -223,10 +223,20 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
    * 只有拖回左侧待分配才调 unassign。
    */
   async function assignToPallet(waveId: string, orderId: string, driverSlotId: string) {
+    const slot = slots.find(s => s.id === driverSlotId)
     setWaves(prev => prev.map(w => {
       if (w.id !== waveId) return w
       const orderIds = w.orderIds.includes(orderId) ? w.orderIds : [...w.orderIds, orderId]
-      return { ...w, orderIds, assignmentDoneAt: null }
+      // 乐观更新也要顺手把订单摆进目标托盘的 items 里，不然这一帧订单只进了 orderIds、还没进
+      // 任何 pallet.items，会被「未分托盘」判定命中，闪一下"历史订单"再等 load() 刷新回正确位置。
+      let pallets = w.pallets
+      if (slot) {
+        pallets = pallets.map(p => ({ ...p, items: p.items.filter(it => it.orderId !== orderId) }))
+        const idx = pallets.findIndex(p => p.seq === slot.batchNum)
+        if (idx >= 0) pallets[idx] = { ...pallets[idx], items: [...pallets[idx].items, { orderId }] }
+        else pallets = [...pallets, { id: `optimistic-${slot.batchNum}`, seq: slot.batchNum, label: null, items: [{ orderId }] }]
+      }
+      return { ...w, orderIds, pallets, assignmentDoneAt: null }
     }))
     try {
       await apiPut(`/api/waves/${waveId}/assign`, { orderIds: [orderId], driverSlotId })
@@ -245,7 +255,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     } catch (e) { toast.error(e instanceof Error ? e.message : '分配失败'); load() }
   }
   async function unassignFromWave(waveId: string, orderId: string) {
-    setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, orderIds: w.orderIds.filter(id => id !== orderId), assignmentDoneAt: null } : w)))
+    // 同样要把订单从它所在托盘的 items 里摘掉，不然移出前 pallet.items 里那条 orderId 没清，
+    // 挪去待分配后这张卡片的托盘 lane 会在 load() 刷新前继续短暂显示这单。
+    setWaves(prev => prev.map(w => (w.id === waveId
+      ? { ...w, orderIds: w.orderIds.filter(id => id !== orderId), pallets: w.pallets.map(p => ({ ...p, items: p.items.filter(it => it.orderId !== orderId) })), assignmentDoneAt: null }
+      : w)))
     try {
       await apiPut(`/api/waves/${waveId}/unassign`, { orderIds: [orderId] })
       toast.success('已移回待分配')
