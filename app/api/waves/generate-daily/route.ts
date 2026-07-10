@@ -19,31 +19,40 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '没有可用的 DriverSlot，请先配置司机批次' }, { status: 400 })
       }
 
-      // Find which driverSlotIds already have a wave for this date
+      // 一个司机+时段只建一条波次(不管配了几个托盘/batchNum)，见 lib/wave-assign.ts。
+      // driverSlotId 只留兼容快照，取该组里第一个(batchNum 最小的)slot 代表。
+      const groups = new Map<string, typeof slots[number][]>()
+      for (const slot of slots) {
+        const key = `${slot.driverName}::${slot.timeOfDay}`
+        const list = groups.get(key) ?? []
+        list.push(slot)
+        groups.set(key, list)
+      }
+
       const existing = await prisma.pickingWave.findMany({
         where: { waveDate },
-        select: { driverSlotId: true, waveNumber: true },
+        select: { driverName: true, timeOfDay: true, waveNumber: true },
       })
-      const existingSlotIds = new Set(existing.map(w => w.driverSlotId))
-      // Determine the next waveNumber (continue from the highest existing)
+      const existingKeys = new Set(existing.map(w => `${w.driverName}::${w.timeOfDay}`))
       let nextNumber = existing.length > 0
         ? Math.max(...existing.map(w => w.waveNumber ?? 0)) + 1
         : 1
 
       const created = []
-      for (const slot of slots) {
-        if (existingSlotIds.has(slot.id)) continue // already has a wave
-
-        const waveType = slot.timeOfDay === 'pm' ? 'bulk' : 'loose'
+      for (const [key, groupSlots] of groups) {
+        if (existingKeys.has(key)) continue // already has a wave
+        const repSlot = groupSlots[0]
+        const waveType = repSlot.timeOfDay === 'pm' ? 'bulk' : 'loose'
         const dateLabel = waveDate.toISOString().slice(0, 10)
         const wave = await prisma.pickingWave.create({
           data: {
-            name: `${dateLabel} #${nextNumber} ${slot.driverName}`,
+            name: `${dateLabel} #${nextNumber} ${repSlot.driverName}`,
             waveDate,
             waveNumber: nextNumber,
             waveType,
-            driverSlotId: slot.id,
-            driverName: slot.driverName,
+            driverSlotId: repSlot.id,
+            driverName: repSlot.driverName,
+            timeOfDay: repSlot.timeOfDay,
             orderIds: [],
             zones: [],
             status: 'PENDING',
@@ -56,6 +65,7 @@ export async function POST(req: Request) {
       const all = await prisma.pickingWave.findMany({
         where: { waveDate },
         orderBy: { waveNumber: 'asc' },
+        include: { pallets: { orderBy: { seq: 'asc' } } },
       })
 
       return NextResponse.json(serializeApi(all))

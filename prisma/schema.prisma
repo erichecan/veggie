@@ -647,8 +647,12 @@ model PickingWave {
   waveDate     DateTime?  @db.Date
   waveNumber   Int?
   waveType     String?
+  /// 历史遗留兼容字段：曾是"波次=单个批次号"时代的主键来源，现已不参与唯一性判定
+  /// (一个波次现在可以跨多个 batchNum/DriverSlot)，仅在极少数兼容读路径里作兜底，不可再当 SSOT 用。
   driverSlotId String?
   driverName   String?
+  /// "am" | "pm"，与 driverName 同为快照字段；波次唯一性 = 司机+时段(不再按批次号拆分)
+  timeOfDay    String?
   /// 分配完成标记时间：调度员点「分配完成」后回填，纯进度标记，可反悔；订单一变动即清空
   assignmentDoneAt DateTime?
   /// 确认出发时间：操作员点「确认出发」后回填，标记该批次已发车（防重复出发 + 追溯）
@@ -663,7 +667,11 @@ model PickingWave {
   pickUnlockedAt DateTime?
   pallets      Pallet[]
 
-  @@unique([waveDate, driverSlotId])
+  /// 注意：唯一性不是"永远只有一条"，而是"同一司机同一时段，未出发的波次只能有一条"——
+  /// 已出发/已完成的历史波次允许并存(不回溯合并，见迁移策略)。这个偏序约束目前只在应用层
+  /// (lib/wave-assign.ts assignOrderToWave)保证；数据库层的 partial unique index 要等历史重复
+  /// 波次(现存的同司机同时段多条未出发波次)合并干净后再补，避免建索引时因存量脏数据直接失败。
+  @@index([waveDate, driverName, timeOfDay])
   @@index([status])
   @@index([waveDate])
   @@index([driverSlotId])

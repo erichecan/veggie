@@ -5,12 +5,16 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { assertWaveNotDispatched, WaveDispatchedError } from '@/lib/wave-dispatch-lock'
+import { removeOrderFromPalletsInWave, putOrderIntoPallet } from '@/lib/wave-assign'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const { orderIds } = await req.json() as { orderIds: string[] }
+      // driverSlotId 可选:调度台托盘视图拖拽会带上目标托盘(该 driverSlot 的 batchNum),
+      // 把订单整单落进这个波次下对应的 Pallet;不传则只并入 wave.orderIds,不动托盘归属
+      // (兼容旧调用/整卡拖入场景)。
+      const { orderIds, driverSlotId } = await req.json() as { orderIds: string[]; driverSlotId?: string | null }
       if (!orderIds?.length) {
         return NextResponse.json({ error: '请选择要分配的订单' }, { status: 400 })
       }
@@ -86,6 +90,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
         return w
       })
+
+      // 托盘子分组：拖进了具体某个托盘(driverSlotId=该托盘的 batchNum 对应的 DriverSlot)时,
+      // 把这些订单整单落进那个 Pallet;没带 driverSlotId(如整卡拖入)则只并入波次,不动托盘。
+      if (driverSlotId) {
+        const slot = await prisma.driverSlot.findUnique({ where: { id: driverSlotId } })
+        if (!slot) return NextResponse.json({ error: '托盘不存在' }, { status: 400 })
+        if (slot.driverName !== wave.driverName || slot.timeOfDay !== wave.timeOfDay) {
+          return NextResponse.json({ error: '托盘与目标批次的司机/时段不匹配' }, { status: 400 })
+        }
+        for (const ow of otherWaves) {
+          for (const orderId of orderIds) await removeOrderFromPalletsInWave(ow.id, orderId)
+        }
+        for (const order of orders) {
+          await removeOrderFromPalletsInWave(id, order.id)
+          await putOrderIntoPallet(id, slot.batchNum, order)
+        }
+      }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,

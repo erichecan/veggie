@@ -200,15 +200,24 @@ export async function loadDispatchPrintData(
       orderBy: { restaurantName: 'asc' },
     })
   } else if (slot) {
-    const wave = await prisma.pickingWave.findUnique({
-      where: { waveDate_driverSlotId: { waveDate: dateOnlyUTC(new Date(`${date}T00:00:00.000Z`)), driverSlotId: slot.id } },
+    // 单批次打印 = 打印这一辆车里、这一个托盘(batchNum)装的订单，不是整个波次(可能横跨多个托盘)。
+    // 波次现在按「司机+时段」聚合(见 lib/wave-assign.ts)，批次号对应的是波次下的某个 Pallet。
+    const wave = await prisma.pickingWave.findFirst({
+      where: { waveDate: dateOnlyUTC(new Date(`${date}T00:00:00.000Z`)), driverName, timeOfDay },
+      orderBy: { createdAt: 'desc' },
     })
-    if (wave && wave.orderIds.length > 0) {
-      orders = await prisma.order.findMany({
-        where: { id: { in: wave.orderIds }, status: { in: statusFilter } },
-        include: { lines: { orderBy: { sequence: 'asc' } } },
-        orderBy: { restaurantName: 'asc' },
-      })
+    if (wave) {
+      const pallet = await prisma.pallet.findUnique({ where: { waveId_seq: { waveId: wave.id, seq: batchNum } } })
+      const palletOrderIds = [
+        ...new Set(((pallet?.items as Array<{ orderId: string }>) ?? []).map((it) => it.orderId)),
+      ]
+      if (palletOrderIds.length > 0) {
+        orders = await prisma.order.findMany({
+          where: { id: { in: palletOrderIds }, status: { in: statusFilter } },
+          include: { lines: { orderBy: { sequence: 'asc' } } },
+          orderBy: { restaurantName: 'asc' },
+        })
+      }
     }
   }
 

@@ -186,7 +186,9 @@ export default function DriverDispatchTab({ date }: { date: string }) {
           <Chip active={sortBy === 'driver'} onClick={() => setSortBy('driver')}>司机</Chip>
         </div>
         <div className="text-sm font-semibold">
-          共 {new Set(filtered.map(r => r.batchNum)).size || filtered.length} 个批次, {filtered.reduce((s, r) => s + r.orderCount, 0)} 单
+          {/* 一行=一个波次=一趟车(不再按批次号拆分,批次号只是波次内部的托盘编号,见 DEV-PLAN.md)，
+              不能再用 batchNum 去重当车次数——同一趟车可能挂着好几个批次号，会把车次数算少。 */}
+          共 {filtered.length} 趟, {filtered.reduce((s, r) => s + r.orderCount, 0)} 单
           <span className="ml-3">合计 €{sumAmount.toLocaleString()}</span>
         </div>
       </div>

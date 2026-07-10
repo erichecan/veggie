@@ -15,6 +15,8 @@ export async function GET(req: Request) {
       const waves = await prisma.pickingWave.findMany({
         where: { waveDate },
         orderBy: { waveNumber: 'asc' },
+        // 调度台需要按托盘(batchNum)子分组展示波次内部的订单，见 lib/wave-assign.ts
+        include: { pallets: { orderBy: { seq: 'asc' } } },
       })
       return NextResponse.json(serializeApi(waves))
     }

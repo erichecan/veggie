@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { assertWaveNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { assertWaveNotDispatched, WaveDispatchedError } from '@/lib/wave-dispatch-lock'
+import { removeOrderFromPalletsInWave } from '@/lib/wave-assign'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -40,6 +41,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         })
         return w
       })
+
+      for (const orderId of orderIds) {
+        await removeOrderFromPalletsInWave(id, orderId)
+      }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
