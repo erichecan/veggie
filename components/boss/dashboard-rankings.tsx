@@ -1,5 +1,6 @@
 'use client'
 import type { Order } from '@/lib/types'
+import { eur } from '@/lib/format-money'
 
 const PURPLE = '#875A7B'
 
@@ -112,7 +113,7 @@ export function DashboardRankings({ orders, pos, suppliers }: {
                 }`}>{i + 1}</span>
                 <span className="flex-1 text-xs text-gray-700 truncate">{c.name}</span>
                 <RankBar value={c.amt} max={custMax} color={PURPLE} />
-                <span className="text-xs font-bold w-16 text-right text-gray-800">€{c.amt.toFixed(0)}</span>
+                <span className="text-xs font-bold w-16 text-right text-gray-800">{eur(c.amt)}</span>
                 <div className="w-14 text-right"><MomBadge pct={c.change} /></div>
               </li>
             ))}
@@ -137,7 +138,7 @@ export function DashboardRankings({ orders, pos, suppliers }: {
                 }`}>{i + 1}</span>
                 <span className="flex-1 text-xs text-gray-700 truncate">{p.name}</span>
                 <RankBar value={p.amt} max={prodMax} color="#4F86C6" />
-                <span className="text-xs font-bold w-16 text-right text-gray-800">€{p.amt.toFixed(0)}</span>
+                <span className="text-xs font-bold w-16 text-right text-gray-800">{eur(p.amt)}</span>
               </li>
             ))}
           </ol>
@@ -161,7 +162,7 @@ export function DashboardRankings({ orders, pos, suppliers }: {
                 }`}>{i + 1}</span>
                 <span className="flex-1 text-xs text-gray-700 truncate">{s.name}</span>
                 <RankBar value={s.amt} max={supMax} color="#e97c44" />
-                <span className="text-xs font-bold w-16 text-right text-gray-800">€{s.amt.toFixed(0)}</span>
+                <span className="text-xs font-bold w-16 text-right text-gray-800">{eur(s.amt)}</span>
               </li>
             ))}
           </ol>

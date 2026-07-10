@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
+import { formatDateTime } from '@/lib/format-date'
 import type { PickingWave, Order, WaveStatus } from '@/lib/types'
 
 const STATUS_LABEL: Record<WaveStatus, string> = {
@@ -175,10 +176,7 @@ export default function ClassicSortingDetailPage({
           { label: '总件数',   value: totalItems },
           {
             label: '创建时间',
-            value: new Date(wave.createdAt).toLocaleString('en-GB', {
-              dateStyle: 'short',
-              timeStyle: 'short',
-            }),
+            value: formatDateTime(wave.createdAt),
           },
         ].map(s => (
           <div key={s.label} className="px-4 py-3 border-r last:border-r-0" style={{ borderColor: '#e0d6e8' }}>

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import { docBadge } from '@/lib/print/doc-badge'
+import { formatDateOnly } from '@/lib/format-date'
 
 interface EnrichedItem {
   id: string
@@ -28,13 +29,6 @@ interface EnrichedPricelist {
   active: boolean
 }
 
-function fmtDate(iso?: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return ''
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-}
-
 function fmtPrice(item: EnrichedItem, currency: string): string {
   if (item.computeType === 'fixed' && item.fixedPrice != null) {
     return Number(item.fixedPrice).toFixed(2)
@@ -56,8 +50,8 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[]): string {
             ${item.productRef ? `<span class="product-ref">[${item.productRef}]</span> ` : ''}${item.productName ?? '—'}
           </td>
           <td class="col-minqty">${item.minQty ?? 1}</td>
-          <td class="col-date">${fmtDate(item.dateStart)}</td>
-          <td class="col-date">${fmtDate(item.dateEnd)}</td>
+          <td class="col-date">${formatDateOnly(item.dateStart)}</td>
+          <td class="col-date">${formatDateOnly(item.dateEnd)}</td>
           <td class="col-price">${fmtPrice(item, pl.currency)}</td>
         </tr>`).join('')
       : `<tr><td colspan="5" class="empty-row">No pricing rules</td></tr>`

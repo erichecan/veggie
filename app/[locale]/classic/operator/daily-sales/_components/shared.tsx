@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { fmtMoney as canonicalFmtMoney } from '@/lib/format-money'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ export function today(): string {
 }
 
 export function fmtMoney(n: number): string {
-  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return canonicalFmtMoney(n)
 }
 
 export function fmtWeight(n: number): string {

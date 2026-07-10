@@ -83,7 +83,7 @@ ${bodyHtml}
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
   document.getElementById('print-ts').textContent =
-    ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
+    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
   // 打印在本文档(iframe)自己的脚本里触发，父页面只 postMessage 通知，不直接调用
   // contentWindow.print()——后者是同步跨窗口调用，会连带卡住父页面的事件循环。

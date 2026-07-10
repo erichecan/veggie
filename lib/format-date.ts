@@ -54,7 +54,23 @@ export function formatDateOnly(date: Date | string | number | null | undefined):
 }
 
 /**
- * 将日期格式化为 "2025-04-24 14:30" 格式（含时分）
+ * 将日期格式化为 "24/04/2025 14:30" 格式（含时分，不带星期）
+ * 全站时间戳类字段（订单流水、发票详情、打印时间等）的统一格式，SSOT。
+ */
+export function formatDateTime(date: Date | string | number | null | undefined): string {
+  if (!date) return '—'
+  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
+  if (isNaN(d.getTime())) return '—'
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`
+}
+
+/**
+ * 将日期格式化为 "2025-04-24 14:30" 格式（含时分+星期）
  */
 export function formatDateTimeShort(date: Date | string | number | null | undefined): string {
   if (!date) return '—'

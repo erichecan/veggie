@@ -19,17 +19,8 @@ import {
   escapeHtml,
 } from './trip-common'
 import { docBadge } from './doc-badge'
-
-function fmtDateUK(v?: string | Date | null): string {
-  if (!v) return '—'
-  const d = new Date(v as string)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-}
-
-function eur(v: number): string {
-  return Number.isFinite(v) ? v.toFixed(2) : '0.00'
-}
+import { formatDateOnly } from '@/lib/format-date'
+import { fmtMoney } from '@/lib/format-money'
 
 function buildSalesOrderHtml(
   order: TripOrder,
@@ -47,7 +38,7 @@ function buildSalesOrderHtml(
     : ''
 
   const customerPhone = customer?.phone ?? order.internalNote ?? ''
-  const deliveryDate = fmtDateUK(order.deliveryDate)
+  const deliveryDate = formatDateOnly(order.deliveryDate)
 
   // 税前小计 subtotal 直接用(unitPrice×qty,SSOT 口径),按税率分组算 VAT
   const vatGroups: Record<string, { base: number; vat: number }> = {}
@@ -83,9 +74,9 @@ function buildSalesOrderHtml(
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
-      <td class="col-price">${eur(Number(l.unitPrice))}</td>
+      <td class="col-price">${fmtMoney(Number(l.unitPrice))}</td>
       <td class="col-vat">${rate > 0 ? rate.toFixed(0) + '%' : '0%'}</td>
-      <td class="col-incl">€ ${eur(inclVat)}</td>
+      <td class="col-incl">€ ${fmtMoney(inclVat)}</td>
     </tr>`
   }).join('')
 
@@ -93,8 +84,8 @@ function buildSalesOrderHtml(
     .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
     .map(([rate, { base, vat }]) => `
     <tr>
-      <td class="total-label">VAT ${parseFloat(rate).toFixed(2)}% on € ${eur(base)}</td>
-      <td class="total-value">€ ${eur(vat)}</td>
+      <td class="total-label">VAT ${parseFloat(rate).toFixed(2)}% on € ${fmtMoney(base)}</td>
+      <td class="total-value">€ ${fmtMoney(vat)}</td>
     </tr>`).join('')
 
   const pageBreak = opts.pageBreakAfter ? 'page-break-after: always;' : ''
@@ -164,12 +155,12 @@ function buildSalesOrderHtml(
     <table class="totals-table">
       <tr>
         <td class="total-label">Subtotal</td>
-        <td class="total-value">€ ${eur(subtotal)}</td>
+        <td class="total-value">€ ${fmtMoney(subtotal)}</td>
       </tr>
       ${vatRowsHtml}
       <tr class="total-grand">
         <td class="total-label">Total</td>
-        <td class="total-value">€ ${eur(total)}</td>
+        <td class="total-value">€ ${fmtMoney(total)}</td>
       </tr>
     </table>
   </div>
@@ -319,7 +310,7 @@ ${pagesHtml}
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
   document.getElementById('print-ts').textContent =
-    ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
+    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
   window.print();
 <\/script>

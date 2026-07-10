@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { eur } from './format-money'
 
 const FROM = 'VeggieSupply <noreply@veggiesupply.ie>'
 
@@ -19,7 +20,7 @@ export async function sendOrderConfirmation(params: {
   const itemRows = items
     .map(
       (i) =>
-        `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee">${i.name}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:center">${i.qty} ${i.unit}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right">€${(i.price * i.qty).toFixed(2)}</td></tr>`
+        `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee">${i.name}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:center">${i.qty} ${i.unit}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right">${eur(i.price * i.qty)}</td></tr>`
     )
     .join('')
 
@@ -44,7 +45,7 @@ export async function sendOrderConfirmation(params: {
           <tfoot>
             <tr>
               <td colspan="2" style="padding:10px 12px;font-weight:bold">合计</td>
-              <td style="padding:10px 12px;font-weight:bold;text-align:right">€${total.toFixed(2)}</td>
+              <td style="padding:10px 12px;font-weight:bold;text-align:right">${eur(total)}</td>
             </tr>
           </tfoot>
         </table>

@@ -18,15 +18,7 @@ import {
   escapeHtml,
 } from './trip-common'
 import { docBadge } from './doc-badge'
-
-function fmtDateUK(v?: string | null): string {
-  if (!v) return ''
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return ''
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  return `${dd}/${mm}/${d.getFullYear()}`
-}
+import { formatDateOnly } from '@/lib/format-date'
 
 function fmtQty(v: number): string {
   if (v === Math.floor(v)) return String(v)
@@ -72,8 +64,8 @@ export function generateTripPickingHtml(
     .map(o => o.deliveryDate)
     .filter(Boolean) as string[]
   const dateStr = deliveryDates.length > 0
-    ? fmtDateUK(deliveryDates.reduce((a, b) => (a < b ? a : b)))
-    : fmtDateUK(trip.departTime)
+    ? formatDateOnly(deliveryDates.reduce((a, b) => (a < b ? a : b)))
+    : formatDateOnly(trip.departTime)
 
   // Aggregate products across all orders
   const aggMap = new Map<string, AggProduct>()
@@ -225,7 +217,7 @@ export function generateTripPickingHtml(
   <div class="page-header">
     ${docBadge('picking', variantLabel ? escapeHtml(variantLabel) : undefined)}
     <div class="meta">
-      ${fmtDateUK(new Date().toISOString())}<br/>
+      ${formatDateOnly(new Date().toISOString())}<br/>
       共 ${orders.length} 单 · ${visibleCount} 种商品
     </div>
   </div>

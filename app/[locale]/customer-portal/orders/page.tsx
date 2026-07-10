@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -76,11 +77,6 @@ export default function CustomerOrdersPage() {
 
   useEffect(() => { load() }, [load])
 
-  function formatDate(d: string | null) {
-    if (!d) return '-'
-    return new Date(d).toLocaleDateString('zh-CN')
-  }
-
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold" style={{ color: PURPLE }}>我的订单</h1>
@@ -130,8 +126,8 @@ export default function CustomerOrdersPage() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">
-                      下单: {formatDate(order.createdAt)}
-                      {order.deliveryDate && <span> · 配送: {formatDate(order.deliveryDate)}</span>}
+                      下单: {formatDateOnly(order.createdAt)}
+                      {order.deliveryDate && <span> · 配送: {formatDateOnly(order.deliveryDate)}</span>}
                       <span> · {order.paymentMethod === 'CASH' ? '现金' : '在线支付'}</span>
                     </p>
                   </div>

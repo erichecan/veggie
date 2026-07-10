@@ -93,28 +93,8 @@ export function toMemoryShape(wire: TripPrintDataWire): TripPrintData {
 
 // ─── 公共格式化工具（三张单都用，纯函数，可同构） ──────────────────────────────
 
-export const fmtMoney = (v: number) =>
-  '€' + v.toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
 export const fmtQty = (v: number) =>
   v.toLocaleString('en-IE', { maximumFractionDigits: 3 })
-
-export const fmtDate = (v?: string | null) => {
-  if (!v) return ''
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-}
-
-export const fmtDateTime = (v?: string | null) => {
-  if (!v) return ''
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
 
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

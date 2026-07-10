@@ -1,9 +1,8 @@
 'use client'
 import { useState } from 'react'
 
-/** 金额格式化（欧元，两位小数） */
-export const eur = (n: number | string | null | undefined) =>
-  `€${Number(n ?? 0).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+/** 金额格式化（欧元，两位小数，不加千分位）— SSOT: lib/format-money.ts */
+export { eur } from '@/lib/format-money'
 
 export interface DateRange { from: string; to: string }
 

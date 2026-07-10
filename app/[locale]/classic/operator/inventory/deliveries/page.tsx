@@ -8,6 +8,7 @@ import { apiGet } from '@/lib/api'
 import type { Order, OrderStatus } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -37,11 +38,6 @@ const STATUS_TABS = [
   { key: 'IN_DELIVERY', label: '配送中' },
   { key: 'COMPLETED', label: '已完成' },
 ]
-
-function fmtDate(iso?: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
-}
 
 const PAGE_SIZE = 50
 
@@ -173,7 +169,7 @@ export default function InventoryDeliveriesPage() {
               {displayOrderCode(order)}
             </span>
             <span className="text-sm text-gray-700 truncate">{order.restaurantName}</span>
-            <span className="text-xs text-gray-500">{fmtDate((order as unknown as { deliveryDate?: string }).deliveryDate)}</span>
+            <span className="text-xs text-gray-500">{formatDateOnly((order as unknown as { deliveryDate?: string }).deliveryDate)}</span>
             <span className="text-xs text-gray-500 truncate">{formatDriverSlotFromOrder(order) || '—'}</span>
             <span className="text-sm font-medium">€{Number(order.totalAmount ?? 0).toFixed(2)}</span>
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[order.status as string] ?? 'bg-gray-100 text-gray-600'}`}>

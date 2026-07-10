@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
 import type { Order, OrderItem } from '@/lib/types'
+import { eur } from '@/lib/format-money'
+import { formatDateOnly } from '@/lib/format-date'
 
 type SaleOrder = Order & { salesman?: string | null }
 
@@ -130,13 +132,9 @@ function openPrintWindow(title: string, html: string) {
   win.focus()
 }
 
-function fmt(n: number) {
-  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
 function fmtDate(d: string | Date | null | undefined) {
   if (!d) return ''
-  return new Date(d).toLocaleDateString('en-GB')
+  return formatDateOnly(d)
 }
 
 export default function SalesReportPage() {
@@ -211,7 +209,7 @@ export default function SalesReportPage() {
     const rows = Array.from(byCustomer.entries())
       .sort((a, b) => b[1].total - a[1].total)
       .map(([name, { count, total }]) =>
-        `<tr><td>${name}</td><td>${count}</td><td style="text-align:right">¥${fmt(total)}</td></tr>`
+        `<tr><td>${name}</td><td>${count}</td><td style="text-align:right">${eur(total)}</td></tr>`
       ).join('')
 
     openPrintWindow('Sales Summary', `
@@ -223,7 +221,7 @@ export default function SalesReportPage() {
       <table>
         <thead><tr><th>客户</th><th>订单数</th><th style="text-align:right">合计金额</th></tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr class="total-row"><td colspan="2">合计</td><td style="text-align:right">¥${fmt(grandTotal)}</td></tr></tfoot>
+        <tfoot><tr class="total-row"><td colspan="2">合计</td><td style="text-align:right">${eur(grandTotal)}</td></tr></tfoot>
       </table>`)
   }
 
@@ -239,8 +237,8 @@ export default function SalesReportPage() {
           <td>${o.salesman ?? ''}</td>
           <td>${it.productName ?? ''}</td>
           <td style="text-align:right">${it.quantity ?? ''}</td>
-          <td style="text-align:right">${it.price != null ? '¥' + fmt(Number(it.price)) : ''}</td>
-          <td style="text-align:right">${it.subtotal != null ? '¥' + fmt(Number(it.subtotal)) : ''}</td>
+          <td style="text-align:right">${it.price != null ? eur(Number(it.price)) : ''}</td>
+          <td style="text-align:right">${it.subtotal != null ? eur(Number(it.subtotal)) : ''}</td>
         </tr>`)
       })
     })
@@ -261,7 +259,7 @@ export default function SalesReportPage() {
         <tbody>${rows.join('')}</tbody>
         <tfoot><tr class="total-row">
           <td colspan="7">合计</td>
-          <td style="text-align:right">¥${fmt(grandTotal)}</td>
+          <td style="text-align:right">${eur(grandTotal)}</td>
         </tr></tfoot>
       </table>`)
   }
@@ -292,7 +290,7 @@ export default function SalesReportPage() {
       <td>${o.restaurantName ?? ''}</td>
       <td>${o.salesman ?? ''}</td>
       <td>${o.status ?? ''}</td>
-      <td style="text-align:right">¥${fmt(Number(o.totalAmount ?? 0))}</td>
+      <td style="text-align:right">${eur(Number(o.totalAmount ?? 0))}</td>
     </tr>`).join('')
     const grandTotal = filtered.reduce((s, o) => s + Number(o.totalAmount ?? 0), 0)
 
@@ -310,7 +308,7 @@ export default function SalesReportPage() {
         <tbody>${rows}</tbody>
         <tfoot><tr class="total-row">
           <td colspan="5">合计</td>
-          <td style="text-align:right">¥${fmt(grandTotal)}</td>
+          <td style="text-align:right">${eur(grandTotal)}</td>
         </tr></tfoot>
       </table>`)
   }
@@ -459,7 +457,7 @@ export default function SalesReportPage() {
                         <td className="px-3 py-1.5">{o.restaurantName}</td>
                         <td className="px-3 py-1.5">{o.salesman}</td>
                         <td className="px-3 py-1.5">{o.status}</td>
-                        <td className="px-3 py-1.5 text-right">¥{fmt(Number(o.totalAmount ?? 0))}</td>
+                        <td className="px-3 py-1.5 text-right">{eur(Number(o.totalAmount ?? 0))}</td>
                       </tr>
                     ))}
                   </tbody>

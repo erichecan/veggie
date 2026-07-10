@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPut, apiPost } from '@/lib/api'
 import { formatDriverSlot, formatDriverSlotFromOrder, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
+import { fmtMoney } from '@/lib/format-money'
 import type { Order, OrderItem, OrderLine } from '@/lib/types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -52,7 +53,6 @@ function firstOfMonth() {
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 function getDateDOW(d: string) { return new Date(d + 'T00:00:00').getDay() }
-function fmtMoney(n: number) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function fmtWeight(n: number) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }
 
 // 行税前(未税)金额。OrderLine.subtotal 恒 = unitPrice×orderedQty,本身已经是税前快照

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { getSession } from '@/lib/session'
+import { formatDateTime } from '@/lib/format-date'
 
 interface CommissionOrder {
   id: string
@@ -197,7 +198,7 @@ export default function DriverSettlementPage() {
 
                 {t.settledAt && (
                   <div className="text-[10px] text-gray-400 mb-3">
-                    确认时间: {new Date(t.settledAt).toLocaleString('zh-CN')}
+                    确认时间: {formatDateTime(t.settledAt)}
                   </div>
                 )}
 

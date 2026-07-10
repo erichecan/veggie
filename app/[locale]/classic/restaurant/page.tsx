@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiPost, apiGet } from '@/lib/api'
 import { getSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
+import { fmtMoney } from '@/lib/format-money'
 import type { Product, CartItem, Customer, OdooPricelist, PaymentMethod } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -192,9 +193,9 @@ export default function ClassicRestaurantPage() {
                 <h3 className="font-medium text-gray-900 truncate">{p.name}</h3>
                 <p className="text-xs text-gray-500 mt-0.5">{p.spec}</p>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-bold" style={{ color: PURPLE }}>€{displayPrice.toFixed(2)}</span>
+                  <span className="font-bold" style={{ color: PURPLE }}>€{fmtMoney(displayPrice)}</span>
                   {hasDiscount && (
-                    <span className="text-gray-400 line-through text-xs">€{listPrice.toFixed(2)}</span>
+                    <span className="text-gray-400 line-through text-xs">€{fmtMoney(listPrice)}</span>
                   )}
                 </div>
                 <div className="mt-3">
@@ -280,14 +281,14 @@ export default function ClassicRestaurantPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{item.productName}</p>
                       <p className="text-xs text-gray-500">{item.spec}</p>
-                      <p className="text-sm font-medium" style={{ color: PURPLE }}>€{item.price}</p>
+                      <p className="text-sm font-medium" style={{ color: PURPLE }}>€{fmtMoney(item.price)}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => updateQty(item.productId, item.quantity - 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-sm">-</button>
                       <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
                       <button onClick={() => updateQty(item.productId, item.quantity + 1)} className="w-6 h-6 rounded text-white flex items-center justify-center text-sm" style={{ background: PURPLE }}>+</button>
                     </div>
-                    <span className="w-16 text-right text-sm font-medium">€{(item.price * item.quantity).toFixed(1)}</span>
+                    <span className="w-16 text-right text-sm font-medium">€{fmtMoney(item.price * item.quantity)}</span>
                   </div>
                   <div className="mt-1.5 ml-[60px] flex items-center gap-1">
                     <span className="text-xs text-gray-400">税率:</span>
@@ -310,7 +311,7 @@ export default function ClassicRestaurantPage() {
           <div className="border-t pt-3 mt-1">
             <div className="flex justify-between items-center mb-3">
               <span className="font-medium text-gray-700">合计</span>
-              <span className="text-xl font-bold" style={{ color: PURPLE }}>€{total.toFixed(2)}</span>
+              <span className="text-xl font-bold" style={{ color: PURPLE }}>€{fmtMoney(total)}</span>
             </div>
             <Button
               className="w-full text-white hover:opacity-90"
@@ -331,7 +332,7 @@ export default function ClassicRestaurantPage() {
             <DialogTitle>确认付款</DialogTitle>
           </DialogHeader>
           <div className="py-6">
-            <p className="text-4xl font-bold mb-2" style={{ color: PURPLE }}>€{total.toFixed(2)}</p>
+            <p className="text-4xl font-bold mb-2" style={{ color: PURPLE }}>€{fmtMoney(total)}</p>
             <p className="text-gray-500 text-sm">{cart.length} 种商品，共 {cartCount} 件</p>
 
             <div className="mt-5 flex gap-3">

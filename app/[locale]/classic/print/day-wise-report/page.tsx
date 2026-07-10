@@ -5,6 +5,8 @@ import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
 import { docBadge, type DocKind } from '@/lib/print/doc-badge'
+import { formatDateOnly } from '@/lib/format-date'
+import { eur } from '@/lib/format-money'
 
 type PrintMode = 'day' | 'multiline' | 'summary'
 
@@ -67,11 +69,6 @@ tr.order-row:nth-child(even) td { background:#f9f9f9; }
 }
 `
 
-function eur(n: number) { return `€${n.toFixed(2)}` }
-function fmtDate(iso: string) {
-  const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
-}
 function dayLabel(dateStr: string) {
   const d = new Date(dateStr)
   return d.toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
@@ -207,7 +204,7 @@ function buildDayHtml(lines: ReportLine[], title: string, meta: string): string 
     }
 
     tbody += `<tr class="date-total">
-      <td>Total for ${fmtDate(date)}</td>
+      <td>Total for ${formatDateOnly(date)}</td>
       <td class="r">${dateQty.toFixed(2)}</td>
       <td></td>
       <td class="r">${eur(dateAmt)}</td>
@@ -237,7 +234,7 @@ function buildMultilineHtml(lines: ReportLine[], title: string, meta: string): s
   const rows = sorted.map(l => {
     grand += l.amount
     return `<tr class="flat-row">
-      <td>${fmtDate(l.date)}</td>
+      <td>${formatDateOnly(l.date)}</td>
       <td>${l.customerName}</td>
       <td>${l.productName}</td>
       <td class="r">${l.qty.toFixed(2)}</td>

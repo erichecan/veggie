@@ -16,13 +16,7 @@ import {
   escapeHtml,
 } from './trip-common'
 import { docBadge } from './doc-badge'
-
-function fmtDateUK(v?: string | Date | null): string {
-  if (!v) return '—'
-  const d = new Date(v as string)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-}
+import { formatDateOnly } from '@/lib/format-date'
 
 function buildDeliveryOrderHtml(
   order: TripOrder,
@@ -40,7 +34,7 @@ function buildDeliveryOrderHtml(
     : ''
 
   const customerPhone = customer?.phone ?? order.internalNote ?? ''
-  const deliveryDate = fmtDateUK(order.deliveryDate)
+  const deliveryDate = formatDateOnly(order.deliveryDate)
 
   // 送货单不含价格:只列数量/单位/品名,不显示单价/税/金额(价格在发票上体现)
   const linesHtml = lines.map((l, i) => `
@@ -257,7 +251,7 @@ ${pagesHtml}
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
   document.getElementById('print-ts').textContent =
-    ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
+    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
   window.print();
 <\/script>

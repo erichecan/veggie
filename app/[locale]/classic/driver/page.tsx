@@ -8,6 +8,7 @@ import { getSession } from '@/lib/session'
 import type { Trip } from '@/lib/types'
 import { TripStatusBadge } from '@/components/shared/status-badge'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -33,7 +34,7 @@ function TripRow({ trip, onClick }: { trip: Trip; onClick: () => void }) {
         {trip.totalPayment > 0 ? `€${trip.totalPayment.toFixed(2)}` : '—'}
       </td>
       <td className="px-4 py-3 text-center text-xs text-gray-400">
-        {trip.departTime ? new Date(trip.departTime).toLocaleString('en-GB') : '—'}
+        {trip.departTime ? formatDateTime(trip.departTime) : '—'}
       </td>
       <td className="px-4 py-3 text-center">
         <button className="text-xs hover:underline" style={{ color: PURPLE }} onClick={e => { e.stopPropagation(); onClick() }}>

@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -182,7 +183,7 @@ export default function StockTakePage() {
               {STATUS_LABEL[detail.status].text}
             </span>
             <span className="text-sm text-gray-500">
-              {new Date(detail.takenAt).toLocaleDateString()} · {lines.length} 个商品 · 已录 {filledCount}
+              {formatDateOnly(detail.takenAt)} · {lines.length} 个商品 · 已录 {filledCount}
             </span>
           </div>
           {isDraft && (
@@ -281,7 +282,7 @@ export default function StockTakePage() {
                       {STATUS_LABEL[st.status].text}
                     </span>
                   </td>
-                  <td className="px-3 py-2">{new Date(st.takenAt).toLocaleDateString()}</td>
+                  <td className="px-3 py-2">{formatDateOnly(st.takenAt)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{st._count?.lines ?? '—'}</td>
                   <td className="px-3 py-2">{st.createdBy ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-500 max-w-48 truncate">{st.notes ?? ''}</td>

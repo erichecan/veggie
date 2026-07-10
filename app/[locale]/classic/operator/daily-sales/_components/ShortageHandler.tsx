@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPatch } from '@/lib/api'
+import { formatDateTime } from '@/lib/format-date'
 import type { Order } from '@/lib/types'
 import type { DriverSlotInfo } from '@/lib/driver-slot'
 import { today } from './shared'
@@ -509,11 +510,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
                   {history.map(log => (
                     <tr key={log.id} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
-                        {new Date(log.createdAt).toLocaleString('zh-CN', {
-                          year: 'numeric', month: '2-digit', day: '2-digit',
-                          hour: '2-digit', minute: '2-digit', second: '2-digit',
-                          hour12: false,
-                        })}
+                        {formatDateTime(log.createdAt)}
                       </td>
                       <td className="px-3 py-2 max-w-[220px]">
                         {log.resourceId ? (() => {

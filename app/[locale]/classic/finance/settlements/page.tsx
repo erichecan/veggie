@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
+import { formatDateTime } from '@/lib/format-date'
 
 interface TripSettlement {
   id: string
@@ -170,7 +171,7 @@ export default function FinanceSettlementsPage() {
                 )}
 
                 {t.settledAt && (
-                  <div className="text-[11px] text-gray-400 mb-3">确认时间：{new Date(t.settledAt).toLocaleString('zh-CN')}</div>
+                  <div className="text-[11px] text-gray-400 mb-3">确认时间：{formatDateTime(t.settledAt)}</div>
                 )}
 
                 {t.settlementStatus === 'submitted' && (

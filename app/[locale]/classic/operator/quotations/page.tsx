@@ -757,7 +757,7 @@ ${footerHtml}
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
   document.getElementById('bulk-print-ts').textContent =
-    ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
+    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
   window.print();
 <\/script>

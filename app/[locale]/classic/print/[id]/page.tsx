@@ -7,18 +7,8 @@ import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import JsBarcode from 'jsbarcode'
 import { barcodeValue } from '@/lib/barcode'
 import { docBadge } from '@/lib/print/doc-badge'
-
-function fmtDate(iso?: string | Date | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso as string)
-  if (isNaN(d.getTime())) return '—'
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-}
-
-function eur(v: unknown): string {
-  const n = Number(v)
-  return isNaN(n) ? '0.00' : n.toFixed(2)
-}
+import { formatDateOnly } from '@/lib/format-date'
+import { eur } from '@/lib/format-money'
 
 // 预渲染 CODE128 条形码为内嵌 SVG（不依赖外部 CDN，规避 CSP 拦截）
 function barcodeSvg(code: string): string {
@@ -69,7 +59,7 @@ export function buildOrderHtml(
   const deliveryBatch = formatDriverSlotFromOrder(order)
   const salesman = order.salesman ?? ''
   const customerPhone = customer?.phone ?? order.internalNote ?? ''
-  const deliveryDate = fmtDate(order.deliveryDate ?? order.quotationDate)
+  const deliveryDate = formatDateOnly(order.deliveryDate ?? order.quotationDate)
 
   const paymentTerm = customer?.paymentTerm ?? ''
   const paymentLabel = paymentTerm === 'cash' ? 'Immediate Payment' : paymentTerm === 'weekly' ? 'Weekly' : paymentTerm === 'monthly' ? 'Monthly' : ''
@@ -94,7 +84,7 @@ export function buildOrderHtml(
       </td>
       ${hidePrice ? '' : `<td class="col-price">${eur(l.unitPrice)}</td>
       <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
-      <td class="col-incl">€ ${eur(inclVat)}</td>`}
+      <td class="col-incl">${eur(inclVat)}</td>`}
     </tr>`
   }).join('')
 
@@ -102,8 +92,8 @@ export function buildOrderHtml(
     .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
     .map(([rate, { base, vat }]) => `
     <tr>
-      <td class="total-label">VAT ${parseFloat(rate).toFixed(2)}% on € ${eur(base)}</td>
-      <td class="total-value">€ ${eur(vat)}</td>
+      <td class="total-label">VAT ${parseFloat(rate).toFixed(2)}% on ${eur(base)}</td>
+      <td class="total-value">${eur(vat)}</td>
     </tr>`).join('')
 
   const pageBreak = opts.pageBreakAfter ? 'page-break-after: always;' : ''
@@ -174,12 +164,12 @@ export function buildOrderHtml(
     <table class="totals-table">
       <tr>
         <td class="total-label">Subtotal</td>
-        <td class="total-value">€ ${eur(subtotal)}</td>
+        <td class="total-value">${eur(subtotal)}</td>
       </tr>
       ${vatRowsHtml}
       <tr class="total-grand">
         <td class="total-label">Total</td>
-        <td class="total-value">€ ${eur(total)}</td>
+        <td class="total-value">${eur(total)}</td>
       </tr>
     </table>
   </div>`}
@@ -319,7 +309,7 @@ ${bodyHtml}
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
   document.getElementById('print-ts').textContent =
-    ts.getFullYear() + '-' + pad(ts.getMonth()+1) + '-' + pad(ts.getDate()) +
+    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
   // 打印在本文档(iframe)自己的脚本里触发，父页面只 postMessage 通知，不直接调用
   // contentWindow.print()——后者是同步跨窗口调用，会连带卡住父页面的事件循环。

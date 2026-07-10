@@ -5,6 +5,7 @@ import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
 import type { Order, Customer, Invoice } from '@/lib/types'
 import { DrillPanel, type DrillColumn } from '@/components/shared/drill-panel'
+import { formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -132,7 +133,7 @@ export default function ClassicFinancePage() {
       for (const o of g.orders) {
         rows.push([
           g.customer.name, TERM_LABEL[g.customer.paymentTerm] ?? g.customer.paymentTerm,
-          o.code ?? o.id.slice(-8), new Date(o.createdAt).toLocaleString('en-GB'),
+          o.code ?? o.id.slice(-8), formatDateTime(o.createdAt),
           o.paymentMethod === 'cash' ? '现收' : '转账',
           STATUS_LABEL[o.status.toLowerCase()] ?? o.status, o.totalAmount.toFixed(2), '',
         ])
@@ -165,7 +166,7 @@ export default function ClassicFinancePage() {
     {
       key: 'time', label: '时间', render: o =>
         <span className="text-xs text-gray-500">
-          {new Date(o.createdAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          {formatDateTime(o.createdAt)}
         </span>,
     },
     {
@@ -382,7 +383,7 @@ export default function ClassicFinancePage() {
                         {g.orders.map(o => (
                           <tr key={o.id}>
                             <td className="px-3 py-1.5 font-mono text-gray-400">{o.id.slice(-8)}</td>
-                            <td className="px-3 py-1.5 text-gray-600">{new Date(o.createdAt).toLocaleString('en-GB')}</td>
+                            <td className="px-3 py-1.5 text-gray-600">{formatDateTime(o.createdAt)}</td>
                             <td className="px-3 py-1.5">
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                 o.paymentMethod === 'cash' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'

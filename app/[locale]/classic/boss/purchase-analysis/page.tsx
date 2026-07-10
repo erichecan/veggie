@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { apiGet } from '@/lib/api'
+import { eur } from '@/lib/format-money'
 
 const TEAL = '#0E7490'
 
@@ -212,7 +213,7 @@ function BarChart({ segments, hoveredIndex, onHover, formatValue }: ChartProps) 
 
 // ─── Format ───────────────────────────────────────────────────────────────────
 function fmtValue(measure: MeasureKey, v: number): string {
-  if (measure === 'subtotalExTax' || measure === 'totalIncTax') return `€${v.toFixed(2)}`
+  if (measure === 'subtotalExTax' || measure === 'totalIncTax') return eur(v)
   if (measure === 'qtyOrdered') return v.toFixed(1)
   return String(Math.round(v))
 }
@@ -292,7 +293,7 @@ export default function PurchaseAnalysisPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {[
           { label: '采购单数', value: String(filtered.length), sub: `已确认 ${confirmedPOs.length}` },
-          { label: '总采购额（税前）', value: `€${totalSpend.toFixed(2)}`, sub: `${activePOs.length} 笔有效单` },
+          { label: '总采购额（税前）', value: eur(totalSpend), sub: `${activePOs.length} 笔有效单` },
           { label: '已收货', value: String(receivedPOs.length), sub: `占比 ${filtered.length > 0 ? ((receivedPOs.length / filtered.length) * 100).toFixed(0) : 0}%` },
           { label: '供应商数', value: String(new Set(filtered.map(o => o.supplierId)).size), sub: '活跃供应商' },
         ].map(k => (

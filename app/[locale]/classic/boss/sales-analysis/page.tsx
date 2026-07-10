@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
+import { eur } from '@/lib/format-money'
 
 const PURPLE = '#875A7B'
 
@@ -272,7 +273,7 @@ function BarChart({ segments, hoveredIndex, onHover, formatValue }: PieChartProp
 // ─── Format helpers ───────────────────────────────────────────────────────────
 function fmtValue(measure: MeasureKey, v: number): string {
   if (['total', 'untaxedTotal', 'unitPrice', 'margin', 'discountAmount', 'commissionTotal'].includes(measure)) {
-    return `€${v.toFixed(2)}`
+    return eur(v)
   }
   if (['qtyOrdered', 'qtyDelivered', 'qtyInvoiced'].includes(measure)) {
     return v.toFixed(1)

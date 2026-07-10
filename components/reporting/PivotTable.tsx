@@ -8,6 +8,7 @@ import {
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { useReporting } from './ReportingContext'
 import type { MeasureMeta } from '@/lib/reports/types'
+import { eur } from '@/lib/format-money'
 
 export function formatValue(value: unknown, format: MeasureMeta['format']): string {
   if (value == null) return '-'
@@ -16,7 +17,7 @@ export function formatValue(value: unknown, format: MeasureMeta['format']): stri
 
   switch (format) {
     case 'currency':
-      return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(num)
+      return eur(num)
     case 'decimal':
       return new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num)
     case 'integer':

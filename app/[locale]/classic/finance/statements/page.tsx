@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 
 interface Statement {
   id: string
@@ -360,14 +361,12 @@ export default function StatementsPage() {
 
 function fmtDate(iso: string) {
   if (!iso) return '-'
-  return new Date(iso).toLocaleDateString('en-GB')
+  return formatDateOnly(iso)
 }
 
 function fmtDateTime(iso: string) {
   if (!iso) return '-'
-  return new Date(iso).toLocaleString('zh-CN', {
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-  })
+  return formatDateTime(iso)
 }
 
 function InfoCard({ label, value }: { label: string; value: string }) {

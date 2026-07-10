@@ -5,6 +5,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { eur } from '@/lib/format-money'
 
 const PURPLE = '#875A7B'
 
@@ -108,7 +109,7 @@ export default function CustomerProductsPage() {
       if (note.trim()) body.internalNote = note.trim()
 
       const res = await apiPost<{ id: string; code: string; totalAmount: number }>('/api/customer-portal/orders', body)
-      toast.success(`下单成功！订单号: ${res.code}，金额: €${res.totalAmount}`)
+      toast.success(`下单成功！订单号: ${res.code}，金额: ${eur(res.totalAmount)}`)
       updateCart([])
       setShowCart(false)
       setNote('')
@@ -171,7 +172,7 @@ export default function CustomerProductsPage() {
                   <div key={c.productId} className="flex items-center justify-between py-3">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{c.name}</p>
-                      <p className="text-xs text-gray-400">{c.spec} · {c.uomName} · €{c.price.toFixed(2)}</p>
+                      <p className="text-xs text-gray-400">{c.spec} · {c.uomName} · {eur(c.price)}</p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
                       <button onClick={() => setQty(c.productId, c.quantity - 1)}
@@ -181,7 +182,7 @@ export default function CustomerProductsPage() {
                         className="w-14 text-center border rounded text-sm py-1" />
                       <button onClick={() => setQty(c.productId, c.quantity + 1)}
                         className="w-7 h-7 rounded border text-sm flex items-center justify-center hover:bg-gray-100">+</button>
-                      <span className="text-sm font-medium w-16 text-right">€{(c.price * c.quantity).toFixed(2)}</span>
+                      <span className="text-sm font-medium w-16 text-right">{eur(c.price * c.quantity)}</span>
                       <button onClick={() => removeFromCart(c.productId)} className="text-red-400 hover:text-red-600 text-sm ml-1">✕</button>
                     </div>
                   </div>
@@ -190,7 +191,7 @@ export default function CustomerProductsPage() {
               <div className="border-t pt-3 space-y-3">
                 <div className="flex justify-between font-bold text-lg">
                   <span>合计</span>
-                  <span style={{ color: PURPLE }}>€{cartTotal.toFixed(2)}</span>
+                  <span style={{ color: PURPLE }}>{eur(cartTotal)}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -217,7 +218,7 @@ export default function CustomerProductsPage() {
                 <button onClick={placeOrder} disabled={submitting || cart.length === 0}
                   className="w-full py-3 rounded-lg text-white font-medium disabled:opacity-50 transition-colors"
                   style={{ background: PURPLE }}>
-                  {submitting ? '提交中...' : `确认下单 (€${cartTotal.toFixed(2)})`}
+                  {submitting ? '提交中...' : `确认下单 (${eur(cartTotal)})`}
                 </button>
               </div>
             </>
@@ -241,7 +242,7 @@ export default function CustomerProductsPage() {
               </div>
               <div className="flex items-center justify-between mt-3">
                 <span className="text-lg font-bold" style={{ color: PURPLE }}>
-                  {p.customerPrice != null ? `€${p.customerPrice.toFixed(2)}` : '询价'}
+                  {p.customerPrice != null ? eur(p.customerPrice) : '询价'}
                 </span>
                 {p.customerPrice != null ? (
                   inCart ? (

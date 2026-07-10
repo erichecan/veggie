@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -61,11 +62,6 @@ export default function CustomerOrderDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  function formatDate(d: string | null) {
-    if (!d) return '-'
-    return new Date(d).toLocaleDateString('zh-CN')
-  }
-
   if (loading) return <div className="text-center py-20 text-gray-400">加载中...</div>
   if (!order) return <div className="text-center py-20 text-gray-400">订单不存在</div>
 
@@ -89,9 +85,9 @@ export default function CustomerOrderDetailPage() {
               </span>
             </div>
             <div className="text-sm text-gray-500 mt-2 space-y-1">
-              <p>下单时间: {formatDate(order.createdAt)}</p>
-              {order.deliveryDate && <p>配送日期: {formatDate(order.deliveryDate)}</p>}
-              {order.quotationDate && <p>报价日期: {formatDate(order.quotationDate)}</p>}
+              <p>下单时间: {formatDateOnly(order.createdAt)}</p>
+              {order.deliveryDate && <p>配送日期: {formatDateOnly(order.deliveryDate)}</p>}
+              {order.quotationDate && <p>报价日期: {formatDateOnly(order.quotationDate)}</p>}
               <p>付款方式: {order.paymentMethod === 'CASH' ? '现金' : '在线支付'}</p>
             </div>
           </div>

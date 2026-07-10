@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { NumericInput } from '@/components/ui/numeric-input'
 import { Label } from '@/components/ui/label'
 import { DrillPanel, type DrillColumn } from '@/components/shared/drill-panel'
+import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -483,7 +484,7 @@ export default function ClassicWarehousePage() {
                       €{(p.quantity * p.unitCost).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
-                      {new Date(p.arrivedAt).toLocaleString('en-GB')}
+                      {formatDateTime(p.arrivedAt)}
                     </td>
                   </tr>
                 ))}
@@ -766,7 +767,7 @@ function WarehouseDrillPanel({
           const d = new Date(l.bestBefore)
           return (
             <span className={`text-xs font-medium ${l.isExpired ? 'text-red-600' : 'text-orange-600'}`}>
-              {d.toLocaleDateString('zh-CN')}
+              {formatDateOnly(d)}
               {l.isExpired
                 ? ` (已过期 ${Math.abs(l.daysRemaining)} 天)`
                 : ` (剩 ${l.daysRemaining} 天)`}

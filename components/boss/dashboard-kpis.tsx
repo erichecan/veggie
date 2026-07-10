@@ -1,5 +1,6 @@
 'use client'
 import type { Order } from '@/lib/types'
+import { eur } from '@/lib/format-money'
 
 const PURPLE = '#875A7B'
 
@@ -11,7 +12,7 @@ interface PO {
   subtotalExTax: number
 }
 
-function fmt(n: number) { return `€${n.toFixed(2)}` }
+function fmt(n: number) { return eur(n) }
 function pct(n: number) { return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%` }
 
 function delta(current: number, prev: number) {

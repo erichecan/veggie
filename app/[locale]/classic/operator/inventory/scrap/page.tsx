@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -46,14 +47,6 @@ const SCRAP_REASONS = [
   { key: 'WAREHOUSE_DAMAGE', label: '仓库损坏' },
   { key: 'OTHER', label: '其他' },
 ]
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
-function fmtShortDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })
-}
 
 export default function ScrapPage() {
   const router = useRouter()
@@ -219,7 +212,7 @@ export default function ScrapPage() {
               {Math.abs(Number(r.qty)).toFixed(2)}
             </span>
             <span className="text-xs text-gray-500 truncate">{r.note ?? '—'}</span>
-            <span className="text-xs text-gray-400">{fmtDate(r.movedAt ?? r.createdAt)}</span>
+            <span className="text-xs text-gray-400">{formatDateTime(r.movedAt ?? r.createdAt)}</span>
           </div>
         ))}
       </div>
@@ -297,12 +290,12 @@ export default function ScrapPage() {
                           <div>
                             <span className="font-mono text-purple-700 font-medium">{lot.lotNumber}</span>
                             <span className="text-gray-400 ml-2 text-xs">
-                              入库 {fmtShortDate(lot.arrivedAt)}
+                              入库 {formatDateOnly(lot.arrivedAt)}
                               {lot.sourceRef ? ` / ${lot.sourceRef}` : ''}
                             </span>
                             {lot.bestBefore && (
                               <span className="text-orange-500 ml-2 text-xs">
-                                保质期 {fmtShortDate(lot.bestBefore)}
+                                保质期 {formatDateOnly(lot.bestBefore)}
                               </span>
                             )}
                           </div>

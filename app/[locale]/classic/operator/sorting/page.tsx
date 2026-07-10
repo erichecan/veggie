@@ -9,7 +9,7 @@ import type { PickingWave, WaveStatus } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
-import { DAY_ABBR, DAY_COLORS } from '@/lib/format-date'
+import { DAY_ABBR, DAY_COLORS, formatDateTime } from '@/lib/format-date'
 
 const STATUS_LABEL: Record<WaveStatus, string> = {
   pending:  '待拣货',
@@ -107,7 +107,7 @@ export default function ClassicSortingPage() {
       sortable: true,
       render: (v) => (
         <span className="text-xs text-gray-500">
-          {new Date(String(v)).toLocaleString('en-GB')}
+          {formatDateTime(String(v))}
         </span>
       ),
     },

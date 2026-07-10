@@ -9,7 +9,7 @@
  * 颜色映射来自 lib/format-date.ts 的 DAY_COLORS：
  *   Sun 红 / Mon 蓝 / Tue 绿 / Wed 橙 / Thu 紫 / Fri 粉 / Sat 青
  */
-import { DAY_ABBR, DAY_COLORS } from '@/lib/format-date'
+import { DAY_ABBR, DAY_COLORS, formatDateOnly, formatDateTime } from '@/lib/format-date'
 
 type DateInput = Date | string | number | null | undefined
 
@@ -30,13 +30,10 @@ function toDate(date: DateInput): Date | null {
 export function DateWithDay({ date, className, fallback = '—' }: Props) {
   const d = toDate(date)
   if (!d) return <span className={className}>{fallback}</span>
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
   const idx = d.getDay()
   return (
     <span className={className}>
-      {dd}/{mm}/{yyyy}{' '}
+      {formatDateOnly(d)}{' '}
       <strong style={{ color: DAY_COLORS[idx], fontWeight: 700 }}>{DAY_ABBR[idx]}</strong>
     </span>
   )
@@ -45,17 +42,13 @@ export function DateWithDay({ date, className, fallback = '—' }: Props) {
 export function DateTimeShort({ date, className, fallback = '—' }: Props) {
   const d = toDate(date)
   if (!d) return <span className={className}>{fallback}</span>
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
   const idx = d.getDay()
+  const [datePart, timePart] = formatDateTime(d).split(' ')
   return (
     <span className={className}>
-      {dd}/{mm}/{yyyy}{' '}
+      {datePart}{' '}
       <strong style={{ color: DAY_COLORS[idx], fontWeight: 700 }}>{DAY_ABBR[idx]}</strong>{' '}
-      {hh}:{min}
+      {timePart}
     </span>
   )
 }

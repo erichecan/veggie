@@ -7,6 +7,7 @@ import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { barcodeValue } from '@/lib/barcode'
 import type { Invoice } from '@/lib/types'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
@@ -21,13 +22,6 @@ const STATUS_LABEL: Record<Invoice['status'], string> = {
   posted: '已确认',
   paid: '已付款',
   cancelled: '已取消',
-}
-
-function fmtDate(d?: string): string {
-  if (!d) return '—'
-  const parsed = new Date(d)
-  if (isNaN(parsed.getTime())) return d
-  return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function InvoicePrintPage() {
@@ -133,11 +127,11 @@ export default function InvoicePrintPage() {
           <div className="text-right space-y-1">
             <div className="flex justify-end gap-3">
               <span className="text-gray-400">开票日期</span>
-              <span className="text-gray-800 w-28">{fmtDate(inv.createdAt)}</span>
+              <span className="text-gray-800 w-28">{formatDateOnly(inv.createdAt)}</span>
             </div>
             <div className="flex justify-end gap-3">
               <span className="text-gray-400">到期日</span>
-              <span className="font-medium text-gray-900 w-28">{fmtDate(inv.dueDate)}</span>
+              <span className="font-medium text-gray-900 w-28">{formatDateOnly(inv.dueDate)}</span>
             </div>
             <div className="flex justify-end gap-3">
               <span className="text-gray-400">关联订单</span>

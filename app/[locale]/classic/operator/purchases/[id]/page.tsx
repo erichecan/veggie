@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut, apiPatch } from '@/lib/api'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 const DARK = '#1f2d3d'
@@ -48,13 +49,6 @@ interface PurchaseOrder {
 interface Supplier {
   id: string
   name: string
-}
-
-function formatDate(iso?: string | null) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-GB')
 }
 
 function toInputDate(iso?: string | null) {
@@ -491,7 +485,7 @@ export default function PurchaseDetailPage() {
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">订单日期</label>
-                  <span className="text-sm text-gray-800">{formatDate(po.orderDate ?? po.createdAt)}</span>
+                  <span className="text-sm text-gray-800">{formatDateOnly(po.orderDate ?? po.createdAt)}</span>
                 </div>
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">预期到货日期</label>
@@ -504,7 +498,7 @@ export default function PurchaseDetailPage() {
                       style={{ width: '180px' }}
                     />
                   ) : (
-                    <span className="text-sm text-gray-800">{formatDate(po.expectedDate) || '—'}</span>
+                    <span className="text-sm text-gray-800">{formatDateOnly(po.expectedDate) || '—'}</span>
                   )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
@@ -599,7 +593,7 @@ export default function PurchaseDetailPage() {
                                 })
                               }} />
                           ) : (
-                            <span className="text-gray-600 text-xs">{formatDate(l.bestBefore) || '—'}</span>
+                            <span className="text-gray-600 text-xs">{formatDateOnly(l.bestBefore) || '—'}</span>
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-right font-medium text-gray-800">
@@ -663,7 +657,7 @@ export default function PurchaseDetailPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <label className="w-36 text-sm text-gray-500 flex-shrink-0">创建日期</label>
-                    <span className="text-sm text-gray-700">{formatDate(po.createdAt)}</span>
+                    <span className="text-sm text-gray-700">{formatDateOnly(po.createdAt)}</span>
                   </div>
                 </div>
               </div>

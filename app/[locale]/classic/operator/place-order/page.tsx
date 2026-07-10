@@ -13,6 +13,7 @@ import { getSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { rankByRelevance } from '@/lib/search-rank'
 import type { Product, Customer, OdooPricelist, CustomerPriceType } from '@/lib/types'
+import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 import JsBarcode from 'jsbarcode'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 
@@ -106,12 +107,9 @@ type QDocProps = {
 
 function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, untaxed, total, externalNote }: QDocProps) {
   const validLines = lines.filter(l => l.productId)
-  const printAt = new Date().toLocaleString('en-GB', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  })
+  const printAt = formatDateTime(new Date())
   const deliveryDate = orderDate
-    ? new Date(orderDate).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })
+    ? formatDateTime(orderDate)
     : printAt
 
   const cell: React.CSSProperties = { border: '1px solid #ccc', padding: '6px 8px', verticalAlign: 'top' }
@@ -337,7 +335,7 @@ export default function ClassicPlaceOrderPage() {
   const [qtyRawMap, setQtyRawMap]     = useState<Record<string, string>>({})
   const [activeTab, setActiveTab]     = useState<'lines' | 'optional' | 'auto' | 'other'>('lines')
   const [logs, setLogs]               = useState<ChatterEntry[]>([
-    { type: 'system', text: 'Creating a new record...', time: new Date().toLocaleString('en-GB') },
+    { type: 'system', text: 'Creating a new record...', time: formatDateTime(new Date()) },
   ])
   const [submitting, setSubmitting]   = useState(false)
 
@@ -1007,7 +1005,7 @@ export default function ClassicPlaceOrderPage() {
     setStatus('sent')
     setLogs(prev => [
       ...prev,
-      { type: 'message', text: `邮件已发送至 ${emailTo}：${emailSubject}`, time: new Date().toLocaleString('en-GB') },
+      { type: 'message', text: `邮件已发送至 ${emailTo}：${emailSubject}`, time: formatDateTime(new Date()) },
     ])
     toast.success('邮件已发送')
   }
@@ -1521,7 +1519,7 @@ export default function ClassicPlaceOrderPage() {
                           <div key={o.id} className="border rounded-lg px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: '#e5e7eb' }}>
                             <div className="min-w-0">
                               <div className="text-sm font-medium" style={{ color: '#875A7B' }}>{o.code ?? o.id.slice(0, 8)}</div>
-                              <div className="text-xs text-gray-500 mt-0.5">{new Date(o.createdAt).toLocaleDateString('en-GB')} · {hl.length} 项 · €{Number(o.totalAmount).toFixed(2)}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">{formatDateOnly(o.createdAt)} · {hl.length} 项 · €{Number(o.totalAmount).toFixed(2)}</div>
                               <div className="text-xs text-gray-400 mt-0.5 truncate">{hl.slice(0, 3).map(x => x.productName).join('、')}{hl.length > 3 ? ` 等 ${hl.length} 项` : ''}</div>
                             </div>
                             <button onClick={() => importHistoryOrder(o)} className="px-3 py-1.5 rounded text-sm font-medium text-white shrink-0" style={{ background: '#875A7B' }}>导入</button>

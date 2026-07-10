@@ -7,6 +7,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { formatDriverSlot, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { PickingVariant } from '@/lib/print/trip-picking-template'
+import { formatDateTime } from '@/lib/format-date'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
 
 type BatchLine = OrderLine & { product?: { template?: { weight?: number | null } | null } | null }
@@ -192,8 +193,8 @@ function BatchCard({
         </button>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-sm font-semibold text-gray-900 mr-2">${fmtMoney(totalAmount)}</span>
-          <span className="text-xs text-gray-400 mr-3">未税 ${fmtMoney(untaxTotal)}</span>
+          <span className="text-sm font-semibold text-gray-900 mr-2">€{fmtMoney(totalAmount)}</span>
+          <span className="text-xs text-gray-400 mr-3">未税 €{fmtMoney(untaxTotal)}</span>
           {!pickLockedAt && (
             <button
               onClick={lock}
@@ -265,7 +266,7 @@ function BatchCard({
               <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
               <span className="text-xs text-gray-500 uppercase">{o.status}</span>
               <span className="text-sm font-medium text-gray-900 w-24 text-right">
-                ${fmtMoney(Number(o.totalAmount))}
+                €{fmtMoney(Number(o.totalAmount))}
               </span>
             </div>
           ))}
@@ -577,7 +578,7 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
               <span>加载中...</span>
             ) : (
               <>
-                <span>共 {orders.length} 单 · {batchGroups.length} 批次 · ${fmtMoney(grandTotal)}</span>
+                <span>共 {orders.length} 单 · {batchGroups.length} 批次 · €{fmtMoney(grandTotal)}</span>
                 {printedKeys.size > 0 && (
                   <button
                     onClick={clearPrinted}
@@ -719,9 +720,7 @@ function OperationLog({ logs }: { logs: ActionLogRow[] }) {
               {logs.map(log => (
                 <tr key={log.id} className="border-b border-gray-50 last:border-0">
                   <td className="px-4 py-2 text-gray-500 whitespace-nowrap">
-                    {new Date(log.createdAt).toLocaleString('zh-CN', {
-                      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-                    })}
+                    {formatDateTime(log.createdAt)}
                   </td>
                   <td className="px-3 py-2 text-gray-600">{log.userName ?? log.userEmail ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-700">{log.detail ?? log.action}</td>

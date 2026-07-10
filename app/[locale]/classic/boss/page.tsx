@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import { toast } from 'sonner'
+import { eur } from '@/lib/format-money'
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend,
 } from 'recharts'
@@ -38,9 +39,6 @@ interface Overview {
     topDebtors: Array<{ customer_id: string; customer_name: string; amount_due: number; invoice_count: number }>
   }
 }
-
-const eur = (n: number | string | null | undefined) =>
-  `€${Number(n ?? 0).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 function KpiCard({ label, value, sub, tone, href }: {
   label: string; value: string; sub?: string

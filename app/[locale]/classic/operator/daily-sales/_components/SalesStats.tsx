@@ -6,6 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { apiGet } from '@/lib/api'
+import { eur } from '@/lib/format-money'
 import type { Order } from '@/lib/types'
 import { formatDriverSlotFromOrder, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import { toggleValue, today } from './shared'
@@ -35,7 +36,6 @@ interface ReportLine {
 }
 
 const DOW_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-const eur = (v: number) => `€${v.toFixed(2)}`
 const fmtQty = (v: number) => (v % 1 === 0 ? v.toFixed(0) : v.toFixed(2))
 
 // 按客户查看：单个日期分组（日期头 → 客户 → 商品行 → 日小计）

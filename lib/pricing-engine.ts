@@ -12,6 +12,7 @@
  */
 
 import type { Product, OdooPricelist, OdooPricelistItem, Customer, CustomerPriceType } from './types'
+import { fmtMoney } from './format-money'
 
 // ─── 公共接口 ─────────────────────────────────────────────────────────────────
 
@@ -184,7 +185,7 @@ function describeItem(item: OdooPricelistItem): string {
 
   switch (item.computeType) {
     case 'fixed':
-      return `${scope}：固定价 €${item.fixedPrice}${qty}`
+      return `${scope}：固定价 €${fmtMoney(item.fixedPrice)}${qty}`
     case 'percentage':
       return `${scope}：折扣 ${item.percentDiscount}%${qty}`
     case 'formula': {
@@ -192,7 +193,7 @@ function describeItem(item: OdooPricelistItem): string {
         item.formulaBase === 'standard_price' ? '进价' :
         item.formulaBase === 'pricelist' ? `价格表 ${item.basedOnPricelistId}` : '牌价'
       const disc = item.priceDiscount ? `，再 -${item.priceDiscount}%` : ''
-      const surcharge = item.priceSurcharge ? `，+€${item.priceSurcharge}` : ''
+      const surcharge = item.priceSurcharge ? `，+€${fmtMoney(item.priceSurcharge)}` : ''
       return `${scope}：基于${base}${disc}${surcharge}${qty}`
     }
     default:
@@ -254,7 +255,7 @@ export function resolveCustomerPrice(
       return {
         price: round2(sp.fixedPrice),
         pricelistName: '客户专属特殊价格',
-        itemDesc: `专属固定价 €${sp.fixedPrice}${sp.minQty > 0 ? `，最小数量 ${sp.minQty}` : ''}${noteStr}`,
+        itemDesc: `专属固定价 €${fmtMoney(sp.fixedPrice)}${sp.minQty > 0 ? `，最小数量 ${sp.minQty}` : ''}${noteStr}`,
         isFallback: false,
         isSpecialPrice: true,
       }
@@ -279,7 +280,7 @@ export function resolveCustomerPrice(
       return {
         price: round2(lastPrice),
         pricelistName: '最近成交价',
-        itemDesc: `最近一次售价 €${lastPrice.toFixed(2)}`,
+        itemDesc: `最近一次售价 €${fmtMoney(lastPrice)}`,
         isFallback: false,
       }
     }
@@ -316,7 +317,7 @@ export function resolveCustomerPrice(
     return {
       price: round2(lastPrice),
       pricelistName: '最近成交价',
-      itemDesc: `${fromDesc}，改用最近售价 €${lastPrice.toFixed(2)}`,
+      itemDesc: `${fromDesc}，改用最近售价 €${fmtMoney(lastPrice)}`,
       isFallback: false,
     }
   }

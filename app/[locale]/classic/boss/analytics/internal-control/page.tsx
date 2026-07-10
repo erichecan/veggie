@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
+import { formatDateTime } from '@/lib/format-date'
 
 interface PriceChange {
   id: string; orderId: string; orderCode: string | null; operator: string
@@ -86,7 +87,7 @@ export default function InternalControlPage() {
                         {c.delta > 0 ? `+${eur(c.delta)}` : eur(c.delta)}
                       </td>
                       <td className="px-3 py-1.5 text-right text-gray-400 text-xs">
-                        {new Date(c.changedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        {formatDateTime(c.changedAt)}
                       </td>
                     </tr>
                   ))}

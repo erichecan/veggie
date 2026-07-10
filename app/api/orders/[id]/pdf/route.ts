@@ -2,18 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { barcodeValue } from '@/lib/barcode'
-
-function fmt(iso?: string | Date | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso as string)
-  if (isNaN(d.getTime())) return '—'
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-}
-
-function eur(v: unknown): string {
-  const n = Number(v)
-  return isNaN(n) ? '0.00' : n.toFixed(2)
-}
+import { formatDateOnly } from '@/lib/format-date'
+import { eur } from '@/lib/format-money'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -61,8 +51,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       customer?.zip,
     ].filter(Boolean).join(', ')
 
-    const deliveryDate = fmt((order as unknown as { deliveryDate?: string }).deliveryDate ?? order.quotationDate)
-    const invoiceDate = fmt((order as unknown as { quotationDate?: string }).quotationDate)
+    const deliveryDate = formatDateOnly((order as unknown as { deliveryDate?: string }).deliveryDate ?? order.quotationDate)
+    const invoiceDate = formatDateOnly((order as unknown as { quotationDate?: string }).quotationDate)
 
     const linesHtml = lines.map((l, i) => {
       const spec = (l as unknown as { spec?: string }).spec
@@ -89,7 +79,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .map(([rate, { vat }]) => `
       <tr>
         <td class="total-label">VAT ${rate}%</td>
-        <td class="total-value">€${eur(vat)}</td>
+        <td class="total-value">${eur(vat)}</td>
       </tr>`).join('')
 
     const internalNote = (order as unknown as { internalNote?: string }).internalNote ?? ''
@@ -229,12 +219,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     <table class="totals-table">
       <tr>
         <td class="total-label">Subtotal</td>
-        <td class="total-value">€${eur(subtotal)}</td>
+        <td class="total-value">${eur(subtotal)}</td>
       </tr>
       ${vatRowsHtml}
       <tr class="total-grand">
         <td class="total-label">Total</td>
-        <td class="total-value">€${eur(total)}</td>
+        <td class="total-value">${eur(total)}</td>
       </tr>
     </table>
   </div>
@@ -255,7 +245,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     displayValue: false,
     margin: 0,
   });
-  document.getElementById('print-ts').textContent = new Date().toLocaleString('en-GB');
+  var ts = new Date();
+  var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
+  document.getElementById('print-ts').textContent =
+    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
+    ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
 </script>
 </body>
 </html>`

@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { apiGet, apiPost, apiPatch } from '@/lib/api'
 import { toast } from 'sonner'
 import HelpDrawer from '@/components/onboarding/HelpDrawer'
+import { formatDateTime } from '@/lib/format-date'
 
 interface MenuItem {
   href: string
@@ -366,7 +367,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                           <div className="flex-1 min-w-0">
                             <p className={`text-sm ${!n.read ? 'font-medium text-gray-900' : 'text-gray-600'}`}>{n.title}</p>
                             <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>
-                            <p className="text-xs text-gray-300 mt-1">{new Date(n.createdAt).toLocaleString('zh-CN')}</p>
+                            <p className="text-xs text-gray-300 mt-1">{formatDateTime(n.createdAt)}</p>
                           </div>
                         </div>
                       </div>

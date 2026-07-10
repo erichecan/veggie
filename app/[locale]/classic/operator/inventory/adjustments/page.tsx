@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { rankByRelevance } from '@/lib/search-rank'
+import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -56,10 +57,6 @@ const TYPE_TABS = [
   { key: 'RETURN', label: '退货' },
   { key: 'SCRAP', label: '报废' },
 ]
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
 
 const PAGE_SIZE = 100
 
@@ -268,7 +265,7 @@ export default function InventoryAdjustmentsPage() {
               <span className={`text-sm font-mono text-right font-semibold ${Number(move.qty) > 0 ? 'text-green-600' : 'text-red-500'}`}>
                 {Number(move.qty) > 0 ? '+' : ''}{Number(move.qty).toFixed(2)}
               </span>
-              <span className="text-xs font-mono text-gray-500 truncate" title={move.lot?.bestBefore ? `保质期: ${new Date(move.lot.bestBefore).toLocaleDateString('zh-CN')}` : undefined}>
+              <span className="text-xs font-mono text-gray-500 truncate" title={move.lot?.bestBefore ? `保质期: ${formatDateOnly(move.lot.bestBefore)}` : undefined}>
                 {move.lot?.lotNumber ?? <span className="text-gray-300">—</span>}
               </span>
               <span className="text-xs truncate">
@@ -284,7 +281,7 @@ export default function InventoryAdjustmentsPage() {
                 )}
               </span>
               <span className="text-xs text-gray-500 truncate">{move.note ?? '—'}</span>
-              <span className="text-xs text-gray-400">{fmtDate(move.createdAt)}</span>
+              <span className="text-xs text-gray-400">{formatDateTime(move.createdAt)}</span>
             </div>
           )
         })}

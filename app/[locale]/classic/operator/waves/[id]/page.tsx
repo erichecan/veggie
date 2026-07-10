@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import type { PickingWave, WaveStatus } from '@/lib/types'
+import { formatDateTime } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 
 /* ─── Slot colour palette (matches list page) ──────────────────────────── */
@@ -114,7 +115,7 @@ export default function ClassicWaveDetailPage() {
   <p style="font-size:13px;color:#555;margin-top:4px;">
     司机：<strong>${dLabel}</strong>
     <span style="margin-left:16px;">类型：<strong>${isBulk ? '大货' : '散货'}</strong></span>
-    <span style="margin-left:16px;">打印时间：${new Date().toLocaleString('en-GB')}</span>
+    <span style="margin-left:16px;">打印时间：${formatDateTime(new Date())}</span>
   </p>
 </div>
 ${zonesHtml}
@@ -189,7 +190,7 @@ ${zonesHtml}
               司机：<strong>{driverLabel}</strong>
               <span className="ml-3">类型：<strong>{isBulk ? '大货' : '散货'}</strong></span>
             </p>
-            <p className="text-sm text-gray-500 mt-0.5">打印时间：{new Date().toLocaleString('en-GB')}</p>
+            <p className="text-sm text-gray-500 mt-0.5">打印时间：{formatDateTime(new Date())}</p>
           </div>
 
           {/* Meta info with slot-colored header */}
@@ -218,7 +219,7 @@ ${zonesHtml}
               <span>关联订单：<strong className="text-gray-900">{wave.orderIds.length}</strong> 张</span>
               <span>分区（餐馆）：<strong className="text-gray-900">{wave.zones.length}</strong> 个</span>
               <span>商品种类：<strong className="text-gray-900">{totalItems}</strong> 种</span>
-              <span>创建时间：{new Date(wave.createdAt).toLocaleString('en-GB')}</span>
+              <span>创建时间：{formatDateTime(wave.createdAt)}</span>
             </div>
           </div>
 

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/lib/api'
 import { toast } from 'sonner'
+import { formatDateTime } from '@/lib/format-date'
 
 function formatVal(v: unknown): string {
   if (v == null || v === '') return '（空）'
@@ -42,13 +43,7 @@ function timeAgo(iso: string): string {
 }
 
 function formatTs(iso: string): string {
-  const d = new Date(iso)
-  const Y = d.getFullYear()
-  const M = String(d.getMonth() + 1).padStart(2, '0')
-  const D = String(d.getDate()).padStart(2, '0')
-  const h = String(d.getHours()).padStart(2, '0')
-  const m = String(d.getMinutes()).padStart(2, '0')
-  return `${Y}-${M}-${D} ${h}:${m}`
+  return formatDateTime(iso)
 }
 
 function initials(name?: string | null): string {

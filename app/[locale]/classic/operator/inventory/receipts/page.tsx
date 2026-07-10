@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
+import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -19,10 +20,6 @@ interface GoodsReceipt {
   lines: Array<{ productId: string; productName: string; qty: number; condition: string }>
   createdAt: string
   purchaseOrder?: { id: string; name: string; supplierId: string } | null
-}
-
-function fmtDate(iso: string) {
-  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
 }
 
 const PAGE_SIZE = 50
@@ -142,7 +139,7 @@ export default function InventoryReceiptsPage() {
             >
               <span className="font-mono text-sm font-semibold" style={{ color: PURPLE }}>{item.name}</span>
               <span className="text-sm text-gray-600">{item.purchaseOrder?.name ?? '—'}</span>
-              <span className="text-sm text-gray-600">{fmtDate(item.arrivedAt)}</span>
+              <span className="text-sm text-gray-600">{formatDateOnly(item.arrivedAt)}</span>
               <span className="text-xs text-gray-500 truncate">{linesSummary}</span>
               <span className="text-sm text-gray-600">{item.receivedBy ?? '—'}</span>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">

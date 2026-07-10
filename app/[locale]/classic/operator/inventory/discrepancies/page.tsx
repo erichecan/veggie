@@ -80,10 +80,6 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   CANCELLED: { label: '已取消', color: '#95a5a6' },
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
 export default function DiscrepanciesPage() {
   const router = useRouter()
   const locale = useLocale()

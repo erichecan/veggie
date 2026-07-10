@@ -10,27 +10,7 @@ import {
   escapeHtml,
 } from './trip-common'
 import { docBadge } from './doc-badge'
-
-function fmtDateUK(v?: string | null): string {
-  if (!v) return ''
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return ''
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  return `${dd}/${mm}/${d.getFullYear()}`
-}
-
-function fmtTimestamp(v?: string | null): string {
-  if (!v) return ''
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return ''
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
-}
+import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 
 export function generateTripSummaryHtml(data: TripPrintData): string {
   const { trip, orders, customers } = data
@@ -84,7 +64,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     </div>`
   }).join('')
 
-  const now = fmtTimestamp(new Date().toISOString())
+  const now = formatDateTime(new Date().toISOString())
 
   return `<!doctype html>
 <html lang="en">
@@ -179,8 +159,8 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   </div>
 
   <div class="filter-row">
-    <div class="item"><span class="label">Start Date : </span>${fmtDateUK(startDate)}</div>
-    <div class="item"><span class="label">End Date : </span>${fmtDateUK(endDate)}</div>
+    <div class="item"><span class="label">Start Date : </span>${formatDateOnly(startDate)}</div>
+    <div class="item"><span class="label">End Date : </span>${formatDateOnly(endDate)}</div>
     <div class="item"><span class="label">Sales Team : </span>${escapeHtml(teamStr)}</div>
   </div>
 

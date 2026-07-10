@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPut, apiPost } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { formatDateTime } from '@/lib/format-date'
 
 interface Suggestion {
   id: string
@@ -564,7 +565,7 @@ export default function PurchaseSuggestionsPage() {
 
                     {/* Generated at */}
                     <td className="px-4 py-2.5 text-gray-500 text-xs">
-                      {s.generatedAt ? new Date(s.generatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      {s.generatedAt ? formatDateTime(s.generatedAt) : '-'}
                     </td>
 
                     {/* Actions */}

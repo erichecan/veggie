@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { apiGet } from '@/lib/api'
+import { formatDateTime } from '@/lib/format-date'
 
 /**
  * Odoo Chatter 风格的活动日志：
@@ -101,11 +102,7 @@ function getInitials(name: string): string {
 }
 
 function formatAbsolute(s: string): string {
-  const d = new Date(s)
-  return d.toLocaleString('en-GB', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  })
+  return formatDateTime(s)
 }
 
 function formatRelative(s: string): string {

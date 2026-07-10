@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import type { OdooPricelist } from '@/lib/types'
+import { formatDateTime } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 
@@ -118,7 +119,7 @@ export default function ClassicPricelistsPage() {
       filterType: 'date-range',
       render: (v) => (
         <span className="text-xs text-gray-500">
-          {v ? new Date(String(v)).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+          {v ? formatDateTime(String(v)) : '—'}
         </span>
       ),
     },

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
+import { formatDateTime } from '@/lib/format-date'
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 
 interface DriverRow {
@@ -120,7 +121,7 @@ export default function LogisticsAnalyticsPage() {
                     <td className="px-3 py-1.5">{d.driver ?? '未指定'}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{d.order_count}</td>
                     <td className="px-3 py-1.5 text-right text-gray-500">
-                      {new Date(d.dispatched_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                      {formatDateTime(d.dispatched_at)}
                     </td>
                   </tr>
                 ))}
