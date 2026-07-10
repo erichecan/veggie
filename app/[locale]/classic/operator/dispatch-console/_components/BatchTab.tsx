@@ -302,17 +302,18 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const nextBatchNum = Math.max(...groupSlots.map(s => s.batchNum)) + 1
     try {
       await apiPost('/api/driver-slots', { timeOfDay, batchNum: nextBatchNum, driverName, userId: groupSlots[0]?.userId ?? null })
-      toast.success(`${driverName} 新增托盘 ${nextBatchNum}`)
+      toast.success(`已新增 ${nextBatchNum} ${timeOfDay} ${driverName}`)
       load()
     } catch (e) { toast.error(e instanceof Error ? e.message : '新增托盘失败') }
   }
 
   // 删除托盘：归档这个 DriverSlot；后端联动把该托盘里的订单整单退回待分配(未出发波次才生效)。
   async function deletePallet(slot: DriverSlot, orderCount: number) {
-    if (orderCount > 0 && !confirm(`托盘 ${slot.batchNum} 里还有 ${orderCount} 单，删除后这些订单会退回待分配，确定删除？`)) return
+    const label = `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}`
+    if (orderCount > 0 && !confirm(`${label} 里还有 ${orderCount} 单，删除后这些订单会退回待分配，确定删除？`)) return
     try {
       const res = await apiDelete<{ unassignedOrderCount?: number }>(`/api/driver-slots/${slot.id}`)
-      toast.success(`已删除托盘 ${slot.batchNum}${res?.unassignedOrderCount ? `，${res.unassignedOrderCount} 个订单已退回待分配` : ''}`)
+      toast.success(`已删除 ${label}${res?.unassignedOrderCount ? `，${res.unassignedOrderCount} 个订单已退回待分配` : ''}`)
       load()
     } catch (e) { toast.error(e instanceof Error ? e.message : '删除托盘失败') }
   }
@@ -542,7 +543,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   >
                     <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-[11px] font-semibold">
                       <span className="w-[18px] h-[18px] rounded flex items-center justify-center text-white text-[10px] flex-none" style={{ background: PALLET_BLUE }}>{slot.batchNum}</span>
-                      <span className="flex-1 text-gray-700">托盘 {slot.batchNum}</span>
+                      {/* 客户习惯叫法：序号+am/pm+司机名(与销售单列表 DriverSlotCombobox 的 slotLabel 同格式)，不叫"托盘N" */}
+                      <span className="flex-1 text-gray-700">{slot.batchNum} {slot.timeOfDay} {slot.driverName}</span>
                       <span className="text-gray-400 font-normal">{palletOrders.length}</span>
                       {!dispatched && !locked && (
                         <button
