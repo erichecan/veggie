@@ -55,6 +55,31 @@ async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType
   return map
 }
 
+/**
+ * OrderLine.uomId 历史全空，goodsType 判断实际靠这个兜底：
+ * 按 productId 找到商品所属 ProductTemplate.uomId，再查其 goodsType。
+ */
+async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string, GoodsType>> {
+  const map = new Map<string, GoodsType>()
+  if (productIds.length === 0) return map
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
+      SELECT p.id, u."goodsType"
+      FROM "Product" p
+      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
+      LEFT JOIN "Uom" u ON u.id = pt."uomId"
+      WHERE p.id = ANY(${productIds})
+    `
+    for (const r of rows) {
+      const g = r.goodsType
+      map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
+    }
+  } catch (e) {
+    console.warn('[trip-print] ProductTemplate.uomId goodsType fallback not available:', (e as Error).message)
+  }
+  return map
+}
+
 /** Server-only：拼装一份完整的 trip 打印数据。给 API route 调用 */
 export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWire | null> {
   const trip = await prisma.trip.findUnique({ where: { id: tripId } })
@@ -81,7 +106,13 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const uomIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.uomId).filter((x): x is string => !!x),
   )]
-  const goodsTypeMap = await loadGoodsTypeMap(uomIds)
+  const productIds = [...new Set(
+    orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
+  )]
+  const [goodsTypeMap, productGoodsTypeMap] = await Promise.all([
+    loadGoodsTypeMap(uomIds),
+    loadProductGoodsTypeMap(productIds),
+  ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
     id: c.id,
@@ -116,7 +147,8 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
           spec: l.spec ?? null,
           uomId: l.uomId,
           uomName: l.uomName,
-          goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
+          // OrderLine.uomId 历史全空，先看行级 uom，没有再回退到商品自己的 uom
+          goodsType: (l.uomId ? goodsTypeMap.get(l.uomId) : null) ?? productGoodsTypeMap.get(l.productId) ?? null,
           note: l.note ?? null,
           orderedQty: toNum(l.orderedQty),
           unitPrice: toNum(l.unitPrice),

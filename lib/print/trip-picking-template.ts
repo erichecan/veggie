@@ -16,6 +16,7 @@
 
 import { barcodeValue } from '@/lib/barcode'
 import {
+  type GoodsType,
   type TripPrintData,
   escapeHtml,
 } from './trip-common'
@@ -49,6 +50,8 @@ interface AggProduct {
   totalQty: number
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType: string | null
+  /** 'LOOSE'(散称,按重量卖) 时按客户展示明细子行；'BULK'/null 只显示总量 */
+  goodsType: GoodsType
   orderCodes: string[]
   byCustomer: Map<string, CustomerBreakdown>
 }
@@ -92,11 +95,14 @@ export function generateTripPickingHtml(
           uomName: line.uomName ?? '',
           totalQty: 0,
           productType: line.productType ?? null,
+          goodsType: line.goodsType ?? null,
           orderCodes: [],
           byCustomer: new Map<string, CustomerBreakdown>(),
         }
         aggMap.set(key, agg)
       }
+      // 同一商品理论上 goodsType 恒定；任一行判为 LOOSE 就展示明细，容错优先
+      if (line.goodsType === 'LOOSE') agg.goodsType = 'LOOSE'
       agg.totalQty += line.orderedQty
       if (!agg.orderCodes.includes(orderCode)) {
         agg.orderCodes.push(orderCode)
@@ -128,7 +134,7 @@ export function generateTripPickingHtml(
     if (products.length === 0) return ''
     const rows = products.map((p, i) => {
       const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
-      return `
+      const mainRow = `
       <tr class="${rowClass}">
         <td class="col-seq">${i + 1}</td>
         <td class="col-name">
@@ -139,6 +145,20 @@ export function generateTripPickingHtml(
         <td class="col-uom">${escapeHtml(p.uomName)}</td>
         <td class="col-check"></td>
       </tr>`
+      // 散称/按重量卖的商品才展示客户拆分明细，其余包装商品只看总量即可备货
+      const breakdownRows = p.goodsType === 'LOOSE'
+        ? Array.from(p.byCustomer.values())
+            .sort((a, b) => a.customerName.localeCompare(b.customerName))
+            .map(bd => `
+      <tr class="row-bd">
+        <td class="col-seq"></td>
+        <td class="col-name bd-name">↳ ${escapeHtml(bd.customerName)}</td>
+        <td class="col-qty bd-qty">${fmtQty(bd.qty)}</td>
+        <td class="col-uom"></td>
+        <td class="col-check"></td>
+      </tr>`).join('')
+        : ''
+      return mainRow + breakdownRows
     }).join('')
 
     return `

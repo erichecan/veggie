@@ -75,6 +75,32 @@ async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType
 }
 
 /**
+ * OrderLine.uomId 历史全空，goodsType 判断实际靠这个兜底：
+ * 按 productId 找到商品所属 ProductTemplate.uomId，再查其 goodsType。
+ * 与 loadProductTypeMap 是同一个 join 模式，只是多连一层 Uom。
+ */
+async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string, GoodsType>> {
+  const map = new Map<string, GoodsType>()
+  if (productIds.length === 0) return map
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
+      SELECT p.id, u."goodsType"
+      FROM "Product" p
+      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
+      LEFT JOIN "Uom" u ON u.id = pt."uomId"
+      WHERE p.id = ANY(${productIds})
+    `
+    for (const r of rows) {
+      const g = r.goodsType
+      map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
+    }
+  } catch (e) {
+    console.warn('[dispatch-print] ProductTemplate.uomId goodsType fallback not available:', (e as Error).message)
+  }
+  return map
+}
+
+/**
  * 批次选择器（优先级从高到低）：
  * - waveIds 非空 → 多批次筛选打印（打印中心筛选后「打印筛选结果」）
  * - driverSlotId / batchLabel → 单批次
@@ -242,9 +268,10 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap] = await Promise.all([
+  const [goodsTypeMap, productTypeMap, productGoodsTypeMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductTypeMap(productIds),
+    loadProductGoodsTypeMap(productIds),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -280,7 +307,8 @@ export async function loadDispatchPrintData(
           spec: l.spec ?? null,
           uomId: l.uomId,
           uomName: l.uomName,
-          goodsType: l.uomId ? (goodsTypeMap.get(l.uomId) ?? null) : null,
+          // OrderLine.uomId 历史全空，先看行级 uom，没有再回退到商品自己的 uom
+          goodsType: (l.uomId ? goodsTypeMap.get(l.uomId) : null) ?? productGoodsTypeMap.get(l.productId) ?? null,
           productType: productTypeMap.get(l.productId) ?? null,
           note: l.note ?? null,
           orderedQty: toNum(l.orderedQty),
