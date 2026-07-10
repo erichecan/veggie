@@ -16,6 +16,9 @@
 # 本地数据库备份（维护脚本生成，不入库）
 /backups/
 
+# 演示种子数据 manifest（记录生产库真实 id，本地状态，不入库）
+scripts/.demo-seed-manifest.json
+
 # next.js
 /.next/
 /out/
