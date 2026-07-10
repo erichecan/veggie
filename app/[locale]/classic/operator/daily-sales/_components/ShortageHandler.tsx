@@ -245,7 +245,11 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
       filteredLines.filter(l => savedLineIds.has(l.lineId)).map(l => l.orderId)
     )]
     if (orderIds.length === 0) return
-    window.open(`${prefix}/classic/print/batch?ids=${orderIds.join(',')}&doc=delivery`, '_blank')
+    // noopener：切断与本页的 opener 关系，避免打印页里的 window.print() 连带把本页卡住
+    const win = window.open(`${prefix}/classic/print/batch?ids=${orderIds.join(',')}&doc=delivery`, '_blank', 'noopener,noreferrer')
+    if (!win) {
+      setSaveMsg({ ok: false, text: '浏览器拦截了弹出窗口，请允许弹窗后重试' })
+    }
   }
 
   // 「操作记录」= 缺货处理产生的改量/删行记录，按记录对应订单的 deliveryDate 归到「所选配送日」

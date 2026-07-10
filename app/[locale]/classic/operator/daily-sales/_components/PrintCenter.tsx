@@ -91,8 +91,15 @@ function BatchCard({
   const parsed = parseDriverSlotKey(batchKey)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
 
+  // noopener：daily-sales 这条打印链路此前没加，新标签页与本页共享 opener 关系，
+  // 落地页里 window.print() 弹出系统打印框时会连带把这个 opener 页面一起卡住、点不动；
+  // 加 noopener 切断这层关系后，打印框只锁自己的标签页，opener 页面正常可操作。
   async function print(type: 'delivery' | 'summary' | 'sales') {
-    window.open(buildPrintUrl(prefix, type, date, batchKey), '_blank')
+    const win = window.open(buildPrintUrl(prefix, type, date, batchKey), '_blank', 'noopener,noreferrer')
+    if (!win) {
+      toast.error('浏览器拦截了弹出窗口，请允许弹窗后重试')
+      return
+    }
     onPrint()
     // 记录打印动作到操作记录（失败不影响打印）
     try {
@@ -107,7 +114,7 @@ function BatchCard({
   // 若改成"await 锁定接口再 window.open"，脱离了用户手势的同步上下文，浏览器会静默拦截弹窗，
   // 页面看起来像"卡住/锁定了"其实是没打开任何东西。
   async function printPicking(variant: 'storable' | 'consumable') {
-    const win = window.open('', '_blank')
+    const win = window.open('', '_blank', 'noopener,noreferrer')
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
@@ -534,7 +541,11 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
   const filteredWaveIds = isFiltered ? batchGroups.map(g => g.waveId) : undefined
 
   async function bulkPrint(type: 'delivery' | 'sales') {
-    window.open(buildPrintUrl(prefix, type, date, undefined, undefined, filteredWaveIds), '_blank')
+    const win = window.open(buildPrintUrl(prefix, type, date, undefined, undefined, filteredWaveIds), '_blank', 'noopener,noreferrer')
+    if (!win) {
+      toast.error('浏览器拦截了弹出窗口，请允许弹窗后重试')
+      return
+    }
     try {
       await apiPost('/api/waves/print-log', { date, type, scope: isFiltered ? 'filtered' : 'bulk', count: batchGroups.length })
       loadLogs()
@@ -545,7 +556,7 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
   // 分实物/耗材两份，供两个拣货员分开作业；打印范围与锁定范围一致（跟随筛选）
   // 同 printPicking：先同步占好新标签页，锁定结果出来后再导航，避免弹窗被浏览器静默拦截。
   async function bulkPrintPicking(variant: 'storable' | 'consumable') {
-    const win = window.open('', '_blank')
+    const win = window.open('', '_blank', 'noopener,noreferrer')
     const results = await Promise.allSettled(
       batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, { reason: 'print', variant }))
     )
