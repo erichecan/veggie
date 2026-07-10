@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { deletePalletForDriverSlot } from '@/lib/wave-assign'
+import { WavePickLockedError } from '@/lib/wave-pick-lock'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -45,6 +46,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     })
     return NextResponse.json(slot)
   } catch (e: unknown) {
+    if (e instanceof WavePickLockedError) {
+      return NextResponse.json({ error: e.message }, { status: 409 })
+    }
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes('Unique constraint')) {
       return NextResponse.json({ error: '该司机名字已存在' }, { status: 409 })
@@ -61,6 +65,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     const { unassignedOrderCount } = await deletePalletForDriverSlot(slot)
     return NextResponse.json({ ok: true, unassignedOrderCount })
   } catch (e) {
+    if (e instanceof WavePickLockedError) {
+      return NextResponse.json({ error: e.message }, { status: 409 })
+    }
     console.error('[driver-slots DELETE]', e)
     return NextResponse.json({ error: 'Failed to archive driver slot' }, { status: 500 })
   }
