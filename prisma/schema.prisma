@@ -159,6 +159,8 @@ model User {
   customersAsSalesUser Customer[] @relation("CustomerSalesUser")
   /// 反向关系：绑定到该用户的司机配送批次(DriverSlot.userId)
   driverSlots   DriverSlot[] @relation("DriverSlotUser")
+  /// 反向关系：该用户作为负责人的采购品类分组
+  categoryGroupsOwned CategoryGroup[] @relation("CategoryGroupOwner")
 
   @@index([role])
   @@index([customerId])
@@ -170,8 +172,36 @@ model ProductCategory {
   name       String
   nameZh     String?
   externalId String?
+  /// 归属的采购品类分组（干货/日韩/超市/生鲜冷冻），可空=未映射
+  groupId    String?
+  group      CategoryGroup?     @relation(fields: [groupId], references: [id])
   templates  ProductTemplate[]
   products   Product[]
+
+  @@index([groupId])
+}
+
+enum CategoryGroupKey {
+  DRY_GOODS
+  JAPANESE_KOREAN
+  SUPERMARKET
+  FRESH_FROZEN
+}
+
+/// 采购品类分组：干货 / 日韩商品 / 超市商品 / 蔬菜生鲜冷冻。
+/// 每组各自的采购节奏和负责人不同，是采购模块"一套流程,四套补货策略"的分组依据。
+model CategoryGroup {
+  id          String            @id @default(cuid())
+  key         CategoryGroupKey  @unique
+  name        String
+  nameZh      String
+  /// 补货节奏：DAILY(每日自动,生鲜) / PERIODIC(周期提醒,超市/日韩) / ANNUAL(年度计划,干货)
+  cadence     String
+  ownerUserId String?
+  owner       User?             @relation("CategoryGroupOwner", fields: [ownerUserId], references: [id])
+  categories  ProductCategory[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 }
 
 model ProductAttribute {
@@ -1146,10 +1176,15 @@ model PurchaseSuggestion {
   generatedAt    DateTime  @default(now())
   resolvedAt     DateTime?
   resolvedBy     String?
+  /// 该商品归属的采购品类分组 key（冗余存储,避免每次列表查询都要多级 join），可空=未映射分组
+  categoryGroupKey String?
+  /// 生成依据的说明文案，如"近3日出货均值+未来订单"/"已确认订单缺口"，用于 UI 展示"为什么建议采购"
+  reason         String?
 
   @@index([productId])
   @@index([status])
   @@index([generatedAt])
+  @@index([categoryGroupKey])
 }
 
 /// 通知（P1-11：缺货自动通知等）

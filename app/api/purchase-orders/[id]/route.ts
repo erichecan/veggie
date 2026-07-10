@@ -4,6 +4,9 @@ import { withAuth } from '@/lib/auth'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
+import { createDraftVendorBillForPurchaseOrder } from '@/lib/vendor-bill-from-po'
+import { notifyRole } from '@/lib/notify'
+import { eur } from '@/lib/format-money'
 
 const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'notes', 'expectedDate', 'editApprovalRequired']
 
@@ -239,89 +242,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         include: { lines: true },
       })
 
-      // 库存批次日期：采购单的预期到货日，无则用当前时间
-      const poBatchDate: Date = po.expectedDate ?? new Date()
+      // SSOT：库存只能通过实际收货（GoodsReceipt）增加，"确认采购"只代表供应商接单，
+      // 不产生任何库存/批次副作用——避免和收货单重复计数（历史 bug，见 20260710 采购模块升级）。
 
-      // On CONFIRMED: increment stock (IN) + create Lot
+      // 确认采购单即代表应付款项已确定，自动生成 DRAFT 供应商账单并通知财务
       if (targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED') {
-        let lotSeq = await p.lot.count()
-        const lines = po.lines as Array<{ productId: string | null; productName: string; orderedQty: unknown; bestBefore?: Date | null }>
-        for (const line of lines) {
-          if (!line.productId) continue
-          const qty = toNum(line.orderedQty)
-          if (qty <= 0) continue
-          const product = await p.product.findUnique({
-            where: { id: line.productId },
-            include: { template: { select: { type: true } } },
-          })
-          if (!product || product.template?.type !== 'PRODUCT') continue
-          await p.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { increment: qty } },
-          })
-
-          // 创建批次
-          lotSeq++
-          const lotNumber = `LOT-${String(lotSeq).padStart(5, '0')}`
-          const lot = await p.lot.create({
-            data: {
-              lotNumber,
-              productId: line.productId,
-              initialQty: qty,
-              currentQty: qty,
-              sourceType: 'PURCHASE_ORDER',
-              sourceId: id,
-              sourceRef: po.name,
-              bestBefore: line.bestBefore ?? null,
-              arrivedAt: poBatchDate,
-            },
-          })
-
-          await p.stockMove.create({
-            data: {
-              productId: line.productId,
-              productName: line.productName ?? '',
-              type: 'IN',
-              qty,
-              lotId: lot.id,
-              movedAt: poBatchDate,
-              note: `采购单 ${po.name} 确认入库 / 批次 ${lotNumber}`,
-              sourceType: 'PURCHASE_ORDER',
-              sourceId: id,
-              sourceRef: po.name,
-            },
-          })
-        }
-      }
-
-      // On CANCELLED from CONFIRMED: reverse stock (OUT)
-      if (targetStatus === 'CANCELLED' && po.status === 'CONFIRMED') {
-        const lines = po.lines as Array<{ productId: string | null; productName: string; orderedQty: unknown }>
-        for (const line of lines) {
-          if (!line.productId) continue
-          const qty = toNum(line.orderedQty)
-          if (qty <= 0) continue
-          const product = await p.product.findUnique({
-            where: { id: line.productId },
-            include: { template: { select: { type: true } } },
-          })
-          if (!product || product.template?.type !== 'PRODUCT') continue
-          await p.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { decrement: qty } },
-          })
-          await p.stockMove.create({
-            data: {
-              productId: line.productId,
-              productName: line.productName ?? '',
-              type: 'OUT',
-              qty: -qty,
-              movedAt: poBatchDate,
-              note: `采购单 ${po.name} 取消释放库存`,
-              sourceType: 'PURCHASE_ORDER',
-              sourceId: id,
-              sourceRef: po.name,
-            },
+        const bill = await createDraftVendorBillForPurchaseOrder(p, id)
+        if (bill) {
+          const supplier = await p.customer.findUnique({ where: { id: bill.supplierId }, select: { name: true } })
+          await notifyRole(['FINANCE'], {
+            type: 'vendor_bill_draft',
+            title: `新草稿账单：${bill.name}`,
+            body: `采购单 ${po.name}（供应商 ${supplier?.name ?? bill.supplierId}）已确认，金额 ${eur(bill.totalIncTax)}，请核对并过账。`,
+            data: { purchaseOrderId: id, vendorBillId: bill.id },
           })
         }
       }

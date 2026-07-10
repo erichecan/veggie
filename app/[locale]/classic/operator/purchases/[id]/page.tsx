@@ -4,8 +4,27 @@ import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut, apiPatch } from '@/lib/api'
+import { apiGet, apiPut, apiPatch, authHeaders } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
+
+async function openPurchaseOrderPdf(poId: string) {
+  // JWT 存在 localStorage，直接 window.open API 路由不会带 Authorization 头会 401，
+  // 必须先用带鉴权的 fetch 取回 HTML 文本，再开新窗口写入。
+  const win = window.open('', '_blank')
+  try {
+    const res = await fetch(`/api/purchase-orders/${poId}/pdf`, { headers: authHeaders() })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const html = await res.text()
+    if (win) {
+      win.document.open()
+      win.document.write(html)
+      win.document.close()
+    }
+  } catch (e) {
+    win?.close()
+    toast.error(e instanceof Error ? e.message : 'PDF 生成失败')
+  }
+}
 
 const PURPLE = '#875A7B'
 const DARK = '#1f2d3d'
@@ -320,9 +339,10 @@ export default function PurchaseDetailPage() {
               </>
             )}
             <div className="w-px h-4 bg-gray-300 mx-1" />
-            <button className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50 flex items-center gap-1"
+            <button onClick={() => openPurchaseOrderPdf(po.id)}
+              className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50 flex items-center gap-1"
               style={{ borderColor: '#d0d5dd', color: DARK }}>
-              打印 <span className="text-xs leading-none">▾</span>
+              打印
             </button>
             <button className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50 flex items-center gap-1"
               style={{ borderColor: '#d0d5dd', color: DARK }}>
@@ -351,7 +371,8 @@ export default function PurchaseDetailPage() {
                   style={{ background: PURPLE }}>
                   发送邮件
                 </button>
-                <button disabled className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                <button onClick={() => openPurchaseOrderPdf(po.id)}
+                  className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
                   打印询价单
                 </button>
                 <button onClick={() => handleAction('confirm', '确认采购')} disabled={acting}

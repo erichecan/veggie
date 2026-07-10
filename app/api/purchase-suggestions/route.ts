@@ -17,11 +17,13 @@ export async function GET(req: Request) {
     try {
       const url = new URL(req.url)
       const status = url.searchParams.get('status')
+      const categoryGroupKey = url.searchParams.get('categoryGroupKey')
       const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
       const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize')) || 50))
 
       const where: Record<string, unknown> = {}
       if (status) where.status = status
+      if (categoryGroupKey) where.categoryGroupKey = categoryGroupKey
 
       const [items, total] = await Promise.all([
         prisma.purchaseSuggestion.findMany({

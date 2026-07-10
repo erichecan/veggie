@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { toNum } from '@/lib/decimal-helpers'
 
 /**
  * lib/notify.ts — 业务事件通知
@@ -42,18 +43,24 @@ export async function notifyLowStockAfterConfirm(
 ): Promise<void> {
   try {
     if (productIds.length === 0) return
-    const low = await prisma.product.findMany({
-      where: { id: { in: productIds }, active: true, qtyOnHand: { lt: 20 } },
-      select: { name: true, qtyOnHand: true },
+    // 口径统一：每个商品用自己的 safetyStockMin 判断，未设置(<=0)的商品不参与低库存判定
+    // 与 /api/products/forecast 的 belowSafetyStock 保持同一套字段来源
+    const candidates = await prisma.product.findMany({
+      where: { id: { in: productIds }, active: true },
+      select: { name: true, qtyOnHand: true, safetyStockMin: true },
+    })
+    const low = candidates.filter(p => {
+      const safetyMin = toNum(p.safetyStockMin)
+      return safetyMin > 0 && toNum(p.qtyOnHand) < safetyMin
     })
     if (low.length === 0) return
     const names = low
       .slice(0, 5)
-      .map(p => `${p.name}(剩 ${Number(p.qtyOnHand)})`)
+      .map(p => `${p.name}(剩 ${toNum(p.qtyOnHand)}, 安全库存 ${toNum(p.safetyStockMin)})`)
       .join('、')
     await notifyRole(['OPERATOR'], {
       type: 'shortage',
-      title: `低库存提醒:${low.length} 个商品库存不足 20`,
+      title: `低库存提醒:${low.length} 个商品低于安全库存`,
       body: `订单 ${orderCode} 确认后,${names}${low.length > 5 ? ' 等' : ''}库存偏低,请考虑补货。`,
       data: { orderCode, products: low.map(p => p.name) },
     })

@@ -211,8 +211,12 @@ export default function PurchasesPage() {
       <OdooControlPanel
         breadcrumb={['采购', '询价单']}
         permanentActions={[
+          { label: '📊 总览', onClick: () => router.push(`${prefix}/classic/operator/purchases/overview`) },
           { label: '新建', onClick: () => setShowNewDialog(true), primary: true },
           { label: 'Import', onClick: () => { setShowImportDialog(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
+          { label: '🥬 生鲜次日备货', onClick: () => router.push(`${prefix}/classic/operator/purchases/fresh`) },
+          { label: '🛒 目录挑选', onClick: () => router.push(`${prefix}/classic/operator/purchases/catalog`) },
+          { label: '🌾 干货年度计划', onClick: () => router.push(`${prefix}/classic/operator/purchases/annual-plan`) },
         ]}
         searchValue={searchInput}
         onSearch={v => setSearchInput(v)}

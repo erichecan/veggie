@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { SALES_COUNTED_STATUSES, TURNOVER_WINDOW_DAYS, resolveDateRange } from '@/lib/analytics/metrics'
+import { getTopProductPriceTrends } from '@/lib/analytics/price-trend'
+import { round2 } from '@/lib/decimal-helpers'
 
 /**
  * /api/analytics/procurement — 采购运营分析
@@ -49,69 +51,8 @@ export async function GET(req: Request) {
         amount_ex: number; ordered_qty: number; received_qty: number
       }>
 
-      // 进价走势：期内采购额 TOP 20 商品，取每次 PO 行价格点
-      const pricePoints = (await p.$queryRawUnsafe(
-        `WITH top_products AS (
-           SELECT pol."productId" AS product_id, SUM(pol."subtotalExTax") AS amt
-           FROM "PurchaseOrderLine" pol
-           JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
-           WHERE po.status::text IN (${PO_COUNTED})
-             AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-             AND COALESCE(po."confirmedAt", po."orderDate") < $2
-           GROUP BY pol."productId"
-           ORDER BY SUM(pol."subtotalExTax") DESC
-           LIMIT 20
-         )
-         SELECT pol."productId" AS product_id,
-                MAX(pol."productName") AS product_name,
-                COALESCE(po."confirmedAt", po."orderDate") AS po_date,
-                COALESCE(MAX(s.name), '') AS supplier_name,
-                AVG(pol."unitCost")::float AS unit_cost
-         FROM "PurchaseOrderLine" pol
-         JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
-         LEFT JOIN "Customer" s ON s.id = po."supplierId"
-         JOIN top_products tp ON tp.product_id = pol."productId"
-         WHERE po.status::text IN (${PO_COUNTED})
-           AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-           AND COALESCE(po."confirmedAt", po."orderDate") < $2
-         GROUP BY pol."productId", COALESCE(po."confirmedAt", po."orderDate"), po.id
-         ORDER BY pol."productId", po_date ASC`,
-        start, end,
-      )) as Array<{
-        product_id: string; product_name: string; po_date: Date
-        supplier_name: string; unit_cost: number
-      }>
-
-      const round2 = (n: number) => Math.round(n * 100) / 100
-      const trendMap = new Map<string, {
-        productId: string; productName: string
-        points: Array<{ date: Date; cost: number; supplier: string }>
-      }>()
-      for (const pt of pricePoints) {
-        let t = trendMap.get(pt.product_id)
-        if (!t) {
-          t = { productId: pt.product_id, productName: pt.product_name, points: [] }
-          trendMap.set(pt.product_id, t)
-        }
-        t.points.push({ date: pt.po_date, cost: pt.unit_cost, supplier: pt.supplier_name })
-      }
-      const priceTrends = [...trendMap.values()].map((t) => {
-        const costs = t.points.map((x) => x.cost)
-        const latest = t.points[t.points.length - 1]
-        const prev = t.points.length > 1 ? t.points[t.points.length - 2] : null
-        return {
-          productId: t.productId,
-          productName: t.productName,
-          buys: t.points.length,
-          minCost: round2(Math.min(...costs)),
-          maxCost: round2(Math.max(...costs)),
-          latestCost: round2(latest.cost),
-          latestSupplier: latest.supplier,
-          latestDate: latest.date,
-          prevCost: prev ? round2(prev.cost) : null,
-          changePct: prev && prev.cost > 0 ? round2(((latest.cost - prev.cost) / prev.cost) * 100) : null,
-        }
-      }).sort((a, b) => Math.abs(b.changePct ?? 0) - Math.abs(a.changePct ?? 0))
+      // 进价走势：期内采购额 TOP 20 商品，取每次 PO 行价格点（口径 SSOT：lib/analytics/price-trend.ts）
+      const priceTrends = await getTopProductPriceTrends(start, end, 20)
 
       // 库存周转：qtyOnHand ÷ 日均销量（近 TURNOVER_WINDOW_DAYS 天），慢周转 TOP 20
       const turnover = (await p.$queryRawUnsafe(
