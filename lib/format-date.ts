@@ -28,28 +28,33 @@ export function getDayColor(dayIndex: number): string {
  * 将日期格式化为 "2025-04-24 Thu" 格式
  * @param date - Date 对象、ISO 字符串或时间戳
  * @returns 格式化后的字符串，如 "2025-04-24 Thu"
+ *
+ * 用 UTC getter，不用本地时区 getter：deliveryDate/waveDate 这类"纯日期"字段存的是
+ * UTC 零点，没有"几点"的含义，本该按 UTC 日历日显示；用本地时区拆解在时区落后 UTC
+ * 的机器上(如美东)会把 07-06 显示成 07-05——2026-07-10 的"销售单和调度台订单数对
+ * 不上"就是这个 bug 造成的(其实数量一致，只是显示的日期整体错了一天)。
  */
 export function formatDateWithDay(date: Date | string | number | null | undefined): string {
   if (!date) return '—'
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) return '—'
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const day = DAY_ABBR[d.getDay()]
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const day = DAY_ABBR[d.getUTCDay()]
   return `${dd}/${mm}/${yyyy} ${day}`
 }
 
 /**
- * 将日期格式化为 "24/04/2025" 格式（仅日期，不含星期）
+ * 将日期格式化为 "24/04/2025" 格式（仅日期，不含星期）。同上用 UTC getter。
  */
 export function formatDateOnly(date: Date | string | number | null | undefined): string {
   if (!date) return '—'
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) return '—'
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
   return `${dd}/${mm}/${yyyy}`
 }
 
@@ -87,16 +92,16 @@ export function formatDateTimeShort(date: Date | string | number | null | undefi
 
 /**
  * HTML 版：返回带 <strong> + 颜色样式的星期几片段
- * 用于打印模板等只接受字符串的场景
+ * 用于打印模板等只接受字符串的场景。同上，纯日期字段用 UTC getter。
  */
 export function formatDateWithDayHtml(date: Date | string | number | null | undefined): string {
   if (!date) return '—'
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) return '—'
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const idx = d.getDay()
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const idx = d.getUTCDay()
   return `${dd}/${mm}/${yyyy} <strong style="color:${DAY_COLORS[idx]}">${DAY_ABBR[idx]}</strong>`
 }
 

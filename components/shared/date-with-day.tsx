@@ -30,7 +30,8 @@ function toDate(date: DateInput): Date | null {
 export function DateWithDay({ date, className, fallback = '—' }: Props) {
   const d = toDate(date)
   if (!d) return <span className={className}>{fallback}</span>
-  const idx = d.getDay()
+  // 纯日期字段(deliveryDate 等)用 UTC 星期，与 formatDateOnly 的 UTC 拆解口径一致
+  const idx = d.getUTCDay()
   return (
     <span className={className}>
       {formatDateOnly(d)}{' '}
