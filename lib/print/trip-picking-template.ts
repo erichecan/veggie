@@ -5,16 +5,13 @@
  *   顶部：批次信息 + 日期 + 司机
  *   实物商品表格（ProductTemplate.type === 'PRODUCT'，或 type 未知）
  *   耗材表格（ProductTemplate.type === 'CONSU'）
- *   底部：所有订单号 + 条形码（供扫码枪扫描）
  *
  * variant 决定印出哪一部分，供两个拣货员分开作业：
  *   'all'        —— 实物 + 耗材（默认，兼容旧链接）
  *   'storable'   —— 只印实物，给整箱整袋的拣货员
  *   'consumable' —— 只印耗材，给零散货的拣货员
- * 无论哪种 variant，底部订单条形码区都保留，两人各自都能扫码核对。
  */
 
-import { barcodeValue } from '@/lib/barcode'
 import {
   type GoodsType,
   type TripPrintData,
@@ -177,30 +174,11 @@ export function generateTripPickingHtml(
     </table>`
   }
 
-  // Order barcodes at the bottom
-  const orderBarcodes = orders.map(o => {
-    const code = o.code ?? o.id.slice(0, 8).toUpperCase()
-    const safeCode = code.replace(/['"\\]/g, '')
-    return `
-    <div class="bc-item">
-      <svg id="bc-${safeCode}" class="bc-svg"></svg>
-      <div class="bc-label">${escapeHtml(code)}</div>
-      <div class="bc-customer">${escapeHtml(o.customerName)}</div>
-    </div>`
-  }).join('')
-
-  const barcodeInits = orders.map(o => {
-    const code = o.code ?? o.id.slice(0, 8).toUpperCase()
-    const safeCode = code.replace(/['"\\]/g, '')
-    return `try{JsBarcode('#bc-${safeCode}',${JSON.stringify(barcodeValue(code, o.id))},{format:'CODE128',width:1.5,height:40,displayValue:false,margin:0});}catch(e){}`
-  }).join('\n')
-
   return `<!doctype html>
 <html lang="zh">
 <head>
 <meta charset="utf-8"/>
 <title>拣货单${variantLabel ? ' · ' + escapeHtml(variantLabel) : ''} — ${escapeHtml(teamStr)}</title>
-<script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background:#fff}
@@ -233,14 +211,6 @@ export function generateTripPickingHtml(
   tr.row-bd td{border-bottom:1px dashed #e0e0e0;padding-top:2px;padding-bottom:2px}
   .bd-name{padding-left:26px!important;color:#555;font-size:10px}
   .bd-qty{font-weight:600!important;font-size:11px!important;color:#555}
-
-  .orders-section{margin-top:16px;padding-top:10px;border-top:2px solid #1a3a2a}
-  .orders-title{font-size:12px;font-weight:700;color:#1a3a2a;margin-bottom:8px}
-  .bc-grid{display:flex;flex-wrap:wrap;gap:12px}
-  .bc-item{text-align:center;border:1px solid #ddd;padding:6px 10px;border-radius:4px;min-width:140px}
-  .bc-svg{max-width:100%;height:32px;display:block;margin:0 auto 2px}
-  .bc-label{font-size:10px;font-weight:700;letter-spacing:.5px}
-  .bc-customer{font-size:9px;color:#666;margin-top:1px}
 
   .stats{margin-top:12px;font-size:10px;color:#555;display:flex;gap:16px}
   .stats .num{font-weight:700;color:#000}
@@ -275,15 +245,7 @@ export function generateTripPickingHtml(
     ${variant === 'all' ? `<span>合计 <span class="num">${allProducts.length}</span> 种</span>` : ''}
   </div>
 
-  <div class="orders-section">
-    <div class="orders-title">关联订单（扫码查询）</div>
-    <div class="bc-grid">
-      ${orderBarcodes}
-    </div>
-  </div>
-
 <script>
-  ${barcodeInits}
   window.print();
 <\/script>
 </body>
