@@ -33,6 +33,35 @@ interface PriceTrend {
   latestCost: number
   prevCost: number | null
   changePct: number | null
+  recentCosts: number[]
+}
+
+function Sparkline({ costs }: { costs: number[] }) {
+  if (costs.length < 2) return <span className="text-gray-300 text-xs">—</span>
+  const min = Math.min(...costs)
+  const max = Math.max(...costs)
+  const range = max - min
+  return (
+    <span className="inline-flex items-end gap-[2px]" style={{ height: 22 }}>
+      {costs.map((c, i) => {
+        const pct = range > 0 ? (c - min) / range : 0.5
+        const h = Math.round(6 + pct * 16)
+        return (
+          <i
+            key={i}
+            style={{
+              display: 'block',
+              width: 4,
+              height: h,
+              background: '#35618a',
+              opacity: i === costs.length - 1 ? 1 : 0.55,
+              borderRadius: '1px 1px 0 0',
+            }}
+          />
+        )
+      })}
+    </span>
+  )
 }
 
 function daysSince(date: Date): number {
@@ -206,6 +235,7 @@ export default function CatalogPickingPage() {
                         <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">商品</th>
                         <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">数量</th>
                         <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">本次报价</th>
+                        <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">近8次走势</th>
                         <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">进价环比</th>
                         <th className="px-4 py-2.5 text-center font-medium text-gray-600 text-xs">匹配</th>
                       </tr>
@@ -220,6 +250,9 @@ export default function CatalogPickingPage() {
                             </td>
                             <td className="px-4 py-2.5 text-right text-gray-700">{l.quantity}</td>
                             <td className="px-4 py-2.5 text-right text-gray-700">{eur(l.unitCost)}</td>
+                            <td className="px-4 py-2.5">
+                              <Sparkline costs={t?.recentCosts ?? []} />
+                            </td>
                             <td className="px-4 py-2.5">
                               {t && t.changePct != null ? (
                                 <span className="font-semibold" style={{ color: t.changePct > 0 ? '#b6412a' : t.changePct < 0 ? '#2e7d4f' : '#6b7280' }}>

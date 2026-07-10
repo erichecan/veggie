@@ -8,7 +8,7 @@ import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
 import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, getOrderWaveDriverSlotMap } from '@/lib/wave-assign'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
-import { toNum } from '@/lib/decimal-helpers'
+import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 
@@ -554,20 +554,40 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             data: { qtyOnHand: { decrement: qty } },
           })
           // SSOT: 同步 FIFO 扣减批次余量,避免 Lot 虚高(P1-5)
-          await consumeLotsFIFO(prismaAny, line.productId, qty)
-          await prismaAny.stockMove.create({
-            data: {
+          const consumed = await consumeLotsFIFO(prismaAny, line.productId, qty)
+          // 按实际消耗的批次拆分 StockMove,lotId 落到批次级别 —— 批次追溯"这批卖给了谁"的数据基础
+          const consumedQty = consumed.reduce((s, c) => s + c.qty, 0)
+          const unmatched = round2(qty - consumedQty)
+          const moveRows = consumed.map(c => ({
+            productId: line.productId,
+            productName: line.productName ?? '',
+            type: 'OUT' as const,
+            qty: -c.qty,
+            lotId: c.lotId,
+            movedAt: orderMovedAt,
+            note: `订单 ${orderBefore.code ?? id} 确认预留（批次 ${c.lotNumber}）`,
+            sourceType: 'ORDER',
+            sourceId: id,
+            sourceRef: orderBefore.code ?? id,
+          }))
+          if (unmatched > 0) {
+            // 超卖部分无批次可扣，仍需一条不带 lotId 的move保证 qtyOnHand 有完整流水
+            moveRows.push({
               productId: line.productId,
               productName: line.productName ?? '',
-              type: 'OUT',
-              qty: -qty,
+              type: 'OUT' as const,
+              qty: -unmatched,
+              lotId: undefined as unknown as string,
               movedAt: orderMovedAt,
-              note: `订单 ${orderBefore.code ?? id} 确认预留`,
+              note: `订单 ${orderBefore.code ?? id} 确认预留（超卖，无批次）`,
               sourceType: 'ORDER',
               sourceId: id,
               sourceRef: orderBefore.code ?? id,
-            },
-          })
+            })
+          }
+          for (const row of moveRows) {
+            await prismaAny.stockMove.create({ data: row })
+          }
         }
       }
 

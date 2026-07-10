@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
-import { toNum } from '@/lib/decimal-helpers'
+import { toNum, round2 } from '@/lib/decimal-helpers'
 
 /**
  * POST /api/orders/bulk
@@ -204,20 +204,38 @@ export async function POST(req: Request) {
               where: { id: line.productId },
               data: { qtyOnHand: { decrement: qty } },
             })
-            await consumeLotsFIFO(prismaAny, line.productId, qty)
-            await prismaAny.stockMove.create({
-              data: {
+            const consumed = await consumeLotsFIFO(prismaAny, line.productId, qty)
+            const consumedQty = consumed.reduce((s, c) => s + c.qty, 0)
+            const unmatched = round2(qty - consumedQty)
+            const moveRows = consumed.map(c => ({
+              productId: line.productId,
+              productName: line.productName ?? '',
+              type: 'OUT' as const,
+              qty: -c.qty,
+              lotId: c.lotId,
+              movedAt: bulkMovedAt,
+              note: `批量确认订单预留库存（批次 ${c.lotNumber}）`,
+              sourceType: 'ORDER',
+              sourceId: ordId,
+              sourceRef: null,
+            }))
+            if (unmatched > 0) {
+              moveRows.push({
                 productId: line.productId,
                 productName: line.productName ?? '',
-                type: 'OUT',
-                qty: -qty,
+                type: 'OUT' as const,
+                qty: -unmatched,
+                lotId: undefined as unknown as string,
                 movedAt: bulkMovedAt,
-                note: `批量确认订单预留库存`,
+                note: `批量确认订单预留库存（超卖，无批次）`,
                 sourceType: 'ORDER',
                 sourceId: ordId,
                 sourceRef: null,
-              },
-            })
+              })
+            }
+            for (const row of moveRows) {
+              await prismaAny.stockMove.create({ data: row })
+            }
           }
         }
 

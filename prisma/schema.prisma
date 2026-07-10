@@ -175,10 +175,37 @@ model ProductCategory {
   /// 归属的采购品类分组（干货/日韩/超市/生鲜冷冻），可空=未映射
   groupId    String?
   group      CategoryGroup?     @relation(fields: [groupId], references: [id])
+  /// 该类目商品业务上"应该"放哪个温区（业务规则），可空=未映射。与 Product.currentZoneId（实际放置）对比即可发现放错温区
+  requiredZoneId String?
+  requiredZone   Zone?          @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
   templates  ProductTemplate[]
   products   Product[]
 
   @@index([groupId])
+  @@index([requiredZoneId])
+}
+
+enum ZoneKey {
+  FROZEN
+  CHILLED
+  DRY
+  AMBIENT
+}
+
+/// 仓库温区：冷冻区/冷藏区/常温干货区/常温超市区。
+/// ProductCategory.requiredZoneId = 该类目商品业务上应放哪个温区；Product.currentZoneId = 该商品实际放在哪个温区（收货/上架时录入）。
+/// 两者不一致即为"放错温区"，是仓库地图页温区不符检测的数据基础。
+model Zone {
+  id                   String            @id @default(cuid())
+  key                  ZoneKey           @unique
+  name                 String
+  nameZh               String
+  /// 温度区间说明，如 "-18°C 以下"，纯展示用
+  tempRangeLabel       String?
+  requiredByCategories ProductCategory[] @relation("CategoryRequiredZone")
+  products             Product[]         @relation("ProductCurrentZone")
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 }
 
 enum CategoryGroupKey {
@@ -295,6 +322,9 @@ model Product {
   updatedAt         DateTime  @updatedAt
   externalId        String?
   sequence          Int?
+  /// 该商品实际放在哪个温区（收货/上架时录入），可空=未上架定位。与 category.requiredZoneId 对比即可发现放错温区
+  currentZoneId     String?
+  currentZone       Zone?     @relation("ProductCurrentZone", fields: [currentZoneId], references: [id])
   supplierInfos     ProductSupplierInfo[]
   orderLines        OrderLine[]
   lots              Lot[]
@@ -302,6 +332,7 @@ model Product {
   @@index([templateId])
   @@index([categoryId])
   @@index([sequence])
+  @@index([currentZoneId])
 }
 
 model Customer {
@@ -1180,6 +1211,11 @@ model PurchaseSuggestion {
   categoryGroupKey String?
   /// 生成依据的说明文案，如"近3日出货均值+未来订单"/"已确认订单缺口"，用于 UI 展示"为什么建议采购"
   reason         String?
+  /// 以下四列仅生鲜次日备货(FRESH_FROZEN)生成时才写入，供前端拆分展示；其余品类生成路径留空
+  dailyAvgOutbound Decimal? @db.Decimal(14, 3)
+  futureDemand     Decimal? @db.Decimal(14, 3)
+  inTransitQty     Decimal? @db.Decimal(14, 3)
+  uomName          String?
 
   @@index([productId])
   @@index([status])

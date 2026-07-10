@@ -156,6 +156,10 @@ export async function generateFreshDailySuggestions(): Promise<FreshSuggestionRo
         status: 'pending',
         categoryGroupKey: 'FRESH_FROZEN',
         reason: r.reason,
+        dailyAvgOutbound: r.dailyAvgOutbound,
+        futureDemand: r.futureDemand,
+        inTransitQty: r.inTransitQty,
+        uomName: r.uomName,
       })),
     })
   }

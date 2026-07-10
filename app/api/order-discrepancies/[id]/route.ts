@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { writeLog } from '@/lib/action-log'
+import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -88,6 +89,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: line.productId },
             data: { qtyOnHand: { increment: releaseQty } },
           })
+          await restoreLotsFIFO(px, line.productId, releaseQty)
           await px.stockMove.create({
             data: {
               productId: line.productId,
@@ -130,6 +132,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: line.productId },
             data: { qtyOnHand: { increment: releaseQty } },
           })
+          await restoreLotsFIFO(px, line.productId, releaseQty)
           await px.stockMove.create({
             data: {
               productId: line.productId,
@@ -174,6 +177,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: substituteProductId },
             data: { qtyOnHand: { decrement: Number(substituteQty) } },
           })
+          await consumeLotsFIFO(px, substituteProductId, Number(substituteQty))
           await px.stockMove.create({
             data: {
               productId: substituteProductId,
@@ -200,6 +204,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: line.productId },
             data: { qtyOnHand: { increment: oldQty } },
           })
+          await restoreLotsFIFO(px, line.productId, oldQty)
           await px.stockMove.create({
             data: {
               productId: line.productId,

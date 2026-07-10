@@ -33,7 +33,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       include: { lines: { orderBy: { sequence: 'asc' } }, receipts: true, bills: true },
     })
     if (!po) return NextResponse.json({ error: '采购订单不存在' }, { status: 404 })
-    return NextResponse.json(serializeApi(po))
+
+    // 操作时间线：复用 ActionLog（创建询价单/状态流转已有记录），供详情页展示"何时发生了什么"
+    const activityLog = await p.actionLog.findMany({
+      where: { resource: 'purchase_order', resourceId: id },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, action: true, detail: true, userName: true, createdAt: true },
+    })
+
+    return NextResponse.json(serializeApi({ ...po, activityLog }))
   } catch (error) {
     console.error('[GET /api/purchase-orders/:id]', error)
     return NextResponse.json({ error: '获取失败' }, { status: 500 })

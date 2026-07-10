@@ -47,6 +47,22 @@ interface POLine {
   subtotalIncTax: number
 }
 
+interface POBill {
+  id: string
+  name: string
+  status: string
+  totalIncTax: number
+  createdAt: string
+}
+
+interface ActivityLogEntry {
+  id: string
+  action: string
+  detail: string | null
+  userName: string
+  createdAt: string
+}
+
 interface PurchaseOrder {
   id: string
   name: string
@@ -63,11 +79,14 @@ interface PurchaseOrder {
   totalIncTax: number
   createdAt: string
   lines: POLine[]
+  bills?: POBill[]
+  activityLog?: ActivityLogEntry[]
 }
 
 interface Supplier {
   id: string
   name: string
+  supplierPaymentTerm?: string | null
 }
 
 function toInputDate(iso?: string | null) {
@@ -231,8 +250,8 @@ export default function PurchaseDetailPage() {
     if (!po || acting) return
     setActing(true)
     try {
-      const updated = await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action })
-      setPo(updated)
+      await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action })
+      await load()
       toast.success(`${label}成功`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : `${label}失败`)
@@ -271,8 +290,14 @@ export default function PurchaseDetailPage() {
   const totalTax = displayLines.reduce((s, l) => s + Number(l.taxAmount), 0)
   const totalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0)
 
-  const supplierName = suppliers.find(s => s.id === (editing ? editSupplierId : po.supplierId))?.name
-    ?? po.supplierName ?? po.supplierId
+  const supplier = suppliers.find(s => s.id === (editing ? editSupplierId : po.supplierId))
+  const supplierName = supplier?.name ?? po.supplierName ?? po.supplierId
+
+  const latestBill = [...(po.bills ?? [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+
+  const timeline = [
+    ...(po.activityLog ?? []).map(l => ({ id: l.id, text: l.detail || l.action, at: l.createdAt })),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
 
   const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100'
   const numInputCls = 'border border-gray-300 rounded px-1.5 py-0.5 text-sm bg-white text-right focus:outline-none focus:border-blue-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
@@ -466,6 +491,14 @@ export default function PurchaseDetailPage() {
 
       {/* ── Main form card ───────────────────────────────── */}
       <div className="flex-1 p-6 overflow-auto">
+        {latestBill && (
+          <div
+            className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded text-sm"
+            style={{ background: '#e5f1e9', color: '#2e7d4f' }}
+          >
+            ✓ 已生成供应商账单 <b>{latestBill.name}</b>（{latestBill.totalIncTax.toFixed(2)}）· 已通知财务角色
+          </div>
+        )}
         <div className="bg-white rounded border border-gray-200 shadow-sm">
 
           {/* Form header */}
@@ -495,6 +528,10 @@ export default function PurchaseDetailPage() {
                   ) : (
                     <span className="text-sm text-gray-400">—</span>
                   )}
+                </div>
+                <div className="flex items-center min-h-[32px]">
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">付款条款</label>
+                  <span className="text-sm text-gray-700">{supplier?.supplierPaymentTerm || '—'}</span>
                 </div>
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">货币</label>
@@ -699,9 +736,23 @@ export default function PurchaseDetailPage() {
               <span>📅</span> 安排活动
             </button>
           </div>
-          <div className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded">
-            暂无消息记录
-          </div>
+          {timeline.length === 0 ? (
+            <div className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded">
+              暂无操作记录
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {timeline.map(t => (
+                <div key={t.id} className="flex items-start gap-3 text-sm">
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: PURPLE }} />
+                  <span className="text-gray-400 font-mono text-xs w-32 flex-shrink-0 pt-px">
+                    {new Date(t.at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <span className="text-gray-700">{t.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

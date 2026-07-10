@@ -5,6 +5,8 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
+import { restoreLotsFIFO } from '@/lib/inventory'
+import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
 import type { TripRestaurant, ReturnItem, OrderItem } from '@/lib/types'
 
 /**
@@ -201,7 +203,12 @@ export async function POST(
  *     }]
  *   }
  *
- * approve: 创建 StockMove(RETURN), 调整 OrderLine.deliveredQty
+ * approve: 必须同时给出 disposition（可再售/报废），决定库存去向
+ *   - SELLABLE：货物回补可售库存 → Product.qtyOnHand += qty，FIFO 回补批次余量，
+ *     创建 StockMove(RETURN, +qty)
+ *   - SCRAP：货物报废，不回补可售库存 → 创建 StockMove(RETURN, +qty) 记录客退事实 +
+ *     StockMove(SCRAP, -qty) 记录报废损耗（计入损耗仪表盘），qtyOnHand 净不变
+ *   两种情形都调整 OrderLine.deliveredQty（货物已不在客户手上，不算已送达）
  * reject: 标记为 REJECTED, 不做库存和订单调整
  */
 export async function PUT(
@@ -217,6 +224,8 @@ export async function PUT(
           restaurantId: string
           productId: string
           action: 'approve' | 'reject'
+          disposition?: 'SELLABLE' | 'SCRAP'
+          scrapReason?: string
           refundMode?: 'pct' | 'fixed'
           refundPct?: number
           refundAmount?: number
@@ -226,6 +235,15 @@ export async function PUT(
 
       if (!Array.isArray(reviews) || reviews.length === 0) {
         return NextResponse.json({ error: '缺少 reviews[]' }, { status: 400 })
+      }
+      const badDisposition = reviews.find(
+        r => r.action === 'approve' && r.disposition !== 'SELLABLE' && r.disposition !== 'SCRAP',
+      )
+      if (badDisposition) {
+        return NextResponse.json(
+          { error: `批准退货 ${badDisposition.productId} 必须选择货物去向：可再售(SELLABLE) 或 报废(SCRAP)` },
+          { status: 400 },
+        )
       }
 
       const trip = await prisma.trip.findUnique({ where: { id } })
@@ -239,6 +257,7 @@ export async function PUT(
       const stockMoves: Array<{
         productId: string
         productName: string
+        type: 'RETURN' | 'SCRAP'
         qty: number
         note: string
         sourceType: string
@@ -250,9 +269,13 @@ export async function PUT(
         productId: string
         reduceQty: number
       }> = []
+      // 仅 SELLABLE 处置需要真正回补可售库存；SCRAP 处置货物不回可售库存，只留 StockMove 记账
+      const restockUpdates: Array<{ productId: string; qty: number }> = []
 
       let approvedCount = 0
       let rejectedCount = 0
+      let sellableCount = 0
+      let scrapCount = 0
 
       for (const review of reviews) {
         const rIdx = restaurants.findIndex(r => r.restaurantId === review.restaurantId)
@@ -271,11 +294,13 @@ export async function PUT(
 
         if (review.action === 'approve') {
           const returnQty = toNum(ret.quantity)
+          const disposition = review.disposition as 'SELLABLE' | 'SCRAP'
 
           // 更新退货状态为 APPROVED，P0-3: 退货日期使用今天而非行程日期
           returns[retIdx] = {
             ...ret,
             status: 'APPROVED',
+            disposition,
             refundMode: review.refundMode,
             refundPct: review.refundPct,
             refundAmount: review.refundAmount ?? calculateRefund(ret, review),
@@ -283,19 +308,42 @@ export async function PUT(
             approvedAt: new Date().toISOString(),
           }
           approvedCount++
+          if (disposition === 'SELLABLE') sellableCount++
+          else scrapCount++
 
           // P1-3: StockMove with source tracking; P1-4: decimal qty
+          // 客退入库记账：无论去向如何，先记一笔"货物回来了"
           stockMoves.push({
             productId: ret.productId,
             productName: ret.productName,
+            type: 'RETURN',
             qty: returnQty,
-            note: `退货入库: ${restaurant.restaurantName} — ${ret.reason ?? '无原因'}`,
+            note: `退货入库(${disposition === 'SELLABLE' ? '可再售' : '待报废'}): ${restaurant.restaurantName} — ${ret.reason ?? '无原因'}`,
             sourceType: 'RETURN',
             sourceId: id,
             sourceRef: restaurant.orderIds?.[0] ?? null,
           })
 
-          // 调整 OrderLine.deliveredQty（减去退货数量）P1-4: 精确小数
+          if (disposition === 'SELLABLE') {
+            // 可再售：真正回补库存，供 FIFO 出库和批次台账使用
+            restockUpdates.push({ productId: ret.productId, qty: returnQty })
+          } else {
+            // 报废：不回补可售库存，额外记一笔报废损耗（计入损耗仪表盘 & 退货回收率）
+            const reasonKey = review.scrapReason ?? 'CUSTOMER_RETURN_DAMAGED'
+            const reasonLabel = SCRAP_REASON_LABEL[reasonKey] ?? reasonKey
+            stockMoves.push({
+              productId: ret.productId,
+              productName: ret.productName,
+              type: 'SCRAP',
+              qty: -returnQty,
+              note: `客退报废(${reasonLabel}): ${restaurant.restaurantName} — ${ret.reason ?? '无原因'}`,
+              sourceType: 'RETURN_SCRAP',
+              sourceId: id,
+              sourceRef: restaurant.orderIds?.[0] ?? null,
+            })
+          }
+
+          // 调整 OrderLine.deliveredQty（减去退货数量，货物已不在客户手上）P1-4: 精确小数
           for (const orderId of restaurant.orderIds) {
             orderLineUpdates.push({
               orderId,
@@ -329,7 +377,7 @@ export async function PUT(
             data: stockMoves.map(sm => ({
               productId: sm.productId,
               productName: sm.productName,
-              type: 'RETURN' as const,
+              type: sm.type,
               qty: sm.qty,
               movedAt: new Date(),
               note: sm.note,
@@ -338,6 +386,17 @@ export async function PUT(
               sourceRef: sm.sourceRef,
             })),
           })
+        }
+
+        // SELLABLE 处置：真正回补 Product.qtyOnHand + FIFO 回补批次余量
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const txAny = tx as any
+        for (const r of restockUpdates) {
+          await tx.product.update({
+            where: { id: r.productId },
+            data: { qtyOnHand: { increment: r.qty } },
+          })
+          await restoreLotsFIFO(txAny, r.productId, r.qty)
         }
 
         // P1-4: 逐条调整 OrderLine.deliveredQty（精确小数计算）
@@ -367,13 +426,15 @@ export async function PUT(
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'trip', resourceId: id,
-        detail: `退货审核: 通过${approvedCount}项, 拒绝${rejectedCount}项`,
+        detail: `退货审核: 通过${approvedCount}项(可再售${sellableCount}/报废${scrapCount}), 拒绝${rejectedCount}项`,
       })
 
       return NextResponse.json(serializeApi({
         message: `已审核 ${reviews.length} 项退货`,
         approved: approvedCount,
         rejected: rejectedCount,
+        sellable: sellableCount,
+        scrap: scrapCount,
       }))
     } catch (error) {
       console.error('[PUT /api/trips/[id]/returns]', error)

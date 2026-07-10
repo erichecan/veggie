@@ -11,6 +11,41 @@ const TRIP_TRACKED_FIELDS = [
   'totalPayment', 'driverCommission', 'waveId',
 ]
 
+const DECIDED_RETURN_STATUSES = new Set(['APPROVED', 'REJECTED', 'SETTLED'])
+
+type RestaurantJson = { restaurantId: string; returns?: Array<{ productId: string; createdAt?: string; status?: string }> }
+
+/**
+ * 退货审核必须走专用的 PUT /api/trips/:id/returns（有状态机守卫 + 库存联动），
+ * 不能通过这个通用路由直接改 restaurants[].returns[].status——此前 operator/returns
+ * 页面就是绕这条路直接改状态，导致审批通过但库存/OrderLine/提成全部没有联动。
+ * 只拦截"状态真的发生了变化，且新状态是已决状态"的情形，其余字段(name/driverId等)照常放行。
+ */
+function findBlockedReturnStatusChange(
+  before: unknown,
+  incoming: unknown,
+): { restaurantId: string; productId: string; from?: string; to?: string } | null {
+  if (!Array.isArray(incoming)) return null
+  const beforeStatusByKey = new Map<string, string | undefined>()
+  if (Array.isArray(before)) {
+    for (const r of before as RestaurantJson[]) {
+      for (const ret of r.returns ?? []) {
+        beforeStatusByKey.set(`${r.restaurantId}::${ret.productId}::${ret.createdAt ?? ''}`, ret.status)
+      }
+    }
+  }
+  for (const r of incoming as RestaurantJson[]) {
+    for (const ret of r.returns ?? []) {
+      const key = `${r.restaurantId}::${ret.productId}::${ret.createdAt ?? ''}`
+      const prevStatus = beforeStatusByKey.get(key)
+      if (ret.status !== prevStatus && DECIDED_RETURN_STATUSES.has(String(ret.status))) {
+        return { restaurantId: r.restaurantId, productId: ret.productId, from: prevStatus, to: ret.status }
+      }
+    }
+  }
+  return null
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -30,6 +65,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const data = await req.json()
       const before = await prisma.trip.findUnique({ where: { id } })
       if (!before) return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+
+      const blocked = findBlockedReturnStatusChange(before.restaurants, data.restaurants)
+      if (blocked) {
+        return NextResponse.json(
+          { error: `退货审核请使用「审核退货」功能（走 /api/trips/${id}/returns），不能直接修改行程数据` },
+          { status: 409 },
+        )
+      }
+
       const newStatus = data.status?.toUpperCase()
       const trip = await prisma.trip.update({
         where: { id },

@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
 import { toNum } from '@/lib/decimal-helpers'
+import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
 
 /**
  * /api/stock-takes/[id]
@@ -11,7 +12,8 @@ import { toNum } from '@/lib/decimal-helpers'
  * GET    详情（含行）
  * PATCH  { action: 'save_counts', counts: [{ lineId, countedQty|null }] }  录入实盘（仅 DRAFT）
  *        { action: 'complete' }  完成：对已录入且 diff ≠ 0 的行生成
- *          StockMove(ADJUSTMENT, sourceType='STOCK_TAKE') 并同步 Product.qtyOnHand；
+ *          StockMove(ADJUSTMENT, sourceType='STOCK_TAKE') 并同步 Product.qtyOnHand + 批次余量
+ *          （盘盈 diff>0 → 回补批次余量；盘亏 diff<0 → FIFO 消耗批次余量，保持 Lot 与 qtyOnHand 一致）；
  *          未录入实盘的行视为未盘（diffQty 保持 null，不调整）
  *        { action: 'cancel' }    取消（仅 DRAFT）
  */
@@ -114,6 +116,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                 where: { id: line.productId },
                 data: { qtyOnHand: { increment: diff } },
               })
+              if (diff > 0) {
+                await restoreLotsFIFO(tx, line.productId, diff)
+              } else {
+                await consumeLotsFIFO(tx, line.productId, -diff)
+              }
             }
           }
           await tx.stockTake.update({ where: { id }, data: { status: 'DONE' } })

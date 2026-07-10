@@ -1,12 +1,26 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { useLocale } from 'next-intl'
-import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import ProcurementOverviewPage from './overview/page'
+import FreshDailySuggestionsPage from './fresh/page'
+import CatalogPickingPage from './catalog/page'
+import AnnualPlanPage from './annual-plan/page'
+
+const PURPLE = '#875A7B'
+
+type MainTab = 'quotations' | 'overview' | 'fresh' | 'catalog' | 'annual-plan'
+
+const MAIN_TABS: { k: MainTab; icon: string; label: string }[] = [
+  { k: 'quotations', icon: '📝', label: '询价单' },
+  { k: 'overview', icon: '📊', label: '总览' },
+  { k: 'fresh', icon: '🥬', label: '生鲜次日备货' },
+  { k: 'catalog', icon: '🛒', label: '目录挑选' },
+  { k: 'annual-plan', icon: '🌾', label: '干货年度计划' },
+]
 
 type POStatus = 'DRAFT' | 'SENT' | 'CONFIRMED' | 'RECEIVED' | 'INVOICED' | 'LOCKED' | 'TO_APPROVE' | 'CANCELLED'
 
@@ -68,8 +82,7 @@ const PAGE_SIZE = 40
 
 export default function PurchasesPage() {
   const router = useRouter()
-  const locale = useLocale()
-  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const [mainTab, setMainTab] = useState<MainTab>('quotations')
   const [pos, setPos] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -208,15 +221,34 @@ export default function PurchasesPage() {
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
+      {/* 品类工作台入口（同页切换，不跳转，参考库存管理页） */}
+      <div className="flex gap-2 px-4 pt-3 pb-1 flex-wrap bg-gray-50">
+        {MAIN_TABS.map(t => {
+          const on = mainTab === t.k
+          return (
+            <button
+              key={t.k}
+              onClick={() => setMainTab(t.k)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border bg-white hover:shadow-sm transition-all"
+              style={on ? { borderColor: PURPLE, color: PURPLE, background: '#f3eff5' } : { borderColor: '#e5e7eb', color: '#6b7280' }}
+            >
+              <span>{t.icon}</span>{t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {mainTab === 'overview' && <ProcurementOverviewPage />}
+      {mainTab === 'fresh' && <FreshDailySuggestionsPage />}
+      {mainTab === 'catalog' && <CatalogPickingPage />}
+      {mainTab === 'annual-plan' && <AnnualPlanPage />}
+
+      {mainTab === 'quotations' && <>
       <OdooControlPanel
         breadcrumb={['采购', '询价单']}
         permanentActions={[
-          { label: '📊 总览', onClick: () => router.push(`${prefix}/classic/operator/purchases/overview`) },
           { label: '新建', onClick: () => setShowNewDialog(true), primary: true },
           { label: 'Import', onClick: () => { setShowImportDialog(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
-          { label: '🥬 生鲜次日备货', onClick: () => router.push(`${prefix}/classic/operator/purchases/fresh`) },
-          { label: '🛒 目录挑选', onClick: () => router.push(`${prefix}/classic/operator/purchases/catalog`) },
-          { label: '🌾 干货年度计划', onClick: () => router.push(`${prefix}/classic/operator/purchases/annual-plan`) },
         ]}
         searchValue={searchInput}
         onSearch={v => setSearchInput(v)}
@@ -246,23 +278,6 @@ export default function PurchasesPage() {
         pageSize={PAGE_SIZE}
         onPageChange={p => setPage(p)}
       />
-
-      {/* Status tabs */}
-      <div className="bg-white border-b border-gray-200 px-4 flex gap-0">
-        {STATUS_TABS.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => handleTabChange(tab.key)}
-            className="px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
-            style={{
-              borderBottomColor: activeTab === tab.key ? '#875A7B' : 'transparent',
-              color: activeTab === tab.key ? '#875A7B' : '#6b7280',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
@@ -552,6 +567,7 @@ export default function PurchasesPage() {
           </div>
         </div>
       )}
+      </>}
     </div>
   )
 }

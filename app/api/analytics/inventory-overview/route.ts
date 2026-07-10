@@ -1,0 +1,21 @@
+import { NextResponse } from 'next/server'
+import { withAuth } from '@/lib/auth'
+import { serializeApi } from '@/lib/api-serializer'
+import { getInventoryOverviewKPIs, getInventoryAttentionItems, getInventoryByCategoryGroup } from '@/lib/analytics/inventory-overview'
+
+/** GET /api/analytics/inventory-overview — 库存总览页数据（KPI + 需要关注 + 按品类分组现状） */
+export async function GET(req: Request) {
+  return withAuth(req, async () => {
+    try {
+      const [kpis, attention, groups] = await Promise.all([
+        getInventoryOverviewKPIs(),
+        getInventoryAttentionItems(8),
+        getInventoryByCategoryGroup(),
+      ])
+      return NextResponse.json(serializeApi({ kpis, attention, groups }))
+    } catch (error) {
+      console.error('[GET /api/analytics/inventory-overview]', error)
+      return NextResponse.json({ error: '获取库存总览失败' }, { status: 500 })
+    }
+  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+}

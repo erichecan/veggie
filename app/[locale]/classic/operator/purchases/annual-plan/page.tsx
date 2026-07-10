@@ -193,6 +193,7 @@ export default function AnnualPlanPage() {
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">近12个月采购量</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">建议年度采购量</th>
                     <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">供应商</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">预估单价</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">预估金额</th>
                   </tr>
                 </thead>
@@ -206,6 +207,9 @@ export default function AnnualPlanPage() {
                       <td className="px-4 py-2.5 text-right text-gray-700">{Number(r.demandQty).toFixed(1)}</td>
                       <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{Number(r.suggestedQty).toFixed(1)}</td>
                       <td className="px-4 py-2.5 text-gray-600 text-xs">{r.supplierName ?? '—（未配置供应商）'}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500 text-xs">
+                        {r.estimatedCost != null && Number(r.suggestedQty) > 0 ? eur(r.estimatedCost / Number(r.suggestedQty)) : '—'}
+                      </td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{r.estimatedCost != null ? eur(r.estimatedCost) : '—'}</td>
                     </tr>
                   ))}

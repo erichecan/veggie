@@ -21,13 +21,15 @@ export interface ProductPriceTrend {
   latestDate: Date
   prevCost: number | null
   changePct: number | null
+  /** 最近若干次价格点（按时间升序），供采购目录挑选页画迷你走势图用 */
+  recentCosts: number[]
 }
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-function buildTrends(pricePoints: Array<{ product_id: string; product_name: string; po_date: Date; supplier_name: string; unit_cost: number }>) {
+function buildTrends(pricePoints: Array<{ product_id: string; product_name: string; po_date: Date; supplier_name: string; unit_cost: number }>, recentLimit = 8) {
   const trendMap = new Map<string, { productId: string; productName: string; points: Array<{ date: Date; cost: number; supplier: string }> }>()
   for (const pt of pricePoints) {
     let t = trendMap.get(pt.product_id)
@@ -53,6 +55,7 @@ function buildTrends(pricePoints: Array<{ product_id: string; product_name: stri
       latestDate: latest.date,
       prevCost: prev ? round2(prev.cost) : null,
       changePct: prev && prev.cost > 0 ? round2(((latest.cost - prev.cost) / prev.cost) * 100) : null,
+      recentCosts: costs.slice(-recentLimit).map(round2),
     })
   }
   return result

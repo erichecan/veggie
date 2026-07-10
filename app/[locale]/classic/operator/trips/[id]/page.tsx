@@ -172,11 +172,11 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     }
   }
 
-  async function reviewReturn(restaurantId: string, productId: string, action: 'approve' | 'reject') {
+  async function reviewReturn(restaurantId: string, productId: string, action: 'approve' | 'reject', disposition?: 'SELLABLE' | 'SCRAP') {
     setSubmittingReview(true)
     try {
       await apiPut(`/api/trips/${id}/returns`, {
-        reviews: [{ restaurantId, productId, action }],
+        reviews: [{ restaurantId, productId, action, disposition }],
       })
       await load()
       toast.success(action === 'approve' ? '已批准退货' : '已拒绝退货')
@@ -679,12 +679,22 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                                     {ret.status === 'PENDING_REVIEW' && (
                                       <div className="flex gap-1 ml-2 flex-shrink-0">
                                         <button
-                                          onClick={() => reviewReturn(ret.restaurantId ?? r.restaurantId, ret.productId, 'approve')}
+                                          onClick={() => reviewReturn(ret.restaurantId ?? r.restaurantId, ret.productId, 'approve', 'SELLABLE')}
                                           disabled={submittingReview}
+                                          title="批准并回补可售库存"
                                           className="px-2 py-1 text-xs rounded font-medium text-white disabled:opacity-50"
                                           style={{ background: '#15803d' }}
                                         >
-                                          批准
+                                          批准·可再售
+                                        </button>
+                                        <button
+                                          onClick={() => reviewReturn(ret.restaurantId ?? r.restaurantId, ret.productId, 'approve', 'SCRAP')}
+                                          disabled={submittingReview}
+                                          title="批准并计入报废损耗，不回补库存"
+                                          className="px-2 py-1 text-xs rounded font-medium text-white disabled:opacity-50"
+                                          style={{ background: '#a3690e' }}
+                                        >
+                                          批准·报废
                                         </button>
                                         <button
                                           onClick={() => reviewReturn(ret.restaurantId ?? r.restaurantId, ret.productId, 'reject')}

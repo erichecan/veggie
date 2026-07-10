@@ -22,6 +22,10 @@ interface Suggestion {
   priority: string
   reason: string | null
   generatedAt: string
+  dailyAvgOutbound: number | null
+  futureDemand: number | null
+  inTransitQty: number | null
+  uomName: string | null
 }
 
 export default function FreshDailySuggestionsPage() {
@@ -155,9 +159,12 @@ export default function FreshDailySuggestionsPage() {
                       <input type="checkbox" checked={selected.size === rows.length && rows.length > 0} onChange={toggleAll} className="w-3.5 h-3.5 accent-purple-700 cursor-pointer" />
                     </th>
                     <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">商品</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">预计需求<span className="font-normal text-gray-400">(日均+已确认订单)</span></th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">近3日日均出货</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">已确认未来订单</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">现有库存</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">在途采购</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">建议采购量</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">单位</th>
                     <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">建议供应商</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">预估成本</th>
                   </tr>
@@ -169,11 +176,14 @@ export default function FreshDailySuggestionsPage() {
                         <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} className="w-3.5 h-3.5 accent-purple-700 cursor-pointer" />
                       </td>
                       <td className="px-4 py-2.5 font-medium" style={{ color: PURPLE }}>{r.productName}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-700">{Number(r.demandQty).toFixed(1)}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{r.dailyAvgOutbound != null ? Number(r.dailyAvgOutbound).toFixed(1) : '—'}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{r.futureDemand != null ? Number(r.futureDemand).toFixed(1) : '—'}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{Number(r.currentStock).toFixed(1)}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{r.inTransitQty != null ? Number(r.inTransitQty).toFixed(1) : '—'}</td>
                       <td className="px-4 py-2.5 text-right font-semibold" style={{ color: r.priority === 'critical' ? '#b6412a' : '#1f2d3d' }}>
                         {Number(r.suggestedQty).toFixed(1)}
                       </td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs">{r.uomName ?? '—'}</td>
                       <td className="px-4 py-2.5 text-gray-600 text-xs">{r.supplierName ?? '—（未配置供应商）'}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{r.estimatedCost != null ? eur(r.estimatedCost) : '—'}</td>
                     </tr>

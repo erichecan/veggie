@@ -12,17 +12,25 @@
 // 接受 prisma client 或事务句柄(项目内多处用 prismaAny)
 type LotClient = {
   lot: {
-    findMany: (args: unknown) => Promise<Array<{ id: string; currentQty: unknown; initialQty: unknown }>>
+    findMany: (args: unknown) => Promise<Array<{ id: string; lotNumber: string; currentQty: unknown; initialQty: unknown }>>
     update: (args: unknown) => Promise<unknown>
   }
 }
 
+/** 消耗/回补落到了哪些批次，供调用方把 StockMove.lotId 精确记到批次级别（批次追溯的数据基础） */
+export interface LotMovement {
+  lotId: string
+  lotNumber: string
+  qty: number
+}
+
 const n = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0)) || 0
 
-/** FIFO(最早 arrivedAt 优先)消耗批次余量。qty 为正数(要扣减的量)。 */
-export async function consumeLotsFIFO(client: LotClient, productId: string, qty: number): Promise<void> {
-  if (!(qty > 0)) return
+/** FIFO(最早 arrivedAt 优先)消耗批次余量。qty 为正数(要扣减的量)。返回实际消耗的批次明细。 */
+export async function consumeLotsFIFO(client: LotClient, productId: string, qty: number): Promise<LotMovement[]> {
+  if (!(qty > 0)) return []
   let remaining = qty
+  const consumed: LotMovement[] = []
   const lots = await client.lot.findMany({
     where: { productId, status: 'AVAILABLE', currentQty: { gt: 0 } },
     orderBy: { arrivedAt: 'asc' },
@@ -36,15 +44,18 @@ export async function consumeLotsFIFO(client: LotClient, productId: string, qty:
       where: { id: lot.id },
       data: { currentQty: { decrement: take }, ...(depleted ? { status: 'DEPLETED' } : {}) },
     })
+    consumed.push({ lotId: lot.id, lotNumber: lot.lotNumber, qty: take })
     remaining -= take
   }
   // remaining > 0 → 超卖,无可扣批次;qtyOnHand 已记负,不补造批次
+  return consumed
 }
 
-/** 回补批次余量(撤回/退货)。优先回补最近批次(newest first),不超过各批 initialQty 上限。 */
-export async function restoreLotsFIFO(client: LotClient, productId: string, qty: number): Promise<void> {
-  if (!(qty > 0)) return
+/** 回补批次余量(撤回/退货)。优先回补最近批次(newest first),不超过各批 initialQty 上限。返回实际回补的批次明细。 */
+export async function restoreLotsFIFO(client: LotClient, productId: string, qty: number): Promise<LotMovement[]> {
+  if (!(qty > 0)) return []
   let remaining = qty
+  const restored: LotMovement[] = []
   const lots = await client.lot.findMany({
     where: { productId, status: { in: ['AVAILABLE', 'DEPLETED'] } },
     orderBy: { arrivedAt: 'desc' },
@@ -58,6 +69,8 @@ export async function restoreLotsFIFO(client: LotClient, productId: string, qty:
       where: { id: lot.id },
       data: { currentQty: { increment: give }, status: 'AVAILABLE' },
     })
+    restored.push({ lotId: lot.id, lotNumber: lot.lotNumber, qty: give })
     remaining -= give
   }
+  return restored
 }

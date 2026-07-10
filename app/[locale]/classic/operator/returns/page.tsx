@@ -114,16 +114,31 @@ function buildReturnProfile(restaurantId: string, trips: Trip[]): ReturnProfile 
   return { totalCount: history.length, totalRefundAmount, history }
 }
 
-async function saveStatus(
+/**
+ * 审核退货必须走专用接口（有状态机守卫 + 库存联动），不能直接改 Trip JSON 里的
+ * returns[].status —— 通用的 PUT /api/trips/:id 现在会拒绝这种直接改法（409）。
+ * 批准时必须带上 disposition：可再售(SELLABLE) 回补库存 / 报废(SCRAP) 计入损耗。
+ */
+async function submitReview(
   item: FlatReturn,
-  newStatus: ReturnStatus,
-  reviewData?: Partial<CanonicalReturnItem & Record<string, unknown>>,
+  action: 'approve' | 'reject',
+  extra?: {
+    disposition?: 'SELLABLE' | 'SCRAP'
+    scrapReason?: string
+    refundMode?: 'pct' | 'fixed'
+    refundPct?: number
+    refundAmount?: number
+    refundNote?: string
+  },
 ) {
-  const updated = JSON.parse(JSON.stringify(item._tripRef)) as Trip
-  const ret = updated.restaurants[item._restIdx].returns[item._retIdx] as CanonicalReturnItem & Record<string, unknown>
-  ret.status = newStatus
-  if (reviewData) Object.assign(ret, reviewData)
-  await apiPut(`/api/trips/${item.tripId}`, updated)
+  await apiPut(`/api/trips/${item.tripId}/returns`, {
+    reviews: [{
+      restaurantId: item.restaurantId,
+      productId: item.productId,
+      action,
+      ...extra,
+    }],
+  })
 }
 
 // ─── Review Dialog ─────────────────────────────────────────────────────────────
@@ -140,6 +155,8 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
   const [pct, setPct] = useState<number>(item.refundPct ?? 0)
   const [fixed, setFixed] = useState<number>(0)
   const [reviewNote, setReviewNote] = useState((item.refundNote as string | undefined) ?? '')
+  const [disposition, setDisposition] = useState<'SELLABLE' | 'SCRAP'>('SELLABLE')
+  const [scrapReason, setScrapReason] = useState<'CUSTOMER_RETURN_EXPIRED' | 'CUSTOMER_RETURN_DAMAGED' | 'OTHER'>('CUSTOMER_RETURN_DAMAGED')
   const [saving, setSaving] = useState(false)
   const [ordersExpanded, setOrdersExpanded] = useState(false)
   const [profileExpanded, setProfileExpanded] = useState(false)
@@ -162,18 +179,20 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
   const profile = buildReturnProfile(item.restaurantId, allTrips)
   const historicalReturns = profile.history.filter(h => h.tripId !== item.tripId)
 
-  async function act(newStatus: ReturnStatus) {
+  async function act(action: 'approve' | 'reject') {
     setSaving(true)
     try {
-      await saveStatus(item, newStatus, {
+      await submitReview(item, action, action === 'approve' ? {
+        disposition,
+        scrapReason: disposition === 'SCRAP' ? scrapReason : undefined,
         refundMode: mode,
         refundPct: mode === 'pct' ? pct : undefined,
-        refundFixed: mode === 'fixed' ? fixed : undefined,
         refundAmount: calcAmount,
         refundNote: reviewNote,
-        reviewedAt: new Date().toISOString(),
+      } : {
+        refundNote: reviewNote,
       })
-      toast.success(`已${STATUS_LABELS[newStatus]}`)
+      toast.success(action === 'approve' ? '已批准' : '已拒绝')
       onSaved()
       onClose()
     } catch (e) {
@@ -272,6 +291,47 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
             className="w-20 h-20 object-cover rounded border border-gray-200 cursor-pointer"
             onClick={() => window.open(item.photo, '_blank')}
           />
+        </div>
+      )}
+
+      {/* ── Section 3.5: 货物去向（批准时必选）──────────────────────────── */}
+      {item.status === 'PENDING_REVIEW' && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-700">货物去向 <span className="text-red-500">*</span></p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setDisposition('SELLABLE')}
+              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${
+                disposition === 'SELLABLE' ? 'text-white' : 'border-gray-200 text-gray-600 hover:border-green-300'
+              }`}
+              style={disposition === 'SELLABLE' ? { background: '#15803d', borderColor: '#15803d' } : {}}
+            >
+              ✅ 可再售（回补库存）
+            </button>
+            <button
+              onClick={() => setDisposition('SCRAP')}
+              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${
+                disposition === 'SCRAP' ? 'text-white' : 'border-gray-200 text-gray-600 hover:border-orange-300'
+              }`}
+              style={disposition === 'SCRAP' ? { background: '#a3690e', borderColor: '#a3690e' } : {}}
+            >
+              🗑️ 报废（计入损耗）
+            </button>
+          </div>
+          {disposition === 'SCRAP' && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500">报废原因</label>
+              <select
+                value={scrapReason}
+                onChange={e => setScrapReason(e.target.value as typeof scrapReason)}
+                className="border border-gray-200 rounded px-2 py-1 text-xs outline-none focus:border-purple-400"
+              >
+                <option value="CUSTOMER_RETURN_DAMAGED">客退损坏</option>
+                <option value="CUSTOMER_RETURN_EXPIRED">客退过期</option>
+                <option value="OTHER">其他</option>
+              </select>
+            </div>
+          )}
         </div>
       )}
 
@@ -414,7 +474,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         {item.status === 'PENDING_REVIEW' && (
           <>
             <Button
-              onClick={() => act('REJECTED')}
+              onClick={() => act('reject')}
               disabled={saving}
               variant="outline"
               className="border-red-200 text-red-600 hover:bg-red-50"
@@ -422,24 +482,17 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
               拒绝
             </Button>
             <Button
-              onClick={() => act('APPROVED')}
+              onClick={() => act('approve')}
               disabled={saving}
               style={{ background: '#875A7B', borderColor: '#875A7B' }}
               className="text-white hover:opacity-90"
             >
-              {saving ? '保存中…' : '批准'}
+              {saving ? '保存中…' : `批准（${disposition === 'SELLABLE' ? '可再售' : '报废'}）`}
             </Button>
           </>
         )}
         {item.status === 'APPROVED' && (
-          <Button
-            onClick={() => act('SETTLED')}
-            disabled={saving}
-            style={{ background: '#875A7B', borderColor: '#875A7B' }}
-            className="text-white hover:opacity-90"
-          >
-            {saving ? '保存中…' : '标记已结算'}
-          </Button>
+          <span className="text-xs text-gray-400 self-center">结算请前往「财务 → 生成贷记单」</span>
         )}
       </DialogFooter>
     </DialogContent>

@@ -4,22 +4,8 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
-
-const SCRAP_REASONS = [
-  'CUSTOMER_RETURN_EXPIRED',
-  'CUSTOMER_RETURN_DAMAGED',
-  'WAREHOUSE_EXPIRY',
-  'WAREHOUSE_DAMAGE',
-  'OTHER',
-] as const
-
-const REASON_LABEL: Record<string, string> = {
-  CUSTOMER_RETURN_EXPIRED: '客退过期',
-  CUSTOMER_RETURN_DAMAGED: '客退损坏',
-  WAREHOUSE_EXPIRY: '仓库过期',
-  WAREHOUSE_DAMAGE: '仓库损坏',
-  OTHER: '其他',
-}
+import { consumeLotsFIFO } from '@/lib/inventory'
+import { SCRAP_REASONS, SCRAP_REASON_LABEL as REASON_LABEL } from '@/lib/scrap-reasons'
 
 export async function GET(req: Request) {
   try {
@@ -111,7 +97,7 @@ export async function POST(req: Request) {
           data: { qtyOnHand: { decrement: qty } },
         })
 
-        // 扣减批次余量
+        // 扣减批次余量：指定了批次就扣那一批，否则按 FIFO 扣最早批次，保持 Lot 与 qtyOnHand 同步
         if (lotId) {
           const updatedLot = await tx.lot.update({
             where: { id: lotId },
@@ -124,6 +110,8 @@ export async function POST(req: Request) {
               data: { status: 'DEPLETED' },
             })
           }
+        } else {
+          await consumeLotsFIFO(tx, productId, qty)
         }
 
         const move = await tx.stockMove.create({

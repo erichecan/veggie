@@ -396,6 +396,10 @@ export interface ReturnItem {
   settledAt?: string
   reason?: string
   actionType?: 'return' | 'exchange'
+  /// 审批通过时必填：货物去向。SELLABLE=可再售(回补库存)，SCRAP=报废(计入损耗)。审批前为空
+  disposition?: 'SELLABLE' | 'SCRAP'
+  /// 报废去向对应的批次消耗，便于批次追溯反查
+  scrapLotId?: string
 }
 
 export interface TripRestaurant {
