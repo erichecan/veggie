@@ -234,6 +234,16 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       load()
     } catch (e) { toast.error(e instanceof Error ? e.message : '分配失败'); load() }
   }
+  // 拖进「这个司机+时段当天还没有波次」的卡片：没有 waveId 可用，走销售单同款的
+  // find-or-create 接口(assignOrderToWave 内部按 driverName+timeOfDay+deliveryDate 找/建波次)，
+  // 建完之后没法本地乐观更新(不知道新波次 id)，直接 load() 刷新。
+  async function assignToPalletNoWave(orderId: string, driverSlotId: string) {
+    try {
+      await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId })
+      toast.success('已分配（新建波次）')
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : '分配失败'); load() }
+  }
   async function unassignFromWave(waveId: string, orderId: string) {
     setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, orderIds: w.orderIds.filter(id => id !== orderId), assignmentDoneAt: null } : w)))
     try {
@@ -311,6 +321,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     if (wave.pickLockedAt) { toast.error('该批次拣货中已锁定，请找打印员解锁'); return }
     if (src && waves.find(w => w.id === src)?.dispatchedAt) { toast.error('原批次已出发，不能移出'); return }
     if (src && waves.find(w => w.id === src)?.pickLockedAt) { toast.error('原批次拣货中已锁定，请找打印员解锁'); return }
+    if (!wave.id) { assignToPalletNoWave(orderId, slot.id); return }
     assignToPallet(wave.id, orderId, slot.id)
   }
   function dropToLeft(e: React.DragEvent) {
@@ -337,13 +348,19 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   function Lane({ groupSlots, collapsed, onToggleCollapse }: { groupSlots: DriverSlot[]; collapsed: boolean; onToggleCollapse: () => void }) {
     const driverName = groupSlots[0].driverName
     const timeOfDay = groupSlots[0].timeOfDay
-    const wave = waveForGroup(driverName, timeOfDay)
+    // 当天这个司机+时段还没有波次(generate-daily 没覆盖到，或从没排过)时用空占位波次渲染卡片，
+    // 保证托盘落点始终存在——拖进去时才实际按 (driverName,timeOfDay,订单交货日) find-or-create
+    // 真正的波次(见 assignToPalletNoWave)，不能因为"还没有 id 可用"就整卡不渲染、拖了没反应。
+    const wave: Wave = waveForGroup(driverName, timeOfDay) ?? {
+      id: '', name: null, orderIds: [], status: 'PENDING',
+      waveType: null, waveNumber: null, driverSlotId: null, driverName, timeOfDay,
+      dispatchedAt: null, completedAt: null, assignmentDoneAt: null,
+      pickLockedAt: null, pickLockedBy: null, pallets: [],
+    }
     const timeCls = timeOfDay === 'am' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
     const timeText = timeOfDay === 'am' ? '上午' : '下午'
     const key = groupKey(driverName, timeOfDay)
     const mode = viewMode[key] ?? 'pallet'
-
-    if (!wave) return null
 
     // 关灯期(司机端未上线):completed 属于配送生命周期,与 dispatched 同源一并关灯——
     // 完成态波次回退为普通排货卡(照常显示订单),与顶部/chip 角标(orderCountByDriver 恒按
@@ -475,13 +492,16 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         </div>
 
         <div className="p-2 overflow-y-auto flex flex-col gap-1.5">
-          {laneOrders.length === 0 && (
+          {/* 订单视图是只读总览，没有拖拽入口，订单为空时用占位文案即可。
+              托盘视图必须始终渲染每个托盘的落点(哪怕 0 单)，否则空波次的司机卡片
+              没有任何 onDrop 区域，拖进去会被浏览器默默拒绝、既不报错也不生效。 */}
+          {mode === 'order' && laneOrders.length === 0 && (
             <div className="text-center text-[11px] text-gray-400 py-5 border border-dashed rounded-lg" style={{ borderColor: '#e5e7eb' }}>
               {reallyDispatched ? '🚚 已出发（无订单）' : `${driverName} 这个时段暂无订单`}
             </div>
           )}
 
-          {laneOrders.length > 0 && mode === 'order' && (
+          {mode === 'order' && laneOrders.length > 0 && (
             <div className="flex flex-col gap-1.5">
               {laneOrders.map(o => (
                 <OrderChip key={o.id} order={o} onClick={() => openOrder(o.id)} draggable={false} />
@@ -489,7 +509,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             </div>
           )}
 
-          {laneOrders.length > 0 && mode === 'pallet' && (
+          {mode === 'pallet' && (
             <div className="flex flex-col gap-1.5">
               {groupSlots.map(slot => {
                 const pallet = palletOf(slot)
@@ -716,7 +736,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               <>
                 <GroupTitle time="am" count={selAmGroups.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} />
                 {!amCollapsed && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
                     {selAmGroups.map(([k, list]) => (
                       <Lane
                         key={k}
@@ -730,7 +750,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 )}
                 <GroupTitle time="pm" count={selPmGroups.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} />
                 {!pmCollapsed && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
                     {selPmGroups.map(([k, list]) => (
                       <Lane
                         key={k}
