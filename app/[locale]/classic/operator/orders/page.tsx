@@ -19,7 +19,7 @@ import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_Q
 
 const PAGE_SIZE = 50
 
-const STATUS_LABEL: Record<OrderStatus, string> = {
+const STATUS_LABEL_ZH: Record<OrderStatus, string> = {
   pending:       '待处理',
   confirmed:     '已确认',
   wave_assigned: '司机分配结束',
@@ -27,6 +27,16 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   completed:     '已完成',
   locked:        '拣货中',
   cancelled:     '已取消',
+}
+
+const STATUS_LABEL_EN: Record<OrderStatus, string> = {
+  pending:       'Pending',
+  confirmed:     'Confirmed',
+  wave_assigned: 'Driver Assigned',
+  in_delivery:   'In Delivery',
+  completed:     'Completed',
+  locked:        'Picking',
+  cancelled:     'Cancelled',
 }
 
 const STATUS_COLOR: Record<OrderStatus, string> = {
@@ -87,6 +97,8 @@ export default function ClassicOrdersPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
 
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
@@ -251,17 +263,17 @@ export default function ClassicOrdersPage() {
         await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId: slotId || null })
       } catch (e) {
         failed.push(orderId)
-        failMessages.add(e instanceof Error ? e.message : '保存失败')
+        failMessages.add(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
       }
     }))
     setSavingBatch(false)
     if (failed.length === 0) {
-      toast.success(`已保存 ${entries.length} 个订单的司机批次`)
+      toast.success(isEn ? `Saved driver batch for ${entries.length} orders` : `已保存 ${entries.length} 个订单的司机批次`)
       setPendingBatch({})
     } else {
       // 失败原因一致（如批次已锁定）时直接显示具体原因，而非笼统的"N 个失败"
-      const detail = failMessages.size === 1 ? [...failMessages][0] : `${failed.length} 个订单保存失败`
-      toast.error(`${detail},已保留待重试`)
+      const detail = failMessages.size === 1 ? [...failMessages][0] : (isEn ? `${failed.length} orders failed to save` : `${failed.length} 个订单保存失败`)
+      toast.error(isEn ? `${detail}, kept for retry` : `${detail},已保留待重试`)
       setPendingBatch(prev => {
         const next: Record<string, string> = {}
         for (const id of failed) if (id in prev) next[id] = prev[id]
@@ -272,7 +284,9 @@ export default function ClassicOrdersPage() {
   }
 
   function exitEditMode() {
-    if (pendingCount > 0 && !confirm(`有 ${pendingCount} 项未保存的司机批次修改,放弃并退出编辑?`)) return
+    if (pendingCount > 0 && !confirm(isEn
+      ? `${pendingCount} unsaved driver batch changes will be discarded. Exit edit mode?`
+      : `有 ${pendingCount} 项未保存的司机批次修改,放弃并退出编辑?`)) return
     setIsReadMode(true)
     setEditBatchId(null)
     setPendingBatch({})
@@ -282,17 +296,17 @@ export default function ClassicOrdersPage() {
     if (generatingWave) return
     // check status only against current page orders
     const confirmedIds = Array.from(selected).filter(id => orders.find(x => x.id === id)?.status === 'confirmed')
-    if (confirmedIds.length === 0) { toast.error('请先选择已确认的销售单'); return }
+    if (confirmedIds.length === 0) { toast.error(isEn ? 'Please select confirmed sales orders first' : '请先选择已确认的销售单'); return }
     setGeneratingWave(true)
     try {
       // waves POST 已在事务内原子回写订单状态(CONFIRMED→WAVE_ASSIGNED)，无需再逐个 PUT。
       await apiPost('/api/waves', { orderIds: confirmedIds, status: 'PENDING' })
-      toast.success(`拣货波次已生成，包含 ${confirmedIds.length} 张订单`)
+      toast.success(isEn ? `Pick wave generated with ${confirmedIds.length} orders` : `拣货波次已生成，包含 ${confirmedIds.length} 张订单`)
       setSelected(new Set())
       // 分配统一在「配送调度中心」进行（波次管理列表页已废弃）。
       router.push(`${prefix}/classic/operator/dispatch-console`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '生成失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Generation failed' : '生成失败'))
     } finally {
       setGeneratingWave(false)
     }
@@ -333,12 +347,12 @@ export default function ClassicOrdersPage() {
         <td className="px-2 py-1">
           <select value={colFilters.status} onChange={e => setCf('status', e.target.value)} className={selectCls}>
             <option value=""></option>
-            <option value="confirmed">已确认</option>
-            <option value="wave_assigned">司机分配结束</option>
-            <option value="in_delivery">配送中</option>
-            <option value="locked">拣货中</option>
-            <option value="completed">已完成</option>
-            <option value="cancelled">已取消</option>
+            <option value="confirmed">{STATUS_LABEL.confirmed}</option>
+            <option value="wave_assigned">{STATUS_LABEL.wave_assigned}</option>
+            <option value="in_delivery">{STATUS_LABEL.in_delivery}</option>
+            <option value="locked">{STATUS_LABEL.locked}</option>
+            <option value="completed">{STATUS_LABEL.completed}</option>
+            <option value="cancelled">{STATUS_LABEL.cancelled}</option>
           </select>
         </td>
         <td className="px-2 py-1"><input value={colFilters.salesman}     onChange={e => setCf('salesman', e.target.value)}     className={inputCls} /></td>
@@ -389,7 +403,7 @@ export default function ClassicOrdersPage() {
               <span
                 className={isReadMode ? '' : 'cursor-pointer hover:text-purple-700 hover:underline'}
                 style={{ color: hasPending ? '#d97706' : display ? '#875A7B' : undefined }}
-                title={hasPending ? '未保存,点顶部「保存」提交' : undefined}
+                title={hasPending ? (isEn ? 'Unsaved — click "Save" above to submit' : '未保存,点顶部「保存」提交') : undefined}
                 onClick={isReadMode ? undefined : () => { setEditBatchId(o.id); setEditBatchVal(hasPending ? pendingVal : originalSlotId) }}
               >
                 {display || '—'}
@@ -407,7 +421,7 @@ export default function ClassicOrdersPage() {
               {STATUS_LABEL[o.status] ?? String(o.status)}
             </span>
             {!!(o as unknown as Record<string, unknown>).orderReturn && (
-              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-600 font-medium">有退货</span>
+              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-600 font-medium">{isEn ? 'Has Return' : '有退货'}</span>
             )}
           </div>
         </td>
@@ -419,7 +433,9 @@ export default function ClassicOrdersPage() {
               <button
                 onClick={async e => {
                   e.stopPropagation()
-                  if (!confirm(`确认将订单 ${displayOrderCode(o)} 撤回到报价单？`)) return
+                  if (!confirm(isEn
+                    ? `Revert order ${displayOrderCode(o)} to quotation?`
+                    : `确认将订单 ${displayOrderCode(o)} 撤回到报价单？`)) return
                   try {
                     await apiPut(`/api/orders/${o.id}`, { status: 'PENDING', confirmationDate: null })
                     setPendingBatch(prev => {
@@ -427,14 +443,14 @@ export default function ClassicOrdersPage() {
                       delete next[o.id]
                       return next
                     })
-                    toast.success('已撤回到报价单')
+                    toast.success(isEn ? 'Reverted to quotation' : '已撤回到报价单')
                     refresh()
                   } catch (err) {
-                    toast.error(err instanceof Error ? err.message : '撤回失败')
+                    toast.error(err instanceof Error ? err.message : (isEn ? 'Revert failed' : '撤回失败'))
                   }
                 }}
                 className="px-2 py-1 text-xs rounded border border-orange-300 text-orange-600 bg-orange-50 hover:bg-orange-100 whitespace-nowrap">
-                撤回
+                {isEn ? 'Revert' : '撤回'}
               </button>
             )}
           </div>
@@ -446,9 +462,9 @@ export default function ClassicOrdersPage() {
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
       <OdooControlPanel
-        breadcrumb={['销售', '订单']}
+        breadcrumb={isEn ? ['Sales', 'Orders'] : ['销售', '订单']}
         permanentActions={[
-          { label: '新建', onClick: () => router.push(`${prefix}/classic/operator/place-order`), primary: true },
+          { label: isEn ? 'New' : '新建', onClick: () => router.push(`${prefix}/classic/operator/place-order`), primary: true },
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },
@@ -457,15 +473,15 @@ export default function ClassicOrdersPage() {
             : [
                 { label: 'Edit', onClick: () => {}, primary: true },
                 ...(pendingCount > 0
-                  ? [{ label: savingBatch ? '保存中…' : `保存 (${pendingCount})`, onClick: saveAllBatches, primary: true }]
+                  ? [{ label: savingBatch ? (isEn ? 'Saving…' : '保存中…') : (isEn ? `Save (${pendingCount})` : `保存 (${pendingCount})`), onClick: saveAllBatches, primary: true }]
                   : []),
                 { label: 'Mode', onClick: exitEditMode },
               ]),
           ...(selectedConfirmedCount > 0 ? [{
-            label: generatingWave ? '生成中…' : `生成拣货波次 (${selectedConfirmedCount})`,
+            label: generatingWave ? (isEn ? 'Generating…' : '生成中…') : (isEn ? `Generate Pick Wave (${selectedConfirmedCount})` : `生成拣货波次 (${selectedConfirmedCount})`),
             onClick: generateBatchWave,
           }] : []),
-          { label: '导出', onClick: () => toast.info('导出功能即将推出') },
+          { label: isEn ? 'Export' : '导出', onClick: () => toast.info(isEn ? 'Export coming soon' : '导出功能即将推出') },
         ]}
         searchValue={search}
         onSearch={v => { setServerSearch(v) }}
@@ -475,11 +491,11 @@ export default function ClassicOrdersPage() {
         filterOptions={[
           { label: myActive ? '✓ My Sales Order' : 'My Sales Order', value: '__my__' },
           ...TIME_QUICK_OPTIONS.map(o => ({ label: timeKey === o.value ? `✓ ${o.label}` : o.label, value: `__time__${o.value}` })),
-          { label: '待开票', value: 'to_invoice' },
-          { label: '已确认', value: 'confirmed' },
-          { label: '司机分配结束', value: 'wave_assigned' },
-          { label: '配送中', value: 'in_delivery' },
-          { label: '已完成', value: 'completed' },
+          { label: isEn ? 'To Invoice' : '待开票', value: 'to_invoice' },
+          { label: STATUS_LABEL.confirmed, value: 'confirmed' },
+          { label: STATUS_LABEL.wave_assigned, value: 'wave_assigned' },
+          { label: STATUS_LABEL.in_delivery, value: 'in_delivery' },
+          { label: STATUS_LABEL.completed, value: 'completed' },
           { label: 'Column filters…', value: '__column_filters__' },
         ]}
         onFilterSelect={v => {
@@ -493,14 +509,14 @@ export default function ClassicOrdersPage() {
           ...(myActive ? [{ label: 'My Sales Order', onRemove: () => setMyActive(false) }] : []),
           ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(activeFilter !== 'all' ? [{
-            label: activeFilter === 'to_invoice' ? '待开票' : (STATUS_LABEL[activeFilter as OrderStatus] ?? activeFilter),
+            label: activeFilter === 'to_invoice' ? (isEn ? 'To Invoice' : '待开票') : (STATUS_LABEL[activeFilter as OrderStatus] ?? activeFilter),
             onRemove: () => setActiveFilter('all'),
           }] : []),
         ]}
         groupByOptions={[
-          { label: '客户', value: 'restaurantName' },
-          { label: '状态', value: 'status' },
-          { label: '日期', value: 'createdAt' },
+          { label: isEn ? 'Customer' : '客户', value: 'restaurantName' },
+          { label: isEn ? 'Status' : '状态', value: 'status' },
+          { label: isEn ? 'Date' : '日期', value: 'createdAt' },
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
@@ -532,7 +548,7 @@ export default function ClassicOrdersPage() {
                   { field: 'code',          label: 'Quotation\nNumber', right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'restaurantName',label: 'Customer',          right: false },
-                  { field: 'deliveryBatch', label: '司机',              right: false },
+                  { field: 'deliveryBatch', label: isEn ? 'Driver' : '司机', right: false },
                   { field: 'totalAmount',   label: 'Total',             right: true  },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
@@ -563,17 +579,17 @@ export default function ClassicOrdersPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">加载中…</td></tr>
+              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && sorted.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">暂无订单数据</td></tr>
+              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
             )}
             {!loading && sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>
         </table>
       </div>
       <div className="flex items-center justify-between px-2 py-3">
-        <span className="text-xs text-gray-400">共 {total} 条，第 {page}/{Math.max(totalPages, 1)} 页</span>
+        <span className="text-xs text-gray-400">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>
     </div>

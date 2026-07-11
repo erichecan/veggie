@@ -22,15 +22,24 @@ const PAGE_SIZE = 50
 
 const FAV_KEY = 'veggie_quotations_favourites'
 
-const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六']
+const WEEKDAY_NAMES_ZH = ['日', '一', '二', '三', '四', '五', '六']
+const WEEKDAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL_ZH: Record<string, string> = {
   pending:       'Quotation',
   confirmed:     'Sales Order',
   wave_assigned: 'Sales Order',
   in_delivery:   'Sales Order',
   completed:     'Done',
   cancelled:     '已取消',
+}
+const STATUS_LABEL_EN: Record<string, string> = {
+  pending:       'Quotation',
+  confirmed:     'Sales Order',
+  wave_assigned: 'Sales Order',
+  in_delivery:   'Sales Order',
+  completed:     'Done',
+  cancelled:     'Cancelled',
 }
 const STATUS_COLOR: Record<string, string> = {
   pending:       'bg-gray-100 text-gray-600',
@@ -109,6 +118,9 @@ export default function ClassicQuotationsPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const WEEKDAY_NAMES = isEn ? WEEKDAY_NAMES_EN : WEEKDAY_NAMES_ZH
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -158,7 +170,7 @@ export default function ClassicQuotationsPage() {
     try {
       await apiPut(`/api/orders/${orderId}`, { deliveryDate: date || null })
       refresh()
-      toast.success(date ? '已安排送货日期' : '已清除送货日期')
+      toast.success(date ? (isEn ? 'Delivery date scheduled' : '已安排送货日期') : (isEn ? 'Delivery date cleared' : '已清除送货日期'))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to update delivery date')
     }
@@ -227,9 +239,9 @@ export default function ClassicQuotationsPage() {
       }
       refresh()
       setEditItemsId(null)
-      toast.success('已更新商品明细')
+      toast.success(isEn ? 'Item details updated' : '已更新商品明细')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSavingItems(false)
     }
@@ -304,7 +316,7 @@ export default function ClassicQuotationsPage() {
       setInvoices(rawInvoices)
       setTrips(rawTrips)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     }
   }
 
@@ -312,8 +324,19 @@ export default function ClassicQuotationsPage() {
 
   // ── CSV import helpers ────────────────────────────────────────────────────
 
+  // CSV 列名是数据格式契约(与上传文件表头及 row[key] 取值强绑定)，不随界面语言切换；
+  // 下方 CSV_HEADER_LABELS 仅用于英文界面下的显示翻译，不影响解析 key。
   const CSV_HEADERS = ['餐馆名称', '商品名称', '规格', '数量', '单价', '配送批次', '内部备注']
   const CSV_TEMPLATE = CSV_HEADERS.join(',') + '\nRestaurant A,白菜,500g,10,2.50,Batch 1,'
+  const CSV_HEADER_LABELS: Record<string, string> = {
+    '餐馆名称': 'Restaurant Name',
+    '商品名称': 'Product Name',
+    '规格': 'Spec',
+    '数量': 'Quantity',
+    '单价': 'Unit Price',
+    '配送批次': 'Delivery Batch',
+    '内部备注': 'Internal Note',
+  }
 
   function parseCSV(text: string): Array<Record<string, string>> {
     const lines = text.trim().split('\n').filter(l => l.trim())
@@ -362,7 +385,7 @@ export default function ClassicQuotationsPage() {
 
     for (const [restaurantName, rows] of groups) {
       const cust = customers.find(c => norm(c.name) === norm(restaurantName))
-      if (!cust) { errors.push(`找不到餐馆: ${restaurantName}`); continue }
+      if (!cust) { errors.push(isEn ? `Restaurant not found: ${restaurantName}` : `找不到餐馆: ${restaurantName}`); continue }
 
       const items = rows.map(row => {
         const productName = row['商品名称']?.trim() || ''
@@ -386,11 +409,13 @@ export default function ClassicQuotationsPage() {
       const deliveryBatch = rows[0]['配送批次']?.trim() || ''
       const internalNote = rows[0]['内部备注']?.trim() || ''
 
-      if (!items.length) { errors.push(`${restaurantName}: 无有效商品行`); continue }
+      if (!items.length) { errors.push(isEn ? `${restaurantName}: no valid item rows` : `${restaurantName}: 无有效商品行`); continue }
 
       const missingProducts = items.filter(it => !it.productId)
       if (missingProducts.length) {
-        errors.push(`${restaurantName}: 商品未找到 — ${missingProducts.map(i => i.productName).join(', ')}`)
+        errors.push(isEn
+          ? `${restaurantName}: product not found — ${missingProducts.map(i => i.productName).join(', ')}`
+          : `${restaurantName}: 商品未找到 — ${missingProducts.map(i => i.productName).join(', ')}`)
         continue
       }
 
@@ -404,14 +429,14 @@ export default function ClassicQuotationsPage() {
         })
         success++
       } catch (e) {
-        errors.push(`${restaurantName}: ${e instanceof Error ? e.message : '创建失败'}`)
+        errors.push(`${restaurantName}: ${e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败')}`)
       }
     }
 
     setImportResult({ success, failed: errors.length, errors })
     setImportLoading(false)
     if (success > 0) {
-      toast.success(`成功导入 ${success} 个订单`)
+      toast.success(isEn ? `Successfully imported ${success} orders` : `成功导入 ${success} 个订单`)
       refresh()
     }
   }
@@ -574,7 +599,7 @@ export default function ClassicQuotationsPage() {
       else if (groupBy === 'status') key = STATUS_LABEL[o.status] ?? o.status
       else if (groupBy === 'weekday') {
         const dd = getField(o, 'deliveryDate')
-        key = dd ? `周${WEEKDAY_NAMES[new Date(dd).getDay()]}` : '无日期'
+        key = dd ? (isEn ? WEEKDAY_NAMES[new Date(dd).getDay()] : `周${WEEKDAY_NAMES[new Date(dd).getDay()]}`) : (isEn ? 'No date' : '无日期')
       }
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(o)
@@ -591,7 +616,7 @@ export default function ClassicQuotationsPage() {
   // 默认(无 Status 列筛选)时 baseUrl 恒为 status=PENDING，total 就是真实的待处理总数；
   // 一旦切了 Status 列筛选，退回到用当前页数据估算（跟改造前的近似程度一致，不引入新问题）
   const TABS: { value: TabValue; label: string; count?: number }[] = [
-    { value: 'all',        label: '全部' },
+    { value: 'all',        label: isEn ? 'All' : '全部' },
     { value: 'quotations', label: 'Quotations', count: !colFilters.status ? total : orders.filter(o => o.status === 'pending').length },
   ]
 
@@ -612,7 +637,7 @@ export default function ClassicQuotationsPage() {
       return o?.status === 'pending'
     })
     if (pendingIds.length === 0) {
-      toast.info('所选订单均已确认，无需操作')
+      toast.info(isEn ? 'All selected orders are already confirmed, nothing to do' : '所选订单均已确认，无需操作')
       return
     }
     setBulkConfirming(true)
@@ -624,16 +649,18 @@ export default function ClassicQuotationsPage() {
     setBulkConfirming(false)
     setSelected(new Set())
     if (failCount === 0) {
-      toast.success(`已确认 ${successCount} 条报价单`)
+      toast.success(isEn ? `Confirmed ${successCount} quotations` : `已确认 ${successCount} 条报价单`)
     } else {
-      toast.warning(`成功 ${successCount} 条，失败 ${failCount} 条`)
+      toast.warning(isEn ? `${successCount} succeeded, ${failCount} failed` : `成功 ${successCount} 条，失败 ${failCount} 条`)
     }
     refresh()
   }
 
   async function handleBulkDelete() {
     const ids = [...selected]
-    if (!confirm(`确认取消 ${ids.length} 条报价单？取消后可在「已取消」筛选中查看。`)) return
+    if (!confirm(isEn
+      ? `Cancel ${ids.length} quotations? You can view them under the "Cancelled" filter afterward.`
+      : `确认取消 ${ids.length} 条报价单？取消后可在「已取消」筛选中查看。`)) return
     setBulkDeleting(true)
     const results = await Promise.allSettled(
       ids.map(id => apiPut(`/api/orders/${id}`, { status: 'CANCELLED' }))
@@ -643,9 +670,9 @@ export default function ClassicQuotationsPage() {
     setBulkDeleting(false)
     setSelected(new Set())
     if (failCount === 0) {
-      toast.success(`已取消 ${successCount} 条报价单`)
+      toast.success(isEn ? `Cancelled ${successCount} quotations` : `已取消 ${successCount} 条报价单`)
     } else {
-      toast.warning(`成功 ${successCount} 条，失败 ${failCount} 条`)
+      toast.warning(isEn ? `${successCount} succeeded, ${failCount} failed` : `成功 ${successCount} 条，失败 ${failCount} 条`)
     }
     refresh()
   }
@@ -665,11 +692,11 @@ export default function ClassicQuotationsPage() {
         internalNote: detail.internalNote ?? undefined,
         deliveryDate: detail.deliveryDate ?? undefined,
       })
-      toast.success('报价单已复制')
+      toast.success(isEn ? 'Quotation duplicated' : '报价单已复制')
       setSelected(new Set())
       refresh()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '复制失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Duplicate failed' : '复制失败'))
     } finally {
       setDuplicating(false)
     }
@@ -750,12 +777,12 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 </div>`
 
       const win = window.open('', '_blank')
-      if (!win) { toast.error('弹窗被拦截，请允许弹出窗口'); return }
+      if (!win) { toast.error(isEn ? 'Pop-up blocked, please allow pop-ups' : '弹窗被拦截，请允许弹出窗口'); return }
       win.document.write(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>批量打印 (${ids.length})</title>
+<title>${isEn ? 'Bulk Print' : '批量打印'} (${ids.length})</title>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
 <style>${CSS}</style>
 </head>
@@ -776,7 +803,7 @@ ${footerHtml}
       win.document.close()
       win.focus()
     } catch {
-      toast.error('批量打印失败')
+      toast.error(isEn ? 'Bulk print failed' : '批量打印失败')
     } finally {
       setBulkPrinting(false)
     }
@@ -858,7 +885,7 @@ ${footerHtml}
               <button
                 onClick={() => isEditingItems ? setEditItemsId(null) : startEditItems(o)}
                 className={`tabular-nums hover:underline ${isEditingItems ? 'text-purple-700 font-medium' : 'hover:text-purple-700'}`}
-                title="点击编辑商品数量/单价"
+                title={isEn ? 'Click to edit item quantity/price' : '点击编辑商品数量/单价'}
               >
                 € {o.totalAmount.toFixed(2)} ✎
               </button>
@@ -878,17 +905,19 @@ ${footerHtml}
                 <button
                   onClick={async e => {
                     e.stopPropagation()
-                    if (!confirm(`确认取消报价单 ${displayOrderCode(o)}？取消后可在「已取消」筛选中查看。`)) return
+                    if (!confirm(isEn
+                      ? `Cancel quotation ${displayOrderCode(o)}? You can view it under the "Cancelled" filter afterward.`
+                      : `确认取消报价单 ${displayOrderCode(o)}？取消后可在「已取消」筛选中查看。`)) return
                     try {
                       await apiPut(`/api/orders/${o.id}`, { status: 'CANCELLED' })
-                      toast.success('报价单已取消')
+                      toast.success(isEn ? 'Quotation cancelled' : '报价单已取消')
                       refresh()
                     } catch (err) {
-                      toast.error(err instanceof Error ? err.message : '取消失败')
+                      toast.error(err instanceof Error ? err.message : (isEn ? 'Cancel failed' : '取消失败'))
                     }
                   }}
                   className="px-2 py-0.5 text-xs rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
-                  取消
+                  {isEn ? 'Cancel' : '取消'}
                 </button>
               )}
             </div>
@@ -901,11 +930,11 @@ ${footerHtml}
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-[#875A7B]/15 border-b border-[#875A7B]/20">
-                      <th className="px-3 py-1.5 text-left text-gray-600 font-medium">商品名称</th>
-                      <th className="px-3 py-1.5 text-left text-gray-500 font-normal">规格</th>
-                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">数量</th>
-                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">单价 (€)</th>
-                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">小计</th>
+                      <th className="px-3 py-1.5 text-left text-gray-600 font-medium">{isEn ? 'Product Name' : '商品名称'}</th>
+                      <th className="px-3 py-1.5 text-left text-gray-500 font-normal">{isEn ? 'Spec' : '规格'}</th>
+                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">{isEn ? 'Quantity' : '数量'}</th>
+                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">{isEn ? 'Unit Price (€)' : '单价 (€)'}</th>
+                      <th className="px-3 py-1.5 text-right text-gray-600 font-medium">{isEn ? 'Subtotal' : '小计'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -950,7 +979,7 @@ ${footerHtml}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-[#875A7B]/20 bg-[#875A7B]/15">
-                      <td colSpan={4} className="px-3 py-1.5 text-right text-gray-600 font-medium">合计</td>
+                      <td colSpan={4} className="px-3 py-1.5 text-right text-gray-600 font-medium">{isEn ? 'Total' : '合计'}</td>
                       <td className="px-3 py-1.5 text-right font-semibold text-gray-900 tabular-nums">
                         € {editItemsLines.reduce((s, l) => s + l.quantity * l.price, 0).toFixed(2)}
                       </td>
@@ -962,7 +991,7 @@ ${footerHtml}
                     onClick={() => setEditItemsId(null)}
                     className="px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
                   >
-                    取消
+                    {isEn ? 'Cancel' : '取消'}
                   </button>
                   <button
                     onClick={() => saveItems(o.id)}
@@ -970,7 +999,7 @@ ${footerHtml}
                     className="px-4 py-1 text-xs rounded text-white disabled:opacity-60"
                     style={{ background: '#875A7B' }}
                   >
-                    {savingItems ? '保存中…' : '保存'}
+                    {savingItems ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}
                   </button>
                 </div>
               </div>
@@ -1026,19 +1055,19 @@ ${footerHtml}
   // ── Render ────────────────────────────────────────────────────────────────
 
   const GROUP_BY_OPTIONS: { value: GroupByField; label: string }[] = [
-    { value: 'none',      label: '不分组' },
-    { value: 'customer',  label: '按客户' },
-    { value: 'salesman',  label: '按业务员' },
-    { value: 'salesTeam', label: '按司机/批次' },
-    { value: 'status',    label: '按状态' },
-    { value: 'weekday',   label: '按交货星期' },
+    { value: 'none',      label: isEn ? 'No Grouping' : '不分组' },
+    { value: 'customer',  label: isEn ? 'By Customer' : '按客户' },
+    { value: 'salesman',  label: isEn ? 'By Salesperson' : '按业务员' },
+    { value: 'salesTeam', label: isEn ? 'By Driver/Batch' : '按司机/批次' },
+    { value: 'status',    label: isEn ? 'By Status' : '按状态' },
+    { value: 'weekday',   label: isEn ? 'By Delivery Weekday' : '按交货星期' },
   ]
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
       {/* ── Header ── */}
       <OdooControlPanel
-        breadcrumb={['销售', 'Quotations']}
+        breadcrumb={isEn ? ['Sales', 'Quotations'] : ['销售', 'Quotations']}
         permanentActions={[
           { label: 'Create', onClick: () => router.push(`${prefix}/classic/operator/place-order`), primary: true },
           { label: 'Import', onClick: () => { setShowImportModal(true); setImportParsed([]); setImportResult(null) } },
@@ -1051,10 +1080,10 @@ ${footerHtml}
                 { label: 'Edit', onClick: () => {}, primary: true },
                 { label: 'Mode', onClick: () => { setIsReadMode(true); setEditDateId(null); setEditItemsId(null) } },
               ]),
-          ...(selected.size >= 2 ? [{ label: bulkConfirming ? '确认中...' : `批量确认 (${selected.size})`, onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
-          ...(selected.size >= 2 ? [{ label: bulkDeleting ? '取消中...' : `批量取消 (${selected.size})`, onClick: handleBulkDelete, primary: true, style: 'red' as const, disabled: bulkDeleting }] : []),
-          ...(selected.size === 1 ? [{ label: duplicating ? '复制中...' : 'Duplicate', onClick: handleDuplicate, primary: true, disabled: duplicating }] : []),
-          ...(selected.size >= 1 ? [{ label: bulkPrinting ? '生成中...' : `批量打印 (${selected.size})`, onClick: handleBulkPrint, primary: true, disabled: bulkPrinting }] : []),
+          ...(selected.size >= 2 ? [{ label: bulkConfirming ? (isEn ? 'Confirming...' : '确认中...') : (isEn ? `Bulk Confirm (${selected.size})` : `批量确认 (${selected.size})`), onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
+          ...(selected.size >= 2 ? [{ label: bulkDeleting ? (isEn ? 'Cancelling...' : '取消中...') : (isEn ? `Bulk Cancel (${selected.size})` : `批量取消 (${selected.size})`), onClick: handleBulkDelete, primary: true, style: 'red' as const, disabled: bulkDeleting }] : []),
+          ...(selected.size === 1 ? [{ label: duplicating ? (isEn ? 'Duplicating...' : '复制中...') : 'Duplicate', onClick: handleDuplicate, primary: true, disabled: duplicating }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkPrinting ? (isEn ? 'Generating...' : '生成中...') : (isEn ? `Bulk Print (${selected.size})` : `批量打印 (${selected.size})`), onClick: handleBulkPrint, primary: true, disabled: bulkPrinting }] : []),
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v) }}
@@ -1142,10 +1171,10 @@ ${footerHtml}
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">加载中…</td></tr>
+              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">暂无数据</td></tr>
+              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</td></tr>
             )}
             {!loading && grouped ? (
               Array.from(grouped.entries()).map(([groupName, groupOrders]) => (
@@ -1165,7 +1194,7 @@ ${footerHtml}
         </table>
       </div>
       <div className="flex items-center justify-between px-2 py-3">
-        <span className="text-xs text-gray-400">共 {total} 条，第 {page}/{Math.max(totalPages, 1)} 页</span>
+        <span className="text-xs text-gray-400">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>
 
@@ -1174,13 +1203,13 @@ ${footerHtml}
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowImportModal(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-              <h2 className="text-base font-semibold text-gray-900">导入订单 (CSV)</h2>
+              <h2 className="text-base font-semibold text-gray-900">{isEn ? 'Import Orders (CSV)' : '导入订单 (CSV)'}</h2>
               <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
             </div>
             <div className="px-5 py-4 space-y-4">
               {/* Template download */}
               <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600">1. 下载模板，填写数据后上传</span>
+                <span className="text-sm text-gray-600">{isEn ? '1. Download the template, fill in data, then upload' : '1. 下载模板，填写数据后上传'}</span>
                 <button
                   onClick={() => {
                     const blob = new Blob(['﻿' + CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' })
@@ -1191,13 +1220,13 @@ ${footerHtml}
                   }}
                   className="px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 >
-                  ↓ 下载模板
+                  {isEn ? '↓ Download Template' : '↓ 下载模板'}
                 </button>
               </div>
 
               {/* File input */}
               <div>
-                <span className="text-sm text-gray-600 block mb-2">2. 选择 CSV 文件</span>
+                <span className="text-sm text-gray-600 block mb-2">{isEn ? '2. Select CSV file' : '2. 选择 CSV 文件'}</span>
                 <input
                   ref={importFileRef}
                   type="file"
@@ -1210,12 +1239,12 @@ ${footerHtml}
               {/* Preview table */}
               {importParsed.length > 0 && (
                 <div>
-                  <p className="text-xs text-gray-500 mb-1">预览（前 5 行，共 {importParsed.length} 行）：</p>
+                  <p className="text-xs text-gray-500 mb-1">{isEn ? `Preview (first 5 of ${importParsed.length} rows):` : `预览（前 5 行，共 ${importParsed.length} 行）：`}</p>
                   <div className="overflow-x-auto border rounded">
                     <table className="text-xs w-full">
                       <thead>
                         <tr className="bg-gray-50 border-b">
-                          {CSV_HEADERS.map(h => <th key={h} className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">{h}</th>)}
+                          {CSV_HEADERS.map(h => <th key={h} className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">{isEn ? (CSV_HEADER_LABELS[h] ?? h) : h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -1243,12 +1272,12 @@ ${footerHtml}
                     if (dups.length === 0) return null
                     return (
                       <div className="mt-2 rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-xs text-purple-700">
-                        🔁 <span className="font-semibold">重复商品提醒：</span>
-                        {dups.length} 项在同一餐馆被重复添加 —
+                        🔁 <span className="font-semibold">{isEn ? 'Duplicate product alert: ' : '重复商品提醒：'}</span>
+                        {isEn ? `${dups.length} items were added more than once for the same restaurant —` : `${dups.length} 项在同一餐馆被重复添加 —`}
                         <span className="text-purple-600 ml-1">
-                          {dups.map(d => `${d.rest} / ${d.product} ×${d.count}`).join('；')}
+                          {dups.map(d => `${d.rest} / ${d.product} ×${d.count}`).join(isEn ? '; ' : '；')}
                         </span>
-                        <span className="text-gray-500 ml-1">请确认是否重复下单</span>
+                        <span className="text-gray-500 ml-1">{isEn ? 'Please confirm this is not a duplicate order' : '请确认是否重复下单'}</span>
                       </div>
                     )
                   })()}
@@ -1258,7 +1287,7 @@ ${footerHtml}
               {/* Import result */}
               {importResult && (
                 <div className={`rounded-lg px-4 py-3 text-sm ${importResult.failed === 0 ? 'bg-green-50 text-green-800' : 'bg-yellow-50 text-yellow-800'}`}>
-                  <p className="font-medium">成功 {importResult.success} 个订单，失败 {importResult.failed} 个</p>
+                  <p className="font-medium">{isEn ? `${importResult.success} orders succeeded, ${importResult.failed} failed` : `成功 ${importResult.success} 个订单，失败 ${importResult.failed} 个`}</p>
                   {importResult.errors.length > 0 && (
                     <ul className="mt-1 list-disc list-inside text-xs space-y-0.5 text-red-700">
                       {importResult.errors.map((err, i) => <li key={i}>{err}</li>)}
@@ -1270,7 +1299,7 @@ ${footerHtml}
 
             <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-200">
               <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                关闭
+                {isEn ? 'Close' : '关闭'}
               </button>
               <button
                 onClick={handleImportSubmit}
@@ -1278,7 +1307,7 @@ ${footerHtml}
                 className="px-4 py-2 text-sm rounded text-white disabled:opacity-50"
                 style={{ background: '#875A7B' }}
               >
-                {importLoading ? '导入中…' : `导入 ${importParsed.length} 行`}
+                {importLoading ? (isEn ? 'Importing…' : '导入中…') : (isEn ? `Import ${importParsed.length} rows` : `导入 ${importParsed.length} 行`)}
               </button>
             </div>
           </div>

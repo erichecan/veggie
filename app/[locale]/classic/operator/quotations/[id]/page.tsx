@@ -41,6 +41,7 @@ interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
 export default function QuotationDetailPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const params = useParams<{ id: string }>()
   const id = params.id
@@ -221,10 +222,10 @@ export default function QuotationDetailPage() {
     if (!order) return
     try {
       await apiPut(`/api/orders/${order.id}`, { status: 'CANCELLED' })
-      toast.success('报价单已取消')
+      toast.success(isEn ? 'Quotation cancelled' : '报价单已取消')
       router.push(`${prefix}/classic/operator/quotations`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '取消失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Cancel failed' : '取消失败'))
     } finally {
       setCancelModalOpen(false)
     }
@@ -324,7 +325,7 @@ export default function QuotationDetailPage() {
       }
       return result
     })
-    toast.success('已合并重复商品')
+    toast.success(isEn ? 'Duplicate products merged' : '已合并重复商品')
   }
   const totalTax = displayLines.reduce((s, l) => s + Number(l.subtotal) * (Number(l.taxRate ?? 0) / 100), 0)
   const margin = displayLines.reduce((s, l) => {
@@ -389,7 +390,7 @@ export default function QuotationDetailPage() {
                   {confirming ? 'Confirming…' : 'Confirm'}
                 </button>
                 {creditBlocked && (
-                  <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 font-medium border border-red-200">信用冻结</span>
+                  <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 font-medium border border-red-200">{isEn ? 'Credit Blocked' : '信用冻结'}</span>
                 )}
               </>
             )}
@@ -406,7 +407,7 @@ export default function QuotationDetailPage() {
           <div className="flex items-center gap-2">
             <button onClick={handleCancel} disabled={isLocked}
               className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed">
-              取消报价单
+              {isEn ? 'Cancel Quotation' : '取消报价单'}
             </button>
             <div className="w-px h-5 bg-gray-300 mx-1" />
             <button disabled={!isSalesOrder}
@@ -472,28 +473,28 @@ export default function QuotationDetailPage() {
               {creditInfo && (
                 <div className={`flex flex-wrap gap-3 py-2 px-3 rounded-lg text-xs ${creditInfo.canOrder === false ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-200'}`}>
                   <div>
-                    <span className="text-gray-500">欠款余额</span>
+                    <span className="text-gray-500">{isEn ? 'Outstanding Balance' : '欠款余额'}</span>
                     <span className={`ml-1 font-medium ${creditInfo.outstandingBalance > 0 ? 'text-red-600' : 'text-gray-800'}`}>
                       € {creditInfo.outstandingBalance.toFixed(2)}
                     </span>
                   </div>
                   {creditInfo.creditLimit > 0 && (
                     <div>
-                      <span className="text-gray-500">信用额度</span>
+                      <span className="text-gray-500">{isEn ? 'Credit Limit' : '信用额度'}</span>
                       <span className="ml-1 font-medium text-gray-800">€ {creditInfo.creditLimit.toFixed(2)}</span>
                     </div>
                   )}
                   {creditInfo.paymentTerm && (
                     <div>
-                      <span className="text-gray-500">付款条件</span>
+                      <span className="text-gray-500">{isEn ? 'Payment Terms' : '付款条件'}</span>
                       <span className="ml-1 font-medium text-gray-800">{creditInfo.paymentTerm}</span>
                     </div>
                   )}
                   {creditInfo.canOrder === false && (
                     <div className="w-full flex items-center gap-1 text-red-700 font-medium">
                       <span>⚠️</span>
-                      <span>{creditInfo.blockReason || '信用冻结，无法确认'}</span>
-                      {canOverrideCredit && <span className="text-gray-500 font-normal">(已用管理员权限覆盖)</span>}
+                      <span>{creditInfo.blockReason || (isEn ? 'Credit blocked, cannot confirm' : '信用冻结，无法确认')}</span>
+                      {canOverrideCredit && <span className="text-gray-500 font-normal">{isEn ? '(overridden with admin privilege)' : '(已用管理员权限覆盖)'}</span>}
                     </div>
                   )}
                 </div>
@@ -503,7 +504,7 @@ export default function QuotationDetailPage() {
                   {(['internal', 'external'] as const).map(tab => (
                     <button key={tab} onClick={() => setNoteTab(tab)}
                       className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                      {tab === 'internal' ? '内部备注' : '外部备注'}
+                      {tab === 'internal' ? (isEn ? 'Internal Note' : '内部备注') : (isEn ? 'External Note' : '外部备注')}
                     </button>
                   ))}
                 </div>
@@ -512,12 +513,12 @@ export default function QuotationDetailPage() {
                     <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
                       rows={3} maxLength={30}
                       className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
-                      placeholder="仅内部可见，不会打印给客户" />
+                      placeholder={isEn ? 'Internal only, not printed for customer' : '仅内部可见，不会打印给客户'} />
                   ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
                 ) : (
                   editing ? (
                     <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
-                      rows={3} placeholder="会打印在报价单和送货单上，客户可见"
+                      rows={3} placeholder={isEn ? 'Printed on quotation and delivery note, visible to customer' : '会打印在报价单和送货单上，客户可见'}
                       className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none" />
                   ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{externalNote || '—'}</div>
                 )}
@@ -611,21 +612,21 @@ export default function QuotationDetailPage() {
                 <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
                   <span className="text-lg leading-none mt-0.5">🔁</span>
                   <div className="text-sm flex-1">
-                    <span className="font-semibold text-purple-700">重复商品提醒：</span>
+                    <span className="font-semibold text-purple-700">{isEn ? 'Duplicate product alert: ' : '重复商品提醒：'}</span>
                     <span className="text-purple-600">
-                      {dups.length} 个商品被重复添加
+                      {isEn ? `${dups.length} product(s) added more than once` : `${dups.length} 个商品被重复添加`}
                       <span className="text-xs text-purple-500 ml-1">
-                        ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join('、')})
+                        ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join(isEn ? ', ' : '、')})
                       </span>
                     </span>
-                    <span className="text-xs text-gray-500 ml-1">— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整</span>
+                    <span className="text-xs text-gray-500 ml-1">{isEn ? '— click "Merge" on the right to combine into one line (quantities added), or leave as-is and adjust manually' : '— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整'}</span>
                   </div>
                   <button
                     onClick={mergeDuplicateLines}
                     className="shrink-0 px-3 py-1 rounded text-xs font-medium text-white"
                     style={{ background: PURPLE }}
                   >
-                    合并重复项
+                    {isEn ? 'Merge Duplicates' : '合并重复项'}
                   </button>
                 </div>
               )
@@ -674,11 +675,11 @@ export default function QuotationDetailPage() {
                           {dragHandle}
                           {deleteButton}
                         </div>
-                      ) : <span className="text-gray-300 select-none" title="编辑后可拖动调整顺序">☰</span>}
+                      ) : <span className="text-gray-300 select-none" title={isEn ? 'Enable editing to drag and reorder' : '编辑后可拖动调整顺序'}>☰</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-700">
                       {i + 1}
-                      {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
+                      {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
@@ -696,7 +697,7 @@ export default function QuotationDetailPage() {
                       {editing ? (
                         <input
                           type="text"
-                          placeholder="备注…"
+                          placeholder={isEn ? 'Note…' : '备注…'}
                           className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24 placeholder:text-gray-300"
                           value={l.note ?? ''}
                           onChange={e => updateLine(i, 'note', e.target.value)}
@@ -765,20 +766,22 @@ export default function QuotationDetailPage() {
       {cancelModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">确认取消此报价单？</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">{isEn ? 'Cancel this quotation?' : '确认取消此报价单？'}</h3>
             <p className="text-sm text-gray-600 mb-6">
-              取消后订单状态将变为「已取消」，可在列表中查看，但无法恢复为报价中。
+              {isEn
+                ? 'The order status will change to "Cancelled" and remain visible in the list, but cannot be restored to a quotation.'
+                : '取消后订单状态将变为「已取消」，可在列表中查看，但无法恢复为报价中。'}
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setCancelModalOpen(false)}
                 className="h-9 px-4 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                取消操作
+                {isEn ? 'Dismiss' : '取消操作'}
               </button>
               <button
                 onClick={handleConfirmCancel}
                 className="h-9 px-4 text-sm rounded bg-red-600 text-white hover:bg-red-700 font-medium">
-                确认取消
+                {isEn ? 'Confirm Cancel' : '确认取消'}
               </button>
             </div>
           </div>

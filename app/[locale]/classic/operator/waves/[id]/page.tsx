@@ -1,11 +1,13 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import type { PickingWave, WaveStatus } from '@/lib/types'
 import { formatDateTime } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { routing } from '@/i18n/routing'
 
 /* ─── Slot colour palette (matches list page) ──────────────────────────── */
 const SLOT_COLORS: Record<number, { bg: string; text: string; border: string; badge: string }> = {
@@ -30,6 +32,8 @@ function isKgUom(uomName?: string): boolean {
 export default function ClassicWaveDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [wave, setWave] = useState<PickingWave | null>(null)
   const [loading, setLoading] = useState(true)
   const [shortages, setShortages] = useState<{ productId: string; productName: string; demandQty: number; stockQty: number; shortageQty: number; shortageRate: number }[]>([])
@@ -56,7 +60,7 @@ export default function ClassicWaveDetailPage() {
         setShortageSummary(shortageData.summary ?? null)
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载波次失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load wave' : '加载波次失败'))
     } finally {
       setLoading(false)
     }
@@ -67,26 +71,26 @@ export default function ClassicWaveDetailPage() {
   function handlePrint() {
     if (!wave) return
     const w = window.open('', '_blank', 'noopener,width=900,height=720')
-    if (!w) { toast.error('请允许弹出窗口以打印'); return }
+    if (!w) { toast.error(isEn ? 'Please allow pop-ups to print' : '请允许弹出窗口以打印'); return }
     const wLabel = wave.name ?? `Wave ${wave.waveNumber ?? '?'}`
-    const dLabel = wave.driverName ?? '未指定'
+    const dLabel = wave.driverName ?? (isEn ? 'Unassigned' : '未指定')
     const isBulk = wave.waveType === 'bulk'
     const zonesHtml = wave.zones.length === 0
-      ? '<p style="color:#999;text-align:center;padding:32px;">暂无拣货明细</p>'
+      ? `<p style="color:#999;text-align:center;padding:32px;">${isEn ? 'No picking items' : '暂无拣货明细'}</p>`
       : wave.zones.map(z => `
           <div style="border:1px solid #e0e0e0;border-radius:6px;overflow:hidden;margin-bottom:12px;background:#fff;">
             <div style="padding:8px 14px;background:#f3eff5;color:#875A7B;font-weight:600;font-size:13px;border-bottom:1px solid #e0e0e0;">
-              📦 ${z.name} <span style="font-weight:400;color:#888;font-size:12px;">${z.items.length} 种商品</span>
+              📦 ${z.name} <span style="font-weight:400;color:#888;font-size:12px;">${z.items.length} ${isEn ? 'products' : '种商品'}</span>
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:13px;">
               <thead>
                 <tr style="background:#f8f8f8;border-bottom:1px solid #e0e0e0;">
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">商品</th>
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">规格</th>
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">单位</th>
-                  <th style="padding:6px 12px;text-align:right;font-weight:500;color:#555;font-size:12px;">需拣量</th>
-                  <th style="padding:6px 12px;text-align:center;font-weight:500;color:#555;font-size:12px;">完成</th>
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">涉及餐馆</th>
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Product' : '商品'}</th>
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Spec' : '规格'}</th>
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Unit' : '单位'}</th>
+                  <th style="padding:6px 12px;text-align:right;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Required Qty' : '需拣量'}</th>
+                  <th style="padding:6px 12px;text-align:center;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Done' : '完成'}</th>
+                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Restaurants' : '涉及餐馆'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,25 +104,27 @@ export default function ClassicWaveDetailPage() {
                     <td style="padding:7px 12px;color:#888;">${it.uomName ?? ''}</td>
                     <td style="padding:7px 12px;text-align:right;font-weight:bold;color:#111;">${isKgUom(it.uomName) ? Number(it.requiredQty).toFixed(2) : it.requiredQty}</td>
                     <td style="padding:7px 12px;text-align:center;color:#ccc;font-size:16px;">☐</td>
-                    <td style="padding:7px 12px;font-size:11px;color:#888;">${it.restaurants.join('、')}</td>
+                    <td style="padding:7px 12px;font-size:11px;color:#888;">${it.restaurants.join(isEn ? ', ' : '、')}</td>
                   </tr>
                 `).join('')}
               </tbody>
             </table>
           </div>
         `).join('')
+    const printTitle = isEn ? 'Picking List' : '拣货单'
+    const typeLabel = isEn ? (isBulk ? 'Bulk' : 'Retail') : (isBulk ? '大货' : '散货')
     w.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
-<title>${wLabel} 拣货单</title>
+<title>${wLabel} ${printTitle}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;padding:20px}@media print{@page{margin:1cm}body{padding:0}}</style>
 </head><body>
 <div style="margin-bottom:16px;">
-  <h1 style="font-size:18px;font-weight:bold;color:#111;">${wLabel} — 拣货单</h1>
+  <h1 style="font-size:18px;font-weight:bold;color:#111;">${wLabel} — ${printTitle}</h1>
   <p style="font-size:13px;color:#555;margin-top:4px;">
-    司机：<strong>${dLabel}</strong>
-    <span style="margin-left:16px;">类型：<strong>${isBulk ? '大货' : '散货'}</strong></span>
-    <span style="margin-left:16px;">打印时间：${formatDateTime(new Date())}</span>
+    ${isEn ? 'Driver' : '司机'}：<strong>${dLabel}</strong>
+    <span style="margin-left:16px;">${isEn ? 'Type' : '类型'}：<strong>${typeLabel}</strong></span>
+    <span style="margin-left:16px;">${isEn ? 'Printed at' : '打印时间'}：${formatDateTime(new Date())}</span>
   </p>
 </div>
 ${zonesHtml}
@@ -131,10 +137,10 @@ ${zonesHtml}
   if (loading) {
     return (
       <div>
-        <OdooControlPanel breadcrumb={['仓库', '拣货波次', '...']} searchValue="" onSearch={() => {}} total={0} page={1} pageSize={1} />
+        <OdooControlPanel breadcrumb={isEn ? ['Warehouse', 'Pick Waves', '...'] : ['仓库', '拣货波次', '...']} searchValue="" onSearch={() => {}} total={0} page={1} pageSize={1} />
         <div className="flex items-center justify-center py-24 text-gray-400">
           <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: '#875A7B' }} />
-          加载中...
+          {isEn ? 'Loading...' : '加载中...'}
         </div>
       </div>
     )
@@ -143,8 +149,8 @@ ${zonesHtml}
   if (!wave) {
     return (
       <div>
-        <OdooControlPanel breadcrumb={['仓库', '拣货波次', '不存在']} searchValue="" onSearch={() => {}} total={0} page={1} pageSize={1} />
-        <div className="py-24 text-center text-gray-400">波次不存在或已删除</div>
+        <OdooControlPanel breadcrumb={isEn ? ['Warehouse', 'Pick Waves', 'Not Found'] : ['仓库', '拣货波次', '不存在']} searchValue="" onSearch={() => {}} total={0} page={1} pageSize={1} />
+        <div className="py-24 text-center text-gray-400">{isEn ? 'Wave not found or deleted' : '波次不存在或已删除'}</div>
       </div>
     )
   }
@@ -152,7 +158,7 @@ ${zonesHtml}
   const waveLabel = wave.name ?? `Wave ${wave.waveNumber ?? '?'}`
   const totalItems = wave.zones.reduce((s, z) => s + z.items.length, 0)
 
-  const driverLabel = wave.driverName ?? '未指定'
+  const driverLabel = wave.driverName ?? (isEn ? 'Unassigned' : '未指定')
   const isBulk = wave.waveType === 'bulk'
   const sc = slotColor(wave.waveNumber ?? 1)
 
@@ -172,10 +178,10 @@ ${zonesHtml}
       <div>
         <div className="no-print">
           <OdooControlPanel
-            breadcrumb={['仓库', '拣货波次', waveLabel]}
+            breadcrumb={isEn ? ['Warehouse', 'Pick Waves', waveLabel] : ['仓库', '拣货波次', waveLabel]}
             permanentActions={[
-              { label: '← 返回列表', onClick: () => router.back() },
-              { label: '🖨 打印拣货单', onClick: handlePrint },
+              { label: isEn ? '← Back to List' : '← 返回列表', onClick: () => router.back() },
+              { label: isEn ? '🖨 Print Picking List' : '🖨 打印拣货单', onClick: handlePrint },
             ]}
             searchValue=""
             onSearch={() => {}}
@@ -188,12 +194,12 @@ ${zonesHtml}
         <div className="p-4 space-y-4 print-area" ref={printRef}>
           {/* Print header */}
           <div className="print-only mb-4">
-            <h1 className="text-xl font-bold">{waveLabel} — 拣货单</h1>
+            <h1 className="text-xl font-bold">{waveLabel} — {isEn ? 'Picking List' : '拣货单'}</h1>
             <p className="text-sm text-gray-700 mt-0.5">
-              司机：<strong>{driverLabel}</strong>
-              <span className="ml-3">类型：<strong>{isBulk ? '大货' : '散货'}</strong></span>
+              {isEn ? 'Driver' : '司机'}：<strong>{driverLabel}</strong>
+              <span className="ml-3">{isEn ? 'Type' : '类型'}：<strong>{isEn ? (isBulk ? 'Bulk' : 'Retail') : (isBulk ? '大货' : '散货')}</strong></span>
             </p>
-            <p className="text-sm text-gray-500 mt-0.5">打印时间：{formatDateTime(new Date())}</p>
+            <p className="text-sm text-gray-500 mt-0.5">{isEn ? 'Printed at' : '打印时间'}：{formatDateTime(new Date())}</p>
           </div>
 
           {/* Meta info with slot-colored header */}
@@ -212,17 +218,17 @@ ${zonesHtml}
                     className="text-[11px] px-2 py-0.5 rounded-full font-medium"
                     style={{ background: sc.bg, color: sc.text }}
                   >
-                    {isBulk ? '大货' : '散货'}
+                    {isEn ? (isBulk ? 'Bulk' : 'Retail') : (isBulk ? '大货' : '散货')}
                   </span>
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">{waveLabel}</div>
               </div>
             </div>
             <div className="px-4 py-2 flex flex-wrap gap-6 text-sm text-gray-600">
-              <span>关联订单：<strong className="text-gray-900">{wave.orderIds.length}</strong> 张</span>
-              <span>分区（餐馆）：<strong className="text-gray-900">{wave.zones.length}</strong> 个</span>
-              <span>商品种类：<strong className="text-gray-900">{totalItems}</strong> 种</span>
-              <span>创建时间：{formatDateTime(wave.createdAt)}</span>
+              <span>{isEn ? 'Orders' : '关联订单'}：<strong className="text-gray-900">{wave.orderIds.length}</strong>{isEn ? '' : ' 张'}</span>
+              <span>{isEn ? 'Zones (Restaurants)' : '分区（餐馆）'}：<strong className="text-gray-900">{wave.zones.length}</strong>{isEn ? '' : ' 个'}</span>
+              <span>{isEn ? 'Products' : '商品种类'}：<strong className="text-gray-900">{totalItems}</strong>{isEn ? '' : ' 种'}</span>
+              <span>{isEn ? 'Created' : '创建时间'}：{formatDateTime(wave.createdAt)}</span>
             </div>
           </div>
 
@@ -234,19 +240,21 @@ ${zonesHtml}
                 className="w-full px-4 py-2.5 flex items-center justify-between text-sm font-medium text-orange-800 hover:bg-orange-100 transition-colors"
               >
                 <span>
-                  ⚠️ 缺货预警：{shortageSummary.shortageProducts}/{shortageSummary.totalProducts} 种商品缺货，缺货率 {(shortageSummary.shortageRate * 100).toFixed(1)}%
+                  ⚠️ {isEn
+                    ? `Shortage alert: ${shortageSummary.shortageProducts}/${shortageSummary.totalProducts} products short, shortage rate ${(shortageSummary.shortageRate * 100).toFixed(1)}%`
+                    : `缺货预警：${shortageSummary.shortageProducts}/${shortageSummary.totalProducts} 种商品缺货，缺货率 ${(shortageSummary.shortageRate * 100).toFixed(1)}%`}
                 </span>
-                <span className="text-xs">{showShortages ? '▲ 收起' : '▼ 展开'}</span>
+                <span className="text-xs">{showShortages ? (isEn ? '▲ Collapse' : '▲ 收起') : (isEn ? '▼ Expand' : '▼ 展开')}</span>
               </button>
               {showShortages && (
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr style={{ background: '#fff7ed', borderBottom: '1px solid #fdba74' }}>
-                      <th className="px-3 py-2 text-left font-medium text-orange-700" style={{ fontSize: '12px' }}>商品</th>
-                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>需求量</th>
-                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>库存量</th>
-                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>缺口</th>
-                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>缺货率</th>
+                      <th className="px-3 py-2 text-left font-medium text-orange-700" style={{ fontSize: '12px' }}>{isEn ? 'Product' : '商品'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>{isEn ? 'Demand' : '需求量'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>{isEn ? 'Stock' : '库存量'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>{isEn ? 'Gap' : '缺口'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-orange-700" style={{ fontSize: '12px' }}>{isEn ? 'Shortage Rate' : '缺货率'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -268,7 +276,7 @@ ${zonesHtml}
           {/* Zones (read-only picking list) */}
           {wave.zones.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded p-8 text-center text-gray-400 text-sm">
-              暂无拣货明细
+              {isEn ? 'No picking items' : '暂无拣货明细'}
             </div>
           ) : (
             wave.zones.map((zone) => (
@@ -276,18 +284,18 @@ ${zonesHtml}
                 <div className="px-4 py-2 font-medium text-sm border-b border-gray-200" style={{ background: '#f3eff5', color: '#875A7B' }}>
                   📦 {zone.name}
                   <span className="ml-2 text-xs font-normal text-gray-500">
-                    {zone.items.length} 种商品
+                    {zone.items.length} {isEn ? 'products' : '种商品'}
                   </span>
                 </div>
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr style={{ background: '#f8f8f8', borderBottom: '1px solid #e0e0e0' }}>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>商品</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>规格</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>单位</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600" style={{ fontSize: '12px' }}>需拣量</th>
-                      <th className="px-3 py-2 text-center font-medium text-gray-600" style={{ fontSize: '12px' }}>完成</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>涉及餐馆</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>{isEn ? 'Product' : '商品'}</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>{isEn ? 'Spec' : '规格'}</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>{isEn ? 'Unit' : '单位'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-600" style={{ fontSize: '12px' }}>{isEn ? 'Required Qty' : '需拣量'}</th>
+                      <th className="px-3 py-2 text-center font-medium text-gray-600" style={{ fontSize: '12px' }}>{isEn ? 'Done' : '完成'}</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600" style={{ fontSize: '12px' }}>{isEn ? 'Restaurants' : '涉及餐馆'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -321,7 +329,7 @@ ${zonesHtml}
                           {/* Print: checkbox for manual ticking */}
                           <span className="text-base text-gray-300">☐</span>
                         </td>
-                        <td className="px-3 py-2 text-xs text-gray-500">{item.restaurants.join('、')}</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">{item.restaurants.join(isEn ? ', ' : '、')}</td>
                       </tr>
                     ))}
                   </tbody>

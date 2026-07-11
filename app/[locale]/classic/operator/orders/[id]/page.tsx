@@ -28,7 +28,7 @@ interface AllProduct {
 
 interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL_ZH: Record<string, string> = {
   PENDING: '待处理',
   CONFIRMED: '已确认',
   WAVE_ASSIGNED: '已生成拣货单',
@@ -36,6 +36,16 @@ const STATUS_LABEL: Record<string, string> = {
   COMPLETED: '已完成',
   LOCKED: '已锁定',
   CANCELLED: '已取消',
+}
+
+const STATUS_LABEL_EN: Record<string, string> = {
+  PENDING: 'Pending',
+  CONFIRMED: 'Confirmed',
+  WAVE_ASSIGNED: 'Picking List Generated',
+  IN_DELIVERY: 'In Delivery',
+  COMPLETED: 'Completed',
+  LOCKED: 'Locked',
+  CANCELLED: 'Cancelled',
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -52,6 +62,8 @@ export default function SalesOrderDetailPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const params = useParams<{ id: string }>()
   const id = params.id
 
@@ -133,7 +145,7 @@ export default function SalesOrderDetailPage() {
       }
 
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -178,36 +190,40 @@ export default function SalesOrderDetailPage() {
         pricelistId: pricelistId || null, priceType,
         ...(editLines.length > 0 && { lines: editLines, totalAmount: newTotalAmount }),
       })
-      toast.success('已保存')
+      toast.success(isEn ? 'Saved' : '已保存')
       setEditing(false)
       setEditLines([])
       await load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
     }
   }
 
   async function handleWithdraw() {
     if (!order) return
-    if (!confirm(`确认将销售单 ${displayOrderCode(order)} 撤回到报价单状态？`)) return
+    if (!confirm(isEn
+      ? `Revert sales order ${displayOrderCode(order)} to quotation status?`
+      : `确认将销售单 ${displayOrderCode(order)} 撤回到报价单状态？`)) return
     try {
       await apiPut(`/api/orders/${order.id}`, { status: 'PENDING', confirmationDate: null })
-      toast.success('已撤回到报价单')
+      toast.success(isEn ? 'Reverted to quotation' : '已撤回到报价单')
       router.push(`${prefix}/classic/operator/quotations/${order.id}`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '撤回失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Revert failed' : '撤回失败'))
     }
   }
 
   async function handleDeleteOrder() {
     if (!order) return
-    if (!confirm(`确认删除报价单 ${displayOrderCode(order)}？此操作不可撤销。`)) return
+    if (!confirm(isEn
+      ? `Delete quotation ${displayOrderCode(order)}? This action cannot be undone.`
+      : `确认删除报价单 ${displayOrderCode(order)}？此操作不可撤销。`)) return
     try {
       await apiDelete(`/api/orders/${order.id}`)
-      toast.success('报价单已删除')
+      toast.success(isEn ? 'Quotation deleted' : '报价单已删除')
       router.push(`${prefix}/classic/operator/quotations`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Delete failed' : '删除失败'))
     }
   }
 
@@ -218,7 +234,7 @@ export default function SalesOrderDetailPage() {
       await apiPost(`/api/orders/${order.id}/mark-printed`, { type: 'SALES' })
       window.open(`${prefix}/classic/print/${order.id}`, '_blank', 'noopener,noreferrer')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '打印失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     } finally {
       setPrinting(false)
     }
@@ -230,11 +246,11 @@ export default function SalesOrderDetailPage() {
     setSavingDeliveryNote(true)
     try {
       await apiPut(`/api/orders/${order.id}`, { deliveryNote: deliveryNote || null })
-      toast.success('Delivery Note 已保存')
+      toast.success(isEn ? 'Delivery Note saved' : 'Delivery Note 已保存')
       setShowDeliveryNoteModal(false)
       await load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSavingDeliveryNote(false)
     }
@@ -268,9 +284,9 @@ export default function SalesOrderDetailPage() {
   if (!order) {
     return (
       <div className="text-center py-20">
-        <p className="text-gray-400 mb-4">订单不存在</p>
+        <p className="text-gray-400 mb-4">{isEn ? 'Order not found' : '订单不存在'}</p>
         <button onClick={() => router.push(`${prefix}/classic/operator/orders`)}
-          className="px-4 py-2 border border-gray-300 rounded text-sm">返回销售单</button>
+          className="px-4 py-2 border border-gray-300 rounded text-sm">{isEn ? 'Back to Sales Orders' : '返回销售单'}</button>
       </div>
     )
   }
@@ -338,7 +354,7 @@ export default function SalesOrderDetailPage() {
       }
       return result
     })
-    toast.success('已合并重复商品')
+    toast.success(isEn ? 'Duplicate products merged' : '已合并重复商品')
   }
 
   return (
@@ -347,7 +363,7 @@ export default function SalesOrderDetailPage() {
       <div className="bg-white border-b border-gray-200 px-6 pt-3 pb-2">
         <div className="text-sm">
           <button onClick={() => router.push(`${prefix}/classic/operator/orders`)}
-            className="hover:underline" style={{ color: PURPLE }}>销售单</button>
+            className="hover:underline" style={{ color: PURPLE }}>{isEn ? 'Sales Orders' : '销售单'}</button>
           <span className="text-gray-400 mx-1">/</span>
           <span className="text-gray-700">{displayOrderCode(order)}</span>
         </div>
@@ -382,13 +398,13 @@ export default function SalesOrderDetailPage() {
             {isConfirmed && !editing && (
               <button onClick={handleWithdraw}
                 className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                撤回到报价单
+                {isEn ? 'Revert to Quotation' : '撤回到报价单'}
               </button>
             )}
             {statusUp === 'PENDING' && !editing && (
               <button onClick={handleDeleteOrder}
                 className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50">
-                删除
+                {isEn ? 'Delete' : '删除'}
               </button>
             )}
           </div>
@@ -415,7 +431,7 @@ export default function SalesOrderDetailPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowDeliveryNoteModal(true)}
-                title="记录第三方替我们送货的信息，会打印在送货单上"
+                title={isEn ? 'Record info about a third party delivering on our behalf; will be printed on the delivery note' : '记录第三方替我们送货的信息，会打印在送货单上'}
                 className={`h-9 px-3 text-sm rounded border ${deliveryNote ? 'border-[#fdba74] bg-[#fff7ed] text-[#9a3412]' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
                 🚚 Delivery Note{deliveryNote ? ' ●' : ''}
               </button>
@@ -456,7 +472,7 @@ export default function SalesOrderDetailPage() {
                   {(['internal', 'external'] as const).map(tab => (
                     <button key={tab} onClick={() => setNoteTab(tab)}
                       className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                      {tab === 'internal' ? '内部备注' : '外部备注'}
+                      {tab === 'internal' ? (isEn ? 'Internal Note' : '内部备注') : (isEn ? 'External Note' : '外部备注')}
                     </button>
                   ))}
                 </div>
@@ -465,12 +481,12 @@ export default function SalesOrderDetailPage() {
                     <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
                       rows={3} maxLength={30}
                       className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
-                      placeholder="仅内部可见，不会打印给客户" />
+                      placeholder={isEn ? 'Internal only, not printed for the customer' : '仅内部可见，不会打印给客户'} />
                   ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
                 ) : (
                   editing ? (
                     <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
-                      rows={3} placeholder="会打印在报价单和送货单上，客户可见"
+                      rows={3} placeholder={isEn ? 'Printed on the quotation and delivery note, visible to the customer' : '会打印在报价单和送货单上，客户可见'}
                       className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none" />
                   ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{externalNote || '—'}</div>
                 )}
@@ -501,7 +517,7 @@ export default function SalesOrderDetailPage() {
                 ) : (
                   <div className="flex-1">
                     <span style={{ color: PURPLE }}>{(order ? formatDriverSlotFromOrder(order) : deliveryBatch) || '—'}</span>
-                    {editing && driverLocked && <span className="ml-2 text-xs text-gray-400">已出发，改派请到调度台</span>}
+                    {editing && driverLocked && <span className="ml-2 text-xs text-gray-400">{isEn ? 'Already departed — reassign from the dispatch console' : '已出发，改派请到调度台'}</span>}
                   </div>
                 )}
               </div>
@@ -568,21 +584,21 @@ export default function SalesOrderDetailPage() {
                 <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
                   <span className="text-lg leading-none mt-0.5">🔁</span>
                   <div className="text-sm flex-1">
-                    <span className="font-semibold text-purple-700">重复商品提醒：</span>
+                    <span className="font-semibold text-purple-700">{isEn ? 'Duplicate product alert: ' : '重复商品提醒：'}</span>
                     <span className="text-purple-600">
-                      {dups.length} 个商品被重复添加
+                      {isEn ? `${dups.length} products added more than once` : `${dups.length} 个商品被重复添加`}
                       <span className="text-xs text-purple-500 ml-1">
-                        ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join('、')})
+                        ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join(isEn ? ', ' : '、')})
                       </span>
                     </span>
-                    <span className="text-xs text-gray-500 ml-1">— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整</span>
+                    <span className="text-xs text-gray-500 ml-1">{isEn ? '— click "Merge" on the right to combine into one line (quantities added), or leave as-is and adjust manually' : '— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整'}</span>
                   </div>
                   <button
                     onClick={mergeDuplicateLines}
                     className="shrink-0 px-3 py-1 rounded text-xs font-medium text-white"
                     style={{ background: PURPLE }}
                   >
-                    合并重复项
+                    {isEn ? 'Merge Duplicates' : '合并重复项'}
                   </button>
                 </div>
               )
@@ -629,7 +645,7 @@ export default function SalesOrderDetailPage() {
                     </td>
                     <td className="px-2 py-2 text-gray-700">
                       {i + 1}
-                      {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
+                      {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
@@ -647,7 +663,7 @@ export default function SalesOrderDetailPage() {
                       {editing ? (
                         <input
                           type="text"
-                          placeholder="备注…"
+                          placeholder={isEn ? 'Note…' : '备注…'}
                           className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24 placeholder:text-gray-300"
                           value={l.note ?? ''}
                           onChange={e => updateLine(i, 'note', e.target.value)}
@@ -719,14 +735,14 @@ export default function SalesOrderDetailPage() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-200">
               <h3 className="text-base font-semibold text-gray-900">Delivery Note</h3>
-              <p className="text-xs text-gray-500 mt-0.5">记录第三方替我们送货时的具体信息（会打印在送货单上）</p>
+              <p className="text-xs text-gray-500 mt-0.5">{isEn ? 'Record the specific details when a third party delivers on our behalf (printed on the delivery note)' : '记录第三方替我们送货时的具体信息（会打印在送货单上）'}</p>
             </div>
             <div className="px-5 py-4">
               <textarea
                 value={deliveryNote}
                 onChange={e => setDeliveryNote(e.target.value)}
                 rows={5}
-                placeholder="例如：由 XX 物流代送，联系人 XX，电话 XXX，送货时间 XX…"
+                placeholder={isEn ? 'e.g. Delivered by XX Logistics, contact XX, phone XXX, delivery time XX…' : '例如：由 XX 物流代送，联系人 XX，电话 XXX，送货时间 XX…'}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#714b67]/40 resize-y"
               />
             </div>
@@ -736,14 +752,14 @@ export default function SalesOrderDetailPage() {
                 disabled={savingDeliveryNote}
                 className="px-4 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-40"
               >
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={handleSaveDeliveryNote}
                 disabled={savingDeliveryNote}
                 className="px-4 py-1.5 bg-[#714b67] text-white rounded text-sm font-medium hover:bg-[#5d3d55] disabled:opacity-40"
               >
-                {savingDeliveryNote ? '保存中…' : '保存'}
+                {savingDeliveryNote ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}
               </button>
             </div>
           </div>

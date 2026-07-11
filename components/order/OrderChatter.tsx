@@ -1,12 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import { toast } from 'sonner'
 import { formatDateTime } from '@/lib/format-date'
 
-function formatVal(v: unknown): string {
-  if (v == null || v === '') return '（空）'
-  if (typeof v === 'boolean') return v ? '是' : '否'
+function formatVal(v: unknown, isEn: boolean): string {
+  if (v == null || v === '') return isEn ? '(empty)' : '（空）'
+  if (typeof v === 'boolean') return v ? (isEn ? 'Yes' : '是') : (isEn ? 'No' : '否')
   if (typeof v === 'number') return String(v)
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
@@ -132,6 +134,8 @@ interface OrderChatterProps {
 }
 
 export function OrderChatter({ orderId }: OrderChatterProps) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -179,7 +183,7 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
       {/* Top bar */}
       <div className="border-b border-gray-100 pb-3">
-        <span className="text-sm font-semibold text-gray-700">操作日志</span>
+        <span className="text-sm font-semibold text-gray-700">{isEn ? 'Activity Log' : '操作日志'}</span>
       </div>
 
       {/* Always-visible message compose */}
@@ -190,7 +194,7 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
           }}
-          placeholder="Send message…（Enter 发送，Shift+Enter 换行）"
+          placeholder={isEn ? 'Send message… (Enter to send, Shift+Enter for new line)' : 'Send message…（Enter 发送，Shift+Enter 换行）'}
           className="flex-1 bg-white border border-gray-200 rounded p-2 text-sm focus:outline-none focus:border-purple-400 resize-none"
           rows={2}
         />
@@ -267,12 +271,12 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
                                   {diffs.map(({ key, before, after }) => (
                                     <li key={key} className="flex items-baseline gap-2 text-xs leading-relaxed flex-wrap">
                                       <span className="text-gray-700 font-medium">{key}:</span>
-                                      <span className="text-red-500 line-through max-w-[200px] truncate" title={formatVal(before)}>
-                                        {formatVal(before)}
+                                      <span className="text-red-500 line-through max-w-[200px] truncate" title={formatVal(before, isEn)}>
+                                        {formatVal(before, isEn)}
                                       </span>
                                       <span className="text-gray-400">→</span>
-                                      <span className="text-green-700 font-medium max-w-[260px] truncate" title={formatVal(after)}>
-                                        {formatVal(after)}
+                                      <span className="text-green-700 font-medium max-w-[260px] truncate" title={formatVal(after, isEn)}>
+                                        {formatVal(after, isEn)}
                                       </span>
                                     </li>
                                   ))}

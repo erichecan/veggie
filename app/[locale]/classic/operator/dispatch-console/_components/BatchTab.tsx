@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { waveStage } from '@/lib/wave-stage'
 import { DRIVER_APP_ENABLED } from '@/lib/features'
@@ -27,12 +29,19 @@ interface Wave {
   pallets: Pallet[]
 }
 
-const WAVE_STATUS: Record<string, { text: string; cls: string; pct: number }> = {
+const WAVE_STATUS_ZH: Record<string, { text: string; cls: string; pct: number }> = {
   PENDING: { text: '待理货', cls: 'bg-gray-100 text-gray-500', pct: 10 },
   PICKING: { text: '理货中', cls: 'bg-blue-100 text-blue-700', pct: 50 },
   PICKED: { text: '已拣货', cls: 'bg-blue-100 text-blue-700', pct: 70 },
   SORTING: { text: '分货中', cls: 'bg-amber-100 text-amber-700', pct: 85 },
   SORTED: { text: '已就绪', cls: 'bg-green-100 text-green-700', pct: 100 },
+}
+const WAVE_STATUS_EN: Record<string, { text: string; cls: string; pct: number }> = {
+  PENDING: { text: 'Pending', cls: 'bg-gray-100 text-gray-500', pct: 10 },
+  PICKING: { text: 'Picking', cls: 'bg-blue-100 text-blue-700', pct: 50 },
+  PICKED: { text: 'Picked', cls: 'bg-blue-100 text-blue-700', pct: 70 },
+  SORTING: { text: 'Sorting', cls: 'bg-amber-100 text-amber-700', pct: 85 },
+  SORTED: { text: 'Ready', cls: 'bg-green-100 text-green-700', pct: 100 },
 }
 
 const num = (v: number | string) => (typeof v === 'number' ? v : Number(v) || 0)
@@ -46,6 +55,9 @@ function shiftDate(base: string, days: number) {
 }
 
 export default function BatchTab({ date, onPickDate }: { date: string; onPickDate?: (d: string) => void }) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const WAVE_STATUS = isEn ? WAVE_STATUS_EN : WAVE_STATUS_ZH
   const [slots, setSlots] = useState<DriverSlot[]>([])
   const [waves, setWaves] = useState<Wave[]>([])
   const [orders, setOrders] = useState<Order[]>([])
@@ -96,11 +108,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       setOrders([...candidateOrders, ...waveOrders])
       setWaves(waveData)
     } catch {
-      toast.error('加载批次数据失败')
+      toast.error(isEn ? 'Failed to load batch data' : '加载批次数据失败')
     } finally {
       setLoading(false)
     }
-  }, [date])
+  }, [date, isEn])
 
   useEffect(() => { load() }, [load])
 
@@ -180,7 +192,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   // 已入批:选中有订单的司机(角标>0),右侧展开这些车次(订单在卡片内)
   function showInBatchDrivers() {
     const names = driverNames.filter(n => (orderCountByDriver.get(n) ?? 0) > 0)
-    if (names.length === 0) { toast.info('当前没有已入批的订单'); return }
+    if (names.length === 0) { toast.info(isEn ? 'No orders currently in a batch' : '当前没有已入批的订单'); return }
     setSelectedDrivers(new Set(names))
     focusRightPanel()
   }
@@ -191,7 +203,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       const w = waveForGroup(list[0].driverName, list[0].timeOfDay)
       if (w && waveStage(w) === 'assignment_done') names.add(list[0].driverName)
     }
-    if (names.size === 0) { toast.info('还没有「分配完成」的车次'); return }
+    if (names.size === 0) { toast.info(isEn ? 'No trips are "assignment done" yet' : '还没有「分配完成」的车次'); return }
     setSelectedDrivers(names)
     focusRightPanel()
   }
@@ -238,9 +250,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     }))
     try {
       await apiPut(`/api/waves/${waveId}/assign`, { orderIds: [orderId], driverSlotId })
-      toast.success('已分配')
+      toast.success(isEn ? 'Assigned' : '已分配')
       load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : '分配失败'); load() }
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load() }
   }
   // 拖进「这个司机+时段当天还没有波次」的卡片：没有 waveId 可用，走销售单同款的
   // find-or-create 接口(assignOrderToWave 内部按 driverName+timeOfDay+deliveryDate 找/建波次)，
@@ -248,9 +260,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   async function assignToPalletNoWave(orderId: string, driverSlotId: string) {
     try {
       await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId })
-      toast.success('已分配（新建波次）')
+      toast.success(isEn ? 'Assigned (new trip created)' : '已分配（新建波次）')
       load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : '分配失败'); load() }
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load() }
   }
   async function unassignFromWave(waveId: string, orderId: string) {
     // 同样要把订单从它所在托盘的 items 里摘掉，不然移出前 pallet.items 里那条 orderId 没清，
@@ -260,8 +272,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       : w)))
     try {
       await apiPut(`/api/waves/${waveId}/unassign`, { orderIds: [orderId] })
-      toast.success('已移回待分配')
-    } catch (e) { toast.error(e instanceof Error ? e.message : '移除失败'); load() }
+      toast.success(isEn ? 'Moved back to unassigned' : '已移回待分配')
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Removal failed' : '移除失败')); load() }
   }
 
   // 确认出发：回填交货日期(=排程日期)，订单转 IN_DELIVERY，波次标记已出发
@@ -270,19 +282,21 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     if (!wave || wave.orderIds.length === 0) return
     try {
       await apiPut(`/api/waves/${waveId}/dispatch`, { date })
-      toast.success('已确认出发')
+      toast.success(isEn ? 'Departure confirmed' : '已确认出发')
       load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : '确认出发失败') }
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to confirm departure' : '确认出发失败')) }
   }
 
   async function completeWave(waveId: string) {
     const wave = waves.find(w => w.id === waveId)
-    if (!confirm(`确认「${wave?.driverName ?? ''}」已完成配送？卡片将从调度台移除。`)) return
+    if (!confirm(isEn
+      ? `Confirm that "${wave?.driverName ?? ''}" has completed delivery? The card will be removed from the dispatch console.`
+      : `确认「${wave?.driverName ?? ''}」已完成配送？卡片将从调度台移除。`)) return
     try {
       await apiPut(`/api/waves/${waveId}/complete`, {})
-      toast.success('已标记完成')
+      toast.success(isEn ? 'Marked as completed' : '已标记完成')
       load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : '标记完成失败') }
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to mark as completed' : '标记完成失败')) }
   }
 
   // 分配完成：纯进度标记，可反悔。不改订单状态/交货日期，不触发下游
@@ -290,22 +304,22 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     setWaves(prev => prev.map(w => (w.id === waveId ? { ...w, assignmentDoneAt: done ? new Date().toISOString() : null } : w)))
     try {
       await apiPut(`/api/waves/${waveId}/assignment-done`, { done })
-      toast.success(done ? '已标记分配完成' : '已撤销')
-    } catch (e) { toast.error(e instanceof Error ? e.message : '操作失败'); load() }
+      toast.success(done ? (isEn ? 'Marked assignment done' : '已标记分配完成') : (isEn ? 'Reverted' : '已撤销'))
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败')); load() }
   }
 
   // 批量分配完成：调度员把当天所有司机都排完车后，一键把 pendingDoneWaves 里每辆车都标记
   // 「分配完成」，不用逐个司机卡片去点。锁定的波次不拦(标记完成不改订单归属，只是进度戳)，
   // 已出发/已标过的波次一开始就没进 pendingDoneWaves，不会重复处理。
   async function markAllAssignmentDone() {
-    if (pendingDoneWaves.length === 0) { toast.info('没有可批量标记的车次'); return }
-    if (!confirm(`将 ${pendingDoneWaves.length} 辆车一次性标记为「分配完成」，确定？`)) return
+    if (pendingDoneWaves.length === 0) { toast.info(isEn ? 'No trips to mark in bulk' : '没有可批量标记的车次'); return }
+    if (!confirm(isEn ? `Mark ${pendingDoneWaves.length} trips as "assignment done" at once, confirm?` : `将 ${pendingDoneWaves.length} 辆车一次性标记为「分配完成」，确定？`)) return
     const ids = pendingDoneWaves.map(w => w.id)
     setWaves(prev => prev.map(w => (ids.includes(w.id) ? { ...w, assignmentDoneAt: new Date().toISOString() } : w)))
     const results = await Promise.allSettled(ids.map(id => apiPut(`/api/waves/${id}/assignment-done`, { done: true })))
     const failed = results.filter(r => r.status === 'rejected').length
-    if (failed > 0) toast.error(`${failed} 辆车标记失败`)
-    else toast.success(`已批量标记 ${ids.length} 辆车分配完成`)
+    if (failed > 0) toast.error(isEn ? `${failed} trips failed to mark` : `${failed} 辆车标记失败`)
+    else toast.success(isEn ? `Marked ${ids.length} trips as assignment done` : `已批量标记 ${ids.length} 辆车分配完成`)
     load()
   }
 
@@ -315,20 +329,24 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const nextBatchNum = Math.max(...groupSlots.map(s => s.batchNum)) + 1
     try {
       await apiPost('/api/driver-slots', { timeOfDay, batchNum: nextBatchNum, driverName, userId: groupSlots[0]?.userId ?? null })
-      toast.success(`已新增 ${nextBatchNum} ${timeOfDay} ${driverName}`)
+      toast.success(isEn ? `Added ${nextBatchNum} ${timeOfDay} ${driverName}` : `已新增 ${nextBatchNum} ${timeOfDay} ${driverName}`)
       load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : '新增托盘失败') }
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to add pallet' : '新增托盘失败')) }
   }
 
   // 删除托盘：归档这个 DriverSlot；后端联动把该托盘里的订单整单退回待分配(未出发波次才生效)。
   async function deletePallet(slot: DriverSlot, orderCount: number) {
     const label = `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}`
-    if (orderCount > 0 && !confirm(`${label} 里还有 ${orderCount} 单，删除后这些订单会退回待分配，确定删除？`)) return
+    if (orderCount > 0 && !confirm(isEn
+      ? `${label} still has ${orderCount} orders. Deleting it will return them to unassigned, confirm delete?`
+      : `${label} 里还有 ${orderCount} 单，删除后这些订单会退回待分配，确定删除？`)) return
     try {
       const res = await apiDelete<{ unassignedOrderCount?: number }>(`/api/driver-slots/${slot.id}`)
-      toast.success(`已删除 ${label}${res?.unassignedOrderCount ? `，${res.unassignedOrderCount} 个订单已退回待分配` : ''}`)
+      toast.success(isEn
+        ? `Deleted ${label}${res?.unassignedOrderCount ? `, ${res.unassignedOrderCount} orders returned to unassigned` : ''}`
+        : `已删除 ${label}${res?.unassignedOrderCount ? `，${res.unassignedOrderCount} 个订单已退回待分配` : ''}`)
       load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : '删除托盘失败') }
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to delete pallet' : '删除托盘失败')) }
   }
 
   function startDrag(e: React.DragEvent, orderId: string, sourceWaveId: string | null) {
@@ -345,10 +363,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
     if (!orderId) return
-    if (wave.dispatchedAt) { toast.error('该批次已出发，不能再分配'); return }
-    if (wave.pickLockedAt) { toast.error('该批次拣货中已锁定，请找打印员解锁'); return }
-    if (src && waves.find(w => w.id === src)?.dispatchedAt) { toast.error('原批次已出发，不能移出'); return }
-    if (src && waves.find(w => w.id === src)?.pickLockedAt) { toast.error('原批次拣货中已锁定，请找打印员解锁'); return }
+    if (wave.dispatchedAt) { toast.error(isEn ? 'This trip has already departed, cannot reassign' : '该批次已出发，不能再分配'); return }
+    if (wave.pickLockedAt) { toast.error(isEn ? 'This trip is locked for picking, ask the print operator to unlock it' : '该批次拣货中已锁定，请找打印员解锁'); return }
+    if (src && waves.find(w => w.id === src)?.dispatchedAt) { toast.error(isEn ? 'The original trip has already departed, cannot move out' : '原批次已出发，不能移出'); return }
+    if (src && waves.find(w => w.id === src)?.pickLockedAt) { toast.error(isEn ? 'The original trip is locked for picking, ask the print operator to unlock it' : '原批次拣货中已锁定，请找打印员解锁'); return }
     if (!wave.id) { assignToPalletNoWave(orderId, slot.id); return }
     assignToPallet(wave.id, orderId, slot.id)
   }
@@ -359,8 +377,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
     if (!orderId || !src) return
-    if (waves.find(w => w.id === src)?.dispatchedAt) { toast.error('该批次已出发，不能移出'); return }
-    if (waves.find(w => w.id === src)?.pickLockedAt) { toast.error('该批次拣货中已锁定，请找打印员解锁'); return }
+    if (waves.find(w => w.id === src)?.dispatchedAt) { toast.error(isEn ? 'This trip has already departed, cannot move out' : '该批次已出发，不能移出'); return }
+    if (waves.find(w => w.id === src)?.pickLockedAt) { toast.error(isEn ? 'This trip is locked for picking, ask the print operator to unlock it' : '该批次拣货中已锁定，请找打印员解锁'); return }
     unassignFromWave(src, orderId)
   }
 
@@ -390,7 +408,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       pickLockedAt: null, pickLockedBy: null, pallets: [],
     }
     const timeCls = timeOfDay === 'am' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
-    const timeText = timeOfDay === 'am' ? '上午' : '下午'
+    const timeText = timeOfDay === 'am' ? (isEn ? 'AM' : '上午') : (isEn ? 'PM' : '下午')
     const key = groupKey(driverName, timeOfDay)
     const mode = viewMode[key] ?? 'pallet'
 
@@ -423,9 +441,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     // 不能再落到 wave.status(建波次时的初始值,dispatch/complete 从不回写,永远是 PENDING)
     // 撑出"待理货"这个假象——已出发/已完成的波次必须诚实标出来,不受开关影响。
     const realLabel = wave.completedAt
-      ? { text: '✅ 已完成', cls: 'bg-gray-200 text-gray-600' }
+      ? { text: isEn ? '✅ Completed' : '✅ 已完成', cls: 'bg-gray-200 text-gray-600' }
       : reallyDispatched
-      ? { text: '🚚 已出发', cls: 'bg-blue-100 text-blue-700' }
+      ? { text: isEn ? '🚚 Departed' : '🚚 已出发', cls: 'bg-blue-100 text-blue-700' }
       : null
     const assignmentDone = stage === 'assignment_done'
     const locked = !!wave.pickLockedAt
@@ -452,14 +470,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           <span className="flex-none"><Avatar name={driverName} /></span>
           <span className="font-bold text-[13px] truncate min-w-0" title={driverName}>{driverName}</span>
           <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${timeCls}`}>{timeText}</span>
-          <span className="text-xs text-gray-500 whitespace-nowrap flex-none">{m.orderCount}单 · {groupSlots.length}托盘</span>
+          <span className="text-xs text-gray-500 whitespace-nowrap flex-none">{isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets` : `${m.orderCount}单 · ${groupSlots.length}托盘`}</span>
           {dispatched
-            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto whitespace-nowrap flex-none">🚚 在途</span>
+            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 ml-auto whitespace-nowrap flex-none">{isEn ? '🚚 In transit' : '🚚 在途'}</span>
             : assignmentDone
-            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 ml-auto whitespace-nowrap flex-none">✅ 分配完成</span>
+            ? <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 ml-auto whitespace-nowrap flex-none">{isEn ? '✅ Assignment done' : '✅ 分配完成'}</span>
             : realLabel
             ? <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-semibold ml-auto whitespace-nowrap flex-none ${realLabel.cls}`}>{realLabel.text}</span>
-            : <span className="ml-auto text-gray-400 text-[10px] whitespace-nowrap flex-none">▾ 展开</span>}
+            : <span className="ml-auto text-gray-400 text-[10px] whitespace-nowrap flex-none">{isEn ? '▾ Expand' : '▾ 展开'}</span>}
           {locked && <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 whitespace-nowrap flex-none">🔒</span>}
         </div>
       )
@@ -479,7 +497,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             style={{ background: 'rgba(107,114,128,0.55)', backdropFilter: 'grayscale(1)' }}
           >
             <span className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow" style={{ background: locked ? '#b45309' : '#1d4ed8' }}>
-              {locked ? '🔒 已锁定，不能拖入（请到打印中心解锁）' : '🚚 已出发，不能再分配'}
+              {locked ? (isEn ? '🔒 Locked, cannot drop in (please unlock at the print center)' : '🔒 已锁定，不能拖入（请到打印中心解锁）') : (isEn ? '🚚 Already departed, cannot reassign' : '🚚 已出发，不能再分配')}
             </span>
           </div>
         )}
@@ -489,25 +507,25 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             <span className="font-bold text-[13px] truncate min-w-0 flex-1" title={driverName}>{driverName}</span>
             <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${timeCls}`}>{timeText}</span>
             {locked && (
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-amber-100 text-amber-700" title={wave.pickLockedBy ? `打印员：${wave.pickLockedBy}` : undefined}>
-                🔒 拣货中
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-amber-100 text-amber-700" title={wave.pickLockedBy ? (isEn ? `Print operator: ${wave.pickLockedBy}` : `打印员：${wave.pickLockedBy}`) : undefined}>
+                {isEn ? '🔒 Picking' : '🔒 拣货中'}
               </span>
             )}
             {dispatched
-              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-blue-100 text-blue-700">🚚 在途</span>
+              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-blue-100 text-blue-700">{isEn ? '🚚 In transit' : '🚚 在途'}</span>
               : assignmentDone
-              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-purple-100 text-purple-700">✅ 分配完成</span>
+              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none bg-purple-100 text-purple-700">{isEn ? '✅ Assignment done' : '✅ 分配完成'}</span>
               : realLabel
               ? <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${realLabel.cls}`}>{realLabel.text}</span>
               : <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-none ${st.cls}`}>{st.text}</span>}
             <button
               onClick={e => { e.stopPropagation(); onToggleCollapse() }}
               className="px-1.5 py-0.5 rounded text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex-none"
-              title="收起"
+              title={isEn ? 'Collapse' : '收起'}
             >▴</button>
           </div>
-          <div className="text-[11px] text-gray-500 mt-1">{m.orderCount}单 · {groupSlots.length}个托盘(一趟车)</div>
-          {reallyDispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
+          <div className="text-[11px] text-gray-500 mt-1">{isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets (one trip)` : `${m.orderCount}单 · ${groupSlots.length}个托盘(一趟车)`}</div>
+          {reallyDispatched && <div className="text-[10px] text-blue-400 mt-0.5">{isEn ? `Departed at ${departTime}` : `已于 ${departTime} 出发`}</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${realLabel ? 100 : st.pct}%`, background: PURPLE }} /></div>
 
           {/* 订单视图/托盘视图切换：实际改派只在托盘视图里发生，订单视图只是总览 */}
@@ -515,11 +533,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             <button
               onClick={e => { e.stopPropagation(); setViewMode(p => ({ ...p, [key]: 'order' })) }}
               className={`flex-1 rounded-md text-[11px] font-semibold py-1 ${mode === 'order' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
-            >📦 订单视图</button>
+            >{isEn ? '📦 Order view' : '📦 订单视图'}</button>
             <button
               onClick={e => { e.stopPropagation(); setViewMode(p => ({ ...p, [key]: 'pallet' })) }}
               className={`flex-1 rounded-md text-[11px] font-semibold py-1 ${mode === 'pallet' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
-            >🗂 托盘视图</button>
+            >{isEn ? '🗂 Pallet view' : '🗂 托盘视图'}</button>
           </div>
         </div>
 
@@ -529,14 +547,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               没有任何 onDrop 区域，拖进去会被浏览器默默拒绝、既不报错也不生效。 */}
           {mode === 'order' && laneOrders.length === 0 && (
             <div className="text-center text-[11px] text-gray-400 py-5 border border-dashed rounded-lg" style={{ borderColor: '#e5e7eb' }}>
-              {reallyDispatched ? '🚚 已出发（无订单）' : `${driverName} 这个时段暂无订单`}
+              {reallyDispatched ? (isEn ? '🚚 Departed (no orders)' : '🚚 已出发（无订单）') : (isEn ? `No orders for ${driverName} in this time slot` : `${driverName} 这个时段暂无订单`)}
             </div>
           )}
 
           {mode === 'order' && laneOrders.length > 0 && (
             <div className="flex flex-col gap-1.5">
               {laneOrders.map(o => (
-                <OrderChip key={o.id} order={o} draggable={false} />
+                <OrderChip key={o.id} order={o} draggable={false} isEn={isEn} />
               ))}
             </div>
           )}
@@ -570,17 +588,18 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                         <button
                           onClick={() => deletePallet(slot, palletOrders.length)}
                           className="flex-none text-gray-400 hover:text-red-600 hover:bg-red-50 rounded px-1"
-                          title="删除这个托盘"
+                          title={isEn ? 'Delete this pallet' : '删除这个托盘'}
                         >✕</button>
                       )}
                     </div>
                     <div className="p-1.5 flex flex-col gap-1.5 min-h-[34px]">
-                      {palletOrders.length === 0 && <div className="text-center text-[10px] text-gray-300 py-2">拖订单到这个托盘</div>}
+                      {palletOrders.length === 0 && <div className="text-center text-[10px] text-gray-300 py-2">{isEn ? 'Drag an order to this pallet' : '拖订单到这个托盘'}</div>}
                       {palletOrders.map(o => (
                         <OrderChip
                           key={o.id}
                           order={o}
                           draggable={!reallyDispatched && !locked}
+                          isEn={isEn}
                           onDragStart={e => { if (reallyDispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
                           onDragEnd={() => setDragging(false)}
                         />
@@ -592,13 +611,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
 
               {legacyOrderIds.length > 0 && (
                 <div className="border border-dashed rounded-lg overflow-hidden" style={{ borderColor: '#fbbf24' }}>
-                  <div className="px-2 py-1 bg-amber-50 text-[11px] font-semibold text-amber-700">⚠️ 历史订单，未分托盘（{legacyOrderIds.length}）</div>
+                  <div className="px-2 py-1 bg-amber-50 text-[11px] font-semibold text-amber-700">{isEn ? `⚠️ Legacy orders, unassigned pallet (${legacyOrderIds.length})` : `⚠️ 历史订单，未分托盘（${legacyOrderIds.length}）`}</div>
                   <div className="p-1.5 flex flex-col gap-1.5">
                     {legacyOrderIds.map(id => ordersById.get(id)).filter(Boolean).map(o => (
                       <OrderChip
                         key={(o as Order).id}
                         order={o as Order}
                         draggable={!reallyDispatched && !locked}
+                        isEn={isEn}
                         onDragStart={e => { if (reallyDispatched || locked) { e.preventDefault(); return } startDrag(e, (o as Order).id, wave.id) }}
                         onDragEnd={() => setDragging(false)}
                       />
@@ -612,7 +632,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   onClick={() => addPallet(driverName, timeOfDay, groupSlots)}
                   className="self-start mt-0.5 border border-dashed rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-gray-400 hover:text-blue-600 hover:border-blue-400"
                   style={{ borderColor: '#d1d5db' }}
-                >＋ 新增托盘</button>
+                >{isEn ? '＋ Add pallet' : '＋ 新增托盘'}</button>
               )}
             </div>
           )}
@@ -621,7 +641,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             <button
               onClick={() => completeWave(wave.id)}
               className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 hover:bg-gray-100 w-full"
-            >✓ 标记完成</button>
+            >{isEn ? '✓ Mark completed' : '✓ 标记完成'}</button>
           ) : assignmentDone ? (
             <div className="mt-1 flex flex-col gap-1.5">
               {DRIVER_APP_ENABLED && (
@@ -629,14 +649,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   onClick={() => dispatchWave(wave.id)}
                   className="rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90"
                   style={{ background: '#16a34a' }}
-                >🚚 确认出发（{laneOrders.length}单）</button>
+                >{isEn ? `🚚 Confirm departure (${laneOrders.length})` : `🚚 确认出发（${laneOrders.length}单）`}</button>
               )}
               <button
                 onClick={() => markAssignmentDone(wave.id, false)}
                 disabled={locked}
-                title={locked ? '拣货中已锁定，请找打印员解锁' : undefined}
+                title={locked ? (isEn ? 'Locked for picking, ask the print operator to unlock it' : '拣货中已锁定，请找打印员解锁') : undefined}
                 className="rounded-lg py-1 text-[11px] font-medium text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >↩︎ 撤销分配完成</button>
+              >{isEn ? '↩︎ Undo assignment done' : '↩︎ 撤销分配完成'}</button>
             </div>
           ) : laneOrders.length > 0 && !reallyDispatched ? (
             // 分配中：只给「分配完成」。确认出发藏到分配完成之后才出现，避免拖拽审核时误发不可逆的车。
@@ -646,7 +666,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               onClick={() => markAssignmentDone(wave.id, true)}
               className="mt-1 rounded-lg py-1.5 text-xs font-semibold text-white hover:opacity-90 w-full"
               style={{ background: '#875A7B' }}
-            >✅ 分配完成</button>
+            >{isEn ? '✅ Assignment done' : '✅ 分配完成'}</button>
           ) : null}
         </div>
       </div>
@@ -657,15 +677,15 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     <div>
       <div className="flex items-center gap-5 bg-white border rounded-lg px-5 py-3 mb-3.5 flex-wrap" style={{ borderColor: '#e5e7eb' }}>
         <div className="flex items-center gap-4">
-          <span className="text-[10px] font-bold text-gray-400 tracking-wide">订单<br />（单）</span>
-          <Board n={unassigned.length} l="待分配" color="#d97706" hint="点击：滚到左侧「待分配」竖条查看这些订单" onClick={focusUnassigned} />
-          <Board n={inBatchCount} l="已入批" color="#16a34a" hint="点击：选中有订单的司机，右侧展开这些车次" onClick={showInBatchDrivers} />
+          <span className="text-[10px] font-bold text-gray-400 tracking-wide">{isEn ? <>Orders<br />(count)</> : <>订单<br />（单）</>}</span>
+          <Board n={unassigned.length} l={isEn ? 'Unassigned' : '待分配'} color="#d97706" hint={isEn ? 'Click: scroll to the "Unassigned" column on the left to view these orders' : '点击：滚到左侧「待分配」竖条查看这些订单'} onClick={focusUnassigned} />
+          <Board n={inBatchCount} l={isEn ? 'In batch' : '已入批'} color="#16a34a" hint={isEn ? 'Click: select drivers who have orders, expand these trips on the right' : '点击：选中有订单的司机，右侧展开这些车次'} onClick={showInBatchDrivers} />
         </div>
         <div className="w-px self-stretch bg-gray-200" />
         <div className="flex items-center gap-4">
-          <span className="text-[10px] font-bold text-gray-400 tracking-wide">波次<br />（车）</span>
-          <Board n={assignmentDoneCount} l="已排完" color="#875A7B" hint="点击：只选中「分配完成」的车次司机" onClick={showAssignmentDoneDrivers} />
-          <Board n={waves.length} l="波次" hint="点击：选中全部司机，右侧展开当天全部车次" onClick={showAllDriverWaves} />
+          <span className="text-[10px] font-bold text-gray-400 tracking-wide">{isEn ? <>Trips<br />(count)</> : <>波次<br />（车）</>}</span>
+          <Board n={assignmentDoneCount} l={isEn ? 'Done' : '已排完'} color="#875A7B" hint={isEn ? 'Click: select only drivers whose trips are "assignment done"' : '点击：只选中「分配完成」的车次司机'} onClick={showAssignmentDoneDrivers} />
+          <Board n={waves.length} l={isEn ? 'Trips' : '波次'} hint={isEn ? "Click: select all drivers, expand all of today's trips on the right" : '点击：选中全部司机，右侧展开当天全部车次'} onClick={showAllDriverWaves} />
         </div>
         <div className="flex-1" />
         {pendingDoneWaves.length > 0 && (
@@ -673,10 +693,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             onClick={markAllAssignmentDone}
             className="px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90"
             style={{ background: PURPLE }}
-            title="把所有已排好车、还没标「分配完成」的车次一次性标记完成，不用逐个司机卡片点"
-          >✅ 批量分配完成（{pendingDoneWaves.length}）</button>
+            title={isEn ? 'Mark every trip that has orders assigned but hasn\'t been flagged "assignment done" yet, all at once, instead of clicking each driver card' : '把所有已排好车、还没标「分配完成」的车次一次性标记完成，不用逐个司机卡片点'}
+          >{isEn ? `✅ Bulk assignment done (${pendingDoneWaves.length})` : `✅ 批量分配完成（${pendingDoneWaves.length}）`}</button>
         )}
-        <label className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm" style={{ borderColor: '#e5e7eb' }} title="选择配送日期">
+        <label className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm" style={{ borderColor: '#e5e7eb' }} title={isEn ? 'Select delivery date' : '选择配送日期'}>
           📅
           <input
             type="date"
@@ -685,32 +705,32 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             className="outline-none text-sm"
           />
         </label>
-        <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>刷新</button>
+        <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>{isEn ? 'Refresh' : '刷新'}</button>
       </div>
 
       {/* 其他日期提示条：别的交货日还有已排订单时列出,点一下跳过去(销售单排司机后单落在其 deliveryDate 那天) */}
       {otherDates.length > 0 && (
         <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 mb-3.5 flex-wrap text-sm">
-          <span className="font-medium text-amber-800">📅 其他日期还有已排订单：</span>
+          <span className="font-medium text-amber-800">{isEn ? '📅 Other dates also have scheduled orders:' : '📅 其他日期还有已排订单：'}</span>
           {otherDates.map(o => (
             <button
               key={o.date}
               onClick={() => onPickDate?.(o.date)}
               className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white border border-amber-300 text-amber-800 hover:bg-amber-100"
-              title="点击切换到该日期查看批次"
+              title={isEn ? 'Click to switch to this date to view its batches' : '点击切换到该日期查看批次'}
             >
-              {o.date}（{o.orders}单）
+              {isEn ? `${o.date} (${o.orders} orders)` : `${o.date}（${o.orders}单）`}
             </button>
           ))}
-          <span className="text-[11px] text-amber-600 ml-1">销售单排的司机，单会落在它的交货日；点日期即可跳转</span>
+          <span className="text-[11px] text-amber-600 ml-1">{isEn ? "Orders scheduled from the sales order land on their own delivery date; click a date to jump there" : '销售单排的司机，单会落在它的交货日；点日期即可跳转'}</span>
         </div>
       )}
 
       {/* ② 司机多选 chip 条：选几个司机右侧就显示几个 */}
       {!loading && driverNames.length > 0 && (
         <div className="flex items-center gap-2 bg-white border rounded-lg px-4 py-3 mb-3.5 flex-wrap" style={{ borderColor: '#e5e7eb' }}>
-          <span className="text-sm font-medium text-gray-600 mr-1">司机</span>
-          <DriverChip label="全部司机" active={allSelected} onClick={toggleAll} />
+          <span className="text-sm font-medium text-gray-600 mr-1">{isEn ? 'Driver' : '司机'}</span>
+          <DriverChip label={isEn ? 'All drivers' : '全部司机'} active={allSelected} onClick={toggleAll} />
           {driverNames.map(name => {
             const cnt = orderCountByDriver.get(name) ?? 0
             return (
@@ -723,13 +743,13 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               onClick={() => setSelectedDrivers(new Set())}
               className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white hover:opacity-90"
               style={{ background: '#16a34a' }}
-              title="收工清场：清空选中的司机,画面变整洁(已拖拽的分配已保存)"
-            >✅ 完成（清空选中）</button>
+              title={isEn ? 'Wrap up: clear the selected drivers to tidy the view (drag-and-drop assignments are already saved)' : '收工清场：清空选中的司机,画面变整洁(已拖拽的分配已保存)'}
+            >{isEn ? '✅ Done (clear selection)' : '✅ 完成（清空选中）'}</button>
           )}
         </div>
       )}
 
-      {loading && <div className="text-center text-gray-400 py-10">加载中…</div>}
+      {loading && <div className="text-center text-gray-400 py-10">{isEn ? 'Loading…' : '加载中…'}</div>}
 
       {!loading && (
         <div className="flex gap-3.5 items-start">
@@ -744,13 +764,13 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           >
             <div className="p-2.5 border-b" style={{ borderColor: '#e5e7eb' }}>
               <div className="flex items-center justify-between">
-                <span className="font-bold text-sm">📥 待分配</span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500">{unassigned.length} 单</span>
+                <span className="font-bold text-sm">{isEn ? '📥 Unassigned' : '📥 待分配'}</span>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500">{isEn ? `${unassigned.length} orders` : `${unassigned.length} 单`}</span>
               </div>
-              <div className="text-[11px] text-gray-400 mt-1">拖到右侧司机的某个托盘；从托盘拖回此处可移出</div>
+              <div className="text-[11px] text-gray-400 mt-1">{isEn ? 'Drag to a pallet on a driver on the right; drag back here from a pallet to remove' : '拖到右侧司机的某个托盘；从托盘拖回此处可移出'}</div>
             </div>
             <div className="p-2.5 overflow-y-auto flex flex-col gap-2">
-              {unassigned.length === 0 && <div className="text-center text-xs text-gray-400 py-6">已全部入批 🎉</div>}
+              {unassigned.length === 0 && <div className="text-center text-xs text-gray-400 py-6">{isEn ? 'All assigned 🎉' : '已全部入批 🎉'}</div>}
               {unassigned.map(o => (
                 <div
                   key={o.id}
@@ -759,10 +779,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   onDragEnd={() => setDragging(false)}
                   className="border rounded-lg p-2 bg-white cursor-grab text-xs hover:border-amber-400"
                   style={{ borderColor: '#e5e7eb' }}
-                  title="拖到右侧司机的某个托盘可分配"
+                  title={isEn ? 'Drag to a pallet on a driver on the right to assign' : '拖到右侧司机的某个托盘可分配'}
                 >
                   <div className="font-semibold text-amber-700">{o.code ?? o.id.slice(0, 8)}</div>
-                  <div className="text-gray-500 mt-0.5">{o.restaurantName} · {o.items?.length ?? 0}项 · €{num(o.totalAmount).toLocaleString()}</div>
+                  <div className="text-gray-500 mt-0.5">{o.restaurantName} · {isEn ? `${o.items?.length ?? 0} items` : `${o.items?.length ?? 0}项`} · €{num(o.totalAmount).toLocaleString()}</div>
                 </div>
               ))}
             </div>
@@ -771,11 +791,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           <div ref={rightPanelRef} className="flex-1 min-w-0 scroll-mt-3">
             {selectedDrivers.size === 0 ? (
               <div className="flex items-center justify-center text-gray-400 text-sm min-h-[200px] border border-dashed rounded-xl" style={{ borderColor: '#e5e7eb' }}>
-                ← 请从上方选择司机
+                {isEn ? '← Please select a driver above' : '← 请从上方选择司机'}
               </div>
             ) : (
               <>
-                <GroupTitle time="am" count={selAmGroups.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} />
+                <GroupTitle time="am" count={selAmGroups.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} isEn={isEn} />
                 {!amCollapsed && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
                     {selAmGroups.map(([k, list]) => (
@@ -786,10 +806,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                         onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })}
                       />
                     ))}
-                    {selAmGroups.length === 0 && <Empty text="选中司机无上午班" />}
+                    {selAmGroups.length === 0 && <Empty text={isEn ? 'No AM shift for selected drivers' : '选中司机无上午班'} />}
                   </div>
                 )}
-                <GroupTitle time="pm" count={selPmGroups.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} />
+                <GroupTitle time="pm" count={selPmGroups.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} isEn={isEn} />
                 {!pmCollapsed && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
                     {selPmGroups.map(([k, list]) => (
@@ -800,7 +820,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                         onToggleCollapse={() => setCollapsedLanes(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })}
                       />
                     ))}
-                    {selPmGroups.length === 0 && <Empty text="选中司机无下午班" />}
+                    {selPmGroups.length === 0 && <Empty text={isEn ? 'No PM shift for selected drivers' : '选中司机无下午班'} />}
                   </div>
                 )}
               </>
@@ -813,8 +833,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   )
 }
 
-function OrderChip({ order, draggable, onDragStart, onDragEnd }: {
-  order: Order; draggable: boolean
+function OrderChip({ order, draggable, isEn, onDragStart, onDragEnd }: {
+  order: Order; draggable: boolean; isEn: boolean
   onDragStart?: (e: React.DragEvent) => void; onDragEnd?: () => void
 }) {
   return (
@@ -824,7 +844,7 @@ function OrderChip({ order, draggable, onDragStart, onDragEnd }: {
       onDragEnd={onDragEnd}
       className={`border rounded-lg px-2 py-1.5 bg-white text-xs hover:border-purple-300 ${draggable ? 'cursor-grab' : ''}`}
       style={{ borderColor: '#eee' }}
-      title={draggable ? '拖到别的托盘=重新码放，拖到别的司机=换车，拖回左侧=移出' : undefined}
+      title={draggable ? (isEn ? 'Drag to another pallet to re-arrange, drag to another driver to switch trips, drag back to the left to remove' : '拖到别的托盘=重新码放，拖到别的司机=换车，拖回左侧=移出') : undefined}
     >
       <div className="flex items-center justify-between">
         <span className="font-medium flex items-center gap-1.5 truncate">
@@ -855,14 +875,14 @@ function Board({ n, l, color, hint, onClick }: { n: number; l: string; color?: s
     </div>
   )
 }
-function GroupTitle({ time, count, collapsed, onToggle }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void }) {
+function GroupTitle({ time, count, collapsed, onToggle, isEn }: { time: 'am' | 'pm'; count: number; collapsed: boolean; onToggle: () => void; isEn: boolean }) {
   const am = time === 'am'
   return (
     <div className="flex items-center gap-3 mt-3.5 mb-2">
       <button onClick={onToggle} className="flex items-center gap-2 font-bold text-sm hover:opacity-80" style={{ color: am ? '#1f2937' : '#92400e' }}>
         <span className="text-gray-400 text-xs w-3 inline-block">{collapsed ? '▸' : '▾'}</span>
-        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${am ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{am ? '上午' : '下午'}</span>
-        {am ? '上午班' : '下午班'} <span className="text-xs text-gray-400 font-normal">· {count} 辆车</span>
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${am ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{am ? (isEn ? 'AM' : '上午') : (isEn ? 'PM' : '下午')}</span>
+        {am ? (isEn ? 'AM shift' : '上午班') : (isEn ? 'PM shift' : '下午班')} <span className="text-xs text-gray-400 font-normal">· {isEn ? `${count} trips` : `${count} 辆车`}</span>
       </button>
     </div>
   )

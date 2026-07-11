@@ -106,6 +106,7 @@ type QDocProps = {
 }
 
 function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, untaxed, total, externalNote }: QDocProps) {
+  const isEn = useLocale() !== routing.defaultLocale
   const validLines = lines.filter(l => l.productId)
   const printAt = formatDateTime(new Date())
   const deliveryDate = orderDate
@@ -213,14 +214,14 @@ function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, 
 
       {customer?.externalNote && (
         <div style={{ fontSize: 11, color: '#374151', marginBottom: 12, padding: '8px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 4, whiteSpace: 'pre-wrap' }}>
-          <div style={{ fontWeight: 600, marginBottom: 3 }}>客户备注 / Customer Note</div>
+          <div style={{ fontWeight: 600, marginBottom: 3 }}>{isEn ? 'Customer Note' : '客户备注 / Customer Note'}</div>
           {customer.externalNote}
         </div>
       )}
 
       {externalNote && (
         <div style={{ fontSize: 11, color: '#374151', marginBottom: 20, padding: '8px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 4, whiteSpace: 'pre-wrap' }}>
-          <div style={{ fontWeight: 600, marginBottom: 3 }}>备注 / Order Note</div>
+          <div style={{ fontWeight: 600, marginBottom: 3 }}>{isEn ? 'Order Note' : '备注 / Order Note'}</div>
           {externalNote}
         </div>
       )}
@@ -248,6 +249,7 @@ export default function ClassicPlaceOrderPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
 
   // ── Raw data ──────────────────────────────────────────────────────────────
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -465,7 +467,7 @@ export default function ClassicPlaceOrderPage() {
         setSalesUsers(us)
         setPendingDemand(pd)
       })
-      .catch(() => toast.error('加载数据失败'))
+      .catch(() => toast.error(isEn ? 'Failed to load data' : '加载数据失败'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -578,7 +580,7 @@ export default function ClassicPlaceOrderPage() {
   // ── Select customer ───────────────────────────────────────────────────────
   function selectCustomer(c: Customer) {
     if (lines.length > 0 && c.id !== customerId) {
-      if (!confirm('切换客户将清空当前订单行，是否继续？')) return
+      if (!confirm(isEn ? 'Switching customer will clear the current order lines. Continue?' : '切换客户将清空当前订单行，是否继续？')) return
       setLines([])
     }
     setCustomerId(c.id)
@@ -661,7 +663,7 @@ export default function ClassicPlaceOrderPage() {
     const demand = pendingDemand[p.id] ?? 0
     const atp = onHand - demand
     if (atp <= 0) {
-      toast.warning(`⚠ 该产品库存不足，已添加至订单，请注意备货`, { duration: 5000 })
+      toast.warning(isEn ? '⚠ This product is out of stock. Added to order — please arrange stock.' : `⚠ 该产品库存不足，已添加至订单，请注意备货`, { duration: 5000 })
     }
 
     setLines(prev =>
@@ -701,7 +703,7 @@ export default function ClassicPlaceOrderPage() {
 
   // ── 复制历史订单 ──────────────────────────────────────────────────────────
   async function openHistory() {
-    if (!customerId) { toast.warning('请先选择客户，再复制历史订单'); setCustOpen(true); return }
+    if (!customerId) { toast.warning(isEn ? 'Please select a customer first, then copy history order' : '请先选择客户，再复制历史订单'); setCustOpen(true); return }
     setShowHistory(true)
     setHistoryLoading(true)
     try {
@@ -711,7 +713,7 @@ export default function ClassicPlaceOrderPage() {
       const arr = Array.isArray(data) ? data : (data.data ?? [])
       setHistoryOrders(arr.slice(0, 5))
     } catch {
-      toast.error('加载历史订单失败')
+      toast.error(isEn ? 'Failed to load history orders' : '加载历史订单失败')
     } finally {
       setHistoryLoading(false)
     }
@@ -746,7 +748,7 @@ export default function ClassicPlaceOrderPage() {
       const qty = rawQty > 0 && rawQty < 0.01 ? 1 : rawQty
       newLines.push(buildHistoryLine(p, qty, hl.note ?? '', lastPrices))
     }
-    if (newLines.length === 0) { toast.error('该订单商品均已下架，无法导入'); return }
+    if (newLines.length === 0) { toast.error(isEn ? 'All products in this order are discontinued, cannot import' : '该订单商品均已下架，无法导入'); return }
     setLines(prev => [...prev, ...newLines])
     setShowHistory(false)
     // 异步拉 lastPrice 后重算价格（与手动选品体验一致）
@@ -763,8 +765,12 @@ export default function ClassicPlaceOrderPage() {
         }))
       })
     }
-    toast.success(`已导入 ${newLines.length} 个商品` + (missing.length ? `，${missing.length} 个已下架已跳过` : ''))
-    if (missing.length) toast.warning(`跳过下架商品：${missing.join('、')}`)
+    toast.success(
+      isEn
+        ? `Imported ${newLines.length} products` + (missing.length ? `, ${missing.length} discontinued products skipped` : '')
+        : `已导入 ${newLines.length} 个商品` + (missing.length ? `，${missing.length} 个已下架已跳过` : ''),
+    )
+    if (missing.length) toast.warning(isEn ? `Skipped discontinued products: ${missing.join(', ')}` : `跳过下架商品：${missing.join('、')}`)
   }
 
   // 合并重复商品：同一 productId 的行合并为一行，数量相加，保留第一行的价格等
@@ -785,13 +791,13 @@ export default function ClassicPlaceOrderPage() {
       }
       return result
     })
-    toast.success('已合并重复商品')
+    toast.success(isEn ? 'Duplicate products merged' : '已合并重复商品')
   }
 
   // ── Line CRUD ─────────────────────────────────────────────────────────────
   function addLine(opts?: { force?: boolean }) {
     if (!customerId) {
-      toast.warning('请先选择客户，再添加商品')
+      toast.warning(isEn ? 'Please select a customer first, then add products' : '请先选择客户，再添加商品')
       setCustOpen(true)
       return
     }
@@ -923,50 +929,50 @@ export default function ClassicPlaceOrderPage() {
   }
 
   async function handleSave() {
-    if (!customer) { toast.warning('请先选择客户'); return }
+    if (!customer) { toast.warning(isEn ? 'Please select a customer first' : '请先选择客户'); return }
     const valid = lines.filter(l => l.productId)
-    if (valid.length === 0) { toast.warning('请至少添加一个商品'); return }
+    if (valid.length === 0) { toast.warning(isEn ? 'Please add at least one product' : '请至少添加一个商品'); return }
     if (submitting) return
     setSubmitting(true)
     try {
       const created = await apiPost<{ id: string }>('/api/orders', buildOrderPayload('pending'))
-      toast.success('报价单已保存')
+      toast.success(isEn ? 'Quotation saved' : '报价单已保存')
       router.push(
         created?.id
           ? `${prefix}/classic/operator/quotations/${created.id}`
           : `${prefix}/classic/operator/quotations`,
       )
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败，请重试')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed, please retry' : '保存失败，请重试'))
     } finally {
       setSubmitting(false)
     }
   }
 
   async function handleConfirm() {
-    if (!customer) { toast.warning('请先选择客户'); return }
+    if (!customer) { toast.warning(isEn ? 'Please select a customer first' : '请先选择客户'); return }
     const valid = lines.filter(l => l.productId)
-    if (valid.length === 0) { toast.warning('请至少添加一个商品'); return }
+    if (valid.length === 0) { toast.warning(isEn ? 'Please add at least one product' : '请至少添加一个商品'); return }
     if (submitting) return
     setSubmitting(true)
     try {
       const created = await apiPost<{ id: string }>('/api/orders', buildOrderPayload('confirmed'))
       setStatus('sale')
-      toast.success('订单已确认')
+      toast.success(isEn ? 'Order confirmed' : '订单已确认')
       router.push(
         created?.id
           ? `${prefix}/classic/operator/quotations/${created.id}`
           : `${prefix}/classic/operator/quotations`,
       )
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '下单失败，请重试')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Order failed, please retry' : '下单失败，请重试'))
     } finally {
       setSubmitting(false)
     }
   }
 
   function handleDiscard() {
-    if ((lines.length > 0 || customerId) && !confirm('放弃当前修改并返回列表？')) return
+    if ((lines.length > 0 || customerId) && !confirm(isEn ? 'Discard current changes and return to the list?' : '放弃当前修改并返回列表？')) return
     router.push(`${prefix}/classic/operator/quotations`)
   }
 
@@ -976,7 +982,7 @@ export default function ClassicPlaceOrderPage() {
     const el = document.getElementById('quotation-print-source')
     if (!el) return
     const w = window.open('', '_blank', 'noopener,width=900,height=720')
-    if (!w) { toast.error('请允许弹出窗口以打印'); return }
+    if (!w) { toast.error(isEn ? 'Please allow pop-ups to print' : '请允许弹出窗口以打印'); return }
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Quotation ${quotationNo}</title><style>
       *{margin:0;padding:0;box-sizing:border-box}
       body{font-family:Arial,sans-serif;background:#fff}
@@ -987,7 +993,7 @@ export default function ClassicPlaceOrderPage() {
   }
 
   function openEmailDialog() {
-    if (!customer) { toast.warning('请先选择客户'); return }
+    if (!customer) { toast.warning(isEn ? 'Please select a customer first' : '请先选择客户'); return }
     setEmailTo(customer.email ?? '')
     setEmailSubject(`${customer.name} Quotation (Ref ${quotationNo})`)
     setEmailBody(
@@ -997,7 +1003,7 @@ export default function ClassicPlaceOrderPage() {
   }
 
   async function handleSendEmail() {
-    if (!emailTo.trim()) { toast.warning('请填写收件人'); return }
+    if (!emailTo.trim()) { toast.warning(isEn ? 'Please enter a recipient' : '请填写收件人'); return }
     setEmailSending(true)
     await new Promise(r => setTimeout(r, 900))
     setEmailSending(false)
@@ -1005,9 +1011,9 @@ export default function ClassicPlaceOrderPage() {
     setStatus('sent')
     setLogs(prev => [
       ...prev,
-      { type: 'message', text: `邮件已发送至 ${emailTo}：${emailSubject}`, time: formatDateTime(new Date()) },
+      { type: 'message', text: isEn ? `Email sent to ${emailTo}: ${emailSubject}` : `邮件已发送至 ${emailTo}：${emailSubject}`, time: formatDateTime(new Date()) },
     ])
-    toast.success('邮件已发送')
+    toast.success(isEn ? 'Email sent' : '邮件已发送')
   }
 
   // ── Status bar ────────────────────────────────────────────────────────────
@@ -1022,7 +1028,7 @@ export default function ClassicPlaceOrderPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
-        加载中…
+        {isEn ? 'Loading…' : '加载中…'}
       </div>
     )
   }
@@ -1099,7 +1105,7 @@ export default function ClassicPlaceOrderPage() {
           </button>
           {status !== 'cancel' && (
             <button
-              onClick={() => { if (confirm('取消此报价单？')) setStatus('cancel') }}
+              onClick={() => { if (confirm(isEn ? 'Cancel this quotation?' : '取消此报价单？')) setStatus('cancel') }}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-red-500 hover:bg-red-50"
             >
               Cancel
@@ -1187,7 +1193,7 @@ export default function ClassicPlaceOrderPage() {
                     className="border border-gray-300 rounded px-3 py-1.5 text-sm flex items-center justify-between cursor-pointer bg-white hover:border-[#875A7B] min-h-[34px]"
                   >
                     <span className={customer ? 'text-gray-900' : 'text-gray-400'}>
-                      {customer ? customer.name : '搜索客户…'}
+                      {customer ? customer.name : (isEn ? 'Search customer…' : '搜索客户…')}
                     </span>
                     <span className="text-gray-400 text-xs ml-2">▾</span>
                   </div>
@@ -1199,14 +1205,14 @@ export default function ClassicPlaceOrderPage() {
                           type="text"
                           value={custSearch}
                           onChange={e => setCustSearch(e.target.value)}
-                          placeholder="搜索客户…"
+                          placeholder={isEn ? 'Search customer…' : '搜索客户…'}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
                           onClick={e => e.stopPropagation()}
                         />
                       </div>
                       <div ref={custListRef} className="max-h-52 overflow-y-auto">
                         {filteredCustomers.length === 0 ? (
-                          <div className="px-3 py-2 text-sm text-gray-400 text-center">没有匹配客户</div>
+                          <div className="px-3 py-2 text-sm text-gray-400 text-center">{isEn ? 'No matching customers' : '没有匹配客户'}</div>
                         ) : (
                           filteredCustomers.map((c, idx) => (
                             <div
@@ -1244,23 +1250,27 @@ export default function ClassicPlaceOrderPage() {
                     : 'bg-gray-50 border border-gray-200 text-gray-400'
                 }`}>
                   {!creditInfo ? (
-                    <span>加载信用信息...</span>
+                    <span>{isEn ? 'Loading credit info...' : '加载信用信息...'}</span>
                   ) : (
                     <>
                       <div className="flex items-center justify-between flex-wrap gap-1">
                         <span className="font-medium">
-                          {!creditInfo.canOrder ? '⛔ 信用冻结' : creditInfo.overdueAmount > 0 ? '⚠️ 有逾期欠款' : '✅ 信用正常'}
+                          {!creditInfo.canOrder
+                            ? (isEn ? '⛔ Credit Frozen' : '⛔ 信用冻结')
+                            : creditInfo.overdueAmount > 0
+                              ? (isEn ? '⚠️ Overdue Balance' : '⚠️ 有逾期欠款')
+                              : (isEn ? '✅ Credit OK' : '✅ 信用正常')}
                         </span>
                         <span>
-                          欠款 €{creditInfo.outstandingBalance.toFixed(2)}
-                          {creditInfo.creditLimit > 0 && ` / 额度 €${creditInfo.creditLimit.toFixed(2)}`}
+                          {isEn ? 'Owed' : '欠款'} €{creditInfo.outstandingBalance.toFixed(2)}
+                          {creditInfo.creditLimit > 0 && (isEn ? ` / Limit €${creditInfo.creditLimit.toFixed(2)}` : ` / 额度 €${creditInfo.creditLimit.toFixed(2)}`)}
                         </span>
                       </div>
                       {!creditInfo.canOrder && creditInfo.blockReason && (
                         <div className="mt-1">{creditInfo.blockReason}</div>
                       )}
                       {!creditInfo.canOrder && !['BOSS', 'FINANCE'].includes(userRole) && (
-                        <div className="mt-1 font-medium">需 BOSS 或财务特批</div>
+                        <div className="mt-1 font-medium">{isEn ? 'Requires BOSS or Finance approval' : '需 BOSS 或财务特批'}</div>
                       )}
                     </>
                   )}
@@ -1277,13 +1287,13 @@ export default function ClassicPlaceOrderPage() {
 
               {/* Notes Tabs */}
               <div className="flex items-start gap-3">
-                <label className="text-sm text-gray-600 w-36 pt-1 shrink-0">备注</label>
+                <label className="text-sm text-gray-600 w-36 pt-1 shrink-0">{isEn ? 'Notes' : '备注'}</label>
                 <div className="flex-1">
                   <div className="flex border-b border-gray-200 mb-1">
                     {(['internal', 'external'] as const).map(tab => (
                       <button key={tab} onClick={() => setNoteTab(tab)}
                         className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                        {tab === 'internal' ? '内部备注' : '外部备注'}
+                        {tab === 'internal' ? (isEn ? 'Internal Note' : '内部备注') : (isEn ? 'External Note' : '外部备注')}
                       </button>
                     ))}
                   </div>
@@ -1294,7 +1304,7 @@ export default function ClassicPlaceOrderPage() {
                         maxLength={30}
                         value={internalNotes}
                         onChange={e => setInternalNotes(e.target.value.slice(0, 30))}
-                        placeholder="仅内部可见，不会打印给客户"
+                        placeholder={isEn ? 'Internal only, will not be printed for the customer' : '仅内部可见，不会打印给客户'}
                         className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 resize-none"
                       />
                       <span className="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none">
@@ -1306,7 +1316,7 @@ export default function ClassicPlaceOrderPage() {
                       rows={3}
                       value={externalNote}
                       onChange={e => setExternalNote(e.target.value)}
-                      placeholder="会打印在报价单和送货单上，客户可见"
+                      placeholder={isEn ? 'Will be printed on the quotation and delivery note, visible to the customer' : '会打印在报价单和送货单上，客户可见'}
                       className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 resize-none"
                     />
                   )}
@@ -1361,7 +1371,7 @@ export default function ClassicPlaceOrderPage() {
                   }}
                   className="flex-1 text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 bg-white"
                 >
-                  <option value="">— 选择业务员 —</option>
+                  <option value="">{isEn ? '— Select Salesperson —' : '— 选择业务员 —'}</option>
                   {salesUsers.map(u => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
@@ -1380,7 +1390,7 @@ export default function ClassicPlaceOrderPage() {
                     <span className={pricelistId ? 'text-gray-900' : 'text-gray-400'}>
                       {pricelistId
                         ? (pricelists.find(p => p.id === pricelistId)?.name ?? pricelistId)
-                        : '— 选择价格表 —'}
+                        : (isEn ? '— Select Pricelist —' : '— 选择价格表 —')}
                     </span>
                     <span className="text-gray-400 text-xs ml-2">▾</span>
                   </div>
@@ -1392,7 +1402,7 @@ export default function ClassicPlaceOrderPage() {
                           type="text"
                           value={plSearch}
                           onChange={e => setPlSearch(e.target.value)}
-                          placeholder="搜索价格表…"
+                          placeholder={isEn ? 'Search pricelist…' : '搜索价格表…'}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
                           onClick={e => e.stopPropagation()}
                         />
@@ -1404,7 +1414,7 @@ export default function ClassicPlaceOrderPage() {
                           onClick={() => { setPricelistId(''); setPlOpen(false) }}
                           className={`px-3 py-2 text-sm cursor-pointer text-gray-400 hover:bg-gray-50 ${plHighlight === 0 ? 'bg-gray-100' : ''}`}
                         >
-                          — 无 —
+                          {isEn ? '— None —' : '— 无 —'}
                         </div>
                         {filteredPricelists.map((pl, idx) => (
                           <div
@@ -1436,7 +1446,7 @@ export default function ClassicPlaceOrderPage() {
                   type="text"
                   value={paymentTerms}
                   onChange={e => setPaymentTerms(e.target.value)}
-                  placeholder="付款条件"
+                  placeholder={isEn ? 'Payment terms' : '付款条件'}
                   className="flex-1 text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
                 />
               </div>
@@ -1498,31 +1508,31 @@ export default function ClassicPlaceOrderPage() {
                   className="px-3 py-1.5 rounded text-sm font-medium text-white inline-flex items-center gap-1.5"
                   style={{ background: '#875A7B' }}
                 >
-                  📋 复制历史订单
+                  📋 {isEn ? 'Copy History Order' : '复制历史订单'}
                 </button>
-                <span className="text-xs text-gray-400">按所选客户最近 5 单复制商品到当前订单，导入后可继续增删改</span>
+                <span className="text-xs text-gray-400">{isEn ? "Copy products from the selected customer's last 5 orders into the current order — you can still add/remove/edit after importing" : '按所选客户最近 5 单复制商品到当前订单，导入后可继续增删改'}</span>
               </div>
 
               {showHistory && createPortal(
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowHistory(false)}>
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-                      <h2 className="text-base font-semibold" style={{ color: '#875A7B' }}>复制历史订单 · 最近 5 单</h2>
+                      <h2 className="text-base font-semibold" style={{ color: '#875A7B' }}>{isEn ? 'Copy History Order · Last 5' : '复制历史订单 · 最近 5 单'}</h2>
                       <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
                     </div>
                     <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-2">
-                      {historyLoading && <div className="py-10 text-center text-sm text-gray-400">加载中…</div>}
-                      {!historyLoading && historyOrders.length === 0 && <div className="py-10 text-center text-sm text-gray-400">该客户暂无历史订单</div>}
+                      {historyLoading && <div className="py-10 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>}
+                      {!historyLoading && historyOrders.length === 0 && <div className="py-10 text-center text-sm text-gray-400">{isEn ? 'No history orders for this customer' : '该客户暂无历史订单'}</div>}
                       {!historyLoading && historyOrders.map(o => {
                         const hl = o.lines ?? o.items ?? []
                         return (
                           <div key={o.id} className="border rounded-lg px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: '#e5e7eb' }}>
                             <div className="min-w-0">
                               <div className="text-sm font-medium" style={{ color: '#875A7B' }}>{o.code ?? o.id.slice(0, 8)}</div>
-                              <div className="text-xs text-gray-500 mt-0.5">{formatDateOnly(o.createdAt)} · {hl.length} 项 · €{Number(o.totalAmount).toFixed(2)}</div>
-                              <div className="text-xs text-gray-400 mt-0.5 truncate">{hl.slice(0, 3).map(x => x.productName).join('、')}{hl.length > 3 ? ` 等 ${hl.length} 项` : ''}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">{formatDateOnly(o.createdAt)} · {hl.length} {isEn ? 'items' : '项'} · €{Number(o.totalAmount).toFixed(2)}</div>
+                              <div className="text-xs text-gray-400 mt-0.5 truncate">{hl.slice(0, 3).map(x => x.productName).join(isEn ? ', ' : '、')}{hl.length > 3 ? (isEn ? ` and ${hl.length} more` : ` 等 ${hl.length} 项`) : ''}</div>
                             </div>
-                            <button onClick={() => importHistoryOrder(o)} className="px-3 py-1.5 rounded text-sm font-medium text-white shrink-0" style={{ background: '#875A7B' }}>导入</button>
+                            <button onClick={() => importHistoryOrder(o)} className="px-3 py-1.5 rounded text-sm font-medium text-white shrink-0" style={{ background: '#875A7B' }}>{isEn ? 'Import' : '导入'}</button>
                           </div>
                         )
                       })}
@@ -1545,12 +1555,12 @@ export default function ClassicPlaceOrderPage() {
                   <div className="mx-3 mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-start gap-3">
                     <span className="text-lg leading-none mt-0.5">🚨</span>
                     <div className="text-sm">
-                      <span className="font-semibold text-red-700">库存警告（基于可承诺量）：</span>
+                      <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on ATP): ' : '库存警告（基于可承诺量）：'}</span>
                       {outOfStockLines.length > 0 && (
                         <span className="text-red-600">
-                          {outOfStockLines.length} 个商品无可用库存
+                          {isEn ? `${outOfStockLines.length} product(s) out of stock` : `${outOfStockLines.length} 个商品无可用库存`}
                           <span className="text-xs text-red-500 ml-1">
-                            ({outOfStockLines.map(l => l.productName).join('、')})
+                            ({outOfStockLines.map(l => l.productName).join(isEn ? ', ' : '、')})
                           </span>
                         </span>
                       )}
@@ -1559,9 +1569,9 @@ export default function ClassicPlaceOrderPage() {
                       )}
                       {lowStockLines.length > 0 && (
                         <span className="text-amber-700">
-                          {lowStockLines.length} 个商品低库存
+                          {isEn ? `${lowStockLines.length} product(s) low stock` : `${lowStockLines.length} 个商品低库存`}
                           <span className="text-xs text-amber-600 ml-1">
-                            ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp.toFixed(1)})`).join('、')})
+                            ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp.toFixed(1)})`).join(isEn ? ', ' : '、')})
                           </span>
                         </span>
                       )}
@@ -1579,21 +1589,21 @@ export default function ClassicPlaceOrderPage() {
                   <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
                     <span className="text-lg leading-none mt-0.5">🔁</span>
                     <div className="text-sm flex-1">
-                      <span className="font-semibold text-purple-700">重复商品提醒：</span>
+                      <span className="font-semibold text-purple-700">{isEn ? 'Duplicate Product Alert: ' : '重复商品提醒：'}</span>
                       <span className="text-purple-600">
-                        {dups.length} 个商品被重复添加
+                        {isEn ? `${dups.length} product(s) added more than once` : `${dups.length} 个商品被重复添加`}
                         <span className="text-xs text-purple-500 ml-1">
-                          ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join('、')})
+                          ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join(isEn ? ', ' : '、')})
                         </span>
                       </span>
-                      <span className="text-xs text-gray-500 ml-1">— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整</span>
+                      <span className="text-xs text-gray-500 ml-1">{isEn ? '— Click "Merge" on the right to combine into one line (quantities added), or leave as is and adjust manually' : '— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整'}</span>
                     </div>
                     <button
                       onClick={mergeDuplicates}
                       className="shrink-0 px-3 py-1 rounded text-xs font-medium text-white"
                       style={{ background: '#875A7B' }}
                     >
-                      合并重复项
+                      {isEn ? 'Merge Duplicates' : '合并重复项'}
                     </button>
                   </div>
                 )
@@ -1607,7 +1617,7 @@ export default function ClassicPlaceOrderPage() {
                 tableStyle={{ minWidth: '1190px', width: '100%' }}
                 tbodyClassName="divide-y divide-gray-100"
                 emptyColSpan={13}
-                emptyMessage='暂无订单行，点击下方 "+ Add a product" 开始添加'
+                emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
                     <th className="px-2 py-2 text-left"  style={{ width: 40  }}>NO</th>
@@ -1616,7 +1626,7 @@ export default function ClassicPlaceOrderPage() {
                     <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
                     <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title="可承诺量 = 在手量 - 待履行量">ATP</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title={isEn ? 'ATP = On Hand − Pending Demand' : '可承诺量 = 在手量 - 待履行量'}>ATP</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
                     <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cost</th>
@@ -1637,7 +1647,7 @@ export default function ClassicPlaceOrderPage() {
                       {/* NO */}
                       <td className="px-2 py-1 text-gray-400 select-none">
                         {idx + 1}
-                        {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
+                        {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
                       </td>
 
                       {/* Product — inline search */}
@@ -1651,7 +1661,7 @@ export default function ClassicPlaceOrderPage() {
                               value={lineSearch}
                               onChange={e => setLineSearch(e.target.value)}
                               onKeyDown={handleLineKey}
-                              placeholder="搜索商品…"
+                              placeholder={isEn ? 'Search product…' : '搜索商品…'}
                               className="w-full border border-[#875A7B] rounded px-2 py-0.5 text-xs focus:outline-none"
                               onClick={e => e.stopPropagation()}
                               onFocus={() => {
@@ -1666,9 +1676,9 @@ export default function ClassicPlaceOrderPage() {
                             className={`px-2 py-0.5 rounded cursor-pointer hover:bg-[#875A7B]/20 min-h-[22px] truncate ${
                               line.productName ? 'text-[#875A7B] underline-offset-2' : 'text-gray-400 italic'
                             }`}
-                            title={line.productName || '点击选择商品'}
+                            title={line.productName || (isEn ? 'Click to select product' : '点击选择商品')}
                           >
-                            {line.productName || '点击选择商品…'}
+                            {line.productName || (isEn ? 'Click to select product…' : '点击选择商品…')}
                           </div>
                         )}
                       </td>
@@ -1693,7 +1703,7 @@ export default function ClassicPlaceOrderPage() {
                           value={line.note}
                           onChange={e => patchLine(line.id, { note: e.target.value })}
                           onKeyDown={e => handleFieldKey(e)}
-                          placeholder="备注…"
+                          placeholder={isEn ? 'Note…' : '备注…'}
                           className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent placeholder:text-gray-300"
                         />
                       </td>
@@ -1734,7 +1744,7 @@ export default function ClassicPlaceOrderPage() {
                       </td>
 
                       {/* ATP */}
-                      <td className="px-2 py-1 text-right" title={line.productId ? `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 可承诺: ${lineAtp.toFixed(1)}` : ''}>
+                      <td className="px-2 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 可承诺: ${lineAtp.toFixed(1)}`) : ''}>
                         {isOutOfStock ? (
                           <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
                             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -1810,7 +1820,7 @@ export default function ClassicPlaceOrderPage() {
                         <button
                           onClick={() => removeLine(line.id)}
                           className="ml-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity align-middle"
-                          title="删除此行"
+                          title={isEn ? 'Delete this line' : '删除此行'}
                         >
                           🗑
                         </button>
@@ -1861,17 +1871,19 @@ export default function ClassicPlaceOrderPage() {
           {/* Left: commission total + terms */}
           <div className="bg-white rounded border border-gray-200 p-4 space-y-3">
             <div>
-              <label className="text-sm text-gray-600 block mb-1">客户外部备注 / Customer Note</label>
+              <label className="text-sm text-gray-600 block mb-1">{isEn ? 'Customer Note' : '客户外部备注 / Customer Note'}</label>
               {customerExternalNote ? (
                 <div className="w-full text-sm border border-gray-200 rounded px-3 py-2 bg-gray-50 text-gray-700 whitespace-pre-wrap min-h-[3.5rem]">
                   {customerExternalNote}
                 </div>
               ) : (
                 <div className="w-full text-sm border border-gray-200 rounded px-3 py-2 bg-gray-50 text-gray-400 min-h-[3.5rem]">
-                  {customerId ? '该客户暂无外部备注（可在客户档案 Internal Notes 页录入）' : '选择客户后显示其外部备注'}
+                  {customerId
+                    ? (isEn ? 'This customer has no external note (can be added on the customer profile Internal Notes page)' : '该客户暂无外部备注（可在客户档案 Internal Notes 页录入）')
+                    : (isEn ? "Select a customer to show their external note" : '选择客户后显示其外部备注')}
                 </div>
               )}
-              <p className="text-xs text-gray-400 mt-1">只读，会打印在报价单/送货单上。修改请到客户档案页。</p>
+              <p className="text-xs text-gray-400 mt-1">{isEn ? 'Read-only, will be printed on the quotation/delivery note. Edit on the customer profile page.' : '只读，会打印在报价单/送货单上。修改请到客户档案页。'}</p>
             </div>
           </div>
 
@@ -1909,7 +1921,7 @@ export default function ClassicPlaceOrderPage() {
 
         {/* ══ Chatter ═══════════════════════════════════════════════════════ */}
         <div className="bg-white rounded border border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">操作日志</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'Activity Log' : '操作日志'}</h3>
 
           {/* Log entries */}
           <div className="mt-4 space-y-0 divide-y divide-gray-50">
@@ -2131,7 +2143,7 @@ export default function ClassicPlaceOrderPage() {
         >
           <div ref={lineListRef} className="bg-white border border-gray-200 rounded shadow-xl max-h-52 overflow-y-auto">
             {filteredProducts.slice(0, 30).length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-400 text-center">没有匹配商品</div>
+              <div className="px-3 py-2 text-xs text-gray-400 text-center">{isEn ? 'No matching products' : '没有匹配商品'}</div>
             ) : (
               filteredProducts.slice(0, 30).map((p, idx) => (
                 <div

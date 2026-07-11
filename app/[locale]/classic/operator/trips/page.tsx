@@ -16,12 +16,19 @@ import { Button } from '@/components/ui/button'
 
 // ─── Status display ───────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<TripStatus, string> = {
+const STATUS_LABEL_ZH: Record<TripStatus, string> = {
   pending:            '待出发',
   pending_assignment: '待指派司机',
   verifying:          '货物核验',
   in_progress:        '配送中',
   completed:          '已完成',
+}
+const STATUS_LABEL_EN: Record<TripStatus, string> = {
+  pending:            'Pending Departure',
+  pending_assignment: 'Pending Driver',
+  verifying:          'Verifying',
+  in_progress:        'In Delivery',
+  completed:          'Completed',
 }
 const STATUS_COLOR: Record<TripStatus, string> = {
   pending:            'bg-gray-100 text-gray-600',
@@ -82,6 +89,8 @@ function groupOrdersByRestaurant(
 export default function ClassicTripsPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   // List state
@@ -111,7 +120,7 @@ export default function ClassicTripsPage() {
       const data = await apiGet<Record<string, unknown>[]>('/api/trips')
       setTrips(data.map(normalizeTrip))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载行程失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load trips' : '加载行程失败'))
     } finally {
       setLoading(false)
     }
@@ -154,7 +163,7 @@ export default function ClassicTripsPage() {
       }
       setAssignedOrderIds(usedIds)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载数据失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load data' : '加载数据失败'))
     } finally {
       setLoadingOrders(false)
     }
@@ -198,12 +207,12 @@ export default function ClassicTripsPage() {
         driverSlotId: slot?.id || null,
         orderIds: Array.from(selectedOrderIds),
       })
-      toast.success('行程创建成功')
+      toast.success(isEn ? 'Trip created successfully' : '行程创建成功')
       setShowCreate(false)
       await load()
       router.push(`${prefix}/classic/operator/trips/${created.id}`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建行程失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to create trip' : '创建行程失败'))
     } finally {
       setCreating(false)
     }
@@ -214,7 +223,7 @@ export default function ClassicTripsPage() {
   const selectedSlot = driverSlots.find(s => s.id === selectedBatch)
   const selectedBatchLabel = selectedSlot ? formatDriverSlot(selectedSlot) : selectedBatch
   const previewName = selectedBatch
-    ? `${selectedBatchLabel} · ${selectedGroups.length}家餐馆`
+    ? (isEn ? `${selectedBatchLabel} · ${selectedGroups.length} restaurants` : `${selectedBatchLabel} · ${selectedGroups.length}家餐馆`)
     : ''
   const filteredBatches = batchFilter
     ? driverSlots.filter(s => (s.timeOfDay.toLowerCase().includes('am') ? 'AM' : 'PM') === batchFilter)
@@ -236,32 +245,32 @@ export default function ClassicTripsPage() {
   const columns: OdooColumn[] = [
     {
       key: 'timeSlot',
-      label: '时段',
+      label: isEn ? 'Slot' : '时段',
       render: (v) => {
         if (!v) return <span className="text-gray-400">—</span>
         return (
           <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${v === 'AM' ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700'}`}>
-            {v === 'AM' ? '☀️ 上午' : '🌙 下午'}
+            {v === 'AM' ? (isEn ? '☀️ AM' : '☀️ 上午') : (isEn ? '🌙 PM' : '🌙 下午')}
           </span>
         )
       },
     },
     {
       key: 'name',
-      label: '行程名称',
+      label: isEn ? 'Trip Name' : '行程名称',
       render: (_, row) => {
         const driverName = row.driverName as string | undefined
         const restaurants = (row.restaurants as TripRestaurant[]) ?? []
         if (driverName) {
           return (
             <span className="font-medium">
-              {driverName} · {restaurants.length}家餐馆
+              {driverName} · {isEn ? `${restaurants.length} restaurants` : `${restaurants.length}家餐馆`}
             </span>
           )
         }
         if (restaurants.length > 0) {
           const names = restaurants.map(r => r.restaurantName)
-          const preview = names.slice(0, 2).join('、')
+          const preview = names.slice(0, 2).join(isEn ? ', ' : '、')
           const extra = names.length > 2 ? ` +${names.length - 2}` : ''
           return <span className="font-medium text-gray-700">{preview}{extra}</span>
         }
@@ -270,14 +279,14 @@ export default function ClassicTripsPage() {
     },
     {
       key: 'restaurants',
-      label: '餐馆数',
+      label: isEn ? 'Restaurants' : '餐馆数',
       render: (_, row) => (
-        <span className="text-sm">{(row.restaurants as unknown[]).length} 家</span>
+        <span className="text-sm">{(row.restaurants as unknown[]).length}{isEn ? '' : ' 家'}</span>
       ),
     },
     {
       key: 'status',
-      label: '状态',
+      label: isEn ? 'Status' : '状态',
       render: (v) => (
         <span className={`inline-block px-2 py-0.5 rounded text-xs ${STATUS_COLOR[v as TripStatus] ?? 'bg-gray-100 text-gray-600'}`}>
           {STATUS_LABEL[v as TripStatus] ?? String(v)}
@@ -286,7 +295,7 @@ export default function ClassicTripsPage() {
     },
     {
       key: '_print',
-      label: '打印',
+      label: isEn ? 'Print' : '打印',
       render: (_, row) => {
         const id = String(row.id)
         const open = (type: 'picking' | 'delivery' | 'summary') => (e: React.MouseEvent) => {
@@ -302,27 +311,27 @@ export default function ClassicTripsPage() {
             <button
               type="button"
               onClick={openPicking('storable')}
-              title="整箱整袋拣货单（无价）"
+              title={isEn ? 'Case/bulk picking list (no price)' : '整箱整袋拣货单（无价）'}
               className="text-xs px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
-            >📦 整箱整袋</button>
+            >{isEn ? '📦 Case/Bulk' : '📦 整箱整袋'}</button>
             <button
               type="button"
               onClick={openPicking('consumable')}
-              title="零散货拣货单（无价）"
+              title={isEn ? 'Loose goods picking list (no price)' : '零散货拣货单（无价）'}
               className="text-xs px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
-            >🧴 零散货</button>
+            >{isEn ? '🧴 Loose Goods' : '🧴 零散货'}</button>
             <button
               type="button"
               onClick={open('delivery')}
-              title="司机送货单（按客户一家一份，含价）"
+              title={isEn ? 'Driver delivery note (per customer, with price)' : '司机送货单（按客户一家一份，含价）'}
               className="text-xs px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-            >🚚 送货</button>
+            >{isEn ? '🚚 Delivery' : '🚚 送货'}</button>
             <button
               type="button"
               onClick={open('summary')}
-              title="配送汇总单（按客户卡片，无价）"
+              title={isEn ? 'Delivery summary (per customer card, no price)' : '配送汇总单（按客户卡片，无价）'}
               className="text-xs px-1.5 py-0.5 rounded border border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
-            >📋 汇总</button>
+            >{isEn ? '📋 Summary' : '📋 汇总'}</button>
           </div>
         )
       },
@@ -333,14 +342,14 @@ export default function ClassicTripsPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['配送', '配送行程']}
+        breadcrumb={isEn ? ['Delivery', 'Trips'] : ['配送', '配送行程']}
         permanentActions={[
           {
-            label: '+ 新建行程',
+            label: isEn ? '+ New Trip' : '+ 新建行程',
             onClick: openCreate,
           },
-          { label: '批次分析', onClick: () => router.push(`${prefix}/classic/operator/batch-analysis`) },
-          { label: '刷新', onClick: load },
+          { label: isEn ? 'Batch Analysis' : '批次分析', onClick: () => router.push(`${prefix}/classic/operator/batch-analysis`) },
+          { label: isEn ? 'Refresh' : '刷新', onClick: load },
         ]}
         searchValue={searchInput}
         onSearch={v => { setSearchInput(v); setPage(1) }}
@@ -370,7 +379,7 @@ export default function ClassicTripsPage() {
             })
           }}
           onRowClick={row => router.push(`${prefix}/classic/operator/trips/${String(row.id)}`)}
-          emptyText="暂无配送行程"
+          emptyText={isEn ? 'No delivery trips' : '暂无配送行程'}
         />
         <Pagination page={page} totalPages={Math.ceil(filtered.length / PAGE_SIZE)} onPageChange={setPage} />
       </div>
@@ -379,7 +388,7 @@ export default function ClassicTripsPage() {
       <Dialog open={showCreate} onOpenChange={open => { if (!open) closeCreate() }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle style={{ color: '#875A7B' }}>新建配送行程</DialogTitle>
+            <DialogTitle style={{ color: '#875A7B' }}>{isEn ? 'New Delivery Trip' : '新建配送行程'}</DialogTitle>
           </DialogHeader>
 
           {/* Step indicator */}
@@ -395,14 +404,14 @@ export default function ClassicTripsPage() {
               </div>
             ))}
             <span className="ml-2 text-xs text-gray-500">
-              {step === 1 ? '选择批次' : step === 2 ? '选择订单' : '确认生成'}
+              {step === 1 ? (isEn ? 'Select Batch' : '选择批次') : step === 2 ? (isEn ? 'Select Orders' : '选择订单') : (isEn ? 'Confirm & Generate' : '确认生成')}
             </span>
           </div>
 
           {/* Step 1: Select batch */}
           {step === 1 && (
             <div className="space-y-3 py-2">
-              <p className="text-sm text-gray-600 font-medium">选择配送批次</p>
+              <p className="text-sm text-gray-600 font-medium">{isEn ? 'Select delivery batch' : '选择配送批次'}</p>
               {/* AM / PM filter */}
               <div className="flex gap-2">
                 <button
@@ -413,7 +422,7 @@ export default function ClassicTripsPage() {
                       : 'border-gray-200 text-gray-500 hover:border-amber-300'
                   }`}
                 >
-                  ☀️ 上午 AM
+                  {isEn ? '☀️ AM' : '☀️ 上午 AM'}
                 </button>
                 <button
                   onClick={() => setBatchFilter(batchFilter === 'PM' ? '' : 'PM')}
@@ -423,14 +432,14 @@ export default function ClassicTripsPage() {
                       : 'border-gray-200 text-gray-500 hover:border-indigo-300'
                   }`}
                 >
-                  🌙 下午 PM
+                  {isEn ? '🌙 PM' : '🌙 下午 PM'}
                 </button>
                 {batchFilter && (
                   <button
                     onClick={() => setBatchFilter('')}
                     className="text-xs text-gray-400 hover:text-gray-600 underline"
                   >
-                    显示全部
+                    {isEn ? 'Show all' : '显示全部'}
                   </button>
                 )}
               </div>
@@ -463,22 +472,22 @@ export default function ClassicTripsPage() {
           {step === 2 && (
             <div className="space-y-3 py-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600 font-medium">选择要配送的餐馆 / 订单</p>
+                <p className="text-sm text-gray-600 font-medium">{isEn ? 'Select restaurants / orders to deliver' : '选择要配送的餐馆 / 订单'}</p>
                 <button
                   onClick={toggleAll}
                   className="text-xs text-purple-700 hover:underline"
                 >
-                  全选 / 取消
+                  {isEn ? 'Select All / Clear' : '全选 / 取消'}
                 </button>
               </div>
 
               {loadingOrders && (
-                <div className="text-sm text-gray-400 py-4 text-center">加载中…</div>
+                <div className="text-sm text-gray-400 py-4 text-center">{isEn ? 'Loading…' : '加载中…'}</div>
               )}
 
               {!loadingOrders && orderGroups.length === 0 && (
                 <div className="text-sm text-gray-400 py-8 text-center">
-                  暂无已确认的订单
+                  {isEn ? 'No confirmed orders' : '暂无已确认的订单'}
                 </div>
               )}
 
@@ -508,12 +517,12 @@ export default function ClassicTripsPage() {
                         />
                         <span className="font-medium text-sm">{g.restaurantName}</span>
                         {g.alreadyAssigned && (
-                          <span className="text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">已指派</span>
+                          <span className="text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">{isEn ? 'Assigned' : '已指派'}</span>
                         )}
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-medium">€{g.totalAmount.toFixed(2)}</div>
-                        <div className="text-xs text-gray-400">{g.orders.length} 张订单 · {g.itemCount} 项</div>
+                        <div className="text-xs text-gray-400">{isEn ? `${g.orders.length} orders · ${g.itemCount} items` : `${g.orders.length} 张订单 · ${g.itemCount} 项`}</div>
                       </div>
                     </div>
                   </div>
@@ -522,7 +531,7 @@ export default function ClassicTripsPage() {
 
               {selectedOrderIds.size > 0 && (
                 <p className="text-xs text-purple-700 font-medium">
-                  已选 {selectedGroups.length} 家餐馆，{selectedOrderIds.size} 张订单
+                  {isEn ? `Selected ${selectedGroups.length} restaurants, ${selectedOrderIds.size} orders` : `已选 ${selectedGroups.length} 家餐馆，${selectedOrderIds.size} 张订单`}
                 </p>
               )}
             </div>
@@ -531,7 +540,7 @@ export default function ClassicTripsPage() {
           {/* Step 3: Confirm */}
           {step === 3 && (
             <div className="space-y-4 py-4">
-              <p className="text-sm text-gray-600 font-medium">确认行程信息</p>
+              <p className="text-sm text-gray-600 font-medium">{isEn ? 'Confirm trip details' : '确认行程信息'}</p>
 
               <div className="rounded-xl border border-purple-200 bg-[#875A7B]/20 p-4 space-y-3">
                 <div className="text-center">
@@ -549,7 +558,7 @@ export default function ClassicTripsPage() {
               </div>
 
               <p className="text-xs text-gray-400 text-center">
-                生成后订单状态将更新为「配送中」
+                {isEn ? 'Order status will update to "In Delivery" after generation' : '生成后订单状态将更新为「配送中」'}
               </p>
             </div>
           )}
@@ -559,7 +568,7 @@ export default function ClassicTripsPage() {
               if (step === 1) closeCreate()
               else setStep(s => s - 1)
             }}>
-              {step === 1 ? '取消' : '上一步'}
+              {step === 1 ? (isEn ? 'Cancel' : '取消') : (isEn ? 'Previous' : '上一步')}
             </Button>
 
             {step < 3 ? (
@@ -572,7 +581,7 @@ export default function ClassicTripsPage() {
                 style={{ background: '#875A7B', borderColor: '#875A7B' }}
                 className="text-white hover:opacity-90"
               >
-                下一步
+                {isEn ? 'Next' : '下一步'}
               </Button>
             ) : (
               <Button
@@ -581,7 +590,7 @@ export default function ClassicTripsPage() {
                 style={{ background: '#875A7B', borderColor: '#875A7B' }}
                 className="text-white hover:opacity-90"
               >
-                {creating ? '生成中…' : '✅ 生成行程'}
+                {creating ? (isEn ? 'Generating…' : '生成中…') : (isEn ? '✅ Generate Trip' : '✅ 生成行程')}
               </Button>
             )}
           </DialogFooter>

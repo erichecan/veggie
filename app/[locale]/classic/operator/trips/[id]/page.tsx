@@ -14,6 +14,21 @@ import { DELIVERY_BATCHES, batchPeriod } from '@/lib/delivery-batches'
 
 const PURPLE = '#875A7B'
 const EXCEPTION_REASONS = ['品质问题', '数量错误', '客户拒收', '配送延误', '包装破损', '其他']
+const EXCEPTION_REASON_LABEL_EN: Record<string, string> = {
+  '品质问题': 'Quality issue',
+  '数量错误': 'Quantity error',
+  '客户拒收': 'Customer refused',
+  '配送延误': 'Delivery delay',
+  '包装破损': 'Damaged packaging',
+  '其他': 'Other',
+}
+
+// 已存库的 reason 是「、」拼接的中文原因文本（提交时 exceptionReasons.join('、')），
+// 只读展示按段翻译，未命中的自定义文本原样透出
+function translateReasonText(reasonText: string, isEn: boolean): string {
+  if (!isEn) return reasonText
+  return reasonText.split('、').map(r => EXCEPTION_REASON_LABEL_EN[r] ?? r).join(', ')
+}
 
 interface ExceptionProduct {
   productId: string
@@ -23,12 +38,19 @@ interface ExceptionProduct {
 }
 
 
-const STATUS_LABEL: Record<TripStatus, string> = {
+const STATUS_LABEL_ZH: Record<TripStatus, string> = {
   pending:            '待出发',
   pending_assignment: '待指派司机',
   verifying:          '货物核验',
   in_progress:        '配送中',
   completed:          '已完成',
+}
+const STATUS_LABEL_EN: Record<TripStatus, string> = {
+  pending:            'Pending',
+  pending_assignment: 'Pending Driver Assignment',
+  verifying:          'Cargo Verification',
+  in_progress:        'In Progress',
+  completed:          'Completed',
 }
 const STATUS_COLOR: Record<TripStatus, string> = {
   pending:            'bg-gray-100 text-gray-600',
@@ -48,10 +70,15 @@ function normalizeTrip(t: Record<string, unknown>): Trip {
 }
 
 // Status pipeline steps
-const PIPELINE: { status: TripStatus; label: string }[] = [
+const PIPELINE_ZH: { status: TripStatus; label: string }[] = [
   { status: 'pending',            label: '待出发' },
   { status: 'in_progress',        label: '配送中' },
   { status: 'completed',          label: '已完成' },
+]
+const PIPELINE_EN: { status: TripStatus; label: string }[] = [
+  { status: 'pending',            label: 'Pending' },
+  { status: 'in_progress',        label: 'In Progress' },
+  { status: 'completed',          label: 'Completed' },
 ]
 
 export default function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -59,6 +86,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const statusLabel = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const PIPELINE = isEn ? PIPELINE_EN : PIPELINE_ZH
 
   const [trip, setTrip] = useState<Trip | null>(null)
   const [loading, setLoading] = useState(true)
@@ -118,14 +148,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     const r = trip.restaurants.find(r => r.restaurantId === restId)
     if (!r) return
     const payStr = stopPayments[restId] ?? ''
-    if (payStr === '') { toast.error('请先填写实收货款'); return }
+    if (payStr === '') { toast.error(isEn ? 'Please enter the amount received first' : '请先填写实收货款'); return }
     const payNum = Number(payStr)
     const updated = cloneTrip()
     const ur = updated.restaurants.find(r => r.restaurantId === restId)
     if (ur) { ur.delivered = true; ur.payment = payNum }
     updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
     await saveStop(updated)
-    toast.success(`${r.restaurantName} 已标记送达`)
+    toast.success(isEn ? `${r.restaurantName} marked as delivered` : `${r.restaurantName} 已标记送达`)
   }
 
   function openExceptionModal(restId: string) {
@@ -146,9 +176,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   async function submitException() {
     if (!trip || !exceptionModal) return
     const selected = exceptionProducts.filter(p => p.selected)
-    if (selected.length === 0) { toast.error('请勾选有异常的商品'); return }
+    if (selected.length === 0) { toast.error(isEn ? 'Please select the item(s) with an issue' : '请勾选有异常的商品'); return }
     const reasonText = exceptionReasons.join('、')
-    if (!reasonText.trim()) { toast.error('请填写异常原因'); return }
+    if (!reasonText.trim()) { toast.error(isEn ? 'Please enter the reason' : '请填写异常原因'); return }
 
     setSaving(true)
     try {
@@ -164,9 +194,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       })
       await load()
       setExceptionModal(null)
-      toast.success('异常已记录')
+      toast.success(isEn ? 'Exception recorded' : '异常已记录')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '提交异常失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to submit exception' : '提交异常失败'))
     } finally {
       setSaving(false)
     }
@@ -179,9 +209,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
         reviews: [{ restaurantId, productId, action, disposition }],
       })
       await load()
-      toast.success(action === 'approve' ? '已批准退货' : '已拒绝退货')
+      toast.success(action === 'approve' ? (isEn ? 'Return approved' : '已批准退货') : (isEn ? 'Return rejected' : '已拒绝退货'))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '审核失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Review failed' : '审核失败'))
     } finally {
       setSubmittingReview(false)
     }
@@ -228,7 +258,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
         setReturnsData(rd)
       } catch { /* returns data optional */ }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载行程失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load trip' : '加载行程失败'))
     } finally {
       setLoading(false)
     }
@@ -251,15 +281,15 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     try {
       const payload: Record<string, unknown> = {
         timeSlot: batchPeriod(editBatch),
-        name: `${editBatch} · ${editRestaurants.length}家餐馆`,
+        name: isEn ? `${editBatch} · ${editRestaurants.length} restaurants` : `${editBatch} · ${editRestaurants.length}家餐馆`,
         restaurants: editRestaurants,
       }
       const updated = await apiPut<Record<string, unknown>>(`/api/trips/${id}`, payload)
       setTrip(normalizeTrip(updated))
       setShowEdit(false)
-      toast.success('行程已更新')
+      toast.success(isEn ? 'Trip updated' : '行程已更新')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '更新失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Update failed' : '更新失败'))
     } finally {
       setSaving(false)
     }
@@ -271,9 +301,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     try {
       const updated = await apiPut<Record<string, unknown>>(`/api/trips/${id}`, { status: newStatus })
       setTrip(normalizeTrip(updated))
-      toast.success('状态已更新')
+      toast.success(isEn ? 'Status updated' : '状态已更新')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '更新失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Update failed' : '更新失败'))
     } finally {
       setSaving(false)
     }
@@ -283,7 +313,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     if (!trip) return
     const inputs = verifyInputs[restaurantId]
     if (!inputs || Object.keys(inputs).length === 0) {
-      toast.error('请填写核验数量')
+      toast.error(isEn ? 'Please enter the verified quantity' : '请填写核验数量')
       return
     }
     const rest = trip.restaurants.find(r => r.restaurantId === restaurantId)
@@ -297,10 +327,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           verifiedQty: Number(inputs[item.productId] ?? item.quantity),
         })),
       })
-      toast.success(`${rest.restaurantName} 核验完成`)
+      toast.success(isEn ? `${rest.restaurantName} verification complete` : `${rest.restaurantName} 核验完成`)
       await load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '核验失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Verification failed' : '核验失败'))
     } finally {
       setSubmittingVerify(false)
     }
@@ -311,10 +341,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     setSubmittingDiscrepancy(true)
     try {
       await apiPut(`/api/trips/${id}/discrepancy`, { resolutions: items })
-      toast.success('差异处理完成')
+      toast.success(isEn ? 'Discrepancies resolved' : '差异处理完成')
       await load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '差异处理失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to resolve discrepancies' : '差异处理失败'))
     } finally {
       setSubmittingDiscrepancy(false)
     }
@@ -324,16 +354,16 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
   if (loading) {
     return (
-      <div className="p-8 text-center text-gray-400">加载中…</div>
+      <div className="p-8 text-center text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
     )
   }
 
   if (!trip) {
     return (
       <div className="p-8 text-center">
-        <p className="text-gray-500">行程不存在</p>
+        <p className="text-gray-500">{isEn ? 'Trip not found' : '行程不存在'}</p>
         <Button variant="outline" className="mt-4" onClick={() => router.push(`${prefix}/classic/operator/trips`)}>
-          返回列表
+          {isEn ? 'Back to List' : '返回列表'}
         </Button>
       </div>
     )
@@ -347,9 +377,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['配送', '配送行程', trip.name ?? trip.id.slice(0, 8)]}
+        breadcrumb={isEn ? ['Delivery', 'Trips', trip.name ?? trip.id.slice(0, 8)] : ['配送', '配送行程', trip.name ?? trip.id.slice(0, 8)]}
         permanentActions={[
-          { label: '返回列表', onClick: () => router.push(`${prefix}/classic/operator/trips`) },
+          { label: isEn ? 'Back to List' : '返回列表', onClick: () => router.push(`${prefix}/classic/operator/trips`) },
         ]}
         searchValue=""
         onSearch={() => {}}
@@ -370,15 +400,17 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                     trip.timeSlot === 'AM' ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700'
                   }`}>
-                    {trip.timeSlot === 'AM' ? '☀️ 上午 AM' : '🌙 下午 PM'}
+                    {isEn
+                      ? (trip.timeSlot === 'AM' ? '☀️ AM' : '🌙 PM')
+                      : (trip.timeSlot === 'AM' ? '☀️ 上午 AM' : '🌙 下午 PM')}
                   </span>
                 )}
                 <span className={`inline-block px-2 py-0.5 rounded text-xs ${STATUS_COLOR[trip.status]}`}>
-                  {STATUS_LABEL[trip.status]}
+                  {statusLabel[trip.status]}
                 </span>
               </div>
               <h1 className="text-xl font-bold" style={{ color: '#875A7B' }}>
-                {trip.name ?? `行程 ${trip.id.slice(0, 8)}`}
+                {trip.name ?? (isEn ? `Trip ${trip.id.slice(0, 8)}` : `行程 ${trip.id.slice(0, 8)}`)}
               </h1>
             </div>
             <div className="flex gap-2">
@@ -388,7 +420,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   onClick={() => setShowVerify(true)}
                   disabled={saving}
                 >
-                  📦 核验货物
+                  📦 {isEn ? 'Verify Cargo' : '核验货物'}
                 </Button>
               )}
               {discrepancyData && discrepancyData.unresolvedCount > 0 && (
@@ -397,7 +429,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   onClick={() => setShowDiscrepancy(true)}
                   className="border-amber-400 text-amber-700 hover:bg-amber-50"
                 >
-                  ⚠️ 差异处理 ({discrepancyData.unresolvedCount})
+                  ⚠️ {isEn ? 'Discrepancies' : '差异处理'} ({discrepancyData.unresolvedCount})
                 </Button>
               )}
               {canEdit && (
@@ -406,7 +438,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   onClick={openEdit}
                   disabled={saving}
                 >
-                  ✏️ 编辑行程
+                  ✏️ {isEn ? 'Edit Trip' : '编辑行程'}
                 </Button>
               )}
               {canStart && (
@@ -416,7 +448,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   className="text-white hover:opacity-90"
                   style={{ background: '#875A7B' }}
                 >
-                  🚚 司机出发
+                  🚚 {isEn ? 'Driver Depart' : '司机出发'}
                 </Button>
               )}
               {canComplete && (
@@ -426,7 +458,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   className="text-white hover:opacity-90"
                   style={{ background: '#16a34a' }}
                 >
-                  ✅ 行程完成
+                  ✅ {isEn ? 'Complete Trip' : '行程完成'}
                 </Button>
               )}
             </div>
@@ -435,21 +467,21 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm pt-2 border-t border-gray-100">
             <div>
-              <span className="text-gray-400">司机</span>
-              <span className="ml-2 font-medium">{trip.driverName ?? '未指定'}</span>
+              <span className="text-gray-400">{isEn ? 'Driver' : '司机'}</span>
+              <span className="ml-2 font-medium">{trip.driverName ?? (isEn ? 'Not assigned' : '未指定')}</span>
             </div>
             <div>
-              <span className="text-gray-400">餐馆数</span>
-              <span className="ml-2 font-medium">{trip.restaurants.length} 家</span>
+              <span className="text-gray-400">{isEn ? 'Restaurants' : '餐馆数'}</span>
+              <span className="ml-2 font-medium">{trip.restaurants.length}{isEn ? '' : ' 家'}</span>
             </div>
             {trip.departTime && (
               <div>
-                <span className="text-gray-400">出发时间</span>
+                <span className="text-gray-400">{isEn ? 'Depart Time' : '出发时间'}</span>
                 <span className="ml-2 font-medium">{formatDateWithDay(trip.departTime)}</span>
               </div>
             )}
             <div>
-              <span className="text-gray-400">创建日期</span>
+              <span className="text-gray-400">{isEn ? 'Created' : '创建日期'}</span>
               <span className="ml-2 font-medium">{formatDateWithDay(trip.createdAt)}</span>
             </div>
           </div>
@@ -489,7 +521,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
         {/* ── 核验状态摘要 ─────────────────────────────────────────────────── */}
         {verifyData && verifyData.restaurants.length > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">货物核验状态</h2>
+            <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">{isEn ? 'Cargo Verification Status' : '货物核验状态'}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {verifyData.restaurants.map(vr => (
                 <div key={vr.restaurantId} className={`flex items-center justify-between p-2.5 rounded-lg text-sm ${
@@ -498,12 +530,12 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   <span className="font-medium text-gray-800">{vr.restaurantName}</span>
                   <div className="flex items-center gap-2">
                     {vr.discrepancies > 0 && (
-                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">{vr.discrepancies} 差异</span>
+                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">{vr.discrepancies} {isEn ? 'discrepancies' : '差异'}</span>
                     )}
                     <span className={`text-xs px-1.5 py-0.5 rounded ${
                       vr.cargoVerified ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                     }`}>
-                      {vr.cargoVerified ? '已核验' : '待核验'}
+                      {vr.cargoVerified ? (isEn ? 'Verified' : '已核验') : (isEn ? 'Pending' : '待核验')}
                     </span>
                   </div>
                 </div>
@@ -514,10 +546,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* ── 配送站点 ───────────────────────────────────────────────────────── */}
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">配送站点</h2>
+          <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">{isEn ? 'Delivery Stops' : '配送站点'}</h2>
           {trip.restaurants.length === 0 && (
             <div className="text-sm text-gray-400 py-4 text-center bg-white border border-gray-200 rounded-xl">
-              暂无关联餐馆
+              {isEn ? 'No restaurants linked' : '暂无关联餐馆'}
             </div>
           )}
           {trip.restaurants.map((r: TripRestaurant, i: number) => {
@@ -536,13 +568,13 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-900">{r.restaurantName}</span>
                       {r.delivered && (
-                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">已送达</span>
+                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">{isEn ? 'Delivered' : '已送达'}</span>
                       )}
                     </div>
                     {r.address ? (
                       <p className="text-sm text-gray-500 mt-0.5 truncate">{r.address}</p>
                     ) : (
-                      <p className="text-sm text-gray-300 mt-0.5 italic">暂无地址</p>
+                      <p className="text-sm text-gray-300 mt-0.5 italic">{isEn ? 'No address' : '暂无地址'}</p>
                     )}
                   </div>
                   <svg
@@ -570,7 +602,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     {/* 关联销售单 */}
                     {r.orderIds.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">关联销售单</p>
+                        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">{isEn ? 'Linked Orders' : '关联销售单'}</p>
                         <div className="space-y-1">
                           {r.orderIds.map(oid => (
                             <div key={oid} className="text-sm text-gray-600 font-mono bg-gray-50 px-2 py-1 rounded">
@@ -584,7 +616,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     {/* 商品清单 */}
                     {r.items && r.items.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">商品清单（{r.items.length} 项）</p>
+                        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">{isEn ? `Item List (${r.items.length} items)` : `商品清单（${r.items.length} 项）`}</p>
                         <div className="space-y-1">
                           {r.items.map((item, j) => (
                             <div key={j} className="flex justify-between text-sm py-0.5">
@@ -600,7 +632,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     {!r.delivered && trip.status === 'in_progress' && (
                       <div className="border-t border-gray-100 pt-3 space-y-3">
                         <div>
-                          <p className="text-xs font-medium text-gray-500 mb-1.5">实收货款（€）</p>
+                          <p className="text-xs font-medium text-gray-500 mb-1.5">{isEn ? 'Amount Received (€)' : '实收货款（€）'}</p>
                           <input
                             type="number"
                             inputMode="decimal"
@@ -620,7 +652,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                             className="flex-1 py-2 rounded-lg text-sm font-medium text-white transition-opacity disabled:opacity-50"
                             style={{ background: '#16a34a' }}
                           >
-                            完成此站
+                            {isEn ? 'Complete Stop' : '完成此站'}
                           </button>
                           <button
                             onClick={() => openExceptionModal(r.restaurantId)}
@@ -628,7 +660,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                             className="flex-1 py-2 rounded-lg text-sm font-medium text-white transition-opacity disabled:opacity-50"
                             style={{ background: '#dc2626' }}
                           >
-                            报告异常
+                            {isEn ? 'Report Exception' : '报告异常'}
                           </button>
                         </div>
                       </div>
@@ -638,7 +670,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     {r.delivered && (
                       <div className="border-t border-gray-100 pt-3 flex items-center gap-2 text-sm text-green-700">
                         <span className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-xs">✓</span>
-                        已送达{r.payment !== undefined ? `，实收 €${r.payment.toFixed(2)}` : ''}
+                        {isEn
+                          ? `Delivered${r.payment !== undefined ? `, received €${r.payment.toFixed(2)}` : ''}`
+                          : `已送达${r.payment !== undefined ? `，实收 €${r.payment.toFixed(2)}` : ''}`}
                       </div>
                     )}
 
@@ -647,7 +681,12 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                       const apiReturns = returnsData?.returns.filter(rt => rt.restaurantId === r.restaurantId) ?? []
                       const items = apiReturns.length > 0 ? apiReturns : (r.returns ?? [])
                       if (items.length === 0) return null
-                      const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
+                      const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = isEn ? {
+                        PENDING_REVIEW: { label: 'Pending Review', bg: '#fef3c7', color: '#b45309' },
+                        APPROVED: { label: 'Approved', bg: '#dcfce7', color: '#15803d' },
+                        REJECTED: { label: 'Rejected', bg: '#fee2e2', color: '#dc2626' },
+                        SETTLED: { label: 'Settled', bg: '#e5e7eb', color: '#374151' },
+                      } : {
                         PENDING_REVIEW: { label: '待审核', bg: '#fef3c7', color: '#b45309' },
                         APPROVED: { label: '已批准', bg: '#dcfce7', color: '#15803d' },
                         REJECTED: { label: '已拒绝', bg: '#fee2e2', color: '#dc2626' },
@@ -655,7 +694,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                       }
                       return (
                         <div>
-                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">异常记录</p>
+                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">{isEn ? 'Exception Records' : '异常记录'}</p>
                           <div className="space-y-1.5">
                             {items.map((ret, j) => {
                               const badge = ret.status ? STATUS_BADGE[ret.status] : null
@@ -667,7 +706,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                                       <span className="text-gray-500">× {ret.quantity}</span>
                                       {ret.actionType && (
                                         <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                                          {ret.actionType === 'return' ? '退货' : '换货'}
+                                          {ret.actionType === 'return' ? (isEn ? 'Return' : '退货') : (isEn ? 'Exchange' : '换货')}
                                         </span>
                                       )}
                                       {badge && (
@@ -681,20 +720,20 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                                         <button
                                           onClick={() => reviewReturn(ret.restaurantId ?? r.restaurantId, ret.productId, 'approve', 'SELLABLE')}
                                           disabled={submittingReview}
-                                          title="批准并回补可售库存"
+                                          title={isEn ? 'Approve and restock sellable inventory' : '批准并回补可售库存'}
                                           className="px-2 py-1 text-xs rounded font-medium text-white disabled:opacity-50"
                                           style={{ background: '#15803d' }}
                                         >
-                                          批准·可再售
+                                          {isEn ? 'Approve · Resellable' : '批准·可再售'}
                                         </button>
                                         <button
                                           onClick={() => reviewReturn(ret.restaurantId ?? r.restaurantId, ret.productId, 'approve', 'SCRAP')}
                                           disabled={submittingReview}
-                                          title="批准并计入报废损耗，不回补库存"
+                                          title={isEn ? 'Approve and record as scrap loss, no inventory restock' : '批准并计入报废损耗，不回补库存'}
                                           className="px-2 py-1 text-xs rounded font-medium text-white disabled:opacity-50"
                                           style={{ background: '#a3690e' }}
                                         >
-                                          批准·报废
+                                          {isEn ? 'Approve · Scrap' : '批准·报废'}
                                         </button>
                                         <button
                                           onClick={() => reviewReturn(ret.restaurantId ?? r.restaurantId, ret.productId, 'reject')}
@@ -702,12 +741,12 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                                           className="px-2 py-1 text-xs rounded font-medium text-white disabled:opacity-50"
                                           style={{ background: '#dc2626' }}
                                         >
-                                          拒绝
+                                          {isEn ? 'Reject' : '拒绝'}
                                         </button>
                                       </div>
                                     )}
                                   </div>
-                                  {ret.reason && <p className="text-xs text-red-600 mt-1">{ret.reason}</p>}
+                                  {ret.reason && <p className="text-xs text-red-600 mt-1">{translateReasonText(ret.reason, isEn)}</p>}
                                 </div>
                               )
                             })}
@@ -728,16 +767,16 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       <Dialog open={showEdit} onOpenChange={open => { if (!open) setShowEdit(false) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle style={{ color: '#875A7B' }}>编辑行程</DialogTitle>
+            <DialogTitle style={{ color: '#875A7B' }}>{isEn ? 'Edit Trip' : '编辑行程'}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-5 py-2">
             {/* 配送批次 */}
             <div>
-              <p className="text-sm font-medium text-gray-600 mb-2">配送批次</p>
+              <p className="text-sm font-medium text-gray-600 mb-2">{isEn ? 'Delivery Batch' : '配送批次'}</p>
               <input
                 type="text"
-                placeholder="搜索批次…"
+                placeholder={isEn ? 'Search batch…' : '搜索批次…'}
                 value={editBatchSearch}
                 onChange={e => setEditBatchSearch(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg mb-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
@@ -768,7 +807,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             {/* 配送地址（可编辑 + 拖拽排序） */}
             {editRestaurants.length > 0 && (
               <div>
-                <p className="text-sm font-medium text-gray-600 mb-2">配送地址顺序</p>
+                <p className="text-sm font-medium text-gray-600 mb-2">{isEn ? 'Delivery Address Order' : '配送地址顺序'}</p>
                 <div className="space-y-2">
                   {editRestaurants.map((r, i) => (
                     <div
@@ -803,7 +842,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                           }}
                           onClick={e => e.stopPropagation()}
                           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-purple-300"
-                          placeholder="输入地址…"
+                          placeholder={isEn ? 'Enter address…' : '输入地址…'}
                         />
                       </div>
                     </div>
@@ -814,14 +853,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowEdit(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setShowEdit(false)}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               onClick={handleSaveEdit}
               disabled={saving || !editBatch}
               style={{ background: '#875A7B' }}
               className="text-white hover:opacity-90"
             >
-              {saving ? '保存中…' : '保存'}
+              {saving ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -831,7 +870,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       <Dialog open={showVerify} onOpenChange={open => { if (!open) setShowVerify(false) }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle style={{ color: PURPLE }}>货物核验</DialogTitle>
+            <DialogTitle style={{ color: PURPLE }}>{isEn ? 'Cargo Verification' : '货物核验'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-5 py-2">
             {trip.restaurants.map(r => {
@@ -841,7 +880,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                 <div key={r.restaurantId} className={`border rounded-lg p-3 space-y-2 ${verified ? 'border-green-200 bg-green-50/50' : 'border-gray-200'}`}>
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-sm">{r.restaurantName}</span>
-                    {verified && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">已核验</span>}
+                    {verified && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">{isEn ? 'Verified' : '已核验'}</span>}
                   </div>
                   {!verified && r.items && r.items.length > 0 && (
                     <>
@@ -849,7 +888,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                         {r.items.map(item => (
                           <div key={item.productId} className="flex items-center gap-2 text-sm">
                             <span className="flex-1 text-gray-700">{item.productName}</span>
-                            <span className="text-gray-400 text-xs w-16 text-right">订 {item.quantity}</span>
+                            <span className="text-gray-400 text-xs w-16 text-right">{isEn ? `Ord ${item.quantity}` : `订 ${item.quantity}`}</span>
                             <input
                               type="number"
                               min="0"
@@ -880,7 +919,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                             setVerifyInputs(prev => ({ ...prev, [r.restaurantId]: prefill }))
                           }}
                         >
-                          全部一致
+                          {isEn ? 'All Match' : '全部一致'}
                         </Button>
                         <Button
                           size="sm"
@@ -889,18 +928,18 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                           className="text-white hover:opacity-90"
                           style={{ background: PURPLE }}
                         >
-                          {submittingVerify ? '提交中…' : '确认核验'}
+                          {submittingVerify ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Confirm Verification' : '确认核验')}
                         </Button>
                       </div>
                     </>
                   )}
-                  {verified && <p className="text-xs text-green-600">所有商品已核验完成</p>}
+                  {verified && <p className="text-xs text-green-600">{isEn ? 'All items verified' : '所有商品已核验完成'}</p>}
                 </div>
               )
             })}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowVerify(false)}>关闭</Button>
+            <Button variant="outline" onClick={() => setShowVerify(false)}>{isEn ? 'Close' : '关闭'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -909,11 +948,11 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       <Dialog open={showDiscrepancy} onOpenChange={open => { if (!open) setShowDiscrepancy(false) }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-amber-700">差异处理</DialogTitle>
+            <DialogTitle className="text-amber-700">{isEn ? 'Discrepancy Resolution' : '差异处理'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             {(!discrepancyData || discrepancyData.discrepancies.length === 0) && (
-              <p className="text-sm text-gray-400 text-center py-4">暂无差异记录</p>
+              <p className="text-sm text-gray-400 text-center py-4">{isEn ? 'No discrepancy records' : '暂无差异记录'}</p>
             )}
             {discrepancyData?.discrepancies.filter(d => !d.resolved).map((d, i) => (
               <div key={`${d.restaurantId}-${d.productId}-${i}`} className="border border-amber-200 rounded-lg p-3 bg-amber-50/50 space-y-2">
@@ -923,8 +962,8 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-700">{d.productName}</span>
                   <div className="flex items-center gap-3 text-xs">
-                    <span className="text-gray-500">订 {d.orderedQty}</span>
-                    <span className="text-amber-700 font-semibold">实 {d.verifiedQty}</span>
+                    <span className="text-gray-500">{isEn ? `Ord ${d.orderedQty}` : `订 ${d.orderedQty}`}</span>
+                    <span className="text-amber-700 font-semibold">{isEn ? `Actual ${d.verifiedQty}` : `实 ${d.verifiedQty}`}</span>
                     <span className={`font-bold ${d.diff < 0 ? 'text-red-600' : 'text-blue-600'}`}>
                       {d.diff > 0 ? '+' : ''}{d.diff}
                     </span>
@@ -942,7 +981,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                       action: 'accept',
                     }])}
                   >
-                    接受（按实发）
+                    {isEn ? 'Accept (as delivered)' : '接受（按实发）'}
                   </Button>
                   <Button
                     size="sm"
@@ -955,25 +994,25 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                       action: 'reject',
                     }])}
                   >
-                    驳回（按订单）
+                    {isEn ? 'Reject (as ordered)' : '驳回（按订单）'}
                   </Button>
                 </div>
               </div>
             ))}
             {discrepancyData && discrepancyData.discrepancies.filter(d => d.resolved).length > 0 && (
               <div className="pt-2 border-t border-gray-200">
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">已处理</p>
+                <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">{isEn ? 'Resolved' : '已处理'}</p>
                 {discrepancyData.discrepancies.filter(d => d.resolved).map((d, i) => (
                   <div key={`resolved-${i}`} className="flex items-center justify-between text-sm py-1 text-gray-400">
                     <span>{d.restaurantName} — {d.productName}</span>
-                    <span className="text-xs">{d.resolution === 'accept' ? '已接受' : '已驳回'}</span>
+                    <span className="text-xs">{d.resolution === 'accept' ? (isEn ? 'Accepted' : '已接受') : (isEn ? 'Rejected' : '已驳回')}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDiscrepancy(false)}>关闭</Button>
+            <Button variant="outline" onClick={() => setShowDiscrepancy(false)}>{isEn ? 'Close' : '关闭'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -982,13 +1021,13 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       <Dialog open={!!exceptionModal} onOpenChange={open => { if (!open) setExceptionModal(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle style={{ color: '#dc2626' }}>报告异常</DialogTitle>
+            <DialogTitle style={{ color: '#dc2626' }}>{isEn ? 'Report Exception' : '报告异常'}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             {/* 商品列表 */}
             <div>
-              <p className="text-sm font-medium text-gray-600 mb-2">选择有异常的商品</p>
+              <p className="text-sm font-medium text-gray-600 mb-2">{isEn ? 'Select the item(s) with an issue' : '选择有异常的商品'}</p>
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {exceptionProducts.map((p, i) => (
                   <label key={p.productId} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
@@ -1003,14 +1042,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   </label>
                 ))}
                 {exceptionProducts.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-3">该站点无商品记录</p>
+                  <p className="text-sm text-gray-400 text-center py-3">{isEn ? 'No items recorded for this stop' : '该站点无商品记录'}</p>
                 )}
               </div>
             </div>
 
             {/* 异常原因（多选标签） */}
             <div>
-              <p className="text-sm font-medium text-gray-600 mb-2">异常原因（可多选）</p>
+              <p className="text-sm font-medium text-gray-600 mb-2">{isEn ? 'Reason (multiple allowed)' : '异常原因（可多选）'}</p>
               <div className="flex flex-wrap gap-2">
                 {EXCEPTION_REASONS.map(reason => {
                   const active = exceptionReasons.includes(reason)
@@ -1026,7 +1065,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                         : { background: 'white', borderColor: '#e5e7eb', color: '#6b7280' }
                       }
                     >
-                      {reason}
+                      {isEn ? (EXCEPTION_REASON_LABEL_EN[reason] ?? reason) : reason}
                     </button>
                   )
                 })}
@@ -1035,7 +1074,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
             {/* 处理方式 */}
             <div>
-              <p className="text-sm font-medium text-gray-600 mb-2">处理方式</p>
+              <p className="text-sm font-medium text-gray-600 mb-2">{isEn ? 'Resolution' : '处理方式'}</p>
               <div className="flex gap-2">
                 {(['return', 'exchange'] as const).map(type => (
                   <button
@@ -1047,7 +1086,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                       : { background: 'white', borderColor: '#e5e7eb', color: '#6b7280' }
                     }
                   >
-                    {type === 'return' ? '退货' : '换货'}
+                    {type === 'return' ? (isEn ? 'Return' : '退货') : (isEn ? 'Exchange' : '换货')}
                   </button>
                 ))}
               </div>
@@ -1055,14 +1094,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setExceptionModal(null)}>取消</Button>
+            <Button variant="outline" onClick={() => setExceptionModal(null)}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               onClick={submitException}
               disabled={saving}
               className="text-white hover:opacity-90"
               style={{ background: '#dc2626' }}
             >
-              {saving ? '提交中…' : '确认提交'}
+              {saving ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Confirm Submit' : '确认提交')}
             </Button>
           </DialogFooter>
         </DialogContent>

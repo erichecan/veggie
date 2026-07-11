@@ -209,7 +209,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
           <button
             onClick={() => setAppSwitcherOpen(v => !v)}
             className="flex items-center justify-center w-9 h-9 rounded hover:bg-white/10 transition-colors"
-            title="切换应用"
+            title={isEn ? 'Switch app' : '切换应用'}
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <rect x="2" y="2" width="6" height="6" rx="1" fill="white" opacity="0.9"/>
