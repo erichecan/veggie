@@ -16,6 +16,7 @@ const PAGE_SIZE = 80
 export default function ClassicPricelistsPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [lists, setLists] = useState<OdooPricelist[]>([])
   const [loading, setLoading] = useState(false)
@@ -34,7 +35,7 @@ export default function ClassicPricelistsPage() {
       const data = await apiGet<OdooPricelist[]>('/api/pricelists')
       setLists([...data].sort((a, b) => a.sequence - b.sequence))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载价格表失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load pricelists' : '加载价格表失败'))
     } finally {
       setLoading(false)
     }
@@ -56,7 +57,7 @@ export default function ClassicPricelistsPage() {
       const created = await apiPost<OdooPricelist>('/api/pricelists', payload)
       router.push(`${prefix}/classic/operator/pricelists/${created.id}`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
     }
   }
 
@@ -105,9 +106,9 @@ export default function ClassicPricelistsPage() {
         const pl = row as unknown as OdooPricelist
         return (
           <span className="font-medium" style={{ color: '#875A7B' }}>
-            {pl.name || <span className="text-gray-400 italic">（未命名）</span>}
+            {pl.name || <span className="text-gray-400 italic">{isEn ? '(Unnamed)' : '（未命名）'}</span>}
             {!pl.active && (
-              <span className="ml-2 text-xs text-gray-400 border border-gray-300 rounded px-1 font-normal">已停用</span>
+              <span className="ml-2 text-xs text-gray-400 border border-gray-300 rounded px-1 font-normal">{isEn ? 'Archived' : '已停用'}</span>
             )}
           </span>
         )
@@ -141,10 +142,10 @@ export default function ClassicPricelistsPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['销售', '价格表']}
+        breadcrumb={isEn ? ['Sales', 'Pricelists'] : ['销售', '价格表']}
         permanentActions={[
-          { label: '新建', onClick: handleCreate },
-          { label: 'Import', onClick: () => toast.info('导入功能即将推出') },
+          { label: isEn ? 'New' : '新建', onClick: handleCreate },
+          { label: 'Import', onClick: () => toast.info(isEn ? 'Import coming soon' : '导入功能即将推出') },
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },
@@ -155,11 +156,11 @@ export default function ClassicPricelistsPage() {
                 { label: 'Mode', onClick: () => setIsReadMode(true) },
               ]),
           ...(selected.size > 0
-            ? [{ label: `🖨 打印 (${selected.size})`, onClick: () => {
+            ? [{ label: isEn ? `🖨 Print (${selected.size})` : `🖨 打印 (${selected.size})`, onClick: () => {
                 const ids = [...selected].join(',')
                 window.open(`${prefix}/classic/print/pricelist?ids=${ids}`, '_blank')
               }}]
-            : [{ label: '🖨 打印全部', onClick: () => window.open(`${prefix}/classic/print/pricelist`, '_blank') }]
+            : [{ label: isEn ? '🖨 Print All' : '🖨 打印全部', onClick: () => window.open(`${prefix}/classic/print/pricelist`, '_blank') }]
           ),
         ]}
         searchValue={searchInput}
@@ -179,7 +180,7 @@ export default function ClassicPricelistsPage() {
           setPage(1)
         }}
         groupByOptions={[
-          { label: '货币', value: 'currency' },
+          { label: isEn ? 'Currency' : '货币', value: 'currency' },
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
@@ -216,10 +217,10 @@ export default function ClassicPricelistsPage() {
             })
           }}
           onRowClick={row => router.push(`${prefix}/classic/operator/pricelists/${String(row.id)}`)}
-          emptyText="暂无价格表数据"
+          emptyText={isEn ? 'No pricelist data' : '暂无价格表数据'}
           groupByField={groupBy === 'currency' ? 'currency' : ''}
           groupByFormatter={(key, count) => (
-            <>{key || '（空）'} <span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({count})</span></>
+            <>{key || (isEn ? '(Empty)' : '（空）')} <span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({count})</span></>
           )}
           columnFilters={columnFilters}
           onColumnFilterChange={(key, val) => {

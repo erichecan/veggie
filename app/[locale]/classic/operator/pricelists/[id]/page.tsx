@@ -41,6 +41,7 @@ function applyScopeTitle(
   templates: ProductTemplate[],
   products: Product[],
   categories: ProductCategory[],
+  isEn: boolean,
 ): string {
   if (item.applyOn === 'global') return 'All Products'
   if (item.applyOn === 'product') {
@@ -53,18 +54,18 @@ function applyScopeTitle(
   }
   if (item.applyOn === 'category') {
     const c = categories.find(c => c.id === item.categoryId)
-    return c ? (c.nameZh ?? c.name) : 'Product Category'
+    return c ? (isEn ? (c.name || c.nameZh || '') : (c.nameZh || c.name)) : 'Product Category'
   }
   return 'All Products'
 }
 
-function applyOnLabel(item: OdooPricelistItem, templates: ProductTemplate[], products: Product[], categories: ProductCategory[]): string {
+function applyOnLabel(item: OdooPricelistItem, templates: ProductTemplate[], products: Product[], categories: ProductCategory[], isEn: boolean): string {
   if (item.applyOn === 'global') return 'All Products'
   if (item.applyOn === 'product') return templates.find(t => t.id === item.productTemplateId)?.name ?? '-'
   if (item.applyOn === 'variant') return products.find(p => p.id === item.productVariantId)?.name ?? '-'
   if (item.applyOn === 'category') {
     const c = categories.find(c => c.id === item.categoryId)
-    return c ? (c.nameZh ?? c.name) : '-'
+    return c ? (isEn ? (c.name || c.nameZh || '') : (c.nameZh || c.name)) : '-'
   }
   return '-'
 }
@@ -77,6 +78,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const searchParams = useSearchParams()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
 
   const [pl, setPl] = useState<OdooPricelist | null>(null)
   const [originalPl, setOriginalPl] = useState<OdooPricelist | null>(null)
@@ -132,7 +134,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           apiGet<OdooPricelist[]>('/api/pricelists'),
         ])
         if (!found) {
-          toast.error('价格表不存在')
+          toast.error(isEn ? 'Pricelist not found' : '价格表不存在')
           router.push(`${prefix}/classic/operator/pricelists`)
           return
         }
@@ -150,7 +152,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         setCategories(allCategories)
         setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
       } catch {
-        toast.error('价格表不存在')
+        toast.error(isEn ? 'Pricelist not found' : '价格表不存在')
         router.push(`${prefix}/classic/operator/pricelists`)
       }
     }
@@ -171,9 +173,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       setPl({ ...updated })
       setOriginalPl({ ...updated })
       setEditMode(false)
-      toast.success('已保存')
+      toast.success(isEn ? 'Saved' : '已保存')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '保存失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
     }
   }
 
@@ -206,15 +208,15 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   async function saveItem(item: OdooPricelistItem): Promise<boolean> {
     if (!pl) return false
     if (item.applyOn === 'product' && !item.productTemplateId) {
-      toast.error('请先选择一个产品')
+      toast.error(isEn ? 'Please select a product first' : '请先选择一个产品')
       return false
     }
     if (item.applyOn === 'variant' && !item.productVariantId) {
-      toast.error('请先选择一个产品变体')
+      toast.error(isEn ? 'Please select a product variant first' : '请先选择一个产品变体')
       return false
     }
     if (item.applyOn === 'category' && !item.categoryId) {
-      toast.error('请先选择一个产品分类')
+      toast.error(isEn ? 'Please select a product category first' : '请先选择一个产品分类')
       return false
     }
     const updatedItems = isNewItem
@@ -225,10 +227,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       await apiPut(`/api/pricelists/${pl.id}`, updated)
       setPl(updated)
       setOriginalPl(updated)
-      toast.success(isNewItem ? '条目已添加' : '条目已更新')
+      toast.success(isNewItem ? (isEn ? 'Item added' : '条目已添加') : (isEn ? 'Item updated' : '条目已更新'))
       return true
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '保存失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
       return false
     }
   }
@@ -243,15 +245,15 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
   async function handleDeleteItem(itemId: string) {
     if (!pl) return
-    if (!confirm('确认删除此条目？')) return
+    if (!confirm(isEn ? 'Delete this item?' : '确认删除此条目？')) return
     const updated = { ...pl, items: pl.items.filter(i => i.id !== itemId), updatedAt: new Date().toISOString() }
     try {
       await apiPut(`/api/pricelists/${pl.id}`, updated)
       setPl(updated)
       setOriginalPl(updated)
-      toast.success('已删除')
+      toast.success(isEn ? 'Deleted' : '已删除')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Delete failed' : '删除失败'))
     }
   }
 
@@ -271,7 +273,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   }
 
   if (!pl) {
-    return <div className="py-12 text-center text-gray-400 text-sm">加载中...</div>
+    return <div className="py-12 text-center text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
   }
 
   const sortedLists = allLists
@@ -338,8 +340,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               </button>
               {printOpen && (
                 <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded border border-gray-200 shadow-lg py-1 z-30 text-sm">
-                  <button onClick={() => { toast.info('打印功能即将推出'); setPrintOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
-                    打印价格表
+                  <button onClick={() => { toast.info(isEn ? 'Print feature coming soon' : '打印功能即将推出'); setPrintOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                    {isEn ? 'Print Pricelist' : '打印价格表'}
                   </button>
                 </div>
               )}
@@ -354,10 +356,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               </button>
               {actionOpen && (
                 <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded border border-gray-200 shadow-lg py-1 z-30 text-sm">
-                  <button onClick={() => { toast.info('导出功能即将推出'); setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                  <button onClick={() => { toast.info(isEn ? 'Export feature coming soon' : '导出功能即将推出'); setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     Export
                   </button>
-                  <button onClick={() => { if (confirm(`确认归档价格表「${pl.name}」？`)) { update('active', false); handleSave() } setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                  <button onClick={() => { if (confirm(isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)) { update('active', false); handleSave() } setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     Archive
                   </button>
                 </div>
@@ -416,7 +418,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                   style={{ background: '#e8e5f3', border: '1px solid transparent' }}
                 />
               ) : (
-                <h2 className="text-lg font-semibold text-gray-800">{pl.name || <span className="text-gray-400 italic">（未命名）</span>}</h2>
+                <h2 className="text-lg font-semibold text-gray-800">{pl.name || <span className="text-gray-400 italic">{isEn ? '(Unnamed)' : '（未命名）'}</span>}</h2>
               )}
             </div>
             {editMode ? (
@@ -627,7 +629,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 9 : 8} className="px-4 py-3 text-gray-400 italic text-xs">暂无条目</td>
+                      <td colSpan={editMode ? 9 : 8} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
                     </tr>
                   )}
                   {pagedItems.map(item => {
@@ -649,6 +651,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
+                        isEn={isEn}
                       />
                     )
                   })}
@@ -689,7 +692,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           categories={categories}
           allLists={allLists.filter(l => l.id !== pl.id)}
           isNew={isNewItem}
-          scopeTitle={applyScopeTitle(editingItem, templates, products, categories)}
+          scopeTitle={applyScopeTitle(editingItem, templates, products, categories, isEn)}
+          isEn={isEn}
         />
       )}
 
@@ -768,7 +772,7 @@ function ExternalLinkIcon() {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, templates, products, categories, templateCost, variantCost, showDelete, onEdit, onDelete }: {
+function ItemRow({ item, templates, products, categories, templateCost, variantCost, showDelete, onEdit, onDelete, isEn }: {
   item: OdooPricelistItem
   templates: ProductTemplate[]
   products: Product[]
@@ -778,6 +782,7 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
   showDelete: boolean
   onEdit: () => void
   onDelete: () => void
+  isEn: boolean
 }) {
   const [hover, setHover] = useState(false)
 
@@ -796,7 +801,7 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
       onMouseLeave={() => setHover(false)}
       onClick={onEdit}
     >
-      <td className="px-4 py-1.5 text-gray-800">{applyOnLabel(item, templates, products, categories)}</td>
+      <td className="px-4 py-1.5 text-gray-800">{applyOnLabel(item, templates, products, categories, isEn)}</td>
       <td className="px-3 py-1.5 text-right text-gray-600">{item.minQty}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateStart ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateEnd ?? ''}</td>
@@ -821,7 +826,7 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
 
 function ItemDialog({
   item, onChange, onSaveClose, onSaveNew, onDiscard, onRemove,
-  templates, products, categories, allLists, isNew, scopeTitle,
+  templates, products, categories, allLists, isNew, scopeTitle, isEn,
 }: {
   item: OdooPricelistItem
   onChange: (item: OdooPricelistItem) => void
@@ -835,6 +840,7 @@ function ItemDialog({
   allLists: OdooPricelist[]
   isNew: boolean
   scopeTitle: string
+  isEn: boolean
 }) {
   function set<K extends keyof OdooPricelistItem>(key: K, val: OdooPricelistItem[K]) {
     onChange({ ...item, [key]: val })
@@ -916,7 +922,7 @@ function ItemDialog({
                 >
                   <option value="">Select a category…</option>
                   {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.nameZh ?? c.name}</option>
+                    <option key={c.id} value={c.id}>{isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)}</option>
                   ))}
                 </select>
               )}
@@ -1007,7 +1013,9 @@ function ItemDialog({
                   />
                   <span className="text-sm text-gray-500">%</span>
                   <span className="text-xs text-gray-400 ml-2">
-                    (牌价 × {(1 - (item.percentDiscount ?? 0) / 100).toFixed(4)})
+                    {isEn
+                      ? `(List Price × ${(1 - (item.percentDiscount ?? 0) / 100).toFixed(4)})`
+                      : `(牌价 × ${(1 - (item.percentDiscount ?? 0) / 100).toFixed(4)})`}
                   </span>
                 </div>
                 <p className="text-xs text-gray-400 mt-2">

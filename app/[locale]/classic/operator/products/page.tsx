@@ -45,6 +45,8 @@ export default function ClassicProductsPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const emptyLabel = isEn ? '(empty)' : '（空）'
   const [templates, setTemplates] = useState<ProductTemplate[]>([])
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [multiSelectOptions, setMultiSelectOptions] = useState<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>({ uomName: [], createdBy: [], updatedBy: [] })
@@ -104,7 +106,7 @@ export default function ClassicProductsPage() {
           ...t,
           status: (t.status as string).toLowerCase() as ProductTemplate['status'],
           type: (t.type as string).toLowerCase() as ProductTemplate['type'],
-          uomName: uom?.nameZh ?? uom?.name,
+          uomName: (isEn ? (uom?.name ?? uom?.nameZh) : (uom?.nameZh ?? uom?.name)) ?? undefined,
         }
       }))
       setTotal(res.total)
@@ -112,7 +114,7 @@ export default function ClassicProductsPage() {
       setTotalPages(res.totalPages)
       setAlertCounts(res.alertCounts ?? { negative: 0, low: 0 })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载商品失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load products' : '加载商品失败'))
     } finally {
       setLoading(false)
     }
@@ -151,7 +153,7 @@ export default function ClassicProductsPage() {
     if (['listPrice', 'standardPrice', 'commissionPrice', 'weight', 'sequence'].includes(key)) {
       const n = Number(newValue)
       if (!Number.isFinite(n) || n < 0) {
-        toast.error('请输入合法的非负数字')
+        toast.error(isEn ? 'Please enter a valid non-negative number' : '请输入合法的非负数字')
         throw new Error('invalid number')
       }
       payloadVal = n
@@ -159,7 +161,7 @@ export default function ClassicProductsPage() {
     if (['customerTaxRate', 'vendorTaxRate'].includes(key)) {
       const n = Number(newValue)
       if (!Number.isFinite(n) || n < 0 || n > 1) {
-        toast.error('税率须在 0–1 之间')
+        toast.error(isEn ? 'Tax rate must be between 0 and 1' : '税率须在 0–1 之间')
         throw new Error('invalid tax rate')
       }
       payloadVal = n
@@ -167,9 +169,9 @@ export default function ClassicProductsPage() {
     try {
       await apiPut(`/api/product-templates/${t.id}`, { [key]: payloadVal })
       setTemplates(prev => prev.map(row => row.id === t.id ? { ...row, [key]: payloadVal } as ProductTemplate : row))
-      toast.success('已保存')
+      toast.success(isEn ? 'Saved' : '已保存')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
       throw e
     }
   }
@@ -258,7 +260,7 @@ export default function ClassicProductsPage() {
       editType: 'select',
       editOptions: TAX_OPTIONS,
       filterOptions: TAX_OPTIONS,
-      filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : '（空）'),
+      filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : emptyLabel),
       render: (v) => (
         <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
           {TAX_LABEL[String(v)] ?? `${(Number(v) * 100).toFixed(0)}%`}
@@ -281,8 +283,8 @@ export default function ClassicProductsPage() {
       editable: true,
       editType: 'select',
       editOptions: [{ value: '', label: '—' }, ...TAX_OPTIONS],
-      filterOptions: [{ value: '', label: '（空）' }, ...TAX_OPTIONS],
-      filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : '（空）'),
+      filterOptions: [{ value: '', label: emptyLabel }, ...TAX_OPTIONS],
+      filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : emptyLabel),
       render: (v) => v != null ? (
         <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
           {TAX_LABEL[String(v)] ?? `${(Number(v) * 100).toFixed(0)}%`}
@@ -337,11 +339,11 @@ export default function ClassicProductsPage() {
       editType: 'select',
       editOptions: [
         { value: '', label: '—' },
-        ...categories.map(c => ({ value: c.id, label: c.nameZh ?? c.name })),
+        ...categories.map(c => ({ value: c.id, label: (isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)) ?? c.name })),
       ],
       render: (v) => {
         const cat = categories.find(c => c.id === String(v ?? ''))
-        const label = cat?.nameZh ?? cat?.name ?? (v ? String(v) : '—')
+        const label = (isEn ? (cat?.name || cat?.nameZh) : (cat?.nameZh || cat?.name)) ?? (v ? String(v) : '—')
         return <span className="text-xs text-gray-600">{label}</span>
       },
     },
@@ -350,7 +352,7 @@ export default function ClassicProductsPage() {
       label: 'Unit of Measure',
       filterType: 'multi-select',
       filterOptions: multiSelectOptions.uomName.map(v => ({ value: v, label: v })),
-      filterLabelGetter: (val) => val || '（空）',
+      filterLabelGetter: (val) => val || emptyLabel,
       render: (v) => v ? <span className="text-xs text-gray-600">{String(v)}</span> : <span className="text-gray-300">—</span>,
     },
     {
@@ -361,7 +363,7 @@ export default function ClassicProductsPage() {
       editType: 'select',
       editOptions: TYPE_OPTIONS,
       filterOptions: TYPE_OPTIONS,
-      filterLabelGetter: (val) => TYPE_LABEL[val] ?? val ?? '（空）',
+      filterLabelGetter: (val) => TYPE_LABEL[val] ?? val ?? emptyLabel,
       render: (v) => <span className="text-xs">{TYPE_LABEL[String(v)] ?? String(v)}</span>,
     },
     {
@@ -410,11 +412,11 @@ export default function ClassicProductsPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['库存', '商品']}
+        breadcrumb={isEn ? ['Inventory', 'Products'] : ['库存', '商品']}
         onNew={() => router.push(`${prefix}/classic/operator/products/new`)}
         permanentActions={[
-          { label: '导入', onClick: () => setImportOpen(true) },
-          { label: '导出', onClick: () => toast.info('导出功能即将推出') },
+          { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
+          { label: isEn ? 'Export' : '导出', onClick: () => toast.info(isEn ? 'Export coming soon' : '导出功能即将推出') },
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },
@@ -432,10 +434,10 @@ export default function ClassicProductsPage() {
           ...(canBeSoldFilter ? [{ label: 'Can be Sold', onRemove: () => setCanBeSoldFilter(false) }] : []),
           ...(productTypeFilter ? [{ label: TYPE_LABEL[productTypeFilter] ?? productTypeFilter, onRemove: () => setProductTypeFilter('') }] : []),
           ...(stockAlertFilter !== 'all' ? [{
-            label: stockAlertFilter === 'negative' ? '⚠ 负库存' : '↓ 低库存',
+            label: stockAlertFilter === 'negative' ? (isEn ? '⚠ Negative Stock' : '⚠ 负库存') : (isEn ? '↓ Low Stock' : '↓ 低库存'),
             onRemove: () => setStockAlertFilter('all'),
           }] : []),
-          ...(activeMultiCount > 0 ? [{ label: `列筛选 (${activeMultiCount})`, onRemove: () => setColumnMultiFilters({}) }] : []),
+          ...(activeMultiCount > 0 ? [{ label: isEn ? `Column filters (${activeMultiCount})` : `列筛选 (${activeMultiCount})`, onRemove: () => setColumnMultiFilters({}) }] : []),
         ]}
         filterOptions={[
           { label: 'Can be Sold', value: 'canBeSold' },
@@ -448,8 +450,8 @@ export default function ClassicProductsPage() {
           else setProductTypeFilter(prev => prev === v ? '' : v)
         }}
         groupByOptions={[
-          { label: '商品类型', value: 'type' },
-          { label: '商品分类', value: 'category' },
+          { label: isEn ? 'Product Type' : '商品类型', value: 'type' },
+          { label: isEn ? 'Product Category' : '商品分类', value: 'category' },
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
@@ -475,19 +477,19 @@ export default function ClassicProductsPage() {
           style={{ background: '#fff7ed', borderColor: '#fed7aa' }}>
           <span className="text-lg leading-none mt-0.5">⚠️</span>
           <div className="flex-1 text-sm">
-            <span className="font-semibold text-orange-800">库存预警</span>
+            <span className="font-semibold text-orange-800">{isEn ? 'Stock Alert' : '库存预警'}</span>
             <span className="text-orange-700 ml-2">
               {alertCounts.negative > 0 && (
                 <>
                   <span className="font-semibold text-red-600">{alertCounts.negative}</span>
-                  <span> 种商品库存为负</span>
+                  <span>{isEn ? ' products with negative stock' : ' 种商品库存为负'}</span>
                 </>
               )}
-              {alertCounts.negative > 0 && alertCounts.low > 0 && <span className="mx-1">，</span>}
+              {alertCounts.negative > 0 && alertCounts.low > 0 && <span className="mx-1">{isEn ? ',' : '，'}</span>}
               {alertCounts.low > 0 && (
                 <>
                   <span className="font-semibold text-amber-600">{alertCounts.low}</span>
-                  <span> 种商品低于安全库存（&lt;{LOW_STOCK_THRESHOLD}）</span>
+                  <span>{isEn ? ` products below safety stock (<${LOW_STOCK_THRESHOLD})` : ` 种商品低于安全库存（<${LOW_STOCK_THRESHOLD}）`}</span>
                 </>
               )}
             </span>
@@ -497,7 +499,7 @@ export default function ClassicProductsPage() {
                   onClick={() => { setStockAlertFilter('negative'); setAlertDismissed(true) }}
                   className="text-xs font-medium underline text-red-600 hover:text-red-800"
                 >
-                  查看负库存 →
+                  {isEn ? 'View negative stock →' : '查看负库存 →'}
                 </button>
               )}
               {alertCounts.low > 0 && (
@@ -505,7 +507,7 @@ export default function ClassicProductsPage() {
                   onClick={() => { setStockAlertFilter('low'); setAlertDismissed(true) }}
                   className="text-xs font-medium underline text-amber-600 hover:text-amber-800"
                 >
-                  查看低库存 →
+                  {isEn ? 'View low stock →' : '查看低库存 →'}
                 </button>
               )}
             </span>
@@ -513,7 +515,7 @@ export default function ClassicProductsPage() {
           <button
             onClick={() => setAlertDismissed(true)}
             className="text-orange-400 hover:text-orange-600 text-base leading-none"
-            title="关闭"
+            title={isEn ? 'Close' : '关闭'}
           >
             ✕
           </button>
@@ -532,19 +534,19 @@ export default function ClassicProductsPage() {
             borderColor: quickEditMode ? '#875A7B' : '#d1d5db',
             color: quickEditMode ? 'white' : '#4b5563',
           }}
-          title="开启后，可双击列表中可编辑字段直接修改，无需打开商品详情页"
+          title={isEn ? 'When on, double-click editable fields in the list to edit directly, without opening the product detail page' : '开启后，可双击列表中可编辑字段直接修改，无需打开商品详情页'}
         >
           <span style={{ fontSize: 13 }}>✏️</span>
-          {quickEditMode ? '快速编辑（已开启）' : '快速编辑'}
+          {quickEditMode ? (isEn ? 'Quick Edit (On)' : '快速编辑（已开启）') : (isEn ? 'Quick Edit' : '快速编辑')}
         </button>
 
         {/* 库存筛选 pills */}
         <div className="flex items-center gap-1.5 ml-2">
           {(
             [
-              { value: 'all', label: '全部', color: undefined },
-              { value: 'negative', label: '⚠ 负库存', color: 'red' },
-              { value: 'low', label: '↓ 低库存', color: 'amber' },
+              { value: 'all', label: isEn ? 'All' : '全部', color: undefined },
+              { value: 'negative', label: isEn ? '⚠ Negative Stock' : '⚠ 负库存', color: 'red' },
+              { value: 'low', label: isEn ? '↓ Low Stock' : '↓ 低库存', color: 'amber' },
             ] as { value: StockAlertFilter; label: string; color: string | undefined }[]
           ).map(({ value, label, color }) => {
             const active = stockAlertFilter === value
@@ -581,7 +583,11 @@ export default function ClassicProductsPage() {
 
         {quickEditMode && (
           <span className="text-xs text-gray-500">
-            <strong style={{ color: '#875A7B' }}>双击</strong>紫色背景列即可编辑，回车或点击其他位置保存，Esc 取消。
+            {isEn ? (
+              <><strong style={{ color: '#875A7B' }}>Double-click</strong> a purple-background cell to edit, press Enter or click elsewhere to save, Esc to cancel.</>
+            ) : (
+              <><strong style={{ color: '#875A7B' }}>双击</strong>紫色背景列即可编辑，回车或点击其他位置保存，Esc 取消。</>
+            )}
           </span>
         )}
       </div>
@@ -611,7 +617,13 @@ export default function ClassicProductsPage() {
             })
           }}
           onRowClick={row => router.push(`${prefix}/classic/operator/products/${String(row.id)}`)}
-          emptyText={stockAlertFilter === 'negative' ? '无负库存商品' : stockAlertFilter === 'low' ? '无低库存商品' : '暂无商品数据'}
+          emptyText={
+            stockAlertFilter === 'negative'
+              ? (isEn ? 'No products with negative stock' : '无负库存商品')
+              : stockAlertFilter === 'low'
+                ? (isEn ? 'No products with low stock' : '无低库存商品')
+                : (isEn ? 'No product data' : '暂无商品数据')
+          }
           columnFilters={columnFilters}
           onColumnFilterChange={(key, val) => setColumnFilters(prev => ({ ...prev, [key]: val }))}
           columnMultiFilters={columnMultiFilters}
@@ -629,11 +641,11 @@ export default function ClassicProductsPage() {
           groupByField={groupBy === 'type' ? 'type' : groupBy === 'category' ? 'categoryId' : ''}
           groupByFormatter={(key, count) => {
             let label: string
-            if (groupBy === 'type') label = TYPE_LABEL[key] ?? (key || '（空）')
+            if (groupBy === 'type') label = TYPE_LABEL[key] ?? (key || emptyLabel)
             else if (groupBy === 'category') {
               const cat = categories.find(c => c.id === key)
-              label = cat?.nameZh ?? cat?.name ?? (key || '（空）')
-            } else label = key || '（空）'
+              label = (isEn ? (cat?.name || cat?.nameZh) : (cat?.nameZh || cat?.name)) ?? (key || emptyLabel)
+            } else label = key || emptyLabel
             return <>{label} <span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({count})</span></>
           }}
         />
@@ -644,17 +656,17 @@ export default function ClassicProductsPage() {
       <CsvImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title="批量导入商品(CSV)"
+        title={isEn ? 'Bulk Import Products (CSV)' : '批量导入商品(CSV)'}
         templateName="products-import-template"
         endpoint="/api/products/bulk"
         columns={[
-          { key: 'name', label: '名称', required: true },
-          { key: 'spec', label: '规格' },
-          { key: 'price', label: '售价' },
-          { key: 'stock', label: '库存' },
-          { key: 'taxRate', label: '税率' },
-          { key: 'commissionPrice', label: '佣金价' },
-          { key: 'internalRef', label: '内部编号' },
+          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
+          { key: 'spec', label: isEn ? 'Spec' : '规格' },
+          { key: 'price', label: isEn ? 'Price' : '售价' },
+          { key: 'stock', label: isEn ? 'Stock' : '库存' },
+          { key: 'taxRate', label: isEn ? 'Tax Rate' : '税率' },
+          { key: 'commissionPrice', label: isEn ? 'Commission Price' : '佣金价' },
+          { key: 'internalRef', label: isEn ? 'Internal Ref' : '内部编号' },
         ]}
         onDone={() => loadPage(1, searchInput)}
       />

@@ -16,6 +16,7 @@ interface SimilarProductCandidate {
  */
 export default function SimilarProductAlert({ name, excludeId }: { name: string; excludeId?: string }) {
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [candidates, setCandidates] = useState<SimilarProductCandidate[]>([])
 
@@ -40,7 +41,9 @@ export default function SimilarProductAlert({ name, excludeId }: { name: string;
   return (
     <div className="mb-2 px-3 py-2 rounded border text-sm" style={{ background: '#fefce8', borderColor: '#fde047' }}>
       <div className="flex items-center gap-1.5 font-medium text-yellow-800 mb-1">
-        <span>✳️</span> 发现 {candidates.length} 个相似商品，确认这不是重复商品
+        <span>✳️</span> {isEn
+          ? `Found ${candidates.length} similar product(s) — please confirm this isn't a duplicate`
+          : `发现 ${candidates.length} 个相似商品，确认这不是重复商品`}
       </div>
       <ul className="space-y-0.5">
         {candidates.map(c => (
@@ -53,7 +56,11 @@ export default function SimilarProductAlert({ name, excludeId }: { name: string;
             >
               {c.name}
             </a>
-            {c.internalRef && <span className="text-yellow-700"> （内部编号 {c.internalRef}）</span>}
+            {c.internalRef && (
+              <span className="text-yellow-700">
+                {isEn ? ` (Internal ref ${c.internalRef})` : ` （内部编号 ${c.internalRef}）`}
+              </span>
+            )}
           </li>
         ))}
       </ul>

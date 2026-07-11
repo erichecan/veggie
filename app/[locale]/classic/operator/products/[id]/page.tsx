@@ -72,6 +72,7 @@ const TYPE_LABEL: Record<string, string> = { product: 'Storable Product', consu:
 export default function ClassicProductDetailPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const params = useParams()
   const id = params.id as string
@@ -156,25 +157,25 @@ export default function ClassicProductDetailPage() {
 
   async function submitAdjust() {
     const vid = adjVariantId || variants[0]?.id
-    if (!vid) { toast.error('该商品暂无可调整的库存单元'); return }
+    if (!vid) { toast.error(isEn ? 'This product has no inventory unit to adjust' : '该商品暂无可调整的库存单元'); return }
     const n = Number(adjQty)
-    if (!Number.isFinite(n) || n <= 0) { toast.error('请输入大于 0 的调整数量'); return }
+    if (!Number.isFinite(n) || n <= 0) { toast.error(isEn ? 'Please enter an adjustment quantity greater than 0' : '请输入大于 0 的调整数量'); return }
     const qty = adjDir === 'in' ? n : -n
     const v = variants.find(x => x.id === vid)
     setAdjSubmitting(true)
     try {
       await apiPost('/api/stock-moves', {
         productId: vid,
-        productName: v?.name ?? tmpl?.name ?? '商品',
+        productName: v?.name ?? tmpl?.name ?? (isEn ? 'Product' : '商品'),
         qty,
         type: 'ADJUSTMENT',
-        note: adjNote.trim() || (adjDir === 'in' ? '手动盘盈' : '手动盘亏'),
+        note: adjNote.trim() || (adjDir === 'in' ? (isEn ? 'Manual stock gain' : '手动盘盈') : (isEn ? 'Manual stock loss' : '手动盘亏')),
       })
-      toast.success('库存调整成功')
+      toast.success(isEn ? 'Inventory adjusted successfully' : '库存调整成功')
       setShowAdjust(false); setAdjQty(''); setAdjNote(''); setAdjDir('in')
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '调整失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Adjustment failed' : '调整失败'))
     } finally {
       setAdjSubmitting(false)
     }
@@ -186,7 +187,7 @@ export default function ClassicProductDetailPage() {
 
   async function handleSave() {
     if (!tmpl || saving) return
-    if (!tmpl.name.trim()) { toast.error('商品名称不能为空'); return }
+    if (!tmpl.name.trim()) { toast.error(isEn ? 'Product name cannot be empty' : '商品名称不能为空'); return }
     setSaving(true)
     try {
       if (isNew) {
@@ -195,7 +196,7 @@ export default function ClassicProductDetailPage() {
           ...fields,
           createdAt: new Date().toISOString(),
         })
-        toast.success(`已创建「${created.name}」`)
+        toast.success(isEn ? `Created "${created.name}"` : `已创建「${created.name}」`)
         router.push(`${prefix}/classic/operator/products/${created.id}`)
       } else {
         const updated = { ...tmpl, updatedAt: new Date().toISOString() }
@@ -203,10 +204,10 @@ export default function ClassicProductDetailPage() {
         setOriginal({ ...updated })
         setTmpl({ ...updated })
         setEditMode(false)
-        toast.success(`已保存「${updated.name}」`)
+        toast.success(isEn ? `Saved "${updated.name}"` : `已保存「${updated.name}」`)
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '保存失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -218,12 +219,13 @@ export default function ClassicProductDetailPage() {
     setEditMode(false)
   }
 
-  if (!tmpl) return <div className="p-8 text-gray-400 text-sm">加载中...</div>
+  if (!tmpl) return <div className="p-8 text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
 
   const fieldClass = "w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 bg-white"
   const focusStyle = { '--tw-ring-color': '#875A7B' } as React.CSSProperties
   const btnBase = "h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
-  const catName = categories.find(c => c.id === tmpl.categoryId)?.nameZh ?? categories.find(c => c.id === tmpl.categoryId)?.name
+  const selectedCategory = categories.find(c => c.id === tmpl.categoryId)
+  const catName = selectedCategory ? (isEn ? (selectedCategory.name || selectedCategory.nameZh) : (selectedCategory.nameZh ?? selectedCategory.name)) : undefined
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -235,7 +237,7 @@ export default function ClassicProductDetailPage() {
             Product Variants
           </button>
           <span className="text-gray-300 mx-1">›</span>
-          <span className="text-gray-800 font-medium">{isNew ? 'New' : (tmpl.name || '（未命名）')}</span>
+          <span className="text-gray-800 font-medium">{isNew ? 'New' : (tmpl.name || (isEn ? '(Unnamed)' : '（未命名）'))}</span>
         </div>
 
         {/* 操作按钮行 */}
@@ -292,7 +294,7 @@ export default function ClassicProductDetailPage() {
               <div
                 className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center flex-shrink-0 overflow-hidden bg-gray-50"
                 style={{ cursor: editMode ? 'pointer' : 'default' }}
-                title={editMode ? '点击上传图片' : undefined}
+                title={editMode ? (isEn ? 'Click to upload image' : '点击上传图片') : undefined}
               >
                 {tmpl.images?.[0] ? (
                   <img src={tmpl.images[0]} alt="" className="w-full h-full object-cover" />
@@ -314,7 +316,7 @@ export default function ClassicProductDetailPage() {
                     className="w-full text-xl font-semibold text-gray-900 placeholder-gray-300 border-0 outline-none bg-transparent mb-2 p-0"
                   />
                 ) : (
-                  <h1 className="text-xl font-semibold text-gray-900 mb-2">{tmpl.name || '（未命名）'}</h1>
+                  <h1 className="text-xl font-semibold text-gray-900 mb-2">{tmpl.name || (isEn ? '(Unnamed)' : '（未命名）')}</h1>
                 )}
                 {editMode && (
                   <SimilarProductAlert name={tmpl.name} excludeId={isNew ? undefined : tmpl.id} />
@@ -374,7 +376,7 @@ export default function ClassicProductDetailPage() {
                 <Row label="Product Category">
                   <select value={tmpl.categoryId ?? ''} onChange={e => setField('categoryId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
                     <option value="">— All —</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.nameZh ?? c.name}</option>)}
+                    {categories.map(c => <option key={c.id} value={c.id}>{isEn ? (c.name || c.nameZh) : (c.nameZh ?? c.name)}</option>)}
                   </select>
                 </Row>
               </div>
@@ -427,22 +429,22 @@ export default function ClassicProductDetailPage() {
           <Section title="Inventory & UoM">
             {!isNew && (
               <div className="mb-4 pb-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
-                <button onClick={() => setShowAdjust(true)} className="px-3 py-1.5 rounded text-sm font-medium text-white" style={{ background: '#875A7B' }}>＋ 手动调整库存</button>
-                <span className="text-xs text-gray-400">当前在手合计 {onHandQty.toFixed(2)}</span>
+                <button onClick={() => setShowAdjust(true)} className="px-3 py-1.5 rounded text-sm font-medium text-white" style={{ background: '#875A7B' }}>{isEn ? '+ Manual Stock Adjustment' : '＋ 手动调整库存'}</button>
+                <span className="text-xs text-gray-400">{isEn ? `Total on hand ${onHandQty.toFixed(2)}` : `当前在手合计 ${onHandQty.toFixed(2)}`}</span>
               </div>
             )}
             {editMode ? (
               <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
                 <Row label="Unit of Measure">
                   <select value={tmpl.uomId ?? ''} onChange={e => setField('uomId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
-                    <option value="">— 请选择 —</option>
-                    {uoms.map(u => <option key={u.id} value={u.id}>{u.nameZh ?? u.name}</option>)}
+                    <option value="">{isEn ? '— Select —' : '— 请选择 —'}</option>
+                    {uoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
                   </select>
                 </Row>
                 <Row label="Purchase UoM">
                   <select value={tmpl.purchaseUomId ?? ''} onChange={e => setField('purchaseUomId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
-                    <option value="">— 请选择 —</option>
-                    {uoms.map(u => <option key={u.id} value={u.id}>{u.nameZh ?? u.name}</option>)}
+                    <option value="">{isEn ? '— Select —' : '— 请选择 —'}</option>
+                    {uoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
                   </select>
                 </Row>
                 <Row label="Weight (kg)">
@@ -463,12 +465,12 @@ export default function ClassicProductDetailPage() {
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
                 <ReadField label="Unit of Measure" value={
                   tmpl.uomId
-                    ? (uoms.find(u => u.id === tmpl.uomId)?.nameZh ?? uoms.find(u => u.id === tmpl.uomId)?.name)
+                    ? (() => { const u = uoms.find(u => u.id === tmpl.uomId); return isEn ? (u?.name || u?.nameZh) : (u?.nameZh ?? u?.name) })()
                     : 'Unit(s)'
                 } />
                 <ReadField label="Purchase UoM" value={
                   tmpl.purchaseUomId
-                    ? (uoms.find(u => u.id === tmpl.purchaseUomId)?.nameZh ?? uoms.find(u => u.id === tmpl.purchaseUomId)?.name)
+                    ? (() => { const u = uoms.find(u => u.id === tmpl.purchaseUomId); return isEn ? (u?.name || u?.nameZh) : (u?.nameZh ?? u?.name) })()
                     : 'Unit(s)'
                 } />
                 <ReadField label="Weight (kg)" value={tmpl.weight != null ? `${tmpl.weight} kg` : undefined} />
@@ -477,7 +479,7 @@ export default function ClassicProductDetailPage() {
                   tmpl.tracking === 'lot' ? 'By Lot' :
                   tmpl.tracking === 'serial' ? 'By Serial Number' : 'No Tracking'
                 } />
-                {!isNew && <ReadField label="当前库存" value={onHandQty.toFixed(2)} />}
+                {!isNew && <ReadField label={isEn ? 'Current Stock' : '当前库存'} value={onHandQty.toFixed(2)} />}
               </div>
             )}
           </Section>
@@ -521,7 +523,7 @@ export default function ClassicProductDetailPage() {
 
       {/* ── Chatter ──────────────────────────────────────────────────────────── */}
       <div className="mx-4 mb-4 bg-white border border-gray-200 rounded p-4">
-        <h3 className="text-sm font-semibold text-gray-700 pb-3 border-b border-gray-100">操作日志</h3>
+        <h3 className="text-sm font-semibold text-gray-700 pb-3 border-b border-gray-100">{isEn ? 'Activity Log' : '操作日志'}</h3>
 
         <div className="pt-4">
           <ChatterFeed
@@ -538,45 +540,45 @@ export default function ClassicProductDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (!adjSubmitting) setShowAdjust(false) }}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-              <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>手动库存调整 · {tmpl?.name}</h2>
+              <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>{isEn ? `Manual Stock Adjustment · ${tmpl?.name}` : `手动库存调整 · ${tmpl?.name}`}</h2>
               <button onClick={() => setShowAdjust(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0 ml-2">✕</button>
             </div>
             <div className="px-5 py-4 space-y-4">
               {variants.length > 1 ? (
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">库存单元 *</label>
+                  <label className="text-xs text-gray-500 block mb-1">{isEn ? 'Inventory Unit *' : '库存单元 *'}</label>
                   <select value={adjVariantId} onChange={e => setAdjVariantId(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none">
-                    <option value="">— 选择库存单元 —</option>
-                    {variants.map(v => <option key={v.id} value={v.id}>{v.name}（在手 {v.qtyOnHand}）</option>)}
+                    <option value="">{isEn ? '— Select Inventory Unit —' : '— 选择库存单元 —'}</option>
+                    {variants.map(v => <option key={v.id} value={v.id}>{isEn ? `${v.name} (on hand ${v.qtyOnHand})` : `${v.name}（在手 ${v.qtyOnHand}）`}</option>)}
                   </select>
                 </div>
               ) : (
-                <div className="text-xs text-gray-500">当前在手：{variants[0]?.qtyOnHand ?? onHandQty}{variants[0]?.uomName ? ' ' + variants[0].uomName : ''}</div>
+                <div className="text-xs text-gray-500">{isEn ? 'Current on hand: ' : '当前在手：'}{variants[0]?.qtyOnHand ?? onHandQty}{variants[0]?.uomName ? ' ' + variants[0].uomName : ''}</div>
               )}
               <div>
-                <label className="text-xs text-gray-500 block mb-1">调整方向 *</label>
+                <label className="text-xs text-gray-500 block mb-1">{isEn ? 'Adjustment Direction *' : '调整方向 *'}</label>
                 <div className="flex gap-2">
-                  <button onClick={() => setAdjDir('in')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={adjDir === 'in' ? { background: '#dcfce7', borderColor: '#16a34a', color: '#15803d' } : { borderColor: '#d1d5db', color: '#6b7280' }}>盘盈（+ 增加）</button>
-                  <button onClick={() => setAdjDir('out')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={adjDir === 'out' ? { background: '#fee2e2', borderColor: '#dc2626', color: '#b91c1c' } : { borderColor: '#d1d5db', color: '#6b7280' }}>盘亏（− 减少）</button>
+                  <button onClick={() => setAdjDir('in')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={adjDir === 'in' ? { background: '#dcfce7', borderColor: '#16a34a', color: '#15803d' } : { borderColor: '#d1d5db', color: '#6b7280' }}>{isEn ? 'Gain (+ Increase)' : '盘盈（+ 增加）'}</button>
+                  <button onClick={() => setAdjDir('out')} className="flex-1 px-3 py-2 rounded text-sm font-medium border" style={adjDir === 'out' ? { background: '#fee2e2', borderColor: '#dc2626', color: '#b91c1c' } : { borderColor: '#d1d5db', color: '#6b7280' }}>{isEn ? 'Loss (− Decrease)' : '盘亏（− 减少）'}</button>
                 </div>
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">调整数量 *</label>
-                <input type="number" min="0" step="any" value={adjQty} onChange={e => setAdjQty(e.target.value)} placeholder="输入数量（正数）" className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none" />
+                <label className="text-xs text-gray-500 block mb-1">{isEn ? 'Adjustment Quantity *' : '调整数量 *'}</label>
+                <input type="number" min="0" step="any" value={adjQty} onChange={e => setAdjQty(e.target.value)} placeholder={isEn ? 'Enter quantity (positive number)' : '输入数量（正数）'} className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none" />
                 {Number(adjQty) > 0 && (
                   <p className="text-xs text-gray-400 mt-1">
-                    调整后在手：{(variants.find(v => v.id === (adjVariantId || variants[0]?.id))?.qtyOnHand ?? onHandQty)} → <span className="font-semibold" style={{ color: '#875A7B' }}>{(variants.find(v => v.id === (adjVariantId || variants[0]?.id))?.qtyOnHand ?? onHandQty) + (adjDir === 'in' ? 1 : -1) * Number(adjQty)}</span>
+                    {isEn ? 'On hand after adjustment: ' : '调整后在手：'}{(variants.find(v => v.id === (adjVariantId || variants[0]?.id))?.qtyOnHand ?? onHandQty)} → <span className="font-semibold" style={{ color: '#875A7B' }}>{(variants.find(v => v.id === (adjVariantId || variants[0]?.id))?.qtyOnHand ?? onHandQty) + (adjDir === 'in' ? 1 : -1) * Number(adjQty)}</span>
                   </p>
                 )}
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">调整原因 / 备注</label>
-                <input value={adjNote} onChange={e => setAdjNote(e.target.value)} placeholder="如：盘点差异、损耗、期初录入…" className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none" />
+                <label className="text-xs text-gray-500 block mb-1">{isEn ? 'Reason / Note' : '调整原因 / 备注'}</label>
+                <input value={adjNote} onChange={e => setAdjNote(e.target.value)} placeholder={isEn ? 'e.g. count discrepancy, spoilage, opening entry…' : '如：盘点差异、损耗、期初录入…'} className="border border-gray-300 rounded px-3 py-2 text-sm w-full outline-none" />
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
-              <button onClick={() => setShowAdjust(false)} className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-600">取消</button>
-              <button onClick={submitAdjust} disabled={adjSubmitting} className="px-4 py-2 text-sm rounded text-white font-medium disabled:opacity-50" style={{ background: '#875A7B' }}>{adjSubmitting ? '提交中…' : '确认调整'}</button>
+              <button onClick={() => setShowAdjust(false)} className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-600">{isEn ? 'Cancel' : '取消'}</button>
+              <button onClick={submitAdjust} disabled={adjSubmitting} className="px-4 py-2 text-sm rounded text-white font-medium disabled:opacity-50" style={{ background: '#875A7B' }}>{adjSubmitting ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Confirm Adjustment' : '确认调整')}</button>
             </div>
           </div>
         </div>
