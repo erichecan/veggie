@@ -18,7 +18,7 @@ interface FlowStep {
   details: string[]
 }
 
-const FLOW_STEPS: FlowStep[] = [
+const FLOW_STEPS_ZH: FlowStep[] = [
   {
     id: 'order',
     emoji: '🛒',
@@ -119,33 +119,136 @@ const FLOW_STEPS: FlowStep[] = [
   },
 ]
 
+const FLOW_STEPS_EN: FlowStep[] = [
+  {
+    id: 'order',
+    emoji: '🛒',
+    title: 'Receive / Place Order for Customer',
+    who: 'Sales',
+    whoColor: ODOO_PURPLE,
+    desc: 'Restaurants order self-service through the ordering platform, or sales places the order on their behalf.',
+    href: '/classic/operator/orders',
+    details: [
+      'Restaurant selects items online and submits an order',
+      'Sales can place an order on the customer\'s behalf on the "Place Order" page',
+      'Order automatically enters "Pending" status',
+    ],
+  },
+  {
+    id: 'wave',
+    emoji: '🗂️',
+    title: 'Generate Pick Wave',
+    who: 'Sales',
+    whoColor: ODOO_PURPLE,
+    desc: 'Sales selects a batch of pending orders and merges them into a pick wave, assigned to a warehouse picker.',
+    href: '/classic/operator/dispatch-console',
+    details: [
+      'Select orders → click "Generate Pick Wave"',
+      'System consolidates the picking list for all items',
+      'Assigns the wave to a designated picker',
+    ],
+  },
+  {
+    id: 'pick',
+    emoji: '📦',
+    title: 'Warehouse Picking',
+    who: 'Picker',
+    whoColor: '#1d4ed8',
+    desc: 'Picker picks each line item in the warehouse per the wave list, enters actual quantities, and submits when complete.',
+    href: '/classic/operator/dispatch-console',
+    details: [
+      'Picker logs in and views assigned waves',
+      'Picks each item line by line and enters quantities',
+      'Submits when done; status changes to "Completed"',
+    ],
+  },
+  {
+    id: 'sort',
+    emoji: '🔀',
+    title: 'Sorting & Packing',
+    who: 'Sales',
+    whoColor: ODOO_PURPLE,
+    desc: 'Picked items are sorted and packed per each restaurant\'s order, generating a delivery list for each trip.',
+    href: '/classic/operator/sorting',
+    details: [
+      'Sort wave items into boxes by order',
+      'Confirm actual delivery quantities per restaurant',
+      'Generate the loading list for the corresponding delivery trip',
+    ],
+  },
+  {
+    id: 'trip',
+    emoji: '🚛',
+    title: 'Assign Driver for Delivery',
+    who: 'Sales',
+    whoColor: ODOO_PURPLE,
+    desc: 'Sales assigns a driver and departure time to the trip on the Trips page; the driver can view the trip after logging in.',
+    href: '/classic/operator/trips',
+    details: [
+      'Find the orange "driver pending" trip on the "Trips" page',
+      'Expand the "Assign Driver" panel and select a driver',
+      'Set the departure time and confirm',
+    ],
+  },
+  {
+    id: 'deliver',
+    emoji: '📍',
+    title: 'Driver Delivery & Sign-off',
+    who: 'Driver',
+    whoColor: '#be123c',
+    desc: 'The driver delivers stop by stop per the trip order; after the restaurant signs off, the driver takes a photo and confirms the amount received.',
+    href: '/classic/operator/trips',
+    details: [
+      'Driver opens the trip list and navigates stop by stop',
+      'Checks items, enters amount received, takes a photo for sign-off',
+      'Clicks "Trip Complete" once all stops are done',
+    ],
+  },
+  {
+    id: 'invoice',
+    emoji: '🧾',
+    title: 'Invoicing & Reconciliation',
+    who: 'Sales / Accounting',
+    whoColor: '#047857',
+    desc: 'The system auto-generates a draft invoice based on actual delivered quantities; sales confirms it and sends it to the restaurant.',
+    href: '/classic/operator/invoices',
+    details: [
+      'A draft invoice is generated once delivery is complete',
+      'Verify quantities and amounts, then click "Confirm Invoice"',
+      'Invoice status becomes "Invoiced" and is recorded in accounts receivable',
+    ],
+  },
+]
+
 export default function ClassicFlowPage() {
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const FLOW_STEPS = isEn ? FLOW_STEPS_EN : FLOW_STEPS_ZH
 
   return (
     <div className="min-h-screen" style={{ background: '#f9f9f9' }}>
       {/* Page header */}
       <div className="px-6 py-5 border-b border-gray-200" style={{ background: ODOO_PURPLE }}>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-white/60 text-xs">销售控制台</span>
+          <span className="text-white/60 text-xs">{isEn ? 'Sales Console' : '销售控制台'}</span>
           <span className="text-white/40 text-xs">›</span>
-          <span className="text-white text-xs font-medium">业务流程图</span>
+          <span className="text-white text-xs font-medium">{isEn ? 'Business Flow' : '业务流程图'}</span>
         </div>
-        <h1 className="text-xl font-bold text-white mb-0.5">业务流程图</h1>
-        <p className="text-white/70 text-xs">从接单到开票的完整供应链流程 — 点击任意步骤跳转到对应模块</p>
+        <h1 className="text-xl font-bold text-white mb-0.5">{isEn ? 'Business Flow' : '业务流程图'}</h1>
+        <p className="text-white/70 text-xs">{isEn ? 'The complete supply chain flow from order to invoice — click any step to jump to that module' : '从接单到开票的完整供应链流程 — 点击任意步骤跳转到对应模块'}</p>
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-8">
 
         {/* Legend */}
         <div className="flex flex-wrap gap-4 mb-8 text-xs">
-          <span className="font-semibold text-gray-500">角色说明：</span>
+          <span className="font-semibold text-gray-500">{isEn ? 'Roles:' : '角色说明：'}</span>
           {[
-            { who: '销售', color: ODOO_PURPLE },
-            { who: '拣货员', color: '#1d4ed8' },
-            { who: '司机', color: '#be123c' },
-            { who: '财务', color: '#047857' },
+            { who: isEn ? 'Sales' : '销售', color: ODOO_PURPLE },
+            { who: isEn ? 'Picker' : '拣货员', color: '#1d4ed8' },
+            { who: isEn ? 'Driver' : '司机', color: '#be123c' },
+            { who: isEn ? 'Accounting' : '财务', color: '#047857' },
           ].map(r => (
             <span key={r.who} className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-full" style={{ background: r.color }} />
@@ -215,9 +318,19 @@ export default function ClassicFlowPage() {
         >
           <span className="text-lg shrink-0">💡</span>
           <div className="text-xs leading-relaxed" style={{ color: ODOO_PURPLE }}>
-            <strong>小提示：</strong>系统设计遵循「接单 → 拣货 → 配送 → 开票」的线性流程。
-            每个步骤完成后，下一步骤的状态会自动更新，无需手动干预。
-            如遇问题可在右上角「<strong>?</strong>」帮助按钮查看当前角色的快速提示。
+            {isEn ? (
+              <>
+                <strong>Tip:</strong> The system follows a linear "Order → Pick → Deliver → Invoice" flow.
+                Once each step is completed, the next step&apos;s status updates automatically — no manual intervention needed.
+                If you run into issues, check the quick tips for your role via the &quot;<strong>?</strong>&quot; help button in the top right.
+              </>
+            ) : (
+              <>
+                <strong>小提示：</strong>系统设计遵循「接单 → 拣货 → 配送 → 开票」的线性流程。
+                每个步骤完成后，下一步骤的状态会自动更新，无需手动干预。
+                如遇问题可在右上角「<strong>?</strong>」帮助按钮查看当前角色的快速提示。
+              </>
+            )}
           </div>
         </div>
       </div>

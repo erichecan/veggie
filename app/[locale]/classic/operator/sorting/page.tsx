@@ -11,12 +11,19 @@ import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
 import { DAY_ABBR, DAY_COLORS, formatDateTime } from '@/lib/format-date'
 
-const STATUS_LABEL: Record<WaveStatus, string> = {
+const STATUS_LABEL_ZH: Record<WaveStatus, string> = {
   pending:  '待拣货',
   picking:  '拣货中',
   picked:   '拣货完成',
   sorting:  '分货中',
   sorted:   '已分货',
+}
+const STATUS_LABEL_EN: Record<WaveStatus, string> = {
+  pending:  'Pending',
+  picking:  'Picking',
+  picked:   'Picked',
+  sorting:  'Sorting',
+  sorted:   'Sorted',
 }
 const STATUS_COLOR: Record<WaveStatus, string> = {
   pending:  'bg-gray-100 text-gray-600',
@@ -33,6 +40,8 @@ export default function ClassicSortingPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
 
   const [waves, setWaves] = useState<PickingWave[]>([])
   const [loading, setLoading] = useState(false)
@@ -56,7 +65,7 @@ export default function ClassicSortingPage() {
         .filter(w => SORTING_STATUSES.includes(w.status))
       setWaves(normalized)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -80,13 +89,13 @@ export default function ClassicSortingPage() {
   }
 
   const activeFilters = statusFilter
-    ? [{ label: `状态：${STATUS_LABEL[statusFilter]}`, onRemove: removeStatusFilter }]
+    ? [{ label: `${isEn ? 'Status' : '状态'}：${STATUS_LABEL[statusFilter]}`, onRemove: removeStatusFilter }]
     : []
 
   const columns: OdooColumn[] = [
     {
       key: 'name',
-      label: '波次编号',
+      label: isEn ? 'Wave No.' : '波次编号',
       render: (_, row) => {
         const name = row.name ? String(row.name) : null
         if (!name) return <span className="font-mono text-xs" style={{ color: '#875A7B' }}>{String(row.id).slice(0, 8)}…</span>
@@ -103,7 +112,7 @@ export default function ClassicSortingPage() {
     },
     {
       key: 'createdAt',
-      label: '创建时间',
+      label: isEn ? 'Created' : '创建时间',
       sortable: true,
       render: (v) => (
         <span className="text-xs text-gray-500">
@@ -113,14 +122,14 @@ export default function ClassicSortingPage() {
     },
     {
       key: 'orderIds',
-      label: '订单数',
+      label: isEn ? 'Orders' : '订单数',
       render: (_, row) => (
         <span className="font-medium">{(row.orderIds as unknown[]).length}</span>
       ),
     },
     {
       key: 'zones',
-      label: '商品种类',
+      label: isEn ? 'Product Types' : '商品种类',
       render: (_, row) => (
         <span>
           {(row.zones as Array<{ items: unknown[] }>).reduce(
@@ -132,7 +141,7 @@ export default function ClassicSortingPage() {
     },
     {
       key: 'status',
-      label: '状态',
+      label: isEn ? 'Status' : '状态',
       sortable: true,
       render: (v) => (
         <span
@@ -149,15 +158,15 @@ export default function ClassicSortingPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['仓库', '分货']}
-        permanentActions={[{ label: '刷新', onClick: load }]}
+        breadcrumb={isEn ? ['Warehouse', 'Sorting'] : ['仓库', '分货']}
+        permanentActions={[{ label: isEn ? 'Refresh' : '刷新', onClick: load }]}
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => {}}
         activeFilters={activeFilters}
         filterOptions={[
-          { label: '拣货完成', value: 'picked' },
-          { label: '分货中',   value: 'sorting' },
+          { label: isEn ? 'Picked' : '拣货完成', value: 'picked' },
+          { label: isEn ? 'Sorting' : '分货中',   value: 'sorting' },
         ]}
         onFilterSelect={v => setStatusFilter(v as WaveStatus)}
         total={filtered.length}
@@ -189,7 +198,7 @@ export default function ClassicSortingPage() {
             })
           }}
           onRowClick={row => router.push(`${prefix}/classic/operator/sorting/${row.id}`)}
-          emptyText="暂无待分货的波次（需要拣货员先完成拣货）"
+          emptyText={isEn ? 'No waves awaiting sorting (picker must finish picking first)' : '暂无待分货的波次（需要拣货员先完成拣货）'}
         />
       </div>
     </div>

@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import type { SystemUser, UserRole } from '@/lib/types'
@@ -14,7 +16,7 @@ const PURPLE = '#875A7B'
 // 新建用户可选角色：销售/司机/销售助理/餐馆/老板/调度/财务/其他
 const ALL_ROLES: UserRole[] = ['OPERATOR', 'DRIVER', 'SALES', 'RESTAURANT', 'BOSS', 'DISPATCH', 'FINANCE', 'OTHER']
 
-const ROLE_LABEL: Record<UserRole, string> = {
+const ROLE_LABEL_ZH: Record<UserRole, string> = {
   OPERATOR: '销售',
   RESTAURANT: '餐馆',
   PICKER: '拣货员',
@@ -26,6 +28,20 @@ const ROLE_LABEL: Record<UserRole, string> = {
   SALES: '销售助理',
   DISPATCH: '调度',
   OTHER: '其他',
+}
+
+const ROLE_LABEL_EN: Record<UserRole, string> = {
+  OPERATOR: 'Sales',
+  RESTAURANT: 'Restaurant',
+  PICKER: 'Picker',
+  SORTER: 'Sorter',
+  DRIVER: 'Driver',
+  BOSS: 'Boss',
+  FINANCE: 'Finance',
+  WAREHOUSE: 'Warehouse',
+  SALES: 'Sales Assistant',
+  DISPATCH: 'Dispatch',
+  OTHER: 'Other',
 }
 
 const ROLE_COLOR: Record<UserRole, string> = {
@@ -57,8 +73,10 @@ function userInitials(name: string): string {
   return name.trim().slice(0, 2).toUpperCase() || '?'
 }
 
-function UserRow({ u, onEdit, onChangePwd, onToggle }: {
+function UserRow({ u, isEn, roleLabel, onEdit, onChangePwd, onToggle }: {
   u: SystemUser
+  isEn: boolean
+  roleLabel: Record<UserRole, string>
   onEdit: () => void
   onChangePwd: () => void
   onToggle: () => void
@@ -82,17 +100,17 @@ function UserRow({ u, onEdit, onChangePwd, onToggle }: {
       <td className="px-4 py-3 text-gray-500 font-mono text-xs">{u.email}</td>
       <td className="px-4 py-3 text-center">
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLOR[u.role]}`}>
-          {ROLE_LABEL[u.role]}
+          {roleLabel[u.role]}
         </span>
       </td>
       <td className="px-4 py-3 text-center">
         {u.isActive ? (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-            启用
+            {isEn ? 'Active' : '启用'}
           </span>
         ) : (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">
-            停用
+            {isEn ? 'Inactive' : '停用'}
           </span>
         )}
       </td>
@@ -102,18 +120,18 @@ function UserRow({ u, onEdit, onChangePwd, onToggle }: {
       <td className="px-4 py-3 text-center">
         <div className="flex items-center justify-center gap-2">
           <button onClick={onEdit} className="text-xs hover:underline" style={{ color: PURPLE }}>
-            编辑
+            {isEn ? 'Edit' : '编辑'}
           </button>
           <span className="text-gray-300">|</span>
           <button onClick={onChangePwd} className="text-xs text-orange-500 hover:underline">
-            修改密码
+            {isEn ? 'Change Password' : '修改密码'}
           </button>
           <span className="text-gray-300">|</span>
           <button
             onClick={onToggle}
             className={`text-xs hover:underline ${u.isActive ? 'text-red-500' : 'text-green-600'}`}
           >
-            {u.isActive ? '停用' : '启用'}
+            {isEn ? (u.isActive ? 'Deactivate' : 'Activate') : (u.isActive ? '停用' : '启用')}
           </button>
         </div>
       </td>
@@ -122,6 +140,9 @@ function UserRow({ u, onEdit, onChangePwd, onToggle }: {
 }
 
 export default function ClassicUsersPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const ROLE_LABEL = isEn ? ROLE_LABEL_EN : ROLE_LABEL_ZH
   const [users, setUsers] = useState<SystemUser[]>([])
   const [loading, setLoading] = useState(false)
   const [searchInput, setSearchInput] = useState('')
@@ -143,7 +164,7 @@ export default function ClassicUsersPage() {
       const data = await apiGet<SystemUser[]>('/api/users')
       setUsers(data)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载用户列表失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load user list' : '加载用户列表失败'))
     } finally {
       setLoading(false)
     }
@@ -165,9 +186,9 @@ export default function ClassicUsersPage() {
 
   async function handleSave() {
     if (saving) return
-    if (!form.name.trim()) { toast.error('姓名不能为空'); return }
-    if (!form.email.trim()) { toast.error('邮箱不能为空'); return }
-    if (!editingId && form.password.length < 6) { toast.error('密码至少 6 位'); return }
+    if (!form.name.trim()) { toast.error(isEn ? 'Name cannot be empty' : '姓名不能为空'); return }
+    if (!form.email.trim()) { toast.error(isEn ? 'Email cannot be empty' : '邮箱不能为空'); return }
+    if (!editingId && form.password.length < 6) { toast.error(isEn ? 'Password must be at least 6 characters' : '密码至少 6 位'); return }
 
     setSaving(true)
     try {
@@ -177,7 +198,7 @@ export default function ClassicUsersPage() {
           role: form.role,
         })
         setUsers(prev => prev.map(u => u.id === editingId ? { ...u, ...updated } : u))
-        toast.success('用户信息已更新')
+        toast.success(isEn ? 'User info updated' : '用户信息已更新')
       } else {
         await apiPost<SystemUser>('/api/users', {
           name: form.name.trim(),
@@ -186,11 +207,11 @@ export default function ClassicUsersPage() {
           password: form.password,
         })
         await load()
-        toast.success('用户已创建')
+        toast.success(isEn ? 'User created' : '用户已创建')
       }
       setDialogOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -200,9 +221,11 @@ export default function ClassicUsersPage() {
     try {
       const updated = await apiPut<SystemUser>(`/api/users/${u.id}`, { isActive: !u.isActive })
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, ...updated } : x))
-      toast.success(u.isActive ? `${u.name} 已停用` : `${u.name} 已启用`)
+      toast.success(isEn
+        ? (u.isActive ? `${u.name} deactivated` : `${u.name} activated`)
+        : (u.isActive ? `${u.name} 已停用` : `${u.name} 已启用`))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败'))
     }
   }
 
@@ -215,15 +238,15 @@ export default function ClassicUsersPage() {
 
   async function handleChangePwd() {
     if (!pwdUser || savingPwd) return
-    if (newPassword.length < 6) { toast.error('密码至少 6 位'); return }
-    if (newPassword !== confirmPassword) { toast.error('两次密码不一致'); return }
+    if (newPassword.length < 6) { toast.error(isEn ? 'Password must be at least 6 characters' : '密码至少 6 位'); return }
+    if (newPassword !== confirmPassword) { toast.error(isEn ? 'Passwords do not match' : '两次密码不一致'); return }
     setSavingPwd(true)
     try {
       await apiPut(`/api/users/${pwdUser.id}`, { newPassword })
-      toast.success(`${pwdUser.name} 的密码已修改`)
+      toast.success(isEn ? `Password changed for ${pwdUser.name}` : `${pwdUser.name} 的密码已修改`)
       setPwdDialogOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '修改失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Change failed' : '修改失败'))
     } finally {
       setSavingPwd(false)
     }
@@ -239,10 +262,10 @@ export default function ClassicUsersPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['系统', '用户管理']}
+        breadcrumb={isEn ? ['System', 'User Management'] : ['系统', '用户管理']}
         permanentActions={[
-          { label: '新建用户', onClick: openAdd },
-          { label: '刷新', onClick: load },
+          { label: isEn ? 'New User' : '新建用户', onClick: openAdd },
+          { label: isEn ? 'Refresh' : '刷新', onClick: load },
         ]}
         searchValue={searchInput}
         onSearch={setSearchInput}
@@ -254,7 +277,7 @@ export default function ClassicUsersPage() {
       <div className="p-4">
         {loading && (
           <div className="bg-white border border-gray-200 py-16 text-center text-gray-400">
-            加载中...
+            {isEn ? 'Loading...' : '加载中...'}
           </div>
         )}
         {!loading && (
@@ -262,19 +285,19 @@ export default function ClassicUsersPage() {
             <table className="w-full text-sm">
               <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">用户</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">邮箱</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">角色</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">状态</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">创建时间</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">操作</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'User' : '用户'}</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Email' : '邮箱'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Role' : '角色'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Created' : '创建时间'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Actions' : '操作'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={6} className="text-center py-16 text-gray-400 text-sm">
-                      暂无用户
+                      {isEn ? 'No users' : '暂无用户'}
                     </td>
                   </tr>
                 )}
@@ -282,6 +305,8 @@ export default function ClassicUsersPage() {
                   <UserRow
                     key={u.id}
                     u={u}
+                    isEn={isEn}
+                    roleLabel={ROLE_LABEL}
                     onEdit={() => openEdit(u)}
                     onChangePwd={() => openChangePwd(u)}
                     onToggle={() => handleToggleActive(u)}
@@ -296,22 +321,22 @@ export default function ClassicUsersPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle style={{ color: PURPLE }}>{editingId ? '编辑用户' : '新建用户'}</DialogTitle>
+            <DialogTitle style={{ color: PURPLE }}>{editingId ? (isEn ? 'Edit User' : '编辑用户') : (isEn ? 'New User' : '新建用户')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label htmlFor="u-name">姓名 *</Label>
+              <Label htmlFor="u-name">{isEn ? 'Name *' : '姓名 *'}</Label>
               <Input
                 id="u-name"
                 className="mt-1"
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="如 张三"
+                placeholder={isEn ? 'e.g. John Smith' : '如 张三'}
               />
             </div>
             {!editingId && (
               <div>
-                <Label htmlFor="u-email">邮箱 *</Label>
+                <Label htmlFor="u-email">{isEn ? 'Email *' : '邮箱 *'}</Label>
                 <Input
                   id="u-email"
                   type="email"
@@ -324,13 +349,13 @@ export default function ClassicUsersPage() {
             )}
             {editingId && (
               <div>
-                <Label>邮箱</Label>
+                <Label>{isEn ? 'Email' : '邮箱'}</Label>
                 <p className="mt-1 text-sm text-gray-500 font-mono">{form.email}</p>
-                <p className="text-xs text-gray-400">邮箱创建后不可修改</p>
+                <p className="text-xs text-gray-400">{isEn ? 'Email cannot be changed after creation' : '邮箱创建后不可修改'}</p>
               </div>
             )}
             <div>
-              <Label>角色 *</Label>
+              <Label>{isEn ? 'Role *' : '角色 *'}</Label>
               <div className="mt-1 grid grid-cols-4 gap-1.5">
                 {ALL_ROLES.map(r => (
                   <button
@@ -349,28 +374,28 @@ export default function ClassicUsersPage() {
             </div>
             {!editingId && (
               <div>
-                <Label htmlFor="u-pass">初始密码 * <span className="text-gray-400 font-normal text-xs">（至少 6 位）</span></Label>
+                <Label htmlFor="u-pass">{isEn ? 'Initial Password *' : '初始密码 *'} <span className="text-gray-400 font-normal text-xs">{isEn ? '(at least 6 characters)' : '（至少 6 位）'}</span></Label>
                 <Input
                   id="u-pass"
                   type="password"
                   className="mt-1"
                   value={form.password}
                   onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                  placeholder="输入初始密码"
+                  placeholder={isEn ? 'Enter initial password' : '输入初始密码'}
                   autoComplete="new-password"
                 />
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>取消</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               onClick={handleSave}
               disabled={saving}
               style={{ background: PURPLE, borderColor: PURPLE }}
               className="text-white hover:opacity-90"
             >
-              {saving ? '保存中…' : (editingId ? '保存修改' : '确认新建')}
+              {saving ? (isEn ? 'Saving…' : '保存中…') : (editingId ? (isEn ? 'Save Changes' : '保存修改') : (isEn ? 'Confirm Create' : '确认新建'))}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -379,44 +404,44 @@ export default function ClassicUsersPage() {
       <Dialog open={pwdDialogOpen} onOpenChange={v => { setPwdDialogOpen(v) }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle style={{ color: PURPLE }}>修改密码 — {pwdUser?.name}</DialogTitle>
+            <DialogTitle style={{ color: PURPLE }}>{isEn ? 'Change Password' : '修改密码'} — {pwdUser?.name}</DialogTitle>
           </DialogHeader>
           <div className="py-2 space-y-4">
             <p className="text-xs text-gray-400">{pwdUser?.email}</p>
             <div>
-              <Label htmlFor="admin-new-pwd">新密码 <span className="text-gray-400 font-normal text-xs">（至少 6 位）</span></Label>
+              <Label htmlFor="admin-new-pwd">{isEn ? 'New Password' : '新密码'} <span className="text-gray-400 font-normal text-xs">{isEn ? '(at least 6 characters)' : '（至少 6 位）'}</span></Label>
               <Input
                 id="admin-new-pwd"
                 type="password"
                 className="mt-1"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
-                placeholder="输入新密码"
+                placeholder={isEn ? 'Enter new password' : '输入新密码'}
                 autoComplete="new-password"
               />
             </div>
             <div>
-              <Label htmlFor="admin-confirm-pwd">确认新密码</Label>
+              <Label htmlFor="admin-confirm-pwd">{isEn ? 'Confirm New Password' : '确认新密码'}</Label>
               <Input
                 id="admin-confirm-pwd"
                 type="password"
                 className="mt-1"
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="再次输入新密码"
+                placeholder={isEn ? 'Re-enter new password' : '再次输入新密码'}
                 autoComplete="new-password"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPwdDialogOpen(false)} disabled={savingPwd}>取消</Button>
+            <Button variant="outline" onClick={() => setPwdDialogOpen(false)} disabled={savingPwd}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               onClick={handleChangePwd}
               disabled={savingPwd}
               style={{ background: '#d97706', borderColor: '#d97706' }}
               className="text-white hover:opacity-90"
             >
-              {savingPwd ? '保存中…' : '确认修改'}
+              {savingPwd ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Confirm' : '确认修改')}
             </Button>
           </DialogFooter>
         </DialogContent>

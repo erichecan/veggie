@@ -8,11 +8,6 @@ import type { ProductCategory } from '@/lib/types'
 
 const PURPLE = '#875A7B'
 
-/** 英文主标题 + 括号中文注释，如 bi('Bulk', '大货') → "Bulk (大货)" */
-function bi(en: string, zh: string) {
-  return `${en} (${zh})`
-}
-
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface UomCategory {
@@ -65,10 +60,12 @@ const PRODUCT_TYPES = [
 
 function GoodsTypeEditor({
   uom,
+  isEn,
   onChange,
   onRevert,
 }: {
   uom: Uom
+  isEn: boolean
   onChange: (next: GoodsType) => void
   onRevert: () => void
 }) {
@@ -80,7 +77,7 @@ function GoodsTypeEditor({
     current === 'LOOSE' ? 'bg-orange-50 text-orange-700 border-orange-200' :
                           'bg-gray-50   text-gray-500   border-gray-200'
 
-  const label = current === 'BULK' ? bi('Bulk', '大货') : current === 'LOOSE' ? bi('Loose', '散货') : bi('Uncategorized', '未分类')
+  const label = current === 'BULK' ? (isEn ? 'Bulk' : '大货') : current === 'LOOSE' ? (isEn ? 'Loose' : '散货') : (isEn ? 'Uncategorized' : '未分类')
 
   async function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const raw = e.target.value
@@ -90,9 +87,9 @@ function GoodsTypeEditor({
     setSaving(true)
     try {
       await apiPut(`/api/uoms/${uom.id}`, { goodsType: next })
-      toast.success(`${uom.name}: ${next === 'BULK' ? bi('Bulk', '大货') : next === 'LOOSE' ? bi('Loose', '散货') : bi('Uncategorized', '未分类')}`)
+      toast.success(`${uom.name}: ${next === 'BULK' ? (isEn ? 'Bulk' : '大货') : next === 'LOOSE' ? (isEn ? 'Loose' : '散货') : (isEn ? 'Uncategorized' : '未分类')}`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : bi('Save failed', '保存失败'))
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
       onRevert()
     } finally {
       setSaving(false)
@@ -107,16 +104,16 @@ function GoodsTypeEditor({
       title={label}
       className={`text-xs rounded px-1.5 py-0.5 border font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400 ${bgClass} ${saving ? 'opacity-60' : ''}`}
     >
-      <option value="">{bi('Uncategorized', '未分类')}</option>
-      <option value="BULK">{bi('Bulk', '大货')}</option>
-      <option value="LOOSE">{bi('Loose', '散货')}</option>
+      <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
+      <option value="BULK">{isEn ? 'Bulk' : '大货'}</option>
+      <option value="LOOSE">{isEn ? 'Loose' : '散货'}</option>
     </select>
   )
 }
 
 // ─── UOM Section ──────────────────────────────────────────────────────────────
 
-function UomSection() {
+function UomSection({ isEn }: { isEn: boolean }) {
   const [categories, setCategories] = useState<UomCategory[]>([])
   const [allUoms, setAllUoms] = useState<Uom[]>([])
   const [loading, setLoading] = useState(true)
@@ -142,7 +139,7 @@ function UomSection() {
       setCategories(cats)
       setAllUoms(uoms)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : bi('Load failed', '加载失败'))
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Load failed' : '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -151,23 +148,23 @@ function UomSection() {
   useEffect(() => { load() }, [])
 
   async function createCategory() {
-    if (!newCatName.trim()) { toast.error(bi('Please enter a category name', '请输入分类名称')); return }
+    if (!newCatName.trim()) { toast.error(isEn ? 'Please enter a category name' : '请输入分类名称'); return }
     setSavingCat(true)
     try {
       await apiPost('/api/uom-categories', { name: newCatName.trim(), nameZh: newCatNameZh.trim() || undefined })
-      toast.success(bi('UoM category created', '计量单位分类已创建'))
+      toast.success(isEn ? 'UoM category created' : '计量单位分类已创建')
       setNewCatName(''); setNewCatNameZh('')
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : bi('Create failed', '创建失败'))
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
     } finally {
       setSavingCat(false)
     }
   }
 
   async function createUom() {
-    if (!newUomName.trim()) { toast.error(bi('Please enter a unit name', '请输入单位名称')); return }
-    if (!newUomCategoryId) { toast.error(bi('Please select a category', '请选择分类')); return }
+    if (!newUomName.trim()) { toast.error(isEn ? 'Please enter a unit name' : '请输入单位名称'); return }
+    if (!newUomCategoryId) { toast.error(isEn ? 'Please select a category' : '请选择分类'); return }
     const factor = parseFloat(newUomFactor)
     if (!Number.isFinite(factor) || factor <= 0) { toast.error('Factor must be > 0'); return }
     setSavingUom(true)
@@ -180,35 +177,37 @@ function UomSection() {
         rounding: parseFloat(newUomRounding) || 0.01,
         goodsType: newUomGoodsType,
       })
-      toast.success(bi('Unit of Measure created', '计量单位已创建'))
+      toast.success(isEn ? 'Unit of Measure created' : '计量单位已创建')
       setNewUomName(''); setNewUomNameZh(''); setNewUomFactor('1'); setNewUomRounding('0.01'); setNewUomGoodsType(null)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : bi('Create failed', '创建失败'))
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
     } finally {
       setSavingUom(false)
     }
   }
 
   async function deactivateUom(id: string, name: string) {
-    const msg = `${bi('Deactivate', '确认停用')} "${name}"? ${bi('It will no longer appear in dropdowns, but historical data is preserved.', '停用后该单位不再出现在下拉选项中，历史数据保留。')}`
+    const msg = isEn
+      ? `Deactivate "${name}"? It will no longer appear in dropdowns, but historical data is preserved.`
+      : `确认停用 "${name}"？停用后该单位不再出现在下拉选项中，历史数据保留。`
     if (!confirm(msg)) return
     try {
       await apiDelete(`/api/uoms/${id}`)
-      toast.success(`${bi('Deactivated', '已停用')}: ${name}`)
+      toast.success(`${isEn ? 'Deactivated' : '已停用'}: ${name}`)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : bi('Failed', '操作失败'))
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed' : '操作失败'))
     }
   }
 
-  if (loading) return <div className="text-sm text-gray-400 py-4">{bi('Loading…', '加载中…')}</div>
+  if (loading) return <div className="text-sm text-gray-400 py-4">{isEn ? 'Loading…' : '加载中…'}</div>
 
   return (
     <div className="space-y-6">
       <div>
         {categories.length === 0 ? (
-          <p className="text-sm text-gray-400">{bi('No categories yet', '暂无分类')}</p>
+          <p className="text-sm text-gray-400">{isEn ? 'No categories yet' : '暂无分类'}</p>
         ) : (
           <div className="space-y-4">
             {categories.map(cat => {
@@ -216,21 +215,23 @@ function UomSection() {
               return (
                 <div key={cat.id} className="border border-gray-200 rounded overflow-hidden">
                   <div className="px-4 py-2 flex items-center gap-2" style={{ background: '#f3eff5' }}>
-                    <span className="font-medium text-sm" style={{ color: PURPLE }}>{cat.name}</span>
-                    {cat.nameZh && <span className="text-xs text-gray-400">({cat.nameZh})</span>}
+                    <span className="font-medium text-sm" style={{ color: PURPLE }}>
+                      {isEn ? cat.name : (cat.nameZh || cat.name)}
+                    </span>
+                    {!isEn && cat.nameZh && cat.name && <span className="text-xs text-gray-400">({cat.name})</span>}
                   </div>
                   {uoms.length === 0 ? (
-                    <p className="px-4 py-3 text-sm text-gray-400">{bi('No units', '暂无单位')}</p>
+                    <p className="px-4 py-3 text-sm text-gray-400">{isEn ? 'No units' : '暂无单位'}</p>
                   ) : (
                     <table className="w-full text-sm">
                       <thead className="border-b border-gray-100">
                         <tr className="text-left text-xs text-gray-500">
-                          <th className="px-4 py-2 font-medium">{bi('Name', '名称')}</th>
-                          <th className="px-4 py-2 font-medium">{bi('Chinese Name', '中文名')}</th>
+                          <th className="px-4 py-2 font-medium">{isEn ? 'Name' : '名称'}</th>
+                          <th className="px-4 py-2 font-medium">{isEn ? 'Chinese Name' : '中文名'}</th>
                           <th className="px-4 py-2 font-medium text-right">Factor</th>
-                          <th className="px-4 py-2 font-medium text-right">{bi('Rounding', '精度')}</th>
-                          <th className="px-4 py-2 font-medium text-center">{bi('Type', '类型')}</th>
-                          <th className="px-4 py-2 font-medium text-center">{bi('Goods', '货物类型')}</th>
+                          <th className="px-4 py-2 font-medium text-right">{isEn ? 'Rounding' : '精度'}</th>
+                          <th className="px-4 py-2 font-medium text-center">{isEn ? 'Type' : '类型'}</th>
+                          <th className="px-4 py-2 font-medium text-center">{isEn ? 'Goods' : '货物类型'}</th>
                           <th className="px-4 py-2 w-16"></th>
                         </tr>
                       </thead>
@@ -247,12 +248,13 @@ function UomSection() {
                                 u.type === 'BIGGER' ? 'bg-purple-100 text-purple-700' :
                                 'bg-gray-100 text-gray-600'
                               }`}>
-                                {u.type === 'REFERENCE' ? bi('Ref', '基准') : u.type === 'BIGGER' ? bi('Bigger', '大单位') : bi('Smaller', '小单位')}
+                                {u.type === 'REFERENCE' ? (isEn ? 'Ref' : '基准') : u.type === 'BIGGER' ? (isEn ? 'Bigger' : '大单位') : (isEn ? 'Smaller' : '小单位')}
                               </span>
                             </td>
                             <td className="px-4 py-2 text-center">
                               <GoodsTypeEditor
                                 uom={u}
+                                isEn={isEn}
                                 onChange={(next) => {
                                   // 乐观更新本地状态
                                   setAllUoms(prev => prev.map(x => x.id === u.id ? { ...x, goodsType: next } : x))
@@ -265,7 +267,7 @@ function UomSection() {
                                 onClick={() => deactivateUom(u.id, u.name)}
                                 className="text-xs text-red-500 hover:text-red-700"
                               >
-                                {bi('Deactivate', '停用')}
+                                {isEn ? 'Deactivate' : '停用'}
                               </button>
                             </td>
                           </tr>
@@ -282,50 +284,50 @@ function UomSection() {
 
       {/* New Category */}
       <div className="border border-gray-200 rounded p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">{bi('New UoM Category', '新建单位分类')}</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'New UoM Category' : '新建单位分类'}</h3>
         <div className="flex items-end gap-3 flex-wrap">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{bi('Name (EN)', '分类名（英文）')}</label>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (EN)' : '分类名（英文）'}</label>
             <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)}
               placeholder="e.g. Weight"
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-purple-400" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{bi('Name (ZH)', '分类名（中文，可选）')}</label>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (ZH, optional)' : '分类名（中文，可选）'}</label>
             <input type="text" value={newCatNameZh} onChange={e => setNewCatNameZh(e.target.value)}
-              placeholder="如 重量"
+              placeholder={isEn ? 'optional' : '如 重量'}
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-purple-400" />
           </div>
           <button onClick={createCategory} disabled={savingCat}
             className="h-9 px-4 text-white text-sm rounded disabled:opacity-40"
             style={{ background: PURPLE }}>
-            {savingCat ? bi('Creating…', '创建中…') : bi('Create Category', '创建分类')}
+            {savingCat ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create Category' : '创建分类')}
           </button>
         </div>
       </div>
 
       {/* New UOM */}
       <div className="border border-gray-200 rounded p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">{bi('New Unit of Measure', '新建计量单位')}</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'New Unit of Measure' : '新建计量单位'}</h3>
         <div className="flex items-end gap-3 flex-wrap">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{bi('Category', '所属分类')}</label>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Category' : '所属分类'}</label>
             <select value={newUomCategoryId} onChange={e => setNewUomCategoryId(e.target.value)}
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-purple-400">
-              <option value="">{bi('Select…', '选择分类')}</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.nameZh ? `${c.name} (${c.nameZh})` : c.name}</option>)}
+              <option value="">{isEn ? 'Select…' : '选择分类'}</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{isEn ? c.name : (c.nameZh || c.name)}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{bi('Name (EN)', '单位名（英文）')}</label>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (EN)' : '单位名（英文）'}</label>
             <input type="text" value={newUomName} onChange={e => setNewUomName(e.target.value)}
               placeholder="e.g. kg"
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-24 focus:outline-none focus:border-purple-400" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{bi('Name (ZH)', '中文名（可选）')}</label>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (ZH, optional)' : '中文名（可选）'}</label>
             <input type="text" value={newUomNameZh} onChange={e => setNewUomNameZh(e.target.value)}
-              placeholder="如 千克"
+              placeholder={isEn ? 'optional' : '如 千克'}
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-24 focus:outline-none focus:border-purple-400" />
           </div>
           <div>
@@ -334,12 +336,12 @@ function UomSection() {
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-purple-400" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{bi('Rounding', '精度')}</label>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Rounding' : '精度'}</label>
             <input type="number" step="any" min="0.0001" value={newUomRounding} onChange={e => setNewUomRounding(e.target.value)}
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-purple-400" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{bi('Goods Type', '货物类型')}</label>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Goods Type' : '货物类型'}</label>
             <select
               value={newUomGoodsType ?? ''}
               onChange={e => {
@@ -348,21 +350,25 @@ function UomSection() {
               }}
               className="border border-gray-300 rounded px-2 py-1.5 text-sm w-32 focus:outline-none focus:border-purple-400 bg-white"
             >
-              <option value="">{bi('Uncategorized', '未分类')}</option>
-              <option value="BULK">{bi('Bulk', '大货')}</option>
-              <option value="LOOSE">{bi('Loose', '散货')}</option>
+              <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
+              <option value="BULK">{isEn ? 'Bulk' : '大货'}</option>
+              <option value="LOOSE">{isEn ? 'Loose' : '散货'}</option>
             </select>
           </div>
           <button onClick={createUom} disabled={savingUom}
             className="h-9 px-4 text-white text-sm rounded disabled:opacity-40"
             style={{ background: PURPLE }}>
-            {savingUom ? bi('Creating…', '创建中…') : bi('Create Unit', '创建单位')}
+            {savingUom ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create Unit' : '创建单位')}
           </button>
         </div>
         <p className="text-xs text-gray-400 mt-2">
-          {bi('Factor: within the same category, a larger factor means a bigger unit. The reference unit has factor = 1.', '换算系数：同分类内，系数越大代表越大的单位。基准单位系数为 1。')}
+          {isEn
+            ? 'Factor: within the same category, a larger factor means a bigger unit. The reference unit has factor = 1.'
+            : '换算系数：同分类内，系数越大代表越大的单位。基准单位系数为 1。'}
           <br />
-          {bi('Goods Type: drives the picking-list grouping (BULK first, then LOOSE).', '货物类型：决定拣货单的分组顺序（先大货，后散货）。')}
+          {isEn
+            ? 'Goods Type: drives the picking-list grouping (BULK first, then LOOSE).'
+            : '货物类型：决定拣货单的分组顺序（先大货，后散货）。'}
         </p>
       </div>
     </div>
@@ -509,7 +515,7 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
           <div>
             <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (ZH, optional)' : '中文名（可选）'}</label>
             <input type="text" value={newNameZh} onChange={e => setNewNameZh(e.target.value)}
-              placeholder={isEn ? 'e.g. 蔬菜' : '如 蔬菜'}
+              placeholder={isEn ? 'optional' : '如 蔬菜'}
               className="border border-gray-300 rounded px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-purple-400" />
           </div>
           <button onClick={create} disabled={saving}
@@ -567,7 +573,7 @@ export default function ClassicOperatorSettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('uom')
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'uom', label: bi('Units of Measure', '计量单位') },
+    { id: 'uom', label: isEn ? 'Units of Measure' : '计量单位' },
     { id: 'product-type', label: isEn ? 'Product Types' : '商品类型' },
     { id: 'product-category', label: isEn ? 'Product Categories' : '商品分类' },
   ]
@@ -605,12 +611,12 @@ export default function ClassicOperatorSettingsPage() {
         {activeTab === 'uom' && (
           <>
             <h2 className="text-base font-semibold mb-1" style={{ color: PURPLE }}>
-              {bi('Units of Measure', '计量单位')}
+              {isEn ? 'Units of Measure' : '计量单位'}
             </h2>
             <p className="text-sm text-gray-500 mb-5">
-              {bi('Manage UoM categories and units for products and inventory.', '管理计量单位分类和单位，用于商品规格和库存管理。')}
+              {isEn ? 'Manage UoM categories and units for products and inventory.' : '管理计量单位分类和单位，用于商品规格和库存管理。'}
             </p>
-            <UomSection />
+            <UomSection isEn={isEn} />
           </>
         )}
         {activeTab === 'product-type' && (

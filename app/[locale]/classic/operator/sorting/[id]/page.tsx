@@ -8,12 +8,19 @@ import { apiGet, apiPut } from '@/lib/api'
 import { formatDateTime } from '@/lib/format-date'
 import type { PickingWave, Order, WaveStatus } from '@/lib/types'
 
-const STATUS_LABEL: Record<WaveStatus, string> = {
+const STATUS_LABEL_ZH: Record<WaveStatus, string> = {
   pending:  '待拣货',
   picking:  '拣货中',
   picked:   '拣货完成',
   sorting:  '分货中',
   sorted:   '已分货',
+}
+const STATUS_LABEL_EN: Record<WaveStatus, string> = {
+  pending:  'Pending',
+  picking:  'Picking',
+  picked:   'Picked',
+  sorting:  'Sorting',
+  sorted:   'Sorted',
 }
 const STATUS_COLOR: Record<WaveStatus, string> = {
   pending:  'bg-gray-100 text-gray-600',
@@ -38,6 +45,8 @@ export default function ClassicSortingDetailPage({
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
 
   const [wave, setWave] = useState<PickingWave | null>(null)
   const [restaurants, setRestaurants] = useState<RestaurantGroup[]>([])
@@ -72,7 +81,7 @@ export default function ClassicSortingDetailPage({
       })
       setRestaurants(Array.from(map.values()))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -85,10 +94,12 @@ export default function ClassicSortingDetailPage({
     setUpdating(true)
     try {
       await apiPut(`/api/waves/${wave.id}`, { ...wave, status: targetStatus })
-      toast.success(targetStatus === 'sorting' ? '已开始分货' : '分货完成')
+      toast.success(targetStatus === 'sorting'
+        ? (isEn ? 'Sorting started' : '已开始分货')
+        : (isEn ? 'Sorting completed' : '分货完成'))
       await load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '状态更新失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update status' : '状态更新失败'))
     } finally {
       setUpdating(false)
     }
@@ -96,12 +107,12 @@ export default function ClassicSortingDetailPage({
 
   if (loading) {
     return (
-      <div className="p-6 text-sm text-gray-400 text-center">加载中…</div>
+      <div className="p-6 text-sm text-gray-400 text-center">{isEn ? 'Loading…' : '加载中…'}</div>
     )
   }
   if (!wave) {
     return (
-      <div className="p-6 text-sm text-red-500 text-center">波次不存在</div>
+      <div className="p-6 text-sm text-red-500 text-center">{isEn ? 'Wave not found' : '波次不存在'}</div>
     )
   }
 
@@ -127,7 +138,7 @@ export default function ClassicSortingDetailPage({
             className="hover:underline"
             style={{ color: '#875A7B' }}
           >
-            分货
+            {isEn ? 'Sorting' : '分货'}
           </button>
           <span>/</span>
           <span className="font-mono text-gray-700">{wave.id.slice(0, 12)}…</span>
@@ -149,7 +160,7 @@ export default function ClassicSortingDetailPage({
               className="px-3 py-1 rounded text-sm text-white disabled:opacity-50"
               style={{ background: '#875A7B' }}
             >
-              {updating ? '处理中…' : '开始分货'}
+              {updating ? (isEn ? 'Processing…' : '处理中…') : (isEn ? 'Start Sorting' : '开始分货')}
             </button>
           )}
           {canFinish && (
@@ -159,7 +170,7 @@ export default function ClassicSortingDetailPage({
               className="px-3 py-1 rounded text-sm text-white disabled:opacity-50"
               style={{ background: '#059669' }}
             >
-              {updating ? '处理中…' : '确认分货完成'}
+              {updating ? (isEn ? 'Processing…' : '处理中…') : (isEn ? 'Confirm Sorting Complete' : '确认分货完成')}
             </button>
           )}
         </div>
@@ -171,11 +182,11 @@ export default function ClassicSortingDetailPage({
         style={{ borderColor: '#e0d6e8' }}
       >
         {[
-          { label: '餐馆数',   value: restaurants.length },
-          { label: '订单数',   value: totalOrders },
-          { label: '总件数',   value: totalItems },
+          { label: isEn ? 'Restaurants' : '餐馆数',   value: restaurants.length },
+          { label: isEn ? 'Orders' : '订单数',   value: totalOrders },
+          { label: isEn ? 'Total Items' : '总件数',   value: totalItems },
           {
-            label: '创建时间',
+            label: isEn ? 'Created' : '创建时间',
             value: formatDateTime(wave.createdAt),
           },
         ].map(s => (
@@ -189,7 +200,7 @@ export default function ClassicSortingDetailPage({
       {/* ── 餐馆分组列表 ── */}
       <div className="p-4 space-y-2">
         <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
-          按餐馆拆分 · {restaurants.length} 家
+          {isEn ? `By Restaurant · ${restaurants.length}` : `按餐馆拆分 · ${restaurants.length} 家`}
         </div>
 
         {restaurants.length === 0 && (
@@ -197,7 +208,7 @@ export default function ClassicSortingDetailPage({
             className="border rounded py-12 text-center text-gray-400 text-sm"
             style={{ borderColor: '#e0d6e8' }}
           >
-            该波次下没有订单
+            {isEn ? 'No orders in this wave' : '该波次下没有订单'}
           </div>
         )}
 
@@ -242,9 +253,9 @@ export default function ClassicSortingDetailPage({
                   </span>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-gray-500 flex-shrink-0">
-                  <span>{r.orders.length} 订单</span>
-                  <span>{totalLines} 行</span>
-                  <span>{totalQty} 件</span>
+                  <span>{isEn ? `${r.orders.length} orders` : `${r.orders.length} 订单`}</span>
+                  <span>{isEn ? `${totalLines} lines` : `${totalLines} 行`}</span>
+                  <span>{isEn ? `${totalQty} items` : `${totalQty} 件`}</span>
                   <span className="font-medium" style={{ color: '#059669' }}>
                     €{totalAmount.toFixed(2)}
                   </span>
@@ -266,11 +277,11 @@ export default function ClassicSortingDetailPage({
                       <table className="w-full text-xs border-collapse">
                         <thead>
                           <tr style={{ background: '#f3eff5' }}>
-                            <th className="text-left px-2 py-1 text-gray-600 font-medium">商品</th>
-                            <th className="text-left px-2 py-1 text-gray-600 font-medium">规格</th>
-                            <th className="text-right px-2 py-1 text-gray-600 font-medium">数量</th>
-                            <th className="text-right px-2 py-1 text-gray-600 font-medium">单价</th>
-                            <th className="text-right px-2 py-1 text-gray-600 font-medium">小计</th>
+                            <th className="text-left px-2 py-1 text-gray-600 font-medium">{isEn ? 'Product' : '商品'}</th>
+                            <th className="text-left px-2 py-1 text-gray-600 font-medium">{isEn ? 'Spec' : '规格'}</th>
+                            <th className="text-right px-2 py-1 text-gray-600 font-medium">{isEn ? 'Qty' : '数量'}</th>
+                            <th className="text-right px-2 py-1 text-gray-600 font-medium">{isEn ? 'Unit Price' : '单价'}</th>
+                            <th className="text-right px-2 py-1 text-gray-600 font-medium">{isEn ? 'Subtotal' : '小计'}</th>
                           </tr>
                         </thead>
                         <tbody>

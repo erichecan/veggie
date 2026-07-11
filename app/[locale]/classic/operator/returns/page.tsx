@@ -10,6 +10,7 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,11 +32,18 @@ interface FlatReturn extends CanonicalReturnItem {
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_LABELS: Record<ReturnStatus, string> = {
+const STATUS_LABELS_ZH: Record<ReturnStatus, string> = {
   PENDING_REVIEW: '待审核',
   APPROVED: '已批准',
   REJECTED: '已拒绝',
   SETTLED: '已结算',
+}
+
+const STATUS_LABELS_EN: Record<ReturnStatus, string> = {
+  PENDING_REVIEW: 'Pending Review',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  SETTLED: 'Settled',
 }
 
 const STATUS_COLORS: Record<ReturnStatus, string> = {
@@ -151,6 +159,11 @@ interface ReviewDialogProps {
 }
 
 function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABELS = isEn ? STATUS_LABELS_EN : STATUS_LABELS_ZH
+  const scrapLabels = isEn ? SCRAP_REASON_LABEL_EN : SCRAP_REASON_LABEL
+
   const [mode, setMode] = useState<'pct' | 'fixed'>(item.refundMode ?? 'pct')
   const [pct, setPct] = useState<number>(item.refundPct ?? 0)
   const [fixed, setFixed] = useState<number>(0)
@@ -192,11 +205,13 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
       } : {
         refundNote: reviewNote,
       })
-      toast.success(action === 'approve' ? '已批准' : '已拒绝')
+      toast.success(action === 'approve'
+        ? (isEn ? 'Return approved' : '已批准')
+        : (isEn ? 'Return rejected' : '已拒绝'))
       onSaved()
       onClose()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Review failed' : '操作失败'))
     } finally {
       setSaving(false)
     }
@@ -206,13 +221,13 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
     <DialogContent className="max-h-[90vh] overflow-y-auto" style={{ maxWidth: 700 }}>
       <DialogHeader>
         <DialogTitle style={{ color: '#875A7B' }}>
-          审核退换货 — {item.restaurantName}
+          {isEn ? 'Review Return/Exchange' : '审核退换货'} — {item.restaurantName}
         </DialogTitle>
       </DialogHeader>
 
       {/* ── Section 1: 本次退货商品（高亮在最上方）──────────────────────────── */}
       <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">本次退货商品</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{isEn ? 'Items in This Return' : '本次退货商品'}</p>
         <div className="rounded-lg border border-orange-200 bg-orange-50 divide-y divide-orange-100">
           {allReturns.map((ret, i) => {
             const isCurrent = i === item._retIdx
@@ -236,10 +251,10 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
                   </div>
                 </div>
                 {(ret.reason as string | undefined) && (
-                  <div className="mt-1 ml-3.5 text-xs text-orange-600">原因：{ret.reason as string}</div>
+                  <div className="mt-1 ml-3.5 text-xs text-orange-600">{isEn ? 'Reason: ' : '原因：'}{ret.reason as string}</div>
                 )}
                 {ret.refundNote && (
-                  <div className="mt-0.5 ml-3.5 text-xs text-gray-400">备注：{ret.refundNote as string}</div>
+                  <div className="mt-0.5 ml-3.5 text-xs text-gray-400">{isEn ? 'Note: ' : '备注：'}{ret.refundNote as string}</div>
                 )}
               </div>
             )
@@ -251,7 +266,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
       {orderedItems.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            本次订单全部商品（共 {orderedItems.length} 件）
+            {isEn ? `All Items in This Delivery (${orderedItems.length} items)` : `本次订单全部商品（共 ${orderedItems.length} 件）`}
           </p>
           <div className="rounded-lg border border-gray-200 bg-gray-50 divide-y divide-gray-100">
             {visibleOrders.map((item, i) => (
@@ -274,8 +289,8 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
               className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
             >
               {ordersExpanded
-                ? '▲ 收起'
-                : `▼ 展开剩余 ${hiddenOrderCount} 件商品`}
+                ? (isEn ? '▲ Collapse' : '▲ 收起')
+                : (isEn ? `▼ Show ${hiddenOrderCount} more items` : `▼ 展开剩余 ${hiddenOrderCount} 件商品`)}
             </button>
           )}
         </div>
@@ -284,7 +299,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
       {/* ── Section 3: 照片 ──────────────────────────────────────────────── */}
       {item.photo && (
         <div className="space-y-1">
-          <p className="text-xs text-gray-500 font-medium">现场照片</p>
+          <p className="text-xs text-gray-500 font-medium">{isEn ? 'Photo Evidence' : '现场照片'}</p>
           <img
             src={item.photo}
             alt="return-photo"
@@ -297,7 +312,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
       {/* ── Section 3.5: 货物去向（批准时必选）──────────────────────────── */}
       {item.status === 'PENDING_REVIEW' && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-gray-700">货物去向 <span className="text-red-500">*</span></p>
+          <p className="text-sm font-medium text-gray-700">{isEn ? 'Disposition' : '货物去向'} <span className="text-red-500">*</span></p>
           <div className="flex gap-2">
             <button
               onClick={() => setDisposition('SELLABLE')}
@@ -306,7 +321,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
               }`}
               style={disposition === 'SELLABLE' ? { background: '#15803d', borderColor: '#15803d' } : {}}
             >
-              ✅ 可再售（回补库存）
+              {isEn ? '✅ Sellable (Restock)' : '✅ 可再售（回补库存）'}
             </button>
             <button
               onClick={() => setDisposition('SCRAP')}
@@ -315,20 +330,20 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
               }`}
               style={disposition === 'SCRAP' ? { background: '#a3690e', borderColor: '#a3690e' } : {}}
             >
-              🗑️ 报废（计入损耗）
+              {isEn ? '🗑️ Scrap (Record as Loss)' : '🗑️ 报废（计入损耗）'}
             </button>
           </div>
           {disposition === 'SCRAP' && (
             <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-500">报废原因</label>
+              <label className="text-xs text-gray-500">{isEn ? 'Scrap Reason' : '报废原因'}</label>
               <select
                 value={scrapReason}
                 onChange={e => setScrapReason(e.target.value as typeof scrapReason)}
                 className="border border-gray-200 rounded px-2 py-1 text-xs outline-none focus:border-purple-400"
               >
-                <option value="CUSTOMER_RETURN_DAMAGED">客退损坏</option>
-                <option value="CUSTOMER_RETURN_EXPIRED">客退过期</option>
-                <option value="OTHER">其他</option>
+                <option value="CUSTOMER_RETURN_DAMAGED">{scrapLabels.CUSTOMER_RETURN_DAMAGED}</option>
+                <option value="CUSTOMER_RETURN_EXPIRED">{scrapLabels.CUSTOMER_RETURN_EXPIRED}</option>
+                <option value="OTHER">{scrapLabels.OTHER}</option>
               </select>
             </div>
           )}
@@ -337,7 +352,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
 
       {/* ── Section 4: 退款方式 ───────────────────────────────────────────── */}
       <div className="space-y-3">
-        <p className="text-sm font-medium text-gray-700">退款方式</p>
+        <p className="text-sm font-medium text-gray-700">{isEn ? 'Refund Method' : '退款方式'}</p>
         <div className="flex gap-2">
           <button
             onClick={() => setMode('pct')}
@@ -346,7 +361,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
             }`}
             style={mode === 'pct' ? { background: '#875A7B', borderColor: '#875A7B' } : {}}
           >
-            按比例 %
+            {isEn ? 'Percentage %' : '按比例 %'}
           </button>
           <button
             onClick={() => setMode('fixed')}
@@ -355,7 +370,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
             }`}
             style={mode === 'fixed' ? { background: '#875A7B', borderColor: '#875A7B' } : {}}
           >
-            固定金额 €
+            {isEn ? 'Fixed Amount €' : '固定金额 €'}
           </button>
         </div>
 
@@ -409,12 +424,12 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         )}
 
         <div className="space-y-1">
-          <label className="text-xs text-gray-500 font-medium">审核备注（可选）</label>
+          <label className="text-xs text-gray-500 font-medium">{isEn ? 'Review Note (optional)' : '审核备注（可选）'}</label>
           <textarea
             value={reviewNote}
             onChange={e => setReviewNote(e.target.value)}
             rows={2}
-            placeholder="说明审核结果或特殊情况…"
+            placeholder={isEn ? 'Describe review outcome or special circumstances…' : '说明审核结果或特殊情况…'}
             className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-400 resize-none"
           />
         </div>
@@ -427,10 +442,18 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
           className="w-full px-3 py-2.5 flex items-center justify-between text-left"
         >
           <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-red-700">📋 退货档案</span>
+            <span className="text-sm font-semibold text-red-700">{isEn ? '📋 Return Profile' : '📋 退货档案'}</span>
             <div className="flex gap-3 text-xs text-red-600">
-              <span>退货 <b>{profile.totalCount}</b> 次</span>
-              <span>合计退款 <b>€{profile.totalRefundAmount.toFixed(2)}</b></span>
+              {isEn ? (
+                <span><b>{profile.totalCount}</b> returns</span>
+              ) : (
+                <span>退货 <b>{profile.totalCount}</b> 次</span>
+              )}
+              {isEn ? (
+                <span>Total refunded <b>€{profile.totalRefundAmount.toFixed(2)}</b></span>
+              ) : (
+                <span>合计退款 <b>€{profile.totalRefundAmount.toFixed(2)}</b></span>
+              )}
             </div>
           </div>
           <span className="text-xs text-red-400">{profileExpanded ? '▲' : '▼'}</span>
@@ -439,7 +462,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         {profileExpanded && (
           <div className="border-t border-red-100">
             {profile.history.length === 0 ? (
-              <p className="px-3 py-3 text-xs text-red-400">暂无退货记录</p>
+              <p className="px-3 py-3 text-xs text-red-400">{isEn ? 'No return history' : '暂无退货记录'}</p>
             ) : (
               <div className="divide-y divide-red-100 max-h-48 overflow-y-auto">
                 {profile.history.map((h, i) => (
@@ -452,7 +475,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
                         </span>
                       </div>
                       <div className="text-gray-700 mt-0.5 font-medium">{h.productName} ×{h.quantity}</div>
-                      {h.reason && <div className="text-red-500 mt-0.5">原因：{h.reason}</div>}
+                      {h.reason && <div className="text-red-500 mt-0.5">{isEn ? 'Reason: ' : '原因：'}{h.reason}</div>}
                     </div>
                     <div className="flex-shrink-0 text-right">
                       {h.refundAmount != null && h.refundAmount > 0 && (
@@ -469,7 +492,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
 
       <DialogFooter className="gap-2 flex-wrap">
         <Button variant="outline" onClick={onClose} disabled={saving}>
-          取消
+          {isEn ? 'Cancel' : '取消'}
         </Button>
         {item.status === 'PENDING_REVIEW' && (
           <>
@@ -479,7 +502,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
               variant="outline"
               className="border-red-200 text-red-600 hover:bg-red-50"
             >
-              拒绝
+              {isEn ? 'Reject' : '拒绝'}
             </Button>
             <Button
               onClick={() => act('approve')}
@@ -487,12 +510,18 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
               style={{ background: '#875A7B', borderColor: '#875A7B' }}
               className="text-white hover:opacity-90"
             >
-              {saving ? '保存中…' : `批准（${disposition === 'SELLABLE' ? '可再售' : '报废'}）`}
+              {saving
+                ? (isEn ? 'Saving…' : '保存中…')
+                : (isEn
+                    ? `Approve — ${disposition === 'SELLABLE' ? 'Resellable' : 'Scrap'}`
+                    : `批准（${disposition === 'SELLABLE' ? '可再售' : '报废'}）`)}
             </Button>
           </>
         )}
         {item.status === 'APPROVED' && (
-          <span className="text-xs text-gray-400 self-center">结算请前往「财务 → 生成贷记单」</span>
+          <span className="text-xs text-gray-400 self-center">
+            {isEn ? 'To settle, go to Finance → Generate Credit Note' : '结算请前往「财务 → 生成贷记单」'}
+          </span>
         )}
       </DialogFooter>
     </DialogContent>
@@ -501,7 +530,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-const FILTER_TABS: { key: FilterStatus; label: string }[] = [
+const FILTER_TABS_ZH: { key: FilterStatus; label: string }[] = [
   { key: 'ALL', label: '全部' },
   { key: 'PENDING_REVIEW', label: '待审核' },
   { key: 'APPROVED', label: '已批准' },
@@ -509,9 +538,19 @@ const FILTER_TABS: { key: FilterStatus; label: string }[] = [
   { key: 'SETTLED', label: '已结算' },
 ]
 
+const FILTER_TABS_EN: { key: FilterStatus; label: string }[] = [
+  { key: 'ALL', label: 'All' },
+  { key: 'PENDING_REVIEW', label: 'Pending Review' },
+  { key: 'APPROVED', label: 'Approved' },
+  { key: 'REJECTED', label: 'Rejected' },
+  { key: 'SETTLED', label: 'Settled' },
+]
+
 export default function ClassicReturnsPage() {
   const locale = useLocale()
   const en = locale !== routing.defaultLocale
+  const STATUS_LABELS = en ? STATUS_LABELS_EN : STATUS_LABELS_ZH
+  const FILTER_TABS = en ? FILTER_TABS_EN : FILTER_TABS_ZH
 
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(false)
@@ -527,7 +566,7 @@ export default function ClassicReturnsPage() {
       const data = await apiGet<Record<string, unknown>[]>('/api/trips')
       setTrips(data as unknown as Trip[])
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载数据失败')
+      toast.error(e instanceof Error ? e.message : (en ? 'Failed to load data' : '加载数据失败'))
     } finally {
       setLoading(false)
     }
@@ -598,7 +637,7 @@ export default function ClassicReturnsPage() {
       label: en ? 'Refund' : '退款金额',
       render: (v, row) => {
         const item = row as unknown as FlatReturn
-        if (item.status === 'PENDING_REVIEW') return <span className="text-gray-400 text-xs">待审核</span>
+        if (item.status === 'PENDING_REVIEW') return <span className="text-gray-400 text-xs">{en ? 'Pending Review' : '待审核'}</span>
         if (v == null) return <span className="text-gray-400">—</span>
         return <span className="text-sm font-medium">€{Number(v).toFixed(2)}</span>
       },

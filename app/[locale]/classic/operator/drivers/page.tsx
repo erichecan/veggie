@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import FieldTip from '@/components/ui/FieldTip'
@@ -32,6 +34,8 @@ const BATCH_OPTIONS = [1, 2, 3, 4, 5]
 function rowKey(r: DraftRow) { return r.id ?? `new-${Date.now()}` }
 
 export default function DriversPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [rows, setRows] = useState<DraftRow[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [archivedRows, setArchivedRows] = useState<DriverSlot[]>([])
@@ -73,7 +77,7 @@ export default function DriversPage() {
         }))
       )
     } catch {
-      toast.error('加载失败')
+      toast.error(isEn ? 'Failed to load' : '加载失败')
     }
   }
 
@@ -89,7 +93,7 @@ export default function DriversPage() {
       const data = await apiGet<DriverSlot[]>('/api/driver-slots?archived=true')
       setArchivedRows(data)
     } catch {
-      toast.error('加载归档数据失败')
+      toast.error(isEn ? 'Failed to load archived data' : '加载归档数据失败')
     }
   }
 
@@ -134,7 +138,7 @@ export default function DriversPage() {
 
   async function saveRow(idx: number) {
     const row = rows[idx]
-    if (!row.driverName.trim()) { toast.error('请填写司机名字'); return }
+    if (!row.driverName.trim()) { toast.error(isEn ? 'Please enter the driver name' : '请填写司机名字'); return }
     const name = row.driverName.trim()
     const num = Number(row.batchNum)
 
@@ -147,14 +151,20 @@ export default function DriversPage() {
       )
       if (archivedMatch) {
         revivingFromArchive = true
-        const timeLabel = row.timeOfDay === 'pm' ? '下午' : '上午'
-        let msg = `「${name}」已存在于归档中（${timeLabel} · 批次${num}）。\n继续将恢复这条归档记录（保留其历史行程 / 默认客户关联），而不是新建一条。`
+        const timeLabel = isEn
+          ? (row.timeOfDay === 'pm' ? 'PM' : 'AM')
+          : (row.timeOfDay === 'pm' ? '下午' : '上午')
+        let msg = isEn
+          ? `"${name}" already exists in the archive (${timeLabel} · Batch ${num}).\nContinuing will restore this archived record (keeping its trip history / default customer links) instead of creating a new one.`
+          : `「${name}」已存在于归档中（${timeLabel} · 批次${num}）。\n继续将恢复这条归档记录（保留其历史行程 / 默认客户关联），而不是新建一条。`
         // 复活会用当前表单的绑定覆盖原绑定:留空则清除原来绑定的账号,提示用户
         if (archivedMatch.userId && !row.userId) {
-          const boundName = driverUsers.find(u => u.id === archivedMatch.userId)?.name ?? '原账号'
-          msg += `\n\n⚠️ 该归档司机原绑定系统用户「${boundName}」；你当前未选绑定用户，恢复后将清除原绑定。如需保留请先在下拉里选回该用户。`
+          const boundName = driverUsers.find(u => u.id === archivedMatch.userId)?.name ?? (isEn ? 'original account' : '原账号')
+          msg += isEn
+            ? `\n\n⚠️ This archived driver was originally bound to system user "${boundName}"; you haven't selected a user to bind, so restoring will clear the original binding. To keep it, select that user from the dropdown first.`
+            : `\n\n⚠️ 该归档司机原绑定系统用户「${boundName}」；你当前未选绑定用户，恢复后将清除原绑定。如需保留请先在下拉里选回该用户。`
         }
-        msg += `\n\n是否继续恢复？`
+        msg += isEn ? `\n\nContinue restoring?` : `\n\n是否继续恢复？`
         if (!confirm(msg)) return
       }
     }
@@ -182,10 +192,15 @@ export default function DriversPage() {
         ))
         if (revivingFromArchive) loadArchived() // 复活后从归档集移除,保持匹配数据最新
       }
-      toast.success(revivingFromArchive ? '已从归档恢复该司机' : '已保存')
+      toast.success(revivingFromArchive
+        ? (isEn ? 'Driver restored from archive' : '已从归档恢复该司机')
+        : (isEn ? 'Saved' : '已保存'))
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      toast.error(msg.includes('409') || msg.includes('已存在') || msg.includes('相同时段') ? '该司机已在相同时段和批次中' : '保存失败')
+      const isConflict = msg.includes('409') || msg.includes('已存在') || msg.includes('相同时段')
+      toast.error(isConflict
+        ? (isEn ? 'This driver already exists in the same time slot and batch' : '该司机已在相同时段和批次中')
+        : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSaving(s => ({ ...s, [key]: false }))
     }
@@ -199,10 +214,10 @@ export default function DriversPage() {
     try {
       await apiPut(`/api/driver-slots/${row.id}`, { archived: true })
       setRows(prev => prev.filter((_, i) => i !== idx))
-      toast.success('已归档')
+      toast.success(isEn ? 'Archived' : '已归档')
       loadArchived() // 始终刷新归档集,保证再次添加同名时能触发复活提示
     } catch {
-      toast.error('归档失败')
+      toast.error(isEn ? 'Failed to archive' : '归档失败')
     } finally {
       setArchiving(a => ({ ...a, [key]: false }))
     }
@@ -213,10 +228,10 @@ export default function DriversPage() {
     try {
       await apiPut(`/api/driver-slots/${id}`, { archived: false })
       setArchivedRows(prev => prev.filter(r => r.id !== id))
-      toast.success('已恢复')
+      toast.success(isEn ? 'Restored' : '已恢复')
       load()
     } catch {
-      toast.error('恢复失败')
+      toast.error(isEn ? 'Failed to restore' : '恢复失败')
     } finally {
       setArchiving(a => ({ ...a, [id]: false }))
     }
@@ -250,8 +265,8 @@ export default function DriversPage() {
       {/* 页头 */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-gray-400">设置</p>
-          <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>司机配置</h1>
+          <p className="text-xs text-gray-400">{isEn ? 'Settings' : '设置'}</p>
+          <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>{isEn ? 'Driver Configuration' : '司机配置'}</h1>
         </div>
         <div className="flex gap-2 items-center">
           {hasDirty && (
@@ -261,14 +276,14 @@ export default function DriversPage() {
                 className="px-3 py-1.5 rounded text-sm font-medium text-white"
                 style={{ background: '#21a67a' }}
               >
-                保存
+                {isEn ? 'Save' : '保存'}
               </button>
               <button
                 onClick={() => { rows.forEach((_, i) => { if (rows[i].dirty) discardEdit(i) }) }}
                 className="px-3 py-1.5 rounded text-sm font-medium border"
                 style={{ borderColor: BORDER, color: '#666' }}
               >
-                放弃
+                {isEn ? 'Discard' : '放弃'}
               </button>
             </>
           )}
@@ -277,7 +292,7 @@ export default function DriversPage() {
             className="px-4 py-1.5 rounded text-sm font-medium text-white"
             style={{ background: PURPLE }}
           >
-            + 新增
+            {isEn ? '+ Add' : '+ 新增'}
           </button>
         </div>
       </div>
@@ -286,17 +301,19 @@ export default function DriversPage() {
         {/* Table header */}
         <div className="grid grid-cols-[110px_80px_1fr_170px_auto] gap-3 px-4 py-2.5 text-xs font-semibold border-b" style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb' }}>
           <button type="button" onClick={() => toggleSort('timeOfDay')} className="flex items-center gap-1 text-left hover:opacity-70">
-            时段（上午/下午）{sortArrow('timeOfDay')}
+            {isEn ? 'Time of Day (AM/PM)' : '时段（上午/下午）'}{sortArrow('timeOfDay')}
           </button>
           <button type="button" onClick={() => toggleSort('batchNum')} className="flex items-center gap-1 text-left hover:opacity-70">
-            批次编号{sortArrow('batchNum')}
+            {isEn ? 'Batch No.' : '批次编号'}{sortArrow('batchNum')}
           </button>
           <button type="button" onClick={() => toggleSort('driverName')} className="flex items-center gap-1 text-left hover:opacity-70">
-            司机名字{sortArrow('driverName')}
+            {isEn ? 'Driver Name' : '司机名字'}{sortArrow('driverName')}
           </button>
           <span className="flex items-center gap-1">
-            绑定系统用户
-            <FieldTip tip="把该批次/司机关联到一个 DRIVER 角色登录账号。派车生成行程单时以此账号为司机身份（Trip.driverId），未来司机端也按它登录查「我的行程」，提成也据此归属。司机名字只是显示快照，身份以此账号为准；不绑不影响打单派车。" />
+            {isEn ? 'Bound System User' : '绑定系统用户'}
+            <FieldTip tip={isEn
+              ? 'Link this batch/driver to a login account with the DRIVER role. When a trip is generated for dispatch, this account is used as the driver identity (Trip.driverId); the future driver app will also log in with it to view "My Trips", and commissions are attributed to it. The driver name is only a display snapshot — this account is the source of truth for identity. Leaving it unbound does not affect printing or dispatch.'
+              : '把该批次/司机关联到一个 DRIVER 角色登录账号。派车生成行程单时以此账号为司机身份（Trip.driverId），未来司机端也按它登录查「我的行程」，提成也据此归属。司机名字只是显示快照，身份以此账号为准；不绑不影响打单派车。'} />
           </span>
           <span className="w-32" />
         </div>
@@ -309,9 +326,9 @@ export default function DriversPage() {
             className="border rounded px-2 py-1 text-xs outline-none focus:ring-1 w-full"
             style={{ ...inputStyle, ...focusStyle }}
           >
-            <option value="">全部时段</option>
-            <option value="am">上午</option>
-            <option value="pm">下午</option>
+            <option value="">{isEn ? 'All Times' : '全部时段'}</option>
+            <option value="am">{isEn ? 'AM' : '上午'}</option>
+            <option value="pm">{isEn ? 'PM' : '下午'}</option>
           </select>
           <select
             value={filterBatch}
@@ -319,14 +336,14 @@ export default function DriversPage() {
             className="border rounded px-2 py-1 text-xs outline-none focus:ring-1 w-full"
             style={{ ...inputStyle, ...focusStyle }}
           >
-            <option value="">全部</option>
+            <option value="">{isEn ? 'All' : '全部'}</option>
             {BATCH_OPTIONS.map(n => <option key={n} value={String(n)}>{n}</option>)}
           </select>
           <input
             type="text"
             value={filterName}
             onChange={e => setFilterName(e.target.value)}
-            placeholder="搜索司机名字…"
+            placeholder={isEn ? 'Search driver name…' : '搜索司机名字…'}
             className="border rounded px-2 py-1 text-xs outline-none focus:ring-1 w-full"
             style={{ ...inputStyle, ...focusStyle }}
           />
@@ -339,7 +356,7 @@ export default function DriversPage() {
                 className="px-2 py-1 rounded text-xs font-medium border"
                 style={{ borderColor: BORDER, color: '#666' }}
               >
-                清除
+                {isEn ? 'Clear' : '清除'}
               </button>
             )}
           </div>
@@ -347,13 +364,13 @@ export default function DriversPage() {
 
         {rows.length === 0 && (
           <div className="py-12 text-center text-sm text-gray-400">
-            暂无司机配置，点击「新增」添加
+            {isEn ? 'No driver configurations yet, click "Add" to create one' : '暂无司机配置，点击「新增」添加'}
           </div>
         )}
 
         {rows.length > 0 && displayed.length === 0 && (
           <div className="py-12 text-center text-sm text-gray-400">
-            无匹配结果
+            {isEn ? 'No matching results' : '无匹配结果'}
           </div>
         )}
 
@@ -377,11 +394,11 @@ export default function DriversPage() {
                   className={inputCls}
                   style={{ ...inputStyle, ...focusStyle }}
                 >
-                  <option value="am">上午（am）</option>
-                  <option value="pm">下午（pm）</option>
+                  <option value="am">{isEn ? 'AM' : '上午（am）'}</option>
+                  <option value="pm">{isEn ? 'PM' : '下午（pm）'}</option>
                 </select>
               ) : (
-                <span className="text-sm px-2 py-1.5">{row.timeOfDay === 'am' ? '上午' : '下午'}</span>
+                <span className="text-sm px-2 py-1.5">{isEn ? (row.timeOfDay === 'am' ? 'AM' : 'PM') : (row.timeOfDay === 'am' ? '上午' : '下午')}</span>
               )}
 
               {/* 批次编号 */}
@@ -408,7 +425,7 @@ export default function DriversPage() {
                   value={row.driverName}
                   onChange={e => updateRow(idx, 'driverName', e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') saveRow(idx) }}
-                  placeholder="输入司机名字"
+                  placeholder={isEn ? 'Enter driver name' : '输入司机名字'}
                   className={inputCls}
                   style={{ ...inputStyle, ...focusStyle }}
                 />
@@ -424,14 +441,14 @@ export default function DriversPage() {
                   className={inputCls}
                   style={{ ...inputStyle, ...focusStyle }}
                 >
-                  <option value="">— 未绑定 —</option>
+                  <option value="">{isEn ? '— Unbound —' : '— 未绑定 —'}</option>
                   {driverUsers.map(u => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
               ) : (
                 <span className="text-sm px-2 py-1.5" style={{ color: row.userId ? '#333' : '#c00' }}>
-                  {row.userId ? (driverUsers.find(u => u.id === row.userId)?.name ?? '(已绑定)') : '未绑定 ⚠'}
+                  {row.userId ? (driverUsers.find(u => u.id === row.userId)?.name ?? (isEn ? '(bound)' : '(已绑定)')) : (isEn ? 'Unbound ⚠' : '未绑定 ⚠')}
                 </span>
               )}
 
@@ -445,14 +462,14 @@ export default function DriversPage() {
                       className="px-2.5 py-1 rounded text-xs font-medium text-white disabled:opacity-50"
                       style={{ background: '#21a67a' }}
                     >
-                      {isSaving ? '...' : '保存'}
+                      {isSaving ? '...' : (isEn ? 'Save' : '保存')}
                     </button>
                     <button
                       onClick={() => discardEdit(idx)}
                       className="px-2.5 py-1 rounded text-xs font-medium border"
                       style={{ borderColor: '#d1d5db', color: '#666' }}
                     >
-                      放弃
+                      {isEn ? 'Discard' : '放弃'}
                     </button>
                   </>
                 ) : (
@@ -462,14 +479,14 @@ export default function DriversPage() {
                       className="px-2.5 py-1 rounded text-xs font-medium"
                       style={{ color: PURPLE }}
                     >
-                      修改
+                      {isEn ? 'Edit' : '修改'}
                     </button>
                     <button
                       onClick={() => archiveRow(idx)}
                       disabled={isArchiving}
                       className="px-2 py-1 rounded text-xs font-medium text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-50"
                     >
-                      {isArchiving ? '...' : '归档'}
+                      {isArchiving ? '...' : (isEn ? 'Archive' : '归档')}
                     </button>
                   </>
                 )}
@@ -485,7 +502,7 @@ export default function DriversPage() {
         className="mt-3 w-full py-2 rounded-lg border border-dashed text-sm font-medium transition-colors hover:bg-[#faf5fb]"
         style={{ borderColor: BORDER, color: PURPLE }}
       >
-        + 新增司机配置
+        {isEn ? '+ Add Driver Configuration' : '+ 新增司机配置'}
       </button>
 
       {/* 归档区域 */}
@@ -495,27 +512,32 @@ export default function DriversPage() {
           className="text-xs font-medium underline"
           style={{ color: PURPLE }}
         >
-          {showArchived ? '隐藏归档司机' : '查看归档司机'}
+          {isEn
+            ? (showArchived ? 'Hide archived drivers' : 'View archived drivers')
+            : (showArchived ? '隐藏归档司机' : '查看归档司机')}
         </button>
 
         {showArchived && (
           <div className="mt-3 bg-gray-50 rounded-lg border overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
             <div className="px-4 py-2 text-xs font-semibold text-gray-500 border-b bg-gray-100">
-              已归档司机（{archivedRows.length}）
+              {isEn ? `Archived Drivers (${archivedRows.length})` : `已归档司机（${archivedRows.length}）`}
             </div>
             {archivedRows.length === 0 ? (
-              <div className="py-6 text-center text-xs text-gray-400">无归档记录</div>
+              <div className="py-6 text-center text-xs text-gray-400">{isEn ? 'No archived records' : '无归档记录'}</div>
             ) : (
               archivedRows.map(slot => (
                 <div key={slot.id} className="flex items-center justify-between px-4 py-2.5 border-b last:border-b-0 text-sm text-gray-500">
-                  <span>{slot.timeOfDay === 'am' ? '上午' : '下午'} · 批次 {slot.batchNum} · {slot.driverName}</span>
+                  <span>
+                    {isEn ? (slot.timeOfDay === 'am' ? 'AM' : 'PM') : (slot.timeOfDay === 'am' ? '上午' : '下午')}
+                    {' · '}{isEn ? 'Batch' : '批次'} {slot.batchNum} · {slot.driverName}
+                  </span>
                   <button
                     onClick={() => restoreRow(slot.id)}
                     disabled={archiving[slot.id]}
                     className="px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-50"
                     style={{ background: PURPLE }}
                   >
-                    {archiving[slot.id] ? '...' : '恢复'}
+                    {archiving[slot.id] ? '...' : (isEn ? 'Restore' : '恢复')}
                   </button>
                 </div>
               ))
@@ -526,7 +548,9 @@ export default function DriversPage() {
 
       {rows.length > 0 && (
         <p className="text-xs text-gray-400">
-          双击行可进入编辑模式 · 批次格式：批次编号 + 时段 + 司机名 → 例如「1 am BAO」
+          {isEn
+            ? 'Double-click a row to edit · Batch format: batch number + time of day + driver name → e.g. "1 am BAO"'
+            : '双击行可进入编辑模式 · 批次格式：批次编号 + 时段 + 司机名 → 例如「1 am BAO」'}
         </p>
       )}
     </div>

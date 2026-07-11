@@ -1,5 +1,7 @@
 'use client'
 import { useState, useMemo } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 
 // ─── Content ──────────────────────────────────────────────────────────────────
 
@@ -25,7 +27,7 @@ interface HelpRole {
   sections: HelpSection[]
 }
 
-const HELP_CONTENT: HelpRole[] = [
+const HELP_CONTENT_ZH: HelpRole[] = [
   {
     id: 'operator',
     label: '销售人员',
@@ -452,6 +454,433 @@ const HELP_CONTENT: HelpRole[] = [
   },
 ]
 
+const HELP_CONTENT_EN: HelpRole[] = [
+  {
+    id: 'operator',
+    label: 'Sales Staff',
+    emoji: '🏭',
+    sections: [
+      {
+        id: 'op-dispatch-console',
+        title: 'Dispatch Console (Assign Drivers · Print Lock)',
+        emoji: '🚚',
+        articles: [
+          {
+            id: 'op-dispatch-flow',
+            title: 'Retail Flow: Assign Driver → Print Lock (Stops at "Wave Assigned")',
+            steps: [
+              '【① Enter the Dispatch Console】After taking a phone order, sales enters it into the system (including the delivery date the customer wants), confirms the details with the customer, and clicks "Confirm". At this point stock is reserved (held, not actually deducted), the order status becomes "Confirmed (CONFIRMED)", and it appears on the Orders page waiting to be assigned a driver. At this stage every "car" for the order is dark gray, meaning no driver has been assigned yet.',
+              '【② Assign a Driver】On the Dispatch Console, drag the order from "Unassigned" on the left into a driver\'s column. The car turns from dark gray to green, meaning a driver has been assigned. Once every car for an order is green, that\'s "Assignment Done" — the order status automatically upgrades from "Confirmed" to "Wave Assigned (WAVE_ASSIGNED)" (shown in the UI as "Driver Assigned").',
+              '【③ Print Lock】The print operator locks the order and prints the picking list; the locked car turns amber, and that car\'s contents and driver assignment are frozen. Note: a print lock only changes the car\'s color, not the order status — the order stays "Wave Assigned" throughout. Locking is independent per car, so the same order can have some cars green and others amber. To change a locked part, you must unlock it first.',
+            ],
+            note: 'The current workflow stops at "Wave Assigned": once a driver is assigned and the print lock is applied, the order stays at "Wave Assigned" — sorting, loading, and delivery continue offline, but the system status doesn\'t advance further. The system does have later statuses ("In Delivery / Completed / Locked"), but since no one currently clicks "Confirm Departure", the order never actually reaches them, and they won\'t show up in production data.',
+            tip: 'A "car" is the delivery unit an order\'s goods get split into by "driver + batch" — one car corresponds to one driver. Three colors: dark gray = no driver assigned, green = assigned but not locked, amber = print-locked (contents frozen).',
+          },
+          {
+            id: 'op-dispatch-errors',
+            title: 'Dispatch Console: Blocks & Error Quick Reference',
+            steps: [
+              'Dragging an order onto a locked (amber) driver column pops up "This trip is locked, cannot assign" and the drop is rejected. Correct approach: pick a different, unlocked car, or unlock the target car first.',
+              'Editing the content or lines of a locked order returns a 409 error: "This order has entered the picking process; its content and driver assignment are locked and cannot be modified." Correct approach: unlock first, then edit.',
+              'Reassigning a locked order to a different car also returns a 409 rejection (content and driver assignment are locked). Correct approach: unlock first, then reassign.',
+              'Once an order is cancelled, it no longer counts toward sales summaries or the daily report (the list view and printed reports use the same basis).',
+            ],
+            note: '"Locked" means the picking process has already started, and both content and driver assignment are frozen — this is a gate that protects picking accuracy. Any change requires unlocking first.',
+          },
+          {
+            id: 'op-dispatch-unlock',
+            title: 'Unlocking: What to Do When You Need to Change a Locked Order',
+            steps: [
+              'How a lock happens: ① when the print operator prints a picking list, the system automatically locks that batch; ② you can also manually click "Lock" in the "Print Center". Once locked, that batch\'s cars turn amber, and order content and driver assignment are frozen.',
+              'Where to unlock: go to "Print Center" inside the "Daily Sales Center", find the batch, and click "Unlock" — "Lock / Unlock" is a toggle pair. On success you\'ll see "Unlocked".',
+              'Who can unlock: any logged-in user on the system can unlock a batch; but by working convention, when the Dispatch Console hits a locked batch it prompts "Please go to the Print Center / ask the print operator to unlock it" — this is normally handled by the print operator at the Print Center.',
+              'After unlocking: the car reverts from amber, and you can reassign drivers, edit order content, or add/remove order lines again. If picking needs to continue after your edits, reprinting the picking list automatically re-locks it.',
+            ],
+            note: 'Clicking "Unlock" on a batch that isn\'t locked shows "This batch is not locked". Lock / Unlock is a switch that protects picking accuracy: it locks during picking to prevent accidental changes — to make a change, unlock first, edit, then re-lock by reprinting the picking list.',
+            tip: 'Remember the three steps: unlock at the "Print Center" first → go back to the Dispatch Console to make the change (reassign / edit content) → reprinting the picking list automatically re-locks it.',
+          },
+        ],
+      },
+      {
+        id: 'op-workflow',
+        title: 'Full Business Workflow',
+        emoji: '🔄',
+        articles: [
+          {
+            id: 'op-workflow-overview',
+            title: 'From Order to Invoice: Full Workflow Overview',
+            steps: [
+              '【Place Order】The restaurant self-serves an order, or sales places one on the customer\'s behalf on the "Place Order" page, selecting products and submitting.',
+              '【Receive Order】Go to the "Orders" page, review new orders with status "Pending", and confirm the content is correct.',
+              '【Generate Wave】Select a batch of pending orders → click "Generate Pick Wave"; the system consolidates the picking list and notifies the warehouse.',
+              '【Picking】The picker works through the wave\'s list line by line in the warehouse, enters the actual quantities, and submits when done.',
+              '【Sorting】Go to the "Sorting" page and pack the picked goods into the correct boxes for each restaurant\'s order, confirming the quantities.',
+              '【Assign Driver】Go to "Trips" and, for orange "Driver Not Assigned" trips, choose a driver and departure time, then click "Confirm Assignment".',
+              '【Delivery & Sign-off】The driver delivers stop by stop along the trip; the restaurant checks the goods and signs off, and the driver uploads a photo and confirms delivery.',
+              '【Invoicing】Once delivery is complete, the system automatically generates a draft invoice; sales reviews it and clicks "Post invoice" to finish invoicing.',
+            ],
+            tip: 'The whole workflow is chained together — completing each step automatically updates the status for the next. You can view the full visual diagram on the "Workflow Diagram" page.',
+          },
+          {
+            id: 'op-place-order',
+            title: '① Place Order on a Customer\'s Behalf: Submit an Order for a Restaurant',
+            steps: [
+              'Go to the "Place Order" page from the top navigation.',
+              'In the customer selector at the top of the page, choose the name of the restaurant you\'re ordering for.',
+              'The system automatically loads that customer\'s dedicated pricelist, and the page shows their personalized prices.',
+              'Browse products by category on the left, click "+ Add to Cart", and adjust the quantity in the cart.',
+              'Once the products and quantities are correct, click "Submit Order".',
+              'Choose a payment method: 💳 Online Transfer (settled on account terms) or 💵 Cash on Delivery (driver collects cash at delivery).',
+              'Click "Confirm Order" — the order is created with status "Pending".',
+            ],
+            note: 'After placing the order on the customer\'s behalf, the restaurant customer can also see this order record on their "My Orders" page.',
+          },
+          {
+            id: 'op-order-to-wave',
+            title: '② Process Incoming Orders: Confirm and Generate a Pick Wave',
+            steps: [
+              'Go to the "Orders" page — orders with status "Pending" need to be handled promptly.',
+              'Click an order to view its detailed product list and confirm the content is correct.',
+              'Check the orders you want to process together (orders in the same delivery batch should be merged into one wave).',
+              'Click "Generate Pick Wave" — the system automatically consolidates all products and creates the wave.',
+              'On the "Pick Waves" page, assign the wave to the appropriate picker.',
+            ],
+            note: 'An order can only belong to one wave — orders already in a wave can\'t be selected again.',
+          },
+          {
+            id: 'op-sorting',
+            title: '③ Sorting: Pack Picked Goods for Each Restaurant',
+            steps: [
+              'Once the picker submits the wave as complete, go to the "Sorting" page.',
+              'Find the sorting task for that wave and click into it.',
+              'The page groups goods by restaurant, showing the products and quantities each restaurant needs.',
+              'Pack the picked goods from the warehouse into each restaurant\'s own box or pallet, according to the restaurant labels.',
+              'If the actual quantity differs from the order, update the actual quantity on that line and add a note.',
+              'Once sorting for all restaurants is done, click "Complete Sorting" — the system automatically generates the delivery trip.',
+            ],
+          },
+          {
+            id: 'op-trip-assign',
+            title: '④ Delivery: Assign a Driver and Track Delivery Progress',
+            steps: [
+              'Go to the "Trips" page and find trips with the orange "Driver Not Assigned" status.',
+              'Click the trip and expand the "Assign Driver" panel in the detail view.',
+              'Select the driver responsible for the trip from the dropdown.',
+              'Enter the expected departure time (a reference time for the driver).',
+              'Click "Confirm Assignment" — once the driver logs in, they can see and accept the trip.',
+              'During delivery, you can view each stop\'s delivery status in real time on the "Trips" page.',
+            ],
+            tip: 'You can create multiple trips at once and assign them to different drivers — the system supports parallel deliveries across multiple drivers.',
+          },
+          {
+            id: 'op-invoice',
+            title: '⑤ Invoicing: Post the Invoice and Complete Accounting',
+            steps: [
+              'Once the driver completes all stops, the system automatically generates a draft invoice based on the actual delivered quantities.',
+              'Go to the "Invoices" page and find invoices with status "Draft".',
+              'Check that the products, quantities, and amounts on the invoice match the actual delivery.',
+              'If there\'s a discrepancy (e.g. the restaurant refused an item), click the invoice line to open the detail and adjust the quantity.',
+              'Once everything checks out, click "Post invoice" — the invoice status becomes "Posted".',
+              'Posted amounts are automatically recorded to that customer\'s accounts receivable, viewable in the financial reports.',
+            ],
+            note: 'Once an invoice is posted it can\'t be edited directly — to make a correction, click "Reset to Draft" first, then edit.',
+          },
+        ],
+      },
+      {
+        id: 'op-products',
+        title: 'Product Management',
+        emoji: '📦',
+        articles: [
+          {
+            id: 'op-product-create',
+            title: 'How to Create a New Product',
+            steps: [
+              'Go to the "Products" page from the top navigation.',
+              'Click the "+ New Product" button in the top-right corner to open the creation form.',
+              'Fill in the product name, sales unit (e.g. kg, piece, bunch), and default price.',
+              'Click the image area to upload a product photo (recommended size 400×400, JPG/PNG).',
+              'Click "Save" to create the product — it starts as "Draft" status and isn\'t visible to restaurants yet.',
+              'Back on the product list, click the "Activate" button on the right of that product\'s row — the status becomes "Active", and restaurants can then order it.',
+            ],
+            note: 'Only products with "Active" status appear on the restaurant ordering screen.',
+          },
+          {
+            id: 'op-product-edit',
+            title: 'Edit Product Price or Info',
+            steps: [
+              'On the product list page, click any product\'s row to enter edit mode.',
+              'Edit the fields you need to change (name, unit, price, image, etc.).',
+              'Click "Save" to apply immediately — price changes are visible to restaurants in real time.',
+            ],
+            tip: 'If you need special pricing for a specific customer, use the "Pricelists" and "Customer Pricing" features instead of changing the product\'s default price.',
+          },
+          {
+            id: 'op-product-fields',
+            title: 'Field Reference',
+            steps: [
+              'Internal Reference: the SKU code used for internal tracking, not shown to customers. Format is free-form, e.g. VEG-001.',
+              'Commission Price: the base price used to calculate sales staff commission — it does not affect the price shown to customers.',
+              'Customer Taxes: defaults to 13.5% VAT, matching the Irish food tax rate — the system automatically calculates the tax-inclusive price.',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'op-pricing',
+        title: 'Pricelists & Pricing',
+        emoji: '💰',
+        articles: [
+          {
+            id: 'op-pricelist-create',
+            title: 'Create a Pricelist',
+            steps: [
+              'Go to the "Pricelists" page from the top navigation.',
+              'Click "+ New Pricelist", and fill in a name (e.g. "Key Account Discount") and effective date.',
+              'In the pricelist detail, add products line by line and set the pricing rules for this list.',
+              'Computation type reference: "Fixed Price" sets a direct price per unit; "Discount" applies a percentage off the product\'s selling price; "Formula" computes a markup on top of the cost price.',
+              'Click "Save" to finish creating it — at this point the pricelist isn\'t linked to any customer yet.',
+            ],
+            note: 'A pricelist is a template — it only takes effect once linked to a specific customer on the "Customer Pricing" page.',
+          },
+          {
+            id: 'op-pricing-customer',
+            title: 'Assign a Pricelist to a Customer',
+            steps: [
+              'Go to the "Customer Pricing" page — all restaurant customers are listed on the left.',
+              'Click the customer you want to configure — their current pricing setup shows on the right.',
+              'In the "Linked Pricelist" dropdown, select an existing pricelist.',
+              'If you need to override the price of a specific product just for this customer, add the product in the "Item-Specific Override" section and enter a price.',
+              'Click "Save" to apply — the customer will automatically use the new price on their next order.',
+            ],
+          },
+          {
+            id: 'op-pricing-tiered',
+            title: 'Set Up Tiered Pricing',
+            steps: [
+              'On a pricelist product line, find the "Min. Quantity" field.',
+              'Set a quantity threshold: this price only applies once the customer\'s order quantity reaches this value.',
+              'For example: set 1 kg = €3.00 and 5 kg = €2.70, meaning purchases of 5 kg or more get the lower unit price.',
+              'You can add multiple lines with different quantity thresholds for the same product — the system automatically matches the most suitable price.',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'op-customers',
+        title: 'Customer Management',
+        emoji: '👥',
+        articles: [
+          {
+            id: 'op-customer-create',
+            title: 'Add a New Restaurant Customer',
+            steps: [
+              'Go to the "Customers" page and click "+ New Customer" in the top-right corner.',
+              'Fill in the restaurant name, contact person, phone number, and delivery address.',
+              'VAT number format: IE + 7 digits + 1–2 letters (e.g. IE1234567T).',
+              'Choose a payment method: Cash on Delivery (paid at each delivery) / Weekly Terms / Monthly Terms.',
+              'Set a credit limit (0 = unlimited): the system will warn you if the customer\'s outstanding balance exceeds this value.',
+              'Click "Save" to finish adding the customer.',
+            ],
+          },
+          {
+            id: 'op-customer-commission',
+            title: 'Set the Commission Rate',
+            steps: [
+              'On the customer detail page, find the "Commission Rate" field and enter a percentage between 0–100.',
+              'For example, entering 5 means 5% of this customer\'s order amount is paid as sales commission.',
+              'On the "Finance" page you can view the total commission payable, summarized per customer.',
+            ],
+            tip: 'The commission rate only affects financial reports — it doesn\'t affect the prices customers see.',
+          },
+        ],
+      },
+      {
+        id: 'op-waves',
+        title: 'Pick Waves',
+        emoji: '🗂️',
+        articles: [
+          {
+            id: 'op-wave-what',
+            title: 'What Is a Wave?',
+            steps: [
+              'A wave is a group of orders that need to be picked together.',
+              'By merging multiple orders into one wave, the picker can pick by product category all at once, cutting down walking distance in the warehouse and significantly improving efficiency.',
+              'Each wave generates a picking list showing all the products that need to be picked and their total quantities.',
+            ],
+          },
+          {
+            id: 'op-wave-create',
+            title: 'Create a Pick Wave',
+            steps: [
+              'Go to the "Orders" page and review orders with status "Pending".',
+              'Check the orders you want to merge (you can select all).',
+              'Click "Generate Pick Wave" — the system automatically creates the wave and consolidates the picking list.',
+              'On the "Pick Waves" page you can view created waves and assign them to pickers.',
+            ],
+            note: 'An order can only belong to one wave — orders already in a wave can\'t be selected again.',
+          },
+        ],
+      },
+      {
+        id: 'op-trips',
+        title: 'Delivery Trips',
+        emoji: '🚛',
+        articles: [
+          {
+            id: 'op-trip-create',
+            title: 'Create a Delivery Trip',
+            steps: [
+              'When a pick wave is generated, the system automatically pre-creates the corresponding delivery trip.',
+              'Go to the "Trips" page and find trips with the orange "Driver Not Assigned" status.',
+              'Click the trip and expand the "Assign Driver" panel in the detail dialog.',
+              'Select a driver from the dropdown and set the expected departure time.',
+              'Click "Confirm Assignment" to finish — once the driver logs in, they can see the trip.',
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'restaurant',
+    label: 'Restaurant',
+    emoji: '🍜',
+    sections: [
+      {
+        id: 'rest-ordering',
+        title: 'How to Place an Order',
+        emoji: '🛒',
+        articles: [
+          {
+            id: 'rest-order-steps',
+            title: 'Full Ordering Process',
+            steps: [
+              'After logging in, go to the "Shop" page — filter products by vegetable category on the left.',
+              'Find the product you need and click "Add to Cart" — you can adjust the quantity before adding.',
+              'Confirm the product list and quantities in the cart area on the right; use "+" / "-" to fine-tune, or type the quantity directly.',
+              'Once everything is correct, click "Submit Order".',
+              'Choose a payment method: 💳 Online Transfer or 💵 Cash on Delivery (pay the driver cash at delivery).',
+              'Click "Confirm Payment" to complete the order — the order status becomes "Pending Picking".',
+            ],
+            tip: 'The prices shown on the page are already your dedicated prices (tax included) — no need to calculate manually.',
+          },
+          {
+            id: 'rest-order-modify',
+            title: 'Can I Modify an Order After Submitting?',
+            steps: [
+              'After an order is submitted, if its status is still "Pending Picking", contact your sales rep for help modifying or cancelling it.',
+              'Once the order reaches "Picking" status, it has entered the warehouse workflow and can no longer be modified directly.',
+            ],
+            note: 'We recommend placing your order before the cutoff time — your sales rep will usually let you know what that is.',
+          },
+        ],
+      },
+      {
+        id: 'rest-orders',
+        title: 'Order Management',
+        emoji: '📋',
+        articles: [
+          {
+            id: 'rest-order-status',
+            title: 'Check Order Status',
+            steps: [
+              'Click "My Orders" in the top navigation to view your order list.',
+              'Each order shows the order time, total item count, amount, and current status.',
+              'Status reference: "Pending Picking" → order received, awaiting warehouse processing; "In Delivery" → the driver is on the way; "Delivered" → delivery complete.',
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'picker',
+    label: 'Picker',
+    emoji: '📦',
+    sections: [
+      {
+        id: 'pick-waves',
+        title: 'Pick Waves',
+        emoji: '🗂️',
+        articles: [
+          {
+            id: 'pick-view-waves',
+            title: 'View Waves Assigned to Me',
+            steps: [
+              'After logging in, the system automatically shows the list of pick waves assigned to you.',
+              'Each wave shows: wave number, number of orders included, total product quantity, and current status.',
+              'Status reference: "Pending" → not started yet; "In Progress" → work has started; "Completed" → submitted.',
+              'Prioritize waves with "Pending" status, ordered by urgency.',
+            ],
+          },
+          {
+            id: 'pick-do-picking',
+            title: 'Complete a Picking Task',
+            steps: [
+              'Click a wave to open its picking detail page, which lists all the products that need to be picked.',
+              'Go through the products line by line: locate each product and pick out the required quantity.',
+              'Once a product is picked, check its checkbox and enter the actual picked quantity in the quantity field.',
+              'If a product is short on stock, enter the quantity you were actually able to pick and explain why in the notes field.',
+              'Once all products are handled, click "Submit" at the bottom.',
+              'The wave status becomes "Completed", and sales and the sorter will be notified.',
+            ],
+            note: 'If the actual quantity differs from the order, you must fill in a note explaining why, so sales can follow up.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'driver',
+    label: 'Driver',
+    emoji: '🚛',
+    sections: [
+      {
+        id: 'drv-trips',
+        title: 'Delivery Trips',
+        emoji: '🗺️',
+        articles: [
+          {
+            id: 'drv-view-trips',
+            title: 'View Today\'s Delivery Trips',
+            steps: [
+              'After logging in, go to the "My Trips" page, which shows all trips assigned to you.',
+              'Each trip shows: trip number, number of restaurant stops, expected departure time, and status.',
+              'Click a trip to expand it and view the address and product list for every delivery stop.',
+              'Follow the trip order and visit each restaurant in sequence to complete deliveries.',
+            ],
+          },
+          {
+            id: 'drv-confirm-delivery',
+            title: 'Confirm Delivery Completion',
+            steps: [
+              'After arriving at a restaurant, find that stop in the trip detail.',
+              'Expand the stop and check the product list against what you\'re actually delivering.',
+              'If there\'s a return or a quantity mismatch, update the actual delivered quantity and add a note.',
+              'Enter the amount collected at this stop (cash amount).',
+              'Click "Photo Sign-off" → take a photo of the restaurant\'s signed receipt or the storefront as proof of delivery.',
+              'Click "Confirm Delivered" to complete that stop — the status turns green "Delivered".',
+              'Repeat these steps for every stop, then click "Complete Trip" to finish today\'s trip.',
+            ],
+            tip: 'Every stop must have "Confirm Delivered" completed before you can move to the next — the system records the delivery time for each stop.',
+          },
+          {
+            id: 'drv-abnormal',
+            title: 'Handling Unusual Situations',
+            steps: [
+              'If a restaurant refuses an item: enter 0 in the quantity field, note the reason for refusal (e.g. "quality issue", "wrong quantity"), then confirm delivery.',
+              'If no one is available to receive the delivery: take a photo of the doorway as proof, note "no one to receive" in the remarks, and contact sales to coordinate.',
+              'If the collected amount is wrong: enter the amount actually received, note any discrepancy in the remarks, and finance will follow up during reconciliation.',
+            ],
+            note: 'All unusual situations must be recorded in the notes so sales can follow up afterward.',
+          },
+        ],
+      },
+    ],
+  },
+]
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function flatArticles(roles: HelpRole[]) {
@@ -510,10 +939,14 @@ function ArticleCard({ article }: { article: HelpArticle }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ClassicHelpPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const HELP_CONTENT = isEn ? HELP_CONTENT_EN : HELP_CONTENT_ZH
+
   const [activeRoleId, setActiveRoleId] = useState('operator')
   const [query, setQuery] = useState('')
 
-  const allArticles = useMemo(() => flatArticles(HELP_CONTENT), [])
+  const allArticles = useMemo(() => flatArticles(HELP_CONTENT), [HELP_CONTENT])
   const activeRole = HELP_CONTENT.find(r => r.id === activeRoleId)!
 
   const searchResults = useMemo(() => {
@@ -532,19 +965,19 @@ export default function ClassicHelpPage() {
       {/* Page header — Odoo-style purple banner */}
       <div className="px-6 py-5 border-b border-gray-200" style={{ background: ODOO_PURPLE }}>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-white/60 text-xs">销售控制台</span>
+          <span className="text-white/60 text-xs">{isEn ? 'Sales Console' : '销售控制台'}</span>
           <span className="text-white/40 text-xs">›</span>
-          <span className="text-white text-xs font-medium">帮助中心</span>
+          <span className="text-white text-xs font-medium">{isEn ? 'Help Center' : '帮助中心'}</span>
         </div>
-        <h1 className="text-xl font-bold text-white mb-0.5">帮助中心</h1>
-        <p className="text-white/70 text-xs">查找操作指南、了解各模块功能，快速上手系统</p>
+        <h1 className="text-xl font-bold text-white mb-0.5">{isEn ? 'Help Center' : '帮助中心'}</h1>
+        <p className="text-white/70 text-xs">{isEn ? 'Find operating guides, learn what each module does, and get up to speed with the system quickly.' : '查找操作指南、了解各模块功能，快速上手系统'}</p>
 
         {/* Search bar */}
         <div className="mt-3 relative max-w-md">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
           <input
             type="text"
-            placeholder={'搜索帮助文档（如"下单"、"波次"、"价格"）'}
+            placeholder={isEn ? 'Search help articles (e.g. "order", "wave", "price")' : '搜索帮助文档（如"下单"、"波次"、"价格"）'}
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full pl-9 pr-8 py-2 rounded text-sm text-gray-900 bg-white placeholder-gray-400 border-0 outline-none focus:ring-2"
@@ -564,7 +997,7 @@ export default function ClassicHelpPage() {
       <div className="flex h-full">
         {/* Left sidebar */}
         <aside className="w-48 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-120px)] py-4 px-3">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">按角色浏览</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">{isEn ? 'Browse by Role' : '按角色浏览'}</p>
           <nav className="space-y-0.5">
             {HELP_CONTENT.map(role => {
               const isActive = activeRoleId === role.id && !searchResults
@@ -590,8 +1023,8 @@ export default function ClassicHelpPage() {
           </nav>
 
           <div className="mt-6 mx-1 p-3 rounded border text-xs leading-relaxed" style={{ background: ODOO_PURPLE_LIGHT, borderColor: ODOO_PURPLE_BORDER, color: ODOO_PURPLE }}>
-            <p className="font-semibold mb-1">还需要帮助？</p>
-            <p className="opacity-80">点击页面右上角 <strong>?</strong> 按钮可随时查看当前角色的快速提示。</p>
+            <p className="font-semibold mb-1">{isEn ? 'Need more help?' : '还需要帮助？'}</p>
+            <p className="opacity-80">{isEn ? <>Click the <strong>?</strong> button in the top-right corner anytime to see quick tips for your current role.</> : <>点击页面右上角 <strong>?</strong> 按钮可随时查看当前角色的快速提示。</>}</p>
           </div>
         </aside>
 
@@ -602,20 +1035,20 @@ export default function ClassicHelpPage() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-gray-700">
-                  搜索「{query}」— 共 {searchResults.length} 条结果
+                  {isEn ? `Search "${query}" — ${searchResults.length} results` : `搜索「${query}」— 共 ${searchResults.length} 条结果`}
                 </h2>
                 <button
                   onClick={() => setQuery('')}
                   className="text-xs hover:underline"
                   style={{ color: ODOO_PURPLE }}
                 >
-                  清除搜索
+                  {isEn ? 'Clear Search' : '清除搜索'}
                 </button>
               </div>
               {searchResults.length === 0 ? (
                 <div className="text-center py-20">
                   <div className="text-4xl mb-3">🔍</div>
-                  <p className="text-gray-500 text-sm">没有找到相关内容，请尝试其他关键词</p>
+                  <p className="text-gray-500 text-sm">{isEn ? 'No matching results found, please try different keywords' : '没有找到相关内容，请尝试其他关键词'}</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -641,7 +1074,7 @@ export default function ClassicHelpPage() {
             <div>
               <div className="flex items-center gap-2 mb-5">
                 <span className="text-2xl">{activeRole.emoji}</span>
-                <h2 className="text-lg font-bold text-gray-900">{activeRole.label} — 操作指南</h2>
+                <h2 className="text-lg font-bold text-gray-900">{activeRole.label} — {isEn ? 'User Guide' : '操作指南'}</h2>
               </div>
 
               <div className="space-y-8">

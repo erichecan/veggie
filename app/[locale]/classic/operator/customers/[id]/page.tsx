@@ -207,6 +207,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
 
   const [form, setForm] = useState<FormState>(emptyForm())
   const [original, setOriginal] = useState<Customer | null>(null)
@@ -260,14 +261,14 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
           setSpecialPrices(c.specialPrices ?? [])
           setLoading(false)
         })
-        .catch(() => { toast.error('加载客户信息失败'); router.push(`${prefix}/classic/operator/customers`) })
+        .catch(() => { toast.error(isEn ? 'Failed to load customer' : '加载客户信息失败'); router.push(`${prefix}/classic/operator/customers`) })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   async function handleSave() {
     if (saving) return
-    if (!form.name.trim()) { toast.error('客户名称不能为空'); return }
+    if (!form.name.trim()) { toast.error(isEn ? 'Customer name is required' : '客户名称不能为空'); return }
 
     const creditLimit = form.creditLimit !== '' ? Number(form.creditLimit) : undefined
     const commissionRate = form.commissionRate !== '' ? Number(form.commissionRate) / 100 : undefined
@@ -318,15 +319,15 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
     try {
       if (isNew) {
         const created = await apiPost<Customer>('/api/customers', { ...fields, createdAt: new Date().toISOString() })
-        toast.success('客户已创建')
+        toast.success(isEn ? 'Customer created' : '客户已创建')
         router.replace(`${prefix}/classic/operator/customers/${created.id}`)
       } else {
         await apiPut(`/api/customers/${id}`, { ...original, ...fields })
-        toast.success('保存成功')
+        toast.success(isEn ? 'Saved successfully' : '保存成功')
         setDirty(false)
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -352,7 +353,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
 
   function saveSPDialog() {
     if (!editingSP.productId || editingSP.fixedPrice == null) {
-      toast.error('请填写商品和固定价格')
+      toast.error(isEn ? 'Please fill in product and fixed price' : '请填写商品和固定价格')
       return
     }
     setSpecialPrices(prev => {
@@ -376,7 +377,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
     }
     if (!original) {
       // 数据还没加载完就点了，给点反馈
-      toast.info('数据还在加载中，请稍候再试')
+      toast.info(isEn ? 'Data is still loading, please try again shortly' : '数据还在加载中，请稍候再试')
       return
     }
     if (dirty) {
@@ -384,7 +385,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       setForm(customerToForm(original))
       setSpecialPrices(original.specialPrices ?? [])
       setDirty(false)
-      toast.success('未保存的修改已撤销')
+      toast.success(isEn ? 'Unsaved changes discarded' : '未保存的修改已撤销')
     } else {
       // 没有改动时，跳回列表（让按钮一定有可见反馈）
       router.push(`${prefix}/classic/operator/customers`)
@@ -444,7 +445,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
         <div className="mx-auto mt-3 px-5 py-2 flex items-center gap-2 text-sm font-medium"
           style={{ background: '#fef3c7', color: '#92400e', borderBottom: '1px solid #fcd34d' }}
         >
-          ⚠️ 该客户已归档，不会出现在常规列表中。
+          ⚠️ {isEn ? 'This customer is archived and will not appear in the regular list.' : '该客户已归档，不会出现在常规列表中。'}
         </div>
       )}
 
@@ -682,9 +683,9 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             </OdooField>
             <OdooField label="Price Type">
               <select value={form.priceType} onChange={e => setField('priceType', e.target.value)} className={selectCls}>
-                <option value="Multi Price">Multi Price（走价格表）</option>
-                <option value="Default Price">Default Price（用牌价）</option>
-                <option value="Last Purchase Price">Last Purchase Price（上次成交价）</option>
+                <option value="Multi Price">{isEn ? 'Multi Price (uses pricelist)' : 'Multi Price（走价格表）'}</option>
+                <option value="Default Price">{isEn ? 'Default Price (uses list price)' : 'Default Price（用牌价）'}</option>
+                <option value="Last Purchase Price">{isEn ? 'Last Purchase Price (last deal price)' : 'Last Purchase Price（上次成交价）'}</option>
               </select>
             </OdooField>
           </div>
@@ -718,7 +719,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             <div>
               <button
                 className="h-7 px-3 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                onClick={() => toast.info('联系人功能即将推出')}
+                onClick={() => toast.info(isEn ? 'Contacts feature coming soon' : '联系人功能即将推出')}
               >
                 Add
               </button>
@@ -731,7 +732,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             <div className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Internal Notes</label>
-                <p className="text-xs text-gray-400 mb-1.5">仅内部可见，不会打印给客户</p>
+                <p className="text-xs text-gray-400 mb-1.5">{isEn ? 'Internal use only, not printed for the customer' : '仅内部可见，不会打印给客户'}</p>
                 <textarea
                   value={form.notes}
                   onChange={e => setField('notes', e.target.value)}
@@ -741,14 +742,14 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">External Note / 客户外部备注</label>
-                <p className="text-xs text-gray-400 mb-1.5">客户可见，会打印在该客户的报价单和送货单上（如收货注意事项、结算方式、后门密码等）</p>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'External Note / Customer-facing Note' : 'External Note / 客户外部备注'}</label>
+                <p className="text-xs text-gray-400 mb-1.5">{isEn ? 'Visible to the customer, printed on this customer\'s quotations and delivery notes (e.g. receiving instructions, payment terms, back-door code, etc.)' : '客户可见，会打印在该客户的报价单和送货单上（如收货注意事项、结算方式、后门密码等）'}</p>
                 <textarea
                   value={form.externalNote}
                   onChange={e => setField('externalNote', e.target.value)}
                   rows={4}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-[#875A7B] resize-none"
-                  placeholder="例如：讲广东话；现金结算；后门密码 1234…"
+                  placeholder={isEn ? 'e.g. Speaks Cantonese; cash payment; back-door code 1234…' : '例如：讲广东话；现金结算；后门密码 1234…'}
                 />
               </div>
             </div>
@@ -882,7 +883,9 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500">
-                    客户专属定价——最高优先级，覆盖价格表规则和商品牌价。按商品 + 最小起订量精确匹配。
+                    {isEn
+                      ? 'Customer-specific pricing — highest priority, overrides pricelist rules and the product list price. Matched exactly by product + minimum order quantity.'
+                      : '客户专属定价——最高优先级，覆盖价格表规则和商品牌价。按商品 + 最小起订量精确匹配。'}
                   </p>
                 </div>
                 <button
