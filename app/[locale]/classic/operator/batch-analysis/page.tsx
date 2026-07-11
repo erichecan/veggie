@@ -11,14 +11,15 @@ export default function BatchAnalysisPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
 
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['配送', '配送行程', '批次路线分析']}
+        breadcrumb={isEn ? ['Dispatch', 'Trips', 'Batch Route Analysis'] : ['配送', '配送行程', '批次路线分析']}
         permanentActions={[
           {
-            label: '返回行程',
+            label: isEn ? 'Back to Trips' : '返回行程',
             onClick: () => router.push(`${prefix}/classic/operator/trips`),
           },
         ]}

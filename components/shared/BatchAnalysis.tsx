@@ -1,16 +1,24 @@
 'use client'
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import dynamic from 'next/dynamic'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import { getBatchColor, computeConvexHull, type MapMarker, type ConvexHullGroup } from './BatchMap'
 
+function MapLoadingFallback() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  return (
+    <div className="h-[520px] rounded-lg border bg-gray-50 flex items-center justify-center text-sm text-gray-400">
+      {isEn ? 'Loading map…' : '加载地图…'}
+    </div>
+  )
+}
+
 const BatchMap = dynamic(() => import('./BatchMap'), {
   ssr: false,
-  loading: () => (
-    <div className="h-[520px] rounded-lg border bg-gray-50 flex items-center justify-center text-sm text-gray-400">
-      加载地图…
-    </div>
-  ),
+  loading: () => <MapLoadingFallback />,
 })
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
@@ -44,7 +52,8 @@ function getWorkload(km: number, min: number): WorkloadLevel {
   return 'easy'
 }
 
-const WORKLOAD_LABEL: Record<WorkloadLevel, string> = { easy: '轻松', mid: '中等', heavy: '偏重' }
+const WORKLOAD_LABEL_ZH: Record<WorkloadLevel, string> = { easy: '轻松', mid: '中等', heavy: '偏重' }
+const WORKLOAD_LABEL_EN: Record<WorkloadLevel, string> = { easy: 'Light', mid: 'Medium', heavy: 'Heavy' }
 const WORKLOAD_STYLE: Record<WorkloadLevel, string> = {
   easy: 'bg-green-100 text-green-800',
   mid: 'bg-amber-100 text-amber-800',
@@ -61,6 +70,10 @@ function formatDuration(min: number): string {
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function BatchAnalysis() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const WORKLOAD_LABEL = isEn ? WORKLOAD_LABEL_EN : WORKLOAD_LABEL_ZH
+
   // Data
   const [batches, setBatches] = useState<BatchGroup[]>([])
   const [loading, setLoading] = useState(true)
@@ -236,7 +249,7 @@ export default function BatchAnalysis() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
-        加载批次数据中…
+        {isEn ? 'Loading batch data…' : '加载批次数据中…'}
       </div>
     )
   }
@@ -245,7 +258,7 @@ export default function BatchAnalysis() {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-gray-400 text-sm gap-2">
         <span className="text-3xl">📭</span>
-        无批次数据
+        {isEn ? 'No batch data' : '无批次数据'}
       </div>
     )
   }
@@ -255,7 +268,7 @@ export default function BatchAnalysis() {
     <div>
       {/* ═══ ACTION BAR (sticky) ═══ */}
       <div className="sticky top-0 z-40 bg-white border-b px-6 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-bold text-gray-800">批次路线分析</h1>
+        <h1 className="text-lg font-bold text-gray-800">{isEn ? 'Batch Route Analysis' : '批次路线分析'}</h1>
         <div className="flex items-center gap-3">
           {calcProgress && (
             <div className="flex items-center gap-3">
@@ -266,7 +279,9 @@ export default function BatchAnalysis() {
                 />
               </div>
               <span className="text-sm text-gray-500">
-                正在计算 {calcProgress.current}/{calcProgress.total} 批次…
+                {isEn
+                  ? `Calculating ${calcProgress.current}/${calcProgress.total} batches…`
+                  : `正在计算 ${calcProgress.current}/${calcProgress.total} 批次…`}
               </span>
             </div>
           )}
@@ -278,7 +293,9 @@ export default function BatchAnalysis() {
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M9 17V7m0 10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m0 10a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m0 10V7m0 10a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2" />
             </svg>
-            {calcDone ? '重新计算所有路线' : '计算所有路线'}
+            {calcDone
+              ? (isEn ? 'Recalculate All Routes' : '重新计算所有路线')
+              : (isEn ? 'Calculate All Routes' : '计算所有路线')}
           </button>
           <button
             onClick={() => { setRouteInfoMap({}); setCalcDone(false); fetchBatches() }}
@@ -288,7 +305,7 @@ export default function BatchAnalysis() {
               <path d="M4 4v5h5M20 20v-5h-5" />
               <path d="M20.49 9A9 9 0 0 0 5.64 5.64L4 4m16 16l-1.64-1.64A9 9 0 0 1 3.51 15" />
             </svg>
-            刷新数据
+            {isEn ? 'Refresh Data' : '刷新数据'}
           </button>
         </div>
       </div>
@@ -298,11 +315,13 @@ export default function BatchAnalysis() {
         {missingCoords.length > 0 && (
           <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5">
             <div className="text-sm text-amber-800">
-              <span className="font-semibold">{missingCoords.length} 家餐馆缺少坐标</span>
+              <span className="font-semibold">
+                {isEn ? `${missingCoords.length} restaurants missing coordinates` : `${missingCoords.length} 家餐馆缺少坐标`}
+              </span>
               <span className="ml-1 text-amber-700">
-                — 无法参与路线计算：
-                {missingCoords.slice(0, 5).map(r => `${r.name} (${r.batch})`).join('、')}
-                {missingCoords.length > 5 && `…等 ${missingCoords.length} 家`}
+                {isEn ? ' — Cannot join route calculation: ' : '— 无法参与路线计算：'}
+                {missingCoords.slice(0, 5).map(r => `${r.name} (${r.batch})`).join(isEn ? ', ' : '、')}
+                {missingCoords.length > 5 && (isEn ? `…and ${missingCoords.length} more` : `…等 ${missingCoords.length} 家`)}
               </span>
             </div>
             <button
@@ -310,7 +329,7 @@ export default function BatchAnalysis() {
               disabled={geocoding}
               className="shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 transition"
             >
-              {geocoding ? '解析中…' : '自动解析地址'}
+              {geocoding ? (isEn ? 'Resolving…' : '解析中…') : (isEn ? 'Auto-resolve addresses' : '自动解析地址')}
             </button>
           </div>
         )}
@@ -319,7 +338,7 @@ export default function BatchAnalysis() {
         {allMarkers.length > 0 && (
           <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
             <div className="px-5 py-4 flex items-center justify-between border-b border-gray-100">
-              <h2 className="text-base font-semibold">配送地图</h2>
+              <h2 className="text-base font-semibold">{isEn ? 'Delivery Map' : '配送地图'}</h2>
               <div className="flex gap-1.5 flex-wrap">
                 {batches.map(b => {
                   const isHidden = hiddenBatches.has(b.batchIndex)
@@ -358,19 +377,19 @@ export default function BatchAnalysis() {
         {hasAnyRoute && (
           <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
             <div className="px-5 py-4 flex items-center justify-between border-b border-gray-100">
-              <h2 className="text-base font-semibold">批次对比总览</h2>
-              <span className="text-[13px] text-gray-400">按工作量从高到低排列</span>
+              <h2 className="text-base font-semibold">{isEn ? 'Batch Comparison Overview' : '批次对比总览'}</h2>
+              <span className="text-[13px] text-gray-400">{isEn ? 'Sorted by workload, high to low' : '按工作量从高到低排列'}</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="bg-gray-50 text-left text-[13px] font-semibold text-gray-500">
-                    <th className="px-4 py-3 min-w-[200px]">批次</th>
-                    <th className="px-4 py-3">餐馆数</th>
-                    <th className="px-4 py-3">总距离</th>
-                    <th className="px-4 py-3">预计时间</th>
-                    <th className="px-4 py-3">平均/站</th>
-                    <th className="px-4 py-3">工作量</th>
+                    <th className="px-4 py-3 min-w-[200px]">{isEn ? 'Batch' : '批次'}</th>
+                    <th className="px-4 py-3">{isEn ? 'Restaurants' : '餐馆数'}</th>
+                    <th className="px-4 py-3">{isEn ? 'Total Distance' : '总距离'}</th>
+                    <th className="px-4 py-3">{isEn ? 'Est. Time' : '预计时间'}</th>
+                    <th className="px-4 py-3">{isEn ? 'Avg/Stop' : '平均/站'}</th>
+                    <th className="px-4 py-3">{isEn ? 'Workload' : '工作量'}</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
@@ -390,7 +409,7 @@ export default function BatchAnalysis() {
                             {row.batch.batchLabel}
                             {isWarn && (
                               <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded bg-red-50 text-red-600 text-xs font-semibold">
-                                距离超平均 2x
+                                {isEn ? 'Distance > 2x avg' : '距离超平均 2x'}
                               </span>
                             )}
                           </div>
@@ -427,7 +446,7 @@ export default function BatchAnalysis() {
                   {/* Average row */}
                   {overviewRows.filter(r => r.route).length >= 2 && (
                     <tr className="bg-gray-50 font-semibold">
-                      <td className="px-4 py-3.5">平均值</td>
+                      <td className="px-4 py-3.5">{isEn ? 'Average' : '平均值'}</td>
                       <td className="px-4 py-3.5">{avgRestaurants.toFixed(1)}</td>
                       <td className="px-4 py-3.5">{avgDistance.toFixed(1)} km</td>
                       <td className="px-4 py-3.5">{formatDuration(avgDuration)}</td>
@@ -448,7 +467,7 @@ export default function BatchAnalysis() {
 
         {/* ═══ BATCH DETAIL CARDS ═══ */}
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">批次详情</h2>
+          <h2 className="text-base font-semibold">{isEn ? 'Batch Details' : '批次详情'}</h2>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[repeat(auto-fill,minmax(420px,1fr))] gap-4">
@@ -479,7 +498,9 @@ export default function BatchAnalysis() {
                     <div>
                       <h3 className="text-[15px] font-semibold leading-tight">{batch.batchLabel}</h3>
                       <span className="text-[13px] text-gray-400">
-                        {batch.restaurants.length} 家餐馆 · {missingCount > 0 ? `${missingCount} 家缺坐标` : '全部有坐标'}
+                        {isEn
+                          ? `${batch.restaurants.length} restaurants · ${missingCount > 0 ? `${missingCount} missing coords` : 'all have coords'}`
+                          : `${batch.restaurants.length} 家餐馆 · ${missingCount > 0 ? `${missingCount} 家缺坐标` : '全部有坐标'}`}
                       </span>
                     </div>
                   </div>
@@ -501,21 +522,21 @@ export default function BatchAnalysis() {
                       <span className={`text-xl font-bold leading-tight ${isHeavy ? 'text-red-600' : 'text-blue-800'}`}>
                         {route.totalDistanceKm.toFixed(1)} km
                       </span>
-                      <span className="text-xs text-gray-500">总距离</span>
+                      <span className="text-xs text-gray-500">{isEn ? 'Total Distance' : '总距离'}</span>
                     </div>
                     <div className={`w-px h-8 ${isHeavy ? 'bg-red-200' : 'bg-blue-200'}`} />
                     <div className="flex flex-col">
                       <span className={`text-xl font-bold leading-tight ${isHeavy ? 'text-red-600' : 'text-blue-800'}`}>
                         {formatDuration(route.totalDurationMin)}
                       </span>
-                      <span className="text-xs text-gray-500">预计时间</span>
+                      <span className="text-xs text-gray-500">{isEn ? 'Est. Time' : '预计时间'}</span>
                     </div>
                     <div className={`w-px h-8 ${isHeavy ? 'bg-red-200' : 'bg-blue-200'}`} />
                     <div className="flex flex-col">
                       <span className={`text-xl font-bold leading-tight ${isHeavy ? 'text-red-600' : 'text-blue-800'}`}>
                         {avgPerStop.toFixed(1)} km
                       </span>
-                      <span className="text-xs text-gray-500">平均/站</span>
+                      <span className="text-xs text-gray-500">{isEn ? 'Avg/Stop' : '平均/站'}</span>
                     </div>
                   </div>
                 )}
@@ -526,7 +547,7 @@ export default function BatchAnalysis() {
                     <svg width="16" height="16" fill="#dc2626" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" clipRule="evenodd" />
                     </svg>
-                    总距离超过平均值 2 倍，建议检查地理分布是否合理
+                    {isEn ? 'Total distance exceeds 2x the average — check if the geographic distribution is reasonable' : '总距离超过平均值 2 倍，建议检查地理分布是否合理'}
                   </div>
                 )}
 
@@ -553,7 +574,9 @@ export default function BatchAnalysis() {
                       >
                         <path d="m9 18 6-6-6-6" />
                       </svg>
-                      {legsExpanded ? '收起路线详情' : '展开路线详情'}
+                      {legsExpanded
+                        ? (isEn ? 'Hide route details' : '收起路线详情')
+                        : (isEn ? 'Show route details' : '展开路线详情')}
                     </button>
                     {legsExpanded && (
                       <div className="pb-3 space-y-1">
@@ -590,7 +613,7 @@ export default function BatchAnalysis() {
                         </span>
                       )}
                       {(!r.latitude || !r.longitude) && (
-                        <span className="text-amber-500 text-xs ml-1">(无坐标)</span>
+                        <span className="text-amber-500 text-xs ml-1">{isEn ? '(no coords)' : '(无坐标)'}</span>
                       )}
                     </div>
                   ))}

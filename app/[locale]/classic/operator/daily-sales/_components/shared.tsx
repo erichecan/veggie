@@ -1,5 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { fmtMoney as canonicalFmtMoney } from '@/lib/format-money'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -90,7 +92,10 @@ interface InlineSearchProps {
   disabled?: boolean
 }
 
-export function InlineSearch({ placeholder = '+ 添加筛选项', items, onSelect, disabled }: InlineSearchProps) {
+export function InlineSearch({ placeholder, items, onSelect, disabled }: InlineSearchProps) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const resolvedPlaceholder = placeholder ?? (isEn ? '+ Add filter' : '+ 添加筛选项')
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [focused, setFocused] = useState(0)
@@ -132,7 +137,7 @@ export function InlineSearch({ placeholder = '+ 添加筛选项', items, onSelec
           onClick={() => { setOpen(true); setTimeout(() => inputRef.current?.focus(), 0) }}
           className="text-xs text-[#875A7B] hover:underline disabled:opacity-40"
         >
-          {placeholder}
+          {resolvedPlaceholder}
         </button>
       ) : (
         <div>
@@ -141,7 +146,7 @@ export function InlineSearch({ placeholder = '+ 添加筛选项', items, onSelec
             value={query}
             onChange={e => { setQuery(e.target.value); setFocused(0) }}
             onKeyDown={handleKeyDown}
-            placeholder="搜索..."
+            placeholder={isEn ? 'Search...' : '搜索...'}
             className="border border-[#875A7B] rounded px-2 py-0.5 text-xs w-40 focus:outline-none"
           />
           {filtered.length > 0 && (

@@ -35,11 +35,12 @@ interface ReportLine {
   qtyOnHand: number
 }
 
-const DOW_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const DOW_LABELS_ZH = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const DOW_LABELS_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const fmtQty = (v: number) => (v % 1 === 0 ? v.toFixed(0) : v.toFixed(2))
 
 // 按客户查看：单个日期分组（日期头 → 客户 → 商品行 → 日小计）
-function FragmentRows({ day }: { day: { date: string; dateQty: number; dateAmt: number; customers: ReportLine[][] } }) {
+function FragmentRows({ day, isEn }: { day: { date: string; dateQty: number; dateAmt: number; customers: ReportLine[][] }; isEn: boolean }) {
   return (
     <>
       <tr className="bg-gray-100">
@@ -61,7 +62,7 @@ function FragmentRows({ day }: { day: { date: string; dateQty: number; dateAmt: 
         </Fragment>
       ))}
       <tr className="border-b border-gray-200 bg-gray-50 font-medium text-gray-600">
-        <td className="px-4 py-1.5">小计 {day.date}</td>
+        <td className="px-4 py-1.5">{isEn ? `Subtotal ${day.date}` : `小计 ${day.date}`}</td>
         <td className="px-4 py-1.5 text-right tabular-nums">{day.dateQty.toFixed(2)}</td>
         <td />
         <td className="px-4 py-1.5 text-right tabular-nums">{eur(day.dateAmt)}</td>
@@ -75,6 +76,8 @@ type ViewMode = 'customer' | 'product' | 'category' | 'weekday'
 export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const DOW_LABELS = isEn ? DOW_LABELS_EN : DOW_LABELS_ZH
 
   // ── 一套筛选条件（驱动下面全部查看方式）──────────────────────────────────
   const [fromDate, setFromDate] = useState(today)
@@ -180,7 +183,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
           customerName: o.restaurantName,
           productId: l.productId ?? '',
           productName: name,
-          categoryName: prod?.category ?? '未分类',
+          categoryName: prod?.category ?? (isEn ? 'Uncategorized' : '未分类'),
           uomName: l.uomName ?? prod?.uomName ?? '',
           qty: Number(l.orderedQty ?? 0),
           unitPrice: Number(l.unitPrice ?? 0),
@@ -190,7 +193,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       }
     }
     return out.sort((a, b) => a.date.localeCompare(b.date) || a.customerName.localeCompare(b.customerName))
-  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, productMap])
+  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, productMap, isEn])
 
   const reportTotal = useMemo(() => ({
     qty: reportLines.reduce((s, l) => s + l.qty, 0),
@@ -282,16 +285,18 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       value: occ[i] > 0 ? round1(sum[i] / occ[i]) : 0,
       occ: occ[i],
     }))
-  }, [reportLines, fromDate, toDate, weekdayMeasure])
+  }, [reportLines, fromDate, toDate, weekdayMeasure, DOW_LABELS])
 
   const weekdayConclusion = useMemo(() => {
     const nonZero = weekdayReport.filter(d => d.value > 0)
     if (nonZero.length === 0) return ''
     const peak = nonZero.reduce((max, d) => d.value > max.value ? d : max)
     const weekTotal = weekdayReport.reduce((s, d) => s + d.value, 0)
-    const fmt = (v: number) => weekdayMeasure === 'qty' ? `${fmtQty(v)} 件` : `€${v.toFixed(0)}`
-    return `日均峰值在${peak.day}（${fmt(peak.value)}）；按此日均，一周合计约 ${fmt(weekTotal)}。`
-  }, [weekdayReport, weekdayMeasure])
+    const fmt = (v: number) => weekdayMeasure === 'qty' ? (isEn ? `${fmtQty(v)} units` : `${fmtQty(v)} 件`) : `€${v.toFixed(0)}`
+    return isEn
+      ? `Daily average peaks on ${peak.day} (${fmt(peak.value)}); at this daily average, weekly total is about ${fmt(weekTotal)}.`
+      : `日均峰值在${peak.day}（${fmt(peak.value)}）；按此日均，一周合计约 ${fmt(weekTotal)}。`
+  }, [weekdayReport, weekdayMeasure, isEn])
 
   // ── 打印 ──────────────────────────────────────────────────────────────────
   function buildUrl(mode: 'day' | 'multiline' | 'summary') {
@@ -308,12 +313,15 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   }
 
   // 按分类查看的专属打印：直接渲染屏幕上的 categoryReport，保证所见即所打
+  // 打印内容(送到仓库调度备货用的实体单据)按团队约定始终保持中文，不随界面 locale 切换——
+  // 与 lib/print/* 系列单据同一原则(纸质单据是给一线员工用的)
   function handleCategoryPrint() {
     const w = window.open('', '_blank', 'noopener,width=800,height=700')
     if (!w) return
+    const unitLabel = '件'
     const catsHtml = categoryReport.map(cat => `
       <div style="margin-bottom:16px;">
-        <div style="background:#f3f4f6;padding:6px 12px;font-weight:bold;font-size:13px;border-radius:4px 4px 0 0;">${cat.catName} <span style="font-weight:normal;font-size:11px;color:#6b7280;">${cat.products.length} SKU · ${fmtQty(cat.totalQty)} 件</span></div>
+        <div style="background:#f3f4f6;padding:6px 12px;font-weight:bold;font-size:13px;border-radius:4px 4px 0 0;">${cat.catName} <span style="font-weight:normal;font-size:11px;color:#6b7280;">${cat.products.length} SKU · ${fmtQty(cat.totalQty)} ${unitLabel}</span></div>
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="background:#f9fafb;">
@@ -341,15 +349,20 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     const catLabel = selectedCategories.length > 0
       ? selectedCategories.map(id => allCategories.find(c => c.id === id)?.name ?? id).join('、')
       : '全部分类'
+    const titleLabel = '分类总量'
+    const dateLabel = '日期'
+    const categoryLabel = '分类'
+    const totalLabel = '合计'
+    const atpLegend = `ATP 色标：<span style="color:#10B981;">正数 = 有余量</span> · <span style="color:#F59E0B;">零 = 刚好用完</span> · <span style="color:#8B5CF6;">负数 ≠ 缺货（可能当天到货或可临时调货）</span>`
     w.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
-<title>分类总量 · ${fromDate}${toDate !== fromDate ? ' ~ ' + toDate : ''}</title>
+<title>${titleLabel} · ${fromDate}${toDate !== fromDate ? ' ~ ' + toDate : ''}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;padding:20px}@media print{@page{margin:1cm}body{padding:0}}</style>
 </head><body>
 <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px dashed #e5e7eb;font-size:12px;color:#6b7280;">
-  <b style="font-size:15px;color:#111;">分类总量</b>&nbsp;&nbsp;日期：<b style="color:#111;">${fromDate}${toDate !== fromDate ? ' ~ ' + toDate : ''}</b>&nbsp;&nbsp;分类：<b style="color:#111;">${catLabel}</b>&nbsp;&nbsp;合计：<b style="color:#111;">${categorySummary.sku} SKU · ${fmtQty(categorySummary.qty)} 件</b>
-  <div style="margin-top:4px;">ATP 色标：<span style="color:#10B981;">正数 = 有余量</span> · <span style="color:#F59E0B;">零 = 刚好用完</span> · <span style="color:#8B5CF6;">负数 ≠ 缺货（可能当天到货或可临时调货）</span></div>
+  <b style="font-size:15px;color:#111;">${titleLabel}</b>&nbsp;&nbsp;${dateLabel}：<b style="color:#111;">${fromDate}${toDate !== fromDate ? ' ~ ' + toDate : ''}</b>&nbsp;&nbsp;${categoryLabel}：<b style="color:#111;">${catLabel}</b>&nbsp;&nbsp;${totalLabel}：<b style="color:#111;">${categorySummary.sku} SKU · ${fmtQty(categorySummary.qty)} ${unitLabel}</b>
+  <div style="margin-top:4px;">${atpLegend}</div>
 </div>
 ${catsHtml}
 <script>window.print();<\/script>
@@ -361,10 +374,10 @@ ${catsHtml}
   const selectCls = 'border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white'
 
   const focusHint = selectedProducts.length > 0
-    ? `已聚焦商品：${selectedProducts.map(p => p.name).join('、')}`
+    ? (isEn ? `Focused on products: ${selectedProducts.map(p => p.name).join('、')}` : `已聚焦商品：${selectedProducts.map(p => p.name).join('、')}`)
     : selectedCategories.length > 0
-      ? `已聚焦分类：${selectedCategories.map(id => allCategories.find(c => c.id === id)?.name ?? '').join('、')}`
-      : '未选商品/分类 = 全店（可在上方选择要订的货）'
+      ? (isEn ? `Focused on categories: ${selectedCategories.map(id => allCategories.find(c => c.id === id)?.name ?? '').join('、')}` : `已聚焦分类：${selectedCategories.map(id => allCategories.find(c => c.id === id)?.name ?? '').join('、')}`)
+      : (isEn ? 'No product/category selected = whole store (select goods to order above)' : '未选商品/分类 = 全店（可在上方选择要订的货）')
 
   return (
     <div className="max-w-4xl space-y-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -383,20 +396,20 @@ ${catsHtml}
           <div className="flex items-center gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0">Salesman</label>
             <select value={selectedSalesman} onChange={e => setSelectedSalesman(e.target.value)} className={`${selectCls} flex-1`}>
-              <option value="">全部业务员</option>
+              <option value="">{isEn ? 'All Salespeople' : '全部业务员'}</option>
               {allSalesmen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
           <div className="flex items-start gap-3">
-            <label className="w-28 text-xs text-gray-500 shrink-0 pt-1.5">分类（多选）</label>
+            <label className="w-28 text-xs text-gray-500 shrink-0 pt-1.5">{isEn ? 'Categories (multi)' : '分类（多选）'}</label>
             <div className="flex items-center gap-1.5 flex-wrap flex-1">
               <MultiSelectPopover
-                label="分类"
+                label={isEn ? 'Category' : '分类'}
                 options={allCategories.map(c => ({ value: c.id, label: c.name }))}
                 selected={selectedCategories}
                 onChange={setSelectedCategories}
                 searchable
-                searchPlaceholder="搜索分类…"
+                searchPlaceholder={isEn ? 'Search categories…' : '搜索分类…'}
               />
               {selectedCategories.map(id => (
                 <span key={id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
@@ -411,15 +424,15 @@ ${catsHtml}
         {/* 司机 / AM-PM / 批次 */}
         <div className="space-y-2 pt-2 border-t border-dashed border-gray-100">
           <div className="flex items-start gap-3">
-            <label className="w-28 text-xs text-gray-500 shrink-0 pt-1">司机</label>
+            <label className="w-28 text-xs text-gray-500 shrink-0 pt-1">{isEn ? 'Driver' : '司机'}</label>
             <div className="flex items-center gap-1.5 flex-wrap flex-1">
               <MultiSelectPopover
-                label="司机"
+                label={isEn ? 'Driver' : '司机'}
                 options={batchFilterOptions.drivers.map(d => ({ value: d, label: d }))}
                 selected={selectedDrivers}
                 onChange={setSelectedDrivers}
                 searchable
-                searchPlaceholder="搜索司机…"
+                searchPlaceholder={isEn ? 'Search drivers…' : '搜索司机…'}
               />
               {selectedDrivers.map(d => (
                 <span key={d} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
@@ -432,16 +445,16 @@ ${catsHtml}
           <div className="flex items-start gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0 pt-1">AM / PM</label>
             <div className="flex gap-1.5 flex-wrap">
-              <button className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedTimes.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`} onClick={() => setSelectedTimes([])}>全部时段</button>
+              <button className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedTimes.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`} onClick={() => setSelectedTimes([])}>{isEn ? 'All time slots' : '全部时段'}</button>
               {batchFilterOptions.times.map(t => (
                 <button key={t} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedTimes.includes(t) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`} onClick={() => setSelectedTimes(prev => toggleValue(prev, t))}>{t.toUpperCase()}</button>
               ))}
             </div>
           </div>
           <div className="flex items-start gap-3">
-            <label className="w-28 text-xs text-gray-500 shrink-0 pt-1">批次</label>
+            <label className="w-28 text-xs text-gray-500 shrink-0 pt-1">{isEn ? 'Batch' : '批次'}</label>
             <div className="flex gap-1.5 flex-wrap">
-              <button className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedBatchNums.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`} onClick={() => setSelectedBatchNums([])}>全部批次</button>
+              <button className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedBatchNums.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`} onClick={() => setSelectedBatchNums([])}>{isEn ? 'All batches' : '全部批次'}</button>
               {batchFilterOptions.nums.map(n => (
                 <button key={n} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedBatchNums.includes(n) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`} onClick={() => setSelectedBatchNums(prev => toggleValue(prev, n))}>#{n}</button>
               ))}
@@ -465,12 +478,12 @@ ${catsHtml}
             onChange={setCustomerQuery}
             onSelect={c => setSelectedCustomers(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c])}
             excludeIds={selectedCustomers.map(c => c.id)}
-            placeholder="搜索客户…"
+            placeholder={isEn ? 'Search customers…' : '搜索客户…'}
             inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-40 focus:outline-none focus:border-[#875A7B]"
           />
           {selectedCustomers.length === 0
-            ? <span className="text-xs text-gray-400">（留空 = 全部客户）</span>
-            : <button onClick={() => setSelectedCustomers([])} className="text-xs text-gray-400 hover:text-gray-600">清除</button>}
+            ? <span className="text-xs text-gray-400">{isEn ? '(Empty = all customers)' : '（留空 = 全部客户）'}</span>
+            : <button onClick={() => setSelectedCustomers([])} className="text-xs text-gray-400 hover:text-gray-600">{isEn ? 'Clear' : '清除'}</button>}
         </div>
       </div>
 
@@ -489,14 +502,14 @@ ${catsHtml}
             onChange={setProductQuery}
             onSelect={p => { setSelectedProducts(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p]); setProductQuery('') }}
             products={allProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
-            placeholder="搜索商品…"
+            placeholder={isEn ? 'Search products…' : '搜索商品…'}
             inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-40 focus:outline-none focus:border-[#875A7B]"
             showOnEmptyQuery={false}
             selectOnTab
           />
           {selectedProducts.length === 0
-            ? <span className="text-xs text-gray-400">（留空 = 全部商品）</span>
-            : <button onClick={() => setSelectedProducts([])} className="text-xs text-gray-400 hover:text-gray-600">清除</button>}
+            ? <span className="text-xs text-gray-400">{isEn ? '(Empty = all products)' : '（留空 = 全部商品）'}</span>
+            : <button onClick={() => setSelectedProducts([])} className="text-xs text-gray-400 hover:text-gray-600">{isEn ? 'Clear' : '清除'}</button>}
         </div>
       </div>
 
@@ -505,13 +518,16 @@ ${catsHtml}
         <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap bg-gray-50 border-b border-gray-100">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              筛选结果
+              {isEn ? 'Filtered Results' : '筛选结果'}
               <span className="ml-2 font-normal normal-case text-gray-400">
-                {ordersLoading ? '加载中…' : `${reportLines.length} 行 · 合计 ${eur(reportTotal.amount)}`}
+                {ordersLoading ? (isEn ? 'Loading…' : '加载中…') : (isEn ? `${reportLines.length} rows · Total ${eur(reportTotal.amount)}` : `${reportLines.length} 行 · 合计 ${eur(reportTotal.amount)}`)}
               </span>
             </span>
             <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
-              {([['customer', '按客户'], ['product', '按商品'], ['category', '按分类'], ['weekday', '按星期趋势']] as [ViewMode, string][]).map(([v, label]) => (
+              {(isEn
+                ? ([['customer', 'By Customer'], ['product', 'By Product'], ['category', 'By Category'], ['weekday', 'By Weekday Trend']] as [ViewMode, string][])
+                : ([['customer', '按客户'], ['product', '按商品'], ['category', '按分类'], ['weekday', '按星期趋势']] as [ViewMode, string][])
+              ).map(([v, label]) => (
                 <button
                   key={v}
                   onClick={() => setViewMode(v)}
@@ -521,19 +537,19 @@ ${catsHtml}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">打印：</span>
+            <span className="text-xs text-gray-400">{isEn ? 'Print:' : '打印：'}</span>
             {viewMode === 'category' ? (
               <button
                 onClick={handleCategoryPrint}
                 disabled={reportLines.length === 0}
                 className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40"
                 style={{ borderColor: '#875A7B', color: '#875A7B' }}
-              >打印分类总量</button>
+              >{isEn ? 'Print Category Totals' : '打印分类总量'}</button>
             ) : (
               <>
-                <button onClick={() => window.open(buildUrl('day'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>日报（按客户）</button>
-                <button onClick={() => window.open(buildUrl('multiline'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>明细清单</button>
-                <button onClick={() => window.open(buildUrl('summary'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>商品×星期汇总</button>
+                <button onClick={() => window.open(buildUrl('day'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Daily Report (By Customer)' : '日报（按客户）'}</button>
+                <button onClick={() => window.open(buildUrl('multiline'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Detail List' : '明细清单'}</button>
+                <button onClick={() => window.open(buildUrl('summary'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Product × Weekday Summary' : '商品×星期汇总'}</button>
               </>
             )}
           </div>
@@ -542,7 +558,7 @@ ${catsHtml}
         {/* 空态 */}
         {viewMode !== 'weekday' && reportLines.length === 0 ? (
           <div className="px-5 py-8 text-center text-gray-400 text-sm">
-            {ordersLoading ? '加载中…' : '当前筛选条件下没有订单行'}
+            {ordersLoading ? (isEn ? 'Loading…' : '加载中…') : (isEn ? 'No order lines match the current filters' : '当前筛选条件下没有订单行')}
           </div>
         ) : viewMode === 'customer' ? (
           /* 按客户 */
@@ -550,16 +566,16 @@ ${catsHtml}
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-white shadow-sm">
                 <tr className="border-b border-gray-200">
-                  <th className="px-4 py-2 text-left text-gray-400 font-medium">产品</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">数量</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">单价</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">金额</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Product' : '产品'}</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Qty' : '数量'}</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Unit Price' : '单价'}</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">{isEn ? 'Amount' : '金额'}</th>
                 </tr>
               </thead>
               <tbody>
-                {groupedReport.map(day => <FragmentRows key={day.date} day={day} />)}
+                {groupedReport.map(day => <FragmentRows key={day.date} day={day} isEn={isEn} />)}
                 <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
-                  <td className="px-4 py-2">总计</td>
+                  <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{eur(reportTotal.amount)}</td>
@@ -573,11 +589,11 @@ ${catsHtml}
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-white shadow-sm">
                 <tr className="border-b border-gray-200">
-                  <th className="px-4 py-2 text-left text-gray-400 font-medium">产品</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-20">客户数</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">数量合计</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">均价</th>
-                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">金额合计</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium">{isEn ? 'Product' : '产品'}</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'Customers' : '客户数'}</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Total Qty' : '数量合计'}</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Avg Price' : '均价'}</th>
+                  <th className="px-4 py-2 text-right text-gray-400 font-medium w-28">{isEn ? 'Total Amount' : '金额合计'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -591,7 +607,7 @@ ${catsHtml}
                   </tr>
                 ))}
                 <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
-                  <td className="px-4 py-2">总计</td>
+                  <td className="px-4 py-2">{isEn ? 'Total' : '总计'}</td>
                   <td className="px-4 py-2" />
                   <td className="px-4 py-2 text-right tabular-nums">{reportTotal.qty.toFixed(2)}</td>
                   <td className="px-4 py-2" />
@@ -608,15 +624,15 @@ ${catsHtml}
                 <div key={cat.catName} className="rounded-lg border border-gray-100 overflow-hidden">
                   <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
                     <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">{cat.catName}</span>
-                    <span className="text-xs text-gray-400">{cat.products.length} SKU · {fmtQty(cat.totalQty)} 件</span>
+                    <span className="text-xs text-gray-400">{cat.products.length} SKU · {fmtQty(cat.totalQty)} {isEn ? 'units' : '件'}</span>
                   </div>
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-gray-100">
-                        <th className="px-3 py-2 text-left text-gray-400 font-normal">产品名称</th>
-                        <th className="px-3 py-2 text-center text-gray-400 font-normal w-16">单位</th>
-                        <th className="px-3 py-2 text-right text-gray-400 font-normal w-20">数量</th>
-                        <th className="px-3 py-2 text-right text-gray-400 font-normal w-24">ATP 库存</th>
+                        <th className="px-3 py-2 text-left text-gray-400 font-normal">{isEn ? 'Product Name' : '产品名称'}</th>
+                        <th className="px-3 py-2 text-center text-gray-400 font-normal w-16">{isEn ? 'Unit' : '单位'}</th>
+                        <th className="px-3 py-2 text-right text-gray-400 font-normal w-20">{isEn ? 'Qty' : '数量'}</th>
+                        <th className="px-3 py-2 text-right text-gray-400 font-normal w-24">{isEn ? 'ATP Stock' : 'ATP 库存'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -643,9 +659,13 @@ ${catsHtml}
               ))}
             </div>
             <div className="text-xs text-gray-500 pt-2 border-t border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-              <span>合计：{categorySummary.sku} SKU · {fmtQty(categorySummary.qty)} 件</span>
+              <span>{isEn ? 'Total' : '合计'}：{categorySummary.sku} SKU · {fmtQty(categorySummary.qty)} {isEn ? 'units' : '件'}</span>
               <span className="text-gray-400">
-                ATP 色标：<span className="text-emerald-600">正数=有余量</span> · <span className="text-amber-500">零=刚好用完</span> · <span className="text-violet-500">负数≠缺货（可能当天到货或可临时调货）</span>
+                {isEn ? (
+                  <>ATP color code: <span className="text-emerald-600">positive=surplus</span> · <span className="text-amber-500">zero=exactly used up</span> · <span className="text-violet-500">negative≠out of stock (may arrive same day or be sourced ad hoc)</span></>
+                ) : (
+                  <>ATP 色标：<span className="text-emerald-600">正数=有余量</span> · <span className="text-amber-500">零=刚好用完</span> · <span className="text-violet-500">负数≠缺货（可能当天到货或可临时调货）</span></>
+                )}
               </span>
             </div>
           </div>
@@ -656,18 +676,18 @@ ${catsHtml}
               <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
                 {(['qty', 'amount'] as const).map(m => (
                   <button key={m} onClick={() => setWeekdayMeasure(m)} className={`px-3 py-1.5 transition-colors ${weekdayMeasure === m ? 'bg-[#875A7B] text-white' : 'text-gray-500 hover:bg-gray-50 bg-white'}`}>
-                    {m === 'qty' ? '按数量' : '按金额'}
+                    {m === 'qty' ? (isEn ? 'By Qty' : '按数量') : (isEn ? 'By Amount' : '按金额')}
                   </button>
                 ))}
               </div>
-              <span className="text-xs text-gray-400">日均（每个星期几在所选区间内的平均值）· {focusHint}</span>
+              <span className="text-xs text-gray-400">{isEn ? 'Daily average (mean per weekday within selected range)' : '日均（每个星期几在所选区间内的平均值）'} · {focusHint}</span>
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={weekdayReport} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="day" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={v => weekdayMeasure === 'qty' ? `${v}` : `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
-                <Tooltip formatter={(v) => [weekdayMeasure === 'qty' ? `${Number(v ?? 0)} 件/日均` : `€${Number(v ?? 0).toFixed(0)}/日均`, '']} />
+                <Tooltip formatter={(v) => [weekdayMeasure === 'qty' ? (isEn ? `${Number(v ?? 0)} units/day-avg` : `${Number(v ?? 0)} 件/日均`) : (isEn ? `€${Number(v ?? 0).toFixed(0)}/day-avg` : `€${Number(v ?? 0).toFixed(0)}/日均`), '']} />
                 <Bar dataKey="value" fill="#875A7B" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

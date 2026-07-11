@@ -38,6 +38,19 @@ interface FlatLine {
 
 type TimeFilter = 'all' | 'am' | 'pm'
 
+// 操作日志 detail 是写入时(app/api/orders/[id]/lines/[lineId]/route.ts)拼好的中文句子，
+// 只读展示时按已知模板做最佳努力翻译；不认识的格式原样透出
+function translateLogDetail(detail: string, isEn: boolean): string {
+  if (!isEn) return detail
+  let m = detail.match(/^删除订单行: (.+)（原数量 (.+)，新数量 0）$/)
+  if (m) return `Deleted order line: ${m[1]} (was ${m[2]}, now 0)`
+  m = detail.match(/^删除订单行: (.+)（数量 (.+)）$/)
+  if (m) return `Deleted order line: ${m[1]} (qty ${m[2]})`
+  m = detail.match(/^修改订单行数量: (.+)（(.+) → (.+)）$/)
+  if (m) return `Changed order line qty: ${m[1]} (${m[2]} → ${m[3]})`
+  return detail
+}
+
 interface ActionLog {
   id: string
   userName: string | null
@@ -51,6 +64,7 @@ interface ActionLog {
 export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: number }) {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
 
   const [date, setDate] = useState(today)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
@@ -233,8 +247,8 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     setSaveMsg({
       ok: failCount === 0,
       text: failCount === 0
-        ? `${successCount} 条已保存`
-        : `${successCount} 条成功，${failCount} 条失败`,
+        ? (isEn ? `${successCount} saved` : `${successCount} 条已保存`)
+        : (isEn ? `${successCount} succeeded, ${failCount} failed` : `${successCount} 条成功，${failCount} 条失败`),
     })
   }
 
@@ -248,7 +262,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     // noopener：切断与本页的 opener 关系，避免打印页里的 window.print() 连带把本页卡住
     const win = window.open(`${prefix}/classic/print/batch?ids=${orderIds.join(',')}&doc=delivery`, '_blank', 'noopener,noreferrer')
     if (!win) {
-      setSaveMsg({ ok: false, text: '浏览器拦截了弹出窗口，请允许弹窗后重试' })
+      setSaveMsg({ ok: false, text: isEn ? 'Browser blocked the popup window, please allow popups and retry' : '浏览器拦截了弹出窗口，请允许弹窗后重试' })
     }
   }
 
@@ -309,7 +323,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
       <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">配送日期</label>
+            <label className="text-xs text-gray-500">{isEn ? 'Delivery Date' : '配送日期'}</label>
             <input
               type="date"
               value={date}
@@ -328,22 +342,22 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
                     : 'border-gray-300 text-gray-600 hover:border-[#875A7B]'
                 }`}
               >
-                {t === 'all' ? '全部' : t.toUpperCase()}
+                {t === 'all' ? (isEn ? 'All' : '全部') : t.toUpperCase()}
               </button>
             ))}
           </div>
           <span className="text-xs text-gray-400">
             {loading
-              ? '加载中...'
+              ? (isEn ? 'Loading...' : '加载中...')
               : selectedProducts.length === 0
-                ? `当天共 ${allLines.length} 行，先选择商品`
-                : `${filteredLines.length} / ${allLines.length} 行`}
+                ? (isEn ? `${allLines.length} lines today, select a product first` : `当天共 ${allLines.length} 行，先选择商品`)
+                : (isEn ? `${filteredLines.length} / ${allLines.length} lines` : `${filteredLines.length} / ${allLines.length} 行`)}
           </span>
         </div>
 
         {availableDrivers.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-500 shrink-0">司机</span>
+            <span className="text-xs text-gray-500 shrink-0">{isEn ? 'Driver' : '司机'}</span>
             {availableDrivers.map(d => (
               <button
                 key={d}
@@ -359,14 +373,14 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             ))}
             {selectedDrivers.length > 0 && (
               <button onClick={() => setSelectedDrivers([])} className="text-xs text-gray-400 hover:text-gray-600">
-                清除
+                {isEn ? 'Clear' : '清除'}
               </button>
             )}
           </div>
         )}
 
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-500 shrink-0">商品</span>
+          <span className="text-xs text-gray-500 shrink-0">{isEn ? 'Product' : '商品'}</span>
           {selectedProducts.map(p => (
             <span key={p.id} className="flex items-center gap-1 px-2 py-0.5 text-xs bg-[#f3edf7] text-[#875A7B] rounded border border-[#d4b8e0]">
               {p.name}
@@ -378,14 +392,14 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             onChange={setProductQuery}
             onSelect={addProduct}
             products={allProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
-            placeholder="输入商品名 / Internal Reference 搜索"
+            placeholder={isEn ? 'Search by product name / Internal Reference' : '输入商品名 / Internal Reference 搜索'}
             inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-56 focus:outline-none focus:border-[#875A7B]"
             showOnEmptyQuery={false}
             selectOnTab
           />
           {selectedProducts.length > 0 && (
             <button onClick={() => setSelectedProducts([])} className="text-xs text-gray-400 hover:text-gray-600">
-              清除
+              {isEn ? 'Clear' : '清除'}
             </button>
           )}
         </div>
@@ -396,25 +410,27 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
         {filteredLines.length === 0 ? (
           <div className="px-4 py-10 text-center text-gray-400 text-sm">
             {loading
-              ? '加载中...'
+              ? (isEn ? 'Loading...' : '加载中...')
               : selectedProducts.length === 0
-                ? '请先在上方搜索并选择缺货商品（支持商品名 / Internal Reference），选中后显示当天订购该商品的订单行'
-                : '当天没有订购所选商品的订单行'}
+                ? (isEn
+                  ? 'Search and select out-of-stock products above (supports product name / Internal Reference); once selected, order lines for that product today will be shown'
+                  : '请先在上方搜索并选择缺货商品（支持商品名 / Internal Reference），选中后显示当天订购该商品的订单行')
+                : (isEn ? 'No order lines for the selected products today' : '当天没有订购所选商品的订单行')}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">单号</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">客户名</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">产品名</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">司机</th>
-                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">时段</th>
-                  <th className="px-3 py-2 text-right text-xs text-gray-400 font-medium">原始数量</th>
-                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">单位</th>
-                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">新数量</th>
-                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">状态</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Order No.' : '单号'}</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Customer' : '客户名'}</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Product' : '产品名'}</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Driver' : '司机'}</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Time' : '时段'}</th>
+                  <th className="px-3 py-2 text-right text-xs text-gray-400 font-medium">{isEn ? 'Original Qty' : '原始数量'}</th>
+                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">{isEn ? 'Unit' : '单位'}</th>
+                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">{isEn ? 'New Qty' : '新数量'}</th>
+                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium">{isEn ? 'Status' : '状态'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -441,13 +457,13 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
                           step="any"
                           value={newQtys[l.lineId] ?? ''}
                           onChange={e => setNewQtys(prev => ({ ...prev, [l.lineId]: e.target.value }))}
-                          placeholder="不改"
+                          placeholder={isEn ? 'No change' : '不改'}
                           className="w-20 border border-gray-300 rounded px-2 py-0.5 text-xs text-right focus:outline-none focus:border-[#875A7B]"
                         />
                       </td>
                       <td className="px-3 py-2 text-center text-xs">
-                        {status === 'saved' && <span className="text-green-600 font-medium">已保存 ✓</span>}
-                        {status === 'pending' && <span className="text-amber-500">待保存</span>}
+                        {status === 'saved' && <span className="text-green-600 font-medium">{isEn ? 'Saved ✓' : '已保存 ✓'}</span>}
+                        {status === 'pending' && <span className="text-amber-500">{isEn ? 'Pending' : '待保存'}</span>}
                       </td>
                     </tr>
                   )
@@ -464,18 +480,18 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             className="px-4 py-1.5 text-sm font-medium rounded bg-[#875A7B] text-white hover:bg-[#6d4764] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {saving
-              ? '保存中...'
+              ? (isEn ? 'Saving...' : '保存中...')
               : modifiedLines.length > 0
-                ? `保存修改（${modifiedLines.length} 条）`
-                : '保存修改'}
+                ? (isEn ? `Save Changes (${modifiedLines.length})` : `保存修改（${modifiedLines.length} 条）`)
+                : (isEn ? 'Save Changes' : '保存修改')}
           </button>
           <button
             onClick={handlePrint}
             disabled={printableOrderCount === 0}
             className="px-4 py-1.5 text-sm font-medium rounded border border-[#875A7B] text-[#875A7B] hover:bg-[#f3edf7] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            批量打印更新版 Delivery Note
-            {printableOrderCount > 0 && `（${printableOrderCount} 单）`}
+            {isEn ? 'Batch Print Updated Delivery Note' : '批量打印更新版 Delivery Note'}
+            {printableOrderCount > 0 && (isEn ? ` (${printableOrderCount} orders)` : `（${printableOrderCount} 单）`)}
           </button>
           {saveMsg && (
             <span className={`text-xs ${saveMsg.ok ? 'text-green-600' : 'text-red-600'}`}>
@@ -491,23 +507,23 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
           onClick={toggleHistory}
           className="w-full px-4 py-3 text-left flex items-center justify-between text-sm text-gray-700 hover:bg-gray-50 transition-colors"
         >
-          <span className="font-medium">操作记录（本配送日）</span>
-          <span className="text-gray-400 text-xs">{historyOpen ? '▲ 收起' : '▼ 展开'}</span>
+          <span className="font-medium">{isEn ? 'Action Log (this delivery day)' : '操作记录（本配送日）'}</span>
+          <span className="text-gray-400 text-xs">{historyOpen ? (isEn ? '▲ Collapse' : '▲ 收起') : (isEn ? '▼ Expand' : '▼ 展开')}</span>
         </button>
         {historyOpen && (
           <div className="border-t border-gray-100">
             {historyLoading ? (
-              <div className="px-4 py-6 text-center text-xs text-gray-400">加载中...</div>
+              <div className="px-4 py-6 text-center text-xs text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>
             ) : history.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-gray-400">该配送日暂无缺货改动记录</div>
+              <div className="px-4 py-6 text-center text-xs text-gray-400">{isEn ? 'No shortage change records for this delivery day' : '该配送日暂无缺货改动记录'}</div>
             ) : (
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-gray-50 bg-gray-50">
-                    <th className="px-3 py-2 text-left text-gray-400 font-medium">时间</th>
-                    <th className="px-3 py-2 text-left text-gray-400 font-medium">订单 / 客户</th>
-                    <th className="px-3 py-2 text-left text-gray-400 font-medium">操作人</th>
-                    <th className="px-3 py-2 text-left text-gray-400 font-medium">操作说明</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">{isEn ? 'Time' : '时间'}</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">{isEn ? 'Order / Customer' : '订单 / 客户'}</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">{isEn ? 'Operator' : '操作人'}</th>
+                    <th className="px-3 py-2 text-left text-gray-400 font-medium">{isEn ? 'Description' : '操作说明'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -526,7 +542,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-[#875A7B] hover:underline"
-                              title={`打开订单详情：${info?.customer ?? code}`}
+                              title={isEn ? `Open order detail: ${info?.customer ?? code}` : `打开订单详情：${info?.customer ?? code}`}
                             >
                               <span className="font-mono">{code}</span>
                               {info?.customer && <span className="text-gray-500"> · {info.customer}</span>}
@@ -537,7 +553,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
                         )}
                       </td>
                       <td className="px-3 py-2 text-gray-600">{log.userName ?? log.userEmail ?? '—'}</td>
-                      <td className="px-3 py-2 text-gray-700">{log.detail ?? log.action}</td>
+                      <td className="px-3 py-2 text-gray-700">{log.detail ? translateLogDetail(log.detail, isEn) : log.action}</td>
                     </tr>
                   ))}
                 </tbody>

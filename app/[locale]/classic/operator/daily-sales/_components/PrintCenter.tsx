@@ -1,11 +1,40 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { fetchDispatchPrintHtml } from '@/lib/print/dispatch-print-html'
 import { formatDateTime } from '@/lib/format-date'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
+
+// 操作日志 detail 是写入时(app/api/waves/**)拼好的中文句子，只读展示时按已知模板做最佳努力翻译；
+// 不认识的格式原样透出
+function translateWaveLogDetail(detail: string, isEn: boolean): string {
+  if (!isEn) return detail
+  let m = detail.match(/^创建拣货波次: (.+)$/)
+  if (m) return `Created pick wave: ${m[1]}`
+  m = detail.match(/^更新拣货波次: (.+)$/)
+  if (m) return `Updated pick wave: ${m[1]}`
+  m = detail.match(/^删除拣货波次: (.+)$/)
+  if (m) return `Deleted pick wave: ${m[1]}`
+  m = detail.match(/^标记完成：批次 (.+) 已完成配送$/)
+  if (m) return `Marked completed: batch ${m[1]} delivery done`
+  m = detail.match(/^标记分配完成：批次 (.+)$/)
+  if (m) return `Marked assignment done: batch ${m[1]}`
+  m = detail.match(/^撤销分配完成：批次 (.+)$/)
+  if (m) return `Undid assignment done: batch ${m[1]}`
+  m = detail.match(/^确认出发：批次 (.+)，(\d+) 个订单交货日期=(.+)$/)
+  if (m) return `Confirmed departure: batch ${m[1]}, ${m[2]} orders delivery date=${m[3]}`
+  m = detail.match(/^从波次 (.+) 移除 (\d+) 个订单$/)
+  if (m) return `Removed ${m[2]} orders from wave ${m[1]}`
+  m = detail.match(/^分配 (\d+) 个订单到波次 (.+)$/)
+  if (m) return `Assigned ${m[1]} orders to wave ${m[2]}`
+  m = detail.match(/^解锁批次 (.+)$/)
+  if (m) return `Unlocked batch ${m[1]}`
+  return detail
+}
 
 type BatchLine = OrderLine & { product?: { template?: { weight?: number | null } | null } | null }
 
@@ -57,8 +86,8 @@ interface BatchGroup {
 // SSOT: 波次归属直接读 wave.driverName/timeOfDay/pallets(真实字段)，
 // 不再通过过期的 wave.driverSlotId 反查 DriverSlot——一个波次现在可能横跨多个托盘，
 // 单值反查只能代表其中一个，会导致徽章/筛选/打印用错快照(见 2026-07-10 复盘)。
-function waveLabel(g: { driverName: string; timeOfDay: string }): string {
-  return [g.driverName || '未分配', g.timeOfDay ? g.timeOfDay.toUpperCase() : ''].filter(Boolean).join(' ')
+function waveLabel(g: { driverName: string; timeOfDay: string }, isEn: boolean): string {
+  return [g.driverName || (isEn ? 'Unassigned' : '未分配'), g.timeOfDay ? g.timeOfDay.toUpperCase() : ''].filter(Boolean).join(' ')
 }
 
 interface ActionLogRow {
@@ -104,6 +133,7 @@ function BatchCard({
   date,
   isPrinted,
   canUnlock,
+  isEn,
   onPrint,
   onLockChange,
   onQueuePrint,
@@ -112,6 +142,7 @@ function BatchCard({
   date: string
   isPrinted: boolean
   canUnlock: boolean
+  isEn: boolean
   onPrint: () => void
   onLockChange: () => void
   onQueuePrint: (html: string) => void
@@ -119,7 +150,7 @@ function BatchCard({
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
   const { waveId, driverName, timeOfDay, pickLockedAt, pickLockedBy, pallets, unassignedOrders, orders, totalAmount, untaxTotal } = group
-  const label = waveLabel(group)
+  const label = waveLabel(group, isEn)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
 
   // 点任何打印按钮(送货单/汇总单/销售单)都必须自动锁定批次，不能只有拣货单锁——
@@ -138,7 +169,7 @@ function BatchCard({
       } catch { /* 日志失败静默 */ }
       onLockChange()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '打印失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     } finally {
       setBusy(false)
     }
@@ -155,7 +186,7 @@ function BatchCard({
       onPrint()
       onLockChange()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '打印失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     } finally {
       setBusy(false)
     }
@@ -166,10 +197,10 @@ function BatchCard({
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'manual' })
-      toast.success('已锁定')
+      toast.success(isEn ? 'Locked' : '已锁定')
       onLockChange()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '锁定失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Lock failed' : '锁定失败'))
     } finally {
       setBusy(false)
     }
@@ -179,10 +210,10 @@ function BatchCard({
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-unlock`, {})
-      toast.success('已解锁')
+      toast.success(isEn ? 'Unlocked' : '已解锁')
       onLockChange()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '解锁失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Unlock failed' : '解锁失败'))
     } finally {
       setBusy(false)
     }
@@ -201,11 +232,11 @@ function BatchCard({
             {pallets.length > 0 ? (
               pallets.map(p => (
                 <span key={p.seq} className="bg-[#875A7B] text-white text-xs font-bold rounded px-2 py-0.5">
-                  批次 {p.seq}
+                  {isEn ? `Batch ${p.seq}` : `批次 ${p.seq}`}
                 </span>
               ))
             ) : (
-              <span className="bg-gray-200 text-gray-500 text-xs rounded px-2 py-0.5">未分托盘</span>
+              <span className="bg-gray-200 text-gray-500 text-xs rounded px-2 py-0.5">{isEn ? 'No Pallet' : '未分托盘'}</span>
             )}
             {timeOfDay && (
               <span className="bg-blue-100 text-blue-700 text-xs font-medium rounded px-2 py-0.5 uppercase">
@@ -215,19 +246,21 @@ function BatchCard({
             {driverName ? (
               <span className="font-medium text-gray-900 text-sm">{driverName}</span>
             ) : (
-              <span className="text-gray-400 text-sm italic">未分配</span>
+              <span className="text-gray-400 text-sm italic">{isEn ? 'Unassigned' : '未分配'}</span>
             )}
             <span className="text-xs text-gray-400">
-              {orders.length} 单 · {uniqueCustomers} 客户 · {pallets.length} 托盘
+              {isEn
+                ? `${orders.length} orders · ${uniqueCustomers} customers · ${pallets.length} pallets`
+                : `${orders.length} 单 · ${uniqueCustomers} 客户 · ${pallets.length} 托盘`}
             </span>
             {isPrinted && (
               <span className="text-xs text-green-600 font-medium bg-green-50 rounded px-1.5 py-0.5">
-                ✓ 已打印
+                {isEn ? '✓ Printed' : '✓ 已打印'}
               </span>
             )}
             {pickLockedAt && (
               <span className="text-xs text-amber-700 font-medium bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                🔒 拣货中{pickLockedBy ? ` · ${pickLockedBy}` : ''}
+                {isEn ? '🔒 Picking' : '🔒 拣货中'}{pickLockedBy ? ` · ${pickLockedBy}` : ''}
               </span>
             )}
           </div>
@@ -235,15 +268,15 @@ function BatchCard({
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-sm font-semibold text-gray-900 mr-2">€{fmtMoney(totalAmount)}</span>
-          <span className="text-xs text-gray-400 mr-3">未税 €{fmtMoney(untaxTotal)}</span>
+          <span className="text-xs text-gray-400 mr-3">{isEn ? 'Excl. tax' : '未税'} €{fmtMoney(untaxTotal)}</span>
           {!pickLockedAt && (
             <button
               onClick={lock}
               disabled={busy}
               className="px-2.5 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
-              title="锁定该波次，防止调度台再改动（打印拣货单也会自动上锁）"
+              title={isEn ? 'Lock this wave to prevent further dispatch changes (printing a picking list also auto-locks)' : '锁定该波次，防止调度台再改动（打印拣货单也会自动上锁）'}
             >
-              🔓 锁定
+              {isEn ? '🔓 Lock' : '🔓 锁定'}
             </button>
           )}
           {pickLockedAt && canUnlock && (
@@ -251,52 +284,52 @@ function BatchCard({
               onClick={unlock}
               disabled={busy}
               className="px-2.5 py-1 text-xs rounded border border-amber-400 text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-40"
-              title="解锁该波次（仅 BOSS / WAREHOUSE 可操作）"
+              title={isEn ? 'Unlock this wave (BOSS / WAREHOUSE only)' : '解锁该波次（仅 BOSS / WAREHOUSE 可操作）'}
             >
-              🔒 解锁
+              {isEn ? '🔒 Unlock' : '🔒 解锁'}
             </button>
           )}
           <span className="inline-flex rounded border border-orange-400 overflow-hidden">
             <button
               onClick={() => printPicking('storable')}
               disabled={busy}
-              title="整箱整袋拣货单"
+              title={isEn ? 'Full case/bag picking list' : '整箱整袋拣货单'}
               className="px-2.5 py-1 text-xs text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-40"
             >
-              📦 整箱整袋
+              {isEn ? '📦 Full Case' : '📦 整箱整袋'}
             </button>
             <button
               onClick={() => printPicking('consumable')}
               disabled={busy}
-              title="零散货拣货单"
+              title={isEn ? 'Loose goods picking list' : '零散货拣货单'}
               className="px-2.5 py-1 text-xs text-orange-600 border-l border-orange-400 hover:bg-orange-50 transition-colors disabled:opacity-40"
             >
-              🧴 零散货
+              {isEn ? '🧴 Loose Goods' : '🧴 零散货'}
             </button>
           </span>
           <button
             onClick={() => print('sales')}
             disabled={busy}
-            title="打印该波次销售单(含价格，含全部托盘) Sales Order · 打印会自动锁定该批次"
+            title={isEn ? 'Print sales order for this wave (with prices, all pallets) · Printing auto-locks this batch' : '打印该波次销售单(含价格，含全部托盘) Sales Order · 打印会自动锁定该批次'}
             className="px-2.5 py-1 text-xs rounded border border-purple-400 text-purple-700 hover:bg-purple-50 transition-colors disabled:opacity-40"
           >
-            🧾 销售单
+            {isEn ? '🧾 Sales Order' : '🧾 销售单'}
           </button>
           <button
             onClick={() => print('delivery')}
             disabled={busy}
-            title="打印该波次送货单(含全部托盘) Delivery Note · 打印会自动锁定该批次"
+            title={isEn ? 'Print delivery note for this wave (all pallets) · Printing auto-locks this batch' : '打印该波次送货单(含全部托盘) Delivery Note · 打印会自动锁定该批次'}
             className="px-2.5 py-1 text-xs rounded border border-blue-400 text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-40"
           >
-            🚚 送货单
+            {isEn ? '🚚 Delivery Note' : '🚚 送货单'}
           </button>
           <button
             onClick={() => print('summary')}
             disabled={busy}
-            title="打印该波次送货汇总单(含全部托盘) Delivery Summary · 打印会自动锁定该批次"
+            title={isEn ? 'Print delivery summary sheet for this wave (all pallets) · Printing auto-locks this batch' : '打印该波次送货汇总单(含全部托盘) Delivery Summary · 打印会自动锁定该批次'}
             className="px-2.5 py-1 text-xs rounded border border-green-500 text-green-700 hover:bg-green-50 transition-colors disabled:opacity-40"
           >
-            📋 汇总单
+            {isEn ? '📋 Summary Sheet' : '📋 汇总单'}
           </button>
         </div>
       </div>
@@ -308,7 +341,7 @@ function BatchCard({
           {pallets.map(p => (
             <div key={p.seq}>
               <div className="px-5 py-1.5 bg-gray-50 text-xs font-semibold text-gray-500">
-                批次 {p.seq} · {p.orders.length} 单
+                {isEn ? `Batch ${p.seq} · ${p.orders.length} orders` : `批次 ${p.seq} · ${p.orders.length} 单`}
               </div>
               {p.orders.map(o => (
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
@@ -324,7 +357,7 @@ function BatchCard({
           {unassignedOrders.length > 0 && (
             <div>
               <div className="px-5 py-1.5 bg-amber-50 text-xs font-semibold text-amber-600">
-                未分配托盘 · {unassignedOrders.length} 单
+                {isEn ? `No Pallet Assigned · ${unassignedOrders.length} orders` : `未分配托盘 · ${unassignedOrders.length} 单`}
               </div>
               {unassignedOrders.map(o => (
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
@@ -350,6 +383,7 @@ function BatchSections({
   date,
   printedKeys,
   canUnlock,
+  isEn,
   onPrint,
   onLockChange,
   onQueuePrint,
@@ -358,6 +392,7 @@ function BatchSections({
   date: string
   printedKeys: Set<string>
   canUnlock: boolean
+  isEn: boolean
   onPrint: (waveId: string) => void
   onLockChange: () => void
   onQueuePrint: (html: string) => void
@@ -374,6 +409,7 @@ function BatchSections({
         date={date}
         isPrinted={printedKeys.has(g.waveId)}
         canUnlock={canUnlock}
+        isEn={isEn}
         onPrint={() => onPrint(g.waveId)}
         onLockChange={onLockChange}
         onQueuePrint={onQueuePrint}
@@ -386,8 +422,8 @@ function BatchSections({
       {amGroups.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">AM 上午</span>
-            <span className="text-xs text-gray-400">{amGroups.length} 波次</span>
+            <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">{isEn ? 'AM' : 'AM 上午'}</span>
+            <span className="text-xs text-gray-400">{isEn ? `${amGroups.length} waves` : `${amGroups.length} 波次`}</span>
             <div className="flex-1 h-px bg-blue-100" />
           </div>
           {amGroups.map(renderGroup)}
@@ -396,8 +432,8 @@ function BatchSections({
       {pmGroups.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-orange-500 uppercase tracking-wider">PM 下午</span>
-            <span className="text-xs text-gray-400">{pmGroups.length} 波次</span>
+            <span className="text-xs font-semibold text-orange-500 uppercase tracking-wider">{isEn ? 'PM' : 'PM 下午'}</span>
+            <span className="text-xs text-gray-400">{isEn ? `${pmGroups.length} waves` : `${pmGroups.length} 波次`}</span>
             <div className="flex-1 h-px bg-orange-100" />
           </div>
           {pmGroups.map(renderGroup)}
@@ -407,8 +443,8 @@ function BatchSections({
         <div className="space-y-2">
           {(amGroups.length > 0 || pmGroups.length > 0) && (
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">其他</span>
-              <span className="text-xs text-gray-400">{otherGroups.length} 波次</span>
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{isEn ? 'Other' : '其他'}</span>
+              <span className="text-xs text-gray-400">{isEn ? `${otherGroups.length} waves` : `${otherGroups.length} 波次`}</span>
               <div className="flex-1 h-px bg-gray-100" />
             </div>
           )}
@@ -442,6 +478,9 @@ function savePrintedKeys(date: string, keys: Set<string>) {
 }
 
 export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number }) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+
   // 解锁权限的唯一开关：当前先全部放开（能进打印中心的人都可解锁）。
   // 日后要收口到某个具体用户，把这里换成 useAbility() 判断即可（如 ability.userId === 'xxx'）。
   const canUnlock = true
@@ -623,12 +662,12 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
       const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds })
       queuePrint(html)
     } catch {
-      toast.error('打印失败')
+      toast.error(isEn ? 'Print failed' : '打印失败')
     }
     try {
       await apiPost('/api/waves/print-log', { date, type, scope: isFiltered ? 'filtered' : 'bulk', count: batchGroups.length })
     } catch { /* 日志失败静默 */ }
-    if (failed > 0) toast.error(`${failed} 个波次锁定失败`)
+    if (failed > 0) toast.error(isEn ? `${failed} waves failed to lock` : `${failed} 个波次锁定失败`)
     refresh()
   }
 
@@ -643,10 +682,10 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
       const html = await fetchDispatchPrintHtml({ type: 'picking', date, waveIds: filteredWaveIds, variant })
       queuePrint(html)
     } catch {
-      toast.error('打印失败')
+      toast.error(isEn ? 'Print failed' : '打印失败')
     }
     for (const g of batchGroups) markPrinted(g.waveId)
-    if (failed > 0) toast.error(`${failed} 个波次锁定失败`)
+    if (failed > 0) toast.error(isEn ? `${failed} waves failed to lock` : `${failed} 个波次锁定失败`)
     refresh()
   }
 
@@ -658,7 +697,7 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
       <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">配送日期</label>
+            <label className="text-sm text-gray-600">{isEn ? 'Delivery Date' : '配送日期'}</label>
             <input
               type="date"
               value={date}
@@ -668,16 +707,20 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-500 ml-2">
             {loading ? (
-              <span>加载中...</span>
+              <span>{isEn ? 'Loading...' : '加载中...'}</span>
             ) : (
               <>
-                <span>共 {orders.length} 单 · {batchGroups.length} 波次 · €{fmtMoney(grandTotal)}</span>
+                <span>
+                  {isEn
+                    ? `Total ${orders.length} orders · ${batchGroups.length} waves · €${fmtMoney(grandTotal)}`
+                    : `共 ${orders.length} 单 · ${batchGroups.length} 波次 · €${fmtMoney(grandTotal)}`}
+                </span>
                 {printedKeys.size > 0 && (
                   <button
                     onClick={clearPrinted}
                     className="ml-2 text-xs text-gray-400 hover:text-gray-600 underline"
                   >
-                    清除已打印记录（{printedKeys.size}）
+                    {isEn ? `Clear print history (${printedKeys.size})` : `清除已打印记录（${printedKeys.size}）`}
                   </button>
                 )}
               </>
@@ -685,35 +728,45 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
           </div>
           <div className="ml-auto flex items-center gap-2">
             {isFiltered && (
-              <span className="text-xs text-[#875A7B] font-medium" title="顶部打印按钮已切换为「仅打印当前筛选结果」">
-                已筛选 · 打印 {batchGroups.length} 波次
+              <span className="text-xs text-[#875A7B] font-medium" title={isEn ? 'The print buttons above have switched to "print current filtered results only"' : '顶部打印按钮已切换为「仅打印当前筛选结果」'}>
+                {isEn ? `Filtered · Printing ${batchGroups.length} waves` : `已筛选 · 打印 ${batchGroups.length} 波次`}
               </span>
             )}
             <span className="inline-flex rounded overflow-hidden">
               <button
                 onClick={() => bulkPrintPicking('storable')}
                 disabled={batchGroups.length === 0}
-                title={isFiltered ? '当前筛选波次 · 整箱整袋拣货单' : '全部波次 · 整箱整袋拣货单'}
+                title={isEn
+                  ? (isFiltered ? 'Current filtered waves · Full case/bag picking list' : 'All waves · Full case/bag picking list')
+                  : (isFiltered ? '当前筛选波次 · 整箱整袋拣货单' : '全部波次 · 整箱整袋拣货单')}
                 className="px-3 py-1.5 text-xs bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:hover:bg-orange-500"
               >
-                {isFiltered ? '筛选拣货单' : '全部拣货单'} 📦 整箱整袋
+                {isEn
+                  ? `${isFiltered ? 'Filtered Picking List' : 'All Picking Lists'} 📦 Full Case`
+                  : `${isFiltered ? '筛选拣货单' : '全部拣货单'} 📦 整箱整袋`}
               </button>
               <button
                 onClick={() => bulkPrintPicking('consumable')}
                 disabled={batchGroups.length === 0}
-                title={isFiltered ? '当前筛选波次 · 零散货拣货单' : '全部波次 · 零散货拣货单'}
+                title={isEn
+                  ? (isFiltered ? 'Current filtered waves · Loose goods picking list' : 'All waves · Loose goods picking list')
+                  : (isFiltered ? '当前筛选波次 · 零散货拣货单' : '全部波次 · 零散货拣货单')}
                 className="px-3 py-1.5 text-xs bg-orange-500 text-white border-l border-orange-300 hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:hover:bg-orange-500"
               >
-                🧴 零散货
+                {isEn ? '🧴 Loose Goods' : '🧴 零散货'}
               </button>
             </span>
             <button
               onClick={bulkPrint}
               disabled={batchGroups.length === 0}
-              title={(isFiltered ? '仅打印当前筛选波次的销售单(含价格)' : '打印全部波次的销售单(含价格)') + ' · 打印会自动锁定这些批次'}
+              title={(isEn
+                ? (isFiltered ? 'Print sales orders (with prices) for the current filtered waves only' : 'Print sales orders (with prices) for all waves')
+                : (isFiltered ? '仅打印当前筛选波次的销售单(含价格)' : '打印全部波次的销售单(含价格)')) + (isEn ? ' · Printing auto-locks these batches' : ' · 打印会自动锁定这些批次')}
               className="px-3 py-1.5 text-xs rounded bg-purple-500 text-white hover:bg-purple-600 transition-colors disabled:opacity-40 disabled:hover:bg-purple-500"
             >
-              {isFiltered ? '打印筛选销售单' : '全部打印销售单'}
+              {isEn
+                ? (isFiltered ? 'Print Filtered Sales Orders' : 'Print All Sales Orders')
+                : (isFiltered ? '打印筛选销售单' : '全部打印销售单')}
             </button>
           </div>
         </div>
@@ -721,7 +774,7 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
         {/* Sort + Filters */}
         <div className="flex items-center gap-4 flex-wrap border-t border-gray-100 pt-3">
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-400">排序:</span>
+            <span className="text-xs text-gray-400">{isEn ? 'Sort:' : '排序:'}</span>
             {(['batch', 'driver', 'time'] as const).map(m => (
               <button
                 key={m}
@@ -730,24 +783,26 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
                   sortMode === m ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-500 hover:border-[#875A7B]'
                 }`}
               >
-                {m === 'batch' ? '批次' : m === 'driver' ? '司机' : '时段'}
+                {isEn
+                  ? (m === 'batch' ? 'Batch' : m === 'driver' ? 'Driver' : 'Time')
+                  : (m === 'batch' ? '批次' : m === 'driver' ? '司机' : '时段')}
               </button>
             ))}
           </div>
           <ChipMultiSelect
-            label="司机"
+            label={isEn ? 'Driver' : '司机'}
             options={filterOptions.drivers}
             selected={driverFilter}
             onChange={setDriverFilter}
           />
           <ChipMultiSelect
-            label="时段"
+            label={isEn ? 'Time' : '时段'}
             options={filterOptions.times}
             selected={timeFilter}
             onChange={setTimeFilter}
           />
           <ChipMultiSelect
-            label="批次"
+            label={isEn ? 'Batch' : '批次'}
             options={filterOptions.batches}
             selected={batchFilter}
             onChange={setBatchFilter}
@@ -757,10 +812,10 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
 
       {/* Batch cards */}
       {loading ? (
-        <div className="text-center text-gray-400 py-16 text-sm">加载中...</div>
+        <div className="text-center text-gray-400 py-16 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
       ) : batchGroups.length === 0 ? (
         <div className="text-center text-gray-400 py-16 text-sm">
-          {date} 没有已分配完成的波次
+          {isEn ? `No fully assigned waves for ${date}` : `${date} 没有已分配完成的波次`}
         </div>
       ) : (
         <BatchSections
@@ -768,6 +823,7 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
           date={date}
           printedKeys={printedKeys}
           canUnlock={canUnlock}
+          isEn={isEn}
           onPrint={markPrinted}
           onLockChange={refresh}
           onQueuePrint={queuePrint}
@@ -775,7 +831,7 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
       )}
 
       {/* 操作记录（当前配送日期）：锁定 / 解锁 / 打印 */}
-      <OperationLog logs={logs} />
+      <OperationLog logs={logs} isEn={isEn} />
 
       {/* 隐藏打印队列：不占布局位置(position:fixed 挪出屏幕)，放在哪里都一样 */}
       <PrintQueue jobs={printJobs} />
@@ -785,23 +841,27 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
 
 // ─── OperationLog ─────────────────────────────────────────────────────────────
 
-function OperationLog({ logs }: { logs: ActionLogRow[] }) {
+function OperationLog({ logs, isEn }: { logs: ActionLogRow[]; isEn: boolean }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-        <span className="text-sm font-medium text-gray-900">操作记录（当前配送日期）</span>
-        <span className="text-xs text-gray-400">共 {logs.length} 条 · 锁定 / 解锁 / 打印</span>
+        <span className="text-sm font-medium text-gray-900">{isEn ? 'Operation Log (current delivery date)' : '操作记录（当前配送日期）'}</span>
+        <span className="text-xs text-gray-400">
+          {isEn ? `${logs.length} entries · Lock / Unlock / Print` : `共 ${logs.length} 条 · 锁定 / 解锁 / 打印`}
+        </span>
       </div>
       {logs.length === 0 ? (
-        <div className="px-4 py-6 text-center text-xs text-gray-400">该配送日期暂无操作记录</div>
+        <div className="px-4 py-6 text-center text-xs text-gray-400">
+          {isEn ? 'No operation logs for this delivery date' : '该配送日期暂无操作记录'}
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                <th className="px-4 py-2 font-medium w-44">时间</th>
-                <th className="px-3 py-2 font-medium w-32">操作人</th>
-                <th className="px-3 py-2 font-medium">操作内容</th>
+                <th className="px-4 py-2 font-medium w-44">{isEn ? 'Time' : '时间'}</th>
+                <th className="px-3 py-2 font-medium w-32">{isEn ? 'User' : '操作人'}</th>
+                <th className="px-3 py-2 font-medium">{isEn ? 'Action' : '操作内容'}</th>
               </tr>
             </thead>
             <tbody>
