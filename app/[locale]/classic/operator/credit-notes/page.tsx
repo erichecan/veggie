@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -37,11 +39,18 @@ interface TripForGen {
   restaurants?: { returns?: { status?: string }[] }[]
 }
 
-const STATUS_LABEL: Record<CnStatus, string> = {
+const STATUS_LABEL_ZH: Record<CnStatus, string> = {
   DRAFT: '草稿',
   CONFIRMED: '已确认',
   SETTLED: '已结算',
   CANCELLED: '已作废',
+}
+
+const STATUS_LABEL_EN: Record<CnStatus, string> = {
+  DRAFT: 'Draft',
+  CONFIRMED: 'Confirmed',
+  SETTLED: 'Settled',
+  CANCELLED: 'Cancelled',
 }
 
 const STATUS_COLOR: Record<CnStatus, string> = {
@@ -54,6 +63,10 @@ const STATUS_COLOR: Record<CnStatus, string> = {
 const PAGE_SIZE = 20
 
 export default function CreditNotesPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+
   const [notes, setNotes] = useState<CreditNote[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<CnStatus | ''>('')
@@ -64,8 +77,8 @@ export default function CreditNotesPage() {
   const load = useCallback(() => {
     apiGet<CreditNote[]>('/api/credit-notes')
       .then(setNotes)
-      .catch(e => toast.error(e instanceof Error ? e.message : '加载信用票失败'))
-  }, [])
+      .catch(e => toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load credit notes' : '加载信用票失败')))
+  }, [isEn])
 
   useEffect(() => { load() }, [load])
 
@@ -82,7 +95,8 @@ export default function CreditNotesPage() {
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  async function changeStatus(cn: CreditNote, status: CnStatus, label: string) {
+  async function changeStatus(cn: CreditNote, status: CnStatus, labelZh: string, labelEn: string) {
+    const label = isEn ? labelEn : labelZh
     setBusy(true)
     try {
       await apiPut(`/api/credit-notes/${cn.id}`, { status })
@@ -90,22 +104,22 @@ export default function CreditNotesPage() {
       setDetail(null)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : `${label}失败`)
+      toast.error(e instanceof Error ? e.message : (isEn ? `Failed to ${label.toLowerCase()}` : `${label}失败`))
     } finally {
       setBusy(false)
     }
   }
 
   async function removeDraft(cn: CreditNote) {
-    if (!window.confirm(`确认删除草稿 ${cn.name}?`)) return
+    if (!window.confirm(isEn ? `Confirm delete draft ${cn.name}?` : `确认删除草稿 ${cn.name}?`)) return
     setBusy(true)
     try {
       await apiDelete(`/api/credit-notes/${cn.id}`)
-      toast.success('已删除')
+      toast.success(isEn ? 'Deleted' : '已删除')
       setDetail(null)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to delete' : '删除失败'))
     } finally {
       setBusy(false)
     }
@@ -122,16 +136,18 @@ export default function CreditNotesPage() {
         .slice(0, 50)
         .map(t => t.id)
       if (tripIds.length === 0) {
-        toast.info('没有待结算的已批准退货(请先在退换货页批准)')
+        toast.info(isEn
+          ? 'No approved returns pending settlement (approve returns on the Returns page first)'
+          : '没有待结算的已批准退货(请先在退换货页批准)')
         return
       }
       const result = await apiPost<{ created?: number; creditNotes?: unknown[] }>(
         '/api/credit-notes/generate-from-returns', { tripIds })
       const n = result.created ?? (result.creditNotes?.length ?? 0)
-      toast.success(`已从退货生成 ${n} 张信用票`)
+      toast.success(isEn ? `Generated ${n} credit note(s) from returns` : `已从退货生成 ${n} 张信用票`)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '生成失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Generation failed' : '生成失败'))
     } finally {
       setBusy(false)
     }
@@ -140,20 +156,20 @@ export default function CreditNotesPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['财务', '信用票']}
+        breadcrumb={isEn ? ['Finance', 'Credit Notes'] : ['财务', '信用票']}
         permanentActions={[
-          { label: '从退货生成', onClick: generateFromReturns, primary: true },
+          { label: isEn ? 'Generate from Returns' : '从退货生成', onClick: generateFromReturns, primary: true },
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v); setPage(1) }}
         activeFilters={[
-          ...(statusFilter ? [{ label: `状态：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
+          ...(statusFilter ? [{ label: `${isEn ? 'Status' : '状态'}：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
         ]}
         filterOptions={[
-          { label: '草稿', value: 'DRAFT' },
-          { label: '已确认', value: 'CONFIRMED' },
-          { label: '已结算', value: 'SETTLED' },
-          { label: '已作废', value: 'CANCELLED' },
+          { label: isEn ? 'Draft' : '草稿', value: 'DRAFT' },
+          { label: isEn ? 'Confirmed' : '已确认', value: 'CONFIRMED' },
+          { label: isEn ? 'Settled' : '已结算', value: 'SETTLED' },
+          { label: isEn ? 'Cancelled' : '已作废', value: 'CANCELLED' },
         ]}
         onFilterSelect={v => { setStatusFilter(prev => prev === v ? '' : v as CnStatus); setPage(1) }}
         total={filtered.length}
@@ -167,19 +183,21 @@ export default function CreditNotesPage() {
           <table className="w-full text-sm">
             <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">单号</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">客户</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">状态</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">含税金额</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">行数</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">退款日期</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'No.' : '单号'}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Customer' : '客户'}</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Amount (Inc. Tax)' : '含税金额'}</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Lines' : '行数'}</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Refund Date' : '退款日期'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {pageRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-gray-400">
-                    暂无信用票 · 在退换货页批准退货后,点击「从退货生成」
+                    {isEn
+                      ? 'No credit notes · approve returns on the Returns page, then click "Generate from Returns"'
+                      : '暂无信用票 · 在退换货页批准退货后,点击「从退货生成」'}
                   </td>
                 </tr>
               )}
@@ -219,19 +237,19 @@ export default function CreditNotesPage() {
 
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between text-gray-600">
-                  <span>客户：<b className="text-gray-900">{detail.customerName}</b></span>
-                  <span>退款日期：{new Date(detail.creditDate).toLocaleDateString('en-GB')}</span>
+                  <span>{isEn ? 'Customer' : '客户'}：<b className="text-gray-900">{detail.customerName}</b></span>
+                  <span>{isEn ? 'Refund Date' : '退款日期'}：{new Date(detail.creditDate).toLocaleDateString('en-GB')}</span>
                 </div>
 
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="text-left px-3 py-2 text-gray-500">商品</th>
-                        <th className="text-right px-3 py-2 text-gray-500">数量</th>
-                        <th className="text-right px-3 py-2 text-gray-500">单价</th>
-                        <th className="text-right px-3 py-2 text-gray-500">含税小计</th>
-                        <th className="text-left px-3 py-2 text-gray-500">原因</th>
+                        <th className="text-left px-3 py-2 text-gray-500">{isEn ? 'Product' : '商品'}</th>
+                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Qty' : '数量'}</th>
+                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Unit Price' : '单价'}</th>
+                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Subtotal (Inc. Tax)' : '含税小计'}</th>
+                        <th className="text-left px-3 py-2 text-gray-500">{isEn ? 'Reason' : '原因'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -247,7 +265,7 @@ export default function CreditNotesPage() {
                     </tbody>
                     <tfoot className="bg-gray-50 border-t border-gray-200">
                       <tr>
-                        <td colSpan={3} className="px-3 py-2 font-medium text-gray-600">合计</td>
+                        <td colSpan={3} className="px-3 py-2 font-medium text-gray-600">{isEn ? 'Total' : '合计'}</td>
                         <td className="px-3 py-2 text-right font-bold text-gray-900">€{Number(detail.totalIncTax).toFixed(2)}</td>
                         <td />
                       </tr>
@@ -255,21 +273,21 @@ export default function CreditNotesPage() {
                   </table>
                 </div>
 
-                {detail.notes && <p className="text-xs text-gray-500">备注：{detail.notes}</p>}
+                {detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes' : '备注'}：{detail.notes}</p>}
               </div>
 
               <DialogFooter className="gap-2">
                 {detail.status === 'DRAFT' && (
                   <>
-                    <Button variant="outline" disabled={busy} onClick={() => removeDraft(detail)}>删除</Button>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废')}>作废</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'CONFIRMED', '已确认')}>确认</Button>
+                    <Button variant="outline" disabled={busy} onClick={() => removeDraft(detail)}>{isEn ? 'Delete' : '删除'}</Button>
+                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废', 'Cancelled')}>{isEn ? 'Cancel' : '作废'}</Button>
+                    <Button disabled={busy} onClick={() => changeStatus(detail, 'CONFIRMED', '已确认', 'Confirmed')}>{isEn ? 'Confirm' : '确认'}</Button>
                   </>
                 )}
                 {detail.status === 'CONFIRMED' && (
                   <>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废')}>作废</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'SETTLED', '已结算')}>标记已结算</Button>
+                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废', 'Cancelled')}>{isEn ? 'Cancel' : '作废'}</Button>
+                    <Button disabled={busy} onClick={() => changeStatus(detail, 'SETTLED', '已结算', 'Settled')}>{isEn ? 'Mark Settled' : '标记已结算'}</Button>
                   </>
                 )}
               </DialogFooter>

@@ -14,11 +14,18 @@ import {
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
 
-const STATUS_LABEL: Record<Invoice['status'], string> = {
+const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   draft: '草稿',
   posted: '已确认',
   paid: '已付款',
   cancelled: '已取消',
+}
+
+const STATUS_LABEL_EN: Record<Invoice['status'], string> = {
+  draft: 'Draft',
+  posted: 'Posted',
+  paid: 'Paid',
+  cancelled: 'Cancelled',
 }
 
 const STATUS_COLOR: Record<Invoice['status'], string> = {
@@ -27,6 +34,9 @@ const STATUS_COLOR: Record<Invoice['status'], string> = {
   paid: 'bg-green-100 text-green-700',
   cancelled: 'bg-red-100 text-red-600',
 }
+
+const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
+const PAYMENT_LABELS_EN: Record<string, string> = { cash: 'Cash', weekly: 'Weekly', monthly: 'Monthly' }
 
 function buildInvoicePayload(
   orderIds: string[],
@@ -95,12 +105,15 @@ function buildInvoicePayload(
   }
 }
 
-function InvoiceRow({ inv, locale, onClick }: {
+function InvoiceRow({ inv, locale, isEn, onClick }: {
   inv: Invoice
   locale: string
+  isEn: boolean
   onClick: () => void
 }) {
   const [hover, setHover] = useState(false)
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const PAYMENT_LABELS = isEn ? PAYMENT_LABELS_EN : PAYMENT_LABELS_ZH
   return (
     <tr
       style={{ background: hover ? '#f3eff5' : undefined, cursor: 'pointer' }}
@@ -122,7 +135,7 @@ function InvoiceRow({ inv, locale, onClick }: {
         €{inv.amountDue.toFixed(2)}
       </td>
       <td className="px-4 py-3 text-center text-gray-500">
-        {{ cash: '现付', weekly: '周结', monthly: '月结' }[inv.paymentTerms]}
+        {PAYMENT_LABELS[inv.paymentTerms]}
       </td>
       <td className="px-4 py-3 text-center text-xs text-gray-400">
         {new Date(inv.createdAt).toLocaleDateString('en-GB')}
@@ -133,7 +146,7 @@ function InvoiceRow({ inv, locale, onClick }: {
           className="text-xs hover:underline"
           style={{ color: '#875A7B' }}
         >
-          查看
+          {isEn ? 'View' : '查看'}
         </button>
       </td>
     </tr>
@@ -144,6 +157,9 @@ export default function ClassicInvoicesPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const PAYMENT_LABELS = isEn ? PAYMENT_LABELS_EN : PAYMENT_LABELS_ZH
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -180,7 +196,7 @@ export default function ClassicInvoicesPage() {
       setOrders(normalizedOrders)
       setCustomers(rawCustomers)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载数据失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load data' : '加载数据失败'))
     }
   }
 
@@ -201,11 +217,11 @@ export default function ClassicInvoicesPage() {
   async function handleGenerate() {
     if (generating) return
     if (!selectedOrderIds.length) {
-      toast.error('请至少选择一个订单')
+      toast.error(isEn ? 'Please select at least one order' : '请至少选择一个订单')
       return
     }
     const payload = buildInvoicePayload(selectedOrderIds, orders, customers, invoices.length)
-    if (!payload) { toast.error('生成失败'); return }
+    if (!payload) { toast.error(isEn ? 'Failed to generate' : '生成失败'); return }
 
     setGenerating(true)
     try {
@@ -214,10 +230,10 @@ export default function ClassicInvoicesPage() {
       setGenOpen(false)
       setSelectedOrderIds([])
       setSelectedCustomerId('')
-      toast.success(`发票 ${created.name} 已生成`)
+      toast.success(isEn ? `Invoice ${created.name} generated` : `发票 ${created.name} 已生成`)
       router.push(`${prefix}/classic/operator/invoices/${created.id}`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '生成发票失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to generate invoice' : '生成发票失败'))
     } finally {
       setGenerating(false)
     }
@@ -238,7 +254,6 @@ export default function ClassicInvoicesPage() {
     status: 'status',
     paymentTerms: 'paymentTerms',
   }
-  const PAYMENT_LABELS: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
 
   const PAGE_SIZE = 20
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -246,27 +261,27 @@ export default function ClassicInvoicesPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['财务', '发票']}
+        breadcrumb={isEn ? ['Finance', 'Invoices'] : ['财务', '发票']}
         permanentActions={[
-          { label: '新建', onClick: () => { setGenOpen(true); setSelectedCustomerId(''); setSelectedOrderIds([]) }, primary: true },
+          { label: isEn ? 'New' : '新建', onClick: () => { setGenOpen(true); setSelectedCustomerId(''); setSelectedOrderIds([]) }, primary: true },
         ]}
         searchValue={searchInput}
         onSearch={v => { setSearchInput(v); setPage(1) }}
         onSearchSubmit={() => setPage(1)}
         activeFilters={[
-          ...(statusFilter ? [{ label: `状态：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
+          ...(statusFilter ? [{ label: isEn ? `Status: ${STATUS_LABEL[statusFilter]}` : `状态：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
         ]}
         filterOptions={[
-          { label: '草稿', value: 'draft' },
-          { label: '已确认', value: 'posted' },
-          { label: '已付款', value: 'paid' },
-          { label: '已取消', value: 'cancelled' },
+          { label: isEn ? 'Draft' : '草稿', value: 'draft' },
+          { label: isEn ? 'Posted' : '已确认', value: 'posted' },
+          { label: isEn ? 'Paid' : '已付款', value: 'paid' },
+          { label: isEn ? 'Cancelled' : '已取消', value: 'cancelled' },
         ]}
         onFilterSelect={v => { setStatusFilter(prev => prev === v ? '' : v as Invoice['status']); setPage(1) }}
         groupByOptions={[
-          { label: '客户', value: 'customer' },
-          { label: '状态', value: 'status' },
-          { label: '结款方式', value: 'paymentTerms' },
+          { label: isEn ? 'Customer' : '客户', value: 'customer' },
+          { label: isEn ? 'Status' : '状态', value: 'status' },
+          { label: isEn ? 'Payment Terms' : '结款方式', value: 'paymentTerms' },
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
@@ -288,21 +303,21 @@ export default function ClassicInvoicesPage() {
           <table className="w-full text-sm">
             <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
               <tr>
-                <SortTh sk="name" cur={sortKey} dir={sortDir} label="发票号" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
-                <SortTh sk="customerName" cur={sortKey} dir={sortDir} label="客户" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
-                <th className="text-center px-4 py-3 font-medium text-gray-600">状态</th>
-                <SortTh sk="totalIncTax" cur={sortKey} dir={sortDir} label="含税总额" align="right" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
-                <SortTh sk="amountDue" cur={sortKey} dir={sortDir} label="待收款" align="right" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
-                <th className="text-center px-4 py-3 font-medium text-gray-600">结款方式</th>
-                <SortTh sk="createdAt" cur={sortKey} dir={sortDir} label="创建时间" align="center" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
-                <th className="text-center px-4 py-3 font-medium text-gray-600">操作</th>
+                <SortTh sk="name" cur={sortKey} dir={sortDir} label={isEn ? 'Invoice No.' : '发票号'} onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
+                <SortTh sk="customerName" cur={sortKey} dir={sortDir} label={isEn ? 'Customer' : '客户'} onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
+                <SortTh sk="totalIncTax" cur={sortKey} dir={sortDir} label={isEn ? 'Total (incl. tax)' : '含税总额'} align="right" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
+                <SortTh sk="amountDue" cur={sortKey} dir={sortDir} label={isEn ? 'Amount Due' : '待收款'} align="right" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Payment Terms' : '结款方式'}</th>
+                <SortTh sk="createdAt" cur={sortKey} dir={sortDir} label={isEn ? 'Created At' : '创建时间'} align="center" onClick={k => { if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(k); setSortDir('asc') } }} />
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Actions' : '操作'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-12 text-gray-400">
-                    暂无发票，点击「生成发票」从已完成订单创建
+                    {isEn ? 'No invoices yet. Click "New" to generate one from completed orders.' : '暂无发票，点击「生成发票」从已完成订单创建'}
                   </td>
                 </tr>
               )}
@@ -310,7 +325,7 @@ export default function ClassicInvoicesPage() {
                 const field = INVOICE_GB_FIELD[groupBy]
                 if (!groupBy || !field || pageRows.length === 0) {
                   return pageRows.map(inv => (
-                    <InvoiceRow key={inv.id} inv={inv} locale={locale} onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)} />
+                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)} />
                   ))
                 }
                 const groups = new Map<string, Invoice[]>()
@@ -324,12 +339,12 @@ export default function ClassicInvoicesPage() {
                     <td colSpan={8} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
                       {groupBy === 'status' ? STATUS_LABEL[key as Invoice['status']] ?? key
                         : groupBy === 'paymentTerms' ? PAYMENT_LABELS[key] ?? key
-                        : key || '（空）'}
+                        : key || (isEn ? '(empty)' : '（空）')}
                       {' '}<span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({groupInvs.length})</span>
                     </td>
                   </tr>,
                   ...groupInvs.map(inv => (
-                    <InvoiceRow key={inv.id} inv={inv} locale={locale} onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)} />
+                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)} />
                   )),
                 ])
               })()}
@@ -342,17 +357,17 @@ export default function ClassicInvoicesPage() {
       <Dialog open={genOpen} onOpenChange={setGenOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>从订单生成发票</DialogTitle>
+            <DialogTitle>{isEn ? 'Generate Invoice from Orders' : '从订单生成发票'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <label className="text-sm font-medium text-gray-700">选择客户</label>
+              <label className="text-sm font-medium text-gray-700">{isEn ? 'Select Customer' : '选择客户'}</label>
               <select
                 className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#875A7B]"
                 value={selectedCustomerId}
                 onChange={e => { setSelectedCustomerId(e.target.value); setSelectedOrderIds([]) }}
               >
-                <option value="">请选择客户...</option>
+                <option value="">{isEn ? 'Please select a customer...' : '请选择客户...'}</option>
                 {customers.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
@@ -362,10 +377,12 @@ export default function ClassicInvoicesPage() {
             {selectedCustomerId && (
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  选择未开票的已完成订单（{unbilledOrders.length} 个可选）
+                  {isEn
+                    ? `Select uninvoiced completed orders (${unbilledOrders.length} available)`
+                    : `选择未开票的已完成订单（${unbilledOrders.length} 个可选）`}
                 </label>
                 {unbilledOrders.length === 0 ? (
-                  <p className="mt-2 text-sm text-gray-400">该客户暂无未开票的已完成订单</p>
+                  <p className="mt-2 text-sm text-gray-400">{isEn ? 'This customer has no uninvoiced completed orders' : '该客户暂无未开票的已完成订单'}</p>
                 ) : (
                   <div className="mt-2 space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-2">
                     {unbilledOrders.map(o => (
@@ -379,7 +396,7 @@ export default function ClassicInvoicesPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-800">{o.id.slice(-8)}</p>
                           <p className="text-xs text-gray-500">
-                            {new Date(o.createdAt).toLocaleDateString('en-GB')} · {o.items.length} 种商品
+                            {new Date(o.createdAt).toLocaleDateString('en-GB')} · {isEn ? `${o.items.length} items` : `${o.items.length} 种商品`}
                           </p>
                         </div>
                         <span className="text-sm font-medium text-orange-600">€{o.totalAmount.toFixed(2)}</span>
@@ -391,14 +408,14 @@ export default function ClassicInvoicesPage() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setGenOpen(false)} disabled={generating}>取消</Button>
+            <Button variant="outline" onClick={() => setGenOpen(false)} disabled={generating}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               disabled={selectedOrderIds.length === 0 || generating}
               onClick={handleGenerate}
               style={{ background: '#875A7B', borderColor: '#875A7B' }}
               className="text-white hover:opacity-90"
             >
-              {generating ? '生成中…' : '生成发票'}
+              {generating ? (isEn ? 'Generating…' : '生成中…') : (isEn ? 'Generate Invoice' : '生成发票')}
             </Button>
           </DialogFooter>
         </DialogContent>

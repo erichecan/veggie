@@ -1,5 +1,7 @@
 'use client'
 import { useState } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import InvoicesPage from '../invoices/page'
 import VendorBillsPage from '../vendor-bills/page'
 
@@ -7,21 +9,29 @@ const PURPLE = '#875A7B'
 
 type TabKey = 'invoices' | 'vendor-bills'
 
-const TABS: { k: TabKey; icon: string; label: string }[] = [
+const TABS_ZH: { k: TabKey; icon: string; label: string }[] = [
   { k: 'invoices', icon: '🧾', label: '发票' },
   { k: 'vendor-bills', icon: '📄', label: '供应商账单' },
 ]
 
+const TABS_EN: { k: TabKey; icon: string; label: string }[] = [
+  { k: 'invoices', icon: '🧾', label: 'Invoices' },
+  { k: 'vendor-bills', icon: '📄', label: 'Vendor Bills' },
+]
+
 export default function AccountingPage() {
   const [tab, setTab] = useState<TabKey>('invoices')
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const TABS = isEn ? TABS_EN : TABS_ZH
 
   return (
     <div className="p-5 max-w-[1320px] mx-auto">
       {/* 页头 */}
       <div className="mb-4">
-        <p className="text-xs text-gray-400">销售 / 会计</p>
+        <p className="text-xs text-gray-400">{isEn ? 'Sales / Accounting' : '销售 / 会计'}</p>
         <h1 className="text-lg font-semibold flex items-center gap-2" style={{ color: PURPLE }}>
-          🧮 会计
+          🧮 {isEn ? 'Accounting' : '会计'}
         </h1>
       </div>
 

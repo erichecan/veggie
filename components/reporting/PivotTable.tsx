@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import {
   Table, TableHeader, TableBody, TableFooter,
   TableHead, TableRow, TableCell,
@@ -34,6 +36,8 @@ export function formatValue(value: unknown, format: MeasureMeta['format']): stri
 export function PivotTable() {
   const { state, dispatch } = useReporting()
   const { rows, totals, rowDimensions, colDimensions, activeMeasures, measureDefs, dimensionDefs, orderBy } = state
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
 
   const measuresMap = useMemo(() => {
     const map = new Map<string, MeasureMeta>()
@@ -47,7 +51,7 @@ export function PivotTable() {
   )
 
   const getDimLabel = (field: string) =>
-    dimensionDefs.find(d => d.field === field)?.labelZh ?? field
+    dimensionDefs.find(d => d.field === field)?.[isEn ? 'label' : 'labelZh'] ?? field
 
   const hasCols = colDimensions.length > 0
 
@@ -132,18 +136,20 @@ export function PivotTable() {
   if (rows.length === 0 && !state.loading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
-        {state.metadataLoaded ? '暂无数据，请调整筛选条件' : '加载中...'}
+        {state.metadataLoaded
+          ? (isEn ? 'No data, please adjust the filters' : '暂无数据，请调整筛选条件')
+          : (isEn ? 'Loading...' : '加载中...')}
       </div>
     )
   }
 
-  if (!hasCols || !pivotData) return <FlatTable {...{ rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon }} />
+  if (!hasCols || !pivotData) return <FlatTable {...{ rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon, isEn }} />
 
-  return <CrossTab pivotData={pivotData} {...{ rowDimensions, colDimensions, activeMetas, totals, getDimLabel }} />
+  return <CrossTab pivotData={pivotData} {...{ rowDimensions, colDimensions, activeMetas, totals, getDimLabel, isEn }} />
 }
 
 function FlatTable({
-  rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon,
+  rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon, isEn,
 }: {
   rows: Record<string, unknown>[]
   rowDimensions: { field: string }[]
@@ -152,6 +158,7 @@ function FlatTable({
   getDimLabel: (f: string) => string
   handleSort: (f: string) => void
   sortIcon: (f: string) => React.ReactNode
+  isEn: boolean
 }) {
   return (
     <Table>
@@ -164,7 +171,7 @@ function FlatTable({
           ))}
           {activeMetas.map(m => (
             <TableHead key={m.field} className="text-right cursor-pointer select-none" onClick={() => handleSort(m.field)}>
-              <div className="flex items-center justify-end">{m.labelZh}{sortIcon(m.field)}</div>
+              <div className="flex items-center justify-end">{isEn ? m.label : m.labelZh}{sortIcon(m.field)}</div>
             </TableHead>
           ))}
         </TableRow>
@@ -184,7 +191,7 @@ function FlatTable({
       {Object.keys(totals).length > 0 && (
         <TableFooter>
           <TableRow>
-            <TableCell colSpan={rowDimensions.length} className="font-bold">合计</TableCell>
+            <TableCell colSpan={rowDimensions.length} className="font-bold">{isEn ? 'Total' : '合计'}</TableCell>
             {activeMetas.map(m => (
               <TableCell key={m.field} className="text-right font-bold tabular-nums">
                 {formatValue(totals[m.field], m.format)}
@@ -198,7 +205,7 @@ function FlatTable({
 }
 
 function CrossTab({
-  pivotData, rowDimensions, colDimensions, activeMetas, totals, getDimLabel,
+  pivotData, rowDimensions, colDimensions, activeMetas, totals, getDimLabel, isEn,
 }: {
   pivotData: {
     colKeys: string[]
@@ -214,6 +221,7 @@ function CrossTab({
   activeMetas: MeasureMeta[]
   totals: Record<string, number>
   getDimLabel: (f: string) => string
+  isEn: boolean
 }) {
   const { colKeys, colLabelMap, rowKeys, rowMap, rowLabelMap, rowTotals, colTotals } = pivotData
   const multi = activeMetas.length > 1
@@ -236,16 +244,16 @@ function CrossTab({
               {colKeys.map(ck => (
                 <TableHead key={ck} colSpan={activeMetas.length} className="text-center border-x">{colLabel(ck)}</TableHead>
               ))}
-              <TableHead colSpan={activeMetas.length} className="text-center border-l bg-muted/30">合计</TableHead>
+              <TableHead colSpan={activeMetas.length} className="text-center border-l bg-muted/30">{isEn ? 'Total' : '合计'}</TableHead>
             </TableRow>
             <TableRow>
               {colKeys.flatMap(ck =>
                 activeMetas.map(m => (
-                  <TableHead key={`${ck}|${m.field}`} className="text-right text-xs border-x">{m.labelZh}</TableHead>
+                  <TableHead key={`${ck}|${m.field}`} className="text-right text-xs border-x">{isEn ? m.label : m.labelZh}</TableHead>
                 )),
               )}
               {activeMetas.map(m => (
-                <TableHead key={`t|${m.field}`} className="text-right text-xs border-l bg-muted/30">{m.labelZh}</TableHead>
+                <TableHead key={`t|${m.field}`} className="text-right text-xs border-l bg-muted/30">{isEn ? m.label : m.labelZh}</TableHead>
               ))}
             </TableRow>
           </>
@@ -257,7 +265,7 @@ function CrossTab({
             {colKeys.map(ck => (
               <TableHead key={ck} className="text-right">{colLabel(ck)}</TableHead>
             ))}
-            <TableHead className="text-right bg-muted/30">合计</TableHead>
+            <TableHead className="text-right bg-muted/30">{isEn ? 'Total' : '合计'}</TableHead>
           </TableRow>
         )}
       </TableHeader>
@@ -305,7 +313,7 @@ function CrossTab({
       </TableBody>
       <TableFooter>
         <TableRow>
-          <TableCell colSpan={rowDimensions.length} className="font-bold border-r">合计</TableCell>
+          <TableCell colSpan={rowDimensions.length} className="font-bold border-r">{isEn ? 'Total' : '合计'}</TableCell>
           {multi
             ? colKeys.flatMap(ck => {
                 const ct = colTotals.get(ck)!

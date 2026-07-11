@@ -9,6 +9,8 @@ import {
   type ReactNode,
   type Dispatch,
 } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import type {
   ReportType,
@@ -142,6 +144,8 @@ interface ProviderProps {
 }
 
 export function ReportingProvider({ reportType, children }: ProviderProps) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const initialState: ReportingState = {
     reportType,
     viewMode: 'pivot',
@@ -182,7 +186,7 @@ export function ReportingProvider({ reportType, children }: ProviderProps) {
       const data = await apiPost<ReportResponse>(`/api/reports/${reportType}`, body)
       dispatch({ type: 'FETCH_SUCCESS', data })
     } catch (err) {
-      dispatch({ type: 'FETCH_ERROR', error: err instanceof Error ? err.message : '查询失败' })
+      dispatch({ type: 'FETCH_ERROR', error: err instanceof Error ? err.message : (isEn ? 'Query failed' : '查询失败') })
     }
   }, [
     reportType,
@@ -193,6 +197,7 @@ export function ReportingProvider({ reportType, children }: ProviderProps) {
     state.orderBy,
     state.limit,
     state.offset,
+    isEn,
   ])
 
   useEffect(() => {

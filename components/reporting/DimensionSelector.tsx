@@ -1,5 +1,7 @@
 'use client'
 
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +22,8 @@ interface DimensionSelectorProps {
 
 export function DimensionSelector({ axis, label }: DimensionSelectorProps) {
   const { state, dispatch } = useReporting()
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const dims = axis === 'row' ? state.rowDimensions : state.colDimensions
   const allDefs = state.dimensionDefs
 
@@ -59,7 +63,8 @@ export function DimensionSelector({ axis, label }: DimensionSelectorProps) {
   }
 
   const getDimLabel = (field: string) => {
-    return allDefs.find(d => d.field === field)?.labelZh ?? field
+    const meta = allDefs.find(d => d.field === field)
+    return (isEn ? meta?.label : meta?.labelZh) ?? field
   }
 
   const getDimMeta = (field: string) => {
@@ -114,6 +119,10 @@ function DimensionMenuItems({
   items: DimensionMeta[]
   onSelect: (d: DimensionMeta) => void
 }) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const dimLabel = (d: DimensionMeta) => (isEn ? d.label : d.labelZh)
+
   const groups = {
     string: items.filter(d => d.type === 'string' || d.type === 'enum'),
     date: items.filter(d => d.type === 'date' || d.type === 'datetime'),
@@ -126,7 +135,7 @@ function DimensionMenuItems({
         <>
           {groups.date.map(d => (
             <DropdownMenuItem key={d.field} onClick={() => onSelect(d)}>
-              📅 {d.labelZh}
+              📅 {dimLabel(d)}
             </DropdownMenuItem>
           ))}
           {(groups.string.length > 0 || groups.number.length > 0) && <DropdownMenuSeparator />}
@@ -134,7 +143,7 @@ function DimensionMenuItems({
       )}
       {groups.string.map(d => (
         <DropdownMenuItem key={d.field} onClick={() => onSelect(d)}>
-          {d.labelZh}
+          {dimLabel(d)}
         </DropdownMenuItem>
       ))}
       {groups.number.length > 0 && (
@@ -142,7 +151,7 @@ function DimensionMenuItems({
           <DropdownMenuSeparator />
           {groups.number.map(d => (
             <DropdownMenuItem key={d.field} onClick={() => onSelect(d)}>
-              # {d.labelZh}
+              # {dimLabel(d)}
             </DropdownMenuItem>
           ))}
         </>

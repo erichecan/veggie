@@ -11,17 +11,30 @@ import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
-const TERM_LABEL: Record<Invoice['paymentTerms'], string> = {
+const TERM_LABEL_ZH: Record<Invoice['paymentTerms'], string> = {
   cash: '现付',
   weekly: '周结',
   monthly: '月结',
 }
 
-const STATUS_LABEL: Record<Invoice['status'], string> = {
+const TERM_LABEL_EN: Record<Invoice['paymentTerms'], string> = {
+  cash: 'Cash',
+  weekly: 'Weekly terms',
+  monthly: 'Monthly terms',
+}
+
+const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   draft: '草稿',
   posted: '已确认',
   paid: '已付款',
   cancelled: '已取消',
+}
+
+const STATUS_LABEL_EN: Record<Invoice['status'], string> = {
+  draft: 'Draft',
+  posted: 'Posted',
+  paid: 'Paid',
+  cancelled: 'Cancelled',
 }
 
 export default function InvoicePrintPage() {
@@ -29,6 +42,9 @@ export default function InvoicePrintPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const TERM_LABEL = isEn ? TERM_LABEL_EN : TERM_LABEL_ZH
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const [inv, setInv] = useState<Invoice | null>(null)
   const [loaded, setLoaded] = useState(false)
   const barcodeRef = useRef<SVGSVGElement>(null)
@@ -51,13 +67,13 @@ export default function InvoicePrintPage() {
   if (loaded && !inv) {
     return (
       <div className="text-center py-20 text-gray-400">
-        发票不存在或已删除
+        {isEn ? 'Invoice not found or has been deleted' : '发票不存在或已删除'}
         <div className="mt-4">
           <button
             onClick={() => router.push(`${prefix}/classic/operator/invoices`)}
             className="px-4 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
           >
-            返回列表
+            {isEn ? 'Back to list' : '返回列表'}
           </button>
         </div>
       </div>
@@ -65,7 +81,7 @@ export default function InvoicePrintPage() {
   }
 
   if (!inv) {
-    return <div className="text-center py-20 text-gray-400">加载中…</div>
+    return <div className="text-center py-20 text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
   }
 
   return (
@@ -86,14 +102,14 @@ export default function InvoicePrintPage() {
           onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)}
           className="text-sm text-gray-500 hover:text-gray-700"
         >
-          ← 返回发票详情
+          {isEn ? '← Back to invoice details' : '← 返回发票详情'}
         </button>
         <button
           onClick={() => window.print()}
           className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium text-white hover:opacity-90"
           style={{ background: PURPLE }}
         >
-          🖨 打印 / 保存 PDF
+          {isEn ? '🖨 Print / Save as PDF' : '🖨 打印 / 保存 PDF'}
         </button>
       </div>
 
@@ -102,11 +118,11 @@ export default function InvoicePrintPage() {
         {/* 抬头 */}
         <div className="flex items-start justify-between border-b-2 pb-5 mb-6" style={{ borderColor: PURPLE }}>
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: PURPLE }}>Veggie 蔬菜供应链</h1>
+            <h1 className="text-2xl font-bold" style={{ color: PURPLE }}>{isEn ? 'Veggie Supply Chain' : 'Veggie 蔬菜供应链'}</h1>
             <p className="text-xs text-gray-500 mt-1">Fresh Vegetable Supply Chain</p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold text-gray-900">发票 INVOICE</p>
+            <p className="text-xl font-bold text-gray-900">{isEn ? 'INVOICE' : '发票 INVOICE'}</p>
             <p className="text-sm font-mono text-gray-600 mt-1">{inv.name}</p>
             <div className="flex justify-end mt-1">
               <svg ref={barcodeRef} style={{ maxWidth: 140, display: 'block' }} />
@@ -120,22 +136,22 @@ export default function InvoicePrintPage() {
         {/* 客户 + 日期 */}
         <div className="grid grid-cols-2 gap-6 mb-8 text-sm">
           <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">致客户 BILL TO</p>
+            <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{isEn ? 'BILL TO' : '致客户 BILL TO'}</p>
             <p className="font-semibold text-gray-900 text-base">{inv.customerName}</p>
-            <p className="text-gray-500 mt-1">结款方式：{TERM_LABEL[inv.paymentTerms]}</p>
+            <p className="text-gray-500 mt-1">{isEn ? 'Payment terms: ' : '结款方式：'}{TERM_LABEL[inv.paymentTerms]}</p>
           </div>
           <div className="text-right space-y-1">
             <div className="flex justify-end gap-3">
-              <span className="text-gray-400">开票日期</span>
+              <span className="text-gray-400">{isEn ? 'Invoice date' : '开票日期'}</span>
               <span className="text-gray-800 w-28">{formatDateOnly(inv.createdAt)}</span>
             </div>
             <div className="flex justify-end gap-3">
-              <span className="text-gray-400">到期日</span>
+              <span className="text-gray-400">{isEn ? 'Due date' : '到期日'}</span>
               <span className="font-medium text-gray-900 w-28">{formatDateOnly(inv.dueDate)}</span>
             </div>
             <div className="flex justify-end gap-3">
-              <span className="text-gray-400">关联订单</span>
-              <span className="text-gray-600 w-28">{inv.saleOrderIds.length} 个</span>
+              <span className="text-gray-400">{isEn ? 'Related orders' : '关联订单'}</span>
+              <span className="text-gray-600 w-28">{inv.saleOrderIds.length}{isEn ? '' : ' 个'}</span>
             </div>
           </div>
         </div>
@@ -144,13 +160,13 @@ export default function InvoicePrintPage() {
         <table className="w-full text-sm mb-6">
           <thead>
             <tr className="text-xs text-gray-500 uppercase border-b-2 border-gray-200">
-              <th className="text-left py-2 font-medium">商品</th>
-              <th className="text-center py-2 font-medium">数量</th>
-              <th className="text-right py-2 font-medium">单价</th>
-              <th className="text-center py-2 font-medium">税率</th>
-              <th className="text-right py-2 font-medium">税前</th>
-              <th className="text-right py-2 font-medium">税额</th>
-              <th className="text-right py-2 font-medium">含税</th>
+              <th className="text-left py-2 font-medium">{isEn ? 'Item' : '商品'}</th>
+              <th className="text-center py-2 font-medium">{isEn ? 'Qty' : '数量'}</th>
+              <th className="text-right py-2 font-medium">{isEn ? 'Unit price' : '单价'}</th>
+              <th className="text-center py-2 font-medium">{isEn ? 'Tax rate' : '税率'}</th>
+              <th className="text-right py-2 font-medium">{isEn ? 'Ex. tax' : '税前'}</th>
+              <th className="text-right py-2 font-medium">{isEn ? 'Tax' : '税额'}</th>
+              <th className="text-right py-2 font-medium">{isEn ? 'Inc. tax' : '含税'}</th>
             </tr>
           </thead>
           <tbody>
@@ -175,25 +191,25 @@ export default function InvoicePrintPage() {
         <div className="flex justify-end">
           <div className="w-72 space-y-1.5 text-sm">
             <div className="flex justify-between text-gray-600">
-              <span>税前小计</span>
+              <span>{isEn ? 'Subtotal (ex. tax)' : '税前小计'}</span>
               <span>€{inv.subtotalExTax.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-gray-600">
-              <span>VAT 税额合计</span>
+              <span>{isEn ? 'Total VAT' : 'VAT 税额合计'}</span>
               <span>€{inv.totalTax.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-base font-bold text-gray-900 border-t border-gray-300 pt-2">
-              <span>含税总额</span>
+              <span>{isEn ? 'Total (inc. tax)' : '含税总额'}</span>
               <span>€{inv.totalIncTax.toFixed(2)}</span>
             </div>
             {inv.amountPaid > 0 && (
               <div className="flex justify-between text-green-600">
-                <span>已付款</span>
+                <span>{isEn ? 'Paid' : '已付款'}</span>
                 <span>€{inv.amountPaid.toFixed(2)}</span>
               </div>
             )}
             <div className={`flex justify-between font-bold ${inv.amountDue > 0 ? 'text-orange-600' : 'text-green-600'}`}>
-              <span>待收款</span>
+              <span>{isEn ? 'Amount due' : '待收款'}</span>
               <span>€{inv.amountDue.toFixed(2)}</span>
             </div>
           </div>
@@ -201,7 +217,9 @@ export default function InvoicePrintPage() {
 
         {/* 页脚 */}
         <div className="mt-10 pt-5 border-t border-gray-200 text-xs text-gray-400 text-center">
-          感谢您的惠顾 · 如对本发票有疑问，请联系 Veggie 财务部 · 本发票由系统自动生成
+          {isEn
+            ? 'Thank you for your business · For any questions about this invoice, please contact the Veggie finance team · This invoice is generated automatically'
+            : '感谢您的惠顾 · 如对本发票有疑问，请联系 Veggie 财务部 · 本发票由系统自动生成'}
         </div>
       </div>
     </>

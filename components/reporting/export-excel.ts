@@ -2,22 +2,25 @@ import * as XLSX from 'xlsx'
 import type { ReportingState } from './ReportingContext'
 import type { MeasureMeta } from '@/lib/reports/types'
 
-export function exportToExcel(state: ReportingState) {
+const REPORT_LABELS_ZH: Record<string, string> = { sales: '销售分析', purchasing: '采购分析', logistics: '物流分析' }
+const REPORT_LABELS_EN: Record<string, string> = { sales: 'Sales Analysis', purchasing: 'Purchasing Analysis', logistics: 'Logistics Analysis' }
+
+export function exportToExcel(state: ReportingState, isEn = false) {
   const { rows, totals, rowDimensions, colDimensions, activeMeasures, measureDefs, dimensionDefs, reportType } = state
 
   const measuresMap = new Map<string, MeasureMeta>()
   measureDefs.forEach(m => measuresMap.set(m.field, m))
 
   const getDimLabel = (field: string) =>
-    dimensionDefs.find(d => d.field === field)?.labelZh ?? field
+    dimensionDefs.find(d => d.field === field)?.[isEn ? 'label' : 'labelZh'] ?? field
 
   const hasCols = colDimensions.length > 0
   const activeMetas = activeMeasures.map(f => measuresMap.get(f)).filter(Boolean) as MeasureMeta[]
 
   if (!hasCols) {
-    return exportFlatTable(rows, rowDimensions, activeMetas, totals, getDimLabel, reportType)
+    return exportFlatTable(rows, rowDimensions, activeMetas, totals, getDimLabel, reportType, isEn)
   }
-  return exportCrossTable(state, activeMetas, getDimLabel, reportType)
+  return exportCrossTable(state, activeMetas, getDimLabel, reportType, isEn)
 }
 
 function exportFlatTable(
@@ -27,10 +30,11 @@ function exportFlatTable(
   totals: Record<string, number>,
   getDimLabel: (f: string) => string,
   reportType: string,
+  isEn: boolean,
 ) {
   const headers = [
     ...rowDimensions.map(d => getDimLabel(d.field)),
-    ...activeMetas.map(m => m.labelZh),
+    ...activeMetas.map(m => isEn ? m.label : m.labelZh),
   ]
 
   const data = rows.map(row => [
@@ -39,7 +43,7 @@ function exportFlatTable(
   ])
 
   const totalRow = [
-    '合计',
+    isEn ? 'Total' : '合计',
     ...Array(rowDimensions.length - 1).fill(''),
     ...activeMetas.map(m => totals[m.field] ?? 0),
   ]
@@ -48,9 +52,9 @@ function exportFlatTable(
   applyColumnWidths(ws, headers.length, rowDimensions.length)
 
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '报表')
+  XLSX.utils.book_append_sheet(wb, ws, isEn ? 'Report' : '报表')
 
-  const reportLabels: Record<string, string> = { sales: '销售分析', purchasing: '采购分析', logistics: '物流分析' }
+  const reportLabels = isEn ? REPORT_LABELS_EN : REPORT_LABELS_ZH
   const filename = `${reportLabels[reportType] ?? reportType}_${formatDate()}.xlsx`
   XLSX.writeFile(wb, filename)
 }
@@ -60,6 +64,7 @@ function exportCrossTable(
   activeMetas: MeasureMeta[],
   getDimLabel: (f: string) => string,
   reportType: string,
+  isEn: boolean,
 ) {
   const { rows, totals, rowDimensions, colDimensions, activeMeasures } = state
 
@@ -105,14 +110,14 @@ function exportCrossTable(
   if (multi) {
     headers = [
       ...dimHeaders,
-      ...colKeys.flatMap(ck => activeMetas.map(m => `${colLabel(ck)} - ${m.labelZh}`)),
-      ...activeMetas.map(m => `合计 - ${m.labelZh}`),
+      ...colKeys.flatMap(ck => activeMetas.map(m => `${colLabel(ck)} - ${isEn ? m.label : m.labelZh}`)),
+      ...activeMetas.map(m => `${isEn ? 'Total' : '合计'} - ${isEn ? m.label : m.labelZh}`),
     ]
   } else {
     headers = [
       ...dimHeaders,
       ...colKeys.map(ck => colLabel(ck)),
-      '合计',
+      isEn ? 'Total' : '合计',
     ]
   }
 
@@ -149,7 +154,7 @@ function exportCrossTable(
   }
 
   const totalRow: (string | number)[] = [
-    '合计',
+    isEn ? 'Total' : '合计',
     ...Array(rowDimensions.length - 1).fill(''),
   ]
 
@@ -184,9 +189,9 @@ function exportCrossTable(
   applyColumnWidths(ws, headers.length, rowDimensions.length)
 
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '报表')
+  XLSX.utils.book_append_sheet(wb, ws, isEn ? 'Report' : '报表')
 
-  const reportLabels: Record<string, string> = { sales: '销售分析', purchasing: '采购分析', logistics: '物流分析' }
+  const reportLabels = isEn ? REPORT_LABELS_EN : REPORT_LABELS_ZH
   const filename = `${reportLabels[reportType] ?? reportType}_${formatDate()}.xlsx`
   XLSX.writeFile(wb, filename)
 }

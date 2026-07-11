@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { toast } from 'sonner'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,11 +39,18 @@ interface VendorBill {
 
 interface Supplier { id: string; name: string }
 
-const STATUS_LABEL: Record<VbStatus, string> = {
+const STATUS_LABEL_ZH: Record<VbStatus, string> = {
   DRAFT: '草稿',
   POSTED: '已入账',
   PAID: '已付款',
   CANCELLED: '已作废',
+}
+
+const STATUS_LABEL_EN: Record<VbStatus, string> = {
+  DRAFT: 'Draft',
+  POSTED: 'Posted',
+  PAID: 'Paid',
+  CANCELLED: 'Cancelled',
 }
 
 const STATUS_COLOR: Record<VbStatus, string> = {
@@ -55,6 +64,9 @@ const EMPTY_LINE: VendorBillLine = { productName: '', qty: 1, unitCost: 0, taxRa
 const PAGE_SIZE = 20
 
 export default function VendorBillsPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const [bills, setBills] = useState<VendorBill[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [search, setSearch] = useState('')
@@ -94,8 +106,8 @@ export default function VendorBillsPage() {
   const load = useCallback(() => {
     apiGet<VendorBill[]>('/api/vendor-bills')
       .then(setBills)
-      .catch(e => toast.error(e instanceof Error ? e.message : '加载账单失败'))
-  }, [])
+      .catch(e => toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load bills' : '加载账单失败')))
+  }, [isEn])
 
   useEffect(() => {
     load()
@@ -125,7 +137,7 @@ export default function VendorBillsPage() {
       setDetail(null)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : `${label}失败`)
+      toast.error(e instanceof Error ? e.message : (isEn ? `${label} failed` : `${label}失败`))
     } finally {
       setBusy(false)
     }
@@ -134,28 +146,28 @@ export default function VendorBillsPage() {
   async function registerPayment(bill: VendorBill) {
     const add = Number(payAmount)
     if (!Number.isFinite(add) || add <= 0) {
-      toast.error('请输入有效的付款金额')
+      toast.error(isEn ? 'Please enter a valid payment amount' : '请输入有效的付款金额')
       return
     }
     setBusy(true)
     try {
       const paid = Math.min(Number(bill.amountPaid) + add, Number(bill.totalIncTax))
       await apiPut(`/api/vendor-bills/${bill.id}`, { amountPaid: paid })
-      toast.success(`已登记付款 €${add.toFixed(2)}`)
+      toast.success(isEn ? `Payment of €${add.toFixed(2)} recorded` : `已登记付款 €${add.toFixed(2)}`)
       setPayAmount('')
       setDetail(null)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '登记付款失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to record payment' : '登记付款失败'))
     } finally {
       setBusy(false)
     }
   }
 
   async function createBill() {
-    if (!newSupplierId) { toast.error('请选择供应商'); return }
+    if (!newSupplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
     const lines = newLines.filter(l => l.productName.trim() && l.qty > 0)
-    if (lines.length === 0) { toast.error('至少填写一行有效明细'); return }
+    if (lines.length === 0) { toast.error(isEn ? 'Please fill in at least one valid line' : '至少填写一行有效明细'); return }
     setBusy(true)
     try {
       await apiPost('/api/vendor-bills', {
@@ -164,12 +176,12 @@ export default function VendorBillsPage() {
         notes: newNotes || undefined,
         lines,
       })
-      toast.success('账单已创建(草稿)')
+      toast.success(isEn ? 'Bill created (draft)' : '账单已创建(草稿)')
       setCreateOpen(false)
       setNewSupplierId(''); setNewDueDate(''); setNewNotes(''); setNewLines([{ ...EMPTY_LINE }])
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败'))
     } finally {
       setBusy(false)
     }
@@ -180,19 +192,21 @@ export default function VendorBillsPage() {
   }
 
   function downloadCsvTemplate() {
-    const content = '商品名称,数量,单价\n示例商品A,10,5.50\n示例商品B,20,3.20\n'
+    const content = isEn
+      ? 'Product Name,Quantity,Unit Price\nSample Product A,10,5.50\nSample Product B,20,3.20\n'
+      : '商品名称,数量,单价\n示例商品A,10,5.50\n示例商品B,20,3.20\n'
     const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = '供应商账单导入模板.csv'
+    a.download = isEn ? 'vendor-bill-import-template.csv' : '供应商账单导入模板.csv'
     a.click()
     URL.revokeObjectURL(url)
   }
 
   async function handleImport() {
-    if (!importSupplierId) { toast.error('请选择供应商'); return }
-    if (!importFile) { toast.error('请选择文件'); return }
+    if (!importSupplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
+    if (!importFile) { toast.error(isEn ? 'Please select a file' : '请选择文件'); return }
     setImporting(true)
     try {
       const fd = new FormData()
@@ -211,11 +225,11 @@ export default function VendorBillsPage() {
       const data = await res.json()
       setImportResult(data)
       if (data.createdBill) {
-        toast.success(`已创建账单草稿 ${data.createdBill.name}`)
+        toast.success(isEn ? `Draft bill created: ${data.createdBill.name}` : `已创建账单草稿 ${data.createdBill.name}`)
         load()
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '导入失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Import failed' : '导入失败'))
     } finally {
       setImporting(false)
     }
@@ -227,21 +241,21 @@ export default function VendorBillsPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={['采购', '供应商账单']}
+        breadcrumb={isEn ? ['Purchasing', 'Vendor Bills'] : ['采购', '供应商账单']}
         permanentActions={[
-          { label: '新建账单', onClick: () => setCreateOpen(true), primary: true },
+          { label: isEn ? 'New Bill' : '新建账单', onClick: () => setCreateOpen(true), primary: true },
           { label: 'Import', onClick: () => { setImportOpen(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v); setPage(1) }}
         activeFilters={[
-          ...(statusFilter ? [{ label: `状态：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
+          ...(statusFilter ? [{ label: isEn ? `Status: ${STATUS_LABEL[statusFilter]}` : `状态：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
         ]}
         filterOptions={[
-          { label: '草稿', value: 'DRAFT' },
-          { label: '已入账', value: 'POSTED' },
-          { label: '已付款', value: 'PAID' },
-          { label: '已作废', value: 'CANCELLED' },
+          { label: isEn ? 'Draft' : '草稿', value: 'DRAFT' },
+          { label: isEn ? 'Posted' : '已入账', value: 'POSTED' },
+          { label: isEn ? 'Paid' : '已付款', value: 'PAID' },
+          { label: isEn ? 'Cancelled' : '已作废', value: 'CANCELLED' },
         ]}
         onFilterSelect={v => { setStatusFilter(prev => prev === v ? '' : v as VbStatus); setPage(1) }}
         total={filtered.length}
@@ -255,20 +269,20 @@ export default function VendorBillsPage() {
           <table className="w-full text-sm">
             <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">单号</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">供应商</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">状态</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">含税总额</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">未付</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">账单日期</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">到期</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Bill No.' : '单号'}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Supplier' : '供应商'}</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Total Inc. Tax' : '含税总额'}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Due' : '未付'}</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Bill Date' : '账单日期'}</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Due Date' : '到期'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {pageRows.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-gray-400">
-                    暂无供应商账单,点击「新建账单」登记应付
+                    {isEn ? 'No vendor bills yet. Click "New Bill" to record a payable.' : '暂无供应商账单,点击「新建账单」登记应付'}
                   </td>
                 </tr>
               )}
@@ -315,19 +329,19 @@ export default function VendorBillsPage() {
 
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between text-gray-600">
-                  <span>供应商：<b className="text-gray-900">{supplierName(detail.supplierId)}</b></span>
-                  <span>已付 €{Number(detail.amountPaid).toFixed(2)} / 未付 <b className="text-red-600">€{Number(detail.amountDue).toFixed(2)}</b></span>
+                  <span>{isEn ? 'Supplier: ' : '供应商：'}<b className="text-gray-900">{supplierName(detail.supplierId)}</b></span>
+                  <span>{isEn ? 'Paid ' : '已付 '}€{Number(detail.amountPaid).toFixed(2)} / {isEn ? 'Due ' : '未付 '}<b className="text-red-600">€{Number(detail.amountDue).toFixed(2)}</b></span>
                 </div>
 
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="text-left px-3 py-2 text-gray-500">商品</th>
-                        <th className="text-right px-3 py-2 text-gray-500">数量</th>
-                        <th className="text-right px-3 py-2 text-gray-500">单价</th>
-                        <th className="text-right px-3 py-2 text-gray-500">税率</th>
-                        <th className="text-right px-3 py-2 text-gray-500">含税小计</th>
+                        <th className="text-left px-3 py-2 text-gray-500">{isEn ? 'Product' : '商品'}</th>
+                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Qty' : '数量'}</th>
+                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Unit Price' : '单价'}</th>
+                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Tax Rate' : '税率'}</th>
+                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Subtotal Inc. Tax' : '含税小计'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -345,18 +359,18 @@ export default function VendorBillsPage() {
                     </tbody>
                     <tfoot className="bg-gray-50 border-t border-gray-200">
                       <tr>
-                        <td colSpan={4} className="px-3 py-2 font-medium text-gray-600">含税合计</td>
+                        <td colSpan={4} className="px-3 py-2 font-medium text-gray-600">{isEn ? 'Total Inc. Tax' : '含税合计'}</td>
                         <td className="px-3 py-2 text-right font-bold text-gray-900">€{Number(detail.totalIncTax).toFixed(2)}</td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
 
-                {detail.notes && <p className="text-xs text-gray-500">备注：{detail.notes}</p>}
+                {detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes: ' : '备注：'}{detail.notes}</p>}
 
                 {detail.status === 'POSTED' && (
                   <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <span className="text-xs text-amber-700 whitespace-nowrap">登记付款 €</span>
+                    <span className="text-xs text-amber-700 whitespace-nowrap">{isEn ? 'Record payment €' : '登记付款 €'}</span>
                     <input
                       type="number" min="0.01" step="0.01"
                       value={payAmount}
@@ -364,8 +378,8 @@ export default function VendorBillsPage() {
                       placeholder={Number(detail.amountDue).toFixed(2)}
                       className="w-32 border border-amber-300 rounded px-2 py-1 text-sm"
                     />
-                    <Button size="sm" disabled={busy} onClick={() => registerPayment(detail)}>登记</Button>
-                    <span className="text-[11px] text-amber-600 ml-auto">付清后自动转「已付款」</span>
+                    <Button size="sm" disabled={busy} onClick={() => registerPayment(detail)}>{isEn ? 'Record' : '登记'}</Button>
+                    <span className="text-[11px] text-amber-600 ml-auto">{isEn ? 'Automatically becomes "Paid" once fully settled' : '付清后自动转「已付款」'}</span>
                   </div>
                 )}
               </div>
@@ -373,14 +387,14 @@ export default function VendorBillsPage() {
               <DialogFooter className="gap-2">
                 {detail.status === 'DRAFT' && (
                   <>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废')}>作废</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'POSTED', '已入账')}>确认入账</Button>
+                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', isEn ? 'Cancelled' : '已作废')}>{isEn ? 'Cancel' : '作废'}</Button>
+                    <Button disabled={busy} onClick={() => changeStatus(detail, 'POSTED', isEn ? 'Posted' : '已入账')}>{isEn ? 'Confirm Posting' : '确认入账'}</Button>
                   </>
                 )}
                 {detail.status === 'POSTED' && (
                   <>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废')}>作废</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'PAID', '已全额付款')}>全额付清</Button>
+                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', isEn ? 'Cancelled' : '已作废')}>{isEn ? 'Cancel' : '作废'}</Button>
+                    <Button disabled={busy} onClick={() => changeStatus(detail, 'PAID', isEn ? 'Paid in full' : '已全额付款')}>{isEn ? 'Pay in Full' : '全额付清'}</Button>
                   </>
                 )}
               </DialogFooter>
@@ -393,24 +407,24 @@ export default function VendorBillsPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>新建供应商账单</DialogTitle>
+            <DialogTitle>{isEn ? 'New Vendor Bill' : '新建供应商账单'}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
-                <span className="text-xs text-gray-500">供应商 *</span>
+                <span className="text-xs text-gray-500">{isEn ? 'Supplier *' : '供应商 *'}</span>
                 <select
                   value={newSupplierId}
                   onChange={e => setNewSupplierId(e.target.value)}
                   className="mt-1 w-full border border-gray-300 rounded px-2 py-1.5"
                 >
-                  <option value="">请选择…</option>
+                  <option value="">{isEn ? 'Please select…' : '请选择…'}</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </label>
               <label className="block">
-                <span className="text-xs text-gray-500">到期日</span>
+                <span className="text-xs text-gray-500">{isEn ? 'Due Date' : '到期日'}</span>
                 <input
                   type="date" value={newDueDate}
                   onChange={e => setNewDueDate(e.target.value)}
@@ -423,10 +437,10 @@ export default function VendorBillsPage() {
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-2 py-2 text-gray-500">商品名称 *</th>
-                    <th className="text-right px-2 py-2 text-gray-500 w-20">数量</th>
-                    <th className="text-right px-2 py-2 text-gray-500 w-24">单价 €</th>
-                    <th className="text-right px-2 py-2 text-gray-500 w-20">税率 %</th>
+                    <th className="text-left px-2 py-2 text-gray-500">{isEn ? 'Product Name *' : '商品名称 *'}</th>
+                    <th className="text-right px-2 py-2 text-gray-500 w-20">{isEn ? 'Qty' : '数量'}</th>
+                    <th className="text-right px-2 py-2 text-gray-500 w-24">{isEn ? 'Unit Price €' : '单价 €'}</th>
+                    <th className="text-right px-2 py-2 text-gray-500 w-20">{isEn ? 'Tax Rate %' : '税率 %'}</th>
                     <th className="w-10" />
                   </tr>
                 </thead>
@@ -435,7 +449,7 @@ export default function VendorBillsPage() {
                     <tr key={i}>
                       <td className="px-2 py-1.5">
                         <input value={l.productName} onChange={e => setLine(i, { productName: e.target.value })}
-                          placeholder="如:大白菜 10kg 箱"
+                          placeholder={isEn ? 'e.g. Napa Cabbage 10kg Box' : '如:大白菜 10kg 箱'}
                           className="w-full border border-gray-200 rounded px-2 py-1" />
                       </td>
                       <td className="px-2 py-1.5">
@@ -465,21 +479,21 @@ export default function VendorBillsPage() {
               </table>
               <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-200">
                 <button onClick={() => setNewLines(prev => [...prev, { ...EMPTY_LINE }])}
-                  className="text-xs text-purple-700 hover:underline">＋ 加一行</button>
-                <span className="text-xs text-gray-600">含税合计:<b className="text-gray-900">€{newTotal.toFixed(2)}</b></span>
+                  className="text-xs text-purple-700 hover:underline">{isEn ? '+ Add Line' : '＋ 加一行'}</button>
+                <span className="text-xs text-gray-600">{isEn ? 'Total Inc. Tax: ' : '含税合计:'}<b className="text-gray-900">€{newTotal.toFixed(2)}</b></span>
               </div>
             </div>
 
             <label className="block">
-              <span className="text-xs text-gray-500">备注</span>
+              <span className="text-xs text-gray-500">{isEn ? 'Notes' : '备注'}</span>
               <input value={newNotes} onChange={e => setNewNotes(e.target.value)}
                 className="mt-1 w-full border border-gray-300 rounded px-2 py-1.5" />
             </label>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button disabled={busy} onClick={createBill}>创建草稿</Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>{isEn ? 'Cancel' : '取消'}</Button>
+            <Button disabled={busy} onClick={createBill}>{isEn ? 'Create Draft' : '创建草稿'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -488,32 +502,32 @@ export default function VendorBillsPage() {
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>导入供应商账单</DialogTitle>
+            <DialogTitle>{isEn ? 'Import Vendor Bill' : '导入供应商账单'}</DialogTitle>
           </DialogHeader>
 
           {!importResult ? (
             <div className="space-y-4 text-sm">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">供应商</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Supplier' : '供应商'}</label>
                 <select
                   value={importSupplierId}
                   onChange={e => setImportSupplierId(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 >
-                  <option value="">请选择供应商...</option>
+                  <option value="">{isEn ? 'Please select a supplier...' : '请选择供应商...'}</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-gray-500">文件（PDF / Excel / CSV，最大 10MB）</label>
+                  <label className="block text-xs font-medium text-gray-500">{isEn ? 'File (PDF / Excel / CSV, max 10MB)' : '文件（PDF / Excel / CSV，最大 10MB）'}</label>
                   <button
                     type="button"
                     onClick={downloadCsvTemplate}
                     className="text-xs font-medium hover:underline"
                     style={{ color: '#875A7B' }}
                   >
-                    ↓ 下载 CSV 模板
+                    {isEn ? '↓ Download CSV Template' : '↓ 下载 CSV 模板'}
                   </button>
                 </div>
                 <input
@@ -525,7 +539,7 @@ export default function VendorBillsPage() {
                 {importFile && (
                   <p className="mt-1 text-xs text-gray-400">{importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)</p>
                 )}
-                <p className="mt-1 text-xs text-gray-400">表头列：商品名称、数量、单价（顺序不限，无表头时按前三列识别）</p>
+                <p className="mt-1 text-xs text-gray-400">{isEn ? 'Header columns: Product Name, Quantity, Unit Price (order-independent; without headers, first 3 columns are used)' : '表头列：商品名称、数量、单价（顺序不限，无表头时按前三列识别）'}</p>
               </div>
             </div>
           ) : (
@@ -533,25 +547,25 @@ export default function VendorBillsPage() {
               <div className="grid grid-cols-4 gap-3 text-center">
                 <div className="bg-gray-50 rounded p-2">
                   <div className="text-lg font-semibold text-gray-800">{importResult.stats.total}</div>
-                  <div className="text-xs text-gray-500">总行数</div>
+                  <div className="text-xs text-gray-500">{isEn ? 'Total Rows' : '总行数'}</div>
                 </div>
                 <div className="bg-green-50 rounded p-2">
                   <div className="text-lg font-semibold text-green-700">{importResult.stats.exactMatch}</div>
-                  <div className="text-xs text-green-600">精确匹配</div>
+                  <div className="text-xs text-green-600">{isEn ? 'Exact Match' : '精确匹配'}</div>
                 </div>
                 <div className="bg-yellow-50 rounded p-2">
                   <div className="text-lg font-semibold text-yellow-700">{importResult.stats.fuzzyMatch}</div>
-                  <div className="text-xs text-yellow-600">模糊匹配</div>
+                  <div className="text-xs text-yellow-600">{isEn ? 'Fuzzy Match' : '模糊匹配'}</div>
                 </div>
                 <div className="bg-red-50 rounded p-2">
                   <div className="text-lg font-semibold text-red-600">{importResult.stats.noMatch}</div>
-                  <div className="text-xs text-red-500">未匹配</div>
+                  <div className="text-xs text-red-500">{isEn ? 'No Match' : '未匹配'}</div>
                 </div>
               </div>
 
               {importResult.createdBill && (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-2 text-sm">
-                  <span className="text-green-700">已创建账单草稿：</span>
+                  <span className="text-green-700">{isEn ? 'Draft bill created: ' : '已创建账单草稿：'}</span>
                   <span className="font-medium" style={{ color: '#875A7B' }}>{importResult.createdBill.name}</span>
                 </div>
               )}
@@ -560,11 +574,11 @@ export default function VendorBillsPage() {
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">原始商品名</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">数量</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">单价</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">匹配结果</th>
-                      <th className="px-3 py-2 text-center font-medium text-gray-500">置信度</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">{isEn ? 'Original Product Name' : '原始商品名'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">{isEn ? 'Qty' : '数量'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">{isEn ? 'Unit Price' : '单价'}</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">{isEn ? 'Match Result' : '匹配结果'}</th>
+                      <th className="px-3 py-2 text-center font-medium text-gray-500">{isEn ? 'Confidence' : '置信度'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -580,7 +594,9 @@ export default function VendorBillsPage() {
                             line.confidence === 'fuzzy' ? 'bg-yellow-100 text-yellow-700' :
                             'bg-red-100 text-red-600'
                           }`}>
-                            {line.confidence === 'exact' ? '精确' : line.confidence === 'fuzzy' ? '模糊' : '未匹配'}
+                            {isEn
+                              ? (line.confidence === 'exact' ? 'Exact' : line.confidence === 'fuzzy' ? 'Fuzzy' : 'No Match')
+                              : (line.confidence === 'exact' ? '精确' : line.confidence === 'fuzzy' ? '模糊' : '未匹配')}
                           </span>
                         </td>
                       </tr>
@@ -594,13 +610,13 @@ export default function VendorBillsPage() {
           <DialogFooter>
             {!importResult ? (
               <>
-                <Button variant="outline" onClick={() => setImportOpen(false)}>取消</Button>
+                <Button variant="outline" onClick={() => setImportOpen(false)}>{isEn ? 'Cancel' : '取消'}</Button>
                 <Button disabled={importing || !importSupplierId || !importFile} onClick={handleImport}>
-                  {importing ? '导入中...' : '上传并解析'}
+                  {importing ? (isEn ? 'Importing...' : '导入中...') : (isEn ? 'Upload & Parse' : '上传并解析')}
                 </Button>
               </>
             ) : (
-              <Button variant="outline" onClick={() => setImportOpen(false)}>关闭</Button>
+              <Button variant="outline" onClick={() => setImportOpen(false)}>{isEn ? 'Close' : '关闭'}</Button>
             )}
           </DialogFooter>
         </DialogContent>

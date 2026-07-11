@@ -1,5 +1,7 @@
 'use client'
 
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +18,7 @@ import { Check, Layers } from 'lucide-react'
 import { useReporting } from './ReportingContext'
 import type { DateInterval, DimensionSpec } from '@/lib/reports/types'
 
-const INTERVAL_LABELS: Record<DateInterval, string> = {
+const INTERVAL_LABELS_ZH: Record<DateInterval, string> = {
   year: '年',
   quarter: '季度',
   month: '月',
@@ -24,8 +26,19 @@ const INTERVAL_LABELS: Record<DateInterval, string> = {
   day: '日',
 }
 
+const INTERVAL_LABELS_EN: Record<DateInterval, string> = {
+  year: 'Year',
+  quarter: 'Quarter',
+  month: 'Month',
+  week: 'Week',
+  day: 'Day',
+}
+
 export function GroupBySelector() {
   const { state, dispatch } = useReporting()
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const INTERVAL_LABELS = isEn ? INTERVAL_LABELS_EN : INTERVAL_LABELS_ZH
 
   const handleToggle = (
     axis: 'row' | 'col',
@@ -74,7 +87,7 @@ export function GroupBySelector() {
               <span className="w-4 shrink-0">
                 {isActive && <Check className="h-3.5 w-3.5" />}
               </span>
-              {d.labelZh}
+              {isEn ? d.label : d.labelZh}
             </DropdownMenuItem>
           )
         })}
@@ -89,7 +102,7 @@ export function GroupBySelector() {
                 <span className="w-4 shrink-0">
                   {activeDim && <Check className="h-3.5 w-3.5" />}
                 </span>
-                {d.labelZh}
+                {isEn ? d.label : d.labelZh}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 {d.dateIntervals!.map(iv => {
@@ -119,19 +132,19 @@ export function GroupBySelector() {
     <DropdownMenu>
       <DropdownMenuTrigger className="inline-flex items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 h-8 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <Layers className="h-4 w-4" />
-        分组
+        {isEn ? 'Group By' : '分组'}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-xs text-muted-foreground">
-            行分组
+            {isEn ? 'Row Group By' : '行分组'}
           </DropdownMenuLabel>
           {renderDimItems('row')}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-xs text-muted-foreground">
-            列分组
+            {isEn ? 'Column Group By' : '列分组'}
           </DropdownMenuLabel>
           {renderDimItems('col')}
         </DropdownMenuGroup>

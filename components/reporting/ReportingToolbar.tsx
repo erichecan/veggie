@@ -1,6 +1,8 @@
 'use client'
 
 import { ArrowLeftRight, Download, X } from 'lucide-react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { useReporting } from './ReportingContext'
 import { MeasureSelector } from './MeasureSelector'
 import { GroupBySelector } from './GroupBySelector'
@@ -8,7 +10,7 @@ import { FilterPanel } from './FilterPanel'
 import { exportToExcel } from './export-excel'
 import type { DateInterval } from '@/lib/reports/types'
 
-const INTERVAL_LABELS: Record<DateInterval, string> = {
+const INTERVAL_LABELS_ZH: Record<DateInterval, string> = {
   day: '日',
   week: '周',
   month: '月',
@@ -16,6 +18,15 @@ const INTERVAL_LABELS: Record<DateInterval, string> = {
   year: '年',
 }
 
+const INTERVAL_LABELS_EN: Record<DateInterval, string> = {
+  day: 'Day',
+  week: 'Week',
+  month: 'Month',
+  quarter: 'Quarter',
+  year: 'Year',
+}
+
+// 运算符符号(=、≠、>…)是通用记号,非中文文案,中英文界面下保持一致
 const FILTER_OP_LABELS: Record<string, string> = {
   '=': '=',
   '!=': '≠',
@@ -31,15 +42,20 @@ const FILTER_OP_LABELS: Record<string, string> = {
 
 export function ReportingToolbar() {
   const { state, dispatch } = useReporting()
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const INTERVAL_LABELS = isEn ? INTERVAL_LABELS_EN : INTERVAL_LABELS_ZH
 
-  const getDimLabel = (field: string) =>
-    state.dimensionDefs.find(d => d.field === field)?.labelZh ?? field
+  const getDimLabel = (field: string) => {
+    const dim = state.dimensionDefs.find(d => d.field === field)
+    return (isEn ? dim?.label : dim?.labelZh) ?? field
+  }
 
   const getFieldLabel = (field: string) => {
     const dim = state.dimensionDefs.find(d => d.field === field)
-    if (dim) return dim.labelZh
+    if (dim) return isEn ? dim.label : dim.labelZh
     const meas = state.measureDefs.find(m => m.field === field)
-    if (meas) return meas.labelZh
+    if (meas) return isEn ? meas.label : meas.labelZh
     return field
   }
 
@@ -57,15 +73,15 @@ export function ReportingToolbar() {
         <button
           onClick={() => dispatch({ type: 'FLIP_AXES' })}
           className="inline-flex items-center justify-center rounded-md border border-input bg-background h-8 w-8 text-sm ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title="行列互换"
+          title={isEn ? 'Swap rows/columns' : '行列互换'}
         >
           <ArrowLeftRight className="h-4 w-4" />
         </button>
         <button
-          onClick={() => exportToExcel(state)}
+          onClick={() => exportToExcel(state, isEn)}
           disabled={state.rows.length === 0}
           className="inline-flex items-center justify-center rounded-md border border-input bg-background h-8 w-8 text-sm ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-          title="导出 Excel"
+          title={isEn ? 'Export Excel' : '导出 Excel'}
         >
           <Download className="h-4 w-4" />
         </button>
