@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { getLastPurchaseOrderDateByGroup } from '@/lib/analytics/last-po-by-group'
+import { toNum } from '@/lib/decimal-helpers'
 
 /**
  * 采购总览页数据 SSOT —— 聚合四个品类页面（生鲜每日建议/超市日韩目录/干货年度计划）
@@ -13,9 +14,23 @@ const PERIODIC_GROUPS = ['SUPERMARKET', 'JAPANESE_KOREAN']
 export interface OverviewKPIs {
   monthSpend: number
   monthSpendDeltaPct: number | null
-  criticalCount: number
-  overdueCount: number
-  toApproveCount: number
+  supplierUnpaidTotal: number
+}
+
+export interface TopSupplierRow {
+  supplierId: string
+  supplierName: string
+  amount: number
+  topCategories: { label: string; amount: number }[]
+}
+
+export interface RestockForecastItem {
+  productId: string
+  productName: string
+  suggestedQty: number
+  uomName: string | null
+  priority: string
+  trend: { day: string; qty: number }[]
 }
 
 export interface GroupOverviewRow {
@@ -58,31 +73,132 @@ async function monthSpendBetween(start: Date, end: Date): Promise<number> {
   return rows[0]?.amt ?? 0
 }
 
+async function supplierUnpaidTotal(): Promise<number> {
+  const result = await prisma.vendorBill.aggregate({
+    where: { status: 'POSTED' },
+    _sum: { amountDue: true },
+  })
+  return toNum(result._sum.amountDue)
+}
+
 export async function getOverviewKPIs(): Promise<OverviewKPIs> {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
 
-  const [monthSpend, lastMonthSpend, criticalCount, toApproveCount, lastByGroup] = await Promise.all([
+  const [monthSpend, lastMonthSpend, unpaidTotal] = await Promise.all([
     monthSpendBetween(monthStart, now),
     monthSpendBetween(lastMonthStart, monthStart),
-    prisma.purchaseSuggestion.count({ where: { status: 'pending', priority: 'critical' } }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (prisma as any).purchaseOrder.count({ where: { status: 'TO_APPROVE' } }),
-    getLastPurchaseOrderDateByGroup(),
+    supplierUnpaidTotal(),
   ])
-
-  const overdueCount = PERIODIC_GROUPS.filter(k => {
-    const d = lastByGroup[k]
-    if (!d) return true
-    return Math.floor((now.getTime() - new Date(d).getTime()) / 86400000) > REMIND_AFTER_DAYS
-  }).length
 
   const monthSpendDeltaPct = lastMonthSpend > 0
     ? Number((((monthSpend - lastMonthSpend) / lastMonthSpend) * 100).toFixed(1))
     : null
 
-  return { monthSpend, monthSpendDeltaPct, criticalCount, overdueCount, toApproveCount }
+  return { monthSpend, monthSpendDeltaPct, supplierUnpaidTotal: unpaidTotal }
+}
+
+/** Top10 供应商——近12个月滚动，按采购金额排序，附带该供应商的采购品类分布 */
+export async function getTopSuppliers(limit = 10): Promise<TopSupplierRow[]> {
+  const now = new Date()
+  const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, now.getDate())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = prisma as any
+
+  const supplierRows = (await p.$queryRawUnsafe(
+    `SELECT po."supplierId" AS supplier_id, COALESCE(c.name, po."supplierId") AS supplier_name,
+            SUM(po."subtotalExTax")::float AS amt
+     FROM "PurchaseOrder" po
+     LEFT JOIN "Customer" c ON c.id = po."supplierId"
+     WHERE po.status::text IN (${PO_COUNTED}) AND po."orderDate" >= $1
+     GROUP BY po."supplierId", c.name
+     ORDER BY amt DESC
+     LIMIT $2`,
+    twelveMonthsAgo, limit,
+  )) as Array<{ supplier_id: string; supplier_name: string; amt: number }>
+
+  if (supplierRows.length === 0) return []
+  const supplierIds = supplierRows.map(r => r.supplier_id)
+
+  const categoryRows = (await p.$queryRawUnsafe(
+    `SELECT po."supplierId" AS supplier_id, COALESCE(pc."nameZh", pc.name, '未分类') AS category_label,
+            SUM(pol."subtotalExTax")::float AS amt
+     FROM "PurchaseOrderLine" pol
+     JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
+     LEFT JOIN "Product" pr ON pr.id = pol."productId"
+     LEFT JOIN "ProductCategory" pc ON pc.id = pr."categoryId"
+     WHERE po.status::text IN (${PO_COUNTED}) AND po."orderDate" >= $1 AND po."supplierId" = ANY($2)
+     GROUP BY po."supplierId", category_label
+     ORDER BY po."supplierId", amt DESC`,
+    twelveMonthsAgo, supplierIds,
+  )) as Array<{ supplier_id: string; category_label: string; amt: number }>
+
+  const categoriesBySupplier = new Map<string, { label: string; amount: number }[]>()
+  for (const row of categoryRows) {
+    const list = categoriesBySupplier.get(row.supplier_id) ?? []
+    if (list.length < 3) list.push({ label: row.category_label, amount: row.amt })
+    categoriesBySupplier.set(row.supplier_id, list)
+  }
+
+  return supplierRows.map(r => ({
+    supplierId: r.supplier_id,
+    supplierName: r.supplier_name,
+    amount: r.amt,
+    topCategories: categoriesBySupplier.get(r.supplier_id) ?? [],
+  }))
+}
+
+/** 总览页中间"建议关注的补货商品"——复用现有建议引擎，不新增预测算法，只换展示位 */
+export async function getRestockForecastItems(limit = 6): Promise<RestockForecastItem[]> {
+  const priorityRank: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 }
+
+  const suggestions = await prisma.purchaseSuggestion.findMany({
+    where: { status: 'pending' },
+    orderBy: { generatedAt: 'desc' },
+    take: 30,
+  })
+  const top = suggestions
+    .slice()
+    .sort((a, b) => (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9))
+    .slice(0, limit)
+  if (top.length === 0) return []
+
+  const productIds = top.map(s => s.productId)
+  const now = new Date()
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
+  const fourteenDaysAgo = new Date(todayStart); fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
+
+  const deliveredLines = await prisma.orderLine.findMany({
+    where: {
+      productId: { in: productIds },
+      order: { status: 'COMPLETED', deliveryDate: { gte: fourteenDaysAgo, lt: todayStart } },
+    },
+    select: { productId: true, deliveredQty: true, order: { select: { deliveryDate: true } } },
+  })
+
+  const trendByProduct = new Map<string, Map<string, number>>()
+  for (const l of deliveredLines) {
+    const day = l.order.deliveryDate!.toISOString().slice(0, 10)
+    const map = trendByProduct.get(l.productId) ?? new Map<string, number>()
+    map.set(day, (map.get(day) ?? 0) + toNum(l.deliveredQty))
+    trendByProduct.set(l.productId, map)
+  }
+
+  const days: string[] = []
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(todayStart); d.setDate(d.getDate() - i)
+    days.push(d.toISOString().slice(0, 10))
+  }
+
+  return top.map(s => ({
+    productId: s.productId,
+    productName: s.productName,
+    suggestedQty: toNum(s.suggestedQty),
+    uomName: null,
+    priority: s.priority,
+    trend: days.map(day => ({ day, qty: trendByProduct.get(s.productId)?.get(day) ?? 0 })),
+  }))
 }
 
 export async function getGroupOverview(): Promise<GroupOverviewRow[]> {

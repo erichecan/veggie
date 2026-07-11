@@ -1,11 +1,14 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut, apiPatch, authHeaders } from '@/lib/api'
+import { Trash2 } from 'lucide-react'
+import { apiGet, apiPost, apiPut, apiPatch, authHeaders } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
+import SimilarProductAlert from '@/components/shared/similar-product-alert'
 
 async function openPurchaseOrderPdf(poId: string) {
   // JWT 存在 localStorage，直接 window.open API 路由不会带 Authorization 头会 401，
@@ -63,6 +66,16 @@ interface ActivityLogEntry {
   createdAt: string
 }
 
+interface GoodsReceiptRow {
+  id: string
+  name: string
+  arrivedAt: string
+  receivedBy?: string | null
+  notes?: string | null
+  photos?: string[]
+  lines: Array<{ productId: string; productName: string; qty: number; condition?: 'ok' | 'damaged' }>
+}
+
 interface PurchaseOrder {
   id: string
   name: string
@@ -80,6 +93,7 @@ interface PurchaseOrder {
   createdAt: string
   lines: POLine[]
   bills?: POBill[]
+  receipts?: GoodsReceiptRow[]
   activityLog?: ActivityLogEntry[]
 }
 
@@ -87,6 +101,30 @@ interface Supplier {
   id: string
   name: string
   supplierPaymentTerm?: string | null
+}
+
+interface PurchaseProduct {
+  id: string
+  name: string
+  internalRef?: string | null
+  category?: string | null
+  spec?: string | null
+  uomId?: string | null
+  uomName?: string | null
+  standardPrice?: number | null
+  price?: number | null
+}
+
+interface Category {
+  id: string
+  name: string
+  nameZh?: string | null
+}
+
+interface Uom {
+  id: string
+  name: string
+  nameZh?: string | null
 }
 
 function toInputDate(iso?: string | null) {
@@ -171,6 +209,91 @@ export default function PurchaseDetailPage() {
   const [editSupplierId, setEditSupplierId] = useState('')
   const [editLines, setEditLines] = useState<POLine[]>([])
 
+  // ── 选品 / 快速建档 ──
+  const [purchaseProducts, setPurchaseProducts] = useState<PurchaseProduct[]>([])
+  const [productQuery, setProductQuery] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [uoms, setUoms] = useState<Uom[]>([])
+  const [showQuickCreate, setShowQuickCreate] = useState(false)
+  const [qcName, setQcName] = useState('')
+  const [qcCategoryId, setQcCategoryId] = useState('')
+  const [qcUomId, setQcUomId] = useState('')
+  const [qcUnitCost, setQcUnitCost] = useState('')
+  const [qcSubmitting, setQcSubmitting] = useState(false)
+  const newLineSeq = useRef(0)
+  const productsLoaded = useRef(false)
+
+  function loadPurchaseProducts() {
+    apiGet<PurchaseProduct[]>('/api/products?purchasable=1').then(setPurchaseProducts).catch(() => {})
+  }
+
+  async function loadPickerData() {
+    if (productsLoaded.current) return
+    productsLoaded.current = true
+    loadPurchaseProducts()
+    apiGet<Category[]>('/api/product-categories').then(setCategories).catch(() => {})
+    apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
+  }
+
+  function addProductLine(prod: PurchaseProduct) {
+    newLineSeq.current += 1
+    const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
+    setEditLines(prev => [
+      ...prev,
+      {
+        id: `new-${newLineSeq.current}`,
+        sequence: (prev[prev.length - 1]?.sequence ?? 0) + 10,
+        productId: prod.id,
+        productName: prod.name,
+        spec: prod.spec ?? null,
+        uomName: prod.uomName ?? null,
+        orderedQty: 1,
+        unitCost,
+        taxRate: 0,
+        bestBefore: null,
+        subtotalExTax: unitCost,
+        taxAmount: 0,
+        subtotalIncTax: unitCost,
+      },
+    ])
+  }
+
+  function deleteProductLine(lineId: string) {
+    setEditLines(prev => prev.filter(l => l.id !== lineId))
+  }
+
+  function openQuickCreate() {
+    setQcName(productQuery)
+    setQcCategoryId('')
+    setQcUomId('')
+    setQcUnitCost('')
+    setShowQuickCreate(true)
+  }
+
+  async function submitQuickCreate() {
+    if (!qcName.trim()) { toast.error('商品名称不能为空'); return }
+    setQcSubmitting(true)
+    try {
+      const created = await apiPost<PurchaseProduct>('/api/products/quick-create', {
+        name: qcName.trim(),
+        categoryId: qcCategoryId || undefined,
+        purchaseUomId: qcUomId || undefined,
+        unitCost: qcUnitCost ? Number(qcUnitCost) : undefined,
+      })
+      const uomName = uoms.find(u => u.id === qcUomId)?.nameZh || uoms.find(u => u.id === qcUomId)?.name
+      const withUom = { ...created, uomName: uomName ?? null, standardPrice: qcUnitCost ? Number(qcUnitCost) : 0 }
+      setPurchaseProducts(prev => [withUom, ...prev])
+      addProductLine(withUom)
+      setProductQuery('')
+      setShowQuickCreate(false)
+      toast.success(`已创建「${created.name}」并加入采购行`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '创建商品失败')
+    } finally {
+      setQcSubmitting(false)
+    }
+  }
+
   async function load() {
     setLoading(true)
     try {
@@ -192,6 +315,7 @@ export default function PurchaseDetailPage() {
 
   function startEdit() {
     if (!po) return
+    loadPickerData()
     setEditNotes(po.notes ?? '')
     setEditExpectedDate(toInputDate(po.expectedDate))
     setEditSupplierId(po.supplierId)
@@ -229,6 +353,7 @@ export default function PurchaseDetailPage() {
         supplierId: editSupplierId,
         lines: editLines.map(l => ({
           id: l.id,
+          ...(l.id.startsWith('new-') && { productId: l.productId, productName: l.productName }),
           orderedQty: Number(l.orderedQty),
           unitCost: Number(l.unitCost),
           taxRate: Number(l.taxRate),
@@ -425,7 +550,8 @@ export default function PurchaseDetailPage() {
             )}
             {po.status === 'CONFIRMED' && (
               <>
-                <button onClick={() => handleAction('receive', '确认收货')} disabled={acting}
+                <button
+                  onClick={() => router.push(`${prefix}/classic/operator/inventory?tab=receive&poId=${po.id}`)}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
                   确认收货
@@ -592,6 +718,7 @@ export default function PurchaseDetailPage() {
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr style={{ background: '#f8f8f8', borderBottom: '1px solid #e8e8e8' }}>
+                      {editing && <th className="w-8 px-2 py-2.5" />}
                       <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">商品</th>
                       <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">描述</th>
                       <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">数量</th>
@@ -605,6 +732,13 @@ export default function PurchaseDetailPage() {
                   <tbody>
                     {displayLines.map((l, i) => (
                       <tr key={l.id} className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors">
+                        {editing && (
+                          <td className="px-2 py-2.5 text-center">
+                            <button onClick={() => deleteProductLine(l.id)} className="text-red-400 hover:text-red-600" title="删除此行">
+                              <Trash2 className="h-3.5 w-3.5 inline" />
+                            </button>
+                          </td>
+                        )}
                         <td className="px-4 py-2.5 font-medium" style={{ color: PURPLE }}>{l.productName}</td>
                         <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[180px] truncate">{l.spec || ''}</td>
                         <td className="px-4 py-2.5 text-right">
@@ -661,7 +795,32 @@ export default function PurchaseDetailPage() {
                     ))}
                     {displayLines.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-sm">暂无明细行</td>
+                        <td colSpan={editing ? 9 : 8} className="px-4 py-10 text-center text-gray-400 text-sm">暂无明细行</td>
+                      </tr>
+                    )}
+                    {editing && (
+                      <tr>
+                        <td className="px-2 py-2" />
+                        <td className="px-2 py-2" colSpan={7}>
+                          <div className="flex items-center gap-2">
+                            <ProductSearchInput
+                              value={productQuery}
+                              onChange={setProductQuery}
+                              onSelect={p => { addProductLine(p); setProductQuery('') }}
+                              products={purchaseProducts}
+                              placeholder="搜索并添加商品…"
+                              inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-64"
+                              portalDropdown
+                            />
+                            <button
+                              onClick={openQuickCreate}
+                              className="text-xs whitespace-nowrap hover:underline"
+                              style={{ color: PURPLE }}
+                            >
+                              找不到？新建商品
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     )}
                   </tbody>
@@ -719,6 +878,42 @@ export default function PurchaseDetailPage() {
                   </div>
                 </div>
               </div>
+
+              {/* 收货记录：实际到货时间以此为准（可能分批多条），来自库存管理「收货」工作台 */}
+              {(po.receipts?.length ?? 0) > 0 && (
+                <div className="mt-6 pt-6 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">收货记录</h3>
+                  <div className="space-y-3">
+                    {[...(po.receipts ?? [])]
+                      .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
+                      .map(gr => {
+                        const damaged = gr.lines.filter(l => l.condition === 'damaged')
+                        return (
+                          <div key={gr.id} className="border border-gray-200 rounded p-3 text-sm">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-gray-800">{gr.name}</span>
+                              <span className="text-gray-500">到货 {formatDateOnly(gr.arrivedAt)}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}</span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {gr.lines.length} 个品项
+                              {damaged.length > 0 && (
+                                <span className="text-red-600 ml-1">· {damaged.length} 项有损坏</span>
+                              )}
+                            </div>
+                            {gr.notes && <div className="text-xs text-gray-500 mt-1">{gr.notes}</div>}
+                            {(gr.photos?.length ?? 0) > 0 && (
+                              <div className="flex gap-1.5 mt-2 flex-wrap">
+                                {(gr.photos ?? []).map((src, i) => (
+                                  <img key={i} src={src} alt={`${gr.name} 照片 ${i + 1}`} className="w-12 h-12 rounded object-cover border border-gray-200" />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -755,6 +950,78 @@ export default function PurchaseDetailPage() {
           )}
         </div>
       </div>
+
+      {showQuickCreate && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-base font-semibold text-gray-800">新建商品</h2>
+            <p className="text-xs text-gray-400">先建最小信息用于本次采购；默认不可销售，之后可在商品库补全销售价/税率/图片再上架。</p>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">商品名称</label>
+              <input
+                value={qcName}
+                onChange={e => setQcName(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
+                autoFocus
+              />
+              <SimilarProductAlert name={qcName} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">分类</label>
+                <select
+                  value={qcCategoryId}
+                  onChange={e => setQcCategoryId(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
+                >
+                  <option value="">未分类</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.nameZh || c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">采购单位</label>
+                <select
+                  value={qcUomId}
+                  onChange={e => setQcUomId(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
+                >
+                  <option value="">未指定</option>
+                  {uoms.map(u => (
+                    <option key={u.id} value={u.id}>{u.nameZh || u.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">参考采购单价（可选）</label>
+              <input
+                type="number" step="0.01" min="0"
+                value={qcUnitCost}
+                onChange={e => setQcUnitCost(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowQuickCreate(false)}
+                className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={submitQuickCreate}
+                disabled={qcSubmitting}
+                className="flex-1 py-2 rounded text-sm text-white disabled:opacity-50"
+                style={{ background: PURPLE }}
+              >
+                {qcSubmitting ? '创建中…' : '创建并加入采购行'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

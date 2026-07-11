@@ -971,10 +971,17 @@ model PurchaseOrder {
   expectedDate   DateTime?
   /// 货币（默认与公司主币一致）
   currency       String              @default("EUR")
+  /// 下单时锁定的 currency→EUR 当日汇率快照，事后汇率变动不影响历史单据
+  exchangeRate   Decimal?            @default(1) @db.Decimal(14, 6)
   /// 不含税总金额
   subtotalExTax  Decimal             @default(0) @db.Decimal(12, 2)
   totalTax       Decimal             @default(0) @db.Decimal(12, 2)
   totalIncTax    Decimal             @default(0) @db.Decimal(12, 2)
+  /// 本单运费（税前），按行 subtotal 占比摊入各行落地成本，不回写 Product 成本
+  freightAmount  Decimal             @default(0) @db.Decimal(14, 2)
+  /// 用于识别/预填本单的供应商 PDF 原件
+  sourceDocumentUrl  String?
+  sourceDocumentName String?
   /// 备注
   notes          String?
   createdBy      String?
@@ -1043,9 +1050,11 @@ model GoodsReceipt {
   arrivedAt       DateTime
   /// 签收人
   receivedBy      String?
-  /// JSON: [{productId, productName, qty, uomId, condition:'ok'|'damaged'}]
+  /// JSON: [{productId, productName, qty, uomId, condition:'ok'|'damaged', bestBefore}]
   lines           Json          @default("[]")
   notes           String?
+  /// 取证照片：base64 data URI 数组（复用司机退货证据照片同一套轻量存储方式，见 driver/trip/[id]/page.tsx）
+  photos          String[]      @default([])
   createdAt       DateTime      @default(now())
 
   @@index([purchaseOrderId])

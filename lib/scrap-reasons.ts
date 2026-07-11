@@ -4,6 +4,7 @@ export const SCRAP_REASONS = [
   'CUSTOMER_RETURN_DAMAGED',
   'WAREHOUSE_EXPIRY',
   'WAREHOUSE_DAMAGE',
+  'RECEIPT_DAMAGE',
   'OTHER',
 ] as const
 
@@ -14,5 +15,6 @@ export const SCRAP_REASON_LABEL: Record<string, string> = {
   CUSTOMER_RETURN_DAMAGED: '客退损坏',
   WAREHOUSE_EXPIRY: '仓库过期',
   WAREHOUSE_DAMAGE: '仓库损坏',
+  RECEIPT_DAMAGE: '到货即损坏（运输/供应商责任）',
   OTHER: '其他',
 }

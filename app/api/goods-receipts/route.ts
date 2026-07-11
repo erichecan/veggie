@@ -4,22 +4,28 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
 import { toNum } from '@/lib/decimal-helpers'
+import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
 
 /**
  * /api/goods-receipts
  * ============================================================================
- * 收货单（对应 Odoo stock.picking type=incoming）
+ * 收货单（对应 Odoo stock.picking type=incoming）—— 库存管理「收货」工作台的落地接口
  *
  * POST body:
- *   { purchaseOrderId, arrivedAt, lines: [{productId, qty, uomId?, condition:'ok'|'damaged'}] }
+ *   { purchaseOrderId, arrivedAt, notes?, photos?: string[],
+ *     lines: [{productId, qty, uomId?, condition:'ok'|'damaged', bestBefore?}] }
+ *   同一 productId 可以拆成两条（一条 ok、一条 damaged），表达"这行有部分损坏"。
  *
  * 业务：
  *   1) 校验 PO 存在且状态 ∈ {CONFIRMED, RECEIVED}（允许分批到货）
  *   2) 生成 GR 编号
  *   3) 事务内：
- *      - 创建 GoodsReceipt
- *      - 更新 PO 各 Line 的 receivedQty
- *      - 给 Product.qtyOnHand 加上收到的数量，并写 StockMove(type=IN)
+ *      - 创建 GoodsReceipt（含取证照片）
+ *      - 更新 PO 各 Line 的 receivedQty（良品+损坏都计入，视为供应商已交付；见 2026-07-10 决策）
+ *      - 良品：给 Product.qtyOnHand 加上收到的数量，写 StockMove(type=IN)，建 Lot（保质期按本次收货行填写，不再死绑
+ *        PO 行下单时的计划值）
+ *      - 损坏：不进库存、不建 Lot，改写一笔 StockMove(type=SCRAP, sourceType=RECEIPT_DAMAGE, lotId=null) 留痕，
+ *        自然落入损耗仪表盘的 SCRAP 统计，方便追损耗/找供应商索赔
  *      - 如果所有 line 的 receivedQty >= orderedQty，把 PO 状态改为 RECEIVED
  */
 
@@ -29,6 +35,8 @@ interface InLine {
   qty: number
   uomId?: string
   condition?: 'ok' | 'damaged'
+  /** 本次收货实际看到的保质期，覆盖 PO 行下单时填的计划值；不传则回退用 PO 行原值 */
+  bestBefore?: string | null
 }
 
 export async function GET(req: Request) {
@@ -84,6 +92,7 @@ export async function POST(req: Request) {
       // 库存批次日期：优先用 PO 的预期到货日（expectedDate），其次用 GR 实际到货日（arrivedAt）
       const grArrivedAt = data.arrivedAt ? new Date(data.arrivedAt) : new Date()
       const batchDate: Date = po.expectedDate ?? grArrivedAt
+      const photos: string[] = Array.isArray(data.photos) ? data.photos.filter((x: unknown) => typeof x === 'string') : []
 
       const result = await p.$transaction(async (tx: typeof p) => {
         const gr = await tx.goodsReceipt.create({
@@ -98,8 +107,10 @@ export async function POST(req: Request) {
               qty: Number(l.qty),
               uomId: l.uomId ?? null,
               condition: l.condition ?? 'ok',
+              bestBefore: l.bestBefore ?? null,
             })),
             notes: data.notes ?? null,
+            photos,
           },
         })
 
@@ -132,9 +143,11 @@ export async function POST(req: Request) {
               data: { qtyOnHand: { increment: qty }, ...(newStd !== oldStd ? { standardPrice: newStd } : {}) },
             })
 
-            // 创建批次
+            // 创建批次；保质期优先用本次收货行实际填写的值（实物到货才知道真实保质期），
+            // 不传则回退用 PO 行下单时的计划值
             lotSeq++
             const lotNumber = `LOT-${String(lotSeq).padStart(5, '0')}`
+            const lineBestBefore = l.bestBefore ? new Date(l.bestBefore) : (poLine.bestBefore ?? null)
             const lot = await tx.lot.create({
               data: {
                 lotNumber,
@@ -144,7 +157,7 @@ export async function POST(req: Request) {
                 sourceType: 'GOODS_RECEIPT',
                 sourceId: gr.id,
                 sourceRef: grName,
-                bestBefore: poLine.bestBefore ?? null,
+                bestBefore: lineBestBefore,
                 arrivedAt: batchDate,
                 // SSOT(成本): 批次成本 = PO 行真实采购价，毛利/损耗分析按批次计成本
                 unitCost: recvCost > 0 ? recvCost : null,
@@ -161,6 +174,23 @@ export async function POST(req: Request) {
                 movedAt: batchDate,
                 note: `收货 ${grName} / PO ${po.name} / 批次 ${lotNumber}`,
                 sourceType: 'GOODS_RECEIPT',
+                sourceId: gr.id,
+                sourceRef: grName,
+              },
+            })
+          } else {
+            // 损坏：不进库存、不建 Lot，但算供应商已交付（上面 receivedQty 已计入）。
+            // 写一笔无批次归属的 SCRAP StockMove 留痕，自然落入损耗仪表盘统计，方便追损耗/找供应商索赔。
+            await tx.stockMove.create({
+              data: {
+                productId: l.productId,
+                productName: l.productName ?? poLine.productName,
+                type: 'SCRAP',
+                qty,
+                lotId: null,
+                movedAt: batchDate,
+                note: `${SCRAP_REASON_LABEL.RECEIPT_DAMAGE} - 收货 ${grName} / PO ${po.name}`,
+                sourceType: 'RECEIPT_DAMAGE',
                 sourceId: gr.id,
                 sourceRef: grName,
               },

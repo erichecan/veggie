@@ -73,14 +73,33 @@ export async function GET(req: Request) {
         }
       }
 
-      const batches = slots.map((slot, idx) => {
-        const slotCustomers = customers.filter(c => c.defaultDriverSlotId === slot.id)
-        const label = `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}`
+      // 路线按「司机+时段」聚合，不再按单个 DriverSlot(=托盘)分别算——一个司机一个时段
+      // 现在只有一辆车、一条连续路线，托盘 1/3/4 的客户混在同一趟车里，分开算路线会把
+      // 一趟车的真实里程/耗时切成互不相关的几段，工作量(轻/中/重)判断系统性失真
+      // (见 2026-07-10 复盘：BAO 一个上午被拆成 3 条"独立路线")。
+      type SlotGroup = { driverName: string; timeOfDay: string; slotIds: string[] }
+      const groups = new Map<string, SlotGroup>()
+      for (const slot of slots) {
+        const key = `${slot.driverName}__${slot.timeOfDay}`
+        const g = groups.get(key) ?? { driverName: slot.driverName, timeOfDay: slot.timeOfDay, slotIds: [] }
+        g.slotIds.push(slot.id)
+        groups.set(key, g)
+      }
+
+      const sortedGroups = [...groups.values()].sort(
+        (a, b) => a.timeOfDay.localeCompare(b.timeOfDay) || a.driverName.localeCompare(b.driverName),
+      )
+
+      const batches = sortedGroups.map((g, idx) => {
+        const groupCustomers = customers.filter(
+          c => c.defaultDriverSlotId && g.slotIds.includes(c.defaultDriverSlotId),
+        )
+        const label = `${g.timeOfDay} ${g.driverName}`
         return {
           batchLabel: label,
           batchIndex: idx,
-          driverSlotId: slot.id,
-          restaurants: slotCustomers.map(c => serializeApi({
+          driverSlotIds: g.slotIds,
+          restaurants: groupCustomers.map(c => serializeApi({
             id: c.id,
             name: c.name,
             latitude: c.latitude,

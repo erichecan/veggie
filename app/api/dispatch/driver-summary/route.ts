@@ -21,21 +21,27 @@ export async function GET(req: Request) {
 
       const emptyTotals = { restaurantCount: 0, orderCount: 0, totalQty: 0, totalAmount: 0 }
 
+      // include pallets：批次号(batchNum)现在是波次内部的托盘编号，一个波次可能横跨多个托盘，
+      // 不能再用 driverSlotId 反查单个 DriverSlot 拿一个批次号(会漏掉波次里其余托盘，见
+      // daily-sales/PrintCenter.tsx 2026-07-10 的同类复盘)。
       const waves = await prisma.pickingWave.findMany({
         where: { waveDate: { gte: from, lt: to } },
+        include: { pallets: { select: { seq: true } } },
       })
       if (waves.length === 0) return NextResponse.json({ from: fromStr, to: toStr, rows: [], totals: emptyTotals })
 
-      const slotIds = Array.from(
-        new Set(waves.map(w => w.driverSlotId).filter(Boolean) as string[]),
+      // legacy 兜底：极少数历史波次 driverName 快照字段为空，用 driverSlotId 反查补一次司机姓名——
+      // 仅用于司机姓名兜底，不再用于 batchNum/timeOfDay(那两个已经是 wave 自身的权威字段)。
+      const legacySlotIds = Array.from(
+        new Set(waves.filter(w => !w.driverName && w.driverSlotId).map(w => w.driverSlotId) as string[]),
       )
-      const slots = slotIds.length
+      const legacySlots = legacySlotIds.length
         ? await prisma.driverSlot.findMany({
-            where: { id: { in: slotIds } },
-            select: { id: true, timeOfDay: true, batchNum: true, driverName: true },
+            where: { id: { in: legacySlotIds } },
+            select: { id: true, driverName: true },
           })
         : []
-      const slotMap = new Map(slots.map(s => [s.id, s]))
+      const legacySlotMap = new Map(legacySlots.map(s => [s.id, s]))
 
       const allOrderIds = Array.from(new Set(waves.flatMap(w => (w.orderIds as string[]) ?? [])))
       const orders = allOrderIds.length
@@ -58,13 +64,13 @@ export async function GET(req: Request) {
           totalAmount += Number(o.totalAmount ?? 0)
           for (const it of (o.items as OrderItemRaw[]) ?? []) totalQty += it.quantity
         }
-        const slot = w.driverSlotId ? slotMap.get(w.driverSlotId) : null
         const wd = w.waveDate ? new Date(w.waveDate) : null
+        const batchNums = [...new Set(w.pallets.map(p => p.seq))].sort((a, b) => a - b)
         return {
           waveId: w.id,
-          driverName: w.driverName ?? slot?.driverName ?? '',
-          timeOfDay: slot?.timeOfDay ?? null,
-          batchNum: slot?.batchNum ?? w.waveNumber ?? null,
+          driverName: w.driverName ?? (w.driverSlotId ? legacySlotMap.get(w.driverSlotId)?.driverName : undefined) ?? '',
+          timeOfDay: w.timeOfDay ?? null,
+          batchNums,
           restaurantCount: restaurants.size,
           orderCount: ids.length,
           totalQty: Math.round(totalQty * 1000) / 1000,
@@ -78,7 +84,7 @@ export async function GET(req: Request) {
       rows.sort(
         (a, b) =>
           (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') ||
-          (a.batchNum ?? 0) - (b.batchNum ?? 0),
+          (a.batchNums[0] ?? 0) - (b.batchNums[0] ?? 0),
       )
 
       const totals = rows.reduce(

@@ -63,9 +63,12 @@ export interface ProductTemplate {
   isPackaging?: boolean
   canBeExpensed?: boolean
   // 计量单位
+  /** @deprecated 旧字符串字段，逐步迁移到 uomId，仅保留兼容读取 */
   unitOfMeasure?: string
+  /** @deprecated 旧字符串字段，逐步迁移到 purchaseUomId，仅保留兼容读取 */
   purchaseUoM?: string
   uomId?: string
+  purchaseUomId?: string
   uomName?: string
   // 库存追踪方式
   tracking?: 'none' | 'lot' | 'serial'
@@ -78,6 +81,8 @@ export interface ProductTemplate {
   createdBy?: string
   updatedBy?: string
   barcode?: string
+  /** 实时在手库存，来自 /api/product-templates 逐行附加，非模型本身字段 */
+  qtyOnHand?: number
 }
 
 // ─── 商品变体（对应 Odoo product.product）────────────────────────────────────
@@ -346,6 +351,8 @@ export interface PickingItem {
   productId: string
   productName: string
   spec: string
+  /** 行级备注（如"15个正常价+5个打折处理"），拣货时需要醒目提示 */
+  note?: string
   image: string
   requiredQty: number
   pickedQty: number

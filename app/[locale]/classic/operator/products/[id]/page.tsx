@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPut, apiPost } from '@/lib/api'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
+import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import type { ProductTemplate, ProductCategory, Order } from '@/lib/types'
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
@@ -17,35 +18,12 @@ function IconSales() {
     </svg>
   )
 }
-function IconPurchase() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-4 4h16l-4-4z"/>
-    </svg>
-  )
-}
-function IconInventory() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-      <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
-    </svg>
-  )
-}
-function IconMoves() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
-    </svg>
-  )
-}
 
 // ── SmartButton ────────────────────────────────────────────────────────────────
-function SmartButton({ icon, value, label, onClick }: { icon: React.ReactNode; value: string | number; label: string; onClick?: () => void }) {
+function SmartButton({ icon, value, label }: { icon: React.ReactNode; value: string | number; label: string }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center gap-0.5 px-4 py-2 rounded border transition-colors text-center min-w-[90px] hover:bg-[#875A7B]/20"
+    <div
+      className="flex flex-col items-center gap-0.5 px-4 py-2 rounded border text-center min-w-[90px]"
       style={{ borderColor: '#d4b8d0' }}
     >
       <div className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#875A7B' }}>
@@ -53,7 +31,7 @@ function SmartButton({ icon, value, label, onClick }: { icon: React.ReactNode; v
         <span>{value}</span>
       </div>
       <span className="text-xs text-gray-500 whitespace-nowrap">{label}</span>
-    </button>
+    </div>
   )
 }
 
@@ -91,20 +69,6 @@ const TYPE_OPTIONS = [
 ]
 const TYPE_LABEL: Record<string, string> = { product: 'Storable Product', consu: 'Consumable', service: 'Service' }
 
-interface VendorLine {
-  id: string
-  supplier: string
-  productVariant: string
-  minQty: number
-  uom: string
-  price: number
-  currency: string
-  dateStart: string
-  dateEnd: string
-}
-
-type FormTab = 'general' | 'sales' | 'ecommerce' | 'purchase' | 'inventory'
-
 export default function ClassicProductDetailPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -129,7 +93,6 @@ export default function ClassicProductDetailPage() {
     attributeLines: [],
     status: 'active',
     createdAt: new Date().toISOString(),
-    websitePublished: false,
     sequence: 0,
     commissionPrice: 0,
     weight: 0,
@@ -137,13 +100,11 @@ export default function ClassicProductDetailPage() {
   const [original, setOriginal] = useState<ProductTemplate | null>(null)
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; category?: { name: string } }[]>([])
-  const [activeTab, setActiveTab] = useState<FormTab>('general')
   const [editMode, setEditMode] = useState(isNew)
   const [saving, setSaving] = useState(false)
 
   // Smart button stats
   const [soldCount, setSoldCount] = useState(0)
-  const [soldAmount, setSoldAmount] = useState(0)
   const [onHandQty, setOnHandQty] = useState(0)
 
   // 手动库存调整（针对本商品的库存单元 variant）
@@ -154,30 +115,6 @@ export default function ClassicProductDetailPage() {
   const [adjQty, setAdjQty] = useState('')
   const [adjNote, setAdjNote] = useState('')
   const [adjSubmitting, setAdjSubmitting] = useState(false)
-
-  // Extra local state (not in ProductTemplate)
-  const [vendorLines, setVendorLines] = useState<VendorLine[]>([])
-  const [availableInPos, setAvailableInPos] = useState(false)
-  const [loyaltyPoint, setLoyaltyPoint] = useState('')
-  const [nonRefundable, setNonRefundable] = useState(false)
-  const [returnValidDays, setReturnValidDays] = useState('')
-  const [invoicingPolicy, setInvoicingPolicy] = useState<'order' | 'delivery'>('order')
-  const [purchaseDescription, setPurchaseDescription] = useState('')
-
-  // Print / Action dropdown
-  const [printOpen, setPrintOpen] = useState(false)
-  const [actionOpen, setActionOpen] = useState(false)
-  const printRef = useRef<HTMLDivElement>(null)
-  const actionRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function outside(e: MouseEvent) {
-      if (printRef.current && !printRef.current.contains(e.target as Node)) setPrintOpen(false)
-      if (actionRef.current && !actionRef.current.contains(e.target as Node)) setActionOpen(false)
-    }
-    document.addEventListener('mousedown', outside)
-    return () => document.removeEventListener('mousedown', outside)
-  }, [])
 
   async function load() {
     try {
@@ -196,16 +133,11 @@ export default function ClassicProductDetailPage() {
         setOriginal({ ...normalized })
         const templateId = found.id
         let count = 0
-        let amount = 0
         for (const order of orders) {
           const matching = (order.items ?? []).filter(item => item.productId === templateId)
-          if (matching.length > 0) {
-            count++
-            amount += matching.reduce((s, item) => s + (item.subtotal ?? item.price * item.quantity), 0)
-          }
+          if (matching.length > 0) count++
         }
         setSoldCount(count)
-        setSoldAmount(amount)
         try {
           const allProducts = await apiGet<Array<{ id: string; name: string; templateId: string; qtyOnHand: number; uomName?: string }>>('/api/products')
           const mine = allProducts.filter(p => p.templateId === templateId)
@@ -288,14 +220,6 @@ export default function ClassicProductDetailPage() {
 
   if (!tmpl) return <div className="p-8 text-gray-400 text-sm">加载中...</div>
 
-  const tabs: { key: FormTab; label: string }[] = [
-    { key: 'general', label: 'General Information' },
-    { key: 'sales', label: 'Sales' },
-    { key: 'ecommerce', label: 'eCommerce' },
-    { key: 'purchase', label: 'Purchase' },
-    { key: 'inventory', label: 'Inventory' },
-  ]
-
   const fieldClass = "w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 bg-white"
   const focusStyle = { '--tw-ring-color': '#875A7B' } as React.CSSProperties
   const btnBase = "h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
@@ -346,38 +270,6 @@ export default function ClassicProductDetailPage() {
                 Create
               </button>
 
-              {/* Print ▼ */}
-              <div className="relative" ref={printRef}>
-                <button onClick={() => { setPrintOpen(v => !v); setActionOpen(false) }} className={`${btnBase} flex items-center gap-1`}>
-                  Print
-                  <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                </button>
-                {printOpen && (
-                  <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded shadow-lg z-30 text-sm py-1">
-                    {['Product Label', 'Product Sheet'].map(item => (
-                      <button key={item} onClick={() => { toast.info('打印功能即将推出'); setPrintOpen(false) }}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700">{item}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Action ▼ */}
-              <div className="relative" ref={actionRef}>
-                <button onClick={() => { setActionOpen(v => !v); setPrintOpen(false) }} className={`${btnBase} flex items-center gap-1`}>
-                  Action
-                  <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                </button>
-                {actionOpen && (
-                  <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded shadow-lg z-30 text-sm py-1">
-                    {['Duplicate', 'Archive', 'Delete'].map(item => (
-                      <button key={item} onClick={() => { toast.info('功能即将推出'); setActionOpen(false) }}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700">{item}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               {/* 1 / — < > */}
               <div className="flex items-center gap-1 ml-auto text-sm text-gray-500">
                 <span>1 / —</span>
@@ -387,18 +279,6 @@ export default function ClassicProductDetailPage() {
             </>
           )}
         </div>
-
-        {/* 次级操作：Update Qty / Replenish (只在读模式 + 非新建时) */}
-        {!editMode && !isNew && (
-          <div className="pb-2 flex items-center gap-2 border-t border-gray-100 pt-2">
-            <button onClick={() => toast.info('即将推出')} className={btnBase}>
-              Update Qty On Hand
-            </button>
-            <button onClick={() => toast.info('即将推出')} className={btnBase}>
-              Replenish
-            </button>
-          </div>
-        )}
       </div>
 
       {/* ── 主内容卡片 ───────────────────────────────────────────────────────── */}
@@ -436,6 +316,9 @@ export default function ClassicProductDetailPage() {
                 ) : (
                   <h1 className="text-xl font-semibold text-gray-900 mb-2">{tmpl.name || '（未命名）'}</h1>
                 )}
+                {editMode && (
+                  <SimilarProductAlert name={tmpl.name} excludeId={isNew ? undefined : tmpl.id} />
+                )}
                 <div className="flex flex-wrap gap-4">
                   {[
                     { key: 'isPackaging' as const, label: 'Is Packaging' },
@@ -463,364 +346,105 @@ export default function ClassicProductDetailPage() {
             {!isNew && (
               <div className="flex flex-wrap gap-2 justify-end flex-shrink-0 max-w-sm">
                 <SmartButton icon={<IconSales />} value={soldCount} label="Sales" />
-                <SmartButton icon={<IconPurchase />} value={`€${soldAmount.toFixed(2)}`} label="Purchased" />
-                <SmartButton icon={<IconInventory />} value={onHandQty.toFixed(2)} label="On Hand" />
-                <SmartButton icon={<IconMoves />} value={0} label="Product Moves" />
               </div>
             )}
           </div>
         </div>
 
-        {/* Tab 栏 */}
-        <div className="flex gap-0 border-b border-gray-200 px-4 overflow-x-auto">
-          {tabs.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className="px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap"
-              style={{
-                borderBottomColor: activeTab === t.key ? '#875A7B' : 'transparent',
-                color: activeTab === t.key ? '#875A7B' : '#6b7280',
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab 内容 */}
+        {/* 内容区：单页分区块 */}
         <div className="px-6 py-5">
 
-          {/* ── General Information ── */}
-          {activeTab === 'general' && (
-            editMode ? (
+          <Section title="Basic Info">
+            {editMode ? (
               <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
-                <div className="space-y-3">
-                  <Row label="Product Type">
-                    <select value={tmpl.type} onChange={e => setField('type', e.target.value as ProductTemplate['type'])} className={fieldClass} style={focusStyle}>
-                      {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </Row>
-                  <Row label="Internal Reference">
-                    <input value={tmpl.internalRef ?? ''} onChange={e => setField('internalRef', e.target.value || undefined)} className={fieldClass} style={{ ...focusStyle, color: '#875A7B' }} />
-                  </Row>
-                  <Row label="Barcode">
-                    <input value={tmpl.barcode ?? ''} onChange={e => setField('barcode', e.target.value || undefined)} className={fieldClass} style={focusStyle} />
-                  </Row>
-                  <Row label="Product Category">
-                    <select value={tmpl.categoryId ?? ''} onChange={e => setField('categoryId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
-                      <option value="">— All —</option>
-                      {categories.map(c => <option key={c.id} value={c.id}>{c.nameZh ?? c.name}</option>)}
-                    </select>
-                  </Row>
-                </div>
-                <div className="space-y-3">
-                  <Row label="Sequence">
-                    <NumericInput value={tmpl.sequence ?? 0} onChange={e => setField('sequence', parseInt(e.target.value) || 0)} className={fieldClass} style={focusStyle} />
-                  </Row>
-                  <Row label="Sales Price">
-                    <PriceInput value={tmpl.listPrice} onChange={v => setField('listPrice', v)} />
-                  </Row>
-                  <Row label="Customer Taxes">
-                    <select value={String(tmpl.customerTaxRate)} onChange={e => setField('customerTaxRate', parseFloat(e.target.value))} className={fieldClass} style={focusStyle}>
-                      {TAX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </Row>
-                  <Row label="Cost">
-                    <PriceInput value={tmpl.standardPrice} onChange={v => setField('standardPrice', v)} />
-                  </Row>
-                  <Row label="Unit of Measure">
-                    <select value={tmpl.unitOfMeasure ?? ''} onChange={e => setField('unitOfMeasure', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
-                      <option value="">— 请选择 —</option>
-                      {uoms.map(u => <option key={u.id} value={u.name}>{u.nameZh ?? u.name}</option>)}
-                    </select>
-                  </Row>
-                  <Row label="Commission Price">
-                    <PriceInput value={tmpl.commissionPrice ?? 0} onChange={v => setField('commissionPrice', v || undefined)} />
-                  </Row>
-                  <Row label="Purchase UoM">
-                    <select value={tmpl.purchaseUoM ?? ''} onChange={e => setField('purchaseUoM', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
-                      <option value="">— 请选择 —</option>
-                      {uoms.map(u => <option key={u.id} value={u.name}>{u.nameZh ?? u.name}</option>)}
-                    </select>
-                  </Row>
-                </div>
-                <div className="col-span-2 mt-2">
-                  <h4 className="text-sm font-semibold mb-2" style={{ color: '#875A7B' }}>Internal Notes</h4>
-                  <textarea
-                    value={tmpl.description ?? ''}
-                    onChange={e => setField('description', e.target.value || undefined)}
-                    placeholder="This note is only for internal purposes."
-                    rows={3}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 bg-white"
-                    style={focusStyle}
-                  />
-                </div>
+                <Row label="Internal Reference">
+                  <input value={tmpl.internalRef ?? ''} onChange={e => setField('internalRef', e.target.value || undefined)} className={fieldClass} style={{ ...focusStyle, color: '#875A7B' }} />
+                </Row>
+                <Row label="Product Type">
+                  <select value={tmpl.type} onChange={e => setField('type', e.target.value as ProductTemplate['type'])} className={fieldClass} style={focusStyle}>
+                    {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </Row>
+                <Row label="Barcode">
+                  <input value={tmpl.barcode ?? ''} onChange={e => setField('barcode', e.target.value || undefined)} className={fieldClass} style={focusStyle} />
+                </Row>
+                <Row label="Sequence">
+                  <NumericInput value={tmpl.sequence ?? 0} onChange={e => setField('sequence', parseInt(e.target.value) || 0)} className={fieldClass} style={focusStyle} />
+                </Row>
+                <Row label="Product Category">
+                  <select value={tmpl.categoryId ?? ''} onChange={e => setField('categoryId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
+                    <option value="">— All —</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.nameZh ?? c.name}</option>)}
+                  </select>
+                </Row>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
-                <ReadField label="Product Type" value={TYPE_LABEL[tmpl.type] ?? tmpl.type} />
-                <ReadField label="Sequence" value={tmpl.sequence ?? 0} />
                 <ReadField label="Internal Reference" value={tmpl.internalRef ? <span style={{ color: '#875A7B' }}>{tmpl.internalRef}</span> : undefined} />
-                <ReadField label="Sales Price" value={`€${tmpl.listPrice.toFixed(2)}`} />
+                <ReadField label="Product Type" value={TYPE_LABEL[tmpl.type] ?? tmpl.type} />
                 <ReadField label="Barcode" value={tmpl.barcode} />
-                <ReadField label="Customer Taxes" value={TAX_LABEL[String(tmpl.customerTaxRate)] ?? `${(tmpl.customerTaxRate * 100).toFixed(0)}%`} />
+                <ReadField label="Sequence" value={tmpl.sequence ?? 0} />
                 <ReadField label="Product Category" value={catName} />
-                <ReadField label="Cost" value={`€${tmpl.standardPrice.toFixed(2)}`} />
-                <ReadField label="Unit of Measure" value={
-                  tmpl.unitOfMeasure
-                    ? (uoms.find(u => u.name === tmpl.unitOfMeasure)?.nameZh ?? tmpl.unitOfMeasure)
-                    : 'Unit(s)'
-                } />
-                <ReadField label="Commission Price" value={tmpl.commissionPrice != null ? `€${tmpl.commissionPrice.toFixed(2)}` : undefined} />
-                <ReadField label="Purchase UoM" value={
-                  tmpl.purchaseUoM
-                    ? (uoms.find(u => u.name === tmpl.purchaseUoM)?.nameZh ?? tmpl.purchaseUoM)
-                    : 'Unit(s)'
-                } />
-                {tmpl.description && (
-                  <div className="col-span-2 mt-4">
-                    <h4 className="text-sm font-semibold mb-2" style={{ color: '#875A7B' }}>Internal Notes</h4>
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{tmpl.description}</p>
-                  </div>
-                )}
               </div>
-            )
-          )}
+            )}
+          </Section>
 
-          {/* ── Sales ── */}
-          {activeTab === 'sales' && (
-            <div className="max-w-2xl space-y-0">
-              <Section title="Point Of Sale">
-                {editMode ? (
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                      <input type="checkbox" checked={availableInPos} onChange={e => setAvailableInPos(e.target.checked)} className="rounded w-3.5 h-3.5" style={{ accentColor: '#875A7B' }} />
-                      Available in POS
-                    </label>
-                    <Row label="Loyalty Point">
-                      <input value={loyaltyPoint} onChange={e => setLoyaltyPoint(e.target.value)} placeholder="0.00" className={fieldClass} style={focusStyle} />
-                    </Row>
-                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                      <input type="checkbox" checked={nonRefundable} onChange={e => setNonRefundable(e.target.checked)} className="rounded w-3.5 h-3.5" style={{ accentColor: '#875A7B' }} />
-                      Non-Refundable
-                    </label>
-                    <Row label="Return Valid Days">
-                      <input value={returnValidDays} onChange={e => setReturnValidDays(e.target.value)} placeholder="0" className={fieldClass} style={focusStyle} />
-                    </Row>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <ReadField label="Available in POS" value={availableInPos ? 'Yes' : 'No'} />
-                    <ReadField label="Loyalty Point" value={loyaltyPoint || '0.00'} />
-                    <ReadField label="Non-Refundable" value={nonRefundable ? 'Yes' : 'No'} />
-                    <ReadField label="Return Valid Days" value={returnValidDays || '0'} />
-                  </div>
-                )}
-              </Section>
+          <Section title="Pricing & Tax">
+            {editMode ? (
+              <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
+                <Row label="Sales Price">
+                  <PriceInput value={tmpl.listPrice} onChange={v => setField('listPrice', v)} />
+                </Row>
+                <Row label="Cost">
+                  <PriceInput value={tmpl.standardPrice} onChange={v => setField('standardPrice', v)} />
+                </Row>
+                <Row label="Customer Taxes">
+                  <select value={String(tmpl.customerTaxRate)} onChange={e => setField('customerTaxRate', parseFloat(e.target.value))} className={fieldClass} style={focusStyle}>
+                    {TAX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </Row>
+                <Row label="Vendor Taxes">
+                  <select value={String(tmpl.vendorTaxRate ?? '')} onChange={e => setField('vendorTaxRate', e.target.value ? parseFloat(e.target.value) : undefined)} className={fieldClass} style={focusStyle}>
+                    <option value="">— None —</option>
+                    {TAX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </Row>
+                <Row label="Commission Price">
+                  <PriceInput value={tmpl.commissionPrice ?? 0} onChange={v => setField('commissionPrice', v || undefined)} />
+                </Row>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
+                <ReadField label="Sales Price" value={`€${tmpl.listPrice.toFixed(2)}`} />
+                <ReadField label="Cost" value={`€${tmpl.standardPrice.toFixed(2)}`} />
+                <ReadField label="Customer Taxes" value={TAX_LABEL[String(tmpl.customerTaxRate)] ?? `${(tmpl.customerTaxRate * 100).toFixed(0)}%`} />
+                <ReadField label="Vendor Taxes" value={tmpl.vendorTaxRate != null ? (TAX_LABEL[String(tmpl.vendorTaxRate)] ?? `${(tmpl.vendorTaxRate * 100).toFixed(0)}%`) : undefined} />
+                <ReadField label="Commission Price" value={tmpl.commissionPrice != null ? `€${tmpl.commissionPrice.toFixed(2)}` : undefined} />
+              </div>
+            )}
+          </Section>
 
-              <Section title="Invoicing">
-                {editMode ? (
-                  <div className="space-y-2">
-                    {[
-                      { value: 'order', label: 'Ordered quantities' },
-                      { value: 'delivery', label: 'Delivered quantities' },
-                    ].map(opt => (
-                      <label key={opt.value} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="invoicingPolicy"
-                          value={opt.value}
-                          checked={invoicingPolicy === opt.value}
-                          onChange={() => setInvoicingPolicy(opt.value as 'order' | 'delivery')}
-                          style={{ accentColor: '#875A7B' }}
-                        />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <ReadField label="Invoicing Policy" value={invoicingPolicy === 'order' ? 'Ordered quantities' : 'Delivered quantities'} />
-                )}
-              </Section>
-
-              <Section title="Description for Customers">
-                {editMode ? (
-                  <textarea
-                    value={tmpl.saleDescription ?? ''}
-                    onChange={e => setField('saleDescription', e.target.value || undefined)}
-                    placeholder="This note will be printed on sales orders and invoices."
-                    rows={4}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1"
-                    style={focusStyle}
-                  />
-                ) : (
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {tmpl.saleDescription || <span className="text-gray-300">—</span>}
-                  </p>
-                )}
-              </Section>
-            </div>
-          )}
-
-          {/* ── eCommerce ── */}
-          {activeTab === 'ecommerce' && (
-            <div className="max-w-xl space-y-3">
-              {editMode ? (
-                <>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                    <input type="checkbox" checked={tmpl.websitePublished ?? false} onChange={e => setField('websitePublished', e.target.checked)} className="rounded w-3.5 h-3.5" style={{ accentColor: '#875A7B' }} />
-                    Published on website
-                  </label>
-                  <Row label="Website Name">
-                    <input value={tmpl.websiteName ?? ''} onChange={e => setField('websiteName', e.target.value || undefined)} className={fieldClass} style={focusStyle} />
-                  </Row>
-                </>
-              ) : (
-                <>
-                  <ReadField label="Published on website" value={tmpl.websitePublished ? 'Yes' : 'No'} />
-                  <ReadField label="Website Name" value={tmpl.websiteName} />
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ── Purchase ── */}
-          {activeTab === 'purchase' && (
-            <div className="max-w-4xl space-y-0">
-              <Section title="Vendors">
-                <div className="border border-gray-200 rounded overflow-hidden mb-2">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        {['Vendor', 'Product Variant', 'Min Qty', 'UoM', 'Price', 'Currency', 'Start Date', 'End Date', ''].map(h => (
-                          <th key={h} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vendorLines.length === 0 && (
-                        <tr><td colSpan={9} className="px-3 py-4 text-center text-gray-400">暂无供应商行</td></tr>
-                      )}
-                      {vendorLines.map((line, i) => (
-                        <tr key={line.id} className="border-b border-gray-100">
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input value={line.supplier} onChange={e => updateVendorLine(i, 'supplier', e.target.value)} className="w-28 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.supplier}</span>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input value={line.productVariant} onChange={e => updateVendorLine(i, 'productVariant', e.target.value)} className="w-24 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.productVariant}</span>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input type="number" value={line.minQty} onChange={e => updateVendorLine(i, 'minQty', parseFloat(e.target.value) || 0)} className="w-16 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.minQty}</span>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input value={line.uom} onChange={e => updateVendorLine(i, 'uom', e.target.value)} className="w-16 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.uom}</span>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input type="number" value={line.price} step="0.01" onChange={e => updateVendorLine(i, 'price', parseFloat(e.target.value) || 0)} className="w-20 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.price.toFixed(2)}</span>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input value={line.currency} onChange={e => updateVendorLine(i, 'currency', e.target.value)} className="w-16 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.currency}</span>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input type="date" value={line.dateStart} onChange={e => updateVendorLine(i, 'dateStart', e.target.value)} className="w-28 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.dateStart}</span>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {editMode
-                              ? <input type="date" value={line.dateEnd} onChange={e => updateVendorLine(i, 'dateEnd', e.target.value)} className="w-28 h-6 px-1 text-xs border border-gray-300 rounded" />
-                              : <span>{line.dateEnd}</span>}
-                          </td>
-                          {editMode && (
-                            <td className="px-2 py-1">
-                              <button onClick={() => removeVendorLine(i)} className="text-gray-400 hover:text-red-500 transition-colors">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {editMode && (
-                  <button onClick={addVendorLine} className="text-sm flex items-center gap-1 hover:underline" style={{ color: '#875A7B' }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
-                    Add a line
-                  </button>
-                )}
-              </Section>
-
-              <Section title="Vendor Bills">
-                {editMode ? (
-                  <div className="space-y-3">
-                    <Row label="Vendor Taxes">
-                      <select value={String(tmpl.vendorTaxRate ?? '')} onChange={e => setField('vendorTaxRate', e.target.value ? parseFloat(e.target.value) : undefined)} className={fieldClass} style={focusStyle}>
-                        <option value="">— None —</option>
-                        {TAX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </Row>
-                    <div>
-                      <span className="text-sm text-gray-700 block mb-1">Control Policy</span>
-                      {[
-                        { value: 'order', label: 'On ordered quantities' },
-                        { value: 'receipt', label: 'On received quantities (Bill control)' },
-                      ].map(opt => (
-                        <label key={opt.value} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mb-1">
-                          <input type="radio" name="controlPolicy" value={opt.value} defaultChecked={opt.value === 'order'} style={{ accentColor: '#875A7B' }} />
-                          {opt.label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <ReadField label="Vendor Taxes" value={tmpl.vendorTaxRate != null ? (TAX_LABEL[String(tmpl.vendorTaxRate)] ?? `${(tmpl.vendorTaxRate * 100).toFixed(0)}%`) : undefined} />
-                )}
-              </Section>
-
-              <Section title="Description for Vendors">
-                {editMode ? (
-                  <textarea
-                    value={purchaseDescription}
-                    onChange={e => setPurchaseDescription(e.target.value)}
-                    placeholder="A note for the vendor."
-                    rows={4}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1"
-                    style={focusStyle}
-                  />
-                ) : (
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {purchaseDescription || <span className="text-gray-300">—</span>}
-                  </p>
-                )}
-              </Section>
-            </div>
-          )}
-
-          {/* ── Inventory ── */}
-          {activeTab === 'inventory' && (
-            <div>
-              {!isNew && (
-                <div className="mb-4 pb-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
-                  <button onClick={() => setShowAdjust(true)} className="px-3 py-1.5 rounded text-sm font-medium text-white" style={{ background: '#875A7B' }}>＋ 手动调整库存</button>
-                  <span className="text-xs text-gray-400">当前在手合计 {onHandQty.toFixed(2)}</span>
-                </div>
-              )}
-              {editMode ? (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-xl">
+          <Section title="Inventory & UoM">
+            {!isNew && (
+              <div className="mb-4 pb-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+                <button onClick={() => setShowAdjust(true)} className="px-3 py-1.5 rounded text-sm font-medium text-white" style={{ background: '#875A7B' }}>＋ 手动调整库存</button>
+                <span className="text-xs text-gray-400">当前在手合计 {onHandQty.toFixed(2)}</span>
+              </div>
+            )}
+            {editMode ? (
+              <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
+                <Row label="Unit of Measure">
+                  <select value={tmpl.uomId ?? ''} onChange={e => setField('uomId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
+                    <option value="">— 请选择 —</option>
+                    {uoms.map(u => <option key={u.id} value={u.id}>{u.nameZh ?? u.name}</option>)}
+                  </select>
+                </Row>
+                <Row label="Purchase UoM">
+                  <select value={tmpl.purchaseUomId ?? ''} onChange={e => setField('purchaseUomId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
+                    <option value="">— 请选择 —</option>
+                    {uoms.map(u => <option key={u.id} value={u.id}>{u.nameZh ?? u.name}</option>)}
+                  </select>
+                </Row>
                 <Row label="Weight (kg)">
                   <NumericInput step="0.001" min={0} value={tmpl.weight ?? 0} onChange={e => setField('weight', parseFloat(e.target.value) || undefined)} className={fieldClass} style={focusStyle} />
                 </Row>
@@ -836,17 +460,61 @@ export default function ClassicProductDetailPage() {
                 </Row>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-xl">
+              <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
+                <ReadField label="Unit of Measure" value={
+                  tmpl.uomId
+                    ? (uoms.find(u => u.id === tmpl.uomId)?.nameZh ?? uoms.find(u => u.id === tmpl.uomId)?.name)
+                    : 'Unit(s)'
+                } />
+                <ReadField label="Purchase UoM" value={
+                  tmpl.purchaseUomId
+                    ? (uoms.find(u => u.id === tmpl.purchaseUomId)?.nameZh ?? uoms.find(u => u.id === tmpl.purchaseUomId)?.name)
+                    : 'Unit(s)'
+                } />
                 <ReadField label="Weight (kg)" value={tmpl.weight != null ? `${tmpl.weight} kg` : undefined} />
                 <ReadField label="Volume (L)" value={tmpl.volume != null ? `${tmpl.volume} L` : undefined} />
                 <ReadField label="Tracking" value={
                   tmpl.tracking === 'lot' ? 'By Lot' :
                   tmpl.tracking === 'serial' ? 'By Serial Number' : 'No Tracking'
                 } />
+                {!isNew && <ReadField label="当前库存" value={onHandQty.toFixed(2)} />}
               </div>
             )}
-            </div>
-          )}
+          </Section>
+
+          <Section title="Sale Description">
+            {editMode ? (
+              <textarea
+                value={tmpl.saleDescription ?? ''}
+                onChange={e => setField('saleDescription', e.target.value || undefined)}
+                placeholder="This note will be printed on sales orders and invoices."
+                rows={4}
+                className="w-full max-w-3xl border border-gray-300 rounded px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1"
+                style={focusStyle}
+              />
+            ) : (
+              <p className="text-sm text-gray-700 whitespace-pre-wrap max-w-3xl">
+                {tmpl.saleDescription || <span className="text-gray-300">—</span>}
+              </p>
+            )}
+          </Section>
+
+          <Section title="Internal Notes">
+            {editMode ? (
+              <textarea
+                value={tmpl.description ?? ''}
+                onChange={e => setField('description', e.target.value || undefined)}
+                placeholder="This note is only for internal purposes."
+                rows={3}
+                className="w-full max-w-3xl border border-gray-300 rounded px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 bg-white"
+                style={focusStyle}
+              />
+            ) : (
+              <p className="text-sm text-gray-700 whitespace-pre-wrap max-w-3xl">
+                {tmpl.description || <span className="text-gray-300">—</span>}
+              </p>
+            )}
+          </Section>
 
         </div>
       </div>
@@ -915,29 +583,6 @@ export default function ClassicProductDetailPage() {
       )}
     </div>
   )
-
-  // ── Vendor line helpers ────────────────────────────────────────────────────
-  function addVendorLine() {
-    setVendorLines(prev => [...prev, {
-      id: Date.now().toString(),
-      supplier: '',
-      productVariant: '',
-      minQty: 0,
-      uom: 'Unit(s)',
-      price: 0,
-      currency: 'EUR',
-      dateStart: '',
-      dateEnd: '',
-    }])
-  }
-
-  function removeVendorLine(index: number) {
-    setVendorLines(prev => prev.filter((_, i) => i !== index))
-  }
-
-  function updateVendorLine(index: number, field: keyof VendorLine, value: unknown) {
-    setVendorLines(prev => prev.map((line, i) => i === index ? { ...line, [field]: value } : line))
-  }
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────

@@ -5,14 +5,14 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
-import type { ProductTemplate, Product, ProductCategory } from '@/lib/types'
+import type { ProductTemplate, ProductCategory } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
 import { Pagination } from '@/components/ui/pagination'
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 50
 const LOW_STOCK_THRESHOLD = 10
 
 const TYPE_LABEL: Record<string, string> = {
@@ -46,10 +46,12 @@ export default function ClassicProductsPage() {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [templates, setTemplates] = useState<ProductTemplate[]>([])
-  const [variantMap, setVariantMap] = useState<Map<string, number>>(new Map())
   const [categories, setCategories] = useState<ProductCategory[]>([])
+  const [multiSelectOptions, setMultiSelectOptions] = useState<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>({ uomName: [], createdBy: [], updatedBy: [] })
   const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
   const [page, setPage] = useState(1)
+  const [alertCounts, setAlertCounts] = useState({ negative: 0, low: 0 })
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -66,31 +68,49 @@ export default function ClassicProductsPage() {
   const [alertDismissed, setAlertDismissed] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
-  async function loadPage(p: number, q: string, size: number = PAGE_SIZE) {
+  // 所有筛选(库存告警/列筛选/Can be Sold/商品类型)都编码成请求参数交给后端做，
+  // 后端两步查(聚合定位 id → 按 id 分页)，绝不一次性拉全量模板到前端。
+  const queryParams = useMemo(() => {
+    const params = new URLSearchParams()
+    if (canBeSoldFilter) params.set('canBeSold', '1')
+    if (stockAlertFilter !== 'all') params.set('stockAlert', stockAlertFilter)
+    const typeSet = new Set([...(columnMultiFilters.type ?? []), ...(productTypeFilter ? [productTypeFilter] : [])])
+    if (typeSet.size > 0) params.set('cfm_type', [...typeSet].join(','))
+    for (const [key, val] of Object.entries(columnFilters)) {
+      if (val) params.set(`cf_${key}`, val)
+    }
+    for (const [key, vals] of Object.entries(columnMultiFilters)) {
+      if (key === 'type') continue // 已合并进上面的 cfm_type
+      if (vals && vals.length > 0) params.set(`cfm_${key}`, vals.join(','))
+    }
+    return params.toString()
+  }, [canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters])
+
+  async function loadPage(p: number, q: string) {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page: String(p), pageSize: String(size) })
+      const params = new URLSearchParams(queryParams)
+      params.set('page', String(p))
+      params.set('pageSize', String(PAGE_SIZE))
       if (q) params.set('search', q)
-      const [res, products, cats] = await Promise.all([
-        apiGet<{ data: ProductTemplate[]; items: ProductTemplate[]; total: number; page: number }>(`/api/product-templates?${params}`),
-        apiGet<Product[]>('/api/products'),
-        apiGet<ProductCategory[]>('/api/product-categories').catch(() => []),
-      ])
+      const res = await apiGet<{
+        data: ProductTemplate[]; items: ProductTemplate[]; total: number; page: number
+        totalPages: number; alertCounts: { negative: number; low: number }
+      }>(`/api/product-templates?${params}`)
       const source = res.data ?? res.items ?? []
-      setTemplates(source.map(t => ({
-        ...t,
-        status: (t.status as string).toLowerCase() as ProductTemplate['status'],
-        type: (t.type as string).toLowerCase() as ProductTemplate['type'],
-      })))
+      setTemplates(source.map(t => {
+        const uom = (t as unknown as { uom?: { name: string; nameZh?: string | null } }).uom
+        return {
+          ...t,
+          status: (t.status as string).toLowerCase() as ProductTemplate['status'],
+          type: (t.type as string).toLowerCase() as ProductTemplate['type'],
+          uomName: uom?.nameZh ?? uom?.name,
+        }
+      }))
       setTotal(res.total)
       setPage(res.page)
-      const qtyMap = new Map<string, number>()
-      for (const p of products) {
-        const prev = qtyMap.get(p.templateId) ?? 0
-        qtyMap.set(p.templateId, prev + (p.qtyOnHand ?? 0))
-      }
-      setVariantMap(qtyMap)
-      setCategories(cats)
+      setTotalPages(res.totalPages)
+      setAlertCounts(res.alertCounts ?? { negative: 0, low: 0 })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '加载商品失败')
     } finally {
@@ -98,90 +118,31 @@ export default function ClassicProductsPage() {
     }
   }
 
-  // 表头列筛选(text/date-range/multi-select)只对已加载到本地的 templates 生效，
-  // 分页模式下默认每页只有 20 条 → 一旦筛选就得跟库存告警筛选一样先拉全量，否则筛选看起来"没反应"。
-  const hasColumnFilters =
-    Object.values(columnFilters).some(v => !!v) ||
-    Object.values(columnMultiFilters).some(vs => (vs?.length ?? 0) > 0)
-
-  // 库存告警筛选/列筛选时需跨页统计或全量匹配 → 一次性拉全量模板
-  const ALERT_SIZE = 10000
-  const pageSizeFor = (f: StockAlertFilter, hasFilters: boolean) => (f === 'all' && !hasFilters ? PAGE_SIZE : ALERT_SIZE)
-
-  useEffect(() => { loadPage(1, '') }, [])
+  useEffect(() => {
+    apiGet<ProductCategory[]>('/api/product-categories').then(setCategories).catch(() => {})
+    apiGet<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>('/api/product-templates/filter-options')
+      .then(setMultiSelectOptions).catch(() => {})
+    loadPage(1, '')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => loadPage(1, searchInput, pageSizeFor(stockAlertFilter, hasColumnFilters)), 400)
+    const timer = setTimeout(() => loadPage(1, searchInput), 400)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
 
-  // stockAlertFilter 切换 / 列筛选从"无"变"有"(或反过来)时才重新拉取——避免每敲一个字符都
-  // 发请求；一旦全量加载完，后续按字符筛选走 filteredTemplates 的本地过滤，不再触发网络请求。
-  // 用 mountedRef 跳过首次挂载，因为初始加载已由上面那个空依赖 effect 负责。
+  // 筛选条件变化(库存告警/Can be Sold/商品类型/列筛选)时重新拉第 1 页。
+  // mountedRef 跳过首次挂载，避免与上面初始加载重复请求。
   const mountedRef = useRef(false)
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return }
-    loadPage(1, searchInput, pageSizeFor(stockAlertFilter, hasColumnFilters))
+    loadPage(1, searchInput)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stockAlertFilter, hasColumnFilters])
+  }, [queryParams])
 
-  // ─── 库存告警计数（来自全量 variantMap，跨页面准确） ───
-  const alertCounts = useMemo(() => {
-    let negative = 0, low = 0
-    for (const qty of variantMap.values()) {
-      if (qty < 0) negative++
-      else if (qty < LOW_STOCK_THRESHOLD) low++
-    }
-    return { negative, low }
-  }, [variantMap])
-
-  const filteredTemplates = useMemo(() => {
-    let rows = templates
-    if (canBeSoldFilter) rows = rows.filter(t => t.canBeSold)
-    if (productTypeFilter) rows = rows.filter(t => t.type === productTypeFilter)
-    // 库存告警筛选（仅统计有库存记录的模板，与徽标 alertCounts 同口径）
-    if (stockAlertFilter === 'negative') {
-      rows = rows.filter(t => variantMap.has(t.id) && variantMap.get(t.id)! < 0)
-    } else if (stockAlertFilter === 'low') {
-      rows = rows.filter(t => {
-        if (!variantMap.has(t.id)) return false
-        const qty = variantMap.get(t.id)!
-        return qty >= 0 && qty < LOW_STOCK_THRESHOLD
-      })
-    }
-    // text / date-range filters
-    for (const [key, val] of Object.entries(columnFilters)) {
-      if (!val) continue
-      if (key.endsWith('_from')) {
-        const base = key.slice(0, -5)
-        rows = rows.filter(t => {
-          const v = String((t as unknown as Record<string, unknown>)[base] ?? '')
-          return !v || v >= val
-        })
-      } else if (key.endsWith('_to')) {
-        const base = key.slice(0, -3)
-        rows = rows.filter(t => {
-          const v = String((t as unknown as Record<string, unknown>)[base] ?? '')
-          return !v || v <= val + 'T23:59:59'
-        })
-      } else {
-        rows = rows.filter(t => {
-          const v = String((t as unknown as Record<string, unknown>)[key] ?? '').toLowerCase()
-          return v.includes(val.toLowerCase())
-        })
-      }
-    }
-    // multi-select column filters
-    for (const [key, vals] of Object.entries(columnMultiFilters)) {
-      if (!vals || vals.length === 0) continue
-      rows = rows.filter(t => {
-        const cellVal = String((t as unknown as Record<string, unknown>)[key] ?? '')
-        return vals.includes(cellVal)
-      })
-    }
-    return sortRows(rows, sortKey, sortDir)
-  }, [templates, columnFilters, columnMultiFilters, canBeSoldFilter, productTypeFilter, stockAlertFilter, variantMap, sortKey, sortDir])
+  // 排序只在当前页内进行(与订单/报价单列表页一致的服务端分页限制：排序、筛选不跨页)
+  const filteredTemplates = useMemo(() => sortRows(templates, sortKey, sortDir), [templates, sortKey, sortDir])
 
   // ─── 单元格保存：调 PUT /api/product-templates/[id]，并刷新本地 row ──
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
@@ -216,7 +177,7 @@ export default function ClassicProductsPage() {
   // ─── 行级背景色：负库存 = 浅红，低库存 = 浅橙 ───
   function getRowStyle(row: Record<string, unknown>): React.CSSProperties | undefined {
     const t = row as unknown as ProductTemplate
-    const qty = variantMap.get(t.id) ?? 0
+    const qty = t.qtyOnHand ?? 0
     if (qty < 0) return { background: '#fff1f2' }
     if (qty < LOW_STOCK_THRESHOLD) return { background: '#fffbeb' }
     return undefined
@@ -275,7 +236,7 @@ export default function ClassicProductsPage() {
     {
       key: 'saleDescription',
       label: 'Sale Description',
-      filterType: 'multi-select',
+      filterType: 'text',
       editable: true,
       editType: 'text',
       render: (v) => v ? <span className="text-xs text-gray-500 truncate max-w-xs block">{String(v)}</span> : <span className="text-gray-300">—</span>,
@@ -296,6 +257,7 @@ export default function ClassicProductsPage() {
       editable: true,
       editType: 'select',
       editOptions: TAX_OPTIONS,
+      filterOptions: TAX_OPTIONS,
       filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : '（空）'),
       render: (v) => (
         <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
@@ -319,6 +281,7 @@ export default function ClassicProductsPage() {
       editable: true,
       editType: 'select',
       editOptions: [{ value: '', label: '—' }, ...TAX_OPTIONS],
+      filterOptions: [{ value: '', label: '（空）' }, ...TAX_OPTIONS],
       filterLabelGetter: (val) => TAX_LABEL[val] ?? (val ? `${(Number(val) * 100).toFixed(0)}%` : '（空）'),
       render: (v) => v != null ? (
         <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
@@ -333,59 +296,62 @@ export default function ClassicProductsPage() {
       sortable: true,
       editable: true,
       editType: 'number',
-      render: (v) => v != null ? <span className="text-xs">{Number(v).toFixed(3)} kg</span> : <span className="text-gray-400">—</span>,
+      render: (v) => v != null ? <span className="text-xs">{Number(v).toFixed(2)} kg</span> : <span className="text-gray-400">—</span>,
     },
     {
-      // Quantity On Hand 是实时计算值(variantMap 按 productId 聚合，不是 t['id'] 本身)，
+      // Quantity On Hand 是实时计算值(后端按 templateId 聚合后逐行附加到 qtyOnHand)，
       // 没有稳定的原始字段可供通用文本筛选匹配，故此列不给筛选框(Odoo 原版这一列同样没有)。
       key: 'id',
       label: 'Quantity On Hand',
       render: (_, row) => {
         const t = row as unknown as ProductTemplate
-        const qty = variantMap.get(t.id) ?? 0
+        const qty = t.qtyOnHand ?? 0
         if (qty < 0) {
           return (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
-              ⚠ {qty.toFixed(2)}
+              ⚠ {qty.toFixed(1)}
             </span>
           )
         }
         if (qty < LOW_STOCK_THRESHOLD) {
           return (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-700">
-              ↓ {qty.toFixed(2)}
+              ↓ {qty.toFixed(1)}
             </span>
           )
         }
-        return <span className={qty > 0 ? 'font-medium text-gray-700' : 'text-gray-400'}>{qty.toFixed(2)}</span>
+        return <span className={qty > 0 ? 'font-medium text-gray-700' : 'text-gray-400'}>{qty.toFixed(1)}</span>
       },
     },
     {
       key: 'forecastQty',
       label: 'Forecast Quantity',
       filterType: 'text',
-      render: (v) => v != null ? <span>{Number(v).toFixed(2)}</span> : <span className="text-gray-400">0.00</span>,
+      render: (v) => v != null ? <span>{Number(v).toFixed(1)}</span> : <span className="text-gray-400">0.0</span>,
     },
     {
       key: 'categoryId',
       label: 'Product Category',
-      filterType: 'multi-select',
+      filterType: 'text',
       editable: true,
       editType: 'select',
       editOptions: [
         { value: '', label: '—' },
         ...categories.map(c => ({ value: c.id, label: c.nameZh ?? c.name })),
       ],
-      filterLabelGetter: (val) => {
-        if (!val) return '（空）'
-        const cat = categories.find(c => c.id === val)
-        return cat?.nameZh ?? cat?.name ?? val
-      },
       render: (v) => {
         const cat = categories.find(c => c.id === String(v ?? ''))
         const label = cat?.nameZh ?? cat?.name ?? (v ? String(v) : '—')
         return <span className="text-xs text-gray-600">{label}</span>
       },
+    },
+    {
+      key: 'uomName',
+      label: 'Unit of Measure',
+      filterType: 'multi-select',
+      filterOptions: multiSelectOptions.uomName.map(v => ({ value: v, label: v })),
+      filterLabelGetter: (val) => val || '（空）',
+      render: (v) => v ? <span className="text-xs text-gray-600">{String(v)}</span> : <span className="text-gray-300">—</span>,
     },
     {
       key: 'type',
@@ -394,6 +360,7 @@ export default function ClassicProductsPage() {
       editable: true,
       editType: 'select',
       editOptions: TYPE_OPTIONS,
+      filterOptions: TYPE_OPTIONS,
       filterLabelGetter: (val) => TYPE_LABEL[val] ?? val ?? '（空）',
       render: (v) => <span className="text-xs">{TYPE_LABEL[String(v)] ?? String(v)}</span>,
     },
@@ -409,6 +376,7 @@ export default function ClassicProductsPage() {
       key: 'createdBy',
       label: 'Created by',
       filterType: 'multi-select',
+      filterOptions: multiSelectOptions.createdBy.map(v => ({ value: v, label: v || 'Administrator' })),
       filterLabelGetter: (val) => val || 'Administrator',
       render: (v) => <span className="text-xs text-gray-500">{String(v || 'Administrator')}</span>,
     },
@@ -423,6 +391,7 @@ export default function ClassicProductsPage() {
       key: 'updatedBy',
       label: 'Last Updated by',
       filterType: 'multi-select',
+      filterOptions: multiSelectOptions.updatedBy.map(v => ({ value: v, label: v || 'Administrator' })),
       filterLabelGetter: (val) => val || 'Administrator',
       render: (v) => <span className="text-xs text-gray-500">{String(v || 'Administrator')}</span>,
     },
@@ -494,9 +463,9 @@ export default function ClassicProductsPage() {
           setPage(1)
         }}
         storageKey="classic_products_favs"
-        total={stockAlertFilter === 'all' ? total : filteredTemplates.length}
-        page={stockAlertFilter === 'all' ? page : 1}
-        pageSize={stockAlertFilter === 'all' ? PAGE_SIZE : Math.max(filteredTemplates.length, 1)}
+        total={total}
+        page={page}
+        pageSize={PAGE_SIZE}
         onPageChange={p => loadPage(p, searchInput)}
       />
 
@@ -670,7 +639,7 @@ export default function ClassicProductsPage() {
         />
       </div>
 
-      <Pagination page={page} totalPages={Math.ceil(total / PAGE_SIZE)} onPageChange={p => loadPage(p, searchInput)} />
+      <Pagination page={page} totalPages={totalPages} onPageChange={p => loadPage(p, searchInput)} />
 
       <CsvImportDialog
         open={importOpen}

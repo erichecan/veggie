@@ -1,7 +1,5 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useLocale } from 'next-intl'
-import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { waveStage } from '@/lib/wave-stage'
@@ -70,12 +68,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const rightPanelRef = useRef<HTMLDivElement>(null)
   const leftPanelRef = useRef<HTMLDivElement>(null)
   const [flashLeft, setFlashLeft] = useState(false)
-
-  const locale = useLocale()
-  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
-  function openOrder(id: string) {
-    window.open(`${prefix}/classic/operator/orders/${id}`, '_blank', 'noopener,noreferrer')
-  }
 
   const load = useCallback(async () => {
     if (!date) return
@@ -216,6 +208,12 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const w = waveForGroup(list[0].driverName, list[0].timeOfDay)
     return w && waveStage(w) === 'assignment_done'
   }).length
+  // 批量分配完成的候选:有单、没出发、还没标过"分配完成"——跟单个卡片上"✅ 分配完成"按钮
+  // 出现的条件完全一致(见 Lane 内 `laneOrders.length > 0 && !reallyDispatched` 分支)，
+  // 只是这里一次性收集全部司机的波次,不受当前 chip 选中筛选影响(调度员收工时要一键处理全天)。
+  const pendingDoneWaves = [...groupsMap.values()]
+    .map(list => waveForGroup(list[0].driverName, list[0].timeOfDay))
+    .filter((w): w is Wave => !!w && w.orderIds.length > 0 && !w.dispatchedAt && !w.assignmentDoneAt)
 
   /* ── 乐观分配 / 移除（参考 waves 页，不整页 reload）──
    * 拖进具体某个托盘 = 带上 driverSlotId 调 assign；同波次内托盘间挪动也走这条(assign 内部
@@ -296,6 +294,21 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     } catch (e) { toast.error(e instanceof Error ? e.message : '操作失败'); load() }
   }
 
+  // 批量分配完成：调度员把当天所有司机都排完车后，一键把 pendingDoneWaves 里每辆车都标记
+  // 「分配完成」，不用逐个司机卡片去点。锁定的波次不拦(标记完成不改订单归属，只是进度戳)，
+  // 已出发/已标过的波次一开始就没进 pendingDoneWaves，不会重复处理。
+  async function markAllAssignmentDone() {
+    if (pendingDoneWaves.length === 0) { toast.info('没有可批量标记的车次'); return }
+    if (!confirm(`将 ${pendingDoneWaves.length} 辆车一次性标记为「分配完成」，确定？`)) return
+    const ids = pendingDoneWaves.map(w => w.id)
+    setWaves(prev => prev.map(w => (ids.includes(w.id) ? { ...w, assignmentDoneAt: new Date().toISOString() } : w)))
+    const results = await Promise.allSettled(ids.map(id => apiPut(`/api/waves/${id}/assignment-done`, { done: true })))
+    const failed = results.filter(r => r.status === 'rejected').length
+    if (failed > 0) toast.error(`${failed} 辆车标记失败`)
+    else toast.success(`已批量标记 ${ids.length} 辆车分配完成`)
+    load()
+  }
+
   // 新增托盘：建一条同司机+时段、batchNum=当前最大值+1 的 DriverSlot；托盘是预先配好的固定组合，
   // 不是波次里临时状态，所以走 driver-slots 接口，和司机配置页共用同一份数据。
   async function addPallet(driverName: string, timeOfDay: string, groupSlots: DriverSlot[]) {
@@ -351,13 +364,17 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     unassignFromWave(src, orderId)
   }
 
-  function laneMetrics(wave: Wave) {
-    const ws = wave.orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
-    const lines = ws.flatMap(o => o.lines ?? [])
+  // 件数/重量/金额现在只在托盘粒度展示（见托盘视图每个托盘头部），驾驶卡整体只保留单数/托盘数
+  function ordersMetrics(orders: Order[]) {
+    const lines = orders.flatMap(o => o.lines ?? [])
     const itemCount = lines.reduce((s, l) => s + num(l.orderedQty), 0)
     const weight = Math.round(lines.reduce((s, l) => s + num(l.orderedQty) * num(l.product?.template?.weight ?? 0), 0) * 10) / 10
-    const amount = Math.round(ws.reduce((s, o) => s + num(o.totalAmount), 0) * 100) / 100
-    return { orderCount: wave.orderIds.length, itemCount, weight, amount }
+    const amount = Math.round(orders.reduce((s, o) => s + num(o.totalAmount), 0) * 100) / 100
+    return { itemCount, weight, amount }
+  }
+
+  function laneMetrics(wave: Wave) {
+    return { orderCount: wave.orderIds.length }
   }
 
   function Lane({ groupSlots, collapsed, onToggleCollapse }: { groupSlots: DriverSlot[]; collapsed: boolean; onToggleCollapse: () => void }) {
@@ -489,7 +506,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               title="收起"
             >▴</button>
           </div>
-          <div className="text-[11px] text-gray-500 mt-1">{m.orderCount}单 · {groupSlots.length}个托盘(一趟车) · {m.itemCount}件 · {m.weight}kg · €{m.amount.toLocaleString()}</div>
+          <div className="text-[11px] text-gray-500 mt-1">{m.orderCount}单 · {groupSlots.length}个托盘(一趟车)</div>
           {reallyDispatched && <div className="text-[10px] text-blue-400 mt-0.5">已于 {departTime} 出发</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${realLabel ? 100 : st.pct}%`, background: PURPLE }} /></div>
 
@@ -519,7 +536,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           {mode === 'order' && laneOrders.length > 0 && (
             <div className="flex flex-col gap-1.5">
               {laneOrders.map(o => (
-                <OrderChip key={o.id} order={o} onClick={() => openOrder(o.id)} draggable={false} />
+                <OrderChip key={o.id} order={o} draggable={false} />
               ))}
             </div>
           )}
@@ -530,6 +547,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 const pallet = palletOf(slot)
                 const orderIds = pallet ? [...new Set(pallet.items.map(it => it.orderId))] : []
                 const palletOrders = orderIds.map(id => ordersById.get(id)).filter(Boolean) as Order[]
+                const pm = ordersMetrics(palletOrders)
                 const dragKey = `${wave.id}::${slot.id}`
                 const over = !dispatched && !locked && dragOverPallet === dragKey
                 return (
@@ -544,12 +562,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                     <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-[11px] font-semibold">
                       <span className="w-[18px] h-[18px] rounded flex items-center justify-center text-white text-[10px] flex-none" style={{ background: PALLET_BLUE }}>{slot.batchNum}</span>
                       {/* 客户习惯叫法：序号+am/pm+司机名(与销售单列表 DriverSlotCombobox 的 slotLabel 同格式)，不叫"托盘N" */}
-                      <span className="flex-1 text-gray-700">{slot.batchNum} {slot.timeOfDay} {slot.driverName}</span>
-                      <span className="text-gray-400 font-normal">{palletOrders.length}</span>
+                      <span className="flex-1 min-w-0 text-gray-700 truncate">{slot.batchNum} {slot.timeOfDay} {slot.driverName}</span>
+                      {palletOrders.length > 0 && (
+                        <span className="flex-none text-gray-400 font-normal whitespace-nowrap">{pm.weight}kg · €{pm.amount.toLocaleString()}</span>
+                      )}
                       {!dispatched && !locked && (
                         <button
                           onClick={() => deletePallet(slot, palletOrders.length)}
-                          className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded px-1"
+                          className="flex-none text-gray-400 hover:text-red-600 hover:bg-red-50 rounded px-1"
                           title="删除这个托盘"
                         >✕</button>
                       )}
@@ -560,7 +580,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                         <OrderChip
                           key={o.id}
                           order={o}
-                          onClick={() => openOrder(o.id)}
                           draggable={!reallyDispatched && !locked}
                           onDragStart={e => { if (reallyDispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
                           onDragEnd={() => setDragging(false)}
@@ -579,7 +598,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                       <OrderChip
                         key={(o as Order).id}
                         order={o as Order}
-                        onClick={() => openOrder((o as Order).id)}
                         draggable={!reallyDispatched && !locked}
                         onDragStart={e => { if (reallyDispatched || locked) { e.preventDefault(); return } startDrag(e, (o as Order).id, wave.id) }}
                         onDragEnd={() => setDragging(false)}
@@ -650,6 +668,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           <Board n={waves.length} l="波次" hint="点击：选中全部司机，右侧展开当天全部车次" onClick={showAllDriverWaves} />
         </div>
         <div className="flex-1" />
+        {pendingDoneWaves.length > 0 && (
+          <button
+            onClick={markAllAssignmentDone}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90"
+            style={{ background: PURPLE }}
+            title="把所有已排好车、还没标「分配完成」的车次一次性标记完成，不用逐个司机卡片点"
+          >✅ 批量分配完成（{pendingDoneWaves.length}）</button>
+        )}
         <label className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm" style={{ borderColor: '#e5e7eb' }} title="选择配送日期">
           📅
           <input
@@ -731,10 +757,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   draggable
                   onDragStart={e => startDrag(e, o.id, null)}
                   onDragEnd={() => setDragging(false)}
-                  onClick={() => openOrder(o.id)}
                   className="border rounded-lg p-2 bg-white cursor-grab text-xs hover:border-amber-400"
                   style={{ borderColor: '#e5e7eb' }}
-                  title="点击查看订单详情；拖到右侧司机的某个托盘可分配"
+                  title="拖到右侧司机的某个托盘可分配"
                 >
                   <div className="font-semibold text-amber-700">{o.code ?? o.id.slice(0, 8)}</div>
                   <div className="text-gray-500 mt-0.5">{o.restaurantName} · {o.items?.length ?? 0}项 · €{num(o.totalAmount).toLocaleString()}</div>
@@ -788,8 +813,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   )
 }
 
-function OrderChip({ order, onClick, draggable, onDragStart, onDragEnd }: {
-  order: Order; onClick: () => void; draggable: boolean
+function OrderChip({ order, draggable, onDragStart, onDragEnd }: {
+  order: Order; draggable: boolean
   onDragStart?: (e: React.DragEvent) => void; onDragEnd?: () => void
 }) {
   return (
@@ -797,10 +822,9 @@ function OrderChip({ order, onClick, draggable, onDragStart, onDragEnd }: {
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onClick={onClick}
-      className={`border rounded-lg px-2 py-1.5 bg-white text-xs hover:border-purple-300 ${draggable ? 'cursor-grab' : 'cursor-pointer'}`}
+      className={`border rounded-lg px-2 py-1.5 bg-white text-xs hover:border-purple-300 ${draggable ? 'cursor-grab' : ''}`}
       style={{ borderColor: '#eee' }}
-      title={draggable ? '点击查看订单详情；拖到别的托盘=重新码放，拖到别的司机=换车，拖回左侧=移出' : '点击查看订单详情'}
+      title={draggable ? '拖到别的托盘=重新码放，拖到别的司机=换车，拖回左侧=移出' : undefined}
     >
       <div className="flex items-center justify-between">
         <span className="font-medium flex items-center gap-1.5 truncate">

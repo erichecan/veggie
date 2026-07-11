@@ -65,12 +65,12 @@ export async function api<T = unknown>(
 ): Promise<T> {
   let res: Response
   try {
+    // FormData 请求不能带 Content-Type: application/json，浏览器要自己加 multipart boundary
+    const baseHeaders = authHeaders()
+    if (options?.body instanceof FormData) delete baseHeaders['Content-Type']
     res = await fetch(path, {
       ...options,
-      headers: {
-        ...authHeaders(),
-        ...(options?.headers ?? {}),
-      },
+      headers: { ...baseHeaders, ...(options?.headers ?? {}) },
     })
   } catch (netErr) {
     // TypeError: Failed to fetch → 网络断
@@ -126,3 +126,6 @@ export const apiPatch = <T = unknown>(path: string, body: unknown) =>
 
 export const apiDelete = <T = unknown>(path: string) =>
   api<T>(path, { method: 'DELETE' })
+
+export const apiUpload = <T = unknown>(path: string, form: FormData) =>
+  api<T>(path, { method: 'POST', body: form })

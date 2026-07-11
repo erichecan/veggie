@@ -85,7 +85,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       )
       const lineChanges: { modified: Array<{ lineId: string; productName: string; field: string; from: unknown; to: unknown }> } = { modified: [] }
 
-      if (Array.isArray(linesPayload) && linesPayload.length > 0) {
+      if (Array.isArray(linesPayload)) {
+        // 新增行：客户端给临时 id（"new-" 前缀），必须带 productId 才能落库
+        const isNewLine = (l: Record<string, unknown>) => String(l.id ?? '').startsWith('new-')
+        const payloadIds = new Set(
+          linesPayload.filter((l: Record<string, unknown>) => !isNewLine(l)).map((l: Record<string, unknown>) => String(l.id)),
+        )
+        // 删除行：原有行里，这次提交没带回来的即视为被删
+        const deletedIds = Object.keys(oldLines).filter(lid => !payloadIds.has(lid))
+
+        const maxSequence = Object.values(oldLines).reduce(
+          (max, l) => Math.max(max, Number((l as Record<string, unknown>).sequence ?? 0)), 0,
+        )
+        let nextSequence = maxSequence
+
         const lineOps = linesPayload.map((l: Record<string, unknown>) => {
           const orderedQty = Number(l.orderedQty)
           const unitCost = Number(l.unitCost)
@@ -93,9 +106,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           const subtotalExTax = orderedQty * unitCost
           const taxAmount = subtotalExTax * taxRate / 100
           const subtotalIncTax = subtotalExTax + taxAmount
-          const bestBefore = l.bestBefore !== undefined
-            ? (l.bestBefore ? new Date(l.bestBefore as string) : null)
-            : undefined
+          const bestBefore = l.bestBefore
+            ? new Date(l.bestBefore as string)
+            : null
+
+          if (isNewLine(l)) {
+            const productId = String(l.productId ?? '')
+            if (!productId) throw Object.assign(new Error('新增采购行缺少商品'), { status: 400 })
+            nextSequence += 10
+            lineChanges.modified.push({ lineId: String(l.id), productName: String(l.productName ?? ''), field: 'added', from: null, to: orderedQty })
+            return p.purchaseOrderLine.create({
+              data: {
+                purchaseOrderId: id,
+                productId,
+                productName: String(l.productName ?? ''),
+                uomId: l.uomId ? String(l.uomId) : null,
+                orderedQty, unitCost, taxRate, subtotalExTax, taxAmount, subtotalIncTax,
+                bestBefore,
+                sequence: nextSequence,
+              },
+            })
+          }
 
           // P1-2: Detect per-line changes
           const lineId = String(l.id)
@@ -117,16 +148,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: lineId },
             data: {
               orderedQty, unitCost, taxRate, subtotalExTax, taxAmount, subtotalIncTax,
-              ...(bestBefore !== undefined && { bestBefore }),
+              ...(l.bestBefore !== undefined && { bestBefore }),
             },
           })
         })
+
+        for (const lid of deletedIds) {
+          const old = oldLines[lid]
+          lineChanges.modified.push({ lineId: lid, productName: String(old?.productName ?? ''), field: 'deleted', from: toNum(old?.orderedQty), to: null })
+          lineOps.push(p.purchaseOrderLine.delete({ where: { id: lid } }))
+        }
+
         await prisma.$transaction(lineOps)
 
-        // Recalculate PO totals
-        const updatedLines = linesPayload as Array<Record<string, unknown>>
+        // Recalculate PO totals from the final line set (更新行 + 新增行，去掉被删的)
+        const finalLines = linesPayload.filter((l: Record<string, unknown>) => !deletedIds.includes(String(l.id)))
         let subtotalExTax = 0, totalTax = 0
-        for (const l of updatedLines) {
+        for (const l of finalLines) {
           const qty = Number(l.orderedQty)
           const cost = Number(l.unitCost)
           const tax = l.taxRate !== undefined ? Number(l.taxRate) : 0

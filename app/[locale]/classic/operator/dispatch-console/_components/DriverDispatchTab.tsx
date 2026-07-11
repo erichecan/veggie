@@ -10,7 +10,8 @@ interface SummaryRow {
   waveId: string
   driverName: string
   timeOfDay: string | null
-  batchNum: number | null
+  /** 该波次下全部托盘号(可能横跨多个)，不再是单值 batchNum——一趟车可能挂着好几个托盘 */
+  batchNums: number[]
   restaurantCount: number
   orderCount: number
   totalQty: number
@@ -90,7 +91,7 @@ export default function DriverDispatchTab({ date }: { date: string }) {
 
   // 可选项（从已加载数据提取）
   const driverOpts = [...new Set(rows.map(r => r.driverName).filter(Boolean))].sort()
-  const batchOpts = [...new Set(rows.map(r => r.batchNum).filter((b): b is number => b != null))].sort((a, b) => a - b)
+  const batchOpts = [...new Set(rows.flatMap(r => r.batchNums))].sort((a, b) => a - b)
 
   function toggleNum(set: Set<number>, v: number, setter: (s: Set<number>) => void) {
     const next = new Set(set); next.has(v) ? next.delete(v) : next.add(v); setter(next)
@@ -102,15 +103,17 @@ export default function DriverDispatchTab({ date }: { date: string }) {
   const filtered = rows.filter(r => {
     if (driverSel.size && !driverSel.has(r.driverName)) return false
     if (slotSel && r.timeOfDay !== slotSel) return false
-    if (batchSel.size && !(r.batchNum != null && batchSel.has(r.batchNum))) return false
+    if (batchSel.size && !r.batchNums.some(b => batchSel.has(b))) return false
     if (weekdaySel.size && !(r.weekday != null && weekdaySel.has(r.weekday))) return false
     return true
   })
 
   const sorted = [...filtered].sort((a, b) => {
-    if (sortBy === 'driver') return a.driverName.localeCompare(b.driverName) || (a.batchNum ?? 0) - (b.batchNum ?? 0)
-    if (sortBy === 'ampm') return (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') || (a.batchNum ?? 0) - (b.batchNum ?? 0)
-    return (a.batchNum ?? 0) - (b.batchNum ?? 0) || (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '')
+    const aNum = a.batchNums[0] ?? 0
+    const bNum = b.batchNums[0] ?? 0
+    if (sortBy === 'driver') return a.driverName.localeCompare(b.driverName) || aNum - bNum
+    if (sortBy === 'ampm') return (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '') || aNum - bNum
+    return aNum - bNum || (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '')
   })
 
   const driverCount = new Set(filtered.map(r => r.driverName)).size
@@ -223,7 +226,7 @@ export default function DriverDispatchTab({ date }: { date: string }) {
                   <td className="px-3 py-2.5 font-medium">{r.driverName || '—'}</td>
                   <td className="px-3 py-2.5 text-gray-500">{r.waveDate ?? '—'}{r.weekday != null ? ` ${WEEKDAYS[r.weekday]}` : ''}</td>
                   <td className="px-3 py-2.5">{timePill(r.timeOfDay)}</td>
-                  <td className="px-3 py-2.5">批次 {r.batchNum ?? '—'}</td>
+                  <td className="px-3 py-2.5">{r.batchNums.length > 0 ? `批次 ${r.batchNums.join('·')}` : '未分托盘'}</td>
                   <td className="px-3 py-2.5 text-right">{r.restaurantCount}</td>
                   <td className="px-3 py-2.5 text-right">{r.orderCount}</td>
                   <td className="px-3 py-2.5 text-right">{r.totalQty}</td>

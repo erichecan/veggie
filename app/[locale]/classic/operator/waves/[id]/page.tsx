@@ -92,7 +92,10 @@ export default function ClassicWaveDetailPage() {
               <tbody>
                 ${z.items.map((it, i) => `
                   <tr style="border-bottom:1px solid #e8e8e8;background:${i % 2 === 1 ? '#fafafa' : '#fff'};">
-                    <td style="padding:7px 12px;color:#333;">${it.productName}</td>
+                    <td style="padding:7px 12px;color:#333;">
+                      ${it.productName}
+                      ${it.note ? `<div style="margin-top:3px;display:inline-block;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:bold;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;">⚠️ ${it.note}</div>` : ''}
+                    </td>
                     <td style="padding:7px 12px;color:#888;">${it.spec ?? ''}</td>
                     <td style="padding:7px 12px;color:#888;">${it.uomName ?? ''}</td>
                     <td style="padding:7px 12px;text-align:right;font-weight:bold;color:#111;">${isKgUom(it.uomName) ? Number(it.requiredQty).toFixed(2) : it.requiredQty}</td>
@@ -300,6 +303,14 @@ ${zonesHtml}
                             )}
                             <span>{item.productName}</span>
                           </div>
+                          {item.note && (
+                            <div
+                              className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-bold"
+                              style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b' }}
+                            >
+                              ⚠️ {item.note}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-gray-500">{item.spec}</td>
                         <td className="px-3 py-2 text-gray-500">{item.uomName ?? ''}</td>

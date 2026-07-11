@@ -72,6 +72,10 @@ export async function POST(req: Request) {
         orderDate: data.orderDate ?? null,
         expectedDate: data.expectedDate ?? null,
         currency: data.currency,
+        exchangeRate: data.exchangeRate ?? null,
+        freightAmount: data.freightAmount ?? null,
+        sourceDocumentUrl: data.sourceDocumentUrl ?? null,
+        sourceDocumentName: data.sourceDocumentName ?? null,
         notes: data.notes ?? null,
         createdBy: user.userId,
       }))

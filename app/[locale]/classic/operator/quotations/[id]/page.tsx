@@ -19,6 +19,7 @@ interface AllProduct {
   id: string
   name: string
   internalRef?: string | null
+  spec?: string | null
   listPrice?: number
   standardPrice?: number
   customerTaxRate?: number
@@ -35,8 +36,6 @@ interface CreditInfo {
   blockReason?: string
 }
 
-type Tab = 'lines' | 'optional' | 'automation' | 'other'
-
 interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
 
 export default function QuotationDetailPage() {
@@ -52,7 +51,6 @@ export default function QuotationDetailPage() {
   const [pricelists, setPricelists] = useState<Pricelist[]>([])
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<Tab>('lines')
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
@@ -152,7 +150,7 @@ export default function QuotationDetailPage() {
     })
   }
 
-  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec', value: number | string) {
+  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec' | 'note', value: number | string) {
     setEditLines(prev => {
       const next = [...prev]
       const line: EditLine = { ...next[idx], [field]: value }
@@ -291,7 +289,8 @@ export default function QuotationDetailPage() {
       orderId: order!.id,
       productId: p.id,
       productName: p.name,
-      spec: null,
+      spec: p.spec ?? null,
+      note: '',
       uomId: p.uomId ?? null,
       uomName: p.uomName ?? 'Unit(s)',
       unitPrice: price,
@@ -594,26 +593,16 @@ export default function QuotationDetailPage() {
           </div>
         </div>
 
-        {/* Region 4: tabs */}
+        {/* Region 4: order lines */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
           <div className="border-b border-gray-200 flex">
-            {([
-              { v: 'lines', label: 'Order Lines' },
-              { v: 'optional', label: 'Optional Products' },
-              { v: 'automation', label: 'Automation Information' },
-              { v: 'other', label: 'Other Information' },
-            ] as { v: Tab; label: string }[]).map(t => (
-              <button key={t.v} onClick={() => setTab(t.v)}
-                className={`px-4 py-3 text-sm ${tab === t.v ? 'font-bold text-gray-900 border-b-2' : 'text-gray-500'}`}
-                style={tab === t.v ? { borderColor: PURPLE } : undefined}>
-                {t.label}
-              </button>
-            ))}
+            <div className="px-4 py-3 text-sm font-bold text-gray-900 border-b-2" style={{ borderColor: PURPLE }}>
+              Order Lines
+            </div>
           </div>
 
           {/* Region 5: order lines table */}
-          {tab === 'lines' && (
-            <>
+          <>
             {editing && (() => {
               const dups = [...duplicateCounts.entries()].filter(([, c]) => c > 1)
               if (dups.length === 0) return null
@@ -649,15 +638,16 @@ export default function QuotationDetailPage() {
               products={allProducts}
               onAddProduct={addProductLine}
               selectOnTab
-              searchColSpan={15}
-              emptyColSpan={16}
+              searchColSpan={16}
+              emptyColSpan={17}
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
                   <th className="px-2 py-3 w-6"></th>
                   <th className="px-2 py-3 text-left">NO</th>
-                  <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
+                  <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
+                  <th className="px-2 py-3 text-left">Note</th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
@@ -690,8 +680,8 @@ export default function QuotationDetailPage() {
                       {i + 1}
                       {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title="重复商品">🔁</span>}
                     </td>
-                    <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
+                    <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-2 py-2 text-gray-600 text-xs">
                       {editing ? (
                         <input
@@ -702,6 +692,17 @@ export default function QuotationDetailPage() {
                         />
                       ) : (l.spec || '')}
                     </td>
+                    <td className="px-2 py-2 text-gray-600 text-xs">
+                      {editing ? (
+                        <input
+                          type="text"
+                          placeholder="备注…"
+                          className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24 placeholder:text-gray-300"
+                          value={l.note ?? ''}
+                          onChange={e => updateLine(i, 'note', e.target.value)}
+                        />
+                      ) : (l.note || '')}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}
@@ -709,12 +710,12 @@ export default function QuotationDetailPage() {
                           value={Number(l.orderedQty)}
                           onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
-                      ) : Number(l.orderedQty).toFixed(3)}
+                      ) : Number(l.orderedQty).toFixed(1)}
                     </td>
-                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(3) : '—'}</td>
-                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(3) : '—'}</td>
-                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(3)}</td>
-                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(3)}</td>
+                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(1) : '—'}</td>
+                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(1) : '—'}</td>
+                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(1)}</td>
+                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(1)}</td>
                     <td className="px-2 py-2 text-gray-600">{l.uomName ?? 'Unit(s)'}</td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
@@ -742,12 +743,7 @@ export default function QuotationDetailPage() {
                 )
               }}
             />
-            </>
-          )}
-
-          {tab !== 'lines' && (
-            <div className="p-12 text-center text-gray-400 text-sm">No data on this tab yet.</div>
-          )}
+          </>
 
           {/* Region 6: totals */}
           <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-end bg-gray-50">

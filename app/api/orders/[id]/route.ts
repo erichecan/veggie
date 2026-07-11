@@ -230,6 +230,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           }
           if (l.taxRate !== undefined) lineData.taxRate = Number(l.taxRate)
           if (l.sequence !== undefined) lineData.sequence = Number(l.sequence)
+          if (l.spec !== undefined) lineData.spec = l.spec ? String(l.spec) : null
+          if (l.note !== undefined) lineData.note = l.note ? String(l.note) : null
 
           if (l.id) {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -246,6 +248,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 productId: String(l.productId ?? ''),
                 productName: String(l.productName ?? ''),
                 spec: l.spec ? String(l.spec) : null,
+                note: l.note ? String(l.note) : null,
                 uomId: l.uomId ? String(l.uomId) : null,
                 uomName: l.uomName ? String(l.uomName) : null,
                 deliveredQty: 0,

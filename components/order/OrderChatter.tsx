@@ -136,7 +136,6 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [followers] = useState(3)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
   async function load() {
@@ -179,13 +178,8 @@ export function OrderChatter({ orderId }: OrderChatterProps) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
       {/* Top bar */}
-      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+      <div className="border-b border-gray-100 pb-3">
         <span className="text-sm font-semibold text-gray-700">操作日志</span>
-        <div className="flex items-center gap-3 text-sm text-gray-500">
-          <span className="flex items-center gap-1"><span>📎</span><span>0</span></span>
-          <button className="px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50">Follow</button>
-          <span className="flex items-center gap-1"><span>👤</span><span>{followers}</span></span>
-        </div>
       </div>
 
       {/* Always-visible message compose */}

@@ -29,6 +29,8 @@ interface CustomerBreakdown {
   customerId: string
   customerName: string
   qty: number
+  /** 行级备注（如"15个正常价+5个打折处理"），拣货时需要醒目提示 */
+  note?: string
 }
 
 interface AggProduct {
@@ -99,8 +101,9 @@ export function generateTripPickingHtml(
       const bd = agg.byCustomer.get(customerId)
       if (bd) {
         bd.qty += line.orderedQty
+        if (line.note && line.note !== bd.note) bd.note = bd.note ? `${bd.note}；${line.note}` : line.note
       } else {
-        agg.byCustomer.set(customerId, { customerId, customerName, qty: line.orderedQty })
+        agg.byCustomer.set(customerId, { customerId, customerName, qty: line.orderedQty, note: line.note ?? undefined })
       }
     }
   }
@@ -123,25 +126,30 @@ export function generateTripPickingHtml(
     if (products.length === 0) return ''
     const rows = products.map((p, i) => {
       const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
+      const hasNote = Array.from(p.byCustomer.values()).some(bd => bd.note)
       const mainRow = `
       <tr class="${rowClass}">
         <td class="col-seq">${i + 1}</td>
         <td class="col-name">
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
+          ${hasNote ? `<span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
         </td>
         <td class="col-qty">${fmtQty(p.totalQty)}</td>
         <td class="col-uom">${escapeHtml(p.uomName)}</td>
         <td class="col-check"></td>
       </tr>`
-      // 散称/按重量卖的商品才展示客户拆分明细，其余包装商品只看总量即可备货
-      const breakdownRows = p.goodsType === 'LOOSE'
+      // 散称/按重量卖的商品按客户展示明细子行；带备注的商品即便不是散称，也强制展开，避免备注被折叠看不到
+      const breakdownRows = (p.goodsType === 'LOOSE' || hasNote)
         ? Array.from(p.byCustomer.values())
             .sort((a, b) => a.customerName.localeCompare(b.customerName))
             .map(bd => `
       <tr class="row-bd">
         <td class="col-seq"></td>
-        <td class="col-name bd-name">↳ ${escapeHtml(bd.customerName)}</td>
+        <td class="col-name bd-name">
+          ↳ ${escapeHtml(bd.customerName)}
+          ${bd.note ? `<span class="note-badge">⚠️ ${escapeHtml(bd.note)}</span>` : ''}
+        </td>
         <td class="col-qty bd-qty">${fmtQty(bd.qty)}</td>
         <td class="col-uom"></td>
         <td class="col-check"></td>
@@ -199,6 +207,8 @@ export function generateTripPickingHtml(
   .col-check{width:40px;text-align:center;border:1px solid #ccc!important}
 
   .spec{display:block;font-size:9px;color:#888;margin-top:1px}
+  .note-flag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;vertical-align:middle}
+  .note-badge{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #f59e0b}
 
   tr.row-bd td{border-bottom:1px dashed #e0e0e0;padding-top:2px;padding-bottom:2px}
   .bd-name{padding-left:26px!important;color:#555;font-size:10px}

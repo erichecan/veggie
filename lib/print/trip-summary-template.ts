@@ -1,8 +1,8 @@
 /**
  * Trip 汇总单 — 批次级客户清单（一个司机一个时段送哪些客户），按客户名字母序去重排列
  *
- * 顶部：序号 | 客户名称（去重，不重复列同一客户的多笔订单）
- * 底部：客户详情（地址/电话/备注），供司机核对
+ * 表格：序号 | 客户名称 | 地址 | 电话 | 备注（去重，不重复列同一客户的多笔订单；
+ * 客户详情直接做在表格列里，不再单独放一个详情区块，方便司机一行看全）
  */
 
 import {
@@ -42,26 +42,20 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
 
-  const nameRowsHtml = customerList.map((c, i) => `
-    <tr>
-      <td class="col-seq">${i + 1}</td>
-      <td>${escapeHtml(c.name)}</td>
-    </tr>`).join('')
-
-  // 客户详情放最下面，只列有地址/电话/备注可核对的客户，避免全空行占版面
-  const detailBlocksHtml = customerList.map(c => {
+  // 客户详情（地址/电话/备注）直接做在表格列里，不再单独列一个详情区块
+  const nameRowsHtml = customerList.map((c, i) => {
     const cust = c.customer
     const addr = cust ? [cust.street, cust.street2, cust.city, cust.zip].filter(Boolean).join(', ') : ''
     const phone = cust?.phone ?? ''
     const note = cust?.externalNote ?? ''
-    if (!addr && !phone && !note) return ''
     return `
-    <div class="detail-block">
-      <div class="detail-name">${escapeHtml(c.name)}</div>
-      ${addr ? `<div class="detail-line">地址：${escapeHtml(addr)}</div>` : ''}
-      ${phone ? `<div class="detail-line">电话：${escapeHtml(phone)}</div>` : ''}
-      ${note ? `<div class="detail-line">备注：${escapeHtml(note)}</div>` : ''}
-    </div>`
+    <tr>
+      <td class="col-seq">${i + 1}</td>
+      <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(addr)}</td>
+      <td>${escapeHtml(phone)}</td>
+      <td>${escapeHtml(note)}</td>
+    </tr>`
   }).join('')
 
   const now = formatDateTime(new Date().toISOString())
@@ -132,18 +126,6 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   }
   .stats-row .num { font-weight: 700; }
 
-  .detail-section { margin-top: 16px; }
-  .detail-section .detail-title {
-    font-size: 12px;
-    font-weight: 700;
-    border-bottom: 1px solid #000;
-    padding-bottom: 4px;
-    margin-bottom: 6px;
-  }
-  .detail-block { padding: 4px 0; border-bottom: 1px dashed #ccc; }
-  .detail-block .detail-name { font-weight: 700; font-size: 11px; }
-  .detail-block .detail-line { font-size: 10px; color: #333; margin-top: 1px; }
-
   @media print {
     body { padding: 0; }
     @page { margin: 12mm 10mm; }
@@ -169,10 +151,13 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
       <tr>
         <th class="col-seq">#</th>
         <th>Customer</th>
+        <th>Address</th>
+        <th>Phone</th>
+        <th>Note</th>
       </tr>
     </thead>
     <tbody>
-      ${nameRowsHtml || '<tr><td colspan="2" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
+      ${nameRowsHtml || '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
     </tbody>
   </table>
 
@@ -180,12 +165,6 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     <span>客户数：<span class="num">${customerList.length}</span></span>
     <span>订单数：<span class="num">${orders.length}</span></span>
   </div>
-
-  ${detailBlocksHtml ? `
-  <div class="detail-section">
-    <div class="detail-title">客户详情</div>
-    ${detailBlocksHtml}
-  </div>` : ''}
 
 <script>
   window.print();

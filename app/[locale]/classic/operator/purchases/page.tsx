@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { apiGet, apiPost } from '@/lib/api'
+import { apiGet } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import ProcurementOverviewPage from './overview/page'
@@ -91,9 +91,6 @@ export default function PurchasesPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [showNewDialog, setShowNewDialog] = useState(false)
-  const [newSupplierId, setNewSupplierId] = useState('')
-  const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [groupBy, setGroupBy] = useState('')
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -157,22 +154,6 @@ export default function PurchasesPage() {
     if (next.has(id)) next.delete(id)
     else next.add(id)
     setSelected(next)
-  }
-
-  async function handleCreate() {
-    if (!newSupplierId) { toast.error('请选择供应商'); return }
-    setCreating(true)
-    try {
-      const result = await apiPost<{ id: string }>('/api/purchase-orders', {
-        supplierId: newSupplierId,
-        lines: [],
-      })
-      router.push(`purchases/${result.id}`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建失败')
-    } finally {
-      setCreating(false)
-    }
   }
 
   function downloadCsvTemplate() {
@@ -247,7 +228,7 @@ export default function PurchasesPage() {
       <OdooControlPanel
         breadcrumb={['采购', '询价单']}
         permanentActions={[
-          { label: '新建', onClick: () => setShowNewDialog(true), primary: true },
+          { label: '新建', onClick: () => router.push('purchases/new'), primary: true },
           { label: 'Import', onClick: () => { setShowImportDialog(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
         ]}
         searchValue={searchInput}
@@ -375,44 +356,6 @@ export default function PurchasesPage() {
         )}
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
-
-      {/* New PO Dialog */}
-      {showNewDialog && (
-        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <h2 className="text-base font-semibold text-gray-800">新建询价单</h2>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">供应商</label>
-              <select
-                value={newSupplierId}
-                onChange={e => setNewSupplierId(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
-              >
-                <option value="">请选择供应商...</option>
-                {suppliers.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={() => { setShowNewDialog(false); setNewSupplierId('') }}
-                className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating || !newSupplierId}
-                className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
-                style={{ background: '#875A7B' }}
-              >
-                {creating ? '创建中...' : '创建'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Import Dialog */}
       {showImportDialog && (

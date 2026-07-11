@@ -17,7 +17,7 @@ import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 import { getSession } from '@/lib/session'
 import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
 
-const PAGE_SIZE = 500
+const PAGE_SIZE = 50
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
   pending:       '待处理',
@@ -571,6 +571,10 @@ export default function ClassicOrdersPage() {
             {!loading && sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>
         </table>
+      </div>
+      <div className="flex items-center justify-between px-2 py-3">
+        <span className="text-xs text-gray-400">共 {total} 条，第 {page}/{Math.max(totalPages, 1)} 页</span>
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>
     </div>
   )

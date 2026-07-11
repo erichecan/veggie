@@ -240,6 +240,10 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page { padding: 8mm 12mm 22mm; }
   .footer-fixed { position: fixed; bottom: 0; }
+  /* .page 已经用 min-height:297mm 模拟一整张 A4，浏览器打印对话框自带的默认页边距会叠加在
+     这 297mm 之上，导致内容溢出单页、多挤出一张几乎空白的续页——把 @page margin 清零，
+     视觉边距完全交给 .page 自身的 padding 负责。 */
+  @page { size: A4; margin: 0; }
 }
 `
 

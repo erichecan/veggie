@@ -1,44 +1,24 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { apiGet } from '@/lib/api'
 import {
-  type TripPrintData,
-  type TripPrintDataWire,
-  toMemoryShape,
-} from '@/lib/print/trip-common'
-import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
-import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
-import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
-import { generateTripSalesHtml } from '@/lib/print/trip-sales-template'
+  type DispatchPrintType,
+  DISPATCH_PRINT_TITLES,
+  parsePickingVariant,
+  fetchDispatchPrintHtml,
+} from '@/lib/print/dispatch-print-html'
 
-type PrintType = 'summary' | 'picking' | 'delivery' | 'sales'
-
-const RENDERERS: Record<PrintType, (d: TripPrintData, variant?: PickingVariant) => string> = {
-  summary: generateTripSummaryHtml,
-  picking: generateTripPickingHtml,
-  delivery: generateTripDeliveryHtml,
-  sales: generateTripSalesHtml,
-}
-
-function parsePickingVariant(v: string | null): PickingVariant {
-  return v === 'storable' || v === 'consumable' ? v : 'all'
-}
-
-const TITLES: Record<PrintType, string> = {
-  summary: '送货汇总单',
-  picking: '拣货单 · 备货清单',
-  delivery: '送货单 · DELIVERY SLIP',
-  sales: '销售单 · SALES ORDER',
-}
+type PrintType = DispatchPrintType
+const TITLES = DISPATCH_PRINT_TITLES
 
 export default function DispatchPrintClient({ type }: { type: PrintType }) {
   const searchParams = useSearchParams()
   const date = searchParams.get('date')
-  const fromDate = searchParams.get('fromDate')
-  const driverSlotId = searchParams.get('driverSlotId')
-  const batchLabel = searchParams.get('batchLabel')
-  const waveIds = searchParams.get('waveIds')
+  const fromDate = searchParams.get('fromDate') ?? undefined
+  const driverSlotId = searchParams.get('driverSlotId') ?? undefined
+  const batchLabel = searchParams.get('batchLabel') ?? undefined
+  const waveIdsRaw = searchParams.get('waveIds')
+  const waveIds = waveIdsRaw ? waveIdsRaw.split(',') : undefined
   const variant = parsePickingVariant(searchParams.get('variant'))
 
   const [html, setHtml] = useState<string>('')
@@ -51,27 +31,12 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
       return
     }
     let cancelled = false
-    async function load() {
-      try {
-        const params = new URLSearchParams({ date: date! })
-        if (driverSlotId) params.set('driverSlotId', driverSlotId)
-        if (batchLabel) params.set('batchLabel', batchLabel)
-        if (waveIds) params.set('waveIds', waveIds)
-        if (fromDate) params.set('fromDate', fromDate)
-        const wire = await apiGet<TripPrintDataWire>(
-          `/api/orders/dispatch-print-data?${params}`,
-        )
-        if (cancelled) return
-        const data = toMemoryShape(wire)
-        setHtml(RENDERERS[type](data, variant))
-      } catch (e) {
-        if (cancelled) return
-        setError(e instanceof Error ? e.message : '加载失败')
-      }
-    }
-    load()
+    fetchDispatchPrintHtml({ type, date, fromDate, driverSlotId, batchLabel, waveIds, variant })
+      .then(h => { if (!cancelled) setHtml(h) })
+      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : '加载失败') })
     return () => { cancelled = true }
-  }, [date, fromDate, driverSlotId, batchLabel, waveIds, type, variant])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, fromDate, driverSlotId, batchLabel, waveIdsRaw, type, variant])
 
   if (error) {
     return (

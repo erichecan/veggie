@@ -8,13 +8,24 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const statusFilter = searchParams.get('status')?.toUpperCase()
-    const where = statusFilter ? { status: statusFilter as never } : {}
+    const search = searchParams.get('search')?.trim()
+    // purchasable=1：只给采购模块选品用，只返回 canBePurchased 的商品（该标记在 ProductTemplate 上）
+    const purchasableOnly = searchParams.get('purchasable') === '1'
+    const where: Record<string, unknown> = {}
+    if (statusFilter) where.status = statusFilter as never
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { internalRef: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+    if (purchasableOnly) where.template = { canBePurchased: true }
     const products = await prisma.product.findMany({
       where,
       orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
       include: {
         category: { select: { name: true } },
-        template: { select: { images: true, uomId: true, uom: { select: { id: true, name: true } }, customerTaxRate: true, internalRef: true, category: { select: { name: true } } } },
+        template: { select: { images: true, uomId: true, uom: { select: { id: true, name: true } }, customerTaxRate: true, internalRef: true, category: { select: { name: true } }, canBeSold: true, canBePurchased: true, purchaseUomId: true } },
       },
     })
     // 商品自身没有图片时使用模板图片；同时把模板 UoM 提升到顶层
@@ -26,9 +37,12 @@ export async function GET(req: Request) {
         : (template?.images ?? []),
       uomId:           template?.uom?.id   ?? template?.uomId ?? null,
       uomName:         template?.uom?.name ?? null,
+      purchaseUomId:   template?.purchaseUomId ?? null,
       customerTaxRate: p.customerTaxRate ?? template?.customerTaxRate ?? 0,
       internalRef:     p.internalRef ?? template?.internalRef ?? null,
       category:        category?.name ?? template?.category?.name ?? null,
+      canBeSold:       template?.canBeSold ?? true,
+      canBePurchased:  template?.canBePurchased ?? true,
     }))
     return NextResponse.json(serializeApi(result))
   } catch (error) {

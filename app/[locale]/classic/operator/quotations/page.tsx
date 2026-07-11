@@ -12,7 +12,11 @@ import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
 import { buildOrderHtml } from '../../print/[id]/page'
 import { getSession } from '@/lib/session'
-import { type Facet, ORDER_FACET_FIELDS, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
+import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
+import { useServerList } from '@/hooks/use-server-list'
+import { Pagination } from '@/components/ui/pagination'
+
+const PAGE_SIZE = 50
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -106,21 +110,18 @@ export default function ClassicQuotationsPage() {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
-  const [orders, setOrders] = useState<Order[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [trips, setTrips] = useState<Trip[]>([])
-  const [loading, setLoading] = useState(false)
 
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabValue>('all')
   const [orderTodayActive, setOrderTodayActive] = useState(false)
-  // 分面搜索 + 快捷筛选(My / 时间)。产品/产品类目维度需服务端数据，走 xxxFacetIds 桥接；其余客户端过滤。
+  // 分面搜索 + 快捷筛选(My / 时间)——全部 7 个维度(含 product/category)现在都直接编码进服务端请求参数，
+  // 不再需要客户端 bridge 拉 id 集合再取交集。
   const [facets, setFacets] = useState<Facet[]>([])
   const [myActive, setMyActive] = useState(false)
   const [timeKey, setTimeKey] = useState('')
-  const [productFacetIds, setProductFacetIds] = useState<Set<string> | null>(null)
-  const [categoryFacetIds, setCategoryFacetIds] = useState<Set<string> | null>(null)
   const currentUser = useMemo(() => getSession(), [])
   const [sortField, setSortField] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -156,7 +157,7 @@ export default function ClassicQuotationsPage() {
   async function saveDeliveryDate(orderId: string, date: string) {
     try {
       await apiPut(`/api/orders/${orderId}`, { deliveryDate: date || null })
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, deliveryDate: date || null } as Order : o))
+      refresh()
       toast.success(date ? '已安排送货日期' : '已清除送货日期')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to update delivery date')
@@ -170,7 +171,6 @@ export default function ClassicQuotationsPage() {
       try {
         const full = await apiGet<Order>(`/api/orders/${o.id}`)
         const lines = full.lines ?? []
-        setOrders(prev => prev.map(x => x.id === o.id ? { ...x, lines } : x))
         setEditItemsLines(lines.map(l => ({
           id: l.id,
           productId: l.productId,
@@ -215,15 +215,6 @@ export default function ClassicQuotationsPage() {
           subtotal: line.quantity * line.price,
         }))
         await apiPut(`/api/orders/${orderId}`, { lines: linesPayload })
-        const totalAmount = linesPayload.reduce((s, l) => s + l.subtotal, 0)
-        setOrders(prev => prev.map(o => {
-          if (o.id !== orderId) return o
-          const newLines = (o.lines ?? []).map(l => {
-            const upd = linesPayload.find(p => p.id === l.id)
-            return upd ? { ...l, unitPrice: upd.unitPrice, orderedQty: upd.orderedQty, subtotal: upd.subtotal } : l
-          })
-          return { ...o, lines: newLines, totalAmount }
-        }))
       } else {
         // Fallback for legacy orders without OrderLine records
         const origOrder = orders.find(o => o.id === orderId)
@@ -233,8 +224,8 @@ export default function ClassicQuotationsPage() {
         })
         const totalAmount = updatedItems.reduce((s, it) => s + it.subtotal, 0)
         await apiPut(`/api/orders/${orderId}`, { totalAmount })
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, totalAmount } : o))
       }
+      refresh()
       setEditItemsId(null)
       toast.success('已更新商品明细')
     } catch (e) {
@@ -245,58 +236,79 @@ export default function ClassicQuotationsPage() {
   }
 
   // ── Load ──────────────────────────────────────────────────────────────────
+  // 报价单列表改成真正的服务端分页(50/页)，不再一次性拉全量到前端。
+  // Status 列筛选决定实际查询的状态集合(默认只查 PENDING，与页面默认只展示待处理报价单的语义一致，
+  // 顺带比"总是拉 PENDING+CANCELLED 再客户端丢弃"更省流量)。
 
-  async function load() {
-    setLoading(true)
+  const statusParam = useMemo(() => {
+    if (!colFilters.status) return 'PENDING'
+    // Odoo state value → 服务端 OrderStatus 枚举
+    const map: Record<string, string> = {
+      draft: 'PENDING',
+      sent: '',       // 系统里没有这个状态，恒空
+      sale: 'CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY',
+      done: 'COMPLETED',
+      cancel: 'CANCELLED',
+    }
+    return map[colFilters.status] ?? 'PENDING'
+  }, [colFilters.status])
+
+  const baseUrl = useMemo(() => {
+    const params = new URLSearchParams({ status: statusParam || 'PENDING', include_lines: 'false' })
+    // "Sent" 在本系统里不是一个真实状态，用一个恒不匹配的条件让结果恒为空（而不是误变成"不筛状态"）
+    if (statusParam === '') params.set('restaurantId', '__none__')
+    // 报价日期列筛 → dateField=quotationDate(与交货日期筛选是两套独立参数，互不冲突)
+    if (colFilters.quotationDateFrom || colFilters.quotationDateTo) {
+      params.set('dateField', 'quotationDate')
+      if (colFilters.quotationDateFrom) params.set('fromDate', colFilters.quotationDateFrom)
+      if (colFilters.quotationDateTo) params.set('toDate', colFilters.quotationDateTo)
+    }
+    // 交货日期列筛 → deliveryFrom/deliveryTo
+    if (colFilters.deliveryDateFrom) params.set('deliveryFrom', colFilters.deliveryDateFrom)
+    if (colFilters.deliveryDateTo) params.set('deliveryTo', colFilters.deliveryDateTo)
+    // 分面聚焦搜索(含 product/category)直接编码进 f_* 参数，服务端原生支持，不再需要客户端 bridge
+    applyFacets(params, facets)
+    // My Quotations → 按当前登录用户(业务员)过滤
+    if (myActive && currentUser?.userId) params.set('salesUserId', currentUser.userId)
+    // 时间快捷(Today/This Week…) → 按交货日期；若已手动设置交货日期列筛，以列筛为准，不重复覆盖
+    if (!colFilters.deliveryDateFrom && !colFilters.deliveryDateTo) {
+      const range = timeKey ? computeTimeRange(timeKey) : null
+      if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
+    }
+    return `/api/orders?${params.toString()}`
+  }, [statusParam, colFilters.quotationDateFrom, colFilters.quotationDateTo, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, facets, myActive, currentUser, timeKey])
+
+  const {
+    data: rawOrders,
+    total,
+    page,
+    totalPages,
+    loading,
+    setPage,
+    refresh,
+  } = useServerList<Record<string, unknown>>({ url: baseUrl, pageSize: PAGE_SIZE })
+
+  const orders = useMemo(() => rawOrders.map(o => ({
+    ...(o as unknown as Order),
+    status: (norm(o.status as string) || 'pending') as OrderStatus,
+  })), [rawOrders])
+
+  async function loadRefData() {
     try {
-      const [rawOrders, rawCustomers, rawInvoices, rawTrips] = await Promise.all([
-        apiGet<Record<string, unknown>[]>('/api/orders?status=PENDING,CANCELLED&include_lines=false'),
+      const [rawCustomers, rawInvoices, rawTrips] = await Promise.all([
         apiGet<Customer[]>('/api/customers?slim=1').catch(() => [] as Customer[]),
         apiGet<Invoice[]>('/api/invoices?slim=1').catch(() => [] as Invoice[]),
         apiGet<Trip[]>('/api/trips').catch(() => [] as Trip[]),
       ])
-      setOrders(rawOrders.map(o => ({
-        ...(o as unknown as Order),
-        status: (norm(o.status as string) || 'pending') as OrderStatus,
-      })))
       setCustomers(rawCustomers)
       setInvoices(rawInvoices)
       setTrips(rawTrips)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '加载失败')
-    } finally {
-      setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [])
-
-  // 产品/产品类目分面走服务端：拉匹配订单 id 集合，与客户端展示数据取交集(见 filtered)。
-  // 其余维度(单号/客户/销售/司机)客户端已有数据，无需服务端。
-  useEffect(() => {
-    let cancelled = false
-    async function bridge(facetKey: 'product' | 'category', paramName: 'f_product' | 'f_category', setIds: (s: Set<string> | null) => void) {
-      const vals = facets.filter(f => f.key === facetKey).map(f => f.value.trim()).filter(Boolean)
-      if (vals.length === 0) { setIds(null); return }
-      try {
-        const sets = await Promise.all(vals.map(async v => {
-          const params = new URLSearchParams({ status: 'PENDING,CANCELLED', include_lines: 'false', [paramName]: v, limit: '2000' })
-          const res = await apiGet<Array<{ id: string }>>(`/api/orders?${params}`)
-          return new Set((Array.isArray(res) ? res : []).map(o => o.id))
-        }))
-        if (cancelled) return
-        // 同维度多个条件取交集
-        const inter = sets.reduce<Set<string> | null>((acc, s) => acc === null ? s : new Set([...acc].filter(x => s.has(x))), null)
-        setIds(inter ?? new Set<string>())
-      } catch {
-        if (!cancelled) setIds(new Set<string>())
-      }
-    }
-    bridge('product', 'f_product', setProductFacetIds)
-    bridge('category', 'f_category', setCategoryFacetIds)
-    return () => { cancelled = true }
-  }, [facets])
-
+  useEffect(() => { loadRefData() }, [])
 
   // ── CSV import helpers ────────────────────────────────────────────────────
 
@@ -400,7 +412,7 @@ export default function ClassicQuotationsPage() {
     setImportLoading(false)
     if (success > 0) {
       toast.success(`成功导入 ${success} 个订单`)
-      load()
+      refresh()
     }
   }
 
@@ -485,13 +497,9 @@ export default function ClassicQuotationsPage() {
           facetPredicates.push(o => getField(o, 'salesman').toLowerCase().includes(v))
         } else if (f.key === 'driver') {
           facetPredicates.push(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(v))
-        } else if (f.key === 'product') {
-          const ids = productFacetIds
-          facetPredicates.push(o => ids ? ids.has(o.id) : false)
-        } else if (f.key === 'category') {
-          const ids = categoryFacetIds
-          facetPredicates.push(o => ids ? ids.has(o.id) : false)
         }
+        // product/category 维度已由服务端 f_product/f_category 原生过滤(见 baseUrl)，
+        // 这里拿到的 orders 已经只剩匹配行，不需要再本地判重
       }
       if (facetPredicates.length > 0) {
         result = result.filter(o => facetPredicates.some(p => p(o)))
@@ -551,7 +559,7 @@ export default function ClassicQuotationsPage() {
     }
 
     return result
-  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, productFacetIds, categoryFacetIds, currentUser])
+  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, currentUser])
 
   // ── Group By ─────────────────────────────────────────────────────────────
 
@@ -580,9 +588,11 @@ export default function ClassicQuotationsPage() {
 
   const toInvoiceCount = useMemo(() => orders.filter(o => o.status === 'completed' && !invoicedIds.has(o.id)).length, [orders, invoicedIds])
 
+  // 默认(无 Status 列筛选)时 baseUrl 恒为 status=PENDING，total 就是真实的待处理总数；
+  // 一旦切了 Status 列筛选，退回到用当前页数据估算（跟改造前的近似程度一致，不引入新问题）
   const TABS: { value: TabValue; label: string; count?: number }[] = [
     { value: 'all',        label: '全部' },
-    { value: 'quotations', label: 'Quotations', count: orders.filter(o => o.status === 'pending').length },
+    { value: 'quotations', label: 'Quotations', count: !colFilters.status ? total : orders.filter(o => o.status === 'pending').length },
   ]
 
   // ── Select helpers ────────────────────────────────────────────────────────
@@ -618,7 +628,7 @@ export default function ClassicQuotationsPage() {
     } else {
       toast.warning(`成功 ${successCount} 条，失败 ${failCount} 条`)
     }
-    load()
+    refresh()
   }
 
   async function handleBulkDelete() {
@@ -637,7 +647,7 @@ export default function ClassicQuotationsPage() {
     } else {
       toast.warning(`成功 ${successCount} 条，失败 ${failCount} 条`)
     }
-    load()
+    refresh()
   }
 
   async function handleDuplicate() {
@@ -657,7 +667,7 @@ export default function ClassicQuotationsPage() {
       })
       toast.success('报价单已复制')
       setSelected(new Set())
-      load()
+      refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '复制失败')
     } finally {
@@ -872,7 +882,7 @@ ${footerHtml}
                     try {
                       await apiPut(`/api/orders/${o.id}`, { status: 'CANCELLED' })
                       toast.success('报价单已取消')
-                      load()
+                      refresh()
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : '取消失败')
                     }
@@ -1153,6 +1163,10 @@ ${footerHtml}
             )}
           </tbody>
         </table>
+      </div>
+      <div className="flex items-center justify-between px-2 py-3">
+        <span className="text-xs text-gray-400">共 {total} 条，第 {page}/{Math.max(totalPages, 1)} 页</span>
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>
 
       {/* ── Import Modal ── */}

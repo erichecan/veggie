@@ -1,85 +1,93 @@
-# DEV-PLAN — 「批次」概念重定义（司机批次号 = 托盘号，非独立车次）
+# DEV-PLAN — 采购模块「询价单」新建采购单页整合
 
-> 更新日期：2026-07-09（v3，最终版，已通过交互原型逐项确认，进入执行）
-> 前序文档：
-> - v1（已发布 waves 数据安全漏洞修复）归档至 `docs/20260709-dev-plan-dispatched-wave-guard.md`
-> - v2（第一版重定义提案，模型判断有误，已被 v3 推翻）归档至 `docs/20260709-dev-plan-batch-redesign-v2.md`
-> - 交互原型（点击验证过）：`/private/tmp/.../20260709-batch-redesign-prototype.html`，已发布为 Artifact 逐轮确认
+> 更新日期：2026-07-10
+> 范围：仅「询价单」tab → 点「新建」进入的新建采购单页（`app/[locale]/classic/operator/purchases/new/page.tsx`），以及为支撑它而需要改动的「总览」tab
+> 读取依据：无独立 PRD 文档；本轮通过对话逐项五问澄清确认（见下方"已确认决策"），未读取额外产品文档
+> 前序状态：`purchases/new/page.tsx`、`app/api/products/quick-create/route.ts` 已在此前会话中新建（解决"采购商品要不要和销售商品分开"——结论是不分开，用 `canBeSold:false/canBePurchased:true` 在同一 Product 表内打标，走"当场建货"quick-create 流程，本轮不再变动）
 
 ---
 
-## 1. 问题确认（不变，沿用 v2）
+## 1. 六个子需求 & 已确认决策
 
-BAO 一个上午只有**一辆车**，「1 am BAO」「3 am BAO」「4 am BAO」里的 1/3/4 是这一辆车上**第几个托盘**，不是三趟独立的车。系统把"司机+批次号"的每种组合当成完全独立、可独立发车、可独立算账的单位——这个假设错误贯穿波次/行程/提成三层。
+| # | 需求 | 关键决策（已用 AskUserQuestion 逐条确认） |
+|---|------|------|
+| 1 | PDF 上传→识别→非英文自动翻译成英文→自动填单；创建页可左右分屏查看 PDF | PDF 以**系统生成的文字版**为主设计假设；识别+翻译**必须调用外部 AI**（项目当前无 `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`），**用户已确认现在配置接入**，费用按次产生 |
+| 2 | 运费录入 + 摊入产品成本 | **按金额比例摊**：`该行摊入运费 = 运费 × (行 subtotal / 整单 subtotal)`；只影响本单"落地成本"展示/毛利参考，**不回写 `Product.standardPrice`**（避免和其他采购单/销售侧成本打架，参见历史 SSOT 教训） |
+| 3 | 汇率——抓当日实时汇率 | **不限定币种**，任意 ISO 代码 + 当日汇率，接免费无需 Key 的 FX API（Frankfurter/ECB），按天缓存快照，避免历史单据汇率被事后变动污染 |
+| 4 | 商品价格——抓最近一次交易价 + 弹窗看最近 10 次走势 | **按（商品+供应商）区分**——同一款菜不同供应商价格分开看，选完供应商价格才回填/画图 |
+| 5 | 总览页统计：本月采购支出（已有）、供应商未付款、Top10 供应商+品类；**去掉**顶部"需要立即处理/已逾期未处理/等待你审批"三张卡片 | Top10 按**采购金额，近 12 个月滚动**；未付款按**全部未结清 `VendorBill.amountDue` 汇总**（不区分是否逾期） |
+| 6 | 总览中间：库存/销量趋势→采购预测 | **复用现有建议引擎**（`lib/purchase-suggestions-fresh.ts` 的"近3日日均出货+在途-库存-安全库存"算法），换成中间卡片形式：建议关注的补货商品列表 + 每个商品近14天出库量迷你趋势图，点击跳转新建采购单；不新增预测算法 |
 
-## 2. v2 → v3 的关键修正（本轮和你逐条对齐出来的）
+---
 
-v2 曾提议收窄 `DriverSlot` 唯一键（去掉 batchNum），把托盘号迁到孤儿 `Pallet` 模型。**这个方向被推翻**，原因：
+## 2. 数据库 schema 变更
 
-1. **`DriverSlot`（含 batchNum）不是错的，是被下游误用了。** 司机配置页里"1 am BAO / 2 am BAO"是预先配好的固定组合，销售单列表、订单详情页、调度台都从这份配置里选/摆，托盘号本来就该长期存在、可增删——只是不该被下游当成独立车次。
-2. **销售单列表已有的行内指派交互完全不用动**：`orders/page.tsx` 编辑模式下点"批次"格子 → `DriverSlotCombobox` 可搜索下拉（选项 `"{batchNum} {timeOfDay} {driverName}"`）→ 本地暂存(●) → 批量「保存」→ `PUT /api/orders/[id]/batch`。这套机制的数据源就是 `DriverSlot`，`DriverSlot` 不改，这条链路零改动。
-3. **真正要动的是 `PickingWave` 的分组粒度**：现在 `@@unique([waveDate, driverSlotId])` 把"1 am BAO"和"3 am BAO"分成两个独立波次，各自独立生成 `Trip`、独立算提成。应该改成按「司机+时段」聚合——不管配了几个托盘，同一司机同一时段的所有订单汇总进**一个**波次。
-4. **孤儿 `Pallet` 模型不需要接入**——`DriverSlot.batchNum` 本身就是托盘号，调度台内部按它分组显示即可，不必再挂一层从未被前端使用过的 `Pallet`/`pick-sheet` API。
+```prisma
+model PurchaseOrder {
+  // ...existing fields...
+  freightAmount      Decimal? @default(0) @db.Decimal(14, 2)  // 本单运费，人工录入
+  exchangeRate       Decimal? @default(1) @db.Decimal(14, 6)  // currency → EUR 的当日汇率快照，下单时锁定
+  sourceDocumentUrl  String?   // 识别用的供应商 PDF，存 GCS，创建页侧栏查看
+  sourceDocumentName String?
+}
+```
 
-## 3. 最终模型
+- **不新增** `PurchaseOrderAttachment` 表——一期一单一 PDF 够用，多附件需求出现再拆表（YAGNI）。
+- **不新增**任何"供应商未付款汇总"字段——总览页未付款/Top10 全部走**实时聚合查询**（对 `VendorBill`/`PurchaseOrder` group by），不落库快照，避免又制造一处需要人工同步的 SSOT 分裂。
+- **不新增** `PurchaseOrderLine.landedUnitCost` 持久字段——落地成本在读取时用 `lib/purchase-landed-cost.ts` 现算，运费/汇率改了自动跟着变，不需要额外一次"重新摊销"的写操作。
+- `PurchaseRecord`（已有 `productId/unitCost/supplierId/arrivedAt`）直接作为"最近价格"数据源，不改动。
 
-| 层级 | 改不改 | 说明 |
-|---|---|---|
-| `DriverSlot`（含 batchNum） | **不改 schema**，管理面维持现状 | 司机配置页可增删；删除一个有订单挂着的 DriverSlot 时，这些订单的 `driverSlotId` 要清空、订单退回"待分配"——原型里"删除托盘→订单回待分配"就是这条规则的可视化 |
-| `PickingWave` | **改**：分组键从 `[waveDate, driverSlotId]` 改为 `[waveDate, driverName, timeOfDay]` | 新增 `timeOfDay String?` 字段（`driverName` 已有，照抄同样的"快照字段"模式）；`orderIds` 汇总同一司机同一时段下所有 DriverSlot 名下的订单 |
-| `Trip` / 提成 | **不改代码**，随波次粒度自动修正 | 一个波次一趟车一笔提成，`lib/trip-from-wave.ts`、`lib/commission.ts` 现有的 1:1-per-wave 逻辑不用碰 |
-| `Order.driverSlotId` | **不当 SSOT**（本来就是；仓库已有 P0-1 结论：`Order.driverSlotId`/`deliveryBatch` 是废弃字段，"这单归哪辆车"只认 `PickingWave.orderIds[]`） | 波次合并后这条 SSOT 规则不变，`wave.orderIds` 继续是唯一真相，下游（打印/拣货单/提成）零改动 |
-| `Pallet`（原孤儿模型，重新启用） | **接入**，不新建表 | 波次内部"这单在第几个托盘"这层信息，波次分离没了之后必须有地方记，`Pallet.waveId + seq + items` 正好是这个粒度；`assignOrderToWave` 在写 `wave.orderIds` 的同时，按 `driverSlot.batchNum` 自动找/建对应 `Pallet` 并把该订单整单的商品行塞进去（一期不支持拆单到多托盘，整单进一个 Pallet） |
-| 调度台 `BatchTab.tsx` | **改**：卡片粒度从"每个 DriverSlot 一张"改成"每个（司机+时段）波次一张" | 卡片内部按该波次下的 `Pallet` 列表渲染托盘 lane（`pallet.items` 里的 orderId 反查是哪些订单）；出发/完成/拣货锁等状态和按钮全部挂在波次（整张卡片）上，不挂在托盘上——避免"某个托盘单独出发"这种不合逻辑状态 |
-| `DriverDispatchTab.tsx` | **改**：页脚"共 X 个批次 · X 趟"的批次数不再等同于车次数，按波次数统计 | |
+一条 migration：`add_purchase_order_freight_fx_source_doc`。
 
-## 4. 已用交互原型逐项验证过的规则（作为实现验收标准）
+---
 
-1. 一张司机卡片 = 一个（司机, 时段）波次；卡片头统计"N 单 · N 个托盘（一趟车）"。
-2. 卡片有「📦 订单视图」（平铺只读总览）/「🗂 托盘视图」（可操作）切换；实际改派只在托盘视图里发生。
-3. 拖拽语义：拖进同司机的另一个托盘 = 纯重新码放；拖进别的司机的托盘 = 真正改派（车也变）；拖回左侧待分配 = 从这辆车移出，订单退回"未指派"状态（对应 `driverSlotId = null`）。
-4. **不存在"分配给司机但未指定托盘"的中间态**——订单要么在具体某个托盘，要么在待分配池，没有第三态。
-5. 托盘可以在调度台里直接新增/删除；删除一个非空托盘，里面的订单自动退回待分配池（对应把这些订单的 `driverSlotId` 清空）。
-6. 销售单列表页的行内指派（点批次格子→可搜索下拉→暂存●→批量保存）和调度台拖拽是**同一份数据的两个写入口**，互相同步，UI 和交互都不需要改，只是它们共同依赖的波次聚合逻辑要修对。
+## 3. 新增/改动的 API
 
-## 5. 影响范围清单
+| 路由 | 说明 |
+|------|------|
+| `POST /api/purchase-orders/pdf-extract`（新增） | 接收 PDF → 存 GCS（复用 `upload-image` 的 Storage 客户端模式，bucket 内换 `purchase-docs/` 前缀）→ `pdf-parse` 抽取文字层 → 调用 Anthropic API 做结构化抽取 + 非英文→英文翻译 → 返回 `{ supplierGuess, lines[], sourceDocumentUrl }` 供前端预填表单（**不自动提交**，人工核对后才保存） |
+| `GET /api/fx-rate?base=EUR&date=YYYY-MM-DD`（新增） | 代理 Frankfurter/ECB 免费汇率接口，按天缓存（进程内内存缓存 + 兜底：接口不可用时返回 `null`，前端允许手动填汇率，不阻塞下单） |
+| `GET /api/products/[id]/price-history?supplierId=`（新增） | 查 `PurchaseRecord` 最近 10 条（同 productId + supplierId），返回 `{ date, unitCost }[]` 给走势弹窗 |
+| `GET /api/analytics/procurement-overview`（改） | 新增 `topSuppliers`（近12月采购额 Top10 + 品类分布）、`supplierUnpaidTotal`（全部未结清 `VendorBill.amountDue` 按供应商汇总）；**移除** `criticalCount`/`overdueCount`/`toApproveCount` 三个字段的 KPI 卡片输出（生成建议列表的底层逻辑不动，只是不再喂给顶部卡片） |
+| 复用 `lib/purchase-suggestions-fresh.ts` 输出 | 总览中间"建议关注补货商品"卡片直接读现有 `PurchaseSuggestion` 表（`status=pending`，按 `priority` 排序取前几条），不新建生成逻辑 |
+| `POST /api/purchase-orders`、`lib/create-purchase-order.ts`（改） | 接收 `freightAmount`、`exchangeRate`、`sourceDocumentUrl` 并落库；`lib/purchase-landed-cost.ts`（新文件）导出 `computeLandedUnitCost(line, po)` 供页面和后续报表统一调用 |
 
-| 文件 | 改动 |
-|---|---|
-| `prisma/schema.prisma` | `PickingWave` 加 `timeOfDay` 字段，唯一键改为 `[waveDate, driverName, timeOfDay]`；`driverSlotId` 降级为非唯一性字段（合并波次后不再代表单一 DriverSlot，仅留兼容）；写正式 migration |
-| `lib/wave-assign.ts` | `assignOrderToWave` 改成按（driverName, timeOfDay）找/建波次；额外调用新增的 `assignOrderToPallet(waveId, orderId, batchNum)`，自动找/建 `Pallet{waveId, seq: batchNum}` 并把订单整单商品行写入；`removeOrderFromAllWaves` 同步清理该订单在所有 `Pallet.items` 里的行 |
-| `app/api/waves/[id]/assign,unassign/route.ts` | 逻辑基本不变（反正现在同司机同时段只有一个波次），需要跟着新的波次查找方式回归测试 |
-| `app/api/driver-slots/route.ts` + 新增 `DELETE` | 司机配置页/调度台共用同一套 DriverSlot 增删：删除一个 DriverSlot 时，级联删除其在当前波次下对应的 `Pallet`，该 Pallet 里的订单整单退出 `wave.orderIds`（回待分配），保证两个入口（销售单下拉框可选项、调度台托盘 lane）永远同步 |
-| `BatchTab.tsx` | 卡片粒度改造：改为按波次渲染，卡片内部按该波次下的 `Pallet` 列表渲染托盘 lane；「+新增托盘」= 建新 DriverSlot（batchNum = 当前最大值+1）；「✕删除托盘」= 走上面的级联删除 |
-| `DriverDispatchTab.tsx` | 页脚统计口径改为"按波次数"，不再等同批次数 |
-| `orders/page.tsx`、`orders/[id]/page.tsx`、`quotations/[id]/page.tsx` | **不改**——指派交互和数据源都不变 |
-| `lib/trip-from-wave.ts`、`lib/commission.ts` | **不改代码**，仅需针对新分组跑一遍回归验证 |
+---
 
-## 6. 历史数据处理策略
+## 4. 页面改动
 
-**已发生的 Trip / 提成记录一律不动**——不回溯合并、不重算、不改写，理由同 v2：这些记录可能已经和司机对过账，事后拆散重组风险极高。
+**`purchases/new/page.tsx`**
+- 顶部加「上传 PDF 识别」按钮：上传后调 `pdf-extract`，展示识别结果供确认，确认后预填供应商/行项目；同时开启右侧栏 PDF 预览（左表单/右 PDF，类似侧边栏抽屉，可收起）
+- 表单加：运费输入框（税前金额）、币种保持现有下拉但联动 `GET /api/fx-rate` 自动回填汇率（可手动覆盖）
+- 每个商品行加"查看价格历史"按钮 → 弹窗：最近一次成交价自动回填单价参考 + 最近 10 次价格走势迷你图（按当前选中供应商过滤）
+- 总计区加"落地成本"小计（`subtotal + 摊入运费`），供下单前核对毛利
 
-迁移脚本（沿用本仓库两段式：只读诊断 + `--apply`）：
-1. 找出所有"同司机同时段"存在多个 `PickingWave`（即现在的 1/3/4 分裂）的分组
-2. **未出发**（`dispatchedAt = null`）的波次：合并 `orderIds`，挑一条存活（优先挑已绑定 `userId` 的 DriverSlot 对应的那条），其余波次 `archived`/软删除
-3. **已出发/已完成**的波次原样不动，包括它们已生成的 Trip——这部分"一辆车被拆成多笔提成"的历史事实保留，不纠正
-4. 收尾报告：合并了多少组、影响多少订单
+**`purchases/overview/page.tsx`**
+- 移除三张顶部提醒卡片
+- 新增 Top10 供应商表格（金额+品类分布）
+- 中间新增"建议关注的补货商品"卡片（迷你趋势图+一键跳转新建）
+- 供应商未付款作为一张统计卡片保留在顶部区域
 
-## 7. 执行状态（2026-07-10 更新）
+---
 
-第一期代码已全部写完并本地验证通过：
+## 5. 大改评估（按项目 CLAUDE.md 第十三节）
 
-- ✅ `prisma/schema.prisma`：`PickingWave` 加 `timeOfDay`，唯一性约束改为应用层保证（同司机同时段未出发波次只能有一条），迁移 `20260709000000_wave_time_of_day` 已应用；存量 391 条波次已跑 `scripts/backfill-wave-timeofday.ts` 回填。
-- ✅ `lib/wave-assign.ts`：`assignOrderToWave` 按司机+时段找/建波次，新增 `assignOrderToPallet`/`removeOrderFromPalletsInWave`/`putOrderIntoPallet`/`deletePalletForDriverSlot`，`getOrderWaveDisplayMap`/`getOrderWaveDriverSlotMap` 改为按托盘反查。
-- ✅ `app/api/waves/[id]/assign,unassign`：新增 `driverSlotId` 参数联动 Pallet；`app/api/waves/route.ts`/`generate-daily`：按司机+时段建波次、返回 `pallets`。
-- ✅ `app/api/driver-slots/[id]`：归档(DELETE/PUT archived:true)联动清空该托盘在未出发波次里的订单，退回待分配。
-- ✅ `BatchTab.tsx` 重写为一卡片=一波次+托盘 lane（订单视图/托盘视图切换、拖拽改派、＋新增/✕删除托盘）；`DriverDispatchTab.tsx` 页脚统计改按波次数。
-- ✅ 本地验证：`tsc --noEmit`/`eslint` 全绿；curl 端到端跑通「同司机不同托盘指派→合并进同一波次→各自落进对应 Pallet」「同波次托盘间重新码放」「删除托盘→订单退回待分配、Pallet/wave.orderIds 同步清理」，dev server 日志无报错。
-- ✅ 只读诊断脚本 `scripts/diagnose-duplicate-driver-waves.ts` 已跑：历史遗留「同司机同时段多条未出发波次」共 **48 组 / 149 条波次 / 38 个不重复订单**（几乎全是 generate-daily 预建的空波次，真正带订单的分组不多）；另有 **2 组**已出发/已完成的历史重复波次，按方案原样不动。
+- **架构**：PDF 识别是唯一引入外部依赖（AI API）的部分，做成独立 API 路由 + 独立 `lib/pdf-extract.ts`，前端拿到结构化结果后仍要走人工确认才保存，不会因识别出错直接污染数据库；汇率/价格历史/预测三块都是纯读取现有数据，无新的单点故障。
+- **质量**：运费摊销、汇率取值统一收敛到 `lib/purchase-landed-cost.ts` 和 `GET /api/fx-rate`，避免在多处重复计算逻辑；不新增未付款/Top10 的落库快照，直接复用已有 `VendorBill`/`PurchaseRecord`/`PurchaseSuggestion`，避免重复造一套新的统计口径。
+- **性能**：Top10 供应商/未付款走 group by 聚合查询，需确认 `VendorBill` 数据量级决定是否加索引（`vendorId` 上应有索引，若无则本轮一并加）；FX 汇率按天缓存避免每次下单都打外部 API。
 
-## 8. 待你确认的下一步
+---
 
-只读诊断已经跑完，**合并未出发重复波次的 `--apply` 脚本还没写、也没执行**，需要你确认：
+## 6. 风险点
 
-1. 48 组历史重复波次是否现在就合并（大多是空的，风险很低），还是挑一个你指定的时间点执行？
-2. 确认后我再写两段式的 `--apply` 合并脚本（只动这 48 组里 `dispatchedAt IS NULL` 的波次，已出发/已完成的 2 组保留不动）。
+1. **AI 调用费用不可控**——已获用户确认接入，但需要在 `pdf-extract` 路由加基本速率限制（复用现有 `lib/rate-limit.ts` 模式），防止误操作/重复上传导致费用累积。
+2. **pdf-parse 对复杂表格排版 PDF 抽取可能错位**——识别结果是"预填草稿"，不允许跳过人工核对直接保存，表单必须让用户逐行确认修改。
+3. **免费 FX API 可用性无 SLA**——接口失败时不能阻塞下单，允许手动填汇率并给出"未取到实时汇率"提示。
+4. **`VendorBill.amountDue` 聚合口径**需要与财务模块现有"应付账款"报表口径核对，避免总览页和财务页数字对不上（历史教训：list-facet-search-20260707、sales-accounting-tax-convention-20260701 都出现过口径不一致的问题，本轮上线前需交叉核对一次数字）。
+
+---
+
+## 需要你确认后开始开发
+
+1. **AI Key**：请把可用的 `ANTHROPIC_API_KEY`（或 `OPENAI_API_KEY`）加到 `.env.local`，不需要发给我明文——我读环境变量即可。本地没有配置的话，PDF 识别/翻译这部分我会先把其余 5 项做完，等 Key 到位再接这一块。
+2. 以上范围、schema 变更、six 模块的划分是否确认？确认后我按 §2→§4 顺序开始开发，中途不再逐项确认。

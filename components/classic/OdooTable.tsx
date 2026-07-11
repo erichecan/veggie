@@ -11,6 +11,8 @@ export interface OdooColumn<T = Record<string, unknown>> {
   filterValueGetter?: (row: T) => string
   /** multi-select 列头筛选时，把原始值映射成展示标签（默认 String(value)） */
   filterLabelGetter?: (value: string, row: T) => string
+  /** multi-select 选项固定列表：提供后不再从当前 rows 去重派生（服务端分页场景下 rows 只是当前页，无法枚举全量取值） */
+  filterOptions?: { value: string; label: string }[]
   render?: (value: unknown, row: T) => React.ReactNode
   /** 编辑态下用什么类型的输入控件 */
   editType?: 'text' | 'number' | 'select'
@@ -136,6 +138,9 @@ export default function OdooTable<T extends Record<string, unknown>>({
 
   // ─── 计算每个 multi-select 列的去重选项 ──
   function getMultiOptions(col: OdooColumn<T>): { value: string; label: string }[] {
+    if (col.filterOptions) {
+      return [...col.filterOptions].sort((a, b) => a.label.localeCompare(b.label))
+    }
     const seen = new Map<string, string>()
     for (const row of rows) {
       const raw = col.filterValueGetter ? col.filterValueGetter(row) : String(row[col.key] ?? '')

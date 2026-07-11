@@ -1,0 +1,55 @@
+/**
+ * 调度打印(拣货单/送货单/汇总单/销售单)的数据获取 + HTML 生成，供两处复用：
+ * - _DispatchPrintClient.tsx：整页导航打开的打印路由(/classic/print/dispatch/[type])
+ * - PrintCenter.tsx：直接在页面内生成 HTML 灌进隐藏 iframe 的 srcDoc，不经过整页导航——
+ *   因为整页导航会撞上全站 X-Frame-Options: DENY / frame-ancestors 'none'(next.config.ts)，
+ *   把这条打印页面在 iframe.src 里跨路由加载的路径直接拒绝渲染；srcDoc 是内联文档，不发起
+ *   HTTP 导航，不受这两个响应头管辖，因此绕开了这个限制。
+ */
+import { apiGet } from '@/lib/api'
+import { type TripPrintData, type TripPrintDataWire, toMemoryShape } from '@/lib/print/trip-common'
+import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
+import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
+import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
+import { generateTripSalesHtml } from '@/lib/print/trip-sales-template'
+
+export type DispatchPrintType = 'summary' | 'picking' | 'delivery' | 'sales'
+
+export const DISPATCH_PRINT_RENDERERS: Record<DispatchPrintType, (d: TripPrintData, variant?: PickingVariant) => string> = {
+  summary: generateTripSummaryHtml,
+  picking: generateTripPickingHtml,
+  delivery: generateTripDeliveryHtml,
+  sales: generateTripSalesHtml,
+}
+
+export const DISPATCH_PRINT_TITLES: Record<DispatchPrintType, string> = {
+  summary: '送货汇总单',
+  picking: '拣货单 · 备货清单',
+  delivery: '送货单 · DELIVERY SLIP',
+  sales: '销售单 · SALES ORDER',
+}
+
+export function parsePickingVariant(v: string | null | undefined): PickingVariant {
+  return v === 'storable' || v === 'consumable' ? v : 'all'
+}
+
+export interface DispatchPrintParams {
+  type: DispatchPrintType
+  date: string
+  fromDate?: string
+  driverSlotId?: string
+  batchLabel?: string
+  waveIds?: string[]
+  variant?: PickingVariant
+}
+
+export async function fetchDispatchPrintHtml(p: DispatchPrintParams): Promise<string> {
+  const params = new URLSearchParams({ date: p.date })
+  if (p.driverSlotId) params.set('driverSlotId', p.driverSlotId)
+  if (p.batchLabel) params.set('batchLabel', p.batchLabel)
+  if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
+  if (p.fromDate) params.set('fromDate', p.fromDate)
+  const wire = await apiGet<TripPrintDataWire>(`/api/orders/dispatch-print-data?${params}`)
+  const data = toMemoryShape(wire)
+  return DISPATCH_PRINT_RENDERERS[p.type](data, p.variant)
+}

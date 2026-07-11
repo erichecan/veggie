@@ -5,6 +5,8 @@ export interface ZoneItem {
   productId: string
   productName: string
   spec: string
+  /** 行级备注（如"15个正常价+5个打折处理"），拣货时需要醒目提示 */
+  note?: string
   image: string
   requiredQty: number
   pickedQty: number
@@ -59,7 +61,7 @@ export async function buildZonesByRestaurant(orderIds: string[]): Promise<Prisma
 
   for (const order of orders) {
     const items = (order.items as Array<{
-      productId: string; productName: string; spec?: string; quantity: number; uomName?: string
+      productId: string; productName: string; spec?: string; note?: string; quantity: number; uomName?: string
     }>) ?? []
 
     let zone = zones.find(z => z.name === order.restaurantName)
@@ -72,11 +74,16 @@ export async function buildZonesByRestaurant(orderIds: string[]): Promise<Prisma
       const existing = zone.items.find(i => i.productId === item.productId)
       if (existing) {
         existing.requiredQty += item.quantity
+        // 同一商品多笔订单合并时，备注逐条拼接，不能因合并丢失任何一条
+        if (item.note && item.note !== existing.note) {
+          existing.note = existing.note ? `${existing.note}；${item.note}` : item.note
+        }
       } else {
         zone.items.push({
           productId: item.productId,
           productName: item.productName,
           spec: item.spec ?? '',
+          note: item.note || undefined,
           image: productImageMap.get(item.productId) ?? '',
           requiredQty: item.quantity,
           pickedQty: 0,
