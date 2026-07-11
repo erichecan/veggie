@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 
 const PURPLE = '#875A7B'
@@ -30,6 +32,8 @@ export default function PriceHistoryModal({
   onClose: () => void
   onApplyLastPrice: (price: number) => void
 }) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<PriceHistoryResponse | null>(null)
 
@@ -59,21 +63,21 @@ export default function PriceHistoryModal({
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-800">{productName} · 价格历史</h2>
+          <h2 className="text-base font-semibold text-gray-800">{productName} · {isEn ? 'Price History' : '价格历史'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
         </div>
         {!supplierId && (
-          <p className="text-xs text-amber-600">未选定供应商，展示的是全部供应商合并历史</p>
+          <p className="text-xs text-amber-600">{isEn ? 'No supplier selected — showing merged history across all suppliers' : '未选定供应商，展示的是全部供应商合并历史'}</p>
         )}
 
         {loading ? (
-          <p className="text-sm text-gray-400 py-8 text-center">加载中…</p>
+          <p className="text-sm text-gray-400 py-8 text-center">{isEn ? 'Loading…' : '加载中…'}</p>
         ) : chartData.length === 0 ? (
-          <p className="text-sm text-gray-400 py-8 text-center">暂无历史采购记录</p>
+          <p className="text-sm text-gray-400 py-8 text-center">{isEn ? 'No purchase price history yet' : '暂无历史采购记录'}</p>
         ) : (
           <>
             <div className="flex items-baseline gap-2">
-              <span className="text-xs text-gray-500">最近一次成交价</span>
+              <span className="text-xs text-gray-500">{isEn ? 'Last purchase price' : '最近一次成交价'}</span>
               <span className="text-lg font-bold" style={{ color: PURPLE }}>
                 {data?.lastPrice != null ? data.lastPrice.toFixed(2) : '—'}
               </span>
@@ -83,7 +87,7 @@ export default function PriceHistoryModal({
                   className="ml-auto text-xs hover:underline"
                   style={{ color: PURPLE }}
                 >
-                  应用到本行单价
+                  {isEn ? 'Apply to this line' : '应用到本行单价'}
                 </button>
               )}
             </div>
@@ -100,9 +104,9 @@ export default function PriceHistoryModal({
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-gray-400">
-                  <th className="text-left font-normal py-1">日期</th>
-                  <th className="text-left font-normal py-1">单据</th>
-                  <th className="text-right font-normal py-1">单价</th>
+                  <th className="text-left font-normal py-1">{isEn ? 'Date' : '日期'}</th>
+                  <th className="text-left font-normal py-1">{isEn ? 'Document' : '单据'}</th>
+                  <th className="text-right font-normal py-1">{isEn ? 'Unit Price' : '单价'}</th>
                 </tr>
               </thead>
               <tbody>

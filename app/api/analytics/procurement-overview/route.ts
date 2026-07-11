@@ -13,17 +13,19 @@ import {
 export async function GET(req: Request) {
   return withAuth(req, async () => {
     try {
+      const isEn = new URL(req.url).searchParams.get('locale') === 'en'
       const [kpis, groups, attention, topSuppliers, forecast] = await Promise.all([
         getOverviewKPIs(),
         getGroupOverview(),
-        getAttentionItems(8),
-        getTopSuppliers(10),
+        getAttentionItems(8, isEn),
+        getTopSuppliers(10, isEn),
         getRestockForecastItems(6),
       ])
       return NextResponse.json(serializeApi({ kpis, groups, attention, topSuppliers, forecast }))
     } catch (error) {
       console.error('[GET /api/analytics/procurement-overview]', error)
-      return NextResponse.json({ error: '获取采购总览失败' }, { status: 500 })
+      const isEn = new URL(req.url).searchParams.get('locale') === 'en'
+      return NextResponse.json({ error: isEn ? 'Failed to load procurement overview' : '获取采购总览失败' }, { status: 500 })
     }
   })
 }

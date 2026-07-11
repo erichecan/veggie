@@ -54,11 +54,18 @@ export interface AttentionItem {
   actionHref: string
 }
 
-const GROUP_META: Record<string, { icon: string; label: string }> = {
+const GROUP_META_ZH: Record<string, { icon: string; label: string }> = {
   FRESH_FROZEN: { icon: '🥬', label: '生鲜' },
   SUPERMARKET: { icon: '🛒', label: '超市' },
   JAPANESE_KOREAN: { icon: '🍱', label: '日韩' },
   DRY_GOODS: { icon: '🌾', label: '干货' },
+}
+
+const GROUP_META_EN: Record<string, { icon: string; label: string }> = {
+  FRESH_FROZEN: { icon: '🥬', label: 'Fresh' },
+  SUPERMARKET: { icon: '🛒', label: 'Supermarket' },
+  JAPANESE_KOREAN: { icon: '🍱', label: 'Japanese/Korean' },
+  DRY_GOODS: { icon: '🌾', label: 'Dry Goods' },
 }
 
 async function monthSpendBetween(start: Date, end: Date): Promise<number> {
@@ -100,7 +107,7 @@ export async function getOverviewKPIs(): Promise<OverviewKPIs> {
 }
 
 /** Top10 供应商——近12个月滚动，按采购金额排序，附带该供应商的采购品类分布 */
-export async function getTopSuppliers(limit = 10): Promise<TopSupplierRow[]> {
+export async function getTopSuppliers(limit = 10, isEn = false): Promise<TopSupplierRow[]> {
   const now = new Date()
   const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, now.getDate())
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,7 +129,7 @@ export async function getTopSuppliers(limit = 10): Promise<TopSupplierRow[]> {
   const supplierIds = supplierRows.map(r => r.supplier_id)
 
   const categoryRows = (await p.$queryRawUnsafe(
-    `SELECT po."supplierId" AS supplier_id, COALESCE(pc."nameZh", pc.name, '未分类') AS category_label,
+    `SELECT po."supplierId" AS supplier_id, COALESCE(${isEn ? 'pc.name, pc."nameZh"' : 'pc."nameZh", pc.name'}, $3) AS category_label,
             SUM(pol."subtotalExTax")::float AS amt
      FROM "PurchaseOrderLine" pol
      JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
@@ -131,7 +138,7 @@ export async function getTopSuppliers(limit = 10): Promise<TopSupplierRow[]> {
      WHERE po.status::text IN (${PO_COUNTED}) AND po."orderDate" >= $1 AND po."supplierId" = ANY($2)
      GROUP BY po."supplierId", category_label
      ORDER BY po."supplierId", amt DESC`,
-    twelveMonthsAgo, supplierIds,
+    twelveMonthsAgo, supplierIds, isEn ? 'Uncategorized' : '未分类',
   )) as Array<{ supplier_id: string; category_label: string; amt: number }>
 
   const categoriesBySupplier = new Map<string, { label: string; amount: number }[]>()
@@ -240,10 +247,11 @@ export async function getGroupOverview(): Promise<GroupOverviewRow[]> {
   }))
 }
 
-export async function getAttentionItems(limit = 8): Promise<AttentionItem[]> {
+export async function getAttentionItems(limit = 8, isEn = false): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = prisma as any
+  const GROUP_META = isEn ? GROUP_META_EN : GROUP_META_ZH
 
   // 1. 严重缺货建议（跨品类）
   const criticalSuggestions = await prisma.purchaseSuggestion.findMany({
@@ -252,7 +260,7 @@ export async function getAttentionItems(limit = 8): Promise<AttentionItem[]> {
     take: 4,
   })
   for (const s of criticalSuggestions) {
-    const meta = GROUP_META[s.categoryGroupKey ?? ''] ?? { icon: '📦', label: '其他' }
+    const meta = GROUP_META[s.categoryGroupKey ?? ''] ?? { icon: '📦', label: isEn ? 'Other' : '其他' }
     const href = s.categoryGroupKey === 'FRESH_FROZEN' ? '/classic/operator/purchases/fresh'
       : s.categoryGroupKey === 'DRY_GOODS' ? '/classic/operator/purchases/annual-plan'
       : '/classic/operator/purchases/catalog'
@@ -260,9 +268,9 @@ export async function getAttentionItems(limit = 8): Promise<AttentionItem[]> {
       severity: 'crit',
       categoryLabel: meta.label,
       icon: meta.icon,
-      title: `${s.productName} 建议采购 ${Number(s.suggestedQty)}`,
-      desc: s.reason ?? '库存已见底，请尽快处理',
-      actionLabel: '去处理 →',
+      title: isEn ? `${s.productName} — suggest ordering ${Number(s.suggestedQty)}` : `${s.productName} 建议采购 ${Number(s.suggestedQty)}`,
+      desc: s.reason ?? (isEn ? 'Stock is nearly out, please act soon' : '库存已见底，请尽快处理'),
+      actionLabel: isEn ? 'Handle →' : '去处理 →',
       actionHref: href,
     })
   }
@@ -279,9 +287,11 @@ export async function getAttentionItems(limit = 8): Promise<AttentionItem[]> {
       severity: 'warn',
       categoryLabel: meta.label,
       icon: meta.icon,
-      title: `${meta.label}本周该盘货了`,
-      desc: d ? `上次下单 ${new Date(d).toLocaleDateString('en-GB')}，已超过每周节奏` : '还没有历史采购记录',
-      actionLabel: '去挑选 →',
+      title: isEn ? `${meta.label} is due for a stock check this week` : `${meta.label}本周该盘货了`,
+      desc: d
+        ? (isEn ? `Last ordered ${new Date(d).toLocaleDateString('en-GB')}, overdue for the weekly cadence` : `上次下单 ${new Date(d).toLocaleDateString('en-GB')}，已超过每周节奏`)
+        : (isEn ? 'No purchase history yet' : '还没有历史采购记录'),
+      actionLabel: isEn ? 'Go pick →' : '去挑选 →',
       actionHref: '/classic/operator/purchases/catalog',
     })
   }
@@ -304,11 +314,11 @@ export async function getAttentionItems(limit = 8): Promise<AttentionItem[]> {
     if (rate >= 0.9) continue
     items.push({
       severity: rate < 0.7 ? 'crit' : 'warn',
-      categoryLabel: '供应商',
+      categoryLabel: isEn ? 'Supplier' : '供应商',
       icon: '📦',
-      title: `${s.supplier_name} 近30天到货满足率 ${(rate * 100).toFixed(0)}%`,
-      desc: '低于 90% 预警线',
-      actionLabel: '查看供应商 →',
+      title: isEn ? `${s.supplier_name} — 30-day fulfillment rate ${(rate * 100).toFixed(0)}%` : `${s.supplier_name} 近30天到货满足率 ${(rate * 100).toFixed(0)}%`,
+      desc: isEn ? 'Below the 90% alert threshold' : '低于 90% 预警线',
+      actionLabel: isEn ? 'View supplier →' : '查看供应商 →',
       actionHref: '/classic/boss/analytics/procurement',
     })
   }
@@ -318,11 +328,11 @@ export async function getAttentionItems(limit = 8): Promise<AttentionItem[]> {
   for (const po of toApprove) {
     items.push({
       severity: 'info',
-      categoryLabel: '审批',
+      categoryLabel: isEn ? 'Approval' : '审批',
       icon: '🌾',
-      title: `${po.name} 待审批`,
-      desc: `预估金额 €${Number(po.totalIncTax).toFixed(2)}`,
-      actionLabel: '去审批 →',
+      title: isEn ? `${po.name} pending approval` : `${po.name} 待审批`,
+      desc: isEn ? `Estimated amount €${Number(po.totalIncTax).toFixed(2)}` : `预估金额 €${Number(po.totalIncTax).toFixed(2)}`,
+      actionLabel: isEn ? 'Go approve →' : '去审批 →',
       actionHref: `/classic/operator/purchases/${po.id}`,
     })
   }

@@ -13,10 +13,19 @@ const REMIND_AFTER_DAYS = 7
 
 type GroupKey = 'SUPERMARKET' | 'JAPANESE_KOREAN'
 
-const GROUPS: Array<{ key: GroupKey; label: string; icon: string }> = [
-  { key: 'SUPERMARKET', label: '超市商品', icon: '🛒' },
-  { key: 'JAPANESE_KOREAN', label: '日韩商品', icon: '🍱' },
+const GROUPS: Array<{ key: GroupKey; icon: string }> = [
+  { key: 'SUPERMARKET', icon: '🛒' },
+  { key: 'JAPANESE_KOREAN', icon: '🍱' },
 ]
+
+const GROUP_LABEL_ZH: Record<GroupKey, string> = {
+  SUPERMARKET: '超市商品',
+  JAPANESE_KOREAN: '日韩商品',
+}
+const GROUP_LABEL_EN: Record<GroupKey, string> = {
+  SUPERMARKET: 'Supermarket',
+  JAPANESE_KOREAN: 'Japanese/Korean',
+}
 
 interface Supplier { id: string; name: string }
 
@@ -72,6 +81,8 @@ export default function CatalogPickingPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const GROUP_LABEL = isEn ? GROUP_LABEL_EN : GROUP_LABEL_ZH
 
   const [activeGroup, setActiveGroup] = useState<GroupKey>('SUPERMARKET')
   const [lastByGroup, setLastByGroup] = useState<Record<string, string | null>>({})
@@ -108,8 +119,8 @@ export default function CatalogPickingPage() {
   }
 
   async function handleImport() {
-    if (!supplierId) { toast.error('请选择供应商'); return }
-    if (!file) { toast.error('请选择文件'); return }
+    if (!supplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
+    if (!file) { toast.error(isEn ? 'Please select a file' : '请选择文件'); return }
     setImporting(true)
     try {
       const fd = new FormData()
@@ -128,7 +139,7 @@ export default function CatalogPickingPage() {
       const data = await res.json()
       setResult(data)
       if (data.createdPO) {
-        toast.success(`已创建采购单草稿 ${data.createdPO.name}`)
+        toast.success(isEn ? `Created purchase order draft ${data.createdPO.name}` : `已创建采购单草稿 ${data.createdPO.name}`)
         loadLastByGroup()
       }
       const ids = (data.lines as ParsedLine[]).map(l => l.matchedProductId).filter(Boolean) as string[]
@@ -138,7 +149,7 @@ export default function CatalogPickingPage() {
           .catch(() => {})
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '导入失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Import failed' : '导入失败'))
     } finally {
       setImporting(false)
     }
@@ -152,11 +163,11 @@ export default function CatalogPickingPage() {
     <div className="flex flex-col h-full overflow-auto bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="text-xs text-gray-500 mb-1">
-          <button onClick={() => router.push(`${prefix}/classic/operator/purchases`)} className="hover:underline" style={{ color: PURPLE }}>采购</button>
+          <button onClick={() => router.push(`${prefix}/classic/operator/purchases`)} className="hover:underline" style={{ color: PURPLE }}>{isEn ? 'Purchases' : '采购'}</button>
           <span className="mx-1 text-gray-400">/</span>
-          <span className="text-gray-700 font-medium">目录挑选</span>
+          <span className="text-gray-700 font-medium">{isEn ? 'Catalog Picking' : '目录挑选'}</span>
         </div>
-        <h1 className="text-xl font-bold text-gray-900">{GROUPS.find(g => g.key === activeGroup)?.icon} 目录挑选</h1>
+        <h1 className="text-xl font-bold text-gray-900">{GROUPS.find(g => g.key === activeGroup)?.icon} {isEn ? 'Catalog Picking' : '目录挑选'}</h1>
         <div className="flex gap-2 mt-3">
           {GROUPS.map(g => (
             <button
@@ -168,7 +179,7 @@ export default function CatalogPickingPage() {
                 color: activeGroup === g.key ? '#fff' : '#6b7280',
               }}
             >
-              {g.icon} {g.label}
+              {g.icon} {GROUP_LABEL[g.key]}
             </button>
           ))}
         </div>
@@ -180,23 +191,27 @@ export default function CatalogPickingPage() {
           style={overdue ? { background: '#f4e7cf', color: '#a3690e' } : { background: '#e5f1e9', color: '#2e7d4f' }}
         >
           {overdue ? '📅' : '✓'} {lastDate
-            ? `上次下单 ${formatDateOnly(lastDate.toISOString())}（${daysSince(lastDate)} 天前）`
-            : '还没有该品类的历史采购记录'}
-          {overdue ? ` · 已超过 ${REMIND_AFTER_DAYS} 天未下单，本周该盘货了` : ' · 未超过每周节奏，暂不需要盘货'}
+            ? (isEn
+              ? `Last ordered ${formatDateOnly(lastDate.toISOString())} (${daysSince(lastDate)} days ago)`
+              : `上次下单 ${formatDateOnly(lastDate.toISOString())}（${daysSince(lastDate)} 天前）`)
+            : (isEn ? 'No purchase history for this category yet' : '还没有该品类的历史采购记录')}
+          {overdue
+            ? (isEn ? ` · Over ${REMIND_AFTER_DAYS} days since last order, time to restock this week` : ` · 已超过 ${REMIND_AFTER_DAYS} 天未下单，本周该盘货了`)
+            : (isEn ? ' · Within the weekly cadence, no restock needed yet' : ' · 未超过每周节奏，暂不需要盘货')}
         </div>
 
         <div className="grid grid-cols-[280px_1fr] gap-4 items-start">
           <div className="bg-white rounded border border-gray-200 shadow-sm p-4">
-            <label className="block text-xs font-medium text-gray-500 mb-1">供应商</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Supplier' : '供应商'}</label>
             <select
               value={supplierId}
               onChange={e => setSupplierId(e.target.value)}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none mb-3"
             >
-              <option value="">请选择供应商...</option>
+              <option value="">{isEn ? 'Select a supplier...' : '请选择供应商...'}</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            <label className="block text-xs font-medium text-gray-500 mb-1">报价单文件（PDF / Excel / CSV）</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Quotation file (PDF / Excel / CSV)' : '报价单文件（PDF / Excel / CSV）'}</label>
             <input
               type="file"
               accept=".pdf,.xlsx,.xls,.csv"
@@ -210,34 +225,36 @@ export default function CatalogPickingPage() {
               className="w-full mt-3 h-8 text-sm font-medium rounded text-white disabled:opacity-50"
               style={{ background: PURPLE }}
             >
-              {importing ? '解析中…' : '解析并生成采购单草稿'}
+              {importing ? (isEn ? 'Parsing…' : '解析中…') : (isEn ? 'Parse and generate purchase order draft' : '解析并生成采购单草稿')}
             </button>
           </div>
 
           <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
             {!result ? (
-              <div className="py-20 text-center text-gray-400 text-sm">上传报价单后，商品明细和进价环比会显示在这里</div>
+              <div className="py-20 text-center text-gray-400 text-sm">{isEn ? 'After uploading a quotation, product details and cost trends will appear here' : '上传报价单后，商品明细和进价环比会显示在这里'}</div>
             ) : (
               <>
                 {result.createdPO && (
                   <div className="flex items-center gap-2 px-4 py-2.5 text-sm border-b border-gray-100" style={{ background: '#e5f1e9', color: '#2e7d4f' }}>
-                    ✓ 已生成采购单草稿
+                    {isEn ? '✓ Purchase order draft generated' : '✓ 已生成采购单草稿'}
                     <button onClick={() => router.push(`${prefix}/classic/operator/purchases/${result.createdPO!.id}`)} className="font-semibold underline">
                       {result.createdPO.name}
                     </button>
-                    ，共 {result.stats.exactMatch + result.stats.fuzzyMatch} 项已匹配商品
+                    {isEn
+                      ? `, ${result.stats.exactMatch + result.stats.fuzzyMatch} items matched`
+                      : `，共 ${result.stats.exactMatch + result.stats.fuzzyMatch} 项已匹配商品`}
                   </div>
                 )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr style={{ background: '#f8f8f8', borderBottom: '1px solid #e8e8e8' }}>
-                        <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">商品</th>
-                        <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">数量</th>
-                        <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">本次报价</th>
-                        <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">近8次走势</th>
-                        <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">进价环比</th>
-                        <th className="px-4 py-2.5 text-center font-medium text-gray-600 text-xs">匹配</th>
+                        <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Product' : '商品'}</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Qty' : '数量'}</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'This Quote' : '本次报价'}</th>
+                        <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Last 8 Trend' : '近8次走势'}</th>
+                        <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Cost Change' : '进价环比'}</th>
+                        <th className="px-4 py-2.5 text-center font-medium text-gray-600 text-xs">{isEn ? 'Match' : '匹配'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -259,7 +276,7 @@ export default function CatalogPickingPage() {
                                   {t.changePct > 0 ? '↑' : t.changePct < 0 ? '↓' : ''} {Math.abs(t.changePct).toFixed(1)}%
                                 </span>
                               ) : (
-                                <span className="text-gray-400 text-xs">{t ? '首次采购' : '—'}</span>
+                                <span className="text-gray-400 text-xs">{t ? (isEn ? 'First purchase' : '首次采购') : '—'}</span>
                               )}
                             </td>
                             <td className="px-4 py-2.5 text-center">
@@ -268,7 +285,7 @@ export default function CatalogPickingPage() {
                                 l.confidence === 'fuzzy' ? 'bg-yellow-100 text-yellow-700' :
                                 'bg-red-100 text-red-600'
                               }`}>
-                                {l.confidence === 'exact' ? '精确' : l.confidence === 'fuzzy' ? '模糊' : '未匹配'}
+                                {l.confidence === 'exact' ? (isEn ? 'Exact' : '精确') : l.confidence === 'fuzzy' ? (isEn ? 'Fuzzy' : '模糊') : (isEn ? 'No Match' : '未匹配')}
                               </span>
                             </td>
                           </tr>

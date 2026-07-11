@@ -1,6 +1,8 @@
 'use client'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiUpload } from '@/lib/api'
 
 const PURPLE = '#875A7B'
@@ -31,6 +33,8 @@ interface ExtractApiResponse {
 
 /** 采购单新建页"上传 PDF 识别"入口：上传→抽取→人工核对后再"应用到表单"，识别结果不自动提交 */
 export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExtractResult) => void }) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState<ExtractApiResponse | null>(null)
@@ -46,7 +50,7 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
       setEditableLines(res.structured?.lines ?? [])
       if (res.error) toast.warning(res.error)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'PDF 识别失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'PDF extraction failed' : 'PDF 识别失败'))
     } finally {
       setUploading(false)
     }
@@ -88,39 +92,43 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
         className="h-8 px-3 text-sm rounded border font-medium hover:bg-gray-50 disabled:opacity-50"
         style={{ borderColor: PURPLE, color: PURPLE }}
       >
-        {uploading ? '识别中…' : '📄 上传 PDF 识别'}
+        {uploading ? (isEn ? 'Extracting…' : '识别中…') : (isEn ? '📄 Upload PDF to extract' : '📄 上传 PDF 识别')}
       </button>
 
       {result && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[85vh] overflow-auto">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-800">识别结果核对</h2>
+              <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Review extraction result' : '识别结果核对'}</h2>
               <button onClick={() => setResult(null)} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
             </div>
             <p className="text-xs text-gray-400">
-              请核对下方内容后再应用到表单——识别结果不会自动保存，你可以直接在这里修改。
+              {isEn
+                ? 'Review the content below before applying it to the form — the extraction result is not saved automatically; you can edit it directly here.'
+                : '请核对下方内容后再应用到表单——识别结果不会自动保存，你可以直接在这里修改。'}
             </p>
 
             {result.aiUnavailable && (
               <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-700">
-                尚未配置 AI 识别（缺少 ANTHROPIC_API_KEY），下面是 PDF 原始文字，请手动核对填入表单。
+                {isEn
+                  ? 'AI extraction is not configured (missing ANTHROPIC_API_KEY). Below is the raw PDF text — please review and fill in the form manually.'
+                  : '尚未配置 AI 识别（缺少 ANTHROPIC_API_KEY），下面是 PDF 原始文字，请手动核对填入表单。'}
               </div>
             )}
 
             {result.structured ? (
               <div className="space-y-2">
                 <div className="flex gap-6 text-sm">
-                  <span>供应商推测：<b>{result.structured.supplierGuess ?? '—'}</b></span>
-                  <span>币种推测：<b>{result.structured.currencyGuess ?? '—'}</b></span>
+                  <span>{isEn ? 'Supplier guess: ' : '供应商推测：'}<b>{result.structured.supplierGuess ?? '—'}</b></span>
+                  <span>{isEn ? 'Currency guess: ' : '币种推测：'}<b>{result.structured.currencyGuess ?? '—'}</b></span>
                 </div>
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr className="text-gray-400 border-b border-gray-200">
-                      <th className="text-left font-normal py-1">商品名称（已译英文）</th>
-                      <th className="text-right font-normal py-1 w-20">数量</th>
-                      <th className="text-left font-normal py-1 w-20">单位</th>
-                      <th className="text-right font-normal py-1 w-24">单价</th>
+                      <th className="text-left font-normal py-1">{isEn ? 'Product name (translated to English)' : '商品名称（已译英文）'}</th>
+                      <th className="text-right font-normal py-1 w-20">{isEn ? 'Quantity' : '数量'}</th>
+                      <th className="text-left font-normal py-1 w-20">{isEn ? 'Unit' : '单位'}</th>
+                      <th className="text-right font-normal py-1 w-24">{isEn ? 'Unit price' : '单价'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -145,7 +153,7 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
                       </tr>
                     ))}
                     {editableLines.length === 0 && (
-                      <tr><td colSpan={4} className="py-4 text-center text-gray-400">未识别到明细行</td></tr>
+                      <tr><td colSpan={4} className="py-4 text-center text-gray-400">{isEn ? 'No line items extracted' : '未识别到明细行'}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -161,7 +169,7 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
 
             <div className="flex gap-2 pt-2">
               <button onClick={() => setResult(null)} className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={apply}
@@ -169,7 +177,7 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
                 className="flex-1 py-2 rounded text-sm text-white disabled:opacity-50"
                 style={{ background: PURPLE }}
               >
-                应用到表单
+                {isEn ? 'Apply to form' : '应用到表单'}
               </button>
             </div>
           </div>

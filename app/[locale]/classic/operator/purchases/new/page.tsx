@@ -71,6 +71,7 @@ export default function NewPurchaseOrderPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [supplierId, setSupplierId] = useState('')
@@ -165,7 +166,9 @@ export default function NewPurchaseOrderPage() {
       const matched = suppliers.find(s =>
         s.name.toLowerCase().includes(guess) || guess.includes(s.name.toLowerCase()))
       if (matched) setSupplierId(matched.id)
-      else toast.info(`识别到供应商「${result.supplierGuess}」，未在系统中匹配到，请手动选择`)
+      else toast.info(isEn
+        ? `Detected supplier "${result.supplierGuess}", not matched in system, please select manually`
+        : `识别到供应商「${result.supplierGuess}」，未在系统中匹配到，请手动选择`)
     }
 
     const unmatched: typeof unmatchedExtractedLines = []
@@ -181,7 +184,9 @@ export default function NewPurchaseOrderPage() {
     }
     setUnmatchedExtractedLines(unmatched)
     if (unmatched.length > 0) {
-      toast.warning(`${unmatched.length} 行商品未匹配到系统商品，请在下方列表逐行新建`)
+      toast.warning(isEn
+        ? `${unmatched.length} line(s) did not match system products, please create them one by one below`
+        : `${unmatched.length} 行商品未匹配到系统商品，请在下方列表逐行新建`)
     }
   }
 
@@ -226,7 +231,7 @@ export default function NewPurchaseOrderPage() {
   }
 
   async function submitQuickCreate() {
-    if (!qcName.trim()) { toast.error('商品名称不能为空'); return }
+    if (!qcName.trim()) { toast.error(isEn ? 'Product name cannot be empty' : '商品名称不能为空'); return }
     setQcSubmitting(true)
     try {
       const created = await apiPost<PurchaseProduct>('/api/products/quick-create', {
@@ -235,16 +240,17 @@ export default function NewPurchaseOrderPage() {
         purchaseUomId: qcUomId || undefined,
         unitCost: qcUnitCost ? Number(qcUnitCost) : undefined,
       })
-      const uomName = uoms.find(u => u.id === qcUomId)?.nameZh || uoms.find(u => u.id === qcUomId)?.name
+      const matchedUom = uoms.find(u => u.id === qcUomId)
+      const uomName = isEn ? (matchedUom?.name || matchedUom?.nameZh) : (matchedUom?.nameZh || matchedUom?.name)
       const withUom = { ...created, uomId: qcUomId || null, uomName: uomName ?? null, standardPrice: qcUnitCost ? Number(qcUnitCost) : 0 }
       setPurchaseProducts(prev => [withUom, ...prev])
       addProductLine(withUom, { qty: pendingQuickCreateQty, unitCost: qcUnitCost ? Number(qcUnitCost) : undefined })
       resolveUnmatchedLine(qcName.trim())
       setProductQuery('')
       setShowQuickCreate(false)
-      toast.success(`已创建「${created.name}」并加入采购行`)
+      toast.success(isEn ? `Created "${created.name}" and added to purchase line` : `已创建「${created.name}」并加入采购行`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建商品失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to create product' : '创建商品失败'))
     } finally {
       setQcSubmitting(false)
     }
@@ -259,8 +265,8 @@ export default function NewPurchaseOrderPage() {
   const totalAllocatedFreight = landedCosts.reduce((s, c) => s + c.allocatedFreight, 0)
 
   async function handleSubmit() {
-    if (!supplierId) { toast.error('请选择供应商'); return }
-    if (lines.length === 0) { toast.error('请至少添加一行采购商品'); return }
+    if (!supplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
+    if (lines.length === 0) { toast.error(isEn ? 'Please add at least one purchase line' : '请至少添加一行采购商品'); return }
     setSubmitting(true)
     try {
       const result = await apiPost<{ id: string }>('/api/purchase-orders', {
@@ -283,10 +289,10 @@ export default function NewPurchaseOrderPage() {
           bestBefore: l.bestBefore,
         })),
       })
-      toast.success('采购单已创建')
+      toast.success(isEn ? 'Purchase order created' : '采购单已创建')
       router.push(`${prefix}/classic/operator/purchases/${result.id}`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败'))
     } finally {
       setSubmitting(false)
     }
@@ -306,10 +312,10 @@ export default function NewPurchaseOrderPage() {
             className="hover:underline"
             style={{ color: PURPLE }}
           >
-            询价单
+            {isEn ? 'Purchase Orders' : '询价单'}
           </button>
           <span className="mx-1 text-gray-400">/</span>
-          <span className="text-gray-700 font-medium">新建</span>
+          <span className="text-gray-700 font-medium">{isEn ? 'New' : '新建'}</span>
         </div>
         <div className="px-6 py-2.5 flex items-center gap-2">
           <button
@@ -318,14 +324,14 @@ export default function NewPurchaseOrderPage() {
             className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
             style={{ background: PURPLE }}
           >
-            {submitting ? '创建中…' : '创建'}
+            {submitting ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create' : '创建')}
           </button>
           <button
             onClick={() => router.push(`${prefix}/classic/operator/purchases`)}
             className="h-8 px-4 text-sm rounded border font-medium hover:bg-gray-50"
             style={{ borderColor: '#d0d5dd', color: DARK }}
           >
-            取消
+            {isEn ? 'Cancel' : '取消'}
           </button>
           <div className="w-px h-5 bg-gray-200 mx-1" />
           <PdfExtractDialog onApply={handlePdfApply} />
@@ -335,7 +341,7 @@ export default function NewPurchaseOrderPage() {
               className="h-8 px-3 text-sm rounded border font-medium hover:bg-gray-50"
               style={{ borderColor: '#d0d5dd', color: DARK }}
             >
-              {showPdfPanel ? '收起 PDF' : '📄 查看 PDF'}
+              {showPdfPanel ? (isEn ? 'Hide PDF' : '收起 PDF') : (isEn ? '📄 View PDF' : '📄 查看 PDF')}
             </button>
           )}
         </div>
@@ -349,24 +355,24 @@ export default function NewPurchaseOrderPage() {
             <div className="grid grid-cols-2 gap-10">
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">供应商 *</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Supplier *' : '供应商 *'}</label>
                   <select
                     value={supplierId}
                     onChange={e => setSupplierId(e.target.value)}
                     className={`flex-1 ${inputCls}`}
                   >
-                    <option value="">请选择供应商...</option>
+                    <option value="">{isEn ? 'Please select a supplier...' : '请选择供应商...'}</option>
                     {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">付款条款</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Payment Terms' : '付款条款'}</label>
                   <span className="text-sm text-gray-700">{supplier?.supplierPaymentTerm || '—'}</span>
                 </div>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">订购日期</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Order Date' : '订购日期'}</label>
                   <input
                     type="date"
                     value={orderDate}
@@ -376,7 +382,7 @@ export default function NewPurchaseOrderPage() {
                   />
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">预计到货日期</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Expected Date' : '预计到货日期'}</label>
                   <input
                     type="date"
                     value={expectedDate}
@@ -386,7 +392,7 @@ export default function NewPurchaseOrderPage() {
                   />
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">币种</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Currency' : '币种'}</label>
                   <input
                     list="currency-options"
                     value={currency}
@@ -399,7 +405,7 @@ export default function NewPurchaseOrderPage() {
                   </datalist>
                   {currency !== 'EUR' && (
                     <div className="flex items-center gap-1 ml-3 text-xs text-gray-500">
-                      <span>汇率→EUR</span>
+                      <span>{isEn ? 'Rate→EUR' : '汇率→EUR'}</span>
                       <input
                         type="number" step="0.000001" min="0"
                         value={exchangeRate}
@@ -407,14 +413,14 @@ export default function NewPurchaseOrderPage() {
                         className={`${numInputCls} w-20`}
                       />
                       {fxSource === 'unavailable' && (
-                        <span className="text-amber-600">未取到实时汇率，请手动填</span>
+                        <span className="text-amber-600">{isEn ? 'Live rate unavailable, please enter manually' : '未取到实时汇率，请手动填'}</span>
                       )}
-                      {fxSource === 'frankfurter' && <span className="text-gray-400">当日汇率</span>}
+                      {fxSource === 'frankfurter' && <span className="text-gray-400">{isEn ? "Today's rate" : '当日汇率'}</span>}
                     </div>
                   )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">运费（税前）</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Freight (Ex Tax)' : '运费（税前）'}</label>
                   <input
                     type="number" step="0.01" min="0"
                     value={freightAmount}
@@ -429,18 +435,22 @@ export default function NewPurchaseOrderPage() {
 
           {unmatchedExtractedLines.length > 0 && (
             <div className="mx-6 mb-4 bg-amber-50 border border-amber-200 rounded p-3 space-y-1.5">
-              <p className="text-xs font-medium text-amber-700">PDF 识别到但系统里没有的商品，需要逐行新建：</p>
+              <p className="text-xs font-medium text-amber-700">
+                {isEn ? 'Products detected in the PDF but not in the system, need to be created one by one:' : 'PDF 识别到但系统里没有的商品，需要逐行新建：'}
+              </p>
               {unmatchedExtractedLines.map((l, i) => (
                 <div key={i} className="flex items-center justify-between text-xs">
                   <span className="text-gray-700">
-                    {l.productName} · 数量 {l.quantity ?? '—'} {l.uom ?? ''} · 单价 {l.unitCost ?? '—'}
+                    {isEn
+                      ? <>{l.productName} · Qty {l.quantity ?? '—'} {l.uom ?? ''} · Unit Price {l.unitCost ?? '—'}</>
+                      : <>{l.productName} · 数量 {l.quantity ?? '—'} {l.uom ?? ''} · 单价 {l.unitCost ?? '—'}</>}
                   </span>
                   <button
                     onClick={() => openQuickCreate({ name: l.productName, unitCost: l.unitCost, qty: l.quantity })}
                     className="hover:underline flex-shrink-0 ml-2"
                     style={{ color: PURPLE }}
                   >
-                    新建商品并加入
+                    {isEn ? 'Create product and add' : '新建商品并加入'}
                   </button>
                 </div>
               ))}
@@ -453,21 +463,21 @@ export default function NewPurchaseOrderPage() {
               <thead>
                 <tr style={{ background: '#f8f8f8', borderBottom: '1px solid #e8e8e8' }}>
                   <th className="w-8 px-2 py-2.5" />
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">商品</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">描述</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">数量</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">单位</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">单价</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">税率%</th>
+                  <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Product' : '商品'}</th>
+                  <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Description' : '描述'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Quantity' : '数量'}</th>
+                  <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Unit' : '单位'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">小计</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                 </tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={l.id} className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors">
                     <td className="px-2 py-2.5 text-center">
-                      <button onClick={() => deleteLine(l.id)} className="text-red-400 hover:text-red-600" title="删除此行">
+                      <button onClick={() => deleteLine(l.id)} className="text-red-400 hover:text-red-600" title={isEn ? 'Delete this line' : '删除此行'}>
                         <Trash2 className="h-3.5 w-3.5 inline" />
                       </button>
                     </td>
@@ -488,7 +498,7 @@ export default function NewPurchaseOrderPage() {
                           onChange={e => updateLine(i, 'unitCost', Number(e.target.value))} />
                         <button
                           onClick={() => setPriceHistoryTarget({ id: l.productId, name: l.productName })}
-                          title="查看价格历史"
+                          title={isEn ? 'View price history' : '查看价格历史'}
                           className="text-gray-400 hover:text-gray-600 flex-shrink-0"
                         >
                           <TrendingUp className="h-3.5 w-3.5" />
@@ -511,7 +521,7 @@ export default function NewPurchaseOrderPage() {
                       {l.subtotalExTax.toFixed(2)}
                       {freightAmount > 0 && (
                         <div className="text-[10px] font-normal text-gray-400">
-                          落地单价 {landedCosts[i]?.landedUnitCost.toFixed(2)}
+                          {isEn ? 'Landed unit price' : '落地单价'} {landedCosts[i]?.landedUnitCost.toFixed(2)}
                         </div>
                       )}
                     </td>
@@ -519,7 +529,7 @@ export default function NewPurchaseOrderPage() {
                 ))}
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">暂无明细行，从下面搜索添加商品</td>
+                    <td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">{isEn ? 'No lines yet, search below to add products' : '暂无明细行，从下面搜索添加商品'}</td>
                   </tr>
                 )}
                 <tr>
@@ -531,7 +541,7 @@ export default function NewPurchaseOrderPage() {
                         onChange={setProductQuery}
                         onSelect={p => { addProductLine(p); setProductQuery('') }}
                         products={purchaseProducts}
-                        placeholder="搜索并添加商品…"
+                        placeholder={isEn ? 'Search and add products…' : '搜索并添加商品…'}
                         inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-64"
                         portalDropdown
                       />
@@ -540,7 +550,7 @@ export default function NewPurchaseOrderPage() {
                         className="text-xs whitespace-nowrap hover:underline"
                         style={{ color: PURPLE }}
                       >
-                        找不到？新建商品
+                        {isEn ? "Can't find it? Create product" : '找不到？新建商品'}
                       </button>
                     </div>
                   </td>
@@ -553,20 +563,22 @@ export default function NewPurchaseOrderPage() {
           <div className="border-t border-gray-200 px-6 py-5 flex justify-end">
             <div style={{ minWidth: '280px' }}>
               <div className="flex justify-between py-1 text-sm">
-                <span className="text-gray-500">税前金额</span>
+                <span className="text-gray-500">{isEn ? 'Subtotal (Ex Tax)' : '税前金额'}</span>
                 <span className="text-gray-800 font-medium">{subtotalExTax.toFixed(2)}</span>
               </div>
               <div className="flex justify-between py-1 text-sm">
-                <span className="text-gray-500">税额</span>
+                <span className="text-gray-500">{isEn ? 'Tax' : '税额'}</span>
                 <span className="text-gray-800">{totalTax.toFixed(2)}</span>
               </div>
               <div className="border-t border-gray-300 mt-1 pt-2 flex justify-between">
-                <span className="text-sm font-semibold" style={{ color: DARK }}>合计</span>
+                <span className="text-sm font-semibold" style={{ color: DARK }}>{isEn ? 'Total' : '合计'}</span>
                 <span className="text-base font-bold" style={{ color: DARK }}>{totalIncTax.toFixed(2)}</span>
               </div>
               {freightAmount > 0 && (
                 <div className="flex justify-between py-1 text-sm border-t border-gray-100 mt-1 pt-2">
-                  <span className="text-gray-500">落地成本（含运费 {totalAllocatedFreight.toFixed(2)}）</span>
+                  <span className="text-gray-500">
+                    {isEn ? `Landed Cost (incl. freight ${totalAllocatedFreight.toFixed(2)})` : `落地成本（含运费 ${totalAllocatedFreight.toFixed(2)}）`}
+                  </span>
                   <span className="text-gray-800 font-medium">{(subtotalExTax + totalAllocatedFreight).toFixed(2)}</span>
                 </div>
               )}
@@ -575,12 +587,12 @@ export default function NewPurchaseOrderPage() {
 
           {/* Notes */}
           <div className="border-t border-gray-200 px-6 py-5">
-            <label className="block text-sm text-gray-500 mb-1.5">备注</label>
+            <label className="block text-sm text-gray-500 mb-1.5">{isEn ? 'Notes' : '备注'}</label>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={3}
-              placeholder="内部备注..."
+              placeholder={isEn ? 'Internal notes...' : '内部备注...'}
               className={`w-full ${inputCls} resize-none`}
               style={{ maxWidth: '520px' }}
             />
@@ -591,10 +603,14 @@ export default function NewPurchaseOrderPage() {
       {showQuickCreate && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <h2 className="text-base font-semibold text-gray-800">新建商品</h2>
-            <p className="text-xs text-gray-400">先建最小信息用于本次采购；默认不可销售，之后可在商品库补全销售价/税率/图片再上架。</p>
+            <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Create Product' : '新建商品'}</h2>
+            <p className="text-xs text-gray-400">
+              {isEn
+                ? 'Create minimal info for this purchase; not sellable by default, complete the sale price/tax rate/image in the product library later.'
+                : '先建最小信息用于本次采购；默认不可销售，之后可在商品库补全销售价/税率/图片再上架。'}
+            </p>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">商品名称</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Product Name' : '商品名称'}</label>
               <input
                 value={qcName}
                 onChange={e => setQcName(e.target.value)}
@@ -605,34 +621,34 @@ export default function NewPurchaseOrderPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">分类</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Category' : '分类'}</label>
                 <select
                   value={qcCategoryId}
                   onChange={e => setQcCategoryId(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 >
-                  <option value="">未分类</option>
+                  <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
                   {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.nameZh || c.name}</option>
+                    <option key={c.id} value={c.id}>{isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">采购单位</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Purchase Unit' : '采购单位'}</label>
                 <select
                   value={qcUomId}
                   onChange={e => setQcUomId(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 >
-                  <option value="">未指定</option>
+                  <option value="">{isEn ? 'Unspecified' : '未指定'}</option>
                   {uoms.map(u => (
-                    <option key={u.id} value={u.id}>{u.nameZh || u.name}</option>
+                    <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh || u.name)}</option>
                   ))}
                 </select>
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">参考采购单价（可选）</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Reference Purchase Price (optional)' : '参考采购单价（可选）'}</label>
               <input
                 type="number" step="0.01" min="0"
                 value={qcUnitCost}
@@ -645,7 +661,7 @@ export default function NewPurchaseOrderPage() {
                 onClick={() => setShowQuickCreate(false)}
                 className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
               >
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={submitQuickCreate}
@@ -653,7 +669,7 @@ export default function NewPurchaseOrderPage() {
                 className="flex-1 py-2 rounded text-sm text-white disabled:opacity-50"
                 style={{ background: PURPLE }}
               >
-                {qcSubmitting ? '创建中…' : '创建并加入采购行'}
+                {qcSubmitting ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create and add to line' : '创建并加入采购行')}
               </button>
             </div>
           </div>

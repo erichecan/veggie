@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPut, apiPost } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
@@ -36,10 +38,15 @@ interface ConvertForm {
   notes: string
 }
 
-const PRIORITY_LABEL: Record<string, string> = {
+const PRIORITY_LABEL_ZH: Record<string, string> = {
   critical: '紧急',
   high: '高',
   normal: '正常',
+}
+const PRIORITY_LABEL_EN: Record<string, string> = {
+  critical: 'Critical',
+  high: 'High',
+  normal: 'Normal',
 }
 const PRIORITY_COLOR: Record<string, string> = {
   critical: 'bg-red-100 text-red-700',
@@ -47,18 +54,30 @@ const PRIORITY_COLOR: Record<string, string> = {
   normal: 'bg-green-50 text-green-700',
 }
 
-const STATUS_TABS = [
+const STATUS_TABS_ZH = [
   { key: 'all', label: '全部' },
   { key: 'pending', label: '待处理' },
   { key: 'ordered', label: '已下单' },
   { key: 'rejected', label: '已忽略' },
 ]
+const STATUS_TABS_EN = [
+  { key: 'all', label: 'All' },
+  { key: 'pending', label: 'Pending' },
+  { key: 'ordered', label: 'Ordered' },
+  { key: 'rejected', label: 'Rejected' },
+]
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL_ZH: Record<string, string> = {
   pending: '待处理',
   approved: '已采纳',
   rejected: '已忽略',
   ordered: '已下单',
+}
+const STATUS_LABEL_EN: Record<string, string> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  ordered: 'Ordered',
 }
 const STATUS_COLOR: Record<string, string> = {
   pending: 'bg-yellow-50 text-yellow-700',
@@ -70,6 +89,12 @@ const STATUS_COLOR: Record<string, string> = {
 const PAGE_SIZE = 50
 
 export default function PurchaseSuggestionsPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const PRIORITY_LABEL = isEn ? PRIORITY_LABEL_EN : PRIORITY_LABEL_ZH
+  const STATUS_TABS = isEn ? STATUS_TABS_EN : STATUS_TABS_ZH
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+
   const [items, setItems] = useState<Suggestion[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -124,11 +149,11 @@ export default function PurchaseSuggestionsPage() {
       setTotal(data.total ?? 0)
       setSelectedIds(new Set())
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [activeTab, page])
+  }, [activeTab, page, isEn])
 
   useEffect(() => { load() }, [load])
 
@@ -145,12 +170,12 @@ export default function PurchaseSuggestionsPage() {
     setGenerating(true)
     try {
       const result = await apiPost<{ generated: number }>('/api/purchase-suggestions', {})
-      toast.success(`已生成 ${result.generated} 条采购建议`)
+      toast.success(isEn ? `Generated ${result.generated} purchase suggestion(s)` : `已生成 ${result.generated} 条采购建议`)
       setActiveTab('pending')
       setPage(1)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '生成失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to generate' : '生成失败'))
     } finally {
       setGenerating(false)
     }
@@ -185,7 +210,7 @@ export default function PurchaseSuggestionsPage() {
         taxRate: convertForm.taxRate,
         notes: convertForm.notes || undefined,
       })
-      toast.success(`已创建采购单：${convertTarget.productName}`)
+      toast.success(isEn ? `Purchase order created: ${convertTarget.productName}` : `已创建采购单：${convertTarget.productName}`)
       setConvertTarget(null)
       // Update local state
       setItems(prev => prev.map(item =>
@@ -197,7 +222,7 @@ export default function PurchaseSuggestionsPage() {
         return next
       })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '转采购单失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to convert to purchase order' : '转采购单失败'))
     } finally {
       setConverting(false)
     }
@@ -236,9 +261,11 @@ export default function PurchaseSuggestionsPage() {
     }
 
     if (success > 0) {
-      toast.success(`已创建 ${success} 个采购单${failed > 0 ? `，${failed} 个失败` : ''}`)
+      toast.success(isEn
+        ? `Created ${success} purchase order(s)${failed > 0 ? `, ${failed} failed` : ''}`
+        : `已创建 ${success} 个采购单${failed > 0 ? `，${failed} 个失败` : ''}`)
     } else {
-      toast.error('批量转采购单失败')
+      toast.error(isEn ? 'Batch convert to purchase orders failed' : '批量转采购单失败')
     }
 
     setBatchConvertItems([])
@@ -252,13 +279,13 @@ export default function PurchaseSuggestionsPage() {
     setProcessingIds(prev => new Set(prev).add(id))
     try {
       await apiPut(`/api/purchase-suggestions/${id}`, { status: 'rejected' })
-      toast.success('已忽略')
+      toast.success(isEn ? 'Rejected' : '已忽略')
       setItems(prev => prev.map(item =>
         item.id === id ? { ...item, status: 'rejected' } : item
       ))
       setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败'))
     } finally {
       setProcessingIds(prev => { const n = new Set(prev); n.delete(id); return n })
     }
@@ -277,8 +304,10 @@ export default function PurchaseSuggestionsPage() {
       } catch { failed++ }
     }
     if (success > 0) {
-      toast.success(`已忽略 ${success} 条${failed > 0 ? `，${failed} 条失败` : ''}`)
-    } else { toast.error('批量忽略失败') }
+      toast.success(isEn
+        ? `Rejected ${success} item(s)${failed > 0 ? `, ${failed} failed` : ''}`
+        : `已忽略 ${success} 条${failed > 0 ? `，${failed} 条失败` : ''}`)
+    } else { toast.error(isEn ? 'Batch reject failed' : '批量忽略失败') }
     setSelectedIds(new Set())
     setProcessingIds(new Set())
     load()
@@ -289,12 +318,12 @@ export default function PurchaseSuggestionsPage() {
     setProcessingIds(prev => new Set(prev).add(id))
     try {
       await apiPut(`/api/purchase-suggestions/${id}`, { status: 'pending' })
-      toast.success('已重新激活')
+      toast.success(isEn ? 'Reactivated' : '已重新激活')
       setItems(prev => prev.map(item =>
         item.id === id ? { ...item, status: 'pending' } : item
       ))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败'))
     } finally {
       setProcessingIds(prev => { const n = new Set(prev); n.delete(id); return n })
     }
@@ -310,7 +339,7 @@ export default function PurchaseSuggestionsPage() {
     if (!editingId) return
     const qty = Number(editQty)
     if (isNaN(qty) || qty <= 0) {
-      toast.error('请输入有效数量')
+      toast.error(isEn ? 'Please enter a valid quantity' : '请输入有效数量')
       return
     }
     setProcessingIds(prev => new Set(prev).add(editingId))
@@ -319,9 +348,9 @@ export default function PurchaseSuggestionsPage() {
       setItems(prev => prev.map(item =>
         item.id === editingId ? { ...item, suggestedQty: qty } : item
       ))
-      toast.success('数量已更新')
+      toast.success(isEn ? 'Quantity updated' : '数量已更新')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '更新失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Update failed' : '更新失败'))
     } finally {
       setEditingId(null)
       setProcessingIds(prev => { const n = new Set(prev); n.delete(editingId!); return n })
@@ -371,10 +400,10 @@ export default function PurchaseSuggestionsPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50">
       <OdooControlPanel
-        breadcrumb={['采购', '采购建议']}
+        breadcrumb={isEn ? ['Purchases', 'Purchase Suggestions'] : ['采购', '采购建议']}
         permanentActions={[
           {
-            label: generating ? '生成中...' : '生成采购建议',
+            label: generating ? (isEn ? 'Generating...' : '生成中...') : (isEn ? 'Generate Suggestions' : '生成采购建议'),
             onClick: handleGenerate,
             primary: true,
           },
@@ -408,26 +437,26 @@ export default function PurchaseSuggestionsPage() {
       {hasPendingSelection && (
         <div className="bg-indigo-50 border-b border-indigo-200 px-4 py-2 flex items-center gap-3">
           <span className="text-sm text-indigo-700 font-medium">
-            已选择 {selectedIds.size} 条
+            {isEn ? `${selectedIds.size} selected` : `已选择 ${selectedIds.size} 条`}
           </span>
           <button
             onClick={openBatchConvert}
             className="px-3 py-1 text-xs font-medium rounded text-white transition-colors hover:opacity-90"
             style={{ backgroundColor: '#875A7B' }}
           >
-            批量采纳
+            {isEn ? 'Batch Approve' : '批量采纳'}
           </button>
           <button
             onClick={handleBatchReject}
             className="px-3 py-1 text-xs font-medium rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
           >
-            批量忽略
+            {isEn ? 'Batch Reject' : '批量忽略'}
           </button>
           <button
             onClick={() => setSelectedIds(new Set())}
             className="ml-auto text-xs text-gray-500 hover:text-gray-700"
           >
-            取消选择
+            {isEn ? 'Clear Selection' : '取消选择'}
           </button>
         </div>
       )}
@@ -437,11 +466,13 @@ export default function PurchaseSuggestionsPage() {
         {loading ? (
           <div className="flex items-center justify-center py-24 text-gray-400">
             <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: '#875A7B' }} />
-            加载中...
+            {isEn ? 'Loading...' : '加载中...'}
           </div>
         ) : items.length === 0 ? (
           <div className="py-24 text-center text-gray-400 text-sm">
-            {activeTab === 'all' ? '暂无采购建议，点击「生成采购建议」自动分析缺货情况' : '暂无数据'}
+            {activeTab === 'all'
+              ? (isEn ? 'No purchase suggestions yet. Click "Generate Suggestions" to auto-analyze shortages.' : '暂无采购建议，点击「生成采购建议」自动分析缺货情况')
+              : (isEn ? 'No data' : '暂无数据')}
           </div>
         ) : (
           <table className="w-full text-sm border-collapse bg-white">
@@ -457,16 +488,16 @@ export default function PurchaseSuggestionsPage() {
                     />
                   )}
                 </th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">商品</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">当前库存</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">需求量</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">建议采购</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">推荐供应商</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">预估成本</th>
-                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs">优先级</th>
-                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs">状态</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">生成时间</th>
-                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs w-36">操作</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Product' : '商品'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Current Stock' : '当前库存'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Demand Qty' : '需求量'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Suggested Qty' : '建议采购'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Recommended Supplier' : '推荐供应商'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Estimated Cost' : '预估成本'}</th>
+                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs">{isEn ? 'Priority' : '优先级'}</th>
+                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs">{isEn ? 'Status' : '状态'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Generated At' : '生成时间'}</th>
+                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs w-36">{isEn ? 'Actions' : '操作'}</th>
               </tr>
             </thead>
             <tbody>
@@ -529,7 +560,7 @@ export default function PurchaseSuggestionsPage() {
                           className={`font-semibold ${s.status === 'pending' ? 'cursor-pointer hover:underline' : ''}`}
                           style={{ color: '#875A7B' }}
                           onClick={() => s.status === 'pending' && startEditQty(s)}
-                          title={s.status === 'pending' ? '点击修改数量' : undefined}
+                          title={s.status === 'pending' ? (isEn ? 'Click to edit quantity' : '点击修改数量') : undefined}
                         >
                           {s.suggestedQty}
                         </span>
@@ -571,7 +602,7 @@ export default function PurchaseSuggestionsPage() {
                     {/* Actions */}
                     <td className="px-4 py-2.5 text-center">
                       {isProcessing ? (
-                        <span className="text-xs text-gray-400">处理中...</span>
+                        <span className="text-xs text-gray-400">{isEn ? 'Processing...' : '处理中...'}</span>
                       ) : s.status === 'pending' ? (
                         <div className="flex items-center justify-center gap-1">
                           <button
@@ -579,13 +610,13 @@ export default function PurchaseSuggestionsPage() {
                             className="px-2.5 py-1 text-xs font-medium rounded text-white transition-colors hover:opacity-90"
                             style={{ backgroundColor: '#875A7B' }}
                           >
-                            采纳
+                            {isEn ? 'Approve' : '采纳'}
                           </button>
                           <button
                             onClick={() => handleReject(s.id)}
                             className="px-2.5 py-1 text-xs font-medium rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                           >
-                            忽略
+                            {isEn ? 'Reject' : '忽略'}
                           </button>
                         </div>
                       ) : s.status === 'approved' ? (
@@ -594,13 +625,13 @@ export default function PurchaseSuggestionsPage() {
                             onClick={() => openConvertModal(s)}
                             className="px-2.5 py-1 text-xs font-medium rounded text-white bg-blue-600 hover:bg-blue-700 transition-colors"
                           >
-                            转采购单
+                            {isEn ? 'Convert to PO' : '转采购单'}
                           </button>
                           <button
                             onClick={() => handleReject(s.id)}
                             className="px-2.5 py-1 text-xs font-medium rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                           >
-                            忽略
+                            {isEn ? 'Reject' : '忽略'}
                           </button>
                         </div>
                       ) : s.status === 'rejected' ? (
@@ -608,10 +639,10 @@ export default function PurchaseSuggestionsPage() {
                           onClick={() => handleReactivate(s.id)}
                           className="px-2.5 py-1 text-xs font-medium rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                         >
-                          重新激活
+                          {isEn ? 'Reactivate' : '重新激活'}
                         </button>
                       ) : s.status === 'ordered' ? (
-                        <span className="text-xs text-gray-400">已完成</span>
+                        <span className="text-xs text-gray-400">{isEn ? 'Completed' : '已完成'}</span>
                       ) : null}
                     </td>
                   </tr>
@@ -629,7 +660,7 @@ export default function PurchaseSuggestionsPage() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200" style={{ backgroundColor: '#875A7B' }}>
-              <h3 className="text-lg font-semibold text-white">采纳 &mdash; 确认采购</h3>
+              <h3 className="text-lg font-semibold text-white">{isEn ? 'Approve — Confirm Purchase' : '采纳 — 确认采购'}</h3>
               <button onClick={() => !converting && setConvertTarget(null)} className="text-white/80 hover:text-white text-xl leading-none">&times;</button>
             </div>
 
@@ -637,18 +668,18 @@ export default function PurchaseSuggestionsPage() {
             <div className="px-6 py-5 space-y-4">
               {/* Product info (read-only) */}
               <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">商品</div>
+                <div className="text-xs text-gray-500 mb-1">{isEn ? 'Product' : '商品'}</div>
                 <div className="font-semibold text-gray-900">{convertTarget.productName}</div>
                 <div className="flex gap-6 mt-2 text-xs text-gray-500">
-                  <span>当前库存: <b className="text-gray-700">{convertTarget.currentStock}</b></span>
-                  <span>需求量: <b className="text-gray-700">{convertTarget.demandQty}</b></span>
-                  <span>缺口: <b className="text-red-600">{Math.max(0, convertTarget.demandQty - convertTarget.currentStock)}</b></span>
+                  <span>{isEn ? 'Current Stock' : '当前库存'}: <b className="text-gray-700">{convertTarget.currentStock}</b></span>
+                  <span>{isEn ? 'Demand Qty' : '需求量'}: <b className="text-gray-700">{convertTarget.demandQty}</b></span>
+                  <span>{isEn ? 'Shortage' : '缺口'}: <b className="text-red-600">{Math.max(0, convertTarget.demandQty - convertTarget.currentStock)}</b></span>
                 </div>
               </div>
 
               {/* Quantity */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">采购数量</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Purchase Qty' : '采购数量'}</label>
                 <input
                   type="number"
                   min={1}
@@ -660,7 +691,7 @@ export default function PurchaseSuggestionsPage() {
 
               {/* Supplier */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">供应商</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Supplier' : '供应商'}</label>
                 <select
                   value={convertForm.supplierId}
                   onChange={e => {
@@ -674,7 +705,7 @@ export default function PurchaseSuggestionsPage() {
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400"
                 >
-                  <option value="">-- 请选择供应商 --</option>
+                  <option value="">{isEn ? '-- Select a supplier --' : '-- 请选择供应商 --'}</option>
                   {suppliers.map(sp => (
                     <option key={sp.id} value={sp.id}>{sp.name}</option>
                   ))}
@@ -684,7 +715,7 @@ export default function PurchaseSuggestionsPage() {
               {/* Unit cost */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">单价 (€)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Unit Price (€)' : '单价 (€)'}</label>
                   <input
                     type="number"
                     min={0}
@@ -695,7 +726,7 @@ export default function PurchaseSuggestionsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">税率</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Tax Rate' : '税率'}</label>
                   <input
                     type="number"
                     min={0}
@@ -710,12 +741,12 @@ export default function PurchaseSuggestionsPage() {
 
               {/* Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Notes' : '备注'}</label>
                 <textarea
                   rows={2}
                   value={convertForm.notes}
                   onChange={e => setConvertForm(f => ({ ...f, notes: e.target.value }))}
-                  placeholder="选填"
+                  placeholder={isEn ? 'Optional' : '选填'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400 resize-none"
                 />
               </div>
@@ -723,17 +754,17 @@ export default function PurchaseSuggestionsPage() {
               {/* Cost summary */}
               <div className="bg-gray-50 rounded-lg p-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">小计 (不含税)</span>
+                  <span className="text-gray-500">{isEn ? 'Subtotal (excl. tax)' : '小计 (不含税)'}</span>
                   <span className="font-medium">€{convertSubtotal.toFixed(2)}</span>
                 </div>
                 {convertForm.taxRate > 0 && (
                   <div className="flex justify-between mt-1">
-                    <span className="text-gray-500">税额 ({(convertForm.taxRate * 100).toFixed(0)}%)</span>
+                    <span className="text-gray-500">{isEn ? 'Tax' : '税额'} ({(convertForm.taxRate * 100).toFixed(0)}%)</span>
                     <span className="font-medium">€{convertTax.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between mt-1 pt-1 border-t border-gray-200">
-                  <span className="font-semibold text-gray-700">合计</span>
+                  <span className="font-semibold text-gray-700">{isEn ? 'Total' : '合计'}</span>
                   <span className="font-bold text-lg" style={{ color: '#875A7B' }}>€{convertTotal.toFixed(2)}</span>
                 </div>
               </div>
@@ -746,7 +777,7 @@ export default function PurchaseSuggestionsPage() {
                 disabled={converting}
                 className="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
               >
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={handleConvert}
@@ -754,7 +785,7 @@ export default function PurchaseSuggestionsPage() {
                 className="px-5 py-2 text-sm font-medium rounded-md text-white transition-colors hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: '#875A7B' }}
               >
-                {converting ? '创建中...' : '确认采购'}
+                {converting ? (isEn ? 'Creating...' : '创建中...') : (isEn ? 'Confirm Purchase' : '确认采购')}
               </button>
             </div>
           </div>
@@ -767,23 +798,27 @@ export default function PurchaseSuggestionsPage() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200" style={{ backgroundColor: '#875A7B' }}>
-              <h3 className="text-lg font-semibold text-white">批量采纳 &mdash; 确认创建采购单</h3>
+              <h3 className="text-lg font-semibold text-white">{isEn ? 'Batch Approve — Confirm Purchase Order Creation' : '批量采纳 — 确认创建采购单'}</h3>
               <button onClick={() => !batchConverting && setBatchConvertItems([])} className="text-white/80 hover:text-white text-xl leading-none">&times;</button>
             </div>
 
             {/* Body */}
             <div className="px-6 py-5">
               <p className="text-sm text-gray-600 mb-4">
-                将以下 <b>{batchConvertItems.length}</b> 条建议转为采购单，每条建议生成一个独立采购单：
+                {isEn ? (
+                  <>Convert the following <b>{batchConvertItems.length}</b> suggestion(s) to purchase orders. Each suggestion creates a separate purchase order:</>
+                ) : (
+                  <>将以下 <b>{batchConvertItems.length}</b> 条建议转为采购单，每条建议生成一个独立采购单：</>
+                )}
               </p>
               <div className="max-h-64 overflow-auto border border-gray-200 rounded-lg">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">商品</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">数量</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">供应商</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">预估成本</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">{isEn ? 'Product' : '商品'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">{isEn ? 'Qty' : '数量'}</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">{isEn ? 'Supplier' : '供应商'}</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">{isEn ? 'Estimated Cost' : '预估成本'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -801,7 +836,9 @@ export default function PurchaseSuggestionsPage() {
                 </table>
               </div>
               <div className="mt-3 text-xs text-gray-500">
-                采购数量和供应商将使用建议的默认值。如需修改，请逐条点击「采纳」。
+                {isEn
+                  ? 'Purchase quantity and supplier will use the suggested defaults. To make changes, click "Approve" on each item individually.'
+                  : '采购数量和供应商将使用建议的默认值。如需修改，请逐条点击「采纳」。'}
               </div>
             </div>
 
@@ -812,7 +849,7 @@ export default function PurchaseSuggestionsPage() {
                 disabled={batchConverting}
                 className="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
               >
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={handleBatchConvert}
@@ -820,7 +857,7 @@ export default function PurchaseSuggestionsPage() {
                 className="px-5 py-2 text-sm font-medium rounded-md text-white transition-colors hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: '#875A7B' }}
               >
-                {batchConverting ? '创建中...' : `确认创建 ${batchConvertItems.length} 个采购单`}
+                {batchConverting ? (isEn ? 'Creating...' : '创建中...') : (isEn ? `Confirm ${batchConvertItems.length} Purchase Order(s)` : `确认创建 ${batchConvertItems.length} 个采购单`)}
               </button>
             </div>
           </div>

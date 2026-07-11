@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
@@ -14,12 +16,20 @@ const PURPLE = '#875A7B'
 
 type MainTab = 'quotations' | 'overview' | 'fresh' | 'catalog' | 'annual-plan'
 
-const MAIN_TABS: { k: MainTab; icon: string; label: string }[] = [
+const MAIN_TABS_ZH: { k: MainTab; icon: string; label: string }[] = [
   { k: 'quotations', icon: '📝', label: '询价单' },
   { k: 'overview', icon: '📊', label: '总览' },
   { k: 'fresh', icon: '🥬', label: '生鲜次日备货' },
   { k: 'catalog', icon: '🛒', label: '目录挑选' },
   { k: 'annual-plan', icon: '🌾', label: '干货年度计划' },
+]
+
+const MAIN_TABS_EN: { k: MainTab; icon: string; label: string }[] = [
+  { k: 'quotations', icon: '📝', label: 'Quotations' },
+  { k: 'overview', icon: '📊', label: 'Overview' },
+  { k: 'fresh', icon: '🥬', label: 'Next-Day Fresh Stocking' },
+  { k: 'catalog', icon: '🛒', label: 'Catalog Picking' },
+  { k: 'annual-plan', icon: '🌾', label: 'Dry Goods Annual Plan' },
 ]
 
 type POStatus = 'DRAFT' | 'SENT' | 'CONFIRMED' | 'RECEIVED' | 'INVOICED' | 'LOCKED' | 'TO_APPROVE' | 'CANCELLED'
@@ -44,7 +54,7 @@ interface Supplier {
   name: string
 }
 
-const STATUS_LABEL: Record<POStatus, string> = {
+const STATUS_LABEL_ZH: Record<POStatus, string> = {
   DRAFT:      '询价单',
   SENT:       '询价单已发送',
   TO_APPROVE: '待审批',
@@ -53,6 +63,17 @@ const STATUS_LABEL: Record<POStatus, string> = {
   INVOICED:   '已开票',
   LOCKED:     '已锁定',
   CANCELLED:  '已取消',
+}
+
+const STATUS_LABEL_EN: Record<POStatus, string> = {
+  DRAFT:      'Quotation',
+  SENT:       'Quotation Sent',
+  TO_APPROVE: 'To Approve',
+  CONFIRMED:  'Purchase Order',
+  RECEIVED:   'Received',
+  INVOICED:   'Invoiced',
+  LOCKED:     'Locked',
+  CANCELLED:  'Cancelled',
 }
 
 const STATUS_COLOR: Record<POStatus, string> = {
@@ -66,7 +87,7 @@ const STATUS_COLOR: Record<POStatus, string> = {
   CANCELLED:  'bg-red-50 text-red-600',
 }
 
-const STATUS_TABS = [
+const STATUS_TABS_ZH = [
   { key: 'all', label: '全部' },
   { key: 'DRAFT', label: '询价单' },
   { key: 'SENT', label: '询价单已发送' },
@@ -78,10 +99,27 @@ const STATUS_TABS = [
   { key: 'CANCELLED', label: '已取消' },
 ]
 
+const STATUS_TABS_EN = [
+  { key: 'all', label: 'All' },
+  { key: 'DRAFT', label: 'Quotation' },
+  { key: 'SENT', label: 'Quotation Sent' },
+  { key: 'TO_APPROVE', label: 'To Approve' },
+  { key: 'CONFIRMED', label: 'Purchase Order' },
+  { key: 'RECEIVED', label: 'Received' },
+  { key: 'INVOICED', label: 'Invoiced' },
+  { key: 'LOCKED', label: 'Locked' },
+  { key: 'CANCELLED', label: 'Cancelled' },
+]
+
 const PAGE_SIZE = 40
 
 export default function PurchasesPage() {
   const router = useRouter()
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const MAIN_TABS = isEn ? MAIN_TABS_EN : MAIN_TABS_ZH
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const STATUS_TABS = isEn ? STATUS_TABS_EN : STATUS_TABS_ZH
   const [mainTab, setMainTab] = useState<MainTab>('quotations')
   const [pos, setPos] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,11 +159,11 @@ export default function PurchasesPage() {
       setPos(data.items ?? (data as unknown as PurchaseOrder[]))
       setTotal(data.total ?? (data as unknown as PurchaseOrder[]).length)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [activeTab, search, page])
+  }, [activeTab, search, page, isEn])
 
   useEffect(() => { load() }, [load])
 
@@ -157,19 +195,21 @@ export default function PurchasesPage() {
   }
 
   function downloadCsvTemplate() {
-    const content = '商品名称,数量,单价\n示例商品A,10,5.50\n示例商品B,20,3.20\n'
+    const content = isEn
+      ? 'Product Name,Quantity,Unit Price\nSample Product A,10,5.50\nSample Product B,20,3.20\n'
+      : '商品名称,数量,单价\n示例商品A,10,5.50\n示例商品B,20,3.20\n'
     const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = '采购导入模板.csv'
+    a.download = isEn ? 'purchase-import-template.csv' : '采购导入模板.csv'
     a.click()
     URL.revokeObjectURL(url)
   }
 
   async function handleImport() {
-    if (!importSupplierId) { toast.error('请选择供应商'); return }
-    if (!importFile) { toast.error('请选择文件'); return }
+    if (!importSupplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
+    if (!importFile) { toast.error(isEn ? 'Please select a file' : '请选择文件'); return }
     setImporting(true)
     try {
       const fd = new FormData()
@@ -188,11 +228,11 @@ export default function PurchasesPage() {
       const data = await res.json()
       setImportResult(data)
       if (data.createdPO) {
-        toast.success(`已创建采购单草稿 ${data.createdPO.name}`)
+        toast.success(isEn ? `Draft purchase order ${data.createdPO.name} created` : `已创建采购单草稿 ${data.createdPO.name}`)
         load()
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '导入失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Import failed' : '导入失败'))
     } finally {
       setImporting(false)
     }
@@ -226,23 +266,23 @@ export default function PurchasesPage() {
 
       {mainTab === 'quotations' && <>
       <OdooControlPanel
-        breadcrumb={['采购', '询价单']}
+        breadcrumb={isEn ? ['Purchases', 'Quotations'] : ['采购', '询价单']}
         permanentActions={[
-          { label: '新建', onClick: () => router.push('purchases/new'), primary: true },
+          { label: isEn ? 'New' : '新建', onClick: () => router.push('purchases/new'), primary: true },
           { label: 'Import', onClick: () => { setShowImportDialog(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
         ]}
         searchValue={searchInput}
         onSearch={v => setSearchInput(v)}
         onSearchSubmit={() => { setSearch(searchInput); setPage(1) }}
         activeFilters={[
-          ...(activeTab !== 'all' ? [{ label: `状态：${STATUS_LABEL[activeTab as POStatus] ?? activeTab}`, onRemove: () => handleTabChange('all') }] : []),
+          ...(activeTab !== 'all' ? [{ label: isEn ? `Status: ${STATUS_LABEL[activeTab as POStatus] ?? activeTab}` : `状态：${STATUS_LABEL[activeTab as POStatus] ?? activeTab}`, onRemove: () => handleTabChange('all') }] : []),
         ]}
         filterOptions={STATUS_TABS.filter(t => t.key !== 'all').map(t => ({ label: t.label, value: t.key }))}
         onFilterSelect={v => handleTabChange(v)}
         groupByOptions={[
-          { label: '供应商', value: 'supplier' },
-          { label: '状态', value: 'status' },
-          { label: '订购日期', value: 'orderDate' },
+          { label: isEn ? 'Supplier' : '供应商', value: 'supplier' },
+          { label: isEn ? 'Status' : '状态', value: 'status' },
+          { label: isEn ? 'Order Date' : '订购日期', value: 'orderDate' },
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
@@ -265,10 +305,10 @@ export default function PurchasesPage() {
         {loading ? (
           <div className="flex items-center justify-center py-24 text-gray-400">
             <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: '#875A7B' }} />
-            加载中...
+            {isEn ? 'Loading...' : '加载中...'}
           </div>
         ) : pos.length === 0 ? (
-          <div className="py-24 text-center text-gray-400 text-sm">暂无采购单</div>
+          <div className="py-24 text-center text-gray-400 text-sm">{isEn ? 'No purchase orders' : '暂无采购单'}</div>
         ) : (
           <table className="w-full text-sm border-collapse bg-white">
             <thead>
@@ -281,14 +321,14 @@ export default function PurchasesPage() {
                     className="w-3.5 h-3.5 accent-purple-700 cursor-pointer"
                   />
                 </th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">编号</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">供应商</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">订购日期</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">预计到货</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">来源单据</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">状态</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">税前金额</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">含税总额</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'No.' : '编号'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Supplier' : '供应商'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Order Date' : '订购日期'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Expected Arrival' : '预计到货'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Source Document' : '来源单据'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Status' : '状态'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Amount Ex. Tax' : '税前金额'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Total Inc. Tax' : '含税总额'}</th>
               </tr>
             </thead>
             <tbody>
@@ -343,8 +383,8 @@ export default function PurchasesPage() {
                   <tr key={`__group__${key}`} style={{ background: '#f5f0f7', borderBottom: '2px solid #d4b8d0' }}>
                     <td colSpan={9} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
                       {groupBy === 'status' ? STATUS_LABEL[key as POStatus] ?? key
-                        : groupBy === 'orderDate' ? (key ? new Date(key).toLocaleDateString('en-GB') : '（空）')
-                        : key || '（空）'}
+                        : groupBy === 'orderDate' ? (key ? new Date(key).toLocaleDateString('en-GB') : (isEn ? '(None)' : '（空）'))
+                        : key || (isEn ? '(None)' : '（空）')}
                       {' '}<span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({groupPos.length})</span>
                     </td>
                   </tr>,
@@ -362,20 +402,20 @@ export default function PurchasesPage() {
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-800">导入采购单</h2>
+              <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Import Purchase Order' : '导入采购单'}</h2>
               <button onClick={() => setShowImportDialog(false)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
             </div>
 
             {!importResult ? (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">供应商</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Supplier' : '供应商'}</label>
                   <select
                     value={importSupplierId}
                     onChange={e => setImportSupplierId(e.target.value)}
                     className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                   >
-                    <option value="">请选择供应商...</option>
+                    <option value="">{isEn ? 'Select a supplier...' : '请选择供应商...'}</option>
                     {suppliers.map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
@@ -383,14 +423,14 @@ export default function PurchasesPage() {
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-medium text-gray-500">文件（PDF / Excel / CSV，最大 10MB）</label>
+                    <label className="block text-xs font-medium text-gray-500">{isEn ? 'File (PDF / Excel / CSV, max 10MB)' : '文件（PDF / Excel / CSV，最大 10MB）'}</label>
                     <button
                       type="button"
                       onClick={downloadCsvTemplate}
                       className="text-xs font-medium hover:underline"
                       style={{ color: '#875A7B' }}
                     >
-                      ↓ 下载 CSV 模板
+                      {isEn ? '↓ Download CSV Template' : '↓ 下载 CSV 模板'}
                     </button>
                   </div>
                   <input
@@ -402,14 +442,14 @@ export default function PurchasesPage() {
                   {importFile && (
                     <p className="mt-1 text-xs text-gray-400">{importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)</p>
                   )}
-                  <p className="mt-1 text-xs text-gray-400">表头列：商品名称、数量、单价（顺序不限，无表头时按前三列识别）</p>
+                  <p className="mt-1 text-xs text-gray-400">{isEn ? 'Header columns: Product Name, Quantity, Unit Price (any order; first three columns used if no header)' : '表头列：商品名称、数量、单价（顺序不限，无表头时按前三列识别）'}</p>
                 </div>
                 <div className="flex gap-2 pt-2">
                   <button
                     onClick={() => setShowImportDialog(false)}
                     className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
                   >
-                    取消
+                    {isEn ? 'Cancel' : '取消'}
                   </button>
                   <button
                     onClick={handleImport}
@@ -417,7 +457,7 @@ export default function PurchasesPage() {
                     className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
                     style={{ background: '#875A7B' }}
                   >
-                    {importing ? '导入中...' : '上传并解析'}
+                    {importing ? (isEn ? 'Importing...' : '导入中...') : (isEn ? 'Upload & Parse' : '上传并解析')}
                   </button>
                 </div>
               </>
@@ -426,25 +466,25 @@ export default function PurchasesPage() {
                 <div className="grid grid-cols-4 gap-3 text-center">
                   <div className="bg-gray-50 rounded p-2">
                     <div className="text-lg font-semibold text-gray-800">{importResult.stats.total}</div>
-                    <div className="text-xs text-gray-500">总行数</div>
+                    <div className="text-xs text-gray-500">{isEn ? 'Total Rows' : '总行数'}</div>
                   </div>
                   <div className="bg-green-50 rounded p-2">
                     <div className="text-lg font-semibold text-green-700">{importResult.stats.exactMatch}</div>
-                    <div className="text-xs text-green-600">精确匹配</div>
+                    <div className="text-xs text-green-600">{isEn ? 'Exact Match' : '精确匹配'}</div>
                   </div>
                   <div className="bg-yellow-50 rounded p-2">
                     <div className="text-lg font-semibold text-yellow-700">{importResult.stats.fuzzyMatch}</div>
-                    <div className="text-xs text-yellow-600">模糊匹配</div>
+                    <div className="text-xs text-yellow-600">{isEn ? 'Fuzzy Match' : '模糊匹配'}</div>
                   </div>
                   <div className="bg-red-50 rounded p-2">
                     <div className="text-lg font-semibold text-red-600">{importResult.stats.noMatch}</div>
-                    <div className="text-xs text-red-500">未匹配</div>
+                    <div className="text-xs text-red-500">{isEn ? 'No Match' : '未匹配'}</div>
                   </div>
                 </div>
 
                 {importResult.createdPO && (
                   <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-2 text-sm">
-                    <span className="text-green-700">已创建草稿：</span>
+                    <span className="text-green-700">{isEn ? 'Draft created:' : '已创建草稿：'}</span>
                     <button
                       onClick={() => { setShowImportDialog(false); router.push(`purchases/${importResult.createdPO!.id}`) }}
                       className="font-medium underline"
@@ -459,11 +499,11 @@ export default function PurchasesPage() {
                   <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="px-3 py-2 text-left font-medium text-gray-500">原始商品名</th>
-                        <th className="px-3 py-2 text-right font-medium text-gray-500">数量</th>
-                        <th className="px-3 py-2 text-right font-medium text-gray-500">单价</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-500">匹配结果</th>
-                        <th className="px-3 py-2 text-center font-medium text-gray-500">置信度</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500">{isEn ? 'Original Product Name' : '原始商品名'}</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-500">{isEn ? 'Quantity' : '数量'}</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-500">{isEn ? 'Unit Price' : '单价'}</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500">{isEn ? 'Match Result' : '匹配结果'}</th>
+                        <th className="px-3 py-2 text-center font-medium text-gray-500">{isEn ? 'Confidence' : '置信度'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -479,7 +519,9 @@ export default function PurchasesPage() {
                               line.confidence === 'fuzzy' ? 'bg-yellow-100 text-yellow-700' :
                               'bg-red-100 text-red-600'
                             }`}>
-                              {line.confidence === 'exact' ? '精确' : line.confidence === 'fuzzy' ? '模糊' : '未匹配'}
+                              {isEn
+                                ? (line.confidence === 'exact' ? 'Exact' : line.confidence === 'fuzzy' ? 'Fuzzy' : 'No Match')
+                                : (line.confidence === 'exact' ? '精确' : line.confidence === 'fuzzy' ? '模糊' : '未匹配')}
                             </span>
                           </td>
                         </tr>
@@ -493,7 +535,7 @@ export default function PurchasesPage() {
                     onClick={() => setShowImportDialog(false)}
                     className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
                   >
-                    关闭
+                    {isEn ? 'Close' : '关闭'}
                   </button>
                   {importResult.createdPO && (
                     <button
@@ -501,7 +543,7 @@ export default function PurchasesPage() {
                       className="flex-1 py-2 rounded text-sm font-medium text-white"
                       style={{ background: '#875A7B' }}
                     >
-                      查看采购单
+                      {isEn ? 'View Purchase Order' : '查看采购单'}
                     </button>
                   )}
                 </div>

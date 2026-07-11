@@ -10,7 +10,7 @@ import { formatDateOnly } from '@/lib/format-date'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 
-async function openPurchaseOrderPdf(poId: string) {
+async function openPurchaseOrderPdf(poId: string, isEn: boolean) {
   // JWT 存在 localStorage，直接 window.open API 路由不会带 Authorization 头会 401，
   // 必须先用带鉴权的 fetch 取回 HTML 文本，再开新窗口写入。
   const win = window.open('', '_blank')
@@ -25,7 +25,7 @@ async function openPurchaseOrderPdf(poId: string) {
     }
   } catch (e) {
     win?.close()
-    toast.error(e instanceof Error ? e.message : 'PDF 生成失败')
+    toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to generate PDF' : 'PDF 生成失败'))
   }
 }
 
@@ -132,19 +132,19 @@ function toInputDate(iso?: string | null) {
   try { return new Date(iso).toISOString().slice(0, 10) } catch { return '' }
 }
 
-function OdooStatusBar({ status }: { status: POStatus }) {
+function OdooStatusBar({ status, isEn }: { status: POStatus; isEn: boolean }) {
   const steps = [
-    { label: '询价单', statuses: ['DRAFT'] as POStatus[] },
-    { label: '询价单已发送', statuses: ['SENT', 'TO_APPROVE'] as POStatus[] },
-    { label: '采购订单', statuses: ['CONFIRMED', 'RECEIVED', 'INVOICED'] as POStatus[] },
-    { label: '已锁定', statuses: ['LOCKED'] as POStatus[] },
+    { label: isEn ? 'Request for Quotation' : '询价单', statuses: ['DRAFT'] as POStatus[] },
+    { label: isEn ? 'RFQ Sent' : '询价单已发送', statuses: ['SENT', 'TO_APPROVE'] as POStatus[] },
+    { label: isEn ? 'Purchase Order' : '采购订单', statuses: ['CONFIRMED', 'RECEIVED', 'INVOICED'] as POStatus[] },
+    { label: isEn ? 'Locked' : '已锁定', statuses: ['LOCKED'] as POStatus[] },
   ]
   const activeIdx = steps.findIndex(s => s.statuses.includes(status))
 
   if (status === 'CANCELLED') {
     return (
       <span className="px-4 py-1 text-sm font-medium rounded-full" style={{ background: '#fef2f2', color: '#dc2626' }}>
-        已取消
+        {isEn ? 'Cancelled' : '已取消'}
       </span>
     )
   }
@@ -153,7 +153,7 @@ function OdooStatusBar({ status }: { status: POStatus }) {
     <div className="flex items-center gap-2">
       {status === 'TO_APPROVE' && (
         <span className="px-3 py-1 text-xs font-medium rounded-full" style={{ background: '#fef3cd', color: '#856404' }}>
-          待审批
+          {isEn ? 'Pending Approval' : '待审批'}
         </span>
       )}
       <div className="flex items-stretch gap-0" style={{ height: '28px' }}>
@@ -193,6 +193,7 @@ export default function PurchaseDetailPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
   const params = useParams<{ id: string }>()
   const id = params.id
 
@@ -271,7 +272,7 @@ export default function PurchaseDetailPage() {
   }
 
   async function submitQuickCreate() {
-    if (!qcName.trim()) { toast.error('商品名称不能为空'); return }
+    if (!qcName.trim()) { toast.error(isEn ? 'Product name is required' : '商品名称不能为空'); return }
     setQcSubmitting(true)
     try {
       const created = await apiPost<PurchaseProduct>('/api/products/quick-create', {
@@ -280,15 +281,16 @@ export default function PurchaseDetailPage() {
         purchaseUomId: qcUomId || undefined,
         unitCost: qcUnitCost ? Number(qcUnitCost) : undefined,
       })
-      const uomName = uoms.find(u => u.id === qcUomId)?.nameZh || uoms.find(u => u.id === qcUomId)?.name
+      const uomRecord = uoms.find(u => u.id === qcUomId)
+      const uomName = isEn ? (uomRecord?.name || uomRecord?.nameZh) : (uomRecord?.nameZh || uomRecord?.name)
       const withUom = { ...created, uomName: uomName ?? null, standardPrice: qcUnitCost ? Number(qcUnitCost) : 0 }
       setPurchaseProducts(prev => [withUom, ...prev])
       addProductLine(withUom)
       setProductQuery('')
       setShowQuickCreate(false)
-      toast.success(`已创建「${created.name}」并加入采购行`)
+      toast.success(isEn ? `Created "${created.name}" and added to purchase lines` : `已创建「${created.name}」并加入采购行`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建商品失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to create product' : '创建商品失败'))
     } finally {
       setQcSubmitting(false)
     }
@@ -300,7 +302,7 @@ export default function PurchaseDetailPage() {
       const data = await apiGet<PurchaseOrder>(`/api/purchase-orders/${id}`)
       setPo(data)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -363,23 +365,34 @@ export default function PurchaseDetailPage() {
       setPo(updated)
       setEditing(false)
       setEditLines([])
-      toast.success('保存成功')
+      toast.success(isEn ? 'Saved successfully' : '保存成功')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleAction(action: string, label: string) {
+  const ACTION_LABELS: Record<string, { zh: string; en: string }> = {
+    send: { zh: '发送', en: 'Send' },
+    confirm: { zh: '确认采购', en: 'Confirm Purchase' },
+    cancel: { zh: '取消', en: 'Cancel' },
+    invoice: { zh: '创建账单', en: 'Create Bill' },
+    lock: { zh: '锁定', en: 'Lock' },
+    approve: { zh: '审批通过', en: 'Approve' },
+    reset_to_draft: { zh: '重置为草稿', en: 'Reset to Draft' },
+  }
+
+  async function handleAction(action: string) {
     if (!po || acting) return
+    const label = isEn ? (ACTION_LABELS[action]?.en ?? action) : (ACTION_LABELS[action]?.zh ?? action)
     setActing(true)
     try {
       await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action })
       await load()
-      toast.success(`${label}成功`)
+      toast.success(isEn ? `${label} succeeded` : `${label}成功`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : `${label}失败`)
+      toast.error(e instanceof Error ? e.message : (isEn ? `${label} failed` : `${label}失败`))
     } finally {
       setActing(false)
     }
@@ -389,7 +402,7 @@ export default function PurchaseDetailPage() {
     return (
       <div className="flex items-center justify-center py-24 text-gray-400">
         <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: PURPLE }} />
-        加载中...
+        {isEn ? 'Loading...' : '加载中...'}
       </div>
     )
   }
@@ -397,10 +410,10 @@ export default function PurchaseDetailPage() {
   if (!po) {
     return (
       <div className="text-center py-20">
-        <p className="text-gray-400 mb-4">采购单不存在</p>
+        <p className="text-gray-400 mb-4">{isEn ? 'Purchase order not found' : '采购单不存在'}</p>
         <button onClick={() => router.push(`${prefix}/classic/operator/purchases`)}
           className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
-          返回列表
+          {isEn ? 'Back to list' : '返回列表'}
         </button>
       </div>
     )
@@ -440,7 +453,7 @@ export default function PurchaseDetailPage() {
             className="hover:underline"
             style={{ color: PURPLE }}
           >
-            询价单
+            {isEn ? 'Request for Quotation' : '询价单'}
           </button>
           <span className="mx-1 text-gray-400">/</span>
           <span className="text-gray-700 font-medium">{po.name}</span>
@@ -459,14 +472,14 @@ export default function PurchaseDetailPage() {
                   onMouseEnter={e => { if (isEditable && !isCancelled && !isLocked) (e.currentTarget as HTMLElement).style.background = '#f5f5f5' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'white' }}
                 >
-                  编辑
+                  {isEn ? 'Edit' : '编辑'}
                 </button>
                 <button
                   onClick={() => { router.push(`${prefix}/classic/operator/purchases`) }}
                   className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50"
                   style={{ borderColor: '#d0d5dd', color: DARK }}
                 >
-                  新建
+                  {isEn ? 'New' : '新建'}
                 </button>
               </>
             ) : (
@@ -477,26 +490,26 @@ export default function PurchaseDetailPage() {
                   className="h-7 px-3 text-sm rounded border disabled:opacity-40 font-medium"
                   style={{ borderColor: PURPLE, color: PURPLE, background: 'white' }}
                 >
-                  {saving ? '保存中…' : '手动保存'}
+                  {saving ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '手动保存')}
                 </button>
                 <button
                   onClick={discardEdit}
                   className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50"
                   style={{ borderColor: '#d0d5dd', color: DARK }}
                 >
-                  放弃
+                  {isEn ? 'Discard' : '放弃'}
                 </button>
               </>
             )}
             <div className="w-px h-4 bg-gray-300 mx-1" />
-            <button onClick={() => openPurchaseOrderPdf(po.id)}
+            <button onClick={() => openPurchaseOrderPdf(po.id, isEn)}
               className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50 flex items-center gap-1"
               style={{ borderColor: '#d0d5dd', color: DARK }}>
-              打印
+              {isEn ? 'Print' : '打印'}
             </button>
             <button className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50 flex items-center gap-1"
               style={{ borderColor: '#d0d5dd', color: DARK }}>
-              操作 <span className="text-xs leading-none">▾</span>
+              {isEn ? 'Actions' : '操作'} <span className="text-xs leading-none">▾</span>
             </button>
           </div>
 
@@ -516,35 +529,35 @@ export default function PurchaseDetailPage() {
           <div className="px-6 py-2.5 border-t border-gray-100 flex items-center gap-2">
             {po.status === 'DRAFT' && (
               <>
-                <button onClick={() => handleAction('send', '发送')} disabled={acting}
+                <button onClick={() => handleAction('send')} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
-                  发送邮件
+                  {isEn ? 'Send by Email' : '发送邮件'}
                 </button>
-                <button onClick={() => openPurchaseOrderPdf(po.id)}
+                <button onClick={() => openPurchaseOrderPdf(po.id, isEn)}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                  打印询价单
+                  {isEn ? 'Print RFQ' : '打印询价单'}
                 </button>
-                <button onClick={() => handleAction('confirm', '确认采购')} disabled={acting}
+                <button onClick={() => handleAction('confirm')} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                  确认采购
+                  {isEn ? 'Confirm Purchase' : '确认采购'}
                 </button>
-                <button onClick={() => { if (confirm('确定取消此采购单？')) handleAction('cancel', '取消') }} disabled={acting}
+                <button onClick={() => { if (confirm(isEn ? 'Cancel this purchase order?' : '确定取消此采购单？')) handleAction('cancel') }} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50">
-                  取消
+                  {isEn ? 'Cancel' : '取消'}
                 </button>
               </>
             )}
             {po.status === 'SENT' && (
               <>
-                <button onClick={() => handleAction('confirm', '确认采购')} disabled={acting}
+                <button onClick={() => handleAction('confirm')} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
-                  确认采购
+                  {isEn ? 'Confirm Purchase' : '确认采购'}
                 </button>
-                <button onClick={() => { if (confirm('确定取消此采购单？')) handleAction('cancel', '取消') }} disabled={acting}
+                <button onClick={() => { if (confirm(isEn ? 'Cancel this purchase order?' : '确定取消此采购单？')) handleAction('cancel') }} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50">
-                  取消
+                  {isEn ? 'Cancel' : '取消'}
                 </button>
               </>
             )}
@@ -554,55 +567,55 @@ export default function PurchaseDetailPage() {
                   onClick={() => router.push(`${prefix}/classic/operator/inventory?tab=receive&poId=${po.id}`)}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
-                  确认收货
+                  {isEn ? 'Confirm Receipt' : '确认收货'}
                 </button>
-                <button onClick={() => { if (confirm('确定取消此采购单？')) handleAction('cancel', '取消') }} disabled={acting}
+                <button onClick={() => { if (confirm(isEn ? 'Cancel this purchase order?' : '确定取消此采购单？')) handleAction('cancel') }} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50">
-                  取消
+                  {isEn ? 'Cancel' : '取消'}
                 </button>
               </>
             )}
             {po.status === 'RECEIVED' && (
-              <button onClick={() => handleAction('invoice', '创建账单')} disabled={acting}
+              <button onClick={() => handleAction('invoice')} disabled={acting}
                 className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                 style={{ background: PURPLE }}>
-                创建账单
+                {isEn ? 'Create Bill' : '创建账单'}
               </button>
             )}
             {po.status === 'INVOICED' && (
-              <button onClick={() => handleAction('lock', '锁定')} disabled={acting}
+              <button onClick={() => handleAction('lock')} disabled={acting}
                 className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                 style={{ background: PURPLE }}>
-                🔒 锁定
+                🔒 {isEn ? 'Lock' : '锁定'}
               </button>
             )}
             {po.status === 'TO_APPROVE' && (
               <>
-                <button onClick={() => handleAction('approve', '审批通过')} disabled={acting}
+                <button onClick={() => handleAction('approve')} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: '#16a34a' }}>
-                  ✓ 审批通过
+                  ✓ {isEn ? 'Approve' : '审批通过'}
                 </button>
-                <button onClick={() => { if (confirm('确定取消此采购单？')) handleAction('cancel', '取消') }} disabled={acting}
+                <button onClick={() => { if (confirm(isEn ? 'Cancel this purchase order?' : '确定取消此采购单？')) handleAction('cancel') }} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50">
-                  取消
+                  {isEn ? 'Cancel' : '取消'}
                 </button>
               </>
             )}
             {isLocked && (
               <span className="text-sm font-medium px-3 py-1 rounded flex items-center gap-1.5" style={{ background: '#f0fdf4', color: '#166534' }}>
-                🔒 已锁定 — 不可变更
+                🔒 {isEn ? 'Locked — no changes allowed' : '已锁定 — 不可变更'}
               </span>
             )}
             {isCancelled && (
               <>
-                <button onClick={() => handleAction('reset_to_draft', '重置为草稿')} disabled={acting}
+                <button onClick={() => handleAction('reset_to_draft')} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
-                  重置为草稿
+                  {isEn ? 'Reset to Draft' : '重置为草稿'}
                 </button>
                 <span className="text-sm font-medium px-3 py-1 rounded" style={{ background: '#fef2f2', color: '#dc2626' }}>
-                  此采购单已取消
+                  {isEn ? 'This purchase order has been cancelled' : '此采购单已取消'}
                 </span>
               </>
             )}
@@ -612,7 +625,7 @@ export default function PurchaseDetailPage() {
 
       {/* ── Status progress bar ──────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-end flex-shrink-0">
-        <OdooStatusBar status={po.status} />
+        <OdooStatusBar status={po.status} isEn={isEn} />
       </div>
 
       {/* ── Main form card ───────────────────────────────── */}
@@ -622,7 +635,9 @@ export default function PurchaseDetailPage() {
             className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded text-sm"
             style={{ background: '#e5f1e9', color: '#2e7d4f' }}
           >
-            ✓ 已生成供应商账单 <b>{latestBill.name}</b>（{latestBill.totalIncTax.toFixed(2)}）· 已通知财务角色
+            {isEn
+              ? <>✓ Vendor bill <b>{latestBill.name}</b> generated ({latestBill.totalIncTax.toFixed(2)}) · Finance role notified</>
+              : <>✓ 已生成供应商账单 <b>{latestBill.name}</b>（{latestBill.totalIncTax.toFixed(2)}）· 已通知财务角色</>}
           </div>
         )}
         <div className="bg-white rounded border border-gray-200 shadow-sm">
@@ -634,7 +649,7 @@ export default function PurchaseDetailPage() {
               {/* Left column */}
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">供应商</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Vendor' : '供应商'}</label>
                   {editing ? (
                     <select
                       value={editSupplierId}
@@ -648,19 +663,19 @@ export default function PurchaseDetailPage() {
                   )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">供应商参考</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Vendor Reference' : '供应商参考'}</label>
                   {editing ? (
-                    <input type="text" placeholder="供应商的订单参考号" className={`flex-1 ${inputCls}`} />
+                    <input type="text" placeholder={isEn ? "Vendor's order reference" : '供应商的订单参考号'} className={`flex-1 ${inputCls}`} />
                   ) : (
                     <span className="text-sm text-gray-400">—</span>
                   )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">付款条款</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Payment Terms' : '付款条款'}</label>
                   <span className="text-sm text-gray-700">{supplier?.supplierPaymentTerm || '—'}</span>
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">货币</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Currency' : '货币'}</label>
                   <span className="text-sm text-gray-700">CNY</span>
                 </div>
               </div>
@@ -668,11 +683,11 @@ export default function PurchaseDetailPage() {
               {/* Right column */}
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">订单日期</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Order Date' : '订单日期'}</label>
                   <span className="text-sm text-gray-800">{formatDateOnly(po.orderDate ?? po.createdAt)}</span>
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">预期到货日期</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Expected Arrival' : '预期到货日期'}</label>
                   {editing ? (
                     <input
                       type="date"
@@ -686,7 +701,7 @@ export default function PurchaseDetailPage() {
                   )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
-                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">采购代表</label>
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Purchase Rep' : '采购代表'}</label>
                   <span className="text-sm text-gray-400">—</span>
                 </div>
               </div>
@@ -706,7 +721,7 @@ export default function PurchaseDetailPage() {
                   background: 'transparent',
                 }}
               >
-                {tab === 'products' ? '产品' : '其他信息'}
+                {tab === 'products' ? (isEn ? 'Products' : '产品') : (isEn ? 'Other Info' : '其他信息')}
               </button>
             ))}
           </div>
@@ -719,14 +734,14 @@ export default function PurchaseDetailPage() {
                   <thead>
                     <tr style={{ background: '#f8f8f8', borderBottom: '1px solid #e8e8e8' }}>
                       {editing && <th className="w-8 px-2 py-2.5" />}
-                      <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">商品</th>
-                      <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">描述</th>
-                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">数量</th>
-                      <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">单位</th>
-                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">单价</th>
-                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">税率%</th>
+                      <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Product' : '商品'}</th>
+                      <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Description' : '描述'}</th>
+                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Qty' : '数量'}</th>
+                      <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'UoM' : '单位'}</th>
+                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
+                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
                       <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
-                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">小计</th>
+                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -734,7 +749,7 @@ export default function PurchaseDetailPage() {
                       <tr key={l.id} className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors">
                         {editing && (
                           <td className="px-2 py-2.5 text-center">
-                            <button onClick={() => deleteProductLine(l.id)} className="text-red-400 hover:text-red-600" title="删除此行">
+                            <button onClick={() => deleteProductLine(l.id)} className="text-red-400 hover:text-red-600" title={isEn ? 'Delete this line' : '删除此行'}>
                               <Trash2 className="h-3.5 w-3.5 inline" />
                             </button>
                           </td>
@@ -795,7 +810,7 @@ export default function PurchaseDetailPage() {
                     ))}
                     {displayLines.length === 0 && (
                       <tr>
-                        <td colSpan={editing ? 9 : 8} className="px-4 py-10 text-center text-gray-400 text-sm">暂无明细行</td>
+                        <td colSpan={editing ? 9 : 8} className="px-4 py-10 text-center text-gray-400 text-sm">{isEn ? 'No lines yet' : '暂无明细行'}</td>
                       </tr>
                     )}
                     {editing && (
@@ -808,7 +823,7 @@ export default function PurchaseDetailPage() {
                               onChange={setProductQuery}
                               onSelect={p => { addProductLine(p); setProductQuery('') }}
                               products={purchaseProducts}
-                              placeholder="搜索并添加商品…"
+                              placeholder={isEn ? 'Search and add product…' : '搜索并添加商品…'}
                               inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-64"
                               portalDropdown
                             />
@@ -817,7 +832,7 @@ export default function PurchaseDetailPage() {
                               className="text-xs whitespace-nowrap hover:underline"
                               style={{ color: PURPLE }}
                             >
-                              找不到？新建商品
+                              {isEn ? "Can't find it? Create product" : '找不到？新建商品'}
                             </button>
                           </div>
                         </td>
@@ -831,15 +846,15 @@ export default function PurchaseDetailPage() {
               <div className="border-t border-gray-200 px-6 py-5 flex justify-end">
                 <div style={{ minWidth: '280px' }}>
                   <div className="flex justify-between py-1 text-sm">
-                    <span className="text-gray-500">税前金额</span>
+                    <span className="text-gray-500">{isEn ? 'Untaxed Amount' : '税前金额'}</span>
                     <span className="text-gray-800 font-medium">{subtotalExTax.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between py-1 text-sm">
-                    <span className="text-gray-500">税额</span>
+                    <span className="text-gray-500">{isEn ? 'Tax' : '税额'}</span>
                     <span className="text-gray-800">{totalTax.toFixed(2)}</span>
                   </div>
                   <div className="border-t border-gray-300 mt-1 pt-2 flex justify-between">
-                    <span className="text-sm font-semibold" style={{ color: DARK }}>合计</span>
+                    <span className="text-sm font-semibold" style={{ color: DARK }}>{isEn ? 'Total' : '合计'}</span>
                     <span className="text-base font-bold" style={{ color: DARK }}>{totalIncTax.toFixed(2)}</span>
                   </div>
                 </div>
@@ -853,13 +868,13 @@ export default function PurchaseDetailPage() {
               <div className="grid grid-cols-2 gap-10">
                 <div className="space-y-4">
                   <div className="flex items-start gap-3">
-                    <label className="w-36 text-sm text-gray-500 flex-shrink-0 pt-1">备注</label>
+                    <label className="w-36 text-sm text-gray-500 flex-shrink-0 pt-1">{isEn ? 'Notes' : '备注'}</label>
                     {editing ? (
                       <textarea
                         value={editNotes}
                         onChange={e => setEditNotes(e.target.value)}
                         rows={3}
-                        placeholder="内部备注..."
+                        placeholder={isEn ? 'Internal notes...' : '内部备注...'}
                         className={`flex-1 ${inputCls} resize-none`}
                       />
                     ) : (
@@ -869,11 +884,11 @@ export default function PurchaseDetailPage() {
                 </div>
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <label className="w-36 text-sm text-gray-500 flex-shrink-0">来源单据</label>
+                    <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Source Document' : '来源单据'}</label>
                     <span className="text-sm text-gray-400">—</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <label className="w-36 text-sm text-gray-500 flex-shrink-0">创建日期</label>
+                    <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Created On' : '创建日期'}</label>
                     <span className="text-sm text-gray-700">{formatDateOnly(po.createdAt)}</span>
                   </div>
                 </div>
@@ -882,7 +897,7 @@ export default function PurchaseDetailPage() {
               {/* 收货记录：实际到货时间以此为准（可能分批多条），来自库存管理「收货」工作台 */}
               {(po.receipts?.length ?? 0) > 0 && (
                 <div className="mt-6 pt-6 border-t border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">收货记录</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'Goods Receipts' : '收货记录'}</h3>
                   <div className="space-y-3">
                     {[...(po.receipts ?? [])]
                       .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
@@ -892,19 +907,19 @@ export default function PurchaseDetailPage() {
                           <div key={gr.id} className="border border-gray-200 rounded p-3 text-sm">
                             <div className="flex items-center justify-between">
                               <span className="font-medium text-gray-800">{gr.name}</span>
-                              <span className="text-gray-500">到货 {formatDateOnly(gr.arrivedAt)}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}</span>
+                              <span className="text-gray-500">{isEn ? 'Arrived' : '到货'} {formatDateOnly(gr.arrivedAt)}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}</span>
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
-                              {gr.lines.length} 个品项
+                              {isEn ? `${gr.lines.length} item(s)` : `${gr.lines.length} 个品项`}
                               {damaged.length > 0 && (
-                                <span className="text-red-600 ml-1">· {damaged.length} 项有损坏</span>
+                                <span className="text-red-600 ml-1">{isEn ? `· ${damaged.length} damaged` : `· ${damaged.length} 项有损坏`}</span>
                               )}
                             </div>
                             {gr.notes && <div className="text-xs text-gray-500 mt-1">{gr.notes}</div>}
                             {(gr.photos?.length ?? 0) > 0 && (
                               <div className="flex gap-1.5 mt-2 flex-wrap">
                                 {(gr.photos ?? []).map((src, i) => (
-                                  <img key={i} src={src} alt={`${gr.name} 照片 ${i + 1}`} className="w-12 h-12 rounded object-cover border border-gray-200" />
+                                  <img key={i} src={src} alt={isEn ? `${gr.name} photo ${i + 1}` : `${gr.name} 照片 ${i + 1}`} className="w-12 h-12 rounded object-cover border border-gray-200" />
                                 ))}
                               </div>
                             )}
@@ -922,18 +937,18 @@ export default function PurchaseDetailPage() {
         <div className="mt-4 bg-white rounded border border-gray-200 shadow-sm p-5">
           <div className="flex items-center gap-3 mb-4">
             <button className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
-              <span>✉</span> 发送消息
+              <span>✉</span> {isEn ? 'Send Message' : '发送消息'}
             </button>
             <button className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
-              <span>📝</span> 记录备注
+              <span>📝</span> {isEn ? 'Log Note' : '记录备注'}
             </button>
             <button className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
-              <span>📅</span> 安排活动
+              <span>📅</span> {isEn ? 'Schedule Activity' : '安排活动'}
             </button>
           </div>
           {timeline.length === 0 ? (
             <div className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded">
-              暂无操作记录
+              {isEn ? 'No activity records yet' : '暂无操作记录'}
             </div>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -941,7 +956,7 @@ export default function PurchaseDetailPage() {
                 <div key={t.id} className="flex items-start gap-3 text-sm">
                   <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: PURPLE }} />
                   <span className="text-gray-400 font-mono text-xs w-32 flex-shrink-0 pt-px">
-                    {new Date(t.at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {new Date(t.at).toLocaleString(isEn ? 'en-US' : 'zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </span>
                   <span className="text-gray-700">{t.text}</span>
                 </div>
@@ -954,10 +969,10 @@ export default function PurchaseDetailPage() {
       {showQuickCreate && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <h2 className="text-base font-semibold text-gray-800">新建商品</h2>
-            <p className="text-xs text-gray-400">先建最小信息用于本次采购；默认不可销售，之后可在商品库补全销售价/税率/图片再上架。</p>
+            <h2 className="text-base font-semibold text-gray-800">{isEn ? 'New Product' : '新建商品'}</h2>
+            <p className="text-xs text-gray-400">{isEn ? "Create minimal info for this purchase; not saleable by default. You can later fill in sale price/tax rate/image in the product catalog before listing it." : '先建最小信息用于本次采购；默认不可销售，之后可在商品库补全销售价/税率/图片再上架。'}</p>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">商品名称</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Product Name' : '商品名称'}</label>
               <input
                 value={qcName}
                 onChange={e => setQcName(e.target.value)}
@@ -968,34 +983,34 @@ export default function PurchaseDetailPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">分类</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Category' : '分类'}</label>
                 <select
                   value={qcCategoryId}
                   onChange={e => setQcCategoryId(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 >
-                  <option value="">未分类</option>
+                  <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
                   {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.nameZh || c.name}</option>
+                    <option key={c.id} value={c.id}>{isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">采购单位</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Purchase UoM' : '采购单位'}</label>
                 <select
                   value={qcUomId}
                   onChange={e => setQcUomId(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 >
-                  <option value="">未指定</option>
+                  <option value="">{isEn ? 'Unspecified' : '未指定'}</option>
                   {uoms.map(u => (
-                    <option key={u.id} value={u.id}>{u.nameZh || u.name}</option>
+                    <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh || u.name)}</option>
                   ))}
                 </select>
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">参考采购单价（可选）</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Reference Purchase Price (optional)' : '参考采购单价（可选）'}</label>
               <input
                 type="number" step="0.01" min="0"
                 value={qcUnitCost}
@@ -1008,7 +1023,7 @@ export default function PurchaseDetailPage() {
                 onClick={() => setShowQuickCreate(false)}
                 className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
               >
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={submitQuickCreate}
@@ -1016,7 +1031,7 @@ export default function PurchaseDetailPage() {
                 className="flex-1 py-2 rounded text-sm text-white disabled:opacity-50"
                 style={{ background: PURPLE }}
               >
-                {qcSubmitting ? '创建中…' : '创建并加入采购行'}
+                {qcSubmitting ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create and add to lines' : '创建并加入采购行')}
               </button>
             </div>
           </div>
