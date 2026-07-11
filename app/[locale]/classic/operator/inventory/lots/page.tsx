@@ -85,7 +85,7 @@ interface TraceResult {
   productReturns: ProductReturn[]
 }
 
-const MOVE_TYPE_LABEL: Record<string, string> = {
+const MOVE_TYPE_LABEL_ZH: Record<string, string> = {
   IN: '入库',
   OUT: '出库',
   ADJUSTMENT: '调整',
@@ -93,21 +93,44 @@ const MOVE_TYPE_LABEL: Record<string, string> = {
   SCRAP: '报废',
 }
 
-function expiryBadge(bestBefore?: string | null): { label: string; color: string } | null {
+const MOVE_TYPE_LABEL_EN: Record<string, string> = {
+  IN: 'Receipt',
+  OUT: 'Issue',
+  ADJUSTMENT: 'Adjustment',
+  RETURN: 'Return',
+  SCRAP: 'Scrap',
+}
+
+function expiryBadge(bestBefore: string | null | undefined, isEn: boolean): { label: string; color: string } | null {
   if (!bestBefore) return null
   const now = new Date()
   const d = new Date(bestBefore)
   if (isNaN(d.getTime())) return null
   const daysRemaining = Math.ceil((d.getTime() - now.getTime()) / 86400000)
-  if (daysRemaining < 0) return { label: `已过期 ${Math.abs(daysRemaining)} 天`, color: '#dc2626' }
-  if (daysRemaining <= 3) return { label: `剩 ${daysRemaining} 天`, color: '#ea580c' }
-  return { label: `剩 ${daysRemaining} 天`, color: '#6b7280' }
+  if (daysRemaining < 0) {
+    return {
+      label: isEn ? `Expired ${Math.abs(daysRemaining)}d ago` : `已过期 ${Math.abs(daysRemaining)} 天`,
+      color: '#dc2626',
+    }
+  }
+  if (daysRemaining <= 3) {
+    return {
+      label: isEn ? `${daysRemaining}d left` : `剩 ${daysRemaining} 天`,
+      color: '#ea580c',
+    }
+  }
+  return {
+    label: isEn ? `${daysRemaining}d left` : `剩 ${daysRemaining} 天`,
+    color: '#6b7280',
+  }
 }
 
 export default function LotsPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const moveTypeLabel = isEn ? MOVE_TYPE_LABEL_EN : MOVE_TYPE_LABEL_ZH
 
   const [mode, setMode] = useState<Mode>('LEDGER')
 
@@ -136,11 +159,11 @@ export default function LotsPage() {
       )
       setProducts(physicalProducts)
     } catch {
-      toast.error('加载商品列表失败')
+      toast.error(isEn ? 'Failed to load product list' : '加载商品列表失败')
     } finally {
       setProductsLoaded(true)
     }
-  }, [])
+  }, [isEn])
 
   useEffect(() => { loadProducts() }, [loadProducts])
 
@@ -172,7 +195,7 @@ export default function LotsPage() {
       })
       .catch((e) => {
         if (!cancelled) {
-          toast.error(e instanceof Error ? e.message : '加载批次失败')
+          toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load lots' : '加载批次失败'))
           setLots([])
           setIntegrity(null)
         }
@@ -200,7 +223,7 @@ export default function LotsPage() {
       if (e instanceof Error && /404|未找到/.test(e.message)) {
         setTraceNotFound(true)
       } else {
-        toast.error(e instanceof Error ? e.message : '追溯查询失败')
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Trace query failed' : '追溯查询失败'))
       }
     } finally {
       setTraceLoading(false)
@@ -211,14 +234,14 @@ export default function LotsPage() {
     <div className="p-6 max-w-6xl mx-auto space-y-4">
       <div className="flex items-center gap-2 text-sm text-gray-400">
         <button onClick={() => router.push(`${prefix}/classic/operator/inventory`)} className="hover:underline">
-          库存管理
+          {isEn ? 'Inventory' : '库存管理'}
         </button>
         <span>/</span>
-        <span style={{ color: PURPLE }}>商品批次台账</span>
+        <span style={{ color: PURPLE }}>{isEn ? 'Product Lot Ledger' : '商品批次台账'}</span>
       </div>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>商品批次台账</h1>
+        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>{isEn ? 'Product Lot Ledger' : '商品批次台账'}</h1>
         <div className="flex gap-2">
           <button
             onClick={() => setMode('LEDGER')}
@@ -227,7 +250,7 @@ export default function LotsPage() {
               ? { background: PURPLE, color: '#fff', borderColor: PURPLE }
               : { background: '#fff', color: PURPLE, borderColor: BORDER }}
           >
-            按商品浏览
+            {isEn ? 'Browse by Product' : '按商品浏览'}
           </button>
           <button
             onClick={() => setMode('TRACE')}
@@ -236,7 +259,7 @@ export default function LotsPage() {
               ? { background: PURPLE, color: '#fff', borderColor: PURPLE }
               : { background: '#fff', color: PURPLE, borderColor: BORDER }}
           >
-            按批号追溯
+            {isEn ? 'Trace by Lot Number' : '按批号追溯'}
           </button>
         </div>
       </div>
@@ -246,12 +269,12 @@ export default function LotsPage() {
         <div className="space-y-4">
           {/* Product picker */}
           <div className="bg-white rounded-lg border p-4" style={{ borderColor: BORDER }}>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">选择商品</label>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">{isEn ? 'Select Product' : '选择商品'}</label>
             <input
               type="text"
               value={productSearch}
               onChange={e => { setProductSearch(e.target.value); setSelectedProductId('') }}
-              placeholder="搜索商品..."
+              placeholder={isEn ? 'Search products...' : '搜索商品...'}
               className="w-full border rounded px-3 py-2 text-sm outline-none"
               style={{ borderColor: BORDER }}
               disabled={!productsLoaded}
@@ -259,7 +282,7 @@ export default function LotsPage() {
             {productSearch && !selectedProductId && (
               <div className="border rounded mt-1 max-h-52 overflow-y-auto" style={{ borderColor: BORDER }}>
                 {filteredProducts.length === 0 && (
-                  <div className="px-3 py-2 text-xs text-gray-400">无匹配商品</div>
+                  <div className="px-3 py-2 text-xs text-gray-400">{isEn ? 'No matching products' : '无匹配商品'}</div>
                 )}
                 {filteredProducts.slice(0, 30).map(p => (
                   <button
@@ -269,14 +292,14 @@ export default function LotsPage() {
                     className="w-full text-left px-3 py-2 text-sm hover:bg-purple-50 flex justify-between"
                   >
                     <span>{p.name}</span>
-                    <span className="text-xs text-gray-400">库存: {Number(p.qtyOnHand ?? 0).toFixed(1)}</span>
+                    <span className="text-xs text-gray-400">{isEn ? 'Stock' : '库存'}: {Number(p.qtyOnHand ?? 0).toFixed(1)}</span>
                   </button>
                 ))}
               </div>
             )}
             {selectedProduct && (
               <p className="text-xs text-gray-400 mt-1">
-                当前商品库存 (qtyOnHand): {Number(selectedProduct.qtyOnHand ?? 0).toFixed(2)}
+                {isEn ? 'Current stock (qtyOnHand)' : '当前商品库存 (qtyOnHand)'}: {Number(selectedProduct.qtyOnHand ?? 0).toFixed(2)}
               </p>
             )}
           </div>
@@ -293,15 +316,19 @@ export default function LotsPage() {
                     color: '#555',
                   }}
                 >
-                  <span className="font-medium" style={{ color: PURPLE }}>一致性核对（信息性）：</span>{' '}
-                  商品库存 qtyOnHand = <b>{integrity.qtyOnHand.toFixed(2)}</b>，
-                  批次台账可用余量合计 = <b>{integrity.lotSumAvailable.toFixed(2)}</b>
+                  <span className="font-medium" style={{ color: PURPLE }}>
+                    {isEn ? 'Consistency check (informational):' : '一致性核对（信息性）：'}
+                  </span>{' '}
+                  {isEn ? 'Stock qtyOnHand' : '商品库存 qtyOnHand'} = <b>{integrity.qtyOnHand.toFixed(2)}</b>
+                  {isEn ? ', ' : '，'}
+                  {isEn ? 'lot ledger available total' : '批次台账可用余量合计'} = <b>{integrity.lotSumAvailable.toFixed(2)}</b>
                   {Math.abs(integrity.difference) < 0.001 ? (
-                    <span className="ml-2 text-green-600">✓ 一致</span>
+                    <span className="ml-2 text-green-600">{isEn ? '✓ Consistent' : '✓ 一致'}</span>
                   ) : (
                     <span className="ml-2">
-                      差额 {integrity.difference.toFixed(2)}（Lot 批次追踪存在已知历史缺口——部分早期入库/出库未生成批次记录，
-                      两者不一致属已知情况，非数据错误，仅供参考）
+                      {isEn
+                        ? `Difference ${integrity.difference.toFixed(2)} (there is a known historical gap in lot tracking — some early receipts/issues did not generate lot records; this discrepancy is a known condition, not a data error, for reference only)`
+                        : `差额 ${integrity.difference.toFixed(2)}（Lot 批次追踪存在已知历史缺口——部分早期入库/出库未生成批次记录，两者不一致属已知情况，非数据错误，仅供参考）`}
                     </span>
                   )}
                 </div>
@@ -318,7 +345,7 @@ export default function LotsPage() {
                       ? { background: PURPLE, color: '#fff', borderColor: PURPLE }
                       : { background: '#fff', color: '#666', borderColor: BORDER }}
                   >
-                    {s === 'ALL' ? '全部' : s === 'AVAILABLE' ? '可用' : '已耗尽'}
+                    {s === 'ALL' ? (isEn ? 'All' : '全部') : s === 'AVAILABLE' ? (isEn ? 'Available' : '可用') : (isEn ? 'Depleted' : '已耗尽')}
                   </button>
                 ))}
               </div>
@@ -329,23 +356,23 @@ export default function LotsPage() {
                   className="grid gap-3 px-4 py-2.5 text-xs font-semibold border-b"
                   style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '140px 80px 110px 90px 90px 120px 1fr' }}
                 >
-                  <span>批号</span>
-                  <span>状态</span>
-                  <span>入库日期</span>
-                  <span className="text-right">初始量</span>
-                  <span className="text-right">剩余量</span>
-                  <span>保质期</span>
-                  <span>来源单据</span>
+                  <span>{isEn ? 'Lot #' : '批号'}</span>
+                  <span>{isEn ? 'Status' : '状态'}</span>
+                  <span>{isEn ? 'Received' : '入库日期'}</span>
+                  <span className="text-right">{isEn ? 'Initial Qty' : '初始量'}</span>
+                  <span className="text-right">{isEn ? 'Remaining Qty' : '剩余量'}</span>
+                  <span>{isEn ? 'Expiry' : '保质期'}</span>
+                  <span>{isEn ? 'Source Doc' : '来源单据'}</span>
                 </div>
 
-                {lotsLoading && <div className="py-12 text-center text-sm text-gray-400">加载中...</div>}
+                {lotsLoading && <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>}
 
                 {!lotsLoading && visibleLots.length === 0 && (
-                  <div className="py-12 text-center text-sm text-gray-400">该商品暂无批次记录</div>
+                  <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'No lot records for this product' : '该商品暂无批次记录'}</div>
                 )}
 
                 {!lotsLoading && visibleLots.map(lot => {
-                  const badge = expiryBadge(lot.bestBefore)
+                  const badge = expiryBadge(lot.bestBefore, isEn)
                   return (
                     <div
                       key={lot.id}
@@ -357,7 +384,7 @@ export default function LotsPage() {
                         onClick={() => { setMode('TRACE'); setLotNumberInput(lot.lotNumber); runTrace(lot.lotNumber) }}
                         className="text-xs font-mono text-left hover:underline"
                         style={{ color: PURPLE }}
-                        title="点击追溯该批次"
+                        title={isEn ? 'Click to trace this lot' : '点击追溯该批次'}
                       >
                         {lot.lotNumber}
                       </button>
@@ -367,7 +394,7 @@ export default function LotsPage() {
                           ? { background: '#e7f6ec', color: '#16a34a' }
                           : { background: '#f1f1f1', color: '#888' }}
                       >
-                        {lot.status === 'AVAILABLE' ? '可用' : '已耗尽'}
+                        {lot.status === 'AVAILABLE' ? (isEn ? 'Available' : '可用') : (isEn ? 'Depleted' : '已耗尽')}
                       </span>
                       <span className="text-xs text-gray-600">{formatDateOnly(lot.arrivedAt)}</span>
                       <span className="text-sm font-mono text-right text-gray-600">{Number(lot.initialQty).toFixed(2)}</span>
@@ -389,7 +416,7 @@ export default function LotsPage() {
 
           {!selectedProductId && (
             <div className="bg-white rounded-lg border py-16 text-center text-sm text-gray-400" style={{ borderColor: BORDER }}>
-              请先搜索并选择一个商品，查看其批次台账
+              {isEn ? 'Search and select a product first to view its lot ledger' : '请先搜索并选择一个商品，查看其批次台账'}
             </div>
           )}
         </div>
@@ -399,7 +426,7 @@ export default function LotsPage() {
       {mode === 'TRACE' && (
         <div className="space-y-4">
           <div className="bg-white rounded-lg border p-4" style={{ borderColor: BORDER }}>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">批号追溯</label>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">{isEn ? 'Trace by Lot Number' : '批号追溯'}</label>
             <form
               onSubmit={e => { e.preventDefault(); runTrace(lotNumberInput) }}
               className="flex gap-2"
@@ -408,7 +435,7 @@ export default function LotsPage() {
                 type="text"
                 value={lotNumberInput}
                 onChange={e => setLotNumberInput(e.target.value)}
-                placeholder="输入批号，如 LOT-00918"
+                placeholder={isEn ? 'Enter lot number, e.g. LOT-00918' : '输入批号，如 LOT-00918'}
                 className="flex-1 border rounded px-3 py-2 text-sm outline-none font-mono"
                 style={{ borderColor: BORDER }}
               />
@@ -418,13 +445,13 @@ export default function LotsPage() {
                 className="px-4 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
                 style={{ background: PURPLE }}
               >
-                {traceLoading ? '查询中...' : '追溯'}
+                {traceLoading ? (isEn ? 'Searching...' : '查询中...') : (isEn ? 'Trace' : '追溯')}
               </button>
             </form>
 
             {recentLots.length > 0 && !traceResult && (
               <div className="mt-3">
-                <p className="text-xs text-gray-400 mb-1.5">或从最近批次中选择：</p>
+                <p className="text-xs text-gray-400 mb-1.5">{isEn ? 'Or pick from recent lots:' : '或从最近批次中选择：'}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {recentLots.map(l => (
                     <button
@@ -444,7 +471,9 @@ export default function LotsPage() {
 
           {traceNotFound && (
             <div className="bg-white rounded-lg border py-16 text-center text-sm text-gray-400" style={{ borderColor: BORDER }}>
-              未找到批号「{lotNumberInput}」，请检查批号是否正确
+              {isEn
+                ? `Lot number "${lotNumberInput}" not found — please check the lot number`
+                : `未找到批号「${lotNumberInput}」，请检查批号是否正确`}
             </div>
           )}
 
@@ -468,26 +497,26 @@ export default function LotsPage() {
                       ? { background: '#e7f6ec', color: '#16a34a' }
                       : { background: '#f1f1f1', color: '#888' }}
                   >
-                    {traceResult.lot.status === 'AVAILABLE' ? '可用' : '已耗尽'}
+                    {traceResult.lot.status === 'AVAILABLE' ? (isEn ? 'Available' : '可用') : (isEn ? 'Depleted' : '已耗尽')}
                   </span>
                 </div>
                 <div className="grid grid-cols-4 gap-4 text-xs">
                   <div>
-                    <p className="text-gray-400">入库日期</p>
+                    <p className="text-gray-400">{isEn ? 'Received' : '入库日期'}</p>
                     <p className="text-gray-700 mt-0.5">{formatDateOnly(traceResult.lot.arrivedAt)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">初始量 / 剩余量</p>
+                    <p className="text-gray-400">{isEn ? 'Initial Qty / Remaining Qty' : '初始量 / 剩余量'}</p>
                     <p className="text-gray-700 mt-0.5">
                       {Number(traceResult.lot.initialQty).toFixed(2)} / {Number(traceResult.lot.currentQty).toFixed(2)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-400">保质期</p>
+                    <p className="text-gray-400">{isEn ? 'Expiry' : '保质期'}</p>
                     <p className="text-gray-700 mt-0.5">{traceResult.lot.bestBefore ? formatDateOnly(traceResult.lot.bestBefore) : '—'}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">来源单据</p>
+                    <p className="text-gray-400">{isEn ? 'Source Doc' : '来源单据'}</p>
                     <p className="text-gray-700 mt-0.5">{traceResult.lot.sourceRef ?? traceResult.lot.sourceType ?? '—'}</p>
                   </div>
                 </div>
@@ -496,20 +525,22 @@ export default function LotsPage() {
               {/* Order sales table */}
               <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
                 <div className="px-4 py-2.5 text-sm font-semibold border-b" style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb' }}>
-                  卖给了谁（订单出库）
+                  {isEn ? 'Sold to (order issues)' : '卖给了谁（订单出库）'}
                 </div>
                 <div
                   className="grid gap-3 px-4 py-2 text-xs font-semibold border-b text-gray-500"
                   style={{ borderColor: '#f0e4ee', gridTemplateColumns: '1fr 140px 90px 140px' }}
                 >
-                  <span>客户</span>
-                  <span>订单号</span>
-                  <span className="text-right">数量</span>
-                  <span>出库时间</span>
+                  <span>{isEn ? 'Customer' : '客户'}</span>
+                  <span>{isEn ? 'Order #' : '订单号'}</span>
+                  <span className="text-right">{isEn ? 'Qty' : '数量'}</span>
+                  <span>{isEn ? 'Issued At' : '出库时间'}</span>
                 </div>
                 {traceResult.orderSales.length === 0 && (
                   <div className="py-8 text-center text-sm text-gray-400">
-                    暂无订单销售记录（该批次尚未通过订单出库，或本环境批次出库数据较少，属已知情况）
+                    {isEn
+                      ? 'No order sales records (this lot has not yet been issued via an order, or lot-level issue data is limited in this environment — this is a known condition)'
+                      : '暂无订单销售记录（该批次尚未通过订单出库，或本环境批次出库数据较少，属已知情况）'}
                   </div>
                 )}
                 {traceResult.orderSales.map((s, i) => (
@@ -531,20 +562,20 @@ export default function LotsPage() {
               {/* Other moves table */}
               <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
                 <div className="px-4 py-2.5 text-sm font-semibold border-b" style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb' }}>
-                  其他流水（报废/调整等，批次级）
+                  {isEn ? 'Other movements (scrap/adjustments etc., lot-level)' : '其他流水（报废/调整等，批次级）'}
                 </div>
                 <div
                   className="grid gap-3 px-4 py-2 text-xs font-semibold border-b text-gray-500"
                   style={{ borderColor: '#f0e4ee', gridTemplateColumns: '90px 90px 1fr 120px 140px' }}
                 >
-                  <span>类型</span>
-                  <span className="text-right">数量</span>
-                  <span>备注/来源</span>
-                  <span>单据号</span>
-                  <span>时间</span>
+                  <span>{isEn ? 'Type' : '类型'}</span>
+                  <span className="text-right">{isEn ? 'Qty' : '数量'}</span>
+                  <span>{isEn ? 'Note/Source' : '备注/来源'}</span>
+                  <span>{isEn ? 'Doc #' : '单据号'}</span>
+                  <span>{isEn ? 'Time' : '时间'}</span>
                 </div>
                 {traceResult.otherMoves.length === 0 && (
-                  <div className="py-8 text-center text-sm text-gray-400">暂无其他批次级流水</div>
+                  <div className="py-8 text-center text-sm text-gray-400">{isEn ? 'No other lot-level movements' : '暂无其他批次级流水'}</div>
                 )}
                 {traceResult.otherMoves.map((m, i) => (
                   <div
@@ -552,7 +583,7 @@ export default function LotsPage() {
                     className="grid gap-3 px-4 py-2.5 border-b last:border-b-0 items-center"
                     style={{ borderColor: '#f0e4ee', gridTemplateColumns: '90px 90px 1fr 120px 140px' }}
                   >
-                    <span className="text-xs font-medium text-gray-700">{MOVE_TYPE_LABEL[m.type] ?? m.type}</span>
+                    <span className="text-xs font-medium text-gray-700">{moveTypeLabel[m.type] ?? m.type}</span>
                     <span className="text-sm font-mono text-right text-gray-600">{m.qty.toFixed(2)}</span>
                     <span className="text-xs text-gray-500 truncate">{m.note ?? '—'}</span>
                     <span className="text-xs font-mono text-gray-400">{m.sourceRef ?? '—'}</span>
@@ -565,16 +596,18 @@ export default function LotsPage() {
               {traceResult.productReturns.length > 0 && (
                 <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
                   <div className="px-4 py-2.5 text-sm font-semibold border-b" style={{ borderColor: BORDER, color: '#888', background: '#fafafa' }}>
-                    该商品的退货记录（供参考，非批次级精确追溯——RETURN 流水暂不可靠携带批号）
+                    {isEn
+                      ? "This product's return records (for reference, not precise lot-level tracing — RETURN movements do not yet reliably carry a lot number)"
+                      : '该商品的退货记录（供参考，非批次级精确追溯——RETURN 流水暂不可靠携带批号）'}
                   </div>
                   <div
                     className="grid gap-3 px-4 py-2 text-xs font-semibold border-b text-gray-500"
                     style={{ borderColor: '#f0e4ee', gridTemplateColumns: '90px 1fr 120px 140px' }}
                   >
-                    <span className="text-right">数量</span>
-                    <span>备注</span>
-                    <span>单据号</span>
-                    <span>时间</span>
+                    <span className="text-right">{isEn ? 'Qty' : '数量'}</span>
+                    <span>{isEn ? 'Note' : '备注'}</span>
+                    <span>{isEn ? 'Doc #' : '单据号'}</span>
+                    <span>{isEn ? 'Time' : '时间'}</span>
                   </div>
                   {traceResult.productReturns.map((r, i) => (
                     <div
@@ -595,7 +628,7 @@ export default function LotsPage() {
 
           {!traceResult && !traceNotFound && (
             <div className="bg-white rounded-lg border py-16 text-center text-sm text-gray-400" style={{ borderColor: BORDER }}>
-              输入批号或从最近批次中选择，查看该批次的完整流转记录
+              {isEn ? 'Enter a lot number or pick from recent lots to view its full movement history' : '输入批号或从最近批次中选择，查看该批次的完整流转记录'}
             </div>
           )}
         </div>

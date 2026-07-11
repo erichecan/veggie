@@ -29,6 +29,7 @@ export interface AttentionItem {
 
 export interface GroupInventoryRow {
   groupKey: string
+  groupName: string
   groupNameZh: string
   skuCount: number
   totalValue: number
@@ -76,7 +77,7 @@ export async function getInventoryOverviewKPIs(): Promise<InventoryOverviewKPIs>
   return { totalStockValue, expiringLotCount, monthLossRate, pendingStockTakeCount }
 }
 
-export async function getInventoryAttentionItems(limit = 8): Promise<AttentionItem[]> {
+export async function getInventoryAttentionItems(limit = 8, isEn = false): Promise<AttentionItem[]> {
   const now = new Date()
   const expiringCutoff = new Date(now.getTime() + EXPIRING_DAYS * 86400000)
   const staleCutoff = new Date(now.getTime() - STOCK_TAKE_STALE_DAYS * 86400000)
@@ -88,7 +89,7 @@ export async function getInventoryAttentionItems(limit = 8): Promise<AttentionIt
   // 1. 低于安全库存的商品（未设置阈值的商品跳过）
   const lowStockRows = (await p.$queryRawUnsafe(
     `SELECT p.id, p.name, p."qtyOnHand"::float AS qty_on_hand, p."safetyStockMin"::float AS safety_stock_min,
-            COALESCE(pc."nameZh", cg."nameZh", '—') AS category_label
+            COALESCE(${isEn ? 'pc.name, cg.name' : 'pc."nameZh", cg."nameZh"'}, '—') AS category_label
      FROM "Product" p
      LEFT JOIN "ProductCategory" pc ON pc.id = p."categoryId"
      LEFT JOIN "CategoryGroup" cg ON cg.id = pc."groupId"
@@ -101,9 +102,13 @@ export async function getInventoryAttentionItems(limit = 8): Promise<AttentionIt
       severity: r.qty_on_hand <= 0 ? 'crit' : 'warn',
       categoryLabel: r.category_label,
       icon: '⚠️',
-      title: `${r.name} 库存告急（现有 ${r.qty_on_hand}，安全库存 ${r.safety_stock_min}）`,
-      desc: r.qty_on_hand <= 0 ? '已缺货，需尽快补货' : '已低于安全库存下限',
-      actionLabel: '去处理 →',
+      title: isEn
+        ? `${r.name} low on stock (current ${r.qty_on_hand}, safety stock ${r.safety_stock_min})`
+        : `${r.name} 库存告急（现有 ${r.qty_on_hand}，安全库存 ${r.safety_stock_min}）`,
+      desc: r.qty_on_hand <= 0
+        ? (isEn ? 'Out of stock, restock urgently' : '已缺货，需尽快补货')
+        : (isEn ? 'Below the safety stock threshold' : '已低于安全库存下限'),
+      actionLabel: isEn ? 'Handle →' : '去处理 →',
       actionHref: '/classic/operator/inventory',
     })
   }
@@ -120,11 +125,15 @@ export async function getInventoryAttentionItems(limit = 8): Promise<AttentionIt
     const daysRemaining = Math.ceil((new Date(lot.bestBefore).getTime() - now.getTime()) / 86400000)
     items.push({
       severity: isExpired ? 'warn' : 'info',
-      categoryLabel: '批次',
+      categoryLabel: isEn ? 'Lot' : '批次',
       icon: '⏰',
-      title: `${lot.product?.name ?? '未知商品'} 批次 ${lot.lotNumber} ${isExpired ? '已过期' : `${daysRemaining} 天后过期`}`,
-      desc: `剩余 ${toNum(lot.currentQty)}，保质期至 ${new Date(lot.bestBefore).toLocaleDateString('en-GB')}`,
-      actionLabel: '去处理 →',
+      title: isEn
+        ? `${lot.product?.name ?? 'Unknown product'} lot ${lot.lotNumber} ${isExpired ? 'expired' : `expires in ${daysRemaining} days`}`
+        : `${lot.product?.name ?? '未知商品'} 批次 ${lot.lotNumber} ${isExpired ? '已过期' : `${daysRemaining} 天后过期`}`,
+      desc: isEn
+        ? `${toNum(lot.currentQty)} remaining, best before ${new Date(lot.bestBefore).toLocaleDateString('en-GB')}`
+        : `剩余 ${toNum(lot.currentQty)}，保质期至 ${new Date(lot.bestBefore).toLocaleDateString('en-GB')}`,
+      actionLabel: isEn ? 'Handle →' : '去处理 →',
       actionHref: '/classic/operator/inventory/lots',
     })
   }
@@ -139,11 +148,15 @@ export async function getInventoryAttentionItems(limit = 8): Promise<AttentionIt
     const daysStale = Math.floor((now.getTime() - new Date(st.createdAt).getTime()) / 86400000)
     items.push({
       severity: 'info',
-      categoryLabel: '盘点',
+      categoryLabel: isEn ? 'Stock Take' : '盘点',
       icon: '📋',
-      title: `${st.name} 待完成盘点（已挂起 ${daysStale} 天）`,
-      desc: '盘点单创建后长期未完成，请尽快核实并提交',
-      actionLabel: '去完成 →',
+      title: isEn
+        ? `${st.name} stock take pending (stale ${daysStale} days)`
+        : `${st.name} 待完成盘点（已挂起 ${daysStale} 天）`,
+      desc: isEn
+        ? 'This stock take has been open for a long time, please verify and submit soon'
+        : '盘点单创建后长期未完成，请尽快核实并提交',
+      actionLabel: isEn ? 'Go finish →' : '去完成 →',
       actionHref: '/classic/warehouse/stock-take',
     })
   }
@@ -174,10 +187,11 @@ export async function getInventoryByCategoryGroup(): Promise<GroupInventoryRow[]
   const aggMap = new Map(aggRows.map(r => [r.group_id, r]))
   const zero = { sku_count: 0, total_value: 0, low_stock_count: 0 }
 
-  const rows: GroupInventoryRow[] = groups.map((g: { id: string; key: string; nameZh: string }) => {
+  const rows: GroupInventoryRow[] = groups.map((g: { id: string; key: string; name: string; nameZh: string }) => {
     const agg = aggMap.get(g.id) ?? zero
     return {
       groupKey: g.key,
+      groupName: g.name,
       groupNameZh: g.nameZh,
       skuCount: agg.sku_count,
       totalValue: round2(agg.total_value),
@@ -188,6 +202,7 @@ export async function getInventoryByCategoryGroup(): Promise<GroupInventoryRow[]
   const ungrouped = aggMap.get(null) ?? zero
   rows.push({
     groupKey: 'UNGROUPED',
+    groupName: 'Ungrouped',
     groupNameZh: '未分组',
     skuCount: ungrouped.sku_count,
     totalValue: round2(ungrouped.total_value),

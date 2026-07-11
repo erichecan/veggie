@@ -7,15 +7,17 @@ import { getInventoryOverviewKPIs, getInventoryAttentionItems, getInventoryByCat
 export async function GET(req: Request) {
   return withAuth(req, async () => {
     try {
+      const isEn = new URL(req.url).searchParams.get('locale') === 'en'
       const [kpis, attention, groups] = await Promise.all([
         getInventoryOverviewKPIs(),
-        getInventoryAttentionItems(8),
+        getInventoryAttentionItems(8, isEn),
         getInventoryByCategoryGroup(),
       ])
       return NextResponse.json(serializeApi({ kpis, attention, groups }))
     } catch (error) {
       console.error('[GET /api/analytics/inventory-overview]', error)
-      return NextResponse.json({ error: '获取库存总览失败' }, { status: 500 })
+      const isEn = new URL(req.url).searchParams.get('locale') === 'en'
+      return NextResponse.json({ error: isEn ? 'Failed to load inventory overview' : '获取库存总览失败' }, { status: 500 })
     }
   }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
 }

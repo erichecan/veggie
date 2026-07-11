@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
+import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -40,17 +41,18 @@ interface LotOption {
   bestBefore?: string | null
 }
 
-const SCRAP_REASONS = [
-  { key: 'CUSTOMER_RETURN_EXPIRED', label: '客退过期' },
-  { key: 'CUSTOMER_RETURN_DAMAGED', label: '客退损坏' },
-  { key: 'WAREHOUSE_EXPIRY', label: '仓库过期' },
-  { key: 'WAREHOUSE_DAMAGE', label: '仓库损坏' },
-  { key: 'OTHER', label: '其他' },
-]
+const SCRAP_REASON_KEYS = [
+  'CUSTOMER_RETURN_EXPIRED',
+  'CUSTOMER_RETURN_DAMAGED',
+  'WAREHOUSE_EXPIRY',
+  'WAREHOUSE_DAMAGE',
+  'OTHER',
+] as const
 
 export default function ScrapPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const [records, setRecords] = useState<ScrapRecord[]>([])
@@ -77,7 +79,7 @@ export default function ScrapPage() {
       const data = await apiGet<ScrapRecord[]>('/api/scrap?limit=200')
       setRecords(Array.isArray(data) ? data : [])
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -123,7 +125,7 @@ export default function ScrapPage() {
       )
       setProducts(physicalProducts)
     } catch {
-      toast.error('加载商品列表失败')
+      toast.error(isEn ? 'Failed to load product list' : '加载商品列表失败')
     }
   }
 
@@ -146,11 +148,11 @@ export default function ScrapPage() {
         notes,
         lotId: selectedLotId || undefined,
       })
-      toast.success('报废记录已创建')
+      toast.success(isEn ? 'Scrap record created' : '报废记录已创建')
       setShowDialog(false)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败'))
     } finally {
       setSubmitting(false)
     }
@@ -160,20 +162,20 @@ export default function ScrapPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-4">
       <div className="flex items-center gap-2 text-sm text-gray-400">
         <button onClick={() => router.push(`${prefix}/classic/operator/inventory`)} className="hover:underline">
-          库存管理
+          {isEn ? 'Inventory' : '库存管理'}
         </button>
         <span>/</span>
-        <span style={{ color: PURPLE }}>报废管理</span>
+        <span style={{ color: PURPLE }}>{isEn ? 'Scrap Management' : '报废管理'}</span>
       </div>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>报废管理</h1>
+        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>{isEn ? 'Scrap Management' : '报废管理'}</h1>
         <button
           onClick={openDialog}
           className="px-4 py-2 rounded text-sm font-medium text-white"
           style={{ background: PURPLE }}
         >
-          + 新建报废
+          {isEn ? '+ New Scrap' : '+ 新建报废'}
         </button>
       </div>
 
@@ -183,18 +185,18 @@ export default function ScrapPage() {
           className="grid gap-3 px-4 py-2.5 text-xs font-semibold border-b"
           style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '1fr 100px 100px 100px 1fr 90px' }}
         >
-          <span>商品名称</span>
-          <span>报废编号</span>
-          <span>关联批次</span>
-          <span className="text-right">数量</span>
-          <span>备注/原因</span>
-          <span>时间</span>
+          <span>{isEn ? 'Product' : '商品名称'}</span>
+          <span>{isEn ? 'Scrap No.' : '报废编号'}</span>
+          <span>{isEn ? 'Lot' : '关联批次'}</span>
+          <span className="text-right">{isEn ? 'Qty' : '数量'}</span>
+          <span>{isEn ? 'Note / Reason' : '备注/原因'}</span>
+          <span>{isEn ? 'Time' : '时间'}</span>
         </div>
 
-        {loading && <div className="py-12 text-center text-sm text-gray-400">加载中...</div>}
+        {loading && <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>}
 
         {!loading && records.length === 0 && (
-          <div className="py-12 text-center text-sm text-gray-400">暂无报废记录</div>
+          <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'No scrap records' : '暂无报废记录'}</div>
         )}
 
         {!loading && records.map((r) => (
@@ -221,23 +223,23 @@ export default function ScrapPage() {
       {showDialog && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={() => setShowDialog(false)}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <h2 className="text-base font-semibold mb-4" style={{ color: PURPLE }}>新建报废</h2>
+            <h2 className="text-base font-semibold mb-4" style={{ color: PURPLE }}>{isEn ? 'New Scrap' : '新建报废'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Product selector */}
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">选择商品</label>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">{isEn ? 'Select Product' : '选择商品'}</label>
                 <input
                   type="text"
                   value={productSearch}
                   onChange={e => { setProductSearch(e.target.value); setSelectedProductId('') }}
-                  placeholder="搜索商品..."
+                  placeholder={isEn ? 'Search product...' : '搜索商品...'}
                   className="w-full border rounded px-3 py-2 text-sm outline-none"
                   style={{ borderColor: BORDER }}
                 />
                 {productSearch && !selectedProductId && (
                   <div className="border rounded mt-1 max-h-40 overflow-y-auto" style={{ borderColor: BORDER }}>
                     {filteredProducts.length === 0 && (
-                      <div className="px-3 py-2 text-xs text-gray-400">无匹配商品</div>
+                      <div className="px-3 py-2 text-xs text-gray-400">{isEn ? 'No matching products' : '无匹配商品'}</div>
                     )}
                     {filteredProducts.slice(0, 20).map(p => (
                       <button
@@ -247,13 +249,13 @@ export default function ScrapPage() {
                         className="w-full text-left px-3 py-2 text-sm hover:bg-purple-50 flex justify-between"
                       >
                         <span>{p.name}</span>
-                        <span className="text-xs text-gray-400">库存: {Number(p.qtyOnHand ?? 0).toFixed(1)}</span>
+                        <span className="text-xs text-gray-400">{isEn ? 'Stock' : '库存'}: {Number(p.qtyOnHand ?? 0).toFixed(1)}</span>
                       </button>
                     ))}
                   </div>
                 )}
                 {selectedProduct && (
-                  <p className="text-xs text-gray-400 mt-1">当前库存: {Number(selectedProduct.qtyOnHand ?? 0).toFixed(1)}</p>
+                  <p className="text-xs text-gray-400 mt-1">{isEn ? 'Current stock' : '当前库存'}: {Number(selectedProduct.qtyOnHand ?? 0).toFixed(1)}</p>
                 )}
               </div>
 
@@ -261,12 +263,12 @@ export default function ScrapPage() {
               {selectedProductId && (
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">
-                    关联批次
-                    <span className="text-gray-400 font-normal ml-1">（可选，选择要报废的入库批次）</span>
+                    {isEn ? 'Lot' : '关联批次'}
+                    <span className="text-gray-400 font-normal ml-1">{isEn ? '(optional, select the receiving lot to scrap)' : '（可选，选择要报废的入库批次）'}</span>
                   </label>
-                  {lotsLoading && <p className="text-xs text-gray-400">加载批次中...</p>}
+                  {lotsLoading && <p className="text-xs text-gray-400">{isEn ? 'Loading lots...' : '加载批次中...'}</p>}
                   {!lotsLoading && lots.length === 0 && (
-                    <p className="text-xs text-gray-400">该商品暂无可用批次记录（历史入库未生成批次）</p>
+                    <p className="text-xs text-gray-400">{isEn ? 'No available lot records for this product (historical receipts did not generate lots)' : '该商品暂无可用批次记录（历史入库未生成批次）'}</p>
                   )}
                   {!lotsLoading && lots.length > 0 && (
                     <div className="border rounded max-h-36 overflow-y-auto" style={{ borderColor: BORDER }}>
@@ -277,7 +279,7 @@ export default function ScrapPage() {
                         className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center border-b ${!selectedLotId ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
                         style={{ borderColor: '#f0e4ee' }}
                       >
-                        <span className="text-gray-400">不指定批次</span>
+                        <span className="text-gray-400">{isEn ? 'No specific lot' : '不指定批次'}</span>
                       </button>
                       {lots.map(lot => (
                         <button
@@ -290,17 +292,17 @@ export default function ScrapPage() {
                           <div>
                             <span className="font-mono text-purple-700 font-medium">{lot.lotNumber}</span>
                             <span className="text-gray-400 ml-2 text-xs">
-                              入库 {formatDateOnly(lot.arrivedAt)}
+                              {isEn ? 'Received' : '入库'} {formatDateOnly(lot.arrivedAt)}
                               {lot.sourceRef ? ` / ${lot.sourceRef}` : ''}
                             </span>
                             {lot.bestBefore && (
                               <span className="text-orange-500 ml-2 text-xs">
-                                保质期 {formatDateOnly(lot.bestBefore)}
+                                {isEn ? 'Best before' : '保质期'} {formatDateOnly(lot.bestBefore)}
                               </span>
                             )}
                           </div>
                           <span className="text-xs font-mono text-gray-600">
-                            余 {Number(lot.currentQty).toFixed(1)}
+                            {isEn ? 'Remaining' : '余'} {Number(lot.currentQty).toFixed(1)}
                           </span>
                         </button>
                       ))}
@@ -308,7 +310,9 @@ export default function ScrapPage() {
                   )}
                   {selectedLot && (
                     <p className="text-xs mt-1" style={{ color: PURPLE }}>
-                      已选: {selectedLot.lotNumber}（余量 {Number(selectedLot.currentQty).toFixed(1)}）
+                      {isEn
+                        ? `Selected: ${selectedLot.lotNumber} (remaining ${Number(selectedLot.currentQty).toFixed(1)})`
+                        : `已选: ${selectedLot.lotNumber}（余量 ${Number(selectedLot.currentQty).toFixed(1)}）`}
                     </p>
                   )}
                 </div>
@@ -316,7 +320,7 @@ export default function ScrapPage() {
 
               {/* Qty */}
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">报废数量</label>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">{isEn ? 'Scrap Qty' : '报废数量'}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -324,7 +328,7 @@ export default function ScrapPage() {
                   max={selectedLot ? Number(selectedLot.currentQty) : undefined}
                   value={qty}
                   onChange={e => setQty(e.target.value)}
-                  placeholder={selectedLot ? `最多 ${Number(selectedLot.currentQty).toFixed(1)}` : '输入数量'}
+                  placeholder={selectedLot ? (isEn ? `Max ${Number(selectedLot.currentQty).toFixed(1)}` : `最多 ${Number(selectedLot.currentQty).toFixed(1)}`) : (isEn ? 'Enter quantity' : '输入数量')}
                   className="w-full border rounded px-3 py-2 text-sm outline-none"
                   style={{ borderColor: BORDER }}
                   required
@@ -333,26 +337,26 @@ export default function ScrapPage() {
 
               {/* Reason */}
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">报废原因</label>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">{isEn ? 'Scrap Reason' : '报废原因'}</label>
                 <select
                   value={reason}
                   onChange={e => setReason(e.target.value)}
                   className="w-full border rounded px-3 py-2 text-sm outline-none"
                   style={{ borderColor: BORDER }}
                 >
-                  {SCRAP_REASONS.map(r => (
-                    <option key={r.key} value={r.key}>{r.label}</option>
+                  {SCRAP_REASON_KEYS.map(key => (
+                    <option key={key} value={key}>{isEn ? SCRAP_REASON_LABEL_EN[key] : SCRAP_REASON_LABEL[key]}</option>
                   ))}
                 </select>
               </div>
 
               {/* Notes */}
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">备注</label>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">{isEn ? 'Notes' : '备注'}</label>
                 <textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
-                  placeholder="补充说明（可选）"
+                  placeholder={isEn ? 'Additional notes (optional)' : '补充说明（可选）'}
                   rows={2}
                   className="w-full border rounded px-3 py-2 text-sm outline-none resize-none"
                   style={{ borderColor: BORDER }}
@@ -366,7 +370,7 @@ export default function ScrapPage() {
                   className="px-4 py-2 rounded text-sm text-gray-600 border"
                   style={{ borderColor: BORDER }}
                 >
-                  取消
+                  {isEn ? 'Cancel' : '取消'}
                 </button>
                 <button
                   type="submit"
@@ -374,7 +378,7 @@ export default function ScrapPage() {
                   className="px-4 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
                   style={{ background: PURPLE }}
                 >
-                  {submitting ? '提交中...' : '确认报废'}
+                  {submitting ? (isEn ? 'Submitting...' : '提交中...') : (isEn ? 'Confirm Scrap' : '确认报废')}
                 </button>
               </div>
             </form>

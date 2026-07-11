@@ -28,6 +28,7 @@ export default function InventoryReceiptsPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
   const [items, setItems] = useState<GoodsReceipt[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -46,7 +47,7 @@ export default function InventoryReceiptsPage() {
       setItems(data.items ?? [])
       setTotal(data.total ?? 0)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -66,20 +67,20 @@ export default function InventoryReceiptsPage() {
     <div className="p-6 max-w-6xl mx-auto space-y-4">
       <div className="flex items-center gap-2 text-sm text-gray-400">
         <button onClick={() => router.push(`${prefix}/classic/operator/inventory`)} className="hover:underline">
-          库存管理
+          {isEn ? 'Inventory' : '库存管理'}
         </button>
         <span>/</span>
-        <span style={{ color: PURPLE }}>收货单</span>
+        <span style={{ color: PURPLE }}>{isEn ? 'Goods Receipts' : '收货单'}</span>
       </div>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>收货单列表</h1>
+        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>{isEn ? 'Goods Receipts' : '收货单列表'}</h1>
         <button
           onClick={() => router.push(`${prefix}/classic/operator/purchases`)}
           className="px-4 py-1.5 rounded text-sm font-medium text-white"
           style={{ background: PURPLE }}
         >
-          去采购单收货
+          {isEn ? 'Receive via Purchase Order' : '去采购单收货'}
         </button>
       </div>
 
@@ -89,16 +90,16 @@ export default function InventoryReceiptsPage() {
           type="text"
           value={searchInput}
           onChange={e => setSearchInput(e.target.value)}
-          placeholder="搜索收货单号或采购单号..."
+          placeholder={isEn ? 'Search receipt no. or purchase order no....' : '搜索收货单号或采购单号...'}
           className="border rounded px-3 py-1.5 text-sm flex-1 outline-none focus:ring-1"
           style={{ borderColor: BORDER, ['--tw-ring-color' as string]: PURPLE }}
         />
         <button type="submit" className="px-4 py-1.5 rounded text-sm font-medium text-white" style={{ background: PURPLE }}>
-          搜索
+          {isEn ? 'Search' : '搜索'}
         </button>
         {search && (
           <button type="button" onClick={() => { setSearch(''); setSearchInput(''); setPage(1) }} className="px-3 py-1.5 rounded text-sm text-gray-500 border" style={{ borderColor: BORDER }}>
-            清除
+            {isEn ? 'Clear' : '清除'}
           </button>
         )}
       </form>
@@ -107,29 +108,31 @@ export default function InventoryReceiptsPage() {
         {/* Table header */}
         <div className="grid gap-3 px-4 py-2.5 text-xs font-semibold border-b"
           style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '140px 140px 110px 1fr 100px 100px' }}>
-          <span>收货单号</span>
-          <span>来源采购单</span>
-          <span>到货日期</span>
-          <span>收货内容</span>
-          <span>收货人</span>
-          <span>状态</span>
+          <span>{isEn ? 'Receipt No.' : '收货单号'}</span>
+          <span>{isEn ? 'Source PO' : '来源采购单'}</span>
+          <span>{isEn ? 'Arrival Date' : '到货日期'}</span>
+          <span>{isEn ? 'Contents' : '收货内容'}</span>
+          <span>{isEn ? 'Received By' : '收货人'}</span>
+          <span>{isEn ? 'Status' : '状态'}</span>
         </div>
 
         {loading && (
-          <div className="py-12 text-center text-sm text-gray-400">加载中…</div>
+          <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
         )}
 
         {!loading && items.length === 0 && (
           <div className="py-12 text-center text-sm text-gray-400">
-            {search ? `未找到"${search}"相关收货单` : '暂无收货记录'}
+            {search
+              ? (isEn ? `No goods receipts found for "${search}"` : `未找到"${search}"相关收货单`)
+              : (isEn ? 'No goods receipts yet' : '暂无收货记录')}
           </div>
         )}
 
         {!loading && items.map((item) => {
           const lines = Array.isArray(item.lines) ? item.lines : []
           const linesSummary = lines.length > 0
-            ? lines.slice(0, 2).map(l => l.productName).join('、') + (lines.length > 2 ? ` 等${lines.length}种` : '')
-            : '（无商品行）'
+            ? lines.slice(0, 2).map(l => l.productName).join(isEn ? ', ' : '、') + (lines.length > 2 ? (isEn ? ` +${lines.length} items` : ` 等${lines.length}种`) : '')
+            : (isEn ? '(No line items)' : '（无商品行）')
           return (
             <div
               key={item.id}
@@ -143,7 +146,7 @@ export default function InventoryReceiptsPage() {
               <span className="text-xs text-gray-500 truncate">{linesSummary}</span>
               <span className="text-sm text-gray-600">{item.receivedBy ?? '—'}</span>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">
-                已完成
+                {isEn ? 'Completed' : '已完成'}
               </span>
             </div>
           )
@@ -153,7 +156,7 @@ export default function InventoryReceiptsPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-gray-500">
-          <span>共 {total} 条</span>
+          <span>{isEn ? `${total} total` : `共 ${total} 条`}</span>
           <div className="flex gap-1">
             <button
               disabled={page <= 1}
@@ -161,16 +164,16 @@ export default function InventoryReceiptsPage() {
               className="px-3 py-1 rounded border disabled:opacity-40"
               style={{ borderColor: BORDER }}
             >
-              上一页
+              {isEn ? 'Previous' : '上一页'}
             </button>
-            <span className="px-3 py-1">第 {page} / {totalPages} 页</span>
+            <span className="px-3 py-1">{isEn ? `Page ${page} / ${totalPages}` : `第 ${page} / ${totalPages} 页`}</span>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage(p => p + 1)}
               className="px-3 py-1 rounded border disabled:opacity-40"
               style={{ borderColor: BORDER }}
             >
-              下一页
+              {isEn ? 'Next' : '下一页'}
             </button>
           </div>
         </div>

@@ -35,28 +35,41 @@ export class ApiError extends Error {
 }
 
 /**
- * 把后端错误码翻译成用户友好的中文提示
+ * classic 应用走 /(zh 无前缀) 和 /en 两套路由（见 i18n/routing.ts），
+ * 这里是纯客户端 fetch 封装，没有 React 上下文，只能从当前 URL 路径判断语言。
+ */
+function isEnLocale(): boolean {
+  if (typeof window === 'undefined') return false
+  const p = window.location.pathname
+  return p === '/en' || p.startsWith('/en/')
+}
+
+/**
+ * 把后端错误码翻译成用户友好的提示（通用兜底文案按 locale 双语；
+ * 各 API 路由自带的 raw message 大多仍是中文——覆盖到的路由已单独处理，
+ * 未覆盖到的路由这里无法逐条翻译，属已知范围外）
  */
 function humanizeError(status: number, code: string | undefined, raw: string | undefined): string {
+  const isEn = isEnLocale()
   // 已知业务错误码
   switch (code) {
     case 'INSUFFICIENT_STOCK':
-      return raw || '库存不足，无法下单'
+      return raw || (isEn ? 'Insufficient stock, cannot place order' : '库存不足，无法下单')
     case 'RATE_LIMIT':
-      return raw || '操作过于频繁，请稍后再试'
+      return raw || (isEn ? 'Too many attempts, please try again later' : '操作过于频繁，请稍后再试')
     case 'MFA_REQUIRED':
-      return raw || '请输入 6 位动态码'
+      return raw || (isEn ? 'Please enter the 6-digit code' : '请输入 6 位动态码')
   }
 
   // 按 status 分档
   if (status === 400 && raw) return raw
-  if (status === 401) return '登录已过期，请重新登录'
-  if (status === 403) return raw || '您没有权限执行此操作'
-  if (status === 404) return raw || '请求的资源不存在'
-  if (status === 409) return raw || '操作与当前状态冲突，请刷新后重试'
-  if (status === 429) return '请求过于频繁，请稍候再试'
-  if (status >= 500)   return '服务器暂时不可用，请稍后重试'
-  return raw || `请求失败 (HTTP ${status})`
+  if (status === 401) return isEn ? 'Session expired, please log in again' : '登录已过期，请重新登录'
+  if (status === 403) return raw || (isEn ? 'You do not have permission to perform this action' : '您没有权限执行此操作')
+  if (status === 404) return raw || (isEn ? 'The requested resource was not found' : '请求的资源不存在')
+  if (status === 409) return raw || (isEn ? 'Conflicts with current state, please refresh and retry' : '操作与当前状态冲突，请刷新后重试')
+  if (status === 429) return isEn ? 'Too many requests, please wait and try again' : '请求过于频繁，请稍候再试'
+  if (status >= 500)   return isEn ? 'Server temporarily unavailable, please try again later' : '服务器暂时不可用，请稍后重试'
+  return raw || (isEn ? `Request failed (HTTP ${status})` : `请求失败 (HTTP ${status})`)
 }
 
 export async function api<T = unknown>(
@@ -74,19 +87,21 @@ export async function api<T = unknown>(
     })
   } catch (netErr) {
     // TypeError: Failed to fetch → 网络断
-    throw new ApiError('连接不上服务器，请检查网络后重试', 0, 'NETWORK_ERROR',
+    const isEn = isEnLocale()
+    throw new ApiError(isEn ? 'Cannot reach the server, please check your connection and retry' : '连接不上服务器，请检查网络后重试', 0, 'NETWORK_ERROR',
       (netErr as Error)?.message)
   }
 
   // 401：token 过期或未登录，自动跳转登录页
   if (res.status === 401) {
+    const isEn = isEnLocale()
     if (typeof window !== 'undefined') {
       localStorage.removeItem('veggie_token')
       localStorage.removeItem('veggie_user')
       // 延迟一点跳转，让 toast 有机会显示
-      setTimeout(() => { window.location.href = '/enter' }, 300)
+      setTimeout(() => { window.location.href = isEn ? '/en/enter' : '/enter' }, 300)
     }
-    throw new ApiError('登录已过期，请重新登录', 401)
+    throw new ApiError(isEn ? 'Session expired, please log in again' : '登录已过期，请重新登录', 401)
   }
 
   if (!res.ok) {

@@ -12,6 +12,7 @@ import { toNum } from '@/lib/decimal-helpers'
 export interface ZoneSummary {
   zoneId: string
   key: string
+  name: string
   nameZh: string
   tempRangeLabel: string | null
   skuCount: number
@@ -24,8 +25,10 @@ export interface ZoneMismatch {
   productName: string
   qtyOnHand: number
   currentZoneId: string
+  currentZoneName: string
   currentZoneNameZh: string
   requiredZoneId: string
+  requiredZoneName: string
   requiredZoneNameZh: string
 }
 
@@ -53,6 +56,7 @@ export async function getZoneSummaries(): Promise<ZoneSummary[]> {
       return {
         zoneId: zone.id,
         key: zone.key,
+        name: zone.name,
         nameZh: zone.nameZh,
         tempRangeLabel: zone.tempRangeLabel,
         skuCount: products.length,
@@ -79,11 +83,11 @@ export async function getZoneMismatches(limit: number): Promise<ZoneMismatch[]> 
       qtyOnHand: true,
       standardPrice: true,
       currentZoneId: true,
-      currentZone: { select: { id: true, nameZh: true } },
+      currentZone: { select: { id: true, name: true, nameZh: true } },
       category: {
         select: {
           requiredZoneId: true,
-          requiredZone: { select: { id: true, nameZh: true } },
+          requiredZone: { select: { id: true, name: true, nameZh: true } },
         },
       },
     },
@@ -103,8 +107,10 @@ export async function getZoneMismatches(limit: number): Promise<ZoneMismatch[]> 
       productName: p.name,
       qtyOnHand: qty,
       currentZoneId: p.currentZone.id,
+      currentZoneName: p.currentZone.name,
       currentZoneNameZh: p.currentZone.nameZh,
       requiredZoneId: p.category.requiredZone.id,
+      requiredZoneName: p.category.requiredZone.name,
       requiredZoneNameZh: p.category.requiredZone.nameZh,
       value: qty * price,
     })

@@ -13,13 +13,22 @@ import { formatDateOnly } from '@/lib/format-date'
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL_ZH: Record<string, string> = {
   PENDING: '待确认',
   CONFIRMED: '已确认',
   WAVE_ASSIGNED: '拣货中',
   IN_DELIVERY: '配送中',
   COMPLETED: '已完成',
   CANCELLED: '已取消',
+}
+
+const STATUS_LABEL_EN: Record<string, string> = {
+  PENDING: 'Pending',
+  CONFIRMED: 'Confirmed',
+  WAVE_ASSIGNED: 'Picking',
+  IN_DELIVERY: 'In Delivery',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -31,12 +40,20 @@ const STATUS_COLOR: Record<string, string> = {
   CANCELLED: 'bg-red-50 text-red-600',
 }
 
-const STATUS_TABS = [
+const STATUS_TABS_ZH = [
   { key: 'all', label: '全部' },
   { key: 'CONFIRMED', label: '待发货' },
   { key: 'WAVE_ASSIGNED', label: '拣货中' },
   { key: 'IN_DELIVERY', label: '配送中' },
   { key: 'COMPLETED', label: '已完成' },
+]
+
+const STATUS_TABS_EN = [
+  { key: 'all', label: 'All' },
+  { key: 'CONFIRMED', label: 'To Ship' },
+  { key: 'WAVE_ASSIGNED', label: 'Picking' },
+  { key: 'IN_DELIVERY', label: 'In Delivery' },
+  { key: 'COMPLETED', label: 'Completed' },
 ]
 
 const PAGE_SIZE = 50
@@ -45,6 +62,9 @@ export default function InventoryDeliveriesPage() {
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const isEn = locale !== routing.defaultLocale
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const STATUS_TABS = isEn ? STATUS_TABS_EN : STATUS_TABS_ZH
   const [orders, setOrders] = useState<Order[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -65,11 +85,11 @@ export default function InventoryDeliveriesPage() {
       setOrders(data.data ?? [])
       setTotal(data.total ?? 0)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [page, search, activeTab])
+  }, [page, search, activeTab, isEn])
 
   useEffect(() => { load() }, [load])
 
@@ -85,20 +105,20 @@ export default function InventoryDeliveriesPage() {
     <div className="p-6 max-w-6xl mx-auto space-y-4">
       <div className="flex items-center gap-2 text-sm text-gray-400">
         <button onClick={() => router.push(`${prefix}/classic/operator/inventory`)} className="hover:underline">
-          库存管理
+          {isEn ? 'Inventory' : '库存管理'}
         </button>
         <span>/</span>
-        <span style={{ color: PURPLE }}>发货单</span>
+        <span style={{ color: PURPLE }}>{isEn ? 'Deliveries' : '发货单'}</span>
       </div>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>发货单列表</h1>
+        <h1 className="text-lg font-semibold" style={{ color: PURPLE }}>{isEn ? 'Delivery List' : '发货单列表'}</h1>
         <button
           onClick={() => router.push(`${prefix}/classic/operator/orders`)}
           className="px-4 py-1.5 rounded text-sm font-medium text-white"
           style={{ background: PURPLE }}
         >
-          查看销售订单
+          {isEn ? 'View Sales Orders' : '查看销售订单'}
         </button>
       </div>
 
@@ -125,16 +145,16 @@ export default function InventoryDeliveriesPage() {
           type="text"
           value={searchInput}
           onChange={e => setSearchInput(e.target.value)}
-          placeholder="搜索订单号或客户名称..."
+          placeholder={isEn ? 'Search order # or customer name...' : '搜索订单号或客户名称...'}
           className="border rounded px-3 py-1.5 text-sm flex-1 outline-none"
           style={{ borderColor: BORDER }}
         />
         <button type="submit" className="px-4 py-1.5 rounded text-sm font-medium text-white" style={{ background: PURPLE }}>
-          搜索
+          {isEn ? 'Search' : '搜索'}
         </button>
         {search && (
           <button type="button" onClick={() => { setSearch(''); setSearchInput(''); setPage(1) }} className="px-3 py-1.5 rounded text-sm text-gray-500 border" style={{ borderColor: BORDER }}>
-            清除
+            {isEn ? 'Clear' : '清除'}
           </button>
         )}
       </form>
@@ -142,19 +162,21 @@ export default function InventoryDeliveriesPage() {
       <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
         <div className="grid gap-3 px-4 py-2.5 text-xs font-semibold border-b"
           style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '140px 1fr 100px 100px 100px 100px' }}>
-          <span>订单号</span>
-          <span>客户</span>
-          <span>配送日期</span>
-          <span>批次</span>
-          <span>金额</span>
-          <span>状态</span>
+          <span>{isEn ? 'Order #' : '订单号'}</span>
+          <span>{isEn ? 'Customer' : '客户'}</span>
+          <span>{isEn ? 'Delivery Date' : '配送日期'}</span>
+          <span>{isEn ? 'Batch' : '批次'}</span>
+          <span>{isEn ? 'Amount' : '金额'}</span>
+          <span>{isEn ? 'Status' : '状态'}</span>
         </div>
 
-        {loading && <div className="py-12 text-center text-sm text-gray-400">加载中…</div>}
+        {loading && <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>}
 
         {!loading && orders.length === 0 && (
           <div className="py-12 text-center text-sm text-gray-400">
-            {search ? `未找到"${search}"相关发货单` : '暂无数据'}
+            {search
+              ? (isEn ? `No deliveries found for "${search}"` : `未找到"${search}"相关发货单`)
+              : (isEn ? 'No data' : '暂无数据')}
           </div>
         )}
 
@@ -181,11 +203,11 @@ export default function InventoryDeliveriesPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-gray-500">
-          <span>共 {total} 条</span>
+          <span>{isEn ? `${total} total` : `共 ${total} 条`}</span>
           <div className="flex gap-1">
-            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: BORDER }}>上一页</button>
-            <span className="px-3 py-1">第 {page} / {totalPages} 页</span>
-            <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: BORDER }}>下一页</button>
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: BORDER }}>{isEn ? 'Prev' : '上一页'}</button>
+            <span className="px-3 py-1">{isEn ? `Page ${page} / ${totalPages}` : `第 ${page} / ${totalPages} 页`}</span>
+            <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: BORDER }}>{isEn ? 'Next' : '下一页'}</button>
           </div>
         </div>
       )}

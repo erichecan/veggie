@@ -18,3 +18,12 @@ export const SCRAP_REASON_LABEL: Record<string, string> = {
   RECEIPT_DAMAGE: '到货即损坏（运输/供应商责任）',
   OTHER: '其他',
 }
+
+export const SCRAP_REASON_LABEL_EN: Record<string, string> = {
+  CUSTOMER_RETURN_EXPIRED: 'Customer return — expired',
+  CUSTOMER_RETURN_DAMAGED: 'Customer return — damaged',
+  WAREHOUSE_EXPIRY: 'Warehouse — expired',
+  WAREHOUSE_DAMAGE: 'Warehouse — damaged',
+  RECEIPT_DAMAGE: 'Damaged on arrival (carrier/supplier fault)',
+  OTHER: 'Other',
+}

@@ -1,6 +1,8 @@
 'use client'
 import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import InventoryOverviewPage from './overview/page'
 import ReceivePage from './receive/page'
 import LotsPage from './lots/page'
@@ -11,7 +13,7 @@ const PURPLE = '#875A7B'
 
 type TabKey = 'overview' | 'receive' | 'lots' | 'zones' | 'loss-dashboard'
 
-const ANALYTICS_TABS: { k: TabKey; icon: string; label: string }[] = [
+const ANALYTICS_TABS_ZH: { k: TabKey; icon: string; label: string }[] = [
   { k: 'overview', icon: '📊', label: '库存总览' },
   { k: 'receive', icon: '📥', label: '收货' },
   { k: 'lots', icon: '📑', label: '批次台账／追溯' },
@@ -19,7 +21,18 @@ const ANALYTICS_TABS: { k: TabKey; icon: string; label: string }[] = [
   { k: 'loss-dashboard', icon: '📉', label: '损耗与退货' },
 ]
 
+const ANALYTICS_TABS_EN: { k: TabKey; icon: string; label: string }[] = [
+  { k: 'overview', icon: '📊', label: 'Overview' },
+  { k: 'receive', icon: '📥', label: 'Receiving' },
+  { k: 'lots', icon: '📑', label: 'Lot Ledger / Traceability' },
+  { k: 'zones', icon: '🧊', label: 'Warehouse Map · Zones' },
+  { k: 'loss-dashboard', icon: '📉', label: 'Loss & Returns' },
+]
+
 function InventoryPageInner() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const ANALYTICS_TABS = isEn ? ANALYTICS_TABS_EN : ANALYTICS_TABS_ZH
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as TabKey | null) ?? 'overview'
   const [tab, setTab] = useState<TabKey>(ANALYTICS_TABS.some(t => t.k === initialTab) ? initialTab : 'overview')
@@ -54,8 +67,10 @@ function InventoryPageInner() {
 }
 
 export default function InventoryPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   return (
-    <Suspense fallback={<div className="p-5 text-center text-gray-400 text-sm">加载中...</div>}>
+    <Suspense fallback={<div className="p-5 text-center text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>}>
       <InventoryPageInner />
     </Suspense>
   )
