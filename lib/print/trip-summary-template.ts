@@ -9,8 +9,8 @@ import {
   type TripPrintData,
   escapeHtml,
 } from './trip-common'
-import { docBadge } from './doc-badge'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
+import { fmtMoney } from '@/lib/format-money'
 
 export function generateTripSummaryHtml(data: TripPrintData): string {
   const { trip, orders, customers } = data
@@ -28,33 +28,42 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   const startDate = deliveryDates.length > 0
     ? deliveryDates.reduce((a, b) => (a < b ? a : b))
     : trip.departTime
-  const endDate = deliveryDates.length > 0
-    ? deliveryDates.reduce((a, b) => (a > b ? a : b))
-    : trip.departTime
 
   // 按 customerId 去重(同一客户当天多笔订单只列一次)，按客户名字母序排列
   const customerIds = [...new Set(orders.map(o => o.customerId))]
   const customerList = customerIds
-    .map(id => ({
-      id,
-      name: customers.get(id)?.name ?? orders.find(o => o.customerId === id)?.customerName ?? '',
-      customer: customers.get(id),
-    }))
+    .map(id => {
+      const customerOrders = orders.filter(o => o.customerId === id)
+      // 同一客户当次波次多笔订单：金额相加、发票号去重拼接（多数订单此时还没开票，留空）
+      const netAmount = customerOrders.reduce((sum, o) => sum + o.totalAmount, 0)
+      const invoiceNos = [...new Set(customerOrders.map(o => o.invoiceNo).filter((v): v is string => !!v))]
+      return {
+        id,
+        name: customers.get(id)?.name ?? customerOrders[0]?.customerName ?? '',
+        customer: customers.get(id),
+        netAmount,
+        invoiceNo: invoiceNos.join(', '),
+      }
+    })
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
 
   // 客户详情（地址/电话/备注）直接做在表格列里，不再单独列一个详情区块
   const nameRowsHtml = customerList.map((c, i) => {
     const cust = c.customer
     const addr = cust ? [cust.street, cust.street2, cust.city, cust.zip].filter(Boolean).join(', ') : ''
+    const city = cust?.city ?? ''
     const phone = cust?.phone ?? ''
     const note = cust?.externalNote ?? ''
     return `
     <tr>
       <td class="col-seq">${i + 1}</td>
       <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(city)}</td>
       <td>${escapeHtml(addr)}</td>
       <td>${escapeHtml(phone)}</td>
       <td>${escapeHtml(note)}</td>
+      <td>${escapeHtml(c.invoiceNo)}</td>
+      <td class="num">€ ${fmtMoney(c.netAmount)}</td>
     </tr>`
   }).join('')
 
@@ -64,7 +73,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Summary</title>
+<title>Johnstone Fruit & Veg Ltd - Delivery Summary</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -107,6 +116,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     font-size: 11px;
   }
   table.summary th.num { text-align: right; }
+  table.summary td.num { text-align: right; white-space: nowrap; }
   table.summary th.col-seq { text-align: center; width: 40px; }
   table.summary td {
     border: 1px solid #999;
@@ -133,16 +143,14 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 </style>
 </head>
 <body>
-  <div style="margin-bottom:3mm;">${docBadge('deliverySummary')}</div>
   <div class="page-header">
-    <div class="left">${now}</div>
+    <div class="left">Print at: ${now}</div>
     <div class="center">Johnstone Fruit &amp; Veg Ltd — 汇总单</div>
     <div class="right">1 / 1</div>
   </div>
 
   <div class="filter-row">
-    <div class="item"><span class="label">Start Date : </span>${formatDateOnly(startDate)}</div>
-    <div class="item"><span class="label">End Date : </span>${formatDateOnly(endDate)}</div>
+    <div class="item"><span class="label">Date : </span>${formatDateOnly(startDate)}</div>
     <div class="item"><span class="label">Sales Team : </span>${escapeHtml(teamStr)}</div>
   </div>
 
@@ -151,13 +159,16 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
       <tr>
         <th class="col-seq">#</th>
         <th>Customer</th>
+        <th>City</th>
         <th>Address</th>
         <th>Phone</th>
         <th>Note</th>
+        <th>Invoice No.</th>
+        <th class="num">Net Amount</th>
       </tr>
     </thead>
     <tbody>
-      ${nameRowsHtml || '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
+      ${nameRowsHtml || '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
     </tbody>
   </table>
 

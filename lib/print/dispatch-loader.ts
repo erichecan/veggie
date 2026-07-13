@@ -15,6 +15,7 @@ import {
   type TripOrder,
   type TripPrintDataWire,
 } from './trip-common'
+import { loadInvoiceNoMap } from './invoice-lookup'
 
 /** 单批次打印的最大订单数，超出则截断并在打印顶部提示 */
 const MAX_PRINT_ORDERS = 50
@@ -277,10 +278,11 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap, productGoodsTypeMap] = await Promise.all([
+  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductTypeMap(productIds),
     loadProductGoodsTypeMap(productIds),
+    loadInvoiceNoMap(orders.map(o => o.id)),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -308,6 +310,7 @@ export async function loadDispatchPrintData(
     externalNote: o.externalNote,
     deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
     deliveryDate: toIso(o.deliveryDate),
+    invoiceNo: invoiceNoMap.get(o.id) ?? null,
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0
       ? o.lines.map(l => ({

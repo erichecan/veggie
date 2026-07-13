@@ -65,6 +65,8 @@ export interface TripOrder {
   /** 第三方送货备注（第三方替我们送货时的具体信息，打印在送货单上） */
   deliveryNote: string | null
   deliveryDate: string | null
+  /** 该订单已开具的发票号（Invoice.name），未开票为 null */
+  invoiceNo: string | null
   lines: TripLine[]
 }
 

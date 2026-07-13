@@ -712,8 +712,8 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
               <>
                 <span>
                   {isEn
-                    ? `Total ${orders.length} orders · ${batchGroups.length} waves · €${fmtMoney(grandTotal)}`
-                    : `共 ${orders.length} 单 · ${batchGroups.length} 波次 · €${fmtMoney(grandTotal)}`}
+                    ? `Total ${orders.length} orders · ${batchGroups.length} waves assigned · €${fmtMoney(grandTotal)}`
+                    : `共 ${orders.length} 单 · ${batchGroups.length} 个已安排波次 · €${fmtMoney(grandTotal)}`}
                 </span>
                 {printedKeys.size > 0 && (
                   <button
