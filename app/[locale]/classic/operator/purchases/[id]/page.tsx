@@ -87,9 +87,13 @@ interface PurchaseOrder {
   notes?: string | null
   lockedAt?: string | null
   editApprovalRequired?: boolean
+  currency: string
+  exchangeRate?: number | null
+  exchangeRatePending?: boolean
   subtotalExTax: number
   totalTax: number
   totalIncTax: number
+  totalIncTaxEur?: number | null
   createdAt: string
   lines: POLine[]
   bills?: POBill[]
@@ -209,6 +213,10 @@ export default function PurchaseDetailPage() {
   const [editExpectedDate, setEditExpectedDate] = useState('')
   const [editSupplierId, setEditSupplierId] = useState('')
   const [editLines, setEditLines] = useState<POLine[]>([])
+
+  // 汇率待确认时的独立补录输入(不进整单编辑态，DRAFT/SENT 都能直接补)
+  const [fixRateInput, setFixRateInput] = useState('')
+  const [fixingRate, setFixingRate] = useState(false)
 
   // ── 选品 / 快速建档 ──
   const [purchaseProducts, setPurchaseProducts] = useState<PurchaseProduct[]>([])
@@ -370,6 +378,26 @@ export default function PurchaseDetailPage() {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  // 汇率待确认时补录：直接 PUT exchangeRate，后端会连带把行/表头的欧元折算字段一起重算(20260713)
+  async function handleFixRate() {
+    if (!po) return
+    const rate = Number(fixRateInput)
+    if (!Number.isFinite(rate) || rate <= 0) {
+      toast.error(isEn ? 'Please enter a valid rate' : '请输入有效的汇率'); return
+    }
+    setFixingRate(true)
+    try {
+      const updated = await apiPut<PurchaseOrder>(`/api/purchase-orders/${id}`, { exchangeRate: rate })
+      setPo(updated)
+      setFixRateInput('')
+      toast.success(isEn ? 'Exchange rate confirmed' : '汇率已确认')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
+    } finally {
+      setFixingRate(false)
     }
   }
 
@@ -538,7 +566,8 @@ export default function PurchaseDetailPage() {
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
                   {isEn ? 'Print RFQ' : '打印询价单'}
                 </button>
-                <button onClick={() => handleAction('confirm')} disabled={acting}
+                <button onClick={() => handleAction('confirm')} disabled={acting || po.exchangeRatePending}
+                  title={po.exchangeRatePending ? (isEn ? 'Exchange rate pending, please fill it in below first' : '汇率待确认，请先在下方补充汇率') : undefined}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                   {isEn ? 'Confirm Purchase' : '确认采购'}
                 </button>
@@ -550,7 +579,8 @@ export default function PurchaseDetailPage() {
             )}
             {po.status === 'SENT' && (
               <>
-                <button onClick={() => handleAction('confirm')} disabled={acting}
+                <button onClick={() => handleAction('confirm')} disabled={acting || po.exchangeRatePending}
+                  title={po.exchangeRatePending ? (isEn ? 'Exchange rate pending, please fill it in below first' : '汇率待确认，请先在下方补充汇率') : undefined}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
                   {isEn ? 'Confirm Purchase' : '确认采购'}
@@ -855,8 +885,34 @@ export default function PurchaseDetailPage() {
                   </div>
                   <div className="border-t border-gray-300 mt-1 pt-2 flex justify-between">
                     <span className="text-sm font-semibold" style={{ color: DARK }}>{isEn ? 'Total' : '合计'}</span>
-                    <span className="text-base font-bold" style={{ color: DARK }}>{totalIncTax.toFixed(2)}</span>
+                    <span className="text-base font-bold" style={{ color: DARK }}>{po.currency} {totalIncTax.toFixed(2)}</span>
                   </div>
+                  {po.currency !== 'EUR' && (
+                    <div className="flex justify-between py-1 text-sm">
+                      <span className="text-gray-400">{isEn ? `≈ EUR (rate ${po.exchangeRate ?? '—'})` : `≈ 折合欧元（汇率 ${po.exchangeRate ?? '—'}）`}</span>
+                      <span className={po.exchangeRatePending ? 'text-red-500 font-medium' : 'text-gray-500'}>
+                        {po.exchangeRatePending ? (isEn ? '🔴 pending' : '🔴 待确认') : `€${Number(po.totalIncTaxEur ?? 0).toFixed(2)}`}
+                      </span>
+                    </div>
+                  )}
+                  {po.exchangeRatePending && (po.status === 'DRAFT' || po.status === 'SENT') && (
+                    <div className="mt-2 flex items-center gap-1.5 bg-red-50 border border-red-200 rounded px-2.5 py-2">
+                      <span className="text-xs text-red-700 flex-shrink-0">{isEn ? `Rate ${po.currency}→EUR` : `汇率 ${po.currency}→EUR`}</span>
+                      <input
+                        type="number" step="0.000001" min="0"
+                        value={fixRateInput}
+                        onChange={e => setFixRateInput(e.target.value)}
+                        placeholder={isEn ? 'e.g. 0.92' : '例如 0.92'}
+                        className="border border-gray-300 rounded px-2 py-1 text-xs w-24 text-right"
+                      />
+                      <button
+                        onClick={handleFixRate}
+                        disabled={fixingRate}
+                        className="h-6 px-2.5 text-xs font-medium rounded text-white disabled:opacity-50 flex-shrink-0"
+                        style={{ background: PURPLE }}
+                      >{fixingRate ? '…' : (isEn ? 'Confirm' : '确认')}</button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

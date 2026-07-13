@@ -90,6 +90,11 @@ export async function POST(req: Request) {
               subtotalExTax: ex,
               taxAmount: 0,
               subtotalIncTax: ex,
+              // 导入固定 EUR，汇率恒 1，Eur 字段直接等于原币字段(20260713 汇率换算改造)
+              unitCostEur: l.unitCost,
+              subtotalExTaxEur: ex,
+              taxAmountEur: 0,
+              subtotalIncTaxEur: ex,
               sequence: idx * 10,
             }
           })
@@ -105,6 +110,10 @@ export async function POST(req: Request) {
               subtotalExTax,
               totalTax: 0,
               totalIncTax: subtotalExTax,
+              subtotalExTaxEur: subtotalExTax,
+              totalTaxEur: 0,
+              totalIncTaxEur: subtotalExTax,
+              freightAmountEur: 0,
               notes: `从文件导入: ${file.name}`,
               createdBy: user.userId,
               lines: { create: lineData },

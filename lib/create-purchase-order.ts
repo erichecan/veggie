@@ -1,4 +1,5 @@
 import { round2 } from '@/lib/decimal-helpers'
+import { eurAmount, resolveExchangeRate } from '@/lib/fx-eur'
 
 /**
  * 采购单创建 SSOT —— POST /api/purchase-orders 和"采购建议转采购单"共用同一份
@@ -40,6 +41,12 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   if (!supplierId) throw Object.assign(new Error('供应商不能为空'), { status: 400 })
   // 询价单允许先只定供应商+日期开单，产品之后在详情页逐条加（见 PurchaseOrderLine 的 POST/DELETE）
 
+  const currency = (input.currency ?? 'EUR').toUpperCase()
+  // 汇率解析：欧元恒为 1；非欧元有有效汇率就用，没有也不阻断下单——
+  // exchangeRate 存 null、exchangeRatePending=true，下游(收货成本/供应商账单)据此跳过折算，
+  // 「确认」这一步(PATCH action=confirm)会挡住 pending 的单，逼着财务先补汇率再往下走(20260713)。
+  const { exchangeRate, exchangeRatePending } = resolveExchangeRate(currency, input.exchangeRate)
+
   let subtotalExTax = 0
   let totalTax = 0
   const recomputedLines = input.lines.map((raw, i) => {
@@ -69,6 +76,10 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
       subtotalExTax: ex,
       taxAmount: tax,
       subtotalIncTax: inc,
+      unitCostEur: eurAmount(unitCost, exchangeRate, 4),
+      subtotalExTaxEur: eurAmount(ex, exchangeRate),
+      taxAmountEur: eurAmount(tax, exchangeRate),
+      subtotalIncTaxEur: eurAmount(inc, exchangeRate),
       bestBefore: raw.bestBefore ? new Date(raw.bestBefore) : null,
       sequence: raw.sequence ?? (i + 1) * 10,
     }
@@ -81,10 +92,6 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   if (!Number.isFinite(freightAmount) || freightAmount < 0) {
     throw Object.assign(new Error('运费无效'), { status: 400 })
   }
-  const exchangeRate = input.exchangeRate == null ? 1 : Number(input.exchangeRate)
-  if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
-    throw Object.assign(new Error('汇率无效'), { status: 400 })
-  }
 
   const count = await tx.purchaseOrder.count()
   const name = `PO-${String(count + 1).padStart(5, '0')}`
@@ -96,12 +103,17 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
       status: 'DRAFT',
       orderDate: input.orderDate ? new Date(input.orderDate) : new Date(),
       expectedDate: input.expectedDate ? new Date(input.expectedDate) : null,
-      currency: input.currency ?? 'EUR',
+      currency,
       exchangeRate,
+      exchangeRatePending,
       subtotalExTax,
       totalTax,
       totalIncTax,
       freightAmount: round2(freightAmount),
+      subtotalExTaxEur: eurAmount(subtotalExTax, exchangeRate),
+      totalTaxEur: eurAmount(totalTax, exchangeRate),
+      totalIncTaxEur: eurAmount(totalIncTax, exchangeRate),
+      freightAmountEur: eurAmount(round2(freightAmount), exchangeRate),
       sourceDocumentUrl: input.sourceDocumentUrl ?? null,
       sourceDocumentName: input.sourceDocumentName ?? null,
       notes: input.notes ?? null,

@@ -7,6 +7,7 @@ import { toNum } from '@/lib/decimal-helpers'
 import { createDraftVendorBillForPurchaseOrder } from '@/lib/vendor-bill-from-po'
 import { notifyRole } from '@/lib/notify'
 import { eur } from '@/lib/format-money'
+import { eurAmount, resolveExchangeRate } from '@/lib/fx-eur'
 
 const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'notes', 'expectedDate', 'editApprovalRequired']
 
@@ -68,12 +69,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '只有草稿/已发送状态可编辑' }, { status: 409 })
       }
 
-      const { notes, expectedDate, supplierId, lines: linesPayload } = data
+      const { notes, expectedDate, supplierId, exchangeRate: exchangeRateInput, lines: linesPayload } = data
 
       const headerUpdate: Record<string, unknown> = {}
       if (notes !== undefined) headerUpdate.notes = notes ? String(notes) : null
       if (expectedDate !== undefined) headerUpdate.expectedDate = expectedDate ? new Date(expectedDate) : null
       if (supplierId !== undefined) headerUpdate.supplierId = String(supplierId)
+
+      // 汇率可在 DRAFT/SENT 阶段补录/修正(币种下单后不可再改，见 lib/create-purchase-order.ts)；
+      // 补上汇率后连带把行/表头的 *Eur 字段一起重算，不能只改 exchangeRate 留下陈旧的折算值(20260713)。
+      const rateProvided = exchangeRateInput !== undefined
+      const { exchangeRate: effectiveRate, exchangeRatePending: effectivePending } = rateProvided
+        ? resolveExchangeRate(poBefore.currency, exchangeRateInput)
+        : { exchangeRate: poBefore.exchangeRate == null ? null : Number(poBefore.exchangeRate), exchangeRatePending: poBefore.exchangeRatePending }
+      if (rateProvided) {
+        headerUpdate.exchangeRate = effectiveRate
+        headerUpdate.exchangeRatePending = effectivePending
+      }
 
       // P1-2: Capture old line state for audit
       const oldLines = (poBefore.lines as Array<Record<string, unknown>>).reduce(
@@ -122,6 +134,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 productName: String(l.productName ?? ''),
                 uomId: l.uomId ? String(l.uomId) : null,
                 orderedQty, unitCost, taxRate, subtotalExTax, taxAmount, subtotalIncTax,
+                unitCostEur: eurAmount(unitCost, effectiveRate, 4),
+                subtotalExTaxEur: eurAmount(subtotalExTax, effectiveRate),
+                taxAmountEur: eurAmount(taxAmount, effectiveRate),
+                subtotalIncTaxEur: eurAmount(subtotalIncTax, effectiveRate),
                 bestBefore,
                 sequence: nextSequence,
               },
@@ -148,6 +164,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: lineId },
             data: {
               orderedQty, unitCost, taxRate, subtotalExTax, taxAmount, subtotalIncTax,
+              unitCostEur: eurAmount(unitCost, effectiveRate, 4),
+              subtotalExTaxEur: eurAmount(subtotalExTax, effectiveRate),
+              taxAmountEur: eurAmount(taxAmount, effectiveRate),
+              subtotalIncTaxEur: eurAmount(subtotalIncTax, effectiveRate),
               ...(l.bestBefore !== undefined && { bestBefore }),
             },
           })
@@ -175,6 +195,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         headerUpdate.subtotalExTax = subtotalExTax
         headerUpdate.totalTax = totalTax
         headerUpdate.totalIncTax = subtotalExTax + totalTax
+        headerUpdate.subtotalExTaxEur = eurAmount(subtotalExTax, effectiveRate)
+        headerUpdate.totalTaxEur = eurAmount(totalTax, effectiveRate)
+        headerUpdate.totalIncTaxEur = eurAmount(subtotalExTax + totalTax, effectiveRate)
+        headerUpdate.freightAmountEur = eurAmount(poBefore.freightAmount, effectiveRate, 2)
+      } else if (rateProvided) {
+        // 只补汇率、没有重提行数据：沿用现存行/表头的原币金额，按新汇率重算全部 *Eur 字段
+        headerUpdate.subtotalExTaxEur = eurAmount(poBefore.subtotalExTax, effectiveRate)
+        headerUpdate.totalTaxEur = eurAmount(poBefore.totalTax, effectiveRate)
+        headerUpdate.totalIncTaxEur = eurAmount(poBefore.totalIncTax, effectiveRate)
+        headerUpdate.freightAmountEur = eurAmount(poBefore.freightAmount, effectiveRate, 2)
+        await prisma.$transaction(
+          (poBefore.lines as Array<Record<string, unknown>>).map(l => p.purchaseOrderLine.update({
+            where: { id: l.id as string },
+            data: {
+              unitCostEur: eurAmount(l.unitCost, effectiveRate, 4),
+              subtotalExTaxEur: eurAmount(l.subtotalExTax, effectiveRate),
+              taxAmountEur: eurAmount(l.taxAmount, effectiveRate),
+              subtotalIncTaxEur: eurAmount(l.subtotalIncTax, effectiveRate),
+            },
+          })),
+        )
       }
 
       const po = await p.purchaseOrder.update({
@@ -237,6 +278,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
       if (!targetStatus) {
         return NextResponse.json({ error: `未知 action: ${action}` }, { status: 400 })
+      }
+
+      // 汇率待确认(非欧元单接口取不到实时汇率)不许推进到「确认」——这是自动生成供应商账单
+      // /通知财务的触发点，真金白银的应付账款不能拿一个未知汇率算出来的数(20260713)。
+      // 挡在这里而不是创建时，是为了不阻塞询价单本身的编辑/发送流程，只在真正要花钱这一步拦。
+      if (targetStatus === 'CONFIRMED' && po.exchangeRatePending) {
+        return NextResponse.json({ error: `汇率待确认（${po.currency}→EUR），请先在采购单里补充汇率再确认` }, { status: 409 })
       }
 
       if (!(ALLOWED_TRANSITIONS[po.status] ?? []).includes(targetStatus)) {

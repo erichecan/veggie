@@ -28,25 +28,36 @@ export async function GET(req: Request) {
       return NextResponse.json({ currency, date, rate: cached.rate, source: 'cache' })
     }
 
-    try {
+    async function fetchRate(url: string): Promise<number> {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 5000)
-      const res = await fetch(
-        `https://api.frankfurter.app/${date}?base=${encodeURIComponent(currency)}&symbols=EUR`,
-        { signal: controller.signal },
-      )
-      clearTimeout(timeout)
+      try {
+        const res = await fetch(url, { signal: controller.signal })
+        if (!res.ok) throw new Error(`frankfurter ${res.status}`)
+        const json = await res.json()
+        const rate = Number(json?.rates?.EUR)
+        if (!Number.isFinite(rate) || rate <= 0) throw new Error('无效汇率数据')
+        return rate
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
 
-      if (!res.ok) throw new Error(`frankfurter ${res.status}`)
-      const json = await res.json()
-      const rate = Number(json?.rates?.EUR)
-      if (!Number.isFinite(rate) || rate <= 0) throw new Error('无效汇率数据')
-
+    try {
+      const rate = await fetchRate(`https://api.frankfurter.app/${date}?base=${encodeURIComponent(currency)}&symbols=EUR`)
       cache.set(cacheKey, { rate, fetchedAt: Date.now() })
       return NextResponse.json({ currency, date, rate, source: 'frankfurter' })
     } catch (error) {
-      console.error('[GET /api/fx-rate]', error)
-      return NextResponse.json({ currency, date, rate: null, source: 'unavailable' })
+      console.error('[GET /api/fx-rate] exact date failed, trying latest', error)
+      // 当日汇率取不到(节假日/接口抖动)时退一步拿"最近一次可用汇率"兜底，不阻塞下单；
+      // source 标为 fallback-latest，前端据此提示"汇率待确认"，别当成当日实时汇率用(20260713)。
+      try {
+        const rate = await fetchRate(`https://api.frankfurter.app/latest?base=${encodeURIComponent(currency)}&symbols=EUR`)
+        return NextResponse.json({ currency, date, rate, source: 'fallback-latest' })
+      } catch (fallbackError) {
+        console.error('[GET /api/fx-rate] fallback latest also failed', fallbackError)
+        return NextResponse.json({ currency, date, rate: null, source: 'unavailable' })
+      }
     }
   })
 }

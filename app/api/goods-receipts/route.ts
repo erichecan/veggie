@@ -131,7 +131,10 @@ export async function POST(req: Request) {
           if ((l.condition ?? 'ok') === 'ok') {
             // SSOT(成本): 收货按加权平均回写 standardPrice(此前收货从不回写,成本陈旧 — P2)
             // newStd = (max(oldQty,0)×oldStd + qty×收货价) / (max(oldQty,0)+qty);负库存按 0 计权
-            const recvCost = Number((poLine as { unitCost?: unknown }).unitCost ?? 0)
+            // 用折合欧元的单价(unitCostEur)，不能直接拿 PO 原币 unitCost 当欧元——非欧元采购单
+            // 必须先按 PO.exchangeRate 折算过才能进公司统一记的欧元成本基准(20260713 汇率换算改造)。
+            // unitCostEur 为空(理论上不会,CONFIRM 阶段已挡住汇率待确认的单)时按 0 处理，与原逻辑一致跳过更新。
+            const recvCost = Number((poLine as { unitCostEur?: unknown; unitCost?: unknown }).unitCostEur ?? 0)
             const prod = await tx.product.findUnique({ where: { id: l.productId }, select: { qtyOnHand: true, standardPrice: true } })
             const oldQty = Math.max(Number(prod?.qtyOnHand ?? 0), 0)
             const oldStd = Number(prod?.standardPrice ?? 0)

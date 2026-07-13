@@ -18,9 +18,15 @@ type VendorBillTx = {
       id: string
       name: string
       supplierId: string
+      currency: string
+      exchangeRate: unknown
+      exchangeRatePending: boolean
       subtotalExTax: unknown
       totalTax: unknown
       totalIncTax: unknown
+      subtotalExTaxEur: unknown
+      totalTaxEur: unknown
+      totalIncTaxEur: unknown
       lines: Array<{
         productId: string | null
         productName: string
@@ -30,6 +36,10 @@ type VendorBillTx = {
         subtotalExTax: unknown
         taxAmount: unknown
         subtotalIncTax: unknown
+        unitCostEur: unknown
+        subtotalExTaxEur: unknown
+        taxAmountEur: unknown
+        subtotalIncTaxEur: unknown
       }>
     } | null>
   }
@@ -48,21 +58,26 @@ export async function createDraftVendorBillForPurchaseOrder(
     include: { lines: true },
   })
   if (!po || po.lines.length === 0) return null
+  // 汇率待确认时不能生成账单——欧元金额未知，宁可让财务手动补录也不能算出一个错的应付款
+  // (正常不会走到这，PATCH action=confirm 已经挡在前面；这里是防御性兜底，20260713)。
+  if (po.exchangeRatePending) return null
 
+  // 账单金额一律用折合欧元的字段：币种非欧元时 subtotalExTax 等原币字段只用于展示原始发票，
+  // 应付账款/会计分录必须是欧元(20260713 汇率换算改造)
   const lines = po.lines.map(l => ({
     productId: l.productId ?? '',
     productName: l.productName,
     qty: Number(l.orderedQty),
-    unitCost: Number(l.unitCost),
+    unitCost: Number(l.unitCostEur ?? l.unitCost),
     taxRate: Number(l.taxRate ?? 0),
-    subtotalExTax: Number(l.subtotalExTax),
-    taxAmount: Number(l.taxAmount),
-    subtotalIncTax: Number(l.subtotalIncTax),
+    subtotalExTax: Number(l.subtotalExTaxEur ?? l.subtotalExTax),
+    taxAmount: Number(l.taxAmountEur ?? l.taxAmount),
+    subtotalIncTax: Number(l.subtotalIncTaxEur ?? l.subtotalIncTax),
   }))
 
   const count = await tx.vendorBill.count()
   const name = `VB-${String(count + 1).padStart(5, '0')}`
-  const totalIncTax = Number(po.totalIncTax)
+  const totalIncTax = Number(po.totalIncTaxEur ?? po.totalIncTax)
 
   const bill = await tx.vendorBill.create({
     data: {
@@ -71,8 +86,10 @@ export async function createDraftVendorBillForPurchaseOrder(
       supplierId: po.supplierId,
       billDate: new Date(),
       lines: lines as never,
-      subtotalExTax: Number(po.subtotalExTax),
-      totalTax: Number(po.totalTax),
+      currency: po.currency,
+      exchangeRate: po.exchangeRate ?? 1,
+      subtotalExTax: Number(po.subtotalExTaxEur ?? po.subtotalExTax),
+      totalTax: Number(po.totalTaxEur ?? po.totalTax),
       totalIncTax,
       amountPaid: 0,
       amountDue: totalIncTax,

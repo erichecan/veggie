@@ -83,8 +83,13 @@ export default function NewPurchaseOrderPage() {
 
   const [currency, setCurrency] = useState('EUR')
   const [exchangeRate, setExchangeRate] = useState(1)
-  const [fxSource, setFxSource] = useState<'identity' | 'cache' | 'frankfurter' | 'unavailable' | null>(null)
+  const [fxSource, setFxSource] = useState<'identity' | 'cache' | 'frankfurter' | 'fallback-latest' | 'unavailable' | null>(null)
+  // 汇率是人手动敲进去的(而不是接口自动回填)，视为已确认，即使自动回填当时是兜底/取不到也不算 pending
+  const [rateManuallyEdited, setRateManuallyEdited] = useState(false)
   const [freightAmount, setFreightAmount] = useState(0)
+  // 待确认：非欧元 + 没有活体当日汇率兜底 + 用户没有手动确认过这个数字——提交时会带 pending 标记，
+  // 提交后「确认」这一步会被后端挡住，直到有人在采购单里补上真汇率(20260713 汇率换算改造)
+  const exchangeRatePending = currency !== 'EUR' && !rateManuallyEdited && (fxSource === 'unavailable' || fxSource === 'fallback-latest')
 
   const [sourceDocumentUrl, setSourceDocumentUrl] = useState('')
   const [sourceDocumentName, setSourceDocumentName] = useState('')
@@ -118,6 +123,7 @@ export default function NewPurchaseOrderPage() {
 
   // 币种变化时自动回填当日汇率；接口不可用时不阻塞下单，允许手动填
   useEffect(() => {
+    setRateManuallyEdited(false)
     if (currency === 'EUR') { setExchangeRate(1); setFxSource('identity'); return }
     apiGet<{ rate: number | null; source: typeof fxSource }>(
       `/api/fx-rate?currency=${encodeURIComponent(currency)}&date=${orderDate}`,
@@ -275,7 +281,10 @@ export default function NewPurchaseOrderPage() {
         expectedDate: expectedDate || undefined,
         notes: notes || undefined,
         currency,
-        exchangeRate,
+        // 待确认的汇率(未取到活体当日汇率、用户也没手动确认)不当真数字传给后端——
+        // 传 null 让后端按"汇率缺失"处理(exchangeRate=null、exchangeRatePending=true)，
+        // 而不是把一个没人认过的兜底猜测值悄悄存成"下单时锁定的汇率"(20260713)。
+        exchangeRate: exchangeRatePending ? null : exchangeRate,
         freightAmount,
         sourceDocumentUrl: sourceDocumentUrl || undefined,
         sourceDocumentName: sourceDocumentName || undefined,
@@ -409,14 +418,23 @@ export default function NewPurchaseOrderPage() {
                       <input
                         type="number" step="0.000001" min="0"
                         value={exchangeRate}
-                        onChange={e => setExchangeRate(Number(e.target.value))}
+                        onChange={e => { setExchangeRate(Number(e.target.value)); setRateManuallyEdited(true) }}
                         className={`${numInputCls} w-20`}
                       />
                       {fxSource === 'unavailable' && (
                         <span className="text-amber-600">{isEn ? 'Live rate unavailable, please enter manually' : '未取到实时汇率，请手动填'}</span>
                       )}
+                      {fxSource === 'fallback-latest' && (
+                        <span className="text-amber-600">{isEn ? "Today's rate unavailable, using latest known rate" : '未取到当日汇率，已用最近一次可用汇率兜底'}</span>
+                      )}
                       {fxSource === 'frankfurter' && <span className="text-gray-400">{isEn ? "Today's rate" : '当日汇率'}</span>}
+                      {fxSource === 'cache' && <span className="text-gray-400">{isEn ? "Today's rate (cached)" : '当日汇率（缓存）'}</span>}
                     </div>
+                  )}
+                  {exchangeRatePending && (
+                    <span className="ml-3 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">
+                      {isEn ? '🔴 Rate pending — confirmation will be blocked until fixed' : '🔴 汇率待确认——不改这个数字，采购单将无法「确认」'}
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
@@ -572,8 +590,16 @@ export default function NewPurchaseOrderPage() {
               </div>
               <div className="border-t border-gray-300 mt-1 pt-2 flex justify-between">
                 <span className="text-sm font-semibold" style={{ color: DARK }}>{isEn ? 'Total' : '合计'}</span>
-                <span className="text-base font-bold" style={{ color: DARK }}>{totalIncTax.toFixed(2)}</span>
+                <span className="text-base font-bold" style={{ color: DARK }}>{currency} {totalIncTax.toFixed(2)}</span>
               </div>
+              {currency !== 'EUR' && (
+                <div className="flex justify-between py-1 text-sm">
+                  <span className="text-gray-400">{isEn ? '≈ EUR (at rate above)' : '≈ 折合欧元（按上方汇率）'}</span>
+                  <span className={exchangeRatePending ? 'text-red-500 font-medium' : 'text-gray-500'}>
+                    {exchangeRatePending ? (isEn ? 'pending' : '待确认') : `€${(totalIncTax * exchangeRate).toFixed(2)}`}
+                  </span>
+                </div>
+              )}
               {freightAmount > 0 && (
                 <div className="flex justify-between py-1 text-sm border-t border-gray-100 mt-1 pt-2">
                   <span className="text-gray-500">

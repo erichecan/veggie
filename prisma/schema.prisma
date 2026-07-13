@@ -971,14 +971,24 @@ model PurchaseOrder {
   expectedDate   DateTime?
   /// 货币（默认与公司主币一致）
   currency       String              @default("EUR")
-  /// 下单时锁定的 currency→EUR 当日汇率快照，事后汇率变动不影响历史单据
+  /// 下单时锁定的 currency→EUR 当日汇率快照，事后汇率变动不影响历史单据；
+  /// 非欧元且没能拿到有效汇率时为 null，此时 exchangeRatePending=true(20260713 汇率换算改造)
   exchangeRate   Decimal?            @default(1) @db.Decimal(14, 6)
-  /// 不含税总金额
+  /// true=汇率是接口取不到时的占位状态(缺失)，需财务在采购单里补录后才能推进「确认」
+  exchangeRatePending Boolean        @default(false)
+  /// 不含税总金额（原币）
   subtotalExTax  Decimal             @default(0) @db.Decimal(12, 2)
   totalTax       Decimal             @default(0) @db.Decimal(12, 2)
   totalIncTax    Decimal             @default(0) @db.Decimal(12, 2)
-  /// 本单运费（税前），按行 subtotal 占比摊入各行落地成本，不回写 Product 成本
+  /// 本单运费（税前，原币），按行 subtotal 占比摊入各行落地成本，不回写 Product 成本
   freightAmount  Decimal             @default(0) @db.Decimal(14, 2)
+  /// 以下 *Eur 字段 = 原币字段 × exchangeRate（币种为 EUR 时恒等于原字段）；
+  /// 下游(收货成本回写/供应商账单/会计分录)一律只读这些字段，不再各自乘汇率——
+  /// exchangeRatePending 时为 null，因为汇率未知没法折算(20260713 汇率换算改造)
+  subtotalExTaxEur Decimal?          @db.Decimal(12, 2)
+  totalTaxEur      Decimal?          @db.Decimal(12, 2)
+  totalIncTaxEur   Decimal?          @db.Decimal(12, 2)
+  freightAmountEur Decimal?          @db.Decimal(14, 2)
   /// 用于识别/预填本单的供应商 PDF 原件
   sourceDocumentUrl  String?
   sourceDocumentName String?
@@ -1021,13 +1031,19 @@ model PurchaseOrderLine {
   receivedQty   Decimal       @default(0) @db.Decimal(14, 3)
   /// 已开票数量
   invoicedQty   Decimal       @default(0) @db.Decimal(14, 3)
-  /// 采购 UoM 下的单价
+  /// 采购 UoM 下的单价（原币）
   unitCost      Decimal       @db.Decimal(12, 4)
   /// 行税率
   taxRate       Decimal       @default(0) @db.Decimal(6, 4)
   subtotalExTax Decimal       @db.Decimal(12, 2)
   taxAmount     Decimal       @db.Decimal(12, 2)
   subtotalIncTax Decimal      @db.Decimal(12, 2)
+  /// 折合欧元 = 原币字段 × PurchaseOrder.exchangeRate；收货成本回写 Product.standardPrice/
+  /// Lot.unitCost 一律读这几个字段，不读上面原币字段。PO 汇率待确认时为 null(20260713)
+  unitCostEur       Decimal?  @db.Decimal(12, 4)
+  subtotalExTaxEur  Decimal?  @db.Decimal(12, 2)
+  taxAmountEur      Decimal?  @db.Decimal(12, 2)
+  subtotalIncTaxEur Decimal?  @db.Decimal(12, 2)
   /// 保质期（最佳食用日期）
   bestBefore    DateTime?
   sequence      Int           @default(10)
@@ -1154,6 +1170,10 @@ model VendorBill {
   billDate        DateTime         @default(now())
   dueDate         DateTime?
   lines           Json             @default("[]")
+  /// 币种/汇率快照，跟随来源采购单，仅用于财务核对原始外币发票；下面的金额字段
+  /// (subtotalExTax 等)始终存欧元折算值，会计过账(lib/accounting.ts)直接读这几个字段即可(20260713)
+  currency        String           @default("EUR")
+  exchangeRate    Decimal?         @default(1) @db.Decimal(14, 6)
   subtotalExTax   Decimal          @default(0) @db.Decimal(12, 2)
   totalTax        Decimal          @default(0) @db.Decimal(12, 2)
   totalIncTax     Decimal          @default(0) @db.Decimal(12, 2)
