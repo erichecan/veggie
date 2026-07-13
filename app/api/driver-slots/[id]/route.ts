@@ -9,11 +9,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const body = await req.json()
     const { timeOfDay, batchNum, driverName, archived, userId } = body
 
-    // 仅绑定/解绑系统用户(司机配置页下拉)
+    // 仅绑定/解绑系统用户(司机配置页下拉)：绑定时把 driverName 同步成该用户的 name，
+    // 身份以 userId 为准、driverName 只是显示快照(见 schema DriverSlot 注释)，避免绑定后
+    // 两者各自漂移导致同一人出现两种拼写。
     if (timeOfDay === undefined && batchNum === undefined && driverName === undefined && userId !== undefined) {
+      const boundUserId = userId ? String(userId) : null
+      const boundUser = boundUserId ? await prisma.user.findUnique({ where: { id: boundUserId }, select: { name: true } }) : null
       const slot = await prisma.driverSlot.update({
         where: { id },
-        data: { userId: userId ? String(userId) : null },
+        data: { userId: boundUserId, ...(boundUser ? { driverName: boundUser.name } : {}) },
       })
       return NextResponse.json(slot)
     }
@@ -41,11 +45,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!timeOfDay || !batchNum || !driverName?.trim()) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    const boundUserId = userId !== undefined ? (userId ? String(userId) : null) : undefined
+    const boundUser = boundUserId ? await prisma.user.findUnique({ where: { id: boundUserId }, select: { name: true } }) : null
     const slot = await prisma.driverSlot.update({
       where: { id },
       data: {
-        timeOfDay, batchNum: Number(batchNum), driverName: driverName.trim(),
-        ...(userId !== undefined ? { userId: userId ? String(userId) : null } : {}),
+        timeOfDay, batchNum: Number(batchNum), driverName: boundUser?.name ?? driverName.trim(),
+        ...(boundUserId !== undefined ? { userId: boundUserId } : {}),
       },
     })
     return NextResponse.json(slot)

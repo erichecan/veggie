@@ -417,18 +417,25 @@ export default function DriversPage() {
                 <span className="text-sm px-2 py-1.5">{row.batchNum}</span>
               )}
 
-              {/* 司机名字 */}
+              {/* 司机名字：绑定了系统账号后由账号 name 派生只读展示(后端也会强制同步)，
+                  避免手填的名字和账号各自漂移出两种拼写(如 Moazzam/Mozzam)。 */}
               {row.editing ? (
-                <input
-                  ref={!row.id ? newNameRef : undefined}
-                  type="text"
-                  value={row.driverName}
-                  onChange={e => updateRow(idx, 'driverName', e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') saveRow(idx) }}
-                  placeholder={isEn ? 'Enter driver name' : '输入司机名字'}
-                  className={inputCls}
-                  style={{ ...inputStyle, ...focusStyle }}
-                />
+                row.userId ? (
+                  <span className="text-sm px-2 py-1.5 font-medium" title={isEn ? 'Derived from the bound account, cannot be edited separately' : '由绑定账号派生，不可单独修改'}>
+                    {row.driverName}
+                  </span>
+                ) : (
+                  <input
+                    ref={!row.id ? newNameRef : undefined}
+                    type="text"
+                    value={row.driverName}
+                    onChange={e => updateRow(idx, 'driverName', e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveRow(idx) }}
+                    placeholder={isEn ? 'Enter driver name' : '输入司机名字'}
+                    className={inputCls}
+                    style={{ ...inputStyle, ...focusStyle }}
+                  />
+                )
               ) : (
                 <span className="text-sm px-2 py-1.5 font-medium">{row.driverName}</span>
               )}
@@ -437,7 +444,13 @@ export default function DriversPage() {
               {row.editing ? (
                 <select
                   value={row.userId}
-                  onChange={e => updateRow(idx, 'userId', e.target.value)}
+                  onChange={e => {
+                    const uid = e.target.value
+                    // 身份以 userId 为准：选中账号即把司机名字同步成该账号的 name，
+                    // 不再让两个字段各自手填、漂出"同一人两种拼写"的问题(如 Moazzam/Mozzam)。
+                    const boundName = driverUsers.find(u => u.id === uid)?.name
+                    setRows(prev => prev.map((r, i) => i === idx ? { ...r, userId: uid, driverName: boundName ?? r.driverName, dirty: true } : r))
+                  }}
                   className={inputCls}
                   style={{ ...inputStyle, ...focusStyle }}
                 >

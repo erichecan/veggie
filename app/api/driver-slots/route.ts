@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
+// 一趟车能装的托盘数是固定的，不能无限新增(见调度台"新增托盘")。
+const MAX_PALLETS_PER_DRIVER = 5
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
@@ -23,15 +26,22 @@ export async function POST(req: Request) {
     if (!timeOfDay || !batchNum || !driverName?.trim()) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
-    const name = driverName.trim()
     const num = Number(batchNum)
     const boundUserId = userId ? String(userId) : null
+    // 身份以 userId 为准，driverName 只是显示快照(见 schema DriverSlot 注释)：绑定了系统用户就
+    // 强制把 driverName 同步成该用户的 name，堵住手填导致同一人两种拼写(如 Moazzam/Mozzam)的口子。
+    const boundUser = boundUserId ? await prisma.user.findUnique({ where: { id: boundUserId }, select: { name: true } }) : null
+    const name = boundUser?.name ?? driverName.trim()
     // 唯一约束含归档：撞到归档记录则自动恢复（复活），撞到活跃记录才报冲突
     const existing = await prisma.driverSlot.findUnique({
       where: { timeOfDay_batchNum_driverName: { timeOfDay, batchNum: num, driverName: name } },
     })
     if (existing) {
       if (existing.archived) {
+        const activeCount = await prisma.driverSlot.count({ where: { timeOfDay, driverName: name, archived: false } })
+        if (activeCount >= MAX_PALLETS_PER_DRIVER) {
+          return NextResponse.json({ error: `托盘数已达上限(${MAX_PALLETS_PER_DRIVER})，无法恢复` }, { status: 409 })
+        }
         const restored = await prisma.driverSlot.update({
           where: { id: existing.id },
           data: { archived: false, userId: boundUserId },
@@ -39,6 +49,10 @@ export async function POST(req: Request) {
         return NextResponse.json(restored, { status: 200 })
       }
       return NextResponse.json({ error: '该司机已在相同时段和批次中' }, { status: 409 })
+    }
+    const activeCount = await prisma.driverSlot.count({ where: { timeOfDay, driverName: name, archived: false } })
+    if (activeCount >= MAX_PALLETS_PER_DRIVER) {
+      return NextResponse.json({ error: `托盘数已达上限(${MAX_PALLETS_PER_DRIVER})，无法新增` }, { status: 409 })
     }
     const slot = await prisma.driverSlot.create({
       data: { timeOfDay, batchNum: num, driverName: name, userId: boundUserId },

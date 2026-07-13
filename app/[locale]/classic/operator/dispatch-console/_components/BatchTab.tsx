@@ -47,6 +47,8 @@ const WAVE_STATUS_EN: Record<string, { text: string; cls: string; pct: number }>
 const num = (v: number | string) => (typeof v === 'number' ? v : Number(v) || 0)
 const SRC = 'application/x-source-wave'
 const groupKey = (driverName: string, timeOfDay: string) => `${driverName}::${timeOfDay}`
+// 一趟车能装的托盘数固定，不能无限新增；到上限后"+新增托盘"按钮直接消失(后端同步兜底校验)。
+const MAX_PALLETS_PER_DRIVER = 5
 
 function shiftDate(base: string, days: number) {
   const d = new Date(base + 'T00:00:00Z')
@@ -89,13 +91,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         apiGet<DriverSlot[]>('/api/driver-slots'),
         apiGet<Order[]>(`/api/orders?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&include_lines=true&limit=500&dateField=deliveryDate&fromDate=${date}&toDate=${date}`),
       ])
-      let waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
-      if (waveData.length === 0 && slotData.length > 0) {
-        try {
-          await apiPost('/api/waves/generate-daily', { date })
-          waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
-        } catch { /* 生成失败不阻断展示 */ }
-      }
+      // 不再预建当天全部司机的空波次(见 assignToPalletNoWave/assignOrderToWave)——
+      // 拖单/分配时才按 (driverName,timeOfDay,订单交货日) find-or-create 真正的波次,
+      // 卡片没单就用空占位波次渲染(见 Lane 组件),避免每打开一个日期就给全部司机建一批空壳
+      // (20260713 清理过 407 条历史空波次，就是这个预建逻辑攒出来的)。
+      const waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
       // 调度台以 wave.waveDate 为口径:车里的订单按 wave.orderIds 直接补拉,
       // 不受 deliveryDate 限制(deliveryDate 只在「确认出发」时才回填,分配阶段为空)。
       // 否则销售单已排司机的订单(deliveryDate 为空)在此看不到,角标也对不上卡片计数。
@@ -182,12 +182,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   // ── 顶部统计卡点击联动 ──
   function focusRightPanel() {
     requestAnimationFrame(() => rightPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }
-  // 司机波次:选中全部司机,右侧展开当天全部车次
-  function showAllDriverWaves() {
-    if (driverNames.length === 0) return
-    setSelectedDrivers(new Set(driverNames))
-    focusRightPanel()
   }
   // 已入批:选中有订单的司机(角标>0),右侧展开这些车次(订单在卡片内)
   function showInBatchDrivers() {
@@ -410,7 +404,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const timeCls = timeOfDay === 'am' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
     const timeText = timeOfDay === 'am' ? (isEn ? 'AM' : '上午') : (isEn ? 'PM' : '下午')
     const key = groupKey(driverName, timeOfDay)
-    const mode = viewMode[key] ?? 'pallet'
+    // 没手动切换过视图时：0 单默认订单视图(卡片显示"暂无订单"，整卡看起来是空的，
+    // 避免每个托盘都画空框造成"明明没订单却有一堆批次"的错觉)；有单默认托盘视图(方便装车)。
+    // 手动点过视图切换按钮后按用户选择走，不再跟着单量自动切换。
+    const mode = viewMode[key] ?? (wave.orderIds.length === 0 ? 'order' : 'pallet')
 
     // 关灯期(司机端未上线):completed 属于配送生命周期,与 dispatched 同源一并关灯——
     // 完成态波次回退为普通排货卡(照常显示订单),与顶部/chip 角标(orderCountByDriver 恒按
@@ -627,7 +624,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 </div>
               )}
 
-              {!dispatched && !locked && (
+              {/* 一趟车能装的托盘数固定，到上限(MAX_PALLETS_PER_DRIVER)后按钮直接消失，
+                  不能无限新增(后端 POST /api/driver-slots 同步兜底校验，防止绕开前端直接调接口)。 */}
+              {!dispatched && !locked && groupSlots.length < MAX_PALLETS_PER_DRIVER && (
                 <button
                   onClick={() => addPallet(driverName, timeOfDay, groupSlots)}
                   className="self-start mt-0.5 border border-dashed rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-gray-400 hover:text-blue-600 hover:border-blue-400"
@@ -685,7 +684,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         <div className="flex items-center gap-4">
           <span className="text-[10px] font-bold text-gray-400 tracking-wide">{isEn ? <>Trips<br />(count)</> : <>波次<br />（车）</>}</span>
           <Board n={assignmentDoneCount} l={isEn ? 'Done' : '已排完'} color="#875A7B" hint={isEn ? 'Click: select only drivers whose trips are "assignment done"' : '点击：只选中「分配完成」的车次司机'} onClick={showAssignmentDoneDrivers} />
-          <Board n={waves.length} l={isEn ? 'Trips' : '波次'} hint={isEn ? "Click: select all drivers, expand all of today's trips on the right" : '点击：选中全部司机，右侧展开当天全部车次'} onClick={showAllDriverWaves} />
         </div>
         <div className="flex-1" />
         {pendingDoneWaves.length > 0 && (
