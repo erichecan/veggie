@@ -13,7 +13,14 @@ import PdfExtractDialog, { type PdfExtractResult } from './_components/PdfExtrac
 import PdfSidePanel from './_components/PdfSidePanel'
 import PriceHistoryModal from './_components/PriceHistoryModal'
 
-const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'MAD', 'CNY']
+const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CNY']
+
+const CURRENCY_LABELS: Record<string, { en: string; zh: string }> = {
+  EUR: { en: 'EUR — Euro', zh: 'EUR — 欧元' },
+  USD: { en: 'USD — US Dollar', zh: 'USD — 美金' },
+  GBP: { en: 'GBP — British Pound', zh: 'GBP — 英镑' },
+  CNY: { en: 'CNY — Chinese Yuan', zh: 'CNY — 人民币' },
+}
 
 const PURPLE = '#875A7B'
 const DARK = '#1f2d3d'
@@ -402,16 +409,18 @@ export default function NewPurchaseOrderPage() {
                 </div>
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Currency' : '币种'}</label>
-                  <input
-                    list="currency-options"
+                  <select
                     value={currency}
-                    onChange={e => setCurrency(e.target.value.toUpperCase())}
+                    onChange={e => setCurrency(e.target.value)}
                     className={inputCls}
-                    style={{ width: '80px' }}
-                  />
-                  <datalist id="currency-options">
-                    {COMMON_CURRENCIES.map(c => <option key={c} value={c} />)}
-                  </datalist>
+                    style={{ width: '170px' }}
+                  >
+                    {/* PDF 识别可能猜出不在常用列表里的币种(currencyGuess)，兜底把它也加进选项，
+                        否则 select 的 value 对不上任何 option 会显示空白，看起来像"选丢了" */}
+                    {(COMMON_CURRENCIES.includes(currency) ? COMMON_CURRENCIES : [currency, ...COMMON_CURRENCIES]).map(c => (
+                      <option key={c} value={c}>{isEn ? (CURRENCY_LABELS[c]?.en ?? c) : (CURRENCY_LABELS[c]?.zh ?? c)}</option>
+                    ))}
+                  </select>
                   {currency !== 'EUR' && (
                     <div className="flex items-center gap-1 ml-3 text-xs text-gray-500">
                       <span>{isEn ? 'Rate→EUR' : '汇率→EUR'}</span>
