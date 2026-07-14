@@ -126,7 +126,6 @@ export default function ClassicQuotationsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [trips, setTrips] = useState<Trip[]>([])
 
-  const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabValue>('all')
   const [orderTodayActive, setOrderTodayActive] = useState(false)
   // 分面搜索 + 快捷筛选(My / 时间)——全部 7 个维度(含 product/category)现在都直接编码进服务端请求参数，
@@ -138,6 +137,14 @@ export default function ClassicQuotationsPage() {
   const [sortField, setSortField] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [colFilters, setColFilters] = useState<ColFilters>({ ...EMPTY_CF })
+  // code/customer/salesman 列筛选框下推到服务端查询(见 baseUrl),防抖 400ms 避免逐字符触发请求
+  const [debouncedColText, setDebouncedColText] = useState({ code: '', customer: '', salesman: '' })
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedColText({ code: colFilters.code, customer: colFilters.customer, salesman: colFilters.salesman })
+    }, 400)
+    return () => clearTimeout(t)
+  }, [colFilters.code, colFilters.customer, colFilters.salesman])
   const [groupBy, setGroupBy] = useState<GroupByField>('none')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -278,6 +285,17 @@ export default function ClassicQuotationsPage() {
     // 交货日期列筛 → deliveryFrom/deliveryTo
     if (colFilters.deliveryDateFrom) params.set('deliveryFrom', colFilters.deliveryDateFrom)
     if (colFilters.deliveryDateTo) params.set('deliveryTo', colFilters.deliveryDateTo)
+    // 单号/客户/销售员列筛选框(与分面 chip 独立,AND 语义) → colCode/colCustomer/colSalesman,
+    // 避免"匹配记录不在当前页时误判为空"(客户反馈,和交货日期同一类 bug)
+    if (debouncedColText.code) params.set('colCode', debouncedColText.code)
+    if (debouncedColText.customer) params.set('colCustomer', debouncedColText.customer)
+    if (debouncedColText.salesman) params.set('colSalesman', debouncedColText.salesman)
+    // 表头排序(internalNote 列除外,服务端没有对应可排序字段,该列排序仍由前端对当页数据做)
+    if (sortField && sortField !== 'internalNote') {
+      const sortFieldMap: Record<string, string> = { customer: 'restaurantName', total: 'totalAmount' }
+      params.set('sortField', sortFieldMap[sortField] ?? sortField)
+      params.set('sortDir', sortDir)
+    }
     // 分面聚焦搜索(含 product/category)直接编码进 f_* 参数，服务端原生支持，不再需要客户端 bridge
     applyFacets(params, facets)
     // My Quotations → 按当前登录用户(业务员)过滤
@@ -288,7 +306,7 @@ export default function ClassicQuotationsPage() {
       if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     }
     return `/api/orders?${params.toString()}`
-  }, [statusParam, colFilters.quotationDateFrom, colFilters.quotationDateTo, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, facets, myActive, currentUser, timeKey])
+  }, [statusParam, colFilters.quotationDateFrom, colFilters.quotationDateTo, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
 
   const {
     data: rawOrders,
@@ -297,6 +315,8 @@ export default function ClassicQuotationsPage() {
     totalPages,
     loading,
     setPage,
+    setSearch: setServerSearch,
+    search,
     refresh,
   } = useServerList<Record<string, unknown>>({ url: baseUrl, pageSize: PAGE_SIZE })
 
@@ -476,16 +496,8 @@ export default function ClassicQuotationsPage() {
       })
     }
 
-    // global search
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      result = result.filter(o =>
-        o.restaurantName.toLowerCase().includes(q) ||
-        (o.code ?? '').toLowerCase().includes(q) ||
-        o.id.toLowerCase().includes(q) ||
-        getField(o, 'salesman').toLowerCase().includes(q)
-      )
-    }
+    // 顶部 Search 框已下推服务端(见 useServerList 的 search/setServerSearch),此处不再客户端二次过滤 ——
+    // 避免"匹配记录不在当前页时误判为空"(客户反馈,和交货日期同一类 bug)
 
     // My Quotations — 按当前登录用户(业务员)过滤
     if (myActive && currentUser?.userId) {
@@ -533,11 +545,9 @@ export default function ClassicQuotationsPage() {
 
     // column filters
     const cf = colFilters
-    if (cf.code) result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(cf.code.toLowerCase()))
+    // 单号/客户/销售员已由服务端过滤(见 baseUrl 的 colCode/colCustomer/colSalesman),此处不再客户端二次筛选
     if (cf.quotationDateFrom) result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) >= cf.quotationDateFrom)
     if (cf.quotationDateTo)   result = result.filter(o => getField(o, 'quotationDate').slice(0, 10) <= cf.quotationDateTo)
-    if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
-    if (cf.salesman)      result = result.filter(o => getField(o, 'salesman').toLowerCase().includes(cf.salesman.toLowerCase()))
     if (cf.deliveryDateFrom) result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d >= cf.deliveryDateFrom })
     if (cf.deliveryDateTo)   result = result.filter(o => { const d = getField(o, 'deliveryDate').slice(0, 10); return d !== '' && d <= cf.deliveryDateTo })
     if (cf.salesTeam)     result = result.filter(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(cf.salesTeam.toLowerCase()))
@@ -562,29 +572,18 @@ export default function ClassicQuotationsPage() {
       return String(new Date(dd).getDay()) === cf.weekday
     })
 
-    // sort
-    if (sortField) {
+    // 其余字段的排序已下推服务端(见 baseUrl),数据到手时已是全局排好序的当页切片,不再客户端二次排序 ——
+    // 除了 internalNote 列(服务端无对应可排序字段),仍需客户端排当页数据,是已知局限。
+    if (sortField === 'internalNote') {
       result = [...result].sort((a, b) => {
-        let av: string | number = ''
-        let bv: string | number = ''
-        if (sortField === 'code') { av = a.code ?? a.id; bv = b.code ?? b.id }
-        else if (sortField === 'quotationDate') { av = getField(a, 'quotationDate'); bv = getField(b, 'quotationDate') }
-        else if (sortField === 'customer') { av = a.restaurantName; bv = b.restaurantName }
-        else if (sortField === 'salesman') { av = getField(a, 'salesman'); bv = getField(b, 'salesman') }
-        else if (sortField === 'deliveryDate') { av = getField(a, 'deliveryDate'); bv = getField(b, 'deliveryDate') }
-        else if (sortField === 'total') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
-        else if (sortField === 'status') { av = a.status; bv = b.status }
-        else if (sortField === 'internalNote') { av = getField(a, 'internalNote'); bv = getField(b, 'internalNote') }
-        else if (sortField === 'createdAt') { av = a.createdAt ?? ''; bv = b.createdAt ?? '' }
-        if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av
-        return sortDir === 'asc'
-          ? String(av).localeCompare(String(bv))
-          : String(bv).localeCompare(String(av))
+        const av = getField(a, 'internalNote')
+        const bv = getField(b, 'internalNote')
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
       })
     }
 
     return result
-  }, [orders, activeTab, orderTodayActive, search, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, currentUser])
+  }, [orders, activeTab, orderTodayActive, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, currentUser])
 
   // ── Group By ─────────────────────────────────────────────────────────────
 
@@ -1086,7 +1085,7 @@ ${footerHtml}
           ...(selected.size >= 1 ? [{ label: bulkPrinting ? (isEn ? 'Generating...' : '生成中...') : (isEn ? `Bulk Print (${selected.size})` : `批量打印 (${selected.size})`), onClick: handleBulkPrint, primary: true, disabled: bulkPrinting }] : []),
         ]}
         searchValue={search}
-        onSearch={v => { setSearch(v) }}
+        onSearch={v => { setServerSearch(v) }}
         facetFields={ORDER_FACET_FIELDS}
         onFacetAdd={addFacet}
         filterOptions={[

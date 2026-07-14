@@ -103,6 +103,14 @@ export default function ClassicOrdersPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_FILTERS)
+  // code/customer/salesman 列筛选框下推到服务端查询(见 baseUrl),防抖 400ms 避免逐字符触发请求
+  const [debouncedColText, setDebouncedColText] = useState({ code: '', customer: '', salesman: '' })
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedColText({ code: colFilters.code, customer: colFilters.customer, salesman: colFilters.salesman })
+    }, 400)
+    return () => clearTimeout(t)
+  }, [colFilters.code, colFilters.customer, colFilters.salesman])
   // 分面搜索 + 快捷筛选(My / 时间)
   const [facets, setFacets] = useState<Facet[]>([])
   const [myActive, setMyActive] = useState(false)
@@ -133,8 +141,8 @@ export default function ClassicOrdersPage() {
     return activeFilter.toUpperCase()
   }, [activeFilter])
 
-  // 交货日期过滤下推到服务端:改日期即触发 useServerList 重查(回第 1 页),
-  // 避免"只筛当前页"——某天订单不在当前页时被误判为空
+  // 交货日期/列筛选/排序均下推到服务端:任一变化即触发 useServerList 重查(回第 1 页),
+  // 避免"只筛/只排当前页"——匹配记录不在当前页时被误判为空,或翻页后排序断档(客户反馈)
   const baseUrl = useMemo(() => {
     const params = new URLSearchParams({ status: statusParam, include_lines: 'false' })
     // 交货日期过滤走服务端分页分支认的参数:dateField=deliveryDate + fromDate/toDate
@@ -142,6 +150,15 @@ export default function ClassicOrdersPage() {
       params.set('dateField', 'deliveryDate')
       if (colFilters.deliveryDateFrom) params.set('fromDate', colFilters.deliveryDateFrom)
       if (colFilters.deliveryDateTo) params.set('toDate', colFilters.deliveryDateTo)
+    }
+    // 单号/客户/销售员列筛选框(与分面 chip 独立,AND 语义) → colCode/colCustomer/colSalesman
+    if (debouncedColText.code) params.set('colCode', debouncedColText.code)
+    if (debouncedColText.customer) params.set('colCustomer', debouncedColText.customer)
+    if (debouncedColText.salesman) params.set('colSalesman', debouncedColText.salesman)
+    // 表头排序(deliveryBatch/司机列除外,该列由 wave 派生,服务端不支持排序)
+    if (sortField !== 'deliveryBatch') {
+      params.set('sortField', sortField)
+      params.set('sortDir', sortDir)
     }
     // 分面聚焦搜索 → f_* / search
     applyFacets(params, facets)
@@ -151,7 +168,7 @@ export default function ClassicOrdersPage() {
     const range = timeKey ? computeTimeRange(timeKey) : null
     if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     return `/api/orders?${params.toString()}`
-  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, facets, myActive, currentUser, timeKey])
+  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
 
   const {
     data: rawOrders,
@@ -205,10 +222,8 @@ export default function ClassicOrdersPage() {
     }
 
     const cf = colFilters
-    if (cf.code) result = result.filter(o => (o.code ?? o.id).toLowerCase().includes(cf.code.toLowerCase()))
-    // 交货日期已由服务端过滤(见 baseUrl),此处不再客户端二次筛选
-    if (cf.customer)    result = result.filter(o => o.restaurantName.toLowerCase().includes(cf.customer.toLowerCase()))
-    if (cf.salesman)    result = result.filter(o => getField(o, 'salesman').toLowerCase().includes(cf.salesman.toLowerCase()))
+    // 交货日期/单号/客户/销售员已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
+    // 避免"匹配记录不在当前页时误判为空"(客户反馈)
     if (cf.deliveryBatch) result = result.filter(o => formatDriverSlotFromOrder(o).toLowerCase().includes(cf.deliveryBatch.toLowerCase()))
     if (cf.invoiceStatus) result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
     if (cf.status) result = result.filter(o => o.status === cf.status)
@@ -218,24 +233,16 @@ export default function ClassicOrdersPage() {
     return result
   }, [orders, activeFilter, invoicedOrderIds, colFilters])
 
+  // 排序已下推服务端(见 baseUrl),数据到手时已是全局排好序的当页切片,不再客户端二次排序 ——
+  // 除了 deliveryBatch/司机列(wave 派生字段,服务端不支持排序),仍需客户端排当页数据,是已知局限。
   const sorted = useMemo(() => {
+    if (sortField !== 'deliveryBatch') return filtered
     return [...filtered].sort((a, b) => {
-      let av: string | number = ''
-      let bv: string | number = ''
-      if (sortField === 'code') { av = a.code ?? a.id; bv = b.code ?? b.id }
-      else if (sortField === 'createdAt') { av = a.createdAt ?? ''; bv = b.createdAt ?? '' }
-      else if (sortField === 'restaurantName') { av = a.restaurantName; bv = b.restaurantName }
-      else if (sortField === 'salesman') { av = getField(a, 'salesman'); bv = getField(b, 'salesman') }
-      else if (sortField === 'deliveryBatch') { av = formatDriverSlotFromOrder(a); bv = formatDriverSlotFromOrder(b) }
-      else if (sortField === 'totalAmount') { av = a.totalAmount ?? 0; bv = b.totalAmount ?? 0 }
-      else if (sortField === 'invoiceStatus') { av = invoiceStatusFor(a, invoicedOrderIds); bv = invoiceStatusFor(b, invoicedOrderIds) }
-      else if (sortField === 'status') { av = a.status; bv = b.status }
-      else if (sortField === 'internalNote') { av = getField(a, 'internalNote'); bv = getField(b, 'internalNote') }
-      else { av = String((a as unknown as Record<string, unknown>)[sortField] ?? ''); bv = String((b as unknown as Record<string, unknown>)[sortField] ?? '') }
-      if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av
-      return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
+      const av = formatDriverSlotFromOrder(a)
+      const bv = formatDriverSlotFromOrder(b)
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
     })
-  }, [filtered, sortField, sortDir, invoicedOrderIds])
+  }, [filtered, sortField, sortDir])
 
   // 选择司机批次只做本地暂存,不触发保存/刷新,避免打断连续编辑
   function stageBatch(orderId: string, slotId: string, originalSlotId: string) {

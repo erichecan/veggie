@@ -126,6 +126,15 @@ export async function GET(req: Request) {
       where.lines = { some: { product: { categoryId } } }
     }
 
+    // 列表页表头下的"列筛选框"(Customer/单号/销售员) — 与 f_* 分面 chip 不同,
+    // 多个列筛选框之间要求"且"(全部同时满足),故各自独立键写入 where,不进 facetOr。
+    const colCode     = searchParams.get('colCode')?.trim()
+    const colCustomer = searchParams.get('colCustomer')?.trim()
+    const colSalesman = searchParams.get('colSalesman')?.trim()
+    if (colCode)     where.code = { contains: colCode, mode: 'insensitive' }
+    if (colCustomer) where.restaurantName = { contains: colCustomer, mode: 'insensitive' }
+    if (colSalesman) where.salesUser = { name: { contains: colSalesman, mode: 'insensitive' } }
+
     // 分面聚焦搜索(facet)：多个维度的 chip 彼此 OR(命中任一即可,如 司机:bao 或 单号:260)，
     // 整体作为一块再与全局 search / 时间 / My 叠加(AND)。
     // 用 where.AND 数组组合，避免与全局 search 的 where.OR、categoryId 的 where.lines 键冲突。
@@ -161,6 +170,21 @@ export async function GET(req: Request) {
     }
     if (facetAnd.length > 0) where.AND = facetAnd
 
+    // 表头点击排序 — 服务端全量排序后再分页,避免"排序只对当前页生效"(客户反馈)。
+    // deliveryBatch/司机列是由 wave 派生的展示字段(见 attachWaveDisplay),数据库里没有直接可排序的列,
+    // 该列排序仍由前端对当页数据做(见 orders/page.tsx),此处不支持。
+    const sortFieldParam = searchParams.get('sortField') ?? 'createdAt'
+    const sortDir = searchParams.get('sortDir') === 'asc' ? 'asc' as const : 'desc' as const
+    const orderBy: Record<string, unknown> =
+      sortFieldParam === 'code' ? { code: sortDir } :
+      sortFieldParam === 'deliveryDate' ? { deliveryDate: sortDir } :
+      sortFieldParam === 'quotationDate' ? { quotationDate: sortDir } :
+      sortFieldParam === 'restaurantName' ? { restaurantName: sortDir } :
+      sortFieldParam === 'totalAmount' ? { totalAmount: sortDir } :
+      sortFieldParam === 'status' ? { status: sortDir } :
+      sortFieldParam === 'salesman' ? { salesUser: { name: sortDir } } :
+      { createdAt: sortDir }
+
     // SSOT: items 一律由 lines 实时投影。include_lines=false 时仍拉精简行(只取投影所需字段),
     // 既保留列表页轻量,又确保 items 永远新鲜(不读已腐化的 Order.items 列)。见 lib/order-items.ts。
     const leanLineSelect = {
@@ -192,7 +216,7 @@ export async function GET(req: Request) {
         prisma.order.count({ where }),
         prisma.order.findMany({
           where,
-          orderBy: { createdAt: 'desc' },
+          orderBy,
           skip: (page - 1) * pageSize,
           take: pageSize,
           include,
