@@ -149,6 +149,9 @@ function BatchCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
+  // 每个托盘（子批次）自己的打印按钮各自忙碌，不跟整卡片的 busy 共用一个开关，
+  // 否则点一个托盘的按钮会把同卡片其它托盘/整卡按钮也一起 disable。
+  const [palletBusy, setPalletBusy] = useState<Record<number, boolean>>({})
   const { waveId, driverName, timeOfDay, pickLockedAt, pickLockedBy, pallets, unassignedOrders, orders, totalAmount, untaxTotal } = group
   const label = waveLabel(group, isEn)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
@@ -216,6 +219,46 @@ function BatchCard({
       toast.error(e instanceof Error ? e.message : (isEn ? 'Unlock failed' : '解锁失败'))
     } finally {
       setBusy(false)
+    }
+  }
+
+  // 单托盘打印：复用 dispatch-print-data 已有的 batchLabel 选择器("批次号 时段 司机名"，
+  // 见 lib/print/dispatch-loader.ts)，只取这一个托盘的订单，不是整个波次。锁定仍锁整个
+  // 波次(没有托盘级锁)，与"打印任何单据都自动锁批次防改派"的既有设计一致。
+  function palletBatchLabel(seq: number): string {
+    return `${seq} ${timeOfDay} ${driverName}`
+  }
+
+  async function printPalletPicking(seq: number, variant: 'storable' | 'consumable') {
+    setPalletBusy(prev => ({ ...prev, [seq]: true }))
+    try {
+      await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
+      const html = await fetchDispatchPrintHtml({ type: 'picking', date, batchLabel: palletBatchLabel(seq), variant })
+      onQueuePrint(html)
+      onPrint()
+      onLockChange()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
+    } finally {
+      setPalletBusy(prev => ({ ...prev, [seq]: false }))
+    }
+  }
+
+  async function printPallet(seq: number, type: 'delivery' | 'summary' | 'sales') {
+    setPalletBusy(prev => ({ ...prev, [seq]: true }))
+    try {
+      await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
+      const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq) })
+      onQueuePrint(html)
+      onPrint()
+      try {
+        await apiPost('/api/waves/print-log', { date, type, scope: 'batch', batchLabel: `${label} · ${isEn ? 'Batch' : '批次'} ${seq}`, waveId })
+      } catch { /* 日志失败静默 */ }
+      onLockChange()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
+    } finally {
+      setPalletBusy(prev => ({ ...prev, [seq]: false }))
     }
   }
 
@@ -340,8 +383,54 @@ function BatchCard({
         <div className="border-t border-gray-100">
           {pallets.map(p => (
             <div key={p.seq}>
-              <div className="px-5 py-1.5 bg-gray-50 text-xs font-semibold text-gray-500">
-                {isEn ? `Batch ${p.seq} · ${p.orders.length} orders` : `批次 ${p.seq} · ${p.orders.length} 单`}
+              <div className="px-5 py-1.5 bg-gray-50 flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-gray-500">
+                  {isEn ? `Batch ${p.seq} · ${p.orders.length} orders` : `批次 ${p.seq} · ${p.orders.length} 单`}
+                </span>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <span className="inline-flex rounded border border-orange-300 overflow-hidden">
+                    <button
+                      onClick={() => printPalletPicking(p.seq, 'storable')}
+                      disabled={!!palletBusy[p.seq]}
+                      title={isEn ? 'Full case/bag picking list for this pallet only' : '仅本托盘 · 整箱整袋拣货单'}
+                      className="px-2 py-0.5 text-[11px] text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-40"
+                    >
+                      {isEn ? '📦 Full Case' : '📦 整箱整袋'}
+                    </button>
+                    <button
+                      onClick={() => printPalletPicking(p.seq, 'consumable')}
+                      disabled={!!palletBusy[p.seq]}
+                      title={isEn ? 'Loose goods picking list for this pallet only' : '仅本托盘 · 零散货拣货单'}
+                      className="px-2 py-0.5 text-[11px] text-orange-600 border-l border-orange-300 hover:bg-orange-50 transition-colors disabled:opacity-40"
+                    >
+                      {isEn ? '🧴 Loose Goods' : '🧴 零散货'}
+                    </button>
+                  </span>
+                  <button
+                    onClick={() => printPallet(p.seq, 'sales')}
+                    disabled={!!palletBusy[p.seq]}
+                    title={isEn ? 'Sales order for this pallet only · Printing auto-locks the whole batch' : '仅本托盘 · 销售单 · 打印会自动锁定整个批次'}
+                    className="px-2 py-0.5 text-[11px] rounded border border-purple-300 text-purple-700 hover:bg-purple-50 transition-colors disabled:opacity-40"
+                  >
+                    {isEn ? '🧾 Sales Order' : '🧾 销售单'}
+                  </button>
+                  <button
+                    onClick={() => printPallet(p.seq, 'delivery')}
+                    disabled={!!palletBusy[p.seq]}
+                    title={isEn ? 'Delivery note for this pallet only · Printing auto-locks the whole batch' : '仅本托盘 · 送货单 · 打印会自动锁定整个批次'}
+                    className="px-2 py-0.5 text-[11px] rounded border border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-40"
+                  >
+                    {isEn ? '🚚 Delivery Note' : '🚚 送货单'}
+                  </button>
+                  <button
+                    onClick={() => printPallet(p.seq, 'summary')}
+                    disabled={!!palletBusy[p.seq]}
+                    title={isEn ? 'Delivery summary sheet for this pallet only · Printing auto-locks the whole batch' : '仅本托盘 · 送货汇总单 · 打印会自动锁定整个批次'}
+                    className="px-2 py-0.5 text-[11px] rounded border border-green-400 text-green-700 hover:bg-green-50 transition-colors disabled:opacity-40"
+                  >
+                    {isEn ? '📋 Summary Sheet' : '📋 汇总单'}
+                  </button>
+                </div>
               </div>
               {p.orders.map(o => (
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
