@@ -29,6 +29,15 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // pdf-parse(采购单 PDF 识别用)内部用 Module.createRequire() 动态 require('@napi-rs/canvas')
+  // 来 polyfill globalThis.DOMMatrix——这个 require 调用是运行时字符串拼出来的，不是字面量
+  // require("...")，Next.js 的构建期文件追踪(@vercel/nft)识别不出来，standalone 产物里就
+  // 不会带上这个原生模块，线上报 "Cannot load @napi-rs/canvas" + "DOMMatrix is not defined"
+  // 500（2026-07-14 客户反馈）。显式声明追踪范围，把该模块连同其平台原生二进制一并打进
+  // .next/standalone/node_modules。
+  outputFileTracingIncludes: {
+    '/api/purchase-orders/pdf-extract': ['./node_modules/@napi-rs/**/*'],
+  },
   async headers() {
     return [{ source: '/:path*', headers: SECURITY_HEADERS }]
   },
