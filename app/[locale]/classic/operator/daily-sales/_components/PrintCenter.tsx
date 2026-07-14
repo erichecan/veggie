@@ -899,8 +899,11 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
         </div>
       </div>
 
-      {/* Batch cards */}
-      {loading ? (
+      {/* Batch cards —— loading 只在"还没有任何数据"时整屏替换成占位符；已有数据后的后台刷新
+          (每次打印/锁定都会 refresh)不再卸载 BatchSections/BatchCard,否则每张卡片的本地展开状态
+          (BatchCard 的 expanded useState)会随组件被卸载一起清零,表现为"打印一个就自动收起"。
+          批次列表在刷新期间保留旧数据静默过渡，新数据到手后自动替换，不会有可感知的空白闪烁。 */}
+      {loading && batchGroups.length === 0 ? (
         <div className="text-center text-gray-400 py-16 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
       ) : batchGroups.length === 0 ? (
         <div className="text-center text-gray-400 py-16 text-sm">

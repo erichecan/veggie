@@ -83,9 +83,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const leftPanelRef = useRef<HTMLDivElement>(null)
   const [flashLeft, setFlashLeft] = useState(false)
 
-  const load = useCallback(async () => {
+  // opts.silent：拖拽/单个操作(分配、移出、确认出发…)之后的后台刷新用这个——只换数据、
+  // 不置 loading。若不区分,每次拖拽都会把 setLoading(true) 传导到下方"整卡片区域"的
+  // {loading && <Loading/>}/{!loading && <网格/>} 条件渲染上,导致全部司机卡片连带待分配栏
+  // 整体卸载再重新挂载，肉眼就是"拖一下、全屏闪一下"。首次进页/切换日期(见下方 effect)
+  // 仍要走非静默这条，那种场景下短暂显示"加载中…"是合理的。
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!date) return
-    setLoading(true)
+    if (!opts?.silent) setLoading(true)
     try {
       const [slotData, candidateOrders] = await Promise.all([
         apiGet<DriverSlot[]>('/api/driver-slots'),
@@ -245,8 +250,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     try {
       await apiPut(`/api/waves/${waveId}/assign`, { orderIds: [orderId], driverSlotId })
       toast.success(isEn ? 'Assigned' : '已分配')
-      load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load() }
+      load({ silent: true })
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load({ silent: true }) }
   }
   // 拖进「这个司机+时段当天还没有波次」的卡片：没有 waveId 可用，走销售单同款的
   // find-or-create 接口(assignOrderToWave 内部按 driverName+timeOfDay+deliveryDate 找/建波次)，
@@ -255,8 +260,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     try {
       await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId })
       toast.success(isEn ? 'Assigned (new trip created)' : '已分配（新建波次）')
-      load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load() }
+      load({ silent: true })
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load({ silent: true }) }
   }
   async function unassignFromWave(waveId: string, orderId: string) {
     // 同样要把订单从它所在托盘的 items 里摘掉，不然移出前 pallet.items 里那条 orderId 没清，
@@ -270,8 +275,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       // 后端把订单状态退回 CONFIRMED、清空 deliveryDate，但本地 orders 数组还是旧值
       // (status 仍是 WAVE_ASSIGNED)，待分配列表按 status==='CONFIRMED' 过滤(见 confirmedOrders)，
       // 不刷新这单会"提示成功但待分配区看不到"——必须 load() 才能把新状态拉回来。
-      load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Removal failed' : '移除失败')); load() }
+      load({ silent: true })
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Removal failed' : '移除失败')); load({ silent: true }) }
   }
 
   // 确认出发：回填交货日期(=排程日期)，订单转 IN_DELIVERY，波次标记已出发
@@ -281,7 +286,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     try {
       await apiPut(`/api/waves/${waveId}/dispatch`, { date })
       toast.success(isEn ? 'Departure confirmed' : '已确认出发')
-      load()
+      load({ silent: true })
     } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to confirm departure' : '确认出发失败')) }
   }
 
@@ -293,7 +298,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     try {
       await apiPut(`/api/waves/${waveId}/complete`, {})
       toast.success(isEn ? 'Marked as completed' : '已标记完成')
-      load()
+      load({ silent: true })
     } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to mark as completed' : '标记完成失败')) }
   }
 
@@ -303,7 +308,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     try {
       await apiPut(`/api/waves/${waveId}/assignment-done`, { done })
       toast.success(done ? (isEn ? 'Marked assignment done' : '已标记分配完成') : (isEn ? 'Reverted' : '已撤销'))
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败')); load() }
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败')); load({ silent: true }) }
   }
 
   // 批量分配完成：调度员把当天所有司机都排完车后，一键把 pendingDoneWaves 里每辆车都标记
@@ -318,7 +323,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const failed = results.filter(r => r.status === 'rejected').length
     if (failed > 0) toast.error(isEn ? `${failed} trips failed to mark` : `${failed} 辆车标记失败`)
     else toast.success(isEn ? `Marked ${ids.length} trips as assignment done` : `已批量标记 ${ids.length} 辆车分配完成`)
-    load()
+    load({ silent: true })
   }
 
   // 新增托盘：建一条同司机+时段、batchNum=当前最大值+1 的 DriverSlot；托盘是预先配好的固定组合，
@@ -328,7 +333,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     try {
       await apiPost('/api/driver-slots', { timeOfDay, batchNum: nextBatchNum, driverName, userId: groupSlots[0]?.userId ?? null })
       toast.success(isEn ? `Added ${nextBatchNum} ${timeOfDay} ${driverName}` : `已新增 ${nextBatchNum} ${timeOfDay} ${driverName}`)
-      load()
+      load({ silent: true })
     } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to add pallet' : '新增托盘失败')) }
   }
 
@@ -343,7 +348,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       toast.success(isEn
         ? `Deleted ${label}${res?.unassignedOrderCount ? `, ${res.unassignedOrderCount} orders returned to unassigned` : ''}`
         : `已删除 ${label}${res?.unassignedOrderCount ? `，${res.unassignedOrderCount} 个订单已退回待分配` : ''}`)
-      load()
+      load({ silent: true })
     } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to delete pallet' : '删除托盘失败')) }
   }
 
@@ -728,7 +733,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             className="outline-none text-sm"
           />
         </label>
-        <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>{isEn ? 'Refresh' : '刷新'}</button>
+        <button onClick={() => load()} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>{isEn ? 'Refresh' : '刷新'}</button>
       </div>
 
       {/* 其他日期提示条：别的交货日还有已排订单时列出,点一下跳过去(销售单排司机后单落在其 deliveryDate 那天) */}
