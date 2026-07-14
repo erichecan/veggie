@@ -47,7 +47,7 @@ export interface ResolvedLine {
 
 export interface PricingContext {
   prisma: Pick<PrismaClient,
-    'user' | 'customer' | 'product' | 'productTemplate' | 'odooPricelist' | 'order'>
+    'user' | 'customer' | 'product' | 'productTemplate' | 'odooPricelist' | 'order' | 'productSaleUom' | 'uom'>
   /**
    * 前端传入的 restaurantId 可能是 User.id（老流程）或 Customer.id（新流程）。
    * 统一在这里解析成 Customer 记录，不存在则报错。
@@ -227,6 +227,35 @@ export async function resolveOrderLines(
   })
   const productMap = new Map(products.map((p) => [p.id, p]))
 
+  // 多单位销售(20260714)：前端可能按非基准单位(如箱)下单，价格随之换算或走独立售价。
+  // 服务端"权威定价"若不感知这一点，会把换算/独立售价一律当"客户改价"打回基准价——
+  // 这里一次性批量拉 ProductSaleUom + 涉及的 Uom.factor，换算逻辑与 lib/inventory.ts
+  // 的 toStockQty 同源(按 factor 比例缩放，唯一区别是这里缩放的是单价而非数量)。
+  const saleUomRows = await ctx.prisma.productSaleUom.findMany({
+    where: { productId: { in: productIds }, active: true },
+  })
+  const saleUomMap = new Map(saleUomRows.map((r) => [`${r.productId}::${r.uomId}`, r]))
+  const uomIdsInvolved = [...new Set([
+    ...products.map((p) => p.template.uomId).filter((x): x is string => !!x),
+    ...submittedItems.map((i) => i.uomId).filter((x): x is string => !!x),
+  ])]
+  const uomRows = uomIdsInvolved.length > 0
+    ? await ctx.prisma.uom.findMany({ where: { id: { in: uomIdsInvolved } } })
+    : []
+  const uomFactorMap = new Map(uomRows.map((u) => [u.id, toNum(u.factor)]))
+
+  /** 把"基准单位"权威价换算成行选单位的权威价：优先 priceOverride，否则按 factor 比例缩放 */
+  function scaleAuthoritativePrice(productId: string, anchorUomId: string | null, lineUomId: string | undefined, basePrice: number): number {
+    if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) return basePrice
+    const saleUom = saleUomMap.get(`${productId}::${lineUomId}`)
+    if (!saleUom) return basePrice
+    if (saleUom.priceOverride != null) return toNum(saleUom.priceOverride)
+    const lineFactor = uomFactorMap.get(lineUomId)
+    const anchorFactor = uomFactorMap.get(anchorUomId)
+    if (!lineFactor || !anchorFactor) return basePrice
+    return basePrice * (lineFactor / anchorFactor)
+  }
+
   const lines: ResolvedLine[] = []
   const warnings: string[] = []
   let total = 0
@@ -286,7 +315,7 @@ export async function resolveOrderLines(
     )
 
     const submittedUnit = Number(item.price ?? 0)
-    const authoritative = Number(resolution.price)
+    const authoritative = scaleAuthoritativePrice(dbProduct.id, dbProduct.template.uomId, item.uomId, Number(resolution.price))
     const accepted = Math.abs(submittedUnit - authoritative) <= PRICE_TOLERANCE_EUR
 
     if (!accepted && Number.isFinite(submittedUnit) && submittedUnit > 0) {

@@ -69,6 +69,14 @@ const TYPE_OPTIONS = [
 ]
 const TYPE_LABEL: Record<string, string> = { product: 'Storable Product', consu: 'Consumable', service: 'Service' }
 
+// 多单位销售(20260714)：ProductSaleUom 行的前端形态
+interface SaleUomRow {
+  uomId: string
+  isDefault: boolean
+  priceOverride: number | null
+  active: boolean
+}
+
 export default function ClassicProductDetailPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -100,7 +108,7 @@ export default function ClassicProductDetailPage() {
   } : null)
   const [original, setOriginal] = useState<ProductTemplate | null>(null)
   const [categories, setCategories] = useState<ProductCategory[]>([])
-  const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; category?: { name: string } }[]>([])
+  const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; category?: { name: string } }[]>([])
   const [editMode, setEditMode] = useState(isNew)
   const [saving, setSaving] = useState(false)
 
@@ -117,13 +125,18 @@ export default function ClassicProductDetailPage() {
   const [adjNote, setAdjNote] = useState('')
   const [adjSubmitting, setAdjSubmitting] = useState(false)
 
+  // 多单位销售(20260714 试点)：可售单位配置，挂在该商品模板下唯一/主变体 Product 上
+  const [primaryProductId, setPrimaryProductId] = useState<string | null>(null)
+  const [saleUoms, setSaleUoms] = useState<SaleUomRow[]>([])
+  const [saleUomsSaving, setSaleUomsSaving] = useState(false)
+
   async function load() {
     try {
       const [found, cats, orders, uomList] = await Promise.all([
         isNew ? Promise.resolve(null) : apiGet<ProductTemplate>(`/api/product-templates/${id}`),
         apiGet<ProductCategory[]>('/api/product-categories'),
         apiGet<Order[]>('/api/orders?include_lines=false'),
-        apiGet<{ id: string; name: string; nameZh?: string | null; category?: { name: string } }[]>('/api/uoms').catch(() => [] as { id: string; name: string; nameZh?: string | null; category?: { name: string } }[]),
+        apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; category?: { name: string } }[]>('/api/uoms').catch(() => [] as { id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; category?: { name: string } }[]),
       ])
       const HIDDEN_CATEGORIES = ['Length', 'Time']
       setUoms(uomList.filter(u => !HIDDEN_CATEGORIES.includes(u.category?.name ?? '')))
@@ -145,6 +158,14 @@ export default function ClassicProductDetailPage() {
           setOnHandQty(mine.reduce((s, p) => s + (p.qtyOnHand ?? 0), 0))
           setVariants(mine.map(p => ({ id: p.id, name: p.name, qtyOnHand: p.qtyOnHand ?? 0, uomName: p.uomName })))
           if (mine.length === 1) setAdjVariantId(mine[0].id)
+          const primaryId = mine[0]?.id ?? null
+          setPrimaryProductId(primaryId)
+          if (primaryId) {
+            try {
+              const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; priceOverride: number | null; active: boolean }>>(`/api/products/${primaryId}/sale-uoms`)
+              setSaleUoms(rows.map(r => ({ uomId: r.uomId, isDefault: r.isDefault, priceOverride: r.priceOverride, active: r.active })))
+            } catch { setSaleUoms([]) }
+          }
         } catch { /* ignore */ }
       }
       setCategories(cats)
@@ -183,6 +204,50 @@ export default function ClassicProductDetailPage() {
 
   function setField<K extends keyof ProductTemplate>(key: K, value: ProductTemplate[K]) {
     setTmpl(prev => prev ? { ...prev, [key]: value } : null)
+  }
+
+  // ── 可售单位(ProductSaleUom)本地编辑 ──────────────────────────────────────────
+  function addSaleUomRow() {
+    const used = new Set(saleUoms.map(r => r.uomId))
+    const candidate = uoms.find(u => !used.has(u.id) && (!tmpl?.uomId || u.categoryId === uoms.find(x => x.id === tmpl.uomId)?.categoryId))
+    if (!candidate) { toast.error(isEn ? 'No more units available in this category' : '该计量类别下已没有可选的单位了'); return }
+    setSaleUoms(prev => [...prev, { uomId: candidate.id, isDefault: prev.length === 0, priceOverride: null, active: true }])
+  }
+  function updateSaleUomRow(index: number, patch: Partial<SaleUomRow>) {
+    setSaleUoms(prev => prev.map((r, i) => {
+      if (i !== index) return patch.isDefault ? { ...r, isDefault: false } : r
+      return { ...r, ...patch }
+    }))
+  }
+  function removeSaleUomRow(index: number) {
+    setSaleUoms(prev => {
+      const next = prev.filter((_, i) => i !== index)
+      if (next.length > 0 && !next.some(r => r.isDefault)) next[0] = { ...next[0], isDefault: true }
+      return next
+    })
+  }
+  async function saveSaleUoms() {
+    if (!primaryProductId) return
+    if (saleUoms.some(r => !r.uomId)) { toast.error(isEn ? 'Please select a unit for every row' : '请为每一行选择单位'); return }
+    const dupes = new Set(saleUoms.map(r => r.uomId))
+    if (dupes.size !== saleUoms.length) { toast.error(isEn ? 'Duplicate unit selected' : '同一单位不能重复配置'); return }
+    if (saleUoms.length > 0 && saleUoms.filter(r => r.isDefault).length !== 1) {
+      toast.error(isEn ? 'Exactly one unit must be default' : '必须且只能有一个默认单位')
+      return
+    }
+    setSaleUomsSaving(true)
+    try {
+      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; priceOverride: number | null; active: boolean }>>(
+        `/api/products/${primaryProductId}/sale-uoms`,
+        { items: saleUoms },
+      )
+      setSaleUoms(rows.map(r => ({ uomId: r.uomId, isDefault: r.isDefault, priceOverride: r.priceOverride, active: r.active })))
+      toast.success(isEn ? 'Sellable units saved' : '可售单位已保存')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+    } finally {
+      setSaleUomsSaving(false)
+    }
   }
 
   async function handleSave() {
@@ -483,6 +548,81 @@ export default function ClassicProductDetailPage() {
               </div>
             )}
           </Section>
+
+          {!isNew && primaryProductId && (
+            <Section title={isEn ? 'Sellable Units (multi-UoM pilot)' : '可售单位（多单位销售试点）'}>
+              <p className="text-xs text-gray-400 mb-3 max-w-3xl">
+                {isEn
+                  ? 'Configure additional units this product can be ordered in (e.g. sell by case as well as by piece). Quantities auto-convert to the base unit above for stock; leave price blank to auto-scale from the base sales price by the unit factor.'
+                  : '配置这个商品还能按哪些单位下单（如既能按箱、也能按个）。库存按上方"计量单位"自动换算；独立售价留空则按换算系数自动从基准销售价折算。'}
+              </p>
+              <div className="max-w-3xl space-y-2">
+                {saleUoms.map((row, i) => {
+                  const anchorCategoryId = uoms.find(u => u.id === tmpl.uomId)?.categoryId
+                  const options = uoms.filter(u => u.id === row.uomId || (!anchorCategoryId || u.categoryId === anchorCategoryId))
+                  const uomInfo = uoms.find(u => u.id === row.uomId)
+                  const anchorInfo = uoms.find(u => u.id === tmpl.uomId)
+                  const autoPrice = uomInfo && anchorInfo && anchorInfo.factor
+                    ? tmpl.listPrice * ((uomInfo.factor ?? 1) / anchorInfo.factor)
+                    : null
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <select
+                        value={row.uomId}
+                        onChange={e => updateSaleUomRow(i, { uomId: e.target.value })}
+                        disabled={!editMode}
+                        className={fieldClass}
+                        style={{ ...focusStyle, maxWidth: 180 }}
+                      >
+                        {options.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
+                      </select>
+                      <label className={`flex items-center gap-1 text-xs text-gray-600 ${editMode ? 'cursor-pointer' : ''}`}>
+                        <input
+                          type="radio"
+                          name="saleUomDefault"
+                          checked={row.isDefault}
+                          onChange={() => editMode && updateSaleUomRow(i, { isDefault: true })}
+                          readOnly={!editMode}
+                          style={{ accentColor: '#875A7B' }}
+                        />
+                        {isEn ? 'Default' : '默认'}
+                      </label>
+                      <div className="flex items-center border border-gray-300 rounded h-8 overflow-hidden bg-white" style={{ width: 160 }}>
+                        <span className="px-2 text-xs text-gray-500 border-r border-gray-200 h-full flex items-center bg-gray-50 whitespace-nowrap">€</span>
+                        <input
+                          type="number" step="0.01" min={0}
+                          value={row.priceOverride ?? ''}
+                          onChange={e => updateSaleUomRow(i, { priceOverride: e.target.value === '' ? null : Number(e.target.value) })}
+                          placeholder={autoPrice != null ? autoPrice.toFixed(2) : '—'}
+                          disabled={!editMode}
+                          className="flex-1 h-full px-2 text-sm outline-none min-w-0"
+                        />
+                      </div>
+                      {editMode && (
+                        <button onClick={() => removeSaleUomRow(i)} className="text-gray-400 hover:text-red-500 text-sm px-1">✕</button>
+                      )}
+                    </div>
+                  )
+                })}
+                {saleUoms.length === 0 && (
+                  <p className="text-xs text-gray-300">{isEn ? 'No additional sellable units configured yet.' : '尚未配置额外可售单位。'}</p>
+                )}
+                {editMode && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button onClick={addSaleUomRow} className={btnBase}>{isEn ? '+ Add Unit' : '＋ 添加单位'}</button>
+                    <button
+                      onClick={saveSaleUoms}
+                      disabled={saleUomsSaving}
+                      className="h-8 px-4 text-sm font-medium text-white rounded transition-colors disabled:opacity-50"
+                      style={{ background: '#875A7B' }}
+                    >
+                      {saleUomsSaving ? (isEn ? 'Saving...' : '保存中...') : (isEn ? 'Save Sellable Units' : '保存可售单位')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
 
           <Section title="Sale Description">
             {editMode ? (

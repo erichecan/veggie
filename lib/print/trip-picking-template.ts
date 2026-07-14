@@ -35,6 +35,8 @@ interface CustomerBreakdown {
 
 interface AggProduct {
   productId: string
+  /** 多单位销售(20260714)：同商品不同下单单位(如箱/个)分开聚合，不混算总量 */
+  uomId: string | null
   productName: string
   spec: string
   uomName: string
@@ -76,11 +78,12 @@ export function generateTripPickingHtml(
     const customerId = order.customerId ?? orderCode
     const customerName = order.customerName ?? orderCode
     for (const line of order.lines) {
-      const key = line.productId
+      const key = `${line.productId}::${line.uomId ?? ''}`
       let agg = aggMap.get(key)
       if (!agg) {
         agg = {
           productId: line.productId,
+          uomId: line.uomId,
           productName: line.productName,
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',

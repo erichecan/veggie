@@ -50,6 +50,14 @@ type QuotationLine = {
   taxRate: number          // %
 }
 
+// 多单位销售(20260714 试点)：商品配置的额外可售单位(ProductSaleUom，不含默认/基准单位)
+type SaleUomOption = {
+  uomId: string
+  uomName: string
+  factor: number
+  priceOverride: number | null
+}
+
 type ChatterEntry = {
   type: 'system' | 'message' | 'note' | 'activity'
   text: string
@@ -259,6 +267,11 @@ export default function ClassicPlaceOrderPage() {
   // 完整客户对象（含 specialPrices），在选中客户后懒加载
   const [selectedCustomerFull, setSelectedCustomerFull] = useState<Customer | null>(null)
 
+  // 多单位销售(20260714 试点)：uomId → factor，用于按换算系数重算单价；
+  // saleUomOptions 按 productId 懒加载该商品配置的"额外可售单位"(不含默认/基准单位本身)
+  const [uomFactors, setUomFactors] = useState<Record<string, number>>({})
+  const [saleUomOptions, setSaleUomOptions] = useState<Record<string, SaleUomOption[]>>({})
+
   // ── Quotation header ──────────────────────────────────────────────────────
   const [status, setStatus]           = useState<QuotationStatus>('draft')
   const [customerId, setCustomerId]   = useState('')
@@ -459,13 +472,15 @@ export default function ClassicPlaceOrderPage() {
       // role=SALES: 服务端过滤，只拉销售人员
       apiGet<{ id: string; name: string; role: string; roles?: string[] }[]>('/api/users?role=SALES').catch(() => []),
       apiGet<Record<string, number>>('/api/products/pending-demand').catch(() => ({})),
+      apiGet<Array<{ id: string; factor: number }>>('/api/uoms').catch(() => []),
     ])
-      .then(([cs, ps, pls, us, pd]) => {
+      .then(([cs, ps, pls, us, pd, uomList]) => {
         setCustomers(cs.filter(c => c.isActive !== false))
         setProducts(ps)
         setPricelists(pls)
         setSalesUsers(us)
         setPendingDemand(pd)
+        setUomFactors(Object.fromEntries(uomList.map(u => [u.id, Number(u.factor) || 1])))
       })
       .catch(() => toast.error(isEn ? 'Failed to load data' : '加载数据失败'))
       .finally(() => setLoading(false))
@@ -638,23 +653,64 @@ export default function ClassicPlaceOrderPage() {
     return v != null && v > 0 ? v : undefined
   }
 
+  // ── 多单位销售(20260714 试点) ──────────────────────────────────────────────
+  // 懒加载某商品配置的额外可售单位；已加载过就跳过
+  function ensureSaleUomOptions(productId: string) {
+    if (productId in saleUomOptions) return
+    setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
+    apiGet<Array<{ uomId: string; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null; factor: number } }>>(
+      `/api/products/${productId}/sale-uoms`,
+    )
+      .then(rows => {
+        const opts = rows
+          .filter(r => r.active)
+          .map(r => ({ uomId: r.uomId, uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name), factor: Number(r.uom.factor) || 1, priceOverride: r.priceOverride }))
+        setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
+      })
+      .catch(() => setSaleUomOptions(prev => ({ ...prev, [productId]: [] })))
+  }
+
+  // 统一算价：基准单位价按定价引擎算好后，非默认单位按换算系数放大/缩小
+  // (除非该单位设了 priceOverride)。价格阶梯("满 N 件")按原始 orderedQty 计数，不做单位换算——
+  // 这里的 qty 参数就是原样传给定价引擎的 orderedQty，与旧行为一致。
+  function computeLinePrice(
+    p: Product, qty: number, lineUomId: string | undefined, cache: Record<string, number> = lastPrices,
+  ): { unitPrice: number; priceLabel: string } {
+    const lastPrice = getLastPrice(p.id, cache)
+    const res = effectiveCustomer ? resolveCustomerPrice(p, effectiveCustomer, pricelists, qty, lastPrice) : null
+    const basePrice = res?.price ?? (p.listPrice ?? p.price ?? 0)
+    const priceLabel = res?.isSpecialPrice ? 'Special' : res && !res.isFallback ? 'PriceList' : 'Price'
+    const anchorUomId = p.uomId
+    if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) {
+      return { unitPrice: basePrice, priceLabel }
+    }
+    const opt = (saleUomOptions[p.id] ?? []).find(o => o.uomId === lineUomId)
+    if (!opt) return { unitPrice: basePrice, priceLabel }
+    if (opt.priceOverride != null) return { unitPrice: opt.priceOverride, priceLabel }
+    const anchorFactor = uomFactors[anchorUomId] ?? 1
+    const unitPrice = anchorFactor ? basePrice * (opt.factor / anchorFactor) : basePrice
+    return { unitPrice, priceLabel }
+  }
+
+  // 切换某行的下单单位：按换算系数(或该单位的独立售价)重算单价
+  function switchLineUnit(lineId: string, uomId: string) {
+    const line = lines.find(l => l.id === lineId)
+    if (!line || !line.productId) return
+    const p = products.find(pp => pp.id === line.productId)
+    if (!p) return
+    const uomName = uomId === p.uomId
+      ? (p.uomName ?? 'Unit(s)')
+      : (saleUomOptions[p.id] ?? []).find(o => o.uomId === uomId)?.uomName ?? line.uom
+    const { unitPrice, priceLabel } = computeLinePrice(p, line.orderedQty, uomId)
+    patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel })
+  }
+
   // ── Select product for a line ─────────────────────────────────────────────
   // 异步：选商品后会异步拉一次该商品的 lastPrice，拉到后再 patch 行价。
   // 第一次渲染时 lastPrice 还没回来，引擎会按 fallback 走（multi → listPrice / last → listPrice）。
   function selectProduct(lineId: string, p: Product) {
-    const computeLine = (cache: Record<string, number>) => {
-      const lastPrice = getLastPrice(p.id, cache)
-      const res = effectiveCustomer
-        ? resolveCustomerPrice(p, effectiveCustomer, pricelists, 1, lastPrice)
-        : null
-      const unitPrice = res?.price ?? (p.listPrice ?? p.price ?? 0)
-      const priceLabel = res?.isSpecialPrice
-        ? 'Special'
-        : res && !res.isFallback
-          ? 'PriceList'
-          : 'Price'
-      return { unitPrice, priceLabel }
-    }
+    ensureSaleUomOptions(p.id)
+    const computeLine = (cache: Record<string, number>) => computeLinePrice(p, 1, p.uomId, cache)
 
     const { unitPrice, priceLabel } = computeLine(lastPrices)
 
@@ -721,10 +777,7 @@ export default function ClassicPlaceOrderPage() {
 
   // 用当前价格表/lastPrice 为历史行的商品重算价格，构造一条订单行
   function buildHistoryLine(p: Product, qty: number, note: string, cache: Record<string, number>): QuotationLine {
-    const lastPrice = getLastPrice(p.id, cache)
-    const res = effectiveCustomer ? resolveCustomerPrice(p, effectiveCustomer, pricelists, qty, lastPrice) : null
-    const unitPrice = res?.price ?? (p.listPrice ?? p.price ?? 0)
-    const priceLabel = res?.isSpecialPrice ? 'Special' : res && !res.isFallback ? 'PriceList' : 'Price'
+    const { unitPrice, priceLabel } = computeLinePrice(p, qty, p.uomId, cache)
     return {
       id: uid(), productId: p.id, productName: p.name,
       description: p.spec ?? p.name, note,
@@ -746,6 +799,7 @@ export default function ClassicPlaceOrderPage() {
       const rawQty = Number(hl.orderedQty) || 1
       // 历史脏数据（如 0.001 占位值）规整为 1，避免把不合理小数带入新订单
       const qty = rawQty > 0 && rawQty < 0.01 ? 1 : rawQty
+      ensureSaleUomOptions(p.id)
       newLines.push(buildHistoryLine(p, qty, hl.note ?? '', lastPrices))
     }
     if (newLines.length === 0) { toast.error(isEn ? 'All products in this order are discontinued, cannot import' : '该订单商品均已下架，无法导入'); return }
@@ -759,9 +813,8 @@ export default function ClassicPlaceOrderPage() {
           if (!ids.includes(l.productId)) return l
           const p = products.find(pp => pp.id === l.productId)
           if (!p || !effectiveCustomer) return l
-          const res = resolveCustomerPrice(p, effectiveCustomer, pricelists, l.orderedQty, getLastPrice(p.id, merged))
-          if (!res) return l
-          return { ...l, unitPrice: res.price ?? l.unitPrice, priceLabel: res.isSpecialPrice ? 'Special' : !res.isFallback ? 'PriceList' : 'Price' }
+          const { unitPrice, priceLabel } = computeLinePrice(p, l.orderedQty, l.uomId, merged)
+          return { ...l, unitPrice, priceLabel }
         }))
       })
     }
@@ -839,10 +892,7 @@ export default function ClassicPlaceOrderPage() {
     let unitPrice = line.unitPrice
     if (effectiveCustomer && line.productId) {
       const p = products.find(pp => pp.id === line.productId)
-      if (p) {
-        const lastPrice = getLastPrice(line.productId)
-        unitPrice = resolveCustomerPrice(p, effectiveCustomer, pricelists, qty, lastPrice).price
-      }
+      if (p) unitPrice = computeLinePrice(p, qty, line.uomId).unitPrice
     }
     patchLine(lineId, { orderedQty: qty, unitPrice })
   }
@@ -861,16 +911,10 @@ export default function ClassicPlaceOrderPage() {
         if (!l.productId) return l
         const p = products.find(pp => pp.id === l.productId)
         if (!p) return l
-        const lastPrice = getLastPrice(l.productId)
-        const res = resolveCustomerPrice(p, effectiveCustomer, pricelists, l.orderedQty || 1, lastPrice)
-        const newLabel = res.isSpecialPrice
-          ? 'Special'
-          : !res.isFallback
-            ? 'PriceList'
-            : 'Price'
-        if (l.unitPrice === res.price && l.priceLabel === newLabel) return l
+        const { unitPrice, priceLabel: newLabel } = computeLinePrice(p, l.orderedQty || 1, l.uomId)
+        if (l.unitPrice === unitPrice && l.priceLabel === newLabel) return l
         changed = true
-        return { ...l, unitPrice: res.price, priceLabel: newLabel }
+        return { ...l, unitPrice, priceLabel: newLabel }
       })
       return changed ? next : prev
     })
@@ -1762,8 +1806,27 @@ export default function ClassicPlaceOrderPage() {
                         )}
                       </td>
 
-                      {/* UoM */}
-                      <td className="px-2 py-1 text-gray-500 truncate">{line.uom || '—'}</td>
+                      {/* UoM — 有额外可售单位(20260714 试点)时显示切换下拉，否则只读文本 */}
+                      <td className="px-2 py-1 text-gray-500 truncate">
+                        {line.productId && (saleUomOptions[line.productId]?.length ?? 0) > 0 ? (
+                          (() => {
+                            const p = products.find(pp => pp.id === line.productId)
+                            const anchorUomId = p?.uomId
+                            return (
+                              <select
+                                value={line.uomId ?? anchorUomId ?? ''}
+                                onChange={e => switchLineUnit(line.id, e.target.value)}
+                                className="w-full text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                              >
+                                {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? 'Unit(s)'}</option>}
+                                {(saleUomOptions[line.productId] ?? []).map(o => (
+                                  <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
+                                ))}
+                              </select>
+                            )
+                          })()
+                        ) : (line.uom || '—')}
+                      </td>
 
                       {/* Unit Price */}
                       <td className="px-2 py-1">

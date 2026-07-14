@@ -26,6 +26,43 @@ export interface LotMovement {
 
 const n = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0)) || 0
 
+// 多单位销售(ProductSaleUom, 20260714)换算用的最小 client 形状
+type StockQtyClient = {
+  product: { findUnique: (args: unknown) => Promise<{ templateId: string } | null> }
+  productTemplate: { findUnique: (args: unknown) => Promise<{ uomId: string | null } | null> }
+  uom: { findUnique: (args: unknown) => Promise<{ factor: unknown } | null> }
+}
+
+/**
+ * 多单位销售换算：把订单行选用单位的数量换算成"库存记账单位"(= 该商品 ProductTemplate.uomId
+ * 当前设置的那个单位)的数量。qtyOnHand/Lot 从上线起就隐式按"商品当前销售单位"计数——只有当
+ * 商品配置了 ProductSaleUom(多个可售单位)、且这一行选的不是那个默认(锚点)单位时才需要换算，
+ * 换算公式 = qty × (行选单位.factor / 锚点单位.factor)。
+ * 其余情况(绝大多数商品从未配置多单位、或这行本来就用默认单位)原样返回 qty，
+ * 与"多单位"功能上线前的行为完全一致，不影响任何存量数据。
+ */
+export async function toStockQty(
+  client: StockQtyClient,
+  productId: string,
+  qty: number,
+  lineUomId: string | null | undefined,
+): Promise<number> {
+  if (!lineUomId || qty === 0) return qty
+  const product = await client.product.findUnique({ where: { id: productId }, select: { templateId: true } })
+  if (!product) return qty
+  const template = await client.productTemplate.findUnique({ where: { id: product.templateId }, select: { uomId: true } })
+  const anchorUomId = template?.uomId
+  if (!anchorUomId || anchorUomId === lineUomId) return qty
+  const [lineUom, anchorUom] = await Promise.all([
+    client.uom.findUnique({ where: { id: lineUomId }, select: { factor: true } }),
+    client.uom.findUnique({ where: { id: anchorUomId }, select: { factor: true } }),
+  ])
+  const lineFactor = n(lineUom?.factor)
+  const anchorFactor = n(anchorUom?.factor)
+  if (!lineFactor || !anchorFactor) return qty
+  return qty * (lineFactor / anchorFactor)
+}
+
 /** FIFO(最早 arrivedAt 优先)消耗批次余量。qty 为正数(要扣减的量)。返回实际消耗的批次明细。 */
 export async function consumeLotsFIFO(client: LotClient, productId: string, qty: number): Promise<LotMovement[]> {
   if (!(qty > 0)) return []

@@ -5,7 +5,7 @@ import { notifyLowStockAfterConfirm } from '@/lib/notify'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
-import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
+import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, getOrderWaveDriverSlotMap } from '@/lib/wave-assign'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum, round2 } from '@/lib/decimal-helpers'
@@ -291,16 +291,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             if (!oldLine || !oldLine.product || oldLine.product.template?.type !== 'PRODUCT') continue
             const releaseQty = toNum(oldLine.orderedQty)
             if (releaseQty <= 0) continue
+            const stockReleaseQty = await toStockQty(prismaAnyLines, oldLine.productId, releaseQty, oldLine.uomId)
             await prismaAnyLines.product.update({
               where: { id: oldLine.productId },
-              data: { qtyOnHand: { increment: releaseQty } },
+              data: { qtyOnHand: { increment: stockReleaseQty } },
             })
             await prismaAnyLines.stockMove.create({
               data: {
                 productId: oldLine.productId,
                 productName: oldLine.productName ?? '',
                 type: 'IN',
-                qty: releaseQty,
+                qty: stockReleaseQty,
                 movedAt: orderMovedAt,
                 note: `订单 ${orderBefore.code ?? id} ${statusLabel}删除行释放`,
                 sourceType: 'ORDER',
@@ -322,16 +323,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 include: { template: { select: { type: true } } },
               })
               if (!prod || prod.template?.type !== 'PRODUCT') continue
+              const stockQty = await toStockQty(prismaAnyLines, productId, qty, l.uomId ? String(l.uomId) : undefined)
               await prismaAnyLines.product.update({
                 where: { id: productId },
-                data: { qtyOnHand: { decrement: qty } },
+                data: { qtyOnHand: { decrement: stockQty } },
               })
               await prismaAnyLines.stockMove.create({
                 data: {
                   productId,
                   productName: String(l.productName ?? ''),
                   type: 'OUT',
-                  qty: -qty,
+                  qty: -stockQty,
                   movedAt: orderMovedAt,
                   note: `订单 ${orderBefore.code ?? id} ${statusLabel}新增行扣减`,
                   sourceType: 'ORDER',
@@ -347,19 +349,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               const newQty = Number(l.orderedQty)
               const delta = newQty - oldQty
               if (delta === 0) continue
+              // 编辑不改单位,只改数量,换算系数用这行原来的 uomId 即可
+              const stockDelta = await toStockQty(prismaAnyLines, oldLine.productId, delta, oldLine.uomId)
 
               if (delta > 0) {
                 // 增加数量 → 额外扣减
                 await prismaAnyLines.product.update({
                   where: { id: oldLine.productId },
-                  data: { qtyOnHand: { decrement: delta } },
+                  data: { qtyOnHand: { decrement: stockDelta } },
                 })
                 await prismaAnyLines.stockMove.create({
                   data: {
                     productId: oldLine.productId,
                     productName: oldLine.productName ?? '',
                     type: 'OUT',
-                    qty: -delta,
+                    qty: -stockDelta,
                     movedAt: orderMovedAt,
                     note: `订单 ${orderBefore.code ?? id} ${statusLabel}增量 ${oldQty}→${newQty}`,
                     sourceType: 'ORDER',
@@ -369,7 +373,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 })
               } else {
                 // 减少数量 → 释放差额
-                const release = Math.abs(delta)
+                const release = Math.abs(stockDelta)
                 await prismaAnyLines.product.update({
                   where: { id: oldLine.productId },
                   data: { qtyOnHand: { increment: release } },
@@ -563,21 +567,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           if (!line.product || line.product.template?.type !== 'PRODUCT') continue
           const qty = toNum(line.orderedQty)
           if (qty <= 0) continue
+          // 多单位销售：这行如果用的不是商品当前默认单位，换算成库存记账单位数量再扣
+          const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
 
           const onHand = toNum(line.product.qtyOnHand)
-          if (onHand < qty) {
-            console.warn(`[order confirm] 库存不足（允许继续）: ${line.productName} 现有 ${onHand}，需要 ${qty}`)
+          if (onHand < stockQty) {
+            console.warn(`[order confirm] 库存不足（允许继续）: ${line.productName} 现有 ${onHand}，需要 ${stockQty}`)
           }
 
           await prismaAny.product.update({
             where: { id: line.productId },
-            data: { qtyOnHand: { decrement: qty } },
+            data: { qtyOnHand: { decrement: stockQty } },
           })
           // SSOT: 同步 FIFO 扣减批次余量,避免 Lot 虚高(P1-5)
-          const consumed = await consumeLotsFIFO(prismaAny, line.productId, qty)
+          const consumed = await consumeLotsFIFO(prismaAny, line.productId, stockQty)
           // 按实际消耗的批次拆分 StockMove,lotId 落到批次级别 —— 批次追溯"这批卖给了谁"的数据基础
           const consumedQty = consumed.reduce((s, c) => s + c.qty, 0)
-          const unmatched = round2(qty - consumedQty)
+          const unmatched = round2(stockQty - consumedQty)
           const moveRows = consumed.map(c => ({
             productId: line.productId,
             productName: line.productName ?? '',
@@ -652,19 +658,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           if (!line.product || line.product.template?.type !== 'PRODUCT') continue
           const qty = toNum(line.orderedQty)
           if (qty <= 0) continue
+          const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
 
           await prismaAny.product.update({
             where: { id: line.productId },
-            data: { qtyOnHand: { increment: qty } },
+            data: { qtyOnHand: { increment: stockQty } },
           })
           // SSOT: 撤回时回补批次余量(P1-5)
-          await restoreLotsFIFO(prismaAny, line.productId, qty)
+          await restoreLotsFIFO(prismaAny, line.productId, stockQty)
           await prismaAny.stockMove.create({
             data: {
               productId: line.productId,
               productName: line.productName ?? '',
               type: 'IN',
-              qty,
+              qty: stockQty,
               movedAt: orderMovedAt,
               note: `订单 ${orderBefore.code ?? id} 撤回释放预留`,
               sourceType: 'ORDER',
@@ -701,16 +708,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             if (!line.product || line.product.template?.type !== 'PRODUCT') continue
             const qty = toNum(line.orderedQty)
             if (qty <= 0) continue
+            const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
             await prismaAny.product.update({
               where: { id: line.productId },
-              data: { qtyOnHand: { increment: qty } },
+              data: { qtyOnHand: { increment: stockQty } },
             })
             await prismaAny.stockMove.create({
               data: {
                 productId: line.productId,
                 productName: line.productName ?? '',
                 type: 'IN',
-                qty,
+                qty: stockQty,
                 movedAt: orderMovedAt,
                 note: `订单 ${orderBefore.code ?? id} 取消释放库存（原状态: ${prevStatus}）`,
                 sourceType: 'ORDER',

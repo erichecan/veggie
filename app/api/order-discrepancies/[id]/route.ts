@@ -4,7 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { writeLog } from '@/lib/action-log'
-import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
+import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -85,17 +85,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         })
 
         if (isProduct && releaseQty > 0) {
+          const stockReleaseQty = await toStockQty(px, line.productId, releaseQty, line.uomId)
           await px.product.update({
             where: { id: line.productId },
-            data: { qtyOnHand: { increment: releaseQty } },
+            data: { qtyOnHand: { increment: stockReleaseQty } },
           })
-          await restoreLotsFIFO(px, line.productId, releaseQty)
+          await restoreLotsFIFO(px, line.productId, stockReleaseQty)
           await px.stockMove.create({
             data: {
               productId: line.productId,
               productName: line.productName,
               type: 'IN',
-              qty: releaseQty,
+              qty: stockReleaseQty,
               movedAt,
               note: `差异处理 ${disc.code}: 调整数量 ${oldQty}→${newQty}`,
               sourceType: 'ORDER',
@@ -128,17 +129,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
 
         if (isProduct && releaseQty > 0) {
+          const stockReleaseQty = await toStockQty(px, line.productId, releaseQty, line.uomId)
           await px.product.update({
             where: { id: line.productId },
-            data: { qtyOnHand: { increment: releaseQty } },
+            data: { qtyOnHand: { increment: stockReleaseQty } },
           })
-          await restoreLotsFIFO(px, line.productId, releaseQty)
+          await restoreLotsFIFO(px, line.productId, stockReleaseQty)
           await px.stockMove.create({
             data: {
               productId: line.productId,
               productName: line.productName,
               type: 'IN',
-              qty: releaseQty,
+              qty: stockReleaseQty,
               movedAt,
               note: `差异处理 ${disc.code}: 原商品释放 ${oldQty}→${pickedQty}`,
               sourceType: 'ORDER',
@@ -200,17 +202,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await prisma.orderLine.delete({ where: { id: disc.orderLineId } })
 
         if (isProduct && oldQty > 0) {
+          const stockQty = await toStockQty(px, line.productId, oldQty, line.uomId)
           await px.product.update({
             where: { id: line.productId },
-            data: { qtyOnHand: { increment: oldQty } },
+            data: { qtyOnHand: { increment: stockQty } },
           })
-          await restoreLotsFIFO(px, line.productId, oldQty)
+          await restoreLotsFIFO(px, line.productId, stockQty)
           await px.stockMove.create({
             data: {
               productId: line.productId,
               productName: line.productName,
               type: 'IN',
-              qty: oldQty,
+              qty: stockQty,
               movedAt,
               note: `差异处理 ${disc.code}: 取消订单行释放`,
               sourceType: 'ORDER',

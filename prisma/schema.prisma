@@ -39,8 +39,8 @@ enum OrderStatus {
   WAVE_ASSIGNED
   IN_DELIVERY
   COMPLETED
-  LOCKED       // 锁定（开票后会计置此态，不可改）
-  CANCELLED    // 取消（客户撤销报价 / 业务员废弃）
+  LOCKED // 锁定（开票后会计置此态，不可改）
+  CANCELLED // 取消（客户撤销报价 / 业务员废弃）
 }
 
 enum PaymentMethod {
@@ -133,34 +133,34 @@ enum JournalEntryStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
   /// 主角色（兼容旧字段；权限判断优先看 roles[]，roles[] 为空时回退此字段）
   role         Role
   /// 多角色集合 — 一个账号可同时是 OPERATOR + SALES 等。
   /// 字符串数组（不是 enum 数组），值必须是 Role 枚举的字符串形式。
-  roles        String[] @default([])
+  roles        String[]  @default([])
   name         String
   customerId   String?
-  isActive     Boolean  @default(true)
+  isActive     Boolean   @default(true)
   /// MFA 秘钥（TOTP base32），为空表示未启用
   mfaSecret    String?
-  mfaEnabled   Boolean  @default(false)
+  mfaEnabled   Boolean   @default(false)
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   /// 反向关系：该用户作为创建者的订单
-  ordersCreated Order[] @relation("OrderCreator")
+  ordersCreated        Order[]         @relation("OrderCreator")
   /// 反向关系：该用户作为业务员的订单
-  ordersAsSalesUser Order[] @relation("OrderSalesUser")
+  ordersAsSalesUser    Order[]         @relation("OrderSalesUser")
   /// 反向关系：该用户作为默认业务员的客户
-  customersAsSalesUser Customer[] @relation("CustomerSalesUser")
+  customersAsSalesUser Customer[]      @relation("CustomerSalesUser")
   /// 反向关系：绑定到该用户的司机配送批次(DriverSlot.userId)
-  driverSlots   DriverSlot[] @relation("DriverSlotUser")
+  driverSlots          DriverSlot[]    @relation("DriverSlotUser")
   /// 反向关系：该用户作为负责人的采购品类分组
-  categoryGroupsOwned CategoryGroup[] @relation("CategoryGroupOwner")
+  categoryGroupsOwned  CategoryGroup[] @relation("CategoryGroupOwner")
 
   @@index([role])
   @@index([customerId])
@@ -168,18 +168,18 @@ model User {
 }
 
 model ProductCategory {
-  id         String             @id @default(cuid())
-  name       String
-  nameZh     String?
-  externalId String?
+  id             String            @id @default(cuid())
+  name           String
+  nameZh         String?
+  externalId     String?
   /// 归属的采购品类分组（干货/日韩/超市/生鲜冷冻），可空=未映射
-  groupId    String?
-  group      CategoryGroup?     @relation(fields: [groupId], references: [id])
+  groupId        String?
+  group          CategoryGroup?    @relation(fields: [groupId], references: [id])
   /// 该类目商品业务上"应该"放哪个温区（业务规则），可空=未映射。与 Product.currentZoneId（实际放置）对比即可发现放错温区
   requiredZoneId String?
-  requiredZone   Zone?          @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
-  templates  ProductTemplate[]
-  products   Product[]
+  requiredZone   Zone?             @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
+  templates      ProductTemplate[]
+  products       Product[]
 
   @@index([groupId])
   @@index([requiredZoneId])
@@ -232,9 +232,9 @@ model CategoryGroup {
 }
 
 model ProductAttribute {
-  id       String                   @id @default(cuid())
+  id       String                  @id @default(cuid())
   name     String
-  sequence Int                      @default(0)
+  sequence Int                     @default(0)
   values   ProductAttributeValue[]
 }
 
@@ -247,45 +247,45 @@ model ProductAttributeValue {
 }
 
 model ProductTemplate {
-  id               String    @id @default(cuid())
+  id               String           @id @default(cuid())
   name             String
   internalRef      String?
   categoryId       String?
   category         ProductCategory? @relation(fields: [categoryId], references: [id])
-  listPrice        Decimal   @default(0) @db.Decimal(12, 2)
-  standardPrice    Decimal   @default(0) @db.Decimal(12, 2)
-  customerTaxRate  Decimal   @default(0) @db.Decimal(6, 4)
-  type             ProductType @default(PRODUCT)
-  canBeSold        Boolean   @default(true)
-  canBePurchased   Boolean   @default(true)
+  listPrice        Decimal          @default(0) @db.Decimal(12, 2)
+  standardPrice    Decimal          @default(0) @db.Decimal(12, 2)
+  customerTaxRate  Decimal          @default(0) @db.Decimal(6, 4)
+  type             ProductType      @default(PRODUCT)
+  canBeSold        Boolean          @default(true)
+  canBePurchased   Boolean          @default(true)
   description      String?
   saleDescription  String?
   images           String[]
-  attributeLines   Json      @default("[]")
-  status           ProductStatus @default(ACTIVE)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  attributeLines   Json             @default("[]")
+  status           ProductStatus    @default(ACTIVE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
   externalId       String?
   sequence         Int?
-  weight           Decimal?  @db.Decimal(10, 3)
-  volume           Decimal?  @db.Decimal(10, 3)
-  commissionPrice  Decimal?  @db.Decimal(12, 2)
+  weight           Decimal?         @db.Decimal(10, 3)
+  volume           Decimal?         @db.Decimal(10, 3)
+  commissionPrice  Decimal?         @db.Decimal(12, 2)
   isPackaging      Boolean?
   canBeExpensed    Boolean?
   /// 销售单位（Odoo uom_id）。新的外键字段，指向 Uom。
   uomId            String?
-  uom              Uom?      @relation("SaleUom", fields: [uomId], references: [id])
+  uom              Uom?             @relation("SaleUom", fields: [uomId], references: [id])
   /// 采购单位（Odoo uom_po_id）
   purchaseUomId    String?
-  purchaseUom      Uom?      @relation("PurchaseUom", fields: [purchaseUomId], references: [id])
+  purchaseUom      Uom?             @relation("PurchaseUom", fields: [purchaseUomId], references: [id])
   /// 兼容保留：老的 String 字段，逐步迁移到 uomId
   unitOfMeasure    String?
   purchaseUoM      String?
   tracking         String?
   websitePublished Boolean?
   websiteName      String?
-  vendorTaxRate    Decimal?  @db.Decimal(6, 4)
-  forecastQty      Decimal?  @db.Decimal(14, 3)
+  vendorTaxRate    Decimal?         @db.Decimal(6, 4)
+  forecastQty      Decimal?         @db.Decimal(14, 3)
   createdBy        String?
   updatedBy        String?
   barcode          String?
@@ -297,37 +297,38 @@ model ProductTemplate {
 }
 
 model Product {
-  id                String    @id @default(cuid())
+  id                String                @id @default(cuid())
   templateId        String
-  template          ProductTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template          ProductTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
   name              String
-  variantAttributes Json      @default("[]")
+  variantAttributes Json                  @default("[]")
   internalRef       String?
-  listPrice         Decimal?  @db.Decimal(12, 2)
-  standardPrice     Decimal?  @db.Decimal(12, 2)
-  qtyOnHand         Decimal   @default(0) @db.Decimal(14, 3)
-  active            Boolean   @default(true)
+  listPrice         Decimal?              @db.Decimal(12, 2)
+  standardPrice     Decimal?              @db.Decimal(12, 2)
+  qtyOnHand         Decimal               @default(0) @db.Decimal(14, 3)
+  active            Boolean               @default(true)
   categoryId        String?
-  category          ProductCategory? @relation(fields: [categoryId], references: [id])
-  customerTaxRate   Decimal?  @db.Decimal(6, 4)
-  commissionPrice   Decimal?  @db.Decimal(12, 2)
+  category          ProductCategory?      @relation(fields: [categoryId], references: [id])
+  customerTaxRate   Decimal?              @db.Decimal(6, 4)
+  commissionPrice   Decimal?              @db.Decimal(12, 2)
   images            String[]
   spec              String?
-  price             Decimal?  @db.Decimal(12, 2)
-  stock             Decimal?  @db.Decimal(14, 3)
+  price             Decimal?              @db.Decimal(12, 2)
+  stock             Decimal?              @db.Decimal(14, 3)
   /// 安全库存下限（低于此值触发缺货预警）
-  safetyStockMin    Decimal?  @default(0) @db.Decimal(14, 3)
-  status            ProductStatus @default(ACTIVE)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  safetyStockMin    Decimal?              @default(0) @db.Decimal(14, 3)
+  status            ProductStatus         @default(ACTIVE)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
   externalId        String?
   sequence          Int?
   /// 该商品实际放在哪个温区（收货/上架时录入），可空=未上架定位。与 category.requiredZoneId 对比即可发现放错温区
   currentZoneId     String?
-  currentZone       Zone?     @relation("ProductCurrentZone", fields: [currentZoneId], references: [id])
+  currentZone       Zone?                 @relation("ProductCurrentZone", fields: [currentZoneId], references: [id])
   supplierInfos     ProductSupplierInfo[]
   orderLines        OrderLine[]
   lots              Lot[]
+  saleUoms          ProductSaleUom[]
 
   @@index([templateId])
   @@index([categoryId])
@@ -335,59 +336,84 @@ model Product {
   @@index([currentZoneId])
 }
 
+/**
+ * 商品可售单位（大小单位灵活出单，20260714 新增）
+ * ================================================================================
+ * 一个商品可以挂多个可售单位（如 CASE 整箱 + PCS 拆零），共享同一份 Product.qtyOnHand。
+ * qtyOnHand 统一按该 uom 所属 UomCategory 的"基准单位"(factor=1)计数——下单选用任何
+ * 一个可售单位时，都按 uom.factor 换算成基准单位数量再扣/补库存（见 lib/inventory.ts）。
+ * priceOverride 留空则按"基准单价 × factor"自动换算这个单位的售价，不留空则用这个固定值。
+ */
+model ProductSaleUom {
+  id            String   @id @default(cuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  uomId         String
+  uom           Uom      @relation(fields: [uomId], references: [id])
+  /// 下单页默认选中的单位；一个商品应恰好有一个 isDefault=true（应用层保证，无数据库级约束）
+  isDefault     Boolean  @default(false)
+  priceOverride Decimal? @db.Decimal(12, 2)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([productId, uomId])
+  @@index([productId])
+}
+
 model Customer {
-  id              String    @id @default(cuid())
-  name            String
+  id                  String                 @id @default(cuid())
+  name                String
   /// 兼容旧数据：合并后的整体地址（仍由后端自动维护，前端不直接编辑）
-  address         String    @default("")
+  address             String                 @default("")
   /// 街道 1（独立保存，不再与 street2 合并到 address）
-  street          String    @default("")
+  street              String                 @default("")
   /// 街道 2（Bug 修复 #3B：保存后保持独立字段，不再合并到 address）
-  street2         String    @default("")
+  street2             String                 @default("")
   /// 州/省（拆分自旧的 address 字段）
-  state           String    @default("")
+  state               String                 @default("")
   /// 邮编
-  zip             String    @default("")
+  zip                 String                 @default("")
   /// 国家（默认空，可在前端下拉选择）
-  country         String    @default("")
-  phone           String    @default("")
-  email           String    @default("")
-  vatNumber       String    @default("")
-  paymentTerm     String    @default("monthly")
-  creditLimit     Decimal?  @db.Decimal(12, 2)
+  country             String                 @default("")
+  phone               String                 @default("")
+  email               String                 @default("")
+  vatNumber           String                 @default("")
+  paymentTerm         String                 @default("monthly")
+  creditLimit         Decimal?               @db.Decimal(12, 2)
   /// 司机送货给此客户的佣金比率（0-1），例如 0.05 = 司机拿 5%
-  commissionRate  Decimal?  @db.Decimal(6, 4)
+  commissionRate      Decimal?               @db.Decimal(6, 4)
   /// 司机送货给此客户的固定佣金（EUR / 单）
-  commissionFixed Decimal?  @db.Decimal(10, 2)
-  createdAt       DateTime  @default(now())
-  externalId      String?
-  city            String?
-  notes           String?
+  commissionFixed     Decimal?               @db.Decimal(10, 2)
+  createdAt           DateTime               @default(now())
+  externalId          String?
+  city                String?
+  notes               String?
   /// 客户级外部备注（客户可见，打印在报价单/送货单上，如收货注意事项、结算方式）；与内部 notes 区分
-  externalNote    String?
-  pricelistId     String?
+  externalNote        String?
+  pricelistId         String?
   /// 定价模式：multi=走价格表引擎, default=直接用牌价, last=用最近一次售价
-  priceType       String    @default("multi")
-  isActive        Boolean   @default(true)
+  priceType           String                 @default("multi")
+  isActive            Boolean                @default(true)
   /// 是否是客户（Odoo res.partner.is_customer）
-  isCustomer      Boolean   @default(true)
+  isCustomer          Boolean                @default(true)
   /// 是否是供应商（Odoo res.partner.is_vendor），两者可同时为 true
-  isVendor        Boolean   @default(false)
+  isVendor            Boolean                @default(false)
   /// 供应商专属：采购税率
-  vendorTaxRate   Decimal?  @db.Decimal(6, 4)
+  vendorTaxRate       Decimal?               @db.Decimal(6, 4)
   /// 供应商专属：供应商付款条款
   supplierPaymentTerm String?
   /// 默认业务员用户 ID（下单时作为 Order.salesUserId 的默认来源）
-  salesUserId     String?
-  salesUser       User?     @relation("CustomerSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
+  salesUserId         String?
+  salesUser           User?                  @relation("CustomerSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
   /// 经纬度（Google Geocoding API 填充）
-  latitude        Float?
-  longitude       Float?
+  latitude            Float?
+  longitude           Float?
   /// 默认配送批次（P1-4：客户↔司机绑定）
   defaultDriverSlotId String?
-  defaultDriverSlot   DriverSlot? @relation("CustomerDefaultSlot", fields: [defaultDriverSlotId], references: [id], onDelete: SetNull)
-  specialPrices   CustomerSpecialPrice[]
-  supplierInfos   ProductSupplierInfo[]   @relation("PartnerSupplierInfos")
+  defaultDriverSlot   DriverSlot?            @relation("CustomerDefaultSlot", fields: [defaultDriverSlotId], references: [id], onDelete: SetNull)
+  specialPrices       CustomerSpecialPrice[]
+  supplierInfos       ProductSupplierInfo[]  @relation("PartnerSupplierInfos")
 
   @@index([isCustomer])
   @@index([isVendor])
@@ -415,31 +441,31 @@ model UomCategory {
  * ================================================================================
  * factor 表示"1 个本单位 = factor 个参考单位"。
  * 例如 Category="Weight" 参考单位 kg：
- *   - kg: factor=1, type=REFERENCE
- *   - g:  factor=0.001, type=SMALLER
- *   - CASE (10kg BAG): factor=10, type=BIGGER
- *
+ * - kg: factor=1, type=REFERENCE
+ * - g:  factor=0.001, type=SMALLER
+ * - CASE (10kg BAG): factor=10, type=BIGGER
  * 换算公式：qty_in_ref = qty_in_uom × factor
- *         qty_in_uom = qty_in_ref / factor
+ * qty_in_uom = qty_in_ref / factor
  */
 model Uom {
-  id          String       @id @default(cuid())
-  name        String
-  nameZh      String?
-  categoryId  String
-  category    UomCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  type        UomType      @default(BIGGER)
-  factor      Decimal      @default(1) @db.Decimal(14, 6)
+  id         String      @id @default(cuid())
+  name       String
+  nameZh     String?
+  categoryId String
+  category   UomCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  type       UomType     @default(BIGGER)
+  factor     Decimal     @default(1) @db.Decimal(14, 6)
   /// 四舍五入精度：订单数量会对齐到这个精度（如 0.01 表示两位小数）
-  rounding    Decimal      @default(0.01) @db.Decimal(14, 6)
+  rounding   Decimal     @default(0.01) @db.Decimal(14, 6)
   /// 货物类型："BULK"（大货）/ "LOOSE"（散货）。司机备货分拣单按此分组。可空=未分类。
-  goodsType   String?
-  active      Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  goodsType  String?
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
   saleTemplates     ProductTemplate[] @relation("SaleUom")
   purchaseTemplates ProductTemplate[] @relation("PurchaseUom")
+  productSaleUoms   ProductSaleUom[]
 
   @@unique([categoryId, name])
   @@index([categoryId])
@@ -451,132 +477,132 @@ model Uom {
  * 一个商品可以从多个供应商进货，每个供应商有自己的进货价、最小起订量、到货天数
  */
 model ProductSupplierInfo {
-  id              String    @id @default(cuid())
-  productId       String
-  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  supplierId      String
-  supplier        Customer  @relation("PartnerSupplierInfos", fields: [supplierId], references: [id], onDelete: Cascade)
-  productCode     String?   // 供应商方的商品编码
-  productName     String?   // 供应商方的商品名
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplierId  String
+  supplier    Customer  @relation("PartnerSupplierInfos", fields: [supplierId], references: [id], onDelete: Cascade)
+  productCode String? // 供应商方的商品编码
+  productName String? // 供应商方的商品名
   /// 采购单价（EUR）
-  price           Decimal   @db.Decimal(12, 4)
+  price       Decimal   @db.Decimal(12, 4)
   /// 最小起订量
-  minQty          Decimal   @default(0) @db.Decimal(12, 4)
+  minQty      Decimal   @default(0) @db.Decimal(12, 4)
   /// 交货天数
-  delay           Int       @default(1)
+  delay       Int       @default(1)
   /// 优先级：1=最优先（默认供应商），数字越小越优先
-  sequence        Int       @default(10)
-  dateStart       DateTime?
-  dateEnd         DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  sequence    Int       @default(10)
+  dateStart   DateTime?
+  dateEnd     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
+  @@unique([productId, supplierId], name: "uniq_product_supplier")
   @@index([productId])
   @@index([supplierId])
-  @@unique([productId, supplierId], name: "uniq_product_supplier")
 }
 
 model CustomerSpecialPrice {
-  id          String    @id @default(cuid())
-  customerId  String
-  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  productId   String
-  minQty      Decimal   @default(0) @db.Decimal(14, 3)
-  fixedPrice  Decimal   @db.Decimal(12, 2)
-  dateStart   String?
-  dateEnd     String?
-  note        String?
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId  String
+  minQty     Decimal  @default(0) @db.Decimal(14, 3)
+  fixedPrice Decimal  @db.Decimal(12, 2)
+  dateStart  String?
+  dateEnd    String?
+  note       String?
 
   @@index([customerId])
   @@index([productId])
 }
 
 model OdooPricelist {
-  id              String    @id @default(cuid())
-  externalId      String?   @unique
+  id              String   @id @default(cuid())
+  externalId      String?  @unique
   name            String
-  currency        String    @default("EUR")
-  items           Json      @default("[]")
-  sequence        Int       @default(0)
-  selectable      Boolean   @default(true)
-  active          Boolean   @default(true)
-  updatedAt       DateTime  @updatedAt
+  currency        String   @default("EUR")
+  items           Json     @default("[]")
+  sequence        Int      @default(0)
+  selectable      Boolean  @default(true)
+  active          Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
   promotionalCode String?
   notes           String?
   website         String?
-  countryGroups   Json      @default("[]")
+  countryGroups   Json     @default("[]")
 
   @@index([active])
   @@index([sequence])
 }
 
 model Order {
-  id               String        @id @default(cuid())
+  id                    String        @id @default(cuid())
   /// 业务编号：创建者缩写-YYMMDD-NNN（如 CJ-260424-001），历史订单可为空
-  code             String?       @unique
+  code                  String?       @unique
   /// 创建者用户 ID（历史订单可为空）
-  createdById      String?
-  createdBy        User?         @relation("OrderCreator", fields: [createdById], references: [id])
+  createdById           String?
+  createdBy             User?         @relation("OrderCreator", fields: [createdById], references: [id])
   /// 创建者姓名快照（避免日后改名影响历史显示）
-  createdByName    String?
-  restaurantId     String
-  restaurantName   String
-  items            Json          @default("[]")
-  totalAmount      Decimal       @default(0) @db.Decimal(12, 2)
-  status           OrderStatus   @default(PENDING)
-  paymentMethod    PaymentMethod @default(ONLINE)
-  externalRef      String?
-  createdAt        DateTime      @default(now())
+  createdByName         String?
+  restaurantId          String
+  restaurantName        String
+  items                 Json          @default("[]")
+  totalAmount           Decimal       @default(0) @db.Decimal(12, 2)
+  status                OrderStatus   @default(PENDING)
+  paymentMethod         PaymentMethod @default(ONLINE)
+  externalRef           String?
+  createdAt             DateTime      @default(now())
   /// 下单时快照客户的价格表 ID（对应 Odoo sale.order.pricelist_id）
-  pricelistId      String?
+  pricelistId           String?
   /// 下单时快照客户的定价模式（multi/default/last）
-  priceType        String?
+  priceType             String?
   /// 下单时快照司机佣金率（commissionRate）
-  commissionRate   Decimal?      @db.Decimal(6, 4)
+  commissionRate        Decimal?      @db.Decimal(6, 4)
   /// 内部备注（仅内部可见，不打印在客户单据上）
-  internalNote     String?
+  internalNote          String?
   /// 外部备注（打印在报价单/送货单上，客户可见）
-  externalNote     String?
+  externalNote          String?
   /// 第三方送货备注（第三方替我们送货时的具体信息，打印在送货单上）
-  deliveryNote     String?
+  deliveryNote          String?
   /// 业务员用户 ID（对应 Odoo sale.order.user_id）
-  salesUserId      String?
-  salesUser        User?     @relation("OrderSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
+  salesUserId           String?
+  salesUser             User?         @relation("OrderSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
   /// 报价日期（创建时自动设置）
-  quotationDate    DateTime?
+  quotationDate         DateTime?
   /// 确认日期（确认时自动设置）
-  confirmationDate DateTime?
+  confirmationDate      DateTime?
   /// 交货日期（手动选择）
-  deliveryDate     DateTime?
+  deliveryDate          DateTime?
   /// 发票日期（跟随交货日期，可手动覆盖）
-  invoiceDate      DateTime?
+  invoiceDate           DateTime?
   /// 送货单是否已回（司机送完货带回签收单，会计核销时标记）
-  orderReturn      Boolean   @default(false)
+  orderReturn           Boolean       @default(false)
   /// 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧合并字段，逐步弃用）
-  deliveryBatch    String?
+  deliveryBatch         String?
   /// 关联 DriverSlot（拆分后的配送批次），替代 deliveryBatch 字符串
-  driverSlotId     String?
-  driverSlot       DriverSlot? @relation(fields: [driverSlotId], references: [id])
+  driverSlotId          String?
+  driverSlot            DriverSlot?   @relation(fields: [driverSlotId], references: [id])
   /// 报价单发送给客户的时间（PENDING + sentAt → "Quotation Sent" 子状态）
-  sentAt           DateTime?
+  sentAt                DateTime?
   /// 锁定时间（开票后置 LOCKED 状态时回填）
-  lockedAt         DateTime?
+  lockedAt              DateTime?
   /// 最近一次打印时间（销售单打印追踪）
-  printedAt        DateTime?
+  printedAt             DateTime?
   /// 最近一次打印人用户 ID
-  printedById      String?
+  printedById           String?
   /// 最近一次打印人姓名快照
-  printedByName    String?
+  printedByName         String?
   /// 最近一次打印的单据类型：DELIVERY | SALES
-  printType        String?
+  printType             String?
   /// 累计打印次数
-  printCount       Int       @default(0)
+  printCount            Int           @default(0)
   /// 下单时快照客户的固定佣金（EUR / 单）
-  commissionFixed        Decimal?   @db.Decimal(10, 2)
+  commissionFixed       Decimal?      @db.Decimal(10, 2)
   /// 冻结后的司机提成总额（Trip 核实交账时写入，写入后不再随实时计算变动）
-  driverCommissionTotal  Decimal?   @db.Decimal(10, 2)
+  driverCommissionTotal Decimal?      @db.Decimal(10, 2)
   /// 提成冻结时间（写入 driverCommissionTotal 时回填）
-  commissionFrozenAt     DateTime?
+  commissionFrozenAt    DateTime?
 
   auditLogs     OrderAuditLog[]
   deliverySlip  DeliverySlip?
@@ -594,32 +620,32 @@ model Order {
 
 /// 订单行（Odoo 对齐）— 每条记录对应一种商品的一行明细，含 ordered/delivered/invoiced 三个数量
 model OrderLine {
-  id           String   @id @default(cuid())
-  orderId      String
-  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId    String
-  product      Product? @relation(fields: [productId], references: [id])
-  productName  String
-  spec         String?
+  id              String   @id @default(cuid())
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product? @relation(fields: [productId], references: [id])
+  productName     String
+  spec            String?
   /// 行级备注（商品级 note，如"free"赠品/注意事项），下单时由操作员填写
-  note         String?
-  uomId        String?
-  uomName      String?
-  unitPrice    Decimal  @db.Decimal(12, 2)
-  taxRate      Decimal? @db.Decimal(6, 4)
+  note            String?
+  uomId           String?
+  uomName         String?
+  unitPrice       Decimal  @db.Decimal(12, 2)
+  taxRate         Decimal? @db.Decimal(6, 4)
   /// 报价/订购数量（quotation 保存时填）
-  orderedQty   Decimal  @db.Decimal(14, 3)
+  orderedQty      Decimal  @db.Decimal(14, 3)
   /// 已交货数量（Trip 标记送达时回写）
-  deliveredQty Decimal  @default(0) @db.Decimal(14, 3)
+  deliveredQty    Decimal  @default(0) @db.Decimal(14, 3)
   /// 已开票数量（生成发票时回写，等于发票时的 deliveredQty）
-  invoicedQty  Decimal  @default(0) @db.Decimal(14, 3)
+  invoicedQty     Decimal  @default(0) @db.Decimal(14, 3)
   /// unitPrice × orderedQty 快照
-  subtotal     Decimal  @db.Decimal(12, 2)
+  subtotal        Decimal  @db.Decimal(12, 2)
   /// 下单时快照该商品的件提成单价（来自 Product/ProductTemplate.commissionPrice）
-  commissionPrice  Decimal?  @db.Decimal(10, 4)
-  sequence     Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  commissionPrice Decimal? @db.Decimal(10, 4)
+  sequence        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([orderId])
   @@index([productId])
@@ -627,41 +653,41 @@ model OrderLine {
 
 /// 拣货差异记录（拣货数量与下单数量不符时由运营记录）
 model OrderDiscrepancy {
-  id              String   @id @default(cuid())
+  id                    String    @id @default(cuid())
   /// 差异编号：DISC-00001
-  code            String   @unique
-  orderId         String
-  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderLineId     String
-  productId       String
-  productName     String
+  code                  String    @unique
+  orderId               String
+  order                 Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLineId           String
+  productId             String
+  productName           String
   /// 原始下单数量
-  orderedQty      Decimal  @db.Decimal(14, 3)
+  orderedQty            Decimal   @db.Decimal(14, 3)
   /// 实际拣货数量
-  pickedQty       Decimal  @db.Decimal(14, 3)
+  pickedQty             Decimal   @db.Decimal(14, 3)
   /// 差异数量（orderedQty - pickedQty，正数表示缺少）
-  diffQty         Decimal  @db.Decimal(14, 3)
+  diffQty               Decimal   @db.Decimal(14, 3)
   /// 差异类型：SHORTAGE=缺货, SUBSTITUTE=替代, WEIGHT_DIFF=重量差异
-  type            String
+  type                  String
   /// 处理状态：PENDING=待处理, RESOLVED=已处理, CANCELLED=已取消
-  status          String   @default("PENDING")
+  status                String    @default("PENDING")
   /// 处理方式：ADJUST_QTY=调整数量, SUBSTITUTE=替代商品, CANCEL_LINE=取消该行, REPLENISH=补货
-  resolution      String?
+  resolution            String?
   /// 替代商品 ID（当 resolution=SUBSTITUTE 时填写）
   substituteProductId   String?
   substituteProductName String?
-  substituteQty         Decimal? @db.Decimal(14, 3)
-  substituteUnitPrice   Decimal? @db.Decimal(12, 2)
+  substituteQty         Decimal?  @db.Decimal(14, 3)
+  substituteUnitPrice   Decimal?  @db.Decimal(12, 2)
   /// 运营备注
-  note            String?
+  note                  String?
   /// 上报人（拣货员）
-  reportedBy      String?
-  reportedByName  String?
+  reportedBy            String?
+  reportedByName        String?
   /// 处理人（运营）
-  resolvedBy      String?
-  resolvedByName  String?
-  resolvedAt      DateTime?
-  createdAt       DateTime @default(now())
+  resolvedBy            String?
+  resolvedByName        String?
+  resolvedAt            DateTime?
+  createdAt             DateTime  @default(now())
 
   @@index([orderId])
   @@index([status])
@@ -674,7 +700,7 @@ model OrderAuditLog {
   orderId       String
   order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   userId        String
-  action        String   // created | confirmed | withdrawn | cancelled | updated
+  action        String // created | confirmed | withdrawn | cancelled | updated
   changedFields Json?
   totalBefore   Decimal? @db.Decimal(12, 2)
   totalAfter    Decimal? @db.Decimal(12, 2)
@@ -699,34 +725,34 @@ model DeliverySlip {
 }
 
 model PickingWave {
-  id           String     @id @default(cuid())
-  name         String?
-  orderIds     String[]
-  zones        Json       @default("[]")
-  status       WaveStatus @default(PENDING)
-  createdAt    DateTime   @default(now())
-  waveDate     DateTime?  @db.Date
-  waveNumber   Int?
-  waveType     String?
+  id               String     @id @default(cuid())
+  name             String?
+  orderIds         String[]
+  zones            Json       @default("[]")
+  status           WaveStatus @default(PENDING)
+  createdAt        DateTime   @default(now())
+  waveDate         DateTime?  @db.Date
+  waveNumber       Int?
+  waveType         String?
   /// 历史遗留兼容字段：曾是"波次=单个批次号"时代的主键来源，现已不参与唯一性判定
   /// (一个波次现在可以跨多个 batchNum/DriverSlot)，仅在极少数兼容读路径里作兜底，不可再当 SSOT 用。
-  driverSlotId String?
-  driverName   String?
+  driverSlotId     String?
+  driverName       String?
   /// "am" | "pm"，与 driverName 同为快照字段；波次唯一性 = 司机+时段(不再按批次号拆分)
-  timeOfDay    String?
+  timeOfDay        String?
   /// 分配完成标记时间：调度员点「分配完成」后回填，纯进度标记，可反悔；订单一变动即清空
   assignmentDoneAt DateTime?
   /// 确认出发时间：操作员点「确认出发」后回填，标记该批次已发车（防重复出发 + 追溯）
-  dispatchedAt DateTime?
+  dispatchedAt     DateTime?
   /// 标记完成时间：司机回仓后操作员点「标记完成」，卡片从调度台归档
-  completedAt  DateTime?
+  completedAt      DateTime?
   /// 拣货锁定时间：打印员打印拣货单后回填，锁定期间调度不可改该批次
-  pickLockedAt   DateTime?
+  pickLockedAt     DateTime?
   /// 拣货锁定操作人
-  pickLockedBy   String?
+  pickLockedBy     String?
   /// 最近一次解锁时间，纯留痕
-  pickUnlockedAt DateTime?
-  pallets      Pallet[]
+  pickUnlockedAt   DateTime?
+  pallets          Pallet[]
 
   /// 注意：唯一性不是"永远只有一条"，而是"同一司机同一时段，未出发的波次只能有一条"——
   /// 已出发/已完成的历史波次允许并存(不回溯合并，见迁移策略)。这个偏序约束目前只在应用层
@@ -756,34 +782,34 @@ model Pallet {
 }
 
 model Trip {
-  id                  String      @id @default(cuid())
+  id               String     @id @default(cuid())
   /// 关联拣货波次（手动创建的行程可为空）
-  waveId              String?
+  waveId           String?
   /// 行程名称，如"上午 · 王师傅 · 4家餐馆"
-  name                String?
+  name             String?
   /// 配送时段：AM（上午）或 PM（下午）
-  timeSlot            String?
-  driverId            String?
-  driverName          String?
-  departTime          String?
-  status              TripStatus  @default(PENDING)
-  restaurants         Json        @default("[]")
-  totalPayment        Decimal     @default(0) @db.Decimal(12, 2)
+  timeSlot         String?
+  driverId         String?
+  driverName       String?
+  departTime       String?
+  status           TripStatus @default(PENDING)
+  restaurants      Json       @default("[]")
+  totalPayment     Decimal    @default(0) @db.Decimal(12, 2)
   /// 本次配送司机总佣金（按每家客户 commissionRate × subtotal 累加）
-  driverCommission    Decimal?    @db.Decimal(12, 2)
+  driverCommission Decimal?   @db.Decimal(12, 2)
   /// 司机交账：现金收款金额（P1-10）
-  cashCollected       Decimal?    @db.Decimal(12, 2) @default(0)
+  cashCollected    Decimal?   @default(0) @db.Decimal(12, 2)
   /// 司机交账：在线收款金额
-  onlineCollected     Decimal?    @db.Decimal(12, 2) @default(0)
+  onlineCollected  Decimal?   @default(0) @db.Decimal(12, 2)
   /// 交账状态：pending | submitted | confirmed
-  settlementStatus    String?     @default("pending")
+  settlementStatus String?    @default("pending")
   /// 交账确认时间
-  settledAt           DateTime?
+  settledAt        DateTime?
   /// 交账确认人
-  settledBy           String?
+  settledBy        String?
   /// 交账备注
-  settlementNote      String?
-  createdAt           DateTime    @default(now())
+  settlementNote   String?
+  createdAt        DateTime   @default(now())
 
   @@index([driverId])
   @@index([status])
@@ -793,29 +819,29 @@ model Trip {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
-  name           String
-  customerId     String
-  customerName   String
-  saleOrderIds   String[]
-  lines          Json          @default("[]")
-  subtotalExTax  Decimal       @default(0) @db.Decimal(12, 2)
-  totalTax       Decimal       @default(0) @db.Decimal(12, 2)
-  totalIncTax    Decimal       @default(0) @db.Decimal(12, 2)
-  amountPaid     Decimal       @default(0) @db.Decimal(12, 2)
-  amountDue      Decimal       @default(0) @db.Decimal(12, 2)
-  status         InvoiceStatus @default(DRAFT)
-  paymentTerms   String        @default("monthly")
-  dueDate        String?
-  createdAt      DateTime      @default(now())
-  postedAt       String?
-  paidAt         String?
-  payments       Payment[]
+  id            String        @id @default(cuid())
+  name          String
+  customerId    String
+  customerName  String
+  saleOrderIds  String[]
+  lines         Json          @default("[]")
+  subtotalExTax Decimal       @default(0) @db.Decimal(12, 2)
+  totalTax      Decimal       @default(0) @db.Decimal(12, 2)
+  totalIncTax   Decimal       @default(0) @db.Decimal(12, 2)
+  amountPaid    Decimal       @default(0) @db.Decimal(12, 2)
+  amountDue     Decimal       @default(0) @db.Decimal(12, 2)
+  status        InvoiceStatus @default(DRAFT)
+  paymentTerms  String        @default("monthly")
+  dueDate       String?
+  createdAt     DateTime      @default(now())
+  postedAt      String?
+  paidAt        String?
+  payments      Payment[]
 
+  @@unique([name])
   @@index([customerId])
   @@index([status])
   @@index([createdAt])
-  @@unique([name])
 }
 
 /**
@@ -849,32 +875,32 @@ model Payment {
  * 报废/出库时关联到具体 Lot，实现先进先出追溯。
  */
 model Lot {
-  id            String   @id @default(cuid())
+  id         String    @id @default(cuid())
   /// 批号：LOT-00001
-  lotNumber     String   @unique
-  productId     String
-  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lotNumber  String    @unique
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   /// 入库时的初始数量
-  initialQty    Decimal  @db.Decimal(14, 3)
+  initialQty Decimal   @db.Decimal(14, 3)
   /// 当前剩余数量（入库后被报废/出库消耗后递减）
-  currentQty    Decimal  @db.Decimal(14, 3)
+  currentQty Decimal   @db.Decimal(14, 3)
   /// 来源类型：GOODS_RECEIPT / PURCHASE_ORDER / ADJUSTMENT / RETURN
-  sourceType    String
+  sourceType String
   /// 来源单据 ID
-  sourceId      String?
+  sourceId   String?
   /// 来源单据编号（如 GR-00001, PO-00003）
-  sourceRef     String?
+  sourceRef  String?
   /// 保质期（最佳食用日期）
-  bestBefore    DateTime?
+  bestBefore DateTime?
   /// 批次日期（业务归属日期，对应 PO 的 expectedDate 或实际到货日）
-  arrivedAt     DateTime  @default(now())
+  arrivedAt  DateTime  @default(now())
   /// 状态：AVAILABLE=有库存可用, DEPLETED=已耗尽
-  status        String    @default("AVAILABLE")
+  status     String    @default("AVAILABLE")
   /// 参考单位下的单位成本（收货时从 PO 行 unitCost 写入；历史批次由 backfill-lot-cost 回填，回填不到为 null）
-  unitCost      Decimal?  @db.Decimal(12, 4)
-  createdAt     DateTime  @default(now())
+  unitCost   Decimal?  @db.Decimal(12, 4)
+  createdAt  DateTime  @default(now())
 
-  stockMoves    StockMove[]
+  stockMoves StockMove[]
 
   @@index([productId])
   @@index([status])
@@ -937,19 +963,19 @@ enum ActionType {
 }
 
 model ActionLog {
-  id           String     @id @default(cuid())
-  userId       String
-  userEmail    String
-  userName     String
-  action       ActionType
-  resource     String
-  resourceId   String?
-  detail       String?
+  id         String     @id @default(cuid())
+  userId     String
+  userEmail  String
+  userName   String
+  action     ActionType
+  resource   String
+  resourceId String?
+  detail     String?
   /// 字段级变更前后快照（JSON），例如 {"price":{"before":10,"after":12}}
-  changes      Json?
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime   @default(now())
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime   @default(now())
 
   @@index([userId])
   @@index([resource, resourceId])
@@ -962,51 +988,51 @@ model ActionLog {
  * 从 RFQ → Sent → Confirmed → Received → Invoiced 完整工作流
  */
 model PurchaseOrder {
-  id             String              @id @default(cuid())
-  name           String              @unique    // PO-00001
-  supplierId     String
-  status         PurchaseOrderStatus @default(DRAFT)
-  orderDate      DateTime            @default(now())
+  id                   String              @id @default(cuid())
+  name                 String              @unique // PO-00001
+  supplierId           String
+  status               PurchaseOrderStatus @default(DRAFT)
+  orderDate            DateTime            @default(now())
   /// 预计到货日期
-  expectedDate   DateTime?
+  expectedDate         DateTime?
   /// 货币（默认与公司主币一致）
-  currency       String              @default("EUR")
+  currency             String              @default("EUR")
   /// 下单时锁定的 currency→EUR 当日汇率快照，事后汇率变动不影响历史单据；
   /// 非欧元且没能拿到有效汇率时为 null，此时 exchangeRatePending=true(20260713 汇率换算改造)
-  exchangeRate   Decimal?            @default(1) @db.Decimal(14, 6)
+  exchangeRate         Decimal?            @default(1) @db.Decimal(14, 6)
   /// true=汇率是接口取不到时的占位状态(缺失)，需财务在采购单里补录后才能推进「确认」
-  exchangeRatePending Boolean        @default(false)
+  exchangeRatePending  Boolean             @default(false)
   /// 不含税总金额（原币）
-  subtotalExTax  Decimal             @default(0) @db.Decimal(12, 2)
-  totalTax       Decimal             @default(0) @db.Decimal(12, 2)
-  totalIncTax    Decimal             @default(0) @db.Decimal(12, 2)
+  subtotalExTax        Decimal             @default(0) @db.Decimal(12, 2)
+  totalTax             Decimal             @default(0) @db.Decimal(12, 2)
+  totalIncTax          Decimal             @default(0) @db.Decimal(12, 2)
   /// 本单运费（税前，原币），按行 subtotal 占比摊入各行落地成本，不回写 Product 成本
-  freightAmount  Decimal             @default(0) @db.Decimal(14, 2)
+  freightAmount        Decimal             @default(0) @db.Decimal(14, 2)
   /// 以下 *Eur 字段 = 原币字段 × exchangeRate（币种为 EUR 时恒等于原字段）；
   /// 下游(收货成本回写/供应商账单/会计分录)一律只读这些字段，不再各自乘汇率——
   /// exchangeRatePending 时为 null，因为汇率未知没法折算(20260713 汇率换算改造)
-  subtotalExTaxEur Decimal?          @db.Decimal(12, 2)
-  totalTaxEur      Decimal?          @db.Decimal(12, 2)
-  totalIncTaxEur   Decimal?          @db.Decimal(12, 2)
-  freightAmountEur Decimal?          @db.Decimal(14, 2)
+  subtotalExTaxEur     Decimal?            @db.Decimal(12, 2)
+  totalTaxEur          Decimal?            @db.Decimal(12, 2)
+  totalIncTaxEur       Decimal?            @db.Decimal(12, 2)
+  freightAmountEur     Decimal?            @db.Decimal(14, 2)
   /// 用于识别/预填本单的供应商 PDF 原件
-  sourceDocumentUrl  String?
-  sourceDocumentName String?
+  sourceDocumentUrl    String?
+  sourceDocumentName   String?
   /// 备注
-  notes          String?
-  createdBy      String?
-  confirmedAt    DateTime?
-  cancelledAt    DateTime?
+  notes                String?
+  createdBy            String?
+  confirmedAt          DateTime?
+  cancelledAt          DateTime?
   /// 锁定时间（LOCKED 状态时记录）
-  lockedAt       DateTime?
+  lockedAt             DateTime?
   /// 编辑审批标记（CONFIRMED+ 状态下非安全字段被编辑时设置）
-  editApprovalRequired Boolean       @default(false)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  editApprovalRequired Boolean             @default(false)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
-  lines          PurchaseOrderLine[]
-  receipts       GoodsReceipt[]
-  bills          VendorBill[]
+  lines    PurchaseOrderLine[]
+  receipts GoodsReceipt[]
+  bills    VendorBill[]
 
   @@index([supplierId])
   @@index([status])
@@ -1018,36 +1044,36 @@ model PurchaseOrder {
  * 一个 PO 包含多条商品行，每行记录 orderedQty 和 receivedQty 分别。
  */
 model PurchaseOrderLine {
-  id            String        @id @default(cuid())
-  purchaseOrderId String
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId     String
-  productName   String
+  id                String        @id @default(cuid())
+  purchaseOrderId   String
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId         String
+  productName       String
   /// 采购 UoM ID（可空，兼容）
-  uomId         String?
+  uomId             String?
   /// 订购数量（采购 UoM 下）
-  orderedQty    Decimal       @db.Decimal(14, 3)
+  orderedQty        Decimal       @db.Decimal(14, 3)
   /// 已收数量（采购 UoM 下）
-  receivedQty   Decimal       @default(0) @db.Decimal(14, 3)
+  receivedQty       Decimal       @default(0) @db.Decimal(14, 3)
   /// 已开票数量
-  invoicedQty   Decimal       @default(0) @db.Decimal(14, 3)
+  invoicedQty       Decimal       @default(0) @db.Decimal(14, 3)
   /// 采购 UoM 下的单价（原币）
-  unitCost      Decimal       @db.Decimal(12, 4)
+  unitCost          Decimal       @db.Decimal(12, 4)
   /// 行税率
-  taxRate       Decimal       @default(0) @db.Decimal(6, 4)
-  subtotalExTax Decimal       @db.Decimal(12, 2)
-  taxAmount     Decimal       @db.Decimal(12, 2)
-  subtotalIncTax Decimal      @db.Decimal(12, 2)
+  taxRate           Decimal       @default(0) @db.Decimal(6, 4)
+  subtotalExTax     Decimal       @db.Decimal(12, 2)
+  taxAmount         Decimal       @db.Decimal(12, 2)
+  subtotalIncTax    Decimal       @db.Decimal(12, 2)
   /// 折合欧元 = 原币字段 × PurchaseOrder.exchangeRate；收货成本回写 Product.standardPrice/
   /// Lot.unitCost 一律读这几个字段，不读上面原币字段。PO 汇率待确认时为 null(20260713)
-  unitCostEur       Decimal?  @db.Decimal(12, 4)
-  subtotalExTaxEur  Decimal?  @db.Decimal(12, 2)
-  taxAmountEur      Decimal?  @db.Decimal(12, 2)
-  subtotalIncTaxEur Decimal?  @db.Decimal(12, 2)
+  unitCostEur       Decimal?      @db.Decimal(12, 4)
+  subtotalExTaxEur  Decimal?      @db.Decimal(12, 2)
+  taxAmountEur      Decimal?      @db.Decimal(12, 2)
+  subtotalIncTaxEur Decimal?      @db.Decimal(12, 2)
   /// 保质期（最佳食用日期）
-  bestBefore    DateTime?
-  sequence      Int           @default(10)
-  createdAt     DateTime      @default(now())
+  bestBefore        DateTime?
+  sequence          Int           @default(10)
+  createdAt         DateTime      @default(now())
 
   @@index([purchaseOrderId])
   @@index([productId])
@@ -1059,7 +1085,7 @@ model PurchaseOrderLine {
  */
 model GoodsReceipt {
   id              String        @id @default(cuid())
-  name            String        @unique   // GR-00001
+  name            String        @unique // GR-00001
   purchaseOrderId String
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   /// 到货日期
@@ -1081,24 +1107,24 @@ model GoodsReceipt {
  * 会计科目（对应 Odoo account.account）
  * ================================================================================
  * code 通常是 4 位数字，例如：
- *   1100 Accounts Receivable (RECEIVABLE)
- *   2100 Accounts Payable (PAYABLE)
- *   2200 VAT Payable (LIABILITY)
- *   4000 Sales Revenue (INCOME)
- *   5000 Cost of Goods Sold (EXPENSE)
- *   1200 Bank (ASSET)
+ * 1100 Accounts Receivable (RECEIVABLE)
+ * 2100 Accounts Payable (PAYABLE)
+ * 2200 VAT Payable (LIABILITY)
+ * 4000 Sales Revenue (INCOME)
+ * 5000 Cost of Goods Sold (EXPENSE)
+ * 1200 Bank (ASSET)
  */
 model Account {
-  id         String      @id @default(cuid())
-  code       String      @unique
-  name       String
-  nameZh     String?
-  type       AccountType
-  active     Boolean     @default(true)
+  id          String             @id @default(cuid())
+  code        String             @unique
+  name        String
+  nameZh      String?
+  type        AccountType
+  active      Boolean            @default(true)
   /// 是否接受手动过账；false 表示只通过系统自动生成（如 AR/AP）
-  allowManual Boolean    @default(false)
-  createdAt  DateTime    @default(now())
-  lines      JournalEntryLine[]
+  allowManual Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  lines       JournalEntryLine[]
 
   @@index([type])
   @@index([active])
@@ -1111,22 +1137,22 @@ model Account {
  * 来源事件包括：发票过账 / 收款 / 供应商账单 / 付款 / 手动调整。
  */
 model JournalEntry {
-  id            String               @id @default(cuid())
-  name          String               @unique      // JE-00001
-  date          DateTime             @default(now())
-  narration     String                            // 简要说明
+  id          String             @id @default(cuid())
+  name        String             @unique // JE-00001
+  date        DateTime           @default(now())
+  narration   String // 简要说明
   /// 来源类型：invoice / vendor_bill / payment / manual
-  sourceType    String?
+  sourceType  String?
   /// 来源单据 ID
-  sourceId      String?
-  status        JournalEntryStatus   @default(DRAFT)
-  totalDebit    Decimal              @default(0) @db.Decimal(14, 2)
-  totalCredit   Decimal              @default(0) @db.Decimal(14, 2)
-  createdBy     String?
-  postedAt      DateTime?
-  createdAt     DateTime             @default(now())
+  sourceId    String?
+  status      JournalEntryStatus @default(DRAFT)
+  totalDebit  Decimal            @default(0) @db.Decimal(14, 2)
+  totalCredit Decimal            @default(0) @db.Decimal(14, 2)
+  createdBy   String?
+  postedAt    DateTime?
+  createdAt   DateTime           @default(now())
 
-  lines         JournalEntryLine[]
+  lines JournalEntryLine[]
 
   @@index([date])
   @@index([sourceType, sourceId])
@@ -1138,19 +1164,19 @@ model JournalEntry {
  * debit / credit 至少有一个为 0；两者之和 > 0
  */
 model JournalEntryLine {
-  id        String       @id @default(cuid())
-  entryId   String
-  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  accountId String
-  account   Account      @relation(fields: [accountId], references: [id])
+  id          String       @id @default(cuid())
+  entryId     String
+  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account      @relation(fields: [accountId], references: [id])
   description String?
   /// 借方金额
-  debit     Decimal      @default(0) @db.Decimal(14, 2)
+  debit       Decimal      @default(0) @db.Decimal(14, 2)
   /// 贷方金额
-  credit    Decimal      @default(0) @db.Decimal(14, 2)
+  credit      Decimal      @default(0) @db.Decimal(14, 2)
   /// 关联的合作伙伴（客户/供应商）
-  partnerId String?
-  sequence  Int          @default(10)
+  partnerId   String?
+  sequence    Int          @default(10)
 
   @@index([entryId])
   @@index([accountId])
@@ -1198,8 +1224,8 @@ model VendorBill {
  */
 model DriverSlot {
   id         String   @id @default(cuid())
-  timeOfDay  String   // "am" | "pm"
-  batchNum   Int      // 1-5
+  timeOfDay  String // "am" | "pm"
+  batchNum   Int // 1-5
   driverName String
   /// 绑定的系统 DRIVER 用户(SSOT P0-2/A2):配送出发建 Trip 时以此为 driverId,
   /// 司机端按 userId 查自己的行程。driverName 仅作显示快照,身份以 userId 为准。
@@ -1209,7 +1235,7 @@ model DriverSlot {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  orders     Order[]
+  orders           Order[]
   defaultCustomers Customer[] @relation("CustomerDefaultSlot")
 
   @@unique([timeOfDay, batchNum, driverName])
@@ -1218,32 +1244,32 @@ model DriverSlot {
 
 /// 采购建议（P0-2：系统根据需求-库存自动生成）
 model PurchaseSuggestion {
-  id             String    @id @default(cuid())
-  tenantId       String    @default("test-company")
-  productId      String
-  productName    String
-  currentStock   Decimal   @default(0) @db.Decimal(14, 3)
-  demandQty      Decimal   @default(0) @db.Decimal(14, 3)
-  suggestedQty   Decimal   @default(0) @db.Decimal(14, 3)
-  supplierId     String?
-  supplierName   String?
-  estimatedCost  Decimal?  @db.Decimal(12, 2)
+  id               String    @id @default(cuid())
+  tenantId         String    @default("test-company")
+  productId        String
+  productName      String
+  currentStock     Decimal   @default(0) @db.Decimal(14, 3)
+  demandQty        Decimal   @default(0) @db.Decimal(14, 3)
+  suggestedQty     Decimal   @default(0) @db.Decimal(14, 3)
+  supplierId       String?
+  supplierName     String?
+  estimatedCost    Decimal?  @db.Decimal(12, 2)
   /// 优先级：critical / high / normal / low
-  priority       String    @default("normal")
+  priority         String    @default("normal")
   /// 状态：pending / approved / rejected / ordered
-  status         String    @default("pending")
-  purchaseOrderId String?
-  generatedAt    DateTime  @default(now())
-  resolvedAt     DateTime?
-  resolvedBy     String?
+  status           String    @default("pending")
+  purchaseOrderId  String?
+  generatedAt      DateTime  @default(now())
+  resolvedAt       DateTime?
+  resolvedBy       String?
   /// 该商品归属的采购品类分组 key（冗余存储,避免每次列表查询都要多级 join），可空=未映射分组
   categoryGroupKey String?
   /// 生成依据的说明文案，如"近3日出货均值+未来订单"/"已确认订单缺口"，用于 UI 展示"为什么建议采购"
-  reason         String?
+  reason           String?
   /// 以下四列仅生鲜次日备货(FRESH_FROZEN)生成时才写入，供前端拆分展示；其余品类生成路径留空
-  dailyAvgOutbound Decimal? @db.Decimal(14, 3)
-  futureDemand     Decimal? @db.Decimal(14, 3)
-  inTransitQty     Decimal? @db.Decimal(14, 3)
+  dailyAvgOutbound Decimal?  @db.Decimal(14, 3)
+  futureDemand     Decimal?  @db.Decimal(14, 3)
+  inTransitQty     Decimal?  @db.Decimal(14, 3)
   uomName          String?
 
   @@index([productId])
@@ -1272,21 +1298,21 @@ model Notification {
 
 /// 财务对账单（P1-1：按客户、周期汇总应收应付）
 model Statement {
-  id             String   @id @default(cuid())
-  tenantId       String   @default("test-company")
+  id             String    @id @default(cuid())
+  tenantId       String    @default("test-company")
   customerId     String
   customerName   String
-  periodStart    DateTime @db.Date
-  periodEnd      DateTime @db.Date
-  openingBalance Decimal  @default(0) @db.Decimal(12, 2)
-  totalSales     Decimal  @default(0) @db.Decimal(12, 2)
-  totalPayments  Decimal  @default(0) @db.Decimal(12, 2)
-  closingBalance Decimal  @default(0) @db.Decimal(12, 2)
-  orderIds       String[] @default([])
-  invoiceIds     String[] @default([])
+  periodStart    DateTime  @db.Date
+  periodEnd      DateTime  @db.Date
+  openingBalance Decimal   @default(0) @db.Decimal(12, 2)
+  totalSales     Decimal   @default(0) @db.Decimal(12, 2)
+  totalPayments  Decimal   @default(0) @db.Decimal(12, 2)
+  closingBalance Decimal   @default(0) @db.Decimal(12, 2)
+  orderIds       String[]  @default([])
+  invoiceIds     String[]  @default([])
   /// 状态：draft / confirmed / sent
-  status         String   @default("draft")
-  createdAt      DateTime @default(now())
+  status         String    @default("draft")
+  createdAt      DateTime  @default(now())
   sentAt         DateTime?
 
   @@index([customerId])
@@ -1296,21 +1322,21 @@ model Statement {
 
 /// 贷记单 / Credit Note（P0-3：退货退款凭证，支持跨单合并）
 model CreditNote {
-  id            String          @id @default(cuid())
-  name          String          @unique
+  id            String           @id @default(cuid())
+  name          String           @unique
   customerId    String
   customerName  String
-  creditDate    DateTime        @default(now())
-  currency      String          @default("EUR")
-  subtotalExTax Decimal         @default(0) @db.Decimal(12, 2)
-  totalTax      Decimal         @default(0) @db.Decimal(12, 2)
-  totalIncTax   Decimal         @default(0) @db.Decimal(12, 2)
+  creditDate    DateTime         @default(now())
+  currency      String           @default("EUR")
+  subtotalExTax Decimal          @default(0) @db.Decimal(12, 2)
+  totalTax      Decimal          @default(0) @db.Decimal(12, 2)
+  totalIncTax   Decimal          @default(0) @db.Decimal(12, 2)
   /// 状态：DRAFT / CONFIRMED / APPLIED / CANCELLED
-  status        String          @default("DRAFT")
+  status        String           @default("DRAFT")
   notes         String?
   createdBy     String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
   lines         CreditNoteLine[]
 
   @@index([customerId])
@@ -1358,18 +1384,18 @@ enum StockTakeStatus {
  * 生成 StockMove(type=ADJUSTMENT, sourceType='STOCK_TAKE') 并同步 Product.qtyOnHand。
  */
 model StockTake {
-  id            String          @id @default(cuid())
+  id        String          @id @default(cuid())
   /// 编号：STK-00001
-  name          String          @unique
-  status        StockTakeStatus @default(DRAFT)
+  name      String          @unique
+  status    StockTakeStatus @default(DRAFT)
   /// 盘点业务日期
-  takenAt       DateTime
+  takenAt   DateTime
   /// 创建人（姓名快照，与 GoodsReceipt.receivedBy 同风格）
-  createdBy     String?
-  notes         String?
-  lines         StockTakeLine[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdBy String?
+  notes     String?
+  lines     StockTakeLine[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   @@index([status])
   @@index([takenAt])

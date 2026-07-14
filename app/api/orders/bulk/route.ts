@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
-import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
+import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 
 /**
@@ -115,17 +115,18 @@ export async function POST(req: Request) {
             if (!line.product || line.product.template?.type !== 'PRODUCT') continue
             const qty = toNum(line.orderedQty)
             if (qty <= 0) continue
+            const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
             await prismaAny.product.update({
               where: { id: line.productId },
-              data: { qtyOnHand: { increment: qty } },
+              data: { qtyOnHand: { increment: stockQty } },
             })
-            await restoreLotsFIFO(prismaAny, line.productId, qty)
+            await restoreLotsFIFO(prismaAny, line.productId, stockQty)
             await prismaAny.stockMove.create({
               data: {
                 productId: line.productId,
                 productName: line.productName ?? '',
                 type: 'IN',
-                qty,
+                qty: stockQty,
                 movedAt: ord.deliveryDate ? new Date(ord.deliveryDate as unknown as string) : new Date(),
                 note: `批量取消订单释放库存`,
                 sourceType: 'ORDER',
@@ -200,13 +201,14 @@ export async function POST(req: Request) {
             if (!line.product || line.product.template?.type !== 'PRODUCT') continue
             const qty = toNum(line.orderedQty)
             if (qty <= 0) continue
+            const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
             await prismaAny.product.update({
               where: { id: line.productId },
-              data: { qtyOnHand: { decrement: qty } },
+              data: { qtyOnHand: { decrement: stockQty } },
             })
-            const consumed = await consumeLotsFIFO(prismaAny, line.productId, qty)
+            const consumed = await consumeLotsFIFO(prismaAny, line.productId, stockQty)
             const consumedQty = consumed.reduce((s, c) => s + c.qty, 0)
-            const unmatched = round2(qty - consumedQty)
+            const unmatched = round2(stockQty - consumedQty)
             const moveRows = consumed.map(c => ({
               productId: line.productId,
               productName: line.productName ?? '',

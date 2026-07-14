@@ -22,6 +22,12 @@ import { round2 } from '@/lib/decimal-helpers'
 const PO_COUNTED = `'CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED'`
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
+/** 多单位销售(20260714)：换算逻辑同 analytics/margin/route.ts 的 STOCK_QTY_EXPR，与 lib/inventory.ts toStockQty 一致 */
+const SOLD_STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <> pt."uomId"
+       AND line_uom.factor IS NOT NULL AND anchor_uom.factor IS NOT NULL AND anchor_uom.factor <> 0
+       THEN ol."orderedQty" * (line_uom.factor / anchor_uom.factor)
+       ELSE ol."orderedQty" END)`
+
 export async function GET(req: Request) {
   return withAuth(req, async () => {
     try {
@@ -58,9 +64,13 @@ export async function GET(req: Request) {
       const turnover = (await p.$queryRawUnsafe(
         `WITH sold AS (
            SELECT ol."productId" AS product_id,
-                  SUM(ol."orderedQty")::float / ${TURNOVER_WINDOW_DAYS} AS daily_qty
+                  SUM(${SOLD_STOCK_QTY_EXPR})::float / ${TURNOVER_WINDOW_DAYS} AS daily_qty
            FROM "OrderLine" ol
            JOIN "Order" o ON o.id = ol."orderId"
+           LEFT JOIN "Product" sp ON sp.id = ol."productId"
+           LEFT JOIN "ProductTemplate" pt ON pt.id = sp."templateId"
+           LEFT JOIN "Uom" line_uom ON line_uom.id = ol."uomId"
+           LEFT JOIN "Uom" anchor_uom ON anchor_uom.id = pt."uomId"
            WHERE o.status::text IN (${SALES_STATUS_SQL})
              AND o."confirmationDate" >= NOW() - INTERVAL '${TURNOVER_WINDOW_DAYS} days'
            GROUP BY ol."productId"

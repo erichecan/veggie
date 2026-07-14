@@ -5,7 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
-import { restoreLotsFIFO } from '@/lib/inventory'
+import { restoreLotsFIFO, toStockQty } from '@/lib/inventory'
 import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
 import type { TripRestaurant, ReturnItem, OrderItem } from '@/lib/types'
 
@@ -270,7 +270,7 @@ export async function PUT(
         reduceQty: number
       }> = []
       // 仅 SELLABLE 处置需要真正回补可售库存；SCRAP 处置货物不回可售库存，只留 StockMove 记账
-      const restockUpdates: Array<{ productId: string; qty: number }> = []
+      const restockUpdates: Array<{ productId: string; qty: number; uomId: string | null }> = []
 
       let approvedCount = 0
       let rejectedCount = 0
@@ -326,7 +326,12 @@ export async function PUT(
 
           if (disposition === 'SELLABLE') {
             // 可再售：真正回补库存，供 FIFO 出库和批次台账使用
-            restockUpdates.push({ productId: ret.productId, qty: returnQty })
+            // 多单位销售(20260714)：退货按原订单行选用的单位换算成库存记账单位
+            const sourceLine = await prisma.orderLine.findFirst({
+              where: { orderId: { in: restaurant.orderIds }, productId: ret.productId },
+              select: { uomId: true },
+            })
+            restockUpdates.push({ productId: ret.productId, qty: returnQty, uomId: sourceLine?.uomId ?? null })
           } else {
             // 报废：不回补可售库存，额外记一笔报废损耗（计入损耗仪表盘 & 退货回收率）
             const reasonKey = review.scrapReason ?? 'CUSTOMER_RETURN_DAMAGED'
@@ -392,11 +397,12 @@ export async function PUT(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const txAny = tx as any
         for (const r of restockUpdates) {
+          const stockQty = await toStockQty(txAny, r.productId, r.qty, r.uomId)
           await tx.product.update({
             where: { id: r.productId },
-            data: { qtyOnHand: { increment: r.qty } },
+            data: { qtyOnHand: { increment: stockQty } },
           })
-          await restoreLotsFIFO(txAny, r.productId, r.qty)
+          await restoreLotsFIFO(txAny, r.productId, stockQty)
         }
 
         // P1-4: 逐条调整 OrderLine.deliveredQty（精确小数计算）
