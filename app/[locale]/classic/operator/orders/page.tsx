@@ -174,9 +174,11 @@ export default function ClassicOrdersPage() {
     data: rawOrders,
     total,
     page,
+    pageSize,
     totalPages,
     loading,
     setPage,
+    setPageSize,
     setSearch: setServerSearch,
     search,
     refresh,
@@ -362,6 +364,7 @@ export default function ClassicOrdersPage() {
             <option value="cancelled">{STATUS_LABEL.cancelled}</option>
           </select>
         </td>
+        <td className="px-2 py-1" />
         <td className="px-2 py-1"><input value={colFilters.salesman}     onChange={e => setCf('salesman', e.target.value)}     className={inputCls} /></td>
         <td className="px-2 py-1" />
       </tr>
@@ -432,6 +435,8 @@ export default function ClassicOrdersPage() {
             )}
           </div>
         </td>
+        {/* Internal Notes */}
+        <td className="px-2 py-2 text-sm text-gray-700 max-w-[140px] truncate" title={getField(o, 'internalNote')}>{getField(o, 'internalNote')}</td>
         {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'salesman') || '—'}</td>
         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
@@ -540,6 +545,10 @@ export default function ClassicOrdersPage() {
         }}
         storageKey="classic_orders_favs"
         total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
       />
 
       <div className="overflow-auto">
@@ -558,6 +567,7 @@ export default function ClassicOrdersPage() {
                   { field: 'deliveryBatch', label: isEn ? 'Driver' : '司机', right: false },
                   { field: 'totalAmount',   label: 'Total',             right: true  },
                   { field: 'status',        label: 'Status',            right: false },
+                  { field: null,            label: isEn ? 'Internal\nNotes' : '内部\n备注', right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
                   { field: null,            label: '',                   right: false },
                 ] as { field: string | null; label: string; right: boolean }[]
@@ -586,10 +596,10 @@ export default function ClassicOrdersPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && sorted.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
+              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
             )}
             {!loading && sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>

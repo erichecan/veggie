@@ -386,7 +386,7 @@ export async function POST(req: Request) {
                 quotationDate: normalizeDateOnly(data.quotationDate) ?? new Date(),
                 deliveryDate: normalizeDateOnly(data.deliveryDate),
                 driverSlotId: resolvedDriverSlotId,
-                internalNote: data.internalNote ? String(data.internalNote).slice(0, 30) : undefined,
+                internalNote: data.internalNote ? String(data.internalNote) : undefined,
                 externalNote: data.externalNote ? String(data.externalNote) : undefined,
                 // SSOT: 业务员关联用户。优先手选值,未选则回退客户默认业务员(Customer.salesUserId)。
                 salesUserId: (data.salesUserId ? String(data.salesUserId) : custDefaults?.salesUserId) || undefined,

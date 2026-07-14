@@ -296,6 +296,11 @@ export default function SalesOrderDetailPage() {
   const isLocked = statusUp === 'LOCKED' || statusUp === 'CANCELLED'
   // 已出发及以后:司机归属由调度台管，详情页不可改派(后端亦拒绝)，编辑态司机字段只读
   const driverLocked = ['IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED'].includes(statusUp)
+  // WAVE_ASSIGNED 起(已入某个波次，哪怕还没出发):assign 时波次会强制把 deliveryDate 回写成
+  // wave.waveDate，这里再直接改会让两者分裂(后端亦拒绝，见 orders/[id]/route.ts)。
+  // 比 driverLocked 多盖 WAVE_ASSIGNED 这一档——driverSlotId 在这一档还能改(会同步波次)，
+  // 但 deliveryDate 的改动没有联动同步逻辑，必须先到调度台移出待分配、状态退回 CONFIRMED 才能改期。
+  const dateLocked = statusUp === 'WAVE_ASSIGNED' || driverLocked
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing && editLines.length > 0 ? editLines : lines
@@ -479,7 +484,7 @@ export default function SalesOrderDetailPage() {
                 {noteTab === 'internal' ? (
                   editing ? (
                     <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
-                      rows={3} maxLength={30}
+                      rows={3} maxLength={500}
                       className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
                       placeholder={isEn ? 'Internal only, not printed for the customer' : '仅内部可见，不会打印给客户'} />
                   ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
@@ -495,16 +500,21 @@ export default function SalesOrderDetailPage() {
 
             {/* Right col */}
             <div className="space-y-3 text-sm">
-              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+              <div className={`flex items-center rounded ${editing && !dateLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Date</div>
-                {editing ? (
+                {editing && !dateLocked ? (
                   <input
                     type="date"
                     value={deliveryDate}
                     onChange={e => setDeliveryDate(e.target.value)}
                     className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
-                ) : <div className="text-gray-800">{deliveryDate || '—'}</div>}
+                ) : (
+                  <div className="flex-1">
+                    <span className="text-gray-800">{deliveryDate || '—'}</span>
+                    {editing && dateLocked && <span className="ml-2 text-xs text-gray-400">{isEn ? 'Bound to its trip — remove from the dispatch console to change' : '已绑定所在波次，请到调度台移出待分配后再改'}</span>}
+                  </div>
+                )}
               </div>
               <div className={`flex items-center rounded ${editing && !driverLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Driver</div>

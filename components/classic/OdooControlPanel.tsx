@@ -56,6 +56,10 @@ interface OdooControlPanelProps {
   page?: number
   pageSize?: number
   onPageChange?: (p: number) => void
+  /** 传入后，"1–40 / 185" 里的每页条数变成可点击编辑（点一下弹出数字输入框） */
+  onPageSizeChange?: (ps: number) => void
+  /** onPageSizeChange 的可编辑上限，默认 200 */
+  pageSizeMax?: number
   className?: string
 }
 
@@ -91,6 +95,8 @@ export default function OdooControlPanel({
   page = 1,
   pageSize = 20,
   onPageChange,
+  onPageSizeChange,
+  pageSizeMax = 200,
   className = '',
 }: OdooControlPanelProps) {
   const [actionsOpen, setActionsOpen] = useState(false)
@@ -98,6 +104,18 @@ export default function OdooControlPanel({
   const [groupByOpen, setGroupByOpen] = useState(false)
   const [favOpen, setFavOpen] = useState(false)
   const [showFavInput, setShowFavInput] = useState(false)
+  const [editingPageSize, setEditingPageSize] = useState(false)
+  // 每次点击进入编辑态时(见下方 onClick)才从 pageSize prop 重新取值，不用 effect 同步——
+  // 编辑期间 prop 不会变(setPageSize 要等 blur/Enter 提交后才触发上层重取)，不需要额外监听。
+  const [pageSizeDraft, setPageSizeDraft] = useState(String(pageSize))
+
+  function commitPageSize() {
+    setEditingPageSize(false)
+    const n = parseInt(pageSizeDraft, 10)
+    if (!Number.isFinite(n) || n <= 0) { setPageSizeDraft(String(pageSize)); return }
+    const clamped = Math.min(pageSizeMax, Math.max(1, n))
+    if (clamped !== pageSize) onPageSizeChange?.(clamped)
+  }
   const [favName, setFavName] = useState('')
   const [savedFavourites, setSavedFavourites] = useState<SavedFavourite[]>([])
 
@@ -463,7 +481,30 @@ export default function OdooControlPanel({
           {/* 记录数 + 翻页箭头（仅在提供 onPageChange 时显示翻页控件） */}
           {total > 0 && onPageChange && (
             <div className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
-              <span className="whitespace-nowrap">{from}–{to} / {total}</span>
+              {onPageSizeChange && editingPageSize ? (
+                <input
+                  type="number"
+                  autoFocus
+                  min={1}
+                  max={pageSizeMax}
+                  value={pageSizeDraft}
+                  onChange={e => setPageSizeDraft(e.target.value)}
+                  onBlur={commitPageSize}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.currentTarget.blur() }
+                    if (e.key === 'Escape') { setEditingPageSize(false); setPageSizeDraft(String(pageSize)) }
+                  }}
+                  className="w-14 border border-purple-300 rounded px-1 py-0.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-purple-300"
+                />
+              ) : (
+                <span
+                  className={onPageSizeChange ? 'whitespace-nowrap cursor-pointer hover:text-purple-700 hover:underline' : 'whitespace-nowrap'}
+                  title={onPageSizeChange ? `Click to change rows per page (max ${pageSizeMax})` : undefined}
+                  onClick={onPageSizeChange ? () => { setPageSizeDraft(String(pageSize)); setEditingPageSize(true) } : undefined}
+                >
+                  {from}–{to} / {total}
+                </span>
+              )}
               <button
                 onClick={() => page > 1 && onPageChange(page - 1)}
                 disabled={page <= 1}

@@ -511,7 +511,7 @@ export default function QuotationDetailPage() {
                 {noteTab === 'internal' ? (
                   editing ? (
                     <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
-                      rows={3} maxLength={30}
+                      rows={3} maxLength={500}
                       className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
                       placeholder={isEn ? 'Internal only, not printed for customer' : '仅内部可见，不会打印给客户'} />
                   ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>

@@ -131,6 +131,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
+      // ── WAVE_ASSIGNED 及以后禁止直接改交货日期 ──
+      // 分配进波次时会强制把 deliveryDate 回写成 wave.waveDate(见 waves/[id]/assign)，
+      // 这里放行会让两者分裂——订单还挂在原波次里，deliveryDate 却指向别的日期，
+      // 调度台按 deliveryDate 筛的候选订单/待分配查询就再也找不到它(表现为"编辑成功但订单消失")。
+      // 要改期须先到调度台把订单拖回待分配(状态退回 CONFIRMED)才能自由改。
+      const dateLockedStatuses = new Set(['WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED'])
+      if (deliveryDate !== undefined && dateLockedStatuses.has(String(orderBefore.status).toUpperCase())) {
+        const oldDd = orderBefore.deliveryDate ? new Date(orderBefore.deliveryDate as unknown as string).toISOString().slice(0, 10) : null
+        const newDd = deliveryDate ? new Date(deliveryDate).toISOString().slice(0, 10) : null
+        if (oldDd !== newDd) {
+          return NextResponse.json(
+            { error: `${orderBefore.status} 状态的订单交货日期已绑定所在波次，不可直接修改，请到调度台移出待分配后再调整` },
+            { status: 409 },
+          )
+        }
+      }
+
       // ── 拣货锁：订单在已锁定波次里时，禁止改内容(明细/合计)。锁定=拣货作业进行中，
       // 不许再动这张单。仅拦内容编辑，不拦纯状态流转(确认出发/完成/撤回走其它路径需放行)。
       if (Array.isArray(linesPayload) || totalAmountPayload !== undefined) {
@@ -154,7 +171,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (deliveryDate !== undefined) updateData.deliveryDate = deliveryDate ? new Date(deliveryDate) : null
       if (invoiceDate !== undefined) updateData.invoiceDate = invoiceDate ? new Date(invoiceDate) : null
       if (quotationDate !== undefined) updateData.quotationDate = quotationDate ? new Date(quotationDate) : null
-      if (internalNote !== undefined) updateData.internalNote = internalNote ? String(internalNote).slice(0, 30) : null
+      if (internalNote !== undefined) updateData.internalNote = internalNote ? String(internalNote) : null
       if (externalNote !== undefined) updateData.externalNote = externalNote ? String(externalNote) : null
       if (deliveryNote !== undefined) updateData.deliveryNote = deliveryNote ? String(deliveryNote) : null
       if (pricelistId !== undefined) updateData.pricelistId = pricelistId ? String(pricelistId) : null

@@ -272,7 +272,7 @@ export interface Order {
   pricelistId?: string
   /** 下单时快照客户的定价模式（multi/default/last） */
   priceType?: CustomerPriceType
-  /** 内部备注（最多 30 字符） */
+  /** 内部备注（仅内部可见，不打印在客户单据上） */
   internalNote?: string
   /** 外部备注（打印在报价单/送货单上，客户可见） */
   externalNote?: string

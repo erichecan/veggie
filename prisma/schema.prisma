@@ -533,7 +533,7 @@ model Order {
   priceType        String?
   /// 下单时快照司机佣金率（commissionRate）
   commissionRate   Decimal?      @db.Decimal(6, 4)
-  /// 内部备注（最多 30 字符）
+  /// 内部备注（仅内部可见，不打印在客户单据上）
   internalNote     String?
   /// 外部备注（打印在报价单/送货单上，客户可见）
   externalNote     String?
