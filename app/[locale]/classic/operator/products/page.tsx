@@ -53,6 +53,7 @@ export default function ClassicProductsPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [alertCounts, setAlertCounts] = useState({ negative: 0, low: 0 })
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -88,15 +89,15 @@ export default function ClassicProductsPage() {
     return params.toString()
   }, [canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters])
 
-  async function loadPage(p: number, q: string) {
+  async function loadPage(p: number, q: string, ps: number = pageSize) {
     setLoading(true)
     try {
       const params = new URLSearchParams(queryParams)
       params.set('page', String(p))
-      params.set('pageSize', String(PAGE_SIZE))
+      params.set('pageSize', String(ps))
       if (q) params.set('search', q)
       const res = await apiGet<{
-        data: ProductTemplate[]; items: ProductTemplate[]; total: number; page: number
+        data: ProductTemplate[]; items: ProductTemplate[]; total: number; page: number; pageSize: number
         totalPages: number; alertCounts: { negative: number; low: number }
       }>(`/api/product-templates?${params}`)
       const source = res.data ?? res.items ?? []
@@ -111,6 +112,7 @@ export default function ClassicProductsPage() {
       }))
       setTotal(res.total)
       setPage(res.page)
+      setPageSize(res.pageSize ?? ps)
       setTotalPages(res.totalPages)
       setAlertCounts(res.alertCounts ?? { negative: 0, low: 0 })
     } catch (e) {
@@ -467,8 +469,9 @@ export default function ClassicProductsPage() {
         storageKey="classic_products_favs"
         total={total}
         page={page}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
         onPageChange={p => loadPage(p, searchInput)}
+        onPageSizeChange={ps => loadPage(1, searchInput, ps)}
       />
 
       {/* ─── 库存告警横幅 ─── */}

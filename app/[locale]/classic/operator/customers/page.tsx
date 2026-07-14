@@ -26,6 +26,7 @@ export default function ClassicCustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [pricelists, setPricelists] = useState<OdooPricelist[]>([])
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [total, setTotal] = useState(0)
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -36,17 +37,18 @@ export default function ClassicCustomersPage() {
   const [groupBy, setGroupBy] = useState('')
   const [importOpen, setImportOpen] = useState(false)
 
-  async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived) {
+  async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived, ps: number = pageSize) {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) })
+      const params = new URLSearchParams({ page: String(p), pageSize: String(ps) })
       if (q) params.set('search', q)
       if (payTerm) params.set('paymentTerm', payTerm)
       if (archived) params.set('includeArchived', '1')
-      const res = await apiGet<{ data: Customer[]; total: number; page: number }>(`/api/customers?${params}`)
+      const res = await apiGet<{ data: Customer[]; total: number; page: number; pageSize: number }>(`/api/customers?${params}`)
       setCustomers(res.data)
       setTotal(res.total)
       setPage(res.page)
+      setPageSize(res.pageSize ?? ps)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load customers' : '加载客户失败'))
     } finally {
@@ -185,8 +187,9 @@ export default function ClassicCustomersPage() {
         storageKey="classic_customers_favs"
         total={total}
         page={page}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
         onPageChange={p => loadPage(p, searchInput)}
+        onPageSizeChange={ps => loadPage(1, searchInput, paymentFilter, includeArchived, ps)}
       />
 
       <div className="p-4">
@@ -219,7 +222,7 @@ export default function ClassicCustomersPage() {
             return <>{label} <span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({count})</span></>
           }}
         />
-        <Pagination page={page} totalPages={Math.ceil(total / PAGE_SIZE)} onPageChange={p => loadPage(p, searchInput)} />
+        <Pagination page={page} totalPages={Math.ceil(total / pageSize)} onPageChange={p => loadPage(p, searchInput)} />
       </div>
 
       <CsvImportDialog

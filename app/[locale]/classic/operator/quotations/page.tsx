@@ -312,9 +312,11 @@ export default function ClassicQuotationsPage() {
     data: rawOrders,
     total,
     page,
+    pageSize,
     totalPages,
     loading,
     setPage,
+    setPageSize,
     setSearch: setServerSearch,
     search,
     refresh,
@@ -1123,7 +1125,11 @@ ${footerHtml}
           setMyActive(Boolean(s.myActive))
           setTimeKey(String(s.timeKey ?? ''))
         }}
-        total={filtered.length}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
       />
 
       {/* ── Table ── */}

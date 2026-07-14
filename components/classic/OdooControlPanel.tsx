@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
 
 interface ActiveFilter {
   label: string
@@ -104,18 +105,6 @@ export default function OdooControlPanel({
   const [groupByOpen, setGroupByOpen] = useState(false)
   const [favOpen, setFavOpen] = useState(false)
   const [showFavInput, setShowFavInput] = useState(false)
-  const [editingPageSize, setEditingPageSize] = useState(false)
-  // 每次点击进入编辑态时(见下方 onClick)才从 pageSize prop 重新取值，不用 effect 同步——
-  // 编辑期间 prop 不会变(setPageSize 要等 blur/Enter 提交后才触发上层重取)，不需要额外监听。
-  const [pageSizeDraft, setPageSizeDraft] = useState(String(pageSize))
-
-  function commitPageSize() {
-    setEditingPageSize(false)
-    const n = parseInt(pageSizeDraft, 10)
-    if (!Number.isFinite(n) || n <= 0) { setPageSizeDraft(String(pageSize)); return }
-    const clamped = Math.min(pageSizeMax, Math.max(1, n))
-    if (clamped !== pageSize) onPageSizeChange?.(clamped)
-  }
   const [favName, setFavName] = useState('')
   const [savedFavourites, setSavedFavourites] = useState<SavedFavourite[]>([])
 
@@ -184,10 +173,6 @@ export default function OdooControlPanel({
 
   const hasGroupBy = groupByOptions.length > 0 && (onGroupByChange ?? onGroupBySelect)
   const hasFavourites = !!storageKey
-
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, total)
-  const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 1
 
   return (
     <div className={`bg-white border-b border-gray-200 ${className}`}>
@@ -478,48 +463,16 @@ export default function OdooControlPanel({
             </div>
           )}
 
-          {/* 记录数 + 翻页箭头（仅在提供 onPageChange 时显示翻页控件） */}
-          {total > 0 && onPageChange && (
-            <div className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
-              {onPageSizeChange && editingPageSize ? (
-                <input
-                  type="number"
-                  autoFocus
-                  min={1}
-                  max={pageSizeMax}
-                  value={pageSizeDraft}
-                  onChange={e => setPageSizeDraft(e.target.value)}
-                  onBlur={commitPageSize}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') { e.currentTarget.blur() }
-                    if (e.key === 'Escape') { setEditingPageSize(false); setPageSizeDraft(String(pageSize)) }
-                  }}
-                  className="w-14 border border-purple-300 rounded px-1 py-0.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-purple-300"
-                />
-              ) : (
-                <span
-                  className={onPageSizeChange ? 'whitespace-nowrap cursor-pointer hover:text-purple-700 hover:underline' : 'whitespace-nowrap'}
-                  title={onPageSizeChange ? `Click to change rows per page (max ${pageSizeMax})` : undefined}
-                  onClick={onPageSizeChange ? () => { setPageSizeDraft(String(pageSize)); setEditingPageSize(true) } : undefined}
-                >
-                  {from}–{to} / {total}
-                </span>
-              )}
-              <button
-                onClick={() => page > 1 && onPageChange(page - 1)}
-                disabled={page <= 1}
-                className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 transition-colors"
-              >
-                ‹
-              </button>
-              <button
-                onClick={() => page < totalPages && onPageChange(page + 1)}
-                disabled={page >= totalPages}
-                className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 transition-colors"
-              >
-                ›
-              </button>
-            </div>
+          {/* 记录数 + 翻页箭头 + 可编辑每页条数（仅在提供 onPageChange 时显示） */}
+          {onPageChange && (
+            <RowsPerPagePagination
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={onPageChange}
+              onPageSizeChange={onPageSizeChange}
+              pageSizeMax={pageSizeMax}
+            />
           )}
         </div>
       </div>
