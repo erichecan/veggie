@@ -141,6 +141,16 @@
   }
 }
 
+/* 数字输入框去掉上下箭头 —— 配合 NumericInput 的 onWheel blur，避免鼠标滚轮悬停误改数值 */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner[type='number'] {
+  -moz-appearance: textfield;
+}
+
 /* 桌面表格 → 手机卡片：通用容器（.table-to-cards 类标记的 table 会在 sm 以下变卡片） */
 @media (max-width: 640px) {
   .table-to-cards thead { display: none; }

@@ -589,8 +589,8 @@ export default function ClassicProductDetailPage() {
                       </label>
                       <div className="flex items-center border border-gray-300 rounded h-8 overflow-hidden bg-white" style={{ width: 160 }}>
                         <span className="px-2 text-xs text-gray-500 border-r border-gray-200 h-full flex items-center bg-gray-50 whitespace-nowrap">€</span>
-                        <input
-                          type="number" step="0.01" min={0}
+                        <NumericInput
+                          step="0.01" min={0}
                           value={row.priceOverride ?? ''}
                           onChange={e => updateSaleUomRow(i, { priceOverride: e.target.value === '' ? null : Number(e.target.value) })}
                           placeholder={autoPrice != null ? autoPrice.toFixed(2) : '—'}

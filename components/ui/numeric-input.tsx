@@ -11,7 +11,7 @@ type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'>
  * 2. Scroll wheel accidentally changes value: blur on wheel prevents it.
  */
 export const NumericInput = forwardRef<HTMLInputElement, Props>(
-  function NumericInput({ value, onChange, onBlur, onFocus, ...rest }, ref) {
+  function NumericInput({ value, onChange, onBlur, onFocus, className, ...rest }, ref) {
     const [display, setDisplay] = useState(
       value !== undefined && value !== null && value !== '' ? String(value) : '',
     )
@@ -44,6 +44,7 @@ export const NumericInput = forwardRef<HTMLInputElement, Props>(
           onBlur?.(e)
         }}
         onWheel={e => e.currentTarget.blur()}
+        className={`no-spinner ${className ?? ''}`}
         {...rest}
       />
     )
