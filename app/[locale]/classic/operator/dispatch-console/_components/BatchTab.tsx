@@ -267,6 +267,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     try {
       await apiPut(`/api/waves/${waveId}/unassign`, { orderIds: [orderId] })
       toast.success(isEn ? 'Moved back to unassigned' : '已移回待分配')
+      // 后端把订单状态退回 CONFIRMED、清空 deliveryDate，但本地 orders 数组还是旧值
+      // (status 仍是 WAVE_ASSIGNED)，待分配列表按 status==='CONFIRMED' 过滤(见 confirmedOrders)，
+      // 不刷新这单会"提示成功但待分配区看不到"——必须 load() 才能把新状态拉回来。
+      load()
     } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Removal failed' : '移除失败')); load() }
   }
 
@@ -349,7 +353,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     e.dataTransfer.effectAllowed = 'move'
     setDragging(true)
   }
-  function dropToPallet(e: React.DragEvent, wave: Wave, slot: DriverSlot) {
+  // 订单视图/托盘视图共用同一套落点逻辑：区别只是目标托盘怎么定——托盘视图落到用户
+  // 拖入的具体那格；订单视图不分托盘粒度，统一落到该司机的 1 号托盘(groupSlots[0])。
+  function dropOrderIntoSlot(e: React.DragEvent, wave: Wave, slot: DriverSlot) {
     e.preventDefault()
     e.stopPropagation()
     setDragOverPallet(null)
@@ -363,6 +369,18 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     if (src && waves.find(w => w.id === src)?.pickLockedAt) { toast.error(isEn ? 'The original trip is locked for picking, ask the print operator to unlock it' : '原批次拣货中已锁定，请找打印员解锁'); return }
     if (!wave.id) { assignToPalletNoWave(orderId, slot.id); return }
     assignToPallet(wave.id, orderId, slot.id)
+  }
+  function dropToPallet(e: React.DragEvent, wave: Wave, slot: DriverSlot) {
+    dropOrderIntoSlot(e, wave, slot)
+  }
+  function dropToLane(e: React.DragEvent, wave: Wave, groupSlots: DriverSlot[]) {
+    // 订单视图是扁平总览，同一司机卡片内部拖拽没有意义(不像托盘视图能选具体托盘)，
+    // 直接忽略，避免"看起来什么都没做"却把订单从其他托盘静默挪到 1 号托盘
+    const src = e.dataTransfer.getData(SRC)
+    if (src && wave.id && src === wave.id) {
+      e.preventDefault(); e.stopPropagation(); setDragOverPallet(null); setDragging(false); return
+    }
+    dropOrderIntoSlot(e, wave, groupSlots[0])
   }
   function dropToLeft(e: React.DragEvent) {
     e.preventDefault()
@@ -451,6 +469,16 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         })()
       : ''
 
+    // 订单视图/托盘视图的 OrderChip 拖拽起点共用同一份可拖拽判断(锁定/已出发不可拖)
+    function chipDragProps(orderId: string, sourceWaveId: string) {
+      const disabled = reallyDispatched || locked
+      return {
+        draggable: !disabled,
+        onDragStart: (e: React.DragEvent) => { if (disabled) { e.preventDefault(); return } startDrag(e, orderId, sourceWaveId) },
+        onDragEnd: () => setDragging(false),
+      }
+    }
+
     // 托盘子分组：每个已配置的 batchNum(groupSlots)对应一条 lane；订单归属看该托盘的 Pallet.items。
     // 波次里有订单、但还没落进任何托盘的(历史数据过渡期，见 lib/wave-assign.ts)单独兜底一条。
     const palletOf = (slot: DriverSlot) => wave.pallets.find(p => p.seq === slot.batchNum)
@@ -525,7 +553,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           {reallyDispatched && <div className="text-[10px] text-blue-400 mt-0.5">{isEn ? `Departed at ${departTime}` : `已于 ${departTime} 出发`}</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${realLabel ? 100 : st.pct}%`, background: PURPLE }} /></div>
 
-          {/* 订单视图/托盘视图切换：实际改派只在托盘视图里发生，订单视图只是总览 */}
+          {/* 订单视图/托盘视图切换：两个视图都能拖拽改派，区别只是订单视图不分托盘粒度
+              (统一落到 1 号托盘)，要精细分托盘装车才需要切到托盘视图 */}
           <div className="flex gap-0.5 mt-2 bg-gray-100 rounded-lg p-0.5">
             <button
               onClick={e => { e.stopPropagation(); setViewMode(p => ({ ...p, [key]: 'order' })) }}
@@ -539,22 +568,32 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         </div>
 
         <div className="p-2 overflow-y-auto flex flex-col gap-1.5">
-          {/* 订单视图是只读总览，没有拖拽入口，订单为空时用占位文案即可。
-              托盘视图必须始终渲染每个托盘的落点(哪怕 0 单)，否则空波次的司机卡片
-              没有任何 onDrop 区域，拖进去会被浏览器默默拒绝、既不报错也不生效。 */}
-          {mode === 'order' && laneOrders.length === 0 && (
-            <div className="text-center text-[11px] text-gray-400 py-5 border border-dashed rounded-lg" style={{ borderColor: '#e5e7eb' }}>
-              {reallyDispatched ? (isEn ? '🚚 Departed (no orders)' : '🚚 已出发（无订单）') : (isEn ? `No orders for ${driverName} in this time slot` : `${driverName} 这个时段暂无订单`)}
-            </div>
-          )}
-
-          {mode === 'order' && laneOrders.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              {laneOrders.map(o => (
-                <OrderChip key={o.id} order={o} draggable={false} isEn={isEn} />
-              ))}
-            </div>
-          )}
+          {/* 两个视图都必须始终渲染落点(哪怕 0 单)，否则空波次的司机卡片没有任何 onDrop
+              区域，拖进去会被浏览器默默拒绝、既不报错也不生效。订单视图不分托盘粒度，
+              整个区域就是一个落点，统一落到 groupSlots[0](见 dropToLane)。 */}
+          {mode === 'order' && (() => {
+            const laneDragKey = `${key}::lane`
+            const over = !dispatched && !locked && dragOverPallet === laneDragKey
+            return (
+              <div
+                className="flex flex-col gap-1.5 rounded-lg"
+                style={{ boxShadow: over ? `0 0 0 2px ${PALLET_BLUE}33` : undefined }}
+                onDragOver={e => { e.preventDefault(); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(laneDragKey) }}
+                onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverPallet(p => p === laneDragKey ? null : p) }}
+                onDrop={e => dropToLane(e, wave, groupSlots)}
+              >
+                {laneOrders.length === 0 ? (
+                  <div className="text-center text-[11px] text-gray-400 py-5 border border-dashed rounded-lg" style={{ borderColor: over ? PALLET_BLUE : '#e5e7eb' }}>
+                    {reallyDispatched ? (isEn ? '🚚 Departed (no orders)' : '🚚 已出发（无订单）') : (isEn ? `No orders for ${driverName} in this time slot` : `${driverName} 这个时段暂无订单`)}
+                  </div>
+                ) : (
+                  laneOrders.map(o => (
+                    <OrderChip key={o.id} order={o} isEn={isEn} {...chipDragProps(o.id, wave.id)} />
+                  ))
+                )}
+              </div>
+            )
+          })()}
 
           {mode === 'pallet' && (
             <div className="flex flex-col gap-1.5">
@@ -592,14 +631,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                     <div className="p-1.5 flex flex-col gap-1.5 min-h-[34px]">
                       {palletOrders.length === 0 && <div className="text-center text-[10px] text-gray-300 py-2">{isEn ? 'Drag an order to this pallet' : '拖订单到这个托盘'}</div>}
                       {palletOrders.map(o => (
-                        <OrderChip
-                          key={o.id}
-                          order={o}
-                          draggable={!reallyDispatched && !locked}
-                          isEn={isEn}
-                          onDragStart={e => { if (reallyDispatched || locked) { e.preventDefault(); return } startDrag(e, o.id, wave.id) }}
-                          onDragEnd={() => setDragging(false)}
-                        />
+                        <OrderChip key={o.id} order={o} isEn={isEn} {...chipDragProps(o.id, wave.id)} />
                       ))}
                     </div>
                   </div>
@@ -611,14 +643,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                   <div className="px-2 py-1 bg-amber-50 text-[11px] font-semibold text-amber-700">{isEn ? `⚠️ Legacy orders, unassigned pallet (${legacyOrderIds.length})` : `⚠️ 历史订单，未分托盘（${legacyOrderIds.length}）`}</div>
                   <div className="p-1.5 flex flex-col gap-1.5">
                     {legacyOrderIds.map(id => ordersById.get(id)).filter(Boolean).map(o => (
-                      <OrderChip
-                        key={(o as Order).id}
-                        order={o as Order}
-                        draggable={!reallyDispatched && !locked}
-                        isEn={isEn}
-                        onDragStart={e => { if (reallyDispatched || locked) { e.preventDefault(); return } startDrag(e, (o as Order).id, wave.id) }}
-                        onDragEnd={() => setDragging(false)}
-                      />
+                      <OrderChip key={(o as Order).id} order={o as Order} isEn={isEn} {...chipDragProps((o as Order).id, wave.id)} />
                     ))}
                   </div>
                 </div>

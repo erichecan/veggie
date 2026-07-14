@@ -31,13 +31,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           where: { id },
           data: { orderIds: remaining, zones, assignmentDoneAt: null },
         })
-        // 移出波次即退回 CONFIRMED 并清空交货日期(退回未排程),保持
-        // 「订单 deliveryDate ⟺ 所在波次 waveDate」一致,避免销售单列表按旧 deliveryDate
-        // 仍显示、而配送中心已无此单的反向错配。状态守卫确保只动未出发订单;
-        // 未出发订单此时尚无 deliverySlip(出发才建),故无需清 slip。
+        // 移出波次即退回 CONFIRMED，deliveryDate 保留不清空：分配时已把它同步成了
+        // 这个波次的 waveDate(见 assign 路由)，退回待分配后订单仍应留在"这一天"的待分配池里
+        // 才能马上再分给别的司机——之前清空过，会导致订单从所有日期的待分配查询里彻底消失
+        // (dateField=deliveryDate 的候选订单查询筛不到 null，也不再被任何 wave.orderIds 引用，
+        // 前端两条补拉路径都够不着，订单"success 却消失")。与 deletePalletForDriverSlot
+        // (删除托盘联动退回待分配)保持一致，那条路径本来就没清空过 deliveryDate。
+        // 状态守卫确保只动未出发订单；未出发订单此时尚无 deliverySlip(出发才建)，故无需清 slip。
         await tx.order.updateMany({
           where: { id: { in: orderIds }, status: 'WAVE_ASSIGNED' },
-          data: { status: 'CONFIRMED', deliveryDate: null },
+          data: { status: 'CONFIRMED' },
         })
         return w
       })
