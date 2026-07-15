@@ -8,6 +8,7 @@ import { toNum } from '@/lib/decimal-helpers'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItemsList } from '@/lib/order-items'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
+import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 
 // SSOT: 调度归属显示一律由「所属 wave + 实时 DriverSlot」派生(P0-1)。
 // formatDriverSlotFromOrder 优先读 deliveryBatchDisplay,故在此注入即全站统一,无需改各页。
@@ -187,8 +188,6 @@ export async function GET(req: Request) {
     if (facetAnd.length > 0) where.AND = facetAnd
 
     // 表头点击排序 — 服务端全量排序后再分页,避免"排序只对当前页生效"(客户反馈)。
-    // deliveryBatch/司机列是由 wave 派生的展示字段(见 attachWaveDisplay),数据库里没有直接可排序的列,
-    // 该列排序仍由前端对当页数据做(见 orders/page.tsx),此处不支持。
     const sortFieldParam = searchParams.get('sortField') ?? 'createdAt'
     const sortDir = searchParams.get('sortDir') === 'asc' ? 'asc' as const : 'desc' as const
     const orderBy: Record<string, unknown> =
@@ -228,6 +227,31 @@ export async function GET(req: Request) {
     }
 
     if (paginated) {
+      // deliveryBatch/司机列是 wave 派生展示字段(见 attachWaveDisplay),SQL 层没有直接可 ORDER BY
+      // 的列,没法走下面 skip/take 那条路——之前直接放弃下推,排序退化成"只排当前页"(客户反馈:
+      // 昨晚其它列排序已下推服务端,司机列却还是老样子)。这里改成取全量匹配集在内存里按派生
+      // 显示值排序后再手动切页;数据量按跟 legacy 分支一致的口径封顶,避免无界查询拖垮内存。
+      if (sortFieldParam === 'deliveryBatch') {
+        const hasDateFilterForSort = !!(fromDate || toDate || deliveryFrom || deliveryTo)
+        const sortLimit = hasDateFilterForSort ? 5000 : 500
+        const allMatching = await prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, take: sortLimit, include })
+        const withWave = attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(allMatching))))
+        withWave.sort((a, b) => {
+          const av = formatDriverSlotFromOrder(a)
+          const bv = formatDriverSlotFromOrder(b)
+          return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+        })
+        const total = withWave.length
+        const start = (page - 1) * pageSize
+        return NextResponse.json({
+          data: withWave.slice(start, start + pageSize),
+          total,
+          page,
+          pageSize,
+          totalPages: Math.ceil(total / pageSize),
+        })
+      }
+
       const [total, orders] = await Promise.all([
         prisma.order.count({ where }),
         prisma.order.findMany({

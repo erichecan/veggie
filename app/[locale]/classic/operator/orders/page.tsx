@@ -156,11 +156,10 @@ export default function ClassicOrdersPage() {
     if (debouncedColText.customer) params.set('colCustomer', debouncedColText.customer)
     if (debouncedColText.salesman) params.set('colSalesman', debouncedColText.salesman)
     if (debouncedColText.driver) params.set('colDriver', debouncedColText.driver)
-    // 表头排序(deliveryBatch/司机列除外,该列由 wave 派生,服务端不支持排序)
-    if (sortField !== 'deliveryBatch') {
-      params.set('sortField', sortField)
-      params.set('sortDir', sortDir)
-    }
+    // 表头排序 — deliveryBatch/司机列虽是 wave 派生展示字段,服务端也已改成整表内存排序后再切页
+    // (见 /api/orders 的 sortField===deliveryBatch 分支),这里不再排除,统一下推
+    params.set('sortField', sortField)
+    params.set('sortDir', sortDir)
     // 分面聚焦搜索 → f_* / search
     applyFacets(params, facets)
     // My Sales Order → 按当前登录用户(业务员)过滤
@@ -235,16 +234,9 @@ export default function ClassicOrdersPage() {
     return result
   }, [orders, activeFilter, invoicedOrderIds, colFilters])
 
-  // 排序已下推服务端(见 baseUrl),数据到手时已是全局排好序的当页切片,不再客户端二次排序 ——
-  // 除了 deliveryBatch/司机列(wave 派生字段,服务端不支持排序),仍需客户端排当页数据,是已知局限。
-  const sorted = useMemo(() => {
-    if (sortField !== 'deliveryBatch') return filtered
-    return [...filtered].sort((a, b) => {
-      const av = formatDriverSlotFromOrder(a)
-      const bv = formatDriverSlotFromOrder(b)
-      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-    })
-  }, [filtered, sortField, sortDir])
+  // 排序(含 deliveryBatch/司机列)已下推服务端(见 baseUrl),数据到手时已是全局排好序的当页
+  // 切片,不再客户端二次排序。
+  const sorted = filtered
 
   // 选择司机批次只做本地暂存,不触发保存/刷新,避免打断连续编辑
   function stageBatch(orderId: string, slotId: string, originalSlotId: string) {
