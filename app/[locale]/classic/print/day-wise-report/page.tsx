@@ -81,12 +81,12 @@ function dayOfWeek(dateStr: string): number {
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // ─── Print mode: Order Summary (Odoo "Print") ──────────────────────────────
-// Shows: Sale No. | Customer | Sales Team | Amount | Total VAT
+// Shows: Sale No. | Customer | Driver | Amount | Total VAT
 function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], title: string, meta: string): string {
   const orderMap = new Map<string, {
     code: string
     customerName: string
-    salesTeam: string
+    driver: string
     untaxed: number
     tax: number
     total: number
@@ -94,7 +94,7 @@ function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], title: stri
 
   for (const order of orders) {
     const code = order.code ?? order.id.slice(0, 8)
-    const salesTeam = formatDriverSlotFromOrder(order) || '—'
+    const driver = formatDriverSlotFromOrder(order) || '—'
     let untaxed = 0
     let tax = 0
 
@@ -122,7 +122,7 @@ function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], title: stri
     orderMap.set(order.id, {
       code,
       customerName: order.restaurantName,
-      salesTeam,
+      driver,
       untaxed,
       tax,
       total: untaxed + tax,
@@ -142,7 +142,7 @@ function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], title: stri
     return `<tr class="order-row">
       <td>${o.code}</td>
       <td>${o.customerName}</td>
-      <td>${o.salesTeam}</td>
+      <td>${o.driver}</td>
       <td class="r">${eur(o.untaxed)}</td>
       <td class="r">${eur(o.tax)}</td>
       <td class="r">${eur(o.total)}</td>
@@ -152,7 +152,7 @@ function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], title: stri
   return wrapHtml(title, meta, `
     <table>
       <thead><tr>
-        <th>Sale No.</th><th>Customer</th><th>Sales Team</th>
+        <th>Sale No.</th><th>Customer</th><th>Driver</th>
         <th class="r">Untaxed Amount</th><th class="r">Total VAT</th><th class="r">Total</th>
       </tr></thead>
       <tbody>

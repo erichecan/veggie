@@ -7,7 +7,7 @@
 
 import 'server-only'
 import { prisma } from '@/lib/db'
-import { dateOnlyUTC } from '@/lib/wave-assign'
+import { dateOnlyUTC, getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import {
   buildLinesFromItems,
   type GoodsType,
@@ -278,11 +278,14 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap] = await Promise.all([
+  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductTypeMap(productIds),
     loadProductGoodsTypeMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
+    // 筛选打印/全部打印可能横跨多个司机,trip 级 driverName 是空的——每单实际司机身份
+    // 只能按单查(与销售单列表司机列同一 SSOT),见 TripOrder.driverBatchLabel。
+    getOrderWaveDisplayMap(orders.map(o => o.id)),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -311,6 +314,7 @@ export async function loadDispatchPrintData(
     deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
     deliveryDate: toIso(o.deliveryDate),
     invoiceNo: invoiceNoMap.get(o.id) ?? null,
+    driverBatchLabel: waveDisplayMap[o.id] ?? null,
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0
       ? o.lines.map(l => ({
@@ -339,6 +343,10 @@ export async function loadDispatchPrintData(
       name: multiMode ? `筛选批次 ${date}` : allBatches ? `全部批次 ${date}` : `${driverName} #${batchNum} ${timeOfDay.toUpperCase()}`,
       timeSlot: timeSlotMap[timeOfDay] ?? timeOfDay,
       driverName: driverName,
+      // 筛选打印/全部打印可能横跨多个司机的托盘,没有唯一批次号——留 null,模板据此省略,
+      // 不再显示 name 里的"筛选批次"占位文案(客户反馈)。单批次/按标签两条路径都已解析出
+      // 确定的 batchNum,可以放心带出去。
+      batchNum: (multiMode || allBatches) ? null : batchNum,
       departTime: null,
       createdAt: new Date().toISOString(),
       notice: truncated

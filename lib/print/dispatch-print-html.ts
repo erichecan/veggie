@@ -53,3 +53,24 @@ export async function fetchDispatchPrintHtml(p: DispatchPrintParams): Promise<st
   const data = toMemoryShape(wire)
   return DISPATCH_PRINT_RENDERERS[p.type](data, p.variant)
 }
+
+/** 汇总单走真·服务端 PDF：路由参数与上面的 print-data 接口一致，见 app/api/print/dispatch-summary-pdf */
+export function buildDispatchSummaryPdfUrl(p: Omit<DispatchPrintParams, 'type' | 'variant'>): string {
+  const params = new URLSearchParams({ date: p.date })
+  if (p.driverSlotId) params.set('driverSlotId', p.driverSlotId)
+  if (p.batchLabel) params.set('batchLabel', p.batchLabel)
+  if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
+  if (p.fromDate) params.set('fromDate', p.fromDate)
+  return `/api/print/dispatch-summary-pdf?${params}`
+}
+
+/** 拣货单走真·服务端 PDF：路由参数与上面的 print-data 接口一致，见 app/api/print/dispatch-picking-pdf */
+export function buildDispatchPickingPdfUrl(p: Omit<DispatchPrintParams, 'type'>): string {
+  const params = new URLSearchParams({ date: p.date })
+  if (p.driverSlotId) params.set('driverSlotId', p.driverSlotId)
+  if (p.batchLabel) params.set('batchLabel', p.batchLabel)
+  if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
+  if (p.fromDate) params.set('fromDate', p.fromDate)
+  if (p.variant) params.set('variant', p.variant)
+  return `/api/print/dispatch-picking-pdf?${params}`
+}

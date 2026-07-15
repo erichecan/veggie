@@ -5,7 +5,8 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
-import { fetchDispatchPrintHtml } from '@/lib/print/dispatch-print-html'
+import { fetchDispatchPrintHtml, buildDispatchSummaryPdfUrl, buildDispatchPickingPdfUrl } from '@/lib/print/dispatch-print-html'
+import { openAuthedPdf } from '@/lib/print/open-pdf'
 import { formatDateTime } from '@/lib/format-date'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
 
@@ -163,8 +164,13 @@ function BatchCard({
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
-      const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId] })
-      onQueuePrint(html)
+      if (type === 'summary') {
+        // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId] }))
+      } else {
+        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId] })
+        onQueuePrint(html)
+      }
       onPrint()
       // 记录打印动作到操作记录（失败不影响打印）
       try {
@@ -184,8 +190,8 @@ function BatchCard({
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
-      const html = await fetchDispatchPrintHtml({ type: 'picking', date, waveIds: [waveId], variant })
-      onQueuePrint(html)
+      // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -233,8 +239,7 @@ function BatchCard({
     setPalletBusy(prev => ({ ...prev, [seq]: true }))
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
-      const html = await fetchDispatchPrintHtml({ type: 'picking', date, batchLabel: palletBatchLabel(seq), variant })
-      onQueuePrint(html)
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -248,8 +253,12 @@ function BatchCard({
     setPalletBusy(prev => ({ ...prev, [seq]: true }))
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
-      const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq) })
-      onQueuePrint(html)
+      if (type === 'summary') {
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq) }))
+      } else {
+        const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq) })
+        onQueuePrint(html)
+      }
       onPrint()
       try {
         await apiPost('/api/waves/print-log', { date, type, scope: 'batch', batchLabel: `${label} · ${isEn ? 'Batch' : '批次'} ${seq}`, waveId })
@@ -768,10 +777,9 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      const html = await fetchDispatchPrintHtml({ type: 'picking', date, waveIds: filteredWaveIds, variant })
-      queuePrint(html)
-    } catch {
-      toast.error(isEn ? 'Print failed' : '打印失败')
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant }))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     }
     for (const g of batchGroups) markPrinted(g.waveId)
     if (failed > 0) toast.error(isEn ? `${failed} waves failed to lock` : `${failed} 个波次锁定失败`)

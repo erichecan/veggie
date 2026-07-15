@@ -16,8 +16,9 @@ import {
   type GoodsType,
   type TripPrintData,
   escapeHtml,
+  formatTripDriverList,
+  formatPrintTimestamp,
 } from './trip-common'
-import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 
 function fmtQty(v: number): string {
@@ -57,12 +58,9 @@ export function generateTripPickingHtml(
 ): string {
   const { trip, orders } = data
 
-  const teamParts = [
-    trip.timeSlot?.toLowerCase() ?? '',
-    trip.name ?? '',
-    trip.driverName ?? '',
-  ].filter(Boolean)
-  const teamStr = teamParts.join(' ')
+  // 拣货单是按商品汇总的整趟车视角,没有"每单一页"的粒度可退回订单级司机——筛选打印/
+  // 全部打印横跨多个司机时,trip 级司机身份是空的,退回按订单 driverBatchLabel 去重列出。
+  const teamStr = formatTripDriverList(trip, orders)
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)
@@ -117,9 +115,6 @@ export function generateTripPickingHtml(
 
   const showStorable = variant !== 'consumable'
   const showConsumable = variant !== 'storable'
-  const visibleCount =
-    (showStorable ? storableProducts.length : 0) +
-    (showConsumable ? consumableProducts.length : 0)
   const variantLabel =
     variant === 'storable' ? '整箱整袋 STOCKABLE'
     : variant === 'consumable' ? '零散货 CONSUMABLE'
@@ -187,10 +182,8 @@ export function generateTripPickingHtml(
   html,body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background:#fff}
   body{padding:14px 20px}
 
-  .page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;padding-bottom:6px;border-bottom:2px solid #1a3a2a}
-  .page-header .title{font-size:18px;font-weight:700;color:#1a3a2a}
-  .page-header .variant-tag{display:inline-block;margin-left:8px;font-size:13px;font-weight:700;color:#fff;background:#1a3a2a;padding:1px 8px;border-radius:4px;vertical-align:middle}
-  .page-header .meta{font-size:10px;color:#333;text-align:right;line-height:1.6}
+  .page-header{margin-bottom:6px;padding-bottom:6px;border-bottom:2px solid #1a3a2a}
+  .page-header .print-at{font-size:10px;color:#333}
 
   .info-row{display:flex;gap:20px;margin-bottom:10px;font-size:11px;padding:6px 8px;background:#f5f5f5;border-radius:4px}
   .info-row .item .label{font-weight:700;color:#555}
@@ -228,11 +221,7 @@ export function generateTripPickingHtml(
 </head>
 <body>
   <div class="page-header">
-    ${docBadge('picking', variantLabel ? escapeHtml(variantLabel) : undefined)}
-    <div class="meta">
-      ${formatDateOnly(new Date().toISOString())}<br/>
-      共 ${orders.length} 单 · ${visibleCount} 种商品
-    </div>
+    <div class="print-at">Print at: ${formatPrintTimestamp()}</div>
   </div>
 
   <div class="info-row">

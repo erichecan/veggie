@@ -17,6 +17,7 @@ import {
   type TripPrintDataWire,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
+import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0
@@ -110,10 +111,11 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productGoodsTypeMap, invoiceNoMap] = await Promise.all([
+  const [goodsTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductGoodsTypeMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
+    getOrderWaveDisplayMap(orders.map(o => o.id)),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -142,6 +144,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
     deliveryDate: toIso(o.deliveryDate),
     invoiceNo: invoiceNoMap.get(o.id) ?? null,
+    driverBatchLabel: waveDisplayMap[o.id] ?? null,
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0
       ? o.lines.map(l => ({
@@ -167,6 +170,8 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
       name: trip.name,
       timeSlot: trip.timeSlot,
       driverName: trip.driverName,
+      // Trip 实体没有批次号概念(一趟车可能横跨多个托盘),留 null——模板据此省略,不拼进司机身份
+      batchNum: null,
       departTime: trip.departTime,
       createdAt: trip.createdAt.toISOString(),
     },

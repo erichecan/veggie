@@ -14,6 +14,7 @@ import {
   type TripOrder,
   type TripCustomer,
   escapeHtml,
+  formatTripDriverLabel,
 } from './trip-common'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
@@ -21,7 +22,7 @@ import { formatDateOnly } from '@/lib/format-date'
 function buildDeliveryOrderHtml(
   order: TripOrder,
   customer: TripCustomer | undefined,
-  teamStr: string,
+  driverLabel: string,
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
   const lines = order.lines ?? []
@@ -71,7 +72,7 @@ function buildDeliveryOrderHtml(
         <div class="info-val">
           <strong>${escapeHtml(order.customerName)}</strong><br/>
           ${customerAddr ? escapeHtml(customerAddr) + '<br/>' : ''}
-          ${teamStr ? '<strong>Driver:</strong> ' + escapeHtml(teamStr) : ''}
+          ${driverLabel ? '<strong>Driver:</strong> ' + escapeHtml(driverLabel) : ''}
         </div>
       </td>
       <td class="barcode-cell">
@@ -191,17 +192,14 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 export function generateTripDeliveryHtml(data: TripPrintData): string {
   const { trip, orders, customers } = data
 
-  const teamParts = [
-    trip.timeSlot?.toLowerCase() ?? '',
-    trip.name ?? '',
-    trip.driverName ?? '',
-  ].filter(Boolean)
-  const teamStr = teamParts.join(' ')
+  // 筛选打印/全部打印可能横跨多个司机,trip 级标签会是空的——每单优先用自己实际所属的
+  // 批次(driverBatchLabel),查不到才退回 trip 级(单批次打印时两者本就一致)。
+  const tripDriverLabel = formatTripDriverLabel(trip)
 
   const totalPages = orders.length
   const pagesHtml = orders.map((order, idx) => {
     const customer = customers.get(order.customerId)
-    return buildDeliveryOrderHtml(order, customer, teamStr, {
+    return buildDeliveryOrderHtml(order, customer, order.driverBatchLabel || tripDriverLabel, {
       pageBreakAfter: idx < totalPages - 1,
     })
   }).join('')

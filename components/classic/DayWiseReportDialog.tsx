@@ -3,6 +3,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPut, apiPost } from '@/lib/api'
+import { buildDispatchSummaryPdfUrl, buildDispatchPickingPdfUrl } from '@/lib/print/dispatch-print-html'
+import { openAuthedPdf } from '@/lib/print/open-pdf'
 import { formatDriverSlot, formatDriverSlotFromOrder, parseDriverSlotKey, type DriverSlotInfo } from '@/lib/driver-slot'
 import { fmtMoney } from '@/lib/format-money'
 import type { Order, OrderItem, OrderLine } from '@/lib/types'
@@ -937,6 +939,26 @@ export default function DayWiseReportDialog({ onClose }: { onClose: () => void }
   // label string for batches that only exist as a legacy deliveryBatch string.
   function handlePrintBatch(batchKey: string, type: 'picking' | 'delivery' | 'summary') {
     const slotId = slotKeyToId.get(batchKey)
+    if (type === 'summary') {
+      // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再导航到 /classic/print/dispatch/summary
+      openAuthedPdf(buildDispatchSummaryPdfUrl({
+        date: toDate,
+        fromDate,
+        driverSlotId: slotId,
+        batchLabel: slotId ? undefined : batchKey,
+      })).catch(e => alert(e instanceof Error ? e.message : '打印失败'))
+      return
+    }
+    if (type === 'picking') {
+      // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再导航到 /classic/print/dispatch/picking
+      openAuthedPdf(buildDispatchPickingPdfUrl({
+        date: toDate,
+        fromDate,
+        driverSlotId: slotId,
+        batchLabel: slotId ? undefined : batchKey,
+      })).catch(e => alert(e instanceof Error ? e.message : '打印失败'))
+      return
+    }
     const params = new URLSearchParams({ date: toDate, fromDate })
     if (slotId) params.set('driverSlotId', slotId)
     else params.set('batchLabel', batchKey)

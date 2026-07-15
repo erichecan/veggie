@@ -23,6 +23,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# 汇总单服务端 PDF：装系统 Chromium(Alpine 原生 musl 构建，puppeteer-core 只驱动它，不下载
+# 自己的浏览器)。用 apk 装而不是 @sparticuz/chromium 这类打包 glibc 二进制的包——那是给
+# Lambda 这种镜像不可控的环境用的，Alpine 上会因 musl/glibc 不匹配跑不起来。
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 

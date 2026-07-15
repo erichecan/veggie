@@ -29,6 +29,9 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // 汇总单服务端 PDF（无头 Chromium）：puppeteer-core 内部有运行时按需 require，交给 Next
+  // 走外部化处理而不是 webpack 打包，避免打包期分析失败或产物里少东西。
+  serverExternalPackages: ['puppeteer-core'],
   // pdf-parse(采购单 PDF 识别用)内部用 Module.createRequire() 动态 require('@napi-rs/canvas')
   // 来 polyfill globalThis.DOMMatrix——这个 require 调用是运行时字符串拼出来的，不是字面量
   // require("...")，Next.js 的构建期文件追踪(@vercel/nft)识别不出来，standalone 产物里就

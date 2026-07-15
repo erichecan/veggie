@@ -8,6 +8,7 @@
 import {
   type TripPrintData,
   escapeHtml,
+  formatTripDriverLabel,
 } from './trip-common'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
@@ -15,11 +16,7 @@ import { fmtMoney } from '@/lib/format-money'
 export function generateTripSummaryHtml(data: TripPrintData): string {
   const { trip, orders, customers } = data
 
-  const driverParts = [
-    trip.timeSlot?.toLowerCase() ?? '',
-    trip.driverName ?? '',
-  ].filter(Boolean)
-  const driverStr = driverParts.join(' ')
+  const driverStr = formatTripDriverLabel(trip)
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)

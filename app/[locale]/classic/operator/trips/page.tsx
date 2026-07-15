@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { openAuthedPdf } from '@/lib/print/open-pdf'
 import { Pagination } from '@/components/ui/pagination'
 import type { Trip, TripStatus, TripRestaurant, Order } from '@/lib/types'
 import { batchPeriod } from '@/lib/delivery-batches'
@@ -300,11 +301,21 @@ export default function ClassicTripsPage() {
         const id = String(row.id)
         const open = (type: 'picking' | 'delivery' | 'summary') => (e: React.MouseEvent) => {
           e.stopPropagation()
+          if (type === 'summary') {
+            // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再导航到 /classic/print/trip/[id]/summary
+            openAuthedPdf(`/api/trips/${id}/summary-pdf`).catch(err => {
+              toast.error(err instanceof Error ? err.message : (isEn ? 'Print failed' : '打印失败'))
+            })
+            return
+          }
           window.open(`${prefix}/classic/print/trip/${id}/${type}`, '_blank')
         }
         const openPicking = (variant: 'storable' | 'consumable') => (e: React.MouseEvent) => {
           e.stopPropagation()
-          window.open(`${prefix}/classic/print/trip/${id}/picking?variant=${variant}`, '_blank')
+          // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再导航到 /classic/print/trip/[id]/picking
+          openAuthedPdf(`/api/trips/${id}/picking-pdf?variant=${variant}`).catch(err => {
+            toast.error(err instanceof Error ? err.message : (isEn ? 'Print failed' : '打印失败'))
+          })
         }
         return (
           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
