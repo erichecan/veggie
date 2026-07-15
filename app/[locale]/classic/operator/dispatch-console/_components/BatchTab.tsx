@@ -56,6 +56,24 @@ function shiftDate(base: string, days: number) {
   return d.toISOString().slice(0, 10)
 }
 
+// 司机卡片/待分配栏内容区高度固定(max-h-[640px] + overflow-y-auto),订单一多就要滚动才能拖到
+// 看不见的托盘——原生 HTML5 拖拽不会像 OS 文件管理器那样自动帮你滚，拖到边缘会卡在那里。
+// 这里在光标接近容器上/下边缘(AUTO_SCROLL_EDGE_PX 内)时手动推 scrollTop，越靠边缘滚得越快，
+// 让"拖走再滚一下"变成"拖到边上会自己滚过去"。在已有的 onDragOver 里调用，不需要额外监听器。
+const AUTO_SCROLL_EDGE_PX = 48
+const AUTO_SCROLL_MAX_SPEED = 20
+function autoScrollContainer(el: HTMLDivElement | null, clientY: number) {
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (clientY < rect.top + AUTO_SCROLL_EDGE_PX) {
+    const intensity = Math.min(1, (rect.top + AUTO_SCROLL_EDGE_PX - clientY) / AUTO_SCROLL_EDGE_PX)
+    el.scrollTop -= Math.max(4, AUTO_SCROLL_MAX_SPEED * intensity)
+  } else if (clientY > rect.bottom - AUTO_SCROLL_EDGE_PX) {
+    const intensity = Math.min(1, (clientY - (rect.bottom - AUTO_SCROLL_EDGE_PX)) / AUTO_SCROLL_EDGE_PX)
+    el.scrollTop += Math.max(4, AUTO_SCROLL_MAX_SPEED * intensity)
+  }
+}
+
 export default function BatchTab({ date, onPickDate }: { date: string; onPickDate?: (d: string) => void }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -81,6 +99,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   // 顶部统计卡点击联动:右侧车次区/左侧待分配竖条的滚动锚点 + 左侧短暂高亮
   const rightPanelRef = useRef<HTMLDivElement>(null)
   const leftPanelRef = useRef<HTMLDivElement>(null)
+  const unassignedScrollRef = useRef<HTMLDivElement>(null)
   const [flashLeft, setFlashLeft] = useState(false)
 
   // opts.silent：拖拽/单个操作(分配、移出、确认出发…)之后的后台刷新用这个——只换数据、
@@ -415,6 +434,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   function Lane({ groupSlots, collapsed, onToggleCollapse }: { groupSlots: DriverSlot[]; collapsed: boolean; onToggleCollapse: () => void }) {
     const driverName = groupSlots[0].driverName
     const timeOfDay = groupSlots[0].timeOfDay
+    const scrollRef = useRef<HTMLDivElement>(null)
     // 当天这个司机+时段还没有波次(generate-daily 没覆盖到，或从没排过)时用空占位波次渲染卡片，
     // 保证托盘落点始终存在——拖进去时才实际按 (driverName,timeOfDay,订单交货日) find-or-create
     // 真正的波次(见 assignToPalletNoWave)，不能因为"还没有 id 可用"就整卡不渲染、拖了没反应。
@@ -572,7 +592,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
           </div>
         </div>
 
-        <div className="p-2 overflow-y-auto flex flex-col gap-1.5">
+        <div ref={scrollRef} className="p-2 overflow-y-auto flex flex-col gap-1.5">
           {/* 两个视图都必须始终渲染落点(哪怕 0 单)，否则空波次的司机卡片没有任何 onDrop
               区域，拖进去会被浏览器默默拒绝、既不报错也不生效。订单视图不分托盘粒度，
               整个区域就是一个落点，统一落到 groupSlots[0](见 dropToLane)。 */}
@@ -583,7 +603,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               <div
                 className="flex flex-col gap-1.5 rounded-lg"
                 style={{ boxShadow: over ? `0 0 0 2px ${PALLET_BLUE}33` : undefined }}
-                onDragOver={e => { e.preventDefault(); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(laneDragKey) }}
+                onDragOver={e => { e.preventDefault(); autoScrollContainer(scrollRef.current, e.clientY); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(laneDragKey) }}
                 onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverPallet(p => p === laneDragKey ? null : p) }}
                 onDrop={e => dropToLane(e, wave, groupSlots)}
               >
@@ -614,7 +634,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                     key={slot.id}
                     className="border rounded-lg overflow-hidden"
                     style={{ borderColor: over ? PALLET_BLUE : '#e5e7eb', boxShadow: over ? `0 0 0 2px ${PALLET_BLUE}33` : undefined }}
-                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(dragKey) }}
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); autoScrollContainer(scrollRef.current, e.clientY); if (dispatched || locked) { e.dataTransfer.dropEffect = 'none'; return } e.dataTransfer.dropEffect = 'move'; setDragOverPallet(dragKey) }}
                     onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverPallet(p => p === dragKey ? null : p) }}
                     onDrop={e => dropToPallet(e, wave, slot)}
                   >
@@ -786,7 +806,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             ref={leftPanelRef}
             className="flex-none w-[220px] bg-gray-50 border border-dashed rounded-xl sticky top-2.5 max-h-[640px] flex flex-col transition-shadow"
             style={{ borderColor: (dragOverLeft || flashLeft) ? PURPLE : '#cbd5e1', boxShadow: (dragOverLeft || flashLeft) ? `0 0 0 2px ${PURPLE}33` : undefined }}
-            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverLeft(true) }}
+            onDragOver={e => { e.preventDefault(); autoScrollContainer(unassignedScrollRef.current, e.clientY); e.dataTransfer.dropEffect = 'move'; setDragOverLeft(true) }}
             onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverLeft(false) }}
             onDrop={dropToLeft}
           >
@@ -797,7 +817,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               </div>
               <div className="text-[11px] text-gray-400 mt-1">{isEn ? 'Drag to a pallet on a driver on the right; drag back here from a pallet to remove' : '拖到右侧司机的某个托盘；从托盘拖回此处可移出'}</div>
             </div>
-            <div className="p-2.5 overflow-y-auto flex flex-col gap-2">
+            <div ref={unassignedScrollRef} className="p-2.5 overflow-y-auto flex flex-col gap-2">
               {unassigned.length === 0 && <div className="text-center text-xs text-gray-400 py-6">{isEn ? 'All assigned 🎉' : '已全部入批 🎉'}</div>}
               {unassigned.map(o => (
                 <div
