@@ -15,12 +15,11 @@ import { fmtMoney } from '@/lib/format-money'
 export function generateTripSummaryHtml(data: TripPrintData): string {
   const { trip, orders, customers } = data
 
-  const teamParts = [
+  const driverParts = [
     trip.timeSlot?.toLowerCase() ?? '',
-    trip.name ?? '',
     trip.driverName ?? '',
   ].filter(Boolean)
-  const teamStr = teamParts.join(' ')
+  const driverStr = driverParts.join(' ')
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)
@@ -43,6 +42,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
         customer: customers.get(id),
         netAmount,
         invoiceNo: invoiceNos.join(', '),
+        orderCount: customerOrders.length,
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
@@ -57,12 +57,12 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     return `
     <tr>
       <td class="col-seq">${i + 1}</td>
-      <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(c.invoiceNo)}</td>
+      <td>${escapeHtml(c.name)}${c.orderCount > 1 ? ` <span class="order-badge">·${c.orderCount}单</span>` : ''}</td>
       <td>${escapeHtml(city)}</td>
       <td>${escapeHtml(addr)}</td>
       <td>${escapeHtml(phone)}</td>
       <td>${escapeHtml(note)}</td>
-      <td>${escapeHtml(c.invoiceNo)}</td>
       <td class="num">€ ${fmtMoney(c.netAmount)}</td>
     </tr>`
   }).join('')
@@ -73,7 +73,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Johnstone Fruit & Veg Ltd - Delivery Summary</title>
+<title>Johnstone Bros Delivery Summary（汇总单）</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -124,6 +124,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     vertical-align: middle;
   }
   table.summary td.col-seq { text-align: center; color: #666; }
+  .order-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #a15c00; background: #fff2d6; border: 1px solid #e0b060; border-radius: 8px; padding: 0 5px; }
 
   .stats-row {
     margin-top: 10px;
@@ -145,25 +146,25 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <body>
   <div class="page-header">
     <div class="left">Print at: ${now}</div>
-    <div class="center">Johnstone Fruit &amp; Veg Ltd — 汇总单</div>
+    <div class="center">Johnstone Bros Delivery Summary（汇总单）</div>
     <div class="right">1 / 1</div>
   </div>
 
   <div class="filter-row">
-    <div class="item"><span class="label">Date : </span>${formatDateOnly(startDate)}</div>
-    <div class="item"><span class="label">Sales Team : </span>${escapeHtml(teamStr)}</div>
+    <div class="item"><span class="label">Delivery Date : </span>${formatDateOnly(startDate)}</div>
+    <div class="item"><span class="label">Driver : </span>${escapeHtml(driverStr)}</div>
   </div>
 
   <table class="summary">
     <thead>
       <tr>
         <th class="col-seq">#</th>
+        <th>Invoice No.</th>
         <th>Customer</th>
         <th>City</th>
         <th>Address</th>
         <th>Phone</th>
         <th>Note</th>
-        <th>Invoice No.</th>
         <th class="num">Net Amount</th>
       </tr>
     </thead>
