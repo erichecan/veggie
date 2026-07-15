@@ -1041,7 +1041,7 @@ export default function ClassicPlaceOrderPage() {
     setEmailTo(customer.email ?? '')
     setEmailSubject(`${customer.name} Quotation (Ref ${quotationNo})`)
     setEmailBody(
-      `Dear ${customer.name},\n\nHere is the quotation ${quotationNo} amounting in €${total.toFixed(2)} from Johnstone Fruit & Veg Ltd.\n\nDo not hesitate to contact us if you have any question.`
+      `Dear ${customer.name},\n\nHere is the quotation ${quotationNo} amounting in €${total.toFixed(2)} from Johnstone Bros.\n\nDo not hesitate to contact us if you have any question.`
     )
     setShowEmailDialog(true)
   }
