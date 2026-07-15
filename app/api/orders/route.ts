@@ -126,21 +126,37 @@ export async function GET(req: Request) {
       where.lines = { some: { product: { categoryId } } }
     }
 
-    // 列表页表头下的"列筛选框"(Customer/单号/销售员) — 与 f_* 分面 chip 不同,
-    // 多个列筛选框之间要求"且"(全部同时满足),故各自独立键写入 where,不进 facetOr。
+    // 用 where.AND 数组组合列筛选框 + 分面 chip + 时间快捷，避免与全局 search 的 where.OR、
+    // categoryId 的 where.lines 键冲突。
+    const facetAnd: Record<string, unknown>[] = []
+    const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
+
+    // 司机是 wave 派生字段(P0-1,见 lib/wave-assign.ts)：「这单归谁送」只存在 wave.orderIds 上，
+    // 多数订单的 Order.driverSlotId 本身是 null。按司机名筛选必须先查匹配司机名的 wave，
+    // 取其 orderIds 命中 id，OR 上 Order.driverSlotId 直连(未进 wave 的历史/兜底数据)才不会漏。
+    async function driverNameClause(term: string): Promise<Record<string, unknown>> {
+      const waves = await prisma.pickingWave.findMany({
+        where: { driverName: like(term) },
+        select: { orderIds: true },
+      })
+      const waveOrderIds = [...new Set(waves.flatMap((w) => w.orderIds as string[]))]
+      return { OR: [{ id: { in: waveOrderIds } }, { driverSlot: { driverName: like(term) } }] }
+    }
+
+    // 列表页表头下的"列筛选框"(Customer/单号/销售员/司机) — 与 f_* 分面 chip 不同,
+    // 多个列筛选框之间要求"且"(全部同时满足),各自独立作为一条 AND 子句。
     const colCode     = searchParams.get('colCode')?.trim()
     const colCustomer = searchParams.get('colCustomer')?.trim()
     const colSalesman = searchParams.get('colSalesman')?.trim()
+    const colDriver   = searchParams.get('colDriver')?.trim()
     if (colCode)     where.code = { contains: colCode, mode: 'insensitive' }
     if (colCustomer) where.restaurantName = { contains: colCustomer, mode: 'insensitive' }
     if (colSalesman) where.salesUser = { name: { contains: colSalesman, mode: 'insensitive' } }
+    if (colDriver)   facetAnd.push(await driverNameClause(colDriver))
 
     // 分面聚焦搜索(facet)：多个维度的 chip 彼此 OR(命中任一即可,如 司机:bao 或 单号:260)，
     // 整体作为一块再与全局 search / 时间 / My 叠加(AND)。
-    // 用 where.AND 数组组合，避免与全局 search 的 where.OR、categoryId 的 where.lines 键冲突。
-    const facetAnd: Record<string, unknown>[] = []
     const facetOr: Record<string, unknown>[] = []
-    const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
     const fCode     = searchParams.get('f_code')?.trim()
     const fCustomer = searchParams.get('f_customer')?.trim()
     const fSalesman = searchParams.get('f_salesman')?.trim()
@@ -155,7 +171,7 @@ export async function GET(req: Request) {
       { name: like(fCategory) },
       { nameZh: like(fCategory) },
     ] } } } } })
-    if (fDriver)   facetOr.push({ driverSlot: { driverName: like(fDriver) } })
+    if (fDriver)   facetOr.push(await driverNameClause(fDriver))
     if (facetOr.length > 0) facetAnd.push(facetOr.length === 1 ? facetOr[0] : { OR: facetOr })
 
     // 时间快捷筛选(Today/This Week…)按交货日期 deliveryDate(与销售单第二列/列筛口径一致)。

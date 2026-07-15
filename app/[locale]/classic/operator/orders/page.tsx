@@ -103,14 +103,14 @@ export default function ClassicOrdersPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_FILTERS)
-  // code/customer/salesman 列筛选框下推到服务端查询(见 baseUrl),防抖 400ms 避免逐字符触发请求
-  const [debouncedColText, setDebouncedColText] = useState({ code: '', customer: '', salesman: '' })
+  // code/customer/salesman/driver 列筛选框下推到服务端查询(见 baseUrl),防抖 400ms 避免逐字符触发请求
+  const [debouncedColText, setDebouncedColText] = useState({ code: '', customer: '', salesman: '', driver: '' })
   useEffect(() => {
     const t = setTimeout(() => {
-      setDebouncedColText({ code: colFilters.code, customer: colFilters.customer, salesman: colFilters.salesman })
+      setDebouncedColText({ code: colFilters.code, customer: colFilters.customer, salesman: colFilters.salesman, driver: colFilters.deliveryBatch })
     }, 400)
     return () => clearTimeout(t)
-  }, [colFilters.code, colFilters.customer, colFilters.salesman])
+  }, [colFilters.code, colFilters.customer, colFilters.salesman, colFilters.deliveryBatch])
   // 分面搜索 + 快捷筛选(My / 时间)
   const [facets, setFacets] = useState<Facet[]>([])
   const [myActive, setMyActive] = useState(false)
@@ -151,10 +151,11 @@ export default function ClassicOrdersPage() {
       if (colFilters.deliveryDateFrom) params.set('fromDate', colFilters.deliveryDateFrom)
       if (colFilters.deliveryDateTo) params.set('toDate', colFilters.deliveryDateTo)
     }
-    // 单号/客户/销售员列筛选框(与分面 chip 独立,AND 语义) → colCode/colCustomer/colSalesman
+    // 单号/客户/销售员/司机列筛选框(与分面 chip 独立,AND 语义) → colCode/colCustomer/colSalesman/colDriver
     if (debouncedColText.code) params.set('colCode', debouncedColText.code)
     if (debouncedColText.customer) params.set('colCustomer', debouncedColText.customer)
     if (debouncedColText.salesman) params.set('colSalesman', debouncedColText.salesman)
+    if (debouncedColText.driver) params.set('colDriver', debouncedColText.driver)
     // 表头排序(deliveryBatch/司机列除外,该列由 wave 派生,服务端不支持排序)
     if (sortField !== 'deliveryBatch') {
       params.set('sortField', sortField)
@@ -224,9 +225,8 @@ export default function ClassicOrdersPage() {
     }
 
     const cf = colFilters
-    // 交货日期/单号/客户/销售员已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
-    // 避免"匹配记录不在当前页时误判为空"(客户反馈)
-    if (cf.deliveryBatch) result = result.filter(o => formatDriverSlotFromOrder(o).toLowerCase().includes(cf.deliveryBatch.toLowerCase()))
+    // 交货日期/单号/客户/销售员/司机已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
+    // 避免"只筛当前页导致可见行数与分页总数对不上"(客户反馈:同一关键词每次搜到的页数/条数都不一样)
     if (cf.invoiceStatus) result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
     if (cf.status) result = result.filter(o => o.status === cf.status)
     if (cf.createdAtFrom) result = result.filter(o => (o.createdAt ?? '').slice(0, 10) >= cf.createdAtFrom)

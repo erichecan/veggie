@@ -64,24 +64,32 @@ export function useServerList<T>(options: Options): ServerListPage<T> & Controls
   pageRef.current = page
   pageSizeRef.current = pageSize
 
+  // fetchPage 调用点很多(挂载/facet变化/翻页/改每页条数/搜索防抖到期),互相不取消,
+  // 网络时序不定时会后发的请求先返回、先发的后返回——不加序号守卫会用"先发后至"的
+  // 旧结果覆盖新结果,列表/总数/分页看起来随机跳变(同一次筛选,页数、末页条数每次不一样)。
+  const requestIdRef = useRef(0)
+
   const fetchPage = useCallback(async (p: number, q: string, ps: number) => {
+    const requestId = ++requestIdRef.current
     setLoading(true)
     try {
       const sep = url.includes('?') ? '&' : '?'
       const params = new URLSearchParams({ page: String(p), pageSize: String(ps) })
       if (q) params.set('search', q)
       const res = await apiGet<ServerListPage<T>>(`${url}${sep}${params}`)
+      if (requestId !== requestIdRef.current) return // 已有更新的请求发出,这份结果是过期的,丢弃
       setData(res.data ?? [])
       setTotal(res.total ?? 0)
       setPageRaw(res.page ?? p)
       setPageSizeRaw(res.pageSize ?? ps)
       setTotalPages(res.totalPages ?? Math.ceil((res.total ?? 0) / ps))
     } catch (e) {
+      if (requestId !== requestIdRef.current) return
       const msg = e instanceof Error ? e.message : '加载失败'
       if (onError) onError(msg)
       else toast.error(msg)
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) setLoading(false)
     }
   }, [url, onError])
 
