@@ -57,7 +57,7 @@ async function main() {
     return
   }
 
-  const BATCH = 50
+  const BATCH = 8 // 2026-07-15 backfill-customer-pricelist.ts 在 BATCH=50 时触发 Neon P2028，此脚本同结构，提前调小并发
   let done = 0
   for (let i = 0; i < toMigrate.length; i += BATCH) {
     const batch = toMigrate.slice(i, i + BATCH)

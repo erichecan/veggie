@@ -117,7 +117,7 @@ async function main() {
 
   const toApply = [...fillNull, ...fixNewPl.map(u => ({ id: u.id, name: u.name, pricelistId: u.pricelistId }))]
   console.log(`\n[APPLY] 开始回填/修正 ${toApply.length} 个客户的优先级第一价格表…`)
-  const BATCH = 50
+  const BATCH = 8 // 2026-07-15 首次 --apply 以 BATCH=50 触发 Neon P2028（事务池耗尽），调小并发以稳定通过
   let done = 0
   for (let i = 0; i < toApply.length; i += BATCH) {
     const batch = toApply.slice(i, i + BATCH)
