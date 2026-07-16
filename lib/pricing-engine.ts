@@ -90,6 +90,26 @@ export function resolvePrice(
   }
 }
 
+/**
+ * 按客户配置的价格表优先级链依次尝试，命中第一张就停。
+ * @param orderedPricelistIds 已按 sequence 升序排好的 pricelistId 列表
+ * @returns 命中的 PriceResolution；全部未命中返回 null（调用方决定下一步回退到哪）
+ */
+function resolveViaPricelistChain(
+  product: Product,
+  orderedPricelistIds: string[],
+  allPricelists: OdooPricelist[],
+  qty: number,
+): PriceResolution | null {
+  for (const plId of orderedPricelistIds) {
+    const pl = allPricelists.find(p => p.id === plId)
+    if (!pl) continue
+    const r = resolvePrice(product, pl, allPricelists, qty)
+    if (!r.isFallback) return r
+  }
+  return null
+}
+
 // ─── 内部工具 ─────────────────────────────────────────────────────────────────
 
 /** 判断 item 是否匹配商品变体 */
@@ -219,8 +239,8 @@ export const PRICE_TYPE_LABEL: Record<CustomerPriceType, string> = {
  * 优先级（从高到低）：
  *   1. customer.specialPrices — 客户专属特殊价格（最高优先级，无论 priceType）
  *   2. priceType 决定后续策略：
- *      - 'multi'   → 走关联价格表引擎
- *      - 'default' → 直接返回 product.listPrice（忽略价格表）
+ *      - 'multi'   → 价格表链 → last price → 牌价，三级回退
+ *      - 'default' → 价格表链 → 牌价，两级回退（不查 last price）
  *      - 'last'    → 使用传入的 lastPrice（调用方需从 API 获取）；若无则回退牌价
  *
  * @param lastPrice  priceType='last' 时传入该客户+商品最近一笔成交价，由调用方查询
@@ -264,12 +284,21 @@ export function resolveCustomerPrice(
 
   // ── 第二优先级：按 priceType 分支 ─────────────────────────────────────────
 
-  // default：直接用商品牌价，完全忽略价格表
+  const orderedPricelistIds = (customer.pricelists ?? [])
+    .slice()
+    .sort((a, b) => a.sequence - b.sequence)
+    .map(link => link.pricelistId)
+
+  // default：先查价格表链，未命中才回退牌价（不查 last price）
   if (priceType === 'default') {
+    const viaChain = resolveViaPricelistChain(product, orderedPricelistIds, allPricelists, qty)
+    if (viaChain) return viaChain
     return {
       price: round2(basePrice),
-      pricelistName: '直接牌价',
-      itemDesc: '客户定价模式：直接牌价（忽略价格表）',
+      pricelistName: orderedPricelistIds.length > 0 ? '价格表链未命中' : '直接牌价',
+      itemDesc: orderedPricelistIds.length > 0
+        ? '客户定价模式：先查价格表，未命中任何规则，回退牌价'
+        : '客户定价模式：直接牌价（未挂价格表）',
       isFallback: true,
     }
   }
@@ -293,27 +322,12 @@ export function resolveCustomerPrice(
     }
   }
 
-  // multi（默认）：客户价格表规则 → lastPrice → listPrice
-  // Step 1: 尝试价格表规则
-  let priceResolution: PriceResolution | null = null
+  // multi（默认）：价格表链 → lastPrice → listPrice
+  const viaChain = resolveViaPricelistChain(product, orderedPricelistIds, allPricelists, qty)
+  if (viaChain) return viaChain
 
-  if (customer.pricelistId) {
-    const pl = allPricelists.find(p => p.id === customer.pricelistId)
-    if (pl) {
-      priceResolution = resolvePrice(product, pl, allPricelists, qty)
-      if (!priceResolution.isFallback) {
-        return priceResolution  // 命中规则，直接返回
-      }
-    }
-  }
-
-  // Step 2: 价格表未命中 → 尝试最近成交价
   if (lastPrice !== undefined && lastPrice > 0) {
-    const fromDesc = priceResolution
-      ? `${priceResolution.pricelistName}（规则未命中）`
-      : customer.pricelistId
-        ? '价格表不存在'
-        : '无价格表'
+    const fromDesc = orderedPricelistIds.length > 0 ? '价格表链未命中' : '无价格表'
     return {
       price: round2(lastPrice),
       pricelistName: '最近成交价',
@@ -322,14 +336,11 @@ export function resolveCustomerPrice(
     }
   }
 
-  // Step 3: 无历史成交价 → 回退牌价
-  if (priceResolution) return priceResolution  // isFallback=true，已含 listPrice
-
   return {
     price: round2(basePrice),
     pricelistName: '牌价',
-    itemDesc: customer.pricelistId
-      ? '价格表不存在，使用牌价'
+    itemDesc: orderedPricelistIds.length > 0
+      ? '价格表链未命中，且无历史成交价，使用牌价'
       : '客户未关联价格表，使用牌价',
     isFallback: true,
   }
