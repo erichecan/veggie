@@ -623,13 +623,14 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Price Discount</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Variant Cost</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Template Cost</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Public Price</th>
                     {editMode && <th className="w-8 px-3 py-2" />}
                   </tr>
                 </thead>
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 9 : 8} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
+                      <td colSpan={editMode ? 10 : 9} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
                     </tr>
                   )}
                   {pagedItems.map(item => {
@@ -639,6 +640,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     const variantCost = item.applyOn === 'variant'
                       ? products.find(p => p.id === item.productVariantId)?.standardPrice
                       : undefined
+                    const publicPrice = item.applyOn === 'variant'
+                      ? products.find(p => p.id === item.productVariantId)?.listPrice
+                      : item.applyOn === 'product'
+                        ? templates.find(t => t.id === item.productTemplateId)?.listPrice
+                        : undefined
                     return (
                       <ItemRow
                         key={item.id}
@@ -648,6 +654,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         categories={categories}
                         templateCost={templateCost}
                         variantCost={variantCost}
+                        publicPrice={publicPrice}
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
@@ -772,13 +779,14 @@ function ExternalLinkIcon() {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, templates, products, categories, templateCost, variantCost, showDelete, onEdit, onDelete, isEn }: {
+function ItemRow({ item, templates, products, categories, templateCost, variantCost, publicPrice, showDelete, onEdit, onDelete, isEn }: {
   item: OdooPricelistItem
   templates: ProductTemplate[]
   products: Product[]
   categories: ProductCategory[]
   templateCost: number | undefined
   variantCost: number | undefined
+  publicPrice: number | undefined
   showDelete: boolean
   onEdit: () => void
   onDelete: () => void
@@ -812,6 +820,9 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
         {templateCost !== undefined ? templateCost.toFixed(2) : ''}
+      </td>
+      <td className="px-3 py-1.5 text-right text-gray-500">
+        {publicPrice !== undefined ? publicPrice.toFixed(2) : ''}
       </td>
       {showDelete && (
         <td className="px-3 py-1.5 text-center" onClick={e => { e.stopPropagation(); onDelete() }}>
@@ -850,6 +861,12 @@ function ItemDialog({
     ? (templates.find(t => t.id === item.productTemplateId)?.standardPrice ?? 0)
     : item.applyOn === 'variant' && item.productVariantId
       ? (products.find(p => p.id === item.productVariantId)?.standardPrice ?? 0)
+      : 0
+
+  const templatePublicPriceVal = item.applyOn === 'product' && item.productTemplateId
+    ? (templates.find(t => t.id === item.productTemplateId)?.listPrice ?? 0)
+    : item.applyOn === 'variant' && item.productVariantId
+      ? (products.find(p => p.id === item.productVariantId)?.listPrice ?? 0)
       : 0
 
   const costLabel = item.applyOn === 'variant' ? 'Variant Cost' : 'Template Cost'
@@ -930,6 +947,10 @@ function ItemDialog({
               <div className="flex items-center gap-4 text-sm">
                 <span className="text-gray-600">{costLabel}</span>
                 <span className="text-gray-800">{templateCostVal.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center gap-4 text-sm mt-1">
+                <span className="text-gray-600">Public Price</span>
+                <span className="text-gray-800">{templatePublicPriceVal.toFixed(2)}</span>
               </div>
             </div>
 

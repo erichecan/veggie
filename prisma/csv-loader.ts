@@ -150,7 +150,7 @@ export interface CsvCustomer {
   creditLimit?: number
   commissionRate?: number
   notes: string | null
-  pricelistId: string | null
+  pricelistIds: string[]
   specialPrices?: never[]
 }
 
@@ -251,7 +251,7 @@ export function loadCsvCustomers(csvPath?: string): CsvCustomer[] {
     customers.push({
       id: stableId, externalId, name: displayName, city,
       address: street, phone: '', email: '', vatNumber: '',
-      paymentTerm: 'monthly', notes, pricelistId,
+      paymentTerm: 'monthly', notes, pricelistIds: pricelistId ? [pricelistId] : [],
     })
   }
   return customers
