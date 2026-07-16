@@ -160,10 +160,24 @@ function BatchCard({
   // 点任何打印按钮(送货单/汇总单/销售单)都必须自动锁定批次，不能只有拣货单锁——
   // 否则打印后调度台仍能改派，纸质单据和系统状态就对不上了(2026-07-10 复盘)。
   // 锁定成功后现取现渲染 HTML，交给 onQueuePrint 挂进隐藏 iframe(见 PrintQueue)，不再导航。
+  //
+  // 锁定本身是静默的 API 调用，之前打印完毫无提示，运营主管事后想改批次才会突然撞见
+  // "已锁定"报错，一头雾水（2026-07-17 反馈）。这里只在批次"这一次点击前还没被锁定"时
+  // 提示一次，避免同一批次反复打印时每次都弹一遍变成骚扰。
+  function notifyFirstLock() {
+    if (pickLockedAt) return
+    toast.success(
+      isEn
+        ? 'Printed · this batch is now locked (unlock with the 🔒 button if you need to keep editing)'
+        : '打印成功 · 该批次已自动锁定（如需继续调整，请点🔒解锁按钮）',
+    )
+  }
+
   async function print(type: 'delivery' | 'summary' | 'sales') {
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
+      notifyFirstLock()
       if (type === 'summary') {
         // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
         await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId] }))
@@ -190,6 +204,7 @@ function BatchCard({
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
+      notifyFirstLock()
       // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
       await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant }))
       onPrint()
@@ -239,6 +254,7 @@ function BatchCard({
     setPalletBusy(prev => ({ ...prev, [seq]: true }))
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
+      notifyFirstLock()
       await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant }))
       onPrint()
       onLockChange()
@@ -253,6 +269,7 @@ function BatchCard({
     setPalletBusy(prev => ({ ...prev, [seq]: true }))
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
+      notifyFirstLock()
       if (type === 'summary') {
         await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq) }))
       } else {
@@ -621,13 +638,15 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
     savePrintedKeys(date, new Set())
   }, [date])
 
-  // Feature B：打印中心按批次阶段取数（仅 assignmentDoneAt 已回填、且未 completed 的 wave），
-  // 分配完成即可见，不必等「确认出发」回填 deliveryDate。
+  // Feature B：打印中心按批次阶段取数（assignmentDoneAt 已回填、或已被拣货锁定的 wave，
+  // 且未 completed）——单看 assignmentDoneAt 会漏掉"已锁定但分配完成被撤销"的批次，
+  // 运营主管找不到自己刚锁的批次会以为数据丢了(20260717 反馈)。分配完成即可见，
+  // 不必等「确认出发」回填 deliveryDate。
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const waveData = await apiGet<Wave[]>(`/api/waves?date=${date}`)
-      const visible = waveData.filter(w => w.assignmentDoneAt != null && !w.completedAt)
+      const visible = waveData.filter(w => (w.assignmentDoneAt != null || w.pickLockedAt != null) && !w.completedAt)
       const orderIds = Array.from(new Set(visible.flatMap(w => w.orderIds)))
       const ordersData = orderIds.length > 0
         ? await apiGet<Order[]>(`/api/orders?include_lines=true&ids=${orderIds.join(',')}`)

@@ -8,7 +8,7 @@
 import {
   type TripPrintData,
   escapeHtml,
-  formatTripDriverLabel,
+  formatTripDriverList,
 } from './trip-common'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
@@ -16,7 +16,10 @@ import { fmtMoney } from '@/lib/format-money'
 export function generateTripSummaryHtml(data: TripPrintData): string {
   const { trip, orders, customers } = data
 
-  const driverStr = formatTripDriverLabel(trip)
+  // 波次级(含全部托盘)打印走 waveIds 多批次筛选模式,trip 级 driverName/batchNum 留空
+  // (dispatch-loader.ts multiMode 分支)，必须退回按订单 driverBatchLabel 去重取司机身份，
+  // 否则 Driver 栏会空白——送货单/销售单/拣货单早就用这个 fallback了,汇总单漏了(20260716)。
+  const driverStr = formatTripDriverList(trip, orders)
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)
