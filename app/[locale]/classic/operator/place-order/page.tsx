@@ -379,8 +379,10 @@ export default function ClassicPlaceOrderPage() {
   // 优先使用懒加载的完整客户对象（含 specialPrices），确保定价引擎拿到特殊价格。
   const effectiveCustomer = useMemo(() => {
     const base = selectedCustomerFull?.id === customerId ? selectedCustomerFull : customer
-    // 本单选定的价格表优先于客户档案默认值（操作员可临时切换价格体系）
-    return base ? { ...base, priceType, pricelistId: pricelistId || base.pricelistId } : null
+    // 本单选定的价格表优先于客户档案的价格表优先级链（操作员可临时切换价格体系）
+    return base
+      ? { ...base, priceType, pricelists: pricelistId ? [{ pricelistId, sequence: 1 }] : base.pricelists }
+      : null
   }, [customer, selectedCustomerFull, customerId, priceType, pricelistId])
 
   // 客户级外部备注：仅完整客户对象携带该字段（slim 列表不含），选中客户后读出
@@ -602,7 +604,7 @@ export default function ClassicPlaceOrderPage() {
     setSelectedCustomerFull(null)  // 先清除旧客户的完整对象
     setCustOpen(false)
     setCustSearch('')
-    if (c.pricelistId) setPricelistId(c.pricelistId)
+    if (c.pricelists?.[0]?.pricelistId) setPricelistId(c.pricelists[0].pricelistId)
     if (c.paymentTerm) setPaymentTerms(c.paymentTerm)
     if (c.priceType)   setPriceType(c.priceType)
     // 业务员默认带入客户绑定的业务员(可手动改);下单时写入 Order.salesUserId

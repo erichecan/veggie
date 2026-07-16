@@ -7,7 +7,7 @@ import { serializeApi } from '@/lib/api-serializer'
 const TRACKED_FIELDS = [
   'name', 'address', 'street', 'street2', 'city', 'state', 'zip', 'country',
   'phone', 'email', 'vatNumber', 'paymentTerm', 'creditLimit',
-  'commissionRate', 'commissionFixed', 'pricelistId', 'priceType',
+  'commissionRate', 'commissionFixed', 'pricelistIds', 'priceType',
   'isActive', 'isCustomer', 'isVendor', 'notes', 'externalNote',
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
   'salesUserId',
@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const customer = await prisma.customer.findUnique({
       where: { id },
-      include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
+      include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
     })
     if (!customer) return NextResponse.json({ error: '客户不存在' }, { status: 404 })
     return NextResponse.json(serializeApi({ ...customer, salesman: customer.salesUser?.name ?? null }))
@@ -32,12 +32,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const { specialPrices, ...data } = await req.json()
-      // 旧值
-      const before = await prisma.customer.findUnique({ where: { id } })
+      const { specialPrices, pricelistIds, ...data } = await req.json()
+      // 旧值（带出 pricelists 关系，供 diffChanges 比对）
+      const before = await prisma.customer.findUnique({
+        where: { id },
+        include: { pricelists: { orderBy: { sequence: 'asc' } } },
+      })
       if (!before) return NextResponse.json({ error: '客户不存在' }, { status: 404 })
 
       await prisma.customerSpecialPrice.deleteMany({ where: { customerId: id } })
+      if (pricelistIds !== undefined) {
+        await prisma.customerPricelist.deleteMany({ where: { customerId: id } })
+      }
       // 关于 street/street2/state/zip/country 这五个字段：
       // schema.prisma 已新增，但 prisma generate 需要在用户本地 macOS 执行。
       // 这里用 Record<string, unknown> 兜底，如果客户端尚未 generate，
@@ -46,6 +52,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         ...data,
         specialPrices: specialPrices?.length
           ? { create: specialPrices.map(({ id: _id, customerId: _cid, ...sp }: Record<string, unknown>) => sp) }
+          : undefined,
+        pricelists: pricelistIds?.length
+          ? { create: pricelistIds.map((pricelistId: string, idx: number) => ({ pricelistId, sequence: idx + 1 })) }
           : undefined,
       }
       // SSOT: address 由地址组件后端派生(前端不再权威拼接),保证与 street/.. 一致(P2)
@@ -60,13 +69,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const customer = await prisma.customer.update({
         where: { id },
         data: updateData as Parameters<typeof prisma.customer.update>[0]['data'],
-        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
+        include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
       })
-      const changes = diffChanges(
-        before as unknown as Record<string, unknown>,
-        customer as unknown as Record<string, unknown>,
-        TRACKED_FIELDS,
-      )
+      const beforeWithPricelistIds = { ...before, pricelistIds: before.pricelists.map(p => p.pricelistId) } as unknown as Record<string, unknown>
+      const afterWithPricelistIds = { ...customer, pricelistIds: customer.pricelists.map(p => p.pricelistId) } as unknown as Record<string, unknown>
+      const changes = diffChanges(beforeWithPricelistIds, afterWithPricelistIds, TRACKED_FIELDS)
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'customer', resourceId: id,
         detail: `更新客户: ${data.name || id}`,

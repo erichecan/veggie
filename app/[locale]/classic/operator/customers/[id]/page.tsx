@@ -58,7 +58,7 @@ interface FormState {
   salesperson: string
   salesTeam: string
   paymentTerm: string
-  pricelistId: string
+  pricelistIds: string[]
   defaultDriverSlotId: string
   isVendor: boolean
   supplierPaymentTerm: string
@@ -82,7 +82,7 @@ function emptyForm(): FormState {
     creditLimit: '0.00', tags: '', commissionRate: '1.00', commissionFixed: '0.00',
     priceType: 'Default Price',
     isCustomer: true, salesperson: '', salesTeam: '',
-    paymentTerm: '', pricelistId: '', defaultDriverSlotId: '',
+    paymentTerm: '', pricelistIds: [], defaultDriverSlotId: '',
     isVendor: false, supplierPaymentTerm: '', supplierCurrency: '',
     internalReference: '', barcode: '', fiscalPosition: '',
     notes: '',
@@ -124,7 +124,7 @@ function customerToForm(c: Customer): FormState {
     salesperson: (cAny.salesUserId ?? '') as string,
     salesTeam: '',
     paymentTerm: c.paymentTerm ?? '',
-    pricelistId: c.pricelistId ?? '',
+    pricelistIds: (c.pricelists ?? []).slice().sort((a, b) => a.sequence - b.sequence).map(p => p.pricelistId),
     defaultDriverSlotId: (cAny.defaultDriverSlotId ?? '') as string,
     isVendor: false,
     supplierPaymentTerm: '',
@@ -304,7 +304,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       email: form.email.trim(),
       vatNumber: form.vatNumber.trim().toUpperCase(),
       paymentTerm: form.paymentTerm || 'monthly',
-      pricelistId: form.pricelistId || undefined,
+      pricelistIds: form.pricelistIds,
       creditLimit,
       commissionRate,
       notes: form.notes.trim() || undefined,
@@ -794,13 +794,64 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                     <option value="monthly">Monthly</option>
                   </select>
                 </OdooField>
-                <OdooField label="Pricelist">
-                  <select value={form.pricelistId} onChange={e => setField('pricelistId', e.target.value)} className={selectCls}>
-                    <option value=""></option>
-                    {pricelists.map(pl => (
-                      <option key={pl.id} value={pl.id}>{pl.name}</option>
-                    ))}
-                  </select>
+                <OdooField label="Pricelists" wide>
+                  <div className="space-y-1">
+                    {form.pricelistIds.length === 0 && (
+                      <p className="text-xs text-gray-400 py-1">{isEn ? 'No pricelist assigned' : '未挂载价格表'}</p>
+                    )}
+                    {form.pricelistIds.map((plId, idx) => {
+                      const pl = pricelists.find(p => p.id === plId)
+                      return (
+                        <div key={plId} className="flex items-center gap-2 border border-gray-200 rounded px-2 py-1">
+                          <span className="text-xs text-gray-400 w-4 text-right">{idx + 1}</span>
+                          <span className="flex-1 text-sm text-gray-800 truncate">{pl?.name ?? plId}</span>
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              const next = [...form.pricelistIds]
+                              ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                              setField('pricelistIds', next)
+                            }}
+                            className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={isEn ? 'Move up (higher priority)' : '上移（优先级更高）'}
+                          >↑</button>
+                          <button
+                            type="button"
+                            disabled={idx === form.pricelistIds.length - 1}
+                            onClick={() => {
+                              const next = [...form.pricelistIds]
+                              ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+                              setField('pricelistIds', next)
+                            }}
+                            className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={isEn ? 'Move down (lower priority)' : '下移（优先级更低）'}
+                          >↓</button>
+                          <button
+                            type="button"
+                            onClick={() => setField('pricelistIds', form.pricelistIds.filter(id => id !== plId))}
+                            className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500"
+                            title={isEn ? 'Remove' : '移除'}
+                          >×</button>
+                        </div>
+                      )
+                    })}
+                    <select
+                      value=""
+                      onChange={e => {
+                        const val = e.target.value
+                        if (val && !form.pricelistIds.includes(val)) {
+                          setField('pricelistIds', [...form.pricelistIds, val])
+                        }
+                      }}
+                      className={selectCls}
+                    >
+                      <option value="">{isEn ? '+ Add a pricelist…' : '+ 添加价格表…'}</option>
+                      {pricelists.filter(pl => !form.pricelistIds.includes(pl.id)).map(pl => (
+                        <option key={pl.id} value={pl.id}>{pl.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </OdooField>
 
                 <div className="mt-5">

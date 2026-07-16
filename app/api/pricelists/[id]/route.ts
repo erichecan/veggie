@@ -193,7 +193,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   return withAuth(req, async (user) => {
     try {
       // 删除前看有没有客户在用，防止"孤儿客户"
-      const inUse = await prisma.customer.count({ where: { pricelistId: id } })
+      const inUse = await prisma.customerPricelist.count({ where: { pricelistId: id } })
       if (inUse > 0) {
         return NextResponse.json({
           error: `价格表被 ${inUse} 个客户使用中，无法删除。请先在客户管理里换成其他价格表。`,

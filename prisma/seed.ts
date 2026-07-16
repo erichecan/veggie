@@ -243,7 +243,7 @@ async function main() {
   for (const c of SEED_DEMO_CUSTOMERS) {
     await prisma.customer.upsert({
       where: { id: c.id },
-      update: { name: c.name, city: c.city, address: c.address, pricelistId: c.pricelistId },
+      update: { name: c.name, city: c.city, address: c.address },
       create: {
         id: c.id,
         name: c.name,
@@ -257,9 +257,14 @@ async function main() {
         externalId: c.externalId,
         city: c.city,
         notes: c.notes,
-        pricelistId: c.pricelistId,
       },
     })
+    if (c.pricelistIds.length > 0) {
+      await prisma.customerPricelist.deleteMany({ where: { customerId: c.id } })
+      await prisma.customerPricelist.createMany({
+        data: c.pricelistIds.map((pricelistId, idx) => ({ customerId: c.id, pricelistId, sequence: idx + 1 })),
+      })
+    }
   }
   console.log(`✅ Demo 客户: ${SEED_DEMO_CUSTOMERS.length} 条`)
 
@@ -268,15 +273,14 @@ async function main() {
   let csvImported = 0
   for (let i = 0; i < csvCustomers.length; i += BATCH) {
     const batch = csvCustomers.slice(i, i + BATCH)
-    await Promise.all(batch.map(c =>
-      prisma.customer.upsert({
+    await Promise.all(batch.map(async c => {
+      await prisma.customer.upsert({
         where: { id: c.id },
         update: {
           name: c.name,
           city: c.city,
           address: c.address,
           notes: c.notes,
-          pricelistId: c.pricelistId,
           externalId: c.externalId,
         },
         create: {
@@ -290,10 +294,15 @@ async function main() {
           externalId: c.externalId,
           city: c.city,
           notes: c.notes,
-          pricelistId: c.pricelistId,
         },
       })
-    ))
+      if (c.pricelistIds.length > 0) {
+        await prisma.customerPricelist.deleteMany({ where: { customerId: c.id } })
+        await prisma.customerPricelist.createMany({
+          data: c.pricelistIds.map((pricelistId, idx) => ({ customerId: c.id, pricelistId, sequence: idx + 1 })),
+        })
+      }
+    }))
     csvImported += batch.length
     if (i % 500 === 0 && i > 0) console.log(`  CSV 客户: ${i}/${csvCustomers.length}`)
   }

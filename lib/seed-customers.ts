@@ -16,7 +16,7 @@ export interface CsvCustomer {
   creditLimit?: number
   commissionRate?: number
   notes: string | null
-  pricelistId: string | null
+  pricelistIds: string[]
   specialPrices?: never[]
 }
 
@@ -38,7 +38,7 @@ export const SEED_DEMO_CUSTOMERS: CsvCustomer[] = [
     paymentTerm: 'weekly',
     creditLimit: 1000,
     commissionRate: 0.05,
-    pricelistId: 'pl_44',
+    pricelistIds: ['pl_44'],
     notes: 'Temple Bar 旗舰店，每周一结算',
   },
   {
@@ -51,7 +51,7 @@ export const SEED_DEMO_CUSTOMERS: CsvCustomer[] = [
     email: 'supply@aed5.ie',
     vatNumber: 'IE2002002B',
     paymentTerm: 'cash',
-    pricelistId: 'pl_44',
+    pricelistIds: ['pl_44'],
     notes: 'Dublin 5 外卖店，现付',
   },
 ]

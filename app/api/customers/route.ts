@@ -63,7 +63,7 @@ export async function GET(req: Request) {
       }
     }
     if (paymentTermFilter) where.paymentTerm = paymentTermFilter
-    if (pricelistFilter) where.pricelistId = pricelistFilter
+    if (pricelistFilter) where.pricelists = { some: { pricelistId: pricelistFilter } }
 
     // P1-3: SALES 角色自动过滤 — 只看自己名下的客户
     const caller = await tryAuth(req)
@@ -104,14 +104,14 @@ export async function GET(req: Request) {
       if (slim) {
         const customers = await prisma.customer.findMany({
           where,
-          select: { id: true, name: true, email: true, phone: true, address: true, street: true, street2: true, city: true, zip: true, paymentTerm: true, pricelistId: true, priceType: true, creditLimit: true, isActive: true, salesUserId: true, salesUser: { select: { id: true, name: true } } },
+          select: { id: true, name: true, email: true, phone: true, address: true, street: true, street2: true, city: true, zip: true, paymentTerm: true, pricelists: { select: { pricelistId: true, sequence: true }, orderBy: { sequence: 'asc' } }, priceType: true, creditLimit: true, isActive: true, salesUserId: true, salesUser: { select: { id: true, name: true } } },
           orderBy: { name: 'asc' },
         })
         return NextResponse.json(serializeApi(attachSalesmanDisplay(customers)))
       }
       const customers = await prisma.customer.findMany({
         where,
-        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
+        include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
         orderBy: { name: 'asc' },
       })
       return NextResponse.json(serializeApi(attachSalesmanDisplay(customers)))
@@ -121,7 +121,7 @@ export async function GET(req: Request) {
       prisma.customer.count({ where }),
       prisma.customer.findMany({
         where,
-        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
+        include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -144,15 +144,18 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
-      const { specialPrices, ...data } = await req.json()
+      const { specialPrices, pricelistIds, ...data } = await req.json()
       const customer = await prisma.customer.create({
         data: {
           ...data,
           specialPrices: specialPrices?.length
             ? { create: specialPrices.map(({ id: _id, customerId: _cid, ...sp }: any) => sp) }
             : undefined,
+          pricelists: pricelistIds?.length
+            ? { create: pricelistIds.map((pricelistId: string, idx: number) => ({ pricelistId, sequence: idx + 1 })) }
+            : undefined,
         },
-        include: { specialPrices: true, salesUser: { select: { id: true, name: true } } },
+        include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
       })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'customer', resourceId: customer.id,

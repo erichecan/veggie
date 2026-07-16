@@ -105,9 +105,14 @@ export default function ClassicCustomersPage() {
       ),
     },
     {
-      key: 'pricelistId',
+      key: 'primaryPricelistId',
       label: isEn ? 'Pricelist' : '价格表',
-      render: (v) => v ? (pricelistMap.get(String(v)) ?? String(v)) : <span className="text-gray-400">—</span>,
+      render: (_v, row) => {
+        const links = (row.pricelists as { pricelistId: string }[] | undefined) ?? []
+        if (links.length === 0) return <span className="text-gray-400">—</span>
+        const primaryName = pricelistMap.get(links[0].pricelistId) ?? links[0].pricelistId
+        return links.length > 1 ? `${primaryName} (+${links.length - 1})` : primaryName
+      },
     },
     {
       key: 'creditLimit',
@@ -195,7 +200,7 @@ export default function ClassicCustomersPage() {
       <div className="p-4">
         <OdooTable
           columns={columns}
-          rows={customers as unknown as Record<string, unknown>[]}
+          rows={customers.map(c => ({ ...c, primaryPricelistId: c.pricelists?.[0]?.pricelistId ?? null })) as unknown as Record<string, unknown>[]}
           loading={loading}
           selected={selected}
           onSelectAll={checked => {
@@ -212,7 +217,7 @@ export default function ClassicCustomersPage() {
           }}
           onRowClick={row => openEdit(row as unknown as Customer)}
           emptyText={isEn ? 'No customer data' : '暂无客户数据'}
-          groupByField={groupBy === 'paymentTerm' ? 'paymentTerm' : groupBy === 'pricelist' ? 'pricelistId' : ''}
+          groupByField={groupBy === 'paymentTerm' ? 'paymentTerm' : groupBy === 'pricelist' ? 'primaryPricelistId' : ''}
           groupByFormatter={(key, count) => {
             const emptyLabel = isEn ? '(none)' : '（空）'
             let label: string
