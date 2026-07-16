@@ -41,7 +41,7 @@ export async function GET(req: Request) {
       }
       const data = { trip: wire.trip, orders: wire.orders, customers: new Map(wire.customers.map(c => [c.id, c])) }
       const html = stripAutoPrintScript(generateTripPickingHtml(data, variant))
-      const pdf = await renderHtmlToPdf(html)
+      const pdf = await renderHtmlToPdf(html, { pageNumbers: true })
       return new NextResponse(new Uint8Array(pdf), {
         headers: {
           'Content-Type': 'application/pdf',

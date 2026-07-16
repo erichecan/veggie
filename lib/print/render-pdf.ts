@@ -25,7 +25,16 @@ function resolveExecutablePath(): string {
   )
 }
 
-export async function renderHtmlToPdf(html: string): Promise<Buffer> {
+export interface RenderPdfOptions {
+  /**
+   * 每页底部居中显示 "Page X / Y"（目前只有拣货单需要——它是按商品汇总的整趟车
+   * 视角，商品多时会自然溢出好几页，司机需要知道有没有漏翻；送货单/销售单/汇总单
+   * 客户明确要求不要页脚/页码，不要传 true）。
+   */
+  pageNumbers?: boolean
+}
+
+export async function renderHtmlToPdf(html: string, options: RenderPdfOptions = {}): Promise<Buffer> {
   const browser = await puppeteer.launch({
     executablePath: resolveExecutablePath(),
     headless: true,
@@ -38,7 +47,11 @@ export async function renderHtmlToPdf(html: string): Promise<Buffer> {
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
-      displayHeaderFooter: false,
+      displayHeaderFooter: !!options.pageNumbers,
+      headerTemplate: '<span></span>',
+      footerTemplate: options.pageNumbers
+        ? '<div style="width:100%;font-size:9px;text-align:center;color:#333;font-family:Arial,Helvetica,sans-serif;">Page <span class="pageNumber"></span> / <span class="totalPages"></span></div>'
+        : '<span></span>',
       margin: { top: '10mm', bottom: '10mm', left: '8mm', right: '8mm' },
     })
     return Buffer.from(pdf)
