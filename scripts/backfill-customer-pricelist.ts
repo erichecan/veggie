@@ -124,8 +124,12 @@ async function main() {
     await Promise.all(batch.map(u =>
       // fillNull: 客户此前没有任何 CustomerPricelist 记录 → 直接建 sequence=1
       // fixNewPl: 客户已有 sequence=1 记录但指向错误的表 → 先删再建，保持 sequence=1 不变
+      // 同时删掉客户名下"目标 pricelistId 已存在于其他 sequence"的旧记录，避免撞
+      // @@unique([customerId, pricelistId]) —— 否则脚本在已有多价格表数据的库上重跑会报 P2002。
       prisma.$transaction([
-        prisma.customerPricelist.deleteMany({ where: { customerId: u.id, sequence: 1 } }),
+        prisma.customerPricelist.deleteMany({
+          where: { customerId: u.id, OR: [{ sequence: 1 }, { pricelistId: u.pricelistId }] },
+        }),
         prisma.customerPricelist.create({ data: { customerId: u.id, pricelistId: u.pricelistId, sequence: 1 } }),
       ]),
     ))
