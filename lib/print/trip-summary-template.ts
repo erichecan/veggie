@@ -3,8 +3,6 @@
  *
  * 表格：序号 | 发票号 | 客户名称 | 城市 | 地址 | 电话 | 备注 | 金额
  * 每个订单单独一行，同一客户当天多笔订单不合并（客户要求两单都要看到，20260715）。
- * 服务端无头 Chromium 渲染 PDF 不认识中文字体（Alpine 镜像未装 CJK 字体），
- * 此模板的可见文案一律用英文，避免打印出乱码方块（20260715）。
  */
 
 import {
@@ -59,14 +57,14 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   const now = formatDateTime(new Date().toISOString())
 
   return `<!doctype html>
-<html lang="en">
+<html lang="zh">
 <head>
 <meta charset="utf-8" />
-<title>Johnstone Bros Delivery Summary</title>
+<title>Johnstone Bros Delivery Summary（汇总单）</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; background: #fff; }
+  html, body { font-family: Arial, Helvetica, "Noto Sans CJK SC", "Noto Sans SC", sans-serif; font-size: 11px; color: #000; background: #fff; }
   body { padding: 18px 24px; }
 
   .page-header {
@@ -134,36 +132,36 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <body>
   <div class="page-header">
     <div class="left">Print at: ${now}</div>
-    <div class="center">Johnstone Bros Delivery Summary</div>
+    <div class="center">Johnstone Bros Delivery Summary（汇总单）</div>
     <div class="right">1 / 1</div>
   </div>
 
   <div class="filter-row">
-    <div class="item"><span class="label">Delivery Date : </span>${formatDateOnly(startDate)}</div>
-    <div class="item"><span class="label">Driver : </span>${escapeHtml(driverStr)}</div>
+    <div class="item"><span class="label">配送日期 Delivery Date：</span>${formatDateOnly(startDate)}</div>
+    <div class="item"><span class="label">司机 Driver：</span>${escapeHtml(driverStr)}</div>
   </div>
 
   <table class="summary">
     <thead>
       <tr>
         <th class="col-seq">#</th>
-        <th>Invoice No.</th>
-        <th>Customer</th>
-        <th>City</th>
-        <th>Address</th>
-        <th>Phone</th>
-        <th>Note</th>
-        <th class="num">Net Amount</th>
+        <th>发票号 Invoice No.</th>
+        <th>客户 Customer</th>
+        <th>城市 City</th>
+        <th>地址 Address</th>
+        <th>电话 Phone</th>
+        <th>备注 Note</th>
+        <th class="num">金额 Net Amount</th>
       </tr>
     </thead>
     <tbody>
-      ${nameRowsHtml || '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">No orders</td></tr>'}
+      ${nameRowsHtml || '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">无订单 No orders</td></tr>'}
     </tbody>
   </table>
 
   <div class="stats-row">
-    <span>Customers: <span class="num">${new Set(orders.map(o => o.customerId)).size}</span></span>
-    <span>Orders: <span class="num">${orders.length}</span></span>
+    <span>客户数 Customers：<span class="num">${new Set(orders.map(o => o.customerId)).size}</span></span>
+    <span>订单数 Orders：<span class="num">${orders.length}</span></span>
   </div>
 
 <script>

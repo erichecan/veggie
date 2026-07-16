@@ -11,8 +11,6 @@
  *   'storable'   —— 只印实物，给整箱整袋的拣货员
  *   'consumable' —— 只印耗材，给零散货的拣货员
  *
- * 服务端无头 Chromium 渲染 PDF 不认识中文字体（Alpine 镜像未装 CJK 字体），
- * 此模板的可见文案一律用英文，避免打印出乱码方块（20260715）。
  */
 
 import {
@@ -119,8 +117,8 @@ export function generateTripPickingHtml(
   const showStorable = variant !== 'consumable'
   const showConsumable = variant !== 'storable'
   const variantLabel =
-    variant === 'storable' ? 'STOCKABLE'
-    : variant === 'consumable' ? 'CONSUMABLE'
+    variant === 'storable' ? '整箱整袋 STOCKABLE'
+    : variant === 'consumable' ? '零散货 CONSUMABLE'
     : ''
 
   function productTableHtml(title: string, products: AggProduct[], icon: string): string {
@@ -134,7 +132,7 @@ export function generateTripPickingHtml(
         <td class="col-name">
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
-          ${hasNote ? `<span class="note-flag">⚠️ See note below</span>` : ''}
+          ${hasNote ? `<span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
         </td>
         <td class="col-qty">${fmtQty(p.totalQty)}</td>
         <td class="col-uom">${escapeHtml(p.uomName)}</td>
@@ -160,14 +158,14 @@ export function generateTripPickingHtml(
     }).join('')
 
     return `
-    <div class="section-header">${icon} ${escapeHtml(title)} (${products.length})</div>
+    <div class="section-header">${icon} ${escapeHtml(title)}（${products.length} 种）</div>
     <table class="pick-table">
       <thead>
         <tr>
           <th class="col-seq">#</th>
-          <th class="col-name">Product</th>
-          <th class="col-qty">Total Qty</th>
-          <th class="col-uom">Uom</th>
+          <th class="col-name">商品名称</th>
+          <th class="col-qty">总数量</th>
+          <th class="col-uom">单位</th>
           <th class="col-check">✓</th>
         </tr>
       </thead>
@@ -176,13 +174,13 @@ export function generateTripPickingHtml(
   }
 
   return `<!doctype html>
-<html lang="en">
+<html lang="zh">
 <head>
 <meta charset="utf-8"/>
-<title>Picking List${variantLabel ? ' · ' + escapeHtml(variantLabel) : ''} — ${escapeHtml(teamStr)}</title>
+<title>拣货单${variantLabel ? ' · ' + escapeHtml(variantLabel) : ''} — ${escapeHtml(teamStr)}</title>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html,body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background:#fff}
+  html,body{font-family:Arial,Helvetica,"Noto Sans CJK SC","Noto Sans SC",sans-serif;font-size:11px;color:#000;background:#fff}
   body{padding:14px 20px}
 
   .page-header{margin-bottom:6px;padding-bottom:6px;border-bottom:2px solid #1a3a2a}
@@ -228,18 +226,18 @@ export function generateTripPickingHtml(
   </div>
 
   <div class="info-row">
-    <div class="item"><span class="label">Delivery Date: </span>${dateStr}</div>
-    <div class="item"><span class="label">Driver/Batch: </span>${escapeHtml(teamStr)}</div>
-    <div class="item"><span class="label">Customers: </span>${new Set(orders.map(o => o.customerId)).size}</div>
+    <div class="item"><span class="label">配送日期：</span>${dateStr}</div>
+    <div class="item"><span class="label">司机/批次：</span>${escapeHtml(teamStr)}</div>
+    <div class="item"><span class="label">客户数：</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
 
-  ${showStorable ? productTableHtml('STOCKABLE', storableProducts, '📦') : ''}
-  ${showConsumable ? productTableHtml('CONSUMABLE', consumableProducts, '🧴') : ''}
+  ${showStorable ? productTableHtml('整箱整袋 STOCKABLE', storableProducts, '📦') : ''}
+  ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableProducts, '🧴') : ''}
 
   <div class="stats">
-    ${showStorable ? `<span>Stockable <span class="num">${storableProducts.length}</span></span>` : ''}
-    ${showConsumable ? `<span>Consumable <span class="num">${consumableProducts.length}</span></span>` : ''}
-    ${variant === 'all' ? `<span>Total <span class="num">${allProducts.length}</span></span>` : ''}
+    ${showStorable ? `<span>整箱整袋 <span class="num">${storableProducts.length}</span> 种</span>` : ''}
+    ${showConsumable ? `<span>零散货 <span class="num">${consumableProducts.length}</span> 种</span>` : ''}
+    ${variant === 'all' ? `<span>合计 <span class="num">${allProducts.length}</span> 种</span>` : ''}
   </div>
 
 <script>

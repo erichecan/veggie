@@ -201,7 +201,7 @@ function buildSalesOrderHtml(
 
 const CSS = `
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; background:#fff; }
+body { font-family: Arial, Helvetica, "Noto Sans CJK SC", "Noto Sans SC", sans-serif; font-size: 10pt; color: #111; background:#fff; }
 .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm; position: relative; }
 
 .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7mm; padding-bottom: 3mm; border-bottom: 2px solid #1a3a2a; }
