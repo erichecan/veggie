@@ -156,11 +156,17 @@ export interface CustomerSpecialPrice {
 
 // ─── 客户定价模式（对应 Odoo 的 price_type 概念）──────────────────────────────
 /**
- * multi   — 走价格表引擎（75.2% 客户默认值）
- * default — 直接用商品牌价，忽略价格表
- * last    — 用该客户最近一次购买该商品的实际成交价
+ * multi   — 价格表链 → last price → 牌价，三级回退（75.2% 客户默认值）
+ * default — 价格表链 → 牌价，两级回退（不查 last price）
+ * last    — 用该客户最近一次购买该商品的实际成交价，与价格表无关
  */
 export type CustomerPriceType = 'multi' | 'default' | 'last'
+
+/** 客户挂载的一张价格表 + 优先级（数字越小优先级越高） */
+export interface CustomerPricelistLink {
+  pricelistId: string
+  sequence: number
+}
 
 // ─── 客户 ───────────────────────────────────────────────────────────────────
 export interface Customer {
@@ -184,8 +190,8 @@ export interface Customer {
   notes?: string
   /** 客户级外部备注（客户可见，打印在报价单/送货单上）；与内部 notes 区分 */
   externalNote?: string
-  /** 关联价格表 ID（Odoo property_product_pricelist） */
-  pricelistId?: string
+  /** 客户挂载的价格表列表，按 sequence 升序 = 优先级从高到低。第一张命中即用，全部未命中才继续下一级（last price / 牌价） */
+  pricelists?: CustomerPricelistLink[]
   /**
    * 定价模式（Odoo price_type）
    * multi = 价格表引擎 | default = 直接牌价 | last = 最近成交价
