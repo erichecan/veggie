@@ -1,12 +1,19 @@
 /**
  * scripts/backfill-customer-pricelist.ts
  *
- * 从 pic/res.partner.csv 回填客户默认价格表(pricelistId)。
- * 仅回填当前 pricelistId 为空、且 CSV 提供了可映射价格表的客户（不覆盖已有值）。
+ * 从 pic/res.partner.csv（Odoo Customers 列表 Action→Export，"customer pricelist" 已保存字段模板 + import-compatible）
+ * 回填客户默认价格表(Customer.pricelistId)。
+ *
+ * 2026-07-15 改版：适配新导出的技术字段名表头(id/name/property_product_pricelist/id...)。
+ * 写入范围（刻意保守，不做全量客户价格表强制同步）：
+ *   1. 当前 pricelistId 为空、CSV 有映射 → 回填（不覆盖任何已有值，零风险）
+ *   2. 当前 pricelistId 指向"本次新建的价格表"名单之外的表，但 Odoo 说该客户应该用
+ *      "本次新建的 9 张价格表"之一 → 修正（仅限这个精确范围，因为这批新客户目前普遍
+ *      挂在错误的默认表下，其余客户的历史 pricelistId 不在本次改动范围内）
  *
  * 匹配规则：
- *   - CSV "External ID" = __export__.res_partner_<num>_<hash>，<num> 对应 DB Customer.externalId（纯数字）
- *   - CSV "Pricelist"   = 价格表 Odoo 外部ID，经 OdooPricelist.externalId 映射到本地 pl_xx
+ *   - CSV "id"                        = __export__.res_partner_<num>_<hash> → Customer.externalId（纯数字）
+ *   - CSV "property_product_pricelist/id" → OdooPricelist.externalId → 本地 pricelist id
  *
  * 运行：
  *   node --import tsx -r dotenv/config scripts/backfill-customer-pricelist.ts dotenv_config_path=.env.local            # dry-run
@@ -24,36 +31,49 @@ const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: pr
 
 const APPLY = process.argv.includes('--apply')
 
-function parseCSVLine(line: string): string[] {
-  const out: string[] = []
-  let cur = ''
-  let q = false
+// 2026-07-15 本次从 Odoo 新建的价格表（只在这个精确范围内允许"修正"已有 pricelistId）
+const NEWLY_CREATED_EXTERNAL_IDS = new Set([
+  'product.list0',
+  '__export__.product_pricelist_161_ba1939c1',
+  '__export__.product_pricelist_160_41977d06',
+  '__export__.product_pricelist_159_387b3ed6',
+  '__export__.product_pricelist_165_e190757a',
+  '__export__.product_pricelist_164_3e995869',
+  '__export__.product_pricelist_163_bf3716b7',
+  '__export__.product_pricelist_166_701972d1',
+  '__export__.product_pricelist_162_9d3b1743',
+])
+
+function splitCsv(line: string): string[] {
+  const out: string[] = []; let cur = ''; let q = false
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]
-    if (ch === '"') {
-      if (q && line[i + 1] === '"') { cur += '"'; i++ } else q = !q
-    } else if (ch === ',' && !q) { out.push(cur); cur = '' } else cur += ch
+    if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++ } else q = !q }
+    else if (ch === ',' && !q) { out.push(cur); cur = '' } else cur += ch
   }
-  out.push(cur)
-  return out
+  out.push(cur); return out
 }
 
 async function main() {
-  // 1) 价格表 externalId → 本地 id
   const pls = await prisma.odooPricelist.findMany({ select: { id: true, externalId: true } })
   const plByExt = new Map<string, string>()
   for (const p of pls) if (p.externalId) plByExt.set(p.externalId, p.id)
+  const newPlLocalIds = new Set([...NEWLY_CREATED_EXTERNAL_IDS].map(e => plByExt.get(e)).filter(Boolean) as string[])
 
-  // 2) CSV：customer num → pricelist 本地 id
   const raw = fs.readFileSync(path.join(process.cwd(), 'pic/res.partner.csv'), 'utf-8')
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
-  const csvMap = new Map<string, string>() // customerExternalId(num) → pricelistLocalId
+  const lines = raw.split(/\r?\n/).filter(Boolean)
+  const headers = splitCsv(lines[0])
+  const idx = (n: string) => headers.indexOf(n)
+  const iId = idx('id'), iName = idx('name'), iPl = idx('property_product_pricelist/id')
+
+  // customer externalId(num) → { pricelistLocalId, name }
+  const csvMap = new Map<string, { plId: string; name: string }>()
   let csvRows = 0, csvWithPl = 0, csvUnmappable = 0
   for (const line of lines.slice(1)) {
-    const cols = parseCSVLine(line)
-    if (cols.length < 8) continue
-    const extId = cols[0]?.trim() ?? ''
-    const plExt = cols[7]?.trim() ?? ''
+    const cols = splitCsv(line)
+    const extId = cols[iId]?.trim() ?? ''
+    const plExt = cols[iPl]?.trim() ?? ''
+    const name = cols[iName]?.trim() ?? ''
     const m = extId.match(/res_partner_(\d+)/)
     if (!m) continue
     csvRows++
@@ -61,49 +81,51 @@ async function main() {
     csvWithPl++
     const localPl = plByExt.get(plExt)
     if (!localPl) { csvUnmappable++; continue }
-    csvMap.set(m[1], localPl)
+    csvMap.set(m[1], { plId: localPl, name })
   }
 
-  // 3) 找出当前 pricelistId 为空、CSV 有映射的客户
-  const nullCusts = await prisma.customer.findMany({
-    where: { pricelistId: null, NOT: { externalId: null } },
-    select: { id: true, name: true, externalId: true },
+  const allCusts = await prisma.customer.findMany({
+    where: { NOT: { externalId: null } },
+    select: { id: true, name: true, externalId: true, pricelistId: true },
   })
-  const toUpdate: { id: string; name: string; pricelistId: string }[] = []
-  for (const c of nullCusts) {
-    const pl = c.externalId ? csvMap.get(c.externalId) : undefined
-    if (pl) toUpdate.push({ id: c.id, name: c.name, pricelistId: pl })
+
+  const fillNull: { id: string; name: string; pricelistId: string }[] = []
+  const fixNewPl: { id: string; name: string; from: string | null; pricelistId: string }[] = []
+  for (const c of allCusts) {
+    const mapped = c.externalId ? csvMap.get(c.externalId) : undefined
+    if (!mapped) continue
+    if (c.pricelistId === null) {
+      fillNull.push({ id: c.id, name: c.name, pricelistId: mapped.plId })
+    } else if (c.pricelistId !== mapped.plId && newPlLocalIds.has(mapped.plId)) {
+      fixNewPl.push({ id: c.id, name: c.name, from: c.pricelistId, pricelistId: mapped.plId })
+    }
   }
 
   console.log('── CSV 解析 ──')
   console.log(`  CSV 客户行: ${csvRows} | 含 Pricelist: ${csvWithPl} | 无法映射(默认表/未知): ${csvUnmappable} | 可映射: ${csvMap.size}`)
   console.log('── 回填目标 ──')
-  console.log(`  当前 pricelistId 为空的客户: ${nullCusts.length}`)
-  console.log(`  其中 CSV 有可映射价格表、可回填: ${toUpdate.length}`)
-  console.log('  示例(前10):')
-  for (const u of toUpdate.slice(0, 10)) console.log(`    ${u.name} (${u.id}) → ${u.pricelistId}`)
-
-  // ABCT 抽查
-  const abct = toUpdate.find(u => u.name.includes('ABCT'))
-  console.log('  ABCT 抽查:', abct ? `${abct.name} → ${abct.pricelistId}` : '(未在回填列表)')
+  console.log(`  pricelistId 为空 → 回填: ${fillNull.length}`)
+  console.log(`  当前挂错表、应改到本次新建价格表 → 修正: ${fixNewPl.length}`)
+  for (const u of fixNewPl) console.log(`    ${u.name}: ${u.from} → ${u.pricelistId}`)
 
   if (!APPLY) {
     console.log('\n[DRY-RUN] 未写入。加 --apply 实际执行。')
     return
   }
 
-  console.log(`\n[APPLY] 开始回填 ${toUpdate.length} 个客户…`)
+  const toApply = [...fillNull, ...fixNewPl.map(u => ({ id: u.id, name: u.name, pricelistId: u.pricelistId }))]
+  console.log(`\n[APPLY] 开始回填/修正 ${toApply.length} 个客户…`)
   const BATCH = 50
   let done = 0
-  for (let i = 0; i < toUpdate.length; i += BATCH) {
-    const batch = toUpdate.slice(i, i + BATCH)
+  for (let i = 0; i < toApply.length; i += BATCH) {
+    const batch = toApply.slice(i, i + BATCH)
     await Promise.all(batch.map(u =>
       prisma.customer.update({ where: { id: u.id }, data: { pricelistId: u.pricelistId } }),
     ))
     done += batch.length
-    if (done % 200 === 0 || done === toUpdate.length) console.log(`  …${done}/${toUpdate.length}`)
+    if (done % 200 === 0 || done === toApply.length) console.log(`  …${done}/${toApply.length}`)
   }
-  console.log(`✅ 完成：回填 ${done} 个客户的默认价格表`)
+  console.log(`✅ 完成：处理 ${done} 个客户的默认价格表`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) }).finally(() => prisma.$disconnect())
