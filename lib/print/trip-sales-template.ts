@@ -3,12 +3,18 @@
  *
  * 与送货单(trip-delivery-template.ts)共用同一套页面结构/CSS,区别只在于:
  *   Line items table: QTY | UNIT | DESCRIPTION | PRICE | VAT | INCL VAT
- *   页脚多一个 Totals: Subtotal + VAT breakdown + Total
+ *   多一个 Totals: Subtotal + VAT breakdown + Total
  * 每单一页(pageBreakAfter),有几个客户就打几页,与送货单一一对应。
  *
  * 税额口径(SSOT,见 docs/20260701 审计 + lib/order-items.ts orderIncTaxTotal):
  *   TripLine.subtotal 恒 = unitPrice × orderedQty,已经是税前金额,直接使用不需要再除税；
  *   含税 = subtotal × (1 + taxRate/100)。taxRate 存的是百分数(如 23,不是 0.23)。
+ *
+ * 单个订单的明细如果多到一页放不下,按 chunkOrderLinesForPrint 手动分块,每块单独
+ * 渲染成一个 .page、页头在每块顶部都重新画一次(客户反馈,20260716)——试过把页头
+ * 塞进 <thead> 让浏览器自动跨页重复,无头 Chromium 的 page.pdf() 实测不支持,详见
+ * chunkOrderLinesForPrint 的注释。Totals/Payment/备注只出现在订单的最后一块。
+ * 没有页脚——客户明确要求不要联系方式/页码这类页脚信息。
  */
 
 import { barcodeValue } from '@/lib/barcode'
@@ -16,8 +22,10 @@ import {
   type TripPrintData,
   type TripOrder,
   type TripCustomer,
+  type TripLine,
   escapeHtml,
   formatTripDriverLabel,
+  chunkOrderLinesForPrint,
 } from './trip-common'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
@@ -63,7 +71,7 @@ function buildSalesOrderHtml(
   const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
   const paymentBorder = isImmediatePayment ? '#ef4444' : '#16a34a'
 
-  const linesHtml = lines.map((l, i) => {
+  function renderLineRow(l: TripLine, i: number): string {
     const rate = Number(l.taxRate ?? 0)
     const inclVat = Number(l.subtotal) * (1 + rate / 100)
     return `
@@ -79,7 +87,7 @@ function buildSalesOrderHtml(
       <td class="col-vat">${rate > 0 ? rate.toFixed(0) + '%' : '0%'}</td>
       <td class="col-incl">€ ${fmtMoney(inclVat)}</td>
     </tr>`
-  }).join('')
+  }
 
   const vatRowsHtml = Object.entries(vatGroups)
     .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
@@ -89,10 +97,7 @@ function buildSalesOrderHtml(
       <td class="total-value">€ ${fmtMoney(vat)}</td>
     </tr>`).join('')
 
-  const pageBreak = opts.pageBreakAfter ? 'page-break-after: always;' : ''
-
-  return `
-<div class="page" style="${pageBreak}">
+  const headerBlockHtml = `
   <div class="header">
     <div>
       ${docBadge('salesOrder')}
@@ -100,8 +105,7 @@ function buildSalesOrderHtml(
     </div>
     <div class="company-addr">
       141 Slaney Close<br/>
-      Dublin 11, D11 C3NX<br/>
-      Ireland
+      Dublin 11, D11 C3NX
     </div>
   </div>
 
@@ -117,7 +121,7 @@ function buildSalesOrderHtml(
       </td>
       <td class="barcode-cell">
         <div class="info-head">Sale Order NO</div>
-        <svg id="bc-${safeCode}" class="barcode-svg"></svg>
+        <svg class="barcode-svg bc-${safeCode}"></svg>
         <div class="barcode-code">${escapeHtml(orderCode)}</div>
       </td>
       <td>
@@ -134,24 +138,9 @@ function buildSalesOrderHtml(
         </div>
       </td>
     </tr>
-  </table>
+  </table>`
 
-  <table class="lines-table">
-    <thead>
-      <tr>
-        <th class="col-qty">QTY</th>
-        <th class="col-unit">UNIT</th>
-        <th class="col-desc">DESCRIPTION</th>
-        <th class="col-price">PRICE</th>
-        <th class="col-vat">VAT</th>
-        <th class="col-incl">INCL VAT</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${linesHtml || `<tr><td colspan="6" style="text-align:center;padding:6mm;color:#999">No items</td></tr>`}
-    </tbody>
-  </table>
-
+  const footerBlockHtml = `
   <div class="totals-wrap">
     <table class="totals-table">
       <tr>
@@ -177,14 +166,43 @@ function buildSalesOrderHtml(
   ${order.externalNote ? `<div class="note-box">
     <div class="note-head">订单备注 / Order Note</div>
     <div class="note-body">${escapeHtml(order.externalNote)}</div>
-  </div>` : ''}
+  </div>` : ''}`
+
+  const chunks = chunkOrderLinesForPrint(lines)
+
+  return chunks.map((chunk, chunkIdx) => {
+    const isLastChunk = chunkIdx === chunks.length - 1
+    const pageBreak = (!isLastChunk || opts.pageBreakAfter) ? 'page-break-after: always;' : ''
+    const linesHtml = chunk.map(renderLineRow).join('')
+    return `
+<div class="page" style="${pageBreak}">
+  ${headerBlockHtml}
+
+  <table class="lines-table">
+    <thead>
+      <tr>
+        <th class="col-qty">QTY</th>
+        <th class="col-unit">UNIT</th>
+        <th class="col-desc">DESCRIPTION</th>
+        <th class="col-price">PRICE</th>
+        <th class="col-vat">VAT</th>
+        <th class="col-incl">INCL VAT</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${linesHtml || (isLastChunk ? `<tr><td colspan="6" style="text-align:center;padding:6mm;color:#999">No items</td></tr>` : '')}
+    </tbody>
+  </table>
+
+  ${isLastChunk ? footerBlockHtml : ''}
 </div>`
+  }).join('')
 }
 
 const CSS = `
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; background:#fff; }
-.page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 12mm 22mm; position: relative; }
+.page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm; position: relative; }
 
 .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7mm; padding-bottom: 3mm; border-bottom: 2px solid #1a3a2a; }
 .company-name { font-size: 26pt; font-weight: bold; font-style: italic; color: #1a3a2a; }
@@ -227,20 +245,9 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 .total-value { text-align: right; }
 .total-grand td { font-weight: bold; font-size: 11pt; color: #111; border-top: 2px solid #333; border-bottom: none; }
 
-.footer-fixed {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  padding: 2mm 12mm 4mm;
-  background: #fff;
-}
-.footer-divider { border: none; border-top: 1px solid #ccc; margin-bottom: 2mm; }
-.footer-lines { font-size: 7.5pt; color: #666; line-height: 1.6; }
-.footer-page-row { display: flex; justify-content: space-between; font-size: 7.5pt; color: #666; margin-top: 1mm; }
-
 @media print {
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .page { padding: 8mm 12mm 22mm; }
-  .footer-fixed { position: fixed; bottom: 0; }
+  .page { padding: 8mm 12mm; }
   /* .page 已经用 min-height:297mm 模拟一整张 A4，浏览器打印对话框自带的默认页边距会叠加在
      这 297mm 之上，导致内容溢出单页、多挤出一张几乎空白的续页——把 @page margin 清零，
      视觉边距完全交给 .page 自身的 padding 负责。 */
@@ -255,20 +262,22 @@ export function generateTripSalesHtml(data: TripPrintData): string {
   // 批次(driverBatchLabel),查不到才退回 trip 级(单批次打印时两者本就一致)。
   const tripDriverLabel = formatTripDriverLabel(trip)
 
-  const totalPages = orders.length
   const pagesHtml = orders.map((order, idx) => {
     const customer = customers.get(order.customerId)
     return buildSalesOrderHtml(order, customer, order.driverBatchLabel || tripDriverLabel, {
-      pageBreakAfter: idx < totalPages - 1,
+      pageBreakAfter: idx < orders.length - 1,
     })
   }).join('')
 
   const barcodeInits = orders.map(order => {
     const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
     const safeCode = orderCode.replace(/['"\\]/g, '')
+    // 长订单被 chunkOrderLinesForPrint 拆成多页时,每页都重画一次页头,同一订单的
+    // 条码 svg 会出现多份——用 class 选择器一次性渲染到所有份(JsBarcode 支持
+    // 传入匹配多个元素的选择器),不能用 id(同一订单多份页头会产生重复 id)。
     return `
     try {
-      JsBarcode('#bc-${safeCode}', ${JSON.stringify(barcodeValue(orderCode, order.id))}, {
+      JsBarcode('.bc-${safeCode}', ${JSON.stringify(barcodeValue(orderCode, order.id))}, {
         format: 'CODE128',
         width: 1.5,
         height: 45,
@@ -295,25 +304,8 @@ export function generateTripSalesHtml(data: TripPrintData): string {
 ${noticeHtml}
 ${pagesHtml}
 
-<div class="footer-fixed">
-  <hr class="footer-divider"/>
-  <div class="footer-lines">
-    Tel: (01) 830 8065 / 018308068 / 0879318299 &nbsp;&nbsp; Mail: info@johnstonebros.ie | johnstoneveg@gmail.com<br/>
-    Web: https://m.johnstonebros.ie/ &nbsp;&nbsp; VAT: IE9739451J
-  </div>
-  <div class="footer-page-row">
-    <span>Page: 1 / ${totalPages}</span>
-    <span>Print at: <span id="print-ts"></span></span>
-  </div>
-</div>
-
 <script>
   ${barcodeInits}
-  var ts = new Date();
-  var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
-  document.getElementById('print-ts').textContent =
-    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
-    ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
   window.print();
 <\/script>
 </body>

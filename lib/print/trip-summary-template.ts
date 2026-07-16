@@ -1,8 +1,10 @@
 /**
- * Trip 汇总单 — 批次级客户清单（一个司机一个时段送哪些客户），按客户名字母序去重排列
+ * Trip 汇总单 — 批次级订单清单（一个司机一个时段送哪些订单），按客户名字母序排列
  *
- * 表格：序号 | 客户名称 | 地址 | 电话 | 备注（去重，不重复列同一客户的多笔订单；
- * 客户详情直接做在表格列里，不再单独放一个详情区块，方便司机一行看全）
+ * 表格：序号 | 发票号 | 客户名称 | 城市 | 地址 | 电话 | 备注 | 金额
+ * 每个订单单独一行，同一客户当天多笔订单不合并（客户要求两单都要看到，20260715）。
+ * 服务端无头 Chromium 渲染 PDF 不认识中文字体（Alpine 镜像未装 CJK 字体），
+ * 此模板的可见文案一律用英文，避免打印出乱码方块（20260715）。
  */
 
 import {
@@ -25,42 +27,32 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     ? deliveryDates.reduce((a, b) => (a < b ? a : b))
     : trip.departTime
 
-  // 按 customerId 去重(同一客户当天多笔订单只列一次)，按客户名字母序排列
-  const customerIds = [...new Set(orders.map(o => o.customerId))]
-  const customerList = customerIds
-    .map(id => {
-      const customerOrders = orders.filter(o => o.customerId === id)
-      // 同一客户当次波次多笔订单：金额相加、发票号去重拼接（多数订单此时还没开票，留空）
-      const netAmount = customerOrders.reduce((sum, o) => sum + o.totalAmount, 0)
-      const invoiceNos = [...new Set(customerOrders.map(o => o.invoiceNo).filter((v): v is string => !!v))]
-      return {
-        id,
-        name: customers.get(id)?.name ?? customerOrders[0]?.customerName ?? '',
-        customer: customers.get(id),
-        netAmount,
-        invoiceNo: invoiceNos.join(', '),
-        orderCount: customerOrders.length,
-      }
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  // 每单单独一行，不按客户合并；同一客户多笔订单都要展示（客户要求，20260715）
+  const rowList = orders
+    .map(o => ({
+      order: o,
+      name: customers.get(o.customerId)?.name ?? o.customerName ?? '',
+      customer: customers.get(o.customerId),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.order.code?.localeCompare(b.order.code ?? '') || 0)
 
   // 客户详情（地址/电话/备注）直接做在表格列里，不再单独列一个详情区块
-  const nameRowsHtml = customerList.map((c, i) => {
-    const cust = c.customer
-    const addr = cust ? [cust.street, cust.street2, cust.city, cust.zip].filter(Boolean).join(', ') : ''
-    const city = cust?.city ?? ''
-    const phone = cust?.phone ?? ''
-    const note = cust?.externalNote ?? ''
+  const nameRowsHtml = rowList.map((r, i) => {
+    const { order, customer } = r
+    const addr = customer ? [customer.street, customer.street2, customer.city, customer.zip].filter(Boolean).join(', ') : ''
+    const city = customer?.city ?? ''
+    const phone = customer?.phone ?? ''
+    const note = customer?.externalNote ?? ''
     return `
     <tr>
       <td class="col-seq">${i + 1}</td>
-      <td>${escapeHtml(c.invoiceNo)}</td>
-      <td>${escapeHtml(c.name)}${c.orderCount > 1 ? ` <span class="order-badge">·${c.orderCount}单</span>` : ''}</td>
+      <td>${escapeHtml(order.invoiceNo ?? '')}</td>
+      <td>${escapeHtml(r.name)}</td>
       <td>${escapeHtml(city)}</td>
       <td>${escapeHtml(addr)}</td>
       <td>${escapeHtml(phone)}</td>
       <td>${escapeHtml(note)}</td>
-      <td class="num">€ ${fmtMoney(c.netAmount)}</td>
+      <td class="num">€ ${fmtMoney(order.totalAmount)}</td>
     </tr>`
   }).join('')
 
@@ -70,7 +62,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Johnstone Bros Delivery Summary（汇总单）</title>
+<title>Johnstone Bros Delivery Summary</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -121,7 +113,6 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     vertical-align: middle;
   }
   table.summary td.col-seq { text-align: center; color: #666; }
-  .order-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #a15c00; background: #fff2d6; border: 1px solid #e0b060; border-radius: 8px; padding: 0 5px; }
 
   .stats-row {
     margin-top: 10px;
@@ -143,7 +134,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <body>
   <div class="page-header">
     <div class="left">Print at: ${now}</div>
-    <div class="center">Johnstone Bros Delivery Summary（汇总单）</div>
+    <div class="center">Johnstone Bros Delivery Summary</div>
     <div class="right">1 / 1</div>
   </div>
 
@@ -171,8 +162,8 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   </table>
 
   <div class="stats-row">
-    <span>客户数：<span class="num">${customerList.length}</span></span>
-    <span>订单数：<span class="num">${orders.length}</span></span>
+    <span>Customers: <span class="num">${new Set(orders.map(o => o.customerId)).size}</span></span>
+    <span>Orders: <span class="num">${orders.length}</span></span>
   </div>
 
 <script>

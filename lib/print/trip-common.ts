@@ -125,6 +125,42 @@ export function stripAutoPrintScript(html: string): string {
 }
 
 /**
+ * 送货单/销售单每单一页，公司页头+客户/发票/送货信息块要在每一个物理打印页都重复
+ * (客户反馈,20260716)。试过把页头塞进 <table><thead> 让浏览器自动跨页重复——
+ * 无头 Chromium 的 page.pdf() 实测不支持(续页完全没有页头,且把 thead 拆成多行
+ * colspan 还会把内层 info-table 的列宽算乱),所以改成手动按「一页能放多少行」
+ * 分块：每一块单独渲染成一个 .page,页头在每块都重新画一次,块与块之间
+ * page-break-after,这样每个物理页在渲染前就已经是独立的一页,不依赖浏览器的
+ * 自动分页判断。行高预估宁可保守(留够余量)，宁可多分一页也不能真的溢出。
+ */
+const PRINT_PAGE_USABLE_MM = 272
+const PRINT_HEADER_OVERHEAD_MM = 90
+const PRINT_ROW_BASE_MM = 9
+const PRINT_ROW_EXTRA_LINE_MM = 4.2
+
+export function chunkOrderLinesForPrint<T extends { spec?: string | null; note?: string | null }>(
+  lines: T[],
+): T[][] {
+  const available = PRINT_PAGE_USABLE_MM - PRINT_HEADER_OVERHEAD_MM
+  const chunks: T[][] = []
+  let current: T[] = []
+  let currentHeight = 0
+  for (const l of lines) {
+    const extraLines = (l.spec ? 1 : 0) + (l.note ? 1 : 0)
+    const rowHeight = PRINT_ROW_BASE_MM + extraLines * PRINT_ROW_EXTRA_LINE_MM
+    if (current.length > 0 && currentHeight + rowHeight > available) {
+      chunks.push(current)
+      current = []
+      currentHeight = 0
+    }
+    current.push(l)
+    currentHeight += rowHeight
+  }
+  chunks.push(current)
+  return chunks
+}
+
+/**
  * 三张单(delivery/sales/picking/summary)统一的司机身份展示格式：「批次号 时段 司机名」
  * (如 "1 am AFZAAL")，与销售单列表司机列(lib/driver-slot.ts formatDriverSlot)同一口径。
  * 绝不拼 trip.name——那是行程备注/占位文案(如筛选打印时的"筛选批次 2026-07-10")，
