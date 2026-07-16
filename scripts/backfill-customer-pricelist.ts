@@ -2,9 +2,10 @@
  * scripts/backfill-customer-pricelist.ts
  *
  * 从 pic/res.partner.csv（Odoo Customers 列表 Action→Export，"customer pricelist" 已保存字段模板 + import-compatible）
- * 回填客户默认价格表(Customer.pricelistId)。
+ * 回填客户价格表优先级第一位（CustomerPricelist.sequence=1）。
  *
- * 2026-07-15 改版：适配新导出的技术字段名表头(id/name/property_product_pricelist/id...)。
+ * 2026-07-15 改版：适配新导出的技术字段名表头(id/name/property_product_pricelist/id...)；
+ * 同日第二次改版：Customer.pricelistId 即将废弃，改为写入新表 CustomerPricelist(sequence=1)。
  * 写入范围（刻意保守，不做全量客户价格表强制同步）：
  *   1. 当前 pricelistId 为空、CSV 有映射 → 回填（不覆盖任何已有值，零风险）
  *   2. 当前 pricelistId 指向"本次新建的价格表"名单之外的表，但 Odoo 说该客户应该用
@@ -86,7 +87,7 @@ async function main() {
 
   const allCusts = await prisma.customer.findMany({
     where: { NOT: { externalId: null } },
-    select: { id: true, name: true, externalId: true, pricelistId: true },
+    select: { id: true, name: true, externalId: true, pricelists: { orderBy: { sequence: 'asc' }, select: { pricelistId: true } } },
   })
 
   const fillNull: { id: string; name: string; pricelistId: string }[] = []
@@ -94,10 +95,11 @@ async function main() {
   for (const c of allCusts) {
     const mapped = c.externalId ? csvMap.get(c.externalId) : undefined
     if (!mapped) continue
-    if (c.pricelistId === null) {
+    const currentTopPl = c.pricelists[0]?.pricelistId ?? null
+    if (currentTopPl === null) {
       fillNull.push({ id: c.id, name: c.name, pricelistId: mapped.plId })
-    } else if (c.pricelistId !== mapped.plId && newPlLocalIds.has(mapped.plId)) {
-      fixNewPl.push({ id: c.id, name: c.name, from: c.pricelistId, pricelistId: mapped.plId })
+    } else if (currentTopPl !== mapped.plId && newPlLocalIds.has(mapped.plId)) {
+      fixNewPl.push({ id: c.id, name: c.name, from: currentTopPl, pricelistId: mapped.plId })
     }
   }
 
@@ -114,18 +116,23 @@ async function main() {
   }
 
   const toApply = [...fillNull, ...fixNewPl.map(u => ({ id: u.id, name: u.name, pricelistId: u.pricelistId }))]
-  console.log(`\n[APPLY] 开始回填/修正 ${toApply.length} 个客户…`)
+  console.log(`\n[APPLY] 开始回填/修正 ${toApply.length} 个客户的优先级第一价格表…`)
   const BATCH = 50
   let done = 0
   for (let i = 0; i < toApply.length; i += BATCH) {
     const batch = toApply.slice(i, i + BATCH)
     await Promise.all(batch.map(u =>
-      prisma.customer.update({ where: { id: u.id }, data: { pricelistId: u.pricelistId } }),
+      // fillNull: 客户此前没有任何 CustomerPricelist 记录 → 直接建 sequence=1
+      // fixNewPl: 客户已有 sequence=1 记录但指向错误的表 → 先删再建，保持 sequence=1 不变
+      prisma.$transaction([
+        prisma.customerPricelist.deleteMany({ where: { customerId: u.id, sequence: 1 } }),
+        prisma.customerPricelist.create({ data: { customerId: u.id, pricelistId: u.pricelistId, sequence: 1 } }),
+      ]),
     ))
     done += batch.length
     if (done % 200 === 0 || done === toApply.length) console.log(`  …${done}/${toApply.length}`)
   }
-  console.log(`✅ 完成：处理 ${done} 个客户的默认价格表`)
+  console.log(`✅ 完成：处理 ${done} 个客户的优先级第一价格表`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) }).finally(() => prisma.$disconnect())
