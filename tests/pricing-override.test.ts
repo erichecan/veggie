@@ -31,11 +31,11 @@ let redOnionId = ''
 before(async () => {
   const cust = await prisma.customer.findFirst({
     where: { name: { contains: 'ABCT' } },
-    select: { id: true, pricelistId: true },
+    select: { id: true, pricelists: { orderBy: { sequence: 'asc' }, select: { pricelistId: true } } },
   })
   assert.ok(cust, '测试前置：未找到 ABCT 客户')
   customerId = cust!.id
-  customerDefaultPl = cust!.pricelistId
+  customerDefaultPl = cust!.pricelists[0]?.pricelistId ?? null
 
   const red = await prisma.product.findFirst({
     where: { name: { contains: 'Red Onion 10kg' }, externalId: '18944' },

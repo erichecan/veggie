@@ -71,7 +71,10 @@ export async function loadCustomerFromRestaurantId(
   if (!customerId) return null
   const raw = await prisma.customer.findFirst({
     where: { id: customerId },
-    include: { specialPrices: true },
+    include: {
+      specialPrices: true,
+      pricelists: { orderBy: { sequence: 'asc' } },
+    },
   })
   if (!raw) return null
   // Decimal → number 边界转换
@@ -90,7 +93,7 @@ export async function loadCustomerFromRestaurantId(
     externalId: raw.externalId ?? undefined,
     city: raw.city ?? undefined,
     notes: raw.notes ?? undefined,
-    pricelistId: raw.pricelistId ?? undefined,
+    pricelists: raw.pricelists.map((p) => ({ pricelistId: p.pricelistId, sequence: p.sequence })),
     priceType: (raw.priceType as CustomerType['priceType']) ?? 'multi',
     specialPrices: raw.specialPrices.map((sp) => ({
       id: sp.id,
@@ -198,10 +201,17 @@ export async function resolveOrderLines(
     throw Object.assign(new Error(`客户不存在（restaurantId=${ctx.restaurantId}）`), { status: 400 })
   }
 
-  // 本单覆盖：用操作员选定的价格表/定价模式参与权威定价（不写回客户档案）
+  // 本单覆盖：操作员可临时选一张价格表代替客户档案的整条优先级链（不写回客户档案）。
+  // overrides.pricelistId === undefined → 沿用客户档案的多价格表链
+  // overrides.pricelistId 是字符串        → 本单只用这一张（临时链长度为 1）
+  // overrides.pricelistId === null        → 本单明确不用价格表
+  const effectivePricelists: CustomerType['pricelists'] =
+    overrides?.pricelistId !== undefined
+      ? (overrides.pricelistId ? [{ pricelistId: overrides.pricelistId, sequence: 1 }] : [])
+      : customer.pricelists
   const effectiveCustomer: CustomerType = {
     ...customer,
-    pricelistId: overrides?.pricelistId !== undefined ? overrides.pricelistId ?? undefined : customer.pricelistId,
+    pricelists: effectivePricelists,
     priceType: (overrides?.priceType ?? customer.priceType) as CustomerType['priceType'],
   }
 
@@ -350,7 +360,9 @@ export async function resolveOrderLines(
     lines,
     totalAmount: Math.round(total * 100) / 100,
     customer,
-    pricelistId: effectiveCustomer.pricelistId ?? null,
+    // Order.pricelistId 快照：生效链条里优先级最高的一张（跟旧行为一致——
+    // 无论是否真的命中规则，都记录"当时配置/选定的价格表"，不是"最终用了哪条规则"）
+    pricelistId: effectiveCustomer.pricelists?.[0]?.pricelistId ?? null,
     priceType: effectiveCustomer.priceType ?? null,
     warnings,
   }
