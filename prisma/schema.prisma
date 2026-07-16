@@ -414,6 +414,7 @@ model Customer {
   defaultDriverSlot   DriverSlot?            @relation("CustomerDefaultSlot", fields: [defaultDriverSlotId], references: [id], onDelete: SetNull)
   specialPrices       CustomerSpecialPrice[]
   supplierInfos       ProductSupplierInfo[]  @relation("PartnerSupplierInfos")
+  pricelists          CustomerPricelist[]
 
   @@index([isCustomer])
   @@index([isVendor])
@@ -515,6 +516,21 @@ model CustomerSpecialPrice {
 
   @@index([customerId])
   @@index([productId])
+}
+
+model CustomerPricelist {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// 价格表 ID（不设 FK 约束，沿用 Customer.pricelistId 原有的宽松引用惯例：
+  /// 允许指向暂不存在的价格表，pricing-engine 会回退牌价而不是报错）
+  pricelistId String
+  /// 数字越小优先级越高，1 = 最高优先级
+  sequence    Int
+  createdAt   DateTime @default(now())
+
+  @@unique([customerId, pricelistId])
+  @@index([customerId, sequence])
 }
 
 model OdooPricelist {
