@@ -16,8 +16,14 @@
 # 本地数据库备份（维护脚本生成，不入库）
 /backups/
 
+# Odoo 源数据导出（真实客户/订单 PII，绝不入库）
+/odoodata/
+
 # 演示种子数据 manifest（记录生产库真实 id，本地状态，不入库）
 scripts/.demo-seed-manifest.json
+
+# 迁移脚本写入前的整表快照备份（含真实客户/商品 PII，仅用于本地回滚参考，不入库）
+scripts/.backup-*.json
 
 # next.js
 /.next/

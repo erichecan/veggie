@@ -6,3 +6,7 @@ config.env
 odoo-backup/
 odoo-api-export/
 filestore/
+pgdata/
+pgsock/
+*.log
+exports/

@@ -171,7 +171,7 @@ model ProductCategory {
   id             String            @id @default(cuid())
   name           String
   nameZh         String?
-  externalId     String?
+  externalId     String?           @unique
   /// 归属的采购品类分组（干货/日韩/超市/生鲜冷冻），可空=未映射
   groupId        String?
   group          CategoryGroup?    @relation(fields: [groupId], references: [id])
@@ -229,6 +229,8 @@ model CategoryGroup {
   categories  ProductCategory[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+
+  @@index([ownerUserId])
 }
 
 model ProductAttribute {
@@ -244,6 +246,8 @@ model ProductAttributeValue {
   sequence    Int              @default(0)
   attributeId String
   attribute   ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@index([attributeId])
 }
 
 model ProductTemplate {
@@ -265,7 +269,7 @@ model ProductTemplate {
   status           ProductStatus    @default(ACTIVE)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
-  externalId       String?
+  externalId       String?          @unique
   sequence         Int?
   weight           Decimal?         @db.Decimal(10, 3)
   volume           Decimal?         @db.Decimal(10, 3)
@@ -294,6 +298,8 @@ model ProductTemplate {
   @@index([categoryId])
   @@index([sequence])
   @@index([status])
+  @@index([uomId])
+  @@index([purchaseUomId])
 }
 
 model Product {
@@ -320,7 +326,7 @@ model Product {
   status            ProductStatus         @default(ACTIVE)
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
-  externalId        String?
+  externalId        String?               @unique
   sequence          Int?
   /// 该商品实际放在哪个温区（收货/上架时录入），可空=未上架定位。与 category.requiredZoneId 对比即可发现放错温区
   currentZoneId     String?
@@ -359,6 +365,7 @@ model ProductSaleUom {
 
   @@unique([productId, uomId])
   @@index([productId])
+  @@index([uomId])
 }
 
 model Customer {
@@ -386,7 +393,7 @@ model Customer {
   /// 司机送货给此客户的固定佣金（EUR / 单）
   commissionFixed     Decimal?               @db.Decimal(10, 2)
   createdAt           DateTime               @default(now())
-  externalId          String?
+  externalId          String?                @unique
   city                String?
   notes               String?
   /// 客户级外部备注（客户可见，打印在报价单/送货单上，如收货注意事项、结算方式）；与内部 notes 区分
@@ -529,6 +536,7 @@ model CustomerPricelist {
 
   @@unique([customerId, pricelistId])
   @@index([customerId, sequence])
+  @@index([pricelistId])
 }
 
 model OdooPricelist {
@@ -626,6 +634,7 @@ model Order {
   @@index([restaurantId])
   @@index([status])
   @@index([createdAt])
+  @@index([deliveryDate])
   @@index([pricelistId])
   @@index([createdById])
   @@index([driverSlotId])
@@ -706,6 +715,7 @@ model OrderDiscrepancy {
   @@index([orderId])
   @@index([status])
   @@index([createdAt])
+  @@index([orderLineId])
 }
 
 /// 订单操作审计日志
@@ -722,6 +732,7 @@ model OrderAuditLog {
 
   @@index([orderId])
   @@index([createdAt])
+  @@index([userId])
 }
 
 /// 送货单（每张订单对应一张，确认订单时生成）
@@ -1290,6 +1301,8 @@ model PurchaseSuggestion {
   @@index([status])
   @@index([generatedAt])
   @@index([categoryGroupKey])
+  @@index([supplierId])
+  @@index([purchaseOrderId])
 }
 
 /// 通知（P1-11：缺货自动通知等）
@@ -1382,6 +1395,7 @@ model CreditNoteLine {
   @@index([creditNoteId])
   @@index([productId])
   @@index([sourceOrderId])
+  @@index([sourceTripId])
 }
 
 /// 盘点单状态
