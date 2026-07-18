@@ -368,17 +368,17 @@ function DayWiseReportInner() {
   useEffect(() => {
     async function load() {
       try {
-        const params = new URLSearchParams({ include_lines: 'true', limit: '5000', dateField: 'deliveryDate' })
+        // status 必须跟销售统计屏幕预览（SalesStats.tsx loadOrders）保持一致，否则打印报表会把
+        // PENDING/QUOTATION 等未确认订单也算进去，行数/金额跟屏幕上「筛选结果」预览的数字对不上
+        // （所见不所打）。
+        const params = new URLSearchParams({ include_lines: 'true', limit: '5000', dateField: 'deliveryDate', status: 'CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED' })
         if (fromDate) params.set('fromDate', fromDate)
         if (toDate) params.set('toDate', toDate)
         if (customerIds.length > 0) params.set('restaurantIds', customerIds.join(','))
         if (categoryIds.length > 0) params.set('categoryIds', categoryIds.join(','))
         if (salesUserId) params.set('salesUserId', salesUserId)
 
-        const allOrders = await apiGet<Order[]>(`/api/orders?${params}`)
-        // 已取消订单不计入销售报表(金额/数量/订单数)。仅本报表口径,不改后端 /api/orders 默认行为。
-        // 运行时 status 为 Prisma 大写枚举(CANCELLED);lib/types 误标为小写,故按字符串比较。
-        const orders = allOrders.filter(o => String(o.status).toUpperCase() !== 'CANCELLED')
+        const orders = await apiGet<Order[]>(`/api/orders?${params}`)
 
         // /api/orders 的 categoryIds 只做订单级粗筛(订单里至少一行命中分类就整单返回)，
         // 这里再按行精确过滤，否则"日报/明细/商品×星期汇总"会把同一订单里其他分类的商品也带出来
