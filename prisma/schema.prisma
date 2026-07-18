@@ -573,7 +573,7 @@ model Order {
   totalAmount           Decimal       @default(0) @db.Decimal(12, 2)
   status                OrderStatus   @default(PENDING)
   paymentMethod         PaymentMethod @default(ONLINE)
-  externalRef           String?
+  externalRef           String?       @unique
   createdAt             DateTime      @default(now())
   /// 下单时快照客户的价格表 ID（对应 Odoo sale.order.pricelist_id）
   pricelistId           String?
@@ -639,6 +639,7 @@ model Order {
   @@index([createdById])
   @@index([driverSlotId])
   @@index([salesUserId])
+  @@index([printedById])
 }
 
 /// 订单行（Odoo 对齐）— 每条记录对应一种商品的一行明细，含 ordered/delivered/invoiced 三个数量
@@ -672,6 +673,7 @@ model OrderLine {
 
   @@index([orderId])
   @@index([productId])
+  @@index([uomId])
 }
 
 /// 拣货差异记录（拣货数量与下单数量不符时由运营记录）
@@ -716,6 +718,8 @@ model OrderDiscrepancy {
   @@index([status])
   @@index([createdAt])
   @@index([orderLineId])
+  @@index([productId])
+  @@index([substituteProductId])
 }
 
 /// 订单操作审计日志
@@ -1102,6 +1106,7 @@ model PurchaseOrderLine {
 
   @@index([purchaseOrderId])
   @@index([productId])
+  @@index([uomId])
 }
 
 /**

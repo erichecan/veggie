@@ -251,8 +251,9 @@ export default function PurchaseAnalysisPage() {
   const measureRef = useRef<HTMLDivElement>(null)
   const groupRef = useRef<HTMLDivElement>(null)
 
+  const REQUEST_LIMIT = 5000
   useEffect(() => {
-    apiGet<PurchaseOrder[]>('/api/purchase-orders?limit=500').then(setOrders).catch(() => {})
+    apiGet<PurchaseOrder[]>(`/api/purchase-orders?limit=${REQUEST_LIMIT}`).then(setOrders).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -288,6 +289,12 @@ export default function PurchaseAnalysisPage() {
           <p className="text-sm text-gray-400 mt-0.5">采购订单分析报表</p>
         </div>
       </div>
+
+      {orders.length >= REQUEST_LIMIT && (
+        <div className="mb-4 px-3 py-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-700">
+          已达到单次拉取上限（{REQUEST_LIMIT} 条），"全部"视图可能不包含更早的历史采购单，统计仅供参考。
+        </div>
+      )}
 
       {/* ── KPI strip ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">

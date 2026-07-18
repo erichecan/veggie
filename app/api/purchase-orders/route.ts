@@ -23,7 +23,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const supplierId = searchParams.get('supplierId')
     const status = searchParams.get('status')?.toUpperCase()
-    const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') ?? '200', 10)))
+    // 上限从 500 提到 5000：采购单量远小于销售单，之前的 500 上限在"全部"视图里会随采购单
+    // 增多悄悄丢掉更早的历史数据（正确性问题，不只是性能问题），见 docs/20260717-odoo-single-source-migration-plan.md 第四节
+    const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') ?? '200', 10)))
 
     const where: Record<string, unknown> = {}
     if (supplierId) where.supplierId = supplierId

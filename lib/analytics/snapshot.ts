@@ -158,8 +158,18 @@ async function upsertSnapshot(day: Date, metrics: DayMetrics) {
 const MAX_BACKFILL_DAYS = 120
 
 /**
+ * 单次请求最多同步补几天。Cloud Run min-instances=0，没有常驻进程跑 cron，所以
+ * ensureSnapshots() 只能在请求里惰性补——但首次上线或服务长时间停机后，缺口可能
+ * 一次积到 120 天，若不封顶会在一次 GET 请求里同步跑完 120 天 × 5 段 SQL，有超时
+ * 风险。这里限制单次最多补这么多天，跑不完的下次调用（幂等，从缺口最早的一天继续）
+ * 接着补，几次请求后自然追平，不需要额外的后台任务/队列基础设施。
+ */
+const MAX_FILL_PER_CALL = 20
+
+/**
  * 惰性补齐缺失快照：从（最早确认日 或 昨天−MAX_BACKFILL_DAYS 取晚者）到昨天。
- * 已存在的日期跳过（幂等）。返回补了多少天。
+ * 已存在的日期跳过（幂等）。单次最多补 MAX_FILL_PER_CALL 天，避免单次请求阻塞。
+ * 返回补了多少天。
  */
 export async function ensureSnapshots(): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,7 +197,7 @@ export async function ensureSnapshots(): Promise<number> {
   const have = new Set(existing.map((e) => new Date(e.snapshotDate).toISOString().slice(0, 10)))
 
   let filled = 0
-  while (cursor <= yesterday) {
+  while (cursor <= yesterday && filled < MAX_FILL_PER_CALL) {
     if (!have.has(toDayKey(cursor))) {
       const metrics = await computeDayMetrics(cursor)
       await upsertSnapshot(cursor, metrics)
