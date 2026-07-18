@@ -359,6 +359,7 @@ function DayWiseReportInner() {
   const drivers = searchParams.get('drivers')?.split(',').filter(Boolean) ?? []
   const times = searchParams.get('times')?.split(',').filter(Boolean) ?? []
   const batchNums = searchParams.get('batchNums')?.split(',').map(Number).filter(n => !isNaN(n)) ?? []
+  const weekdays = searchParams.get('weekdays')?.split(',').map(Number).filter(n => !isNaN(n)) ?? []
   const categoryIds = searchParams.get('categoryIds')?.split(',').filter(Boolean) ?? []
   const salesUserId = searchParams.get('salesUserId') ?? ''
 
@@ -391,15 +392,25 @@ function DayWiseReportInner() {
             )
           : null
 
-        const lines: ReportLine[] = []
-        for (const order of orders) {
-          // Driver / AM-PM / Batch multi-select filter (empty list = all)
+        // Driver / AM-PM / Batch / Weekday 多选筛选先收窄 orders 本身（而不是只在拼 lines 时 continue），
+        // 否则 'day' 模式(buildOrderSummaryHtml 直接吃 orders 数组)会漏掉这几个筛选维度——
+        // 打印出来的订单汇总跟 multiline/summary 两种模式对不上。
+        const filteredOrders = orders.filter(order => {
           if (drivers.length > 0 || times.length > 0 || batchNums.length > 0) {
             const p = parseDriverSlotKey(formatDriverSlotFromOrder(order))
-            if (drivers.length > 0 && !drivers.includes(p.driver)) continue
-            if (times.length > 0 && !times.includes(p.time)) continue
-            if (batchNums.length > 0 && !batchNums.includes(p.num)) continue
+            if (drivers.length > 0 && !drivers.includes(p.driver)) return false
+            if (times.length > 0 && !times.includes(p.time)) return false
+            if (batchNums.length > 0 && !batchNums.includes(p.num)) return false
           }
+          if (weekdays.length > 0) {
+            const dateKey = (order as unknown as { deliveryDate?: string }).deliveryDate ?? order.createdAt
+            if (!weekdays.includes(dayOfWeek(dateKey.slice(0, 10)))) return false
+          }
+          return true
+        })
+
+        const lines: ReportLine[] = []
+        for (const order of filteredOrders) {
           const dateKey = (order as unknown as { deliveryDate?: string }).deliveryDate ?? order.createdAt
           const date = dateKey.slice(0, 10)
 
@@ -453,10 +464,11 @@ function DayWiseReportInner() {
           drivers.length > 0 ? `Drivers: ${drivers.join(', ')}` : '',
           times.length > 0 ? `${times.map(t => t.toUpperCase()).join('/')}` : '',
           batchNums.length > 0 ? `Batch# ${batchNums.join(', ')}` : '',
+          weekdays.length > 0 ? `Weekday: ${weekdays.map(w => DAY_NAMES[w]).join(', ')}` : '',
         ].filter(Boolean)
         const batchLabel = batchFilterParts.length > 0 ? batchFilterParts.join(' · ') : 'All batches'
         // day 模式表格按订单聚合(一单一行),计数用订单数与表格行数一致;其余模式按明细行。
-        const countLabel = mode === 'day' ? `${orders.length} orders` : `${lines.length} lines`
+        const countLabel = mode === 'day' ? `${filteredOrders.length} orders` : `${lines.length} lines`
         const meta = `Period: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}${catLabel}  |  ${batchLabel}  |  ${countLabel}`
 
         const TITLES: Record<PrintMode, string> = {
@@ -471,7 +483,7 @@ function DayWiseReportInner() {
         } else if (mode === 'summary') {
           result = buildSummaryHtml(lines, TITLES.summary, meta)
         } else {
-          result = buildOrderSummaryHtml(lines, orders, TITLES.day, meta)
+          result = buildOrderSummaryHtml(lines, filteredOrders, TITLES.day, meta)
         }
 
         setHtml(result)
@@ -481,7 +493,7 @@ function DayWiseReportInner() {
       }
     }
     load()
-  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), drivers.join(','), times.join(','), batchNums.join(','), categoryIds.join(','), salesUserId])
+  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), drivers.join(','), times.join(','), batchNums.join(','), weekdays.join(','), categoryIds.join(','), salesUserId])
 
   if (!ready) {
     return (

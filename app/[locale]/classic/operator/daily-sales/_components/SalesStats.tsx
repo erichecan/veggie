@@ -87,6 +87,8 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
   const [selectedTimes, setSelectedTimes] = useState<string[]>([])
   const [selectedBatchNums, setSelectedBatchNums] = useState<number[]>([])
+  /** 周一=0…周日=6，跟 weekdayReport 的星期换算（(getUTCDay()+6)%7）保持同一套编号 */
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([])
   const [selectedCustomers, setSelectedCustomers] = useState<CustomerRow[]>([])
   const [selectedProducts, setSelectedProducts] = useState<ProductRow[]>([])
   const [customerQuery, setCustomerQuery] = useState('')
@@ -171,6 +173,10 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
         if (selectedBatchNums.length > 0 && !selectedBatchNums.includes(p.num)) continue
       }
       const date = ((o as Order & { deliveryDate?: string }).deliveryDate ?? String(o.createdAt)).slice(0, 10)
+      if (selectedWeekdays.length > 0) {
+        const dow = (new Date(date + 'T12:00:00Z').getUTCDay() + 6) % 7
+        if (!selectedWeekdays.includes(dow)) continue
+      }
       for (const l of ((o as Order & { lines?: OrderLine[] }).lines ?? [])) {
         const name = l.productName ?? ''
         if (prodNames.size > 0 && !prodNames.has(name)) continue
@@ -193,7 +199,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       }
     }
     return out.sort((a, b) => a.date.localeCompare(b.date) || a.customerName.localeCompare(b.customerName))
-  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, productMap, isEn])
+  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, selectedWeekdays, productMap, isEn])
 
   const reportTotal = useMemo(() => ({
     qty: reportLines.reduce((s, l) => s + l.qty, 0),
@@ -306,6 +312,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     if (selectedDrivers.length > 0) params.set('drivers', selectedDrivers.join(','))
     if (selectedTimes.length > 0) params.set('times', selectedTimes.join(','))
     if (selectedBatchNums.length > 0) params.set('batchNums', selectedBatchNums.join(','))
+    if (selectedWeekdays.length > 0) params.set('weekdays', selectedWeekdays.join(','))
     if (selectedCategories.length > 0) params.set('categoryIds', selectedCategories.join(','))
     if (selectedSalesman) params.set('salesUserId', selectedSalesman)
     return `${prefix}/classic/print/day-wise-report?${params.toString()}`
@@ -456,6 +463,15 @@ ${catsHtml}
               <button className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedBatchNums.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`} onClick={() => setSelectedBatchNums([])}>{isEn ? 'All batches' : '全部批次'}</button>
               {batchFilterOptions.nums.map(n => (
                 <button key={n} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedBatchNums.includes(n) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`} onClick={() => setSelectedBatchNums(prev => toggleValue(prev, n))}>#{n}</button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <label className="w-28 text-xs text-gray-500 shrink-0 pt-1">{isEn ? 'Weekday' : '星期'}</label>
+            <div className="flex gap-1.5 flex-wrap">
+              <button className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedWeekdays.length === 0 ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-gray-400 border-gray-200'}`} onClick={() => setSelectedWeekdays([])}>{isEn ? 'All weekdays' : '全部星期'}</button>
+              {DOW_LABELS.map((label, i) => (
+                <button key={i} className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedWeekdays.includes(i) ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'bg-white text-[#875A7B] border-[#d4b8d0]'}`} onClick={() => setSelectedWeekdays(prev => toggleValue(prev, i))}>{label}</button>
               ))}
             </div>
           </div>
