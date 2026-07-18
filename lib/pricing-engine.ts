@@ -16,6 +16,9 @@ import { fmtMoney } from './format-money'
 
 // ─── 公共接口 ─────────────────────────────────────────────────────────────────
 
+/** 价格来源分类，用于 UI 展示"这个价格是哪来的"，不依赖 pricelistName/itemDesc 的自然语言文本猜测 */
+export type PriceSourceKind = 'pricelist' | 'special' | 'last' | 'default'
+
 export interface PriceResolution {
   /** 最终价格 */
   price: number
@@ -27,6 +30,8 @@ export interface PriceResolution {
   isFallback: boolean
   /** 是否由客户专属特殊价格触发（最高优先级） */
   isSpecialPrice?: boolean
+  /** 价格来源分类：pricelist=命中价格表 / special=客户专属价 / last=最近成交价 / default=牌价兜底 */
+  sourceType: PriceSourceKind
 }
 
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
@@ -58,6 +63,7 @@ export function resolvePrice(
       pricelistName: pricelist.name,
       itemDesc: '递归深度超限，回退到牌价',
       isFallback: true,
+      sourceType: 'pricelist',
     }
   }
 
@@ -79,6 +85,7 @@ export function resolvePrice(
       pricelistName: pricelist.name,
       itemDesc: describeItem(item),
       isFallback: false,
+      sourceType: 'pricelist',
     }
   }
 
@@ -87,6 +94,7 @@ export function resolvePrice(
     pricelistName: pricelist.name,
     itemDesc: '未匹配任何规则，使用牌价',
     isFallback: true,
+    sourceType: 'pricelist',
   }
 }
 
@@ -278,6 +286,7 @@ export function resolveCustomerPrice(
         itemDesc: `专属固定价 €${fmtMoney(sp.fixedPrice)}${sp.minQty > 0 ? `，最小数量 ${sp.minQty}` : ''}${noteStr}`,
         isFallback: false,
         isSpecialPrice: true,
+        sourceType: 'special',
       }
     }
   }
@@ -300,6 +309,7 @@ export function resolveCustomerPrice(
         ? '客户定价模式：先查价格表，未命中任何规则，回退牌价'
         : '客户定价模式：直接牌价（未挂价格表）',
       isFallback: true,
+      sourceType: 'default',
     }
   }
 
@@ -311,6 +321,7 @@ export function resolveCustomerPrice(
         pricelistName: '最近成交价',
         itemDesc: `最近一次售价 €${fmtMoney(lastPrice)}`,
         isFallback: false,
+        sourceType: 'last',
       }
     }
     // 若查不到历史成交价，回退牌价
@@ -319,6 +330,7 @@ export function resolveCustomerPrice(
       pricelistName: '最近成交价（无历史，回退牌价）',
       itemDesc: '该客户从未购买此商品，回退到牌价',
       isFallback: true,
+      sourceType: 'default',
     }
   }
 
@@ -333,6 +345,7 @@ export function resolveCustomerPrice(
       pricelistName: '最近成交价',
       itemDesc: `${fromDesc}，改用最近售价 €${fmtMoney(lastPrice)}`,
       isFallback: false,
+      sourceType: 'last',
     }
   }
 
@@ -343,5 +356,6 @@ export function resolveCustomerPrice(
       ? '价格表链未命中，且无历史成交价，使用牌价'
       : '客户未关联价格表，使用牌价',
     isFallback: true,
+    sourceType: 'default',
   }
 }

@@ -46,7 +46,8 @@ type QuotationLine = {
   uomId?: string
   unitPrice: number
   cost: number
-  priceLabel: string       // 'Price' | 'PriceList' | 'Special'
+  priceLabel: string       // 'Price' | 'PriceList' | 'Last' | 'Special'
+  priceLabelDetail?: string   // PriceList 命中的价格表名字；Last 命中的最近成交时间(ISO)
   taxRate: number          // %
 }
 
@@ -311,6 +312,8 @@ export default function ClassicPlaceOrderPage() {
   // key = productId, value = 最近一次成交单价（€）
   // 仅本客户当前会话有效，切客户时清空。Object 中没有的 productId 表示"无历史"。
   const [lastPrices, setLastPrices] = useState<Record<string, number>>({})
+  // key = productId, value = 该最近成交价发生的时间（ISO），仅供 hover 展示，不参与算价
+  const [lastPriceDates, setLastPriceDates] = useState<Record<string, string>>({})
 
   // ── Customer dropdown ─────────────────────────────────────────────────────
   const [custSearch, setCustSearch]       = useState('')
@@ -632,16 +635,19 @@ export default function ClassicPlaceOrderPage() {
     if (unknown.length === 0) return lastPrices
     try {
       const qs = encodeURIComponent(unknown.join(','))
-      const res = await apiGet<{ prices: Record<string, number>; missing: string[] }>(
+      const res = await apiGet<{ prices: Record<string, number>; dates?: Record<string, string>; missing: string[] }>(
         `/api/customers/${customerId}/last-prices?productIds=${qs}`,
       )
       // missing 也写入缓存（占位为 0），避免反复请求"无历史"的商品
       const merged = { ...lastPrices }
+      const mergedDates = { ...lastPriceDates }
       for (const pid of unknown) {
         if (res.prices[pid] != null) merged[pid] = res.prices[pid]
         else merged[pid] = 0  // 0 = 已查过、无历史
+        if (res.dates?.[pid]) mergedDates[pid] = res.dates[pid]
       }
       setLastPrices(merged)
+      setLastPriceDates(mergedDates)
       return merged
     } catch {
       // 静默失败 — 引擎会回退到 listPrice
@@ -677,21 +683,28 @@ export default function ClassicPlaceOrderPage() {
   // 这里的 qty 参数就是原样传给定价引擎的 orderedQty，与旧行为一致。
   function computeLinePrice(
     p: Product, qty: number, lineUomId: string | undefined, cache: Record<string, number> = lastPrices,
-  ): { unitPrice: number; priceLabel: string } {
+  ): { unitPrice: number; priceLabel: string; priceLabelDetail?: string } {
     const lastPrice = getLastPrice(p.id, cache)
     const res = effectiveCustomer ? resolveCustomerPrice(p, effectiveCustomer, pricelists, qty, lastPrice) : null
     const basePrice = res?.price ?? (p.listPrice ?? p.price ?? 0)
-    const priceLabel = res?.isSpecialPrice ? 'Special' : res && !res.isFallback ? 'PriceList' : 'Price'
+    const priceLabel = res
+      ? (res.sourceType === 'special' ? 'Special' : res.sourceType === 'pricelist' ? 'PriceList' : res.sourceType === 'last' ? 'Last' : 'Price')
+      : 'Price'
+    const priceLabelDetail = res?.sourceType === 'pricelist'
+      ? res.pricelistName
+      : res?.sourceType === 'last'
+        ? lastPriceDates[p.id]
+        : undefined
     const anchorUomId = p.uomId
     if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) {
-      return { unitPrice: basePrice, priceLabel }
+      return { unitPrice: basePrice, priceLabel, priceLabelDetail }
     }
     const opt = (saleUomOptions[p.id] ?? []).find(o => o.uomId === lineUomId)
-    if (!opt) return { unitPrice: basePrice, priceLabel }
-    if (opt.priceOverride != null) return { unitPrice: opt.priceOverride, priceLabel }
+    if (!opt) return { unitPrice: basePrice, priceLabel, priceLabelDetail }
+    if (opt.priceOverride != null) return { unitPrice: opt.priceOverride, priceLabel, priceLabelDetail }
     const anchorFactor = uomFactors[anchorUomId] ?? 1
     const unitPrice = anchorFactor ? basePrice * (opt.factor / anchorFactor) : basePrice
-    return { unitPrice, priceLabel }
+    return { unitPrice, priceLabel, priceLabelDetail }
   }
 
   // 切换某行的下单单位：按换算系数(或该单位的独立售价)重算单价
@@ -703,8 +716,8 @@ export default function ClassicPlaceOrderPage() {
     const uomName = uomId === p.uomId
       ? (p.uomName ?? 'Unit(s)')
       : (saleUomOptions[p.id] ?? []).find(o => o.uomId === uomId)?.uomName ?? line.uom
-    const { unitPrice, priceLabel } = computeLinePrice(p, line.orderedQty, uomId)
-    patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel })
+    const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, line.orderedQty, uomId)
+    patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail })
   }
 
   // ── Select product for a line ─────────────────────────────────────────────
@@ -714,7 +727,7 @@ export default function ClassicPlaceOrderPage() {
     ensureSaleUomOptions(p.id)
     const computeLine = (cache: Record<string, number>) => computeLinePrice(p, 1, p.uomId, cache)
 
-    const { unitPrice, priceLabel } = computeLine(lastPrices)
+    const { unitPrice, priceLabel, priceLabelDetail } = computeLine(lastPrices)
 
     // ATP 警告：库存不足时提示但不阻止添加
     const onHand = p.qtyOnHand ?? 0
@@ -741,6 +754,7 @@ export default function ClassicPlaceOrderPage() {
               unitPrice,
               cost:        p.standardPrice ?? 0,
               priceLabel,
+              priceLabelDetail,
               taxRate:     (p.customerTaxRate ?? 0) * 100,
             },
       ),
@@ -779,14 +793,14 @@ export default function ClassicPlaceOrderPage() {
 
   // 用当前价格表/lastPrice 为历史行的商品重算价格，构造一条订单行
   function buildHistoryLine(p: Product, qty: number, note: string, cache: Record<string, number>): QuotationLine {
-    const { unitPrice, priceLabel } = computeLinePrice(p, qty, p.uomId, cache)
+    const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, qty, p.uomId, cache)
     return {
       id: uid(), productId: p.id, productName: p.name,
       description: p.spec ?? p.name, note,
       orderedQty: qty, forecastQty: null, qtyOnHand: p.qtyOnHand ?? 0,
       uom: (p as Product & { uomName?: string }).uomName ?? 'Unit(s)',
       uomId: (p as Product & { uomId?: string }).uomId ?? undefined,
-      unitPrice, cost: p.standardPrice ?? 0, priceLabel,
+      unitPrice, cost: p.standardPrice ?? 0, priceLabel, priceLabelDetail,
       taxRate: (p.customerTaxRate ?? 0) * 100,
     }
   }
@@ -815,8 +829,8 @@ export default function ClassicPlaceOrderPage() {
           if (!ids.includes(l.productId)) return l
           const p = products.find(pp => pp.id === l.productId)
           if (!p || !effectiveCustomer) return l
-          const { unitPrice, priceLabel } = computeLinePrice(p, l.orderedQty, l.uomId, merged)
-          return { ...l, unitPrice, priceLabel }
+          const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, l.orderedQty, l.uomId, merged)
+          return { ...l, unitPrice, priceLabel, priceLabelDetail }
         }))
       })
     }
@@ -913,10 +927,10 @@ export default function ClassicPlaceOrderPage() {
         if (!l.productId) return l
         const p = products.find(pp => pp.id === l.productId)
         if (!p) return l
-        const { unitPrice, priceLabel: newLabel } = computeLinePrice(p, l.orderedQty || 1, l.uomId)
-        if (l.unitPrice === unitPrice && l.priceLabel === newLabel) return l
+        const { unitPrice, priceLabel: newLabel, priceLabelDetail: newDetail } = computeLinePrice(p, l.orderedQty || 1, l.uomId)
+        if (l.unitPrice === unitPrice && l.priceLabel === newLabel && l.priceLabelDetail === newDetail) return l
         changed = true
-        return { ...l, unitPrice, priceLabel: newLabel }
+        return { ...l, unitPrice, priceLabel: newLabel, priceLabelDetail: newDetail }
       })
       return changed ? next : prev
     })
@@ -1853,12 +1867,26 @@ export default function ClassicPlaceOrderPage() {
                       {/* Price label */}
                       <td className="px-2 py-1">
                         {line.productId ? (
-                          <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          <span
+                            title={
+                              line.priceLabel === 'PriceList'
+                                ? (line.priceLabelDetail ? (isEn ? `Pricelist: ${line.priceLabelDetail}` : `价格表：${line.priceLabelDetail}`) : (isEn ? 'Pricelist' : '价格表'))
+                                : line.priceLabel === 'Last'
+                                  ? (line.priceLabelDetail
+                                      ? (isEn ? `Last transaction: ${new Date(line.priceLabelDetail).toLocaleDateString('en-CA')}` : `最近成交时间：${new Date(line.priceLabelDetail).toLocaleDateString('zh-CN')}`)
+                                      : (isEn ? 'Last transaction price' : '最近成交价'))
+                                  : line.priceLabel === 'Special'
+                                    ? (isEn ? 'Customer special price' : '客户专属特殊价格')
+                                    : (isEn ? 'Default list price' : '直接牌价')
+                            }
+                            className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-medium cursor-help ${
                             line.priceLabel === 'Special'
                               ? 'bg-green-100 text-green-700'
                               : line.priceLabel === 'PriceList'
                                 ? 'bg-blue-100 text-blue-700'
-                                : 'bg-gray-100 text-gray-600'
+                                : line.priceLabel === 'Last'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-gray-100 text-gray-600'
                           }`}>
                             {line.priceLabel}
                           </span>

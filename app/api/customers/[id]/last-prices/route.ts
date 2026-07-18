@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { queryLastSoldPrices } from '@/lib/server-pricing'
+import { queryLastSoldPricesDetailed } from '@/lib/server-pricing'
 
 /**
  * GET /api/customers/[id]/last-prices?productIds=p1,p2,p3
@@ -11,6 +11,7 @@ import { queryLastSoldPrices } from '@/lib/server-pricing'
  * Response:
  *   {
  *     prices: { [productId: string]: number }   // 仅包含有历史的商品
+ *     dates: { [productId: string]: string }    // 对应成交发生时间（ISO），供 hover 展示
  *     missing: string[]                         // 无历史成交记录的 productIds
  *   }
  *
@@ -48,11 +49,17 @@ export async function GET(
       return NextResponse.json({ error: '客户不存在' }, { status: 404 })
     }
 
-    const prices = await queryLastSoldPrices(prisma, customerId, productIds)
+    const detailed = await queryLastSoldPricesDetailed(prisma, customerId, productIds)
 
+    const prices: Record<string, number> = {}
+    const dates: Record<string, string> = {}
+    for (const [pid, hit] of Object.entries(detailed)) {
+      prices[pid] = hit.price
+      dates[pid] = hit.date.toISOString()
+    }
     const missing = productIds.filter((pid) => !(pid in prices))
 
-    return NextResponse.json({ prices, missing })
+    return NextResponse.json({ prices, dates, missing })
   } catch (error) {
     console.error('[GET /api/customers/[id]/last-prices]', error)
     return NextResponse.json({ error: '查询历史成交价失败' }, { status: 500 })

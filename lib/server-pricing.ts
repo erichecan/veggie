@@ -40,6 +40,8 @@ export interface ResolvedLine {
   accepted: boolean                // 是否落库采用前端价格（默认以 authoritative 为准）
   subtotal: number                 // = authoritativeUnitPrice * quantity
   resolution: PriceResolution       // 价格溯源（来自哪条规则）
+  /** resolution.sourceType==='last' 时，那笔最近成交发生的时间；其余情况为 undefined */
+  lastPriceDate?: Date
   uomId?: string
   uomName?: string
   taxRate?: number
@@ -119,6 +121,20 @@ export async function queryLastSoldPrice(
 }
 
 /**
+ * 同 queryLastSoldPrice，额外带上那笔成交发生的时间（订单 createdAt），
+ * 用于 OrderLine.priceSourceDate 快照——UI 上"最近成交价"的 hover 提示要能显示
+ * 具体是哪天成交的，不只是金额。
+ */
+export async function queryLastSoldPriceWithDate(
+  prisma: PricingContext['prisma'],
+  customerId: string,
+  productId: string,
+): Promise<{ price: number; date: Date } | undefined> {
+  const map = await queryLastSoldPricesDetailed(prisma, customerId, [productId])
+  return map[productId]
+}
+
+/**
  * 批量查询某客户对一组商品的最近一次成交价。
  * 用于前端 place-order 页一次性拉所有 line 的 lastPrice，避免 N 次往返。
  *
@@ -132,7 +148,19 @@ export async function queryLastSoldPrices(
   customerId: string,
   productIds: string[],
 ): Promise<Record<string, number>> {
+  const detailed = await queryLastSoldPricesDetailed(prisma, customerId, productIds)
   const result: Record<string, number> = {}
+  for (const [productId, hit] of Object.entries(detailed)) result[productId] = hit.price
+  return result
+}
+
+/** 同 queryLastSoldPrices，额外带成交发生的时间（订单 createdAt），供 priceSourceDate 快照用 */
+export async function queryLastSoldPricesDetailed(
+  prisma: PricingContext['prisma'],
+  customerId: string,
+  productIds: string[],
+): Promise<Record<string, { price: number; date: Date }>> {
+  const result: Record<string, { price: number; date: Date }> = {}
   if (productIds.length === 0) return result
 
   const users = await prisma.user.findMany({
@@ -147,7 +175,7 @@ export async function queryLastSoldPrices(
     where: { restaurantId: { in: restaurantIds } },
     orderBy: { createdAt: 'desc' },
     take: 200,
-    select: { items: true },
+    select: { items: true, createdAt: true },
   })
 
   for (const order of recent) {
@@ -156,7 +184,7 @@ export async function queryLastSoldPrices(
     for (const it of items) {
       if (!wanted.has(it.productId)) continue
       if (!Number.isFinite(it.price) || it.price <= 0) continue
-      result[it.productId] = it.price
+      result[it.productId] = { price: it.price, date: order.createdAt }
       wanted.delete(it.productId)
     }
   }
@@ -312,8 +340,11 @@ export async function resolveOrderLines(
     //   multi → 价格表规则 → lastPrice → listPrice（三级优先级）
     const normalizedPriceType = (effectiveCustomer.priceType ?? 'multi').toLowerCase()
     let lastPrice: number | undefined
+    let lastPriceDate: Date | undefined
     if (normalizedPriceType === 'last' || normalizedPriceType === 'multi') {
-      lastPrice = await queryLastSoldPrice(ctx.prisma, customer.id, item.productId)
+      const hit = await queryLastSoldPriceWithDate(ctx.prisma, customer.id, item.productId)
+      lastPrice = hit?.price
+      lastPriceDate = hit?.date
     }
 
     const resolution = resolveCustomerPrice(
@@ -348,6 +379,7 @@ export async function resolveOrderLines(
       accepted,
       subtotal,
       resolution,
+      lastPriceDate: resolution.sourceType === 'last' ? lastPriceDate : undefined,
       uomId: item.uomId,
       uomName: item.uomName,
       // SSOT 护栏(A-1): OrderLine.taxRate 一律存百分数(如 23)。历史小数(0.23)与

@@ -11,6 +11,7 @@ import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { OrderChatter } from '@/components/order/OrderChatter'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
+import { formatPriceSourceBadge } from '@/lib/price-source'
 
 const PURPLE = '#875A7B'
 
@@ -170,6 +171,12 @@ export default function SalesOrderDetailPage() {
         const price = field === 'unitPrice' ? Number(value) : Number(next[idx].unitPrice)
         line.subtotal = Math.round(qty * price * 100) / 100
       }
+      if (field === 'unitPrice') {
+        // 手动改价，原来的来源判断（价格表/牌价/最近成交）不再成立
+        line.priceSourceType = null
+        line.priceSourceDetail = null
+        line.priceSourceDate = null
+      }
       next[idx] = line
       return next
     })
@@ -314,9 +321,21 @@ export default function SalesOrderDetailPage() {
     const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
     return s + (Number(l.unitPrice) - cost) * Number(l.orderedQty)
   }, 0)
-  function addProductLine(p: AllProduct) {
+  async function addProductLine(p: AllProduct) {
+    // priceType='default' 的定价链从不查最近成交价，跳过这次查询
+    let lastPriceHit: { price: number; date: string } | undefined
+    if (customer && priceType !== 'default') {
+      try {
+        const res = await apiGet<{ price: number | null; createdAt?: string }>(
+          `/api/orders/last-price?customerId=${customer.id}&productId=${p.id}`
+        )
+        if (res.price != null && res.price > 0) {
+          lastPriceHit = { price: res.price, date: res.createdAt ?? '' }
+        }
+      } catch { /* 查询失败不阻塞加行，回退到价格表/牌价 */ }
+    }
     const resolution = customer
-      ? resolveCustomerPrice(p as never, customer, pricelists)
+      ? resolveCustomerPrice(p as never, customer, pricelists, 1, lastPriceHit?.price)
       : null
     const price = resolution ? resolution.price : Number(p.listPrice ?? 0)
     const newLine = {
@@ -336,6 +355,9 @@ export default function SalesOrderDetailPage() {
       taxRate: Number(p.customerTaxRate ?? 0) * 100,
       sequence: editLines.length,
       cost: Number(p.standardPrice ?? 0),
+      priceSourceType: resolution ? resolution.sourceType.toUpperCase() : null,
+      priceSourceDetail: resolution?.sourceType === 'pricelist' ? resolution.pricelistName : null,
+      priceSourceDate: resolution?.sourceType === 'last' ? (lastPriceHit?.date ?? null) : null,
     } as unknown as EditLine
     setEditLines(prev => [...prev, newLine])
   }
@@ -706,7 +728,17 @@ export default function SalesOrderDetailPage() {
                     </td>
                     <td className="px-2 py-2 text-right text-gray-400">{cost.toFixed(2)}</td>
                     <td className="px-2 py-2 text-center">
-                      <button className="px-2 py-0.5 border border-gray-300 rounded text-xs text-gray-500">Price</button>
+                      {(() => {
+                        const badge = formatPriceSourceBadge(l as unknown as { priceSourceType?: string | null; priceSourceDetail?: string | null; priceSourceDate?: string | null }, isEn)
+                        return (
+                          <span
+                            title={badge.title}
+                            className={`inline-block px-2 py-0.5 border rounded text-xs cursor-help ${badge.className}`}
+                          >
+                            {badge.label}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="px-2 py-2 text-center">
                       {editing ? (

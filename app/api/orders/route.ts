@@ -457,6 +457,11 @@ export async function POST(req: Request) {
                     invoicedQty: 0,
                     subtotal: Number((l.authoritativeUnitPrice * l.quantity).toFixed(2)),
                     commissionPrice: commissionPriceMap.get(l.productId) ?? null,
+                    // 单价来源快照：服务端权威定价(resolveOrderLines)算出的 sourceType，
+                    // 供订单详情页"Price"列 hover 展示来源，历史订单没有这三个字段
+                    priceSourceType: l.resolution.sourceType.toUpperCase(),
+                    priceSourceDetail: l.resolution.sourceType === 'pricelist' ? l.resolution.pricelistName : null,
+                    priceSourceDate: l.lastPriceDate ?? null,
                     sequence: idx,
                   })),
                 },

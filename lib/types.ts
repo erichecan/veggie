@@ -252,6 +252,12 @@ export interface OrderLine {
   sequence: number
   /** 商品件提成单价·下单快照（不下发到下单/报价/销售单详情页，见 PRD 20260703） */
   commissionPrice?: number | null
+  /** 单价来源快照：PRICELIST/DEFAULT/LAST/SPECIAL，历史订单为 null */
+  priceSourceType?: string | null
+  /** 来源明细：PRICELIST 时为命中的价格表名字 */
+  priceSourceDetail?: string | null
+  /** LAST 来源时，最近一次成交发生的时间 */
+  priceSourceDate?: string | null
   createdAt: string
   updatedAt: string
 }

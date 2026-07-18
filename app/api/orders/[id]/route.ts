@@ -249,6 +249,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           if (l.sequence !== undefined) lineData.sequence = Number(l.sequence)
           if (l.spec !== undefined) lineData.spec = l.spec ? String(l.spec) : null
           if (l.note !== undefined) lineData.note = l.note ? String(l.note) : null
+          // 单价来源快照：编辑态由客户端算好传上来(见 orders/[id]/page.tsx updateLine)，
+          // 手动改价时客户端会把这三个字段清空，这里原样落库，不重新推断。
+          if (l.priceSourceType !== undefined) lineData.priceSourceType = l.priceSourceType ? String(l.priceSourceType) : null
+          if (l.priceSourceDetail !== undefined) lineData.priceSourceDetail = l.priceSourceDetail ? String(l.priceSourceDetail) : null
+          if (l.priceSourceDate !== undefined) lineData.priceSourceDate = l.priceSourceDate ? new Date(String(l.priceSourceDate)) : null
 
           if (l.id) {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
