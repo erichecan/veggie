@@ -13,14 +13,15 @@ import { toggleValue, today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
+import { openAuthedPdf } from '@/lib/print/open-pdf'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
-interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string }
+interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
 interface UserRow { id: string; name: string }
 interface CategoryRow { id: string; name: string }
 interface OrderLine { id: string; productId?: string | null; productName?: string | null; orderedQty?: number | null; unitPrice?: number | null; subtotal?: number | null; uomName?: string | null }
 
-/** 一条摊平的订单行，携带派生的分类/单位/库存，供四种查看方式共用 */
+/** 一条摊平的订单行，携带派生的分类/单位/库存/目录顺序号，供四种查看方式共用 */
 interface ReportLine {
   date: string
   customerId: string
@@ -33,6 +34,8 @@ interface ReportLine {
   unitPrice: number
   amount: number
   qtyOnHand: number
+  /** 商品目录/仓库拣货顺序号，勾选「按目录顺序排序」时用来排序；查不到兜底 0 排最前 */
+  sequence: number
 }
 
 const DOW_LABELS_ZH = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
@@ -75,7 +78,6 @@ type ViewMode = 'customer' | 'product' | 'category' | 'weekday'
 
 export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) {
   const locale = useLocale()
-  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const isEn = locale !== routing.defaultLocale
   const DOW_LABELS = isEn ? DOW_LABELS_EN : DOW_LABELS_ZH
 
@@ -104,6 +106,8 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   // ── 查看方式 + 度量 ──────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('customer')
   const [weekdayMeasure, setWeekdayMeasure] = useState<'qty' | 'amount'>('qty')
+  /** 勾选后「按客户/按商品/按分类」三种查看方式 + 打印都按商品目录 sequence 排序，不再按默认(插入顺序/金额/数量) */
+  const [sortBySequence, setSortBySequence] = useState(false)
 
   // 参考数据（一次加载）
   useEffect(() => {
@@ -195,11 +199,15 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
           unitPrice: Number(l.unitPrice ?? 0),
           amount: Number(l.subtotal ?? 0),
           qtyOnHand: Number(prod?.qtyOnHand ?? 0),
+          sequence: prod?.sequence ?? 0,
         })
       }
     }
-    return out.sort((a, b) => a.date.localeCompare(b.date) || a.customerName.localeCompare(b.customerName))
-  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, selectedWeekdays, productMap, isEn])
+    return out.sort((a, b) =>
+      a.date.localeCompare(b.date)
+      || a.customerName.localeCompare(b.customerName)
+      || (sortBySequence ? a.sequence - b.sequence : 0))
+  }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, selectedWeekdays, sortBySequence, productMap, isEn])
 
   const reportTotal = useMemo(() => ({
     qty: reportLines.reduce((s, l) => s + l.qty, 0),
@@ -230,37 +238,37 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 
   // 查看方式②：按商品（跨区间聚合）
   const productReport = useMemo(() => {
-    const m = new Map<string, { name: string; qty: number; amount: number; customers: Set<string> }>()
+    const m = new Map<string, { name: string; qty: number; amount: number; customers: Set<string>; sequence: number }>()
     for (const l of reportLines) {
-      const e = m.get(l.productName) ?? { name: l.productName, qty: 0, amount: 0, customers: new Set<string>() }
+      const e = m.get(l.productName) ?? { name: l.productName, qty: 0, amount: 0, customers: new Set<string>(), sequence: l.sequence }
       e.qty += l.qty
       e.amount += l.amount
       e.customers.add(l.customerId)
       m.set(l.productName, e)
     }
     return [...m.values()]
-      .map(v => ({ name: v.name, qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0 }))
-      .sort((a, b) => b.amount - a.amount)
-  }, [reportLines])
+      .map(v => ({ name: v.name, qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0, sequence: v.sequence }))
+      .sort((a, b) => sortBySequence ? a.sequence - b.sequence : b.amount - a.amount)
+  }, [reportLines, sortBySequence])
 
   // 查看方式③：按分类（分类 → 商品，带 ATP）—— 调度备货
   const categoryReport = useMemo(() => {
-    const catMap = new Map<string, Map<string, { productId: string; name: string; uomName: string; qty: number; qtyOnHand: number }>>()
+    const catMap = new Map<string, Map<string, { productId: string; name: string; uomName: string; qty: number; qtyOnHand: number; sequence: number }>>()
     for (const l of reportLines) {
       if (!catMap.has(l.categoryName)) catMap.set(l.categoryName, new Map())
       const prods = catMap.get(l.categoryName)!
       const key = l.productId || l.productName
       const ex = prods.get(key)
       if (ex) ex.qty += l.qty
-      else prods.set(key, { productId: l.productId, name: l.productName, uomName: l.uomName, qty: l.qty, qtyOnHand: l.qtyOnHand })
+      else prods.set(key, { productId: l.productId, name: l.productName, uomName: l.uomName, qty: l.qty, qtyOnHand: l.qtyOnHand, sequence: l.sequence })
     }
     return [...catMap.entries()]
       .map(([catName, prods]) => {
-        const products = [...prods.values()].sort((a, b) => b.qty - a.qty)
+        const products = [...prods.values()].sort((a, b) => sortBySequence ? a.sequence - b.sequence : b.qty - a.qty)
         return { catName, products, totalQty: products.reduce((s, p) => s + p.qty, 0) }
       })
       .sort((a, b) => a.catName.localeCompare(b.catName))
-  }, [reportLines])
+  }, [reportLines, sortBySequence])
 
   const categorySummary = useMemo(() => ({
     sku: categoryReport.reduce((s, c) => s + c.products.length, 0),
@@ -304,8 +312,10 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       : `日均峰值在${peak.day}（${fmt(peak.value)}）；按此日均，一周合计约 ${fmt(weekTotal)}。`
   }, [weekdayReport, weekdayMeasure, isEn])
 
-  // ── 打印 ──────────────────────────────────────────────────────────────────
-  function buildUrl(mode: 'day' | 'multiline' | 'summary') {
+  // ── 打印：走服务端 PDF（跟送货单/汇总单一致），不再是客户端 window.print()——
+  // 浏览器自己加的默认页头页脚(打印时间/文档标题/URL/页码)丑且不受控，客户反馈(20260718)
+  // 要求去掉；服务端 PDF 页头/页脚完全由我们自己画。────────────────────────────
+  function buildPrintUrl(mode: 'day' | 'multiline' | 'summary') {
     const params = new URLSearchParams({ mode, from: fromDate, to: toDate })
     if (selectedCustomers.length > 0) params.set('customerIds', selectedCustomers.map(c => c.id).join(','))
     if (selectedProducts.length > 0) params.set('productNames', selectedProducts.map(p => p.name).join(','))
@@ -315,7 +325,12 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     if (selectedWeekdays.length > 0) params.set('weekdays', selectedWeekdays.join(','))
     if (selectedCategories.length > 0) params.set('categoryIds', selectedCategories.join(','))
     if (selectedSalesman) params.set('salesUserId', selectedSalesman)
-    return `${prefix}/classic/print/day-wise-report?${params.toString()}`
+    if (sortBySequence) params.set('sortBySequence', '1')
+    return `/api/print/day-wise-report-pdf?${params.toString()}`
+  }
+
+  function handlePrint(mode: 'day' | 'multiline' | 'summary') {
+    openAuthedPdf(buildPrintUrl(mode)).catch(e => alert(e instanceof Error ? e.message : '打印失败'))
   }
 
   // 按分类查看的专属打印：直接渲染屏幕上的 categoryReport，保证所见即所打
@@ -550,6 +565,10 @@ ${catsHtml}
                 >{label}</button>
               ))}
             </div>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+              <input type="checkbox" checked={sortBySequence} onChange={e => setSortBySequence(e.target.checked)} className="accent-[#875A7B]" />
+              {isEn ? 'Sort by catalog sequence' : '按商品目录顺序排序'}
+            </label>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">{isEn ? 'Print:' : '打印：'}</span>
@@ -562,9 +581,9 @@ ${catsHtml}
               >{isEn ? 'Print Category Totals' : '打印分类总量'}</button>
             ) : (
               <>
-                <button onClick={() => window.open(buildUrl('day'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Daily Report (By Customer)' : '日报（按客户）'}</button>
-                <button onClick={() => window.open(buildUrl('multiline'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Detail List' : '明细清单'}</button>
-                <button onClick={() => window.open(buildUrl('summary'), '_blank', 'noopener,noreferrer')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Product × Weekday Summary' : '商品×星期汇总'}</button>
+                <button onClick={() => handlePrint('day')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Daily Report (By Customer)' : '日报（按客户）'}</button>
+                <button onClick={() => handlePrint('multiline')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Detail List' : '明细清单'}</button>
+                <button onClick={() => handlePrint('summary')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Product × Weekday Summary' : '商品×星期汇总'}</button>
               </>
             )}
           </div>
