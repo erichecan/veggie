@@ -28,14 +28,16 @@ export default function DailySalesPage() {
         <div className="px-6 pt-5 pb-0">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-semibold text-gray-900">{isEn ? 'Daily Sales Center' : '日销售管理中心'}</h1>
-            <button
-              onClick={() => setRefreshKey(k => k + 1)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
-              style={{ background: '#875A7B' }}
-              title={isEn ? 'Refetch data for the current tab' : '重新拉取当前标签页的数据'}
-            >
-              🔄 {isEn ? 'Refresh' : '刷新'}
-            </button>
+            {tab !== 'print' && (
+              <button
+                onClick={() => setRefreshKey(k => k + 1)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
+                style={{ background: '#875A7B' }}
+                title={isEn ? 'Refetch data for the current tab' : '重新拉取当前标签页的数据'}
+              >
+                🔄 {isEn ? 'Refresh' : '刷新'}
+              </button>
+            )}
           </div>
           <div className="flex">
             <button className={tabCls('print')} onClick={() => setTab('print')}>{isEn ? 'Print Center' : '打印中心'}</button>
@@ -45,7 +47,7 @@ export default function DailySalesPage() {
         </div>
       </div>
       <div className="px-6 py-6">
-        {tab === 'print' && <PrintCenter refreshKey={refreshKey} />}
+        {tab === 'print' && <PrintCenter refreshKey={refreshKey} onRefresh={() => setRefreshKey(k => k + 1)} />}
         {tab === 'shortage' && <ShortageHandler refreshKey={refreshKey} />}
         {tab === 'stats' && <SalesStats refreshKey={refreshKey} />}
       </div>

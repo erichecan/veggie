@@ -592,7 +592,7 @@ function savePrintedKeys(date: string, keys: Set<string>) {
   }
 }
 
-export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number }) {
+export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?: number; onRefresh?: () => void }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
 
@@ -843,6 +843,16 @@ export default function PrintCenter({ refreshKey = 0 }: { refreshKey?: number })
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white transition-colors hover:opacity-90"
+                style={{ background: '#875A7B' }}
+                title={isEn ? 'Refetch data for the current tab' : '重新拉取当前标签页的数据'}
+              >
+                🔄 {isEn ? 'Refresh' : '刷新'}
+              </button>
+            )}
             {isFiltered && (
               <span className="text-xs text-[#875A7B] font-medium" title={isEn ? 'The print buttons above have switched to "print current filtered results only"' : '顶部打印按钮已切换为「仅打印当前筛选结果」'}>
                 {isEn ? `Filtered · Printing ${batchGroups.length} waves` : `已筛选 · 打印 ${batchGroups.length} 波次`}
