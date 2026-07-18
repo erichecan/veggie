@@ -686,19 +686,21 @@ export default function SalesOrderDetailPage() {
                           ref={firstFieldRef as React.Ref<HTMLInputElement>}
                           value={Number(l.orderedQty)}
                           onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
+                          onFocus={e => e.target.select()}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
-                      ) : Number(l.orderedQty).toFixed(1)}
+                      ) : Number(l.orderedQty).toFixed(2)}
                     </td>
-                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(1) : '—'}</td>
-                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(1) : '—'}</td>
-                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(1)}</td>
-                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(1)}</td>
+                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
+                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
+                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
                     <td className="px-2 py-2 text-gray-600">{l.uomName ?? 'Unit(s)'}</td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.01" min="0" className={inputCls}
                           value={Number(l.unitPrice)}
                           onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))}
+                          onFocus={e => e.target.select()}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
                       ) : Number(l.unitPrice).toFixed(2)}
                     </td>

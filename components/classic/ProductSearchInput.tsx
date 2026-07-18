@@ -46,6 +46,7 @@ export default function ProductSearchInput<
   const inputRef = (externalRef ?? localInputRef) as React.RefObject<HTMLInputElement | null>
   const containerRef = useRef<HTMLDivElement>(null)
   const portalRef = useRef<HTMLDivElement>(null)
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   const filtered = useMemo(() => {
     if (!showOnEmptyQuery && !value.trim()) return []
@@ -80,9 +81,14 @@ export default function ProductSearchInput<
 
   const showDropdown = open && filtered.length > 0
 
+  useEffect(() => {
+    if (highlight >= 0) itemRefs.current[highlight]?.scrollIntoView({ block: 'nearest' })
+  }, [highlight])
+
   const dropdownItems = filtered.map((p, idx) => (
     <button
       key={p.id}
+      ref={el => { itemRefs.current[idx] = el }}
       type="button"
       onMouseDown={() => { select(p); setHighlight(-1) }}
       onMouseEnter={() => setHighlight(idx)}
@@ -149,7 +155,7 @@ export default function ProductSearchInput<
         }}
       />
       {showDropdown && !portalDropdown && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-52 overflow-y-auto">
+        <div className="absolute z-50 mt-1 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-80 overflow-y-auto">
           {dropdownItems}
         </div>
       )}
@@ -157,7 +163,7 @@ export default function ProductSearchInput<
         <div
           ref={portalRef}
           style={{ position: 'absolute', top: rect.top + 2, left: rect.left, width: Math.max(rect.width, 288), zIndex: 9999 }}
-          className="bg-white border border-gray-200 rounded shadow-lg max-h-52 overflow-y-auto"
+          className="bg-white border border-gray-200 rounded shadow-lg max-h-80 overflow-y-auto"
         >
           {dropdownItems}
         </div>,

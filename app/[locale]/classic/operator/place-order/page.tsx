@@ -1779,6 +1779,7 @@ export default function ClassicPlaceOrderPage() {
                             }
                             setQtyRawMap(prev => { const next = { ...prev }; delete next[line.id]; return next })
                           }}
+                          onFocus={e => e.target.select()}
                           onKeyDown={e => handleFieldKey(e)}
                           className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                         />
@@ -1838,6 +1839,7 @@ export default function ClassicPlaceOrderPage() {
                           step="0.01"
                           value={line.unitPrice}
                           onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0 })}
+                          onFocus={e => e.target.select()}
                           onKeyDown={e => handleFieldKey(e)}
                           className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                         />
