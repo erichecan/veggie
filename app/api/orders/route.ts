@@ -132,16 +132,26 @@ export async function GET(req: Request) {
     const facetAnd: Record<string, unknown>[] = []
     const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
 
-    // 司机是 wave 派生字段(P0-1,见 lib/wave-assign.ts)：「这单归谁送」只存在 wave.orderIds 上，
-    // 多数订单的 Order.driverSlotId 本身是 null。按司机名筛选必须先查匹配司机名的 wave，
-    // 取其 orderIds 命中 id，OR 上 Order.driverSlotId 直连(未进 wave 的历史/兜底数据)才不会漏。
+    // 司机是 wave 派生字段(P0-1,见 lib/wave-assign.ts)：「这单归谁送」一旦订单进了 wave,
+    // 就以 wave.driverName 为准(与列表页「司机」列的展示口径 attachWaveDisplay/
+    // getOrderWaveDisplayMap 完全同源)，Order.driverSlotId 只是下单时的意向快照，
+    // 进 wave 之后可能已经改派给别的司机，不能再信。
+    // Order.driverSlot 直连兜底只对"从没进过任何 wave"的订单生效(未进入调度流程的历史/新建单)，
+    // 否则会出现"搜 AFZAAL 却搜出一张列表显示 BAO 的订单"这种搜索命中和展示对不上的 bug
+    // （之前发生过：Order.driverSlotId=AFZAAL 但订单已被排进 BAO 的 wave)。
     async function driverNameClause(term: string): Promise<Record<string, unknown>> {
-      const waves = await prisma.pickingWave.findMany({
-        where: { driverName: like(term) },
-        select: { orderIds: true },
-      })
-      const waveOrderIds = [...new Set(waves.flatMap((w) => w.orderIds as string[]))]
-      return { OR: [{ id: { in: waveOrderIds } }, { driverSlot: { driverName: like(term) } }] }
+      const [matchingWaves, allWaves] = await Promise.all([
+        prisma.pickingWave.findMany({ where: { driverName: like(term) }, select: { orderIds: true } }),
+        prisma.pickingWave.findMany({ select: { orderIds: true } }),
+      ])
+      const waveOrderIds = [...new Set(matchingWaves.flatMap((w) => w.orderIds as string[]))]
+      const inAnyWave = [...new Set(allWaves.flatMap((w) => w.orderIds as string[]))]
+      return {
+        OR: [
+          { id: { in: waveOrderIds } },
+          { AND: [{ id: { notIn: inAnyWave } }, { driverSlot: { driverName: like(term) } }] },
+        ],
+      }
     }
 
     // 列表页表头下的"列筛选框"(Customer/单号/销售员/司机) — 与 f_* 分面 chip 不同,
