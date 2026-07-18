@@ -3,6 +3,11 @@
  *
  * 表格：序号 | 发票号 | 客户名称 | 城市 | 地址 | 电话 | 备注 | 金额
  * 每个订单单独一行，同一客户当天多笔订单不合并（客户要求两单都要看到，20260715）。
+ *
+ * 页码：汇总单不是按订单分页(是连续表格，多单挤一起)，"订单号-Page X/Y"这套规则不适用；
+ * 走服务端 Puppeteer PDF(见 dispatch-summary-pdf/route.ts)，页码用 page.pdf() 原生
+ * pageNumber/totalPages(按真实渲染页数计数)，不在这个模板里手工渲染("Summary 日期 司机 -
+ * Page X/Y"，整份文档统一页码，20260718 客户要求)。
  */
 
 import {
@@ -136,7 +141,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   <div class="page-header">
     <div class="left">Print at: ${now}</div>
     <div class="center">Johnstone Bros Delivery Summary（汇总单）</div>
-    <div class="right">1 / 1</div>
+    <div class="right"></div>
   </div>
 
   <div class="filter-row">

@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadDispatchPrintData } from '@/lib/print/dispatch-loader'
-import { stripAutoPrintScript } from '@/lib/print/trip-common'
+import { stripAutoPrintScript, formatTripDriverList } from '@/lib/print/trip-common'
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 
@@ -39,7 +39,12 @@ export async function GET(req: Request) {
       }
       const data = { trip: wire.trip, orders: wire.orders, customers: new Map(wire.customers.map(c => [c.id, c])) }
       const html = stripAutoPrintScript(generateTripSummaryHtml(data))
-      const pdf = await renderHtmlToPdf(html)
+      // 汇总单不是按订单分页(是连续表格，多单挤一起)，"订单号-Page X/Y"套不上——改成
+      // 整份文档统一页码，用 Puppeteer 原生页码(按真实渲染页数计数)，前缀带日期+司机方便辨认
+      // 是哪一叠(客户要求，20260718)。
+      const driverLabel = formatTripDriverList(wire.trip, wire.orders)
+      const pageLabel = `Summary ${date}${driverLabel && driverLabel !== '—' ? ' ' + driverLabel : ''}`
+      const pdf = await renderHtmlToPdf(html, { pageNumbers: true, pageLabel })
       return new NextResponse(new Uint8Array(pdf), {
         headers: {
           'Content-Type': 'application/pdf',

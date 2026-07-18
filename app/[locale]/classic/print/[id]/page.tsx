@@ -9,6 +9,15 @@ import { barcodeValue } from '@/lib/barcode'
 import { docBadge } from '@/lib/print/doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
+import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
+
+/**
+ * 最后一块除了富页脚(联系方式+页码)，还要放 Totals/Payment 徽章(sales/invoice)或最多 3 个
+ * 备注框(delivery: 客户/订单/送货备注)——这些内容不算进行高预估，实测长订单会撑破单页
+ * 变成 2 张物理纸，页脚跟着错位(同 trip-sales/delivery-template 的教训)。按两种 docType
+ * 的最坏情况取更大值，宁可多分一页也不能真溢出。
+ */
+const RICH_FOOTER_OVERHEAD_MM = 80
 
 // 预渲染 CODE128 条形码为内嵌 SVG（不依赖外部 CDN，规避 CSP 拦截）
 function barcodeSvg(code: string): string {
@@ -68,7 +77,7 @@ export function buildOrderHtml(
   const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
   const paymentBorder = isImmediatePayment ? '#ef4444' : '#16a34a'
 
-  const linesHtml = lines.map((l, i) => {
+  function renderLineRow(l: (typeof lines)[number], i: number): string {
     const spec = (l as unknown as { spec?: string }).spec
     const uomName = (l as unknown as { uomName?: string }).uomName ?? ''
     const taxRate = Number(l.taxRate ?? 0)
@@ -86,7 +95,7 @@ export function buildOrderHtml(
       <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
       <td class="col-incl">${eur(inclVat)}</td>`}
     </tr>`
-  }).join('')
+  }
 
   const vatRowsHtml = Object.entries(vatGroups)
     .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
@@ -96,10 +105,7 @@ export function buildOrderHtml(
       <td class="total-value">${eur(vat)}</td>
     </tr>`).join('')
 
-  const pageBreak = opts.pageBreakAfter ? 'page-break-after: always;' : ''
-
-  return `
-<div class="page" style="${pageBreak}">
+  const headerBlockHtml = `
   <div class="header">
     <div>
       ${docBadge(opts.docType === 'delivery' ? 'delivery' : opts.docType === 'sales' ? 'salesOrder' : 'invoice')}
@@ -142,24 +148,9 @@ export function buildOrderHtml(
         </div>
       </td>
     </tr>
-  </table>
+  </table>`
 
-  <table class="lines-table">
-    <thead>
-      <tr>
-        <th class="col-qty">QTY</th>
-        <th class="col-unit">UNIT</th>
-        <th class="col-desc">DESCRIPTION</th>
-        ${hidePrice ? '' : `<th class="col-price">PRICE</th>
-        <th class="col-vat">VAT</th>
-        <th class="col-incl">INCL VAT</th>`}
-      </tr>
-    </thead>
-    <tbody>
-      ${linesHtml || `<tr><td colspan="${hidePrice ? 3 : 6}" style="text-align:center;padding:6mm;color:#999">No items</td></tr>`}
-    </tbody>
-  </table>
-
+  const totalsBlockHtml = `
   ${hidePrice ? '' : `<div class="totals-wrap">
     <table class="totals-table">
       <tr>
@@ -191,8 +182,52 @@ export function buildOrderHtml(
   ${opts.docType === 'delivery' && order.deliveryNote ? `<div style="margin-top:16px;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;font-size:12px;color:#374151;">
     <div style="font-weight:600;margin-bottom:4px;">🚚 送货备注 / Delivery Note</div>
     <div style="white-space:pre-wrap;">${order.deliveryNote}</div>
-  </div>` : ''}
+  </div>` : ''}`
+
+  // 明细多到一页放不下时按 chunkOrderLinesForPrint 手动分块，每块单独渲染成一个 .page、
+  // 页头在每块顶部都重新画一次；页脚(联系方式+订单号-页码)同理每块都画一次——不能用
+  // position:fixed 图省事，那样整份文档只有一份内容，没法按块显示不同的当前页码。
+  const chunks = chunkOrderLinesForPrint(lines, RICH_FOOTER_OVERHEAD_MM)
+
+  return chunks.map((chunk, chunkIdx) => {
+    const isLastChunk = chunkIdx === chunks.length - 1
+    const pageBreak = (!isLastChunk || opts.pageBreakAfter) ? 'page-break-after: always;' : ''
+    const linesHtml = chunk.map(renderLineRow).join('')
+    return `
+<div class="page" style="${pageBreak}">
+  ${headerBlockHtml}
+
+  <table class="lines-table">
+    <thead>
+      <tr>
+        <th class="col-qty">QTY</th>
+        <th class="col-unit">UNIT</th>
+        <th class="col-desc">DESCRIPTION</th>
+        ${hidePrice ? '' : `<th class="col-price">PRICE</th>
+        <th class="col-vat">VAT</th>
+        <th class="col-incl">INCL VAT</th>`}
+      </tr>
+    </thead>
+    <tbody>
+      ${linesHtml || (isLastChunk ? `<tr><td colspan="${hidePrice ? 3 : 6}" style="text-align:center;padding:6mm;color:#999">No items</td></tr>` : '')}
+    </tbody>
+  </table>
+
+  ${isLastChunk ? totalsBlockHtml : ''}
+
+  <div class="footer-inpage">
+    <hr class="footer-divider"/>
+    <div class="footer-lines">
+      Tel: (01) 830 8065 / 018308068 / 0879318299 &nbsp;&nbsp; Mail: info@johnstonebros.ie | johnstoneveg@gmail.com<br/>
+      Web: https://m.johnstonebros.ie/ &nbsp;&nbsp; VAT: IE9739451J
+    </div>
+    <div class="footer-page-row">
+      <span>${orderCode} - Page ${chunkIdx + 1}/${chunks.length}</span>
+      <span>Print at: <span class="print-ts"></span></span>
+    </div>
+  </div>
 </div>`
+  }).join('')
 }
 
 export const CSS = `
@@ -237,8 +272,8 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 .total-value { text-align: right; }
 .total-grand td { font-weight: bold; font-size: 11pt; color: #111; border-top: 2px solid #333; border-bottom: none; }
 
-.footer-fixed {
-  position: fixed;
+.footer-inpage {
+  position: absolute;
   bottom: 0; left: 0; right: 0;
   padding: 2mm 12mm 4mm;
   background: #fff;
@@ -250,7 +285,6 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 @media print {
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page { padding: 8mm 12mm 22mm; }
-  .footer-fixed { position: fixed; bottom: 0; }
 }
 `
 
@@ -293,24 +327,13 @@ export default function PrintPage() {
 <body>
 ${bodyHtml}
 
-<div class="footer-fixed">
-  <hr class="footer-divider"/>
-  <div class="footer-lines">
-    Tel: (01) 830 8065 / 018308068 / 0879318299 &nbsp;&nbsp; Mail: info@johnstonebros.ie | johnstoneveg@gmail.com<br/>
-    Web: https://m.johnstonebros.ie/ &nbsp;&nbsp; VAT: IE9739451J
-  </div>
-  <div class="footer-page-row">
-    <span>Page: 1 / 1</span>
-    <span>Print at: <span id="print-ts"></span></span>
-  </div>
-</div>
-
 <script>
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
-  document.getElementById('print-ts').textContent =
-    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
+  var stamp = pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
+  // 订单被分成多页时，每页都有自己的一份页脚(见 footer-inpage)，逐个填充时间戳
+  document.querySelectorAll('.print-ts').forEach(function(el){ el.textContent = stamp; });
   // 打印在本文档(iframe)自己的脚本里触发，父页面只 postMessage 通知，不直接调用
   // contentWindow.print()——后者是同步跨窗口调用，会连带卡住父页面的事件循环。
   window.addEventListener('message', function(e){ if (e.data === 'print' && e.source === window.parent) window.print(); });

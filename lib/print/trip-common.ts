@@ -137,28 +137,65 @@ const PRINT_PAGE_USABLE_MM = 272
 const PRINT_HEADER_OVERHEAD_MM = 90
 const PRINT_ROW_BASE_MM = 9
 const PRINT_ROW_EXTRA_LINE_MM = 4.2
+/** 每页页脚(单据编码 - Page X/Y)预留高度，单行小字，比页头保守估算小很多 */
+const PRINT_FOOTER_OVERHEAD_MM = 8
 
-export function chunkOrderLinesForPrint<T extends { spec?: string | null; note?: string | null }>(
-  lines: T[],
+/**
+ * 通用打印分页器：按每行预估高度(mm)把 rows 切块，块内累计高度不超过 availableMm，
+ * 保证每块能刚好放进一张物理打印页(单块至少 1 行，避免死循环)。
+ * chunkOrderLinesForPrint(订单明细行)、汇总单(整单一行)等场景共用同一套切块逻辑，
+ * 只是每行高度的估算函数不同。
+ */
+export function chunkRowsForPrint<T>(
+  rows: T[],
+  estimateHeightMm: (row: T) => number,
+  availableMm: number,
 ): T[][] {
-  const available = PRINT_PAGE_USABLE_MM - PRINT_HEADER_OVERHEAD_MM
   const chunks: T[][] = []
   let current: T[] = []
   let currentHeight = 0
-  for (const l of lines) {
-    const extraLines = (l.spec ? 1 : 0) + (l.note ? 1 : 0)
-    const rowHeight = PRINT_ROW_BASE_MM + extraLines * PRINT_ROW_EXTRA_LINE_MM
-    if (current.length > 0 && currentHeight + rowHeight > available) {
+  for (const r of rows) {
+    const h = estimateHeightMm(r)
+    if (current.length > 0 && currentHeight + h > availableMm) {
       chunks.push(current)
       current = []
       currentHeight = 0
     }
-    current.push(l)
-    currentHeight += rowHeight
+    current.push(r)
+    currentHeight += h
   }
-  chunks.push(current)
+  if (current.length > 0) chunks.push(current)
   return chunks
 }
+
+/**
+ * @param footerOverheadMm 页脚预留高度(mm)，默认按"单据编码 - Page X/Y"这行小字预留；
+ *   页脚内容更多(如带联系方式的多行页脚)的调用方应传入更大的值，避免最后一行内容被页脚压住。
+ */
+export function chunkOrderLinesForPrint<T extends { spec?: string | null; note?: string | null }>(
+  lines: T[],
+  footerOverheadMm: number = PRINT_FOOTER_OVERHEAD_MM,
+): T[][] {
+  const available = PRINT_PAGE_USABLE_MM - PRINT_HEADER_OVERHEAD_MM - footerOverheadMm
+  return chunkRowsForPrint(lines, l => {
+    const extraLines = (l.spec ? 1 : 0) + (l.note ? 1 : 0)
+    return PRINT_ROW_BASE_MM + extraLines * PRINT_ROW_EXTRA_LINE_MM
+  }, available)
+}
+
+/**
+ * 每页页脚统一格式："单据编码 - Page 当前页/总页数"——不管这叠纸后续被打乱成什么顺序，
+ * 靠页脚就能唯一定位归属订单与相对位置(客户要求,20260718)。docCode 传订单号/单据编号；
+ * 页脚渲染在 .page 内部(需要 .page 是 position:relative)，不能用 position:fixed——
+ * 那样整份多页文档只有一份内容，没法按块显示不同的当前页码。
+ */
+export function renderPageNumberFooter(docCode: string, pageNum: number, totalPages: number): string {
+  return `<div class="print-page-footer">${escapeHtml(docCode)} - Page ${pageNum}/${totalPages}</div>`
+}
+
+export const PRINT_PAGE_FOOTER_CSS = `
+.print-page-footer { position: absolute; left: 0; right: 0; bottom: 4mm; text-align: center; font-size: 8pt; color: #666; }
+`
 
 /**
  * 三张单(delivery/sales/picking/summary)统一的司机身份展示格式：「批次号 时段 司机名」

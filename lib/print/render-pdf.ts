@@ -8,6 +8,7 @@
 import 'server-only'
 import { existsSync } from 'fs'
 import puppeteer from 'puppeteer-core'
+import { escapeHtml } from './trip-common'
 
 const MAC_CHROME_PATHS = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -27,11 +28,14 @@ function resolveExecutablePath(): string {
 
 export interface RenderPdfOptions {
   /**
-   * 每页底部居中显示 "Page X / Y"（目前只有拣货单需要——它是按商品汇总的整趟车
-   * 视角，商品多时会自然溢出好几页，司机需要知道有没有漏翻；送货单/销售单/汇总单
-   * 客户明确要求不要页脚/页码，不要传 true）。
+   * 每页底部居中显示 "Page X / Y"——拣货单(按商品汇总的整趟车视角，商品多时自然溢出
+   * 好几页)和汇总单(20260718 起客户要求，方便一叠纸打乱后按页脚归位)都需要；用的是
+   * Puppeteer page.pdf() 原生页码(按真实渲染页数计数，不用像客户端 HTML 打印那样
+   * 手工估算行高分页)。送货单/销售单走客户端 window.print()，不经过这个文件。
    */
   pageNumbers?: boolean
+  /** pageNumbers=true 时，页码前追加的文案前缀，如 "Summary 2026-07-18 AFZAAL"；不传则只显示 "Page X / Y" */
+  pageLabel?: string
 }
 
 export async function renderHtmlToPdf(html: string, options: RenderPdfOptions = {}): Promise<Buffer> {
@@ -50,7 +54,7 @@ export async function renderHtmlToPdf(html: string, options: RenderPdfOptions = 
       displayHeaderFooter: !!options.pageNumbers,
       headerTemplate: '<span></span>',
       footerTemplate: options.pageNumbers
-        ? '<div style="width:100%;font-size:9px;text-align:center;color:#333;font-family:Arial,Helvetica,sans-serif;">Page <span class="pageNumber"></span> / <span class="totalPages"></span></div>'
+        ? `<div style="width:100%;font-size:9px;text-align:center;color:#333;font-family:Arial,Helvetica,sans-serif;">${options.pageLabel ? escapeHtml(options.pageLabel) + ' - ' : ''}Page <span class="pageNumber"></span> / <span class="totalPages"></span></div>`
         : '<span></span>',
       margin: { top: '10mm', bottom: '10mm', left: '8mm', right: '8mm' },
     })

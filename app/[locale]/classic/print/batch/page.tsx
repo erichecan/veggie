@@ -67,24 +67,13 @@ export default function BatchPrintPage() {
 <body>
 ${bodyHtml}
 
-<div class="footer-fixed">
-  <hr class="footer-divider"/>
-  <div class="footer-lines">
-    Tel: (01) 830 8065 / 018308068 / 0879318299 &nbsp;&nbsp; Mail: info@johnstonebros.ie | johnstoneveg@gmail.com<br/>
-    Web: https://m.johnstonebros.ie/ &nbsp;&nbsp; VAT: IE9739451J
-  </div>
-  <div class="footer-page-row">
-    <span>Orders: ${validOrders.length}</span>
-    <span>Print at: <span id="print-ts"></span></span>
-  </div>
-</div>
-
 <script>
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
-  document.getElementById('print-ts').textContent =
-    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
+  var stamp = pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
+  // 每个订单每页都有自己的一份页脚(见 buildOrderHtml 的 footer-inpage)，逐个填充时间戳
+  document.querySelectorAll('.print-ts').forEach(function(el){ el.textContent = stamp; });
   // 打印在本文档(iframe)自己的脚本里触发，父页面只 postMessage 通知，不直接调用
   // contentWindow.print()——后者是同步跨窗口调用，会连带卡住父页面的事件循环。
   window.addEventListener('message', function(e){ if (e.data === 'print' && e.source === window.parent) window.print(); });

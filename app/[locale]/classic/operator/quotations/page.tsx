@@ -10,7 +10,7 @@ import type { Order, OrderStatus, Invoice, Customer, Trip } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
-import { buildOrderHtml } from '../../print/[id]/page'
+import { buildOrderHtml, CSS as PRINT_CSS } from '../../print/[id]/page'
 import { getSession } from '@/lib/session'
 import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
 import { useServerList } from '@/hooks/use-server-list'
@@ -716,67 +716,6 @@ export default function ClassicQuotationsPage() {
         return buildOrderHtml(o, customer, { pageBreakAfter: idx < fetched.length - 1 })
       }).join('')
 
-      const orderCodes = fetched.map(o => o.code ?? o.id.slice(-8).toUpperCase())
-      const barcodeInits = orderCodes.map(code => {
-        const safe = code.replace(/['"\\]/g, '')
-        return `try { JsBarcode('#bc-${safe}', ${JSON.stringify(code)}, { format:'CODE128', width:1.5, height:45, displayValue:false, margin:0 }); } catch(e){}`
-      }).join('\n  ')
-
-      const CSS = `
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; background:#fff; }
-.page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 12mm 22mm; position: relative; }
-.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7mm; padding-bottom: 3mm; border-bottom: 2px solid #1a3a2a; }
-.company-name { font-size: 26pt; font-weight: bold; font-style: italic; color: #1a3a2a; }
-.company-addr { text-align: right; font-size: 8.5pt; color: #444; line-height: 1.6; }
-.info-table { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
-.info-table td { border: 1px solid #bbb; padding: 3mm 4mm; vertical-align: top; width: 25%; }
-.info-head { font-size: 7pt; font-weight: bold; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2mm; }
-.info-val  { font-size: 9pt; color: #111; line-height: 1.6; }
-.barcode-cell { text-align: center; }
-.barcode-svg { max-width: 100%; height: 22mm; display: block; margin: 0 auto; }
-.barcode-code { font-size: 9pt; font-weight: bold; margin-top: 1mm; letter-spacing: 1px; }
-.lines-table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
-.lines-table thead tr { background: #1a3a2a; color: #fff; }
-.lines-table thead th { padding: 2.5mm 3mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
-.lines-table tbody tr.row-even { background: #fff; }
-.lines-table tbody tr.row-odd  { background: #f7f7f7; }
-.lines-table tbody td { padding: 2mm 3mm; font-size: 9pt; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
-.col-qty   { text-align: right; width: 10%; }
-.col-unit  { text-align: left;  width: 9%; }
-.col-desc  { text-align: left;  width: 43%; }
-.col-price { text-align: right; width: 12%; }
-.col-vat   { text-align: center; width: 7%; }
-.col-incl  { text-align: right; width: 13%; }
-.prod-name { font-weight: normal; }
-.prod-spec { color: #666; font-size: 8pt; margin-top: 1px; }
-.totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; }
-.totals-table { width: 260px; border-collapse: collapse; border: 1px solid #ccc; }
-.totals-table tr td { padding: 2mm 4mm; font-size: 9.5pt; border-bottom: 1px solid #e0e0e0; }
-.total-label { color: #555; }
-.total-value { text-align: right; }
-.total-grand td { font-weight: bold; font-size: 11pt; color: #111; border-top: 2px solid #333; border-bottom: none; }
-.footer-block { margin-top: 8mm; border-top: 1px solid #ccc; padding-top: 2mm; }
-.footer-lines { font-size: 7.5pt; color: #666; line-height: 1.6; }
-.footer-page-row { display: flex; justify-content: space-between; font-size: 7.5pt; color: #666; margin-top: 1mm; }
-@media print {
-  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .page { padding: 8mm 12mm 18mm; }
-}
-`
-
-      const footerHtml = `
-<div class="footer-block">
-  <div class="footer-lines">
-    Tel: (01) 830 8065 / 018308068 / 0879318299 &nbsp;&nbsp; Mail: info@johnstonebros.ie | johnstoneveg@gmail.com<br/>
-    Web: https://m.johnstonebros.ie/ &nbsp;&nbsp; VAT: IE9739451J
-  </div>
-  <div class="footer-page-row">
-    <span>Page: 1 / ${fetched.length}</span>
-    <span>Print at: <span id="bulk-print-ts"></span></span>
-  </div>
-</div>`
-
       const win = window.open('', '_blank')
       if (!win) { toast.error(isEn ? 'Pop-up blocked, please allow pop-ups' : '弹窗被拦截，请允许弹出窗口'); return }
       win.document.write(`<!DOCTYPE html>
@@ -784,19 +723,17 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 <head>
 <meta charset="UTF-8"/>
 <title>${isEn ? 'Bulk Print' : '批量打印'} (${ids.length})</title>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script>
-<style>${CSS}</style>
+<style>${PRINT_CSS}</style>
 </head>
 <body>
 ${orderSections}
-${footerHtml}
 <script>
-  ${barcodeInits}
   var ts = new Date();
   var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
-  document.getElementById('bulk-print-ts').textContent =
-    pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
+  var stamp = pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
     ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
+  // 每个订单每页都有自己的一份页脚(见 buildOrderHtml 的 footer-inpage)，逐个填充时间戳
+  document.querySelectorAll('.print-ts').forEach(function(el){ el.textContent = stamp; });
   window.print();
 <\/script>
 </body>

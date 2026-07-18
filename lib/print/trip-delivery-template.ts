@@ -9,8 +9,8 @@
  * 单个订单的明细如果多到一页放不下,按 chunkOrderLinesForPrint 手动分块,每块单独
  * 渲染成一个 .page、页头在每块顶部都重新画一次(客户反馈,20260716)——试过把页头
  * 塞进 <thead> 让浏览器自动跨页重复,无头 Chromium 的 page.pdf() 实测不支持,详见
- * chunkOrderLinesForPrint 的注释。没有页脚——客户明确要求不要联系方式/页码这类
- * 页脚信息。
+ * chunkOrderLinesForPrint 的注释。没有联系方式页脚——客户明确要求不要(20260716)；
+ * 每页底部只有一行订单号-页码(20260718 新要求)，方便一叠纸打乱后还能按页脚归位。
  */
 
 import { barcodeValue } from '@/lib/barcode'
@@ -22,6 +22,8 @@ import {
   escapeHtml,
   formatTripDriverLabel,
   chunkOrderLinesForPrint,
+  renderPageNumberFooter,
+  PRINT_PAGE_FOOTER_CSS,
 } from './trip-common'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
@@ -112,7 +114,11 @@ function buildDeliveryOrderHtml(
     </tr>`
   }
 
-  const chunks = chunkOrderLinesForPrint(lines)
+  // 备注(客户/订单/送货，最多 3 个)只画在最后一块，那块要放的东西比其它块多——分块时
+  // 必须把这块「额外内容」也当成预留高度算进去，不然最后一块自己会溢出单页，页脚跟着
+  // 错位到下一张纸，失去"一页一页脚"的准确性(同 trip-sales-template 的教训)。
+  const LAST_CHUNK_EXTRA_MM = 68
+  const chunks = chunkOrderLinesForPrint(lines, LAST_CHUNK_EXTRA_MM)
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1
@@ -136,6 +142,7 @@ function buildDeliveryOrderHtml(
   </table>
 
   ${isLastChunk ? notesHtml : ''}
+  ${renderPageNumberFooter(orderCode, chunkIdx + 1, chunks.length)}
 </div>`
   }).join('')
 }
@@ -186,6 +193,8 @@ body { font-family: Arial, Helvetica, "Noto Sans CJK SC", "Noto Sans SC", sans-s
 .total-label { color: #555; }
 .total-value { text-align: right; }
 .total-grand td { font-weight: bold; font-size: 11pt; color: #111; border-top: 2px solid #333; border-bottom: none; }
+
+${PRINT_PAGE_FOOTER_CSS}
 
 @media print {
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
