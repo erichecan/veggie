@@ -121,10 +121,12 @@ export async function GET(req: Request) {
       }
     }
 
-    // ?categoryId=xxx — filter orders that have at least one line with product in this category
-    const categoryId = searchParams.get('categoryId')
-    if (categoryId) {
-      where.lines = { some: { product: { categoryId } } }
+    // ?categoryIds=id1,id2 (legacy: ?categoryId=xxx) — filter orders that have at least one
+    // line with product in any of these categories
+    const categoryIdsParam = searchParams.get('categoryIds') ?? searchParams.get('categoryId')
+    const categoryIds = categoryIdsParam ? categoryIdsParam.split(',').filter(Boolean) : null
+    if (categoryIds && categoryIds.length > 0) {
+      where.lines = { some: { product: { categoryId: { in: categoryIds } } } }
     }
 
     // 用 where.AND 数组组合列筛选框 + 分面 chip + 时间快捷，避免与全局 search 的 where.OR、

@@ -359,7 +359,7 @@ function DayWiseReportInner() {
   const drivers = searchParams.get('drivers')?.split(',').filter(Boolean) ?? []
   const times = searchParams.get('times')?.split(',').filter(Boolean) ?? []
   const batchNums = searchParams.get('batchNums')?.split(',').map(Number).filter(n => !isNaN(n)) ?? []
-  const categoryId = searchParams.get('categoryId') ?? ''
+  const categoryIds = searchParams.get('categoryIds')?.split(',').filter(Boolean) ?? []
   const salesUserId = searchParams.get('salesUserId') ?? ''
 
   const [html, setHtml] = useState<string>('')
@@ -372,13 +372,24 @@ function DayWiseReportInner() {
         if (fromDate) params.set('fromDate', fromDate)
         if (toDate) params.set('toDate', toDate)
         if (customerIds.length > 0) params.set('restaurantIds', customerIds.join(','))
-        if (categoryId) params.set('categoryId', categoryId)
+        if (categoryIds.length > 0) params.set('categoryIds', categoryIds.join(','))
         if (salesUserId) params.set('salesUserId', salesUserId)
 
         const allOrders = await apiGet<Order[]>(`/api/orders?${params}`)
         // 已取消订单不计入销售报表(金额/数量/订单数)。仅本报表口径,不改后端 /api/orders 默认行为。
         // 运行时 status 为 Prisma 大写枚举(CANCELLED);lib/types 误标为小写,故按字符串比较。
         const orders = allOrders.filter(o => String(o.status).toUpperCase() !== 'CANCELLED')
+
+        // /api/orders 的 categoryIds 只做订单级粗筛(订单里至少一行命中分类就整单返回)，
+        // 这里再按行精确过滤，否则"日报/明细/商品×星期汇总"会把同一订单里其他分类的商品也带出来
+        // （用户反馈：选中 3 个分类后打印结果仍出现不属于这些分类的商品）。
+        const categorySet = new Set(categoryIds)
+        const categoryByProductId = categorySet.size > 0
+          ? new Map(
+              (await apiGet<{ id: string; categoryId?: string | null }[]>('/api/products?limit=5000'))
+                .map(p => [p.id, p.categoryId ?? ''])
+            )
+          : null
 
         const lines: ReportLine[] = []
         for (const order of orders) {
@@ -396,6 +407,7 @@ function DayWiseReportInner() {
           if (hasLines) {
             for (const l of order.lines!) {
               if (productNames.length > 0 && !productNames.includes(l.productName)) continue
+              if (categoryByProductId && !categorySet.has(categoryByProductId.get(l.productId) ?? '')) continue
               lines.push({
                 date,
                 customerId: order.restaurantId,
@@ -413,6 +425,7 @@ function DayWiseReportInner() {
             for (const it of (order.items ?? [])) {
               if (!it.productName) continue
               if (productNames.length > 0 && !productNames.includes(it.productName)) continue
+              if (categoryByProductId && !categorySet.has(categoryByProductId.get(it.productId) ?? '')) continue
               const qty = Number(it.quantity ?? 0)
               const price = Number(it.price ?? 0)
               const subtotal = Number(it.subtotal ?? qty * price)
@@ -435,6 +448,7 @@ function DayWiseReportInner() {
         const dateLabel = fromDate && toDate ? `${fromDate} → ${toDate}` : fromDate || toDate || 'All dates'
         const custLabel = customerIds.length > 0 ? `${customerIds.length} customer(s) selected` : 'All customers'
         const prodLabel = productNames.length > 0 ? `${productNames.length} product(s) selected` : 'All products'
+        const catLabel = categoryIds.length > 0 ? ` · ${categoryIds.length} categor${categoryIds.length > 1 ? 'ies' : 'y'} selected` : ''
         const batchFilterParts = [
           drivers.length > 0 ? `Drivers: ${drivers.join(', ')}` : '',
           times.length > 0 ? `${times.map(t => t.toUpperCase()).join('/')}` : '',
@@ -443,7 +457,7 @@ function DayWiseReportInner() {
         const batchLabel = batchFilterParts.length > 0 ? batchFilterParts.join(' · ') : 'All batches'
         // day 模式表格按订单聚合(一单一行),计数用订单数与表格行数一致;其余模式按明细行。
         const countLabel = mode === 'day' ? `${orders.length} orders` : `${lines.length} lines`
-        const meta = `Period: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}  |  ${batchLabel}  |  ${countLabel}`
+        const meta = `Period: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}${catLabel}  |  ${batchLabel}  |  ${countLabel}`
 
         const TITLES: Record<PrintMode, string> = {
           day: 'Order Summary Report',
@@ -467,7 +481,7 @@ function DayWiseReportInner() {
       }
     }
     load()
-  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), drivers.join(','), times.join(','), batchNums.join(','), categoryId, salesUserId])
+  }, [mode, fromDate, toDate, customerIds.join(','), productNames.join(','), drivers.join(','), times.join(','), batchNums.join(','), categoryIds.join(','), salesUserId])
 
   if (!ready) {
     return (

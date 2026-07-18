@@ -306,8 +306,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     if (selectedDrivers.length > 0) params.set('drivers', selectedDrivers.join(','))
     if (selectedTimes.length > 0) params.set('times', selectedTimes.join(','))
     if (selectedBatchNums.length > 0) params.set('batchNums', selectedBatchNums.join(','))
-    // 打印页只支持单分类；多选时不下传（分类精确打印走「打印分类总量」）
-    if (selectedCategories.length === 1) params.set('categoryId', selectedCategories[0])
+    if (selectedCategories.length > 0) params.set('categoryIds', selectedCategories.join(','))
     if (selectedSalesman) params.set('salesUserId', selectedSalesman)
     return `${prefix}/classic/print/day-wise-report?${params.toString()}`
   }
