@@ -155,7 +155,7 @@ export default function SalesOrderDetailPage() {
   useEffect(() => { load() }, [id])
 
   useEffect(() => {
-    apiGet<AllProduct[]>('/api/products?limit=500').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
+    apiGet<AllProduct[]>('/api/products?limit=500&sellable=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
   }, [])
 
   function deleteLine(idx: number) {
