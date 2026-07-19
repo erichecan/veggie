@@ -52,19 +52,15 @@ export function formatPriceSourceBadge(line: PriceSourceLine, isEn: boolean): Pr
   let title = label
 
   if (raw === 'PRICELIST') {
-    title = line.priceSourceDetail
-      ? (isEn ? `Pricelist: ${line.priceSourceDetail}` : `价格表：${line.priceSourceDetail}`)
-      : (isEn ? 'Pricelist' : '价格表')
+    title = line.priceSourceDetail ? `Pricelist: ${line.priceSourceDetail}` : 'Pricelist'
   } else if (raw === 'LAST') {
     const d = line.priceSourceDate ? new Date(line.priceSourceDate) : null
-    const dateStr = d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(isEn ? 'en-CA' : 'zh-CN') : ''
-    title = dateStr
-      ? (isEn ? `Last transaction: ${dateStr}` : `最近成交时间：${dateStr}`)
-      : (isEn ? 'Last transaction price' : '最近成交价')
+    const dateStr = d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-CA') : ''
+    title = dateStr ? `Last transaction: ${dateStr}` : 'Last transaction price'
   } else if (raw === 'SPECIAL') {
-    title = isEn ? 'Customer special price' : '客户专属特殊价格'
+    title = 'Customer special price'
   } else if (raw === 'DEFAULT') {
-    title = isEn ? 'Default list price' : '直接牌价'
+    title = 'Default price'
   }
 
   return { label, className, title }
