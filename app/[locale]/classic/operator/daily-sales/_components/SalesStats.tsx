@@ -2,9 +2,6 @@
 import { Fragment, useState, useEffect, useMemo, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
 import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
 import type { Order } from '@/lib/types'
@@ -89,7 +86,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
   const [selectedTimes, setSelectedTimes] = useState<string[]>([])
   const [selectedBatchNums, setSelectedBatchNums] = useState<number[]>([])
-  /** 周一=0…周日=6，跟 weekdayReport 的星期换算（(getUTCDay()+6)%7）保持同一套编号 */
+  /** 周一=0…周日=6，跟 weekdaySummaryReport 的星期换算（(getUTCDay()+6)%7）保持同一套编号 */
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([])
   const [selectedCustomers, setSelectedCustomers] = useState<CustomerRow[]>([])
   const [selectedProducts, setSelectedProducts] = useState<ProductRow[]>([])
@@ -105,7 +102,9 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 
   // ── 查看方式 + 度量 ──────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('customer')
-  const [weekdayMeasure, setWeekdayMeasure] = useState<'qty' | 'amount'>('qty')
+  type WeekdaySortKey = 'product' | 'total' | 0 | 1 | 2 | 3 | 4 | 5 | 6
+  const [weekdaySortKey, setWeekdaySortKey] = useState<WeekdaySortKey>('product')
+  const [weekdaySortDir, setWeekdaySortDir] = useState<'asc' | 'desc'>('asc')
   /** 勾选后「按客户/按商品/按分类」三种查看方式 + 打印都按商品目录 sequence 排序，不再按默认(插入顺序/金额/数量) */
   const [sortBySequence, setSortBySequence] = useState(false)
 
@@ -275,42 +274,58 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     qty: categoryReport.reduce((s, c) => s + c.totalQty, 0),
   }), [categoryReport])
 
-  // 查看方式④：按星期趋势（日均）—— 销售员订货
-  const weekdayReport = useMemo(() => {
-    // 区间内每个"星期几"出现的日历天数（用于算日均，含没有订单的日子）
-    const occ = [0, 0, 0, 0, 0, 0, 0]
-    if (fromDate && toDate) {
-      const end = new Date(toDate + 'T12:00:00Z')
-      const d = new Date(fromDate + 'T12:00:00Z')
-      while (d <= end) {
-        occ[(d.getUTCDay() + 6) % 7]++
-        d.setUTCDate(d.getUTCDate() + 1)
-      }
-    }
-    const sum = [0, 0, 0, 0, 0, 0, 0]
+  // 查看方式④：商品×星期汇总 —— 屏幕和打印「商品×星期汇总」同一套口径
+  // （星期换算 (getUTCDay()+6)%7 与 lib/print/day-wise-report-template.ts 的 dayOfWeek() 保持一致）
+  const weekdaySummaryReport = useMemo(() => {
+    const m = new Map<string, { name: string; dayQty: number[]; totalQty: number; sequence: number }>()
     for (const l of reportLines) {
       const dt = new Date(l.date + 'T12:00:00Z')
       const dow = (dt.getUTCDay() + 6) % 7
-      sum[dow] += weekdayMeasure === 'qty' ? l.qty : l.amount
+      const e = m.get(l.productName) ?? { name: l.productName, dayQty: [0, 0, 0, 0, 0, 0, 0], totalQty: 0, sequence: l.sequence }
+      e.dayQty[dow] += l.qty
+      e.totalQty += l.qty
+      m.set(l.productName, e)
     }
-    const round1 = (v: number) => Math.round(v * 10) / 10
-    return DOW_LABELS.map((day, i) => ({
-      day,
-      value: occ[i] > 0 ? round1(sum[i] / occ[i]) : 0,
-      occ: occ[i],
-    }))
-  }, [reportLines, fromDate, toDate, weekdayMeasure, DOW_LABELS])
+    return [...m.values()]
+  }, [reportLines])
 
-  const weekdayConclusion = useMemo(() => {
-    const nonZero = weekdayReport.filter(d => d.value > 0)
-    if (nonZero.length === 0) return ''
-    const peak = nonZero.reduce((max, d) => d.value > max.value ? d : max)
-    const weekTotal = weekdayReport.reduce((s, d) => s + d.value, 0)
-    const fmt = (v: number) => weekdayMeasure === 'qty' ? (isEn ? `${fmtQty(v)} units` : `${fmtQty(v)} 件`) : `€${v.toFixed(0)}`
-    return isEn
-      ? `Daily average peaks on ${peak.day} (${fmt(peak.value)}); at this daily average, weekly total is about ${fmt(weekTotal)}.`
-      : `日均峰值在${peak.day}（${fmt(peak.value)}）；按此日均，一周合计约 ${fmt(weekTotal)}。`
-  }, [weekdayReport, weekdayMeasure, isEn])
+  const weekdaySummarySorted = useMemo(() => {
+    const rows = [...weekdaySummaryReport]
+    if (weekdaySortKey === 'product') {
+      rows.sort((a, b) => sortBySequence ? a.sequence - b.sequence : a.name.localeCompare(b.name))
+    } else if (weekdaySortKey === 'total') {
+      rows.sort((a, b) => a.totalQty - b.totalQty)
+    } else {
+      const day = weekdaySortKey
+      rows.sort((a, b) => a.dayQty[day] - b.dayQty[day])
+    }
+    if (weekdaySortDir === 'desc') rows.reverse()
+    return rows
+  }, [weekdaySummaryReport, weekdaySortKey, weekdaySortDir, sortBySequence])
+
+  const weekdaySummaryGrand = useMemo(() => {
+    const dayQty = [0, 0, 0, 0, 0, 0, 0]
+    let totalQty = 0
+    for (const r of weekdaySummaryReport) {
+      for (let i = 0; i < 7; i++) dayQty[i] += r.dayQty[i]
+      totalQty += r.totalQty
+    }
+    return { dayQty, totalQty }
+  }, [weekdaySummaryReport])
+
+  function toggleWeekdaySort(key: WeekdaySortKey) {
+    if (weekdaySortKey === key) {
+      setWeekdaySortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setWeekdaySortKey(key)
+      setWeekdaySortDir(key === 'product' ? 'asc' : 'desc')
+    }
+  }
+
+  function weekdaySortArrow(key: WeekdaySortKey) {
+    if (weekdaySortKey !== key) return null
+    return <span className="ml-0.5">{weekdaySortDir === 'asc' ? '▲' : '▼'}</span>
+  }
 
   // ── 打印：走服务端 PDF（跟送货单/汇总单一致），不再是客户端 window.print()——
   // 浏览器自己加的默认页头页脚(打印时间/文档标题/URL/页码)丑且不受控，客户反馈(20260718)
@@ -412,12 +427,6 @@ ${catsHtml}
   }
 
   const selectCls = 'border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white'
-
-  const focusHint = selectedProducts.length > 0
-    ? (isEn ? `Focused on products: ${selectedProducts.map(p => p.name).join('、')}` : `已聚焦商品：${selectedProducts.map(p => p.name).join('、')}`)
-    : selectedCategories.length > 0
-      ? (isEn ? `Focused on categories: ${selectedCategories.map(id => allCategories.find(c => c.id === id)?.name ?? '').join('、')}` : `已聚焦分类：${selectedCategories.map(id => allCategories.find(c => c.id === id)?.name ?? '').join('、')}`)
-      : (isEn ? 'No product/category selected = whole store (select goods to order above)' : '未选商品/分类 = 全店（可在上方选择要订的货）')
 
   return (
     <div className="max-w-4xl space-y-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -574,8 +583,8 @@ ${catsHtml}
             </span>
             <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
               {(isEn
-                ? ([['customer', 'By Customer'], ['product', 'By Product'], ['category', 'By Category'], ['weekday', 'By Weekday Trend']] as [ViewMode, string][])
-                : ([['customer', '按客户'], ['product', '按商品'], ['category', '按分类'], ['weekday', '按星期趋势']] as [ViewMode, string][])
+                ? ([['customer', 'By Customer'], ['product', 'By Product'], ['category', 'By Category'], ['weekday', 'Product × Weekday Summary']] as [ViewMode, string][])
+                : ([['customer', '按客户'], ['product', '按商品'], ['category', '按分类'], ['weekday', '商品×星期汇总']] as [ViewMode, string][])
               ).map(([v, label]) => (
                 <button
                   key={v}
@@ -612,7 +621,7 @@ ${catsHtml}
         </div>
 
         {/* 空态 */}
-        {viewMode !== 'weekday' && reportLines.length === 0 ? (
+        {reportLines.length === 0 ? (
           <div className="px-5 py-8 text-center text-gray-400 text-sm">
             {ordersLoading ? (isEn ? 'Loading…' : '加载中…') : (isEn ? 'No order lines match the current filters' : '当前筛选条件下没有订单行')}
           </div>
@@ -726,30 +735,48 @@ ${catsHtml}
             </div>
           </div>
         ) : (
-          /* 按星期趋势（销售员）*/
-          <div className="p-5 space-y-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
-                {(['qty', 'amount'] as const).map(m => (
-                  <button key={m} onClick={() => setWeekdayMeasure(m)} className={`px-3 py-1.5 transition-colors ${weekdayMeasure === m ? 'bg-[#875A7B] text-white' : 'text-gray-500 hover:bg-gray-50 bg-white'}`}>
-                    {m === 'qty' ? (isEn ? 'By Qty' : '按数量') : (isEn ? 'By Amount' : '按金额')}
-                  </button>
+          /* 商品×星期汇总 —— 跟打印「商品×星期汇总」同一套口径（见 lib/print/day-wise-report-template.ts
+             buildSummaryHtml），屏幕上额外支持点击表头排序 */
+          <div className="max-h-[480px] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white shadow-sm">
+                <tr className="border-b border-gray-200">
+                  <th
+                    onClick={() => toggleWeekdaySort('product')}
+                    className="px-4 py-2 text-left text-gray-400 font-medium cursor-pointer select-none hover:text-gray-600"
+                  >{isEn ? 'Product' : '产品'}{weekdaySortArrow('product')}</th>
+                  {DOW_LABELS.map((label, i) => (
+                    <th
+                      key={i}
+                      onClick={() => toggleWeekdaySort(i as WeekdaySortKey)}
+                      className="px-3 py-2 text-right text-gray-400 font-medium w-16 cursor-pointer select-none hover:text-gray-600"
+                    >{label}{weekdaySortArrow(i as WeekdaySortKey)}</th>
+                  ))}
+                  <th
+                    onClick={() => toggleWeekdaySort('total')}
+                    className="px-4 py-2 text-right text-gray-400 font-medium w-24 cursor-pointer select-none hover:text-gray-600"
+                  >{isEn ? 'Total Qty' : '数量合计'}{weekdaySortArrow('total')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekdaySummarySorted.map(r => (
+                  <tr key={r.name} className="border-b border-gray-50 hover:bg-purple-50/30">
+                    <td className="px-4 py-1.5 text-gray-700">{r.name}</td>
+                    {r.dayQty.map((q, i) => (
+                      <td key={i} className="px-3 py-1.5 text-right tabular-nums text-gray-700">{q > 0 ? fmtQty(q) : ''}</td>
+                    ))}
+                    <td className="px-4 py-1.5 text-right tabular-nums font-medium text-gray-700">{fmtQty(r.totalQty)}</td>
+                  </tr>
                 ))}
-              </div>
-              <span className="text-xs text-gray-400">{isEn ? 'Daily average (mean per weekday within selected range)' : '日均（每个星期几在所选区间内的平均值）'} · {focusHint}</span>
-            </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={weekdayReport} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={v => weekdayMeasure === 'qty' ? `${v}` : `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
-                <Tooltip formatter={(v) => [weekdayMeasure === 'qty' ? (isEn ? `${Number(v ?? 0)} units/day-avg` : `${Number(v ?? 0)} 件/日均`) : (isEn ? `€${Number(v ?? 0).toFixed(0)}/day-avg` : `€${Number(v ?? 0).toFixed(0)}/日均`), '']} />
-                <Bar dataKey="value" fill="#875A7B" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-            {weekdayConclusion && (
-              <div className="text-xs text-gray-600 bg-gray-50 rounded-lg px-4 py-2.5 border border-gray-100">{weekdayConclusion}</div>
-            )}
+                <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
+                  <td className="px-4 py-2">{isEn ? 'Grand Total' : '合计'}</td>
+                  {weekdaySummaryGrand.dayQty.map((q, i) => (
+                    <td key={i} className="px-3 py-2 text-right tabular-nums">{q > 0 ? fmtQty(q) : ''}</td>
+                  ))}
+                  <td className="px-4 py-2 text-right tabular-nums">{fmtQty(weekdaySummaryGrand.totalQty)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         )}
       </div>
