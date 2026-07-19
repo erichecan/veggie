@@ -41,6 +41,21 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   if (!supplierId) throw Object.assign(new Error('供应商不能为空'), { status: 400 })
   // 询价单允许先只定供应商+日期开单，产品之后在详情页逐条加（见 PurchaseOrderLine 的 POST/DELETE）
 
+  // 准入闸门：新增采购行必须 canBePurchased=true（已存在的 PO 老行不受此校验，见 [id]/route.ts PUT）
+  const productIds = [...new Set(input.lines.map(l => l.productId))]
+  if (productIds.length > 0) {
+    const products = await tx.product.findMany({
+      where: { id: { in: productIds } },
+      include: { template: { select: { canBePurchased: true } } },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const notPurchasable = products.filter((p: any) => p.template?.canBePurchased === false)
+    if (notPurchasable.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      throw Object.assign(new Error(`商品「${notPurchasable.map((p: any) => p.name).join('、')}」不可采购，无法加入采购单`), { status: 400 })
+    }
+  }
+
   const currency = (input.currency ?? 'EUR').toUpperCase()
   // 汇率解析：欧元恒为 1；非欧元有有效汇率就用，没有也不阻断下单——
   // exchangeRate 存 null、exchangeRatePending=true，下游(收货成本/供应商账单)据此跳过折算，

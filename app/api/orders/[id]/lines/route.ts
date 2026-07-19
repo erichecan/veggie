@@ -43,6 +43,17 @@ export async function POST(
         sequence,
       } = body
 
+      const productToAdd = await prisma.product.findUnique({
+        where: { id: String(productId) },
+        include: { template: { select: { canBeSold: true } } },
+      })
+      if (productToAdd?.template?.canBeSold === false) {
+        return NextResponse.json(
+          { error: `商品「${productToAdd.name}」已下架，不可加入订单` },
+          { status: 400 },
+        )
+      }
+
       const subtotal = Math.round(Number(unitPrice) * Number(orderedQty) * 100) / 100
       // SSOT: 追加行同样要写件提成快照,否则该行提成恒为 null
       const commissionPrice = await resolveCommissionPrice(String(productId))

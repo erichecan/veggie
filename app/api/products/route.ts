@@ -11,6 +11,8 @@ export async function GET(req: Request) {
     const search = searchParams.get('search')?.trim()
     // purchasable=1：只给采购模块选品用，只返回 canBePurchased 的商品（该标记在 ProductTemplate 上）
     const purchasableOnly = searchParams.get('purchasable') === '1'
+    // sellable=1：只给下单/报价单/销售单选品用，只返回 canBeSold 的商品（该标记在 ProductTemplate 上）
+    const sellableOnly = searchParams.get('sellable') === '1'
     const where: Record<string, unknown> = {}
     if (statusFilter) where.status = statusFilter as never
     if (search) {
@@ -19,7 +21,10 @@ export async function GET(req: Request) {
         { internalRef: { contains: search, mode: 'insensitive' } },
       ]
     }
-    if (purchasableOnly) where.template = { canBePurchased: true }
+    const templateWhere: Record<string, unknown> = {}
+    if (purchasableOnly) templateWhere.canBePurchased = true
+    if (sellableOnly) templateWhere.canBeSold = true
+    if (Object.keys(templateWhere).length > 0) where.template = templateWhere
     const products = await prisma.product.findMany({
       where,
       orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],

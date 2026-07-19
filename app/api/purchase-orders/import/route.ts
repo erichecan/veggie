@@ -59,8 +59,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '未能从文件中解析到商品数据' }, { status: 400 })
       }
 
-      // 从数据库获取所有商品用于匹配
+      // 从数据库获取所有商品用于匹配；不可采购的商品不参与匹配，交给人工处理（落成 confidence:'none'）
       const allProducts = await prisma.product.findMany({
+        where: { template: { canBePurchased: true } },
         select: { id: true, name: true },
       })
       const parsedLines = matchProducts(rawLines, allProducts)
