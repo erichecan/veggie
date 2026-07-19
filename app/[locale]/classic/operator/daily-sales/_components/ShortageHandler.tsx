@@ -69,7 +69,6 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const [date, setDate] = useState(today)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
-  const [allProducts, setAllProducts] = useState<ProductOption[]>([])
   const [slots, setSlots] = useState<DriverSlotInfo[]>([])
   const [waves, setWaves] = useState<Wave[]>([])
   const [selectedProducts, setSelectedProducts] = useState<ProductOption[]>([])
@@ -115,9 +114,6 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    apiGet<ProductOption[]>('/api/products?limit=500')
-      .then(d => setAllProducts(Array.isArray(d) ? d : []))
-      .catch(() => setAllProducts([]))
     apiGet<DriverSlotInfo[]>('/api/driver-slots')
       .then(d => setSlots(Array.isArray(d) ? d : []))
       .catch(() => setSlots([]))
@@ -177,6 +173,18 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     for (const o of orders) m.set(o.id, { customer: o.restaurantName, code: o.code ?? o.id.slice(-6).toUpperCase() })
     return m
   }, [orders])
+
+  // 商品搜索候选池从当天订单实际出现过的行派生，而不是全量商品目录：
+  // 缺货处理是在筛选「已存在的订单行」，只有当天真的有行的商品才值得被搜到——
+  // 既天然排除从不进客户订单的采购原料/包材，也不受商品后续 canBeSold 开关影响，
+  // 已下架但当天仍有未处理缺货行的商品照样能搜到、能改量。
+  const searchableProducts = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const l of allLines) {
+      if (!map.has(l.productId)) map.set(l.productId, { id: l.productId, name: l.productName })
+    }
+    return Array.from(map.values())
+  }, [allLines])
 
   const availableDrivers = useMemo(() => {
     const set = new Set<string>()
@@ -400,7 +408,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             value={productQuery}
             onChange={setProductQuery}
             onSelect={addProduct}
-            products={allProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
+            products={searchableProducts.filter(p => !selectedProducts.some(sp => sp.id === p.id))}
             placeholder={isEn ? 'Search by product name / Internal Reference' : '输入商品名 / Internal Reference 搜索'}
             inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-56 focus:outline-none focus:border-[#875A7B]"
             showOnEmptyQuery={false}
