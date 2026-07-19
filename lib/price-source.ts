@@ -12,17 +12,11 @@ export interface PriceSourceLine {
   priceSourceDate?: string | Date | null
 }
 
-const LABEL_ZH: Record<PriceSourceType, string> = {
-  PRICELIST: '价格表',
-  DEFAULT: '牌价',
-  LAST: '最近成交',
-  SPECIAL: '专属价',
-}
-
-const LABEL_EN: Record<PriceSourceType, string> = {
-  PRICELIST: 'Pricelist',
+// 徽章上显示的短标签：不分中英文界面，统一用这套缩写（Plist/Last/Default/Special）
+const LABEL_BADGE: Record<PriceSourceType, string> = {
+  PRICELIST: 'Plist',
   DEFAULT: 'Default',
-  LAST: 'Last Price',
+  LAST: 'Last',
   SPECIAL: 'Special',
 }
 
@@ -53,7 +47,7 @@ export function formatPriceSourceBadge(line: PriceSourceLine, isEn: boolean): Pr
     }
   }
 
-  const label = isEn ? LABEL_EN[raw] : LABEL_ZH[raw]
+  const label = LABEL_BADGE[raw]
   const className = BADGE_CLASS[raw]
   let title = label
 
