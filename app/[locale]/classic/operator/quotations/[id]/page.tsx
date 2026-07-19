@@ -28,6 +28,9 @@ interface AllProduct {
   uomId?: string
 }
 
+// 多单位销售(20260714 试点)：商品挂的额外可售单位，与 place-order 创建页同构
+type SaleUomOption = { uomId: string; uomName: string; factor: number; priceOverride: number | null }
+
 interface CreditInfo {
   outstandingBalance: number
   overdueAmount: number
@@ -80,6 +83,9 @@ export default function QuotationDetailPage() {
     return counts
   }, [editLines])
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
+  // 多单位销售(20260714 试点)：全局单位 factor 表 + 按商品懒加载的额外可售单位
+  const [uomFactors, setUomFactors] = useState<Record<string, number>>({})
+  const [saleUomOptions, setSaleUomOptions] = useState<Record<string, SaleUomOption[]>>({})
   const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
   const [session, setSession] = useState<UserSession | null>(null)
   useEffect(() => { setSession(getSession()) }, [])
@@ -130,7 +136,70 @@ export default function QuotationDetailPage() {
 
   useEffect(() => {
     apiGet<AllProduct[]>('/api/products?limit=500&sellable=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
+    apiGet<Array<{ id: string; factor: number }>>('/api/uoms')
+      .then(uomList => setUomFactors(Object.fromEntries(uomList.map(u => [u.id, Number(u.factor) || 1]))))
+      .catch(() => {})
   }, [])
+
+  // 多单位销售(20260714 试点)：懒加载某商品配置的额外可售单位；已加载过就跳过
+  function ensureSaleUomOptions(productId: string) {
+    if (!productId || productId in saleUomOptions) return
+    setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
+    apiGet<Array<{ uomId: string; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null; factor: number } }>>(
+      `/api/products/${productId}/sale-uoms`,
+    )
+      .then(rows => {
+        const opts = rows
+          .filter(r => r.active)
+          .map(r => ({ uomId: r.uomId, uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name), factor: Number(r.uom.factor) || 1, priceOverride: r.priceOverride }))
+        setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
+      })
+      .catch(() => setSaleUomOptions(prev => ({ ...prev, [productId]: [] })))
+  }
+
+  // 切换某行的单位：按换算系数(或该单位的独立售价)重算单价，不重新触发定价引擎，
+  // 避免把用户手动改过的单价/来源覆盖掉——与本页"改数量/改单价不触发定价引擎重算"的既有行为一致
+  function switchLineUnit(idx: number, newUomId: string) {
+    setEditLines(prev => {
+      const line = prev[idx]
+      if (!line || !line.productId) return prev
+      const p = allProducts.find(pp => pp.id === line.productId)
+      if (!p) return prev
+      const anchorUomId = p.uomId
+      const currentUomId = line.uomId ?? anchorUomId
+      if (!currentUomId || newUomId === currentUomId) return prev
+      const opts = saleUomOptions[p.id] ?? []
+      const factorOf = (uid: string | undefined) => {
+        if (!uid) return 1
+        if (uid === anchorUomId) return uomFactors[uid] ?? 1
+        return opts.find(o => o.uomId === uid)?.factor ?? uomFactors[uid] ?? 1
+      }
+      const nameOf = (uid: string) => uid === anchorUomId ? (p.uomName ?? 'Unit(s)') : (opts.find(o => o.uomId === uid)?.uomName ?? line.uomName)
+      const targetOpt = newUomId !== anchorUomId ? opts.find(o => o.uomId === newUomId) : undefined
+      let newUnitPrice: number
+      if (targetOpt?.priceOverride != null) {
+        newUnitPrice = targetOpt.priceOverride
+      } else {
+        const oldFactor = factorOf(currentUomId)
+        const newFactor = factorOf(newUomId)
+        newUnitPrice = oldFactor ? Number(line.unitPrice) * (newFactor / oldFactor) : Number(line.unitPrice)
+      }
+      newUnitPrice = Math.round(newUnitPrice * 100) / 100
+      const qty = Number(line.orderedQty)
+      const next = [...prev]
+      next[idx] = {
+        ...line,
+        uomId: newUomId,
+        uomName: nameOf(newUomId),
+        unitPrice: newUnitPrice,
+        subtotal: Math.round(qty * newUnitPrice * 100) / 100,
+        priceSourceType: null,
+        priceSourceDetail: null,
+        priceSourceDate: null,
+      }
+      return next
+    })
+  }
 
   // Status flow
   const flowSegment: 'quotation' | 'sale' = useMemo(() => {
@@ -288,6 +357,7 @@ export default function QuotationDetailPage() {
     : Number(order.totalAmount)
 
   async function addProductLine(p: AllProduct) {
+    ensureSaleUomOptions(p.id)
     // priceType='default' 的定价链从不查最近成交价，跳过这次查询
     let lastPriceHit: { price: number; date: string } | undefined
     if (customer && priceType !== 'default') {
@@ -383,6 +453,7 @@ export default function QuotationDetailPage() {
                     subtotal: Math.round(qty * price * 100) / 100,
                   }
                 }))
+                Array.from(new Set(lines.map(l => l.productId).filter(Boolean))).forEach(pid => ensureSaleUomOptions(pid))
                 setEditing(true)
               }} disabled={isLocked}
                 className="h-8 px-4 text-sm rounded text-white font-medium disabled:opacity-50"
@@ -740,7 +811,26 @@ export default function QuotationDetailPage() {
                     <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
                     <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
                     <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
-                    <td className="px-2 py-2 text-gray-600">{l.uomName ?? 'Unit(s)'}</td>
+                    <td className="px-2 py-2 text-gray-600">
+                      {editing && l.productId && (saleUomOptions[l.productId]?.length ?? 0) > 0 ? (
+                        (() => {
+                          const p = allProducts.find(pp => pp.id === l.productId)
+                          const anchorUomId = p?.uomId
+                          return (
+                            <select
+                              value={l.uomId ?? anchorUomId ?? ''}
+                              onChange={e => switchLineUnit(i, e.target.value)}
+                              className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                            >
+                              {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? 'Unit(s)'}</option>}
+                              {(saleUomOptions[l.productId] ?? []).map(o => (
+                                <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
+                              ))}
+                            </select>
+                          )
+                        })()
+                      ) : (l.uomName ?? 'Unit(s)')}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.01" min="0" className={inputCls}

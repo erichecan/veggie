@@ -210,6 +210,42 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
         const currentLineMap = new Map(currentLines.map(l => [l.id, l]))
 
+        // 多单位销售(20260714)：编辑已有行允许切换该行的销售单位。校验新单位必须是该商品的
+        // 锚点单位(ProductTemplate.uomId)或已配置的 active ProductSaleUom，防止乱传/脏数据。
+        const uomEditCandidates = (linesPayload as Record<string, unknown>[]).filter(l => l.id && l.uomId !== undefined)
+        if (uomEditCandidates.length > 0) {
+          const affectedProductIds = Array.from(new Set(
+            uomEditCandidates
+              .map(l => currentLineMap.get(String(l.id))?.productId)
+              .filter((v): v is string => !!v)
+          ))
+          const productsForUomCheck = affectedProductIds.length > 0
+            ? await prisma.product.findMany({
+                where: { id: { in: affectedProductIds } },
+                select: {
+                  id: true,
+                  template: { select: { uomId: true } },
+                  saleUoms: { where: { active: true }, select: { uomId: true } },
+                },
+              })
+            : []
+          const allowedUomMap = new Map(
+            productsForUomCheck.map(p => [
+              p.id,
+              new Set([p.template?.uomId, ...p.saleUoms.map(s => s.uomId)].filter((v): v is string => !!v)),
+            ])
+          )
+          for (const l of uomEditCandidates) {
+            const oldLine = currentLineMap.get(String(l.id))
+            if (!oldLine) continue
+            const newUomId = l.uomId ? String(l.uomId) : null
+            if (newUomId === (oldLine.uomId ?? null)) continue // 未变化
+            if (!newUomId || !allowedUomMap.get(oldLine.productId)?.has(newUomId)) {
+              return NextResponse.json({ error: `商品「${oldLine.productName}」不支持切换到该单位` }, { status: 400 })
+            }
+          }
+        }
+
         const existingIds = new Set(currentLines.map(l => l.id))
         const payloadIds = new Set(
           (linesPayload as Record<string, unknown>[]).filter(l => l.id).map(l => String(l.id))
@@ -264,6 +300,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           if (l.priceSourceType !== undefined) lineData.priceSourceType = l.priceSourceType ? String(l.priceSourceType) : null
           if (l.priceSourceDetail !== undefined) lineData.priceSourceDetail = l.priceSourceDetail ? String(l.priceSourceDetail) : null
           if (l.priceSourceDate !== undefined) lineData.priceSourceDate = l.priceSourceDate ? new Date(String(l.priceSourceDate)) : null
+          // 多单位销售(20260714)：编辑已有行时也允许写入新单位(此前只有新增行分支才写 uomId/uomName，
+          // 已有行传了新单位会被静默忽略)。合法性已在上面 uomEditCandidates 校验过。
+          if (l.uomId !== undefined) {
+            lineData.uomId = l.uomId ? String(l.uomId) : null
+            lineData.uomName = l.uomName ? String(l.uomName) : null
+          }
 
           if (l.id) {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -357,18 +399,24 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 },
               })
             } else {
-              // 已有行：检查数量变化
+              // 已有行：检查数量/单位变化(多单位销售 20260714 起，切单位也需要联动库存)
               const oldLine = currentLineMap.get(String(l.id))
               if (!oldLine || !oldLine.product || oldLine.product.template?.type !== 'PRODUCT') continue
               const oldQty = toNum(oldLine.orderedQty)
               const newQty = Number(l.orderedQty)
-              const delta = newQty - oldQty
-              if (delta === 0) continue
-              // 编辑不改单位,只改数量,换算系数用这行原来的 uomId 即可
-              const stockDelta = await toStockQty(prismaAnyLines, oldLine.productId, delta, oldLine.uomId)
+              const newUomId = l.uomId !== undefined ? (l.uomId ? String(l.uomId) : null) : oldLine.uomId
+              if (newQty === oldQty && newUomId === oldLine.uomId) continue
+              // 数量和单位可能同时变化，各自按自己的单位换算成库存记账单位后再相减，
+              // 不能再用"newQty-oldQty"直接相减(两个数字含义的单位可能不同)
+              const oldStockQty = await toStockQty(prismaAnyLines, oldLine.productId, oldQty, oldLine.uomId)
+              const newStockQty = await toStockQty(prismaAnyLines, oldLine.productId, newQty, newUomId)
+              const stockDelta = newStockQty - oldStockQty
+              if (stockDelta === 0) continue
+              const oldLabel = `${oldQty}${oldLine.uomName ?? ''}`
+              const newLabel = `${newQty}${(l.uomName ? String(l.uomName) : oldLine.uomName) ?? ''}`
 
-              if (delta > 0) {
-                // 增加数量 → 额外扣减
+              if (stockDelta > 0) {
+                // 净消耗增加 → 额外扣减
                 await prismaAnyLines.product.update({
                   where: { id: oldLine.productId },
                   data: { qtyOnHand: { decrement: stockDelta } },
@@ -380,14 +428,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                     type: 'OUT',
                     qty: -stockDelta,
                     movedAt: orderMovedAt,
-                    note: `订单 ${orderBefore.code ?? id} ${statusLabel}增量 ${oldQty}→${newQty}`,
+                    note: `订单 ${orderBefore.code ?? id} ${statusLabel}增量 ${oldLabel}→${newLabel}`,
                     sourceType: 'ORDER',
                     sourceId: id,
                     sourceRef: orderBefore.code ?? id,
                   },
                 })
               } else {
-                // 减少数量 → 释放差额
+                // 净消耗减少 → 释放差额
                 const release = Math.abs(stockDelta)
                 await prismaAnyLines.product.update({
                   where: { id: oldLine.productId },
@@ -400,7 +448,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                     type: 'IN',
                     qty: release,
                     movedAt: orderMovedAt,
-                    note: `订单 ${orderBefore.code ?? id} ${statusLabel}减量 ${oldQty}→${newQty}`,
+                    note: `订单 ${orderBefore.code ?? id} ${statusLabel}减量 ${oldLabel}→${newLabel}`,
                     sourceType: 'ORDER',
                     sourceId: id,
                     sourceRef: orderBefore.code ?? id,
