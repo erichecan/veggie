@@ -111,6 +111,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         )
         let nextSequence = maxSequence
 
+        // 准入闸门：只查新增行，已有行（哪怕它引用的商品后来被关闭 canBePurchased）永远不受影响
+        const newLinePOProductIds = linesPayload
+          .filter((l: Record<string, unknown>) => isNewLine(l))
+          .map((l: Record<string, unknown>) => String(l.productId ?? ''))
+          .filter(Boolean)
+        if (newLinePOProductIds.length > 0) {
+          const newLinePOProducts = await p.product.findMany({
+            where: { id: { in: newLinePOProductIds } },
+            include: { template: { select: { canBePurchased: true } } },
+          })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const notPurchasable = newLinePOProducts.filter((prod: any) => prod.template?.canBePurchased === false)
+          if (notPurchasable.length > 0) {
+            return NextResponse.json(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              { error: `商品「${notPurchasable.map((prod: any) => prod.name).join('、')}」不可采购，无法加入采购单` },
+              { status: 400 },
+            )
+          }
+        }
+
         const lineOps = linesPayload.map((l: Record<string, unknown>) => {
           const orderedQty = Number(l.orderedQty)
           const unitCost = Number(l.unitCost)
