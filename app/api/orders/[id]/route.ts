@@ -231,9 +231,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         const newLineProducts = newLineProductIds.length > 0
           ? await prisma.product.findMany({
               where: { id: { in: newLineProductIds } },
-              include: { template: { select: { commissionPrice: true } } },
+              include: { template: { select: { commissionPrice: true, canBeSold: true } } },
             })
           : []
+
+        // 准入闸门：只查新增行，已有行（哪怕它引用的商品后来被关闭 canBeSold）永远不受影响
+        const notSellable = newLineProducts.filter(p => p.template?.canBeSold === false)
+        if (notSellable.length > 0) {
+          return NextResponse.json(
+            { error: `商品「${notSellable.map(p => p.name).join('、')}」已下架，不可加入订单` },
+            { status: 400 },
+          )
+        }
+
         const newLineCommissionMap = new Map(
           newLineProducts.map(p => [p.id, p.commissionPrice ?? p.template?.commissionPrice ?? null])
         )
