@@ -1,8 +1,10 @@
 /**
  * Trip 汇总单 — 批次级订单清单（一个司机一个时段送哪些订单），按客户名字母序排列
  *
- * 表格：序号 | 发票号 | 客户名称 | 城市 | 地址 | 电话 | 备注 | 金额
+ * 表格：序号 | 订单号 | 客户名称 | 城市 | 地址 | 电话 | 备注 | 金额
  * 每个订单单独一行，同一客户当天多笔订单不合并（客户要求两单都要看到，20260715）。
+ * 第二列用 Order No.(order.code)，不是发票号——与销售单/拣货单/送货单的订单号口径一致
+ * (20260718 客户确认，不用管发票号对不上的事)。
  *
  * 页码：汇总单不是按订单分页(是连续表格，多单挤一起)，"订单号-Page X/Y"这套规则不适用；
  * 走服务端 Puppeteer PDF(见 dispatch-summary-pdf/route.ts)，页码用 page.pdf() 原生
@@ -45,6 +47,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   // 客户详情（地址/电话/备注）直接做在表格列里，不再单独列一个详情区块
   const nameRowsHtml = rowList.map((r, i) => {
     const { order, customer } = r
+    const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
     const addr = customer ? [customer.street, customer.street2, customer.city, customer.zip].filter(Boolean).join(', ') : ''
     const city = customer?.city ?? ''
     const phone = customer?.phone ?? ''
@@ -52,7 +55,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     return `
     <tr>
       <td class="col-seq">${i + 1}</td>
-      <td>${escapeHtml(order.invoiceNo ?? '')}</td>
+      <td>${escapeHtml(orderCode)}</td>
       <td>${escapeHtml(r.name)}</td>
       <td>${escapeHtml(city)}</td>
       <td>${escapeHtml(addr)}</td>
@@ -153,7 +156,7 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     <thead>
       <tr>
         <th class="col-seq">#</th>
-        <th>发票号 Invoice No.</th>
+        <th>订单号 Order No.</th>
         <th>客户 Customer</th>
         <th>城市 City</th>
         <th>地址 Address</th>

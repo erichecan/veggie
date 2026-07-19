@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
-import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
+import { assertOrderNotPickLockedForLineEdit, WavePickLockedError } from '@/lib/wave-pick-lock'
 
 /**
  * PATCH /api/orders/:id/lines/:lineId
@@ -29,7 +29,6 @@ export async function PATCH(
       if (lockedStatuses.includes(order.status)) {
         return NextResponse.json({ error: '该订单状态不允许修改明细' }, { status: 403 })
       }
-      await assertOrderNotPickLocked(id)
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },
@@ -46,6 +45,10 @@ export async function PATCH(
       }
 
       const oldQty = Number(line.orderedQty)
+      // 缺货改量/删行是拣货锁定的唯一例外(PRD Feature D)：只有减量/清零才放行，
+      // 加量仍必须先解锁——避免趁锁定期间借「改量」接口做实质性加单
+      await assertOrderNotPickLockedForLineEdit(id, newQty <= oldQty)
+
       // 少供退库、多供扣库：确认订单时已按 orderedQty 扣过库存，改量在此把差额补回/补扣
       const qtyDelta = oldQty - newQty
 
@@ -130,7 +133,8 @@ export async function DELETE(
       if (lockedStatuses.includes(order.status)) {
         return NextResponse.json({ error: '该订单状态不允许修改明细' }, { status: 403 })
       }
-      await assertOrderNotPickLocked(id)
+      // 删行等价于减量至 0，是拣货锁定的唯一例外(PRD Feature D)，恒放行
+      await assertOrderNotPickLockedForLineEdit(id, true)
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },

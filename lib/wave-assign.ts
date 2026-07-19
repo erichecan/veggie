@@ -279,6 +279,19 @@ export async function getOrderWaveDisplayMap(orderIds: string[]): Promise<Record
 }
 
 /**
+ * 把一批订单的 deliveryBatchDisplay 就地覆写成实时 wave 派生值(SSOT P0-1)。
+ * 与 app/api/orders/route.ts 内的同名局部函数逻辑一致，这里导出一份供其它只读消费方
+ * （如 CSV 导出）复用，避免各处各写一份「司机显示」覆写逻辑。
+ */
+export async function attachWaveDisplay<T extends { id: string; deliveryBatchDisplay?: string | null }>(orders: T[]): Promise<T[]> {
+  const map = await getOrderWaveDisplayMap(orders.map((o) => o.id))
+  for (const o of orders) {
+    if (map[o.id]) o.deliveryBatchDisplay = map[o.id]
+  }
+  return orders
+}
+
+/**
  * 取一批订单的「所属托盘对应的 DriverSlot.id」:orderId → driverSlotId。
  * 与 getOrderWaveDisplayMap 同源(托盘是调度精确到批次号的唯一真相),供编辑态下拉框预选,
  * 保证「编辑时预选的司机+批次」= 「显示的司机+批次」,不再读 Order.driverSlotId 的下单意向存量。

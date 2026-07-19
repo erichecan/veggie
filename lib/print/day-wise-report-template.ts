@@ -10,6 +10,7 @@ import { docBadge, type DocKind } from './doc-badge'
 import { formatPrintTimestamp } from './trip-common'
 import { eur } from '@/lib/format-money'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import { computeOrderTotals } from '@/lib/order-totals'
 import type { Order } from '@/lib/types'
 
 export type PrintMode = 'day' | 'multiline' | 'summary'
@@ -105,29 +106,7 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
   for (const order of orders) {
     const code = order.code ?? order.id.slice(0, 8)
     const driver = formatDriverSlotFromOrder(order) || '—'
-    let untaxed = 0
-    let tax = 0
-
-    const hasLines = order.lines && order.lines.length > 0
-    if (hasLines) {
-      for (const l of order.lines!) {
-        const sub = Number(l.subtotal)
-        const rate = Number(l.taxRate ?? 0)
-        const normalizedRate = rate > 1 ? rate / 100 : rate
-        untaxed += sub
-        tax += sub * normalizedRate
-      }
-    } else {
-      for (const it of (order.items ?? [])) {
-        const qty = Number(it.quantity ?? 0)
-        const price = Number(it.price ?? 0)
-        const sub = Number(it.subtotal ?? qty * price)
-        const rate = Number(it.taxRate ?? 0)
-        const normalizedRate = rate > 1 ? rate / 100 : rate
-        untaxed += sub
-        tax += sub * normalizedRate
-      }
-    }
+    const { untaxed, tax, total } = computeOrderTotals(order)
 
     orderMap.set(order.id, {
       code,
@@ -135,7 +114,7 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
       driver,
       untaxed,
       tax,
-      total: untaxed + tax,
+      total,
     })
   }
 

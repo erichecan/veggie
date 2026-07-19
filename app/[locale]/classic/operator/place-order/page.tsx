@@ -472,7 +472,7 @@ export default function ClassicPlaceOrderPage() {
       // slim=1: 跳过 specialPrices JOIN，客户选定后再懒加载完整对象
       apiGet<Customer[]>('/api/customers?slim=1').catch(() => []),
       // status=ACTIVE: 服务端过滤，不传输已归档商品
-      apiGet<Product[]>('/api/products?status=ACTIVE').catch(() => []),
+      apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1').catch(() => []),
       apiGet<OdooPricelist[]>('/api/pricelists').catch(() => []),
       // role=SALES: 服务端过滤，只拉销售人员
       apiGet<{ id: string; name: string; role: string; roles?: string[] }[]>('/api/users?role=SALES').catch(() => []),

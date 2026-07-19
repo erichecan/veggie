@@ -25,7 +25,7 @@ export async function assertWaveNotPickLocked(waveId: string): Promise<void> {
 /**
  * 订单维度的拣货锁校验：订单只要落在任一「已锁定」波次里，就禁止改其内容/明细。
  * 锁定的语义是「拣货作业进行中，不许再动这张单」——不仅不许换车(归属)，也不许改量(内容)。
- * 用于订单编辑/加行/改量/删行等写接口，与 assertWaveNotPickLocked(改归属) 形成完整闭环。
+ * 用于订单编辑/加行等写接口，与 assertWaveNotPickLocked(改归属) 形成完整闭环。
  */
 export async function assertOrderNotPickLocked(orderId: string): Promise<void> {
   const wave = await prisma.pickingWave.findFirst({
@@ -33,4 +33,19 @@ export async function assertOrderNotPickLocked(orderId: string): Promise<void> {
     select: { id: true },
   })
   if (wave) throw new WavePickLockedError(wave.id)
+}
+
+/**
+ * 缺货改量/删行专用校验（PRD Feature D，拣货锁定唯一例外）：
+ * 拣货中发现缺货，打印员在缺货 tab 改数量（≤ 下单量）或删行，即使批次已锁定也允许——
+ * 改完重打拣货单会重新上锁。但不能借这条口径趁锁定加量，加量必须先解锁。
+ * isDecreaseOrDelete 由调用方按「新数量 <= 原数量」（含整行删除）判定，服务端据此放行/拦截，
+ * 不依赖前端传任何「是否缺货处理」的标记（避免被伪造绕过锁）。
+ */
+export async function assertOrderNotPickLockedForLineEdit(
+  orderId: string,
+  isDecreaseOrDelete: boolean,
+): Promise<void> {
+  if (isDecreaseOrDelete) return
+  await assertOrderNotPickLocked(orderId)
 }

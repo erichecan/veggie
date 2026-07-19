@@ -16,6 +16,7 @@ import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slo
 import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 import { getSession } from '@/lib/session'
 import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
+import { downloadAuthedFile } from '@/lib/print/open-pdf'
 
 const PAGE_SIZE = 50
 
@@ -169,6 +170,21 @@ export default function ClassicOrdersPage() {
     if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     return `/api/orders?${params.toString()}`
   }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
+
+  // 会计导出:跟列表当前筛选结果(baseUrl)完全同一套参数,只是换个路由+加 kind
+  const [exporting, setExporting] = useState<'summary' | 'detail' | null>(null)
+  async function exportCsv(kind: 'summary' | 'detail') {
+    if (exporting) return
+    setExporting(kind)
+    try {
+      const url = baseUrl.replace('/api/orders?', `/api/orders/export-csv?kind=${kind}&`)
+      await downloadAuthedFile(url, `订单${kind === 'summary' ? '汇总' : '明细'}.csv`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Export failed' : '导出失败'))
+    } finally {
+      setExporting(null)
+    }
+  }
 
   const {
     data: rawOrders,
@@ -485,7 +501,8 @@ export default function ClassicOrdersPage() {
             label: generatingWave ? (isEn ? 'Generating…' : '生成中…') : (isEn ? `Generate Pick Wave (${selectedConfirmedCount})` : `生成拣货波次 (${selectedConfirmedCount})`),
             onClick: generateBatchWave,
           }] : []),
-          { label: isEn ? 'Export' : '导出', onClick: () => toast.info(isEn ? 'Export coming soon' : '导出功能即将推出') },
+          { label: exporting === 'summary' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Export Summary' : '导出汇总'), onClick: () => exportCsv('summary') },
+          { label: exporting === 'detail' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Export Detail' : '导出明细'), onClick: () => exportCsv('detail') },
         ]}
         searchValue={search}
         onSearch={v => { setServerSearch(v) }}

@@ -1,24 +1,15 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
-import { withAuth, tryAuth, effectiveRoles } from '@/lib/auth'
+import { withAuth } from '@/lib/auth'
 import { sendOrderConfirmation } from '@/lib/email'
 import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItemsList } from '@/lib/order-items'
-import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
+import { attachWaveDisplay } from '@/lib/wave-assign'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
-
-// SSOT: 调度归属显示一律由「所属 wave + 实时 DriverSlot」派生(P0-1)。
-// formatDriverSlotFromOrder 优先读 deliveryBatchDisplay,故在此注入即全站统一,无需改各页。
-async function attachWaveDisplay<T extends { id: string; deliveryBatchDisplay?: string | null }>(orders: T[]): Promise<T[]> {
-  const map = await getOrderWaveDisplayMap(orders.map((o) => o.id))
-  for (const o of orders) {
-    if (map[o.id]) o.deliveryBatchDisplay = map[o.id]
-  }
-  return orders
-}
+import { ORDER_STATUSES, buildOrdersWhere } from '@/lib/orders-query'
 
 // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面(报表/打印/列表)
 // 不用改动就能继续显示业务员姓名。写入路径一律走 salesUserId,不读这个字段。
@@ -28,9 +19,6 @@ function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: strin
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { getInitials, nextOrderCode } from '@/lib/order-code'
 
-const ORDER_STATUSES = new Set<$Enums.OrderStatus>([
-  'PENDING', 'CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED',
-])
 const PAYMENT_METHODS = new Set<$Enums.PaymentMethod>(['ONLINE', 'CASH'])
 
 function normalizeStatus(raw: unknown): $Enums.OrderStatus {
@@ -52,30 +40,14 @@ function normalizeDateOnly(raw: unknown): Date | undefined {
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const restaurantId = searchParams.get('restaurantId')
-    // ?restaurantIds=id1,id2,id3 — multi-customer filter (used by print reports)
-    const restaurantIdsParam = searchParams.get('restaurantIds')
-    const restaurantIds = restaurantIdsParam ? restaurantIdsParam.split(',').filter(Boolean) : null
-    // ?ids=id1,id2,id3 — explicit order id filter (used by print center, driven off wave.orderIds)
-    const idsParam = searchParams.get('ids')
-    const ids = idsParam ? idsParam.split(',').filter(Boolean) : null
     const includeLines = searchParams.get('include_lines') !== 'false'
 
-    // ?status=PENDING or ?status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED
-    const statusParam = searchParams.get('status')
-    const statusFilter = statusParam
-      ? statusParam.split(',').map(s => s.trim().toUpperCase()).filter(s => ORDER_STATUSES.has(s as $Enums.OrderStatus)) as $Enums.OrderStatus[]
-      : null
-
-    // ?search= → match restaurantName or code (case-insensitive)
-    const search = searchParams.get('search')?.trim() ?? ''
-
-    // ?fromDate=2026-04-01 ?toDate=2026-05-15 — date range filter
-    // ?dateField=deliveryDate|quotationDate|createdAt (default: createdAt)
+    // ?fromDate/?toDate/?deliveryFrom/?deliveryTo 在下方分页判断里还要单独用到,
+    // where 本身的构建已经下沉到 buildOrdersWhere(与 export-csv 共用同一套筛选口径)。
     const fromDate = searchParams.get('fromDate')
     const toDate = searchParams.get('toDate')
-    const dateField = searchParams.get('dateField') ?? 'createdAt'
-    const allowedDateFields = new Set(['createdAt', 'deliveryDate', 'quotationDate'])
+    const deliveryFrom = searchParams.get('deliveryFrom')
+    const deliveryTo = searchParams.get('deliveryTo')
 
     // ?page= & ?pageSize= → server-side pagination (pageSize=0 or absent → legacy flat array)
     const rawPageSize = parseInt(searchParams.get('pageSize') ?? '0', 10)
@@ -83,121 +55,7 @@ export async function GET(req: Request) {
     const pageSize = paginated ? Math.min(200, Math.max(1, rawPageSize)) : 0
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
 
-    const where: Record<string, unknown> = {}
-    if (restaurantId) where.restaurantId = restaurantId
-    if (restaurantIds && restaurantIds.length > 0) where.restaurantId = { in: restaurantIds }
-    if (ids && ids.length > 0) where.id = { in: ids }
-    if (statusFilter && statusFilter.length > 0) where.status = { in: statusFilter }
-    if (search) {
-      where.OR = [
-        { restaurantName: { contains: search, mode: 'insensitive' } },
-        { code: { contains: search, mode: 'insensitive' } },
-      ]
-    }
-    if (fromDate || toDate) {
-      const field = allowedDateFields.has(dateField) ? dateField : 'createdAt'
-      const range: Record<string, Date> = {}
-      if (fromDate) range.gte = new Date(fromDate + 'T00:00:00Z')
-      if (toDate) range.lte = new Date(toDate + 'T23:59:59Z')
-      where[field] = range
-    }
-
-    // deliveryBatch 字符串已弃用(调度归属归 wave,P0-1);按批次筛选用 driverSlotId
-    const driverSlotId = searchParams.get('driverSlotId')
-    if (driverSlotId) where.driverSlotId = driverSlotId
-
-    // ?salesUserId=xxx — filter by salesperson
-    const salesUserId = searchParams.get('salesUserId')
-    if (salesUserId) where.salesUserId = salesUserId
-
-    // P1-3: SALES 角色自动过滤 — 只看自己名下的订单
-    if (!salesUserId) {
-      const caller = await tryAuth(req)
-      if (caller) {
-        const roles = effectiveRoles(caller)
-        if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
-          where.salesUserId = caller.userId
-        }
-      }
-    }
-
-    // ?categoryIds=id1,id2 (legacy: ?categoryId=xxx) — filter orders that have at least one
-    // line with product in any of these categories
-    const categoryIdsParam = searchParams.get('categoryIds') ?? searchParams.get('categoryId')
-    const categoryIds = categoryIdsParam ? categoryIdsParam.split(',').filter(Boolean) : null
-    if (categoryIds && categoryIds.length > 0) {
-      where.lines = { some: { product: { categoryId: { in: categoryIds } } } }
-    }
-
-    // 用 where.AND 数组组合列筛选框 + 分面 chip + 时间快捷，避免与全局 search 的 where.OR、
-    // categoryId 的 where.lines 键冲突。
-    const facetAnd: Record<string, unknown>[] = []
-    const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
-
-    // 司机是 wave 派生字段(P0-1,见 lib/wave-assign.ts)：「这单归谁送」一旦订单进了 wave,
-    // 就以 wave.driverName 为准(与列表页「司机」列的展示口径 attachWaveDisplay/
-    // getOrderWaveDisplayMap 完全同源)，Order.driverSlotId 只是下单时的意向快照，
-    // 进 wave 之后可能已经改派给别的司机，不能再信。
-    // Order.driverSlot 直连兜底只对"从没进过任何 wave"的订单生效(未进入调度流程的历史/新建单)，
-    // 否则会出现"搜 AFZAAL 却搜出一张列表显示 BAO 的订单"这种搜索命中和展示对不上的 bug
-    // （之前发生过：Order.driverSlotId=AFZAAL 但订单已被排进 BAO 的 wave)。
-    async function driverNameClause(term: string): Promise<Record<string, unknown>> {
-      const [matchingWaves, allWaves] = await Promise.all([
-        prisma.pickingWave.findMany({ where: { driverName: like(term) }, select: { orderIds: true } }),
-        prisma.pickingWave.findMany({ select: { orderIds: true } }),
-      ])
-      const waveOrderIds = [...new Set(matchingWaves.flatMap((w) => w.orderIds as string[]))]
-      const inAnyWave = [...new Set(allWaves.flatMap((w) => w.orderIds as string[]))]
-      return {
-        OR: [
-          { id: { in: waveOrderIds } },
-          { AND: [{ id: { notIn: inAnyWave } }, { driverSlot: { driverName: like(term) } }] },
-        ],
-      }
-    }
-
-    // 列表页表头下的"列筛选框"(Customer/单号/销售员/司机) — 与 f_* 分面 chip 不同,
-    // 多个列筛选框之间要求"且"(全部同时满足),各自独立作为一条 AND 子句。
-    const colCode     = searchParams.get('colCode')?.trim()
-    const colCustomer = searchParams.get('colCustomer')?.trim()
-    const colSalesman = searchParams.get('colSalesman')?.trim()
-    const colDriver   = searchParams.get('colDriver')?.trim()
-    if (colCode)     where.code = { contains: colCode, mode: 'insensitive' }
-    if (colCustomer) where.restaurantName = { contains: colCustomer, mode: 'insensitive' }
-    if (colSalesman) where.salesUser = { name: { contains: colSalesman, mode: 'insensitive' } }
-    if (colDriver)   facetAnd.push(await driverNameClause(colDriver))
-
-    // 分面聚焦搜索(facet)：多个维度的 chip 彼此 OR(命中任一即可,如 司机:bao 或 单号:260)，
-    // 整体作为一块再与全局 search / 时间 / My 叠加(AND)。
-    const facetOr: Record<string, unknown>[] = []
-    const fCode     = searchParams.get('f_code')?.trim()
-    const fCustomer = searchParams.get('f_customer')?.trim()
-    const fSalesman = searchParams.get('f_salesman')?.trim()
-    const fProduct  = searchParams.get('f_product')?.trim()
-    const fCategory = searchParams.get('f_category')?.trim()
-    const fDriver   = searchParams.get('f_driver')?.trim()
-    if (fCode)     facetOr.push({ code: like(fCode) })
-    if (fCustomer) facetOr.push({ restaurantName: like(fCustomer) })
-    if (fSalesman) facetOr.push({ salesUser: { name: like(fSalesman) } })
-    if (fProduct)  facetOr.push({ lines: { some: { productName: like(fProduct) } } })
-    if (fCategory) facetOr.push({ lines: { some: { product: { category: { OR: [
-      { name: like(fCategory) },
-      { nameZh: like(fCategory) },
-    ] } } } } })
-    if (fDriver)   facetOr.push(await driverNameClause(fDriver))
-    if (facetOr.length > 0) facetAnd.push(facetOr.length === 1 ? facetOr[0] : { OR: facetOr })
-
-    // 时间快捷筛选(Today/This Week…)按交货日期 deliveryDate(与销售单第二列/列筛口径一致)。
-    // 走独立的 deliveryFrom/deliveryTo 放进 AND 数组，与交货日期列筛(where.deliveryDate)取交集、互不覆盖。
-    const deliveryFrom = searchParams.get('deliveryFrom')
-    const deliveryTo = searchParams.get('deliveryTo')
-    if (deliveryFrom || deliveryTo) {
-      const range: Record<string, Date> = {}
-      if (deliveryFrom) range.gte = new Date(deliveryFrom + 'T00:00:00Z')
-      if (deliveryTo) range.lte = new Date(deliveryTo + 'T23:59:59Z')
-      facetAnd.push({ deliveryDate: range })
-    }
-    if (facetAnd.length > 0) where.AND = facetAnd
+    const where = await buildOrdersWhere(req, searchParams)
 
     // 表头点击排序 — 服务端全量排序后再分页,避免"排序只对当前页生效"(客户反馈)。
     const sortFieldParam = searchParams.get('sortField') ?? 'createdAt'

@@ -26,3 +26,29 @@ export async function openAuthedPdf(url: string): Promise<void> {
     throw e
   }
 }
+
+/**
+ * 下载一个需要 JWT 鉴权的文件（导出 CSV 等）：同 openAuthedPdf 的鉴权 fetch 套路，
+ * 但触发浏览器"另存为下载"而非新开窗口预览。文件名优先取服务端 Content-Disposition，
+ * 拿不到时退回调用方传入的 fallbackFilename。
+ */
+export async function downloadAuthedFile(url: string, fallbackFilename: string): Promise<void> {
+  const res = await fetch(url, { headers: authHeaders() })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.message ?? body?.error ?? `HTTP ${res.status}`)
+  }
+  const disposition = res.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+  const filename = match ? decodeURIComponent(match[1]) : fallbackFilename
+
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objectUrl)
+}

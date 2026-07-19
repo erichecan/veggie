@@ -13,7 +13,7 @@ import { toggleValue, today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
-import { openAuthedPdf } from '@/lib/print/open-pdf'
+import { openAuthedPdf, downloadAuthedFile } from '@/lib/print/open-pdf'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
@@ -333,6 +333,25 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     openAuthedPdf(buildPrintUrl(mode)).catch(e => alert(e instanceof Error ? e.message : '打印失败'))
   }
 
+  // 会计导出:跟屏幕/打印同一套筛选参数(buildPrintUrl 的 querystring 部分)，走 CSV 路由
+  const [exporting, setExporting] = useState<'summary' | 'detail' | null>(null)
+  function buildExportUrl(kind: 'summary' | 'detail') {
+    const url = buildPrintUrl('day')
+    const sep = url.includes('?') ? '&' : '?'
+    return url.replace('/api/print/day-wise-report-pdf', '/api/print/day-wise-report-csv') + `${sep}kind=${kind}`
+  }
+  async function handleExport(kind: 'summary' | 'detail') {
+    if (exporting) return
+    setExporting(kind)
+    try {
+      await downloadAuthedFile(buildExportUrl(kind), `${kind === 'summary' ? '订单汇总' : '产品明细'}.csv`)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '导出失败')
+    } finally {
+      setExporting(null)
+    }
+  }
+
   // 按分类查看的专属打印：直接渲染屏幕上的 categoryReport，保证所见即所打
   // 打印内容(送到仓库调度备货用的实体单据)按团队约定始终保持中文，不随界面 locale 切换——
   // 与 lib/print/* 系列单据同一原则(纸质单据是给一线员工用的)
@@ -584,6 +603,9 @@ ${catsHtml}
                 <button onClick={() => handlePrint('day')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Daily Report (By Customer)' : '日报（按客户）'}</button>
                 <button onClick={() => handlePrint('multiline')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Detail List' : '明细清单'}</button>
                 <button onClick={() => handlePrint('summary')} disabled={reportLines.length === 0} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#875A7B', color: '#875A7B' }}>{isEn ? 'Product × Weekday Summary' : '商品×星期汇总'}</button>
+                <span className="text-xs text-gray-400 ml-2">{isEn ? 'Export:' : '导出：'}</span>
+                <button onClick={() => handleExport('summary')} disabled={reportLines.length === 0 || exporting !== null} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#2d6a4f', color: '#2d6a4f' }}>{exporting === 'summary' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Order Summary (CSV)' : '订单汇总（CSV）')}</button>
+                <button onClick={() => handleExport('detail')} disabled={reportLines.length === 0 || exporting !== null} className="px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40" style={{ borderColor: '#2d6a4f', color: '#2d6a4f' }}>{exporting === 'detail' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Product Detail (CSV)' : '产品明细（CSV）')}</button>
               </>
             )}
           </div>

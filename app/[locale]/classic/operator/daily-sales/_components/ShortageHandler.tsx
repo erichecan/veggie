@@ -198,9 +198,11 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     })
   }, [allLines, timeFilter, selectedDrivers, selectedProducts])
 
+  // 已保存成功的行要排除在外，否则 newQtys 里的旧值会在下次点「保存修改」时被重新提交一遍
+  // （若该行当时是清零删行，重复提交会因行已不存在而报错，污染这次保存的失败计数）
   const modifiedLines = useMemo(
-    () => filteredLines.filter(l => (newQtys[l.lineId]?.trim() ?? '') !== ''),
-    [filteredLines, newQtys]
+    () => filteredLines.filter(l => !savedLineIds.has(l.lineId) && (newQtys[l.lineId]?.trim() ?? '') !== ''),
+    [filteredLines, newQtys, savedLineIds]
   )
 
   function toggleDriver(driver: string) {
@@ -229,26 +231,33 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     setSaving(true)
     setSaveMsg(null)
     const newSaved = new Set(savedLineIds)
+    const newQtysAfter = { ...newQtys }
     let successCount = 0
     let failCount = 0
+    let firstErrorMsg: string | null = null
     for (const l of modifiedLines) {
       const newQty = Number(newQtys[l.lineId]!.trim())
       if (!Number.isFinite(newQty) || newQty < 0) { failCount++; continue }
       try {
         await apiPatch(`/api/orders/${l.orderId}/lines/${l.lineId}`, { newQty })
         newSaved.add(l.lineId)
+        delete newQtysAfter[l.lineId]
         successCount++
-      } catch {
+      } catch (e) {
         failCount++
+        if (!firstErrorMsg) firstErrorMsg = e instanceof Error ? e.message : null
       }
     }
     setSavedLineIds(newSaved)
+    setNewQtys(newQtysAfter)
     setSaving(false)
     setSaveMsg({
       ok: failCount === 0,
       text: failCount === 0
         ? (isEn ? `${successCount} saved` : `${successCount} 条已保存`)
-        : (isEn ? `${successCount} succeeded, ${failCount} failed` : `${successCount} 条成功，${failCount} 条失败`),
+        : (isEn
+          ? `${successCount} succeeded, ${failCount} failed${firstErrorMsg ? `: ${firstErrorMsg}` : ''}`
+          : `${successCount} 条成功，${failCount} 条失败${firstErrorMsg ? `：${firstErrorMsg}` : ''}`),
     })
   }
 
