@@ -13,6 +13,7 @@ import { OrderChatter } from '@/components/order/OrderChatter'
 import { getSession, type UserSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
+import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 
 const PURPLE = '#875A7B'
 
@@ -845,12 +846,20 @@ export default function QuotationDetailPage() {
                       {(() => {
                         const badge = formatPriceSourceBadge(l as unknown as { priceSourceType?: string | null; priceSourceDetail?: string | null; priceSourceDate?: string | null }, isEn)
                         return (
-                          <span
-                            title={badge.title}
-                            className={`inline-block px-2 py-0.5 border rounded text-xs cursor-help ${badge.className}`}
-                          >
-                            {badge.label}
-                          </span>
+                          <>
+                            <span
+                              title={badge.title}
+                              className={`inline-block px-2 py-0.5 border rounded text-xs cursor-help ${badge.className}`}
+                            >
+                              {badge.label}
+                            </span>
+                            <SalesPriceHistoryButton
+                              customerId={customer?.id}
+                              productId={l.productId}
+                              productName={l.productName}
+                              onSelectPrice={editing ? (price) => updateLine(i, 'unitPrice', price) : undefined}
+                            />
+                          </>
                         )
                       })()}
                     </td>

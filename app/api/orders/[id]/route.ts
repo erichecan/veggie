@@ -11,6 +11,7 @@ import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
+import { resolveOrderLines } from '@/lib/server-pricing'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
@@ -200,6 +201,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           })
         : []
       let toDelete: string[] = []
+      let pricingWarnings: string[] = []
 
       // If lines are provided, replace all: update existing, create new, delete removed
       if (Array.isArray(linesPayload)) {
@@ -284,22 +286,46 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           newLineProducts.map(p => [p.id, p.commissionPrice ?? p.template?.commissionPrice ?? null])
         )
 
-        for (const l of linesPayload as Record<string, unknown>[]) {
-          // SSOT: subtotal 服务端按 unitPrice×orderedQty 重算,不信前端传值(防金额被篡改/算错)
+        // 服务端权威定价：编辑订单行与下单同一套引擎(resolveOrderLines)，前端传的
+        // unitPrice 只作参考，容差外一律按引擎权威价入库——不再信任"编辑态由客户端算好
+        // 传上来、手动改价直接原样落库"的旧行为(见本次改动前的注释)。按客户当前档案
+        // 的价格表/定价模式重算，不沿用 Order.pricelistId/priceType 快照，理由是：
+        // 该快照只是"创建时链条头一张表"的历史记录，不是"本单显式覆盖"的标记，若原样
+        // 当覆盖重放会把客户当时的多价格表链坍缩成单表，丢失优先级链的回退能力。
+        const linesArr = linesPayload as Record<string, unknown>[]
+        const { lines: resolvedLines, warnings: resolvedWarnings } = await resolveOrderLines(
+          { prisma, restaurantId: orderBefore.restaurantId },
+          linesArr.map(l => ({
+            productId: String(l.productId ?? currentLineMap.get(String(l.id ?? ''))?.productId ?? ''),
+            productName: l.productName !== undefined ? String(l.productName) : undefined,
+            spec: l.spec !== undefined && l.spec ? String(l.spec) : undefined,
+            note: l.note !== undefined && l.note ? String(l.note) : undefined,
+            price: l.unitPrice !== undefined ? Number(l.unitPrice) : undefined,
+            quantity: Number(l.orderedQty),
+            uomId: l.uomId !== undefined && l.uomId ? String(l.uomId) : undefined,
+            uomName: l.uomName !== undefined && l.uomName ? String(l.uomName) : undefined,
+            taxRate: l.taxRate !== undefined ? Number(l.taxRate) : undefined,
+          })),
+        )
+        pricingWarnings = resolvedWarnings
+
+        for (let lineIdx = 0; lineIdx < linesArr.length; lineIdx++) {
+          const l = linesArr[lineIdx]
+          const resolved = resolvedLines[lineIdx]
+          // SSOT: subtotal/unitPrice 服务端按引擎权威价重算,不信前端传值(防金额被篡改/算错)
           const lineData: Record<string, unknown> = {
             orderedQty: Number(l.orderedQty),
-            unitPrice: Number(l.unitPrice),
-            subtotal: Math.round(Number(l.orderedQty) * Number(l.unitPrice) * 100) / 100,
+            unitPrice: resolved.authoritativeUnitPrice,
+            subtotal: resolved.subtotal,
+            // 单价来源快照：一律取服务端引擎本次算出的结果,不再信任/原样落库客户端传值
+            priceSourceType: resolved.resolution.sourceType.toUpperCase(),
+            priceSourceDetail: resolved.resolution.sourceType === 'pricelist' ? resolved.resolution.pricelistName : null,
+            priceSourceDate: resolved.lastPriceDate ?? null,
           }
           if (l.taxRate !== undefined) lineData.taxRate = Number(l.taxRate)
           if (l.sequence !== undefined) lineData.sequence = Number(l.sequence)
           if (l.spec !== undefined) lineData.spec = l.spec ? String(l.spec) : null
           if (l.note !== undefined) lineData.note = l.note ? String(l.note) : null
-          // 单价来源快照：编辑态由客户端算好传上来(见 orders/[id]/page.tsx updateLine)，
-          // 手动改价时客户端会把这三个字段清空，这里原样落库，不重新推断。
-          if (l.priceSourceType !== undefined) lineData.priceSourceType = l.priceSourceType ? String(l.priceSourceType) : null
-          if (l.priceSourceDetail !== undefined) lineData.priceSourceDetail = l.priceSourceDetail ? String(l.priceSourceDetail) : null
-          if (l.priceSourceDate !== undefined) lineData.priceSourceDate = l.priceSourceDate ? new Date(String(l.priceSourceDate)) : null
           // 多单位销售(20260714)：编辑已有行时也允许写入新单位(此前只有新增行分支才写 uomId/uomName，
           // 已有行传了新单位会被静默忽略)。合法性已在上面 uomEditCandidates 校验过。
           if (l.uomId !== undefined) {
@@ -814,7 +840,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'order', resourceId: id,
         detail: Array.isArray(linesPayload) && linesPayload.length > 0
-          ? `更新订单商品明细: ${id}（${linesPayload.length} 条行）`
+          ? `更新订单商品明细: ${id}（${linesPayload.length} 条行）${pricingWarnings.length ? '，警告: ' + pricingWarnings.join('; ') : ''}`
           : `更新订单: ${id}${newStatus ? ` → 状态: ${newStatus}` : ''}`,
         changes: Object.keys(changes).length > 0 ? changes : undefined,
       })
@@ -827,10 +853,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           (order as { code?: string | null }).code ?? id,
         )
       }
-      return NextResponse.json(serializeApi(order))
+      return NextResponse.json({ ...serializeApi(order), pricingWarnings })
     } catch (error) {
       if (error instanceof WavePickLockedError) {
         return NextResponse.json({ error: error.message }, { status: 409 })
+      }
+      const err = error as { status?: number; message?: string }
+      if (err.status && err.status >= 400 && err.status < 500) {
+        return NextResponse.json({ error: err.message ?? '请求无效' }, { status: err.status })
       }
       console.error('[PUT /api/orders/[id]]', error)
       return NextResponse.json({ error: '更新订单失败' }, { status: 500 })

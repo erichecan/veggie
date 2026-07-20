@@ -30,8 +30,6 @@ function emptyItem(): OdooPricelistItem {
     priceDiscount: 0,
     priceSurcharge: 0,
     roundingMethod: 0,
-    priceMinMargin: 0,
-    priceMaxMargin: 0,
     sequence: 10,
   }
 }
@@ -1098,7 +1096,7 @@ function ItemDialog({
                     <NumericInput
                       step="any" min={0} placeholder="0.00"
                       value={item.priceMinMargin ?? ''}
-                      onChange={e => set('priceMinMargin', e.target.value ? Number(e.target.value) : 0)}
+                      onChange={e => set('priceMinMargin', e.target.value ? Number(e.target.value) : undefined)}
                       className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                     />
                   </div>
@@ -1107,7 +1105,7 @@ function ItemDialog({
                     <NumericInput
                       step="any" min={0} placeholder="0.00"
                       value={item.priceMaxMargin ?? ''}
-                      onChange={e => set('priceMaxMargin', e.target.value ? Number(e.target.value) : 0)}
+                      onChange={e => set('priceMaxMargin', e.target.value ? Number(e.target.value) : undefined)}
                       className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                     />
                   </div>

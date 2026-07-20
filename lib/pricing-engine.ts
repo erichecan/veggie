@@ -178,6 +178,7 @@ function computeItemPrice(
           const nestedResult = resolvePrice(product, nested, allPricelists, qty, date, depth + 1)
           if (nestedResult.isFallback) return null  // If nested call fell back, we should too
           formulaBase = nestedResult.price
+          break
         }
         default:
           formulaBase = basePrice

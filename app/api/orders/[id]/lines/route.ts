@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { resolveCommissionPrice } from '@/lib/commission'
+import { resolveOrderLines } from '@/lib/server-pricing'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 
 /**
@@ -20,7 +21,7 @@ export async function POST(
 
       const order = await prisma.order.findUnique({
         where: { id },
-        select: { id: true, code: true, status: true },
+        select: { id: true, code: true, status: true, restaurantId: true },
       })
       if (!order) {
         return NextResponse.json({ error: '订单不存在' }, { status: 404 })
@@ -54,7 +55,22 @@ export async function POST(
         )
       }
 
-      const subtotal = Math.round(Number(unitPrice) * Number(orderedQty) * 100) / 100
+      // 服务端权威定价：追加行与下单同一套引擎，前端传的 unitPrice 只作参考，
+      // 容差外一律按引擎权威价入库（见 lib/server-pricing.ts 顶部注释）。
+      const { lines: resolvedLines, warnings } = await resolveOrderLines(
+        { prisma, restaurantId: order.restaurantId },
+        [{
+          productId: String(productId),
+          productName: productName ? String(productName) : undefined,
+          price: unitPrice != null ? Number(unitPrice) : undefined,
+          quantity: Number(orderedQty),
+          uomId: uomId ? String(uomId) : undefined,
+          uomName: uomName ? String(uomName) : undefined,
+          taxRate: taxRate != null ? Number(taxRate) : undefined,
+        }],
+      )
+      const resolved = resolvedLines[0]
+
       // SSOT: 追加行同样要写件提成快照,否则该行提成恒为 null
       const commissionPrice = await resolveCommissionPrice(String(productId))
 
@@ -62,17 +78,20 @@ export async function POST(
         data: {
           orderId: id,
           productId,
-          productName,
+          productName: resolved.productName,
           uomId: uomId ?? null,
           uomName: uomName ?? 'Unit(s)',
-          unitPrice: Number(unitPrice),
+          unitPrice: resolved.authoritativeUnitPrice,
           orderedQty: Number(orderedQty),
           deliveredQty: 0,
           invoicedQty: 0,
-          subtotal,
+          subtotal: resolved.subtotal,
           taxRate: taxRate != null ? Number(taxRate) : null,
           sequence: sequence ?? 0,
           commissionPrice,
+          priceSourceType: resolved.resolution.sourceType.toUpperCase(),
+          priceSourceDetail: resolved.resolution.sourceType === 'pricelist' ? resolved.resolution.pricelistName : null,
+          priceSourceDate: resolved.lastPriceDate ?? null,
         },
       })
 
@@ -93,13 +112,17 @@ export async function POST(
         action: 'CREATE',
         resource: 'order',
         resourceId: id,
-        detail: `追加订单行: ${productName}（数量 ${Number(orderedQty)}，单价 ${Number(unitPrice)}）`,
+        detail: `追加订单行: ${productName}（数量 ${Number(orderedQty)}，单价 ${resolved.authoritativeUnitPrice}）${warnings.length ? '，警告: ' + warnings.join('; ') : ''}`,
       })
 
-      return NextResponse.json(newLine, { status: 201 })
+      return NextResponse.json({ ...newLine, pricingWarnings: warnings }, { status: 201 })
     } catch (e) {
       if (e instanceof WavePickLockedError) {
         return NextResponse.json({ error: e.message }, { status: 409 })
+      }
+      const err = e as { status?: number; message?: string }
+      if (err.status && err.status >= 400 && err.status < 500) {
+        return NextResponse.json({ error: err.message ?? '请求无效' }, { status: err.status })
       }
       console.error('[POST order line]', e)
       return NextResponse.json(
