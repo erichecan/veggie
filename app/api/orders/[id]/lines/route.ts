@@ -21,7 +21,7 @@ export async function POST(
 
       const order = await prisma.order.findUnique({
         where: { id },
-        select: { id: true, code: true, status: true, restaurantId: true },
+        select: { id: true, code: true, status: true, restaurantId: true, pricelistId: true, priceType: true },
       })
       if (!order) {
         return NextResponse.json({ error: '订单不存在' }, { status: 404 })
@@ -57,6 +57,8 @@ export async function POST(
 
       // 服务端权威定价：追加行与下单同一套引擎，前端传的 unitPrice 只作参考，
       // 容差外一律按引擎权威价入库（见 lib/server-pricing.ts 顶部注释）。
+      // 本单覆盖：沿用订单已选的 pricelistId/priceType，而非客户档案默认链
+      // （否则订单编辑页里选好的 pricelist/priceType 对新追加的行不生效）。
       const { lines: resolvedLines, warnings } = await resolveOrderLines(
         { prisma, restaurantId: order.restaurantId },
         [{
@@ -68,6 +70,7 @@ export async function POST(
           uomName: uomName ? String(uomName) : undefined,
           taxRate: taxRate != null ? Number(taxRate) : undefined,
         }],
+        { pricelistId: order.pricelistId, priceType: order.priceType },
       )
       const resolved = resolvedLines[0]
 

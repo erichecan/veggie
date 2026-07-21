@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
-import type { Order, Customer, OdooPricelist as Pricelist } from '@/lib/types'
+import type { Order, Customer, OdooPricelist as Pricelist, CustomerPriceType } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { OrderChatter } from '@/components/order/OrderChatter'
 import { getSession, type UserSession } from '@/lib/session'
@@ -84,6 +84,12 @@ export default function QuotationDetailPage() {
     return counts
   }, [editLines])
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
+  // 本单覆盖：编辑页可临时切换 pricelist/priceType（不写回客户档案），
+  // 加行询价必须用叠加后的客户对象，否则永远只按客户档案默认链定价（与 place-order 创建页一致）
+  const effectiveCustomer = useMemo(() => customer
+    ? { ...customer, priceType: priceType as CustomerPriceType, pricelists: pricelistId ? [{ pricelistId, sequence: 1 }] : customer.pricelists }
+    : null,
+  [customer, priceType, pricelistId])
   // 多单位销售(20260714 试点)：全局单位 factor 表 + 按商品懒加载的额外可售单位
   const [uomFactors, setUomFactors] = useState<Record<string, number>>({})
   const [saleUomOptions, setSaleUomOptions] = useState<Record<string, SaleUomOption[]>>({})
@@ -314,23 +320,6 @@ export default function QuotationDetailPage() {
     return m
   }, [allProducts])
 
-  const editFormRef = useRef<HTMLDivElement>(null)
-  const handleTabNav = useCallback((e: React.KeyboardEvent) => {
-    if (e.key !== 'Tab') return
-    const container = editFormRef.current
-    if (!container) return
-    const focusable = Array.from(container.querySelectorAll<HTMLElement>(
-      'input:not([disabled]):not([type=hidden]), select:not([disabled])'
-    ))
-    if (focusable.length === 0) return
-    const idx = focusable.indexOf(e.target as HTMLElement)
-    if (idx === -1) return
-    const next = e.shiftKey ? idx - 1 : idx + 1
-    if (next >= 0 && next < focusable.length) {
-      e.preventDefault()
-      focusable[next].focus()
-    }
-  }, [])
 
   if (loading) return <div className="text-center py-20 text-gray-400">Loading…</div>
   if (!order) {
@@ -371,8 +360,8 @@ export default function QuotationDetailPage() {
         }
       } catch { /* 查询失败不阻塞加行，回退到价格表/牌价 */ }
     }
-    const resolution = customer
-      ? resolveCustomerPrice(p as never, customer, pricelists, 1, lastPriceHit?.price)
+    const resolution = effectiveCustomer
+      ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, 1, lastPriceHit?.price)
       : null
     const price = resolution ? resolution.price : Number(p.listPrice ?? 0)
     const newLine = {
@@ -529,7 +518,7 @@ export default function QuotationDetailPage() {
       </div>
 
       {/* Region 3: Main info card */}
-      <div className="px-6 py-4" ref={editFormRef} onKeyDown={editing ? handleTabNav : undefined}>
+      <div className="px-6 py-4">
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
           <div className="flex items-start justify-between">
             <h1 className="text-3xl font-bold text-gray-800">{displayOrderCode(order)}</h1>

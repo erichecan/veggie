@@ -288,10 +288,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
         // 服务端权威定价：编辑订单行与下单同一套引擎(resolveOrderLines)，前端传的
         // unitPrice 只作参考，容差外一律按引擎权威价入库——不再信任"编辑态由客户端算好
-        // 传上来、手动改价直接原样落库"的旧行为(见本次改动前的注释)。按客户当前档案
-        // 的价格表/定价模式重算，不沿用 Order.pricelistId/priceType 快照，理由是：
-        // 该快照只是"创建时链条头一张表"的历史记录，不是"本单显式覆盖"的标记，若原样
-        // 当覆盖重放会把客户当时的多价格表链坍缩成单表，丢失优先级链的回退能力。
+        // 传上来、手动改价直接原样落库"的旧行为(见本次改动前的注释)。
+        // 本单覆盖：pricelistId/priceType 优先取本次请求刚提交的值(操作员在编辑页显式选择)，
+        // 请求未带这两个字段时才 fallback 到订单已存的值——不能默认沿用客户档案默认链，
+        // 否则编辑页里选好的 pricelist/priceType 形同虚设(见 resolveOrderLines overrides 参数注释)。
+        const effectivePricelistId = pricelistId !== undefined
+          ? (pricelistId ? String(pricelistId) : null)
+          : orderBefore.pricelistId
+        const effectivePriceType = priceType !== undefined
+          ? String(priceType).toLowerCase()
+          : orderBefore.priceType
         const linesArr = linesPayload as Record<string, unknown>[]
         const { lines: resolvedLines, warnings: resolvedWarnings } = await resolveOrderLines(
           { prisma, restaurantId: orderBefore.restaurantId },
@@ -306,6 +312,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             uomName: l.uomName !== undefined && l.uomName ? String(l.uomName) : undefined,
             taxRate: l.taxRate !== undefined ? Number(l.taxRate) : undefined,
           })),
+          { pricelistId: effectivePricelistId, priceType: effectivePriceType },
         )
         pricingWarnings = resolvedWarnings
 
