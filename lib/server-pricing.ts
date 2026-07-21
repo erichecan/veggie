@@ -49,7 +49,7 @@ export interface ResolvedLine {
 
 export interface PricingContext {
   prisma: Pick<PrismaClient,
-    'user' | 'customer' | 'product' | 'productTemplate' | 'odooPricelist' | 'order' | 'productSaleUom' | 'uom'>
+    'user' | 'customer' | 'product' | 'productTemplate' | 'odooPricelist' | 'order' | 'orderLine' | 'productSaleUom' | 'uom'>
   /**
    * 前端传入的 restaurantId 可能是 User.id（老流程）或 Customer.id（新流程）。
    * 统一在这里解析成 Customer 记录，不存在则报错。
@@ -138,9 +138,6 @@ export async function queryLastSoldPriceWithDate(
  * 批量查询某客户对一组商品的最近一次成交价。
  * 用于前端 place-order 页一次性拉所有 line 的 lastPrice，避免 N 次往返。
  *
- * 实现策略：扫该客户最近 200 条订单的 items JSON，对每个 productId 取**首个命中**
- * （订单按 createdAt desc 排序，因此首个命中即最近一次）。
- *
  * @returns Record<productId, number>。未命中的 productId 不在结果里（前端按缺省判断 = 无历史）
  */
 export async function queryLastSoldPrices(
@@ -154,7 +151,16 @@ export async function queryLastSoldPrices(
   return result
 }
 
-/** 同 queryLastSoldPrices，额外带成交发生的时间（订单 createdAt），供 priceSourceDate 快照用 */
+/**
+ * 同 queryLastSoldPrices，额外带成交发生的时间（订单 createdAt），供 priceSourceDate 快照用。
+ *
+ * 两处历史坑（2026-07-20 修复，详见 docs/20260624-data-ownership-audit.md）：
+ *   1. Order.restaurantId 有两种写法——应用内下单走 User.id（该 User.customerId 关联 Customer）；
+ *      Odoo 历史导入订单 / 操作员直接给 Customer 下单时，restaurantId 就是 Customer.id 本身
+ *      （全库仅 2 个 User 关联了 customerId，此前只查 User 那条链等于对几乎所有客户永远查空）。
+ *   2. 原实现扫 Order.items JSON——15 万笔 Odoo 导入订单 items 恒为空数组，且订单一旦被
+ *      编辑过 items 也不再跟随 OrderLine 更新，同样查不到。改为直接查 OrderLine 关系表。
+ */
 export async function queryLastSoldPricesDetailed(
   prisma: PricingContext['prisma'],
   customerId: string,
@@ -167,26 +173,25 @@ export async function queryLastSoldPricesDetailed(
     where: { customerId },
     select: { id: true },
   })
-  const restaurantIds = users.map((u) => u.id)
-  if (restaurantIds.length === 0) return result
+  const restaurantIds = [customerId, ...users.map((u) => u.id)]
 
-  const wanted = new Set(productIds)
-  const recent = await prisma.order.findMany({
-    where: { restaurantId: { in: restaurantIds } },
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-    select: { items: true, createdAt: true },
-  })
+  const hits = await Promise.all(
+    productIds.map((productId) =>
+      prisma.orderLine.findFirst({
+        where: {
+          productId,
+          unitPrice: { gt: 0 },
+          order: { restaurantId: { in: restaurantIds }, status: { not: 'CANCELLED' } },
+        },
+        orderBy: { order: { createdAt: 'desc' } },
+        select: { unitPrice: true, order: { select: { createdAt: true } } },
+      }).then((line) => ({ productId, line })),
+    ),
+  )
 
-  for (const order of recent) {
-    if (wanted.size === 0) break
-    const items = order.items as Array<{ productId: string; price: number }>
-    for (const it of items) {
-      if (!wanted.has(it.productId)) continue
-      if (!Number.isFinite(it.price) || it.price <= 0) continue
-      result[it.productId] = { price: it.price, date: order.createdAt }
-      wanted.delete(it.productId)
-    }
+  for (const { productId, line } of hits) {
+    if (!line) continue
+    result[productId] = { price: toNum(line.unitPrice), date: line.order.createdAt }
   }
 
   return result
