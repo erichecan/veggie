@@ -32,7 +32,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const { specialPrices, pricelistIds, ...data } = await req.json()
+      const { specialPrices, pricelistIds, ...rest } = await req.json()
+      // 前端 Save 会把 GET 返回的原始对象（含 salesUser 关系对象、salesman 派生字段、id/createdAt 等）
+      // 整体展开进请求体；只挑白名单里真实可写的标量字段传给 Prisma，
+      // 否则 salesUser 这类关系对象会让 prisma.customer.update 直接抛 PrismaClientValidationError（500）
+      const data: Record<string, unknown> = {}
+      for (const key of TRACKED_FIELDS) {
+        if (key === 'pricelistIds') continue
+        if (key in rest) data[key] = rest[key]
+      }
       // 旧值（带出 pricelists 关系，供 diffChanges 比对）
       const before = await prisma.customer.findUnique({
         where: { id },

@@ -142,7 +142,11 @@ export default function ClassicProductDetailPage() {
       setUoms(uomList.filter(u => !HIDDEN_CATEGORIES.includes(u.category?.name ?? '')))
       if (!isNew) {
         if (!found) { router.push(`${prefix}/classic/operator/products`); return }
-        const normalized = { ...found, status: found.status?.toLowerCase() as ProductTemplate['status'] ?? found.status }
+        const normalized = {
+          ...found,
+          status: found.status?.toLowerCase() as ProductTemplate['status'] ?? found.status,
+          type: found.type?.toLowerCase() as ProductTemplate['type'] ?? found.type,
+        }
         setTmpl(normalized)
         setOriginal({ ...normalized })
         const templateId = found.id
