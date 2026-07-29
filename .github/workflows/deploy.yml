@@ -1,9 +1,31 @@
 name: Deploy to Cloud Run
 
 # 推送到 main 自动部署；也可在 Actions 页手动触发。
+# paths 过滤：只有会进 Docker 镜像/影响构建部署的路径变化才触发，docs/*.md 等纯文档改动不触发
+# （对照 .dockerignore 里排除的路径反过来推导，两边要保持一致）。
 on:
   push:
     branches: [main]
+    paths:
+      - "app/**"
+      - "components/**"
+      - "hooks/**"
+      - "i18n/**"
+      - "lib/**"
+      - "messages/**"
+      - "prisma/**"
+      - "public/**"
+      - "middleware.ts"
+      - "next.config.ts"
+      - "postcss.config.mjs"
+      - "sentry.*.config.ts"
+      - "prisma.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "Dockerfile"
+      - "cloudbuild.yaml"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 # 同一时刻只跑一次部署，新推送取消正在进行的旧部署。
