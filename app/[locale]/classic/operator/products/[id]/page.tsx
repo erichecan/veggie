@@ -9,6 +9,7 @@ import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import type { ProductTemplate, ProductCategory, Order } from '@/lib/types'
+import { validateSaleUomItems } from '@/lib/sale-uom'
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
 function IconSales() {
@@ -257,6 +258,10 @@ export default function ClassicProductDetailPage() {
   async function handleSave() {
     if (!tmpl || saving) return
     if (!tmpl.name.trim()) { toast.error(isEn ? 'Product name cannot be empty' : '商品名称不能为空'); return }
+    if (isNew) {
+      const saleUomsError = validateSaleUomItems(saleUoms)
+      if (saleUomsError) { toast.error(saleUomsError); return }
+    }
     setSaving(true)
     try {
       if (isNew) {
@@ -264,6 +269,7 @@ export default function ClassicProductDetailPage() {
         const created = await (await import('@/lib/api')).apiPost<ProductTemplate>('/api/product-templates', {
           ...fields,
           createdAt: new Date().toISOString(),
+          saleUoms,
         })
         toast.success(isEn ? `Created "${created.name}"` : `已创建「${created.name}」`)
         router.push(`${prefix}/classic/operator/products/${created.id}`)
@@ -553,7 +559,7 @@ export default function ClassicProductDetailPage() {
             )}
           </Section>
 
-          {!isNew && primaryProductId && (
+          {(isNew || primaryProductId) && (
             <Section title={isEn ? 'Sellable Units (multi-UoM pilot)' : '可售单位（多单位销售试点）'}>
               <p className="text-xs text-gray-400 mb-3 max-w-3xl">
                 {isEn
@@ -614,14 +620,20 @@ export default function ClassicProductDetailPage() {
                 {editMode && (
                   <div className="flex items-center gap-2 pt-1">
                     <button onClick={addSaleUomRow} className={btnBase}>{isEn ? '+ Add Unit' : '＋ 添加单位'}</button>
-                    <button
-                      onClick={saveSaleUoms}
-                      disabled={saleUomsSaving}
-                      className="h-8 px-4 text-sm font-medium text-white rounded transition-colors disabled:opacity-50"
-                      style={{ background: '#875A7B' }}
-                    >
-                      {saleUomsSaving ? (isEn ? 'Saving...' : '保存中...') : (isEn ? 'Save Sellable Units' : '保存可售单位')}
-                    </button>
+                    {isNew ? (
+                      <span className="text-xs text-gray-400">
+                        {isEn ? 'Saved together with the product below' : '随下方"保存"按钮一起创建'}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={saveSaleUoms}
+                        disabled={saleUomsSaving}
+                        className="h-8 px-4 text-sm font-medium text-white rounded transition-colors disabled:opacity-50"
+                        style={{ background: '#875A7B' }}
+                      >
+                        {saleUomsSaving ? (isEn ? 'Saving...' : '保存中...') : (isEn ? 'Save Sellable Units' : '保存可售单位')}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

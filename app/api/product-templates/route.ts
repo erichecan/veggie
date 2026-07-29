@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { validateSaleUomItems, type SaleUomItemInput } from '@/lib/sale-uom'
 
 const LOW_STOCK_THRESHOLD = 10
 
@@ -160,15 +161,52 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
-      const data = await req.json()
-      const template = await prisma.productTemplate.create({
-        data: {
-          ...data,
-          type: data.type?.toUpperCase() ?? 'PRODUCT',
-          status: data.status?.toUpperCase() ?? 'DRAFT',
-          attributeLines: data.attributeLines ?? [],
-          images: data.images ?? [],
-        },
+      const { saleUoms: rawSaleUoms, ...data } = await req.json()
+
+      const saleUoms: SaleUomItemInput[] = Array.isArray(rawSaleUoms) ? rawSaleUoms : []
+      const saleUomsError = saleUoms.length > 0 ? validateSaleUomItems(saleUoms) : null
+      if (saleUomsError) return NextResponse.json({ error: saleUomsError }, { status: 400 })
+
+      // 系统约定商品必须挂模板（同 /api/products/bulk、/api/products/quick-create）：
+      // 同一事务里把 ProductTemplate + 主变体 Product 一起建好，否则编辑页找不到
+      // primaryProductId，"可售单位(大小单位)"区块永远不出现（20260728 排查确认）。
+      // 新建时顺手带上的 saleUoms 也在这同一个事务里落库，不用等保存后跳到编辑页再配一次。
+      const template = await prisma.$transaction(async tx => {
+        const tpl = await tx.productTemplate.create({
+          data: {
+            ...data,
+            type: data.type?.toUpperCase() ?? 'PRODUCT',
+            status: data.status?.toUpperCase() ?? 'DRAFT',
+            attributeLines: data.attributeLines ?? [],
+            images: data.images ?? [],
+          },
+        })
+        const product = await tx.product.create({
+          data: {
+            templateId: tpl.id,
+            name: tpl.name,
+            internalRef: data.internalRef,
+            categoryId: data.categoryId,
+            listPrice: data.listPrice,
+            standardPrice: data.standardPrice,
+            customerTaxRate: data.customerTaxRate,
+            commissionPrice: data.commissionPrice,
+            images: data.images ?? [],
+            status: data.status?.toUpperCase() ?? 'DRAFT',
+          },
+        })
+        if (saleUoms.length > 0) {
+          await tx.productSaleUom.createMany({
+            data: saleUoms.map(it => ({
+              productId: product.id,
+              uomId: String(it.uomId),
+              isDefault: !!it.isDefault,
+              priceOverride: it.priceOverride != null && it.priceOverride !== '' ? Number(it.priceOverride) : null,
+              active: it.active !== false,
+            })),
+          })
+        }
+        return tpl
       })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'product-template', resourceId: template.id,
