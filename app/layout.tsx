@@ -9,6 +9,18 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: "蔬菜批发管理系统",
   description: "从商品上架到签收回款的完整供应链管理平台",
+  manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    title: "蔬菜订购",
+    statusBarStyle: "default",
+  },
 }
 
 /**

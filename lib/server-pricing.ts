@@ -175,23 +175,22 @@ export async function queryLastSoldPricesDetailed(
   })
   const restaurantIds = [customerId, ...users.map((u) => u.id)]
 
-  const hits = await Promise.all(
-    productIds.map((productId) =>
-      prisma.orderLine.findFirst({
-        where: {
-          productId,
-          unitPrice: { gt: 0 },
-          order: { restaurantId: { in: restaurantIds }, status: { not: 'CANCELLED' } },
-        },
-        orderBy: { order: { createdAt: 'desc' } },
-        select: { unitPrice: true, order: { select: { createdAt: true } } },
-      }).then((line) => ({ productId, line })),
-    ),
-  )
+  // 单条查询取该客户全部相关订单行（按订单时间倒序），逐商品在内存里取首次命中（即最近一次）。
+  // 原实现对每个 productId 单独发一次 findFirst——商品目录页一次要查上千个商品，等于上千次并发
+  // 查询，把 Neon 连接池打满导致整个请求挂起（2026-07-29 排查确认）。
+  const lines = await prisma.orderLine.findMany({
+    where: {
+      productId: { in: productIds },
+      unitPrice: { gt: 0 },
+      order: { restaurantId: { in: restaurantIds }, status: { not: 'CANCELLED' } },
+    },
+    orderBy: { order: { createdAt: 'desc' } },
+    select: { productId: true, unitPrice: true, order: { select: { createdAt: true } } },
+  })
 
-  for (const { productId, line } of hits) {
-    if (!line) continue
-    result[productId] = { price: toNum(line.unitPrice), date: line.order.createdAt }
+  for (const line of lines) {
+    if (result[line.productId]) continue
+    result[line.productId] = { price: toNum(line.unitPrice), date: line.order.createdAt }
   }
 
   return result

@@ -1,0 +1,14 @@
+{
+  "name": "蔬菜批发订购",
+  "short_name": "蔬菜订购",
+  "description": "餐厅客户在线下单专属批发价蔬菜",
+  "start_url": "/customer-portal",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F9FAFB",
+  "theme_color": "#875A7B",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
