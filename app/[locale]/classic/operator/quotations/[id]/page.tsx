@@ -16,6 +16,7 @@ import { formatPriceSourceBadge } from '@/lib/price-source'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 
 const PURPLE = '#875A7B'
+const LOW_STOCK_THRESHOLD = 20
 
 interface AllProduct {
   id: string
@@ -141,12 +142,23 @@ export default function QuotationDetailPage() {
 
   useEffect(() => { load() }, [id])
 
+  const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
+
   useEffect(() => {
     apiGet<AllProduct[]>('/api/products?limit=500&sellable=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
     apiGet<Array<{ id: string; factor: number }>>('/api/uoms')
       .then(uomList => setUomFactors(Object.fromEntries(uomList.map(u => [u.id, Number(u.factor) || 1]))))
       .catch(() => {})
+    apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
   }, [])
+
+  // 缺货提醒(20260729)：编辑期间新增的行不在初次 load() 拉取的 forecastMap 里，单独补一条
+  function ensureForecast(productId: string) {
+    if (!productId || forecastMap.has(productId)) return
+    apiGet<ForecastRow[]>(`/api/products/forecast?ids=${productId}`)
+      .then(rows => { if (rows[0]) setForecastMap(prev => new Map(prev).set(productId, rows[0])) })
+      .catch(() => {})
+  }
 
   // 多单位销售(20260714 试点)：懒加载某商品配置的额外可售单位；已加载过就跳过
   function ensureSaleUomOptions(productId: string) {
@@ -341,6 +353,11 @@ export default function QuotationDetailPage() {
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing ? editLines : lines
+  // 缺货提醒(20260729)：pending-demand 是全库存量按 PENDING/CONFIRMED/WAVE_ASSIGNED 全部订单聚合的，
+  // 本单自己也在这些状态里，若不减掉会把"这单自己占的量"算成"跟自己抢库存"，出现假缺货
+  const ownDemandMap = new Map<string, number>()
+  for (const l of lines) if (l.productId) ownDemandMap.set(l.productId, (ownDemandMap.get(l.productId) ?? 0) + Number(l.orderedQty))
+  const atpDemand = (productId: string) => Math.max(0, (pendingDemand[productId] ?? 0) - (ownDemandMap.get(productId) ?? 0))
   const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
   const displayTotal = editing
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
@@ -348,6 +365,7 @@ export default function QuotationDetailPage() {
 
   async function addProductLine(p: AllProduct) {
     ensureSaleUomOptions(p.id)
+    ensureForecast(p.id)
     // priceType='default' 的定价链从不查最近成交价，跳过这次查询
     let lastPriceHit: { price: number; date: string } | undefined
     if (customer && priceType !== 'default') {
@@ -688,6 +706,45 @@ export default function QuotationDetailPage() {
           {/* Region 5: order lines table */}
           <>
             {editing && (() => {
+              const withAtp = editLines
+                .filter(l => l.productId)
+                .map(l => {
+                  const fc = forecastMap.get(l.productId)
+                  const atp = fc ? Number(fc.qtyOnHand) - atpDemand(l.productId) : null
+                  return { ...l, atp }
+                })
+              const outOfStockLines = withAtp.filter(l => l.atp != null && l.atp <= 0)
+              const lowStockLines = withAtp.filter(l => l.atp != null && l.atp > 0 && l.atp < LOW_STOCK_THRESHOLD)
+              if (outOfStockLines.length === 0 && lowStockLines.length === 0) return null
+              return (
+                <div className="mx-3 mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-start gap-3">
+                  <span className="text-lg leading-none mt-0.5">🚨</span>
+                  <div className="text-sm">
+                    <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on ATP): ' : '库存警告（基于可承诺量）：'}</span>
+                    {outOfStockLines.length > 0 && (
+                      <span className="text-red-600">
+                        {isEn ? `${outOfStockLines.length} product(s) out of stock` : `${outOfStockLines.length} 个商品无可用库存`}
+                        <span className="text-xs text-red-500 ml-1">
+                          ({outOfStockLines.map(l => l.productName).join(isEn ? ', ' : '、')})
+                        </span>
+                      </span>
+                    )}
+                    {outOfStockLines.length > 0 && lowStockLines.length > 0 && (
+                      <span className="text-gray-400 mx-1.5">|</span>
+                    )}
+                    {lowStockLines.length > 0 && (
+                      <span className="text-amber-700">
+                        {isEn ? `${lowStockLines.length} product(s) low stock` : `${lowStockLines.length} 个商品低库存`}
+                        <span className="text-xs text-amber-600 ml-1">
+                          ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp!.toFixed(1)})`).join(isEn ? ', ' : '、')})
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+            {editing && (() => {
               const dups = [...duplicateCounts.entries()].filter(([, c]) => c > 1)
               if (dups.length === 0) return null
               const nameOf = (pid: string) => editLines.find(l => l.productId === pid)?.productName ?? pid
@@ -724,6 +781,15 @@ export default function QuotationDetailPage() {
               selectOnTab
               searchColSpan={16}
               emptyColSpan={17}
+              rowStyle={(l) => {
+                if (!editing || !l.productId) return undefined
+                const fc = forecastMap.get(l.productId)
+                if (!fc) return undefined
+                const atp = Number(fc.qtyOnHand) - atpDemand(l.productId)
+                if (atp <= 0) return { background: '#fee2e2' }
+                if (atp < LOW_STOCK_THRESHOLD) return { background: '#fffbeb' }
+                return undefined
+              }}
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
                   <th className="px-2 py-3 w-6"></th>
@@ -750,6 +816,9 @@ export default function QuotationDetailPage() {
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
                 const isDuplicate = !!l.productId && (duplicateCounts.get(l.productId) ?? 0) > 1
+                const atp = editing && fc ? Number(fc.qtyOnHand) - atpDemand(l.productId) : null
+                const isOutOfStock = atp != null && atp <= 0
+                const isLowStock = atp != null && atp > 0 && atp < LOW_STOCK_THRESHOLD
                 return (
                   <>
                     <td className="px-2 py-2">
@@ -763,6 +832,8 @@ export default function QuotationDetailPage() {
                     <td className="px-2 py-2 text-gray-700">
                       {i + 1}
                       {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
+                      {isOutOfStock && <span className="ml-1 text-[10px] text-red-600" title={isEn ? 'Out of stock' : '无可用库存'}>🚨</span>}
+                      {!isOutOfStock && isLowStock && <span className="ml-1 text-[10px] text-amber-600" title={isEn ? 'Low stock' : '低库存'}>⚠️</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
                     <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
@@ -856,7 +927,12 @@ export default function QuotationDetailPage() {
                       {editing ? (
                         <select className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                           value={Number(l.taxRate ?? 0)}
-                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}>
+                          onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
+                          onKeyDown={e => {
+                            // 只有最后一行需要拦截：中间行原生 Tab 顺序本来就会走到下一行的字段，
+                            // 拦截会打断"顺着已有多行往下 Tab"的场景；最后一行后面就是搜索框，跳不跳原生顺序结果一样
+                            if (e.key === 'Tab' && !e.shiftKey && i === displayLines.length - 1) { e.preventDefault(); focusSearch() }
+                          }}>
                           <option value={0}>0%</option>
                           <option value={13.5}>13.5%</option>
                           <option value={23}>23%</option>
