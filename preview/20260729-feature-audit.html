@@ -1,0 +1,617 @@
+<title>合同功能清单 × 代码核实 — veggie Phase 1</title>
+<style>
+  :root {
+    --ink: #1B2023;
+    --paper: #F4F3EE;
+    --paper-raised: #FFFFFF;
+    --line: #DEDCD3;
+    --muted: #63675E;
+    --accent: #2E5C63;
+    --accent-soft: #DEEAE9;
+    --done: #2F7D4F;
+    --done-soft: #E1EFE4;
+    --partial: #A9760A;
+    --partial-soft: #F4E9D2;
+    --missing: #B23A34;
+    --missing-soft: #F5DEDC;
+    --deferred: #62666E;
+    --deferred-soft: #E7E7E9;
+    --shadow: 0 1px 2px rgba(27,32,35,0.06), 0 8px 24px -12px rgba(27,32,35,0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #ECEAE3;
+      --paper: #14171A;
+      --paper-raised: #1B1F22;
+      --line: #2A2E31;
+      --muted: #9BA39B;
+      --accent: #86AEB6;
+      --accent-soft: #1E2E30;
+      --done: #4FAE79;
+      --done-soft: #16281F;
+      --partial: #D6A23C;
+      --partial-soft: #2E2718;
+      --missing: #D9635D;
+      --missing-soft: #2E1D1C;
+      --deferred: #9AA1AA;
+      --deferred-soft: #23262A;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #ECEAE3; --paper: #14171A; --paper-raised: #1B1F22; --line: #2A2E31; --muted: #9BA39B;
+    --accent: #86AEB6; --accent-soft: #1E2E30;
+    --done: #4FAE79; --done-soft: #16281F;
+    --partial: #D6A23C; --partial-soft: #2E2718;
+    --missing: #D9635D; --missing-soft: #2E1D1C;
+    --deferred: #9AA1AA; --deferred-soft: #23262A;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+  :root[data-theme="light"] {
+    --ink: #1B2023; --paper: #F4F3EE; --paper-raised: #FFFFFF; --line: #DEDCD3; --muted: #63675E;
+    --accent: #2E5C63; --accent-soft: #DEEAE9;
+    --done: #2F7D4F; --done-soft: #E1EFE4;
+    --partial: #A9760A; --partial-soft: #F4E9D2;
+    --missing: #B23A34; --missing-soft: #F5DEDC;
+    --deferred: #62666E; --deferred-soft: #E7E7E9;
+    --shadow: 0 1px 2px rgba(27,32,35,0.06), 0 8px 24px -12px rgba(27,32,35,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  a { color: var(--accent); }
+  ::selection { background: var(--accent-soft); }
+
+  .page { max-width: 880px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+
+  /* ── Masthead ─────────────────────────────────────────────── */
+  .masthead { padding-bottom: 1.75rem; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    margin: 0 0 .6rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin: 0 0 .7rem;
+    font-size: clamp(1.6rem, 1.1rem + 2vw, 2.15rem);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .lede {
+    margin: 0 0 .9rem;
+    max-width: 62ch;
+    color: var(--ink);
+    font-size: 1.02rem;
+  }
+  .meta { margin: 0; color: var(--muted); font-size: .85rem; }
+
+  /* ── Stat strip ───────────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 1.75rem 0 1.5rem;
+  }
+  .stat-tile {
+    background: var(--paper-raised);
+    padding: 1rem .9rem;
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+  }
+  .stat-num { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+  .stat-done .stat-num { color: var(--done); }
+  .stat-partial .stat-num { color: var(--partial); }
+  .stat-missing .stat-num { color: var(--missing); }
+  .stat-deferred .stat-num { color: var(--deferred); }
+  .stat-index .stat-num { color: var(--accent); }
+  .stat-label { font-size: .82rem; font-weight: 600; }
+  .stat-sub { font-size: .72rem; color: var(--muted); }
+
+  @media (max-width: 640px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ── Jump / filter bar ────────────────────────────────────── */
+  .jumpbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+    padding: .7rem 0;
+    margin-bottom: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .6rem .9rem;
+  }
+  .jump-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .jump-links a {
+    flex: none;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .72rem;
+    text-decoration: none;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    padding: .2rem .5rem;
+    border-radius: 6px;
+  }
+  .jump-links a:hover, .jump-links a:focus-visible { color: var(--accent); border-color: var(--accent); }
+
+  .filter-chips { display: flex; gap: .35rem; flex: none; }
+  .chip {
+    font: inherit;
+    font-size: .78rem;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    color: var(--muted);
+    padding: .3rem .7rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--paper-raised); }
+  .chip:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── Module cards ─────────────────────────────────────────── */
+  .module {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    margin-bottom: 1.1rem;
+    padding: 1.2rem 1.3rem 1.35rem;
+    scroll-margin-top: 4.5rem;
+  }
+  .module-head {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: .7rem;
+    row-gap: .55rem;
+    align-items: baseline;
+    margin-bottom: .85rem;
+  }
+  .module-code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .8rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .module h2 { margin: 0; font-size: 1.05rem; font-weight: 700; text-wrap: balance; }
+  .module-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--line);
+  }
+  .seg-done { background: var(--done); }
+  .seg-partial { background: var(--partial); }
+  .seg-missing { background: var(--missing); }
+  .seg-deferred { background: var(--deferred); }
+
+  .items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .items > li {
+    display: grid;
+    grid-template-columns: 6.2rem 1fr;
+    gap: .8rem;
+    padding: .65rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .items > li:first-child { border-top: none; padding-top: 0; }
+  @media (max-width: 560px) {
+    .items > li { grid-template-columns: 1fr; gap: .35rem; }
+  }
+
+  .status-chip {
+    justify-self: start;
+    align-self: start;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    padding: .18rem .5rem;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  li[data-status="done"] .status-chip { background: var(--done-soft); color: var(--done); }
+  li[data-status="partial"] .status-chip { background: var(--partial-soft); color: var(--partial); }
+  li[data-status="missing"] .status-chip { background: var(--missing-soft); color: var(--missing); }
+  li[data-status="deferred"] .status-chip { background: var(--deferred-soft); color: var(--deferred); }
+
+  .item-title { margin: 0 0 .2rem; font-weight: 600; }
+  .item-note { margin: 0; color: var(--muted); font-size: .88rem; max-width: 66ch; }
+
+  .aside {
+    margin: .75rem 0 0;
+    padding: .6rem .75rem;
+    background: var(--accent-soft);
+    border-left: 2px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    font-size: .85rem;
+    color: var(--ink);
+  }
+  .aside strong { color: var(--accent); }
+
+  .module-na {
+    background: var(--paper-raised);
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    padding: 1rem 1.3rem;
+    margin-bottom: 1.1rem;
+    color: var(--muted);
+    font-size: .9rem;
+    display: flex;
+    align-items: baseline;
+    gap: .7rem;
+  }
+  .module-na .module-code { color: var(--muted); }
+
+  footer.page-footer {
+    margin-top: 2.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: .82rem;
+  }
+  footer.page-footer p { margin: 0 0 .4rem; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; }
+  }
+  html { scroll-behavior: smooth; }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">代码核实报告 · Phase 1 功能边界</p>
+    <h1>合同功能清单 &times; 代码库核实</h1>
+    <p class="lede">对照《软件定制开发与服务合同》(IE-DEV-202607-01)与甲方补充需求合并出的 14 个模块、57 项功能点，逐条核实 veggie 代码库当前的完成程度。只读排查，未修改任何代码。</p>
+    <p class="meta">核实日期 2026-07-29 · 14 个模块 · 57 项功能点</p>
+  </header>
+
+  <section class="stats" aria-label="完成度概览">
+    <div class="stat-tile stat-done">
+      <span class="stat-num mono">15</span>
+      <span class="stat-label">已完成</span>
+      <span class="stat-sub">/ 55 项</span>
+    </div>
+    <div class="stat-tile stat-partial">
+      <span class="stat-num mono">26</span>
+      <span class="stat-label">部分完成</span>
+      <span class="stat-sub">/ 55 项</span>
+    </div>
+    <div class="stat-tile stat-missing">
+      <span class="stat-num mono">14</span>
+      <span class="stat-label">未完成</span>
+      <span class="stat-sub">/ 55 项</span>
+    </div>
+    <div class="stat-tile stat-deferred">
+      <span class="stat-num mono">2</span>
+      <span class="stat-label">待触发</span>
+      <span class="stat-sub">条件成就后免费升级</span>
+    </div>
+    <div class="stat-tile stat-index">
+      <span class="stat-num mono">&asymp;51%</span>
+      <span class="stat-label">加权完成度</span>
+      <span class="stat-sub">完成=1分/部分完成=0.5分，不含待触发项</span>
+    </div>
+  </section>
+
+  <nav class="jumpbar" aria-label="模块跳转与状态筛选">
+    <div class="jump-links">
+      <a href="#m01">01 移动端订货</a>
+      <a href="#m02">02 Quotation</a>
+      <a href="#m03">03 配送POD</a>
+      <a href="#m04">04 司机CMS</a>
+      <a href="#m05">05 日销售中心</a>
+      <a href="#m06">06 仓储库存</a>
+      <a href="#m07">07 采购</a>
+      <a href="#m08">08 财务</a>
+      <a href="#m09">09 数据分析</a>
+      <a href="#m10">10 系统管理</a>
+      <a href="#m11">11 双系统部署</a>
+      <a href="#m12">12 接口安全</a>
+      <a href="#m13">13 保修</a>
+      <a href="#m14">14 Odoo平移</a>
+    </div>
+    <div class="filter-chips" role="group" aria-label="按状态筛选">
+      <button class="chip" data-filter="all" aria-pressed="true">全部</button>
+      <button class="chip" data-filter="done" aria-pressed="false">已完成</button>
+      <button class="chip" data-filter="partial" aria-pressed="false">部分完成</button>
+      <button class="chip" data-filter="missing" aria-pressed="false">未完成</button>
+      <button class="chip" data-filter="deferred" aria-pressed="false">待触发</button>
+    </div>
+  </nav>
+
+  <main>
+
+    <section class="module" id="m01">
+      <div class="module-head">
+        <span class="module-code">01</span>
+        <h2>B2B 移动端订货系统（客户前端 App / Web）</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-missing" style="width:33.4%"></span>
+          <span class="seg-partial" style="width:33.3%"></span>
+          <span class="seg-done" style="width:33.3%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">常购清单：一键快捷复购</p><p class="item-note">全库没有复购/常购清单相关代码，下单流程只是“浏览 → 加购物车 → 提交”。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">账期与专属批发价展示</p><p class="item-note">专属批发价已经实现（定价引擎 + 客户端商品接口）；账期字段存在于数据库，但客户端页面没有展示出来。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">订单提交自动校验，生成标准电子销售订单</p><p class="item-note">客户下单接口校验通过后直接落成真实订单记录。</p></div></li>
+      </ul>
+      <p class="aside"><strong>提示</strong>：目前没有独立的移动端 App，客户下单走的是同一套系统里的响应式网页，不是原生 App 或 PWA。</p>
+    </section>
+
+    <section class="module" id="m02">
+      <div class="module-head">
+        <span class="module-code">02</span>
+        <h2>Quotation 和销售单</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-partial" style="width:50%"></span>
+          <span class="seg-done" style="width:50%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">创建/修改 quotation：重复商品及缺货商品提醒</p><p class="item-note">重复商品提醒已经做了；缺货商品提醒还没做，页面只显示库存数字，没有预警或阻断操作。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">定价与 commission 自动计算（多层级、价格嵌套）</p><p class="item-note">价格表链式解析引擎与提成计算模块均已完整实现，接入订单流程。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">快捷按键：tab / enter 键操作</p><p class="item-note">Enter 跳转搜索框已实现；Tab 键跳行逻辑此前有 bug，最近一次修复是直接回退成浏览器默认行为，而不是自定义的 Tab 导航。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">quotation / 销售单状态切换、批量操作、退回 quotation</p><p class="item-note">两者共用同一张订单表按状态区分；批量确认打印、以及“撤销确认退回 quotation”都已实现。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m03">
+      <div class="module-head">
+        <span class="module-code">03</span>
+        <h2>配送与司机电子签收（TMS &amp; POD 配送端）</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-done" style="width:28.6%"></span>
+          <span class="seg-partial" style="width:42.8%"></span>
+          <span class="seg-missing" style="width:28.6%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">司机管理（批次 / 时段 / 独立配置）</p><p class="item-note">司机排班模型与管理页面完整，支持后台独立搜索。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">销售单列表页快速派单</p><p class="item-note">订单列表内嵌批次选择，可就地保存派单。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">拖拽调度（按送货窗口与路线半自动派单）</p><p class="item-note">目前是纯手动的拖拽排班；系统里有计算距离/耗时的 Google Distance Matrix API 代码，但没有接进调度界面，谈不上“半自动”。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">司机端 App 按序导航 + 客户电子签名（Sign on Glass）</p><p class="item-note">全库没有触屏签名捕获的代码；现在司机端的“签收凭证”其实是拍照上传，不是手写签名；也没有按顺序导航功能，只有状态按钮流程。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">车辆调度：Google 地图显示司机路线图</p><p class="item-note">目前只用到了地理编码和距离计算两个 API，没有接入 Directions API，也没有任何地图可视化组件，司机端用不到地图。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">现场退改：生成电子退款凭证</p><p class="item-note">司机可以现场即时报告少货/坏货；但退款凭证要走人工审批加财务手动出具，不是“现场自动生成”。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">对账回传：签收后收款/欠款数据即时回传</p><p class="item-note">行程完成后会自动回写发票草稿、订单状态、司机提成冻结；但司机现场收的现金不会自动记成收款，现金核对目前仍靠人工比对纸质单。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m04">
+      <div class="module-head">
+        <span class="module-code">04</span>
+        <h2>司机绩效与 CMS 分析</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-done" style="width:100%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">Product Commission + Customer Commission（Rate + Fixed）</p><p class="item-note">提成计算模块完整实现，两种提成模式均已建模并接入订单与交货流程，用于司机绩效结算。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m05">
+      <div class="module-head">
+        <span class="module-code">05</span>
+        <h2>日销售管理中心（运营操作台）</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-partial" style="width:66.7%"></span>
+          <span class="seg-done" style="width:33.3%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">打印中心</p><p class="item-note">拣货单、送货单、送货汇总单、销售单都能打印；但没有独立的“客户签收单”这种单据类型。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">缺货处理</p><p class="item-note">批量改量和打印已经做了；但没有记录缺货原因的字段，也没有“转单”这个操作概念。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">销售统计（日销售额/关键商品销量/客单价/缺货率）</p><p class="item-note">四项指标功能都存在，只是分散在两三个不同页面里，还没合并成一个统一视图。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m06">
+      <div class="module-head">
+        <span class="module-code">06</span>
+        <h2>仓储与库存管理中心</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-done" style="width:83.3%"></span>
+          <span class="seg-partial" style="width:16.7%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">多温区仓库管理</p><p class="item-note">冷库/冷藏/冷冻/常温区划分已实现。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">批次与效期管理（FIFO / 预警 / 追溯）</p><p class="item-note">批次模型、FIFO 扣减逻辑、全程追溯均已实现。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">库存实时监控与多仓库调拨</p><p class="item-note">单仓库内的实时监控很完整；但数据模型里没有“仓库”这个概念，现在是单一仓库多温区架构，不支持跨仓调拨。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">库存盘点（盘点单、循环盘点）</p><p class="item-note">已实现。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">损耗管理</p><p class="item-note">结构化原因码 + 归因看板已实现。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">收货管理</p><p class="item-note">采购单自动生成收货凭据、拍照存证、验货状态位均已实现。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m07">
+      <div class="module-head">
+        <span class="module-code">07</span>
+        <h2>采购管理中心</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-partial" style="width:75%"></span>
+          <span class="seg-missing" style="width:25%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">采购计划与预测</p><p class="item-note">生鲜品类是简单的缺口补货规则，干货品类有同比外推，但都没有考虑季节性因素和促销活动，达不到“智能生成”的程度。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">询价单</p><p class="item-note">PDF 识别报价、历史报价查询已经做了；但没有向供应商在线发起询价的流程，也没有“复制历史采购单”功能。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">采购订单全流程</p><p class="item-note">创建/审核/跟踪/入库/发票的状态机很完整；但缺少独立的采购退货流程。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">采购质检与验收</p><p class="item-note">到货重量核对、新鲜度分级、农残检测记录——全库都没有找到相关代码。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m08">
+      <div class="module-head">
+        <span class="module-code">08</span>
+        <h2>财务管理中心</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-done" style="width:11.1%"></span>
+          <span class="seg-partial" style="width:55.6%"></span>
+          <span class="seg-missing" style="width:33.3%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">客户结算</p><p class="item-note">按客户生成对账单已实现；但结算周期需要手动填写，没有日结/周结/月结自动触发，也没有预付款和在线支付网关（相关字段目前只是个标签，没接真实支付渠道）。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">供应商结算</p><p class="item-note">分批付款已实现；但对账靠手动录入，不是按采购单/入库单自动核销。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">收付款管理</p><p class="item-note">客户收款这一侧已实现；但没有“其他收支”记录模块，也没有银行账户与流水的数据模型。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">成本核算</p><p class="item-note">目前只有采购建议里用到了加权平均估价，还没做成系统性的出入库计价引擎。</p></div></li>
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">财务报表 — 销售毛利分析表</p><p class="item-note">已实现。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">财务报表 — 应收应付汇总表</p><p class="item-note">只做了应收账龄，应付账龄还没有。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">财务报表 — 利润表</p><p class="item-note">未实现。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">财务报表 — 资产负债表</p><p class="item-note">未实现，没有资产/负债/权益的汇总报表。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">财务报表 — 费用分析表</p><p class="item-note">未实现。</p></div></li>
+      </ul>
+      <p class="aside"><strong>提示</strong>：复式记账的底层基础设施（会计科目、分录）是存在的，只是还没有把这些底层数据组织成利润表/资产负债表这类成品报表。</p>
+    </section>
+
+    <section class="module" id="m09">
+      <div class="module-head">
+        <span class="module-code">09</span>
+        <h2>数据分析与 BI 决策中心</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-done" style="width:20%"></span>
+          <span class="seg-partial" style="width:60%"></span>
+          <span class="seg-missing" style="width:20%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">经营看板</p><p class="item-note">核心 KPI 大屏 + 每日快照表已完整实现。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">客户分析（RFM）</p><p class="item-note">现有客户分层和流失预警；但没有 RFM 模型，也没有复购率这个指标。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">商品分析（ABC 分类）</p><p class="item-note">只有毛利排行做完整了；商品的 ABC 分类、系统性的畅销/滞销排行、价格敏感度分析都还没有。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">销售预测（机器学习模型）</p><p class="item-note">全库检索预测/回归/时间序列/机器学习相关关键词均无命中；现有的“预测”其实是一条确定性规则公式（近期均量 + 在途订单 − 库存），没有模型、没有回测。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">灵活数据分析（Odoo 式多维度组合）</p><p class="item-note">现有 7 个分析页面本质是“预设报表 + 单维度切换”，例如毛利分析虽可选四种分组维度，但一次只能选一个，做不到“客户×月份”这种交叉组合，筛选也只有日期范围。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m10">
+      <div class="module-head">
+        <span class="module-code">10</span>
+        <h2>基础信息与系统管理</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-partial" style="width:83.3%"></span>
+          <span class="seg-missing" style="width:16.7%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">组织架构（多公司 / 多部门 / 多门店）</p><p class="item-note">数据模型里没有公司/部门/门店这些概念，现在是单公司单仓库架构。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">精细化角色权限</p><p class="item-note">销售侧的行级数据隔离已经做了（销售员只见自己客户）；但采购员侧的供应商数据隔离还没做，“配送中心”“打印中心”目前也只是按大类角色放行，还没做到“只有指定人员能用”的细粒度。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">商品信息管理</p><p class="item-note">分类、多规格、多单位、批次、保质期、图片、条码都齐全；只缺产地溯源这个字段。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">客户信息管理</p><p class="item-note">信用额度、账期、历史价格协议都有；但不支持一个客户挂多个地址，也没有合同文档管理功能。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">供应商信息管理</p><p class="item-note">价格、交期、起订量有记录；但没有资质证件电子版、没有供应商评级、也没有合同管理。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">系统日志与数据安全</p><p class="item-note">操作日志和登录日志很完整；但系统本身没有内置的备份恢复功能，现有备份都是数据迁移时的一次性手工快照。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m11">
+      <div class="module-head">
+        <span class="module-code">11</span>
+        <h2>系统部署（含双系统独立并行运行）</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-missing" style="width:100%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">私有化部署能力</p><p class="item-note">当前 100% 是 GCP Cloud Run + Neon 云端 SaaS 单实例架构；数据库驱动是 Neon 专有的 serverless 适配器，没法直接接客户自己机房的普通 PostgreSQL，也没有任何“部署到客户服务器”的交付包。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">与 Odoo 12 同机独立并行运行</p><p class="item-note">目前完全没有为“两套系统同机隔离部署”设计过——没有对应的容器/账号/端口隔离方案，也没有反向代理分流的规划。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">管理员账号与技术资料交接机制</p><p class="item-note">目前的部署方式是开发方自己掌握所有账号（GCP 项目、Secret Manager 等），还没有一套“交给客户自主掌握”的交接流程。</p></div></li>
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">自动备份（数据库 + 文件、异地存储、可恢复验证、客户可取得完整备份）</p><p class="item-note">系统层面完全空白，现有备份只是数据迁移时的一次性手工快照，没有定时任务，没有异地存储，也没做过恢复演练。</p></div></li>
+      </ul>
+    </section>
+
+    <section class="module" id="m12">
+      <div class="module-head">
+        <span class="module-code">12</span>
+        <h2>接口与安全</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-missing" style="width:25%"></span>
+          <span class="seg-partial" style="width:25%"></span>
+          <span class="seg-deferred" style="width:50%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="missing"><span class="status-chip">未完成</span><div><p class="item-title">标准 API 接口对接第三方（ERP / 财务 / 电子秤 / 税控盘 / 物流）</p><p class="item-note">现有 151 个 API 路由全部是给自己前端用的，统一走 JWT session 鉴权，没有面向第三方的 API Key/OAuth 机制，没有版本号；全库搜索这几个对接对象相关关键词均为零命中。</p></div></li>
+        <li data-status="partial"><span class="status-chip">部分完成</span><div><p class="item-title">安全性与合规</p><p class="item-note">数据传输走 HTTPS，批次追溯链路已经实现；但没有看到专门针对《食品安全法》做的合规设计。</p></div></li>
+        <li data-status="deferred"><span class="status-chip">待触发</span><div><p class="item-title">PDA 扫码功能</p><p class="item-note">条码字段已经有了；按合同这是“仓库商品全部有条码后可免费升级”的条件触发项，不算本阶段功能缺口。</p></div></li>
+        <li data-status="deferred"><span class="status-chip">待触发</span><div><p class="item-title">电子秤功能</p><p class="item-note">合同写的是“生鲜出库流程改为过秤后可免费升级”，同样是条件触发项，不是 Phase 1 现在就要交付的内容。</p></div></li>
+      </ul>
+    </section>
+
+    <div class="module-na" id="m13">
+      <span class="module-code mono">13</span>
+      <span>维护服务与保修期——这是商务/服务承诺条款（24小时响应/€300每次，或6-9个月免费保修与年费挂钩），不是代码功能，没有“完成度”概念，不计入本报告统计。</span>
+    </div>
+
+    <section class="module" id="m14">
+      <div class="module-head">
+        <span class="module-code">14</span>
+        <h2>Odoo 数据平移与导出（数据搬运）</h2>
+        <div class="module-bar" aria-hidden="true">
+          <span class="seg-done" style="width:100%"></span>
+        </div>
+      </div>
+      <ul class="items">
+        <li data-status="done"><span class="status-chip">已完成</span><div><p class="item-title">客户名册、产品 SKU、历史价格一次性平移</p><p class="item-note">已于 2026 年 6 月完成：导入客户 1,529 个、商品 1,718 个 SKU、约一周 789 笔订单及 6,995 行订单明细的历史数据。</p></div></li>
+      </ul>
+    </section>
+
+  </main>
+
+  <footer class="page-footer">
+    <p>数据来源：<code>docs/20260729-phase1-feature-scope-boundary.md</code>（功能边界清单）+ 本次代码核实（只读排查，未修改任何代码）。</p>
+    <p>加权完成度计算：已完成记 1 分、部分完成记 0.5 分、未完成记 0 分，分母不含 2 项“待触发”条件项（共 55 项）。</p>
+  </footer>
+
+</div>
+
+<script>
+  (function () {
+    var chips = document.querySelectorAll('.chip[data-filter]');
+    chips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        chips.forEach(function (c) { c.setAttribute('aria-pressed', 'false'); });
+        chip.setAttribute('aria-pressed', 'true');
+        var f = chip.getAttribute('data-filter');
+        document.querySelectorAll('.items > li').forEach(function (li) {
+          li.style.display = (f === 'all' || li.getAttribute('data-status') === f) ? 'grid' : 'none';
+        });
+      });
+    });
+  })();
+</script>
