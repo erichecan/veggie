@@ -8,6 +8,7 @@ import { routing } from '@/i18n/routing'
 import { eur } from '@/lib/format-money'
 
 const PURPLE = '#875A7B'
+const PAYMENT_LABELS: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
 
 interface Product {
   id: string
@@ -50,6 +51,7 @@ function saveCart(items: CartItem[]) {
 
 export default function CustomerProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
+  const [paymentTerm, setPaymentTerm] = useState<string | null>(null)
   const [frequent, setFrequent] = useState<FrequentItem[]>([])
   const [cart, setCart] = useState<CartItem[]>(loadCart)
   const [loading, setLoading] = useState(true)
@@ -65,8 +67,11 @@ export default function CustomerProductsPage() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   useEffect(() => {
-    apiGet<{ products: Product[] }>('/api/customer-portal/products')
-      .then(d => setProducts(d.products || []))
+    apiGet<{ products: Product[]; paymentTerm?: string }>('/api/customer-portal/products')
+      .then(d => {
+        setProducts(d.products || [])
+        setPaymentTerm(d.paymentTerm ?? null)
+      })
       .catch(() => toast.error('加载商品失败'))
       .finally(() => setLoading(false))
     apiGet<FrequentItem[]>('/api/customer-portal/frequently-ordered')
@@ -175,6 +180,12 @@ export default function CustomerProductsPage() {
           )}
         </button>
       </div>
+
+      {paymentTerm && (
+        <p className="text-xs text-gray-500">
+          结算方式：<span className="font-medium" style={{ color: PURPLE }}>{PAYMENT_LABELS[paymentTerm] ?? paymentTerm}</span>
+        </p>
+      )}
 
       {/* 常购清单：按历史下单次数排序，支持一键快捷复购 */}
       {frequentProducts.length > 0 && (

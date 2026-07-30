@@ -127,6 +127,7 @@ export async function GET(req: Request) {
         customerId: customer.id,
         customerName: customer.name,
         priceType: customer.priceType ?? 'multi',
+        paymentTerm: customer.paymentTerm ?? 'cash',
         products: result,
       }))
     } catch (error) {
