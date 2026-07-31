@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { SALES_COUNTED_STATUSES, resolveDateRange, deriveAov } from '@/lib/analytics/metrics'
-import { ensureSnapshots } from '@/lib/analytics/snapshot'
+import { ensureSnapshots, computeDayMetrics } from '@/lib/analytics/snapshot'
 import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/shortage'
 
 /**
@@ -47,6 +47,22 @@ export async function GET(req: Request) {
         }
       })
 
+      // 快照表按设计不写"今天"（当天永远实时算），若所选范围包含今天，
+      // 补一条实时计算的今天条目，与 boss/page.tsx「今天（实时）」口径一致。
+      // 快照只覆盖到昨天，今天在时间上排最后，直接 push 不需要重新排序。
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (today >= start && today < end) {
+        const todayMetrics = await computeDayMetrics(today)
+        dailySeries.push({
+          date: today,
+          salesExTax: todayMetrics.salesExTax,
+          salesIncTax: todayMetrics.salesIncTax,
+          orderCount: todayMetrics.orderCount,
+          aov: deriveAov(todayMetrics.salesExTax, todayMetrics.orderCount),
+        })
+      }
+
       const shortageDaily = await computeShortageDaily(start, end)
       const shortageSummary = summarizeShortageDaily(shortageDaily)
 
@@ -69,7 +85,7 @@ export async function GET(req: Request) {
         productId: r.product_id,
         productName: r.product_name,
         subtotal: Math.round(r.subtotal * 100) / 100,
-        qty: r.qty,
+        qty: Math.round(r.qty * 100) / 100,
       }))
 
       return NextResponse.json(serializeApi({
