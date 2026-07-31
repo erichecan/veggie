@@ -84,3 +84,31 @@ export async function sendPasswordReset(params: {
     `,
   })
 }
+
+export async function sendPurchaseOrderRfq(params: {
+  to: string
+  poName: string
+  supplierName: string
+  pdfBuffer: Buffer
+}) {
+  const { to, poName, supplierName, pdfBuffer } = params
+
+  await getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Request for Quotation ${poName} — VeggieSupply`,
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#16a34a">VeggieSupply — Request for Quotation</h2>
+        <p>Dear ${supplierName},</p>
+        <p>Please find attached our request for quotation <strong>${poName}</strong>. Kindly review the items and quantities and let us know your confirmed pricing and availability at your earliest convenience.</p>
+        <p>If you have any questions, please reply to this email or contact your usual VeggieSupply contact.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+        <p style="color:#9ca3af;font-size:12px">VeggieSupply Ireland</p>
+      </div>
+    `,
+    attachments: [
+      { filename: `${poName}.pdf`, content: pdfBuffer },
+    ],
+  })
+}
