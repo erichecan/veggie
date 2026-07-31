@@ -109,3 +109,8 @@ export function toDayKey(d: Date): string {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
+
+/** 客单价 = 销售额（税前） / 订单数，订单数为 0 时记 0，避免除零。四舍五入到分。 */
+export function deriveAov(salesExTax: number, orderCount: number): number {
+  return orderCount > 0 ? Math.round((salesExTax / orderCount) * 100) / 100 : 0
+}
