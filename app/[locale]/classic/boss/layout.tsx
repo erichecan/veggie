@@ -16,6 +16,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
 
   const LINKS = [
     { href: `${prefix}/classic/boss`, label: '经营总览' },
+    { href: `${prefix}/classic/boss/analytics/sales-overview`, label: '销售统计' },
     { href: `${prefix}/classic/boss/analytics/customers`, label: '客户分析' },
     { href: `${prefix}/classic/boss/analytics/margin`, label: '毛利分析' },
     { href: `${prefix}/classic/boss/analytics/ar-aging`, label: '应收账龄' },
