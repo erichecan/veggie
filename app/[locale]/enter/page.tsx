@@ -23,6 +23,8 @@ export default function EnterPage() {
 
   const DEMO_ACCOUNTS = [
     { labelKey: 'operator' as const, email: 'operator@veggie.com' },
+    { labelKey: 'warehouse' as const, email: 'warehouse@veggie.com' },
+    { labelKey: 'restaurant' as const, email: 'restaurant1@veggie.com' },
     { labelKey: 'driver' as const, email: 'driver@veggie.com' },
     { labelKey: 'boss' as const, email: 'boss@veggie.com' },
     { labelKey: 'finance' as const, email: 'finance@veggie.com' },
@@ -69,7 +71,7 @@ export default function EnterPage() {
         {/* 一键登录 */}
         <div className="rounded-2xl shadow-sm border p-5" style={{ background: 'white', borderColor: '#d4b8d0' }}>
           <p className="text-xs font-medium mb-3" style={{ color: '#875A7B' }}>{t('demoTitle')}</p>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {DEMO_ACCOUNTS.map(({ labelKey, email: demoEmail }) => (
               <button
                 key={demoEmail}
