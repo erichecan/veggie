@@ -99,6 +99,8 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [allDriverSlots, setAllDriverSlots] = useState<DriverSlotInfo[]>([])
+  /** 客单价/缺货率汇总卡片：只跟 fromDate/toDate 联动，不跟客户/商品筛选联动（全局参考值） */
+  const [salesOverview, setSalesOverview] = useState<{ aov: number; shortageRate: number } | null>(null)
 
   // ── 查看方式 + 度量 ──────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('customer')
@@ -129,6 +131,24 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   }, [fromDate, toDate])
 
   useEffect(() => { loadOrders() }, [loadOrders])
+
+  // 客单价 / 缺货率汇总卡片：跟 fromDate/toDate 走同一个组合 API，保证和「数据分析中心」口径一致
+  useEffect(() => {
+    if (!fromDate || !toDate) return
+    apiGet<{
+      dailySeries: Array<{ salesExTax: number; orderCount: number }>
+      shortage: { summary: { shortageRate: number } }
+    }>(`/api/analytics/sales-overview?from=${fromDate}&to=${toDate}`)
+      .then((d) => {
+        const totalSales = d.dailySeries.reduce((s, x) => s + x.salesExTax, 0)
+        const totalOrders = d.dailySeries.reduce((s, x) => s + x.orderCount, 0)
+        setSalesOverview({
+          aov: totalOrders > 0 ? Math.round((totalSales / totalOrders) * 100) / 100 : 0,
+          shortageRate: d.shortage.summary.shortageRate,
+        })
+      })
+      .catch(() => setSalesOverview(null))
+  }, [fromDate, toDate])
 
   // 页头「刷新」：跳过首次挂载，之后 refreshKey 变化按当前区间重拉订单
   useEffect(() => {
@@ -579,6 +599,15 @@ ${catsHtml}
               {isEn ? 'Filtered Results' : '筛选结果'}
               <span className="ml-2 font-normal normal-case text-gray-400">
                 {ordersLoading ? (isEn ? 'Loading…' : '加载中…') : (isEn ? `${reportLines.length} rows · Total ${eur(reportTotal.amount)}` : `${reportLines.length} 行 · 合计 ${eur(reportTotal.amount)}`)}
+              </span>
+              <span className="ml-3 font-normal normal-case inline-flex items-center gap-1.5">
+                <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                  {isEn ? 'AOV' : '客单价'} {salesOverview ? eur(salesOverview.aov) : '—'}
+                </span>
+                <span className={`px-2 py-0.5 rounded ${salesOverview && salesOverview.shortageRate > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                  {isEn ? 'Shortage rate' : '缺货率'} {salesOverview ? `${(salesOverview.shortageRate * 100).toFixed(1)}%` : '—'}
+                </span>
+                <span className="text-gray-400">{isEn ? '(all customers/products)' : '（全部客户/商品）'}</span>
               </span>
             </span>
             <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
