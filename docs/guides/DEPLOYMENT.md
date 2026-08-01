@@ -80,6 +80,36 @@ gsutil iam ch "serviceAccount:${PROJECT_NUM}-compute@developer.gserviceaccount.c
   gs://veggie-supply-images
 ```
 
+### 2b. GCS Bucket（数据库备份，私有）
+
+```bash
+gsutil mb -l europe-west1 gs://veggie-db-backups
+# 不开放公共读——备份是全库敏感数据，只允许运行时 SA 读写
+gsutil iam ch "serviceAccount:${PROJECT_NUM}-compute@developer.gserviceaccount.com:objectAdmin" \
+  gs://veggie-db-backups
+
+# Secret Manager 加一个 CRON_SECRET（如果之前还没配过，其它 cron 路由也用它）
+gcloud secrets create VEGGIE_CRON_SECRET --data-file=- <<< "$(openssl rand -hex 32)"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${PROJECT_NUM}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+部署时把 `GCS_BACKUP_BUCKET_NAME=veggie-db-backups` 和 `CRON_SECRET=VEGGIE_CRON_SECRET:latest` 加进 `cloudbuild.yaml` 的 `--set-secrets`/`--set-env-vars`。
+
+### 2c. Cloud Scheduler（每日自动备份）
+
+```bash
+gcloud scheduler jobs create http veggie-daily-backup \
+  --location=europe-west1 \
+  --schedule="0 3 * * *" \
+  --uri="https://<你的 Cloud Run URL>/api/cron/backup-database" \
+  --http-method=POST \
+  --headers="x-cron-secret=<与 VEGGIE_CRON_SECRET 相同的值>"
+```
+
+每天 03:00（服务器所在时区）触发一次全库备份，成功后自动清理 30 天前的旧备份。
+
 ### 3. 触发部署
 
 ```bash
@@ -130,6 +160,7 @@ HOST=https://veggie-demo-xxxx.run.app bash scripts/e2e-verify.sh
 - [ ] Prisma 迁移应用成功（`prisma migrate deploy` 输出 "All migrations have been successfully applied."）
 - [ ] 种子数据导入完成（users / 产品 / pricelist / UoM / 会计科目）
 - [ ] Neon 数据库已建备份分支
+- [ ] `veggie-db-backups` GCS 私有桶已创建，Cloud Scheduler 每日备份 job 已配置，`GET /api/backups` 能看到至少一条 `success` 记录
 - [ ] 关键表都有索引（Sprint 1 的迁移已加 40+ 个）
 
 ### 🌐 基础设施
@@ -205,6 +236,20 @@ Prisma 迁移默认**不可回滚**（不生成 down.sql）。应急方案：
 1. 立即在 Neon 控制台创建当前状态的备份分支
 2. 切换 DATABASE_URL 指向之前的某个 "known good" 分支
 3. Redeploy 对应代码版本
+
+### 数据库恢复（从应用内备份恢复）
+
+应用内的"数据库备份"页面（仅 BOSS 可见，`/classic/boss/system/backups`）只提供下载，不做应用内一键覆盖恢复。真正恢复到生产库需要运维人员手动执行：
+
+1. 在后台下载目标 `.sql.gz` 备份文件（签名 URL 10 分钟内有效，过期重新点下载）。
+2. **恢复前**，先在 Neon 控制台给当前生产库开一个备份分支兜底（应急保险，如果恢复出问题还能退回去）。
+3. 拿到 direct（非 pooler）连接串，执行：
+
+```bash
+gunzip -c backup-xxx.sql.gz | psql "$DIRECT_DATABASE_URL"
+```
+
+4. 恢复完成后核对关键表行数、最新几张订单/发票是否符合预期，再切流量/放开访问。
 
 ---
 
