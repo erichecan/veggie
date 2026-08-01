@@ -10,6 +10,7 @@ const PUBLIC_API_ROUTES = [
   '/api/health',
   '/api/customers',
   '/api/tile',
+  '/api/cron',
 ]
 
 const intlMiddleware = createMiddleware(routing)
