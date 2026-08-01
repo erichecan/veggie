@@ -35,7 +35,7 @@ function getBackupBucketName(): string {
 }
 
 async function dumpToFile(directUrl: string, tmpFile: string): Promise<void> {
-  const pgDump = spawn('pg_dump', ['--format=plain', '--no-owner', '--no-privileges', directUrl])
+  const pgDump = spawn('pg_dump', ['--format=plain', '--no-owner', '--no-privileges', '--clean', '--if-exists', directUrl])
   let stderr = ''
   pgDump.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 

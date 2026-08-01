@@ -88,6 +88,13 @@ gsutil mb -l europe-west1 gs://veggie-db-backups
 gsutil iam ch "serviceAccount:${PROJECT_NUM}-compute@developer.gserviceaccount.com:objectAdmin" \
   gs://veggie-db-backups
 
+# 生成签名下载 URL 需要运行时 SA 能对自己签名（Cloud Run 用 ADC 没有私钥，
+# getSignedUrl() 走 IAM signBlob API，必须显式授权，否则下载会报 SigningError）
+gcloud iam service-accounts add-iam-policy-binding \
+  "${PROJECT_NUM}-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:${PROJECT_NUM}-compute@developer.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountTokenCreator"
+
 # Secret Manager 加一个 CRON_SECRET（如果之前还没配过，其它 cron 路由也用它）
 gcloud secrets create VEGGIE_CRON_SECRET --data-file=- <<< "$(openssl rand -hex 32)"
 gcloud projects add-iam-policy-binding $PROJECT_ID \
