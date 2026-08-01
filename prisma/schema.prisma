@@ -1020,6 +1020,26 @@ model ActionLog {
 }
 
 /**
+ * 数据库备份任务记录 —— 每次自动/手动 pg_dump 备份留一条记录
+ * status: running | success | failed
+ * triggerType: AUTO（Cloud Scheduler 每日触发）| MANUAL（BOSS 在后台点击）
+ */
+model BackupJob {
+  id           String    @id @default(cuid())
+  status       String    @default("running")
+  triggerType  String
+  triggeredBy  String?
+  gcsPath      String?
+  sizeBytes    Int?
+  errorMessage String?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  @@index([status])
+  @@index([startedAt])
+}
+
+/**
  * 采购订单（对应 Odoo purchase.order）
  * 从 RFQ → Sent → Confirmed → Received → Invoiced 完整工作流
  */
