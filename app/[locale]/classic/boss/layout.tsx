@@ -19,10 +19,20 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     { href: `${prefix}/classic/boss/analytics/sales-overview`, label: '销售统计' },
     { href: `${prefix}/classic/boss/analytics/customers`, label: '客户分析' },
     { href: `${prefix}/classic/boss/analytics/margin`, label: '毛利分析' },
+    { href: `${prefix}/classic/boss/analytics/income-statement`, label: '利润表' },
     { href: `${prefix}/classic/boss/analytics/ar-aging`, label: '应收账龄' },
+    { href: `${prefix}/classic/boss/analytics/ap-aging`, label: '应付账龄' },
     { href: `${prefix}/classic/boss/analytics/procurement`, label: '采购运营' },
     { href: `${prefix}/classic/boss/analytics/logistics`, label: '物流分析' },
     { href: `${prefix}/classic/boss/analytics/internal-control`, label: '内控审计' },
+    // 数据库备份涉及全库敏感数据，仅 BOSS 可见（本 layout 本身放行 BOSS+OPERATOR，这里额外收紧）
+    // 注：RoleSession.role 是小写（toRoleSession 内部 .toLowerCase()），brief 原文示例用大写 'BOSS' 与 lib/types.ts 的 Role 类型不符，会导致 tsc 报 TS2367，这里改用 'boss'
+    ...(session?.role === 'boss'
+      ? [
+          { href: '', label: '│' },
+          { href: `${prefix}/classic/boss/system/backups`, label: '数据库备份' },
+        ]
+      : []),
   ]
 
   useEffect(() => {
