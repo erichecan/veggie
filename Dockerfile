@@ -30,7 +30,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # (20260715 客户截图反馈)，根因是镜像里压根没有中文字体可供 Chromium 回退渲染——
 # 装 Noto Sans CJK 并 fc-cache 刷新字体缓存，彻底解决，不再需要把打印文案改成纯英文。
 # font-noto-emoji：打印模板里的 📦/🧴/⚠️ 图标同理没有对应字形会变缺字方框，一并装上。
-RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont font-noto-cjk font-noto-emoji fontconfig \
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont font-noto-cjk font-noto-emoji fontconfig postgresql16-client \
     && fc-cache -f
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
