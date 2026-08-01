@@ -35,19 +35,20 @@ function getBackupBucketName(): string {
 }
 
 async function dumpToFile(directUrl: string, tmpFile: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const pgDump = spawn('pg_dump', ['--format=plain', '--no-owner', '--no-privileges', directUrl])
-    let stderr = ''
-    pgDump.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+  const pgDump = spawn('pg_dump', ['--format=plain', '--no-owner', '--no-privileges', directUrl])
+  let stderr = ''
+  pgDump.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+
+  const pipelinePromise = pipeline(pgDump.stdout, createGzip(), createWriteStream(tmpFile))
+  const exitPromise = new Promise<number | null>((resolve, reject) => {
     pgDump.on('error', reject)
-
-    const out = createWriteStream(tmpFile)
-    pipeline(pgDump.stdout, createGzip(), out).then(resolve).catch(reject)
-
-    pgDump.on('close', (code) => {
-      if (code !== 0) reject(new Error(`pg_dump exited with code ${code}: ${stderr}`))
-    })
+    pgDump.on('close', (code) => resolve(code))
   })
+
+  const [, code] = await Promise.all([pipelinePromise, exitPromise])
+  if (code !== 0) {
+    throw new Error(`pg_dump exited with code ${code}: ${stderr}`)
+  }
 }
 
 export async function runBackup(
@@ -107,14 +108,21 @@ export async function cleanupExpiredBackups(now: Date = new Date()): Promise<{ d
   if (expired.length === 0) return { deleted: 0 }
 
   const bucket = getStorage().bucket(getBackupBucketName())
+  const deletable: string[] = []
   for (const job of expired) {
-    if (job.gcsPath) {
-      await bucket.file(job.gcsPath).delete({ ignoreNotFound: true })
+    try {
+      if (job.gcsPath) {
+        await bucket.file(job.gcsPath).delete({ ignoreNotFound: true })
+      }
+      deletable.push(job.id)
+    } catch (err) {
+      console.error(`[cleanupExpiredBackups] failed to delete GCS object for job ${job.id}:`, err)
     }
   }
 
+  if (deletable.length === 0) return { deleted: 0 }
   const { count } = await prisma.backupJob.deleteMany({
-    where: { id: { in: expired.map((j) => j.id) } },
+    where: { id: { in: deletable } },
   })
   return { deleted: count }
 }
