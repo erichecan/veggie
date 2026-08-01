@@ -9,6 +9,7 @@ import type { Trip, ReturnItem } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { NumericInput } from '@/components/ui/numeric-input'
 import { TripStatusBadge } from '@/components/shared/status-badge'
+import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'
 
 const PURPLE = '#875A7B'
 
@@ -44,6 +45,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const returnPhotoRef = useRef<HTMLInputElement>(null)
   const [podRestId, setPodRestId] = useState<string | null>(null)
 
+  // 站点坐标（只读，独立于 trip state：绝不随 saveTrip 原样 PUT 回去，
+  // 否则 Prisma 会因 Trip.restaurants 里混入未知字段而报错）
+  const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
+
   function load() {
     apiGet<Trip>(`/api/trips/${id}`)
       .then(t => setTrip(t))
@@ -51,6 +56,28 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   }
 
   useEffect(() => { load() }, [id])
+
+  useEffect(() => {
+    if (!trip || trip.restaurants.length === 0) return
+    const ids = trip.restaurants.map(r => r.restaurantId).join(',')
+    apiGet<Array<{ id: string; latitude: number | null; longitude: number | null }>>(
+      `/api/customers/coordinates?ids=${encodeURIComponent(ids)}`
+    ).then(list => {
+      const map: Record<string, { lat: number; lng: number }> = {}
+      for (const c of list) {
+        if (c.latitude !== null && c.longitude !== null) map[c.id] = { lat: c.latitude, lng: c.longitude }
+      }
+      setCoords(map)
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id])
+
+  function buildNavUrl(restId: string, address?: string): string | null {
+    const c = coords[restId]
+    if (c) return `https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}`
+    if (address) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`
+    return null
+  }
 
   async function saveTrip(updated: Trip) {
     await apiPut(`/api/trips/${updated.id}`, updated)
@@ -222,6 +249,15 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const allProcessed = processedCount === trip.restaurants.length
   const tripStatus = trip.status.toLowerCase()
 
+  const routeMarkers: MapMarker[] = trip.restaurants
+    .map((r, i): MapMarker | null => {
+      const c = coords[r.restaurantId]
+      if (!c) return null
+      return { lat: c.lat, lng: c.lng, label: r.restaurantName, color: PURPLE, markerNumber: i + 1 }
+    })
+    .filter((m): m is MapMarker => m !== null)
+  const missingCoordsCount = trip.restaurants.length - routeMarkers.length
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -252,6 +288,18 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           </Button>
         )}
       </div>
+
+      {/* 路线总览图 */}
+      {routeMarkers.length > 0 && (
+        <div className="mb-5">
+          <BatchMap markers={routeMarkers} height="200px" />
+          {missingCoordsCount > 0 && (
+            <p className="text-xs text-gray-400 mt-1">
+              {missingCoordsCount} 个站点未标定位置，暂不显示在地图上
+            </p>
+          )}
+        </div>
+      )}
 
       {/* 核货阶段 */}
       {tripStatus === 'pending' && (
@@ -310,17 +358,24 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
       {/* 餐馆列表 */}
       <div className="space-y-3">
-        {trip.restaurants.map(r => {
+        {trip.restaurants.map((r, i) => {
           const hasException = r.returns.length > 0
           const isProcessed = r.delivered || hasException
           const borderColor = r.delivered ? 'border-green-300' : hasException ? 'border-orange-300' : 'border-gray-200'
           const headerBg = r.delivered ? 'bg-green-50' : hasException ? 'bg-orange-50' : 'bg-gray-50'
+          const navUrl = buildNavUrl(r.restaurantId, r.address)
 
           return (
             <div key={r.restaurantId} className={`bg-white rounded-xl border overflow-hidden ${borderColor}`}>
               <div className={`px-4 py-3 flex items-center justify-between ${headerBg}`}>
                 {/* 左侧：餐馆名 + 状态 + 报告异常按钮 */}
                 <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  <span
+                    className="shrink-0 w-5 h-5 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
+                    style={{ background: PURPLE }}
+                  >
+                    {i + 1}
+                  </span>
                   <button
                     className="font-medium text-gray-900 text-left"
                     onClick={() => setExpandedRest(expandedRest === r.restaurantId ? null : r.restaurantId)}
@@ -330,6 +385,14 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   {r.delivered && <span className="text-xs text-green-600 font-medium">✓ 已送达</span>}
                   {!r.delivered && hasException && (
                     <span className="text-xs text-orange-600 font-medium">⚠ 有异常</span>
+                  )}
+                  {navUrl && (
+                    <button
+                      className="text-xs px-2 py-0.5 rounded border border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100 whitespace-nowrap"
+                      onClick={e => { e.stopPropagation(); window.open(navUrl, '_blank') }}
+                    >
+                      🧭 导航
+                    </button>
                   )}
                   {!isProcessed && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
                     <button
