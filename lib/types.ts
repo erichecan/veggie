@@ -625,3 +625,15 @@ export interface AppStore {
   roleSession: RoleSession | null
   odooLists: OdooPricelist[]
 }
+
+export interface BackupJob {
+  id: string
+  status: 'running' | 'success' | 'failed'
+  triggerType: 'AUTO' | 'MANUAL'
+  triggeredBy: string | null
+  gcsPath: string | null
+  sizeBytes: number | null
+  errorMessage: string | null
+  startedAt: string
+  finishedAt: string | null
+}
