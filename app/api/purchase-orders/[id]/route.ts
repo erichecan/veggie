@@ -8,6 +8,9 @@ import { createDraftVendorBillForPurchaseOrder } from '@/lib/vendor-bill-from-po
 import { notifyRole } from '@/lib/notify'
 import { eur } from '@/lib/format-money'
 import { eurAmount, resolveExchangeRate } from '@/lib/fx-eur'
+import { renderPurchaseOrderHtml } from '@/lib/purchase-order-pdf'
+import { renderHtmlToPdf } from '@/lib/print/render-pdf'
+import { sendPurchaseOrderRfq } from '@/lib/email'
 
 const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'notes', 'expectedDate', 'editApprovalRequired']
 
@@ -312,6 +315,36 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         return NextResponse.json({
           error: `状态转换不合法: ${po.status} → ${targetStatus}`,
         }, { status: 409 })
+      }
+
+      // 真正把询价单发给供应商：邮箱缺失/邮件发送失败都在这里挡住，
+      // 不允许出现"界面显示已发送但实际没发邮件"的假成功(20260730)
+      if (action === 'send') {
+        const supplier = await p.customer.findUnique({ where: { id: po.supplierId } })
+        if (!supplier?.email) {
+          return NextResponse.json({
+            error: 'SUPPLIER_EMAIL_MISSING',
+            message: '该供应商未设置邮箱地址，请先在客户资料中补全邮箱后再发送',
+          }, { status: 400 })
+        }
+        try {
+          // po.lines 在本函数开头是无序 include 出来的（不像 pdf/route.ts 那样 orderBy sequence），
+          // 邮件附件要展示跟详情页/打印页一致的行顺序，这里补一次排序，不用为此多打一次 DB
+          const orderedLines = [...po.lines].sort((a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0))
+          const pdfBuffer = await renderHtmlToPdf(renderPurchaseOrderHtml({ ...po, lines: orderedLines }, supplier))
+          await sendPurchaseOrderRfq({
+            to: supplier.email,
+            poName: po.name,
+            supplierName: supplier.name,
+            pdfBuffer,
+          })
+        } catch (err) {
+          console.error('[PATCH /api/purchase-orders/:id] send RFQ email failed', err)
+          return NextResponse.json({
+            error: 'EMAIL_SEND_FAILED',
+            message: '邮件发送失败，请稍后重试',
+          }, { status: 502 })
+        }
       }
 
       // P0-1: Cancel check — reject if related documents exist

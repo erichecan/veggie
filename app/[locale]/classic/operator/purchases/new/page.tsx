@@ -12,6 +12,7 @@ import { computeOrderLandedCosts } from '@/lib/purchase-landed-cost'
 import PdfExtractDialog, { type PdfExtractResult } from './_components/PdfExtractDialog'
 import PdfSidePanel from './_components/PdfSidePanel'
 import PriceHistoryModal from './_components/PriceHistoryModal'
+import CopyFromHistoryModal, { type HistoryPO } from './_components/CopyFromHistoryModal'
 
 const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CNY']
 
@@ -106,6 +107,7 @@ export default function NewPurchaseOrderPage() {
   >([])
   const [priceHistoryTarget, setPriceHistoryTarget] = useState<{ id: string; name: string } | null>(null)
   const [pendingQuickCreateQty, setPendingQuickCreateQty] = useState(1)
+  const [showCopyFromHistory, setShowCopyFromHistory] = useState(false)
 
   const [purchaseProducts, setPurchaseProducts] = useState<PurchaseProduct[]>([])
   const [productQuery, setProductQuery] = useState('')
@@ -164,6 +166,42 @@ export default function NewPurchaseOrderPage() {
         subtotalIncTax: qty * unitCost,
       },
     ])
+  }
+
+  /** 从历史采购单复制行项目：数量/单价原样带入，供应商已由弹窗的调用方（当前 supplierId）限定 */
+  function handleCopyFromHistory(historyPo: HistoryPO) {
+    if (historyPo.lines.length === 0) {
+      toast.info(isEn ? `${historyPo.name} has no line items to copy` : `${historyPo.name} 没有可复制的行项目`)
+      return
+    }
+    const newLines: DraftLine[] = historyPo.lines.map(hl => {
+      lineSeq.current += 1
+      const product = purchaseProducts.find(p => p.id === hl.productId)
+      const qty = Number(hl.orderedQty)
+      const unitCost = Number(hl.unitCost)
+      const taxRate = Number(hl.taxRate)
+      const subtotalExTax = qty * unitCost
+      const taxAmount = subtotalExTax * taxRate / 100
+      return {
+        id: `new-${lineSeq.current}`,
+        productId: hl.productId,
+        productName: hl.productName,
+        spec: product?.category ?? null,
+        uomId: hl.uomId,
+        uomName: product?.uomName ?? null,
+        orderedQty: qty,
+        unitCost,
+        taxRate,
+        bestBefore: null,
+        subtotalExTax,
+        taxAmount,
+        subtotalIncTax: subtotalExTax + taxAmount,
+      }
+    })
+    setLines(prev => [...prev, ...newLines])
+    toast.success(isEn
+      ? `Copied ${newLines.length} line(s) from ${historyPo.name}`
+      : `已从 ${historyPo.name} 复制 ${newLines.length} 行`)
   }
 
   /** PDF 识别结果核对后"应用到表单"：按商品名匹配已有采购商品，未匹配的进"待处理"列表 */
@@ -380,6 +418,15 @@ export default function NewPurchaseOrderPage() {
                     <option value="">{isEn ? 'Please select a supplier...' : '请选择供应商...'}</option>
                     {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
+                  {supplierId && (
+                    <button
+                      onClick={() => setShowCopyFromHistory(true)}
+                      className="ml-3 text-xs whitespace-nowrap hover:underline flex-shrink-0"
+                      style={{ color: PURPLE }}
+                    >
+                      {isEn ? 'Copy from history' : '从历史单复制'}
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Payment Terms' : '付款条款'}</label>
@@ -709,6 +756,15 @@ export default function NewPurchaseOrderPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showCopyFromHistory && (
+        <CopyFromHistoryModal
+          supplierId={supplierId}
+          isEn={isEn}
+          onClose={() => setShowCopyFromHistory(false)}
+          onPick={handleCopyFromHistory}
+        />
       )}
 
       {priceHistoryTarget && (

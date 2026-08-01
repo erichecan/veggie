@@ -5,7 +5,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
 
-// GET /api/users — 用户列表（仅 OPERATOR）
+// GET /api/users — 用户列表（OPERATOR / BOSS / FINANCE）
 export async function GET(req: Request) {
   return withAuth(req, async (me) => {
     try {
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/users]', error)
       return NextResponse.json({ error: '获取用户列表失败' }, { status: 500 })
     }
-  }, ['OPERATOR'])
+  }, ['OPERATOR', 'BOSS', 'FINANCE'])
 }
 
 // POST /api/users — 新建用户（仅 OPERATOR）
