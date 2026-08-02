@@ -4,6 +4,8 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { validateSaleUomItems, type SaleUomItemInput } from '@/lib/sale-uom'
+import { buildFacetWhere } from '@/lib/facet-sql'
+import { PRODUCT_TEMPLATE_FACET_DEFS } from '@/lib/facets/product-templates'
 
 const LOW_STOCK_THRESHOLD = 10
 
@@ -48,6 +50,10 @@ export async function GET(req: Request) {
         { internalRef: { contains: search, mode: 'insensitive' } },
       ]
     }
+
+    // ── 分面搜索(f_*)：同维度 OR、跨维度 AND，挂进 where.AND 以免与上面的 search OR 打架 ──
+    const facetClauses = await buildFacetWhere(searchParams, PRODUCT_TEMPLATE_FACET_DEFS)
+    if (facetClauses.length > 0) where.AND = facetClauses
 
     // ── 文本列筛选(cf_*) ──────────────────────────────────────────────────────
     const textFields = ['internalRef', 'name', 'saleDescription', 'externalId']

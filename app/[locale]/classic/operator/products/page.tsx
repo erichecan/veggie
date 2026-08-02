@@ -10,6 +10,7 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
+import { applyFacets, groupFacets, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 
 const PAGE_SIZE = 50
@@ -70,6 +71,17 @@ export default function ClassicProductsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [alertDismissed, setAlertDismissed] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  // Odoo 式分面：同一维度可累积多个关键词(OR)，不同维度之间 AND(后端 buildFacetWhere 保证)
+  const [facets, setFacets] = useState<Facet[]>([])
+
+  function addFacet(key: string, value: string) {
+    const field = PRODUCT_FACET_FIELDS.find(f => f.key === key)
+    if (!field) return
+    setFacets(prev => [...prev, { key, label: field.label, value }])
+  }
+  function removeFacetGroup(key: string) {
+    setFacets(prev => prev.filter(f => f.key !== key))
+  }
 
   // 所有筛选(库存告警/列筛选/Can be Sold/商品类型)都编码成请求参数交给后端做，
   // 后端两步查(聚合定位 id → 按 id 分页)，绝不一次性拉全量模板到前端。
@@ -86,8 +98,9 @@ export default function ClassicProductsPage() {
       if (key === 'type') continue // 已合并进上面的 cfm_type
       if (vals && vals.length > 0) params.set(`cfm_${key}`, vals.join(','))
     }
+    applyFacets(params, facets)
     return params.toString()
-  }, [canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters])
+  }, [canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets])
 
   async function loadPage(p: number, q: string, ps: number = pageSize) {
     setLoading(true)
@@ -432,7 +445,10 @@ export default function ClassicProductsPage() {
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => loadPage(1, searchInput)}
+        facetFields={PRODUCT_FACET_FIELDS}
+        onFacetAdd={addFacet}
         activeFilters={[
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
           ...(canBeSoldFilter ? [{ label: 'Can be Sold', onRemove: () => setCanBeSoldFilter(false) }] : []),
           ...(productTypeFilter ? [{ label: TYPE_LABEL[productTypeFilter] ?? productTypeFilter, onRemove: () => setProductTypeFilter('') }] : []),
           ...(stockAlertFilter !== 'all' ? [{
