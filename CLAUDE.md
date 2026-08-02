@@ -2,6 +2,48 @@
 
 ---
 
+## ⛔ 部署目标铁律：一切按「迁到客户自有服务器」来设计
+
+> **GCP + Neon 是临时宿主，不是目标架构。**
+> 客户已提供自有服务器（DigitalOcean droplet，`docs/20260802-private-deployment-server-enablement-plan.md`），
+> 合同 IE-DEV-202607-01 第十一条把私有化部署写成硬性要求：新系统必须与 Odoo 12 同机独立并行。
+> 功能开发完成后，**全部迁到该服务器**。因此每一个基础设施选型决定，都要问一句：
+> **「迁到那台服务器之后，这东西还在吗？」**
+
+### 硬性禁止
+
+- ⛔ **不得新增任何 GCP 专有服务依赖**：Cloud Storage、Cloud Scheduler、Cloud Tasks、Secret Manager、Firestore、Pub/Sub…
+  已有的 3 处 `@google-cloud/storage`（`app/api/upload-image`、`app/api/purchase-orders/pdf-extract`、`lib/backup.ts`）属历史欠债，只减不增。
+- ⛔ **不得依赖 Neon 专有能力**：分支、PITR、serverless WebSocket 驱动。客户服务器上跑的是普通 PostgreSQL。
+- ⛔ **不得为了让某功能"先跑起来"而去开通新的云资源**（建桶、开 API、建 Scheduler 任务）。
+  这类动作是在给一个明确要拆掉的架构加钉子，迁移时连数据带配置都要重搬。
+- ⛔ **不得把定时任务的触发逻辑写进云平台**。cron 路由必须是"任何东西都能 POST 触发"的形状
+  （现有 `/api/cron/*` + `CRON_SECRET` 就是对的），这样服务器上用 systemd timer 或 crontab 就能接。
+
+### 正确做法
+
+| 需求 | 不要 | 要 |
+|---|---|---|
+| 文件存储 | 直接 `@google-cloud/storage` | 走 `lib/storage.ts` 抽象；默认本地磁盘，S3 兼容为可选 driver |
+| 备份产物落点 | GCS 桶 | S3 兼容对象存储（如 DigitalOcean Spaces）——Cloud Run 现在能用，迁到 droplet 后照样能用，且天然满足合同「异地留存」 |
+| 数据库连接 | 写死 `PrismaNeon` | 按 `DATABASE_DRIVER` 切换，私有化用 `@prisma/adapter-pg` |
+| 密钥 | 只支持 Secret Manager | 读 `process.env`，由 Secret Manager 或 `.env` / docker secrets 注入均可 |
+| 定时任务 | Cloud Scheduler 独有语义 | HTTP 端点 + 共享密钥，触发方可替换 |
+
+### 选型时的判定问题
+
+新增依赖或基础设施前，必须能回答：
+
+1. 这个东西在客户的 DigitalOcean 服务器上能跑吗？跑不了的话，替代方案是什么、切换成本多大？
+2. 它是否把**数据**（而不只是代码）沉淀在了云厂商那边？沉淀了的话，迁移时怎么搬？
+3. 能不能藏在一层接口后面，让迁移变成"改配置"而不是"改代码"？
+
+三个问题里只要有一个答不上来，就先停下来问用户，不要自作主张开资源。
+
+> 与主机无关的 SaaS（Resend 邮件、Sentry 监控、Google Maps API）不在此限，迁移后照常可用。
+
+---
+
 ## 完成标准（开发完成前必须全部达到）
 
 > "服务启动成功"不等于"开发完成"。
