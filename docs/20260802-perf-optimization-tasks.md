@@ -83,7 +83,7 @@
 
 ---
 
-### - [ ] T3 `driverNameClause` 不再全表拉 `orderIds` 进内存
+### - [x] T3 `driverNameClause` 不再全表拉 `orderIds` 进内存 — 完成（待生产验证）
 
 **为什么**：`lib/orders-query.ts` 的 `driverNameClause` 里
 
@@ -106,6 +106,17 @@ prisma.pickingWave.findMany({ select: { orderIds: true } })   // 没有 where，
 
 **风险**：中。改的是筛选语义所在的函数，写错会静默返回错误结果——必须做前后计数比对，不能只看「能跑」。
 
+**结果（周期 3，2026-08-02）**：
+- 改法：整个判定交给数据库。`unnest(orderIds)` 取波次归属，`NOT EXISTS + @>` 判「不在任何波次」，
+  后者走 T1 建的 `idx_pickingwave_orderids_gin`（这就是 T3 依赖 T1 的原因）
+- 验收 1 ✅ 该函数已无 `pickingWave.findMany`
+- 验收 2 ✅ 8 个司机名（含一个不存在的）新旧命中数**完全一致**：
+  hansung 1 / ASHWIN 9 / ANDRIUS 6 / WIT 5 / John 11 / BAO 35 / YANG 11 / 不存在 0
+- 验收 3 ✅ 走真实入口 `buildOrdersWhere` 验证，`f_driver` 与 `colDriver` 两条路径均一致
+- 验收 4 ✅ tsc 0 错误；105 测试 103 通过 0 失败；build 通过
+- 消除的膨胀点：原先把 51 个波次 → 102 个订单 id 塞进 `notIn`，该列表随波次增长线性膨胀
+- ⏳ 生产端到端验证待部署后进行
+
 ---
 
 ## 周期日志
@@ -114,4 +125,7 @@ prisma.pickingWave.findMany({ select: { orderIds: true } })   // 没有 where，
 |---|---|---|---|---|
 | — | — | 台账建立，未开工 | — | 2026-08-02 |
 | 1 | T1 GIN 索引 | ✅ 完成，4/4 验收通过 | 78ebb59 | 2026-08-02 |
-| 2 | T2 商品列表全表聚合 | ✅ 完成，4/4 验收通过（生产验证待部署） | 见下 | 2026-08-02 |
+| 2 | T2 商品列表全表聚合 | ✅ 完成，4/4 验收通过（生产验证待部署） | 12eb7fe | 2026-08-02 |
+| 3 | T3 driverNameClause | ✅ 完成，4/4 验收通过（生产验证待部署） | 见下 | 2026-08-02 |
+
+**本轮结束**：3/3 条完成，达周期上限（3），无剩余条目。两项代码改动待部署后做生产端到端验证。

@@ -31,19 +31,32 @@ export const ORDER_FACET_DEFS: FacetDef[] = [
   { key: 'driver',   label: '司机',     toClause: v => driverNameClause(v) },
 ]
 
+/**
+ * 「这单归哪个司机」的筛选口径（两条并集，与显示口径一致）：
+ *   a) 订单在某个 driverName 匹配的波次里 —— 调度归属的真相（SSOT P0-1）
+ *   b) 订单不在任何波次里，且其 Order.driverSlot 的司机名匹配 —— 回退到下单意向
+ *
+ * 20260802 改写：原实现把**全部**波次的 orderIds 拉进 Node（`findMany` 无 where），
+ * 在内存里求并集后塞进 `notIn`。波次表按天线性增长（每司机每时段一条），
+ * 那个 notIn 列表会随之膨胀——属于"不改会随时间必然劣化"的形状。
+ * 现在整个判定交给数据库：b) 的"不在任何波次"用 NOT EXISTS + 数组包含，
+ * 走 idx_pickingwave_orderids_gin（见 20260802160000 迁移）。
+ *
+ * 等价性已在真实数据上逐一验证（8 个司机名含一个不存在的，命中数完全一致）。
+ */
 async function driverNameClause(term: string): Promise<Record<string, unknown>> {
-  const [matchingWaves, allWaves] = await Promise.all([
-    prisma.pickingWave.findMany({ where: { driverName: like(term) }, select: { orderIds: true } }),
-    prisma.pickingWave.findMany({ select: { orderIds: true } }),
-  ])
-  const waveOrderIds = [...new Set(matchingWaves.flatMap((w) => w.orderIds as string[]))]
-  const inAnyWave = [...new Set(allWaves.flatMap((w) => w.orderIds as string[]))]
-  return {
-    OR: [
-      { id: { in: waveOrderIds } },
-      { AND: [{ id: { notIn: inAnyWave } }, { driverSlot: { driverName: like(term) } }] },
-    ],
-  }
+  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT DISTINCT id FROM (
+       SELECT unnest(w."orderIds") AS id FROM "PickingWave" w WHERE w."driverName" ILIKE $1
+       UNION
+       SELECT o.id FROM "Order" o
+         JOIN "DriverSlot" d ON d.id = o."driverSlotId"
+        WHERE d."driverName" ILIKE $1
+          AND NOT EXISTS (SELECT 1 FROM "PickingWave" w2 WHERE w2."orderIds" @> ARRAY[o.id])
+     ) t`,
+    `%${term}%`,
+  )
+  return { id: { in: rows.map((r) => r.id) } }
 }
 
 export async function buildOrdersWhere(req: Request, searchParams: URLSearchParams): Promise<Record<string, unknown>> {
