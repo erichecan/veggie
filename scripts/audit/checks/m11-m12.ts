@@ -4,7 +4,7 @@
  * M12 接口与安全
  *   ① 标准 API 对接第三方 ② 安全性与合规 ③ PDA 扫码(条件触发) ④ 电子秤(条件触发)
  */
-import { defineCheck, api, grepCode, grepMatrix, findFiles, fileExists, prisma } from '../harness'
+import { defineCheck, api, grepCode, grepCount, grepMatrix, findFiles, fileExists, prisma } from '../harness'
 
 // ── M11 ─────────────────────────────────────────────────────────────────────
 
@@ -121,8 +121,11 @@ defineCheck({
     const fileBackup = grepMatrix(['上传文件备份', 'uploads.*backup', '程序文件备份'], 'app lib')
     parts['程序与上传文件备份'] = Object.values(fileBackup).some(v => v > 0) ? '✓' : '✗（只备数据库）'
 
-    const offsite = grepCode('gcsPath|bucket', { roots: 'lib/backup.ts', max: 3 })
-    parts['异地留存'] = offsite.length > 0 ? '△ 落 GCS（迁到自有服务器后不可用）' : '✗'
+    const driverAbstraction = grepCode('BACKUP_DRIVER|BackupStore', { roots: 'lib/storage lib/backup.ts', max: 3 })
+    const stillDirectGcs = grepCount('@google-cloud/storage', 'lib/backup.ts')
+    parts['落点可迁移'] = driverAbstraction.length > 0 && stillDirectGcs === 0
+      ? '✓ driver 抽象（local/s3/gcs 由 BACKUP_DRIVER 选，迁服务器只改配置）'
+      : '✗ 直连 GCS，迁到自有服务器后不可用'
 
     const verify = grepMatrix(['恢复验证', 'restoreVerif', '恢复演练'], 'app lib')
     parts['可恢复验证'] = Object.values(verify).some(v => v > 0) ? '✓' : '✗（有 runbook 文档，无自动验证）'
@@ -138,10 +141,12 @@ defineCheck({
 
     return {
       verdict: 'partial' as const,
-      gap: `0729 判 missing 已过时——备份模块、每日 cron、签名下载都已落地，且 cron 是` +
-        `「HTTP 端点 + CRON_SECRET」形状，迁到自有服务器可直接用 systemd timer 接。` +
-        `但**${ok}/${jobs} 次成功**（最近一次栽在 GCS bucket 不存在），且只备数据库不备上传文件、` +
-        `无自动恢复验证、异地留存仍绑在 GCS 上`,
+      gap: `0729 判 missing 已过时——备份模块、每日 cron、BOSS 管理页、签名下载都已落地，` +
+        `cron 是「HTTP 端点 + CRON_SECRET」形状（迁服务器后 systemd timer 可直接接），` +
+        `落点已于 20260802 抽成 driver（local/s3/gcs），迁移时只改配置不改代码，` +
+        `并已用 local driver 端到端跑出过 81.7MB 的可解压备份。` +
+        `仍缺：生产上尚未接好持久落点（BackupJob 历史 ${ok}/${jobs} 次成功，需用户备好 S3 兼容桶）、` +
+        `只备数据库不备上传文件、无自动恢复验证`,
       evidence,
     }
   },

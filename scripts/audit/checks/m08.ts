@@ -188,12 +188,19 @@ defineCheck({
     evidence.push(...nav.map(l => `导航入口: ${l.slice(0, 130)}`))
 
     const apOk = ap.pages.length > 0 && ap.apiRes!.status === 200
+    if (apOk) {
+      return {
+        verdict: 'done' as const,
+        gap: '0729 时应付账龄只有导航入口、页面与 API 都不存在（点进去 404）；' +
+          '20260802 已补齐，与应收共用同一套账龄阈值(AGING_BUCKETS)因而可直接对读。' +
+          '注：当前 25 张供应商账单全是 DRAFT 未过账，账龄表暂为空，页面已把这一点写在提示条里',
+        evidence,
+      }
+    }
     return {
       verdict: 'partial' as const,
-      gap: apOk
-        ? '应收应付均已实现'
-        : '应收账龄已实现；**应付账龄只有导航入口、页面和 API 都不存在**（boss/layout.tsx 里的' +
-          ' /classic/boss/analytics/ap-aging 是死链，点进去 404）',
+      gap: '应收账龄已实现；**应付账龄只有导航入口、页面和 API 都不存在**（boss/layout.tsx 里的' +
+        ' /classic/boss/analytics/ap-aging 是死链，点进去 404）',
       evidence,
     }
   },
@@ -217,11 +224,16 @@ defineCheck({
     const accounts = await prisma.account.count()
     evidence.push(`底层复式记账：Account ${accounts} 个 / JournalEntry ${ledger} 条 / Line ${lines} 行`)
 
+    // 死链入口已于 20260802 摘除，判定仍是 missing（功能确实没有），但不再叠加"点进去 404"这条缺陷
+    const navStillLinks = nav.some(l => l.includes('href') && l.includes('income-statement'))
+    evidence.push(`导航仍挂着入口: ${navStillLinks ? '是（死链）' : '否（20260802 已摘除）'}`)
     return {
       verdict: 'missing' as const,
-      gap: `利润表页面与 API 均不存在（接口返回 ${apiRes!.status}），但 boss/layout.tsx 里已经挂了` +
-        `「利润表」导航入口 → **点进去是 404 死链**。底层复式记账基础设施在` +
-        `（Account ${accounts} / JournalEntry ${ledger} / Line ${lines}），只差成品报表`,
+      gap: `利润表页面与 API 均不存在（接口返回 ${apiRes!.status}）。` +
+        (navStillLinks ? '而 boss/layout.tsx 仍挂着导航入口 → **点进去是 404 死链**。' : '导航入口已于 20260802 摘除，不再是死链。') +
+        `不补的根因是**费用没有数据来源**：无「其他收支」录入模块，` +
+        `Account ${accounts} 个但 JournalEntry ${ledger} 条 / Line ${lines} 行——复式记账是空壳。` +
+        `硬做只能产出一张缺全部运营费用的表。恢复条件已写进 layout.tsx 注释`,
       evidence,
     }
   },

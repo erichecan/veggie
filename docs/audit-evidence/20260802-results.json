@@ -571,12 +571,14 @@
     "module": "08",
     "title": "财务报表 — 应收应付汇总表",
     "prev": "partial",
-    "verdict": "partial",
-    "gap": "应收账龄已实现；**应付账龄只有导航入口、页面和 API 都不存在**（boss/layout.tsx 里的 /classic/boss/analytics/ap-aging 是死链，点进去 404）",
+    "verdict": "done",
+    "gap": "0729 时应付账龄只有导航入口、页面与 API 都不存在（点进去 404）；20260802 已补齐，与应收共用同一套账龄阈值(AGING_BUCKETS)因而可直接对读。注：当前 25 张供应商账单全是 DRAFT 未过账，账龄表暂为空，页面已把这一点写在提示条里",
     "evidence": [
       "应收账龄 页面: app/[locale]/classic/boss/analytics/ar-aging/page.tsx / 接口: GET /api/analytics/ar-aging → 200 keys{totalDue,invoiceCount,unknownCount,buckets,customers} buckets[6] customers[658]",
-      "应付账龄 页面: 无 / 接口: GET /api/analytics/ap-aging → 404 <!DOCTYPE html><html class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\"",
-      "导航入口: app/[locale]/classic/boss/layout.tsx:24:    { href: `${prefix}/classic/boss/analytics/ap-aging`, label: '应付账龄' },"
+      "应付账龄 页面: app/[locale]/classic/boss/analytics/ap-aging/page.tsx / 接口: GET /api/analytics/ap-aging → 200 keys{totalDue,billCount,unknownCount,buckets,suppliers,pending} buckets[6] suppliers[0]",
+      "导航入口: app/[locale]/classic/boss/layout.tsx:29:    { href: `${prefix}/classic/boss/analytics/ap-aging`, label: '应付账龄' },",
+      "导航入口: app/[locale]/classic/boss/analytics/ap-aging/page.tsx:55:    apiGet<Payload>('/api/analytics/ap-aging').then(setData).catch((e) =>",
+      "导航入口: app/api/analytics/ap-aging/route.ts:9: * /api/analytics/ap-aging — 应付账龄"
     ]
   },
   "M08-07": {
@@ -585,11 +587,13 @@
     "title": "财务报表 — 利润表",
     "prev": "missing",
     "verdict": "missing",
-    "gap": "利润表页面与 API 均不存在（接口返回 404），但 boss/layout.tsx 里已经挂了「利润表」导航入口 → **点进去是 404 死链**。底层复式记账基础设施在（Account 10 / JournalEntry 0 / Line 0），只差成品报表",
+    "gap": "利润表页面与 API 均不存在（接口返回 404）。导航入口已于 20260802 摘除，不再是死链。不补的根因是**费用没有数据来源**：无「其他收支」录入模块，Account 10 个但 JournalEntry 0 条 / Line 0 行——复式记账是空壳。硬做只能产出一张缺全部运营费用的表。恢复条件已写进 layout.tsx 注释",
     "evidence": [
       "页面: 不存在 / 接口: GET /api/analytics/income-statement → 404 <!DOCTYPE html><html class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\"",
-      "命中: app/[locale]/classic/boss/layout.tsx:22:    { href: `${prefix}/classic/boss/analytics/income-statement`, label: '利润表' },",
-      "底层复式记账：Account 10 个 / JournalEntry 0 条 / Line 0 行"
+      "命中: app/[locale]/classic/boss/layout.tsx:22:    // 「利润表」入口于 20260802 摘除：它指向的页面与 API 从未存在，点进去是 404。",
+      "命中: app/[locale]/classic/boss/layout.tsx:23:    // 不补的理由：利润表 = 收入 − 成本 − 费用，而**费用这一项没有数据来源**——",
+      "底层复式记账：Account 10 个 / JournalEntry 0 条 / Line 0 行",
+      "导航仍挂着入口: 否（20260802 已摘除）"
     ]
   },
   "M08-08": {
@@ -841,14 +845,14 @@
     "title": "自动备份（数据库+文件 / 异地留存 / 可恢复验证 / 甲方可取完整备份）",
     "prev": "missing",
     "verdict": "partial",
-    "gap": "0729 判 missing 已过时——备份模块、每日 cron、签名下载都已落地，且 cron 是「HTTP 端点 + CRON_SECRET」形状，迁到自有服务器可直接用 systemd timer 接。但**0/3 次成功**（最近一次栽在 GCS bucket 不存在），且只备数据库不备上传文件、无自动恢复验证、异地留存仍绑在 GCS 上",
+    "gap": "0729 判 missing 已过时——备份模块、每日 cron、BOSS 管理页、签名下载都已落地，cron 是「HTTP 端点 + CRON_SECRET」形状（迁服务器后 systemd timer 可直接接），落点已于 20260802 抽成 driver（local/s3/gcs），迁移时只改配置不改代码，并已用 local driver 端到端跑出过 81.7MB 的可解压备份。仍缺：生产上尚未接好持久落点（BackupJob 历史 0/3 次成功，需用户备好 S3 兼容桶）、只备数据库不备上传文件、无自动恢复验证",
     "evidence": [
       "备份模块: ✓",
       "定时任务: ✓ (HTTP+CRON_SECRET，触发方可替换)",
       "甲方可下载: ✓ (签名 URL)",
       "真的跑出过备份: ✗ (0/3 全部失败)",
       "程序与上传文件备份: ✗（只备数据库）",
-      "异地留存: △ 落 GCS（迁到自有服务器后不可用）",
+      "落点可迁移: ✓ driver 抽象（local/s3/gcs 由 BACKUP_DRIVER 选，迁服务器只改配置）",
       "可恢复验证: ✗（有 runbook 文档，无自动验证）",
       "最近一次 @2026-08-02T14:42 failed: { \"error\": { \"code\": 404, \"message\": \"The specified bucket does not exist.\", \"errors\": [ { \"message\": \"The spe"
     ]

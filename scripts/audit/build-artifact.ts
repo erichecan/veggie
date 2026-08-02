@@ -261,6 +261,37 @@ parts.push(`<section class="callout">
   <p>同一路由还有第二处授权绕过：SALES 行级隔离条件在 <code>where</code> 构造<strong>之后</strong>才加入，
   <code>where</code> 已退化成 <code>{}</code> 时该条件不再生效——<code>?includeArchived=1</code> 且无其他筛选时销售员可看到全部客户。</p>
   <p>两处均已修复并部署（commit <code>588357a</code>）：匿名请求返回 401，带 token 返回 200。</p>
+</section>
+
+<section class="changes">
+  <h2>核实之后动手修掉的三项</h2>
+  <p class="hint">这份报告不只是判定。核实过程中暴露的问题里，有三项当场做掉了。</p>
+  <ul class="movelist">
+    <li><span class="arrow up">已修</span>
+      <div><strong>白名单缺回归测试</strong><br><span class="why">
+      客户名册泄露的根因不是有人写错，而是<em>白名单加错了没有任何测试会红</em>。
+      新增的测试扫描全部 157 个 API 路由，算出 middleware 会放行哪些，与显式快照比对。
+      反向验证过：把 <code>/api/customers</code> 加回白名单，测试立刻变红并列出前缀匹配连带放行的 6 条子路由。
+      </span></div></li>
+    <li><span class="arrow up">已补</span>
+      <div><strong>应付账龄报表</strong><br><span class="why">
+      导航里原本挂着入口但页面和 API 都不存在，点进去 404。现已补齐，与应收共用同一套账龄阈值，
+      两张表可直接对读。补的过程中发现 25 张供应商账单<em>全是草稿未过账</em>（合计 €27,925.60），
+      账龄表因而暂为空——页面把这一点写在了提示条里，而不是让人以为功能坏了。
+      </span></div></li>
+    <li><span class="arrow down">已摘</span>
+      <div><strong>利润表入口</strong><br><span class="why">
+      同样是 404 死链，但这条选择摘掉而不是补。利润表 = 收入 − 成本 − 费用，
+      而<em>费用没有数据来源</em>：没有支出录入模块，会计科目有 10 个但分录 0 条。
+      硬做只能产出一张缺全部运营费用的表，给甲方看比没有更糟。恢复它的三个前置条件写进了代码注释。
+      </span></div></li>
+    <li><span class="arrow up">已改</span>
+      <div><strong>备份落点</strong><br><span class="why">
+      原本直连 GCS，与「整体迁到客户自有服务器」的目标冲突，且三次任务成功零次。
+      现抽成 driver（本地磁盘 / S3 兼容 / GCS 遗留），迁移时只改配置不改代码。
+      已用本地 driver 端到端跑出 <strong>81.7 MB</strong> 可解压备份——<em>这是该系统第一次成功产出备份</em>。
+      </span></div></li>
+  </ul>
 </section>`)
 
 // ── changes ─────────────────────────────────────────────────────────────────
