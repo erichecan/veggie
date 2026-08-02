@@ -52,7 +52,7 @@
 
 ---
 
-### - [x] T2 商品列表去掉每请求的全表聚合 — 完成（待生产验证）
+### - [x] T2 商品列表去掉每请求的全表聚合 — 完成 ✅ 已生产验证
 
 **为什么**：`app/api/product-templates/route.ts` 里
 `prisma.product.groupBy({ by:['templateId'], _sum:{qtyOnHand:true} })`
@@ -79,11 +79,11 @@
 - 验收 3 ✅ `stockAlert=negative` 命中 id 数 28，与基线一致
 - 验收 4 ✅ tsc 0 错误；105 测试 103 通过 0 失败；build 通过
 - 本机耗时 1028ms → 563ms（差值主要是行传输；生产端同机传输，收益更大）
-- ⏳ 生产端到端验证待部署后进行
+- 验收 5 ✅ 生产验证（周期 4）：角标 negative=28 low=4737 与基线一致；stockAlert=negative 命中 28
 
 ---
 
-### - [x] T3 `driverNameClause` 不再全表拉 `orderIds` 进内存 — 完成（待生产验证）
+### - [x] T3 `driverNameClause` 不再全表拉 `orderIds` 进内存 — 完成 ✅ 已生产验证
 
 **为什么**：`lib/orders-query.ts` 的 `driverNameClause` 里
 
@@ -115,7 +115,7 @@ prisma.pickingWave.findMany({ select: { orderIds: true } })   // 没有 where，
 - 验收 3 ✅ 走真实入口 `buildOrdersWhere` 验证，`f_driver` 与 `colDriver` 两条路径均一致
 - 验收 4 ✅ tsc 0 错误；105 测试 103 通过 0 失败；build 通过
 - 消除的膨胀点：原先把 51 个波次 → 102 个订单 id 塞进 `notIn`，该列表随波次增长线性膨胀
-- ⏳ 生产端到端验证待部署后进行
+- 验收 5 ✅ 生产验证（周期 4）：7 个司机名命中数与基线全部一致
 
 ---
 
@@ -128,4 +128,26 @@ prisma.pickingWave.findMany({ select: { orderIds: true } })   // 没有 where，
 | 2 | T2 商品列表全表聚合 | ✅ 完成，4/4 验收通过（生产验证待部署） | 12eb7fe | 2026-08-02 |
 | 3 | T3 driverNameClause | ✅ 完成，4/4 验收通过（生产验证待部署） | 见下 | 2026-08-02 |
 
-**本轮结束**：3/3 条完成，达周期上限（3），无剩余条目。两项代码改动待部署后做生产端到端验证。
+| 4 | T2/T3 生产验证 | ✅ 全部通过（10 项比对 0 失败） | b9cbf64 已部署 | 2026-08-02 |
+
+**本轮结束**：3/3 条完成 + 生产验证通过，无剩余条目。
+
+### 周期 4 生产验证结果（2026-08-02，revision 部署于 run 30765136723）
+
+| 检查项 | 基线 | 生产实际 | |
+|---|---|---|---|
+| T2 角标 negative | 28 | 28 | ✅ |
+| T2 角标 low | 4737 | 4737 | ✅ |
+| T2 stockAlert=negative 命中 | 28 | 28 | ✅ |
+| T3 f_driver=hansung | 1 | 1 | ✅ |
+| T3 f_driver=ASHWIN | 9 | 9 | ✅ |
+| T3 f_driver=ANDRIUS | 6 | 6 | ✅ |
+| T3 f_driver=WIT | 5 | 5 | ✅ |
+| T3 f_driver=John | 11 | 11 | ✅ |
+| T3 f_driver=BAO | 35 | 35 | ✅ |
+| T3 f_driver=YANG | 11 | 11 | ✅ |
+
+生产端耗时（预热后取 8 次最小值）：商品列表 50 条 **394 ms**；司机筛选 `f_driver=BAO` **264 ms**。
+
+> 注：这两个数字**没有改动前的生产端对照**——改动前只在本机量过（1028 ms 的 groupBy 含 5479 行到本机的传输）。
+> 所以只能说「优化后是这个水平」，不能声称「快了 N 倍」。真正可比的证据是上面 10 项结果一致性。
