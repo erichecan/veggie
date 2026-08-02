@@ -2,18 +2,11 @@ import createMiddleware from 'next-intl/middleware'
 import { routing } from './i18n/routing'
 import { type NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
+import { isPublicApiRoute } from './lib/public-routes'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? 'veggie-demo-fallback-secret')
 
-// ⚠️ 加进这个名单等于把接口完全公开到互联网上。只放真正无敏感数据的端点。
-// /api/customers 曾经在这里（246e3c6 修 /enter 404 时顺手加的），后果是全量客户名册
-// —— 名称/地址/电话/邮箱/VAT/信用额度/提成率 —— 匿名可读 1.3MB。已于 20260802 移除。
-const PUBLIC_API_ROUTES = [
-  '/api/auth/login',
-  '/api/health',
-  '/api/tile',
-  '/api/cron',
-]
+// 白名单与放行判定在 lib/public-routes.ts，由 tests/public-api-routes.test.ts 锁住。
 
 const intlMiddleware = createMiddleware(routing)
 
@@ -28,7 +21,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  if (PUBLIC_API_ROUTES.some(r => pathname.startsWith(r))) {
+  if (isPublicApiRoute(pathname)) {
     return NextResponse.next()
   }
 
