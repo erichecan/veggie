@@ -1,0 +1,65 @@
+{
+  "M01-01": {
+    "id": "M01-01",
+    "module": "01",
+    "title": "常购清单：一键快捷复购",
+    "prev": "missing",
+    "verdict": "done",
+    "evidence": [
+      "GET /api/customer-portal/frequently-ordered → 200 [array 6]",
+      "UI: app/[locale]/customer-portal/page.tsx:79:      .catch(() => {}) // 常购清单是锦上添花，加载失败不影响正常下单",
+      "UI: app/[locale]/customer-portal/page.tsx:190:      {/* 常购清单：按历史下单次数排序，支持一键快捷复购 */}",
+      "UI: app/[locale]/customer-portal/page.tsx:193:          <h2 className=\"text-sm font-bold text-gray-700\">🔁 常购清单</h2>",
+      "UI: app/[locale]/customer-portal/page.tsx:208:                    一键复购",
+      "返回 6 个常购商品"
+    ]
+  },
+  "M01-02": {
+    "id": "M01-02",
+    "module": "01",
+    "title": "账期与专属批发价展示",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "专属批发价与账期已在客户端展示；但信用额度只在运营端可见，客户端不可见且不参与下单阻断（无超额拦截）",
+    "evidence": [
+      "GET /api/customer-portal/products → 200 keys{customerId,customerName,priceType,paymentTerm,products} products[1735]",
+      "接口返回 paymentTerm=\"cash\" priceType=\"multi\"",
+      "渲染: app/[locale]/customer-portal/page.tsx:54:  const [paymentTerm, setPaymentTerm] = useState<string | null>(null)",
+      "渲染: app/[locale]/customer-portal/page.tsx:70:    apiGet<{ products: Product[]; paymentTerm?: string }>('/api/customer-portal/products')",
+      "渲染: app/[locale]/customer-portal/page.tsx:73:        setPaymentTerm(d.paymentTerm ?? null)",
+      "渲染: app/[locale]/customer-portal/page.tsx:184:      {paymentTerm && (",
+      "渲染: app/[locale]/customer-portal/page.tsx:186:          结算方式：<span className=\"font-medium\" style={{ color: PURPLE }}>{PAYMENT_LABELS[paymentTerm",
+      "商品 1735 个，1735 个带 customerPrice，0 个命中客户专属价(isSpecialPrice)",
+      "客户↔价格表绑定 1239 条，客户专属价 0 条",
+      "信用额度: 客户端命中 0 处，下单阻断逻辑命中 1 处"
+    ]
+  },
+  "M01-03": {
+    "id": "M01-03",
+    "module": "01",
+    "title": "订单提交自动校验，生成标准电子销售订单",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "校验-空订单: POST /api/customer-portal/orders → 400 keys{error} {\"error\":\"订单商品不能为空\"}",
+      "校验-未登录: POST /api/customer-portal/orders → 401 keys{error} {\"error\":\"未授权访问\"}",
+      "下单: POST /api/customer-portal/orders → 201 keys{id,code,status,totalAmount,deliveryDate,createdAt,lineCount,pricingWarnings} pricingWarnings[0]",
+      "落库: code=RE-260802-001 status=PENDING 行数=1 total=1 priceType=multi",
+      "服务端权威定价回写: 是",
+      "清理: 删除探针订单 cmsca4j9r000pjrylh9pykq9c (1 行)"
+    ]
+  },
+  "M01-04": {
+    "id": "M01-04",
+    "module": "01",
+    "title": "（形态说明）是否存在独立移动端 App / PWA",
+    "verdict": "partial",
+    "gap": "PWA 形态：manifest + standalone + 图标齐全，可\"添加到主屏\"，但无 Service Worker（无离线能力），也无原生 App",
+    "evidence": [
+      "原生 App 关键词命中: {\"react-native\":0,\"capacitor\":0,\"expo-\":0,\"manifest.json\":1,\"serviceWorker\":0,\"beforeinstallprompt\":0}",
+      "app/layout.tsx:12:  manifest: \"/manifest.json\",",
+      "public/manifest.json: name=\"蔬菜批发订购\" display=\"standalone\" start_url=\"/customer-portal\" icons=2",
+      "Service Worker（离线能力）: 无"
+    ]
+  }
+}

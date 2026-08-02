@@ -58,3 +58,6 @@ next-env.d.ts
 
 # graphify 知识图谱产物（本地生成，含 4.3MB graph.html）
 graphify-out/
+
+# 服务器凭据（含 SSH 私钥），严禁入库
+docs/dev-server-info/
