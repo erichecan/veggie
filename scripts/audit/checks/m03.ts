@@ -138,19 +138,34 @@ defineCheck({
     const seq = grepMatrix(['stopSequence', 'stopIndex', 'sortOrder', 'routeOrder', '按序'], DRIVER_PAGE)
     evidence.push(`停靠点排序字段命中: ${JSON.stringify(seq)}`)
 
-    const hasSig = sig['signature'] > 0 || sig['签名'] > 0 || sig['signaturePad'] > 0
+    // 光有签名代码不算数——必须确认真的接进了司机端送达流程
+    const wiredInDriver = grepCode('SignaturePad|openSignModal|confirmDelivery', { roots: DRIVER_PAGE, max: 4 })
+    evidence.push(...wiredInDriver.map(l => `司机端接线: ${l.slice(0, 120)}`))
+    const serverGuard = grepCode('reconcileSignatures', { roots: 'app/api/trips', max: 2 })
+    evidence.push(`服务端完整性校验: ${serverGuard.length > 0 ? '有（时间戳服务端打 + 已签不可改）' : '无'}`)
+
+    const hasSig = wiredInDriver.length > 0 && serverGuard.length > 0
     const hasNav = nav.length > 0
     const hasSeq = Object.values(seq).some(v => v > 0)
 
-    if (!hasSig && !hasSeq && hasNav) {
+    if (hasSig && hasSeq) return { verdict: 'done' as const, evidence }
+    if (hasSig) {
       return {
         verdict: 'partial' as const,
-        gap: '有逐点「🧭 导航」按钮（跳外部地图），但停靠点无排序字段、不构成"按序"导航；' +
-          '电子签名完全没有——现有签收凭证是拍照上传，不是手写签名捕获',
+        gap: '客户手写电子签名（Sign on Glass）已实现并接入司机端送达流程（20260802），' +
+          '签名成为送达唯一入口，服务端保证时间戳可信与已签不可改，另有主管纠错路径。' +
+          '仍缺「按序」导航：有逐点导航按钮跳外部地图，但停靠点没有排序字段，' +
+          '不构成合同所说的"按序导航送货"',
         evidence,
       }
     }
-    if (hasSig) return { verdict: 'partial' as const, gap: '签名代码存在，需确认是否接入司机端', evidence }
+    if (hasNav) {
+      return {
+        verdict: 'partial' as const,
+        gap: '有逐点导航按钮，但无排序字段、无电子签名',
+        evidence,
+      }
+    }
     return { verdict: 'missing' as const, gap: '无电子签名、无按序导航', evidence }
   },
 })
@@ -245,13 +260,28 @@ defineCheck({
     }).catch(() => [] as { settlementStatus: string | null; _count: number }[])
     evidence.push(`交账状态分布: ${settle.map(s => `${s.settlementStatus}=${s._count}`).join(' ') || '无'}`)
 
-    const paymentOnSettle = grepCode('payment.create', { roots: 'app/api/trips', max: 3 })
+    // 20260802：入账逻辑落在 lib/trip-settlement-payment.ts，不在路由文件里
+    const paymentOnSettle = grepCode('payment.create|postTripCollections', {
+      roots: 'app/api/trips lib/trip-settlement-payment.ts', max: 4,
+    })
     evidence.push(`财务确认交账时创建 Payment: ${paymentOnSettle.length > 0 ? '是' : '否'}`)
+    evidence.push(...paymentOnSettle.slice(0, 2).map(l => `  ${l.slice(0, 120)}`))
 
     const invCount = await prisma.invoice.count()
     const payCount = await prisma.payment.count()
     evidence.push(`生产数据：Invoice ${invCount} 张，Payment ${payCount} 条`)
 
+    const posts = paymentOnSettle.length > 0
+    if (posts) {
+      return {
+        verdict: 'done' as const,
+        gap: '行程完成自动回写发票草稿/订单状态/提成冻结；财务确认交账（20260802 起）' +
+          '会按到期日把各站实收核销到已过账发票并生成 Payment，结清即推进为 PAID，' +
+          '带 TRIP:<id> 标记幂等。刻意保留的人工环节：DRAFT 发票不自动过账、超收不硬塞，' +
+          '两者都如实报给财务处理',
+        evidence,
+      }
+    }
     return {
       verdict: 'partial' as const,
       gap: '行程完成会自动回写发票草稿、订单状态、司机提成冻结；司机交账也有结构化流程' +

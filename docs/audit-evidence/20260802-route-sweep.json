@@ -1,0 +1,1985 @@
+[
+  {
+    "path": "/api/accounts",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/action-logs/cleanup",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/action-logs",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/ap-aging",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/ar-aging",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/customers",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/internal-control",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/inventory-overview",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/logistics",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/loss-dashboard",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/margin",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/overview",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/price-trends",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/procurement",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/procurement-overview",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/sales-overview",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/shortage",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/snapshots",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/analytics/zone-inventory",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/auth/change-password",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/auth/login",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/backups/[id]/download",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/backups",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/batch-analysis",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/credit-notes/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/credit-notes/generate-from-returns",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/credit-notes",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/cron/backup-database",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/customer-portal/frequently-ordered",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customer-portal/orders/[id]",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customer-portal/orders",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customer-portal/products",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customers/[id]/credit",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customers/[id]/last-prices",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customers/[id]",
+    "methods": [
+      "GET",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customers/bulk",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/customers/coordinates",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/customers",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/daily-sales/shortage/apply",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/demo/reset",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/dispatch/driver-summary",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/distance-matrix",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/driver-slots/[id]",
+    "methods": [
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/driver-slots",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/finance/historical-debt",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/fx-rate",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/gdpr/delete",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/gdpr/export",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/geocode",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/goods-receipts",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/health",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "public",
+    "note": "在 PUBLIC_API_ROUTES 白名单里（由 tests/public-api-routes.test.ts 锁定）"
+  },
+  {
+    "path": "/api/invoices/[id]/post",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/invoices/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/invoices",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/lots/expiring",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/lots/integrity",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/lots",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/lots/trace",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/mfa/enroll",
+    "methods": [
+      "GET",
+      "POST",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/notifications",
+    "methods": [
+      "GET",
+      "POST",
+      "PATCH"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/order-discrepancies/[id]",
+    "methods": [
+      "GET",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/order-discrepancies",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders/[id]/audit",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders/[id]/batch",
+    "methods": [
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/orders/[id]/lines/[lineId]",
+    "methods": [
+      "PATCH",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/orders/[id]/lines",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/orders/[id]/mark-printed",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/orders/[id]/pdf",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders/bulk",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/orders/dispatch-print-data",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders/export-csv",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders/last-price",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/orders/sales-price-history",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/payments",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/pricelists/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/pricelists/print",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/pricelists",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/print/day-wise-report-csv",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/print/day-wise-report-pdf",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/print/dispatch-picking-pdf",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/print/dispatch-summary-pdf",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/product-categories/[id]",
+    "methods": [
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/product-categories",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/product-templates/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/product-templates/filter-options",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/product-templates",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/products/[id]/price-history",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/products/[id]",
+    "methods": [
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/products/[id]/sale-uoms",
+    "methods": [
+      "GET",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/products/[id]/zone",
+    "methods": [
+      "PATCH"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/products/bulk",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/products/forecast",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/products/pending-demand",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/products/quick-create",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/products",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/products/similar",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchase-orders/[id]/pdf",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchase-orders/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "PATCH"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchase-orders/import",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/purchase-orders/last-by-group",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchase-orders/pdf-extract",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/purchase-orders/receipts-by-group",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchase-orders",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchase-suggestions/[id]/convert",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/purchase-suggestions/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchase-suggestions/convert",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/purchase-suggestions/generate-annual",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/purchase-suggestions/generate-fresh",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/purchase-suggestions",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchases/[id]",
+    "methods": [
+      "GET",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/purchases",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/reports/[type]/metadata",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/reports/[type]",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/scrap",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/statements/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/statements",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/stock-moves",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/stock-takes/[id]",
+    "methods": [
+      "GET",
+      "PATCH"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/stock-takes",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/suppliers",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/tile",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "public",
+    "note": "在 PUBLIC_API_ROUTES 白名单里（由 tests/public-api-routes.test.ts 锁定）"
+  },
+  {
+    "path": "/api/trips/[id]/discrepancy",
+    "methods": [
+      "GET",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips/[id]/picking-pdf",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips/[id]/print-data",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips/[id]/returns",
+    "methods": [
+      "GET",
+      "POST",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips/[id]/settlement",
+    "methods": [
+      "GET",
+      "POST",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips/[id]/signature-correction",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/trips/[id]/summary-pdf",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips/[id]/verify",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/trips",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/uom-categories",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/uoms/[id]",
+    "methods": [
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/uoms",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/upload-image",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/users/[id]/reset-password",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/users/[id]",
+    "methods": [
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/users",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/vendor-bills/[id]",
+    "methods": [
+      "GET",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/vendor-bills/import",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/vendor-bills",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/waves/[id]/assign",
+    "methods": [
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/[id]/assignment-done",
+    "methods": [
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/[id]/complete",
+    "methods": [
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/[id]/dispatch",
+    "methods": [
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/[id]/pallets",
+    "methods": [
+      "GET",
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/waves/[id]/pick-lock",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/[id]/pick-sheet",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/waves/[id]/pick-unlock",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/[id]",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/waves/[id]/shortage",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/waves/[id]/unassign",
+    "methods": [
+      "PUT"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/generate-daily",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves/print-log",
+    "methods": [
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "skipped",
+    "note": "无 GET 处理器，鉴权由 middleware 覆盖（与方法无关）"
+  },
+  {
+    "path": "/api/waves",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/workbench",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  },
+  {
+    "path": "/api/zones",
+    "methods": [
+      "GET"
+    ],
+    "anon": null,
+    "badToken": null,
+    "lowRole": null,
+    "authed": null,
+    "verdict": "server-error",
+    "note": "⛔ 鉴权闸门失效：匿名=null 伪造token=null，两者都应为 401"
+  }
+]

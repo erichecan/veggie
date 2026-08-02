@@ -112,11 +112,17 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     toast.success('已确认出发，开始配送')
   }
 
+  /**
+   * 实收货款。必须规整到分——现场手滑输入 40.504050 这类值时，parseFloat 会原样落库，
+   * 之后一路带进累计实收、司机交账、发票核销，产生分以下的尾数对不平。
+   * 负数按 0 处理：收款不可能为负，输错了不如归零让人看出来。
+   */
   async function setPayment(restId: string, amount: number) {
     if (!trip) return
+    const clean = Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100) / 100) : 0
     const updated = cloneTrip()
     const r = updated.restaurants.find(r => r.restaurantId === restId)
-    if (r) r.payment = amount
+    if (r) r.payment = clean
     await saveTrip(updated)
   }
 
