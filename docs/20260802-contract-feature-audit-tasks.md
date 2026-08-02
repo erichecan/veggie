@@ -33,8 +33,8 @@
 | C8 | T8 M08 财务（9 项） | [x] | |
 | C9 | T9 M09 数据分析 BI（5 项） | [x] | |
 | C10 | T10 M10 基础信息与系统管理（6 项） | [x] | |
-| C11 | T11 M11 私有化部署双系统（4 项） | [ ] | |
-| C12 | T12 M12 接口与安全（4 项） | [ ] | |
+| C11 | T11 M11 私有化部署双系统（4 项） | [x] | |
+| C12 | T12 M12 接口与安全（4 项） | [x] | |
 | C13 | T13 重算完成度 + 与 0729 版差异表 | [ ] | |
 | C14 | T14 更新并发布 artifact | [ ] | |
 | C15 | T15 收尾：提交、记忆、遗留问题 | [ ] | |
@@ -255,6 +255,22 @@
 > 信用额度、提成率。已移除白名单；同时修掉 SALES 行级隔离在 `includeArchived=1`
 > 路径下的授权绕过（条件 push 在 `where` 构造之后，`where` 已退化成 `{}`）。
 > 已 push 部署（用户批准）。
+
+### C11 M11 私有化部署与双系统并行（完成）——1 条升级
+| 项 | 0729 | 0802 | 依据 |
+|---|---|---|---|
+| 私有化部署能力 | missing | missing | `DATABASE_DRIVER` 与 `@prisma/adapter-pg` **零命中**，`lib/db.ts:12` 写死 `PrismaNeon`；有 Dockerfile 但无 docker-compose / 部署脚本；`@google-cloud/storage` 仍残留 3 处。方案文档 2 份但未实施 |
+| 与 Odoo 12 同机并行 | missing | missing | 同机隔离方案停在纸面。20260802 计划已识别阻塞：数据居留（库在法兰克福↔机在伦敦）、无 swap 时峰值 3.5–3.7GB 逼近 3.8GB 会 OOM、Odoo 12 需 py3.5-3.7 撞系统 py3.14 |
+| 账号与资料交接 | missing | missing | `交接清单/管理员账号/账号移交` 关键词零命中；账号仍全在开发方 GCP 项目 supply-491510 |
+| 自动备份 | missing | **partial** | 备份模块、每日 cron、BOSS 管理页、签名下载全已落地，且 cron 是「HTTP + CRON_SECRET」形状（迁服务器后 systemd timer 可直接接）。但 **0/3 次成功**、只备库不备上传文件、无自动恢复验证、落点绑 GCS |
+
+### C12 M12 接口与安全（完成）
+| 项 | 判定 | 实测证据 |
+|---|---|---|
+| 第三方标准 API | missing | 157 个路由全服务自家前端。apiKeyAuth/oauth/clientSecret/webhook//api/v1 **全零命中**（唯一的 x-api-key 是本系统去调 Anthropic）。电子秤/税控/ERP对接/物流平台全零命中 |
+| 安全性与合规 | partial | **鉴权闸门实测通过**：无 token→401、错 token→401、低权限 DRIVER 访问备份→403、写操作无 token→401。bcrypt/登录限流/TOTP/操作审计/批次追溯全 ✓。缺静态加密、缺《食品安全法》专项合规设计 |
+| PDA 扫码 | deferred | 条码生成能力在（jsbarcode 20 处），但**条码覆盖率 0/5482**，合同的触发条件尚未成就 |
+| 电子秤 | deferred | 电子秤/过秤关键词零命中，属条件触发项 |
 
 ## 遗留问题 / 决策记录
 

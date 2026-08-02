@@ -788,5 +788,128 @@
       "  失败@2026-08-01T13:51 AUTO: pg_dump exited with code 1: pg_dump: error: server version: 17.10 (4f20678); pg_dump version: 14.20 (Homebrew) pg_dump: ",
       "  失败@2026-08-01T13:40 MANUAL: pg_dump exited with code 1: pg_dump: error: server version: 17.10 (4f20678); pg_dump version: 14.20 (Homebrew) pg_dump: "
     ]
+  },
+  "M11-01": {
+    "id": "M11-01",
+    "module": "11",
+    "title": "私有化部署能力",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "代码侧仍是 GCP Cloud Run + Neon 单一路径：`DATABASE_DRIVER` 与 `@prisma/adapter-pg` 均零命中，`lib/db.ts` 写死 `PrismaNeon`，接不了客户机房的普通 PostgreSQL；有 Dockerfile 但无 docker-compose / 部署脚本 / 交付包。已有落地方案文档（2 份，含 20260802 服务器启用计划），但尚未实施",
+    "evidence": [
+      "数据库驱动可切换性: {\"DATABASE_DRIVER\":0,\"adapter-pg\":0,\"PrismaPg\":0}",
+      "当前驱动: lib/db.ts:2:import { PrismaNeon } from '@prisma/adapter-neon'",
+      "当前驱动: lib/db.ts:11:  // PrismaNeon expects a PoolConfig (connection config), not a Pool instance",
+      "当前驱动: lib/db.ts:12:  const adapter = new PrismaNeon({",
+      "交付物: Dockerfile=✓ docker-compose.yml=✗ 部署脚本目录 deploy/=✗ .env.example=✓",
+      "GCP 专有依赖残留: {\"@google-cloud/storage\":3,\"Secret Manager\":2,\"cloudbuild\":0}",
+      "私有化部署方案文档: docs/20260729-api-integration-and-private-deployment-plan.md, docs/20260802-private-deployment-server-enablement-plan.md"
+    ]
+  },
+  "M11-02": {
+    "id": "M11-02",
+    "module": "11",
+    "title": "与 Odoo 12 同机独立并行运行",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "两套系统同机隔离（独立运行环境/数据库/文件目录/账号/端口/日志备份）尚未实施。20260802 的服务器启用计划已把方案与三个阻塞点写清（数据居留：库在法兰克福↔机在伦敦；内存不足会 OOM；Odoo 12 需 py3.5-3.7 撞系统 py3.14 须走 Docker），但都还停在纸面",
+    "evidence": [
+      "同机隔离/反代关键词命中: {\"odoo.*并行\":3,\"reverse.?proxy\":0,\"nginx\":1,\"caddy\":1,\"systemd\":2,\"docker-compose\":3}",
+      "服务器启用计划: docs/20260802-private-deployment-server-enablement-plan.md",
+      "计划中已识别的阻塞: docs/20260802-private-deployment-server-enablement-plan.md:32:## 2. 五个必须先解决的阻塞项",
+      "计划中已识别的阻塞: docs/20260802-private-deployment-server-enablement-plan.md:67:峰值可达 3.5–3.7 GB，逼近 3.8 GB 物理上限，而**当前 Swap 为 0**。Linux 在无 swap 时触发 OO",
+      "计划中已识别的阻塞: docs/20260802-private-deployment-server-enablement-plan.md:148:### 阶段 0：决策与摸底（阻塞后续，不占开发工时）",
+      "计划中已识别的阻塞: docs/20260802-private-deployment-server-enablement-plan.md:152:| 0.1 | 数据居留决策：接受伦敦 / 迁 EU 区（B1） | 客户 + 法务 | 书面确认 |"
+    ]
+  },
+  "M11-03": {
+    "id": "M11-03",
+    "module": "11",
+    "title": "管理员账号与技术资料交接机制",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "合同要求服务器/数据库/新系统/Odoo 12 的最高管理员账号、备份文件、技术资料均由甲方掌握。当前部署形态下这些全在开发方的 GCP 项目里，且无交接清单/移交流程文档",
+    "evidence": [
+      "交接类文档: docs/20260620-handoff-销售会计修复.md, docs/20260708-driver-slot-handoff.md, docs/handoff/20260705-会话记录-需求梳理与收尾.html",
+      "交接机制关键词命中: {\"交接清单\":0,\"runbook\":0,\"管理员账号\":0,\"账号移交\":0}",
+      "当前账号归属：GCP 项目 supply-491510 与 Secret Manager 由开发方掌握，甲方无独立访问路径"
+    ]
+  },
+  "M11-04": {
+    "id": "M11-04",
+    "module": "11",
+    "title": "自动备份（数据库+文件 / 异地留存 / 可恢复验证 / 甲方可取完整备份）",
+    "prev": "missing",
+    "verdict": "partial",
+    "gap": "0729 判 missing 已过时——备份模块、每日 cron、签名下载都已落地，且 cron 是「HTTP 端点 + CRON_SECRET」形状，迁到自有服务器可直接用 systemd timer 接。但**0/3 次成功**（最近一次栽在 GCS bucket 不存在），且只备数据库不备上传文件、无自动恢复验证、异地留存仍绑在 GCS 上",
+    "evidence": [
+      "备份模块: ✓",
+      "定时任务: ✓ (HTTP+CRON_SECRET，触发方可替换)",
+      "甲方可下载: ✓ (签名 URL)",
+      "真的跑出过备份: ✗ (0/3 全部失败)",
+      "程序与上传文件备份: ✗（只备数据库）",
+      "异地留存: △ 落 GCS（迁到自有服务器后不可用）",
+      "可恢复验证: ✗（有 runbook 文档，无自动验证）",
+      "最近一次 @2026-08-02T14:42 failed: { \"error\": { \"code\": 404, \"message\": \"The specified bucket does not exist.\", \"errors\": [ { \"message\": \"The spe"
+    ]
+  },
+  "M12-01": {
+    "id": "M12-01",
+    "module": "12",
+    "title": "标准 API 接口对接第三方（ERP/财务/电子秤/税控盘/物流）",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "157 个 API 路由全部服务于自家前端，统一走 JWT session 鉴权；没有面向第三方的 API Key / OAuth 机制、没有 webhook、没有版本号前缀。电子秤/税控/ERP对接/物流平台等对接对象全库零命中",
+    "evidence": [
+      "API 路由总数: 157",
+      "对外 API 机制命中: {\"X-API-Key\":1,\"apiKeyAuth\":0,\"oauth\":0,\"clientSecret\":0,\"webhook\":0,\"/api/v1\":0,\"/api/v2\":0}",
+      "注：app/api/purchase-orders/pdf-extract/route.ts:65:      'x-api-key': apiKey,（是本系统作为客户端去调 Anthropic，不是对外开放）",
+      "合同点名的对接对象命中: {\"电子秤\":0,\"税控\":0,\"ERP.*对接\":0,\"物流平台\":0,\"weighbridge\":0}"
+    ]
+  },
+  "M12-02": {
+    "id": "M12-02",
+    "module": "12",
+    "title": "安全性与合规（加密传输存储 / 食品安全法 / 全链路追溯 / 账号登录安全）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "HTTPS 传输、bcrypt 口令、登录限流、TOTP 二次验证、middleware 统一鉴权闸门、操作审计、批次级追溯都在。缺口：数据**静态加密**未做（库内字段明文）；没有针对《食品安全法》的专门合规设计（关键词零命中）。另：本次审计发现过一处白名单误配导致客户数据匿名可读，已修复——说明白名单缺少回归测试",
+    "evidence": [
+      "密码哈希: ✓ bcrypt",
+      "登录限流: ✓",
+      "MFA/TOTP: ✓",
+      "API 统一鉴权: ✓ middleware 统一闸门",
+      "操作审计: ✓",
+      "批次全链路追溯: ✓",
+      "食品安全法合规设计: ✗",
+      "鉴权实测 — 无 token: 401｜错 token: 401｜低权限(DRIVER)访问备份: 403",
+      "写操作无 token: POST /api/orders → 401 keys{error} {\"error\":\"未授权访问\"}",
+      "鉴权闸门结论: 无 token / 错 token 均被拦在 middleware",
+      "注：20260802 本次审计发现并修复了 /api/customers 被误列入 middleware 白名单导致全量客户名册匿名可读（commit 588357a）"
+    ]
+  },
+  "M12-03": {
+    "id": "M12-03",
+    "module": "12",
+    "title": "PDA 扫码功能（合同条件触发：仓库商品全部有条码后免费升级）",
+    "prev": "deferred",
+    "verdict": "deferred",
+    "gap": "合同写明\"后续如果仓库全部商品都有打印条码，可免费升级此功能\"。当前条码覆盖率 0/5482，**触发条件尚未成就**，不计入本阶段功能缺口",
+    "evidence": [
+      "条码覆盖率: 0/5482 商品模板有条码",
+      "条码相关能力: {\"jsbarcode\":20,\"barcode\":77}（已能生成/打印条码）"
+    ]
+  },
+  "M12-04": {
+    "id": "M12-04",
+    "module": "12",
+    "title": "电子秤功能（合同条件触发：生鲜出库改为过秤后免费升级）",
+    "prev": "deferred",
+    "verdict": "deferred",
+    "gap": "合同写明\"后续如果仓库生鲜商品出库流程修改为电子秤过秤才能出库，可免费升级此功能\"，属条件触发项，不是 Phase 1 交付内容",
+    "evidence": [
+      "电子秤关键词命中: {\"电子秤\":0,\"weighbridge\":0,\"scaleDevice\":0,\"过秤\":0}",
+      "现有出库按订单行数量扣减，无过秤环节"
+    ]
   }
 }
