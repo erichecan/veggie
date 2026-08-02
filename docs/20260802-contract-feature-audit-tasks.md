@@ -254,7 +254,9 @@
 > 生产实测 200 / 1,311,883 bytes / 1605 个客户，含地址、电话、邮箱、VAT 税号、
 > 信用额度、提成率。已移除白名单；同时修掉 SALES 行级隔离在 `includeArchived=1`
 > 路径下的授权绕过（条件 push 在 `where` 构造之后，`where` 已退化成 `{}`）。
-> 已 push 部署（用户批准）。
+> 已 push 部署（用户批准），**生产验证通过**（2026-08-02 21:40）：
+> 匿名 `/api/customers` `/api/customers/coordinates` `/api/orders` `/api/products` 全部 401；
+> 带 OPERATOR token 时 customers 1596 / orders / products 5479 / driver-slots 52 全部 200，登录态未误伤。
 
 ### C11 M11 私有化部署与双系统并行（完成）——1 条升级
 | 项 | 0729 | 0802 | 依据 |
