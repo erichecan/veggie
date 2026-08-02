@@ -16,7 +16,7 @@
 | `missing` | 没有实现 | 必须给出检索命中为零的关键词集合 |
 | `deferred` | 合同写明条件触发 | 引用合同条款 |
 
-**规则**：不允许凭"看起来像"下结论。每条都要在 `docs/20260802-contract-audit-evidence.md` 留下可复现的命令或探针 ID。
+**规则**：不允许凭"看起来像"下结论。每条都要在 `docs/audit-evidence/20260802-results.json` 留下可复现的探针 ID 与证据。
 
 ## 状态汇总
 
@@ -35,9 +35,9 @@
 | C10 | T10 M10 基础信息与系统管理（6 项） | [x] | |
 | C11 | T11 M11 私有化部署双系统（4 项） | [x] | |
 | C12 | T12 M12 接口与安全（4 项） | [x] | |
-| C13 | T13 重算完成度 + 与 0729 版差异表 | [ ] | |
-| C14 | T14 更新并发布 artifact | [ ] | |
-| C15 | T15 收尾：提交、记忆、遗留问题 | [ ] | |
+| C13 | T13 重算完成度 + 与 0729 版差异表 | [x] | |
+| C14 | T14 更新并发布 artifact | [x] | |
+| C15 | T15 收尾：提交、记忆、遗留问题 | [x] | |
 
 ---
 
@@ -47,7 +47,7 @@
 - 建 `scripts/audit/` 探针harness：登录取 token、调本地 API、跑 DB 查询，输出结构化 JSON
 - 确认 dev server 可用、能登录、库里有真实数据（不是空壳）
 - **验收**：`npx tsx scripts/audit/run.ts --list` 能列出全部 check；至少 1 个 check 真实跑通并落 JSON
-- **产出**：`scripts/audit/*`, `docs/20260802-contract-audit-evidence.md` 骨架
+- **产出**：`scripts/audit/*`, `docs/audit-evidence/20260802-results.json`
 - **依赖**：无
 
 ### T1 M01 B2B 移动端订货（3 项）
@@ -271,6 +271,21 @@
 | 安全性与合规 | partial | **鉴权闸门实测通过**：无 token→401、错 token→401、低权限 DRIVER 访问备份→403、写操作无 token→401。bcrypt/登录限流/TOTP/操作审计/批次追溯全 ✓。缺静态加密、缺《食品安全法》专项合规设计 |
 | PDA 扫码 | deferred | 条码生成能力在（jsbarcode 20 处），但**条码覆盖率 0/5482**，合同的触发条件尚未成就 |
 | 电子秤 | deferred | 电子秤/过秤关键词零命中，属条件触发项 |
+
+### C13–C15 汇总与发布（完成）
+- 加权完成度 **50.9% → 56.4%**（done 15→17、partial 26→28、missing 14→10、deferred 2 不变）
+- 判定变化 7 条：**升级 6、降级 1、维持 50**
+  - 升级：常购清单(missing→done)、缺货提醒(partial→done)、Tab 快捷键(partial→done)、
+    司机端导航(missing→partial)、司机路线地图(missing→partial)、自动备份(missing→partial)
+  - 降级：司机提成(done→partial)
+- 产出：`docs/20260802-contract-audit-diff.md`（逐条差异表）、
+  `scripts/audit/summarize.ts`（重算）、`scripts/audit/build-artifact.ts`（从 JSON 生成页面，避免手工转录 57 条数据）
+- artifact 已更新到原链接 `c0c91d92-8b8b-4c9e-be2d-89579453c2e6`
+
+**这次复核对 0729 那版的整体评价**：六条升级里五条对应的功能是 0729 之后才合入的
+——上一版的主要问题是**时效性**而不是判断力。唯一系统性的判断偏差是把「代码存在」
+当成「功能可用」，本次用生产数据实查纠正了 M04（提成冻结 0 单）、M08（Statement 0 张 /
+Payment 0 条 / JournalEntry 0 条）、M11-04（备份 0/3 成功）几处。
 
 ## 遗留问题 / 决策记录
 
