@@ -6,12 +6,30 @@
 import { prisma } from '@/lib/db'
 import { tryAuth, effectiveRoles } from '@/lib/auth'
 import type { $Enums } from '@/lib/generated/prisma/client'
+import { buildFacetWhere, type FacetDef } from '@/lib/facet-sql'
 
 export const ORDER_STATUSES = new Set<$Enums.OrderStatus>([
   'PENDING', 'CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED',
 ])
 
 const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
+
+/**
+ * 订单/报价单列表的分面维度定义 —— 该资源「可搜什么」的唯一真相。
+ * key 与 lib/list-filters.ts 的 ORDER_FACET_FIELDS 一一对应；'all' 走 search 参数不在此声明。
+ * code 维度：20260802 已用 scripts/backfill-order-code-from-odoo.ts 从 Odoo 原始单号回填，
+ * 覆盖率 861/149874 → 149874/149874 (100%)，"看得见搜不到"的问题已消除。
+ */
+export const ORDER_FACET_DEFS: FacetDef[] = [
+  { key: 'code',     label: '单号',     toClause: v => ({ code: like(v) }) },
+  { key: 'customer', label: '客户',     toClause: v => ({ restaurantName: like(v) }) },
+  { key: 'salesman', label: '销售',     toClause: v => ({ salesUser: { name: like(v) } }) },
+  { key: 'product',  label: '产品',     toClause: v => ({ lines: { some: { productName: like(v) } } }) },
+  { key: 'category', label: '产品类目', toClause: v => ({ lines: { some: { product: { category: { OR: [
+    { name: like(v) }, { nameZh: like(v) },
+  ] } } } } }) },
+  { key: 'driver',   label: '司机',     toClause: v => driverNameClause(v) },
+]
 
 async function driverNameClause(term: string): Promise<Record<string, unknown>> {
   const [matchingWaves, allWaves] = await Promise.all([
@@ -99,23 +117,9 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   if (colSalesman) where.salesUser = { name: { contains: colSalesman, mode: 'insensitive' } }
   if (colDriver)   facetAnd.push(await driverNameClause(colDriver))
 
-  const facetOr: Record<string, unknown>[] = []
-  const fCode     = searchParams.get('f_code')?.trim()
-  const fCustomer = searchParams.get('f_customer')?.trim()
-  const fSalesman = searchParams.get('f_salesman')?.trim()
-  const fProduct  = searchParams.get('f_product')?.trim()
-  const fCategory = searchParams.get('f_category')?.trim()
-  const fDriver   = searchParams.get('f_driver')?.trim()
-  if (fCode)     facetOr.push({ code: like(fCode) })
-  if (fCustomer) facetOr.push({ restaurantName: like(fCustomer) })
-  if (fSalesman) facetOr.push({ salesUser: { name: like(fSalesman) } })
-  if (fProduct)  facetOr.push({ lines: { some: { productName: like(fProduct) } } })
-  if (fCategory) facetOr.push({ lines: { some: { product: { category: { OR: [
-    { name: like(fCategory) },
-    { nameZh: like(fCategory) },
-  ] } } } } })
-  if (fDriver)   facetOr.push(await driverNameClause(fDriver))
-  if (facetOr.length > 0) facetAnd.push(facetOr.length === 1 ? facetOr[0] : { OR: facetOr })
+  // 分面搜索：同一维度多值 OR、不同维度之间 AND（20260802 语义修正，此前是分面间 OR，
+  // 导致"加一个筛选条件结果反而变多"）。规则集中在 lib/facet-sql.ts，各资源只声明维度。
+  facetAnd.push(...await buildFacetWhere(searchParams, ORDER_FACET_DEFS))
 
   const deliveryFrom = searchParams.get('deliveryFrom')
   const deliveryTo = searchParams.get('deliveryTo')

@@ -7,6 +7,8 @@ import { apiGet } from '@/lib/api'
 import type { PickingWave } from '@/lib/types'
 import { WaveStatusBadge } from '@/components/shared/status-badge'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 
 const PURPLE = '#875A7B'
 
@@ -38,6 +40,12 @@ function WaveRow({ w, onClick }: { w: PickingWave; onClick: () => void }) {
   )
 }
 
+const FACET_DEFS: ClientFacetDef<PickingWave>[] = [
+  { key: 'name',   label: '波次', values: r => [r.name ?? r.id] },
+  { key: 'driver', label: '司机', values: r => [r.driverName] },
+  { key: 'status', label: '状态', values: r => [r.status] },
+]
+
 export default function ClassicSorterPage() {
   const [waves, setWaves] = useState<PickingWave[]>([])
   const [loading, setLoading] = useState(false)
@@ -59,13 +67,18 @@ export default function ClassicSorterPage() {
 
   useEffect(() => { load() }, [])
 
-  const filtered = searchInput
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
+  const searched = searchInput
     ? waves.filter(w => w.id.toLowerCase().includes(searchInput.toLowerCase()))
     : waves
+  const filtered = filterByFacets(searched, facets, FACET_DEFS)
 
   return (
     <div>
       <OdooControlPanel
+        {...controlPanelProps}
+        activeFilters={chips}
         breadcrumb={['仓库', '分货任务']}
         permanentActions={[{ label: '刷新', onClick: load }]}
         searchValue={searchInput}

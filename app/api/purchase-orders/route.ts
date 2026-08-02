@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { buildFacetWhere } from '@/lib/facet-sql'
+import { PURCHASE_ORDER_FACET_DEFS } from '@/lib/facets/purchase-orders'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
@@ -30,6 +32,10 @@ export async function GET(req: Request) {
     const where: Record<string, unknown> = {}
     if (supplierId) where.supplierId = supplierId
     if (status) where.status = status
+
+    // 分面搜索：同维度 OR、跨维度 AND
+    const facetClauses = await buildFacetWhere(searchParams, PURCHASE_ORDER_FACET_DEFS)
+    if (facetClauses.length > 0) where.AND = facetClauses
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p = prisma as any

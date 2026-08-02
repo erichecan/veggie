@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
+import { applyFacets, groupFacets, CUSTOMER_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
@@ -34,6 +35,17 @@ export default function ClassicCustomersPage() {
   const [paymentFilter, setPaymentFilter] = useState('')
   const [includeArchived, setIncludeArchived] = useState(false)
   const [isReadMode, setIsReadMode] = useState(true)
+  // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
+  const [facets, setFacets] = useState<Facet[]>([])
+
+  function addFacet(key: string, value: string) {
+    const field = CUSTOMER_FACET_FIELDS.find(f => f.key === key)
+    if (!field) return
+    setFacets(prev => [...prev, { key, label: field.label, value }])
+  }
+  function removeFacetGroup(key: string) {
+    setFacets(prev => prev.filter(f => f.key !== key))
+  }
   const [groupBy, setGroupBy] = useState('')
   const [importOpen, setImportOpen] = useState(false)
 
@@ -44,6 +56,7 @@ export default function ClassicCustomersPage() {
       if (q) params.set('search', q)
       if (payTerm) params.set('paymentTerm', payTerm)
       if (archived) params.set('includeArchived', '1')
+      applyFacets(params, facets)
       const res = await apiGet<{ data: Customer[]; total: number; page: number; pageSize: number }>(`/api/customers?${params}`)
       setCustomers(res.data)
       setTotal(res.total)
@@ -55,6 +68,11 @@ export default function ClassicCustomersPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadPage(1, searchInput, paymentFilter, includeArchived)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facets])
 
   useEffect(() => {
     loadPage(1, '', paymentFilter, includeArchived)
@@ -131,6 +149,7 @@ export default function ClassicCustomersPage() {
   ]
 
   const activeFilters = [
+    ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
     ...(paymentFilter ? [{ label: isEn ? `Payment Term: ${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}` : `结算方式：${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}`, onRemove: removePaymentFilter }] : []),
     ...(includeArchived ? [{ label: isEn ? 'Include Archived' : '包含已归档', onRemove: () => setIncludeArchived(false) }] : []),
   ]
@@ -159,6 +178,8 @@ export default function ClassicCustomersPage() {
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => loadPage(1, searchInput)}
+        facetFields={CUSTOMER_FACET_FIELDS}
+        onFacetAdd={addFacet}
         activeFilters={activeFilters}
         filterOptions={[
           { label: isEn ? 'Cash Customers' : '现付客户', value: 'cash' },

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { buildFacetWhere } from '@/lib/facet-sql'
+import { CUSTOMER_FACET_DEFS } from '@/lib/facets/customers'
 import { writeLog } from '@/lib/action-log'
 import { withAuth, tryAuth, effectiveRoles } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
@@ -55,6 +57,9 @@ export async function GET(req: Request) {
         ],
       })
     }
+    // 分面搜索：同维度 OR、跨维度 AND
+    andConditions.push(...await buildFacetWhere(searchParams, CUSTOMER_FACET_DEFS))
+
     const where: Record<string, unknown> = andConditions.length > 0 ? { AND: andConditions } : {}
     if (createdFrom || createdTo) {
       where.createdAt = {

@@ -9,6 +9,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 
 type VbStatus = 'DRAFT' | 'POSTED' | 'PAID' | 'CANCELLED'
 
@@ -63,6 +65,12 @@ const STATUS_COLOR: Record<VbStatus, string> = {
 const EMPTY_LINE: VendorBillLine = { productName: '', qty: 1, unitCost: 0, taxRate: 0 }
 const PAGE_SIZE = 20
 
+const FACET_DEFS: ClientFacetDef<VendorBill>[] = [
+  { key: 'name',    label: '单号', values: r => [r.name] },
+  { key: 'product', label: '商品', values: r => r.lines.map(l => l.productName) },
+  { key: 'status',  label: '状态', values: r => [r.status] },
+]
+
 export default function VendorBillsPage() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -116,6 +124,8 @@ export default function VendorBillsPage() {
       .catch(() => {})
   }, [load])
 
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
   const filtered = useMemo(() => {
     let rows = bills
     if (statusFilter) rows = rows.filter(b => b.status === statusFilter)
@@ -124,8 +134,8 @@ export default function VendorBillsPage() {
       rows = rows.filter(b =>
         b.name.toLowerCase().includes(q) || supplierName(b.supplierId).toLowerCase().includes(q))
     }
-    return rows
-  }, [bills, statusFilter, search, supplierName])
+    return filterByFacets(rows, facets, FACET_DEFS)
+  }, [bills, statusFilter, search, supplierName, facets])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -248,7 +258,9 @@ export default function VendorBillsPage() {
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v); setPage(1) }}
+        {...controlPanelProps}
         activeFilters={[
+          ...chips,
           ...(statusFilter ? [{ label: isEn ? `Status: ${STATUS_LABEL[statusFilter]}` : `状态：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
         ]}
         filterOptions={[

@@ -6,6 +6,8 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 import { getSession } from '@/lib/session'
 import { formatDateTime } from '@/lib/format-date'
 
@@ -49,6 +51,12 @@ const SETTLEMENT_COLOR: Record<string, string> = {
   confirmed: 'bg-green-50 text-green-700',
 }
 
+const FACET_DEFS: ClientFacetDef<TripSettlement>[] = [
+  { key: 'name',   label: '行程', values: r => [r.name] },
+  { key: 'driver', label: '司机', values: r => [r.driverName] },
+  { key: 'status', label: '状态', values: r => [r.status] },
+]
+
 export default function DriverSettlementPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -91,6 +99,9 @@ export default function DriverSettlementPage() {
 
   useEffect(() => { loadTrips() }, [loadTrips])
 
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const filtered = filterByFacets(trips, facets, FACET_DEFS)
+
   async function handleSubmitSettlement() {
     if (!selected) return
     const cash = parseFloat(cashAmount)
@@ -121,7 +132,13 @@ export default function DriverSettlementPage() {
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
-      <OdooControlPanel breadcrumb={['配送', '交账']} searchValue="" onSearch={() => {}} />
+      <OdooControlPanel
+        breadcrumb={['配送', '交账']}
+        searchValue=""
+        onSearch={() => {}}
+        {...controlPanelProps}
+        activeFilters={chips}
+      />
 
       <div className="flex-1 overflow-auto">
         {loading ? (
@@ -133,7 +150,7 @@ export default function DriverSettlementPage() {
           <div className="py-24 text-center text-gray-400 text-sm">暂无需要交账的配送单</div>
         ) : (
           <div className="p-4 space-y-3">
-            {trips.map(t => (
+            {filtered.map(t => (
               <div
                 key={t.id}
                 className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow"

@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import type { PickingWave, WaveStatus } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
 import { DAY_ABBR, DAY_COLORS, formatDateTime } from '@/lib/format-date'
@@ -35,6 +37,12 @@ const STATUS_COLOR: Record<WaveStatus, string> = {
 
 // 分货页只显示 picked / sorting 状态的波次
 const SORTING_STATUSES: WaveStatus[] = ['picked', 'sorting']
+
+const FACET_DEFS: ClientFacetDef<PickingWave>[] = [
+  { key: 'name',   label: '波次', values: r => [r.name ?? r.id] },
+  { key: 'driver', label: '司机', values: r => [r.driverName] },
+  { key: 'status', label: '状态', values: r => [r.status] },
+]
 
 export default function ClassicSortingPage() {
   const router = useRouter()
@@ -73,6 +81,8 @@ export default function ClassicSortingPage() {
 
   useEffect(() => { load() }, [])
 
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
   const filtered = useMemo(() => {
     const base = waves.filter(w => {
       const matchStatus = statusFilter ? w.status === statusFilter : true
@@ -81,16 +91,19 @@ export default function ClassicSortingPage() {
         : true
       return matchStatus && matchSearch
     })
-    return sortRows(base, sortKey, sortDir)
-  }, [waves, statusFilter, searchInput, sortKey, sortDir])
+    return sortRows(filterByFacets(base, facets, FACET_DEFS), sortKey, sortDir)
+  }, [waves, statusFilter, searchInput, sortKey, sortDir, facets])
 
   function removeStatusFilter() {
     setStatusFilter('')
   }
 
-  const activeFilters = statusFilter
-    ? [{ label: `${isEn ? 'Status' : '状态'}：${STATUS_LABEL[statusFilter]}`, onRemove: removeStatusFilter }]
-    : []
+  const activeFilters = [
+    ...chips,
+    ...(statusFilter
+      ? [{ label: `${isEn ? 'Status' : '状态'}：${STATUS_LABEL[statusFilter]}`, onRemove: removeStatusFilter }]
+      : []),
+  ]
 
   const columns: OdooColumn[] = [
     {
@@ -163,6 +176,7 @@ export default function ClassicSortingPage() {
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => {}}
+        {...controlPanelProps}
         activeFilters={activeFilters}
         filterOptions={[
           { label: isEn ? 'Picked' : '拣货完成', value: 'picked' },

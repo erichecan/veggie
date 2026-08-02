@@ -15,7 +15,7 @@ import { useServerList } from '@/hooks/use-server-list'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 import { getSession } from '@/lib/session'
-import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange } from '@/lib/list-filters'
+import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
 import { downloadAuthedFile } from '@/lib/print/open-pdf'
 
 const PAGE_SIZE = 50
@@ -221,11 +221,14 @@ export default function ClassicOrdersPage() {
   function addFacet(key: string, value: string) {
     const field = ORDER_FACET_FIELDS.find(f => f.key === key)
     if (!field) return
-    // 同一维度只保留一个值(后加覆盖先前)
-    setFacets(prev => [...prev.filter(f => f.key !== key), { key, label: field.label, value }])
+    // 同一维度可累积多个关键词(后端 buildFacetWhere 组成 OR)；不同维度之间 AND
+    setFacets(prev => [...prev, { key, label: field.label, value }])
   }
   function removeFacet(idx: number) {
     setFacets(prev => prev.filter((_, i) => i !== idx))
+  }
+  function removeFacetGroup(key: string) {
+    setFacets(prev => prev.filter(f => f.key !== key))
   }
   function facetChipLabel(f: Facet) {
     return f.key === 'all' ? f.value : `${f.label}: ${f.value}`
@@ -526,7 +529,7 @@ export default function ClassicOrdersPage() {
           setActiveFilter(v as ActiveFilter)
         }}
         activeFilters={[
-          ...facets.map((f, i) => ({ label: facetChipLabel(f), onRemove: () => removeFacet(i) })),
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
           ...(myActive ? [{ label: 'My Sales Order', onRemove: () => setMyActive(false) }] : []),
           ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(activeFilter !== 'all' ? [{

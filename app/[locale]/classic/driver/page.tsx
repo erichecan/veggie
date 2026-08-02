@@ -8,6 +8,8 @@ import { getSession } from '@/lib/session'
 import type { Trip } from '@/lib/types'
 import { TripStatusBadge } from '@/components/shared/status-badge'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 import { formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
@@ -45,6 +47,13 @@ function TripRow({ trip, onClick }: { trip: Trip; onClick: () => void }) {
   )
 }
 
+const FACET_DEFS: ClientFacetDef<Trip>[] = [
+  { key: 'name',   label: '行程', values: r => [r.name ?? r.id] },
+  { key: 'driver', label: '司机', values: r => [r.driverName] },
+  { key: 'slot',   label: '时段', values: r => [r.timeSlot] },
+  { key: 'status', label: '状态', values: r => [r.status] },
+]
+
 export default function ClassicDriverPage() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(false)
@@ -68,13 +77,18 @@ export default function ClassicDriverPage() {
 
   useEffect(() => { load() }, [])
 
-  const filtered = searchInput
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
+  const searched = searchInput
     ? trips.filter(t => t.id.toLowerCase().includes(searchInput.toLowerCase()))
     : trips
+  const filtered = filterByFacets(searched, facets, FACET_DEFS)
 
   return (
     <div>
       <OdooControlPanel
+        {...controlPanelProps}
+        activeFilters={chips}
         breadcrumb={['配送', '配送任务']}
         permanentActions={[{ label: '刷新', onClick: load }]}
         searchValue={searchInput}
