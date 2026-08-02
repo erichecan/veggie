@@ -424,5 +424,70 @@
       "收货特性命中: {\"photos\":3,\"condition\":4,\"良品\":2,\"damaged\":4,\"lot.create\":1}",
       "收货建批次: app/api/goods-receipts/route.ts:149:            // 创建批次；保质期优先用本次收货行实际填写的值（实物到货才知道真实保质期），"
     ]
+  },
+  "M07-01": {
+    "id": "M07-01",
+    "module": "07",
+    "title": "采购计划与预测（智能生成采购建议）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "生鲜走「缺口补货」规则、干货走「近12月同比外推」，两条规则都跑得通并已产出 13 条建议；但合同点名的季节性因素与促销活动两个因子在代码里零命中，算不上\"智能生成\"",
+    "evidence": [
+      "建议生成入口: [id]/convert, [id], convert, generate-annual, generate-fresh, route.ts",
+      "PurchaseSuggestion 生产数据: 13 条",
+      "干货年度算法: lib/purchase-suggestions-annual.ts:8: * 和再前 12 个月对比得出增长率，外推到下一年：",
+      "干货年度算法: lib/purchase-suggestions-annual.ts:10: *   建议年度采购量 = 近12月采购量 × (1 + 近12月同比前12月增长率)",
+      "生鲜算法: lib/purchase-suggestions-fresh.ts:7: * 生鲜不囤货，不看安全库存下限，只看\"接下来大概要多少、手上还有多少\"：",
+      "生鲜算法: lib/purchase-suggestions-fresh.ts:9: *   建议采购量 = max(0, 近3日日均出货 + 已确认未来订单 - 现有库存 - 在途采购)",
+      "生鲜算法: lib/purchase-suggestions-fresh.ts:17: * - 在途采购：已 CONFIRMED 但还没 RECEIVED 的 PurchaseOrderLine 未收货余量。",
+      "生鲜算法: lib/purchase-suggestions-fresh.ts:90:  // 在途采购（已确认未收货余量）",
+      "季节性/促销因子命中: {\"seasonal\":0,\"季节性\":0,\"promotion\":6,\"促销\":1,\"holiday\":0,\"节假日\":1}"
+    ]
+  },
+  "M07-02": {
+    "id": "M07-02",
+    "module": "07",
+    "title": "询价单（线上询价 / PDF 识别 / 历史报价 / 复制历史采购单）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "PDF 识别、历史报价、复制历史采购单三项均已实现（复制历史单是 0729 之后落地的）；仍缺：线上询价——没有向供应商在线发起询价并回收报价的闭环",
+    "evidence": [
+      "PDF 报价识别接口: app/api/purchase-orders/pdf-extract/route.ts",
+      "历史报价: app/[locale]/classic/operator/place-order/page.tsx:314:  const [lastPrices, setLastPrices] = useState<Record<string, num",
+      "历史报价: app/[locale]/classic/operator/place-order/page.tsx:316:  const [lastPriceDates, setLastPriceDates] = useState<Record<str",
+      "复制历史单: app/[locale]/classic/operator/purchases/new/_components/CopyFromHistoryModal.tsx:26:/** 新建采购单页\"从历史单复制\"：按供应商列出历史采购单，选中后把行项目原样带入当前草稿",
+      "复制历史单: app/[locale]/classic/operator/purchases/new/_components/CopyFromHistoryModal.tsx:27:export default function CopyFromHistoryModal({",
+      "向供应商线上询价命中: {\"sendRfq\":0,\"发起询价\":0,\"rfqEmail\":0,\"quoteRequest\":0,\"supplierPortal\":0}",
+      "四项子能力: PDF识别=✓ 历史报价=✓ 复制历史采购单=✓ 线上询价=✗"
+    ]
+  },
+  "M07-03": {
+    "id": "M07-03",
+    "module": "07",
+    "title": "采购订单全流程（创建/审核/跟踪/入库/退货/发票）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "创建/审核/跟踪/入库/发票状态机完整；缺 退货——CreditNote 只覆盖销售侧退款，采购侧无独立退货单据",
+    "evidence": [
+      "PurchaseOrder 状态分布: SENT=1 CANCELLED=5 DRAFT=1 LOCKED=21 RECEIVED=2",
+      "GET /api/purchase-orders?pageSize=1 → 200 [array 30]",
+      "VendorBill 供应商账单: 25 条",
+      "各环节: 创建=✓ 审核=✓ 跟踪=✓ 入库=✓ 发票=✓ 退货=✗",
+      "采购退货关键词命中: {\"purchaseReturn\":0,\"采购退货\":0,\"returnToVendor\":0,\"退货给供应商\":0}"
+    ]
+  },
+  "M07-04": {
+    "id": "M07-04",
+    "module": "07",
+    "title": "采购质检与验收（到货重量 / 新鲜度 / 农残检测）",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "质检/农残/新鲜度/freshness/pesticide/inspection 等关键词全库零命中。现有验收粒度只到收货行的 condition: ok | damaged 二值，没有重量核对、没有新鲜度分级、没有农残检测记录，也没有不合格品触发退换的流程",
+    "evidence": [
+      "质检关键词全集命中: {\"质检\":0,\"农残\":0,\"新鲜度\":0,\"freshness\":0,\"pesticide\":0,\"qualityCheck\":0,\"inspection\":0,\"qcResult\":0,\"不合格\":0}",
+      "现有验收粒度: app/api/goods-receipts/route.ts:16: *     lines: [{productId, qty, uomId?, condition:'ok'|'damaged', bestBefore?}] }",
+      "现有验收粒度: app/api/goods-receipts/route.ts:24: *      - 更新 PO 各 Line 的 receivedQty（良品+损坏都计入，视为供应商已交付；见 2026-07-10 决策）",
+      "现有验收粒度: app/api/goods-receipts/route.ts:25: *      - 良品：给 Product.qtyOnHand 加上收到的数量，写 StockMove(type=IN)，建 Lot（保质期按本次收货行填写，不再死绑"
+    ]
   }
 }
