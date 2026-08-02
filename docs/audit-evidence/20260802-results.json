@@ -147,5 +147,118 @@
       "清理: 删除探针订单 cmscaa5xw0028jrylu9x3f2bb (1 行) + 其 StockMove/审计",
       "清理后库存核对: 23（原始 23）"
     ]
+  },
+  "M03-01": {
+    "id": "M03-01",
+    "module": "03",
+    "title": "司机管理（批次 / 时段 / 独立配置 + 后台搜索）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "GET /api/driver-slots → 200 [array 52]",
+      "DriverSlot 共 70（在用 52）：时段 pm/am，批次 1,2,3,4，已绑定 DRIVER 账号 48/52",
+      "司机配置页搜索/排序命中 1 处"
+    ]
+  },
+  "M03-02": {
+    "id": "M03-02",
+    "module": "03",
+    "title": "销售单列表页快速派单",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "列表页内嵌派单: app/[locale]/classic/operator/orders/page.tsx:283:        await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId: slotId || n",
+      "列表页内嵌派单: app/[locale]/classic/operator/orders/page.tsx:405:            const originalSlotId = (o as unknown as { assignedDriverSlotId?: str",
+      "派单接口 PUT /api/orders/[id]/batch: 存在",
+      "生产数据佐证：23/149874 单已带 driverSlotId"
+    ]
+  },
+  "M03-03": {
+    "id": "M03-03",
+    "module": "03",
+    "title": "拖拽调度：按送货窗口与路线半自动派单",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "拖拽为纯手动；系统提供地理分布可视化(凸包分组)与\"总距离超均值2倍\"预警作决策辅助，但不生成分派方案、不做路线优化，达不到合同所说的\"半自动派单\"",
+    "evidence": [
+      "调度台拖拽实现命中 4 处",
+      "  app/[locale]/classic/operator/dispatch-console/_components/BatchTab.tsx:501:        draggable: !disabled,",
+      "  app/[locale]/classic/operator/dispatch-console/_components/BatchTab.tsx:502:        onDragStart: (e: React.DragEvent) =>",
+      "送货窗口(timeOfDay)进入调度台: 是",
+      "地理分批分析接口: GET /api/batch-analysis → 200 [array 11]",
+      "地理辅助: components/shared/BatchMap.tsx:15:export interface ConvexHullGroup {",
+      "地理辅助: components/shared/BatchMap.tsx:25:  convexHulls?: ConvexHullGroup[]",
+      "地理辅助: components/shared/BatchMap.tsx:39:export function computeConvexHull(",
+      "自动派单/路线优化关键词命中: {\"autoAssign\":0,\"auto-assign\":0,\"自动派单\":0,\"optimizeRoute\":0,\"vrp\":0,\"clustering\":0,\"kmeans\":0}"
+    ]
+  },
+  "M03-04": {
+    "id": "M03-04",
+    "module": "03",
+    "title": "司机端 App：按序导航 + 客户电子签名（Sign on Glass）",
+    "prev": "missing",
+    "verdict": "partial",
+    "gap": "有逐点「🧭 导航」按钮（跳外部地图），但停靠点无排序字段、不构成\"按序\"导航；电子签名完全没有——现有签收凭证是拍照上传，不是手写签名捕获",
+    "evidence": [
+      "电子签名关键词命中: {\"signature\":0,\"signaturePad\":0,\"signOnGlass\":0,\"签名\":0,\"toDataURL\":0,\"getContext..2d\":0}",
+      "现有签收凭证形式: app/[locale]/classic/driver/trip/[id]/page.tsx:41:  const [returnForm, setReturnForm] = useState<{ productId: string; pr",
+      "现有签收凭证形式: app/[locale]/classic/driver/trip/[id]/page.tsx:42:    productId: '', productName: '', qty: 1, photo: ''",
+      "现有签收凭证形式: app/[locale]/classic/driver/trip/[id]/page.tsx:45:  const returnPhotoRef = useRef<HTMLInputElement>(null)",
+      "现有签收凭证形式: app/[locale]/classic/driver/trip/[id]/page.tsx:171:    const { productId, productName, qty, photo } = returnForm",
+      "导航: app/[locale]/classic/driver/trip/[id]/page.tsx:75:  function buildNavUrl(restId: string, address?: string): string | nul",
+      "导航: app/[locale]/classic/driver/trip/[id]/page.tsx:366:          const navUrl = buildNavUrl(r.restaurantId, r.address)",
+      "导航: app/[locale]/classic/driver/trip/[id]/page.tsx:389:                  {navUrl && (",
+      "导航: app/[locale]/classic/driver/trip/[id]/page.tsx:392:                      onClick={e => { e.stopPropagation(); window.ope",
+      "停靠点排序字段命中: {\"stopSequence\":0,\"stopIndex\":0,\"sortOrder\":0,\"routeOrder\":0,\"按序\":0}"
+    ]
+  },
+  "M03-05": {
+    "id": "M03-05",
+    "module": "03",
+    "title": "车辆调度：Google 地图显示司机路线图",
+    "prev": "missing",
+    "verdict": "partial",
+    "gap": "司机端行程页已内嵌地图并打出各停靠点标记（提交 0cb4c52，0729 之后落地）；但只画点不画线——未接 Directions API、无路径规划折线，仍不是\"路线图\"",
+    "evidence": [
+      "司机端地图: app/[locale]/classic/driver/trip/[id]/page.tsx:12:import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'",
+      "司机端地图: app/[locale]/classic/driver/trip/[id]/page.tsx:252:  const routeMarkers: MapMarker[] = trip.restaurants",
+      "司机端地图: app/[locale]/classic/driver/trip/[id]/page.tsx:259:  const missingCoordsCount = trip.restaurants.length - routeMarkers.length",
+      "司机端地图: app/[locale]/classic/driver/trip/[id]/page.tsx:293:      {routeMarkers.length > 0 && (",
+      "地图 API 使用情况: {\"DirectionsService\":0,\"DirectionsRenderer\":0,\"Polyline\":2,\"AdvancedMarkerElement\":3,\"distancematrix\":10,\"geocode\":12}"
+    ]
+  },
+  "M03-06": {
+    "id": "M03-06",
+    "module": "03",
+    "title": "现场退改：生成电子退款凭证",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "司机现场可即时上报少货/坏货并拍照存证（OrderDiscrepancy），退款单模型(CreditNote)也在；但两者不自动衔接——凭证需人工审批后由财务另行开具，不是合同所说的\"现场生成电子退款凭证\"",
+    "evidence": [
+      "现场上报: app/[locale]/classic/driver/trip/[id]/page.tsx:116:  function openExceptionModal(restId: string) {",
+      "现场上报: app/[locale]/classic/driver/trip/[id]/page.tsx:160:        r.returns.push(entry)",
+      "现场上报: app/[locale]/classic/driver/trip/[id]/page.tsx:181:      r.returns.push({ productId, productName, quantity: qty, photo: ",
+      "现场上报: app/[locale]/classic/driver/trip/[id]/page.tsx:204:  function handleReturnPhoto(e: React.ChangeEvent<HTMLInputElement>) ",
+      "生产数据：OrderDiscrepancy 0 条，CreditNote 1096 条",
+      "审批环节: app/api/order-discrepancies/[id]/route.ts:46:      if (disc.status !== 'PENDING') {",
+      "异常上报处直接生成退款单: 否（需另行在 credit-notes 开单）"
+    ]
+  },
+  "M03-07": {
+    "id": "M03-07",
+    "module": "03",
+    "title": "对账回传：签收后收款/欠款数据即时回传",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "行程完成会自动回写发票草稿、订单状态、司机提成冻结；司机交账也有结构化流程（司机提交 cashCollected → 财务确认/退回）。但财务确认只翻转 Trip.settlementStatus，不生成 Payment 收款记录，现金入账仍需在收款模块另行录入",
+    "evidence": [
+      "行程完成回写逻辑命中 5 处",
+      "完成即回写: app/api/trips/[id]/verify/route.ts:6:import { freezeTripCommission } from '@/lib/commission'",
+      "完成即回写: app/api/trips/[id]/verify/route.ts:161:        await freezeTripCommission(id, tx)",
+      "完成即回写: lib/commission.ts:160:export async function freezeTripCommission(",
+      "交账状态分布: pending=8",
+      "财务确认交账时创建 Payment: 否",
+      "生产数据：Invoice 148285 张，Payment 0 条"
+    ]
   }
 }

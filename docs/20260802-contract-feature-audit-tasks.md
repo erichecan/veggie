@@ -25,7 +25,7 @@
 | C0 | T0 探针骨架 + 基线 | [x] | 见 C1 同批 |
 | C1 | T1 M01 移动端订货（3 项） | [x] | 见下方提交 |
 | C2 | T2 M02 Quotation 销售单（4 项） | [x] | |
-| C3 | T3 M03 配送 POD（7 项） | [ ] | |
+| C3 | T3 M03 配送 POD（7 项） | [x] | |
 | C4 | T4 M04 司机 CMS（1 项）+ M14 Odoo 平移（1 项） | [ ] | |
 | C5 | T5 M05 日销售中心（3 项） | [ ] | |
 | C6 | T6 M06 仓储库存（6 项） | [ ] | |
@@ -151,6 +151,22 @@
 **探针自身修的两个 bug**（会造成假结论，记下来）：
 1. `grepCount` 无条件加 `--include=*.ts`，把点名的 `prisma/schema.prisma` 整个过滤掉 → commission 字段假报 0 命中。已改为「roots 指向具体文件时不加 include」。
 2. 库存扣减探针原本随机挑商品，挑到 `qtyOnHand=0` 的就变成 0→0→0 的空测。已改为强制挑 `qtyOnHand > 5` 的商品。
+
+### C3 M03 配送与司机电子签收（完成）——**2 条升级，0 条降级**
+| 项 | 0729 | 0802 | 依据 |
+|---|---|---|---|
+| 司机管理 | done | done | DriverSlot 70 条（在用 52）：am/pm 双时段、批次 1-4、48/52 已绑定 DRIVER 账号 |
+| 列表页快速派单 | done | done | `orders/page.tsx:283` 内嵌 `PUT /api/orders/[id]/batch` |
+| 拖拽半自动调度 | partial | partial（缺口写实） | 拖拽在 `dispatch-console/_components/BatchTab.tsx:501`；地理辅助**比 0729 描述的强**——有凸包分组可视化 + "总距离超均值 2 倍"预警。但 autoAssign/optimizeRoute/vrp/kmeans **全部零命中**，确实不生成分派方案 |
+| 司机端按序导航 + 电子签名 | missing | **partial** | 有逐点「🧭 导航」按钮跳外部地图（`driver/trip/[id]/page.tsx:75,389`）。但停靠点排序字段全零命中，不构成"按序"；电子签名 signature/签名/toDataURL **全部零命中**，凭证仍是拍照 |
+| Google 地图司机路线图 | missing | **partial** | 司机端行程页已内嵌 `BatchMap`（`page.tsx:12,293`，提交 0cb4c52，0729 之后落地），打出各停靠点标记。但 DirectionsService/DirectionsRenderer **零命中**，只画点不画线 |
+| 现场退改电子退款凭证 | partial | partial | 现场上报 + 拍照存证在；CreditNote 模型有 1096 条。但 `order-discrepancies` 路由里无 `creditNote.create`，两者不自动衔接 |
+| 对账回传 | partial | partial | 完成回写发票/状态/提成冻结确实在。**财务确认交账只翻 `Trip.settlementStatus`，不建 Payment** |
+
+**顺带挖到的生产数据事实**（对后续模块判定有用）：
+- `Payment` 表 **0 条**，`Invoice` 148285 张 → 收款侧从未真正落过数据
+- `OrderDiscrepancy` **0 条** → 现场退改功能在，但生产上没人用过
+- 149874 单里只有 23 单带 `driverSlotId` → 绝大多数是 Odoo 历史导入单，不走派单
 
 ## 遗留问题 / 决策记录
 
