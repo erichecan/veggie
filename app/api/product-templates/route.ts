@@ -112,23 +112,27 @@ export async function GET(req: Request) {
       }
     }
 
-    // ── 库存告警筛选(negative/low)：跨表聚合，两步查 ──────────────────────
+    // ── 库存告警(negative/low) ────────────────────────────────────────────
+    // 角标计数在数据库里聚合成 2 个数字返回，不再把 5,479 行 groupBy 结果搬进 Node 再遍历
+    // （20260802 实测：旧写法返回 5479 行是该页最慢的一条查询）。
+    // 只有真正按告警筛选时，才额外查一次符合条件的 templateId 列表。
     const stockAlert = searchParams.get('stockAlert') // 'negative' | 'low'
-    const stockGroups = await prisma.product.groupBy({ by: ['templateId'], _sum: { qtyOnHand: true } })
-    const alertCounts = { negative: 0, low: 0 }
-    for (const g of stockGroups) {
-      const qty = Number(g._sum.qtyOnHand ?? 0)
-      if (qty < 0) alertCounts.negative++
-      else if (qty < LOW_STOCK_THRESHOLD) alertCounts.low++
-    }
+    const [counts] = await prisma.$queryRawUnsafe<{ negative: number; low: number }[]>(
+      `SELECT count(*) FILTER (WHERE s < 0)::int AS negative,
+              count(*) FILTER (WHERE s >= 0 AND s < $1)::int AS low
+       FROM (SELECT "templateId", sum("qtyOnHand") AS s FROM "Product" GROUP BY "templateId") t`,
+      LOW_STOCK_THRESHOLD,
+    )
+    const alertCounts = { negative: counts?.negative ?? 0, low: counts?.low ?? 0 }
+
     if (stockAlert === 'negative' || stockAlert === 'low') {
-      const ids = stockGroups
-        .filter(g => {
-          const qty = Number(g._sum.qtyOnHand ?? 0)
-          return stockAlert === 'negative' ? qty < 0 : (qty >= 0 && qty < LOW_STOCK_THRESHOLD)
-        })
-        .map(g => g.templateId)
-      restrictToIds = intersect(restrictToIds, ids)
+      const cond = stockAlert === 'negative' ? 's < 0' : `s >= 0 AND s < $1`
+      const rows = await prisma.$queryRawUnsafe<{ templateId: string }[]>(
+        `SELECT "templateId" FROM (SELECT "templateId", sum("qtyOnHand") AS s FROM "Product" GROUP BY "templateId") t
+         WHERE ${cond}`,
+        ...(stockAlert === 'low' ? [LOW_STOCK_THRESHOLD] : []),
+      )
+      restrictToIds = intersect(restrictToIds, rows.map(r => r.templateId))
     }
 
     if (restrictToIds !== null) where.id = { in: [...restrictToIds] }
