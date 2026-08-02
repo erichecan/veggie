@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 
 const PURPLE = '#875A7B'
 
@@ -139,6 +141,12 @@ function UserRow({ u, isEn, roleLabel, onEdit, onChangePwd, onToggle }: {
   )
 }
 
+const FACET_DEFS: ClientFacetDef<SystemUser>[] = [
+  { key: 'name',  label: '姓名', values: r => [r.name] },
+  { key: 'email', label: '邮箱', values: r => [r.email] },
+  { key: 'role',  label: '角色', values: r => [r.role] },
+]
+
 export default function ClassicUsersPage() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -252,16 +260,21 @@ export default function ClassicUsersPage() {
     }
   }
 
-  const filtered = searchInput
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
+  const searched = searchInput
     ? users.filter(u =>
         u.name.toLowerCase().includes(searchInput.toLowerCase()) ||
         u.email.toLowerCase().includes(searchInput.toLowerCase())
       )
     : users
+  const filtered = filterByFacets(searched, facets, FACET_DEFS)
 
   return (
     <div>
       <OdooControlPanel
+        {...controlPanelProps}
+        activeFilters={chips}
         breadcrumb={isEn ? ['System', 'User Management'] : ['系统', '用户管理']}
         permanentActions={[
           { label: isEn ? 'New User' : '新建用户', onClick: openAdd },

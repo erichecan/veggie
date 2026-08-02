@@ -9,9 +9,19 @@ import { Pagination } from '@/components/ui/pagination'
 import type { OdooPricelist } from '@/lib/types'
 import { formatDateTime } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 
 const PAGE_SIZE = 80
+
+const FACET_DEFS: ClientFacetDef<OdooPricelist>[] = [
+  { key: 'name',     label: '名称', values: r => [r.name] },
+  { key: 'currency', label: '货币', values: r => [r.currency] },
+  // 不做「商品」维度：OdooPricelistItem 只存 productTemplateId/productVariantId，
+  // 没有商品名，按名字搜必然搜不到（同 barcode 的处理原则）。
+  // 若要支持，需在页面里先加载 id→名称 映射再匹配，属独立改动。
+]
 
 export default function ClassicPricelistsPage() {
   const router = useRouter()
@@ -61,8 +71,10 @@ export default function ClassicPricelistsPage() {
     }
   }
 
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
   const filteredLists = useMemo(() => {
-    let rows = lists
+    let rows = filterByFacets(lists, facets, FACET_DEFS)
     if (searchInput) {
       rows = rows.filter(pl => pl.name.toLowerCase().includes(searchInput.toLowerCase()))
     }
@@ -166,7 +178,9 @@ export default function ClassicPricelistsPage() {
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => { setPage(1) }}
+        {...controlPanelProps}
         activeFilters={[
+          ...chips,
           ...(selectableFilter ? [{ label: 'Selectable', onRemove: () => setSelectableFilter(false) }] : []),
           ...(activeListFilter ? [{ label: 'Active', onRemove: () => setActiveListFilter(false) }] : []),
         ]}

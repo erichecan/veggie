@@ -9,6 +9,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 
 type CnStatus = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 
@@ -62,6 +64,13 @@ const STATUS_COLOR: Record<CnStatus, string> = {
 
 const PAGE_SIZE = 20
 
+const FACET_DEFS: ClientFacetDef<CreditNote>[] = [
+  { key: 'name',     label: '单号', values: r => [r.name] },
+  { key: 'customer', label: '客户', values: r => [r.customerName] },
+  { key: 'status',   label: '状态', values: r => [r.status] },
+  { key: 'product',  label: '商品', values: r => r.lines.map(l => l.productName) },
+]
+
 export default function CreditNotesPage() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -82,6 +91,8 @@ export default function CreditNotesPage() {
 
   useEffect(() => { load() }, [load])
 
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
   const filtered = useMemo(() => {
     let rows = notes
     if (statusFilter) rows = rows.filter(n => n.status === statusFilter)
@@ -90,8 +101,8 @@ export default function CreditNotesPage() {
       rows = rows.filter(n =>
         n.name.toLowerCase().includes(q) || n.customerName.toLowerCase().includes(q))
     }
-    return rows
-  }, [notes, statusFilter, search])
+    return filterByFacets(rows, facets, FACET_DEFS)
+  }, [notes, statusFilter, search, facets])
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -162,7 +173,9 @@ export default function CreditNotesPage() {
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v); setPage(1) }}
+        {...controlPanelProps}
         activeFilters={[
+          ...chips,
           ...(statusFilter ? [{ label: `${isEn ? 'Status' : '状态'}：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
         ]}
         filterOptions={[

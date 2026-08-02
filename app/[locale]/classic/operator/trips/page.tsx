@@ -11,6 +11,8 @@ import type { Trip, TripStatus, TripRestaurant, Order } from '@/lib/types'
 import { batchPeriod } from '@/lib/delivery-batches'
 import { formatDriverSlot, type DriverSlotInfo } from '@/lib/driver-slot'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -86,6 +88,13 @@ function groupOrdersByRestaurant(
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+const FACET_DEFS: ClientFacetDef<Trip>[] = [
+  { key: 'name',   label: '行程', values: r => [r.name ?? r.id] },
+  { key: 'driver', label: '司机', values: r => [r.driverName] },
+  { key: 'slot',   label: '时段', values: r => [r.timeSlot] },
+  { key: 'status', label: '状态', values: r => [r.status] },
+]
 
 export default function ClassicTripsPage() {
   const router = useRouter()
@@ -231,13 +240,16 @@ export default function ClassicTripsPage() {
     : driverSlots
 
   // ── Filter ────────────────────────────────────────────────────────────────
-  const filtered = searchInput
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
+  const searched = searchInput
     ? trips.filter(t =>
         t.id.toLowerCase().includes(searchInput.toLowerCase()) ||
         (t.name ?? '').toLowerCase().includes(searchInput.toLowerCase()) ||
         (t.driverName ?? '').toLowerCase().includes(searchInput.toLowerCase())
       )
     : trips
+  const filtered = filterByFacets(searched, facets, FACET_DEFS)
 
   const PAGE_SIZE = 20
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -353,6 +365,8 @@ export default function ClassicTripsPage() {
   return (
     <div>
       <OdooControlPanel
+        {...controlPanelProps}
+        activeFilters={chips}
         breadcrumb={isEn ? ['Delivery', 'Trips'] : ['配送', '配送行程']}
         permanentActions={[
           {

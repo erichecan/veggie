@@ -7,6 +7,8 @@ import { apiGet, apiPut } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import type { Trip, ReturnItem as CanonicalReturnItem, OrderItem } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -546,6 +548,13 @@ const FILTER_TABS_EN: { key: FilterStatus; label: string }[] = [
   { key: 'SETTLED', label: 'Settled' },
 ]
 
+const FACET_DEFS: ClientFacetDef<FlatReturn>[] = [
+  { key: 'customer', label: '客户', values: r => [r.restaurantName] },
+  { key: 'product',  label: '商品', values: r => [r.productName] },
+  { key: 'driver',   label: '司机', values: r => [r.driverName] },
+  { key: 'status',   label: '状态', values: r => [r.status] },
+]
+
 export default function ClassicReturnsPage() {
   const locale = useLocale()
   const en = locale !== routing.defaultLocale
@@ -576,7 +585,9 @@ export default function ClassicReturnsPage() {
 
   const allRows = flatten(trips)
 
-  const filtered = allRows.filter(r => {
+  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+
+  const filtered = filterByFacets(allRows, facets, FACET_DEFS).filter(r => {
     if (filterStatus !== 'ALL' && r.status !== filterStatus) return false
     if (searchInput) {
       const q = searchInput.toLowerCase()
@@ -678,6 +689,8 @@ export default function ClassicReturnsPage() {
   return (
     <div>
       <OdooControlPanel
+        {...controlPanelProps}
+        activeFilters={chips}
         breadcrumb={[en ? 'Returns' : '退换货', en ? 'Returns Management' : '退换货管理']}
         permanentActions={[{ label: en ? 'Refresh' : '刷新', onClick: load }]}
         searchValue={searchInput}
