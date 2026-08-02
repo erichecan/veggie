@@ -216,7 +216,7 @@ defineCheck({
     } finally {
       if (probeOrderId) {
         await prisma.orderAuditLog.deleteMany({ where: { orderId: probeOrderId } }).catch(() => {})
-        await prisma.stockMove.deleteMany({ where: { refId: probeOrderId } }).catch(() => {})
+        await prisma.stockMove.deleteMany({ where: { sourceId: probeOrderId } }).catch(() => {})
         await prisma.orderLine.deleteMany({ where: { orderId: probeOrderId } })
         const del = await prisma.order.deleteMany({ where: { id: probeOrderId, internalNote: PROBE_MARK } })
         await prisma.actionLog.deleteMany({ where: { resource: 'Order', resourceId: probeOrderId } })

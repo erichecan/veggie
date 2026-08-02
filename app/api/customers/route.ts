@@ -60,6 +60,18 @@ export async function GET(req: Request) {
     // 分面搜索：同维度 OR、跨维度 AND
     andConditions.push(...await buildFacetWhere(searchParams, CUSTOMER_FACET_DEFS))
 
+    // P1-3: SALES 角色自动过滤 — 只看自己名下的客户。
+    // ⚠️ 必须在构造 where 之前 push：where 为空数组时会退化成 {}，
+    // 此后再往 andConditions 里 push 就完全不生效（includeArchived=1 且无其他筛选时正是这种情况，
+    // 隔离会静默失效）。20260802 审计发现，故上移。
+    const caller = await tryAuth(req)
+    if (caller) {
+      const roles = effectiveRoles(caller)
+      if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
+        andConditions.push({ salesUserId: caller.userId })
+      }
+    }
+
     const where: Record<string, unknown> = andConditions.length > 0 ? { AND: andConditions } : {}
     if (createdFrom || createdTo) {
       where.createdAt = {
@@ -69,15 +81,6 @@ export async function GET(req: Request) {
     }
     if (paymentTermFilter) where.paymentTerm = paymentTermFilter
     if (pricelistFilter) where.pricelists = { some: { pricelistId: pricelistFilter } }
-
-    // P1-3: SALES 角色自动过滤 — 只看自己名下的客户
-    const caller = await tryAuth(req)
-    if (caller) {
-      const roles = effectiveRoles(caller)
-      if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
-        andConditions.push({ salesUserId: caller.userId })
-      }
-    }
 
     // 购买频次：近30天订单数 >= N
     // Order.restaurantId → User.id (RESTAURANT role) → User.customerId → Customer.id
