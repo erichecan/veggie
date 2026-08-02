@@ -41,4 +41,11 @@ pic/
 .gitignore
 
 # 本地数据库备份（不上传）
-backups/
+# 必须锚定到根目录：.gcloudignore 用 gitignore 语义，未锚定的 `backups/` 会匹配任意层级，
+# 把 app/api/backups/ 这条备份管理 API 路由一起从上传清单里剥掉，导致生产 /api/backups 404
+# （2026-08-02 实测：gcloud meta list-files-for-upload 里没有该路由，Cloud Run 日志全是 404）。
+# .gitignore 里本来就是 /backups/，这里之前漏了斜杠。
+/backups/
+
+# Claude Code 的工作树/配置，含整个应用的多份副本（实测 1190 个文件），不应进构建上下文
+.claude/

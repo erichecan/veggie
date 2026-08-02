@@ -50,3 +50,6 @@ README.md
 
 # 本地数据库备份
 backups
+
+# Claude Code 的工作树/配置，含整个应用的多份副本，不应进 Docker 构建上下文
+.claude
