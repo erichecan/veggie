@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import type { TripRestaurant } from '@/lib/types'
+import { postTripCollections, type SettlementPostingResult } from '@/lib/trip-settlement-payment'
 
 /**
  * P1-10: 司机交账确认
@@ -199,6 +200,15 @@ export async function PUT(
         data: updateData,
       })
 
+      // ── 确认交账 = 真正入账 ────────────────────────────────────────────────
+      // 此前这里只翻转 settlementStatus，钱收了账上看不出来（生产库 Invoice 148285 张、
+      // Payment 0 条）。现在把各站实收核销到对应发票上。
+      // 不自动过账 DRAFT 发票——过账是财务动作，不该是交账确认的副作用。
+      let settlementResult: SettlementPostingResult | null = null
+      if (confirmed) {
+        settlementResult = await postTripCollections(prisma, trip, user.userId)
+      }
+
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'trip', resourceId: id,
@@ -207,7 +217,7 @@ export async function PUT(
           : `财务退回交账: ${settlementNote ?? ''}`,
       })
 
-      return NextResponse.json(serializeApi(updated))
+      return NextResponse.json(serializeApi({ ...updated, settlementPosting: settlementResult }))
     } catch (error) {
       console.error('[PUT /api/trips/[id]/settlement]', error)
       return NextResponse.json({ error: '确认交账失败' }, { status: 500 })
