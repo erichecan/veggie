@@ -5,8 +5,8 @@ import { createGzip } from 'node:zlib'
 import { pipeline } from 'node:stream/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Storage } from '@google-cloud/storage'
 import { prisma } from '@/lib/db'
+import { getBackupStore, type BackupDownload } from '@/lib/storage/backup-store'
 
 export function getDirectDatabaseUrl(databaseUrl: string): string {
   return databaseUrl.replace('-pooler', '')
@@ -23,16 +23,6 @@ export function isExpired(startedAt: Date, now: Date, retentionDays: number): bo
 }
 
 const RETENTION_DAYS = 30
-
-let _storage: Storage | null = null
-function getStorage(): Storage {
-  if (!_storage) _storage = new Storage()
-  return _storage
-}
-
-function getBackupBucketName(): string {
-  return process.env.GCS_BACKUP_BUCKET_NAME ?? 'veggie-db-backups'
-}
 
 async function dumpToFile(directUrl: string, tmpFile: string): Promise<void> {
   const pgDump = spawn('pg_dump', ['--format=plain', '--no-owner', '--no-privileges', '--clean', '--if-exists', directUrl])
@@ -80,10 +70,10 @@ export async function runBackup(
   try {
     await dumpToFile(directUrl, tmpFile)
 
-    const bucket = getStorage().bucket(getBackupBucketName())
-    await bucket.upload(tmpFile, { destination: objectPath, metadata: { contentType: 'application/gzip' } })
-    const [metadata] = await bucket.file(objectPath).getMetadata()
-    const sizeBytes = Number(metadata.size ?? 0)
+    // 落点由 BACKUP_DRIVER 决定（local / s3 / gcs），见 lib/storage/backup-store.ts。
+    // 配置不全时这里抛 BackupStoreConfigError，错误信息直接写明缺哪几个环境变量，
+    // 会连同 job.errorMessage 一起落库，运维在备份管理页就能看到该配什么。
+    const { sizeBytes } = await getBackupStore().upload(tmpFile, objectPath)
 
     const updated = await prisma.backupJob.update({
       where: { id: job.id },
@@ -107,16 +97,14 @@ export async function cleanupExpiredBackups(now: Date = new Date()): Promise<{ d
   const expired = candidates.filter((job) => isExpired(job.startedAt, now, RETENTION_DAYS))
   if (expired.length === 0) return { deleted: 0 }
 
-  const bucket = getStorage().bucket(getBackupBucketName())
+  const store = getBackupStore()
   const deletable: string[] = []
   for (const job of expired) {
     try {
-      if (job.gcsPath) {
-        await bucket.file(job.gcsPath).delete({ ignoreNotFound: true })
-      }
+      if (job.gcsPath) await store.remove(job.gcsPath)
       deletable.push(job.id)
     } catch (err) {
-      console.error(`[cleanupExpiredBackups] failed to delete GCS object for job ${job.id}:`, err)
+      console.error(`[cleanupExpiredBackups] ${store.describe()} 删除对象失败 job=${job.id}:`, err)
     }
   }
 
@@ -127,14 +115,15 @@ export async function cleanupExpiredBackups(now: Date = new Date()): Promise<{ d
   return { deleted: count }
 }
 
-export async function getBackupDownloadUrl(id: string): Promise<string | null> {
+const DOWNLOAD_TTL_MS = 10 * 60 * 1000
+
+/**
+ * 取备份下载方式。对象存储返回签名 URL；本地磁盘没有 URL 可签，返回可读流由路由转发。
+ * 注：BackupJob.gcsPath 这个列名是 GCS 时期留下的，现在存的是与 driver 无关的对象路径。
+ * 改列名要迁移，暂不动，此处统一按"对象路径"理解。
+ */
+export async function getBackupDownload(id: string): Promise<BackupDownload | null> {
   const job = await prisma.backupJob.findUnique({ where: { id } })
   if (!job || job.status !== 'success' || !job.gcsPath) return null
-
-  const bucket = getStorage().bucket(getBackupBucketName())
-  const [url] = await bucket.file(job.gcsPath).getSignedUrl({
-    action: 'read',
-    expires: Date.now() + 10 * 60 * 1000,
-  })
-  return url
+  return getBackupStore().download(job.gcsPath, DOWNLOAD_TTL_MS)
 }

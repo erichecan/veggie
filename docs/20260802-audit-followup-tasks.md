@@ -10,7 +10,7 @@
 | D1 | F1 PUBLIC_API_ROUTES 回归测试 | [x] | |
 | D2 | F2 摘掉利润表死链入口 | [x] | |
 | D3 | F3 补应付账龄报表（API + 页面） | [x] | |
-| D4 | F4 备份落点改 S3 兼容存储 | [ ] | |
+| D4 | F4 备份落点改 S3 兼容存储 | [x] | |
 | D5 | F5 验证 + 部署 + 生产实测 | [ ] | |
 
 ---
@@ -99,6 +99,25 @@
 
 **实测**：接口 200；`pending` 数字与库内 DRAFT 聚合完全一致；
 鉴权 无token=401 / DRIVER=403。
+
+### D4 完成记录
+- `lib/storage/backup-store.ts`：三个 driver（`local` 默认 / `s3` 目标形态 / `gcs` 遗留兼容），
+  由 `BACKUP_DRIVER` 选。SDK 一律动态 import，没选到的 driver 不进运行时。
+- `lib/backup.ts` 不再 import `@google-cloud/storage`；下载路由同时支持签名 URL 与文件流。
+- **端到端跑通了**：用 `local` driver 完整走 `pg_dump → gzip → 落盘 → 下载流`，
+  产出 **81.7 MB**，解压是合法 SQL（48 个 CREATE TABLE）。
+  **这是该系统第一次成功产出备份**（此前 3 次任务成功 0 次）。探针 job 与 82MB 产物已清理。
+- 配置文档 `docs/20260802-backup-storage-config.md`：DO Spaces / MinIO / AWS 各自要配哪几个变量。
+
+**过程中发现并堵掉的一个新风险**：生产 cloudbuild 没设 `BACKUP_DRIVER`，
+改造后会默认成 `local`——而 Cloud Run 容器磁盘重启即失，备份会"成功"然后消失，
+比现在响亮地失败危险得多。已加两道闸：
+1. `isEphemeralFilesystem()` 检测到 Cloud Run/Heroku/Fly 时，选 local 直接抛错并指向 s3
+2. cloudbuild.yaml 显式写死 `BACKUP_DRIVER=gcs`，保持当前行为，待用户备好 Spaces 再切
+另：`BACKUP_DRIVER` 拼错（如写成 `spaces`）直接抛错，不静默回退——静默回退正是上面那种消失模式。
+
+**测试**：`tests/backup-store.test.ts` 11 个用例（driver 选择 / 配置缺失报错内容 /
+local 读写删 / 幂等删除 / describe 不泄露密钥 / 无状态环境拒绝 / 显式绕过）。全量 120 个测试通过。
 
 ## 遗留问题
 

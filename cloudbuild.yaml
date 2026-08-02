@@ -49,7 +49,10 @@ steps:
       - '--max-instances=3'
       - '--cpu-boost'
       - '--set-secrets=DATABASE_URL=VEGGIE_DATABASE_URL:latest,JWT_SECRET=VEGGIE_JWT_SECRET:latest,RESEND_API_KEY=VEGGIE_RESEND_API_KEY:latest,NEXT_PUBLIC_SENTRY_DSN=VEGGIE_SENTRY_DSN:latest'
-      - '--set-env-vars=GCS_BUCKET_NAME=veggie-supply-images'
+      # BACKUP_DRIVER 显式声明：不设的话会默认 local，而 Cloud Run 容器磁盘重启即失。
+      # gcs 是遗留 driver，仅为不打断现有部署；桶备好 S3 兼容存储后改成 s3
+      # 并补 S3_* 变量即可（见 docs/20260802-backup-storage-config.md）。
+      - '--set-env-vars=GCS_BUCKET_NAME=veggie-supply-images,BACKUP_DRIVER=gcs,GCS_BACKUP_BUCKET_NAME=veggie-db-backups'
 
 images:
   - 'gcr.io/$PROJECT_ID/veggie'
