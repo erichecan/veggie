@@ -17,8 +17,8 @@ const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
 /**
  * 订单/报价单列表的分面维度定义 —— 该资源「可搜什么」的唯一真相。
  * key 与 lib/list-filters.ts 的 ORDER_FACET_FIELDS 一一对应；'all' 走 search 参数不在此声明。
- * ⚠️ code 维度存在已知缺陷：Order.code 仅 861/149874 有值，界面用 id.slice 兜底显示，
- *    用户看得见却搜不到（见 docs/20260802-facet-dimension-data-readiness.md §5.1）。
+ * code 维度：20260802 已用 scripts/backfill-order-code-from-odoo.ts 从 Odoo 原始单号回填，
+ * 覆盖率 861/149874 → 149874/149874 (100%)，"看得见搜不到"的问题已消除。
  */
 export const ORDER_FACET_DEFS: FacetDef[] = [
   { key: 'code',     label: '单号',     toClause: v => ({ code: like(v) }) },
