@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import { barcodeValue } from '@/lib/barcode'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
@@ -84,7 +85,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const internalNote = (order as unknown as { internalNote?: string }).internalNote ?? ''
     const salesman = order.salesUser?.name ?? ''
-    const deliveryBatch = formatDriverSlotFromOrder(order as unknown as { driverSlot?: { id: string; batchNum: number; timeOfDay: string; driverName: string } | null; deliveryBatch?: string | null })
+    // SSOT(P0-1): 司机归属以所属 wave 派生为准,Order.driverSlotId 只是下单意向列——
+    // 调度台拖拽改派只写 wave.orderIds,不回写 order.driverSlotId,直接读会印出旧司机。
+    const waveDisplay = await getOrderWaveDisplayMap([order.id])
+    const deliveryBatch = formatDriverSlotFromOrder({
+      ...(order as unknown as { driverSlot?: { id: string; batchNum: number; timeOfDay: string; driverName: string } | null; deliveryBatch?: string | null }),
+      deliveryBatchDisplay: waveDisplay[order.id] ?? null,
+    })
 
     const html = `<!DOCTYPE html>
 <html lang="en">

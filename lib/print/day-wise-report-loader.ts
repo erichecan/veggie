@@ -8,6 +8,7 @@
 import 'server-only'
 import { prisma } from '@/lib/db'
 import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot'
+import { attachWaveDisplay } from '@/lib/wave-assign'
 import { dayOfWeek, type ReportLine } from './day-wise-report-template'
 import type { Order } from '@/lib/types'
 
@@ -44,6 +45,10 @@ export async function loadDayWiseReportData(p: DayWiseReportParams): Promise<{ l
     include: { lines: { orderBy: { sequence: 'asc' } } },
     orderBy: { restaurantName: 'asc' },
   })
+
+  // SSOT(P0-1): 司机/AM-PM/批次筛选与输出行的司机显示都必须走 wave 派生真相,
+  // 否则调度台拖拽改派过的单会按下单意向列(order.driverSlotId)被筛掉或印错司机。
+  await attachWaveDisplay(rawOrders as unknown as { id: string; deliveryBatchDisplay?: string | null }[])
 
   // 分类精确过滤需要商品的真实 categoryId（订单行只存 productName 快照），
   // 顺带取 sequence 供「按目录顺序排序」选项用
