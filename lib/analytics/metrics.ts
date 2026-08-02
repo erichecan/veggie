@@ -38,6 +38,14 @@ export const AR_AGING_BUCKETS = [
 
 export type ArAgingBucketKey = (typeof AR_AGING_BUCKETS)[number]['key'] | 'unknown'
 
+/**
+ * 账龄分桶口径 —— 应收（ar-aging）与应付（ap-aging）共用同一套阈值。
+ * 两张表阈值必须一致，否则「应收 60 天以上 vs 应付 60 天以上」没法对读，
+ * 资金缺口就成了两套口径拼出来的假象。
+ */
+export const AGING_BUCKETS = AR_AGING_BUCKETS
+export type AgingBucketKey = ArAgingBucketKey
+
 /** 流失预警参数：前 8~30 天有 ≥MIN_PRIOR_ORDERS 单、近 CHURN_QUIET_DAYS 天 0 单 */
 export const CHURN_QUIET_DAYS = 7
 export const CHURN_LOOKBACK_DAYS = 30
