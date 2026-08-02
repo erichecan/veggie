@@ -148,3 +148,32 @@ test('分组：all 维度的 chip 只显示值本身', () => {
     { key: 'all', label: '全部', values: ['salt'], chipLabel: 'salt' },
   ])
 })
+
+// ── 客户端类页面的维度定义（以发票为样板）──────────────────────────────────
+import { INVOICE_FACET_DEFS, fieldsOf } from '../lib/facets/client-defs'
+
+const INVOICES = [
+  { id: '1', name: 'INV-001', customerName: 'Fuji Ltd',  status: 'draft',  paymentTerms: 'cash' },
+  { id: '2', name: 'INV-002', customerName: 'Rongcheng', status: 'posted', paymentTerms: 'monthly' },
+  { id: '3', name: 'INV-003', customerName: 'Fuji Ltd',  status: 'posted', paymentTerms: 'weekly' },
+] as unknown as Parameters<typeof filterByFacets<never>>[0]
+
+test('发票维度：同维度 OR、跨维度 AND 与服务端一致', () => {
+  const f = (fs: { key: string; label: string; value: string }[]) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (filterByFacets(INVOICES as any, fs, INVOICE_FACET_DEFS as any) as any[]).map(r => r.name)
+
+  assert.deepEqual(f([{ key: 'customer', label: '客户', value: 'Fuji' }]), ['INV-001', 'INV-003'])
+  assert.deepEqual(f([
+    { key: 'customer', label: '客户', value: 'Fuji' },
+    { key: 'customer', label: '客户', value: 'Rong' },
+  ]), ['INV-001', 'INV-002', 'INV-003'], '同维度多值 → OR 扩大')
+  assert.deepEqual(f([
+    { key: 'customer', label: '客户', value: 'Fuji' },
+    { key: 'status',   label: '状态', value: 'posted' },
+  ]), ['INV-003'], '跨维度 → AND 收窄')
+})
+
+test('fieldsOf 从 defs 派生下拉项，key/label 与 defs 一致', () => {
+  assert.deepEqual(fieldsOf(INVOICE_FACET_DEFS).map(f => f.key), ['name', 'customer', 'status', 'terms'])
+})

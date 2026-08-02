@@ -12,6 +12,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useFacets } from '@/lib/use-facets'
+import { filterByFacets } from '@/lib/facet-client'
+import { INVOICE_FACET_DEFS, fieldsOf } from '@/lib/facets/client-defs'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
 
 const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
@@ -239,6 +242,8 @@ export default function ClassicInvoicesPage() {
     }
   }
 
+  const { facets, chips, controlPanelProps } = useFacets(fieldsOf(INVOICE_FACET_DEFS))
+
   const filtered = useMemo(() => {
     let base = invoices
     if (statusFilter) base = base.filter(inv => inv.status === statusFilter)
@@ -246,8 +251,10 @@ export default function ClassicInvoicesPage() {
       inv.name.toLowerCase().includes(searchInput.toLowerCase()) ||
       inv.customerName.toLowerCase().includes(searchInput.toLowerCase())
     )
+    // 分面：同维度 OR、跨维度 AND（与服务端类页面同一套语义，见 lib/facet-client.ts）
+    base = filterByFacets(base, facets, INVOICE_FACET_DEFS)
     return sortRows(base, sortKey, sortDir)
-  }, [invoices, searchInput, statusFilter, sortKey, sortDir])
+  }, [invoices, searchInput, statusFilter, sortKey, sortDir, facets])
 
   const INVOICE_GB_FIELD: Record<string, keyof Invoice> = {
     customer: 'customerName',
@@ -268,7 +275,9 @@ export default function ClassicInvoicesPage() {
         searchValue={searchInput}
         onSearch={v => { setSearchInput(v); setPage(1) }}
         onSearchSubmit={() => setPage(1)}
+        {...controlPanelProps}
         activeFilters={[
+          ...chips,
           ...(statusFilter ? [{ label: isEn ? `Status: ${STATUS_LABEL[statusFilter]}` : `状态：${STATUS_LABEL[statusFilter]}`, onRemove: () => setStatusFilter('') }] : []),
         ]}
         filterOptions={[
