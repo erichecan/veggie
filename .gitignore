@@ -55,3 +55,6 @@ next-env.d.ts
 /lib/generated/prisma
 .playwright-mcp/
 *.png
+
+# graphify 知识图谱产物（本地生成，含 4.3MB graph.html）
+graphify-out/
