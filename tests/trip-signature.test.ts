@@ -8,6 +8,7 @@ import {
   reconcileSignatures,
   decodedPngBytes,
   describeIssues,
+  applySignatureCorrection,
   MAX_SIGNATURE_BYTES,
 } from '../lib/trip-signature'
 
@@ -127,4 +128,91 @@ test('describeIssues 给出人能看懂的话', () => {
   const msg = describeIssues([{ kind: 'immutable', restaurantId: 'r1', restaurantName: '张记餐厅' }])
   assert.match(msg, /张记餐厅/)
   assert.match(msg, /已完成签收/)
+})
+
+// ── 主管更正 ────────────────────────────────────────────────────────────────
+
+const ACTOR = { userId: 'u1', userName: '王主管' }
+const LATER = new Date('2026-08-02T15:00:00.000Z')
+const SIG2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
+
+function signedRest() {
+  return rest({ signature: SIG, signerName: '李四', signedAt: NOW.toISOString(), delivered: true })
+}
+
+test('作废签收：旧签名归档而不是抹掉——凭证销毁了就没法举证', () => {
+  const r = applySignatureCorrection([signedRest()], {
+    restaurantId: 'r1', action: 'void', reason: '客户反映签错人',
+  }, ACTOR, LATER)
+
+  assert.equal(r.error, undefined)
+  const t = r.restaurants![0] as Record<string, unknown>
+  assert.equal(t.signature, null, '当前签名清空')
+  assert.equal(t.delivered, false, '作废后退回未送达')
+
+  const hist = t.signatureCorrections as Array<Record<string, unknown>>
+  assert.equal(hist.length, 1)
+  assert.equal(hist[0].previousSignature, SIG, '旧签名必须留住')
+  assert.equal(hist[0].previousSignerName, '李四')
+  assert.equal(hist[0].reason, '客户反映签错人')
+  assert.equal(hist[0].correctedByName, '王主管')
+  assert.equal(hist[0].correctedAt, LATER.toISOString())
+  assert.equal(hist[0].action, 'void')
+})
+
+test('换签：新签名生效，旧签名同样归档', () => {
+  const r = applySignatureCorrection([signedRest()], {
+    restaurantId: 'r1', action: 'replace', reason: '重签', signature: SIG2, signerName: '  赵六  ',
+  }, ACTOR, LATER)
+
+  const t = r.restaurants![0] as Record<string, unknown>
+  assert.equal(t.signature, SIG2)
+  assert.equal(t.signerName, '赵六')
+  assert.equal(t.signedAt, LATER.toISOString(), '换签时间也是服务端打的')
+  const hist = t.signatureCorrections as Array<Record<string, unknown>>
+  assert.equal(hist[0].previousSignature, SIG)
+})
+
+test('多次更正逐条追加，历史不被覆盖', () => {
+  const once = applySignatureCorrection([signedRest()], {
+    restaurantId: 'r1', action: 'replace', reason: '第一次', signature: SIG2, signerName: '赵六',
+  }, ACTOR, LATER)
+  const twice = applySignatureCorrection(once.restaurants!, {
+    restaurantId: 'r1', action: 'void', reason: '第二次',
+  }, ACTOR, LATER)
+
+  const hist = (twice.restaurants![0] as Record<string, unknown>).signatureCorrections as unknown[]
+  assert.equal(hist.length, 2)
+})
+
+test('未签收的站点没得更正', () => {
+  const r = applySignatureCorrection([rest()], { restaurantId: 'r1', action: 'void', reason: 'x' }, ACTOR, LATER)
+  assert.equal(r.status, 409)
+  assert.match(r.error!, /尚未签收/)
+})
+
+test('站点不存在返回 404', () => {
+  const r = applySignatureCorrection([signedRest()], { restaurantId: 'nope', action: 'void', reason: 'x' }, ACTOR, LATER)
+  assert.equal(r.status, 404)
+})
+
+test('换签必须带新签名与签收人，且新签名同样受格式/体积校验', () => {
+  const noSig = applySignatureCorrection([signedRest()], { restaurantId: 'r1', action: 'replace', reason: 'x' }, ACTOR, LATER)
+  assert.equal(noSig.status, 400)
+
+  const badSig = applySignatureCorrection([signedRest()], {
+    restaurantId: 'r1', action: 'replace', reason: 'x', signature: 'data:text/html;base64,PHA+', signerName: '赵六',
+  }, ACTOR, LATER)
+  assert.match(badSig.error!, /不是合法的 PNG/)
+
+  const noName = applySignatureCorrection([signedRest()], {
+    restaurantId: 'r1', action: 'replace', reason: 'x', signature: SIG2,
+  }, ACTOR, LATER)
+  assert.match(noName.error!, /签收人姓名/)
+})
+
+test('更正不影响同行程其他站点', () => {
+  const list = [signedRest(), rest({ restaurantId: 'r2', signature: SIG2, signerName: '孙七', signedAt: NOW.toISOString() })]
+  const r = applySignatureCorrection(list, { restaurantId: 'r1', action: 'void', reason: 'x' }, ACTOR, LATER)
+  assert.equal((r.restaurants![1] as Record<string, unknown>).signature, SIG2)
 })

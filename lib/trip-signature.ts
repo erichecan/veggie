@@ -19,6 +19,7 @@ const PNG_DATA_URI = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/
 
 export interface SignatureBearing {
   restaurantId?: string
+  delivered?: boolean
   restaurantName?: string
   signature?: string | null
   signerName?: string | null
@@ -124,4 +125,93 @@ export function describeIssues(issues: SignatureIssue[]): string {
       case 'immutable': return `${i.restaurantName ?? i.restaurantId} 已完成签收，签名不可更改；如需更正请联系主管`
     }
   }).join('；')
+}
+
+// ── 主管更正 ────────────────────────────────────────────────────────────────
+
+export interface CorrectionInput {
+  restaurantId: string
+  action: 'void' | 'replace'
+  reason: string
+  signature?: string | null
+  signerName?: string | null
+}
+
+export interface CorrectionActor {
+  userId: string
+  userName: string
+}
+
+export interface CorrectionRecord {
+  previousSignature: string
+  previousSignerName: string | null
+  previousSignedAt: string | null
+  reason: string
+  correctedBy: string
+  correctedByName: string
+  correctedAt: string
+  action: 'void' | 'replace'
+}
+
+type Correctable = SignatureBearing & { signatureCorrections?: CorrectionRecord[] }
+
+/**
+ * 应用一次签收更正。
+ *
+ * 铁律：**旧签名归档进 signatureCorrections，不覆盖**。收货凭证一旦销毁就没法举证，
+ * 所以哪怕是作废，也要留住原图与原签收人、原时间，外加谁改的、为什么改、什么时候改的。
+ */
+export function applySignatureCorrection(
+  restaurantsJson: unknown,
+  input: CorrectionInput,
+  actor: CorrectionActor,
+  now: Date,
+): { restaurants?: Correctable[]; error?: string; status?: number } {
+  const list = (Array.isArray(restaurantsJson) ? restaurantsJson : []) as Correctable[]
+  const idx = list.findIndex(r => r.restaurantId === input.restaurantId)
+  if (idx < 0) return { error: `行程里没有站点 ${input.restaurantId}`, status: 404 }
+
+  const target = list[idx]
+  if (!target.signature) {
+    return { error: '该站点尚未签收，没有可更正的签名', status: 409 }
+  }
+
+  if (input.action === 'replace') {
+    if (!input.signature) return { error: '换签必须提供新签名', status: 400 }
+    const bytes = decodedPngBytes(input.signature)
+    if (bytes === null) return { error: '新签名不是合法的 PNG data URI', status: 400 }
+    if (bytes > MAX_SIGNATURE_BYTES) {
+      return { error: `新签名过大（${Math.round(bytes / 1024)}KB，上限 ${MAX_SIGNATURE_BYTES / 1024}KB）`, status: 400 }
+    }
+    if (!input.signerName || !String(input.signerName).trim()) {
+      return { error: '换签必须提供签收人姓名', status: 400 }
+    }
+  }
+
+  const record: CorrectionRecord = {
+    previousSignature: target.signature,
+    previousSignerName: target.signerName ?? null,
+    previousSignedAt: target.signedAt ?? null,
+    reason: input.reason,
+    correctedBy: actor.userId,
+    correctedByName: actor.userName,
+    correctedAt: now.toISOString(),
+    action: input.action,
+  }
+
+  const corrected: Correctable = {
+    ...target,
+    signatureCorrections: [...(target.signatureCorrections ?? []), record],
+    ...(input.action === 'void'
+      ? { signature: null, signerName: null, signedAt: null, delivered: false }
+      : {
+          signature: input.signature as string,
+          signerName: String(input.signerName).trim().slice(0, 40),
+          signedAt: now.toISOString(),
+        }),
+  }
+
+  const next = [...list]
+  next[idx] = corrected
+  return { restaurants: next }
 }

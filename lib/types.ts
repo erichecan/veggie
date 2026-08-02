@@ -442,6 +442,28 @@ export interface TripRestaurant {
   signerName?: string
   /** 签名时间（ISO 字符串），由服务端在收到签名时打戳，不信客户端时间 */
   signedAt?: string
+  /**
+   * 签名纠错历史。现场签错（签错人、签错站）时由主管走纠错接口更正，
+   * **旧签名归档到这里而不是被覆盖掉**——凭证一旦销毁就没法举证了。
+   */
+  signatureCorrections?: SignatureCorrection[]
+}
+
+/** 一次签名更正的完整留痕 */
+export interface SignatureCorrection {
+  /** 被替换掉的旧签名（PNG data URI）。作废时同样保留 */
+  previousSignature: string
+  previousSignerName: string | null
+  previousSignedAt: string | null
+  /** 更正原因，必填 */
+  reason: string
+  /** 操作人 */
+  correctedBy: string
+  correctedByName: string
+  /** 服务端时间 */
+  correctedAt: string
+  /** void = 作废签名回到未签收；replace = 换成新签名 */
+  action: 'void' | 'replace'
 }
 
 export interface Trip {
