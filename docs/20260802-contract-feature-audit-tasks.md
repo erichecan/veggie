@@ -27,7 +27,7 @@
 | C2 | T2 M02 Quotation 销售单（4 项） | [x] | |
 | C3 | T3 M03 配送 POD（7 项） | [x] | |
 | C4 | T4 M04 司机 CMS（1 项）+ M14 Odoo 平移（1 项） | [x] | |
-| C5 | T5 M05 日销售中心（3 项） | [ ] | |
+| C5 | T5 M05 日销售中心（3 项） | [x] | |
 | C6 | T6 M06 仓储库存（6 项） | [ ] | |
 | C7 | T7 M07 采购（4 项） | [ ] | |
 | C8 | T8 M08 财务（9 项） | [ ] | |
@@ -176,6 +176,16 @@
 
 **提成基准的技术事实**：`sumCommission` 以 `deliveredQty` 为基数（`lib/commission.ts:62-90`），
 未发货订单算出来恒为 0。探针第一版没挑已发货单，差点得出"引擎算错"的假结论。
+
+### C5 M05 日销售管理中心（完成）
+| 项 | 0729 | 0802 | 依据 |
+|---|---|---|---|
+| 打印中心 | partial | partial（缺口更准） | 打印页面实测 **11 个**。合同点名 6 类单据：拣货单✓ 汇总单✓ 销售单✓ 司机送货汇总单✓ 配送单✓ **客户签收单✗**。0729 漏说的一点：**整箱整袋 / 零散货两种拣货策略已分开打印**（合同明确要求），筛选维度 customerId/driverSlotId/productId/categoryId 全在 |
+| 缺货处理 | partial | partial（确认） | 批量改量接口在、缺货率分析接口 200。`shortageReason/缺货原因/outOfStockReason` **全零命中**；`转单/transferOrder/splitOrder` 在缺货相关目录内**全零命中**。0729 结论正确 |
+| 销售统计 | done | done（口径升级） | 0729 说"四项指标分散在两三个页面、还没合并"——现已由 `/api/analytics/sales-overview` **一次请求返回全部四项**（dailySeries 含 aov、shortage、topProducts），页面 `boss/analytics/sales-overview/page.tsx` |
+
+**探针又修一个 bug**：`findFiles` 原本用 `ls`，`**` 不展开，把嵌套的打印页整片漏掉，
+第一次跑出来"6 类单据全部缺失"的假结论。已改用 `find`。
 
 ## 遗留问题 / 决策记录
 

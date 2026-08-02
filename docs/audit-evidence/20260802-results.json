@@ -289,5 +289,52 @@
       "Odoo 导入脚本 8 个（客户/商品/价格表/订单/发票/分类/供应商）",
       "带成交价的历史订单行: 1297981"
     ]
+  },
+  "M05-01": {
+    "id": "M05-01",
+    "module": "05",
+    "title": "打印中心（6 类单据 + 筛选打印）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "合同点名的单据里缺 客户签收单；其余 5/6 类齐全，整箱/零散两种拣货策略也已分开打印",
+    "evidence": [
+      "打印页面 11 个: [id], batch, day-wise-report, dispatch/delivery, dispatch/picking, dispatch/sales, dispatch/summary, pricelist, trip/[id]/delivery, trip/[id]/picking, trip/[id]/summary",
+      "打印 PDF 接口: day-wise-report-csv, day-wise-report-pdf, dispatch-picking-pdf, dispatch-summary-pdf",
+      "合同点名单据: 拣货单=✓ 汇总单=✓ 销售单=✓ 司机送货汇总单=✓ 配送单=✓ 客户签收单=✗",
+      "拣货策略(整箱/零散)分开打印: ✓",
+      "  app/[locale]/classic/operator/trips/page.tsx:337:              title={isEn ? 'Case/bulk picking list (no price)' : '整箱整袋",
+      "  app/[locale]/classic/operator/trips/page.tsx:339:            >{isEn ? '📦 Case/Bulk' : '📦 整箱整袋'}</button>",
+      "打印中心筛选维度命中: {\"customerId\":7,\"driverSlotId\":7,\"productId\":15,\"categoryId\":3}"
+    ]
+  },
+  "M05-02": {
+    "id": "M05-02",
+    "module": "05",
+    "title": "缺货处理（批量改量 / 转单 / 记录原因）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "批量改量与缺货打印已实现、缺货率分析接口可用；但无结构化「缺货原因」字段（只能改量，不记录为什么缺），且无「转单」操作概念（合同要求缺货时可转单）",
+    "evidence": [
+      "批量改量接口: app/api/daily-sales/shortage/apply/route.ts",
+      "缺货分析接口: GET /api/analytics/shortage?days=7 → 200 keys{summary,daily,byProduct} daily[30] byProduct[0]",
+      "缺货原因字段命中: {\"shortageReason\":0,\"缺货原因\":0,\"outOfStockReason\":0,\"stockoutReason\":0}",
+      "转单相关命中: {\"转单\":0,\"transferOrder\":0,\"splitOrder\":0,\"reassignLine\":0}"
+    ]
+  },
+  "M05-03": {
+    "id": "M05-03",
+    "module": "05",
+    "title": "销售统计（日销售额 / 关键商品销量 / 客单价 / 缺货率）",
+    "prev": "done",
+    "verdict": "done",
+    "gap": "0729 说\"四项指标分散在两三个页面、还没合并成统一视图\"——现已由 /api/analytics/sales-overview 一次请求返回全部四项",
+    "evidence": [
+      "统一视图接口: GET /api/analytics/sales-overview?days=7 → 200 keys{dailySeries,shortage,topProducts} dailySeries[30] topProducts[10]",
+      "返回字段: dailySeries, shortage, topProducts",
+      "四项指标: 日销售额=✓ 客单价=✓ 缺货率=✓ 关键商品=✓",
+      "多维报表: lib/analytics/pivot.ts:18:export const DIMENSION_DEFS: Record<string, DimensionDef> = {",
+      "多维报表: lib/analytics/procurement-overview.ts:230:    prisma.purchaseSuggestion.groupBy({ by: ['categoryGroupKey'], where: { sta",
+      "统一页面: app/[locale]/classic/boss/analytics/sales-overview/page.tsx"
+    ]
   }
 }

@@ -178,10 +178,16 @@ export function fileExists(p: string): boolean {
   }
 }
 
-/** 列出匹配的文件路径（用于「有没有这个页面」这类判定） */
-export function findFiles(glob: string): string[] {
+/**
+ * 列出某目录下匹配文件名的文件（用于「有没有这个页面」这类判定）。
+ * 用 find 而不是 ls——ls 不展开 `**`，会把嵌套目录里的页面整片漏掉。
+ */
+export function findFiles(dir: string, namePattern = '*'): string[] {
   try {
-    const out = execSync(`ls -1 ${glob} 2>/dev/null`, { encoding: 'utf8', shell: '/bin/bash' })
+    const out = execSync(
+      `find ${dir} -type f -name ${JSON.stringify(namePattern)} 2>/dev/null | grep -v node_modules | sort`,
+      { encoding: 'utf8', shell: '/bin/bash' },
+    )
     return out.trim() ? out.trim().split('\n') : []
   } catch {
     return []
