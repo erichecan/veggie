@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { applyFacets, groupFacets, PURCHASE_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import ProcurementOverviewPage from './overview/page'
 import FreshDailySuggestionsPage from './fresh/page'
 import CatalogPickingPage from './catalog/page'
@@ -132,6 +133,17 @@ export default function PurchasesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [groupBy, setGroupBy] = useState('')
   const [showImportDialog, setShowImportDialog] = useState(false)
+  // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
+  const [facets, setFacets] = useState<Facet[]>([])
+
+  function addFacet(key: string, value: string) {
+    const field = PURCHASE_FACET_FIELDS.find(f => f.key === key)
+    if (!field) return
+    setFacets(prev => [...prev, { key, label: field.label, value }])
+  }
+  function removeFacetGroup(key: string) {
+    setFacets(prev => prev.filter(f => f.key !== key))
+  }
   const [importSupplierId, setImportSupplierId] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
@@ -155,6 +167,7 @@ export default function PurchasesPage() {
       if (search) params.set('search', search)
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String((page - 1) * PAGE_SIZE))
+      applyFacets(params, facets)
       const data = await apiGet<{ items: PurchaseOrder[]; total: number }>(`/api/purchase-orders?${params}`)
       setPos(data.items ?? (data as unknown as PurchaseOrder[]))
       setTotal(data.total ?? (data as unknown as PurchaseOrder[]).length)
@@ -163,7 +176,7 @@ export default function PurchasesPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeTab, search, page, isEn])
+  }, [activeTab, search, page, isEn, facets])
 
   useEffect(() => { load() }, [load])
 
@@ -274,7 +287,10 @@ export default function PurchasesPage() {
         searchValue={searchInput}
         onSearch={v => setSearchInput(v)}
         onSearchSubmit={() => { setSearch(searchInput); setPage(1) }}
+        facetFields={PURCHASE_FACET_FIELDS}
+        onFacetAdd={addFacet}
         activeFilters={[
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
           ...(activeTab !== 'all' ? [{ label: isEn ? `Status: ${STATUS_LABEL[activeTab as POStatus] ?? activeTab}` : `状态：${STATUS_LABEL[activeTab as POStatus] ?? activeTab}`, onRemove: () => handleTabChange('all') }] : []),
         ]}
         filterOptions={STATUS_TABS.filter(t => t.key !== 'all').map(t => ({ label: t.label, value: t.key }))}
