@@ -489,5 +489,131 @@
       "现有验收粒度: app/api/goods-receipts/route.ts:24: *      - 更新 PO 各 Line 的 receivedQty（良品+损坏都计入，视为供应商已交付；见 2026-07-10 决策）",
       "现有验收粒度: app/api/goods-receipts/route.ts:25: *      - 良品：给 Product.qtyOnHand 加上收到的数量，写 StockMove(type=IN)，建 Lot（保质期按本次收货行填写，不再死绑"
     ]
+  },
+  "M08-01": {
+    "id": "M08-01",
+    "module": "08",
+    "title": "客户结算（多种结算方式 / 自动对账单 / 预付 / 在线支付）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "按客户生成对账单已实现（Statement 0 张），周结/月结的口径也在客户档案里；但没有日结/周结/月结的自动触发（无对应 cron 任务），预付款无独立模型，PaymentMethod.ONLINE 只是个标签、未接任何真实支付网关",
+    "evidence": [
+      "客户结算方式分布: weekly=1 NET30=3 30 Net Days=4 NET15=1 cash=2 monthly=1554 15 Days=2 IMMEDIATE=1 COD=37",
+      "Statement 对账单: 0 张",
+      "GET /api/statements → 200 keys{items,total,page,pageSize} items[0]",
+      "cron 定时任务: backup-database",
+      "结算周期自动触发命中: {\"日结\":0,\"dailySettle\":0,\"autoStatement\":0,\"自动生成对账单\":0}",
+      "预付/在线支付命中: {\"prepay\":0,\"预付\":0,\"stripe\":0,\"paypal\":0,\"payment.*gateway\":0,\"ONLINE\":75}"
+    ]
+  },
+  "M08-02": {
+    "id": "M08-02",
+    "module": "08",
+    "title": "供应商结算（应付账款 / 按采购单入库单自动对账 / 分批付款）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "账单可由采购单自动生成（lib/vendor-bill-from-po.ts），分批付款字段在；但与入库单(GoodsReceipt)之间没有自动核销——收了多少货 vs 该付多少钱要人工比对",
+    "evidence": [
+      "VendorBill 供应商账单: 25 条",
+      "按 PO 自动生成账单: app/api/purchase-orders/[id]/route.ts:7:import { createDraftVendorBillForPurchaseOrder } from '@/lib/vendor-bill-from-po'",
+      "分批付款命中: {\"分批付款\":0,\"partialPayment\":0,\"paidAmount\":0,\"installment\":0}",
+      "入库单核销命中: {\"核销\":5,\"reconcil\":0,\"matchReceipt\":0,\"goodsReceiptId\":0}"
+    ]
+  },
+  "M08-03": {
+    "id": "M08-03",
+    "module": "08",
+    "title": "收付款管理（销售收款 / 采购付款 / 其他收支 / 银行账户与流水）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "收款模型(Payment)与接口在，但生产库里 Payment 0 条——收款侧从未真正落过数据；「其他收入/支出」无模块、银行账户与流水无数据模型",
+    "evidence": [
+      "Payment 收款记录 0 条 / Invoice 148285 张",
+      "GET /api/payments → 200 [array 0]",
+      "银行账户/流水模型命中: {\"bankAccount\":0,\"银行账户\":0,\"bankStatement\":0,\"流水\":19}",
+      "其他收支命中: {\"其他收支\":0,\"otherIncome\":0,\"otherExpense\":0,\"miscExpense\":0}"
+    ]
+  },
+  "M08-04": {
+    "id": "M08-04",
+    "module": "08",
+    "title": "成本核算（移动加权平均 / FIFO 计价 / 自动算销售成本与毛利）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "批次上有 unitCost（45/45 已回填），毛利分析能算；但没有系统性的出入库计价引擎——移动加权平均/标准成本等 costMethod 配置项零命中，出库不做成本结转",
+    "evidence": [
+      "计价方法关键词命中: {\"movingAverage\":0,\"移动加权\":0,\"加权平均\":4,\"costMethod\":0,\"standardCost\":0,\"avgCost\":2}",
+      "schema 成本字段: prisma/schema.prisma:935:  /// 参考单位下的单位成本（收货时从 PO 行 unitCost 写入；历史批次由 backfill-lot-cost 回填，回填不到为 null）",
+      "schema 成本字段: prisma/schema.prisma:936:  unitCost   Decimal?  @db.Decimal(12, 4)",
+      "schema 成本字段: prisma/schema.prisma:982:  unitCost    Decimal  @db.Decimal(12, 4)",
+      "schema 成本字段: prisma/schema.prisma:1117:  unitCost          Decimal       @db.Decimal(12, 4)",
+      "schema 成本字段: prisma/schema.prisma:1124:  /// Lot.unitCost 一律读这几个字段，不读上面原币字段。PO 汇率待确认时为 null(20260713)",
+      "schema 成本字段: prisma/schema.prisma:1125:  unitCostEur       Decimal?      @db.Decimal(12, 4)",
+      "带成本的批次: 45/45"
+    ]
+  },
+  "M08-05": {
+    "id": "M08-05",
+    "module": "08",
+    "title": "财务报表 — 销售毛利分析表",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "页面: app/[locale]/classic/boss/analytics/margin/page.tsx",
+      "接口: GET /api/analytics/margin?days=30 → 200 keys{summary,rows} rows[803]",
+      "透视能力: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:52:export default function PivotView({ range }: { range: DateRa",
+      "透视能力: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:54:  const [colBy, setColBy] = useState('month')",
+      "透视能力: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:81:    const params = new URLSearchParams({ from: range.from, t"
+    ]
+  },
+  "M08-06": {
+    "id": "M08-06",
+    "module": "08",
+    "title": "财务报表 — 应收应付汇总表",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "应收账龄已实现；**应付账龄只有导航入口、页面和 API 都不存在**（boss/layout.tsx 里的 /classic/boss/analytics/ap-aging 是死链，点进去 404）",
+    "evidence": [
+      "应收账龄 页面: app/[locale]/classic/boss/analytics/ar-aging/page.tsx / 接口: GET /api/analytics/ar-aging → 200 keys{totalDue,invoiceCount,unknownCount,buckets,customers} buckets[6] customers[658]",
+      "应付账龄 页面: 无 / 接口: GET /api/analytics/ap-aging → 404 <!DOCTYPE html><html class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\"",
+      "导航入口: app/[locale]/classic/boss/layout.tsx:24:    { href: `${prefix}/classic/boss/analytics/ap-aging`, label: '应付账龄' },"
+    ]
+  },
+  "M08-07": {
+    "id": "M08-07",
+    "module": "08",
+    "title": "财务报表 — 利润表",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "利润表页面与 API 均不存在（接口返回 404），但 boss/layout.tsx 里已经挂了「利润表」导航入口 → **点进去是 404 死链**。底层复式记账基础设施在（Account 10 / JournalEntry 0 / Line 0），只差成品报表",
+    "evidence": [
+      "页面: 不存在 / 接口: GET /api/analytics/income-statement → 404 <!DOCTYPE html><html class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\"",
+      "命中: app/[locale]/classic/boss/layout.tsx:22:    { href: `${prefix}/classic/boss/analytics/income-statement`, label: '利润表' },",
+      "底层复式记账：Account 10 个 / JournalEntry 0 条 / Line 0 行"
+    ]
+  },
+  "M08-08": {
+    "id": "M08-08",
+    "module": "08",
+    "title": "财务报表 — 资产负债表",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "资产负债/balanceSheet/所有者权益全部零命中，无页面无接口",
+    "evidence": [
+      "关键词命中: {\"资产负债\":0,\"balanceSheet\":0,\"balance-sheet\":0,\"所有者权益\":0}",
+      "接口: GET /api/analytics/balance-sheet → 404 <!DOCTYPE html><html class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\""
+    ]
+  },
+  "M08-09": {
+    "id": "M08-09",
+    "module": "08",
+    "title": "财务报表 — 费用分析表",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "费用分析/expenseReport/费用科目全部零命中；且无「其他支出」录入模块，费用数据本身就没有来源",
+    "evidence": [
+      "关键词命中: {\"费用分析\":0,\"expenseReport\":0,\"expenseAnalysis\":0,\"费用科目\":0}",
+      "接口: GET /api/analytics/expenses → 404 <!DOCTYPE html><html class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\""
+    ]
   }
 }

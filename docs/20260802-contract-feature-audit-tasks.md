@@ -30,7 +30,7 @@
 | C5 | T5 M05 日销售中心（3 项） | [x] | |
 | C6 | T6 M06 仓储库存（6 项） | [x] | |
 | C7 | T7 M07 采购（4 项） | [x] | |
-| C8 | T8 M08 财务（9 项） | [ ] | |
+| C8 | T8 M08 财务（9 项） | [x] | |
 | C9 | T9 M09 数据分析 BI（5 项） | [ ] | |
 | C10 | T10 M10 基础信息与系统管理（6 项） | [ ] | |
 | C11 | T11 M11 私有化部署双系统（4 项） | [ ] | |
@@ -208,10 +208,35 @@
 | 采购订单全流程 | partial | 状态分布实测 DRAFT=1 SENT=1 RECEIVED=2 LOCKED=21 CANCELLED=5；VendorBill 25 条。创建/审核/跟踪/入库/发票全 ✓，**退货 ✗**（purchaseReturn/采购退货/returnToVendor 全零命中） |
 | 采购质检与验收 | missing | 质检/农残/新鲜度/freshness/pesticide/inspection/不合格 **9 个关键词全部零命中**。现有验收粒度只到收货行 `condition: 'ok'｜'damaged'` 二值 |
 
+### C8 M08 财务管理（完成）——判定全维持，但挖出 2 条死链 + 3 个空壳
+| 项 | 判定 | 实测证据 |
+|---|---|---|
+| 客户结算 | partial | 结算方式 cash/weekly/monthly 口径在客户档案里；但 **Statement 生产库 0 张**（0729 说"已实现"指的是代码），无日/周/月结自动触发 cron，预付款零模型，`PaymentMethod.ONLINE` 只是标签（stripe/paypal 全零命中） |
+| 供应商结算 | partial | VendorBill 25 条，可由 PO 自动生成草稿（`lib/vendor-bill-from-po.ts`）。与 GoodsReceipt 无自动核销（`goodsReceiptId` 零命中） |
+| 收付款管理 | partial | **Payment 生产库 0 条**（Invoice 148285 张）；银行账户/流水模型零命中；「其他收支」零命中 |
+| 成本核算 | partial | 批次成本 **45/45 已回填**；但 `movingAverage/costMethod/standardCost` 全零命中，出库不做成本结转 |
+| 销售毛利分析表 | done | 页面 + `/api/analytics/margin` 返回 803 行；已带透视（`PivotView.tsx` colBy 两维交叉） |
+| 应收应付汇总表 | partial | 应收账龄完整（6 个账龄桶 / 658 个客户）；**应付账龄页面与 API 都不存在，接口实测 404** |
+| 利润表 | missing | 页面与 API **实测 404**。底层 Account 10 个，但 **JournalEntry 0 条 / Line 0 行**——复式记账是空壳 |
+| 资产负债表 | missing | 资产负债/balanceSheet/所有者权益全零命中 |
+| 费用分析表 | missing | 费用分析/expenseReport/费用科目全零命中；且无「其他支出」录入口，费用数据没有来源 |
+
+> ⛔ **本次审计发现的真实缺陷（非判定问题，是 bug）**
+> `app/[locale]/classic/boss/layout.tsx:22,24` 挂了两条导航入口：
+> `/classic/boss/analytics/income-statement`（利润表）与 `/classic/boss/analytics/ap-aging`（应付账龄），
+> **两个页面目录和对应 API 都不存在，BOSS 点进去就是 404**。
+> 演示给甲方时会当场翻车。已记入遗留问题，等用户决定是修还是摘掉入口。
+
+**0729 报告在 M08 的系统性偏差**：它说的"已实现"多数指**代码存在**，
+但生产库里 Statement 0 张、Payment 0 条、JournalEntry 0 条——功能是空跑的。
+
 ## 遗留问题 / 决策记录
 
 - 用户跑在 :3000 的 dev server 已陈旧，审计不动它，另起 :3100。审计结束需提醒用户重启 :3000。
 - 生产库写探针已获用户授权（带 `AUDIT-PROBE-20260802` 标记 + finally 清理）。
+- ⛔ **待用户决策**：BOSS 导航两条死链（利润表 / 应付账龄，`boss/layout.tsx:22,24` → 404）。
+  选项：(a) 补出这两张报表；(b) 先把导航入口摘掉避免演示翻车；(c) 保持现状。
+  本次审计只记录不修改。
 
 ## 硬停止触发记录
 
