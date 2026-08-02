@@ -615,5 +615,88 @@
       "关键词命中: {\"费用分析\":0,\"expenseReport\":0,\"expenseAnalysis\":0,\"费用科目\":0}",
       "接口: GET /api/analytics/expenses → 404 <!DOCTYPE html><html class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\""
     ]
+  },
+  "M09-01": {
+    "id": "M09-01",
+    "module": "09",
+    "title": "经营看板（核心 KPI 大屏）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "GET /api/analytics/overview → 200 keys{yesterday,today,todayOps,redFlags,ar} {\"yesterday\":{\"id\":\"cmsc7ek1a000801s6fleohh1r\",\"snapshotDate\":\"2026-08-01T00:00:00.000Z\",\"salesExTax\":0,\"salesIncTax\":0,\"grossProfit\":0,\"costCoverageRate\":0,\"or",
+      "DailyBusinessSnapshot 快照 136 天，最新 2026-08-01（销售额 0 / 0 单 / 活跃客户 0）",
+      "KPI: app/[locale]/classic/operator/inventory/overview/page.tsx:120:              <span className=\"w-1.5 h-1.5 round",
+      "KPI: app/api/analytics/procurement/route.ts:17: *   turnover    库存周转：qtyOnHand ÷ 日均销量（近 30 天），慢周转 TOP 20",
+      "KPI: app/api/analytics/procurement/route.ts:63:      // 库存周转：qtyOnHand ÷ 日均销量（近 TURNOVER_WINDOW_DAYS 天），慢周转 TOP 20",
+      "KPI: lib/analytics/metrics.ts:46:/** 库存周转/损耗统计的默认回看窗口（天） */"
+    ]
+  },
+  "M09-02": {
+    "id": "M09-02",
+    "module": "09",
+    "title": "客户分析（RFM 模型 / 复购率 / 流失预警 / 购买偏好）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "客户分层（ABC）与流失预警已实现并有接口；但 RFM 模型零命中（现有分层只按销售额排序做 ABC，不是 R/F/M 三维打分），复购率指标零命中",
+    "evidence": [
+      "GET /api/analytics/customers?days=90 → 200 keys{summary,abc,churn} abc[437] churn[226]",
+      "返回视图: summary, abc, churn",
+      "RFM/复购率关键词命中: {\"rfm\":0,\"recency.*frequency\":0,\"复购率\":0,\"repurchaseRate\":0}",
+      "流失预警: app/[locale]/classic/boss/page.tsx:34:    churnRisk: Array<{ customer_id: string; customer_name: string; prior_orders: n",
+      "流失预警: app/[locale]/classic/boss/page.tsx:175:            ⚠ 流失预警（前 30 天常下单、近 7 天没动静）",
+      "流失预警: app/[locale]/classic/boss/page.tsx:178:          {data.redFlags.churnRisk.length === 0 ? ("
+    ]
+  },
+  "M09-03": {
+    "id": "M09-03",
+    "module": "09",
+    "title": "商品分析（ABC 分类 / 畅销滞销 / 毛利排行 / 价格敏感度）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "4 项子能力只完成 2 项：商品 ABC（现有 ABC 是客户维度，不是商品维度）；价格敏感度",
+    "evidence": [
+      "毛利排行: GET /api/analytics/margin?days=30 → 200 keys{summary,rows} rows[803]",
+      "ABC 命中: app/api/analytics/customers/route.ts:16: *   abc      期内每客户聚合（销售额、单数、客单价、最后下单日）+ ABC 分层",
+      "ABC 命中: app/api/analytics/customers/route.ts:63:      const abc = rows.map((r, i) => {",
+      "ABC 命中: app/api/analytics/customers/route.ts:117:        abc,",
+      "畅销/滞销命中: {\"滞销\":1,\"slowMoving\":0,\"畅销\":0,\"bestSeller\":0,\"topProducts\":7}",
+      "价格敏感度命中: {\"价格敏感\":0,\"elasticity\":0,\"priceSensitiv\":0}",
+      "价格趋势接口: GET /api/analytics/price-trends → 200 keys{} {}",
+      "四项子能力: 毛利排行=✓；商品 ABC=✗（现有 ABC 是客户维度，不是商品维度）；畅销滞销=✓；价格敏感度=✗"
+    ]
+  },
+  "M09-04": {
+    "id": "M09-04",
+    "module": "09",
+    "title": "销售预测（机器学习模型）",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "ML/回归/时间序列/prophet/backtest 等 10 个关键词全库零命中。现有\"预测\"是两条确定性规则公式（生鲜：近3日日均出货+已确认未来订单−库存−在途；干货：近12月量×同比增长率），没有模型、没有训练、没有回测，也不考虑天气与节假日",
+    "evidence": [
+      "ML/预测关键词全集命中: {\"machine.?learn\":0,\"regression\":0,\"arima\":0,\"时间序列\":0,\"prophet\":0,\"tensorflow\":0,\"onnx\":0,\"neural\":0,\"训练集\":0,\"backtest\":0}",
+      "现有\"预测\"的真实形态: lib/purchase-suggestions-fresh.ts:9: *   建议采购量 = max(0, 近3日日均出货 + 已确认未来订单 - 现有库存 - 在途采购)",
+      "现有\"预测\"的真实形态: lib/purchase-suggestions-fresh.ts:11: * - 近3日日均出货：Order.status='COMPLETED' 且 deliveryDate 落在过去3天内的",
+      "现有\"预测\"的真实形态: lib/purchase-suggestions-fresh.ts:135:      reason: `近3日日均出货 ${dailyAvg} + 未来已确认订单 ${future} - 现有库存 ${stock} - 在途采购 ${inTransit}`,"
+    ]
+  },
+  "M09-05": {
+    "id": "M09-05",
+    "module": "09",
+    "title": "灵活数据分析（Odoo 式多维度、多条件、可组合）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "0729 说\"一次只能选一个维度、做不到客户×月份交叉\"——**已被 20260801 的透视模式推翻**：`lib/analytics/pivot.ts` 提供白名单维度 + `buildPivot`，毛利分析支持 `groupBy × colBy` 两维交叉，UI 有 PivotView 切换。仍未达 Odoo 12 水准的是：只有毛利分析一张表接了透视（sale/purchase report 其余页面仍是预设报表），筛选条件仍以日期范围为主",
+    "evidence": [
+      "透视引擎: lib/analytics/pivot.ts:18:export const DIMENSION_DEFS: Record<string, DimensionDef> = {",
+      "引擎文件: lib/analytics/pivot.ts",
+      "单维分组: GET /api/analytics/margin?days=30&groupBy=customer → 200 keys{summary,rows} rows[437]",
+      "两维交叉（客户 × 月份）: GET /api/analytics/margin?days=30&groupBy=customer&colBy=month → 200 keys{summary,rows,cols,cells,grandTotal} rows[437] cols[1] cells[437]",
+      "交叉返回体含列维: 是（keys: summary,rows,cols,cells,grandTotal）",
+      "pivot 白名单维度定义行数: 10",
+      "UI 接线: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:52:export default function PivotView({ range }: { range: DateRa",
+      "UI 接线: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:54:  const [colBy, setColBy] = useState('month')",
+      "UI 接线: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:81:    const params = new URLSearchParams({ from: range.from, t",
+      "UI 接线: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:88:  }, [range, rowBy, colBy, categoryId, customerId, salesUser"
+    ]
   }
 }

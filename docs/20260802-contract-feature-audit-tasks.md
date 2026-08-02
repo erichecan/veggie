@@ -31,7 +31,7 @@
 | C6 | T6 M06 仓储库存（6 项） | [x] | |
 | C7 | T7 M07 采购（4 项） | [x] | |
 | C8 | T8 M08 财务（9 项） | [x] | |
-| C9 | T9 M09 数据分析 BI（5 项） | [ ] | |
+| C9 | T9 M09 数据分析 BI（5 项） | [x] | |
 | C10 | T10 M10 基础信息与系统管理（6 项） | [ ] | |
 | C11 | T11 M11 私有化部署双系统（4 项） | [ ] | |
 | C12 | T12 M12 接口与安全（4 项） | [ ] | |
@@ -229,6 +229,15 @@
 
 **0729 报告在 M08 的系统性偏差**：它说的"已实现"多数指**代码存在**，
 但生产库里 Statement 0 张、Payment 0 条、JournalEntry 0 条——功能是空跑的。
+
+### C9 M09 数据分析与 BI（完成）——灵活分析那条的核心论断被推翻
+| 项 | 判定 | 实测证据 |
+|---|---|---|
+| 经营看板 | done | `/api/analytics/overview` 返回 yesterday/today/todayOps/redFlags/ar；快照表 **136 天**数据。注：最新一天（08-01）销售额与单数都是 0 |
+| 客户分析 RFM | partial | 接口返回 summary/abc(437)/churn(226)，分层与流失预警是真的。`rfm/recency.*frequency/复购率/repurchaseRate` **全零命中**——现有分层是按销售额排序做 ABC，不是 R/F/M 三维打分 |
+| 商品分析 | partial | 毛利排行 ✓（803 行）、畅销滞销 ✓。**商品 ABC ✗**——现有 ABC 在 `analytics/customers/route.ts`，是**客户维度**不是商品维度；价格敏感度 ✗（elasticity 零命中） |
+| 销售预测 ML | missing | ML/regression/arima/时间序列/prophet/tensorflow/onnx/neural/训练集/backtest **10 个关键词全零命中**。现有"预测"是两条确定性公式 |
+| 灵活数据分析 | partial（**核心论断被推翻**） | 0729 说"一次只能选一个维度、做不到客户×月份交叉"——**实测两维交叉可用**：`groupBy=customer&colBy=month` 返回 `rows[437] cols[1] cells[437] grandTotal`，引擎 `lib/analytics/pivot.ts`（10 个白名单维度），UI 有 `PivotView`。真实缺口收窄为：**只有毛利分析一张表接了透视**，其余分析页仍是预设报表 |
 
 ## 遗留问题 / 决策记录
 
