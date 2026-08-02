@@ -698,5 +698,95 @@
       "UI 接线: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:81:    const params = new URLSearchParams({ from: range.from, t",
       "UI 接线: app/[locale]/classic/boss/analytics/margin/PivotView.tsx:88:  }, [range, rowBy, colBy, categoryId, customerId, salesUser"
     ]
+  },
+  "M10-01": {
+    "id": "M10-01",
+    "module": "10",
+    "title": "组织架构（多公司 / 多部门 / 多仓库 / 多门店）",
+    "prev": "missing",
+    "verdict": "missing",
+    "gap": "公司/部门/门店/仓库/组织 六个模型全部不存在，现为单公司单仓库架构。仅 Notification 等表上有一个默认值为 \"test-company\" 的 tenantId 字段，未成体系",
+    "evidence": [
+      "组织类模型存在情况: Company=✗ Department=✗ Store=✗ Branch=✗ Warehouse=✗ Organization=✗",
+      "多租户痕迹: prisma/schema.prisma:1305:  tenantId         String    @default(\"test-company\")",
+      "多租户痕迹: prisma/schema.prisma:1343:  tenantId  String   @default(\"test-company\")",
+      "多租户痕迹: prisma/schema.prisma:1361:  tenantId       String    @default(\"test-company\")"
+    ]
+  },
+  "M10-02": {
+    "id": "M10-02",
+    "module": "10",
+    "title": "精细化角色权限（销售/采购员数据隔离 + 配送中心/打印中心专人）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "销售行级隔离代码在（/api/customers 按 salesUserId 自动收窄），但**生产上 19 个 SALES 用户全部兼任 OPERATOR，没有一个人真正受这条规则约束**，隔离实际未生效。采购员侧供应商隔离零命中；配送中心/打印中心只按角色大类放行，做不到\"仅特定人员\"；合同要求的外聘/办公室/高级销售员、销售经理等细分角色在 Role 枚举里没有对应项",
+    "evidence": [
+      "销售行级隔离: app/api/customers/route.ts:63:    // P1-3: SALES 角色自动过滤 — 只看自己名下的客户。",
+      "销售行级隔离: app/api/customers/route.ts:71:        andConditions.push({ salesUserId: caller.userId })",
+      "SALES 用户 19 个，其中**不兼任 OPERATOR/BOSS** 的只有 0 个 → 行级隔离规则实际约束到的人数: 0",
+      "采购员供应商隔离命中: {\"采购员.*隔离\":0,\"PURCHASER\":17,\"vendorScope\":0,\"isVendor.*userId\":0}",
+      "配送/打印中心的门禁粒度: 按角色大类",
+      "Role 枚举: 存在；实际角色 11 种（含 OTHER）",
+      "合同补充需求要求的 7 类：客户 / 外聘销售员 / 办公室销售员 / 高级销售员 / 销售经理 / 仓库经理 / 办公室销售中的配送中心+打印中心专人"
+    ]
+  },
+  "M10-03": {
+    "id": "M10-03",
+    "module": "10",
+    "title": "商品信息管理（分类/多规格/多单位/批次/保质期/产地/图片条码）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "缺 产地溯源",
+    "evidence": [
+      "能力矩阵: 分类=✓ 多规格=✓ 多单位=✓ 批次=✓ 保质期=✓ 图片=✓ 条码=✓ 产地溯源=✗",
+      "实际数据：分类 33 个 / 计量单位 43 个 / 商品 5479 个",
+      "带条码的商品模板: 0/5482（条码在 ProductTemplate 上，非变体级）"
+    ]
+  },
+  "M10-04": {
+    "id": "M10-04",
+    "module": "10",
+    "title": "客户信息管理（分级/多地址/信用额度/账期/历史价格协议/合同管理）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "缺 分级、多地址、合同管理——地址是 street/street2/city/zip/country 一组平铺字段，一个客户只能挂一个收货地址",
+    "evidence": [
+      "能力矩阵: 分级=✗ 信用额度=✓ 账期=✓ 历史价格协议=✓ 多地址=✗ 合同管理=✗",
+      "Customer 地址字段: address, ///, street, ///, street2, ///（单组，非多地址）"
+    ]
+  },
+  "M10-05": {
+    "id": "M10-05",
+    "module": "10",
+    "title": "供应商信息管理（资料/资质证件/供货品类/价格/评级/账期/合同）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "缺 资质证件、评级、合同管理",
+    "evidence": [
+      "供应商（Customer.isVendor=true）: 207 个",
+      "ProductSupplierInfo 供货信息: 192 条（价格/交期/起订量）",
+      "能力矩阵: 供货品类与价格=✓ 交期起订量=✓ 资质证件=✗ 评级=✗ 合同管理=✗",
+      "独立 Vendor 模型: 无——供应商与客户共用 Customer 表，靠 isVendor 布尔位区分"
+    ]
+  },
+  "M10-06": {
+    "id": "M10-06",
+    "module": "10",
+    "title": "系统日志与数据安全（操作日志/登录日志/敏感审计/备份恢复）",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "操作日志完整（5295 条，含 LOGIN 963 条）。备份不再是 0729 说的\"系统层面完全空白\"——pg_dump 模块、每日 cron、BOSS 备份管理页、签名下载都已落地。**但 3 次任务成功 0 次**：早期两次栽在 pg_dump 版本不匹配（已修），最近一次栽在 GCS bucket 不存在——按项目部署铁律不该为将要拆掉的架构新开云资源，备份落点应改为 S3 兼容存储。目前系统从未成功产出过一份备份",
+    "evidence": [
+      "ActionLog 5295 条：LOGIN=963 CREATE=308 UPDATE=4007 DELETE=17",
+      "备份页面: app/[locale]/classic/boss/system/backups/page.tsx",
+      "备份 API: app/api/backups/[id]/download/route.ts, app/api/backups/route.ts",
+      "定时备份 cron: app/api/cron/backup-database/route.ts",
+      "BackupJob 3 条；最近一次: MANUAL/failed @2026-08-02T14:42 ?B",
+      "恢复能力命中: {\"pg_restore\":1,\"恢复演练\":1,\"restoreBackup\":1}",
+      "成功的备份任务: 0/3",
+      "  失败@2026-08-02T14:42 MANUAL: { \"error\": { \"code\": 404, \"message\": \"The specified bucket does not exist.\", \"errors\": [ { \"message\": \"The specified buc",
+      "  失败@2026-08-01T13:51 AUTO: pg_dump exited with code 1: pg_dump: error: server version: 17.10 (4f20678); pg_dump version: 14.20 (Homebrew) pg_dump: ",
+      "  失败@2026-08-01T13:40 MANUAL: pg_dump exited with code 1: pg_dump: error: server version: 17.10 (4f20678); pg_dump version: 14.20 (Homebrew) pg_dump: "
+    ]
   }
 }
