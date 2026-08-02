@@ -13,6 +13,7 @@ export type DocKind =
   | 'reportMultiline'// 商品明细清单
   | 'reportSummary'  // 商品×星期汇总
   | 'pricelist'      // 价格表
+  | 'receipt'        // 客户签收单（POD 回单）
 
 const SPEC: Record<DocKind, { zh: string; en: string; color: string }> = {
   picking:         { zh: '拣货单',       en: 'PICKING LIST',      color: '#ea580c' },
@@ -24,6 +25,7 @@ const SPEC: Record<DocKind, { zh: string; en: string; color: string }> = {
   reportMultiline: { zh: '商品明细清单', en: 'PRODUCT LINES',     color: '#475569' },
   reportSummary:   { zh: '商品×星期汇总', en: 'WEEKLY SUMMARY',   color: '#475569' },
   pricelist:       { zh: '价格表',       en: 'PRICE LIST',        color: '#0d9488' },
+  receipt:         { zh: '客户签收单',   en: 'PROOF OF DELIVERY', color: '#7c3aed' },
 }
 
 /** 返回一个内联样式的徽章 HTML,放在打印页左上角。suffix 可选(如拣货单的整箱/零散)。 */

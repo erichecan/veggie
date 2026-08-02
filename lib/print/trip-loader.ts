@@ -88,7 +88,16 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   if (!trip) return null
 
   const restaurants = Array.isArray(trip.restaurants)
-    ? (trip.restaurants as Array<{ orderIds?: string[] }>)
+    ? (trip.restaurants as Array<{
+        restaurantId?: string
+        restaurantName?: string
+        orderIds?: string[]
+        delivered?: boolean
+        payment?: number
+        signature?: string | null
+        signerName?: string | null
+        signedAt?: string | null
+      }>)
     : []
   const orderIds = restaurants.flatMap(r => r.orderIds ?? [])
 
@@ -177,5 +186,16 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     },
     orders: printOrders,
     customers,
+    // 客户签收单要用的签收记录。签名图是 base64，只在需要时随打印数据一起下发
+    signoffs: restaurants.map(r => ({
+      restaurantId: r.restaurantId ?? '',
+      restaurantName: r.restaurantName ?? '',
+      orderIds: r.orderIds ?? [],
+      delivered: r.delivered === true,
+      payment: typeof r.payment === 'number' ? r.payment : null,
+      signature: r.signature ?? null,
+      signerName: r.signerName ?? null,
+      signedAt: r.signedAt ?? null,
+    })),
   }
 }

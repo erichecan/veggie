@@ -311,7 +311,7 @@ export default function ClassicTripsPage() {
       label: isEn ? 'Print' : '打印',
       render: (_, row) => {
         const id = String(row.id)
-        const open = (type: 'picking' | 'delivery' | 'summary') => (e: React.MouseEvent) => {
+        const open = (type: 'picking' | 'delivery' | 'summary' | 'receipt') => (e: React.MouseEvent) => {
           e.stopPropagation()
           if (type === 'summary') {
             // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再导航到 /classic/print/trip/[id]/summary
@@ -355,6 +355,14 @@ export default function ClassicTripsPage() {
               title={isEn ? 'Delivery summary (per customer card, no price)' : '配送汇总单（按客户卡片，无价）'}
               className="text-xs px-1.5 py-0.5 rounded border border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
             >{isEn ? '📋 Summary' : '📋 汇总'}</button>
+            <button
+              type="button"
+              onClick={open('receipt')}
+              title={isEn
+                ? 'Proof of delivery (customer signature per stop)'
+                : '客户签收单（每站一页，含客户手写签名；未签收的留空白栏供纸质补签）'}
+              className="text-xs px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100"
+            >{isEn ? '✍️ POD' : '✍️ 签收单'}</button>
           </div>
         )
       },

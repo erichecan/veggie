@@ -10,13 +10,15 @@ import {
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
+import { generateTripReceiptHtml } from '@/lib/print/trip-receipt-template'
 
-type PrintType = 'summary' | 'picking' | 'delivery'
+type PrintType = 'summary' | 'picking' | 'delivery' | 'receipt'
 
 const RENDERERS: Record<PrintType, (d: TripPrintData, variant?: PickingVariant) => string> = {
   summary: generateTripSummaryHtml,
   picking: generateTripPickingHtml,
   delivery: generateTripDeliveryHtml,
+  receipt: generateTripReceiptHtml,
 }
 
 function parsePickingVariant(v: string | null): PickingVariant {
@@ -27,6 +29,7 @@ const TITLES: Record<PrintType, string> = {
   summary: '配送汇总单',
   picking: '拣货单 · 备货清单',
   delivery: '送货单 · DELIVERY SLIP',
+  receipt: '客户签收单 · PROOF OF DELIVERY',
 }
 
 /**

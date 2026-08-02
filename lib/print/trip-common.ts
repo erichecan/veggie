@@ -85,10 +85,30 @@ export interface TripOrder {
 }
 
 /** API 返回 JSON 形态（Map 不能直接序列化，customers 用数组） */
+/**
+ * 客户签收记录 —— 客户签收单（POD 回单）的数据来源。
+ * 取自 Trip.restaurants JSON 里司机现场写入的签名，见 lib/trip-signature.ts。
+ */
+export interface TripSignoff {
+  restaurantId: string
+  restaurantName: string
+  orderIds: string[]
+  delivered: boolean
+  /** 实收货款 */
+  payment: number | null
+  /** 手写签名 PNG data URI；未签收为 null */
+  signature: string | null
+  signerName: string | null
+  /** 服务端打的签收时间（ISO） */
+  signedAt: string | null
+}
+
 export interface TripPrintDataWire {
   trip: TripBasic
   orders: TripOrder[]
   customers: TripCustomer[]
+  /** 每站签收状态。旧数据没有这个字段，模板需容忍 undefined */
+  signoffs?: TripSignoff[]
 }
 
 /** 客户端组件用的内存形态 — 数组形式 customers 转 Map */
@@ -96,6 +116,7 @@ export interface TripPrintData {
   trip: TripBasic
   orders: TripOrder[]
   customers: Map<string, TripCustomer>
+  signoffs?: TripSignoff[]
 }
 
 /** 客户端：把 wire 形态转成方便的 Map 形态 */
@@ -104,6 +125,7 @@ export function toMemoryShape(wire: TripPrintDataWire): TripPrintData {
     trip: wire.trip,
     orders: wire.orders,
     customers: new Map(wire.customers.map(c => [c.id, c])),
+    signoffs: wire.signoffs,
   }
 }
 
