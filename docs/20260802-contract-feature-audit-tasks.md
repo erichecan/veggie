@@ -28,7 +28,7 @@
 | C3 | T3 M03 配送 POD（7 项） | [x] | |
 | C4 | T4 M04 司机 CMS（1 项）+ M14 Odoo 平移（1 项） | [x] | |
 | C5 | T5 M05 日销售中心（3 项） | [x] | |
-| C6 | T6 M06 仓储库存（6 项） | [ ] | |
+| C6 | T6 M06 仓储库存（6 项） | [x] | |
 | C7 | T7 M07 采购（4 项） | [ ] | |
 | C8 | T8 M08 财务（9 项） | [ ] | |
 | C9 | T9 M09 数据分析 BI（5 项） | [ ] | |
@@ -186,6 +186,19 @@
 
 **探针又修一个 bug**：`findFiles` 原本用 `ls`，`**` 不展开，把嵌套的打印页整片漏掉，
 第一次跑出来"6 类单据全部缺失"的假结论。已改用 `find`。
+
+### C6 M06 仓储与库存（完成）——判定全部维持 0729
+| 项 | 判定 | 实测证据 |
+|---|---|---|
+| 多温区 | done | 4 个温区实存：FROZEN(-18°C以下)/CHILLED(0~4°C)/DRY/AMBIENT；1669/5479 商品已归温区 |
+| 批次效期 FIFO | done | Lot 45 个；`lib/inventory.ts:73` 消耗按 `arrivedAt asc`、回补按 `desc`；临期接口返回 12 条；StockMove 带 lotId 59/1983 |
+| 实时监控 + 多仓调拨 | partial | **schema 里没有 Warehouse 模型**；调拨/warehouseTransfer/stockTransfer 全零命中。单仓内监控完整（safetyStock 16 处、库存预警 5 处），负库存商品 28 个 |
+| 库存盘点 | done | StockTake 2 单 / 17 行；差异调整会生成 `StockMove(ADJUSTMENT)` 并同步 qtyOnHand + 批次余量。**循环盘点零命中**（合同提了但没做） |
+| 损耗管理 | done | SCRAP 移动 6 条；`SCRAP_REASON` 结构化原因码在；`/api/analytics/loss-dashboard` 返回 kpis/trend/dispositionSplit/reasonBreakdown/topLoss |
+| 收货管理 | done | GoodsReceipt 23 单；`photos` 字段存 base64 取证照片（1/23 有照片）；良品/damaged 验货状态位在；收货自动建批次并写实际保质期 |
+
+**探针踩坑**：`/api/analytics/loss` 猜错路径返回 404，差点误判损耗模块降级——真实路径是
+`loss-dashboard`。教训：接口 404 必须先确认路径存在，不能直接当成"功能缺失"。
 
 ## 遗留问题 / 决策记录
 

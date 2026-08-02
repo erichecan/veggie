@@ -336,5 +336,93 @@
       "多维报表: lib/analytics/procurement-overview.ts:230:    prisma.purchaseSuggestion.groupBy({ by: ['categoryGroupKey'], where: { sta",
       "统一页面: app/[locale]/classic/boss/analytics/sales-overview/page.tsx"
     ]
+  },
+  "M06-01": {
+    "id": "M06-01",
+    "module": "06",
+    "title": "多温区仓库管理（冷库/冷藏/冷冻/常温）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "温区 4 个: FROZEN(冷冻区 -18°C 以下), CHILLED(冷藏区 0°C ~ 4°C), DRY(常温干货区 常温 · 避光干燥), AMBIENT(常温超市区 常温)",
+      "已归温区的商品: 1669/5479",
+      "GET /api/zones → 200 [array 4]"
+    ]
+  },
+  "M06-02": {
+    "id": "M06-02",
+    "module": "06",
+    "title": "批次与效期管理（FIFO / 临期预警 / 全程追溯）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "Lot 批次 45 个（可用 45）",
+      "FIFO 排序: lib/inventory.ts:73:    orderBy: { arrivedAt: 'asc' },",
+      "FIFO 排序: lib/inventory.ts:98:    orderBy: { arrivedAt: 'desc' },",
+      "多批次商品实查（应先耗最早入库的）: LOT-00017@2026-06-08 余23/23 | LOT-00043@2026-07-13 余15/15",
+      "消耗比例 0% ≥ 0% → 符合 FIFO",
+      "临期预警接口: GET /api/lots/expiring → 200 [array 12]",
+      "StockMove 带 lotId（批次级追溯）: 59/1983"
+    ]
+  },
+  "M06-03": {
+    "id": "M06-03",
+    "module": "06",
+    "title": "库存实时监控 + 多仓库调拨",
+    "prev": "partial",
+    "verdict": "partial",
+    "gap": "单仓库内的实时监控、安全库存与预警完整；但数据模型里没有 Warehouse 实体——现为「单仓库 + 多温区(Zone)」架构，跨仓调拨无从谈起",
+    "evidence": [
+      "schema 中有 Warehouse 模型: 否",
+      "调拨关键词命中: {\"调拨\":0,\"warehouseTransfer\":0,\"stockTransfer\":0,\"TRANSFER\":22}",
+      "库存查询接口: GET /api/products?pageSize=1 → 200 [array 5479]",
+      "安全库存/预警命中: {\"safetyStock\":16,\"安全库存\":10,\"lowStock\":38,\"库存预警\":5}",
+      "负库存商品数: 28"
+    ]
+  },
+  "M06-04": {
+    "id": "M06-04",
+    "module": "06",
+    "title": "库存盘点（盘点单 / 循环盘点 / 差异调整）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "StockTake 2 单 / StockTakeLine 17 行",
+      "GET /api/stock-takes → 200 keys{items,total} items[2]",
+      "差异调整: app/api/stock-takes/[id]/route.ts:14: *        { action: 'complete' }  完成：对已录入且 diff ≠ 0 的行生成",
+      "差异调整: app/api/stock-takes/[id]/route.ts:15: *          StockMove(ADJUSTMENT, sourceType='STOCK_TAKE') 并同步 Product.qtyOnHand + ",
+      "差异调整: app/api/stock-takes/[id]/route.ts:16: *          （盘盈 diff>0 → 回补批次余量；盘亏 diff<0 → FIFO 消耗批次余量，保持 Lot 与 qtyOnHand 一致）；",
+      "差异调整: app/api/stock-takes/[id]/route.ts:17: *          未录入实盘的行视为未盘（diffQty 保持 null，不调整）",
+      "循环盘点命中: {\"循环盘点\":0,\"cycleCount\":0,\"cycle_count\":0}"
+    ]
+  },
+  "M06-05": {
+    "id": "M06-05",
+    "module": "06",
+    "title": "损耗管理（原因码 / 归因分析 / 损耗报表）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "SCRAP 类型库存移动: 6 条",
+      "原因码: app/[locale]/classic/operator/inventory/loss-dashboard/page.tsx:9:import { SCRAP_REASON_LABEL_EN } from '@/lib/scrap-rea",
+      "原因码: app/[locale]/classic/operator/inventory/loss-dashboard/page.tsx:220:                  <span className=\"text-xs text-gray",
+      "原因码: app/[locale]/classic/operator/inventory/scrap/page.tsx:9:import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/li",
+      "原因码: app/[locale]/classic/operator/inventory/scrap/page.tsx:44:const SCRAP_REASON_KEYS = [",
+      "损耗归因接口: GET /api/analytics/loss-dashboard?days=30 → 200 keys{kpis,trend,dispositionSplit,reasonBreakdown,topLoss} trend[8] reasonBreakdown[1] topLoss[2]"
+    ]
+  },
+  "M06-06": {
+    "id": "M06-06",
+    "module": "06",
+    "title": "收货管理（采购单自动生成收货凭据 / 拍照存证 / 验货记录）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "GoodsReceipt 收货单: 23 条",
+      "GET /api/goods-receipts → 200 keys{items,total} items[23]",
+      "带取证照片的收货单: 1/23（GoodsReceipt.photos 为 base64 data URI 数组）",
+      "收货特性命中: {\"photos\":3,\"condition\":4,\"良品\":2,\"damaged\":4,\"lot.create\":1}",
+      "收货建批次: app/api/goods-receipts/route.ts:149:            // 创建批次；保质期优先用本次收货行实际填写的值（实物到货才知道真实保质期），"
+    ]
   }
 }
