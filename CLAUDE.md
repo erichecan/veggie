@@ -7,14 +7,21 @@
 > **GCP + Neon 是临时宿主，不是目标架构。**
 > 客户已提供自有服务器（DigitalOcean droplet，`docs/20260802-private-deployment-server-enablement-plan.md`），
 > 合同 IE-DEV-202607-01 第十一条把私有化部署写成硬性要求：新系统必须与 Odoo 12 同机独立并行。
-> 功能开发完成后，**全部迁到该服务器**。因此每一个基础设施选型决定，都要问一句：
+> 功能开发完成后，**应用与数据库全部迁到 DigitalOcean**——不只是应用，
+> **数据库也不再放 Neon**，改为客户自己的 PostgreSQL。因此每一个基础设施选型决定，都要问一句：
 > **「迁到那台服务器之后，这东西还在吗？」**
+>
+> 迁移规模已实测（20260802）：生产库 **880 MB**（`OrderLine` 644MB/133万行 + `Order` 131MB/15万行，索引占 375MB）。
+> 磁盘毫无压力（droplet 77GB），**真正的约束是内存**——见服务器计划 §2 B2。
 
 ### 硬性禁止
 
 - ⛔ **不得新增任何 GCP 专有服务依赖**：Cloud Storage、Cloud Scheduler、Cloud Tasks、Secret Manager、Firestore、Pub/Sub…
   已有的 3 处 `@google-cloud/storage`（`app/api/upload-image`、`app/api/purchase-orders/pdf-extract`、`lib/backup.ts`）属历史欠债，只减不增。
-- ⛔ **不得依赖 Neon 专有能力**：分支、PITR、serverless WebSocket 驱动。客户服务器上跑的是普通 PostgreSQL。
+- ⛔ **不得依赖 Neon 专有能力**：分支、PITR、serverless WebSocket 驱动、pooler 端点语义。
+  数据库最终会迁到客户自己的 PostgreSQL，Neon 控制台上的一切能力届时都不存在。
+  相应地，那些为 Neon 写的迁就（如"单事务 5s 上限，大数组事务 P2028 回滚"所以逐行提交）
+  迁移后不再必要，但**不要提前去掉**——现在还在 Neon 上跑。
 - ⛔ **不得为了让某功能"先跑起来"而去开通新的云资源**（建桶、开 API、建 Scheduler 任务）。
   这类动作是在给一个明确要拆掉的架构加钉子，迁移时连数据带配置都要重搬。
 - ⛔ **不得把定时任务的触发逻辑写进云平台**。cron 路由必须是"任何东西都能 POST 触发"的形状
