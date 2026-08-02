@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
+import { reconcileSignatures, describeIssues } from '@/lib/trip-signature'
 
 const TRIP_TRACKED_FIELDS = [
   'name', 'status', 'driverId', 'driverName', 'departTime', 'timeSlot',
@@ -72,6 +73,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           { error: `退货审核请使用「审核退货」功能（走 /api/trips/${id}/returns），不能直接修改行程数据` },
           { status: 409 },
         )
+      }
+
+      // 电子签收完整性：时间戳服务端打、已签名不可改、体积与格式受限
+      // （签名是收货凭证，客户端时钟与整包 PUT 都不能信）
+      if (data.restaurants !== undefined) {
+        const { restaurants, issues } = reconcileSignatures(before.restaurants, data.restaurants, new Date())
+        const immutable = issues.filter(i => i.kind === 'immutable')
+        if (immutable.length > 0) {
+          return NextResponse.json({ error: describeIssues(immutable) }, { status: 409 })
+        }
+        if (issues.length > 0) {
+          return NextResponse.json({ error: describeIssues(issues) }, { status: 400 })
+        }
+        data.restaurants = restaurants
       }
 
       const newStatus = data.status?.toUpperCase()

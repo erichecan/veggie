@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { NumericInput } from '@/components/ui/numeric-input'
 import { TripStatusBadge } from '@/components/shared/status-badge'
 import BatchMap, { type MapMarker } from '@/components/shared/BatchMap'
+import SignaturePad from '@/components/driver/SignaturePad'
 
 const PURPLE = '#875A7B'
 
@@ -41,6 +42,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [returnForm, setReturnForm] = useState<{ productId: string; productName: string; qty: number; photo: string }>({
     productId: '', productName: '', qty: 1, photo: ''
   })
+  // 电子签收 modal（Sign on Glass）
+  const [signModal, setSignModal] = useState<{ restId: string; restName: string } | null>(null)
+  const [signData, setSignData] = useState<string | null>(null)
+  const [signerName, setSignerName] = useState('')
+  const [signing, setSigning] = useState(false)
+
   const podInputRef = useRef<HTMLInputElement>(null)
   const returnPhotoRef = useRef<HTMLInputElement>(null)
   const [podRestId, setPodRestId] = useState<string | null>(null)
@@ -212,18 +219,41 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     e.target.value = ''
   }
 
-  async function markRestDelivered(restId: string) {
+  /** 打开电子签收面板。签收是送达的唯一入口——合同要求客户电子签名 */
+  function openSignModal(restId: string) {
     if (!trip) return
     const r = trip.restaurants.find(r => r.restaurantId === restId)
     if (!r) return
     if (r.payment === undefined) { toast.error('请先填写实收货款'); return }
-    const updated = cloneTrip()
-    const ur = updated.restaurants.find(r => r.restaurantId === restId)
-    if (ur) ur.delivered = true
-    updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
-    await saveTrip(updated)
-    setExpandedRest(null)
-    toast.success(`${r.restaurantName} 配送完成`)
+    setSignData(null)
+    setSignerName('')
+    setSignModal({ restId, restName: r.restaurantName })
+  }
+
+  /** 客户签完字才算送达。签名与签名人一并写进该站点，服务端补时间戳 */
+  async function confirmDelivery() {
+    if (!trip || !signModal) return
+    if (!signData) { toast.error('请先请客户签名'); return }
+    if (!signerName.trim()) { toast.error('请填写签收人姓名'); return }
+
+    setSigning(true)
+    try {
+      const updated = cloneTrip()
+      const ur = updated.restaurants.find(r => r.restaurantId === signModal.restId)
+      if (ur) {
+        ur.delivered = true
+        ur.signature = signData
+        ur.signerName = signerName.trim()
+        ur.signedAt = new Date().toISOString()
+      }
+      updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
+      await saveTrip(updated)
+      setExpandedRest(null)
+      setSignModal(null)
+      toast.success(`${signModal.restName} 已签收`)
+    } finally {
+      setSigning(false)
+    }
   }
 
   async function endTrip() {
@@ -481,6 +511,19 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     </div>
                   )}
 
+                  {r.signature && (
+                    <div className="border-t pt-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">✍️ 客户签收</p>
+                      <div className="inline-block rounded border bg-white p-2">
+                        <img src={r.signature} alt="客户签名" className="h-20 object-contain" />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        签收人：{r.signerName ?? '—'}
+                        {r.signedAt && ` · ${new Date(r.signedAt).toLocaleString('zh-CN')}`}
+                      </p>
+                    </div>
+                  )}
+
                   {r.pods.length > 0 && (
                     <div className="border-t pt-4">
                       <p className="text-sm font-medium text-gray-700 mb-2">📷 POD 签收照片</p>
@@ -514,9 +557,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       <Button
                         size="sm"
                         className="bg-green-600 hover:bg-green-700 ml-auto"
-                        onClick={() => markRestDelivered(r.restaurantId)}
+                        onClick={() => openSignModal(r.restaurantId)}
                       >
-                        ✓ 完成此站
+                        ✍️ 客户签收
                       </Button>
                     </div>
                   )}
@@ -536,6 +579,47 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       />
 
       {/* 报告异常 Modal */}
+      {/* Sign on Glass —— 客户手写签收。合同第四条把「司机电子签收」写进验收闭环 */}
+      {signModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h3 className="font-bold text-gray-900">客户签收 — {signModal.restName}</h3>
+              <p className="text-xs text-gray-500 mt-0.5">请把手机递给客户，由客户本人在下方签名确认收货</p>
+            </div>
+
+            <SignaturePad onChange={setSignData} disabled={signing} />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">签收人姓名</label>
+              <input
+                className="w-full border rounded px-3 py-2 text-sm"
+                placeholder="请客户写下或司机代填姓名"
+                value={signerName}
+                onChange={e => setSignerName(e.target.value)}
+                disabled={signing}
+                maxLength={40}
+              />
+              <p className="text-xs text-gray-400 mt-1">签名图像认不出是谁签的，姓名要单独记，日后追责才有依据</p>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-1">
+              <Button variant="outline" size="sm" onClick={() => setSignModal(null)} disabled={signing}>
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={confirmDelivery}
+                disabled={signing || !signData || !signerName.trim()}
+              >
+                {signing ? '提交中…' : '✓ 确认签收'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {exceptionModal && (() => {
         const rest = trip.restaurants.find(r => r.restaurantId === exceptionModal.restId)
         if (!rest) return null

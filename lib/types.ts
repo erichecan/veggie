@@ -432,6 +432,16 @@ export interface TripRestaurant {
   returns: ReturnItem[]
   pods: string[]
   cargoVerified: boolean
+  /**
+   * 客户手写电子签名（Sign on Glass），PNG data URI。
+   * 与 pods（拍照存证）互补：照片证明货送到了，签名证明客户认可收货。
+   * 合同第二条点名此能力，第四条把「司机电子签收」写进验收闭环。
+   */
+  signature?: string
+  /** 签名人姓名，司机现场填写——签名图像本身认不出是谁签的 */
+  signerName?: string
+  /** 签名时间（ISO 字符串），由服务端在收到签名时打戳，不信客户端时间 */
+  signedAt?: string
 }
 
 export interface Trip {
