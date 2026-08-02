@@ -130,12 +130,20 @@ function summarize(body: unknown): string {
 const DEFAULT_ROOTS = 'app lib components scripts prisma/schema.prisma'
 const EXCLUDE = "grep -vE 'node_modules|lib/generated/'"
 
+/**
+ * --include 只在搜索目录时加。roots 若点名了具体文件（如 prisma/schema.prisma），
+ * 加上 --include=*.ts 会把它整个过滤掉，导致「schema 里明明有这个字段却报 0 命中」。
+ */
+function includeFlags(roots: string): string {
+  return /\.\w+(\s|$)/.test(roots) ? '' : '--include=*.ts --include=*.tsx'
+}
+
 export function grepCode(
   pattern: string,
   opts: { roots?: string; max?: number } = {},
 ): string[] {
   const roots = opts.roots || DEFAULT_ROOTS
-  const cmd = `grep -rniE ${JSON.stringify(pattern)} ${roots} --include=*.ts --include=*.tsx 2>/dev/null | ${EXCLUDE} | head -${opts.max || 12}`
+  const cmd = `grep -rniE ${JSON.stringify(pattern)} ${roots} ${includeFlags(roots)} 2>/dev/null | ${EXCLUDE} | head -${opts.max || 12}`
   try {
     const out = execSync(cmd, { encoding: 'utf8', cwd: process.cwd(), shell: '/bin/bash' })
     return out.trim() ? out.trim().split('\n') : []
@@ -146,7 +154,7 @@ export function grepCode(
 
 /** 只要命中数，用于「检索为零」的批量取证 */
 export function grepCount(pattern: string, roots = DEFAULT_ROOTS): number {
-  const cmd = `grep -rniE ${JSON.stringify(pattern)} ${roots} --include=*.ts --include=*.tsx 2>/dev/null | ${EXCLUDE} | wc -l`
+  const cmd = `grep -rniE ${JSON.stringify(pattern)} ${roots} ${includeFlags(roots)} 2>/dev/null | ${EXCLUDE} | wc -l`
   try {
     return parseInt(execSync(cmd, { encoding: 'utf8', shell: '/bin/bash' }).trim(), 10) || 0
   } catch {

@@ -61,5 +61,91 @@
       "public/manifest.json: name=\"蔬菜批发订购\" display=\"standalone\" start_url=\"/customer-portal\" icons=2",
       "Service Worker（离线能力）: 无"
     ]
+  },
+  "M02-01": {
+    "id": "M02-01",
+    "module": "02",
+    "title": "创建/修改 quotation：重复商品及缺货商品提醒",
+    "prev": "partial",
+    "verdict": "done",
+    "gap": "提醒为「警告不阻断」——缺货仍可下单，符合生鲜业务常规，但非硬校验",
+    "evidence": [
+      "重复提醒: app/[locale]/classic/operator/place-order/page.tsx:1643:              {/* 重复商品提醒 banner */}",
+      "重复提醒: app/[locale]/classic/operator/place-order/page.tsx:1652:                      <span className=\"font-semibold text-purple-700\">{isE",
+      "下单页缺货: app/[locale]/classic/operator/place-order/page.tsx:732:    // ATP 警告：库存不足时提示但不阻止添加",
+      "下单页缺货: app/[locale]/classic/operator/place-order/page.tsx:737:      toast.warning(isEn ? '⚠ This product is out of stock. Added to order ",
+      "下单页缺货: app/[locale]/classic/operator/place-order/page.tsx:1621:                          {isEn ? `${outOfStockLines.length} product(s) ou",
+      "报价页缺货: app/[locale]/classic/operator/quotations/[id]/page.tsx:59:  const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow",
+      "报价页缺货: app/[locale]/classic/operator/quotations/[id]/page.tsx:133:            setForecastMap(m)",
+      "报价页缺货: app/[locale]/classic/operator/quotations/[id]/page.tsx:152:    apiGet<Record<string, number>>('/api/products/pending-demand').then",
+      "报价页缺货: app/[locale]/classic/operator/quotations/[id]/page.tsx:155:  // 缺货提醒(20260729)：编辑期间新增的行不在初次 load() 拉取的 forecastMap 里，单独补一条",
+      "ATP/缺货数据源: GET /api/products/pending-demand → 200 keys{cmqn8t4bc0001dmylbpgddzpv,cmqn8t4iy0003dmylv3g0vxtv,cmqn8t4on0005dmylau0frukf,cmqn8t4uh0007dmyl6sm72qjv,cmqn8t50e0009dmylqbp49ece,cmqn8t5by000ddmylzds1jbtt,cmqn8t5ho000fdmyl5pmdps90,cmqn8t5ng000hdmyl6jzikdik} {\"cmqn8t4bc0001dmylbpgddzpv\":32,\"cmqn8t4iy0003dmylv3g0vxtv\":5,\"cmqn8t4on0005dmylau0frukf\":3,\"cmqn8t4uh0007dmyl6sm72qjv\":7,\"cmqn8t50e0009dmylqbp49ece\":2,\"cmqn8t5"
+    ]
+  },
+  "M02-02": {
+    "id": "M02-02",
+    "module": "02",
+    "title": "定价与 commission 自动计算（多层级、价格嵌套）",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "价格表 95 张，客户绑定 1239 条",
+      "嵌套: lib/pricing-engine.ts:44: * @param allPricelists 全部价格表（用于嵌套 pricelist formulaBase）",
+      "嵌套: lib/pricing-engine.ts:77:    // 防止嵌套递归超过深度限制：当已接近深度限制时，跳过引用其他价格表的项",
+      "实测取价命中的规则种类 77 种，样例: 价格表链未命中，且无历史成交价，使用牌价 | 变体 cmqn902rq02dpdmylxv1inf2t：固定价 €3.00 | 商品模板 cmqn8tmbp0066dmylg90nihb9：基于牌价，+€1.50，最小数量 1",
+      "schema: commissionRate=4 commissionFixed=2 commissionPrice=4",
+      "订单行中已落 commissionPrice 的行数: 171"
+    ]
+  },
+  "M02-03": {
+    "id": "M02-03",
+    "module": "02",
+    "title": "快捷按键：tab / enter 键操作",
+    "prev": "partial",
+    "verdict": "done",
+    "gap": "Tab 选中商品并跳到数量框、Enter 选中/提交均已实现；未做全表格方向键导航",
+    "evidence": [
+      "Tab 处理命中 8 处、Enter 处理命中 10 处",
+      "Tab: components/classic/ProductSearchInput.tsx:128:          if (e.key === 'Tab') {",
+      "Tab: app/[locale]/classic/operator/place-order/page.tsx:496:    if (e.key === 'Tab') {",
+      "Tab: app/[locale]/classic/operator/place-order/page.tsx:569:    } else if (e.key === 'Tab') {",
+      "Tab: app/[locale]/classic/operator/place-order/page.tsx:594:    } else if (e.key === 'Tab' && opts?.last && !e.shiftKey) {",
+      "Tab: app/[locale]/classic/operator/place-order/page.tsx:1399:                    if (e.key === 'Tab') {",
+      "Tab: app/[locale]/classic/operator/place-order/page.tsx:1427:                    if (e.key === 'Tab') {",
+      "Tab: app/[locale]/classic/operator/place-order/page.tsx:1522:                    if (e.key === 'Tab') {",
+      "Tab: app/[locale]/classic/operator/quotations/[id]/page.tsx:934:                            if (e.key === 'Tab' && !e.shiftKey && i ===",
+      "Tab 跳行: components/classic/OrderLineEditor.tsx:32:  selectOnTab?: boolean",
+      "Tab 跳行: components/classic/OrderLineEditor.tsx:56:  selectOnTab = false,",
+      "Tab 跳行: components/classic/OrderLineEditor.tsx:184:                    onTabSelect={() => {",
+      "Tab 跳行: components/classic/OrderLineEditor.tsx:195:                    selectOnTab={selectOnTab}",
+      "Tab 跳行: components/classic/ProductSearchInput.tsx:19:  selectOnTab?: boolean",
+      "Tab 跳行: components/classic/ProductSearchInput.tsx:21:  onTabSelect?: (p: P) => void",
+      "自定义 Tab 跳行接线处数: 5"
+    ]
+  },
+  "M02-04": {
+    "id": "M02-04",
+    "module": "02",
+    "title": "quotation / 销售单状态切换、批量操作、退回 quotation",
+    "prev": "done",
+    "verdict": "done",
+    "evidence": [
+      "批量: app/[locale]/classic/operator/quotations/page.tsx:158:  const [bulkPrinting, setBulkPrinting] = useState(false)",
+      "批量: app/[locale]/classic/operator/quotations/page.tsx:634:  async function handleBulkConfirm() {",
+      "批量: app/[locale]/classic/operator/quotations/page.tsx:660:  async function handleBulkDelete() {",
+      "批量: app/[locale]/classic/operator/quotations/page.tsx:708:    setBulkPrinting(true)",
+      "状态机: app/api/orders/[id]/route.ts:27:  PENDING: new Set(['CONFIRMED', 'CANCELLED']),",
+      "状态机: app/api/orders/[id]/route.ts:28:  CONFIRMED: new Set(['PENDING', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'CANCELLED']),",
+      "选用商品「Aji Chicken&Veg Gyoza 10*600g CASE」初始库存 23",
+      "① 建报价单: POST /api/customer-portal/orders → 201 keys{id,code,status,totalAmount,deliveryDate,createdAt,lineCount,pricingWarnings} pricingWarnings[0]",
+      "② 确认为销售单: PUT /api/orders/cmscaa5xw0028jrylu9x3f2bb → 200 keys{id,code,createdById,createdByName,restaurantId,restaurantName,items,totalAmount} items[1] lines[1] pricingWarnings[0]",
+      "   库存 23 → 22（确认应扣减）",
+      "③ 撤回到报价单: PUT /api/orders/cmscaa5xw0028jrylu9x3f2bb → 200 keys{id,code,createdById,createdByName,restaurantId,restaurantName,items,totalAmount} items[1] lines[1] pricingWarnings[0]",
+      "   库存回到 23（期望 23，净变化 0.000）",
+      "④ 最终状态 PENDING，confirmationDate=null",
+      "⑤ 审计留痕: created → confirmed → withdrawn",
+      "清理: 删除探针订单 cmscaa5xw0028jrylu9x3f2bb (1 行) + 其 StockMove/审计",
+      "清理后库存核对: 23（原始 23）"
+    ]
   }
 }

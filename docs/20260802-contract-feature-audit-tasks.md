@@ -24,7 +24,7 @@
 |---|---|---|---|
 | C0 | T0 探针骨架 + 基线 | [x] | 见 C1 同批 |
 | C1 | T1 M01 移动端订货（3 项） | [x] | 见下方提交 |
-| C2 | T2 M02 Quotation 销售单（4 项） | [ ] | |
+| C2 | T2 M02 Quotation 销售单（4 项） | [x] | |
 | C3 | T3 M03 配送 POD（7 项） | [ ] | |
 | C4 | T4 M04 司机 CMS（1 项）+ M14 Odoo 平移（1 项） | [ ] | |
 | C5 | T5 M05 日销售中心（3 项） | [ ] | |
@@ -139,6 +139,18 @@
 | 账期与专属批发价 | partial | partial（缺口改写） | 账期已展示（`page.tsx:186` 结算方式），专属价 1735 个商品全部带 customerPrice、1239 条客户↔价格表绑定。真实缺口不是"页面没展示"，而是**信用额度不参与下单阻断、客户端不可见** |
 | 订单提交自动校验 | done | **done（实测确认）** | 空订单→400、未登录→401、真实下单→201 落成 `RE-260802-001`，服务端权威定价回写正常 |
 | （新增）移动端形态 | 报告称"不是 PWA" | **是可安装 PWA** | `public/manifest.json` display=standalone + 2 个图标 + start_url=/customer-portal；缺 Service Worker（无离线） |
+
+### C2 M02 Quotation 与销售单（完成）——**2 条翻案**
+| 项 | 0729 | 0802 | 依据 |
+|---|---|---|---|
+| 重复/缺货商品提醒 | partial（"缺货提醒还没做"） | **done** | 下单页有缺货 banner + ATP toast（`place-order/page.tsx:1611-1627,737`），报价编辑页有缺货提醒（`quotations/[id]/page.tsx:155,356`，代码注释标日期 20260729——就是核实当天落地的）。缺口改写为「警告不阻断」 |
+| 定价与 commission | done | done（实测确认） | 95 张价格表、1239 条客户绑定、实测取价命中 **77 种不同规则**（固定价/基于牌价加价/最小数量/嵌套）；schema 里 commissionRate/commissionFixed/commissionPrice 齐全，171 条订单行已落 commissionPrice |
+| tab / enter 快捷键 | partial（"Tab 已回退成浏览器默认行为"） | **done** | Tab 处理 8 处、Enter 10 处；`ProductSearchInput` 的 `selectOnTab/onTabSelect` 自定义跳行**仍在且已接线 5 处**（OrderLineEditor→数量框）。缺口改写为「未做全表格方向键导航」 |
+| 状态切换/批量/退回 | done | done（实测确认） | 真实往返：建报价→确认→撤回，库存 **23 → 22 → 23 净变化 0**，终态 PENDING + confirmationDate 清空，审计链 created→confirmed→withdrawn 完整，探针单已清理 |
+
+**探针自身修的两个 bug**（会造成假结论，记下来）：
+1. `grepCount` 无条件加 `--include=*.ts`，把点名的 `prisma/schema.prisma` 整个过滤掉 → commission 字段假报 0 命中。已改为「roots 指向具体文件时不加 include」。
+2. 库存扣减探针原本随机挑商品，挑到 `qtyOnHand=0` 的就变成 0→0→0 的空测。已改为强制挑 `qtyOnHand > 5` 的商品。
 
 ## 遗留问题 / 决策记录
 
