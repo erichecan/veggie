@@ -1110,6 +1110,39 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 |---|---|---|---|
 | T1.1 双驱动 | 2026-08-02 | `5466ed2` | ✅ pg 分支已在生产库真实验证（149874 单/5479 商品，与 neon 分支一致）。两处偏离计划见下 |
 | T1.2 object-store | 2026-08-03 | `37ca22c` | ✅ 10 项测试全绿；typecheck / 全量 175 项测试 / build 三绿。按计划实现，无偏离 |
+| T1.3 改造调用点 | 2026-08-03 | `18b807e` | ✅ 真实 HTTP 验证通过（见下）；全量 178 项测试 0 失败；build 通过。顺带查清了两个既有问题 |
+
+### T1.3 实测结果（dev 服务器 + `STORAGE_DRIVER=local`，真实 HTTP 请求）
+
+| 用例 | 结果 |
+|---|---|
+| upload-image 正常上传 PNG | `{"url":"/uploads/products/<ts>-<uuid>.png"}`，**SHA256 与源文件逐字节一致** |
+| pdf-extract 上传 PDF | 落盘 41332 字节到 `purchase-docs/` |
+| 两个路由无 token / 伪造 token | 均 401 |
+| 非法类型 | 400「仅支持 JPG、PNG、WebP、GIF」/「仅支持 PDF 文件」 |
+| 异常路径后目录内容 | 只有正常路径写入的文件，异常路径不落盘 |
+
+### T1.3 查清的两个**既有**问题（非本次引入，均不阻塞）
+
+1. **pdf-extract 在 dev 模式下正常路径返回 500。**
+   文件已成功落盘（存储那段是好的），报错在下游 `extractPdfText`：
+   `Setting up fake worker failed: Cannot find module '.next/dev/server/chunks/pdf.worker.mjs'`
+   —— Turbopack **dev 模式**解析不到 pdfjs 的 worker chunk。生产构建走
+   `next.config.ts` 的 `outputFileTracingIncludes`，路径不同。
+   **T1.4 的生产镜像必须专门验这条**，若生产也 500 则是真 bug，要单独立项。
+
+2. **`npm run db:validate` 连 Neon 会断连崩溃**（不是慢）。
+   跑约 15 分钟后 `Connection terminated unexpectedly`，栈在
+   `@neondatabase/serverless` 的 WebSocket 层。属于 CLAUDE.md 记的
+   「为 Neon 写的迁就」那一类问题。正在用 `DATABASE_DRIVER=pg`（libpq/TCP）
+   重跑做对照——若 pg 能跑完，就同时证明了两件事：崩溃根因是 Neon 的 WebSocket 驱动，
+   且迁移之后这个问题自动消失。
+
+### 一个操作教训
+
+首轮验证里 `curl -F "file=@public/favicon.ico"` 全返回 `000`，一度以为是服务端问题。
+实际是**该文件不存在**，curl 在本地就失败了，`%{http_code}` 因此是 000。
+→ 用 curl 做上传验证时，先确认待上传的样本文件真的存在；`000` 优先怀疑客户端而不是服务端。
 
 ### T1.1 与计划的偏离（已在 commit 说明中记录）
 
@@ -1133,10 +1166,14 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 
 > 显式留一条，不要只在对话里提。
 
-- **`npm run db:validate` 连 Neon 跑了 15 分钟以上无输出**（后台任务 `bhipm0t8q`）。
-  尚不确定是本来就慢（880MB 库 + 跨机房）还是卡住了。不阻塞 T1.1——已用更直接的
-  连通性冒烟覆盖了回归风险——但**迁移后必须复测**：如果是跨机房网络导致的慢，
-  迁到同机 PostgreSQL 后应显著变快；如果迁移后依然慢，说明是脚本本身的问题，需要单独查。
+- ~~`npm run db:validate` 连 Neon 跑 15 分钟无输出~~ → **已查清（T1.3）：不是慢，是崩。**
+  `Connection terminated unexpectedly`，栈在 `@neondatabase/serverless` 的 WebSocket 层。
+  这不是本次改动引入的（走的是未改行为的 neon 分支）。pg 驱动对照实验进行中。
+  **若对照证实是 Neon 驱动的问题，则迁移后自动消失**，属于「迁过去就好了」的一类，
+  不需要单独修。
+- **pdf-extract 生产模式是否也 500** —— dev 模式下因 Turbopack 找不到 pdfjs worker chunk
+  而 500（文件已正常落盘，故非存储问题）。**T1.4 生产镜像必须专门验**。
+  若生产也 500 → 是真 bug，与本次迁移无关但要单独立项。
 - pg 分支配 `sslmode=require` 的 URL 时，`pg-connection-string` 警告未来版本 sslmode
   语义将改变。目标形态走 unix socket 不涉及 SSL，不受影响；仅在阶段 4 用 pg 驱动连
   Neon 做比对时会看到。
