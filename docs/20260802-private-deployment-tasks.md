@@ -1108,10 +1108,34 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 
 | 任务 | 完成时间 | commit | 备注 |
 |---|---|---|---|
-| （待填） | | | |
+| T1.1 双驱动 | 2026-08-02 | `5466ed2` | ✅ pg 分支已在生产库真实验证（149874 单/5479 商品，与 neon 分支一致）。两处偏离计划见下 |
+
+### T1.1 与计划的偏离（已在 commit 说明中记录）
+
+1. **纯函数拆到 `lib/db-driver.ts`**，不留在 `lib/db.ts`。后者模块加载即构造 PrismaClient，
+   测一个字符串函数要连带加载整个 client，而测试环境无 `DATABASE_URL`。
+2. **无连接串时不判定驱动、不抛错**，回落改造前行为。原计划让它抛，结果打死了
+   `tests/backup.test.ts` 与 `tests/analytics-shortage-summary.test.ts`——这两个
+   **通过传递依赖**（`lib/backup.ts` / `lib/analytics/*`）加载到 `lib/db` 却从不查库。
+   写计划时只 grep 了 tests/ 里的直接 import，漏了传递路径。
+
+> 教训（对后续任务有效）：改 `lib/db.ts`、`lib/auth.ts` 这类被广泛间接依赖的模块时，
+> 「哪些测试会受影响」不能靠 grep 直接 import 判断，必须真跑一次 `npm test`。
+
+### 意外收获
+
+**Neon 也支持标准 libpq 协议**，所以 `DATABASE_DRIVER=pg` 配 Neon 连接串能直接跑通。
+这意味着 pg 分支不必等到 Task 1.4 的 docker compose 才能验证，现在就已在**生产数据**上验过。
+阶段 4 演练迁移时也可用这个方式做两端比对。
 
 ## 未解决问题
 
 > 显式留一条，不要只在对话里提。
 
-- 无
+- **`npm run db:validate` 连 Neon 跑了 15 分钟以上无输出**（后台任务 `bhipm0t8q`）。
+  尚不确定是本来就慢（880MB 库 + 跨机房）还是卡住了。不阻塞 T1.1——已用更直接的
+  连通性冒烟覆盖了回归风险——但**迁移后必须复测**：如果是跨机房网络导致的慢，
+  迁到同机 PostgreSQL 后应显著变快；如果迁移后依然慢，说明是脚本本身的问题，需要单独查。
+- pg 分支配 `sslmode=require` 的 URL 时，`pg-connection-string` 警告未来版本 sslmode
+  语义将改变。目标形态走 unix socket 不涉及 SSL，不受影响；仅在阶段 4 用 pg 驱动连
+  Neon 做比对时会看到。
