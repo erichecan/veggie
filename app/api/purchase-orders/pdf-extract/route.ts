@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { Storage } from '@google-cloud/storage'
 import { withAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { getObjectStore } from '@/lib/storage/object-store'
 
 /**
  * POST /api/purchase-orders/pdf-extract
@@ -12,12 +12,6 @@ import { rateLimit } from '@/lib/rate-limit'
 
 const MAX_SIZE = 15 * 1024 * 1024 // 15 MB
 const ALLOWED_ROLES = ['OPERATOR', 'BOSS', 'WAREHOUSE']
-
-let _storage: Storage | null = null
-function getStorage(): Storage {
-  if (!_storage) _storage = new Storage()
-  return _storage
-}
 
 interface ExtractedLine {
   productName: string
@@ -111,13 +105,12 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(await file.arrayBuffer())
 
       const objectPath = `purchase-docs/${Date.now()}-${crypto.randomUUID()}.pdf`
-      const bucketName = process.env.GCS_BUCKET_NAME ?? 'veggie-supply-images'
-      const bucket = getStorage().bucket(bucketName)
-      await bucket.file(objectPath).save(buffer, {
-        contentType: 'application/pdf',
-        metadata: { metadata: { uploadedBy: user.userId, uploadedByEmail: user.email } },
-      })
-      const sourceDocumentUrl = `https://storage.googleapis.com/${bucketName}/${objectPath}`
+      const { url: sourceDocumentUrl } = await getObjectStore().put(
+        objectPath,
+        buffer,
+        'application/pdf',
+        { uploadedBy: user.userId, uploadedByEmail: user.email },
+      )
 
       const rawText = await extractPdfText(buffer)
       if (!rawText.trim()) {

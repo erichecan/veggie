@@ -1,23 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Storage } from '@google-cloud/storage'
 import { withAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { getObjectStore } from '@/lib/storage/object-store'
 
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const MAX_SIZE = 5 * 1024 * 1024 // 5 MB
 // 只允许这几个角色上传图片（餐馆/司机不能）
 const ALLOWED_ROLES = ['OPERATOR', 'BOSS', 'WAREHOUSE', 'FINANCE']
-
-// Lazily initialised GCS client (avoid cold-start errors when env vars are absent)
-let _storage: Storage | null = null
-function getStorage(): Storage {
-  if (!_storage) {
-    // In production (Cloud Run) ADC is auto-injected.
-    // Locally, set GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
-    _storage = new Storage()
-  }
-  return _storage
-}
 
 export async function POST(req: NextRequest) {
   // 每用户每分钟最多 30 次上传（防恶意刷存储）
@@ -50,26 +39,15 @@ export async function POST(req: NextRequest) {
       const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
       const objectPath = `products/${Date.now()}-${crypto.randomUUID()}.${ext}`
 
-      const bucketName = process.env.GCS_BUCKET_NAME ?? 'veggie-supply-images'
-      const storage = getStorage()
-      const bucket = storage.bucket(bucketName)
-      const gcsFile = bucket.file(objectPath)
-
       const buffer = Buffer.from(await file.arrayBuffer())
 
-      await gcsFile.save(buffer, {
-        contentType: file.type,
-        metadata: {
-          // 追溯上传人，方便后续审计/清理
-          metadata: {
-            uploadedBy: user.userId,
-            uploadedByEmail: user.email,
-          },
-        },
+      const { url } = await getObjectStore().put(objectPath, buffer, file.type, {
+        // 追溯上传人，方便后续审计/清理
+        uploadedBy: user.userId,
+        uploadedByEmail: user.email,
       })
 
-      const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectPath}`
-      return NextResponse.json({ url: publicUrl })
+      return NextResponse.json({ url })
     } catch (err) {
       console.error('[upload-image] error:', err)
       return NextResponse.json({ error: '图片上传失败，请稍后重试' }, { status: 500 })
