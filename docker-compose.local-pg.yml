@@ -1,0 +1,98 @@
+# 本地验证专用：标准 PostgreSQL 17 + unix socket + 本地磁盘存储。
+#
+# 目的是在自己机器上暴露驱动切换的问题，**不是生产编排文件**。
+# 生产编排在阶段 3 另写，且那边 PostgreSQL 装宿主机而不在 compose 里
+# （见 docs/20260802-private-deployment-migration-design.md §2.1）。
+#
+# 这里刻意用两个容器共享一个命名卷来传 socket。与服务器上「容器挂宿主机 socket
+# 目录」不完全相同，但**权限与 gid 这一层是同一个问题**，能提前暴露。
+#
+# 用法：
+#   docker compose -f docker-compose.local-pg.yml up -d --build
+#   docker compose -f docker-compose.local-pg.yml down -v      # -v 连数据卷一起删
+name: veggie-local-pg
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: veggie
+      POSTGRES_PASSWORD: localonly
+      POSTGRES_DB: veggie
+    command:
+      - postgres
+      # 不监听网络，只走 socket —— 与目标形态一致
+      - -c
+      - listen_addresses=
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - random_page_cost=1.1
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgsock:/var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veggie -h /var/run/postgresql"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_DRIVER: pg
+      DATABASE_URL: postgresql://veggie@localhost/veggie?host=/var/run/postgresql
+      STORAGE_DRIVER: local
+      UPLOAD_DIR: /data/uploads
+      BACKUP_DRIVER: local
+      BACKUP_LOCAL_DIR: /data/backups
+      JWT_SECRET: local-verification-only-not-a-real-secret-32chars
+      CRON_SECRET: local-verification-cron-secret
+      NODE_ENV: production
+    volumes:
+      - pgsock:/var/run/postgresql
+      - uploads:/data/uploads
+      - backups:/data/backups
+    ports:
+      - "127.0.0.1:3100:3000"
+
+  # 迁移 / 种子 / 运维脚本专用，跑完即退（profiles 让它不参与 up -d）。
+  #
+  # 为什么不复用 app 容器：运行时镜像是 Next standalone 产物，**不含 prisma CLI**
+  # （node_modules/.bin 里没有），`npx prisma migrate deploy` 会去 npm 现拉，
+  # 依赖外网且脆弱。builder 阶段有 npm ci 装全的 node_modules，直接可用。
+  #
+  # 阶段 3 的服务器编排照抄这个形状即可 —— 这是本地验证顺带打的样。
+  migrator:
+    build:
+      context: .
+      target: builder
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_DRIVER: pg
+      DATABASE_URL: postgresql://veggie@localhost/veggie?host=/var/run/postgresql
+      STORAGE_DRIVER: local
+      UPLOAD_DIR: /data/uploads
+      BACKUP_DRIVER: local
+      BACKUP_LOCAL_DIR: /data/backups
+      JWT_SECRET: local-verification-only-not-a-real-secret-32chars
+    volumes:
+      - pgsock:/var/run/postgresql
+      - uploads:/data/uploads
+      - backups:/data/backups
+      # 种子脚本要读的 Odoo 导出 CSV。pic/ 在 .dockerignore 里（生产镜像不该带这些），
+      # 本地验证需要它才能灌出有商品的库，所以只在这里只读绑挂。
+      - ./pic:/app/pic:ro
+    command: ["npx", "prisma", "migrate", "deploy"]
+
+volumes:
+  pgdata:
+  pgsock:
+  uploads:
+  backups:

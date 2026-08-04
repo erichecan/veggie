@@ -37,6 +37,15 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
+# 私有化下上传文件与备份产物落本地磁盘（STORAGE_DRIVER=local / BACKUP_DRIVER=local）。
+# 这两个目录必须由 nextjs(uid 1001) 拥有，否则运行时 mkdir 报 EACCES，表现是上传接口
+# 500「图片上传失败」——2026-08-04 本地 compose 验证时实测到（docker 具名卷会继承镜像里
+# 该目录的属主，所以在这里建好就能一并解决具名卷的情况）。
+#
+# ⚠️ 宿主机 bind mount **不继承**镜像里的属主。服务器上 /data/veggie/{uploads,backups}
+#    必须在宿主机侧 chown 1001:1001，见部署手册。
+RUN mkdir -p /data/uploads /data/backups && chown -R nextjs:nodejs /data
+
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

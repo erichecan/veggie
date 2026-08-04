@@ -7,6 +7,7 @@ import { SEED_DEMO_CUSTOMERS } from '../lib/seed-customers'
 import { SEED_UOM_CATEGORIES } from '../lib/seed-uoms'
 import { STANDARD_ACCOUNTS } from '../lib/accounting'
 import { loadCsvProducts, loadCsvCustomers } from './csv-loader'
+import type { OrderStatus } from '../lib/generated/prisma/enums'
 
 const prisma = createPrismaClient()
 
@@ -351,7 +352,18 @@ async function main() {
   console.log(`✅ 爱尔兰示例客户: ${IRISH_CUSTOMERS.length} 条`)
 
   // ── 示例订单（每个餐馆一张，状态 IN_DELIVERY 供行程使用）───────────────
-  const DEMO_ORDERS = [
+  // status 显式标注成 OrderStatus 而不是让它推断成 string：这里原本写 `o.status as any`，
+  // 于是 'DELIVERED'（枚举里根本没有，正确值是 COMPLETED）一直躺在种子数据里，
+  // typecheck 全绿、直到真去空库灌种子才在运行时炸（2026-08-04 T1.4 发现）。
+  const DEMO_ORDERS: Array<{
+    id: string
+    restaurantId: string
+    restaurantName: string
+    items: Array<{ productId: string; name: string; qty: number; unitPrice: number; subtotal: number }>
+    totalAmount: number
+    status: OrderStatus
+    deliveryBatch: string | null
+  }> = [
     { id: 'order_ie_001', restaurantId: 'cust_ie_001', restaurantName: 'Lucky Garden Chinese Restaurant',
       items: [{ productId: 'prod_demo_1', name: 'Bok Choy', qty: 10, unitPrice: 2.5, subtotal: 25 }, { productId: 'prod_demo_2', name: 'Spring Onion', qty: 5, unitPrice: 1.8, subtotal: 9 }],
       totalAmount: 34, status: 'IN_DELIVERY', deliveryBatch: '1 pm BAO' },
@@ -366,7 +378,7 @@ async function main() {
       totalAmount: 46.5, status: 'CONFIRMED', deliveryBatch: null },
     { id: 'order_ie_005', restaurantId: 'cust_ie_005', restaurantName: 'Phoenix Asian Supermarket & Deli',
       items: [{ productId: 'prod_demo_8', name: 'Lemongrass', qty: 10, unitPrice: 2.2, subtotal: 22 }, { productId: 'prod_demo_9', name: 'Kaffir Lime Leaf', qty: 8, unitPrice: 3.0, subtotal: 24 }],
-      totalAmount: 46, status: 'DELIVERED', deliveryBatch: '1 am AFZAAL' },
+      totalAmount: 46, status: 'COMPLETED', deliveryBatch: '1 am AFZAAL' },
   ]
 
   // Upsert DriverSlot records for demo orders
@@ -396,14 +408,14 @@ async function main() {
     const driverSlotId = resolveDriverSlotId(o.deliveryBatch)
     await prisma.order.upsert({
       where: { id: o.id },
-      update: { status: o.status as any, deliveryBatch: o.deliveryBatch, driverSlotId },
+      update: { status: o.status, deliveryBatch: o.deliveryBatch, driverSlotId },
       create: {
         id: o.id,
         restaurantId: o.restaurantId,
         restaurantName: o.restaurantName,
         items: o.items as any,
         totalAmount: o.totalAmount,
-        status: o.status as any,
+        status: o.status,
         deliveryBatch: o.deliveryBatch,
         driverSlotId,
       },
