@@ -656,7 +656,15 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 
 | 任务 | 完成时间 | 证据 / commit | 备注 |
 |---|---|---|---|
-| （待填） | | | |
+| B2 自查解决 | 2026-08-04 | `bdb7f6b` | `git remote` → `erichecan/veggie`，台账占位符已全替换 |
+| T2.4 Step 1 本地验 uid 覆盖 | 2026-08-04 | `bdb7f6b` | ✅ 方案 A 可行，捞出 `HOME=/tmp` 陷阱 |
+| T3.2 生产编排 | 2026-08-04 | `5b41ecc` | `deploy/droplet/docker-compose.yml` + `app.env.example`。**未上机** |
+| T3.3 Step 1 migrator 镜像 | 2026-08-04 | `5b41ecc` | Dockerfile 加 `migrator` stage |
+| T3.5 Step 1–2 健康检查 + 工作流 | 2026-08-04 | `5b41ecc` | `healthcheck.sh` + `deploy-droplet.yml`。**未实跑** |
+
+> ⚠️ 上面标「未上机 / 未实跑」的，只是**写完了**，不等于验证过。
+> 它们的验收判据（T3.2 Step 3、T3.5 Step 3 的故意坏部署回滚测试）都需要服务器访问，
+> 全部卡在 P0a。**不要把「文件已写」当成「任务已完成」。**
 
 ## T2.0 复核结果
 
