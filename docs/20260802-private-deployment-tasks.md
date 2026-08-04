@@ -947,8 +947,12 @@ docker compose -f docker-compose.local-pg.yml exec app id
 
 ```bash
 docker compose -f docker-compose.local-pg.yml exec app npx prisma migrate deploy
-docker compose -f docker-compose.local-pg.yml exec app npx prisma db seed
+docker compose -f docker-compose.local-pg.yml exec app npx tsx prisma/seed.ts
 ```
+
+> 用 `npx tsx prisma/seed.ts` 而不是 `npx prisma db seed`：后者最终也是跑这条
+> （`package.json` 的 `prisma.seed`），但多绕一层 CLI，容器里没必要。
+> 种子脚本已在 T1.3b 改走 `lib/prisma-factory`，`DATABASE_DRIVER=pg` 对它生效。
 
 Expected: 61 个迁移全部 applied；种子数据落库。
 
@@ -1111,6 +1115,25 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 | T1.1 双驱动 | 2026-08-02 | `5466ed2` | ✅ pg 分支已在生产库真实验证（149874 单/5479 商品，与 neon 分支一致）。两处偏离计划见下 |
 | T1.2 object-store | 2026-08-03 | `37ca22c` | ✅ 10 项测试全绿；typecheck / 全量 175 项测试 / build 三绿。按计划实现，无偏离 |
 | T1.3 改造调用点 | 2026-08-03 | `18b807e` | ✅ 真实 HTTP 验证通过（见下）；全量 178 项测试 0 失败；build 通过。顺带查清了两个既有问题 |
+| **T1.3b 脚本脱 Neon**（计划外新增） | 2026-08-04 | `c7278f1` | ✅ 62 个脚本/种子统一走 `lib/prisma-factory`；grep 归零 + typecheck + 178 项测试 + build；**真跑 get-admin.ts 两个驱动都通** |
+
+### T1.3b：一条计划里没有的任务，但它挡在 T1.4 前面
+
+**发现经过**：为查 db:validate 崩溃根因，用 `DATABASE_DRIVER=pg` 跑对照，
+栈里**仍是** `PrismaNeonAdapter` —— 因为 `scripts/validate-data.ts` 自己
+`new PrismaClient({ adapter: new PrismaNeon(...) })`，根本不读 `lib/db`。
+实验无效，但顺藤摸出 `scripts/` + `prisma/` 下**62 个文件**都是这个写法。
+
+**为什么必须先做**：`prisma/seed.ts` 就在这份名单里，而 T1.4 第三步要给容器里的
+标准 PostgreSQL 灌种子数据 —— 照原样直接连不上。`scripts/validate-data.ts` 同理，
+它在阶段 4 的验收判据里。
+
+**改法**：抽 `lib/prisma-factory.ts` 作唯一构造入口（复用 `lib/db-driver` 的选择逻辑），
+codemod 机械替换，`lib/db.ts` 退化成只管单例。加第三条静态锁，并用临时违规文件
+验证过该锁**不是空转**。
+
+> **给设计文档的修正**：§1.4「代码层耦合点（复查后为 3 处）」是错的，实际是
+> **3 处 + 62 个脚本/种子**。清查范围当时只覆盖了 `app/` 和 `lib/`。
 
 ### T1.3 实测结果（dev 服务器 + `STORAGE_DRIVER=local`，真实 HTTP 请求）
 
