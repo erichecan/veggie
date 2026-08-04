@@ -660,7 +660,28 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 | T2.4 Step 1 本地验 uid 覆盖 | 2026-08-04 | `bdb7f6b` | ✅ 方案 A 可行，捞出 `HOME=/tmp` 陷阱 |
 | T3.2 生产编排 | 2026-08-04 | `5b41ecc` | `deploy/droplet/docker-compose.yml` + `app.env.example`。**未上机** |
 | T3.3 Step 1 migrator 镜像 | 2026-08-04 | `5b41ecc` | Dockerfile 加 `migrator` stage |
-| T3.5 Step 1–2 健康检查 + 工作流 | 2026-08-04 | `5b41ecc` | `healthcheck.sh` + `deploy-droplet.yml`。**未实跑** |
+| T3.5 Step 1–2 健康检查 + 工作流 | 2026-08-04 | `5b41ecc` `cb65023` | `healthcheck.sh` + `deploy-droplet.yml`。**未实跑** |
+| T3.1 Step 1 生成 deploy 密钥 | 2026-08-04 | `146b9ef` | `~/.ssh/veggie_deploy`，公钥待用户装（见人工步骤文档） |
+| 镜像瘦身 | 2026-08-04 | `cb65023` | migrator 每次部署增量 912MB → **8MB**；排除 281MB 无用数据 |
+
+### 镜像优化实测（`docker history` 逐层）
+
+| 版本 | 总体积 | **每次部署失效的层** |
+|---|---|---|
+| `FROM builder` | 3.4 GB | `COPY . .` 328MB + `npm run build` 580MB ≈ **912 MB** |
+| `FROM deps` | 3.61 GB | ≈ 302 MB |
+| `FROM deps` + 排除 281MB | **3.26 GB** | ≈ **8 MB** |
+
+> ⚠️ **总体积是误导性指标。** 中间那版按总体积看是负优化（3.61 > 3.4），
+> 我差点据此回退。真正该看的是「TAG 变化时哪些层要重新推/拉」——
+> `node_modules` 那一层只在 `package-lock` 变化时才失效，不参与每次部署。
+
+排除的是 `scripts/odoo-migration/exports`（281MB，Odoo 一次性迁移导出数据，
+`grep app/lib/prisma` 零引用）与 `odoodata`。这条同时让运行时镜像受益。
+
+**改 `.dockerignore` 后的回归验证**（怕静默删掉构建需要的东西）：
+健康检查 `db:ok` · 登录 · 上传落盘 · Chromium 渲染 PDF 98969 字节 ·
+备份 57051 字节 · 401/401/404 —— 全通过。运行时镜像 1.68 GB。
 
 > ⚠️ 上面标「未上机 / 未实跑」的，只是**写完了**，不等于验证过。
 > 它们的验收判据（T3.2 Step 3、T3.5 Step 3 的故意坏部署回滚测试）都需要服务器访问，
