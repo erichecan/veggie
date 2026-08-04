@@ -17,6 +17,21 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx prisma generate
 RUN npm run build
 
+# ── 迁移 / 运维镜像 ──────────────────────────────────────────────────────────
+# 为什么单独一层：运行时镜像是 Next standalone 产物，**不含 prisma CLI**
+# （node_modules/.bin 里没有，2026-08-04 T1.4 实测）。在那里跑
+# `npx prisma migrate deploy` 会去 npm 现拉 CLI，依赖外网且脆弱——部署流水线
+# 的迁移步骤不能建立在"npm registry 此刻可达"上。
+#
+# builder 阶段有 npm ci 装全的 node_modules 与完整源码（含 prisma/migrations），
+# 直接派生即可。只用于一次性任务（migrate deploy / seed / 订正脚本），跑完即退，
+# 不常驻，所以体积大不是问题。
+FROM builder AS migrator
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+CMD ["npx", "prisma", "migrate", "deploy"]
+
 # ── 运行时镜像 ───────────────────────────────────────────────────────────────
 FROM base AS runner
 WORKDIR /app

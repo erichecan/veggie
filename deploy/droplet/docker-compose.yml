@@ -1,0 +1,62 @@
+# 客户自有服务器（DigitalOcean droplet）的生产编排。
+# 部署到服务器的 /opt/veggie/docker-compose.yml。
+#
+# 与 docker-compose.local-pg.yml 的区别：
+#   - PostgreSQL **不在这里** —— 装在宿主机（设计 §2.1：数据卷不经 Docker、
+#     接手方用的是通用运维常识、备份 cron 直接跑 pg_dump 不用套 docker exec）
+#   - 数据目录是宿主机 bind mount，不是具名卷
+#   - 镜像从 GHCR 拉，不在本机构建（2 vCPU 跑 npm run build 会拖垮同机 PostgreSQL）
+name: veggie
+
+services:
+  app:
+    image: ghcr.io/erichecan/veggie:${TAG:-latest}
+    restart: unless-stopped
+    # 覆盖镜像默认的 uid 1001 —— 服务器上 1001 已被人类账号 dev 占用（T2.4）。
+    user: "1100:1100"
+    env_file: /etc/veggie/app.env
+    environment:
+      # ⛔ 缺了这条打印 PDF 必 500。uid 1100 在 /etc/passwd 里没有条目，HOME 不指向
+      # 可写目录，Chromium 的 crashpad 定不出数据目录就拒绝启动：
+      #   Failed to launch the browser process
+      #   chrome_crashpad_handler: --database is required
+      # 其它一切正常，唯独打印挂——2026-08-04 本地实测，别删。
+      HOME: /tmp
+    volumes:
+      # 宿主机 PostgreSQL 的 unix socket。数据库配 listen_addresses='' 完全不监听网络。
+      - /var/run/postgresql:/var/run/postgresql
+      # 宿主机侧必须 chown 1100:1100 —— bind mount **不继承**镜像里的目录属主，
+      # 不 chown 的话上传接口静默 500（EACCES: mkdir '/data/uploads/products'）。
+      - /data/veggie/uploads:/data/uploads
+      - /data/veggie/backups:/data/backups
+      # ⛔ 换 uid 后 Next standalone 写不进镜像里属 1001 的 .next/cache
+      - nextcache:/app/.next/cache
+    ports:
+      # 只绑回环，对外统一经 Nginx。ufw 之外再加一道。
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q '\"db\":\"ok\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  # 一次性任务：迁移 / 种子 / 订正脚本。profiles 让它不参与 up -d。
+  # 运行时镜像不含 prisma CLI，所以必须用这个从 builder 阶段派生的镜像。
+  migrator:
+    image: ghcr.io/erichecan/veggie-migrator:${TAG:-latest}
+    profiles: ["tools"]
+    env_file: /etc/veggie/app.env
+    environment:
+      HOME: /tmp
+    volumes:
+      - /var/run/postgresql:/var/run/postgresql
+      - /data/veggie/uploads:/data/uploads
+      - /data/veggie/backups:/data/backups
+    restart: "no"
+
+volumes:
+  nextcache:

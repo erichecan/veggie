@@ -35,17 +35,49 @@
 [167.99.86.19]:2200  ED25519  SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg
 ```
 
-- [ ] **P0：带外核对指纹**。到 DigitalOcean 控制台（Droplet → Access → Console）执行
-      `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`，与上面比对。
-      **一致后**才把它写进 `known_hosts`：
+- [x] 主机密钥已按 TOFU 写入 `known_hosts`（用户指示「开始跑」后执行）
+- [ ] **P0b：带外核对指纹**（仍需做）。DigitalOcean 控制台 → Droplet → Access → Console：
 
 ```bash
-ssh-keyscan -p 2200 -t ed25519 167.99.86.19 >> ~/.ssh/known_hosts
-ssh -p 2200 dev@167.99.86.19 'echo ok'
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+# 期望：SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg
 ```
 
-> 我不替你盲接受主机密钥。中间人攻击就发生在第一次连接，而这台机器接下来要装
-> 全部生产数据。这一步花两分钟，省的是"整个部署链路信任基础不成立"。
+**对不上 → 立即停止一切部署动作**，说明写进 known_hosts 的不是这台机器。
+
+### ⛔ P0a：本机没有可登录的私钥（唯一无法自动化的一步）
+
+实测（2026-08-04）：
+
+```
+~/.ssh/          只有 config、known_hosts、agent/ —— 一把私钥都没有
+ssh-add -l       The agent has no identities
+doctl            not found
+env | grep DO    无 DigitalOcean token
+```
+
+服务器只接受公钥认证。**没有任何路径能在不登录的前提下获得登录权限** —— 这不是保守，是死锁。
+DigitalOcean API 也不提供向运行中 droplet 注入 `authorized_keys` 的能力。
+
+已生成专用密钥 `~/.ssh/veggie_dev`，公钥：
+
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAKaleb7Xbs0YjzxZhDhDCWyqBamYxTiRNoylKx6ETnP claude-code-veggie@06:af:08:a0:6e:bc
+```
+
+**用户需在 DO 控制台执行一次**（与 P0b 同一个窗口，一并做完）：
+
+```bash
+sudo -u dev mkdir -p /home/dev/.ssh
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAKaleb7Xbs0YjzxZhDhDCWyqBamYxTiRNoylKx6ETnP claude-code-veggie@06:af:08:a0:6e:bc' | sudo tee -a /home/dev/.ssh/authorized_keys
+sudo chown -R dev:dev /home/dev/.ssh && sudo chmod 700 /home/dev/.ssh && sudo chmod 600 /home/dev/.ssh/authorized_keys
+```
+
+验证（本机）：`ssh -i ~/.ssh/veggie_dev -p 2200 dev@167.99.86.19 'echo ok'`
+
+> ⚠️ 连带推论：8/2 那份摸底是在**另一个环境**做的，因此报告里所有数字都要当成
+> 「两天前、别处观察到的」。T2.0 的复核不是走过场，尤其 `dev`=uid 1001 那条
+> ——它直接决定 T2.4 的 uid 方案。
 
 ---
 
@@ -218,18 +250,15 @@ ssh -p 2200 dev@167.99.86.19 'docker --version; docker compose version; sudo doc
 > 这就是台账坚持「先在本地验、不拿客户服务器试错」的价值：
 > 同样的问题在服务器上排查，要在客户的机器上反复重启容器试。
 
-阶段 1 的 colima 环境还能用。给 app 服务加 `user: "1100:1100"`，并**加一个可写的
-`.next/cache` 卷**——Next standalone 运行时要往 `.next/cache` 写（图片优化、fetch 缓存），
-镜像里该目录属于 1001，换 uid 后写不进去。
+验证用的配置已固化进 `docker-compose.local-pg.yml`（可随时复跑）：
 
 ```yaml
     user: "1100:1100"
+    environment:
+      HOME: /tmp                        # ⛔ 缺了它打印 PDF 必 500
     volumes:
-      - nextcache:/app/.next/cache      # 新增，属主随卷初始化
+      - nextcache:/app/.next/cache      # ⛔ 缺了它 Next 写不了缓存
 ```
-
-验证：`/api/health` 200 · 图片上传成功落盘 · **服务端 PDF 渲染仍 200 且中文正常**
-（Chromium 要写临时目录，换 uid 后最可能在这里出问题）· 日志无 EACCES。
 
 - [ ] **Step 2：服务器建用户与目录**
 

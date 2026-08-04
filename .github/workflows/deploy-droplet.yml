@@ -1,0 +1,116 @@
+name: Deploy to droplet
+
+# 客户自有服务器（DigitalOcean）的部署链路。
+#
+# 与 deploy.yml（Cloud Run）的关系：迁移完成前两者并存 —— 本工作流先只支持手动触发，
+# 待阶段 5 正式切换后改为 push main 自动触发，同时把 deploy.yml 降为仅手动。
+# 见 docs/20260804-server-enablement-tasks.md T3.7。
+#
+# ⛔ 不在 2 vCPU 的服务器上构建镜像（会拖垮同机 PostgreSQL）。构建在 runner 上做，
+#    服务器只负责 pull + up。
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_migrate:
+        description: '跳过 prisma migrate deploy（仅在确认无新迁移时用）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-droplet
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/${{ github.repository }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 运行时镜像（Next standalone + chromium + 中文字体 + postgresql17-client）
+      - name: Build & push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runner
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 迁移镜像：运行时镜像不含 prisma CLI，迁移不能建立在"npm registry 此刻可达"上
+      - name: Build & push migrator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: migrator
+          push: true
+          tags: |
+            ${{ env.IMAGE }}-migrator:${{ github.sha }}
+            ${{ env.IMAGE }}-migrator:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set up SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # 固定主机密钥，不用 StrictHostKeyChecking=no —— 那等于每次部署都接受任意中间人
+          printf '%s\n' "${{ secrets.DROPLET_HOST_KEY }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          HOST: ${{ vars.DROPLET_HOST }}
+          PORT: ${{ vars.DROPLET_PORT }}
+          USER_NAME: ${{ vars.DROPLET_USER }}
+          TAG: ${{ github.sha }}
+          SKIP_MIGRATE: ${{ inputs.skip_migrate }}
+        run: |
+          set -euo pipefail
+          ssh -p "$PORT" "$USER_NAME@$HOST" bash -euo pipefail -s <<EOSSH
+            cd /opt/veggie
+
+            # 记下当前 tag 作为回滚目标（第一次部署时可能为空）
+            PREV_TAG=\$(docker compose config --format json 2>/dev/null \
+              | sed -nE 's#.*ghcr.io/${{ github.repository }}:([^"]+).*#\1#p' | head -1 || true)
+            echo "PREV_TAG=\${PREV_TAG:-<无>}  NEW_TAG=$TAG"
+
+            export TAG="$TAG"
+            docker compose pull app migrator
+
+            # 「先迁移后部署」：加列这类增量变更下旧代码对多出的可空列前向兼容；
+            # 反过来会出「镜像 client 期望新列、库还没有」的 ColumnNotFound 500。
+            if [ "$SKIP_MIGRATE" != "true" ]; then
+              docker compose run --rm migrator npx prisma migrate deploy
+            else
+              echo "⏭  按输入跳过迁移"
+            fi
+
+            docker compose up -d --no-build app
+            ./healthcheck.sh "$TAG" "\${PREV_TAG:-}"
+          EOSSH
+
+      - name: Deployed image
+        if: success()
+        run: echo "✅ ${{ env.IMAGE }}:${{ github.sha }}"
