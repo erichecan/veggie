@@ -4,13 +4,10 @@
  *   npx tsx --env-file=.env.local scripts/diagnose-shortage-driver-source.ts 2026-07-04
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
+import { createPrismaClient } from '@/lib/prisma-factory'
 import { PrismaClient, type $Enums } from '../lib/generated/prisma/client'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 async function main(): Promise<void> {
   const date = process.argv[2] ?? '2026-07-04'

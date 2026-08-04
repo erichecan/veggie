@@ -7,15 +7,11 @@
  *   node --import tsx -r dotenv/config scripts/dedup-to-cuid25.ts dotenv_config_path=.env.local            # 备份 + dry-run
  *   node --import tsx -r dotenv/config scripts/dedup-to-cuid25.ts dotenv_config_path=.env.local --apply     # 执行
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'fs'
 import path from 'path'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 const APPLY = process.argv.includes('--apply')
 
 const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)

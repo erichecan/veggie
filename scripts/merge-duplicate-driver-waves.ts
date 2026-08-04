@@ -24,13 +24,10 @@
  *   npx tsx --env-file=.env.local scripts/merge-duplicate-driver-waves.ts --apply  # 实际合并
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
+import { createPrismaClient } from '@/lib/prisma-factory'
 import { PrismaClient, Prisma } from '../lib/generated/prisma/client'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 

@@ -31,16 +31,12 @@
  *   node --import tsx -r dotenv/config scripts/import-test-orders-odoo-20260714.ts dotenv_config_path=.env.local            # dry-run
  *   node --import tsx -r dotenv/config scripts/import-test-orders-odoo-20260714.ts dotenv_config_path=.env.local --apply    # 实际写入
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'fs'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 import { assignOrderToWave } from '../lib/wave-assign'
 import { syncOrderItemsSnapshot } from '../lib/order-items'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 const CSV_PATH = '/Users/eric/Downloads/sale.order (7).csv'

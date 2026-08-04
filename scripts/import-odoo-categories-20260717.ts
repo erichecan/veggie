@@ -15,15 +15,11 @@
  *   node --import tsx -r dotenv/config scripts/import-odoo-categories-20260717.ts dotenv_config_path=.env.local            # dry-run
  *   node --import tsx -r dotenv/config scripts/import-odoo-categories-20260717.ts dotenv_config_path=.env.local --apply    # 实际写入
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'fs'
 import path from 'path'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 const CSV_PATH = path.join(__dirname, 'odoo-migration/exports/product_category.csv')

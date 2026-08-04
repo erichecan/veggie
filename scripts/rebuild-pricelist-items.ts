@@ -26,16 +26,12 @@
  *   node --import tsx -r dotenv/config scripts/rebuild-pricelist-items.ts dotenv_config_path=.env.local            # dry-run
  *   node --import tsx -r dotenv/config scripts/rebuild-pricelist-items.ts dotenv_config_path=.env.local --apply    # 写入
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'fs'
 import path from 'path'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 import { randomUUID } from 'crypto'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 

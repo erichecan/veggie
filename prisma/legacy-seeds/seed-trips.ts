@@ -1,12 +1,7 @@
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
+import { createPrismaClient } from '@/lib/prisma-factory'
 
-neonConfig.webSocketConstructor = ws
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
-const prisma = new PrismaClient({ adapter })
+const prisma = createPrismaClient()
 
 const IRISH_CUSTOMERS = [
   {

@@ -9,13 +9,9 @@
  * (仅限 status ∈ {CONFIRMED, WAVE_ASSIGNED} 的未出发订单；已出发/完成的不动)，并同步 deliverySlip。
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
+import { createPrismaClient } from '@/lib/prisma-factory'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const DO_FIX = process.argv.includes('--fix')
 const ymd = (d: Date | null | undefined): string => (d ? new Date(d).toISOString().slice(0, 10) : 'NULL')

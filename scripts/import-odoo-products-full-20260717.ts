@@ -37,15 +37,11 @@
  * 回滚：--apply 前会把当前全部 Product 整表快照写到
  *   scripts/.backup-products-pre-20260717.json
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'fs'
 import path from 'path'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 const CSV_PATH = path.join(__dirname, 'odoo-migration/exports/product_product.csv')

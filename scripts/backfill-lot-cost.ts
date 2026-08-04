@@ -11,13 +11,9 @@
  *   npx tsx --env-file=.env.local scripts/backfill-lot-cost.ts            # dry-run
  *   npx tsx --env-file=.env.local scripts/backfill-lot-cost.ts --apply    # 实际写入
  */
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+import { createPrismaClient } from '@/lib/prisma-factory'
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 

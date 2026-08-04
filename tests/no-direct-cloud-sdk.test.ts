@@ -66,6 +66,36 @@ test('只有 lib/storage/* 可以直连云存储 SDK', () => {
   )
 })
 
+/**
+ * 只有 lib/prisma-factory.ts 可以构造 PrismaClient。
+ *
+ * 由来：2026-08-03 发现 lib/db.ts 改成双驱动之后，scripts/ 与 prisma/ 下还有 62 个
+ * 文件各自 `new PrismaClient({ adapter: new PrismaNeon(...) })`，完全绕过 lib/db。
+ * 其中包括 prisma/seed.ts —— 迁移演练建完表就没法灌种子数据。设计文档最初的耦合点
+ * 清查只看了 app/ 和 lib/，漏了这一整片。
+ *
+ * 全量 sweep 之后加这条锁：下一个脚本再手搓一个 PrismaNeon，测试立刻变红。
+ */
+test('只有 lib/prisma-factory.ts 可以直接构造 PrismaClient / 适配器', () => {
+  const ALLOWED_FACTORY = new Set(['lib/prisma-factory.ts'])
+  // scripts/audit/checks/* 里这些名字是被审计的字符串字面量，不是真的构造
+  const AUDIT_CHECKS = /^scripts\/audit\/checks\//
+  const offenders: string[] = []
+  for (const file of [...sourceFiles(), ...walk('scripts'), ...walk('prisma')]) {
+    if (ALLOWED_FACTORY.has(file) || AUDIT_CHECKS.test(file)) continue
+    const src = readFileSync(file, 'utf8')
+    if (/new\s+PrismaNeon\(/.test(src) || /new\s+PrismaPg\(/.test(src)) {
+      offenders.push(`${file} → 直接 new 适配器`)
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    '这些文件绕过 lib/prisma-factory 直接构造数据库适配器，迁到标准 PostgreSQL 后连不上：\n' +
+      offenders.join('\n'),
+  )
+})
+
 test('业务代码不许硬编码 storage.googleapis.com 绝对 URL', () => {
   // 绝对 URL 一旦写进数据库，迁移时就不只是改代码，还要订正数据。
   const offenders: string[] = []

@@ -11,13 +11,10 @@
  *   npx tsx --env-file=.env.local scripts/repair-orphaned-archived-pallets.ts --apply  # 实际修复
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
+import { createPrismaClient } from '@/lib/prisma-factory'
 import { PrismaClient, Prisma } from '../lib/generated/prisma/client'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 const LOCKED_WAVE_IDS = ['cmr46dgra003201s6gy0lf0md', 'cmr46dgnu002v01s62va5jeby', 'cmr5kdzo8001001s62a75w5r6']

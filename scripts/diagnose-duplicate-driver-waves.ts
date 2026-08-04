@@ -9,13 +9,9 @@
  *   npx tsx --env-file=.env.local scripts/diagnose-duplicate-driver-waves.ts
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
+import { createPrismaClient } from '@/lib/prisma-factory'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 async function main() {
   const waves = await prisma.pickingWave.findMany({

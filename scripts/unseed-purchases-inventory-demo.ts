@@ -13,12 +13,11 @@
  *   node --import tsx -r dotenv/config scripts/unseed-purchases-inventory-demo.ts dotenv_config_path=.env.local            # dry-run
  *   node --import tsx -r dotenv/config scripts/unseed-purchases-inventory-demo.ts dotenv_config_path=.env.local --apply    # 真正删除
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'node:fs'
 import path from 'node:path'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
 
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) }) as any
+const prisma = createPrismaClient() as any
 const APPLY = process.argv.includes('--apply')
 const MANIFEST_PATH = path.join(__dirname, '.demo-seed-manifest.json')
 

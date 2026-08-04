@@ -12,11 +12,10 @@
  *   node --import tsx -r dotenv/config scripts/fix-order-code-ascii.ts dotenv_config_path=.env.local            # dry-run
  *   node --import tsx -r dotenv/config scripts/fix-order-code-ascii.ts dotenv_config_path=.env.local --apply    # 写库
  */
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
+import { createPrismaClient } from '@/lib/prisma-factory'
 import { getInitials } from '../lib/order-code'
 
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 const APPLY = process.argv.includes('--apply')
 const isAscii = (s: string) => /^[\x00-\x7F]*$/.test(s)
 

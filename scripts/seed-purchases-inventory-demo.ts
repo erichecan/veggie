@@ -23,17 +23,16 @@
  *
  * 配套的删除脚本：scripts/unseed-purchases-inventory-demo.ts（读 manifest 按 id 精确删除）
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'node:fs'
 import path from 'node:path'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
 import { createPurchaseOrder } from '../lib/create-purchase-order'
 import { createDraftVendorBillForPurchaseOrder } from '../lib/vendor-bill-from-po'
 import { generateFreshDailySuggestions } from '../lib/purchase-suggestions-fresh'
 import { generateAnnualDryGoodsPlan } from '../lib/purchase-suggestions-annual'
 import { SCRAP_REASON_LABEL } from '../lib/scrap-reasons'
 
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) }) as any
+const prisma = createPrismaClient() as any
 const APPLY = process.argv.includes('--apply')
 const MANIFEST_PATH = path.join(__dirname, '.demo-seed-manifest.json')
 const NOW = new Date()

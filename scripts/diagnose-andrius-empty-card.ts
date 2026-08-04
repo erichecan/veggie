@@ -4,13 +4,9 @@
  *   npx tsx --env-file=.env.local scripts/diagnose-andrius-empty-card.ts 2026-07-03 ANDRIUS
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
+import { createPrismaClient } from '@/lib/prisma-factory'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const ymd = (d: Date | null | undefined): string => (d ? new Date(d).toISOString().slice(0, 10) : 'NULL')
 

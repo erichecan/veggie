@@ -11,16 +11,11 @@
  */
 
 import { config } from 'dotenv'
+import { createPrismaClient } from '@/lib/prisma-factory'
 config({ path: '.env.local' })
 
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
-const prisma = new PrismaClient({ adapter })
+const prisma = createPrismaClient()
 
 // --resume: 跳过清空步骤，只处理没有图片的商品（用于第二次及后续运行）
 const RESUME_MODE = process.argv.includes('--resume')

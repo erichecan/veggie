@@ -9,15 +9,11 @@
  *           （与 assign 接口一致：入波次不改订单状态，批次板按 orderIds 解析渲染）。
  */
 import 'dotenv/config'
+import { createPrismaClient } from '@/lib/prisma-factory'
 import { randomUUID } from 'crypto'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import ws from 'ws'
-import { PrismaClient } from '../../lib/generated/prisma/client'
 import { recomputeOnHand, ensureNonNegativeStock } from './inventory'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const DISP_REF = 'seed-dispatch'
 const WAVE_PREFIX = 'DISP-WAVE-'

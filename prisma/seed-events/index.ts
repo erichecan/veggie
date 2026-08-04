@@ -9,11 +9,8 @@
  * 幂等：只清理带标记的数据 + 重置库存（StockMove/Lot 由本种子全权拥有）。
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../../lib/generated/prisma/client'
+import { createPrismaClient } from '@/lib/prisma-factory'
 import bcrypt from 'bcryptjs'
-import ws from 'ws'
 import { Rng } from './rng'
 import { Counter, MARK, SCALE_CONFIG, type Ctx, type Scale } from './context'
 import { buildPersonas, SALESMEN } from './personas'
@@ -25,9 +22,7 @@ import { recomputeOnHand, ensureNonNegativeStock } from './inventory'
 import { runAssertions } from './assert'
 import { DAY } from './shared'
 
-neonConfig.webSocketConstructor = ws
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
-const prisma = new PrismaClient({ adapter })
+const prisma = createPrismaClient()
 
 const SEED = 20260613
 

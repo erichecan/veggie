@@ -5,12 +5,8 @@
  * wave 是调度唯一真相,只回写 order.driverSlotId 这一列,不动 wave/状态。
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+import { createPrismaClient } from '@/lib/prisma-factory'
+const prisma = createPrismaClient()
 
 async function main(): Promise<void> {
   // 所有进过 wave 的订单 → wave.driverSlotId

@@ -3,13 +3,9 @@
  *   npx tsx --env-file=.env.local scripts/diagnose-driver-edit-mismatch.ts <orderId> [<orderId> ...]
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
+import { createPrismaClient } from '@/lib/prisma-factory'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const fmtSlot = (s: { batchNum: number; timeOfDay: string; driverName: string } | null | undefined) =>
   s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : '—'

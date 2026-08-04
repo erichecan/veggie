@@ -27,15 +27,11 @@
  * 回滚：--apply 前会把当前全部 isVendor=true 记录整表快照写到
  *   scripts/.backup-vendors-pre-20260714.json，需要回滚时按 externalId 手工核对该文件即可。
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import fs from 'fs'
 import path from 'path'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 const CSV_PATH = '/Users/eric/Downloads/res.partner (1).csv'

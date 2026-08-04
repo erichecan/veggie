@@ -21,15 +21,12 @@
  *   npx tsx --env-file=.env.local scripts/backfill-price-source-20260718.ts            # dry-run，只统计不写
  *   npx tsx --env-file=.env.local scripts/backfill-price-source-20260718.ts --apply    # 实际写入
  */
+import { createPrismaClient } from '@/lib/prisma-factory'
 import { PrismaClient, Prisma } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 import { resolvePrice } from '../lib/pricing-engine'
 import type { Product as ProductType, OdooPricelist as OdooPricelistType, Customer as CustomerType } from '../lib/types'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 const TOLERANCE = 0.01

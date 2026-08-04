@@ -3,14 +3,9 @@
  * 运行: node_modules/.bin/tsx --env-file=.env.local prisma/seed-returns.ts
  */
 import 'dotenv/config'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { PrismaClient } from '../lib/generated/prisma/client'
-import ws from 'ws'
+import { createPrismaClient } from '@/lib/prisma-factory'
 
-neonConfig.webSocketConstructor = ws
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
-const prisma = new PrismaClient({ adapter })
+const prisma = createPrismaClient()
 
 // ─── 餐馆（使用 seed.ts 已创建的 demo 客户）────────────────────────────────
 const REST_1 = { restaurantId: 'cust_001', restaurantName: 'Achara' }

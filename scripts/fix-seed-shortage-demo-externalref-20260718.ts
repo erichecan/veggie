@@ -9,13 +9,9 @@
  *   node --import tsx -r dotenv/config scripts/fix-seed-shortage-demo-externalref-20260718.ts dotenv_config_path=.env.local            # dry-run
  *   node --import tsx -r dotenv/config scripts/fix-seed-shortage-demo-externalref-20260718.ts dotenv_config_path=.env.local --apply    # 实际写入
  */
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+import { createPrismaClient } from '@/lib/prisma-factory'
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 

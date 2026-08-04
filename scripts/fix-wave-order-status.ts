@@ -13,10 +13,9 @@
  *   node --import tsx -r dotenv/config scripts/fix-wave-order-status.ts dotenv_config_path=.env.local           # dry-run（只读统计，绝不写库）
  *   node --import tsx -r dotenv/config scripts/fix-wave-order-status.ts dotenv_config_path=.env.local --apply   # 事务写库
  */
-import { PrismaClient } from '../lib/generated/prisma/client'
-import { PrismaNeon } from '@prisma/adapter-neon'
 
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+import { createPrismaClient } from '@/lib/prisma-factory'
+const prisma = createPrismaClient()
 
 const APPLY = process.argv.includes('--apply')
 const sample = (arr: string[], n = 15) => arr.slice(0, n).join(', ') + (arr.length > n ? ` …(+${arr.length - n})` : '')

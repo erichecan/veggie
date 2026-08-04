@@ -20,15 +20,11 @@
  * 幂等： 重复跑先删本脚本标记的订单再重建，不累积。
  */
 import 'dotenv/config'
+import { createPrismaClient } from '@/lib/prisma-factory'
 import { randomUUID } from 'crypto'
-import { neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import ws from 'ws'
-import { PrismaClient } from '../../lib/generated/prisma/client'
 import { recomputeOnHand, ensureNonNegativeStock } from './inventory'
 
-neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+const prisma = createPrismaClient()
 
 const SHORTAGE_REF = 'seed-shortage-demo'
 const CODE_PREFIX = 'SHDEMO-'
