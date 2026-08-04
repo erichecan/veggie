@@ -1022,36 +1022,18 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 
 ---
 
-# 阶段 2–7（服务器侧，待前置解除后展开）
+# 阶段 2–7（服务器侧）
 
-> 这些任务依赖服务器实况与阻塞项，现在写详细步骤会写出对不上的东西。
-> **每条的验收标准现在就定死**，具体步骤在进入该阶段时展开（届时人已在服务器上，能看到真实输出）。
+## 阶段 2、3 → 已展开到独立台账
 
-## 阶段 2：服务器基线
+**`docs/20260804-server-enablement-tasks.md` 是阶段 2、3 的唯一真相**，本文不再重复。
+那份台账已展开到步骤级（含实际命令与验证命令），并吸收了阶段 1 的实测结论：
 
-| # | 任务 | 验收标准 | 依赖 |
-|---|---|---|---|
-| T2.0 | 核实 PGDG 是否支持 Ubuntu 26.04 | `apt-cache policy postgresql-17` 能查到候选版本；查不到则记录退路（官方容器镜像）并告知用户 | B4 |
-| T2.1 | 加 2 GB swap，`vm.swappiness=10` | `free -h` 显示 swap 2G；`sysctl vm.swappiness` 为 10；**重启后仍在**（写进 `/etc/fstab` 与 `sysctl.d`） | 无 |
-| T2.2 | 时区设 `Europe/Dublin` | `timedatectl` 显示 Europe/Dublin | 无 |
-| T2.3 | 装 Docker Engine + compose plugin | `docker compose version` 有输出；`docker run --rm hello-world` 成功 | 无 |
-| T2.4 | 建 `veggie`/`deploy` 用户与 `/data/veggie/{uploads,backups}`、`/opt/veggie`、`/etc/veggie` | `namei -l` 逐级核对属主与权限符合设计 §2 图；`deploy` 用户**不能**读 `/etc/veggie/app.env` 以外的敏感文件 | 无 |
-| T2.5 | 装 PostgreSQL 17，建 `veggie` 角色与库，应用调优参数 | `psql -c 'select version()'` 为 17.x；`show shared_buffers` = 1GB；`show random_page_cost` = 1.1；**`ss -tulnp` 中无 5432** | T2.0 |
-| T2.6 | 装 Nginx + certbot，签发证书，配自动续期 | `curl -I https://<域名>` 返回 200 且证书有效；`certbot renew --dry-run` 通过 | ⛔ B1 |
-| T2.7 | ufw 复核；容器只绑 127.0.0.1 | 从外部机器 `nmap` 只见 2200/80/443 | T2.3 T2.5 |
-| T2.8 | 内存/磁盘告警 | **手工触发一次告警并确认收到**（不是配完就算） | 无 |
-| T2.9 | 产出《服务器基线配置记录》 | 文档能让另一个人从空机器复现出同样的基线 | T2.1–T2.8 |
-
-## 阶段 3：部署流水线
-
-| # | 任务 | 验收标准 | 依赖 |
-|---|---|---|---|
-| T3.1 | 新建 `deploy` 专用 SSH 密钥对，公钥装服务器，私钥进 GitHub Secrets | 用该密钥能 ssh 登录并操作 `/opt/veggie`；**不能**用它拿到全量 sudo | T2.4 |
-| T3.2 | 写生产 `docker-compose.yml` + `/etc/veggie/app.env`（600） | `docker compose up -d` 起得来，`curl localhost:3000/api/health` 200 | T2.5 阶段 1 |
-| T3.3 | 写 `.github/workflows/deploy-droplet.yml`（build → GHCR → ssh 部署） | 一次 `workflow_dispatch` 能把新镜像部署上去并健康检查通过 | B2 T3.1 T3.2 |
-| T3.4 | 写 `/opt/veggie/healthcheck.sh` 与回滚逻辑 | **故意部署一个坏镜像**，验证自动回滚到上一个 sha 且服务未中断 | T3.3 |
-| T3.5 | `deploy.yml`（Cloud Run）改为仅手动触发 | push main 不再触发 Cloud Run 部署 | T3.3 |
-| T3.6 | systemd timer 触发备份 cron 路由 | `systemctl list-timers` 可见；手工 `systemctl start` 一次，备份产物真实生成 | T3.2 |
+- **uid 冲突**：镜像跑 uid 1001，而服务器上 1001 已被人类账号 `dev` 占用 → T2.4 有决策分支
+- **`.next/cache` 可写卷**：换 uid 后 Next standalone 写不进缓存 → 已列入
+- **migrator 容器**：运行时镜像不含 prisma CLI → T3.3
+- **`JWT_SECRET` 必须与现生产同值**：否则切换瞬间所有已登录用户被登出
+- **SSH 主机指纹待带外核对**：`SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg`（P0，阻塞阶段 2 全部）
 
 ## 阶段 4：演练迁移
 
