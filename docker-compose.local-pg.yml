@@ -42,6 +42,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # 覆盖镜像默认的 uid 1001 —— 服务器上 1001 已被人类账号 dev 占用（T2.4）。
+    # 这里就是为了验「应用以任意 uid 运行是否正常」，不拿客户服务器试错。
+    user: "1100:1100"
     environment:
       DATABASE_DRIVER: pg
       DATABASE_URL: postgresql://veggie@localhost/veggie?host=/var/run/postgresql
@@ -52,10 +55,19 @@ services:
       JWT_SECRET: local-verification-only-not-a-real-secret-32chars
       CRON_SECRET: local-verification-cron-secret
       NODE_ENV: production
+      # ⛔ 以任意 uid 运行时必须显式给 HOME。1100 在 /etc/passwd 里没有条目，HOME 因此
+      # 不指向可写目录，Chromium 的 crashpad 定不出数据目录就拒绝启动，表现是打印 PDF
+      # 500「Failed to launch the browser process / chrome_crashpad_handler: --database
+      # is required」（2026-08-04 T2.4 本地实测）。上传、备份、DB 都正常，只有打印挂——
+      # 直接上服务器的话，会是"其它都好、唯独打印不能用"的诡异故障。
+      HOME: /tmp
     volumes:
       - pgsock:/var/run/postgresql
       - uploads:/data/uploads
       - backups:/data/backups
+      # Next standalone 运行时要往 .next/cache 写（图片优化、fetch 缓存）。
+      # 镜像里该目录属 1001，换 uid 后写不进去 → 必须挂可写卷。
+      - nextcache:/app/.next/cache
     ports:
       - "127.0.0.1:3100:3000"
 
@@ -96,3 +108,4 @@ volumes:
   pgsock:
   uploads:
   backups:
+  nextcache:

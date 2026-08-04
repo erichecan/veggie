@@ -187,7 +187,36 @@ ssh -p 2200 dev@167.99.86.19 'docker --version; docker compose version; sudo doc
 | B | 直接 `chown 1001`，接受显示为 `dev` | 交接困惑；应用数据与人类账号纠缠 |
 | C | 用 build-arg 让镜像 uid 可配，droplet 单独构建 | Cloud Run 与 droplet 镜像分叉，回滚窗口内是两套产物 |
 
-- [ ] **Step 1（⛔ 先在本地验，不拿服务器试错）：本地 compose 验证 uid 覆盖**
+- [x] **Step 1（⛔ 先在本地验，不拿服务器试错）：本地 compose 验证 uid 覆盖** ✅ 2026-08-04 完成
+
+**结论：方案 A 可行，但需要两处额外配置，缺一不可。**
+
+| 验证项（uid 1100） | 结果 |
+|---|---|
+| `/api/health`（含 DB 查询，走 unix socket） | ✅ `{"db":"ok"}` |
+| 登录 / 图片上传 / 落盘属主 1100:1100 | ✅ |
+| 备份（`pg_dump` + 写 `/data/backups`） | ✅ 56959 字节 |
+| `.next/cache` 可写 | ✅（**因为挂了 `nextcache` 卷**） |
+| **服务端 Chromium 渲染 PDF** | ❌ → 加 `HOME=/tmp` 后 ✅ 98967 字节，中文完整 |
+| EACCES 日志 | 0 条 |
+
+**两处必需配置：**
+
+1. **`nextcache` 卷挂到 `/app/.next/cache`** —— 镜像里该目录属 1001，换 uid 后写不进去。
+2. ⛔ **`HOME=/tmp` 环境变量** —— 这条最阴。uid 1100 在 `/etc/passwd` 里没有条目，
+   `HOME` 因此不指向可写目录，Chromium 的 crashpad 定不出数据目录直接拒绝启动：
+
+   ```
+   Failed to launch the browser process
+   chrome_crashpad_handler: --database is required
+   ```
+
+   **健康检查、登录、上传、备份、数据库全部正常，唯独打印 PDF 500。**
+   直接上服务器的话，这会是"其它都好、偏偏打印不能用"的诡异故障，而且报错指向
+   Chromium 而不是 uid —— 极难往"用户 id 没在 passwd 里"这个方向想。
+
+> 这就是台账坚持「先在本地验、不拿客户服务器试错」的价值：
+> 同样的问题在服务器上排查，要在客户的机器上反复重启容器试。
 
 阶段 1 的 colima 环境还能用。给 app 服务加 `user: "1100:1100"`，并**加一个可写的
 `.next/cache` 卷**——Next standalone 运行时要往 `.next/cache` 写（图片优化、fetch 缓存），
@@ -441,15 +470,17 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'sudo -n true 2>&1 | hea
 name: veggie
 services:
   app:
-    image: ghcr.io/<B2 owner>/veggie:${TAG:-latest}
+    image: ghcr.io/erichecan/veggie:${TAG:-latest}
     restart: unless-stopped
     user: "1100:1100"                        # T2.4 的 uid 决策
     env_file: /etc/veggie/app.env
+    environment:
+      HOME: /tmp                             # ⛔ 不加则打印 PDF 500，见 T2.4 Step 1
     volumes:
       - /var/run/postgresql:/var/run/postgresql   # 宿主机 PG socket
       - /data/veggie/uploads:/data/uploads
       - /data/veggie/backups:/data/backups
-      - nextcache:/app/.next/cache                # 换 uid 后必须给可写缓存
+      - nextcache:/app/.next/cache                # ⛔ 换 uid 后必须给可写缓存，见 T2.4 Step 1
     ports:
       - "127.0.0.1:3000:3000"                # 只绑回环，对外经 Nginx
 volumes:
@@ -493,7 +524,7 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'cat /etc/veggie/app.env
 设计文档 §4.1 写的 `docker compose run --rm app npx prisma migrate deploy` 会去 npm 现拉，依赖外网且脆弱。
 
 - [ ] **Step 1**：Dockerfile 加一个 `migrator` target（从 `builder` 阶段派生，有完整 node_modules），
-      CI 里一并构建推 `ghcr.io/<owner>/veggie-migrator:<sha>`
+      CI 里一并构建推 `ghcr.io/erichecan/veggie-migrator:<sha>`
 - [ ] **Step 2**：compose 里加 `migrator` 服务，`profiles: ["tools"]`，形状照抄
       `docker-compose.local-pg.yml`（已验证可用）
 - [ ] **Step 3：验证**
@@ -509,12 +540,12 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 \
 
 ## T3.4 GHCR ⛔ 阻塞于 B2
 
-- [ ] **Step 1**：确认仓库 owner，开 `packages: write`
+- [x] ~~确认仓库 owner~~ ✅ `erichecan`（git remote 自查）。仍需开 `packages: write`
 - [ ] **Step 2**：服务器 `docker login ghcr.io`（私有仓库需只读 PAT）
 - [ ] **Step 3：验证**
 
 ```bash
-ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'docker pull ghcr.io/<owner>/veggie:latest && docker images | head -3'
+ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'docker pull ghcr.io/erichecan/veggie:latest && docker images | head -3'
 ```
 
 ---
@@ -528,7 +559,7 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'docker pull ghcr.io/<ow
 ```
 on: push main（paths 沿用现有 deploy.yml 的清单）+ workflow_dispatch
 concurrency: deploy-droplet（不取消进行中）
-  1. build & push ghcr.io/<owner>/veggie:${{ github.sha }} + :latest（启用 Actions cache）
+  1. build & push ghcr.io/erichecan/veggie:${{ github.sha }} + :latest（启用 Actions cache）
   2. build & push veggie-migrator:${{ github.sha }}
   3. ssh：docker compose pull
           docker compose run --rm migrator npx prisma migrate deploy   ← 先迁移
@@ -580,9 +611,10 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 
 | # | 需要什么 | 阻塞 | 状态 |
 |---|---|---|---|
-| P0 | **带外核对 SSH 主机指纹** `SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg` | **阶段 2 全部** | ⛔ 未做 |
+| P0a | **服务器上没有本机可用的登录密钥** —— `~/.ssh` 里一把私钥都没有，无 doctl、无 DO token。**物理上无法自绕**，必须由用户在 DO 控制台把公钥加进 `dev` 的 authorized_keys | **阶段 2 全部** | ⛔ **未做，唯一的人工步骤** |
+| P0b | 带外核对 SSH 主机指纹 `SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg`（已按 TOFU 写入 known_hosts，用户授权「开始跑」） | 信任基础 | ⏳ 待用户在 DO 控制台核对 |
 | B1 | 子域名 + 客户 DNS A 记录 → 167.99.86.19 | T2.6 Step 4–5、阶段 5 | ⛔ 未定 |
-| B2 | GitHub 仓库 owner 名 | T3.2、T3.4、T3.5 | ⏳ 待确认 |
+| ~~B2~~ | ~~GitHub 仓库 owner 名~~ | — | ✅ **已解决**：`git remote` 读出 `erichecan/veggie` → 镜像 `ghcr.io/erichecan/veggie` |
 | B3 | DO Spaces 桶 + 4 个 `S3_*` | T3.2 的 `BACKUP_DRIVER=s3`（可先用 local 顶） | ⏳ 待确认 |
 | B4 | PGDG 是否支持本系统代号 | T2.5 | ⏳ **T2.0 即可自查** |
 
