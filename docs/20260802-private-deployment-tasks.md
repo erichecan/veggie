@@ -1061,7 +1061,7 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 | T4.2 | `pg_restore -j2` 到本地 PG | 退出码 0；warning 逐条看过并判定可忽略；**记录耗时** |
 | T4.3 | 逐表行数比对脚本 | **零差异**。任一张表对不上就停，不进下一步 |
 | T4.4 | `prisma migrate status` | 61 个迁移全 applied，无 pending、无 failed |
-| T4.5 | `npm run db:validate` | 结果与 Neon 端**一致**（不是「干净」——895 个历史不守恒商品是存量问题） |
+| T4.5 | `npm run db:validate` | **两层判据**：① 能否跑完（Neon 上必崩，见「未解决问题」——这是判别根因的唯一实验，结果必须记录）；② 若跑完，结果与 Neon 端**一致**（不是「干净」——895 个历史不守恒商品是存量问题）。若在目标库上仍崩，说明脚本在 133 万行量级上有真问题，单独立项 |
 | T4.6 | 完整业务闭环 + 异常路径 | 同阶段 1 完成判据，但跑在服务器上 |
 | T4.7 | 产出《演练迁移报告》 | 含每步实测耗时 → 这是正式窗口时长的依据，不靠估 |
 
@@ -1255,11 +1255,21 @@ dev 与**生产镜像**都复现，pdfjs 的 worker chunk 没被打进 standalon
 
 > 显式留一条，不要只在对话里提。
 
-- ~~`npm run db:validate` 连 Neon 跑 15 分钟无输出~~ → **已查清（T1.3）：不是慢，是崩。**
-  `Connection terminated unexpectedly`，栈在 `@neondatabase/serverless` 的 WebSocket 层。
-  这不是本次改动引入的（走的是未改行为的 neon 分支）。pg 驱动对照实验进行中。
-  **若对照证实是 Neon 驱动的问题，则迁移后自动消失**，属于「迁过去就好了」的一类，
-  不需要单独修。
+- **`npm run db:validate` 连 Neon 必崩** —— `Connection terminated unexpectedly`。
+  **⚠️ 更正：先前记在这里的「若 pg 能跑完就说明是 Neon 驱动的问题、迁移后自动消失」已被证伪。**
+
+  三段实测证据（2026-08-04）：
+
+  | 假设 | 证据 | 结论 |
+  |---|---|---|
+  | Neon 的 WebSocket 驱动有问题 | 改 `DATABASE_DRIVER=pg` 走 libpq，**崩在同一处**（栈变成 `pg-pool`/`PrismaPgAdapter`），跑了两次都一样 | ❌ 排除 |
+  | 脚本本身有必崩的 bug | 同一脚本打本地容器 PostgreSQL，**11 项不变量全部跑通** | ❌ 排除 |
+  | Neon 服务端在长查询/大结果集上掐连接；或脚本在 133 万行量级上撑不住 | 两者都还成立，本地数据量太小无法区分 | ⏳ **未定** |
+
+  **判别方法只剩一个**：在目标 PostgreSQL 上用 `pg_restore` 恢复的真实生产数据跑一次
+  —— 即 **T4.5**。届时若通过，说明是 Neon 侧的连接终止（迁移顺带解决）；
+  若仍崩，说明脚本在这个数据量级上有真问题，需单独立项。
+  **在 T4.5 出结果之前，不要假设迁移会解决它。**
 - **pdf-extract 生产模式是否也 500** —— dev 模式下因 Turbopack 找不到 pdfjs worker chunk
   而 500（文件已正常落盘，故非存储问题）。**T1.4 生产镜像必须专门验**。
   若生产也 500 → 是真 bug，与本次迁移无关但要单独立项。
