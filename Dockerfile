@@ -23,13 +23,21 @@ RUN npm run build
 # `npx prisma migrate deploy` 会去 npm 现拉 CLI，依赖外网且脆弱——部署流水线
 # 的迁移步骤不能建立在"npm registry 此刻可达"上。
 #
-# builder 阶段有 npm ci 装全的 node_modules 与完整源码（含 prisma/migrations），
-# 直接派生即可。只用于一次性任务（migrate deploy / seed / 订正脚本），跑完即退，
-# 不常驻，所以体积大不是问题。
-FROM builder AS migrator
+# 从 deps 而不是 builder 派生：builder 带着 next build 的产物，实测 3.4 GB，
+# 而迁移一个字节都用不到。更要命的是每次部署 TAG 都变，那些层要重新拉到 droplet。
+# 这里只拷迁移与脚本真正需要的东西，跑 prisma generate（不跑 next build）。
+#
+# 用途：migrate deploy / seed / scripts 下的订正与诊断脚本。跑完即退，不常驻。
+FROM deps AS migrator
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+COPY prisma ./prisma
+COPY lib ./lib
+COPY scripts ./scripts
+COPY prisma.config.ts tsconfig.json package.json ./
+# Prisma Client 的 output 指向 lib/generated/prisma，种子与运维脚本都要它
+RUN npx prisma generate
 CMD ["npx", "prisma", "migrate", "deploy"]
 
 # ── 运行时镜像 ───────────────────────────────────────────────────────────────

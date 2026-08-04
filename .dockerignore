@@ -51,5 +51,10 @@ README.md
 # 本地数据库备份
 backups
 
+# Odoo 一次性迁移的导出数据，281MB，代码里零引用（2026-08-04 实测）。
+# 之前每个镜像都白背这 281MB：builder 的 COPY . . 层 328MB 里主要就是它。
+scripts/odoo-migration/exports
+odoodata
+
 # Claude Code 的工作树/配置，含整个应用的多份副本，不应进 Docker 构建上下文
 .claude

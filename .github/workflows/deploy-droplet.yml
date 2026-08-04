@@ -91,10 +91,11 @@ jobs:
           ssh -p "$PORT" "$USER_NAME@$HOST" bash -euo pipefail -s <<EOSSH
             cd /opt/veggie
 
-            # 记下当前 tag 作为回滚目标（第一次部署时可能为空）
-            PREV_TAG=\$(docker compose config --format json 2>/dev/null \
-              | sed -nE 's#.*ghcr.io/${{ github.repository }}:([^"]+).*#\1#p' | head -1 || true)
-            echo "PREV_TAG=\${PREV_TAG:-<无>}  NEW_TAG=$TAG"
+            # 上一次成功部署的 tag = 回滚目标。用显式状态文件而不是从 compose 配置里
+            # 正则抠——后者依赖输出格式，改版就静默失效，而失效的表现是"回滚目标为空、
+            # 出事时没得回滚"，恰恰在最需要它的时候不工作。
+            PREV_TAG=\$(cat .deployed_tag 2>/dev/null || true)
+            echo "PREV_TAG=\${PREV_TAG:-<无，首次部署>}  NEW_TAG=$TAG"
 
             export TAG="$TAG"
             docker compose pull app migrator
@@ -108,7 +109,11 @@ jobs:
             fi
 
             docker compose up -d --no-build app
+
+            # healthcheck 失败会自行回滚并以非零码退出，此时不更新 .deployed_tag，
+            # 下次部署的回滚目标仍是最后一个真正健康过的版本。
             ./healthcheck.sh "$TAG" "\${PREV_TAG:-}"
+            echo "$TAG" > .deployed_tag
           EOSSH
 
       - name: Deployed image
