@@ -1116,6 +1116,24 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 | T1.2 object-store | 2026-08-03 | `37ca22c` | ✅ 10 项测试全绿；typecheck / 全量 175 项测试 / build 三绿。按计划实现，无偏离 |
 | T1.3 改造调用点 | 2026-08-03 | `18b807e` | ✅ 真实 HTTP 验证通过（见下）；全量 178 项测试 0 失败；build 通过。顺带查清了两个既有问题 |
 | **T1.3b 脚本脱 Neon**（计划外新增） | 2026-08-04 | `c7278f1` | ✅ 62 个脚本/种子统一走 `lib/prisma-factory`；grep 归零 + typecheck + 178 项测试 + build；**真跑 get-admin.ts 两个驱动都通** |
+| **T1.4 本地 compose 硬关卡** | 2026-08-04 | `dfd5a10` | ✅ 通过。详见 `docs/20260804-local-pg-verification.md`。修掉 2 个挡路问题，记录 3 个待决策问题 |
+
+### T1.4 结论：这套组合可以上服务器
+
+备份+**恢复演练**（47 张表行数逐一相等）、服务端 Chromium 渲染中文 PDF（人工看图确认无豆腐块）、
+真实登录与 401/404 异常路径 —— 全部在标准 PostgreSQL + unix socket + 本地磁盘上跑通。
+
+**两条必须带进阶段 2/3 的实操结论**：
+
+1. ⛔ **T2.4 建 `/data/veggie/{uploads,backups}` 时必须 `chown 1001:1001`。**
+   宿主机 bind mount **不继承**镜像里的目录属主，不 chown 的话生产上传就是静默 500
+   （本地实测 `EACCES: permission denied, mkdir '/data/uploads/products'`）。写进部署手册。
+2. **阶段 3 的服务器编排要照抄 `migrator` 服务的形状**。运行时镜像是 standalone 产物，
+   **不含 prisma CLI**，设计文档 §4.1 写的 `docker compose run --rm app npx prisma migrate deploy`
+   会去 npm 现拉，依赖外网且脆弱。改用从 `builder` 阶段构建的一次性容器。
+
+**设计文档 §2.2 的最高风险项预判错了**：socket 权限没出问题（alpine 的 socket 是 0777）。
+真正咬人的是同一类问题的另一处 —— 上传目录属主。方向对，落点错。
 
 ### T1.3b：一条计划里没有的任务，但它挡在 T1.4 前面
 
@@ -1184,6 +1202,54 @@ codemod 机械替换，`lib/db.ts` 退化成只管单例。加第三条静态锁
 **Neon 也支持标准 libpq 协议**，所以 `DATABASE_DRIVER=pg` 配 Neon 连接串能直接跑通。
 这意味着 pg 分支不必等到 Task 1.4 的 docker compose 才能验证，现在就已在**生产数据**上验过。
 阶段 4 演练迁移时也可用这个方式做两端比对。
+
+## 阶段 1 完成情况
+
+T1.1 ✅ · T1.2 ✅ · T1.3 ✅ · T1.3b ✅ · T1.4 ✅ —— **阶段 1 完成，代码已具备上服务器的条件。**
+
+唯一未达成的判据是「完整业务闭环」：因问题 X2（商品种子失效）库里没有商品，
+下单→扣库存→拣货→签收这条链路没走通。栈层面（驱动/存储/备份/PDF/鉴权/异常路径）全部验过。
+业务闭环会在阶段 4 用 `pg_restore` 的真实生产数据补验 —— 那时数据来自 dump，不依赖种子脚本。
+
+---
+
+## 待决策问题（T1.4 发现，均为既有问题，与迁移改造无关）
+
+> 这三条我没有自行处理：都超出了「迁移」的范围，且各自有独立的取舍。
+
+### X1 —— 迁移历史无法从空库重建 schema
+
+首条迁移 `20260419_decimal_partner_indexes` 直接 `ALTER TABLE "ProductTemplate"`，
+假定表已存在；整个迁移历史里没有任何建表迁移。历史上 schema 一直靠 `db push` 建、
+迁移靠 `migrate resolve` 补记。
+
+**不影响本次迁移路径**（走 `pg_dump`/`pg_restore`，schema 与 `_prisma_migrations` 都随 dump 过来）。
+**但灾难恢复完全依赖 dump**。至少要写进备份手册；彻底解法是补一条 baseline 建表迁移。
+
+### X2 —— `npm run db:seed` 已经灌不出商品
+
+`pic/product.product.csv` 于 2026-07-15 换成 Odoo **技术字段名**导出
+（`id,name,lst_price,categ_id/id,…`），而 `prisma/csv-loader.ts` 仍按人类可读表头读
+（`External ID`/`Sale Price`/…），每行第一个字段就取不到 → 0 条。客户 CSV 用另一套解析，不受影响。
+
+⚠️ 技术字段名导出里**没有 `Quantity On Hand` 列**，所以即使修好映射商品也是 0 库存 ——
+修这个要连「演示库存从哪来」一起想清楚，不是改几行映射就完。
+
+### X3 —— 采购单 PDF 识别在生产镜像里就是坏的
+
+```
+Cannot find module '/app/.next/server/chunks/pdf.worker.mjs'
+```
+
+dev 与**生产镜像**都复现，pdfjs 的 worker chunk 没被打进 standalone 产物。
+文件本身正常落盘（存储层是好的），挂在下游 `extractPdfText`。
+**当前 Cloud Run 生产环境上该功能大概率同样不可用。**
+
+建议修法：把 `pdf-parse` 加进 `next.config.ts` 的 `serverExternalPackages`，
+与已有的 `puppeteer-core` 同样处理。（`outputFileTracingIncludes` 已为该路由包了
+`@napi-rs/**`，但那解决的是 DOMMatrix polyfill，管不到 worker chunk。）
+
+---
 
 ## 未解决问题
 
