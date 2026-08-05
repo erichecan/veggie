@@ -34,6 +34,12 @@ services:
     ports:
       # 只绑回环，对外统一经 Nginx。ufw 之外再加一道。
       - "127.0.0.1:3000:3000"
+    # ⛔ 内存上限不是为了省内存，是为了保护数据库。
+    # 不设上限时 Node 失控会吃光宿主机，而 OOM killer 多半去杀内存占用最大的进程 ——
+    # 那是 PostgreSQL。一次故障干掉两样东西。设了上限则它先被杀，再被 restart 拉起。
+    # 稳态占用 260MB，NODE_OPTIONS 已把堆限制在 768MB，1500m 留足余量。
+    mem_limit: 1500m
+    memswap_limit: 1500m          # 不给它用 swap —— swap 是留给数据库的兜底
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q '\"db\":\"ok\"'"]
       interval: 30s

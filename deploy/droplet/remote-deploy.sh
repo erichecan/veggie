@@ -55,3 +55,18 @@ docker compose up -d --no-build app
 ./healthcheck.sh "$TAG" "${PREV_TAG:-}"
 echo "$TAG" > .deployed_tag
 echo "✅ 部署完成：$TAG"
+
+# 镜像清理：只留「当前」和「上一个」两个 tag。
+# 每次部署会新增 app 1.7GB + migrator 3.3GB ≈ 5GB，不清理的话 77GB 的盘十来次部署就满，
+# 而磁盘满的表现是容器起不来、PostgreSQL 也写不了 —— 一次故障干掉两样东西。
+# 不用 `docker image prune -a --filter until=…`：那是按时间删的，
+# 长期不部署时会把回滚目标一起删掉，恰好在最需要它的时候不工作。
+KEEP="$TAG ${PREV_TAG:-}"
+docker images --format '{{.Repository}}:{{.Tag}}' \
+  | grep -E '^ghcr\.io/erichecan/veggie(-migrator)?:' \
+  | while read -r img; do
+      tag="${img##*:}"
+      case " $KEEP " in *" $tag "*) continue;; esac
+      echo "  清理旧镜像 $img"
+      docker rmi "$img" >/dev/null 2>&1 || true
+    done
