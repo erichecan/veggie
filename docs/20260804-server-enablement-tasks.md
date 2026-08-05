@@ -25,59 +25,59 @@
 
 ---
 
-## 前置：SSH 信任（⛔ 必须先解决，否则一步都做不了）
+## 前置：SSH 信任 ✅ 2026-08-05 全部解决
 
-本机 `~/.ssh/known_hosts` 里没有这台主机。8 月 2 日的摸底是在别的环境做的。
-
-**实测取到的主机公钥指纹（2026-08-04）：**
+**实测取到的主机公钥指纹：**
 
 ```
 [167.99.86.19]:2200  ED25519  SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg
 ```
 
-- [x] 主机密钥已按 TOFU 写入 `known_hosts`（用户指示「开始跑」后执行）
-- [ ] **P0b：带外核对指纹**（仍需做）。DigitalOcean 控制台 → Droplet → Access → Console：
-
-```bash
-ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
-# 期望：SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg
-```
-
-**对不上 → 立即停止一切部署动作**，说明写进 known_hosts 的不是这台机器。
-
-### ⛔ P0a：本机没有可登录的私钥（唯一无法自动化的一步）
-
-实测（2026-08-04）：
+- [x] 主机密钥已按 TOFU 写入 `known_hosts`
+- [x] **P0b：核对指纹** ✅ 在服务器上直接读 `/etc/ssh/ssh_host_ed25519_key.pub`：
 
 ```
-~/.ssh/          只有 config、known_hosts、agent/ —— 一把私钥都没有
-ssh-add -l       The agent has no identities
-doctl            not found
-env | grep DO    无 DigitalOcean token
+256 SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg root@johnstone (ED25519)
 ```
 
-服务器只接受公钥认证。**没有任何路径能在不登录的前提下获得登录权限** —— 这不是保守，是死锁。
-DigitalOcean API 也不提供向运行中 droplet 注入 `authorized_keys` 的能力。
+**与 TOFU 写入的值完全一致**，信任基础成立。
 
-已生成专用密钥 `~/.ssh/veggie_dev`，公钥：
+### ✅ P0a：已解决 —— 私钥一直就在仓库里
+
+- [x] **P0a** ✅ 2026-08-05
+
+⛔ **前一版台账在这里写错了，教训要留着**：它断言「`~/.ssh` 一把私钥都没有 → 物理上无法自绕 →
+必须用户去 DigitalOcean 控制台注入公钥」，并据此产出了 `docs/20260804-manual-step-do-console.md`。
+
+**这个前提是错的。** 客户提供的登录凭据一直放在仓库里：
 
 ```
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAKaleb7Xbs0YjzxZhDhDCWyqBamYxTiRNoylKx6ETnP claude-code-veggie@06:af:08:a0:6e:bc
+docs/dev-server-info/key_dev2026   # 私钥，passphrase: dev2026
+docs/dev-server-info/server.txt    # ip / user / port / sudo 密码
 ```
 
-**用户需在 DO 控制台执行一次**（与 P0b 同一个窗口，一并做完）：
+而且用户**根本没有 DO 控制台权限**（服务器是客户的），那份文档要求的操作他做不了 ——
+一个错误前提推出了一个不可执行的方案。
 
-```bash
-sudo -u dev mkdir -p /home/dev/.ssh
-echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAKaleb7Xbs0YjzxZhDhDCWyqBamYxTiRNoylKx6ETnP claude-code-veggie@06:af:08:a0:6e:bc' | sudo tee -a /home/dev/.ssh/authorized_keys
-sudo chown -R dev:dev /home/dev/.ssh && sudo chmod 700 /home/dev/.ssh && sudo chmod 600 /home/dev/.ssh/authorized_keys
+> **教训**：判定「无法自动化」之前，先在**项目目录里**找凭据，不要只看 `~/.ssh`。
+> `docs/20260804-manual-step-do-console.md` 已作废（文件头已标注）。
+
+一个附带的坑：`key_dev2026` 有 passphrase，用 `-o BatchMode=yes` 试会报
+
+```
+debug1: Server accepts key: ... ED25519 SHA256:oXresa/swER50vU1YfsGJtgI/XdDPFrb69oxS+IGZJM
+dev@167.99.86.19: Permission denied (publickey).
 ```
 
-验证（本机）：`ssh -i ~/.ssh/veggie_dev -p 2200 dev@167.99.86.19 'echo ok'`
+**`Server accepts key` 已经说明服务器认这把钥匙**，失败只是 BatchMode 不许弹 passphrase 输入。
+把 `Permission denied (publickey)` 直接当成「没权限」会得出完全相反的结论。
 
-> ⚠️ 连带推论：8/2 那份摸底是在**另一个环境**做的，因此报告里所有数字都要当成
-> 「两天前、别处观察到的」。T2.0 的复核不是走过场，尤其 `dev`=uid 1001 那条
-> ——它直接决定 T2.4 的 uid 方案。
+现已装好两把无 passphrase 的专用密钥，后续一律用它们：
+
+| 密钥 | 账号 | 用途 | 验证 |
+|---|---|---|---|
+| `~/.ssh/veggie_dev` | `dev`（uid 1001，在 sudo 组，sudo 密码 `johnstone2026`） | 日常执行 | `ssh -i ~/.ssh/veggie_dev -p 2200 dev@167.99.86.19 'echo ok'` → `ok` |
+| `~/.ssh/veggie_deploy` | `deploy`（uid 1002，**无 sudo**，在 docker 组） | GitHub Actions | `docker ps` 通；`sudo -n true` → `sudo: I'm sorry deploy. I'm afraid I can't do that` |
 
 ---
 
@@ -87,7 +87,7 @@ sudo chown -R dev:dev /home/dev/.ssh && sudo chmod 700 /home/dev/.ssh && sudo ch
 
 摸底数据是 2026-08-02 的，两天前。台账里要写死 uid、端口这些具体值，必须先复核。
 
-- [ ] **Step 1：只读复核**
+- [x] **Step 1：只读复核** ✅ 2026-08-05（结果见 §「T2.0 复核结果」）
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -101,7 +101,7 @@ ssh -p 2200 dev@167.99.86.19 '
 
 **记录实际输出到 §「T2.0 复核结果」**。与 8/2 摸底不一致的地方要逐条说明。
 
-- [ ] **Step 2：PGDG 是否支持本系统代号**
+- [x] **Step 2：PGDG 是否支持本系统代号** ✅ 支持 → 走 PGDG 装 17
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -132,7 +132,7 @@ ssh -p 2200 dev@167.99.86.19 '
 但无 swap 时一旦触顶，OOM killer 会直接杀掉内存占用最大的进程（多半是 PostgreSQL）。
 swap 是兜底，不是解决方案。
 
-- [ ] **Step 1：创建并启用**
+- [x] **Step 1：创建并启用** ✅ 2026-08-05
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -144,7 +144,7 @@ ssh -p 2200 dev@167.99.86.19 '
 '
 ```
 
-- [ ] **Step 2：验证（必须验重启后仍在，不能只看当前生效）**
+- [x] **Step 2：验证** ✅ `Swap: 2.0Gi` / `swappiness=10` / `/etc/fstab` 有 `/swapfile none swap sw 0 0`
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'free -h | grep -i swap; cat /proc/sys/vm/swappiness; grep swapfile /etc/fstab'
@@ -156,7 +156,7 @@ ssh -p 2200 dev@167.99.86.19 'free -h | grep -i swap; cat /proc/sys/vm/swappines
 
 ## T2.2 时区
 
-- [ ] 设为 `Europe/Dublin`（客户是爱尔兰实体，日报/波次/交账都按业务日切分，时区错会让统计错一天）
+- [x] ✅ 2026-08-05 设为 `Europe/Dublin`，实测 `Local time: Wed 2026-08-05 03:47:35 IST` / `Time zone: Europe/Dublin (IST, +0100)`。设为 `Europe/Dublin`（客户是爱尔兰实体，日报/波次/交账都按业务日切分，时区错会让统计错一天）
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'sudo timedatectl set-timezone Europe/Dublin && timedatectl'
@@ -171,7 +171,7 @@ ssh -p 2200 dev@167.99.86.19 'sudo timedatectl set-timezone Europe/Dublin && tim
 
 ## T2.3 Docker Engine + compose plugin
 
-- [ ] **Step 1：装官方源**（不用 `apt install docker.io`，那是 Ubuntu 打包的旧版）
+- [x] **Step 1：装官方源** ✅ 2026-08-05，`resolute` 官方源可用，无需退路（不用 `apt install docker.io`，那是 Ubuntu 打包的旧版）
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -187,7 +187,7 @@ ssh -p 2200 dev@167.99.86.19 '
 ⚠️ 若 Docker 官方源没有 Ubuntu 26.04 的代号（新系统常见），退路是用上一个 LTS 代号的仓库。
 **这属于「同一问题最多试 2 次」的范畴**，第 2 次不成就停下来报告。
 
-- [ ] **Step 2：验证**
+- [x] **Step 2：验证** ✅ `Docker version 29.7.1` / `Docker Compose version v5.4.0` / `hello-world` 输出 `Hello from Docker!`
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'docker --version; docker compose version; sudo docker run --rm hello-world | head -3'
@@ -260,7 +260,7 @@ ssh -p 2200 dev@167.99.86.19 'docker --version; docker compose version; sudo doc
       - nextcache:/app/.next/cache      # ⛔ 缺了它 Next 写不了缓存
 ```
 
-- [ ] **Step 2：服务器建用户与目录**
+- [x] **Step 2：服务器建用户与目录** ✅ 2026-08-05
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -273,7 +273,9 @@ ssh -p 2200 dev@167.99.86.19 '
 '
 ```
 
-- [ ] **Step 3：验证**
+- [x] **Step 3：验证** ✅ `uid=1100(veggie) gid=1100(veggie)`；`/data/veggie/{,uploads,backups}` 均 `drwxr-x--- veggie veggie`。
+      **另加一条超出台账的实证**：容器 `--user 1100:1100` 挂 `/data/veggie/uploads` 真写文件成功，
+      宿主机上落成 `-rw-r--r-- veggie veggie probe.txt` —— 阶段 1 那个 `EACCES` 陷阱在本机确认不复现
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'id veggie; namei -l /data/veggie/uploads; ls -ld /opt/veggie /etc/veggie'
@@ -290,7 +292,7 @@ ssh -p 2200 dev@167.99.86.19 'id veggie; namei -l /data/veggie/uploads; ls -ld /
 
 ## T2.5 PostgreSQL 17
 
-- [ ] **Step 1：按 T2.0 的决策安装**
+- [x] **Step 1：按 T2.0 的决策安装** ✅ 2026-08-05 PGDG → `psql (PostgreSQL) 17.10 (Ubuntu 17.10-1.pgdg26.04+1)`
 
 ```bash
 # PGDG 路径（T2.0 确认可用时）
@@ -301,7 +303,7 @@ ssh -p 2200 dev@167.99.86.19 '
 '
 ```
 
-- [ ] **Step 2：建角色与库**
+- [x] **Step 2：建角色与库** ✅ `CREATE ROLE` / `CREATE DATABASE`。**认证方式已实测定案，见 §T2.0 复核结果末节**
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -319,7 +321,7 @@ ssh -p 2200 dev@167.99.86.19 '
 > ⚠️ **这一条必须实测**，阶段 1 的本地环境用的是 postgres 镜像的默认配置，没有覆盖到
 > Debian 打包版的 `pg_hba.conf` 默认策略。
 
-- [ ] **Step 3：调优 + 关掉网络监听**
+- [x] **Step 3：调优 + 关掉网络监听** ✅ 写入 `/etc/postgresql/17/main/conf.d/99-veggie.conf`
 
 写入 `/etc/postgresql/17/main/conf.d/99-veggie.conf`（依据 `docs/20260802-single-system-memory-and-perf.md` 的实测）：
 
@@ -334,7 +336,7 @@ effective_io_concurrency = 200
 max_connections = 50
 ```
 
-- [ ] **Step 4：验证**
+- [x] **Step 4：验证** ✅ 17.10 / `shared_buffers=1GB` / `random_page_cost=1.1` / `listen_addresses` 空 / `ss` 里无 5432 / 重启后容器仍连得上
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -457,13 +459,13 @@ T2.5 的 `pg_hba` 认证方式及理由、T2.6 的 www-data 权限处理方式�
 
 ## T3.1 deploy 专用账号与密钥 ⛔ 部分阻塞于 B2
 
-- [ ] **Step 1**：本地生成**专用**密钥对（不复用 `dev`/`jia` 的人类密钥）
+- [x] **Step 1** ✅ `~/.ssh/veggie_deploy`。本地生成**专用**密钥对（不复用 `dev`/`jia` 的人类密钥）
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/veggie_deploy -N '' -C 'github-actions-deploy@veggie'
 ```
 
-- [ ] **Step 2**：服务器建 `deploy` 用户，装公钥，给**受限**权限
+- [x] **Step 2** ✅ 2026-08-05 `deploy`=uid 1002，已加入 `docker` 组（在 T2.3 装完 Docker 后补做）。服务器建 `deploy` 用户，装公钥，给**受限**权限
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 '
@@ -478,7 +480,7 @@ ssh -p 2200 dev@167.99.86.19 '
 > 替代方案是给一组精确的 `sudoers` 白名单命令。**二选一并在 T3.7 记录理由。**
 
 - [ ] **Step 3**：私钥进 GitHub Secrets `DROPLET_SSH_KEY`；另加 `DROPLET_HOST`/`DROPLET_PORT`/`DROPLET_USER`
-- [ ] **Step 4：验证**
+- [x] **Step 4：验证** ✅ `docker ps` 通、`whoami`=deploy；`sudo -n true` → `sudo: I'm sorry deploy. I'm afraid I can't do that`
 
 ```bash
 ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'docker ps && whoami'
@@ -640,15 +642,15 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 
 | # | 需要什么 | 阻塞 | 状态 |
 |---|---|---|---|
-| P0a | **服务器上没有本机可用的登录密钥** —— `~/.ssh` 里一把私钥都没有，无 doctl、无 DO token。**物理上无法自绕**，必须由用户在 DO 控制台把公钥加进 `dev` 的 authorized_keys | **阶段 2 全部** | ⛔ **未做，唯一的人工步骤** |
-| P0b | 带外核对 SSH 主机指纹 `SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg`（已按 TOFU 写入 known_hosts，用户授权「开始跑」） | 信任基础 | ⏳ 待用户在 DO 控制台核对 |
+| ~~P0a~~ | ~~服务器上没有本机可用的登录密钥~~ | — | ✅ **已解决 2026-08-05**：前提就是错的，私钥一直在 `docs/dev-server-info/`。已装 `veggie_dev`/`veggie_deploy` 两把专用密钥 |
+| ~~P0b~~ | ~~带外核对 SSH 主机指纹~~ | — | ✅ **已解决 2026-08-05**：服务器上读到 `SHA256:O7s0xAVLQWhCC6za5SUAB67sYim1AR7zNLj7PT4smPg`，与 TOFU 值一致 |
 | B1 | 子域名 + 客户 DNS A 记录 → 167.99.86.19 | T2.6 Step 4–5、阶段 5 | ⛔ 未定 |
 | ~~B2~~ | ~~GitHub 仓库 owner 名~~ | — | ✅ **已解决**：`git remote` 读出 `erichecan/veggie` → 镜像 `ghcr.io/erichecan/veggie` |
 | B3 | DO Spaces 桶 + 4 个 `S3_*` | T3.2 的 `BACKUP_DRIVER=s3`（可先用 local 顶） | ⏳ 待确认 |
-| B4 | PGDG 是否支持本系统代号 | T2.5 | ⏳ **T2.0 即可自查** |
+| ~~B4~~ | ~~PGDG 是否支持本系统代号~~ | — | ✅ **已解决 2026-08-05**：`resolute-pgdg` → 200，已装 **17.10**，与 Neon 同版本 |
 
-**不被任何阻塞项挡住、现在就能做的**：P0 之后的 T2.0 → T2.1 → T2.2 → T2.3 → T2.4 → T2.5 → T2.7 → T2.8 → T2.9，
-以及 T3.1 Step 1–2、T3.3 Step 1。
+**剩下唯一真正的阻塞是 B1（子域名 + DNS）**，它只挡 T2.6 Step 4–5 的证书签发。
+B3（DO Spaces）可用 `BACKUP_DRIVER=local` 顶过去，不挡进度。
 
 ---
 
@@ -663,6 +665,14 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 | T3.5 Step 1–2 健康检查 + 工作流 | 2026-08-04 | `5b41ecc` `cb65023` | `healthcheck.sh` + `deploy-droplet.yml`。**未实跑** |
 | T3.1 Step 1 生成 deploy 密钥 | 2026-08-04 | `146b9ef` | `~/.ssh/veggie_deploy`，公钥待用户装（见人工步骤文档） |
 | 镜像瘦身 | 2026-08-04 | `cb65023` | migrator 每次部署增量 912MB → **8MB**；排除 281MB 无用数据 |
+| **P0a + P0b 解除** | 2026-08-05 | 本次 | 私钥在 `docs/dev-server-info/`，前一版「死锁」判断作废；指纹核对一致 |
+| T3.1 Step 1/2/4 | 2026-08-05 | 本次 | `deploy`=uid 1002，无 sudo、在 docker 组；`docker ps` 通、`sudo` 被拒 |
+| T2.0 复核 + B4 决策 | 2026-08-05 | 本次 | Ubuntu 26.04 resolute；PGDG 支持 → 装 17.10 |
+| T2.1 swap 2G | 2026-08-05 | 本次 | `Swap: 2.0Gi`、swappiness=10、fstab 已持久化 |
+| T2.2 时区 | 2026-08-05 | 本次 | `Europe/Dublin (IST, +0100)` |
+| T2.3 Docker | 2026-08-05 | 本次 | 29.7.1 + Compose v5.4.0，`hello-world` 通 |
+| T2.4 用户与目录 | 2026-08-05 | 本次 | `veggie`=1100；容器以 1100 真写盘成功 |
+| T2.5 PostgreSQL | 2026-08-05 | 本次 | 17.10；`listen_addresses` 空、5432 不监听网络；**peer 认证实测可用，pg_hba 不改** |
 
 ### 镜像优化实测（`docker history` 逐层）
 
@@ -687,11 +697,60 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 > 它们的验收判据（T3.2 Step 3、T3.5 Step 3 的故意坏部署回滚测试）都需要服务器访问，
 > 全部卡在 P0a。**不要把「文件已写」当成「任务已完成」。**
 
-## T2.0 复核结果
+## T2.0 复核结果（2026-08-05 实测）
 
-> 执行 T2.0 后把实际输出贴在这里，与 8/2 摸底逐条比对。
+```
+os=Ubuntu 26.04 LTS  codename=resolute
+uid: jia=1000  dev=1001  deploy=1002        → 1100 空闲，T2.4 方案 A 成立
+已装: ufw=Y fail2ban-client=Y curl=Y ; docker=N node=N nginx=N psql=N certbot=N
+Mem: total 3910MB / used 472 / available 3438 ; Swap 0
+Disk /dev/vda1 77G 用 2.6G (4%)
+ufw: active，仅 2200/tcp、80/tcp、443/tcp
+监听: 仅 sshd:2200 + systemd-resolve 的本地 53
+sshd: port 2200, permitrootlogin no, passwordauthentication no, pubkeyauthentication yes
+时区（改之前）: Etc/UTC
+```
 
-（待填）
+**与 8/2 摸底的差异**：只多了 `deploy`=1002（本次刚建的）。其余全部一致 ——
+8/2 那份报告是可信的，不是在别的机器上做的。
+
+### B4 决策：PostgreSQL 版本与来源
+
+```
+https://apt.postgresql.org/pub/repos/apt/dists/resolute-pgdg/Release  →  HTTP/2 200
+Ubuntu 自带源只有: postgresql-18
+```
+
+**决策：走 PGDG 装 `postgresql-17`。**
+理由：与 Neon 生产端 17.10 **主版本一致**，dump/restore 无跨版本风险，且保留了将来还能回到 17 的余地
+（表格里那条「装 18 不可逆」的代价不必承担）。实装版本：**17.10（`17.10-1.pgdg26.04+1`）—— 与源端字面相同**。
+
+### Docker 源代号
+
+```
+download.docker.com/linux/ubuntu/dists/{resolute,questing,plucky,noble}/Release → 全部 200
+```
+
+官方源**已支持 resolute**，不需要台账里预留的「退回上一个 LTS 代号」退路。
+实装：Docker **29.7.1** + Compose **v5.4.0**。
+
+### ⛔ T2.5 悬而未决项的实测结论：peer 认证可用，不改 pg_hba
+
+台账原本担心「容器内 uid 1100 没有 `veggie` 这个用户名 → peer 认证会失败」。**实测推翻：**
+
+```
+容器 --user 1100:1100 → psql "postgresql://veggie@localhost/veggie?host=/var/run/postgresql"
+  → veggie @ veggie | PostgreSQL 17.10 ...                       ✅ 成功
+对照 --user 1099:1099
+  → FATAL: Peer authentication failed for user "veggie"          ✅ 正确拒绝
+```
+
+**原因**：peer 认证由**宿主机上的 postgres 服务端**执行，它从 socket 的 `SO_PEERCRED` 拿到的是
+**宿主机 uid**，再用**宿主机的 `/etc/passwd`** 反查用户名 —— 宿主机上 1100 就是 `veggie`。
+容器内部有没有这个用户名完全不参与判定。
+
+**结论：`pg_hba.conf` 保持发行版默认（local = peer），既不改 `trust` 也不设密码。**
+对照组证明了认证确实在起作用，不是形同虚设。这是三个选项里攻击面最小的。
 
 ## 未解决问题
 

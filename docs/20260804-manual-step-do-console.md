@@ -1,3 +1,23 @@
+# ⛔ 本文已作废（2026-08-05）—— 不要执行
+
+> **前提是错的，不需要 DigitalOcean 控制台。**
+>
+> 本文断言「本机 `~/.ssh` 一把私钥都没有 → 死锁 → 必须用户去 DO 控制台注入公钥」。
+> 实际上客户提供的登录凭据一直在仓库里：`docs/dev-server-info/key_dev2026`（passphrase `dev2026`）
+> 加 `server.txt`（ip / user / port / sudo 密码）。用它可以直接 SSH 登入，`dev` 还在 sudo 组。
+>
+> 而且用户**根本没有 DO 控制台权限**（服务器是客户的），本文要求的操作他做不了 ——
+> 一个错误前提推出了一个不可执行的方案。
+>
+> 下面三段命令**已于 2026-08-05 通过 SSH + sudo 全部执行完毕**，验证记录见
+> `docs/20260804-server-enablement-tasks.md` 的「前置：SSH 信任」与「进度回写区」。
+> 保留原文只为留住这个判断失误的教训：**判定「无法自动化」之前，先在项目目录里找凭据。**
+
+---
+
+<details>
+<summary>原文（历史留档，勿执行）</summary>
+
 # 唯一需要你手动做的一步（DigitalOcean 控制台，一次做完）
 
 > 台账：`docs/20260804-server-enablement-tasks.md`（P0a / P0b）
@@ -90,3 +110,5 @@ ssh -i ~/.ssh/veggie_dev -p 2200 dev@167.99.86.19 'echo ok'
 | `DROPLET_USER` | `deploy` |
 
 镜像路径由 `github.repository` 自动推出（`ghcr.io/erichecan/veggie`），不用配。
+
+</details>
