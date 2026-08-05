@@ -1,31 +1,15 @@
 name: Deploy to Cloud Run
 
-# 推送到 main 自动部署；也可在 Actions 页手动触发。
-# paths 过滤：只有会进 Docker 镜像/影响构建部署的路径变化才触发，docs/*.md 等纯文档改动不触发
-# （对照 .dockerignore 里排除的路径反过来推导，两边要保持一致）。
+# ⛔ 2026-08-05 起：**仅手动触发**。自动部署已交给 deploy-droplet.yml（客户自有服务器）。
+#
+# 为什么保留这个工作流而不是删掉：它是回滚窗口内唯一的退路 —— 万一 droplet 出问题，
+# 还能手动把 Cloud Run 部署回来并把入口指回去。等观察期结束、确认不再需要回滚，
+# 连同 Cloud Run 服务与 Neon 一起清理（顺序见 docs/20260805-migration-tasks.md）。
+#
+# ⚠️ 连带后果，别忘：从这一刻起新的 Prisma 迁移**只会打到 droplet 的库**，
+#    Neon 的 schema 停在 2026-08-05。所以切流量那天从 Neon 重做 dump 恢复到 droplet 之后，
+#    **必须再跑一次 `prisma migrate deploy`** 把落后的迁移补上，否则 schema 会被 dump 倒退。
 on:
-  push:
-    branches: [main]
-    paths:
-      - "app/**"
-      - "components/**"
-      - "hooks/**"
-      - "i18n/**"
-      - "lib/**"
-      - "messages/**"
-      - "prisma/**"
-      - "public/**"
-      - "middleware.ts"
-      - "next.config.ts"
-      - "postcss.config.mjs"
-      - "sentry.*.config.ts"
-      - "prisma.config.ts"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "Dockerfile"
-      - "cloudbuild.yaml"
-      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 # 同一时刻只跑一次部署，新推送取消正在进行的旧部署。

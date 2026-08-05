@@ -156,10 +156,22 @@
 
 ## M5 收尾
 
-- [ ] **M5.1 ⛔ 刻意没做**：`deploy.yml`（Cloud Run）**保持自动触发**。
+- [x] **M5.1 ✅ 2026-08-05 已切换**：自动部署链路整体换到 droplet。
 
-  理由：域名/DNS 本轮不做，**客户此刻仍在用 Cloud Run 那个入口**。现在把它降为手动，
-  等于此后任何 push 都不再更新用户真正在用的系统。这一步应该和切流量同时做，不能提前。
+  | 工作流 | 改动前 | 改动后 |
+  |---|---|---|
+  | `deploy.yml`（Cloud Run） | push main 自动 | **仅 `workflow_dispatch`** |
+  | `deploy-droplet.yml` | 仅 `workflow_dispatch` | **push main 自动**（paths 沿用原清单）+ 手动 |
+
+  用户 2026-08-05 明确要求「以后开发完部署，全部自动部署到新服务器」。
+  已当面说明后果并获确认：**Cloud Run 从此不再收到更新**，客户若仍在用那个入口，
+  他们的系统会停在当前版本。
+
+  `deploy.yml` **保留不删** —— 它是回滚窗口内唯一的退路。
+
+  ⛔ **连带后果，写进切换手册**：从这一刻起新的 Prisma 迁移**只会打到 droplet 的库**，
+  Neon 的 schema 停在 2026-08-05。切流量那天从 Neon 重做 dump 恢复到 droplet 之后，
+  **必须再跑一次 `prisma migrate deploy`**，否则 schema 会被旧 dump 倒退。
 
 - [x] **M5.2 ✅** 回写本文
 
@@ -180,9 +192,17 @@
 ## 未解决问题
 
 - ⛔ **本轮的 dump 是 2026-08-05 04:19 的快照。** 从那一刻起，客户在 Cloud Run 上产生的
-  新数据都不在 droplet 里。真正切流量那天必须停写 → 重做一次全量 dump → 再切，
-  否则丢掉中间所有生产数据。**这是本轮唯一一个会造成真实数据丢失的点。**
-- droplet 上的 `PurchaseOrder` 有一条 URL 被改写过（`test.pdf`），切换时重做 dump 会覆盖掉，
-  需要重跑一次同样的 `update`。改写语句见 M3.2。
+  新数据都不在 droplet 里。**这是唯一一个会造成真实数据丢失的点。**
+
+  切换当天的正确顺序（缺一步都会出问题）：
+
+  1. 停止对 Cloud Run 的写入（下线或置只读）
+  2. 从 **Neon 直连端点**（去掉 `-pooler`）重做全量 `pg_dump -Fc`
+  3. droplet 上 `DROP DATABASE veggie` → `CREATE DATABASE veggie OWNER veggie` → `pg_restore --role=veggie`
+  4. ⛔ **再跑一次 `prisma migrate deploy`** —— 2026-08-05 之后的迁移只打到了 droplet，
+     Neon 的 schema 是旧的，不补这一步会被 dump 倒退
+  5. `vacuumdb --analyze-only`（restore 不生成规划器统计）
+  6. 重跑 M3.2 那条 URL 改写（`update "PurchaseOrder" set "sourceDocumentUrl" = replace(...)`）
+  7. 逐表比对行数（脚本见 M1.3），确认一致后再切 DNS
 - 备份只落本机 `/data/veggie/backups`，**不满足合同「异地留存」条款**，等 B3（DO Spaces）。
 - 访问入口目前是 `http://167.99.86.19`，**明文 HTTP**。按用户指示本轮不做 TLS。

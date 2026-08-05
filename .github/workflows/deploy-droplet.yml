@@ -2,14 +2,38 @@ name: Deploy to droplet
 
 # 客户自有服务器（DigitalOcean）的部署链路。
 #
-# 与 deploy.yml（Cloud Run）的关系：迁移完成前两者并存 —— 本工作流先只支持手动触发，
-# 待阶段 5 正式切换后改为 push main 自动触发，同时把 deploy.yml 降为仅手动。
-# 见 docs/20260804-server-enablement-tasks.md T3.7。
+# ⛔ 2026-08-05 起这是**唯一的自动部署链路**。deploy.yml（Cloud Run）已降为仅手动，
+#    只作为回滚窗口内的退路保留。
+#
+# paths 过滤与 deploy.yml 原先保持一致：只有会进 Docker 镜像 / 影响构建部署的路径变化
+# 才触发，docs/*.md 这类纯文档改动不触发（对照 .dockerignore 反推，两边要一致）。
 #
 # ⛔ 不在 2 vCPU 的服务器上构建镜像（会拖垮同机 PostgreSQL）。构建在 runner 上做，
 #    服务器只负责 pull + up。
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "components/**"
+      - "hooks/**"
+      - "i18n/**"
+      - "lib/**"
+      - "messages/**"
+      - "prisma/**"
+      - "public/**"
+      - "middleware.ts"
+      - "next.config.ts"
+      - "postcss.config.mjs"
+      - "sentry.*.config.ts"
+      - "prisma.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "Dockerfile"
+      - "deploy/droplet/**"
+      - ".github/workflows/deploy-droplet.yml"
   workflow_dispatch:
     inputs:
       skip_migrate:
