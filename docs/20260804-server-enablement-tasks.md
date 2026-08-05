@@ -437,9 +437,22 @@ nmap -Pn -p 22,2200,80,443,3000,5432 167.99.86.19
 
 - [x] **Step 1** ✅ `deploy/droplet/alert.sh` → `/opt/veggie/alert.sh`；配置见 `deploy/droplet/alert.env.example` → `/etc/veggie/alert.env`（0600）。阈值：内存可用 < 400 MB / 磁盘 > 80% / swap > 50%
 - [x] **Step 2** ✅ `deploy/droplet/systemd/veggie-alert.{service,timer}`，`list-timers` 可见，每 5 分钟一次
-- [ ] ⛔ **Step 3 卡在 B5：邮件没真发出去过**
+- [x] **Step 3 ✅ 2026-08-05 真发成功**（用户提供真 key 后）
 
-  **探测与判定逻辑已实跑验证**（这部分是真的）：
+  ```
+  sudo MEM_THRESHOLD_MB=999999 /opt/veggie/alert.sh
+  → ALERT SENT (200): 内存可用 3289MB / 共 3910MB（阈值 <999999MB）
+    Resend 返回 {"id":"568ab4df-68bd-4a86-ad48-117e4edca56f"}
+  立刻重跑 → suppressed (同类告警 0 分钟前已发过)      ✅ 去重生效
+  恢复默认阈值 → ok mem=3283MB disk=8% swap=0%          ✅ 不误报
+  ```
+
+  ⚠️ **发件人暂时是 `onboarding@resend.dev` 而不是 `noreply@veggiesupply.ie`** ——
+  Resend 账号里 `veggiesupply.ie` **未验证域**，用它发直接 403。
+  测试模式下 `onboarding@resend.dev` 只能发给账号所有者 `erichecan@gmail.com`，
+  所以 `ALERT_TO` 也临时改成了这个地址。**域验证后要改回来**（见 B6）。
+
+  **探测与判定逻辑（在拿到 key 之前就已单独验过）**：
 
   ```
   sudo /opt/veggie/alert.sh                         → ok mem=3275MB disk=8% swap=0%   exit 0
@@ -447,9 +460,6 @@ nmap -Pn -p 22,2200,80,443,3000,5432 167.99.86.19
   sudo DISK_THRESHOLD_PCT=1    /opt/veggie/alert.sh → ALERT ... 阈值 >1%               exit 2
   sudo /opt/veggie/alert.sh                         → ok（未覆盖时不误报）             exit 0
   ```
-
-  **但发信这一环没验过** —— `VEGGIE_RESEND_API_KEY` 的值是字面量 `placeholder`（见 B5）。
-  按本节自己的判据「配完没触发过的告警等于没有」，**这一条不算完成**。
 
   途中修掉两个真 bug（详见 `docs/20260805-server-baseline.md` §2.8）：
   `alert.env` 的值没加引号，`<` 被当成重定向使整个文件解析中断；
@@ -669,7 +679,8 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 | B1 | 子域名 + 客户 DNS A 记录 → 167.99.86.19 | T2.6 Step 4–5、阶段 5 | ⛔ 未定 |
 | ~~B2~~ | ~~GitHub 仓库 owner 名~~ | — | ✅ **已解决**：`git remote` 读出 `erichecan/veggie` → 镜像 `ghcr.io/erichecan/veggie` |
 | B3 | DO Spaces 桶 + 4 个 `S3_*` | T3.2 的 `BACKUP_DRIVER=s3`（可先用 local 顶） | ⏳ 待确认 |
-| **B5** | **真实 `RESEND_API_KEY`** —— GCP Secret Manager 里 `VEGGIE_RESEND_API_KEY` 的值是字面量 `placeholder`（2026-04-18 建立至今没填过真值） | T2.8 Step 3 验收；**且现生产的订单确认/密码重置/采购 RFQ 三处发信本来就是坏的** | ⛔ **新增 2026-08-05** |
+| ~~B5~~ | ~~真实 `RESEND_API_KEY`~~ | — | ✅ **2026-08-05 用户提供**，已填进 `/etc/veggie/alert.env`，告警邮件真发成功。⚠️ **GCP Secret Manager 里的 `VEGGIE_RESEND_API_KEY` 仍是 `placeholder`，未改** |
+| **B6** | **在 Resend 验证 `veggiesupply.ie` 域**（加 DNS 记录）| ①告警发件人改回 `noreply@veggiesupply.ie` 并发给任意收件人；②**现生产的订单确认/密码重置/采购 RFQ 三处发信** —— 光有 key 不够，域没验证照样 403 | ⛔ **新增 2026-08-05** |
 | ~~B4~~ | ~~PGDG 是否支持本系统代号~~ | — | ✅ **已解决 2026-08-05**：`resolute-pgdg` → 200，已装 **17.10**，与 Neon 同版本 |
 
 **剩下唯一真正的阻塞是 B1（子域名 + DNS）**，它只挡 T2.6 Step 4–5 的证书签发。
@@ -700,6 +711,7 @@ B3（DO Spaces）可用 `BACKUP_DRIVER=local` 顶过去，不挡进度。
 | T2.7 防火墙 | 2026-08-05 | 本次 | 外部扫：仅 2200/80 开；3000、5432 filtered |
 | T2.8 Step 1-2 告警 | 2026-08-05 | 本次 | 脚本+timer 已上机，探测逻辑实跑通过。**Step 3 卡 B5，邮件未真发** |
 | T2.9 基线文档 | 2026-08-05 | 本次 | `docs/20260805-server-baseline.md` |
+| T2.8 Step 3 真发信 | 2026-08-05 | 本次 | Resend 200 + msg id；去重与不误报一并验过。发件人临时用 `onboarding@resend.dev`（B6） |
 
 ### 镜像优化实测（`docker history` 逐层）
 

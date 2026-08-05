@@ -251,22 +251,39 @@ sudo systemctl daemon-reload && sudo systemctl enable --now veggie-alert.timer
 
 ```bash
 # ⛔ 本文件被 alert.sh 以 `. ` 引入 —— 所有值必须加引号
-RESEND_API_KEY=""                                          # ⛔ 待填，见 §3 B5
-ALERT_TO="szahua@gmail.com"
-ALERT_FROM="VeggieSupply Ops <noreply@veggiesupply.ie>"
+RESEND_API_KEY="re_..."                                    # 2026-08-05 已填真值
+# ⚠️ 下面两行是临时状态：veggiesupply.ie 在 Resend 未验证域，用它发直接 403。
+#    测试模式下 onboarding@resend.dev 只能发给账号所有者 erichecan@gmail.com。
+#    域验证后（B6）改回 noreply@veggiesupply.ie，ALERT_TO 才能是任意地址。
+ALERT_TO="erichecan@gmail.com"
+ALERT_FROM="VeggieSupply Ops <onboarding@resend.dev>"
 MEM_THRESHOLD_MB="400"
 DISK_THRESHOLD_PCT="80"
 SWAP_THRESHOLD_PCT="50"
 ```
 
-**验证到什么程度**（诚实说明）：探测与判定逻辑已实跑验证，**邮件本身没发出去过**，因为没有真 key。
+**验证到什么程度**：端到端跑通，邮件真发出去了。
 
 ```
-sudo /opt/veggie/alert.sh                        → ok mem=3275MB disk=8% swap=0%   exit 0
-sudo MEM_THRESHOLD_MB=999999 /opt/veggie/alert.sh → ALERT ... 阈值 <999999MB       exit 2
-sudo DISK_THRESHOLD_PCT=1    /opt/veggie/alert.sh → ALERT ... 阈值 >1%              exit 2
-sudo /opt/veggie/alert.sh                        → ok（未覆盖时不误报）            exit 0
+sudo /opt/veggie/alert.sh                         → ok mem=3275MB disk=8% swap=0%          exit 0
+sudo DISK_THRESHOLD_PCT=1    /opt/veggie/alert.sh → ALERT ... 阈值 >1%                     exit 2 (填 key 前)
+sudo MEM_THRESHOLD_MB=999999 /opt/veggie/alert.sh → ALERT SENT (200) id=568ab4df-…         exit 0
+立刻重跑同一条                                     → suppressed (同类告警 0 分钟前已发过)   exit 0
+恢复默认阈值                                       → ok mem=3283MB disk=8% swap=0%          exit 0
 ```
+
+**踩到的两道 Resend 门槛**（都是 403，但原因完全不同，别混淆）：
+
+```
+用 noreply@veggiesupply.ie 发
+  → 403 The veggiesupply.ie domain is not verified          ← 域没验证
+改用 onboarding@resend.dev 发给 szahua@gmail.com
+  → 403 You can only send testing emails to your own email
+        address (erichecan@gmail.com)                        ← 测试模式限收件人
+```
+
+**key 本身是好的** —— 它通过了鉴权才撞到这两道校验。这也说明：
+**光有真 key 修不好生产的发信功能**，`veggiesupply.ie` 的域验证（B6）才是关键那一步。
 
 > 途中修掉两个真 bug，都值得记住：
 > 1. `alert.env` 里 `ALERT_FROM=VeggieSupply Ops <noreply@…>` **没加引号**，
@@ -285,13 +302,16 @@ sudo /opt/veggie/alert.sh                        → ok（未覆盖时不误报�
 | # | 事项 | 挡住什么 | 需要谁 |
 |---|---|---|---|
 | **B1** | 子域名 + 客户把 DNS A 记录指向 `167.99.86.19` | T2.6 Step 4–5 签发 TLS 证书 | 客户 |
-| **B5** | **真实 `RESEND_API_KEY`** —— GCP Secret Manager 里 `VEGGIE_RESEND_API_KEY` 的值是字面量 `placeholder`（2026-04-18 建立至今没填过） | T2.8 Step 3「必须真收到一封告警邮件」的验收 | 用户 |
+| ~~B5~~ | ~~真实 `RESEND_API_KEY`~~ | ✅ 2026-08-05 用户提供，告警邮件已真发成功 | — |
+| **B6** | **在 Resend 验证 `veggiesupply.ie` 域**（加 DNS 记录） | ①告警发件人改回 `noreply@veggiesupply.ie`；②**生产的订单确认/密码重置/采购 RFQ 三处发信** | 用户 + 客户（DNS） |
 | B3 | DO Spaces 桶 + 4 个 `S3_*` | T3.2 的 `BACKUP_DRIVER=s3`（可先用 `local` 顶） | 用户 |
 
-> **B5 的影响不止告警**：生产代码有三处在发邮件 ——
+> **B6 的影响不止告警**：生产代码有三处在发邮件 ——
 > `app/api/orders/route.ts`（订单确认）、`app/api/users/[id]/reset-password/route.ts`（密码重置）、
 > `app/api/purchase-orders/[id]/route.ts`（采购询价 RFQ）。
-> key 是 `placeholder` 意味着这三个功能在**现有 Cloud Run 生产环境上就是坏的**，与私有化迁移无关。
+> 三处的发件人都是 `noreply@veggiesupply.ie`（`lib/email.ts` 的 `FROM` 常量）。
+> 这三个功能在**现有 Cloud Run 生产环境上就是坏的**，与私有化迁移无关，而且是**两层坏**：
+> Secret Manager 里的 key 是 `placeholder`（至今未改），且即使换成真 key，域没验证照样 403。
 
 ---
 
