@@ -1,0 +1,13 @@
+[Unit]
+Description=每日跑一次 veggie 数据库备份
+
+[Timer]
+# 03:15 本地时间（宿主机时区 Europe/Dublin）—— 业务低谷，且避开整点的其它定时任务
+OnCalendar=*-*-* 03:15:00
+# 机器关机错过的那次，开机后补跑。备份漏一天是真丢数据。
+Persistent=true
+RandomizedDelaySec=300
+Unit=veggie-backup.service
+
+[Install]
+WantedBy=timers.target

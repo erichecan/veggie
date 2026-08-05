@@ -1,0 +1,16 @@
+[Unit]
+Description=veggie 数据库每日备份（触发应用的 cron 路由）
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# CRON_SECRET 与 /etc/veggie/app.env 里的同值。单独放一个文件是因为本 unit 以 root 跑，
+# 而 app.env 属主是 veggie —— 不想为了一个变量把整份应用密钥暴露给 systemd 环境。
+EnvironmentFile=/etc/veggie/backup.env
+# ⛔ header 是 x-cron-secret，不是 Authorization: Bearer（阶段 1 实测踩过）。
+# --fail-with-body：没有它，路由返回 4xx/5xx 时 curl 仍退出 0，备份失败会被记成成功。
+ExecStart=/usr/bin/curl --fail-with-body -sS -X POST \
+          -H "x-cron-secret: ${CRON_SECRET}" \
+          --max-time 600 \
+          http://127.0.0.1:3000/api/cron/backup-database
