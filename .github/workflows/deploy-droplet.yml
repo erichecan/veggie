@@ -86,10 +86,18 @@ jobs:
           USER_NAME: ${{ vars.DROPLET_USER }}
           TAG: ${{ github.sha }}
           SKIP_MIGRATE: ${{ inputs.skip_migrate }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           ssh -p "$PORT" "$USER_NAME@$HOST" bash -euo pipefail -s <<EOSSH
             cd /opt/veggie
+
+            # 仓库是 private → GHCR 上的包也是 private → 服务器不登录就 pull 不下来（401）。
+            # 用本 job 的 GITHUB_TOKEN 临时登录（它有 packages:read），而不是在服务器上
+            # 长期存一个 PAT——少一份需要轮换、泄露面又大的凭据。用完即登出。
+            echo '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USER' --password-stdin
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 
             # 上一次成功部署的 tag = 回滚目标。用显式状态文件而不是从 compose 配置里
             # 正则抠——后者依赖输出格式，改版就静默失效，而失效的表现是"回滚目标为空、
@@ -98,7 +106,9 @@ jobs:
             echo "PREV_TAG=\${PREV_TAG:-<无，首次部署>}  NEW_TAG=$TAG"
 
             export TAG="$TAG"
-            docker compose pull app migrator
+            # migrator 挂了 profiles: ["tools"]，pull 时不带 --profile 会被跳过，
+            # 后面 run 就得现拉，等于把「先拉好再动」的保证丢了。
+            docker compose --profile tools pull app migrator
 
             # 「先迁移后部署」：加列这类增量变更下旧代码对多出的可空列前向兼容；
             # 反过来会出「镜像 client 期望新列、库还没有」的 ColumnNotFound 500。
