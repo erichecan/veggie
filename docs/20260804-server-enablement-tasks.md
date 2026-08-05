@@ -354,13 +354,13 @@ ssh -p 2200 dev@167.99.86.19 '
 
 ## T2.6 Nginx + TLS ⛔ 阻塞于 B1（子域名）
 
-- [ ] **Step 1（不阻塞）：装 Nginx + certbot，写好配置但先不签证书**
+- [x] **Step 1（不阻塞）：装 Nginx + certbot** ✅ 2026-08-05 nginx 1.28.3 / certbot 4.0.0
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'sudo apt-get install -y nginx certbot python3-certbot-nginx'
 ```
 
-- [ ] **Step 2：站点配置** `/etc/nginx/sites-available/veggie`
+- [x] **Step 2：站点配置** ✅ 已落地，当前 `server_name _;` + `listen 80 default_server`（B1 到位后改真实域名）。`/etc/nginx/sites-available/veggie`
 
 ```nginx
 server {
@@ -389,13 +389,16 @@ server {
 }
 ```
 
-- [ ] **Step 3：解决 www-data 读 uploads 的权限**（见 T2.4 的警告），并验证：
+- [x] **Step 3：www-data 读 uploads** ✅ **选 `usermod -aG veggie www-data`，不改 755**。
+      理由：改 755 会让机器上任何本地账号都能读客户上传的采购单 PDF；加组只授权 Nginx 一个进程身份。
+      实测 `sudo -u www-data test -r` 通过；`GET /uploads/probe.txt` → **200 text/plain 内容正确**；
+      `GET /` → **502**（预期，应用未部署）。原验证命令：
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'sudo -u www-data test -r /data/veggie/uploads && echo "✅ www-data 可读" || echo "❌ 读不到，图片会 403"'
 ```
 
-- [ ] **Step 4 ⛔ 阻塞：签发证书**（需 B1 子域名 + 客户 DNS A 记录已指向 167.99.86.19）
+- [ ] **Step 4 ⛔ 仍阻塞于 B1：签发证书**（需 B1 子域名 + 客户 DNS A 记录已指向 167.99.86.19）
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'sudo certbot --nginx -d <B1 子域名> --agree-tos -m <邮箱> --no-eff-email'
@@ -414,7 +417,9 @@ ssh -p 2200 dev@167.99.86.19 'sudo certbot renew --dry-run 2>&1 | tail -3'
 
 ## T2.7 防火墙复核
 
-- [ ] 确认仅 2200/80/443 对外；容器端口一律绑 `127.0.0.1`
+- [x] ✅ 2026-08-05。**从本机外部扫**（本机无 nmap，用 `nc -z`）：
+      `2200 OPEN · 80 OPEN · 22 filtered · 443 filtered(尚无监听) · 3000 filtered · 5432 filtered`。
+      服务器侧 `ufw status numbered` 仅 2200/80/443（v4+v6）。原目标：确认仅 2200/80/443 对外；容器端口一律绑 `127.0.0.1`
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'sudo ufw status numbered'
@@ -430,11 +435,28 @@ nmap -Pn -p 22,2200,80,443,3000,5432 167.99.86.19
 
 内存是本次架构的风险点（3.8 GB，峰值估算 2.4–2.7 GB）。**必须有告警，而不是等 OOM 后从日志里考古。**
 
-- [ ] **Step 1**：写 `/opt/veggie/alert.sh`——超阈值时通过 Resend 发邮件
-      （Resend 是与主机无关的 SaaS，迁移后照常可用，符合部署铁律；项目已有 `RESEND_API_KEY`）
-      阈值：内存可用 < 400 MB，或磁盘使用 > 80%，或 swap 使用 > 50%
-- [ ] **Step 2**：systemd timer 每 5 分钟跑一次
-- [ ] **Step 3 ⛔ 必须真触发一次**
+- [x] **Step 1** ✅ `deploy/droplet/alert.sh` → `/opt/veggie/alert.sh`；配置见 `deploy/droplet/alert.env.example` → `/etc/veggie/alert.env`（0600）。阈值：内存可用 < 400 MB / 磁盘 > 80% / swap > 50%
+- [x] **Step 2** ✅ `deploy/droplet/systemd/veggie-alert.{service,timer}`，`list-timers` 可见，每 5 分钟一次
+- [ ] ⛔ **Step 3 卡在 B5：邮件没真发出去过**
+
+  **探测与判定逻辑已实跑验证**（这部分是真的）：
+
+  ```
+  sudo /opt/veggie/alert.sh                         → ok mem=3275MB disk=8% swap=0%   exit 0
+  sudo MEM_THRESHOLD_MB=999999 /opt/veggie/alert.sh → ALERT ... 阈值 <999999MB        exit 2
+  sudo DISK_THRESHOLD_PCT=1    /opt/veggie/alert.sh → ALERT ... 阈值 >1%               exit 2
+  sudo /opt/veggie/alert.sh                         → ok（未覆盖时不误报）             exit 0
+  ```
+
+  **但发信这一环没验过** —— `VEGGIE_RESEND_API_KEY` 的值是字面量 `placeholder`（见 B5）。
+  按本节自己的判据「配完没触发过的告警等于没有」，**这一条不算完成**。
+
+  途中修掉两个真 bug（详见 `docs/20260805-server-baseline.md` §2.8）：
+  `alert.env` 的值没加引号，`<` 被当成重定向使整个文件解析中断；
+  以及脚本让配置文件无条件覆盖命令行环境变量，把台账自己的验证命令给废了。
+  **bug 1 恰好掩盖了 bug 2** —— 解析失败时环境变量反而生效，验证"通过"了。
+
+  原验收命令（现已可正常工作）：
 
 ```bash
 # 用临时把阈值调到必然触发的值来验证，而不是"配完就算"
@@ -447,7 +469,7 @@ ssh -p 2200 dev@167.99.86.19 'sudo MEM_THRESHOLD_MB=999999 /opt/veggie/alert.sh;
 
 ## T2.9 《服务器基线配置记录》
 
-- [ ] 产出 `docs/YYYYMMDD-server-baseline.md`
+- [x] ✅ 2026-08-05 产出 `docs/20260805-server-baseline.md`
 
 **验收**：**另一个人拿着它，能从一台全新的空 droplet 复现出同样的基线**。
 包含：每一步的实际命令与实际输出、T2.0 的版本决策及理由、T2.4 的 uid 方案及理由、
@@ -647,6 +669,7 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 | B1 | 子域名 + 客户 DNS A 记录 → 167.99.86.19 | T2.6 Step 4–5、阶段 5 | ⛔ 未定 |
 | ~~B2~~ | ~~GitHub 仓库 owner 名~~ | — | ✅ **已解决**：`git remote` 读出 `erichecan/veggie` → 镜像 `ghcr.io/erichecan/veggie` |
 | B3 | DO Spaces 桶 + 4 个 `S3_*` | T3.2 的 `BACKUP_DRIVER=s3`（可先用 local 顶） | ⏳ 待确认 |
+| **B5** | **真实 `RESEND_API_KEY`** —— GCP Secret Manager 里 `VEGGIE_RESEND_API_KEY` 的值是字面量 `placeholder`（2026-04-18 建立至今没填过真值） | T2.8 Step 3 验收；**且现生产的订单确认/密码重置/采购 RFQ 三处发信本来就是坏的** | ⛔ **新增 2026-08-05** |
 | ~~B4~~ | ~~PGDG 是否支持本系统代号~~ | — | ✅ **已解决 2026-08-05**：`resolute-pgdg` → 200，已装 **17.10**，与 Neon 同版本 |
 
 **剩下唯一真正的阻塞是 B1（子域名 + DNS）**，它只挡 T2.6 Step 4–5 的证书签发。
@@ -673,6 +696,10 @@ B3（DO Spaces）可用 `BACKUP_DRIVER=local` 顶过去，不挡进度。
 | T2.3 Docker | 2026-08-05 | 本次 | 29.7.1 + Compose v5.4.0，`hello-world` 通 |
 | T2.4 用户与目录 | 2026-08-05 | 本次 | `veggie`=1100；容器以 1100 真写盘成功 |
 | T2.5 PostgreSQL | 2026-08-05 | 本次 | 17.10；`listen_addresses` 空、5432 不监听网络；**peer 认证实测可用，pg_hba 不改** |
+| T2.6 Step 1-3 Nginx | 2026-08-05 | 本次 | nginx 1.28.3 + certbot 4.0.0；`/uploads/` 直出 200；www-data 走加组不走 755。Step 4-5 仍卡 B1 |
+| T2.7 防火墙 | 2026-08-05 | 本次 | 外部扫：仅 2200/80 开；3000、5432 filtered |
+| T2.8 Step 1-2 告警 | 2026-08-05 | 本次 | 脚本+timer 已上机，探测逻辑实跑通过。**Step 3 卡 B5，邮件未真发** |
+| T2.9 基线文档 | 2026-08-05 | 本次 | `docs/20260805-server-baseline.md` |
 
 ### 镜像优化实测（`docker history` 逐层）
 

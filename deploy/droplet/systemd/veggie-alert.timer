@@ -1,0 +1,11 @@
+[Unit]
+Description=每 5 分钟跑一次 veggie 资源告警检查
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=veggie-alert.service
+
+[Install]
+WantedBy=timers.target

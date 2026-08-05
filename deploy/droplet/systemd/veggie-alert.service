@@ -1,0 +1,10 @@
+[Unit]
+Description=veggie 资源告警检查（内存/磁盘/swap）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/veggie/alert.sh
+# 发不出邮件时不要让 timer 状态变红把人误导 —— 失败会记进 journal
+SuccessExitStatus=0 2
