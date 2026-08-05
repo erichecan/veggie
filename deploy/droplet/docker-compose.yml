@@ -49,6 +49,11 @@ services:
   migrator:
     image: ghcr.io/erichecan/veggie-migrator:${TAG:-latest}
     profiles: ["tools"]
+    # ⛔ 和 app 一样必须覆盖 uid。宿主机 PostgreSQL 走 peer 认证，认的是**宿主机 uid**：
+    # 1100 → veggie（有这个角色，通过）；镜像默认的 0 → root（PG 里没有 root 角色）
+    # → Prisma 报 `P1010: User was denied access on the database veggie`。
+    # 报错指向"权限"，但根因是 uid，很容易往连接串/pg_hba 方向白查。2026-08-05 实测踩过。
+    user: "1100:1100"
     env_file: /etc/veggie/app.env
     environment:
       HOME: /tmp

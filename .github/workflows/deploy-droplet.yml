@@ -79,6 +79,20 @@ jobs:
           printf '%s\n' "${{ secrets.DROPLET_HOST_KEY }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      # 编排文件跟着代码走。不同步的话，改了仓库里的 compose 而服务器上还是旧的，
+      # 表现是「明明改好了却没生效」，且没有任何报错提示你去看那个文件。
+      # /opt/veggie 属主是 deploy，直接 scp 即可，不需要 sudo。
+      - name: Sync compose files
+        env:
+          HOST: ${{ vars.DROPLET_HOST }}
+          PORT: ${{ vars.DROPLET_PORT }}
+          USER_NAME: ${{ vars.DROPLET_USER }}
+        run: |
+          set -euo pipefail
+          scp -P "$PORT" deploy/droplet/docker-compose.yml deploy/droplet/healthcheck.sh \
+              "$USER_NAME@$HOST:/opt/veggie/"
+          ssh -p "$PORT" "$USER_NAME@$HOST" 'chmod 755 /opt/veggie/healthcheck.sh'
+
       - name: Deploy
         env:
           HOST: ${{ vars.DROPLET_HOST }}
