@@ -79,20 +79,28 @@ jobs:
           printf '%s\n' "${{ secrets.DROPLET_HOST_KEY }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # 编排文件跟着代码走。不同步的话，改了仓库里的 compose 而服务器上还是旧的，
-      # 表现是「明明改好了却没生效」，且没有任何报错提示你去看那个文件。
+      # 编排文件与部署脚本跟着代码走。不同步的话，改了仓库里的 compose 而服务器上
+      # 还是旧的，表现是「明明改好了却没生效」，且没有任何报错提示你去看那个文件。
       # /opt/veggie 属主是 deploy，直接 scp 即可，不需要 sudo。
-      - name: Sync compose files
+      - name: Sync deploy files
         env:
           HOST: ${{ vars.DROPLET_HOST }}
           PORT: ${{ vars.DROPLET_PORT }}
           USER_NAME: ${{ vars.DROPLET_USER }}
         run: |
           set -euo pipefail
-          scp -P "$PORT" deploy/droplet/docker-compose.yml deploy/droplet/healthcheck.sh \
+          scp -P "$PORT" \
+              deploy/droplet/docker-compose.yml \
+              deploy/droplet/healthcheck.sh \
+              deploy/droplet/remote-deploy.sh \
               "$USER_NAME@$HOST:/opt/veggie/"
-          ssh -p "$PORT" "$USER_NAME@$HOST" 'chmod 755 /opt/veggie/healthcheck.sh'
+          ssh -p "$PORT" "$USER_NAME@$HOST" 'chmod 755 /opt/veggie/healthcheck.sh /opt/veggie/remote-deploy.sh'
 
+      # ⛔ 部署脚本必须是服务器上的**文件**，不能用 `ssh host bash -s <<EOF` 把脚本
+      #    从 stdin 喂进去 —— `docker compose run` 会接管 stdin 并把脚本剩下的部分
+      #    整段吃掉，导致 migrate 之后的 up -d / healthcheck 全不执行，而工作流
+      #    照样报成功。2026-08-05 首次部署实测踩到，见 remote-deploy.sh 文件头。
+      #    GHCR token 走 stdin，不进命令行，避免出现在服务器的 ps 输出里。
       - name: Deploy
         env:
           HOST: ${{ vars.DROPLET_HOST }}
@@ -104,41 +112,8 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ssh -p "$PORT" "$USER_NAME@$HOST" bash -euo pipefail -s <<EOSSH
-            cd /opt/veggie
-
-            # 仓库是 private → GHCR 上的包也是 private → 服务器不登录就 pull 不下来（401）。
-            # 用本 job 的 GITHUB_TOKEN 临时登录（它有 packages:read），而不是在服务器上
-            # 长期存一个 PAT——少一份需要轮换、泄露面又大的凭据。用完即登出。
-            echo '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USER' --password-stdin
-            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-
-            # 上一次成功部署的 tag = 回滚目标。用显式状态文件而不是从 compose 配置里
-            # 正则抠——后者依赖输出格式，改版就静默失效，而失效的表现是"回滚目标为空、
-            # 出事时没得回滚"，恰恰在最需要它的时候不工作。
-            PREV_TAG=\$(cat .deployed_tag 2>/dev/null || true)
-            echo "PREV_TAG=\${PREV_TAG:-<无，首次部署>}  NEW_TAG=$TAG"
-
-            export TAG="$TAG"
-            # migrator 挂了 profiles: ["tools"]，pull 时不带 --profile 会被跳过，
-            # 后面 run 就得现拉，等于把「先拉好再动」的保证丢了。
-            docker compose --profile tools pull app migrator
-
-            # 「先迁移后部署」：加列这类增量变更下旧代码对多出的可空列前向兼容；
-            # 反过来会出「镜像 client 期望新列、库还没有」的 ColumnNotFound 500。
-            if [ "$SKIP_MIGRATE" != "true" ]; then
-              docker compose run --rm migrator npx prisma migrate deploy
-            else
-              echo "⏭  按输入跳过迁移"
-            fi
-
-            docker compose up -d --no-build app
-
-            # healthcheck 失败会自行回滚并以非零码退出，此时不更新 .deployed_tag，
-            # 下次部署的回滚目标仍是最后一个真正健康过的版本。
-            ./healthcheck.sh "$TAG" "\${PREV_TAG:-}"
-            echo "$TAG" > .deployed_tag
-          EOSSH
+          printf '%s\n' "$GHCR_TOKEN" | ssh -p "$PORT" "$USER_NAME@$HOST" \
+            "TAG='$TAG' SKIP_MIGRATE='$SKIP_MIGRATE' GHCR_USER='$GHCR_USER' bash /opt/veggie/remote-deploy.sh"
 
       - name: Deployed image
         if: success()
