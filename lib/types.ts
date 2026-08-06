@@ -1,5 +1,5 @@
 // ─── 系统用户 ─────────────────────────────────────────────────────────────────
-export type UserRole = 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER' | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE' | 'SALES' | 'DISPATCH' | 'OTHER'
+export type UserRole = 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER' | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE' | 'SALES' | 'EXTERNAL_SALES' | 'DISPATCH' | 'OTHER'
 
 export interface SystemUser {
   id: string

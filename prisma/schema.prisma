@@ -16,7 +16,10 @@ enum Role {
   BOSS
   FINANCE
   WAREHOUSE
+  /// 正式销售（公司内部员工）
   SALES
+  /// 外部合作销售 —— 权限比 SALES 更窄，且必须配合行级隔离（只看自己名下客户）
+  EXTERNAL_SALES
   DISPATCH
   OTHER
 }

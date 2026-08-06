@@ -17,9 +17,18 @@
  *   两个都要做 — UI 隐藏按钮提升体验，后端拦截保证安全。
  */
 
+/**
+ * ⛔ 必须与 prisma/schema.prisma 的 `enum Role` 和 lib/types.ts 的 `UserRole` 三处一致。
+ * tests/role-definitions-sync.test.ts 会比对这三处，漂了就失败。
+ *
+ * 2026-08-06 审计发现这里曾少了 DISPATCH / OTHER 两个：`MATRIX` 是
+ * `Record<Role, …>`，查 `MATRIX['DISPATCH']` 得到 undefined，只是当时恰好
+ * 没有用户是这两种角色才没炸。
+ */
 export type Role =
   | 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER'
-  | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE' | 'SALES'
+  | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE'
+  | 'SALES' | 'EXTERNAL_SALES' | 'DISPATCH' | 'OTHER'
 
 export type Action =
   | 'read' | 'create' | 'update' | 'delete'
@@ -126,6 +135,7 @@ const MATRIX: Record<Role, Partial<Record<Subject, Action[]>>> = {
     notification:     ['read'],
   },
 
+  /** 正式销售（公司内部员工） */
   SALES: {
     order:            ['read', 'create', 'update'],
     customer:         ['read', 'create', 'update'],
@@ -134,6 +144,40 @@ const MATRIX: Record<Role, Partial<Record<Subject, Action[]>>> = {
     pricelist:        ['read'],
     notification:     ['read'],
   },
+
+  /**
+   * 外部合作销售 —— 公司外部的人，按更窄的边界给权限。
+   *
+   * 与正式 SALES 的差别（2026-08-06 用户要求把 sales 分成两类）：
+   *   - 不给 `invoice`：发票是财务信息，含账期与欠款
+   *   - 不给 `pricelist`：整套价格体系是商业机密，外部只需看到具体商品的报价
+   *   - `customer` 不给 update：改客户资料（信用额度、税号）不该由外部人做
+   *
+   * ⛔ 还必须配合**行级隔离**才有意义：外部销售只能看到自己名下的客户与其订单。
+   * 光靠这张表只能挡住「能不能做这个动作」，挡不住「能看到谁的数据」。
+   */
+  EXTERNAL_SALES: {
+    order:            ['read', 'create'],
+    customer:         ['read', 'create'],
+    product:          ['read'],
+    notification:     ['read'],
+  },
+
+  /** 调度：排波次、派车、改派司机。不碰钱、不碰商品定价。 */
+  DISPATCH: {
+    wave:             ['read', 'create', 'update'],
+    trip:             ['read', 'create', 'update'],
+    order:            ['read', 'update'],
+    customer:         ['read'],
+    notification:     ['read'],
+  },
+
+  /**
+   * 未分类角色。**刻意给空权限** —— schema 里有这个枚举值，
+   * 与其让它落进 `MATRIX[role] === undefined` 的未定义状态，不如显式声明为"什么都不能做"。
+   * 真要给某人权限，应该分配一个明确的角色，而不是用 OTHER。
+   */
+  OTHER: {},
 }
 
 /**

@@ -16,7 +16,7 @@ import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 const PURPLE = '#875A7B'
 
 // 新建用户可选角色：销售/司机/销售助理/餐馆/老板/调度/财务/其他
-const ALL_ROLES: UserRole[] = ['OPERATOR', 'DRIVER', 'SALES', 'RESTAURANT', 'BOSS', 'DISPATCH', 'FINANCE', 'OTHER']
+const ALL_ROLES: UserRole[] = ['OPERATOR', 'DRIVER', 'SALES', 'EXTERNAL_SALES', 'RESTAURANT', 'BOSS', 'DISPATCH', 'FINANCE', 'OTHER']
 
 const ROLE_LABEL_ZH: Record<UserRole, string> = {
   OPERATOR: '销售',
@@ -28,6 +28,7 @@ const ROLE_LABEL_ZH: Record<UserRole, string> = {
   FINANCE: '财务',
   WAREHOUSE: '仓管',
   SALES: '销售助理',
+  EXTERNAL_SALES: '外部合作销售',
   DISPATCH: '调度',
   OTHER: '其他',
 }
@@ -42,6 +43,7 @@ const ROLE_LABEL_EN: Record<UserRole, string> = {
   FINANCE: 'Finance',
   WAREHOUSE: 'Warehouse',
   SALES: 'Sales Assistant',
+  EXTERNAL_SALES: 'External Sales',
   DISPATCH: 'Dispatch',
   OTHER: 'Other',
 }
@@ -56,6 +58,8 @@ const ROLE_COLOR: Record<UserRole, string> = {
   FINANCE:    'bg-yellow-100 text-yellow-700',
   WAREHOUSE:  'bg-gray-100 text-gray-700',
   SALES:      'bg-pink-100 text-pink-700',
+  // 外部合作销售用更醒目的琥珀色 —— 一眼能从名单里认出「这是外部的人」
+  EXTERNAL_SALES: 'bg-amber-100 text-amber-800 ring-1 ring-amber-300',
   DISPATCH:   'bg-indigo-100 text-indigo-700',
   OTHER:      'bg-gray-100 text-gray-600',
 }

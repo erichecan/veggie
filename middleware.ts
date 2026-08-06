@@ -3,10 +3,24 @@ import { routing } from './i18n/routing'
 import { type NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 import { isPublicApiRoute } from './lib/public-routes'
+import {
+  isExternalRole, canExternalRoleAccessApi, canExternalRoleAccessPage, EXTERNAL_ROLE_HOME,
+} from './lib/role-access'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? 'veggie-demo-fallback-secret')
 
 // 白名单与放行判定在 lib/public-routes.ts，由 tests/public-api-routes.test.ts 锁住。
+
+/**
+ * 从 JWT payload 取生效角色集合。与 lib/auth.ts 的 effectiveRoles 同口径 ——
+ * roles[] 优先、空则回退单 role。这里单独写一份是因为 middleware 跑在 edge runtime，
+ * 不能顺着 lib/auth.ts 把 prisma 一起拖进来。
+ */
+function rolesOf(payload: Record<string, unknown>): string[] {
+  const arr = Array.isArray(payload.roles) ? payload.roles.filter(Boolean).map(String) : []
+  if (arr.length > 0) return arr
+  return payload.role ? [String(payload.role)] : []
+}
 
 const intlMiddleware = createMiddleware(routing)
 
@@ -31,7 +45,14 @@ export async function middleware(req: NextRequest) {
       return NextResponse.json({ error: '未授权访问' }, { status: 401 })
     }
     try {
-      await jwtVerify(token, secret)
+      const { payload } = await jwtVerify(token, secret)
+      // 边界收窄型角色（目前只有 RESTAURANT）：白名单之外一律拒绝。
+      // 放在这里而不是逐个路由加 allowedRoles —— 后者要改 100 处且漏一处就还是漏，
+      // 而且新增路由默认又是敞开的。见 lib/role-access.ts 的说明。
+      const restricted = isExternalRole(rolesOf(payload))
+      if (restricted && !canExternalRoleAccessApi(restricted, pathname)) {
+        return NextResponse.json({ error: '权限不足' }, { status: 403 })
+      }
       return NextResponse.next()
     } catch {
       return NextResponse.json({ error: 'Token 无效或已过期' }, { status: 401 })
@@ -52,7 +73,15 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
-    await jwtVerify(token, secret)
+    const { payload } = await jwtVerify(token, secret)
+    // 页面层同样收窄：餐馆客户不能登录运营后台（2026-08-06 用户明确要求）。
+    // 光挡 API 不够 —— 页面能打开但数据全 403，用户看到的是一堆空壳和报错，
+    // 既暴露了后台的存在，也说不清是权限问题还是系统坏了。
+    const restrictedPage = isExternalRole(rolesOf(payload))
+    if (restrictedPage && !canExternalRoleAccessPage(restrictedPage, barePath)) {
+      const home = EXTERNAL_ROLE_HOME[restrictedPage] ?? '/enter'
+      return NextResponse.redirect(new URL(localePrefix ? `/${localePrefix}${home}` : home, req.url))
+    }
     return intlMiddleware(req)
   } catch {
     const enterUrl = new URL(localePrefix ? `/${localePrefix}/enter` : '/enter', req.url)
