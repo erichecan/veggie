@@ -387,7 +387,7 @@ function DayWiseReportInner() {
         const categorySet = new Set(categoryIds)
         const categoryByProductId = categorySet.size > 0
           ? new Map(
-              (await apiGet<{ id: string; categoryId?: string | null }[]>('/api/products?limit=5000'))
+              (await apiGet<{ id: string; categoryId?: string | null }[]>('/api/products?limit=5000&slim=1'))
                 .map(p => [p.id, p.categoryId ?? ''])
             )
           : null

@@ -133,7 +133,7 @@ export default function InventoryAdjustmentsPage() {
     setShowAdjust(true)
     if (products.length === 0) {
       try {
-        const d = await apiGet<ProductLite[]>('/api/products')
+        const d = await apiGet<ProductLite[]>('/api/products?slim=1')
         setProducts(Array.isArray(d) ? d : [])
       } catch {
         toast.error(isEn ? 'Failed to load product list' : '加载商品列表失败')

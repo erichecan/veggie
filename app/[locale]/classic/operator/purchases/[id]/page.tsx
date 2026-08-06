@@ -233,7 +233,7 @@ export default function PurchaseDetailPage() {
   const productsLoaded = useRef(false)
 
   function loadPurchaseProducts() {
-    apiGet<PurchaseProduct[]>('/api/products?purchasable=1').then(setPurchaseProducts).catch(() => {})
+    apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1').then(setPurchaseProducts).catch(() => {})
   }
 
   async function loadPickerData() {

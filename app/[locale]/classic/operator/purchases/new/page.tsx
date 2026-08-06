@@ -125,7 +125,7 @@ export default function NewPurchaseOrderPage() {
     apiGet<{ items: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
       .then(d => setSuppliers(Array.isArray(d) ? d : (d.items ?? [])))
       .catch(() => {})
-    apiGet<PurchaseProduct[]>('/api/products?purchasable=1').then(setPurchaseProducts).catch(() => {})
+    apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1').then(setPurchaseProducts).catch(() => {})
     apiGet<Category[]>('/api/product-categories').then(setCategories).catch(() => {})
     apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
   }, [])

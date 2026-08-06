@@ -74,7 +74,7 @@ export default function ClassicWarehousePage() {
   const [expiringLots, setExpiringLots] = useState<ExpiringLot[]>([])
 
   function load() {
-    apiGet<Product[]>('/api/products').then(data => setProducts(data)).catch(() => {})
+    apiGet<Product[]>('/api/products?slim=1').then(data => setProducts(data)).catch(() => {})
     apiGet<Order[]>('/api/orders?status=COMPLETED&include_lines=false').then(data => setOrders(data)).catch(() => {})
     apiGet<PurchaseRecord[]>('/api/purchases').then(data => setPurchases(data)).catch(() => {})
     apiGet<ExpiringLot[]>('/api/lots/expiring?days=3').then(data => setExpiringLots(Array.isArray(data) ? data : [])).catch(() => {})
