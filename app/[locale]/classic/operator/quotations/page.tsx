@@ -401,7 +401,7 @@ export default function ClassicQuotationsPage() {
     // 加载商品列表用于名称匹配
     let products: Array<{ id: string; name: string; spec?: string; listPrice?: number }> = []
     try {
-      products = await apiGet<typeof products>('/api/products')
+      products = await apiGet<typeof products>('/api/products?slim=1')
     } catch { /* ignore */ }
 
     // 按餐馆名分组，构建订单

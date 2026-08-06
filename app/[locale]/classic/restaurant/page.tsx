@@ -54,7 +54,7 @@ export default function ClassicRestaurantPage() {
         .then(cs => { const found = cs.find(c => c.id === cid); if (found) setCustomer(found) })
         .catch(() => {})
     }
-    apiGet<Product[]>('/api/products')
+    apiGet<Product[]>('/api/products?slim=1')
       .then(ps => { setProducts(ps.filter(p => (p.status as string).toLowerCase() === 'active')); setPage(1) })
       .catch(() => {})
     apiGet<OdooPricelist[]>('/api/pricelists')

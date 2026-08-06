@@ -39,9 +39,13 @@ export async function GET(req: Request) {
           id: true, templateId: true, name: true, internalRef: true, spec: true,
           listPrice: true, price: true, standardPrice: true, qtyOnHand: true,
           customerTaxRate: true, status: true, categoryId: true,
+          // images 留着：实测全库 5,480 条**全是空数组**，总共才 74 KB，
+          // 但少了它下单页就没法显示商品图，得为一个字段再开一套接口。
+          images: true,
           category: { select: { name: true } },
           template: {
             select: {
+              images: true,
               uomId: true, uom: { select: { id: true, name: true } },
               customerTaxRate: true, internalRef: true,
               category: { select: { name: true } },
@@ -52,6 +56,7 @@ export async function GET(req: Request) {
       })
       const slimResult = rows.map(({ template, category, ...p }) => ({
         ...p,
+        images: (p.images as string[]).length > 0 ? p.images : (template?.images ?? []),
         uomId:           template?.uom?.id   ?? template?.uomId ?? null,
         uomName:         template?.uom?.name ?? null,
         purchaseUomId:   template?.purchaseUomId ?? null,
