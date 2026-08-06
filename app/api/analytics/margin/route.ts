@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { SALES_COUNTED_STATUSES, resolveDateRange } from '@/lib/analytics/metrics'
 import { DIMENSION_DEFS, buildPivot, PivotTooManyColumnsError, type PivotRawCell } from '@/lib/analytics/pivot'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/margin — 毛利分析
@@ -33,7 +33,7 @@ const STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <> pt."
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))

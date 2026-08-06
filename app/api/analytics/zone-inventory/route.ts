@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { getZoneSummaries, getZoneMismatches, getUnplacedCount } from '@/lib/analytics/zone-inventory'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') ?? '200', 10)))

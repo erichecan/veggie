@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { resolveDateRange } from '@/lib/analytics/metrics'
 import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/shortage'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/shortage — 缺货分析 × 采购联动
@@ -16,7 +16,7 @@ import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/sh
  */
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))

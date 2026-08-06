@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { getProductPriceTrendsByIds } from '@/lib/analytics/price-trend'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /** GET /api/analytics/price-trends?productIds=a,b,c — 商品进价环比（最近两次采购价对比） */
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const ids = (searchParams.get('productIds') ?? '').split(',').map(s => s.trim()).filter(Boolean)

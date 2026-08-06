@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { computeDayMetrics, ensureSnapshots } from '@/lib/analytics/snapshot'
 import {
   SALES_COUNTED_STATUSES, CHURN_QUIET_DAYS, CHURN_LOOKBACK_DAYS, CHURN_MIN_PRIOR_ORDERS,
   toDayKey,
 } from '@/lib/analytics/metrics'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/overview — 老板日报一屏
@@ -18,7 +18,7 @@ import {
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any

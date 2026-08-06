@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import {
   getOverviewKPIs,
@@ -8,10 +7,11 @@ import {
   getTopSuppliers,
   getRestockForecastItems,
 } from '@/lib/analytics/procurement-overview'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /** GET /api/analytics/procurement-overview — 采购总览页数据（KPI + Top10供应商 + 补货预测 + 需要关注 + 四品类现状） */
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const isEn = new URL(req.url).searchParams.get('locale') === 'en'
       const [kpis, groups, attention, topSuppliers, forecast] = await Promise.all([

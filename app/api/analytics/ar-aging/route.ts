@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { AR_AGING_BUCKETS, type ArAgingBucketKey } from '@/lib/analytics/metrics'
 import { toNum } from '@/lib/decimal-helpers'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/ar-aging — 应收账龄
@@ -16,7 +16,7 @@ import { toNum } from '@/lib/decimal-helpers'
  */
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any

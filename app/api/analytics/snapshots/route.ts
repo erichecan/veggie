@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { ensureSnapshots, recomputeSnapshots } from '@/lib/analytics/snapshot'
 import { resolveDateRange } from '@/lib/analytics/metrics'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/snapshots
@@ -13,7 +14,7 @@ import { resolveDateRange } from '@/lib/analytics/metrics'
  */
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))

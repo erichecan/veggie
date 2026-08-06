@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { getInventoryOverviewKPIs, getInventoryAttentionItems, getInventoryByCategoryGroup } from '@/lib/analytics/inventory-overview'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /** GET /api/analytics/inventory-overview — 库存总览页数据（KPI + 需要关注 + 按品类分组现状） */
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const isEn = new URL(req.url).searchParams.get('locale') === 'en'
       const [kpis, attention, groups] = await Promise.all([

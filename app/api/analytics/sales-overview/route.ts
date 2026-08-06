@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { SALES_COUNTED_STATUSES, resolveDateRange, deriveAov } from '@/lib/analytics/metrics'
 import { ensureSnapshots, computeDayMetrics } from '@/lib/analytics/snapshot'
 import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/shortage'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/sales-overview — 销售统计统一视图
@@ -21,7 +21,7 @@ import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/sh
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))

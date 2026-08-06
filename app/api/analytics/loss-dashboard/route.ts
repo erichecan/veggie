@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import {
   getLossKPIs,
@@ -8,6 +7,7 @@ import {
   getLossReasonBreakdown,
   getTopLossProducts,
 } from '@/lib/analytics/loss-dashboard'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/loss-dashboard — 损耗与退货仪表盘
@@ -23,7 +23,7 @@ import {
  *   topLoss          期内报废损耗值 TOP N 商品
  */
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const days = clampInt(searchParams.get('days'), 30, 1, 400)

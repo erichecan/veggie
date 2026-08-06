@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import {
   SALES_COUNTED_STATUSES, CHURN_QUIET_DAYS, CHURN_LOOKBACK_DAYS, CHURN_MIN_PRIOR_ORDERS,
   resolveDateRange,
 } from '@/lib/analytics/metrics'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/customers — 客户分析
@@ -21,7 +21,7 @@ import {
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { SALES_COUNTED_STATUSES, TURNOVER_WINDOW_DAYS, resolveDateRange } from '@/lib/analytics/metrics'
 import { getTopProductPriceTrends } from '@/lib/analytics/price-trend'
 import { round2 } from '@/lib/decimal-helpers'
+import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
  * /api/analytics/procurement — 采购运营分析
@@ -29,7 +29,7 @@ const SOLD_STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <>
        ELSE ol."orderedQty" END)`
 
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withCachedAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))
