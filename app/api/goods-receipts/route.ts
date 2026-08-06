@@ -66,6 +66,10 @@ export async function GET(req: Request) {
     // 实测：23 条收货单 6.06 MB，其中 photos 占 6.02 MB —— 99%。
     // 而列表默认是折叠的，照片只有展开某一条时才显示。为了那一条把另外 22 条的
     // 照片也传过来，是纯粹的浪费。展开时用 ?id= 单独取。
+    // ⛔ 必须用 select 显式列字段，不能 findMany 出来再在 JS 里把 photos 删掉。
+    // 那样只省了「Node→浏览器」这一段，「DB→Node」照样传 6 MB —— 实测响应体积从
+    // 6.06 MB 降到 14 KB 而耗时仍是 1.18 s，就是这么来的。Prisma 没有"排除某字段"，
+    // 只能把要的都列出来。新增字段时记得同步这里。
     const [total, rows] = await Promise.all([
       p.goodsReceipt.count({ where }),
       p.goodsReceipt.findMany({
@@ -73,13 +77,21 @@ export async function GET(req: Request) {
         orderBy: { createdAt: 'desc' },
         skip: offset,
         take: limit,
-        include: { purchaseOrder: { select: { id: true, name: true, supplierId: true } } },
+        select: {
+          id: true, name: true, purchaseOrderId: true, arrivedAt: true,
+          receivedBy: true, lines: true, notes: true, createdAt: true,
+          purchaseOrder: { select: { id: true, name: true, supplierId: true } },
+        },
       }),
     ])
-    const items = rows.map(({ photos, ...r }: { photos?: string[] } & Record<string, unknown>) => ({
-      ...r,
-      photoCount: photos?.length ?? 0,
-    }))
+    // 照片数量单独查：只取 id + photos 会把 6 MB 又读回来，所以用 SQL 只算长度。
+    const counts = await prisma.$queryRaw<{ id: string; n: bigint }[]>`
+      SELECT id, coalesce(array_length(photos, 1), 0)::bigint AS n
+      FROM "GoodsReceipt"
+      WHERE id = ANY(${rows.map((r: { id: string }) => r.id)})
+    `
+    const countMap = new Map(counts.map((c) => [c.id, Number(c.n)]))
+    const items = rows.map((r: { id: string }) => ({ ...r, photoCount: countMap.get(r.id) ?? 0 }))
     return NextResponse.json(serializeApi({ items, total }))
   } catch (error) {
     console.error('[GET /api/goods-receipts]', error)
