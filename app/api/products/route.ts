@@ -25,6 +25,45 @@ export async function GET(req: Request) {
     if (purchasableOnly) templateWhere.canBePurchased = true
     if (sellableOnly) templateWhere.canBeSold = true
     if (Object.keys(templateWhere).length > 0) where.template = templateWhere
+
+    // ?slim=1 → 只回选品下拉框真正会用到的字段。
+    // 全量版一次 3.5 MB（5,479 个商品 × 全字段），而它被 8+ 个页面在加载时调用，
+    // 光是序列化就把单线程的事件循环占住。命名与 /api/customers?slim=1 保持一致。
+    // ⛔ 不传 slim 时字段与改造前逐字相同 —— 现有调用方不受影响。
+    const slim = searchParams.get('slim') === '1'
+    if (slim) {
+      const rows = await prisma.product.findMany({
+        where,
+        orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
+        select: {
+          id: true, templateId: true, name: true, internalRef: true, spec: true,
+          listPrice: true, price: true, standardPrice: true, qtyOnHand: true,
+          customerTaxRate: true, status: true, categoryId: true,
+          category: { select: { name: true } },
+          template: {
+            select: {
+              uomId: true, uom: { select: { id: true, name: true } },
+              customerTaxRate: true, internalRef: true,
+              category: { select: { name: true } },
+              canBeSold: true, canBePurchased: true, purchaseUomId: true,
+            },
+          },
+        },
+      })
+      const slimResult = rows.map(({ template, category, ...p }) => ({
+        ...p,
+        uomId:           template?.uom?.id   ?? template?.uomId ?? null,
+        uomName:         template?.uom?.name ?? null,
+        purchaseUomId:   template?.purchaseUomId ?? null,
+        customerTaxRate: p.customerTaxRate ?? template?.customerTaxRate ?? 0,
+        internalRef:     p.internalRef ?? template?.internalRef ?? null,
+        category:        category?.name ?? template?.category?.name ?? null,
+        canBeSold:       template?.canBeSold ?? true,
+        canBePurchased:  template?.canBePurchased ?? true,
+      }))
+      return NextResponse.json(serializeApi(slimResult))
+    }
+
     const products = await prisma.product.findMany({
       where,
       orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],

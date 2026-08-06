@@ -329,13 +329,11 @@ export default function ClassicQuotationsPage() {
 
   async function loadRefData() {
     try {
-      const [rawCustomers, rawInvoices, rawTrips] = await Promise.all([
+      const [rawCustomers, rawTrips] = await Promise.all([
         apiGet<Customer[]>('/api/customers?slim=1').catch(() => [] as Customer[]),
-        apiGet<Invoice[]>('/api/invoices?slim=1').catch(() => [] as Invoice[]),
         apiGet<Trip[]>('/api/trips').catch(() => [] as Trip[]),
       ])
       setCustomers(rawCustomers)
-      setInvoices(rawInvoices)
       setTrips(rawTrips)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
@@ -343,6 +341,19 @@ export default function ClassicQuotationsPage() {
   }
 
   useEffect(() => { loadRefData() }, [])
+
+  // 开票状态只查当前这一页的订单。以前是 `/api/invoices?slim=1` 全表扫 148,285 张
+  // （3.2 MB / 3.7 秒），而 invoicedIds 的唯一用途是给当前页打「待开票」标记。
+  const pageOrderIds = useMemo(() => orders.map(o => o.id).join(','), [orders])
+
+  useEffect(() => {
+    if (!pageOrderIds) { setInvoices([]); return }
+    let cancelled = false
+    apiGet<Invoice[]>(`/api/invoices?slim=1&orderIds=${encodeURIComponent(pageOrderIds)}`)
+      .catch(() => [] as Invoice[])
+      .then(rows => { if (!cancelled) setInvoices(rows) })
+    return () => { cancelled = true }
+  }, [pageOrderIds])
 
   // ── CSV import helpers ────────────────────────────────────────────────────
 

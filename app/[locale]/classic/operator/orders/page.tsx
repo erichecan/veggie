@@ -208,9 +208,18 @@ export default function ClassicOrdersPage() {
     [rawOrders],
   )
 
+  // 只查当前这一页订单的开票状态。以前是 `/api/invoices?slim=1` 全表扫 148,285 张
+  // （3.2 MB / 2.5 秒），只为给列表打「已开票」标记 —— 而列表本来就只显示 PAGE_SIZE 条。
+  const pageOrderIds = useMemo(() => orders.map(o => o.id).join(','), [orders])
+
   useEffect(() => {
-    apiGet<Invoice[]>('/api/invoices?slim=1').catch(() => [] as Invoice[]).then(setInvoices)
-  }, [])
+    if (!pageOrderIds) { setInvoices([]); return }
+    let cancelled = false
+    apiGet<Invoice[]>(`/api/invoices?slim=1&orderIds=${encodeURIComponent(pageOrderIds)}`)
+      .catch(() => [] as Invoice[])
+      .then(rows => { if (!cancelled) setInvoices(rows) })
+    return () => { cancelled = true }
+  }, [pageOrderIds])
 
   const invoicedOrderIds = useMemo(() => new Set(invoices.flatMap(inv => inv.saleOrderIds)), [invoices])
 

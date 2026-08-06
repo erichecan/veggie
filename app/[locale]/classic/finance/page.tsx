@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
-import type { Order, Customer, Invoice } from '@/lib/types'
+import type { Order, Customer } from '@/lib/types'
 import { DrillPanel, type DrillColumn } from '@/components/shared/drill-panel'
 import { formatDateTime } from '@/lib/format-date'
 
@@ -49,26 +49,22 @@ export default function ClassicFinancePage() {
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [arByCustomer, setArByCustomer] = useState<Record<string, number>>({})
   const [historicalDebt, setHistoricalDebt] = useState<Record<string, number>>({})
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
 
   useEffect(() => {
     apiGet<Order[]>('/api/orders?include_lines=false').then(data => setOrders(data)).catch(() => {})
     apiGet<Customer[]>('/api/customers').then(data => setCustomers(data)).catch(() => {})
-    apiGet<Invoice[]>('/api/invoices').then(data => setInvoices(Array.isArray(data) ? data : [])).catch(() => {})
+    // SSOT(应收口径,P1-6): 本期欠款 = Σ未付发票 amountDue(DRAFT+POSTED;PAID=0;排除 CANCELLED)。
+    // 配合"完成订单自动建 DRAFT 发票",每张送达单都有发票,口径不漏单且与发票/收款挂钩。
+    //
+    // 这个汇总以前是把 /api/invoices 全部 148,285 张发票拉到浏览器再跑循环加起来的
+    // ——74 MB / 15 秒，且单次请求就能把服务端内存推到 1.09 GiB。口径没变，只是把
+    // 聚合放回服务端（groupBy），改口径请改 app/api/invoices/ar-summary/route.ts。
+    apiGet<Record<string, number>>('/api/invoices/ar-summary').then(setArByCustomer).catch(() => {})
     apiGet<Record<string, number>>('/api/finance/historical-debt').then(setHistoricalDebt).catch(() => {})
   }, [])
-
-  // SSOT(应收口径,P1-6): 本期欠款 = Σ未付发票 amountDue(DRAFT+POSTED;PAID=0;排除 CANCELLED)。
-  // 配合"完成订单自动建 DRAFT 发票",每张送达单都有发票,口径不漏单且与发票/收款挂钩。
-  const arByCustomer: Record<string, number> = {}
-  for (const inv of invoices) {
-    const st = String(inv.status).toUpperCase()
-    if (st === 'DRAFT' || st === 'POSTED') {
-      arByCustomer[inv.customerId] = (arByCustomer[inv.customerId] ?? 0) + Number(inv.amountDue ?? 0)
-    }
-  }
 
   const today = todayStart()
 

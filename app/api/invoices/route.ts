@@ -5,25 +5,75 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writebackInvoicedQty } from '@/lib/invoice-invoiced-qty'
 
+/**
+ * 不分页调用的兜底上限。
+ *
+ * 由来（2026-08-05 实测）：这个路由原本无分页也无上限，一次返回全部 148,285 张发票
+ * 的**全字段**（`lines` 是 Json，存着整张发票的明细）= 74 MB / 10 秒，且单次请求就把
+ * 应用容器内存从 408 MB 推到 1.09 GiB —— 两个人同时打开发票页就会 OOM。
+ *
+ * 所以这个上限不是"优化"，是**安全阀**：即使将来有人写了个不带分页的新调用方，
+ * 也不能再把内存拉爆。要全量请显式分页翻页。
+ */
+const FLAT_LIMIT = 500
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const customerId = searchParams.get('customerId')
     // ?slim=1 → only id + saleOrderIds (used by orders/quotations pages to detect invoiced orders)
     const slim = searchParams.get('slim') === '1'
+    // ?orderIds=a,b,c → 只回传涉及这些订单的发票。配合 slim 用于"这批订单开票了没"，
+    // 不必再为判断 20 张单的开票状态而扫全表。
+    const orderIdsRaw = searchParams.get('orderIds')?.trim()
+    const orderIds = orderIdsRaw ? orderIdsRaw.split(',').map((s) => s.trim()).filter(Boolean) : null
+
+    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
+    const rawPageSize = parseInt(searchParams.get('pageSize') ?? '0', 10)
+    const paginated = Number.isFinite(rawPageSize) && rawPageSize > 0
+    const pageSize = paginated ? Math.min(200, Math.max(1, rawPageSize)) : 0
+
+    const where: Record<string, unknown> = {}
+    if (customerId) where.customerId = customerId
+    // saleOrderIds 是 String[]，hasSome 命中"这张发票涉及了其中任一订单"
+    if (orderIds && orderIds.length > 0) where.saleOrderIds = { hasSome: orderIds }
 
     if (slim) {
       const invoices = await prisma.invoice.findMany({
-        where: customerId ? { customerId } : undefined,
+        where,
         select: { id: true, saleOrderIds: true },
         orderBy: { createdAt: 'desc' },
+        // 按 orderIds 精确查时不截断（结果集本来就小）；否则套用安全阀
+        take: orderIds ? undefined : FLAT_LIMIT,
       })
       return NextResponse.json(serializeApi(invoices))
     }
 
+    // 分页模式：返回 { data, total, page, pageSize, totalPages }，与 /api/customers 一致
+    if (paginated) {
+      const [total, invoices] = await Promise.all([
+        prisma.invoice.count({ where }),
+        prisma.invoice.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+      ])
+      return NextResponse.json(serializeApi({
+        data: invoices,
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      }))
+    }
+
+    // Legacy：不传 pageSize 仍返回 flat array（保持旧调用方不炸），但受 FLAT_LIMIT 约束
     const invoices = await prisma.invoice.findMany({
-      where: customerId ? { customerId } : undefined,
+      where,
       orderBy: { createdAt: 'desc' },
+      take: FLAT_LIMIT,
     })
     return NextResponse.json(serializeApi(invoices))
   } catch (error) {

@@ -164,6 +164,8 @@ export default function ClassicInvoicesPage() {
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const PAYMENT_LABELS = isEn ? PAYMENT_LABELS_EN : PAYMENT_LABELS_ZH
   const [invoices, setInvoices] = useState<Invoice[]>([])
+  // 发票总数由服务端给（列表只加载最近 200 张），发票号 INV-${total+1} 依赖它
+  const [invoiceTotal, setInvoiceTotal] = useState(0)
   const [orders, setOrders] = useState<Order[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [genOpen, setGenOpen] = useState(false)
@@ -179,12 +181,16 @@ export default function ClassicInvoicesPage() {
 
   async function load() {
     try {
-      const [rawInvoices, rawOrders, rawCustomers] = await Promise.all([
-        apiGet<Record<string, unknown>[]>('/api/invoices'),
+      // 只取最近 200 张。以前这里拉全部 148,285 张（74 MB / 15 秒，且能把服务端内存
+      // 推到 1.09 GiB），只为在浏览器里做搜索排序 —— 翻到第 700 页的需求并不存在。
+      // total 必须来自服务端：发票号是 `INV-${total+1}`，用前端数组长度会和已有号撞
+      // 车（Invoice.name 有唯一约束）。
+      const [invPage, rawOrders, rawCustomers] = await Promise.all([
+        apiGet<{ data: Record<string, unknown>[]; total: number }>('/api/invoices?page=1&pageSize=200'),
         apiGet<Record<string, unknown>[]>('/api/orders?status=COMPLETED,IN_DELIVERY,WAVE_ASSIGNED,CONFIRMED&include_lines=false'),
         apiGet<Customer[]>('/api/customers'),
       ])
-      const normalizedInvoices: Invoice[] = rawInvoices.map(inv => ({
+      const normalizedInvoices: Invoice[] = (invPage.data ?? []).map(inv => ({
         ...(inv as unknown as Invoice),
         status: (inv.status as string).toLowerCase() as Invoice['status'],
         lines: (inv.lines as Invoice['lines']) ?? [],
@@ -196,6 +202,7 @@ export default function ClassicInvoicesPage() {
         items: (o.items as Order['items']) ?? [],
       }))
       setInvoices(normalizedInvoices)
+      setInvoiceTotal(invPage.total ?? normalizedInvoices.length)
       setOrders(normalizedOrders)
       setCustomers(rawCustomers)
     } catch (e) {
@@ -205,11 +212,33 @@ export default function ClassicInvoicesPage() {
 
   useEffect(() => { load() }, [])
 
-  const unbilledOrders = orders.filter(o =>
-    o.restaurantId === selectedCustomerId &&
-    o.status === 'completed' &&
-    !invoices.some(inv => inv.saleOrderIds.includes(o.id))
+  // 「该客户还没开票的已完成订单」。以前是拿全量发票在前端 some() 判断，现在只把
+  // 这个客户的已完成订单 id 发过去精确反查 —— 判断 20 张单的开票状态不必扫全表。
+  const [billedOrderIds, setBilledOrderIds] = useState<Set<string>>(new Set())
+  const customerCompletedOrders = useMemo(
+    () => orders.filter(o => o.restaurantId === selectedCustomerId && o.status === 'completed'),
+    [orders, selectedCustomerId],
   )
+
+  useEffect(() => {
+    if (!selectedCustomerId || customerCompletedOrders.length === 0) {
+      setBilledOrderIds(new Set())
+      return
+    }
+    let cancelled = false
+    const ids = customerCompletedOrders.map(o => o.id)
+    apiGet<{ id: string; saleOrderIds: string[] }[]>(
+      `/api/invoices?slim=1&orderIds=${encodeURIComponent(ids.join(','))}`,
+    )
+      .then(rows => {
+        if (cancelled) return
+        setBilledOrderIds(new Set(rows.flatMap(r => r.saleOrderIds ?? [])))
+      })
+      .catch(() => { if (!cancelled) setBilledOrderIds(new Set()) })
+    return () => { cancelled = true }
+  }, [selectedCustomerId, customerCompletedOrders])
+
+  const unbilledOrders = customerCompletedOrders.filter(o => !billedOrderIds.has(o.id))
 
   function toggleOrder(id: string) {
     setSelectedOrderIds(prev =>
@@ -223,7 +252,7 @@ export default function ClassicInvoicesPage() {
       toast.error(isEn ? 'Please select at least one order' : '请至少选择一个订单')
       return
     }
-    const payload = buildInvoicePayload(selectedOrderIds, orders, customers, invoices.length)
+    const payload = buildInvoicePayload(selectedOrderIds, orders, customers, invoiceTotal)
     if (!payload) { toast.error(isEn ? 'Failed to generate' : '生成失败'); return }
 
     setGenerating(true)
