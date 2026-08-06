@@ -54,6 +54,8 @@ interface GoodsReceiptHistoryRow {
   arrivedAt: string
   receivedBy?: string | null
   notes?: string | null
+  /// 列表接口不返回 photos（它们是 base64，23 条就 6 MB），只给数量；展开时按需拉
+  photoCount?: number
   photos?: string[]
   lines: GoodsReceiptLine[]
   purchaseOrder?: { id: string; name: string; supplierId: string } | null
@@ -108,6 +110,17 @@ function ReceivePageInner() {
   const [history, setHistory] = useState<GoodsReceiptHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [expandedGrId, setExpandedGrId] = useState<string | null>(null)
+  // 展开某条时才去取它的取证照片。列表接口刻意不带 photos —— 那些是 base64 data URI，
+  // 23 条收货单里 photos 就占 6.02 MB（99%），而列表默认全是折叠的。
+  const [grPhotos, setGrPhotos] = useState<Record<string, string[]>>({})
+
+  async function loadPhotos(id: string) {
+    if (grPhotos[id]) return
+    try {
+      const one = await apiGet<{ photos?: string[] }>(`/api/goods-receipts?id=${encodeURIComponent(id)}`)
+      setGrPhotos(prev => ({ ...prev, [id]: one.photos ?? [] }))
+    } catch { setGrPhotos(prev => ({ ...prev, [id]: [] })) }
+  }
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true)
@@ -443,7 +456,11 @@ function ReceivePageInner() {
             return (
               <div key={gr.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <button
-                  onClick={() => setExpandedGrId(expanded ? null : gr.id)}
+                  onClick={() => {
+                    const next = expanded ? null : gr.id
+                    setExpandedGrId(next)
+                    if (next && (gr.photoCount ?? 0) > 0) loadPhotos(next)
+                  }}
                   className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50">
                   <div>
                     <span className="font-semibold text-gray-800">{gr.name}</span>
@@ -490,9 +507,9 @@ function ReceivePageInner() {
                       )}
                     </table>
                     {gr.notes && <div className="text-xs text-gray-500 mt-2">{isEn ? `Notes: ${gr.notes}` : `备注：${gr.notes}`}</div>}
-                    {(gr.photos?.length ?? 0) > 0 && (
+                    {(gr.photoCount ?? gr.photos?.length ?? 0) > 0 && (
                       <div className="flex gap-1.5 mt-2 flex-wrap">
-                        {(gr.photos ?? []).map((src, i) => (
+                        {(grPhotos[gr.id] ?? gr.photos ?? []).map((src, i) => (
                           <img key={i} src={src} alt={isEn ? `${gr.name} photo ${i + 1}` : `${gr.name} 照片 ${i + 1}`} className="w-16 h-16 rounded object-cover border border-gray-200" />
                         ))}
                       </div>

@@ -50,7 +50,23 @@ export async function GET(req: Request) {
     const where = search
       ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { purchaseOrder: { name: { contains: search, mode: 'insensitive' } } }] }
       : {}
-    const [total, items] = await Promise.all([
+    // ?id=xxx → 单条，带上照片。列表页展开某一条时才调，见下面为什么。
+    const singleId = searchParams.get('id')?.trim()
+    if (singleId) {
+      const one = await p.goodsReceipt.findUnique({
+        where: { id: singleId },
+        include: { purchaseOrder: { select: { id: true, name: true, supplierId: true } } },
+      })
+      if (!one) return NextResponse.json({ error: '收货单不存在' }, { status: 404 })
+      return NextResponse.json(serializeApi(one))
+    }
+
+    // ⛔ 列表**不返回 photos**，只给数量。
+    // photos 是 String[]，里面存的是 base64 data URI（取证照片，单张上限 5 MB）。
+    // 实测：23 条收货单 6.06 MB，其中 photos 占 6.02 MB —— 99%。
+    // 而列表默认是折叠的，照片只有展开某一条时才显示。为了那一条把另外 22 条的
+    // 照片也传过来，是纯粹的浪费。展开时用 ?id= 单独取。
+    const [total, rows] = await Promise.all([
       p.goodsReceipt.count({ where }),
       p.goodsReceipt.findMany({
         where,
@@ -60,6 +76,10 @@ export async function GET(req: Request) {
         include: { purchaseOrder: { select: { id: true, name: true, supplierId: true } } },
       }),
     ])
+    const items = rows.map(({ photos, ...r }: { photos?: string[] } & Record<string, unknown>) => ({
+      ...r,
+      photoCount: photos?.length ?? 0,
+    }))
     return NextResponse.json(serializeApi({ items, total }))
   } catch (error) {
     console.error('[GET /api/goods-receipts]', error)
