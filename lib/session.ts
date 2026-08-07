@@ -26,12 +26,29 @@ export function getSession(): UserSession | null {
   }
 }
 
+const AUTH_COOKIE_MAX_AGE = 7 * 24 * 3600
+
+/**
+ * 写登录 cookie —— **写 cookie 只走这一个函数**。
+ * 原先 `enter/page.tsx` 与这里各写了一份同样的字符串，加 `Secure` 时差点只改了一处。
+ *
+ * `Secure` 按当前协议决定，不是无条件加：无条件加的话，HTTP 下浏览器**直接丢弃**
+ * 这个 cookie，表现是"登录成功但立刻又被踢回登录页"。本地开发和
+ * TLS 生效前的过渡窗口都还是 HTTP，所以按协议判定。
+ * （彻底的做法是服务端下发 HttpOnly cookie，见台账 W0-3，那是另一件事。）
+ */
+export function writeAuthCookie(token: string): void {
+  if (typeof document === 'undefined') return
+  const secure = location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `veggie_token=${token}; path=/; max-age=${AUTH_COOKIE_MAX_AGE}; SameSite=Lax${secure}`
+}
+
 /** 登录后写入 session（enter/page.tsx 已经做了，这里保留供外部调用） */
 export function setSession(user: UserSession, token: string): void {
   if (typeof window === 'undefined') return
   localStorage.setItem('veggie_user', JSON.stringify(user))
   localStorage.setItem('veggie_token', token)
-  document.cookie = `veggie_token=${token}; path=/; max-age=${7 * 24 * 3600}; SameSite=Lax`
+  writeAuthCookie(token)
 }
 
 /** 退出登录 */

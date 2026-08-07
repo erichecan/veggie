@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { writeAuthCookie } from '@/lib/session'
 
 export default function EnterPage() {
   const router = useRouter()
@@ -48,7 +49,7 @@ export default function EnterPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || t('networkError')); return }
-      document.cookie = `veggie_token=${data.token}; path=/; max-age=${7 * 24 * 3600}; SameSite=Lax`
+      writeAuthCookie(data.token)
       localStorage.setItem('veggie_token', data.token)
       localStorage.setItem('veggie_user', JSON.stringify(data.user))
       router.replace(ROLE_PATHS[data.user.role] ?? `${prefix}/`)

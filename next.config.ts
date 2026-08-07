@@ -20,7 +20,15 @@ const CSP_DIRECTIVES = [
 
 const SECURITY_HEADERS = [
   { key: 'Content-Security-Policy', value: CSP_DIRECTIVES },
-  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+  // ⛔ HSTS 先短后长，别一上来就写两年。
+  // HSTS 与普通证书告警不同：它没有「仍要继续」按钮。一旦浏览器记住了
+  // max-age=63072000，证书出任何问题（签发失败、续期漏了、配置写错）用户就是
+  // 打不开、也点不掉，而且这个记忆在**用户的浏览器里**，服务端改配置救不回来。
+  // 2026-08-07 上 HTTPS 时从 300 秒起步，观察证书与自动续期稳定几天后，
+  // 再显式提交把它升到 63072000（届时把这段注释一并更新）。
+  // `preload` 也去掉了：那是"申请进浏览器内置名单"的信号，进去之后想退出要走
+  // 官方移除流程并等浏览器发版，而我们才刚开始用这个域名。
+  { key: 'Strict-Transport-Security', value: 'max-age=300' },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
