@@ -1,0 +1,44 @@
+name: CI
+
+# 之前仓库里**没有任何跑测试的工作流** —— 260 个测试只在本地跑。
+# 2026-08-06 权限整改后这不能再这样：权限的守卫（可达性快照、写操作角色闸、
+# 角色定义三处同步、公开路由白名单）全是"改错了要立刻变红"的东西，
+# 没有 CI 就等于没有守卫。审计那次的根因就是**写错了没有任何测试会红**。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Prisma Client 是生成物，测试里有引用它类型的文件
+      - run: npx prisma generate
+
+      - name: 类型检查
+        run: npx tsc --noEmit
+
+      - name: 测试（含权限守卫）
+        run: npm test
+
+      # 单独拎出来跑一遍并打印摘要，失败时在 CI 日志里一眼看到是哪一格变了，
+      # 不用翻整个测试输出。
+      - name: 权限可达性快照
+        if: always()
+        run: npx tsx --test tests/role-reachability.test.ts tests/api-write-gates.test.ts tests/role-access.test.ts tests/public-api-routes.test.ts tests/role-definitions-sync.test.ts
