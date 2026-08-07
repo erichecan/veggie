@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/db'
 import { signToken } from '@/lib/auth'
+import { resolveUserPermissions } from '@/lib/rbac/resolve'
 import { writeLog } from '@/lib/action-log'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyTotp } from '@/lib/totp'
@@ -59,6 +60,10 @@ export async function POST(req: Request) {
     const rolesArr = Array.isArray(userRoles) && userRoles.length > 0
       ? userRoles.map(String)
       : [String(user.role)]
+    // 权限集在登录时算一次并编成位图塞进 token —— 之后每次请求的判定是纯位运算，
+    // 不再查库。middleware 跑 Edge runtime 用不了 Prisma，也只能这么办。
+    const perms = await resolveUserPermissions(user.id)
+
     const token = await signToken({
       userId: user.id,
       email: user.email,
@@ -66,6 +71,9 @@ export async function POST(req: Request) {
       roles: rolesArr,
       name: user.name,
       customerId: user.customerId,
+      pm: perms.bitmap,
+      ds: perms.dataScope,
+      pv: perms.permVersion,
     })
 
     // 记录 lastLoginAt（schema 已加，但 Prisma client 需要 generate 才能认字段）

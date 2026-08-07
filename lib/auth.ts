@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { SignJWT, jwtVerify } from 'jose'
+import { decodePermissions } from './rbac/bitmap'
 
 // ─── JWT_SECRET 懒加载 ───────────────────────────────────────────────────────
 // 不在模块加载时 throw：Docker build 期间 Secret Manager 的值尚未注入，
@@ -36,6 +37,16 @@ export interface JwtPayload {
   roles?: string[]
   name: string
   customerId?: string | null
+
+  // ── 可配置权限体系（20260807）───────────────────────────────────────────
+  // 判定真相是这三个字段，上面的 role/roles 只留作兼容与显示。
+  // 之所以塞进 token 而不是查库：middleware 跑 Edge runtime，用不了 Prisma。
+  /** 权限位图（base64url），位序 = catalog 的 sortKey */
+  pm?: string
+  /** 数据范围 ALL | TEAM | OWN */
+  ds?: string
+  /** 权限版本号。落后于 User.permVersion 就强制重新登录 */
+  pv?: number
 }
 
 /** 把 user 拍平成"该用户拥有的角色集合"，供 withAuth / 前端做权限判断 */
@@ -83,18 +94,33 @@ export async function requireAuth(request: Request): Promise<JwtPayload> {
   }
 }
 
+/** withAuth 的第三个参数：老写法是角色数组，新写法是权限点要求 */
+export type AuthGate =
+  | string[]
+  | {
+      /** 需要的权限点；数组表示任一即可 */
+      require: string | string[]
+    }
+
 /**
  * withAuth — 统一认证包装器
  * 在执行任何业务逻辑之前先验证 JWT，验证失败直接返回 401/403。
  *
- * @param request      原始请求对象
- * @param handler      认证通过后执行的处理函数，接收当前用户信息
- * @param allowedRoles 可选：限定允许的角色列表（如 ['OPERATOR']）
+ * 两种闸门写法：
+ *   withAuth(req, h, { require: 'purchase.order.approve' })   ← 新，按权限点
+ *   withAuth(req, h, ['OPERATOR'])                            ← 旧，按角色（过渡期保留）
+ *
+ * 迁移期间两者并存是有意的：150 个 handler 分批改，一次改完风险太大
+ * （8/6 踩过：批量脚本把 allowedRoles 数组插进了注释里，只能回滚重做）。
+ *
+ * @param request 原始请求对象
+ * @param handler 认证通过后执行的处理函数，接收当前用户信息
+ * @param gate    可选：权限点要求或角色列表
  */
 export async function withAuth(
   request: Request,
   handler: (user: JwtPayload) => Promise<Response>,
-  allowedRoles?: string[]
+  gate?: AuthGate
 ): Promise<Response> {
   let user: JwtPayload
   try {
@@ -102,12 +128,18 @@ export async function withAuth(
   } catch {
     return NextResponse.json({ error: '未授权访问，请先登录' }, { status: 401 })
   }
-  if (allowedRoles && allowedRoles.length > 0) {
+
+  if (Array.isArray(gate) && gate.length > 0) {
     const own = effectiveRoles(user)
-    const hasRole = own.some(r => allowedRoles.includes(r))
-    if (!hasRole) {
-      return NextResponse.json({ error: `权限不足，需要角色: ${allowedRoles.join(' / ')}` }, { status: 403 })
+    if (!own.some(r => gate.includes(r))) {
+      return NextResponse.json({ error: `权限不足，需要角色: ${gate.join(' / ')}` }, { status: 403 })
+    }
+  } else if (gate && !Array.isArray(gate)) {
+    const need = typeof gate.require === 'string' ? [gate.require] : gate.require
+    if (!decodePermissions(user.pm).hasAny(need)) {
+      return NextResponse.json({ error: `权限不足，需要: ${need.join(' 或 ')}` }, { status: 403 })
     }
   }
+
   return handler(user)
 }
