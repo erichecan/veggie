@@ -7,6 +7,7 @@ import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { canEnterPage } from '@/lib/rbac/page-guard'
 
 export default function ClassicSorterLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RoleSession | null>(null)
@@ -20,7 +21,7 @@ export default function ClassicSorterLayout({ children }: { children: React.Reac
 
   useEffect(() => {
     const user = getSession()
-    if (!user || !['SORTER', 'OPERATOR'].includes(user.role)) {
+    if (!user || !canEnterPage(user, '/classic/sorter', ['SORTER', 'OPERATOR'])) {
       router.push(`${prefix}/enter`)
       return
     }

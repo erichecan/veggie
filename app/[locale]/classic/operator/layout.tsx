@@ -7,6 +7,7 @@ import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { canEnterPage } from '@/lib/rbac/page-guard'
 
 export default function ClassicOperatorLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RoleSession | null>(null)
@@ -63,7 +64,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
 
   useEffect(() => {
     const user = getSession()
-    if (!user || user.role !== 'OPERATOR') {
+    if (!user || !canEnterPage(user, '/classic/operator', ['OPERATOR'])) {
       router.push(`${prefix}/enter`)
       return
     }

@@ -7,6 +7,7 @@ import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { canEnterPage } from '@/lib/rbac/page-guard'
 
 export default function ClassicWarehouseLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RoleSession | null>(null)
@@ -21,7 +22,7 @@ export default function ClassicWarehouseLayout({ children }: { children: React.R
 
   useEffect(() => {
     const user = getSession()
-    if (!user || !['WAREHOUSE', 'OPERATOR', 'BOSS'].includes(user.role)) {
+    if (!user || !canEnterPage(user, '/classic/warehouse', ['WAREHOUSE', 'OPERATOR', 'BOSS'])) {
       router.push(`${prefix}/enter`)
       return
     }

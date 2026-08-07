@@ -105,6 +105,10 @@ export async function POST(req: Request) {
         roles: rolesArr,
         name: user.name,
         customerId: user.customerId,
+        // 与 token 里的 pm/ds 同源。前端只用它做显隐与页面守卫，
+        // 真正的拦截仍在 middleware 与路由层 —— 前端这份改了也越不了权。
+        pm: perms.bitmap,
+        ds: perms.dataScope,
       },
     })
   } catch (error) {

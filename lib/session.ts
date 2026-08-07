@@ -10,6 +10,10 @@ export interface UserSession {
   role: string  // 兼容字段(单角色);权限判定优先看 roles[]
   /** 全部角色(多角色账号),login 接口已返回。前端 can()/useAbility 按此并集判权限。 */
   roles?: string[]
+  /** 权限位图（base64url），与 JWT 的 pm 同源。仅用于前端显隐 */
+  pm?: string
+  /** 数据范围 ALL | TEAM | OWN */
+  ds?: string
   name: string
   customerId?: string | null
 }

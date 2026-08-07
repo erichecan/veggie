@@ -1,3 +1,6 @@
+import { decodePermissions } from './rbac/bitmap'
+import { isKnownPermission } from './rbac/catalog'
+
 /**
  * 权限定义 & 检查
  * ============================================================================
@@ -45,6 +48,8 @@ export type Subject =
 
 export interface Ability {
   role: Role
+  /** 权限位图（base64url）。有它就按它判，没有则回落到 MATRIX */
+  pm?: string
   /** 全部角色(多角色账号)。非空时按并集判权限,与后端 effectiveRoles 口径一致;空则回退 role。 */
   roles?: Role[]
   userId?: string
@@ -181,13 +186,76 @@ const MATRIX: Record<Role, Partial<Record<Subject, Action[]>>> = {
 }
 
 /**
+ * (action, subject) → 权限点 id。
+ *
+ * 20260807：判定真相搬到了 `lib/rbac/catalog.ts` 的权限点上，`MATRIX` 退居兼容层。
+ * 这张表把旧的两段式写法翻译成权限点，这样 `can()` 的对外签名一个字没变，
+ * 调用方不用改。翻不出来的组合回落到 MATRIX —— 不是所有旧组合都有对应权限点。
+ */
+const SUBJECT_MODULE: Partial<Record<Subject, string>> = {
+  order: 'sales.order',
+  invoice: 'finance.invoice',
+  product: 'master.product',
+  product_template: 'master.product_template',
+  pricelist: 'master.pricelist',
+  customer: 'master.customer',
+  supplier: 'master.supplier',
+  purchase_order: 'purchase.order',
+  goods_receipt: 'stock.receipt',
+  vendor_bill: 'finance.vendor_bill',
+  wave: 'dispatch.wave',
+  trip: 'dispatch.trip',
+  stock_move: 'stock.move',
+  user: 'system.user',
+  uom: 'master.uom',
+  uom_category: 'master.uom_category',
+  statement: 'finance.statement',
+  purchase_suggestion: 'purchase.suggestion',
+  stock_take: 'stock.take',
+  analytics: 'analytics.sales',
+}
+
+/** 少数动作在新目录里换了名字 */
+const ACTION_ALIAS: Partial<Record<Action, string>> = {
+  manage_users: 'manage',
+  settle: 'confirm',
+  approve_edit: 'update',
+  receive: 'receive',
+  pay: 'pay',
+}
+
+function permissionIdFor(action: Action, subject: Subject): string | null {
+  const module = SUBJECT_MODULE[subject]
+  if (!module) return null
+  return `${module}.${ACTION_ALIAS[action] ?? action}`
+}
+
+/**
  * 检查当前能力是否允许执行 (action, subject)。
+ *
+ * 优先按权限位图判（登录时算好塞进 session 的 `pm`）。位图缺失时 —— 旧会话、
+ * 或服务端渲染阶段还没读到 localStorage —— 回落到 MATRIX，行为与改造前一致。
+ *
+ * ⚠️ 这是**前端显隐**用的，不是安全边界。真正的拦截在 middleware 与路由层，
+ * 改浏览器里的 pm 只能让自己多看见几个按钮，点下去照样 403。
  */
 export function can(ability: Ability, action: Action, subject: Subject): boolean {
   const roles = effectiveAbilityRoles(ability)
+
+  if (ability.pm) {
+    const id = permissionIdFor(action, subject)
+    if (id && isKnownPermission(id)) return decodePermissions(ability.pm).has(id)
+  }
+
   if (roles.length === 0) return false
   if (roles.includes('BOSS')) return true
   return roles.some((r) => (MATRIX[r]?.[subject] ?? []).includes(action))
+}
+
+/** 直接按权限点判 —— 新代码用这个，别再走 (action, subject) 两段式 */
+export function hasPermission(ability: Ability, permissionId: string): boolean {
+  if (ability.pm) return decodePermissions(ability.pm).has(permissionId)
+  return false
 }
 
 /**
@@ -209,7 +277,13 @@ export function useAbility(): Ability {
         const roles = Array.isArray(u.roles) && u.roles.length > 0
           ? (u.roles as Role[])
           : [u.role as Role]
-        setAbility({ role: u.role as Role, roles, userId: u.userId, customerId: u.customerId })
+        setAbility({
+          role: u.role as Role,
+          roles,
+          userId: u.userId,
+          customerId: u.customerId,
+          pm: typeof u.pm === 'string' ? u.pm : undefined,
+        })
       }
     } catch { /* ignore */ }
   }, [])

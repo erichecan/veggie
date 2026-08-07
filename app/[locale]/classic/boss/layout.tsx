@@ -7,6 +7,7 @@ import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { canEnterPage } from '@/lib/rbac/page-guard'
 
 export default function ClassicBossLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RoleSession | null>(null)
@@ -42,7 +43,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
 
   useEffect(() => {
     const user = getSession()
-    if (!user || !['BOSS', 'OPERATOR'].includes(user.role)) {
+    if (!user || !canEnterPage(user, '/classic/boss', ['BOSS', 'OPERATOR'])) {
       router.push(`${prefix}/enter`)
       return
     }
