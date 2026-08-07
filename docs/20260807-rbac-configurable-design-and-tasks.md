@@ -347,7 +347,7 @@ JWT 新增三个字段：
 
 ### 批 2：数据范围三级
 
-- [ ] **T8 `scopeWhere` 统一工具**
+- [x] **T8 数据范围三级（升级 `lib/row-scope.ts`）** ✅ 2026-08-07 · `3be92ac`
       `lib/rbac/scope.ts`：`scopeWhere(ctx, 'order'|'quotation'|'customer'|'purchase_order')`
       → Prisma where 片段。ALL 返回 `{}`，OWN 返回 `{ salesUserId: userId }`，
       TEAM 返回 `{ salesUserId: { in: [自己 + 下属] } }`（下属 = `User.managerId = 自己`，一层）。
@@ -355,14 +355,35 @@ JWT 新增三个字段：
       **验收**：`EXTERNAL_SALES` 现有隔离行为**不变**（回归）；新增 TEAM 用例；
       单测锁住「where 条件在任何分支下都不会被丢掉」（0802 踩过 push 在 where 构造之后的坑）；
       堵掉 `?salesUserId=别人` 的绕过（0806 T7 已堵，不能回退）。
-      **产出**：`lib/rbac/scope.ts`、相关 API 路由、`tests/rbac-scope.test.ts`
+      **产出**：`lib/row-scope.ts`（升级现有文件，不另起 `lib/rbac/scope.ts`）、
+      `app/api/customers/[id]`、`app/api/orders/[id]`、`tests/row-scope.test.ts`
       **依赖**：T7
 
-- [ ] **T9 上级关系落地**
+      **实测**：19 个单测。TEAM 用 Prisma **关系过滤**（`salesUser.managerId = 我`）而不是
+      先查下属 id 再 `in` —— 后者多打一次库，且下属列表变化时有时间窗。
+      旧 token（无 `ds`）回退原硬编码判断，行为一字不变。
+
+      **类型改完 tsc 立刻指出两处 `select` 没取 `managerId`**（customers/[id]、orders/[id]）——
+      这正是想要的：忘了 select 就编译不过，而不是运行时静默放行。字段缺失时保守拒绝。
+
+- [x] **T9 上级关系落地（API 层）** ✅ 2026-08-07 · `3be92ac`
       用户管理页支持设 `managerId`；防成环（A 的上级是 B，B 的上级不能是 A）。
       **验收**：设置上级后 TEAM 范围角色能看到下属数据、看不到非下属；成环时保存被拒。
-      **产出**：`app/api/users/[id]/route.ts`、用户管理页
+      **产出**：`app/api/users/[id]/route.ts`、`app/api/users/route.ts`、`tests/rbac-user-sync.test.ts`
       **依赖**：T8
+
+      **范围调整**：UI 部分（在用户管理页上选上级）并入 T11 的权限中心一起做，
+      避免同一个页面改两遍。本条只做 API 与校验。
+
+      **⛔ 途中撞见三个「写错了不报错、只静默失效」的洞**，都在本次范围内，一并修了：
+
+      | # | 洞 | 表现 |
+      |---|---|---|
+      | 1 | `VALID_ROLES` 漏角色（POST 少 `EXTERNAL_SALES`/`DISPATCH`/`OTHER`，PUT 少 `EXTERNAL_SALES`） | 8/6 加了角色没回来更新，管理员**两个月来建不出外部销售账号**，且不报错、只是选项不生效 |
+      | 2 | 改角色不同步 `UserRoleLink` | 权限真相已是 `UserRoleLink`，页面改的还是 legacy `role[]` → **在页面上改了角色，权限纹丝不动**（正是要杜绝的「配了但不生效」） |
+      | 3 | 建用户不建 `UserRoleLink` | 新账号登录后权限集为空 —— **人建出来了却什么都点不动** |
+
+      三条现在都有静态测试守着（`tests/rbac-user-sync.test.ts`）。
 
 ### 批 3：配置页面
 
@@ -517,3 +538,5 @@ JWT 新增三个字段：
 | 部署批 0+1 | 2026-08-07 | `df9b1f8` | 生产实测：迁移两条已应用、12 角色/181 权限点/70 条链接、**未挂角色的活跃账号 = 0** |
 | 事故修复 | 2026-08-07 | `eb50ebf` | 旧 token 打 154 个接口全 403，见 §9.5 |
 | 修复后实测 | 2026-08-07 | 生产 `eb50ebf` | 192 次探测新旧 token 行为一致；真实身份下客户门户 200、越权接口 403 |
+| T8 | 2026-08-07 | `3be92ac` | 三级范围；TEAM 走关系过滤；tsc 逼出两处漏 select |
+| T9 | 2026-08-07 | `3be92ac` | managerId + 环检测；顺手补 3 个静默失效的洞 |
