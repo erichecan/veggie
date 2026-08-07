@@ -20,7 +20,19 @@ import ws from 'ws'
 import { resolveOrderLines } from '../lib/server-pricing'
 
 neonConfig.webSocketConstructor = ws
-const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) })
+
+/**
+ * 这个文件与其余测试不同：它要连**真实数据库**，还依赖具体业务数据
+ * （ABCT 客户 + Red Onion 商品）。CI runner 上没有库，也不该有 ——
+ * 所以没有 DATABASE_URL 时整个文件显式跳过，而不是让 before 钩子报连接失败。
+ *
+ * ⚠️ 跳过必须是**看得见**的（test runner 会打 SKIP 并给出原因），
+ * 不能悄悄 return 让它显示为通过 —— 那等于谎报。
+ */
+const DB_URL = process.env.DATABASE_URL
+const NO_DB = !DB_URL && '未设置 DATABASE_URL：此文件需要真实数据库与业务数据，本地跑 `npm test` 时才会执行'
+
+const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: DB_URL ?? 'postgresql://unused' }) })
 
 const CITY_CENTRE_PL = 'pl_35'
 const NONEXISTENT_PL = '__nonexistent_pl__'
@@ -29,6 +41,7 @@ let customerDefaultPl: string | null = null
 let redOnionId = ''
 
 before(async () => {
+  if (NO_DB) return
   const cust = await prisma.customer.findFirst({
     where: { name: { contains: 'ABCT' } },
     select: { id: true, pricelists: { orderBy: { sequence: 'asc' }, select: { pricelistId: true } } },
@@ -45,7 +58,7 @@ before(async () => {
   redOnionId = red!.id
 })
 
-after(async () => { await prisma.$disconnect() })
+after(async () => { if (!NO_DB) await prisma.$disconnect() })
 
 // 2026-07-15 跳过：Odoo 全量同步(commit 1f36326)重导了 product/pricelist 数据，
 // Red Onion 的业务确认价 2.2 和牌价 11 都被覆盖回 Odoo 源值(9.5)，与本次价格表
@@ -63,7 +76,7 @@ test.skip('选定 CITY CENTRE 价格表覆盖后，Red Onion 单价应为 2.2', 
   assert.equal(pricelistId, CITY_CENTRE_PL, '返回的 pricelistId 应为本单选定值，用于持久化到订单')
 })
 
-test('不传覆盖时使用客户档案默认价格表（持久化值一致）', async () => {
+test('不传覆盖时使用客户档案默认价格表（持久化值一致）', { skip: NO_DB }, async () => {
   const { pricelistId } = await resolveOrderLines(
     { prisma, restaurantId: customerId },
     [{ productId: redOnionId, quantity: 1, price: 11 }],
