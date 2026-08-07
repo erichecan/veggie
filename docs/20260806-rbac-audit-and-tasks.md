@@ -146,65 +146,87 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
 
 ---
 
-## 4. ⛔ 需要你决策的三件事（阻塞 T3 及之后）
+## 4. ✅ 三个决策已定（2026-08-06，用户拍板）
 
-这三条是业务规则，我不能替你定：
-
-1. **RESTAURANT 角色到底能访问什么？**
-   建议：**只能走 `/api/customer-portal/*`，所有内部接口一律 403**。
-   需要你确认现有客户门户功能是否够用（下单、看自己订单、常购清单）。
-
-2. **SALES 的隔离要不要真正生效？**
-   现在 19 个 SALES 全兼任 OPERATOR，隔离形同虚设。三个选项：
-   - (a) 去掉这些人的 OPERATOR 角色 → 隔离生效，但他们可能会失去某些日常功能
-   - (b) 保持现状，承认「SALES 能看全部客户」是有意为之，把那段隔离代码删掉（否则误导后人）
-   - (c) 改判定：只要有 SALES 就隔离，不管有没有 OPERATOR
-
-3. **`DISPATCH` / `OTHER` 两个角色还要不要？**
-   schema 里有、当前 0 用户、`permissions.ts` 里没定义。
-   要么补进权限矩阵，要么从 schema 移除 —— 留着不管是给将来埋雷。
+| # | 决策 | 落地 |
+|---|---|---|
+| 1 | **RESTAURANT 只能走客户门户**，内部接口与后台页面一律拒绝 | `5aba1e5` — `lib/role-access.ts` + middleware 双层 |
+| 2 | **sales 拆成两类**：正式 `SALES` 与外部合作 `EXTERNAL_SALES`（后者不给发票、不给价格表、不能改客户资料） | `5aba1e5` — 含 schema 迁移；⚠️ **行级隔离尚未做**，见 T7 |
+| 3 | **`DISPATCH` 补进权限矩阵**（波次/行程可增改、订单可改派、客户只读）；`OTHER` 显式声明为空权限 | `5aba1e5` |
 
 ---
 
 ## 5. 任务
 
-- [ ] **T1 建立权限探针（先做这个，否则后面每次改动都无法验证）**
+- [x] **T1 建立权限探针** ✅ 2026-08-06 · `5aba1e5`
 
-  `scripts/audit/rbac-probe.ts`：为每个角色签发 token，遍历全部 API 路由，
-  产出「角色 × 端点 → 状态码」矩阵，与快照比对。
-  **验收**：能一条命令跑出当前矩阵；把本文 §1 的越权全部复现出来；
-  输出可 diff（后续每次整改都跑，一眼看出哪些格子从 200 变 403）。
+  `scripts/audit/rbac-probe.ts`：为 10 个角色签发 token，遍历全部 API 路由，
+  产出「角色 × 端点 → 状态码」矩阵并与 `scripts/audit/rbac-snapshot.json` diff。
+  **已达成**：一条命令跑出矩阵；§1 的越权全部复现（修复前 RESTAURANT 可达 43 个内部 GET）；
+  基线快照已存（235 个 handler）。
+  ⛔ 探针**刻意不探 POST** —— 审计时探 `POST /api/pricelists` 返回 201 真的建了一条数据，
+  事后得去生产库删。POST 改用静态分析看有没有 `allowedRoles`。
 
-- [ ] **T2 补齐角色定义一致性（低风险，先清掉）**
+- [x] **T2 补齐角色定义一致性** ✅ 2026-08-06 · `5aba1e5`
 
-  `permissions.ts` 的 `Role` 补上 `DISPATCH`/`OTHER`（或按 §4-3 的决策移除）。
-  **验收**：新增一个测试，从 `prisma/schema.prisma` 读 `enum Role` 与
-  `lib/types.ts`、`lib/permissions.ts` 三处比对，不一致就失败 —— 让它以后不可能再漂移。
+  `permissions.ts` 补上 `DISPATCH`/`OTHER`（另新增 `EXTERNAL_SALES`）。
+  **已达成**：`tests/role-definitions-sync.test.ts` 从 schema / types.ts / permissions.ts
+  三处解析角色列表比对，并检查 `MATRIX` 是否给每个角色都写了条目 —— 以后漂不了。
 
-- [ ] **T3 ⛔ 给 RESTAURANT 砌墙（最高优先级，阻塞于 §4-1）**
+- [x] **T3 给 RESTAURANT 砌墙** ✅ 2026-08-06 · `5aba1e5`
 
-  在 middleware 或统一 wrapper 层做：`RESTAURANT` 角色只放行
-  `/api/customer-portal/*` + `/api/auth/*`，其余 `/api/*` 一律 403。
-  **验收**：用 T1 的探针，RESTAURANT 那一列除客户门户外全部 403；
-  且客户门户的下单/查单/常购清单**功能不变**（要真跑一遍，不是只看状态码）。
+  `lib/role-access.ts` 定义边界收窄型角色的白名单，middleware 一处判定覆盖全部路由
+  （**API 层与页面层都挡** —— 光挡 API 的话页面能开但数据全 403，用户看到一堆空壳）。
+  **已达成**：白名单只留 `/api/customer-portal`、`/api/auth`、`/api/health`、`/api/notifications`；
+  客户门户三个路由本就按 `customerId` 行级隔离且不回 standardPrice/commissionPrice。
+
+---
+
+### 剩余任务（2026-08-06 重排）
+
+原 T5/T6 的写法是「给 99 个 handler 逐个补 `allowedRoles`」。**重排的理由**：
+实测口径下无角色闸的是 **152 个 handler**（99 是"有 withAuth 但没传 allowedRoles"，
+另有 53 个 GET 靠 middleware 兜底鉴权、连 withAuth 都没有）。逐个补要改 152 处，
+**漏一处就还是漏，而且新增路由默认又是敞开的** —— 这正是 T3 选择 middleware 层的原因。
+所以改成：**先在 middleware 层给每个内部角色划边界（一次覆盖全部现有与将来路由），
+再给高危写操作补 `allowedRoles` 做纵深防御**。
 
 - [ ] **T4 `driver-slots` 补 `withAuth` + 角色**（3 个 handler，独立小改）
-  **验收**：非 OPERATOR/BOSS 调用返回 403；运营页面功能不变。
+      现状：`POST /api/driver-slots`、`PUT/DELETE /api/driver-slots/[id]` **连 `withAuth` 都没有**，
+      只靠 middleware 验了「有没有 token」，任何登录用户都能改司机配置。
+      **验收**：非 OPERATOR/BOSS 调用返回 403；运营端司机配置页增删改一遍功能不变。
+      **产出**：`app/api/driver-slots/route.ts`、`app/api/driver-slots/[id]/route.ts`
 
-- [ ] **T5 给 60 个写操作补 `allowedRoles`**
+- [ ] **T5 内部角色边界（把 `role-access.ts` 从"外部角色"扩成"全部收窄型角色"）**
+      给 DRIVER / SORTER / PICKER / WAREHOUSE / FINANCE / SALES / EXTERNAL_SALES /
+      DISPATCH / OTHER 各定义「前缀 + 允许的 HTTP 方法」白名单，白名单外一律 403。
+      OPERATOR / BOSS 不在此层收窄（他们是后台本身）。
+      边界**从各角色实际能进的页面反推**（页面层白名单在 6 个 layout 里），不是拍脑袋定。
+      **验收**：探针跑出的矩阵里，每个角色可达的内部接口数显著下降且**没有一个是该角色页面在用的**；
+      DRIVER（生产 21 人，唯一有真实用户的收窄角色）行程页取数/签收/交账全流程实跑不报错。
+      **产出**：`lib/role-access.ts`、`middleware.ts`、`tests/role-access.test.ts`
 
-  按资源分批，每批一次提交 + 跑探针：
-  `waves`(13) → `orders`(9) → `trips`(4) → 商品域(9) → 其余。
-  **验收**：每批改完探针无意外 403；对应岗位的页面实际操作一遍不报错。
-  ⚠️ 分批做，不要一次性批量替换 —— 参考上一轮「正则改 16 个路由把 allowedRoles 吃掉」的教训。
+- [ ] **T6 高危写操作补 `allowedRoles`（纵深防御，分批）**
+      即使有了 T5 的边界，写操作仍要在路由层再挡一道 —— middleware 是按前缀判的，
+      粒度到不了「同一个前缀下 GET 可以、DELETE 不行」的细处。
+      批次：`waves`(13) → `orders`(9) → `trips`(4) → 商品域(products/templates/categories 9) →
+      `pricelists`(3) → `purchases`/`stock-takes`/`lots`/`backups` 其余。
+      **验收**：每批改完跑探针，diff 里只出现预期的 `→403`；对应岗位页面实际操作一遍不报错。
+      ⚠️ 分批做，不要正则批量替换 —— 参考「正则改 16 个路由把 `allowedRoles` 吃掉」的教训。
 
-- [ ] **T6 给 39 个 GET 补 `allowedRoles`**
-  风险低于写操作但影响面更广（读接口被更多页面调用），放在写操作之后。
-
-- [ ] **T7 SALES 隔离定案**（阻塞于 §4-2）
+- [ ] **T7 `EXTERNAL_SALES` 行级隔离**（决策 2 的后半截）
+      现状：拆出了角色，但它仍能看到**全部**客户与订单 —— 只挡了"能不能做这个动作"，
+      没挡"能看到谁的数据"。
+      **验收**：`EXTERNAL_SALES` 调 `/api/customers`、`/api/orders` 只返回
+      `salesUserId = 自己` 的记录；越权访问他人客户详情返回 404/403；
+      **不受"是否同时兼任其他角色"影响**（这正是 SALES 隔离形同虚设的原因）；
+      单测锁住「where 条件在任何分支下都不会被丢掉」（0802 踩过 push 在 where 构造之后的坑）。
+      正式 `SALES` 维持现状（19 人全兼 OPERATOR，业务上就是要看全量），
+      在代码里写明这是有意为之，避免后人误以为是 bug。
 
 - [ ] **T8 把探针纳入 CI**
-  **验收**：任何一个路由的角色可达性发生变化，CI 必须失败并显示 diff。
+      **验收**：任何一个路由的角色可达性发生变化，CI 必须失败并显示 diff；
+      快照更新必须是显式动作（改代码顺手把快照也改了 → review 时看得见）。
 
 ---
 
@@ -213,9 +235,13 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
 | 任务 | 完成时间 | 证据 | 备注 |
 |---|---|---|---|
 | 审计本身 | 2026-08-06 | 本文 §1/§2 | 实测越权已确认；误建的 1 条价格表已清理 |
+| T1/T2/T3 | 2026-08-06 | `5aba1e5`，Deploy to droplet 04:23 成功 | 台账当时漏了回写，2026-08-06 补上 |
 
 ## 7. 未解决问题
 
-- §4 的三个决策未定，T3/T7 阻塞
+- **`OTHER` 角色的 11 个空角色用户**：生产上有 11 个账号 `roles` 为空，
+  回退单 `role` 后落在哪个角色需要核对 —— 收窄边界后他们可能会 403。
 - 本次只审了 API 层与角色定义；**页面级白名单（6 个 layout）与 API 的一致性尚未逐条核对**
-  （例如某页面允许 FINANCE 进入，但它调的接口不允许 FINANCE，表现是页面能开但数据全 403）
+  （例如某页面允许 FINANCE 进入，但它调的接口不允许 FINANCE，表现是页面能开但数据全 403）。
+  T5 会顺带把这件事做掉一半：边界就是从页面白名单反推的。
+- `/classic/print` 的 layout **没有任何角色判定** —— 打印中心谁都能进。T5 一并处理。
