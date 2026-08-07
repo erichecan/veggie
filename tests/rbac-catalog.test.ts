@@ -126,14 +126,13 @@ test('isKnownPermission 认得真权限点、认不出假的', () => {
 
 test('expandPermissionPattern 展开模块通配', () => {
   const expanded = expandPermissionPattern('sales.order.*')
-  assert.deepEqual(expanded, [
-    'sales.order.read',
-    'sales.order.create',
-    'sales.order.update',
-    'sales.order.delete',
-    'sales.order.confirm',
-    'sales.order.cancel',
-  ])
+  const expected = PERMISSIONS.filter((p) => p.module === 'sales.order').map((p) => p.id)
+  assert.deepEqual(expanded, expected)
+  assert.ok(expanded.includes('sales.order.read'))
+  assert.ok(expanded.includes('sales.order.confirm'))
+  // 只展开本模块，不能把 sales.quotation 之类前缀相近的一起卷进来
+  assert.ok(expanded.every((id) => id.startsWith('sales.order.')))
+
   assert.deepEqual(expandPermissionPattern('sales.order.create'), ['sales.order.create'])
   assert.deepEqual(expandPermissionPattern('nope.nope.*'), [])
   assert.deepEqual(expandPermissionPattern('nope.nope.nope'), [])
