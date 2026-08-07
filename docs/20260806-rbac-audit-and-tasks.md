@@ -288,7 +288,13 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
 - ~~`/classic/print` 的 layout 没有任何角色判定~~ → T5 已在 middleware 页面层堵上
   （只有 OPERATOR/BOSS/FINANCE/DISPATCH 进得去）。layout 本身仍然没有判定，
   哪天有人绕过 middleware（例如改了 matcher）就又敞开了 —— 建议补一道。
-- **本轮改动尚未部署**。全部验证都在本地 dev + 生产库只读核对上完成，
-  生产跑的还是 `5aba1e5`。部署后要做的两件事：
-  ① 用 `scripts/audit/rbac-probe.ts` 打生产刷新 `rbac-snapshot.json`；
-  ② 找一个真实司机账号走一遍「打开行程 → 签收 → 交账」。
+- ~~本轮改动尚未部署~~ → **已部署并在生产实测**（`314011e`，Deploy to droplet 成功）：
+  - 20 条角色边界用例全部符合预期（司机/分拣/仓库/财务/销售/外部销售/拣货/餐厅/运营/老板）
+  - 真实司机账号（`driver.yiwei`，2 个行程）：行程列表 200、详情 200（5 个停靠点）、
+    交账信息 200、签收与交账提交的写入闸放行（打不存在的 id 得 404 = 进到业务逻辑）、
+    客户名册 403
+  - ⚠️ **签收与交账没有真跑写入**，只验到"闸放行"这一步 —— 不在生产上造数据。
+    真实签收要等有人跑一趟车，或在业务方同意下拿一单演练。
+  - ⚠️ `scripts/audit/rbac-snapshot.json`（HTTP 探针快照）**没有刷新**：
+    全量探针要对生产打约 1750 次请求，而这台机器是 2 vCPU 且在服务客户。
+    CI 里守着的是静态可达性快照（`role-reachability.json`），那份是最新的。
