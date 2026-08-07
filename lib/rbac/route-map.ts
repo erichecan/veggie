@@ -269,6 +269,10 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/upload-image', permission: 'tool.upload.use' },
   { pattern: '/api/fx-rate', permission: 'tool.fx.read' },
 
+  // ── 权限管理（配置页自己用的接口）──────────────────────────────────────
+  { pattern: '/api/rbac/**', methods: R, permission: 'system.rbac.read' },
+  { pattern: '/api/rbac/**', methods: W, permission: 'system.rbac.manage' },
+
   // ── 系统 ────────────────────────────────────────────────────────────────
   { pattern: '/api/users/*/reset-password', permission: 'system.user.manage' },
   { pattern: '/api/users', methods: R, permission: 'system.user.read' },
