@@ -33,63 +33,42 @@
 
 ### 波次 0 — 合同/合规硬伤（2026-08-06 补入，插在最前）
 
-- [ ] **W0-1 生产入口没有 HTTPS** ⛔ 迁到自有服务器后新出现的问题
+- [x] **W0-1 生产入口 HTTPS** ✅ 2026-08-07 完成
 
-      现状：`http://167.99.86.19` 明文。0802 核实报告把「加密传输」判为已具备，
-      依据是 Cloud Run 自带 TLS —— 迁移之后这个前提没了。
-      登录口令、7 天有效的 JWT、含税号/信用额度的客户名册，全部明文过网。
-      这不满足合同「加密传输」，客户资料含爱尔兰自然人个人数据，GDPR 下也站不住。
+      规范地址：**https://www.johnstonebros.ie**
 
-      **2026-08-07 现状勘察（服务器与代码都已就位，唯一卡点是域名）**
-
-      | 项 | 状态 |
+      | 步骤 | 结果 |
       |---|---|
-      | nginx 1.28.3 | ✅ 已装，单个 `:80` server 块 |
-      | certbot 4.0.0 | ✅ 已装，`certbot.timer` 在跑（每天两次） |
-      | ufw 443 | ✅ 已放行 |
-      | `X-Forwarded-Proto $scheme` | ✅ 反代已带，Next 能识别 https |
-      | 库里存的绝对 URL | ✅ 0 条（`PurchaseOrder.sourceDocumentUrl` 全为空/相对） |
-      | 代码里的 `APP_URL`/硬编码域名 | ✅ 无 |
+      | DNS | apex 与 www 都解析到 167.99.86.19（客户已配好） |
+      | 证书 | Let's Encrypt，覆盖 `johnstonebros.ie` + `www`，2026-11-05 到期 |
+      | 跳转 | `http://www` / `http://167.99.86.19` / `https://裸域` 三个入口全 301 到 www |
+      | 协议 | TLS 1.3 ✓ TLS 1.2 ✓ TLS 1.1 拒绝 ✓ HTTP/2 ✓ |
+      | 自动续期 | `certbot renew --dry-run` 通过（证明 ACME 路径没被 301 吃掉） |
+      | 混合内容 | 0 处 |
+      | 停机 | 0（nginx 热重载） |
 
-      **S1（你来，唯一阻塞）**：给一个子域名并把 DNS A 记录指到 `167.99.86.19`。
-      验收：`dig +short <域名>` 返回该 IP。
+      **上线顺序是有讲究的**：先把 HSTS 从两年降到 300 秒并部署（`14ba898`），
+      再开 443。反过来的话，第一个 HTTPS 响应就把两年锁死在每个访问者浏览器里，
+      证书一出问题就是打不开也点不掉。
 
-      **S2 签证书**：nginx 加 `:443` server 块 + `certbot --nginx` 走 HTTP-01。
-      ⚠️ 显式保留 `location /.well-known/acme-challenge/`，不能被 301 吃掉，否则**续期会失败**
-      （第一次签成功、90 天后静默过期是这类配置最常见的死法）。
-      验收：`https://<域名>` 200；`openssl s_client` 证书链完整且签发者是 Let's Encrypt；
-      `certbot renew --dry-run` 通过。
+      **落地时补的三个坑**（都不补的话故障会在 90 天后才显形）：
+      1. `/.well-known/acme-challenge` 显式排在 301 之前 —— 否则首签成功、续期静默失败
+      2. **续期后重载 nginx 的 deploy hook**：certbot 装完默认**没有**这个钩子
+         （`certonly` 路径不带），续期会「成功」但 nginx 还在内存里发旧证书
+      3. `options-ssl-nginx.conf` / `ssl-dhparams.pem` 在本机不存在（那是 nginx 插件包带的），
+         TLS 参数改为自写片段 `snippets/veggie-tls.conf`，两个 server 块共用
 
-      **S3 强制跳转**：HTTP 301 → HTTPS，直接访问 IP 的旧书签也跳到域名。
-      验收：`curl -I http://167.99.86.19/` 返回 301 且 Location 是 https 域名。
+      **配置已回写仓库**（`deploy/droplet/`），并与服务器上的逐字比对一致 ——
+      否则下次 bootstrap 会把 TLS 配置盖掉。bootstrap 也补了「证书还没签时先用
+      HTTP-only 配置」的分支：新机器上配置引用不存在的证书会让 nginx 直接起不来，
+      而 certbot 又需要一个活着的 nginx 才能走 HTTP-01。
 
-      **S4 HSTS 分两步（⛔ 这里有个已埋好的雷）**：
-      `next.config.ts:23` 现在写死 `max-age=63072000; includeSubDomains; preload`
-      —— 两年 + 预加载。HTTP 下浏览器忽略它，**一旦 HTTPS 生效就立刻锁死两年**：
-      万一证书出问题，用户是打不开、也点不掉的（HSTS 没有"仍要继续"按钮）。
-      所以先降到 `max-age=300` 上线观察几天，稳定后再升回长值；
-      `preload` 除非真要提交到浏览器预加载列表，否则去掉。
-      验收：上线当天响应头是 300 秒；观察期结束后有一次显式提交把它升上去。
-
-      **S5 cookie 加 `Secure`**：`veggie_token` 现在是 `SameSite=Lax`、
-      **没有 Secure 也没有 HttpOnly**，而且两处重复设置
-      （`app/[locale]/enter/page.tsx:51` 与 `lib/session.ts:34`）——顺手收敛成一处。
-      验收：登录后 cookie 带 `Secure`；HTTP 请求不再携带它。
-      （HttpOnly 要改成服务端 `Set-Cookie`，是另一件事，见 W0-3。）
-
-      **S6 回归**：全站关键页 + 司机端在 https 下各走一遍；
-      浏览器控制台**零混合内容告警**；CSP 里没有 `http:` 源。
-
-      **S7 通知使用者换 URL**：现在大家用的是 `http://167.99.86.19`，
-      也可能还有人停在旧的 Cloud Run 地址（那个已经不再更新）。
-
-      **回退**：nginx 是热重载、零停机；旧 conf 留备份，证书签发失败可秒回 :80；
-      HSTS 先短后长，就是为了出问题还能退回 HTTP。
-
-      **顺带解锁**（浏览器在非安全源上直接禁用这两样）：地理定位（司机端导航）、
-      Service Worker（PWA 离线，见 W5-7）。
-
-      **预计**：域名到位后 30–60 分钟，其中停机 0。
+      ⚠️ **两件还没做完的**：
+      - HSTS 仍是 300 秒。观察证书与续期几天后，要显式提交升回 `max-age=63072000`
+        （不加 preload）。**这条不做，HTTPS 就是"可以被降级绕过"的**。
+      - 任何用 `http://` + Bearer token 调接口的脚本/集成会失效：
+        fetch 跨 http→https 重定向时**会丢掉 Authorization 头**，表现是 401。
+        必须改成 https。（这是实测撞到的，不是推测。）
 
 - [ ] **W0-3 登录 cookie 改服务端下发（HttpOnly）**
       现状：token 由前端 JS 写进 `document.cookie`，所以拿不到 HttpOnly ——

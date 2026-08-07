@@ -84,16 +84,43 @@ systemctl restart postgresql@17-main
 # 认证保持发行版默认的 peer：容器 uid 1100 → 宿主机 /etc/passwd 反查得到 veggie。
 # 容器内部有没有这个用户名不参与判定，所以不需要 trust、也不需要密码。
 
-log "7/8 Nginx"
+log "7/8 Nginx + TLS"
 apt-get install -y -qq nginx certbot python3-certbot-nginx
 usermod -aG veggie www-data       # 让它能读 750 的 uploads，而不是把目录放成 755
-if [ -f "$(dirname "$0")/nginx-veggie.conf" ]; then
-  install -m 644 "$(dirname "$0")/nginx-veggie.conf" /etc/nginx/sites-available/veggie
+HERE="$(dirname "$0")"
+mkdir -p /var/www/certbot /etc/nginx/snippets /etc/letsencrypt/renewal-hooks/deploy
+
+# 证书续期后重载 nginx。没有这个钩子，续期会「成功」但没人用上新证书 ——
+# nginx 把证书读在内存里，不 reload 就一直发旧的，直到 90 天后过期全站告警，
+# 而 certbot 日志一片绿。
+if [ -f "$HERE/letsencrypt-hooks/reload-nginx.sh" ]; then
+  install -m 755 "$HERE/letsencrypt-hooks/reload-nginx.sh" \
+    /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+fi
+
+if [ -f "$HERE/snippets/veggie-tls.conf" ]; then
+  install -m 644 "$HERE/snippets/veggie-tls.conf" /etc/nginx/snippets/veggie-tls.conf
+fi
+
+# ⛔ 先有鸡还是先有蛋：nginx-veggie.conf 引用 /etc/letsencrypt/live/... 的证书，
+# 全新机器上那个文件还不存在，nginx 会**直接起不来**，于是 certbot 也没法用
+# webroot 签发（它需要一个能提供 /.well-known 的 nginx）。
+# 所以：证书不在就先装 HTTP-only 版本，签完再切 TLS 版本。
+CERT=/etc/letsencrypt/live/johnstonebros.ie/fullchain.pem
+if [ -f "$CERT" ] && [ -f "$HERE/nginx-veggie.conf" ]; then
+  install -m 644 "$HERE/nginx-veggie.conf" /etc/nginx/sites-available/veggie
+elif [ -f "$HERE/nginx-veggie-http-only.conf" ]; then
+  echo "  ℹ️ 尚无证书，先装 HTTP-only 配置。签发后再执行："
+  echo "     certbot certonly --webroot -w /var/www/certbot -d johnstonebros.ie -d www.johnstonebros.ie"
+  echo "     install -m 644 $HERE/nginx-veggie.conf /etc/nginx/sites-available/veggie && nginx -t && systemctl reload nginx"
+  install -m 644 "$HERE/nginx-veggie-http-only.conf" /etc/nginx/sites-available/veggie
+else
+  echo "  ⚠️ 同目录没有 nginx 配置，跳过站点配置"
+fi
+if [ -f /etc/nginx/sites-available/veggie ]; then
   rm -f /etc/nginx/sites-enabled/default
   ln -sfn /etc/nginx/sites-available/veggie /etc/nginx/sites-enabled/veggie
   nginx -t && systemctl restart nginx
-else
-  echo "  ⚠️ 同目录没有 nginx-veggie.conf，跳过站点配置"
 fi
 
 log "8/8 防火墙 + 定时任务单元"
