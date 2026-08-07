@@ -157,5 +157,5 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/waves/[id]/pallets]', error)
       return NextResponse.json({ error: '保存托盘失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
 }

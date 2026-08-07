@@ -274,7 +274,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/order-discrepancies/[id]]', error)
       return NextResponse.json({ error: '处理差异失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS'])
 }
 
 async function recalcOrderTotal(orderId: string) {

@@ -104,5 +104,5 @@ export async function POST(req: NextRequest) {
       console.error('[POST /api/order-discrepancies]', error)
       return NextResponse.json({ error: '创建差异记录失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS'])
 }

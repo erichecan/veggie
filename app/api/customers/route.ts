@@ -173,5 +173,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/customers]', error)
       return NextResponse.json({ error: '创建客户失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES'])
 }

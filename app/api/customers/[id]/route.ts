@@ -91,5 +91,5 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/customers/[id]]', error)
       return NextResponse.json({ error: '更新客户失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'SALES'])
 }

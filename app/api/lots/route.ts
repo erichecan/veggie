@@ -118,5 +118,5 @@ export async function POST(req: Request) {
         ? '批号已存在' : '创建批次失败'
       return NextResponse.json({ error: msg }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
 }

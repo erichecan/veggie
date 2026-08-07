@@ -49,7 +49,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/waves/[id]]', error)
       return NextResponse.json({ error: '更新波次失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'DISPATCH', 'SORTER'])
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -65,5 +65,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/waves/[id]]', error)
       return NextResponse.json({ error: '删除波次失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
 }

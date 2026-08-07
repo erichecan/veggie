@@ -122,7 +122,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/waves/[id]/assign]', error)
       return NextResponse.json({ error: '分配订单失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
 }
 
 async function buildZonesByRestaurant(orderIds: string[]) {

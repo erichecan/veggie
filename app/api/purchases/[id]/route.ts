@@ -29,5 +29,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/purchases/[id]]', error)
       return NextResponse.json({ error: '删除采购记录失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS'])
 }

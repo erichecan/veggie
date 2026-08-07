@@ -98,7 +98,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/product-templates/[id]]', error)
       return NextResponse.json({ error: '更新商品模板失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS'])
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -114,5 +114,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/product-templates/[id]]', error)
       return NextResponse.json({ error: '删除商品模板失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS'])
 }

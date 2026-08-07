@@ -23,5 +23,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/product-categories]', error)
       return NextResponse.json({ error: '创建分类失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS'])
 }

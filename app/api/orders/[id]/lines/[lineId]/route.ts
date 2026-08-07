@@ -105,7 +105,7 @@ export async function PATCH(
         { status: 500 },
       )
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES'])
 }
 
 /**
@@ -188,5 +188,5 @@ export async function DELETE(
         { status: 500 },
       )
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES'])
 }

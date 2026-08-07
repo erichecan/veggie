@@ -133,5 +133,5 @@ export async function POST(
         { status: 500 },
       )
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES'])
 }

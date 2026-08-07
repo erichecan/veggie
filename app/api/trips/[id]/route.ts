@@ -145,7 +145,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/trips/[id]]', error)
       return NextResponse.json({ error: '更新行程失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'DISPATCH', 'DRIVER'])
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -161,5 +161,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/trips/[id]]', error)
       return NextResponse.json({ error: '删除行程失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS'])
 }

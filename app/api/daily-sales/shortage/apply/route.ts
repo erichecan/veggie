@@ -141,5 +141,5 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ ok: true, affected: orders.length })
-  })
+  }, ['OPERATOR', 'BOSS'])
 }

@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       console.error('[POST /api/waves/generate-daily]', error)
       return NextResponse.json({ error: '生成每日波次失败' }, { status: 500 })
     }
-  })
+  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
 }
 
 function todayUTC(): Date {

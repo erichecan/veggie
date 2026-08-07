@@ -20,6 +20,7 @@
 import { createHmac } from 'node:crypto'
 import { readdirSync, statSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { scanApiHandlers } from '../../lib/route-gate-scan'
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:3000'
 const SECRET = process.env.JWT_SECRET
@@ -103,17 +104,24 @@ async function main() {
   const tokens = Object.fromEntries(ROLES.map(r => [r, signToken(r)]))
   const matrix: Record<string, Record<string, number | string>> = {}
 
+  // POST 的静态判定统一走 lib/route-gate-scan —— 这里原本自带一条正则，
+  // 只认 `}, ['X'])` 内联数组写法，把 5 处用具名常量的路由误报成 NO-GATE，
+  // 还被注释里的 `1)` 骗过括号配平。检测器只留一份，修一次到处对。
+  const gates = new Map(scanApiHandlers().map(h => [`${h.verb} ${h.route}`, h.gate]))
+
   let done = 0
-  for (const { route, verbs, src } of routes) {
+  for (const { route, verbs } of routes) {
     for (const verb of verbs) {
       const key = `${verb} ${route}`
       matrix[key] = {}
       for (const role of ROLES) {
         if (verb === 'POST') {
           // 不实际调用。静态看这个 handler 有没有角色闸，以及闸里有没有这个角色。
-          const seg = src.slice(src.indexOf('export async function POST'))
-          const m = seg.match(/\}\s*,\s*\[([^\]]*)\]\s*\)/)
-          matrix[key][role] = !m ? 'NO-GATE' : (m[1].includes(`'${role}'`) ? 'allow' : 'deny')
+          const g = gates.get(key)
+          matrix[key][role] =
+            g?.kind === 'roles' ? (g.roles.includes(role) ? 'allow' : 'deny')
+            : g?.kind === 'cronSecret' ? 'cron'
+            : 'NO-GATE'
         } else {
           matrix[key][role] = await probe(BASE + fillParams(route), verb, tokens[role])
         }
