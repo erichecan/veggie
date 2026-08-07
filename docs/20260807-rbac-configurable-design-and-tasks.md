@@ -251,42 +251,98 @@ JWT 新增三个字段：
 
 ### 批 1：判定层切换（风险最高的一批）
 
-- [ ] **T3 权限解析与位图编解码**
+- [x] **T3 权限解析与位图编解码** ✅ 2026-08-07 · `2f67df4`
       `lib/rbac/resolve.ts`：`getEffectivePermissions(userId)` → 角色权限并集 ∪ 个人 grant
       − 个人 revoke，dataScope 取最宽。`lib/rbac/bitmap.ts`：编解码 base64url 位图。
       登录时写进 JWT 的 `pm`/`ds`/`pv`。
       **验收**：单测覆盖「多角色并集」「个人加权」「个人扣权」「dataScope 取最宽」四种组合；
       位图编解码往返一致；实测 token 长度增量 < 100 字符。
-      **产出**：`lib/rbac/resolve.ts`、`lib/rbac/bitmap.ts`、`lib/auth.ts`、`tests/rbac-resolve.test.ts`
+      **产出**：`lib/rbac/resolve.ts`、`lib/rbac/bitmap.ts`、`lib/auth.ts`、`tests/rbac-resolve.test.ts`、
+      `prisma/migrations/20260807000001_rbac_seed_system_roles/`、`scripts/rbac/generate-seed-migration.ts`
       **依赖**：T0
 
-- [ ] **T4 middleware 改查位图**
+      **实测**：位图 31 字符；token 241 → 317（**增量 76**，上限 100）。
+      OPERATOR+SALES 合并 178 权限点、范围 ALL；EXTERNAL_SALES / RESTAURANT 范围 OWN。15 个单测。
+
+      **计划外但必须做的一件事**：预置角色得做成**数据迁移**而不是 seed 脚本。
+      本项目部署链路是 `push main → Actions → migrate deploy`，**根本不跑 seed** ——
+      写成 seed 的话部署完库里一个角色都没有，全员权限为空、集体被锁在门外。
+      迁移三件事全部幂等：写 Permission 镜像、建 12 个预置角色（`DO NOTHING`，
+      管理员在页面上调过的权限不该被下次部署冲掉）、把现有用户按 legacy role 挂上去。
+      第三件在一次性 PG 上用照现网分布造的数据实测过：多角色正确映射成两个 AppRole，
+      `roles[]` 为空的账号正确回退单 role，权限点数与 T1 推导一致，重跑幂等。
+
+- [x] **T4 middleware 改查位图** ✅ 2026-08-07 · `b61f2d9`
       `lib/rbac/route-map.ts`：URL 前缀 + 方法 → 所需权限点。middleware 从 token 的 `pm`
       解位图判定，取代 `role-access.ts` 的角色白名单。
       ⚠️ **route-map 必须覆盖全部 48 个 API 域 + 89 个页面**，漏了就是敞开 —— 用测试锁住
       「每个已知路由都能在 route-map 里命中一条规则」。
       **验收**：`tests/role-access.test.ts` 的 40 条既有用例全部改写后通过；无路由未命中。
-      **产出**：`lib/rbac/route-map.ts`、`middleware.ts`、`tests/rbac-route-map.test.ts`
+      **产出**：`lib/rbac/gate.ts`、`middleware.ts`、`tests/rbac-gate.test.ts`
+      （`route-map.ts` 已在 T1 产出）
       **依赖**：T3
 
-- [ ] **T5 `withAuth` 新签名 + 117 处迁移**
+      **⛔ 计划外但必须做的一件事**：保留**旧 token 回退路径**。部署那一刻所有在线用户
+      手里都是没有 `pm` 字段的旧 token（有效期 7 天），直接按位图判会把全员挡在门外 ——
+      包括没法登录进去改配置的管理员。回退路径可在部署日 + 7 天后连同 `lib/role-access.ts` 一起删。
+
+      **兜底语义反转**：旧的是「不在收窄名单里就放行」，新的是「没有规则命中就拒绝」。
+      新增接口忘了登记的表现从「敞开」变成「403」—— 坏掉比漏掉好。
+
+- [x] **T5 `withAuth` 新签名 + 154 处迁移** ✅ 2026-08-07 · `401ed49`
       `withAuth(req, handler, { require: 'x.y.z' })`，旧的 `allowedRoles` 数组形式保留一个
       过渡期重载。分批迁移，**不要正则批量替换**（8/6 踩过：批量脚本把数组插进了注释里）。
       批次同 8/6 台账 T6：`waves` → `orders` → `trips` → 商品域 → `pricelists` → 其余。
-      **验收**：每批改完跑一次 `verify-parity.ts`，diff 必须为空。
-      **产出**：`lib/auth.ts`、各 API 路由
+      **验收**：每批改完跑一次 `verify-parity.ts`，diff 必须为空 ✅
+      **产出**：`lib/auth.ts`、`lib/analytics/cache.ts`、`scripts/rbac/migrate-route-gates.ts`、各 API 路由
       **依赖**：T3
 
-- [ ] **T6 `can()` 内部改写 + 页面层**
+      **实测**：实际 154 处（台账原写 117，是 8/6 的旧数）。迁完后 `allowedRoles` 写法归零：
+      235 个 handler 里 154 个权限点闸、2 个 CRON 密钥、31 个只验登录、48 个靠 middleware 兜底。
+      分 7 批（waves→orders→trips→商品域→pricelists→其余），每批回扫 + parity。
+
+      **改写脚本的做法**（针对 8/6 那次事故）：定位复用 `route-gate-scan` 的括号配平
+      （会跳过注释、字符串、模板串），只替换第三个实参那一段，改完**回扫验证** ——
+      重新 scan 确认 gate 确实变成了预期权限点。光看编译通过什么都证明不了。
+
+      **⛔ 途中修了三处度量工具失真，每一处都会让安全绳失效**：
+
+      1. **parity 基线不能实时算旧体系**。`allowedRoles` 一拆，实时算出来的「旧体系」
+         跟着变松，那条测试就成了拿改动后的自己和改动后的自己比，永远绿。
+         基线已冻结成 `lib/rbac/parity-baseline.json`（与 8/6 的 CI 快照逐格一致）。
+      2. **`lib/role-reachability.ts` 同样的病**，它报了 67 格「变得更开放」。不是真放宽，
+         是它还在按 `allowedRoles` 算而那东西已经没了。升级到按权限点算之后，
+         与 8/6 的 CI 快照**完全一致** —— 这是第二个独立的零 diff 证据。
+      3. **`tests/api-write-gates.test.ts`** 断言 `gate.kind === 'roles'`，现在一个都没有。
+         升级到权限点口径后反而更强：以前看「闸门里写没写一线角色的名字」，
+         现在直接查该角色**实际拥有的权限集**，就算哪天悄悄给司机加了权限点也会红。
+
+- [x] **T6 `can()` 内部改写 + 页面层** ✅ 2026-08-07 · `758f63e`
       `lib/permissions.ts` 的 `can(ability, action, subject)` 对外签名不变，内部从查 `MATRIX`
       改为查位图。6 个 layout 的角色白名单改查权限点。
       **验收**：各岗位页面实跑一遍不报错；`tests/role-definitions-sync.test.ts` 相应调整。
-      **产出**：`lib/permissions.ts`、6 个 layout
+      **产出**：`lib/permissions.ts`、`lib/rbac/page-guard.ts`、**9 个** layout、
+      `tests/rbac-page-guard.test.ts`
       **依赖**：T5
 
-- [ ] **T7 平迁验证：可达性零 diff（第二次，换引擎后）**
+      **实测**：`can()` 全项目只有一处调用（`PermissionGate` 组件），而那个组件
+      **没有任何使用者** —— `MATRIX` 早已是死代码。所以 can() 保持签名、内部改查位图、
+      翻不出权限点时回落 MATRIX 就够了，另加 `hasPermission()` 供新代码直接用。
+
+      **layout 那边查出三类问题**：
+      - 6 个写的是 `[...].includes(user.role)`，**只看主角色单值** —— 现网 19 个 SALES
+        全兼 OPERATOR，兼任角色一直白兼，与 middleware 的 `roles[]` 口径对不上
+      - `operator` / `restaurant` 更严，写的是 `user.role !== 'X'` 严格相等
+      - ⛔ **`print` 完全没有判定** —— 正是 8/6 台账 §7 记的未解决问题，现已补上
+
+      统一到 `canEnterPage`，与 middleware 共用同一张 route-map。测试逐格比对
+      9 页面 × 12 角色，**layout 与 middleware 判定完全一致** ——
+      8/6 台账「页面级白名单与 API 的一致性尚未逐条核对」这条可以销了。
+
+- [x] **T7 平迁验证：可达性零 diff（第二次，换引擎后）** ✅ 2026-08-07 · `758f63e`
       判定层全部切换完成后，再跑一次全量比对。
-      **验收**：**diff 仍必须为空**。这是「换了引擎但一格权限都没动」的唯一证据。
+      **验收**：**diff 仍为空** ✅ 2820 格。判定层四处（middleware / 路由闸 / `can()` / layout）
+      全部改完，可达性一格未动。全量 312 测试 0 失败，build 通过。
       **依赖**：T6
 
 ### 批 2：数据范围三级
@@ -403,3 +459,8 @@ JWT 新增三个字段：
 | T0 补 | 2026-08-07 | `d76efd1` | sortKey 改由快照权威分配 —— 原设计挡不住「往中间插动作」，而 T1 第一件事就要插 |
 | T1 | 2026-08-07 | `d5d155a` | 181 权限点；95 处冲突五轮收敛到 0；裁决见 §9 |
 | T2 | 2026-08-07 | `d5d155a` | **2820 格零 diff**；CI 快照新鲜度一并校验；已锁进测试 |
+| T3 | 2026-08-07 | `2f67df4` | token 增量 76 字符；预置角色改做数据迁移（部署链路不跑 seed） |
+| T4 | 2026-08-07 | `b61f2d9` | middleware 切位图；**保留旧 token 回退**，否则部署即全员锁死 |
+| T5 | 2026-08-07 | `401ed49` | 154 处迁移、`allowedRoles` 归零；修了 3 处度量工具失真 |
+| T6 | 2026-08-07 | `758f63e` | `can()` + 9 个 layout；补上 `print` 缺失的守卫 |
+| T7 | 2026-08-07 | `758f63e` | **第二次 2820 格零 diff**，批 1 完成 |
