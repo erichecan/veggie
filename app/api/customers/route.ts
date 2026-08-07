@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db'
 import { buildFacetWhere } from '@/lib/facet-sql'
 import { CUSTOMER_FACET_DEFS } from '@/lib/facets/customers'
 import { writeLog } from '@/lib/action-log'
-import { withAuth, tryAuth, effectiveRoles } from '@/lib/auth'
+import { withAuth, tryAuth } from '@/lib/auth'
+import { salesRowScope } from '@/lib/row-scope'
 import { serializeApi } from '@/lib/api-serializer'
 
 // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
@@ -60,17 +61,13 @@ export async function GET(req: Request) {
     // 分面搜索：同维度 OR、跨维度 AND
     andConditions.push(...await buildFacetWhere(searchParams, CUSTOMER_FACET_DEFS))
 
-    // P1-3: SALES 角色自动过滤 — 只看自己名下的客户。
+    // 行级隔离：销售只看自己名下的客户。规则在 lib/row-scope.ts（唯一真相）。
     // ⚠️ 必须在构造 where 之前 push：where 为空数组时会退化成 {}，
     // 此后再往 andConditions 里 push 就完全不生效（includeArchived=1 且无其他筛选时正是这种情况，
     // 隔离会静默失效）。20260802 审计发现，故上移。
     const caller = await tryAuth(req)
-    if (caller) {
-      const roles = effectiveRoles(caller)
-      if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
-        andConditions.push({ salesUserId: caller.userId })
-      }
-    }
+    const rowScope = salesRowScope(caller)
+    if (rowScope) andConditions.push(rowScope)
 
     const where: Record<string, unknown> = andConditions.length > 0 ? { AND: andConditions } : {}
     if (createdFrom || createdTo) {

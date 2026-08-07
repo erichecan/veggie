@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
-import { withAuth } from '@/lib/auth'
+import { withAuth, tryAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 
 const TRACKED_FIELDS = [
   'name', 'address', 'street', 'street2', 'city', 'state', 'zip', 'country',
@@ -21,6 +22,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
     })
     if (!customer) return NextResponse.json({ error: '客户不存在' }, { status: 404 })
+    // 行级隔离：列表挡住了但详情没挡的话，拿到 id 依然能逐条读走
+    // （id 在打印单、CSV 导出、订单详情里到处都是）。回 404 而不是 403 ——
+    // 403 等于告诉对方"这个客户存在，只是不给你看"。
+    if (!isRowVisible(customer, salesRowScope(await tryAuth(_req)))) {
+      return NextResponse.json({ error: '客户不存在' }, { status: 404 })
+    }
     return NextResponse.json(serializeApi({ ...customer, salesman: customer.salesUser?.name ?? null }))
   } catch (error) {
     console.error('[GET /api/customers/[id]]', error)
@@ -47,6 +54,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         include: { pricelists: { orderBy: { sequence: 'asc' } } },
       })
       if (!before) return NextResponse.json({ error: '客户不存在' }, { status: 404 })
+      // 只能改自己名下的客户。⛔ 必须挡在任何写动作之前 —— 下面第一句就是
+      // deleteMany 专属价，先删后判的话即使最终 404，别人的数据已经被删了。
+      if (!isRowVisible(before, salesRowScope(user))) {
+        return NextResponse.json({ error: '客户不存在' }, { status: 404 })
+      }
 
       await prisma.customerSpecialPrice.deleteMany({ where: { customerId: id } })
       if (pricelistIds !== undefined) {

@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { notifyLowStockAfterConfirm } from '@/lib/notify'
-import { withAuth } from '@/lib/auth'
+import { withAuth, tryAuth } from '@/lib/auth'
+import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
 import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
@@ -48,6 +49,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       },
     })
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
+    // 行级隔离：外部销售只看自己名下的订单。回 404 而不是 403 ——
+    // 403 等于告诉对方"这单存在，只是不给你看"。
+    if (!isRowVisible(order, salesRowScope(await tryAuth(_req)))) {
+      return NextResponse.json({ error: '订单不存在' }, { status: 404 })
+    }
     // Flatten product fields onto each line so UI can read l.cost
     const waveDisplay = await getOrderWaveDisplayMap([order.id])
     // 编辑态司机下拉框预选值:与显示态同源(所属 wave),订单不在任何 wave 时回退下单意向列
@@ -84,6 +90,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const data = await req.json()
       const orderBefore = await prisma.order.findUnique({ where: { id } })
       if (!orderBefore) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
+      if (!isRowVisible(orderBefore, salesRowScope(user))) {
+        return NextResponse.json({ error: '订单不存在' }, { status: 404 })
+      }
 
       // Strip non-schema fields before passing to Prisma
       const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, deliveryNote, status, paymentMethod, salesUserId, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
@@ -879,8 +888,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const orderToDelete = await prisma.order.findUnique({ where: { id }, select: { status: true, code: true } })
+      const orderToDelete = await prisma.order.findUnique({ where: { id }, select: { status: true, code: true, salesUserId: true } })
       if (!orderToDelete) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
+      if (!isRowVisible(orderToDelete, salesRowScope(user))) {
+        return NextResponse.json({ error: '订单不存在' }, { status: 404 })
+      }
       if (String(orderToDelete.status).toUpperCase() !== 'PENDING') {
         return NextResponse.json({ error: '只有报价单（待处理状态）可以删除' }, { status: 409 })
       }

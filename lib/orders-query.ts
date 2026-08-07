@@ -4,7 +4,8 @@
  * 逐字迁移自 app/api/orders/route.ts 原 GET 内联逻辑，行为不变。
  */
 import { prisma } from '@/lib/db'
-import { tryAuth, effectiveRoles } from '@/lib/auth'
+import { tryAuth } from '@/lib/auth'
+import { salesRowScope, withRowScope } from '@/lib/row-scope'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { buildFacetWhere, type FacetDef } from '@/lib/facet-sql'
 
@@ -103,16 +104,6 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   const salesUserId = searchParams.get('salesUserId')
   if (salesUserId) where.salesUserId = salesUserId
 
-  if (!salesUserId) {
-    const caller = await tryAuth(req)
-    if (caller) {
-      const roles = effectiveRoles(caller)
-      if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
-        where.salesUserId = caller.userId
-      }
-    }
-  }
-
   const categoryIdsParam = searchParams.get('categoryIds') ?? searchParams.get('categoryId')
   const categoryIds = categoryIdsParam ? categoryIdsParam.split(',').filter(Boolean) : null
   if (categoryIds && categoryIds.length > 0) {
@@ -144,5 +135,9 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   }
   if (facetAnd.length > 0) where.AND = facetAnd
 
-  return where
+  // ⛔ 行级隔离必须放在**最后**，且走 withRowScope（AND 里加一项），不能写成
+  // `where.salesUserId = …`。原实现两个毛病：写在 `if (!salesUserId)` 分支里，
+  // 只要请求带 `?salesUserId=别人的id` 隔离就整段跳过；即使进了分支也是直接赋值，
+  // 会被同名参数覆盖。放在最后 + AND 包裹，才是谁也删不掉的。
+  return withRowScope(where, salesRowScope(await tryAuth(req)))
 }
