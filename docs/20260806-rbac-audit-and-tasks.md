@@ -16,6 +16,14 @@
 **「谁能干什么」这一层基本是空的**：235 个 handler 里 **99 个有 `withAuth` 但没有
 `allowedRoles`**，另有 3 个写操作连 `withAuth` 都没有。结果是**任何登录用户都能调**。
 
+> ⚠️ **2026-08-06 数字更正**：99 这个数偏高。当时的检测正则只认 `}, ['OPERATOR'])`
+> 这一种写法，凡是把角色抽成具名常量（backups / stock-takes / pdf-extract /
+> signature-correction 等 5 处）一律被误报成"没闸"；同一条正则还被注释里的 `1)`
+> 骗过括号计数，把 `/api/orders` 与 `/api/waves` 的 POST 也误判了。
+> 按修好的检测器（`lib/route-gate-scan.ts`）重扫，整改前真实缺口是
+> **写操作 120 个里 57 个没有角色闸**。结论方向不变，但**假阴性会让清单虚高，
+> 也会让真正的漏网之鱼淹没在噪音里** —— 检测器本身也要被验证。
+
 ⛔ **已实测确认的越权（不是推断）**：一个**餐厅客户**账号能读到全公司的客户名册、
 别家的订单、采购成本，并且**能写入数据**。详见 §1。
 
@@ -191,13 +199,13 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
 所以改成：**先在 middleware 层给每个内部角色划边界（一次覆盖全部现有与将来路由），
 再给高危写操作补 `allowedRoles` 做纵深防御**。
 
-- [ ] **T4 `driver-slots` 补 `withAuth` + 角色**（3 个 handler，独立小改）
+- [x] **T4 `driver-slots` 补 `withAuth` + 角色** ✅ 2026-08-06 · `4a62846`
       现状：`POST /api/driver-slots`、`PUT/DELETE /api/driver-slots/[id]` **连 `withAuth` 都没有**，
       只靠 middleware 验了「有没有 token」，任何登录用户都能改司机配置。
       **验收**：非 OPERATOR/BOSS 调用返回 403；运营端司机配置页增删改一遍功能不变。
       **产出**：`app/api/driver-slots/route.ts`、`app/api/driver-slots/[id]/route.ts`
 
-- [ ] **T5 内部角色边界（把 `role-access.ts` 从"外部角色"扩成"全部收窄型角色"）**
+- [x] **T5 内部角色边界 ✅ 2026-08-06 · `bae0ac9`（把 `role-access.ts` 扩成全部收窄型角色）**
       给 DRIVER / SORTER / PICKER / WAREHOUSE / FINANCE / SALES / EXTERNAL_SALES /
       DISPATCH / OTHER 各定义「前缀 + 允许的 HTTP 方法」白名单，白名单外一律 403。
       OPERATOR / BOSS 不在此层收窄（他们是后台本身）。
@@ -206,7 +214,7 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
       DRIVER（生产 21 人，唯一有真实用户的收窄角色）行程页取数/签收/交账全流程实跑不报错。
       **产出**：`lib/role-access.ts`、`middleware.ts`、`tests/role-access.test.ts`
 
-- [ ] **T6 高危写操作补 `allowedRoles`（纵深防御，分批）**
+- [x] **T6 写操作补 `allowedRoles`（纵深防御）** ✅ 2026-08-06 · `006fa8b`
       即使有了 T5 的边界，写操作仍要在路由层再挡一道 —— middleware 是按前缀判的，
       粒度到不了「同一个前缀下 GET 可以、DELETE 不行」的细处。
       批次：`waves`(13) → `orders`(9) → `trips`(4) → 商品域(products/templates/categories 9) →
@@ -214,7 +222,7 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
       **验收**：每批改完跑探针，diff 里只出现预期的 `→403`；对应岗位页面实际操作一遍不报错。
       ⚠️ 分批做，不要正则批量替换 —— 参考「正则改 16 个路由把 `allowedRoles` 吃掉」的教训。
 
-- [ ] **T7 `EXTERNAL_SALES` 行级隔离**（决策 2 的后半截）
+- [x] **T7 `EXTERNAL_SALES` 行级隔离** ✅ 2026-08-06 · `934aec9`
       现状：拆出了角色，但它仍能看到**全部**客户与订单 —— 只挡了"能不能做这个动作"，
       没挡"能看到谁的数据"。
       **验收**：`EXTERNAL_SALES` 调 `/api/customers`、`/api/orders` 只返回
@@ -224,7 +232,7 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
       正式 `SALES` 维持现状（19 人全兼 OPERATOR，业务上就是要看全量），
       在代码里写明这是有意为之，避免后人误以为是 bug。
 
-- [ ] **T8 把探针纳入 CI**
+- [x] **T8 把探针纳入 CI** ✅ 2026-08-06 · `2f70fe2`
       **验收**：任何一个路由的角色可达性发生变化，CI 必须失败并显示 diff；
       快照更新必须是显式动作（改代码顺手把快照也改了 → review 时看得见）。
 
@@ -236,12 +244,51 @@ OPERATOR+SALES  19 人      ← 全部 SALES 都兼任 OPERATOR
 |---|---|---|---|
 | 审计本身 | 2026-08-06 | 本文 §1/§2 | 实测越权已确认；误建的 1 条价格表已清理 |
 | T1/T2/T3 | 2026-08-06 | `5aba1e5`，Deploy to droplet 04:23 成功 | 台账当时漏了回写，2026-08-06 补上 |
+| T4 | 2026-08-06 | `4a62846` | 司机配置三个写操作补上角色闸，实测 5 个非运营角色全 403 |
+| T5 | 2026-08-06 | `bae0ac9` | 边界扩到全部收窄型角色，40 条实测用例全符合预期 |
+| T6 | 2026-08-06 | `006fa8b` | 48 处补 `allowedRoles`；**第一版批量脚本把数组插进了注释里，已回滚重做** |
+| T7 | 2026-08-06 | `934aec9` | 行级隔离落地，并堵掉 `?salesUserId=别人` 的绕过 |
+| T8 | 2026-08-06 | `2f70fe2` | 可达性快照进 CI；此前仓库根本没有跑测试的工作流 |
+
+### 整改前后（静态可达性，235 handler × 12 角色 = 2820 格）
+
+| | 可达格 |
+|---|---:|
+| 只有路由级 `allowedRoles`（无 middleware 边界） | 1410 |
+| 加上 middleware 角色边界（现状） | **757** |
+
+两层各砍掉一半 —— 这也说明为什么只做逐路由 `allowedRoles` 不够。
+
+### 生产账号影响核对（2026-08-06 直连生产库）
+
+51 个活跃账号，逐类核过收窄后还能不能干活：
+
+| 角色 | 人数 | 收窄后 |
+|---|---:|---|
+| DRIVER | 23 | 行程列表/详情/签收(PUT)/交账/地图打点 全部放行，实测通过 |
+| OPERATOR（含兼 SALES 19 人） | 21 | 不收窄 |
+| BOSS | 1 | 不收窄 |
+| RESTAURANT | 2 | 只走客户门户（`5aba1e5` 起已生效），实测门户功能完好 |
+| FINANCE / SORTER / WAREHOUSE | 各 1 | 各自页面调用的接口已在白名单内 |
+| PICKER | 1 | ⚠️ 见下方未解决问题 |
 
 ## 7. 未解决问题
 
-- **`OTHER` 角色的 11 个空角色用户**：生产上有 11 个账号 `roles` 为空，
-  回退单 `role` 后落在哪个角色需要核对 —— 收窄边界后他们可能会 403。
+- ~~`OTHER` 角色的 11 个空角色用户~~ → **已核**：那 11 个是 `roles[]` 为空、
+  回退单 `role` 的账号（OPERATOR 2 / RESTAURANT 2 / DRIVER 2 / FINANCE 1 / BOSS 1 /
+  PICKER 1 / SORTER 1 / WAREHOUSE 1），`rolesOf` 的回退口径覆盖得到，不会因为
+  `roles[]` 空而被误判。
+- ⚠️ **1 个 PICKER 账号收窄后什么都够不着**（除登录与通知）。这不是本次造成的：
+  `/classic/sorter` 的 layout 只放 SORTER/OPERATOR，PICKER 本来就进不去任何页面，
+  `permissions.ts` 里也是空矩阵 —— 它此前"能调所有接口"才是不该有的状态。
+  **需要业务确认**：这个账号还在用吗？要用的话该给它哪个页面？
 - 本次只审了 API 层与角色定义；**页面级白名单（6 个 layout）与 API 的一致性尚未逐条核对**
   （例如某页面允许 FINANCE 进入，但它调的接口不允许 FINANCE，表现是页面能开但数据全 403）。
   T5 会顺带把这件事做掉一半：边界就是从页面白名单反推的。
-- `/classic/print` 的 layout **没有任何角色判定** —— 打印中心谁都能进。T5 一并处理。
+- ~~`/classic/print` 的 layout 没有任何角色判定~~ → T5 已在 middleware 页面层堵上
+  （只有 OPERATOR/BOSS/FINANCE/DISPATCH 进得去）。layout 本身仍然没有判定，
+  哪天有人绕过 middleware（例如改了 matcher）就又敞开了 —— 建议补一道。
+- **本轮改动尚未部署**。全部验证都在本地 dev + 生产库只读核对上完成，
+  生产跑的还是 `5aba1e5`。部署后要做的两件事：
+  ① 用 `scripts/audit/rbac-probe.ts` 打生产刷新 `rbac-snapshot.json`；
+  ② 找一个真实司机账号走一遍「打开行程 → 签收 → 交账」。
