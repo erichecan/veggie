@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { SignJWT, jwtVerify } from 'jose'
 import { decodePermissions } from './rbac/bitmap'
+import { legacyRolesHavePermission } from './rbac/legacy-roles'
 
 // ─── JWT_SECRET 懒加载 ───────────────────────────────────────────────────────
 // 不在模块加载时 throw：Docker build 期间 Secret Manager 的值尚未注入，
@@ -136,7 +137,14 @@ export async function withAuth(
     }
   } else if (gate && !Array.isArray(gate)) {
     const need = typeof gate.require === 'string' ? [gate.require] : gate.require
-    if (!decodePermissions(user.pm).hasAny(need)) {
+    // ⛔ 旧 token（部署前签发的，没有 pm 字段）必须走角色反查，不能直接判位图 ——
+    // 空位图会让这 154 个接口对所有还没重新登录的人全部 403。
+    // 也不能「没位图就跳过检查」：那样只剩 middleware 一层，比改造前更宽松。
+    // 反查表等价于改造前的 allowedRoles，见 lib/rbac/legacy-roles.ts。
+    const ok = user.pm
+      ? decodePermissions(user.pm).hasAny(need)
+      : legacyRolesHavePermission(effectiveRoles(user), need)
+    if (!ok) {
       return NextResponse.json({ error: `权限不足，需要: ${need.join(' 或 ')}` }, { status: 403 })
     }
   }
