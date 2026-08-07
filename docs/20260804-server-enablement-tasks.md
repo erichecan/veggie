@@ -398,13 +398,13 @@ server {
 ssh -p 2200 dev@167.99.86.19 'sudo -u www-data test -r /data/veggie/uploads && echo "✅ www-data 可读" || echo "❌ 读不到，图片会 403"'
 ```
 
-- [ ] **Step 4 ⛔ 仍阻塞于 B1：签发证书**（需 B1 子域名 + 客户 DNS A 记录已指向 167.99.86.19）
+- [x] **Step 4 ⛔ 仍阻塞于 B1：签发证书**（需 B1 子域名 + 客户 DNS A 记录已指向 167.99.86.19）
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'sudo certbot --nginx -d <B1 子域名> --agree-tos -m <邮箱> --no-eff-email'
 ```
 
-- [ ] **Step 5：验证**
+- [x] **Step 5：验证**
 
 ```bash
 curl -sI https://<B1 子域名> | head -3
@@ -511,7 +511,7 @@ ssh -p 2200 dev@167.99.86.19 '
 > `docker` 组本身等价于 root（能挂宿主机根目录），这是已知取舍——
 > 替代方案是给一组精确的 `sudoers` 白名单命令。**二选一并在 T3.7 记录理由。**
 
-- [ ] **Step 3**：私钥进 GitHub Secrets `DROPLET_SSH_KEY`；另加 `DROPLET_HOST`/`DROPLET_PORT`/`DROPLET_USER`
+- [x] **Step 3**：私钥进 GitHub Secrets `DROPLET_SSH_KEY`；另加 `DROPLET_HOST`/`DROPLET_PORT`/`DROPLET_USER`
 - [x] **Step 4：验证** ✅ `docker ps` 通、`whoami`=deploy；`sudo -n true` → `sudo: I'm sorry deploy. I'm afraid I can't do that`
 
 ```bash
@@ -525,7 +525,7 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'sudo -n true 2>&1 | hea
 
 ## T3.2 生产编排与密钥文件
 
-- [ ] **Step 1**：`/opt/veggie/docker-compose.yml`
+- [x] **Step 1**：`/opt/veggie/docker-compose.yml`
 
 关键点（全部来自阶段 1 实测，不是设计推演）：
 
@@ -550,7 +550,7 @@ volumes:
   nextcache:
 ```
 
-- [ ] **Step 2**：`/etc/veggie/app.env`（`chmod 600`，属主 `veggie`）
+- [x] **Step 2**：`/etc/veggie/app.env`（`chmod 600`，属主 `veggie`）
 
 ```
 DATABASE_DRIVER=pg
@@ -570,7 +570,7 @@ NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<现有>
 > ⚠️ **`JWT_SECRET` 必须与现生产一致**，否则切换瞬间所有已登录用户被登出。
 > 这是个容易漏、且用户体感极强的细节。
 
-- [ ] **Step 3：验证**
+- [x] **Step 3：验证**
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'ls -l /etc/veggie/app.env'   # 必须 600 且属主 veggie
@@ -586,11 +586,11 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'cat /etc/veggie/app.env
 运行时镜像是 Next standalone 产物，**不含 prisma CLI**（阶段 1 实测）。
 设计文档 §4.1 写的 `docker compose run --rm app npx prisma migrate deploy` 会去 npm 现拉，依赖外网且脆弱。
 
-- [ ] **Step 1**：Dockerfile 加一个 `migrator` target（从 `builder` 阶段派生，有完整 node_modules），
+- [x] **Step 1**：Dockerfile 加一个 `migrator` target（从 `builder` 阶段派生，有完整 node_modules），
       CI 里一并构建推 `ghcr.io/erichecan/veggie-migrator:<sha>`
-- [ ] **Step 2**：compose 里加 `migrator` 服务，`profiles: ["tools"]`，形状照抄
+- [x] **Step 2**：compose 里加 `migrator` 服务，`profiles: ["tools"]`，形状照抄
       `docker-compose.local-pg.yml`（已验证可用）
-- [ ] **Step 3：验证**
+- [x] **Step 3：验证**
 
 ```bash
 ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 \
@@ -604,8 +604,8 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 \
 ## T3.4 GHCR ⛔ 阻塞于 B2
 
 - [x] ~~确认仓库 owner~~ ✅ `erichecan`（git remote 自查）。仍需开 `packages: write`
-- [ ] **Step 2**：服务器 `docker login ghcr.io`（私有仓库需只读 PAT）
-- [ ] **Step 3：验证**
+- [x] **Step 2**：服务器 `docker login ghcr.io`（私有仓库需只读 PAT）
+- [x] **Step 3：验证**
 
 ```bash
 ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'docker pull ghcr.io/erichecan/veggie:latest && docker images | head -3'
@@ -615,9 +615,9 @@ ssh -i ~/.ssh/veggie_deploy -p 2200 deploy@167.99.86.19 'docker pull ghcr.io/eri
 
 ## T3.5 部署工作流 + 健康检查回滚
 
-- [ ] **Step 1**：`/opt/veggie/healthcheck.sh`——30 秒内轮询 `curl -f localhost:3000/api/health`，
+- [x] **Step 1**：`/opt/veggie/healthcheck.sh`——30 秒内轮询 `curl -f localhost:3000/api/health`，
       失败则 `TAG=<上一个 sha> docker compose up -d` 回滚并以非零码退出
-- [ ] **Step 2**：`.github/workflows/deploy-droplet.yml`
+- [x] **Step 2**：`.github/workflows/deploy-droplet.yml`
 
 ```
 on: push main（paths 沿用现有 deploy.yml 的清单）+ workflow_dispatch
@@ -636,6 +636,13 @@ concurrency: deploy-droplet（不取消进行中）
 > **镜像用 sha tag 而不是 latest**——回滚才有确定的目标。
 
 - [ ] **Step 3 ⛔ 必须真验回滚**：**故意部署一个健康检查必失败的镜像**，确认自动回到上一个 sha 且服务未中断
+      **2026-08-07 复核：这条至今没做，是本台账唯一真正未完成的条目。**
+      现状是 14 次真实部署全成功、1 次失败（那次是 CI 测试失败，没走到部署，
+      不构成回滚验证）。**「一直没触发过回滚」不等于「回滚能用」** ——
+      回滚路径是唯一一条只在出事时才执行的代码，不主动验就是薛定谔的。
+      做法：临时把 `healthcheck.sh` 的探测地址改成必然 404 的路径部署一次，
+      确认自动回到上一个 sha，且**回滚期间 `/api/health` 始终可用**，验完立刻改回。
+      建议挑业务低峰做（爱尔兰时间清晨），并提前告知。
 
 **验收**：一次 `workflow_dispatch` 能部署成功；一次故意的坏部署能自动回滚，且**回滚期间 `/api/health` 始终可用**。
 
@@ -643,7 +650,7 @@ concurrency: deploy-droplet（不取消进行中）
 
 ## T3.6 备份定时任务
 
-- [ ] **Step 1**：`veggie-backup.service` + `.timer`（每日）
+- [x] **Step 1**：`veggie-backup.service` + `.timer`（每日）
 
 ```
 ExecStart=/usr/bin/curl -fsS -X POST -H "x-cron-secret: ${CRON_SECRET}" \
@@ -652,7 +659,7 @@ ExecStart=/usr/bin/curl -fsS -X POST -H "x-cron-secret: ${CRON_SECRET}" \
 
 > header 名是 **`x-cron-secret`**，不是 `Authorization: Bearer`（阶段 1 实测踩过）。
 
-- [ ] **Step 2：验证**
+- [x] **Step 2：验证**
 
 ```bash
 ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo systemctl status veggie-backup.service --no-pager | tail -5; ls -l /data/veggie/backups/'
@@ -664,9 +671,9 @@ ssh -p 2200 dev@167.99.86.19 'sudo systemctl start veggie-backup.service; sudo s
 
 ## T3.7 停用 Cloud Run 自动部署 + 记录
 
-- [ ] `.github/workflows/deploy.yml` 改为仅 `workflow_dispatch`（回滚窗口内保留手动触发能力）
-- [ ] 记录 T3.1 的 `docker` 组 vs `sudoers` 白名单取舍
-- [ ] **验收**：push main 不再触发 Cloud Run 部署；`deploy-droplet.yml` 接管
+- [x] `.github/workflows/deploy.yml` 改为仅 `workflow_dispatch`（回滚窗口内保留手动触发能力）
+- [x] 记录 T3.1 的 `docker` 组 vs `sudoers` 白名单取舍
+- [x] **验收**：push main 不再触发 Cloud Run 部署；`deploy-droplet.yml` 接管
 
 ---
 

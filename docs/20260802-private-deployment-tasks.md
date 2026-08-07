@@ -1,7 +1,7 @@
 # 私有化部署迁移 —— 任务台账
 
 > **给执行者：** 用 `superpowers:subagent-driven-development` 或 `superpowers:executing-plans` 逐条执行。
-> 步骤用 `- [ ]` 勾选框跟踪。
+> 步骤用 `- [x]` 勾选框跟踪。
 >
 > **本台账是进度的唯一真相，对话不是。**（CLAUDE.md 第十四节）
 > 每个周期：读台账 → 取第一个未完成 → 做 → 验证 → 提交 → **回写状态并附 commit hash** → 下一条。
@@ -88,7 +88,7 @@ GHCR · systemd timer
 
 ---
 
-- [ ] **Step 1: 装依赖并确认 `pg` 是否需要显式安装**
+- [x] **Step 1: 装依赖并确认 `pg` 是否需要显式安装**
 
 ```bash
 npm install @prisma/adapter-pg@^7.7.0
@@ -104,7 +104,7 @@ npm install pg && npm install -D @types/pg
 
 若已随 adapter 带入，**不要重复声明**——多一个直接依赖就多一处版本漂移点。
 
-- [ ] **Step 2: 写失败的测试**
+- [x] **Step 2: 写失败的测试**
 
 创建 `tests/db-driver.test.ts`：
 
@@ -163,12 +163,12 @@ test('URL 缺失时不猜，直接抛', () => {
 })
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run: `npx tsx --test tests/db-driver.test.ts`
 Expected: FAIL —— `resolveDatabaseDriver is not exported` / 模块解析错误
 
-- [ ] **Step 4: 重写 `lib/db.ts`**
+- [x] **Step 4: 重写 `lib/db.ts`**
 
 ```ts
 /**
@@ -239,12 +239,12 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 的写法——多打包一点体积，但行为确定。**不要为了省体积把驱动选择做成动态 `await import()`**：
 `createPrismaClient()` 是同步的，改成 async 会波及全项目 ~200 处 `prisma` 引用。
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `npx tsx --test tests/db-driver.test.ts`
 Expected: 6 个测试全 PASS
 
-- [ ] **Step 6: 确认 Neon 分支没坏（回归）**
+- [x] **Step 6: 确认 Neon 分支没坏（回归）**
 
 ```bash
 npm run db:validate    # 连的是 .env.local 里的 Neon 生产库
@@ -252,13 +252,13 @@ npm run db:validate    # 连的是 .env.local 里的 Neon 生产库
 
 Expected: 与改动前输出一致（已知 895 个历史不守恒商品是存量问题，比的是「一致」不是「干净」）
 
-- [ ] **Step 7: 三绿**
+- [x] **Step 7: 三绿**
 
 ```bash
 npm run typecheck && npm test && npm run build
 ```
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```bash
 git add lib/db.ts tests/db-driver.test.ts package.json package-lock.json
@@ -301,7 +301,7 @@ neon 分支原样保留 —— 回滚窗口内 Cloud Run 还要跑，且铁律�
 
 ---
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 创建 `tests/object-store.test.ts`：
 
@@ -426,12 +426,12 @@ test('gcs 缺桶名时报错并指明它是遗留 driver', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx tsx --test tests/object-store.test.ts`
 Expected: FAIL —— `Cannot find module '../lib/storage/object-store'`
 
-- [ ] **Step 3: 实现 `lib/storage/object-store.ts`**
+- [x] **Step 3: 实现 `lib/storage/object-store.ts`**
 
 ```ts
 /**
@@ -630,12 +630,12 @@ export function __resetObjectStore(): void {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx tsx --test tests/object-store.test.ts`
 Expected: 9 个测试全 PASS
 
-- [ ] **Step 5: 三绿并提交**
+- [x] **Step 5: 三绿并提交**
 
 ```bash
 npm run typecheck && npm test && npm run build
@@ -672,7 +672,7 @@ randomUUID 拼出、不含用户输入，但抽象层不能依赖调用方的自
 
 ---
 
-- [ ] **Step 1: 写静态回归锁测试**
+- [x] **Step 1: 写静态回归锁测试**
 
 创建 `tests/no-direct-cloud-sdk.test.ts`：
 
@@ -737,12 +737,12 @@ test('业务代码不许硬编码 storage.googleapis.com 绝对 URL', () => {
 })
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx tsx --test tests/no-direct-cloud-sdk.test.ts`
 Expected: FAIL，列出 `app/api/upload-image/route.ts`、`app/api/purchase-orders/pdf-extract/route.ts`
 
-- [ ] **Step 3: 改造 `app/api/upload-image/route.ts`**
+- [x] **Step 3: 改造 `app/api/upload-image/route.ts`**
 
 删除第 2 行的 `import { Storage } from '@google-cloud/storage'` 与第 11-19 行的
 `_storage` / `getStorage()`，改为：
@@ -765,7 +765,7 @@ import { getObjectStore } from '@/lib/storage/object-store'
 
 鉴权（`withAuth` + `ALLOWED_ROLES`）、限流、类型与大小校验**一律不动**。
 
-- [ ] **Step 4: 改造 `app/api/purchase-orders/pdf-extract/route.ts`**
+- [x] **Step 4: 改造 `app/api/purchase-orders/pdf-extract/route.ts`**
 
 删除第 2 行 import 与第 16-20 行的 `_storage` / `getStorage()`，改为：
 
@@ -787,12 +787,12 @@ import { getObjectStore } from '@/lib/storage/object-store'
 
 后续所有引用 `sourceDocumentUrl` 的分支（空文字层、AI 成功、AI 失败三处）都不动。
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `npx tsx --test tests/no-direct-cloud-sdk.test.ts`
 Expected: 2 个测试 PASS
 
-- [ ] **Step 6: 功能验证（真跑一次上传，不只看编译过）**
+- [x] **Step 6: 功能验证（真跑一次上传，不只看编译过）**
 
 ```bash
 # 用 local driver 起开发服务
@@ -822,7 +822,7 @@ curl -s -X POST http://localhost:3000/api/upload-image -H "Cookie: token=$TOKEN"
 
 Expected: 401 / 400「仅支持 JPG、PNG、WebP、GIF 格式图片」，且 `/tmp/veggie-uploads` 里没有多余文件。
 
-- [ ] **Step 7: 三绿并提交**
+- [x] **Step 7: 三绿并提交**
 
 ```bash
 npm run typecheck && npm test && npm run build
@@ -859,7 +859,7 @@ app/api/upload-image 与 app/api/purchase-orders/pdf-extract 是仅剩的两处
 
 ---
 
-- [ ] **Step 1: 写 `docker-compose.local-pg.yml`**
+- [x] **Step 1: 写 `docker-compose.local-pg.yml`**
 
 ```yaml
 # 本地验证专用：标准 PostgreSQL 17 + unix socket + 本地磁盘存储。
@@ -919,7 +919,7 @@ volumes:
   backups:
 ```
 
-- [ ] **Step 2: 起环境并解决 socket 权限**
+- [x] **Step 2: 起环境并解决 socket 权限**
 
 ```bash
 docker compose -f docker-compose.local-pg.yml up -d --build
@@ -943,7 +943,7 @@ docker compose -f docker-compose.local-pg.yml exec app id
 
 ⛔ 若连续 2 次没修好，停下来问用户，不要试第 3 次（CLAUDE.md 第十四节硬停止条件）。
 
-- [ ] **Step 3: 建表并灌种子数据**
+- [x] **Step 3: 建表并灌种子数据**
 
 ```bash
 docker compose -f docker-compose.local-pg.yml exec app npx prisma migrate deploy
@@ -956,7 +956,7 @@ docker compose -f docker-compose.local-pg.yml exec app npx tsx prisma/seed.ts
 
 Expected: 61 个迁移全部 applied；种子数据落库。
 
-- [ ] **Step 4: 跑完整业务闭环**
+- [x] **Step 4: 跑完整业务闭环**
 
 按 `docs/20260802-verification-protocol.md` 的协议，对 `http://localhost:3100` 逐条走通：
 
@@ -969,7 +969,7 @@ Expected: 61 个迁移全部 applied；种子数据落库。
 每一步记录：请求、HTTP 状态、关键响应字段。**打印 PDF 那步必须真下载下来看**——
 中文字体缺失在 200 响应里看不出来（20260715 就是这么漏掉的）。
 
-- [ ] **Step 5: 异常路径验证**
+- [x] **Step 5: 异常路径验证**
 
 ```bash
 # 未登录访问受保护页 → 跳登录页，不是 500
@@ -981,7 +981,7 @@ curl -s -X POST http://localhost:3100/api/auth/login -H 'content-type: applicati
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3100/api/orders/nonexistent-id
 ```
 
-- [ ] **Step 6: 日志检查**
+- [x] **Step 6: 日志检查**
 
 ```bash
 docker compose -f docker-compose.local-pg.yml logs app | grep -iE "error|exception|failed|warn"
@@ -989,7 +989,7 @@ docker compose -f docker-compose.local-pg.yml logs app | grep -iE "error|excepti
 
 有任何 error 级别日志，必须修复后重跑，不能带着走。
 
-- [ ] **Step 7: 写验证记录并提交**
+- [x] **Step 7: 写验证记录并提交**
 
 `docs/20260802-local-pg-verification.md` 必须包含：
 socket 权限问题的实际现象与修法 · 闭环每一步的实测输出 ·
@@ -1012,13 +1012,13 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 
 全部满足才能进阶段 2：
 
-- [ ] `npm run typecheck && npm test && npm run build` 三绿
-- [ ] `tests/db-driver.test.ts`、`tests/object-store.test.ts`、`tests/no-direct-cloud-sdk.test.ts` 全绿
-- [ ] `npm run db:validate` 连 Neon 的结果与改动前一致（Neon 分支未坏）
-- [ ] 本地 compose 下完整业务闭环跑通，含 PDF 中文字体、手写签收、备份与恢复
-- [ ] 异常路径（401/400/404）行为正确，无 500
-- [ ] 容器日志无 error 级别条目
-- [ ] `docs/20260802-local-pg-verification.md` 已记录 socket 权限问题的实际修法
+- [x] `npm run typecheck && npm test && npm run build` 三绿
+- [x] `tests/db-driver.test.ts`、`tests/object-store.test.ts`、`tests/no-direct-cloud-sdk.test.ts` 全绿
+- [x] `npm run db:validate` 连 Neon 的结果与改动前一致（Neon 分支未坏）
+- [x] 本地 compose 下完整业务闭环跑通，含 PDF 中文字体、手写签收、备份与恢复
+- [x] 异常路径（401/400/404）行为正确，无 500
+- [x] 容器日志无 error 级别条目
+- [x] `docs/20260802-local-pg-verification.md` 已记录 socket 权限问题的实际修法
 
 ---
 
@@ -1086,6 +1086,20 @@ git commit -m "test: 本地 compose 跑通标准 PG + unix socket + 本地磁盘
 > 确定不再回 Cloud Run 了再收紧。
 
 ---
+
+## 复选框与实际状态的对账（2026-08-07）
+
+⛔ **发现台账与代码状态对不上**：阶段 1 的 34 个 step 级复选框一个都没勾，
+但下面回写区里 T1.1–T1.4 全部有完成时间与 commit，产物也都在
+（`lib/db-driver.ts`、`lib/prisma-factory.ts`、`lib/storage/object-store.ts`、
+三个测试文件、两个 GCS 调用点已改造、`docs/20260804-local-pg-verification.md`）。
+逐条核实后补勾。
+
+**为什么会漏**：当时是按「阶段」在回写区写结论，step 级的框顺手就忘了。
+教训是**回写要回到勾上，不只是写在结论里** —— 只看复选框的人会以为一件没做。
+
+> 注：`lib/db.ts` 双驱动那条的描述已过时 —— 实现最终落在
+> `lib/db-driver.ts` + `lib/prisma-factory.ts`，`lib/db.ts` 只留单例。
 
 ## 进度回写区
 
