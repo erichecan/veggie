@@ -5,12 +5,12 @@
  * 一个权限点，后面所有权限点的序号会整体后移 —— 已签发的 token 会**静默错位**，
  * 表现是用户突然拥有了别人的权限。这种 bug 不会报错，只会在生产上悄悄放权。
  *
- * 所以 sortKey 一经分配就冻结在这个文件里，`tests/rbac-catalog.test.ts` 比对：
- *   - 已存在的权限点：sortKey 必须与快照一致（改了 → 测试失败）
- *   - 新增的权限点：只能拿比快照最大值更大的号
- *   - 删除的权限点：允许，但它的号作废，不得被复用
+ * 所以本快照是 sortKey 的**权威来源**，catalog.ts 的声明顺序不参与分配：
+ *   - 已存在的权限点：号码原样保留，永不重算
+ *   - 新增的权限点：一律取 max+1，与它在 catalog 里插在哪无关
+ *   - 删除的权限点：号码进 retired，永不复用（否则旧 token 里那一位会指向新权限点）
  *
- * 用法：新增权限点后跑 `npx tsx scripts/rbac/sync-sortkeys.ts`。
+ * 用法：增删权限点后跑 `npx tsx scripts/rbac/sync-sortkeys.ts`。
  * 这是**显式动作** —— 改代码顺手把快照也改了的话，review 时看得见。
  */
 import { writeFileSync, existsSync, readFileSync } from 'node:fs'
@@ -30,38 +30,29 @@ const prev: Snapshot = existsSync(SNAPSHOT_PATH)
   ? (JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf-8')) as Snapshot)
   : { retired: [], keys: {} }
 
-const current = new Map(PERMISSIONS.map((p) => [p.id, p.sortKey]))
+const currentIds = new Set(PERMISSIONS.map((p) => p.id))
 
-const drifted: string[] = []
-for (const [id, oldKey] of Object.entries(prev.keys)) {
-  const nowKey = current.get(id)
-  if (nowKey !== undefined && nowKey !== oldKey) {
-    drifted.push(`${id}: ${oldKey} → ${nowKey}`)
-  }
+// 已存在的权限点：号码原样保留，永不重算。
+const keys: Record<string, number> = {}
+for (const id of currentIds) {
+  if (prev.keys[id] !== undefined) keys[id] = prev.keys[id]
 }
 
-if (drifted.length > 0) {
-  console.error('⛔ 以下权限点的 sortKey 发生了漂移，已签发的 token 会错位：\n')
-  drifted.forEach((d) => console.error('   ' + d))
-  console.error(
-    '\n新增权限点只能追加到所属模块的末尾。请调整 catalog.ts 的声明顺序后重跑。',
-  )
-  process.exit(1)
-}
-
-const removed = Object.keys(prev.keys).filter((id) => !current.has(id))
+// 删除的权限点：号码作废，不得被后来者复用（否则旧 token 里那一位会指向新权限点）。
+const removed = Object.keys(prev.keys).filter((id) => !currentIds.has(id))
 const retired = [...new Set([...prev.retired, ...removed.map((id) => prev.keys[id])])].sort(
   (a, b) => a - b,
 )
 
-const next: Snapshot = {
-  retired,
-  keys: Object.fromEntries(PERMISSIONS.map((p) => [p.id, p.sortKey])),
-}
+// 新增的权限点：一律取 max+1，与它在 catalog 里的位置无关。
+let nextKey = Math.max(-1, ...Object.values(prev.keys), ...retired) + 1
+const added = PERMISSIONS.filter((p) => prev.keys[p.id] === undefined)
+for (const p of added) keys[p.id] = nextKey++
+
+const next: Snapshot = { retired, keys }
 
 writeFileSync(SNAPSHOT_PATH, JSON.stringify(next, null, 2) + '\n', 'utf-8')
 
-const added = PERMISSIONS.filter((p) => prev.keys[p.id] === undefined)
 console.log(`✅ 快照已更新：${PERMISSIONS.length} 个权限点`)
 if (added.length > 0) console.log(`   新增 ${added.length}：${added.map((p) => p.id).join(', ')}`)
 if (removed.length > 0) console.log(`   删除 ${removed.length}：${removed.join(', ')}（序号作废）`)

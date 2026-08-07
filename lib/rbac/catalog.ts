@@ -10,10 +10,19 @@
  * ⛔ 页面上不能新建权限点。原因：权限点必须对应代码里真实存在的判定，
  *    页面上建一个代码不认的权限点毫无作用，反而制造「配了但不生效」的假象。
  *
- * ⛔ sortKey 一经分配不得重排 —— JWT 里的权限位图靠它定位。
- *    sortKey 由本文件的声明顺序自动分配，并由 `lib/rbac/sortkeys.json` 冻结。
- *    新增权限点**只能追加到所属模块的末尾**（见 tests/rbac-catalog.test.ts）。
+ * ⛔ sortKey 一经分配不得改变 —— JWT 里的权限位图靠它定位，序号错位 = 用户凭空
+ *    拿到别人的权限，且不报任何错。所以 **sortKey 的权威来源是
+ *    `lib/rbac/sortkeys.json`，不是本文件的声明顺序**：
+ *      - 已存在的权限点：永远用快照里那个号
+ *      - 新增的权限点：由 `scripts/rbac/sync-sortkeys.ts` 分配 max+1
+ *    因此本文件里的顺序可以随意调整、可以往任何模块中间插动作，都不会影响位图。
+ *    唯一要求是：加了权限点就要跑一次 sync 脚本（漏跑的话测试会红）。
  */
+
+import sortkeys from './sortkeys.json'
+
+/** 冻结的位图序号表 —— 权威来源，见文件头说明 */
+const FROZEN_SORT_KEYS: Record<string, number> = sortkeys.keys
 
 /** 权限点定义 */
 export interface PermissionDef {
@@ -445,24 +454,36 @@ export const PERMISSION_GROUPS: GroupDef[] = [
 ]
 
 /**
- * 展开成扁平权限点列表，sortKey 按声明顺序分配。
- * ⛔ 顺序即位图序号 —— 只能往模块末尾追加，不能插队、不能重排。
+ * 展开成扁平权限点列表。
+ * sortKey 一律从 `sortkeys.json` 取 —— 声明顺序不参与，所以往任何位置插权限点都安全。
+ * 快照里没有的权限点（刚加还没跑 sync）拿到 -1，由 `tests/rbac-catalog.test.ts` 拦下。
  */
 export const PERMISSIONS: readonly PermissionDef[] = PERMISSION_GROUPS.flatMap((g) =>
   g.modules.flatMap((m) =>
-    m.actions.map((a) => ({
-      id: `${m.module}.${a.action}`,
-      module: m.module,
-      action: a.action,
-      labelZh: `${m.labelZh} — ${a.labelZh}`,
-      labelEn: `${m.labelEn} — ${a.labelEn}`,
-      sortKey: -1, // 占位，下面统一赋值
-    })),
+    m.actions.map((a) => {
+      const id = `${m.module}.${a.action}`
+      return {
+        id,
+        module: m.module,
+        action: a.action,
+        labelZh: `${m.labelZh} — ${a.labelZh}`,
+        labelEn: `${m.labelEn} — ${a.labelEn}`,
+        sortKey: FROZEN_SORT_KEYS[id] ?? -1,
+      }
+    }),
   ),
-).map((p, i) => ({ ...p, sortKey: i }))
+)
 
-/** 权限点总数 —— 位图长度 = ceil(TOTAL / 8) 字节 */
+/** 权限点总数 */
 export const PERMISSION_COUNT = PERMISSIONS.length
+
+/**
+ * 位图长度（字节）。注意用的是 **最大 sortKey + 1** 而不是权限点数量 ——
+ * 删除权限点会让序号出现空洞，空洞不能压缩（压缩就等于重排）。
+ */
+export const PERMISSION_BITMAP_BYTES = Math.ceil(
+  (Math.max(-1, ...PERMISSIONS.map((p) => p.sortKey)) + 1) / 8,
+)
 
 /** id → 定义 */
 export const PERMISSION_BY_ID: ReadonlyMap<string, PermissionDef> = new Map(

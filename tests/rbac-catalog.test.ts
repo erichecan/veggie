@@ -6,6 +6,7 @@ import {
   PERMISSIONS,
   PERMISSION_GROUPS,
   PERMISSION_COUNT,
+  PERMISSION_BITMAP_BYTES,
   PERMISSION_BY_ID,
   isKnownPermission,
   expandPermissionPattern,
@@ -25,13 +26,30 @@ test('权限点 id 唯一', () => {
   assert.equal(new Set(ids).size, ids.length, '存在重复的权限点 id')
 })
 
-test('sortKey 从 0 起连续、无重复、无空洞', () => {
+test('sortKey 唯一且非负', () => {
   const keys = PERMISSIONS.map((p) => p.sortKey)
+  assert.equal(new Set(keys).size, keys.length, '两个权限点占了同一个位图位')
+  const unassigned = PERMISSIONS.filter((p) => p.sortKey < 0).map((p) => p.id)
   assert.deepEqual(
-    keys,
-    keys.map((_, i) => i),
-    'sortKey 必须是 0..n-1 的连续序列（位图按它定位）',
+    unassigned,
+    [],
+    '这些权限点还没有位图序号；请跑 npx tsx scripts/rbac/sync-sortkeys.ts',
   )
+})
+
+/**
+ * sortKey 允许有空洞 —— 删掉的权限点其序号进 retired 且永不复用，
+ * 压缩空洞就等于重排，会让已签发的 token 错位。
+ */
+test('sortKey 的空洞只能是已作废的号', () => {
+  const used = new Set(PERMISSIONS.map((p) => p.sortKey))
+  const retired = new Set(snapshot.retired)
+  const max = Math.max(...used)
+  const unexplained: number[] = []
+  for (let i = 0; i <= max; i++) {
+    if (!used.has(i) && !retired.has(i)) unexplained.push(i)
+  }
+  assert.deepEqual(unexplained, [], '这些序号既没被使用也没被作废，说明快照与 catalog 不同步')
 })
 
 test('PERMISSION_COUNT 与实际数量一致', () => {
@@ -41,7 +59,8 @@ test('PERMISSION_COUNT 与实际数量一致', () => {
 /**
  * 这条是整个权限体系的安全绳：sortKey 漂移会让**已签发的 token 静默错位**，
  * 用户凭空获得别人的权限，而且不报任何错。
- * 新增权限点只能追加到所属模块末尾；追加后跑 `npx tsx scripts/rbac/sync-sortkeys.ts`。
+ * sortKey 由快照决定、与声明位置无关，所以正常改 catalog 不会触发这条；
+ * 它拦的是有人手改了 sortkeys.json，或绕过 sync 脚本自行赋号。
  */
 test('已冻结的 sortKey 不得漂移', () => {
   const drifted: string[] = []
@@ -124,9 +143,10 @@ test('expandPermissionPattern 展开模块通配', () => {
  * 位图长度直接决定 JWT 体积。设计上限是「token 增量 < 100 字符」，
  * 权限点涨到 600 个以上就会突破，届时要改设计（分段位图或改回查库）。
  */
-test('权限点总数在位图设计容量内', () => {
+test('位图长度在设计容量内', () => {
   assert.ok(
-    PERMISSION_COUNT <= 600,
-    `权限点 ${PERMISSION_COUNT} 个已超出位图设计容量，需重新评估 JWT 方案`,
+    PERMISSION_BITMAP_BYTES <= 75,
+    `位图已 ${PERMISSION_BITMAP_BYTES} 字节（约 ${Math.ceil((PERMISSION_BITMAP_BYTES / 3) * 4)} 个 base64 字符），` +
+      '超出「token 增量 < 100 字符」的设计上限，需重新评估 JWT 方案',
   )
 })
