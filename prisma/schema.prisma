@@ -154,6 +154,18 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  /// 直属上级。DataScope.TEAM 靠它算下属（只算一层，不做组织架构树）
+  managerId   String?
+  /// 权限版本号。权限变更时 bump，token 里的 pv 落后就强制重新登录
+  permVersion Int    @default(0)
+
+  manager      User?  @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
+  subordinates User[] @relation("UserManager")
+
+  /// 可配置权限体系（20260807）
+  roleLinks        UserRoleLink[]
+  permissionGrants UserPermissionGrant[]
+
   /// 反向关系：该用户作为创建者的订单
   ordersCreated        Order[]         @relation("OrderCreator")
   /// 反向关系：该用户作为业务员的订单
@@ -168,6 +180,7 @@ model User {
   @@index([role])
   @@index([customerId])
   @@index([isActive])
+  @@index([managerId])
 }
 
 model ProductCategory {
@@ -1520,4 +1533,86 @@ model DailyBusinessSnapshot {
   computedAt       DateTime @default(now())
 
   @@index([snapshotDate])
+}
+
+// ============================================================================
+// 可配置权限体系（20260807）
+// 设计：docs/20260807-rbac-configurable-design-and-tasks.md
+//
+// 权限点的唯一真相是 lib/rbac/catalog.ts，下面的 Permission 表只是它的镜像，
+// 由 scripts/rbac/sync-permissions.ts 在部署时同步。
+// enum Role 保留为兼容层（旧 token、旧代码路径），判定真相是 AppRole.permissions。
+// ============================================================================
+
+/// 角色能看到谁的数据。多角色账号取最宽的一档。
+enum DataScope {
+  /// 全部数据
+  ALL
+  /// 自己 + 直属下属（User.managerId 一层）
+  TEAM
+  /// 只有自己名下的
+  OWN
+}
+
+/// 可配置角色。预置的 12 个 isSystem=true，不可删除但权限可改。
+model AppRole {
+  id          String    @id @default(cuid())
+  /// 稳定标识，代码里引用用它（预置角色即原 Role 枚举值的小写形式）
+  code        String    @unique
+  name        String
+  description String?
+  /// 预置角色：不可删除（删了会让平迁基线失效），权限可改
+  isSystem    Boolean   @default(false)
+  dataScope   DataScope @default(ALL)
+  /// 权限点 id 列表，取值必须存在于 lib/rbac/catalog.ts
+  permissions String[]  @default([])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users UserRoleLink[]
+
+  @@index([isSystem])
+}
+
+/// 用户 ↔ 角色（多对多）
+model UserRoleLink {
+  userId String
+  roleId String
+
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role AppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+/// 个人级权限例外。granted=true 加权限，false 扣权限。
+/// 用途：「办公室销售里只有张三能进配送中心」—— 不必为此再造一个角色。
+model UserPermissionGrant {
+  userId       String
+  /// 权限点 id，取值必须存在于 lib/rbac/catalog.ts
+  permissionId String
+  granted      Boolean
+  /// 谁给的、为什么给 —— 权限例外最容易变成无人知晓的后门
+  grantedBy    String?
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionId])
+  @@index([permissionId])
+}
+
+/// lib/rbac/catalog.ts 的数据库镜像，供配置页展示。⛔ 页面不可增删，只能由同步脚本写入。
+model Permission {
+  id      String @id
+  module  String
+  action  String
+  labelZh String
+  labelEn String
+  /// 位图序号，与 lib/rbac/sortkeys.json 冻结值一致
+  sortKey Int
+
+  @@index([module])
 }

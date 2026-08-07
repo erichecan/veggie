@@ -14,5 +14,9 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // 只有生成迁移（prisma migrate diff --from-migrations）时才需要。
+    // 平时不设，行为与之前一致 —— 不会连上任何额外的库。
+    // 用法：起一个一次性的空 PG，SHADOW_DATABASE_URL=... npx prisma migrate diff ...
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
   },
 });
