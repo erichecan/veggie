@@ -45,7 +45,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           include: { product: { select: { standardPrice: true, internalRef: true } } },
         },
         driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
-        salesUser: { select: { id: true, name: true } },
+        salesUser: { select: { id: true, name: true, managerId: true } },
       },
     })
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })

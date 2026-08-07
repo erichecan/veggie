@@ -56,7 +56,9 @@ export async function POST(req: Request) {
       if (!email?.toString().trim()) return NextResponse.json({ error: '邮箱不能为空' }, { status: 400 })
       if (!password || String(password).length < 6) return NextResponse.json({ error: '密码至少 6 位' }, { status: 400 })
 
-      const VALID_ROLES = ['OPERATOR', 'RESTAURANT', 'PICKER', 'SORTER', 'DRIVER', 'BOSS', 'FINANCE', 'WAREHOUSE', 'SALES']
+      // ⛔ 与 prisma enum Role 一致。这份白名单此前少了 EXTERNAL_SALES / DISPATCH / OTHER
+      //    —— 8/6 加了角色但没回来更新，管理员因此建不出外部销售与调度账号。
+      const VALID_ROLES = ['OPERATOR', 'RESTAURANT', 'PICKER', 'SORTER', 'DRIVER', 'BOSS', 'FINANCE', 'WAREHOUSE', 'SALES', 'EXTERNAL_SALES', 'DISPATCH', 'OTHER']
 
       // 入参可以传 role (单角色，旧客户端) 或 roles[] (新多角色)，至少有一个。
       // role 当作主角色；roles[] 至少包含 role。
@@ -85,6 +87,19 @@ export async function POST(req: Request) {
         },
         select: { id: true, email: true, name: true, role: true, roles: true, isActive: true, createdAt: true, updatedAt: true },
       })
+
+      // ⛔ 必须建 UserRoleLink：权限判定的真相是它，不是 role/roles[]。
+      // 漏了的话新账号登录后权限集为空 —— 人建出来了，却什么都点不动。
+      const appRoles = await prisma.appRole.findMany({
+        where: { code: { in: rolesArr.map((r) => r.toLowerCase()) } },
+        select: { id: true },
+      })
+      if (appRoles.length > 0) {
+        await prisma.userRoleLink.createMany({
+          data: appRoles.map((r) => ({ userId: user.id, roleId: r.id })),
+          skipDuplicates: true,
+        })
+      }
 
       await writeLog({
         userId: me.userId, userEmail: me.email, userName: me.name,

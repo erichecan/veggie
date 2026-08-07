@@ -8,22 +8,22 @@
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { salesRowScope, withRowScope, isRowVisible } from '../lib/row-scope'
+import { salesRowScope, withRowScope, isRowVisible, scopeCondition } from '../lib/row-scope'
 
 const ME = 'user-me'
 const OTHER = 'user-other'
 
 describe('谁被隔离', () => {
   test('EXTERNAL_SALES 无条件隔离 —— 兼任别的角色也照隔', () => {
-    assert.deepEqual(salesRowScope({ userId: ME, roles: ['EXTERNAL_SALES'] }), { salesUserId: ME })
-    assert.deepEqual(salesRowScope({ userId: ME, roles: ['EXTERNAL_SALES', 'OPERATOR'] }), { salesUserId: ME })
-    assert.deepEqual(salesRowScope({ userId: ME, roles: ['BOSS', 'EXTERNAL_SALES'] }), { salesUserId: ME })
+    assert.deepEqual(salesRowScope({ userId: ME, roles: ['EXTERNAL_SALES'] }), { kind: 'own', userId: ME })
+    assert.deepEqual(salesRowScope({ userId: ME, roles: ['EXTERNAL_SALES', 'OPERATOR'] }), { kind: 'own', userId: ME })
+    assert.deepEqual(salesRowScope({ userId: ME, roles: ['BOSS', 'EXTERNAL_SALES'] }), { kind: 'own', userId: ME })
   })
 
   test('SALES 兼任 OPERATOR/BOSS 时不隔离 —— 这是决策，不是漏判', () => {
     // 生产上 19 个 SALES 全部兼任 OPERATOR，业务上就是要看全量。
     // 改成"只要有 SALES 就隔离"会让这 19 个人第二天打不开客户列表。
-    assert.deepEqual(salesRowScope({ userId: ME, roles: ['SALES'] }), { salesUserId: ME })
+    assert.deepEqual(salesRowScope({ userId: ME, roles: ['SALES'] }), { kind: 'own', userId: ME })
     assert.equal(salesRowScope({ userId: ME, roles: ['SALES', 'OPERATOR'] }), null)
     assert.equal(salesRowScope({ userId: ME, roles: ['SALES', 'BOSS'] }), null)
   })
@@ -35,7 +35,7 @@ describe('谁被隔离', () => {
   })
 
   test('roles[] 为空时回退单 role（与 effectiveRoles 同口径）', () => {
-    assert.deepEqual(salesRowScope({ userId: ME, role: 'EXTERNAL_SALES', roles: [] }), { salesUserId: ME })
+    assert.deepEqual(salesRowScope({ userId: ME, role: 'EXTERNAL_SALES', roles: [] }), { kind: 'own', userId: ME })
     assert.equal(salesRowScope({ userId: ME, role: 'OPERATOR', roles: [] }), null)
   })
 
@@ -46,7 +46,7 @@ describe('谁被隔离', () => {
 })
 
 describe('条件塞进 where 之后不能被丢掉', () => {
-  const scope = { salesUserId: ME }
+  const scope = { kind: 'own' as const, userId: ME }
 
   test('空 where 也要带上条件（20260802 就是这里失效的）', () => {
     assert.deepEqual(withRowScope({}, scope), { AND: [{ salesUserId: ME }] })
@@ -77,7 +77,7 @@ describe('条件塞进 where 之后不能被丢掉', () => {
 })
 
 describe('单条记录可见性（详情/编辑接口）', () => {
-  const scope = { salesUserId: ME }
+  const scope = { kind: 'own' as const, userId: ME }
   test('自己的可见，别人的不可见', () => {
     assert.equal(isRowVisible({ salesUserId: ME }, scope), true)
     assert.equal(isRowVisible({ salesUserId: OTHER }, scope), false)
@@ -89,5 +89,55 @@ describe('单条记录可见性（详情/编辑接口）', () => {
   test('不隔离时一律可见', () => {
     assert.equal(isRowVisible({ salesUserId: OTHER }, null), true)
     assert.equal(isRowVisible(null, null), true)
+  })
+})
+
+// ── 数据范围三级（20260807 T8）───────────────────────────────────────────────
+
+describe('dataScope 三级', () => {
+  const BOSS_ID = 'u-manager'
+
+  test('token 带 ds 时按它判，不再看角色名字', () => {
+    assert.equal(salesRowScope({ userId: ME, ds: 'ALL', roles: ['EXTERNAL_SALES'] }), null,
+      'ds=ALL 应当不隔离 —— 范围由角色配置决定，不是按角色名字硬编码')
+    assert.deepEqual(salesRowScope({ userId: ME, ds: 'OWN', roles: ['OPERATOR'] }),
+      { kind: 'own', userId: ME })
+    assert.deepEqual(salesRowScope({ userId: ME, ds: 'TEAM', roles: [] }),
+      { kind: 'team', userId: ME })
+  })
+
+  test('⛔ 旧 token（无 ds）回退硬编码，行为与改造前一字不差', () => {
+    // 少了这条，部署后没重新登录的外部销售会突然看到全量客户
+    assert.deepEqual(salesRowScope({ userId: ME, roles: ['EXTERNAL_SALES', 'OPERATOR'] }),
+      { kind: 'own', userId: ME })
+    assert.equal(salesRowScope({ userId: ME, roles: ['SALES', 'OPERATOR'] }), null)
+    assert.deepEqual(salesRowScope({ userId: ME, roles: ['SALES'] }), { kind: 'own', userId: ME })
+  })
+
+  test('TEAM 用关系过滤，不额外查库', () => {
+    const cond = scopeCondition({ kind: 'team', userId: BOSS_ID })
+    assert.deepEqual(cond, {
+      OR: [{ salesUserId: BOSS_ID }, { salesUser: { managerId: BOSS_ID } }],
+    })
+  })
+
+  test('TEAM 的 where 条件同样进 AND，绕不过去', () => {
+    const w = withRowScope({ salesUserId: OTHER }, { kind: 'team', userId: BOSS_ID })
+    assert.equal(w.salesUserId, OTHER)
+    assert.deepEqual(w.AND, [{ OR: [{ salesUserId: BOSS_ID }, { salesUser: { managerId: BOSS_ID } }] }])
+  })
+
+  test('TEAM 下：自己的、下属的可见，别人的不可见', () => {
+    const scope = { kind: 'team' as const, userId: BOSS_ID }
+    assert.equal(isRowVisible({ salesUserId: BOSS_ID }, scope), true, '自己的')
+    assert.equal(isRowVisible({ salesUserId: ME, salesUser: { managerId: BOSS_ID } }, scope), true, '下属的')
+    assert.equal(isRowVisible({ salesUserId: OTHER, salesUser: { managerId: 'someone-else' } }, scope), false)
+    assert.equal(isRowVisible({ salesUserId: OTHER, salesUser: { managerId: null } }, scope), false)
+  })
+
+  test('⛔ TEAM 下调用方忘了 select managerId → 保守拒绝，不是放行', () => {
+    // 宁可少给，也不能因为字段没取就把别人的数据放出去
+    const scope = { kind: 'team' as const, userId: BOSS_ID }
+    assert.equal(isRowVisible({ salesUserId: OTHER }, scope), false)
   })
 })

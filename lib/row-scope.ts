@@ -18,7 +18,15 @@ export interface ScopeCaller {
   userId: string
   role?: string | null
   roles?: string[] | null
+  /** 数据范围（token 的 ds 字段）。有它就按它判，没有则回退下面的角色硬编码 */
+  ds?: string | null
 }
+
+/** 行级范围。`null` 表示不隔离（看全部） */
+export type RowScope =
+  | { kind: 'own'; userId: string }
+  | { kind: 'team'; userId: string }
+  | null
 
 /** 与 lib/auth.ts effectiveRoles 同口径：roles[] 优先，空则回退单 role */
 function rolesOf(caller: ScopeCaller): string[] {
@@ -41,14 +49,40 @@ function rolesOf(caller: ScopeCaller): string[] {
  *   业务上他们就是要看全量。改成"只要有 SALES 就隔离"会让这 19 个人第二天
  *   打不开客户列表。真要让隔离生效，得先在业务上把兼任拆开（台账 T7 里写了）。
  */
-export function salesRowScope(caller: ScopeCaller | null | undefined): { salesUserId: string } | null {
+export function salesRowScope(caller: ScopeCaller | null | undefined): RowScope {
   if (!caller?.userId) return null
+
+  // 新 token：范围由角色配置决定，不再按角色名字硬编码。
+  // 多角色账号的范围在登录时已经取过最宽（见 lib/rbac/resolve.ts），这里直接用。
+  if (caller.ds === 'ALL') return null
+  if (caller.ds === 'OWN') return { kind: 'own', userId: caller.userId }
+  if (caller.ds === 'TEAM') return { kind: 'team', userId: caller.userId }
+
+  // 旧 token（没有 ds）：回退到改造前的硬编码判断，行为一个字不变。
+  // 可在全部旧 token 过期后删掉（2026-08-14）。
   const roles = rolesOf(caller)
-  if (roles.includes('EXTERNAL_SALES')) return { salesUserId: caller.userId }
+  if (roles.includes('EXTERNAL_SALES')) return { kind: 'own', userId: caller.userId }
   if (roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')) {
-    return { salesUserId: caller.userId }
+    return { kind: 'own', userId: caller.userId }
   }
   return null
+}
+
+/**
+ * 把范围翻成 Prisma where 片段。
+ *
+ * TEAM 用**关系过滤**而不是先查一遍下属 id 再 `in` —— 后者要多打一次库，
+ * 而且下属列表变化时会有时间窗。关系过滤由数据库一次算完。
+ */
+export function scopeCondition(scope: RowScope): Record<string, unknown> | null {
+  if (!scope) return null
+  if (scope.kind === 'own') return { salesUserId: scope.userId }
+  return {
+    OR: [
+      { salesUserId: scope.userId },
+      { salesUser: { managerId: scope.userId } },
+    ],
+  }
 }
 
 /**
@@ -60,11 +94,12 @@ export function salesRowScope(caller: ScopeCaller | null | undefined): { salesUs
  */
 export function withRowScope(
   where: Record<string, unknown>,
-  scope: { salesUserId: string } | null,
+  scope: RowScope,
 ): Record<string, unknown> {
-  if (!scope) return where
+  const cond = scopeCondition(scope)
+  if (!cond) return where
   const existing = Array.isArray(where.AND) ? where.AND as unknown[] : where.AND ? [where.AND] : []
-  return { ...where, AND: [...existing, scope] }
+  return { ...where, AND: [...existing, cond] }
 }
 
 /**
@@ -72,10 +107,16 @@ export function withRowScope(
  * 拿到 id 依然能逐条读走（id 在打印单、CSV 导出里到处都是）。
  */
 export function isRowVisible(
-  record: { salesUserId?: string | null } | null | undefined,
-  scope: { salesUserId: string } | null,
+  record: { salesUserId?: string | null; salesUser?: { managerId?: string | null } | null } | null | undefined,
+  scope: RowScope,
 ): boolean {
   if (!scope) return true
   if (!record) return false
-  return record.salesUserId === scope.salesUserId
+  if (record.salesUserId === scope.userId) return true
+  if (scope.kind === 'own') return false
+
+  // TEAM：还要看这单的业务员是不是我的下属。
+  // ⛔ 调用方必须把 `salesUser: { select: { managerId: true } }` 一起 select 出来，
+  //    否则这里只能保守拒绝 —— 宁可少给，也不能因为字段没取就放行别人的数据。
+  return record.salesUser?.managerId === scope.userId
 }

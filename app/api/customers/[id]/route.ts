@@ -19,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const customer = await prisma.customer.findUnique({
       where: { id },
-      include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
+      include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true, managerId: true } } },
     })
     if (!customer) return NextResponse.json({ error: '客户不存在' }, { status: 404 })
     // 行级隔离：列表挡住了但详情没挡的话，拿到 id 依然能逐条读走
@@ -89,7 +89,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const customer = await prisma.customer.update({
         where: { id },
         data: updateData as Parameters<typeof prisma.customer.update>[0]['data'],
-        include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true } } },
+        include: { specialPrices: true, pricelists: { orderBy: { sequence: 'asc' } }, salesUser: { select: { id: true, name: true, managerId: true } } },
       })
       const beforeWithPricelistIds = { ...before, pricelistIds: before.pricelists.map(p => p.pricelistId) } as unknown as Record<string, unknown>
       const afterWithPricelistIds = { ...customer, pricelistIds: customer.pricelists.map(p => p.pricelistId) } as unknown as Record<string, unknown>
