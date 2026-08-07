@@ -43,7 +43,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/stock-takes]', error)
       return NextResponse.json({ error: '获取盘点单失败' }, { status: 500 })
     }
-  }, STOCK_TAKE_ROLES)
+  }, { require: 'stock.take.read' })
 }
 
 export async function POST(req: Request) {
@@ -108,5 +108,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/stock-takes]', error)
       return NextResponse.json({ error: '创建盘点单失败' }, { status: 500 })
     }
-  }, STOCK_TAKE_ROLES)
+  }, { require: 'stock.take.create' })
 }

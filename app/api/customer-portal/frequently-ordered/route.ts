@@ -59,5 +59,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/customer-portal/frequently-ordered]', error)
       return NextResponse.json({ error: '获取常购清单失败' }, { status: 500 })
     }
-  }, ['RESTAURANT'])
+  }, { require: 'portal.self.access' })
 }

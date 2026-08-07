@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { scanApiHandlers } from '../lib/route-gate-scan'
-import { buildReachabilityMatrix, PROBE_ROLES, type Reach } from '../lib/role-reachability'
+import { PROBE_ROLES, type Reach } from '../lib/role-reachability'
 import { isPublicApiRoute } from '../lib/public-routes'
 import { isKnownPermission } from '../lib/rbac/catalog'
 import {
@@ -46,11 +46,17 @@ test('每个 API handler 都能命中一条规则', () => {
  * 而这种改变不会有任何报错 —— 只会在生产上表现为「某个岗位突然打不开页面」
  * 或者更糟：「某个岗位突然能看到不该看的数据」。
  *
- * 这条测试逐格比对新旧两套体系算出的可达性矩阵，任何一格不同都会失败。
- * 真要改权限，正确做法是改完 seed 后**显式**更新基线，让 review 看得见。
+ * 这条测试逐格比对新体系与**冻结基线**，任何一格不同都会失败。
+ * 真要改权限，正确做法是改完 seed 后显式更新基线文件，让 review 看得见。
+ *
+ * ⛔ 基线必须是文件（lib/rbac/parity-baseline.json），不能实时算旧体系：
+ * T5 会把 150 处 allowedRoles 拆掉，实时计算的「旧体系」会跟着一起变松 ——
+ * 那样这条测试就成了拿改动后的自己和改动后的自己比，永远绿，什么都守不住。
  */
-test('新旧体系的可达性矩阵逐格相同（平迁零 diff）', () => {
-  const oldMatrix = buildReachabilityMatrix()
+test('新体系的可达性与冻结基线逐格相同（平迁零 diff）', () => {
+  const oldMatrix = JSON.parse(
+    readFileSync('lib/rbac/parity-baseline.json', 'utf-8'),
+  ) as Record<string, Record<string, Reach>>
   const diffs: string[] = []
 
   for (const h of scanApiHandlers()) {

@@ -134,7 +134,7 @@ export function __resetStats(): void {
 export async function withCachedAuth(
   req: Request,
   handler: (user: { role?: string | null; roles?: string[] | null }) => Promise<Response>,
-  allowedRoles?: string[],
+  gate?: import('@/lib/auth').AuthGate,
 ): Promise<Response> {
   // 动态引入避免 lib/auth ↔ lib/analytics/cache 循环依赖
   const { withAuth, effectiveRoles } = await import('@/lib/auth')
@@ -164,5 +164,5 @@ export async function withCachedAuth(
     const headers = new Headers(res.headers)
     headers.set('x-cache', 'MISS')
     return new Response(body, { status: 200, headers })
-  }, allowedRoles)
+  }, gate)
 }

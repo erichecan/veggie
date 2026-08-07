@@ -36,7 +36,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[GET /api/stock-takes/:id]', error)
       return NextResponse.json({ error: '获取盘点单失败' }, { status: 500 })
     }
-  }, STOCK_TAKE_ROLES)
+  }, { require: 'stock.take.read' })
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -156,5 +156,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       console.error('[PATCH /api/stock-takes/:id]', error)
       return NextResponse.json({ error: '操作失败' }, { status: 500 })
     }
-  }, STOCK_TAKE_ROLES)
+  }, { require: 'stock.take.update' })
 }

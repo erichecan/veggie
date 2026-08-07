@@ -63,5 +63,5 @@ export async function GET(req: Request) {
 
     const csv = buildCsv(ORDER_SUMMARY_HEADERS, buildOrderSummaryRows(orders))
     return new NextResponse(csv, { headers: csvResponseHeaders(`订单汇总-${rangeTag}.csv`) })
-  }, ALLOWED_ROLES)
+  }, { require: 'print.center.access' })
 }

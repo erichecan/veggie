@@ -102,5 +102,5 @@ export async function POST(req: Request) {
       console.error('[GDPR delete]', error)
       return NextResponse.json({ error: '删除失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.customer.delete_gdpr' })
 }

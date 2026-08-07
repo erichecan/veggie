@@ -8,7 +8,7 @@ import { WavePickLockedError } from '@/lib/wave-pick-lock'
 const CONFIG_WRITERS = ['OPERATOR', 'BOSS']
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  return withAuth(req, () => updateSlot(req, ctx), CONFIG_WRITERS)
+  return withAuth(req, () => updateSlot(req, ctx), { require: 'dispatch.driver_slot.manage' })
 }
 
 async function updateSlot(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -77,7 +77,7 @@ async function updateSlot(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  return withAuth(req, () => archiveSlot(ctx), CONFIG_WRITERS)
+  return withAuth(req, () => archiveSlot(ctx), { require: 'dispatch.driver_slot.manage' })
 }
 
 async function archiveSlot({ params }: { params: Promise<{ id: string }> }) {

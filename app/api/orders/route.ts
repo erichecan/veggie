@@ -449,5 +449,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/orders]', error)
       return NextResponse.json({ error: '创建订单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES'])
+  }, { require: 'sales.order.create' })
 }

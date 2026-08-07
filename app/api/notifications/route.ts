@@ -96,7 +96,7 @@ export async function POST(req: Request) {
       console.error('[POST /api/notifications]', error)
       return NextResponse.json({ error: '创建通知失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'system.notification.create' })
 }
 
 /**

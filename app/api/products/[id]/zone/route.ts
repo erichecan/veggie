@@ -68,5 +68,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       console.error('[PATCH /api/products/[id]/zone]', error)
       return NextResponse.json({ error: '更新商品温区失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: ['master.product.update', 'stock.zone.manage'] })
 }

@@ -82,5 +82,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/trips/[id]/signature-correction]', error)
       return NextResponse.json({ error: '签收更正失败' }, { status: 500 })
     }
-  }, ALLOWED_ROLES)
+  }, { require: 'dispatch.trip.correct_signature' })
 }

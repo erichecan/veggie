@@ -28,7 +28,7 @@ export async function GET(
       console.error('[GET /api/statements/[id]]', error)
       return NextResponse.json({ error: '获取对账单详情失败' }, { status: 500 })
     }
-  }, ['FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.statement.read' })
 }
 
 export async function PUT(
@@ -85,7 +85,7 @@ export async function PUT(
       console.error('[PUT /api/statements/[id]]', error)
       return NextResponse.json({ error: '更新对账单失败' }, { status: 500 })
     }
-  }, ['FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.statement.update' })
 }
 
 export async function DELETE(
@@ -120,5 +120,5 @@ export async function DELETE(
       console.error('[DELETE /api/statements/[id]]', error)
       return NextResponse.json({ error: '删除对账单失败' }, { status: 500 })
     }
-  }, ['FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.statement.delete' })
 }

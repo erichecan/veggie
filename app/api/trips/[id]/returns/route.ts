@@ -184,7 +184,7 @@ export async function POST(
       console.error('[POST /api/trips/[id]/returns]', error)
       return NextResponse.json({ error: '提交退货失败' }, { status: 500 })
     }
-  }, ['DRIVER', 'OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'dispatch.trip.returns' })
 }
 
 /**
@@ -446,7 +446,7 @@ export async function PUT(
       console.error('[PUT /api/trips/[id]/returns]', error)
       return NextResponse.json({ error: '退货审核失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'dispatch.trip.returns' })
 }
 
 /** P1-4: 计算退款金额（精确小数） */

@@ -118,5 +118,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/ar-aging]', error)
       return NextResponse.json({ error: '获取应收账龄失败' }, { status: 500 })
     }
-  }, ['BOSS', 'FINANCE', 'OPERATOR']) // TODO: 临时放开给 OPERATOR 看数据分析中心，权限模型定下来后收紧
+  }, { require: 'analytics.finance.read' }) // TODO: 临时放开给 OPERATOR 看数据分析中心，权限模型定下来后收紧
 }

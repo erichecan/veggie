@@ -115,5 +115,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/vendor-bills]', error)
       return NextResponse.json({ error: '创建账单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'FINANCE', 'BOSS'])
+  }, { require: 'finance.vendor_bill.create' })
 }

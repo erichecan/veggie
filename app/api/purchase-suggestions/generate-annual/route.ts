@@ -22,5 +22,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/purchase-suggestions/generate-annual]', error)
       return NextResponse.json({ error: '生成年度采购计划失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'purchase.plan.manage' })
 }

@@ -147,7 +147,7 @@ export async function PUT(
       console.error('[PUT /api/credit-notes/[id]]', error)
       return NextResponse.json({ error: '更新退款单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'FINANCE'])
+  }, { require: 'finance.credit_note.update' })
 }
 
 export async function DELETE(
@@ -176,5 +176,5 @@ export async function DELETE(
       console.error('[DELETE /api/credit-notes/[id]]', error)
       return NextResponse.json({ error: '删除退款单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'finance.credit_note.delete' })
 }

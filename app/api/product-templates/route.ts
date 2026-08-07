@@ -226,5 +226,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/product-templates]', error)
       return NextResponse.json({ error: '创建商品模板失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.product_template.create' })
 }

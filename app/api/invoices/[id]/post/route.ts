@@ -55,5 +55,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/invoices/:id/post]', error)
       return NextResponse.json({ error: '发票过账失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'FINANCE', 'BOSS'])
+  }, { require: 'finance.invoice.pay' })
 }

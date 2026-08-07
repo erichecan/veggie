@@ -27,5 +27,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/demo/reset]', error)
       return NextResponse.json({ error: '重置失败' }, { status: 500 })
     }
-  }, ['OPERATOR'])
+  }, { require: 'system.settings.manage' })
 }

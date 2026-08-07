@@ -136,5 +136,5 @@ export async function POST(
       console.error('[POST /api/purchase-suggestions/[id]/convert]', error)
       return NextResponse.json({ error: '转采购单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'purchase.suggestion.manage' })
 }

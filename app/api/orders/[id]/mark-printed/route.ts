@@ -46,5 +46,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/orders/[id]/mark-printed]', error)
       return NextResponse.json({ error: '记录打印状态失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
+  }, { require: 'sales.order.mark_printed' })
 }

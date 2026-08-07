@@ -156,5 +156,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/margin]', error)
       return NextResponse.json({ error: '获取毛利分析失败' }, { status: 500 })
     }
-  }, ['BOSS', 'OPERATOR', 'FINANCE'])
+  }, { require: 'analytics.margin.read' })
 }

@@ -140,5 +140,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/procurement]', error)
       return NextResponse.json({ error: '获取采购分析失败' }, { status: 500 })
     }
-  }, ['BOSS', 'OPERATOR'])
+  }, { require: 'analytics.purchase_detail.read' })
 }

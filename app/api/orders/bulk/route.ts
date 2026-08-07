@@ -344,5 +344,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/orders/bulk]', error)
       return NextResponse.json({ error: '批量操作失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'FINANCE'])
+  }, { require: 'sales.order.bulk_import' })
 }

@@ -12,5 +12,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/zones]', error)
       return NextResponse.json({ error: '获取温区列表失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: 'stock.zone.read' })
 }

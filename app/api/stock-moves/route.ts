@@ -122,5 +122,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/stock-moves]', error)
       return NextResponse.json({ error: '创建库存记录失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'stock.move.create' })
 }

@@ -35,5 +35,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/finance/historical-debt]', error)
       return NextResponse.json({ error: '获取历史欠款失败' }, { status: 500 })
     }
-  }, ['FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.account.read' })
 }

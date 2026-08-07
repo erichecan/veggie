@@ -19,5 +19,5 @@ export async function GET(req: Request) {
       const isEn = new URL(req.url).searchParams.get('locale') === 'en'
       return NextResponse.json({ error: isEn ? 'Failed to load inventory overview' : '获取库存总览失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: 'analytics.inventory.read' })
 }

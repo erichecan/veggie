@@ -32,7 +32,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       console.error('[GET /api/vendor-bills/[id]]', error)
       return NextResponse.json({ error: '获取账单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'FINANCE', 'BOSS'])
+  }, { require: 'finance.vendor_bill.read' })
 }
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -129,5 +129,5 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       console.error('[PUT /api/vendor-bills/[id]]', error)
       return NextResponse.json({ error: '更新账单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'FINANCE', 'BOSS'])
+  }, { require: 'finance.vendor_bill.update' })
 }

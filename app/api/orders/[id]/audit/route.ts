@@ -56,5 +56,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/orders/[id]/audit]', error)
       return NextResponse.json({ error: '写入失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES', 'FINANCE'])
+  }, { require: 'sales.order.write_audit' })
 }

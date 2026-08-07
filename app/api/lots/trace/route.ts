@@ -115,5 +115,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/lots/trace]', error)
       return NextResponse.json({ error: '获取批次追溯失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: 'stock.lot.read' })
 }

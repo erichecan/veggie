@@ -262,5 +262,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/goods-receipts]', error)
       return NextResponse.json({ error: '收货失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: 'stock.receipt.create' })
 }

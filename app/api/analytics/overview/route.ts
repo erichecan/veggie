@@ -152,5 +152,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/overview]', error)
       return NextResponse.json({ error: '获取经营总览失败' }, { status: 500 })
     }
-  }, ['BOSS', 'OPERATOR', 'FINANCE'])
+  }, { require: 'analytics.sales.read' })
 }

@@ -30,7 +30,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/snapshots]', error)
       return NextResponse.json({ error: '获取快照失败' }, { status: 500 })
     }
-  }, ['BOSS', 'OPERATOR', 'FINANCE'])
+  }, { require: 'analytics.report.read' })
 }
 
 export async function POST(req: Request) {
@@ -59,5 +59,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/analytics/snapshots]', error)
       return NextResponse.json({ error: '重算快照失败' }, { status: 500 })
     }
-  }, ['BOSS', 'OPERATOR', 'FINANCE'])
+  }, { require: 'analytics.report.manage' })
 }

@@ -71,5 +71,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/shortage]', error)
       return NextResponse.json({ error: '获取缺货分析失败' }, { status: 500 })
     }
-  }, ['BOSS', 'OPERATOR'])
+  }, { require: 'analytics.inventory.read' })
 }

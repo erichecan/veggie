@@ -129,7 +129,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/customer-portal/orders]', error)
       return NextResponse.json({ error: '获取订单列表失败' }, { status: 500 })
     }
-  }, ['RESTAURANT'])
+  }, { require: 'portal.self.access' })
 }
 
 /**
@@ -313,5 +313,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/customer-portal/orders]', error)
       return NextResponse.json({ error: '下单失败' }, { status: 500 })
     }
-  }, ['RESTAURANT'])
+  }, { require: 'portal.self.access' })
 }

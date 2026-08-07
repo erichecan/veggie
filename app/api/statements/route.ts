@@ -41,7 +41,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/statements]', error)
       return NextResponse.json({ error: '获取对账单列表失败' }, { status: 500 })
     }
-  }, ['FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.statement.read' })
 }
 
 /**
@@ -155,5 +155,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/statements]', error)
       return NextResponse.json({ error: '创建对账单失败' }, { status: 500 })
     }
-  }, ['FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.statement.create' })
 }

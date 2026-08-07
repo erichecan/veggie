@@ -34,5 +34,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/uom-categories]', error)
       return NextResponse.json({ error: '创建失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.uom_category.create' })
 }

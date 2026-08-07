@@ -78,5 +78,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/workbench]', error)
       return NextResponse.json({ error: '获取工作台数据失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'sales.workbench.read' })
 }

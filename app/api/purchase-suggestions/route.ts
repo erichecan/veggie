@@ -180,5 +180,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/purchase-suggestions]', error)
       return NextResponse.json({ error: '生成采购建议失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'purchase.suggestion.manage' })
 }

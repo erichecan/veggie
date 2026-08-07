@@ -37,7 +37,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/payments]', error)
       return NextResponse.json({ error: '获取收款记录失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'FINANCE', 'BOSS'])
+  }, { require: 'finance.payment.read' })
 }
 
 export async function POST(req: Request) {
@@ -120,5 +120,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/payments]', error)
       return NextResponse.json({ error: '登记收款失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'FINANCE', 'BOSS'])
+  }, { require: 'finance.payment.create' })
 }

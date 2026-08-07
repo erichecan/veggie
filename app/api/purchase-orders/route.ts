@@ -103,5 +103,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/purchase-orders]', error)
       return NextResponse.json({ error: '创建采购订单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'purchase.order.create' })
 }

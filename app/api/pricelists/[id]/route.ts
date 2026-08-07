@@ -185,7 +185,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/pricelists/[id]]', error)
       return NextResponse.json({ error: '更新价格表失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.pricelist.update' })
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -211,5 +211,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/pricelists/[id]]', error)
       return NextResponse.json({ error: '删除价格表失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.pricelist.delete' })
 }

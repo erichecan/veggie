@@ -36,5 +36,5 @@ export async function GET(
       dimensions: Object.values(registry.dimensions),
       measures: Object.values(registry.measures),
     })
-  }, REPORT_ROLES)
+  }, { require: 'analytics.report.read' })
 }

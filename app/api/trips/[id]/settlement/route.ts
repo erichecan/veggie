@@ -74,7 +74,7 @@ export async function GET(
       console.error('[GET /api/trips/[id]/settlement]', error)
       return NextResponse.json({ error: '获取交账详情失败' }, { status: 500 })
     }
-  }, ['DRIVER', 'FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.settlement.read' })
 }
 
 /**
@@ -143,7 +143,7 @@ export async function POST(
       console.error('[POST /api/trips/[id]/settlement]', error)
       return NextResponse.json({ error: '提交交账失败' }, { status: 500 })
     }
-  }, ['DRIVER', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.settlement.create' })
 }
 
 /**
@@ -222,5 +222,5 @@ export async function PUT(
       console.error('[PUT /api/trips/[id]/settlement]', error)
       return NextResponse.json({ error: '确认交账失败' }, { status: 500 })
     }
-  }, ['FINANCE', 'OPERATOR', 'BOSS'])
+  }, { require: 'finance.settlement.confirm' })
 }

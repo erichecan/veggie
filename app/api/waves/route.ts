@@ -146,5 +146,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/waves]', error)
       return NextResponse.json({ error: '创建波次失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
+  }, { require: 'dispatch.wave.create' })
 }

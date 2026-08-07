@@ -134,5 +134,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/customer-portal/products]', error)
       return NextResponse.json({ error: '获取商品目录失败' }, { status: 500 })
     }
-  }, ['RESTAURANT'])
+  }, { require: 'portal.self.access' })
 }

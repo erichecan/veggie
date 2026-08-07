@@ -57,7 +57,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/products/[id]]', error)
       return NextResponse.json({ error: '更新商品失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.product.update' })
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -73,5 +73,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/products/[id]]', error)
       return NextResponse.json({ error: '删除商品失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.product.delete' })
 }

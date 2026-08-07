@@ -151,5 +151,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/purchase-orders/pdf-extract]', error)
       return NextResponse.json({ error: 'PDF 识别失败，请稍后重试' }, { status: 500 })
     }
-  }, ALLOWED_ROLES)
+  }, { require: 'purchase.order.create' })
 }

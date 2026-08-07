@@ -881,7 +881,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/orders/[id]]', error)
       return NextResponse.json({ error: '更新订单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES'])
+  }, { require: 'sales.order.update' })
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -907,5 +907,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/orders/[id]]', error)
       return NextResponse.json({ error: '删除订单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'sales.order.delete' })
 }

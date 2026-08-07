@@ -44,7 +44,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/loss-dashboard]', error)
       return NextResponse.json({ error: '获取损耗与退货仪表盘数据失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: 'analytics.inventory.read' })
 }
 
 function clampInt(raw: string | null, fallback: number, min: number, max: number): number {

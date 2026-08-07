@@ -12,7 +12,8 @@ import { readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export type Gate =
-  | { kind: 'roles'; roles: string[] }      // withAuth(..., [...]) 或 withAuth(..., ROLES)
+  | { kind: 'roles'; roles: string[] }      // withAuth(..., [...]) 或 withAuth(..., ROLES)  ← 旧写法
+  | { kind: 'permission'; permissions: string[] }  // withAuth(..., { require: '…' })        ← 新写法
   | { kind: 'authOnly' }                    // 有 withAuth/requireAuth，但没有角色限制
   | { kind: 'cronSecret' }                  // 走 CRON_SECRET 共享密钥（定时任务，不走 JWT）
   | { kind: 'none' }                        // 连鉴权包装都没有（只靠 middleware 兜底）
@@ -87,6 +88,16 @@ function splitArgs(inner: string): string[] {
   return out
 }
 
+/**
+ * 从第三个参数解析权限点：`{ require: 'x.y.z' }` 或 `{ require: ['a','b'] }`。
+ * 这是 20260807 起的新写法，取代按角色写死的 allowedRoles。
+ */
+function parsePermissions(arg: string): string[] | null {
+  const m = arg.match(/\brequire\s*:\s*(\[[^\]]*\]|'[^']*'|"[^"]*")/)
+  if (!m) return null
+  return [...m[1].matchAll(/'([^']+)'|"([^"]+)"/g)].map((x) => x[1] ?? x[2])
+}
+
 /** 从第三个参数解析角色：可能是内联数组，也可能是本文件里的具名常量 */
 function parseRoles(arg: string, src: string): string[] | null {
   const inline = arg.match(/\[([^\]]*)\]/)
@@ -127,7 +138,13 @@ export function scanApiHandlers(dir = 'app/api'): HandlerInfo[] {
         const open = src.indexOf('(', abs)
         const close = matchParen(src, open)
         const args = close === -1 ? [] : splitArgs(src.slice(open + 1, close))
-        const roles = args.length >= 3 ? parseRoles(args.slice(2).join(','), src) : null
+        const third = args.length >= 3 ? args.slice(2).join(',') : null
+        const perms = third ? parsePermissions(third) : null
+        if (perms && perms.length) {
+          out.push({ route, verb, file: p, gate: { kind: 'permission', permissions: perms } })
+          continue
+        }
+        const roles = third ? parseRoles(third, src) : null
         out.push({ route, verb, file: p, gate: roles && roles.length ? { kind: 'roles', roles } : { kind: 'authOnly' } })
       }
     }

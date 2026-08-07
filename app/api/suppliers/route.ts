@@ -102,5 +102,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/suppliers]', error)
       return NextResponse.json({ error: '保存供应商失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.supplier.create' })
 }

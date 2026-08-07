@@ -206,5 +206,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/invoices]', error)
       return NextResponse.json({ error: '创建发票失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'FINANCE', 'BOSS'])
+  }, { require: 'finance.invoice.create' })
 }

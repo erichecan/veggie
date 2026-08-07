@@ -105,5 +105,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/vendor-bills/import]', error)
       return NextResponse.json({ error: '导入失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'FINANCE', 'WAREHOUSE'])
+  }, { require: 'finance.vendor_bill.create' })
 }

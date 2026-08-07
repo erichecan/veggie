@@ -39,7 +39,7 @@ export async function GET(req: Request) {
       console.error('[GET /api/users]', error)
       return NextResponse.json({ error: '获取用户列表失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'FINANCE'])
+  }, { require: 'system.user.read' })
 }
 
 // POST /api/users — 新建用户（仅 OPERATOR）
@@ -97,5 +97,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/users]', error)
       return NextResponse.json({ error: '创建用户失败' }, { status: 500 })
     }
-  }, ['OPERATOR'])
+  }, { require: 'system.user.manage' })
 }

@@ -266,7 +266,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/purchase-orders/:id]', error)
       return NextResponse.json({ error: '保存失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'purchase.order.update' })
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -424,5 +424,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       console.error('[PATCH /api/purchase-orders/:id]', error)
       return NextResponse.json({ error: '状态更新失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'purchase.order.update' })
 }

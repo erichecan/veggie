@@ -52,5 +52,5 @@ export async function POST(req: NextRequest) {
       console.error('[upload-image] error:', err)
       return NextResponse.json({ error: '图片上传失败，请稍后重试' }, { status: 500 })
     }
-  }, ALLOWED_ROLES)
+  }, { require: 'tool.upload.use' })
 }

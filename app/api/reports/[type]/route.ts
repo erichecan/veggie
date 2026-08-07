@@ -80,7 +80,7 @@ export async function POST(
       const message = err instanceof Error ? err.message : '报表查询失败'
       return NextResponse.json({ error: message }, { status: 500 })
     }
-  }, REPORT_ROLES)
+  }, { require: 'analytics.report.generate' })
 }
 
 function applyRoleFilters(

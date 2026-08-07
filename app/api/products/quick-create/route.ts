@@ -55,5 +55,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/products/quick-create]', error)
       return NextResponse.json({ error: '创建商品失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'master.product.create' })
 }

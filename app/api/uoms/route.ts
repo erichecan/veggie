@@ -77,5 +77,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/uoms]', error)
       return NextResponse.json({ error: '创建 UoM 失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.uom.create' })
 }

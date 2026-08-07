@@ -23,5 +23,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/purchase-suggestions/generate-fresh]', error)
       return NextResponse.json({ error: '生成生鲜备货建议失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'purchase.suggestion.manage' })
 }

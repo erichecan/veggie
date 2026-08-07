@@ -13,7 +13,7 @@
  * 「与快照一致」就成了自欺欺人。
  */
 import { readFileSync } from 'node:fs'
-import { buildReachabilityMatrix, PROBE_ROLES, type Reach } from '../../lib/role-reachability'
+import { PROBE_ROLES, type Reach } from '../../lib/role-reachability'
 import { scanApiHandlers } from '../../lib/route-gate-scan'
 import { isPublicApiRoute } from '../../lib/public-routes'
 import { API_ROUTE_RULES, requiredPermissionsFor } from '../../lib/rbac/route-map'
@@ -46,7 +46,11 @@ function buildNewMatrix(): Record<string, Record<string, Reach>> {
   return matrix
 }
 
-const oldMatrix = buildReachabilityMatrix()
+// 基线是冻结文件而不是实时计算 —— T5 拆掉 allowedRoles 后，实时算出来的
+// 「旧体系」会跟着变松，拿它当基线等于自己和自己比。
+const oldMatrix = JSON.parse(
+  readFileSync('lib/rbac/parity-baseline.json', 'utf-8'),
+) as Record<string, Record<string, Reach>>
 const newMatrix = buildNewMatrix()
 
 const diffs: string[] = []
@@ -64,24 +68,7 @@ for (const key of [...keys].sort()) {
 const cells = keys.size * PROBE_ROLES.length
 console.log(`逐格比对 ${keys.size} 个 handler × ${PROBE_ROLES.length} 个角色 = ${cells} 格`)
 
-// 顺带：快照是否还新鲜
-let snapshotNote = ''
-try {
-  const snap = JSON.parse(readFileSync('scripts/audit/role-reachability.json', 'utf-8')) as
-    Record<string, Record<string, Reach>>
-  let stale = 0
-  for (const [k, row] of Object.entries(oldMatrix)) {
-    const s = snap[k]
-    if (!s) { stale++; continue }
-    for (const role of PROBE_ROLES) if (s[role] !== row[role]) { stale++; break }
-  }
-  snapshotNote = stale === 0
-    ? 'CI 快照与旧体系实时计算一致（快照是新鲜的）'
-    : `⚠️ CI 快照与旧体系实时计算有 ${stale} 处不同 —— 快照已过期，「与快照一致」不足以证明平迁`
-} catch {
-  snapshotNote = '⚠️ 读不到 scripts/audit/role-reachability.json'
-}
-console.log(snapshotNote)
+console.log(`基线：lib/rbac/parity-baseline.json（改造前冻结，${Object.keys(oldMatrix).length} 个 handler）`)
 
 if (diffs.length === 0) {
   console.log('\n✅ 零 diff —— 换了引擎，一格权限都没动。')

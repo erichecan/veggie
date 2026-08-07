@@ -90,7 +90,7 @@ export async function PUT(
       console.error('[PUT /api/purchase-suggestions/[id]]', error)
       return NextResponse.json({ error: '更新采购建议失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'purchase.suggestion.manage' })
 }
 
 export async function DELETE(
@@ -118,5 +118,5 @@ export async function DELETE(
       console.error('[DELETE /api/purchase-suggestions/[id]]', error)
       return NextResponse.json({ error: '删除采购建议失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'purchase.suggestion.manage' })
 }

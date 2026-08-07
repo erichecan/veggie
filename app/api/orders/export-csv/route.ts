@@ -53,5 +53,5 @@ export async function GET(req: Request) {
     const res = new NextResponse(csv, { headers: csvResponseHeaders(`订单汇总-${today}.csv`) })
     if (truncated) res.headers.set('X-Export-Truncated', String(totalMatching))
     return res
-  }, ALLOWED_ROLES)
+  }, { require: 'sales.order.export' })
 }

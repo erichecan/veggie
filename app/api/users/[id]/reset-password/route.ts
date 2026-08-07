@@ -50,5 +50,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/users/[id]/reset-password]', error)
       return NextResponse.json({ error: '重置密码失败' }, { status: 500 })
     }
-  }, ['OPERATOR'])
+  }, { require: 'system.user.manage' })
 }

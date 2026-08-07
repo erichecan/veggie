@@ -29,5 +29,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         'Content-Disposition': `attachment; filename="backup-${id}.sql.gz"`,
       },
     })
-  }, ALLOWED_ROLES)
+  }, { require: 'system.backup.read' })
 }

@@ -12,7 +12,7 @@ export async function GET(req: Request) {
       take: 30,
     })
     return NextResponse.json({ backups })
-  }, ALLOWED_ROLES)
+  }, { require: 'system.backup.read' })
 }
 
 export async function POST(req: Request) {
@@ -25,5 +25,5 @@ export async function POST(req: Request) {
       const message = err instanceof Error ? err.message : '备份失败'
       return NextResponse.json({ error: message }, { status })
     }
-  }, ALLOWED_ROLES)
+  }, { require: 'system.backup.manage' })
 }

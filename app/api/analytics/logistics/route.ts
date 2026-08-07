@@ -87,5 +87,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/logistics]', error)
       return NextResponse.json({ error: '获取物流分析失败' }, { status: 500 })
     }
-  }, ['BOSS', 'OPERATOR', 'FINANCE'])
+  }, { require: 'analytics.logistics.read' })
 }

@@ -186,5 +186,5 @@ export async function POST(
       console.error('[POST /api/trips/[id]/verify]', error)
       return NextResponse.json({ error: '核货确认失败' }, { status: 500 })
     }
-  }, ['DRIVER', 'OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'dispatch.trip.verify' })
 }

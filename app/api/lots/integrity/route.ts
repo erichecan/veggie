@@ -59,5 +59,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/lots/integrity]', error)
       return NextResponse.json({ error: '获取批次一致性核对失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: 'stock.lot.read' })
 }

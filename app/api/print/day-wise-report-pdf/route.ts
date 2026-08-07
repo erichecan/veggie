@@ -98,5 +98,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/print/day-wise-report-pdf]', error)
       return NextResponse.json({ error: '生成报表失败' }, { status: 500 })
     }
-  }, ALLOWED_ROLES)
+  }, { require: 'print.center.access' })
 }

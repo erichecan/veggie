@@ -37,5 +37,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/waves/[id]/pick-unlock]', error)
       return NextResponse.json({ error: '解锁批次失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
+  }, { require: 'stock.pick.manage' })
 }

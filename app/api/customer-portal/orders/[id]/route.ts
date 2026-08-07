@@ -79,5 +79,5 @@ export async function GET(
       console.error('[GET /api/customer-portal/orders/[id]]', error)
       return NextResponse.json({ error: '获取订单详情失败' }, { status: 500 })
     }
-  }, ['RESTAURANT'])
+  }, { require: 'portal.self.access' })
 }

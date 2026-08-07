@@ -30,7 +30,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  return withAuth(req, () => createSlot(req), CONFIG_WRITERS)
+  return withAuth(req, () => createSlot(req), { require: 'dispatch.driver_slot.manage' })
 }
 
 async function createSlot(req: Request) {

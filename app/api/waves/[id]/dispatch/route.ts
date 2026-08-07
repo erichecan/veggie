@@ -61,5 +61,5 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/waves/[id]/dispatch]', error)
       return NextResponse.json({ error: '确认出发失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
+  }, { require: 'dispatch.wave.update' })
 }

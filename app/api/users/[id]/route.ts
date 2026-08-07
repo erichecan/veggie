@@ -69,7 +69,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/users/[id]]', error)
       return NextResponse.json({ error: '更新用户失败' }, { status: 500 })
     }
-  }, ['OPERATOR'])
+  }, { require: 'system.user.manage' })
 }
 
 // DELETE /api/users/[id] — 软删除（设 isActive=false，仅 OPERATOR）
@@ -98,5 +98,5 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       console.error('[DELETE /api/users/[id]]', error)
       return NextResponse.json({ error: '停用用户失败' }, { status: 500 })
     }
-  }, ['OPERATOR'])
+  }, { require: 'system.user.manage' })
 }

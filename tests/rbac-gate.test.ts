@@ -5,7 +5,7 @@ import { canAccessApi, canAccessPage, hasBitmap, rolesOf } from '../lib/rbac/gat
 import { canRolesAccessApi, canRolesAccessPage } from '../lib/role-access'
 import { encodePermissions } from '../lib/rbac/bitmap'
 import { scanApiHandlers } from '../lib/route-gate-scan'
-import { buildReachabilityMatrix } from '../lib/role-reachability'
+
 import { isPublicApiRoute } from '../lib/public-routes'
 
 interface SeedRole {
@@ -81,7 +81,8 @@ test('旧 token 的页面判定同样走回退路径', () => {
  */
 test('位图路径不会比旧体系的最终可达性更宽松', () => {
   const looser: string[] = []
-  const oldMatrix = buildReachabilityMatrix()
+  const oldMatrix = JSON.parse(readFileSync('lib/rbac/parity-baseline.json', 'utf-8')) as
+    Record<string, Record<string, string>>
   for (const h of scanApiHandlers()) {
     const path = fillParams(h.route)
     if (isPublicApiRoute(path)) continue // 公开路由在 middleware 里先行放行，到不了 gate

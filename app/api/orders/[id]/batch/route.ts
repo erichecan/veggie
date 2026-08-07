@@ -47,5 +47,5 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[PUT /api/orders/[id]/batch]', error)
       return NextResponse.json({ error: '分配批次失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
+  }, { require: 'sales.order.assign_batch' })
 }

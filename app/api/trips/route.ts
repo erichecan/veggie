@@ -183,5 +183,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/trips]', error)
       return NextResponse.json({ error: '创建行程失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'DISPATCH'])
+  }, { require: 'dispatch.trip.create' })
 }

@@ -142,5 +142,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/scrap]', error)
       return NextResponse.json({ error: '创建报废记录失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'WAREHOUSE', 'BOSS'])
+  }, { require: 'stock.scrap.manage' })
 }

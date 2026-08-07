@@ -137,5 +137,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/credit-notes]', error)
       return NextResponse.json({ error: '创建退款单失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'FINANCE'])
+  }, { require: 'finance.credit_note.create' })
 }

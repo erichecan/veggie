@@ -94,5 +94,5 @@ export async function POST(req: Request) {
       console.error('[POST /api/products/bulk]', error)
       return NextResponse.json({ error: '批量导入失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS'])
+  }, { require: 'master.product.update' })
 }

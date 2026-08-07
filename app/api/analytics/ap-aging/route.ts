@@ -142,5 +142,5 @@ export async function GET(req: Request) {
       console.error('[GET /api/analytics/ap-aging]', error)
       return NextResponse.json({ error: '获取应付账龄失败' }, { status: 500 })
     }
-  }, ['BOSS', 'FINANCE', 'OPERATOR']) // 与 ar-aging 保持同一角色口径
+  }, { require: 'analytics.finance.read' }) // 与 ar-aging 保持同一角色口径
 }

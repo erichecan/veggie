@@ -206,5 +206,5 @@ export async function PUT(
       console.error('[PUT /api/trips/[id]/discrepancy]', error)
       return NextResponse.json({ error: '差异处理失败' }, { status: 500 })
     }
-  }, ['OPERATOR', 'BOSS', 'WAREHOUSE'])
+  }, { require: 'dispatch.trip.discrepancy' })
 }
