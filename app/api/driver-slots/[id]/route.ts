@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { withAuth } from '@/lib/auth'
 import { deletePalletForDriverSlot } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
 
-export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+/** 同 ../route.ts：司机配置是主数据，改动会波及销售单下拉与调度台托盘 lane。 */
+const CONFIG_WRITERS = ['OPERATOR', 'BOSS']
+
+export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  return withAuth(req, () => updateSlot(req, ctx), CONFIG_WRITERS)
+}
+
+async function updateSlot(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const body = await req.json()
@@ -68,7 +76,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  return withAuth(req, () => archiveSlot(ctx), CONFIG_WRITERS)
+}
+
+async function archiveSlot({ params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const slot = await prisma.driverSlot.findUnique({ where: { id } })

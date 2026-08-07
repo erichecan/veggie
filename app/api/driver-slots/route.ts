@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { withAuth } from '@/lib/auth'
 
 // 一趟车能装的托盘数是固定的，不能无限新增(见调度台"新增托盘")。
 const MAX_PALLETS_PER_DRIVER = 5
+
+/**
+ * 司机配置是主数据：改了它，销售单的司机下拉、调度台的托盘 lane、
+ * 已排波次的归属会一起变。所以写操作只给运营与老板。
+ *
+ * 2026-08-06 审计发现这三个写操作**连 withAuth 都没有** —— 只有 middleware
+ * 验了「有没有 token」，任何登录用户（包括司机本人、餐厅客户）都能改。
+ */
+const CONFIG_WRITERS = ['OPERATOR', 'BOSS']
 
 export async function GET(req: Request) {
   try {
@@ -20,6 +30,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  return withAuth(req, () => createSlot(req), CONFIG_WRITERS)
+}
+
+async function createSlot(req: Request) {
   try {
     const body = await req.json()
     const { timeOfDay, batchNum, driverName, userId } = body
