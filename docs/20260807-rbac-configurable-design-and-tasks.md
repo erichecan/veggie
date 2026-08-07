@@ -194,14 +194,33 @@ JWT 新增三个字段：
 
 ### 批 0：基础设施（不改任何判定逻辑）
 
-- [ ] **T0 权限点目录 + Prisma 模型**
+- [x] **T0 权限点目录 + Prisma 模型** ✅ 2026-08-07 · `355710e`
       新建 `lib/rbac/catalog.ts`：按 §4 定义全部权限点，每个带固定 `sortKey`（一经分配不得重排，
       位图靠它）。新增 `AppRole` / `UserRoleLink` / `UserPermissionGrant` / `Permission` 四张表，
       `User` 加 `managerId` / `permVersion`。
-      **验收**：`npx prisma migrate status` 全部已应用；`npm run build` 通过；
-      单测锁住「catalog 里 sortKey 无重复、无空洞」。
-      **产出**：`lib/rbac/catalog.ts`、`prisma/schema.prisma`、迁移文件、`tests/rbac-catalog.test.ts`
+      **验收**：~~`npx prisma migrate status` 全部已应用~~ → 改为「一次性 PG 上实证可应用且完备」，
+      理由见下；`npm run build` 通过；单测锁住「catalog 里 sortKey 无重复、无空洞」。
+      **产出**：`lib/rbac/catalog.ts`、`lib/rbac/sortkeys.json`、`scripts/rbac/sync-sortkeys.ts`、
+      `prisma/schema.prisma`、`prisma/migrations/20260807000000_rbac_configurable/`、
+      `tests/rbac-catalog.test.ts`
       **依赖**：无
+
+      **实测**：117 个权限点 / 11 模块组 / 52 模块；位图 15 字节 → base64url 20 字符
+      （与设计预估一致，JWT 塞得下）。13 个单测通过，全量 278 测试 0 失败，`npm run build` 通过。
+
+      **验收标准变更的理由**：本地 `DATABASE_URL` 指向 Neon（已非生产，生产在 droplet），
+      对它跑 `migrate status`/`migrate deploy` 既无意义又有风险。改用等价且更强的验证：
+      起一次性 PG → `db push` 出改动前结构 → 实跑迁移 SQL（退出码 0）→ 新 schema 反查
+      `migrate diff` = **No difference detected**。实际应用交给部署流程的 `migrate deploy`。
+      SQL 是纯新增（1 enum + User 2 列 + 4 表 + 6 索引 + 4 外键），无破坏性操作。
+
+      **途中踩到的坑**：`migrate diff --from-migrations` 要在 shadow DB 重放全部历史迁移，
+      `20260419_decimal_partner_indexes` 至今仍失败（P3006/P1014）—— 就是记忆里那个老坑。
+      绕开办法：拿 git 里的旧 schema 与新 schema **直接 diff**，根本不需要 shadow 库。
+
+      **发现的真实差异**：报价单没有独立 API，走 `/api/orders`。所以 `sales.quotation`
+      只能是页面级权限点（只有 `access` 一个动作），已在 catalog 注释里写明，
+      免得后人以为 API 层有对应的闸。
 
 - [ ] **T1 反推脚本：现有权限 → 12 个预置角色**
       写 `scripts/rbac/derive-system-roles.ts`：从 `lib/permissions.ts` 的 `MATRIX`、
@@ -334,3 +353,4 @@ JWT 新增三个字段：
 | 任务 | 完成时间 | 证据(commit) | 备注 |
 |---|---|---|---|
 | 设计定稿 | 2026-08-07 | 本文 §2 五条决策 | 用户拍板 |
+| T0 | 2026-08-07 | `355710e` | 117 权限点 / 4 张表；迁移在一次性 PG 上实证，未碰 Neon 与生产 |
