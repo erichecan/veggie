@@ -3,9 +3,7 @@ import { routing } from './i18n/routing'
 import { type NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 import { isPublicApiRoute } from './lib/public-routes'
-import {
-  isExternalRole, canExternalRoleAccessApi, canExternalRoleAccessPage, EXTERNAL_ROLE_HOME,
-} from './lib/role-access'
+import { canRolesAccessApi, canRolesAccessPage, homeFor } from './lib/role-access'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? 'veggie-demo-fallback-secret')
 
@@ -46,11 +44,10 @@ export async function middleware(req: NextRequest) {
     }
     try {
       const { payload } = await jwtVerify(token, secret)
-      // 边界收窄型角色（目前只有 RESTAURANT）：白名单之外一律拒绝。
-      // 放在这里而不是逐个路由加 allowedRoles —— 后者要改 100 处且漏一处就还是漏，
+      // 边界收窄型角色（外部客户 + 各内部岗位）：白名单之外一律拒绝。
+      // 放在这里而不是逐个路由加 allowedRoles —— 后者要改 152 处且漏一处就还是漏，
       // 而且新增路由默认又是敞开的。见 lib/role-access.ts 的说明。
-      const restricted = isExternalRole(rolesOf(payload))
-      if (restricted && !canExternalRoleAccessApi(restricted, pathname)) {
+      if (!canRolesAccessApi(rolesOf(payload), pathname, req.method)) {
         return NextResponse.json({ error: '权限不足' }, { status: 403 })
       }
       return NextResponse.next()
@@ -74,12 +71,12 @@ export async function middleware(req: NextRequest) {
 
   try {
     const { payload } = await jwtVerify(token, secret)
-    // 页面层同样收窄：餐馆客户不能登录运营后台（2026-08-06 用户明确要求）。
-    // 光挡 API 不够 —— 页面能打开但数据全 403，用户看到的是一堆空壳和报错，
-    // 既暴露了后台的存在，也说不清是权限问题还是系统坏了。
-    const restrictedPage = isExternalRole(rolesOf(payload))
-    if (restrictedPage && !canExternalRoleAccessPage(restrictedPage, barePath)) {
-      const home = EXTERNAL_ROLE_HOME[restrictedPage] ?? '/enter'
+    // 页面层同样收窄：餐馆客户不能登录运营后台（2026-08-06 用户明确要求），
+    // 各内部岗位也只看得到自己那块。光挡 API 不够 —— 页面能打开但数据全 403，
+    // 用户看到的是一堆空壳和报错，既暴露了别人后台的存在，也说不清是权限问题还是系统坏了。
+    const pageRoles = rolesOf(payload)
+    if (!canRolesAccessPage(pageRoles, barePath)) {
+      const home = homeFor(pageRoles)
       return NextResponse.redirect(new URL(localePrefix ? `/${localePrefix}${home}` : home, req.url))
     }
     return intlMiddleware(req)
