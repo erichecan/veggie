@@ -222,22 +222,32 @@ JWT 新增三个字段：
       只能是页面级权限点（只有 `access` 一个动作），已在 catalog 注释里写明，
       免得后人以为 API 层有对应的闸。
 
-- [ ] **T1 反推脚本：现有权限 → 12 个预置角色**
-      写 `scripts/rbac/derive-system-roles.ts`：从 `lib/permissions.ts` 的 `MATRIX`、
-      `lib/role-access.ts` 的 `ROLE_API_SCOPE`/`ROLE_PAGE_SCOPE`、以及 117 处 `allowedRoles`
-      （用 `lib/route-gate-scan.ts` 扫）三处**求交集**，推出每个角色实际拥有的权限点。
-      三处不一致的地方要**列出来人工裁决**，不能默默取并集（取并集 = 放权，取交集 = 收权，都可能出事）。
-      **验收**：脚本输出 12 个角色的权限点清单 + 一份「三处不一致」的差异报告；
-      差异逐条有结论写进本文档 §9。
-      **产出**：`scripts/rbac/derive-system-roles.ts`、`prisma/seed-rbac.ts`
+- [x] **T1 反推脚本：现有权限 → 12 个预置角色** ✅ 2026-08-07 · `d5d155a`
+      ~~从三处求交集~~ → **修正为两处推导 + 一处校验**：可达性只由
+      `ROLE_API_SCOPE` AND `allowedRoles` 决定（见 `lib/role-reachability.ts`），
+      `MATRIX` 根本不参与可达性，它只管 UI 按钮显隐。
+      **验收**：脚本输出 12 个角色的权限点清单 + 冲突报告；冲突逐条有结论（见 §9）。
+      **产出**：`lib/rbac/route-map.ts`、`scripts/rbac/derive-system-roles.ts`、
+      `prisma/seed-rbac.json`、`docs/20260807-rbac-derivation-report.md`
       **依赖**：T0
 
-- [ ] **T2 平迁验证：可达性零 diff（第一次）**
-      用 T1 推出的角色权限，重算 `lib/role-reachability.ts` 的 235×12 可达性矩阵，
-      与 `scripts/audit/role-reachability.json` 现有快照比对。
-      **验收**：**diff 必须为空**。不为空则回到 T1 修正推导规则，不得直接改快照。
-      **产出**：`scripts/rbac/verify-parity.ts`、比对报告
+      **实测**：权限点 117 → **181**（细分是冲突驱动的，见 §9）；位图 23 字节。
+      各角色权限点数：BOSS/OPERATOR 178 · FINANCE 66 · SALES 49 · DISPATCH 47 ·
+      WAREHOUSE 45 · EXTERNAL_SALES 39 · SORTER 26 · DRIVER 24 · RESTAURANT 21 ·
+      PICKER/OTHER 19。dataScope：RESTAURANT / EXTERNAL_SALES = OWN，其余 ALL。
+
+      **顺序调整**：`route-map.ts` 原计划在 T4 才写，实际 T1 就必须有 —— 没有
+      「接口→权限点」的映射就无从反推。T4 相应只剩「接到 middleware」这一步。
+
+- [x] **T2 平迁验证：可达性零 diff（第一次）** ✅ 2026-08-07 · `d5d155a`
+      用 T1 推出的角色权限，重算 235×12 可达性矩阵与旧体系逐格比对。
+      **验收**：**diff 为空** ✅ —— 235 handler × 12 角色 = **2820 格全部一致**。
+      并额外校验了 `scripts/audit/role-reachability.json` 快照与旧体系实时计算一致
+      （快照若已过期，「与快照一致」就成了自欺欺人）。
+      **产出**：`scripts/rbac/verify-parity.ts`、`tests/rbac-route-map.test.ts`
       **依赖**：T1
+
+      零 diff 已锁进测试，之后改 route-map / catalog / seed 而动了任何一格可达性都会红。
 
 ### 批 1：判定层切换（风险最高的一批）
 
@@ -344,7 +354,43 @@ JWT 新增三个字段：
 
 ## 9. 推导差异裁决区（T1 产出后填写）
 
-（待 T1 产出后填写。三源不一致的每一条都要在这里有明确结论，不得默默取并集或交集。）
+**首轮 95 处冲突，五轮收敛到 0。** 完整报告见
+`docs/20260807-rbac-derivation-report.md`（由脚本生成，可复跑）。
+
+冲突不是零散的，是两条系统性根因加一类粒度问题：
+
+**根因 1：页面权限点与 API 权限点混用（消除 32 处）**
+`ROLE_PAGE_SCOPE` 与 `ROLE_API_SCOPE` 本就是两套独立定义，现实中存在大量
+「能调接口但进不去页面」的组合 —— 例如财务能读订单接口，却进不去运营后台页面。
+共用一个权限点表达不了这种差异。
+**裁决**：拆出独立的 `page.*` 权限点组（11 个），页面层不再复用 API 权限点。
+
+**根因 2：OR 规则会把两个权限点一起拉进禁止集**
+逻辑本身没错（`¬(a∨b)` 就是两个都禁），但暴露了 OR 用错了地方：
+`mark-printed` 写成「改订单 或 打印中心」，结果财务有打印权，却因为不能改订单
+而连打印中心一起丢了。
+**裁决**：OR 只保留语义上确实「多岗位共用同一接口」的少数几处
+（如订单列表同时是分拣与拣货的取数入口），其余一律拆成独立权限点。
+
+**粒度问题：子路由与父路由共用权限点，而角色的旧白名单只给了其中之一**
+**裁决**：细分。细分出来的粒度本身就有业务意义，不是为迁就算法 ——
+
+| 细分 | 业务含义 |
+|---|---|
+| `master.customer.read` / `read_detail` / `read_credit` / `read_last_prices` | 能看客户名册 ≠ 能看信用额度与账期 |
+| `sales.order.create` / `bulk_import` | 能下单 ≠ 能批量导入 |
+| `sales.order.update` / `assign_batch` / `mark_printed` / `delete_line` | 改订单内容 ≠ 改派波次 ≠ 标记打印 |
+| `sales.order.read` / `read_audit` / `export` | 看订单 ≠ 看修改审计 ≠ 导出全量 |
+| `dispatch.trip.read` / `print` / `verify` / `returns` / `discrepancy` | 看行程 ≠ 打印面单 ≠ 核货 ≠ 处理退货 |
+| `purchase.order.*` / `purchase.legacy.*` | `/api/purchase-orders` 与 `/api/purchases` 是两套并存的采购模块 |
+| `master.product.read` / `read_detail` / `read_price_history` | 商品列表 ≠ 商品档案 ≠ 价格历史 |
+
+**顺带查出两处「以为人人可用、其实不是」**（现状原样保留，未放开）：
+
+| 接口 | 实情 |
+|---|---|
+| `/api/mfa/enroll` | 收窄角色的 `COMMON` 白名单里**没有** `/api/mfa` —— 财务、仓库、司机等根本用不了二次验证自助绑定。给了 `system.mfa.enroll`，要放开在配置页里勾 |
+| `POST /api/notifications` | 有角色闸，9 个角色够不着。给了 `system.notification.create` |
 
 ---
 
@@ -354,3 +400,6 @@ JWT 新增三个字段：
 |---|---|---|---|
 | 设计定稿 | 2026-08-07 | 本文 §2 五条决策 | 用户拍板 |
 | T0 | 2026-08-07 | `355710e` | 117 权限点 / 4 张表；迁移在一次性 PG 上实证，未碰 Neon 与生产 |
+| T0 补 | 2026-08-07 | `d76efd1` | sortKey 改由快照权威分配 —— 原设计挡不住「往中间插动作」，而 T1 第一件事就要插 |
+| T1 | 2026-08-07 | `d5d155a` | 181 权限点；95 处冲突五轮收敛到 0；裁决见 §9 |
+| T2 | 2026-08-07 | `d5d155a` | **2820 格零 diff**；CI 快照新鲜度一并校验；已锁进测试 |
