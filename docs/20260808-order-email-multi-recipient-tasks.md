@@ -79,7 +79,19 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
       产出：`prisma/schema.prisma`、`prisma/migrations/20260808*/`
       依赖：无
 
-- [ ] **T3 联系人 CRUD API**
+- [x] **T3 联系人 CRUD API** ✅ 2026-08-08
+      权限沿用 `master.customer.read_detail` / `update`，**不新开权限点**（20260807 教训）。
+      两处守卫按项目既有规矩登记：`lib/rbac/route-map.ts`（新体系，必须排在
+      `/api/customers/*` 通配之前）+ `lib/role-access.ts`（旧 token 过渡期）。
+      后者发现真实语义分歧：SALES 原本没有 customers 的 PATCH/DELETE（"删客户是运营的事"），
+      但删一个写错的联系人邮箱是销售日常 —— 精确登记到 `/api/customers/*/contacts/**` 子树，
+      ⛔ 没有给 `/api/customers/**` 放开 DELETE（那是 20260802 泄露的同一种成因）。
+      基线用 `scripts/rbac/update-parity-baseline.ts`（只做加法）+
+      `scripts/audit/save-reachability.ts` 更新，非手改快照。
+      本地实测 15 项全过，含：邮箱规范化、重复 409、格式 400、主联系人唯一、
+      删主联系人后自动顶替、跨客户 cid 越权 404、OWN 范围隔离（读别人 404 / 写别人 403）。
+      ⚠️ 一个自我更正：起初把「SALES 读别人客户应 404」当断言，实际 `office_sales` 的
+      dataScope 是 **ALL**，200 才是对的；真正验证隔离要用 dataScope=OWN 的 external_sales。
       验收：`GET/POST /api/customers/[id]/contacts`、`PATCH/DELETE .../contacts/[cid]`；
             全部带鉴权（写操作 `customer.manage` 级）；无 token 返回 401；
             邮箱格式非法返回 400；删除最后一个主联系人不报 500
@@ -137,3 +149,18 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
 - ~~**U3**：采购单 RFQ 发失败是否被吞成"假成功"~~ → **已查证：是**，且三处全中。见 T1。
   ⚠️ 推论：生产上历史状态为 `SENT` 的采购单，供应商**实际从未收到过邮件**。
   这批单据需要业主确认是否要重发 —— 属于数据层面的既成事实，代码修复救不回来。
+
+---
+
+## 5. 提交历史的一处失真（2026-08-08）
+
+T3 的全部代码（两个 contacts route、`lib/customer-contacts.ts`、`route-map.ts`、
+`role-access.ts`、两份可达性快照）被并发的另一个会话连带提交进了 **8192f8f
+`fix(pricing): 嵌套价格表跳出进价`** —— 那个会话大概用了 `git add -A`。
+
+文件内容完整、未被篡改，只是归错了提交。**没有改写历史**：同一仓库当时有并发会话
+在工作，rebase 会把它正在做的东西一起搅乱，代价大于收益。
+
+后果：按提交信息检索「联系人 API 是什么时候加的」会查不到。真相记在这里。
+教训：多会话并行同一仓库时，`git add -A` / `git commit -a` 会顺走别人的工作区改动，
+提交前应显式列出文件（本任务各次提交都是显式 `git add <具体文件>`）。
