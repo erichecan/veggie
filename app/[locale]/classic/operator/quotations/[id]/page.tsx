@@ -14,6 +14,7 @@ import { getSession, type UserSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
+import SendEmailDialog from '@/components/orders/send-email-dialog'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -59,6 +60,7 @@ export default function QuotationDetailPage() {
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
+  const [sendEmailOpen, setSendEmailOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
   // Editable buffer
@@ -482,6 +484,11 @@ export default function QuotationDetailPage() {
               onClick={() => window.open(`${prefix}/classic/print/${order.id}`, '_blank', 'noopener,noreferrer')}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
               Print
+            </button>
+            <button
+              onClick={() => setSendEmailOpen(true)}
+              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+              {isEn ? 'Send Email' : '发送邮件'}
             </button>
             {isQuotation && (
               <>
@@ -987,6 +994,13 @@ export default function QuotationDetailPage() {
           </div>
         </div>
       )}
+
+      <SendEmailDialog
+        orderId={order.id}
+        orderCode={displayOrderCode(order)}
+        open={sendEmailOpen}
+        onOpenChange={setSendEmailOpen}
+      />
     </div>
   )
 }

@@ -142,7 +142,18 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
       产出：`app/api/orders/[id]/send-email/route.ts`、`lib/email.ts` 新增 `sendOrderDocument`
       依赖：T1、T5
 
-- [ ] **T7 前端 Send Email 弹窗**
+- [x] **T7 前端 Send Email 弹窗** ✅ 2026-08-08
+      `components/orders/send-email-dialog.tsx`，报价单页与销售单页共用同一组件，
+      标题措辞按 `order.status` 自动切换（PENDING →「发送报价单」，否则「发送销售单」）。
+      **浏览器实点验证**（Playwright，非 curl）：
+      · 弹窗列出该客户名下 3 个邮箱，主联系人默认选中
+      · 主收件人那一行的「抄送」复选框 disabled —— 同一人不能既是 To 又是 CC
+      · 勾选抄送后底部摘要同步显示
+      · ⭐ 把已被抄送的人改选为主收件人时，抄送自动摘除（摘要里抄送行消失、
+        该行抄送框转 disabled、原主收件人的抄送框恢复可用）
+      · 客户一个邮箱都没有时：明确提示「请先到客户资料 → 联系人里添加」+ 发送按钮 disabled，
+        不是弹一个空列表
+      build EXIT=0，全量 386 测试 0 失败。
       验收：报价单页与销售单页**共用同一组件**；弹窗列出该客户名下全部邮箱；
             单选主收件人（To）、多选 CC；默认勾中主联系人；CC 不能与 To 重复；
             客户一个邮箱都没有时给明确提示并禁用发送按钮，而不是弹空列表；

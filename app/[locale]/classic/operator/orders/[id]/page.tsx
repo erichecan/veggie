@@ -9,6 +9,7 @@ import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, Customer, OdooPricelist as Pricelist, CustomerPriceType } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
+import SendEmailDialog from '@/components/orders/send-email-dialog'
 import { OrderChatter } from '@/components/order/OrderChatter'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
@@ -77,6 +78,7 @@ export default function SalesOrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [printing, setPrinting] = useState(false)
+  const [sendEmailOpen, setSendEmailOpen] = useState(false)
   const [internalNote, setInternalNote] = useState('')
   const [externalNote, setExternalNote] = useState('')
   const [deliveryNote, setDeliveryNote] = useState('')
@@ -411,6 +413,11 @@ export default function SalesOrderDetailPage() {
               disabled={printing}
               className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">
               Print
+            </button>
+            <button
+              onClick={() => setSendEmailOpen(true)}
+              className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+              {isEn ? 'Send Email' : '发送邮件'}
             </button>
             {isConfirmed && !editing && (
               <button onClick={handleWithdraw}
@@ -807,6 +814,13 @@ export default function SalesOrderDetailPage() {
           </div>
         </div>
       )}
+
+      <SendEmailDialog
+        orderId={order.id}
+        orderCode={displayOrderCode(order)}
+        open={sendEmailOpen}
+        onOpenChange={setSendEmailOpen}
+      />
     </div>
   )
 }
