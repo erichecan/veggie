@@ -192,6 +192,13 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/customers/*/credit', permission: 'master.customer.read_credit' },
   { pattern: '/api/customers/*/last-prices', permission: 'master.customer.read_last_prices' },
   { pattern: '/api/customers/bulk', permission: 'master.customer.bulk_import' },
+  // 联系人（多邮箱）。读跟着「客户详情」走，写跟着「编辑客户」走 —— 不单开权限点：
+  // 拆细子动作而不同步补给原本够得着的角色，会让功能对全公司静默中断（20260807）。
+  // ⛔ 必须排在下面的 /api/customers/* 通配之前，否则 PATCH/DELETE 会先被
+  //    「改客户 / 删客户」那两条捞走，语义就错了。
+  { pattern: '/api/customers/*/contacts', methods: R, permission: 'master.customer.read_detail' },
+  { pattern: '/api/customers/*/contacts', methods: W, permission: 'master.customer.update' },
+  { pattern: '/api/customers/*/contacts/*', permission: 'master.customer.update' },
   { pattern: '/api/customers', methods: R, permission: 'master.customer.read' },
   { pattern: '/api/customers', methods: ['POST'], permission: 'master.customer.create' },
   { pattern: '/api/customers/*', methods: R, permission: 'master.customer.read_detail' },

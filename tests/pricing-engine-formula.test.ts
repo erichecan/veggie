@@ -126,8 +126,11 @@ test('formula + pricelist：复刻真实客户报单场景（CITY CENTREtest →
   const outer = pl('pl-city-centre-test', [
     item({
       applyOn: 'global', formulaBase: 'pricelist', basedOnPricelistId: 'pl-m7n3m1test',
-      // 生产库这条数据当时被 priceMinMargin/priceMaxMargin=0 覆盖，Bug 2 已修复为 undefined
-      priceMinMargin: undefined, priceMaxMargin: undefined,
+      // ⛔ 这里必须用生产库里**真实存在**的 0/0。
+      // 上一轮把它改成 undefined「修复」了测试，但生产数据一个字都没动 ——
+      // 20260808 从生产 dump 出来，pl_35 这条规则的 0/0 原封不动躺在那里，
+      // 客户于是又撞上同一个问题。把 undefined 写进测试等于把 bug 藏起来。
+      priceMinMargin: 0, priceMaxMargin: 0,
     }),
   ])
   const r = resolvePrice(riceProduct, outer, [outer, nested])
@@ -162,28 +165,75 @@ test('formula + pricelist：循环引用不会死循环，超过递归深度后�
 
 // ─── priceMinMargin / priceMaxMargin ── Bug 2 相关 ──────────────────────────
 
-test('priceMaxMargin：显式设置时应封顶价格', () => {
-  const p = pl('pl-maxmargin', [item({ formulaBase: 'list_price', priceMaxMargin: 5 })])
+test('priceMaxMargin：相对**基准价**封顶，不是相对进价', () => {
+  // Odoo：price_limit = price（基准价，折扣/加价之前），margin 都相对它。
+  // 之前实现取的是 product.standardPrice（进价），语义完全是另一回事。
+  const p = pl('pl-maxmargin', [item({ formulaBase: 'list_price', priceSurcharge: 20, priceMaxMargin: 5 })])
   const r = resolvePrice(marginProduct, p, [p])
-  assert.equal(r.price, 35, '牌价 50 本应直接采用，但 priceMaxMargin=5 把价格封顶在 成本30+5=35')
+  assert.equal(r.price, 55, '牌价 50 加价 20 = 70，被 maxMargin=5 封顶到 基准50+5=55（不是 进价30+5=35）')
 })
 
-test('priceMinMargin：显式设置时应兜底价格下限', () => {
+test('priceMinMargin：相对**基准价**兜底，不是相对进价', () => {
   const p = pl('pl-minmargin', [item({ formulaBase: 'list_price', priceDiscount: 90, priceMinMargin: 8 })])
   const r = resolvePrice(marginProduct, p, [p])
-  assert.equal(r.price, 38, '牌价打1折后仅5，被 priceMinMargin=8 兜到 成本30+8=38')
+  assert.equal(r.price, 58, '牌价 50 打一折 = 5，被 minMargin=8 兜到 基准50+8=58（不是 进价30+8=38）')
 })
 
-test('priceMinMargin=0：显式设为0是合法用法（不低于成本价出售），必须仍然生效', () => {
-  const p = pl('pl-minmargin0', [item({ formulaBase: 'list_price', priceDiscount: 95, priceMinMargin: 0 })])
+test('⛔ priceMinMargin=0 / priceMaxMargin=0 表示「不设限」，不是「利润必须为 0」', () => {
+  // 这是 20260808 客户报的那个 bug 的核心。
+  // Odoo 写的是 `if rule.price_min_margin:` —— 0 在 Python 里 falsy，整条跳过。
+  // 若把 0 当成生效的约束，min 和 max 同时为 0 就是 min(max(价,基准),基准)，
+  // 价格被死死钉在基准价上，配置者完全看不出为什么。
+  const both0 = pl('pl-margin0', [
+    item({ formulaBase: 'list_price', priceSurcharge: 20, priceMinMargin: 0, priceMaxMargin: 0 }),
+  ])
+  assert.equal(
+    resolvePrice(marginProduct, both0, [both0]).price, 70,
+    '牌价 50 加价 20 = 70。两个 margin 都是 0 = 不设限，价格不该被钉住',
+  )
+
+  const min0 = pl('pl-min0', [item({ formulaBase: 'list_price', priceDiscount: 95, priceMinMargin: 0 })])
+  assert.equal(
+    resolvePrice(marginProduct, min0, [min0]).price, 2.5,
+    'minMargin=0 不设限，打 0.5 折就是 2.5，不该被兜到基准价或成本价',
+  )
+})
+
+test('要「不低于成本价出售」应当明写，而不是指望 margin=0 有这个含义', () => {
+  // 上一轮把 margin=0 解读成「以成本价兜底」。这个业务诉求本身合理，
+  // 但它不是 Odoo 里 margin=0 的含义，也不该靠一个默认值去表达 ——
+  // 真要这么做，基准选 standard_price、margin 给正数，意图才写在脸上。
+  const p = pl('pl-floor-cost', [
+    item({ formulaBase: 'standard_price', priceDiscount: 95, priceMinMargin: 0.01 }),
+  ])
   const r = resolvePrice(marginProduct, p, [p])
-  assert.equal(r.price, 30, '牌价打05折后仅2.5，minMargin=0 应兜底到成本价30，且0要被当成真实值而非"未设置"')
+  assert.equal(r.price, 30.01, '基准取进价 30，minMargin=0.01 → 至少 30.01，永远不低于成本')
 })
 
-test('priceMaxMargin/priceMinMargin 均未设置（undefined）：不做任何封顶或兜底（Bug 2 回归）', () => {
+test('priceMaxMargin/priceMinMargin 均未设置：不做任何封顶或兜底', () => {
   const p = pl('pl-nomargin', [item({ formulaBase: 'list_price' })])
   const r = resolvePrice(marginProduct, p, [p])
-  assert.equal(r.price, 50, '未配置 margin 限制时应直接用牌价 50，不能被误当成 0 而封顶到成本价')
+  assert.equal(r.price, 50, '未配置 margin 限制时应直接用牌价 50')
+})
+
+// ─── roundingMethod（Odoo price_round）── 20260808 之前引擎完全没读这个字段 ──
+
+test('roundingMethod：按步长舍入，且发生在折扣之后、加价之前', () => {
+  // 顺序不是随便定的：Odoo 是 折扣 → 舍入 → 加价 → margin。
+  // 先加价再舍入会把加价也 round 掉，结果与 Odoo 对不上。
+  const p = pl('pl-round', [
+    item({ formulaBase: 'list_price', priceDiscount: 7, roundingMethod: 0.05, priceSurcharge: 1.02 }),
+  ])
+  const r = resolvePrice(marginProduct, p, [p])
+  // 50 * 0.93 = 46.5 → 舍入 0.05 仍是 46.5 → +1.02 = 47.52（加价没有被 round 掉）
+  assert.equal(r.price, 47.52)
+})
+
+test('roundingMethod=0 或未设置：不舍入', () => {
+  const p0 = pl('pl-round0', [item({ formulaBase: 'list_price', priceDiscount: 7, roundingMethod: 0 })])
+  assert.equal(resolvePrice(marginProduct, p0, [p0]).price, 46.5)
+  const pU = pl('pl-roundU', [item({ formulaBase: 'list_price', priceDiscount: 7 })])
+  assert.equal(resolvePrice(marginProduct, pU, [pU]).price, 46.5)
 })
 
 // ─── minQty 分层 ─────────────────────────────────────────────────────────────

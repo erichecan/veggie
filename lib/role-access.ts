@@ -186,6 +186,10 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     { pattern: '/api/customers/**', methods: ['GET', 'POST', 'PUT'] },
+    // 联系人（多邮箱）可以改删 —— 删客户不给销售，但删一个写错的联系人邮箱是日常。
+    // ⛔ 必须精确写到 contacts 子树：直接给 /api/customers/** 放 DELETE 会连带
+    //    放行删客户本身，那就是 20260802 泄露的同一种成因（宽 pattern 顺带放行整棵子树）。
+    { pattern: '/api/customers/*/contacts/**', methods: ['PATCH', 'DELETE'] },
     { pattern: '/api/products/**', methods: READ },
     { pattern: '/api/product-templates/**', methods: READ },
     { pattern: '/api/product-categories/**', methods: READ },

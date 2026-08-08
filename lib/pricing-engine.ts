@@ -184,16 +184,27 @@ function computeItemPrice(
           formulaBase = basePrice
       }
 
+      // Odoo 的 price_limit：**基准价本身**，在折扣/加价之前捕获。
+      // 下面两条 margin 都相对它，而不是相对商品进价。
+      const priceLimit = formulaBase
+
       let price = formulaBase * (1 - (item.priceDiscount ?? 0) / 100)
+      // Odoo 的顺序是「折扣 → 舍入 → 加价 → margin 夹取」，不能随意调换：
+      // 先加价再舍入会把加价一起round掉，结果对不上 Odoo。
+      if (item.roundingMethod) price = roundToStep(price, item.roundingMethod)
       price += item.priceSurcharge ?? 0
-      if (item.priceMinMargin !== undefined) {
-        const cost = product.standardPrice ?? 0
-        price = Math.max(price, cost + item.priceMinMargin)
-      }
-      if (item.priceMaxMargin !== undefined) {
-        const cost = product.standardPrice ?? 0
-        price = Math.min(price, cost + item.priceMaxMargin)
-      }
+
+      // ⛔ 这里必须用**真值**判断，不能用 `!== undefined`。
+      //
+      // Odoo 写的是 `if rule.price_min_margin:` —— 0 在 Python 里是 falsy，
+      // 所以「利润 0」的含义是**不设限**，不是「利润必须正好为 0」。
+      // 用 `!== undefined` 的话，min 和 max 同时为 0 会变成
+      // `min(max(价, 基准), 基准)`，恒等于基准价 —— 20260808 客户实测到的
+      // 「CITY CENTREtest 嵌套 M7N3M1test 却跳出 COST PRICE」就是这么来的
+      // （当时还错把基准取成了进价，两个 bug 叠在一起，结果正好是进价）。
+      // 而 UI 上把「最低利润」填 0 是个再自然不过的动作。
+      if (item.priceMinMargin) price = Math.max(price, priceLimit + item.priceMinMargin)
+      if (item.priceMaxMargin) price = Math.min(price, priceLimit + item.priceMaxMargin)
       return price
     }
 
@@ -232,6 +243,19 @@ function describeItem(item: OdooPricelistItem): string {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
+}
+
+/**
+ * 按步长舍入，对应 Odoo 的 `float_round(price, precision_rounding=rule.price_round)`。
+ * 步长 0.05 表示"取整到最近的 5 分"。
+ *
+ * 这个字段（UI 上的「舍入精度」）在 20260808 之前**引擎根本没读**：
+ * 页面上可以填、能存进库，但对价格毫无影响 —— 一个不生效的开关比没有更糟，
+ * 因为设置的人以为它生效了。
+ */
+function roundToStep(value: number, step: number): number {
+  if (!step || step <= 0) return value
+  return Math.round(value / step) * step
 }
 
 // ─── 便捷工具：按客户 pricelistId 解析最终价格 ────────────────────────────────
