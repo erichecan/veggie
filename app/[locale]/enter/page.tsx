@@ -22,17 +22,6 @@ export default function EnterPage() {
     WAREHOUSE: `${prefix}/classic/warehouse`,
   }
 
-  const DEMO_ACCOUNTS = [
-    { labelKey: 'operator' as const, email: 'operator@veggie.com' },
-    { labelKey: 'warehouse' as const, email: 'warehouse@veggie.com' },
-    { labelKey: 'restaurant' as const, email: 'restaurant1@veggie.com' },
-    { labelKey: 'driver' as const, email: 'driver@veggie.com' },
-    { labelKey: 'boss' as const, email: 'boss@veggie.com' },
-    { labelKey: 'finance' as const, email: 'finance@veggie.com' },
-  ]
-
-  const PASSWORD = 'Demo1234!'
-
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -78,27 +67,17 @@ export default function EnterPage() {
           <p className="text-sm mt-1" style={{ color: '#7c5a8e' }}>Odoo 风格经典界面</p>
         </div>
 
-        {/* 一键登录 */}
-        <div className="rounded-2xl shadow-sm border p-5" style={{ background: 'white', borderColor: '#d4b8d0' }}>
-          <p className="text-xs font-medium mb-3" style={{ color: '#875A7B' }}>{t('demoTitle')}</p>
-          <div className="grid grid-cols-3 gap-2">
-            {DEMO_ACCOUNTS.map(({ labelKey, email: demoEmail }) => (
-              <button
-                key={demoEmail}
-                onClick={() => doLogin(demoEmail, PASSWORD, demoEmail)}
-                disabled={loading !== null}
-                className="disabled:opacity-50 text-white text-xs font-medium py-2 rounded-lg transition-colors"
-                style={{ background: '#875A7B' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#7a5070' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#875A7B' }}
-              >
-                {loading === demoEmail ? '···' : t(`roles.${labelKey}`)}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/*
+          ⛔ 这里原来是「一键登录」：6 个演示账号按钮 + 前端写死的密码 `Demo1234!`，
+          点一下就以 BOSS 身份进系统。开发期方便，但这套东西现在跑在客户的公网域名上，
+          等于把管理员入口敞开给任何打开登录页的人。20260807 已移除，只保留邮箱 + 密码。
 
-        {/* 手动登录 */}
+          ⚠️ 移除按钮**不等于**账号安全了 —— 那 6 个账号仍然存在且密码仍是 Demo1234!，
+          知道邮箱的人照样能登进来。真正的修复是改密码，见
+          docs/20260807-production-credentials-audit.md。
+        */}
+
+        {/* 登录 */}
         <form
           onSubmit={e => { e.preventDefault(); doLogin(email, password, 'form') }}
           className="rounded-2xl shadow-sm border p-5 space-y-3"
