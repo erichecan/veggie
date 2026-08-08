@@ -441,11 +441,50 @@ model Customer {
   specialPrices       CustomerSpecialPrice[]
   supplierInfos       ProductSupplierInfo[]  @relation("PartnerSupplierInfos")
   pricelists          CustomerPricelist[]
+  contacts            CustomerContact[]
 
   @@index([isCustomer])
   @@index([isVendor])
   @@index([defaultDriverSlotId])
   @@index([salesUserId])
+}
+
+/**
+ * 客户联系人（对应 Odoo res.partner 的子联系人 child_ids）
+ * ================================================================================
+ * 存在的理由：一个客户名下往往有多个人——下单的、对账的、收货的，各有各的邮箱。
+ * 发报价单/销售单时要能选「主收件人 + 抄送若干」，而 `Customer.email` 只有一个格子。
+ *
+ * ⚠️ 与 `Customer.email` 的关系：后者保留不动，作为「客户默认邮箱」继续被采购 RFQ 等
+ * 既有逻辑使用。本表是**补充**不是替代——贸然把 Customer.email 迁走会牵动一堆只读它的地方。
+ * 建表迁移会把非空的 Customer.email 回填成一条 isPrimary 联系人，两边初始是一致的。
+ *
+ * `isPrimary` 每个客户至多一条，靠 partial unique index 保证（见迁移 SQL）——
+ * Prisma schema 语法表达不了带 WHERE 的唯一索引，所以那句 DDL 是手写进迁移的，
+ * 别指望 `prisma db push` 能从这里推导出来。
+ */
+model CustomerContact {
+  id         String   @id @default(cuid())
+  customerId String
+  name       String
+  email      String
+  /// 职能标签，如「采购」「财务」「收货」。自由文本，不做枚举——
+  /// 各家客户的叫法不一样，枚举只会逼出一堆 OTHER。
+  role       String   @default("")
+  phone      String   @default("")
+  /// 默认收件人。发单据时默认选中它作为主收件人（To）
+  isPrimary  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  /// Odoo res.partner 子联系人主键，供导入脚本幂等 upsert
+  externalId String?  @unique
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([email])
 }
 
 /**

@@ -61,7 +61,18 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
       产出：`lib/email.ts`、`.env.example`
       依赖：无
 
-- [ ] **T2 CustomerContact 表 + 迁移**
+- [x] **T2 CustomerContact 表 + 迁移** ✅ 2026-08-08
+      ⚠️ 开发库踩坑记录（下次别再撞）：`.env.local` 指向的 Neon **已与代码分叉** ——
+      落后 8 个迁移，同时还有 2 个本地没有的迁移（customer_settlement_cycle、
+      payment_prepayment_support），不能再当开发库；而在干净库上重放全量迁移会死在
+      `20260419_decimal_partner_indexes`（老问题）。
+      可行路径：从 droplet `pg_dump -s` 拉生产 schema + `_prisma_migrations` 数据 →
+      灌进本地 Docker postgres:17 → `migrate status` 显示 up to date → 在此基础上
+      `migrate diff --from-config-datasource --to-schema` 生成 DDL（注意 CLI 参数已改名，
+      旧的 `--from-schema-datasource` 已被移除）。
+      迁移内手写了两样 diff 推不出来的东西：`isPrimary` 的 partial unique index、
+      存量 `Customer.email` 的回填。已用测试数据实证：无效邮箱被排除、空格已 btrim、
+      第二条 isPrimary 被约束挡住、级联删除生效。
       验收：`npx prisma migrate status` 显示新迁移已应用；字段含
             `customerId / name / email / role标签 / isPrimary / isActive`；
             同一客户下 `isPrimary` 至多一条；`Customer.email` 非空的存量数据回填为一条主联系人
