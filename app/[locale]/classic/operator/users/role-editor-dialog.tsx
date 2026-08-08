@@ -117,8 +117,12 @@ export default function RoleEditorDialog({ open, draft, catalog, isEn, readOnly 
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
+      {/* 权限树是这个弹窗的主体，181 个权限点铺开需要地方 —— 顶到视口宽度，只留边距。
+          `sm:` 前缀不能少：DialogContent 自带 sm:max-w-sm，不带前缀的类在 sm 断点以上盖不住它。
+          高度同样必须卡住视口：弹窗是绝对居中的，超出视口就是上下各溢出一半，
+          底部的「保存」会跑到屏幕外点不到。改成 flex 列 —— 头尾固定、中间滚。 */}
+      <DialogContent className="flex flex-col max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] sm:max-w-[min(1280px,calc(100vw-3rem))]">
+        <DialogHeader className="shrink-0">
           <DialogTitle style={{ color: PURPLE }}>
             {isEdit
               ? `${isEn ? 'Edit Role' : '编辑角色'} — ${draft.name}`
@@ -131,7 +135,7 @@ export default function RoleEditorDialog({ open, draft, catalog, isEn, readOnly 
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 py-1">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 py-1 pr-1">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="r-name">{isEn ? 'Name *' : '名称 *'}</Label>
@@ -191,7 +195,7 @@ export default function RoleEditorDialog({ open, draft, catalog, isEn, readOnly 
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={onClose} disabled={saving}>
             {readOnly ? (isEn ? 'Close' : '关闭') : (isEn ? 'Cancel' : '取消')}
           </Button>

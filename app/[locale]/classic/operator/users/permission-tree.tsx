@@ -158,8 +158,12 @@ export default function PermissionTree({ catalog, selected, disabled = false, is
   const allIds = catalog.groups.flatMap((g) => g.modules.flatMap((m) => m.actions.map((a) => a.id)))
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
+    // ⚠️ 这棵树**自己不滚动**，由弹窗的主体区统一滚。
+    // 之前它有 max-h 自己滚，结果 181 个权限点全展开时弹窗整体高 868px、
+    // 而 1440×800 的笔记本视口只有 800px —— 弹窗上下都溢出屏幕，「保存」按钮
+    // 直接看不见，点不到。工具条改成 sticky，滚起来也一直能看到「已选 n/181」。
+    <div className="border border-gray-200 rounded-lg">
+      <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white rounded-t-lg">
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
@@ -189,7 +193,7 @@ export default function PermissionTree({ catalog, selected, disabled = false, is
           </>
         )}
       </div>
-      <div className="max-h-[46vh] overflow-y-auto bg-white">
+      <div className="bg-white rounded-b-lg">
         {groups.length === 0 && (
           <div className="py-10 text-center text-xs text-gray-400">
             {isEn ? 'No module matches the filter' : '没有匹配的模块'}

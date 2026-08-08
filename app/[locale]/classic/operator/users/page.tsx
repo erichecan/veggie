@@ -1,8 +1,8 @@
 'use client'
 /**
- * 权限中心 —— 用户 / 角色 / 权限总览三 tab。
+ * 权限中心 —— 用户 / 角色 两 tab。
  *
- * 角色与权限总览两个 tab 要 `system.rbac.read`，没有这个权限的人只看得到用户 tab，
+ * 角色 tab 要 `system.rbac.read`，没有这个权限的人只看得到用户 tab，
  * 不是把 tab 显示出来再让他点了吃 403。
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -14,12 +14,11 @@ import type { SystemUser } from '@/lib/types'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import UsersTab from './users-tab'
 import RolesTab from './roles-tab'
-import MatrixTab from './matrix-tab'
 import { fetchCatalog, fetchRoles, type PermissionCatalog, type RoleRow } from './rbac-client'
 
 const PURPLE = '#875A7B'
 
-type TabKey = 'users' | 'roles' | 'matrix'
+type TabKey = 'users' | 'roles'
 
 /**
  * 旧登录态没有权限位图（`pm`），`hasPermission` 一律返回 false，权限 tab 会整个消失 ——
@@ -82,12 +81,7 @@ export default function PermissionCenterPage() {
 
   const TABS: Array<{ k: TabKey; icon: string; label: string }> = [
     { k: 'users', icon: '👤', label: isEn ? 'Users' : '用户' },
-    ...(canSeeRbac
-      ? ([
-          { k: 'roles' as TabKey, icon: '🎭', label: isEn ? 'Roles' : '角色' },
-          { k: 'matrix' as TabKey, icon: '🗂', label: isEn ? 'Overview' : '权限总览' },
-        ])
-      : []),
+    ...(canSeeRbac ? [{ k: 'roles' as TabKey, icon: '🎭', label: isEn ? 'Roles' : '角色' }] : []),
   ]
 
   return (
@@ -130,10 +124,6 @@ export default function PermissionCenterPage() {
           canManage={canManageRbac}
           onReload={reloadAll}
         />
-      )}
-
-      {tab === 'matrix' && canSeeRbac && (
-        <MatrixTab roles={roles} catalog={catalog} loading={rbacLoading} isEn={isEn} />
       )}
     </div>
   )

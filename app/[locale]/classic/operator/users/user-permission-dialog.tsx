@@ -144,8 +144,10 @@ export default function UserPermissionDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
+      {/* 高度卡住视口，头尾固定中间滚 —— 弹窗绝对居中，超出视口就是上下各溢出一半，
+          「保存」会跑到屏幕外点不到。理由同 role-editor-dialog。 */}
+      <DialogContent className="flex flex-col max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] sm:max-w-[min(1280px,calc(100vw-3rem))]">
+        <DialogHeader className="shrink-0">
           <DialogTitle style={{ color: PURPLE }}>
             {isEn ? 'Permissions' : '权限'} — {detail?.user.name ?? ''}
             <span className="ml-2 text-xs font-normal text-gray-400">{detail?.user.email}</span>
@@ -153,17 +155,17 @@ export default function UserPermissionDialog({
         </DialogHeader>
 
         {loading && (
-          <div className="py-16 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
+          <div className="flex-1 py-16 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
         )}
 
         {!loading && detail && (
-          <div className="space-y-4 py-1 max-h-[62vh] overflow-y-auto pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 py-1 pr-1">
             <div>
               <Label>{isEn ? 'Roles' : '角色'}</Label>
               {roles.length === 0 && (
                 <p className="text-xs text-gray-400 mt-1">{isEn ? 'No roles defined' : '还没有任何角色'}</p>
               )}
-              <div className="mt-1 grid grid-cols-3 gap-1.5">
+              <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 {roles.map((r) => {
                   const on = roleIds.includes(r.id)
                   return (
@@ -350,7 +352,7 @@ export default function UserPermissionDialog({
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={onClose} disabled={saving}>
             {canManage ? (isEn ? 'Cancel' : '取消') : (isEn ? 'Close' : '关闭')}
           </Button>
