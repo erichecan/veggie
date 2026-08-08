@@ -399,8 +399,8 @@ JWT 新增三个字段：
 
 - [x] **T11 权限中心 UI（三 tab）** ✅ 2026-08-07 · `0f13304`
       扩 `/classic/operator/users` 为用户 / 角色 / 权限总览三 tab，按 §6。
-      **验收**：✅ 一次性 PG + 真浏览器逐个点过（Playwright 这次是可用的，
-      与记忆里「本项目没有浏览器自动化」相反 —— 记忆已更正）。
+      **验收**：✅ 一次性 PG + 真浏览器逐个点过（Playwright MCP，deferred 工具，
+      要先 `ToolSearch` 加载 schema）。
       **产出**：`app/[locale]/classic/operator/users/{page,users-tab,roles-tab,matrix-tab,
       permission-tree,role-editor-dialog,user-permission-dialog,rbac-client}.tsx`
       **依赖**：T10
