@@ -143,6 +143,10 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/analytics/**', methods: READ },
     { pattern: '/api/customers/**', methods: READ },
     { pattern: '/api/orders/**', methods: READ },
+    // 把单据邮件发给客户。财务对订单其余部分仍是只读 —— 这条精确到 send-email，
+    // 不是给 /api/orders/** 放开 POST。新体系里 finance 本来就有 sales.order.print，
+    // 这里补齐旧 token 路径，免得没重新登录的人点发送就 403。
+    { pattern: '/api/orders/*/send-email', methods: ['POST'] },
     { pattern: '/api/suppliers/**', methods: READ },
     { pattern: '/api/purchase-orders/**', methods: READ },
     { pattern: '/api/trips', methods: READ },

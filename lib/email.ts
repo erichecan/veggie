@@ -155,3 +155,50 @@ export async function sendPurchaseOrderRfq(params: {
     ],
   })
 }
+
+/**
+ * 把报价单 / 销售单当作 PDF 附件发给客户。
+ *
+ * 报价单与销售单是同一个 Order（PENDING 是报价单，确认后是销售单），
+ * 只有措辞不同 —— 所以是一个函数带 `isQuotation` 开关，不是两份几乎相同的模板。
+ *
+ * `replyTo` 传发送人自己的邮箱：客户回复时直接回到经办的销售手上，
+ * 而不是回到那个没人看的 noreply 信箱。
+ */
+export async function sendOrderDocument(params: {
+  to: string
+  cc?: string[]
+  customerName: string
+  orderCode: string
+  isQuotation: boolean
+  total: number
+  pdfBuffer: Buffer
+  senderName: string
+  replyTo?: string
+}) {
+  const { to, cc, customerName, orderCode, isQuotation, total, pdfBuffer, senderName, replyTo } = params
+  const docLabel = isQuotation ? 'Quotation' : 'Order Confirmation'
+
+  await dispatch({
+    to,
+    cc,
+    replyTo,
+    subject: `${docLabel} ${orderCode} — Johnstone Bros`,
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#16a34a">Johnstone Bros — ${docLabel}</h2>
+        <p>Dear ${customerName},</p>
+        <p>Please find attached ${isQuotation ? 'our quotation' : 'your order confirmation'} <strong>${orderCode}</strong>, total <strong>${eur(total)}</strong> (incl. VAT).</p>
+        <p>${isQuotation
+          ? 'Please review the items and prices and let us know if you would like to proceed.'
+          : 'We will be in touch regarding delivery. If anything looks incorrect, please reply to this email as soon as possible.'}</p>
+        <p>Kind regards,<br/>${senderName}<br/>Johnstone Bros</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+        <p style="color:#9ca3af;font-size:12px">Johnstone Bros · Wholesale Fresh Produce &amp; Grocery</p>
+      </div>
+    `,
+    attachments: [
+      { filename: `${orderCode}.pdf`, content: pdfBuffer },
+    ],
+  })
+}

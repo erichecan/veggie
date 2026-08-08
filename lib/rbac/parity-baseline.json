@@ -3442,5 +3442,33 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "GET /api/orders/[id]/send-email": {
+    "BOSS": "y",
+    "OPERATOR": "y",
+    "FINANCE": "y",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "y",
+    "EXTERNAL_SALES": "y",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "POST /api/orders/[id]/send-email": {
+    "BOSS": "y",
+    "OPERATOR": "y",
+    "FINANCE": "y",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "y",
+    "EXTERNAL_SALES": "y",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }

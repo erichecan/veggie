@@ -56,6 +56,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/orders/sales-price-history', permission: 'sales.order.read' },
   { pattern: '/api/orders/dispatch-print-data', permission: 'sales.order.dispatch_print' },
   { pattern: '/api/orders/*/pdf', permission: 'sales.order.print' },
+  // 把单据发给客户。与打印同权限 —— 都是「把单据交付给客户」，
+  // 只是一个走打印机一个走邮件，不为它单开权限点。
+  { pattern: '/api/orders/*/send-email', permission: 'sales.order.print' },
   { pattern: '/api/orders/*/mark-printed', permission: 'sales.order.mark_printed' },
   { pattern: '/api/orders/*/batch', permission: 'sales.order.assign_batch' },
   { pattern: '/api/orders/*/audit', methods: R, permission: 'sales.order.read_audit' },

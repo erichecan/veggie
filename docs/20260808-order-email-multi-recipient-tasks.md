@@ -116,7 +116,25 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
       产出：`lib/order-pdf.ts`、`app/api/orders/[id]/pdf/route.ts`
       依赖：无
 
-- [ ] **T6 发送接口**
+- [x] **T6 发送接口** ✅ 2026-08-08
+      `POST /api/orders/[id]/send-email` + 同路径 `GET`（返回候选收件人）。
+      权限沿用 `sales.order.print`（10 个角色持有，不是死开关），不新开权限点。
+      GET 放在同一路由而不是让前端调 `/api/customers/[id]/contacts` —— 后者要
+      `master.customer.read_detail`，`print_center` 这类有打印权限的角色未必有它，
+      那样弹窗会对一部分本该能发邮件的人空掉。
+      ⛔ 核心闸门：收件人只能取自该客户名下已登记的邮箱（CustomerContact + Customer.email）。
+      不校验的话这个接口就是「拿公司域名给任意地址发带客户单据的邮件」的通道。
+      修掉一个顺带发现的真 bug：`isRowVisible` 判 TEAM 范围要靠 `salesUser.managerId`，
+      原 select 没取它，`sales_manager` 会被保守拒绝看不到下属的单 —— 两处 select 都补上了。
+      旧体系补了 FINANCE 一格（精确到 `/api/orders/*/send-email` 的 POST，
+      没给 `/api/orders/**` 放开 POST）。
+      实测：不给收件人 400、外部地址 400、CC 混入外部地址 400、未登录 401、订单不存在 404、
+      **发信失败返回 502 而不是 200 假成功**。
+      ✅ 端到端真实发送成功（Resend 测试发件域 onboarding@resend.dev → HTTP 200，
+      ActionLog 留痕「邮件发送单据 ER_PDF_1 → erichecan@gmail.com」，PDF 附件已生成）。
+      ⚠️ CC 的**实际投递**未能实测：Resend 测试模式只允许发给账号自身邮箱，
+      CC 到第二个地址被拒。CC 的去重/白名单/排除与 To 重复三条逻辑已在接口层实测，
+      真实投递要等 U2（域名验证）之后才能确认。
       验收：`POST /api/orders/[id]/send-email`，入参 `{ to, cc[] }`；
             带鉴权；`to` 不在该客户名下的邮箱要拒（防越权发信）；
             收件人为空返回 400 且**不发信**；Resend 失败返回 5xx 且**不写成功日志**
