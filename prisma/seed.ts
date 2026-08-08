@@ -8,6 +8,7 @@ import { SEED_UOM_CATEGORIES } from '../lib/seed-uoms'
 import { STANDARD_ACCOUNTS } from '../lib/accounting'
 import { loadCsvProducts, loadCsvCustomers } from './csv-loader'
 import type { OrderStatus } from '../lib/generated/prisma/enums'
+import { randomBytes } from 'node:crypto'
 
 const prisma = createPrismaClient()
 
@@ -22,9 +23,32 @@ const SEED_USERS = [
   { email: 'warehouse@veggie.com', role: 'WAREHOUSE', name: '仓库主管' },
 ]
 
+/**
+ * 种子账号密码。
+ *
+ * ⛔ 这里曾经硬编码 `Demo1234!`，而这份代码是公开仓库 —— 生产上这 9 个账号
+ *    因此人人可登，实测 boss@veggie.com 一登就是 BOSS 权限。
+ *    见 docs/20260807-production-credentials-audit.md
+ *
+ * 现在：优先读环境变量 `SEED_PASSWORD`；没给就**当场随机生成并打印**。
+ * 无论哪条路径，都不会再有一个「写在代码里、所有人都知道」的默认密码。
+ */
+function resolveSeedPassword(): string {
+  const fromEnv = process.env.SEED_PASSWORD
+  if (fromEnv && fromEnv.length >= 12) return fromEnv
+  if (fromEnv) {
+    throw new Error('SEED_PASSWORD 至少 12 位，别再给种子账号设弱口令')
+  }
+  const generated = randomBytes(18).toString('base64url')
+  console.log('\n⚠️  未设置 SEED_PASSWORD，已随机生成种子账号密码：')
+  console.log(`    ${generated}`)
+  console.log('    这行只打印这一次，需要的话现在就记下来。\n')
+  return generated
+}
+
 async function main() {
   console.log('🌱 开始导入种子数据...')
-  const hash = await bcrypt.hash('Demo1234!', 10)
+  const hash = await bcrypt.hash(resolveSeedPassword(), 12)
 
   // Users
   for (const u of SEED_USERS) {
@@ -573,7 +597,7 @@ async function main() {
   console.log(`✅ 示例行程: ${DEMO_TRIPS.length} 条（IN_PROGRESS · PENDING · COMPLETED · PENDING_ASSIGNMENT）`)
 
   console.log('\n🎉 种子数据导入完成！')
-  console.log('\n📋 测试账号（密码统一：Demo1234!）:')
+  console.log('\n📋 测试账号（密码见上方 SEED_PASSWORD / 随机生成的那一行）:')
   SEED_USERS.forEach(u => console.log(`  ${u.role.padEnd(12)} ${u.email}`))
 }
 
