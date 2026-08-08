@@ -21,6 +21,7 @@ import { runScenarios } from './events/scenarios'
 import { recomputeOnHand, ensureNonNegativeStock } from './inventory'
 import { runAssertions } from './assert'
 import { DAY } from './shared'
+import { randomBytes } from 'node:crypto'
 
 const prisma = createPrismaClient()
 
@@ -69,7 +70,9 @@ async function main(): Promise<void> {
   if (!operator) throw new Error('缺少 OPERATOR 用户，请先 npm run db:seed')
 
   // 种子内造的 SALES 账号(幂等 upsert,email 固定,重跑不重复创建)
-  const seedPasswordHash = await bcrypt.hash('Demo1234!', 10)
+  // 这几个是造数据用的 SALES 账号，没人需要登进去。给一个**当场随机、无人知晓**的
+  // 口令即可 —— 原来写死 Demo1234!，等于每跑一次种子就往库里多埋几个公开凭据。
+  const seedPasswordHash = await bcrypt.hash(randomBytes(24).toString('base64url'), 10)
   const salesUserIdByName: Record<string, string> = {}
   for (const name of SALESMEN) {
     const email = `seed-evt-${name.toLowerCase().replace(/\s+/g, '.')}@veggie.demo`

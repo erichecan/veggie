@@ -3,7 +3,7 @@
  *
  * 一次性把"修改意见 1.0"截图里的 18 个销售/运营人员导入数据库。
  * 每个账号同时具备 OPERATOR + SALES 两个角色（roles[]），主角色 (role) 是 OPERATOR。
- * 初始密码：test123（参考项目现有测试账号习惯）。
+ * 初始密码：每人随机生成并打印，且标记首次登录必须改密。
  *
  * 使用：
  *   # 前置：确保 DB 已经有 User.roles 字段
@@ -14,13 +14,14 @@
  *
  * 行为：
  * - 按 email 幂等 upsert：已存在的账号只补齐 roles[]，不动密码
- * - 不存在则新建，password=test123（bcrypt 12 轮）
+ * - 不存在则新建，password=随机生成（bcrypt 12 轮）+ 首次登录强制改密
  * - 全程打印进度 + 最终统计
  *
  * 安全：bcrypt 12 轮和 /api/auth/login 一致。
  */
 import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/db'
+import { randomBytes } from 'node:crypto'
 
 interface UserInput {
   name: string
@@ -48,13 +49,20 @@ const USERS: UserInput[] = [
   { name: 'Zhang Min',               email: 'z-m-cat@hotmail.com' },
 ]
 
-const DEFAULT_PASSWORD = 'test123'
+/**
+ * ⛔ 这里原来是 `const DEFAULT_PASSWORD = 'test123'`，一批人共用一个哈希。
+ *    结果是 35 个生产账号长期使用同一个明文写在本文件里的弱口令，
+ *    见 docs/20260807-production-credentials-audit.md。
+ *
+ * 现在：**每人一个随机密码**，并置 mustChangePassword —— 本人首次登录必须自己改。
+ * 密码打印在导入日志里，由执行者负责分发；脚本不再持有任何默认口令。
+ */
+const genPassword = () => randomBytes(12).toString('base64url')
 const PRIMARY_ROLE = 'OPERATOR'
 const ROLES = ['OPERATOR', 'SALES']
 
 async function main() {
   // email 在 DB 用小写存（login 也是 toLowerCase 后查）
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12)
 
   let created = 0
   let updated = 0
@@ -86,23 +94,26 @@ async function main() {
       continue
     }
 
+    const pwd = genPassword()
     await prisma.user.create({
       data: {
         name: name.slice(0, 100),
         email: email.slice(0, 200),
-        passwordHash,
+        passwordHash: await bcrypt.hash(pwd, 12),
+
+        mustChangePassword: true,
         role: PRIMARY_ROLE as never,
         roles: ROLES,
         isActive: true,
       },
     })
-    console.log(`  [new]    ${email.padEnd(32)} ${name}  (pwd=${DEFAULT_PASSWORD})`)
+    console.log(`  [new]    ${email.padEnd(32)} ${name}  (pwd=${pwd})`)
     created++
   }
 
   console.log()
   console.log(`完成：新建 ${created}，更新 ${updated}，跳过 ${skipped}，共 ${USERS.length} 条`)
-  console.log(`密码统一为：${DEFAULT_PASSWORD}`)
+  console.log('每个新账号的初始密码见上方各行，均已标记「首次登录必须改密」。')
   console.log(`角色：${ROLES.join(' + ')}（主角色 ${PRIMARY_ROLE}）`)
 }
 

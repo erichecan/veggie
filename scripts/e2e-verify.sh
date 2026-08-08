@@ -18,7 +18,8 @@ set -euo pipefail
 
 HOST="${HOST:-http://localhost:3000}"
 OPERATOR_EMAIL="operator@veggie.com"
-DEFAULT_PASSWORD="Demo1234!"
+# 凭据不写死在脚本里，理由同 e2e-full-flow.sh
+DEFAULT_PASSWORD="${VEGGIE_TEST_PASSWORD:?请先设置 VEGGIE_TEST_PASSWORD（不要把密码写进脚本）}"
 
 echo "========================================"
 echo "🧪 E2E 主流程验证（对标 CLAUDE.md 完成标准）"

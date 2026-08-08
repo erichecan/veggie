@@ -3,7 +3,7 @@
  *
  * 从 pic/crm.team.csv 提取的 16 位司机，导入为 DRIVER 角色账号。
  * 邮箱占位格式：driver.[key]@veggie.local（无真实邮件地址）
- * 初始密码：test123
+ * 初始密码：每人随机生成并打印，且标记首次登录必须改密
  *
  * 使用：
  *   npx tsx --env-file=.env.local scripts/import-drivers.ts
@@ -14,6 +14,7 @@
  */
 import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/db'
+import { randomBytes } from 'node:crypto'
 
 interface DriverInput {
   name: string
@@ -41,10 +42,17 @@ const DRIVERS: DriverInput[] = [
   { name: 'YIWEI',     email: 'driver.yiwei@veggie.local' },
 ]
 
-const DEFAULT_PASSWORD = 'test123'
+/**
+ * ⛔ 这里原来是 `const DEFAULT_PASSWORD = 'test123'`，一批人共用一个哈希。
+ *    结果是 35 个生产账号长期使用同一个明文写在本文件里的弱口令，
+ *    见 docs/20260807-production-credentials-audit.md。
+ *
+ * 现在：**每人一个随机密码**，并置 mustChangePassword —— 本人首次登录必须自己改。
+ * 密码打印在导入日志里，由执行者负责分发；脚本不再持有任何默认口令。
+ */
+const genPassword = () => randomBytes(12).toString('base64url')
 
 async function main() {
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12)
 
   let created = 0
   let skipped = 0
@@ -59,10 +67,13 @@ async function main() {
       continue
     }
 
+    const pwd = genPassword()
     await prisma.user.create({
       data: {
         email,
-        passwordHash,
+        passwordHash: await bcrypt.hash(pwd, 12),
+
+        mustChangePassword: true,
         role: 'DRIVER',
         roles: ['DRIVER'],
         name: driver.name,

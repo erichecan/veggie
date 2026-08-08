@@ -185,8 +185,15 @@ Nginx 也确实设了 `X-Forwarded-For` / `X-Real-IP`（`/etc/nginx/sites-availa
 > 取下来的哈希文件用完即 `shred`。
 
 ### 上线后待办
-- [ ] `scripts/import-users.ts` / `import-drivers.ts` 里的 `DEFAULT_PASSWORD = 'test123'`：
-      改成「生成随机密码 + 自动置 mustChangePassword」，否则下次导入又是一批弱口令
+- [x] ~~`scripts/import-users.ts` / `import-drivers.ts` 的 `DEFAULT_PASSWORD`~~ ✅ 2026-08-08
+      已改成**每人一个随机密码 + 自动置 `mustChangePassword`**，密码打印在导入日志里由执行者分发。
+
+- [x] **把仓库里所有可用凭据清干净** ✅ 2026-08-08
+      改完 seed.ts 之后又 grep 出三处会把洞重新挖开的地方：
+      `prisma/seed-events/index.ts` 另有一个硬编码 `Demo1234!`（每跑一次种子就多埋几个公开凭据）；
+      `scripts/e2e-full-flow.sh`、`e2e-verify.sh`、`test-api.ts` 把同一个口令写死在测试脚本里。
+      前者改成随机口令（这些账号本来就没人需要登），后三者改成读 `VEGGIE_TEST_PASSWORD`。
+      现在 `scripts/` 与 `prisma/` 下除了弱口令**黑名单**本身，没有任何可用凭据。
 - [ ] 限流状态在进程内存里，将来多实例部署要换成共享存储
 
 ---

@@ -14,7 +14,9 @@ set -euo pipefail
 
 HOST="${HOST:-http://localhost:3000}"
 EMAIL="operator@veggie.com"
-PASS="Demo1234!"
+# 凭据不写死在脚本里 —— 20260807 之前这里是 Demo1234!，与生产账号同一个口令。
+# 用法：VEGGIE_TEST_PASSWORD='xxx' bash scripts/e2e-full-flow.sh
+PASS="${VEGGIE_TEST_PASSWORD:?请先设置 VEGGIE_TEST_PASSWORD（不要把密码写进脚本）}"
 
 ok()  { echo -e "\033[32m✓\033[0m $1"; }
 fail(){ echo -e "\033[31m✗\033[0m $1" >&2; exit 1; }

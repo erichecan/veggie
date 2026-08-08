@@ -10,6 +10,12 @@
  *   3. 输出 PASS / FAIL 汇总表
  */
 
+const TEST_PASSWORD = process.env.VEGGIE_TEST_PASSWORD ?? ''
+if (!TEST_PASSWORD) {
+  console.error('请先设置 VEGGIE_TEST_PASSWORD（不要把密码写进脚本）')
+  process.exit(1)
+}
+
 const BASE = 'http://localhost:3000'
 
 // ── 颜色工具 ──────────────────────────────────────────────────────────────────
@@ -50,8 +56,10 @@ async function login() {
   console.log(`\n${C}=== 1. Auth ===${RESET}`)
   // 先查有没有 admin 用户
   const candidates = [
-    { email: 'operator@veggie.com', password: 'Demo1234!' },
-    { email: 'erichecan@gmail.com', password: 'Demo1234!' },
+    // 密码从环境变量读，不写死在脚本里 —— 这里原本是 Demo1234!，
+    // 与生产账号同一个口令（见 docs/20260807-production-credentials-audit.md）
+    { email: 'operator@veggie.com', password: TEST_PASSWORD },
+    { email: 'erichecan@gmail.com', password: TEST_PASSWORD },
   ]
   let r: { status: number; json: unknown } = { status: 0, json: null }
   for (const cred of candidates) {
