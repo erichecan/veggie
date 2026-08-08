@@ -411,7 +411,22 @@ export async function POST(req: Request) {
               price: l.authoritativeUnitPrice,
             })),
             total: totalAmount,
-          }).catch((e) => console.error('[email] order confirmation failed:', e))
+          }).catch(async (e) => {
+            // 发信失败不该拖垮下单，但也**不能只 console.error 了事** ——
+            // 那样运营永远不知道这单的确认信没送出去（2026-08-08 之前生产上
+            // 因发件域未验证，这里每一单都在静默失败）。落一条 ActionLog，
+            // 订单 chatter 里可见。
+            console.error('[email] order confirmation failed:', e)
+            await writeLog({
+              userId: user.userId,
+              userEmail: user.email,
+              userName: user.name,
+              action: 'UPDATE',
+              resource: 'order',
+              resourceId: order.id,
+              detail: `⚠️ 订单确认邮件发送失败（收件人 ${cust.email}）：${e instanceof Error ? e.message : String(e)}`,
+            })
+          })
         }
       }
 

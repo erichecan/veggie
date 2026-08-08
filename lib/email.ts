@@ -1,11 +1,57 @@
 import { Resend } from 'resend'
 import { eur } from './format-money'
 
-const FROM = 'VeggieSupply <noreply@veggiesupply.ie>'
+/**
+ * 发件地址。⛔ 不要写死 —— 域名必须在 Resend 验证过，否则 API 直接 403，
+ * 一封都发不出去。2026-08-08 实测 `veggiesupply.ie` 从未验证过，也就是说在此之前
+ * 生产上的订单确认 / 密码重置 / 采购 RFQ 三处**全部**是发不出去的。
+ *
+ * 迁到客户自有服务器后照样靠环境变量注入，不依赖任何云厂商的配置中心。
+ */
+const FROM = process.env.EMAIL_FROM || 'Johnstone Bros <noreply@johnstonebros.ie>'
 
 function getResend() {
   if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY not set')
   return new Resend(process.env.RESEND_API_KEY)
+}
+
+export interface EmailAttachment {
+  filename: string
+  content: Buffer
+}
+
+/**
+ * 所有发信的唯一出口。
+ *
+ * ⛔ Resend SDK 失败时**不抛异常**，而是把错误放进返回值的 `error` 字段。
+ * 只 `await` 不看返回值 = 发送失败被静默咽掉，调用方以为发成功了。
+ * 这里统一把它翻译成异常，让调用方的 try/catch 真正有意义。
+ */
+async function dispatch(payload: {
+  to: string | string[]
+  cc?: string[]
+  subject: string
+  html: string
+  attachments?: EmailAttachment[]
+  replyTo?: string
+}): Promise<{ id: string }> {
+  const { error, data } = await getResend().emails.send({
+    from: FROM,
+    to: payload.to,
+    ...(payload.cc?.length ? { cc: payload.cc } : {}),
+    ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
+    subject: payload.subject,
+    html: payload.html,
+    ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
+  })
+
+  if (error) {
+    throw new Error(`[resend] ${error.name}: ${error.message}`)
+  }
+  if (!data?.id) {
+    throw new Error('[resend] 发送未返回消息 id，无法确认是否送达')
+  }
+  return { id: data.id }
 }
 
 export async function sendOrderConfirmation(params: {
@@ -24,8 +70,7 @@ export async function sendOrderConfirmation(params: {
     )
     .join('')
 
-  await getResend().emails.send({
-    from: FROM,
+  await dispatch({
     to,
     subject: `订单确认 #${orderId.slice(-6).toUpperCase()} — VeggieSupply`,
     html: `
@@ -64,8 +109,7 @@ export async function sendPasswordReset(params: {
 }) {
   const { to, userName, tempPassword } = params
 
-  await getResend().emails.send({
-    from: FROM,
+  await dispatch({
     to,
     subject: '您的 VeggieSupply 临时密码',
     html: `
@@ -93,8 +137,7 @@ export async function sendPurchaseOrderRfq(params: {
 }) {
   const { to, poName, supplierName, pdfBuffer } = params
 
-  await getResend().emails.send({
-    from: FROM,
+  await dispatch({
     to,
     subject: `Request for Quotation ${poName} — VeggieSupply`,
     html: `
