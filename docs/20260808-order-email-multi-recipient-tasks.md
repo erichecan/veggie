@@ -98,7 +98,15 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
       产出：`app/api/customers/[id]/contacts/route.ts` 及 `[cid]/route.ts`
       依赖：T2
 
-- [ ] **T4 客户详情页联系人管理 UI**
+- [x] **T4 客户详情页联系人管理 UI** ✅ 2026-08-08
+      客户详情页本来就有「Contacts & Addresses」这个 tab，但它是个**死按钮** ——
+      点 Add 只弹一句「联系人功能即将推出」。现在实现成真的。
+      **浏览器实点验证**：新增联系人落库成功、邮箱 `Receiving@PDF.Example.COM`
+      被规范化为小写、点「设为主联系人」真正改库（切换后原主联系人自动卸任，
+      库里查证只剩一条 isPrimary）。
+      新建客户页（id='new'）不渲染面板，改为提示先保存客户 —— 否则会拿 'new'
+      去请求一个不存在的客户。
+      build EXIT=0，全量 386 测试 0 失败。
       验收：浏览器实点 —— 能增/删/改联系人、能切换主联系人，列表为空有空状态提示，
             不是空白页；改完刷新仍在
       产出：`app/[locale]/classic/operator/customers/[id]/page.tsx` + 联系人组件

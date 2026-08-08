@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
+import CustomerContactsPanel from '@/components/customers/contacts-panel'
 import type { Customer, OdooPricelist } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -716,15 +717,14 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
 
           {/* Contacts & Addresses */}
           {activeTab === 'contacts' && (
-            <div>
-              <button
-                className="h-7 px-3 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                onClick={() => toast.info(isEn ? 'Contacts feature coming soon' : '联系人功能即将推出')}
-              >
-                Add
-              </button>
-              <p className="mt-3 text-sm text-gray-400">No additional contacts or addresses.</p>
-            </div>
+            // 新建页还没有 customerId，联系人挂不上去 —— 先存客户再回来加
+            isNew ? (
+              <p className="text-sm text-gray-400">
+                {isEn ? 'Save the customer first, then add contacts.' : '请先保存客户，再添加联系人。'}
+              </p>
+            ) : (
+              <CustomerContactsPanel customerId={id} isEn={isEn} />
+            )
           )}
 
           {/* Internal Notes + External Note */}
