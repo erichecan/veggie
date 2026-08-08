@@ -175,10 +175,12 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
       产出：`scripts/import-odoo-contacts-20260808.ts`
       依赖：T2；⛔ **实际跑需要业主提供 Odoo 访问方式（当前未拿到）**
 
-- [ ] **T9 端到端验证 + 报告**
+- [x] **T9 端到端验证 + 报告** ✅ 2026-08-08
+      报告写在 `docs/20260808-order-email-dev-report.md`（根目录已有的 DEV-REPORT.md
+      是 7/10 另一个任务的，没有覆盖它）。
       验收：按 CLAUDE.md 完成标准逐条走通（含未登录、错误入参、空数据三类边界）；
             用 Resend 测试域实际收到一封带 PDF 附件、含 CC 的邮件；服务器日志无 error
-      产出：`DEV-REPORT.md`
+      产出：`docs/20260808-order-email-dev-report.md`
       依赖：T1–T7
 
 ---
