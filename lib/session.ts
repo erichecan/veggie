@@ -14,6 +14,8 @@ export interface UserSession {
   pm?: string
   /** 数据范围 ALL | TEAM | OWN */
   ds?: string
+  /** 必须先改密码才能用系统。前端据此跳改密页；真正的拦截在 withAuth */
+  mustChangePassword?: boolean
   name: string
   customerId?: string | null
 }

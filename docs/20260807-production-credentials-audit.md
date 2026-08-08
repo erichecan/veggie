@@ -105,24 +105,47 @@ Nginx 也确实设了 `X-Forwarded-For` / `X-Real-IP`（`/etc/nginx/sites-availa
 > 顺序是**故意**的：先加防护、再上强制改密流程、**最后才换种子账号密码**。
 > 换密码的那一刻，当前在用的人就进不来了，必须等新密码交付到位才能做。
 
-- [ ] **S1 登录防爆破补齐：按账号限流 + 连续失败锁定**
+- [x] **S1 登录防爆破补齐：按账号限流 + 连续失败锁定** ✅ 2026-08-08
       现有的按 IP 10 次/分钟保留。新增：同一个邮箱连续失败达阈值后临时锁定，
       与来源 IP 无关（换 IP 绕不过）。锁定要**只影响该账号**，不能误伤别人。
       **验收**：同一账号换不同 IP 连续失败仍被锁；锁定期内即使密码正确也拒绝；
       锁定不影响其它账号登录；锁定到期自动解除；成功登录清零计数。
-      **产出**：`lib/login-throttle.ts`、`app/api/auth/login/route.ts`、测试
+      **产出**：`lib/login-throttle.ts`、`app/api/auth/login/route.ts`、`tests/login-throttle.test.ts`
       **依赖**：无
 
-- [ ] **S2 首次登录强制改密**
+      **实测**：连续 5 次错密码 → 429 锁 60 秒；锁定期内**即使密码正确也拒绝**；
+      IP 窗口重置后另一个账号照常登录，证明锁的是账号不是来源。
+      动态码错误也计入失败（否则密码这关一过，6 位数字可以无限试）。
+      账号不存在与密码错误合并处理，避免用户名枚举。
+
+- [x] **S2 首次登录强制改密** ✅ 2026-08-08
       `User.mustChangePassword` 标记位；登录成功后若为 true，前端跳改密页；
       后端在 `withAuth` 里拦住除改密接口外的一切写操作，避免只靠前端跳转被绕过。
       给 42 个真实员工账号置 true。
       **验收**：带标记的账号登录后进不了任何业务页，只能改密；改完标记清除、能正常用；
       新密码不能与旧密码相同、不能是 `test123`/`Demo1234!` 这类已泄露口令；
       未带标记的账号完全不受影响。
-      **产出**：`prisma/schema.prisma` + 迁移、`lib/auth.ts`、
-      `app/api/auth/change-password/route.ts`、改密页面、测试
+      **产出**：`prisma/schema.prisma` + `20260808000000_must_change_password`、
+      `lib/password-policy.ts`、`lib/auth.ts`、`middleware.ts`、
+      `app/api/auth/change-password/route.ts`、`app/[locale]/change-password/page.tsx`、
+      `scripts/security/flag-weak-passwords.ts`、`tests/must-change-password.test.ts`
       **依赖**：S1
+
+      **⛔ 计划外但必须做的一件事：判定放进 middleware，不能只放 withAuth。**
+      第一版只做了 withAuth 那一层，实测弱口令账号打 `/api/orders`、`/api/customers`
+      **仍然 200** —— 那 47 个只靠 middleware 的 GET 根本不经过 withAuth（§9.7 那个缺口）。
+      改密后旧 token 在这些接口上同样照用不误。`mcp` 就在 JWT 里、不需要查库，
+      所以 Edge runtime 也能判，这一半缺口当场堵死了（`pv` 那一半仍需迁 proxy.ts）。
+      修完复测：6 个接口全 403，页面 307 跳 `/change-password?forced=1`。
+
+      **「谁该被强制改密」不能用 SQL 判**。第一版按「重复的 passwordHash」推断
+      （导入脚本算一次哈希复制给一批人），实测出错：漏掉一个密码是 `123456` 的
+      独立哈希账号，同时会误判两个真的自己改过密码的账号。改成
+      `flag-weak-passwords.ts` 用 bcrypt 逐个比对弱口令字典，默认 dry-run。
+
+      **密码策略挡的是这次真实出现过的那几个**，不是堆复杂度规则：
+      黑名单 + 子串匹配（`test123test123` 也拒）+ 不能含自己邮箱名/姓名的**片段**
+      （现网邮箱 `driver.moazzam@…`，人会拿 `moazzam` 当密码，按整串比对正好放过）。
 
 - [ ] **S3 种子账号换强密码（⛔ 最后做，且要先把密码交出去）**
       9 个 `*@veggie.com` 各生成一个随机强密码。**密码不进 git**，

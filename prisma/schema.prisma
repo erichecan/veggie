@@ -158,6 +158,10 @@ model User {
   managerId   String?
   /// 权限版本号。权限变更时 bump，token 里的 pv 落后就强制重新登录
   permVersion Int    @default(0)
+  /// 必须先改密码才能用系统。导入脚本造出来的一批弱口令账号（test123）置 true，
+  /// 登录后除了改密接口什么都调不了，改完自动清掉。见
+  /// docs/20260807-production-credentials-audit.md
+  mustChangePassword Boolean @default(false)
 
   manager      User?  @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
   subordinates User[] @relation("UserManager")

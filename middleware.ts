@@ -6,6 +6,25 @@ import { isPublicApiRoute } from './lib/public-routes'
 import { homeFor } from './lib/role-access'
 import { canAccessApi, canAccessPage, rolesOf } from './lib/rbac/gate'
 
+/** token 里带 mcp=true = 这个账号还在用初始密码，必须先改密 */
+function mustChangePassword(payload: unknown): boolean {
+  return (payload as { mcp?: boolean })?.mcp === true
+}
+
+/**
+ * 改密流程本身要放行，否则就是「让人去改密码，却把改密码的门也锁上」。
+ * 名单要同时覆盖页面路径与接口路径，两个分支共用。
+ */
+function isPasswordFlowPath(path: string): boolean {
+  return (
+    path === '/change-password' ||
+    path.startsWith('/change-password/') ||
+    path.startsWith('/api/auth/change-password') ||
+    path.startsWith('/api/auth/logout') ||
+    path.startsWith('/api/auth/me')
+  )
+}
+
 const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? 'veggie-demo-fallback-secret')
 
 // 白名单与放行判定在 lib/public-routes.ts，由 tests/public-api-routes.test.ts 锁住。
@@ -34,6 +53,19 @@ export async function middleware(req: NextRequest) {
     }
     try {
       const { payload } = await jwtVerify(token, secret)
+      // ⛔ 还在用初始密码的账号：除改密相关接口外一律挡住。
+      //
+      // 这一道**必须放在 middleware**，不能只放在 withAuth 里。实测过：
+      // 全站 242 个 handler 里有 47 个 GET 从不调用 withAuth（只靠 middleware 判权限），
+      // `/api/orders`、`/api/customers` 都在其中 —— 只做 withAuth 那一层的话，
+      // 弱口令账号照样读得到全部订单和客户名单。
+      // 判定只看 token 里的 mcp claim，不查库，所以 Edge runtime 也能做。
+      if (mustChangePassword(payload) && !isPasswordFlowPath(pathname)) {
+        return NextResponse.json(
+          { error: 'PASSWORD_CHANGE_REQUIRED', message: '首次登录请先修改密码' },
+          { status: 403 },
+        )
+      }
       // 按 token 里的权限位图判定（旧 token 无位图时回退角色白名单，见 lib/rbac/gate.ts）。
       // 放在这里而不是逐个路由加 allowedRoles —— 后者要改 152 处且漏一处就还是漏，
       // 而且新增路由默认又是敞开的；这里未登记的路由默认拒绝。
@@ -61,6 +93,15 @@ export async function middleware(req: NextRequest) {
 
   try {
     const { payload } = await jwtVerify(token, secret)
+    // 弱口令账号在页面层直接送去改密页，别让他先看到一屏 403
+    if (mustChangePassword(payload) && !isPasswordFlowPath(barePath)) {
+      const url = new URL(
+        localePrefix ? `/${localePrefix}/change-password` : '/change-password',
+        req.url,
+      )
+      url.searchParams.set('forced', '1')
+      return NextResponse.redirect(url)
+    }
     // 页面层同样收窄：餐馆客户不能登录运营后台（2026-08-06 用户明确要求），
     // 各内部岗位也只看得到自己那块。光挡 API 不够 —— 页面能打开但数据全 403，
     // 用户看到的是一堆空壳和报错，既暴露了别人后台的存在，也说不清是权限问题还是系统坏了。

@@ -294,6 +294,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
  */
 export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/enter', permission: null },
+  // 改密页：任何登录用户都要进得来。被强制改密的账号除了这里哪都去不了，
+  // 少这条规则就是「让人去改密码，却把改密码的门也锁上」（兜底语义是未命中即拒绝）
+  { pattern: '/change-password', permission: null },
   { pattern: '/customer-portal/**', permission: 'page.portal.access' },
   { pattern: '/classic/restaurant/**', permission: 'page.restaurant.access' },
   { pattern: '/classic/driver/**', permission: 'page.driver.access' },

@@ -50,6 +50,12 @@ export default function EnterPage() {
       writeAuthCookie(data.token)
       localStorage.setItem('veggie_token', data.token)
       localStorage.setItem('veggie_user', JSON.stringify(data.user))
+      // 还在用初始密码的账号先去改密码 —— 后端也会挡（withAuth 的
+      // PASSWORD_CHANGE_REQUIRED），这里跳转只是别让人先看到一屏 403
+      if (data.user.mustChangePassword) {
+        router.replace(`${prefix}/change-password?forced=1`)
+        return
+      }
       router.replace(ROLE_PATHS[data.user.role] ?? `${prefix}/`)
     } catch {
       setError(t('networkError'))

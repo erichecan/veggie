@@ -49,6 +49,29 @@ export interface JwtPayload {
   ds?: string
   /** 权限版本号。落后于 User.permVersion 就强制重新登录 */
   pv?: number
+  /** 必须先改密码（must change password）。为 true 时除改密接口外一律拒绝 */
+  mcp?: boolean
+}
+
+/**
+ * 处于「必须改密」状态时仍然放行的接口。
+ *
+ * 只能是「改密码本身」和「知道自己是谁」这两件事 —— 多放一个进来，
+ * 强制改密就成了一句建议。
+ */
+const PASSWORD_CHANGE_EXEMPT = [
+  '/api/auth/change-password',
+  '/api/auth/logout',
+  '/api/auth/me',
+]
+
+function isPasswordChangeExempt(url: string): boolean {
+  try {
+    const path = new URL(url, 'http://x').pathname.replace(/^\/(en|zh)(?=\/)/, '')
+    return PASSWORD_CHANGE_EXEMPT.some((p) => path === p || path.startsWith(p + '/'))
+  } catch {
+    return false
+  }
 }
 
 /** 把 user 拍平成"该用户拥有的角色集合"，供 withAuth / 前端做权限判断 */
@@ -154,6 +177,16 @@ export async function withAuth(
     return NextResponse.json(
       { error: 'PERMISSION_CHANGED', message: '权限已变更，请重新登录' },
       { status: 401 },
+    )
+  }
+
+  // ⛔ 必须改密的账号，除改密接口外一律挡住。
+  // 只靠前端跳转是不够的 —— 前端跳转拦不住直接打接口的人，而这批账号的密码
+  // (test123 / 123456) 是公开可知的，等于谁都能拿它调 API。
+  if (user.mcp === true && !isPasswordChangeExempt(request.url)) {
+    return NextResponse.json(
+      { error: 'PASSWORD_CHANGE_REQUIRED', message: '首次登录请先修改密码' },
+      { status: 403 },
     )
   }
 

@@ -117,6 +117,28 @@ export async function api<T = unknown>(
     throw new ApiError(message, 401, permissionChanged ? 'PERMISSION_CHANGED' : undefined)
   }
 
+  // 403 + PASSWORD_CHANGE_REQUIRED：账号还在用初始密码，除了改密什么都不让做。
+  // 直接把人送到改密页，否则他会在一个每次点击都报错的界面里打转。
+  if (res.status === 403) {
+    const clone = res.clone()
+    try {
+      const body = await clone.json()
+      if (body?.error === 'PASSWORD_CHANGE_REQUIRED') {
+        const isEn = isEnLocale()
+        const msg = isEn ? 'Please change your password first' : '请先修改密码'
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/change-password')) {
+          setTimeout(() => {
+            window.location.href = `${isEn ? '/en' : ''}/change-password?forced=1`
+          }, 300)
+        }
+        throw new ApiError(msg, 403, 'PASSWORD_CHANGE_REQUIRED')
+      }
+    } catch (e) {
+      if (e instanceof ApiError) throw e
+      /* 不是这个 code，落到下面的通用处理 */
+    }
+  }
+
   if (!res.ok) {
     let rawMessage: string | undefined
     let code: string | undefined
