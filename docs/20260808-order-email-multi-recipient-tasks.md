@@ -104,7 +104,13 @@ PDF 渲染走 puppeteer，是重操作，但只在点发送时同步跑一次，
       产出：`app/[locale]/classic/operator/customers/[id]/page.tsx` + 联系人组件
       依赖：T3
 
-- [ ] **T5 抽取订单单据 HTML 模板**
+- [x] **T5 抽取订单单据 HTML 模板** ✅ 2026-08-08
+      route 从 271 行缩到 44 行；`renderOrderHtml` 是纯函数（不查库、不读时间），
+      数据获取含 wave 派生的司机归属留在 route。
+      逐字节验证：改动前后同一订单输出均为 **7061 字节，diff 为空**。
+      ⚠️ 发现一处 T6 要处理的差异：这份模板依赖 CDN 上的 JsBarcode + 客户端 JS 画条码，
+      而采购单模板是纯静态无外部依赖。浏览器打印没问题（`setContent(waitUntil:'load')`
+      会等它），但服务器不通外网时 PDF 附件里条码会是空白。
       验收：`lib/order-pdf.ts` 导出 `renderOrderHtml(order, customer)`；
             `/api/orders/[id]/pdf` 改为调用它，打印页输出与改动前**逐字节一致**（diff 验证）
       产出：`lib/order-pdf.ts`、`app/api/orders/[id]/pdf/route.ts`
