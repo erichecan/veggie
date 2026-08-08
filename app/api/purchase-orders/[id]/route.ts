@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
+import { withAuth, userHasPermission } from '@/lib/auth'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
@@ -274,6 +274,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     try {
       const { id } = await params
       const { action } = await req.json()
+
+      // ⛔ 同一个端点承载多个动作，route-map 只认 URL + method，分不开「改」和「批」。
+      // 客户的岗位划分正卡在这条线上：办公室销售能录采购单，审批要更高一级的人。
+      // 不在这里细分的话，`purchase.order.approve` 就是一个没人引用的装饰性权限点 ——
+      // 配置页上勾了它什么也不会发生，比没有更糟。
+      const FINER_GATE: Record<string, string> = {
+        approve: 'purchase.order.approve',
+        confirm: 'purchase.order.approve',
+        receive: 'purchase.order.receive',
+      }
+      const finer = FINER_GATE[action]
+      if (finer && !userHasPermission(user, finer)) {
+        return NextResponse.json({ error: `权限不足，需要: ${finer}` }, { status: 403 })
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any

@@ -387,44 +387,97 @@ JWT 新增三个字段：
 
 ### 批 3：配置页面
 
-- [ ] **T10 角色与权限 API**
+- [x] **T10 角色与权限 API** ✅ 2026-08-07 · `bc81014`
       `/api/rbac/roles` CRUD、`/api/rbac/permissions`（读 catalog）、
-      `/api/rbac/users/[id]/roles`、`/api/rbac/users/[id]/grants`。
-      全部要求 `system.rbac.manage`。
-      **验收**：无该权限的账号一律 403；建角色→分配→实测目标接口从 403 变 200。
-      **产出**：`app/api/rbac/**`
+      `/api/rbac/users/[id]`（读合并结果 / 写角色与个人例外）。
+      读要 `system.rbac.read`，写要 `system.rbac.manage`。
+      **验收**：✅ 生产实测 BOSS/OPERATOR 200、其余 6 个角色全 403。
+      **产出**：`app/api/rbac/**`、`lib/rbac/admin.ts`
       **依赖**：T7
 
-- [ ] **T11 权限中心 UI（三 tab）**
+      做的过程中揪出 §9.6 的事故（12 个角色全带 `system.rbac.manage`）。
+
+- [x] **T11 权限中心 UI（三 tab）** ✅ 2026-08-07 · `<本次>`
       扩 `/classic/operator/users` 为用户 / 角色 / 权限总览三 tab，按 §6。
-      **验收**：每个可点元素有响应；空状态有提示；建角色全流程走通并在另一浏览器会话生效。
-      **产出**：`app/[locale]/classic/operator/users/**`
+      **验收**：✅ 一次性 PG + 真浏览器逐个点过（Playwright 这次是可用的，
+      与记忆里「本项目没有浏览器自动化」相反 —— 记忆已更正）。
+      **产出**：`app/[locale]/classic/operator/users/{page,users-tab,roles-tab,matrix-tab,
+      permission-tree,role-editor-dialog,user-permission-dialog,rbac-client}.tsx`
       **依赖**：T10
 
-- [ ] **T12 防锁死 + 审计 + 强制重登**
-      保存时校验「至少一个活跃用户有 `system.rbac.manage`」；权限变更写 `ActionLog`；
-      bump `User.permVersion`，handler 发现 `token.pv < permVersion` 返回 401，
-      前端跳登录页提示「权限已变更，请重新登录」。
-      **验收**：尝试删掉自己最后的管理权限被拒并给出说明；改了 A 的权限后 A 下次请求被踢到登录页，
-      B 不受影响；`ActionLog` 里能查到这次变更的前后值。
-      **产出**：`app/api/rbac/**`、`lib/auth.ts`、前端 401 处理
+      **实测**：19 个角色（12 预置 + 7 模板）在角色 tab 全部渲染，预置角色 🔒 且删除按钮
+      disabled；权限树半选态正确（办公室销售「采购单」组显示 4/14，展开后「审批」「收货」
+      未勾）；权限总览 20 列 × 各模块，格子是「勾了几个/共几个」而不是有/无 ——
+      「只能看」和「能删」得一眼分得开。控制台 0 error。
+
+      **顺手修的两处**：
+      - `/api/users` 列表补 `managerId` + `manager.name`，用户 tab 多了「上级」列；
+        角色列改为显示**全部角色**而不只主角色（19 个 SALES 兼 OPERATOR 只显示一个是骗人的）
+      - 预置 12 个角色在配置页里显示成 `BOSS` / `DISPATCH` 这种枚举名。这个页面是给客户的
+        管理员看的，已加迁移 `20260807000005` 改成中文名（code 不动，平迁基线与 legacy
+        回退都按 code 认它们）；只改「还没被人改过名字」的，不覆盖管理员的调整。
+
+- [x] **T12 防锁死 + 审计 + 强制重登** ✅ 2026-08-07 · `<本次>`
+      **验收**：
+      - ✅ 防锁死三种走法全部被拒并给出人话：把唯一管理员降级 409、摘掉 operator 的
+        `system.rbac.manage` 409、删预置角色 409；事后查库确认 operator 仍是 163 个权限点
+        （校验跑在事务里，不过就整体回滚）
+      - ✅ 改了 A 的权限后，A 的旧 token 打 `/api/orders`、`/api/purchase-orders` 均返回
+        `401 {"error":"PERMISSION_CHANGED"}`；B（admin）不受影响，同一时刻 200
+      - ✅ `ActionLog` 里查得到建角色 / 删角色 / 改某人权限，含影响人数
+      **产出**：`lib/rbac/perm-version.ts`、`lib/auth.ts`、`lib/api.ts`、`app/[locale]/enter/page.tsx`
       **依赖**：T11
+
+      **计划外但必须做的一件事**：permVersion 查询加了 30 秒进程内缓存。`withAuth` 原本
+      **零次查库**，纯验签；每请求加一次 `SELECT permVersion` 在 2 vCPU 上不是可忽略的开销
+      （记忆「droplet 性能与容灾」：瓶颈是 CPU，8 并发即饱和）。改权限的接口会就地清缓存，
+      单进程部署下没有滞后。
+
+      **⚠️ 已知覆盖缺口（见 §9.7）**：`pv` 校验只覆盖走 `withAuth` 的 194 个 handler，
+      另外 47 个只靠 middleware 的 GET 不经过它，被作废的 token 在它们上面仍按**旧位图**放行。
 
 ### 批 4：业务角色模板
 
-- [ ] **T13 建 7 个业务角色（不自动分配）**
-      按 §4 的岗位映射建成预置角色模板：办公室销售 / 高级销售 / 销售经理 / 仓库经理 /
-      外聘销售 / 配送中心 / 打印中心。**只建角色，不动现有 51 个账号的分配** —— 上线后由
-      管理员在配置页自行调整（决策 4）。
-      **验收**：7 个角色在配置页可见、权限点勾选状态与 §4 一致；
-      拿一个测试账号挂上「办公室销售」后实测：能建订单、能录采购单、**不能批采购单**。
-      **产出**：`prisma/seed-rbac.ts`
+- [x] **T13 建 7 个业务角色（不自动分配）** ✅ 2026-08-07 · `<本次>`
+      按 §4 的岗位映射建成模板。**只建角色，不动现有 51 个账号的分配**（决策 4）。
+      **验收**：✅ 7 个角色在配置页可见、权限点勾选与 §4 一致；测试账号挂「办公室销售」实测：
+      `POST /api/orders` 400（过了权限闸、卡在业务校验）· `POST /api/purchase-orders` 400 ·
+      `PATCH ?action=approve` **403 purchase.order.approve** · `?action=receive` **403** ·
+      `?action=send` 404（过闸）。对照组 admin 打同样两个 action 均 404（过闸）。
+      **产出**：`scripts/rbac/generate-business-roles.ts`、`prisma/seed-business-roles.json`、
+      `prisma/migrations/20260807000003_*`、`tests/rbac-business-roles.test.ts`
       **依赖**：T12
+
+      权限点数：办公室销售 43 · 高级销售 56 · 销售经理 83(TEAM) · 仓库经理 39 ·
+      外聘销售 21(OWN) · 配送中心 43 · 打印中心 14。
+
+      **⛔ 计划外但必须做的一件事：把 `purchase.order.approve` 变成真判定。**
+      验收里的「不能批采购单」原本**根本无法成立** —— 审批、收货、发送全都是
+      `PATCH /api/purchase-orders/[id]` 的 `action` 参数，route-map 只认 URL + method，
+      整体映射到 `purchase.order.update`。`purchase.order.approve` 在 catalog 里躺着，
+      没有任何地方引用它，勾了不会有任何效果。这比「没有这个权限点」更糟：
+      配置页上摆着一个假开关。已在 handler 里加 `FINER_GATE` 做子动作判定。
+
+      拆细动作最容易造成的伤害不是「谁多了权限」，而是**所有人都少了一个能力** ——
+      改造前有 `update` 就能审批，拆完之后没人拿得到 `approve`，审批功能对全公司静默中断。
+      因此同步做了两件事：`derive-system-roles.ts` 里登记 `INTENTIONAL_GRANTS`
+      （BOSS/OPERATOR 补 approve + receive，理由写在脚本里），迁移 `20260807000004`
+      给现网库补上，并有测试盯着「有 update 的角色必须有 approve」。
+
+      **踩到的坑**：那条补权限的迁移跑在建模板之后，`WHERE 'purchase.order.update' = ANY(...)`
+      把刚建好的「办公室销售」也一起补了 —— 43 个权限点变 45，刚拆出来的分界线当场被抹平。
+      加 `AND "isSystem" = true` 修好，并加测试锁住这个条件。
+      **同一批里造出来的东西会互相影响，一条 UPDATE 的 WHERE 写宽一点就够。**
 
 ### 上线后待办（需用户参与，不阻塞开发）
 
 - [ ] 19 个 SALES 兼 OPERATOR 是否拆分
 - [ ] 那个收窄后够不着任何页面的 PICKER 账号还用不用（8/6 遗留问题）
+- [ ] **把 `middleware.ts` 迁到 `proxy.ts`（Node runtime），关掉 §9.7 那 47 个 GET 的缺口。**
+      顺带可以重新评估「位图塞 JWT」这个决策的其它取舍 —— 但位图本身值得留（每请求零查库）
+- [ ] `KNOWN_INERT` 那 8 个「勾了不生效」的权限点（见 `tests/rbac-business-roles.test.ts`）：
+      `sales.order.confirm/cancel` 要照采购那样在 handler 里细分才有意义；
+      `analytics.commission.read` 等提成考核报表做出来（属灵活分析那批）
 - [ ] `/classic/print` 的 layout 本身仍无角色判定（只靠 middleware），建议补一道
 
 ---
@@ -562,6 +615,28 @@ T5 那次修了三处（parity 基线、`role-reachability.ts`、`api-write-gate
 
 ---
 
+### 9.7 「强制重新登录」覆盖不全 —— 47 个 GET 漏在外面
+
+做 T12 时实测发现的，**不是猜测**。
+
+| | |
+|---|---|
+| 现象 | 权限被改过的 token，打 `/api/orders`、`/api/customers` 仍然 200；打 `/api/purchase-orders` 才 401 |
+| 根因 | `pv` 校验写在 `withAuth` 里。全站 242 个 handler 中只有 194 个走 `withAuth`（161 权限点闸 + 31 只验登录 + 2 cron），**另外 48 个从不调用它**（47 个 GET + login），它们的权限判定完全由 middleware 承担 |
+| 为什么不能挪到 middleware | middleware 跑 Edge runtime，用不了 Prisma —— 这正是当初把权限位图塞进 JWT 的原因（§2 决策）。没有库就查不到 `permVersion` |
+| 实际暴露面 | 被作废的 token 在这 47 个**只读**接口上按**旧位图**放行，直到过期（最长 7 天）。但用户只要做任何一次写操作、或碰到那 161 个权限点闸中的任何一个，立刻 401 被踢去重新登录 —— 实际窗口很窄，但确实存在 |
+
+**顺带查到一件对后续有用的事**：本项目 Next 16.2.3。`middleware.ts` 已被标记废弃，
+新的 `proxy.ts` 约定**默认跑 Node.js runtime**（`node_modules/next/dist/docs/01-app/
+03-api-reference/03-file-conventions/proxy.md` §Runtime；Node runtime 的 middleware 自
+v15.5 起 stable）。也就是说「middleware 用不了 Prisma」这条硬约束**已经不成立了**。
+
+迁到 `proxy.ts` 就能让 `pv` 校验覆盖每一个请求，把这个缺口彻底关掉。
+但那是把整个边界层换 runtime，风险不属于本批 —— 已登记为上线后待办。
+位图设计本身仍然值得保留（每请求零查库），迁移只是**多加一道作废校验**，不是推翻它。
+
+---
+
 ## 10. 进度回写区
 
 | 任务 | 完成时间 | 证据(commit) | 备注 |
@@ -583,3 +658,6 @@ T5 那次修了三处（parity 基线、`role-reachability.ts`、`api-write-gate
 | T9 | 2026-08-07 | `3be92ac` | managerId + 环检测；顺手补 3 个静默失效的洞 |
 | T10 | 2026-08-07 | `bc81014` | `/api/rbac/*` 六个接口 + 防锁死校验；做的过程中揪出 §9.6 的事故 |
 | 事故修复 2 | 2026-08-07 | `bc81014` | 推导算法把无人引用的权限点发给了所有角色，见 §9.6 |
+| T11 | 2026-08-07 | 见下 | 权限中心三 tab；真浏览器逐个点过，控制台 0 error；顺手补上级列、多角色显示、预置角色中文名 |
+| T12 | 2026-08-07 | 见下 | 防锁死三种走法全部 409 且事务回滚；改权限后旧 token 401 PERMISSION_CHANGED；**覆盖缺口见 §9.7** |
+| T13 | 2026-08-07 | 见下 | 7 个业务模板；把 `purchase.order.approve` 从装饰变成真判定，并补回 BOSS/OPERATOR 免得审批静默中断 |

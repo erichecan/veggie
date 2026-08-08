@@ -23,6 +23,9 @@ export async function GET(req: Request) {
           customerId: true,
           createdAt: true,
           updatedAt: true,
+          // 上级：权限中心要显示这一列，也是「本人及下属」范围的判定依据
+          managerId: true,
+          manager: { select: { id: true, name: true } },
           // passwordHash 永远不返回给前端
         },
       })

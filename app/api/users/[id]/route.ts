@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog, diffChanges } from '@/lib/action-log'
+import { forgetPermVersions } from '@/lib/rbac/perm-version'
 import bcrypt from 'bcryptjs'
 
 const USER_TRACKED_FIELDS = ['name', 'role', 'isActive']
@@ -48,6 +49,7 @@ async function syncRoleLinks(userId: string, legacyRoles: string[]): Promise<voi
     // 权限变了就作废对方手里的 token（已定决策 5：强制重新登录）
     prisma.user.update({ where: { id: userId }, data: { permVersion: { increment: 1 } } }),
   ])
+  forgetPermVersions([userId])
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

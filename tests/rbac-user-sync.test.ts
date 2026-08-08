@@ -30,6 +30,24 @@ function validRolesIn(src: string): string[] {
   return [...m[1].matchAll(/'([A-Z_]+)'/g)].map((x) => x[1])
 }
 
+test('权限中心分配角色时，legacy 列只写 enum 里存在的角色', () => {
+  // 自定义角色的 code（office_sales 之类）不在 enum Role 里。不过滤就直接写库的话，
+  // Prisma 抛 PrismaClientValidationError，表现是「新建的角色一分配给用户就 500」——
+  // 正好把可配置权限最核心的一步打死。实测踩到过。
+  const src = readFileSync('app/api/rbac/users/[id]/route.ts', 'utf-8')
+  const m = src.match(/const LEGACY_ROLES = \[([\s\S]*?)\] as const/)
+  assert.ok(m, '没有 LEGACY_ROLES 白名单，说明又在无条件 toUpperCase 后写库')
+  const listed = [...m![1].matchAll(/'([A-Z_]+)'/g)].map((x) => x[1])
+  assert.deepEqual(
+    ENUM_ROLES.filter((r) => !listed.includes(r)), [],
+    'LEGACY_ROLES 漏了 enum 里的角色，挂上它的人 legacy 列会被清空',
+  )
+  assert.deepEqual(
+    listed.filter((r) => !ENUM_ROLES.includes(r)), [],
+    'LEGACY_ROLES 里有 enum 不认的角色，写库照样会炸',
+  )
+})
+
 test('创建与修改用户的角色白名单，都要覆盖 enum Role 的全部角色', () => {
   for (const [label, src] of [['POST /api/users', postSrc], ['PUT /api/users/[id]', putSrc]] as const) {
     const allowed = validRolesIn(src)

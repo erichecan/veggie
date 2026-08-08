@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { SignJWT, jwtVerify } from 'jose'
 import { decodePermissions } from './rbac/bitmap'
 import { legacyRolesHavePermission } from './rbac/legacy-roles'
+import { isTokenRevoked } from './rbac/perm-version'
 
 // ─── JWT_SECRET 懒加载 ───────────────────────────────────────────────────────
 // 不在模块加载时 throw：Docker build 期间 Secret Manager 的值尚未注入，
@@ -104,6 +105,22 @@ export type AuthGate =
     }
 
 /**
+ * 当前用户有没有这些权限点里的任意一个。
+ *
+ * handler 内部要做**比路由更细**的判定时用它 —— 典型是同一个端点承载多个动作
+ * （`PATCH /api/purchase-orders/[id]` 的 action 既有「改」也有「批」），
+ * route-map 只认 URL + method，分不开这两件事。
+ *
+ * 旧 token 的处理与 withAuth 一致：没有位图就走角色反查，不是直接放行。
+ */
+export function userHasPermission(user: JwtPayload, need: string | string[]): boolean {
+  const arr = typeof need === 'string' ? [need] : need
+  return user.pm
+    ? decodePermissions(user.pm).hasAny(arr)
+    : legacyRolesHavePermission(effectiveRoles(user), arr)
+}
+
+/**
  * withAuth — 统一认证包装器
  * 在执行任何业务逻辑之前先验证 JWT，验证失败直接返回 401/403。
  *
@@ -130,6 +147,16 @@ export async function withAuth(
     return NextResponse.json({ error: '未授权访问，请先登录' }, { status: 401 })
   }
 
+  // 权限被改过的 token 一律作废（决策 5：不静默重签，改完就踢）。
+  // 前端认 PERMISSION_CHANGED 这个 code，跳登录页时才能说清「为什么把我踢出来」，
+  // 而不是笼统的一句「登录已过期」—— 后者会让人以为是系统抽风。
+  if (await isTokenRevoked(user)) {
+    return NextResponse.json(
+      { error: 'PERMISSION_CHANGED', message: '权限已变更，请重新登录' },
+      { status: 401 },
+    )
+  }
+
   if (Array.isArray(gate) && gate.length > 0) {
     const own = effectiveRoles(user)
     if (!own.some(r => gate.includes(r))) {
@@ -141,10 +168,7 @@ export async function withAuth(
     // 空位图会让这 154 个接口对所有还没重新登录的人全部 403。
     // 也不能「没位图就跳过检查」：那样只剩 middleware 一层，比改造前更宽松。
     // 反查表等价于改造前的 allowedRoles，见 lib/rbac/legacy-roles.ts。
-    const ok = user.pm
-      ? decodePermissions(user.pm).hasAny(need)
-      : legacyRolesHavePermission(effectiveRoles(user), need)
-    if (!ok) {
+    if (!userHasPermission(user, need)) {
       return NextResponse.json({ error: `权限不足，需要: ${need.join(' 或 ')}` }, { status: 403 })
     }
   }

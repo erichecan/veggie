@@ -225,6 +225,22 @@ const INTENTIONAL_GRANTS: Array<{ role: string; permissions: string[]; why: stri
     permissions: ['system.rbac.read', 'system.rbac.manage'],
     why: '运营是后台本身，日常的账号与角色维护由他们做。',
   },
+  // ⛔ 下面两条不是「新功能」，是**保持改造前的可达性**。
+  // `PATCH /api/purchase-orders/[id]` 一个端点承载 send/confirm/approve/receive 等
+  // 全部动作，route-map 只能整体映射到 purchase.order.update。20260807 在 handler
+  // 里把 approve/receive 拆成了更细的判定（客户的岗位划分要求「能录不能批」），
+  // 拆完之后，原本靠 update 就能审批的人必须显式拿到这两个点，否则**审批功能对
+  // 所有人失效** —— 这是一次静默的功能中断，不是权限收紧。
+  {
+    role: 'BOSS',
+    permissions: ['purchase.order.approve', 'purchase.order.receive'],
+    why: '改造前有 purchase.order.update 即可审批/收货，拆细后要显式补回，否则审批断掉。',
+  },
+  {
+    role: 'OPERATOR',
+    permissions: ['purchase.order.approve', 'purchase.order.receive'],
+    why: '同上。',
+  },
 ]
 
 for (const g of INTENTIONAL_GRANTS) {

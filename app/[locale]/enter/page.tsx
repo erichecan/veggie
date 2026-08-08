@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -37,6 +37,15 @@ export default function EnterPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
+  const [permissionChanged, setPermissionChanged] = useState(false)
+
+  // 被 lib/api.ts 以 ?reason=permission-changed 踢回来的。直接读 location 而不用
+  // useSearchParams：后者会把这个页面拖进 Suspense 边界的要求里，为一行提示不值得。
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const reason = new URLSearchParams(window.location.search).get('reason')
+    setPermissionChanged(reason === 'permission-changed')
+  }, [])
 
   async function doLogin(loginEmail: string, loginPassword: string, tag: string) {
     setError('')
@@ -96,6 +105,13 @@ export default function EnterPage() {
           style={{ background: 'white', borderColor: '#d4b8d0' }}
         >
           <p className="text-xs font-medium" style={{ color: '#875A7B' }}>{t('manualTitle')}</p>
+          {permissionChanged && (
+            <div className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {locale === routing.defaultLocale
+                ? '您的权限已被管理员调整，请重新登录后生效。'
+                : 'Your permissions were changed by an administrator — sign in again for them to take effect.'}
+            </div>
+          )}
           <input
             type="email"
             value={email}

@@ -8,8 +8,8 @@
 
 | 角色 | 权限点数 | 数据范围 |
 |---|---:|---|
-| BOSS | 161 | ALL |
-| OPERATOR | 161 | ALL |
+| BOSS | 163 | ALL |
+| OPERATOR | 163 | ALL |
 | FINANCE | 47 | ALL |
 | WAREHOUSE | 27 | ALL |
 | DISPATCH | 28 | ALL |
@@ -27,10 +27,12 @@
 |---|---|---|
 | BOSS | system.rbac.read、system.rbac.manage | 权限配置页是本次新增的功能，改造前不存在，反推不出来。老板要能配权限。 |
 | OPERATOR | system.rbac.read、system.rbac.manage | 运营是后台本身，日常的账号与角色维护由他们做。 |
+| BOSS | purchase.order.approve、purchase.order.receive | 改造前有 purchase.order.update 即可审批/收货，拆细后要显式补回，否则审批断掉。 |
+| OPERATOR | purchase.order.approve、purchase.order.receive | 同上。 |
 
 ## 1.5 无人拥有的权限点
 
-19 个权限点没有任何预置角色拥有 —— 这通常是对的：
+17 个权限点没有任何预置角色拥有 —— 这通常是对的：
 它们对应「改造前不存在的功能」（例如权限配置页自己的接口）。
 要让某个岗位用上，得在配置页里显式勾给它。
 
@@ -50,8 +52,6 @@ master.customer.delete
 master.supplier.update
 master.supplier.delete
 analytics.commission.read
-system.rbac.read
-system.rbac.manage
 system.gdpr.manage
 system.settings.read
 ```

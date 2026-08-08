@@ -9,6 +9,7 @@
  */
 import { prisma } from '@/lib/db'
 import { isKnownPermission, PERMISSIONS } from './catalog'
+import { forgetPermVersions } from './perm-version'
 
 /** 拥有这个权限点的人可以改任何人的权限 —— 系统里必须始终至少有一个 */
 export const RBAC_ADMIN_PERMISSION = 'system.rbac.manage'
@@ -82,7 +83,12 @@ export async function assertAdminSurvives(
   }
 }
 
-/** 权限变更后作废这些人手里的 token（下次请求 401 → 重新登录） */
+/**
+ * 权限变更后作废这些人手里的 token（下次请求 401 → 重新登录）。
+ *
+ * 顺带清掉本进程的 permVersion 缓存 —— 不清的话，判定要等缓存自然过期（≤30s）
+ * 才生效，管理员改完立刻去验证会看到「怎么还没踢」。
+ */
 export async function invalidateTokens(
   tx: Pick<typeof prisma, 'user'>,
   userIds: readonly string[],
@@ -92,6 +98,7 @@ export async function invalidateTokens(
     where: { id: { in: [...userIds] } },
     data: { permVersion: { increment: 1 } },
   })
+  forgetPermVersions(userIds)
   return r.count
 }
 

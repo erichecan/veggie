@@ -6,8 +6,13 @@ export interface SystemUser {
   email: string
   name: string
   role: UserRole
+  /** 全部角色。列表接口对老数据会回填成 [role]，所以这里不是可选的空数组 */
+  roles?: string[]
   isActive: boolean
   customerId?: string | null
+  /** 上级。数据范围为「本人及下属」的角色靠这条链决定能看到谁的单据 */
+  managerId?: string | null
+  manager?: { id: string; name: string } | null
   createdAt: string
   updatedAt: string
 }

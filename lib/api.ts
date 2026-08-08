@@ -92,16 +92,29 @@ export async function api<T = unknown>(
       (netErr as Error)?.message)
   }
 
-  // 401：token 过期或未登录，自动跳转登录页
+  // 401：token 过期、未登录，或权限被管理员改过（PERMISSION_CHANGED）。都要重新登录，
+  // 但**原因要说对** —— 权限刚被调整的人看到「登录已过期」会以为系统抽风，
+  // 转头去问 IT，而不是去问改他权限的人。
   if (res.status === 401) {
     const isEn = isEnLocale()
+    let permissionChanged = false
+    try {
+      const body = await res.json()
+      permissionChanged = body?.error === 'PERMISSION_CHANGED'
+    } catch { /* 空响应体，按普通过期处理 */ }
+
+    const message = permissionChanged
+      ? (isEn ? 'Your permissions were changed, please sign in again' : '权限已变更，请重新登录')
+      : (isEn ? 'Session expired, please log in again' : '登录已过期，请重新登录')
+
     if (typeof window !== 'undefined') {
       localStorage.removeItem('veggie_token')
       localStorage.removeItem('veggie_user')
+      const target = `${isEn ? '/en/enter' : '/enter'}${permissionChanged ? '?reason=permission-changed' : ''}`
       // 延迟一点跳转，让 toast 有机会显示
-      setTimeout(() => { window.location.href = isEn ? '/en/enter' : '/enter' }, 300)
+      setTimeout(() => { window.location.href = target }, 300)
     }
-    throw new ApiError(isEn ? 'Session expired, please log in again' : '登录已过期，请重新登录', 401)
+    throw new ApiError(message, 401, permissionChanged ? 'PERMISSION_CHANGED' : undefined)
   }
 
   if (!res.ok) {
