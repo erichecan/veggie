@@ -478,7 +478,8 @@ JWT 新增三个字段：
 - [ ] `KNOWN_INERT` 那 8 个「勾了不生效」的权限点（见 `tests/rbac-business-roles.test.ts`）：
       `sales.order.confirm/cancel` 要照采购那样在 handler 里细分才有意义；
       `analytics.commission.read` 等提成考核报表做出来（属灵活分析那批）
-- [ ] `/classic/print` 的 layout 本身仍无角色判定（只靠 middleware），建议补一道
+- [x] ~~`/classic/print` 的 layout 本身仍无角色判定~~ ✅ T6 已补（`758f63e`），
+      现在走 `canEnterPage`，与 middleware 同一张权限表
 
 ---
 
