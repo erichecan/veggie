@@ -155,6 +155,21 @@ Nginx 也确实设了 `X-Forwarded-For` / `X-Real-IP`（`/etc/nginx/sites-availa
       **产出**：一次性脚本 + `prisma/seed.ts`
       **依赖**：S2 完成并部署
 
+### 生产执行记录（2026-08-08）
+
+| 步骤 | 结果 |
+|---|---|
+| 迁移 `20260808000000` | 已应用，`mustChangePassword` 列就位 |
+| 弱口令扫描（bcrypt 逐个比对） | 51 个账号中 **35 个在用弱口令**：`test123` 34 个、`123456` 1 个 |
+| 未标记 | 7 个真实员工（确实已自己改过密码）+ 9 个种子账号（走 S3） |
+| 标记执行 | `UPDATE 35` |
+| 生产实测 | `driver.moazzam@veggie.local` 用 `test123` 登录 → `mustChangePassword=true`，`/api/orders`、`/api/trips`、`/api/customers` 全部 **403**；`operator@veggie.com` 仍正常 200 |
+
+> 执行环境上的一个坑：生产 PostgreSQL 只监听 unix socket，SSH 隧道到 TCP 连不上；
+> 容器是 Next standalone 构建，`bcryptjs` 已被打包进 chunk，没有独立模块可以 `require`。
+> 最后的做法是把哈希取到本地用本地 bcrypt 判定，再把 id 列表推回去执行 UPDATE。
+> 取下来的哈希文件用完即 `shred`。
+
 ### 上线后待办
 - [ ] `scripts/import-users.ts` / `import-drivers.ts` 里的 `DEFAULT_PASSWORD = 'test123'`：
       改成「生成随机密码 + 自动置 mustChangePassword」，否则下次导入又是一批弱口令
