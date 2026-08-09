@@ -1083,33 +1083,52 @@ function ItemDialog({
                 </div>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Rounding Method</label>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      {isEn ? 'Rounding Method' : '舍入精度'}
+                    </label>
                     <NumericInput
-                      step="any" min={0} placeholder="0.00"
+                      step="any" min={0} placeholder={isEn ? '0 = none' : '0 = 不舍入'}
                       value={item.roundingMethod ?? ''}
                       onChange={e => set('roundingMethod', e.target.value ? Number(e.target.value) : 0)}
                       className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                     />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {isEn ? 'e.g. 0.05 rounds to the nearest 5 cents' : '如填 0.05，价格取整到最近的 5 分'}
+                    </p>
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Min. Margin</label>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      {isEn ? 'Min. Margin' : '最低利润'}
+                    </label>
                     <NumericInput
-                      step="any" min={0} placeholder="0.00"
+                      step="any" min={0} placeholder={isEn ? 'blank = no limit' : '留空 = 不设限'}
                       value={item.priceMinMargin ?? ''}
                       onChange={e => set('priceMinMargin', e.target.value ? Number(e.target.value) : undefined)}
                       className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Max. Margin</label>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      {isEn ? 'Max. Margin' : '最高利润'}
+                    </label>
                     <NumericInput
-                      step="any" min={0} placeholder="0.00"
+                      step="any" min={0} placeholder={isEn ? 'blank = no limit' : '留空 = 不设限'}
                       value={item.priceMaxMargin ?? ''}
                       onChange={e => set('priceMaxMargin', e.target.value ? Number(e.target.value) : undefined)}
                       className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                     />
                   </div>
                 </div>
+                {/*
+                  20260808：客户实测「嵌套价格表跳出 COST PRICE」，根因就是这两个字段被填了 0。
+                  0 与留空在 Odoo 里是同一个意思（不设限），但填 0 的人往往以为自己设了个约束，
+                  所以这里把话说明白，而不是指望他去猜。
+                */}
+                <p className="text-[11px] text-gray-500 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                  {isEn
+                    ? 'Min./Max. Margin: leave blank or enter 0 for no limit. Both are measured against the base price above (not the cost price).'
+                    : '最低 / 最高利润：留空或填 0 都表示「不设限」。两者都是相对上面的「基准价」计算，不是相对进价。'}
+                </p>
                 {item.formulaBase === 'pricelist' && (
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-gray-600 w-28 flex-shrink-0">Other Pricelist</span>
