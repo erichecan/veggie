@@ -110,7 +110,12 @@ async function buildProducts(prisma: PrismaClient, supplierIds: string[]): Promi
     if (sell <= 0) sell = round2(2 + (strHash(p.id) % 1800) / 100) // 2.00–19.99 兜底
     let cost = num(p.standardPrice) ?? num(p.template?.standardPrice) ?? 0
     if (cost <= 0 || cost >= sell) cost = round2(sell * (0.55 + (strHash(p.id) % 20) / 100)) // 55%–74%
-    const taxRate = num(p.customerTaxRate) ?? num(p.template?.customerTaxRate) ?? 0
+    // ⚠️ 量纲：Product.customerTaxRate 存小数（0.1350），而 OrderLine.taxRate 的 SSOT 是
+    // **百分数**（13.5）—— lib/analytics/metrics.ts、lib/order-items.ts、lib/order-pdf.ts
+    // 都按 taxRate/100 算税。种子此前直接把小数写进订单行，导致这三处对种子数据算出
+    // 的税额只有真实值的 1/100，而 db:validate 不校验税额所以一路绿灯。
+    const rawTax = num(p.customerTaxRate) ?? num(p.template?.customerTaxRate) ?? 0
+    const taxRate = rawTax > 0 && rawTax < 1 ? round2(rawTax * 100) : rawTax
     out.push({
       id: p.id,
       name: p.name,

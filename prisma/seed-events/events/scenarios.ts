@@ -48,7 +48,8 @@ async function makeCreditNotes(ctx: Ctx, completed: MadeOrder[]): Promise<void> 
     const lines = specs.map((s) => {
       const qty = Math.max(1, Math.floor(s.qty / 2))
       const e = round2(s.product.sellPrice * qty)
-      const t = round2(e * s.product.taxRate)
+      // product.taxRate 现在是百分数（见 personas.ts 的量纲说明），算税额要除 100
+      const t = round2(e * s.product.taxRate / 100)
       ex += e
       tax += t
       return {

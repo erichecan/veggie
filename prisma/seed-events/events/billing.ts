@@ -52,7 +52,7 @@ export async function runBilling(ctx: Ctx, completed: MadeOrder[]): Promise<void
     const persona = group[0].persona
     const exTax = round2(group.reduce((a, o) => a + o.total, 0))
     let tax = 0
-    for (const o of group) for (const s of o.specs) tax += s.product.sellPrice * s.qty * s.product.taxRate
+    for (const o of group) for (const s of o.specs) tax += s.product.sellPrice * s.qty * s.product.taxRate / 100
     tax = round2(tax)
     const incTax = round2(exTax + tax)
     const lastDate = group.reduce((a, o) => (o.date > a ? o.date : a), group[0].date)

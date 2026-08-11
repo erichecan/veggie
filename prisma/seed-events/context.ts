@@ -56,7 +56,8 @@ export interface ProductInfo {
   uomName: string | null
   sellPrice: number // 含义：不含税牌价（OrderLine.unitPrice）
   cost: number // standardPrice（采购成本）
-  taxRate: number // 0 / 0.135 等
+  /** 百分数（13.5），与 OrderLine.taxRate 的 SSOT 一致；Product.customerTaxRate 存的是小数，在 personas.ts 归一 */
+  taxRate: number
   supplierId: string // 指派的供应商
 }
 

@@ -29,7 +29,7 @@ async function createPO(
   const received = status === 'RECEIVED'
   const lines = specs.map((s, idx) => {
     const ex = round2(s.qty * s.product.cost)
-    const tax = round2(ex * s.product.taxRate)
+    const tax = round2(ex * s.product.taxRate / 100)
     const inc = round2(ex + tax)
     exSum += ex
     taxSum += tax
@@ -127,7 +127,7 @@ async function billPO(
   let tax = 0
   const lines = specs.map((s) => {
     const e = round2(s.qty * s.product.cost)
-    const t = round2(e * s.product.taxRate)
+    const t = round2(e * s.product.taxRate / 100)
     ex += e
     tax += t
     return { productId: s.product.id, productName: s.product.name, qty: s.qty, unitCost: s.product.cost, subtotalIncTax: round2(e + t) }
