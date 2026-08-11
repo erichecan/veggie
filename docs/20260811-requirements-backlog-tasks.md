@@ -4,9 +4,9 @@
 > 每个周期从「读本文件」开始，不从「我记得上次做到哪」开始。
 > 需求原文与现状徽章见 `preview/20260811-requirements-checklist.html`。
 
-- 任务总数：47（需求）+ 8（前置；Z4/Z5/Z6 于周期 1 新增，Z7/Z8 于周期 2 新增）= **55**
-- 完成：2 / 55（Z1、Z3）
-- 当前批次：**W0 前置**（Z1 ✅ Z3 ✅ → 下一条 Z8，但它需要你先拍板，见文末待决策 7）
+- 任务总数：47（需求）+ 9（前置；Z4/Z5/Z6 周期 1，Z7/Z8 周期 2，Z8 于周期 3 拆为 Z8a/Z8b）= **56**
+- 完成：3 / 56（Z1、Z3、Z8a）
+- 当前批次：**W0 前置**（Z1 ✅ Z3 ✅ Z8a ✅；Z8b ⛔ 硬停止待用户 → 转做 W1 里不需要浏览器的 9 条）
 
 ---
 
@@ -32,7 +32,7 @@
 | 批次 | 含义 | 条数 | 可否立即开跑 |
 |---|---|---|---|
 | **W0** | 前置：解除后续批次的阻塞 | 8 | Z1 ✅ Z3 ✅；Z8 需拍板；Z2 需客户提供域名 |
-| **W1** | 只读走查 / 纯文档 / 纯前端，**不写库** | 13 | 9 条可立即做；A1/A2/B1/D2 四条走查 ⛔ 等 Z8 |
+| **W1** | 只读走查 / 纯文档 / 纯前端，**不写库** | 13 | 9 条可立即做；A1/A2/B1/D2 四条走查 ⛔ 等 Z8b |
 | **W2** | 需要写库（schema 变更、下单、收货、盘点） | 30 | ✅ Z1 已关闭，可开跑（受库存限制的几条等 Z5） |
 | **W3** | 被用户决策阻塞 | 4 | ⛔ 等客户答复 |
 | **W4** | 本期不做（APP 相关） | 3 | — |
@@ -41,8 +41,8 @@
 
 ## W0 · 前置
 
-> **执行顺序（本节条目按发现时间排列，不按执行顺序）**：Z1 ✅ → Z3 ✅ → **Z8**（需拍板）→ Z4 → Z5 → Z7 → Z6 → Z2（等客户给域名）
-> Z8 顶到前面是因为 W1 的 A1/A2/B1/D2 四条走查全都要在浏览器里点，它不通这四条就一条都做不了。
+> **执行顺序（本节条目按发现时间排列，不按执行顺序）**：Z1 ✅ → Z3 ✅ → Z8a ✅ → Z8b ⛔硬停止 → **转 W1 非浏览器条目（B3 起）** → Z4 → Z5 → Z7 → Z6 → Z2
+> Z8b 卡住只影响 W1 那四条 UI 走查；其余 9 条不碰浏览器，继续推进不受影响。
 
 - [x] **Z1 起本机 PostgreSQL 测试库** —— 完成 20260811，commit `e5c5793`
       结果：PostgreSQL 17.9（本机已装，无需安装）+ 库 `veggie_test` + `.env.test` 指向 `127.0.0.1`，驱动自动推断为 `pg`
@@ -88,14 +88,25 @@
       阻塞：I1（权限密码验收）、I2（权限操作指南）—— 配置页空着就没法写指南
       发现于：Z3 周期
 
-- [ ] **Z8 浏览器里页面不水合，UI 走查全被挡住**
-      现象：`/enter` 是 `'use client'` 组件、有 `onSubmit` + `preventDefault()`，但浏览器提交后跳到 `/enter?`（原生 GET），字段被清空；快捷登录按钮也不渲染
-      已排除：JS chunk 全部 200（含 `app_[locale]_enter_page_tsx_*.js`）；不是双 dev server 抢 `.next`（:3000 上跑的是另一个项目 `localrank`，veggie 只在 :3001）
-      当前判断：控制台 7 个错误全是 `ws://127.0.0.1:3001/_next/webpack-hmr` 握手失败（`ERR_INVALID_HTTP_RESPONSE`），本环境沙箱疑似拦截到 localhost 的 WebSocket 升级，Turbopack dev 引导因此没跑完
-      建议解法：UI 走查改用生产构建（`next build && next start`），没有 HMR WebSocket 就绕开了；代价是每次改代码要重新 build
-      验收：浏览器里能真正点着登录进系统，且能点开一个受保护页面
-      阻塞：**W1 的 A1 / A2 / B1 / D2 四条走查全部依赖它**
-      发现于：Z3 周期；已达「同一问题 2 次未修好」上限，未做第 3 次尝试
+- [x] **Z8a 浏览器不水合 —— 已解决**（周期 3）
+      结论：**生产构建可用，dev 模式不可用**。`next build` 后页面正常水合，cookie 横幅等客户端组件渲染出来，登录表单走 JS 提交（不再退化成原生 GET），登录成功并正确种下 `veggie_token` cookie + `localStorage.veggie_user`
+      根因：dev 模式下 `ws://127.0.0.1:3001/_next/webpack-hmr` 握手失败（`ERR_INVALID_HTTP_RESPONSE`），本环境拦截到 localhost 的 WebSocket 升级，Turbopack dev 引导因此没跑完
+      ⚠️ 起服务必须用 `node .next/standalone/server.js`，**不能用 `next start`** —— 项目配了 `output: standalone`，`next start` 会打印明确警告说不支持
+      UI 走查工作流：改代码 → `next build`（约 40s）→ 拷 `.next/static`、`public` 进 `.next/standalone/` → 起 standalone server
+
+- [ ] **Z8b ⛔ 中间件看不到 `veggie_token` cookie，受保护页面进不去**（硬停止，已连续 2 次未修好）
+      现象：登录成功、cookie 已种下，但访问 `/zh/classic/operator/orders` 恒定 307 → `/zh/enter` → `/enter`
+      **决定性证据**：带 cookie 与完全不带 cookie 的响应头**逐字节相同**，且响应里**没有 `Set-Cookie` 删除动作** —— 说明走的是 `middleware.ts:89` 的 `!token` 分支（验签失败分支 `:113` 会 `res.cookies.delete`），即 `req.cookies.get('veggie_token')` 取到的是空值。浏览器里也一样（不是 curl 的伪影）
+      已试过且**无效**的两个修法：
+        1. 对齐 JWT_SECRET —— `.env.local` 与 `.env.test` 的密钥原本不同，已改成一致并重启，症状不变
+        2. 改用 `node .next/standalone/server.js` 起服务（框架警告指定的方式）—— 症状不变
+      已读过 `middleware.ts` 全文，`/zh/classic/operator/orders` 会正常落到取 cookie 那一段，前面几个提前 return 都不匹配
+      **下一步该查的方向**（留给下个会话，别重复上面两条）：
+        - `next-intl` 的 `intlMiddleware` 是否在取 cookie 之前就发出了这个 307（`/zh/...` → `/...` 的 locale 重写）
+        - 中间件 `matcher` 配置是否真的覆盖了 `/zh/classic/**`
+        - 项目已提示 `middleware` 约定被废弃、应改用 `proxy` —— 该约定在 Next 16.2 下是否仍按预期注入 cookie
+      阻塞：**W1 的 A1 / A2 / B1 / D2 四条走查**
+      不阻塞：W1 其余 9 条（纯前端 / 纯文档 / 只读脚本）照常可做
 
 ---
 
@@ -230,7 +241,8 @@
 4. **缺货「在途」口径**（阻塞 D7）
 5. **Sage 对接时点 / G3 是否只做演示**
 6. **是否同意新增 `Order.source` 字段**（已建议同意；A3/A4 按"同意"推进，若否则回滚）
-7. **UI 走查是否改用生产构建**（Z8）：dev 模式下浏览器不水合，`next build && next start` 可绕开，代价是每次改代码要重新 build
+7. ~~**UI 走查是否改用生产构建**~~ → ✅ 已验证可行（Z8a），但要用 `node .next/standalone/server.js` 起，不能用 `next start`
+8. **Z8b 要不要继续查**：受保护页面进不去，已连续 2 次未修好按规矩停手。选项：(a) 我按台账里列的三个方向继续查 (b) 先跳过，UI 走查押后，我去做 W1 剩下 9 条
 
 ---
 
@@ -273,3 +285,4 @@
 |---|---|---|---|
 | 1 | Z1 起本机测试库 | ✅ 完成，但 `migrate deploy` 走不通改用 `db push`；途中发现并修复 `db:seed` 已静默产出垃圾数据一个月，新登记 Z4/Z5/Z6 | `e5c5793` |
 | 2 | Z3 各角色账号可登录 | ✅ 9/9 通过（补了缺失的 SALES 账号 + 种子 roles[]）；浏览器登录不通（未水合）另立 Z8，RBAC 表空另立 Z7 | `0f731f2` |
+| 3 | Z8 浏览器可用性 | ⚠️ 一半：Z8a 水合问题用生产构建解决（浏览器登录已真正跑通）；Z8b 中间件看不到 cookie，2 次未修好触发硬停止 | 无代码改动（`.env.test` 被 git 忽略） |
