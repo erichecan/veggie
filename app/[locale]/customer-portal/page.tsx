@@ -16,6 +16,8 @@ interface Product {
   spec: string | null
   uomName: string | null
   customerPrice: number | null
+  /** 商品档案里的客户税率，接口一直有返回、前端此前没声明。小数（0.1350） */
+  customerTaxRate?: number | null
   priceSource: string | null
   categoryId: string | null
   internalRef: string | null
@@ -29,6 +31,8 @@ interface CartItem {
   uomName: string | null
   price: number
   quantity: number
+  /** 百分数（13.5 而非 0.135），用于在购物车里显示含税合计 */
+  taxRate?: number
 }
 
 interface FrequentItem {
@@ -36,6 +40,16 @@ interface FrequentItem {
   orderCount: number
   lastQuantity: number
   lastOrderedAt: string
+}
+
+/**
+ * 税率归一成百分数。商品档案存的是小数（0.1350），而购物车按百分数算税，
+ * 与服务端 lib/server-pricing.ts 的 normalizeTaxRate 同一套规则：
+ * IE 的 VAT 档位在 (0,1) 区间无合法值，故「小于 1 即视为小数」无歧义。
+ */
+function toPercent(v: number | null | undefined): number | undefined {
+  if (v == null || !Number.isFinite(v)) return undefined
+  return v > 0 && v < 1 ? v * 100 : v
 }
 
 function loadCart(): CartItem[] {
@@ -96,6 +110,7 @@ export default function CustomerProductsPage() {
         uomName: p.uomName,
         price: p.customerPrice ?? 0,
         quantity: qty,
+        taxRate: toPercent(p.customerTaxRate),
       }])
     }
     toast.success(`已添加 ${p.name}`)
@@ -125,7 +140,9 @@ export default function CustomerProductsPage() {
       if (note.trim()) body.internalNote = note.trim()
 
       const res = await apiPost<{ id: string; code: string; totalAmount: number }>('/api/customer-portal/orders', body)
-      toast.success(`下单成功！订单号: ${res.code}，金额: ${eur(res.totalAmount)}`)
+      // 按钮与提示都用「客户实际应付」＝含税；res.totalAmount 是系统口径的税前额，
+      // 直接展示会与刚才按钮上的数字对不上
+      toast.success(`下单成功！订单号: ${res.code}，应付: ${eur(cartTotal + cartTax)}`)
       updateCart([])
       setShowCart(false)
       setNote('')
@@ -138,6 +155,10 @@ export default function CustomerProductsPage() {
   }
 
   const cartTotal = cart.reduce((s, c) => s + c.price * c.quantity, 0)
+  // 本系统的价格口径一律税前（unitPrice / totalAmount 都是税前，见 docs/20260701）。
+  // 门户此前全程不标注，餐厅看到 €22.00 却会被按 €24.97 开票（13.5% VAT）——
+  // 差额不小且毫无提示。这里把税额与含税合计一并显示，口径不再靠猜。
+  const cartTax = cart.reduce((s, c) => s + c.price * c.quantity * ((c.taxRate ?? 0) / 100), 0)
   const cartCount = cart.reduce((s, c) => s + c.quantity, 0)
   const frequentProducts = frequent
     .map(f => {
@@ -250,9 +271,21 @@ export default function CustomerProductsPage() {
               </div>
               <div className="border-t pt-3 space-y-3">
                 <div className="flex justify-between font-bold text-lg">
-                  <span>合计</span>
+                  <span>合计（不含税）</span>
                   <span style={{ color: PURPLE }}>{eur(cartTotal)}</span>
                 </div>
+                {cartTax > 0 && (
+                  <div className="flex items-center justify-between text-xs text-gray-500 pb-2">
+                    <span>税额</span>
+                    <span>{eur(cartTax)}</span>
+                  </div>
+                )}
+                {cartTax > 0 && (
+                  <div className="flex items-center justify-between text-sm font-bold pb-3">
+                    <span>含税应付</span>
+                    <span style={{ color: PURPLE }}>{eur(cartTotal + cartTax)}</span>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">配送日期</label>
@@ -278,7 +311,7 @@ export default function CustomerProductsPage() {
                 <button onClick={placeOrder} disabled={submitting || cart.length === 0}
                   className="w-full py-3 rounded-lg text-white font-medium disabled:opacity-50 transition-colors"
                   style={{ background: PURPLE }}>
-                  {submitting ? '提交中...' : `确认下单 (${eur(cartTotal)})`}
+                  {submitting ? '提交中...' : `确认下单 (${eur(cartTotal + cartTax)})`}
                 </button>
               </div>
             </>

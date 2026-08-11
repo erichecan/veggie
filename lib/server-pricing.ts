@@ -202,6 +202,20 @@ export async function queryLastSoldPricesDetailed(
  * @returns { lines, totalAmount, pricelistId, priceType } 可直接写入订单字段
  * @throws  当客户不存在 / 商品不存在 时抛出 Error
  */
+/**
+ * 税率归一化：OrderLine.taxRate 一律存**百分数**（13.5 而非 0.135）。
+ *
+ * 两个来源的量纲不同，必须在同一处收口：
+ *   客户端传的       历史上小数/百分数都出现过
+ *   Product 档案的   customerTaxRate 存的是小数（0.1350）
+ * IE 的 VAT 档位是 0 / 4.8 / 9 / 13.5 / 23，在 (0,1) 区间内没有合法值，
+ * 因此「小于 1 即视为小数」这个判别没有歧义。
+ */
+export function normalizeTaxRate(v: number | null | undefined): number | undefined {
+  if (v == null || !Number.isFinite(v)) return undefined
+  return v > 0 && v < 1 ? v * 100 : v
+}
+
 export async function resolveOrderLines(
   ctx: PricingContext,
   submittedItems: Array<{
@@ -388,7 +402,12 @@ export async function resolveOrderLines(
       uomName: item.uomName,
       // SSOT 护栏(A-1): OrderLine.taxRate 一律存百分数(如 23)。历史小数(0.23)与
       // 前端偶发小数在此归一;IE VAT 档位 0/4.8/9/13.5/23 在 (0,1) 无合法值,判别无歧义。
-      taxRate: item.taxRate != null && item.taxRate > 0 && item.taxRate < 1 ? item.taxRate * 100 : item.taxRate,
+      //
+      // 客户端没传时回落到商品档案的税率(20260811)：本函数号称"服务端权威定价"，
+      // 但此前只有价格是权威的，税率完全听客户端的。餐馆门户压根不传这个字段，
+      // 于是门户下的每一单税率都是 NULL —— 实测 PORTAL 来源 5/5 行为空，
+      // 而后台创建的 1444/1446 行都有值。后果不是显示难看，是**开票时按 0 计税**。
+      taxRate: normalizeTaxRate(item.taxRate ?? productForEngine.customerTaxRate),
     })
   }
 

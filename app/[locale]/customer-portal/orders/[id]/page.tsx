@@ -67,6 +67,12 @@ export default function CustomerOrderDetailPage() {
 
   const st = STATUS_MAP[order.status] || { label: order.status, color: '#666', bg: '#eee' }
 
+  // 行上的 taxRate 存的是百分数（13.5）。order.totalAmount 是**税前**口径（系统 SSOT），
+  // 此前本页只显示这一个数且不加标注，客户无从知道账单上还要加 VAT。
+  // 注意：这是普通常量不是 hook，放在提前 return 之后没有 hooks 顺序问题。
+  const orderTax = (order.lines ?? []).reduce(
+    (s, l) => s + Number(l.subtotal) * (Number(l.taxRate ?? 0) / 100), 0)
+
   return (
     <div className="space-y-5">
       <Link href={`${prefix}/customer-portal/orders`}
@@ -92,10 +98,15 @@ export default function CustomerOrderDetailPage() {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-sm text-gray-400">订单金额</p>
+            <p className="text-sm text-gray-400">{orderTax > 0 ? '含税应付' : '订单金额'}</p>
             <p className="text-2xl font-bold" style={{ color: PURPLE }}>
-              €{Number(order.totalAmount).toFixed(2)}
+              €{(Number(order.totalAmount) + orderTax).toFixed(2)}
             </p>
+            {orderTax > 0 && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                不含税 €{Number(order.totalAmount).toFixed(2)} + 税 €{orderTax.toFixed(2)}
+              </p>
+            )}
           </div>
         </div>
 
@@ -151,11 +162,25 @@ export default function CustomerOrderDetailPage() {
           </tbody>
           <tfoot className="border-t">
             <tr>
-              <td colSpan={4} className="text-right px-3 py-3 font-bold">合计</td>
-              <td className="text-right px-5 py-3 font-bold" style={{ color: PURPLE }}>
+              <td colSpan={4} className="text-right px-3 py-2 text-gray-500">合计（不含税）</td>
+              <td className="text-right px-5 py-2 text-gray-600">
                 €{Number(order.totalAmount).toFixed(2)}
               </td>
             </tr>
+            {orderTax > 0 && (
+              <>
+                <tr>
+                  <td colSpan={4} className="text-right px-3 py-2 text-gray-500">税额</td>
+                  <td className="text-right px-5 py-2 text-gray-600">€{orderTax.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td colSpan={4} className="text-right px-3 py-3 font-bold">含税应付</td>
+                  <td className="text-right px-5 py-3 font-bold" style={{ color: PURPLE }}>
+                    €{(Number(order.totalAmount) + orderTax).toFixed(2)}
+                  </td>
+                </tr>
+              </>
+            )}
           </tfoot>
         </table>
       </div>
