@@ -166,11 +166,11 @@ async function makeWave(
   day: Date,
   driverSlotId: string | null,
   driverName: string | null,
-): Promise<void> {
+): Promise<string> {
   // 确定性命名（重置后波次表已空，无需查询发号）；(waveDate,driverSlotId) 唯一已由分桶保证
   const ids = group.map((o) => o.id)
   const name = `${MARK.wavePrefix}${localDay(day)} ${driverName ?? ''}`.trim()
-  await ctx.prisma.$transaction([
+  const [wave] = await ctx.prisma.$transaction([
     ctx.prisma.pickingWave.create({
       data: {
         name,
@@ -184,6 +184,7 @@ async function makeWave(
     }),
     ctx.prisma.order.updateMany({ where: { id: { in: ids } }, data: { status: 'WAVE_ASSIGNED' } }),
   ])
+  return wave.id
 }
 
 /** 装车配送：Trip + 订单状态推进 + deliveredQty 回写 + 司机交账 */
@@ -193,6 +194,7 @@ async function makeTrip(
   day: Date,
   driverName: string | null,
   complete: boolean,
+  waveId: string,
 ): Promise<void> {
   const totalPayment = round2(group.reduce((a, o) => a + o.total, 0))
   const commission = round2(group.reduce((a, o) => a + o.total * o.persona.commissionRate, 0))
@@ -216,19 +218,47 @@ async function makeTrip(
   ops.push(
     ctx.prisma.trip.create({
       data: {
+        // ⚠️ 必须挂 waveId：真实行程都由 lib/trip-from-wave.ts 从波次生成，
+        // 打印页（送货汇总单/配送单/签收单）走的是「行程→波次→订单」这条链路。
+        // 种子此前不设这个字段，造出的是脱离波次的孤儿行程，三类单据全打成空白。
+        waveId,
         name: `${MARK.tripPrefix}${timeSlot} · ${driverName ?? '司机'} · ${group.length}家`,
         timeSlot,
         driverId: ctx.driverUserId ?? undefined,
         driverName: driverName ?? undefined,
         departTime: timeSlot === 'AM' ? '08:30' : '14:00',
         status: complete ? 'COMPLETED' : 'IN_PROGRESS',
-        restaurants: group.map((o) => ({
-          orderId: o.id,
-          customerId: o.persona.id,
-          customerName: o.persona.name,
-          amount: o.total,
-          paymentMethod: o.paymentMethod,
-        })),
+        // ⚠️ 字段名必须与 lib/trip-from-wave.ts（应用主路径）写的一致：
+        // restaurantId / restaurantName / orderIds[]。种子原来写的是
+        // customerId / customerName / orderId（单数），而 lib/print/trip-loader.ts
+        // 读的是 `r.orderIds ?? []` —— 取到空数组，三类配送单据全打成空白。
+        // 按客户分组：同一客户的多张单合并成一条，与主路径的 grouped 语义一致。
+        restaurants: Object.values(
+          group.reduce<Record<string, {
+            restaurantId: string; restaurantName: string; address: string
+            orderIds: string[]; items: never[]; delivered: boolean
+            returns: never[]; pods: never[]; cargoVerified: boolean
+            amount: number; paymentMethod: string
+          }>>((acc, o) => {
+            const k = o.persona.id
+            acc[k] ??= {
+              restaurantId: o.persona.id,
+              restaurantName: o.persona.name,
+              address: '',
+              orderIds: [],
+              items: [],
+              delivered: complete,
+              returns: [],
+              pods: [],
+              cargoVerified: complete,
+              amount: 0,
+              paymentMethod: o.paymentMethod,
+            }
+            acc[k].orderIds.push(o.id)
+            acc[k].amount = round2(acc[k].amount + o.total)
+            return acc
+          }, {}),
+        ) as never,
         totalPayment,
         driverCommission: commission,
         cashCollected: complete ? cash : 0,
@@ -289,13 +319,13 @@ export async function runSales(ctx: Ctx): Promise<MadeOrder[]> {
     const day = new Date(key.split('|')[0] + 'T10:00:00')
     const driverName = group[0].persona.driverName
     const driverSlotId = group[0].persona.driverSlotId
-    await makeWave(ctx, group, day, driverSlotId, driverName)
+    const waveId = await makeWave(ctx, group, day, driverSlotId, driverName)
     const toDeliver = group.filter((o) => o.stage === 'IN_DELIVERY' || o.stage === 'COMPLETED')
     if (toDeliver.length > 0) {
       const completed = toDeliver.filter((o) => o.stage === 'COMPLETED')
       const inDelivery = toDeliver.filter((o) => o.stage === 'IN_DELIVERY')
-      if (completed.length > 0) await makeTrip(ctx, completed, day, driverName, true)
-      if (inDelivery.length > 0) await makeTrip(ctx, inDelivery, day, driverName, false)
+      if (completed.length > 0) await makeTrip(ctx, completed, day, driverName, true, waveId)
+      if (inDelivery.length > 0) await makeTrip(ctx, inDelivery, day, driverName, false, waveId)
     }
   }
 

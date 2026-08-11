@@ -48,6 +48,18 @@ export interface OrderDocCustomer {
   zip?: string | null
 }
 
+/**
+ * VAT 税率的显示格式。
+ *
+ * 原来行级用 `taxRate.toFixed(0)`，把 13.5% 显示成 **14%**，而同一张发票的汇总行
+ * 用的是完整精度「VAT 13.50%」—— 客户在一张单据上看到两个税率。爱尔兰的
+ * 13.5% 和 4.8% 都带小数，整数化必错。
+ * 整数税率（23%）不显示多余的小数位。
+ */
+export function formatVatRate(rate: number): string {
+  return (Number.isInteger(rate) ? rate.toFixed(0) : rate.toFixed(2).replace(/0$/, '')) + '%'
+}
+
 export function renderOrderHtml(
   order: OrderDocInput,
   customer: OrderDocCustomer | null,
@@ -100,7 +112,7 @@ export function renderOrderHtml(
           ${note ? `<div class="prod-note">📝 ${note}</div>` : ''}
         </td>
         <td class="col-price">${eur(l.unitPrice as number)}</td>
-        <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
+        <td class="col-vat">${taxRate > 0 ? formatVatRate(taxRate) : '0%'}</td>
         <td class="col-incl">${eur(inclVat)}</td>
       </tr>`
   }).join('')
