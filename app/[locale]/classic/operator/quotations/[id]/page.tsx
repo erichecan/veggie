@@ -341,6 +341,38 @@ export default function QuotationDetailPage() {
   }, [allProducts])
 
 
+  // ⚠️ 必须放在所有提前 return 之前。放在后面的话，order 未加载那次渲染不会调用它，
+  // 加载完成后才调用 → hook 数量变化 → React error #310。typecheck 与 next build
+  // 都查不出这类错误，只有真在浏览器打开才会崩。
+  const { helpOverlay } = useHotkeys([
+    {
+      combo: 'mod+s', label: '保存', group: '编辑',
+      when: () => editing,
+      run: () => { void handleSave() },
+      // 编辑时焦点几乎总在某个输入框里，不放行就等于这条快捷键不存在
+      allowInInput: true,
+    },
+    {
+      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
+      when: () => editing,
+      run: () => focusLineSearchRef.current?.(),
+      allowInInput: true,
+    },
+    {
+      combo: 'mod+enter', label: '确认报价单', group: '流转',
+      // 与 Confirm 按钮的 disabled 保持同一套条件，避免按钮灰着但快捷键还能按下去
+      when: () => isQuotation && !editing && !confirming && !creditBlocked,
+      run: () => { void handleConfirm() },
+      allowInInput: true,
+    },
+    {
+      combo: 'mod+p', label: '打印', group: '流转',
+      when: () => !!order,
+      run: () => window.open(`${prefix}/classic/print/${order!.id}`, '_blank', 'noopener,noreferrer'),
+      allowInInput: true,
+    },
+  ])
+
   if (loading) return <div className="text-center py-20 text-gray-400">Loading…</div>
   if (!order) {
     return (
@@ -447,34 +479,6 @@ export default function QuotationDetailPage() {
     )
   }
 
-  const { helpOverlay } = useHotkeys([
-    {
-      combo: 'mod+s', label: '保存', group: '编辑',
-      when: () => editing,
-      run: () => { void handleSave() },
-      // 编辑时焦点几乎总在某个输入框里，不放行就等于这条快捷键不存在
-      allowInInput: true,
-    },
-    {
-      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
-      when: () => editing,
-      run: () => focusLineSearchRef.current?.(),
-      allowInInput: true,
-    },
-    {
-      combo: 'mod+enter', label: '确认报价单', group: '流转',
-      // 与 Confirm 按钮的 disabled 保持同一套条件，避免按钮灰着但快捷键还能按下去
-      when: () => isQuotation && !editing && !confirming && !creditBlocked,
-      run: () => { void handleConfirm() },
-      allowInInput: true,
-    },
-    {
-      combo: 'mod+p', label: '打印', group: '流转',
-      when: () => !!order,
-      run: () => window.open(`${prefix}/classic/print/${order!.id}`, '_blank', 'noopener,noreferrer'),
-      allowInInput: true,
-    },
-  ])
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>

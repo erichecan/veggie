@@ -285,6 +285,29 @@ export default function SalesOrderDetailPage() {
     return m
   }, [allProducts])
 
+  // ⚠️ 必须放在所有提前 return 之前，否则 hook 数量随渲染变化 → React error #310（见报价单详情页同处注释）
+  const { helpOverlay } = useHotkeys([
+    {
+      combo: 'mod+s', label: '保存', group: '编辑',
+      when: () => editing,
+      run: () => { void handleSave() },
+      allowInInput: true,
+    },
+    {
+      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
+      when: () => editing,
+      run: () => focusLineSearchRef.current?.(),
+      allowInInput: true,
+    },
+    {
+      combo: 'mod+p', label: '打印销售单', group: '流转',
+      // 与 Print 按钮同条件：打印中不可重复触发，锁定单不可打
+      when: () => !!order && !printing,
+      run: () => { void handlePrint() },
+      allowInInput: true,
+    },
+  ])
+
   if (loading) return <div className="text-center py-20 text-gray-400">Loading…</div>
   if (!order) {
     return (
@@ -382,27 +405,6 @@ export default function SalesOrderDetailPage() {
     toast.success(isEn ? 'Duplicate products merged' : '已合并重复商品')
   }
 
-  const { helpOverlay } = useHotkeys([
-    {
-      combo: 'mod+s', label: '保存', group: '编辑',
-      when: () => editing,
-      run: () => { void handleSave() },
-      allowInInput: true,
-    },
-    {
-      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
-      when: () => editing,
-      run: () => focusLineSearchRef.current?.(),
-      allowInInput: true,
-    },
-    {
-      combo: 'mod+p', label: '打印销售单', group: '流转',
-      // 与 Print 按钮同条件：打印中不可重复触发，锁定单不可打
-      when: () => !!order && !printing,
-      run: () => { void handlePrint() },
-      allowInInput: true,
-    },
-  ])
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
