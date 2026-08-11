@@ -21,6 +21,12 @@ const SEED_USERS = [
   { email: 'boss@veggie.com', role: 'BOSS', name: '老板' },
   { email: 'finance@veggie.com', role: 'FINANCE', name: '财务小陈' },
   { email: 'warehouse@veggie.com', role: 'WAREHOUSE', name: '仓库主管' },
+  // SALES 一直缺一个能登录的账号：seed-events 建的那几个业务员是 attribution 用的
+  // 数据记录，密码是 randomBytes(24) 或字面量 '$2a$10$invalidSeedOnlyHash...'，
+  // 按设计就登不进去。于是「以业务员身份开报价单」这条路在本地从来没被走过。
+  // roles 给 ['OPERATOR','SALES'] 与 seed-events 保持一致——生产上业务员也都兼任
+  // OPERATOR，行级隔离因此在实际中约束不到人，测权限时要意识到这一点。
+  { email: 'sales@veggie.com', role: 'SALES', name: '业务员小王', roles: ['OPERATOR', 'SALES'] },
 ]
 
 /**
@@ -59,6 +65,9 @@ async function main() {
         email: u.email,
         passwordHash: hash,
         role: u.role as any,
+        // 权限判断优先看 roles[]，为空才回退到 role。之前这里没写，所有种子账号的
+        // roles[] 都是空数组，等于强制走回退路径——真正的多角色场景测不出来。
+        roles: (u as any).roles ?? [u.role],
         name: u.name,
         customerId: (u as any).customerId ?? null,
       },
