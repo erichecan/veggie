@@ -13,6 +13,9 @@ export const ORDER_STATUSES = new Set<$Enums.OrderStatus>([
   'PENDING', 'CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED',
 ])
 
+/** 订单来源白名单。用于把 ?source= 里的非法值挡在 Prisma 之外（否则是 500 而非空列表） */
+export const ORDER_SOURCES = new Set<string>(['PORTAL', 'INTERNAL', 'IMPORT'])
+
 const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
 
 /**
@@ -103,6 +106,15 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
 
   const salesUserId = searchParams.get('salesUserId')
   if (salesUserId) where.salesUserId = salesUserId
+
+  // 来源筛选。支持逗号分隔多选（PORTAL,INTERNAL），非法值直接丢弃而不是原样
+  // 塞进 where —— 传个不存在的枚举值会让 Prisma 抛 500，而不是返回空列表。
+  const sourceParam = searchParams.get('source')
+  if (sourceParam) {
+    const valid = sourceParam.split(',').map(s => s.trim().toUpperCase())
+      .filter(s => ORDER_SOURCES.has(s))
+    if (valid.length > 0) where.source = { in: valid }
+  }
 
   const categoryIdsParam = searchParams.get('categoryIds') ?? searchParams.get('categoryId')
   const categoryIds = categoryIdsParam ? categoryIdsParam.split(',').filter(Boolean) : null

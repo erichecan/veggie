@@ -275,6 +275,8 @@ export interface Order {
   createdById?: string | null
   /** 创建者姓名快照 */
   createdByName?: string | null
+  /** 下单渠道：PORTAL 餐厅自助 / INTERNAL 后台代下 / IMPORT 外部导入 */
+  source?: 'PORTAL' | 'INTERNAL' | 'IMPORT'
   restaurantId: string
   restaurantName: string
   items: OrderItem[]

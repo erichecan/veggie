@@ -203,6 +203,10 @@ export async function POST(req: Request) {
                 createdByName: restaurantName,
                 restaurantId,
                 restaurantName,
+                // 唯一写入 PORTAL 的地方：这条路由就是餐馆门户的自助下单入口。
+                // 之前来源只埋在下面的 OrderAuditLog 里，列表页够不着，于是
+                // 「这单是客户自己提交的」在后台完全看不出来。
+                source: 'PORTAL',
                 items: toOrderItems(lines) as unknown as object,
                 totalAmount,
                 status: 'PENDING',

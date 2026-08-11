@@ -46,6 +46,17 @@ enum OrderStatus {
   CANCELLED // 取消（客户撤销报价 / 业务员废弃）
 }
 
+/// 订单来源。在这之前无法区分「餐厅自助提交」与「业务员代下」——两者在列表页
+/// 长得一模一样，来源只埋在 OrderAuditLog.changedFields.source 里，列表页够不着。
+enum OrderSource {
+  /// 客户在餐馆门户自助提交
+  PORTAL
+  /// 运营/业务员在后台创建（默认值：历史订单一律归此类，不做臆测性回溯）
+  INTERNAL
+  /// 从 Odoo 等外部系统批量导入
+  IMPORT
+}
+
 enum PaymentMethod {
   ONLINE
   CASH
@@ -626,6 +637,9 @@ model Order {
   createdBy             User?         @relation("OrderCreator", fields: [createdById], references: [id])
   /// 创建者姓名快照（避免日后改名影响历史显示）
   createdByName         String?
+  /// 下单渠道。默认 INTERNAL 保证加字段不破坏历史数据；门户下单处显式写 PORTAL。
+  /// 历史订单只在 OrderAuditLog 留过痕，迁移里据此回填真正的门户单，其余不做臆测。
+  source                OrderSource   @default(INTERNAL)
   restaurantId          String
   restaurantName        String
   items                 Json          @default("[]")
@@ -692,6 +706,7 @@ model Order {
 
   @@index([restaurantId])
   @@index([status])
+  @@index([source])
   @@index([createdAt])
   @@index([deliveryDate])
   @@index([pricelistId])

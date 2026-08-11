@@ -75,6 +75,8 @@ interface ColFilters {
   deliveryDateTo: string
   salesTeam: string
   status: string
+  /** 下单渠道：'' 全部 / PORTAL 餐厅自助 / INTERNAL 后台代下 / IMPORT 外部导入 */
+  source: string
   internalNote: string
   createdAtFrom: string
   createdAtTo: string
@@ -85,7 +87,7 @@ const EMPTY_CF: ColFilters = {
   code: '', quotationDateFrom: '', quotationDateTo: '',
   customer: '', salesman: '',
   deliveryDateFrom: '', deliveryDateTo: '',
-  salesTeam: '', status: '', internalNote: '',
+  salesTeam: '', status: '', source: '', internalNote: '',
   createdAtFrom: '', createdAtTo: '', weekday: '',
 }
 
@@ -274,6 +276,9 @@ export default function ClassicQuotationsPage() {
 
   const baseUrl = useMemo(() => {
     const params = new URLSearchParams({ status: statusParam || 'PENDING', include_lines: 'false' })
+    // 下单渠道筛选走服务端（Order.source 有索引），不要落到客户端过滤——
+    // 客户端只拿得到当前页，筛出来的计数会是错的
+    if (colFilters.source) params.set('source', colFilters.source)
     // "Sent" 在本系统里不是一个真实状态，用一个恒不匹配的条件让结果恒为空（而不是误变成"不筛状态"）
     if (statusParam === '') params.set('restaurantId', '__none__')
     // 报价日期列筛 → dateField=quotationDate(与交货日期筛选是两套独立参数，互不冲突)
@@ -306,7 +311,7 @@ export default function ClassicQuotationsPage() {
       if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     }
     return `/api/orders?${params.toString()}`
-  }, [statusParam, colFilters.quotationDateFrom, colFilters.quotationDateTo, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
+  }, [statusParam, colFilters.source, colFilters.quotationDateFrom, colFilters.quotationDateTo, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
 
   const {
     data: rawOrders,
@@ -848,6 +853,18 @@ ${orderSections}
           </td>
           {/* Status */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{STATUS_LABEL[o.status] ?? o.status}</td>
+          {/* Source —— 这一列的全部意义就是一眼看出「这单是不是餐厅自己提交的」 */}
+          <td className="px-2 py-2 whitespace-nowrap">
+            {o.source === 'PORTAL' ? (
+              <span className="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {isEn ? 'Customer' : '客户自助'}
+              </span>
+            ) : o.source === 'IMPORT' ? (
+              <span className="text-[11px] text-gray-400">{isEn ? 'Imported' : '导入'}</span>
+            ) : (
+              <span className="text-[11px] text-gray-400">{isEn ? 'Internal' : '后台'}</span>
+            )}
+          </td>
           {/* Internal Notes */}
           <td className="px-2 py-2 text-sm text-gray-700 max-w-[140px] truncate" title={internalNote}>{internalNote || ''}</td>
           {/* Salesperson — Order.salesman 快照(下单时冻结),不随客户当前业务员变 */}
@@ -878,7 +895,7 @@ ${orderSections}
         </tr>
         {isEditingItems && (
           <tr key={`${o.id}-items`}>
-            <td colSpan={13} className="px-4 py-3 bg-[#875A7B]/15 border-b border-[#875A7B]/20">
+            <td colSpan={14} className="px-4 py-3 bg-[#875A7B]/15 border-b border-[#875A7B]/20">
               <div className="border border-purple-200 rounded bg-white overflow-hidden shadow-sm">
                 <table className="w-full text-xs">
                   <thead>
@@ -999,6 +1016,14 @@ ${orderSections}
             <option value="cancel">Cancelled</option>
           </select>
         </td>
+        <td className="px-2 py-1">
+          <select value={colFilters.source} onChange={e => setCf('source', e.target.value)} className={selectCls}>
+            <option value=""></option>
+            <option value="PORTAL">{isEn ? 'Customer' : '客户自助'}</option>
+            <option value="INTERNAL">{isEn ? 'Internal' : '后台'}</option>
+            <option value="IMPORT">{isEn ? 'Imported' : '导入'}</option>
+          </select>
+        </td>
         <td className="px-2 py-1"><input value={colFilters.internalNote} onChange={e => setCf('internalNote', e.target.value)} className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.salesman} onChange={e => setCf('salesman', e.target.value)} className={inputCls} /></td>
       </tr>
@@ -1100,6 +1125,7 @@ ${orderSections}
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'total',         label: 'Total',             right: true  },
                   { field: 'status',        label: 'Status',            right: false },
+                  { field: null,            label: 'Source',            right: false },
                   { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
                 ] as { field: string | null; label: string; right: boolean }[]
@@ -1128,16 +1154,16 @@ ${orderSections}
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+              <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={13} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</td></tr>
+              <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</td></tr>
             )}
             {!loading && grouped ? (
               Array.from(grouped.entries()).map(([groupName, groupOrders]) => (
                 <Fragment key={groupName}>
                   <tr className="bg-gray-100 border-b border-gray-200">
-                    <td colSpan={13} className="px-4 py-1.5 text-xs font-semibold text-gray-600">
+                    <td colSpan={14} className="px-4 py-1.5 text-xs font-semibold text-gray-600">
                       {groupName} <span className="ml-2 text-gray-400">({groupOrders.length})</span>
                     </td>
                   </tr>
