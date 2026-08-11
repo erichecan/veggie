@@ -14,6 +14,7 @@ import bcrypt from 'bcryptjs'
 import { Rng } from './rng'
 import { Counter, MARK, SCALE_CONFIG, type Ctx, type Scale } from './context'
 import { buildPersonas, SALESMEN } from './personas'
+import { strHash } from './rng'
 import { runPurchasing } from './events/purchase'
 import { runSales } from './events/sales'
 import { runBilling } from './events/billing'
@@ -118,8 +119,13 @@ async function main(): Promise<void> {
   await runPurchasing(ctx)
   console.log('🧾 销售下单/确认/送达...')
   const allOrders = await runSales(ctx)
-  const completed = allOrders.filter((o) => o.stage === 'COMPLETED')
-  console.log(`   全订单 ${allOrders.length} · 完成 ${completed.length}`)
+  const completedAll = allOrders.filter((o) => o.stage === 'COMPLETED')
+  // 留一部分已送达但**尚未开票**的单：开票会把订单推到 LOCKED，全开的话最终快照里
+  // COMPLETED 一张不剩，D5 打印矩阵与任何按状态取数的测试都永远覆盖不到这个状态。
+  // 现实里也本该有——账期未到的单就是「已送达、未开票」。按确定性哈希留 1/6。
+  const completed = completedAll.filter((o) => strHash('bill:' + o.id) % 6 !== 0)
+  const heldBack = completedAll.length - completed.length
+  console.log(`   全订单 ${allOrders.length} · 完成 ${completedAll.length}（其中 ${heldBack} 张留作未开票，保持 COMPLETED 态）`)
   console.log('💶 开票/收款/对账...')
   await runBilling(ctx, completed)
   console.log('⚠️  异常场景...')
