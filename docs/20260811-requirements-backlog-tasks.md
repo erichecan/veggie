@@ -4,9 +4,9 @@
 > 每个周期从「读本文件」开始，不从「我记得上次做到哪」开始。
 > 需求原文与现状徽章见 `preview/20260811-requirements-checklist.html`。
 
-- 任务总数：47（需求）+ 3（前置）= **50**
-- 完成：0 / 50
-- 当前批次：**W0 前置**
+- 任务总数：47（需求）+ 6（前置，Z4/Z5/Z6 于周期 1 新增）= **53**
+- 完成：1 / 53（Z1）
+- 当前批次：**W0 前置**（Z1 ✅ → 下一条 Z3）
 
 ---
 
@@ -41,13 +41,29 @@
 
 ## W0 · 前置
 
-- [ ] **Z1 起本机 PostgreSQL 测试库**（决策已定 20260811）
-      做法：`brew install postgresql@17` → 建库 `veggie_test` → `.env.test` 指向本机 → `npm run db:migrate:test` → `npm run db:seed`
-      验收：`.env.test` 连通；`prisma migrate deploy` 全部应用；种子数据写入成功；`npm run db:validate` 跑通；**连接串确认为 localhost**
-      产出：`.env.test` + 本台账记录
-      依赖：无 —— 可立即执行
-      阻塞：整个 W2
-      备注：本机库同时验证 `@prisma/adapter-pg` 路径，为私有化部署铺路（禁止依赖 Neon 专有能力）
+- [x] **Z1 起本机 PostgreSQL 测试库** —— 完成 20260811，commit `e5c5793`
+      结果：PostgreSQL 17.9（本机已装，无需安装）+ 库 `veggie_test` + `.env.test` 指向 `127.0.0.1`，驱动自动推断为 `pg`
+      验收达成：52 张表与 schema 的 52 个模型一致 ✓；种子写入 1677 商品 / 1324 客户 / 8 账号 ✓；`db:validate` 11 项不变量全绿 ✓；`npm test` 384 通过 0 失败 ✓；连接串确认 localhost ✓
+      ⚠️ **偏离验收标准一处**：`prisma migrate deploy` **未能使用**。69 个历史迁移无法在全新库上重放（`20260419_decimal_partner_indexes` 整个事务中止），这是项目已知问题（`migrate dev` 撞 shadow DB 同一根因）。改用 `prisma db push` 从 schema 直建。对测试库而言可接受（不需要迁移历史保真），但**这意味着「迁移能否在空库重放」至今无人验证过** → 见 Z6。
+      ⚠️ 已知限制：1677 个商品 **库存全为 0**（新格式 CSV 不带库存列）→ 见 Z5
+
+- [ ] **Z4 修复 `db:seed:events` 的 P2002**
+      现象：全量 seed 后再跑 `prisma/seed-events/index.ts`，在 `index.ts:88` 撞 Customer 唯一约束（UniqueConstraintViolation）
+      验收：全量 seed 之后能顺利跑完事件种子；重复跑两次不报错（幂等）
+      依赖：Z1 ✓
+      发现于：Z1 周期
+
+- [ ] **Z5 给测试库铺库存底数**
+      现象：`Product.qtyOnHand` 1677 条全为 0，因 20260715 后的 CSV 导出不含库存列
+      验收：在售商品有合理的非零库存，且 `qtyOnHand == ΣStockMove` 仍守恒（`db:validate` 保持全绿）
+      依赖：Z4（事件种子可能就是铺库存的正确位置）
+      阻塞：A3 下单、D6 缺货、I3 单位换算 —— 零库存下这些测试全会被判缺货，测不出真结果
+
+- [ ] **Z6 验证迁移历史能否在空库重放**
+      现象：`prisma migrate deploy` 在全新库上第 N 个迁移即失败，Z1 只能绕道 `db push`
+      验收：要么修好迁移链使空库可重放，要么明确记录「迁移链只支持增量、重建走 db push」并写进 README
+      风险：私有化部署到客户服务器时若需从空库起步，这条会直接卡住上线
+      依赖：无
 
 - [ ] **Z2 修复生产发信（两层都坏）**
       验收：Resend 真 key 写入密钥源；发件域在 Resend 完成验证；实际发出一封密码重置邮件并收到
@@ -207,12 +223,27 @@
 
 ---
 
-## 测试账号
+## 测试账号（本机 veggie_test，密码统一 `LocalTest2026!`）
 
-（Z3 完成后填写）
+| 角色 | 账号 |
+|---|---|
+| OPERATOR | operator@veggie.com |
+| BOSS | boss@veggie.com |
+| FINANCE | finance@veggie.com |
+| WAREHOUSE | warehouse@veggie.com |
+| SORTER | sorter@veggie.com |
+| DRIVER | driver@veggie.com |
+| RESTAURANT | restaurant1@veggie.com / restaurant2@veggie.com |
+
+启停测试库（`brew services` 在沙箱内不可用，必须用 v17 显式路径，否则会被 PATH 里的 v14 二进制拒绝）：
+
+```
+/opt/homebrew/opt/postgresql@17/bin/pg_ctl -D /opt/homebrew/var/postgresql@17 \
+  -l /opt/homebrew/var/log/postgresql@17.log start
+```
 
 ## 周期日志
 
 | 周期 | 任务 | 结果 | commit |
 |---|---|---|---|
-| — | — | — | — |
+| 1 | Z1 起本机测试库 | ✅ 完成，但 `migrate deploy` 走不通改用 `db push`；途中发现并修复 `db:seed` 已静默产出垃圾数据一个月，新登记 Z4/Z5/Z6 | `e5c5793` |
