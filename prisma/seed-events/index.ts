@@ -33,14 +33,15 @@ async function cleanup(): Promise<void> {
   await prisma.invoice.deleteMany({ where: { name: { startsWith: MARK.invPrefix } } })
   await prisma.creditNote.deleteMany({ where: { name: { startsWith: MARK.cnPrefix } } })
   await prisma.vendorBill.deleteMany({ where: { name: { startsWith: MARK.vbPrefix } } })
-  await prisma.order.deleteMany({ where: { externalRef: MARK.orderRef } })
+  await prisma.order.deleteMany({ where: { externalRef: { startsWith: MARK.orderRef } } })
   await prisma.pickingWave.deleteMany({ where: { name: { startsWith: MARK.wavePrefix } } })
   await prisma.trip.deleteMany({ where: { name: { startsWith: MARK.tripPrefix } } })
   await prisma.purchaseSuggestion.deleteMany({ where: { tenantId: MARK.tenant } })
   await prisma.notification.deleteMany({ where: { tenantId: MARK.tenant } })
   await prisma.statement.deleteMany({ where: { tenantId: MARK.tenant } })
   await prisma.purchaseOrder.deleteMany({ where: { name: { startsWith: MARK.poPrefix } } })
-  await prisma.customer.deleteMany({ where: { externalId: MARK.vendorExternalId } })
+  // 前缀匹配：供应商的 externalId 是 `<marker>-<n>`（唯一约束要求逐个不同）
+  await prisma.customer.deleteMany({ where: { externalId: { startsWith: MARK.vendorExternalId } } })
 }
 
 async function resetSeedArtifacts(): Promise<void> {
@@ -136,7 +137,7 @@ async function main(): Promise<void> {
 
   // 计数汇总
   const [orders, invoices, payments, lots, moves, pos] = await Promise.all([
-    prisma.order.count({ where: { externalRef: MARK.orderRef } }),
+    prisma.order.count({ where: { externalRef: { startsWith: MARK.orderRef } } }),
     prisma.invoice.count({ where: { name: { startsWith: MARK.invPrefix } } }),
     prisma.payment.count(),
     prisma.lot.count(),

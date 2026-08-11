@@ -98,7 +98,9 @@ async function placeOrder(ctx: Ctx, persona: Persona, date: Date, specs: LineSpe
         totalAmount: total,
         status: 'PENDING',
         paymentMethod,
-        externalRef: MARK.orderRef,
+        // 唯一列上不能放共享标记：Order.externalRef 有唯一约束，
+        // 直接写 MARK.orderRef 会让第 2 张单就撞 P2002。前缀保留标记语义。
+        externalRef: `${MARK.orderRef}-${orderId}`,
         priceType: 'multi',
         commissionRate: persona.commissionRate,
         salesUserId: ctx.salesUserIdByName[persona.salesman] ?? null,

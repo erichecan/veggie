@@ -21,7 +21,15 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null
 }
 
-/** 确保有一组带标记的供应商（清理后每次重建） */
+/**
+ * 确保有一组带标记的供应商（清理后每次重建）。
+ *
+ * externalId 必须**逐个唯一**：`Customer.externalId` 上有唯一约束，而这里要造
+ * 8 个供应商。原来 8 个共用 `MARK.vendorExternalId` 一个值，第 2 个就撞 P2002 ——
+ * 不是「重跑才坏」，是**首次运行就必坏**，整个事件种子从来没跑完过。
+ * 改成 `<marker>-<n>`，标记语义靠前缀保留，清理与查询都改成前缀匹配
+ * （见 index.ts 的 deleteMany 与 events/scenarios.ts 的 findMany）。
+ */
 async function ensureSuppliers(prisma: PrismaClient): Promise<string[]> {
   const ids: string[] = []
   for (let i = 0; i < SUPPLIER_NAMES.length; i++) {
@@ -30,7 +38,7 @@ async function ensureSuppliers(prisma: PrismaClient): Promise<string[]> {
         name: SUPPLIER_NAMES[i],
         isCustomer: false,
         isVendor: true,
-        externalId: MARK.vendorExternalId,
+        externalId: `${MARK.vendorExternalId}-${i + 1}`,
         paymentTerm: 'monthly',
         vendorTaxRate: 0,
         country: 'IE',

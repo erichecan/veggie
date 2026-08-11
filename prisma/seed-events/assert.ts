@@ -100,7 +100,7 @@ export async function runAssertions(prisma: PrismaClient): Promise<void> {
     const rows = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
       `SELECT COUNT(*)::bigint AS cnt FROM "OrderLine" ol
        JOIN "Order" o ON o.id = ol."orderId"
-       WHERE o."externalRef" = $1 AND o.status IN ('COMPLETED','LOCKED')
+       WHERE o."externalRef" LIKE $1 || '%' AND o.status IN ('COMPLETED','LOCKED')
          AND ol."deliveredQty" <> ol."orderedQty"`,
       MARK.orderRef,
     )

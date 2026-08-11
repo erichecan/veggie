@@ -104,7 +104,7 @@ async function makeCreditNotes(ctx: Ctx, completed: MadeOrder[]): Promise<void> 
 /** 补货建议：低库存商品（与 app 算法一致：demand-stock） */
 async function makeSuggestions(ctx: Ctx): Promise<void> {
   const suppliers = await ctx.prisma.customer.findMany({
-    where: { externalId: MARK.vendorExternalId },
+    where: { externalId: { startsWith: MARK.vendorExternalId } },
     select: { id: true, name: true },
   })
   const supName = new Map(suppliers.map((s) => [s.id, s.name]))
