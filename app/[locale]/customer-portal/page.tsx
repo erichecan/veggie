@@ -227,7 +227,12 @@ export default function CustomerProductsPage() {
                   <div key={c.productId} className="flex items-center justify-between py-3">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{c.name}</p>
-                      <p className="text-xs text-gray-400">{c.spec} · {c.uomName} · {eur(c.price)}</p>
+                      {/* 分隔符必须跟着字段走：spec/uomName 多数商品为空，
+                          无条件拼「·」会渲染成 " ·  · €22.00" 这种孤立点。
+                          下方商品卡片（p.spec && …）用的就是这个写法。 */}
+                      <p className="text-xs text-gray-400">
+                        {[c.spec, c.uomName].filter(Boolean).map(v => `${v} · `).join('')}{eur(c.price)}
+                      </p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
                       <button onClick={() => setQty(c.productId, c.quantity - 1)}
