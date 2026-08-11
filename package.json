@@ -21,7 +21,9 @@
     "db:generate": "prisma generate",
     "db:studio": "npx dotenv -e .env.local prisma studio",
     "images:fetch": "npx tsx --env-file=.env.local scripts/fetch-product-images.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:bootstrap": "npx tsx --env-file=.env.test scripts/db/bootstrap-fresh.ts",
+    "db:opening-stock": "npx tsx --env-file=.env.test scripts/seed/ensure-opening-stock.ts"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
