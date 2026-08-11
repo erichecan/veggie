@@ -283,6 +283,17 @@ export async function resolveOrderLines(
   })
   const productMap = new Map(products.map((p) => [p.id, p]))
 
+  // 单位名快照：与 taxRate 同理，此前 uomName 完全听客户端的，客户端不传就是 NULL。
+  // 后果落在拣货单/送货单上——纸面只有「2」，仓库看不出是 2 箱还是 2 包。
+  // 单位名必须**落库快照**而不是打印时联表取：单位改名后，历史单据要保持当时的叫法。
+  const lineUomIds = [...new Set(submittedItems.map((i) => i.uomId).filter((x): x is string => !!x))]
+  const uomNameMap = new Map<string, string>(
+    lineUomIds.length > 0
+      ? (await ctx.prisma.uom.findMany({ where: { id: { in: lineUomIds } }, select: { id: true, name: true } }))
+          .map((u) => [u.id, u.name])
+      : [],
+  )
+
   // 多单位销售(20260714)：前端可能按非基准单位(如箱)下单，价格随之换算或走独立售价。
   // 服务端"权威定价"若不感知这一点，会把换算/独立售价一律当"客户改价"打回基准价——
   // 这里一次性批量拉 ProductSaleUom + 涉及的 Uom.factor，换算逻辑与 lib/inventory.ts
@@ -399,7 +410,8 @@ export async function resolveOrderLines(
       resolution,
       lastPriceDate: resolution.sourceType === 'last' ? lastPriceDate : undefined,
       uomId: item.uomId,
-      uomName: item.uomName,
+      // 优先用服务端按 uomId 查出的正式名称；客户端传的仅作回落
+      uomName: (item.uomId ? uomNameMap.get(item.uomId) : undefined) ?? item.uomName,
       // SSOT 护栏(A-1): OrderLine.taxRate 一律存百分数(如 23)。历史小数(0.23)与
       // 前端偶发小数在此归一;IE VAT 档位 0/4.8/9/13.5/23 在 (0,1) 无合法值,判别无歧义。
       //

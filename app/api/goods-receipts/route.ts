@@ -5,6 +5,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
 import { toNum } from '@/lib/decimal-helpers'
 import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
+import { toStockQty } from '@/lib/inventory'
 
 /**
  * /api/goods-receipts
@@ -155,8 +156,20 @@ export async function POST(req: Request) {
           if (!poLine) continue
           const qty = Number(l.qty)
           if (qty <= 0) continue
+
+          // ⚠️ 单位换算（20260811 补）：收货数量是**采购单位**下的（如「5 箱」），
+          // 而 qtyOnHand / StockMove / Lot 一律以商品**基准单位**计（如「包」）。
+          // 此前这里直接 increment(qty) —— 采购单位是箱(factor 12) 时，收 5 箱只加 5，
+          // 库存少记 11/12。销售侧一直有换算（lib/inventory.ts toStockQty），
+          // 采购侧没有，两边不对称。
+          const recvUomId = l.uomId ?? (poLine as { uomId?: string | null }).uomId ?? null
+          const stockQty = await toStockQty(tx, l.productId, qty, recvUomId)
+          // 换算比：1 采购单位 = ratio 个基准单位
+          const ratio = qty !== 0 ? stockQty / qty : 1
+
           await tx.purchaseOrderLine.update({
             where: { id: poLine.id },
+            // receivedQty 保持**采购单位**语义，与 orderedQty 同量纲，不换算
             data: { receivedQty: { increment: qty } },
           })
           // damaged 的货不入库
@@ -167,15 +180,19 @@ export async function POST(req: Request) {
             // 必须先按 PO.exchangeRate 折算过才能进公司统一记的欧元成本基准(20260713 汇率换算改造)。
             // unitCostEur 为空(理论上不会,CONFIRM 阶段已挡住汇率待确认的单)时按 0 处理，与原逻辑一致跳过更新。
             const recvCost = Number((poLine as { unitCostEur?: unknown; unitCost?: unknown }).unitCostEur ?? 0)
+            // 单价也是**采购单位**下的（€20/箱）。qtyOnHand 与 standardPrice 都以基准单位计，
+            // 所以加权平均必须两边同时换算——只换数量不换单价，会把「60 包」按「每包 €20」
+            // 计入加权，成本直接虚高 12 倍。
+            const costPerBase = ratio !== 0 ? recvCost / ratio : recvCost
             const prod = await tx.product.findUnique({ where: { id: l.productId }, select: { qtyOnHand: true, standardPrice: true } })
             const oldQty = Math.max(Number(prod?.qtyOnHand ?? 0), 0)
             const oldStd = Number(prod?.standardPrice ?? 0)
-            const newStd = recvCost > 0 && (oldQty + qty) > 0
-              ? Math.round(((oldQty * oldStd + qty * recvCost) / (oldQty + qty)) * 100) / 100
+            const newStd = costPerBase > 0 && (oldQty + stockQty) > 0
+              ? Math.round(((oldQty * oldStd + stockQty * costPerBase) / (oldQty + stockQty)) * 100) / 100
               : oldStd
             await tx.product.update({
               where: { id: l.productId },
-              data: { qtyOnHand: { increment: qty }, ...(newStd !== oldStd ? { standardPrice: newStd } : {}) },
+              data: { qtyOnHand: { increment: stockQty }, ...(newStd !== oldStd ? { standardPrice: newStd } : {}) },
             })
 
             // 创建批次；保质期优先用本次收货行实际填写的值（实物到货才知道真实保质期），
@@ -187,15 +204,15 @@ export async function POST(req: Request) {
               data: {
                 lotNumber,
                 productId: l.productId,
-                initialQty: qty,
-                currentQty: qty,
+                initialQty: stockQty,
+                currentQty: stockQty,
                 sourceType: 'GOODS_RECEIPT',
                 sourceId: gr.id,
                 sourceRef: grName,
                 bestBefore: lineBestBefore,
                 arrivedAt: batchDate,
                 // SSOT(成本): 批次成本 = PO 行真实采购价，毛利/损耗分析按批次计成本
-                unitCost: recvCost > 0 ? recvCost : null,
+                unitCost: costPerBase > 0 ? costPerBase : null,
               },
             })
 
@@ -204,7 +221,7 @@ export async function POST(req: Request) {
                 productId: l.productId,
                 productName: l.productName ?? poLine.productName,
                 type: 'IN',
-                qty,
+                qty: stockQty,
                 lotId: lot.id,
                 movedAt: batchDate,
                 note: `收货 ${grName} / PO ${po.name} / 批次 ${lotNumber}`,
@@ -228,7 +245,7 @@ export async function POST(req: Request) {
                 productId: l.productId,
                 productName: l.productName ?? poLine.productName,
                 type: 'IN',
-                qty,
+                qty: stockQty,
                 lotId: null,
                 movedAt: batchDate,
                 note: `${damageNote}（到货，随即报废）`,
@@ -242,7 +259,7 @@ export async function POST(req: Request) {
                 productId: l.productId,
                 productName: l.productName ?? poLine.productName,
                 type: 'SCRAP',
-                qty: -qty,
+                qty: -stockQty,
                 lotId: null,
                 movedAt: batchDate,
                 note: damageNote,
