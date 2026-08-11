@@ -215,16 +215,37 @@ export async function POST(req: Request) {
             })
           } else {
             // 损坏：不进库存、不建 Lot，但算供应商已交付（上面 receivedQty 已计入）。
-            // 写一笔无批次归属的 SCRAP StockMove 留痕，自然落入损耗仪表盘统计，方便追损耗/找供应商索赔。
+            //
+            // ⚠️ 必须记**两笔**：IN(+qty) 后紧跟 SCRAP(-qty)，净额为 0。
+            // 原来只记一笔正数 SCRAP，而 qtyOnHand 不动 —— 直接破坏系统的头号不变量
+            // `qtyOnHand == Σ StockMove.qty`（db:validate 第 1 项）。
+            // 之所以一直没暴露，是因为种子从不制造损坏收货，这条路径没有测试数据走过。
+            // 两笔的写法也更贴近事实：货确实到了，然后被判损报废；
+            // 损耗仪表盘照常统计到 SCRAP 那一笔，追损/索赔不受影响。
+            const damageNote = `${SCRAP_REASON_LABEL.RECEIPT_DAMAGE} - 收货 ${grName} / PO ${po.name}`
+            await tx.stockMove.create({
+              data: {
+                productId: l.productId,
+                productName: l.productName ?? poLine.productName,
+                type: 'IN',
+                qty,
+                lotId: null,
+                movedAt: batchDate,
+                note: `${damageNote}（到货，随即报废）`,
+                sourceType: 'RECEIPT_DAMAGE',
+                sourceId: gr.id,
+                sourceRef: grName,
+              },
+            })
             await tx.stockMove.create({
               data: {
                 productId: l.productId,
                 productName: l.productName ?? poLine.productName,
                 type: 'SCRAP',
-                qty,
+                qty: -qty,
                 lotId: null,
                 movedAt: batchDate,
-                note: `${SCRAP_REASON_LABEL.RECEIPT_DAMAGE} - 收货 ${grName} / PO ${po.name}`,
+                note: damageNote,
                 sourceType: 'RECEIPT_DAMAGE',
                 sourceId: gr.id,
                 sourceRef: grName,
