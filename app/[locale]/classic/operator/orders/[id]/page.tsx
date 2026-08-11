@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -14,6 +14,7 @@ import { OrderChatter } from '@/components/order/OrderChatter'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
+import { useHotkeys } from '@/components/shared/use-hotkeys'
 
 const PURPLE = '#875A7B'
 
@@ -77,6 +78,11 @@ export default function SalesOrderDetailPage() {
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
+  // 同报价单页：OrderLineEditor 的商品搜索框 ref 是私有的，靠 onReady 递出来
+  const focusLineSearchRef = useRef<(() => void) | null>(null)
+  const handleEditorReady = useCallback((api: { focusSearch: () => void }) => {
+    focusLineSearchRef.current = api.focusSearch
+  }, [])
   const [printing, setPrinting] = useState(false)
   const [sendEmailOpen, setSendEmailOpen] = useState(false)
   const [internalNote, setInternalNote] = useState('')
@@ -376,6 +382,28 @@ export default function SalesOrderDetailPage() {
     toast.success(isEn ? 'Duplicate products merged' : '已合并重复商品')
   }
 
+  const { helpOverlay } = useHotkeys([
+    {
+      combo: 'mod+s', label: '保存', group: '编辑',
+      when: () => editing,
+      run: () => { void handleSave() },
+      allowInInput: true,
+    },
+    {
+      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
+      when: () => editing,
+      run: () => focusLineSearchRef.current?.(),
+      allowInInput: true,
+    },
+    {
+      combo: 'mod+p', label: '打印销售单', group: '流转',
+      // 与 Print 按钮同条件：打印中不可重复触发，锁定单不可打
+      when: () => !!order && !printing,
+      run: () => { void handlePrint() },
+      allowInInput: true,
+    },
+  ])
+
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
       {/* Action bar */}
@@ -640,6 +668,7 @@ export default function SalesOrderDetailPage() {
               searchColSpan={16}
               products={allProducts}
               onAddProduct={addProductLine}
+              onReady={handleEditorReady}
               selectOnTab
               renderHeaders={() => (
                 <tr className="border-b border-gray-200 text-xs font-bold text-gray-700 align-bottom">
@@ -821,6 +850,7 @@ export default function SalesOrderDetailPage() {
         open={sendEmailOpen}
         onOpenChange={setSendEmailOpen}
       />
+      {helpOverlay}
     </div>
   )
 }

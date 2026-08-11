@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -15,6 +15,7 @@ import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 import SendEmailDialog from '@/components/orders/send-email-dialog'
+import { useHotkeys } from '@/components/shared/use-hotkeys'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -60,6 +61,11 @@ export default function QuotationDetailPage() {
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
+  // OrderLineEditor 内部的商品搜索框 ref 是私有的，靠 onReady 把 focus 能力递出来给快捷键用
+  const focusLineSearchRef = useRef<(() => void) | null>(null)
+  const handleEditorReady = useCallback((api: { focusSearch: () => void }) => {
+    focusLineSearchRef.current = api.focusSearch
+  }, [])
   const [sendEmailOpen, setSendEmailOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
@@ -441,6 +447,35 @@ export default function QuotationDetailPage() {
     )
   }
 
+  const { helpOverlay } = useHotkeys([
+    {
+      combo: 'mod+s', label: '保存', group: '编辑',
+      when: () => editing,
+      run: () => { void handleSave() },
+      // 编辑时焦点几乎总在某个输入框里，不放行就等于这条快捷键不存在
+      allowInInput: true,
+    },
+    {
+      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
+      when: () => editing,
+      run: () => focusLineSearchRef.current?.(),
+      allowInInput: true,
+    },
+    {
+      combo: 'mod+enter', label: '确认报价单', group: '流转',
+      // 与 Confirm 按钮的 disabled 保持同一套条件，避免按钮灰着但快捷键还能按下去
+      when: () => isQuotation && !editing && !confirming && !creditBlocked,
+      run: () => { void handleConfirm() },
+      allowInInput: true,
+    },
+    {
+      combo: 'mod+p', label: '打印', group: '流转',
+      when: () => !!order,
+      run: () => window.open(`${prefix}/classic/print/${order!.id}`, '_blank', 'noopener,noreferrer'),
+      allowInInput: true,
+    },
+  ])
+
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
       {/* Region 1: Breadcrumb + action bar */}
@@ -785,6 +820,7 @@ export default function QuotationDetailPage() {
               onDeleteLine={(_lineId, i) => deleteLine(i)}
               products={allProducts}
               onAddProduct={addProductLine}
+              onReady={handleEditorReady}
               selectOnTab
               searchColSpan={16}
               emptyColSpan={17}
@@ -1001,6 +1037,7 @@ export default function QuotationDetailPage() {
         open={sendEmailOpen}
         onOpenChange={setSendEmailOpen}
       />
+      {helpOverlay}
     </div>
   )
 }

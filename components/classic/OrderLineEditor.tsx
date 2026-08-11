@@ -1,5 +1,5 @@
 'use client'
-import { type ReactNode, type CSSProperties, useRef, useState } from 'react'
+import { type ReactNode, type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import ProductSearchInput from './ProductSearchInput'
 
@@ -38,6 +38,12 @@ interface Props<
   footer?: ReactNode
   emptyColSpan?: number
   emptyMessage?: string
+  /**
+   * 把内部能力暴露给外层，挂载后调用一次。
+   * 目前只有 focusSearch —— 页面级快捷键（如 Alt+N 新增一行）要能聚焦到商品搜索框，
+   * 而搜索框的 ref 一直是本组件私有的，外面够不着。
+   */
+  onReady?: (api: { focusSearch: () => void }) => void
 }
 
 export default function OrderLineEditor<
@@ -62,6 +68,7 @@ export default function OrderLineEditor<
   footer,
   emptyColSpan = 1,
   emptyMessage = '暂无明细',
+  onReady,
 }: Props<L, P>) {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
@@ -71,9 +78,13 @@ export default function OrderLineEditor<
   const psInputRef = useRef<HTMLInputElement>(null)
   const firstFieldRefs = useRef<Map<number, HTMLElement>>(new Map())
 
-  function focusSearch() {
+  const focusSearch = useCallback(() => {
     psInputRef.current?.focus()
-  }
+  }, [])
+
+  useEffect(() => {
+    onReady?.({ focusSearch })
+  }, [onReady, focusSearch])
 
   const canDrag = editing && !!onReorder
 
