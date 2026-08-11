@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>North Fresh · 需求任务清单 20260811</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#16191d; --muted:#6b7280; --line:#e3e6ea;
+  --accent:#1f6feb; --accent-soft:#e8f0fe;
+  --ok:#128a4c; --ok-bg:#e6f5ed;
+  --partial:#a86400; --partial-bg:#fdf3e0;
+  --miss:#c0392b; --miss-bg:#fdeceb;
+  --unknown:#5b5f66; --unknown-bg:#eef0f2;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.1);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1216; --panel:#171b21; --ink:#e6e9ee; --muted:#9aa3af; --line:#2a3038;
+    --accent:#5b9bff; --accent-soft:#1b2740;
+    --ok:#4ade80; --ok-bg:#12301f;
+    --partial:#f0b429; --partial-bg:#2f2410;
+    --miss:#f87171; --miss-bg:#331818;
+    --unknown:#9aa3af; --unknown-bg:#23282f;
+    --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+header.top{margin-bottom:20px}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.4px}
+.sub{color:var(--muted);font-size:13.5px}
+.sub code{font-family:var(--mono);font-size:12.5px;background:var(--unknown-bg);padding:1px 5px;border-radius:4px}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:18px 0}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;box-shadow:var(--shadow)}
+.kpi b{display:block;font-size:24px;line-height:1.2;letter-spacing:-.5px}
+.kpi span{font-size:12px;color:var(--muted)}
+.kpi.ok b{color:var(--ok)} .kpi.partial b{color:var(--partial)} .kpi.miss b{color:var(--miss)}
+
+/* progress */
+.progress{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:18px;box-shadow:var(--shadow)}
+.bar{height:9px;border-radius:99px;background:var(--unknown-bg);overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .25s}
+.progress .lbl{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.progress .lbl b{color:var(--ink)}
+
+/* toolbar */
+.toolbar{position:sticky;top:0;z-index:20;background:var(--bg);padding:10px 0 12px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;
+  padding:5px 11px;font-size:12.5px;cursor:pointer;user-select:none;white-space:nowrap}
+.chip:hover{border-color:var(--accent)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.sep{background:transparent;border:none;color:var(--muted);cursor:default;padding-left:8px}
+input.search{flex:1;min-width:180px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;
+  background:var(--panel);color:var(--ink);font-size:13px;outline:none}
+input.search:focus{border-color:var(--accent)}
+
+/* sections */
+section{margin:0 0 26px}
+h2{font-size:17px;margin:0 0 4px;display:flex;align-items:baseline;gap:9px}
+h2 .num{font-family:var(--mono);font-size:13px;color:#fff;background:var(--ink);border-radius:5px;padding:2px 7px}
+h2 .cnt{font-size:12px;color:var(--muted);font-weight:400}
+.secnote{color:var(--muted);font-size:13px;margin:0 0 10px;padding-left:2px}
+
+/* task */
+.task{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  margin-bottom:8px;box-shadow:var(--shadow);display:grid;grid-template-columns:auto 1fr;gap:11px}
+.task.done{opacity:.5}
+.task.done .tt{text-decoration:line-through}
+.task input[type=checkbox]{width:17px;height:17px;margin-top:3px;accent-color:var(--accent);cursor:pointer}
+.tt{font-weight:600;font-size:14.5px;margin:0 0 5px;display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.tid{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:var(--unknown-bg);
+  padding:1px 6px;border-radius:4px;font-weight:500}
+.badge{font-size:11px;padding:2px 7px;border-radius:99px;font-weight:600;white-space:nowrap}
+.b-ok{color:var(--ok);background:var(--ok-bg)}
+.b-partial{color:var(--partial);background:var(--partial-bg)}
+.b-miss{color:var(--miss);background:var(--miss-bg)}
+.b-unknown{color:var(--unknown);background:var(--unknown-bg)}
+.kind{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:1px 7px}
+.desc{font-size:13.5px;color:var(--ink);margin:0 0 7px}
+.ac{font-size:12.5px;color:var(--muted);border-left:2px solid var(--line);padding-left:9px;margin:0 0 5px}
+.ac b{color:var(--ink);font-weight:600}
+.paths{font-family:var(--mono);font-size:11.5px;color:var(--muted);word-break:break-all}
+.paths span{background:var(--unknown-bg);padding:1px 5px;border-radius:4px;margin-right:5px;display:inline-block;margin-top:3px}
+.risk{font-size:12.5px;color:var(--miss);background:var(--miss-bg);border-radius:6px;padding:6px 9px;margin-top:6px}
+
+/* open questions */
+.qa{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:14px 16px;margin-bottom:26px}
+.qa h3{margin:0 0 8px;font-size:15px}
+.qa ol{margin:0;padding-left:20px;font-size:13.5px}
+.qa li{margin-bottom:6px}
+.empty{color:var(--muted);font-size:14px;padding:30px;text-align:center}
+footer{color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:14px;margin-top:30px}
+@media print{
+  .toolbar,.kpis,.progress{display:none}
+  .task{break-inside:avoid;box-shadow:none}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>North Fresh · 需求任务清单</h1>
+  <div class="sub">
+    整理自 2026-08-11 需求口述 · 共 9 大板块 ·
+    「现状」列基于对当前代码库的实查（52 个数据模型 / 全部页面与 API 路由），<b>不是估计</b>；
+    标 <code>待实测</code> 的表示代码存在但未在浏览器里真点过。
+  </div>
+</header>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="progress">
+  <div class="lbl"><span>完成进度（本地保存，勾选状态存在浏览器里）</span><span><b id="pdone">0</b> / <span id="ptotal">0</span></span></div>
+  <div class="bar"><i id="pbar" style="width:0%"></i></div>
+</div>
+
+<div class="qa">
+  <h3>⚠️ 动手前必须先定的 6 件事</h3>
+  <ol>
+    <li><b>司机端 APP 的形态</b>：现在司机端是浏览器页面（<code>/classic/driver</code>）。要做"安卓 APP"是指 ① 把现有页面包成 WebView 壳（1～2 天，功能全继承），还是 ② 原生/RN 重写（数周，能拿到离线、后台定位、推送）？<b>这个决定 C 板块全部工期。</b></li>
+    <li><b>安卓开发者账号</b>：Google Play 开发者账号需 $25 一次性费用 + 组织实名。你要我用测试包（APK 直接下发 / Firebase App Distribution）绕开，那还需不需要注册账号？现在有没有现成账号？</li>
+    <li><b>"多仓库"到底是几个仓</b>：库里只有 <code>Zone</code>（温区），没有 <code>Warehouse</code> 表。做多仓库 = 加一层实体 + 所有库存查询改写。客户现在实际是 1 个仓 3 个温区，还是真有 2 个以上物理仓？</li>
+    <li><b>Quotation 的来源标识</b>：<code>Order</code> 表没有来源字段，餐厅自助提交的单和业务员代下的单在列表页长得一样。要不要加 <code>Order.source</code> 字段并在列表加筛选？（我建议加，改动小）</li>
+    <li><b>Sage 对接的时间点</b>：财务模块你说"先做演示，等需求明确再对接 Sage"。那 G 板块这次是否只交界面 + 假数据流程，不做真实凭证？</li>
+    <li><b>缺货"人工跳过"的判定依据</b>：跳过的前提是"采购/收货处有在途"。是让系统自动查在途采购单给出建议，还是纯人工凭经验点跳过？前者要定"在途"口径（PO 已审核？已发货？预计今日到？）。</li>
+  </ol>
+</div>
+
+<div class="toolbar">
+  <div class="filters" id="filters"></div>
+</div>
+
+<div id="list"></div>
+
+<footer>
+  生成于 2026-08-11 · 勾选状态仅保存在本机浏览器 localStorage · 打印时会自动隐藏筛选器
+</footer>
+</div>
+
+<script>
+const OK='ok', PART='partial', MISS='miss', UNK='unknown';
+const STATUS_LABEL={ok:'已有',partial:'部分已有',miss:'缺失',unknown:'待实测'};
+
+const DATA=[
+{
+  id:'A', title:'餐馆订货系统（客户门户）',
+  note:'现状：<code>/customer-portal</code> 已上线，含商品浏览、常购清单、下单、订单列表四个页面。本板块以「实测」为主，不是新开发。',
+  tasks:[
+    {id:'A1',t:'常购清单 UI 交互检查',kind:'测试',st:UNK,
+     d:'走查常购清单的交互：一键复购是否预填上次数量、数量增减控件、加入购物车反馈、商品已下架/停售时的表现、清单为空时的空状态。',
+     ac:'用真实餐厅账号在浏览器里逐个点一遍；每个可点元素都有可见反馈，无死按钮；下架商品不能被加入购物车且有明确提示。',
+     p:['app/api/customer-portal/frequently-ordered/route.ts','app/[locale]/customer-portal/page.tsx'],
+     r:'接口写死取 TOP 8（<code>TOP_N=8</code>），且按"历史出现次数"排序不带时间衰减——半年前常买、现在不买的商品会长期占位。需确认这是不是想要的。'},
+    {id:'A2',t:'账期与定价显示检查',kind:'测试',st:UNK,
+     d:'检查客户门户里价格与账期的显示是否正确：是否用了该客户的专属价/价格表、含税还是不含税、单位是否与销售单位一致、信用额度与账期文案是否准确。',
+     ac:'挑 3 个不同价格表的客户各下一单；门户显示价 == 后台销售单成交价；税前/税后口径与 <code>lib/analytics/metrics.ts</code> 一致；账期显示与 Customer 记录一致。',
+     p:['app/api/customer-portal/products/route.ts','lib/server-pricing.ts'],
+     r:'系统内 <code>totalAmount</code> 是<b>税前</b>、<code>unitPrice</code> 也是税前，税后是派生值。门户如果直接显示 unitPrice，餐厅看到的会是不含税价，容易引发争议。'},
+    {id:'A3',t:'门户下单 → 生成 Quotation 并进入列表页',kind:'测试',st:PART,
+     d:'餐厅在门户提交订单后，应形成一张 quotation 并出现在后台 quotation 列表页，且能看出这是餐厅自己提交的。',
+     ac:'门户提交 → 后台 <code>/operator/quotations</code> 默认视图里能查到该单；单据上能识别来源为"客户自助"；金额、行数、交货日期与门户提交一致。',
+     p:['app/api/customer-portal/orders/route.ts','app/[locale]/classic/operator/quotations/page.tsx'],
+     r:'链路本身是通的（门户创建 <code>status=PENDING</code> 的 Order，列表页默认就拉 PENDING）。<b>但 Order 表没有来源字段</b>，列表页无法区分"餐厅自助"与"业务员代下"，只有 OrderAuditLog 里埋了 <code>source:"customer-portal"</code>。→ 见 A4。'},
+    {id:'A4',t:'给订单加来源字段并在列表页可筛选',kind:'开发',st:MISS,
+     d:'新增 Order.source（PORTAL / INTERNAL / IMPORT），门户下单写 PORTAL，列表页加"来源"分面筛选与列显示。',
+     ac:'新字段有默认值不破坏历史数据；quotation 列表页可按来源筛选；门户新提交的单来源恒为 PORTAL。',
+     p:['prisma/schema.prisma','app/api/orders/route.ts']},
+  ]
+},
+{
+  id:'B', title:'Quotation 与销售单',
+  note:'Quotation 在本系统里<b>不是独立的表</b>，它就是 <code>Order.status = PENDING</code>；确认后转 CONFIRMED 即为销售单。所以 B 板块的改动会同时影响两个页面。',
+  tasks:[
+    {id:'B1',t:'重复商品 / 缺货商品提醒的交互走查',kind:'测试',st:UNK,
+     d:'创建 Quotation 时，若同一商品被添加两次、或所选商品当前库存不足，提醒是否清晰：提示出现在哪、是否可忽略、是否阻断保存、批量录入时是否会刷屏。',
+     ac:'构造三种场景各测一次（重复、缺货、既重复又缺货）；提示必须指明是哪一行哪个商品；用户能明确知道"能不能继续保存"。',
+     p:['app/[locale]/classic/operator/quotations/page.tsx','components/classic/ProductSearchInput.tsx']},
+    {id:'B2',t:'定价系统与 Commission 自动计算核验',kind:'开发',st:PART,
+     d:'确保开单时自动带出正确售价（客户专属价 → 价格表 → 上次成交价 → 标准价）并自动算出司机/业务提成，无需人工填。',
+     ac:'写脚本对 20 张历史单重算价格与提成，与库中值逐单比对，差异为 0；新建单时提成字段自动填充且与 <code>lib/commission.ts</code> 输出一致。',
+     p:['lib/server-pricing.ts','lib/commission.ts'],
+     r:'提成体系代码已完整（Stage1-8），但历史审计显示<b>提成冻结记录实测 0 单</b>——即冻结逻辑可能从未真正跑过。核验时要特别看这条。'},
+    {id:'B3',t:'快捷键抽象为公共组件并铺开',kind:'开发',st:MISS,
+     d:'把散落各处的键盘快捷键收敛成一个公共 hook/组件（如 useHotkeys + 快捷键提示浮层），统一应用到 Quotation、销售单、采购单等录入型页面。',
+     ac:'新增一处公共实现；至少 Quotation + 销售单两个页面接入；按 ? 能唤出当前页快捷键说明；原有快捷键行为不回退。',
+     p:['components/classic/OdooTable.tsx','components/classic/ProductSearchInput.tsx','components/classic/OdooControlPanel.tsx'],
+     r:'实查：键盘处理逻辑目前分散在 <b>9 个以上组件</b>里各写各的，没有统一抽象。这条是真需求，不是重构洁癖。'},
+  ]
+},
+{
+  id:'C', title:'司机端',
+  note:'现状：司机端是<b>浏览器页面</b>（<code>/classic/driver</code>，含行程与对账两页），电子签名已实现。原生 APP 不存在。本板块最大的未知数是 APP 形态（见顶部问题 1）。',
+  tasks:[
+    {id:'C1',t:'司机端 APP 形态决策与技术选型',kind:'待澄清',st:MISS,
+     d:'确定走 WebView 壳 还是 原生/RN 重写。产出一页选型说明：工期、能力差异（离线、后台定位、推送、拍照）、后续维护成本。',
+     ac:'客户在两个方案里明确选一个；选定后才进入 C2–C5。',
+     p:[]},
+    {id:'C2',t:'安卓开发者账号确认与申请',kind:'待澄清',st:MISS,
+     d:'确认客户是否已有 Google Play 开发者账号；若无，评估是否需要注册（$25 + 组织资料）还是走内测分发绕开。',
+     ac:'拿到账号归属结论；若需注册，客户方确认由谁注册、用哪个主体。',
+     p:[]},
+    {id:'C3',t:'内测包分发通道（不走公开渠道）',kind:'开发',st:MISS,
+     d:'搭建 APK 内测分发：Firebase App Distribution 或自建下载页 + 版本号管理。司机扫码即可装，不上架应用商店。',
+     ac:'司机手机扫码能装上并登录；出新版本时能收到更新提示；分发链接不公开可索引。',
+     p:[],
+     r:'注意部署铁律：不得新增 GCP 专有依赖。若用 Firebase App Distribution，属于外部 SaaS（可接受），但自建下载页要放在客户自有服务器上。'},
+    {id:'C4',t:'任务接收：配送中心指派 → 司机端可见',kind:'测试',st:PART,
+     d:'配送中心在批次台拖拽订单到司机并"确认出发"后，司机端应立刻看到今日任务列表。',
+     ac:'操作员拖拽 + 确认出发 → 司机账号刷新后看到该单；未指派给他的单看不到；改派后旧司机端该单消失。',
+     p:['app/[locale]/classic/driver/trip/[id]/page.tsx','app/api/waves/[id]/route.ts']},
+    {id:'C5',t:'电子签名',kind:'测试',st:OK,
+     d:'司机送达后由客户在屏幕上手写签名，签名图与订单绑定并可在后台/打印件上查看。',
+     ac:'手机端能签、能重签、能保存；后台行程页可查看签名；签名后订单状态正确流转。',
+     p:['lib/trip-signature.ts','app/api/trips/[id]/signature-correction/route.ts']},
+    {id:'C6',t:'实体统一：司机端司机 = 配送中心司机（同一字段）',kind:'开发',st:PART,
+     d:'吸取上次 TMS 的教训——司机不能有两套。司机端登录身份与配送中心指派用的必须是同一个实体、同一个数据库字段。',
+     ac:'全库只有一处司机真相（DriverSlot ↔ User）；写一个校验脚本跑全量订单，司机来源不一致的记录数为 0，并接进 db:validate。',
+     p:['prisma/schema.prisma','app/api/driver-slots/route.ts'],
+     r:'这条系统里<b>翻过车</b>：<code>Order.driverSlotId</code> 与 <code>wave.orderIds</code> 曾是两套真相，导致详情页显示与编辑态司机名不一致、57 单历史脏数据，且发票 PDF 与日报两条打印路径漏注入，102 单里 83 单司机错。做 APP 时必须守住单一真相，别再分叉。'},
+    {id:'C7',t:'流程连通：车辆调度 + Google 地图司机路线',kind:'开发',st:PART,
+     d:'把订单→波次→司机→车辆→路线打通；地图上按顺序显示司机今日路线。',
+     ac:'指定一个波次能在地图上画出完整路线并给出预计里程/时长；司机端能看到自己的路线；无坐标客户有明确降级提示。',
+     p:['app/api/distance-matrix/route.ts','app/api/geocode/route.ts','app/api/customers/coordinates/route.ts'],
+     r:'地理编码与距离矩阵接口已有；缺的是"车辆"实体与路线排序 UI。'},
+    {id:'C8',t:'司机端每日回传：现金 / 订单总额 / 退货 / 换货',kind:'开发',st:PART,
+     d:'司机收车时在 APP 里提交当日：收回现金金额、订单总额、退货数量、换货数量。',
+     ac:'司机提交后生成一条当日对账记录，四个数字都落库；同一天重复提交有防重复处理；数字与该司机当日行程明细可对上。',
+     p:['app/[locale]/classic/driver/settlement/page.tsx','app/api/trips/[id]/route.ts']},
+    {id:'C9',t:'财务当日确认货款，并核实是否含历史欠款',kind:'开发',st:PART,
+     d:'财务在后台确认司机带回的货款；若金额超出当日订单额，需能标记出超出部分是回收的历史欠款并冲抵。',
+     ac:'财务确认动作有独立权限；确认后司机端不可再改；含历史欠款的场景能正确冲抵到对应客户欠款上并留痕。',
+     p:['app/[locale]/classic/finance/settlements/page.tsx','app/api/finance/historical-debt/route.ts']},
+    {id:'C10',t:'司机对账状态统计',kind:'开发',st:PART,
+     d:'把上述状态统计清楚：未提交 / 已提交待确认 / 已确认 / 有差异，按司机按日汇总可查。',
+     ac:'一个页面能看到当天所有司机的对账状态；有差异的单独标红；可按日期区间导出。',
+     p:['app/[locale]/classic/finance/settlements/page.tsx']},
+  ]
+},
+{
+  id:'D', title:'日销售管理中心（打印 + 缺货 + 统计）',
+  note:'现状：打印体系已相当完整（<code>/classic/print</code> 下 6 类打印页 + 4 个服务端 PDF 接口）。缺货处理与实时统计是主要缺口。',
+  tasks:[
+    {id:'D1',t:'打单人员岗位与流程串联',kind:'开发',st:PART,
+     d:'配送中心排完司机后，由专门的打单人员进行打印。需要一个"待打印"工作台：哪些波次已排完可打、哪些已打过、谁打的。',
+     ac:'打单人员登录后直接看到今日待打印列表；打印后自动标记已打印并留下操作人与时间；重复打印有二次确认。',
+     p:['app/[locale]/classic/operator/daily-sales/page.tsx','app/api/waves/print-log/route.ts']},
+    {id:'D2',t:'四类单据打印：销售单 / 司机送货汇总单 / 配送单 / 客户签收单',kind:'测试',st:PART,
+     d:'逐一核对四种单据的排版、字段完整性与实际纸张效果。',
+     ac:'四种单据各打一份实物核对；金额税额正确；司机名与实际指派一致；A4/热敏纸都不串行。',
+     p:['app/[locale]/classic/print/','app/api/print/dispatch-summary-pdf/route.ts','app/api/print/dispatch-picking-pdf/route.ts'],
+     r:'历史坑：打印路径曾因为没注入 <code>deliveryBatchDisplay</code> 而静默掉回错误的司机列。改打印模板时务必回归这条。'},
+    {id:'D3',t:'打印筛选：按客户 / 线路 / 商品',kind:'开发',st:PART,
+     d:'打印前可按客户、线路（司机/波次）、商品维度筛选，只打需要的部分。',
+     ac:'三个维度可单选可组合；筛选结果条数与预览一致；筛选后打印的份数与预期相符。',
+     p:['components/classic/OdooControlPanel.tsx','app/api/orders/dispatch-print-data/route.ts']},
+    {id:'D4',t:'拣货单/汇总单按整箱与零散拆分',kind:'开发',st:MISS,
+     d:'按商品是"整箱"还是"零散"分别打印拣货单与汇总单，方便仓库按箱拣和按散拣分开作业。',
+     ac:'同一商品数量能正确拆成 N 箱 + M 散；整箱清单与零散清单分页打印；换算比例取自商品的大小单位设置。',
+     p:['app/api/print/dispatch-picking-pdf/route.ts'],
+     r:'依赖 I2（大小单位）的换算关系必须先测通，否则拆箱数会算错。'},
+    {id:'D5',t:'打印全场景测试用例（各状态 × 各筛选条件）',kind:'测试',st:MISS,
+     d:'用 AI 生成覆盖矩阵：订单状态（待处理/已确认/已排波/配送中/已完成/已锁定）× 筛选条件（客户/线路/商品/日期）× 单据类型（4 种）。',
+     ac:'产出可执行的测试用例文件；跑一轮记录通过/失败；失败项进台账。',
+     p:[]},
+    {id:'D6',t:'缺货自动筛选 + 批量改单/转单 + 原因记录',kind:'开发',st:PART,
+     d:'仓库实时反馈缺货商品后，系统自动筛出所有受影响订单，支持批量修改数量或转单到次日，并记录缺货原因。',
+     ac:'录入一个缺货商品 → 立即列出全部受影响订单与行；可勾选批量改量/转单；每次操作写入缺货原因并可追溯；已锁定的单被正确拦截。',
+     p:['app/api/daily-sales/shortage/route.ts','app/api/analytics/shortage/route.ts','app/api/order-discrepancies/route.ts'],
+     r:'注意：拣货锁（<code>pickLockedAt</code>）目前会拦住订单内容编辑并返回 409，缺货改量走的 PATCH 也被挡。缺货批量改单必须和这把锁明确定好优先级。'},
+    {id:'D7',t:'缺货人工跳过机制（有在途采购时不改单）',kind:'开发',st:MISS,
+     d:'商品报缺但采购/收货处已有在途（可能中午就到货），允许人工点"跳过"，不修改订单、不影响订单状态，但留下跳过记录与理由。',
+     ac:'跳过后该商品不再出现在缺货待处理列表；订单完全不变；跳过记录含操作人、时间、理由；当天结束时未到货的跳过项要能被重新捞出来。',
+     p:[],
+     r:'见顶部问题 6：需先定"在途"的判定口径。'},
+    {id:'D8',t:'实时销售统计：日销售额 / 关键商品销量 / 客单价 / 缺货率',kind:'开发',st:PART,
+     d:'按实时查询条件展示当日关键指标。',
+     ac:'四个指标口径写进 <code>lib/analytics/metrics.ts</code> 并有单测；筛选条件变化后数字同步变化；与销售单列表交叉核对一致。',
+     p:['app/api/analytics/sales-overview/route.ts','lib/analytics/metrics.ts'],
+     r:'口径已统一为都柏林时区（<code>BUSINESS_TIMEZONE=Europe/Dublin</code>），跨日数字会与旧报表不同，属修正不是 bug，需向客户说明。'},
+    {id:'D9',t:'按日/按周查看销售、库存、商品数量（供采购参考）',kind:'开发',st:PART,
+     d:'按日、按周维度看每天销售情况、库存情况、商品数量，给采购提供感性判断依据。',
+     ac:'周视图能看到周一至周日每天的量；同页可切日/周；数据能导出给采购。',
+     p:['app/[locale]/classic/boss/sales-report/page.tsx','app/api/analytics/overview/route.ts']},
+  ]
+},
+{
+  id:'E', title:'仓库管理',
+  note:'现状：温区（Zone）、收货、库存移动、盘点、损耗看板都有。<b>但没有 Warehouse 实体</b>——多仓库与移仓是从零开始。',
+  tasks:[
+    {id:'E1',t:'多温区 + 多仓库划分 + 库存盘点',kind:'开发',st:PART,
+     d:'支持冷藏/冷冻/常温温区划分，支持多仓库划分，并支持在此结构上做库存盘点。',
+     ac:'商品库存能按 仓库 × 温区 两级查看；盘点单可指定仓库与温区；盘点差异生成对应的库存调整流水。',
+     p:['prisma/schema.prisma','app/api/zones/route.ts','app/api/stock-takes/route.ts','app/[locale]/classic/warehouse/stock-take/page.tsx'],
+     r:'温区已有（<code>Zone</code> + <code>ZoneKey</code>），<b>多仓库完全没有</b>：需新增 Warehouse 实体，并改写所有库存查询与出入库写入路径。见顶部问题 3——先确认客户真有几个物理仓，别为一个仓做两层抽象。'},
+    {id:'E2',t:'多仓库转移（移仓）最小实现规划',kind:'规划',st:MISS,
+     d:'目前既无界面也无完整需求。先出一页 MVP 规划：最小实现是什么样（单据结构、状态流、是否需审核、是否影响成本）。',
+     ac:'产出规划文档并经客户确认范围后再开发；文档明确"这版不做什么"。',
+     p:[],
+     r:'依赖 E1 的 Warehouse 实体。E1 不做，E2 无从谈起。'},
+    {id:'E3',t:'实时库存查看 + 安全库存 + 库存预警',kind:'测试',st:PART,
+     d:'基于已有的收货记录与库存记录，实时查看各仓库各商品库存数量、安全库存线、低于安全库存的预警。',
+     ac:'库存数 == 该商品全部 StockMove 累加（抽 20 个商品验证）；安全库存可维护；低于线的商品出现在预警列表。',
+     p:['app/api/analytics/inventory-overview/route.ts','app/api/analytics/zone-inventory/route.ts','app/api/stock-moves/route.ts'],
+     r:'历史体检发现 <b>895 个商品库存不守恒</b>（属存量脏数据，非新引入）。做预警前要先决定：是清洗历史，还是从某个时点重新起算。'},
+    {id:'E4',t:'损耗管理：分拣/运输/仓储损耗 + 退换货记录 + 归因分析',kind:'开发',st:PART,
+     d:'记录分拣、运输、仓储各环节损耗，自动归因分析原因；同时记录每天退回来的退换货数量。<b>至少要有一个录入界面</b>。',
+     ac:'仓库人员能在界面上录入一条损耗（环节 + 商品 + 数量 + 原因）；录入后生成 SCRAP 类型库存流水；损耗看板按环节/原因能拆分。',
+     p:['app/api/scrap/route.ts','app/api/analytics/loss-dashboard/route.ts','app/api/returns/'],
+     r:'底层有 <code>StockMoveType.SCRAP</code> 和损耗看板，<b>但录入界面是缺的</b>——这正是你点名要的那一项。'},
+    {id:'E5',t:'收货 → 库存更新 的测试用例',kind:'测试',st:UNK,
+     d:'用 AI 写测试用例检查收货后库存是否正确更新。',
+     ac:'覆盖：正常收货、超收、少收、部分收、退货、同一 PO 多次收货；每种场景断言库存增量与流水条数；接进 CI。',
+     p:['app/api/goods-receipts/route.ts']},
+    {id:'E6',t:'收货与采购单自动关联 + 预计到货时间',kind:'开发',st:PART,
+     d:'收货单要能和采购单自动连上，并带出该采购单的预计到货时间。',
+     ac:'从采购单一键生成收货单，行项目自动带入；收货单上显示预计到货日；未关联采购单的收货要能被识别出来。',
+     p:['app/api/purchase-orders/receipts-by-group/route.ts','app/api/goods-receipts/route.ts']},
+    {id:'E7',t:'实际到货日期回写采购单',kind:'开发',st:MISS,
+     d:'收货完成后，把真正到货的日期回写到采购单的"实际到货日期"字段。',
+     ac:'收货确认后采购单实际到货日自动填上；多次分批收货时按最后一次（或首次，需确认）；可与预计到货日对比出准时率。',
+     p:['prisma/schema.prisma','app/api/goods-receipts/route.ts']},
+  ]
+},
+{
+  id:'F', title:'采购模块',
+  note:'现状：采购订单、采购建议（含年度/生鲜两种生成策略）、PDF 抽取接口均已存在。',
+  tasks:[
+    {id:'F1',t:'采购计划与预测 MVP 界面',kind:'开发',st:PART,
+     d:'让 AI 先出一版最小实现界面：基于历史销量与在手库存给出建议采购量，可调整后一键转采购单。',
+     ac:'界面能列出建议采购商品与建议量；可人工改量；一键生成采购单且行项目正确。',
+     p:['app/api/purchase-suggestions/route.ts','app/api/purchase-suggestions/convert/route.ts','app/api/products/forecast/route.ts']},
+    {id:'F2',t:'厂家询价单 PDF 识别（纯 Python 解析，不用 AI）',kind:'开发',st:PART,
+     d:'PDF 都是规整的电子版，只需把内容拆出来即可，暂不上 AI 识别。做最简方案。',
+     ac:'给 3 份真实供应商 PDF，能正确解析出商品行、数量、单价；解析失败时有明确报错而非静默出空表。',
+     p:['app/api/purchase-orders/pdf-extract/route.ts'],
+     r:'⚠️ 现有实现依赖 <code>@google-cloud/storage</code>，属于要拆掉的 GCP 历史欠债之一。重做时应改走 <code>lib/storage.ts</code> 抽象或直接内存解析，不要再加深 GCS 依赖。'},
+    {id:'F3',t:'采购订单管理：创建/修改/审核/入库/退货/实际到货/发票',kind:'测试',st:PART,
+     d:'完整走通采购单全生命周期。',
+     ac:'一张采购单从创建走到发票核销全程无阻断；审核权限生效（无权者被 403）；退货能正确冲减库存；发票金额与入库金额可对账。',
+     p:['app/api/purchase-orders/route.ts','app/api/vendor-bills/route.ts']},
+    {id:'F4',t:'采购质检与验收（到货重量/新鲜度/农残）',kind:'开发',st:MISS,
+     d:'记录到货重量、新鲜度评级、农残检验结果。做最小 MVP，<b>整合进收货管理界面</b>，不单开模块。',
+     ac:'收货界面上可填三项质检信息（可留空）；已填的能在采购单与批次追溯里看到；不合格能触发拒收流程。',
+     p:['app/api/goods-receipts/route.ts']},
+  ]
+},
+{
+  id:'G', title:'财务管理中心',
+  note:'⚠️ 重要现状：Statement / Payment / JournalEntry 三张表<b>代码齐全但生产数据实测为 0 条</b>——即这些功能目前是空壳，从没被真正用起来过。本板块的首要任务不是加功能，是让它跑出第一条真实数据。',
+  tasks:[
+    {id:'G1',t:'客户结算 MVP：自动生成对账单 + 司机现金/汇款对账',kind:'开发',st:PART,
+     d:'目前没有界面。做最小化 MVP：按周期自动生成客户对账单，并把司机带回的现金或客户汇款核销上去。',
+     ac:'能为一个真实客户生成一张对账单（含期初、本期发生、收款、期末）；司机带回现金能核销到具体单据；生成后金额与订单明细可逐笔对上。',
+     p:['app/api/statements/route.ts','app/[locale]/classic/finance/statements/page.tsx','app/api/payments/route.ts'],
+     r:'Statement 表实测 0 张、Payment 表实测 0 条。验收必须以"生产库里真的出现了记录"为准，不能只看页面能打开。'},
+    {id:'G2',t:'供应商结算：应付账款 + 按采购单/入库单自动生成对账单 + 分批付款',kind:'开发',st:PART,
+     d:'与采购订单关联，管理应付账款；按采购订单或入库单自动生成供应商对账单；支持分批付款。',
+     ac:'一个供应商能生成对账单并显示应付余额；支持一张账单多次付款且余额正确递减；账龄分析数字与明细一致。',
+     p:['app/api/vendor-bills/route.ts','app/api/analytics/ap-aging/route.ts']},
+    {id:'G3',t:'收付款管理（销售收款 / 采购付款 / 其他支出）',kind:'开发',st:PART,
+     d:'记录三类资金往来。<b>本期先做成演示</b>，等客户需求明确后再看如何与现在财务在用的 Sage 系统对接。',
+     ac:'三类单据都能录入并查询；演示数据能完整走一遍流程；对接 Sage 的接口边界在文档里写明但不实现。',
+     p:['app/api/payments/route.ts','app/api/accounts/route.ts']},
+    {id:'G4',t:'成本核算与财务报表',kind:'规划',st:PART,
+     d:'需要 AI 做一份<b>完整的产品输出</b>（口径、算法、报表清单），但界面上只给简单 MVP。',
+     ac:'产出成本核算方案文档（含加权平均/先进先出选型、损耗如何入成本）；界面上至少能出损益表与毛利表两张。',
+     p:['app/api/analytics/margin/route.ts','lib/analytics/pivot.ts']},
+  ]
+},
+{
+  id:'H', title:'数据中心',
+  note:'现状：分析中心已有 7 个页面 + 16 个带缓存的分析接口，毛利页已支持透视（两维交叉）。缺的是"整合"与"覆盖盘点"。',
+  tasks:[
+    {id:'H1',t:'经营看板 / 客户分析 / 商品分析 的整合盘点',kind:'规划',st:PART,
+     d:'现有界面可能已覆盖一部分但不全面。先做一次整合分析：列出客户想要的指标 × 现有页面的覆盖矩阵，缺的给最小 MVP。',
+     ac:'产出覆盖矩阵（指标 → 已有页面 / 缺失）；缺失项各给一句 MVP 定义；客户确认优先级后再开发。',
+     p:['app/[locale]/classic/boss/analytics/','app/api/analytics/customers/route.ts','lib/analytics/metrics.ts']},
+    {id:'H2',t:'把透视引擎接到更多分析页',kind:'开发',st:PART,
+     d:'客户要的是 Odoo 12 式可自由组合的销售/采购报表。透视引擎已存在但目前只接了毛利分析一处，采购侧完全没有可组合分析。',
+     ac:'销售与采购各至少一个页面接入透视；维度白名单可配置；行列互换与下钻可用。',
+     p:['lib/analytics/pivot.ts','components/reporting/PivotView.tsx']},
+    {id:'H3',t:'司机提成考核报表',kind:'开发',st:MISS,
+     d:'提成算得出来，但没有面向考核的报表（按司机/按周期看提成构成与排名）。',
+     ac:'能按日期区间出每个司机的提成明细与汇总；数字与 <code>lib/commission.ts</code> 计算结果一致；可导出。',
+     p:['lib/commission.ts']},
+  ]
+},
+{
+  id:'I', title:'基础信息',
+  note:'现状：可配置权限体系（角色/权限点/数据范围）已建成，商品大小单位模型已存在。本板块以验收与交付文档为主。',
+  tasks:[
+    {id:'I1',t:'权限体系密码测试验收',kind:'测试',st:PART,
+     d:'组织架构与权限已做好，需要完成密码相关的测试验收：登录、改密、重置、失效重登。',
+     ac:'弱密码被拒；改密后旧密码立即失效；权限变更后强制重新登录生效；重置密码邮件能真正送达。',
+     p:['app/api/auth/change-password/route.ts','app/api/rbac/roles/route.ts'],
+     r:'⚠️ 生产发信目前两层都坏：Secret Manager 里的 Resend Key 是字面量 "placeholder"，且发件域 <code>noreply@veggiesupply.ie</code> 在 Resend 未验证——换了真 key 也会 403。密码重置邮件<b>现在发不出去</b>，测这条之前必须先修这两处。'},
+    {id:'I2',t:'权限调整操作指南（给客户看）',kind:'开发',st:MISS,
+     d:'写一份简单的操作指南，告诉客户怎么自己调整权限：新增角色、给角色勾权限、把用户放进角色、数据范围怎么选。',
+     ac:'指南带截图；非技术人员照着能独立完成一次"新建角色并授权"；放进系统内帮助页而不只是一个文档文件。',
+     p:['app/[locale]/classic/operator/help/'],
+     r:'指南里要特别提醒：权限点若没有被任何判定引用，就是配置页上的假开关（历史实测有 8 个这类空开关）。交付前应先清掉。'},
+    {id:'I3',t:'商品大小单位（UoM）实测',kind:'测试',st:UNK,
+     d:'已看到大小单位的套用，但需要实际测一遍：采购按大单位、销售按小单位、库存按基本单位时换算是否正确。',
+     ac:'构造一个"箱=12包"的商品，走完 采购入库→库存→销售出库→打印拣货 全链路，各环节数量换算正确无累积误差。',
+     p:['app/api/uoms/route.ts','app/api/uom-categories/route.ts','prisma/schema.prisma'],
+     r:'D4（整箱/零散拆分打印）直接依赖这条的换算正确性，建议先测这条。'},
+  ]
+},
+];
+
+// ---------- render ----------
+const KEY='nf-checklist-20260811';
+let done=JSON.parse(localStorage.getItem(KEY)||'{}');
+let fSec='', fSt='', fKind='', fQ='';
+
+const all=DATA.flatMap(s=>s.tasks.map(t=>({...t,sec:s.id,secTitle:s.title})));
+
+function kpis(){
+  const c=st=>all.filter(t=>t.st===st).length;
+  document.getElementById('kpis').innerHTML=`
+    <div class="kpi"><b>${all.length}</b><span>任务总数</span></div>
+    <div class="kpi ok"><b>${c(OK)}</b><span>已有（待验收）</span></div>
+    <div class="kpi partial"><b>${c(PART)}</b><span>部分已有</span></div>
+    <div class="kpi miss"><b>${c(MISS)}</b><span>缺失（要开发）</span></div>
+    <div class="kpi"><b>${c(UNK)}</b><span>待实测</span></div>`;
+}
+
+function filters(){
+  const kinds=[...new Set(all.map(t=>t.kind))];
+  const el=document.getElementById('filters');
+  el.innerHTML=
+    `<input class="search" id="q" placeholder="搜索任务…" value="${fQ}">`+
+    `<span class="chip sep">板块</span>`+
+    DATA.map(s=>`<span class="chip ${fSec===s.id?'on':''}" data-sec="${s.id}">${s.id} ${s.title.replace(/（.*/,'')}</span>`).join('')+
+    `<span class="chip sep">现状</span>`+
+    [OK,PART,MISS,UNK].map(s=>`<span class="chip ${fSt===s?'on':''}" data-st="${s}">${STATUS_LABEL[s]}</span>`).join('')+
+    `<span class="chip sep">类型</span>`+
+    kinds.map(k=>`<span class="chip ${fKind===k?'on':''}" data-kind="${k}">${k}</span>`).join('')+
+    `<span class="chip" data-reset="1">清除筛选</span>`;
+
+  el.querySelectorAll('[data-sec]').forEach(n=>n.onclick=()=>{fSec=fSec===n.dataset.sec?'':n.dataset.sec;render()});
+  el.querySelectorAll('[data-st]').forEach(n=>n.onclick=()=>{fSt=fSt===n.dataset.st?'':n.dataset.st;render()});
+  el.querySelectorAll('[data-kind]').forEach(n=>n.onclick=()=>{fKind=fKind===n.dataset.kind?'':n.dataset.kind;render()});
+  el.querySelector('[data-reset]').onclick=()=>{fSec=fSt=fKind=fQ='';render()};
+  const q=el.querySelector('#q');
+  q.oninput=e=>{fQ=e.target.value;render();const n=document.getElementById('q');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
+}
+
+function match(t){
+  if(fSec&&t.sec!==fSec)return false;
+  if(fSt&&t.st!==fSt)return false;
+  if(fKind&&t.kind!==fKind)return false;
+  if(fQ){const s=(t.id+t.t+t.d+t.ac+(t.r||'')).toLowerCase();if(!s.includes(fQ.toLowerCase()))return false}
+  return true;
+}
+
+function taskHtml(t){
+  const isDone=!!done[t.id];
+  return `<div class="task ${isDone?'done':''}">
+    <input type="checkbox" data-id="${t.id}" ${isDone?'checked':''}>
+    <div>
+      <div class="tt"><span class="tid">${t.id}</span>${t.t}
+        <span class="badge b-${t.st}">${STATUS_LABEL[t.st]}</span>
+        <span class="kind">${t.kind}</span></div>
+      <p class="desc">${t.d}</p>
+      <p class="ac"><b>验收：</b>${t.ac}</p>
+      ${t.r?`<div class="risk">${t.r}</div>`:''}
+      ${t.p&&t.p.length?`<div class="paths">${t.p.map(x=>`<span>${x}</span>`).join('')}</div>`:''}
+    </div></div>`;
+}
+
+function render(){
+  filters();
+  const box=document.getElementById('list');
+  const shown=DATA.map(s=>{
+    const ts=s.tasks.filter(match);
+    if(!ts.length)return '';
+    return `<section>
+      <h2><span class="num">${s.id}</span>${s.title}<span class="cnt">${ts.length} 项</span></h2>
+      <p class="secnote">${s.note}</p>
+      ${ts.map(taskHtml).join('')}</section>`;
+  }).join('');
+  box.innerHTML = shown || `<div class="empty">没有匹配的任务</div>`;
+  box.querySelectorAll('input[type=checkbox]').forEach(n=>n.onchange=()=>{
+    done[n.dataset.id]=n.checked;
+    if(!n.checked)delete done[n.dataset.id];
+    localStorage.setItem(KEY,JSON.stringify(done));render();
+  });
+  const d=all.filter(t=>done[t.id]).length;
+  document.getElementById('pdone').textContent=d;
+  document.getElementById('ptotal').textContent=all.length;
+  document.getElementById('pbar').style.width=(d/all.length*100)+'%';
+}
+kpis();render();
+</script>
+</body>
+</html>
