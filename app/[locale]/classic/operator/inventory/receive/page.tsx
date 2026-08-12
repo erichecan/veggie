@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
+import { arrivalDelay, describeArrivalDelay, describeArrivalDelayEn } from '@/lib/receipt-linkage'
 
 const PURPLE = '#875A7B'
 
@@ -58,7 +59,7 @@ interface GoodsReceiptHistoryRow {
   photoCount?: number
   photos?: string[]
   lines: GoodsReceiptLine[]
-  purchaseOrder?: { id: string; name: string; supplierId: string } | null
+  purchaseOrder?: { id: string; name: string; supplierId: string; expectedDate?: string | null } | null
 }
 
 function today() {
@@ -110,6 +111,11 @@ function ReceivePageInner() {
   const [history, setHistory] = useState<GoodsReceiptHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [expandedGrId, setExpandedGrId] = useState<string | null>(null)
+  /** 未关联采购单的入库（台账 E6）：绕过收货单直接进库存的流水 */
+  const [unlinked, setUnlinked] = useState<{
+    count: number; scanned: number; qty: number; truncated?: boolean
+    items: Array<{ id: string; productName: string; qty: string | number; type: string; sourceType: string | null; note: string | null; movedAt: string }>
+  } | null>(null)
   // 展开某条时才去取它的取证照片。列表接口刻意不带 photos —— 那些是 base64 data URI，
   // 23 条收货单里 photos 就占 6.02 MB（99%），而列表默认全是折叠的。
   const [grPhotos, setGrPhotos] = useState<Record<string, string[]>>({})
@@ -149,6 +155,15 @@ function ReceivePageInner() {
   }, [])
 
   useEffect(() => { loadList() }, [loadList])
+
+  // 未关联入库与收货历史同屏展示：只有把「没走采购单的货」摆在收货记录旁边，
+  // 才看得出这个月到底有多少货是没有采购依据进来的
+  useEffect(() => {
+    if (viewMode !== 'history') return
+    apiGet<NonNullable<typeof unlinked>>('/api/goods-receipts/unlinked?days=30&limit=50')
+      .then(setUnlinked)
+      .catch(() => setUnlinked(null))
+  }, [viewMode])
 
   useEffect(() => {
     apiGet<{ items: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
@@ -290,6 +305,24 @@ function ReceivePageInner() {
               <div>
                 <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Arrival Date' : '到货日期'}</label>
                 <input type="date" value={arrivedAt} onChange={e => setArrivedAt(e.target.value)} className={`w-full ${inputCls}`} />
+                {/* 预计到货日就摆在实际到货日旁边（台账 E6）——收货现场当场就能看出早了还是晚了，
+                    不用事后再去采购单里对一遍；准时率也才有可信的原始数据 */}
+                {(() => {
+                  const d = arrivalDelay(selectedPo.expectedDate, arrivedAt)
+                  const text = isEn ? describeArrivalDelayEn(d) : describeArrivalDelay(d)
+                  return (
+                    <div className="mt-1 text-xs text-gray-500 flex items-center gap-1.5 flex-wrap">
+                      <span>{isEn ? 'Expected' : '预计到货'} {formatDateOnly(selectedPo.expectedDate) || '—'}</span>
+                      {text && (
+                        <span className={`px-1.5 py-0.5 rounded ${
+                          d.timing === 'LATE' ? 'bg-red-50 text-red-600'
+                          : d.timing === 'EARLY' ? 'bg-blue-50 text-blue-600'
+                          : 'bg-emerald-50 text-emerald-600'}`}>{text}</span>
+                      )}
+                      {!text && <span className="text-gray-400">{isEn ? '(PO has no expected date)' : '（采购单未填预计到货日）'}</span>}
+                    </div>
+                  )
+                })()}
               </div>
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Source verification notes (vehicle / driver / supplier info, etc.)' : '来源核对备注（车辆/司机/供应商信息等）'}</label>
@@ -444,10 +477,57 @@ function ReceivePageInner() {
         )
       ) : historyLoading ? (
         <div className="py-16 text-center text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
-      ) : history.length === 0 ? (
-        <div className="py-16 text-center text-gray-400 text-sm">{isEn ? 'No receipt records' : '暂无收货记录'}</div>
       ) : (
         <div className="space-y-2">
+          {/* 未关联采购单的入库（台账 E6 验收第三条）。
+              ⚠️ 不是去 GoodsReceipt 表里找——purchaseOrderId 是非空外键，那张表永远查不出未关联；
+              会漏的是绕过收货单直接进库存的流水（手工调整/导入/盘盈）：货进来了却没有采购依据。 */}
+          {unlinked && (
+            <div className={`rounded-lg border p-3 ${unlinked.count > 0 ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200 bg-white'}`}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-gray-800">
+                  {isEn ? 'Inbound without a purchase order (last 30 days)' : '未关联采购单的入库（近 30 天）'}
+                </span>
+                <span className={`text-xs px-1.5 py-0.5 rounded ${unlinked.count > 0 ? 'bg-amber-200 text-amber-900' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {unlinked.count > 0
+                    ? (isEn ? `${unlinked.count} of ${unlinked.scanned} inbound moves · ${unlinked.qty} units` : `${unlinked.scanned} 笔入库中有 ${unlinked.count} 笔 · 共 ${unlinked.qty} 件`)
+                    : (isEn ? `All ${unlinked.scanned} inbound moves are linked` : `${unlinked.scanned} 笔入库全部有据可查`)}
+                </span>
+              </div>
+              {unlinked.count > 0 && (
+                <table className="w-full text-xs mt-2">
+                  <thead>
+                    <tr className="text-gray-500 border-b border-amber-200">
+                      <th className="text-left py-1">{isEn ? 'Product' : '商品'}</th>
+                      <th className="text-right py-1">{isEn ? 'Qty' : '数量'}</th>
+                      <th className="text-left py-1 pl-3">{isEn ? 'Source' : '来源'}</th>
+                      <th className="text-left py-1 pl-3">{isEn ? 'Date' : '日期'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unlinked.items.slice(0, 10).map(m => (
+                      <tr key={m.id} className="border-b border-amber-100/60">
+                        <td className="py-1 text-gray-800">{m.productName}</td>
+                        <td className="py-1 text-right text-gray-700">{Number(m.qty)}</td>
+                        <td className="py-1 pl-3 text-gray-500" title={m.note ?? ''}>{m.sourceType ?? (isEn ? '(none)' : '（无）')}</td>
+                        <td className="py-1 pl-3 text-gray-500">{formatDateOnly(m.movedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {unlinked.count > 10 && (
+                <p className="text-[11px] text-amber-800 mt-1">
+                  {isEn ? `Showing first 10 of ${unlinked.count}` : `共 ${unlinked.count} 笔，此处只列前 10 笔`}
+                  {unlinked.truncated ? (isEn ? ' (server returned a capped list; the count is the true total)' : '（接口只回了前若干条，计数是全量真实值）') : ''}
+                </p>
+              )}
+            </div>
+          )}
+
+          {history.length === 0 && (
+            <div className="py-12 text-center text-gray-400 text-sm">{isEn ? 'No receipt records' : '暂无收货记录'}</div>
+          )}
           {history.map(gr => {
             const supplierName = gr.purchaseOrder ? (supplierMap.get(gr.purchaseOrder.supplierId) ?? gr.purchaseOrder.supplierId) : '—'
             const goodLines = gr.lines.filter(l => (l.condition ?? 'ok') === 'ok')
@@ -471,6 +551,19 @@ function ReceivePageInner() {
                   </div>
                   <div className="flex items-center gap-3 text-xs text-gray-400">
                     <span>{isEn ? `Arrived ${formatDateOnly(gr.arrivedAt)}` : `到货 ${formatDateOnly(gr.arrivedAt)}`}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}</span>
+                    {(() => {
+                      const d = arrivalDelay(gr.purchaseOrder?.expectedDate, gr.arrivedAt)
+                      const text = isEn ? describeArrivalDelayEn(d) : describeArrivalDelay(d)
+                      if (!text) return null
+                      return (
+                        <span className={`px-1.5 py-0.5 rounded ${
+                          d.timing === 'LATE' ? 'bg-red-50 text-red-600'
+                          : d.timing === 'EARLY' ? 'bg-blue-50 text-blue-600'
+                          : 'bg-emerald-50 text-emerald-600'}`}
+                          title={isEn ? `Expected ${formatDateOnly(gr.purchaseOrder?.expectedDate)}` : `预计到货 ${formatDateOnly(gr.purchaseOrder?.expectedDate)}`}
+                        >{text}</span>
+                      )
+                    })()}
                     <span>{expanded ? (isEn ? 'Collapse ▲' : '收起 ▲') : (isEn ? 'Expand ▼' : '展开 ▼')}</span>
                   </div>
                 </button>

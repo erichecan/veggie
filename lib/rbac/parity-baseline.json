@@ -3498,5 +3498,19 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "GET /api/goods-receipts/unlinked": {
+    "BOSS": "y",
+    "OPERATOR": "y",
+    "FINANCE": "n",
+    "WAREHOUSE": "y",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }

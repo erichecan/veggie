@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     if (singleId) {
       const one = await p.goodsReceipt.findUnique({
         where: { id: singleId },
-        include: { purchaseOrder: { select: { id: true, name: true, supplierId: true } } },
+        include: { purchaseOrder: { select: { id: true, name: true, supplierId: true, expectedDate: true } } },
       })
       if (!one) return NextResponse.json({ error: '收货单不存在' }, { status: 404 })
       return NextResponse.json(serializeApi(one))
@@ -81,7 +81,8 @@ export async function GET(req: Request) {
         select: {
           id: true, name: true, purchaseOrderId: true, arrivedAt: true,
           receivedBy: true, lines: true, notes: true, createdAt: true,
-          purchaseOrder: { select: { id: true, name: true, supplierId: true } },
+          // expectedDate：收货历史要能当场对出「预计 vs 实际」，否则准时率只能事后另查一遍（台账 E6）
+          purchaseOrder: { select: { id: true, name: true, supplierId: true, expectedDate: true } },
         },
       }),
     ])
