@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { assertOrderNotPickLockedForLineEdit, WavePickLockedError } from '@/lib/wave-pick-lock'
+import { applyLineStockDelta } from '@/lib/order-line-stock'
+import { formatShortageReason, type ShortageReasonInput } from '@/lib/shortage-reason'
 
 /**
  * PATCH /api/orders/:id/lines/:lineId
@@ -32,13 +34,13 @@ export async function PATCH(
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },
-        select: { id: true, orderId: true, productId: true, productName: true, orderedQty: true, unitPrice: true },
+        select: { id: true, orderId: true, productId: true, productName: true, orderedQty: true, unitPrice: true, uomId: true },
       })
       if (!line || line.orderId !== id) {
         return NextResponse.json({ error: '订单行不存在' }, { status: 404 })
       }
 
-      const body = await req.json() as { newQty: unknown }
+      const body = await req.json() as { newQty: unknown } & ShortageReasonInput
       const newQty = Number(body.newQty)
       if (!Number.isFinite(newQty) || newQty < 0) {
         return NextResponse.json({ error: '无效的数量' }, { status: 400 })
@@ -49,9 +51,9 @@ export async function PATCH(
       // 加量仍必须先解锁——避免趁锁定期间借「改量」接口做实质性加单
       await assertOrderNotPickLockedForLineEdit(id, newQty <= oldQty)
 
-      // 少供退库、多供扣库：确认订单时已按 orderedQty 扣过库存，改量在此把差额补回/补扣
-      const qtyDelta = oldQty - newQty
-
+      // 少供退库、多供扣库：确认订单时已按 orderedQty 扣过库存，改量在此把差额补回/补扣。
+      // ⚠️ 补回/补扣必须**连 StockMove 一起写**，且按行单位换算 —— 这里原先两件都没做
+      // （只 increment 了 qtyOnHand），改一次量这个商品就永久不守恒。见 lib/order-line-stock.ts
       await prisma.$transaction(async (tx) => {
         if (newQty === 0) {
           await tx.orderLine.delete({ where: { id: lineId } })
@@ -64,12 +66,14 @@ export async function PATCH(
           })
         }
 
-        if (qtyDelta !== 0) {
-          await tx.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { increment: qtyDelta } },
-          })
-        }
+        await applyLineStockDelta(tx as never, {
+          productId: line.productId,
+          productName: line.productName ?? '',
+          oldQty, newQty, uomId: line.uomId,
+          reasonLabel: newQty < oldQty ? '缺货减量' : '改量',
+          orderId: id,
+          orderCode: order.code ?? id,
+        })
 
         const remaining = await tx.orderLine.findMany({
           where: { orderId: id },
@@ -89,9 +93,9 @@ export async function PATCH(
         action: 'UPDATE',
         resource: 'order',
         resourceId: id,
-        detail: newQty === 0
+        detail: (newQty === 0
           ? `删除订单行: ${line.productName}（原数量 ${oldQty}，新数量 0）`
-          : `修改订单行数量: ${line.productName}（${oldQty} → ${newQty}）`,
+          : `修改订单行数量: ${line.productName}（${oldQty} → ${newQty}）`) + formatShortageReason(body),
       })
 
       return NextResponse.json({ ok: true })
@@ -138,7 +142,7 @@ export async function DELETE(
 
       const line = await prisma.orderLine.findUnique({
         where: { id: lineId },
-        select: { id: true, orderId: true, productId: true, productName: true, orderedQty: true },
+        select: { id: true, orderId: true, productId: true, productName: true, orderedQty: true, uomId: true },
       })
       if (!line || line.orderId !== id) {
         return NextResponse.json({ error: '订单行不存在' }, { status: 404 })
@@ -149,12 +153,15 @@ export async function DELETE(
       await prisma.$transaction(async (tx) => {
         await tx.orderLine.delete({ where: { id: lineId } })
 
-        if (oldQty !== 0) {
-          await tx.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { increment: oldQty } },
-          })
-        }
+        // 同 PATCH：释放库存必须连流水一起写并按行单位换算
+        await applyLineStockDelta(tx as never, {
+          productId: line.productId,
+          productName: line.productName ?? '',
+          oldQty, newQty: 0, uomId: line.uomId,
+          reasonLabel: '删行释放',
+          orderId: id,
+          orderCode: order.code ?? id,
+        })
 
         const remaining = await tx.orderLine.findMany({
           where: { orderId: id },

@@ -2,7 +2,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { apiGet, apiPatch } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
+import { SHORTAGE_REASON_CODES, SHORTAGE_REASON_LABELS, type ShortageReasonCode } from '@/lib/shortage-reason'
 import { formatDateTime } from '@/lib/format-date'
 import type { Order } from '@/lib/types'
 import type { DriverSlotInfo } from '@/lib/driver-slot'
@@ -15,6 +16,8 @@ interface Wave {
   orderIds: string[]
   driverSlotId: string | null
   driverName: string | null
+  /** 拣货锁：减量/删行放行，加量拦截（见 app/api/daily-sales/shortage/bulk-adjust） */
+  pickLockedAt: string | null
 }
 
 interface ProductOption {
@@ -34,6 +37,8 @@ interface FlatLine {
   driverName: string | null
   timeOfDay: string | null
   orderedQty: number
+  /** 所在批次是否已被拣货锁锁住 */
+  locked: boolean
 }
 
 type TimeFilter = 'all' | 'am' | 'pm'
@@ -79,6 +84,13 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const [savedLineIds, setSavedLineIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // 台账 D6：勾选 + 批量填充 + 缺货原因 + 被拦截明细
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [bulkQty, setBulkQty] = useState('')
+  const [reasonCode, setReasonCode] = useState<ShortageReasonCode>('SUPPLIER_SHORT')
+  const [reasonNote, setReasonNote] = useState('')
+  const [blockedRows, setBlockedRows] = useState<Array<{ orderCode: string; message: string }>>([])
+  const [deferInfo, setDeferInfo] = useState<Array<{ code: string; date: string }>>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState<ActionLog[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -93,6 +105,9 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     setSavedLineIds(new Set())
     setSaveMsg(null)
     setSelectedDrivers([])
+    setChecked(new Set())
+    setBlockedRows([])
+    setDeferInfo([])
     Promise.all([
       apiGet<Order[]>(
         `/api/orders?include_lines=true&status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&dateField=deliveryDate&fromDate=${date}&toDate=${date}`
@@ -122,13 +137,16 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   // orderId → 司机/时段（按 wave 归属，SSOT）；覆盖只拖拽分配、未回填 Order.driverSlotId 的订单
   const orderDriverMap = useMemo(() => {
     const slotMap = new Map(slots.map(s => [s.id, s]))
-    const m = new Map<string, { driver: string | null; time: string | null }>()
+    const m = new Map<string, { driver: string | null; time: string | null; locked: boolean }>()
     for (const w of waves) {
       const slot = w.driverSlotId ? slotMap.get(w.driverSlotId) : undefined
       const driver = slot?.driverName ?? w.driverName ?? null
       const time = slot?.timeOfDay ? slot.timeOfDay.toLowerCase() : null
       for (const id of w.orderIds) {
-        if (!m.has(id)) m.set(id, { driver, time })
+        const prev = m.get(id)
+        // 一单理论上只属一个 wave（db:validate 有这条不变量），但只要有一个锁着就算锁着
+        if (prev) prev.locked = prev.locked || w.pickLockedAt != null
+        else m.set(id, { driver, time, locked: w.pickLockedAt != null })
       }
     }
     return m
@@ -160,6 +178,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
           driverName,
           timeOfDay,
           orderedQty: Number(l.orderedQty),
+          locked: wd?.locked ?? false,
         })
       }
     }
@@ -213,6 +232,42 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     [filteredLines, newQtys, savedLineIds]
   )
 
+  // 真正要提交的行：勾了就只提交勾中的（且填了新数量的），一行没勾就沿用原来的
+  // 「填了数字就算」的行为 —— 老用户不勾选也能照旧用，不逼人多学一步。
+  const targetLines = useMemo(
+    () => (checked.size > 0 ? modifiedLines.filter(l => checked.has(l.lineId)) : modifiedLines),
+    [modifiedLines, checked]
+  )
+
+  const selectableLines = useMemo(
+    () => filteredLines.filter(l => !savedLineIds.has(l.lineId)),
+    [filteredLines, savedLineIds]
+  )
+
+  function toggleChecked(lineId: string) {
+    setChecked(prev => {
+      const next = new Set(prev)
+      if (next.has(lineId)) next.delete(lineId); else next.add(lineId)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setChecked(prev => (prev.size === selectableLines.length ? new Set() : new Set(selectableLines.map(l => l.lineId))))
+  }
+
+  /** 批量填充新数量到勾选行（没勾就填当前筛选出的全部未保存行） */
+  function applyBulkQty(value: string) {
+    const rows = checked.size > 0 ? selectableLines.filter(l => checked.has(l.lineId)) : selectableLines
+    if (rows.length === 0) return
+    setNewQtys(prev => {
+      const next = { ...prev }
+      for (const l of rows) next[l.lineId] = value
+      return next
+    })
+    setChecked(new Set(rows.map(l => l.lineId)))
+  }
+
   function toggleDriver(driver: string) {
     setSelectedDrivers(prev =>
       prev.includes(driver) ? prev.filter(d => d !== driver) : [...prev, driver]
@@ -234,39 +289,56 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     return 'none'
   }
 
-  async function handleSave() {
-    if (modifiedLines.length === 0) return
+  /**
+   * 保存 / 转单都走同一个批量接口（POST /api/daily-sales/shortage/bulk-adjust）：
+   * 原先是前端 for 循环逐行 PATCH，失败只汇成一句「N 条失败」——被拣货锁拦下的单
+   * 和真出错的单混在同一个数字里，操作员看不出该去解锁还是该报修。
+   * 现在服务端逐单返回 applied / blocked，原因（PICK_LOCKED / ORDER_STATUS / …）直接列出来。
+   */
+  async function submit(mode: 'ADJUST' | 'DEFER') {
+    if (targetLines.length === 0) return
     setSaving(true)
     setSaveMsg(null)
-    const newSaved = new Set(savedLineIds)
-    const newQtysAfter = { ...newQtys }
-    let successCount = 0
-    let failCount = 0
-    let firstErrorMsg: string | null = null
-    for (const l of modifiedLines) {
-      const newQty = Number(newQtys[l.lineId]!.trim())
-      if (!Number.isFinite(newQty) || newQty < 0) { failCount++; continue }
-      try {
-        await apiPatch(`/api/orders/${l.orderId}/lines/${l.lineId}`, { newQty })
-        newSaved.add(l.lineId)
-        delete newQtysAfter[l.lineId]
-        successCount++
-      } catch (e) {
-        failCount++
-        if (!firstErrorMsg) firstErrorMsg = e instanceof Error ? e.message : null
-      }
+    setBlockedRows([])
+    setDeferInfo([])
+    try {
+      const res = await apiPost<{
+        applied: Array<{ lineId: string; deferOrderCode?: string }>
+        blocked: Array<{ orderCode: string; message: string }>
+        deferOrders: Array<{ code: string; date: string }>
+      }>('/api/daily-sales/shortage/bulk-adjust', {
+        mode,
+        reasonCode,
+        reasonNote,
+        items: targetLines.map(l => ({
+          orderId: l.orderId,
+          lineId: l.lineId,
+          newQty: Number(newQtys[l.lineId]!.trim()),
+        })),
+      })
+      const okIds = new Set(res.applied.map(a => a.lineId))
+      setSavedLineIds(prev => new Set([...prev, ...okIds]))
+      setNewQtys(prev => {
+        const next = { ...prev }
+        for (const id of okIds) delete next[id]
+        return next
+      })
+      setChecked(prev => new Set([...prev].filter(id => !okIds.has(id))))
+      setBlockedRows(res.blocked)
+      setDeferInfo(res.deferOrders ?? [])
+      setSaveMsg({
+        ok: res.blocked.length === 0,
+        text: res.blocked.length === 0
+          ? (isEn ? `${okIds.size} saved` : `${okIds.size} 条已保存`)
+          : (isEn
+            ? `${okIds.size} succeeded, ${res.blocked.length} blocked (see below)`
+            : `${okIds.size} 条成功，${res.blocked.length} 条被拦截（见下方）`),
+      })
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e instanceof Error ? e.message : (isEn ? 'Failed' : '处理失败') })
+    } finally {
+      setSaving(false)
     }
-    setSavedLineIds(newSaved)
-    setNewQtys(newQtysAfter)
-    setSaving(false)
-    setSaveMsg({
-      ok: failCount === 0,
-      text: failCount === 0
-        ? (isEn ? `${successCount} saved` : `${successCount} 条已保存`)
-        : (isEn
-          ? `${successCount} succeeded, ${failCount} failed${firstErrorMsg ? `: ${firstErrorMsg}` : ''}`
-          : `${successCount} 条成功，${failCount} 条失败${firstErrorMsg ? `：${firstErrorMsg}` : ''}`),
-    })
   }
 
   function handlePrint() {
@@ -439,6 +511,14 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-3 py-2 text-center text-xs text-gray-400 font-medium w-8">
+                    <input
+                      type="checkbox"
+                      checked={selectableLines.length > 0 && checked.size === selectableLines.length}
+                      onChange={toggleAll}
+                      title={isEn ? 'Select all' : '全选'}
+                    />
+                  </th>
                   <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Order No.' : '单号'}</th>
                   <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Customer' : '客户名'}</th>
                   <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">{isEn ? 'Product' : '产品名'}</th>
@@ -458,7 +538,25 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
                       key={l.lineId}
                       className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} hover:bg-purple-50/20`}
                     >
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500">{l.orderCode}</td>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={checked.has(l.lineId)}
+                          onChange={() => toggleChecked(l.lineId)}
+                          disabled={savedLineIds.has(l.lineId)}
+                        />
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500">
+                        {l.orderCode}
+                        {l.locked && (
+                          <span
+                            className="ml-1 text-amber-600"
+                            title={isEn
+                              ? 'Batch locked for picking: reducing / removing is allowed (shortage), increasing needs unlocking first'
+                              : '该批次拣货中已锁定：缺货减量、删行放行；加量需先解锁'}
+                          >🔒</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-xs text-gray-800 max-w-[130px] truncate" title={l.customerName}>{l.customerName}</td>
                       <td className="px-3 py-2 text-xs text-gray-800 max-w-[180px] truncate" title={l.productName}>{l.productName}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{l.driverName ?? '—'}</td>
@@ -490,17 +588,78 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
           </div>
         )}
 
+        {/* 批量填充 + 缺货原因：原因是必填项，写进操作记录与订单 chatter 两条轨迹 */}
+        {filteredLines.length > 0 && (
+          <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-2 flex-wrap bg-white">
+            <span className="text-xs text-gray-500">
+              {isEn ? `Selected ${checked.size}` : `已勾选 ${checked.size} 行`}
+            </span>
+            <button
+              onClick={() => applyBulkQty('0')}
+              className="px-2 py-0.5 text-xs rounded border border-gray-300 text-gray-600 hover:border-[#875A7B] hover:text-[#875A7B]"
+              title={isEn ? 'Fill 0 for the selected rows (fully out of stock)' : '把勾选行的新数量填成 0（整行缺货）'}
+            >
+              {isEn ? 'Set 0' : '批量设为 0'}
+            </button>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={bulkQty}
+              onChange={e => setBulkQty(e.target.value)}
+              placeholder={isEn ? 'Qty' : '数量'}
+              className="w-20 border border-gray-300 rounded px-2 py-0.5 text-xs text-right focus:outline-none focus:border-[#875A7B]"
+            />
+            <button
+              onClick={() => bulkQty.trim() !== '' && applyBulkQty(bulkQty.trim())}
+              disabled={bulkQty.trim() === ''}
+              className="px-2 py-0.5 text-xs rounded border border-gray-300 text-gray-600 hover:border-[#875A7B] hover:text-[#875A7B] disabled:opacity-40"
+            >
+              {isEn ? 'Fill selected' : '批量填充'}
+            </button>
+            <span className="mx-1 h-4 w-px bg-gray-200" />
+            <span className="text-xs text-gray-500">{isEn ? 'Reason' : '缺货原因'}</span>
+            <select
+              value={reasonCode}
+              onChange={e => setReasonCode(e.target.value as ShortageReasonCode)}
+              className="border border-gray-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-[#875A7B]"
+            >
+              {SHORTAGE_REASON_CODES.map(c => (
+                <option key={c} value={c}>{isEn ? SHORTAGE_REASON_LABELS[c].en : SHORTAGE_REASON_LABELS[c].zh}</option>
+              ))}
+            </select>
+            <input
+              value={reasonNote}
+              onChange={e => setReasonNote(e.target.value)}
+              placeholder={isEn ? 'Note (optional)' : '备注（选填）'}
+              className="border border-gray-300 rounded px-2 py-0.5 text-xs w-48 focus:outline-none focus:border-[#875A7B]"
+            />
+          </div>
+        )}
+
         <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-3 flex-wrap bg-gray-50/50">
           <button
-            onClick={handleSave}
-            disabled={saving || modifiedLines.length === 0}
+            onClick={() => submit('ADJUST')}
+            disabled={saving || targetLines.length === 0}
             className="px-4 py-1.5 text-sm font-medium rounded bg-[#875A7B] text-white hover:bg-[#6d4764] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {saving
               ? (isEn ? 'Saving...' : '保存中...')
-              : modifiedLines.length > 0
-                ? (isEn ? `Save Changes (${modifiedLines.length})` : `保存修改（${modifiedLines.length} 条）`)
+              : targetLines.length > 0
+                ? (isEn ? `Save Changes (${targetLines.length})` : `保存修改（${targetLines.length} 条）`)
                 : (isEn ? 'Save Changes' : '保存修改')}
+          </button>
+          <button
+            onClick={() => submit('DEFER')}
+            disabled={saving || targetLines.length === 0}
+            title={isEn
+              ? 'Today ships the new qty; the shortfall moves to a next-day draft order for the same customer'
+              : '今日按新数量送，差额转到该客户次日的补送单（草稿状态，到货确认后才扣库存）'}
+            className="px-4 py-1.5 text-sm font-medium rounded border border-amber-500 text-amber-700 hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving
+              ? (isEn ? 'Working...' : '处理中...')
+              : (isEn ? `Defer shortfall to next day (${targetLines.length})` : `转单到次日（${targetLines.length} 条）`)}
           </button>
           <button
             onClick={handlePrint}
@@ -516,6 +675,27 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             </span>
           )}
         </div>
+
+        {deferInfo.length > 0 && (
+          <div className="px-4 py-2 border-t border-gray-100 bg-amber-50/50 text-xs text-amber-800">
+            {isEn ? 'Next-day draft orders created: ' : '已生成次日补送单：'}
+            {deferInfo.map(d => `${d.code}（${d.date}）`).join('、')}
+            {isEn ? ' — draft status, confirm them once the goods arrive' : ' —— 草稿状态，到货后确认才扣库存'}
+          </div>
+        )}
+
+        {blockedRows.length > 0 && (
+          <div className="px-4 py-2 border-t border-gray-100 bg-red-50/50">
+            <div className="text-xs font-medium text-red-700 mb-1">
+              {isEn ? `${blockedRows.length} rows were not applied:` : `${blockedRows.length} 条未生效：`}
+            </div>
+            <ul className="text-xs text-red-700 space-y-0.5">
+              {blockedRows.map((b, i) => (
+                <li key={i}><span className="font-mono">{b.orderCode}</span> · {b.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Operation history */}
