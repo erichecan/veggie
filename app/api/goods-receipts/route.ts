@@ -6,6 +6,11 @@ import { writeLog } from '@/lib/action-log'
 import { toNum } from '@/lib/decimal-helpers'
 import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
 import { toStockQty } from '@/lib/inventory'
+import {
+  parseQc, validateQcLines, lineVerdict, formatQcSummary,
+  isQcRejectReason, QcInputError, QC_REJECT_REASON_LABELS,
+  type QcRecord, type QcRejectReason,
+} from '@/lib/purchase/qc'
 
 /**
  * /api/goods-receipts
@@ -14,15 +19,24 @@ import { toStockQty } from '@/lib/inventory'
  *
  * POST body:
  *   { purchaseOrderId, arrivedAt, notes?, photos?: string[],
- *     lines: [{productId, qty, uomId?, condition:'ok'|'damaged', bestBefore?}] }
- *   同一 productId 可以拆成两条（一条 ok、一条 damaged），表达"这行有部分损坏"。
+ *     lines: [{productId, qty, uomId?, condition:'ok'|'damaged'|'rejected', bestBefore?,
+ *              qc?: {weightKg?, freshness?, pesticide?, note?}, rejectReason?}] }
+ *   同一 productId 可以拆成多条（ok / damaged / rejected），表达"这行部分损坏、部分退回"。
+ *
+ * 三种 condition 的区别（台账 F4，别混）：
+ *   · ok       —— 进库存、建批次、计入 receivedQty
+ *   · damaged  —— 不进库存，但**算供应商已交付**（receivedQty 计入），记 IN+SCRAP 两笔净额 0，
+ *                 损耗仪表盘据此追损/索赔
+ *   · rejected —— 质检不合格**当场退回**：不进库存、不建批次、**不计 receivedQty**、
+ *                 一笔流水都不写（货压根没进过门）。采购单因此保持"未收齐"，
+ *                 采购员看得见还要找供应商补 —— 这才是"拒收"与"报废"的实质差别
  *
  * 业务：
  *   1) 校验 PO 存在且状态 ∈ {CONFIRMED, RECEIVED}（允许分批到货）
  *   2) 生成 GR 编号
  *   3) 事务内：
- *      - 创建 GoodsReceipt（含取证照片）
- *      - 更新 PO 各 Line 的 receivedQty（良品+损坏都计入，视为供应商已交付；见 2026-07-10 决策）
+ *      - 创建 GoodsReceipt（含取证照片与质检记录）
+ *      - 更新 PO 各 Line 的 receivedQty（良品+损坏计入，拒收不计；见 2026-07-10 决策与 F4）
  *      - 良品：给 Product.qtyOnHand 加上收到的数量，写 StockMove(type=IN)，建 Lot（保质期按本次收货行填写，不再死绑
  *        PO 行下单时的计划值）
  *      - 损坏：不进库存、不建 Lot，改写一笔 StockMove(type=SCRAP, sourceType=RECEIPT_DAMAGE, lotId=null) 留痕，
@@ -35,9 +49,19 @@ interface InLine {
   productName?: string
   qty: number
   uomId?: string
-  condition?: 'ok' | 'damaged'
+  condition?: 'ok' | 'damaged' | 'rejected'
   /** 本次收货实际看到的保质期，覆盖 PO 行下单时填的计划值；不传则回退用 PO 行原值 */
   bestBefore?: string | null
+  /** 质检记录（可留空）：实测重量 / 新鲜度 / 农残 */
+  qc?: unknown
+  /** 拒收原因；condition='rejected' 时必填 */
+  rejectReason?: QcRejectReason
+}
+
+/** 归一化后的收货行：质检已解析、condition 已收敛到三态 */
+interface NormLine extends Omit<InLine, 'qc' | 'condition'> {
+  condition: 'ok' | 'damaged' | 'rejected'
+  qc: QcRecord | null
 }
 
 export async function GET(req: Request) {
@@ -107,8 +131,26 @@ export async function POST(req: Request) {
       const data = await req.json()
       const poId = String(data.purchaseOrderId ?? '').trim()
       if (!poId) return NextResponse.json({ error: 'purchaseOrderId 必填' }, { status: 400 })
-      const lines: InLine[] = Array.isArray(data.lines) ? data.lines : []
-      if (lines.length === 0) return NextResponse.json({ error: '收货行不能为空' }, { status: 400 })
+      const rawLines: InLine[] = Array.isArray(data.lines) ? data.lines : []
+      if (rawLines.length === 0) return NextResponse.json({ error: '收货行不能为空' }, { status: 400 })
+
+      // 质检解析与校验（台账 F4）——**在事务之前**做完。
+      // 非法枚举值直接 400 而不是静默丢弃：悄悄丢掉等于「界面上填了、库里没有」，
+      // 而操作员看到的是提交成功。
+      let lines: NormLine[]
+      try {
+        lines = rawLines.map((l) => ({
+          ...l,
+          condition: l.condition === 'damaged' ? 'damaged' : l.condition === 'rejected' ? 'rejected' : 'ok',
+          qc: parseQc(l.qc),
+          rejectReason: isQcRejectReason(l.rejectReason) ? l.rejectReason : undefined,
+        }))
+      } catch (e) {
+        if (e instanceof QcInputError) return NextResponse.json({ error: e.message }, { status: 400 })
+        throw e
+      }
+      const qcError = validateQcLines(lines)
+      if (qcError) return NextResponse.json({ error: qcError }, { status: 400 })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
@@ -140,8 +182,12 @@ export async function POST(req: Request) {
               productName: l.productName ?? '',
               qty: Number(l.qty),
               uomId: l.uomId ?? null,
-              condition: l.condition ?? 'ok',
+              condition: l.condition,
               bestBefore: l.bestBefore ?? null,
+              // 质检记录随收货行一起落库（不另起表，见 lib/purchase/qc.ts 开头）。
+              // checkedBy/checkedAt 服务端盖章，不接受客户端传值 —— 「谁签的字」不能由前端说了算。
+              qc: l.qc ? { ...l.qc, checkedBy: user.name, checkedAt: grArrivedAt.toISOString() } : null,
+              rejectReason: l.rejectReason ?? null,
             })),
             notes: data.notes ?? null,
             photos,
@@ -157,6 +203,12 @@ export async function POST(req: Request) {
           if (!poLine) continue
           const qty = Number(l.qty)
           if (qty <= 0) continue
+
+          // 拒收（台账 F4）：货当场退回供应商 —— 不入库、不建批次、不写流水，
+          // 也**不能计入 receivedQty**。计了的话这张 PO 会显示"已收齐"，
+          // 而实际上那批货躺在供应商车上，采购员再也不会去追。
+          // 记录只留在 GoodsReceipt.lines（上面已写）+ 下面的操作日志里。
+          if (l.condition === 'rejected') continue
 
           // ⚠️ 单位换算（20260811 补）：收货数量是**采购单位**下的（如「5 箱」），
           // 而 qtyOnHand / StockMove / Lot 一律以商品**基准单位**计（如「包」）。
@@ -174,7 +226,7 @@ export async function POST(req: Request) {
             data: { receivedQty: { increment: qty } },
           })
           // damaged 的货不入库
-          if ((l.condition ?? 'ok') === 'ok') {
+          if (l.condition === 'ok') {
             // SSOT(成本): 收货按加权平均回写 standardPrice(此前收货从不回写,成本陈旧 — P2)
             // newStd = (max(oldQty,0)×oldStd + qty×收货价) / (max(oldQty,0)+qty);负库存按 0 计权
             // 用折合欧元的单价(unitCostEur)，不能直接拿 PO 原币 unitCost 当欧元——非欧元采购单
@@ -306,11 +358,28 @@ export async function POST(req: Request) {
         return gr
       })
 
+      const rejected = lines.filter((l) => l.condition === 'rejected' && Number(l.qty) > 0)
+      const qcChecked = lines.filter((l) => lineVerdict(l.qc, l.condition === 'rejected' ? Number(l.qty) : 0))
+      const qcNote = qcChecked.length > 0 ? ` · 质检 ${qcChecked.length} 行` : ''
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'goods_receipt', resourceId: result.id,
-        detail: `${grName} 收货，PO=${po.name}`,
+        detail: `${grName} 收货，PO=${po.name}${qcNote}`,
       })
+      // 拒收另记一条**挂在采购单上**的日志：收货单的日志采购员不会去翻，
+      // 而"这批货被退回、还没收齐"正是他们必须知道的事（PO 详情的 chatter 读的就是这条）
+      if (rejected.length > 0) {
+        const detail = rejected.map((l) => {
+          const reason = l.rejectReason ? QC_REJECT_REASON_LABELS[l.rejectReason].zh : '未注明'
+          const summary = formatQcSummary(l.qc)
+          return `${l.productName || l.productId} ×${Number(l.qty)}（${reason}${summary ? ` · ${summary}` : ''}）`
+        }).join('；')
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'UPDATE', resource: 'purchase_order', resourceId: poId,
+          detail: `${grName} 质检拒收：${detail}。拒收部分不计入已收数量，需向供应商补货或退款`,
+        })
+      }
       return NextResponse.json(serializeApi(result), { status: 201 })
     } catch (error) {
       console.error('[POST /api/goods-receipts]', error)

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { parseStoredQc, qcVerdict, type QcRecord, type QcVerdict } from '@/lib/purchase/qc'
 
 /**
  * GET /api/lots/trace
@@ -108,8 +109,36 @@ export async function GET(req: Request) {
           lotSpecific: false,
         }))
 
+      // 收货质检（台账 F4）：**派生，不复制存储** ——
+      // 批次是收货那一刻建的（sourceType=GOODS_RECEIPT / sourceId=收货单 id），
+      // 质检记录就写在那张收货单的对应行上。把它抄一份到 Lot 上会立刻多出第二处真相：
+      // 收货单改了、批次上的没改，追溯页显示的就是过期结论。
+      // ⚠️ 已知精度：按 productId 匹配收货行。同一张收货单里同一商品拆成多条良品行时
+      // （界面不会这么产出，脚本可能）只能定位到第一条带质检的。
+      let receiptQc: {
+        goodsReceiptId: string; goodsReceiptName: string; arrivedAt: Date
+        receivedBy: string | null; qc: QcRecord; verdict: QcVerdict | null
+      } | null = null
+      if (lot.sourceType === 'GOODS_RECEIPT' && lot.sourceId) {
+        const gr = await p.goodsReceipt.findUnique({
+          where: { id: lot.sourceId },
+          select: { id: true, name: true, arrivedAt: true, receivedBy: true, lines: true },
+        })
+        const grLines = Array.isArray(gr?.lines) ? gr.lines as Array<Record<string, unknown>> : []
+        const hit = grLines.find(
+          (l) => l.productId === lot.productId && (l.condition ?? 'ok') === 'ok' && l.qc != null
+        )
+        const qc = hit ? parseStoredQc(hit.qc) : null
+        if (gr && qc) {
+          receiptQc = {
+            goodsReceiptId: gr.id, goodsReceiptName: gr.name, arrivedAt: gr.arrivedAt,
+            receivedBy: gr.receivedBy ?? null, qc, verdict: qcVerdict(qc),
+          }
+        }
+      }
+
       return NextResponse.json(
-        serializeApi({ lot, orderSales, otherMoves, productReturns })
+        serializeApi({ lot, orderSales, otherMoves, productReturns, receiptQc })
       )
     } catch (error) {
       console.error('[GET /api/lots/trace]', error)

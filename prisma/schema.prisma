@@ -1234,7 +1234,9 @@ model GoodsReceipt {
   arrivedAt       DateTime
   /// 签收人
   receivedBy      String?
-  /// JSON: [{productId, productName, qty, uomId, condition:'ok'|'damaged', bestBefore}]
+  /// JSON: [{productId, productName, qty, uomId, condition:'ok'|'damaged'|'rejected', bestBefore,
+  ///         qc:{weightKg,freshness,pesticide,note,checkedBy,checkedAt}|null, rejectReason|null}]
+  /// condition='rejected'（质检拒收）不入库、不建批次、不计 receivedQty；口径见 lib/purchase/qc.ts
   lines           Json          @default("[]")
   notes           String?
   /// 取证照片：base64 data URI 数组（复用司机退货证据照片同一套轻量存储方式，见 driver/trip/[id]/page.tsx）

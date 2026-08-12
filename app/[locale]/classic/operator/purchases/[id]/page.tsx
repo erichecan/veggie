@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Trash2 } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiPatch, authHeaders } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
+import { parseStoredQc, lineVerdict, formatQcSummary, QC_REJECT_REASON_LABELS, type QcRejectReason } from '@/lib/purchase/qc'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 
@@ -73,7 +74,13 @@ interface GoodsReceiptRow {
   receivedBy?: string | null
   notes?: string | null
   photos?: string[]
-  lines: Array<{ productId: string; productName: string; qty: number; condition?: 'ok' | 'damaged' }>
+  lines: Array<{
+    productId: string; productName: string; qty: number
+    condition?: 'ok' | 'damaged' | 'rejected'
+    /** 收货质检（台账 F4）：随收货行落库，这里是**读取派生**，不另存一份 */
+    qc?: unknown
+    rejectReason?: QcRejectReason | null
+  }>
 }
 
 interface PurchaseOrder {
@@ -959,6 +966,12 @@ export default function PurchaseDetailPage() {
                       .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
                       .map(gr => {
                         const damaged = gr.lines.filter(l => l.condition === 'damaged')
+                        const rejected = gr.lines.filter(l => l.condition === 'rejected')
+                        // 质检信息在采购单上可见（台账 F4 验收第二条）：只列**填过**的行，
+                        // 没做质检的收货一个字都不多印
+                        const checked = gr.lines
+                          .map(l => ({ line: l, qc: parseStoredQc(l.qc) }))
+                          .filter(x => x.qc || x.line.condition === 'rejected')
                         return (
                           <div key={gr.id} className="border border-gray-200 rounded p-3 text-sm">
                             <div className="flex items-center justify-between">
@@ -970,7 +983,43 @@ export default function PurchaseDetailPage() {
                               {damaged.length > 0 && (
                                 <span className="text-red-600 ml-1">{isEn ? `· ${damaged.length} damaged` : `· ${damaged.length} 项有损坏`}</span>
                               )}
+                              {rejected.length > 0 && (
+                                <span className="text-red-700 ml-1 font-medium">{isEn ? `· ${rejected.length} rejected` : `· ${rejected.length} 项拒收`}</span>
+                              )}
                             </div>
+                            {checked.length > 0 && (
+                              <div className="mt-2 rounded bg-gray-50 border border-gray-100 p-2 space-y-1">
+                                <div className="text-xs font-medium text-gray-600">{isEn ? 'Quality check' : '质检记录'}</div>
+                                {checked.map(({ line, qc }, i) => {
+                                  const isRejected = line.condition === 'rejected'
+                                  const verdict = lineVerdict(qc, isRejected ? Number(line.qty) : 0)
+                                  return (
+                                    <div key={`${line.productId}-${i}`} className="text-xs text-gray-600 flex items-start gap-1.5 flex-wrap">
+                                      <span className="text-gray-800">{line.productName}</span>
+                                      {verdict && (
+                                        <span className={`px-1.5 py-0.5 rounded ${verdict === 'FAIL' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                          {verdict === 'FAIL' ? (isEn ? 'Failed' : '不合格') : (isEn ? 'Passed' : '合格')}
+                                        </span>
+                                      )}
+                                      {isRejected && (
+                                        <span className="text-red-700">
+                                          {isEn ? `Rejected ${Number(line.qty)}` : `拒收 ${Number(line.qty)}`}
+                                          {line.rejectReason ? `（${isEn ? QC_REJECT_REASON_LABELS[line.rejectReason].en : QC_REJECT_REASON_LABELS[line.rejectReason].zh}）` : ''}
+                                        </span>
+                                      )}
+                                      <span className="text-gray-500">{formatQcSummary(qc, isEn ? 'en' : 'zh')}</span>
+                                    </div>
+                                  )
+                                })}
+                                {rejected.length > 0 && (
+                                  <div className="text-xs text-red-700">
+                                    {isEn
+                                      ? 'Rejected quantities are not counted as received — this PO stays open until the supplier replaces or credits them.'
+                                      : '拒收数量不计入已收 —— 本采购单会保持未收齐，直到供应商补货或退款。'}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             {gr.notes && <div className="text-xs text-gray-500 mt-1">{gr.notes}</div>}
                             {(gr.photos?.length ?? 0) > 0 && (
                               <div className="flex gap-1.5 mt-2 flex-wrap">

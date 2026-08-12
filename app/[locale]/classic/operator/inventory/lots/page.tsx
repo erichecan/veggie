@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
+import { formatQcSummary, type QcRecord } from '@/lib/purchase/qc'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -83,6 +84,14 @@ interface TraceResult {
   orderSales: OrderSale[]
   otherMoves: OtherMove[]
   productReturns: ProductReturn[]
+  /** 收货质检（台账 F4）：由收货单派生，没做质检时为 null */
+  receiptQc?: {
+    goodsReceiptName: string
+    arrivedAt: string
+    receivedBy: string | null
+    qc: QcRecord
+    verdict: 'PASS' | 'FAIL' | null
+  } | null
 }
 
 const MOVE_TYPE_LABEL_ZH: Record<string, string> = {
@@ -520,6 +529,25 @@ export default function LotsPage() {
                     <p className="text-gray-700 mt-0.5">{traceResult.lot.sourceRef ?? traceResult.lot.sourceType ?? '—'}</p>
                   </div>
                 </div>
+                {/* 收货质检（台账 F4）：这批货进门时称了多少、新鲜度几级、农残有没有过。
+                    出问题要召回时，从批号一路查到当时的体检记录和签字人 —— 这是"可查"的落点 */}
+                {traceResult.receiptQc && (
+                  <div className="mt-3 pt-3 border-t" style={{ borderColor: BORDER }}>
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <span className="text-gray-400">{isEn ? 'Quality check at receipt' : '收货质检'}</span>
+                      {traceResult.receiptQc.verdict && (
+                        <span className={`px-1.5 py-0.5 rounded ${traceResult.receiptQc.verdict === 'FAIL' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                          {traceResult.receiptQc.verdict === 'FAIL' ? (isEn ? 'Failed' : '不合格') : (isEn ? 'Passed' : '合格')}
+                        </span>
+                      )}
+                      <span className="text-gray-700">{formatQcSummary(traceResult.receiptQc.qc, isEn ? 'en' : 'zh')}</span>
+                      <span className="text-gray-400">
+                        · {traceResult.receiptQc.goodsReceiptName}
+                        {traceResult.receiptQc.receivedBy ? ` · ${traceResult.receiptQc.receivedBy}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Order sales table */}
