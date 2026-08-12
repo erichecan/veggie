@@ -39,7 +39,11 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   // 汇总单服务端 PDF（无头 Chromium）：puppeteer-core 内部有运行时按需 require，交给 Next
   // 走外部化处理而不是 webpack 打包，避免打包期分析失败或产物里少东西。
-  serverExternalPackages: ['puppeteer-core'],
+  // pdf-parse 同样必须外部化：被 webpack 打进 chunk 后，它 import 的 './pdf.worker.mjs'
+  // 会指向 .next/server/chunks/ 下一个**根本不存在**的文件，standalone 产物一跑就
+  // 「Setting up fake worker failed: Cannot find module …/chunks/pdf.worker.mjs」500。
+  // dev 模式不打包所以看不出来 —— 台账 F2 在 standalone 上实测撞到的。
+  serverExternalPackages: ['puppeteer-core', 'pdf-parse'],
   // pdf-parse(采购单 PDF 识别用)内部用 Module.createRequire() 动态 require('@napi-rs/canvas')
   // 来 polyfill globalThis.DOMMatrix——这个 require 调用是运行时字符串拼出来的，不是字面量
   // require("...")，Next.js 的构建期文件追踪(@vercel/nft)识别不出来，standalone 产物里就
@@ -47,7 +51,14 @@ const nextConfig: NextConfig = {
   // 500（2026-07-14 客户反馈）。显式声明追踪范围，把该模块连同其平台原生二进制一并打进
   // .next/standalone/node_modules。
   outputFileTracingIncludes: {
-    '/api/purchase-orders/pdf-extract': ['./node_modules/@napi-rs/**/*'],
+    '/api/purchase-orders/pdf-extract': [
+      './node_modules/@napi-rs/**/*',
+      // pdfjs 的 worker 是运行时按路径动态 import 的，追踪器只带上了 pdf.mjs，
+      // 漏了紧挨着它的 pdf.worker.mjs → standalone 上一解析 PDF 就
+      // 「Setting up fake worker failed: Cannot find module …/pdf.worker.mjs」500。
+      // 与上面 @napi-rs 是同一个病根（动态引用追踪不到），dev 模式看不出来。
+      './node_modules/pdfjs-dist/legacy/build/*.mjs',
+    ],
   },
   async headers() {
     return [{ source: '/:path*', headers: SECURITY_HEADERS }]

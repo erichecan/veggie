@@ -2,12 +2,21 @@ import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { getObjectStore } from '@/lib/storage/object-store'
+import { parsePdfLines } from '@/lib/purchase/pdf-line-parser'
 
 /**
  * POST /api/purchase-orders/pdf-extract
  * ============================================================================
- * 采购单新建页"上传 PDF 识别"：存档 → 抽文字层 → （有 Key 时）AI 结构化+非英文翻译成英文。
+ * 采购单新建页"上传 PDF 识别"：存档 → 抽文字层 → **确定性解析**（台账 F2）→
+ * 解析不出来时，若配了 AI Key 再退而求其次交给模型。
  * 返回的是"预填草稿"，前端必须让用户逐行核对后才能保存，不允许识别结果直接落库。
+ *
+ * ⛔ 顺序是刻意的。需求原话是「PDF 都是规整的电子版……**暂不上 AI 识别**，做最简方案」：
+ * 确定性解析同一份 PDF 永远得同一个结果，错了能指着某一行说「这行没认出来」；
+ * 模型则每次可能不同，且没 Key 的环境（私有化部署）根本跑不了。所以 AI 只当兜底。
+ *
+ * 存档走 lib/storage/object-store 抽象（默认落本地磁盘），**不直接依赖 GCS** ——
+ * 台账里记的那条「现有实现依赖 @google-cloud/storage」已不成立，本轮复核过。
  */
 
 const MAX_SIZE = 15 * 1024 * 1024 // 15 MB
@@ -124,6 +133,31 @@ export async function POST(req: Request) {
         }, { status: 200 })
       }
 
+      // ① 确定性解析（不联网、不调模型）
+      const parsed = parsePdfLines(rawText)
+      if (parsed.lines.length > 0) {
+        return NextResponse.json({
+          sourceDocumentUrl,
+          sourceDocumentName: file.name,
+          rawText,
+          structured: {
+            supplierGuess: null,
+            currencyGuess: null,
+            lines: parsed.lines.map(l => ({
+              productName: l.productName,
+              quantity: l.quantity,
+              unitCost: l.unitCost,
+              uom: l.uom,
+            })),
+            translationNote: null,
+          },
+          source: 'parser',
+          diagnostics: parsed.diagnostics,
+          aiUnavailable: false,
+        })
+      }
+
+      // ② 兜底：确定性解析认不出来时才考虑 AI
       try {
         const structured = await structureWithAI(rawText)
         return NextResponse.json({
@@ -131,6 +165,11 @@ export async function POST(req: Request) {
           sourceDocumentName: file.name,
           rawText,
           structured,
+          source: 'ai',
+          diagnostics: parsed.diagnostics,
+          // 解析器没认出来这件事要如实说，不能因为 AI 兜住了就当无事发生 ——
+          // 否则没人知道该去给解析器补规则
+          parserError: parsed.error,
           aiUnavailable: false,
         })
       } catch (err) {
@@ -141,10 +180,15 @@ export async function POST(req: Request) {
           sourceDocumentName: file.name,
           rawText,
           structured: null,
+          source: 'none',
+          diagnostics: parsed.diagnostics,
           aiUnavailable,
-          error: aiUnavailable
-            ? '尚未配置 AI（ANTHROPIC_API_KEY），仅展示 PDF 原文，请手动填单'
-            : 'AI 识别失败，仅展示 PDF 原文，请手动填单',
+          // ⛔ 这里必须给出**具体**原因（扫了多少行、跳过多少合计行），
+          // 不能只回一张空表 —— 采购分不清「这份 PDF 没有商品」和「我们没解析出来」，
+          // 而这两种情况该做的事完全不同
+          error: `${parsed.error ?? '未能解析出商品行'}${
+            aiUnavailable ? '（本环境未配置 AI 兜底）' : '（AI 兜底也未成功）'
+          }`,
         })
       }
     } catch (error) {

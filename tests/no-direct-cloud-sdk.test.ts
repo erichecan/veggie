@@ -49,13 +49,26 @@ test('扫描逻辑本身没坏（能扫到足够多的文件）', () => {
   assert.ok(files.includes('lib/storage/object-store.ts'))
 })
 
+/**
+ * 判定「真的依赖了这个 SDK」而不是「文中提到过这个名字」。
+ * 只看 import / require / 动态 import —— 注释里写「本文件**不**直连 @google-cloud/storage」
+ * 会被 includes() 判成违规（F2 周期实际撞到：一句说明性注释把这条守卫弄红了）。
+ * 收紧成语法级匹配比放宽名单更安全：真违规一定出现在这三种形式里。
+ */
+function importsPackage(src: string, pkg: string): boolean {
+  const esc = pkg.replace(/[/@-]/g, m => `\\${m}`)
+  return new RegExp(`from\\s*['"]${esc}['"]`).test(src)
+    || new RegExp(`require\\(\\s*['"]${esc}['"]`).test(src)
+    || new RegExp(`import\\(\\s*['"]${esc}['"]`).test(src)
+}
+
 test('只有 lib/storage/* 可以直连云存储 SDK', () => {
   const offenders: string[] = []
   for (const file of sourceFiles()) {
     if (ALLOWED.has(file)) continue
     const src = readFileSync(file, 'utf8')
     for (const sdk of CLOUD_SDKS) {
-      if (src.includes(sdk)) offenders.push(`${file} → ${sdk}`)
+      if (importsPackage(src, sdk)) offenders.push(`${file} → ${sdk}`)
     }
   }
   assert.deepEqual(
@@ -104,4 +117,12 @@ test('业务代码不许硬编码 storage.googleapis.com 绝对 URL', () => {
     if (readFileSync(file, 'utf8').includes('storage.googleapis.com')) offenders.push(file)
   }
   assert.deepEqual(offenders, [], `硬编码 GCS 绝对 URL：\n${offenders.join('\n')}`)
+})
+
+test('守卫本身有效：抓真 import、放过注释里的提及', () => {
+  const real = `import { Storage } from '@google-cloud/storage'`
+  const mention = `// 本文件不直连 @google-cloud/storage，走 lib/storage 抽象`
+  assert.equal(importsPackage(real, '@google-cloud/storage'), true, '真 import 必须被抓到')
+  assert.equal(importsPackage(mention, '@google-cloud/storage'), false, '注释提及不算违规')
+  assert.equal(importsPackage(`const s = require("@aws-sdk/client-s3")`, '@aws-sdk/client-s3'), true)
 })
