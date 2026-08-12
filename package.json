@@ -30,6 +30,7 @@
     "build:standalone": "next build && cp -R .next/static .next/standalone/.next/ && cp -R public .next/standalone/ 2>/dev/null || true",
     "test:print-status": "npx tsx --env-file=.env.test scripts/audit/print-status-test.ts",
     "test:pack-split": "npx tsx --env-file=.env.test scripts/audit/pack-split-print-test.ts",
+    "test:print-filter": "npx tsx --env-file=.env.test scripts/audit/print-filter-test.ts",
     "test:uom-chain": "npx tsx --env-file=.env.test scripts/audit/uom-chain-test.ts"
   },
   "prisma": {

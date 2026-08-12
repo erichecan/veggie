@@ -16,6 +16,7 @@ import {
   type TripPrintData,
   escapeHtml,
   formatTripDriverList,
+  renderTripNoticeHtml,
 } from './trip-common'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
@@ -146,6 +147,8 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
     <div class="center">Johnstone Bros Delivery Summary（汇总单）</div>
     <div class="right"></div>
   </div>
+
+  ${renderTripNoticeHtml(trip.notice)}
 
   <div class="filter-row">
     <div class="item"><span class="label">配送日期 Delivery Date：</span>${formatDateOnly(startDate)}</div>

@@ -199,7 +199,7 @@ export async function POST(req: Request) {
     try {
       const data = await req.json()
       const restaurantId = data.restaurantId?.toString().trim()
-      const restaurantName = data.restaurantName?.toString().trim().slice(0, 200) || '未知餐馆'
+      const submittedName = data.restaurantName?.toString().trim().slice(0, 200) || ''
       if (!restaurantId) {
         return NextResponse.json({ error: '餐馆 ID 不能为空' }, { status: 400 })
       }
@@ -212,8 +212,14 @@ export async function POST(req: Request) {
       // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
       const custDefaults = await prisma.customer.findUnique({
         where: { id: restaurantId },
-        select: { defaultDriverSlotId: true, commissionRate: true, commissionFixed: true, salesUserId: true, paymentTerm: true, creditLimit: true },
+        select: { name: true, defaultDriverSlotId: true, commissionRate: true, commissionFixed: true, salesUserId: true, paymentTerm: true, creditLimit: true },
       })
+
+      // 客户名是订单上的展示快照。原先只认客户端传的值，不传就写死"未知餐馆"——
+      // 界面上永远传，所以没人发现；但任何直接调接口的路径（脚本、集成、将来的
+      // 第三方下单）建出来的单，客户名就是一句废话，且打印中心的客户筛选会列出
+      // 一串同名项无法区分。客户端不给就从客户档案取，取不到才退回占位符。
+      const restaurantName = submittedName || custDefaults?.name || '未知餐馆'
 
       // 服务端信用管控校验
       if (custDefaults && custDefaults.paymentTerm !== 'cash') {

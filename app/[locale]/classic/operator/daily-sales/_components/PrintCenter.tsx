@@ -6,8 +6,10 @@ import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { fetchDispatchPrintHtml, buildDispatchSummaryPdfUrl, buildDispatchPickingPdfUrl } from '@/lib/print/dispatch-print-html'
+import { type PrintContentFilter, applyPrintContentFilter, hasContentFilter } from '@/lib/print/print-filters'
 import { openAuthedPdf } from '@/lib/print/open-pdf'
 import { formatDateTime } from '@/lib/format-date'
+import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
 
 // 操作日志 detail 是写入时(app/api/waves/**)拼好的中文句子，只读展示时按已知模板做最佳努力翻译；
@@ -136,6 +138,7 @@ function BatchCard({
   printedTimes: printedTimesOf,
   onConfirmReprint,
   canUnlock,
+  filter,
   isEn,
   onPrint,
   onLockChange,
@@ -149,6 +152,9 @@ function BatchCard({
   /** 已打印过时弹二次确认；返回 false 表示用户取消，不要打 */
   onConfirmReprint: (docType: string, label: string) => boolean
   canUnlock: boolean
+  /** 当前生效的内容筛选（客户/商品）；必须原样带进每一个打印入口，
+      否则会出现"屏幕上筛了、打出来是全量"的错打 */
+  filter: PrintContentFilter
   isEn: boolean
   onPrint: () => void
   onLockChange: () => void
@@ -190,9 +196,9 @@ function BatchCard({
       notifyFirstLock()
       if (type === 'summary') {
         // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId] }))
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId], ...filter }))
       } else {
-        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId] })
+        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId], ...filter })
         onQueuePrint(html)
       }
       onPrint()
@@ -217,7 +223,7 @@ function BatchCard({
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
       // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -266,7 +272,7 @@ function BatchCard({
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -282,9 +288,9 @@ function BatchCard({
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
       notifyFirstLock()
       if (type === 'summary') {
-        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq) }))
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq), ...filter }))
       } else {
-        const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq) })
+        const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq), ...filter })
         onQueuePrint(html)
       }
       onPrint()
@@ -510,6 +516,7 @@ function BatchSections({
   printStatus,
   onConfirmReprint,
   canUnlock,
+  filter,
   isEn,
   onPrint,
   onLockChange,
@@ -520,6 +527,7 @@ function BatchSections({
   printStatus: PrintStatus
   onConfirmReprint: (waveId: string, docType: string, label: string) => boolean
   canUnlock: boolean
+  filter: PrintContentFilter
   isEn: boolean
   onPrint: (waveId: string) => void
   onLockChange: () => void
@@ -539,6 +547,7 @@ function BatchSections({
         printedTimes={(docType: string) => printedTimes(printStatus, g.waveId, docType)}
         onConfirmReprint={(docType: string, label: string) => onConfirmReprint(g.waveId, docType, label)}
         canUnlock={canUnlock}
+        filter={filter}
         isEn={isEn}
         onPrint={() => onPrint(g.waveId)}
         onLockChange={onLockChange}
@@ -631,6 +640,9 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   const [driverFilter, setDriverFilter] = useState<string[]>([])
   const [timeFilter, setTimeFilter] = useState<string[]>([])
   const [batchFilter, setBatchFilter] = useState<string[]>([])
+  // 台账 D3：客户 / 商品两维内容筛选。线路维度由上面的司机 + 批次承担。
+  const [customerFilter, setCustomerFilter] = useState<string[]>([])
+  const [productFilter, setProductFilter] = useState<string[]>([])
   const [printStatus, setPrintStatus] = useState<PrintStatus>(EMPTY_STATUS)
   const [logs, setLogs] = useState<ActionLogRow[]>([])
   // 打印队列：每次打印挂一个隐藏 iframe(见 PrintQueue)，不主动卸载——iframe 是 0 尺寸挪到
@@ -725,12 +737,39 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
 
   const ordersById = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])
 
+  const contentFilter: PrintContentFilter = useMemo(
+    () => ({ customerIds: customerFilter, productIds: productFilter }),
+    [customerFilter, productFilter],
+  )
+
+  /**
+   * 内容筛选（客户 / 商品）后的订单。
+   * ⚠️ 这里调的 applyPrintContentFilter 与服务端 dispatch-loader 是**同一段代码**
+   * （lib/print/print-filters.ts）——「筛选结果条数与预览一致」这条验收标准
+   * 靠的是共用实现，不是两边各写一遍再指望它们凑巧一致。
+   * 商品筛选把行砍掉后，卡片金额同样按剩余行重算，与纸面同口径。
+   */
+  const filteredOrdersById = useMemo(() => {
+    if (!hasContentFilter(contentFilter)) return ordersById
+    const kept = applyPrintContentFilter(
+      orders.map(o => ({ ...o, customerId: o.restaurantId, lines: o.lines ?? [] })),
+      contentFilter,
+    )
+    const lineFiltered = productFilter.length > 0
+    return new Map<string, Order>(kept.map(o => [
+      o.id,
+      (lineFiltered
+        ? { ...o, totalAmount: o.lines.reduce((s, l) => s + Number(l.subtotal ?? 0), 0) }
+        : o) as unknown as Order,
+    ]))
+  }, [orders, ordersById, contentFilter, productFilter])
+
   // 每张卡片 = 一个 wave，与调度台一一对应；分组直接读 wave 自身字段
   // (driverName/timeOfDay/pallets)，不再反查过期的 driverSlotId 快照。
-  const waveGroups = useMemo(() => {
+  const buildWaveGroups = useCallback((lookup: Map<string, Order>) => {
     return waves
       .map(w => {
-        const ords = w.orderIds.map(id => ordersById.get(id)).filter((o): o is Order => !!o)
+        const ords = w.orderIds.map(id => lookup.get(id)).filter((o): o is Order => !!o)
         const inPallet = new Set<string>()
         const pallets: PalletGroup[] = (w.pallets ?? [])
           .slice()
@@ -740,7 +779,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
             orderIds.forEach(id => inPallet.add(id))
             return {
               seq: p.seq,
-              orders: orderIds.map(id => ordersById.get(id)).filter((o): o is Order => !!o),
+              orders: orderIds.map(id => lookup.get(id)).filter((o): o is Order => !!o),
             }
           })
           .filter(p => p.orders.length > 0)
@@ -757,23 +796,42 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
         }
       })
       .filter(g => g.orders.length > 0)
-  }, [waves, ordersById])
+  }, [waves])
 
+  const waveGroups = useMemo(() => buildWaveGroups(filteredOrdersById), [buildWaveGroups, filteredOrdersById])
+
+  /**
+   * 选项列表一律从**未经内容筛选**的数据算出来。
+   * 若从筛选后的结果算，选了客户 A 之后其余客户/司机的选项会当场消失，
+   * 已选中的那个也可能因为渲染不出来而取消不掉 —— 筛选器把用户锁在自己的选择里。
+   */
   const filterOptions = useMemo(() => {
+    const all = buildWaveGroups(ordersById)
     const drivers = new Set<string>()
     const times = new Set<string>()
     const batches = new Set<number>()
-    for (const g of waveGroups) {
+    const customers = new Map<string, string>()
+    const products = new Map<string, string>()
+    for (const g of all) {
       if (g.driverName) drivers.add(g.driverName)
       if (g.timeOfDay) times.add(g.timeOfDay)
       for (const p of g.pallets) batches.add(p.seq)
+      for (const o of g.orders) {
+        if (o.restaurantId) customers.set(o.restaurantId, o.restaurantName ?? o.restaurantId)
+        for (const l of o.lines ?? []) {
+          if (l.productId) products.set(l.productId, l.productName ?? l.productId)
+        }
+      }
     }
+    const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label)
     return {
       drivers: [...drivers].sort(),
       times: [...times].sort(),
       batches: [...batches].sort((a, b) => a - b).map(String),
+      customers: [...customers].map(([value, label]) => ({ value, label })).sort(byLabel),
+      products: [...products].map(([value, label]) => ({ value, label })).sort(byLabel),
     }
-  }, [waveGroups])
+  }, [buildWaveGroups, ordersById])
 
   const filteredWaveGroups = useMemo(() => {
     return waveGroups.filter(g => {
@@ -801,9 +859,13 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     })
   }, [filteredWaveGroups, sortMode])
 
-  // 顶部「全部打印」跟随筛选：无筛选=整日全部；有筛选=只打屏幕上可见的这批波次（传 waveIds）
+  // 顶部「全部打印」跟随筛选：无筛选=整日全部；有筛选=只打屏幕上可见的这批波次（传 waveIds）。
+  // 客户/商品筛选同样要落进 waveIds —— 不带的话服务端走「整日全部批次」分支，
+  // 会把屏幕上根本没显示的波次（未分配完成/已完成）也算进去，条数就与预览对不上了。
   const isFiltered = driverFilter.length > 0 || timeFilter.length > 0 || batchFilter.length > 0
+    || hasContentFilter(contentFilter)
   const filteredWaveIds = isFiltered ? batchGroups.map(g => g.waveId) : undefined
+  const visibleOrderCount = batchGroups.reduce((s, g) => s + g.orders.length, 0)
 
   // 顶部「全部打印」也要给每个可见波次自动上锁，跟拣货单一致——否则批量打印销售单后
   // 调度台仍能改派，纸质单据和系统状态就对不上了。锁定结果出来后现取现渲染 HTML，交给
@@ -831,7 +893,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds })
+      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds, ...contentFilter })
       queuePrint(html)
     } catch {
       toast.error(isEn ? 'Print failed' : '打印失败')
@@ -853,7 +915,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant, ...contentFilter }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     }
@@ -884,9 +946,12 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
             ) : (
               <>
                 <span>
+                  {/* 三个数字必须同源：波次数与金额本来就取自筛选后的 batchGroups，
+                      订单数若还用未筛的 orders.length，就会出现「共 4 单 · €100」这种
+                      自相矛盾的抬头（4 单是全量、100 是筛后金额）。 */}
                   {isEn
-                    ? `Total ${orders.length} orders · ${batchGroups.length} waves assigned · €${fmtMoney(grandTotal)}`
-                    : `共 ${orders.length} 单 · ${batchGroups.length} 个已安排波次 · €${fmtMoney(grandTotal)}`}
+                    ? `Total ${visibleOrderCount} orders · ${batchGroups.length} waves assigned · €${fmtMoney(grandTotal)}`
+                    : `共 ${visibleOrderCount} 单 · ${batchGroups.length} 个已安排波次 · €${fmtMoney(grandTotal)}`}
                 </span>
                 {/* 原本这里是「清除已打印记录」——那是 localStorage 时代的产物。
                     现在痕迹在服务端(ActionLog)，是审计数据，不该被前端一键抹掉。
@@ -927,7 +992,9 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
             )}
             {isFiltered && (
               <span className="text-xs text-[#875A7B] font-medium" title={isEn ? 'The print buttons above have switched to "print current filtered results only"' : '顶部打印按钮已切换为「仅打印当前筛选结果」'}>
-                {isEn ? `Filtered · Printing ${batchGroups.length} waves` : `已筛选 · 打印 ${batchGroups.length} 波次`}
+                {isEn
+                  ? `Filtered · Printing ${batchGroups.length} waves / ${visibleOrderCount} orders`
+                  : `已筛选 · 打印 ${batchGroups.length} 波次 / ${visibleOrderCount} 单`}
               </span>
             )}
             <span className="inline-flex rounded overflow-hidden">
@@ -1005,6 +1072,37 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
             selected={batchFilter}
             onChange={setBatchFilter}
           />
+          {/* 客户 / 商品是「同一批波次里再挑一部分」，选项动辄上百条，
+              用可搜索的下拉而不是平铺 chip（司机/时段/批次只有个位数才平铺）。 */}
+          <MultiSelectPopover
+            label={isEn ? 'Customer' : '客户'}
+            options={filterOptions.customers}
+            selected={customerFilter}
+            onChange={setCustomerFilter}
+            searchable
+            searchPlaceholder={isEn ? 'Search customer…' : '搜索客户…'}
+            buttonLabel={n => n === 0
+              ? (isEn ? 'All customers' : '全部客户')
+              : (isEn ? `Customer: ${n}` : `客户：${n} 项`)}
+          />
+          <MultiSelectPopover
+            label={isEn ? 'Product' : '商品'}
+            options={filterOptions.products}
+            selected={productFilter}
+            onChange={setProductFilter}
+            searchable
+            searchPlaceholder={isEn ? 'Search product…' : '搜索商品…'}
+            buttonLabel={n => n === 0
+              ? (isEn ? 'All products' : '全部商品')
+              : (isEn ? `Product: ${n}` : `商品：${n} 项`)}
+          />
+          {productFilter.length > 0 && (
+            <span className="text-xs text-amber-600" title={isEn
+              ? 'Only the selected products are printed; order totals on screen and on paper both count the remaining lines only'
+              : '只打印所选商品的行；屏幕与纸面的订单金额都只统计剩余行'}>
+              {isEn ? '⚠ Partial documents' : '⚠ 部分单据'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -1025,6 +1123,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
           printStatus={printStatus}
           onConfirmReprint={confirmReprint}
           canUnlock={canUnlock}
+          filter={contentFilter}
           isEn={isEn}
           onPrint={markPrinted}
           onLockChange={refresh}

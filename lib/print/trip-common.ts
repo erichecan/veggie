@@ -140,6 +140,17 @@ export const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 /**
+ * 纸面顶部的黄色提示条（截断 / 按筛选打印）。四种单据共用一份实现 ——
+ * 原先只有送货单与销售单渲染 trip.notice，拣货单与汇总单静默忽略；
+ * 而「只打了一部分」这件事恰恰是拣货单最需要说清楚的：
+ * 仓库拿到一张没有提示的部分拣货单，会当成整车的全部去备货。
+ */
+export function renderTripNoticeHtml(notice?: string | null): string {
+  if (!notice) return ''
+  return `<div style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:3mm 5mm;margin:0 auto 5mm;max-width:210mm;font-size:9pt;font-weight:bold;">⚠ ${escapeHtml(notice)}</div>`
+}
+
+/**
  * 模板末尾都内嵌了 <script>window.print()</script> 给客户端 iframe 打印用；
  * 无头 Chromium 走 page.pdf() 生成 PDF 时不需要也不能留着这段——window.print() 在无头模式下
  * 是同步阻塞调用，没有真实对话框可关，会把 page.setContent() 的 networkidle0 等待卡住。

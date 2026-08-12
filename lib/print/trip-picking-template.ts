@@ -19,6 +19,7 @@ import {
   escapeHtml,
   formatTripDriverList,
   formatPrintTimestamp,
+  renderTripNoticeHtml,
 } from './trip-common'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
@@ -256,6 +257,8 @@ export function generateTripPickingHtml(
   <div class="page-header">
     <div class="print-at">Print at: ${formatPrintTimestamp()}</div>
   </div>
+
+  ${renderTripNoticeHtml(trip.notice)}
 
   <div class="info-row">
     <div class="item"><span class="label">配送日期：</span>${dateStr}</div>

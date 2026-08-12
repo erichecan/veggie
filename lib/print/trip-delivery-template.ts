@@ -23,6 +23,7 @@ import {
   formatTripDriverLabel,
   chunkOrderLinesForPrint,
   renderPageNumberFooter,
+  renderTripNoticeHtml,
   PRINT_PAGE_FOOTER_CSS,
 } from './trip-common'
 import { docBadge } from './doc-badge'
@@ -238,9 +239,7 @@ export function generateTripDeliveryHtml(data: TripPrintData): string {
     } catch(e) { console.warn('Barcode error for ${safeCode}:', e); }`
   }).join('\n')
 
-  const noticeHtml = trip.notice
-    ? `<div style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:3mm 5mm;margin:0 auto 5mm;max-width:210mm;font-size:9pt;font-weight:bold;">⚠ ${escapeHtml(trip.notice)}</div>`
-    : ''
+  const noticeHtml = renderTripNoticeHtml(trip.notice)
 
   return `<!DOCTYPE html>
 <html lang="en">

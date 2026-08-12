@@ -12,6 +12,7 @@ import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
 import { generateTripSalesHtml } from '@/lib/print/trip-sales-template'
+import { type PrintContentFilter, appendPrintFilterParams } from '@/lib/print/print-filters'
 
 export type DispatchPrintType = 'summary' | 'picking' | 'delivery' | 'sales'
 
@@ -33,7 +34,7 @@ export function parsePickingVariant(v: string | null | undefined): PickingVarian
   return v === 'storable' || v === 'consumable' ? v : 'all'
 }
 
-export interface DispatchPrintParams {
+export interface DispatchPrintParams extends PrintContentFilter {
   type: DispatchPrintType
   date: string
   fromDate?: string
@@ -43,12 +44,26 @@ export interface DispatchPrintParams {
   variant?: PickingVariant
 }
 
-export async function fetchDispatchPrintHtml(p: DispatchPrintParams): Promise<string> {
+/**
+ * 三个入口（HTML / 拣货 PDF / 汇总 PDF）的查询参数完全一致，构造只写一份。
+ * 之前是三处各抄一遍，新增一个筛选维度要改三处，漏改的表现是
+ * 「屏幕上筛了、打出来没筛」——不会报错，只会打错纸。
+ * 服务端的解析对侧在 dispatch-loader.parseDispatchSelector()。
+ */
+function buildDispatchParams(p: Omit<DispatchPrintParams, 'type'>): URLSearchParams {
   const params = new URLSearchParams({ date: p.date })
   if (p.driverSlotId) params.set('driverSlotId', p.driverSlotId)
   if (p.batchLabel) params.set('batchLabel', p.batchLabel)
   if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
   if (p.fromDate) params.set('fromDate', p.fromDate)
+  if (p.variant) params.set('variant', p.variant)
+  appendPrintFilterParams(params, p)
+  return params
+}
+
+export async function fetchDispatchPrintHtml(p: DispatchPrintParams): Promise<string> {
+  const params = buildDispatchParams(p)
+  params.delete('variant') // 变体只影响渲染，取数接口不认这个参数
   const wire = await apiGet<TripPrintDataWire>(`/api/orders/dispatch-print-data?${params}`)
   const data = toMemoryShape(wire)
   return DISPATCH_PRINT_RENDERERS[p.type](data, p.variant)
@@ -56,21 +71,10 @@ export async function fetchDispatchPrintHtml(p: DispatchPrintParams): Promise<st
 
 /** 汇总单走真·服务端 PDF：路由参数与上面的 print-data 接口一致，见 app/api/print/dispatch-summary-pdf */
 export function buildDispatchSummaryPdfUrl(p: Omit<DispatchPrintParams, 'type' | 'variant'>): string {
-  const params = new URLSearchParams({ date: p.date })
-  if (p.driverSlotId) params.set('driverSlotId', p.driverSlotId)
-  if (p.batchLabel) params.set('batchLabel', p.batchLabel)
-  if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
-  if (p.fromDate) params.set('fromDate', p.fromDate)
-  return `/api/print/dispatch-summary-pdf?${params}`
+  return `/api/print/dispatch-summary-pdf?${buildDispatchParams(p)}`
 }
 
 /** 拣货单走真·服务端 PDF：路由参数与上面的 print-data 接口一致，见 app/api/print/dispatch-picking-pdf */
 export function buildDispatchPickingPdfUrl(p: Omit<DispatchPrintParams, 'type'>): string {
-  const params = new URLSearchParams({ date: p.date })
-  if (p.driverSlotId) params.set('driverSlotId', p.driverSlotId)
-  if (p.batchLabel) params.set('batchLabel', p.batchLabel)
-  if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
-  if (p.fromDate) params.set('fromDate', p.fromDate)
-  if (p.variant) params.set('variant', p.variant)
-  return `/api/print/dispatch-picking-pdf?${params}`
+  return `/api/print/dispatch-picking-pdf?${buildDispatchParams(p)}`
 }

@@ -12,6 +12,8 @@ interface Props {
   onChange: (next: string[]) => void
   searchable?: boolean
   searchPlaceholder?: string
+  /** 按钮文案自定义（双语页面用）；不传则用中文默认「全部X」/「X：N 项」 */
+  buttonLabel?: (selectedCount: number) => string
 }
 
 /**
@@ -19,7 +21,7 @@ interface Props {
  * 点开是一个带可选搜索框的勾选列表。面板走 portal，避免被父容器 overflow-hidden 裁掉。
  */
 export default function MultiSelectPopover({
-  label, options, selected, onChange, searchable = false, searchPlaceholder,
+  label, options, selected, onChange, searchable = false, searchPlaceholder, buttonLabel,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -49,7 +51,9 @@ export default function MultiSelectPopover({
   }, [open])
 
   const selCount = selected.length
-  const btnLabel = selCount === 0 ? `全部${label}` : `${label}：${selCount} 项`
+  const btnLabel = buttonLabel
+    ? buttonLabel(selCount)
+    : (selCount === 0 ? `全部${label}` : `${label}：${selCount} 项`)
 
   function toggle(v: string) {
     onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])

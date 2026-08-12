@@ -8,7 +8,7 @@
  */
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
-import { loadDispatchPrintData } from '@/lib/print/dispatch-loader'
+import { loadDispatchPrintData, parseDispatchSelector } from '@/lib/print/dispatch-loader'
 import { stripAutoPrintScript, formatTripDriverList } from '@/lib/print/trip-common'
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
@@ -23,17 +23,14 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const date = searchParams.get('date')
     const fromDate = searchParams.get('fromDate') ?? undefined
-    const driverSlotId = searchParams.get('driverSlotId')
-    const batchLabel = searchParams.get('batchLabel')
-    const waveIdsParam = searchParams.get('waveIds')
-    const waveIds = waveIdsParam ? waveIdsParam.split(',').filter(Boolean) : undefined
+    const selector = parseDispatchSelector(searchParams)
 
     if (!date) {
       return NextResponse.json({ error: '缺少参数 date' }, { status: 400 })
     }
 
     try {
-      const wire = await loadDispatchPrintData(date, { driverSlotId, batchLabel, waveIds }, fromDate)
+      const wire = await loadDispatchPrintData(date, selector, fromDate)
       if (!wire) {
         return NextResponse.json({ error: '该批次无订单数据' }, { status: 404 })
       }

@@ -16,6 +16,14 @@ import {
   type TripPrintDataWire,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
+import {
+  type PrintContentFilter,
+  describePrintFilter,
+  filterPrintLines,
+  hasContentFilter,
+  keepPrintOrder,
+  parseIdListParam,
+} from './print-filters'
 
 /** 单批次打印的最大订单数，超出则截断并在打印顶部提示 */
 const MAX_PRINT_ORDERS = 50
@@ -106,11 +114,29 @@ async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string
  * - waveIds 非空 → 多批次筛选打印（打印中心筛选后「打印筛选结果」）
  * - driverSlotId / batchLabel → 单批次
  * - 三者皆空 → 整日全部批次
+ *
+ * 以上是「线路」维度（挑哪几趟车）。customerIds / productIds 是在取到的这批订单里
+ * 再挑内容，两者正交、可任意组合（台账 D3）。
  */
-export interface DispatchSelector {
+export interface DispatchSelector extends PrintContentFilter {
   driverSlotId?: string | null
   batchLabel?: string | null
   waveIds?: string[] | null
+}
+
+/**
+ * 三个打印接口（print-data / picking-pdf / summary-pdf）参数完全一致，
+ * 解析放在这里统一一份 —— 之前是三处各抄一遍，加一个参数就要改三处，
+ * 漏改任一处的表现是「预览筛了、PDF 没筛」，而且不会报错。
+ */
+export function parseDispatchSelector(searchParams: URLSearchParams): DispatchSelector {
+  return {
+    driverSlotId: searchParams.get('driverSlotId'),
+    batchLabel: searchParams.get('batchLabel'),
+    waveIds: parseIdListParam(searchParams.get('waveIds')),
+    customerIds: parseIdListParam(searchParams.get('customerIds')),
+    productIds: parseIdListParam(searchParams.get('productIds')),
+  }
 }
 
 export async function loadDispatchPrintData(
@@ -261,6 +287,16 @@ export async function loadDispatchPrintData(
 
   if (orders.length === 0) return null
 
+  // 内容筛选（客户 / 商品）——必须在截断之前做，否则会先截掉 200 张再从中筛，
+  // 用户按商品筛出来的结果会莫名其妙地少。前端预览走的是同一组纯函数（print-filters.ts）。
+  const contentFiltered = hasContentFilter(selector)
+  if (contentFiltered) {
+    orders = orders
+      .map(o => ({ ...o, lines: filterPrintLines(o.lines, selector) }))
+      .filter(o => keepPrintOrder({ customerId: o.restaurantId, lines: o.lines }, selector))
+    if (orders.length === 0) return null
+  }
+
   // 截断保护：单批次累积大量历史订单时，避免一次渲染上千页发票
   const maxOrders = (allBatches || multiMode) ? MAX_PRINT_ORDERS_ALL : MAX_PRINT_ORDERS
   const totalMatched = orders.length
@@ -303,12 +339,19 @@ export async function loadDispatchPrintData(
     externalNote: c.externalNote ?? null,
   }))
 
+  // 商品筛选把行砍掉之后，订单级 totalAmount 就不再等于纸面上那几行的和 ——
+  // 汇总单读的正是这个字段，不重算会印出「只列 2 行、金额却是全单」的自相矛盾单据。
+  // 口径与 OrderLine.subtotal 一致（税前，SSOT 见 docs/20260701）。
+  const lineFiltered = (selector.productIds ?? []).filter(Boolean).length > 0
+  const orderTotal = (o: (typeof orders)[number]): number =>
+    lineFiltered ? o.lines.reduce((s, l) => s + toNum(l.subtotal), 0) : toNum(o.totalAmount)
+
   const printOrders: TripOrder[] = orders.map(o => ({
     id: o.id,
     code: o.code,
     customerId: o.restaurantId,
     customerName: o.restaurantName,
-    totalAmount: toNum(o.totalAmount),
+    totalAmount: orderTotal(o),
     internalNote: o.internalNote,
     externalNote: o.externalNote,
     deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
@@ -349,9 +392,16 @@ export async function loadDispatchPrintData(
       batchNum: (multiMode || allBatches) ? null : batchNum,
       departTime: null,
       createdAt: new Date().toISOString(),
-      notice: truncated
-        ? `本批次共 ${totalMatched} 张订单，已截断显示前 ${maxOrders} 张。请用日期过滤缩小范围。`
-        : null,
+      // 截断与筛选可能同时发生；两条都得说，只说一条会让人以为纸面就是全部
+      notice: [
+        truncated
+          ? `本批次共 ${totalMatched} 张订单，已截断显示前 ${maxOrders} 张。请用日期过滤缩小范围。`
+          : null,
+        describePrintFilter(selector, {
+          customers: customerIds.length,
+          products: new Set(orders.flatMap(o => o.lines).map(l => l.productId)).size,
+        }),
+      ].filter(Boolean).join(' ') || null,
     },
     orders: printOrders,
     customers,

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
-import { loadDispatchPrintData } from '@/lib/print/dispatch-loader'
+import { loadDispatchPrintData, parseDispatchSelector } from '@/lib/print/dispatch-loader'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,10 +12,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const date = searchParams.get('date')
     const fromDate = searchParams.get('fromDate') ?? undefined
-    const driverSlotId = searchParams.get('driverSlotId')
-    const batchLabel = searchParams.get('batchLabel')
-    const waveIdsParam = searchParams.get('waveIds')
-    const waveIds = waveIdsParam ? waveIdsParam.split(',').filter(Boolean) : undefined
+    const selector = parseDispatchSelector(searchParams)
 
     // waveIds / driverSlotId / batchLabel 皆空 = 整日全部批次打印
     if (!date) {
@@ -26,7 +23,7 @@ export async function GET(req: Request) {
     }
 
     try {
-      const data = await loadDispatchPrintData(date, { driverSlotId, batchLabel, waveIds }, fromDate)
+      const data = await loadDispatchPrintData(date, selector, fromDate)
       if (!data) {
         return NextResponse.json({ error: '该批次无订单数据' }, { status: 404 })
       }
