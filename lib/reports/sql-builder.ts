@@ -1,5 +1,15 @@
 import type { ReportRequest, DimensionMeta, MeasureMeta, FilterSpec } from './types'
 
+/**
+ * 请求本身不合法（维度/度量/筛选字段不在白名单里、粒度不支持…）。
+ * 与「查库炸了」区分开 —— 前者是 400，后者才是 500。
+ * 混成一种的后果：用户选错维度看到「服务器错误」，而运维在日志里看到一片
+ * 500 却全是正常的输入校验，真故障反而被淹掉（台账 H2 实测发现）。
+ */
+export class ReportRequestError extends Error {
+  constructor(message: string) { super(message); this.name = 'ReportRequestError' }
+}
+
 interface BuildResult {
   sql: string
   params: unknown[]
@@ -18,10 +28,10 @@ export function buildReportSQL(
 
   const allDimensions = [...req.rowDimensions, ...(req.colDimensions ?? [])]
   if (allDimensions.length === 0) {
-    throw new Error('至少需要一个分组维度')
+    throw new ReportRequestError('至少需要一个分组维度')
   }
   if (req.measures.length === 0) {
-    throw new Error('至少需要一个度量')
+    throw new ReportRequestError('至少需要一个度量')
   }
 
   // ── Validate & build SELECT columns ─────────────────────────────────────────
@@ -32,11 +42,11 @@ export function buildReportSQL(
 
   for (const dim of allDimensions) {
     const meta = dimensionDefs[dim.field]
-    if (!meta) throw new Error(`无效维度: ${dim.field}`)
+    if (!meta) throw new ReportRequestError(`无效维度: ${dim.field}`)
 
     if (dim.interval && (meta.type === 'date' || meta.type === 'datetime')) {
       if (!meta.dateIntervals?.includes(dim.interval)) {
-        throw new Error(`维度 ${dim.field} 不支持区间 ${dim.interval}`)
+        throw new ReportRequestError(`维度 ${dim.field} 不支持区间 ${dim.interval}`)
       }
       const alias = `${dim.field}_${dim.interval}`
       const expr = `DATE_TRUNC('${dim.interval}', ${meta.field})`
@@ -53,7 +63,7 @@ export function buildReportSQL(
   const measureCols: string[] = []
   for (const m of req.measures) {
     const meta = measureDefs[m]
-    if (!meta) throw new Error(`无效度量: ${m}`)
+    if (!meta) throw new ReportRequestError(`无效度量: ${m}`)
     measureCols.push(`${meta.aggregation.toUpperCase()}(${meta.field}) AS ${meta.field}`)
   }
 
@@ -66,7 +76,7 @@ export function buildReportSQL(
       const dimMeta = dimensionDefs[f.field]
       const mesMeta = measureDefs[f.field]
       const fieldName = dimMeta?.field ?? mesMeta?.field
-      if (!fieldName) throw new Error(`无效筛选字段: ${f.field}`)
+      if (!fieldName) throw new ReportRequestError(`无效筛选字段: ${f.field}`)
 
       const clause = buildFilterClause(fieldName, f, params, paramIdx)
       whereParts.push(clause.sql)
@@ -84,7 +94,7 @@ export function buildReportSQL(
     for (const o of req.orderBy) {
       const dimMeta = dimensionDefs[o.field]
       const mesMeta = measureDefs[o.field]
-      if (!dimMeta && !mesMeta) throw new Error(`无效排序字段: ${o.field}`)
+      if (!dimMeta && !mesMeta) throw new ReportRequestError(`无效排序字段: ${o.field}`)
       const dir = o.direction === 'desc' ? 'DESC' : 'ASC'
       orderParts.push(`${dimMeta?.field ?? mesMeta!.field} ${dir}`)
     }
@@ -155,21 +165,21 @@ function buildFilterClause(
       return { sql: `${field} ILIKE $${idx}`, nextIdx: idx + 1 }
     }
     case 'in': {
-      if (!Array.isArray(value)) throw new Error(`'in' 操作符的值必须是数组`)
+      if (!Array.isArray(value)) throw new ReportRequestError(`'in' 操作符的值必须是数组`)
       const placeholders = value.map(v => { params.push(v); return `$${idx++}` })
       return { sql: `${field} IN (${placeholders.join(', ')})`, nextIdx: idx }
     }
     case 'not_in': {
-      if (!Array.isArray(value)) throw new Error(`'not_in' 操作符的值必须是数组`)
+      if (!Array.isArray(value)) throw new ReportRequestError(`'not_in' 操作符的值必须是数组`)
       const placeholders = value.map(v => { params.push(v); return `$${idx++}` })
       return { sql: `${field} NOT IN (${placeholders.join(', ')})`, nextIdx: idx }
     }
     case 'between': {
-      if (!Array.isArray(value) || value.length !== 2) throw new Error(`'between' 操作符需要两个值的数组`)
+      if (!Array.isArray(value) || value.length !== 2) throw new ReportRequestError(`'between' 操作符需要两个值的数组`)
       params.push(value[0], value[1])
       return { sql: `${field} BETWEEN $${idx} AND $${idx + 1}`, nextIdx: idx + 2 }
     }
     default:
-      throw new Error(`不支持的操作符: ${operator}`)
+      throw new ReportRequestError(`不支持的操作符: ${operator}`)
   }
 }

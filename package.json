@@ -42,7 +42,8 @@
     "test:uom-chain": "npx tsx --env-file=.env.test scripts/audit/uom-chain-test.ts",
     "test:purchase-qc": "npx tsx --env-file=.env.test scripts/audit/purchase-qc-test.ts",
     "test:statement": "npx tsx --env-file=.env.test scripts/audit/statement-settlement-test.ts",
-    "test:vendor-settlement": "npx tsx --env-file=.env.test scripts/audit/vendor-settlement-test.ts"
+    "test:vendor-settlement": "npx tsx --env-file=.env.test scripts/audit/vendor-settlement-test.ts",
+    "test:reports-pivot": "npx tsx --env-file=.env.test scripts/audit/reports-pivot-test.ts"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

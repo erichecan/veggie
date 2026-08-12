@@ -125,3 +125,20 @@ export const REPORT_REGISTRY = {
     measures: LOGISTICS_MEASURES,
   },
 } as const
+
+
+/**
+ * 每张报表的默认视角（台账 H2）。
+ *
+ * 没有默认值时，页面打开是一张「请选择维度和度量」的空白提示 —— 功能在、入口也有，
+ * 但用户得先猜两次才看得到任何数字，实测下来跟没做差不多。
+ * 默认给的是各自最常被问的那个问题：卖了什么 / 从谁那儿买的 / 哪个司机跑的。
+ */
+export const REPORT_DEFAULTS: Record<
+  keyof typeof REPORT_REGISTRY,
+  { rowDimensions: Array<{ field: string }>; measures: string[] }
+> = {
+  sales:      { rowDimensions: [{ field: 'product_name' }],  measures: ['line_subtotal', 'ordered_qty'] },
+  purchasing: { rowDimensions: [{ field: 'supplier_name' }], measures: ['subtotal_ex_tax', 'ordered_qty'] },
+  logistics:  { rowDimensions: [{ field: 'driver_name' }],   measures: ['total_payment', 'trip_count'] },
+}

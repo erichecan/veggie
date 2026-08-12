@@ -47,6 +47,9 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // 采购建议已整合进「库存管理」tab，供应商账单已移至发票旁，隐藏/移除此处入口
     // { href: `${prefix}/classic/operator/purchases/suggestions`, label: en ? 'Purchase Suggestions' : '采购建议' },
     { href: `${prefix}/classic/operator/inventory`, label: en ? 'Inventory'     : '库存管理', activePaths: [`${prefix}/classic/operator/inventory`] },
+    // 报表分析（台账 H2）：Odoo 式可组合报表，销售/采购/物流三张。
+    // ⚠️ 这三页此前代码全在、接口能返数据，却没有任何入口链接过去——功能到不了等于不存在
+    { href: `${prefix}/classic/operator/reports/sales`, label: en ? 'Reports' : '报表分析', activePaths: [`${prefix}/classic/operator/reports`] },
     // divider
     { href: '', label: '│' },
     // Group B

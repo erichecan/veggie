@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, Fragment, type Dispatch } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import {
@@ -9,7 +9,10 @@ import {
 } from '@/components/ui/table'
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { useReporting } from './ReportingContext'
-import type { MeasureMeta } from '@/lib/reports/types'
+import type { MeasureMeta, DimensionMeta, DimensionSpec } from '@/lib/reports/types'
+import { drillCandidates, rowFieldAlias, rowKeyOf } from '@/lib/reports/drilldown'
+import type { ReportingState, ReportingAction } from './ReportingContext'
+import { ChevronDown } from 'lucide-react'
 import { eur } from '@/lib/format-money'
 
 export function formatValue(value: unknown, format: MeasureMeta['format']): string {
@@ -34,7 +37,7 @@ export function formatValue(value: unknown, format: MeasureMeta['format']): stri
 }
 
 export function PivotTable() {
-  const { state, dispatch } = useReporting()
+  const { state, dispatch, drillDown } = useReporting()
   const { rows, totals, rowDimensions, colDimensions, activeMeasures, measureDefs, dimensionDefs, orderBy } = state
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -143,23 +146,30 @@ export function PivotTable() {
     )
   }
 
-  if (!hasCols || !pivotData) return <FlatTable {...{ rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon, isEn }} />
+  if (!hasCols || !pivotData) return <FlatTable {...{ rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon, isEn, dimensionDefs, drill: state.drill, drillDown, dispatch }} />
 
   return <CrossTab pivotData={pivotData} {...{ rowDimensions, colDimensions, activeMetas, totals, getDimLabel, isEn }} />
 }
 
 function FlatTable({
   rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon, isEn,
+  dimensionDefs, drill, drillDown, dispatch,
 }: {
   rows: Record<string, unknown>[]
-  rowDimensions: { field: string }[]
+  rowDimensions: DimensionSpec[]
   activeMetas: MeasureMeta[]
   totals: Record<string, number>
   getDimLabel: (f: string) => string
   handleSort: (f: string) => void
   sortIcon: (f: string) => React.ReactNode
   isEn: boolean
+  dimensionDefs: DimensionMeta[]
+  drill: ReportingState['drill']
+  drillDown: (rowKey: string, row: Record<string, unknown>, by: DimensionSpec) => Promise<void>
+  dispatch: Dispatch<ReportingAction>
 }) {
+  // 下钻目标：排掉已经在行上用过的维度（再展开一次只会得到一模一样的一行）
+  const candidates = drillCandidates(dimensionDefs, rowDimensions)
   return (
     <Table>
       <TableHeader>
@@ -177,16 +187,84 @@ function FlatTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row, idx) => (
-          <TableRow key={idx}>
-            {rowDimensions.map(d => (
-              <TableCell key={d.field} className="font-medium">{String(row[d.field] ?? '-')}</TableCell>
+        {rows.map((row, idx) => {
+          const rk = rowKeyOf(rowDimensions, row)
+          const d = drill[rk]
+          // 值为空的行锁不住（`= ''` 筛不到 NULL），宁可不给点也不要给一张假的空表
+          const canDrill = candidates.length > 0 && rowDimensions.every(dim => {
+            const v = row[rowFieldAlias(dim)]
+            return v !== null && v !== undefined && v !== ''
+          })
+          return (
+          <Fragment key={rk || idx}>
+          <TableRow>
+            {rowDimensions.map((dim, i) => (
+              <TableCell key={dim.field} className="font-medium">
+                <div className="flex items-center gap-1">
+                  {i === 0 && canDrill && (
+                    d
+                      ? (
+                        <button type="button" className="text-muted-foreground hover:text-foreground"
+                          title={isEn ? 'Collapse' : '收起'}
+                          onClick={() => dispatch({ type: 'DRILL_COLLAPSE', rowKey: rk })}>
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                      )
+                      : (
+                        <select
+                          className="h-5 w-5 shrink-0 cursor-pointer appearance-none rounded border bg-transparent text-transparent"
+                          title={isEn ? 'Expand by…' : '按维度展开…'}
+                          value=""
+                          onChange={e => {
+                            const f = e.target.value
+                            const by = candidates.find(c => c.field === f)
+                            if (by) drillDown(rk, row, { field: by.field })
+                            e.target.value = ''
+                          }}>
+                          <option value="">▸</option>
+                          {candidates.map(c => (
+                            <option key={c.field} value={c.field}>{isEn ? c.label : c.labelZh}</option>
+                          ))}
+                        </select>
+                      )
+                  )}
+                  <span>{String(row[rowFieldAlias(dim)] ?? '-')}</span>
+                </div>
+              </TableCell>
             ))}
             {activeMetas.map(m => (
               <TableCell key={m.field} className="text-right tabular-nums">{formatValue(row[m.field], m.format)}</TableCell>
             ))}
           </TableRow>
-        ))}
+          {d?.loading && (
+            <TableRow><TableCell colSpan={rowDimensions.length + activeMetas.length} className="text-xs text-muted-foreground pl-8">
+              {isEn ? 'Loading…' : '展开中…'}
+            </TableCell></TableRow>
+          )}
+          {d?.error && (
+            <TableRow><TableCell colSpan={rowDimensions.length + activeMetas.length} className="text-xs text-red-600 pl-8">{d.error}</TableCell></TableRow>
+          )}
+          {d && !d.loading && !d.error && d.rows.length === 0 && (
+            <TableRow><TableCell colSpan={rowDimensions.length + activeMetas.length} className="text-xs text-muted-foreground pl-8">
+              {isEn ? 'No detail rows' : '这一行下面没有明细'}
+            </TableCell></TableRow>
+          )}
+          {d?.rows.map((child, ci) => (
+            <TableRow key={`${rk}|c${ci}`} className="bg-muted/20">
+              <TableCell colSpan={rowDimensions.length} className="pl-8 text-muted-foreground">
+                <span className="mr-1 opacity-50">└</span>
+                {String(child[rowFieldAlias(d.by)] ?? '-')}
+                <span className="ml-2 text-[10px] opacity-60">{getDimLabel(d.by.field)}</span>
+              </TableCell>
+              {activeMetas.map(m => (
+                <TableCell key={m.field} className="text-right tabular-nums text-muted-foreground">
+                  {formatValue(child[m.field], m.format)}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+          </Fragment>
+        )})}
       </TableBody>
       {Object.keys(totals).length > 0 && (
         <TableFooter>
