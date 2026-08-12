@@ -20,8 +20,9 @@
  *                     不补的话 /api/analytics/* 直接 500（v_lot_daily_cost 不存在）
  *   3. RBAC 数据迁移   角色与权限点是写在数据迁移里的，db push 会跳过 → 必须补
  *   4. 基础种子        用户/商品/客户/价格表
- *   5. 事件种子        订单/发票/收付款/库存流水（可选，--with-events）
- *   6. 期初库存        把商品补到可下单的库存水位（可选，--with-stock）
+ *   5. 采购品类分组     四大品类分组只在一次性订正脚本里，不建则采购建议恒为空
+ *   6. 事件种子        订单/发票/收付款/库存流水（可选，--with-events）
+ *   7. 期初库存        把商品补到可下单的库存水位（可选，--with-stock）
  *
  * ⛔ 只允许打向本机。这个脚本会 db push，对生产库执行等同于结构性重写。
  *
@@ -53,30 +54,37 @@ function main() {
   const withStock = process.argv.includes('--with-stock')
 
   steps.push({
-    name: '1/6 同步表结构（db push —— 刻意绕开无基线的迁移链）',
+    name: '1/7 同步表结构（db push —— 刻意绕开无基线的迁移链）',
     run: () => sh('npx', ['prisma', 'db', 'push']),
   })
   steps.push({
-    name: '2/6 补视图/扩展/trgm 索引（db push 同样跳过，不补则分析中心 500）',
+    name: '2/7 补视图/扩展/trgm 索引（db push 同样跳过，不补则分析中心 500）',
     run: () => sh('npx', ['tsx', 'scripts/db/apply-sql-objects.ts']),
   })
   steps.push({
-    name: '3/6 补 RBAC 数据迁移（db push 会跳过，不补则全站 403）',
+    name: '3/7 补 RBAC 数据迁移（db push 会跳过，不补则全站 403）',
     run: () => sh('npx', ['tsx', 'scripts/rbac/apply-data-migrations.ts']),
   })
   steps.push({
-    name: '4/6 基础种子（用户/商品/客户/价格表）',
+    name: '4/7 基础种子（用户/商品/客户/价格表）',
     run: () => sh('npx', ['tsx', 'prisma/seed.ts']),
+  })
+  steps.push({
+    // 采购品类分组同样只存在于一次性订正脚本里（不在 seed、不在迁移数据里），
+    // 不建的话 CategoryGroup 是空表 → 生鲜每日采购建议直接返回空数组，
+    // 「采购计划」整块功能在全新库上是死的（台账 F1 查出）。脚本本身幂等。
+    name: '5/7 采购品类分组（不建则采购建议恒为空）',
+    run: () => sh('npx', ['tsx', 'scripts/backfill-category-groups.ts', '--apply']),
   })
   if (withEvents) {
     steps.push({
-      name: '5/6 事件种子（订单/发票/收付款/库存流水）',
+      name: '6/7 事件种子（订单/发票/收付款/库存流水）',
       run: () => sh('npx', ['tsx', 'prisma/seed-events/index.ts']),
     })
   }
   if (withStock) {
     steps.push({
-      name: '6/6 期初库存（把商品补到可下单水位）',
+      name: '7/7 期初库存（把商品补到可下单水位）',
       run: () => sh('npx', ['tsx', 'scripts/seed/ensure-opening-stock.ts']),
     })
   }

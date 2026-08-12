@@ -36,6 +36,7 @@
     "db:sql-objects": "npx tsx --env-file=.env.test scripts/db/apply-sql-objects.ts",
     "test:loss-entry": "npx tsx --env-file=.env.test scripts/audit/loss-entry-test.ts",
     "test:receipt-linkage": "npx tsx --env-file=.env.test scripts/audit/receipt-linkage-test.ts",
+    "test:purchase-suggestion": "npx tsx --env-file=.env.test scripts/audit/purchase-suggestion-test.ts",
     "test:uom-chain": "npx tsx --env-file=.env.test scripts/audit/uom-chain-test.ts"
   },
   "prisma": {

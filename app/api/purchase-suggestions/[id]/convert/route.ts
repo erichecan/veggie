@@ -114,7 +114,11 @@ export async function POST(
           data: {
             status: 'ordered',
             purchaseOrderId: created.id,
+            // 采纳时把建议量改写成实际下单量，让这一行读起来就是「最后订了多少」。
+            // ⚠️ estimatedCost 必须跟着一起改：只改数量不改金额，列表上会出现
+            // 「建议采购 12 · 预估成本 €100」这种自相矛盾的行（€100 是按原建议 20 算的）。
             suggestedQty: qty,
+            estimatedCost: round2(qty * unitCost),
             supplierId,
             supplierName: body.supplierName ?? suggestion.supplierName,
             resolvedAt: new Date(),
