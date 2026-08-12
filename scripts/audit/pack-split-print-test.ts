@@ -59,11 +59,24 @@ async function main() {
     data: {
       name: `D4 拆箱测试商品 ${Date.now()}`, type: 'PRODUCT', status: 'ACTIVE',
       listPrice: 10, standardPrice: 6, uomId: pcs.id, canBeSold: true, canBePurchased: true,
-      products: { create: [{ name: 'D4 拆箱测试商品', listPrice: 10, standardPrice: 6, qtyOnHand: 500, active: true, status: 'ACTIVE' }] },
+      products: { create: [{ name: 'D4 拆箱测试商品', listPrice: 10, standardPrice: 6, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
     },
     select: { id: true, products: { select: { id: true, name: true }, take: 1 } },
   })
   const pid = tmpl.products[0]!.id
+
+  // ⚠️ 期初库存必须**连流水一起**写。直接给 qtyOnHand 塞个数会破坏头号不变量
+  // (qtyOnHand == ΣStockMove)，让 db:validate 报出一条不是产品缺陷的违例 ——
+  // 测试数据自己不守恒，后面的周期就会去追一个幽灵。
+  await prisma.$transaction([
+    prisma.stockMove.create({
+      data: {
+        productId: pid, productName: 'D4 拆箱测试商品', type: 'ADJUSTMENT', qty: 500,
+        movedAt: new Date(), note: 'D4 测试期初', sourceType: 'TEST_OPENING', sourceRef: 'D4',
+      },
+    }),
+    prisma.product.update({ where: { id: pid }, data: { qtyOnHand: 500 } }),
+  ])
   await prisma.productSaleUom.createMany({
     data: [
       { productId: pid, uomId: pcs.id, isDefault: true },
