@@ -3415,6 +3415,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/waves/print-status": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/waves": {
   "BOSS": "y",
   "OPERATOR": "y",

@@ -133,6 +133,8 @@ function BatchCard({
   group,
   date,
   isPrinted,
+  printedTimes: printedTimesOf,
+  onConfirmReprint,
   canUnlock,
   isEn,
   onPrint,
@@ -142,6 +144,10 @@ function BatchCard({
   group: BatchGroup
   date: string
   isPrinted: boolean
+  /** 该批次某类单据已打印次数（服务端痕迹） */
+  printedTimes: (docType: string) => number
+  /** 已打印过时弹二次确认；返回 false 表示用户取消，不要打 */
+  onConfirmReprint: (docType: string, label: string) => boolean
   canUnlock: boolean
   isEn: boolean
   onPrint: () => void
@@ -174,6 +180,10 @@ function BatchCard({
   }
 
   async function print(type: 'delivery' | 'summary' | 'sales') {
+    const label = type === 'delivery' ? (isEn ? 'delivery note' : '送货单')
+      : type === 'sales' ? (isEn ? 'sales order' : '销售单')
+      : (isEn ? 'summary' : '汇总单')
+    if (!onConfirmReprint(type, label)) return
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
@@ -201,6 +211,7 @@ function BatchCard({
   // Feature C：打印拣货单即触发批次锁定（重打=重新上锁）；锁定失败则不打印，避免"打印了但没锁"
   // 拣货单分实物(storable)/耗材(consumable)两份，供两个拣货员分开作业
   async function printPicking(variant: 'storable' | 'consumable') {
+    if (!onConfirmReprint('picking', isEn ? 'picking list' : '拣货单')) return
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
@@ -496,7 +507,8 @@ function BatchCard({
 function BatchSections({
   batchGroups,
   date,
-  printedKeys,
+  printStatus,
+  onConfirmReprint,
   canUnlock,
   isEn,
   onPrint,
@@ -505,7 +517,8 @@ function BatchSections({
 }: {
   batchGroups: BatchGroup[]
   date: string
-  printedKeys: Set<string>
+  printStatus: PrintStatus
+  onConfirmReprint: (waveId: string, docType: string, label: string) => boolean
   canUnlock: boolean
   isEn: boolean
   onPrint: (waveId: string) => void
@@ -522,7 +535,9 @@ function BatchSections({
         key={g.waveId}
         group={g}
         date={date}
-        isPrinted={printedKeys.has(g.waveId)}
+        isPrinted={printedTimes(printStatus, g.waveId) > 0}
+        printedTimes={(docType: string) => printedTimes(printStatus, g.waveId, docType)}
+        onConfirmReprint={(docType: string, label: string) => onConfirmReprint(g.waveId, docType, label)}
         canUnlock={canUnlock}
         isEn={isEn}
         onPrint={() => onPrint(g.waveId)}
@@ -572,24 +587,32 @@ function BatchSections({
 
 // ─── PrintCenter ──────────────────────────────────────────────────────────────
 
-const STORAGE_PREFIX = 'veggie-printed-batches-'
-
-function loadPrintedKeys(date: string): Set<string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + date)
-    const arr = raw ? (JSON.parse(raw) as string[]) : []
-    return new Set(arr)
-  } catch {
-    return new Set()
-  }
+/**
+ * 打印状态（20260811 改）
+ * ----------------------------------------------------------------------------
+ * 此前「✓ 已打印」存在 localStorage(`veggie-printed-batches-{date}`)：换台电脑、
+ * 换浏览器、清缓存就没了，页面上还有个「清除已打印记录」按钮能随手抹掉。
+ * 后果不是显示难看 —— 打印员 A 打过的批次，打印员 B 那边显示成没打过，
+ * 于是漏打或重复打。
+ *
+ * 现改为读服务端 /api/waves/print-status：数据来自每次打印本就写下的 ActionLog，
+ * 没有新增写入路径。跨设备一致，且能给出「打了几次、谁打的、什么时候」。
+ */
+interface PrintMark { count: number; lastAt: string; lastBy: string }
+type PrintStatus = {
+  waves: Record<string, Record<string, PrintMark>>
+  legacyCount: number
+  printedWaveCount: number
+  totalWaveCount: number
 }
+const EMPTY_STATUS: PrintStatus = { waves: {}, legacyCount: 0, printedWaveCount: 0, totalWaveCount: 0 }
 
-function savePrintedKeys(date: string, keys: Set<string>) {
-  try {
-    localStorage.setItem(STORAGE_PREFIX + date, JSON.stringify([...keys]))
-  } catch {
-    // localStorage unavailable
-  }
+/** 该批次的某类单据打过几次；docType 省略则看任意一类 */
+function printedTimes(status: PrintStatus, waveId: string, docType?: string): number {
+  const slot = status.waves[waveId]
+  if (!slot) return 0
+  if (docType) return slot[docType]?.count ?? 0
+  return Object.values(slot).reduce((s, m) => s + m.count, 0)
 }
 
 export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?: number; onRefresh?: () => void }) {
@@ -608,7 +631,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   const [driverFilter, setDriverFilter] = useState<string[]>([])
   const [timeFilter, setTimeFilter] = useState<string[]>([])
   const [batchFilter, setBatchFilter] = useState<string[]>([])
-  const [printedKeys, setPrintedKeys] = useState<Set<string>>(new Set())
+  const [printStatus, setPrintStatus] = useState<PrintStatus>(EMPTY_STATUS)
   const [logs, setLogs] = useState<ActionLogRow[]>([])
   // 打印队列：每次打印挂一个隐藏 iframe(见 PrintQueue)，不主动卸载——iframe 是 0 尺寸挪到
   // 屏幕外的轻量元素，攒一整天的打印任务对内存无实质影响，比"猜多久该卸载"更简单可靠
@@ -620,23 +643,39 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     setPrintJobs(prev => [...prev, { id: printJobSeq.current, html }])
   }, [])
 
-  useEffect(() => {
-    setPrintedKeys(loadPrintedKeys(date))
+  const loadPrintStatus = useCallback(async () => {
+    try {
+      const s = await apiGet<PrintStatus>(`/api/waves/print-status?date=${date}`)
+      setPrintStatus(s ?? EMPTY_STATUS)
+    } catch {
+      // 打印状态取不到不该挡住打印本身：退回"全都没打过"，宁可多问一次也不漏打
+      setPrintStatus(EMPTY_STATUS)
+    }
   }, [date])
 
-  const markPrinted = useCallback((waveId: string) => {
-    setPrintedKeys(prev => {
-      const next = new Set(prev)
-      next.add(waveId)
-      savePrintedKeys(date, next)
-      return next
-    })
-  }, [date])
+  useEffect(() => { void loadPrintStatus() }, [loadPrintStatus])
 
-  const clearPrinted = useCallback(() => {
-    setPrintedKeys(new Set())
-    savePrintedKeys(date, new Set())
-  }, [date])
+  // 打印动作发生后重新拉一次服务端状态。不做本地乐观更新——本地猜的状态与
+  // 服务端不一致时，用户看到的"已打印"可能根本没落库，那正是原来那个 bug。
+  const markPrinted = useCallback(() => { void loadPrintStatus() }, [loadPrintStatus])
+
+  /**
+   * 重复打印二次确认。
+   * 原先重打是**刻意静默**的（notifyFirstLock 里"已锁定就不再提示"，理由是
+   * 避免骚扰）。但静默的代价是没人知道自己在重打 —— 纸张与人工都白费，更麻烦的是
+   * 两份内容不同的单据同时在仓库里流转。改为：打过才问，没打过不打扰。
+   */
+  const confirmReprint = useCallback((waveId: string, docType: string, label: string): boolean => {
+    const n = printedTimes(printStatus, waveId, docType)
+    if (n === 0) return true
+    const mark = printStatus.waves[waveId]?.[docType]
+    const when = mark ? new Date(mark.lastAt).toLocaleString(isEn ? 'en-IE' : 'zh-CN') : ''
+    return window.confirm(
+      isEn
+        ? `This batch's ${label} has already been printed ${n} time(s).\nLast: ${when} by ${mark?.lastBy ?? '—'}.\n\nPrint again?`
+        : `该批次的${label}已经打印过 ${n} 次。\n最近一次：${when} · ${mark?.lastBy ?? '—'}\n\n确定要再打一次吗？`,
+    )
+  }, [printStatus, isEn])
 
   // Feature B：打印中心按批次阶段取数（assignmentDoneAt 已回填、或已被拣货锁定的 wave，
   // 且未 completed）——单看 assignmentDoneAt 会漏掉"已锁定但分配完成被撤销"的批次，
@@ -769,8 +808,24 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   // 顶部「全部打印」也要给每个可见波次自动上锁，跟拣货单一致——否则批量打印销售单后
   // 调度台仍能改派，纸质单据和系统状态就对不上了。锁定结果出来后现取现渲染 HTML，交给
   // queuePrint 挂进隐藏 iframe，不再导航到打印页(见 PrintQueue 顶部注释)。
+  /**
+   * 批量打印的二次确认。逐批弹窗会弹到手软，所以改成问一次：
+   * 「这 N 批里有 M 批已经打过了，仍要全部重打吗」。
+   * 批量入口最容易造成重复打印 —— 一次就盖掉全天所有批次。
+   */
+  function confirmBulkReprint(docType: string, label: string): boolean {
+    const dup = batchGroups.filter(g => printedTimes(printStatus, g.waveId, docType) > 0)
+    if (dup.length === 0) return true
+    return window.confirm(
+      isEn
+        ? `${dup.length} of ${batchGroups.length} batches have already had their ${label} printed.\n\nPrint all again?`
+        : `这 ${batchGroups.length} 批里，有 ${dup.length} 批的${label}已经打印过。\n\n确定要全部再打一次吗？`,
+    )
+  }
+
   async function bulkPrint() {
     const type = 'sales'
+    if (!confirmBulkReprint(type, isEn ? 'sales order' : '销售单')) return
     const results = await Promise.allSettled(
       batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, { reason: 'print', printType: type }))
     )
@@ -784,6 +839,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     try {
       await apiPost('/api/waves/print-log', { date, type, scope: isFiltered ? 'filtered' : 'bulk', count: batchGroups.length })
     } catch { /* 日志失败静默 */ }
+    markPrinted()
     if (failed > 0) toast.error(isEn ? `${failed} waves failed to lock` : `${failed} 个波次锁定失败`)
     refresh()
   }
@@ -791,6 +847,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   // Feature C：「打印拣货单」= 对当前可见波次批量上锁，锁定失败的波次不阻断其余波次打印
   // 分实物/耗材两份，供两个拣货员分开作业；打印范围与锁定范围一致（跟随筛选）
   async function bulkPrintPicking(variant: 'storable' | 'consumable') {
+    if (!confirmBulkReprint('picking', isEn ? 'picking list' : '拣货单')) return
     const results = await Promise.allSettled(
       batchGroups.map(g => apiPost(`/api/waves/${g.waveId}/pick-lock`, { reason: 'print', variant }))
     )
@@ -800,7 +857,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     }
-    for (const g of batchGroups) markPrinted(g.waveId)
+    markPrinted()
     if (failed > 0) toast.error(isEn ? `${failed} waves failed to lock` : `${failed} 个波次锁定失败`)
     refresh()
   }
@@ -831,13 +888,28 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
                     ? `Total ${orders.length} orders · ${batchGroups.length} waves assigned · €${fmtMoney(grandTotal)}`
                     : `共 ${orders.length} 单 · ${batchGroups.length} 个已安排波次 · €${fmtMoney(grandTotal)}`}
                 </span>
-                {printedKeys.size > 0 && (
-                  <button
-                    onClick={clearPrinted}
-                    className="ml-2 text-xs text-gray-400 hover:text-gray-600 underline"
-                  >
-                    {isEn ? `Clear print history (${printedKeys.size})` : `清除已打印记录（${printedKeys.size}）`}
-                  </button>
+                {/* 原本这里是「清除已打印记录」——那是 localStorage 时代的产物。
+                    现在痕迹在服务端(ActionLog)，是审计数据，不该被前端一键抹掉。
+                    换成打印员真正需要的那个数：还剩几批没打。 */}
+                {batchGroups.length > 0 && (() => {
+                  const printed = batchGroups.filter(g => printedTimes(printStatus, g.waveId) > 0).length
+                  const left = batchGroups.length - printed
+                  return (
+                    <span className={`ml-2 text-xs font-semibold ${left > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                      {left > 0
+                        ? (isEn ? `· ${left} not printed yet` : `· 还剩 ${left} 批未打`)
+                        : (isEn ? '· all printed' : '· 全部已打印')}
+                    </span>
+                  )
+                })()}
+                {printStatus.legacyCount > 0 && (
+                  <span className="ml-2 text-xs text-gray-400">
+                    {/* 20260811 之前的日志没有结构化打印类型，无法判定属于哪种单据，
+                        也无法与"手动锁定"区分，所以只提示条数，不冒充"已打印" */}
+                    {isEn
+                      ? `(${printStatus.legacyCount} earlier log entries, type unknown)`
+                      : `（另有 ${printStatus.legacyCount} 条早期记录，类型未知）`}
+                  </span>
                 )}
               </>
             )}
@@ -950,7 +1022,8 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
         <BatchSections
           batchGroups={batchGroups}
           date={date}
-          printedKeys={printedKeys}
+          printStatus={printStatus}
+          onConfirmReprint={confirmReprint}
           canUnlock={canUnlock}
           isEn={isEn}
           onPrint={markPrinted}

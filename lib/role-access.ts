@@ -154,6 +154,10 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/trips/*/settlement', methods: ['GET', 'PUT'] },   // 确认/退回交账
     { pattern: '/api/driver-slots', methods: READ },
     { pattern: '/api/users', methods: READ },
+    // 打印状态查询：这两个角色本来就能调 /api/print/** 打单，能打印却看不到
+    // 「打过没有」会导致重复打印。旧 token（部署后未重新登录）走的是这张白名单，
+    // 漏了它就会 403 —— 而前端拿不到状态时退回"全都没打过"，恰好造成全量重打。
+    { pattern: '/api/waves/print-status', methods: READ },
     { pattern: '/api/print/**', methods: READ },
   ],
 
@@ -202,6 +206,10 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/uoms/**', methods: READ },
     { pattern: '/api/users', methods: READ },          // 列表页按业务员筛选
     { pattern: '/api/print/**', methods: READ },
+    // 打印状态查询：这两个角色本来就能调 /api/print/** 打单，能打印却看不到
+    // 「打过没有」会导致重复打印。旧 token（部署后未重新登录）走的是这张白名单，
+    // 漏了它就会 403 —— 而前端拿不到状态时退回"全都没打过"，恰好造成全量重打。
+    { pattern: '/api/waves/print-status', methods: READ },
     { pattern: '/api/waves', methods: READ },          // 销售单列表显示波次/司机
     { pattern: '/api/driver-slots', methods: READ },
   ],

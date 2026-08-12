@@ -131,6 +131,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/waves/*/dispatch', permission: 'dispatch.wave.update' },
   { pattern: '/api/waves/generate-daily', permission: 'dispatch.wave.create' },
   { pattern: '/api/waves/print-log', permission: 'dispatch.wave.print_log' },
+  // 打印状态查询：必须登记在下面那条 '/api/waves/*' 通配之前，否则会被当成
+  // 「某个波次的详情」要 dispatch.wave.read_detail，与路由自己 require 的不一致。
+  { pattern: '/api/waves/print-status', permission: 'print.center.access' },
   { pattern: '/api/waves', methods: R, permission: 'dispatch.wave.read' },
   { pattern: '/api/waves', methods: ['POST'], permission: 'dispatch.wave.create' },
   { pattern: '/api/waves/*', methods: R, permission: 'dispatch.wave.read_detail' },

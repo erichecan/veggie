@@ -8,8 +8,12 @@ interface LogParams {
   resource: string
   resourceId?: string
   detail?: string
-  /** 字段级前后值 diff，例如 {"price":{"before":10,"after":12}} */
-  changes?: Record<string, { before: unknown; after: unknown }>
+  /**
+   * 结构化附加数据。主用途仍是字段级前后值 diff，例如 {"price":{"before":10,"after":12}}；
+   * 也用于挂载查询方需要机器读取的元数据（如打印痕迹 {"print":{"docType":"delivery"}}）——
+   * 否则查询方只能去反解 detail 那串中文，改一个字就全断。schema 里本就是 Json?。
+   */
+  changes?: Record<string, unknown>
   ipAddress?: string
   userAgent?: string
 }

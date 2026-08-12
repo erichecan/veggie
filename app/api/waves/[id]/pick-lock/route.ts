@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   return withAuth(req, async (user) => {
     try {
-      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true } })
+      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true, waveDate: true } })
       if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
 
       const updated = await prisma.pickingWave.update({
@@ -42,6 +42,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
         detail,
+        // 结构化打印痕迹（20260811）：手动锁不是打印，不记 print 段——
+        // 否则「已打印」会把「有人点了锁定」也算成打过一次。
+        changes: body.reason === 'manual' ? undefined : {
+          print: {
+            docType: body.printType ?? 'picking',
+            variant: body.variant ?? null,
+            scope: 'batch',
+            date: wave.waveDate ? wave.waveDate.toISOString().slice(0, 10) : null,
+          },
+        },
       })
 
       return NextResponse.json(serializeApi(updated))
