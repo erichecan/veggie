@@ -645,6 +645,26 @@
   -l /opt/homebrew/var/log/postgresql@17.log start
 ```
 
+## 部署记录
+
+| 日期 | 内容 | 结果 |
+|---|---|---|
+| 20260812 | **W1+W2 累计 89 个提交一次性上生产**（run `31590792782`，`ec05497`）| ✅ 成功 |
+
+细节（下次部署前先读这段）：
+- 链路：`push main` → GitHub Actions 构建镜像 → SSH 客户服务器 → `prisma migrate deploy` → `compose up -d` → healthcheck
+- **4 个迁移全部应用**：`order_source` / `stock_move_loss_attribution` / `po_actual_arrival` / `vendor_payment`；
+  日志显示 73 个迁移中这 4 个为新增，其余已在库。**迁移链在存量生产库上是通的**
+  （Z6 查出的"空库重放不了"只影响从零重建，不影响增量部署——本次实证）
+- 健康检查：`{"status":"ok","db":"ok"}`，容器重建到就绪 ~5 秒
+- **生产实际访问已核对**（不只看工作流绿灯）：`https://www.johnstonebros.ie/enter` 200 且登录页正常水合；
+  `/api/health` 200；`/api/orders` 匿名 401；**新增的 `/api/vendor-bills/*/payments` 匿名返回 401 而非 404**
+  → 说明新路由确实上线且鉴权生效
+- ⚠️ **域名解析已指向 droplet**：`167.99.86.19` 上的 nginx 把 http 301 到 `https://www.johnstonebros.ie`。
+  记忆里"流量还没切、客户可能仍在用 Cloud Run URL"这条**已过期**
+- ⚠️ 本次**未登录生产系统做写操作**，也未在生产库造数据。G1 验收里"生产库真的出现第一张 Statement"
+  仍需在客户环境由业务实际操作一次才闭环
+
 ## 周期日志
 
 | 周期 | 任务 | 结果 | commit |
