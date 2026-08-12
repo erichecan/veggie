@@ -11,6 +11,12 @@ import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
 import { openAuthedPdf, downloadAuthedFile } from '@/lib/print/open-pdf'
+import { downloadCsv } from '@/lib/csv-export'
+import {
+  buildSalesMatrix,
+  matrixToCsvRows,
+  type MatrixGranularity,
+} from '@/lib/analytics/sales-matrix'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
@@ -104,9 +110,12 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 
   // ── 查看方式 + 度量 ──────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('customer')
-  type WeekdaySortKey = 'product' | 'total' | 0 | 1 | 2 | 3 | 4 | 5 | 6
+  /** 矩阵排序键：'product' | 'total' | 列下标（按日时列数不固定，用下标而不是星期号）*/
+  type WeekdaySortKey = 'product' | 'total' | number
   const [weekdaySortKey, setWeekdaySortKey] = useState<WeekdaySortKey>('product')
   const [weekdaySortDir, setWeekdaySortDir] = useState<'asc' | 'desc'>('asc')
+  /** 台账 D9：同一张矩阵，按日（每天一列）/ 按周（周一至周日七列）现场切 */
+  const [granularity, setGranularity] = useState<MatrixGranularity>('week')
   /** 勾选后「按客户/按商品/按分类」三种查看方式 + 打印都按商品目录 sequence 排序，不再按默认(插入顺序/金额/数量) */
   const [sortBySequence, setSortBySequence] = useState(false)
 
@@ -296,44 +305,40 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     qty: categoryReport.reduce((s, c) => s + c.totalQty, 0),
   }), [categoryReport])
 
-  // 查看方式④：商品×星期汇总 —— 屏幕和打印「商品×星期汇总」同一套口径
-  // （星期换算 (getUTCDay()+6)%7 与 lib/print/day-wise-report-template.ts 的 dayOfWeek() 保持一致）
-  const weekdaySummaryReport = useMemo(() => {
-    const m = new Map<string, { name: string; dayQty: number[]; totalQty: number; sequence: number }>()
-    for (const l of reportLines) {
-      const dt = new Date(l.date + 'T12:00:00Z')
-      const dow = (dt.getUTCDay() + 6) % 7
-      const e = m.get(l.productName) ?? { name: l.productName, dayQty: [0, 0, 0, 0, 0, 0, 0], totalQty: 0, sequence: l.sequence }
-      e.dayQty[dow] += l.qty
-      e.totalQty += l.qty
-      m.set(l.productName, e)
-    }
-    return [...m.values()]
-  }, [reportLines])
+  // 查看方式④：销售矩阵（商品 × 日期 / 商品 × 星期）——台账 D9
+  // 汇总逻辑在 lib/analytics/sales-matrix.ts（纯函数），屏幕表格与 CSV 导出共用同一份结果，
+  // 「导出的和屏幕上看到的不一样」从结构上就不可能发生。
+  // 星期换算与打印模板 day-wise-report-template 的 dayOfWeek() 同一套编号。
+  const salesMatrix = useMemo(
+    () => buildSalesMatrix(reportLines, granularity, DOW_LABELS),
+    [reportLines, granularity, DOW_LABELS],
+  )
 
-  const weekdaySummarySorted = useMemo(() => {
-    const rows = [...weekdaySummaryReport]
+  const matrixRowsSorted = useMemo(() => {
+    const rows = [...salesMatrix.rows]
     if (weekdaySortKey === 'product') {
-      rows.sort((a, b) => sortBySequence ? a.sequence - b.sequence : a.name.localeCompare(b.name))
+      rows.sort((a, b) => sortBySequence ? a.sequence - b.sequence : a.productName.localeCompare(b.productName))
     } else if (weekdaySortKey === 'total') {
       rows.sort((a, b) => a.totalQty - b.totalQty)
     } else {
-      const day = weekdaySortKey
-      rows.sort((a, b) => a.dayQty[day] - b.dayQty[day])
+      const col = weekdaySortKey
+      rows.sort((a, b) => (a.qty[col] ?? 0) - (b.qty[col] ?? 0))
     }
     if (weekdaySortDir === 'desc') rows.reverse()
     return rows
-  }, [weekdaySummaryReport, weekdaySortKey, weekdaySortDir, sortBySequence])
+  }, [salesMatrix, weekdaySortKey, weekdaySortDir, sortBySequence])
 
-  const weekdaySummaryGrand = useMemo(() => {
-    const dayQty = [0, 0, 0, 0, 0, 0, 0]
-    let totalQty = 0
-    for (const r of weekdaySummaryReport) {
-      for (let i = 0; i < 7; i++) dayQty[i] += r.dayQty[i]
-      totalQty += r.totalQty
-    }
-    return { dayQty, totalQty }
-  }, [weekdaySummaryReport])
+  /** 导出给采购：所见即所得，用的就是屏幕上这张矩阵 */
+  function exportMatrixCsv() {
+    const { headers, rows } = matrixToCsvRows(
+      { ...salesMatrix, rows: matrixRowsSorted },
+      isEn
+        ? { product: 'Product', uom: 'Unit', total: 'Total Qty', amount: 'Amount', onHand: 'On Hand', atp: 'ATP', grand: 'Grand Total' }
+        : { product: '产品', uom: '单位', total: '数量合计', amount: '金额合计', onHand: '当前库存', atp: '可承诺 ATP', grand: '合计' },
+    )
+    const kind = granularity === 'week' ? (isEn ? 'by-weekday' : '按星期') : (isEn ? 'by-day' : '按日')
+    downloadCsv(`${isEn ? 'sales-matrix' : '销售矩阵'}-${kind}-${fromDate}_${toDate}`, headers, rows)
+  }
 
   function toggleWeekdaySort(key: WeekdaySortKey) {
     if (weekdaySortKey === key) {
@@ -618,8 +623,8 @@ ${catsHtml}
             </span>
             <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
               {(isEn
-                ? ([['customer', 'By Customer'], ['product', 'By Product'], ['category', 'By Category'], ['weekday', 'Product × Weekday Summary']] as [ViewMode, string][])
-                : ([['customer', '按客户'], ['product', '按商品'], ['category', '按分类'], ['weekday', '商品×星期汇总']] as [ViewMode, string][])
+                ? ([['customer', 'By Customer'], ['product', 'By Product'], ['category', 'By Category'], ['weekday', 'Product × Day / Weekday']] as [ViewMode, string][])
+                : ([['customer', '按客户'], ['product', '按商品'], ['category', '按分类'], ['weekday', '商品×日期/星期']] as [ViewMode, string][])
               ).map(([v, label]) => (
                 <button
                   key={v}
@@ -770,48 +775,83 @@ ${catsHtml}
             </div>
           </div>
         ) : (
-          /* 商品×星期汇总 —— 跟打印「商品×星期汇总」同一套口径（见 lib/print/day-wise-report-template.ts
-             buildSummaryHtml），屏幕上额外支持点击表头排序 */
-          <div className="max-h-[480px] overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-white shadow-sm">
-                <tr className="border-b border-gray-200">
-                  <th
-                    onClick={() => toggleWeekdaySort('product')}
-                    className="px-4 py-2 text-left text-gray-400 font-medium cursor-pointer select-none hover:text-gray-600"
-                  >{isEn ? 'Product' : '产品'}{weekdaySortArrow('product')}</th>
-                  {DOW_LABELS.map((label, i) => (
+          /* 销售矩阵：商品 × 日期（按日）/ 商品 × 星期（按周）——台账 D9
+             星期口径与打印「商品×星期汇总」一致；额外带当前库存与 ATP，供采购判断补货 */
+          <div>
+            <div className="px-4 py-2 flex items-center gap-2 flex-wrap border-b border-gray-100 bg-white">
+              <span className="text-xs text-gray-400">{isEn ? 'Granularity:' : '维度：'}</span>
+              {([['day', isEn ? 'By day' : '按日'], ['week', isEn ? 'By weekday' : '按周']] as [MatrixGranularity, string][]).map(([g, label]) => (
+                <button
+                  key={g}
+                  onClick={() => { setGranularity(g); setWeekdaySortKey('product') }}
+                  className={`px-2.5 py-0.5 rounded text-xs border transition-colors ${
+                    granularity === g ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'border-gray-300 text-gray-500 hover:border-[#875A7B]'
+                  }`}
+                >{label}</button>
+              ))}
+              <span className="text-xs text-gray-400 ml-1">
+                {granularity === 'week'
+                  ? (isEn ? 'Mon–Sun columns aggregate every matching weekday in the range' : '周一至周日各列 = 区间内所有该星期几的合计')
+                  : (isEn ? 'One column per delivery date in the range' : '区间内每个配送日一列')}
+              </span>
+              <button
+                onClick={exportMatrixCsv}
+                disabled={salesMatrix.rows.length === 0}
+                className="ml-auto px-3 py-1 text-xs font-medium rounded border transition-colors disabled:opacity-40"
+                style={{ borderColor: '#2d6a4f', color: '#2d6a4f' }}
+                title={isEn ? 'Export exactly this matrix (for purchasing)' : '把屏幕上这张矩阵原样导出（给采购）'}
+              >{isEn ? 'Export matrix (CSV)' : '导出矩阵（CSV）'}</button>
+            </div>
+            <div className="max-h-[480px] overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-white shadow-sm">
+                  <tr className="border-b border-gray-200">
                     <th
-                      key={i}
-                      onClick={() => toggleWeekdaySort(i as WeekdaySortKey)}
-                      className="px-3 py-2 text-right text-gray-400 font-medium w-16 cursor-pointer select-none hover:text-gray-600"
-                    >{label}{weekdaySortArrow(i as WeekdaySortKey)}</th>
-                  ))}
-                  <th
-                    onClick={() => toggleWeekdaySort('total')}
-                    className="px-4 py-2 text-right text-gray-400 font-medium w-24 cursor-pointer select-none hover:text-gray-600"
-                  >{isEn ? 'Total Qty' : '数量合计'}{weekdaySortArrow('total')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {weekdaySummarySorted.map(r => (
-                  <tr key={r.name} className="border-b border-gray-50 hover:bg-purple-50/30">
-                    <td className="px-4 py-1.5 text-gray-700">{r.name}</td>
-                    {r.dayQty.map((q, i) => (
-                      <td key={i} className="px-3 py-1.5 text-right tabular-nums text-gray-700">{q > 0 ? fmtQty(q) : ''}</td>
+                      onClick={() => toggleWeekdaySort('product')}
+                      className="px-4 py-2 text-left text-gray-400 font-medium cursor-pointer select-none hover:text-gray-600"
+                    >{isEn ? 'Product' : '产品'}{weekdaySortArrow('product')}</th>
+                    {salesMatrix.columns.map((c, i) => (
+                      <th
+                        key={c.key}
+                        onClick={() => toggleWeekdaySort(i)}
+                        className="px-3 py-2 text-right text-gray-400 font-medium w-16 cursor-pointer select-none hover:text-gray-600 whitespace-nowrap"
+                      >{c.label}{weekdaySortArrow(i)}</th>
                     ))}
-                    <td className="px-4 py-1.5 text-right tabular-nums font-medium text-gray-700">{fmtQty(r.totalQty)}</td>
+                    <th
+                      onClick={() => toggleWeekdaySort('total')}
+                      className="px-4 py-2 text-right text-gray-400 font-medium w-24 cursor-pointer select-none hover:text-gray-600"
+                    >{isEn ? 'Total Qty' : '数量合计'}{weekdaySortArrow('total')}</th>
+                    <th className="px-3 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Amount' : '金额合计'}</th>
+                    <th className="px-3 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'On Hand' : '当前库存'}</th>
+                    <th className="px-3 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'ATP' : 'ATP'}</th>
                   </tr>
-                ))}
-                <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
-                  <td className="px-4 py-2">{isEn ? 'Grand Total' : '合计'}</td>
-                  {weekdaySummaryGrand.dayQty.map((q, i) => (
-                    <td key={i} className="px-3 py-2 text-right tabular-nums">{q > 0 ? fmtQty(q) : ''}</td>
+                </thead>
+                <tbody>
+                  {matrixRowsSorted.map(r => (
+                    <tr key={r.productId || r.productName} className="border-b border-gray-50 hover:bg-purple-50/30">
+                      <td className="px-4 py-1.5 text-gray-700">{r.productName}</td>
+                      {r.qty.map((q, i) => (
+                        <td key={i} className="px-3 py-1.5 text-right tabular-nums text-gray-700">{q > 0 ? fmtQty(q) : ''}</td>
+                      ))}
+                      <td className="px-4 py-1.5 text-right tabular-nums font-medium text-gray-700">{fmtQty(r.totalQty)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{eur(r.totalAmount)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtQty(r.qtyOnHand)}</td>
+                      <td className={`px-3 py-1.5 text-right tabular-nums ${r.atp > 0 ? 'text-emerald-600' : r.atp === 0 ? 'text-amber-500' : 'text-violet-500'}`}>{fmtQty(r.atp)}</td>
+                    </tr>
                   ))}
-                  <td className="px-4 py-2 text-right tabular-nums">{fmtQty(weekdaySummaryGrand.totalQty)}</td>
-                </tr>
-              </tbody>
-            </table>
+                  <tr className="bg-[#875A7B]/10 font-bold text-gray-800">
+                    <td className="px-4 py-2">{isEn ? 'Grand Total' : '合计'}</td>
+                    {salesMatrix.grand.qty.map((q, i) => (
+                      <td key={i} className="px-3 py-2 text-right tabular-nums">{q > 0 ? fmtQty(q) : ''}</td>
+                    ))}
+                    <td className="px-4 py-2 text-right tabular-nums">{fmtQty(salesMatrix.grand.totalQty)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{eur(salesMatrix.grand.totalAmount)}</td>
+                    <td className="px-3 py-2" />
+                    <td className="px-3 py-2" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
