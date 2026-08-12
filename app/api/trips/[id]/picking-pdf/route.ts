@@ -30,6 +30,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       }
       const data = { trip: wire.trip, orders: wire.orders, customers: new Map(wire.customers.map(c => [c.id, c])) }
       const html = stripAutoPrintScript(generateTripPickingHtml(data, variant))
+
+      // ?format=html：直接返回排版好的 HTML，不过无头 Chromium。
+      // 用途一是在浏览器里调打印样式（分页、拆箱副标这类改 CSS 要反复看），
+      // 二是让自动化测试能对纸面内容做文本断言——在 PDF 二进制里找字既脆又难定位。
+      // 鉴权与权限点(dispatch.trip.print)与 PDF 分支完全一致，不额外放开任何东西。
+      if (searchParams.get('format') === 'html') {
+        return new NextResponse(html, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+        })
+      }
+
       const pdf = await renderHtmlToPdf(html, { pageNumbers: true })
       return new NextResponse(new Uint8Array(pdf), {
         headers: {

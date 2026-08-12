@@ -53,6 +53,8 @@ export interface TripLine {
   productType?: string | null
   /** 行级备注（商品级 note，如"free"赠品/注意事项），客户可见，打印在明细行下 */
   note: string | null
+  /** 箱规：1 箱 = 多少个基准单位。拣货单据此把总量拆成「N 箱 + M 散」(lib/pack-split.ts) */
+  packSpec?: { factor: number; caseUomName: string; baseUomName: string } | null
   orderedQty: number
   unitPrice: number
   taxRate: number

@@ -21,6 +21,7 @@ import {
   formatPrintTimestamp,
 } from './trip-common'
 import { formatDateOnly } from '@/lib/format-date'
+import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 
 function fmtQty(v: number): string {
   if (v === Math.floor(v)) return String(v)
@@ -42,6 +43,8 @@ interface AggProduct {
   productName: string
   spec: string
   uomName: string
+  /** 箱规；行本身就是按大单位下的单时为 null（已经是整箱，不必再拆） */
+  packSpec: PackSpec | null
   totalQty: number
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType: string | null
@@ -86,6 +89,11 @@ export function generateTripPickingHtml(
           productName: line.productName,
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',
+          // 下单单位就是大单位时（如直接订 2 箱），数量本身已是整箱数，再按箱规拆
+          // 会拆成「0 箱 + 2 箱」这种废话。只有按基准单位下单（订 30 包）才需要拆。
+          packSpec: line.uomId && line.packSpec && line.uomName === line.packSpec.caseUomName
+            ? null
+            : (line.packSpec ?? null),
           totalQty: 0,
           productType: line.productType ?? null,
           goodsType: line.goodsType ?? null,
@@ -121,7 +129,7 @@ export function generateTripPickingHtml(
     : variant === 'consumable' ? '零散货 CONSUMABLE'
     : ''
 
-  function productTableHtml(title: string, products: AggProduct[], icon: string): string {
+  function productTableHtml(title: string, products: AggProduct[], icon: string, startNewPage = false): string {
     if (products.length === 0) return ''
     const rows = products.map((p, i) => {
       const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
@@ -134,7 +142,15 @@ export function generateTripPickingHtml(
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
           ${hasNote ? `<span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
         </td>
-        <td class="col-qty">${fmtQty(p.totalQty)}</td>
+        <td class="col-qty">
+          ${fmtQty(p.totalQty)}
+          ${(() => {
+            // 拆箱只在「确实要拆」时印：整除或不足一箱都没有额外信息量，
+            // 多印一行反而挤占版面。splitIntoPacks 返回 null 表示不该拆。
+            const sp = splitIntoPacks(p.totalQty, p.packSpec)
+            return sp?.mixed ? `<span class="pack-split">${escapeHtml(sp.text)}</span>` : ''
+          })()}
+        </td>
         <td class="col-uom">${escapeHtml(p.uomName)}</td>
         <td class="col-check"></td>
       </tr>`
@@ -158,7 +174,7 @@ export function generateTripPickingHtml(
     }).join('')
 
     return `
-    <div class="section-header">${icon} ${escapeHtml(title)}（${products.length} 种）</div>
+    <div class="section-header${startNewPage ? ' section-2nd' : ''}">${icon} ${escapeHtml(title)}（${products.length} 种）</div>
     <table class="pick-table">
       <thead>
         <tr>
@@ -200,6 +216,8 @@ export function generateTripPickingHtml(
   .col-seq{width:30px;text-align:center}
   .col-name{width:auto}
   .col-qty{width:80px;text-align:right;font-weight:700;font-size:13px}
+  /* 拆箱副标：印在总数量下面一行，比总数小一号，仓库先看总数再看怎么拿 */
+  .pack-split{display:block;font-weight:600;font-size:10px;color:#1a5c2e;white-space:nowrap;margin-top:1px}
   .col-uom{width:80px;text-align:center;color:#555}
   .col-check{width:40px;text-align:center;border:1px solid #ccc!important}
 
@@ -217,6 +235,20 @@ export function generateTripPickingHtml(
   @media print{
     body{padding:0}
     @page{margin:10mm 8mm}
+
+    /* 分页控制（20260811 补）：此前只设了页边距，多页拣货单会
+       ①行被拦腰截断 ②第二页起没有表头，仓库不知道哪列是数量。 */
+
+    /* 表头在每一页重复 —— thead 的这个值就是给分页用的 */
+    .pick-table thead{display:table-header-group}
+    /* 一行不许跨页断开：数量和商品名被切到两页上会拣错 */
+    .pick-table tr{break-inside:avoid;page-break-inside:avoid}
+    /* 商品主行后面紧跟着它的客户明细子行，别让主行落在页底成孤儿 */
+    .pick-table tr:not(.row-bd){break-after:avoid;page-break-after:avoid}
+    /* 区块标题不许单独留在页底 */
+    .section-header{break-after:avoid;page-break-after:avoid}
+    /* 整箱整袋 / 零散货 各自起新页：两批货由不同的人在不同区域拣 */
+    .section-header.section-2nd{break-before:page;page-break-before:always}
   }
 </style>
 </head>
@@ -232,7 +264,7 @@ export function generateTripPickingHtml(
   </div>
 
   ${showStorable ? productTableHtml('整箱整袋 STOCKABLE', storableProducts, '📦') : ''}
-  ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableProducts, '🧴') : ''}
+  ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableProducts, '🧴', showStorable && storableProducts.length > 0) : ''}
 
   <div class="stats">
     ${showStorable ? `<span>整箱整袋 <span class="num">${storableProducts.length}</span> 种</span>` : ''}

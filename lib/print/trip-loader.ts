@@ -9,6 +9,7 @@
 
 import 'server-only'
 import { prisma } from '@/lib/db'
+import { pickLargestPack } from '@/lib/pack-split'
 import {
   buildLinesFromItems,
   type GoodsType,
@@ -82,6 +83,49 @@ async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string
   return map
 }
 
+/**
+ * 箱规：商品挂的可售单位里 factor 最大的那个大单位（ProductSaleUom）。
+ * 取最大是因为拣货能整托搬就不该拆成箱（见 lib/pack-split.ts: pickLargestPack）。
+ *
+ * ⚠️ 实测（20260811）：测试库 ProductSaleUom **0 行** —— 没有任何商品配了可售单位，
+ * 于是拆箱对现有数据全部返回 null，纸面与改动前一模一样。这不是代码问题，是
+ * 主数据没录。生产库需同样核对。
+ */
+async function loadPackSpecMap(productIds: string[]): Promise<Map<string, { factor: number; caseUomName: string; baseUomName: string }>> {
+  const map = new Map<string, { factor: number; caseUomName: string; baseUomName: string }>()
+  if (productIds.length === 0) return map
+  try {
+    const rows = await prisma.$queryRaw<Array<{ productId: string; uomName: string; factor: string; baseName: string | null }>>`
+      SELECT psu."productId",
+             u.name          AS "uomName",
+             u.factor::text  AS factor,
+             base.name       AS "baseName"
+      FROM "ProductSaleUom" psu
+      JOIN "Uom" u ON u.id = psu."uomId"
+      LEFT JOIN "Product" p ON p.id = psu."productId"
+      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
+      LEFT JOIN "Uom" base ON base.id = pt."uomId"
+      WHERE psu."productId" = ANY(${productIds}) AND psu.active = true
+    `
+    const byProduct = new Map<string, typeof rows>()
+    for (const r of rows) {
+      const arr = byProduct.get(r.productId) ?? []
+      arr.push(r)
+      byProduct.set(r.productId, arr)
+    }
+    for (const [pid, arr] of byProduct) {
+      const spec = pickLargestPack(
+        arr.map((r) => ({ name: r.uomName, factor: Number(r.factor), type: 'BIGGER' })),
+        arr[0]?.baseName ?? '',
+      )
+      if (spec) map.set(pid, spec)
+    }
+  } catch (e) {
+    console.warn('[trip-print] ProductSaleUom pack spec not available:', (e as Error).message)
+  }
+  return map
+}
+
 /** Server-only：拼装一份完整的 trip 打印数据。给 API route 调用 */
 export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWire | null> {
   const trip = await prisma.trip.findUnique({ where: { id: tripId } })
@@ -120,9 +164,10 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap] = await Promise.all([
+  const [goodsTypeMap, productGoodsTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductGoodsTypeMap(productIds),
+    loadPackSpecMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
     getOrderWaveDisplayMap(orders.map(o => o.id)),
   ])
@@ -165,6 +210,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
           // OrderLine.uomId 历史全空，先看行级 uom，没有再回退到商品自己的 uom
           goodsType: (l.uomId ? goodsTypeMap.get(l.uomId) : null) ?? productGoodsTypeMap.get(l.productId) ?? null,
           note: l.note ?? null,
+          packSpec: packSpecMap.get(l.productId) ?? null,
           orderedQty: toNum(l.orderedQty),
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),
