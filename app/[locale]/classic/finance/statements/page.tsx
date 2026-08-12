@@ -24,6 +24,44 @@ interface Statement {
   sentAt: string | null
 }
 
+interface StatementOrderLine {
+  id: string
+  code: string | null
+  status: string
+  confirmationDate: string | null
+  deliveryDate: string | null
+  incTaxTotal: number
+}
+
+interface StatementPaymentLine {
+  id: string
+  invoiceId: string
+  invoiceName: string | null
+  amount: number
+  method: string | null
+  paidAt: string | null
+  note: string | null
+  createdBy: string | null
+  source: 'DRIVER_CASH' | 'MANUAL'
+  tripId: string | null
+}
+
+interface StatementDetail extends Statement {
+  orders: StatementOrderLine[]
+  payments: StatementPaymentLine[]
+  missingOrderIds: string[]
+  reconciliation: {
+    ok: boolean
+    salesFromOrders: number
+    salesDiff: number
+    paymentsFromRecords: number
+    paymentsDiff: number
+    closingExpected: number
+    closingDiff: number
+    problems: string[]
+  }
+}
+
 interface Customer {
   id: string
   name: string
@@ -71,6 +109,22 @@ export default function StatementsPage() {
   // Detail view
   const [detail, setDetail] = useState<Statement | null>(null)
   const [updating, setUpdating] = useState(false)
+  /** 逐笔明细（台账 G1 验收：金额与订单明细可逐笔对上）—— 展开时才拉 */
+  const [detailData, setDetailData] = useState<StatementDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const openDetail = useCallback(async (s: Statement) => {
+    setDetail(s)
+    setDetailData(null)
+    setDetailLoading(true)
+    try {
+      setDetailData(await apiGet<StatementDetail>(`/api/statements/${s.id}?withDetail=1`))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '加载明细失败')
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -203,6 +257,116 @@ export default function StatementsPage() {
               <FinanceRow label="期末余额" amount={detail.closingBalance} bold />
             </div>
           </div>
+
+          {/* 逐笔明细 —— 验收要求「金额与订单明细可逐笔对上」。
+              核对结果由服务端当场算（lib/finance/statement.reconcileStatement），
+              页面不自己再算一遍：两边各算一次，差异出现时反而说不清谁对。 */}
+          {detailLoading && <div className="text-sm text-gray-400">明细加载中...</div>}
+          {detailData && (
+            <>
+              <div className={`rounded-lg border p-4 ${detailData.reconciliation.ok ? 'border-emerald-200 bg-emerald-50/50' : 'border-red-300 bg-red-50/60'}`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-sm font-medium ${detailData.reconciliation.ok ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {detailData.reconciliation.ok ? '✓ 与明细逐笔对上' : '⚠ 与明细对不上'}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    订单明细合计 €{detailData.reconciliation.salesFromOrders.toFixed(2)}（{detailData.orders.length} 单）
+                    · 收款流水合计 €{detailData.reconciliation.paymentsFromRecords.toFixed(2)}（{detailData.payments.length} 笔）
+                  </span>
+                </div>
+                {detailData.reconciliation.problems.map((p, i) => (
+                  <p key={i} className="text-xs text-red-700 mt-1">{p}</p>
+                ))}
+                {detailData.missingOrderIds.length > 0 && (
+                  <p className="text-xs text-red-700 mt-1">
+                    有 {detailData.missingOrderIds.length} 张单据已不存在（生成后被删），明细条数比对账单少
+                  </p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">
+                  本期订单明细 <span className="text-xs font-normal text-gray-400">按销售确认日</span>
+                </div>
+                {detailData.orders.length === 0 ? (
+                  <div className="px-5 py-6 text-sm text-gray-400">本期没有已确认的订单</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-gray-500 bg-gray-50 border-b border-gray-100">
+                        <th className="text-left px-5 py-2">订单号</th>
+                        <th className="text-left px-3 py-2">确认日期</th>
+                        <th className="text-left px-3 py-2">配送日期</th>
+                        <th className="text-left px-3 py-2">状态</th>
+                        <th className="text-right px-5 py-2">含税金额</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailData.orders.map(o => (
+                        <tr key={o.id} className="border-b border-gray-50">
+                          <td className="px-5 py-2 text-gray-800">{o.code ?? o.id.slice(0, 8)}</td>
+                          <td className="px-3 py-2 text-gray-600">{fmtDate(o.confirmationDate)}</td>
+                          <td className="px-3 py-2 text-gray-600">{fmtDate(o.deliveryDate)}</td>
+                          <td className="px-3 py-2 text-gray-500">{o.status}</td>
+                          <td className="px-5 py-2 text-right text-gray-800">€{Number(o.incTaxTotal).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-200 font-medium">
+                        <td className="px-5 py-2 text-gray-600" colSpan={4}>合计</td>
+                        <td className="px-5 py-2 text-right text-gray-800">€{detailData.reconciliation.salesFromOrders.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">
+                  本期收款明细 <span className="text-xs font-normal text-gray-400">司机现金与汇款分开标注</span>
+                </div>
+                {detailData.payments.length === 0 ? (
+                  <div className="px-5 py-6 text-sm text-gray-400">本期没有收款流水</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-gray-500 bg-gray-50 border-b border-gray-100">
+                        <th className="text-left px-5 py-2">收款日期</th>
+                        <th className="text-left px-3 py-2">核销到发票</th>
+                        <th className="text-left px-3 py-2">来源</th>
+                        <th className="text-left px-3 py-2">经手</th>
+                        <th className="text-right px-5 py-2">金额</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailData.payments.map(p => (
+                        <tr key={p.id} className="border-b border-gray-50">
+                          <td className="px-5 py-2 text-gray-600">{fmtDate(p.paidAt)}</td>
+                          <td className="px-3 py-2 text-gray-800">{p.invoiceName ?? p.invoiceId.slice(0, 8)}</td>
+                          <td className="px-3 py-2">
+                            {p.source === 'DRIVER_CASH' ? (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700" title={p.note ?? ''}>司机现金交账</span>
+                            ) : (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">{p.method === 'cash' ? '现金' : p.method === 'transfer' ? '汇款' : '其他'}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-gray-500">{p.createdBy ?? '—'}</td>
+                          <td className="px-5 py-2 text-right text-gray-800">€{Number(p.amount).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-200 font-medium">
+                        <td className="px-5 py-2 text-gray-600" colSpan={4}>合计</td>
+                        <td className="px-5 py-2 text-right text-gray-800">€{detailData.reconciliation.paymentsFromRecords.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     )
@@ -268,7 +432,7 @@ export default function StatementsPage() {
               {items.map(s => (
                 <tr
                   key={s.id}
-                  onClick={() => setDetail(s)}
+                  onClick={() => openDetail(s)}
                   className="cursor-pointer border-b border-gray-100 hover:bg-blue-50 transition-colors"
                 >
                   <td className="px-4 py-2.5 font-medium" style={{ color: '#875A7B' }}>{s.customerName}</td>
@@ -359,7 +523,7 @@ export default function StatementsPage() {
   )
 }
 
-function fmtDate(iso: string) {
+function fmtDate(iso: string | null | undefined) {
   if (!iso) return '-'
   return formatDateOnly(iso)
 }

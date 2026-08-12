@@ -206,7 +206,11 @@ export async function PUT(
       // 不自动过账 DRAFT 发票——过账是财务动作，不该是交账确认的副作用。
       let settlementResult: SettlementPostingResult | null = null
       if (confirmed) {
-        settlementResult = await postTripCollections(prisma, trip, user.userId)
+        // ⚠️ 传人名而不是 userId：`Payment.createdBy` 是给人看的「经手人」，
+        // /api/payments 手工登记那条路径写的就是 user.name。这里原先写 userId，
+        // 同一列两条路径两种语义 —— 对账单明细上一行显示「张三」、一行显示
+        // 一串 cuid，浏览器实测当场看见（台账 G1）。
+        settlementResult = await postTripCollections(prisma, trip, user.name ?? user.email ?? user.userId)
       }
 
       await writeLog({

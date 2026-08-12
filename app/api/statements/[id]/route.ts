@@ -3,6 +3,10 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { toNum } from '@/lib/decimal-helpers'
+import { orderIncTaxTotal } from '@/lib/order-items'
+import { addBusinessDays } from '@/lib/analytics/metrics'
+import { reconcileStatement, paymentSource, paymentTripId } from '@/lib/finance/statement'
 
 /**
  * P1-1: 对账单单条操作
@@ -12,6 +16,15 @@ import { serializeApi } from '@/lib/api-serializer'
  * DELETE /api/statements/:id  — 删除（仅 draft 可删）
  */
 
+/**
+ * GET /api/statements/:id?withDetail=1
+ * ----------------------------------------------------------------------------
+ * 验收要求「金额与订单明细可逐笔对上」。`withDetail=1` 返回：
+ *   orders        —— 按**存下来的 orderIds**取（对账单是快照，不重新按期间查，
+ *                    否则事后新确认的单会凭空出现在一张已发出的账上）
+ *   payments      —— 期内收款流水，标出每笔是司机现金还是手工登记
+ *   reconciliation—— 当场算出的三个差额。人肉比对是查不出 3 分钱差的
+ */
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -23,7 +36,69 @@ export async function GET(
       if (!item) {
         return NextResponse.json({ error: '对账单不存在' }, { status: 404 })
       }
-      return NextResponse.json(serializeApi(item))
+      if (new URL(req.url).searchParams.get('withDetail') !== '1') {
+        return NextResponse.json(serializeApi(item))
+      }
+
+      const period = { start: item.periodStart, endExclusive: addBusinessDays(item.periodEnd, 1) }
+      const [orderRows, paymentRows] = await Promise.all([
+        prisma.order.findMany({
+          where: { id: { in: item.orderIds } },
+          orderBy: { confirmationDate: 'asc' },
+          select: {
+            id: true, code: true, status: true, confirmationDate: true, deliveryDate: true,
+            lines: { select: { subtotal: true, taxRate: true } },
+          },
+        }),
+        prisma.payment.findMany({
+          where: { customerId: item.customerId, paidAt: { gte: period.start, lt: period.endExclusive } },
+          orderBy: { paidAt: 'asc' },
+          select: { id: true, invoiceId: true, amount: true, method: true, paidAt: true, note: true, createdBy: true },
+        }),
+      ])
+
+      const invoiceNames = paymentRows.length > 0
+        ? await prisma.invoice.findMany({
+            where: { id: { in: [...new Set(paymentRows.map(p => p.invoiceId))] } },
+            select: { id: true, name: true, totalIncTax: true, amountDue: true, status: true },
+          })
+        : []
+      const invoiceById = new Map(invoiceNames.map(i => [i.id, i]))
+
+      const orders = orderRows.map(o => ({
+        id: o.id, code: o.code, status: o.status,
+        confirmationDate: o.confirmationDate, deliveryDate: o.deliveryDate,
+        incTaxTotal: orderIncTaxTotal(o.lines),
+      }))
+      const payments = paymentRows.map(p => {
+        const inv = invoiceById.get(p.invoiceId)
+        return {
+          id: p.id, invoiceId: p.invoiceId, invoiceName: inv?.name ?? null,
+          invoiceStatus: inv?.status ?? null,
+          amount: toNum(p.amount), method: p.method, paidAt: p.paidAt,
+          note: p.note, createdBy: p.createdBy,
+          source: paymentSource(p.note), tripId: paymentTripId(p.note),
+        }
+      })
+
+      const reconciliation = reconcileStatement({
+        stored: {
+          openingBalance: toNum(item.openingBalance),
+          totalSales: toNum(item.totalSales),
+          totalPayments: toNum(item.totalPayments),
+          closingBalance: toNum(item.closingBalance),
+        },
+        orders,
+        payments,
+      })
+
+      // 「缺笔」比「差额」更难发现：对账单存了 N 个订单 id，若其中几单被删了，
+      // 金额差额可能恰好被别的改动抵消，但明细条数对不上是硬伤
+      const missingOrders = item.orderIds.filter(oid => !orderRows.some(o => o.id === oid))
+
+      return NextResponse.json(serializeApi({
+        ...item, orders, payments, reconciliation, missingOrderIds: missingOrders,
+      }))
     } catch (error) {
       console.error('[GET /api/statements/[id]]', error)
       return NextResponse.json({ error: '获取对账单详情失败' }, { status: 500 })

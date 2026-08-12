@@ -171,7 +171,9 @@ export interface SettlementPostingResult {
 export async function postTripCollections(
   prisma: any,
   trip: { id: string; restaurants: unknown },
-  actorUserId: string,
+  /** 经手人显示名 —— 写进 `Payment.createdBy`，与 /api/payments 手工登记同语义。
+   *  ⛔ 别传 userId：那一列会直接显示在对账单明细的「经手」列上 */
+  actorName: string,
 ): Promise<SettlementPostingResult> {
   const marker = tripPaymentMarker(trip.id)
 
@@ -231,7 +233,7 @@ export async function postTripCollections(
           amount: p.amount,
           method: 'cash',
           note: `司机交账核销 · ${p.restaurantName} · ${marker}`,
-          createdBy: actorUserId,
+          createdBy: actorName,
         },
       })
       const inv = await tx.invoice.update({
