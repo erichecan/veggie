@@ -5,6 +5,7 @@ import { SALES_COUNTED_STATUSES, TURNOVER_WINDOW_DAYS, resolveDateRange } from '
 import { getTopProductPriceTrends } from '@/lib/analytics/price-trend'
 import { round2 } from '@/lib/decimal-helpers'
 import { withCachedAuth } from '@/lib/analytics/cache'
+import { summarizeOnTime, type PoArrivalRow } from '@/lib/receipt-linkage'
 
 /**
  * /api/analytics/procurement — 采购运营分析
@@ -56,6 +57,36 @@ export async function GET(req: Request) {
         supplier_id: string; supplier_name: string; po_count: number
         amount_ex: number; ordered_qty: number; received_qty: number
       }>
+
+      // 到货准时率（台账 E7）：按供应商统计。口径 SSOT 在 lib/receipt-linkage.summarizeOnTime ——
+      // 按收齐日对比预计到货日，且**只统计已收齐的单**；未收齐的单独进 pending，
+      // 不进分母（否则一张永远收不齐的单会被静默算成「按期」，考核就成了粉饰）。
+      const poArrivals = (await p.$queryRawUnsafe(
+        `SELECT po."supplierId" AS supplier_id,
+                po."expectedDate" AS expected_date,
+                po."lastArrivedAt" AS last_arrived_at,
+                BOOL_AND(COALESCE(pol."receivedQty", 0) >= COALESCE(pol."orderedQty", 0)) AS fully_received
+         FROM "PurchaseOrder" po
+         LEFT JOIN "PurchaseOrderLine" pol ON pol."purchaseOrderId" = po.id
+         WHERE po.status::text IN (${PO_COUNTED})
+           AND COALESCE(po."confirmedAt", po."orderDate") >= $1
+           AND COALESCE(po."confirmedAt", po."orderDate") < $2
+         GROUP BY po.id, po."supplierId", po."expectedDate", po."lastArrivedAt"`,
+        start, end,
+      )) as Array<{
+        supplier_id: string; expected_date: Date | null
+        last_arrived_at: Date | null; fully_received: boolean | null
+      }>
+      const arrivalsBySupplier = new Map<string, PoArrivalRow[]>()
+      for (const r of poArrivals) {
+        const list = arrivalsBySupplier.get(r.supplier_id) ?? []
+        list.push({
+          expectedDate: r.expected_date,
+          lastArrivedAt: r.last_arrived_at,
+          fullyReceived: r.fully_received === true,
+        })
+        arrivalsBySupplier.set(r.supplier_id, list)
+      }
 
       // 进价走势：期内采购额 TOP 20 商品，取每次 PO 行价格点（口径 SSOT：lib/analytics/price-trend.ts）
       const priceTrends = await getTopProductPriceTrends(start, end, 20)
@@ -116,13 +147,23 @@ export async function GET(req: Request) {
           supplierCount: bySupplier.length,
           scrapAmount: round2(scrapRows.reduce((s, r) => s + r.amount, 0)),
         },
-        bySupplier: bySupplier.map((r) => ({
-          supplierId: r.supplier_id,
-          supplierName: r.supplier_name,
-          poCount: r.po_count,
-          amountExTax: round2(r.amount_ex),
-          fulfillmentRate: r.ordered_qty > 0 ? Math.round((r.received_qty / r.ordered_qty) * 10000) / 10000 : null,
-        })),
+        bySupplier: bySupplier.map((r) => {
+          const onTime = summarizeOnTime(arrivalsBySupplier.get(r.supplier_id) ?? [])
+          return {
+            supplierId: r.supplier_id,
+            supplierName: r.supplier_name,
+            poCount: r.po_count,
+            amountExTax: round2(r.amount_ex),
+            fulfillmentRate: r.ordered_qty > 0 ? Math.round((r.received_qty / r.ordered_qty) * 10000) / 10000 : null,
+            // 准时率：rate 为 null 表示「没有可判定的单」（没填预计到货日或都没收齐），
+            // 界面必须显示「—」而不是 0% —— 后者会被读成「这家从不准时」
+            onTimeRate: onTime.rate,
+            onTimeMeasured: onTime.measured,
+            onTimeLate: onTime.late,
+            onTimePending: onTime.pending,
+            onTimeNoExpected: onTime.noExpected,
+          }
+        }),
         priceTrends,
         turnover: turnover.map((r) => ({
           productId: r.product_id,

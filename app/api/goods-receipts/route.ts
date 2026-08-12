@@ -285,12 +285,23 @@ export async function POST(req: Request) {
           (l: { receivedQty: unknown; orderedQty: unknown }) =>
             toNum(l.receivedQty) >= toNum(l.orderedQty),
         )
-        if (allReceived && po.status !== 'RECEIVED') {
-          await tx.purchaseOrder.update({
-            where: { id: poId },
-            data: { status: 'RECEIVED' },
-          })
-        }
+        // 实际到货日回写（台账 E7）。
+        // ⚠️ 不能写成「first 为空就填、last 直接覆盖」——收货单允许补录，
+        // 补一张日期更早的进来时，first 必须往前挪、last 不能被这张旧的顶掉。
+        // 所以两个都按 min/max 取，与收货单的录入顺序无关。
+        const arrivals = await tx.goodsReceipt.aggregate({
+          where: { purchaseOrderId: poId },
+          _min: { arrivedAt: true },
+          _max: { arrivedAt: true },
+        })
+        await tx.purchaseOrder.update({
+          where: { id: poId },
+          data: {
+            firstArrivedAt: arrivals._min.arrivedAt ?? grArrivedAt,
+            lastArrivedAt: arrivals._max.arrivedAt ?? grArrivedAt,
+            ...(allReceived && po.status !== 'RECEIVED' ? { status: 'RECEIVED' as const } : {}),
+          },
+        })
 
         return gr
       })

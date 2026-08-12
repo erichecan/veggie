@@ -7,7 +7,12 @@ import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, L
 
 interface Procurement {
   summary: { purchaseExTax: number; poCount: number; supplierCount: number; scrapAmount: number }
-  bySupplier: Array<{ supplierId: string; supplierName: string; poCount: number; amountExTax: number; fulfillmentRate: number | null }>
+  bySupplier: Array<{
+    supplierId: string; supplierName: string; poCount: number; amountExTax: number; fulfillmentRate: number | null
+    /** 台账 E7：按收齐日 vs 预计到货日；null = 没有可判定的单，界面显示「—」而不是 0% */
+    onTimeRate: number | null; onTimeMeasured: number; onTimeLate: number
+    onTimePending: number; onTimeNoExpected: number
+  }>
   priceTrends: Array<{
     productId: string; productName: string; buys: number
     minCost: number; maxCost: number; latestCost: number; latestSupplier: string
@@ -108,6 +113,7 @@ export default function ProcurementAnalyticsPage() {
                     <th className="px-3 py-2 font-medium text-right">PO 数</th>
                     <th className="px-3 py-2 font-medium text-right">采购额（税前）</th>
                     <th className="px-3 py-2 font-medium text-right">到货满足率</th>
+                    <th className="px-3 py-2 font-medium text-right" title="按收齐日对比预计到货日；只统计已收齐且填了预计到货日的采购单">到货准时率</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -119,10 +125,15 @@ export default function ProcurementAnalyticsPage() {
                       <td className={`px-3 py-1.5 text-right tabular-nums ${s.fulfillmentRate !== null && s.fulfillmentRate < 0.9 ? 'text-red-600' : ''}`}>
                         {s.fulfillmentRate === null ? '—' : `${(s.fulfillmentRate * 100).toFixed(0)}%`}
                       </td>
+                      <td className={`px-3 py-1.5 text-right tabular-nums ${s.onTimeRate !== null && s.onTimeRate < 0.8 ? 'text-red-600' : ''}`}
+                        title={`已判定 ${s.onTimeMeasured} 单（迟到 ${s.onTimeLate}）· 未收齐 ${s.onTimePending} · 未填预计到货日 ${s.onTimeNoExpected}`}>
+                        {s.onTimeRate === null ? '—' : `${(s.onTimeRate * 100).toFixed(0)}%`}
+                        <span className="text-gray-400 text-xs ml-1">/{s.onTimeMeasured}</span>
+                      </td>
                     </tr>
                   ))}
                   {proc.bySupplier.length === 0 && (
-                    <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400">期内没有已确认的采购单</td></tr>
+                    <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">期内没有已确认的采购单</td></tr>
                   )}
                 </tbody>
               </table>

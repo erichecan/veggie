@@ -100,3 +100,53 @@ export function describeArrivalDelayEn(d: ArrivalDelay): string | null {
   if (d.timing === 'ON_TIME') return 'On time'
   return d.days > 0 ? `${d.days} day(s) late` : `${Math.abs(d.days)} day(s) early`
 }
+
+// ─── 准时率（台账 E7）──────────────────────────────────────────────────────
+
+export interface PoArrivalRow {
+  /** 预计到货日；为空的单进不了分母 */
+  expectedDate?: Date | string | null
+  /** 收齐日（最后一批到货）；未收齐时为空 */
+  lastArrivedAt?: Date | string | null
+  /** 是否已收齐（所有行 receivedQty >= orderedQty） */
+  fullyReceived: boolean
+}
+
+export interface OnTimeStats {
+  /** 分母：既有预计到货日、又已收齐的单 */
+  measured: number
+  onTime: number
+  early: number
+  late: number
+  /** 有预计日但还没收齐 —— 不算准时也不算迟到，单独摆出来 */
+  pending: number
+  /** 连预计到货日都没填的单，无从判断 */
+  noExpected: number
+  /** onTime+early 占 measured 的比例，0~1；measured=0 时为 null（不是 0，也不是 1）*/
+  rate: number | null
+}
+
+/**
+ * 准时率。口径写死在这里，两处以上要用就从这里取：
+ *   · 按**收齐日**（lastArrivedAt）对比预计到货日；
+ *   · **只统计已收齐的单**。未收齐的进 pending —— 若把它们算进分母，
+ *     一张永远收不齐的单会被静默算成「按期」，供应商考核就成了粉饰；
+ *   · 提前到货算准时（早到不是问题，仓库能收就行）；
+ *   · 没填预计到货日的进 noExpected，绝不拿下单日/创建日顶替。
+ */
+export function summarizeOnTime(rows: readonly PoArrivalRow[]): OnTimeStats {
+  const stats: OnTimeStats = { measured: 0, onTime: 0, early: 0, late: 0, pending: 0, noExpected: 0, rate: null }
+  for (const r of rows) {
+    if (!r.expectedDate) { stats.noExpected++; continue }
+    if (!r.fullyReceived || !r.lastArrivedAt) { stats.pending++; continue }
+    const d = arrivalDelay(r.expectedDate, r.lastArrivedAt)
+    stats.measured++
+    if (d.timing === 'LATE') stats.late++
+    else if (d.timing === 'EARLY') stats.early++
+    else stats.onTime++
+  }
+  stats.rate = stats.measured > 0
+    ? Math.round(((stats.onTime + stats.early) / stats.measured) * 1000) / 1000
+    : null
+  return stats
+}

@@ -1,7 +1,7 @@
 /**
  * 收货 ↔ 采购单关联 + 预计到货 —— 端到端实证
  * ============================================================================
- * 台账 E6。验收三条：
+ * 台账 E6 + E7。E6 验收三条：
  *   ① 从采购单一键生成收货单，行项目自动带入
  *   ② 收货单上显示预计到货日
  *   ③ 未关联采购单的收货要能被识别出来
@@ -15,7 +15,7 @@
  * 用法：npm run test:receipt-linkage
  */
 import { createPrismaClient } from '../../lib/prisma-factory'
-import { arrivalDelay } from '../../lib/receipt-linkage'
+import { arrivalDelay, summarizeOnTime } from '../../lib/receipt-linkage'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3002'
 const OPERATOR = process.env.OPERATOR_EMAIL ?? 'operator@veggie.com'
@@ -161,19 +161,78 @@ async function main() {
     afterUnlinked.scanned > afterUnlinked.count,
     `未关联 ${afterUnlinked.count} / 入库总数 ${afterUnlinked.scanned}`)
 
+  // ── E7：实际到货日回写采购单 ────────────────────────────────────────────
+  {
+    const poAfter = await prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id: po.id }, select: { firstArrivedAt: true, lastArrivedAt: true, status: true },
+    })
+    add('E7 收货后回写首次/最近到货日',
+      poAfter.firstArrivedAt?.toISOString().slice(0, 10) === ARRIVED
+      && poAfter.lastArrivedAt?.toISOString().slice(0, 10) === ARRIVED,
+      `first=${poAfter.firstArrivedAt?.toISOString().slice(0, 10) ?? 'null'} last=${poAfter.lastArrivedAt?.toISOString().slice(0, 10) ?? 'null'}（应各 ${ARRIVED}）`)
+    add('E7 收齐后采购单转 RECEIVED', poAfter.status === 'RECEIVED', `status=${poAfter.status}`)
+  }
+
+  // 分批：再补一张**日期更早**的收货单（现实中常见的补录），
+  // first 必须往前挪、last 不能被这张旧的顶掉 —— 「first 为空才填、last 直接覆盖」的写法在这里就会错
+  {
+    const BACKDATED = dayStr(-5)
+    const r = await fetch(`${BASE}/api/goods-receipts`, {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({
+        purchaseOrderId: po.id, arrivedAt: `${BACKDATED}T00:00:00.000Z`,
+        lines: [{ productId, productName: pname, qty: 1, condition: 'ok' }],
+      }),
+    })
+    const poAfter = await prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id: po.id }, select: { firstArrivedAt: true, lastArrivedAt: true },
+    })
+    add('E7 补录一张更早的收货单：首次到货日前移，最近到货日不被顶掉',
+      r.status === 201
+      && poAfter.firstArrivedAt?.toISOString().slice(0, 10) === BACKDATED
+      && poAfter.lastArrivedAt?.toISOString().slice(0, 10) === ARRIVED,
+      `HTTP ${r.status} · first=${poAfter.firstArrivedAt?.toISOString().slice(0, 10)}（应 ${BACKDATED}）· last=${poAfter.lastArrivedAt?.toISOString().slice(0, 10)}（应 ${ARRIVED}）`)
+  }
+
+  // 准时率：本单预计 3 天前、收齐日是今天 → 计入「迟到」
+  {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT po."expectedDate" AS expected, po."lastArrivedAt" AS last_arrived,
+              BOOL_AND(COALESCE(pol."receivedQty",0) >= COALESCE(pol."orderedQty",0)) AS fully
+       FROM "PurchaseOrder" po LEFT JOIN "PurchaseOrderLine" pol ON pol."purchaseOrderId" = po.id
+       WHERE po.id = $1 GROUP BY po.id, po."expectedDate", po."lastArrivedAt"`,
+      po.id,
+    ) as Array<{ expected: Date | null; last_arrived: Date | null; fully: boolean | null }>
+    const stats = summarizeOnTime(rows.map(r => ({
+      expectedDate: r.expected, lastArrivedAt: r.last_arrived, fullyReceived: r.fully === true,
+    })))
+    add('E7 该单计入准时率并判为迟到', stats.measured === 1 && stats.late === 1 && stats.rate === 0,
+      `measured=${stats.measured} late=${stats.late} rate=${stats.rate}`)
+  }
+
+  // 采购分析接口要真的把准时率算出来（不是只有纯函数会算）
+  {
+    const from = dayStr(-7), to = dayStr(0)
+    const proc = await (await fetch(`${BASE}/api/analytics/procurement?from=${from}&to=${to}&_=${stamp}`, { headers: auth }))
+      .json() as { bySupplier: Array<{ supplierId: string; onTimeRate: number | null; onTimeMeasured: number; onTimeLate: number; onTimePending: number }> }
+    const row = proc.bySupplier?.find(x => x.supplierId === supplier.id)
+    add('E7 采购分析按供应商给出准时率', !!row && row.onTimeMeasured >= 1 && row.onTimeLate >= 1,
+      row ? `供应商 ${supplier.name}：已判定 ${row.onTimeMeasured} 单 · 迟到 ${row.onTimeLate} · 未收齐 ${row.onTimePending} · 准时率 ${row.onTimeRate === null ? '—' : `${Math.round(row.onTimeRate * 100)}%`}` : '⛔ 分析接口里找不到该供应商')
+  }
+
   // ── 守恒底线 ────────────────────────────────────────────────────────────
   const prod = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { qtyOnHand: true } })
   const agg = await prisma.stockMove.aggregate({ where: { productId }, _sum: { qty: true } })
   add('收货与手工入库后库存仍守恒',
     Math.abs(num(prod.qtyOnHand) - num(agg._sum.qty)) < 0.001,
-    `qtyOnHand ${num(prod.qtyOnHand)} vs Σ流水 ${num(agg._sum.qty)}（100 收货 + 7 手工）`)
+    `qtyOnHand ${num(prod.qtyOnHand)} vs Σ流水 ${num(agg._sum.qty)}（100 + 1 补录收货 + 7 手工）`)
 
   await prisma.$disconnect()
   report()
 }
 
 function report() {
-  console.log('\n──── 收货 ↔ 采购单关联 + 预计到货 ────')
+  console.log('\n──── 收货 ↔ 采购单关联 + 预计/实际到货 ────')
   for (const c of cases) {
     const icon = c.state === 'pass' ? '✅' : c.state === 'fail' ? '❌' : '⚠️ '
     console.log(`  ${icon} ${c.name.padEnd(40)} ${c.detail}`)

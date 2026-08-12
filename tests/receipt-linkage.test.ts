@@ -5,6 +5,7 @@ import {
   describeArrivalDelay,
   describeArrivalDelayEn,
   isUnlinkedInbound,
+  summarizeOnTime,
 } from '../lib/receipt-linkage'
 
 describe('未关联入库的判据', () => {
@@ -93,5 +94,51 @@ describe('预计 vs 实际到货', () => {
   test('跨月跨年也按真实天数算', () => {
     assert.equal(arrivalDelay('2026-12-30', '2027-01-02').days, 3)
     assert.equal(arrivalDelay('2026-02-27', '2026-03-01').days, 2, '2026 不是闰年')
+  })
+})
+
+describe('到货准时率（台账 E7）', () => {
+  const po = (expected: string | null, last: string | null, fully: boolean) =>
+    ({ expectedDate: expected, lastArrivedAt: last, fullyReceived: fully })
+
+  test('按期与提前都算准时，迟到不算', () => {
+    const s = summarizeOnTime([
+      po('2026-08-10', '2026-08-10', true),   // 按期
+      po('2026-08-10', '2026-08-08', true),   // 提前
+      po('2026-08-10', '2026-08-14', true),   // 迟到
+    ])
+    assert.equal(s.measured, 3)
+    assert.equal(s.onTime, 1)
+    assert.equal(s.early, 1)
+    assert.equal(s.late, 1)
+    assert.equal(s.rate, 0.667)
+  })
+
+  test('⛔ 未收齐的单不进分母 —— 否则一张永远收不齐的单会被算成「按期」', () => {
+    const s = summarizeOnTime([
+      po('2026-08-10', '2026-08-09', true),
+      po('2026-08-10', '2026-08-09', false),  // 到了一部分，还没收齐
+    ])
+    assert.equal(s.measured, 1, '只有收齐的那张进分母')
+    assert.equal(s.pending, 1)
+    assert.equal(s.rate, 1)
+  })
+
+  test('⛔ 没填预计到货日的单单独计数，不拿下单日顶替', () => {
+    const s = summarizeOnTime([po(null, '2026-08-09', true)])
+    assert.equal(s.noExpected, 1)
+    assert.equal(s.measured, 0)
+    assert.equal(s.rate, null, '没有可判定的单时是 null，不是 0')
+  })
+
+  test('⛔ 一单可判定都没有时 rate 是 null 而不是 0 —— 0% 会被读成「这家从不准时」', () => {
+    assert.equal(summarizeOnTime([]).rate, null)
+    assert.equal(summarizeOnTime([po('2026-08-10', null, false)]).rate, null)
+  })
+
+  test('收齐但没有到货日（数据异常）按未收齐处理，不硬判', () => {
+    const s = summarizeOnTime([po('2026-08-10', null, true)])
+    assert.equal(s.measured, 0)
+    assert.equal(s.pending, 1)
   })
 })

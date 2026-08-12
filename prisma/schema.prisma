@@ -1132,6 +1132,10 @@ model PurchaseOrder {
   orderDate            DateTime            @default(now())
   /// 预计到货日期
   expectedDate         DateTime?
+  /// 首次实际到货日（台账 E7）：第一张收货单的到货日，回答「供应商有没有按期**开始**交付」
+  firstArrivedAt       DateTime?
+  /// 最近一次实际到货日：分批收货取最后一批。收齐后它就是「收齐日」，准时率按它算
+  lastArrivedAt        DateTime?
   /// 货币（默认与公司主币一致）
   currency             String              @default("EUR")
   /// 下单时锁定的 currency→EUR 当日汇率快照，事后汇率变动不影响历史单据；
