@@ -38,6 +38,7 @@
     "test:receipt-linkage": "npx tsx --env-file=.env.test scripts/audit/receipt-linkage-test.ts",
     "test:purchase-suggestion": "npx tsx --env-file=.env.test scripts/audit/purchase-suggestion-test.ts",
     "test:pdf-extract": "npx tsx --env-file=.env.test scripts/audit/pdf-extract-test.ts",
+    "test:purchase-lifecycle": "npx tsx --env-file=.env.test scripts/audit/purchase-lifecycle-test.ts",
     "test:uom-chain": "npx tsx --env-file=.env.test scripts/audit/uom-chain-test.ts"
   },
   "prisma": {

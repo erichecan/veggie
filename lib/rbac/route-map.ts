@@ -85,6 +85,11 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/purchase-orders', methods: R, permission: 'purchase.order.read' },
   { pattern: '/api/purchase-orders', methods: ['POST'], permission: 'purchase.order.create' },
   { pattern: '/api/purchase-orders/*', methods: R, permission: 'purchase.order.read' },
+  // 采购退货（台账 F3 新增）：动的是库存与已收量，按「收货」权限走，
+  // 与 PATCH 的 receive 动作同一把闸 —— 能收货的人才有资格把货退回去。
+  // ⛔ 必须显式登记：未登记的路由在 lib/rbac/gate.ts 里是**默认拒绝**，
+  // 表现为功能整个 403（本条就是这么发现的），而不是敞开。
+  { pattern: '/api/purchase-orders/*/return', methods: ['POST'], permission: 'purchase.order.receive' },
   { pattern: '/api/purchase-orders/*', methods: ['PUT', 'PATCH'], permission: 'purchase.order.update' },
   { pattern: '/api/purchases', methods: R, permission: 'purchase.legacy.read' },
   { pattern: '/api/purchases', methods: ['POST'], permission: 'purchase.legacy.create' },
