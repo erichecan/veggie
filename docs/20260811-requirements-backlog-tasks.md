@@ -16,6 +16,10 @@
 |---|---|
 | ⚠️ 重启 standalone 服务 | **必须按端口 kill**：`kill -9 $(lsof -nP -iTCP:3002 -sTCP:LISTEN -t)`。standalone 会把进程名改成 `next-server`，`pkill -f "standalone/server.js"` **永远匹配不上** —— 周期 3~7 里的「重启服务」全是空操作，一直在拿旧进程验证。杀完务必核对新 PID |
 | dev server | :3001 指向本机 `veggie_test`（:3000 上跑的是另一个项目 `localrank`，与本项目无关——周期 1 台账里那句「已在 :3000 运行」是错的，已更正） |
+| ⚠️ **构建 standalone** | **必须用 `npm run build:standalone`**，不能只 `npm run build`。Next 不会把 `.next/static` 与 `public` 拷进 standalone 产物，漏了这一步整页 `ChunkLoadError`，浏览器里啥也验不了 —— 周期 25 之前反复记的「页面视觉未验」全是这个原因，不是路由问题。改完代码的完整节奏：`npm run build:standalone` → 按端口 kill → 重启 → 核对新 PID |
+| ⚠️ 登录接口限流 | 同 IP 约 50 秒冷却。连着跑多个走 HTTP 的测试脚本时，脚本之间要 `sleep 45~50`，否则登录失败会被误读成功能坏了 |
+| ⚠️ 测试数据必须自身守恒 | 造夹具时不能直接塞 `qtyOnHand` / 不能让两个 wave 挂同一批订单 —— `db:validate` 会报违例，而那不是产品缺陷。周期 25、26 各踩了一次。期初库存要**连 StockMove 一起写** |
+| ⚠️ RBAC 快照 | 新增接口会让两个测试红（`可达性矩阵与快照一致`、`旧 token 逐格相同`）。**不得手改快照**，走 `npx tsx scripts/rbac/update-parity-baseline.ts` + `npx tsx scripts/audit/save-reachability.ts`。若「旧 token」那条仍红，那是**真问题**（部署后未重登的人会 403），要去 `lib/role-access.ts` 补旧路径白名单，不是刷快照 |
 | 测试框架 | `node --test --import=tsx tests/*.test.ts`，已有 20+ 测试文件 |
 | 数据校验 | `npm run db:validate` 可用 |
 | `.env.local` → Neon `ep-icy-rice` | **149,874 单 / 1,337,568 行 / 1,605 客户**；最后订单 07-21，最后操作日志 **08-04** → 迁移后冻结的旧生产副本，非活库 |
