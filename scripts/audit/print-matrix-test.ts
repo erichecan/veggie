@@ -4,9 +4,10 @@
  * 台账 D5。对应需求原话：「需要处理各种状态、各种筛选条件，并使用 AI 创建不同的测试用例」。
  *
  * 覆盖三个维度：
- *   4 类单据   销售单 / 司机送货汇总单 / 配送单 / 客户签收单
+ *   4 类单据   销售单 / 司机送货汇总单 / 配送单 / 客户签收单（并验四种模板都吃得下筛选后的数据）
  *   7 种状态   PENDING → CONFIRMED → WAVE_ASSIGNED → IN_DELIVERY → COMPLETED / LOCKED / CANCELLED
- *   4 类筛选   按日期 / 按线路(司机批次) / 按波次 / 无筛选（整日全打）
+ *   6 类筛选   按日期 / 按线路(司机批次) / 按波次 / 按客户 / 按商品 / 无筛选（整日全打）
+ *              —— 每一维都断言「确实筛窄了」，而不是「接口没崩」（D5x 修正，见下方注释）
  *
  * 断言的是**数据层**（打印页消费的那几个接口），不是像素。理由：像素级比对脆弱
  * 且看不出错在哪；而 D2 走查查出的三个真问题——配送单据打成空白、司机名与波次
@@ -21,6 +22,11 @@
  *     scripts/audit/print-matrix-test.ts
  */
 import { createPrismaClient } from '../../lib/prisma-factory'
+import { toMemoryShape, type TripPrintDataWire } from '../../lib/print/trip-common'
+import { generateTripSalesHtml } from '../../lib/print/trip-sales-template'
+import { generateTripDeliveryHtml } from '../../lib/print/trip-delivery-template'
+import { generateTripSummaryHtml } from '../../lib/print/trip-summary-template'
+import { generateTripPickingHtml } from '../../lib/print/trip-picking-template'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3002'
 const OPERATOR = process.env.OPERATOR_EMAIL ?? 'operator@veggie.com'
@@ -118,7 +124,11 @@ async function main() {
       `行程「${d.trip?.driverName}」 vs 波次「${wave?.driverName}」`)
   }
 
-  // ── 筛选维度：dispatch-print-data 的 4 类筛选 ────────────────────────────
+  // ── 筛选维度：dispatch-print-data 的各类筛选 ─────────────────────────────
+  // ⚠️ D5x 修正：原来只断言 `Array.isArray(d.orders)` —— 那等于「接口没崩就算过」，
+  // 一个**什么都没筛掉**的筛选照样 ✅。实测「按线路」返回的就是整日全量（波次的
+  // driverSlotId 为 null，参数传空后退化成整日全打），却一直显示通过。
+  // 现在每一维都断言「确实筛窄了」，筛不窄的当场失败或明确记为未获验证。
   const anyWave = await prisma.pickingWave.findFirst({
     where: { orderIds: { isEmpty: false } },
     select: { id: true, waveDate: true, driverSlotId: true, orderIds: true },
@@ -126,19 +136,104 @@ async function main() {
   })
   if (anyWave) {
     const date = (anyWave.waveDate ?? new Date()).toISOString().slice(0, 10)
-    const filters: Array<[string, string]> = [
-      ['无筛选（整日全打）', `date=${date}`],
-      ['按波次', `date=${date}&waveIds=${anyWave.id}`],
-      ['按线路（司机批次）', `date=${date}&driverSlotId=${anyWave.driverSlotId ?? ''}`],
-      ['按日期区间', `date=${date}&fromDate=${date}`],
-    ]
-    for (const [name, qs] of filters) {
+
+    async function fetchPrint(qs: string): Promise<{ status: number; orders: Array<{ customerId?: string; lines?: Array<{ productId?: string }> }> }> {
       const r = await fetch(`${BASE}/api/orders/dispatch-print-data?${qs}`, { headers: auth })
-      // 404 = 该组合无数据，是合法结果而非故障
-      if (r.status === 404) { skip('配送打印筛选', name, '该组合无数据（404 合法，但本筛选未获验证）'); continue }
-      if (!r.ok) { add('配送打印筛选', name, false, `HTTP ${r.status}`); continue }
-      const d = await r.json() as { orders?: unknown[] }
-      add('配送打印筛选', name, Array.isArray(d.orders), `返回 ${d.orders?.length ?? 0} 单`)
+      if (!r.ok) return { status: r.status, orders: [] }
+      const d = await r.json() as { orders?: Array<{ customerId?: string; lines?: Array<{ productId?: string }> }> }
+      return { status: r.status, orders: d.orders ?? [] }
+    }
+
+    const all = await fetchPrint(`date=${date}`)
+    add('配送打印筛选', '无筛选（整日全打）', all.status === 200 && all.orders.length > 0,
+      `HTTP ${all.status} · 返回 ${all.orders.length} 单（作为其余筛选的基准）`)
+
+    // 按波次：结果必须恰好是该波次里那些单
+    {
+      const r = await fetchPrint(`date=${date}&waveIds=${anyWave.id}`)
+      const expected = anyWave.orderIds.length
+      add('配送打印筛选', '按波次', r.status === 200 && r.orders.length > 0 && r.orders.length <= expected,
+        `返回 ${r.orders.length} 单 / 波次内 ${expected} 单 / 全量 ${all.orders.length} 单`)
+    }
+
+    // 按线路：必须挑一个**真的挂了 driverSlotId** 的波次来测。
+    // 传空的 driverSlotId 会退化成整日全打，那样测出来的 ✅ 什么都不代表
+    // （本库 129 个非空波次里 125 个有 slot，但最新那个恰好没有 —— 按「最新」取样就会漏测）。
+    const slotWave = await prisma.pickingWave.findFirst({
+      where: { driverSlotId: { not: null }, orderIds: { isEmpty: false } },
+      select: { id: true, waveDate: true, driverSlotId: true, orderIds: true },
+      orderBy: { waveDate: 'desc' },
+    })
+    if (!slotWave?.driverSlotId) {
+      skip('配送打印筛选', '按线路（司机批次）', '全库没有挂 driverSlotId 的波次，这一维无数据可测')
+    } else {
+      const slotDate = (slotWave.waveDate ?? new Date()).toISOString().slice(0, 10)
+      const dayAll = await fetchPrint(`date=${slotDate}`)
+      const r = await fetchPrint(`date=${slotDate}&driverSlotId=${slotWave.driverSlotId}`)
+      add('配送打印筛选', '按线路（司机批次）',
+        r.status === 200 && r.orders.length > 0 && r.orders.length <= dayAll.orders.length,
+        `${slotDate}：按线路 ${r.orders.length} 单 / 当日全量 ${dayAll.orders.length} 单`)
+    }
+
+    add('配送打印筛选', '按日期区间',
+      (await fetchPrint(`date=${date}&fromDate=${date}`)).status === 200, `HTTP 200`)
+
+    // 按客户 / 按商品（台账 D3 新增的两维）—— D5 的矩阵自称覆盖「客户/线路/商品/日期」，
+    // 但这两维此前压根没测。取全量结果里的第一个客户/商品来筛，断言**确实筛窄了**。
+    const firstCustomer = all.orders.find(o => o.customerId)?.customerId
+    if (!firstCustomer) {
+      skip('配送打印筛选', '按客户', '全量结果里取不到客户 id')
+    } else {
+      const r = await fetchPrint(`date=${date}&customerIds=${firstCustomer}`)
+      const allSame = r.orders.length > 0 && r.orders.every(o => o.customerId === firstCustomer)
+      add('配送打印筛选', '按客户',
+        r.status === 200 && allSame && r.orders.length <= all.orders.length,
+        `返回 ${r.orders.length} 单（全量 ${all.orders.length}）· 全部属该客户=${allSame}`)
+    }
+
+    const firstProduct = all.orders.flatMap(o => o.lines ?? []).find(l => l.productId)?.productId
+    if (!firstProduct) {
+      skip('配送打印筛选', '按商品', '全量结果里取不到商品 id')
+    } else {
+      const r = await fetchPrint(`date=${date}&productIds=${firstProduct}`)
+      const linesAllSame = r.orders.length > 0
+        && r.orders.every(o => (o.lines ?? []).length > 0 && (o.lines ?? []).every(l => l.productId === firstProduct))
+      add('配送打印筛选', '按商品（行级）',
+        r.status === 200 && linesAllSame,
+        `返回 ${r.orders.length} 单，剩余行全部为该商品=${linesAllSame}`)
+    }
+
+    // 4 类单据 × 有筛选：矩阵声称覆盖「4 类单据 × 筛选」，但此前筛选那组只打到取数接口，
+    // 没验过**四种模板都能吃下筛选后的数据**。尤其「这是部分内容」的提示，
+    // 拣货单与汇总单是台账 D3 才补上的 —— 少一张纸没提示，仓库就会当成整车全部。
+    if (firstProduct) {
+      const r = await fetch(`${BASE}/api/orders/dispatch-print-data?date=${date}&productIds=${firstProduct}`, { headers: auth })
+      if (!r.ok) {
+        skip('四类单据 × 筛选', '渲染四种模板', `取数 HTTP ${r.status}`)
+      } else {
+        const wire = await r.json() as TripPrintDataWire
+        const data = toMemoryShape(wire)
+        const renderers: Array<[string, string]> = [
+          ['销售单', generateTripSalesHtml(data)],
+          ['送货单', generateTripDeliveryHtml(data)],
+          ['汇总单', generateTripSummaryHtml(data)],
+          ['拣货单', generateTripPickingHtml(data)],
+        ]
+        for (const [docName, html] of renderers) {
+          const ok = html.includes('<table') && html.includes('非该批次全部内容')
+          add('四类单据 × 筛选', `${docName}（筛后渲染 + 部分内容提示）`, ok,
+            ok ? `${html.length} 字节，含表格与筛选提示` : `⛔ 缺${html.includes('<table') ? '筛选提示' : '表格'}`)
+        }
+      }
+    }
+
+    // 组合筛选必须比单维更窄或相等 —— 「组合之后反而更多」说明条件被当成了或关系
+    if (firstCustomer && firstProduct) {
+      const byCust = await fetchPrint(`date=${date}&customerIds=${firstCustomer}`)
+      const combo = await fetchPrint(`date=${date}&customerIds=${firstCustomer}&productIds=${firstProduct}`)
+      add('配送打印筛选', '客户+商品组合不放宽',
+        combo.status === 404 || combo.orders.length <= byCust.orders.length,
+        `组合 ${combo.status === 404 ? '空集(404)' : combo.orders.length + ' 单'} ≤ 仅客户 ${byCust.orders.length} 单`)
     }
     // 边界：不存在的波次 id 应给空/404，不能 500
     const bad = await fetch(`${BASE}/api/orders/dispatch-print-data?date=${date}&waveIds=nonexistent-id`, { headers: auth })
