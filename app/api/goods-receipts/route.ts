@@ -260,6 +260,10 @@ export async function POST(req: Request) {
                 productName: l.productName ?? poLine.productName,
                 type: 'SCRAP',
                 qty: -stockQty,
+                // 结构化归因（台账 E4）：到货即损坏天然属「收货」环节 ——
+                // 这是能不能向供应商/承运方索赔的那一格，不能让看板去 note 里猜
+                lossStage: 'RECEIPT',
+                lossReason: 'RECEIPT_DAMAGE',
                 lotId: null,
                 movedAt: batchDate,
                 note: damageNote,
