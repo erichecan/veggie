@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
 import { SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
+import { LOSS_STAGE_LABEL_EN, type LossStage } from '@/lib/loss-attribution'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -49,11 +50,20 @@ interface TopLossProduct {
   scrapValue: number
 }
 
+interface LossStageRow {
+  stage: LossStage | 'UNKNOWN'
+  stageLabel: string
+  qty: number
+  /** 其中按原因推断出来的量（历史行没有结构化环节）——猜的和填的不混为一谈 */
+  inferredQty: number
+}
+
 interface DashboardData {
   kpis: LossKPIs
   trend: LossTrendWeek[]
   dispositionSplit: ReturnDispositionSplit
   reasonBreakdown: LossReasonRow[]
+  stageBreakdown: LossStageRow[]
   topLoss: TopLossProduct[]
 }
 
@@ -92,6 +102,9 @@ export default function LossDashboardPage() {
   const topLoss = data?.topLoss ?? []
   const trendMax = Math.max(1, ...trend.map(w => w.scrapQty))
   const reasonMax = Math.max(1, ...reasons.map(r => r.qty))
+  const stages = data?.stageBreakdown ?? []
+  const stageMax = Math.max(1, ...stages.map(r => r.qty))
+  const stageInferred = stages.reduce((s2, r) => s2 + r.inferredQty, 0)
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
@@ -205,6 +218,44 @@ export default function LossDashboardPage() {
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: PURPLE }} />{isEn ? 'Warehouse scrap' : '仓库报废'}</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: AMBER }} />{isEn ? 'Return scrap' : '客退报废'}</span>
         </div>
+      </div>
+
+      {/* Stage breakdown —— 台账 E4 验收：损耗看板按环节可拆 */}
+      <div className="bg-white rounded border p-4" style={{ borderColor: BORDER }}>
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          {isEn ? `Loss by stage (last ${DAYS} days)` : `损耗环节拆分（近 ${DAYS} 天）`}
+        </h2>
+        {stages.length === 0 ? (
+          <div className="py-6 text-center text-sm text-gray-400">{isEn ? 'No scrap records' : '暂无报废记录'}</div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {stages.map(r => (
+                <div key={r.stage} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-700 w-24 truncate shrink-0">
+                    {isEn ? (r.stage === 'UNKNOWN' ? 'Unattributed' : LOSS_STAGE_LABEL_EN[r.stage]) : r.stageLabel}
+                  </span>
+                  <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
+                    <div className="h-full rounded" style={{ width: `${Math.max(4, (r.qty / stageMax) * 100)}%`, background: r.stage === 'UNKNOWN' ? GRAY : PURPLE }} />
+                  </div>
+                  <span className="text-xs font-mono text-gray-600 w-14 text-right shrink-0">{r.qty}</span>
+                  {r.inferredQty > 0 && (
+                    <span className="text-[11px] text-gray-400 w-24 shrink-0" title={isEn ? 'Inferred from the scrap reason (historical rows have no stage field)' : '按报废原因推断（历史记录没有环节字段）'}>
+                      {isEn ? `${r.inferredQty} inferred` : `其中 ${r.inferredQty} 为推断`}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {stageInferred > 0 && (
+              <p className="text-[11px] text-gray-400 mt-3">
+                {isEn
+                  ? 'Rows created before the stage field existed are attributed by reason; new entries always carry an explicit stage.'
+                  : '环节字段上线前的记录按原因推断归类，不做回填；新录入的损耗一律带明确环节。'}
+              </p>
+            )}
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-5">

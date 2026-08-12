@@ -1034,6 +1034,12 @@ model StockMove {
   /// 关联批次（报废/出库时指向消耗的 Lot）
   lotId       String?
   lot         Lot?          @relation(fields: [lotId], references: [id])
+  /// 损耗归因 · 环节（台账 D4/E4）：SORTING/TRANSPORT/STORAGE/RECEIPT/CUSTOMER_RETURN/OTHER。
+  /// 只对 SCRAP 类流水有意义；历史行为 null，看板按原因反推展示（见 lib/loss-attribution.ts）
+  lossStage   String?
+  /// 损耗归因 · 原因（结构化，取值见 lib/scrap-reasons.ts）。
+  /// 此前原因只存在 note 拼接串里，看板靠正则从文本里反解，改不动文案就会静默失真
+  lossReason  String?
   /// 业务日期（库存批次归属日期）：采购入库=PO.expectedDate或GR.arrivedAt，销售出库=订单交付日，手动调整=操作日
   /// 与 createdAt（记录创建时间）分开，确保库存按实际业务日期归批
   movedAt     DateTime      @default(now())
@@ -1045,6 +1051,7 @@ model StockMove {
   @@index([createdAt])
   @@index([type])
   @@index([sourceType, sourceId])
+  @@index([lossStage])
 }
 
 model PurchaseRecord {

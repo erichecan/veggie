@@ -153,11 +153,11 @@ export default function LotsPage() {
 
   const loadProducts = useCallback(async () => {
     try {
-      const prods = await apiGet<ProductOption[]>('/api/products?status=ACTIVE')
-      const physicalProducts = (Array.isArray(prods) ? prods : []).filter(
-        p => p.template?.type === 'PRODUCT'
-      )
-      setProducts(physicalProducts)
+      // ⚠️ 实物筛选必须交给服务端：本接口的响应把 template 解构掉了，
+      // 前端 `p.template?.type === 'PRODUCT'` 永远为 undefined，会把全部商品筛没
+      // —— 这个选品框此前一直是空的（台账 E4 走查发现）
+      const prods = await apiGet<ProductOption[]>('/api/products?status=ACTIVE&templateType=PRODUCT')
+      setProducts(Array.isArray(prods) ? prods : [])
     } catch {
       toast.error(isEn ? 'Failed to load product list' : '加载商品列表失败')
     } finally {

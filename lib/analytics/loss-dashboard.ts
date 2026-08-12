@@ -20,6 +20,7 @@ import { prisma } from '@/lib/db'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { toDayKey } from '@/lib/analytics/metrics'
 import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
+import { summarizeByStage, type StageBreakdownRow } from '@/lib/loss-attribution'
 import type { TripRestaurant, ReturnItem } from '@/lib/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,9 +63,22 @@ function parseReasonLabel(note: string | null | undefined): string {
   return seg || '未标注原因'
 }
 
-const REASON_LABEL_TO_KEY: Record<string, string> = Object.fromEntries(
-  Object.entries(SCRAP_REASON_LABEL).map(([key, label]) => [label, key]),
-)
+/**
+ * 原因文案 → 原因 key。除了完整标签，**括号内的那段也登记成别名** ——
+ * parseReasonLabel 优先取括号内文字，于是「到货即损坏（运输/供应商责任）」会被截成
+ * 「运输/供应商责任」，用完整标签去查就永远查不中，那批记录既归不了原因也归不了环节
+ * （实测本地库有 45 件因此躺在「未归因」里）。这只是**老数据的兜底**：
+ * 新记录带结构化 lossReason，不走这条路。
+ */
+const REASON_LABEL_TO_KEY: Record<string, string> = (() => {
+  const map: Record<string, string> = {}
+  for (const [key, label] of Object.entries(SCRAP_REASON_LABEL)) {
+    map[label] = key
+    const inner = label.match(/[(（]([^)）]+)[)）]/)?.[1]?.trim()
+    if (inner) map[inner] = key
+  }
+  return map
+})()
 function reasonKeyFromLabel(label: string): string {
   return REASON_LABEL_TO_KEY[label] ?? label
 }
@@ -254,18 +268,40 @@ export async function getLossReasonBreakdown(days: number): Promise<LossReasonRo
   const { start, end } = periodRange(days)
   const rows = await p.stockMove.findMany({
     where: { type: 'SCRAP', movedAt: { gte: start, lt: end } },
-    select: { qty: true, note: true },
+    select: { qty: true, note: true, lossReason: true },
   })
 
-  const byLabel = new Map<string, number>()
-  for (const row of rows as Array<{ qty: unknown; note: string | null }>) {
-    const label = parseReasonLabel(row.note)
-    byLabel.set(label, (byLabel.get(label) ?? 0) + Math.abs(toNum(row.qty)))
+  const byKey = new Map<string, number>()
+  for (const row of rows as Array<{ qty: unknown; note: string | null; lossReason: string | null }>) {
+    // 结构化字段优先（台账 E4 起写入）；老数据仍从 note 反解 —— 反解是**兜底**，
+    // 不再是唯一来源：写入时改一句文案就静默把统计打散，那正是这次要终结的问题
+    const key = row.lossReason ?? reasonKeyFromLabel(parseReasonLabel(row.note))
+    byKey.set(key, (byKey.get(key) ?? 0) + Math.abs(toNum(row.qty)))
   }
 
-  return Array.from(byLabel.entries())
-    .map(([reasonLabel, qty]) => ({ reason: reasonKeyFromLabel(reasonLabel), reasonLabel, qty: round2(qty) }))
+  return Array.from(byKey.entries())
+    .map(([reason, qty]) => ({ reason, reasonLabel: SCRAP_REASON_LABEL[reason] ?? reason, qty: round2(qty) }))
     .sort((a, b) => b.qty - a.qty)
+}
+
+/**
+ * 按环节拆分（台账 E4 验收：「损耗看板按环节/原因能拆分」）。
+ * 历史行没有 lossStage，按原因反推并单独计入 inferredQty —— 看板据此标注
+ * 「其中 N 为按原因推断」，不把猜的和填的混成一个数。
+ */
+export async function getLossStageBreakdown(days: number): Promise<StageBreakdownRow[]> {
+  const { start, end } = periodRange(days)
+  const rows = await p.stockMove.findMany({
+    where: { type: 'SCRAP', movedAt: { gte: start, lt: end } },
+    select: { qty: true, note: true, lossStage: true, lossReason: true },
+  }) as Array<{ qty: unknown; note: string | null; lossStage: string | null; lossReason: string | null }>
+
+  return summarizeByStage(rows.map(r => ({
+    qty: toNum(r.qty),
+    lossStage: r.lossStage,
+    lossReason: r.lossReason,
+    fallbackReason: reasonKeyFromLabel(parseReasonLabel(r.note)),
+  })))
 }
 
 export interface TopLossProduct {

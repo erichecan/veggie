@@ -13,6 +13,11 @@ export async function GET(req: Request) {
     const purchasableOnly = searchParams.get('purchasable') === '1'
     // sellable=1：只给下单/报价单/销售单选品用，只返回 canBeSold 的商品（该标记在 ProductTemplate 上）
     const sellableOnly = searchParams.get('sellable') === '1'
+    // templateType=PRODUCT：只要实物商品（报废/批次这类只对实物有意义）。
+    // ⚠️ 必须在服务端筛：本接口的返回值把 template 解构掉了，客户端拿不到 type，
+    // 于是「p.template?.type === 'PRODUCT'」这种前端过滤会把**全部**商品筛没
+    // （报废录入与批次页的选品框因此一直是空的，见台账 E4）。
+    const templateType = searchParams.get('templateType')?.toUpperCase()
     const where: Record<string, unknown> = {}
     if (statusFilter) where.status = statusFilter as never
     if (search) {
@@ -24,6 +29,7 @@ export async function GET(req: Request) {
     const templateWhere: Record<string, unknown> = {}
     if (purchasableOnly) templateWhere.canBePurchased = true
     if (sellableOnly) templateWhere.canBeSold = true
+    if (templateType) templateWhere.type = templateType
     if (Object.keys(templateWhere).length > 0) where.template = templateWhere
 
     // ?slim=1 → 只回选品下拉框真正会用到的字段。

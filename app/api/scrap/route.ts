@@ -6,6 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { consumeLotsFIFO } from '@/lib/inventory'
 import { SCRAP_REASONS, SCRAP_REASON_LABEL as REASON_LABEL } from '@/lib/scrap-reasons'
+import { LOSS_STAGE_LABEL, isLossStage, type LossStage } from '@/lib/loss-attribution'
 
 export async function GET(req: Request) {
   try {
@@ -39,8 +40,15 @@ export async function POST(req: Request) {
       const reason = data.reason?.toString().trim() ?? ''
       const notes = data.notes?.toString().trim().slice(0, 500) ?? ''
       const lotId = data.lotId?.toString().trim() || null
+      // 损耗环节（台账 E4）：分拣/运输/仓储… 与「原因」正交 —— 同样是损坏，
+      // 收货时发现是供应商责任，分拣时发生是自家操作，混一个枚举就再也分不开
+      const stageRaw = data.stage?.toString().trim() ?? ''
+      const stage: LossStage | null = isLossStage(stageRaw) ? stageRaw : null
 
       if (!productId) return NextResponse.json({ error: '商品 ID 不能为空' }, { status: 400 })
+      if (stageRaw && !stage) {
+        return NextResponse.json({ error: `无效的损耗环节: ${stageRaw}` }, { status: 400 })
+      }
       if (!Number.isFinite(qty) || qty <= 0 || qty > 100000) {
         return NextResponse.json({ error: '报废数量必须大于 0 且不超过 100,000' }, { status: 400 })
       }
@@ -87,8 +95,10 @@ export async function POST(req: Request) {
       const scrapRef = `SCRAP-${String(scrapCount + 1).padStart(5, '0')}`
 
       const reasonLabel = REASON_LABEL[reason] ?? reason
+      const stageLabel = stage ? LOSS_STAGE_LABEL[stage] : ''
       const lotLabel = lotNumber ? ` / 批次 ${lotNumber}` : ''
-      const noteText = [reasonLabel, notes].filter(Boolean).join(' - ')
+      // note 仍拼给人看；看板不再靠正则从这句话里反解 —— 它读结构化的 lossStage/lossReason
+      const noteText = [stageLabel && `${stageLabel}环节`, reasonLabel, notes].filter(Boolean).join(' - ')
 
       // Atomic: decrement stock + update lot + create scrap move
       const result = await p.$transaction(async (tx: typeof p) => {
@@ -123,6 +133,8 @@ export async function POST(req: Request) {
             lotId,
             movedAt: new Date(),
             note: (noteText || `报废 ${scrapRef}`) + lotLabel,
+            lossStage: stage,
+            lossReason: reason || null,
             sourceType: 'SCRAP',
             sourceId: null,
             sourceRef: scrapRef,
@@ -134,7 +146,7 @@ export async function POST(req: Request) {
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'scrap', resourceId: result.id,
-        detail: `报废 ${scrapRef}: ${productName ?? product.name} x${qty} (${reasonLabel})${lotLabel}`,
+        detail: `报废 ${scrapRef}: ${productName ?? product.name} x${qty} (${[stageLabel, reasonLabel].filter(Boolean).join(' / ')})${lotLabel}`,
       })
 
       return NextResponse.json(serializeApi(result), { status: 201 })

@@ -258,6 +258,8 @@ export async function PUT(
         productId: string
         productName: string
         type: 'RETURN' | 'SCRAP'
+        lossStage?: string | null
+        lossReason?: string | null
         qty: number
         note: string
         sourceType: string
@@ -342,6 +344,9 @@ export async function PUT(
               type: 'SCRAP',
               qty: -returnQty,
               note: `客退报废(${reasonLabel}): ${restaurant.restaurantName} — ${ret.reason ?? '无原因'}`,
+              // 结构化归因（台账 E4）：客退报废天然属「客退」环节，不必让看板再从 note 里猜
+              lossStage: 'CUSTOMER_RETURN',
+              lossReason: reasonKey,
               sourceType: 'RETURN_SCRAP',
               sourceId: id,
               sourceRef: restaurant.orderIds?.[0] ?? null,
@@ -386,6 +391,8 @@ export async function PUT(
               qty: sm.qty,
               movedAt: new Date(),
               note: sm.note,
+              lossStage: sm.lossStage ?? null,
+              lossReason: sm.lossReason ?? null,
               sourceType: sm.sourceType,
               sourceId: sm.sourceId,
               sourceRef: sm.sourceRef,

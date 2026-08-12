@@ -7,6 +7,13 @@ import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
+import {
+  LOSS_STAGES,
+  LOSS_STAGE_HINT,
+  LOSS_STAGE_LABEL,
+  LOSS_STAGE_LABEL_EN,
+  type LossStage,
+} from '@/lib/loss-attribution'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -65,6 +72,8 @@ export default function ScrapPage() {
   const [selectedProductId, setSelectedProductId] = useState('')
   const [qty, setQty] = useState('')
   const [reason, setReason] = useState('WAREHOUSE_EXPIRY')
+  /** 损耗环节（台账 E4）：与原因正交 —— 同样是损坏，收货时发现是供应商责任，分拣时是自家操作 */
+  const [stage, setStage] = useState<LossStage>('STORAGE')
   const [notes, setNotes] = useState('')
   const [productSearch, setProductSearch] = useState('')
 
@@ -114,16 +123,17 @@ export default function ScrapPage() {
     setSelectedProductId('')
     setQty('')
     setReason('WAREHOUSE_EXPIRY')
+    setStage('STORAGE')
     setNotes('')
     setProductSearch('')
     setSelectedLotId('')
     setLots([])
     try {
-      const prods = await apiGet<ProductOption[]>('/api/products?status=ACTIVE')
-      const physicalProducts = (Array.isArray(prods) ? prods : []).filter(
-        p => p.template?.type === 'PRODUCT'
-      )
-      setProducts(physicalProducts)
+      // ⚠️ 实物筛选必须交给服务端：本接口的响应把 template 解构掉了，
+      // 前端 `p.template?.type === 'PRODUCT'` 永远为 undefined，会把全部商品筛没
+      // —— 这个选品框此前一直是空的（台账 E4 走查发现）
+      const prods = await apiGet<ProductOption[]>('/api/products?status=ACTIVE&templateType=PRODUCT')
+      setProducts(Array.isArray(prods) ? prods : [])
     } catch {
       toast.error(isEn ? 'Failed to load product list' : '加载商品列表失败')
     }
@@ -145,6 +155,7 @@ export default function ScrapPage() {
         productName: selectedProduct?.name ?? '',
         qty: Number(qty),
         reason,
+        stage,
         notes,
         lotId: selectedLotId || undefined,
       })
@@ -333,6 +344,23 @@ export default function ScrapPage() {
                   style={{ borderColor: BORDER }}
                   required
                 />
+              </div>
+
+              {/* Stage —— 台账 E4：环节是归因的另一半，原因只说「为什么坏」，环节说「在哪一步坏」 */}
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">{isEn ? 'Loss Stage' : '损耗环节'}</label>
+                <select
+                  value={stage}
+                  onChange={e => setStage(e.target.value as LossStage)}
+                  className="w-full border rounded px-3 py-2 text-sm outline-none"
+                  style={{ borderColor: BORDER }}
+                  required
+                >
+                  {LOSS_STAGES.map(key => (
+                    <option key={key} value={key}>{isEn ? LOSS_STAGE_LABEL_EN[key] : LOSS_STAGE_LABEL[key]}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">{LOSS_STAGE_HINT[stage]}</p>
               </div>
 
               {/* Reason */}
