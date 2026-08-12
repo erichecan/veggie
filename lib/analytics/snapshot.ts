@@ -7,7 +7,14 @@
  * - computeDayMetrics(day)：单日指标计算（当天实时展示也走这里，保证口径唯一）
  */
 import { prisma } from '@/lib/db'
-import { SALES_COUNTED_STATUSES, toDayKey } from '@/lib/analytics/metrics'
+import {
+  SALES_COUNTED_STATUSES,
+  addBusinessDays,
+  businessDayRange,
+  businessDayStart,
+  businessTodayStart,
+  toDayKey,
+} from '@/lib/analytics/metrics'
 
 /** 常量状态集合 → SQL IN 字面量（非用户输入，安全内联） */
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
@@ -28,12 +35,15 @@ export interface DayMetrics {
   arOverdue: number
 }
 
-/** 计算某一天的全部快照指标。day = 当天 00:00（本地） */
+/**
+ * 计算某一天的全部快照指标。day = 该业务日内的任意时刻。
+ * ⛔ 边界按**业务时区**（都柏林）切，不是进程本地时区 —— 原来是
+ * `start.setHours(0,0,0,0)`，在 UTC 容器上等于按 UTC 日切，而这一行下面
+ * 的成本/应收参数和 upsert 的 key 都用 toDayKey（都柏林），两者错位一小时，
+ * 夏令时期间都柏林 00:00–01:00 的单子会被算进前一天（见 metrics.businessDayRange）。
+ */
 export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
-  const start = new Date(day)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 1)
+  const { start, end } = businessDayRange(day)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = prisma as any
@@ -174,20 +184,16 @@ const MAX_FILL_PER_CALL = 20
 export async function ensureSnapshots(): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = prisma as any
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
+  const today = businessTodayStart()
+  const yesterday = addBusinessDays(today, -1)
 
   const earliest = (await p.$queryRawUnsafe(
     `SELECT MIN("confirmationDate")::date AS d FROM "Order" WHERE "confirmationDate" IS NOT NULL`,
   )) as Array<{ d: Date | null }>
   if (!earliest[0]?.d) return 0
 
-  const floor = new Date(yesterday)
-  floor.setDate(floor.getDate() - (MAX_BACKFILL_DAYS - 1))
-  let cursor = new Date(earliest[0].d)
-  cursor.setHours(0, 0, 0, 0)
+  const floor = addBusinessDays(yesterday, -(MAX_BACKFILL_DAYS - 1))
+  let cursor = businessDayStart(new Date(earliest[0].d))
   if (cursor < floor) cursor = floor
 
   const existing = (await p.dailyBusinessSnapshot.findMany({
@@ -203,26 +209,22 @@ export async function ensureSnapshots(): Promise<number> {
       await upsertSnapshot(cursor, metrics)
       filled++
     }
-    cursor = new Date(cursor)
-    cursor.setDate(cursor.getDate() + 1)
+    cursor = addBusinessDays(cursor, 1)
   }
   return filled
 }
 
 /** 强制重算 [from, to]（含两端，不含今天及以后），订正数据后调用。返回重算天数。 */
 export async function recomputeSnapshots(from: Date, to: Date): Promise<number> {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const cursor = new Date(from)
-  cursor.setHours(0, 0, 0, 0)
-  const endDay = new Date(to)
-  endDay.setHours(0, 0, 0, 0)
+  const today = businessTodayStart()
+  let cursor = businessDayStart(from)
+  const endDay = businessDayStart(to)
   let count = 0
   while (cursor <= endDay && cursor < today && count < MAX_BACKFILL_DAYS) {
     const metrics = await computeDayMetrics(cursor)
     await upsertSnapshot(cursor, metrics)
     count++
-    cursor.setDate(cursor.getDate() + 1)
+    cursor = addBusinessDays(cursor, 1)
   }
   return count
 }

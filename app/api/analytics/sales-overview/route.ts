@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
-import { SALES_COUNTED_STATUSES, resolveDateRange, deriveAov } from '@/lib/analytics/metrics'
+import {
+  SALES_COUNTED_STATUSES,
+  resolveDateRange,
+  deriveAov,
+  businessTodayStart,
+  summarizeSalesSeries,
+} from '@/lib/analytics/metrics'
 import { ensureSnapshots, computeDayMetrics } from '@/lib/analytics/snapshot'
 import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/shortage'
 import { withCachedAuth } from '@/lib/analytics/cache'
@@ -50,8 +56,10 @@ export async function GET(req: Request) {
       // 快照表按设计不写"今天"（当天永远实时算），若所选范围包含今天，
       // 补一条实时计算的今天条目，与 boss/page.tsx「今天（实时）」口径一致。
       // 快照只覆盖到昨天，今天在时间上排最后，直接 push 不需要重新排序。
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
+      // ⛔「今天」按业务时区取（原来是 setHours(0,0,0,0)=进程本地时区）——
+      //    范围边界已经是都柏林口径，这里若按 UTC 判定，夏令时期间会出现
+      //    「范围含今天但判定为不含」的一小时窗口，当天数字整块消失。
+      const today = businessTodayStart()
       if (today >= start && today < end) {
         const todayMetrics = await computeDayMetrics(today)
         dailySeries.push({
@@ -90,6 +98,9 @@ export async function GET(req: Request) {
 
       return NextResponse.json(serializeApi({
         dailySeries,
+        // 区间汇总由服务端给出（口径 SSOT 在 lib/analytics/metrics.summarizeSalesSeries）。
+        // 前端原先自己 reduce 一份客单价 —— 同一个公式两处实现，迟早漂。
+        summary: summarizeSalesSeries(dailySeries),
         shortage: { series: shortageDaily, summary: shortageSummary },
         topProducts,
       }))

@@ -189,3 +189,77 @@ export function toDayKey(d: Date): string {
 export function deriveAov(salesExTax: number, orderCount: number): number {
   return orderCount > 0 ? Math.round((salesExTax / orderCount) * 100) / 100 : 0
 }
+
+/**
+ * 业务日边界（台账 D8）
+ * ----------------------------------------------------------------------------
+ * ⛔ 日指标的「一天」必须与 resolveDateRange / toDayKey 同口径 —— 都柏林，
+ * **不是进程所在时区**。此前 snapshot.ts 用的是 `d.setHours(0,0,0,0)`：
+ * 生产容器是 UTC，于是快照按 UTC 日切，而它的 key 和查询范围按都柏林算，
+ * 每一天都错位一小时。夏令时（IST=UTC+1）期间，都柏林 00:00–01:00 确认的单子
+ * 会被算进前一天。生产副本实测 **1,909 / 149,859 张单（1.27%）** 的
+ * confirmationDate 在两种口径下分属不同日期 —— 这就是那批单。
+ */
+export function businessDayStart(at: Date): Date {
+  const [y, m, d] = zonedYMD(at)
+  return zonedDayStart(y, m, d)
+}
+
+/** 业务日的 [start, end)，end 为次日 00:00（独占上界） */
+export function businessDayRange(at: Date): { start: Date; end: Date } {
+  const [y, m, d] = zonedYMD(at)
+  return { start: zonedDayStart(y, m, d), end: addDaysZoned(y, m, d, 1) }
+}
+
+/** 业务时区「今天」的 00:00 */
+export function businessTodayStart(): Date {
+  return businessDayStart(new Date())
+}
+
+/** 在业务时区下给某个时刻加减整天，返回目标日 00:00 */
+export function addBusinessDays(at: Date, delta: number): Date {
+  const [y, m, d] = zonedYMD(at)
+  return addDaysZoned(y, m, d, delta)
+}
+
+/**
+ * 缺货率 = 缺货行数 / 订单行数（物流口径），保留 4 位小数（前端乘 100 显示为百分比）。
+ * 订单行为 0 时记 0 —— 那天没单，说「缺货率 100%」比说 0 更误导。
+ */
+export function deriveShortageRate(shortageLines: number, orderLines: number): number {
+  return orderLines > 0 ? Math.round((shortageLines / orderLines) * 10000) / 10000 : 0
+}
+
+export interface SalesSeriesPoint {
+  salesExTax: number
+  salesIncTax: number
+  orderCount: number
+}
+
+export interface SalesSeriesSummary {
+  salesExTax: number
+  salesIncTax: number
+  orderCount: number
+  /** 区间客单价 = Σ销售额 / Σ订单数 */
+  aov: number
+}
+
+/**
+ * 区间汇总（日销售额 + 客单价的 SSOT）。
+ *
+ * ⛔ 区间客单价必须是 **Σ销售额 / Σ订单数**，不能是「每天客单价的平均」——
+ * 后者会把只有 1 单的那天与有 100 单的那天等权，淡季日反而把均价拉高。
+ * 这个公式原先散在前端组件里各算一遍（SalesStats.tsx 自己 reduce 了一份），
+ * 收到这里之后前后端读同一份，不会各自漂移。
+ */
+export function summarizeSalesSeries(series: readonly SalesSeriesPoint[]): SalesSeriesSummary {
+  const salesExTax = series.reduce((s, p) => s + p.salesExTax, 0)
+  const salesIncTax = series.reduce((s, p) => s + p.salesIncTax, 0)
+  const orderCount = series.reduce((s, p) => s + p.orderCount, 0)
+  return {
+    salesExTax: Math.round(salesExTax * 100) / 100,
+    salesIncTax: Math.round(salesIncTax * 100) / 100,
+    orderCount,
+    aov: deriveAov(salesExTax, orderCount),
+  }
+}

@@ -16,10 +16,12 @@
  *
  * 本脚本固化的是已验证可行的路径：
  *   1. db push        直接把 schema 同步成表结构（跳过迁移链）
- *   2. RBAC 数据迁移   角色与权限点是写在数据迁移里的，db push 会跳过 → 必须补
- *   3. 基础种子        用户/商品/客户/价格表
- *   4. 事件种子        订单/发票/收付款/库存流水（可选，--with-events）
- *   5. 期初库存        把商品补到可下单的库存水位（可选，--with-stock）
+ *   2. 视图/扩展/索引   视图与 pg_trgm 写在迁移 SQL 里，db push 同样跳过 →
+ *                     不补的话 /api/analytics/* 直接 500（v_lot_daily_cost 不存在）
+ *   3. RBAC 数据迁移   角色与权限点是写在数据迁移里的，db push 会跳过 → 必须补
+ *   4. 基础种子        用户/商品/客户/价格表
+ *   5. 事件种子        订单/发票/收付款/库存流水（可选，--with-events）
+ *   6. 期初库存        把商品补到可下单的库存水位（可选，--with-stock）
  *
  * ⛔ 只允许打向本机。这个脚本会 db push，对生产库执行等同于结构性重写。
  *
@@ -51,26 +53,30 @@ function main() {
   const withStock = process.argv.includes('--with-stock')
 
   steps.push({
-    name: '1/5 同步表结构（db push —— 刻意绕开无基线的迁移链）',
+    name: '1/6 同步表结构（db push —— 刻意绕开无基线的迁移链）',
     run: () => sh('npx', ['prisma', 'db', 'push']),
   })
   steps.push({
-    name: '2/5 补 RBAC 数据迁移（db push 会跳过，不补则全站 403）',
+    name: '2/6 补视图/扩展/trgm 索引（db push 同样跳过，不补则分析中心 500）',
+    run: () => sh('npx', ['tsx', 'scripts/db/apply-sql-objects.ts']),
+  })
+  steps.push({
+    name: '3/6 补 RBAC 数据迁移（db push 会跳过，不补则全站 403）',
     run: () => sh('npx', ['tsx', 'scripts/rbac/apply-data-migrations.ts']),
   })
   steps.push({
-    name: '3/5 基础种子（用户/商品/客户/价格表）',
+    name: '4/6 基础种子（用户/商品/客户/价格表）',
     run: () => sh('npx', ['tsx', 'prisma/seed.ts']),
   })
   if (withEvents) {
     steps.push({
-      name: '4/5 事件种子（订单/发票/收付款/库存流水）',
+      name: '5/6 事件种子（订单/发票/收付款/库存流水）',
       run: () => sh('npx', ['tsx', 'prisma/seed-events/index.ts']),
     })
   }
   if (withStock) {
     steps.push({
-      name: '5/5 期初库存（把商品补到可下单水位）',
+      name: '6/6 期初库存（把商品补到可下单水位）',
       run: () => sh('npx', ['tsx', 'scripts/seed/ensure-opening-stock.ts']),
     })
   }

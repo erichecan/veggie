@@ -100,7 +100,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [allDriverSlots, setAllDriverSlots] = useState<DriverSlotInfo[]>([])
   /** 客单价/缺货率汇总卡片：只跟 fromDate/toDate 联动，不跟客户/商品筛选联动（全局参考值） */
-  const [salesOverview, setSalesOverview] = useState<{ aov: number; shortageRate: number } | null>(null)
+  const [salesOverview, setSalesOverview] = useState<{ salesExTax: number; orderCount: number; aov: number; shortageRate: number } | null>(null)
 
   // ── 查看方式 + 度量 ──────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('customer')
@@ -135,15 +135,17 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   // 客单价 / 缺货率汇总卡片：跟 fromDate/toDate 走同一个组合 API，保证和「数据分析中心」口径一致
   useEffect(() => {
     if (!fromDate || !toDate) return
+    // 汇总口径全部取服务端的 summary（SSOT 在 lib/analytics/metrics.summarizeSalesSeries）——
+    // 这里原来自己 reduce 了一份客单价，同一个公式两处实现，迟早漂
     apiGet<{
-      dailySeries: Array<{ salesExTax: number; orderCount: number }>
+      summary: { salesExTax: number; orderCount: number; aov: number }
       shortage: { summary: { shortageRate: number } }
     }>(`/api/analytics/sales-overview?from=${fromDate}&to=${toDate}`)
       .then((d) => {
-        const totalSales = d.dailySeries.reduce((s, x) => s + x.salesExTax, 0)
-        const totalOrders = d.dailySeries.reduce((s, x) => s + x.orderCount, 0)
         setSalesOverview({
-          aov: totalOrders > 0 ? Math.round((totalSales / totalOrders) * 100) / 100 : 0,
+          salesExTax: d.summary.salesExTax,
+          orderCount: d.summary.orderCount,
+          aov: d.summary.aov,
           shortageRate: d.shortage.summary.shortageRate,
         })
       })
@@ -601,7 +603,11 @@ ${catsHtml}
                 {ordersLoading ? (isEn ? 'Loading…' : '加载中…') : (isEn ? `${reportLines.length} rows · Total ${eur(reportTotal.amount)}` : `${reportLines.length} 行 · 合计 ${eur(reportTotal.amount)}`)}
               </span>
               <span className="ml-3 font-normal normal-case inline-flex items-center gap-1.5">
-                <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600" title={isEn ? 'Sales (ex. tax) in the selected date range, all customers/products' : '所选日期区间的销售额（税前），不受客户/商品筛选影响'}>
+                  {isEn ? 'Sales' : '销售额'} {salesOverview ? eur(salesOverview.salesExTax) : '—'}
+                  {salesOverview ? <span className="text-gray-400">{isEn ? ` / ${salesOverview.orderCount} orders` : ` / ${salesOverview.orderCount} 单`}</span> : null}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600" title={isEn ? 'AOV = total sales (ex. tax) / order count' : '客单价 = 区间销售额（税前）÷ 区间订单数'}>
                   {isEn ? 'AOV' : '客单价'} {salesOverview ? eur(salesOverview.aov) : '—'}
                 </span>
                 <span className={`px-2 py-0.5 rounded ${salesOverview && salesOverview.shortageRate > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>

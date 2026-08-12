@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
+import { deriveShortageRate } from '@/lib/analytics/metrics'
 import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 
@@ -11,6 +12,8 @@ interface TopProduct { productId: string; productName: string; subtotal: number;
 
 interface Payload {
   dailySeries: DailyPoint[]
+  /** 区间汇总由服务端算（lib/analytics/metrics.summarizeSalesSeries），页面不再自己 reduce */
+  summary: { salesExTax: number; salesIncTax: number; orderCount: number; aov: number }
   shortage: { series: ShortageDayRow[]; summary: { shortageLines: number; orderLines: number; shortageRate: number } }
   topProducts: TopProduct[]
 }
@@ -29,9 +32,11 @@ export default function SalesOverviewPage() {
 
   if (!data) return <div className="text-center text-gray-400 py-24 text-sm">加载中…</div>
 
-  const totalSalesExTax = data.dailySeries.reduce((s, d) => s + d.salesExTax, 0)
-  const totalOrders = data.dailySeries.reduce((s, d) => s + d.orderCount, 0)
-  const avgAov = totalOrders > 0 ? Math.round((totalSalesExTax / totalOrders) * 100) / 100 : 0
+  // 汇总与缺货率公式一律取自服务端 summary / lib/analytics/metrics，
+  // 不在页面里再算一遍（同一公式散在三处是 D8 之前的状态）
+  const totalSalesExTax = data.summary.salesExTax
+  const totalOrders = data.summary.orderCount
+  const avgAov = data.summary.aov
 
   const salesChartData = data.dailySeries.map((d) => ({
     day: String(d.date).slice(5, 10),
@@ -44,7 +49,7 @@ export default function SalesOverviewPage() {
   }))
   const shortageChartData = data.shortage.series.map((d) => ({
     day: String(d.day).slice(5, 10),
-    缺货率: d.order_lines > 0 ? Math.round((d.shortage_lines / d.order_lines) * 1000) / 10 : 0,
+    缺货率: Math.round(deriveShortageRate(d.shortage_lines, d.order_lines) * 1000) / 10,
   }))
 
   return (

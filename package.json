@@ -32,6 +32,8 @@
     "test:pack-split": "npx tsx --env-file=.env.test scripts/audit/pack-split-print-test.ts",
     "test:print-filter": "npx tsx --env-file=.env.test scripts/audit/print-filter-test.ts",
     "test:shortage-bulk": "npx tsx --env-file=.env.test scripts/audit/shortage-bulk-test.ts",
+    "test:daily-metrics": "npx tsx --env-file=.env.test scripts/audit/daily-metrics-test.ts",
+    "db:sql-objects": "npx tsx --env-file=.env.test scripts/db/apply-sql-objects.ts",
     "test:uom-chain": "npx tsx --env-file=.env.test scripts/audit/uom-chain-test.ts"
   },
   "prisma": {
