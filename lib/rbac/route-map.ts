@@ -192,6 +192,10 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/vendor-bills/import', permission: 'finance.vendor_bill.create' },
   { pattern: '/api/vendor-bills', methods: R, permission: 'finance.vendor_bill.read' },
   { pattern: '/api/vendor-bills', methods: ['POST'], permission: 'finance.vendor_bill.create' },
+  // 分批付款流水（台账 G2）。⚠️ 必须显式登记 —— 未登记的路由在 gate 里是默认拒绝，
+  // 表现为整个功能 403（F3 就是这么发现的）。放在通配之前，避免被 `/api/vendor-bills/*` 吃掉
+  { pattern: '/api/vendor-bills/*/payments', methods: R, permission: 'finance.vendor_bill.read' },
+  { pattern: '/api/vendor-bills/*/payments', methods: ['POST'], permission: 'finance.vendor_bill.update' },
   { pattern: '/api/vendor-bills/*', methods: R, permission: 'finance.vendor_bill.read' },
   { pattern: '/api/vendor-bills/*', methods: ['PUT'], permission: 'finance.vendor_bill.update' },
   { pattern: '/api/accounts/**', methods: R, permission: 'finance.account.read' },

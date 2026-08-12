@@ -104,6 +104,31 @@ async function main(): Promise<void> {
     record('应付余额  amountDue == incTax - amountPaid', badDue, invoices.length, exDue)
   }
 
+  // 3b. 供应商付款勾稽（台账 G2）—— 与上面的应收侧严格对称。
+  // amountPaid 从此是 VendorPayment 的汇总，不是一个可以被单独写坏的数字。
+  {
+    const bills = await prisma.vendorBill.findMany({
+      select: { id: true, name: true, totalIncTax: true, amountPaid: true, amountDue: true, payments: { select: { amount: true } } },
+    })
+    const exPay: string[] = []
+    const exDue: string[] = []
+    let badPay = 0
+    let badDue = 0
+    for (const b of bills) {
+      const paid = b.payments.reduce((a, p) => a + n(p.amount), 0)
+      if (!near(paid, n(b.amountPaid), MONEY_EPS)) {
+        badPay++
+        if (exPay.length < 3) exPay.push(`${b.name}: Σpay=${paid.toFixed(2)} ≠ paid=${n(b.amountPaid).toFixed(2)}`)
+      }
+      if (!near(n(b.amountDue), n(b.totalIncTax) - n(b.amountPaid), MONEY_EPS)) {
+        badDue++
+        if (exDue.length < 3) exDue.push(`${b.name}: due=${n(b.amountDue).toFixed(2)} ≠ inc-paid`)
+      }
+    }
+    record('供应商付款勾稽  ΣVendorPayment == amountPaid', badPay, bills.length, exPay)
+    record('供应商账单余额  amountDue == incTax - amountPaid', badDue, bills.length, exDue)
+  }
+
   // 4. 发票↔订单
   {
     const invoices = await prisma.invoice.findMany({ select: { id: true, name: true, saleOrderIds: true, subtotalExTax: true } })

@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
+import { formatDateOnly } from '@/lib/format-date'
+import { VENDOR_PAYMENT_METHODS, VENDOR_PAYMENT_METHOD_LABELS } from '@/lib/finance/vendor-settlement'
 import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 
 type VbStatus = 'DRAFT' | 'POSTED' | 'PAID' | 'CANCELLED'
@@ -40,6 +42,15 @@ interface VendorBill {
 }
 
 interface Supplier { id: string; name: string }
+
+interface VendorPaymentRow {
+  id: string
+  amount: number
+  method: string
+  paidAt: string
+  note: string | null
+  createdBy: string | null
+}
 
 const STATUS_LABEL_ZH: Record<VbStatus, string> = {
   DRAFT: '草稿',
@@ -83,6 +94,10 @@ export default function VendorBillsPage() {
   const [detail, setDetail] = useState<VendorBill | null>(null)
   const [busy, setBusy] = useState(false)
   const [payAmount, setPayAmount] = useState('')
+  const [payMethod, setPayMethod] = useState('bank')
+  const [payNote, setPayNote] = useState('')
+  /** 该账单的付款流水（台账 G2）—— 「分批付款」的价值全在这张表上 */
+  const [payments, setPayments] = useState<VendorPaymentRow[]>([])
 
   const [createOpen, setCreateOpen] = useState(false)
   const [newSupplierId, setNewSupplierId] = useState('')
@@ -153,6 +168,13 @@ export default function VendorBillsPage() {
     }
   }
 
+  const loadPayments = useCallback(async (billId: string) => {
+    try {
+      const d = await apiGet<{ items: VendorPaymentRow[] }>(`/api/vendor-bills/${billId}/payments`)
+      setPayments(d.items ?? [])
+    } catch { setPayments([]) }
+  }, [])
+
   async function registerPayment(bill: VendorBill) {
     const add = Number(payAmount)
     if (!Number.isFinite(add) || add <= 0) {
@@ -161,11 +183,17 @@ export default function VendorBillsPage() {
     }
     setBusy(true)
     try {
-      const paid = Math.min(Number(bill.amountPaid) + add, Number(bill.totalIncTax))
-      await apiPut(`/api/vendor-bills/${bill.id}`, { amountPaid: paid })
+      // ⛔ 传的是**本笔金额**，累计由服务端加（台账 G2）。
+      // 原先是前端读到已付再传累计值 —— 两个人同时各付一笔，后写的那次会把
+      // 前一笔覆盖掉，钱既不报错也不留痕，直接消失。
+      const res = await apiPost<{ bill: VendorBill }>(`/api/vendor-bills/${bill.id}/payments`, {
+        amount: add, method: payMethod, note: payNote || null,
+      })
       toast.success(isEn ? `Payment of €${add.toFixed(2)} recorded` : `已登记付款 €${add.toFixed(2)}`)
       setPayAmount('')
-      setDetail(null)
+      setPayNote('')
+      setDetail(res.bill)
+      loadPayments(bill.id)
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to record payment' : '登记付款失败'))
@@ -300,7 +328,7 @@ export default function VendorBillsPage() {
               )}
               {pageRows.map(b => (
                 <tr key={b.id} className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => { setDetail(b); setPayAmount('') }}>
+                  onClick={() => { setDetail(b); setPayAmount(''); setPayNote(''); setPayments([]); loadPayments(b.id) }}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-700">{b.name}</td>
                   <td className="px-4 py-3 text-gray-800">{supplierName(b.supplierId)}</td>
                   <td className="px-4 py-3 text-center">
@@ -380,18 +408,75 @@ export default function VendorBillsPage() {
 
                 {detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes: ' : '备注：'}{detail.notes}</p>}
 
+                {/* 付款流水（台账 G2）：一张账单分几笔付、哪天付的、谁付的 ——
+                    此前只有一个累计数字，这些全查不到 */}
+                {payments.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-50 text-xs font-medium text-gray-600">
+                      {isEn ? `Payment history (${payments.length})` : `付款记录（${payments.length} 笔）`}
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 border-b border-gray-100">
+                          <th className="text-left px-3 py-1.5">{isEn ? 'Date' : '日期'}</th>
+                          <th className="text-left px-3 py-1.5">{isEn ? 'Method' : '方式'}</th>
+                          <th className="text-left px-3 py-1.5">{isEn ? 'By' : '经手'}</th>
+                          <th className="text-left px-3 py-1.5">{isEn ? 'Note' : '备注'}</th>
+                          <th className="text-right px-3 py-1.5">{isEn ? 'Amount' : '金额'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payments.map(p => (
+                          <tr key={p.id} className="border-b border-gray-50">
+                            <td className="px-3 py-1.5 text-gray-600">{formatDateOnly(p.paidAt)}</td>
+                            <td className="px-3 py-1.5 text-gray-600">
+                              {VENDOR_PAYMENT_METHOD_LABELS[p.method as keyof typeof VENDOR_PAYMENT_METHOD_LABELS]?.[isEn ? 'en' : 'zh'] ?? p.method}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-500">{p.createdBy ?? '—'}</td>
+                            <td className="px-3 py-1.5 text-gray-500">{p.note ?? '—'}</td>
+                            <td className="px-3 py-1.5 text-right text-gray-800">€{Number(p.amount).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="font-medium border-t border-gray-200">
+                          <td className="px-3 py-1.5 text-gray-600" colSpan={4}>{isEn ? 'Total paid' : '已付合计'}</td>
+                          <td className="px-3 py-1.5 text-right text-gray-900">
+                            €{payments.reduce((s2, p) => s2 + Number(p.amount), 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+
                 {detail.status === 'POSTED' && (
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex-wrap">
                     <span className="text-xs text-amber-700 whitespace-nowrap">{isEn ? 'Record payment €' : '登记付款 €'}</span>
                     <input
                       type="number" min="0.01" step="0.01"
                       value={payAmount}
                       onChange={e => setPayAmount(e.target.value)}
                       placeholder={Number(detail.amountDue).toFixed(2)}
-                      className="w-32 border border-amber-300 rounded px-2 py-1 text-sm"
+                      className="w-28 border border-amber-300 rounded px-2 py-1 text-sm"
+                    />
+                    <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
+                      className="border border-amber-300 rounded px-2 py-1 text-sm bg-white">
+                      {VENDOR_PAYMENT_METHODS.map(m => (
+                        <option key={m} value={m}>{VENDOR_PAYMENT_METHOD_LABELS[m][isEn ? 'en' : 'zh']}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text" value={payNote} onChange={e => setPayNote(e.target.value)}
+                      placeholder={isEn ? 'Note (e.g. bank ref)' : '备注（如银行流水号）'}
+                      className="flex-1 min-w-[140px] border border-amber-300 rounded px-2 py-1 text-sm"
                     />
                     <Button size="sm" disabled={busy} onClick={() => registerPayment(detail)}>{isEn ? 'Record' : '登记'}</Button>
-                    <span className="text-[11px] text-amber-600 ml-auto">{isEn ? 'Automatically becomes "Paid" once fully settled' : '付清后自动转「已付款」'}</span>
+                    <span className="text-[11px] text-amber-600 w-full">
+                      {isEn
+                        ? 'Enter the amount of THIS payment; the running total is computed on the server. Fully settled bills switch to "Paid" automatically.'
+                        : '填**本次**付款金额，累计由服务端计算；付清后自动转「已付款」。'}
+                    </span>
                   </div>
                 )}
               </div>

@@ -1331,6 +1331,33 @@ model JournalEntryLine {
  * 供应商账单（Odoo account.move type=in_invoice）
  * 一个 PO 可以收到多张账单；账单金额 ≤ PO 金额
  */
+/**
+ * 供应商付款流水（台账 G2）
+ * ================================================================================
+ * 与客户侧的 `Payment` 严格对称。此前应付侧只有 `VendorBill.amountPaid` 一个**累计数字**：
+ * 余额能递减，但「分了几笔、哪天付的、谁付的、什么方式」全查不到，也无法对账。
+ * 而且前端是 read-modify-write（读到已付 100 → 传 100+50），两个人同时付会静默丢一笔。
+ * 所以付款一律走这张流水表，`amountPaid` 退化为它的汇总（db:validate 有对应不变量）。
+ */
+model VendorPayment {
+  id           String     @id @default(cuid())
+  vendorBillId String
+  vendorBill   VendorBill @relation(fields: [vendorBillId], references: [id], onDelete: Cascade)
+  supplierId   String
+  /// 本笔付款金额（欧元）。负数表示冲销/退款
+  amount       Decimal    @db.Decimal(12, 2)
+  /// bank | cash | other
+  method       String     @default("bank")
+  paidAt       DateTime   @default(now())
+  note         String?
+  createdBy    String?
+  createdAt    DateTime   @default(now())
+
+  @@index([vendorBillId])
+  @@index([supplierId])
+  @@index([paidAt])
+}
+
 model VendorBill {
   id              String           @id @default(cuid())
   name            String           @unique
@@ -1354,6 +1381,8 @@ model VendorBill {
   createdAt       DateTime         @default(now())
   postedAt        DateTime?
   paidAt          DateTime?
+
+  payments        VendorPayment[]
 
   @@index([supplierId])
   @@index([purchaseOrderId])

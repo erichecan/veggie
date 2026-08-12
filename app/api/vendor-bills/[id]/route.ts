@@ -111,8 +111,21 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
           if (e) detail.push(`凭证 ${e.name}`)
         }
         if (paymentDelta > 0.005) {
+          // ⚠️ 这条路径（PUT 传累计已付 / 「全额付清」按钮）保留是为了不破坏既有调用，
+          // 但它**必须同样落一笔流水** —— 否则 `amountPaid` 与 VendorPayment 会各说各话，
+          // 而分批付款的全部价值就在那张流水表上（台账 G2）。
+          // 新代码请用 POST /api/vendor-bills/:id/payments（传本笔金额，服务端累加）。
+          const vp = await tx.vendorPayment.create({
+            data: {
+              vendorBillId: id, supplierId: existing.supplierId, amount: paymentDelta,
+              method: 'other', note: '经账单更新接口登记（未指定付款方式）',
+              createdBy: user.name ?? user.email,
+            },
+          })
           const e = await postVendorPaymentToJournal(tx, {
-            id: `${id}-pay-${newPaid}`, billName: existing.name, supplierId: existing.supplierId, amount: paymentDelta,
+            // 幂等键用流水 id：原先拼的是 `${billId}-pay-${累计金额}`，
+            // 同一账单先付 100 → 冲销 → 再付 100 会撞出同一个 sourceId
+            id: vp.id, billName: existing.name, supplierId: existing.supplierId, amount: paymentDelta,
           }, user.userId)
           if (e) detail.push(`付款凭证 ${e.name}`)
         }
