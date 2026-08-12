@@ -104,21 +104,47 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             data: { qtyOnHand: { decrement: stockQty } },
           })
           // 批次也要退：只扣 qtyOnHand 不动批次，Lot.currentQty 会系统性虚高（db:validate 第 2 项）
-          await consumeLotsFIFO(tx as never, p.productId, stockQty)
+          const consumed = await consumeLotsFIFO(tx as never, p.productId, stockQty)
 
-          await tx.stockMove.create({
-            data: {
-              productId: p.productId,
-              productName: p.productName,
-              type: 'OUT',
-              qty: -stockQty,
-              movedAt: new Date(),
-              note: `采购退货 PO ${po.name}${noteSuffix}`,
-              sourceType: 'PURCHASE_RETURN',
-              sourceId: id,
-              sourceRef: po.name,
-            },
-          })
+          // ⛔ 流水必须**按批次逐笔记**，不能只记一笔 lotId=null 的总额。
+          // 第一版就是那么写的，结果 `Lot.currentQty == Σ该批次流水` 当场被破坏：
+          // 批次余量扣到 26，而挂在它名下的流水仍只有收货那笔 +30。
+          // consumeLotsFIFO 返回的就是「扣到了哪几个批次各多少」，用它拆流水。
+          const consumedQty = consumed.reduce((sum, c) => sum + c.qty, 0)
+          for (const c of consumed) {
+            await tx.stockMove.create({
+              data: {
+                productId: p.productId,
+                productName: p.productName,
+                type: 'OUT',
+                qty: -c.qty,
+                lotId: c.lotId,
+                movedAt: new Date(),
+                note: `采购退货 PO ${po.name} / 批次 ${c.lotNumber}${noteSuffix}`,
+                sourceType: 'PURCHASE_RETURN',
+                sourceId: id,
+                sourceRef: po.name,
+              },
+            })
+          }
+          // 批次覆盖不到的部分（历史库存没有批次时）单记一笔无批次流水，
+          // 保证 qtyOnHand 与 Σ流水 仍然相等
+          const uncovered = Math.round((stockQty - consumedQty) * 1000) / 1000
+          if (uncovered > 0) {
+            await tx.stockMove.create({
+              data: {
+                productId: p.productId,
+                productName: p.productName,
+                type: 'OUT',
+                qty: -uncovered,
+                movedAt: new Date(),
+                note: `采购退货 PO ${po.name}（无批次部分）${noteSuffix}`,
+                sourceType: 'PURCHASE_RETURN',
+                sourceId: id,
+                sourceRef: po.name,
+              },
+            })
+          }
 
           // 回冲已收量：不冲的话「已收 = 订购」会让这单看起来收齐了，
           // 采购建议也会把退掉的货继续当成在途

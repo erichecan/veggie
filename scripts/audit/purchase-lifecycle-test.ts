@@ -173,6 +173,16 @@ async function main() {
   add('③ 退货后库存仍守恒（qtyOnHand == ΣStockMove）', consAfterReturn.ok,
     `qtyOnHand ${consAfterReturn.onHand} vs Σ流水 ${consAfterReturn.moved}`)
 
+  // ⛔ 批次守恒要单独验：第一版退货只扣了 Lot.currentQty 却把流水记成 lotId=null，
+  // 商品级守恒照样成立（总量对得上），**只有批次级会露馅**。
+  // 这正是「只测总量」漏掉的那一类错。
+  const lotBad = await prisma.$queryRawUnsafe<Array<{ c: bigint }>>(`
+    SELECT COUNT(*)::bigint AS c FROM "Lot" l
+    LEFT JOIN (SELECT "lotId", SUM(qty) AS s FROM "StockMove" WHERE "lotId" IS NOT NULL GROUP BY 1) m ON m."lotId" = l.id
+    WHERE l."productId" = $1 AND ABS(l."currentQty" - COALESCE(m.s, 0)) > 0.001`, productId)
+  add('③ 退货后批次也守恒（Lot.currentQty == Σ该批次流水）',
+    Number(lotBad[0]?.c ?? 0) === 0, `该商品不守恒批次数 ${Number(lotBad[0]?.c ?? 0)}`)
+
   const lineAfterReturn = await prisma.purchaseOrderLine.findFirstOrThrow({ where: { purchaseOrderId: poId } })
   add('③ 已收数量回冲（30 → 26），否则这单看起来还是收齐的',
     num(lineAfterReturn.receivedQty) === 26, `receivedQty=${num(lineAfterReturn.receivedQty)}（应 26）`)

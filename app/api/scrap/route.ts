@@ -107,7 +107,12 @@ export async function POST(req: Request) {
           data: { qtyOnHand: { decrement: qty } },
         })
 
-        // 扣减批次余量：指定了批次就扣那一批，否则按 FIFO 扣最早批次，保持 Lot 与 qtyOnHand 同步
+        // 扣减批次余量：指定了批次就扣那一批，否则按 FIFO 扣最早批次，保持 Lot 与 qtyOnHand 同步。
+        // ⚠️ FIFO 分支下**流水的 lotId 是 null**，而批次余量被扣了 —— 这会破坏
+        // 「Lot.currentQty == Σ该批次流水」（F3 周期在采购退货上撞到同一个形态）。
+        // 这里的商品若有批次就会中招；之所以一直没暴露，是因为报废测试用的商品
+        // 都是没有批次的期初库存。fifoConsumed 收集实际扣到的批次，下面据此补记流水。
+        let fifoConsumed: Array<{ lotId: string; lotNumber: string; qty: number }> = []
         if (lotId) {
           const updatedLot = await tx.lot.update({
             where: { id: lotId },
@@ -121,7 +126,7 @@ export async function POST(req: Request) {
             })
           }
         } else {
-          await consumeLotsFIFO(tx, productId, qty)
+          fifoConsumed = await consumeLotsFIFO(tx, productId, qty)
         }
 
         const move = await tx.stockMove.create({
@@ -140,6 +145,33 @@ export async function POST(req: Request) {
             sourceRef: scrapRef,
           },
         })
+        // FIFO 扣了哪几个批次，就把那部分金额从总流水里拆出来挂到批次上，
+        // 使「Lot.currentQty == Σ该批次流水」重新成立（总量不变，只是拆分记账）
+        if (fifoConsumed.length > 0) {
+          const covered = fifoConsumed.reduce((s2, c) => s2 + c.qty, 0)
+          for (const c of fifoConsumed) {
+            await tx.stockMove.create({
+              data: {
+                productId,
+                productName: productName || product.name || '未知商品',
+                type: 'SCRAP',
+                qty: -c.qty,
+                lotId: c.lotId,
+                movedAt: new Date(),
+                note: `${noteText || `报废 ${scrapRef}`} / 批次 ${c.lotNumber}`,
+                sourceType: 'SCRAP',
+                sourceRef: scrapRef,
+              },
+            })
+          }
+          // 主流水只保留没落到批次上的那部分；全部落到批次时把它清成 0 会更干净，
+          // 但删掉又会丢失「这次报废」的主记录，所以改写数量、保留记录
+          await tx.stockMove.update({
+            where: { id: move.id },
+            data: { qty: -(Math.round((qty - covered) * 1000) / 1000) },
+          })
+        }
+
         return move
       })
 
