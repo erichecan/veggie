@@ -44,6 +44,7 @@ function arg(name: string): string | undefined {
 }
 const APPLY = process.argv.includes('--apply')
 const ALLOW_REMOTE = process.argv.includes('--allow-remote')
+const SYNC_TRIPS = process.argv.includes('--sync-trips')
 
 /** `--mapping "BAO=a@b.com,SEAN=c@d.com"` → Map */
 function parseMapping(): Map<string, string> {
@@ -92,7 +93,11 @@ async function main() {
     const pending = slots.filter(s => !s.userId)
     console.log(`档位共 ${slots.length} 个，其中未绑账号 ${pending.length} 个`)
     if (pending.length === 0) {
-      console.log('✅ 全部已绑定，无需处理')
+      console.log('✅ 全部已绑定')
+      // ⚠️ 不能在这里 return：档位早就绑好了，但**改绑之前生成的进行中行程**
+      // 可能还挂着旧账号 —— 那正是需要这一步的场景。第一版在这里提前返回，
+      // 于是「全部已绑定」和「有 2 条行程对不上」同时成立却什么都没报。
+      await syncOpenTrips(prisma)
       return
     }
 
@@ -160,10 +165,62 @@ async function main() {
       if (created > 0) {
         console.log(`\n新账号初始密码：${INITIAL_PASSWORD}（已置强制改密，司机首次登录必须改掉）`)
       }
+      await syncOpenTrips(prisma)
     }
   } finally {
     await prisma.$disconnect()
   }
+}
+
+/**
+ * 改绑档位之后，**未跑完**的行程还挂着旧账号 —— 新司机看不到任务，旧司机还看得到。
+ * 已完成的行程不动：那是"当时派给谁"的历史事实，改了等于篡改记录
+ * （与「司机改名不级联到历史快照」是同一个道理）。
+ *
+ * 默认只报告，加 --sync-trips 才真的改。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function syncOpenTrips(prisma: any): Promise<void> {
+  const trips = await prisma.trip.findMany({
+    where: { waveId: { not: null }, status: { not: 'COMPLETED' } },
+    select: { id: true, name: true, driverId: true, waveId: true },
+  })
+  if (trips.length === 0) return
+
+  const waves = await prisma.pickingWave.findMany({
+    where: { id: { in: trips.map((t: { waveId: string }) => t.waveId) } },
+    select: { id: true, driverSlotId: true },
+  })
+  const slotIdByWave = new Map(waves.map((w: { id: string; driverSlotId: string | null }) => [w.id, w.driverSlotId]))
+  const slotIds = [...new Set([...slotIdByWave.values()].filter(Boolean))] as string[]
+  const slots = slotIds.length
+    ? await prisma.driverSlot.findMany({ where: { id: { in: slotIds } }, select: { id: true, userId: true, driverName: true } })
+    : []
+  const slotById = new Map(slots.map((s: { id: string }) => [s.id, s]))
+
+  const stale = trips.filter((t: { waveId: string; driverId: string | null }) => {
+    const sid = slotIdByWave.get(t.waveId)
+    if (!sid) return false
+    const slot = slotById.get(sid as string) as { userId: string | null } | undefined
+    return !!slot?.userId && t.driverId !== slot.userId
+  })
+
+  if (stale.length === 0) {
+    console.log('未完成的行程司机身份都与档位绑定一致')
+    return
+  }
+  console.log(`\n⚠️ ${stale.length} 条**未完成**行程的 driverId 与档位绑定不一致`)
+  console.log('   （改绑之前生成的：新司机看不到任务、旧司机还看得到）')
+  if (!SYNC_TRIPS) {
+    console.log('   加 --sync-trips 可把它们同步过来。已完成的行程一律不动。')
+    return
+  }
+  for (const t of stale) {
+    const slot = slotById.get(slotIdByWave.get(t.waveId) as string) as { userId: string; driverName: string }
+    await prisma.trip.update({ where: { id: t.id }, data: { driverId: slot.userId, driverName: slot.driverName } })
+    console.log(`   ✅ ${t.name ?? t.id} → ${slot.driverName}`)
+  }
+  console.log(`   已同步 ${stale.length} 条`)
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })

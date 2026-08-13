@@ -22,6 +22,8 @@ import { createPrismaClient } from '@/lib/prisma-factory'
 
 const prisma = createPrismaClient()
 
+import { checkDriverIdentity } from '../lib/validation/driver-identity'
+
 const MONEY_EPS = 0.02
 const QTY_EPS = 0.001
 const n = (v: unknown): number => Number(v ?? 0)
@@ -256,6 +258,24 @@ async function main(): Promise<void> {
       }
     }
     record('调度单一归属  一单至多属一个 wave', dupOrders.size, seen.size, ex)
+  }
+
+  // 11. 司机身份单一真相（台账 C6）——「司机不能有两套」是需求点名翻过车的地方
+  {
+    const findings = await checkDriverIdentity(prisma)
+    for (const f of findings) {
+      if (f.advisory) {
+        // 提示项不参与成败：改名不级联、下单意向与实际不同，都是设计允许的
+        checks.push({
+          name: `（提示）${f.title}`,
+          pass: true,
+          detail: f.bad === 0 ? `✓ ${f.total} 条无差异` : `ℹ ${f.bad}/${f.total} 条不同（不算违例）`,
+          examples: f.examples.slice(0, 2),
+        })
+        continue
+      }
+      record(`司机真相  ${f.title}`, f.bad, f.total, f.examples)
+    }
   }
 
   // 输出报告

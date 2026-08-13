@@ -172,10 +172,27 @@ async function main() {
     select: { id: true },
   })
 
-  const driverName = `H3 司机甲 ${stamp}`
+  // ⛔ driverId 必须是**真实存在的用户 id**。第一版编了个 `h3-drv-<stamp>`，
+  // C6 的「行程 driverId 都指向真实用户」当场报出 25 条违例 —— 全是这个脚本留下的。
+  // 测试数据自身不守恒，测出来的结论就不可信（周期 25/26 已在库存上踩过两次）。
+  const drvA = await prisma.user.create({
+    data: {
+      email: `h3-drv-a-${stamp}@veggie.com`, name: `H3 司机甲 ${stamp}`,
+      role: 'DRIVER', roles: ['DRIVER'], passwordHash: 'x', isActive: true,
+    },
+    select: { id: true, name: true },
+  })
+  const drvB = await prisma.user.create({
+    data: {
+      email: `h3-drv-b-${stamp}@veggie.com`, name: `H3 司机乙 ${stamp}`,
+      role: 'DRIVER', roles: ['DRIVER'], passwordHash: 'x', isActive: true,
+    },
+    select: { id: true, name: true },
+  })
+  const driverName = drvA.name
   const tripDone = await prisma.trip.create({
     data: {
-      name: `H3 行程-已完成 ${stamp}`, driverName, driverId: `h3-drv-${stamp}`,
+      name: `H3 行程-已完成 ${stamp}`, driverName, driverId: drvA.id,
       status: 'IN_PROGRESS', waveId: wave.id, totalPayment: 0,
       restaurants: [
         { restaurantId: custA.id, restaurantName: custA.name, orderIds: [o1, o2] },
@@ -270,7 +287,7 @@ async function main() {
   const o4 = await makeOrder(custB, [{ productId: prodA, quantity: 6, unitPrice: 10 }], '未完成')
   await prisma.trip.create({
     data: {
-      name: `H3 行程-在途 ${stamp}`, driverName: `H3 司机乙 ${stamp}`, driverId: `h3-drv2-${stamp}`,
+      name: `H3 行程-在途 ${stamp}`, driverName: drvB.name, driverId: drvB.id,
       status: 'IN_PROGRESS', waveId: wave.id, totalPayment: 0,
       restaurants: [{ restaurantId: custB.id, restaurantName: custB.name, orderIds: [o4] }] as never,
     },
@@ -286,7 +303,7 @@ async function main() {
   add('⑤ 未送达的单：冻结列为空、固定费不计', !!openRow && openRow.frozenAt === null && openRow.fixedFee === 0,
     openRow ? `冻结=${openRow.frozenAt ?? 'null'} 固定费=${eur(openRow.fixedFee)} 合计=${eur(openRow.computedTotal)}` : '未找到该单')
 
-  const openDriver = rep2.byDriver.find(d => d.driverName === `H3 司机乙 ${stamp}`)
+  const openDriver = rep2.byDriver.find(d => d.driverName === drvB.name)
   add('⑤ 汇总里「已冻结单数」把未冻结的排除在外', !!openDriver && openDriver.frozenOrderCount === 0 && openDriver.orderCount === 1,
     openDriver ? `已冻结 ${openDriver.frozenOrderCount}/${openDriver.orderCount}` : '未找到该司机')
 
@@ -307,7 +324,7 @@ async function main() {
 
   // ── ① 按司机筛选 ───────────────────────────────────────────────────────────
   const fRes = await fetch(
-    `${BASE}/api/analytics/driver-commission?${qs}&driverId=h3-drv-${stamp}&driverName=${encodeURIComponent(driverName)}`,
+    `${BASE}/api/analytics/driver-commission?${qs}&driverId=${drvA.id}&driverName=${encodeURIComponent(driverName)}`,
     { headers: auth })
   const filtered = await fRes.json() as Payload
   add('① 按 (driverId, driverName) 筛选只返回该司机', filtered.byDriver.length === 1 && filtered.byDriver[0]!.driverName === driverName,
@@ -316,13 +333,18 @@ async function main() {
   // ⛔ 回归：**同一个 driverId 挂多个司机名**。测试库里 BAO/AFZAAL/SEAN 就共用一个
   // Trip.driverId，只按 id 筛会把三个人一起带出来 —— 页面上表现为「点了司机，数字不动」。
   // 这里造一对同 id 不同名的行程，断言按名字能真的筛开。
-  const sharedId = `h3-shared-${stamp}`
+  // 同一个真实用户 id 挂两个不同的司机名 —— 这正是现网数据的形状
+  const sharedId = drvA.id
+  // ⛔ 每个行程挂**各自的订单**。第一版让两个行程共用 o4，于是同一张订单同时挂在
+  // 三个行程上 —— C6 的「一单只挂一个司机」当场报违例。夹具自己破坏业务不变量，
+  // 得到的就不是"测出问题"而是"测出我自己造的问题"（周期 25/26 已在库存上踩过两次）。
   for (const nm of [`H3 同ID甲 ${stamp}`, `H3 同ID乙 ${stamp}`]) {
+    const oid = await makeOrder(custB, [{ productId: prodA, quantity: 2, unitPrice: 10 }], nm)
     await prisma.trip.create({
       data: {
         name: `H3 同ID行程 ${nm}`, driverName: nm, driverId: sharedId,
         status: 'IN_PROGRESS', waveId: wave.id, totalPayment: 0,
-        restaurants: [{ restaurantId: custB.id, restaurantName: custB.name, orderIds: [o4] }] as never,
+        restaurants: [{ restaurantId: custB.id, restaurantName: custB.name, orderIds: [oid] }] as never,
       },
     })
   }
@@ -336,8 +358,9 @@ async function main() {
 
   const idOnly = await fetch(`${BASE}/api/analytics/driver-commission?${bust(5)}&driverId=${sharedId}`, { headers: auth })
     .then(r => r.json()) as Payload
-  add('① 只给 driverId 时如实返回该 id 下的全部司机（不假装筛过了）',
-    idOnly.byDriver.length === 2,
+  // drvA 名下现在挂着三个名字（本人 + 同ID甲 + 同ID乙），只给 id 应该三个都回来
+  add('① 只给 driverId 时如实返回该 id 下的全部司机名（不假装筛过了）',
+    idOnly.byDriver.length >= 2 && idOnly.byDriver.every(d => d.driverId === drvA.id),
     `返回 ${idOnly.byDriver.length} 名：${idOnly.byDriver.map(d => d.driverName).join(',')}`)
 
   // ── 提成归属：跟行程走，不跟订单上计划派的司机走 ──────────────────────────

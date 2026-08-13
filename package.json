@@ -44,6 +44,7 @@
     "test:purchase-qc": "npx tsx --env-file=.env.test scripts/audit/purchase-qc-test.ts",
     "test:statement": "npx tsx --env-file=.env.test scripts/audit/statement-settlement-test.ts",
     "test:vendor-settlement": "npx tsx --env-file=.env.test scripts/audit/vendor-settlement-test.ts",
+    "test:driver-identity": "npx tsx --env-file=.env.test scripts/audit/driver-identity-selftest.ts",
     "test:signature": "npx tsx --env-file=.env.test scripts/audit/signature-test.ts",
     "test:driver-tasks": "npx tsx --env-file=.env.test scripts/audit/driver-task-visibility-test.ts",
     "test:driver-commission": "npx tsx --env-file=.env.test scripts/audit/driver-commission-test.ts",
