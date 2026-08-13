@@ -54,37 +54,44 @@ function main() {
   const withStock = process.argv.includes('--with-stock')
 
   steps.push({
-    name: '1/7 同步表结构（db push —— 刻意绕开无基线的迁移链）',
+    name: '1/8 同步表结构（db push —— 刻意绕开无基线的迁移链）',
     run: () => sh('npx', ['prisma', 'db', 'push']),
   })
   steps.push({
-    name: '2/7 补视图/扩展/trgm 索引（db push 同样跳过，不补则分析中心 500）',
+    name: '2/8 补视图/扩展/trgm 索引（db push 同样跳过，不补则分析中心 500）',
     run: () => sh('npx', ['tsx', 'scripts/db/apply-sql-objects.ts']),
   })
   steps.push({
-    name: '3/7 补 RBAC 数据迁移（db push 会跳过，不补则全站 403）',
+    name: '3/8 补 RBAC 数据迁移（db push 会跳过，不补则全站 403）',
     run: () => sh('npx', ['tsx', 'scripts/rbac/apply-data-migrations.ts']),
   })
   steps.push({
-    name: '4/7 基础种子（用户/商品/客户/价格表）',
+    name: '4/8 基础种子（用户/商品/客户/价格表）',
     run: () => sh('npx', ['tsx', 'prisma/seed.ts']),
+  })
+  steps.push({
+    // 司机档位不绑账号 → 确认出发生成的 Trip.driverId 为空 → **司机端一条任务都看不到**
+    // （台账 C4 实测：全新库里 3 个档位的 userId 全为空）。这是第四次撞上
+    // 「只被人手配过、任何脚本都不填」的表，所以直接接进来。脚本幂等。
+    name: '5/8 司机档位绑定系统账号（不绑则司机端看不到任务）',
+    run: () => sh('npx', ['tsx', 'scripts/seed/bind-driver-slots.ts', '--apply']),
   })
   steps.push({
     // 采购品类分组同样只存在于一次性订正脚本里（不在 seed、不在迁移数据里），
     // 不建的话 CategoryGroup 是空表 → 生鲜每日采购建议直接返回空数组，
     // 「采购计划」整块功能在全新库上是死的（台账 F1 查出）。脚本本身幂等。
-    name: '5/7 采购品类分组（不建则采购建议恒为空）',
+    name: '6/8 采购品类分组（不建则采购建议恒为空）',
     run: () => sh('npx', ['tsx', 'scripts/backfill-category-groups.ts', '--apply']),
   })
   if (withEvents) {
     steps.push({
-      name: '6/7 事件种子（订单/发票/收付款/库存流水）',
+      name: '7/8 事件种子（订单/发票/收付款/库存流水）',
       run: () => sh('npx', ['tsx', 'prisma/seed-events/index.ts']),
     })
   }
   if (withStock) {
     steps.push({
-      name: '7/7 期初库存（把商品补到可下单水位）',
+      name: '8/8 期初库存（把商品补到可下单水位）',
       run: () => sh('npx', ['tsx', 'scripts/seed/ensure-opening-stock.ts']),
     })
   }

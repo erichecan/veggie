@@ -263,6 +263,14 @@ async function main() {
     t3?.driverId === otherUser.id,
     `行程 driverId=${t3?.driverId ?? 'null'} · 期望 ${otherUser.id}（${slotB.driverName}）`)
 
+  // 收尾：把本轮造的档位归档。不归档的话每跑一次就在「司机配置」页多两行垃圾，
+  // 而且 bind-driver-slots 会当真去给它们建账号（第一次跑就撞上了）。
+  // 归档而不是删除 —— PickingWave.driverSlotId 还指着它们，删了会断引用。
+  await prisma.driverSlot.updateMany({
+    where: { id: { in: [slotA.id, slotB.id] } },
+    data: { archived: true },
+  })
+
   await prisma.$disconnect()
   report()
 }

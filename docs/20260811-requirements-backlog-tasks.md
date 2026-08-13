@@ -627,9 +627,17 @@
       **司机端每次打开打出 7 个 403**：`hydrate()` 无差别八连发（orders/waves/invoices/customers/pricelists/stock-moves/purchases），
       司机一个都够不着。权限是对的，浪费的是请求本身（还占 2 vCPU 的并发）。改为按会话可达性过滤，
       判定用 middleware 那张表；浏览器实测司机端与运营端**控制台均 0 错误**
-      ⚠️ **主数据缺口（不是代码问题，但司机会因此看不到任务）**：库里 3 个 `DriverSlot` 的 `userId` **全为空**，
+      ✅ **主数据缺口已补（20260812，用户要求）**：3 个 `DriverSlot`（AFZAAL/BAO/SEAN）的 `userId` 原本全为空，
       而 `createTripFromWave` 的司机身份取自 `slot.userId` → 生成的 Trip `driverId=null` → 司机端一条也查不到。
-      绑定入口在「司机配置」页已存在，**要客户去把每个档位绑到对应的司机账号**。已写成第一条断言，长期可复跑
+      新增 `scripts/seed/bind-driver-slots.ts`（`npm run db:bind-drivers`）：按档位司机名找/建 DRIVER 账号并绑定，
+      **幂等 + 默认预演**（不加 `--apply` 一个字都不写）。测试库 3/3 已绑（afzaal/bao/sean@veggie.com），
+      司机配置页实看已显示绑定。新账号是弱口令 + `mustChangePassword=true`，首次登录除改密外什么都调不了 ——
+      **绝不给司机一个我们知道密码的长期账号**
+      · 已接进 `db:bootstrap` 第 5/8 步 —— 这是第四次撞上「只被人手配过、任何脚本都不填」的表
+        （前三次：RBAC 角色权限、采购品类分组、SQL 视图），重建库不会再缺
+      · ⚠️ **生产环境仍需执行**：脚本支持 `--allow-remote --mapping "BAO=真实邮箱,..."`，
+        但**真实邮箱必须客户提供**，默认拼出来的 `bao@veggie.com` 不能用在生产上。见下方「待客户提供」
+      · C4 测试脚本造的档位现在会自我归档（归档而非删除 —— `PickingWave.driverSlotId` 还指着它们）
       ⚠️ 销售单 PUT 那条改派路径**本来就对**（有更早的按订单状态判的守卫，409 且文案清楚），
       本轮给它补的 catch 是走不到的兜底 —— 如实记下，不把"本来就好的"算成修复
 - [ ] **C5 电子签名验收** — 能签能重签能保存，后台可查
