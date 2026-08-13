@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import { getBatchColor, computeConvexHull, type MapMarker, type ConvexHullGroup } from './BatchMap'
+import { toast } from 'sonner'
 
 function MapLoadingFallback() {
   const locale = useLocale()
@@ -41,6 +42,9 @@ interface RouteInfo {
   totalDistanceKm: number
   totalDurationMin: number
   summary: string
+  /** true = 没有地图服务，按直线距离估算出来的，不是实际道路里程 */
+  estimated?: boolean
+  estimateNote?: string
   legs: { from: string; to: string; distance: string; duration: string }[]
 }
 
@@ -155,10 +159,17 @@ export default function BatchAnalysis() {
     if (missingCoords.length === 0) return
     setGeocoding(true)
     try {
-      await apiPost('/api/geocode', { customerIds: missingCoords.map(r => r.id) })
+      // ⛔ 结果必须反馈给用户。原实现成功路径不看返回、失败路径 `// silent`，
+      // 于是没配地图服务时点这个按钮**什么都不会发生** —— 死按钮。
+      const res = await apiPost<{ geocoded?: number; failed?: number }>(
+        '/api/geocode', { customerIds: missingCoords.map(r => r.id) })
       await fetchBatches()
-    } catch {
-      // silent
+      const ok = res?.geocoded ?? 0
+      const bad = res?.failed ?? 0
+      if (ok > 0) toast.success(`已解析 ${ok} 家${bad > 0 ? `，${bad} 家地址无法识别` : ''}`)
+      else toast.warning(bad > 0 ? `${bad} 家的地址无法识别，请检查地址是否完整` : '没有需要解析的客户')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '地址解析失败')
     } finally {
       setGeocoding(false)
     }
@@ -225,6 +236,18 @@ export default function BatchAnalysis() {
 
     return [...withRoute, ...withoutRoute]
   }, [batches, routeInfoMap])
+
+  // ⛔ 没有地图服务时里程是**直线估算**，界面必须说出来。
+  // 浏览器实测发现：接口已经标了 estimated，但表格照样把 44.1 km 显示得像实测值 ——
+  // 调度台据此排班，把估算当实测会直接排错车。
+  const anyEstimated = useMemo(
+    () => Object.values(routeInfoMap).some(r => r?.estimated),
+    [routeInfoMap],
+  )
+  const estimateNote = useMemo(
+    () => Object.values(routeInfoMap).find(r => r?.estimateNote)?.estimateNote ?? '',
+    [routeInfoMap],
+  )
 
   const avgDistance = useMemo(() => {
     const withRoute = overviewRows.filter(r => r.route)
@@ -380,14 +403,28 @@ export default function BatchAnalysis() {
               <h2 className="text-base font-semibold">{isEn ? 'Batch Comparison Overview' : '批次对比总览'}</h2>
               <span className="text-[13px] text-gray-400">{isEn ? 'Sorted by workload, high to low' : '按工作量从高到低排列'}</span>
             </div>
+            {anyEstimated && (
+              <div className="px-5 py-2 bg-amber-50 border-b border-amber-100 text-[13px] text-amber-800">
+                ≈ {isEn
+                  ? 'Distances and times are straight-line estimates, not actual road routes.'
+                  : '里程与时间是直线距离估算，不是实际道路里程'}
+                {estimateNote && <span className="text-amber-700 ml-1">（{estimateNote}）</span>}
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="bg-gray-50 text-left text-[13px] font-semibold text-gray-500">
                     <th className="px-4 py-3 min-w-[200px]">{isEn ? 'Batch' : '批次'}</th>
                     <th className="px-4 py-3">{isEn ? 'Restaurants' : '餐馆数'}</th>
-                    <th className="px-4 py-3">{isEn ? 'Total Distance' : '总距离'}</th>
-                    <th className="px-4 py-3">{isEn ? 'Est. Time' : '预计时间'}</th>
+                    <th className="px-4 py-3">
+                      {isEn ? 'Total Distance' : '总距离'}
+                      {anyEstimated && <span className="ml-1 font-normal text-amber-700">≈</span>}
+                    </th>
+                    <th className="px-4 py-3">
+                      {isEn ? 'Est. Time' : '预计时间'}
+                      {anyEstimated && <span className="ml-1 font-normal text-amber-700">≈</span>}
+                    </th>
                     <th className="px-4 py-3">{isEn ? 'Avg/Stop' : '平均/站'}</th>
                     <th className="px-4 py-3">{isEn ? 'Workload' : '工作量'}</th>
                   </tr>

@@ -12,6 +12,10 @@ const TRACKED_FIELDS = [
   'isActive', 'isCustomer', 'isVendor', 'notes', 'externalNote',
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
   'salesUserId',
+  // 经纬度（C7）：原先**只能由 Google geocode 写入**，而那需要客户出钱开通的
+  // API key —— 实测生产与测试库都没配，于是 1411 个客户里 0 个有坐标，
+  // 地图与路线整块是死的。放开手工填写，让地图不依赖外部服务也能用起来。
+  'latitude', 'longitude',
 ]
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -82,10 +86,22 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const pick = (k: string) => (data[k] !== undefined ? data[k] : b[k])
       updateData.address = ['street', 'street2', 'city', 'state', 'zip', 'country']
         .map((k) => String(pick(k) ?? '').trim()).filter(Boolean).join(', ')
-      // 地址组件变更 → 清空经纬度,触发重新 geocode(否则坐标陈旧)
+      // 地址组件变更 → 清空经纬度,触发重新 geocode(否则坐标陈旧)。
+      // ⚠️ 但**本次显式传了坐标就以传入值为准** —— 否则「改地址的同时填上正确坐标」
+      // 这个最自然的操作会被自己清掉，手工录入永远存不进去。
+      const coordsGiven = data.latitude !== undefined || data.longitude !== undefined
       const addrChanged = ['street', 'street2', 'city', 'state', 'zip', 'country']
         .some((k) => data[k] !== undefined && String(data[k] ?? '') !== String(b[k] ?? ''))
-      if (addrChanged) { updateData.latitude = null; updateData.longitude = null }
+      if (addrChanged && !coordsGiven) { updateData.latitude = null; updateData.longitude = null }
+      // 坐标做范围校验：写错一位就会把餐馆丢到大西洋里，而地图不会报错只会显示错位置
+      for (const [k, range] of [['latitude', 90], ['longitude', 180]] as const) {
+        if (updateData[k] === undefined || updateData[k] === null) continue
+        const v = Number(updateData[k])
+        if (!Number.isFinite(v) || Math.abs(v) > range) {
+          return NextResponse.json({ error: `${k} 超出有效范围（±${range}）` }, { status: 400 })
+        }
+        updateData[k] = v
+      }
       const customer = await prisma.customer.update({
         where: { id },
         data: updateData as Parameters<typeof prisma.customer.update>[0]['data'],

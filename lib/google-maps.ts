@@ -1,5 +1,14 @@
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY ?? ''
 
+/**
+ * 有没有配地图服务的 key。调用方据此决定「降级估算」还是「报错」——
+ * 没 key 时静默返回 null 会让上层分不清「服务没配」和「这次调用失败了」，
+ * 前者该降级，后者该重试。
+ */
+export function hasMapsApiKey(): boolean {
+  return API_KEY.length > 0
+}
+
 export interface GeocodingResult {
   latitude: number
   longitude: number
