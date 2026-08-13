@@ -153,6 +153,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 结果就是又一个够不着的开关（C4/H3 各踩过一次）
   { pattern: '/api/driver-reports/daily', methods: R, permission: 'finance.settlement.read' },
   { pattern: '/api/driver-reports/daily', methods: ['POST'], permission: 'finance.settlement.create' },
+  // C9 财务确认当日货款：独立权限，司机有 create 但没有 confirm（职责分离）
+  { pattern: '/api/driver-reports/daily', methods: ['PUT'], permission: 'finance.settlement.confirm' },
   { pattern: '/api/trips/*/verify', methods: R, permission: 'dispatch.trip.read_verify' },
   { pattern: '/api/trips/*/verify', methods: ['POST'], permission: 'dispatch.trip.verify' },
   { pattern: '/api/trips/*/returns', methods: R, permission: 'dispatch.trip.read_returns' },

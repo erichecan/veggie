@@ -14,6 +14,7 @@ import {
  * GET  ?date=YYYY-MM-DD&driverId=   查当日四项：系统派生值 + 已提交的申报快照 + 差异
  * POST { date, cashCollected, orderTotal, returnCount, exchangeCount, note }
  *                                   司机提交当日回传
+ * PUT  { date, driverId, note? }    财务确认当日货款（台账 C9）
  *
  * 行级隔离：只挂 DRIVER 的账号一律只能看/提交自己的（`driverRowScope`，与
  * `/api/trips` 同一套）。不做这层的话，司机改一个 driverId 就能替别人报账。
@@ -151,4 +152,77 @@ export async function POST(req: Request) {
     // handler 自己也要挂闸，不能只在 route-map 登记 —— 扫描器查的是这里，
     // 而 middleware 与 handler 是两层，少一层就等于"任何登录用户都能调"
   }, { require: 'finance.settlement.create' })
+}
+
+
+/**
+ * PUT — 财务确认司机当日回传（台账 C9）
+ *
+ * 独立权限 `finance.settlement.confirm`：司机有 read/create 但**没有 confirm**，
+ * 所以司机确认不了自己报的账（职责分离，与 G1 的交账确认同一条线）。
+ *
+ * 确认之后这条记录进入 `confirmed`，司机侧本来就改不了（一天一条 + 唯一约束），
+ * 现在再加一道：已确认的不允许重复确认，避免两个财务各点一次留下两条互相矛盾的痕迹。
+ */
+export async function PUT(req: Request) {
+  return withAuth(req, async (user) => {
+    try {
+      const body = await req.json() as { date?: string; driverId?: string; note?: string }
+      const date = parseReportDate(body.date)
+      if (!date) {
+        return NextResponse.json({ error: 'date 必须是 YYYY-MM-DD 格式的真实日期' }, { status: 400 })
+      }
+      const driverId = body.driverId?.trim()
+      if (!driverId) {
+        return NextResponse.json({ error: '缺少 driverId' }, { status: 400 })
+      }
+
+      const key = { driverId_reportDate: { driverId, reportDate: new Date(`${date}T00:00:00Z`) } }
+      const existing = await prisma.driverDailyReport.findUnique({ where: key })
+      if (!existing) {
+        return NextResponse.json({ error: `司机 ${date} 还没有提交当日回传` }, { status: 404 })
+      }
+      if (existing.status === 'confirmed') {
+        return NextResponse.json({
+          error: `该回传已于 ${existing.confirmedAt?.toISOString().slice(0, 10)} 由 ${existing.confirmedByName ?? '?'} 确认过`,
+        }, { status: 409 })
+      }
+
+      const updated = await prisma.driverDailyReport.update({
+        where: key,
+        data: {
+          status: 'confirmed',
+          confirmedAt: new Date(),
+          confirmedById: user.userId,
+          confirmedByName: user.name ?? '',
+          // 确认时的备注**追加**而不是覆盖司机写的那条 —— 两边说的是不同的事
+          note: body.note
+            ? `${existing.note ? existing.note + ' | ' : ''}财务：${String(body.note).slice(0, 300)}`
+            : existing.note,
+        },
+      })
+
+      // 确认那一刻的系统值一并记进日志：事后行程再被改，也能查到"确认时看到的是什么"
+      const system = await deriveDailyReport(prisma, driverId, date)
+      const diffs = diffReport({
+        cashCollected: Number(existing.cashCollected),
+        orderTotal: Number(existing.orderTotal),
+        returnCount: existing.returnCount,
+        exchangeCount: existing.exchangeCount,
+      }, system)
+
+      await writeLog({
+        userId: user.userId, userEmail: user.email, userName: user.name,
+        action: 'UPDATE', resource: 'driver-daily-report', resourceId: updated.id,
+        detail: `财务确认当日回传 ${date}：申报现金 ${Number(existing.cashCollected)}` +
+          ` / 系统 ${system.cashCollected}` +
+          (diffs.length > 0 ? ` · ${diffs.length} 项对不上：${diffs.map(d => d.label).join('、')}` : ' · 完全一致'),
+      })
+
+      return NextResponse.json(serializeApi({ report: updated, system, diffs }))
+    } catch (error) {
+      console.error('[PUT /api/driver-reports/daily]', error)
+      return NextResponse.json({ error: '确认当日回传失败' }, { status: 500 })
+    }
+  }, { require: 'finance.settlement.confirm' })
 }

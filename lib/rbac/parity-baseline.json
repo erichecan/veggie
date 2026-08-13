@@ -3596,5 +3596,19 @@
     "DRIVER": "y",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "PUT /api/driver-reports/daily": {
+    "BOSS": "y",
+    "OPERATOR": "y",
+    "FINANCE": "y",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }
