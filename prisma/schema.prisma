@@ -165,10 +165,12 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  dailyReports DriverDailyReport[] @relation("DriverDailyReports")
+
   /// 直属上级。DataScope.TEAM 靠它算下属（只算一层，不做组织架构树）
-  managerId   String?
+  managerId          String?
   /// 权限版本号。权限变更时 bump，token 里的 pv 落后就强制重新登录
-  permVersion Int    @default(0)
+  permVersion        Int     @default(0)
   /// 必须先改密码才能用系统。导入脚本造出来的一批弱口令账号（test123）置 true，
   /// 登录后除了改密接口什么都调不了，改完自动清掉。见
   /// docs/20260807-production-credentials-audit.md
@@ -465,11 +467,9 @@ model Customer {
  * ================================================================================
  * 存在的理由：一个客户名下往往有多个人——下单的、对账的、收货的，各有各的邮箱。
  * 发报价单/销售单时要能选「主收件人 + 抄送若干」，而 `Customer.email` 只有一个格子。
- *
  * ⚠️ 与 `Customer.email` 的关系：后者保留不动，作为「客户默认邮箱」继续被采购 RFQ 等
  * 既有逻辑使用。本表是**补充**不是替代——贸然把 Customer.email 迁走会牵动一堆只读它的地方。
  * 建表迁移会把非空的 Customer.email 回填成一条 isPrimary 联系人，两边初始是一致的。
- *
  * `isPrimary` 每个客户至多一条，靠 partial unique index 保证（见迁移 SQL）——
  * Prisma schema 语法表达不了带 WHERE 的唯一索引，所以那句 DDL 是手写进迁移的，
  * 别指望 `prisma db push` 能从这里推导出来。
@@ -718,29 +718,29 @@ model Order {
 
 /// 订单行（Odoo 对齐）— 每条记录对应一种商品的一行明细，含 ordered/delivered/invoiced 三个数量
 model OrderLine {
-  id              String   @id @default(cuid())
-  orderId         String
-  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId       String
-  product         Product? @relation(fields: [productId], references: [id])
-  productName     String
-  spec            String?
+  id                String    @id @default(cuid())
+  orderId           String
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product?  @relation(fields: [productId], references: [id])
+  productName       String
+  spec              String?
   /// 行级备注（商品级 note，如"free"赠品/注意事项），下单时由操作员填写
-  note            String?
-  uomId           String?
-  uomName         String?
-  unitPrice       Decimal  @db.Decimal(12, 2)
-  taxRate         Decimal? @db.Decimal(6, 4)
+  note              String?
+  uomId             String?
+  uomName           String?
+  unitPrice         Decimal   @db.Decimal(12, 2)
+  taxRate           Decimal?  @db.Decimal(6, 4)
   /// 报价/订购数量（quotation 保存时填）
-  orderedQty      Decimal  @db.Decimal(14, 3)
+  orderedQty        Decimal   @db.Decimal(14, 3)
   /// 已交货数量（Trip 标记送达时回写）
-  deliveredQty    Decimal  @default(0) @db.Decimal(14, 3)
+  deliveredQty      Decimal   @default(0) @db.Decimal(14, 3)
   /// 已开票数量（生成发票时回写，等于发票时的 deliveredQty）
-  invoicedQty     Decimal  @default(0) @db.Decimal(14, 3)
+  invoicedQty       Decimal   @default(0) @db.Decimal(14, 3)
   /// unitPrice × orderedQty 快照
-  subtotal        Decimal  @db.Decimal(12, 2)
+  subtotal          Decimal   @db.Decimal(12, 2)
   /// 下单时快照该商品的件提成单价（来自 Product/ProductTemplate.commissionPrice）
-  commissionPrice Decimal? @db.Decimal(10, 4)
+  commissionPrice   Decimal?  @db.Decimal(10, 4)
   /// 单价来源快照（下单/编辑时计算，历史订单无此字段一律为 null）：
   /// PRICELIST=命中价格表 / DEFAULT=直接牌价 / LAST=最近成交价 / SPECIAL=客户专属价
   priceSourceType   String?
@@ -748,9 +748,9 @@ model OrderLine {
   priceSourceDetail String?
   /// LAST 来源时，最近一次成交（订单创建）发生的时间
   priceSourceDate   DateTime?
-  sequence        Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  sequence          Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([orderId])
   @@index([productId])
@@ -1382,7 +1382,7 @@ model VendorBill {
   postedAt        DateTime?
   paidAt          DateTime?
 
-  payments        VendorPayment[]
+  payments VendorPayment[]
 
   @@index([supplierId])
   @@index([purchaseOrderId])
@@ -1715,4 +1715,47 @@ model Permission {
   sortKey Int
 
   @@index([module])
+}
+
+/// 司机每日回传（台账 C8）：司机收车时提交当日的现金 / 订单总额 / 退货数 / 换货数。
+///
+/// ⛔ **这张表只存"提交那一刻的快照"，不是这四个数字的真相**。
+/// 真相仍在 Trip 上（cashCollected / totalPayment / restaurants[].returns[]），
+/// 查询时实时派生。存快照是为了回答「司机当时报的是多少」——
+/// 提交之后行程被改（退货审核、补录收款），快照与实时值就会不一样，
+/// 那个差额正是对账要看见的东西，抹平它等于把对账做没了。
+/// 与 H3 的「冻结提成 vs 重算提成」是同一个模式。
+model DriverDailyReport {
+  id         String   @id @default(cuid())
+  /// 司机的系统账号（User.id）——与 Trip.driverId 同一实体，见 C6 的单一真相约束
+  driverId   String
+  driver     User     @relation("DriverDailyReports", fields: [driverId], references: [id], onDelete: Cascade)
+  /// 业务日（都柏林时区的自然日），与波次 waveDate 同口径
+  reportDate DateTime @db.Date
+
+  /// ── 提交时刻的四项快照 ──
+  cashCollected Decimal  @db.Decimal(12, 2)
+  orderTotal    Decimal  @db.Decimal(12, 2)
+  returnCount   Int
+  exchangeCount Int
+  /// 这份日报覆盖了哪几趟行程，用于事后追溯"当时算的是哪些单"
+  tripIds       String[]
+
+  note            String?
+  status          String    @default("submitted") /// submitted | confirmed（confirmed 由 C9 财务确认写入）
+  submittedAt     DateTime  @default(now())
+  submittedById   String
+  submittedByName String
+  confirmedAt     DateTime?
+  confirmedById   String?
+  confirmedByName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// ⛔ 防重复提交靠**数据库唯一约束**，不靠应用层先查后写 ——
+  /// 后者在并发下必然漏（G2 的分批付款就是这么丢过钱的）
+  @@unique([driverId, reportDate])
+  @@index([reportDate])
+  @@index([status])
 }

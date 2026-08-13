@@ -148,6 +148,11 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/trips/*/settlement', methods: R, permission: 'finance.settlement.read' },
   { pattern: '/api/trips/*/settlement', methods: ['POST'], permission: 'finance.settlement.create' },
   { pattern: '/api/trips/*/settlement', methods: ['PUT'], permission: 'finance.settlement.confirm' },
+  // C8 司机每日回传：是「司机交账」的日级形态，同一件事复用同一组权限点 ——
+  // 新开一个权限点的话，derive 不会自动发给任何人（新 handler 不在冻结基线里），
+  // 结果就是又一个够不着的开关（C4/H3 各踩过一次）
+  { pattern: '/api/driver-reports/daily', methods: R, permission: 'finance.settlement.read' },
+  { pattern: '/api/driver-reports/daily', methods: ['POST'], permission: 'finance.settlement.create' },
   { pattern: '/api/trips/*/verify', methods: R, permission: 'dispatch.trip.read_verify' },
   { pattern: '/api/trips/*/verify', methods: ['POST'], permission: 'dispatch.trip.verify' },
   { pattern: '/api/trips/*/returns', methods: R, permission: 'dispatch.trip.read_returns' },

@@ -10,6 +10,7 @@ import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 import { getSession } from '@/lib/session'
 import { formatDateTime } from '@/lib/format-date'
+import DailyReportCard from '@/components/driver/DailyReportCard'
 
 interface CommissionOrder {
   id: string
@@ -141,6 +142,10 @@ export default function DriverSettlementPage() {
       />
 
       <div className="flex-1 overflow-auto">
+        {/* C8 收车回传：一天一条，四项预填系统值供司机核对 */}
+        <div className="p-4 pb-0">
+          <DailyReportCard date={new Date().toISOString().slice(0, 10)} />
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-24 text-gray-400">
             <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: '#875A7B' }} />

@@ -84,6 +84,9 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: ['GET', 'PUT'] },
     { pattern: '/api/trips/*/settlement', methods: ['GET', 'POST'] },
+    // C8：司机收车时提交当日回传。行级隔离在 handler 里（driverRowScope），
+    // 司机改一个 driverId 也只能报自己的
+    { pattern: '/api/driver-reports/daily', methods: ['GET', 'POST'] },
     { pattern: '/api/customers/coordinates', methods: READ },
   ],
 
@@ -152,6 +155,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: READ },
     { pattern: '/api/trips/*/settlement', methods: ['GET', 'PUT'] },   // 确认/退回交账
+    { pattern: '/api/driver-reports/**', methods: READ },              // C8 司机当日回传（C9 将加确认）
     { pattern: '/api/driver-slots', methods: READ },
     { pattern: '/api/users', methods: READ },
     // 打印状态查询：这两个角色本来就能调 /api/print/** 打单，能打印却看不到
