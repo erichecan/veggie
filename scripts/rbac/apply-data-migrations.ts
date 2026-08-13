@@ -33,6 +33,7 @@ const DATA_MIGRATIONS = [
   '20260807000003_rbac_business_role_templates',
   '20260807000004_purchase_approve_finer_gate',
   '20260807000005_rbac_preset_role_display_names',
+  '20260812000001_rbac_driver_commission_grant',
 ]
 
 async function main() {

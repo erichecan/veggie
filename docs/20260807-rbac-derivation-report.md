@@ -1,8 +1,8 @@
 # T1 权限反推报告
 
 > 生成：`npx tsx scripts/rbac/derive-system-roles.ts` · 台账 T1
-> 输入：242 个 API handler + 12 个页面探针
-> 权限点：181 个 · 规则：214 条 API + 12 条页面
+> 输入：255 个 API handler + 12 个页面探针
+> 权限点：181 个 · 规则：223 条 API + 13 条页面
 
 ## 1. 推导结果
 
@@ -32,7 +32,7 @@
 
 ## 1.5 无人拥有的权限点
 
-17 个权限点没有任何预置角色拥有 —— 这通常是对的：
+16 个权限点没有任何预置角色拥有 —— 这通常是对的：
 它们对应「改造前不存在的功能」（例如权限配置页自己的接口）。
 要让某个岗位用上，得在配置页里显式勾给它。
 
@@ -42,7 +42,6 @@ sales.order.cancel
 sales.quotation.access
 sales.daily_report.read
 purchase.order.approve
-purchase.order.receive
 purchase.plan.read
 stock.receipt.confirm
 dispatch.console.access

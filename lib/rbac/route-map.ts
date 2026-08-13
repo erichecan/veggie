@@ -269,6 +269,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/analytics/procurement', permission: 'analytics.purchase_detail.read' },
   { pattern: '/api/analytics/procurement-overview', permission: 'analytics.purchase.read' },
   { pattern: '/api/analytics/logistics', permission: 'analytics.logistics.read' },
+  // H3：这条规则让 analytics.commission.read 从「假开关」变成真闸门 ——
+  // 它此前在权限目录里挂了一个月，没有任何 handler 引用（I2 查出的 13 个之一）。
+  { pattern: '/api/analytics/driver-commission', permission: 'analytics.commission.read' },
   { pattern: '/api/analytics/ap-aging', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/ar-aging', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/internal-control', permission: 'analytics.finance.read' },

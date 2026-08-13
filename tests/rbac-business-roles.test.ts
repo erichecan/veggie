@@ -136,7 +136,6 @@ const CHECKED_IN_HANDLER = ['purchase.order.approve', 'purchase.order.receive']
  *     点没有对应规则。
  *   - `stock.receipt.confirm` / `purchase.plan.read` / `master.supplier.update`：
  *     对应功能的接口尚未按这个粒度拆。
- *   - `analytics.commission.read`：司机提成考核报表本身还没做（见灵活分析需求文档）。
  *
  * 留在模板里是有意的 —— 模板表达的是「这个岗位应该能做什么」，等功能补上就自动生效。
  * 但**这张清单只能变短，不能变长**：新增一个没人引用的点，说明又造了一个假开关。
@@ -149,7 +148,8 @@ const KNOWN_INERT = [
   'purchase.plan.read',
   'master.supplier.update',
   'dispatch.console.access',
-  'analytics.commission.read',
+  // `analytics.commission.read` 于 20260812（台账 H3）接上判定，从这张清单里摘除：
+  // /api/analytics/driver-commission 用它做闸门，随迁移发给 boss / operator。
 ]
 
 /** 规则里的 permission 可能是单个、数组（任一即可），或 null（无需权限） */

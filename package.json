@@ -43,6 +43,7 @@
     "test:purchase-qc": "npx tsx --env-file=.env.test scripts/audit/purchase-qc-test.ts",
     "test:statement": "npx tsx --env-file=.env.test scripts/audit/statement-settlement-test.ts",
     "test:vendor-settlement": "npx tsx --env-file=.env.test scripts/audit/vendor-settlement-test.ts",
+    "test:driver-commission": "npx tsx --env-file=.env.test scripts/audit/driver-commission-test.ts",
     "test:reports-pivot": "npx tsx --env-file=.env.test scripts/audit/reports-pivot-test.ts"
   },
   "prisma": {

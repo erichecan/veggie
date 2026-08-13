@@ -30,6 +30,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     { href: `${prefix}/classic/boss/analytics/ap-aging`, label: '应付账龄' },
     { href: `${prefix}/classic/boss/analytics/procurement`, label: '采购运营' },
     { href: `${prefix}/classic/boss/analytics/logistics`, label: '物流分析' },
+    { href: `${prefix}/classic/boss/analytics/driver-commission`, label: '司机提成' },
     { href: `${prefix}/classic/boss/analytics/internal-control`, label: '内控审计' },
     // 数据库备份涉及全库敏感数据，仅 BOSS 可见（本 layout 本身放行 BOSS+OPERATOR，这里额外收紧）
     // 注：RoleSession.role 是小写（toRoleSession 内部 .toLowerCase()），brief 原文示例用大写 'BOSS' 与 lib/types.ts 的 Role 类型不符，会导致 tsc 报 TS2367，这里改用 'boss'
