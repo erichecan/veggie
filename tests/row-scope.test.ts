@@ -8,7 +8,7 @@
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { salesRowScope, withRowScope, isRowVisible, scopeCondition } from '../lib/row-scope'
+import { salesRowScope, withRowScope, isRowVisible, scopeCondition, driverRowScope, withDriverScope } from '../lib/row-scope'
 
 const ME = 'user-me'
 const OTHER = 'user-other'
@@ -139,5 +139,50 @@ describe('dataScope 三级', () => {
     // 宁可少给，也不能因为字段没取就把别人的数据放出去
     const scope = { kind: 'team' as const, userId: BOSS_ID }
     assert.equal(isRowVisible({ salesUserId: OTHER }, scope), false)
+  })
+})
+
+describe('司机侧隔离（Trip.driverId）', () => {
+  test('只挂 DRIVER 的账号一律只看自己的', () => {
+    assert.deepEqual(driverRowScope({ userId: ME, roles: ['DRIVER'] }), { kind: 'own', userId: ME })
+    assert.deepEqual(driverRowScope({ userId: ME, role: 'DRIVER', roles: [] }), { kind: 'own', userId: ME })
+  })
+
+  test('兼任管理岗的不隔离 —— 调度台/老板/财务交账都得看别人的', () => {
+    for (const r of ['OPERATOR', 'BOSS', 'FINANCE', 'DISPATCH']) {
+      assert.equal(driverRowScope({ userId: ME, roles: ['DRIVER', r] }), null, `DRIVER+${r} 不该被隔离`)
+    }
+  })
+
+  test('不是司机的角色不走这层', () => {
+    assert.equal(driverRowScope({ userId: ME, roles: ['SALES'] }), null)
+    assert.equal(driverRowScope({ userId: ME, roles: [] }), null)
+    assert.equal(driverRowScope(null), null)
+    assert.equal(driverRowScope({ userId: '', roles: ['DRIVER'] }), null)
+  })
+
+  test('⛔ 条件塞进 where 后不会被同名查询参数覆盖', () => {
+    // 这正是 /api/trips 的形状：driverId 来自查询参数，司机可以随便换一个。
+    const scope = driverRowScope({ userId: ME, roles: ['DRIVER'] })
+    const where = withDriverScope({ driverId: OTHER, status: 'COMPLETED' }, scope)
+    // 顶层那个 driverId 还在（它是用户给的过滤条件），但 AND 里多了一条谁也删不掉的
+    assert.deepEqual(where.AND, [{ driverId: ME }])
+    assert.equal(where.driverId, OTHER)   // 两个条件是 AND 关系 → 结果必然为空集
+  })
+
+  test('⛔ where 为空对象时条件依然在（20260802 那次就是这里退化的）', () => {
+    const scope = driverRowScope({ userId: ME, roles: ['DRIVER'] })
+    assert.deepEqual(withDriverScope({}, scope).AND, [{ driverId: ME }])
+  })
+
+  test('已有的 AND 不会被覆盖掉', () => {
+    const scope = driverRowScope({ userId: ME, roles: ['DRIVER'] })
+    const where = withDriverScope({ AND: [{ status: 'COMPLETED' }] }, scope)
+    assert.deepEqual(where.AND, [{ status: 'COMPLETED' }, { driverId: ME }])
+  })
+
+  test('不隔离时 where 原样不动', () => {
+    const where = { driverId: OTHER }
+    assert.deepEqual(withDriverScope(where, null), where)
   })
 })

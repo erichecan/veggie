@@ -8,6 +8,8 @@ import { DEMO_CUSTOMERS, MOCK_PRODUCTS, MOCK_PURCHASES } from './mock-data'
 import { SEED_PRICELISTS } from './seed-pricelists'
 import { SEED_DEMO_CUSTOMERS } from './seed-customers'
 import { SEED_CATEGORIES, SEED_PRODUCT_TEMPLATES, SEED_PRODUCT_ATTRIBUTES, SEED_PRODUCTS } from './seed-products'
+import { getSession } from './session'
+import { canAccessApi, type TokenClaims } from './rbac/gate'
 
 const STORAGE_KEY = 'veggie_demo_store'
 
@@ -188,53 +190,61 @@ export async function hydrate(): Promise<void> {
   const token = getToken()
   if (!token) return
 
+  // ⛔ 只拉当前会话**够得着**的那几个。原先是无差别八连发：司机一登录就打出
+  // 7 个 403（orders/waves/invoices/customers/pricelists/stock-moves/purchases），
+  // 控制台一片红，还白白占掉这台 2 vCPU 机器的并发。权限是对的（403 说明隔离生效），
+  // 浪费的是请求本身。判定用的是 middleware 那张表，不会出现「这里放行而服务端 403」。
+  const claims = (getSession() ?? {}) as TokenClaims
+  const fetchAllowed = (path: string): Promise<Response | null> =>
+    canAccessApi(claims, path, 'GET') ? api(path) : Promise.resolve(null)
+
   try {
     const [
       ordersRes, wavesRes, tripsRes, invoicesRes,
       customersRes, pricelistsRes, stockMovesRes, purchasesRes,
     ] = await Promise.allSettled([
-      api('/api/orders'),
-      api('/api/waves'),
-      api('/api/trips'),
-      api('/api/invoices'),
-      api('/api/customers'),
-      api('/api/pricelists'),
-      api('/api/stock-moves'),
-      api('/api/purchases'),
+      fetchAllowed('/api/orders'),
+      fetchAllowed('/api/waves'),
+      fetchAllowed('/api/trips'),
+      fetchAllowed('/api/invoices'),
+      fetchAllowed('/api/customers'),
+      fetchAllowed('/api/pricelists'),
+      fetchAllowed('/api/stock-moves'),
+      fetchAllowed('/api/purchases'),
     ])
 
     const s = loadStore()
 
-    if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
-      const data = await ordersRes.value.json() as Record<string, unknown>[]
+    if (ordersRes.status === 'fulfilled' && ordersRes.value?.ok) {
+      const data = await ordersRes.value!.json() as Record<string, unknown>[]
       s.orders = data.map(normalizeOrder)
     }
-    if (wavesRes.status === 'fulfilled' && wavesRes.value.ok) {
-      const data = await wavesRes.value.json() as Record<string, unknown>[]
+    if (wavesRes.status === 'fulfilled' && wavesRes.value?.ok) {
+      const data = await wavesRes.value!.json() as Record<string, unknown>[]
       s.waves = data.map(normalizeWave)
     }
-    if (tripsRes.status === 'fulfilled' && tripsRes.value.ok) {
-      const data = await tripsRes.value.json() as Record<string, unknown>[]
+    if (tripsRes.status === 'fulfilled' && tripsRes.value?.ok) {
+      const data = await tripsRes.value!.json() as Record<string, unknown>[]
       s.trips = data.map(normalizeTrip)
     }
-    if (invoicesRes.status === 'fulfilled' && invoicesRes.value.ok) {
-      const data = await invoicesRes.value.json() as Record<string, unknown>[]
+    if (invoicesRes.status === 'fulfilled' && invoicesRes.value?.ok) {
+      const data = await invoicesRes.value!.json() as Record<string, unknown>[]
       s.invoices = data.map(normalizeInvoice)
     }
-    if (customersRes.status === 'fulfilled' && customersRes.value.ok) {
-      const data = await customersRes.value.json() as Customer[]
+    if (customersRes.status === 'fulfilled' && customersRes.value?.ok) {
+      const data = await customersRes.value!.json() as Customer[]
       if (data.length > 0) s.customers = data
     }
-    if (pricelistsRes.status === 'fulfilled' && pricelistsRes.value.ok) {
-      const data = await pricelistsRes.value.json() as OdooPricelist[]
+    if (pricelistsRes.status === 'fulfilled' && pricelistsRes.value?.ok) {
+      const data = await pricelistsRes.value!.json() as OdooPricelist[]
       if (data.length > 0) s.odooLists = data
     }
-    if (stockMovesRes.status === 'fulfilled' && stockMovesRes.value.ok) {
-      const data = await stockMovesRes.value.json() as Record<string, unknown>[]
+    if (stockMovesRes.status === 'fulfilled' && stockMovesRes.value?.ok) {
+      const data = await stockMovesRes.value!.json() as Record<string, unknown>[]
       s.stockMoves = data.map(normalizeStockMove)
     }
-    if (purchasesRes.status === 'fulfilled' && purchasesRes.value.ok) {
-      const data = await purchasesRes.value.json() as PurchaseRecord[]
+    if (purchasesRes.status === 'fulfilled' && purchasesRes.value?.ok) {
+      const data = await purchasesRes.value!.json() as PurchaseRecord[]
       if (data.length > 0) s.purchases = data
     }
 

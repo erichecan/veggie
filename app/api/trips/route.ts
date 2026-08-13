@@ -4,10 +4,18 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import type { OrderItem, TripRestaurant } from '@/lib/types'
+import { driverRowScope, withDriverScope } from '@/lib/row-scope'
 
-// GET /api/trips — 行程列表，可选 driverId / waveId / status / settlementStatus 过滤
+/**
+ * GET /api/trips — 行程列表，可选 driverId / waveId / status / settlementStatus 过滤
+ *
+ * ⛔ `driverId` 是**查询参数**，司机端靠它过滤出自己的行程 —— 但那只是前端的自觉。
+ * 换一个 id 就能看别人的行程（客户地址、金额、收款一并带出），不传参数则拿到
+ * 全公司的。所以这里再叠一层不可绕过的行级条件：只挂 DRIVER 的账号一律只看自己的。
+ * 与 20260802 `/api/customers` 那次同类 —— 前端过滤不是隔离。
+ */
 export async function GET(req: Request) {
-  return withAuth(req, async () => {
+  return withAuth(req, async (user) => {
     try {
       const { searchParams } = new URL(req.url)
       const driverId = searchParams.get('driverId')
@@ -15,12 +23,12 @@ export async function GET(req: Request) {
       const status = searchParams.get('status')
       const settlementStatus = searchParams.get('settlementStatus')
       const trips = await prisma.trip.findMany({
-        where: {
+        where: withDriverScope({
           ...(driverId ? { driverId } : {}),
           ...(waveId ? { waveId } : {}),
           ...(status ? { status: status.toUpperCase() as never } : {}),
           ...(settlementStatus ? { settlementStatus } : {}),
-        },
+        }, driverRowScope(user)),
         orderBy: { createdAt: 'desc' },
       })
       return NextResponse.json(serializeApi(trips))

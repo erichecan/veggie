@@ -12,6 +12,7 @@ import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
+import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
 
 const ORDER_TRACKED_FIELDS = [
@@ -871,7 +872,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
       return NextResponse.json({ ...serializeApi(order), pricingWarnings })
     } catch (error) {
-      if (error instanceof WavePickLockedError) {
+      // 已出发的波次不能再改派 —— 与调度台 assign/unassign 同一口径（见 batch 路由注释）
+      if (error instanceof WavePickLockedError || error instanceof WaveDispatchedError) {
         return NextResponse.json({ error: error.message }, { status: 409 })
       }
       const err = error as { status?: number; message?: string }

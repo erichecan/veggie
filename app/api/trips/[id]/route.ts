@@ -6,6 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import { reconcileSignatures, describeIssues } from '@/lib/trip-signature'
+import { driverRowScope } from '@/lib/row-scope'
 
 const TRIP_TRACKED_FIELDS = [
   'name', 'status', 'driverId', 'driverName', 'departTime', 'timeSlot',
@@ -47,16 +48,29 @@ function findBlockedReturnStatusChange(
   return null
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * ⛔ 这个 GET 原先**连 withAuth 都没有**，任何够得着本路由的角色都能按 id 读走
+ * 任意行程。列表挡住了而详情没挡，等于没挡 —— 行程 id 在司机端 URL、交账页、
+ * 日志里到处都是，逐条读就能把别人的客户地址与收款拿全。
+ * 现在与列表同一口径：只挂 DRIVER 的账号只能读自己的行程，其余角色照常。
+ */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  return withAuth(req, async (user) => {
   try {
     const { id } = await params
     const trip = await prisma.trip.findUnique({ where: { id } })
     if (!trip) return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+    const scope = driverRowScope(user)
+    if (scope && trip.driverId !== scope.userId) {
+      // 刻意返回 404 而不是 403：403 会告诉对方"这个 id 确实存在，只是你看不了"
+      return NextResponse.json({ error: '行程不存在' }, { status: 404 })
+    }
     return NextResponse.json(serializeApi(trip))
   } catch (error) {
     console.error('[GET /api/trips/[id]]', error)
     return NextResponse.json({ error: '获取行程失败' }, { status: 500 })
   }
+  })
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

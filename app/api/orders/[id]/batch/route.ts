@@ -4,6 +4,7 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { assignOrderToWave, removeOrderFromAllWaves } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
+import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 
 /**
  * 销售单列表分配/清空交货批次。
@@ -41,7 +42,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       })
       return NextResponse.json({ ok: true, driverSlotId, waveId: result.waveId, driverName: result.driverName })
     } catch (error) {
-      if (error instanceof WavePickLockedError) {
+      // ⛔ WaveDispatchedError 也要按 409 交出去。调度台的 assign/unassign 两条路由
+      // 早就这么做了，唯独走 assignOrderToWave 的这条（销售单列表改派）漏了 ——
+      // 同一条业务规则，从调度台拖拽得到「该批次已出发，不能再分配」，
+      // 从销售单列表改派却得到无信息的 500「分配批次失败」。C4 实测撞出来的。
+      if (error instanceof WavePickLockedError || error instanceof WaveDispatchedError) {
         return NextResponse.json({ error: error.message }, { status: 409 })
       }
       console.error('[PUT /api/orders/[id]/batch]', error)

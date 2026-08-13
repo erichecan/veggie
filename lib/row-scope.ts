@@ -102,6 +102,46 @@ export function withRowScope(
   return { ...where, AND: [...existing, cond] }
 }
 
+// ─── 司机侧（Trip.driverId）────────────────────────────────────────────────────
+
+/** 兼任这些角色之一，就是要看全量行程的人（调度台、老板、财务交账都得看别人的） */
+const TRIP_UNSCOPED_ROLES = ['OPERATOR', 'BOSS', 'FINANCE', 'DISPATCH'] as const
+
+/**
+ * 按司机归属隔离（`Trip.driverId`）。返回 null 表示不隔离。
+ *
+ * ⛔ 为什么必须有这一层：`GET /api/trips` 的 `driverId` 是**查询参数**，
+ * 司机端自己传 `?driverId=我的id` 来过滤。但那是前端的自觉 ——
+ * 换个 id 就能看别人的行程（客户地址、金额、收款一并带出），
+ * 干脆不传参数则拿到全公司的行程。与 20260802 `/api/customers` 那次同类：
+ * **前端过滤不是隔离**。
+ *
+ * 与 salesRowScope 的差别：销售那边「兼任 OPERATOR 就不隔离」是被生产现状
+ * 逼出来的妥协（19 个 SALES 全兼任）。司机这边没有这个包袱 ——
+ * 只挂 DRIVER 的账号一律只看自己的，兼任管理岗的才放行。
+ */
+export function driverRowScope(caller: ScopeCaller | null | undefined): RowScope {
+  if (!caller?.userId) return null
+  const roles = rolesOf(caller)
+  if (!roles.includes('DRIVER')) return null
+  if (roles.some((r) => (TRIP_UNSCOPED_ROLES as readonly string[]).includes(r))) return null
+  return { kind: 'own', userId: caller.userId }
+}
+
+/**
+ * 把司机范围并进 where。同样用 AND 包一层 ——
+ * 直接写 `where.driverId = …` 会被查询参数里的同名字段覆盖，
+ * 那正是 `buildOrdersWhere` 20260806 被 `?salesUserId=别人的id` 绕过去的原因。
+ */
+export function withDriverScope(
+  where: Record<string, unknown>,
+  scope: RowScope,
+): Record<string, unknown> {
+  if (!scope) return where
+  const existing = Array.isArray(where.AND) ? where.AND as unknown[] : where.AND ? [where.AND] : []
+  return { ...where, AND: [...existing, { driverId: scope.userId }] }
+}
+
 /**
  * 单条记录是否在可见范围内。详情/编辑接口用 —— 列表挡住了但详情没挡的话，
  * 拿到 id 依然能逐条读走（id 在打印单、CSV 导出里到处都是）。
