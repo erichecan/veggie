@@ -13,6 +13,7 @@ import { OrderChatter } from '@/components/order/OrderChatter'
 import { getSession, type UserSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
+import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 import SendEmailDialog from '@/components/orders/send-email-dialog'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
@@ -895,6 +896,7 @@ export default function QuotationDetailPage() {
                           className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
                           value={l.spec ?? ''}
                           onChange={e => updateLine(i, 'spec', e.target.value)}
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                         />
                       ) : (l.spec || '')}
                     </td>
@@ -906,6 +908,7 @@ export default function QuotationDetailPage() {
                           className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24 placeholder:text-gray-300"
                           value={l.note ?? ''}
                           onChange={e => updateLine(i, 'note', e.target.value)}
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                         />
                       ) : (l.note || '')}
                     </td>
@@ -916,7 +919,7 @@ export default function QuotationDetailPage() {
                           value={Number(l.orderedQty)}
                           onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
                           onFocus={e => e.target.select()}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.orderedQty).toFixed(2)}
                     </td>
                     <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
@@ -932,6 +935,7 @@ export default function QuotationDetailPage() {
                             <select
                               value={l.uomId ?? anchorUomId ?? ''}
                               onChange={e => switchLineUnit(i, e.target.value)}
+                              onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                               className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                             >
                               {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? 'Unit(s)'}</option>}
@@ -949,7 +953,7 @@ export default function QuotationDetailPage() {
                           value={Number(l.unitPrice)}
                           onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))}
                           onFocus={e => e.target.select()}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); focusSearch() } }} />
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.unitPrice).toFixed(2)}
                     </td>
                     <td className="px-2 py-2 text-right text-gray-400">{cost.toFixed(2)}</td>
@@ -979,11 +983,12 @@ export default function QuotationDetailPage() {
                         <select className="w-16 text-right border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                           value={Number(l.taxRate ?? 0)}
                           onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
-                          onKeyDown={e => {
-                            // 只有最后一行需要拦截：中间行原生 Tab 顺序本来就会走到下一行的字段，
-                            // 拦截会打断"顺着已有多行往下 Tab"的场景；最后一行后面就是搜索框，跳不跳原生顺序结果一样
-                            if (e.key === 'Tab' && !e.shiftKey && i === displayLines.length - 1) { e.preventDefault(); focusSearch() }
-                          }}>
+                          onKeyDown={lineFieldKeyHandler({
+                            onNextRow: focusSearch,
+                            // 税率是本行最后一个可编辑字段。只有最后一行才拦 Tab：
+                            // 中间行原生 Tab 本来就走到下一行，拦了反而打断"顺着多行往下改"
+                            isLastFieldOfLastRow: i === displayLines.length - 1,
+                          })}>
                           <option value={0}>0%</option>
                           <option value={13.5}>13.5%</option>
                           <option value={23}>23%</option>
