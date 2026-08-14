@@ -45,6 +45,7 @@
     "test:statement": "npx tsx --env-file=.env.test scripts/audit/statement-settlement-test.ts",
     "test:vendor-settlement": "npx tsx --env-file=.env.test scripts/audit/vendor-settlement-test.ts",
     "test:finance-confirm": "npx tsx --env-file=.env.test scripts/audit/finance-confirm-test.ts",
+    "test:driver-recon": "npx tsx --env-file=.env.test scripts/audit/driver-reconciliation-test.ts",
     "test:driver-daily": "npx tsx --env-file=.env.test scripts/audit/driver-daily-report-test.ts",
     "test:route-map": "npx tsx --env-file=.env.test scripts/audit/route-map-test.ts",
     "test:driver-identity": "npx tsx --env-file=.env.test scripts/audit/driver-identity-selftest.ts",

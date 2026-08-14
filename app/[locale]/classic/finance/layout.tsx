@@ -19,6 +19,7 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
     { href: `${prefix}/classic/finance`, label: '财务总览' },
     { href: `${prefix}/classic/finance/statements`, label: '对账单' },
     { href: `${prefix}/classic/finance/settlements`, label: '司机交账' },
+    { href: `${prefix}/classic/finance/driver-reports`, label: '司机对账' },
     { href: `${prefix}/classic/accounting`, label: '核销管理' },
   ]
 
