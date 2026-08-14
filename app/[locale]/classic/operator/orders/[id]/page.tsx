@@ -206,7 +206,7 @@ export default function SalesOrderDetailPage() {
         : undefined
       const slot = driverSlots.find(s => s.id === driverSlotId)
       const batchStr = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : deliveryBatch
-      await apiPut(`/api/orders/${order.id}`, {
+      const saved = await apiPut<{ pricingWarnings?: string[] }>(`/api/orders/${order.id}`, {
         internalNote, externalNote: externalNote || null, salesUserId: salesUserId || null,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
         deliveryBatch: batchStr, driverSlotId: driverSlotId || null,
@@ -214,6 +214,13 @@ export default function SalesOrderDetailPage() {
         ...(editLines.length > 0 && { lines: editLines, totalAmount: newTotalAmount }),
       })
       toast.success(isEn ? 'Saved' : '已保存')
+      // 定价引擎对价格另有说法时必须说出来。此前接口一直返回 pricingWarnings，
+      // 而前端**没有任何代码读它** —— 于是操作员改价被静默换成价格表价，
+      // 只看到"已保存"（客户 20260814 反馈的就是这个）。
+      // 用 duration 拉长 + 逐条显示：这类提示一闪而过等于没说。
+      for (const w of saved?.pricingWarnings ?? []) {
+        toast.warning(w, { duration: 10000 })
+      }
       setEditing(false)
       setEditLines([])
       await load()

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { notifyLowStockAfterConfirm } from '@/lib/notify'
-import { withAuth, tryAuth } from '@/lib/auth'
+import { withAuth, tryAuth, userHasPermission } from '@/lib/auth'
 import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
@@ -212,6 +212,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         : []
       let toDelete: string[] = []
       let pricingWarnings: string[] = []
+      /**
+       * 本次**实际落库**的行（与 linesPayload 同序）。审计日志必须读它而不是读 payload ——
+       * 定价引擎可能拒掉提交价，读 payload 就会记下一条从未发生的变更
+       * （客户 20260814 看到的正是这个：日志写着「€22.50 → €35.00」，行还是 22.50）。
+       */
+      let writtenLines: import('@/lib/server-pricing').ResolvedLine[] = []
 
       // If lines are provided, replace all: update existing, create new, delete removed
       if (Array.isArray(linesPayload)) {
@@ -322,22 +328,33 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             uomName: l.uomName !== undefined && l.uomName ? String(l.uomName) : undefined,
             taxRate: l.taxRate !== undefined ? Number(l.taxRate) : undefined,
           })),
-          { pricelistId: effectivePricelistId, priceType: effectivePriceType },
+          {
+            pricelistId: effectivePricelistId, priceType: effectivePriceType,
+            // 手动改价（台账 X1/X2）：有 override_price 才采纳操作员填的价。
+            // 没有这个权限时**维持按权威价入库、不报错** —— 页面打开后价格表被改过
+            // 也会让提交价合法地对不上，硬失败会把正常保存一起挡掉。
+            // 那种情况下 warnings 会说明「你填的没被采纳」，前端负责显示（X4）。
+            allowManualPrice: userHasPermission(user, 'sales.order.override_price'),
+          },
         )
         pricingWarnings = resolvedWarnings
+        writtenLines = resolvedLines
 
         for (let lineIdx = 0; lineIdx < linesArr.length; lineIdx++) {
           const l = linesArr[lineIdx]
           const resolved = resolvedLines[lineIdx]
-          // SSOT: subtotal/unitPrice 服务端按引擎权威价重算,不信前端传值(防金额被篡改/算错)
+          // SSOT: subtotal/unitPrice 由服务端定价引擎决定,不直接信前端传值(防金额被篡改/算错)。
+          // finalUnitPrice = 采纳手动价时是操作员填的价,否则是引擎权威价 —— 见 server-pricing.ts
           const lineData: Record<string, unknown> = {
             orderedQty: Number(l.orderedQty),
-            unitPrice: resolved.authoritativeUnitPrice,
+            unitPrice: resolved.finalUnitPrice,
             subtotal: resolved.subtotal,
-            // 单价来源快照：一律取服务端引擎本次算出的结果,不再信任/原样落库客户端传值
-            priceSourceType: resolved.resolution.sourceType.toUpperCase(),
-            priceSourceDetail: resolved.resolution.sourceType === 'pricelist' ? resolved.resolution.pricelistName : null,
-            priceSourceDate: resolved.lastPriceDate ?? null,
+            // 单价来源快照：手动改价要能一眼看出来,并留下"当时的价格表价是多少"
+            priceSourceType: resolved.manualOverride ? 'MANUAL' : resolved.resolution.sourceType.toUpperCase(),
+            priceSourceDetail: resolved.manualOverride
+              ? `手动改价（价格表价 €${resolved.authoritativeUnitPrice.toFixed(2)}）`
+              : (resolved.resolution.sourceType === 'pricelist' ? resolved.resolution.pricelistName : null),
+            priceSourceDate: resolved.manualOverride ? null : (resolved.lastPriceDate ?? null),
           }
           if (l.taxRate !== undefined) lineData.taxRate = Number(l.taxRate)
           if (l.sequence !== undefined) lineData.sequence = Number(l.sequence)
@@ -503,11 +520,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
 
         // SSOT: totalAmount 服务端重算 = Σ税前(line.subtotal=unitPrice×qty 税前,
-        // totalAmount 亦为税前,与下单 server-pricing.ts / 加行 lines/route.ts 口径一致)。不信前端传值。
-        const computedTotal = (linesPayload as Record<string, unknown>[]).reduce((s, l) => {
-          const exTax = Math.round(Number(l.orderedQty) * Number(l.unitPrice) * 100) / 100
-          return s + exTax
-        }, 0)
+        // totalAmount 亦为税前,与下单 server-pricing.ts / 加行 lines/route.ts 口径一致)。
+        //
+        // ⛔ 这里过去读的是 `linesPayload` 里的 `unitPrice` —— 注释写着"不信前端传值",
+        // 代码却恰恰在信。于是提交价被定价引擎拒掉时,**行按权威价落库、表头按提交价算**,
+        // 表头与行就此分叉且不报错。生产实测两张单中招(OP-260720-001 存 211.50、
+        // 行合计 199.00,差的正好是那笔被拒的改价 35.00-22.50)。db:validate 当时不查这条,
+        // 所以躺了很久没人发现(现已补上不变量,见 scripts/validate-data.ts)。
+        //
+        // 改成按**真正落库的那份** subtotal 求和 —— resolvedLines 与写 OrderLine 用的是
+        // 同一个数组同一个字段,不存在"算总额和写行各按各的"的空间。
+        const computedTotal = resolvedLines.reduce((s, r) => s + r.subtotal, 0)
         updateData.totalAmount = Math.round(computedTotal * 100) / 100
         // 改动 OrderLine 后同步 items 快照(随本次 order.update 一并写),
         // 下游直接读 items 列的端点(波次/配送/司机汇总/核货)拿到新数量
@@ -615,13 +638,22 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
 
         // Added and modified lines
-        for (const l of linesPayload as Record<string, unknown>[]) {
+        //
+        // ⛔ 价格一律取**落库值**（writtenLines[i].finalUnitPrice），不取 payload。
+        // 读 payload 的话，提交价被定价引擎拒掉时日志会记下一条根本没发生的变更 ——
+        // 客户 20260814 反馈的「日志说改了 €22.50 → €35.00，列表还是 22.50」就是这么来的。
+        // 审计日志的价值全在于「它说发生了，就真的发生了」，记录意图等于把它作废。
+        const linesArrForAudit = linesPayload as Record<string, unknown>[]
+        for (let i = 0; i < linesArrForAudit.length; i++) {
+          const l = linesArrForAudit[i]!
+          const written = writtenLines[i]
+          const writtenPrice = written ? written.finalUnitPrice : Number(l.unitPrice)
           if (!l.id) {
             // New line
             lineChanges.added.push({
               productName: String(l.productName ?? ''),
               qty: Number(l.orderedQty),
-              unitPrice: Number(l.unitPrice),
+              unitPrice: writtenPrice,
             })
           } else {
             // Existing line — check for qty/price changes
@@ -630,14 +662,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               const oldQty = toNum(oldLine.orderedQty)
               const newQty = Number(l.orderedQty)
               const oldPrice = toNum(oldLine.unitPrice)
-              const newPrice = Number(l.unitPrice)
-              if (oldQty !== newQty || Math.abs(oldPrice - newPrice) > 0.001) {
+              if (oldQty !== newQty || Math.abs(oldPrice - writtenPrice) > 0.001) {
                 lineChanges.modified.push({
                   productName: oldLine.productName ?? '',
                   qtyBefore: oldQty,
                   qtyAfter: newQty,
                   priceBefore: oldPrice,
-                  priceAfter: newPrice,
+                  priceAfter: writtenPrice,
                 })
               }
             }

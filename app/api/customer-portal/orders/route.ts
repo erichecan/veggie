@@ -226,7 +226,7 @@ export async function POST(req: Request) {
                     spec: l.spec ?? null,
                     uomId: l.uomId ?? null,
                     uomName: l.uomName ?? null,
-                    unitPrice: l.authoritativeUnitPrice,
+                    unitPrice: l.finalUnitPrice,   // 门户不开手动价，此处恒等于权威价；写 final 是为了不留下「行价与小计各取一处」的隐患
                     taxRate: l.taxRate ?? null,
                     orderedQty: l.quantity,
                     deliveredQty: 0,
@@ -267,7 +267,7 @@ export async function POST(req: Request) {
               added: lines.map(l => ({
                 productName: l.productName,
                 qty: l.quantity,
-                unitPrice: l.authoritativeUnitPrice,
+                unitPrice: l.finalUnitPrice,   // 门户不开手动价，此处恒等于权威价；写 final 是为了不留下「行价与小计各取一处」的隐患
               })),
               deleted: [],
               modified: [],

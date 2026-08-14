@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
-import { withAuth } from '@/lib/auth'
+import { withAuth, userHasPermission } from '@/lib/auth'
 import { sendOrderConfirmation } from '@/lib/email'
 import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
@@ -255,6 +255,9 @@ export async function POST(req: Request) {
       } = await resolveOrderLines({ prisma, restaurantId }, submittedItems, {
         pricelistId: data.pricelistId ?? undefined,
         priceType: data.priceType ?? undefined,
+        // 手动改价（台账 X1/X2）：下单时谈好的价也要能填进来。此前下单同样静默丢弃 ——
+        // 只是下单路径的表头是按落库值算的，所以只表现为"改不了价"，没有烂数据
+        allowManualPrice: userHasPermission(user, 'sales.order.override_price'),
       })
 
       // 2) 预加载商品数据（用于后续事务；报价单阶段不做库存检查）
@@ -324,16 +327,16 @@ export async function POST(req: Request) {
                     note: l.note ?? null,
                     uomId: l.uomId ?? null,
                     uomName: l.uomName ?? null,
-                    unitPrice: l.authoritativeUnitPrice,
+                    unitPrice: l.finalUnitPrice,
                     taxRate: l.taxRate ?? null,
                     orderedQty: l.quantity,
                     deliveredQty: 0,
                     invoicedQty: 0,
-                    subtotal: Number((l.authoritativeUnitPrice * l.quantity).toFixed(2)),
+                    subtotal: Number((l.finalUnitPrice * l.quantity).toFixed(2)),
                     commissionPrice: commissionPriceMap.get(l.productId) ?? null,
                     // 单价来源快照：服务端权威定价(resolveOrderLines)算出的 sourceType，
                     // 供订单详情页"Price"列 hover 展示来源，历史订单没有这三个字段
-                    priceSourceType: l.resolution.sourceType.toUpperCase(),
+                    priceSourceType: l.manualOverride ? 'MANUAL' : l.resolution.sourceType.toUpperCase(),
                     priceSourceDetail: l.resolution.sourceType === 'pricelist' ? l.resolution.pricelistName : null,
                     priceSourceDate: l.lastPriceDate ?? null,
                     sequence: idx,
@@ -380,7 +383,7 @@ export async function POST(req: Request) {
               added: lines.map(l => ({
                 productName: l.productName,
                 qty: l.quantity,
-                unitPrice: l.authoritativeUnitPrice,
+                unitPrice: l.finalUnitPrice,
               })),
               deleted: [],
               modified: [],
@@ -414,7 +417,7 @@ export async function POST(req: Request) {
               name: l.productName,
               qty: l.quantity,
               unit: l.spec || '件',
-              price: l.authoritativeUnitPrice,
+              price: l.finalUnitPrice,
             })),
             total: totalAmount,
           }).catch(async (e) => {

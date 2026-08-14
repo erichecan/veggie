@@ -34,6 +34,10 @@ const DATA_MIGRATIONS = [
   '20260807000004_purchase_approve_finer_gate',
   '20260807000005_rbac_preset_role_display_names',
   '20260812000001_rbac_driver_commission_grant',
+  // 手动改价（台账 X2）。⚠️ 漏加这一行的后果不是「少个开关」：全新库上没人有
+  // override_price，于是改价被静默换成价格表价 —— 恰好回到本条要修的那个 bug。
+  // 「只被迁移填过的表，重建库时一律是空的」这条已经栽过 Z7（整套 RBAC）和 F1（采购品类）
+  '20260814000001_sales_order_override_price',
 ]
 
 async function main() {

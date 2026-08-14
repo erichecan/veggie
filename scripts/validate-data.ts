@@ -151,6 +151,39 @@ async function main(): Promise<void> {
     record('发票↔订单  subtotalExTax == Σ订单额', bad, checked, ex)
   }
 
+  // 4b. 订单头行一致（台账 X5）
+  //
+  // 为什么单列一条：#4 拿 `Order.totalAmount` 去对发票，**默认表头本身是对的**。
+  // 客户 20260814 那个 bug 破的正是这个前提 —— 编辑订单时表头按前端提交价算、
+  // 行按定价引擎的权威价落库，两者就此分叉，而当时没有任何一条不变量看这里，
+  // 于是 149,763 张单里烂掉的 2 张一直没人发现（OP-260720-001 存 211.50、行合计 199.00）。
+  // 表头是发票、报表、毛利的取数口，行是拣货、打印、核货的取数口 —— 分叉意味着
+  // 「按单据发的货」和「按单据收的钱」不是一回事。
+  {
+    const grouped = await prisma.orderLine.groupBy({
+      by: ['orderId'],
+      _sum: { subtotal: true },
+    })
+    const lineSum = new Map(grouped.map(g => [g.orderId, n(g._sum.subtotal)]))
+    // 只查有行的订单：一行都没有的单（草稿/导入残留）表头是多少都不构成分叉
+    const orders = await prisma.order.findMany({
+      where: { id: { in: [...lineSum.keys()] } },
+      select: { id: true, code: true, totalAmount: true },
+    })
+    const ex: string[] = []
+    let bad = 0
+    for (const o of orders) {
+      const sum = lineSum.get(o.id) ?? 0
+      if (!near(sum, n(o.totalAmount), MONEY_EPS)) {
+        bad++
+        if (ex.length < 5) {
+          ex.push(`${o.code}: 表头=${n(o.totalAmount).toFixed(2)} ≠ Σ行小计=${sum.toFixed(2)}`)
+        }
+      }
+    }
+    record('订单头行一致  totalAmount == Σ行小计', bad, orders.length, ex)
+  }
+
   // 5. 借贷平衡
   {
     const entries = await prisma.journalEntry.findMany({

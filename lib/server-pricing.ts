@@ -35,10 +35,20 @@ export interface ResolvedLine {
   spec: string
   note?: string
   quantity: number
-  authoritativeUnitPrice: number  // 服务端计算出的权威单价
+  authoritativeUnitPrice: number  // 定价引擎算出的权威单价（价格表/历史成交/目录价）
   submittedUnitPrice: number       // 前端提交的单价
-  accepted: boolean                // 是否落库采用前端价格（默认以 authoritative 为准）
-  subtotal: number                 // = authoritativeUnitPrice * quantity
+  accepted: boolean                // 提交价是否落在权威价的容差内
+  /**
+   * **实际应落库的单价** —— 调用方一律写这个，不要再直接写 `authoritativeUnitPrice`。
+   *
+   * 采纳手动价时 = 提交价，否则 = 权威价。两者分开保留是为了留痕：
+   * 事后要能回答「这行按 €35 成交，而当时的价格表价是 €22.50」。
+   * 合成一个字段的话，手动价一落库就再也查不出它偏离了多少。
+   */
+  finalUnitPrice: number
+  /** 本行是否采纳了手动价（调用方据此把 priceSourceType 记成 MANUAL） */
+  manualOverride: boolean
+  subtotal: number                 // = finalUnitPrice * quantity
   resolution: PriceResolution       // 价格溯源（来自哪条规则）
   /** resolution.sourceType==='last' 时，那笔最近成交发生的时间；其余情况为 undefined */
   lastPriceDate?: Date
@@ -233,7 +243,21 @@ export async function resolveOrderLines(
    * 本单临时覆盖：操作员可在下单页选择不同于客户档案默认的价格表/定价模式。
    * 仅当字段存在时才覆盖（undefined = 沿用客户档案；null = 本单明确不用价格表）。
    */
-  overrides?: { pricelistId?: string | null; priceType?: string | null },
+  overrides?: {
+    pricelistId?: string | null
+    priceType?: string | null
+    /**
+     * 是否允许**手动价**覆盖引擎算出的权威价（台账 X1）。
+     *
+     * 默认 `false`，与本函数改造前的行为完全一致 —— 提交价只作参考，一律按权威价入库。
+     * ⛔ **客户门户必须保持默认**：开了就等于让餐厅自己填价格。
+     *
+     * 由调用方按权限点 `sales.order.override_price` 决定传不传 true。
+     * 之所以做成开关而不是无条件采纳：这个函数号称「服务端权威定价」，
+     * 无条件信任前端传值正是它当初要终结的东西（防金额被篡改/算错）。
+     */
+    allowManualPrice?: boolean
+  },
 ): Promise<{
   lines: ResolvedLine[]
   totalAmount: number
@@ -388,13 +412,24 @@ export async function resolveOrderLines(
     const authoritative = scaleAuthoritativePrice(dbProduct.id, dbProduct.template.uomId, item.uomId, Number(resolution.price))
     const accepted = Math.abs(submittedUnit - authoritative) <= PRICE_TOLERANCE_EUR
 
+    // 手动价（台账 X1）：只有调用方显式开了 allowManualPrice 才采纳。
+    // 还要求提交值是个正数 —— 0 与负数多半是前端没填/算错，不是「谈好按 0 卖」；
+    // 真要送货不收钱，走折扣或改数量，别让一个疑似空值把整行金额清零。
+    const manualOverride = Boolean(
+      overrides?.allowManualPrice && !accepted && Number.isFinite(submittedUnit) && submittedUnit > 0,
+    )
+    const finalUnit = manualOverride ? submittedUnit : authoritative
+
     if (!accepted && Number.isFinite(submittedUnit) && submittedUnit > 0) {
       warnings.push(
-        `商品 ${productForEngine.name} 前端价格 €${submittedUnit.toFixed(2)} 与权威价 €${authoritative.toFixed(2)} 不符，已按权威价入库`,
+        manualOverride
+          // 采纳了也要出一条：改价是要被看见的动作，不该悄悄发生
+          ? `商品 ${productForEngine.name} 按手动价 €${submittedUnit.toFixed(2)} 入库（价格表价 €${authoritative.toFixed(2)}）`
+          : `商品 ${productForEngine.name} 前端价格 €${submittedUnit.toFixed(2)} 与权威价 €${authoritative.toFixed(2)} 不符，已按权威价入库`,
       )
     }
 
-    const subtotal = Math.round(authoritative * qty * 100) / 100
+    const subtotal = Math.round(finalUnit * qty * 100) / 100
     total += subtotal
 
     lines.push({
@@ -406,6 +441,8 @@ export async function resolveOrderLines(
       authoritativeUnitPrice: authoritative,
       submittedUnitPrice: submittedUnit,
       accepted,
+      finalUnitPrice: finalUnit,
+      manualOverride,
       subtotal,
       resolution,
       lastPriceDate: resolution.sourceType === 'last' ? lastPriceDate : undefined,
@@ -442,7 +479,9 @@ export function toOrderItems(lines: ResolvedLine[]): OrderItem[] {
     productName: l.productName,
     spec: l.spec,
     note: l.note,
-    price: l.authoritativeUnitPrice,
+    // items 是 OrderLine 的快照，必须跟着落库值走 —— 记权威价的话，
+    // 手动改价后波次/配送/司机汇总（都读 items）会显示成另一个金额
+    price: l.finalUnitPrice,
     quantity: l.quantity,
     subtotal: l.subtotal,
   }))

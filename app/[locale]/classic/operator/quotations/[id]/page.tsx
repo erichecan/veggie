@@ -273,7 +273,7 @@ export default function QuotationDetailPage() {
     try {
       const newTotalAmount = Math.round(editLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
       const orderedLines = editLines.map((l, idx) => ({ ...l, sequence: idx }))
-      await apiPut(`/api/orders/${order.id}`, {
+      const saved = await apiPut<{ pricingWarnings?: string[] }>(`/api/orders/${order.id}`, {
         internalNote, externalNote: externalNote || null, salesUserId: salesUserId || null,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
         driverSlotId: driverSlotId || null,
@@ -284,6 +284,10 @@ export default function QuotationDetailPage() {
         totalAmount: newTotalAmount,
       })
       toast.success('Saved')
+      // 见销售单详情页同处注释：接口一直返回 pricingWarnings，前端一直没读
+      for (const w of saved?.pricingWarnings ?? []) {
+        toast.warning(w, { duration: 10000 })
+      }
       setEditing(false)
       setEditLines([])
       await load()

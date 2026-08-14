@@ -92,6 +92,10 @@ export const PERMISSION_GROUPS: GroupDef[] = [
           { action: 'write_audit', labelZh: '记录修改', labelEn: 'Write Audit' },
           { action: 'export', labelZh: '导出 CSV', labelEn: 'Export CSV' },
           { action: 'delete_line', labelZh: '删除订单行', labelEn: 'Delete Line' },
+          // 台账 X1/X2：从 update 里拆出来的子动作。没有它，改价会按价格表价入库
+          // （不是报错，是安静地换掉你填的数）——所以它必须发给原本就能改单的角色，
+          // 否则等于把一个一直存在的能力对全公司静默关掉
+          { action: 'override_price', labelZh: '手动改价', labelEn: 'Override Price' },
         ],
       },
       {

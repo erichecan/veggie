@@ -178,9 +178,10 @@
     "system.audit.read": 113,
     "system.audit.manage": 119,
     "system.gdpr.manage": 114,
+    "system.mfa.enroll": 179,
+    "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "system.mfa.enroll": 179,
-    "system.notification.create": 180
+    "sales.order.override_price": 181
   }
 }

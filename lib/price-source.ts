@@ -4,7 +4,7 @@
  * 字段，一律显示为「—」。
  */
 
-export type PriceSourceType = 'PRICELIST' | 'DEFAULT' | 'LAST' | 'SPECIAL'
+export type PriceSourceType = 'PRICELIST' | 'DEFAULT' | 'LAST' | 'SPECIAL' | 'MANUAL'
 
 export interface PriceSourceLine {
   priceSourceType?: string | null
@@ -18,6 +18,9 @@ const LABEL_BADGE: Record<PriceSourceType, string> = {
   DEFAULT: 'Default',
   LAST: 'Last',
   SPECIAL: 'Special',
+  // 手动改价（台账 X1）：用红色而不是蓝灰系 —— 这行的价不来自任何规则，
+  // 是人定的，翻单时最该被一眼看见
+  MANUAL: 'Manual',
 }
 
 const BADGE_CLASS: Record<PriceSourceType, string> = {
@@ -25,6 +28,7 @@ const BADGE_CLASS: Record<PriceSourceType, string> = {
   DEFAULT: 'bg-gray-100 text-gray-500 border-gray-200',
   LAST: 'bg-amber-50 text-amber-700 border-amber-200',
   SPECIAL: 'bg-purple-50 text-purple-700 border-purple-200',
+  MANUAL: 'bg-rose-50 text-rose-700 border-rose-300',
 }
 
 export interface PriceSourceBadge {
@@ -34,7 +38,7 @@ export interface PriceSourceBadge {
 }
 
 function isKnownType(v: string): v is PriceSourceType {
-  return v === 'PRICELIST' || v === 'DEFAULT' || v === 'LAST' || v === 'SPECIAL'
+  return v === 'PRICELIST' || v === 'DEFAULT' || v === 'LAST' || v === 'SPECIAL' || v === 'MANUAL'
 }
 
 export function formatPriceSourceBadge(line: PriceSourceLine, isEn: boolean): PriceSourceBadge {
@@ -61,6 +65,10 @@ export function formatPriceSourceBadge(line: PriceSourceLine, isEn: boolean): Pr
     title = 'Customer special price'
   } else if (raw === 'DEFAULT') {
     title = 'Default price'
+  } else if (raw === 'MANUAL') {
+    // priceSourceDetail 里存的是「手动改价（价格表价 €22.50）」——
+    // 把当时的规则价一起显示出来，否则事后没人知道这行偏离了多少
+    title = line.priceSourceDetail || (isEn ? 'Manually overridden price' : '手动改价')
   }
 
   return { label, className, title }

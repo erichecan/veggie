@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
+import { withAuth, userHasPermission } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { resolveCommissionPrice } from '@/lib/commission'
 import { resolveOrderLines } from '@/lib/server-pricing'
@@ -70,7 +70,11 @@ export async function POST(
           uomName: uomName ? String(uomName) : undefined,
           taxRate: taxRate != null ? Number(taxRate) : undefined,
         }],
-        { pricelistId: order.pricelistId, priceType: order.priceType },
+        {
+          pricelistId: order.pricelistId, priceType: order.priceType,
+          // 手动改价（台账 X1/X2）：与编辑行同一把闸，否则「改已有行能改、加新行改不了」
+          allowManualPrice: userHasPermission(user, 'sales.order.override_price'),
+        },
       )
       const resolved = resolvedLines[0]
 
@@ -84,7 +88,7 @@ export async function POST(
           productName: resolved.productName,
           uomId: uomId ?? null,
           uomName: uomName ?? 'Unit(s)',
-          unitPrice: resolved.authoritativeUnitPrice,
+          unitPrice: resolved.finalUnitPrice,
           orderedQty: Number(orderedQty),
           deliveredQty: 0,
           invoicedQty: 0,
@@ -92,8 +96,10 @@ export async function POST(
           taxRate: taxRate != null ? Number(taxRate) : null,
           sequence: sequence ?? 0,
           commissionPrice,
-          priceSourceType: resolved.resolution.sourceType.toUpperCase(),
-          priceSourceDetail: resolved.resolution.sourceType === 'pricelist' ? resolved.resolution.pricelistName : null,
+          priceSourceType: resolved.manualOverride ? 'MANUAL' : resolved.resolution.sourceType.toUpperCase(),
+          priceSourceDetail: resolved.manualOverride
+            ? `手动改价（价格表价 €${resolved.authoritativeUnitPrice.toFixed(2)}）`
+            : (resolved.resolution.sourceType === 'pricelist' ? resolved.resolution.pricelistName : null),
           priceSourceDate: resolved.lastPriceDate ?? null,
         },
       })
@@ -115,7 +121,10 @@ export async function POST(
         action: 'CREATE',
         resource: 'order',
         resourceId: id,
-        detail: `追加订单行: ${productName}（数量 ${Number(orderedQty)}，单价 ${resolved.authoritativeUnitPrice}）${warnings.length ? '，警告: ' + warnings.join('; ') : ''}`,
+        // 单价记**落库值** —— 记权威价的话，手动改价后日志与订单行会各说各话
+        detail: `追加订单行: ${productName}（数量 ${Number(orderedQty)}，单价 ${resolved.finalUnitPrice}`
+          + `${resolved.manualOverride ? `，手动改价，价格表价 ${resolved.authoritativeUnitPrice}` : ''}）`
+          + `${warnings.length ? '，警告: ' + warnings.join('; ') : ''}`,
       })
 
       return NextResponse.json({ ...newLine, pricingWarnings: warnings }, { status: 201 })
