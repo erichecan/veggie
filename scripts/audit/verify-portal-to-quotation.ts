@@ -24,7 +24,8 @@ import { createPrismaClient } from '../../lib/prisma-factory'
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:3002'
 const RESTAURANT = process.env.PORTAL_EMAIL ?? 'restaurant1@veggie.com'
 const OPERATOR = process.env.OPERATOR_EMAIL ?? 'operator@veggie.com'
-const PASSWORD = process.env.SEED_PASSWORD ?? 'LocalTest2026!'
+// 口令收口在 _seed-credentials.ts —— 此前 26 个脚本各写一遍字面量，改一个账号要改 26 处
+import { seedPassword } from './_seed-credentials'
 
 const pass: string[] = []
 const fail: string[] = []
@@ -34,7 +35,7 @@ async function login(email: string): Promise<string> {
   const r = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: PASSWORD }),
+    body: JSON.stringify({ email, password: seedPassword(email) }),
   })
   const j = await r.json() as { token?: string; error?: string; message?: string }
   if (!j.token) throw new Error(`登录失败 ${email}：${j.error ?? ''} ${j.message ?? ''}`)

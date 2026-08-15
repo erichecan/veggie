@@ -28,6 +28,11 @@ export async function GET(req: Request) {
       })
       const restaurantIds = [customer.id, ...linkedUsers.map((u) => u.id)]
 
+      // ⚠️ 这里**刻意保留 PENDING**，与 `lib/order-status.ts` 的 SALE_ORDER_STATUSES 不同 ——
+      // 不是漏改。两者问的不是同一个问题：
+      //   · 历史成交价问「这货实际卖过多少钱」→ 报价单只是要价，不算数（X9 修的就是那个）
+      //   · 常购清单问「我常买什么」→ 客户在门户提交的单**落地就是 PENDING**，
+      //     排掉的话，他刚下的单不会进自己的常购清单，得等运营确认才出现，那才是错的
       const lines = await prisma.orderLine.findMany({
         where: { order: { restaurantId: { in: restaurantIds }, status: { not: 'CANCELLED' } } },
         select: { productId: true, orderedQty: true, order: { select: { createdAt: true } } },

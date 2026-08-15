@@ -19,7 +19,8 @@ import { createPrismaClient } from '../../lib/prisma-factory'
 import { ensureOpeningStock } from '../../prisma/seed-events/inventory'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3002'
-const PASSWORD = process.env.SEED_PASSWORD ?? 'LocalTest2026!'
+// 口令收口在 _seed-credentials.ts —— 此前 26 个脚本各写一遍字面量，改一个账号要改 26 处
+import { seedPassword } from './_seed-credentials'
 const OPERATOR = process.env.OPERATOR_EMAIL ?? 'operator@veggie.com'
 const DRIVER = process.env.DRIVER_EMAIL ?? 'driver@veggie.com'
 
@@ -37,7 +38,7 @@ interface TripRow { id: string; driverId: string | null; driverName: string | nu
 async function login(email: string): Promise<string | null> {
   const r = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: PASSWORD }),
+    body: JSON.stringify({ email, password: seedPassword(email) }),
   })
   const j = await r.json() as { token?: string }
   return j.token ?? null
@@ -64,7 +65,8 @@ async function main() {
   const otherUser = await prisma.user.create({
     data: {
       email: otherEmail, name: `C4 司机乙 ${stamp}`, role: 'DRIVER', roles: ['DRIVER'],
-      passwordHash: await bcrypt.hash(PASSWORD, 12), isActive: true,
+      // 这个账号是本脚本现造的，口令按它自己的邮箱取（不会命中 OVERRIDES，走默认）
+      passwordHash: await bcrypt.hash(seedPassword(otherEmail), 12), isActive: true,
       ...(driverRole ? { roleLinks: { create: [{ roleId: driverRole.id }] } } : {}),
     },
     select: { id: true, name: true },

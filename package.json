@@ -47,6 +47,7 @@
     "test:finance-confirm": "npx tsx --env-file=.env.test scripts/audit/finance-confirm-test.ts",
     "test:driver-recon": "npx tsx --env-file=.env.test scripts/audit/driver-reconciliation-test.ts",
     "test:price-override": "npx tsx --env-file=.env.test scripts/audit/price-override-test.ts",
+    "test:last-price": "npx tsx --env-file=.env.test scripts/audit/last-price-source-test.ts",
     "test:driver-daily": "npx tsx --env-file=.env.test scripts/audit/driver-daily-report-test.ts",
     "test:route-map": "npx tsx --env-file=.env.test scripts/audit/route-map-test.ts",
     "test:driver-identity": "npx tsx --env-file=.env.test scripts/audit/driver-identity-selftest.ts",

@@ -19,7 +19,8 @@ import { deriveAov, deriveShortageRate, toDayKey, addBusinessDays } from '../../
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3002'
 const OPERATOR = process.env.OPERATOR_EMAIL ?? 'operator@veggie.com'
-const PASSWORD = process.env.SEED_PASSWORD ?? 'LocalTest2026!'
+// 口令收口在 _seed-credentials.ts —— 此前 26 个脚本各写一遍字面量，改一个账号要改 26 处
+import { seedPassword } from './_seed-credentials'
 
 interface Case { name: string; state: 'pass' | 'fail' | 'skip'; detail: string }
 const cases: Case[] = []
@@ -32,7 +33,7 @@ const prisma = createPrismaClient()
 async function login(): Promise<string> {
   const r = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: OPERATOR, password: PASSWORD }),
+    body: JSON.stringify({ email: OPERATOR, password: seedPassword(OPERATOR) }),
   })
   const j = await r.json() as { token?: string; error?: string }
   if (!j.token) throw new Error(`登录失败：${j.error ?? ''}`)

@@ -21,6 +21,7 @@ import type {
   OrderItem,
 } from './types'
 import { resolveCustomerPrice, type PriceResolution } from './pricing-engine'
+import { SALE_ORDER_STATUSES } from './order-status'
 import { toNum, toNumOpt } from './decimal-helpers'
 
 // ─── 价格校验容差 ─────────────────────────────────────────────────────────────
@@ -192,7 +193,7 @@ export async function queryLastSoldPricesDetailed(
     where: {
       productId: { in: productIds },
       unitPrice: { gt: 0 },
-      order: { restaurantId: { in: restaurantIds }, status: { not: 'CANCELLED' } },
+      order: { restaurantId: { in: restaurantIds }, status: { in: SALE_ORDER_STATUSES } },
     },
     orderBy: { order: { createdAt: 'desc' } },
     select: { productId: true, unitPrice: true, order: { select: { createdAt: true } } },

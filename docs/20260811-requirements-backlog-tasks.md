@@ -981,6 +981,47 @@
 
 ---
 
+- [x] **X9「上次成交价」把报价单也算成了成交**（客户 20260814 反馈）— 完成 20260814，8/8 端到端
+      原话：「price type 是 multi 或 last 时，上一次的价格，是指 sale order 的价格，
+      不应该是 quotation 价格。」
+      **根因**：本系统里报价单不是独立实体，就是 `status='PENDING'` 的 Order。
+      而 `lib/server-pricing.ts:195` 取历史成交价时只写了 `status: { not: 'CANCELLED' }` ——
+      于是一张**从没被确认、甚至已经谈崩**的报价单，它的价直接成了下一单的基准价。
+      报价只是**要价**，不是成交。
+      **生产实测影响面（只读，20260814）**：488 张 PENDING；而报价单都是新的、历史单几乎
+      全是 LOCKED，所以报价极容易赢下「最近一次」——
+      **2434 个「客户×商品」组合里 873 个（36%）的所谓"上次成交价"取自报价单**
+      产出：`lib/order-status.ts`（`SALE_ORDER_STATUSES` 白名单，报价单/销售单分界的唯一真相）
+      + `scripts/audit/last-price-source-test.ts`（`npm run test:last-price`）
+      **改了两处、刻意不改第三处**：
+      · `lib/server-pricing.ts` 的 `queryLastSoldPricesDetailed` —— 定价引擎取的那个价 ✓
+      · `app/api/orders/sales-price-history` —— 「查看历史价格」弹窗。**必须同时改**：
+        不改的话，行上 Last 徽标那个数与弹窗第一行会对不上，同一件事两处各算一遍
+      · ⛔ `customer-portal/frequently-ordered` **保留 PENDING，不是漏改** ——
+        它问的是「我常买什么」，而客户在门户提交的单**落地就是 PENDING**；
+        排掉的话他刚下的单不进自己的常购清单，得等运营确认才出现。已写进该文件注释
+      写法从 `{ not: 'CANCELLED' }` 改成显式白名单：以后新增状态时，减法会默默把它算成成交，
+      白名单会逼人做决定
+      验收达成：造出对照（同客户同商品：先 €20 销售单，再一张更晚的 €99 报价单）——
+      引擎取 €20 ✓、下单页 HTTP 路径取 €20 ✓、弹窗第一行 €20 且不出现 €99 ✓；
+      **报价单一经确认，€99 立刻算数** ✓（排除的是「未成交」，不是「报价单」这个词）；
+      作废后回落 €20 ✓；浏览器实看弹窗 + 控制台 0 错误 ✓
+      ⚠️ **第五次踩「夹具直塞库存」**：确认订单会扣库存，夹具商品建时 0 库存、确认两张单
+      就扣成 −2，撞红 db:validate 的「库存非负」——**那是夹具不守恒，不是产品缺陷**。
+      已改走 `ensureOpeningStock`，并把上一轮留下的负库存按期初余额口径补平（不直接改 qtyOnHand）
+
+- [ ] **X10 管理员重置密码这条路绕过了强密码策略**（X8 相邻，20260814 查出）
+      `lib/password-policy.ts` 的 `assessNewPassword`（黑名单 + 最小 10 位 + 不得重复字符）
+      **只挂在 `/api/auth/change-password`（用户自己改）**；
+      而 `/api/users/[id]` PUT 的 `newPassword`（管理员替别人重置）只校验 `length >= 6`。
+      两条路一严一松，**松的那条恰恰是设置别人密码的那条**
+      验收：两条路走同一个校验；若确需为运维留后门，必须显式命名且留痕，不能是"忘了接"
+      ⚠️ 另注：改密**不使旧 token 失效**（无 passwordChangedAt / tokenVersion），
+      与 I1「改密即失效」那条验收标准冲突，一并在本条处理
+      依赖：无
+
+---
+
 ## W3 · 被用户决策阻塞（不得开工）
 
 > **用户决策 20260812：多仓（E1/E2x）、Sage（G3）本期先忽略；D7 用户表示「口径没理解」，
@@ -1082,6 +1123,10 @@
 | RESTAURANT | restaurant1@veggie.com / restaurant2@veggie.com |
 | SALES | sales@veggie.com（周期 2 新增，roles = OPERATOR+SALES） |
 
+> ⚠️ **20260814 起 `operator@veggie.com` 的口令改成 `111111`**（用户要求，生产同步改了）。
+> 其余账号仍是 `LocalTest2026!`。审计脚本的口令已收口到 `scripts/audit/_seed-credentials.ts`，
+> 不再各写一遍字面量。⛔ 该口令在 `lib/password-policy.ts` 黑名单里，**生产那份应尽快轮换**。
+>
 > 9/9 均已实测可登录。注意登录接口字段名是 `email` 不是 `username`，且有 IP 限流——
 > 连续试错会拿到 `RATE_LIMIT` 并需等约 50s。
 

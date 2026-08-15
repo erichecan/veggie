@@ -17,7 +17,8 @@ import { createPrismaClient } from '../../lib/prisma-factory'
 import { deriveDailyReport } from '../../lib/driver-daily-report'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3002'
-const PASSWORD = process.env.SEED_PASSWORD ?? 'LocalTest2026!'
+// 口令收口在 _seed-credentials.ts —— 此前 26 个脚本各写一遍字面量，改一个账号要改 26 处
+import { seedPassword } from './_seed-credentials'
 const OPERATOR = process.env.OPERATOR_EMAIL ?? 'operator@veggie.com'
 const DRIVER = process.env.DRIVER_EMAIL ?? 'driver@veggie.com'
 
@@ -44,7 +45,7 @@ interface DailyPayload {
 async function login(email: string): Promise<string | null> {
   const r = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: PASSWORD }),
+    body: JSON.stringify({ email, password: seedPassword(email) }),
   })
   const j = await r.json() as { token?: string }
   return j.token ?? null

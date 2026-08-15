@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { toNum } from '@/lib/decimal-helpers'
 import { displayOrderCode } from '@/lib/order-code'
+import { SALE_ORDER_STATUSES } from '@/lib/order-status'
 
 /**
  * GET /api/orders/sales-price-history?customerId=X&productId=Y&limit=20
@@ -41,7 +42,10 @@ export async function GET(req: Request) {
           productId,
           order: {
             restaurantId: { in: restaurantIds },
-            status: { not: 'CANCELLED' },
+            // 与 lib/server-pricing 的 queryLastSoldPricesDetailed 同口径：只算真正成交过的单。
+            // 弹窗列的是「历史成交价」，混进报价单的话，行上 Last 徽标那个数与本弹窗
+            // 第一行会对不上 —— 同一件事在两处各算一遍，正是最难查的那类不一致
+            status: { in: SALE_ORDER_STATUSES },
           },
         },
         orderBy: { order: { createdAt: 'desc' } },
