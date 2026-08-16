@@ -51,6 +51,46 @@ const nextConfig: NextConfig = {
   // 500（2026-07-14 客户反馈）。显式声明追踪范围，把该模块连同其平台原生二进制一并打进
   // .next/standalone/node_modules。
   outputFileTracingIncludes: {
+    // 运维/审计脚本要在生产容器里跑（`npx tsx scripts/audit/xxx.ts`），而运行时镜像
+    // 就是 .next/standalone —— 它的 node_modules 是 nft 追踪结果，**被 webpack 内联
+    // 掉的包不会留下**。实测该目录里 @prisma/adapter-pg 根本不存在，所以脚本一
+    // createPrismaClient 就 MODULE_NOT_FOUND —— 光把 lib/prisma-factory.ts 改成懒加载
+    // 并不够。
+    //
+    // ⚠️ 「包目录在」不等于「包能用」。nft 会为解析路径**只拷一个 package.json**，
+    // 目录看着在、`main` 指的文件却没拷。实测 standalone 里 postgres-array 就只剩一个
+    // package.json，pgpass / xtend 的 main 同样缺失 —— 头一版只补了 adapter-pg 与
+    // driver-adapter-utils，模拟产线一跑照样炸在
+    // 「Cannot find module .../postgres-array/index.js」。
+    // 所以这里补的是 **@prisma/adapter-pg 的整棵运行时依赖闭包**（按各包 package.json
+    // 的 dependencies 递归算出，去掉 @types/*），不是挑着补。
+    // 用 `PKG/**/*` 而不是列具体文件：顺带覆盖嵌套的 node_modules
+    //（pg-types 自带一份 postgres-array@2，与顶层的 3.0.4 不是同一个）。
+    //
+    // 选 outputFileTracingIncludes 而不是 serverExternalPackages：前者只是**往产物里
+    // 多拷文件**，app 自己的打包与解析方式一个字节不变；后者会把适配器改成运行时从
+    // node_modules 解析，那是全站连库的风险面，为了跑脚本不值得动。
+    //
+    // ⛔ 不要照此把 Neon 那三个包也加进来。生产走 pg，Neon 是要拆掉的架构，
+    //    给它在生产产物里加钉子违反部署铁律（台账 X8 验收第 ② 条）。
+    '/**/*': [
+      './node_modules/@prisma/adapter-pg/**/*',
+      './node_modules/@prisma/driver-adapter-utils/**/*',
+      './node_modules/@prisma/debug/**/*',
+      './node_modules/pg/**/*',
+      './node_modules/pg-connection-string/**/*',
+      './node_modules/pg-int8/**/*',
+      './node_modules/pg-pool/**/*',
+      './node_modules/pg-protocol/**/*',
+      './node_modules/pg-types/**/*',
+      './node_modules/pgpass/**/*',
+      './node_modules/postgres-array/**/*',
+      './node_modules/postgres-bytea/**/*',
+      './node_modules/postgres-date/**/*',
+      './node_modules/postgres-interval/**/*',
+      './node_modules/split2/**/*',
+      './node_modules/xtend/**/*',
+    ],
     '/api/purchase-orders/pdf-extract': [
       './node_modules/@napi-rs/**/*',
       // pdfjs 的 worker 是运行时按路径动态 import 的，追踪器只带上了 pdf.mjs，
