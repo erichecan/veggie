@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { sendPasswordReset } from '@/lib/email'
+import { forgetPermVersions } from '@/lib/rbac/perm-version'
 
 const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
 
@@ -28,9 +29,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
       const user = await prisma.user.update({
         where: { id },
-        data: { passwordHash },
+        // 重置密码的动机通常就是「这个账号可能被别人登了」，
+        // 不作废旧 token 的话对方手里那张还能继续用满 7 天 —— 等于白重置。
+        data: { passwordHash, permVersion: { increment: 1 } },
         select: { id: true, name: true, email: true },
       })
+      forgetPermVersions([id])
 
       await writeLog({
         userId: me.userId, userEmail: me.email, userName: me.name,

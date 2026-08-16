@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
+import { assessNewPassword } from '@/lib/password-policy'
 
 // GET /api/users — 用户列表（OPERATOR / BOSS / FINANCE）
 export async function GET(req: Request) {
@@ -57,7 +58,14 @@ export async function POST(req: Request) {
 
       if (!name?.toString().trim()) return NextResponse.json({ error: '姓名不能为空' }, { status: 400 })
       if (!email?.toString().trim()) return NextResponse.json({ error: '邮箱不能为空' }, { status: 400 })
-      if (!password || String(password).length < 6) return NextResponse.json({ error: '密码至少 6 位' }, { status: 400 })
+      // 建号时设的初始密码同样要过强度校验 —— 生产上那 42 个 `test123` 就是
+      // 从这条路进来的。这里不校验，等于给弱口令留了唯一一个还开着的入口。
+      if (!password) return NextResponse.json({ error: '密码不能为空' }, { status: 400 })
+      const pwVerdict = assessNewPassword(String(password), {
+        email: String(email),
+        name: String(name),
+      })
+      if (!pwVerdict.ok) return NextResponse.json({ error: pwVerdict.reason }, { status: 400 })
 
       // ⛔ 与 prisma enum Role 一致。这份白名单此前少了 EXTERNAL_SALES / DISPATCH / OTHER
       //    —— 8/6 加了角色但没回来更新，管理员因此建不出外部销售与调度账号。

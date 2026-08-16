@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiPost } from '@/lib/api'
+import { assessNewPassword } from '@/lib/password-policy'
 import { toast } from 'sonner'
 import { useTranslations, useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -64,11 +65,15 @@ export default function Nav({ session, links = [], onReplayTour }: NavProps) {
 
   async function handleChangePwd() {
     if (!oldPwd) { toast.error(t('pwdErrors.currentRequired')); return }
-    if (newPwd.length < 6) { toast.error(t('pwdErrors.tooShort')); return }
+    // 与后端同一个校验。verdict.reason 目前只有中文 —— 服务端返回的也是同一批字符串，
+    // 所以这里显示它至少与报错一致；把策略文案接进 i18n 是单独一条（见 X11）。
+    const verdict = assessNewPassword(newPwd, { name: session?.name })
+    if (!verdict.ok) { toast.error(verdict.reason ?? t('pwdErrors.tooShort')); return }
     if (newPwd !== confirmPwd) { toast.error(t('pwdErrors.mismatch')); return }
     setSaving(true)
     try {
-      await apiPost('/api/auth/change-password', { oldPassword: oldPwd, newPassword: newPwd })
+      // ⛔ 字段名必须是 currentPassword —— 见 OdooNav 同处注释
+      await apiPost('/api/auth/change-password', { currentPassword: oldPwd, newPassword: newPwd })
       toast.success(t('pwdErrors.success'))
       setPwdOpen(false)
       setTimeout(doLogout, 1000)

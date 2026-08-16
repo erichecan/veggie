@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { apiPost, apiPut } from '@/lib/api'
+import { assessNewPassword, PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
 import type { SystemUser, UserRole } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -216,7 +217,15 @@ export default function UsersTab({
     if (saving) return
     if (!form.name.trim()) { toast.error(isEn ? 'Name cannot be empty' : '姓名不能为空'); return }
     if (!form.email.trim()) { toast.error(isEn ? 'Email cannot be empty' : '邮箱不能为空'); return }
-    if (!editingId && form.password.length < 6) { toast.error(isEn ? 'Password must be at least 6 characters' : '密码至少 6 位'); return }
+    // 与后端同一个 assessNewPassword —— 前端只是提前告知，判定权仍在后端。
+    // 之前这里写死 6 位，而后端要 10 位且有黑名单：填了 6 位前端放行、后端打回。
+    if (!editingId) {
+      const verdict = assessNewPassword(form.password, { email: form.email, name: form.name })
+      if (!verdict.ok) {
+        toast.error(isEn ? `Password rejected: ${verdict.reason}` : `密码不符合要求：${verdict.reason}`)
+        return
+      }
+    }
 
     setSaving(true)
     try {
@@ -266,7 +275,11 @@ export default function UsersTab({
 
   async function handleChangePwd() {
     if (!pwdUser || savingPwd) return
-    if (newPassword.length < 6) { toast.error(isEn ? 'Password must be at least 6 characters' : '密码至少 6 位'); return }
+    const verdict = assessNewPassword(newPassword, { email: pwdUser.email, name: pwdUser.name })
+    if (!verdict.ok) {
+      toast.error(isEn ? `Password rejected: ${verdict.reason}` : `密码不符合要求：${verdict.reason}`)
+      return
+    }
     if (newPassword !== confirmPassword) { toast.error(isEn ? 'Passwords do not match' : '两次密码不一致'); return }
     setSavingPwd(true)
     try {
@@ -429,7 +442,7 @@ export default function UsersTab({
             </div>
             {!editingId && (
               <div>
-                <Label htmlFor="u-pass">{isEn ? 'Initial Password *' : '初始密码 *'} <span className="text-gray-400 font-normal text-xs">{isEn ? '(at least 6 characters)' : '（至少 6 位）'}</span></Label>
+                <Label htmlFor="u-pass">{isEn ? 'Initial Password *' : '初始密码 *'} <span className="text-gray-400 font-normal text-xs">{isEn ? `(at least ${PASSWORD_MIN_LENGTH} characters, not a common password)` : `（至少 ${PASSWORD_MIN_LENGTH} 位，不能是常见弱口令）`}</span></Label>
                 <Input
                   id="u-pass"
                   type="password"
@@ -464,7 +477,7 @@ export default function UsersTab({
           <div className="py-2 space-y-4">
             <p className="text-xs text-gray-400">{pwdUser?.email}</p>
             <div>
-              <Label htmlFor="admin-new-pwd">{isEn ? 'New Password' : '新密码'} <span className="text-gray-400 font-normal text-xs">{isEn ? '(at least 6 characters)' : '（至少 6 位）'}</span></Label>
+              <Label htmlFor="admin-new-pwd">{isEn ? 'New Password' : '新密码'} <span className="text-gray-400 font-normal text-xs">{isEn ? `(at least ${PASSWORD_MIN_LENGTH} characters, not a common password)` : `（至少 ${PASSWORD_MIN_LENGTH} 位，不能是常见弱口令）`}</span></Label>
               <Input
                 id="admin-new-pwd"
                 type="password"

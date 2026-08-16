@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { forgetPermVersions } from '@/lib/rbac/perm-version'
+import { assessNewPassword } from '@/lib/password-policy'
 import bcrypt from 'bcryptjs'
 
 const USER_TRACKED_FIELDS = ['name', 'role', 'isActive']
@@ -94,16 +95,26 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
         updateData.managerId = next
       }
-      if (newPassword !== undefined) {
-        if (String(newPassword).length < 6) return NextResponse.json({ error: '密码至少 6 位' }, { status: 400 })
-        updateData.passwordHash = await bcrypt.hash(String(newPassword), 12)
-      }
-
       const before = await prisma.user.findUnique({
         where: { id },
         select: { id: true, email: true, name: true, role: true, isActive: true },
       })
       if (!before) return NextResponse.json({ error: '用户不存在' }, { status: 404 })
+
+      // ⛔ 这条路走的是**管理员替别人设密码**，比自助改密更危险，校验却一度更松
+      //    （只看 length >= 6）。两条路必须过同一个 assessNewPassword ——
+      //    否则强度策略等于只对愿意遵守的人生效。
+      //    黑名单里的邮箱名/姓名比对用的是**被改的那个人**，不是操作者。
+      if (newPassword !== undefined) {
+        const verdict = assessNewPassword(String(newPassword), {
+          email: before.email,
+          name: before.name,
+        })
+        if (!verdict.ok) return NextResponse.json({ error: verdict.reason }, { status: 400 })
+        updateData.passwordHash = await bcrypt.hash(String(newPassword), 12)
+        // 密码变了就作废对方手里的 token，与自助改密同一口径（决策 5 / I1）
+        updateData.permVersion = { increment: 1 }
+      }
       const user = await prisma.user.update({
         where: { id },
         data: updateData,
@@ -117,6 +128,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (Array.isArray(updateData.roles)) {
         await syncRoleLinks(id, updateData.roles as string[])
       }
+
+      // permVersion 已经 +1，但 withAuth 那侧有 30 秒缓存 —— 不清掉的话
+      // 被改密码的人还能拿旧 token 再用半分钟。
+      if (newPassword !== undefined) forgetPermVersions([id])
 
       const changes = diffChanges(
         before as unknown as Record<string, unknown>,
@@ -152,11 +167,16 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         return NextResponse.json({ error: '不能停用自己的账号' }, { status: 400 })
       }
 
+      // ⛔ isActive 只在**登录时**校验一次（app/api/auth/login/route.ts），withAuth 是纯验签
+      //    + permVersion，全程不查这个字段。所以只写 isActive=false 的话，被停用的人
+      //    手里那张 token 还能继续用满 7 天 —— 离职当天停用，第二天照样能下单。
+      //    permVersion +1 才是真正把人踢出去的那一下。
       const user = await prisma.user.update({
         where: { id },
-        data: { isActive: false },
+        data: { isActive: false, permVersion: { increment: 1 } },
         select: { id: true, name: true, email: true },
       })
+      forgetPermVersions([id])
 
       await writeLog({
         userId: me.userId, userEmail: me.email, userName: me.name,

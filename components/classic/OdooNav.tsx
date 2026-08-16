@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiGet, apiPost, apiPatch } from '@/lib/api'
+import { assessNewPassword, PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
 import { toast } from 'sonner'
 import HelpDrawer from '@/components/onboarding/HelpDrawer'
 import { formatDateTime } from '@/lib/format-date'
@@ -154,11 +155,19 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
 
   async function handleChangePwd() {
     if (!oldPwd) { toast.error(isEn ? 'Please enter current password' : '请输入当前密码'); return }
-    if (newPwd.length < 6) { toast.error(isEn ? 'Password must be at least 6 characters' : '新密码至少 6 位'); return }
+    // RoleSession 里没有 email，前端只能按姓名预检；「不得包含邮箱名」那条由后端把关
+    const verdict = assessNewPassword(newPwd, { name: session?.name })
+    if (!verdict.ok) {
+      toast.error(isEn ? `Password rejected: ${verdict.reason}` : `密码不符合要求：${verdict.reason}`)
+      return
+    }
     if (newPwd !== confirmPwd) { toast.error(isEn ? 'Passwords do not match' : '两次密码不一致'); return }
     setSaving(true)
     try {
-      await apiPost('/api/auth/change-password', { oldPassword: oldPwd, newPassword: newPwd })
+      // ⛔ 字段名必须是 currentPassword —— 接口读的是这个。
+      //    这里曾写成 oldPassword，后端 destructure 成 undefined，
+      //    于是导航栏的「修改密码」100% 报「请填写当前密码与新密码」，改不了密码。
+      await apiPost('/api/auth/change-password', { currentPassword: oldPwd, newPassword: newPwd })
       toast.success(isEn ? 'Password changed, please log in again' : '密码已修改，请重新登录')
       setPwdOpen(false)
       setTimeout(doLogout, 1000)
@@ -469,7 +478,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
             </div>
             <div>
               <Label htmlFor="odoo-new-pwd">
-                {isEn ? <>New Password <span className="text-gray-400 font-normal text-xs">(min 6 chars)</span></> : <>新密码 <span className="text-gray-400 font-normal text-xs">（至少 6 位）</span></>}
+                {isEn ? <>New Password <span className="text-gray-400 font-normal text-xs">{`(min ${PASSWORD_MIN_LENGTH} chars)`}</span></> : <>新密码 <span className="text-gray-400 font-normal text-xs">{`（至少 ${PASSWORD_MIN_LENGTH} 位）`}</span></>}
               </Label>
               <Input
                 id="odoo-new-pwd"

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
+import { forgetPermVersions } from '@/lib/rbac/perm-version'
 
 /**
  * POST /api/gdpr/delete
@@ -71,11 +72,19 @@ export async function POST(req: Request) {
             isActive: false,
           },
         })
-        // 同时把关联的 user 也脱敏
+        // 同时把关联的 user 也脱敏。
+        // ⛔ isActive=false 挡的只是**下一次登录**——withAuth 不查这个字段，
+        //    已签发的 token 仍有效最长 7 天。对 GDPR 删除来说，"删了还能继续访问"
+        //    直接违背 Article 17 的目的，所以必须 permVersion +1 把 token 打掉。
+        const linked = await p.user.findMany({
+          where: { customerId: targetId },
+          select: { id: true },
+        })
         await p.user.updateMany({
           where: { customerId: targetId },
-          data: { isActive: false },
+          data: { isActive: false, permVersion: { increment: 1 } },
         })
+        forgetPermVersions(linked.map((u: { id: string }) => u.id))
       } else {
         await p.user.update({
           where: { id: targetId },
@@ -84,8 +93,10 @@ export async function POST(req: Request) {
             name: 'Deleted User',
             passwordHash: 'DELETED_ACCOUNT_NO_LOGIN',
             isActive: false,
+            permVersion: { increment: 1 },
           },
         })
+        forgetPermVersions([targetId])
       }
 
       await writeLog({
