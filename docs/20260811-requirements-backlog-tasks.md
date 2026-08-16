@@ -967,7 +967,8 @@
 
 ---
 
-- [ ] **X8 审计脚本在生产容器里跑不起来**（X6 撞出来）
+- [x] **X8 审计脚本在生产容器里跑不起来**（X6 撞出来）— 代码完成 20260816 `d2cf539`
+      **⚠️ 尚未部署，生产侧未实跑（验收 ③ 的一半未达成），见下方「留给用户执行」**
       现象：`docker exec veggie-app-1 npx tsx scripts/audit/xxx.ts` →
       `Cannot find module '@neondatabase/serverless'`，require 栈顶是 `lib/prisma-factory.ts`
       根因：该文件**静态**引入 Neon 驱动，而生产走 pg、standalone 镜像已把 Neon 包裁掉。
@@ -978,6 +979,52 @@
         （那是给要拆掉的架构加钉子，违反部署铁律）—— 应改成**按 `DATABASE_DRIVER` 懒加载驱动**
       ③ 本地与生产两侧都实跑验证
       依赖：无。⚠️ 动的是驱动选择这段公共代码，改坏了全站连不上库，要单独一轮做并单独验
+
+      **⛔ 根因是两条，工单只写了一条 —— 只修工单那条依然跑不起来**
+      1. `lib/prisma-factory.ts` 顶层静态 import 四个驱动包（工单写的这条）
+      2. **运行时镜像就是 `.next/standalone`，它的 node_modules 是 nft 追踪结果，
+         被 webpack 内联掉的包不会留下。实测该目录里 `@prisma/adapter-pg` ——
+         生产真正要用的那个 —— 同样不存在。** 只改懒加载的话，脚本会从
+         「找不到 Neon」变成「找不到 adapter-pg」，一样跑不了
+      改法：① `lib/prisma-factory.ts` 四个驱动包改成分支内 `require()`
+      （不用 `await import()`：本函数是同步的，60+ 脚本与 `lib/db.ts` 直接调它，
+      改 async 会传染整棵调用树）
+      ② `next.config.ts` 的 `outputFileTracingIncludes` 补上 **`@prisma/adapter-pg`
+      的整棵运行时依赖闭包**（16 个包，按各包 package.json 递归算出）
+      ⚠️ **「包目录在」不等于「包能用」**：nft 会只拷一个 `package.json` 占位，
+      `main` 指的文件没拷。头一版只补了 adapter-pg + driver-adapter-utils，
+      模拟产线一跑照样炸在 `Cannot find module .../postgres-array/index.js` ——
+      所以补的是**闭包**，不是挑着补
+      ⚠️ 选 `outputFileTracingIncludes` 而不是 `serverExternalPackages`：前者只往产物里
+      多拷文件，app 自己的打包与解析方式一个字节不变；后者会把适配器改成运行时解析，
+      那是**全站连库**的风险面，为了跑脚本不值得动
+      **验收 ② 达成**：产物里 `@neondatabase/serverless` 与 `@prisma/adapter-neon`
+      依旧 **0 个**，没在生产装 Neon 包
+      **验收 ① 的等价验证（本地，非生产）**：把 `.next/standalone` 复制到**仓库外**
+      （否则 Node 会向上解析到开发 node_modules，等于什么都没验），Neon 包 0 个，
+      当作模拟产线容器 —— 换回修复前的 `prisma-factory` → **原样复现**
+      `Cannot find module '@neondatabase/serverless'`；装回修复 → 审计脚本跑出完整报告
+      **两种驱动本地各实跑** `scripts/audit/stock-conservation-probe.ts`：
+      | 驱动 | 环境 | 商品总数 | 流水条数 |
+      |---|---|---:|---:|
+      | pg | `.env.test` 本地 PostgreSQL | 1780 | 3385 |
+      | neon | `.env.local` Neon | 5479 | 1984 |
+      数字不同 → 证明真连了两个不同的库，不是空转
+      **全站连库没坏**（这条是本轮最大风险）：standalone 产物起服务打 `/api/health`，
+      `DATABASE_DRIVER=pg` → 200 `{"db":"ok"}`；`DATABASE_DRIVER=neon` → 200 `{"db":"ok"}`
+      （后者把开发 node_modules 里的 Neon 包**临时藏起来**跑的，证明 Cloud Run 回滚路径
+      靠的是 webpack 内联那份，没被懒加载改坏）。`next dev` 同样 200
+      产出：`tests/prisma-factory-lazy-driver.test.ts` —— 挂 `Module._load` 记下每一次
+      模块请求，走 pg 时 Neon 三个包一次都不许出现。**盯的是运行时真的没去加载**，
+      不是"源码看着像懒加载"。已做回退验证：拿掉修复 3 条全红，装回 3 条全绿
+
+      **📌 留给用户执行（交付工程师不碰生产服务器，`167.99.86.19` 是客户的）**
+      部署后在生产容器里实跑一次，验收 ③ 才算完整：
+      ```
+      docker exec veggie-app-1 npx tsx scripts/audit/stock-conservation-probe.ts
+      ```
+      预期：跑出「库存守恒体检报告」。若仍 MODULE_NOT_FOUND，把缺的包名报回来 ——
+      那说明闭包还漏了一个，不是修复方向错了
 
 ---
 
