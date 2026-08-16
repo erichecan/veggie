@@ -18,7 +18,7 @@ export interface OdooColumn<T = Record<string, unknown>> {
   editType?: 'text' | 'number' | 'select'
   /** editType=select 时使用的下拉选项 */
   editOptions?: { value: string; label: string }[]
-  /** 是否支持双击进入编辑态（必须配合 onCellEdit 才生效） */
+  /** 是否支持单击进入编辑态（必须配合 onCellEdit 才生效） */
   editable?: boolean
 }
 
@@ -40,7 +40,7 @@ interface OdooTableProps<T extends Record<string, unknown>> {
   columnMultiFilters?: Record<string, string[]>
   onColumnFilterChange?: (key: string, value: string) => void
   onColumnMultiFilterChange?: (key: string, values: string[]) => void
-  /** 是否启用全表的「双击编辑」模式；为 true 时支持 cell 双击编辑（再配合 col.editable） */
+  /** 是否启用全表的「行内编辑」模式；为 true 时单击 cell 直接进入编辑（再配合 col.editable） */
   inlineEditEnabled?: boolean
   /** 单元格保存回调；返回 Promise，resolve 表示保存成功 */
   onCellEdit?: (row: T, key: string, newValue: unknown) => Promise<void> | void
@@ -92,7 +92,7 @@ export default function OdooTable<T extends Record<string, unknown>>({
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [openMultiKey])
 
-  // ─── 双击单元格编辑态 ──
+  // ─── 单击单元格进入编辑态 ──
   const [editing, setEditing] = useState<{ rowId: string; key: string } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
   const [savingCell, setSavingCell] = useState(false)
@@ -411,16 +411,12 @@ export default function OdooTable<T extends Record<string, unknown>>({
                         }}
                         onClick={e => {
                           if (isEditingCell) { e.stopPropagation(); return }
-                          if (cellEditable) { e.stopPropagation() }
-                        }}
-                        onDoubleClick={e => {
-                          if (cellEditable && !isEditingCell) {
+                          if (cellEditable) {
                             e.stopPropagation()
-                            e.preventDefault()
                             beginEdit(row, col)
                           }
                         }}
-                        title={cellEditable ? '双击编辑（回车保存 / Esc 取消）' : undefined}
+                        title={cellEditable ? '单击编辑（回车保存 / Esc 取消）' : undefined}
                       >
                         {isEditingCell ? (
                           col.editType === 'select' ? (

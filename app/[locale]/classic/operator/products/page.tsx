@@ -64,8 +64,10 @@ export default function ClassicProductsPage() {
   const [canBeSoldFilter, setCanBeSoldFilter] = useState(false)
   const [productTypeFilter, setProductTypeFilter] = useState('')
   const [stockAlertFilter, setStockAlertFilter] = useState<StockAlertFilter>('all')
-  const [quickEditMode, setQuickEditMode] = useState(false)
+  // Read / Edit 是整个列表页唯一的模式真相：顶部 Mode 按钮与下方「快速编辑」按钮共用它，
+  // 表格的行内编辑也由它开关。此前两者各持一个 state，导致顶部显示 Edit 但单元格仍改不了。
   const [isReadMode, setIsReadMode] = useState(true)
+  const editMode = !isReadMode
   const [groupBy, setGroupBy] = useState('')
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -545,18 +547,18 @@ export default function ClassicProductsPage() {
       <div className="px-4 pt-3 pb-1 flex items-center gap-3 flex-wrap">
         <button
           type="button"
-          onClick={() => setQuickEditMode(v => !v)}
-          aria-pressed={quickEditMode}
+          onClick={() => setIsReadMode(v => !v)}
+          aria-pressed={editMode}
           className="h-8 px-3 text-sm rounded border transition-colors flex items-center gap-1.5"
           style={{
-            background: quickEditMode ? '#875A7B' : 'white',
-            borderColor: quickEditMode ? '#875A7B' : '#d1d5db',
-            color: quickEditMode ? 'white' : '#4b5563',
+            background: editMode ? '#875A7B' : 'white',
+            borderColor: editMode ? '#875A7B' : '#d1d5db',
+            color: editMode ? 'white' : '#4b5563',
           }}
-          title={isEn ? 'When on, double-click editable fields in the list to edit directly, without opening the product detail page' : '开启后，可双击列表中可编辑字段直接修改，无需打开商品详情页'}
+          title={isEn ? 'When on, click editable fields in the list to edit directly, without opening the product detail page' : '开启后，可单击列表中可编辑字段直接修改，无需打开商品详情页'}
         >
           <span style={{ fontSize: 13 }}>✏️</span>
-          {quickEditMode ? (isEn ? 'Quick Edit (On)' : '快速编辑（已开启）') : (isEn ? 'Quick Edit' : '快速编辑')}
+          {editMode ? (isEn ? 'Quick Edit (On)' : '快速编辑（已开启）') : (isEn ? 'Quick Edit' : '快速编辑')}
         </button>
 
         {/* 库存筛选 pills */}
@@ -600,12 +602,12 @@ export default function ClassicProductsPage() {
           })}
         </div>
 
-        {quickEditMode && (
+        {editMode && (
           <span className="text-xs text-gray-500">
             {isEn ? (
-              <><strong style={{ color: '#875A7B' }}>Double-click</strong> a purple-background cell to edit, press Enter or click elsewhere to save, Esc to cancel.</>
+              <><strong style={{ color: '#875A7B' }}>Click</strong> a purple-background cell to edit, press Enter or click elsewhere to save, Esc to cancel.</>
             ) : (
-              <><strong style={{ color: '#875A7B' }}>双击</strong>紫色背景列即可编辑，回车或点击其他位置保存，Esc 取消。</>
+              <><strong style={{ color: '#875A7B' }}>单击</strong>紫色背景列即可编辑，回车或点击其他位置保存，Esc 取消。</>
             )}
           </span>
         )}
@@ -654,7 +656,7 @@ export default function ClassicProductsPage() {
               return next
             })
           }}
-          inlineEditEnabled={quickEditMode}
+          inlineEditEnabled={editMode}
           onCellEdit={handleCellEdit}
           getRowStyle={getRowStyle}
           groupByField={groupBy === 'type' ? 'type' : groupBy === 'category' ? 'categoryId' : ''}
