@@ -1019,7 +1019,21 @@
       就扣成 −2，撞红 db:validate 的「库存非负」——**那是夹具不守恒，不是产品缺陷**。
       已改走 `ensureOpeningStock`，并把上一轮留下的负库存按期初余额口径补平（不直接改 qtyOnHand）
 
-- [ ] **X10 管理员重置密码这条路绕过了强密码策略**（X8 相邻，20260814 查出）
+- [x] **X10 管理员重置密码这条路绕过了强密码策略**（X8 相邻，20260814 查出）
+      ✅ 20260816 完成 `7d71d6e`。**实际范围比工单大**：根因不是「漏接了一个校验」，
+      而是 **`withAuth` 全程不查 `isActive`**（只在 login 校验一次）而 token 有效期 7 天 ——
+      于是一切「改了账号凭据/状态」的动作都没能把人踢下线。
+      修五处：PUT /api/users/[id]（改密走 assessNewPassword + permVersion+1）、
+      POST /api/users（建号初始密码同样过校验 —— 生产那 42 个 test123 的入口）、
+      reset-password / DELETE users/[id] / gdpr/delete（各补 permVersion+1 + forgetPermVersions）。
+      顺带修掉两个用户可见 bug：两个导航栏的「修改密码」发 `oldPassword` 而接口读
+      `currentPassword`，**日常改密入口 100% 失败**；前端四处还写「至少 6 位」而后端要 10 位。
+      新增 `tests/session-invalidation.test.ts`（9 条结构性扫描，已回退验证能红）。
+      验证：tsc 通过 / npm test 648 项 0 失败 / next build 通过。
+      ⏭ 明确留到下一轮：管理员设密码后是否置 `mustChangePassword=true`（会改变用户可见
+      行为，验收窗口内不动）；`assessNewPassword` 拒绝理由未接 i18n。
+
+<details><summary>原工单描述</summary>
       `lib/password-policy.ts` 的 `assessNewPassword`（黑名单 + 最小 10 位 + 不得重复字符）
       **只挂在 `/api/auth/change-password`（用户自己改）**；
       而 `/api/users/[id]` PUT 的 `newPassword`（管理员替别人重置）只校验 `length >= 6`。
@@ -1028,6 +1042,7 @@
       ⚠️ 另注：改密**不使旧 token 失效**（无 passwordChangedAt / tokenVersion），
       与 I1「改密即失效」那条验收标准冲突，一并在本条处理
       依赖：无
+</details>
 
 ---
 
