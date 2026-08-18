@@ -176,42 +176,42 @@ registry 每个实体登记：`{ permission, buildWhere, fetch, columns, filenam
             `lib/export/columns/product-templates.ts`，两处页面接线
       依赖：E0
 
-- [ ] **E2 客户（S 模式）**
+- [x] **E2 客户（S 模式）** `373a769`
       验收：按销售员分面筛选后导出行数 = total；SALES 角色导出时行级隔离生效
             （只拿到自己的客户，与列表口径一致，见 `lib/row-scope.ts`）
       产出：`lib/customers-query.ts`（抽 where，含 `salesRowScope`）、
             `lib/export/columns/customers.ts`、页面接线
       依赖：E0
 
-- [ ] **E3 报价单（S 模式，成本最低）**
+- [x] **E3 报价单（S 模式）** `63104d6`
       验收：报价单列表任意分面组合下导出行数 = total
       产出：`lib/export/columns/quotations.ts` + registry 登记（where 直接复用现成的
             `buildOrdersWhere`，无需新抽）、页面接线
       依赖：E0
 
-- [ ] **E4 采购单（S 模式）**
+- [x] **E4 采购单（S 模式）** `853e1f9`
       验收：按供应商/状态筛选后导出行数 = total
       产出：`lib/purchase-orders-query.ts`（抽 where，已有 `PURCHASE_ORDER_FACET_DEFS` 可复用）、
             `lib/export/columns/purchase-orders.ts`、页面接线
       依赖：E0
 
-- [ ] **E5 发票（C 模式）**
+- [x] **E5 发票（C 模式）** `c8248c4`
       验收：屏幕筛选后导出行数 = 屏幕行数；改一个筛选条件重导，行数跟着变
       产出：`lib/export/columns/invoices.ts`、页面接线
       依赖：E0
       备注：该页现为 `?page=1&pageSize=200` 一次性拉取 + 客户端筛选，属技术债 D2
 
-- [ ] **E6 供应商账单（C 模式）**
+- [x] **E6 供应商账单（C 模式）** `c8248c4`
       验收：同 E5
       产出：`lib/export/columns/vendor-bills.ts`、页面接线
       依赖：E0
 
-- [ ] **E7 贷记单（C 模式）**
+- [x] **E7 贷记单（C 模式）** `c8248c4`
       验收：同 E5
       产出：`lib/export/columns/credit-notes.ts`、页面接线
       依赖：E0
 
-- [ ] **E8 对账单（S 模式）**
+- [x] **E8 对账单（S 模式）** `b162cce`
       验收：按客户/期间筛选后导出行数 = total
       产出：`lib/statements-query.ts`（抽 where）、`lib/export/columns/statements.ts`、页面接线
       依赖：E0
@@ -241,6 +241,23 @@ registry 每个实体登记：`{ permission, buildWhere, fetch, columns, filenam
    迁移（历史分叉），跑不了新代码（缺 `User.permVersion`）。本次改用一次性
    Docker Postgres 验证，没有去动演示库。要在演示库上验证后续实体的话，得先
    处理这个分叉。
+
+### E2–E8 周期中的发现
+
+1. **E3 把「导出实体」与「列表页」解耦了**：报价单页与销售单列表吃同一个
+   `/api/orders`，所以登记一个 `orders` 实体、两页共用，而不是按页面各造一套。
+2. **不变量测试自己有盲区**（已补）：`export-access-parity` 原先只比对**旧 token**
+   的 middleware 白名单，新 token 走权限点是另一层判据。补测后立刻抓到 SORTER
+   读得了 `/api/orders` 却导不出 `orders`。这次是安全的（SORTER 够不到那些页面，
+   界面上没有导出按钮），但必须显式登记进 `KNOWN_STRICTER` 并写清理由 ——
+   否则下一个这样的差异就是没人知道原因的静默失效。**第 6 次踩「度量工具自身失真」。**
+3. **旧角色白名单要逐个角色补**：E2 时发现 FINANCE / SALES / EXTERNAL_SALES 用的是
+   `/api/customers/**` 通配，只加一处 `exportOf` 会让这三个角色的旧 token
+   「列表看得见、点导出 403」。E3/E4/E8 同理，各补了 6/2/1 处。
+4. **registry 的 columns 改成可传函数**：客户的「结算方式/状态」中英文显示不同的**值**
+   （月结 / Monthly），不只是表头跟着语言变。
+5. **外币单据要给两套金额**：采购单与供应商账单都有 `currency + exchangeRate`，
+   只导一种财务对不上账；本币单的欧元列留空而不是抄一遍，否则看不出哪些换算过。
 
 ## 六、后续待办（本次不做，但已识别）
 
