@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { buildFacetWhere } from '@/lib/facet-sql'
-import { PURCHASE_ORDER_FACET_DEFS } from '@/lib/facets/purchase-orders'
+import { buildPurchaseOrdersWhere } from '@/lib/purchase-orders-query'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
@@ -29,13 +28,8 @@ export async function GET(req: Request) {
     // 增多悄悄丢掉更早的历史数据（正确性问题，不只是性能问题），见 docs/20260717-odoo-single-source-migration-plan.md 第四节
     const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') ?? '200', 10)))
 
-    const where: Record<string, unknown> = {}
-    if (supplierId) where.supplierId = supplierId
-    if (status) where.status = status
-
-    // 分面搜索：同维度 OR、跨维度 AND
-    const facetClauses = await buildFacetWhere(searchParams, PURCHASE_ORDER_FACET_DEFS)
-    if (facetClauses.length > 0) where.AND = facetClauses
+    // 筛选口径抽在 lib/purchase-orders-query.ts，导出路由用同一个函数
+    const where = await buildPurchaseOrdersWhere(searchParams)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p = prisma as any

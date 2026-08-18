@@ -17,6 +17,8 @@ import { PRODUCT_TEMPLATE_EXPORT_COLUMNS } from './columns/product-templates'
 import { loadProductTemplatesForExport } from './loaders/product-templates'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from './columns/customers'
 import { loadCustomersForExport } from './loaders/customers'
+import { purchaseOrderExportColumns } from './columns/purchase-orders'
+import { loadPurchaseOrdersForExport } from './loaders/purchase-orders'
 import { orderExportColumns } from './columns/orders'
 import { loadOrdersForExport } from './loaders/orders'
 
@@ -79,6 +81,10 @@ export const EXPORT_REGISTRY: Record<string, ErasedExportDef> = {
   customers: defineExport({
     columns: (isEn) => (isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS),
     load: loadCustomersForExport,
+  }),
+  'purchase-orders': defineExport({
+    columns: (isEn) => purchaseOrderExportColumns(isEn),
+    load: loadPurchaseOrdersForExport,
   }),
   // 报价单与销售单是同一个实体（Order）的两个状态视图，共用一份列定义与取数
   orders: defineExport({

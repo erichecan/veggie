@@ -138,6 +138,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/purchases', methods: ['GET', 'POST'] },
     { pattern: '/api/purchases/*', methods: READ },
     { pattern: '/api/purchase-orders/**', methods: READ },
+    exportOf('purchase-orders'),
     { pattern: '/api/goods-receipts/**', methods: ['GET', 'POST'] },
     { pattern: '/api/stock-moves/**', methods: ['GET', 'POST'] },
     { pattern: '/api/stock-takes', methods: ['GET', 'POST'] },
@@ -171,6 +172,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/orders/*/send-email', methods: ['POST'] },
     { pattern: '/api/suppliers/**', methods: READ },
     { pattern: '/api/purchase-orders/**', methods: READ },
+    exportOf('purchase-orders'),
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: READ },
     { pattern: '/api/trips/*/settlement', methods: ['GET', 'PUT'] },   // 确认/退回交账

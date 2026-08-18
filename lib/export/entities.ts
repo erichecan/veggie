@@ -46,6 +46,12 @@ export const EXPORT_ENTITY_META = {
   // 报价单页与销售单列表吃的是同一个 /api/orders，导出也共用这一个实体。
   // 权限沿用列表的查看权（决策 D-3）；既有的 /api/orders/export-csv 仍用它自己的
   // sales.order.export，不动它以免已配置好的角色权限发生变化。
+  'purchase-orders': {
+    permission: 'purchase.order.read',
+    labelZh: '采购单',
+    labelEn: 'Purchase Orders',
+    listApi: '/api/purchase-orders',
+  },
   orders: {
     permission: 'sales.order.read',
     labelZh: '订单',

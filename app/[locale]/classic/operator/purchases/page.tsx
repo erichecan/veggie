@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useCsvExport } from '@/hooks/use-csv-export'
 import { applyFacets, groupFacets, PURCHASE_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import ProcurementOverviewPage from './overview/page'
 import FreshDailySuggestionsPage from './fresh/page'
@@ -178,6 +179,19 @@ export default function PurchasesPage() {
     }
   }, [activeTab, search, page, isEn, facets])
 
+  // 导出与列表同参（状态页签 + 搜索 + 分面），服务端复用同一个 buildPurchaseOrdersWhere
+  const exportAction = useCsvExport({
+    entity: 'purchase-orders',
+    params: () => {
+      const params = new URLSearchParams()
+      if (activeTab !== 'all') params.set('status', activeTab)
+      if (search) params.set('search', search)
+      applyFacets(params, facets)
+      return params
+    },
+    fallbackFilename: '采购单.csv',
+  })
+
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
@@ -281,6 +295,7 @@ export default function PurchasesPage() {
       <OdooControlPanel
         breadcrumb={isEn ? ['Purchases', 'Quotations'] : ['采购', '询价单']}
         permanentActions={[
+          exportAction,
           { label: isEn ? 'New' : '新建', onClick: () => router.push('purchases/new'), primary: true },
           { label: 'Import', onClick: () => { setShowImportDialog(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
         ]}
