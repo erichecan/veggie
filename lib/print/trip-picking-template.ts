@@ -21,6 +21,7 @@ import {
   formatPrintTimestamp,
   renderTripNoticeHtml,
 } from './trip-common'
+import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 
@@ -42,6 +43,8 @@ interface AggProduct {
   /** 多单位销售(20260714)：同商品不同下单单位(如箱/个)分开聚合，不混算总量 */
   uomId: string | null
   productName: string
+  /** 商品 sequence，组内排序用（大货/散货的分组本身不变，见下方注释） */
+  productSequence: number | null
   spec: string
   uomName: string
   /** 箱规；行本身就是按大单位下的单时为 null（已经是整箱，不必再拆） */
@@ -88,6 +91,7 @@ export function generateTripPickingHtml(
           productId: line.productId,
           uomId: line.uomId,
           productName: line.productName,
+          productSequence: line.productSequence ?? null,
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',
           // 下单单位就是大单位时（如直接订 2 箱），数量本身已是整箱数，再按箱规拆
@@ -120,8 +124,10 @@ export function generateTripPickingHtml(
   }
 
   const allProducts = Array.from(aggMap.values())
-  const consumableProducts = allProducts.filter(p => p.productType === 'CONSU').sort((a, b) => a.productName.localeCompare(b.productName))
-  const storableProducts = allProducts.filter(p => p.productType !== 'CONSU').sort((a, b) => a.productName.localeCompare(b.productName))
+  // ⚠️ 大货/散货这个分组**不动** —— 那是仓库的作业顺序（先整箱后零散），
+  // 2026-08-18 客户要的「按 sequence 排」只改组内顺序，不该打乱仓库习惯。
+  const consumableProducts = sortLinesBySequence(allProducts.filter(p => p.productType === 'CONSU'))
+  const storableProducts = sortLinesBySequence(allProducts.filter(p => p.productType !== 'CONSU'))
 
   const showStorable = variant !== 'consumable'
   const showConsumable = variant !== 'storable'

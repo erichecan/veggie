@@ -16,6 +16,7 @@ import {
   type TripPrintDataWire,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
+import { fetchProductSequences } from './product-sequence'
 import {
   type PrintContentFilter,
   describePrintFilter,
@@ -314,7 +315,7 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap] = await Promise.all([
+  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap, productSeqMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductTypeMap(productIds),
     loadProductGoodsTypeMap(productIds),
@@ -322,6 +323,8 @@ export async function loadDispatchPrintData(
     // 筛选打印/全部打印可能横跨多个司机,trip 级 driverName 是空的——每单实际司机身份
     // 只能按单查(与销售单列表司机列同一 SSOT),见 TripOrder.driverBatchLabel。
     getOrderWaveDisplayMap(orders.map(o => o.id)),
+    // 打印顺序按商品 sequence（客户要求 2026-08-18）。模板拿不到数据库，在这里附上。
+    fetchProductSequences(productIds),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -363,6 +366,7 @@ export async function loadDispatchPrintData(
       ? o.lines.map(l => ({
           productId: l.productId,
           productName: l.productName,
+          productSequence: productSeqMap.get(l.productId) ?? null,
           spec: l.spec ?? null,
           uomId: l.uomId,
           uomName: l.uomName,

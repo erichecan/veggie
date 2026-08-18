@@ -45,6 +45,8 @@ export interface TripCustomer {
 export interface TripLine {
   productId: string
   productName: string
+  /** 商品的 sequence（ProductTemplate.sequence）。打印排序按它，见 lib/print/line-sort.ts */
+  productSequence?: number | null
   spec: string | null
   uomId: string | null
   uomName: string | null

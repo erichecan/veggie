@@ -18,6 +18,7 @@ import {
   fmtQty,
   formatTripDriverLabel,
 } from './trip-common'
+import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 
@@ -76,7 +77,8 @@ function buildReceiptPage(
   driverLabel: string,
   tripDate: string,
 ): string {
-  const lines = orders.flatMap(o => o.lines ?? [])
+  // 按商品 sequence 排（客户要求 2026-08-18），与其它单据同口径
+  const lines = sortLinesBySequence(orders.flatMap(o => o.lines ?? []))
   const total = lines.reduce((s, l) => s + (l.subtotal ?? 0), 0)
   const orderCodes = orders.map(o => o.code ?? o.id.slice(-8).toUpperCase()).join('、')
 

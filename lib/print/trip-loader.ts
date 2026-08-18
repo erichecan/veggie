@@ -18,6 +18,7 @@ import {
   type TripPrintDataWire,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
+import { fetchProductSequences } from '@/lib/print/product-sequence'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 
 const toNum = (v: unknown): number => {
@@ -164,12 +165,15 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productGoodsTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap] = await Promise.all([
+  const [goodsTypeMap, productGoodsTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap, productSeqMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductGoodsTypeMap(productIds),
     loadPackSpecMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
     getOrderWaveDisplayMap(orders.map(o => o.id)),
+    // 打印顺序按商品 sequence（客户要求 2026-08-18）。模板是纯字符串拼接、
+    // 拿不到数据库，所以在这里附到行上。见 lib/print/line-sort.ts
+    fetchProductSequences(productIds),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -204,6 +208,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
       ? o.lines.map(l => ({
           productId: l.productId,
           productName: l.productName,
+          productSequence: productSeqMap.get(l.productId) ?? null,
           spec: l.spec ?? null,
           uomId: l.uomId,
           uomName: l.uomName,

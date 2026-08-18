@@ -43,16 +43,32 @@ async function main() {
     const MM = 96 / 25.4
     const doc = (document.querySelector('iframe') as HTMLIFrameElement | null)?.contentDocument ?? document
     const pages = [...doc.querySelectorAll('.page')]
-    return pages.map(p => ({
-      heightMm: +((p as HTMLElement).scrollHeight / MM).toFixed(1),
-      rows: p.querySelectorAll('.lines-table tbody tr').length,
-    }))
+    if (pages.length > 0) {
+      // 手工分页型模板：每个 .page 就是一张物理纸，逐个量
+      return {
+        mode: 'manual' as const,
+        pages: pages.map(p => ({
+          heightMm: +((p as HTMLElement).scrollHeight / MM).toFixed(1),
+          rows: p.querySelectorAll('.lines-table tbody tr').length,
+        })),
+      }
+    }
+    // 流式模板（拣货单/汇总单）：靠浏览器自动分页，只能量总高度与总行数
+    const rows = doc.querySelectorAll('table tbody tr, table.pick-table tr:not(:first-child)').length
+    const totalMm = doc.body.scrollHeight / MM
+    return { mode: 'flow' as const, totalMm: +totalMm.toFixed(1), rows }
   })
 
-  console.log(`共 ${result.length} 个渲染页`)
-  for (const [i, p] of result.entries()) {
-    const over = p.heightMm > A4_H_MM + OVERFLOW_TOLERANCE_MM
-    console.log(`  第 ${i + 1} 页: 高度 ${p.heightMm}mm ${over ? '⛔ 超出 A4(297mm)' : '✅'}  行数 ${p.rows}`)
+  if (result.mode === 'manual') {
+    console.log(`共 ${result.pages.length} 个渲染页（手工分页）`)
+    for (const [i, p] of result.pages.entries()) {
+      const over = p.heightMm > A4_H_MM + OVERFLOW_TOLERANCE_MM
+      console.log(`  第 ${i + 1} 页: 高度 ${p.heightMm}mm ${over ? '⛔ 超出 A4(297mm)' : '✅'}  行数 ${p.rows}`)
+    }
+  } else {
+    const pages = Math.max(1, Math.ceil(result.totalMm / A4_H_MM))
+    console.log(`流式分页：总高 ${result.totalMm}mm ≈ ${pages} 页，共 ${result.rows} 行`
+      + `（约 ${(result.rows / pages).toFixed(1)} 行/页）`)
   }
   await browser.close()
 }

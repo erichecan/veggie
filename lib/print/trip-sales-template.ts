@@ -31,6 +31,7 @@ import {
   renderTripNoticeHtml,
   PRINT_PAGE_FOOTER_CSS,
 } from './trip-common'
+import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
@@ -41,7 +42,8 @@ function buildSalesOrderHtml(
   driverLabel: string,
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
-  const lines = order.lines ?? []
+  // 按商品 sequence 排（客户要求 2026-08-18），与销售单/发票 PDF 同一口径
+  const lines = sortLinesBySequence<TripLine>(order.lines ?? [])
 
   const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
   const safeCode = orderCode.replace(/['"\\]/g, '')
@@ -229,10 +231,14 @@ body { font-family: Arial, Helvetica, "Noto Sans CJK SC", "Noto Sans SC", sans-s
 
 .lines-table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
 .lines-table thead tr { background: #1a3a2a; color: #fff; }
-.lines-table thead th { padding: 2.5mm 3mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
+.lines-table thead th { padding: 1.6mm 2.5mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
 .lines-table tbody tr.row-even { background: #fff; }
 .lines-table tbody tr.row-odd  { background: #f7f7f7; }
-.lines-table tbody td { padding: 2mm 3mm; font-size: 9pt; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
+/* 行高与 lib/order-pdf.ts、print/[id] 同一口径（客户要求一页至少 20 行，2026-08-18）。
+   ⚠️ 这个模板是手工预估分页的，改行高必须同步 lib/print/trip-common.ts 的
+   PRINT_ROW_BASE_MM，预估小于实际会真的溢出物理页。改完跑
+   scripts/print/measure-print-page.ts 核对。 */
+.lines-table tbody td { padding: 1.1mm 2.5mm; font-size: 8.5pt; line-height: 1.25; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
 
 .col-qty   { text-align: right; width: 9%; }
 .col-unit  { text-align: left;  width: 8%; }
