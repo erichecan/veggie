@@ -101,30 +101,44 @@ ProductTemplate.sequence 为空     3,758  (69%)
 > 一周期一条：做 → 验证 → 提交 → 回写状态。
 > 验收一律要**实际渲染出 PDF/页面数行数、核对顺序**，不能只看代码改完了。
 
-- [ ] **T1 共用排序工具**
+- [x] **T1 共用排序工具** `bea744a`
       验收：单元测试覆盖 —— 有 sequence 按升序；NULL 排最后；NULL 之间按商品名 A→Z；
             sequence 相同的按商品名；空数组/缺字段不炸
       产出：`lib/print/line-sort.ts`（纯函数，不依赖 Prisma）+ `tests/print-line-sort.test.ts`
       依赖：无
 
-- [ ] **T2 商品 sequence 取数**
+- [x] **T2 商品 sequence 取数** `bea744a`
       验收：对同一批 productId，返回的 sequence 与商品页显示的一致；
             商品不存在/已删时不报错（视为 NULL）
       产出：`lib/print/product-sequence.ts`（按 productId 批量查 Template.sequence，一次查询）
       依赖：无
 
-- [ ] **T3 销售单/发票/采购单 PDF（客户直接看到的，优先）**
+- [x] **T3 销售单/发票/采购单 PDF（客户直接看到的，优先）** `bea744a`
       验收：拿 D154111 的行渲染，顺序 = sequence 升序 + NULL 在后按名称；
             与改动前的顺序做 diff 并人工确认合理
       产出：`lib/order-pdf.ts`、`app/api/orders/[id]/pdf/route.ts`、
             `app/api/orders/[id]/send-email/route.ts`、采购单两处
       依赖：T1 T2
 
-- [ ] **T4 密度改造（同一份 CSS 口径，一次改到位）**
+- [x] **T4 密度改造** `1d67521` `e2092e4`
       验收：用真实长度商品名实测 —— 20 行必须 1 页；30 行 ≤ 2 页；
             页脚不与正文重叠；页码显示真实页数（不再是写死的 1/1）
-      产出：`lib/order-pdf.ts` 的 CSS + 页脚；其余模板同口径
+      产出：`lib/order-pdf.ts` 的 CSS + 页脚、`scripts/print/measure-lines-per-page.ts`
       依赖：T3
+      实测（真实长度商品名，4/6 需折两行）：
+      | 行数 | 改造前 | 改造后 | 每页行数 |
+      |---|---|---|---|
+      | 10 | 1 页 | 1 页 | 10 |
+      | 20 | **2 页** | **1 页** | 20 |
+      | 30 | 2 页 | 2 页 | 26 / 4 |
+      | 40 | 2 页 | 2 页 | 28 / 12 |
+      | 60 | 3 页 | 3 页 | 32 / 27 / 1 |
+      首页容量 26–32 行，客户要的「至少 20 行」达成。
+      改造过程中踩到并写进注释的两个坑：页面 padding-bottom 只在文档末尾生效
+      （所以 fixed 页脚必然压正文）；把页脚用负 bottom 塞进 @page 边距会让 Chrome
+      多开一整页空白。最终形态：@page 管每页边距 + 页脚做成与汇总绑定的尾块。
+      ⚠️ 遗留：25 行那一档仍会把「汇总+页脚」挤到第 2 页（首页塞满 25 行）。
+      优先塞行是客户的明确要求，故接受。
 
 - [ ] **T5 发票页面打印 + 单据打印页 + 批量打印**
       验收：三个页面各渲染一次，顺序与 T3 一致；每页行数达标
