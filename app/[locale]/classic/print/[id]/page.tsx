@@ -10,12 +10,17 @@ import { docBadge } from '@/lib/print/doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
 import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
+import { sortLinesBySequence } from '@/lib/print/line-sort'
 
 /**
  * 最后一块除了富页脚(联系方式+页码)，还要放 Totals/Payment 徽章(sales/invoice)或最多 3 个
  * 备注框(delivery: 客户/订单/送货备注)——这些内容不算进行高预估，实测长订单会撑破单页
  * 变成 2 张物理纸，页脚跟着错位(同 trip-sales/delivery-template 的教训)。按两种 docType
  * 的最坏情况取更大值，宁可多分一页也不能真溢出。
+ *
+ * ⚠️ 这是**只有最后一页才有**的开销，作为 chunkOrderLinesForPrint 的第 3 个参数传。
+ *    2026-08-18 之前它被当成每页的页脚开销传（第 2 个参数），于是每一页都少了 80mm，
+ *    一页只印得下 19 行 —— 客户「一页至少 20 行」的抱怨有一半是这么来的。
  */
 const RICH_FOOTER_OVERHEAD_MM = 80
 
@@ -40,7 +45,9 @@ export function buildOrderHtml(
   const docNoLabel = opts.docType === 'delivery' ? 'Delivery NO' : opts.docType === 'sales' ? 'Sale Order NO' : 'Invoice NO'
   // 送货单不含价格:隐藏单价/税/金额列与合计(价格在销售订单/发票上体现)
   const hidePrice = opts.docType === 'delivery'
-  const lines = order.lines ?? []
+  // 按商品 sequence 排（客户要求 2026-08-18）。原先靠 OrderLine.sequence，
+  // 而实测 77.5% 的多行订单那个字段所有行都一样 —— 等于没排。见 lib/print/line-sort.ts
+  const lines = sortLinesBySequence(order.lines ?? [])
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)
 
   const vatGroups: Record<string, { base: number; vat: number }> = {}
@@ -187,7 +194,9 @@ export function buildOrderHtml(
   // 明细多到一页放不下时按 chunkOrderLinesForPrint 手动分块，每块单独渲染成一个 .page、
   // 页头在每块顶部都重新画一次；页脚(联系方式+订单号-页码)同理每块都画一次——不能用
   // position:fixed 图省事，那样整份文档只有一份内容，没法按块显示不同的当前页码。
-  const chunks = chunkOrderLinesForPrint(lines, RICH_FOOTER_OVERHEAD_MM)
+  // 第 2 个参数是每页的页脚（默认小字页脚），第 3 个才是最后一页的尾部内容 ——
+  // 改造前把 80mm 当成每页开销传，导致每页都白留 80mm、只印 19 行
+  const chunks = chunkOrderLinesForPrint(lines, undefined, RICH_FOOTER_OVERHEAD_MM)
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1
@@ -235,24 +244,28 @@ export const CSS = `
 body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; background:#fff; }
 .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 12mm 22mm; position: relative; }
 
-.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7mm; padding-bottom: 3mm; border-bottom: 2px solid #1a3a2a; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5mm; padding-bottom: 3mm; border-bottom: 2px solid #1a3a2a; }
 .company-name { font-size: 26pt; font-weight: bold; font-style: italic; color: #1a3a2a; }
 .company-addr { text-align: right; font-size: 8.5pt; color: #444; line-height: 1.6; }
 
-.info-table { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
-.info-table td { border: 1px solid #bbb; padding: 3mm 4mm; vertical-align: top; width: 25%; }
+.info-table { width: 100%; border-collapse: collapse; margin-bottom: 4.5mm; }
+.info-table td { border: 1px solid #bbb; padding: 2mm 3mm; vertical-align: top; width: 25%; }
 .info-head { font-size: 7pt; font-weight: bold; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2mm; }
 .info-val  { font-size: 9pt; color: #111; line-height: 1.6; }
 .barcode-cell { text-align: center; }
-.barcode-svg { max-width: 100%; height: 22mm; display: block; margin: 0 auto; }
+.barcode-svg { max-width: 100%; height: 17mm; display: block; margin: 0 auto; }
 .barcode-code { font-size: 9pt; font-weight: bold; margin-top: 1mm; letter-spacing: 1px; }
 
 .lines-table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
 .lines-table thead tr { background: #1a3a2a; color: #fff; }
-.lines-table thead th { padding: 2.5mm 3mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
+.lines-table thead th { padding: 1.6mm 2.5mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
 .lines-table tbody tr.row-even { background: #fff; }
 .lines-table tbody tr.row-odd  { background: #f7f7f7; }
-.lines-table tbody td { padding: 2mm 3mm; font-size: 9pt; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
+/* 行高与 lib/order-pdf.ts 同一口径（客户要求一页至少 20 行，2026-08-18）。
+   ⚠️ 这个页面是**手工预估分页**的（chunkOrderLinesForPrint），改这里的行高
+   必须同步改 lib/print/trip-common.ts 的 PRINT_ROW_BASE_MM ——
+   预估比实际小就会真的溢出，比不改还糟。 */
+.lines-table tbody td { padding: 1.1mm 2.5mm; font-size: 8.5pt; line-height: 1.25; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
 
 .col-qty   { text-align: right; width: 10%; }
 .col-unit  { text-align: left;  width: 9%; }

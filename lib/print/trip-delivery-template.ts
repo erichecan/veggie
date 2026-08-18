@@ -119,7 +119,8 @@ function buildDeliveryOrderHtml(
   // 必须把这块「额外内容」也当成预留高度算进去，不然最后一块自己会溢出单页，页脚跟着
   // 错位到下一张纸，失去"一页一页脚"的准确性(同 trip-sales-template 的教训)。
   const LAST_CHUNK_EXTRA_MM = 68
-  const chunks = chunkOrderLinesForPrint(lines, LAST_CHUNK_EXTRA_MM)
+  // LAST_CHUNK_EXTRA_MM 只压最后一页，不该让每一页都为它让地方（见 chunkOrderLinesForPrint）
+  const chunks = chunkOrderLinesForPrint(lines, undefined, LAST_CHUNK_EXTRA_MM)
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1

@@ -169,9 +169,20 @@ export function stripAutoPrintScript(html: string): string {
  * 自动分页判断。行高预估宁可保守(留够余量)，宁可多分一页也不能真的溢出。
  */
 const PRINT_PAGE_USABLE_MM = 272
-const PRINT_HEADER_OVERHEAD_MM = 90
-const PRINT_ROW_BASE_MM = 9
-const PRINT_ROW_EXTRA_LINE_MM = 4.2
+/** 页头(公司抬头+客户/单号/送货信息块+表头)每页重画一次；条码与内边距收紧后的实测值 */
+const PRINT_HEADER_OVERHEAD_MM = 78
+/**
+ * 单行高度预估。2026-08-18 行内边距 2mm→1.1mm、字号 9pt→8.5pt 之后从 9mm 降到 6mm，
+ * 对应客户「一页至少 20 行」的要求（原先 (272-90-8)/9 ≈ 19 行/页，正是客户抱怨的数字）。
+ * 6.3 不是 6：实测 6 会让 31 行的页真的溢出 1.4mm（行高实际约 6.05mm），
+ * 6.3 留约 5% 余量，稳定在 29 行/页。
+ *
+ * ⛔ 改这两个数就必须同步改各模板 CSS 的行内边距/字号，反之亦然。预估**大于**实际
+ *    只是浪费纸；预估**小于**实际会让内容真的溢出物理页 —— 这套模板是手工分页的，
+ *    溢出不会自动换页，只会被切掉或压住页脚。改完跑 scripts/print/measure-print-page.ts。
+ */
+const PRINT_ROW_BASE_MM = 6.3
+const PRINT_ROW_EXTRA_LINE_MM = 3.4
 /** 每页页脚(单据编码 - Page X/Y)预留高度，单行小字，比页头保守估算小很多 */
 const PRINT_FOOTER_OVERHEAD_MM = 8
 
@@ -204,18 +215,54 @@ export function chunkRowsForPrint<T>(
 }
 
 /**
- * @param footerOverheadMm 页脚预留高度(mm)，默认按"单据编码 - Page X/Y"这行小字预留；
- *   页脚内容更多(如带联系方式的多行页脚)的调用方应传入更大的值，避免最后一行内容被页脚压住。
+ * 把订单明细行切成「每块正好一张物理页」。
+ *
+ * @param footerOverheadMm **每一页**都要预留的页脚高度，默认按"单据编码 - Page X/Y"
+ *   那行小字算。
+ * @param lastPageExtraMm  只有**最后一页**才有的尾部内容（合计、Payment 徽章、
+ *   最多 3 个备注框）额外预留的高度。
+ *
+ * ⛔ 这两个参数必须分开：改造前三个调用方都把「最后一页才有的 72–80mm」当成每页的
+ *    footerOverhead 传进来，于是**每一页都白留 80mm**，一页只印得下 19 行 ——
+ *    客户「一页至少 20 行」的抱怨有一半是这么来的。
  */
 export function chunkOrderLinesForPrint<T extends { spec?: string | null; note?: string | null }>(
   lines: T[],
   footerOverheadMm: number = PRINT_FOOTER_OVERHEAD_MM,
+  lastPageExtraMm: number = 0,
 ): T[][] {
+  const rowHeight = (l: T) =>
+    PRINT_ROW_BASE_MM + ((l.spec ? 1 : 0) + (l.note ? 1 : 0)) * PRINT_ROW_EXTRA_LINE_MM
+  const heightOf = (rows: T[]) => rows.reduce((sum, l) => sum + rowHeight(l), 0)
+
   const available = PRINT_PAGE_USABLE_MM - PRINT_HEADER_OVERHEAD_MM - footerOverheadMm
-  return chunkRowsForPrint(lines, l => {
-    const extraLines = (l.spec ? 1 : 0) + (l.note ? 1 : 0)
-    return PRINT_ROW_BASE_MM + extraLines * PRINT_ROW_EXTRA_LINE_MM
-  }, available)
+  const chunks = chunkRowsForPrint(lines, rowHeight, available)
+  if (lastPageExtraMm <= 0 || chunks.length === 0) return chunks
+
+  // 尾部内容只压最后一页，所以只有最后一块按更小的可用高度收；放不下就把尾巴上的
+  // 行推到新的一块。
+  //
+  // ⚠️ 只推「必要的最少行数」：前面的页不是最后一页，只要 ≤ available 就合法，该塞满
+  //    就塞满。写这段时第一版把原块也收到 lastAvailable，30 行的单被切成 13+17，
+  //    首页比改造前还空 —— 与「一页尽可能多印」正好相反。
+  const lastAvailable = available - lastPageExtraMm
+  for (;;) {
+    const last = chunks[chunks.length - 1]
+    if (heightOf(last) <= lastAvailable || last.length <= 1) break
+    const moved: T[] = []
+    let movedH = 0
+    while (last.length > 1) {
+      const row = last[last.length - 1]
+      const rh = rowHeight(row)
+      if (movedH + rh > lastAvailable) break   // 新的最后一页装不下更多了
+      moved.unshift(last.pop() as T)
+      movedH += rh
+      if (heightOf(last) <= available) break   // 前一页已经合法 —— 别再多搬，让它满着
+    }
+    if (moved.length === 0) break              // 搬不动（单行超高），避免死循环
+    chunks.push(moved)
+  }
+  return chunks
 }
 
 /**

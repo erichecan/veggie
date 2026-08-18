@@ -43,7 +43,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       include: {
         lines: {
           orderBy: { sequence: 'asc' },
-          include: { product: { select: { standardPrice: true, internalRef: true } } },
+          include: {
+            product: {
+              select: {
+                standardPrice: true,
+                internalRef: true,
+                // 打印顺序按商品 sequence（客户要求 2026-08-18）。打印页是纯前端渲染，
+                // 拿不到数据库，所以在这里就把它展平到行上。见 lib/print/line-sort.ts
+                template: { select: { sequence: true } },
+              },
+            },
+          },
         },
         driverSlot: { select: { id: true, batchNum: true, timeOfDay: true, driverName: true } },
         salesUser: { select: { id: true, name: true, managerId: true } },
@@ -75,6 +85,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         ...line,
         cost: toNum(product?.standardPrice),
         internalRef: product?.internalRef ?? null,
+        productSequence: product?.template?.sequence ?? null,
       })),
     }
     return NextResponse.json(deriveOrderItems(serializeApi(enrichedOrder)))

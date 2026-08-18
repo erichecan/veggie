@@ -254,7 +254,14 @@ export interface OrderLine {
   deliveredQty: number
   invoicedQty: number
   subtotal: number
+  /**
+   * 订单内的行序号。⚠️ 实测 77.5% 的多行订单这个值所有行都相同（历史创建路径没给它
+   * 分配递增序号），**不要拿它当排序依据** —— 打印排序统一用 productSequence，
+   * 见 lib/print/line-sort.ts 与 docs/20260818-print-sequence-and-density-tasks.md
+   */
   sequence: number
+  /** 商品的 sequence（ProductTemplate.sequence），打印排序用。GET /api/orders/[id] 会带出来 */
+  productSequence?: number | null
   /** 商品件提成单价·下单快照（不下发到下单/报价/销售单详情页，见 PRD 20260703） */
   commissionPrice?: number | null
   /** 单价来源快照：PRICELIST/DEFAULT/LAST/SPECIAL，历史订单为 null */
@@ -602,6 +609,8 @@ export type InvoiceStatus = 'draft' | 'posted' | 'paid' | 'cancelled'
 
 export interface InvoiceLine {
   productId: string
+  /** 商品的 sequence，打印排序用。GET /api/invoices/[id] 回查后附上（JSON 快照里没有） */
+  productSequence?: number | null
   productName: string
   spec: string
   qty: number

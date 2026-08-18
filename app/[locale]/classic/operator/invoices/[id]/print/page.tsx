@@ -8,6 +8,7 @@ import { apiGet } from '@/lib/api'
 import { barcodeValue } from '@/lib/barcode'
 import type { Invoice } from '@/lib/types'
 import { formatDateOnly } from '@/lib/format-date'
+import { sortLinesBySequence } from '@/lib/print/line-sort'
 
 const PURPLE = '#875A7B'
 
@@ -93,7 +94,14 @@ export default function InvoicePrintPage() {
           #invoice-print, #invoice-print * { visibility: visible; }
           #invoice-print { position: absolute; top: 0; left: 0; width: 100%; padding: 0; }
           .no-print { display: none !important; }
+          /* 多页时每页都要有列名，否则第二页起看不出哪列是什么 */
+          thead { display: table-header-group; }
+          /* 一行被拦腰切到下一页会看不懂，宁可整行推下去 */
+          tbody tr { break-inside: avoid; page-break-inside: avoid; }
         }
+        /* 每页边距交给 @page：容器自己的 padding-bottom 只在整份文档末尾生效，
+           middle page 会一直排到纸边（同 lib/order-pdf.ts 踩过的坑） */
+        @page { size: A4; margin: 12mm 10mm; }
       `}</style>
 
       {/* 工具栏（不打印） */}
@@ -157,31 +165,32 @@ export default function InvoicePrintPage() {
         </div>
 
         {/* 明细表 */}
-        <table className="w-full text-sm mb-6">
+        <table className="w-full text-xs mb-4">
           <thead>
             <tr className="text-xs text-gray-500 uppercase border-b-2 border-gray-200">
-              <th className="text-left py-2 font-medium">{isEn ? 'Item' : '商品'}</th>
-              <th className="text-center py-2 font-medium">{isEn ? 'Qty' : '数量'}</th>
-              <th className="text-right py-2 font-medium">{isEn ? 'Unit price' : '单价'}</th>
-              <th className="text-center py-2 font-medium">{isEn ? 'Tax rate' : '税率'}</th>
-              <th className="text-right py-2 font-medium">{isEn ? 'Ex. tax' : '税前'}</th>
-              <th className="text-right py-2 font-medium">{isEn ? 'Tax' : '税额'}</th>
-              <th className="text-right py-2 font-medium">{isEn ? 'Inc. tax' : '含税'}</th>
+              <th className="text-left py-1 font-medium">{isEn ? 'Item' : '商品'}</th>
+              <th className="text-center py-1 font-medium">{isEn ? 'Qty' : '数量'}</th>
+              <th className="text-right py-1 font-medium">{isEn ? 'Unit price' : '单价'}</th>
+              <th className="text-center py-1 font-medium">{isEn ? 'Tax rate' : '税率'}</th>
+              <th className="text-right py-1 font-medium">{isEn ? 'Ex. tax' : '税前'}</th>
+              <th className="text-right py-1 font-medium">{isEn ? 'Tax' : '税额'}</th>
+              <th className="text-right py-1 font-medium">{isEn ? 'Inc. tax' : '含税'}</th>
             </tr>
           </thead>
           <tbody>
-            {inv.lines.map((line, i) => (
+            {/* 按商品 sequence 排，与销售单/发票 PDF 同一口径（见 lib/print/line-sort.ts） */}
+            {sortLinesBySequence(inv.lines).map((line, i) => (
               <tr key={i} className="border-b border-gray-100">
-                <td className="py-2.5">
+                <td className="py-1">
                   <p className="font-medium text-gray-800">{line.productName}</p>
                   {line.spec && <p className="text-xs text-gray-400">{line.spec}</p>}
                 </td>
-                <td className="py-2.5 text-center">{line.qty}</td>
-                <td className="py-2.5 text-right">€{line.unitPrice.toFixed(2)}</td>
-                <td className="py-2.5 text-center text-gray-500">{(line.taxRate * 100).toFixed(1)}%</td>
-                <td className="py-2.5 text-right">€{line.subtotalExTax.toFixed(2)}</td>
-                <td className="py-2.5 text-right text-gray-500">€{line.taxAmount.toFixed(2)}</td>
-                <td className="py-2.5 text-right font-medium">€{line.subtotalIncTax.toFixed(2)}</td>
+                <td className="py-1 text-center">{line.qty}</td>
+                <td className="py-1 text-right">€{line.unitPrice.toFixed(2)}</td>
+                <td className="py-1 text-center text-gray-500">{(line.taxRate * 100).toFixed(1)}%</td>
+                <td className="py-1 text-right">€{line.subtotalExTax.toFixed(2)}</td>
+                <td className="py-1 text-right text-gray-500">€{line.taxAmount.toFixed(2)}</td>
+                <td className="py-1 text-right font-medium">€{line.subtotalIncTax.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>

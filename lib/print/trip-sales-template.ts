@@ -177,7 +177,8 @@ function buildSalesOrderHtml(
   // 不然最后一块自己就会溢出单页，页脚跟着错位到下一张纸,失去"一页一页脚"的准确性。
   // 预留按常见情况估(1个税率档+付款徽章)，宁可多分一页也不能真溢出。
   const LAST_CHUNK_EXTRA_MM = 63
-  const chunks = chunkOrderLinesForPrint(lines, LAST_CHUNK_EXTRA_MM)
+  // LAST_CHUNK_EXTRA_MM 只压最后一页，不该让每一页都为它让地方（见 chunkOrderLinesForPrint）
+  const chunks = chunkOrderLinesForPrint(lines, undefined, LAST_CHUNK_EXTRA_MM)
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1

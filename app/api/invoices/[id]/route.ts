@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { fetchProductSequences } from '@/lib/print/product-sequence'
 
 const INVOICE_TRACKED_FIELDS = [
   'name', 'status', 'customerName', 'subtotalExTax', 'totalTax', 'totalIncTax',
@@ -14,7 +15,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const { id } = await params
     const invoice = await prisma.invoice.findUnique({ where: { id } })
     if (!invoice) return NextResponse.json({ error: '发票不存在' }, { status: 404 })
-    return NextResponse.json(serializeApi(invoice))
+
+    // 发票行是 JSON 快照，里面没有商品 sequence；打印页要按它排序（客户要求
+    // 2026-08-18），而打印页是纯前端渲染碰不到数据库，所以在这里回查一次附上。
+    // 见 lib/print/line-sort.ts
+    const rawLines = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
+    const seqMap = await fetchProductSequences(rawLines.map(l => l.productId as string | undefined))
+    const lines = rawLines.map(l => ({
+      ...l,
+      productSequence: l.productId ? (seqMap.get(l.productId as string) ?? null) : null,
+    }))
+
+    return NextResponse.json(serializeApi({ ...invoice, lines }))
   } catch (error) {
     console.error('[GET /api/invoices/[id]]', error)
     return NextResponse.json({ error: '获取发票失败' }, { status: 500 })
