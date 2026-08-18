@@ -909,6 +909,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/export/product-templates": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "y",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "y",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/finance/historical-debt": {
   "BOSS": "y",
   "OPERATOR": "y",

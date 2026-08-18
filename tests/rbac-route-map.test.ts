@@ -1,8 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { scanApiHandlers } from '../lib/route-gate-scan'
-import { PROBE_ROLES, type Reach } from '../lib/role-reachability'
+import { probeRoutes, PROBE_ROLES, type Reach } from '../lib/role-reachability'
 import { isPublicApiRoute } from '../lib/public-routes'
 import { isKnownPermission } from '../lib/rbac/catalog'
 import {
@@ -10,8 +9,6 @@ import {
   PAGE_ROUTE_RULES,
   requiredPermissionsFor,
 } from '../lib/rbac/route-map'
-
-const fillParams = (route: string) => route.replace(/\[\.\.\.[^\]]+\]|\[[^\]]+\]/g, 'x')
 
 interface SeedRole {
   legacyRole: string
@@ -35,9 +32,9 @@ test('route-map 只引用 catalog 里存在的权限点', () => {
  * 而不是敞开（安全漏洞）。这条测试保证新接口不会因为忘了登记而静默坏掉。
  */
 test('每个 API handler 都能命中一条规则', () => {
-  const uncovered = scanApiHandlers()
-    .filter((h) => requiredPermissionsFor(API_ROUTE_RULES, fillParams(h.route), h.verb) === undefined)
-    .map((h) => `${h.verb} ${h.route}`)
+  const uncovered = probeRoutes()
+    .filter((r) => requiredPermissionsFor(API_ROUTE_RULES, r.path, r.verb) === undefined)
+    .map((r) => r.key)
   assert.deepEqual(uncovered, [], '这些接口没有任何 route-map 规则命中，会全员 403')
 })
 
@@ -59,10 +56,8 @@ test('新体系的可达性与冻结基线逐格相同（平迁零 diff）', () 
   ) as Record<string, Record<string, Reach>>
   const diffs: string[] = []
 
-  for (const h of scanApiHandlers()) {
-    const key = `${h.verb} ${h.route}`
-    const path = fillParams(h.route)
-    const required = requiredPermissionsFor(API_ROUTE_RULES, path, h.verb)
+  for (const { key, path, verb } of probeRoutes()) {
+    const required = requiredPermissionsFor(API_ROUTE_RULES, path, verb)
     for (const role of PROBE_ROLES) {
       let now: Reach
       if (isPublicApiRoute(path)) now = 'anon'

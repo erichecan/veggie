@@ -2,12 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { legacyRolesHavePermission } from '../lib/rbac/legacy-roles'
-import { scanApiHandlers } from '../lib/route-gate-scan'
 import { canAccessApi } from '../lib/rbac/gate'
 import { isPublicApiRoute } from '../lib/public-routes'
-import { PROBE_ROLES, type Reach } from '../lib/role-reachability'
-
-const fillParams = (route: string) => route.replace(/\[\.\.\.[^\]]+\]|\[[^\]]+\]/g, 'x')
+import { probeRoutes, PROBE_ROLES, type Reach } from '../lib/role-reachability'
 const baseline = JSON.parse(readFileSync('lib/rbac/parity-baseline.json', 'utf-8')) as
   Record<string, Record<string, Reach>>
 
@@ -25,19 +22,17 @@ const baseline = JSON.parse(readFileSync('lib/rbac/parity-baseline.json', 'utf-8
 test('旧 token 的最终可达性与改造前基线逐格相同', () => {
   const diffs: string[] = []
 
-  for (const h of scanApiHandlers()) {
-    const key = `${h.verb} ${h.route}`
-    const path = fillParams(h.route)
+  for (const { key, path, verb, gate } of probeRoutes()) {
     if (isPublicApiRoute(path)) continue
 
     for (const role of PROBE_ROLES) {
       // 第一层：middleware（旧 token 走角色白名单回退）
-      const passMiddleware = canAccessApi({ role, roles: [role] }, path, h.verb)
+      const passMiddleware = canAccessApi({ role, roles: [role] }, path, verb)
 
       // 第二层：路由自身的闸。旧 token 没有位图，权限点闸走角色反查
       const passGate =
-        h.gate.kind === 'permission' ? legacyRolesHavePermission([role], h.gate.permissions)
-        : h.gate.kind === 'roles' ? h.gate.roles.includes(role)
+        gate.kind === 'permission' ? legacyRolesHavePermission([role], gate.permissions)
+        : gate.kind === 'roles' ? gate.roles.includes(role)
         : true
 
       const now: Reach = passMiddleware && passGate ? 'y' : 'n'

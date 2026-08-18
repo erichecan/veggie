@@ -39,6 +39,13 @@ export interface ApiScope {
 const READ: readonly HttpMethod[] = ['GET']
 
 /**
+ * 某实体的导出入口。**必须与该实体的列表条目成对出现** —— 只给列表不给导出的话，
+ * 这个角色的旧 token 会「列表看得见、点导出 403」，且没有任何报错。
+ * tests/export-access-parity.test.ts 守这条不变量。
+ */
+const exportOf = (entity: string): ApiScope => ({ pattern: `/api/export/${entity}`, methods: READ })
+
+/**
  * 每个收窄型角色都需要的公共部分：登录/改密、健康检查、自己的通知。
  * 少了任何一条，对应角色连登录后的导航栏都会报错。
  */
@@ -117,6 +124,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/products/**', methods: READ },
     { pattern: '/api/product-templates/**', methods: READ },
+    exportOf('product-templates'),
     { pattern: '/api/product-categories/**', methods: READ },
     { pattern: '/api/lots/**', methods: READ },
     { pattern: '/api/lots', methods: ['POST'] },
@@ -215,6 +223,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/customers/*/contacts/**', methods: ['PATCH', 'DELETE'] },
     { pattern: '/api/products/**', methods: READ },
     { pattern: '/api/product-templates/**', methods: READ },
+    exportOf('product-templates'),
     { pattern: '/api/product-categories/**', methods: READ },
     { pattern: '/api/pricelists/**', methods: READ },
     { pattern: '/api/invoices/**', methods: READ },
@@ -246,6 +255,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/customers/**', methods: ['GET', 'POST'] },
     { pattern: '/api/products/**', methods: READ },
     { pattern: '/api/product-templates/**', methods: READ },
+    exportOf('product-templates'),
     { pattern: '/api/product-categories/**', methods: READ },
     { pattern: '/api/uoms/**', methods: READ },
     { pattern: '/api/print/**', methods: READ },

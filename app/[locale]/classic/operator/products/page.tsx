@@ -12,6 +12,7 @@ import CsvImportDialog from '@/components/classic/CsvImportDialog'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
 import { applyFacets, groupFacets, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
+import { useCsvExport } from '@/hooks/use-csv-export'
 
 const PAGE_SIZE = 50
 const LOW_STOCK_THRESHOLD = 10
@@ -103,6 +104,18 @@ export default function ClassicProductsPage() {
     applyFacets(params, facets)
     return params.toString()
   }, [canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets])
+
+  // 导出：吃的就是 queryParams —— 与列表请求同一份筛选参数，同一份 where 构造，
+  // 所以导出的是当前筛选下的**全部**结果，不是屏幕上这 50 条。
+  const exportAction = useCsvExport({
+    entity: 'product-templates',
+    params: () => {
+      const params = new URLSearchParams(queryParams)
+      if (searchInput) params.set('search', searchInput)
+      return params
+    },
+    fallbackFilename: '商品.csv',
+  })
 
   async function loadPage(p: number, q: string, ps: number = pageSize) {
     setLoading(true)
@@ -433,7 +446,7 @@ export default function ClassicProductsPage() {
         onNew={() => router.push(`${prefix}/classic/operator/products/new`)}
         permanentActions={[
           { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
-          { label: isEn ? 'Export' : '导出', onClick: () => toast.info(isEn ? 'Export coming soon' : '导出功能即将推出') },
+          exportAction,
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },

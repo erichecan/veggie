@@ -15,6 +15,7 @@
  *   - `null`     无需权限（登录即可用；是否公开由 lib/public-routes.ts 决定）
  */
 import { matchesPattern, type HttpMethod } from '../role-access'
+import { EXPORT_ENTITY_META } from '../export/entities'
 
 export interface RouteRule {
   pattern: string
@@ -29,7 +30,24 @@ export interface RouteRule {
 const R: readonly HttpMethod[] = ['GET']
 const W: readonly HttpMethod[] = ['POST', 'PUT', 'PATCH', 'DELETE']
 
+/**
+ * 列表导出的统一入口 /api/export/<entity>。
+ * 规则由 lib/export/entities.ts 生成 —— 权限点在那里声明一次，这里和
+ * 导出路由本身都读它，不存在"路由允许了但 handler 要另一个权限"的错位。
+ * 未登记的 entity 匹配不到规则 = 403，与本文件的默认拒绝语义一致。
+ */
+const EXPORT_ROUTE_RULES: readonly RouteRule[] = Object.entries(EXPORT_ENTITY_META).map(
+  ([entity, meta]) => ({
+    pattern: `/api/export/${entity}`,
+    methods: ['GET'] as const,
+    permission: meta.permission,
+    note: '导出沿用该列表的查看权限（决策 D-3，见 docs/20260818-global-csv-export-design-and-tasks.md）',
+  }),
+)
+
 export const API_ROUTE_RULES: readonly RouteRule[] = [
+  ...EXPORT_ROUTE_RULES,
+
   // ── 无需权限：登录、健康检查、自助与系统触发 ────────────────────────────
   { pattern: '/api/auth/**', permission: null },
   { pattern: '/api/health', permission: null },

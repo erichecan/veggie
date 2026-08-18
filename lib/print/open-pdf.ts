@@ -31,8 +31,14 @@ export async function openAuthedPdf(url: string): Promise<void> {
  * 下载一个需要 JWT 鉴权的文件（导出 CSV 等）：同 openAuthedPdf 的鉴权 fetch 套路，
  * 但触发浏览器"另存为下载"而非新开窗口预览。文件名优先取服务端 Content-Disposition，
  * 拿不到时退回调用方传入的 fallbackFilename。
+ *
+ * 返回 truncatedTotal：服务端因行数上限截断时给出的**实际匹配总数**（X-Export-Truncated），
+ * 没截断则为 null。调用方据此提示用户，避免把半份数据当成全部拿走。
  */
-export async function downloadAuthedFile(url: string, fallbackFilename: string): Promise<void> {
+export async function downloadAuthedFile(
+  url: string,
+  fallbackFilename: string,
+): Promise<{ truncatedTotal: number | null }> {
   const res = await fetch(url, { headers: authHeaders() })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
@@ -51,4 +57,7 @@ export async function downloadAuthedFile(url: string, fallbackFilename: string):
   a.click()
   a.remove()
   URL.revokeObjectURL(objectUrl)
+
+  const truncated = res.headers.get('X-Export-Truncated')
+  return { truncatedTotal: truncated ? Number(truncated) : null }
 }
