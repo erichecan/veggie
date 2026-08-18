@@ -155,6 +155,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/invoices/**' },
     { pattern: '/api/statements/**' },
+    exportOf('statements'),
     { pattern: '/api/payments/**' },
     { pattern: '/api/vendor-bills/**' },
     { pattern: '/api/credit-notes/**' },

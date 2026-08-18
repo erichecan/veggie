@@ -19,6 +19,8 @@ import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from './columns/c
 import { loadCustomersForExport } from './loaders/customers'
 import { purchaseOrderExportColumns } from './columns/purchase-orders'
 import { loadPurchaseOrdersForExport } from './loaders/purchase-orders'
+import { statementExportColumns } from './columns/statements'
+import { loadStatementsForExport } from './loaders/statements'
 import { orderExportColumns } from './columns/orders'
 import { loadOrdersForExport } from './loaders/orders'
 
@@ -85,6 +87,10 @@ export const EXPORT_REGISTRY: Record<string, ErasedExportDef> = {
   'purchase-orders': defineExport({
     columns: (isEn) => purchaseOrderExportColumns(isEn),
     load: loadPurchaseOrdersForExport,
+  }),
+  statements: defineExport({
+    columns: (isEn) => statementExportColumns(isEn),
+    load: loadStatementsForExport,
   }),
   // 报价单与销售单是同一个实体（Order）的两个状态视图，共用一份列定义与取数
   orders: defineExport({

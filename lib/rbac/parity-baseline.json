@@ -3680,5 +3680,19 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "GET /api/export/statements": {
+    "BOSS": "y",
+    "OPERATOR": "y",
+    "FINANCE": "y",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }

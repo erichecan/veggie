@@ -52,6 +52,12 @@ export const EXPORT_ENTITY_META = {
     labelEn: 'Purchase Orders',
     listApi: '/api/purchase-orders',
   },
+  statements: {
+    permission: 'finance.statement.read',
+    labelZh: '对账单',
+    labelEn: 'Statements',
+    listApi: '/api/statements',
+  },
   orders: {
     permission: 'sales.order.read',
     labelZh: '订单',

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { buildStatementsWhere } from '@/lib/statements-query'
 import { toNum } from '@/lib/decimal-helpers'
 import { orderIncTaxTotal } from '@/lib/order-items'
 import {
@@ -26,14 +27,11 @@ export async function GET(req: Request) {
   return withAuth(req, async () => {
     try {
       const url = new URL(req.url)
-      const status = url.searchParams.get('status')
-      const customerId = url.searchParams.get('customerId')
       const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
       const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize')) || 50))
 
-      const where: Record<string, unknown> = {}
-      if (status) where.status = status
-      if (customerId) where.customerId = customerId
+      // 筛选口径抽在 lib/statements-query.ts，导出路由用同一个函数
+      const where = buildStatementsWhere(url.searchParams)
 
       const [items, total] = await Promise.all([
         prisma.statement.findMany({

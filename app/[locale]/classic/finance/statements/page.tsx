@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useCsvExport } from '@/hooks/use-csv-export'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 
 interface Statement {
@@ -142,6 +143,17 @@ export default function StatementsPage() {
       setLoading(false)
     }
   }, [activeTab, page])
+
+  // 导出与列表同参（状态页签），服务端复用同一个 buildStatementsWhere
+  const exportAction = useCsvExport({
+    entity: 'statements',
+    params: () => {
+      const params = new URLSearchParams()
+      if (activeTab !== 'all') params.set('status', activeTab)
+      return params
+    },
+    fallbackFilename: '对账单.csv',
+  })
 
   useEffect(() => { load() }, [load])
 
@@ -379,6 +391,7 @@ export default function StatementsPage() {
         breadcrumb={['财务', '对账单']}
         permanentActions={[
           { label: '生成对账单', onClick: () => setShowCreate(true), primary: true },
+          exportAction,
         ]}
         total={total}
         page={page}
