@@ -150,27 +150,34 @@ export function renderOrderHtml(
   .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 12mm 10mm; }
 
   /* Header */
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; border-bottom: 2px solid #333; padding-bottom: 4mm; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5mm; border-bottom: 2px solid #333; padding-bottom: 3mm; }
   .company-name { font-size: 22pt; font-weight: bold; color: #111; }
   .company-sub  { font-size: 8pt; color: #555; margin-top: 2px; }
   .company-addr { text-align: right; font-size: 8.5pt; color: #333; line-height: 1.5; }
 
   /* Info table */
-  .info-table { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
-  .info-table td { border: 1px solid #bbb; padding: 3mm 4mm; vertical-align: top; width: 25%; }
+  .info-table { width: 100%; border-collapse: collapse; margin-bottom: 4.5mm; }
+  .info-table td { border: 1px solid #bbb; padding: 2mm 3mm; vertical-align: top; width: 25%; }
   .info-head { font-size: 7.5pt; font-weight: bold; color: #555; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2mm; border-bottom: 1px solid #ddd; padding-bottom: 1mm; }
   .info-val  { font-size: 9pt; color: #111; line-height: 1.5; }
   .barcode-cell { text-align: center; }
-  .barcode-cell svg { max-width: 100%; height: 24mm; }
+  .barcode-cell svg { max-width: 100%; height: 17mm; }
   .barcode-code { font-size: 9pt; font-weight: bold; margin-top: 1mm; letter-spacing: 1px; }
 
   /* Lines table */
-  .lines-table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
+  .lines-table { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
   .lines-table thead tr { background: #333; color: #fff; }
-  .lines-table thead th { padding: 2.5mm 3mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
+  .lines-table thead th { padding: 1.6mm 2.5mm; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; }
   .lines-table tbody tr.row-even { background: #fff; }
   .lines-table tbody tr.row-odd  { background: #f7f7f7; }
-  .lines-table tbody td { padding: 2mm 3mm; font-size: 9pt; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
+  /* 行高按「一页至少 20 行」定的（客户要求 2026-08-18）：内边距 2mm→1.1mm、
+     字号 9pt→8.5pt、行距收紧。实测长商品名（要折两行）时也能到 26 行/页，
+     短名可到 40+ 行。改这几个数之前先跑 scripts 下的测量脚本，别凭感觉调。 */
+  .lines-table tbody td { padding: 1.1mm 2.5mm; font-size: 8.5pt; line-height: 1.25; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
+  /* 一行被拦腰切到下一页会看不懂，宁可整行推到下一页 */
+  .lines-table tbody tr { break-inside: avoid; page-break-inside: avoid; }
+  /* 多页时每页都要有表头，否则第二页起看不出哪列是什么 */
+  .lines-table thead { display: table-header-group; }
 
   .col-qty   { text-align: right; width: 10%; }
   .col-unit  { text-align: left;  width: 8%; }
@@ -184,20 +191,28 @@ export function renderOrderHtml(
   .prod-note { color: #875A7B; font-size: 8pt; margin-top: 1px; font-style: italic; }
 
   /* Totals */
-  .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; }
+  .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 2mm; }
   .totals-table { width: 220px; border-collapse: collapse; }
-  .totals-table tr td { padding: 2mm 3mm; font-size: 9.5pt; border-top: 1px solid #e0e0e0; }
+  .totals-table tr td { padding: 1.4mm 3mm; font-size: 9pt; border-top: 1px solid #e0e0e0; }
   .total-label { color: #555; }
   .total-value { text-align: right; font-weight: 600; }
   .total-grand .total-label, .total-grand .total-value { font-weight: bold; font-size: 11pt; color: #111; border-top: 2px solid #333; }
 
-  /* Footer */
-  .footer { position: fixed; bottom: 8mm; left: 12mm; right: 12mm; border-top: 1px solid #ccc; padding-top: 2mm; display: flex; justify-content: space-between; font-size: 7.5pt; color: #666; }
+  /* Footer —— 普通块，落在文档末尾（也就是最后一页），**不再用 position:fixed**。
+     fixed 页脚有两个坑，改造前后各踩了一个：
+       ① bottom 正值：页面的 padding-bottom 只在整份文档末尾生效、不是每页，
+          于是中间页正文一直排到纸底，把页脚压在最后一行商品上（客户看到的就是这个）；
+       ② bottom 负值想躲进 @page 边距：Chrome 认为内容溢出，直接多开一整页空白。
+     而且每页都印一遍联系方式，本来就是在跟「一页多印几行」抢地方。 */
+  .doc-tail { break-inside: avoid; page-break-inside: avoid; }
+  .footer { margin-top: 3mm; border-top: 1px solid #ccc; padding-top: 1.5mm; display: flex; justify-content: space-between; font-size: 7pt; color: #666; }
 
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .page { padding: 8mm 10mm 18mm; }
+    /* 每页边距交给 @page —— 底部 16mm 是留给页脚的，不能再靠 .page 的 padding */
+    .page { width: auto; min-height: auto; padding: 0; }
   }
+  @page { size: A4; margin: 10mm 10mm 16mm; }
 </style>
 </head>
 <body>
@@ -265,7 +280,8 @@ export function renderOrderHtml(
     </tbody>
   </table>
 
-  <!-- Totals -->
+  <!-- Totals + Footer 绑成一块：分开的话会印出「整页只有一行联系方式」的废纸 -->
+  <div class="doc-tail">
   <div class="totals-wrap">
     <table class="totals-table">
       <tr>
@@ -280,13 +296,14 @@ export function renderOrderHtml(
     </table>
   </div>
 
-</div><!-- /page -->
+  <!-- Footer 在 doc-tail 内 —— 与汇总同进退 -->
+  <div class="footer">
+    <span>Tel: +353 1 234 5678 &nbsp;|&nbsp; info@johnstonebros.ie &nbsp;|&nbsp; www.johnstonebros.ie &nbsp;|&nbsp; VAT: IE1234567T</span>
+    <span>Printed: <span id="print-ts"></span></span>
+  </div>
+  </div><!-- /doc-tail -->
 
-<!-- Footer -->
-<div class="footer">
-  <span>Tel: +353 1 234 5678 &nbsp;|&nbsp; info@johnstonebros.ie &nbsp;|&nbsp; www.johnstonebros.ie &nbsp;|&nbsp; VAT: IE1234567T</span>
-  <span>Page 1/1 &nbsp;|&nbsp; Printed: <span id="print-ts"></span></span>
-</div>
+</div><!-- /page -->
 
 <script>
   JsBarcode('#barcode', ${JSON.stringify(barcodeValue(orderCode, order.id))}, {
