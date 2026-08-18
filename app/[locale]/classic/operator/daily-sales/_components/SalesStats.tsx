@@ -118,7 +118,11 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   /** 台账 D9：同一张矩阵，按日（每天一列）/ 按周（周一至周日七列）现场切 */
   const [granularity, setGranularity] = useState<MatrixGranularity>('week')
   /** 勾选后「按客户/按商品/按分类」三种查看方式 + 打印都按商品目录 sequence 排序，不再按默认(插入顺序/金额/数量) */
-  const [sortBySequence, setSortBySequence] = useState(false)
+  // 默认按商品 sequence 排（客户要求 2026-08-18，与所有单据打印同一口径）。
+  // ⚠️ 这是**全局默认值**：所有人下次打开这一页看到的顺序都会变，不再是按金额/数量降序。
+  //    没有 sequence 的商品（实测订单行里占 18.4%）排在末尾，按名称 A→Z。
+  //    取消勾选即可回到原来的排序。
+  const [sortBySequence, setSortBySequence] = useState(true)
 
   // 参考数据（一次加载）
   useEffect(() => {
