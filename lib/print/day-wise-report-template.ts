@@ -10,6 +10,7 @@ import { docBadge, type DocKind } from './doc-badge'
 import { formatPrintTimestamp } from './trip-common'
 import { eur } from '@/lib/format-money'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import { compareSequenceThenName } from '@/lib/print/line-sort'
 import { computeOrderTotals } from '@/lib/order-totals'
 import type { Order } from '@/lib/types'
 
@@ -158,8 +159,11 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
 
 // ─── Multiline mode: flat table ─────────────────────────────────────────────
 export function buildMultilineHtml(lines: ReportLine[], title: string, meta: string, sortBySequence: boolean): string {
+  // 排序口径与单据打印统一（见 lib/print/line-sort.ts）：没有 sequence 的排最后按名称，
+  // 而不是相减得 NaN —— 实测 18.4% 的订单行拿不到商品 sequence
   const sorted = [...lines].sort((a, b) => sortBySequence
-    ? (a.productSequence - b.productSequence) || a.date.localeCompare(b.date)
+    ? compareSequenceThenName(a.productSequence, a.productName, b.productSequence, b.productName)
+      || a.date.localeCompare(b.date)
     : a.date.localeCompare(b.date) || a.customerName.localeCompare(b.customerName))
   let grand = 0
   const rows = sorted.map(l => {
@@ -208,7 +212,7 @@ export function buildSummaryHtml(lines: ReportLine[], title: string, meta: strin
 
   // 默认按商品名字母顺序 A→Z；勾选「按 sequence 排序」则按目录/拣货顺序
   const sorted = Array.from(prodMap.entries()).sort((a, b) => sortBySequence
-    ? a[1].sequence - b[1].sequence
+    ? compareSequenceThenName(a[1].sequence, a[0], b[1].sequence, b[0])
     : a[0].localeCompare(b[0], 'en'))
 
   let grandQty = 0

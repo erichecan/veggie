@@ -12,6 +12,7 @@ import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
 import { openAuthedPdf, downloadAuthedFile } from '@/lib/print/open-pdf'
 import { downloadCsv } from '@/lib/csv-export'
+import { compareSequenceThenName } from '@/lib/print/line-sort'
 import {
   buildSalesMatrix,
   matrixToCsvRows,
@@ -236,7 +237,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     return out.sort((a, b) =>
       a.date.localeCompare(b.date)
       || a.customerName.localeCompare(b.customerName)
-      || (sortBySequence ? a.sequence - b.sequence : 0))
+      || (sortBySequence ? compareSequenceThenName(a.sequence, a.productName, b.sequence, b.productName) : 0))
   }, [orders, selectedCustomers, selectedProducts, selectedCategories, selectedSalesman, selectedDrivers, selectedTimes, selectedBatchNums, selectedWeekdays, sortBySequence, productMap, isEn])
 
   const reportTotal = useMemo(() => ({
@@ -278,7 +279,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     }
     return [...m.values()]
       .map(v => ({ name: v.name, qty: v.qty, amount: v.amount, customerCount: v.customers.size, avgPrice: v.qty > 0 ? v.amount / v.qty : 0, sequence: v.sequence }))
-      .sort((a, b) => sortBySequence ? a.sequence - b.sequence : b.amount - a.amount)
+      .sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) : b.amount - a.amount)
   }, [reportLines, sortBySequence])
 
   // 查看方式③：按分类（分类 → 商品，带 ATP）—— 调度备货
@@ -294,7 +295,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     }
     return [...catMap.entries()]
       .map(([catName, prods]) => {
-        const products = [...prods.values()].sort((a, b) => sortBySequence ? a.sequence - b.sequence : b.qty - a.qty)
+        const products = [...prods.values()].sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) : b.qty - a.qty)
         return { catName, products, totalQty: products.reduce((s, p) => s + p.qty, 0) }
       })
       .sort((a, b) => a.catName.localeCompare(b.catName))
@@ -317,7 +318,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   const matrixRowsSorted = useMemo(() => {
     const rows = [...salesMatrix.rows]
     if (weekdaySortKey === 'product') {
-      rows.sort((a, b) => sortBySequence ? a.sequence - b.sequence : a.productName.localeCompare(b.productName))
+      rows.sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.productName, b.sequence, b.productName) : a.productName.localeCompare(b.productName))
     } else if (weekdaySortKey === 'total') {
       rows.sort((a, b) => a.totalQty - b.totalQty)
     } else {

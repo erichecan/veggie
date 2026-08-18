@@ -27,13 +27,27 @@ function seqKey(line: SortableLine): number {
   return typeof s === 'number' && Number.isFinite(s) ? s : Number.POSITIVE_INFINITY
 }
 
+/**
+ * 通用比较器：给字段名不叫 productSequence/productName 的调用方用
+ * （日报的行结构是 { sequence, productName } / { sequence, name }）。
+ * 口径与打印一致：有序号的在前按升序，没有的排最后按名称。
+ */
+export function compareSequenceThenName(
+  aSeq: number | null | undefined,
+  aName: string | null | undefined,
+  bSeq: number | null | undefined,
+  bName: string | null | undefined,
+): number {
+  const sa = typeof aSeq === 'number' && Number.isFinite(aSeq) ? aSeq : Number.POSITIVE_INFINITY
+  const sb = typeof bSeq === 'number' && Number.isFinite(bSeq) ? bSeq : Number.POSITIVE_INFINITY
+  if (sa !== sb) return sa < sb ? -1 : 1
+  return (aName ?? '').localeCompare(bName ?? '', 'en')
+}
+
 export function compareByProductSequence(a: SortableLine, b: SortableLine): number {
-  const sa = seqKey(a)
-  const sb = seqKey(b)
   // 用比较而不是相减：两边都没有 sequence 时相减得 NaN，
   // 一边没有时得 ±Infinity —— 这两种情况都会让"减法版"给出错误答案
-  if (sa !== sb) return sa < sb ? -1 : 1
-  return (a.productName ?? '').localeCompare(b.productName ?? '', 'en')
+  return compareSequenceThenName(a.productSequence, a.productName, b.productSequence, b.productName)
 }
 
 /** 返回排好序的新数组，不改传入的那份（调用方常把原数组用于别的统计） */
