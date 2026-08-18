@@ -113,6 +113,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/waves/**', methods: READ },
     { pattern: '/api/waves/*', methods: ['PUT'] },
     { pattern: '/api/orders', methods: READ },
+    exportOf('orders'),
   ],
 
   /**
@@ -132,6 +133,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/uoms/**', methods: READ },
     { pattern: '/api/uom-categories/**', methods: READ },
     { pattern: '/api/orders', methods: READ },
+    exportOf('orders'),
     { pattern: '/api/orders/*', methods: READ },
     { pattern: '/api/purchases', methods: ['GET', 'POST'] },
     { pattern: '/api/purchases/*', methods: READ },
@@ -162,6 +164,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/customers/**', methods: READ },
     exportOf('customers'),
     { pattern: '/api/orders/**', methods: READ },
+    exportOf('orders'),
     // 把单据邮件发给客户。财务对订单其余部分仍是只读 —— 这条精确到 send-email，
     // 不是给 /api/orders/** 放开 POST。新体系里 finance 本来就有 sales.order.print，
     // 这里补齐旧 token 路径，免得没重新登录的人点发送就 403。
@@ -194,6 +197,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/waves/**', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { pattern: '/api/trips/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     { pattern: '/api/orders', methods: READ },
+    exportOf('orders'),
     { pattern: '/api/orders/*', methods: READ },
     { pattern: '/api/orders/*/batch', methods: ['PUT'] },
     { pattern: '/api/orders/*/mark-printed', methods: ['POST'] },
@@ -218,6 +222,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
   SALES: [
     ...COMMON,
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
+    exportOf('orders'),
     { pattern: '/api/customers/**', methods: ['GET', 'POST', 'PUT'] },
     exportOf('customers'),
     // 联系人（多邮箱）可以改删 —— 删客户不给销售，但删一个写错的联系人邮箱是日常。
@@ -255,6 +260,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
   EXTERNAL_SALES: [
     ...COMMON,
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
+    exportOf('orders'),
     { pattern: '/api/customers/**', methods: ['GET', 'POST'] },
     exportOf('customers'),
     { pattern: '/api/products/**', methods: READ },

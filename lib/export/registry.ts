@@ -17,11 +17,15 @@ import { PRODUCT_TEMPLATE_EXPORT_COLUMNS } from './columns/product-templates'
 import { loadProductTemplatesForExport } from './loaders/product-templates'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from './columns/customers'
 import { loadCustomersForExport } from './loaders/customers'
+import { orderExportColumns } from './columns/orders'
+import { loadOrdersForExport } from './loaders/orders'
 
 /** 默认行数上限，与 /api/orders/export-csv 保持一致 */
 export const DEFAULT_EXPORT_ROW_LIMIT = 20000
 
 export interface ExportLoadContext {
+  /** 原始请求。有的 where 构造（如 buildOrdersWhere）要靠它做行级隔离 */
+  request: Request
   /** 列表页原样传来的筛选参数 */
   searchParams: URLSearchParams
   user: JwtPayload
@@ -75,5 +79,10 @@ export const EXPORT_REGISTRY: Record<string, ErasedExportDef> = {
   customers: defineExport({
     columns: (isEn) => (isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS),
     load: loadCustomersForExport,
+  }),
+  // 报价单与销售单是同一个实体（Order）的两个状态视图，共用一份列定义与取数
+  orders: defineExport({
+    columns: (isEn) => orderExportColumns(isEn),
+    load: loadOrdersForExport,
   }),
 }

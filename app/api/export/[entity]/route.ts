@@ -35,7 +35,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ entity: 
       const isEn = searchParams.get('locale') === 'en'
       const limit = def.rowLimit ?? DEFAULT_EXPORT_ROW_LIMIT
 
-      const { rows, total } = await def.load({ searchParams, user, limit, isEn })
+      const { rows, total } = await def.load({ request: req, searchParams, user, limit, isEn })
 
       const columns = resolveColumns(def.columns, isEn)
       const csv = buildCsv(exportHeaders(columns, isEn), exportRows(columns, rows))

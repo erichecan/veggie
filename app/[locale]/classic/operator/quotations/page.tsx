@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/api'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useCsvExport } from '@/hooks/use-csv-export'
 import type { Order, OrderStatus, Invoice, Customer, Trip } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { DateWithDay } from '@/components/shared/date-with-day'
@@ -312,6 +313,14 @@ export default function ClassicQuotationsPage() {
     }
     return `/api/orders?${params.toString()}`
   }, [statusParam, colFilters.source, colFilters.quotationDateFrom, colFilters.quotationDateTo, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
+
+  // 导出与列表同参：baseUrl 就是列表请求的地址，取它的 querystring 交给
+  // /api/export/orders —— 服务端复用同一个 buildOrdersWhere
+  const exportAction = useCsvExport({
+    entity: 'orders',
+    params: () => baseUrl.split('?')[1] ?? '',
+    fallbackFilename: '报价单.csv',
+  })
 
   const {
     data: rawOrders,
@@ -1049,6 +1058,7 @@ ${orderSections}
         permanentActions={[
           { label: 'Create', onClick: () => router.push(`${prefix}/classic/operator/place-order`), primary: true },
           { label: 'Import', onClick: () => { setShowImportModal(true); setImportParsed([]); setImportResult(null) } },
+          exportAction,
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },

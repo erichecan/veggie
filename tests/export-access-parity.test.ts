@@ -56,3 +56,42 @@ test('导出不会比它的列表更开放', () => {
   }
   assert.deepEqual(wider, [])
 })
+
+/**
+ * 上面那条只测了旧 token 的 middleware 白名单。新 token 走的是权限点，
+ * 两层判据不同 —— 度量工具自己有盲区，这条补上。
+ *
+ * 允许「导出比列表严」，但必须在这里显式登记并写清为什么：那意味着某个角色
+ * 接口上读得到列表却导不出，必须确认它在**界面上根本碰不到导出按钮**，
+ * 否则就是又一个「点了 403、没人知道为什么」的静默失效。
+ */
+const KNOWN_STRICTER: Record<string, { roles: string[]; why: string }> = {
+  orders: {
+    roles: ['SORTER'],
+    why: '分拣台内部调 /api/orders 取数（route-map 给 GET 放行了 stock.quality.read/'
+      + 'stock.pick.read），但 SORTER 的页面范围只有 /classic/sorter，够不到报价单/'
+      + '销售单列表页，界面上不存在导出按钮。导出保持只要 sales.order.read。',
+  },
+}
+
+test('新 token：导出的可达角色不多于列表，少的必须是登记过的例外', async () => {
+  const { buildReachabilityMatrix } = await import('../lib/role-reachability')
+  const matrix = buildReachabilityMatrix()
+  const problems: string[] = []
+
+  for (const [entity, meta] of Object.entries(EXPORT_ENTITY_META)) {
+    const list = matrix[`GET ${meta.listApi}`]
+    const exp = matrix[`GET /api/export/${entity}`]
+    if (!list || !exp) { problems.push(`${entity}: 矩阵里找不到列表或导出`); continue }
+    const allowed = new Set(KNOWN_STRICTER[entity]?.roles ?? [])
+    for (const role of Object.keys(list)) {
+      if (exp[role] === 'y' && list[role] !== 'y') {
+        problems.push(`${entity}: ${role} 导得出却读不了列表 —— 导出不能比列表开放`)
+      }
+      if (list[role] === 'y' && exp[role] !== 'y' && !allowed.has(role)) {
+        problems.push(`${entity}: ${role} 读得了列表却导不出，且不在 KNOWN_STRICTER 里`)
+      }
+    }
+  }
+  assert.deepEqual(problems, [])
+})
