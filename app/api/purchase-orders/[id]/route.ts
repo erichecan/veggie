@@ -9,6 +9,7 @@ import { notifyRole } from '@/lib/notify'
 import { eur } from '@/lib/format-money'
 import { eurAmount, resolveExchangeRate } from '@/lib/fx-eur'
 import { renderPurchaseOrderHtml } from '@/lib/purchase-order-pdf'
+import { withProductSequence } from '@/lib/print/product-sequence'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { sendPurchaseOrderRfq } from '@/lib/email'
 
@@ -342,9 +343,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           }, { status: 400 })
         }
         try {
-          // po.lines 在本函数开头是无序 include 出来的（不像 pdf/route.ts 那样 orderBy sequence），
-          // 邮件附件要展示跟详情页/打印页一致的行顺序，这里补一次排序，不用为此多打一次 DB
-          const orderedLines = [...po.lines].sort((a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0))
+          // 邮件附件的行顺序要跟打印页一致 —— 现在两边都按商品 sequence 排
+          // （模板内部排，这里只把 sequence 取来附上）
+          const orderedLines = await withProductSequence(po.lines)
           const pdfBuffer = await renderHtmlToPdf(renderPurchaseOrderHtml({ ...po, lines: orderedLines }, supplier))
           await sendPurchaseOrderRfq({
             to: supplier.email,

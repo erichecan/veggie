@@ -1,6 +1,7 @@
 import { barcodeValue } from './barcode'
 import { formatDateOnly } from './format-date'
 import { eur } from './format-money'
+import { sortLinesBySequence } from '@/lib/print/line-sort'
 
 /**
  * 销售单 / 报价单的单据 HTML。
@@ -20,6 +21,11 @@ import { eur } from './format-money'
 /** 宽松输入类型：沿用原 route 的字段读法，不强绑 Prisma 生成类型 */
 export interface OrderDocLine {
   productName: string
+  /**
+   * 商品的 sequence，由调用方用 lib/print/product-sequence.ts 的 withProductSequence()
+   * 附上。不附也不会报错，但那样整单会退化成"按商品名排" —— 别忘了附。
+   */
+  productSequence?: number | null
   orderedQty: unknown
   unitPrice: unknown
   subtotal: unknown
@@ -66,7 +72,10 @@ export function renderOrderHtml(
   /** 司机归属。SSOT 是所属 wave 派生的结果，调用方负责算好传进来 */
   deliveryBatch: string,
 ): string {
-  const lines = order.lines ?? []
+  // 按商品 sequence 排（客户要求，2026-08-18）。以前是按 OrderLine.sequence，
+  // 而实测 77.5% 的多行订单那个字段所有行都相同 —— 等于没排序，顺序由数据库
+  // 返回顺序决定，同一张单两次打印都可能不一样。规则见 lib/print/line-sort.ts
+  const lines = sortLinesBySequence(order.lines ?? [])
 
   // Compute totals
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)

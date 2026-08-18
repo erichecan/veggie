@@ -8,9 +8,12 @@
  */
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
+import { sortLinesBySequence } from '@/lib/print/line-sort'
 
 export interface PurchaseOrderPdfLine {
   productName: string
+  /** 商品 sequence，由调用方用 withProductSequence() 附上；不附则退化成按商品名排 */
+  productSequence?: number | null
   uomName?: string | null
   orderedQty: unknown
   unitCost: unknown
@@ -57,7 +60,9 @@ export function renderPurchaseOrderHtml(
   const orderDate = formatDateOnly((po.orderDate ?? po.createdAt) as never)
   const expectedDate = formatDateOnly(po.expectedDate as never)
 
-  const linesHtml = po.lines.map((l, i) => {
+  // 与销售单/发票同一套排序口径：商品 sequence 升序，没有的排最后按名称
+  // （见 lib/print/line-sort.ts；PurchaseOrderLine.sequence 默认值恒为 10，靠它排等于不排）
+  const linesHtml = sortLinesBySequence(po.lines).map((l, i) => {
     const taxRate = Number(l.taxRate ?? 0)
     return `
       <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">

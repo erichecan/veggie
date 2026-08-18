@@ -6,6 +6,7 @@ import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import { renderOrderHtml, type OrderDocInput } from '@/lib/order-pdf'
+import { withProductSequence } from '@/lib/print/product-sequence'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { sendOrderDocument } from '@/lib/email'
 import { normalizeEmail, MAX_RECIPIENTS_PER_EMAIL } from '@/lib/customer-contacts'
@@ -180,7 +181,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       // 这里靠 dispatch 抛异常 + 下面这个 catch 真正兜住。
       try {
         const pdfBuffer = await renderHtmlToPdf(
-          renderOrderHtml(order as unknown as OrderDocInput, customer, deliveryBatch),
+          renderOrderHtml(
+            { ...order, lines: await withProductSequence(order.lines) } as unknown as OrderDocInput,
+            customer,
+            deliveryBatch,
+          ),
         )
         await sendOrderDocument({
           to,

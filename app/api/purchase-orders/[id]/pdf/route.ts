@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { renderPurchaseOrderHtml } from '@/lib/purchase-order-pdf'
+import { withProductSequence } from '@/lib/print/product-sequence'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -15,7 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!po) return NextResponse.json({ error: '采购单不存在' }, { status: 404 })
 
     const supplier = await prisma.customer.findUnique({ where: { id: po.supplierId } })
-    const html = renderPurchaseOrderHtml(po, supplier)
+    const html = renderPurchaseOrderHtml({ ...po, lines: await withProductSequence(po.lines) }, supplier)
 
     return new NextResponse(html, {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
