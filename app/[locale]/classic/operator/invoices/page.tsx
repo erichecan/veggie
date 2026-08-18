@@ -12,6 +12,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { invoiceExportColumns } from '@/lib/export/columns/invoices'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets } from '@/lib/facet-client'
 import { INVOICE_FACET_DEFS, fieldsOf } from '@/lib/facets/client-defs'
@@ -285,6 +287,15 @@ export default function ClassicInvoicesPage() {
     return sortRows(base, sortKey, sortDir)
   }, [invoices, searchInput, statusFilter, sortKey, sortDir, facets])
 
+  // 这一页是全量拉取 + 客户端筛选，所以导出走本地模式：导的就是屏幕上这批已筛好的行。
+  // 走服务端导出的话，服务端不认识这些客户端筛选条件，会变成「导出全部」。
+  const exportAction = useCsvExport({
+    columns: invoiceExportColumns(isEn),
+    rows: () => filtered,
+    filenameZh: '发票',
+    filenameEn: 'Invoices',
+  })
+
   const INVOICE_GB_FIELD: Record<string, keyof Invoice> = {
     customer: 'customerName',
     status: 'status',
@@ -300,6 +311,7 @@ export default function ClassicInvoicesPage() {
         breadcrumb={isEn ? ['Finance', 'Invoices'] : ['财务', '发票']}
         permanentActions={[
           { label: isEn ? 'New' : '新建', onClick: () => { setGenOpen(true); setSelectedCustomerId(''); setSelectedOrderIds([]) }, primary: true },
+          exportAction,
         ]}
         searchValue={searchInput}
         onSearch={v => { setSearchInput(v); setPage(1) }}

@@ -9,6 +9,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { vendorBillExportColumns } from '@/lib/export/columns/vendor-bills'
 import { useFacets } from '@/lib/use-facets'
 import { formatDateOnly } from '@/lib/format-date'
 import { VENDOR_PAYMENT_METHODS, VENDOR_PAYMENT_METHOD_LABELS } from '@/lib/finance/vendor-settlement'
@@ -152,6 +154,17 @@ export default function VendorBillsPage() {
     return filterByFacets(rows, facets, FACET_DEFS)
   }, [bills, statusFilter, search, supplierName, facets])
 
+  // 全量拉取 + 客户端筛选的页面 → 本地导出，导的就是屏幕上这批
+  const exportAction = useCsvExport({
+    columns: vendorBillExportColumns(isEn),
+    rows: () => filtered.map(b => ({
+      ...b,
+      supplierName: supplierName(b.supplierId),
+    })),
+    filenameZh: '供应商账单',
+    filenameEn: 'Vendor Bills',
+  })
+
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   async function changeStatus(bill: VendorBill, status: VbStatus, label: string) {
@@ -283,6 +296,7 @@ export default function VendorBillsPage() {
         permanentActions={[
           { label: isEn ? 'New Bill' : '新建账单', onClick: () => setCreateOpen(true), primary: true },
           { label: 'Import', onClick: () => { setImportOpen(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },
+          exportAction,
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v); setPage(1) }}

@@ -9,6 +9,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { creditNoteExportColumns } from '@/lib/export/columns/credit-notes'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
 
@@ -104,6 +106,14 @@ export default function CreditNotesPage() {
     return filterByFacets(rows, facets, FACET_DEFS)
   }, [notes, statusFilter, search, facets])
 
+  // 全量拉取 + 客户端筛选的页面 → 本地导出，导的就是屏幕上这批
+  const exportAction = useCsvExport({
+    columns: creditNoteExportColumns(isEn),
+    rows: () => filtered,
+    filenameZh: '贷记单',
+    filenameEn: 'Credit Notes',
+  })
+
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   async function changeStatus(cn: CreditNote, status: CnStatus, labelZh: string, labelEn: string) {
@@ -170,6 +180,7 @@ export default function CreditNotesPage() {
         breadcrumb={isEn ? ['Finance', 'Credit Notes'] : ['财务', '信用票']}
         permanentActions={[
           { label: isEn ? 'Generate from Returns' : '从退货生成', onClick: generateFromReturns, primary: true },
+          exportAction,
         ]}
         searchValue={search}
         onSearch={v => { setSearch(v); setPage(1) }}
