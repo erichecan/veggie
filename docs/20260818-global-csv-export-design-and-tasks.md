@@ -146,14 +146,28 @@ registry 每个实体登记：`{ permission, buildWhere, fetch, columns, filenam
 > 一周期 = 一条任务：做 → 验证 → 提交 → 回写本表状态。
 > 每条的验收都必须**实际下载一次 CSV 并核对行数与筛选条件**，不能只看 build 通过。
 
-- [ ] **E0 基建：序列化 + 列定义类型 + registry + 统一路由 + 面板接入**
+- [x] **E0 基建：序列化 + 列定义类型 + registry + 统一路由 + 按钮 hook** `6d20345`
+      与 E1 合并为一个周期提交 —— 骨架单独交付无法验证（没有实体可导），
+      硬拆两次提交只会留下一个跑不通的中间态。
+      实际做法与设计有一处调整：**没有改 OdooControlPanel 的 props，改为
+      `hooks/use-csv-export.ts` 返回一个 ActionItem**。面板的 ActionItem 已支持
+      label/disabled，够用；做成 hook 还能覆盖不在面板里的导出入口
+      （价格表详情的下拉菜单、分析页的按钮），耦合更小。
       验收：以第一个登记的实体走通全链路，返回带 BOM 的 CSV；无权限角色返回 403；
             未登录返回 401；`OdooControlPanel` 传 `exportEntity` 后按钮渲染且有 loading 态
       产出：`lib/export/csv.ts`(改)、`lib/export/types.ts`、`lib/export/registry.ts`、
             `app/api/export/[entity]/route.ts`、`components/classic/OdooControlPanel.tsx`(改)
       依赖：无
 
-- [ ] **E1 商品（S 模式）—— 本次的起因**
+- [x] **E1 商品（S 模式）—— 本次的起因** `6d20345`
+      实测（本地 Postgres + 6 条覆盖各筛选分支的数据）：10 组筛选逐组比对，
+      导出行数 = 列表 total，含截图那组「名称: 26/30 or onion」；
+      列表 pageSize=2 时导出仍返回全部 6 条（证明导出不受分页限制）；
+      浏览器实点：筛低库存 → 点导出 → 真下载 CSV，内容就是屏幕上那 1 行。
+      where 抽取是逐字搬运（去缩进 diff 仅 alertCounts 被有意拆出）。
+      ⚠️ 与设计的偏离（有意，已在列定义里注释）：金额/税率导出为纯数字、
+      单位挪到表头（带 € 和 % 的话 Excel 整列当文本，求和排序全废）；
+      日期用 yyyy-mm-dd 而非屏幕的 dd/mm/yyyy（后者 Excel 会按区域设置猜月日）。
       验收：分面筛 `名称: 26/30 or onion` 后导出，CSV 行数 = 列表页显示的 total；
             列与屏幕一致（Internal Reference…Commission Price）；中文名在 Excel 中不乱码；
             叠加「负库存」筛选后再导，行数 = 页面角标显示的负库存种数
@@ -161,8 +175,6 @@ registry 每个实体登记：`{ permission, buildWhere, fetch, columns, filenam
             where 构造抽出，含 facet / cf_ / cfm_ / 数值子串两步查 / 库存告警），
             `lib/export/columns/product-templates.ts`，两处页面接线
       依赖：E0
-      ⚠️ 风险：抽 where 时若行为发生偏移，列表页筛选会跟着错。抽完必须对同一组参数
-            比对「抽取前 / 抽取后」列表返回的 total 与首页 id 序列，一致才算过
 
 - [ ] **E2 客户（S 模式）**
       验收：按销售员分面筛选后导出行数 = total；SALES 角色导出时行级隔离生效
@@ -210,6 +222,25 @@ registry 每个实体登记：`{ permission, buildWhere, fetch, columns, filenam
       依赖：E1–E8
 
 ---
+
+### E0/E1 周期中发现并已处理的问题
+
+1. **旧角色白名单漏了导出入口**（已修）。导出是新动作，`lib/role-access.ts` 里
+   收窄型角色只登记了列表接口，于是 WAREHOUSE / SALES / EXTERNAL_SALES 拿旧
+   token（部署后没重新登录）时是「商品列表看得见、点导出 403」，没有任何报错。
+   已补白名单，并加 `tests/export-access-parity.test.ts` 把「能读列表就能导出」
+   变成不变量 —— 后续每加一个实体，漏配白名单会直接测红。
+2. **可达性探测对导出接口双重失明**（已修）。扫描器只认字面量 gate，把
+   `{ require: meta.permission }` 读成 authOnly；`[entity]` 填成 `x` 又匹配不到
+   任何 route-map 规则。两个失真叠加，安全绳对导出完全失明。
+   已加 `probeRoutes()` 按实体展开，矩阵现在如实反映每个实体的权限。
+3. **空库重放迁移仍然坏**（未修，非本次范围）。验证环境只能用 `prisma db push`
+   建表，`migrate deploy` 在 `20260419_decimal_partner_indexes` 失败。
+   只影响从零重建，存量库不受影响 —— 与既有记录一致。
+4. **本地 `.env.local` 指向的 Neon 演示库落后 16 个迁移**且有 2 个本地不存在的
+   迁移（历史分叉），跑不了新代码（缺 `User.permVersion`）。本次改用一次性
+   Docker Postgres 验证，没有去动演示库。要在演示库上验证后续实体的话，得先
+   处理这个分叉。
 
 ## 六、后续待办（本次不做，但已识别）
 
