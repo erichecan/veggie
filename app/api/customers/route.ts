@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { buildFacetWhere } from '@/lib/facet-sql'
-import { CUSTOMER_FACET_DEFS } from '@/lib/facets/customers'
 import { writeLog } from '@/lib/action-log'
 import { withAuth, tryAuth } from '@/lib/auth'
-import { salesRowScope } from '@/lib/row-scope'
+import { buildCustomersWhere } from '@/lib/customers-query'
 import { serializeApi } from '@/lib/api-serializer'
 
 // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
@@ -39,66 +37,11 @@ export async function GET(req: Request) {
       return NextResponse.json(serializeApi(customers))
     }
 
-    // Default: only active customers (isActive = true). Pass includeArchived=1 to see all.
-    // isActive is non-nullable Boolean in schema — { isActive: null } is invalid Prisma syntax.
-    const andConditions: Record<string, unknown>[] = []
-    if (!includeArchived) {
-      andConditions.push({ isActive: true })
-    }
-    const isVendorParam = searchParams.get('isVendor')
-    if (isVendorParam === 'true' || isVendorParam === '1') {
-      andConditions.push({ isVendor: true })
-    }
-    if (search) {
-      andConditions.push({
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { vatNumber: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-        ],
-      })
-    }
-    // 分面搜索：同维度 OR、跨维度 AND
-    andConditions.push(...await buildFacetWhere(searchParams, CUSTOMER_FACET_DEFS))
-
-    // 行级隔离：销售只看自己名下的客户。规则在 lib/row-scope.ts（唯一真相）。
-    // ⚠️ 必须在构造 where 之前 push：where 为空数组时会退化成 {}，
-    // 此后再往 andConditions 里 push 就完全不生效（includeArchived=1 且无其他筛选时正是这种情况，
-    // 隔离会静默失效）。20260802 审计发现，故上移。
-    const caller = await tryAuth(req)
-    const rowScope = salesRowScope(caller)
-    if (rowScope) andConditions.push(rowScope)
-
-    const where: Record<string, unknown> = andConditions.length > 0 ? { AND: andConditions } : {}
-    if (createdFrom || createdTo) {
-      where.createdAt = {
-        ...(createdFrom ? { gte: new Date(createdFrom) } : {}),
-        ...(createdTo ? { lte: new Date(createdTo + 'T23:59:59.999Z') } : {}),
-      }
-    }
-    if (paymentTermFilter) where.paymentTerm = paymentTermFilter
-    if (pricelistFilter) where.pricelists = { some: { pricelistId: pricelistFilter } }
-
-    // 购买频次：近30天订单数 >= N
-    // Order.restaurantId → User.id (RESTAURANT role) → User.customerId → Customer.id
-    if (minOrderCount > 0) {
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      const orderGroups = await prisma.order.groupBy({
-        by: ['restaurantId'],
-        where: { createdAt: { gte: thirtyDaysAgo } },
-        _count: { id: true },
-        having: { id: { _count: { gte: minOrderCount } } },
-      })
-      const restaurantIds = orderGroups.map(r => r.restaurantId)
-      const users = await prisma.user.findMany({
-        where: { id: { in: restaurantIds }, customerId: { not: null } },
-        select: { customerId: true },
-      })
-      const eligibleIds = users.map(u => u.customerId).filter(Boolean) as string[]
-      if (eligibleIds.length === 0) {
-        return NextResponse.json({ data: [], total: 0, page, pageSize, totalPages: 0 })
-      }
-      where.id = { in: eligibleIds }
+    // 筛选口径抽在 lib/customers-query.ts，导出路由(/api/export/customers)用同一个函数 ——
+    // 包括行级隔离在内，导出与列表不可能分叉。
+    const where = await buildCustomersWhere(searchParams, await tryAuth(req))
+    if (minOrderCount > 0 && (where.id as { in?: string[] } | undefined)?.in?.length === 0) {
+      return NextResponse.json({ data: [], total: 0, page, pageSize, totalPages: 0 })
     }
 
     // slim=1 → skip specialPrices JOIN (for dropdowns that don't need pricing details)

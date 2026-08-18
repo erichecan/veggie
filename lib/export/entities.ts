@@ -37,6 +37,12 @@ export const EXPORT_ENTITY_META = {
     labelEn: 'Products',
     listApi: '/api/product-templates',
   },
+  customers: {
+    permission: 'master.customer.read',
+    labelZh: '客户',
+    labelEn: 'Customers',
+    listApi: '/api/customers',
+  },
 } as const satisfies Record<string, ExportEntityMeta>
 
 export type ExportEntityKey = keyof typeof EXPORT_ENTITY_META

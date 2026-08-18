@@ -160,6 +160,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/reports/**', methods: READ },
     { pattern: '/api/analytics/**', methods: READ },
     { pattern: '/api/customers/**', methods: READ },
+    exportOf('customers'),
     { pattern: '/api/orders/**', methods: READ },
     // 把单据邮件发给客户。财务对订单其余部分仍是只读 —— 这条精确到 send-email，
     // 不是给 /api/orders/** 放开 POST。新体系里 finance 本来就有 sales.order.print，
@@ -201,6 +202,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/daily-sales/**', methods: READ },
     { pattern: '/api/driver-slots', methods: READ },
     { pattern: '/api/customers', methods: READ },
+    exportOf('customers'),
     { pattern: '/api/customers/coordinates', methods: READ },
     { pattern: '/api/products', methods: READ },
     { pattern: '/api/batch-analysis', methods: READ },
@@ -217,6 +219,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     { pattern: '/api/customers/**', methods: ['GET', 'POST', 'PUT'] },
+    exportOf('customers'),
     // 联系人（多邮箱）可以改删 —— 删客户不给销售，但删一个写错的联系人邮箱是日常。
     // ⛔ 必须精确写到 contacts 子树：直接给 /api/customers/** 放 DELETE 会连带
     //    放行删客户本身，那就是 20260802 泄露的同一种成因（宽 pattern 顺带放行整棵子树）。
@@ -253,6 +256,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/orders/**', methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     { pattern: '/api/customers/**', methods: ['GET', 'POST'] },
+    exportOf('customers'),
     { pattern: '/api/products/**', methods: READ },
     { pattern: '/api/product-templates/**', methods: READ },
     exportOf('product-templates'),

@@ -15,6 +15,8 @@ import type { JwtPayload } from '@/lib/auth'
 import type { ExportColumn } from './types'
 import { PRODUCT_TEMPLATE_EXPORT_COLUMNS } from './columns/product-templates'
 import { loadProductTemplatesForExport } from './loaders/product-templates'
+import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from './columns/customers'
+import { loadCustomersForExport } from './loaders/customers'
 
 /** 默认行数上限，与 /api/orders/export-csv 保持一致 */
 export const DEFAULT_EXPORT_ROW_LIMIT = 20000
@@ -37,7 +39,11 @@ export interface ExportLoadResult<T> {
 }
 
 export interface ExportDef<T> {
-  columns: readonly ExportColumn<T>[]
+  /**
+   * 列定义。传函数是为了让**值**也能跟着界面语言走（如客户的「结算方式」
+   * 中文显示「月结」、英文显示「Monthly」），不只是表头。
+   */
+  columns: readonly ExportColumn<T>[] | ((isEn: boolean) => readonly ExportColumn<T>[])
   rowLimit?: number
   load: (ctx: ExportLoadContext) => Promise<ExportLoadResult<T>>
 }
@@ -53,9 +59,21 @@ function defineExport<T>(def: ExportDef<T>): ErasedExportDef {
   return def as unknown as ErasedExportDef
 }
 
+/** 取某个实体在当前语言下的列定义 */
+export function resolveColumns<T>(
+  columns: ExportDef<T>['columns'],
+  isEn: boolean,
+): readonly ExportColumn<T>[] {
+  return typeof columns === 'function' ? columns(isEn) : columns
+}
+
 export const EXPORT_REGISTRY: Record<string, ErasedExportDef> = {
   'product-templates': defineExport({
     columns: PRODUCT_TEMPLATE_EXPORT_COLUMNS,
     load: loadProductTemplatesForExport,
+  }),
+  customers: defineExport({
+    columns: (isEn) => (isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS),
+    load: loadCustomersForExport,
   }),
 }

@@ -9,6 +9,7 @@ import { applyFacets, groupFacets, CUSTOMER_FACET_FIELDS, type Facet } from '@/l
 import { Pagination } from '@/components/ui/pagination'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
+import { useCsvExport } from '@/hooks/use-csv-export'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
 
@@ -48,6 +49,21 @@ export default function ClassicCustomersPage() {
   }
   const [groupBy, setGroupBy] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+
+  // 导出吃与列表请求完全相同的筛选参数（含分面），所以导出的就是屏幕上筛出来的那批，
+  // 且服务端复用同一个 buildCustomersWhere —— 销售的行级隔离在导出上照样生效
+  const exportAction = useCsvExport({
+    entity: 'customers',
+    params: () => {
+      const params = new URLSearchParams()
+      if (searchInput) params.set('search', searchInput)
+      if (paymentFilter) params.set('paymentTerm', paymentFilter)
+      if (includeArchived) params.set('includeArchived', '1')
+      applyFacets(params, facets)
+      return params
+    },
+    fallbackFilename: '客户.csv',
+  })
 
   async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived, ps: number = pageSize) {
     setLoading(true)
@@ -171,7 +187,7 @@ export default function ClassicCustomersPage() {
                 { label: 'Mode', onClick: () => setIsReadMode(true) },
               ]),
           ...(selected.size > 0 ? [
-            { label: isEn ? `Export (${selected.size})` : `导出 (${selected.size})`, onClick: () => toast.info(isEn ? 'Export coming soon' : '导出功能即将推出') },
+            exportAction,
             { label: isEn ? `Delete (${selected.size})` : `删除 (${selected.size})`, onClick: () => toast.info(isEn ? 'Delete coming soon' : '删除功能即将推出') },
           ] : []),
         ]}

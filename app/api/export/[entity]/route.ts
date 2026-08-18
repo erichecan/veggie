@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { buildCsv, csvResponseHeaders } from '@/lib/export/csv'
 import { exportEntityMeta } from '@/lib/export/entities'
-import { EXPORT_REGISTRY, DEFAULT_EXPORT_ROW_LIMIT } from '@/lib/export/registry'
+import { EXPORT_REGISTRY, DEFAULT_EXPORT_ROW_LIMIT, resolveColumns } from '@/lib/export/registry'
 import { exportHeaders, exportRows } from '@/lib/export/types'
 
 export const runtime = 'nodejs'
@@ -37,10 +37,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ entity: 
 
       const { rows, total } = await def.load({ searchParams, user, limit, isEn })
 
-      const csv = buildCsv(
-        exportHeaders(def.columns, isEn),
-        exportRows(def.columns, rows),
-      )
+      const columns = resolveColumns(def.columns, isEn)
+      const csv = buildCsv(exportHeaders(columns, isEn), exportRows(columns, rows))
       const today = new Date().toISOString().slice(0, 10)
       const filename = `${isEn ? meta.labelEn : meta.labelZh}-${today}.csv`
 

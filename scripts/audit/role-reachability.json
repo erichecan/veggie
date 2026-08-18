@@ -923,6 +923,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/export/customers": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "y",
+  "SALES": "y",
+  "EXTERNAL_SALES": "y",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/finance/historical-debt": {
   "BOSS": "y",
   "OPERATOR": "y",
