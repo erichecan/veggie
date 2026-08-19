@@ -218,6 +218,7 @@ export default function ClassicProductsPage() {
   const columns: OdooColumn[] = [
     {
       key: 'internalRef',
+      width: 84,
       label: 'Internal Reference',
       filterType: 'text',
       sortable: true,
@@ -227,6 +228,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'externalId',
+      width: 70,
       label: 'ID',
       filterType: 'text',
       sortable: true,
@@ -234,6 +236,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'sequence',
+      width: 76,
       label: 'Sequence',
       filterType: 'text',
       sortable: true,
@@ -243,6 +246,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'name',
+      minWidth: 280,
       label: 'Name',
       filterType: 'text',
       sortable: true,
@@ -267,6 +271,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'saleDescription',
+      minWidth: 180,
       label: 'Sale Description',
       filterType: 'text',
       editable: true,
@@ -275,6 +280,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'listPrice',
+      width: 84,
       label: 'Sale Price',
       filterType: 'text',
       sortable: true,
@@ -284,6 +290,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'customerTaxRate',
+      width: 74,
       label: 'Customer Taxes',
       filterType: 'multi-select',
       editable: true,
@@ -299,6 +306,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'standardPrice',
+      width: 80,
       label: 'Cost',
       filterType: 'text',
       sortable: true,
@@ -308,6 +316,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'vendorTaxRate',
+      width: 74,
       label: 'Vendor Taxes',
       filterType: 'multi-select',
       editable: true,
@@ -323,6 +332,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'weight',
+      width: 78,
       label: 'Weight',
       filterType: 'text',
       sortable: true,
@@ -334,6 +344,7 @@ export default function ClassicProductsPage() {
       // Quantity On Hand 是实时计算值(后端按 templateId 聚合后逐行附加到 qtyOnHand)，
       // 没有稳定的原始字段可供通用文本筛选匹配，故此列不给筛选框(Odoo 原版这一列同样没有)。
       key: 'id',
+      width: 80,
       label: 'Quantity On Hand',
       render: (_, row) => {
         const t = row as unknown as ProductTemplate
@@ -357,6 +368,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'forecastQty',
+      width: 76,
       label: 'Forecast Quantity',
       filterType: 'text',
       render: (v) => v != null ? <span>{Number(v).toFixed(1)}</span> : <span className="text-gray-400">0.0</span>,
@@ -379,6 +391,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'uomName',
+      width: 86,
       label: 'Unit of Measure',
       filterType: 'multi-select',
       filterOptions: multiSelectOptions.uomName.map(v => ({ value: v, label: v })),
@@ -398,6 +411,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'commissionPrice',
+      width: 84,
       label: 'Commission Price',
       filterType: 'text',
       editable: true,
@@ -421,6 +435,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'updatedBy',
+      width: 92,
       label: 'Last Updated by',
       filterType: 'multi-select',
       filterOptions: multiSelectOptions.updatedBy.map(v => ({ value: v, label: v || 'Administrator' })),

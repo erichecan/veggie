@@ -1,6 +1,16 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
 
+/** 把列上的 width / minWidth 翻译成表格单元格样式：width 同时当上限用，避免被表头文字撑开 */
+function colSizeStyle(col: { width?: number; minWidth?: number }): React.CSSProperties {
+  if (!col.width && !col.minWidth) return {}
+  return {
+    width: col.width,
+    maxWidth: col.width,
+    minWidth: col.minWidth ?? col.width,
+  }
+}
+
 export interface OdooColumn<T = Record<string, unknown>> {
   key: string
   label: string
@@ -20,6 +30,10 @@ export interface OdooColumn<T = Record<string, unknown>> {
   editOptions?: { value: string; label: string }[]
   /** 是否支持单击进入编辑态（必须配合 onCellEdit 才生效） */
   editable?: boolean
+  /** 列目标宽度(px)。设了就按此宽度收窄：列头允许换行、单元格内容超出换行，不再被表头文字撑开 */
+  width?: number
+  /** 列最小宽度(px)。给内容会被挤扁的列(名称、描述)留出空间 */
+  minWidth?: number
 }
 
 interface OdooTableProps<T extends Record<string, unknown>> {
@@ -177,8 +191,8 @@ export default function OdooTable<T extends Record<string, unknown>>({
               return (
                 <th
                   key={col.key}
-                  className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap"
-                  style={{ fontSize: '11px', position: 'relative' }}
+                  className={`px-2 py-1 text-left font-medium text-gray-600 ${col.width ? 'whitespace-normal break-words' : 'whitespace-nowrap'}`}
+                  style={{ fontSize: '11px', position: 'relative', ...colSizeStyle(col) }}
                 >
                   <div className="flex items-center gap-1">
                     {col.sortable ? (
@@ -297,7 +311,7 @@ export default function OdooTable<T extends Record<string, unknown>>({
             <tr style={{ background: '#fff', borderBottom: '1px solid #e0e0e0' }}>
               {showCheckbox && <td className="w-8 px-2 py-1" />}
               {columns.map(col => (
-                <td key={`filter-${col.key}`} className="px-2 py-1 align-top">
+                <td key={`filter-${col.key}`} className="px-2 py-1 align-top" style={colSizeStyle(col)}>
                   {col.filterType === 'text' && onColumnFilterChange && (
                     <input
                       type="text"
@@ -403,8 +417,9 @@ export default function OdooTable<T extends Record<string, unknown>>({
                     return (
                       <td
                         key={col.key}
-                        className="px-2 py-1 text-gray-700"
+                        className="px-2 py-1 text-gray-700 break-words"
                         style={{
+                          ...colSizeStyle(col),
                           background: cellEditable && !isEditingCell ? 'rgba(135, 90, 123, 0.04)' : undefined,
                           outline: isEditingCell ? '2px solid #875A7B' : undefined,
                           cursor: cellEditable && !isEditingCell ? 'cell' : undefined,
