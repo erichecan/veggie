@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, use, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, use, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -13,6 +13,7 @@ import type {
 import { resolvePrice } from '@/lib/pricing-engine'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ActionLogPanel from '@/components/shared/action-log-panel'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
 
 const PURPLE = '#875A7B'
 const PURPLE_LIGHT = '#f3eff5'
@@ -32,6 +33,16 @@ function emptyItem(): OdooPricelistItem {
     roundingMethod: 0,
     sequence: 10,
   }
+}
+
+/** 变体自身没覆盖价格时(null/undefined)回落到模板价 —— Product.listPrice/standardPrice 的语义就是「空=用模板价」 */
+function variantPrice(
+  variant: Product | undefined,
+  templates: ProductTemplate[],
+  field: 'standardPrice' | 'listPrice',
+): number | undefined {
+  if (!variant) return undefined
+  return variant[field] ?? templates.find(t => t.id === variant.templateId)?.[field]
 }
 
 function applyScopeTitle(
@@ -82,6 +93,20 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [originalPl, setOriginalPl] = useState<OdooPricelist | null>(null)
   const [allLists, setAllLists] = useState<OdooPricelist[]>([])
   const [templates, setTemplates] = useState<ProductTemplate[]>([])
+  // 弹窗里按关键词搜到的模板并回本地池：Template Cost / Public Price / 条目列表
+  // 都是靠 templates.find(...) 取名取价的，不并回去就会显示 0 或 '-'
+  const mergeTemplates = useCallback((list: ProductTemplate[]) => {
+    setTemplates(prev => {
+      const map = new Map(prev.map(t => [t.id, t]))
+      let added = false
+      for (const t of list) {
+        if (t.status?.toLowerCase() !== 'active' || map.has(t.id)) continue
+        map.set(t.id, t)
+        added = true
+      }
+      return added ? [...map.values()] : prev
+    })
+  }, [])
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<ProductCategory[]>([])
 
@@ -636,10 +661,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                       ? templates.find(t => t.id === item.productTemplateId)?.standardPrice
                       : undefined
                     const variantCost = item.applyOn === 'variant'
-                      ? products.find(p => p.id === item.productVariantId)?.standardPrice
+                      ? variantPrice(products.find(p => p.id === item.productVariantId), templates, 'standardPrice')
                       : undefined
                     const publicPrice = item.applyOn === 'variant'
-                      ? products.find(p => p.id === item.productVariantId)?.listPrice
+                      ? variantPrice(products.find(p => p.id === item.productVariantId), templates, 'listPrice')
                       : item.applyOn === 'product'
                         ? templates.find(t => t.id === item.productTemplateId)?.listPrice
                         : undefined
@@ -699,6 +724,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           isNew={isNewItem}
           scopeTitle={applyScopeTitle(editingItem, templates, products, categories, isEn)}
           isEn={isEn}
+          onTemplatesFetched={mergeTemplates}
         />
       )}
 
@@ -814,13 +840,13 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
       <td className="px-3 py-1.5 text-right text-gray-800">{priceText}</td>
       <td className="px-3 py-1.5 text-right text-gray-500">{discountText}</td>
       <td className="px-3 py-1.5 text-right text-gray-500">
-        {variantCost !== undefined ? variantCost.toFixed(2) : ''}
+        {variantCost != null ? variantCost.toFixed(2) : ''}
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
-        {templateCost !== undefined ? templateCost.toFixed(2) : ''}
+        {templateCost != null ? templateCost.toFixed(2) : ''}
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
-        {publicPrice !== undefined ? publicPrice.toFixed(2) : ''}
+        {publicPrice != null ? publicPrice.toFixed(2) : ''}
       </td>
       {showDelete && (
         <td className="px-3 py-1.5 text-center" onClick={e => { e.stopPropagation(); onDelete() }}>
@@ -836,6 +862,7 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
 function ItemDialog({
   item, onChange, onSaveClose, onSaveNew, onDiscard, onRemove,
   templates, products, categories, allLists, isNew, scopeTitle, isEn,
+  onTemplatesFetched,
 }: {
   item: OdooPricelistItem
   onChange: (item: OdooPricelistItem) => void
@@ -850,21 +877,62 @@ function ItemDialog({
   isNew: boolean
   scopeTitle: string
   isEn: boolean
+  /** 远程搜到的模板回传给父页面并入 templates —— 否则选中第 200 名以后的商品时，
+      Template Cost / Public Price / 条目列表都会因为查不到而显示 0 或 '-' */
+  onTemplatesFetched: (list: ProductTemplate[]) => void
 }) {
   function set<K extends keyof OdooPricelistItem>(key: K, val: OdooPricelistItem[K]) {
     onChange({ ...item, [key]: val })
   }
 
+  // 选品改成「输入即筛选」：原来是把全部商品塞进 <select>，几千行只能靠肉眼翻。
+  const [templateQuery, setTemplateQuery] = useState(
+    () => templates.find(t => t.id === item.productTemplateId)?.name ?? '',
+  )
+  const [variantQuery, setVariantQuery] = useState(
+    () => products.find(p => p.id === item.productVariantId)?.name ?? '',
+  )
+  const [remoteTemplates, setRemoteTemplates] = useState<ProductTemplate[]>([])
+
+  // 变体(products)父页面已全量加载，本地筛即可；模板受接口 pageSize≤200 限制只有前 200 个，
+  // 所以模板要带关键词去服务端再搜一次，否则第 200 名以后的商品永远搜不到。
+  useEffect(() => {
+    if (item.applyOn !== 'product') return
+    const q = templateQuery.trim()
+    if (!q) return
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiGet<{ data?: ProductTemplate[]; items?: ProductTemplate[] }>(
+          `/api/product-templates?search=${encodeURIComponent(q)}&pageSize=50&status=active`,
+        )
+        const list = res.data ?? res.items ?? []
+        setRemoteTemplates(list)
+        if (list.length > 0) onTemplatesFetched(list)
+      } catch {
+        // 搜不动就退回本地已加载的那部分，不打断选品
+      }
+    }, 250)
+    return () => clearTimeout(timer)
+  // onTemplatesFetched 由父组件用 useCallback 固定，不进依赖以免每次渲染重搜
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateQuery, item.applyOn])
+
+  const templateOptions = useMemo(() => {
+    const map = new Map(templates.map(t => [t.id, t]))
+    for (const t of remoteTemplates) map.set(t.id, t)
+    return [...map.values()]
+  }, [templates, remoteTemplates])
+
   const templateCostVal = item.applyOn === 'product' && item.productTemplateId
     ? (templates.find(t => t.id === item.productTemplateId)?.standardPrice ?? 0)
     : item.applyOn === 'variant' && item.productVariantId
-      ? (products.find(p => p.id === item.productVariantId)?.standardPrice ?? 0)
+      ? (variantPrice(products.find(p => p.id === item.productVariantId), templates, 'standardPrice') ?? 0)
       : 0
 
   const templatePublicPriceVal = item.applyOn === 'product' && item.productTemplateId
     ? (templates.find(t => t.id === item.productTemplateId)?.listPrice ?? 0)
     : item.applyOn === 'variant' && item.productVariantId
-      ? (products.find(p => p.id === item.productVariantId)?.listPrice ?? 0)
+      ? (variantPrice(products.find(p => p.id === item.productVariantId), templates, 'listPrice') ?? 0)
       : 0
 
   const costLabel = item.applyOn === 'variant' ? 'Variant Cost' : 'Template Cost'
@@ -906,28 +974,38 @@ function ItemDialog({
               </div>
 
               {item.applyOn === 'product' && (
-                <select
-                  value={item.productTemplateId ?? ''}
-                  onChange={e => set('productTemplateId', e.target.value || undefined)}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B] mb-3"
-                >
-                  <option value="">Select a product…</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                <div className="mb-3">
+                  <ProductSearchInput<ProductTemplate>
+                    value={templateQuery}
+                    onChange={v => {
+                      setTemplateQuery(v)
+                      if (!v.trim()) set('productTemplateId', undefined)
+                    }}
+                    onSelect={t => { setTemplateQuery(t.name); set('productTemplateId', t.id) }}
+                    products={templateOptions}
+                    placeholder={isEn ? 'Type to search a product…' : '输入关键词搜索商品…'}
+                    inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
+                    portalDropdown
+                    maxResults={30}
+                  />
+                </div>
               )}
               {item.applyOn === 'variant' && (
-                <select
-                  value={item.productVariantId ?? ''}
-                  onChange={e => set('productVariantId', e.target.value || undefined)}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B] mb-3"
-                >
-                  <option value="">Select a variant…</option>
-                  {products.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                <div className="mb-3">
+                  <ProductSearchInput<Product>
+                    value={variantQuery}
+                    onChange={v => {
+                      setVariantQuery(v)
+                      if (!v.trim()) set('productVariantId', undefined)
+                    }}
+                    onSelect={p => { setVariantQuery(p.name); set('productVariantId', p.id) }}
+                    products={products}
+                    placeholder={isEn ? 'Type to search a variant…' : '输入关键词搜索商品变体…'}
+                    inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
+                    portalDropdown
+                    maxResults={30}
+                  />
+                </div>
               )}
               {item.applyOn === 'category' && (
                 <select
