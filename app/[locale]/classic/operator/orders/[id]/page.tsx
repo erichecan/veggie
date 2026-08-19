@@ -16,6 +16,7 @@ import { formatPriceSourceBadge } from '@/lib/price-source'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
+import { lineDescription } from '@/lib/order-line-description'
 
 const PURPLE = '#875A7B'
 
@@ -372,7 +373,7 @@ export default function SalesOrderDetailPage() {
       orderId: order!.id,
       productId: p.id,
       productName: p.name,
-      spec: p.spec ?? null,
+      spec: lineDescription(p),
       note: '',
       uomId: p.uomId ?? null,
       uomName: p.uomName ?? 'Unit(s)',

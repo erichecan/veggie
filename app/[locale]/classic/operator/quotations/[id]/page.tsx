@@ -17,6 +17,7 @@ import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 import SendEmailDialog from '@/components/orders/send-email-dialog'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
+import { lineDescription } from '@/lib/order-line-description'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -432,7 +433,7 @@ export default function QuotationDetailPage() {
       orderId: order!.id,
       productId: p.id,
       productName: p.name,
-      spec: p.spec ?? null,
+      spec: lineDescription(p),
       note: '',
       uomId: p.uomId ?? null,
       uomName: p.uomName ?? 'Unit(s)',

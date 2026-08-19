@@ -16,6 +16,7 @@ import type { Product, Customer, OdooPricelist, CustomerPriceType } from '@/lib/
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 import JsBarcode from 'jsbarcode'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
+import { lineDescription } from '@/lib/order-line-description'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const LOW_STOCK_THRESHOLD = 20
@@ -329,21 +330,14 @@ export default function ClassicPlaceOrderPage() {
   const plRef     = useRef<HTMLDivElement>(null)
   const plListRef = useRef<HTMLDivElement>(null)
 
-  // ── Inline product search (one row active at a time) ──────────────────────
-  const [activeLineId, setActiveLineId]   = useState<string | null>(null)
-  const [lineSearch,   setLineSearch]     = useState('')
-  const [lineHighlight, setLineHighlight] = useState(0)
-  const lineDropRef  = useRef<HTMLDivElement>(null)
-  const lineListRef  = useRef<HTMLDivElement>(null)
-  // Fixed-position anchor: stores the input element's bounding rect so the
-  // dropdown can be rendered via a portal outside the overflow-x-auto container
-  const [dropRect, setDropRect] = useState<{ top: number; left: number; width: number } | null>(null)
-  const lineInputRef = useRef<HTMLInputElement>(null)
+  // ── 行内选商品 ────────────────────────────────────────────────────────────
+  // 交互整体收口在 OrderLineEditor/useInlineProductPicker 里，本页只留一个
+  // 「让某行进入搜索态」的把手 —— 新增空行后要靠它把焦点送进去。
+  const activatePickerRef = useRef<(lineId: string) => void>(() => {})
   // ── Odoo-style Tab navigation ─────────────────────────────────────────────
   const orderDateRef = useRef<HTMLInputElement>(null)
   const salesRef     = useRef<HTMLSelectElement>(null)
   const priceTypeRef = useRef<HTMLSelectElement>(null)
-  const qtyInputRef  = useRef<HTMLInputElement>(null)
 
   // ── Credit control ────────────────────────────────────────────────────────
   const [userRole,   setUserRole]   = useState<string>('')
@@ -401,11 +395,6 @@ export default function ClassicPlaceOrderPage() {
     return rankByRelevance(active, plSearch, p => p.name)
   }, [pricelists, plSearch])
 
-  const filteredProducts = useMemo(
-    () => rankByRelevance(products, lineSearch, p => [p.name, p.internalRef]),
-    [products, lineSearch],
-  )
-
   // ── Click-outside handler (all dropdowns) ─────────────────────────────────
   useEffect(() => {
     function onMouse(e: MouseEvent) {
@@ -414,11 +403,6 @@ export default function ClassicPlaceOrderPage() {
       }
       if (plRef.current && !plRef.current.contains(e.target as Node)) {
         setPlOpen(false)
-      }
-      if (lineDropRef.current && !lineDropRef.current.contains(e.target as Node)) {
-        setActiveLineId(null)
-        setLineSearch('')
-        setDropRect(null)
       }
     }
     document.addEventListener('mousedown', onMouse)
@@ -434,7 +418,6 @@ export default function ClassicPlaceOrderPage() {
   // ── Keyboard highlight — reset on search change ────────────────────────────
   useEffect(() => { setCustHighlight(0) }, [custSearch])
   useEffect(() => { setPlHighlight(0) }, [plSearch])
-  useEffect(() => { setLineHighlight(0) }, [lineSearch])
 
   // ── Keyboard highlight — scroll into view ─────────────────────────────────
   useEffect(() => {
@@ -448,23 +431,6 @@ export default function ClassicPlaceOrderPage() {
     const el = plListRef.current?.querySelector(`[data-idx="${plHighlight}"]`) as HTMLElement | null
     el?.scrollIntoView({ block: 'nearest' })
   }, [plHighlight, plOpen])
-
-  useEffect(() => {
-    if (!activeLineId) return
-    const el = lineListRef.current?.querySelector(`[data-idx="${lineHighlight}"]`) as HTMLElement | null
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [lineHighlight, activeLineId])
-
-  // ── Reposition portal dropdown when active line changes ──────────────────
-  useEffect(() => {
-    if (!activeLineId) { setDropRect(null); return }
-    // Small delay to let the input render, then measure it
-    const t = setTimeout(() => {
-      const r = lineInputRef.current?.getBoundingClientRect()
-      if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
-    }, 20)
-    return () => clearTimeout(t)
-  }, [activeLineId])
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -542,46 +508,6 @@ export default function ClassicPlaceOrderPage() {
     } else if (e.key === 'Escape') {
       e.preventDefault()
       setPlOpen(false)
-    }
-  }
-
-  function handleLineKey(e: React.KeyboardEvent) {
-    const items = filteredProducts.slice(0, 30)
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setLineHighlight(i => Math.min(i + 1, items.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setLineHighlight(i => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      if (activeLineId && items[lineHighlight]) {
-        // 回车选中商品后立即开下一个商品行，支持连续录入（再次回车进下一个产品）
-        selectProduct(activeLineId, items[lineHighlight])
-        setDropRect(null)
-        addLine({ force: true })
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      setActiveLineId(null)
-      setLineSearch('')
-      setDropRect(null)
-    } else if (e.key === 'Tab') {
-      e.preventDefault()
-      if (activeLineId && items[lineHighlight]) {
-        // Tab 选中商品后聚焦到该行第一个字段（备注），再 Tab 依次到 数量→价格→税率
-        const targetLineId = activeLineId
-        selectProduct(activeLineId, items[lineHighlight])
-        setDropRect(null)
-        setTimeout(() => {
-          document.querySelector<HTMLInputElement>(`[data-desc-line="${targetLineId}"]`)?.focus()
-        }, 50)
-      } else if (activeLineId && lineSearch.trim() === '') {
-        // Empty product field — close the line
-        setActiveLineId(null)
-        setLineSearch('')
-        setDropRect(null)
-      }
     }
   }
 
@@ -745,7 +671,7 @@ export default function ClassicPlaceOrderPage() {
               ...l,
               productId:   p.id,
               productName: p.name,
-              description: p.spec ?? p.name,
+              description: lineDescription(p),
               orderedQty:  1,
               qtyOnHand:   p.qtyOnHand ?? 0,
               forecastQty: null,
@@ -759,9 +685,6 @@ export default function ClassicPlaceOrderPage() {
             },
       ),
     )
-    setActiveLineId(null)
-    setLineSearch('')
-
     // 后台拉 lastPrice，回来后如有变化再 patch 一次
     if (effectiveCustomer && !(p.id in lastPrices)) {
       void fetchLastPrices([p.id]).then(merged => {
@@ -796,7 +719,7 @@ export default function ClassicPlaceOrderPage() {
     const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, qty, p.uomId, cache)
     return {
       id: uid(), productId: p.id, productName: p.name,
-      description: p.spec ?? p.name, note,
+      description: lineDescription(p), note,
       orderedQty: qty, forecastQty: null, qtyOnHand: p.qtyOnHand ?? 0,
       uom: (p as Product & { uomName?: string }).uomName ?? 'Unit(s)',
       uomId: (p as Product & { uomId?: string }).uomId ?? undefined,
@@ -875,8 +798,7 @@ export default function ClassicPlaceOrderPage() {
     if (!opts?.force) {
       const last = lines[lines.length - 1]
       if (last && !last.productId) {
-        setActiveLineId(last.id)
-        setLineSearch('')
+        activatePickerRef.current(last.id)
         return
       }
     }
@@ -890,8 +812,7 @@ export default function ClassicPlaceOrderPage() {
       },
     ])
     // Auto-activate the search for the new row
-    setActiveLineId(newId)
-    setLineSearch('')
+    activatePickerRef.current(newId)
   }
 
   function removeLine(id: string) {
@@ -1695,9 +1616,8 @@ export default function ClassicPlaceOrderPage() {
                     <th className="px-2 py-2 text-right" style={{ width: 100 }}>Total</th>
                   </tr>
                 )}
-                renderRow={(line, idx) => {
+                renderRow={(line, idx, opts) => {
                   const lineTotal = line.unitPrice * line.orderedQty
-                  const isActive  = activeLineId === line.id
                   const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
                   const isOutOfStock = line.productId && lineAtp <= 0
                   const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
@@ -1710,37 +1630,9 @@ export default function ClassicPlaceOrderPage() {
                         {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
                       </td>
 
-                      {/* Product — inline search */}
+                      {/* Product — 就地搜索，与编辑页共用同一份实现 */}
                       <td className="px-2 py-1 relative">
-                        {isActive ? (
-                          <div ref={lineDropRef}>
-                            <input
-                              ref={lineInputRef}
-                              autoFocus
-                              type="text"
-                              value={lineSearch}
-                              onChange={e => setLineSearch(e.target.value)}
-                              onKeyDown={handleLineKey}
-                              placeholder={isEn ? 'Search product…' : '搜索商品…'}
-                              className="w-full border border-[#875A7B] rounded px-2 py-0.5 text-xs focus:outline-none"
-                              onClick={e => e.stopPropagation()}
-                              onFocus={() => {
-                                const r = lineInputRef.current?.getBoundingClientRect()
-                                if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => { setActiveLineId(line.id); setLineSearch('') }}
-                            className={`px-2 py-0.5 rounded cursor-pointer hover:bg-[#875A7B]/20 min-h-[22px] truncate ${
-                              line.productName ? 'text-[#875A7B] underline-offset-2' : 'text-gray-400 italic'
-                            }`}
-                            title={line.productName || (isEn ? 'Click to select product' : '点击选择商品')}
-                          >
-                            {line.productName || (isEn ? 'Click to select product…' : '点击选择商品…')}
-                          </div>
-                        )}
+                        {opts.productCell({ lineId: line.id, productName: line.productName })}
                       </td>
 
                       {/* Description */}
@@ -1771,7 +1663,6 @@ export default function ClassicPlaceOrderPage() {
                       {/* Ordered Qty */}
                       <td className="px-2 py-1">
                         <input
-                          ref={isActive ? qtyInputRef : undefined}
                           data-qty-line={line.id}
                           type="text"
                           inputMode="decimal"
@@ -1930,22 +1821,16 @@ export default function ClassicPlaceOrderPage() {
                   boxShadow: (!!line.productId && (duplicateCounts.get(line.productId) ?? 0) > 1) ? 'inset 3px 0 0 0 #875A7B' : undefined,
                 })}
                 defaultRowCls="group align-middle"
-                footer={
-                  <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-3 flex-wrap">
-                    <button
-                      onClick={() => addLine()}
-                      className="text-sm text-[#875A7B] hover:underline font-medium"
-                    >
-                      + Add a product
-                    </button>
-                    <span className="text-gray-300 text-xs">|</span>
-                    <button className="text-xs text-gray-400 hover:text-gray-600">Configure a product</button>
-                    <span className="text-gray-300 text-xs">|</span>
-                    <button className="text-xs text-gray-400 hover:text-gray-600">Add a section</button>
-                    <span className="text-gray-300 text-xs">|</span>
-                    <button className="text-xs text-gray-400 hover:text-gray-600">Add a note</button>
-                  </div>
-                }
+                products={products}
+                onPickProduct={(lineId, p) => selectProduct(lineId, p)}
+                onPickByEnter={() => addLine({ force: true })}
+                onAddBlankLine={() => addLine()}
+                pickerTexts={{
+                  empty: isEn ? 'No matching products' : '没有匹配商品',
+                  placeholder: isEn ? 'Click to select product…' : '点击选择商品…',
+                  search: isEn ? 'Search product…' : '搜索商品…',
+                }}
+                onReady={api => { activatePickerRef.current = api.activateProductPicker }}
               />
             </div>
           )}
@@ -2220,49 +2105,6 @@ export default function ClassicPlaceOrderPage() {
         </div>
       )}
 
-      {/* ── Product search portal ─────────────────────────────────────────────
-          Rendered at document.body so it escapes the overflow-x:auto table
-          container and is never clipped. Positioned via fixed coords from
-          the input element's getBoundingClientRect().
-      ──────────────────────────────────────────────────────────────────────── */}
-      {activeLineId && dropRect && typeof document !== 'undefined' && createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            top:   dropRect.top,
-            left:  dropRect.left,
-            width: dropRect.width,
-            zIndex: 9999,
-          }}
-          onMouseDown={e => e.preventDefault()}   // keep input focused
-        >
-          <div ref={lineListRef} className="bg-white border border-gray-200 rounded shadow-xl max-h-52 overflow-y-auto">
-            {filteredProducts.slice(0, 30).length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-400 text-center">{isEn ? 'No matching products' : '没有匹配商品'}</div>
-            ) : (
-              filteredProducts.slice(0, 30).map((p, idx) => (
-                <div
-                  key={p.id}
-                  data-idx={idx}
-                  onMouseEnter={() => setLineHighlight(idx)}
-                  onMouseDown={e => {
-                    e.preventDefault()
-                    selectProduct(activeLineId, p)
-                    setDropRect(null)
-                  }}
-                  className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[#875A7B]/20 flex items-center gap-2 ${idx === lineHighlight ? 'bg-[#875A7B]/20' : ''}`}
-                >
-                  <span className="font-medium text-gray-800 truncate flex-1">{p.name}</span>
-                  {p.internalRef && (
-                    <span className="text-gray-400 text-[10px] shrink-0">[{p.internalRef}]</span>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>,
-        document.body,
-      )}
     </div>
   )
 }
