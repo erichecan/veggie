@@ -18,6 +18,7 @@ import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryM
 import SendEmailDialog from '@/components/orders/send-email-dialog'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
 import { lineDescription } from '@/lib/order-line-description'
+import { newDraftLineId, isDraftLineId, toSubmittableLines } from '@/lib/order-line-draft'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -65,9 +66,13 @@ export default function QuotationDetailPage() {
   const [editing, setEditing] = useState(false)
   // OrderLineEditor 内部的商品搜索框 ref 是私有的，靠 onReady 把 focus 能力递出来给快捷键用
   const focusLineSearchRef = useRef<(() => void) | null>(null)
-  const handleEditorReady = useCallback((api: { focusSearch: () => void }) => {
-    focusLineSearchRef.current = api.focusSearch
-  }, [])
+  // 插完空行要让那一行立刻进搜索态 —— 与新建页同一套交互
+  const activatePickerRef = useRef<(lineId: string) => void>(() => {})
+  const handleEditorReady = useCallback(
+    (api: { focusSearch: () => void; activateProductPicker: (lineId: string) => void }) => {
+      focusLineSearchRef.current = api.focusSearch
+      activatePickerRef.current = api.activateProductPicker
+    }, [])
   const [sendEmailOpen, setSendEmailOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
@@ -274,7 +279,8 @@ export default function QuotationDetailPage() {
     if (!order) return
     try {
       const newTotalAmount = Math.round(editLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
-      const orderedLines = editLines.map((l, idx) => ({ ...l, sequence: idx }))
+      // 草稿 id 只在前端存活；带着它提交，后端会拿不存在的 id 去 update（见 lib/order-line-draft.ts）
+      const orderedLines = toSubmittableLines(editLines)
       const saved = await apiPut<{ pricingWarnings?: string[] }>(`/api/orders/${order.id}`, {
         internalNote, externalNote: externalNote || null, salesUserId: salesUserId || null,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
@@ -409,7 +415,7 @@ export default function QuotationDetailPage() {
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
     : Number(order.totalAmount)
 
-  async function addProductLine(p: AllProduct) {
+  async function selectProductIntoLine(lineId: string, p: AllProduct) {
     ensureSaleUomOptions(p.id)
     ensureForecast(p.id)
     // priceType='default' 的定价链从不查最近成交价，跳过这次查询
@@ -429,7 +435,7 @@ export default function QuotationDetailPage() {
       : null
     const price = resolution ? resolution.price : Number(p.listPrice ?? 0)
     const newLine = {
-      id: '',
+      id: lineId,
       orderId: order!.id,
       productId: p.id,
       productName: p.name,
@@ -449,7 +455,34 @@ export default function QuotationDetailPage() {
       priceSourceDetail: resolution?.sourceType === 'pricelist' ? resolution.pricelistName : null,
       priceSourceDate: resolution?.sourceType === 'last' ? (lastPriceHit?.date ?? null) : null,
     } as unknown as EditLine
-    setEditLines(prev => [...prev, newLine])
+    // 填充的是「已经插好的那一行」，不是往末尾追加 —— 行是点 + Add a product 时就建好的
+    setEditLines(prev => prev.map(l => (l.id === lineId ? { ...newLine, id: lineId } : l)))
+  }
+
+  /**
+   * 点「+ Add a product」：插一个空的草稿行并让它进入搜索态。
+   * 与新建页同一个交互模型（见 lib/order-line-draft.ts 说明为什么要草稿 id）。
+   */
+  function addBlankLine(opts?: { force?: boolean }) {
+    // force 只给「Enter 连续录入」用：那一刻 setEditLines 还没落地，
+    // 闭包里的末行仍是刚填好的那个草稿行，走守卫会把它再激活一次而不是开新行。
+    const last = editLines[editLines.length - 1]
+    // 末行还没选商品就别再插 —— 直接把它激活，免得连点攒出一串空行
+    if (!opts?.force && last && !last.productId) {
+      activatePickerRef.current(last.id)
+      return
+    }
+    const draftId = newDraftLineId()
+    setEditLines(prev => [...prev, {
+      id: draftId,
+      orderId: order!.id,
+      productId: '', productName: '', spec: '', note: '',
+      uomId: null, uomName: 'Unit(s)',
+      unitPrice: 0, orderedQty: 1, deliveredQty: 0, invoicedQty: 0,
+      subtotal: 0, taxRate: 0, sequence: prev.length, cost: 0,
+      priceSourceType: null, priceSourceDetail: null, priceSourceDate: null,
+    } as unknown as EditLine])
+    activatePickerRef.current(draftId)
   }
   // 合并重复商品：同一 productId 的行合并为一行，数量相加（与 place-order 创建页一致）
   function mergeDuplicateLines() {
@@ -829,10 +862,15 @@ export default function QuotationDetailPage() {
               onReorder={moveLine}
               onDeleteLine={(_lineId, i) => deleteLine(i)}
               products={allProducts}
-              onAddProduct={addProductLine}
+              onPickProduct={selectProductIntoLine}
+              onPickByEnter={() => addBlankLine({ force: true })}
+              onAddBlankLine={editing ? addBlankLine : undefined}
+              pickerTexts={{
+                empty: isEn ? 'No matching products' : '没有匹配商品',
+                placeholder: isEn ? 'Click to select product…' : '点击选择商品…',
+                search: isEn ? 'Search product…' : '搜索商品…',
+              }}
               onReady={handleEditorReady}
-              selectOnTab
-              searchColSpan={16}
               emptyColSpan={17}
               rowStyle={(l) => {
                 if (!editing || !l.productId) return undefined
@@ -864,7 +902,7 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 text-right">Total</th>
                 </tr>
               )}
-              renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef }) => {
+              renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef, productCell }) => {
                 const fc = forecastMap.get(l.productId)
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
@@ -889,11 +927,23 @@ export default function QuotationDetailPage() {
                       {!isOutOfStock && isLowStock && <span className="ml-1 text-[10px] text-amber-600" title={isEn ? 'Low stock' : '低库存'}>⚠️</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-500 text-xs">{(l as unknown as { internalRef?: string }).internalRef || productRefMap.get(l.productId) || ''}</td>
-                    <td className="px-2 py-2" style={{ color: PURPLE }}>{l.productName}</td>
+                    <td className="px-2 py-2" style={{ color: PURPLE }}>
+                      {editing
+                        ? productCell({
+                            lineId: l.id,
+                            productName: l.productName,
+                            // 已落库的行只读：换 productId 会牵动价格快照、提成快照、
+                            // 拣货锁与库存流水，不该由点一下单元格触发
+                            readOnly: !isDraftLineId(l.id),
+                          })
+                        : l.productName}
+                    </td>
                     <td className="px-2 py-2 text-gray-600 text-xs">
                       {editing ? (
                         <input
                           type="text"
+                          /* Tab 选完商品后焦点落到这里 —— useInlineProductPicker 靠 data-desc-line 定位 */
+                          data-desc-line={l.id}
                           className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
                           value={l.spec ?? ''}
                           onChange={e => updateLine(i, 'spec', e.target.value)}

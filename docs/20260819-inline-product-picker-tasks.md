@@ -40,23 +40,23 @@
       产出：OrderLineEditor.tsx、place-order/page.tsx
       依赖：T1
 
-- [ ] T3 临时 id 清空的单元测试（先写，锁住上面那条约束）
+- [x] T3 临时 id 清空的单元测试（先写，锁住上面那条约束）
       验收：新行提交 payload 的 id 必须是空串；已有行的 id 必须原样保留
       产出：lib/order-line-draft.ts、tests/order-line-draft.test.ts
       依赖：无
 
-- [ ] T4 报价单编辑页接入
+- [x] T4 报价单编辑页接入
       验收：Edit 态下 `+ Add a product` 插空行 → 行内选品 → Tab/Enter 走位与新建页一致；
             已有行 Product 只读；保存后回查数据库确认新行是 create 出来的真实记录
       产出：quotations/[id]/page.tsx
       依赖：T1 T2 T3
 
-- [ ] T5 销售单编辑页接入
+- [x] T5 销售单编辑页接入
       验收：同 T4
       产出：orders/[id]/page.tsx
       依赖：T4
 
-- [ ] T6 真浏览器端到端验证两页
+- [x] T6 真浏览器端到端验证两页
       验收：新建/编辑各走一遍加商品 + Tab + Enter；编辑页保存后回查 DB
       依赖：T5
 
@@ -80,3 +80,44 @@
 | Esc 关闭下拉 | ✅ |
 | 点已有行商品格可重选 | ✅（新建页语义不变） |
 | 三个死按钮已消失 | ✅ |
+
+## T3–T6 验证记录（20260819，真浏览器 + 回查数据库）
+
+三个页面现在跑同一份加商品交互，业务仍各写各的。
+
+| 行为 | 新建 place-order | 报价单 quotations/[id] | 销售单 orders/[id] |
+|---|---|---|---|
+| `+ Add a product` 插空行并自动进搜索态 | ✅ | ✅ | ✅ |
+| 行内就地搜索 + portal 下拉 | ✅ | ✅ | ✅ |
+| Enter 选中 → 连续录入下一行 | ✅ | ✅ | ✅ |
+| Tab 选中 → 焦点落到描述框 | ✅ | ✅ | ✅ |
+| 字段上按 Enter → 去下一行 | ✅ | ✅ | ✅ |
+| 已有行 Product 只读 | n/a（新建无已有行） | ✅ | ✅ |
+| 保存后新行真的 create 落库 | n/a | ✅ | ✅ |
+
+落库回查（验证库）：
+
+```
+     code      | seq |             productName              |   description    | created
+ SO-VERIFY-001 |   0 | Tomato Beef CASE                     | Tomato Beef CASE | 02:28:18  ← 老行 id 未变
+ SO-VERIFY-001 |   1 | Carrot Loose KG                      | Carrot Loose KG  | 02:28:57  ← 新 create
+ VERIFY-001    |   1 | Carrot Loose KG                      | Carrot Loose KG  | 02:24:52  ← 新 create
+ VERIFY-001    |   2 | Red Unicorn Long Grain Rice 20kg BAG | [麒麟]丝苗米     | 02:24:52  ← 新 create
+```
+
+提交 payload 实测：老行带真实 id、新行 id 为空串，与 `lib/order-line-draft.ts` 的约定一致。
+
+### 过程中查出并修掉的两个真问题
+
+1. **Enter 连续录入在编辑页开不出新行**。`addBlankLine` 的守卫读到的是尚未更新的
+   `editLines`——刚填好的那行在闭包里仍是空的，守卫命中就把同一行又激活了一次。
+   新建页靠 `addLine({force:true})` 跳过守卫，编辑页漏了同样的处理。已补 `force`。
+2. **编辑页描述框缺 `data-desc-line`**，Tab 选完商品后焦点无处可落（hook 靠这个属性定位）。
+   新建页一直有，编辑页没有——又一处"两边各写一遍"的产物。已补。
+
+### 顺带清掉的第二套实现
+
+`OrderLineEditor` 里那条「表格底部一个搜索框，选完追加行」的路径已整个删除
+（连同 `onAddProduct` / `selectOnTab` / `searchColSpan` 三个 props）。
+`RowRenderOpts.focusSearch` 的语义也收口了：以前编辑态是"聚焦底部搜索框"、
+新建态是"开新行"，同一个按键两边做不同的事——现在统一为"插空行并进入选品"。

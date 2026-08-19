@@ -1,7 +1,6 @@
 'use client'
 import { type ReactNode, type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import ProductSearchInput from './ProductSearchInput'
 import {
   useInlineProductPicker,
   type InlineProductPickerProduct,
@@ -38,10 +37,6 @@ interface Props<
   defaultRowCls?: string
   onReorder?: (from: number, to: number) => void
   products?: P[]
-  onAddProduct?: (p: P) => void
-  /** 允许 Tab 键选中「Add a product」搜索框中当前高亮/首个匹配项(默认 false) */
-  selectOnTab?: boolean
-  searchColSpan?: number
   onDeleteLine?: (lineId: string, index: number) => void
   /**
    * 行内选商品：传了才启用 `RowRenderOpts.productCell`。
@@ -65,9 +60,8 @@ interface Props<
   emptyMessage?: string
   /**
    * 把内部能力暴露给外层，挂载后调用一次。
-   * focusSearch —— 页面级快捷键（如 Alt+N 新增一行）要能聚焦到商品搜索框，
-   * 而搜索框的 ref 一直是本组件私有的，外面够不着。
-   * activateProductPicker —— 页面插完空行后要让那一行立刻进入搜索态。
+   * focusSearch —— 页面级快捷键（如 Alt+N）用的「去下一行」：插空行并进入选品。
+   * activateProductPicker —— 页面自己插完行后，让那一行立刻进入搜索态。
    */
   onReady?: (api: { focusSearch: () => void; activateProductPicker: (lineId: string) => void }) => void
 }
@@ -84,9 +78,6 @@ export default function OrderLineEditor<
   defaultRowCls = 'border-b border-gray-100 hover:bg-gray-50',
   onReorder,
   products,
-  onAddProduct,
-  selectOnTab = false,
-  searchColSpan = 18,
   onDeleteLine,
   onPickProduct,
   onPickByEnter,
@@ -105,14 +96,19 @@ export default function OrderLineEditor<
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
   const [handleActive, setHandleActive] = useState(false)
-  const [query, setQuery] = useState('')
 
-  const psInputRef = useRef<HTMLInputElement>(null)
   const firstFieldRefs = useRef<Map<number, HTMLElement>>(new Map())
 
+  /**
+   * 「去下一行」。三个页面共用同一个语义：插一个空行并让它进入选品搜索态。
+   *
+   * 编辑态以前是「聚焦表格底部那个搜索框」，新建态是「开新行」——同一个按键
+   * （字段上按 Enter、页面快捷键）在两边做不同的事，正是客户反复报 Tab/Enter
+   * 不一致的原因之一。底部搜索框已经拿掉，这里收口成一种。
+   */
   const focusSearch = useCallback(() => {
-    psInputRef.current?.focus()
-  }, [])
+    onAddBlankLine?.()
+  }, [onAddBlankLine])
 
   const noopPick = useCallback(() => {}, [])
   const picker = useInlineProductPicker<P>({
@@ -153,8 +149,10 @@ export default function OrderLineEditor<
                 </span>
               ) : null
 
+              // 还没选商品的草稿行也要能删 —— 否则点错「+ Add a product」
+              // 留下的空行只能靠 Discard 整单丢弃
               const deleteButton: ReactNode =
-                editing && line.productId && onDeleteLine ? (
+                editing && onDeleteLine ? (
                   <button
                     onClick={() => onDeleteLine(line.id, i)}
                     className="text-red-400 hover:text-red-600 leading-none"
@@ -229,30 +227,6 @@ export default function OrderLineEditor<
               </tr>
             )}
 
-            {editing && onAddProduct && (
-              <tr>
-                <td className="px-2 py-2" />
-                <td className="px-2 py-2" colSpan={searchColSpan}>
-                  <ProductSearchInput
-                    value={query}
-                    onChange={setQuery}
-                    onSelect={p => { onAddProduct(p); setQuery('') }}
-                    onTabSelect={() => {
-                      const newRowIndex = lines.length
-                      requestAnimationFrame(() => {
-                        firstFieldRefs.current.get(newRowIndex)?.focus()
-                      })
-                    }}
-                    products={products ?? []}
-                    placeholder="Add a product"
-                    inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-72"
-                    portalDropdown={true}
-                    externalRef={psInputRef}
-                    selectOnTab={selectOnTab}
-                  />
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
