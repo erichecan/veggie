@@ -8,6 +8,7 @@ import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import CustomerContactsPanel from '@/components/customers/contacts-panel'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import type { Customer, OdooPricelist } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +26,7 @@ interface CustomerSpecialPrice {
 interface ProductOption {
   id: string
   name: string
+  internalRef?: string | null
 }
 
 const EMPTY_SP: CustomerSpecialPrice = { productId: '', minQty: 0, fixedPrice: 0 }
@@ -218,6 +220,11 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   const [showSPDialog, setShowSPDialog] = useState(false)
   const [editingSP, setEditingSP] = useState<CustomerSpecialPrice>(EMPTY_SP)
   const [editingSPIdx, setEditingSPIdx] = useState<number | null>(null)
+  const [spQuery, setSpQuery] = useState('')
+  // 编辑已有特价时对话框要显示出商品名，所以文本框跟着 editingSP.productId 走
+  useEffect(() => {
+    setSpQuery(products.find(p => p.id === editingSP.productId)?.name ?? '')
+  }, [editingSP.productId, products])
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
   const [driverSlots, setDriverSlots] = useState<{ id: string; driverName: string; timeOfDay: string; batchNum: number }[]>([])
   const [activeTab, setActiveTab] = useState<Tab>('contacts')
@@ -244,7 +251,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       .then(setDriverSlots)
       .catch(() => {})
 
-    apiGet<{ data?: ProductOption[]; items?: ProductOption[] } | ProductOption[]>('/api/products?pageSize=500')
+    apiGet<{ data?: ProductOption[]; items?: ProductOption[] } | ProductOption[]>('/api/products?slim=1')
       .then(resp => {
         const raw: ProductOption[] = Array.isArray(resp)
           ? resp
@@ -1027,16 +1034,20 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">Product *</label>
-                <select
-                  value={editingSP.productId}
-                  onChange={e => setEditingSP(s => ({ ...s, productId: e.target.value }))}
-                  className={selectCls}
-                >
-                  <option value="">— Select product —</option>
-                  {products.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                <ProductSearchInput
+                  value={spQuery}
+                  onChange={v => {
+                    setSpQuery(v)
+                    // 改过文字就作废已选中的商品，避免「显示 A 提交 B」
+                    if (editingSP.productId) setEditingSP(s => ({ ...s, productId: '' }))
+                  }}
+                  onSelect={p => setEditingSP(s => ({ ...s, productId: p.id }))}
+                  products={products}
+                  placeholder="Type to search a product…"
+                  inputClassName={inputCls}
+                  portalDropdown
+                  maxResults={30}
+                />
               </div>
 
               <div>
