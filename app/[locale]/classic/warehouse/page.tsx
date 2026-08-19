@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Product, Order, PurchaseRecord } from '@/lib/types'
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { NumericInput } from '@/components/ui/numeric-input'
 import { Label } from '@/components/ui/label'
 import { DrillPanel, type DrillColumn } from '@/components/shared/drill-panel'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
@@ -105,7 +106,24 @@ export default function ClassicWarehousePage() {
       .flatMap(o => o.items.map(i => i.productId))
   )
 
-  const activeProducts = products.filter(p => p.status === 'active')
+  // 接口回的是大写 'ACTIVE'，页面里原本一直拿 'active' 比 —— 恒为 false，
+  // 入库选品是空列表、低库存/滞销从不标记、状态一律显示「下架」。统一走这个判定。
+  const isActive = (p: Product) => p.status?.toLowerCase() === 'active'
+  const activeProducts = products.filter(isActive)
+  // 入库下拉沿用原来的「名称 (规格)」展示，把规格并进 name，选中回填时才对得上
+  const purchaseOptions = useMemo(
+    () => activeProducts.map(p => ({ ...p, name: p.spec ? `${p.name} (${p.spec})` : p.name })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [products],
+  )
+  const [purchaseQuery, setPurchaseQuery] = useState('')
+  const [adjustQuery, setAdjustQuery] = useState('')
+  useEffect(() => {
+    setPurchaseQuery(purchaseOptions.find(p => p.id === purchaseForm.productId)?.name ?? '')
+  }, [purchaseForm.productId, purchaseOptions])
+  useEffect(() => {
+    setAdjustQuery(products.find(p => p.id === adjustForm.productId)?.name ?? '')
+  }, [adjustForm.productId, products])
 
   async function handlePurchaseSave() {
     if (purchaseSaving) return
@@ -394,8 +412,8 @@ export default function ClassicWarehousePage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {products.map(p => {
-                  const isLow = (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD && p.status === 'active'
-                  const isSlow = !recentSoldIds.has(p.id) && p.status === 'active'
+                  const isLow = (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD && isActive(p)
+                  const isSlow = !recentSoldIds.has(p.id) && isActive(p)
                   return (
                     <tr key={p.id} className="hover:bg-gray-50" style={isLow ? { background: '#fdf8ff' } : {}}>
                       <td className="px-4 py-3 font-medium">{p.name}</td>
@@ -408,13 +426,13 @@ export default function ClassicWarehousePage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          p.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                          isActive(p) ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
                         }`}>
-                          {p.status === 'active' ? '在售' : '下架'}
+                          {isActive(p) ? '在售' : '下架'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {p.status === 'active' && (
+                        {isActive(p) && (
                           isSlow ? (
                             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">滞销</span>
                           ) : (
@@ -512,17 +530,22 @@ export default function ClassicWarehousePage() {
           <div className="space-y-4 py-2">
             <div>
               <Label>选择商品 *</Label>
-              <select
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                style={{ ['--tw-ring-color' as string]: PURPLE }}
-                value={purchaseForm.productId}
-                onChange={e => setPurchaseForm(f => ({ ...f, productId: e.target.value }))}
-              >
-                <option value="">请选择商品...</option>
-                {products.filter(p => p.status === 'active').map(p => (
-                  <option key={p.id} value={p.id}>{p.name} {p.spec ? `(${p.spec})` : ''}</option>
-                ))}
-              </select>
+              <div className="mt-1">
+                <ProductSearchInput
+                  value={purchaseQuery}
+                  onChange={v => {
+                    setPurchaseQuery(v)
+                    // 改过文字就作废已选中的商品，避免「显示 A 提交 B」
+                    if (purchaseForm.productId) setPurchaseForm(f => ({ ...f, productId: '' }))
+                  }}
+                  onSelect={p => setPurchaseForm(f => ({ ...f, productId: p.id }))}
+                  products={purchaseOptions}
+                  placeholder="输入名称或编码搜索商品…"
+                  inputClassName="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                  portalDropdown
+                  maxResults={30}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -587,19 +610,22 @@ export default function ClassicWarehousePage() {
           <div className="space-y-4 py-2">
             <div>
               <Label>选择商品 *</Label>
-              <select
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                value={adjustForm.productId}
-                onChange={e => setAdjustForm(f => ({ ...f, productId: e.target.value }))}
-              >
-                <option value="">请选择商品...</option>
-                {products.map(p => {
-                  const qty = p.qtyOnHand ?? 0
-                  return (
-                    <option key={p.id} value={p.id}>{p.name} (当前库存: {qty})</option>
-                  )
-                })}
-              </select>
+              <div className="mt-1">
+                <ProductSearchInput
+                  value={adjustQuery}
+                  onChange={v => {
+                    setAdjustQuery(v)
+                    if (adjustForm.productId) setAdjustForm(f => ({ ...f, productId: '' }))
+                  }}
+                  onSelect={p => setAdjustForm(f => ({ ...f, productId: p.id }))}
+                  products={products}
+                  placeholder="输入名称或编码搜索商品…"
+                  inputClassName="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                  portalDropdown
+                  showAtp
+                  maxResults={30}
+                />
+              </div>
             </div>
             <div>
               <Label htmlFor="adj-qty">调整数量 *</Label>
