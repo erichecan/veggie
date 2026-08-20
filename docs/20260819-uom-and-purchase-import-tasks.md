@@ -54,8 +54,8 @@
 - 理由：实测该路径把 `Harvest Beans` 误配成商品 `vest` 并**直接落库建单**，未匹配行静默丢弃
 
 ### T3 多规格 4 个卡点
-#### T3-1 换算系数改挂商品（schema 变更）
-- [ ] 验收：
+#### T3-1 换算系数改挂商品（schema 变更）✅ [8049a3a]
+- [x] 验收：
   - `ProductSaleUom` 新增 `factor`（该商品下 1 个此单位 = factor 个基础单位），迁移文件手写
   - 计价（`place-order` / `quotations/[id]`）与库存换算（`lib/inventory.ts:toStockQty`）改读 `ProductSaleUom.factor`，不再读全局 `Uom.factor`
   - 商品档案页「可售单位」块能编辑该系数
@@ -63,13 +63,13 @@
 - 产出：`prisma/schema.prisma`、迁移、`lib/inventory.ts`、`lib/sale-uom.ts`、三个订单页、商品档案页
 - 依赖：无
 
-#### T3-2 销售单编辑页补单位下拉
-- [ ] 验收：`orders/[id]` 编辑态 UoM 列是下拉（与 `quotations/[id]` 一致）；切换后单价按 T3-1 的系数重算；新加行也能选非基础单位
+#### T3-2 销售单编辑页补单位下拉 ✅ [8049a3a]
+- [x] 验收：`orders/[id]` 编辑态 UoM 列是下拉（与 `quotations/[id]` 一致）；切换后单价按 T3-1 的系数重算；新加行也能选非基础单位
 - 产出：`app/[locale]/classic/operator/orders/[id]/page.tsx`
 - 依赖：T3-1
 
-#### T3-3 锚点单位缺失时不静默失效
-- [ ] 验收：模板 `uomId` 为空的商品，配置多规格时前端明确拦截并提示先设基础单位；已存在的 152 个 ACTIVE 无锚点模板有诊断脚本可列出
+#### T3-3 锚点单位缺失时不静默失效 ✅ [8049a3a]
+- [x] 验收：模板 `uomId` 为空的商品，配置多规格时前端明确拦截并提示先设基础单位；已存在的 152 个 ACTIVE 无锚点模板有诊断脚本可列出
 - 产出：商品档案页、`scripts/audit/`
 - 依赖：T3-1
 
@@ -85,8 +85,8 @@
 - 产出：`lib/search-rank.ts`、清洗脚本
 - 依赖：无
 
-### T5 计量单位从商品名提炼
-- [ ] 验收：
+### T5 计量单位从商品名提炼 ✅ [9badecc]（生产 --apply 待确认）
+- [x] 验收：
   - 提炼脚本产出「商品名末词 → 规范单位」映射表，含大小写归一（JAR/Jar、BAG/Bag、KG/Kg/kg）与拼写修正（PUNNUT/PUNNT → PUNNET）
   - 生成的单位表覆盖 ACTIVE 可售商品 ≥95%
   - 旧的中文自造单位（箱/袋/头/盒/板/筐/把/扎…）设为 inactive 而非删除（历史 OrderLine 存的是 uomName 快照，但 uomId 不能变悬空）
@@ -122,7 +122,27 @@
       - 顺带修单位下拉里默认单位重复出现
       - 浏览器实测：列表 1780→1781、警示条显示、单空格能搜到双空格商品名
 
+- [x] **T3-1/2/3** [8049a3a] 换算系数挂到商品上，多规格从"形同虚设"变成真能用
+      - `ProductSaleUom.factor` = 1 个此单位 = 多少个基础单位；库存按基础(最小)单位记
+      - 计价与库存换算统一收口 `lib/sale-uom.ts`，两边不会算得不一样
+      - 销售单编辑页补上单位下拉；保存时把模板销售单位同步为基础单位（顺带补 152 个无锚点模板）
+      - 端到端实测：卖 2 箱(×10) → 库存 100→80，StockMove -20；三页价格 €12/€120/€17 全对
+
+- [x] **T5** [9badecc] 单位从商品名提炼
+      - `lib/uom/extract-from-product-name.ts`（19 单测）+ dry-run 脚本
+      - **生产库真实数据跑出：20 个单位，覆盖 94.2%**
+        CASE 1004 · PKT 325 · BAG 62 · KG 59 · LOOSE 40 · JAR 31 · BOTTLE 30 …
+      - 拼写变体合并：PUNNUT(5)+PUNNT(2)+PUNNET(1) → PUNNET；大小写全部归一
+      - 未覆盖的 5.8% 是 77 个末词就是规格的商品（`Chilli Green XL 400g`），命名不规范非算法漏
+      - ⛔ **生产 --apply 未执行**，等确认
+
 ### 遗留待办（本轮新发现）
 - [ ] `lib/import-parser.ts` 的 `matchProducts` 仍被 `/api/vendor-bills/import` 使用，
       那条路径有**同样的 includes 误配 bug**。本轮未动（超出客户要求范围），
       但供应商账单导入会把 `Harvest Beans` 配成 `vest` 这件事依然成立。
+- [ ] 生产库执行 T5 的 `--apply`（新建 ~15 个单位、停用无引用的自造单位），需客户确认
+- [ ] 生产库执行 `scripts/clean-product-name-whitespace.ts --apply`（69 个名字含连续空格）
+- [ ] 那 67 组「同一个货拆成两个商品」的合并（客户 0819 决定：先不动，只把机制做好）
+- [ ] 生产库里的历史垃圾商品（`vest`/`0`/`tttt`/`Temp`/`reuse`/`osp`/`prok`）
+      仍是可采购状态，会污染采购导入的匹配候选。建议归档或标为不可采购。
+- [x] pic/ 下遗漏的发票 PDF 已停止跟踪 [16fa5b8]
