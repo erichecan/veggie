@@ -24,6 +24,9 @@ async function supplierClause(term: string): Promise<Record<string, unknown>> {
 }
 
 export const PURCHASE_ORDER_FACET_DEFS: FacetDef[] = [
+  // 'all' 此前根本没实现：采购列表页的搜索框把词发成了 ?search=，而 where 构造从不读它，
+  // 于是「搜什么都返回全部」——比搜不到更难发现。
+  { key: 'all',      label: '全部',   toClause: async v => ({ OR: [{ name: like(v) }, await supplierClause(v)] }) },
   { key: 'name',     label: '单号',   toClause: v => ({ name: like(v) }) },
   { key: 'supplier', label: '供应商', toClause: supplierClause },
   { key: 'product',  label: '商品',   toClause: v => ({ lines: { some: { productName: like(v) } } }) },

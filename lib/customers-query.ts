@@ -19,7 +19,6 @@ export async function buildCustomersWhere(
   searchParams: URLSearchParams,
   caller: JwtPayload | null,
 ): Promise<Record<string, unknown>> {
-  const search = searchParams.get('search') ?? ''
   const createdFrom = searchParams.get('createdFrom') ?? ''
   const createdTo = searchParams.get('createdTo') ?? ''
   const paymentTermFilter = searchParams.get('paymentTerm') ?? ''
@@ -33,16 +32,7 @@ export async function buildCustomersWhere(
   const isVendorParam = searchParams.get('isVendor')
   if (isVendorParam === 'true' || isVendorParam === '1') andConditions.push({ isVendor: true })
 
-  if (search) {
-    andConditions.push({
-      OR: [
-        { name: { contains: search, mode: 'insensitive' } },
-        { vatNumber: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-      ],
-    })
-  }
-  // 分面搜索：同维度 OR、跨维度 AND
+  // 分面搜索：同维度 OR、跨维度 AND（搜索框的「全部」维度也在其中，参数名 search）
   andConditions.push(...await buildFacetWhere(searchParams, CUSTOMER_FACET_DEFS))
 
   // 行级隔离：销售只看自己名下的客户。规则在 lib/row-scope.ts（唯一真相）。

@@ -20,11 +20,13 @@ const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
 
 /**
  * 订单/报价单列表的分面维度定义 —— 该资源「可搜什么」的唯一真相。
- * key 与 lib/list-filters.ts 的 ORDER_FACET_FIELDS 一一对应；'all' 走 search 参数不在此声明。
+ * key 与 lib/list-filters.ts 的 ORDER_FACET_FIELDS 一一对应；'all'（「全部」）也是一条普通维度，
+ * 只是参数名沿用历史的 search（见 facetParamName）。
  * code 维度：20260802 已用 scripts/backfill-order-code-from-odoo.ts 从 Odoo 原始单号回填，
  * 覆盖率 861/149874 → 149874/149874 (100%)，"看得见搜不到"的问题已消除。
  */
 export const ORDER_FACET_DEFS: FacetDef[] = [
+  { key: 'all',      label: '全部',     toClause: v => ({ OR: [{ restaurantName: like(v) }, { code: like(v) }] }) },
   { key: 'code',     label: '单号',     toClause: v => ({ code: like(v) }) },
   { key: 'customer', label: '客户',     toClause: v => ({ restaurantName: like(v) }) },
   { key: 'salesman', label: '销售',     toClause: v => ({ salesUser: { name: like(v) } }) },
@@ -75,8 +77,6 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
     ? statusParam.split(',').map(s => s.trim().toUpperCase()).filter(s => ORDER_STATUSES.has(s as $Enums.OrderStatus)) as $Enums.OrderStatus[]
     : null
 
-  const search = searchParams.get('search')?.trim() ?? ''
-
   const fromDate = searchParams.get('fromDate')
   const toDate = searchParams.get('toDate')
   const dateField = searchParams.get('dateField') ?? 'createdAt'
@@ -87,12 +87,6 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   if (restaurantIds && restaurantIds.length > 0) where.restaurantId = { in: restaurantIds }
   if (ids && ids.length > 0) where.id = { in: ids }
   if (statusFilter && statusFilter.length > 0) where.status = { in: statusFilter }
-  if (search) {
-    where.OR = [
-      { restaurantName: { contains: search, mode: 'insensitive' } },
-      { code: { contains: search, mode: 'insensitive' } },
-    ]
-  }
   if (fromDate || toDate) {
     const field = allowedDateFields.has(dateField) ? dateField : 'createdAt'
     const range: Record<string, Date> = {}

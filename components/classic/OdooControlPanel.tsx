@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
+import { splitOrTerms } from '@/lib/list-filters'
 
 interface ActiveFilter {
   label: string
@@ -125,7 +126,8 @@ export default function OdooControlPanel({
     if (!v || !facetFields || !onFacetAdd) return
     const field = facetFields[idx] ?? facetFields[0]
     if (!field) return
-    onFacetAdd(field.key, v)
+    // "a or b" 一次录入两个关键词：与 chip 上的显示写法对称（同维度多值 OR）
+    for (const term of splitOrTerms(v)) onFacetAdd(field.key, term)
     setDraft('')
     setFacetOpen(false)
     setHighlight(0)

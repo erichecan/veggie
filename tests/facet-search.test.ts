@@ -177,3 +177,67 @@ test('发票维度：同维度 OR、跨维度 AND 与服务端一致', () => {
 test('fieldsOf 从 defs 派生下拉项，key/label 与 defs 一致', () => {
   assert.deepEqual(fieldsOf(INVOICE_FACET_DEFS).map(f => f.key), ['name', 'customer', 'status', 'terms'])
 })
+
+// ── 'all'（全部）维度：曾经是唯一一个不走 buildFacetWhere 的维度 ─────────────
+// 客户反馈（20260820）：商品列表先搜 "pepper g" 再搜 "scall"，chip 显示
+// "pepper g or scall"，结果却只有 pepper。根因：'all' 走各路由自己手写的
+// `searchParams.get('search')` —— getAll 变成 get，第二个词被静默丢掉。
+// 现在 'all' 与其它维度一样是一条 FacetDef，语义由 buildFacetWhere 统一保证。
+import { PRODUCT_TEMPLATE_FACET_DEFS } from '../lib/facets/product-templates'
+import { CUSTOMER_FACET_DEFS } from '../lib/facets/customers'
+import { PURCHASE_ORDER_FACET_DEFS } from '../lib/facets/purchase-orders'
+import { ORDER_FACET_DEFS } from '../lib/orders-query'
+import {
+  ORDER_FACET_FIELDS, PRODUCT_FACET_FIELDS, CUSTOMER_FACET_FIELDS, PURCHASE_FACET_FIELDS,
+} from '../lib/list-filters'
+
+const RESOURCES: { name: string; fields: { key: string; label: string }[]; defs: FacetDef[] }[] = [
+  { name: '商品',   fields: PRODUCT_FACET_FIELDS,  defs: PRODUCT_TEMPLATE_FACET_DEFS },
+  { name: '客户',   fields: CUSTOMER_FACET_FIELDS, defs: CUSTOMER_FACET_DEFS },
+  { name: '订单',   fields: ORDER_FACET_FIELDS,    defs: ORDER_FACET_DEFS },
+  { name: '采购单', fields: PURCHASE_FACET_FIELDS, defs: PURCHASE_ORDER_FACET_DEFS },
+]
+
+test('下拉里的每个维度后端都有实现（含 all，否则搜了等于没搜）', () => {
+  for (const r of RESOURCES) {
+    const implemented = new Set(r.defs.map(d => d.key))
+    for (const f of r.fields) {
+      assert.ok(implemented.has(f.key), `${r.name} 维度 ${f.key} 在下拉里可选，但后端没有对应 FacetDef`)
+    }
+  }
+})
+
+test("all 维度多值 → OR（客户反馈：'pepper g or scall' 只出 pepper）", async () => {
+  const sp = new URLSearchParams()
+  sp.append('search', 'pepper g')
+  sp.append('search', 'scall')
+  const clauses = await buildFacetWhere(sp, PRODUCT_TEMPLATE_FACET_DEFS)
+  assert.equal(clauses.length, 1, 'all 只产出一个子句')
+  const or = (clauses[0] as { OR?: unknown[] }).OR
+  assert.equal(or?.length, 2, '两个关键词各一条，彼此 OR')
+  assert.deepEqual(JSON.parse(JSON.stringify(or)), [
+    { OR: [{ name: { contains: 'pepper g', mode: 'insensitive' } }, { internalRef: { contains: 'pepper g', mode: 'insensitive' } }] },
+    { OR: [{ name: { contains: 'scall',    mode: 'insensitive' } }, { internalRef: { contains: 'scall',    mode: 'insensitive' } }] },
+  ])
+})
+
+test('all 维度单值 → 与旧的 search 参数完全等价', async () => {
+  const clauses = await buildFacetWhere(new URLSearchParams('search=salt'), PRODUCT_TEMPLATE_FACET_DEFS)
+  assert.deepEqual(JSON.parse(JSON.stringify(clauses)), [
+    { OR: [{ name: { contains: 'salt', mode: 'insensitive' } }, { internalRef: { contains: 'salt', mode: 'insensitive' } }] },
+  ])
+})
+
+// ── 搜索框里直接写 "a or b" ────────────────────────────────────────────────
+import { splitOrTerms } from '../lib/list-filters'
+
+test('输入 "a or b" 拆成两个关键词（chip 就是这么显示的，用户照着输）', () => {
+  assert.deepEqual(splitOrTerms('pepper g or scall'), ['pepper g', 'scall'])
+  assert.deepEqual(splitOrTerms('salt OR ketch or  odlum '), ['salt', 'ketch', 'odlum'])
+})
+
+test('只认独立的 or：商品名里的 or 不被拆开', () => {
+  assert.deepEqual(splitOrTerms('Orange Juice'), ['Orange Juice'])
+  assert.deepEqual(splitOrTerms('Flavour'), ['Flavour'])
+  assert.deepEqual(splitOrTerms('  '), [])
+})

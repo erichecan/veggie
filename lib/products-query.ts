@@ -7,7 +7,7 @@
  * 这类问题，靠两处各写一份条件是防不住的。
  *
  * 支持的筛选参数（与列表页 UI 一一对应）：
- *   search        搜索框（名称 / 内部编码 模糊）
+ *   search        搜索框的「全部」维度（名称 / 内部编码 模糊），可重复传，多值之间 OR
  *   status        状态；canBeSold=1  可销售
  *   f_*           Odoo 式分面（同维度 OR、跨维度 AND，见 lib/facet-sql.ts）
  *   cf_<字段>     文本列筛选；cf_<日期字段>_from/_to  日期区间列筛选
@@ -56,7 +56,6 @@ export async function productStockAlertCounts(): Promise<{ negative: number; low
 export async function buildProductTemplatesWhere(
   searchParams: URLSearchParams,
 ): Promise<Record<string, unknown>> {
-  const search = searchParams.get('search') ?? ''
   const status = searchParams.get('status') ?? ''
 
   const where: Record<string, unknown> = {}
@@ -71,14 +70,8 @@ export async function buildProductTemplatesWhere(
   if (status && status !== 'all') where.status = status.toUpperCase()
   else if (!status) where.status = { not: 'ARCHIVED' }
   if (searchParams.get('canBeSold') === '1') where.canBeSold = true
-  if (search) {
-    where.OR = [
-      { name: { contains: search, mode: 'insensitive' } },
-      { internalRef: { contains: search, mode: 'insensitive' } },
-    ]
-  }
-
-  // ── 分面搜索(f_*)：同维度 OR、跨维度 AND，挂进 where.AND 以免与上面的 search OR 打架 ──
+  // ── 分面搜索：同维度 OR、跨维度 AND。搜索框的「全部」维度也在其中（参数名 search），
+  // 与 f_* 走同一条路 —— 此前它是路由手写的 get('search')，同维度第二个词会被静默丢掉。──
   const facetClauses = await buildFacetWhere(searchParams, PRODUCT_TEMPLATE_FACET_DEFS)
   if (facetClauses.length > 0) where.AND = facetClauses
 

@@ -1,7 +1,7 @@
 /**
  * 客户列表的分面维度定义 —— 该资源「可搜什么」的唯一真相。
  * 语义：同一维度多值 OR，不同维度之间 AND（lib/facet-sql.ts buildFacetWhere 保证）。
- * 'all' 不在此声明，它走路由已有的 search 参数。
+ * 'all'（下拉里的「全部」）也是一条普通维度，只是参数名沿用历史的 search（见 facetParamName）。
  *
  * 已按 docs/20260802-facet-dimension-data-readiness.md 的填充率体检裁剪：
  * 剔除 state(7/1605, 0.4%)、externalNote(全空)；email(5.2%)、vatNumber(2.9%) 覆盖率低但保留
@@ -12,6 +12,7 @@ import type { FacetDef } from '../facet-sql'
 const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
 
 export const CUSTOMER_FACET_DEFS: FacetDef[] = [
+  { key: 'all',       label: '全部',   toClause: v => ({ OR: [{ name: like(v) }, { vatNumber: like(v) }, { email: like(v) }] }) },
   { key: 'name',      label: '名称',   toClause: v => ({ name: like(v) }) },
   { key: 'city',      label: '城市',   toClause: v => ({ city: like(v) }) },
   { key: 'address',   label: '地址',   toClause: v => ({ OR: [{ address: like(v) }, { street: like(v) }, { street2: like(v) }] }) },

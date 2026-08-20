@@ -6,7 +6,7 @@
 import { facetParamName } from './list-filters'
 
 export interface FacetDef {
-  /** 维度 key，与前端 Facet.key 对应。不要声明 'all'（它走各 API 自己的 search 参数） */
+  /** 维度 key，与前端 Facet.key 对应。'all' 也在此声明 —— 它只是参数名叫 search 的普通维度 */
   key: string
   /** 下拉里显示的维度名 */
   label: string
