@@ -1727,9 +1727,14 @@ export default function ClassicPlaceOrderPage() {
                                 className="w-full text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                               >
                                 {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? 'Unit(s)'}</option>}
-                                {(saleUomOptions[line.productId] ?? []).map(o => (
-                                  <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
-                                ))}
+                                {/* ⛔ 排除锚点：saleUomOptions 本来就含默认单位，
+                                    不排的话它会在下拉里出现两次（一次英文 name、一次中文 nameZh，
+                                    同一个 uomId）——看起来像两个不同的单位 */}
+                                {(saleUomOptions[line.productId] ?? [])
+                                  .filter(o => o.uomId !== anchorUomId)
+                                  .map(o => (
+                                    <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
+                                  ))}
                               </select>
                             )
                           })()

@@ -9,16 +9,29 @@
  */
 const WORD_SEP = /[\s\-_/.,()]+/
 
+/**
+ * 空白归一：连续空白压成一个空格。
+ *
+ * ⛔ 不做这一步的话，商品名里的**双空格**会让搜索直接失效。
+ * 客户 20260819 报「搜不到 ICE Black Tiger Shrimp」——库里那条叫
+ * `ASIAN CHOICE␣␣Black Tiger Shrimp HOSO 31/40 700g PKT`（CHOICE 后两个空格），
+ * 用户按看到的样子输入单空格，`includes` 一路失败。生产库有 69 个商品名带连续空格，
+ * 它们对所有跨空格的搜索词都是隐身的。
+ */
+function squashSpace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
 export function rankByRelevance<T>(
   items: T[],
   query: string,
   getTexts: (item: T) => string | Array<string | null | undefined>,
 ): T[] {
-  const q = query.trim().toLowerCase()
+  const q = squashSpace(query).toLowerCase()
   if (!q) return items
 
   const scoreText = (text: string): number => {
-    const n = text.toLowerCase()
+    const n = squashSpace(text).toLowerCase()
     if (n === q) return 0
     if (n.startsWith(q)) return 1
     if (n.split(WORD_SEP).some(w => w.startsWith(q))) return 2

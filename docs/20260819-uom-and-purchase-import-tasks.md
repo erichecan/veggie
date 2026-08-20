@@ -35,16 +35,16 @@
 
 ## 任务清单
 
-### T1 采购 PDF：加强确定性解析，AI 只作可选兜底
-- [ ] 验收：
+### T1 采购 PDF：加强确定性解析，移除 AI 兜底 ✅ [8bdbd7b]
+- [x] 验收：
   - 用 `pic/发票的 PDF 格式Sales-Order-D120827.pdf` 及新造样本，解析器能识别供应商名与币种（现在恒为 null，必须手填）
   - `tests/pdf-line-parser.test.ts` 全绿且新增用例覆盖新识别项
   - 无 `ANTHROPIC_API_KEY` 时功能完整可用，界面不再出现"未配置 AI"字样的降级提示
 - 产出：`lib/purchase/pdf-line-parser.ts`、`app/api/purchase-orders/pdf-extract/route.ts`、`tests/pdf-line-parser.test.ts`
 - 依赖：无
 
-### T2 删除路径 B（`/api/purchase-orders/import` + 列表页导入入口）
-- [ ] 验收：
+### T2 删除路径 B（`/api/purchase-orders/import` + 列表页导入入口）✅ [8bdbd7b]
+- [x] 验收：
   - `app/api/purchase-orders/import/route.ts` 删除；`lib/import-parser.ts` 若仅此处引用则一并删（vendor-bills 也在用，需先核实）
   - 采购列表页 `purchases/page.tsx` 导入按钮与对话框移除
   - `lib/rbac/route-map.ts` / `parity-baseline.json` 同步，权限点 `purchase.order.import` 若无引用则清理
@@ -108,4 +108,15 @@
 
 ## 进度
 
-（每完成一条在此回写：`- [x] Tn ... [commit]`）
+- [x] **T1 + T2** [8bdbd7b] 采购识别收口到 `/api/purchase-orders/parse` 一条路径
+      - 新增 `lib/purchase/product-match.ts`（21 单测）取代 includes 匹配
+      - 解析器补 `detectCurrency` / `detectSupplier`，AI 兜底整体移除
+      - 删 `/api/purchase-orders/import` 与 `/pdf-extract`
+      - `purchase.order.import` 权限点作废（序号 137 进 retired）
+      - 实测：PDF 币种 null→EUR；`Harvest Beans` 不再配成 `vest`；`Courgette` 标歧义
+      - ⚠️ **catalog 页与新建页的 UI 尚未用浏览器点过**，接口层已实测
+
+### 遗留待办（本轮新发现）
+- [ ] `lib/import-parser.ts` 的 `matchProducts` 仍被 `/api/vendor-bills/import` 使用，
+      那条路径有**同样的 includes 误配 bug**。本轮未动（超出客户要求范围），
+      但供应商账单导入会把 `Harvest Beans` 配成 `vest` 这件事依然成立。

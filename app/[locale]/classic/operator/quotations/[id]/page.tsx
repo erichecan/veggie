@@ -990,9 +990,12 @@ export default function QuotationDetailPage() {
                               className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                             >
                               {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? 'Unit(s)'}</option>}
-                              {(saleUomOptions[l.productId] ?? []).map(o => (
-                                <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
-                              ))}
+                              {/* ⛔ 排除锚点，否则默认单位在下拉里出现两次（见 place-order 同处注释） */}
+                              {(saleUomOptions[l.productId] ?? [])
+                                .filter(o => o.uomId !== anchorUomId)
+                                .map(o => (
+                                  <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
+                                ))}
                             </select>
                           )
                         })()

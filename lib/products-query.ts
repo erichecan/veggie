@@ -60,7 +60,16 @@ export async function buildProductTemplatesWhere(
   const status = searchParams.get('status') ?? ''
 
   const where: Record<string, unknown> = {}
+  // 归档商品**默认不出现在商品管理里**（20260819 客户要求）。
+  //
+  // 起因：客户在一个已归档的商品上配了半天多规格，回到报价页却怎么都搜不到它 ——
+  // 下单/报价的选品只取 `status=ACTIVE`（1736 个），而商品管理页当时不筛状态，
+  // 把 5477 个全列出来，归档的看起来和在售的一模一样。人在商品管理里能看到、
+  // 能编辑、能保存，到了报价页却不存在，这个落差没有任何提示。
+  //
+  // 显式传 `status=all` 才会连归档一起返回（列表页的「显示已归档」开关走这条）。
   if (status && status !== 'all') where.status = status.toUpperCase()
+  else if (!status) where.status = { not: 'ARCHIVED' }
   if (searchParams.get('canBeSold') === '1') where.canBeSold = true
   if (search) {
     where.OR = [

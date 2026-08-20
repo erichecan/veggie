@@ -304,6 +304,22 @@ export default function ClassicProductDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/*
+        归档警示条（20260819）。
+        客户在一个已归档商品上配了半天可售单位，回到报价页却怎么都搜不到它 ——
+        下单/报价的选品只取 `status=ACTIVE`，而这个页面照常让人编辑保存，
+        全程没有任何提示。事后再解释"它是归档的"，那半天已经白花了。
+      */}
+      {!isNew && tmpl.status === 'archived' && (
+        <div className="px-4 py-2.5 text-sm flex items-center gap-2" style={{ background: '#fdecea', color: '#a33a2a' }}>
+          <span>⚠</span>
+          <span>
+            {isEn
+              ? 'This product is ARCHIVED — it will NOT appear when picking products on order / quotation pages. Set the status back to Active to sell it again.'
+              : '该商品已归档 —— 下单 / 报价页的选品中不会出现它。要重新销售，请把状态改回 Active。'}
+          </span>
+        </div>
+      )}
       {/* ── 顶部控制栏 ───────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-4">
         {/* 面包屑 */}

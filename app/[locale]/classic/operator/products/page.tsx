@@ -65,6 +65,9 @@ export default function ClassicProductsPage() {
   const [canBeSoldFilter, setCanBeSoldFilter] = useState(false)
   const [productTypeFilter, setProductTypeFilter] = useState('')
   const [stockAlertFilter, setStockAlertFilter] = useState<StockAlertFilter>('all')
+  // 归档商品默认不显示（20260819）：客户曾在归档商品上配了半天规格，
+  // 回到报价页却搜不到 —— 下单选品只取 ACTIVE，而这里过去把归档的一起列出来。
+  const [showArchived, setShowArchived] = useState(false)
   // Read / Edit 是整个列表页唯一的模式真相：顶部 Mode 按钮与下方「快速编辑」按钮共用它，
   // 表格的行内编辑也由它开关。此前两者各持一个 state，导致顶部显示 Edit 但单元格仍改不了。
   const [isReadMode, setIsReadMode] = useState(true)
@@ -90,6 +93,8 @@ export default function ClassicProductsPage() {
   // 后端两步查(聚合定位 id → 按 id 分页)，绝不一次性拉全量模板到前端。
   const queryParams = useMemo(() => {
     const params = new URLSearchParams()
+    // 不传 status = 后端默认排除 ARCHIVED；status=all 才连归档一起返回
+    if (showArchived) params.set('status', 'all')
     if (canBeSoldFilter) params.set('canBeSold', '1')
     if (stockAlertFilter !== 'all') params.set('stockAlert', stockAlertFilter)
     const typeSet = new Set([...(columnMultiFilters.type ?? []), ...(productTypeFilter ? [productTypeFilter] : [])])
@@ -103,7 +108,7 @@ export default function ClassicProductsPage() {
     }
     applyFacets(params, facets)
     return params.toString()
-  }, [canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets])
+  }, [showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets])
 
   // 导出：吃的就是 queryParams —— 与列表请求同一份筛选参数，同一份 where 构造，
   // 所以导出的是当前筛选下的**全部**结果，不是屏幕上这 50 条。
@@ -479,6 +484,7 @@ export default function ClassicProductsPage() {
         onFacetAdd={addFacet}
         activeFilters={[
           ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
+          ...(showArchived ? [{ label: isEn ? 'Incl. archived' : '含已归档', onRemove: () => setShowArchived(false) }] : []),
           ...(canBeSoldFilter ? [{ label: 'Can be Sold', onRemove: () => setCanBeSoldFilter(false) }] : []),
           ...(productTypeFilter ? [{ label: TYPE_LABEL[productTypeFilter] ?? productTypeFilter, onRemove: () => setProductTypeFilter('') }] : []),
           ...(stockAlertFilter !== 'all' ? [{
@@ -503,9 +509,10 @@ export default function ClassicProductsPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, canBeSoldFilter, productTypeFilter, stockAlertFilter, groupBy }}
+        favouriteState={{ searchInput, showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, groupBy }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
+          setShowArchived(Boolean(s.showArchived))
           setCanBeSoldFilter(Boolean(s.canBeSoldFilter))
           setProductTypeFilter(String(s.productTypeFilter ?? ''))
           setStockAlertFilter((s.stockAlertFilter as StockAlertFilter) ?? 'all')
@@ -628,6 +635,21 @@ export default function ClassicProductsPage() {
               </button>
             )
           })}
+
+          {/* 归档商品开关：默认关 —— 归档 = 停售，不该混在在售商品里让人误编辑 */}
+          <button
+            type="button"
+            onClick={() => setShowArchived(v => !v)}
+            className="h-7 px-2.5 text-xs rounded border transition-colors font-medium ml-1"
+            style={showArchived
+              ? { background: '#f3eff5', borderColor: '#875A7B', color: '#875A7B' }
+              : { background: 'white', borderColor: '#d1d5db', color: '#6b7280' }}
+            title={isEn
+              ? 'Archived products never appear in order / quotation product pickers'
+              : '已归档商品不会出现在下单 / 报价的选品中'}
+          >
+            {showArchived ? (isEn ? '✓ Incl. archived' : '✓ 含已归档') : (isEn ? 'Incl. archived' : '含已归档')}
+          </button>
         </div>
 
         {editMode && (
