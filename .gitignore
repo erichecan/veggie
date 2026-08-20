@@ -19,6 +19,17 @@
 # Odoo 源数据导出（真实客户/订单 PII，绝不入库）
 /odoodata/
 
+# 20260816 合规审查发现 pic/ 下混有 Odoo 真实客户导出（res.partner/sale.order 等 csv、
+# 发票 PDF）及历史备份子目录，曾被公开仓库暴露（c-d17237）。此目录只允许存放脱敏后的
+# UI 截图素材；任何 csv/xlsx/xls/sql/pdf 一律禁止入库，需要新增示例数据请用 /pic/samples/
+# 之类目录并确认已脱敏。
+/pic/**/*.csv
+/pic/**/*.xlsx
+/pic/**/*.xls
+/pic/**/*.sql
+/pic/**/*.pdf
+/pic/backup-*/
+
 # 演示种子数据 manifest（记录生产库真实 id，本地状态，不入库）
 scripts/.demo-seed-manifest.json
 
