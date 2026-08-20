@@ -142,7 +142,6 @@ export const PERMISSION_GROUPS: GroupDef[] = [
           A.update,
           { action: 'approve', labelZh: '审批', labelEn: 'Approve' },
           { action: 'receive', labelZh: '收货', labelEn: 'Receive' },
-          { action: 'import', labelZh: '导入', labelEn: 'Import' },
           { action: 'print', labelZh: '打印', labelEn: 'Print' },
         ],
       },

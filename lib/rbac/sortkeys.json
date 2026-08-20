@@ -1,5 +1,7 @@
 {
-  "retired": [],
+  "retired": [
+    137
+  ],
   "keys": {
     "sales.order.read": 0,
     "sales.order.create": 1,
@@ -16,6 +18,7 @@
     "sales.order.write_audit": 136,
     "sales.order.export": 161,
     "sales.order.delete_line": 162,
+    "sales.order.override_price": 181,
     "sales.quotation.access": 6,
     "sales.daily_report.read": 7,
     "sales.daily_report.manage": 117,
@@ -27,7 +30,6 @@
     "purchase.order.update": 13,
     "purchase.order.approve": 14,
     "purchase.order.receive": 15,
-    "purchase.order.import": 137,
     "purchase.order.print": 138,
     "purchase.legacy.read": 139,
     "purchase.legacy.create": 140,
@@ -181,7 +183,6 @@
     "system.mfa.enroll": 179,
     "system.notification.create": 180,
     "system.settings.read": 115,
-    "system.settings.manage": 116,
-    "sales.order.override_price": 181
+    "system.settings.manage": 116
   }
 }

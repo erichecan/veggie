@@ -204,40 +204,50 @@ export default function NewPurchaseOrderPage() {
       : `已从 ${historyPo.name} 复制 ${newLines.length} 行`)
   }
 
-  /** PDF 识别结果核对后"应用到表单"：按商品名匹配已有采购商品，未匹配的进"待处理"列表 */
+  /**
+   * 单据识别结果核对后「应用到表单」。
+   *
+   * ⛔ 匹配由**后端**做（`lib/purchase/product-match.ts`），这里只负责把结果落到行上。
+   * 之前这里自己跑过一套 `p.name.includes(q) || q.includes(p.name)` 的前端匹配 ——
+   * 后半截会让库里的短名商品（`vest`/`0`/`reuse`）变成万能匹配器，
+   * 实测把 `Harvest Beans` 配成了 `vest`。同样的错不要在两个地方各犯一次。
+   */
   function handlePdfApply(result: PdfExtractResult) {
-    setSourceDocumentUrl(result.sourceDocumentUrl)
+    setSourceDocumentUrl(result.sourceDocumentUrl ?? '')
     setSourceDocumentName(result.sourceDocumentName)
-    setShowPdfPanel(true)
+    setShowPdfPanel(Boolean(result.sourceDocumentUrl))
 
-    if (result.currencyGuess) setCurrency(result.currencyGuess.toUpperCase())
+    if (result.currency) setCurrency(result.currency.toUpperCase())
 
-    if (result.supplierGuess) {
-      const guess = result.supplierGuess.toLowerCase()
-      const matched = suppliers.find(s =>
-        s.name.toLowerCase().includes(guess) || guess.includes(s.name.toLowerCase()))
-      if (matched) setSupplierId(matched.id)
-      else toast.info(isEn
-        ? `Detected supplier "${result.supplierGuess}", not matched in system, please select manually`
-        : `识别到供应商「${result.supplierGuess}」，未在系统中匹配到，请手动选择`)
+    if (result.supplierId) {
+      setSupplierId(result.supplierId)
+    } else if (result.supplierName) {
+      toast.info(isEn
+        ? `Detected supplier "${result.supplierName}", not matched in system, please select manually`
+        : `识别到供应商「${result.supplierName}」，未在系统中匹配到，请手动选择`)
     }
 
     const unmatched: typeof unmatchedExtractedLines = []
     for (const line of result.lines) {
-      const name = line.productName.toLowerCase()
-      const matched = purchaseProducts.find(p =>
-        p.name.toLowerCase().includes(name) || name.includes(p.name.toLowerCase()))
+      const matched = line.matchedProductId
+        ? purchaseProducts.find(p => p.id === line.matchedProductId)
+        : undefined
       if (matched) {
         addProductLine(matched, { qty: line.quantity ?? 1, unitCost: line.unitCost ?? undefined })
       } else {
-        unmatched.push(line)
+        unmatched.push({
+          productName: line.productName,
+          quantity: line.quantity,
+          unitCost: line.unitCost,
+          uom: line.uom,
+        })
       }
     }
     setUnmatchedExtractedLines(unmatched)
     if (unmatched.length > 0) {
       toast.warning(isEn
-        ? `${unmatched.length} line(s) did not match system products, please create them one by one below`
-        : `${unmatched.length} 行商品未匹配到系统商品，请在下方列表逐行新建`)
+        ? `${unmatched.length} line(s) not matched — create them one by one below`
+        : `${unmatched.length} 行未匹配到系统商品，请在下方列表逐行新建`)
     }
   }
 

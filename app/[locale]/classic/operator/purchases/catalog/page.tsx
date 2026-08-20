@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPost, apiUpload } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
 
@@ -29,13 +29,18 @@ const GROUP_LABEL_EN: Record<GroupKey, string> = {
 
 interface Supplier { id: string; name: string }
 
+interface MatchCandidate { id: string; name: string; score: number }
+
 interface ParsedLine {
-  rawProductName: string
-  quantity: number
-  unitCost: number
+  productName: string
+  quantity: number | null
+  unitCost: number | null
+  uom: string | null
   matchedProductId: string | null
   matchedProductName: string | null
-  confidence: 'exact' | 'fuzzy' | 'none'
+  confidence: 'exact' | 'strong' | 'weak' | 'none'
+  candidates: MatchCandidate[]
+  ambiguous: boolean
 }
 
 interface PriceTrend {
@@ -91,10 +96,17 @@ export default function CatalogPickingPage() {
   const [file, setFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<{
-    stats: { total: number; exactMatch: number; fuzzyMatch: number; noMatch: number }
+    stats: { total: number; exact: number; strong: number; weak: number; none: number; ambiguous: number } | null
     lines: ParsedLine[]
-    createdPO: { id: string; name: string } | null
+    currency: string | null
+    supplierId: string | null
+    supplierName: string | null
+    sourceDocumentUrl: string | null
+    sourceDocumentName: string
+    error?: string | null
   } | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [createdPO, setCreatedPO] = useState<{ id: string; name: string } | null>(null)
   const [trends, setTrends] = useState<Record<string, PriceTrend>>({})
 
   const loadLastByGroup = useCallback(() => {
@@ -113,45 +125,116 @@ export default function CatalogPickingPage() {
   function switchGroup(g: GroupKey) {
     setActiveGroup(g)
     setResult(null)
+    setCreatedPO(null)
     setFile(null)
     setSupplierId('')
     setTrends({})
   }
 
-  async function handleImport() {
-    if (!supplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
+  /**
+   * 只解析，**不建单**。
+   *
+   * ⛔ 这里以前调的是 `/api/purchase-orders/import`，那个接口识别完直接创建 DRAFT 采购单，
+   * 且匹配用的是双向子串包含 —— 实测把 `Harvest Beans` 配成库里的垃圾商品 `vest`
+   * 并落了库，未匹配的行还被静默丢弃。现在统一走 `/api/purchase-orders/parse`：
+   * 只返回结果与候选，人核对完点「创建采购单草稿」才落库。
+   */
+  async function handleParse() {
     if (!file) { toast.error(isEn ? 'Please select a file' : '请选择文件'); return }
     setImporting(true)
+    setCreatedPO(null)
     try {
       const fd = new FormData()
       fd.append('file', file)
-      fd.append('supplierId', supplierId)
-      const token = localStorage.getItem('veggie_token')
-      const res = await fetch('/api/purchase-orders/import', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: fd,
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || `HTTP ${res.status}`)
-      }
-      const data = await res.json()
+      const data = await apiUpload<{
+        stats: { total: number; exact: number; strong: number; weak: number; none: number; ambiguous: number } | null
+        lines: ParsedLine[]
+        currency: string | null
+        supplierId: string | null
+        supplierName: string | null
+        sourceDocumentUrl: string | null
+        sourceDocumentName: string
+        error?: string | null
+      }>('/api/purchase-orders/parse', fd)
       setResult(data)
-      if (data.createdPO) {
-        toast.success(isEn ? `Created purchase order draft ${data.createdPO.name}` : `已创建采购单草稿 ${data.createdPO.name}`)
-        loadLastByGroup()
+      if (data.error) toast.warning(data.error)
+      // 识别到系统里已有的供应商就自动选上，省一次手选；认不出就保持人工选择
+      if (data.supplierId) setSupplierId(data.supplierId)
+      else if (data.supplierName) {
+        toast.info(isEn
+          ? `Detected supplier "${data.supplierName}", not in system — please select manually`
+          : `识别到供应商「${data.supplierName}」，系统中无此供应商，请手动选择`)
       }
-      const ids = (data.lines as ParsedLine[]).map(l => l.matchedProductId).filter(Boolean) as string[]
+
+      const ids = data.lines.map(l => l.matchedProductId).filter(Boolean) as string[]
       if (ids.length > 0) {
         apiGet<Record<string, PriceTrend>>(`/api/analytics/price-trends?productIds=${ids.join(',')}`)
           .then(setTrends)
           .catch(() => {})
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Import failed' : '导入失败'))
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Parse failed' : '解析失败'))
     } finally {
       setImporting(false)
+    }
+  }
+
+  /** 人工改选某行匹配到的商品 */
+  function pickProduct(idx: number, productId: string) {
+    setResult(prev => {
+      if (!prev) return prev
+      const lines = [...prev.lines]
+      const line = lines[idx]
+      const hit = line.candidates.find(c => c.id === productId)
+      lines[idx] = {
+        ...line,
+        matchedProductId: hit?.id ?? null,
+        matchedProductName: hit?.name ?? null,
+        confidence: hit ? 'exact' : 'none',
+        ambiguous: false,
+      }
+      return { ...prev, lines }
+    })
+  }
+
+  /** 核对完毕才落库。未匹配的行不会被静默丢弃 —— 提交前明确告知会漏掉几行 */
+  async function handleCreatePO() {
+    if (!supplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
+    const matched = (result?.lines ?? []).filter(l => l.matchedProductId && (l.quantity ?? 0) > 0)
+    if (matched.length === 0) {
+      toast.error(isEn ? 'No matched line to create' : '没有可创建的已匹配行')
+      return
+    }
+    const skipped = (result?.lines ?? []).length - matched.length
+    if (skipped > 0) {
+      const ok = window.confirm(isEn
+        ? `${skipped} line(s) are not matched to a product and will NOT be included. Continue?`
+        : `有 ${skipped} 行未匹配到商品，将不会写入采购单。继续？`)
+      if (!ok) return
+    }
+    setCreating(true)
+    try {
+      const po = await apiPost<{ id: string; name: string }>('/api/purchase-orders', {
+        supplierId,
+        currency: result?.currency ?? 'EUR',
+        sourceDocumentUrl: result?.sourceDocumentUrl ?? null,
+        sourceDocumentName: result?.sourceDocumentName ?? null,
+        notes: `从单据识别导入：${result?.sourceDocumentName ?? ''}`,
+        lines: matched.map(l => ({
+          productId: l.matchedProductId!,
+          productName: l.matchedProductName ?? l.productName,
+          orderedQty: l.quantity ?? 0,
+          unitCost: l.unitCost ?? 0,
+          taxRate: 0,
+        })),
+      })
+      setCreatedPO(po)
+      toast.success(isEn ? `Purchase order draft ${po.name} created` : `已创建采购单草稿 ${po.name}`)
+      loadLastByGroup()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -220,13 +303,18 @@ export default function CatalogPickingPage() {
             />
             {file && <p className="mt-1 text-xs text-gray-400">{file.name} ({(file.size / 1024).toFixed(1)} KB)</p>}
             <button
-              onClick={handleImport}
-              disabled={importing || !supplierId || !file}
+              onClick={handleParse}
+              disabled={importing || !file}
               className="w-full mt-3 h-8 text-sm font-medium rounded text-white disabled:opacity-50"
               style={{ background: PURPLE }}
             >
-              {importing ? (isEn ? 'Parsing…' : '解析中…') : (isEn ? 'Parse and generate purchase order draft' : '解析并生成采购单草稿')}
+              {importing ? (isEn ? 'Parsing…' : '解析中…') : (isEn ? 'Parse document' : '解析单据')}
             </button>
+            <p className="mt-2 text-xs text-gray-400">
+              {isEn
+                ? 'Parsing does not save anything. Review the lines on the right, then create the draft.'
+                : '解析不会保存任何数据。请核对右侧明细后再创建草稿。'}
+            </p>
           </div>
 
           <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
@@ -234,15 +322,30 @@ export default function CatalogPickingPage() {
               <div className="py-20 text-center text-gray-400 text-sm">{isEn ? 'After uploading a quotation, product details and cost trends will appear here' : '上传报价单后，商品明细和进价环比会显示在这里'}</div>
             ) : (
               <>
-                {result.createdPO && (
+                {createdPO ? (
                   <div className="flex items-center gap-2 px-4 py-2.5 text-sm border-b border-gray-100" style={{ background: '#e5f1e9', color: '#2e7d4f' }}>
-                    {isEn ? '✓ Purchase order draft generated' : '✓ 已生成采购单草稿'}
-                    <button onClick={() => router.push(`${prefix}/classic/operator/purchases/${result.createdPO!.id}`)} className="font-semibold underline">
-                      {result.createdPO.name}
+                    {isEn ? '✓ Purchase order draft created' : '✓ 已创建采购单草稿'}
+                    <button onClick={() => router.push(`${prefix}/classic/operator/purchases/${createdPO.id}`)} className="font-semibold underline">
+                      {createdPO.name}
                     </button>
-                    {isEn
-                      ? `, ${result.stats.exactMatch + result.stats.fuzzyMatch} items matched`
-                      : `，共 ${result.stats.exactMatch + result.stats.fuzzyMatch} 项已匹配商品`}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm border-b border-gray-100 bg-gray-50">
+                    <span className="text-xs text-gray-600">
+                      {result.stats && (isEn
+                        ? `${result.stats.total} lines · ${result.stats.exact + result.stats.strong} matched · ${result.stats.weak} to verify · ${result.stats.none} unmatched`
+                        : `共 ${result.stats.total} 行 · 已匹配 ${result.stats.exact + result.stats.strong} · 存疑 ${result.stats.weak} · 未匹配 ${result.stats.none}`)}
+                    </span>
+                    <button
+                      onClick={handleCreatePO}
+                      disabled={creating || !supplierId}
+                      className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
+                      style={{ background: PURPLE }}
+                    >
+                      {creating
+                        ? (isEn ? 'Creating…' : '创建中…')
+                        : (isEn ? 'Create purchase order draft' : '创建采购单草稿')}
+                    </button>
                   </div>
                 )}
                 <div className="overflow-x-auto">
@@ -262,11 +365,27 @@ export default function CatalogPickingPage() {
                         const t = l.matchedProductId ? trends[l.matchedProductId] : null
                         return (
                           <tr key={i} className="border-b border-gray-100">
-                            <td className="px-4 py-2.5" style={{ color: l.matchedProductId ? PURPLE : '#9ca3af' }}>
-                              {l.matchedProductName ?? l.rawProductName}
+                            <td className="px-4 py-2.5">
+                              <div className="text-xs text-gray-500 mb-0.5">{l.productName}</div>
+                              {l.candidates.length > 0 ? (
+                                <select
+                                  value={l.matchedProductId ?? ''}
+                                  onChange={e => pickProduct(i, e.target.value)}
+                                  className={`w-full border rounded px-1 py-0.5 text-xs ${l.matchedProductId ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                >
+                                  <option value="">
+                                    {l.ambiguous
+                                      ? (isEn ? '— multiple matches, pick one —' : '— 命中多个，请选择 —')
+                                      : (isEn ? '— not matched —' : '— 未匹配 —')}
+                                  </option>
+                                  {l.candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                              ) : (
+                                <span className="text-xs text-red-500">{isEn ? 'no candidate' : '无候选商品'}</span>
+                              )}
                             </td>
                             <td className="px-4 py-2.5 text-right text-gray-700">{l.quantity}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-700">{eur(l.unitCost)}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-700">{l.unitCost == null ? '—' : eur(l.unitCost)}</td>
                             <td className="px-4 py-2.5">
                               <Sparkline costs={t?.recentCosts ?? []} />
                             </td>
@@ -282,10 +401,14 @@ export default function CatalogPickingPage() {
                             <td className="px-4 py-2.5 text-center">
                               <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
                                 l.confidence === 'exact' ? 'bg-green-100 text-green-700' :
-                                l.confidence === 'fuzzy' ? 'bg-yellow-100 text-yellow-700' :
+                                l.confidence === 'strong' ? 'bg-green-50 text-green-600' :
+                                l.confidence === 'weak' ? 'bg-yellow-100 text-yellow-700' :
                                 'bg-red-100 text-red-600'
                               }`}>
-                                {l.confidence === 'exact' ? (isEn ? 'Exact' : '精确') : l.confidence === 'fuzzy' ? (isEn ? 'Fuzzy' : '模糊') : (isEn ? 'No Match' : '未匹配')}
+                                {l.confidence === 'exact' ? (isEn ? 'Exact' : '精确')
+                                  : l.confidence === 'strong' ? (isEn ? 'Strong' : '较可靠')
+                                    : l.confidence === 'weak' ? (isEn ? 'Verify' : '存疑')
+                                      : (isEn ? 'No Match' : '未匹配')}
                               </span>
                             </td>
                           </tr>

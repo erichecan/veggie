@@ -2253,20 +2253,6 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
- "POST /api/purchase-orders/import": {
-  "BOSS": "y",
-  "OPERATOR": "y",
-  "FINANCE": "n",
-  "WAREHOUSE": "n",
-  "DISPATCH": "n",
-  "SALES": "n",
-  "EXTERNAL_SALES": "n",
-  "SORTER": "n",
-  "PICKER": "n",
-  "DRIVER": "n",
-  "RESTAURANT": "n",
-  "OTHER": "n"
- },
  "GET /api/purchase-orders/last-by-group": {
   "BOSS": "y",
   "OPERATOR": "y",
@@ -2281,7 +2267,7 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
- "POST /api/purchase-orders/pdf-extract": {
+ "POST /api/purchase-orders/parse": {
   "BOSS": "y",
   "OPERATOR": "y",
   "FINANCE": "n",

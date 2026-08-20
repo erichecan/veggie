@@ -44,6 +44,23 @@ export interface PdfParseResult {
   diagnostics: PdfParseDiagnostics
   /** 人能读懂的失败原因；解析出行时为 null */
   error: string | null
+  /** 识别到的币种 ISO 码（EUR/USD/GBP/CNY…），认不出为 null */
+  currency: string | null
+  /** 命中系统里已有的供应商时给出；只是从文字里读到名字但对不上库存供应商则为 null */
+  supplierId: string | null
+  /** 从文字层读到的供应商名原文（无论是否对得上系统供应商） */
+  supplierName: string | null
+}
+
+/** 供 parsePdfLines 比对的候选供应商 */
+export interface SupplierCandidate {
+  id: string
+  name: string
+}
+
+export interface ParsePdfOptions {
+  /** 系统里已有的供应商；传了才可能返回 supplierId */
+  suppliers?: SupplierCandidate[]
 }
 
 /** 合计/税额/页脚这类不是商品的行 */
@@ -144,10 +161,86 @@ const CODE_LIKE = /\b[A-Za-z][A-Za-z0-9]{0,7}(?:-[A-Za-z0-9]+)*-\d{3,}\b/g
 const DATE_LIKE = /\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b|\b\d{1,2}:\d{2}(:\d{2})?\b/g
 
 /**
+ * 币种识别（20260819 补）。原先只有 AI 兜底才给币种，确定性解析恒返回 null，
+ * 采购每次都得手选 —— 而这件事根本不需要模型：符号与 ISO 码都是有限集。
+ *
+ * 顺序有讲究：**先认 ISO 码再认符号**。`$` 同时是 USD/CAD/AUD 的符号，
+ * 单看符号只能猜 USD；但只要单据上写了 `CAD 120.00`，就该以 ISO 码为准。
+ */
+const CURRENCY_ISO = /\b(EUR|USD|GBP|CNY|RMB|JPY|PLN|SEK|DKK|CHF|CAD|AUD|NZD|HKD|SGD)\b/i
+const CURRENCY_SYMBOL: Array<[RegExp, string]> = [
+  [/€/, 'EUR'],
+  [/£/, 'GBP'],
+  [/¥|￥/, 'CNY'],
+  [/\$/, 'USD'],
+]
+
+export function detectCurrency(rawText: string): string | null {
+  const iso = rawText.match(CURRENCY_ISO)
+  if (iso) {
+    const code = iso[1].toUpperCase()
+    return code === 'RMB' ? 'CNY' : code
+  }
+  for (const [re, code] of CURRENCY_SYMBOL) {
+    if (re.test(rawText)) return code
+  }
+  return null
+}
+
+/**
+ * 供应商识别（20260819 补）。同样不需要模型 —— 两条确定性线索就够：
+ *
+ *   1. **带标签的行**：`Supplier: X` / `Vendor: X` / `Proveedor: X` / `供应商：X`。
+ *      多语言标签是个有限集，穷举即可。
+ *   2. **系统已有供应商名直接出现在文字层里**。这条更硬 —— 它不是"猜名字"，
+ *      而是拿库里的名单去正文里找，命中即确定，还能直接给出 supplierId。
+ *
+ * ⛔ 不做「取第一行当供应商名」这类启发式。PDF 第一行常常是**客户自己**的抬头
+ *    （Johnstone Bros），猜错的代价是把采购单挂到错误的供应商上。宁可返回 null 让人选。
+ */
+const SUPPLIER_LABEL = /(?:supplier|vendor|proveedor|fournisseur|lieferant|供应商|供货商|卖方)\s*[:：]\s*(.+)/i
+
+export function detectSupplier(
+  rawText: string,
+  suppliers: SupplierCandidate[] = [],
+): { id: string | null; name: string | null } {
+  // 线索 2 优先：能对上系统里的供应商，才是真正可用的结果。
+  // 取「名字最长的那个命中」——`Asia Foods` 与 `Asia Foods Dublin` 同时出现在正文时，
+  // 更长的那个是更具体的匹配。
+  const haystack = rawText.toLowerCase()
+  let best: SupplierCandidate | null = null
+  for (const s of suppliers) {
+    const n = s.name.trim().toLowerCase()
+    // 少于 4 个字符的供应商名不参与正文扫描：太短会被正文里的任意片段命中
+    if (n.length < 4) continue
+    if (haystack.includes(n) && (!best || n.length > best.name.trim().length)) best = s
+  }
+  if (best) return { id: best.id, name: best.name }
+
+  // 线索 1：带标签的行。读到了名字但对不上系统供应商，也如实回报，
+  // 界面据此提示「识别到 X，未在系统中匹配到，请手动选择」。
+  for (const line of rawText.split(/\r?\n/)) {
+    const m = line.match(SUPPLIER_LABEL)
+    if (!m) continue
+    const raw = m[1].trim().replace(/\s{2,}/g, ' ')
+    if (raw.length < 2) continue
+    const hit = suppliers.find(s => {
+      const n = s.name.trim().toLowerCase()
+      return n.length >= 4 && (raw.toLowerCase().includes(n) || n.includes(raw.toLowerCase()))
+    })
+    return { id: hit?.id ?? null, name: hit?.name ?? raw }
+  }
+
+  return { id: null, name: null }
+}
+
+/**
  * 解析文字层。任何情况下都不会「静默返回空表」：
  * 认不出行时 error 里写明为什么、扫了多少行、跳过多少合计行。
  */
-export function parsePdfLines(rawText: string): PdfParseResult {
+export function parsePdfLines(rawText: string, options: ParsePdfOptions = {}): PdfParseResult {
+  const currency = detectCurrency(rawText ?? '')
+  const supplier = detectSupplier(rawText ?? '', options.suppliers ?? [])
   const allLines = (rawText ?? '').split(/\r?\n/).map(l => l.trimEnd())
   const nonEmpty = allLines.filter(l => l.trim().length > 0)
   const diagnostics: PdfParseDiagnostics = {
@@ -155,7 +248,10 @@ export function parsePdfLines(rawText: string): PdfParseResult {
   }
 
   if (nonEmpty.length === 0) {
-    return { lines: [], diagnostics, error: 'PDF 没有文字层（可能是扫描件），无法解析' }
+    return {
+      lines: [], diagnostics, error: 'PDF 没有文字层（可能是扫描件），无法解析',
+      currency, supplierId: supplier.id, supplierName: supplier.name,
+    }
   }
 
   // ── 策略 1：表头驱动 ────────────────────────────────────────────────────
@@ -269,8 +365,9 @@ export function parsePdfLines(rawText: string): PdfParseResult {
       // 真的没有商品，而不是「我们没解析出来」——两者要采取的行动完全不同。
       error: `未能从 PDF 文字层解析出商品行（扫描了 ${diagnostics.totalLines} 行，跳过 ${diagnostics.skippedTotals} 行合计/页脚）。`
         + '该 PDF 的表格结构可能与常见格式差异较大，请手工填单，并把这份 PDF 留给开发补规则。',
+      currency, supplierId: supplier.id, supplierName: supplier.name,
     }
   }
 
-  return { lines, diagnostics, error: null }
+  return { lines, diagnostics, error: null, currency, supplierId: supplier.id, supplierName: supplier.name }
 }

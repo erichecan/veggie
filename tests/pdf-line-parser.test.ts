@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseNumber, parsePdfLines } from '../lib/purchase/pdf-line-parser'
+import { parseNumber, parsePdfLines, detectCurrency, detectSupplier } from '../lib/purchase/pdf-line-parser'
 
 describe('数字解析（欧陆小数逗号是这里唯一真正的坑）', () => {
   test('普通小数点', () => {
@@ -226,5 +226,88 @@ describe('表头两词挤一格 / 单号干扰（都是实测撞到的）', () =
     ].join('\n'))
     assert.equal(r.lines.length, 1)
     assert.match(r.lines[0].productName, /Carrot/)
+  })
+})
+
+describe('币种识别（20260819：不再依赖 AI）', () => {
+  test('欧元符号 → EUR', () => {
+    assert.equal(detectCurrency('Total € 1.20'), 'EUR')
+  })
+
+  test('ISO 码优先于符号 —— $ 可能是 USD/CAD/AUD，写了 CAD 就以它为准', () => {
+    assert.equal(detectCurrency('Amount: CAD $120.00'), 'CAD')
+  })
+
+  test('RMB 归一到 CNY', () => {
+    assert.equal(detectCurrency('金额 RMB 800'), 'CNY')
+  })
+
+  test('认不出就是 null，不瞎猜', () => {
+    assert.equal(detectCurrency('Carrot 10 0.95'), null)
+  })
+})
+
+describe('供应商识别（20260819：不再依赖 AI）', () => {
+  const SUPPLIERS = [
+    { id: 's1', name: 'Dublin Veg Wholesale' },
+    { id: 's2', name: 'Asia Foods' },
+    { id: 's3', name: 'Asia Foods Dublin' },
+    { id: 's4', name: 'AB' },
+  ]
+
+  test('系统已有供应商名出现在正文里 → 直接给 id', () => {
+    const r = detectSupplier('Quotation from Dublin Veg Wholesale\nCarrot 10 0.95', SUPPLIERS)
+    assert.equal(r.id, 's1')
+  })
+
+  test('多个命中取名字最长的（更具体那个）', () => {
+    const r = detectSupplier('Invoice — Asia Foods Dublin Ltd', SUPPLIERS)
+    assert.equal(r.id, 's3')
+  })
+
+  test('带标签但库里没有 → 回报名字、id 为 null，让人手选', () => {
+    const r = detectSupplier('Supplier: Fresh Iberia SL', SUPPLIERS)
+    assert.equal(r.id, null)
+    assert.equal(r.name, 'Fresh Iberia SL')
+  })
+
+  test('中文标签也认', () => {
+    assert.equal(detectSupplier('供应商：山东蔬菜公司', []).name, '山东蔬菜公司')
+  })
+
+  test('⛔ 过短的供应商名不参与正文扫描，否则任意片段都能命中', () => {
+    const r = detectSupplier('Carrot ABC 10 0.95', SUPPLIERS)
+    assert.equal(r.id, null)
+  })
+
+  test('⛔ 不拿第一行当供应商 —— 那通常是客户自己的抬头', () => {
+    const r = detectSupplier('Johnstone Bros\nCarrot 10 0.95', SUPPLIERS)
+    assert.equal(r.id, null)
+    assert.equal(r.name, null)
+  })
+})
+
+describe('parsePdfLines 一并返回币种与供应商', () => {
+  test('解析成功时带上识别结果', () => {
+    const r = parsePdfLines(
+      ['Supplier: Dublin Veg Wholesale', 'QTY \tDESCRIPTION \tUNIT COST', '3 \tApple \t€2.50'].join('\n'),
+      { suppliers: [{ id: 's1', name: 'Dublin Veg Wholesale' }] },
+    )
+    assert.equal(r.currency, 'EUR')
+    assert.equal(r.supplierId, 's1')
+    assert.equal(r.lines.length, 1)
+  })
+
+  test('解析失败时也要带上（供应商/币种是独立线索，不该被行解析失败连累）', () => {
+    const r = parsePdfLines('Supplier: Fresh Iberia SL\n€ nothing parsable here')
+    assert.equal(r.lines.length, 0)
+    assert.equal(r.currency, 'EUR')
+    assert.equal(r.supplierName, 'Fresh Iberia SL')
+  })
+
+  test('空文字层也不抛错', () => {
+    const r = parsePdfLines('')
+    assert.equal(r.currency, null)
+    assert.equal(r.supplierId, null)
   })
 })
