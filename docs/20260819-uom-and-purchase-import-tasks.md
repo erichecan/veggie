@@ -73,13 +73,13 @@
 - 产出：商品档案页、`scripts/audit/`
 - 依赖：T3-1
 
-#### T3-4 下拉里默认单位重复
-- [ ] 验收：单位下拉中每个 uomId 只出现一次（现在锚点单位出现两次：一次英文 name、一次中文 nameZh）
+#### T3-4 下拉里默认单位重复 ✅ [e76cec1]
+- [x] 验收：单位下拉中每个 uomId 只出现一次（现在锚点单位出现两次：一次英文 name、一次中文 nameZh）
 - 产出：三个订单页的 UoM `<select>` 渲染
 - 依赖：无
 
-### T4 商品搜不到（tiger shrimp）
-- [ ] 验收：
+### T4 商品搜不到（tiger shrimp）✅ [e76cec1]
+- [x] 验收：
   - 商品名连续空格清洗脚本（69 个）+ 搜索时空白归一，输入单空格能匹配到双空格商品名
   - 客户报的 `ASIAN CHOICE  Black Tiger Shrimp HOSO 31/40 700g PKT` 能被搜到（前提是它不再是归档，见 T6）
 - 产出：`lib/search-rank.ts`、清洗脚本
@@ -94,8 +94,8 @@
 - 产出：`scripts/uom/extract-uoms-from-product-names.ts`、迁移或数据脚本
 - 依赖：T3-1（系数不再挂全局 Uom，提炼出来的单位才可以只有名字）
 
-### T6 商品管理页默认隐藏归档商品
-- [ ] 验收：商品列表默认只显示 ACTIVE；有显式开关可查看归档；归档商品的编辑页顶部明确提示"已归档，不会出现在下单/报价选品中"
+### T6 商品管理页默认隐藏归档商品 ✅ [e76cec1]
+- [x] 验收：商品列表默认只显示 ACTIVE；有显式开关可查看归档；归档商品的编辑页顶部明确提示"已归档，不会出现在下单/报价选品中"
 - 产出：`app/[locale]/classic/operator/products/`
 - 依赖：无
 
@@ -115,6 +115,12 @@
       - `purchase.order.import` 权限点作废（序号 137 进 retired）
       - 实测：PDF 币种 null→EUR；`Harvest Beans` 不再配成 `vest`；`Courgette` 标歧义
       - ⚠️ **catalog 页与新建页的 UI 尚未用浏览器点过**，接口层已实测
+
+- [x] **T4 + T6 + T3-4** [e76cec1] tiger shrimp 搜不到的两个根因都修了
+      - 根因① 那个商品是 ARCHIVED，下单选品只取 ACTIVE → 商品管理默认隐藏归档 + 编辑页警示条
+      - 根因② 商品名 `ASIAN CHOICE␣␣Black Tiger` 双空格 → 搜索两侧空白归一（生产 69 个受影响）
+      - 顺带修单位下拉里默认单位重复出现
+      - 浏览器实测：列表 1780→1781、警示条显示、单空格能搜到双空格商品名
 
 ### 遗留待办（本轮新发现）
 - [ ] `lib/import-parser.ts` 的 `matchProducts` 仍被 `/api/vendor-bills/import` 使用，
