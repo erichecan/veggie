@@ -27,7 +27,10 @@ type TxClient = {
     update: (args: unknown) => Promise<unknown>
   }
   productTemplate: { findUnique: (args: unknown) => Promise<{ uomId: string | null; type?: string } | null> }
-  uom: { findUnique: (args: unknown) => Promise<{ factor: unknown } | null> }
+  // 多规格换算读的是**商品级** ProductSaleUom.factor，不再是全局 Uom.factor（20260819）
+  productSaleUom: {
+    findMany: (args: unknown) => Promise<Array<{ uomId: string; isDefault: boolean; factor: unknown }>>
+  }
   stockMove: { create: (args: unknown) => Promise<unknown> }
 }
 

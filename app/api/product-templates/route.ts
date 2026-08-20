@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { validateSaleUomItems, type SaleUomItemInput } from '@/lib/sale-uom'
+import { validateSaleUomItems, normalizeFactor, type SaleUomItemInput } from '@/lib/sale-uom'
 import {
   buildProductTemplatesWhere,
   productStockAlertCounts,
@@ -93,6 +93,8 @@ export async function POST(req: Request) {
               productId: product.id,
               uomId: String(it.uomId),
               isDefault: !!it.isDefault,
+              // 基础单位对自己的换算恒为 1（见 lib/sale-uom.ts）
+              factor: it.isDefault ? 1 : normalizeFactor(it.factor),
               priceOverride: it.priceOverride != null && it.priceOverride !== '' ? Number(it.priceOverride) : null,
               active: it.active !== false,
             })),

@@ -376,12 +376,30 @@ model Product {
 }
 
 /**
- * 商品可售单位（大小单位灵活出单，20260714 新增）
+ * 商品可售单位（大小单位灵活出单，20260714 新增；20260819 换算系数改挂商品）
  * ================================================================================
- * 一个商品可以挂多个可售单位（如 CASE 整箱 + PCS 拆零），共享同一份 Product.qtyOnHand。
- * qtyOnHand 统一按该 uom 所属 UomCategory 的"基准单位"(factor=1)计数——下单选用任何
- * 一个可售单位时，都按 uom.factor 换算成基准单位数量再扣/补库存（见 lib/inventory.ts）。
- * priceOverride 留空则按"基准单价 × factor"自动换算这个单位的售价，不留空则用这个固定值。
+ * 一个商品可以挂多个可售单位（如 CASE 整箱 + PKT 拆零），共享同一份 Product.qtyOnHand。
+ *
+ * ## 换算系数为什么必须挂在**商品**上，而不是全局 Uom 上
+ *
+ * 20260819 生产库实测：`ASIAN CHOICE Black Tiger Shrimp 10*700g CASE` 与
+ * `Chuannan Pickled Vegetable 30*62g CASE` 都叫 CASE，一箱一个装 10 包、一个装 30 包。
+ * 「1 CASE 等于多少」根本不是 CASE 这个词的属性，而是**这个商品**的属性。
+ * 全局 `Uom.factor` 承担不了 —— 生产库里 Unit 类目下的 factor 干脆全是 1，
+ * 于是多规格报价形同虚设（切了单位价格不变、库存也不换算）。
+ *
+ * 所以 `factor` 落在这张表上：**1 个此单位 = factor 个基础单位**。
+ * 基础单位就是 `isDefault = true` 那一行，其 factor 恒为 1。
+ *
+ * ## 库存口径（客户 20260819 拍板）
+ *
+ * `Product.qtyOnHand` 按**基础单位**（最小可售单位）计数。
+ * 进 10 箱、每箱 10 包 → 库存记 100 包；卖 1 CASE 扣 10，卖 3 PKT 扣 3。
+ * 这样拆箱散卖不需要任何人工调账 —— 而拆成两个商品的老办法（生产库有 67 组）
+ * 必须靠人把 CASE 库存减 1、LOOSE 库存加 N，没人做，散装商品库存就长期是错的。
+ *
+ * `priceOverride` 留空则按「基础单价 × factor」自动换算，填了就用这个固定值
+ * （整箱优惠价这类场景）。
  */
 model ProductSaleUom {
   id            String   @id @default(cuid())
@@ -390,7 +408,11 @@ model ProductSaleUom {
   uomId         String
   uom           Uom      @relation(fields: [uomId], references: [id])
   /// 下单页默认选中的单位；一个商品应恰好有一个 isDefault=true（应用层保证，无数据库级约束）
+  /// 它同时是**基础单位**：库存按它计数，其 factor 恒为 1
   isDefault     Boolean  @default(false)
+  /// 1 个此单位 = factor 个基础单位。如 CASE 装 10 包则填 10；基础单位自身恒为 1。
+  /// ⛔ 不要用全局 Uom.factor —— 同名 CASE 在不同商品里箱规不同（见 model 注释）
+  factor        Decimal  @default(1) @db.Decimal(14, 6)
   priceOverride Decimal? @db.Decimal(12, 2)
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())

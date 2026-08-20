@@ -14,12 +14,15 @@ import { OrderChatter } from '@/components/order/OrderChatter'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
+import { priceOf, factorOf } from '@/lib/sale-uom'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
 import { lineDescription } from '@/lib/order-line-description'
 import { newDraftLineId, isDraftLineId, toSubmittableLines } from '@/lib/order-line-draft'
 
 const PURPLE = '#875A7B'
+
+type SaleUomOption = { uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null }
 
 interface AllProduct {
   id: string
@@ -112,6 +115,63 @@ export default function SalesOrderDetailPage() {
     apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
 
+  /** 懒加载某商品配置的可售单位；已加载过就跳过 */
+  function ensureSaleUomOptions(productId: string) {
+    if (!productId || productId in saleUomOptions) return
+    setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
+    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
+      `/api/products/${productId}/sale-uoms`,
+    )
+      .then(rows => {
+        const opts = rows.filter(r => r.active).map(r => ({
+          uomId: r.uomId,
+          uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
+          isDefault: r.isDefault,
+          factor: Number(r.factor ?? 1) || 1,
+          priceOverride: r.priceOverride,
+        }))
+        setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
+      })
+      .catch(() => setSaleUomOptions(prev => ({ ...prev, [productId]: [] })))
+  }
+
+  /**
+   * 切换某行的下单单位：按该商品自己的换算系数（或独立售价）重算单价。
+   * 不重新触发定价引擎 —— 与本页「改数量/改单价不重算」的既有行为一致，
+   * 否则用户手改过的价会被悄悄冲掉。
+   */
+  function switchLineUnit(idx: number, newUomId: string) {
+    setEditLines(prev => {
+      const line = prev[idx]
+      if (!line || !line.productId) return prev
+      const p = allProducts.find(pp => pp.id === line.productId)
+      if (!p) return prev
+      const anchorUomId = (p as { uomId?: string | null }).uomId ?? null
+      const currentUomId = line.uomId ?? anchorUomId
+      if (!currentUomId || newUomId === currentUomId) return prev
+      const opts = saleUomOptions[p.id] ?? []
+      const rows = opts.map(o => ({
+        uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+      }))
+      const nameOf = (uid: string) => uid === anchorUomId
+        ? ((p as { uomName?: string }).uomName ?? 'Unit(s)')
+        : (opts.find(o => o.uomId === uid)?.uomName ?? line.uomName)
+      const oldFactor = factorOf(rows, currentUomId)
+      const basePrice = oldFactor ? Number(line.unitPrice) / oldFactor : Number(line.unitPrice)
+      const newUnitPrice = priceOf(rows, newUomId, basePrice)
+      const qty = Number(line.orderedQty)
+      const next = [...prev]
+      next[idx] = {
+        ...line,
+        uomId: newUomId,
+        uomName: nameOf(newUomId),
+        unitPrice: newUnitPrice,
+        subtotal: Math.round(qty * newUnitPrice * 100) / 100,
+      }
+      return next
+    })
+  }
+
   type EditLine = NonNullable<Order['lines']>[number]
   const [editLines, setEditLines] = useState<EditLine[]>([])
   // 重复商品检测：同一 productId 在编辑缓冲区中出现多次（与 place-order 创建页一致）
@@ -121,6 +181,15 @@ export default function SalesOrderDetailPage() {
     return counts
   }, [editLines])
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
+  /**
+   * 多规格：商品 → 可售单位（含商品级换算系数）。
+   *
+   * ⛔ 这一块此前**只有下单页与报价单编辑页有**，销售单编辑页的 UoM 列是纯文本。
+   * 后果是：报价阶段选好的规格，一旦转成销售单就再也改不了，
+   * 在这里新加的行也只能用基础单位 —— 客户要改只能把单撤回报价单状态。
+   * 20260819 补齐，三个订单页至此口径一致。
+   */
+  const [saleUomOptions, setSaleUomOptions] = useState<Record<string, SaleUomOption[]>>({})
 
   // 本单覆盖：编辑页可临时切换 pricelist/priceType（不写回客户档案），
   // 加行询价必须用叠加后的客户对象，否则永远只按客户档案默认链定价（与 place-order 创建页一致）
@@ -358,6 +427,8 @@ export default function SalesOrderDetailPage() {
     return s + (Number(l.unitPrice) - cost) * Number(l.orderedQty)
   }, 0)
   async function selectProductIntoLine(lineId: string, p: AllProduct) {
+    // 新选的商品也要把可售单位拉起来，否则这一行的 UoM 下拉不出现
+    ensureSaleUomOptions(p.id)
     // priceType='default' 的定价链从不查最近成交价，跳过这次查询
     let lastPriceHit: { price: number; date: string } | undefined
     if (customer && priceType !== 'default') {
@@ -464,6 +535,8 @@ export default function SalesOrderDetailPage() {
                   ...l,
                   subtotal: Math.round(Number(l.orderedQty) * Number(l.unitPrice) * 100) / 100,
                 })))
+                // 现有行涉及的商品先把可售单位拉起来，否则 UoM 下拉一进编辑态是空的
+                for (const l of lines) if (l.productId) ensureSaleUomOptions(l.productId)
                 setEditing(true)
               }} disabled={isLocked}
                 className="h-8 px-4 text-sm rounded text-white font-medium disabled:opacity-50"
@@ -803,7 +876,32 @@ export default function SalesOrderDetailPage() {
                     <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
                     <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
                     <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
-                    <td className="px-2 py-2 text-gray-600">{l.uomName ?? 'Unit(s)'}</td>
+                    <td className="px-2 py-2 text-gray-600">
+                      {editing && l.productId && (saleUomOptions[l.productId]?.length ?? 0) > 0 ? (
+                        (() => {
+                          const p = allProducts.find(pp => pp.id === l.productId)
+                          const anchorUomId = (p as { uomId?: string | null } | undefined)?.uomId ?? null
+                          return (
+                            <select
+                              value={l.uomId ?? anchorUomId ?? ''}
+                              onChange={e => switchLineUnit(i, e.target.value)}
+                              onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
+                              className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                            >
+                              {anchorUomId && (
+                                <option value={anchorUomId}>{(p as { uomName?: string } | undefined)?.uomName ?? 'Unit(s)'}</option>
+                              )}
+                              {/* 排除锚点，否则默认单位在下拉里出现两次 */}
+                              {(saleUomOptions[l.productId] ?? [])
+                                .filter(o => o.uomId !== anchorUomId)
+                                .map(o => (
+                                  <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
+                                ))}
+                            </select>
+                          )
+                        })()
+                      ) : (l.uomName ?? 'Unit(s)')}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.01" min="0" className={inputCls}

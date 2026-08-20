@@ -3,6 +3,7 @@
  * 销售代客下单页（经典版 — Odoo Sales Quotation 1:1 还原）
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { priceOf } from '@/lib/sale-uom'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
@@ -56,6 +57,7 @@ type QuotationLine = {
 type SaleUomOption = {
   uomId: string
   uomName: string
+  isDefault?: boolean
   factor: number
   priceOverride: number | null
 }
@@ -269,9 +271,9 @@ export default function ClassicPlaceOrderPage() {
   // 完整客户对象（含 specialPrices），在选中客户后懒加载
   const [selectedCustomerFull, setSelectedCustomerFull] = useState<Customer | null>(null)
 
-  // 多单位销售(20260714 试点)：uomId → factor，用于按换算系数重算单价；
-  // saleUomOptions 按 productId 懒加载该商品配置的"额外可售单位"(不含默认/基准单位本身)
-  const [uomFactors, setUomFactors] = useState<Record<string, number>>({})
+  // 多规格销售：saleUomOptions 按 productId 懒加载该商品配置的可售单位（含换算系数）。
+  // ⛔ 这里**不再**缓存全局 Uom.factor —— 换算系数是商品的属性不是单位的属性
+  //    （同名 CASE 在不同商品里箱规不同），留着那份缓存只会让人误用。
   const [saleUomOptions, setSaleUomOptions] = useState<Record<string, SaleUomOption[]>>({})
 
   // ── Quotation header ──────────────────────────────────────────────────────
@@ -443,15 +445,13 @@ export default function ClassicPlaceOrderPage() {
       // role=SALES: 服务端过滤，只拉销售人员
       apiGet<{ id: string; name: string; role: string; roles?: string[] }[]>('/api/users?role=SALES').catch(() => []),
       apiGet<Record<string, number>>('/api/products/pending-demand').catch(() => ({})),
-      apiGet<Array<{ id: string; factor: number }>>('/api/uoms').catch(() => []),
     ])
-      .then(([cs, ps, pls, us, pd, uomList]) => {
+      .then(([cs, ps, pls, us, pd]) => {
         setCustomers(cs.filter(c => c.isActive !== false))
         setProducts(ps)
         setPricelists(pls)
         setSalesUsers(us)
         setPendingDemand(pd)
-        setUomFactors(Object.fromEntries(uomList.map(u => [u.id, Number(u.factor) || 1])))
       })
       .catch(() => toast.error(isEn ? 'Failed to load data' : '加载数据失败'))
       .finally(() => setLoading(false))
@@ -592,13 +592,22 @@ export default function ClassicPlaceOrderPage() {
   function ensureSaleUomOptions(productId: string) {
     if (productId in saleUomOptions) return
     setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    apiGet<Array<{ uomId: string; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null; factor: number } }>>(
+    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
+        // ⛔ factor 取的是 **ProductSaleUom.factor**（这个商品自己的箱规），
+        //    不是全局 uom.factor —— 后者在生产库 Unit 类目下全是 1，
+        //    切了单位价格纹丝不动，多规格等于没做（20260819 实测）。
         const opts = rows
           .filter(r => r.active)
-          .map(r => ({ uomId: r.uomId, uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name), factor: Number(r.uom.factor) || 1, priceOverride: r.priceOverride }))
+          .map(r => ({
+            uomId: r.uomId,
+            uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
+            isDefault: r.isDefault,
+            factor: Number(r.factor ?? 1) || 1,
+            priceOverride: r.priceOverride,
+          }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
       .catch(() => setSaleUomOptions(prev => ({ ...prev, [productId]: [] })))
@@ -621,16 +630,13 @@ export default function ClassicPlaceOrderPage() {
       : res?.sourceType === 'last'
         ? lastPriceDates[p.id]
         : undefined
-    const anchorUomId = p.uomId
-    if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) {
-      return { unitPrice: basePrice, priceLabel, priceLabelDetail }
-    }
-    const opt = (saleUomOptions[p.id] ?? []).find(o => o.uomId === lineUomId)
-    if (!opt) return { unitPrice: basePrice, priceLabel, priceLabelDetail }
-    if (opt.priceOverride != null) return { unitPrice: opt.priceOverride, priceLabel, priceLabelDetail }
-    const anchorFactor = uomFactors[anchorUomId] ?? 1
-    const unitPrice = anchorFactor ? basePrice * (opt.factor / anchorFactor) : basePrice
-    return { unitPrice, priceLabel, priceLabelDetail }
+    // 单价 = 基础单价 × 本行单位的换算系数（有独立售价则用独立售价）。
+    // 系数取自 ProductSaleUom（这个商品自己的箱规），换算口径与库存扣减
+    // (lib/inventory.ts:toStockQty) 共用 lib/sale-uom.ts，不会两边算得不一样。
+    const rows = (saleUomOptions[p.id] ?? []).map(o => ({
+      uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+    }))
+    return { unitPrice: priceOf(rows, lineUomId, basePrice), priceLabel, priceLabelDetail }
   }
 
   // 切换某行的下单单位：按换算系数(或该单位的独立售价)重算单价

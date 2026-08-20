@@ -74,6 +74,8 @@ const TYPE_LABEL: Record<string, string> = { product: 'Storable Product', consu:
 interface SaleUomRow {
   uomId: string
   isDefault: boolean
+  /** 1 个此单位 = factor 个基础单位（基础单位自身恒为 1） */
+  factor: number
   priceOverride: number | null
   active: boolean
 }
@@ -167,8 +169,8 @@ export default function ClassicProductDetailPage() {
           setPrimaryProductId(primaryId)
           if (primaryId) {
             try {
-              const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; priceOverride: number | null; active: boolean }>>(`/api/products/${primaryId}/sale-uoms`)
-              setSaleUoms(rows.map(r => ({ uomId: r.uomId, isDefault: r.isDefault, priceOverride: r.priceOverride, active: r.active })))
+              const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean }>>(`/api/products/${primaryId}/sale-uoms`)
+              setSaleUoms(rows.map(r => ({ uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active })))
             } catch { setSaleUoms([]) }
           }
         } catch { /* ignore */ }
@@ -216,10 +218,11 @@ export default function ClassicProductDetailPage() {
     const used = new Set(saleUoms.map(r => r.uomId))
     const candidate = uoms.find(u => !used.has(u.id) && (!tmpl?.uomId || u.categoryId === uoms.find(x => x.id === tmpl.uomId)?.categoryId))
     if (!candidate) { toast.error(isEn ? 'No more units available in this category' : '该计量类别下已没有可选的单位了'); return }
-    setSaleUoms(prev => [...prev, { uomId: candidate.id, isDefault: prev.length === 0, priceOverride: null, active: true }])
+    setSaleUoms(prev => [...prev, { uomId: candidate.id, isDefault: prev.length === 0, factor: 1, priceOverride: null, active: true }])
   }
   function updateSaleUomRow(index: number, patch: Partial<SaleUomRow>) {
     setSaleUoms(prev => prev.map((r, i) => {
+      // 被设为默认的那一行就是基础单位，系数必须归 1，否则「1 包 = 2 包」库存立刻算错
       if (i !== index) return patch.isDefault ? { ...r, isDefault: false } : r
       return { ...r, ...patch }
     }))
@@ -242,11 +245,11 @@ export default function ClassicProductDetailPage() {
     }
     setSaleUomsSaving(true)
     try {
-      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; priceOverride: number | null; active: boolean }>>(
+      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean }>>(
         `/api/products/${primaryProductId}/sale-uoms`,
         { items: saleUoms },
       )
-      setSaleUoms(rows.map(r => ({ uomId: r.uomId, isDefault: r.isDefault, priceOverride: r.priceOverride, active: r.active })))
+      setSaleUoms(rows.map(r => ({ uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active })))
       toast.success(isEn ? 'Sellable units saved' : '可售单位已保存')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -579,18 +582,18 @@ export default function ClassicProductDetailPage() {
             <Section title={isEn ? 'Sellable Units (multi-UoM pilot)' : '可售单位（多单位销售试点）'}>
               <p className="text-xs text-gray-400 mb-3 max-w-3xl">
                 {isEn
-                  ? 'Configure additional units this product can be ordered in (e.g. sell by case as well as by piece). Quantities auto-convert to the base unit above for stock; leave price blank to auto-scale from the base sales price by the unit factor.'
-                  : '配置这个商品还能按哪些单位下单（如既能按箱、也能按个）。库存按上方"计量单位"自动换算；独立售价留空则按换算系数自动从基准销售价折算。'}
+                  ? 'Configure the units this product can be sold in. The unit marked "Base" is what stock is counted in — set each other unit\'s factor to how many base units it contains (e.g. a case of 10 packets → 10). Leave the price blank to auto-scale from the base price by that factor.'
+                  : '配置这个商品能按哪些单位卖。标为「基础」的那个单位就是库存的计数单位 —— 其余每个单位填「1 个它等于多少个基础单位」（如一箱装 10 包就填 10）。独立售价留空则按系数自动折算。'}
               </p>
               <div className="max-w-3xl space-y-2">
                 {saleUoms.map((row, i) => {
-                  const anchorCategoryId = uoms.find(u => u.id === tmpl.uomId)?.categoryId
-                  const options = uoms.filter(u => u.id === row.uomId || (!anchorCategoryId || u.categoryId === anchorCategoryId))
-                  const uomInfo = uoms.find(u => u.id === row.uomId)
-                  const anchorInfo = uoms.find(u => u.id === tmpl.uomId)
-                  const autoPrice = uomInfo && anchorInfo && anchorInfo.factor
-                    ? tmpl.listPrice * ((uomInfo.factor ?? 1) / anchorInfo.factor)
-                    : null
+                  // ⛔ 单位不再按类目限制：`10*700g CASE` 的基础单位是 PKT（Unit 类目），
+                  //    而它也按 KG 卖（Weight 类目）—— 跨类目在真实业务里就是常态，
+                  //    因为换算系数现在是这个商品自己的，不依赖全局类目体系。
+                  const options = uoms
+                  // 自动价按**本行的** factor 折算，不再读全局 Uom.factor
+                  //（同名 CASE 在不同商品里箱规不同，全局系数必然算错）
+                  const autoPrice = row.isDefault ? tmpl.listPrice : tmpl.listPrice * (row.factor || 1)
                   return (
                     <div key={i} className="flex items-center gap-2">
                       <select
@@ -611,8 +614,24 @@ export default function ClassicProductDetailPage() {
                           readOnly={!editMode}
                           style={{ accentColor: '#875A7B' }}
                         />
-                        {isEn ? 'Default' : '默认'}
+                        {isEn ? 'Base' : '基础'}
                       </label>
+                      {/* 换算系数：基础单位恒为 1 且不可改 —— 它是库存的计数尺子 */}
+                      <div className="flex items-center border border-gray-300 rounded h-8 overflow-hidden bg-white" style={{ width: 190 }}>
+                        <span className="px-2 text-xs text-gray-500 border-r border-gray-200 h-full flex items-center bg-gray-50 whitespace-nowrap">
+                          {isEn ? '= base ×' : '= 基础 ×'}
+                        </span>
+                        <NumericInput
+                          step="0.000001" min={0}
+                          value={row.isDefault ? 1 : (row.factor ?? 1)}
+                          onChange={e => updateSaleUomRow(i, { factor: e.target.value === '' ? 1 : Number(e.target.value) })}
+                          disabled={!editMode || row.isDefault}
+                          title={isEn
+                            ? 'How many base units one of this unit contains (a case of 10 packets → 10)'
+                            : '1 个此单位等于多少个基础单位（一箱装 10 包就填 10）'}
+                          className="flex-1 h-full px-2 text-sm outline-none min-w-0 disabled:bg-gray-50 disabled:text-gray-400"
+                        />
+                      </div>
                       <div className="flex items-center border border-gray-300 rounded h-8 overflow-hidden bg-white" style={{ width: 160 }}>
                         <span className="px-2 text-xs text-gray-500 border-r border-gray-200 h-full flex items-center bg-gray-50 whitespace-nowrap">€</span>
                         <NumericInput

@@ -1,5 +1,6 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { priceOf, factorOf } from '@/lib/sale-uom'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -36,7 +37,7 @@ interface AllProduct {
 }
 
 // 多单位销售(20260714 试点)：商品挂的额外可售单位，与 place-order 创建页同构
-type SaleUomOption = { uomId: string; uomName: string; factor: number; priceOverride: number | null }
+type SaleUomOption = { uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null }
 
 interface CreditInfo {
   outstandingBalance: number
@@ -107,7 +108,6 @@ export default function QuotationDetailPage() {
     : null,
   [customer, priceType, pricelistId])
   // 多单位销售(20260714 试点)：全局单位 factor 表 + 按商品懒加载的额外可售单位
-  const [uomFactors, setUomFactors] = useState<Record<string, number>>({})
   const [saleUomOptions, setSaleUomOptions] = useState<Record<string, SaleUomOption[]>>({})
   const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
   const [session, setSession] = useState<UserSession | null>(null)
@@ -161,9 +161,6 @@ export default function QuotationDetailPage() {
 
   useEffect(() => {
     apiGet<AllProduct[]>('/api/products?limit=500&sellable=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
-    apiGet<Array<{ id: string; factor: number }>>('/api/uoms')
-      .then(uomList => setUomFactors(Object.fromEntries(uomList.map(u => [u.id, Number(u.factor) || 1]))))
-      .catch(() => {})
     apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
   }, [])
 
@@ -179,13 +176,20 @@ export default function QuotationDetailPage() {
   function ensureSaleUomOptions(productId: string) {
     if (!productId || productId in saleUomOptions) return
     setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    apiGet<Array<{ uomId: string; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null; factor: number } }>>(
+    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
+        // factor 取 ProductSaleUom.factor（这个商品自己的箱规），不是全局 uom.factor
         const opts = rows
           .filter(r => r.active)
-          .map(r => ({ uomId: r.uomId, uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name), factor: Number(r.uom.factor) || 1, priceOverride: r.priceOverride }))
+          .map(r => ({
+            uomId: r.uomId,
+            uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
+            isDefault: r.isDefault,
+            factor: Number(r.factor ?? 1) || 1,
+            priceOverride: r.priceOverride,
+          }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
       .catch(() => setSaleUomOptions(prev => ({ ...prev, [productId]: [] })))
@@ -203,22 +207,18 @@ export default function QuotationDetailPage() {
       const currentUomId = line.uomId ?? anchorUomId
       if (!currentUomId || newUomId === currentUomId) return prev
       const opts = saleUomOptions[p.id] ?? []
-      const factorOf = (uid: string | undefined) => {
-        if (!uid) return 1
-        if (uid === anchorUomId) return uomFactors[uid] ?? 1
-        return opts.find(o => o.uomId === uid)?.factor ?? uomFactors[uid] ?? 1
-      }
-      const nameOf = (uid: string) => uid === anchorUomId ? (p.uomName ?? 'Unit(s)') : (opts.find(o => o.uomId === uid)?.uomName ?? line.uomName)
-      const targetOpt = newUomId !== anchorUomId ? opts.find(o => o.uomId === newUomId) : undefined
-      let newUnitPrice: number
-      if (targetOpt?.priceOverride != null) {
-        newUnitPrice = targetOpt.priceOverride
-      } else {
-        const oldFactor = factorOf(currentUomId)
-        const newFactor = factorOf(newUomId)
-        newUnitPrice = oldFactor ? Number(line.unitPrice) * (newFactor / oldFactor) : Number(line.unitPrice)
-      }
-      newUnitPrice = Math.round(newUnitPrice * 100) / 100
+      const rows = opts.map(o => ({
+        uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+      }))
+      const nameOf = (uid: string) => uid === anchorUomId
+        ? (p.uomName ?? 'Unit(s)')
+        : (opts.find(o => o.uomId === uid)?.uomName ?? line.uomName)
+      // 从当前行价倒推基础单价，再按新单位折算 —— 这样用户手改过的单价不会被定价引擎冲掉，
+      // 与本页"改数量/改单价不触发定价引擎重算"的既有行为一致。
+      // 换算与库存扣减共用 lib/sale-uom.ts，两边不会算得不一样。
+      const oldFactor = factorOf(rows, currentUomId)
+      const basePrice = oldFactor ? Number(line.unitPrice) / oldFactor : Number(line.unitPrice)
+      const newUnitPrice = priceOf(rows, newUomId, basePrice)
       const qty = Number(line.orderedQty)
       const next = [...prev]
       next[idx] = {
