@@ -880,7 +880,7 @@ export default function QuotationDetailPage() {
                 search: isEn ? 'Search product…' : '搜索商品…',
               }}
               onReady={handleEditorReady}
-              emptyColSpan={17}
+              emptyColSpan={16}
               rowStyle={(l) => {
                 if (!editing || !l.productId) return undefined
                 const fc = forecastMap.get(l.productId)
@@ -897,18 +897,17 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
-                  <th className="px-2 py-3 text-left">Note</th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
                   <th className="px-2 py-3 text-right">Cost</th>
                   <th className="px-2 py-3 text-center">Price</th>
                   <th className="px-2 py-3 text-center">Taxes</th>
                   <th className="px-2 py-3 text-right">Total</th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
                 </tr>
               )}
               renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef, productCell }) => {
@@ -960,18 +959,6 @@ export default function QuotationDetailPage() {
                         />
                       ) : (l.spec || '')}
                     </td>
-                    <td className="px-2 py-2 text-gray-600 text-xs">
-                      {editing ? (
-                        <input
-                          type="text"
-                          placeholder={isEn ? 'Note…' : '备注…'}
-                          className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24 placeholder:text-gray-300"
-                          value={l.note ?? ''}
-                          onChange={e => updateLine(i, 'note', e.target.value)}
-                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
-                        />
-                      ) : (l.note || '')}
-                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}
@@ -982,10 +969,6 @@ export default function QuotationDetailPage() {
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.orderedQty).toFixed(2)}
                     </td>
-                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
-                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
-                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
                     <td className="px-2 py-2 text-gray-600">
                       {editing && l.productId && (saleUomOptions[l.productId]?.length ?? 0) > 0 ? (
                         (() => {
@@ -1059,6 +1042,10 @@ export default function QuotationDetailPage() {
                       ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                     </td>
                     <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
+                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
+                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
                   </>
                 )
               }}
