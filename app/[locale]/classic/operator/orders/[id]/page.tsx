@@ -94,6 +94,7 @@ export default function SalesOrderDetailPage() {
       activatePickerRef.current = api.activateProductPicker
     }, [])
   const [printing, setPrinting] = useState(false)
+  const [printingDelivery, setPrintingDelivery] = useState(false)
   const [sendEmailOpen, setSendEmailOpen] = useState(false)
   const [internalNote, setInternalNote] = useState('')
   const [externalNote, setExternalNote] = useState('')
@@ -109,6 +110,7 @@ export default function SalesOrderDetailPage() {
   const [driverSlotId, setDriverSlotId] = useState('')
   const [pricelistId, setPricelistId] = useState('')
   const [priceType, setPriceType] = useState('multi')
+  const [paymentTerm, setPaymentTerm] = useState('')
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
 
   useEffect(() => {
@@ -216,6 +218,7 @@ export default function SalesOrderDetailPage() {
         ?? (ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
       setPricelistId(ord.pricelistId ?? '')
       setPriceType((ord as unknown as { priceType?: string }).priceType ?? 'multi')
+      setPaymentTerm((ord as unknown as { paymentTerm?: string }).paymentTerm ?? '')
 
       // 首屏只依赖订单本身:拿到订单即渲染,客户/价格表异步补(不再为一条订单 await 全量客户表)
       if (ord.restaurantId) {
@@ -277,8 +280,10 @@ export default function SalesOrderDetailPage() {
   async function handleSave() {
     if (!order) return
     try {
-      const newTotalAmount = editLines.length > 0
-        ? Math.round(editLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
+      // 误按 Enter 多出的空行（没选商品）直接丢弃，不提交也不再提示——客户反馈过这类空行会挡住保存
+      const validLines = editLines.filter(l => l.productId)
+      const newTotalAmount = validLines.length > 0
+        ? Math.round(validLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
         : undefined
       const slot = driverSlots.find(s => s.id === driverSlotId)
       const batchStr = slot ? `${slot.batchNum} ${slot.timeOfDay} ${slot.driverName}` : deliveryBatch
@@ -287,8 +292,9 @@ export default function SalesOrderDetailPage() {
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
         deliveryBatch: batchStr, driverSlotId: driverSlotId || null,
         pricelistId: pricelistId || null, priceType,
+        paymentTerm: paymentTerm || null,
         // 草稿 id 只在前端存活；带着它提交，后端会拿不存在的 id 去 update（见 lib/order-line-draft.ts）
-        ...(editLines.length > 0 && { lines: toSubmittableLines(editLines), totalAmount: newTotalAmount }),
+        ...(validLines.length > 0 && { lines: toSubmittableLines(validLines), totalAmount: newTotalAmount }),
       })
       toast.success(isEn ? 'Saved' : '已保存')
       // 定价引擎对价格另有说法时必须说出来。此前接口一直返回 pricingWarnings，
@@ -344,6 +350,20 @@ export default function SalesOrderDetailPage() {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     } finally {
       setPrinting(false)
+    }
+    load().catch(() => {})
+  }
+
+  async function handlePrintDelivery() {
+    if (!order || printingDelivery) return
+    setPrintingDelivery(true)
+    try {
+      await apiPost(`/api/orders/${order.id}/mark-printed`, { type: 'DELIVERY' })
+      window.open(`${prefix}/classic/print/${order.id}?doc=delivery`, '_blank', 'noopener,noreferrer')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
+    } finally {
+      setPrintingDelivery(false)
     }
     load().catch(() => {})
   }
@@ -703,9 +723,13 @@ export default function SalesOrderDetailPage() {
                   </select>
                 ) : <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>}
               </div>
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Payment Terms</div>
-                <div className="text-gray-800">{customer?.paymentTerm ?? '—'}</div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Payment Terms</div>
+                {editing ? (
+                  <input type="text" value={paymentTerm} onChange={e => setPaymentTerm(e.target.value)}
+                    placeholder={customer?.paymentTerm ?? ''}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                ) : <div className="text-gray-800">{(order as unknown as { paymentTerm?: string })?.paymentTerm ?? customer?.paymentTerm ?? '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>
@@ -779,7 +803,7 @@ export default function SalesOrderDetailPage() {
               lines={displayLines}
               editing={editing}
               onDeleteLine={(_lineId, i) => deleteLine(i)}
-              emptyColSpan={17}
+              emptyColSpan={16}
               products={allProducts}
               onPickProduct={selectProductIntoLine}
               onPickByEnter={() => addBlankLine({ force: true })}
@@ -797,18 +821,17 @@ export default function SalesOrderDetailPage() {
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
-                  <th className="px-2 py-3 text-left">Note</th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
-                  <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
                   <th className="px-2 py-3 text-right">Cost</th>
                   <th className="px-2 py-3 text-center">Price</th>
                   <th className="px-2 py-3 text-center">Taxes</th>
                   <th className="px-2 py-3 text-right">Total</th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Forecast<br/>Quantity</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Quantity<br/>On Hand</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Delivered<br/>Quantity</div></th>
+                  <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
                 </tr>
               )}
               renderRow={(l, i, { inputCls, deleteButton, focusSearch, firstFieldRef, productCell }) => {
@@ -850,18 +873,6 @@ export default function SalesOrderDetailPage() {
                         />
                       ) : (l.spec || '')}
                     </td>
-                    <td className="px-2 py-2 text-gray-600 text-xs">
-                      {editing ? (
-                        <input
-                          type="text"
-                          placeholder={isEn ? 'Note…' : '备注…'}
-                          className="border border-amber-400 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24 placeholder:text-gray-300"
-                          value={l.note ?? ''}
-                          onChange={e => updateLine(i, 'note', e.target.value)}
-                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
-                        />
-                      ) : (l.note || '')}
-                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}
@@ -872,10 +883,6 @@ export default function SalesOrderDetailPage() {
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.orderedQty).toFixed(2)}
                     </td>
-                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
-                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
-                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
                     <td className="px-2 py-2 text-gray-600">
                       {editing && l.productId && (saleUomOptions[l.productId]?.length ?? 0) > 0 ? (
                         (() => {
@@ -949,6 +956,10 @@ export default function SalesOrderDetailPage() {
                       ) : <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{taxPct}</span>}
                     </td>
                     <td className="px-2 py-2 text-right font-bold" style={{ color: PURPLE }}>€ {Number(l.subtotal).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-emerald-700">{fc ? Number(fc.forecast).toFixed(2) : '—'}</td>
+                    <td className="px-2 py-2 text-right">{fc ? Number(fc.qtyOnHand).toFixed(2) : '—'}</td>
+                    <td className="px-2 py-2 text-right text-blue-700">{Number(l.deliveredQty).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-purple-700">{Number(l.invoicedQty).toFixed(2)}</td>
                   </>
                 )
               }}
@@ -987,7 +998,16 @@ export default function SalesOrderDetailPage() {
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#714b67]/40 resize-y"
               />
             </div>
-            <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+            <div className="px-5 py-4 border-t border-gray-200 flex justify-between gap-2">
+              <button
+                onClick={handlePrintDelivery}
+                disabled={printingDelivery}
+                title={isEn ? 'Print the delivery note without price/amount' : '打印送货单，不含单价和金额'}
+                className="px-4 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-40"
+              >
+                {printingDelivery ? (isEn ? 'Printing…' : '打印中…') : (isEn ? '🖨️ Print Delivery Note' : '🖨️ 打印送货单')}
+              </button>
+              <div className="flex gap-2">
               <button
                 onClick={() => setShowDeliveryNoteModal(false)}
                 disabled={savingDeliveryNote}
@@ -1002,6 +1022,7 @@ export default function SalesOrderDetailPage() {
               >
                 {savingDeliveryNote ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}
               </button>
+              </div>
             </div>
           </div>
         </div>

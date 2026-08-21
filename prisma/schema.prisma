@@ -674,6 +674,8 @@ model Order {
   pricelistId           String?
   /// 下单时快照客户的定价模式（multi/default/last）
   priceType             String?
+  /// 订单级付款条件覆盖（如 monthly / cod），为空则沿用客户 Customer.paymentTerm 默认设置
+  paymentTerm           String?
   /// 下单时快照司机佣金率（commissionRate）
   commissionRate        Decimal?      @db.Decimal(6, 4)
   /// 内部备注（仅内部可见，不打印在客户单据上）

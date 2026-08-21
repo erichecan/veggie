@@ -89,6 +89,7 @@ export default function QuotationDetailPage() {
   const [driverSlotId, setDriverSlotId] = useState('')
   const [pricelistId, setPricelistId] = useState('')
   const [priceType, setPriceType] = useState('multi')
+  const [paymentTerm, setPaymentTerm] = useState('')
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
   useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
 
@@ -126,6 +127,7 @@ export default function QuotationDetailPage() {
       setDriverSlotId((ord as unknown as { driverSlotId?: string }).driverSlotId ?? '')
       setPricelistId(ord.pricelistId ?? '')
       setPriceType((ord as unknown as { priceType?: string }).priceType ?? 'multi')
+      setPaymentTerm((ord as unknown as { paymentTerm?: string }).paymentTerm ?? '')
 
       const [cs, pls] = await Promise.all([
         apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
@@ -278,9 +280,11 @@ export default function QuotationDetailPage() {
   async function handleSave() {
     if (!order) return
     try {
-      const newTotalAmount = Math.round(editLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
+      // 误按 Enter 多出的空行（没选商品）直接丢弃，不提交也不再提示——客户反馈过这类空行会挡住保存
+      const validLines = editLines.filter(l => l.productId)
+      const newTotalAmount = Math.round(validLines.reduce((s, l) => s + Number(l.subtotal), 0) * 100) / 100
       // 草稿 id 只在前端存活；带着它提交，后端会拿不存在的 id 去 update（见 lib/order-line-draft.ts）
-      const orderedLines = toSubmittableLines(editLines)
+      const orderedLines = toSubmittableLines(validLines)
       const saved = await apiPut<{ pricingWarnings?: string[] }>(`/api/orders/${order.id}`, {
         internalNote, externalNote: externalNote || null, salesUserId: salesUserId || null,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
@@ -288,6 +292,7 @@ export default function QuotationDetailPage() {
         deliveryBatch: driverSlotId ? (() => { const s = driverSlots.find(x => x.id === driverSlotId); return s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : deliveryBatch })() : deliveryBatch,
         pricelistId: pricelistId || null,
         priceType,
+        paymentTerm: paymentTerm || null,
         lines: orderedLines,
         totalAmount: newTotalAmount,
       })
@@ -744,9 +749,13 @@ export default function QuotationDetailPage() {
                   </select>
                 ) : <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>}
               </div>
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Payment Terms</div>
-                <div className="text-gray-800">{customer?.paymentTerm ?? '—'}</div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Payment Terms</div>
+                {editing ? (
+                  <input type="text" value={paymentTerm} onChange={e => setPaymentTerm(e.target.value)}
+                    placeholder={customer?.paymentTerm ?? ''}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                ) : <div className="text-gray-800">{(order as unknown as { paymentTerm?: string })?.paymentTerm ?? customer?.paymentTerm ?? '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>

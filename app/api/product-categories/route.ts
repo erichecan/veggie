@@ -2,15 +2,18 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { withCachedGet } from '@/lib/http-cache'
 
-export async function GET() {
-  try {
-    const cats = await prisma.productCategory.findMany({ orderBy: { name: 'asc' } })
-    return NextResponse.json(serializeApi(cats))
-  } catch (error) {
-    console.error('[GET /api/product-categories]', error)
-    return NextResponse.json({ error: '获取分类失败' }, { status: 500 })
-  }
+export async function GET(req: Request) {
+  return withCachedGet(req, async () => {
+    try {
+      const cats = await prisma.productCategory.findMany({ orderBy: { name: 'asc' } })
+      return NextResponse.json(serializeApi(cats))
+    } catch (error) {
+      console.error('[GET /api/product-categories]', error)
+      return NextResponse.json({ error: '获取分类失败' }, { status: 500 })
+    }
+  })
 }
 
 export async function POST(req: Request) {

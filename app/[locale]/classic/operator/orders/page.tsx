@@ -572,7 +572,12 @@ export default function ClassicOrdersPage() {
         onPageSizeChange={setPageSize}
       />
 
-      <div className="overflow-auto">
+      <div className="overflow-auto relative">
+        {loading && sorted.length > 0 && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-20">
+            <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
+          </div>
+        )}
         <table className="w-full text-sm border-collapse bg-white">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-600" style={{ background: '#f9f9f9' }}>
@@ -586,7 +591,7 @@ export default function ClassicOrdersPage() {
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
                   { field: 'restaurantName',label: 'Customer',          right: false },
                   { field: 'deliveryBatch', label: isEn ? 'Driver' : '司机', right: false },
-                  { field: 'totalAmount',   label: 'Total',             right: true  },
+                  { field: 'totalAmount',   label: 'Untaxed\nTotal',    right: true  },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: null,            label: isEn ? 'Internal\nNotes' : '内部\n备注', right: false },
                   { field: 'salesman',      label: 'Salesperson',       right: false },
@@ -616,13 +621,13 @@ export default function ClassicOrdersPage() {
             {showFiltersBar && filterRow()}
           </thead>
           <tbody>
-            {loading && (
+            {loading && sorted.length === 0 && (
               <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && sorted.length === 0 && (
               <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
             )}
-            {!loading && sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
+            {sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>
         </table>
       </div>

@@ -18,7 +18,7 @@ import { resolveOrderLines } from '@/lib/server-pricing'
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
   'confirmationDate', 'deliveryDate', 'invoiceDate', 'quotationDate',
-  'internalNote', 'externalNote', 'deliveryNote', 'pricelistId', 'priceType', 'restaurantName',
+  'internalNote', 'externalNote', 'deliveryNote', 'pricelistId', 'priceType', 'paymentTerm', 'restaurantName',
   'driverSlotId', 'deliveryBatch',
 ]
 
@@ -107,7 +107,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
 
       // Strip non-schema fields before passing to Prisma
-      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, deliveryNote, status, paymentMethod, salesUserId, deliveryBatch, driverSlotId, pricelistId, priceType, lines: linesPayload, totalAmount: totalAmountPayload } = data
+      const { confirmationDate, deliveryDate, invoiceDate, quotationDate, internalNote, externalNote, deliveryNote, status, paymentMethod, salesUserId, deliveryBatch, driverSlotId, pricelistId, priceType, paymentTerm, lines: linesPayload, totalAmount: totalAmountPayload } = data
 
       // Determine new status
       const newStatus = status ? String(status).toUpperCase() : undefined
@@ -204,6 +204,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
         updateData.priceType = pt
       }
+      if (paymentTerm !== undefined) updateData.paymentTerm = paymentTerm ? String(paymentTerm) : null
 
       // Auto-set confirmationDate when confirming
       if (newStatus === 'CONFIRMED' && !confirmationDate) {

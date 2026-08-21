@@ -22,23 +22,28 @@ import { createPurchaseOrder } from '@/lib/create-purchase-order'
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const supplierId = searchParams.get('supplierId')
-    const status = searchParams.get('status')?.toUpperCase()
-    // 上限从 500 提到 5000：采购单量远小于销售单，之前的 500 上限在"全部"视图里会随采购单
-    // 增多悄悄丢掉更早的历史数据（正确性问题，不只是性能问题），见 docs/20260717-odoo-single-source-migration-plan.md 第四节
-    const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') ?? '200', 10)))
+    // 之前这里只有 take，没有 skip/count —— 列表页(purchases/page.tsx)传的 offset 被静默
+    // 无视，翻页永远拿到同一批最新的 limit 条，totalPages 也是按"返回了多少条"算的假值。
+    // 上限从 500→5000 那次是拿"一次性多拿点"顶替"全部"视图的真分页；现在有了真分页(skip+count)，
+    // 这个顶替不再需要，单页上限收回到合理值。
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? '200', 10)))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') ?? '0', 10))
 
     // 筛选口径抽在 lib/purchase-orders-query.ts，导出路由用同一个函数
     const where = await buildPurchaseOrdersWhere(searchParams)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p = prisma as any
-    const rows = await p.purchaseOrder.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      include: { lines: true },
-    })
+    const [rows, total] = await Promise.all([
+      p.purchaseOrder.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+        include: { lines: true },
+      }),
+      p.purchaseOrder.count({ where }),
+    ])
 
     // 补全 supplierName —— PurchaseOrder 只存 supplierId，需要从 Customer 表查名字
     const supplierIds = [...new Set(rows.map((r: { supplierId: string }) => r.supplierId).filter(Boolean))]
@@ -55,7 +60,7 @@ export async function GET(req: Request) {
       supplierName: supplierMap.get(r.supplierId as string) ?? r.supplierId,
     }))
 
-    return NextResponse.json(serializeApi(enriched))
+    return NextResponse.json(serializeApi({ items: enriched, total }))
   } catch (error) {
     console.error('[GET /api/purchase-orders]', error)
     return NextResponse.json({ error: '获取采购订单失败' }, { status: 500 })

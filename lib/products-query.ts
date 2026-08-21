@@ -17,6 +17,7 @@
 import { prisma } from '@/lib/db'
 import { buildFacetWhere } from '@/lib/facet-sql'
 import { PRODUCT_TEMPLATE_FACET_DEFS } from '@/lib/facets/product-templates'
+import { TTL_STATIC_MS } from '@/lib/http-cache'
 
 export const LOW_STOCK_THRESHOLD = 10
 
@@ -42,15 +43,24 @@ function intersect(a: Set<string> | null, b: string[]): Set<string> {
   return new Set([...a].filter(x => bs.has(x)))
 }
 
+// 全表聚合，不带任何请求维度 —— 进程内缓存一份就够，不用 lib/http-cache 的按 URL 分 key。
+let stockAlertCountsCache: { value: { negative: number; low: number }; expiresAt: number } | null = null
+
 /** 库存告警角标计数。只有列表页需要，导出不必为此多跑一次全表聚合 */
 export async function productStockAlertCounts(): Promise<{ negative: number; low: number }> {
+  const now = Date.now()
+  if (stockAlertCountsCache && stockAlertCountsCache.expiresAt > now) {
+    return stockAlertCountsCache.value
+  }
   const [counts] = await prisma.$queryRawUnsafe<{ negative: number; low: number }[]>(
     `SELECT count(*) FILTER (WHERE s < 0)::int AS negative,
             count(*) FILTER (WHERE s >= 0 AND s < $1)::int AS low
      FROM (SELECT "templateId", sum("qtyOnHand") AS s FROM "Product" GROUP BY "templateId") t`,
     LOW_STOCK_THRESHOLD,
   )
-  return { negative: counts?.negative ?? 0, low: counts?.low ?? 0 }
+  const value = { negative: counts?.negative ?? 0, low: counts?.low ?? 0 }
+  stockAlertCountsCache = { value, expiresAt: now + TTL_STATIC_MS }
+  return value
 }
 
 export async function buildProductTemplatesWhere(

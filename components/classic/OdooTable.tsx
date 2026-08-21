@@ -170,6 +170,11 @@ export default function OdooTable<T extends Record<string, unknown>>({
 
   return (
     <div className="border border-gray-200 rounded overflow-visible bg-white" style={{ position: 'relative' }}>
+      {loading && rows.length > 0 && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden rounded-t" style={{ zIndex: 10 }}>
+          <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
+        </div>
+      )}
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr style={{ background: '#f8f8f8', borderBottom: '1px solid #e0e0e0' }}>
@@ -351,7 +356,7 @@ export default function OdooTable<T extends Record<string, unknown>>({
           )}
         </thead>
         <tbody>
-          {loading && (
+          {loading && rows.length === 0 && (
             <tr>
               <td
                 colSpan={columns.length + (showCheckbox ? 1 : 0)}
@@ -374,7 +379,7 @@ export default function OdooTable<T extends Record<string, unknown>>({
               </td>
             </tr>
           )}
-          {!loading && rows.length > 0 && (() => {
+          {rows.length > 0 && (() => {
             function renderDataRow(row: T, idx: number) {
               const id = String(row[rowKey])
               const isSelected = selected?.has(id) ?? false

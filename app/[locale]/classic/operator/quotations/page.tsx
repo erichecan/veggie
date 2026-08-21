@@ -1120,7 +1120,12 @@ ${orderSections}
       />
 
       {/* ── Table ── */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto relative">
+        {loading && filtered.length > 0 && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-20">
+            <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
+          </div>
+        )}
         <table className="w-full text-sm bg-white">
           <thead>
             <tr className="border-b border-gray-200 text-left text-sm font-bold text-gray-700 align-bottom">
@@ -1133,7 +1138,7 @@ ${orderSections}
                   { field: 'quotationDate', label: 'Quotation\nDate',   right: false },
                   { field: 'customer',      label: 'Customer',          right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
-                  { field: 'total',         label: 'Total',             right: true  },
+                  { field: 'total',         label: 'Untaxed\nTotal',    right: true  },
                   { field: 'status',        label: 'Status',            right: false },
                   { field: null,            label: 'Source',            right: false },
                   { field: 'internalNote',  label: 'Internal\nNotes',   right: false },
@@ -1163,13 +1168,13 @@ ${orderSections}
             {filterRow()}
           </thead>
           <tbody>
-            {loading && (
+            {loading && filtered.length === 0 && (
               <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr><td colSpan={14} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</td></tr>
             )}
-            {!loading && grouped ? (
+            {grouped ? (
               Array.from(grouped.entries()).map(([groupName, groupOrders]) => (
                 <Fragment key={groupName}>
                   <tr className="bg-gray-100 border-b border-gray-200">
@@ -1181,7 +1186,7 @@ ${orderSections}
                 </Fragment>
               ))
             ) : (
-              !loading && paginated.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)
+              paginated.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)
             )}
           </tbody>
         </table>

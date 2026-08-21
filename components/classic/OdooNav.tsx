@@ -17,12 +17,24 @@ import { toast } from 'sonner'
 import HelpDrawer from '@/components/onboarding/HelpDrawer'
 import { formatDateTime } from '@/lib/format-date'
 
-interface MenuItem {
+interface MenuLeaf {
   href: string
   label: string
   activePaths?: string[]
   /** true 时在新标签页打开（用于跳去另一个独立模块，避免用户进去后回不来） */
   newTab?: boolean
+}
+
+/** 折叠为下拉菜单的一组次要入口（如"主数据""系统"），不占用顶层导航宽度 */
+interface MenuGroup {
+  label: string
+  items: MenuLeaf[]
+}
+
+type MenuItem = MenuLeaf | MenuGroup
+
+function isMenuGroup(item: MenuItem): item is MenuGroup {
+  return 'items' in item
 }
 
 interface OdooNavProps {
@@ -86,6 +98,9 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
   const userMenuRef = useRef<HTMLDivElement>(null)
   const appSwitcherRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
+  // 二级导航折叠为下拉菜单的分组（如"主数据""系统"），键为 MenuGroup.label
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -98,10 +113,16 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setNotifOpen(false)
       }
+      if (openGroup) {
+        const ref = groupRefs.current[openGroup]
+        if (ref && !ref.contains(e.target as Node)) {
+          setOpenGroup(null)
+        }
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [openGroup])
 
   useEffect(() => {
     if (!session) return
@@ -257,6 +278,68 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
         {/* 二级导航 */}
         <nav className="flex items-center gap-0 flex-1 overflow-x-auto">
           {menuItems.map((item, i) => {
+            // 折叠分组（如"主数据""系统"）：渲染为下拉按钮，不占用顶层导航宽度
+            if (isMenuGroup(item)) {
+              const isGroupActive = item.items.some(sub => {
+                const extraPaths = sub.activePaths ?? []
+                return pathname === sub.href || pathname.startsWith(sub.href + '/') ||
+                  extraPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
+              })
+              const isOpen = openGroup === item.label
+              return (
+                <div
+                  key={`group-${item.label}`}
+                  className="relative flex-shrink-0"
+                  ref={el => { groupRefs.current[item.label] = el }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpenGroup(v => (v === item.label ? null : item.label))}
+                    className="px-3 h-11 flex items-center gap-1 text-sm whitespace-nowrap transition-colors"
+                    style={{
+                      color: 'white',
+                      background: isGroupActive || isOpen ? 'rgba(0,0,0,0.15)' : 'transparent',
+                      borderBottom: isGroupActive ? '2px solid rgba(255,255,255,0.9)' : '2px solid transparent',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isGroupActive && !isOpen) (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.08)'
+                    }}
+                    onMouseLeave={e => {
+                      if (!isGroupActive && !isOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'
+                    }}
+                  >
+                    {item.label}
+                    <svg
+                      width="10" height="10" viewBox="0 0 10 6" fill="none"
+                      className="transition-transform"
+                      style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}
+                    >
+                      <path d="M1 1l4 4 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  {isOpen && (
+                    <div className="absolute left-0 top-full bg-white rounded-b shadow-xl border border-gray-200 z-50 py-1 min-w-[170px]">
+                      {item.items.map(sub => {
+                        const extraPaths = sub.activePaths ?? []
+                        const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/') ||
+                          extraPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
+                        return (
+                          <Link
+                            key={sub.href}
+                            href={sub.href}
+                            onClick={() => setOpenGroup(null)}
+                            className="block px-4 py-2 text-sm whitespace-nowrap hover:bg-gray-50"
+                            style={{ color: subActive ? '#875A7B' : '#374151', fontWeight: subActive ? 600 : 400 }}
+                          >
+                            {sub.label}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            }
             // 空 href 作分隔符
             if (item.href === '') {
               return (
@@ -275,13 +358,14 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
             const matchesExtra = extraPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
             const isActive = matchesExtra || pathname === item.href || (
               pathname.startsWith(item.href + '/') &&
-              !menuItems.some(other =>
-                other.href !== item.href &&
-                (
-                  (other.href && other.href.length > item.href.length && pathname.startsWith(other.href)) ||
-                  (other.activePaths ?? []).some(p => pathname === p || pathname.startsWith(p + '/'))
-                )
-              )
+              !menuItems.some(other => {
+                if (isMenuGroup(other)) return false
+                return other.href !== item.href &&
+                  (
+                    (other.href && other.href.length > item.href.length && pathname.startsWith(other.href)) ||
+                    (other.activePaths ?? []).some(p => pathname === p || pathname.startsWith(p + '/'))
+                  )
+              })
             )
             if (item.newTab) {
               return (

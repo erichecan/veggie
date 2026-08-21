@@ -524,11 +524,9 @@ export default function ClassicPlaceOrderPage() {
   }
 
   // ── Select customer ───────────────────────────────────────────────────────
+  // 切客户只换客户本身 + 联动定价字段，已录入的订单行保留 —— 下面的价格重算
+  // useEffect 会在 effectiveCustomer 变化后按新客户的价格体系重算这些行的单价。
   function selectCustomer(c: Customer) {
-    if (lines.length > 0 && c.id !== customerId) {
-      if (!confirm(isEn ? 'Switching customer will clear the current order lines. Continue?' : '切换客户将清空当前订单行，是否继续？')) return
-      setLines([])
-    }
     setCustomerId(c.id)
     setSelectedCustomerFull(null)  // 先清除旧客户的完整对象
     setCustOpen(false)

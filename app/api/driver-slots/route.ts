@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
+import { withCachedGet } from '@/lib/http-cache'
 
 // 一趟车能装的托盘数是固定的，不能无限新增(见调度台"新增托盘")。
 const MAX_PALLETS_PER_DRIVER = 5
@@ -15,18 +16,20 @@ const MAX_PALLETS_PER_DRIVER = 5
 const CONFIG_WRITERS = ['OPERATOR', 'BOSS']
 
 export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url)
-    const showArchived = searchParams.get('archived') === 'true'
-    const slots = await prisma.driverSlot.findMany({
-      where: { archived: showArchived },
-      orderBy: [{ timeOfDay: 'asc' }, { batchNum: 'asc' }],
-    })
-    return NextResponse.json(slots)
-  } catch (e) {
-    console.error('[driver-slots GET]', e)
-    return NextResponse.json({ error: 'Failed to fetch driver slots' }, { status: 500 })
-  }
+  return withCachedGet(req, async () => {
+    try {
+      const { searchParams } = new URL(req.url)
+      const showArchived = searchParams.get('archived') === 'true'
+      const slots = await prisma.driverSlot.findMany({
+        where: { archived: showArchived },
+        orderBy: [{ timeOfDay: 'asc' }, { batchNum: 'asc' }],
+      })
+      return NextResponse.json(slots)
+    } catch (e) {
+      console.error('[driver-slots GET]', e)
+      return NextResponse.json({ error: 'Failed to fetch driver slots' }, { status: 500 })
+    }
+  })
 }
 
 export async function POST(req: Request) {
