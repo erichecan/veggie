@@ -18,7 +18,8 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
   // 导航分三组（2026-04-19 修改意见 #15 对齐）：
   //   Group A - 业务主流程：订单 → 拣货波次 → 分货 → 配送单 → 发票（平铺）
   //   Group B - 主数据：商品 → 客户 → 价格表 → 计量单位（平铺，客户要求可见可点，勿再折叠）
-  //   Group C - 系统管理：用户（折叠进"系统/System"下拉，低频）
+  //   Group C - 系统管理：用户管理（平铺）。⛔ 整条导航不再有任何折叠分组，
+  //     客户 20260821 明确要求：常用菜单一律直接展示，不要下拉。
   // 英文版标签一律取短词（Units 而非 Units of Measure），否则整行会横向溢出
   // 数据分析中心插在「日销售中心」后面（Group A 内），不再单独分组
   const en = locale !== routing.defaultLocale
@@ -59,13 +60,9 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/settings/units`, label: en ? 'Units' : '计量单位' },
     // 司机配置已并入「配送调度中心」，隐藏独立导航入口
     // { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },
-    // Group C - 系统设置（下拉，低频入口不占用平铺宽度）
-    {
-      label: en ? 'System' : '系统设置',
-      items: [
-        { href: `${prefix}/classic/operator/users`, label: en ? 'User Management' : '系统用户管理' },
-      ],
-    },
+    // Group C - 系统（平铺）。原先折叠成「系统设置」下拉，客户 20260821 明确要求
+    // 去掉分组标签、所有菜单直接可见可点，因此这里不再用 MenuGroup。
+    { href: `${prefix}/classic/operator/users`, label: en ? 'Users' : '用户管理' },
   ]
 
   useEffect(() => {
