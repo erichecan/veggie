@@ -15,10 +15,11 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
-  // 导航分三组（2026-04-19 修改意见 #15 对齐，2026-08-21 因英文版横向溢出改为分组折叠）：
-  //   Group A - 业务主流程：订单 → 拣货波次 → 分货 → 配送单 → 发票（保持平铺，高频操作）
-  //   Group B - 主数据：商品 → 客户 → 价格表 → 计量单位（折叠进"主数据/Data"下拉）
-  //   Group C - 系统管理：用户（折叠进"系统/System"下拉）
+  // 导航分三组（2026-04-19 修改意见 #15 对齐）：
+  //   Group A - 业务主流程：订单 → 拣货波次 → 分货 → 配送单 → 发票（平铺）
+  //   Group B - 主数据：商品 → 客户 → 价格表 → 计量单位（平铺，客户要求可见可点，勿再折叠）
+  //   Group C - 系统管理：用户（折叠进"系统/System"下拉，低频）
+  // 英文版标签一律取短词（Units 而非 Units of Measure），否则整行会横向溢出
   // 数据分析中心插在「日销售中心」后面（Group A 内），不再单独分组
   const en = locale !== routing.defaultLocale
   const MENU_ITEMS = [
@@ -49,22 +50,20 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // 报表分析（台账 H2）：Odoo 式可组合报表，销售/采购/物流三张。
     // ⚠️ 这三页此前代码全在、接口能返数据，却没有任何入口链接过去——功能到不了等于不存在
     { href: `${prefix}/classic/operator/reports/sales`, label: en ? 'Reports' : '报表分析', activePaths: [`${prefix}/classic/operator/reports`] },
-    // Group B + C（折叠为下拉，收窄导航总宽度，解决英文版横向滚动）
+    // divider
+    { href: '', label: '│' },
+    // Group B - 主数据（平铺）
+    { href: `${prefix}/classic/operator/products`,  label: en ? 'Products'   : '商品' },
+    { href: `${prefix}/classic/operator/customers`, label: en ? 'Customers'  : '客户' },
+    { href: `${prefix}/classic/operator/pricelists`,label: en ? 'Pricelists' : '价格表' },
+    { href: `${prefix}/classic/operator/settings/units`, label: en ? 'Units' : '计量单位' },
+    // 司机配置已并入「配送调度中心」，隐藏独立导航入口
+    // { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },
+    // Group C - 系统设置（下拉，低频入口不占用平铺宽度）
     {
-      label: en ? 'Data' : '主数据',
+      label: en ? 'System' : '系统设置',
       items: [
-        { href: `${prefix}/classic/operator/products`,  label: en ? 'Products'      : '商品' },
-        { href: `${prefix}/classic/operator/customers`, label: en ? 'Customers'     : '客户' },
-        { href: `${prefix}/classic/operator/pricelists`,label: en ? 'Pricelists'    : '价格表' },
-        { href: `${prefix}/classic/operator/settings/units`, label: en ? 'Units of Measure' : '计量单位' },
-        // 司机配置已并入「配送调度中心」，隐藏独立导航入口
-        // { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },
-      ],
-    },
-    {
-      label: en ? 'System' : '系统',
-      items: [
-        { href: `${prefix}/classic/operator/users`,     label: en ? 'User Management' : '系统用户管理' },
+        { href: `${prefix}/classic/operator/users`, label: en ? 'User Management' : '系统用户管理' },
       ],
     },
   ]

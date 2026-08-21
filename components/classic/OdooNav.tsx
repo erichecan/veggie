@@ -98,9 +98,12 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
   const userMenuRef = useRef<HTMLDivElement>(null)
   const appSwitcherRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
-  // 二级导航折叠为下拉菜单的分组（如"主数据""系统"），键为 MenuGroup.label
+  // 二级导航折叠为下拉菜单的分组（如"系统设置"），键为 MenuGroup.label
   const [openGroup, setOpenGroup] = useState<string | null>(null)
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  // 面板必须 fixed 定位：二级导航是 overflow-x-auto 容器，CSS 规范下 overflow-y 会被一并
+  // 提升为 auto，absolute 面板会被整块裁掉（表现为"按钮点了没反应"）。
+  const [groupAnchor, setGroupAnchor] = useState<{ left: number; top: number } | null>(null)
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -276,7 +279,10 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
         <span className="text-white font-semibold text-sm mr-6 whitespace-nowrap">{appName}</span>
 
         {/* 二级导航 */}
-        <nav className="flex items-center gap-0 flex-1 overflow-x-auto">
+        <nav
+          className="flex items-center gap-0 flex-1 overflow-x-auto"
+          onScroll={() => setOpenGroup(null)}
+        >
           {menuItems.map((item, i) => {
             // 折叠分组（如"主数据""系统"）：渲染为下拉按钮，不占用顶层导航宽度
             if (isMenuGroup(item)) {
@@ -294,8 +300,12 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                 >
                   <button
                     type="button"
-                    onClick={() => setOpenGroup(v => (v === item.label ? null : item.label))}
-                    className="px-3 h-11 flex items-center gap-1 text-sm whitespace-nowrap transition-colors"
+                    onClick={e => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setGroupAnchor({ left: rect.left, top: rect.bottom })
+                setOpenGroup(v => (v === item.label ? null : item.label))
+              }}
+                    className="px-1.5 h-11 flex items-center gap-1 text-[13px] whitespace-nowrap transition-colors"
                     style={{
                       color: 'white',
                       background: isGroupActive || isOpen ? 'rgba(0,0,0,0.15)' : 'transparent',
@@ -318,7 +328,10 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                     </svg>
                   </button>
                   {isOpen && (
-                    <div className="absolute left-0 top-full bg-white rounded-b shadow-xl border border-gray-200 z-50 py-1 min-w-[170px]">
+                    <div
+              className="fixed bg-white rounded-b shadow-xl border border-gray-200 z-50 py-1 min-w-[170px]"
+              style={{ left: groupAnchor?.left ?? 0, top: groupAnchor?.top ?? 0 }}
+            >
                       {item.items.map(sub => {
                         const extraPaths = sub.activePaths ?? []
                         const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/') ||
@@ -345,7 +358,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
               return (
                 <span
                   key={`sep-${i}`}
-                  className="px-2 text-white/40 select-none flex-shrink-0"
+                  className="px-0.5 text-white/40 select-none flex-shrink-0"
                   aria-hidden
                 >│</span>
               )
@@ -374,7 +387,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                   href={item.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 h-11 flex items-center gap-1 text-sm whitespace-nowrap transition-colors flex-shrink-0"
+                  className="px-1.5 h-11 flex items-center gap-1 text-[13px] whitespace-nowrap transition-colors flex-shrink-0"
                   style={{ color: 'white' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.08)' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
@@ -392,7 +405,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
               <Link
                 key={item.href}
                 href={item.href}
-                className="px-3 h-11 flex items-center text-sm whitespace-nowrap transition-colors flex-shrink-0"
+                className="px-1.5 h-11 flex items-center text-[13px] whitespace-nowrap transition-colors flex-shrink-0"
                 style={{
                   color: 'white',
                   background: isActive ? 'rgba(0,0,0,0.15)' : 'transparent',
