@@ -50,15 +50,13 @@ const APPS_ZH = [
   { label: '仓库', icon: '🏪', href: '/classic/warehouse' },
   { label: '配送', icon: '🚚', href: '/classic/operator/trips' },
   { label: '发票', icon: '🧾', href: '/classic/operator/invoices' },
-  { label: '退换货', icon: '↩️', href: '/classic/operator/returns' },
+  // 20260821：退换货已迁入库存管理 tab，数据分析/账户已分别迁入数据中心与头像下拉菜单，此处不再重复暴露
   { label: '会计', icon: '📒', href: '/classic/accounting' },
   { label: '采购', icon: '🛍️', href: '/classic/operator/purchases' },
   { label: '商品', icon: '🥦', href: '/classic/operator/products' },
   { label: '价格表', icon: '🏷️', href: '/classic/operator/pricelists' },
   { label: '分货员', icon: '🔀', href: '/classic/operator/sorting' },
   { label: '老板', icon: '📊', href: '/classic/boss' },
-  { label: '数据分析', icon: '📈', href: '/classic/operator/reports/sales' },
-  { label: '账户', icon: '👤', href: '/classic/operator/users' },
 ]
 
 const APPS_EN = [
@@ -68,15 +66,12 @@ const APPS_EN = [
   { label: 'Warehouse', icon: '🏪', href: '/classic/warehouse' },
   { label: 'Delivery', icon: '🚚', href: '/classic/operator/trips' },
   { label: 'Invoices', icon: '🧾', href: '/classic/operator/invoices' },
-  { label: 'Returns', icon: '↩️', href: '/classic/operator/returns' },
   { label: 'Accounting', icon: '📒', href: '/classic/accounting' },
   { label: 'Purchases', icon: '🛍️', href: '/classic/operator/purchases' },
   { label: 'Products', icon: '🥦', href: '/classic/operator/products' },
   { label: 'Pricelists', icon: '🏷️', href: '/classic/operator/pricelists' },
   { label: 'Sorter', icon: '🔀', href: '/classic/operator/sorting' },
   { label: 'Manager', icon: '📊', href: '/classic/boss' },
-  { label: 'Reports', icon: '📈', href: '/classic/operator/reports/sales' },
-  { label: 'Users', icon: '👤', href: '/classic/operator/users' },
 ]
 
 export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
@@ -538,6 +533,17 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                       className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                     >
                       <span>⚙️</span> {isEn ? 'Settings' : '设置'}
+                    </button>
+                  </>
+                )}
+                {session?.role === 'boss' && (
+                  <>
+                    <div className="border-t border-gray-100 my-1" />
+                    <button
+                      onClick={() => { setUserMenuOpen(false); router.push(appHref('/classic/operator/users')) }}
+                      className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <span>👤</span> {isEn ? 'User Management' : '用户管理'}
                     </button>
                   </>
                 )}

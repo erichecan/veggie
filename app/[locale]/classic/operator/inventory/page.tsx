@@ -5,28 +5,24 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import InventoryOverviewPage from './overview/page'
 import ReceivePage from './receive/page'
-import LotsPage from './lots/page'
-import ZoneInventoryPage from './zones/page'
-import LossDashboardPage from './loss-dashboard/page'
+import ClassicReturnsPage from '../returns/page'
 
 const PURPLE = '#875A7B'
 
-type TabKey = 'overview' | 'receive' | 'lots' | 'zones' | 'loss-dashboard'
+// 20260821：损耗与退货/批次台账·追溯/仓库地图·温区 三个 tab 已按范围确认仅做 UI 入口下线，
+// 底层页面文件/API/数据模型保留不动。退换货则从顶部导航迁入本页新增的 returns tab。
+type TabKey = 'overview' | 'receive' | 'returns'
 
 const ANALYTICS_TABS_ZH: { k: TabKey; icon: string; label: string }[] = [
   { k: 'overview', icon: '📊', label: '库存总览' },
   { k: 'receive', icon: '📥', label: '收货' },
-  { k: 'lots', icon: '📑', label: '批次台账／追溯' },
-  { k: 'zones', icon: '🧊', label: '仓库地图·温区' },
-  { k: 'loss-dashboard', icon: '📉', label: '损耗与退货' },
+  { k: 'returns', icon: '↩️', label: '退换货' },
 ]
 
 const ANALYTICS_TABS_EN: { k: TabKey; icon: string; label: string }[] = [
   { k: 'overview', icon: '📊', label: 'Overview' },
   { k: 'receive', icon: '📥', label: 'Receiving' },
-  { k: 'lots', icon: '📑', label: 'Lot Ledger / Traceability' },
-  { k: 'zones', icon: '🧊', label: 'Warehouse Map · Zones' },
-  { k: 'loss-dashboard', icon: '📉', label: 'Loss & Returns' },
+  { k: 'returns', icon: '↩️', label: 'Returns' },
 ]
 
 function InventoryPageInner() {
@@ -59,9 +55,7 @@ function InventoryPageInner() {
       {/* Tab 内容（直接嵌入对应子页，进来即实操界面） */}
       {tab === 'overview' && <InventoryOverviewPage />}
       {tab === 'receive' && <ReceivePage />}
-      {tab === 'lots' && <LotsPage />}
-      {tab === 'zones' && <ZoneInventoryPage />}
-      {tab === 'loss-dashboard' && <LossDashboardPage />}
+      {tab === 'returns' && <ClassicReturnsPage />}
     </div>
   )
 }

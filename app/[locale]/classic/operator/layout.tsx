@@ -35,22 +35,19 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     // { href: `${prefix}/classic/operator/trips`,     label: en ? 'Deliveries'    : '配送单' },
     { href: `${prefix}/classic/operator/dispatch-console`, label: en ? 'Dispatch' : '配送中心', activePaths: [`${prefix}/classic/operator/dispatch-console`] },
     { href: `${prefix}/classic/operator/daily-sales`, label: en ? 'Daily Sales' : '日销售中心' },
-    // 数据分析中心：临时先屏蔽权限校验，让 OPERATOR 直接进入老板视角的分析页面（见 boss/layout.tsx + 相关 API 的 allowedRoles）
-    // newTab: 老板视角是独立的导航体系，没有返回入口，新标签页打开避免用户回不去
-    { href: `${prefix}/classic/boss`,   label: en ? 'Analytics' : '数据分析中心',
-      newTab: true },
+    // 数据中心：临时先屏蔽权限校验，让 OPERATOR 直接进入老板视角的分析页面（见 boss/layout.tsx + 相关 API 的 allowedRoles）
+    // 20260821：改名"数据中心"、去掉新标签页打开——boss/layout.tsx 已加返回入口，不会回不去
+    { href: `${prefix}/classic/boss`,   label: en ? 'Data Center' : '数据中心' },
     // 发票 + 供应商账单合并到「会计」tab 式页面
     { href: `${prefix}/classic/operator/accounting`, label: en ? 'Accounting' : '会计', activePaths: [`${prefix}/classic/operator/accounting`] },
-    { href: `${prefix}/classic/operator/returns`,  label: en ? 'Returns'       : '退换货' },
     // 信用票已隐藏导航入口
     // { href: `${prefix}/classic/operator/credit-notes`, label: en ? 'Credit Notes' : '信用票' },
     { href: `${prefix}/classic/operator/purchases`, label: en ? 'Purchases'     : '采购' },
     // 采购建议已整合进「库存管理」tab，供应商账单已移至发票旁，隐藏/移除此处入口
     // { href: `${prefix}/classic/operator/purchases/suggestions`, label: en ? 'Purchase Suggestions' : '采购建议' },
+    // 20260821：退换货已整合进「库存管理」tab，隐藏独立导航入口
     { href: `${prefix}/classic/operator/inventory`, label: en ? 'Inventory'     : '库存管理', activePaths: [`${prefix}/classic/operator/inventory`] },
-    // 报表分析（台账 H2）：Odoo 式可组合报表，销售/采购/物流三张。
-    // ⚠️ 这三页此前代码全在、接口能返数据，却没有任何入口链接过去——功能到不了等于不存在
-    { href: `${prefix}/classic/operator/reports/sales`, label: en ? 'Reports' : '报表分析', activePaths: [`${prefix}/classic/operator/reports`] },
+    // 报表分析已物理迁入「数据中心」（boss/reports），隐藏独立导航入口
     // divider
     { href: '', label: '│' },
     // Group B - 主数据（平铺）
@@ -60,9 +57,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/settings/units`, label: en ? 'Units' : '计量单位' },
     // 司机配置已并入「配送调度中心」，隐藏独立导航入口
     // { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },
-    // Group C - 系统（平铺）。原先折叠成「系统设置」下拉，客户 20260821 明确要求
-    // 去掉分组标签、所有菜单直接可见可点，因此这里不再用 MenuGroup。
-    { href: `${prefix}/classic/operator/users`, label: en ? 'Users' : '用户管理' },
+    // 20260821：用户管理已迁入头像下拉菜单（仅 boss 角色可见），隐藏顶部导航入口
   ]
 
   useEffect(() => {

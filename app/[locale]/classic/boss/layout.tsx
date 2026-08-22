@@ -16,6 +16,8 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const LINKS = [
+    // 20260821：数据中心不再新标签页打开，需要一个返回销售系统的入口
+    { href: `${prefix}/classic/operator`, label: '← 返回销售' },
     { href: `${prefix}/classic/boss`, label: '经营总览' },
     { href: `${prefix}/classic/boss/analytics/sales-overview`, label: '销售统计' },
     { href: `${prefix}/classic/boss/analytics/customers`, label: '客户分析' },
@@ -32,6 +34,10 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     { href: `${prefix}/classic/boss/analytics/logistics`, label: '物流分析' },
     { href: `${prefix}/classic/boss/analytics/driver-commission`, label: '司机提成' },
     { href: `${prefix}/classic/boss/analytics/internal-control`, label: '内控审计' },
+    // 20260821：报表分析（原 operator/reports）物理迁入数据中心
+    { href: `${prefix}/classic/boss/reports/sales`, label: '销售分析' },
+    { href: `${prefix}/classic/boss/reports/purchasing`, label: '采购分析' },
+    { href: `${prefix}/classic/boss/reports/logistics`, label: '物流分析（报表）' },
     // 数据库备份涉及全库敏感数据，仅 BOSS 可见（本 layout 本身放行 BOSS+OPERATOR，这里额外收紧）
     // 注：RoleSession.role 是小写（toRoleSession 内部 .toLowerCase()），brief 原文示例用大写 'BOSS' 与 lib/types.ts 的 Role 类型不符，会导致 tsc 报 TS2367，这里改用 'boss'
     ...(session?.role === 'boss'
