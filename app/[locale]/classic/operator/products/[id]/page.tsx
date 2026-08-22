@@ -297,6 +297,28 @@ export default function ClassicProductDetailPage() {
     setEditMode(false)
   }
 
+  // 归档/恢复(20260821)：独立于 Save/Discard 流程，点击即生效，不进编辑态、不需二次确认
+  const [archiveToggling, setArchiveToggling] = useState(false)
+  async function toggleActive() {
+    if (!tmpl || isNew || archiveToggling) return
+    const nextStatus: ProductTemplate['status'] = tmpl.status === 'active' ? 'archived' : 'active'
+    setArchiveToggling(true)
+    try {
+      await apiPut(`/api/product-templates/${tmpl.id}`, { status: nextStatus })
+      setTmpl(prev => prev ? { ...prev, status: nextStatus } : prev)
+      setOriginal(prev => prev ? { ...prev, status: nextStatus } : prev)
+      toast.success(
+        nextStatus === 'active'
+          ? (isEn ? 'Product restored to Active' : '商品已恢复为 Active')
+          : (isEn ? 'Product archived' : '商品已归档')
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update status' : '状态更新失败'))
+    } finally {
+      setArchiveToggling(false)
+    }
+  }
+
   if (!tmpl) return <div className="p-8 text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
 
   const fieldClass = "w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 bg-white"
@@ -304,6 +326,30 @@ export default function ClassicProductDetailPage() {
   const btnBase = "h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
   const selectedCategory = categories.find(c => c.id === tmpl.categoryId)
   const catName = selectedCategory ? (isEn ? (selectedCategory.name || selectedCategory.nameZh) : (selectedCategory.nameZh ?? selectedCategory.name)) : undefined
+  const isActive = tmpl.status === 'active'
+  // Active 开关（20260821）：与 Edit/Create、Save/Discard 并排，点击立即生效，不需二次确认
+  const activeToggle = !isNew && (
+    <button
+      type="button"
+      onClick={toggleActive}
+      disabled={archiveToggling}
+      role="switch"
+      aria-checked={isActive}
+      title={isEn ? (isActive ? 'Click to archive this product' : 'Click to restore this product to Active') : (isActive ? '点击归档该商品' : '点击恢复该商品为 Active')}
+      className="h-8 px-2 flex items-center gap-2 text-sm rounded border border-gray-300 bg-white disabled:opacity-50 transition-colors"
+    >
+      <span className={isActive ? 'text-gray-700' : 'text-gray-400'}>{isEn ? 'Active' : 'Active'}</span>
+      <span
+        className="relative inline-block w-8 h-4 rounded-full transition-colors"
+        style={{ background: isActive ? '#875A7B' : '#d1d5db' }}
+      >
+        <span
+          className="absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform"
+          style={{ left: isActive ? '18px' : '2px' }}
+        />
+      </span>
+    </button>
+  )
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -349,6 +395,7 @@ export default function ClassicProductDetailPage() {
               <button onClick={handleDiscard} disabled={saving} className={btnBase}>
                 Discard
               </button>
+              {activeToggle}
             </>
           ) : (
             <>
@@ -365,6 +412,7 @@ export default function ClassicProductDetailPage() {
               >
                 Create
               </button>
+              {activeToggle}
 
               {/* 1 / — < > */}
               <div className="flex items-center gap-1 ml-auto text-sm text-gray-500">
