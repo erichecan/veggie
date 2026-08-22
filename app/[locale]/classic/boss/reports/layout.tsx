@@ -28,7 +28,7 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
     <div>
       <div className="flex items-center gap-1 border-b bg-white px-4 pt-3">
         {TABS.map(t => {
-          const href = `${prefix}/classic/operator/reports/${t.seg}`
+          const href = `${prefix}/classic/boss/reports/${t.seg}`
           const active = pathname?.startsWith(href)
           return (
             <Link key={t.seg} href={href}
