@@ -121,10 +121,6 @@ function UomSection({ isEn }: { isEn: boolean }) {
   const [newUomGoodsType, setNewUomGoodsType] = useState<GoodsType>(null)
   const [savingUom, setSavingUom] = useState(false)
 
-  const [newCatName, setNewCatName] = useState('')
-  const [newCatNameZh, setNewCatNameZh] = useState('')
-  const [savingCat, setSavingCat] = useState(false)
-
   async function load() {
     try {
       const [cats, uoms] = await Promise.all([
@@ -141,21 +137,6 @@ function UomSection({ isEn }: { isEn: boolean }) {
   }
 
   useEffect(() => { load() }, [])
-
-  async function createCategory() {
-    if (!newCatName.trim()) { toast.error(isEn ? 'Please enter a category name' : '请输入分类名称'); return }
-    setSavingCat(true)
-    try {
-      await apiPost('/api/uom-categories', { name: newCatName.trim(), nameZh: newCatNameZh.trim() || undefined })
-      toast.success(isEn ? 'UoM category created' : '计量单位分类已创建')
-      setNewCatName(''); setNewCatNameZh('')
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
-    } finally {
-      setSavingCat(false)
-    }
-  }
 
   async function createUom() {
     if (!newUomName.trim()) { toast.error(isEn ? 'Please enter a unit name' : '请输入单位名称'); return }
@@ -257,30 +238,6 @@ function UomSection({ isEn }: { isEn: boolean }) {
             })}
           </div>
         )}
-      </div>
-
-      {/* New Category */}
-      <div className="border border-gray-200 rounded p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'New UoM Category' : '新建单位分类'}</h3>
-        <div className="flex items-end gap-3 flex-wrap">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (EN)' : '分类名（英文）'}</label>
-            <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)}
-              placeholder="e.g. Weight"
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-purple-400" />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (ZH, optional)' : '分类名（中文，可选）'}</label>
-            <input type="text" value={newCatNameZh} onChange={e => setNewCatNameZh(e.target.value)}
-              placeholder={isEn ? 'optional' : '如 重量'}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-purple-400" />
-          </div>
-          <button onClick={createCategory} disabled={savingCat}
-            className="h-9 px-4 text-white text-sm rounded disabled:opacity-40"
-            style={{ background: PURPLE }}>
-            {savingCat ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create Category' : '创建分类')}
-          </button>
-        </div>
       </div>
 
       {/* New UOM */}
