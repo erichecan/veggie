@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { priceOf, factorOf } from '@/lib/sale-uom'
+import type { SaleUomPriceMode } from '@/lib/sale-uom'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -37,7 +38,10 @@ interface AllProduct {
 }
 
 // 多单位销售(20260714 试点)：商品挂的额外可售单位，与 place-order 创建页同构
-type SaleUomOption = { uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null }
+type SaleUomOption = {
+  uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null
+  priceMode: SaleUomPriceMode; priceDiscountPct: number; priceSurcharge: number
+}
 
 interface CreditInfo {
   outstandingBalance: number
@@ -200,7 +204,7 @@ export default function QuotationDetailPage() {
   function ensureSaleUomOptions(productId: string) {
     if (!productId || productId in saleUomOptions) return
     setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
+    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
@@ -213,6 +217,9 @@ export default function QuotationDetailPage() {
             isDefault: r.isDefault,
             factor: Number(r.factor ?? 1) || 1,
             priceOverride: r.priceOverride,
+            priceMode: r.priceMode ?? 'AUTO',
+            priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
+            priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
           }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
@@ -233,6 +240,7 @@ export default function QuotationDetailPage() {
       const opts = saleUomOptions[p.id] ?? []
       const rows = opts.map(o => ({
         uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+        priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
       }))
       const nameOf = (uid: string) => uid === anchorUomId
         ? (p.uomName ?? 'Unit(s)')

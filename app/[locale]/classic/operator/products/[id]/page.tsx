@@ -762,6 +762,26 @@ export default function ClassicProductDetailPage() {
                             <span className="text-xs text-gray-400 ml-1">{modeLabel}</span>
                           </button>
                         )}
+                        {editMode && !isBase && (
+                          <button
+                            type="button"
+                            onClick={() => updateSaleUomRow(i, { active: !row.active })}
+                            role="switch"
+                            aria-checked={row.active}
+                            title={isEn
+                              ? (row.active ? 'Click to disable — hidden when placing orders/quotations; factor & price relationships still apply if re-enabled' : 'Click to enable')
+                              : (row.active ? '点击停用 —— 下单/报价时不再出现；换算与价格关系仍保留，重新启用即可用' : '点击启用')}
+                            className="h-8 px-2 flex items-center gap-1.5 text-xs rounded border border-gray-300 bg-white transition-colors whitespace-nowrap"
+                          >
+                            <span className={row.active ? 'text-gray-700' : 'text-gray-400'}>{isEn ? 'Sellable' : '可下单'}</span>
+                            <span className="relative inline-block w-7 h-3.5 rounded-full transition-colors" style={{ background: row.active ? '#875A7B' : '#d1d5db' }}>
+                              <span className="absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform" style={{ left: row.active ? '15px' : '2px' }} />
+                            </span>
+                          </button>
+                        )}
+                        {!editMode && !isBase && !row.active && (
+                          <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-400 whitespace-nowrap">{isEn ? 'Disabled' : '已停用'}</span>
+                        )}
                         {editMode && (
                           <button onClick={() => removeSaleUomRow(i)} className="text-gray-400 hover:text-red-500 text-sm px-1">✕</button>
                         )}

@@ -4,6 +4,7 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { priceOf } from '@/lib/sale-uom'
+import type { SaleUomPriceMode } from '@/lib/sale-uom'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
@@ -60,6 +61,9 @@ type SaleUomOption = {
   isDefault?: boolean
   factor: number
   priceOverride: number | null
+  priceMode: SaleUomPriceMode
+  priceDiscountPct: number
+  priceSurcharge: number
 }
 
 type ChatterEntry = {
@@ -612,7 +616,7 @@ export default function ClassicPlaceOrderPage() {
   function ensureSaleUomOptions(productId: string) {
     if (productId in saleUomOptions) return
     setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
+    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
@@ -627,6 +631,9 @@ export default function ClassicPlaceOrderPage() {
             isDefault: r.isDefault,
             factor: Number(r.factor ?? 1) || 1,
             priceOverride: r.priceOverride,
+            priceMode: r.priceMode ?? 'AUTO',
+            priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
+            priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
           }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
@@ -655,6 +662,7 @@ export default function ClassicPlaceOrderPage() {
     // (lib/inventory.ts:toStockQty) 共用 lib/sale-uom.ts，不会两边算得不一样。
     const rows = (saleUomOptions[p.id] ?? []).map(o => ({
       uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+      priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
     }))
     return { unitPrice: priceOf(rows, lineUomId, basePrice), priceLabel, priceLabelDetail }
   }

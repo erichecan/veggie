@@ -15,6 +15,7 @@ import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import { priceOf, factorOf } from '@/lib/sale-uom'
+import type { SaleUomPriceMode } from '@/lib/sale-uom'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
 import { lineDescription } from '@/lib/order-line-description'
@@ -22,7 +23,10 @@ import { newDraftLineId, isDraftLineId, toSubmittableLines } from '@/lib/order-l
 
 const PURPLE = '#875A7B'
 
-type SaleUomOption = { uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null }
+type SaleUomOption = {
+  uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null
+  priceMode: SaleUomPriceMode; priceDiscountPct: number; priceSurcharge: number
+}
 
 interface AllProduct {
   id: string
@@ -121,7 +125,7 @@ export default function SalesOrderDetailPage() {
   function ensureSaleUomOptions(productId: string) {
     if (!productId || productId in saleUomOptions) return
     setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
+    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
@@ -131,6 +135,9 @@ export default function SalesOrderDetailPage() {
           isDefault: r.isDefault,
           factor: Number(r.factor ?? 1) || 1,
           priceOverride: r.priceOverride,
+          priceMode: r.priceMode ?? 'AUTO',
+          priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
+          priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
         }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
@@ -154,6 +161,7 @@ export default function SalesOrderDetailPage() {
       const opts = saleUomOptions[p.id] ?? []
       const rows = opts.map(o => ({
         uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+        priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
       }))
       const nameOf = (uid: string) => uid === anchorUomId
         ? ((p as { uomName?: string }).uomName ?? 'Unit(s)')
