@@ -108,6 +108,58 @@ function GoodsTypeEditor({
   )
 }
 
+// ─── Uom Name Inline Editor ────────────────────────────────────────────────────
+// 名称/中文名行内可编辑，失焦时才保存；name 不允许清空，nameZh 允许清空为 null
+
+function NameEditor({
+  value,
+  required,
+  isEn,
+  onSave,
+}: {
+  value: string
+  required: boolean
+  isEn: boolean
+  onSave: (next: string) => Promise<void>
+}) {
+  const [draft, setDraft] = useState(value)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setDraft(value) }, [value])
+
+  async function commit() {
+    const next = draft.trim()
+    if (next === value.trim()) return
+    if (required && !next) {
+      toast.error(isEn ? 'Name cannot be empty' : '名称不能为空')
+      setDraft(value)
+      return
+    }
+    setSaving(true)
+    try {
+      await onSave(next)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+      setDraft(value)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      disabled={saving}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      placeholder={required ? undefined : (isEn ? '-' : '-')}
+      className={`w-full bg-transparent border border-transparent hover:border-gray-300 focus:border-purple-400 rounded px-1.5 py-0.5 focus:outline-none ${saving ? 'opacity-60' : ''}`}
+    />
+  )
+}
+
 // ─── UOM Section ──────────────────────────────────────────────────────────────
 
 function UomSection({ isEn }: { isEn: boolean }) {
@@ -207,8 +259,28 @@ function UomSection({ isEn }: { isEn: boolean }) {
                       <tbody className="divide-y divide-gray-50">
                         {uoms.map(u => (
                           <tr key={u.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 font-medium">{u.name}</td>
-                            <td className="px-4 py-2 text-gray-500">{u.nameZh || '-'}</td>
+                            <td className="px-4 py-1 font-medium">
+                              <NameEditor
+                                value={u.name}
+                                required
+                                isEn={isEn}
+                                onSave={async (next) => {
+                                  await apiPut(`/api/uoms/${u.id}`, { name: next })
+                                  setAllUoms(prev => prev.map(x => x.id === u.id ? { ...x, name: next } : x))
+                                }}
+                              />
+                            </td>
+                            <td className="px-4 py-1 text-gray-500">
+                              <NameEditor
+                                value={u.nameZh || ''}
+                                required={false}
+                                isEn={isEn}
+                                onSave={async (next) => {
+                                  await apiPut(`/api/uoms/${u.id}`, { nameZh: next })
+                                  setAllUoms(prev => prev.map(x => x.id === u.id ? { ...x, nameZh: next || undefined } : x))
+                                }}
+                              />
+                            </td>
                             <td className="px-4 py-2 text-center">
                               <GoodsTypeEditor
                                 uom={u}
