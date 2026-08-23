@@ -110,9 +110,14 @@ export async function GET(req: Request) {
         }))
 
       // 收货质检（台账 F4）：**派生，不复制存储** ——
-      // 批次是收货那一刻建的（sourceType=GOODS_RECEIPT / sourceId=收货单 id），
-      // 质检记录就写在那张收货单的对应行上。把它抄一份到 Lot 上会立刻多出第二处真相：
+      // 质检记录写在收货单（GoodsReceipt）的对应行上，不抄一份到 Lot 上，否则
       // 收货单改了、批次上的没改，追溯页显示的就是过期结论。
+      // ⚠️ 20260823 起批次由采购确认收货建出（sourceType=PURCHASE_RECEIVE / sourceId=PO id），
+      // 不再是某一张具体收货单——一个 PO 名下可能有多张记录到货的 GoodsReceipt，
+      // 质检回查因此改按 purchaseOrderId + productId 找最近一张有质检的收货单，
+      // 不再是精确到"就是建这个批次的那张单"。
+      // 历史批次（20260823 前建的）sourceType 仍是 GOODS_RECEIPT，sourceId 精确指向那张收货单，
+      // 两种取法都保留，互不影响。
       // ⚠️ 已知精度：按 productId 匹配收货行。同一张收货单里同一商品拆成多条良品行时
       // （界面不会这么产出，脚本可能）只能定位到第一条带质检的。
       let receiptQc: {
@@ -133,6 +138,26 @@ export async function GET(req: Request) {
           receiptQc = {
             goodsReceiptId: gr.id, goodsReceiptName: gr.name, arrivedAt: gr.arrivedAt,
             receivedBy: gr.receivedBy ?? null, qc, verdict: qcVerdict(qc),
+          }
+        }
+      } else if (lot.sourceType === 'PURCHASE_RECEIVE' && lot.sourceId) {
+        const grs = await p.goodsReceipt.findMany({
+          where: { purchaseOrderId: lot.sourceId },
+          orderBy: { arrivedAt: 'desc' },
+          select: { id: true, name: true, arrivedAt: true, receivedBy: true, lines: true },
+        })
+        for (const gr of grs) {
+          const grLines = Array.isArray(gr.lines) ? gr.lines as Array<Record<string, unknown>> : []
+          const hit = grLines.find(
+            (l) => l.productId === lot.productId && (l.condition ?? 'ok') === 'ok' && l.qc != null
+          )
+          const qc = hit ? parseStoredQc(hit.qc) : null
+          if (qc) {
+            receiptQc = {
+              goodsReceiptId: gr.id, goodsReceiptName: gr.name, arrivedAt: gr.arrivedAt,
+              receivedBy: gr.receivedBy ?? null, qc, verdict: qcVerdict(qc),
+            }
+            break
           }
         }
       }

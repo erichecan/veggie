@@ -12,7 +12,8 @@ import { serializeApi } from '@/lib/api-serializer'
  * GET  → 返回全部 UoM（含 category），用于商品编辑下拉框和订单选单位
  * POST → 新建 UoM（只有 OPERATOR/BOSS 能建）
  *
- * 注意：修改 reference 单位的 factor 会破坏已有换算关系，生产环境应锁死。
+ * 注意：20260823 起单位不再承载换算系数（factor / rounding / type 已从管理界面下线），
+ * 换算挂在商品上（ProductSaleUom.factor）。DB 列保留，仅因分析 SQL 等处仍在读。
  */
 
 export async function GET() {
@@ -22,7 +23,7 @@ export async function GET() {
     const uoms = await p.uom.findMany({
       where: { active: true },
       include: { category: true },
-      orderBy: [{ category: { name: 'asc' } }, { factor: 'asc' }],
+      orderBy: [{ category: { name: 'asc' } }, { name: 'asc' }],
     })
     return NextResponse.json(serializeApi(uoms))
   } catch (error) {
@@ -40,13 +41,11 @@ export async function POST(req: Request) {
       if (!name) return NextResponse.json({ error: '名称不能为空' }, { status: 400 })
       if (!categoryId) return NextResponse.json({ error: '必须选择 Category' }, { status: 400 })
 
-      const factor = Number(data.factor ?? 1)
-      const rounding = Number(data.rounding ?? 0.01)
-      if (!Number.isFinite(factor) || factor <= 0) {
-        return NextResponse.json({ error: 'factor 必须 > 0' }, { status: 400 })
-      }
-      const type: 'REFERENCE' | 'SMALLER' | 'BIGGER' =
-        factor === 1 ? 'REFERENCE' : factor < 1 ? 'SMALLER' : 'BIGGER'
+      // factor / rounding / type 不再由调用方传入：界面已下线这三项。
+      // 仍写入中性默认值（1 = 不参与换算），与旧数据行为一致。
+      const factor = 1
+      const rounding = 0.01
+      const type = 'REFERENCE' as const
 
       // 货物类型白名单（BULK 大货 / LOOSE 散货 / null 未分类）
       const rawGoodsType = data.goodsType
@@ -70,7 +69,7 @@ export async function POST(req: Request) {
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'uom', resourceId: created.id,
-        detail: `新建 UoM: ${name} (factor=${factor}${goodsType ? `, ${goodsType}` : ''})`,
+        detail: `新建 UoM: ${name}${goodsType ? `（${goodsType}）` : ''}`,
       })
       return NextResponse.json(serializeApi(created), { status: 201 })
     } catch (error) {

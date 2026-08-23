@@ -43,6 +43,7 @@ interface POLine {
   spec?: string | null
   uomName?: string | null
   orderedQty: number
+  receivedQty?: number
   unitCost: number
   taxRate: number
   bestBefore?: string | null
@@ -224,6 +225,17 @@ export default function PurchaseDetailPage() {
   // 汇率待确认时的独立补录输入(不进整单编辑态，DRAFT/SENT 都能直接补)
   const [fixRateInput, setFixRateInput] = useState('')
   const [fixingRate, setFixingRate] = useState(false)
+
+  // 确认收货弹窗（真正改库存的动作，20260823 从库存收货台搬来）
+  const [showReceiveModal, setShowReceiveModal] = useState(false)
+  const [receiveQtys, setReceiveQtys] = useState<Record<string, string>>({})
+  const [receiving, setReceiving] = useState(false)
+
+  // 退货/修正数量弹窗
+  const [showReturnModal, setShowReturnModal] = useState(false)
+  const [returnQtys, setReturnQtys] = useState<Record<string, string>>({})
+  const [returnReason, setReturnReason] = useState('')
+  const [returning, setReturning] = useState(false)
 
   // ── 选品 / 快速建档 ──
   const [purchaseProducts, setPurchaseProducts] = useState<PurchaseProduct[]>([])
@@ -433,6 +445,63 @@ export default function PurchaseDetailPage() {
     }
   }
 
+  // 确认收货：默认按下单数量入库，可按行改成实收数量（DEV-PLAN 决策#2）
+  function openReceiveModal() {
+    if (!po) return
+    const init: Record<string, string> = {}
+    for (const l of po.lines) init[l.id] = String(Number(l.orderedQty))
+    setReceiveQtys(init)
+    setShowReceiveModal(true)
+  }
+
+  async function submitReceive() {
+    if (!po) return
+    setReceiving(true)
+    try {
+      const lines = po.lines.map(l => ({ lineId: l.id, qty: Number(receiveQtys[l.id] ?? 0) }))
+      await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action: 'receive', lines })
+      await load()
+      setShowReceiveModal(false)
+      toast.success(isEn ? 'Receipt confirmed' : '确认收货成功')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to confirm receipt' : '确认收货失败'))
+    } finally {
+      setReceiving(false)
+    }
+  }
+
+  // 退货/修正数量：默认全部填 0，采购员按实际退货量填写
+  function openReturnModal() {
+    if (!po) return
+    const init: Record<string, string> = {}
+    for (const l of po.lines) init[l.id] = ''
+    setReturnQtys(init)
+    setReturnReason('')
+    setShowReturnModal(true)
+  }
+
+  async function submitReturn() {
+    if (!po) return
+    const lines = po.lines
+      .map(l => ({ productId: l.productId, qty: Number(returnQtys[l.id] ?? 0) }))
+      .filter(l => l.productId && l.qty > 0)
+    if (lines.length === 0) {
+      toast.error(isEn ? 'Please enter a return quantity for at least one line' : '请至少填写一行退货数量')
+      return
+    }
+    setReturning(true)
+    try {
+      await apiPost(`/api/purchase-orders/${id}/return`, { lines, reason: returnReason || undefined })
+      await load()
+      setShowReturnModal(false)
+      toast.success(isEn ? 'Return recorded' : '退货已记录')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to record return' : '退货失败'))
+    } finally {
+      setReturning(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-gray-400">
@@ -601,7 +670,7 @@ export default function PurchaseDetailPage() {
             {po.status === 'CONFIRMED' && (
               <>
                 <button
-                  onClick={() => router.push(`${prefix}/classic/operator/inventory?tab=receive&poId=${po.id}`)}
+                  onClick={openReceiveModal}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
                   {isEn ? 'Confirm Receipt' : '确认收货'}
@@ -638,6 +707,12 @@ export default function PurchaseDetailPage() {
                   {isEn ? 'Cancel' : '取消'}
                 </button>
               </>
+            )}
+            {['CONFIRMED', 'RECEIVED', 'INVOICED'].includes(po.status) && (
+              <button onClick={openReturnModal} disabled={acting}
+                className="h-8 px-4 text-sm font-medium rounded border border-orange-300 bg-white text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+                {isEn ? 'Return / Adjust Qty' : '退货/修正数量'}
+              </button>
             )}
             {isLocked && (
               <span className="text-sm font-medium px-3 py-1 rounded flex items-center gap-1.5" style={{ background: '#f0fdf4', color: '#166534' }}>
@@ -1070,6 +1145,134 @@ export default function PurchaseDetailPage() {
           )}
         </div>
       </div>
+
+      {showReceiveModal && po && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 space-y-4">
+            <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Confirm Receipt' : '确认收货'} · {po.name}</h2>
+            <p className="text-xs text-gray-500">
+              {isEn
+                ? 'Quantities default to the ordered amount and are added to stock once confirmed. Adjust if the actual receipt differs.'
+                : '数量默认按下单数量计入库存，如实收有差异可在此调整。'}
+            </p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-gray-200">
+                  <th className="text-left py-1.5">{isEn ? 'Product' : '商品'}</th>
+                  <th className="text-right py-1.5">{isEn ? 'Ordered' : '订购'}</th>
+                  {po.lines.some(l => Number(l.receivedQty ?? 0) > 0) && (
+                    <th className="text-right py-1.5">{isEn ? 'Already received' : '已收'}</th>
+                  )}
+                  <th className="text-right py-1.5">{isEn ? 'Confirm qty' : '确认数量'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {po.lines.map(l => (
+                  <tr key={l.id} className="border-b border-gray-100">
+                    <td className="py-2 text-gray-800">{l.productName}</td>
+                    <td className="py-2 text-right text-gray-500">{Number(l.orderedQty).toFixed(3)}</td>
+                    {po.lines.some(x => Number(x.receivedQty ?? 0) > 0) && (
+                      <td className="py-2 text-right text-gray-500">{Number(l.receivedQty ?? 0).toFixed(3)}</td>
+                    )}
+                    <td className="py-2 text-right">
+                      <input type="number" step="0.001" min="0"
+                        value={receiveQtys[l.id] ?? ''}
+                        onChange={e => setReceiveQtys(prev => ({ ...prev, [l.id]: e.target.value }))}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm text-right w-24" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {(po.receipts?.length ?? 0) > 0 && (
+              <div className="border-t border-gray-100 pt-3">
+                <div className="text-xs font-medium text-gray-600 mb-1.5">{isEn ? 'Recorded arrivals (reference)' : '库存已记录的到货（供参考）'}</div>
+                <div className="space-y-1.5">
+                  {(po.receipts ?? []).map(gr => {
+                    const good = gr.lines.filter(l => (l.condition ?? 'ok') === 'ok').length
+                    const bad = gr.lines.filter(l => l.condition === 'damaged').length
+                    const rejected = gr.lines.filter(l => l.condition === 'rejected').length
+                    return (
+                      <div key={gr.id} className="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5">
+                        <span className="font-medium text-gray-700">{gr.name}</span>
+                        {' · '}{isEn ? `${good} good` : `${good} 良品`}
+                        {bad > 0 && <span className="text-red-600">{isEn ? `, ${bad} damaged` : `，${bad} 损坏`}</span>}
+                        {rejected > 0 && <span className="text-red-700">{isEn ? `, ${rejected} rejected` : `，${rejected} 拒收`}</span>}
+                        {gr.notes && <span className="text-gray-400"> · {gr.notes}</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowReceiveModal(false)}
+                className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">
+                {isEn ? 'Cancel' : '取消'}
+              </button>
+              <button onClick={submitReceive} disabled={receiving}
+                className="flex-1 py-2 rounded text-sm text-white disabled:opacity-50" style={{ background: PURPLE }}>
+                {receiving ? (isEn ? 'Confirming…' : '确认中…') : (isEn ? 'Confirm Receipt' : '确认收货')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReturnModal && po && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 space-y-4">
+            <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Return / Adjust Quantity' : '退货/修正数量'} · {po.name}</h2>
+            <p className="text-xs text-gray-500">
+              {isEn
+                ? 'Enter the return quantity for the affected lines. Stock and received quantity are reversed immediately.'
+                : '填写需要退货的行数量，库存与已收数量会立即冲减。'}
+            </p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-gray-200">
+                  <th className="text-left py-1.5">{isEn ? 'Product' : '商品'}</th>
+                  <th className="text-right py-1.5">{isEn ? 'Received' : '已收'}</th>
+                  <th className="text-right py-1.5">{isEn ? 'Return qty' : '退货数量'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {po.lines.filter(l => Number(l.receivedQty ?? 0) > 0).map(l => (
+                  <tr key={l.id} className="border-b border-gray-100">
+                    <td className="py-2 text-gray-800">{l.productName}</td>
+                    <td className="py-2 text-right text-gray-500">{Number(l.receivedQty ?? 0).toFixed(3)}</td>
+                    <td className="py-2 text-right">
+                      <input type="number" step="0.001" min="0" max={Number(l.receivedQty ?? 0)}
+                        value={returnQtys[l.id] ?? ''}
+                        onChange={e => setReturnQtys(prev => ({ ...prev, [l.id]: e.target.value }))}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm text-right w-24" />
+                    </td>
+                  </tr>
+                ))}
+                {po.lines.every(l => Number(l.receivedQty ?? 0) <= 0) && (
+                  <tr><td colSpan={3} className="py-6 text-center text-gray-400">{isEn ? 'No received quantity to return yet' : '暂无已收数量可退'}</td></tr>
+                )}
+              </tbody>
+            </table>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Reason' : '退货原因'}</label>
+              <input value={returnReason} onChange={e => setReturnReason(e.target.value)}
+                placeholder={isEn ? 'e.g. quality issue found after receiving' : '例如：收货后发现质量问题'}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none" />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowReturnModal(false)}
+                className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">
+                {isEn ? 'Cancel' : '取消'}
+              </button>
+              <button onClick={submitReturn} disabled={returning}
+                className="flex-1 py-2 rounded text-sm text-white disabled:opacity-50 bg-orange-600 hover:bg-orange-700 disabled:hover:bg-orange-600">
+                {returning ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Submit Return' : '提交退货')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showQuickCreate && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">

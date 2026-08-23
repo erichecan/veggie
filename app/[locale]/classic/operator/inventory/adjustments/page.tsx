@@ -54,6 +54,8 @@ const SOURCE_HREF: Record<string, string> = {
   PURCHASE_ORDER: '/classic/operator/purchases',
   ORDER: '/classic/operator/orders',
   GOODS_RECEIPT: '/classic/operator/inventory/receipts',
+  // 20260823 起改库存的动作在采购单详情页「确认收货」，sourceId 是 PO id 不是收货单 id
+  PURCHASE_RECEIVE: '/classic/operator/purchases',
   SCRAP: '/classic/operator/inventory/scrap',
 }
 

@@ -7,9 +7,10 @@ import { serializeApi } from '@/lib/api-serializer'
 /**
  * PUT /api/uoms/[id]
  * ============================================================================
- * 编辑 UoM。白名单允许的字段：name / nameZh / goodsType / rounding / factor / active
+ * 编辑 UoM。白名单允许的字段：name / nameZh / goodsType / active
  * - goodsType 限定 BULK / LOOSE / null
- * - factor 若变化会重新计算 type（REFERENCE / SMALLER / BIGGER）
+ * - 20260823 起不再接受 factor / rounding：换算系数改挂商品（ProductSaleUom.factor），
+ *   单位本身只剩名称与货物类型。DB 列仍在（分析 SQL 等处仍读），只是不再从这里改。
  * - 不允许直接改 categoryId（迁移单位会破坏已有商品换算）
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -39,21 +40,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (update.goodsType === undefined) {
           return NextResponse.json({ error: 'goodsType 必须是 BULK / LOOSE / null' }, { status: 400 })
         }
-      }
-      if (body.rounding !== undefined) {
-        const r = Number(body.rounding)
-        if (!Number.isFinite(r) || r <= 0) {
-          return NextResponse.json({ error: 'rounding 必须 > 0' }, { status: 400 })
-        }
-        update.rounding = r
-      }
-      if (body.factor !== undefined) {
-        const f = Number(body.factor)
-        if (!Number.isFinite(f) || f <= 0) {
-          return NextResponse.json({ error: 'factor 必须 > 0' }, { status: 400 })
-        }
-        update.factor = f
-        update.type = f === 1 ? 'REFERENCE' : f < 1 ? 'SMALLER' : 'BIGGER'
       }
       if (body.active !== undefined) {
         update.active = Boolean(body.active)

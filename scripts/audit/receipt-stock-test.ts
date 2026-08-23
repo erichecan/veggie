@@ -3,13 +3,21 @@
  * ============================================================================
  * 台账 E5。对应需求原话：「库存更新：需要 AI 写测试用例去做检查」。
  *
- * 六个场景，每个都做**收货前后快照对比**，断言三件事：
- *   1. `Product.qtyOnHand` 的增量恰好等于本次良品收货量
- *   2. `StockMove` 新增条数与类型符合预期（良品 IN / 损坏 SCRAP）
- *   3. 收完仍满足全局不变量 `qtyOnHand == Σ StockMove`（守恒）
+ * ⚠️ 20260823 改写：改库存的动作从 `POST /api/goods-receipts` 搬到了
+ * `PATCH /api/purchase-orders/[id]` action=receive（采购单详情页「确认收货」，
+ * 见 lib/purchase/receive-purchase-order.ts）。goods-receipts 现在只记录到货，
+ * 不再碰库存——这份脚本原先测的是前者，现在拆成两段：
+ *   1. 验证 goods-receipts 确实**零库存副作用**（不管 condition 是什么）——
+ *      这是本次重构最容易漏测的回归点：忘删一行库存写入，这里就会当场炸。
+ *   2. 把原来测「收货改库存」的场景搬到新端点上，断言三件事不变：
+ *      - `Product.qtyOnHand` 的增量恰好等于本次确认的数量
+ *      - `StockMove` 新增条数与类型符合预期
+ *      - 收完仍满足全局不变量 `qtyOnHand == Σ StockMove`（守恒）
  *
- * 第 3 条是重点：E3 查出过 qtyOnHand 与流水脱钩的历史病灶，任何往库存里写东西
- * 的路径都必须当场验证它没有再制造脱钩，否则又是一笔「以后再说」的债。
+ * 良品/损坏/拒收的**记录**仍在 goods-receipts（决策#1：全部录入项保留，只是不再
+ * 触发库存），但那三态本身不再产生任何库存后果，所以原先「损坏不进库存」「拒收
+ * 不进库存」这类场景在新架构下对**所有** condition 都成立、且已被场景 0 覆盖，
+ * 不必再各测一遍。
  *
  * ⛔ 本脚本会写库（建 PO、收货）。只允许打向本机 veggie_test。
  *
@@ -58,13 +66,13 @@ async function snapshot(productId: string) {
   }
 }
 
-/** 建一张 CONFIRMED 的采购单，供收货用 */
+/** 建一张 CONFIRMED 的采购单，供收货用。返回 PO id 与唯一那行的 lineId */
 async function makePO(
   token: string,
   productId: string,
   qty: number,
   opts: { uomId?: string; unitCost?: number } = {},
-): Promise<string | null> {
+): Promise<{ poId: string; lineId: string } | null> {
   const supplier = await prisma.customer.findFirst({ where: { isVendor: true }, select: { id: true } })
   if (!supplier) return null
   const product = await prisma.product.findUniqueOrThrow({
@@ -78,6 +86,7 @@ async function makePO(
       status: 'CONFIRMED',
       orderDate: new Date(),
       expectedDate: new Date(),
+      currency: 'EUR',
       subtotalExTax: cost * qty,
       totalTax: 0,
       totalIncTax: cost * qty,
@@ -91,18 +100,29 @@ async function makePO(
         }],
       },
     },
-    select: { id: true },
+    select: { id: true, lines: { select: { id: true } } },
   })
-  return po.id
+  return { poId: po.id, lineId: po.lines[0]!.id }
 }
 
-async function receive(token: string, poId: string, lines: Array<{
-  productId: string; qty: number; condition?: 'ok' | 'damaged'; uomId?: string
+/** 记录到货（不再改库存）——POST /api/goods-receipts */
+async function recordGoodsReceipt(token: string, poId: string, lines: Array<{
+  productId: string; qty: number; condition?: 'ok' | 'damaged' | 'rejected'
 }>) {
   const r = await fetch(`${BASE}/api/goods-receipts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ purchaseOrderId: poId, arrivedAt: new Date().toISOString(), lines }),
+  })
+  return { status: r.status, body: await r.json().catch(() => ({})) as Record<string, unknown> }
+}
+
+/** 采购确认收货（真正改库存的动作）——PATCH /api/purchase-orders/:id action=receive */
+async function confirmReceive(token: string, poId: string, lines?: Array<{ lineId: string; qty: number }>) {
+  const r = await fetch(`${BASE}/api/purchase-orders/${poId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action: 'receive', ...(lines ? { lines } : {}) }),
   })
   return { status: r.status, body: await r.json().catch(() => ({})) as Record<string, unknown> }
 }
@@ -122,114 +142,95 @@ async function main() {
   if (!product) { console.error('测试库没有可用商品'); process.exit(1) }
   const pid = product.id
 
-  // ── 场景 1：正常收货（足额良品） ────────────────────────────────────────
+  // ── 场景 0：goods-receipts 记录到货 = 零库存副作用（不管 condition） ──────
+  // 这是本次重构最该守住的回归点：三种 condition 各测一遍，任何一个悄悄改了库存
+  // 都当场暴露。同时验证 receivedQty / PO 状态也纹丝不动——那两个现在只归
+  // action=receive 管。
+  for (const condition of ['ok', 'damaged', 'rejected'] as const) {
+    const before = await snapshot(pid)
+    const made = await makePO(token, pid, 20)
+    if (!made) { skip(`goods-receipts 零副作用（${condition}）`, '无供应商'); continue }
+    const res = await recordGoodsReceipt(token, made.poId, [{ productId: pid, qty: 20, condition }])
+    const after = await snapshot(pid)
+    const line = (await prisma.purchaseOrderLine.findFirst({ where: { id: made.lineId } }))!
+    const po = (await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: made.poId } }))
+    add(`goods-receipts 记录到货零库存副作用（condition=${condition}）`,
+      res.status === 201 && after.qty === before.qty && after.moveCount === before.moveCount
+      && num(line.receivedQty) === 0 && po.status === 'CONFIRMED',
+      `HTTP ${res.status} · 库存 ${before.qty}→${after.qty} · 流水 +${after.moveCount - before.moveCount}`
+      + ` · receivedQty=${num(line.receivedQty)}（应 0）· PO 状态=${po.status}（应仍 CONFIRMED）`)
+  }
+
+  // ── 场景 1：确认收货（默认按订购量，不传 lines） ──────────────────────────
   {
     const before = await snapshot(pid)
-    const po = await makePO(token, pid, 100)
-    if (!po) { skip('正常收货', '库中无供应商，无法建采购单'); }
+    const made = await makePO(token, pid, 100)
+    if (!made) { skip('正常确认收货', '库中无供应商，无法建采购单') }
     else {
-      const res = await receive(token, po, [{ productId: pid, qty: 100, condition: 'ok' }])
+      const res = await confirmReceive(token, made.poId)
       const after = await snapshot(pid)
-      add('正常收货（足额良品）',
-        res.status === 200 || res.status === 201
+      add('确认收货（不传 lines，默认按订购量 100 全收）',
+        res.status === 200
           ? after.qty - before.qty === 100 && after.inCount - before.inCount === 1
           : false,
         `HTTP ${res.status} · 库存 ${before.qty}→${after.qty}（+${after.qty - before.qty}）· IN 流水 +${after.inCount - before.inCount}`)
     }
   }
 
-  // ── 场景 2：少收（收货量 < 订购量） ────────────────────────────────────
+  // ── 场景 2：按行覆盖为少收（qty < 订购量） ────────────────────────────────
   {
     const before = await snapshot(pid)
-    const po = await makePO(token, pid, 100)
-    if (!po) skip('少收', '无供应商')
+    const made = await makePO(token, pid, 100)
+    if (!made) skip('少收', '无供应商')
     else {
-      const res = await receive(token, po, [{ productId: pid, qty: 40, condition: 'ok' }])
+      const res = await confirmReceive(token, made.poId, [{ lineId: made.lineId, qty: 40 }])
       const after = await snapshot(pid)
-      add('少收（订 100 收 40）',
-        after.qty - before.qty === 40,
-        `库存 +${after.qty - before.qty}（应为 40，按实收而非订购量入库）`)
+      const po = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: made.poId } })
+      add('少收（订 100 确认 40）：库存按确认量入库，未收满维持 CONFIRMED',
+        res.status === 200 && after.qty - before.qty === 40 && po.status === 'CONFIRMED',
+        `HTTP ${res.status} · 库存 +${after.qty - before.qty}（应 40）· PO 状态=${po.status}（应仍 CONFIRMED）`)
     }
   }
 
-  // ── 场景 3：超收（收货量 > 订购量） ────────────────────────────────────
+  // ── 场景 3：超收（qty > 订购量） ───────────────────────────────────────────
   {
     const before = await snapshot(pid)
-    const po = await makePO(token, pid, 50)
-    if (!po) skip('超收', '无供应商')
+    const made = await makePO(token, pid, 50)
+    if (!made) skip('超收', '无供应商')
     else {
-      const res = await receive(token, po, [{ productId: pid, qty: 80, condition: 'ok' }])
+      const res = await confirmReceive(token, made.poId, [{ lineId: made.lineId, qty: 80 }])
       const after = await snapshot(pid)
       const delta = after.qty - before.qty
-      // 超收该被拒（409/400）还是按实收入库（+80），两种设计都成立，
-      // 但不能出现「按订购量 50 入库」这种既非拒绝也非实收的第三种结果
-      const sane = (res.status >= 400 && delta === 0) || delta === 80
-      add('超收（订 50 收 80）', sane,
-        `HTTP ${res.status} · 库存 +${delta}（应为「拒绝且 +0」或「按实收 +80」，不得为 +50）`)
+      add('超收（订 50 确认 80）：按确认量入库，不封顶',
+        res.status === 200 && delta === 80,
+        `HTTP ${res.status} · 库存 +${delta}（应 80）`)
     }
   }
 
-  // ── 场景 4：部分收货（同一 PO 分两次收） ──────────────────────────────
+  // ── 场景 4：分批确认（60 + 40 两次调用，每次显式指定本次数量） ────────────
   {
     const before = await snapshot(pid)
-    const po = await makePO(token, pid, 100)
-    if (!po) skip('部分收货', '无供应商')
+    const made = await makePO(token, pid, 100)
+    if (!made) skip('分批确认', '无供应商')
     else {
-      await receive(token, po, [{ productId: pid, qty: 60, condition: 'ok' }])
+      const r1 = await confirmReceive(token, made.poId, [{ lineId: made.lineId, qty: 60 }])
       const mid = await snapshot(pid)
-      const r2 = await receive(token, po, [{ productId: pid, qty: 40, condition: 'ok' }])
+      const midPo = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: made.poId } })
+      const r2 = await confirmReceive(token, made.poId, [{ lineId: made.lineId, qty: 40 }])
       const after = await snapshot(pid)
-      add('部分收货（60 + 40 分两次）',
-        mid.qty - before.qty === 60 && after.qty - before.qty === 100 && after.inCount - before.inCount === 2,
-        `第一次 +${mid.qty - before.qty} · 第二次后累计 +${after.qty - before.qty} · IN 流水 +${after.inCount - before.inCount}（应为 2 条）· 第二次 HTTP ${r2.status}`)
+      const afterPo = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: made.poId } })
+      add('分批确认（60 + 40 两次）：中途维持 CONFIRMED，收满转 RECEIVED',
+        mid.qty - before.qty === 60 && midPo.status === 'CONFIRMED'
+        && after.qty - before.qty === 100 && after.inCount - before.inCount === 2 && afterPo.status === 'RECEIVED',
+        `第一次 +${mid.qty - before.qty}（中途状态 ${midPo.status}）· 第二次后累计 +${after.qty - before.qty}`
+        + ` · IN 流水 +${after.inCount - before.inCount}（应 2）· 最终状态 ${afterPo.status}（应 RECEIVED）`
+        + ` · HTTP ${r1.status}/${r2.status}`)
     }
   }
 
-  // ── 场景 5：收到损坏品（不进库存，只留 SCRAP 痕迹） ──────────────────
-  {
-    const before = await snapshot(pid)
-    const po = await makePO(token, pid, 30)
-    if (!po) skip('损坏品', '无供应商')
-    else {
-      const res = await receive(token, po, [{ productId: pid, qty: 30, condition: 'damaged' }])
-      const after = await snapshot(pid)
-      // 损坏品记两笔：IN(+qty) 紧跟 SCRAP(-qty)，净额 0 —— 既不进库存又不破坏守恒
-      add('损坏品（不进库存，留 SCRAP 痕迹）',
-        after.qty === before.qty
-        && after.scrapCount - before.scrapCount === 1
-        && after.inCount - before.inCount === 1
-        && Math.abs(after.moveSum - before.moveSum) < 0.001,
-        `HTTP ${res.status} · 库存变化 ${after.qty - before.qty}（应 0）· IN +${after.inCount - before.inCount} · SCRAP +${after.scrapCount - before.scrapCount} · 流水净额 ${after.moveSum - before.moveSum}（应 0）`)
-    }
-  }
-
-  // ── 场景 6：良品 + 损坏混合收 ──────────────────────────────────────────
-  {
-    const before = await snapshot(pid)
-    const po = await makePO(token, pid, 50)
-    if (!po) skip('混合收货', '无供应商')
-    else {
-      const res = await receive(token, po, [
-        { productId: pid, qty: 35, condition: 'ok' },
-        { productId: pid, qty: 15, condition: 'damaged' },
-      ])
-      const after = await snapshot(pid)
-      // 良品 1 笔 IN；损坏品 1 笔 IN + 1 笔 SCRAP → 共 2 笔 IN、1 笔 SCRAP，净额 = 良品量
-      add('混合收货（35 良 + 15 损）',
-        after.qty - before.qty === 35
-        && after.inCount - before.inCount === 2
-        && after.scrapCount - before.scrapCount === 1
-        && Math.abs((after.moveSum - before.moveSum) - 35) < 0.001,
-        `库存 +${after.qty - before.qty}（应 35，只算良品）· IN +${after.inCount - before.inCount}（应 2）· SCRAP +${after.scrapCount - before.scrapCount} · 流水净额 ${after.moveSum - before.moveSum}（应 35）`)
-    }
-  }
-
-  // ── 场景 7~10：批次与成本（E5x 补测）───────────────────────────────────
+  // ── 场景 5～8：批次与成本（E5x 补测，原逻辑照搬到新端点）──────────────────
   // G4 查出「批次仅 45 个、凭证 0 张」，结论是**算法对但几乎没有数据流经它**。
-  // 收货是批次与成本的唯一入口，所以这条链必须有回归测试守着：
-  // 建批次 → 批次余量 → 批次成本 → 移动加权平均 → 批次守恒。
-  // 用**专用商品**而不是共享商品：加权平均要拿已知的期初数量与成本算，
-  // 借别人的商品算出来的期望值会被其它用例的收货改掉。
+  // 确认收货是批次与成本现在的唯一入口，这条链必须有回归测试守着。
   const stamp = Date.now()
   const dedicatedName = `E5x 批次成本测试商品 ${stamp}`
   const tmpl = await prisma.productTemplate.create({
@@ -252,18 +253,18 @@ async function main() {
     prisma.product.update({ where: { id: dpid }, data: { qtyOnHand: 100 } }),
   ])
 
-  // 场景 7 + 8：收 50 件 @ €16 → 建批次；加权平均 (100×10 + 50×16)/150 = 12
+  // 场景 5 + 6：确认收货 50 件 @ €16 → 建批次；加权平均 (100×10 + 50×16)/150 = 12
   {
-    const po = await makePO(token, dpid, 50, { unitCost: 16 })
-    if (!po) skip('收货建批次 / 加权平均成本', '无供应商')
+    const made = await makePO(token, dpid, 50, { unitCost: 16 })
+    if (!made) skip('确认收货建批次 / 加权平均成本', '无供应商')
     else {
-      const res = await receive(token, po, [{ productId: dpid, qty: 50, condition: 'ok' }])
+      const res = await confirmReceive(token, made.poId, [{ lineId: made.lineId, qty: 50 }])
       const lots = await prisma.lot.findMany({ where: { productId: dpid }, orderBy: { createdAt: 'desc' } })
       const lot = lots[0]
-      add('收货建出批次（Lot）',
-        res.status === 201 && lots.length === 1 && !!lot?.lotNumber && lot?.sourceType === 'GOODS_RECEIPT',
-        `HTTP ${res.status} · 批次数 ${lots.length} · ${lot?.lotNumber ?? '—'} · source=${lot?.sourceType ?? '—'}`)
-      add('批次余量 = 本次收货量', num(lot?.currentQty) === 50 && num(lot?.initialQty) === 50,
+      add('确认收货建出批次（Lot）：sourceType=PURCHASE_RECEIVE（不是历史的 GOODS_RECEIPT）',
+        res.status === 200 && lots.length === 1 && !!lot?.lotNumber && lot?.sourceType === 'PURCHASE_RECEIVE' && lot?.sourceId === made.poId,
+        `HTTP ${res.status} · 批次数 ${lots.length} · ${lot?.lotNumber ?? '—'} · source=${lot?.sourceType ?? '—'}/${lot?.sourceId ?? '—'}`)
+      add('批次余量 = 本次确认量', num(lot?.currentQty) === 50 && num(lot?.initialQty) === 50,
         `initialQty=${num(lot?.initialQty)} currentQty=${num(lot?.currentQty)}（应各 50）`)
       add('批次成本 = 采购单价（毛利/损耗按批次计成本的基础）', num(lot?.unitCost) === 16,
         `unitCost=${num(lot?.unitCost)}（应 16）`)
@@ -274,38 +275,25 @@ async function main() {
     }
   }
 
-  // 场景 9（I3 回归）：按**箱**收货，1 箱 = 12 件
-  // 此前收货侧从不换算，收 5 箱只加 5 件；单价也必须同步换算，否则成本虚高 12 倍
+  // 场景 7（I3 回归）：按**箱**确认收货，1 箱 = 12 件
   {
     const before = await snapshot(dpid)
-    const po = await makePO(token, dpid, 5, { uomId: 'uom_case', unitCost: 240 })
-    if (!po) skip('按箱收货换算', '无供应商')
+    const made = await makePO(token, dpid, 5, { uomId: 'uom_case', unitCost: 240 })
+    if (!made) skip('按箱确认收货换算', '无供应商')
     else {
-      const res = await receive(token, po, [{ productId: dpid, qty: 5, condition: 'ok', uomId: 'uom_case' }])
+      const res = await confirmReceive(token, made.poId, [{ lineId: made.lineId, qty: 5 }])
       const after = await snapshot(dpid)
-      add('按箱收货：库存按基准单位换算（5 箱 = 60 件）',
-        res.status === 201 && after.qty - before.qty === 60,
+      add('按箱确认收货：库存按基准单位换算（5 箱 = 60 件）',
+        res.status === 200 && after.qty - before.qty === 60,
         `HTTP ${res.status} · 库存 +${after.qty - before.qty}（应 60，不是 5）`)
       const lot = (await prisma.lot.findMany({ where: { productId: dpid }, orderBy: { createdAt: 'desc' }, take: 1 }))[0]
-      add('按箱收货：批次成本折到基准单位（€240/箱 → €20/件）',
+      add('按箱确认收货：批次成本折到基准单位（€240/箱 → €20/件）',
         num(lot?.unitCost) === 20 && num(lot?.currentQty) === 60,
         `unitCost=${num(lot?.unitCost)}（应 20）· currentQty=${num(lot?.currentQty)}（应 60）`)
     }
   }
 
-  // 场景 10：损坏品不建批次（货没进库，不该凭空多一个可发的批次）
-  {
-    const lotsBefore = await prisma.lot.count({ where: { productId: dpid } })
-    const po = await makePO(token, dpid, 8, { unitCost: 16 })
-    if (!po) skip('损坏品不建批次', '无供应商')
-    else {
-      await receive(token, po, [{ productId: dpid, qty: 8, condition: 'damaged' }])
-      const lotsAfter = await prisma.lot.count({ where: { productId: dpid } })
-      add('损坏品不建批次', lotsAfter === lotsBefore, `批次数 ${lotsBefore} → ${lotsAfter}（应不变）`)
-    }
-  }
-
-  // 场景 11：批次守恒 —— 每个批次的余量必须等于挂在它名下的流水之和
+  // ── 场景 8：批次守恒 —— 每个批次的余量必须等于挂在它名下的流水之和 ────────
   {
     const rows = await prisma.$queryRawUnsafe<Array<{ c: bigint }>>(`
       SELECT COUNT(*)::bigint AS c FROM "Lot" l
@@ -313,21 +301,6 @@ async function main() {
       WHERE ABS(l."currentQty" - COALESCE(m.s, 0)) > 0.001`)
     add('全库批次守恒（Lot.currentQty == Σ该批次流水）',
       Number(rows[0]?.c ?? 0) === 0, `不守恒批次数 ${Number(rows[0]?.c ?? 0)}`)
-  }
-
-  // 场景 12：收货损坏的 SCRAP 流水要带结构化归因（台账 E4 的环节字段）
-  {
-    const damaged = await prisma.stockMove.findFirst({
-      where: { productId: dpid, type: 'SCRAP', sourceType: 'RECEIPT_DAMAGE' },
-      orderBy: { createdAt: 'desc' },
-      select: { lossStage: true, lossReason: true },
-    })
-    if (!damaged) skip('收货损坏带结构化归因', '本轮没有产生收货损坏流水')
-    else {
-      add('收货损坏的 SCRAP 带环节=收货、原因=到货即损坏',
-        damaged.lossStage === 'RECEIPT' && damaged.lossReason === 'RECEIPT_DAMAGE',
-        `lossStage=${damaged.lossStage ?? 'null'} lossReason=${damaged.lossReason ?? 'null'}`)
-    }
   }
 
   // ── 全局：守恒必须仍然成立 ──────────────────────────────────────────────
@@ -341,7 +314,7 @@ async function main() {
       SELECT COUNT(*)::bigint AS c FROM "Product" p
       LEFT JOIN (SELECT "productId", SUM(qty) AS s FROM "StockMove" GROUP BY 1) m ON m."productId" = p.id
       WHERE ABS(p."qtyOnHand" - COALESCE(m.s, 0)) > 0.001`)
-    add('全库守恒（收货未制造新的脱钩）',
+    add('全库守恒（本轮测试未制造新的脱钩）',
       Number(bad[0]?.c ?? 0) === 0,
       `不守恒商品数 ${Number(bad[0]?.c ?? 0)}`)
   }
@@ -351,7 +324,7 @@ async function main() {
   console.log('\n──── 收货 → 库存 测试 ────')
   for (const c of cases) {
     const icon = c.state === 'pass' ? '✅' : c.state === 'fail' ? '❌' : '⚠️ '
-    console.log(`  ${icon} ${c.name.padEnd(30)} ${c.detail}`)
+    console.log(`  ${icon} ${c.name.padEnd(40)} ${c.detail}`)
   }
   const failed = cases.filter(c => c.state === 'fail')
   const skipped = cases.filter(c => c.state === 'skip')

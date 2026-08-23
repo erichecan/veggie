@@ -439,8 +439,8 @@ export default function ClassicPlaceOrderPage() {
     Promise.all([
       // slim=1: 跳过 specialPrices JOIN，客户选定后再懒加载完整对象
       apiGet<Customer[]>('/api/customers?slim=1').catch(() => []),
-      // status=ACTIVE: 服务端过滤，不传输已归档商品
-      apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1').catch(() => []),
+      // status=ACTIVE: 服务端过滤，不传输已归档商品；slim=1: 只回选品框真正用到的字段
+      apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1&slim=1').catch(() => []),
       apiGet<OdooPricelist[]>('/api/pricelists').catch(() => []),
       // role=SALES: 服务端过滤，只拉销售人员
       apiGet<{ id: string; name: string; role: string; roles?: string[] }[]>('/api/users?role=SALES').catch(() => []),
@@ -455,6 +455,28 @@ export default function ClassicPlaceOrderPage() {
       })
       .catch(() => toast.error(isEn ? 'Failed to load data' : '加载数据失败'))
       .finally(() => setLoading(false))
+  }, [])
+
+  // 商品管理侧改了 canBeSold 等字段后，希望回到这个已经打开的页面时能看到最新数据，
+  // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案。
+  useEffect(() => {
+    let lastFetch = Date.now()
+    function refetchProducts() {
+      if (Date.now() - lastFetch < 30_000) return
+      lastFetch = Date.now()
+      apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1&slim=1')
+        .then(setProducts)
+        .catch(() => {})
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'visible') refetchProducts()
+    }
+    window.addEventListener('focus', refetchProducts)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', refetchProducts)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   // ── Keyboard navigation handlers ──────────────────────────────────────────

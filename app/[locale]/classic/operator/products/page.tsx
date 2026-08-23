@@ -270,6 +270,15 @@ export default function ClassicProductsPage() {
               />
             )}
             <span className="font-medium" style={{ color: '#875A7B' }}>{String(v ?? '')}</span>
+            {t.canBeSold && (
+              <span
+                className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] flex-shrink-0"
+                style={{ background: '#d1fae5', color: '#059669' }}
+                title={isEn ? 'Can be Sold' : '可售'}
+              >
+                ✓
+              </span>
+            )}
           </div>
         )
       },
@@ -649,6 +658,19 @@ export default function ClassicProductsPage() {
               : '已归档商品不会出现在下单 / 报价的选品中'}
           >
             {showArchived ? (isEn ? '✓ Incl. archived' : '✓ 含已归档') : (isEn ? 'Incl. archived' : '含已归档')}
+          </button>
+
+          {/* 可售商品开关：与顶部筛选下拉的 Can be Sold 项共用同一个 state */}
+          <button
+            type="button"
+            onClick={() => setCanBeSoldFilter(v => !v)}
+            className="h-7 px-2.5 text-xs rounded border transition-colors font-medium ml-1"
+            style={canBeSoldFilter
+              ? { background: '#d1fae5', borderColor: '#10b981', color: '#059669' }
+              : { background: 'white', borderColor: '#d1d5db', color: '#6b7280' }}
+            title={isEn ? 'Show only products that can be sold' : '只显示可售商品'}
+          >
+            {canBeSoldFilter ? (isEn ? '✓ Can be Sold' : '✓ 可售商品') : (isEn ? 'Can be Sold' : '可售商品')}
           </button>
         </div>
 

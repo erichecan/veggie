@@ -305,6 +305,10 @@ model ProductTemplate {
   externalId       String?          @unique
   sequence         Int?
   weight           Decimal?         @db.Decimal(10, 3)
+  /// 毛重（kg）。物流/报关/称重口径，独立于上面的"默认商品重量"weight。
+  grossWeight      Decimal?         @db.Decimal(10, 3)
+  /// 净重（kg）。物流/报关/称重口径，独立于上面的"默认商品重量"weight。
+  netWeight        Decimal?         @db.Decimal(10, 3)
   volume           Decimal?         @db.Decimal(10, 3)
   commissionPrice  Decimal?         @db.Decimal(12, 2)
   isPackaging      Boolean?
@@ -401,6 +405,12 @@ model Product {
  * `priceOverride` 留空则按「基础单价 × factor」自动换算，填了就用这个固定值
  * （整箱优惠价这类场景）。
  */
+enum SaleUomPriceMode {
+  AUTO     // 基准单价 × factor，四舍五入两位小数（现状默认行为）
+  FIXED    // 直接用 priceOverride（现状"填了就固定"，只是显式建模成一个状态）
+  FORMULA  // 基准单价 × factor × (1 − priceDiscountPct/100) + priceSurcharge
+}
+
 model ProductSaleUom {
   id            String   @id @default(cuid())
   productId     String
@@ -414,6 +424,12 @@ model ProductSaleUom {
   /// ⛔ 不要用全局 Uom.factor —— 同名 CASE 在不同商品里箱规不同（见 model 注释）
   factor        Decimal  @default(1) @db.Decimal(14, 6)
   priceOverride Decimal? @db.Decimal(12, 2)
+  /// 价格计算方式；默认 AUTO 与现状完全一致，存量数据据 priceOverride 是否有值一次性回填
+  priceMode        SaleUomPriceMode @default(AUTO)
+  /// FORMULA 模式下的折扣百分比，如 10 表示"打 9 折"
+  priceDiscountPct Decimal          @default(0) @db.Decimal(6, 4)
+  /// FORMULA 模式下的加减金额（可正可负），折扣之后再加
+  priceSurcharge   Decimal          @default(0) @db.Decimal(12, 2)
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

@@ -15,7 +15,8 @@
  * 导出给服务端拼查询条件用 —— 判据只有这一份，不在 SQL 里再抄一遍。
  */
 export const ACCOUNTED_IN_SOURCE_LIST = [
-  'GOODS_RECEIPT',   // 正常收货
+  'GOODS_RECEIPT',   // 正常收货（历史值：20260823 前由 goods-receipts 直接写库存时打的标）
+  'PURCHASE_RECEIVE', // 采购确认收货（20260823 起真正改库存的动作，见 lib/purchase/receive-purchase-order.ts）
   'RECEIPT_DAMAGE',  // 收货判损（到货那一笔 IN，随后被 SCRAP 抵掉）
   'ORDER',           // 订单减量/删行释放回库
   'RETURN',          // 客退回库

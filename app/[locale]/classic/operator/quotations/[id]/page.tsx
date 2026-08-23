@@ -162,8 +162,30 @@ export default function QuotationDetailPage() {
   const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    apiGet<AllProduct[]>('/api/products?limit=500&sellable=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
+    apiGet<AllProduct[]>('/api/products?sellable=1&slim=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
     apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
+  }, [])
+
+  // 商品管理侧改了 canBeSold 等字段后，希望回到这个已经打开的页面时能看到最新数据，
+  // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案。
+  useEffect(() => {
+    let lastFetch = Date.now()
+    function refetchProducts() {
+      if (Date.now() - lastFetch < 30_000) return
+      lastFetch = Date.now()
+      apiGet<AllProduct[]>('/api/products?sellable=1&slim=1')
+        .then(p => setAllProducts(Array.isArray(p) ? p : []))
+        .catch(() => {})
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'visible') refetchProducts()
+    }
+    window.addEventListener('focus', refetchProducts)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', refetchProducts)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   // 缺货提醒(20260729)：编辑期间新增的行不在初次 load() 拉取的 forecastMap 里，单独补一条

@@ -55,7 +55,17 @@ export async function POST(req: Request) {
     try {
       const { saleUoms: rawSaleUoms, ...data } = await req.json()
 
-      const saleUoms: SaleUomItemInput[] = Array.isArray(rawSaleUoms) ? rawSaleUoms : []
+      const rawList: SaleUomItemInput[] = Array.isArray(rawSaleUoms) ? rawSaleUoms : []
+      // 基准单位单一入口(20260823)：谁是基础行由页头选的 data.uomId 派生（同下方 createMany 的口径），
+      // 换基准单位后新变成基础的那一行系数可能还留着旧值 —— 校验前先归一，而不是拿一个用户
+      // 没机会去改的旧数字挡住创建。
+      const templateUomIdForValidation = data.uomId ? String(data.uomId) : null
+      const saleUoms: SaleUomItemInput[] = templateUomIdForValidation
+        ? rawList.map(it => {
+          const isDefault = String(it.uomId) === templateUomIdForValidation
+          return { ...it, isDefault, factor: isDefault ? 1 : it.factor }
+        })
+        : rawList
       const saleUomsError = saleUoms.length > 0 ? validateSaleUomItems(saleUoms) : null
       if (saleUomsError) return NextResponse.json({ error: saleUomsError }, { status: 400 })
 
@@ -88,16 +98,26 @@ export async function POST(req: Request) {
           },
         })
         if (saleUoms.length > 0) {
+          // 基准单位单一入口(20260823)：谁是基础行由页头选的 data.uomId 派生，
+          // 不再信 saleUoms 里各行自带的 isDefault —— 新建场景两者理论上应该一致，
+          // 这里是保险，不是预期会分叉。
+          const templateUomId = data.uomId ? String(data.uomId) : null
           await tx.productSaleUom.createMany({
-            data: saleUoms.map(it => ({
-              productId: product.id,
-              uomId: String(it.uomId),
-              isDefault: !!it.isDefault,
-              // 基础单位对自己的换算恒为 1（见 lib/sale-uom.ts）
-              factor: it.isDefault ? 1 : normalizeFactor(it.factor),
-              priceOverride: it.priceOverride != null && it.priceOverride !== '' ? Number(it.priceOverride) : null,
-              active: it.active !== false,
-            })),
+            data: saleUoms.map(it => {
+              const isDefault = templateUomId ? String(it.uomId) === templateUomId : !!it.isDefault
+              return {
+                productId: product.id,
+                uomId: String(it.uomId),
+                isDefault,
+                // 基础单位对自己的换算恒为 1（见 lib/sale-uom.ts）
+                factor: isDefault ? 1 : normalizeFactor(it.factor),
+                priceOverride: it.priceOverride != null && it.priceOverride !== '' ? Number(it.priceOverride) : null,
+                priceMode: it.priceMode === 'FIXED' || it.priceMode === 'FORMULA' ? it.priceMode : 'AUTO',
+                priceDiscountPct: it.priceDiscountPct != null && it.priceDiscountPct !== '' ? Number(it.priceDiscountPct) : 0,
+                priceSurcharge: it.priceSurcharge != null && it.priceSurcharge !== '' ? Number(it.priceSurcharge) : 0,
+                active: it.active !== false,
+              }
+            }),
           })
         }
         return tpl

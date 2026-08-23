@@ -14,6 +14,8 @@ import { round2 } from '@/lib/decimal-helpers'
  * 基础单位 = `isDefault` 那一行，其 factor 恒为 1。
  */
 
+export type SaleUomPriceMode = 'AUTO' | 'FIXED' | 'FORMULA'
+
 export interface SaleUomItemInput {
   uomId?: string
   isDefault?: boolean
@@ -21,6 +23,12 @@ export interface SaleUomItemInput {
   factor?: number | string | null
   priceOverride?: number | string | null
   active?: boolean
+  /** 价格计算方式；默认 AUTO 与不填这个字段的历史行为完全一致 */
+  priceMode?: SaleUomPriceMode
+  /** FORMULA 模式下的折扣百分比（0–100） */
+  priceDiscountPct?: number | string | null
+  /** FORMULA 模式下的加减金额（可正可负），折扣之后再加 */
+  priceSurcharge?: number | string | null
 }
 
 /** factor 的合理区间。上限 100000 足够覆盖「1 托盘 = N 个最小包装」这类真实场景 */
@@ -43,6 +51,13 @@ export function validateSaleUomItems(items: SaleUomItemInput[]): string | null {
     if (it.priceOverride != null && it.priceOverride !== '') {
       const n = Number(it.priceOverride)
       if (!Number.isFinite(n) || n < 0 || n > 1000000) return '独立售价必须在 0–1,000,000 之间'
+    }
+
+    if (it.priceMode === 'FORMULA') {
+      const d = it.priceDiscountPct == null || it.priceDiscountPct === '' ? 0 : Number(it.priceDiscountPct)
+      if (!Number.isFinite(d) || d < 0 || d > 100) return '折扣百分比必须在 0–100 之间'
+      const s = it.priceSurcharge == null || it.priceSurcharge === '' ? 0 : Number(it.priceSurcharge)
+      if (!Number.isFinite(s) || s < -1000000 || s > 1000000) return '加减金额必须在 −1,000,000–1,000,000 之间'
     }
 
     const f = it.factor == null || it.factor === '' ? 1 : Number(it.factor)
@@ -70,6 +85,9 @@ export interface SaleUomRow {
   factor: number
   priceOverride: number | null
   active?: boolean
+  priceMode?: SaleUomPriceMode
+  priceDiscountPct?: number
+  priceSurcharge?: number
 }
 
 /**
@@ -88,7 +106,12 @@ export function factorOf(saleUoms: SaleUomRow[], lineUomId: string | null | unde
 /**
  * 某一行选用 `lineUomId` 时的单价。
  *
- * `priceOverride` 优先（整箱优惠价这类场景），否则按「基础单价 × factor」换算。
+ * 20260823 起按 `priceMode` 三态分支：
+ * - FIXED：直接用 `priceOverride`（整箱优惠价这类场景）
+ * - FORMULA：`基准单价 × factor × (1 − priceDiscountPct/100) + priceSurcharge`
+ * - AUTO（含 priceMode 未传的旧调用点）：与改造前逐字一致 ——
+ *   `priceOverride` 有值就用，否则按「基础单价 × factor」换算。
+ *   这保证 5474 个从没配过多规格、以及所有存量已配置行的计算结果一个数字都不变。
  */
 export function priceOf(
   saleUoms: SaleUomRow[],
@@ -98,11 +121,20 @@ export function priceOf(
   if (!lineUomId || saleUoms.length === 0) return basePrice
   const hit = saleUoms.find(r => r.uomId === lineUomId)
   if (!hit) return basePrice
-  if (hit.priceOverride != null) return hit.priceOverride
   // ⚠️ 必须舍入：1.20 × 3 在浮点里是 3.5999999999999996。
   // 落库时 Decimal(12,2) 会截断掉，但界面上会**原样显示**这一串 ——
   // 客户看到报价单上写 €3.5999999999999996 就没法用了。
-  return round2(basePrice * (hit.factor > 0 ? hit.factor : 1))
+  const factor = hit.factor > 0 ? hit.factor : 1
+  if (hit.priceMode === 'FIXED') {
+    return hit.priceOverride != null ? hit.priceOverride : round2(basePrice * factor)
+  }
+  if (hit.priceMode === 'FORMULA') {
+    const discountPct = hit.priceDiscountPct ?? 0
+    const surcharge = hit.priceSurcharge ?? 0
+    return round2(basePrice * factor * (1 - discountPct / 100) + surcharge)
+  }
+  if (hit.priceOverride != null) return hit.priceOverride
+  return round2(basePrice * factor)
 }
 
 /** 基础单位（库存计数单位）；没配多规格时为 null */

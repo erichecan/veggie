@@ -12,6 +12,7 @@ import { renderPurchaseOrderHtml } from '@/lib/purchase-order-pdf'
 import { withProductSequence } from '@/lib/print/product-sequence'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { sendPurchaseOrderRfq } from '@/lib/email'
+import { handleReceiveAction } from '@/lib/purchase/receive-purchase-order'
 
 const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'notes', 'expectedDate', 'editApprovalRequired']
 
@@ -274,7 +275,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return withAuth(req, async (user) => {
     try {
       const { id } = await params
-      const { action } = await req.json()
+      const body = await req.json()
+      const { action } = body
 
       // ⛔ 同一个端点承载多个动作，route-map 只认 URL + method，分不开「改」和「批」。
       // 客户的岗位划分正卡在这条线上：办公室销售能录采购单，审批要更高一级的人。
@@ -303,11 +305,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         return NextResponse.json({ error: '已锁定的采购单不可变更' }, { status: 409 })
       }
 
+      // 确认收货是唯一真正改库存的采购动作，逻辑独立于下面的通用状态流转表——
+      // 分批到货时可以反复调用（未收满维持 CONFIRMED），不是一次性的状态跳转(20260823)
+      if (action === 'receive') {
+        return await handleReceiveAction(p, po, id, user, body)
+      }
+
       const targetStatus: string | null = ({
         send:           'SENT',
         confirm:        'CONFIRMED',
         cancel:         'CANCELLED',
-        receive:        'RECEIVED',
         invoice:        'INVOICED',
         lock:           'LOCKED',
         reset_to_draft: 'DRAFT',
@@ -407,6 +414,31 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
       // SSOT：库存只能通过实际收货（GoodsReceipt）增加，"确认采购"只代表供应商接单，
       // 不产生任何库存/批次副作用——避免和收货单重复计数（历史 bug，见 20260710 采购模块升级）。
+
+      // 采购单位跟着采购单走(20260823)：确认采购时，把这张单里每个商品最后一次
+      // 出现的 PurchaseOrderLine.uomId 回写到该商品 ProductTemplate.purchaseUomId。
+      // 只影响这次改动上线之后新确认的采购单，历史数据不做回填。
+      if (targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED') {
+        const lastUomByProductId = new Map<string, string>()
+        const linesBySequence = [...(po.lines as Array<{ productId: string; uomId: string | null; sequence: number }>)]
+          .sort((a, b) => a.sequence - b.sequence)
+        for (const l of linesBySequence) {
+          if (l.uomId) lastUomByProductId.set(l.productId, l.uomId)
+        }
+        if (lastUomByProductId.size > 0) {
+          const products = await p.product.findMany({
+            where: { id: { in: [...lastUomByProductId.keys()] } },
+            select: { id: true, templateId: true, template: { select: { purchaseUomId: true } } },
+          })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const prod of products as any[]) {
+            const newUomId = lastUomByProductId.get(prod.id)
+            if (newUomId && prod.template?.purchaseUomId !== newUomId) {
+              await p.productTemplate.update({ where: { id: prod.templateId }, data: { purchaseUomId: newUomId } })
+            }
+          }
+        }
+      }
 
       // 确认采购单即代表应付款项已确定，自动生成 DRAFT 供应商账单并通知财务
       if (targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED') {

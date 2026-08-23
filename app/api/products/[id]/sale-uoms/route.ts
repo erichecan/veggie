@@ -43,12 +43,35 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const body = await req.json()
       const items = Array.isArray(body.items) ? body.items : []
 
-      const product = await px.product.findUnique({ where: { id }, select: { id: true, name: true, templateId: true } })
+      const product = await px.product.findUnique({
+        where: { id },
+        select: { id: true, name: true, templateId: true, template: { select: { uomId: true } } },
+      })
       if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
 
-      const validationError = validateSaleUomItems(items)
+      // 基准单位单一入口(20260823)：只有页头「Unit of Measure」下拉框能改基准单位，
+      // 这里的 isDefault 变成纯派生 —— 等于 template.uomId 的那一行才是基础行；
+      // 服务端据此重新计算，忽略客户端提交的每行 isDefault。
+      // 模板尚未设置销售单位时（历史遗留、从未设置过）维持旧行为：按客户端提交的 isDefault 回填一次。
+      const templateUomId: string | null = product.template?.uomId ?? null
+      let normalizedItems: Array<Record<string, unknown>> = items
+      if (templateUomId) {
+        normalizedItems = items.map((it: { uomId?: string; factor?: unknown }) => {
+          const isDefault = String(it.uomId ?? '') === templateUomId
+          // 换基准单位后，新变成基础的那一行系数可能还留着换基准单位前的旧值（如 0.025）——
+          // 基础单位的换算只能是 1，这里直接归一，而不是拿一个用户没机会去改的旧数字挡住保存。
+          return { ...it, isDefault, factor: isDefault ? 1 : it.factor }
+        })
+        if (!normalizedItems.some(it => it.isDefault)) {
+          // 提交的行里没有一行等于当前基准单位：自动补一行（factor=1, priceOverride=null）一起存，
+          // 不要求用户先手动把基准单位加进列表才能保存其余行。
+          normalizedItems = [...normalizedItems, { uomId: templateUomId, isDefault: true, factor: 1, priceOverride: null, active: true }]
+        }
+      }
+
+      const validationError = validateSaleUomItems(normalizedItems)
       if (validationError) return NextResponse.json({ error: validationError }, { status: 400 })
-      const uomIds = items.map((it: { uomId?: string }) => String(it.uomId ?? ''))
+      const uomIds = normalizedItems.map((it) => String(it.uomId ?? ''))
 
       await prisma.$transaction(async (tx) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,23 +79,24 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await txAny.productSaleUom.deleteMany({
           where: { productId: id, uomId: { notIn: uomIds } },
         })
-        // 把模板的销售单位同步成基础单位。
-        //
-        // 两者不一致时，订单行的单位下拉会同时列出「模板销售单位」和「基础单位」两项，
-        // 而选中前者时换算系数回落到 1 —— 价格和库存都会悄悄算错，且界面上看不出区别。
-        // 基础单位是**库存的计数单位**，模板销售单位是**下单默认选中的单位**，
-        // 业务上它们本来就该是同一个；这里直接对齐，从源头消除分叉。
-        // 顺带修掉「模板没设销售单位」（生产 152 个 ACTIVE 模板）的商品 ——
-        // 它们只要配了多规格，这里就会把 uomId 补上。
-        const baseItem = items.find((it: { isDefault?: boolean }) => it.isDefault)
-        if (baseItem?.uomId) {
-          await txAny.productTemplate.update({
-            where: { id: product.templateId },
-            data: { uomId: String(baseItem.uomId) },
-          })
+
+        if (!templateUomId) {
+          // 模板还没设过销售单位（生产历史遗留）：顺带补一次 ——
+          // 老逻辑「顺带修掉模板没设销售单位」的兜底价值还在，只是从
+          // 「每次都覆盖」降级成「仅当前模板还没设过才补一次」。
+          const baseItem = normalizedItems.find(it => it.isDefault)
+          if (baseItem?.uomId) {
+            await txAny.productTemplate.update({
+              where: { id: product.templateId },
+              data: { uomId: String(baseItem.uomId) },
+            })
+          }
         }
 
-        for (const it of items) {
+        for (const it of normalizedItems) {
+          const priceMode = it.priceMode === 'FIXED' || it.priceMode === 'FORMULA' ? it.priceMode : 'AUTO'
+          const priceDiscountPct = it.priceDiscountPct != null && it.priceDiscountPct !== '' ? Number(it.priceDiscountPct) : 0
+          const priceSurcharge = it.priceSurcharge != null && it.priceSurcharge !== '' ? Number(it.priceSurcharge) : 0
           await txAny.productSaleUom.upsert({
             where: { productId_uomId: { productId: id, uomId: it.uomId } },
             create: {
@@ -80,14 +104,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               uomId: it.uomId,
               isDefault: !!it.isDefault,
               // 基础单位对自己的换算只能是 1，其余按输入（空/非法回落到 1）
-              factor: it.isDefault ? 1 : normalizeFactor(it.factor),
+              factor: it.isDefault ? 1 : normalizeFactor(it.factor as number | string | null | undefined),
               priceOverride: it.priceOverride != null ? Number(it.priceOverride) : null,
+              priceMode, priceDiscountPct, priceSurcharge,
               active: it.active !== false,
             },
             update: {
               isDefault: !!it.isDefault,
-              factor: it.isDefault ? 1 : normalizeFactor(it.factor),
+              factor: it.isDefault ? 1 : normalizeFactor(it.factor as number | string | null | undefined),
               priceOverride: it.priceOverride != null ? Number(it.priceOverride) : null,
+              priceMode, priceDiscountPct, priceSurcharge,
               active: it.active !== false,
             },
           })

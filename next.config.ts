@@ -91,7 +91,10 @@ const nextConfig: NextConfig = {
       './node_modules/split2/**/*',
       './node_modules/xtend/**/*',
     ],
-    '/api/purchase-orders/pdf-extract': [
+    // ⚠️ 20260819 采购单据识别收口（6b7e4aa），路由从 pdf-extract 改名成 parse 时
+    // 这个 key 没跟着改——key 是按真实路由路径 picomatch 匹配的，不匹配就静默整段不生效，
+    // 没有构建期报错，导致这里本该修好的 @napi-rs/pdfjs-dist 追踪缺口原样复发。
+    '/api/purchase-orders/parse': [
       './node_modules/@napi-rs/**/*',
       // pdfjs 的 worker 是运行时按路径动态 import 的，追踪器只带上了 pdf.mjs，
       // 漏了紧挨着它的 pdf.worker.mjs → standalone 上一解析 PDF 就

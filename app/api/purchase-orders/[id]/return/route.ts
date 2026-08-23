@@ -11,8 +11,14 @@
  *   3. 回冲 PurchaseOrderLine.receivedQty —— 这样「已收 / 应付」两边才对得上，
  *      也让采购建议的在途计算不会把退掉的货算成还在路上
  *
- * ⛔ 不动供应商账单金额：账单是财务凭证，退货后的抵扣该由财务开负数账单/贷记单处理，
- *    在这里偷偷改金额会让已过账的凭证与账面对不上。返回结果里给出应退金额供财务参考。
+ * ⛔ 不动**已出正式账单**的金额：账单一旦过账/已付，是财务凭证，退货后的抵扣该由财务
+ *    开负数账单/贷记单处理，在这里偷偷改金额会让已过账的凭证与账面对不上。
+ *
+ * 20260823 补（DEV-PLAN 决策#3）：PO 还没出正式账单（没有 VendorBill，或只有 DRAFT/CANCELLED
+ * 状态的）时，退货**顺带下修对应行的 orderedQty 并重算金额**——用户原话「修正采购单的数量」
+ * 字面指的就是下单数量本身，此时改了也不会让明细跟已发账单对不上。一旦出现 POSTED/PAID
+ * 状态的账单，退回到"只改库存、算 refundExTax 给财务参考"的老路径，两条路径共用同一个入口，
+ * 不引入第二套编辑机制。
  */
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -21,6 +27,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { consumeLotsFIFO, toStockQty } from '@/lib/inventory'
+import { eurAmount } from '@/lib/fx-eur'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -61,8 +68,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         )
       }
 
+      // 精确判断"是否已开票"：不能只看 PO 状态 !== 'INVOICED'——CONFIRMED 转 INVOICED 前
+      // 系统会自动建**草稿** VendorBill（见 purchase-orders/[id]/route.ts confirm 分支），
+      // 那张草稿从未真正发出去，账面上不存在，退货金额照样能改。真正拦住的是
+      // POSTED/PAID：金额已经出去，明细不能再跟已发账单对不上（风险#2）。
+      const issuedBill = await prisma.vendorBill.findFirst({
+        where: { purchaseOrderId: id, status: { in: ['POSTED', 'PAID'] } },
+        select: { id: true },
+      })
+      const hasIssuedBill = !!issuedBill
+      const rate = po.exchangeRatePending ? null : toNum(po.exchangeRate)
+
       // 先全量校验再落库：一行不合法就整单拒绝，不做「前两行成功第三行失败」的半吊子结果
-      const planned: Array<{ lineId: string; productId: string; productName: string; qty: number; uomId: string | null; unitCost: number }> = []
+      const planned: Array<{
+        lineId: string; productId: string; productName: string; qty: number
+        uomId: string | null; unitCost: number
+        orderedQty: number; nativeUnitCost: number; taxRate: number
+      }> = []
       for (const raw of rawLines) {
         const productId = String(raw.productId ?? '')
         const qty = Number(raw.qty)
@@ -87,6 +109,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           qty,
           uomId: poLine.uomId ?? null,
           unitCost: toNum(poLine.unitCostEur ?? poLine.unitCost),
+          orderedQty: toNum(poLine.orderedQty),
+          nativeUnitCost: toNum(poLine.unitCost),
+          taxRate: toNum(poLine.taxRate),
         })
       }
 
@@ -148,12 +173,49 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
           // 回冲已收量：不冲的话「已收 = 订购」会让这单看起来收齐了，
           // 采购建议也会把退掉的货继续当成在途
+          //
+          // 未开正式账单时（决策#3）顺带下修 orderedQty 并按原币重算行金额——
+          // 用原生 unitCost/taxRate（不是 refundExTax 用的欧元折算价），
+          // 与 PUT 编辑接口的算法保持一致。orderedQty 理论上不会退到负数
+          // （已校验 qty ≤ receivedQty ≤ orderedQty 的正常情形），Math.max(0, …) 只是兜底。
+          let lineAmountUpdate: Record<string, unknown> = {}
+          if (!hasIssuedBill) {
+            const newOrderedQty = Math.max(0, p.orderedQty - p.qty)
+            const subtotalExTax = newOrderedQty * p.nativeUnitCost
+            const taxAmount = subtotalExTax * p.taxRate / 100
+            const subtotalIncTax = subtotalExTax + taxAmount
+            lineAmountUpdate = {
+              orderedQty: newOrderedQty,
+              subtotalExTax, taxAmount, subtotalIncTax,
+              subtotalExTaxEur: eurAmount(subtotalExTax, rate),
+              taxAmountEur: eurAmount(taxAmount, rate),
+              subtotalIncTaxEur: eurAmount(subtotalIncTax, rate),
+            }
+          }
           await tx.purchaseOrderLine.update({
             where: { id: p.lineId },
-            data: { receivedQty: { decrement: p.qty } },
+            data: { receivedQty: { decrement: p.qty }, ...lineAmountUpdate },
           })
           created.push({ productId: p.productId, stockQty })
         }
+
+        // 行金额变了，PO 表头合计要跟着重算（从全部行重新汇总，不只是本次退货的行）
+        if (!hasIssuedBill) {
+          const freshLines = await tx.purchaseOrderLine.findMany({ where: { purchaseOrderId: id } })
+          const subtotalExTax = freshLines.reduce((s, l) => s + toNum(l.subtotalExTax), 0)
+          const totalTax = freshLines.reduce((s, l) => s + toNum(l.taxAmount), 0)
+          const totalIncTax = subtotalExTax + totalTax
+          await tx.purchaseOrder.update({
+            where: { id },
+            data: {
+              subtotalExTax, totalTax, totalIncTax,
+              subtotalExTaxEur: eurAmount(subtotalExTax, rate),
+              totalTaxEur: eurAmount(totalTax, rate),
+              totalIncTaxEur: eurAmount(totalIncTax, rate),
+            },
+          })
+        }
+
         return created
       })
 
@@ -161,7 +223,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'purchase_order', resourceId: id,
         detail: `采购退货 ${po.name}：${planned.map(p => `${p.productName} ×${p.qty}`).join('、')}`
-          + `，应退金额 €${refundExTax}${noteSuffix}`,
+          + `，应退金额 €${refundExTax}${noteSuffix}`
+          + (hasIssuedBill
+            ? '（账单已开票，仅冲减库存，金额需财务手动处理）'
+            : '（已同步下修下单数量与金额）'),
       })
 
       return NextResponse.json(serializeApi({
@@ -169,8 +234,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         purchaseOrderId: id,
         returned: planned.map(p => ({ productId: p.productId, productName: p.productName, qty: p.qty })),
         stockMoves: moves.length,
-        /** 应退金额（税前，欧元）。财务据此开负数账单/贷记单——本接口刻意不动账单金额 */
+        /** 应退金额（税前，欧元）。已开票时财务据此开负数账单/贷记单；未开票时金额已随 orderedQty 同步修正 */
         refundExTax,
+        /** true=已同步下修 orderedQty 与金额；false=已开正式账单，仅冲减库存，金额留给财务处理 */
+        orderedQtyAdjusted: !hasIssuedBill,
       }), { status: 201 })
     } catch (error) {
       console.error('[POST /api/purchase-orders/[id]/return]', error)

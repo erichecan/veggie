@@ -328,7 +328,7 @@ function ReceivePageInner() {
         photos,
         lines,
       })
-      toast.success(isEn ? 'Goods receipt recorded' : '收货成功')
+      toast.success(isEn ? 'Arrival recorded — waiting for purchasing to confirm receipt into stock' : '已记录到货，等待采购确认收货入库')
       setSelectedPo(null)
       loadList()
       if (viewMode === 'history') loadHistory()
