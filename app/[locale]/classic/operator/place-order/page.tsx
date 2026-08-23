@@ -3,7 +3,7 @@
  * 销售代客下单页（经典版 — Odoo Sales Quotation 1:1 还原）
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { priceOf } from '@/lib/sale-uom'
+import { priceOf, UNSET_UOM_LABEL } from '@/lib/sale-uom'
 import type { SaleUomPriceMode } from '@/lib/sale-uom'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
@@ -647,7 +647,7 @@ export default function ClassicPlaceOrderPage() {
     p: Product, qty: number, lineUomId: string | undefined, cache: Record<string, number> = lastPrices,
   ): { unitPrice: number; priceLabel: string; priceLabelDetail?: string } {
     const lastPrice = getLastPrice(p.id, cache)
-    const res = effectiveCustomer ? resolveCustomerPrice(p, effectiveCustomer, pricelists, qty, lastPrice) : null
+    const res = effectiveCustomer ? resolveCustomerPrice(p, effectiveCustomer, pricelists, qty, lastPrice, lineUomId) : null
     const basePrice = res?.price ?? (p.listPrice ?? p.price ?? 0)
     const priceLabel = res
       ? (res.sourceType === 'special' ? 'Special' : res.sourceType === 'pricelist' ? 'PriceList' : res.sourceType === 'last' ? 'Last' : 'Price')
@@ -657,6 +657,11 @@ export default function ClassicPlaceOrderPage() {
       : res?.sourceType === 'last'
         ? lastPriceDates[p.id]
         : undefined
+    // 命中了单位限定价格表规则（决策#6）：res.price 已经是这个单位的最终价，
+    // 不能再乘 ProductSaleUom.factor 二次换算，否则界面填的数字和实际生效的对不上。
+    if (res?.matchedUomId) {
+      return { unitPrice: res.price, priceLabel, priceLabelDetail }
+    }
     // 单价 = 基础单价 × 本行单位的换算系数（有独立售价则用独立售价）。
     // 系数取自 ProductSaleUom（这个商品自己的箱规），换算口径与库存扣减
     // (lib/inventory.ts:toStockQty) 共用 lib/sale-uom.ts，不会两边算得不一样。
@@ -674,7 +679,7 @@ export default function ClassicPlaceOrderPage() {
     const p = products.find(pp => pp.id === line.productId)
     if (!p) return
     const uomName = uomId === p.uomId
-      ? (p.uomName ?? 'Unit(s)')
+      ? (p.uomName ?? UNSET_UOM_LABEL)
       : (saleUomOptions[p.id] ?? []).find(o => o.uomId === uomId)?.uomName ?? line.uom
     const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, line.orderedQty, uomId)
     patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail })
@@ -709,7 +714,7 @@ export default function ClassicPlaceOrderPage() {
               orderedQty:  1,
               qtyOnHand:   p.qtyOnHand ?? 0,
               forecastQty: null,
-              uom:         (p as Product & { uomName?: string }).uomName ?? 'Unit(s)',
+              uom:         (p as Product & { uomName?: string }).uomName ?? UNSET_UOM_LABEL,
               uomId:       (p as Product & { uomId?: string }).uomId ?? undefined,
               unitPrice,
               cost:        p.standardPrice ?? 0,
@@ -755,7 +760,7 @@ export default function ClassicPlaceOrderPage() {
       id: uid(), productId: p.id, productName: p.name,
       description: lineDescription(p), note,
       orderedQty: qty, forecastQty: null, qtyOnHand: p.qtyOnHand ?? 0,
-      uom: (p as Product & { uomName?: string }).uomName ?? 'Unit(s)',
+      uom: (p as Product & { uomName?: string }).uomName ?? UNSET_UOM_LABEL,
       uomId: (p as Product & { uomId?: string }).uomId ?? undefined,
       unitPrice, cost: p.standardPrice ?? 0, priceLabel, priceLabelDetail,
       taxRate: (p.customerTaxRate ?? 0) * 100,
@@ -1760,7 +1765,7 @@ export default function ClassicPlaceOrderPage() {
                                 onChange={e => switchLineUnit(line.id, e.target.value)}
                                 className="w-full text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                               >
-                                {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? 'Unit(s)'}</option>}
+                                {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
                                 {/* ⛔ 排除锚点：saleUomOptions 本来就含默认单位，
                                     不排的话它会在下拉里出现两次（一次英文 name、一次中文 nameZh，
                                     同一个 uomId）——看起来像两个不同的单位 */}

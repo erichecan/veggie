@@ -14,6 +14,8 @@ import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commiss
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
+import { formatUomConversionHint, uomConversionKey } from '@/lib/print/uom-conversion'
+import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
@@ -73,6 +75,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const { commissionRate: _commissionRate, commissionFixed: _commissionFixed,
       driverCommissionTotal: _driverCommissionTotal, commissionFrozenAt: _commissionFrozenAt,
       ...orderWithoutCommission } = order
+    // 打印页（报价单/发票）用：可售单位换算说明，见 DEV-PLAN 20260823 模块 B
+    const uomConversionMap = await loadUomConversionMap(
+      order.lines.map(l => ({ productId: l.productId, uomId: l.uomId })),
+    )
     const enrichedOrder = {
       ...orderWithoutCommission,
       // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
@@ -81,12 +87,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       deliveryBatchDisplay: waveDisplay[order.id] ?? null,
       // 编辑态下拉框预选:所属 wave 的 driverSlotId(真相),回退到下单意向列
       currentDriverSlotId: waveDriverSlot[order.id] ?? order.driverSlotId ?? null,
-      lines: order.lines.map(({ product, commissionPrice: _commissionPrice, ...line }) => ({
-        ...line,
-        cost: toNum(product?.standardPrice),
-        internalRef: product?.internalRef ?? null,
-        productSequence: product?.template?.sequence ?? null,
-      })),
+      lines: order.lines.map(({ product, commissionPrice: _commissionPrice, ...line }) => {
+        const uomHint = formatUomConversionHint(
+          uomConversionMap.get(uomConversionKey(line.productId, line.uomId)),
+          toNum(line.orderedQty),
+        )
+        return {
+          ...line,
+          cost: toNum(product?.standardPrice),
+          internalRef: product?.internalRef ?? null,
+          productSequence: product?.template?.sequence ?? null,
+          uomConversionHint: uomHint?.conversionLine ?? null,
+          uomWeightHint: uomHint?.weightLine ?? null,
+        }
+      }),
     }
     return NextResponse.json(deriveOrderItems(serializeApi(enrichedOrder)))
   } catch (error) {

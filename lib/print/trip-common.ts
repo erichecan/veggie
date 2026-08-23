@@ -57,6 +57,13 @@ export interface TripLine {
   note: string | null
   /** 箱规：1 箱 = 多少个基准单位。拣货单据此把总量拆成「N 箱 + M 散」(lib/pack-split.ts) */
   packSpec?: { factor: number; caseUomName: string; baseUomName: string } | null
+  /**
+   * 可售单位换算信息（DEV-PLAN 20260823 模块 B，原始数据，未格式化）：这一行选的单位
+   * 不是基准单位时才有值。格式化成显示文字用 `formatUomConversionHint()`（lib/print/uom-conversion.ts）——
+   * 拣货单要按聚合后的总量算，销售单/送货单/回单要按单行数量算，两者不能共用同一份预先拼好的字符串。
+   * null = 选的就是基准单位，或商品没配这个可售单位（不显示）。
+   */
+  uomConversion?: import('./uom-conversion').UomConversionInfo | null
   orderedQty: number
   unitPrice: number
   taxRate: number

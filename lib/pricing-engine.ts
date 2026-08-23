@@ -32,6 +32,10 @@ export interface PriceResolution {
   isSpecialPrice?: boolean
   /** 价格来源分类：pricelist=命中价格表 / special=客户专属价 / last=最近成交价 / default=牌价兜底 */
   sourceType: PriceSourceKind
+  /** 20260823：命中的是单位限定规则（`item.uomId` 有值且匹配调用方传入的 uomId）时，
+   *  这里回填该 uomId —— 调用方据此知道 `price` 已经是这个单位的最终价，
+   *  不能再乘 `ProductSaleUom.factor` 二次换算（否则界面填的数字和实际生效的对不上）。 */
+  matchedUomId?: string
 }
 
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
@@ -44,6 +48,8 @@ export interface PriceResolution {
  * @param allPricelists 全部价格表（用于嵌套 pricelist formulaBase）
  * @param qty           购买数量（影响 minQty 过滤）
  * @param date          询价日期（影响 dateStart/dateEnd，默认今天）
+ * @param uomId         调用方本行选用的可售单位；只用于匹配单位限定规则（`item.uomId`），
+ *                       不传 = 与改造前行为一致，单位限定规则一律不命中，回退到通用规则
  * @param _depth        内部递归深度计数器，外部不要传
  */
 export function resolvePrice(
@@ -52,6 +58,7 @@ export function resolvePrice(
   allPricelists: OdooPricelist[],
   qty = 1,
   date?: string,
+  uomId?: string,
   _depth = 0,
 ): PriceResolution {
   const basePrice = product.listPrice ?? product.price ?? 0
@@ -73,11 +80,11 @@ export function resolvePrice(
     if (qty < item.minQty) continue
     if (item.dateStart && today < item.dateStart) continue
     if (item.dateEnd && today > item.dateEnd) continue
-    if (!matchesItem(item, product)) continue
+    if (!matchesItem(item, product, uomId)) continue
     // 防止嵌套递归超过深度限制：当已接近深度限制时，跳过引用其他价格表的项
     if (_depth >= 5 && item.computeType === 'formula' && item.formulaBase === 'pricelist') continue
 
-    const computed = computeItemPrice(item, product, basePrice, allPricelists, qty, date, _depth)
+    const computed = computeItemPrice(item, product, basePrice, allPricelists, qty, date, _depth, uomId)
     if (computed === null) continue
 
     return {
@@ -86,6 +93,7 @@ export function resolvePrice(
       itemDesc: describeItem(item),
       isFallback: false,
       sourceType: 'pricelist',
+      matchedUomId: item.uomId,
     }
   }
 
@@ -108,11 +116,12 @@ function resolveViaPricelistChain(
   orderedPricelistIds: string[],
   allPricelists: OdooPricelist[],
   qty: number,
+  uomId?: string,
 ): PriceResolution | null {
   for (const plId of orderedPricelistIds) {
     const pl = allPricelists.find(p => p.id === plId)
     if (!pl) continue
-    const r = resolvePrice(product, pl, allPricelists, qty)
+    const r = resolvePrice(product, pl, allPricelists, qty, undefined, uomId)
     if (!r.isFallback) return r
   }
   return null
@@ -120,8 +129,14 @@ function resolveViaPricelistChain(
 
 // ─── 内部工具 ─────────────────────────────────────────────────────────────────
 
-/** 判断 item 是否匹配商品变体 */
-function matchesItem(item: OdooPricelistItem, product: Product): boolean {
+/**
+ * 判断 item 是否匹配商品变体（含可选单位过滤）
+ *
+ * `item.uomId` 有值 = 这条规则限定了某个可售单位，只有调用方传入的 `uomId` 与它相等才命中；
+ * 不填 `item.uomId`（存量数据 / 不限定的规则）= 对该商品所有可售单位都生效，不受 `uomId` 影响。
+ */
+function matchesItem(item: OdooPricelistItem, product: Product, uomId?: string): boolean {
+  if (item.uomId && item.uomId !== uomId) return false
   switch (item.applyOn) {
     case 'global':
       return true
@@ -150,6 +165,7 @@ function computeItemPrice(
   qty: number,
   date: string | undefined,
   depth: number,
+  uomId?: string,
 ): number | null {
   switch (item.computeType) {
     case 'fixed':
@@ -175,7 +191,7 @@ function computeItemPrice(
           if (!nested) return null
           // 如果再往下一层会超过深度限制，直接返回 null 让外层回退
           if (depth >= 5) return null
-          const nestedResult = resolvePrice(product, nested, allPricelists, qty, date, depth + 1)
+          const nestedResult = resolvePrice(product, nested, allPricelists, qty, date, uomId, depth + 1)
           if (nestedResult.isFallback) return null  // If nested call fell back, we should too
           formulaBase = nestedResult.price
           break
@@ -277,6 +293,8 @@ export const PRICE_TYPE_LABEL: Record<CustomerPriceType, string> = {
  *      - 'last'    → 使用传入的 lastPrice（调用方需从 API 获取）；若无则回退牌价
  *
  * @param lastPrice  priceType='last' 时传入该客户+商品最近一笔成交价，由调用方查询
+ * @param uomId      本行选用的可售单位；用于匹配价格表条目的单位限定规则（决策见 lib/types.ts
+ *                   OdooPricelistItem.uomId 注释）。不传 = 与改造前行为一致。
  */
 export function resolveCustomerPrice(
   product: Product,
@@ -284,6 +302,7 @@ export function resolveCustomerPrice(
   allPricelists: OdooPricelist[],
   qty = 1,
   lastPrice?: number,
+  uomId?: string,
 ): PriceResolution {
   const basePrice = product.listPrice ?? product.price ?? 0
   const today = new Date().toISOString().slice(0, 10)
@@ -325,7 +344,7 @@ export function resolveCustomerPrice(
 
   // default：先查价格表链，未命中才回退牌价（不查 last price）
   if (priceType === 'default') {
-    const viaChain = resolveViaPricelistChain(product, orderedPricelistIds, allPricelists, qty)
+    const viaChain = resolveViaPricelistChain(product, orderedPricelistIds, allPricelists, qty, uomId)
     if (viaChain) return viaChain
     return {
       price: round2(basePrice),
@@ -360,7 +379,7 @@ export function resolveCustomerPrice(
   }
 
   // multi（默认）：价格表链 → lastPrice → listPrice
-  const viaChain = resolveViaPricelistChain(product, orderedPricelistIds, allPricelists, qty)
+  const viaChain = resolveViaPricelistChain(product, orderedPricelistIds, allPricelists, qty, uomId)
   if (viaChain) return viaChain
 
   if (lastPrice !== undefined && lastPrice > 0) {

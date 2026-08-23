@@ -24,6 +24,8 @@ import {
 import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
+import { displayUomName } from '@/lib/sale-uom'
+import { formatUomConversionHint, type UomConversionInfo } from '@/lib/print/uom-conversion'
 
 function fmtQty(v: number): string {
   if (v === Math.floor(v)) return String(v)
@@ -49,6 +51,8 @@ interface AggProduct {
   uomName: string
   /** 箱规；行本身就是按大单位下的单时为 null（已经是整箱，不必再拆） */
   packSpec: PackSpec | null
+  /** 可售单位换算信息（原始，未格式化），配合 totalQty 现算「= N 基准单位」说明 */
+  uomConversion: UomConversionInfo | null
   totalQty: number
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType: string | null
@@ -94,6 +98,7 @@ export function generateTripPickingHtml(
           productSequence: line.productSequence ?? null,
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',
+          uomConversion: line.uomConversion ?? null,
           // 下单单位就是大单位时（如直接订 2 箱），数量本身已是整箱数，再按箱规拆
           // 会拆成「0 箱 + 2 箱」这种废话。只有按基准单位下单（订 30 包）才需要拆。
           packSpec: line.uomId && line.packSpec && line.uomName === line.packSpec.caseUomName
@@ -141,12 +146,14 @@ export function generateTripPickingHtml(
     const rows = products.map((p, i) => {
       const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
       const hasNote = Array.from(p.byCustomer.values()).some(bd => bd.note)
+      const uomHint = formatUomConversionHint(p.uomConversion ?? undefined, p.totalQty)
       const mainRow = `
       <tr class="${rowClass}">
         <td class="col-seq">${i + 1}</td>
         <td class="col-name">
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
+          ${uomHint ? `<span class="spec">${escapeHtml(uomHint.conversionLine)}${uomHint.weightLine ? ` (${escapeHtml(uomHint.weightLine)})` : ''}</span>` : ''}
           ${hasNote ? `<span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
         </td>
         <td class="col-qty">
@@ -158,7 +165,7 @@ export function generateTripPickingHtml(
             return sp?.mixed ? `<span class="pack-split">${escapeHtml(sp.text)}</span>` : ''
           })()}
         </td>
-        <td class="col-uom">${escapeHtml(p.uomName)}</td>
+        <td class="col-uom">${escapeHtml(displayUomName(p.uomName))}</td>
         <td class="col-check"></td>
       </tr>`
       // 散称/按重量卖的商品按客户展示明细子行；带备注的商品即便不是散称，也强制展开，避免备注被折叠看不到

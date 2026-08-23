@@ -17,6 +17,8 @@ import {
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
 import { fetchProductSequences } from './product-sequence'
+import { uomConversionKey } from './uom-conversion'
+import { loadUomConversionMap } from './uom-conversion-loader'
 import {
   type PrintContentFilter,
   describePrintFilter,
@@ -315,7 +317,7 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap, productSeqMap] = await Promise.all([
+  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductTypeMap(productIds),
     loadProductGoodsTypeMap(productIds),
@@ -325,6 +327,7 @@ export async function loadDispatchPrintData(
     getOrderWaveDisplayMap(orders.map(o => o.id)),
     // 打印顺序按商品 sequence（客户要求 2026-08-18）。模板拿不到数据库，在这里附上。
     fetchProductSequences(productIds),
+    loadUomConversionMap(orders.flatMap(o => o.lines).map(l => ({ productId: l.productId, uomId: l.uomId }))),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -374,6 +377,7 @@ export async function loadDispatchPrintData(
           goodsType: (l.uomId ? goodsTypeMap.get(l.uomId) : null) ?? productGoodsTypeMap.get(l.productId) ?? null,
           productType: productTypeMap.get(l.productId) ?? null,
           note: l.note ?? null,
+          uomConversion: uomConversionMap.get(uomConversionKey(l.productId, l.uomId)) ?? null,
           orderedQty: toNum(l.orderedQty),
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),

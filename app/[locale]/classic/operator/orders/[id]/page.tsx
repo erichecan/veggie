@@ -14,7 +14,7 @@ import { OrderChatter } from '@/components/order/OrderChatter'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { formatPriceSourceBadge } from '@/lib/price-source'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
-import { priceOf, factorOf } from '@/lib/sale-uom'
+import { priceOf, factorOf, UNSET_UOM_LABEL } from '@/lib/sale-uom'
 import type { SaleUomPriceMode } from '@/lib/sale-uom'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
@@ -164,11 +164,17 @@ export default function SalesOrderDetailPage() {
         priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
       }))
       const nameOf = (uid: string) => uid === anchorUomId
-        ? ((p as { uomName?: string }).uomName ?? 'Unit(s)')
+        ? ((p as { uomName?: string }).uomName ?? UNSET_UOM_LABEL)
         : (opts.find(o => o.uomId === uid)?.uomName ?? line.uomName)
+      // 单位限定价格表规则（决策#6）优先：命中就直接用规则算出的最终价，不走"从旧价倒推基础价"
+      // 那套 factor 换算——否则用户手改过的价没关系，但如果价格表已经给这个单位单独定过价，
+      // 换单位就该按那条规则来，而不是继续沿用旧单位的价格比例。
+      const uomScoped = effectiveCustomer
+        ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, Number(line.orderedQty) || 1, undefined, newUomId)
+        : null
       const oldFactor = factorOf(rows, currentUomId)
       const basePrice = oldFactor ? Number(line.unitPrice) / oldFactor : Number(line.unitPrice)
-      const newUnitPrice = priceOf(rows, newUomId, basePrice)
+      const newUnitPrice = uomScoped?.matchedUomId === newUomId ? uomScoped.price : priceOf(rows, newUomId, basePrice)
       const qty = Number(line.orderedQty)
       const next = [...prev]
       next[idx] = {
@@ -492,7 +498,7 @@ export default function SalesOrderDetailPage() {
       } catch { /* 查询失败不阻塞加行，回退到价格表/牌价 */ }
     }
     const resolution = effectiveCustomer
-      ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, 1, lastPriceHit?.price)
+      ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, 1, lastPriceHit?.price, p.uomId ?? undefined)
       : null
     const price = resolution ? resolution.price : Number(p.listPrice ?? 0)
     const newLine = {
@@ -503,7 +509,7 @@ export default function SalesOrderDetailPage() {
       spec: lineDescription(p),
       note: '',
       uomId: p.uomId ?? null,
-      uomName: p.uomName ?? 'Unit(s)',
+      uomName: p.uomName ?? UNSET_UOM_LABEL,
       unitPrice: price,
       orderedQty: 1,
       deliveredQty: 0,
@@ -536,7 +542,7 @@ export default function SalesOrderDetailPage() {
       id: draftId,
       orderId: order!.id,
       productId: '', productName: '', spec: '', note: '',
-      uomId: null, uomName: 'Unit(s)',
+      uomId: null, uomName: UNSET_UOM_LABEL,
       unitPrice: 0, orderedQty: 1, deliveredQty: 0, invoicedQty: 0,
       subtotal: 0, taxRate: 0, sequence: prev.length, cost: 0,
       priceSourceType: null, priceSourceDetail: null, priceSourceDate: null,
@@ -926,7 +932,7 @@ export default function SalesOrderDetailPage() {
                               className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                             >
                               {anchorUomId && (
-                                <option value={anchorUomId}>{(p as { uomName?: string } | undefined)?.uomName ?? 'Unit(s)'}</option>
+                                <option value={anchorUomId}>{(p as { uomName?: string } | undefined)?.uomName ?? UNSET_UOM_LABEL}</option>
                               )}
                               {/* 排除锚点，否则默认单位在下拉里出现两次 */}
                               {(saleUomOptions[l.productId] ?? [])
@@ -937,7 +943,7 @@ export default function SalesOrderDetailPage() {
                             </select>
                           )
                         })()
-                      ) : (l.uomName ?? 'Unit(s)')}
+                      ) : (l.uomName ?? UNSET_UOM_LABEL)}
                     </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (

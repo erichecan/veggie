@@ -144,7 +144,6 @@ export default function ChatterFeed({
   const [logs, setLogs] = useState<ActionLog[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [total, setTotal] = useState(0)
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   // 只要不是新建态，且有 resource 或 resourceId 之一，就会发请求
   const shouldFetch = !isNew && (!!resource || !!resourceId)
   const [loading, setLoading] = useState(shouldFetch)
@@ -257,7 +256,7 @@ export default function ChatterFeed({
                     {initials}
                   </div>
                   <div className="flex-1 min-w-0">
-                    {/* 第一行：谁 + 做了什么的标题 + 时间 */}
+                    {/* 第一行：谁 + 做了什么 + 改了哪些字段(直接摊平展示,不用点开) + 时间 */}
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-gray-800">
                         {log.userName || 'Administrator'}
@@ -268,6 +267,14 @@ export default function ChatterFeed({
                       {log.detail && (
                         <span className="text-sm text-gray-500">— {log.detail}</span>
                       )}
+                      {changeEntries.map(([field, { before, after }]) => (
+                        <span key={field} className="text-xs text-gray-600 whitespace-nowrap">
+                          {fieldLabel(field)}：
+                          <span className="text-red-500 line-through" title={formatVal(before)}>{formatVal(before)}</span>
+                          {' → '}
+                          <span className="text-green-700 font-medium" title={formatVal(after)}>{formatVal(after)}</span>
+                        </span>
+                      ))}
                       <span
                         className="text-xs text-gray-400 ml-auto whitespace-nowrap"
                         title={formatAbsolute(log.createdAt)}
@@ -275,53 +282,6 @@ export default function ChatterFeed({
                         {formatRelative(log.createdAt)} · {formatAbsolute(log.createdAt)}
                       </span>
                     </div>
-                    {/* 第二行：具体改了什么字段（可折叠） */}
-                    {changeEntries.length > 0 && (() => {
-                      const isExpanded = expandedIds.has(log.id)
-                      return (
-                        <div className="mt-1.5">
-                          <button
-                            onClick={() => setExpandedIds(prev => {
-                              const next = new Set(prev)
-                              if (next.has(log.id)) next.delete(log.id)
-                              else next.add(log.id)
-                              return next
-                            })}
-                            className="flex items-center gap-1 text-xs text-[#875A7B] hover:text-[#875A7B]/70 transition-colors"
-                          >
-                            <span className={`inline-block transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
-                            <span>{changeEntries.length} 个字段已修改</span>
-                          </button>
-                          {isExpanded && (
-                            <ul className="mt-1.5 ml-0 space-y-1 border-l-2 border-[#875A7B]/30 pl-3 bg-gray-50/50 py-1.5 rounded-r">
-                              {changeEntries.map(([field, { before, after }]) => (
-                                <li
-                                  key={field}
-                                  className="flex items-baseline gap-2 text-xs leading-relaxed flex-wrap"
-                                >
-                                  <span className="text-gray-700 font-medium">
-                                    {fieldLabel(field)}：
-                                  </span>
-                                  <span
-                                    className="text-red-500 line-through max-w-[200px] truncate"
-                                    title={formatVal(before)}
-                                  >
-                                    {formatVal(before)}
-                                  </span>
-                                  <span className="text-gray-400">→</span>
-                                  <span
-                                    className="text-green-700 font-medium max-w-[260px] truncate"
-                                    title={formatVal(after)}
-                                  >
-                                    {formatVal(after)}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      )
-                    })()}
                     {/* 没 diff 时如果是 UPDATE，至少提示一句 */}
                     {changeEntries.length === 0 && log.action === 'UPDATE' && !log.detail && (
                       <p className="mt-1 text-xs text-gray-400">未跟踪到字段级变更（可能是关联子表或老日志）</p>

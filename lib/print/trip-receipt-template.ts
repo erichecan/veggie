@@ -21,6 +21,8 @@ import {
 import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
+import { displayUomName } from '@/lib/sale-uom'
+import { formatUomConversionHint } from '@/lib/print/uom-conversion'
 
 const CSS = `
   @page { size: A4; margin: 12mm 10mm; }
@@ -83,14 +85,18 @@ function buildReceiptPage(
   const orderCodes = orders.map(o => o.code ?? o.id.slice(-8).toUpperCase()).join('、')
 
   const rows = lines.length > 0
-    ? lines.map(l => `
+    ? lines.map(l => {
+      const uomHint = formatUomConversionHint(l.uomConversion ?? undefined, Number(l.orderedQty ?? 0))
+      const specText = [l.spec, uomHint?.conversionLine, uomHint?.weightLine].filter(Boolean).join(' · ')
+      return `
       <tr>
         <td>${escapeHtml(l.productName ?? '')}</td>
-        <td>${escapeHtml(l.spec ?? '')}</td>
+        <td>${escapeHtml(specText)}</td>
         <td class="num">${fmtQty(l.orderedQty ?? 0)}</td>
-        <td class="num">${escapeHtml(l.uomName ?? '')}</td>
+        <td class="num">${escapeHtml(displayUomName(l.uomName))}</td>
         <td class="num">${money(l.subtotal ?? 0)}</td>
-      </tr>`).join('')
+      </tr>`
+    }).join('')
     : `<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:6mm;">本站无明细</td></tr>`
 
   // 已签收印签名图；未签收留空白签名栏供纸质补签

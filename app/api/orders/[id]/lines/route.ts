@@ -5,6 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { resolveCommissionPrice } from '@/lib/commission'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
+import { UNSET_UOM_LABEL } from '@/lib/sale-uom'
 
 /**
  * POST /api/orders/:id/lines
@@ -87,7 +88,7 @@ export async function POST(
           productId,
           productName: resolved.productName,
           uomId: uomId ?? null,
-          uomName: uomName ?? 'Unit(s)',
+          uomName: uomName ?? UNSET_UOM_LABEL,
           unitPrice: resolved.finalUnitPrice,
           orderedQty: Number(orderedQty),
           deliveredQty: 0,

@@ -59,8 +59,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         data: {
           ...data,
           name: data.name !== undefined ? String(data.name).trim().slice(0, 200) : undefined,
-          internalRef: data.internalRef !== undefined ? String(data.internalRef).trim().slice(0, 100) : undefined,
-          description: data.description !== undefined ? String(data.description).trim().slice(0, 2000) : undefined,
+          // data.internalRef/description 是 null(字段本来是空的，前端整对象回传)时不能走
+          // String(null)，那会把字面字符串 "null" 写进数据库——用 == null 把 null 和空字符串
+          // 一起清成 Prisma null，undefined 才是"没传，不动这个字段"。
+          internalRef: data.internalRef === undefined ? undefined : (data.internalRef == null || String(data.internalRef).trim() === '' ? null : String(data.internalRef).trim().slice(0, 100)),
+          description: data.description === undefined ? undefined : (data.description == null || String(data.description).trim() === '' ? null : String(data.description).trim().slice(0, 2000)),
           type: data.type?.toUpperCase() ?? undefined,
           status: data.status?.toUpperCase() ?? undefined,
         },

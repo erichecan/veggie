@@ -66,6 +66,7 @@ interface RawItem {
   priceMaxMargin?: number
   roundingMethod?: number
   sequence?: number
+  uomId?: string
 }
 
 function normalizeItems(raw: unknown): RawItem[] {
@@ -118,7 +119,13 @@ function normalizeItems(raw: unknown): RawItem[] {
     if (seen.has(id)) id = newId()
     seen.add(id)
 
-    out.push({ ...rItem, id, minQty, applyOn, computeType: compute } as RawItem)
+    // uomId 只对 product/variant 有意义（决策#4）：category/global 传了也一律丢弃，
+    // 不然改成 category 后残留的 uomId 会在引擎里悄悄拦掉这条规则却没人看得出来为什么
+    const uomId = (applyOn === 'product' || applyOn === 'variant') && typeof rItem.uomId === 'string' && rItem.uomId.trim() !== ''
+      ? rItem.uomId
+      : undefined
+
+    out.push({ ...rItem, id, minQty, applyOn, computeType: compute, uomId } as RawItem)
   }
   return out
 }

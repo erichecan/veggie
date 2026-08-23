@@ -586,6 +586,10 @@ export interface OdooPricelistItem {
   roundingMethod?: number
   /** 排序序号（小的优先） */
   sequence: number
+  /** 20260823：仅 applyOn ∈ {product, variant} 时可选填。填了则这条规则只对该商品/变体的这一个
+   *  可售单位（ProductSaleUom.uomId）生效；不填 = 对该商品所有可售单位（含基准单位）都生效，与现状一致。
+   *  命中单位限定规则后，算出的价格就是该单位的最终价，不再叠加 ProductSaleUom.factor。 */
+  uomId?: string
 }
 
 export interface OdooPricelist {

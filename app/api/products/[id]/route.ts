@@ -37,7 +37,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         data: {
           ...data,
           name: data.name !== undefined ? String(data.name).trim().slice(0, 200) : undefined,
-          internalRef: data.internalRef !== undefined ? String(data.internalRef).trim().slice(0, 100) : undefined,
+          // data.internalRef 是 null(字段本来是空的，前端整对象回传)时不能走 String(null)，
+          // 那会把字面字符串 "null" 写进数据库——见 product-templates/[id]/route.ts 同款修复。
+          internalRef: data.internalRef === undefined ? undefined : (data.internalRef == null || String(data.internalRef).trim() === '' ? null : String(data.internalRef).trim().slice(0, 100)),
           status: data.status?.toUpperCase() ?? undefined,
           variantAttributes: data.variantAttributes ?? undefined,
           images: data.images ?? undefined,

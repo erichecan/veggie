@@ -35,6 +35,8 @@ import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
+import { displayUomName } from '@/lib/sale-uom'
+import { formatUomConversionHint } from '@/lib/print/uom-conversion'
 
 function buildSalesOrderHtml(
   order: TripOrder,
@@ -80,13 +82,15 @@ function buildSalesOrderHtml(
   function renderLineRow(l: TripLine, i: number): string {
     const rate = Number(l.taxRate ?? 0)
     const inclVat = Number(l.subtotal) * (1 + rate / 100)
+    const uomHint = formatUomConversionHint(l.uomConversion ?? undefined, Number(l.orderedQty))
     return `
     <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
       <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
-      <td class="col-unit">${escapeHtml((l.uomName ?? '').toUpperCase())}</td>
+      <td class="col-unit">${escapeHtml(displayUomName(l.uomName).toUpperCase())}</td>
       <td class="col-desc">
         <div class="prod-name">${escapeHtml(l.productName)}</div>
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
+        ${uomHint ? `<div class="prod-spec">${escapeHtml(uomHint.conversionLine)}${uomHint.weightLine ? ` (${escapeHtml(uomHint.weightLine)})` : ''}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
       <td class="col-price">${fmtMoney(Number(l.unitPrice))}</td>

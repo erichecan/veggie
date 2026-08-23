@@ -18,6 +18,8 @@ import {
   type TripPrintDataWire,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
+import { uomConversionKey } from './uom-conversion'
+import { loadUomConversionMap } from './uom-conversion-loader'
 import { fetchProductSequences } from '@/lib/print/product-sequence'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 
@@ -55,6 +57,31 @@ async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType
     }
   } catch (e) {
     console.warn('[trip-print] Uom.goodsType column not available, all items will be 未分类:', (e as Error).message)
+  }
+  return map
+}
+
+/**
+ * ProductTemplate.type（storable/consumable/service），拣货单据此把商品拆成
+ * 「整箱整袋 STOCKABLE」「零散货 CONSUMABLE」两张表（trip-picking-template.ts）。
+ * 20260823 修：这里之前完全没查，所有行的 productType 恒为 undefined，
+ * 导致 CONSUMABLE 表永远是空的——与 dispatch-loader.ts 的 loadProductTypeMap 同一 join 模式。
+ */
+async function loadProductTypeMap(productIds: string[]): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>()
+  if (productIds.length === 0) return map
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string; type: string | null }>>`
+      SELECT p.id, pt.type
+      FROM "Product" p
+      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
+      WHERE p.id = ANY(${productIds})
+    `
+    for (const r of rows) {
+      map.set(r.id, r.type ?? null)
+    }
+  } catch (e) {
+    console.warn('[trip-print] ProductTemplate.type not available:', (e as Error).message)
   }
   return map
 }
@@ -165,15 +192,17 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productGoodsTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap, productSeqMap] = await Promise.all([
+  const [goodsTypeMap, productGoodsTypeMap, productTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductGoodsTypeMap(productIds),
+    loadProductTypeMap(productIds),
     loadPackSpecMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
     getOrderWaveDisplayMap(orders.map(o => o.id)),
     // 打印顺序按商品 sequence（客户要求 2026-08-18）。模板是纯字符串拼接、
     // 拿不到数据库，所以在这里附到行上。见 lib/print/line-sort.ts
     fetchProductSequences(productIds),
+    loadUomConversionMap(orders.flatMap(o => o.lines).map(l => ({ productId: l.productId, uomId: l.uomId }))),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -214,8 +243,10 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
           uomName: l.uomName,
           // OrderLine.uomId 历史全空，先看行级 uom，没有再回退到商品自己的 uom
           goodsType: (l.uomId ? goodsTypeMap.get(l.uomId) : null) ?? productGoodsTypeMap.get(l.productId) ?? null,
+          productType: productTypeMap.get(l.productId) ?? null,
           note: l.note ?? null,
           packSpec: packSpecMap.get(l.productId) ?? null,
+          uomConversion: uomConversionMap.get(uomConversionKey(l.productId, l.uomId)) ?? null,
           orderedQty: toNum(l.orderedQty),
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),

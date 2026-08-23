@@ -83,13 +83,6 @@ interface SaleUomRow {
   priceSurcharge: number
 }
 
-function round3(n: number): number {
-  return Math.round(n * 1000) / 1000
-}
-function round6(n: number): number {
-  return Math.round(n * 1000000) / 1000000
-}
-
 export default function ClassicProductDetailPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -121,7 +114,7 @@ export default function ClassicProductDetailPage() {
   } : null)
   const [original, setOriginal] = useState<ProductTemplate | null>(null)
   const [categories, setCategories] = useState<ProductCategory[]>([])
-  const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; category?: { name: string } }[]>([])
+  const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]>([])
   const [editMode, setEditMode] = useState(isNew)
   const [saving, setSaving] = useState(false)
 
@@ -142,9 +135,6 @@ export default function ClassicProductDetailPage() {
   const [primaryProductId, setPrimaryProductId] = useState<string | null>(null)
   const [saleUoms, setSaleUoms] = useState<SaleUomRow[]>([])
   const [saleUomsSaving, setSaleUomsSaving] = useState(false)
-  // 换算计算器(20260823)展开的行；价格公式面板展开的行——都是"每次只开一个"的手风琴
-  const [calcOpenIndex, setCalcOpenIndex] = useState<number | null>(null)
-  const [priceOpenIndex, setPriceOpenIndex] = useState<number | null>(null)
 
   async function load() {
     try {
@@ -152,7 +142,7 @@ export default function ClassicProductDetailPage() {
         isNew ? Promise.resolve(null) : apiGet<ProductTemplate>(`/api/product-templates/${id}`),
         apiGet<ProductCategory[]>('/api/product-categories'),
         apiGet<Order[]>('/api/orders?include_lines=false'),
-        apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; category?: { name: string } }[]>('/api/uoms').catch(() => [] as { id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; category?: { name: string } }[]),
+        apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]>('/api/uoms').catch(() => [] as { id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]),
       ])
       const HIDDEN_CATEGORIES = ['Length', 'Time']
       setUoms(uomList.filter(u => !HIDDEN_CATEGORIES.includes(u.category?.name ?? '')))
@@ -245,7 +235,9 @@ export default function ClassicProductDetailPage() {
       uomId: candidate.id,
       isDefault: tmpl?.uomId ? candidate.id === tmpl.uomId : prev.length === 0,
       factor: 1, priceOverride: null, active: true,
-      priceMode: 'AUTO', priceDiscountPct: 0, priceSurcharge: 0,
+      // 价格公式(20260823 改行内摊平后)不再有单独的"自动/固定/公式"模式选择，统一用 FORMULA，
+      // 折扣/加价都是 0 时等价于"自动按系数折算"，行为跟以前的 AUTO 模式完全一致。
+      priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
     }])
   }
   function updateSaleUomRow(index: number, patch: Partial<SaleUomRow>) {
@@ -354,6 +346,11 @@ export default function ClassicProductDetailPage() {
 
   if (!tmpl) return <div className="p-8 text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
 
+  // 库存计数单位(Unit of Measure/Purchase UoM)只给纯计量单位选(kg/L/g/mL/件…)，
+  // 箱/袋/包/CASE/BAG/PKT 这类容器单位(遗留数据里全是 type=BIGGER)现在走下面
+  // 「可售单位」的 = base × 系数 表达，不再能被选成基准单位——可售单位那一行的下拉
+  // 还是用完整的 uoms，容器单位仍然选得到，只是不能再当"基准"。
+  const baseUoms = uoms.filter(u => u.type !== 'BIGGER')
   const fieldClass = "w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 bg-white"
   const focusStyle = { '--tw-ring-color': '#875A7B' } as React.CSSProperties
   const btnBase = "h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
@@ -614,7 +611,7 @@ export default function ClassicProductDetailPage() {
                   <div>
                     <select value={tmpl.uomId ?? ''} onChange={e => setField('uomId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
                       <option value="">{isEn ? '— Select —' : '— 请选择 —'}</option>
-                      {uoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
+                      {baseUoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
                     </select>
                     {saleUoms.length > 0 && (
                       <p className="text-xs text-amber-600 mt-1">
@@ -628,7 +625,7 @@ export default function ClassicProductDetailPage() {
                 <Row label="Purchase UoM">
                   <select value={tmpl.purchaseUomId ?? ''} onChange={e => setField('purchaseUomId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
                     <option value="">{isEn ? '— Select —' : '— 请选择 —'}</option>
-                    {uoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
+                    {baseUoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
                   </select>
                 </Row>
                 <Row label={isEn ? 'Weight (kg)' : '默认重量 Weight (kg)'}>
@@ -691,10 +688,18 @@ export default function ClassicProductDetailPage() {
                   //    因为换算系数现在是这个商品自己的，不依赖全局类目体系。
                   const options = uoms
                   const isBase = isBaseUom(row)
+                  // 具体数量有两种真实场景，同一个数字含义相反，必须让用户自己选×/÷，不能瞎猜：
+                  // 整箱/大包装(case of 10 packets)是"放大" → factor=数量本身；
+                  // 半份/拆零(拆成 1/10)是"缩小" → factor=1/数量，更常见，默认就是这个方向。
+                  // factor<=1 时按"缩小"展示(含新行默认的 factor=1，边界给÷不给×)，这样刷新页面
+                  // 读旧数据也能还原出正确的×/÷，不用额外存一个 mode 字段。
+                  const rowFactor = isBase ? 1 : (row.factor ?? 1)
+                  const isDivideMode = rowFactor > 0 && rowFactor <= 1
+                  const displayQty = isDivideMode ? Math.round((1 / rowFactor) * 1e6) / 1e6 : rowFactor
+                  // "基准 × 系数"这一步的结果，与折扣/加价无关——借道 FORMULA(折扣/加减都是 0) 拿到这个干净的数，
+                  // 公式行要展示"从这个数出发再调整"，不能直接用 finalPrice(已经算完调整)。
+                  const stepPrice = priceOf([{ ...row, priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0 }], row.uomId, tmpl.listPrice)
                   const finalPrice = priceOf([row], row.uomId, tmpl.listPrice)
-                  const modeLabel = isEn
-                    ? { AUTO: 'Auto', FIXED: 'Fixed', FORMULA: 'Formula' }[row.priceMode]
-                    : { AUTO: '自动', FIXED: '固定', FORMULA: '公式' }[row.priceMode]
                   return (
                     <div key={i}>
                       <div className="flex items-center gap-2">
@@ -719,48 +724,77 @@ export default function ClassicProductDetailPage() {
                         ) : (
                           <span className="w-0" />
                         )}
-                        {/* 换算系数：基础单位恒为 1 且不可改 —— 它是库存的计数尺子 */}
-                        <div className="flex items-center border border-gray-300 rounded h-8 overflow-hidden bg-white" style={{ width: 190 }}>
-                          <span className="px-2 text-xs text-gray-500 border-r border-gray-200 h-full flex items-center bg-gray-50 whitespace-nowrap">
-                            {isEn ? '= base ×' : '= 基础 ×'}
-                          </span>
-                          <NumericInput
-                            step="0.000001" min={0}
-                            value={isBase ? 1 : (row.factor ?? 1)}
-                            onChange={e => updateSaleUomRow(i, { factor: e.target.value === '' ? 1 : Number(e.target.value) })}
-                            disabled={!editMode || isBase}
-                            title={isEn
-                              ? 'How many base units one of this unit contains (a case of 10 packets → 10)'
-                              : '1 个此单位等于多少个基础单位（一箱装 10 包就填 10）'}
-                            className="flex-1 h-full px-2 text-sm outline-none min-w-0 disabled:bg-gray-50 disabled:text-gray-400"
-                          />
-                        </div>
-                        {editMode && !isBase && (
-                          <button
-                            type="button"
-                            onClick={() => { setCalcOpenIndex(calcOpenIndex === i ? null : i); setPriceOpenIndex(null) }}
-                            className={`${btnBase} px-2`}
-                            title={isEn ? 'Conversion calculator' : '换算计算器'}
-                          >
-                            🔧 {isEn ? 'Calc' : '帮我算'}
-                          </button>
+                        {/* 具体数量：纯数字，不带方向——方向(×/÷)由后面「= base」那个开关决定。
+                            基础单位恒为 1 且不可改 —— 它是库存的计数尺子。 */}
+                        <NumericInput
+                          step="0.000001" min={0}
+                          value={isBase ? 1 : displayQty}
+                          onChange={e => {
+                            const n = e.target.value === '' ? 1 : Number(e.target.value)
+                            const nextFactor = isDivideMode ? (n > 0 ? 1 / n : 1) : n
+                            updateSaleUomRow(i, { factor: nextFactor })
+                          }}
+                          disabled={!editMode || isBase}
+                          title={isEn
+                            ? 'How many — pick × or ÷ on the right for the direction'
+                            : '具体数量——方向(×放大/÷缩小)用右边的开关选'}
+                          className="h-8 px-2 border border-gray-300 rounded text-sm text-center outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                          style={{ width: 90 }}
+                        />
+                        {/* 跟基础单位的关系：= base [×/÷开关] 数量。开关点一下就在放大/缩小间切换，
+                            默认缩小(÷)更常见(拆零比整箱常见)；符号字号调大，纯展示+开关，不带计算器。 */}
+                        {isBase ? (
+                          <span className="w-0" />
+                        ) : (
+                          <div className="flex items-center gap-1.5 h-8 px-2 border border-gray-300 rounded text-xs bg-gray-50 whitespace-nowrap">
+                            <span className="text-gray-500">{isEn ? '= base' : '= 基础'}</span>
+                            <button
+                              type="button"
+                              disabled={!editMode}
+                              onClick={() => {
+                                const nextFactor = isDivideMode ? displayQty : (displayQty > 0 ? 1 / displayQty : 1)
+                                updateSaleUomRow(i, { factor: nextFactor })
+                              }}
+                              title={isEn ? 'Toggle between "× multiply base" and "÷ split base"' : '在"×放大 base"和"÷拆分 base"之间切换'}
+                              className="text-base leading-none font-bold px-0.5 disabled:cursor-not-allowed"
+                              style={{ color: '#875A7B' }}
+                            >
+                              {isDivideMode ? '÷' : '×'}
+                            </button>
+                            <span className="font-medium" style={{ color: '#875A7B' }}>{displayQty}</span>
+                          </div>
                         )}
-                        {/* 价格：基础行价格恒等于 Sales Price，不再单独可编辑 */}
+                        {/* 价格：基础行价格恒等于 Sales Price，不再单独可编辑；其余行公式直接摊平在行内，
+                            不用再点开才看到——price = base price + 一个百分比(可负=加价) + 一个绝对值(可负) */}
                         {isBase ? (
                           <div className="flex items-center h-8 px-2 text-sm text-gray-500 whitespace-nowrap">
                             €{tmpl.listPrice.toFixed(2)}
                           </div>
+                        ) : editMode ? (
+                          <div className="flex items-center gap-1 border border-gray-300 rounded h-8 px-2 bg-white text-xs whitespace-nowrap">
+                            <span className="text-gray-400">€{stepPrice.toFixed(2)} +</span>
+                            <NumericInput
+                              step="0.01"
+                              value={row.priceDiscountPct ?? 0}
+                              onChange={e => updateSaleUomRow(i, { priceMode: 'FORMULA', priceDiscountPct: e.target.value === '' ? 0 : Number(e.target.value) })}
+                              title={isEn ? 'Percentage adjustment, negative = discount' : '百分比调整，填负数就是打折'}
+                              className="w-14 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
+                            />
+                            <span className="text-gray-400">% +</span>
+                            <NumericInput
+                              step="0.01"
+                              value={row.priceSurcharge ?? 0}
+                              onChange={e => updateSaleUomRow(i, { priceMode: 'FORMULA', priceSurcharge: e.target.value === '' ? 0 : Number(e.target.value) })}
+                              title={isEn ? 'Flat amount, can be negative' : '绝对值，可以是负数'}
+                              className="w-16 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
+                            />
+                            <span className="text-gray-400">=</span>
+                            <span className="font-medium" style={{ color: '#875A7B' }}>€{finalPrice.toFixed(2)}</span>
+                          </div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => { setPriceOpenIndex(priceOpenIndex === i ? null : i); setCalcOpenIndex(null) }}
-                            disabled={!editMode}
-                            className="flex items-center justify-between border border-gray-300 rounded h-8 px-2 text-sm bg-white disabled:bg-gray-50"
-                            style={{ width: 170 }}
-                          >
-                            <span>€{finalPrice.toFixed(2)}</span>
-                            <span className="text-xs text-gray-400 ml-1">{modeLabel}</span>
-                          </button>
+                          <div className="flex items-center h-8 px-2 text-sm text-gray-500 whitespace-nowrap">
+                            €{finalPrice.toFixed(2)}
+                          </div>
                         )}
                         {editMode && !isBase && (
                           <button
@@ -786,26 +820,6 @@ export default function ClassicProductDetailPage() {
                           <button onClick={() => removeSaleUomRow(i)} className="text-gray-400 hover:text-red-500 text-sm px-1">✕</button>
                         )}
                       </div>
-                      {editMode && !isBase && calcOpenIndex === i && (
-                        <FactorCalculator
-                          isEn={isEn}
-                          netWeight={tmpl.netWeight ?? null}
-                          otherRows={saleUoms
-                            .map((r, j) => ({ index: j, uomId: r.uomId, factor: r.factor, label: isEn ? (uoms.find(u => u.id === r.uomId)?.name || uoms.find(u => u.id === r.uomId)?.nameZh) : (uoms.find(u => u.id === r.uomId)?.nameZh ?? uoms.find(u => u.id === r.uomId)?.name) }))
-                            .filter(r => r.index !== i && r.factor > 0)}
-                          onApply={f => { updateSaleUomRow(i, { factor: f }); setCalcOpenIndex(null) }}
-                          onClose={() => setCalcOpenIndex(null)}
-                        />
-                      )}
-                      {editMode && !isBase && priceOpenIndex === i && (
-                        <PriceFormulaPanel
-                          isEn={isEn}
-                          row={row}
-                          basePrice={tmpl.listPrice}
-                          onUpdate={patch => updateSaleUomRow(i, patch)}
-                          onClose={() => setPriceOpenIndex(null)}
-                        />
-                      )}
                     </div>
                   )
                 })}
@@ -963,194 +977,3 @@ function PriceInput({ value, onChange }: { value: number; onChange: (v: number) 
   )
 }
 
-// ── 可售单位·换算计算器(20260823) ────────────────────────────────────────────
-// 两种真实场景的辅助算法："按重量拆分"(需要 Net Weight)与"参照已有单位的倍数"，
-// 只帮忙把系数算对、填进已有的系数输入框，不改变 ProductSaleUom 的数据形状。
-function FactorCalculator({
-  isEn, netWeight, otherRows, onApply, onClose,
-}: {
-  isEn: boolean
-  netWeight: number | null
-  otherRows: Array<{ index: number; uomId: string; factor: number; label?: string | null }>
-  onApply: (factor: number) => void
-  onClose: () => void
-}) {
-  const [mode, setMode] = useState<'weight' | 'multiple'>('weight')
-  const [amount, setAmount] = useState('')
-  const [amountUnit, setAmountUnit] = useState<'g' | 'kg'>('g')
-  const [refIndex, setRefIndex] = useState(otherRows[0]?.index ?? -1)
-  const [multiplier, setMultiplier] = useState('')
-
-  const hasNetWeight = !!netWeight && netWeight > 0
-  const weightFactor = (() => {
-    if (!hasNetWeight) return null
-    const n = Number(amount)
-    if (!Number.isFinite(n) || n <= 0) return null
-    const amountKg = amountUnit === 'g' ? n / 1000 : n
-    return round6(amountKg / (netWeight as number))
-  })()
-  const refRow = otherRows.find(r => r.index === refIndex)
-  const multipleFactor = (() => {
-    const n = Number(multiplier)
-    if (!refRow || !Number.isFinite(n) || n <= 0) return null
-    return round6(n * refRow.factor)
-  })()
-
-  return (
-    <div className="mt-1 p-3 border border-gray-200 rounded bg-gray-50 max-w-xl text-sm">
-      <div className="flex items-center gap-4 mb-2">
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" checked={mode === 'weight'} onChange={() => setMode('weight')} style={{ accentColor: '#875A7B' }} />
-          {isEn ? 'By weight' : '按重量'}
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" checked={mode === 'multiple'} onChange={() => setMode('multiple')} style={{ accentColor: '#875A7B' }} />
-          {isEn ? 'By multiple of another unit' : '按已有单位的倍数'}
-        </label>
-        <button type="button" onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
-      </div>
-
-      {mode === 'weight' && (
-        !hasNetWeight ? (
-          <p className="text-xs text-amber-600">
-            {isEn ? 'Please fill in Net Weight (under Inventory & UoM) first.' : '请先在上面「Inventory & UoM」区块填净重 Net Weight。'}
-          </p>
-        ) : (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-500 whitespace-nowrap">
-              {isEn ? `1 base unit = ${netWeight} kg net —` : `1 个基础单位 = ${netWeight} kg 净重 ——`}
-            </span>
-            <NumericInput step="0.001" min={0} value={amount} onChange={e => setAmount(e.target.value)} placeholder="100" className="w-24 h-8 px-2 border border-gray-300 rounded text-sm no-spinner" />
-            <select value={amountUnit} onChange={e => setAmountUnit(e.target.value as 'g' | 'kg')} className="h-8 px-2 border border-gray-300 rounded text-sm">
-              <option value="g">g</option>
-              <option value="kg">kg</option>
-            </select>
-            {weightFactor != null && (
-              <span className="text-xs text-gray-600 whitespace-nowrap">
-                {isEn
-                  ? `= factor ${weightFactor} (≈ 1 base unit splits into ${round3(1 / weightFactor)} of this)`
-                  : `= 系数 ${weightFactor}（约等于 1 基础单位可以拆成 ${round3(1 / weightFactor)} 份）`}
-              </span>
-            )}
-            <button
-              type="button"
-              disabled={weightFactor == null}
-              onClick={() => weightFactor != null && onApply(weightFactor)}
-              className="h-8 px-3 text-xs font-medium text-white rounded disabled:opacity-40"
-              style={{ background: '#875A7B' }}
-            >
-              {isEn ? 'Apply' : '应用'}
-            </button>
-          </div>
-        )
-      )}
-
-      {mode === 'multiple' && (
-        otherRows.length === 0 ? (
-          <p className="text-xs text-amber-600">
-            {isEn ? 'Add and fill in another unit\'s factor first, then reference it here.' : '请先手填一行其他单位的系数，再在这里参照它。'}
-          </p>
-        ) : (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-500">{isEn ? 'Reference' : '参照'}</span>
-            <select value={refIndex} onChange={e => setRefIndex(Number(e.target.value))} className="h-8 px-2 border border-gray-300 rounded text-sm">
-              {otherRows.map(r => <option key={r.index} value={r.index}>{r.label} (×{r.factor})</option>)}
-            </select>
-            <span className="text-xs text-gray-500">×</span>
-            <NumericInput step="0.000001" min={0} value={multiplier} onChange={e => setMultiplier(e.target.value)} placeholder="5" className="w-24 h-8 px-2 border border-gray-300 rounded text-sm no-spinner" />
-            {multipleFactor != null && (
-              <span className="text-xs text-gray-600">{isEn ? `= factor ${multipleFactor}` : `= 系数 ${multipleFactor}`}</span>
-            )}
-            <button
-              type="button"
-              disabled={multipleFactor == null}
-              onClick={() => multipleFactor != null && onApply(multipleFactor)}
-              className="h-8 px-3 text-xs font-medium text-white rounded disabled:opacity-40"
-              style={{ background: '#875A7B' }}
-            >
-              {isEn ? 'Apply' : '应用'}
-            </button>
-          </div>
-        )
-      )}
-    </div>
-  )
-}
-
-// ── 可售单位·价格公式面板(20260823) ──────────────────────────────────────────
-// 三态：自动(基准×系数)/固定(priceOverride)/公式(基准×系数 后再打折+加减)。
-// 计算逻辑完全复用 lib/sale-uom.ts 的 priceOf，不在这里另写一遍公式。
-function PriceFormulaPanel({
-  isEn, row, basePrice, onUpdate, onClose,
-}: {
-  isEn: boolean
-  row: SaleUomRow
-  basePrice: number
-  onUpdate: (patch: Partial<SaleUomRow>) => void
-  onClose: () => void
-}) {
-  // "基准 × 系数" 这一步的结果，与 priceMode 无关 —— 借道 FORMULA(折扣/加减都是 0) 拿到这个干净的数
-  const stepPrice = priceOf([{ ...row, priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0 }], row.uomId, basePrice)
-  const finalPrice = priceOf([row], row.uomId, basePrice)
-
-  return (
-    <div className="mt-1 p-3 border border-gray-200 rounded bg-gray-50 max-w-xl text-sm space-y-2">
-      <div className="flex items-center gap-4">
-        {([['AUTO', isEn ? 'Auto' : '自动'], ['FIXED', isEn ? 'Fixed' : '固定'], ['FORMULA', isEn ? 'Formula' : '公式']] as [SaleUomPriceMode, string][]).map(([mode, label]) => (
-          <label key={mode} className="flex items-center gap-1.5 cursor-pointer">
-            <input type="radio" checked={row.priceMode === mode} onChange={() => onUpdate({ priceMode: mode })} style={{ accentColor: '#875A7B' }} />
-            {label}
-          </label>
-        ))}
-        <button type="button" onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
-      </div>
-
-      {row.priceMode === 'AUTO' && (
-        <p className="text-xs text-gray-500">
-          {isEn ? `€${basePrice.toFixed(2)} × ${row.factor} = €${stepPrice.toFixed(2)} (read-only — switch mode to change)` : `€${basePrice.toFixed(2)} × ${row.factor} = €${stepPrice.toFixed(2)}（只读 —— 要改就换模式）`}
-        </p>
-      )}
-
-      {row.priceMode === 'FIXED' && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">€</span>
-          <NumericInput
-            step="0.01" min={0}
-            value={row.priceOverride ?? ''}
-            onChange={e => onUpdate({ priceOverride: e.target.value === '' ? null : Number(e.target.value) })}
-            placeholder={stepPrice.toFixed(2)}
-            className="w-32 h-8 px-2 border border-gray-300 rounded text-sm no-spinner"
-          />
-        </div>
-      )}
-
-      {row.priceMode === 'FORMULA' && (
-        <div className="space-y-2">
-          <p className="text-xs text-gray-500">
-            {isEn ? `€${basePrice.toFixed(2)} × ${row.factor} = €${stepPrice.toFixed(2)}` : `€${basePrice.toFixed(2)} × ${row.factor} = €${stepPrice.toFixed(2)}`}
-          </p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-gray-600 whitespace-nowrap">{isEn ? 'New Price =' : 'New Price ='} €{stepPrice.toFixed(2)} −</span>
-            <NumericInput
-              step="0.01" min={0} max={100}
-              value={row.priceDiscountPct ?? 0}
-              onChange={e => onUpdate({ priceDiscountPct: e.target.value === '' ? 0 : Number(e.target.value) })}
-              className="w-20 h-8 px-2 border border-gray-300 rounded text-sm no-spinner"
-            />
-            <span className="text-gray-500">% +</span>
-            <NumericInput
-              step="0.01"
-              value={row.priceSurcharge ?? 0}
-              onChange={e => onUpdate({ priceSurcharge: e.target.value === '' ? 0 : Number(e.target.value) })}
-              className="w-24 h-8 px-2 border border-gray-300 rounded text-sm no-spinner"
-            />
-          </div>
-        </div>
-      )}
-
-      <p className="text-xs font-medium" style={{ color: '#875A7B' }}>
-        {isEn ? `Final price: €${finalPrice.toFixed(2)}` : `最终价格：€${finalPrice.toFixed(2)}`}
-      </p>
-    </div>
-  )
-}

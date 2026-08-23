@@ -1,162 +1,140 @@
-# DEV-PLAN — 商品基准单位/采购单位/可售单位换算与定价
+# DEV-PLAN — 可售单位在打印单据上的可读性 + 价格表按可售单位差异化定价
 
 > 更新日期：2026-08-23
-> 读取依据：无独立 PRD 文档；需求由用户对话直接描述（附两张截图），随后通过 `AskUserQuestion` 四问逐条确认关键决策（见下方「已确认决策」）。未读取额外产品文档。
-> 涉及模块：商品详情页 `app/[locale]/classic/operator/products/[id]/page.tsx`、可售单位 API `app/api/products/[id]/sale-uoms/route.ts`、商品模板创建 `app/api/product-templates/route.ts`、采购单确认流转 `app/api/purchase-orders/[id]/route.ts`、公用换算函数 `lib/sale-uom.ts`、Schema `prisma/schema.prisma`。
+> 读取依据：无独立 PRD 文档；需求由用户对话直接描述（附两张实拍截图：波次拣货单、报价单打印页），本轮未读取额外产品文档。
+> 触发背景：`可售单位`（多单位销售）功能刚上线（见上一轮 DEV-REPORT），用户复核打印单据时发现同一商品在拣货单上因为单位显示不一致而容易让拣货员看错数量，并提出两个后续需求：① 打印单据要让司机/拣货员看懂"这一行到底是多少货"；② 价格表要支持按可售单位对不同客户差异化定价。
 
 ---
 
-## 0. 现状（实测代码，不是猜测）
+## 0. 现状（实测代码 + 实拍截图，不是猜测）
 
-### 0.1 基准单位（Unit of Measure）
+### 0.1 截图诊断：拣货单同一商品两行单位不一致，是真 bug，不是本次新功能引入的
 
-- 存在 `ProductTemplate.uomId`（外键指向 `Uom`，`prisma/schema.prisma:316-318`）。
-- 商品详情页点击「Edit」进入编辑态后，页头就有一个可编辑的下拉框（`app/[locale]/classic/operator/products/[id]/page.tsx:580-591`），改完随整页一起 `PUT /api/product-templates/[id]` 保存——**这个值本来就能改**，不是只读。
-- 但下面「可售单位（多单位销售试点）」区块的"基础"单选钮（`:665-675`），保存时（`saveSaleUoms` → `PUT /api/products/[id]/sale-uoms`）也会把这个字段覆盖掉（`app/api/products/[id]/sale-uoms/route.ts:59-73`，这段代码本身是 20260819 为了修复"模板单位与可售单位基础不一致导致订单页系数算错"这个真实 bug 才加的，动机是对的，但做法是"两个入口各自写同一个字段"）。
-- **已确认决策**：基准单位只能通过页头「Unit of Measure」下拉框改，「可售单位」区块的"基础"不再是可操作的开关，只是"哪一行等于页头选的那个单位"的自动展示。
+拣货单截图第 2、3 行都是「Pepper Green 5KG CASE」（同一 `productId`，两个不同客户各点了一次），单位列一个显示 `Unit(s)`、一个显示 `CASE`。
 
-### 0.2 采购单位（Purchase UoM）
+- 拣货单按 `${productId}::${uomId}` 分组（`lib/print/trip-picking-template.ts:87`），两行 `uomId` 确实不同，分组本身没错。
+- 但 `uomName` 一个是空的。追到源头：`Product.uomName` 由 `template?.uom?.name ?? null` 派生（`app/api/products/route.ts:67,94`）——**该商品的 `ProductTemplate.uomId` 当时没设**，前端多处兜底成通用占位字符串 `'Unit(s)'`（`place-order.tsx:677/712/758/1763` 等 5 处硬编码 `?? 'Unit(s)'`）。
+- 后果：两个客户点的其实很可能是同一种"箱"，只是其中一单是在这个商品还没配基准单位时下的，打印出来却像是两种不同货——拣货员没法靠这张单判断要不要合并拣、拣多少。
 
-- 存在 `ProductTemplate.purchaseUomId`（`prisma/schema.prisma:320-321`），页面展示同样在 `:620-624`。
-- 实测**没有任何代码**会在采购单确认/收货时回写这个字段——现在库里的值全部来自 Odoo 导入时的一次性快照，或 `quick-create` 时手工选的（`app/api/products/quick-create/route.ts`），此后再也不会变。
-- `PurchaseOrderLine.uomId` 是一个**没有 `@relation` 的裸字符串字段**（`prisma/schema.prisma:1215-1250` 内确认，只有 `@@index([uomId])`，不像 `ProductTemplate.uomId` 那样有正式外键关系）——不在本次改动范围，只是记录在案。
-- **已确认决策**：采购单「确认采购」（`PATCH /api/purchase-orders/[id]` action=confirm，`targetStatus==='CONFIRMED'` 分支，与现有"生成供应商草稿账单+通知财务"同一个触发点）时，把这张单里每个商品最后一次出现的 `PurchaseOrderLine.uomId` 回写到该商品 `ProductTemplate.purchaseUomId`（`uomId` 为空的行跳过，不拿空值覆盖）。历史数据不做回填，只影响这次改动上线之后新确认的采购单。
+### 0.2 打印模板现状：已经有"商品名 + 规格(spec)"两行，但没有"换算说明"
 
-### 0.3 可售单位换算系数（ProductSaleUom.factor）
+四个司机/仓库侧模板（`trip-picking-template.ts` / `trip-sales-template.ts` / `trip-delivery-template.ts` / `trip-receipt-template.ts`）用的都是同一套字段：`productName`（大字）+ `spec`（商品名下方一行小灰字，`OrderLine.spec` 快照）+ `uomName`（单独一列）。用户报价单/发票打印页（`app/[locale]/classic/print/[id]/page.tsx`）也是同一套。
 
-- 完整模型见 `prisma/schema.prisma:382-428`：`factor` = "1 个此单位 = factor 个基础单位"，基础单位那一行恒为 1；`priceOverride` 留空则按 `基础单价 × factor` 自动折算。
-- 前端目前要求用户**直接手填 factor 数字**（`= 基础 × [数字]`，`:676-691`），没有任何"输入真实规格、自动算比例"的辅助。
-- `ProductTemplate.weight`（原有，通用"默认商品重量"）之外，这次对话前已经有一条**未提交但已应用到本地库**的迁移 `prisma/migrations/20260823000001_product_gross_net_weight/`，新增了 `grossWeight`/`netWeight` 两个字段（`prisma/schema.prisma:307-311`），目前全部商品该值为空，且**没有任何代码读它们**（只在导出 CSV 时显示）。
-- **已确认决策**：换算计算器用 `netWeight`（净重，不是 `weight`）作为"1 个基准单位的真实重量"。同时用户指出一个更普遍的场景——大包装拆成多份小包装出售（如"一大袋=20小袋"，需要配出"1袋装/5袋装/10袋装"三个可售单位），这不是重量场景，是**计数场景**，见下方 §2.3 设计。
+`spec` 是"这个商品长什么样"的自由文本快照（如"红包菜 Red Only"），跟这次的"可售单位换算关系"是两回事——**现在没有任何地方告诉看单据的人「这一行的 5 PKT，换算成基准单位是多少」**。截图里的"整箱整袋"分组标题已经暗示了拣货员是按"箱/袋"这种物理单位在找货，可售单位一旦精细到"1 箱拆成 40 小袋卖"，不显式换算出来，拣货员没法一眼判断该去拿几箱。
 
-### 0.4 价格公式
+### 0.3 价格表现状：已经间接影响可售单位价格，但没有"按可售单位单独定价"的能力
 
-- 现状价格只有"留空自动折算 / 填了就固定用这个数"两种状态（二选一），没有截图2那种"基准价 − 折扣% + 金额"的公式面板。
-- 项目里已经有一套非常接近的 UI（客户价目表规则，`app/[locale]/classic/operator/pricelists/[id]/page.tsx:1072-1226`：`fixed / percentage / formula` 三态单选 + formula 态下的"Based on 下拉 + New Price = 基准 − 折扣% + 金额 + 取整/最低最高毛利"完整公式面板），可以直接借用这套交互模式，不用另起一套设计语言。
-- **已确认决策**：可售单位这块除了换算计算器，还要照这个模式加一套独立的"价格公式"面板（自动/固定/公式三态），比现在"留空自动算"更透明可调。
+`OdooPricelistItem`（`lib/types.ts:551-589`）只有 `applyOn: global/category/product/variant` 四种匹配范围，`resolvePrice()`（`lib/pricing-engine.ts:49`）算出的价格是**该商品基准单位**下的价格。下单/报价三处（`place-order.tsx:659` / `orders/[id]/page.tsx:163` / `quotations/[id]/page.tsx:245`）都是先用 `resolveCustomerPrice()` 拿到这个基准价，再用 `priceOf(rows, lineUomId, basePrice)` 按可售单位的系数/公式往下折算——**所以价格表规则已经会间接影响所有可售单位的价格**，改一条价格表规则，AUTO/FORMULA 两种模式的可售单位价格全部自动跟着变（这正是用户这次要求在页面上提示的行为，且已经是事实，不需要新写计算逻辑，只需要把这句话说清楚）。
+
+但如果要的是"客户 A 买这个商品的 CASE 就该是固定 €X，不走系数换算"这种直接针对某个可售单位的定价，现在的规则做不到——`applyOn=product/variant` 匹配范围里没有"只对这个商品的某个可售单位生效"这一档。
 
 ---
 
-## 1. Schema 改动
+## 1. 模块拆解 & 已确认决策
 
-**只有价格公式这一项需要新增字段，基准单位/采购单位两项都是纯逻辑改动，不改表结构。**
+| # | 模块 | 范围 | 是否需要 schema | 状态 |
+|---|------|------|:---:|:---:|
+| D | 价格表编辑页加提示文案："这个价改了，商品配置的其他可售单位会自动跟着变" | 纯文案，1 个文件 | 否 | ✅ 已完成 |
+| A | 修复「Unit(s)」占位符与真实单位混排导致误读 | 打印模板 + 下单/报价/订单编辑 3 个页面的兜底逻辑 + 审计脚本 | 否 | ✅ 已完成 |
+| B | 打印单据加"可售单位换算说明"，让拣货员/司机看懂这一行等于多少基准单位 | 5 处打印模板 + `orders/[id]` GET 路由 + 新文件 `lib/print/uom-conversion.ts`（实施中改为 live 查询，见§2） | 否（原计划要，实施中推翻） | ✅ 已完成 |
+| C | 价格表支持按可售单位差异化定价 | `OdooPricelistItem` 加可选单位范围 + 定价引擎 + 价格表编辑页 UI + 下单/报价/订单编辑 3 处调用点 + 服务端权威定价 | **是（仅 TS 类型，无需迁移）** | ✅ 已完成 |
 
-`prisma/schema.prisma` 的 `ProductSaleUom` 新增：
+D 与 C 互不依赖，文案描述的是**已经成立的事实**（见 0.3），可以先于 C 完成上线；C 上线后需要把 D 的文案再补一句"除非该单位单独设了固定价"。A、B 互相独立，可以并行。
+
+### 已确认决策
+
+| # | 决策点 | 采用方案 | 理由 |
+|---|--------|---------|------|
+| 1 | A：缺 `uomId` 商品的兜底展示 | 打印/下单页不再用容易和真实单位混淆的通用占位字符串 `Unit(s)`；改为更醒目的提示（如带 ⚠ 标记 + 商品原名截取的规格片段），并生成一份「缺基准单位商品」清单落到 action-log/审计脚本，供你抽空去商品页逐个补 `Unit of Measure` | 截图暴露的问题是"看着像两种货"，根源是数据没配全；先让展示层不再制造误解，同时不悄悄吞掉这个数据缺口——留痕比自动瞎猜一个单位更安全 |
+| 2 | B：换算说明的呈现形式 | 系数 <1 时按倒数换算成"1 大单位 = N 小单位"（如 `1 CASE = 40 PKT`），系数 ≥1 时直接顺述（如 `1 CASE = 6 × 2KG`）；两种都优先用 `netWeight`（如有）换算出实物重量作为第二行小字辅助（如 `≈ 1.5kg`） | 拣货员认物理包装不认小数系数，"1 箱 = 40 袋"比"factor=0.025"直观；重量是仓库场景里除了个数外最直接的第二参照 |
+| 3 | B：换算说明存哪 | ⚠️ 实施中推翻原计划：**不给 `OrderLine` 加快照字段**，改为打印时 live 查询 `ProductSaleUom`——发现 `lib/print/trip-loader.ts` 里已有的 `packSpec`（拆箱用）就是同一类"包装规格"信息，走的正是"live 查询、不落库快照"这条路，是已经验证过的既有模式；这类纯展示用的换算说明和金额/库存快照不是一回事，跟着抄一份现成模式比新开一条 schema 更省，也更符合"能否复用现有代码"的评估原则。新文件 `lib/print/uom-conversion.ts` | 与 `productName`/`spec`/`uomName` 三个既有快照字段的治理原则不冲突——那三个是"下单当时的事实"必须冻结；换算系数是"商品现在长什么样"，跟包装规格（`packSpec`）同一类，本来就该是 live 的 |
+| 4 | C：可售单位范围只对 `applyOn ∈ {product, variant}` 生效 | `category`/`global` 范围的规则不支持限定到某个可售单位（不同商品的可售单位配置互不相同，"这个分类下所有商品的 CASE"没有统一意义） | 与 Odoo 语义、及现有 `matchesItem()` 的四档范围保持一致，不强行让语义不通的组合能选 |
+| 5 | C：单位限定规则与不限定规则的优先级 | 复用现有 `sequence` 排序机制，不额外发明"更具体的规则优先"——用户自己把限定单位的规则往前排（`sequence` 数字小）即可命中；不限定单位的规则退化成"对该商品所有可售单位都生效"的兜底规则 | 少一套新的隐式优先级规则，价格表已有的排序心智模型直接复用，界面上不用新解释一套"精确匹配优先"的隐藏逻辑 |
+| 6 | C：命中单位限定规则后，是否还叠加可售单位自身的 factor/formula | 不叠加——单位限定规则算出来的就是该单位的最终价（跟现在 `fixed/percentage/formula` 三种算法直接输出"这个商品的最终价"是同一语义），不再乘以 `ProductSaleUom.factor` | 否则会出现"规则里填的数字"和"实际生效的数字"不一致，用户在价格表页填了 €10，下单却显示 €10×系数，无法用界面数字直接对账 |
+
+---
+
+## 2. Schema 改动
+
+**模块 B 原计划给 `OrderLine` 加 `uomFactor` 快照字段——实施中推翻，改为 live 查询复用 `lib/print/trip-loader.ts` 里已有的 `packSpec` 模式（详见上面决策#3），不再需要这条迁移，也不需要在下单/编辑三个页面写任何东西。这次 schema 改动只剩模块 C 一项。**
 
 ```prisma
-enum SaleUomPriceMode {
-  AUTO     // 基准单价 × factor，四舍五入两位小数（现状默认行为）
-  FIXED    // 直接用 priceOverride（现状"填了就固定"，只是显式建模成一个状态）
-  FORMULA  // 基准单价 × factor × (1 − priceDiscountPct/100) + priceSurcharge
-}
-
-model ProductSaleUom {
-  ...既有字段不变...
-  /// 价格计算方式；默认 AUTO 与现状完全一致，存量数据据 priceOverride 是否有值一次性回填
-  priceMode        SaleUomPriceMode @default(AUTO)
-  /// FORMULA 模式下的折扣百分比，如 10 表示"打 9 折"
-  priceDiscountPct Decimal          @default(0) @db.Decimal(6, 4)
-  /// FORMULA 模式下的加减金额（可正可负），折扣之后再加
-  priceSurcharge   Decimal          @default(0) @db.Decimal(12, 2)
+/** 价格计算方式不变，OdooPricelistItem 仍是 OdooPricelist.items 里的 JSON 数组元素（非独立表），
+ *  加一个可选字段即可，不需要迁移脚本 —— TS 类型层面加，JSON 里没有这个字段的旧数据视为"不限定单位"。 */
+export interface OdooPricelistItem {
+  // ...既有字段不变...
+  /** 20260823：仅 applyOn ∈ {product, variant} 时可选填。填了则这条规则只对该商品/变体的这一个
+   *  可售单位（ProductSaleUom.uomId）生效；不填 = 对该商品所有可售单位（含基准单位）都生效，与现状一致。 */
+  uomId?: string
 }
 ```
 
-迁移脚本（按项目现有做法：`db push` + 手写迁移 + `migrate resolve`，不用 `migrate dev`，理由见记忆"Prisma 迁移 shadow DB 问题"）：
-
-```sql
-CREATE TYPE "SaleUomPriceMode" AS ENUM ('AUTO', 'FIXED', 'FORMULA');
-ALTER TABLE "ProductSaleUom" ADD COLUMN "priceMode" "SaleUomPriceMode" NOT NULL DEFAULT 'AUTO';
-ALTER TABLE "ProductSaleUom" ADD COLUMN "priceDiscountPct" DECIMAL(6,4) NOT NULL DEFAULT 0;
-ALTER TABLE "ProductSaleUom" ADD COLUMN "priceSurcharge" DECIMAL(12,2) NOT NULL DEFAULT 0;
--- 存量行按现有 priceOverride 是否有值一次性归类，行为不变
-UPDATE "ProductSaleUom" SET "priceMode" = 'FIXED' WHERE "priceOverride" IS NOT NULL;
-```
-
-不新增字段记录"换算计算器"当时输入的参考数量/参考单位（比如"100g"这个原始输入）——计算器只是帮你把系数算对、填进现有的 `factor` 框，本身不作为一份"还原公式"持久化。理由：避免为一个纯辅助工具引入新的持久状态和另一套"要不要跟 factor 保持同步"的问题；下次要改，重新用计算器按一遍就行，比维护两份真相简单。
+`OdooPricelist.items` 是 `Json` 字段（`prisma/schema.prisma:654`），加 `uomId` 不需要写 `.sql` 迁移，只改 TypeScript 类型定义 + 定价引擎读取逻辑。
 
 ---
 
-## 2. 三处改动详细设计
+## 3. 涉及文件清单
 
-### 2.1 基准单位单一入口
+### 模块 A（占位符修复，无 schema）
+- `app/[locale]/classic/operator/place-order/page.tsx`（5 处 `?? 'Unit(s)'`）
+- `app/[locale]/classic/operator/orders/[id]/page.tsx`
+- `app/[locale]/classic/operator/quotations/[id]/page.tsx`
+- 新增审计脚本 `scripts/audit/products-missing-uom.ts`：扫描"有过订单行但 `ProductTemplate.uomId IS NULL`"的商品，量化清单规模，决定是否需要批量提醒运营去补
 
-- `app/[locale]/classic/operator/products/[id]/page.tsx`：「可售单位」区块里，判定"是否基础"改成纯派生 `row.uomId === tmpl.uomId`，不再是可点的单选钮——是基础的那一行显示一个"基础"徽章、系数锁定显示 1；点击其他行不会再把"基础"转移过去。真要换基准单位，去页头「Unit of Measure」下拉框改。
-- 页头「Unit of Measure」下拉框旁边加一句提示：如果已经配置了「可售单位」，换基准单位后各行系数是相对**旧基准**算的，不会自动换算，需要重新核对——这是主动加的一个提醒，不做阻塞性校验（校验"库存是否已有发生额"超出本次范围，现状本来就允许随时改）。
-- `app/api/products/[id]/sale-uoms/route.ts`（PUT）：
-  - 删除"把 `isDefault` 那行写回 `ProductTemplate.uomId`"的整段逻辑（现 `:59-73`）。
-  - 改成读当前 `product.template.uomId`：如果非空，服务端**忽略**客户端传来的每行 `isDefault`，一律按 `item.uomId === template.uomId` 重新计算；如果提交的行里没有一行匹配这个基准单位，自动补一行（`factor=1, priceOverride=null`）一起存，不报错——用户没必要先手动把基准单位也加进列表才能保存其余行。
-  - 如果 `product.template.uomId` 目前是空的（历史遗留、从未设置过），维持现状：按客户端提交的 `isDefault` 回填一次 `ProductTemplate.uomId`（老逻辑里"顺带修掉模板没设销售单位"的兜底价值还在，只是从"每次都覆盖"降级成"仅当前模板还没设过才补一次"）。
-- `app/api/product-templates/route.ts`（POST，新建商品）：创建时同理，按提交的 `data.uomId`（页头选的）而不是 `saleUoms` 里的 `isDefault` 来决定谁是基础行，写法与上面一致（新建场景两者理论上应该一致，这里是保险，不是预期会分叉）。
+### 模块 B（打印换算说明，实施后无 schema，已完成 ✅）
+- `lib/print/uom-conversion.ts`（新文件：`loadUomConversionMap()` live 查询 + `formatUomConversionHint()` 纯格式化函数，决策#2 的倒数/顺述两种phrasing + netWeight 重量估算都在这）
+- `lib/print/trip-common.ts`（`TripLine` 加 `uomConversion` 字段）
+- `lib/print/trip-loader.ts` / `lib/print/dispatch-loader.ts`（两条各自独立查询 Order 的 loader，都要接 `loadUomConversionMap`——已验证 `dispatch-loader.ts` 原本连 `packSpec` 都没接，是既有缺口，这次顺带一起补齐 uomConversion 但不管 packSpec）
+- `lib/print/trip-picking-template.ts`（拣货单：按聚合后的 `totalQty` 现算）
+- `lib/print/trip-sales-template.ts` / `trip-delivery-template.ts` / `trip-receipt-template.ts`（按单行 `orderedQty` 现算）
+- `app/api/orders/[id]/route.ts`（GET 返回每行加 `uomConversionHint`/`uomWeightHint` 两个已格式化字符串，供客户端打印页用，不需要在客户端重新实现一遍换算逻辑）
+- `app/[locale]/classic/print/[id]/page.tsx`（客户报价单/发票打印页，渲染上面两个字段）
+- 下单/报价/订单编辑三个页面**不需要改**——原计划"行提交时写快照"的方案已作废
 
-### 2.2 采购单位跟着采购单走
+### 模块 C（价格表按可售单位定价，含 schema，已完成 ✅）
+- `lib/types.ts`（`OdooPricelistItem` 加 `uomId?`）
+- `lib/pricing-engine.ts`（`PriceResolution` 加 `matchedUomId?`；`matchesItem()` 加单位过滤；`resolvePrice()`/`resolveViaPricelistChain()`/`resolveCustomerPrice()`/`computeItemPrice()` 签名加可选 `uomId` 参数并逐层透传，含嵌套 `formulaBase='pricelist'` 递归）
+- `app/api/pricelists/[id]/route.ts`（`normalizeItems()` 加 `uomId` 白名单：只有 `applyOn ∈ {product, variant}` 时保留，否则丢弃，避免切回 category/global 后残留一个悄悄拦规则的死值）
+- `app/[locale]/classic/operator/pricelists/[id]/page.tsx`（`applyOn=product/variant` 时加"限定可售单位"下拉，按 `productTemplateId`/`productVariantId` 现查该商品的 `ProductSaleUom`；命中单位限定规则时在 Price Computation 区块顶部用醒目色块标出"这条规则算的是【CASE】的最终价"，对应风险点#3；切 applyOn 或换商品/变体时自动清空 `uomId`；表格 Applicable On 列加小徽章显示限定单位）
+- `app/[locale]/classic/operator/place-order/page.tsx` / `orders/[id]/page.tsx` / `quotations/[id]/page.tsx`（`computeLinePrice`/`selectProductIntoLine`/`switchLineUnit` 调用 `resolveCustomerPrice` 时把 `lineUomId` 一起传下去；命中单位限定规则(`res.matchedUomId`)时**不再**额外乘 `factor`，直接用规则结果；`orders`/`quotations` 两个编辑页的 `switchLineUnit` 原本刻意不重新触发定价引擎（保护用户手改过的价），这里加了一次"仅探测有没有单位限定规则命中"的调用，命中才改用规则价，不命中则维持原有的按比例换算逻辑，不影响那条既有保护）
+- **⚠️ 计划外但必须一起改，否则模块 C 在服务端权威定价这一步会被判"超出容差"而失效**：`lib/server-pricing.ts` 的 `resolveOrderLines()`——
+  1. `resolveCustomerPrice(...)` 调用补上 `item.uomId`，否则单位限定规则在服务端永远不会命中
+  2. 命中 `resolution.matchedUomId` 时 `authoritative` 直接取 `resolution.price`，不再走 `scaleAuthoritativePrice()` 二次乘 factor（决策#6 服务端对齐）
+  3. 顺带修了一个在这次改造前就存在、与本次目标相关的独立 bug：`scaleAuthoritativePrice()` 换算非基准单位时读的是**全局 `Uom.factor`**（生产库 Unit 类目下恒为 1），跟 20260819 起客户端已切到的 `ProductSaleUom.factor` 口径脱节——服务端"权威价"因此对非基准单位一律算成基准价，客户端按箱规算对的价格反而会被判超出容差。已改成直接用已经查到的 `ProductSaleUom.factor`，与 `lib/sale-uom.ts:priceOf()` 同源；顺带删掉了因此变得多余的一次 `Uom.findMany` 查询。
+  该函数是 `POST /api/orders`、`PUT /api/orders/[id]`、`POST /api/orders/[id]/lines`、customer-portal 下单共用的唯一入口，不改这里，模块 C 在编辑页里看着生效，一提交订单就会被服务端悄悄打回基准价——且不会报错，属于风险点#2 的同类陷阱。
+- 新增测试 `tests/pricing-engine-uom-scope.test.ts`（7 条，覆盖决策#4/#5/#6 + `resolveCustomerPrice` 透传）
 
-- `app/api/purchase-orders/[id]/route.ts`，`targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED'` 分支（现有生成草稿账单的那段，约 `:412-423`）里追加：
-  - 对 `po.lines` 里 `uomId` 非空的行，按 `productId` 去重（同一采购单里同一商品出现多行时，取最后一行的 `uomId`，這种情况本身就少见，没必要引入额外判断/报错）；
-  - 查一遍这些 `productId` 对应的 `templateId`（`prisma.product.findMany`），把 `ProductTemplate.purchaseUomId` 更新成对应的 `uomId`；只更新确实变化的（`purchaseUomId !== 新值`才写，减少无意义的 `updatedAt` 刷新）。
-  - 这段和生成账单一样是"确认采购"的副作用之一，不新增权限点，跟着现有 `purchase.order.approve` 走。
-
-### 2.3 可售单位换算计算器
-
-面向两种真实场景，做成同一个小工具的两个模式（点击换算系数输入框旁边一个"🔧 帮我算"按钮展开，不强制使用，手动直接填数字的老路径继续保留）：
-
-**模式一·按重量**：适用于"一箱=6kg，拆成 100g 一份卖"这种。
-- 输入：数量 + 单位（克/公斤）下拉。
-- 前提：商品「其他信息」里的 `Net Weight` 必须先填了；没填时这个模式整体置灰，提示"请先在其他信息里填净重"。
-- 计算：`factor = (此单位重量换算成公斤) / 商品净重(公斤)`，保留 6 位小数存库（`Decimal(14,6)` 精度足够，100g/6kg 这种算出来是 0.016667，不会因为小数位不够丢精度）；旁边同时显示一个人话版本"约等于 1 箱可以拆成 60.000 份"（`= 1 / factor`，保留 3 位小数，用户说的"保留小数点后 3 位"对应的是这个更好读的展示数，不是数据库里存的原始 factor）。
-- 点"应用"把算出来的 factor 写进上面已有的系数输入框（还能再手动微调）。
-
-**模式二·按已有可售单位的倍数**：适用于"一大袋=20小袋，要配 1 袋装/5袋装/10袋装"这种计数场景。
-- 前提：这个商品已经有至少一行"最小可售单位"配置好了系数（比如先手动填一行"1 小袋 = 0.05 基础"——0.05 从哪来，是采购/仓库同事自己知道"一大袋 20 小袋"换算出来的，这一步维持现状手填，不额外做"请输入基准单位一共分成几份"这种一次性声明字段，避免为了省这一次手算，多加一个需要长期维护的数据）。
-- 有了这一行之后，模式二 = 选择"参照哪一行" + 填倍数，算出 `factor = 倍数 × 参照行.factor`（比如参照"小袋"0.05，填 5，算出 0.25，对应"5袋装"）——这一步是这次真正省事的地方：不用再手算 5×0.05，尤其倍数一多(10、20)容易算错或按错方向（正好呼应截图里"头/盒"两行系数疑似都填成 1 这种一眼看得出算错了的情况）。
-- 点"应用"同样写入系数框。
-
-两种模式都只是"帮你把系数算对、填进已有输入框"的计算器，不改变 `ProductSaleUom` 的数据形状，落库的东西和现在手填一个数字完全一样。
-
-### 2.4 价格公式面板
-
-每一行（非基础行）的价格展示从单一输入框，改成"收起时显示一行结果摘要 + 点开可切三态"，模式参照 `pricelists/[id]/page.tsx` 那套 fixed/percentage/formula 单选交互：
-
-- **自动（默认，对应现状"留空"）**：只读展示 `基准单价(tmpl.listPrice) × 系数 = 结果`，不能改数字，要改就换模式。
-- **固定**：一个金额输入框，直接对应现有 `priceOverride`（老数据全部落在这一态，行为不变）。
-- **公式（新增）**：只读展示"基准 × 系数 = X"这一步，下面照截图2的样子：`New Price = 上一步的 X − 折扣 [___]% + [___]`，两个数字输入框，改完实时算出并展示最终价格。对应新字段 `priceDiscountPct`/`priceSurcharge`。
-
-`lib/sale-uom.ts` 改动：
-- `SaleUomRow`/`SaleUomItemInput` 加 `priceMode/priceDiscountPct/priceSurcharge` 三个字段。
-- `validateSaleUomItems` 加校验：`priceDiscountPct` 在 0–100 之间；`priceSurcharge` 在 −1,000,000–1,000,000 之间（允许负数，对应"再减一点"的场景，截图只画了加号，但没理由锁死不让减）。
-- `priceOf()` 按 `priceMode` 分支计算：`FIXED` 用 `priceOverride`；`FORMULA` 按上面公式；`AUTO` 维持现状逐字不变（`priceOverride` 有值就用，否则 `基准×系数`）——这保证 5474 个从没配过多规格、以及所有存量已配置行的计算结果一个数字都不变。
-- 下单页/报价单/订单详情页三处调用 `priceOf` 的地方（`orders/[id]/page.tsx`、`quotations/[id]/page.tsx`、`place-order/page.tsx`）不用改代码，只要它们读到的 `saleUoms` 数据里带上新的三个字段（GET 接口自然返回），函数内部行为自动生效。
-
----
-
-## 3. 路由/文件清单
-
-| 文件 | 改动 |
-|---|---|
-| `prisma/schema.prisma` | `ProductSaleUom` 新增 `priceMode`/`priceDiscountPct`/`priceSurcharge` + 新枚举 `SaleUomPriceMode` |
-| 新迁移（手写 SQL，`db push` 方式应用） | 建枚举类型、加三列、按 `priceOverride` 是否有值回填存量行 `priceMode` |
-| `lib/sale-uom.ts` | 新字段的类型、校验、`priceOf()` 三态计算逻辑 |
-| `app/api/products/[id]/sale-uoms/route.ts` | 去掉写回 `ProductTemplate.uomId` 的逻辑，改成读它来派生 `isDefault`；接住价格公式三个新字段并落库 |
-| `app/api/product-templates/route.ts` | 新建商品时，`isDefault` 同样按提交的 `data.uomId` 派生（保险对齐，非预期会分叉） |
-| `app/api/purchase-orders/[id]/route.ts` | 「确认采购」时按行 `uomId` 回写商品 `purchaseUomId` |
-| `app/[locale]/classic/operator/products/[id]/page.tsx` | 「可售单位」区块重做：基础行改为纯展示、加换算计算器（两种模式）、加价格公式面板（三态）；页头 Unit of Measure 旁加换基准单位的提示文案 |
+### 模块 D（价格表提示文案，无 schema，可独立先上）
+- `app/[locale]/classic/operator/pricelists/[id]/page.tsx`：在 `Price Computation` 区块三种算价方式（fixed/percentage/formula）各自已有的灰字提示"The computed price is expressed in the default Unit of Measure of the product."后面，各加一句：
+  > 英文：This price is the base unit price. Other sellable units configured for this product (e.g. CASE, PKT) will automatically follow it — unless a unit-specific rule (see below) overrides them.
+  > 中文：这是基准单位的价格。该商品配置的其他可售单位（如箱/袋）会自动跟着这个价联动 —— 除非下面为某个单位单独设了限定规则。
+  括号里"see below"那句要等模块 C 上线才成立，模块 C 未上线前先用不含这句的版本（见下方"分阶段"）。
 
 ---
 
 ## 4. 风险点
 
-1. **换基准单位本身早就是能做的事，这次没有新增这个能力，只是把"能改它的地方"从两处收敛成一处**——但换了之后，商品当前库存 `qtyOnHand` 的计量单位含义会跟着变（原来按 A 单位计数的库存数字，换了基准后系统会当成按 B 单位计数），这是现状就有的行为，本次不额外加"已有库存/历史单据时禁止改基准单位"这类阻塞校验，只在 UI 上加一句提醒。如果客户希望更严格，需要另外提出。
-2. **采购单位回写只影响以后新确认的采购单**，不做历史数据回填（用户已确认）；如果同一商品在不同供应商那里买的包装不一样，`purchaseUomId` 会随"最近一次确认的采购单"变来变去——这是"跟着采购单走"这个设计本身的自然结果，不是 bug。
-3. **换算计算器不持久化输入过程**（只存最终算出的 `factor`），下次要改同一行需要重新走一遍计算器；这是主动的简化决定（见 §1 末尾），如果以后需要"记住这行是怎么算出来的"，属于另一个需求。
-4. **`PurchaseOrderLine.uomId` 缺少正式外键关系**是发现的一个数据完整性小问题，与本次三个需求无关，不顺手修（避免打包无关变更），只记录在案。
+1. **B 的 `uomFactor` 只是打印用快照，不能被误用去算钱**：命名和注释要明确"仅用于打印说明"，避免以后有人图省事拿它去参与金额计算（金额口径已经在 `unitPrice` 里，多一条平行路径就是新的 SSOT 分裂风险，参照 `[[data-ownership-audit-20260624]]` 的教训）。
+2. **C 改变了定价引擎的对外签名**（`resolvePrice`/`resolveCustomerPrice` 加参数），三处调用点（下单/报价/订单编辑）漏改一处就会导致该页面"按单位定价"规则不生效，且不会报错——只是价格算错，容易被当成正常功能验证通过。上线前必须三处都真实下单验证，不能只测一处就类推另外两处。
+3. **C 的"命中单位规则后不再乘 factor"**（决策#6）如果运营不理解，会在价格表里填了一个"基准价"却以为是"这个单位的价"，导致填错数量级（比如把 CASE 的价填成了跟 PKT 一样的数字）。价格表编辑页在单位限定规则生效时要把当前选中单位的名字醒目标出来（如"这条规则算出的是【CASE】的最终价"），不能只在小字里带过。
+4. **A 的审计脚本可能扫出较大数量的历史商品**（生产库 1718 个商品中有多少从未配过 `uomId` 未知，需要先跑脚本拿到真实数字才能决定要不要做批量提醒/强制补全），这属于"先测再定方案"的一步，不在这份计划里先假设数字。
+5. **不属于本次范围**：`day-wise-report-template.ts`（日报表）目前按 `productName` 分组汇总、不区分单位（`lib/print/day-wise-report-template.ts:204`），是否要在日报里也拆开显示不同可售单位，这次不动，只做前面 5 个"按单据行"打印的模板。
 
 ---
 
-## 5. 是否需要额外确认
+## 5. 分阶段建议（可拆成独立可验证的交付单元）
 
-以下是主动做出的设计选择（非又一轮征询），如无异议按此执行：
+1. **D 独立先上**（不含"see below"那句、不依赖 C）：价格表页面加提示文案，1 个文件、纯文案，验证方式=打开任意价格表规则截图对比。
+2. **A**：审计脚本先跑出数字 → 定占位符展示方案 → 改 3 个页面。
+3. **B**：加 `uomFactor` 迁移 → 3 处下单/编辑页写入 → 5 处打印模板渲染换算说明。
+4. **C**：`OdooPricelistItem` 类型加字段 → 定价引擎改造 → 价格表编辑页 UI → 3 处下单/编辑页调用点 → 回头把 D 的文案补上"see below"那句。
 
-- 换算计算器"按倍数"模式要求先有一行手填的最小单位作为参照，不新增"基准单位一共分几份"这类额外持久字段——原因见 §2.3 末尾。
-- 价格公式面板的"基准"固定是 `tmpl.listPrice`，不像 `pricelists` 那样给"Based on"下拉选择多种来源——因为可售单位场景里"基准"本来就只有一个含义（这个商品自己的门市价），不需要那个灵活度。
-- 换基准单位不加阻塞性校验，只加提示文案——原因见风险点#1。
+每一步都能独立验证、独立提交，互不阻塞（除了 D 的收尾要等 C）。
 
-请回复"确认，开始开发"以进入实现；如需调整以上任一点，请直接指出。
+---
+
+📋 计划已生成，请确认：
+- 上面 6 条"已确认决策"（尤其 #2 换算说明的呈现形式、#4 单位限定规则只对 product/variant 生效、#6 命中单位规则后不再叠加 factor）是否符合你的预期？
+- 是否按"D → A → B → C"这个顺序推进，还是你有别的优先级？
+
+回复"确认，开始开发"（或指出要调整的地方）后我再开始动手。

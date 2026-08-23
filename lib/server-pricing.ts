@@ -321,31 +321,29 @@ export async function resolveOrderLines(
 
   // 多单位销售(20260714)：前端可能按非基准单位(如箱)下单，价格随之换算或走独立售价。
   // 服务端"权威定价"若不感知这一点，会把换算/独立售价一律当"客户改价"打回基准价——
-  // 这里一次性批量拉 ProductSaleUom + 涉及的 Uom.factor，换算逻辑与 lib/inventory.ts
-  // 的 toStockQty 同源(按 factor 比例缩放，唯一区别是这里缩放的是单价而非数量)。
+  // 这里一次性批量拉 ProductSaleUom，换算逻辑与 lib/sale-uom.ts 的 priceOf() 同源。
+  //
+  // ⚠️ 20260823 修：换算系数以前读的是**全局 `Uom.factor`**，与 20260819 起客户端换成
+  // `ProductSaleUom.factor` 的口径（lib/sale-uom.ts 顶部注释）早已脱节——生产库 Unit 类目下
+  // 全局 factor 全是 1，导致这里对非基准单位算出的"权威价"其实等于基准价，
+  // 客户端按箱规折算后提交的正确单价会被判定成"超出容差"，白白拦掉或被强制打回基准价。
+  // 顺带修：不再需要单独查 Uom.factor，已拉到的 saleUom 行本身就带 factor。
   const saleUomRows = await ctx.prisma.productSaleUom.findMany({
     where: { productId: { in: productIds }, active: true },
   })
   const saleUomMap = new Map(saleUomRows.map((r) => [`${r.productId}::${r.uomId}`, r]))
-  const uomIdsInvolved = [...new Set([
-    ...products.map((p) => p.template.uomId).filter((x): x is string => !!x),
-    ...submittedItems.map((i) => i.uomId).filter((x): x is string => !!x),
-  ])]
-  const uomRows = uomIdsInvolved.length > 0
-    ? await ctx.prisma.uom.findMany({ where: { id: { in: uomIdsInvolved } } })
-    : []
-  const uomFactorMap = new Map(uomRows.map((u) => [u.id, toNum(u.factor)]))
 
-  /** 把"基准单位"权威价换算成行选单位的权威价：优先 priceOverride，否则按 factor 比例缩放 */
+  /** 把"基准单位"权威价换算成行选单位的权威价：优先 priceOverride，否则按 ProductSaleUom.factor 缩放 */
   function scaleAuthoritativePrice(productId: string, anchorUomId: string | null, lineUomId: string | undefined, basePrice: number): number {
     if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) return basePrice
     const saleUom = saleUomMap.get(`${productId}::${lineUomId}`)
     if (!saleUom) return basePrice
     if (saleUom.priceOverride != null) return toNum(saleUom.priceOverride)
-    const lineFactor = uomFactorMap.get(lineUomId)
-    const anchorFactor = uomFactorMap.get(anchorUomId)
-    if (!lineFactor || !anchorFactor) return basePrice
-    return basePrice * (lineFactor / anchorFactor)
+    const lineFactor = toNum(saleUom.factor)
+    if (!lineFactor) return basePrice
+    // 基准单位自己的 ProductSaleUom 行 factor 恒为 1，不需要再除以"锚点单位系数"——
+    // 与 lib/sale-uom.ts:priceOf() 的 `basePrice * factor` 逐字一致。
+    return basePrice * lineFactor
   }
 
   const lines: ResolvedLine[] = []
@@ -407,10 +405,16 @@ export async function resolveOrderLines(
       allPricelists,
       qty,
       lastPrice,
+      item.uomId,
     )
 
     const submittedUnit = Number(item.price ?? 0)
-    const authoritative = scaleAuthoritativePrice(dbProduct.id, dbProduct.template.uomId, item.uomId, Number(resolution.price))
+    // 命中了单位限定价格表规则（决策#6，lib/types.ts OdooPricelistItem.uomId 注释）：
+    // resolution.price 已经是这个单位自己的最终价，不能再走 scaleAuthoritativePrice 的
+    // factor 换算——否则界面上填的数字和服务端权威价对不上，明明按规则算对了却被判"超出容差"。
+    const authoritative = resolution.matchedUomId
+      ? Number(resolution.price)
+      : scaleAuthoritativePrice(dbProduct.id, dbProduct.template.uomId, item.uomId, Number(resolution.price))
     const accepted = Math.abs(submittedUnit - authoritative) <= PRICE_TOLERANCE_EUR
 
     // 手动价（台账 X1）：只有调用方显式开了 allowManualPrice 才采纳。

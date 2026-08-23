@@ -25,9 +25,9 @@ export interface SaleUomItemInput {
   active?: boolean
   /** 价格计算方式；默认 AUTO 与不填这个字段的历史行为完全一致 */
   priceMode?: SaleUomPriceMode
-  /** FORMULA 模式下的折扣百分比（0–100） */
+  /** FORMULA 模式下按基准价加减的百分比（可正可负，正=加价，负=打折）；20260823 由"折扣"改成"加减"语义 */
   priceDiscountPct?: number | string | null
-  /** FORMULA 模式下的加减金额（可正可负），折扣之后再加 */
+  /** FORMULA 模式下再加减的绝对金额（可正可负） */
   priceSurcharge?: number | string | null
 }
 
@@ -108,7 +108,9 @@ export function factorOf(saleUoms: SaleUomRow[], lineUomId: string | null | unde
  *
  * 20260823 起按 `priceMode` 三态分支：
  * - FIXED：直接用 `priceOverride`（整箱优惠价这类场景）
- * - FORMULA：`基准单价 × factor × (1 − priceDiscountPct/100) + priceSurcharge`
+ * - FORMULA：`基准单价 × factor × (1 + priceDiscountPct/100) + priceSurcharge`
+ *   20260823 由"减"改"加"：priceDiscountPct 现在正数=加价、负数=打折，跟界面上
+ *   「price = base price + 百分比(可负) + 绝对值(可负)」的公式描述一一对应。
  * - AUTO（含 priceMode 未传的旧调用点）：与改造前逐字一致 ——
  *   `priceOverride` 有值就用，否则按「基础单价 × factor」换算。
  *   这保证 5474 个从没配过多规格、以及所有存量已配置行的计算结果一个数字都不变。
@@ -129,9 +131,9 @@ export function priceOf(
     return hit.priceOverride != null ? hit.priceOverride : round2(basePrice * factor)
   }
   if (hit.priceMode === 'FORMULA') {
-    const discountPct = hit.priceDiscountPct ?? 0
+    const pct = hit.priceDiscountPct ?? 0
     const surcharge = hit.priceSurcharge ?? 0
-    return round2(basePrice * factor * (1 - discountPct / 100) + surcharge)
+    return round2(basePrice * factor * (1 + pct / 100) + surcharge)
   }
   if (hit.priceOverride != null) return hit.priceOverride
   return round2(basePrice * factor)
@@ -140,4 +142,27 @@ export function priceOf(
 /** 基础单位（库存计数单位）；没配多规格时为 null */
 export function baseUomId(saleUoms: SaleUomRow[]): string | null {
   return saleUoms.find(r => r.isDefault)?.uomId ?? null
+}
+
+/**
+ * 商品没配基准单位（`ProductTemplate.uomId` 为空）时的兜底单位名。
+ *
+ * ⚠️ 20260823（DEV-PLAN 决策#1）：故意带 `⚠` 前缀，不能是干净的 "Unit(s)" ——
+ * 同一商品的历史订单行，有的是在配了基准单位之后下的（显示真实单位名如 CASE），
+ * 有的是在那之前下的（显示这个兜底值），两行印在同一张拣货单/送货单上，干净的
+ * "Unit(s)" 看起来就像一个正常的第三方单位，拣货员没法分辨那其实是"没配"。
+ * 加了 `⚠` 前缀后，无论出现在下单页的单位下拉框、行内标签，还是打印单据的单位列，
+ * 都一眼能看出"这行数据不完整"，而不是被当成又一种合法单位。
+ */
+export const UNSET_UOM_LABEL = '⚠ Unit(s)'
+
+/**
+ * 打印/展示单据时统一走这个函数取单位名，而不是直接读 `uomName` 字段——
+ * 历史订单行（20260823 之前下的）落库的兜底值是不带 `⚠` 的纯 "Unit(s)"，
+ * 直接显示会跟同一商品配了基准单位后的真实单位名（如 "CASE"）混在一起看不出区别，
+ * 这里统一按当前口径重新打上标记，不需要一次性改历史数据。
+ */
+export function displayUomName(uomName: string | null | undefined): string {
+  if (!uomName || uomName === 'Unit(s)') return UNSET_UOM_LABEL
+  return uomName
 }

@@ -19,6 +19,18 @@ const PURPLE = '#875A7B'
 const PURPLE_LIGHT = '#f3eff5'
 const ITEMS_PAGE_SIZE = 40
 
+interface Uom {
+  id: string
+  name: string
+  nameZh?: string | null
+}
+
+interface SaleUomOption {
+  uomId: string
+  uomName: string
+  isDefault: boolean
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function emptyItem(): OdooPricelistItem {
@@ -68,6 +80,14 @@ function applyScopeTitle(
   return 'All Products'
 }
 
+/** 单位限定规则（决策#4：只对 product/variant 有意义）的单位名，供表格/弹窗醒目标出用 */
+function uomScopeLabel(item: OdooPricelistItem, uoms: Uom[], isEn: boolean): string | null {
+  if (!item.uomId) return null
+  const u = uoms.find(u => u.id === item.uomId)
+  if (!u) return null
+  return isEn ? u.name : (u.nameZh ?? u.name)
+}
+
 function applyOnLabel(item: OdooPricelistItem, templates: ProductTemplate[], products: Product[], categories: ProductCategory[], isEn: boolean): string {
   if (item.applyOn === 'global') return 'All Products'
   if (item.applyOn === 'product') return templates.find(t => t.id === item.productTemplateId)?.name ?? '-'
@@ -109,6 +129,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   }, [])
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<ProductCategory[]>([])
+  const [uoms, setUoms] = useState<Uom[]>([])
 
   const [editMode, setEditMode] = useState(searchParams.get('new') === '1')
   const [itemPage, setItemPage] = useState(1)
@@ -149,12 +170,13 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           return
         }
 
-        const [found, allProducts, allTemplatesResp, allCategories, allPricelists] = await Promise.all([
+        const [found, allProducts, allTemplatesResp, allCategories, allPricelists, allUoms] = await Promise.all([
           apiGet<OdooPricelist>(`/api/pricelists/${id}`),
           apiGet<Product[]>('/api/products'),
           apiGet<{ data?: ProductTemplate[]; items?: ProductTemplate[] } | ProductTemplate[]>('/api/product-templates?pageSize=200'),
           apiGet<ProductCategory[]>('/api/product-categories'),
           apiGet<OdooPricelist[]>('/api/pricelists'),
+          apiGet<Uom[]>('/api/uoms').catch(() => [] as Uom[]),
         ])
         if (!found) {
           toast.error(isEn ? 'Pricelist not found' : '价格表不存在')
@@ -173,6 +195,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         setProducts(allProducts.filter(p => p.status?.toLowerCase() === 'active' && p.active !== false))
         setTemplates(rawTemplates.filter(t => t.status?.toLowerCase() === 'active'))
         setCategories(allCategories)
+        setUoms(allUoms)
         setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
       } catch {
         toast.error(isEn ? 'Pricelist not found' : '价格表不存在')
@@ -675,6 +698,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         templates={templates}
                         products={products}
                         categories={categories}
+                        uoms={uoms}
                         templateCost={templateCost}
                         variantCost={variantCost}
                         publicPrice={publicPrice}
@@ -720,6 +744,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           templates={templates}
           products={products}
           categories={categories}
+          uoms={uoms}
           allLists={allLists.filter(l => l.id !== pl.id)}
           isNew={isNewItem}
           scopeTitle={applyScopeTitle(editingItem, templates, products, categories, isEn)}
@@ -803,11 +828,12 @@ function ExternalLinkIcon() {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, templates, products, categories, templateCost, variantCost, publicPrice, showDelete, onEdit, onDelete, isEn }: {
+function ItemRow({ item, templates, products, categories, uoms, templateCost, variantCost, publicPrice, showDelete, onEdit, onDelete, isEn }: {
   item: OdooPricelistItem
   templates: ProductTemplate[]
   products: Product[]
   categories: ProductCategory[]
+  uoms: Uom[]
   templateCost: number | undefined
   variantCost: number | undefined
   publicPrice: number | undefined
@@ -817,6 +843,7 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
   isEn: boolean
 }) {
   const [hover, setHover] = useState(false)
+  const scopedUom = uomScopeLabel(item, uoms, isEn)
 
   const priceText = item.computeType === 'fixed'
     ? `€${(item.fixedPrice ?? 0).toFixed(2)}`
@@ -833,7 +860,18 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
       onMouseLeave={() => setHover(false)}
       onClick={onEdit}
     >
-      <td className="px-4 py-1.5 text-gray-800">{applyOnLabel(item, templates, products, categories, isEn)}</td>
+      <td className="px-4 py-1.5 text-gray-800">
+        {applyOnLabel(item, templates, products, categories, isEn)}
+        {scopedUom && (
+          <span
+            className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium"
+            style={{ background: PURPLE_LIGHT, color: PURPLE }}
+            title={isEn ? `Only applies to unit: ${scopedUom}` : `仅对可售单位「${scopedUom}」生效`}
+          >
+            {scopedUom}
+          </span>
+        )}
+      </td>
       <td className="px-3 py-1.5 text-right text-gray-600">{item.minQty}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateStart ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateEnd ?? ''}</td>
@@ -861,7 +899,7 @@ function ItemRow({ item, templates, products, categories, templateCost, variantC
 
 function ItemDialog({
   item, onChange, onSaveClose, onSaveNew, onDiscard, onRemove,
-  templates, products, categories, allLists, isNew, scopeTitle, isEn,
+  templates, products, categories, uoms, allLists, isNew, scopeTitle, isEn,
   onTemplatesFetched,
 }: {
   item: OdooPricelistItem
@@ -873,6 +911,7 @@ function ItemDialog({
   templates: ProductTemplate[]
   products: Product[]
   categories: ProductCategory[]
+  uoms: Uom[]
   allLists: OdooPricelist[]
   isNew: boolean
   scopeTitle: string
@@ -884,6 +923,72 @@ function ItemDialog({
   function set<K extends keyof OdooPricelistItem>(key: K, val: OdooPricelistItem[K]) {
     onChange({ ...item, [key]: val })
   }
+
+  // 20260823（决策#4）：uomId 只对 applyOn ∈ {product, variant} 有意义。切到 global/category，
+  // 或换了另一个商品/变体，旧选的单位十有八九对不上新商品的可售单位配置了，直接清掉，
+  // 不要让用户带着一个已经不适用的隐藏值去保存。
+  function setApplyOn(next: PricelistApplyOn) {
+    onChange({ ...item, applyOn: next, uomId: (next === 'product' || next === 'variant') ? item.uomId : undefined })
+  }
+  function setProductTemplateId(next: string | undefined) {
+    onChange({ ...item, productTemplateId: next, uomId: undefined })
+  }
+  function setProductVariantId(next: string | undefined) {
+    onChange({ ...item, productVariantId: next, uomId: undefined })
+  }
+
+  // applyOn=variant 时 ProductSaleUom 直接按 productVariantId 查；applyOn=product 时该规则对
+  // 整个模板下所有变体生效，ProductSaleUom 却是挂在变体(Product)上的——取该模板下第一个变体
+  // 作代表加载可选单位列表（生产库里绝大多数模板只有 1 个变体，够用；多变体模板的可售单位
+  // 配置本来就该保持一致，用哪个变体的列表影响不大）。
+  const saleUomProductId = item.applyOn === 'variant'
+    ? item.productVariantId
+    : item.applyOn === 'product'
+      ? products.find(p => p.templateId === item.productTemplateId)?.id
+      : undefined
+
+  const [saleUomOptions, setSaleUomOptions] = useState<SaleUomOption[]>([])
+  useEffect(() => {
+    if (!saleUomProductId) { setSaleUomOptions([]); return }
+    let cancelled = false
+    apiGet<Array<{ uomId: string; isDefault: boolean; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
+      `/api/products/${saleUomProductId}/sale-uoms`,
+    )
+      .then(rows => {
+        if (cancelled) return
+        setSaleUomOptions(
+          rows.filter(r => r.active).map(r => ({
+            uomId: r.uomId, isDefault: r.isDefault,
+            uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
+          })),
+        )
+      })
+      .catch(() => { if (!cancelled) setSaleUomOptions([]) })
+    return () => { cancelled = true }
+  }, [saleUomProductId, isEn])
+
+  // 优先用刚加载的该商品可售单位列表（更准确、也是同一份数据源），全局 uoms 只是兜底
+  // （比如商品还没加载出可售单位列表、但 item.uomId 已经存在于历史数据里的情况）
+  const scopedUomLabel = saleUomOptions.find(o => o.uomId === item.uomId)?.uomName ?? uomScopeLabel(item, uoms, isEn)
+
+  // 20260823：这个价改了，商品配置的其他可售单位（AUTO/FORMULA 两种模式）会自动跟着联动——
+  // 这已经是事实（priceOf() 每次都拿"当下"的基准价现算，不是存快照），这里只是把它说清楚，
+  // 不是新写的计算逻辑。FIXED 模式的可售单位是例外，不受基准价变化影响。
+  // ⚠️ 命中单位限定规则（item.uomId 有值）时这句话不成立——这条规则算出的就是那个单位自己的
+  // 最终价，不再是"基准价"，risk#3：必须换一句话把选中的单位名字醒目标出来，不能只在小字里带过。
+  const saleUomAutoUpdateHint = scopedUomLabel ? (
+    <p className="text-xs px-2 py-1.5 rounded mt-1" style={{ background: PURPLE_LIGHT, color: PURPLE }}>
+      {isEn
+        ? <>This rule computes the final price for unit <strong>{scopedUomLabel}</strong> only — it is NOT the base unit price, and will not be multiplied by that unit&apos;s conversion factor.</>
+        : <>这条规则算出的是【<strong>{scopedUomLabel}</strong>】这一个单位自己的最终价 —— 不是基准价，不会再乘该单位的换算系数。</>}
+    </p>
+  ) : (
+    <p className="text-xs text-gray-400 mt-1">
+      {isEn
+        ? 'This is the base unit price. Other sellable units configured for this product (e.g. CASE, PKT) will automatically follow it — except any unit set to a fixed price, or a unit with its own unit-specific rule below.'
+        : '这是基准单位的价格。该商品配置的其他可售单位（如箱/袋）会自动跟着这个价联动 —— 除了单独设了固定价的单位，或者下面为该单位单独设了限定规则的情况。'}
+    </p>
+  )
 
   // 选品改成「输入即筛选」：原来是把全部商品塞进 <select>，几千行只能靠肉眼翻。
   const [templateQuery, setTemplateQuery] = useState(
@@ -966,7 +1071,7 @@ function ItemDialog({
                   <label key={opt} className="flex items-center gap-2 cursor-pointer text-sm">
                     <OdooRadio
                       checked={item.applyOn === opt}
-                      onChange={() => set('applyOn', opt)}
+                      onChange={() => setApplyOn(opt)}
                     />
                     <span className="text-gray-700">{label}</span>
                   </label>
@@ -979,9 +1084,9 @@ function ItemDialog({
                     value={templateQuery}
                     onChange={v => {
                       setTemplateQuery(v)
-                      if (!v.trim()) set('productTemplateId', undefined)
+                      if (!v.trim()) setProductTemplateId(undefined)
                     }}
-                    onSelect={t => { setTemplateQuery(t.name); set('productTemplateId', t.id) }}
+                    onSelect={t => { setTemplateQuery(t.name); setProductTemplateId(t.id) }}
                     products={templateOptions}
                     placeholder={isEn ? 'Type to search a product…' : '输入关键词搜索商品…'}
                     inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
@@ -996,9 +1101,9 @@ function ItemDialog({
                     value={variantQuery}
                     onChange={v => {
                       setVariantQuery(v)
-                      if (!v.trim()) set('productVariantId', undefined)
+                      if (!v.trim()) setProductVariantId(undefined)
                     }}
-                    onSelect={p => { setVariantQuery(p.name); set('productVariantId', p.id) }}
+                    onSelect={p => { setVariantQuery(p.name); setProductVariantId(p.id) }}
                     products={products}
                     placeholder={isEn ? 'Type to search a variant…' : '输入关键词搜索商品变体…'}
                     inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
@@ -1028,6 +1133,32 @@ function ItemDialog({
                 <span className="text-gray-600">Public Price</span>
                 <span className="text-gray-800">{templatePublicPriceVal.toFixed(2)}</span>
               </div>
+
+              {(item.applyOn === 'product' || item.applyOn === 'variant') && (
+                <div className="mt-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {isEn ? 'Sellable Unit (optional)' : '限定可售单位（可选）'}
+                  </label>
+                  <select
+                    value={item.uomId ?? ''}
+                    onChange={e => set('uomId', e.target.value || undefined)}
+                    disabled={!saleUomProductId}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B] disabled:bg-gray-50 disabled:text-gray-400"
+                  >
+                    <option value="">{isEn ? '(all units — follows the base unit price)' : '（不限定 — 所有可售单位跟随基准价联动）'}</option>
+                    {saleUomOptions.map(o => (
+                      <option key={o.uomId} value={o.uomId}>
+                        {o.uomName}{o.isDefault ? (isEn ? ' (base unit)' : '（基准单位）') : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {isEn
+                      ? 'Pick a unit only if this product/variant needs a different price than its base-unit price × conversion factor.'
+                      : '只有当这个商品/变体需要"这个单位单独定价"而不是"基准价 × 换算系数"时才需要选。'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Right: Qty + Dates */}
@@ -1096,6 +1227,7 @@ function ItemDialog({
                 <p className="text-xs text-gray-400 mt-2">
                   The computed price is expressed in the default Unit of Measure of the product.
                 </p>
+                {saleUomAutoUpdateHint}
               </div>
             )}
 
@@ -1118,6 +1250,7 @@ function ItemDialog({
                 <p className="text-xs text-gray-400 mt-2">
                   The computed price is expressed in the default Unit of Measure of the product.
                 </p>
+                {saleUomAutoUpdateHint}
               </div>
             )}
 
@@ -1126,6 +1259,7 @@ function ItemDialog({
                 <p className="text-xs text-gray-400">
                   The computed price is expressed in the default Unit of Measure of the product.
                 </p>
+                {saleUomAutoUpdateHint}
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-gray-600 w-28 flex-shrink-0">Based on</span>
                   <select
