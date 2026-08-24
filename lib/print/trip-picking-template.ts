@@ -257,8 +257,14 @@ export function generateTripPickingHtml(
     .pick-table thead{display:table-header-group}
     /* 一行不许跨页断开：数量和商品名被切到两页上会拣错 */
     .pick-table tr{break-inside:avoid;page-break-inside:avoid}
-    /* 商品主行后面紧跟着它的客户明细子行，别让主行落在页底成孤儿 */
-    .pick-table tr:not(.row-bd){break-after:avoid;page-break-after:avoid}
+    /* ⛔ 20260824 移除了 .pick-table tr:not(.row-bd){break-after:avoid}——
+       意图是"商品主行别跟丢在页底的客户明细子行分开"，但对几十行的长表格逐行都设
+       break-after:avoid 会触发无头 Chromium page.pdf() 的一个已知分页缺陷：只要最早
+       出现的一处"避让"约束在页面很靠前的位置生效（比如第 2 行商品就带了客户明细子行），
+       它就会把该约束之后的所有内容整体推到下一页，而不是继续往当前页填——实测一张
+       35 行、页 1 本该能装下 30+ 行的拣货单，被这条规则挤到只剩 2 行，下一页塞 33 行。
+       row 自身仍有 break-inside:avoid 兜底（单行不会被从中间切断），孤儿主行这种更轻的
+       瑕疵可以接受，好过页面几乎打空。*/
     /* 区块标题不许单独留在页底 */
     .section-header{break-after:avoid;page-break-after:avoid}
     /* 整箱整袋 / 零散货 各自起新页：两批货由不同的人在不同区域拣 */
