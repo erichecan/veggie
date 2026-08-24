@@ -453,6 +453,17 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                     </button>
                   )}
                 </div>
+                {/* 信息广场入口：不单开导航项，塞进铃铛面板里，所有内部角色都能从这进 */}
+                {session?.role !== 'restaurant' && (
+                  <Link
+                    href={appHref('/classic/bulletin')}
+                    onClick={() => setNotifOpen(false)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs border-b text-gray-600 hover:bg-gray-50"
+                    style={{ color: '#875A7B' }}
+                  >
+                    📋 {isEn ? 'Info Board' : '信息广场'}
+                  </Link>
+                )}
                 <div className="flex-1 overflow-y-auto">
                   {notifItems.length === 0 ? (
                     <p className="text-center text-gray-400 text-sm py-8">{isEn ? 'No notifications' : '暂无通知'}</p>

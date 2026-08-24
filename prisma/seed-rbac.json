@@ -168,7 +168,9 @@
         "system.audit.read",
         "system.audit.manage",
         "system.mfa.enroll",
-        "system.notification.create"
+        "system.notification.create",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -339,7 +341,9 @@
         "system.audit.manage",
         "system.mfa.enroll",
         "system.notification.create",
-        "system.settings.manage"
+        "system.settings.manage",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -395,7 +399,9 @@
         "page.finance.access",
         "page.accounting.access",
         "page.print.access",
-        "system.user.read"
+        "system.user.read",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -431,7 +437,9 @@
         "master.product_template.read",
         "master.product_category.read",
         "page.warehouse.access",
-        "system.notification.create"
+        "system.notification.create",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -468,7 +476,9 @@
         "master.customer.read",
         "master.product.read",
         "page.dispatch_console.access",
-        "page.print.access"
+        "page.print.access",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -507,7 +517,9 @@
         "print.center.access",
         "page.operator.access",
         "page.dispatch_console.access",
-        "page.print.access"
+        "page.print.access",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -536,7 +548,9 @@
         "master.product_template.read",
         "master.product_category.read",
         "page.operator.access",
-        "page.dispatch_console.access"
+        "page.dispatch_console.access",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -552,7 +566,9 @@
         "stock.pick.read_pallets",
         "dispatch.wave.read",
         "dispatch.wave.read_detail",
-        "page.sorter.access"
+        "page.sorter.access",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -561,7 +577,10 @@
       "name": "PICKER",
       "isSystem": true,
       "dataScope": "ALL",
-      "permissions": []
+      "permissions": [
+        "tool.bulletin.use",
+        "page.bulletin.access"
+      ]
     },
     {
       "code": "driver",
@@ -574,7 +593,9 @@
         "dispatch.trip.update",
         "finance.settlement.read",
         "finance.settlement.create",
-        "page.driver.access"
+        "page.driver.access",
+        "tool.bulletin.use",
+        "page.bulletin.access"
       ]
     },
     {
@@ -594,7 +615,10 @@
       "name": "OTHER",
       "isSystem": true,
       "dataScope": "ALL",
-      "permissions": []
+      "permissions": [
+        "tool.bulletin.use",
+        "page.bulletin.access"
+      ]
     }
   ]
 }

@@ -193,6 +193,10 @@ model User {
   driverSlots          DriverSlot[]    @relation("DriverSlotUser")
   /// 反向关系：该用户作为负责人的采购品类分组
   categoryGroupsOwned  CategoryGroup[] @relation("CategoryGroupOwner")
+  /// 反向关系：该用户发布的信息广场帖子
+  bulletinPostsAuthored BulletinPost[] @relation("BulletinPostAuthor")
+  /// 反向关系：该用户置顶的信息广场帖子
+  bulletinPostsPinned   BulletinPost[] @relation("BulletinPostPinnedBy")
 
   @@index([role])
   @@index([customerId])
@@ -372,6 +376,7 @@ model Product {
   orderLines        OrderLine[]
   lots              Lot[]
   saleUoms          ProductSaleUom[]
+  aliases           ProductAlias[]
 
   @@index([templateId])
   @@index([categoryId])
@@ -614,6 +619,30 @@ model ProductSupplierInfo {
   @@unique([productId, supplierId], name: "uniq_product_supplier")
   @@index([productId])
   @@index([supplierId])
+}
+
+/**
+ * 采购单据识别的「原文 → 商品」记忆表（20260824 新增）
+ * ================================================================================
+ * 解决两个连在一起的问题：供应商单据上的商品名可能是西班牙语等系统匹配不上的写法，
+ * 且同一份写法反复出现在多期单据里。与其做一次性通用翻译（不准、还要引外部 AI 服务），
+ * 不如让操作员在核对界面选一次商品后就把这行原文记住 —— 下次同样的写法出现，
+ * 直接精确命中，界面上也会显示当时选定的系统商品名（相当于变相"翻译"）。
+ *
+ * 全局生效，不分供应商：同一段原文不管出自哪家供应商的单据都指向同一个系统商品。
+ */
+model ProductAlias {
+  id             String   @id @default(cuid())
+  /// 单据上的原始文字，仅供人核对追溯，不参与匹配
+  rawName        String
+  /// normalizeName(rawName)：匹配时的唯一对照键
+  normalizedName String   @unique
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([productId])
 }
 
 model CustomerSpecialPrice {
@@ -1798,4 +1827,45 @@ model DriverDailyReport {
   @@unique([driverId, reportDate])
   @@index([reportDate])
   @@index([status])
+}
+
+enum BulletinCategory {
+  /// 缺货
+  SHORTAGE
+  /// 到货
+  ARRIVAL
+  /// 供应商调价 —— 内容层面禁止出现具体金额，属产品规则，非数据库约束
+  PRICE_CHANGE
+  OTHER
+}
+
+enum BulletinSource {
+  /// 同事手动发布
+  MANUAL
+  /// 系统自动生成（Phase 2 才会真正写入，本轮先把枚举建好避免二次迁移）
+  AUTO
+}
+
+/// 信息广场：把原来发在微信群里的"缺货了/到货了/调价了"这类内部消息沉淀下来，
+/// 可搜索、可置顶，不做点赞/评论——是布告栏，不是论坛。
+model BulletinPost {
+  id       String           @id @default(cuid())
+  category BulletinCategory
+  source   BulletinSource   @default(MANUAL)
+  content  String           @db.Text
+  imageUrl String?
+
+  /// AUTO 来源的帖子没有人类作者，故可空
+  authorId String?
+  author   User?  @relation("BulletinPostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  pinned         Boolean   @default(false)
+  pinnedAt       DateTime?
+  pinnedByUserId String?
+  pinnedBy       User?     @relation("BulletinPostPinnedBy", fields: [pinnedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([category, createdAt])
+  @@index([pinned, createdAt])
 }

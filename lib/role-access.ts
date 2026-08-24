@@ -102,6 +102,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     // （端到端实测在 scripts/audit/driver-reconciliation-test.ts 的 ⑦）
     { pattern: '/api/driver-reports/summary', methods: READ },
     { pattern: '/api/customers/coordinates', methods: READ },
+    // 信息广场：所有内部角色都能用，见 lib/bulletin.ts 与 DEV-PLAN 20260824 §3
+    { pattern: '/api/bulletin-posts/**' },
   ],
 
   /**
@@ -114,6 +116,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/waves/*', methods: ['PUT'] },
     { pattern: '/api/orders', methods: READ },
     exportOf('orders'),
+    { pattern: '/api/bulletin-posts/**' },
   ],
 
   /**
@@ -144,6 +147,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/stock-takes', methods: ['GET', 'POST'] },
     { pattern: '/api/stock-takes/*', methods: ['GET', 'PATCH'] },
     { pattern: '/api/scrap/**', methods: ['GET', 'POST'] },
+    { pattern: '/api/bulletin-posts/**' },
   ],
 
   /**
@@ -189,6 +193,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     // 漏了它就会 403 —— 而前端拿不到状态时退回"全都没打过"，恰好造成全量重打。
     { pattern: '/api/waves/print-status', methods: READ },
     { pattern: '/api/print/**', methods: READ },
+    { pattern: '/api/bulletin-posts/**' },
   ],
 
   /**
@@ -216,6 +221,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/geocode', methods: READ },
     { pattern: '/api/distance-matrix', methods: READ },
     { pattern: '/api/print/**', methods: READ },
+    { pattern: '/api/bulletin-posts/**' },
   ],
 
   /**
@@ -247,6 +253,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/waves/print-status', methods: READ },
     { pattern: '/api/waves', methods: READ },          // 销售单列表显示波次/司机
     { pattern: '/api/driver-slots', methods: READ },
+    { pattern: '/api/bulletin-posts/**' },
   ],
 
   /**
@@ -272,6 +279,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/product-categories/**', methods: READ },
     { pattern: '/api/uoms/**', methods: READ },
     { pattern: '/api/print/**', methods: READ },
+    { pattern: '/api/bulletin-posts/**' },
   ],
 
   /**
@@ -279,13 +287,14 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
    * （`/classic/sorter` 的 layout 只放 SORTER / OPERATOR），permissions.ts 里也是空矩阵。
    * 所以这里只给公共部分。真要让拣货员干活，得先给他一个页面 —— 那时再连同这里一起改。
    */
-  PICKER: [...COMMON],
+  PICKER: [...COMMON, { pattern: '/api/bulletin-posts/**' }],
 
   /**
    * 未分类角色：**刻意只给公共部分**。真要给某人权限，
    * 应该分配一个明确的角色，而不是用 OTHER 兜着。
+   * 信息广场是例外——不分角色发放，见 DEV-PLAN 20260824 §3。
    */
-  OTHER: [...COMMON],
+  OTHER: [...COMMON, { pattern: '/api/bulletin-posts/**' }],
 }
 
 /**
@@ -303,15 +312,15 @@ const UNSCOPED_ROLES = ['OPERATOR', 'BOSS'] as const
  */
 export const ROLE_PAGE_SCOPE: Record<string, readonly string[]> = {
   RESTAURANT: ['/customer-portal', '/enter'],
-  DRIVER: ['/classic/driver', '/enter'],
-  SORTER: ['/classic/sorter', '/enter'],
-  WAREHOUSE: ['/classic/warehouse', '/enter'],
-  FINANCE: ['/classic/finance', '/classic/accounting', '/classic/print', '/enter'],
-  DISPATCH: ['/classic/operator/dispatch-console', '/classic/print', '/enter'],
-  SALES: ['/classic/operator', '/classic/print', '/enter'],
-  EXTERNAL_SALES: ['/classic/operator', '/enter'],
-  PICKER: ['/enter'],
-  OTHER: ['/enter'],
+  DRIVER: ['/classic/driver', '/classic/bulletin', '/enter'],
+  SORTER: ['/classic/sorter', '/classic/bulletin', '/enter'],
+  WAREHOUSE: ['/classic/warehouse', '/classic/bulletin', '/enter'],
+  FINANCE: ['/classic/finance', '/classic/accounting', '/classic/print', '/classic/bulletin', '/enter'],
+  DISPATCH: ['/classic/operator/dispatch-console', '/classic/print', '/classic/bulletin', '/enter'],
+  SALES: ['/classic/operator', '/classic/print', '/classic/bulletin', '/enter'],
+  EXTERNAL_SALES: ['/classic/operator', '/classic/bulletin', '/enter'],
+  PICKER: ['/classic/bulletin', '/enter'],
+  OTHER: ['/classic/bulletin', '/enter'],
 }
 
 /** 该角色被拦下后该去哪 */

@@ -57,6 +57,12 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/mfa/**', permission: 'system.mfa.enroll' },
   { pattern: '/api/cron/**', permission: null, note: '由 CRON_SECRET 把关，不走角色' },
 
+  // ── 信息广场：内部员工都能读写，不做角色差异化，只用一个权限点把 ───────
+  // RESTAURANT 客户门户账号结构性挡在路由表这层（不能只靠 handler 内部判断，
+  // 那对静态可达性审计不可见）。置顶/删任意帖这类管理动作仍在 handler 内部
+  // 按角色判断（BOSS/OPERATOR），见 lib/bulletin.ts。
+  { pattern: '/api/bulletin-posts/**', permission: 'tool.bulletin.use' },
+
   // ── 客户门户：外部客户唯一能碰的东西，已按 customerId 行级隔离 ──────────
   { pattern: '/api/customer-portal/**', permission: 'portal.self.access' },
 
@@ -99,6 +105,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/purchase-orders/receipts-by-group', permission: 'purchase.order.read' },
   { pattern: '/api/purchase-orders/last-by-group', permission: 'purchase.order.read' },
   { pattern: '/api/purchase-orders/parse', permission: 'purchase.order.create' },
+  { pattern: '/api/purchase-orders/product-aliases', methods: ['POST'], permission: 'purchase.order.create' },
   { pattern: '/api/purchase-orders', methods: R, permission: 'purchase.order.read' },
   { pattern: '/api/purchase-orders', methods: ['POST'], permission: 'purchase.order.create' },
   { pattern: '/api/purchase-orders/*', methods: R, permission: 'purchase.order.read' },
@@ -349,6 +356,8 @@ export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   // 少这条规则就是「让人去改密码，却把改密码的门也锁上」（兜底语义是未命中即拒绝）
   { pattern: '/change-password', permission: null },
   { pattern: '/customer-portal/**', permission: 'page.portal.access' },
+  // 信息广场：所有内部角色可进，RESTAURANT 客户门户账号被挡在外面
+  { pattern: '/classic/bulletin/**', permission: 'page.bulletin.access' },
   { pattern: '/classic/restaurant/**', permission: 'page.restaurant.access' },
   { pattern: '/classic/driver/**', permission: 'page.driver.access' },
   { pattern: '/classic/sorter/**', permission: 'page.sorter.access' },

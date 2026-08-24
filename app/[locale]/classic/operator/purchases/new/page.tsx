@@ -1,12 +1,14 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { Trash2, TrendingUp } from 'lucide-react'
+import { TrendingUp } from 'lucide-react'
 import { apiGet, apiPost } from '@/lib/api'
-import ProductSearchInput from '@/components/classic/ProductSearchInput'
+import OrderLineEditor from '@/components/classic/OrderLineEditor'
+import { lineFieldKeyHandler } from '@/lib/order-line-keys'
+import { newDraftLineId } from '@/lib/order-line-draft'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import { computeOrderLandedCosts } from '@/lib/purchase-landed-cost'
 import PdfExtractDialog, { type PdfExtractResult } from './_components/PdfExtractDialog'
@@ -110,7 +112,6 @@ export default function NewPurchaseOrderPage() {
   const [showCopyFromHistory, setShowCopyFromHistory] = useState(false)
 
   const [purchaseProducts, setPurchaseProducts] = useState<PurchaseProduct[]>([])
-  const [productQuery, setProductQuery] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
   const [showQuickCreate, setShowQuickCreate] = useState(false)
@@ -119,7 +120,14 @@ export default function NewPurchaseOrderPage() {
   const [qcUomId, setQcUomId] = useState('')
   const [qcUnitCost, setQcUnitCost] = useState('')
   const [qcSubmitting, setQcSubmitting] = useState(false)
-  const lineSeq = useRef(0)
+  // 插完空行要让那一行立刻进搜索态 —— 与 quotation/sale order 同一套交互（useInlineProductPicker）
+  const activatePickerRef = useRef<(lineId: string) => void>(() => {})
+  const handleEditorReady = useCallback(
+    (api: { focusSearch: () => void; activateProductPicker: (lineId: string) => void }) => {
+      activatePickerRef.current = api.activateProductPicker
+    },
+    [],
+  )
 
   useEffect(() => {
     apiGet<{ items: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
@@ -145,13 +153,12 @@ export default function NewPurchaseOrderPage() {
   }, [currency, orderDate])
 
   function addProductLine(prod: PurchaseProduct, overrides?: { qty?: number; unitCost?: number }) {
-    lineSeq.current += 1
     const unitCost = overrides?.unitCost ?? Number(prod.standardPrice ?? prod.price ?? 0)
     const qty = overrides?.qty ?? 1
     setLines(prev => [
       ...prev,
       {
-        id: `new-${lineSeq.current}`,
+        id: newDraftLineId(),
         productId: prod.id,
         productName: prod.name,
         spec: prod.category ?? null,
@@ -168,6 +175,64 @@ export default function NewPurchaseOrderPage() {
     ])
   }
 
+  /**
+   * 点「+ Add a product」/ 就地选品搜索框回车连续录入：插一个空草稿行并让它进入搜索态。
+   * 与 quotation/sale order 编辑页同一套模型（见 lib/order-line-draft.ts）。
+   */
+  function addBlankLine(opts?: { force?: boolean }) {
+    // force 只给「Enter 连续录入」用：那一刻 setLines 还没落地，闭包里的末行仍是刚
+    // 填好的那个草稿行，走守卫会把它再激活一次而不是开新行。
+    const last = lines[lines.length - 1]
+    if (!opts?.force && last && !last.productId) {
+      activatePickerRef.current(last.id)
+      return
+    }
+    const draftId = newDraftLineId()
+    setLines(prev => [
+      ...prev,
+      {
+        id: draftId,
+        productId: '',
+        productName: '',
+        spec: null,
+        uomId: null,
+        uomName: null,
+        orderedQty: 1,
+        unitCost: 0,
+        taxRate: 0,
+        bestBefore: null,
+        subtotalExTax: 0,
+        taxAmount: 0,
+        subtotalIncTax: 0,
+      },
+    ])
+    activatePickerRef.current(draftId)
+  }
+
+  /** 就地选品：把选中的商品填进已经插好的那一行（草稿行由 addBlankLine 建好） */
+  function fillLineWithProduct(lineId: string, prod: PurchaseProduct) {
+    const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
+    setLines(prev => prev.map(l => {
+      if (l.id !== lineId) return l
+      const qty = Number(l.orderedQty) || 1
+      const subtotalExTax = qty * unitCost
+      const taxAmount = subtotalExTax * Number(l.taxRate) / 100
+      return {
+        ...l,
+        productId: prod.id,
+        productName: prod.name,
+        spec: prod.category ?? null,
+        uomId: prod.uomId ?? null,
+        uomName: prod.uomName ?? null,
+        orderedQty: qty,
+        unitCost,
+        subtotalExTax,
+        taxAmount,
+        subtotalIncTax: subtotalExTax + taxAmount,
+      }
+    }))
+  }
+
   /** 从历史采购单复制行项目：数量/单价原样带入，供应商已由弹窗的调用方（当前 supplierId）限定 */
   function handleCopyFromHistory(historyPo: HistoryPO) {
     if (historyPo.lines.length === 0) {
@@ -175,7 +240,6 @@ export default function NewPurchaseOrderPage() {
       return
     }
     const newLines: DraftLine[] = historyPo.lines.map(hl => {
-      lineSeq.current += 1
       const product = purchaseProducts.find(p => p.id === hl.productId)
       const qty = Number(hl.orderedQty)
       const unitCost = Number(hl.unitCost)
@@ -183,7 +247,7 @@ export default function NewPurchaseOrderPage() {
       const subtotalExTax = qty * unitCost
       const taxAmount = subtotalExTax * taxRate / 100
       return {
-        id: `new-${lineSeq.current}`,
+        id: newDraftLineId(),
         productId: hl.productId,
         productName: hl.productName,
         spec: product?.category ?? null,
@@ -279,7 +343,7 @@ export default function NewPurchaseOrderPage() {
   }
 
   function openQuickCreate(prefill?: { name: string; unitCost: number | null; qty: number | null }) {
-    setQcName(prefill?.name ?? productQuery)
+    setQcName(prefill?.name ?? '')
     setQcCategoryId('')
     setQcUomId('')
     setQcUnitCost(prefill?.unitCost != null ? String(prefill.unitCost) : '')
@@ -307,7 +371,6 @@ export default function NewPurchaseOrderPage() {
       setPurchaseProducts(prev => [withUom, ...prev])
       addProductLine(withUom, { qty: pendingQuickCreateQty, unitCost: qcUnitCost ? Number(qcUnitCost) : undefined })
       resolveUnmatchedLine(qcName.trim())
-      setProductQuery('')
       setShowQuickCreate(false)
       toast.success(isEn ? `Created "${created.name}" and added to purchase line` : `已创建「${created.name}」并加入采购行`)
     } catch (e) {
@@ -321,13 +384,16 @@ export default function NewPurchaseOrderPage() {
   const totalTax = lines.reduce((s, l) => s + l.taxAmount, 0)
   const totalIncTax = lines.reduce((s, l) => s + l.subtotalIncTax, 0)
   const supplier = suppliers.find(s => s.id === supplierId)
-  const canSubmit = !!supplierId && lines.length > 0 && !submitting
+  // 误按 Enter / 点「+ Add a product」多出的空行（还没选商品）不占「至少一行」的名额——
+  // 同 quotation/sale order 编辑页的处理(20260814+)
+  const validLines = lines.filter(l => l.productId)
+  const canSubmit = !!supplierId && validLines.length > 0 && !submitting
   const landedCosts = computeOrderLandedCosts({ freightAmount, subtotalExTax }, lines)
   const totalAllocatedFreight = landedCosts.reduce((s, c) => s + c.allocatedFreight, 0)
 
   async function handleSubmit() {
     if (!supplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
-    if (lines.length === 0) { toast.error(isEn ? 'Please add at least one purchase line' : '请至少添加一行采购商品'); return }
+    if (validLines.length === 0) { toast.error(isEn ? 'Please add at least one purchase line' : '请至少添加一行采购商品'); return }
     setSubmitting(true)
     try {
       const result = await apiPost<{ id: string }>('/api/purchase-orders', {
@@ -343,7 +409,7 @@ export default function NewPurchaseOrderPage() {
         freightAmount,
         sourceDocumentUrl: sourceDocumentUrl || undefined,
         sourceDocumentName: sourceDocumentName || undefined,
-        lines: lines.map(l => ({
+        lines: validLines.map(l => ({
           productId: l.productId,
           productName: l.productName,
           uomId: l.uomId,
@@ -366,7 +432,7 @@ export default function NewPurchaseOrderPage() {
   const numInputCls = 'border border-gray-300 rounded px-1.5 py-0.5 text-sm bg-white text-right focus:outline-none focus:border-blue-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
 
   return (
-    <div className="flex h-full" style={{ background: '#f3f4f5' }}>
+    <div className="flex h-[calc(100vh-44px)]" style={{ background: '#f3f4f5' }}>
     <div className="flex flex-col flex-1 overflow-auto min-w-0">
       {/* ── Top control bar ─────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 flex-shrink-0">
@@ -398,7 +464,7 @@ export default function NewPurchaseOrderPage() {
             {isEn ? 'Cancel' : '取消'}
           </button>
           <div className="w-px h-5 bg-gray-200 mx-1" />
-          <PdfExtractDialog onApply={handlePdfApply} />
+          <PdfExtractDialog onApply={handlePdfApply} products={purchaseProducts} />
           {sourceDocumentUrl && (
             <button
               onClick={() => setShowPdfPanel(v => !v)}
@@ -541,10 +607,33 @@ export default function NewPurchaseOrderPage() {
             </div>
           )}
 
-          {/* Product line table */}
-          <div className="overflow-x-auto border-t border-gray-200">
-            <table className="w-full text-sm border-collapse">
-              <thead>
+          {/* Product line table —— 就地选品 + Tab/Enter 走位与 quotation/sale order 共用同一套（useInlineProductPicker） */}
+          <div className="border-t border-gray-200">
+            <OrderLineEditor
+              lines={lines}
+              editing
+              products={purchaseProducts}
+              onDeleteLine={lineId => deleteLine(lineId)}
+              onPickProduct={fillLineWithProduct}
+              onPickByEnter={() => addBlankLine({ force: true })}
+              onPickByTab={lineId => {
+                // 没有可编辑的描述框，Tab 选完商品后把焦点交给数量——本行第一个该填的字段
+                setTimeout(() => {
+                  document.querySelector<HTMLInputElement>(`[data-qty-line="${lineId}"]`)?.focus()
+                }, 50)
+              }}
+              onAddBlankLine={addBlankLine}
+              addBlankLineText={isEn ? '+ Add a product' : '+ 添加商品'}
+              pickerTexts={{
+                empty: isEn ? 'No matching products' : '没有匹配商品',
+                placeholder: isEn ? 'Click to select product…' : '点击选择商品…',
+                search: isEn ? 'Search product…' : '搜索商品…',
+              }}
+              onReady={handleEditorReady}
+              emptyColSpan={9}
+              emptyMessage={isEn ? 'No lines yet — click "+ Add a product" below' : '暂无明细行，点下方「+ 添加商品」'}
+              tableClassName="w-full text-sm border-collapse"
+              renderHeaders={() => (
                 <tr style={{ background: '#f8f8f8', borderBottom: '1px solid #e8e8e8' }}>
                   <th className="w-8 px-2 py-2.5" />
                   <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Product' : '商品'}</th>
@@ -556,22 +645,25 @@ export default function NewPurchaseOrderPage() {
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                 </tr>
-              </thead>
-              <tbody>
-                {lines.map((l, i) => (
-                  <tr key={l.id} className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors">
-                    <td className="px-2 py-2.5 text-center">
-                      <button onClick={() => deleteLine(l.id)} className="text-red-400 hover:text-red-600" title={isEn ? 'Delete this line' : '删除此行'}>
-                        <Trash2 className="h-3.5 w-3.5 inline" />
-                      </button>
+              )}
+              defaultRowCls="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
+              renderRow={(l, i, { deleteButton, focusSearch, productCell }) => {
+                const isLast = i === lines.length - 1
+                return (
+                  <>
+                    <td className="px-2 py-2.5 text-center">{deleteButton}</td>
+                    <td className="px-4 py-2.5 font-medium" style={{ color: PURPLE }}>
+                      {productCell({ lineId: l.id, productName: l.productName })}
                     </td>
-                    <td className="px-4 py-2.5 font-medium" style={{ color: PURPLE }}>{l.productName}</td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[180px] truncate">{l.spec || ''}</td>
                     <td className="px-4 py-2.5 text-right">
                       <input type="number" step="0.001" min="0"
+                        data-qty-line={l.id}
                         className={numInputCls} style={{ width: '80px' }}
                         value={Number(l.orderedQty)}
-                        onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))} />
+                        onChange={e => updateLine(i, 'orderedQty', Number(e.target.value))}
+                        onFocus={e => e.target.select()}
+                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                     </td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{l.uomName || '—'}</td>
                     <td className="px-4 py-2.5 text-right">
@@ -579,68 +671,57 @@ export default function NewPurchaseOrderPage() {
                         <input type="number" step="0.01" min="0"
                           className={numInputCls} style={{ width: '90px' }}
                           value={Number(l.unitCost)}
-                          onChange={e => updateLine(i, 'unitCost', Number(e.target.value))} />
-                        <button
-                          onClick={() => setPriceHistoryTarget({ id: l.productId, name: l.productName })}
-                          title={isEn ? 'View price history' : '查看价格历史'}
-                          className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                        >
-                          <TrendingUp className="h-3.5 w-3.5" />
-                        </button>
+                          onChange={e => updateLine(i, 'unitCost', Number(e.target.value))}
+                          onFocus={e => e.target.select()}
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
+                        {l.productId && (
+                          <button
+                            onClick={() => setPriceHistoryTarget({ id: l.productId, name: l.productName })}
+                            title={isEn ? 'View price history' : '查看价格历史'}
+                            className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                          >
+                            <TrendingUp className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <input type="number" step="0.1" min="0"
                         className={numInputCls} style={{ width: '60px' }}
                         value={Number(l.taxRate)}
-                        onChange={e => updateLine(i, 'taxRate', Number(e.target.value))} />
+                        onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
+                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <input type="date"
                         className={`${numInputCls} text-xs`} style={{ width: '120px' }}
                         value={l.bestBefore ?? ''}
-                        onChange={e => updateBestBefore(i, e.target.value)} />
+                        onChange={e => updateBestBefore(i, e.target.value)}
+                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch, isLastFieldOfLastRow: isLast })} />
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium text-gray-800">
                       {l.subtotalExTax.toFixed(2)}
-                      {freightAmount > 0 && (
+                      {freightAmount > 0 && l.productId && (
                         <div className="text-[10px] font-normal text-gray-400">
                           {isEn ? 'Landed unit price' : '落地单价'} {landedCosts[i]?.landedUnitCost.toFixed(2)}
                         </div>
                       )}
                     </td>
-                  </tr>
-                ))}
-                {lines.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">{isEn ? 'No lines yet, search below to add products' : '暂无明细行，从下面搜索添加商品'}</td>
-                  </tr>
-                )}
-                <tr>
-                  <td className="px-2 py-2" />
-                  <td className="px-2 py-2" colSpan={7}>
-                    <div className="flex items-center gap-2">
-                      <ProductSearchInput
-                        value={productQuery}
-                        onChange={setProductQuery}
-                        onSelect={p => { addProductLine(p); setProductQuery('') }}
-                        products={purchaseProducts}
-                        placeholder={isEn ? 'Search and add products…' : '搜索并添加商品…'}
-                        inputClassName="border border-dashed border-gray-300 rounded px-3 py-1.5 text-sm text-gray-500 focus:outline-none focus:border-purple-400 bg-transparent w-64"
-                        portalDropdown
-                      />
-                      <button
-                        onClick={() => openQuickCreate()}
-                        className="text-xs whitespace-nowrap hover:underline"
-                        style={{ color: PURPLE }}
-                      >
-                        {isEn ? "Can't find it? Create product" : '找不到？新建商品'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </>
+                )
+              }}
+              footer={
+                <div className="px-4 py-2 border-t border-gray-100">
+                  <button
+                    onClick={() => openQuickCreate()}
+                    className="text-xs whitespace-nowrap hover:underline"
+                    style={{ color: PURPLE }}
+                  >
+                    {isEn ? "Can't find it? Create product" : '找不到？新建商品'}
+                  </button>
+                </div>
+              }
+            />
           </div>
 
           {/* Totals */}

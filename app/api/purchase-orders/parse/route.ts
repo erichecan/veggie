@@ -6,7 +6,8 @@ import { serializeApi } from '@/lib/api-serializer'
 import { getObjectStore } from '@/lib/storage/object-store'
 import { parsePdfLines, type SupplierCandidate } from '@/lib/purchase/pdf-line-parser'
 import { parseImportFile } from '@/lib/import-parser'
-import { matchOne, matchStats, type MatchedLine } from '@/lib/purchase/product-match'
+import { matchOne, matchStats, normalizeName, type MatchedLine } from '@/lib/purchase/product-match'
+import { findAliasMatches } from '@/lib/purchase/product-alias'
 
 /**
  * POST /api/purchase-orders/parse
@@ -144,10 +145,22 @@ export async function POST(req: Request) {
         }
       }
 
-      // 商品匹配：歧义与未命中都如实返回候选，**不替人做决定**
+      // 商品匹配：先查「原文 → 商品」记忆表（操作员之前手动挑过的写法，含外语），
+      // 命中就直接精确匹配；没命中的行才走 token 匹配。歧义与未命中都如实返回候选，
+      // **不替人做决定**
+      const aliasMap = await findAliasMatches(rows.map(r => r.productName))
       const lines = rows.map(r => {
+        const alias = aliasMap.get(normalizeName(r.productName))
+        if (alias) {
+          const m: MatchedLine = {
+            matchedProductId: alias.productId, matchedProductName: alias.productName,
+            confidence: 'exact', candidates: [{ id: alias.productId, name: alias.productName, score: 1 }],
+            ambiguous: false,
+          }
+          return { ...r, ...m, fromAlias: true }
+        }
         const m: MatchedLine = matchOne(r.productName, products)
-        return { ...r, ...m }
+        return { ...r, ...m, fromAlias: false }
       })
 
       return NextResponse.json(serializeApi({

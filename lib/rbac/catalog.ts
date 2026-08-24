@@ -494,6 +494,13 @@ export const PERMISSION_GROUPS: GroupDef[] = [
         labelEn: 'FX Rate',
         actions: [A.read],
       },
+      {
+        module: 'tool.bulletin',
+        labelZh: '信息广场',
+        labelEn: 'Info Board',
+        actions: [{ action: 'use', labelZh: '使用', labelEn: 'Use' }],
+        note: '内部员工发帖/浏览广场；只用来把 RESTAURANT 客户门户账号挡在外面，不做角色差异化——管理动作（置顶/删任意帖）在 handler 内部另判 BOSS/OPERATOR，见 lib/bulletin.ts',
+      },
     ],
   },
   {
@@ -512,6 +519,7 @@ export const PERMISSION_GROUPS: GroupDef[] = [
       { module: 'page.print', labelZh: '打印中心页', labelEn: 'Print Center Page', actions: [A.access] },
       { module: 'page.portal', labelZh: '客户门户页', labelEn: 'Customer Portal Page', actions: [A.access] },
       { module: 'page.restaurant', labelZh: '餐厅旧版页', labelEn: 'Restaurant Legacy Page', actions: [A.access] },
+      { module: 'page.bulletin', labelZh: '信息广场页', labelEn: 'Info Board Page', actions: [A.access] },
     ],
   },
   {

@@ -3,7 +3,8 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { apiUpload } from '@/lib/api'
+import { apiPost, apiUpload } from '@/lib/api'
+import ProductSearchInput from '@/components/classic/ProductSearchInput'
 
 const PURPLE = '#875A7B'
 
@@ -25,6 +26,15 @@ export interface ExtractedLine {
   confidence: 'exact' | 'strong' | 'weak' | 'none'
   candidates: MatchCandidate[]
   ambiguous: boolean
+  /** true = 命中「原文→商品」记忆表（此前有人手动挑过这个写法），而不是本次现算的 */
+  fromAlias: boolean
+}
+
+export interface AliasProduct {
+  id: string
+  name: string
+  internalRef?: string | null
+  category?: string | null
 }
 
 export interface PdfExtractResult {
@@ -54,6 +64,7 @@ const CONFIDENCE_STYLE: Record<ExtractedLine['confidence'], string> = {
   weak: 'bg-yellow-100 text-yellow-700',
   none: 'bg-red-100 text-red-600',
 }
+const ALIAS_STYLE = 'bg-purple-100 text-purple-700'
 
 /**
  * 采购单新建页「上传单据识别」入口。
@@ -62,13 +73,21 @@ const CONFIDENCE_STYLE: Record<ExtractedLine['confidence'], string> = {
  * 这不是谨慎过头 —— 被替换掉的那条旧路径就是识别完直接建单，
  * 实测把 `Harvest Beans` 配成了库里的垃圾商品 `vest` 并落了库。
  */
-export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExtractResult) => void }) {
+export default function PdfExtractDialog({ onApply, products }: {
+  onApply: (result: PdfExtractResult) => void
+  /** 供「搜索其他商品」用的全量可采购商品；人工挑中即记住原文对照，见下 applyMatch */
+  products: AliasProduct[]
+}) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState<ParseApiResponse | null>(null)
   const [editableLines, setEditableLines] = useState<ExtractedLine[]>([])
+  const [searchingIndex, setSearchingIndex] = useState<number | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  /** 识别出的原文，永远不随人工编辑 productName 而变——记忆表要记的是「单据本来写的什么」 */
+  const originalNamesRef = useRef<string[]>([])
 
   async function handleFileChosen(file: File) {
     setUploading(true)
@@ -78,6 +97,7 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
       const res = await apiUpload<ParseApiResponse>('/api/purchase-orders/parse', form)
       setResult(res)
       setEditableLines(res.lines ?? [])
+      originalNamesRef.current = (res.lines ?? []).map(l => l.productName)
       if (res.error) toast.warning(res.error)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Extraction failed' : '识别失败'))
@@ -95,21 +115,31 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
     })
   }
 
-  /** 人工改选匹配商品：选中后置信度记为 exact —— 人挑的就是准的 */
-  function pickProduct(i: number, productId: string) {
+  /** 清空匹配，回到「未匹配，稍后新建」 */
+  function clearMatch(i: number) {
     setEditableLines(prev => {
       const next = [...prev]
-      const line = next[i]
-      const hit = line.candidates.find(c => c.id === productId)
-      next[i] = {
-        ...line,
-        matchedProductId: hit ? hit.id : null,
-        matchedProductName: hit ? hit.name : null,
-        confidence: hit ? 'exact' : 'none',
-        ambiguous: false,
-      }
+      next[i] = { ...next[i], matchedProductId: null, matchedProductName: null, confidence: 'none', ambiguous: false, fromAlias: false }
       return next
     })
+  }
+
+  /**
+   * 人工选中商品（下拉候选或搜索均走这里）：置信度记为 exact —— 人挑的就是准的；
+   * 同时把「单据原文 → 这个商品」记住（后台异步，不挡 UI），下次同样写法直接精确命中。
+   */
+  function applyMatch(i: number, product: { id: string; name: string }) {
+    setEditableLines(prev => {
+      const next = [...prev]
+      next[i] = { ...next[i], matchedProductId: product.id, matchedProductName: product.name, confidence: 'exact', ambiguous: false, fromAlias: false }
+      return next
+    })
+    setSearchingIndex(null)
+    setSearchQuery('')
+    const rawName = originalNamesRef.current[i]
+    if (rawName) {
+      apiPost('/api/purchase-orders/product-aliases', { rawName, productId: product.id }).catch(() => {})
+    }
   }
 
   function apply() {
@@ -208,32 +238,76 @@ export default function PdfExtractDialog({ onApply }: { onApply: (result: PdfExt
                         />
                       </td>
                       <td className="py-1 pr-2">
-                        {l.candidates.length > 0 ? (
-                          <select
-                            value={l.matchedProductId ?? ''}
-                            onChange={e => pickProduct(i, e.target.value)}
-                            className={`w-full border rounded px-1 py-0.5 text-xs ${l.matchedProductId ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
-                          >
-                            <option value="">
-                              {l.ambiguous
-                                ? (isEn ? '— multiple matches, please pick —' : '— 命中多个，请选择 —')
-                                : (isEn ? '— not matched, create later —' : '— 未匹配，稍后新建 —')}
-                            </option>
-                            {l.candidates.map(c => (
-                              <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                          </select>
+                        {searchingIndex === i ? (
+                          <div className="flex items-center gap-1">
+                            <div className="flex-1">
+                              <ProductSearchInput
+                                products={products}
+                                value={searchQuery}
+                                onChange={setSearchQuery}
+                                onSelect={p => applyMatch(i, p)}
+                                placeholder={isEn ? 'Search product…' : '搜索商品…'}
+                                inputClassName="w-full border border-blue-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-blue-400"
+                                portalDropdown
+                                maxResults={8}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { setSearchingIndex(null); setSearchQuery('') }}
+                              className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                              title={isEn ? 'Cancel search' : '取消搜索'}
+                            >
+                              ✕
+                            </button>
+                          </div>
                         ) : (
-                          <span className={`inline-block px-1.5 py-0.5 rounded ${CONFIDENCE_STYLE.none}`}>
-                            {isEn ? 'no candidate — create later' : '无候选，稍后新建'}
-                          </span>
-                        )}
-                        {l.matchedProductId && (
-                          <span className={`ml-1 inline-block px-1.5 py-0.5 rounded ${CONFIDENCE_STYLE[l.confidence]}`}>
-                            {l.confidence === 'exact' ? (isEn ? 'Exact' : '精确')
-                              : l.confidence === 'strong' ? (isEn ? 'Strong' : '较可靠')
-                                : (isEn ? 'Weak — verify' : '存疑，请核对')}
-                          </span>
+                          <>
+                            <div className="flex items-center gap-1">
+                              {l.candidates.length > 0 ? (
+                                <select
+                                  value={l.matchedProductId ?? ''}
+                                  onChange={e => {
+                                    const id = e.target.value
+                                    if (!id) { clearMatch(i); return }
+                                    const hit = l.candidates.find(c => c.id === id)
+                                    if (hit) applyMatch(i, hit)
+                                  }}
+                                  className={`flex-1 min-w-0 border rounded px-1 py-0.5 text-xs ${l.matchedProductId ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                >
+                                  <option value="">
+                                    {l.ambiguous
+                                      ? (isEn ? '— multiple matches, please pick —' : '— 命中多个，请选择 —')
+                                      : (isEn ? '— not matched, create later —' : '— 未匹配，稍后新建 —')}
+                                  </option>
+                                  {l.candidates.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className={`flex-1 min-w-0 inline-block px-1.5 py-0.5 rounded ${CONFIDENCE_STYLE.none}`}>
+                                  {isEn ? 'no candidate — create later' : '无候选，稍后新建'}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => { setSearchingIndex(i); setSearchQuery(l.productName) }}
+                                className="text-gray-400 hover:text-blue-600 flex-shrink-0"
+                                title={isEn ? 'Search another product' : '搜索其他商品'}
+                              >
+                                🔍
+                              </button>
+                            </div>
+                            {l.matchedProductId && (
+                              <span className={`mt-0.5 inline-block px-1.5 py-0.5 rounded ${l.fromAlias ? ALIAS_STYLE : CONFIDENCE_STYLE[l.confidence]}`}>
+                                {l.fromAlias
+                                  ? (isEn ? 'Remembered match' : '记忆匹配')
+                                  : l.confidence === 'exact' ? (isEn ? 'Exact' : '精确')
+                                    : l.confidence === 'strong' ? (isEn ? 'Strong' : '较可靠')
+                                      : (isEn ? 'Weak — verify' : '存疑，请核对')}
+                              </span>
+                            )}
+                          </>
                         )}
                       </td>
                       <td className="py-1 text-right">

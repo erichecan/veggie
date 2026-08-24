@@ -36,6 +36,14 @@ const EXEMPT: Record<string, string> = {
   'PATCH /api/notifications': '标记自己的通知已读',
   'POST /api/geocode': '地址转坐标，纯转发第三方；调用方已被 middleware 的角色边界限定',
   'POST /api/distance-matrix': '同上，算两点距离',
+  // 信息广场（DEV-PLAN 20260824 §3）：按设计不接正式权限点体系，所有内部登录用户
+  // 都能发帖/带图；管理动作（删任意帖/置顶）在 handler 内部硬判断 BOSS/OPERATOR 角色
+  // （lib/bulletin.ts canManageBulletin），扫描器识别不到这层运行时判断。
+  // RESTAURANT 客户门户账号同样在 handler 内部单独挡掉（assertInternalUser）。
+  'POST /api/bulletin-posts': '发帖，所有内部登录用户可用，闸在 handler 内部（assertInternalUser）',
+  'POST /api/bulletin-posts/upload-image': '发帖配图上传，同上',
+  'DELETE /api/bulletin-posts/[id]': '删自己的帖子人人可用；删别人的帖子闸在 handler 内部（canManageBulletin）',
+  'PATCH /api/bulletin-posts/[id]/pin': '置顶/取消置顶，闸在 handler 内部（canManageBulletin，仅 BOSS/OPERATOR）',
 }
 
 test('每个写 handler 都有闸（例外必须登记）', () => {

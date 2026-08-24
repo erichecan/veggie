@@ -183,6 +183,8 @@
     "system.mfa.enroll": 179,
     "system.notification.create": 180,
     "system.settings.read": 115,
-    "system.settings.manage": 116
+    "system.settings.manage": 116,
+    "tool.bulletin.use": 182,
+    "page.bulletin.access": 183
   }
 }
