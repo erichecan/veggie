@@ -230,9 +230,9 @@ export default function UsersTab({
     setSaving(true)
     try {
       if (editingId) {
+        // 角色改动已并入行上的「权限」入口（多角色/个人例外/上级都在那），这里只改姓名
         await apiPut<SystemUser>(`/api/users/${editingId}`, {
           name: form.name.trim(),
-          role: form.role,
         })
         toast.success(isEn ? 'User info updated' : '用户信息已更新')
       } else {
@@ -415,31 +415,40 @@ export default function UsersTab({
                 <p className="text-xs text-gray-400">{isEn ? 'Email cannot be changed after creation' : '邮箱创建后不可修改'}</p>
               </div>
             )}
-            <div>
-              <Label>{isEn ? 'Role *' : '角色 *'}</Label>
-              <div className="mt-1 grid grid-cols-4 gap-1.5">
-                {ALL_ROLES.map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setForm(f => ({ ...f, role: r }))}
-                    className="py-1.5 rounded-lg border text-xs font-medium transition-colors"
-                    style={form.role === r
-                      ? { borderColor: PURPLE, background: '#f3eff5', color: PURPLE }
-                      : { borderColor: '#e5e7eb', color: '#6b7280' }
-                    }
-                  >
-                    {ROLE_LABEL[r]}
-                  </button>
-                ))}
+            {!editingId && (
+              <div>
+                <Label>{isEn ? 'Role *' : '角色 *'}</Label>
+                <div className="mt-1 grid grid-cols-4 gap-1.5">
+                  {ALL_ROLES.map(r => (
+                    <button
+                      key={r}
+                      onClick={() => setForm(f => ({ ...f, role: r }))}
+                      className="py-1.5 rounded-lg border text-xs font-medium transition-colors"
+                      style={form.role === r
+                        ? { borderColor: PURPLE, background: '#f3eff5', color: PURPLE }
+                        : { borderColor: '#e5e7eb', color: '#6b7280' }
+                      }
+                    >
+                      {ROLE_LABEL[r]}
+                    </button>
+                  ))}
+                </div>
+                {canSeeRbac && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    {isEn
+                      ? 'This sets the initial role. For multiple roles, personal exceptions or a manager, use “Permissions” on the row.'
+                      : '这里设的是初始角色。要挂多个角色、加减个人例外或设上级，用列表行上的「权限」。'}
+                  </p>
+                )}
               </div>
-              {canSeeRbac && (
-                <p className="text-[11px] text-gray-400 mt-1.5">
-                  {isEn
-                    ? 'This sets the preset role. For multiple roles, personal exceptions or a manager, use “Permissions” on the row.'
-                    : '这里设的是预置角色。要挂多个角色、加减个人例外或设上级，用列表行上的「权限」。'}
-                </p>
-              )}
-            </div>
+            )}
+            {editingId && canSeeRbac && (
+              <p className="text-[11px] text-gray-400">
+                {isEn
+                  ? 'Role and permissions have moved to “Permissions” on the row.'
+                  : '角色与权限已改到列表行上的「权限」入口去管理。'}
+              </p>
+            )}
             {!editingId && (
               <div>
                 <Label htmlFor="u-pass">{isEn ? 'Initial Password *' : '初始密码 *'} <span className="text-gray-400 font-normal text-xs">{isEn ? `(at least ${PASSWORD_MIN_LENGTH} characters, not a common password)` : `（至少 ${PASSWORD_MIN_LENGTH} 位，不能是常见弱口令）`}</span></Label>
