@@ -427,7 +427,10 @@ model ProductSaleUom {
   isDefault     Boolean  @default(false)
   /// 1 个此单位 = factor 个基础单位。如 CASE 装 10 包则填 10；基础单位自身恒为 1。
   /// ⛔ 不要用全局 Uom.factor —— 同名 CASE 在不同商品里箱规不同（见 model 注释）
-  factor        Decimal  @default(1) @db.Decimal(14, 6)
+  /// ⛔ 精度必须够存"1/n"这类除不尽的小数（20260825 前只有 6 位小数，"÷3"存成
+  ///    0.333333，页面反算 1/0.333333 显形成 3.000003——不是精度够用只是没显出来，
+  ///    是反算会把截断误差放大）。10 位小数能让 n 到几万都反算干净。
+  factor        Decimal  @default(1) @db.Decimal(18, 10)
   priceOverride Decimal? @db.Decimal(12, 2)
   /// 价格计算方式；默认 AUTO 与现状完全一致，存量数据据 priceOverride 是否有值一次性回填
   priceMode        SaleUomPriceMode @default(AUTO)
