@@ -10,7 +10,11 @@ import type { FacetDef } from '../facet-sql'
 const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
 
 export const PRODUCT_TEMPLATE_FACET_DEFS: FacetDef[] = [
-  { key: 'all',         label: '全部',     toClause: v => ({ OR: [{ name: like(v) }, { internalRef: like(v) }] }) },
+  // ⛔ 20260825 补 description/saleDescription：很多商品的中文名只写在描述里
+  // （name 是英文 Odoo 主名），"全部"之前只看 name/internalRef，中文用户搜中文名
+  // 直接落空，还得手动切到「描述」维度再搜一次——而"全部"跟"描述"是不同维度，
+  // 两个 chip 叠一起是 AND 不是 OR，反而比只搜一次更搜不到。
+  { key: 'all',         label: '全部',     toClause: v => ({ OR: [{ name: like(v) }, { internalRef: like(v) }, { description: like(v) }, { saleDescription: like(v) }] }) },
   { key: 'name',        label: '名称',     toClause: v => ({ name: like(v) }) },
   { key: 'ref',         label: '内部编号', toClause: v => ({ internalRef: like(v) }) },
   { key: 'category',    label: '类目',     toClause: v => ({ category: { OR: [{ name: like(v) }, { nameZh: like(v) }] } }) },
