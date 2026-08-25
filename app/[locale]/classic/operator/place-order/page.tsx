@@ -1629,30 +1629,29 @@ export default function ClassicPlaceOrderPage() {
                 )
               })()}
 
-              {/* Horizontally scrollable 14-column table */}
+              {/* Horizontally scrollable 12-column table */}
               <OrderLineEditor
                 lines={lines}
                 editing={true}
                 tableClassName="text-xs border-collapse"
                 tableStyle={{ minWidth: '1190px', width: '100%' }}
                 tbodyClassName="divide-y divide-gray-100"
-                emptyColSpan={13}
+                emptyColSpan={12}
                 emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
                     <th className="px-2 py-2 text-left"  style={{ width: 40  }}>NO</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
-                    <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title={isEn ? 'ATP = On Hand − Pending Demand' : '可承诺量 = 在手量 - 待履行量'}>ATP</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
                     <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cost</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 80  }}>Price</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>Taxes</th>
                     <th className="px-2 py-2 text-right" style={{ width: 100 }}>Total</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title={isEn ? 'ATP = On Hand − Pending Demand' : '可承诺量 = 在手量 - 待履行量'}>ATP</th>
                   </tr>
                 )}
                 renderRow={(line, idx, opts) => {
@@ -1686,19 +1685,6 @@ export default function ClassicPlaceOrderPage() {
                         />
                       </td>
 
-                      {/* Note */}
-                      <td className="px-2 py-1">
-                        <input
-                          type="text"
-                          data-note-line={line.id}
-                          value={line.note}
-                          onChange={e => patchLine(line.id, { note: e.target.value })}
-                          onKeyDown={e => handleFieldKey(e)}
-                          placeholder={isEn ? 'Note…' : '备注…'}
-                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent placeholder:text-gray-300"
-                        />
-                      </td>
-
                       {/* Ordered Qty */}
                       <td className="px-2 py-1">
                         <input
@@ -1727,30 +1713,6 @@ export default function ClassicPlaceOrderPage() {
                           onKeyDown={e => handleFieldKey(e)}
                           className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                         />
-                      </td>
-
-                      {/* Forecast Qty */}
-                      <td className="px-2 py-1 text-right text-gray-400">
-                        {line.forecastQty != null ? line.forecastQty.toFixed(3) : '—'}
-                      </td>
-
-                      {/* ATP */}
-                      <td className="px-2 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 可承诺: ${lineAtp.toFixed(1)}`) : ''}>
-                        {isOutOfStock ? (
-                          <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
-                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                            {lineAtp.toFixed(1)}
-                          </span>
-                        ) : isLowStock ? (
-                          <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-amber-500" />
-                            {lineAtp.toFixed(1)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-500">
-                            {lineAtp > 0 ? lineAtp.toFixed(1) : '—'}
-                          </span>
-                        )}
                       </td>
 
                       {/* UoM — 有额外可售单位(20260714 试点)时显示切换下拉，否则只读文本 */}
@@ -1854,6 +1816,30 @@ export default function ClassicPlaceOrderPage() {
                         >
                           🗑
                         </button>
+                      </td>
+
+                      {/* Forecast Qty */}
+                      <td className="px-2 py-1 text-right text-gray-400">
+                        {line.forecastQty != null ? line.forecastQty.toFixed(3) : '—'}
+                      </td>
+
+                      {/* ATP */}
+                      <td className="px-2 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 可承诺: ${lineAtp.toFixed(1)}`) : ''}>
+                        {isOutOfStock ? (
+                          <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
+                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                            {lineAtp.toFixed(1)}
+                          </span>
+                        ) : isLowStock ? (
+                          <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" />
+                            {lineAtp.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">
+                            {lineAtp > 0 ? lineAtp.toFixed(1) : '—'}
+                          </span>
+                        )}
                       </td>
                     </>
                   )
