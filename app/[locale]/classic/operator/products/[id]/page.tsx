@@ -346,11 +346,13 @@ export default function ClassicProductDetailPage() {
 
   if (!tmpl) return <div className="p-8 text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
 
-  // 库存计数单位(Unit of Measure/Purchase UoM)只给纯计量单位选(kg/L/g/mL/件…)，
-  // 箱/袋/包/CASE/BAG/PKT 这类容器单位(遗留数据里全是 type=BIGGER)现在走下面
-  // 「可售单位」的 = base × 系数 表达，不再能被选成基准单位——可售单位那一行的下拉
-  // 还是用完整的 uoms，容器单位仍然选得到，只是不能再当"基准"。
-  const baseUoms = uoms.filter(u => u.type !== 'BIGGER')
+  // ⛔ 20260819 曾把这里限成"只给纯计量单位选(kg/L/g/mL/件…)"，箱/袋/CASE/BAG
+  // 这类容器单位(type=BIGGER)被挡在 Unit of Measure/Purchase UoM 下拉之外。
+  // 20260825 查生产库发现这个限制跟实际数据完全脱节：229 个商品名里带"CASE/箱/kg"
+  // 这种箱规写法的商品里，227 个的基准单位本来就是 BIGGER 型(CASE/BAG 等)，只有 2 个
+  // (含 Broccoli 6KG CASE)例外卡在 KG——容器单位当基准早就是主流用法，不是要挡的例外，
+  // 挡新选反而是挡在了正确用法上。改回给全部 uoms，不再按 type 过滤。
+  const baseUoms = uoms
   const fieldClass = "w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 bg-white"
   const focusStyle = { '--tw-ring-color': '#875A7B' } as React.CSSProperties
   const btnBase = "h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
