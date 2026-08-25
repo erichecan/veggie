@@ -631,10 +631,8 @@ export default function ClassicProductDetailPage() {
                 <Row label={isEn ? 'Weight (kg)' : '默认重量 Weight (kg)'}>
                   <NumericInput step="0.001" min={0} value={tmpl.weight ?? 0} onChange={e => setField('weight', parseFloat(e.target.value) || undefined)} className={fieldClass} style={focusStyle} />
                 </Row>
-                {/* 毛重/净重与上面的"默认商品重量"是三个独立字段，供物流、报关、称重使用 */}
-                <Row label={isEn ? 'Gross Weight (kg)' : '毛重 Gross Weight (kg)'}>
-                  <NumericInput step="0.001" min={0} value={tmpl.grossWeight ?? 0} onChange={e => setField('grossWeight', parseFloat(e.target.value) || undefined)} className={fieldClass} style={focusStyle} />
-                </Row>
+                {/* 净重与上面的"默认商品重量"是两个独立字段，供物流、报关、称重使用。
+                    毛重(grossWeight)20260825 已删除——跟"默认商品重量"重复,生产 5482 个商品无一个填过。 */}
                 <Row label={isEn ? 'Net Weight (kg)' : '净重 Net Weight (kg)'}>
                   <NumericInput step="0.001" min={0} value={tmpl.netWeight ?? 0} onChange={e => setField('netWeight', parseFloat(e.target.value) || undefined)} className={fieldClass} style={focusStyle} />
                 </Row>
@@ -662,7 +660,6 @@ export default function ClassicProductDetailPage() {
                     : 'Unit(s)'
                 } />
                 <ReadField label={isEn ? 'Weight (kg)' : '默认重量 Weight (kg)'} value={tmpl.weight != null ? `${tmpl.weight} kg` : undefined} />
-                <ReadField label={isEn ? 'Gross Weight (kg)' : '毛重 Gross Weight (kg)'} value={tmpl.grossWeight != null ? `${tmpl.grossWeight} kg` : undefined} />
                 <ReadField label={isEn ? 'Net Weight (kg)' : '净重 Net Weight (kg)'} value={tmpl.netWeight != null ? `${tmpl.netWeight} kg` : undefined} />
                 <ReadField label="Volume (L)" value={tmpl.volume != null ? `${tmpl.volume} L` : undefined} />
                 <ReadField label="Tracking" value={
@@ -683,6 +680,11 @@ export default function ClassicProductDetailPage() {
               </p>
               <div className="max-w-3xl space-y-2">
                 {saleUoms.map((row, i) => {
+                  // 基础行已经在上面「Unit of Measure」里显示/管理过一次，这里不用再列一遍——
+                  // 纯前端不渲染而已，saveSaleUoms/后端 upsert 仍然照常保住这一行的数据
+                  // （PUT 路由提交列表里没有基准单位时会自动补一行，见该路由注释），
+                  // 不会因为这里不渲染就把它从数据库删掉。
+                  if (isBaseUom(row)) return null
                   // ⛔ 单位不再按类目限制：`10*700g CASE` 的基础单位是 PKT（Unit 类目），
                   //    而它也按 KG 卖（Weight 类目）—— 跨类目在真实业务里就是常态，
                   //    因为换算系数现在是这个商品自己的，不依赖全局类目体系。
@@ -823,7 +825,7 @@ export default function ClassicProductDetailPage() {
                     </div>
                   )
                 })}
-                {saleUoms.length === 0 && (
+                {saleUoms.filter(r => !isBaseUom(r)).length === 0 && (
                   <p className="text-xs text-gray-300">{isEn ? 'No additional sellable units configured yet.' : '尚未配置额外可售单位。'}</p>
                 )}
                 {editMode && (

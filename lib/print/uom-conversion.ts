@@ -32,7 +32,7 @@ function round(n: number, digits: number): number {
 
 /**
  * 把换算信息 + 这一行的数量，格式化成两行说明文字（DEV-PLAN 决策#2）：
- * - factor < 1（这单位比基准小）：倒数换算，如「1 CASE = 40 PKT」
+ * - factor < 1（这单位比基准小）：倒数换算，如「1 CASE = 40 × PKT」
  * - factor ≥ 1（这单位比基准大）：直接顺述，如「1 CASE = 6 × PKT」
  * - 配了 netWeight 时，第二行给出这一行数量对应的实物重量估算，如「≈ 1.5kg」
  *
@@ -46,7 +46,7 @@ export function formatUomConversionHint(
   const { factor, thisUomName, baseUomName, netWeight } = info
 
   const conversionLine = factor < 1
-    ? `1 ${baseUomName} = ${round(1 / factor, 2)} ${thisUomName}`
+    ? `1 ${baseUomName} = ${round(1 / factor, 2)} × ${thisUomName}`
     : `1 ${thisUomName} = ${round(factor, 2)} × ${baseUomName}`
 
   let weightLine: string | null = null

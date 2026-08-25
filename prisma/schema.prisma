@@ -309,8 +309,6 @@ model ProductTemplate {
   externalId       String?          @unique
   sequence         Int?
   weight           Decimal?         @db.Decimal(10, 3)
-  /// 毛重（kg）。物流/报关/称重口径，独立于上面的"默认商品重量"weight。
-  grossWeight      Decimal?         @db.Decimal(10, 3)
   /// 净重（kg）。物流/报关/称重口径，独立于上面的"默认商品重量"weight。
   netWeight        Decimal?         @db.Decimal(10, 3)
   volume           Decimal?         @db.Decimal(10, 3)

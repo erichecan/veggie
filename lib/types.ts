@@ -62,8 +62,6 @@ export interface ProductTemplate {
   externalId?: string
   sequence?: number
   weight?: number
-  /** 毛重（kg），物流/报关/称重用，独立于 weight */
-  grossWeight?: number
   /** 净重（kg），物流/报关/称重用，独立于 weight */
   netWeight?: number
   volume?: number

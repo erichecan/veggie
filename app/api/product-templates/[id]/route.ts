@@ -8,7 +8,7 @@ import { serializeApi } from '@/lib/api-serializer'
 const TRACKED_FIELDS = [
   'internalRef', 'sequence', 'name', 'saleDescription',
   'listPrice', 'customerTaxRate', 'standardPrice', 'vendorTaxRate',
-  'weight', 'grossWeight', 'netWeight', 'categoryId', 'type', 'commissionPrice',
+  'weight', 'netWeight', 'categoryId', 'type', 'commissionPrice',
   'status', 'canBeSold', 'description',
 ]
 
