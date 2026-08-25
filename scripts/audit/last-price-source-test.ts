@@ -54,15 +54,14 @@ async function main() {
     data: { name: `X9 客户 ${stamp}`, isActive: true, paymentTerm: 'cash', priceType: 'last' },
     select: { id: true, name: true },
   })
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: `X9 商品 ${stamp}`, type: 'PRODUCT', status: 'ACTIVE',
-      listPrice: 10, standardPrice: 6, uomId: 'uom_pcs', canBeSold: true,
-      products: { create: [{ name: `X9 商品 ${stamp}`, listPrice: 10, standardPrice: 6, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      listPrice: 10, standardPrice: 6, uomId: 'uom_pcs', canBeSold: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   // ⚠️ 确认订单会扣库存。库存 0 的商品确认两张单就扣成 -2，撞 db:validate 的「库存非负」——
   // 而那是**夹具**不守恒，不是产品缺陷。期初库存必须连 StockMove 一起写（台账已栽过四次）
   await ensureOpeningStock(prisma, {

@@ -53,24 +53,11 @@ export async function POST(req: Request) {
         // Fetch product images in one query
         const products = await prisma.product.findMany({
           where: { id: { in: Array.from(allProductIds) } },
-          select: { id: true, images: true, templateId: true },
-        })
-        const templates = await prisma.productTemplate.findMany({
-          where: { id: { in: products.map(p => p.templateId).filter(Boolean) as string[] } },
           select: { id: true, images: true, uom: { select: { name: true } } },
         })
-        const templateImageMap = new Map(templates.map(t => [t.id, t.images[0] ?? '']))
-        const templateUomMap = new Map(templates.map(t => [t.id, t.uom?.name ?? '']))
-        const productImageMap = new Map(
-          products.map(p => [
-            p.id,
-            p.images[0] ?? (p.templateId ? (templateImageMap.get(p.templateId) ?? '') : ''),
-          ]),
-        )
+        const productImageMap = new Map(products.map(p => [p.id, p.images[0] ?? '']))
         // Product → UOM name fallback (when order item doesn't carry uomName)
-        const productUomMap = new Map(
-          products.map(p => [p.id, p.templateId ? (templateUomMap.get(p.templateId) ?? '') : '']),
-        )
+        const productUomMap = new Map(products.map(p => [p.id, p.uom?.name ?? '']))
 
         // Aggregate items across all orders, grouped by productId
         const productMap = new Map<string, {

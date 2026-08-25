@@ -47,9 +47,9 @@ export async function POST(
 
       const productToAdd = await prisma.product.findUnique({
         where: { id: String(productId) },
-        include: { template: { select: { canBeSold: true } } },
+        select: { name: true, canBeSold: true },
       })
-      if (productToAdd?.template?.canBeSold === false) {
+      if (productToAdd?.canBeSold === false) {
         return NextResponse.json(
           { error: `商品「${productToAdd.name}」已下架，不可加入订单` },
           { status: 400 },

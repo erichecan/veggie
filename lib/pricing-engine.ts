@@ -141,8 +141,10 @@ function matchesItem(item: OdooPricelistItem, product: Product, uomId?: string):
     case 'global':
       return true
     case 'product':
-      // 匹配商品模板（product.template = product.templateId）
-      return item.productTemplateId !== undefined && item.productTemplateId === product.templateId
+      // 20260825 合表重构：ProductTemplate 已删，'product' 与 'variant' 两级现在
+      // 语义完全等价，都是锁定到 product.id（价格表选择器计划合并为一层，见 T8）。
+      // productTemplateId 字段名保留，值已在数据迁移时 remap 成 Product.id。
+      return item.productTemplateId !== undefined && item.productTemplateId === product.id
     case 'variant':
       // 匹配具体变体
       return item.productVariantId !== undefined && item.productVariantId === product.id

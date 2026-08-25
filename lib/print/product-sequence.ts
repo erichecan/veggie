@@ -1,9 +1,8 @@
 /**
  * 按 productId 批量取商品 sequence，供各打印模板排序用（见 lib/print/line-sort.ts）。
  *
- * 取的是 **ProductTemplate.sequence** —— 商品列表页显示与编辑的就是这一份，
- * 客户调打印顺序时改的也是它。`Product.sequence` 是另一份（实测 5,477 条里只有
- * 1 条与 Template 不一致），不取它，免得客户改了商品页却发现打印没变。
+ * 商品列表页显示与编辑、客户调打印顺序改的都是 Product.sequence
+ * （ProductTemplate 已并入 Product，见 docs/20260825-producttemplate-merge-tasks.md）。
  *
  * 一次查询拿完，不要在渲染循环里逐行查 —— 一张单几十行，逐行查就是几十次往返。
  */
@@ -17,11 +16,11 @@ export async function fetchProductSequences(
 
   const rows = await prisma.product.findMany({
     where: { id: { in: ids } },
-    select: { id: true, template: { select: { sequence: true } } },
+    select: { id: true, sequence: true },
   })
 
   // 查不到的（商品被删/脏 productId）不放进 map，取值时得到 undefined → 按"没有 sequence"处理
-  return new Map(rows.map(r => [r.id, r.template?.sequence ?? null]))
+  return new Map(rows.map(r => [r.id, r.sequence ?? null]))
 }
 
 /** 把 sequence 附到行上，供 sortLinesBySequence 使用 */

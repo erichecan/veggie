@@ -25,7 +25,7 @@ export const DIMENSION_DEFS: Record<string, DimensionDef> = {
   category: {
     keyExpr: `COALESCE(cat.id, 'uncategorized')`,
     nameExpr: `COALESCE(MAX(COALESCE(cat."nameZh", cat.name)), '未分类')`,
-    extraJoin: `LEFT JOIN "ProductCategory" cat ON cat.id = COALESCE(p."categoryId", pt."categoryId")`,
+    extraJoin: `LEFT JOIN "ProductCategory" cat ON cat.id = p."categoryId"`,
     isTimeBucket: false,
   },
   customer: {

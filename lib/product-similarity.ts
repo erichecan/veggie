@@ -44,7 +44,7 @@ export async function findSimilarProducts(name: string, excludeId?: string): Pro
   const query = name.trim()
   if (query.length < 2) return []
 
-  const candidates = await prisma.productTemplate.findMany({
+  const candidates = await prisma.product.findMany({
     where: {
       status: { not: 'ARCHIVED' },
       ...(excludeId ? { id: { not: excludeId } } : {}),

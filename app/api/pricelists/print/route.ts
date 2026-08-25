@@ -13,22 +13,23 @@ export async function GET(req: NextRequest) {
       : await prisma.odooPricelist.findMany({ where: { active: true }, orderBy: { sequence: 'asc' } })
 
     // Collect all productTemplateIds referenced across all pricelist items
-    const templateIds = new Set<string>()
+    // (值已在数据层 remap 为 Product.id，字段名沿用旧名未改)
+    const productIds = new Set<string>()
     for (const pl of pricelists) {
       const items = (pl.items as unknown as OdooPricelistItem[]) ?? []
       for (const item of items) {
-        if (item.productTemplateId) templateIds.add(item.productTemplateId)
+        if (item.productTemplateId) productIds.add(item.productTemplateId)
       }
     }
 
     // Fetch product names in one query
-    const templates = templateIds.size > 0
-      ? await prisma.productTemplate.findMany({
-          where: { id: { in: [...templateIds] } },
+    const products = productIds.size > 0
+      ? await prisma.product.findMany({
+          where: { id: { in: [...productIds] } },
           select: { id: true, name: true, internalRef: true },
         })
       : []
-    const templateMap = new Map(templates.map(t => [t.id, t]))
+    const productMap = new Map(products.map(p => [p.id, p]))
 
     // Enrich items with product names
     const enriched = pricelists.map(pl => {
@@ -36,10 +37,10 @@ export async function GET(req: NextRequest) {
       const enrichedItems = items.map(item => ({
         ...item,
         productName: item.productTemplateId
-          ? (templateMap.get(item.productTemplateId)?.name ?? item.productTemplateId)
+          ? (productMap.get(item.productTemplateId)?.name ?? item.productTemplateId)
           : null,
         productRef: item.productTemplateId
-          ? (templateMap.get(item.productTemplateId)?.internalRef ?? null)
+          ? (productMap.get(item.productTemplateId)?.internalRef ?? null)
           : null,
       }))
       return { ...serializeApi(pl), items: enrichedItems }

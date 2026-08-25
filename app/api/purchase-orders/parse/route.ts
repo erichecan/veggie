@@ -80,7 +80,7 @@ export async function POST(req: Request) {
           select: { id: true, name: true },
         }),
         prisma.product.findMany({
-          where: { template: { canBePurchased: true }, status: 'ACTIVE' },
+          where: { canBePurchased: true, status: 'ACTIVE' },
           select: { id: true, name: true, internalRef: true },
         }),
       ])

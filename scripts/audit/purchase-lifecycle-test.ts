@@ -57,15 +57,14 @@ async function main() {
 
   // ── 夹具：一个带期初库存的商品 ──────────────────────────────────────────
   const pname = `F3 生命周期测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: pname, type: 'PRODUCT', status: 'ACTIVE', listPrice: 20, standardPrice: 6,
-      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true,
-      products: { create: [{ name: pname, listPrice: 20, standardPrice: 6, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   await prisma.$transaction([
     prisma.stockMove.create({
       data: {

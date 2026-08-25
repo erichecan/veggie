@@ -36,19 +36,15 @@ const ORDER_COMMISSION_SELECT = {
 
 /**
  * 查询某商品的件提成单价。
- * 优先取 Product.commissionPrice，fallback 到 ProductTemplate.commissionPrice。
- * 如果都没有则返回 null（代表该行不计件提成）。
+ * 如果没有则返回 null（代表该行不计件提成）。
  */
 export async function resolveCommissionPrice(productId: string): Promise<Decimal | null> {
   const product = await prisma.product.findUnique({
     where: { id: productId },
-    select: {
-      commissionPrice: true,
-      template: { select: { commissionPrice: true } },
-    },
+    select: { commissionPrice: true },
   })
   if (!product) return null
-  return product.commissionPrice ?? product.template?.commissionPrice ?? null
+  return product.commissionPrice ?? null
 }
 
 /**

@@ -27,14 +27,14 @@ export async function findAliasMatches(rawNames: string[]): Promise<Map<string, 
     select: {
       normalizedName: true,
       product: {
-        select: { id: true, name: true, status: true, template: { select: { canBePurchased: true } } },
+        select: { id: true, name: true, status: true, canBePurchased: true },
       },
     },
   })
 
   const map = new Map<string, AliasHit>()
   for (const row of rows) {
-    if (row.product.status !== 'ACTIVE' || !row.product.template.canBePurchased) continue
+    if (row.product.status !== 'ACTIVE' || !row.product.canBePurchased) continue
     map.set(row.normalizedName, { productId: row.product.id, productName: row.product.name })
   }
   return map

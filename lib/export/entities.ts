@@ -32,10 +32,14 @@ export interface ExportEntityMeta {
 
 export const EXPORT_ENTITY_META = {
   'product-templates': {
-    permission: 'master.product_template.read',
+    // 20260825 合表重构：ProductTemplate 已删，实体键名沿用旧名（/api/export/product-templates
+    // 这个 URL 不改，避免动前端），但真实列表接口是 /api/products，要求的权限点也改成
+    // 该接口实际的 master.product.read —— product_template.* 系列权限点仍保留在权限目录里
+    // （决策：留作别名/技术债，不删），只是不再被任何真实路由引用。
+    permission: 'master.product.read',
     labelZh: '商品',
     labelEn: 'Products',
-    listApi: '/api/product-templates',
+    listApi: '/api/products',
   },
   customers: {
     permission: 'master.customer.read',

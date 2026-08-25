@@ -56,15 +56,15 @@ async function main() {
   const FACTOR = Number(box.factor)
 
   // ── 造一个「1 箱 = 12 包」的商品，并给它配上可售单位 ────────────────────
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: `D4 拆箱测试商品 ${Date.now()}`, type: 'PRODUCT', status: 'ACTIVE',
       listPrice: 10, standardPrice: 6, uomId: pcs.id, canBeSold: true, canBePurchased: true,
-      products: { create: [{ name: 'D4 拆箱测试商品', listPrice: 10, standardPrice: 6, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      qtyOnHand: 0, active: true,
     },
-    select: { id: true, products: { select: { id: true, name: true }, take: 1 } },
+    select: { id: true, name: true },
   })
-  const pid = tmpl.products[0]!.id
+  const pid = product.id
 
   // ⚠️ 期初库存必须**连流水一起**写。直接给 qtyOnHand 塞个数会破坏头号不变量
   // (qtyOnHand == ΣStockMove)，让 db:validate 报出一条不是产品缺陷的违例 ——

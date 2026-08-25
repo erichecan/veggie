@@ -65,15 +65,14 @@ async function main() {
     select: { id: true, name: true },
   })
   const pname = `C9 商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: pname, type: 'PRODUCT', status: 'ACTIVE', listPrice: 10, standardPrice: 4,
-      uomId: 'uom_pcs', canBeSold: true,
-      products: { create: [{ name: pname, listPrice: 10, standardPrice: 4, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      uomId: 'uom_pcs', canBeSold: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   // 库存连流水一起造 —— 直接塞 qtyOnHand 会破坏 db:validate 的头号不变量。
   // 这已经是第三次踩（周期 25/26 库存、H3 提成、C7 路线各一次）：
   // 夹具自己不守恒，测出来的就不是产品的问题。

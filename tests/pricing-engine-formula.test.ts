@@ -279,8 +279,8 @@ test('applyOn=variant：只匹配指定的具体变体，不匹配其他商品',
   assert.equal(resolvePrice(marginProduct, p, [p]).isFallback, true, '不是该变体，应该 fallback')
 })
 
-test('applyOn=product：按 productTemplateId 匹配整个模板下的所有变体', () => {
-  const p = pl('pl-product', [item({ applyOn: 'product', productTemplateId: 't-formula', computeType: 'fixed', fixedPrice: 13 })])
+test('applyOn=product（历史遗留，20260825 合表重构后与 variant 等价）：按 productTemplateId=product.id 匹配', () => {
+  const p = pl('pl-product', [item({ applyOn: 'product', productTemplateId: 'p-formula', computeType: 'fixed', fixedPrice: 13 })])
   assert.equal(resolvePrice(formulaProduct, p, [p]).price, 13)
 })
 

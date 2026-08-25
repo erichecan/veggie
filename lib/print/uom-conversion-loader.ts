@@ -41,12 +41,11 @@ export async function loadUomConversionMap(
            u.name           AS "uomName",
            psu.factor::text AS factor,
            base.name        AS "baseName",
-           pt."netWeight"::text AS "netWeight"
+           p."netWeight"::text AS "netWeight"
     FROM "ProductSaleUom" psu
     JOIN "Uom" u ON u.id = psu."uomId"
     LEFT JOIN "Product" p ON p.id = psu."productId"
-    LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
-    LEFT JOIN "Uom" base ON base.id = pt."uomId"
+    LEFT JOIN "Uom" base ON base.id = p."uomId"
     WHERE psu."productId" = ANY(${productIds}) AND psu.active = true
   `
 

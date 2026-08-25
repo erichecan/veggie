@@ -3,20 +3,47 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { buildProductTemplatesWhere, productStockAlertCounts, PRODUCT_TEMPLATE_ORDER_BY } from '@/lib/products-query'
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
+
+    // 商品管理列表页(?page=...)：分页/分面/库存告警，where 构造与导出
+    // (/api/export/product-templates) 共用同一份 lib/products-query.ts，保证屏幕与导出口径一致。
+    // 20260825 合表重构前这条路径在已删除的 GET /api/product-templates 上，现搬回 /api/products。
+    if (searchParams.has('page')) {
+      const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
+      const rawSize = searchParams.get('pageSize') ?? searchParams.get('limit') ?? '20'
+      const limit = Math.min(200, Math.max(1, parseInt(rawSize, 10)))
+      const [where, alertCounts] = await Promise.all([
+        buildProductTemplatesWhere(searchParams),
+        productStockAlertCounts(),
+      ])
+      const [total, products] = await Promise.all([
+        prisma.product.count({ where }),
+        prisma.product.findMany({
+          where,
+          include: { uom: true },
+          orderBy: PRODUCT_TEMPLATE_ORDER_BY,
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+      ])
+      const serialized = serializeApi(products)
+      return NextResponse.json({
+        data: serialized, items: serialized, total, page, pageSize: limit, totalPages: Math.ceil(total / limit),
+        alertCounts,
+      })
+    }
+
     const statusFilter = searchParams.get('status')?.toUpperCase()
     const search = searchParams.get('search')?.trim()
-    // purchasable=1：只给采购模块选品用，只返回 canBePurchased 的商品（该标记在 ProductTemplate 上）
+    // purchasable=1：只给采购模块选品用，只返回 canBePurchased 的商品
     const purchasableOnly = searchParams.get('purchasable') === '1'
-    // sellable=1：只给下单/报价单/销售单选品用，只返回 canBeSold 的商品（该标记在 ProductTemplate 上）
+    // sellable=1：只给下单/报价单/销售单选品用，只返回 canBeSold 的商品
     const sellableOnly = searchParams.get('sellable') === '1'
     // templateType=PRODUCT：只要实物商品（报废/批次这类只对实物有意义）。
-    // ⚠️ 必须在服务端筛：本接口的返回值把 template 解构掉了，客户端拿不到 type，
-    // 于是「p.template?.type === 'PRODUCT'」这种前端过滤会把**全部**商品筛没
-    // （报废录入与批次页的选品框因此一直是空的，见台账 E4）。
     const templateType = searchParams.get('templateType')?.toUpperCase()
     const where: Record<string, unknown> = {}
     if (statusFilter) where.status = statusFilter as never
@@ -26,11 +53,9 @@ export async function GET(req: Request) {
         { internalRef: { contains: search, mode: 'insensitive' } },
       ]
     }
-    const templateWhere: Record<string, unknown> = {}
-    if (purchasableOnly) templateWhere.canBePurchased = true
-    if (sellableOnly) templateWhere.canBeSold = true
-    if (templateType) templateWhere.type = templateType
-    if (Object.keys(templateWhere).length > 0) where.template = templateWhere
+    if (purchasableOnly) where.canBePurchased = true
+    if (sellableOnly) where.canBeSold = true
+    if (templateType) where.type = templateType
 
     // ?slim=1 → 只回选品下拉框真正会用到的字段。
     // 全量版一次 3.5 MB（5,479 个商品 × 全字段），而它被 8+ 个页面在加载时调用，
@@ -42,35 +67,22 @@ export async function GET(req: Request) {
         where,
         orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
         select: {
-          id: true, templateId: true, name: true, internalRef: true, spec: true,
+          id: true, name: true, internalRef: true, spec: true,
           listPrice: true, price: true, standardPrice: true, qtyOnHand: true,
           customerTaxRate: true, status: true, categoryId: true,
           // images 留着：实测全库 5,480 条**全是空数组**，总共才 74 KB，
           // 但少了它下单页就没法显示商品图，得为一个字段再开一套接口。
           images: true,
           category: { select: { name: true } },
-          template: {
-            select: {
-              images: true,
-              uomId: true, uom: { select: { id: true, name: true } },
-              customerTaxRate: true, internalRef: true,
-              category: { select: { name: true } },
-              canBeSold: true, canBePurchased: true, purchaseUomId: true,
-            },
-          },
+          uomId: true, uom: { select: { id: true, name: true } },
+          purchaseUomId: true,
+          canBeSold: true, canBePurchased: true,
         },
       })
-      const slimResult = rows.map(({ template, category, ...p }) => ({
+      const slimResult = rows.map(({ category, uom, ...p }) => ({
         ...p,
-        images: (p.images as string[]).length > 0 ? p.images : (template?.images ?? []),
-        uomId:           template?.uom?.id   ?? template?.uomId ?? null,
-        uomName:         template?.uom?.name ?? null,
-        purchaseUomId:   template?.purchaseUomId ?? null,
-        customerTaxRate: p.customerTaxRate ?? template?.customerTaxRate ?? 0,
-        internalRef:     p.internalRef ?? template?.internalRef ?? null,
-        category:        category?.name ?? template?.category?.name ?? null,
-        canBeSold:       template?.canBeSold ?? true,
-        canBePurchased:  template?.canBePurchased ?? true,
+        uomName: uom?.name ?? null,
+        category: category?.name ?? null,
       }))
       return NextResponse.json(serializeApi(slimResult))
     }
@@ -80,24 +92,13 @@ export async function GET(req: Request) {
       orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
       include: {
         category: { select: { name: true } },
-        template: { select: { images: true, uomId: true, uom: { select: { id: true, name: true } }, customerTaxRate: true, internalRef: true, category: { select: { name: true } }, canBeSold: true, canBePurchased: true, purchaseUomId: true } },
+        uom: { select: { id: true, name: true } },
       },
     })
-    // 商品自身没有图片时使用模板图片；同时把模板 UoM 提升到顶层
-    // customerTaxRate / internalRef / category：变体自身可空，兜底用模板的值
-    const result = products.map(({ template, category, ...p }) => ({
+    const result = products.map(({ category, uom, ...p }) => ({
       ...p,
-      images: (p.images as string[]).length > 0
-        ? p.images
-        : (template?.images ?? []),
-      uomId:           template?.uom?.id   ?? template?.uomId ?? null,
-      uomName:         template?.uom?.name ?? null,
-      purchaseUomId:   template?.purchaseUomId ?? null,
-      customerTaxRate: p.customerTaxRate ?? template?.customerTaxRate ?? 0,
-      internalRef:     p.internalRef ?? template?.internalRef ?? null,
-      category:        category?.name ?? template?.category?.name ?? null,
-      canBeSold:       template?.canBeSold ?? true,
-      canBePurchased:  template?.canBePurchased ?? true,
+      uomName: uom?.name ?? null,
+      category: category?.name ?? null,
     }))
     return NextResponse.json(serializeApi(result))
   } catch (error) {
@@ -109,11 +110,15 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
-      const data = await req.json()
+      // saleUoms 不是 Product 自身字段（关系名同名，直接透传会被 Prisma 当成嵌套写入报错）——
+      // 商品详情页新建流程创建后另调 PUT /api/products/[id]/sale-uoms 落库。
+      const { saleUoms: _saleUoms, ...data } = await req.json()
       const product = await prisma.product.create({
         data: {
           ...data,
           status: data.status?.toUpperCase() ?? 'ACTIVE',
+          // 商品详情页新建流程的 tmpl.type 是小写('product'/'consu'/'service')，枚举必须大写。
+          type: data.type !== undefined ? String(data.type).toUpperCase() : undefined,
           variantAttributes: data.variantAttributes ?? [],
           images: data.images ?? [],
         },

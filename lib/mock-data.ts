@@ -8,7 +8,6 @@ function wimg(filename: string) {
 export const MOCK_PRODUCTS: Product[] = [
   {
     id: 'prod_001',
-    templateId: 'tmpl_prod_001',
     name: '本地菠菜',
     variantAttributes: [],
     spec: '1 bunch / ~500g',
@@ -23,7 +22,6 @@ export const MOCK_PRODUCTS: Product[] = [
   },
   {
     id: 'prod_002',
-    templateId: 'tmpl_prod_002',
     name: '新鲜胡萝卜',
     variantAttributes: [],
     spec: '1 bag / 5kg',
@@ -38,7 +36,6 @@ export const MOCK_PRODUCTS: Product[] = [
   },
   {
     id: 'prod_003',
-    templateId: 'tmpl_prod_003',
     name: '有机西兰花',
     variantAttributes: [],
     spec: '1 head / ~600g',
@@ -53,7 +50,6 @@ export const MOCK_PRODUCTS: Product[] = [
   },
   {
     id: 'prod_004',
-    templateId: 'tmpl_prod_004',
     name: '白玉菇',
     variantAttributes: [],
     spec: '1 pack / 250g',
@@ -68,7 +64,6 @@ export const MOCK_PRODUCTS: Product[] = [
   },
   {
     id: 'prod_005',
-    templateId: 'tmpl_prod_005',
     name: '大白菜',
     variantAttributes: [],
     spec: '1 head / ~2kg',
@@ -83,7 +78,6 @@ export const MOCK_PRODUCTS: Product[] = [
   },
   {
     id: 'prod_006',
-    templateId: 'tmpl_prod_006',
     name: '土豆（黄皮）',
     variantAttributes: [],
     spec: '1 box / 10kg',
@@ -98,7 +92,6 @@ export const MOCK_PRODUCTS: Product[] = [
   },
   {
     id: 'prod_007',
-    templateId: 'tmpl_prod_007',
     name: '精品番茄',
     variantAttributes: [],
     spec: '1 tray / 1kg',
@@ -113,7 +106,6 @@ export const MOCK_PRODUCTS: Product[] = [
   },
   {
     id: 'prod_008',
-    templateId: 'tmpl_prod_008',
     name: '青椒',
     variantAttributes: [],
     spec: '1 bag / 500g',

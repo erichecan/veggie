@@ -18,8 +18,11 @@ export const PRODUCT_TEMPLATE_FACET_DEFS: FacetDef[] = [
   { key: 'name',        label: '名称',     toClause: v => ({ name: like(v) }) },
   { key: 'ref',         label: '内部编号', toClause: v => ({ internalRef: like(v) }) },
   { key: 'category',    label: '类目',     toClause: v => ({ category: { OR: [{ name: like(v) }, { nameZh: like(v) }] } }) },
-  { key: 'variant',     label: '变体',     toClause: v => ({ products: { some: { name: like(v) } } }) },
-  // 条码维度暂不开放：ProductTemplate.barcode 当前 0/5482 有值，放出来只会永远搜不到。
+  // 20260825 合表重构：'variant' 维度删除——原本靠 `products: { some: {...} } }` 关系
+  // 查"模板下有没有叫这个名字的变体"，ProductTemplate 已删，Product 自己没有子变体关系，
+  // 这条查询会直接报 Prisma 未知字段错误；且这个 key 从没在 PRODUCT_FACET_FIELDS 里
+  // 暴露给前端过，删掉不影响任何现有 UI。
+  // 条码维度暂不开放：Product.barcode 当前 0/5482 有值，放出来只会永远搜不到。
   // 等条码数据导入（合同「PDA 扫码」条款）后，把 barcode 加回这里和 PRODUCT_FACET_FIELDS 即可。
   { key: 'description', label: '描述',     toClause: v => ({ OR: [{ description: like(v) }, { saleDescription: like(v) }] }) },
 ]

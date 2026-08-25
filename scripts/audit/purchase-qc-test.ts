@@ -61,15 +61,14 @@ async function main() {
   // ── 夹具：两个**专用**商品。借共享商品会被别的用例改掉期望值（E5x 栽过） ──
   async function makeProduct(label: string) {
     const name = `F4 质检测试${label} ${stamp}`
-    const t = await prisma.productTemplate.create({
+    const t = await prisma.product.create({
       data: {
         name, type: 'PRODUCT', status: 'ACTIVE', listPrice: 20, standardPrice: 5,
-        uomId: 'uom_pcs', canBeSold: true, canBePurchased: true,
-        products: { create: [{ name, listPrice: 20, standardPrice: 5, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+        uomId: 'uom_pcs', canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
       },
-      select: { products: { select: { id: true }, take: 1 } },
+      select: { id: true },
     })
-    return { id: t.products[0]!.id, name }
+    return { id: t.id, name }
   }
   const pA = await makeProduct('A')   // 走质检合格 + 拒收
   const pB = await makeProduct('B')   // 走「农残超标让步接收」

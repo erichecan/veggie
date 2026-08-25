@@ -217,6 +217,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     exportOf('customers'),
     { pattern: '/api/customers/coordinates', methods: READ },
     { pattern: '/api/products', methods: READ },
+    exportOf('product-templates'),
     { pattern: '/api/batch-analysis', methods: READ },
     { pattern: '/api/geocode', methods: READ },
     { pattern: '/api/distance-matrix', methods: READ },

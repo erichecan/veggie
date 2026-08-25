@@ -60,12 +60,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const line = await prisma.orderLine.findUnique({
         where: { id: disc.orderLineId },
-        include: { product: { include: { template: { select: { type: true } } } } },
+        include: { product: { select: { type: true } } },
       })
       if (!line) return NextResponse.json({ error: '关联订单行不存在' }, { status: 404 })
 
       const movedAt = order.deliveryDate ? new Date(order.deliveryDate as unknown as string) : new Date()
-      const isProduct = line.product && line.product.template?.type === 'PRODUCT'
+      const isProduct = line.product && line.product.type === 'PRODUCT'
       const orderRef = order.code ?? disc.orderId
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -152,7 +152,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
         const subProduct = await px.product.findUnique({
           where: { id: substituteProductId },
-          include: { template: { select: { type: true } } },
+          select: { type: true },
         })
 
         const maxSeq = await prisma.orderLine.aggregate({
@@ -174,7 +174,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           },
         })
 
-        if (subProduct?.template?.type === 'PRODUCT') {
+        if (subProduct?.type === 'PRODUCT') {
           await px.product.update({
             where: { id: substituteProductId },
             data: { qtyOnHand: { decrement: Number(substituteQty) } },

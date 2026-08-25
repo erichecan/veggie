@@ -74,15 +74,14 @@ async function main() {
   const productNames: string[] = []
   for (const tag of ['X', 'Y']) {
     const name = `D3 筛选测试商品${tag} ${stamp}`
-    const tmpl = await prisma.productTemplate.create({
+    const product = await prisma.product.create({
       data: {
         name, type: 'PRODUCT', status: 'ACTIVE', listPrice: 10, standardPrice: 6,
-        canBeSold: true, canBePurchased: true,
-        products: { create: [{ name, listPrice: 10, standardPrice: 6, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+        canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
       },
-      select: { products: { select: { id: true }, take: 1 } },
+      select: { id: true },
     })
-    const pid = tmpl.products[0]!.id
+    const pid = product.id
     // 期初库存连流水一起写：直接塞 qtyOnHand 会破坏 qtyOnHand == ΣStockMove
     // （周期 25、26 各踩过一次，那是测试数据的缺陷，不是产品缺陷）
     await prisma.$transaction([

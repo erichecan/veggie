@@ -17,16 +17,15 @@
  */
 import { toStockQty } from '@/lib/inventory'
 
-/** 只有实物商品(ProductTemplate.type === 'PRODUCT')才记库存；服务/耗材不动 */
+/** 只有实物商品(Product.type === 'PRODUCT')才记库存；服务/耗材不动 */
 const STOCKABLE_TYPE = 'PRODUCT'
 
 // 事务句柄的最小形状（项目里多处用 prismaAny 传进来）
 type TxClient = {
   product: {
-    findUnique: (args: unknown) => Promise<{ templateId: string } | null>
+    findUnique: (args: unknown) => Promise<{ type?: string } | null>
     update: (args: unknown) => Promise<unknown>
   }
-  productTemplate: { findUnique: (args: unknown) => Promise<{ uomId: string | null; type?: string } | null> }
   // 多规格换算读的是**商品级** ProductSaleUom.factor，不再是全局 Uom.factor（20260819）
   productSaleUom: {
     findMany: (args: unknown) => Promise<Array<{ uomId: string; isDefault: boolean; factor: unknown }>>
@@ -55,14 +54,12 @@ export interface LineStockChange {
  * 非实物商品、差额为 0、或换算后差额为 0 时不做任何事并返回 0。
  */
 export async function applyLineStockDelta(tx: TxClient, c: LineStockChange): Promise<number> {
-  const product = await tx.product.findUnique({ where: { id: c.productId } }) as
-    { templateId: string } | null
-  if (!product) return 0
-  const template = await tx.productTemplate.findUnique({
-    where: { id: product.templateId },
-    select: { type: true, uomId: true },
+  const product = await tx.product.findUnique({
+    where: { id: c.productId },
+    select: { type: true },
   }) as { type?: string } | null
-  if (template?.type !== STOCKABLE_TYPE) return 0
+  if (!product) return 0
+  if (product.type !== STOCKABLE_TYPE) return 0
 
   // 新旧数量各自换算成库存记账单位再相减 —— 直接拿 oldQty-newQty 相减在按箱下单时
   // 会少补回一个箱规倍数（I3 周期在收货侧修的是同一件事的另一半）

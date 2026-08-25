@@ -69,15 +69,14 @@ async function main() {
 
   // ── 夹具：一个带期初库存的实物商品 ──────────────────────────────────────
   const name = `E4 损耗测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name, type: 'PRODUCT', status: 'ACTIVE', listPrice: 10, standardPrice: 4,
-      canBeSold: true, canBePurchased: true,
-      products: { create: [{ name, listPrice: 10, standardPrice: 4, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   // 期初连流水一起写，夹具自身必须守恒（周期 25/26 的教训）
   await prisma.$transaction([
     prisma.stockMove.create({

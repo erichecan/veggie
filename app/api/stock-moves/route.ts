@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       const p = prisma as any
 
       // 校验商品存在（库存调整需更新其在手量）
-      const product = await p.product.findUnique({ where: { id: productId }, select: { id: true, name: true, templateId: true } })
+      const product = await p.product.findUnique({ where: { id: productId }, select: { id: true, name: true } })
       if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
 
       // 出库/报废/负向调整时，如果指定了 lotId，扣减 Lot.currentQty
@@ -114,10 +114,11 @@ export async function POST(req: Request) {
         return created
       })
 
-      // resource 用 'product-template'+模板id，和商品详情页 ChatterFeed 的查询条件对齐，
-      // 否则手动调整库存会写进 ActionLog 但商品详情页的"操作日志"永远查不到（20260823 修）。
+      // resource 用 'product'+商品id，和商品详情页 ChatterFeed 的查询条件对齐，
+      // 否则手动调整库存会写进 ActionLog 但商品详情页的"操作日志"永远查不到（20260823 修；
+      // 20260825 合表重构后 resource 从 'product-template' 统一改成 'product'）。
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
-        action: 'UPDATE', resource: 'product-template', resourceId: product.templateId,
+        action: 'UPDATE', resource: 'product', resourceId: product.id,
         detail: `库存调整: ${qty > 0 ? '+' : ''}${qty}${note ? `（${note}）` : ''}` })
       return NextResponse.json(serializeApi(move), { status: 201 })
     } catch (error) {

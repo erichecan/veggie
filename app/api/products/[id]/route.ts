@@ -10,6 +10,18 @@ const PRODUCT_TRACKED_FIELDS = [
   'variantAttributes', 'images',
 ]
 
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  try {
+    const product = await prisma.product.findUnique({ where: { id } })
+    if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
+    return NextResponse.json(serializeApi(product))
+  } catch (error) {
+    console.error('[GET /api/products/[id]]', error)
+    return NextResponse.json({ error: '获取商品失败' }, { status: 500 })
+  }
+}
+
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   return withAuth(req, async (user) => {
@@ -41,6 +53,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           // 那会把字面字符串 "null" 写进数据库——见 product-templates/[id]/route.ts 同款修复。
           internalRef: data.internalRef === undefined ? undefined : (data.internalRef == null || String(data.internalRef).trim() === '' ? null : String(data.internalRef).trim().slice(0, 100)),
           status: data.status?.toUpperCase() ?? undefined,
+          // ⛔ 20260825 合表重构遗留 bug：商品详情页把 tmpl.type 标准化成小写显示('product'/'consu'/'service')，
+          // 保存时整对象回传，这里原来没跟 status 一样转大写 —— Prisma 枚举校验直接 500，
+          // 商品详情页整页保存(Edit→Save)必现失败(实测复现)。
+          type: data.type !== undefined ? String(data.type).toUpperCase() : undefined,
           variantAttributes: data.variantAttributes ?? undefined,
           images: data.images ?? undefined,
         },

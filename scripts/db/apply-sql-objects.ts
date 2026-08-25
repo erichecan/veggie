@@ -26,6 +26,7 @@ const SQL_OBJECT_MIGRATIONS = [
   '20260702000001_reporting_view_sales_user',
   '20260703000001_v_lot_daily_cost',
   '20260802070000_pg_trgm_facet_indexes',
+  '20260825000005_reporting_views_drop_product_template',
 ]
 
 /**

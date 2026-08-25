@@ -44,7 +44,7 @@ async function buildSampleIds(): Promise<Record<string, string>> {
     prisma.purchaseOrder.findFirst({ select: { id: true } }),
     prisma.invoice.findFirst({ select: { id: true } }),
     prisma.user.findFirst({ select: { id: true } }),
-    prisma.productTemplate.findFirst({ select: { id: true } }),
+    prisma.product.findFirst({ select: { id: true } }),
   ])
   return {
     orders: order?.id ?? 'x', customers: customer?.id ?? 'x', products: product?.id ?? 'x',

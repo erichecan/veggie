@@ -49,19 +49,18 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
   const p = prisma as any
 
   // 销售口径：销售额/毛利/订单数/活跃客户（confirmationDate 归日）
-  // 成本优先级：≤当日最近的批次加权成本 → Product.standardPrice → Template.standardPrice
+  // 成本优先级：≤当日最近的批次加权成本 → Product.standardPrice
   const salesRows = (await p.$queryRawUnsafe(
     `SELECT
        COALESCE(SUM(ol.subtotal), 0)::float AS sales_ex,
        COALESCE(SUM(ol.subtotal * (1 + COALESCE(ol."taxRate", 0) / 100)), 0)::float AS sales_inc,
        COUNT(DISTINCT o.id)::int AS order_count,
        COUNT(DISTINCT o."restaurantId")::int AS active_customers,
-       COALESCE(SUM((ol."unitPrice" - COALESCE(lc.unit_cost, p."standardPrice", pt."standardPrice", 0)) * ol."orderedQty"), 0)::float AS gross_profit,
+       COALESCE(SUM((ol."unitPrice" - COALESCE(lc.unit_cost, p."standardPrice", 0)) * ol."orderedQty"), 0)::float AS gross_profit,
        COALESCE(SUM(CASE WHEN lc.unit_cost IS NOT NULL THEN ol.subtotal ELSE 0 END), 0)::float AS costed_amount
      FROM "OrderLine" ol
      JOIN "Order" o ON o.id = ol."orderId"
      LEFT JOIN "Product" p ON p.id = ol."productId"
-     LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
      LEFT JOIN LATERAL (
        SELECT c.unit_cost FROM v_lot_daily_cost c
        WHERE c.product_id = ol."productId" AND c.cost_date <= $1::date
@@ -102,11 +101,10 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
 
   // 损耗额：SCRAP 全部 + 盘亏（STOCK_TAKE 的负向 ADJUSTMENT），按批次成本 fallback standardPrice
   const scrapRows = (await p.$queryRawUnsafe(
-    `SELECT COALESCE(SUM(ABS(sm.qty) * COALESCE(l."unitCost", p."standardPrice", pt."standardPrice", 0)), 0)::float AS amount
+    `SELECT COALESCE(SUM(ABS(sm.qty) * COALESCE(l."unitCost", p."standardPrice", 0)), 0)::float AS amount
      FROM "StockMove" sm
      LEFT JOIN "Lot" l ON l.id = sm."lotId"
      LEFT JOIN "Product" p ON p.id = sm."productId"
-     LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
      WHERE sm."movedAt" >= $1 AND sm."movedAt" < $2
        AND (sm.type = 'SCRAP' OR (sm.type = 'ADJUSTMENT' AND sm."sourceType" = 'STOCK_TAKE' AND sm.qty < 0))`,
     start, end,

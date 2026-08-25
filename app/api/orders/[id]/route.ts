@@ -52,7 +52,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
                 internalRef: true,
                 // 打印顺序按商品 sequence（客户要求 2026-08-18）。打印页是纯前端渲染，
                 // 拿不到数据库，所以在这里就把它展平到行上。见 lib/print/line-sort.ts
-                template: { select: { sequence: true } },
+                sequence: true,
               },
             },
           },
@@ -96,7 +96,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           ...line,
           cost: toNum(product?.standardPrice),
           internalRef: product?.internalRef ?? null,
-          productSequence: product?.template?.sequence ?? null,
+          productSequence: product?.sequence ?? null,
           uomConversionHint: uomHint?.conversionLine ?? null,
           uomWeightHint: uomHint?.weightLine ?? null,
         }
@@ -233,7 +233,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const currentLines = Array.isArray(linesPayload)
         ? await prisma.orderLine.findMany({
             where: { orderId: id },
-            include: { product: { include: { template: { select: { type: true } } } } },
+            include: { product: { select: { type: true } } },
           })
         : []
       let toDelete: string[] = []
@@ -268,7 +268,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 where: { id: { in: affectedProductIds } },
                 select: {
                   id: true,
-                  template: { select: { uomId: true } },
+                  uomId: true,
                   saleUoms: { where: { active: true }, select: { uomId: true } },
                 },
               })
@@ -276,7 +276,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           const allowedUomMap = new Map(
             productsForUomCheck.map(p => [
               p.id,
-              new Set([p.template?.uomId, ...p.saleUoms.map(s => s.uomId)].filter((v): v is string => !!v)),
+              new Set([p.uomId, ...p.saleUoms.map(s => s.uomId)].filter((v): v is string => !!v)),
             ])
           )
           for (const l of uomEditCandidates) {
@@ -311,12 +311,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         const newLineProducts = newLineProductIds.length > 0
           ? await prisma.product.findMany({
               where: { id: { in: newLineProductIds } },
-              include: { template: { select: { commissionPrice: true, canBeSold: true } } },
             })
           : []
 
         // 准入闸门：只查新增行，已有行（哪怕它引用的商品后来被关闭 canBeSold）永远不受影响
-        const notSellable = newLineProducts.filter(p => p.template?.canBeSold === false)
+        const notSellable = newLineProducts.filter(p => p.canBeSold === false)
         if (notSellable.length > 0) {
           return NextResponse.json(
             { error: `商品「${notSellable.map(p => p.name).join('、')}」已下架，不可加入订单` },
@@ -325,7 +324,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
 
         const newLineCommissionMap = new Map(
-          newLineProducts.map(p => [p.id, p.commissionPrice ?? p.template?.commissionPrice ?? null])
+          newLineProducts.map(p => [p.id, p.commissionPrice ?? null])
         )
 
         // 服务端权威定价：编辑订单行与下单同一套引擎(resolveOrderLines)，前端传的
@@ -431,7 +430,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           // 被删除的行：释放全部库存
           for (const deletedId of toDelete) {
             const oldLine = currentLineMap.get(deletedId)
-            if (!oldLine || !oldLine.product || oldLine.product.template?.type !== 'PRODUCT') continue
+            if (!oldLine || !oldLine.product || oldLine.product.type !== 'PRODUCT') continue
             const releaseQty = toNum(oldLine.orderedQty)
             if (releaseQty <= 0) continue
             const stockReleaseQty = await toStockQty(prismaAnyLines, oldLine.productId, releaseQty, oldLine.uomId)
@@ -463,9 +462,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               if (!productId || qty <= 0) continue
               const prod = await prismaAnyLines.product.findUnique({
                 where: { id: productId },
-                include: { template: { select: { type: true } } },
+                select: { type: true },
               })
-              if (!prod || prod.template?.type !== 'PRODUCT') continue
+              if (!prod || prod.type !== 'PRODUCT') continue
               const stockQty = await toStockQty(prismaAnyLines, productId, qty, l.uomId ? String(l.uomId) : undefined)
               await prismaAnyLines.product.update({
                 where: { id: productId },
@@ -487,7 +486,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             } else {
               // 已有行：检查数量/单位变化(多单位销售 20260714 起，切单位也需要联动库存)
               const oldLine = currentLineMap.get(String(l.id))
-              if (!oldLine || !oldLine.product || oldLine.product.template?.type !== 'PRODUCT') continue
+              if (!oldLine || !oldLine.product || oldLine.product.type !== 'PRODUCT') continue
               const oldQty = toNum(oldLine.orderedQty)
               const newQty = Number(l.orderedQty)
               const newUomId = l.uomId !== undefined ? (l.uomId ? String(l.uomId) : null) : oldLine.uomId
@@ -723,11 +722,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (newStatus === 'CONFIRMED' && String(orderBefore.status) === 'PENDING') {
         const confirmLines = await prisma.orderLine.findMany({
           where: { orderId: id },
-          include: { product: { include: { template: { select: { type: true } } } } },
+          include: { product: { select: { type: true, qtyOnHand: true } } },
         })
 
         for (const line of confirmLines) {
-          if (!line.product || line.product.template?.type !== 'PRODUCT') continue
+          if (!line.product || line.product.type !== 'PRODUCT') continue
           const qty = toNum(line.orderedQty)
           if (qty <= 0) continue
           // 多单位销售：这行如果用的不是商品当前默认单位，换算成库存记账单位数量再扣
@@ -814,11 +813,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (newStatus === 'PENDING' && String(orderBefore.status) === 'CONFIRMED') {
         const withdrawLines = await prisma.orderLine.findMany({
           where: { orderId: id },
-          include: { product: { include: { template: { select: { type: true } } } } },
+          include: { product: { select: { type: true } } },
         })
 
         for (const line of withdrawLines) {
-          if (!line.product || line.product.template?.type !== 'PRODUCT') continue
+          if (!line.product || line.product.type !== 'PRODUCT') continue
           const qty = toNum(line.orderedQty)
           if (qty <= 0) continue
           const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
@@ -865,10 +864,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           // 使用当前 orderLines（已经是最新的，可能被本次 PUT 修改过）恢复库存
           const cancelLines = await prisma.orderLine.findMany({
             where: { orderId: id },
-            include: { product: { include: { template: { select: { type: true } } } } },
+            include: { product: { select: { type: true } } },
           })
           for (const line of cancelLines) {
-            if (!line.product || line.product.template?.type !== 'PRODUCT') continue
+            if (!line.product || line.product.type !== 'PRODUCT') continue
             const qty = toNum(line.orderedQty)
             if (qty <= 0) continue
             const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)

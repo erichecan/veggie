@@ -34,19 +34,7 @@ export async function GET(req: Request) {
         where: { status: 'ACTIVE' },
         orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
         include: {
-          template: {
-            select: {
-              images: true,
-              uomId: true,
-              uom: { select: { id: true, name: true } },
-              customerTaxRate: true,
-              listPrice: true,
-              standardPrice: true,
-              type: true,
-              categoryId: true,
-              commissionPrice: true,
-            },
-          },
+          uom: { select: { id: true, name: true } },
         },
       })
 
@@ -69,20 +57,19 @@ export async function GET(req: Request) {
       const lastPrices = await queryLastSoldPrices(prisma, customer.id, productIds)
 
       // 逐商品计算客户专属价
-      const result = products.map(({ template, ...p }) => {
+      const result = products.map((p) => {
         const productForEngine: ProductType = {
           id: p.id,
-          templateId: p.templateId,
           name: p.name,
           variantAttributes: (p.variantAttributes as unknown as ProductType['variantAttributes']) ?? [],
           internalRef: p.internalRef ?? undefined,
-          listPrice: toNum(p.listPrice ?? template?.listPrice ?? p.price ?? 0),
-          standardPrice: toNum(p.standardPrice ?? template?.standardPrice ?? 0),
+          listPrice: toNum(p.listPrice ?? p.price ?? 0),
+          standardPrice: toNum(p.standardPrice ?? 0),
           qtyOnHand: toNum(p.qtyOnHand),
           active: p.active,
-          categoryId: p.categoryId ?? template?.categoryId ?? undefined,
-          customerTaxRate: toNumOpt(p.customerTaxRate ?? template?.customerTaxRate),
-          commissionPrice: toNumOpt(p.commissionPrice ?? template?.commissionPrice),
+          categoryId: p.categoryId ?? undefined,
+          customerTaxRate: toNumOpt(p.customerTaxRate),
+          commissionPrice: toNumOpt(p.commissionPrice),
           images: p.images,
           spec: p.spec ?? undefined,
           price: toNumOpt(p.price),
@@ -107,19 +94,17 @@ export async function GET(req: Request) {
           id: p.id,
           name: p.name,
           spec: p.spec,
-          images: (p.images as string[]).length > 0
-            ? p.images
-            : (template?.images ?? []),
-          uomId: template?.uom?.id ?? template?.uomId ?? null,
-          uomName: template?.uom?.name ?? null,
-          customerTaxRate: toNumOpt(p.customerTaxRate ?? template?.customerTaxRate) ?? 0,
+          images: p.images,
+          uomId: p.uom?.id ?? p.uomId ?? null,
+          uomName: p.uom?.name ?? null,
+          customerTaxRate: toNumOpt(p.customerTaxRate) ?? 0,
           customerPrice: resolution.price,
           priceSource: resolution.itemDesc,
           pricelistName: resolution.pricelistName,
           isSpecialPrice: resolution.isSpecialPrice ?? false,
           lastPrice: lastPrice ?? null,
           internalRef: p.internalRef,
-          categoryId: p.categoryId ?? template?.categoryId ?? null,
+          categoryId: p.categoryId ?? null,
         }
       })
 

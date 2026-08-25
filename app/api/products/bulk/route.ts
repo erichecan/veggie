@@ -6,7 +6,6 @@ import { writeLog } from '@/lib/action-log'
 /**
  * POST /api/products/bulk — 商品批量导入(CSV)
  * body: { rows: [{ name*, spec?, price?, stock?, taxRate?, commissionPrice?, internalRef? }] }
- * 每行自动创建 ProductTemplate + Product(系统约定商品必须挂模板)。
  * 重名跳过,一次最多 200 行。
  */
 
@@ -52,30 +51,20 @@ export async function POST(req: Request) {
       }
 
       let created = 0
-      // 分批事务:每批 50 行(模板+商品各一条插入)
+      // 分批事务:每批 50 行
       for (let i = 0; i < toCreate.length; i += 50) {
         const chunk = toCreate.slice(i, i + 50)
         await prisma.$transaction(async tx => {
           for (const r of chunk) {
-            const tpl = await tx.productTemplate.create({
-              data: {
-                name: r.name,
-                internalRef: r.internalRef,
-                listPrice: r.price ?? 0,
-                customerTaxRate: r.taxRate ?? 0,
-                commissionPrice: r.commissionPrice,
-              },
-            })
             await tx.product.create({
               data: {
-                templateId: tpl.id,
                 name: r.name,
                 internalRef: r.internalRef,
                 spec: r.spec,
                 price: r.price,
-                listPrice: r.price,
+                listPrice: r.price ?? 0,
                 qtyOnHand: r.stock ?? 0,
-                customerTaxRate: r.taxRate,
+                customerTaxRate: r.taxRate ?? 0,
                 commissionPrice: r.commissionPrice,
               },
             })

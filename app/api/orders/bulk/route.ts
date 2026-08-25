@@ -109,10 +109,10 @@ export async function POST(req: Request) {
         for (const ord of needsStockRestore) {
           const lines = await prisma.orderLine.findMany({
             where: { orderId: ord.id },
-            include: { product: { include: { template: { select: { type: true } } } } },
+            include: { product: { select: { type: true } } },
           })
           for (const line of lines) {
-            if (!line.product || line.product.template?.type !== 'PRODUCT') continue
+            if (!line.product || line.product.type !== 'PRODUCT') continue
             const qty = toNum(line.orderedQty)
             if (qty <= 0) continue
             const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
@@ -195,10 +195,10 @@ export async function POST(req: Request) {
           const bulkMovedAt = ord?.deliveryDate ? new Date(ord.deliveryDate) : new Date()
           const lines = await prisma.orderLine.findMany({
             where: { orderId: ordId },
-            include: { product: { include: { template: { select: { type: true } } } } },
+            include: { product: { select: { type: true } } },
           })
           for (const line of lines) {
-            if (!line.product || line.product.template?.type !== 'PRODUCT') continue
+            if (!line.product || line.product.type !== 'PRODUCT') continue
             const qty = toNum(line.orderedQty)
             if (qty <= 0) continue
             const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)

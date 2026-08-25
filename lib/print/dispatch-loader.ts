@@ -55,16 +55,15 @@ async function loadProductTypeMap(productIds: string[]): Promise<Map<string, str
   if (productIds.length === 0) return map
   try {
     const rows = await prisma.$queryRaw<Array<{ id: string; type: string | null }>>`
-      SELECT p.id, pt.type
+      SELECT p.id, p.type
       FROM "Product" p
-      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
       WHERE p.id = ANY(${productIds})
     `
     for (const r of rows) {
       map.set(r.id, r.type ?? null)
     }
   } catch (e) {
-    console.warn('[dispatch-print] ProductTemplate.type not available:', (e as Error).message)
+    console.warn('[dispatch-print] Product.type not available:', (e as Error).message)
   }
   return map
 }
@@ -88,7 +87,7 @@ async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType
 
 /**
  * OrderLine.uomId 历史全空，goodsType 判断实际靠这个兜底：
- * 按 productId 找到商品所属 ProductTemplate.uomId，再查其 goodsType。
+ * 按 productId 找到商品的 Product.uomId，再查其 goodsType。
  * 与 loadProductTypeMap 是同一个 join 模式，只是多连一层 Uom。
  */
 async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string, GoodsType>> {
@@ -98,8 +97,7 @@ async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string
     const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
       SELECT p.id, u."goodsType"
       FROM "Product" p
-      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
-      LEFT JOIN "Uom" u ON u.id = pt."uomId"
+      LEFT JOIN "Uom" u ON u.id = p."uomId"
       WHERE p.id = ANY(${productIds})
     `
     for (const r of rows) {
@@ -107,7 +105,7 @@ async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string
       map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
     }
   } catch (e) {
-    console.warn('[dispatch-print] ProductTemplate.uomId goodsType fallback not available:', (e as Error).message)
+    console.warn('[dispatch-print] Product.uomId goodsType fallback not available:', (e as Error).message)
   }
   return map
 }

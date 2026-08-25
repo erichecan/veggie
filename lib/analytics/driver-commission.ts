@@ -170,8 +170,8 @@ export function pivotPeriods(rows: DriverPeriodRow[]): {
 const UOM_RATIO_SQL = `
   CASE
     WHEN ol."uomId" IS NULL
-      OR pt."uomId" IS NULL
-      OR ol."uomId" = pt."uomId"
+      OR p."uomId" IS NULL
+      OR ol."uomId" = p."uomId"
       OR lu.factor IS NULL OR au.factor IS NULL
       OR lu.factor = 0 OR au.factor = 0
     THEN 1
@@ -222,9 +222,8 @@ line_agg AS (
   FROM "OrderLine" ol
   JOIN trip_order to2            ON to2.order_id = ol."orderId"
   LEFT JOIN "Product" p          ON p.id  = ol."productId"
-  LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
   LEFT JOIN "Uom" lu             ON lu.id = ol."uomId"
-  LEFT JOIN "Uom" au             ON au.id = pt."uomId"
+  LEFT JOIN "Uom" au             ON au.id = p."uomId"
   GROUP BY ol."orderId"
 ),
 order_calc AS (

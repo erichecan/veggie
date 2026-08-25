@@ -7,7 +7,6 @@ import { serializeApi } from '@/lib/api-serializer'
 import {
   buildProductTemplatesWhere,
   PRODUCT_TEMPLATE_ORDER_BY,
-  attachQtyOnHand,
 } from '@/lib/products-query'
 import type { ExportLoadContext, ExportLoadResult } from '../registry'
 import type { ProductExportRow } from '../columns/product-templates'
@@ -24,8 +23,8 @@ export async function loadProductTemplatesForExport(
   const where = await buildProductTemplatesWhere(ctx.searchParams)
 
   const [total, templates] = await Promise.all([
-    prisma.productTemplate.count({ where }),
-    prisma.productTemplate.findMany({
+    prisma.product.count({ where }),
+    prisma.product.findMany({
       where,
       include: { uom: true, category: true },
       orderBy: PRODUCT_TEMPLATE_ORDER_BY,
@@ -33,7 +32,7 @@ export async function loadProductTemplatesForExport(
     }),
   ])
 
-  const serialized = await attachQtyOnHand(serializeApi(templates) as RawRow[]) as RawRow[]
+  const serialized = serializeApi(templates) as RawRow[]
 
   const rows: ProductExportRow[] = serialized.map(r => ({
     ...(r as unknown as ProductExportRow),

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback, use, useRef } from 'react'
+import { useState, useEffect, use, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -8,7 +8,7 @@ import { apiGet, apiPut, apiPost } from '@/lib/api'
 import type {
   OdooPricelist, OdooPricelistItem,
   PricelistApplyOn, PricelistComputeType, PricelistFormulaBase,
-  Product, ProductTemplate, ProductCategory,
+  Product, ProductCategory,
 } from '@/lib/types'
 import { resolvePrice } from '@/lib/pricing-engine'
 import { NumericInput } from '@/components/ui/numeric-input'
@@ -47,31 +47,28 @@ function emptyItem(): OdooPricelistItem {
   }
 }
 
-/** 变体自身没覆盖价格时(null/undefined)回落到模板价 —— Product.listPrice/standardPrice 的语义就是「空=用模板价」 */
-function variantPrice(
-  variant: Product | undefined,
-  templates: ProductTemplate[],
-  field: 'standardPrice' | 'listPrice',
-): number | undefined {
-  if (!variant) return undefined
-  return variant[field] ?? templates.find(t => t.id === variant.templateId)?.[field]
+/**
+ * 20260825 合表重构：ProductTemplate 已删，'product'/'variant' 两级 applyOn 在匹配逻辑上
+ * 已完全等价（都锁定 product.id，见 lib/pricing-engine.ts）。选品 UI 合并成一个入口后
+ * 新建规则只写 'variant'；'product' 只作为历史数据的只读兼容分支保留，这里统一按
+ * "这条规则锁定的是哪个商品" 解出一个 id，两种 applyOn 都能查到同一张 Product 表。
+ */
+function scopedProductId(item: OdooPricelistItem): string | undefined {
+  if (item.applyOn === 'variant') return item.productVariantId
+  if (item.applyOn === 'product') return item.productTemplateId
+  return undefined
 }
 
 function applyScopeTitle(
   item: OdooPricelistItem,
-  templates: ProductTemplate[],
   products: Product[],
   categories: ProductCategory[],
   isEn: boolean,
 ): string {
   if (item.applyOn === 'global') return 'All Products'
-  if (item.applyOn === 'product') {
-    const t = templates.find(t => t.id === item.productTemplateId)
-    return t ? t.name : 'Product'
-  }
-  if (item.applyOn === 'variant') {
-    const p = products.find(p => p.id === item.productVariantId)
-    return p ? p.name : 'Product Variant'
+  if (item.applyOn === 'product' || item.applyOn === 'variant') {
+    const p = products.find(p => p.id === scopedProductId(item))
+    return p ? p.name : 'Product'
   }
   if (item.applyOn === 'category') {
     const c = categories.find(c => c.id === item.categoryId)
@@ -88,10 +85,11 @@ function uomScopeLabel(item: OdooPricelistItem, uoms: Uom[], isEn: boolean): str
   return isEn ? u.name : (u.nameZh ?? u.name)
 }
 
-function applyOnLabel(item: OdooPricelistItem, templates: ProductTemplate[], products: Product[], categories: ProductCategory[], isEn: boolean): string {
+function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: ProductCategory[], isEn: boolean): string {
   if (item.applyOn === 'global') return 'All Products'
-  if (item.applyOn === 'product') return templates.find(t => t.id === item.productTemplateId)?.name ?? '-'
-  if (item.applyOn === 'variant') return products.find(p => p.id === item.productVariantId)?.name ?? '-'
+  if (item.applyOn === 'product' || item.applyOn === 'variant') {
+    return products.find(p => p.id === scopedProductId(item))?.name ?? '-'
+  }
   if (item.applyOn === 'category') {
     const c = categories.find(c => c.id === item.categoryId)
     return c ? (isEn ? (c.name || c.nameZh || '') : (c.nameZh || c.name)) : '-'
@@ -112,21 +110,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [pl, setPl] = useState<OdooPricelist | null>(null)
   const [originalPl, setOriginalPl] = useState<OdooPricelist | null>(null)
   const [allLists, setAllLists] = useState<OdooPricelist[]>([])
-  const [templates, setTemplates] = useState<ProductTemplate[]>([])
-  // 弹窗里按关键词搜到的模板并回本地池：Template Cost / Public Price / 条目列表
-  // 都是靠 templates.find(...) 取名取价的，不并回去就会显示 0 或 '-'
-  const mergeTemplates = useCallback((list: ProductTemplate[]) => {
-    setTemplates(prev => {
-      const map = new Map(prev.map(t => [t.id, t]))
-      let added = false
-      for (const t of list) {
-        if (t.status?.toLowerCase() !== 'active' || map.has(t.id)) continue
-        map.set(t.id, t)
-        added = true
-      }
-      return added ? [...map.values()] : prev
-    })
-  }, [])
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
@@ -170,10 +153,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           return
         }
 
-        const [found, allProducts, allTemplatesResp, allCategories, allPricelists, allUoms] = await Promise.all([
+        const [found, allProducts, allCategories, allPricelists, allUoms] = await Promise.all([
           apiGet<OdooPricelist>(`/api/pricelists/${id}`),
           apiGet<Product[]>('/api/products'),
-          apiGet<{ data?: ProductTemplate[]; items?: ProductTemplate[] } | ProductTemplate[]>('/api/product-templates?pageSize=200'),
           apiGet<ProductCategory[]>('/api/product-categories'),
           apiGet<OdooPricelist[]>('/api/pricelists'),
           apiGet<Uom[]>('/api/uoms').catch(() => [] as Uom[]),
@@ -183,9 +165,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           router.push(`${prefix}/classic/operator/pricelists`)
           return
         }
-        const rawTemplates: ProductTemplate[] = Array.isArray(allTemplatesResp)
-          ? allTemplatesResp
-          : ((allTemplatesResp as { data?: ProductTemplate[]; items?: ProductTemplate[] }).data ?? (allTemplatesResp as { data?: ProductTemplate[]; items?: ProductTemplate[] }).items ?? [])
         const loaded = {
           ...found,
           countryGroups: Array.isArray(found.countryGroups) ? found.countryGroups : [],
@@ -193,7 +172,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         setPl(loaded)
         setOriginalPl(loaded)
         setProducts(allProducts.filter(p => p.status?.toLowerCase() === 'active' && p.active !== false))
-        setTemplates(rawTemplates.filter(t => t.status?.toLowerCase() === 'active'))
         setCategories(allCategories)
         setUoms(allUoms)
         setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
@@ -667,8 +645,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <th className="text-left px-3 py-2 font-medium text-gray-600">End Date</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600 min-w-[160px]">Price</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Price Discount</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Variant Cost</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Template Cost</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Cost</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Public Price</th>
                     {editMode && <th className="w-8 px-3 py-2" />}
                   </tr>
@@ -676,31 +653,21 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 10 : 9} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
+                      <td colSpan={editMode ? 9 : 8} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
                     </tr>
                   )}
                   {pagedItems.map(item => {
-                    const templateCost = item.applyOn === 'product'
-                      ? templates.find(t => t.id === item.productTemplateId)?.standardPrice
-                      : undefined
-                    const variantCost = item.applyOn === 'variant'
-                      ? variantPrice(products.find(p => p.id === item.productVariantId), templates, 'standardPrice')
-                      : undefined
-                    const publicPrice = item.applyOn === 'variant'
-                      ? variantPrice(products.find(p => p.id === item.productVariantId), templates, 'listPrice')
-                      : item.applyOn === 'product'
-                        ? templates.find(t => t.id === item.productTemplateId)?.listPrice
-                        : undefined
+                    const scopedProduct = products.find(p => p.id === scopedProductId(item))
+                    const cost = scopedProduct?.standardPrice
+                    const publicPrice = scopedProduct?.listPrice
                     return (
                       <ItemRow
                         key={item.id}
                         item={item}
-                        templates={templates}
                         products={products}
                         categories={categories}
                         uoms={uoms}
-                        templateCost={templateCost}
-                        variantCost={variantCost}
+                        cost={cost}
                         publicPrice={publicPrice}
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
@@ -741,15 +708,13 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           onSaveNew={item => { saveAndNew(item) }}
           onDiscard={() => setDialogOpen(false)}
           onRemove={isNewItem ? undefined : () => { handleDeleteItem(editingItem.id); setDialogOpen(false) }}
-          templates={templates}
           products={products}
           categories={categories}
           uoms={uoms}
           allLists={allLists.filter(l => l.id !== pl.id)}
           isNew={isNewItem}
-          scopeTitle={applyScopeTitle(editingItem, templates, products, categories, isEn)}
+          scopeTitle={applyScopeTitle(editingItem, products, categories, isEn)}
           isEn={isEn}
-          onTemplatesFetched={mergeTemplates}
         />
       )}
 
@@ -828,14 +793,12 @@ function ExternalLinkIcon() {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, templates, products, categories, uoms, templateCost, variantCost, publicPrice, showDelete, onEdit, onDelete, isEn }: {
+function ItemRow({ item, products, categories, uoms, cost, publicPrice, showDelete, onEdit, onDelete, isEn }: {
   item: OdooPricelistItem
-  templates: ProductTemplate[]
   products: Product[]
   categories: ProductCategory[]
   uoms: Uom[]
-  templateCost: number | undefined
-  variantCost: number | undefined
+  cost: number | undefined
   publicPrice: number | undefined
   showDelete: boolean
   onEdit: () => void
@@ -861,7 +824,7 @@ function ItemRow({ item, templates, products, categories, uoms, templateCost, va
       onClick={onEdit}
     >
       <td className="px-4 py-1.5 text-gray-800">
-        {applyOnLabel(item, templates, products, categories, isEn)}
+        {applyOnLabel(item, products, categories, isEn)}
         {scopedUom && (
           <span
             className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium"
@@ -878,10 +841,7 @@ function ItemRow({ item, templates, products, categories, uoms, templateCost, va
       <td className="px-3 py-1.5 text-right text-gray-800">{priceText}</td>
       <td className="px-3 py-1.5 text-right text-gray-500">{discountText}</td>
       <td className="px-3 py-1.5 text-right text-gray-500">
-        {variantCost != null ? variantCost.toFixed(2) : ''}
-      </td>
-      <td className="px-3 py-1.5 text-right text-gray-500">
-        {templateCost != null ? templateCost.toFixed(2) : ''}
+        {cost != null ? cost.toFixed(2) : ''}
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
         {publicPrice != null ? publicPrice.toFixed(2) : ''}
@@ -899,8 +859,7 @@ function ItemRow({ item, templates, products, categories, uoms, templateCost, va
 
 function ItemDialog({
   item, onChange, onSaveClose, onSaveNew, onDiscard, onRemove,
-  templates, products, categories, uoms, allLists, isNew, scopeTitle, isEn,
-  onTemplatesFetched,
+  products, categories, uoms, allLists, isNew, scopeTitle, isEn,
 }: {
   item: OdooPricelistItem
   onChange: (item: OdooPricelistItem) => void
@@ -908,7 +867,6 @@ function ItemDialog({
   onSaveNew: (item: OdooPricelistItem) => void
   onDiscard: () => void
   onRemove?: () => void
-  templates: ProductTemplate[]
   products: Product[]
   categories: ProductCategory[]
   uoms: Uom[]
@@ -916,36 +874,24 @@ function ItemDialog({
   isNew: boolean
   scopeTitle: string
   isEn: boolean
-  /** 远程搜到的模板回传给父页面并入 templates —— 否则选中第 200 名以后的商品时，
-      Template Cost / Public Price / 条目列表都会因为查不到而显示 0 或 '-' */
-  onTemplatesFetched: (list: ProductTemplate[]) => void
 }) {
   function set<K extends keyof OdooPricelistItem>(key: K, val: OdooPricelistItem[K]) {
     onChange({ ...item, [key]: val })
   }
 
   // 20260823（决策#4）：uomId 只对 applyOn ∈ {product, variant} 有意义。切到 global/category，
-  // 或换了另一个商品/变体，旧选的单位十有八九对不上新商品的可售单位配置了，直接清掉，
+  // 或换了另一个商品，旧选的单位十有八九对不上新商品的可售单位配置了，直接清掉，
   // 不要让用户带着一个已经不适用的隐藏值去保存。
   function setApplyOn(next: PricelistApplyOn) {
     onChange({ ...item, applyOn: next, uomId: (next === 'product' || next === 'variant') ? item.uomId : undefined })
   }
-  function setProductTemplateId(next: string | undefined) {
-    onChange({ ...item, productTemplateId: next, uomId: undefined })
-  }
-  function setProductVariantId(next: string | undefined) {
-    onChange({ ...item, productVariantId: next, uomId: undefined })
+  // 20260825 合表重构：选品只有一个入口了，新建/改选一律写 applyOn:'variant'（历史 'product'
+  // 数据只读兼容，见 scopedProductId；一旦在这个弹窗里改过选品，就顺势升级成 'variant'）。
+  function setScopedProductId(next: string | undefined) {
+    onChange({ ...item, applyOn: 'variant', productVariantId: next, productTemplateId: undefined, uomId: undefined })
   }
 
-  // applyOn=variant 时 ProductSaleUom 直接按 productVariantId 查；applyOn=product 时该规则对
-  // 整个模板下所有变体生效，ProductSaleUom 却是挂在变体(Product)上的——取该模板下第一个变体
-  // 作代表加载可选单位列表（生产库里绝大多数模板只有 1 个变体，够用；多变体模板的可售单位
-  // 配置本来就该保持一致，用哪个变体的列表影响不大）。
-  const saleUomProductId = item.applyOn === 'variant'
-    ? item.productVariantId
-    : item.applyOn === 'product'
-      ? products.find(p => p.templateId === item.productTemplateId)?.id
-      : undefined
+  const saleUomProductId = scopedProductId(item)
 
   const [saleUomOptions, setSaleUomOptions] = useState<SaleUomOption[]>([])
   useEffect(() => {
@@ -991,56 +937,16 @@ function ItemDialog({
   )
 
   // 选品改成「输入即筛选」：原来是把全部商品塞进 <select>，几千行只能靠肉眼翻。
-  const [templateQuery, setTemplateQuery] = useState(
-    () => templates.find(t => t.id === item.productTemplateId)?.name ?? '',
+  // 20260825 合表重构：products 父页面已全量加载（不再分页），本地筛就能覆盖全部商品，
+  // 不需要再对第 200 名以后的商品单独发请求。
+  const [productQuery, setProductQuery] = useState(
+    () => products.find(p => p.id === scopedProductId(item))?.name ?? '',
   )
-  const [variantQuery, setVariantQuery] = useState(
-    () => products.find(p => p.id === item.productVariantId)?.name ?? '',
-  )
-  const [remoteTemplates, setRemoteTemplates] = useState<ProductTemplate[]>([])
 
-  // 变体(products)父页面已全量加载，本地筛即可；模板受接口 pageSize≤200 限制只有前 200 个，
-  // 所以模板要带关键词去服务端再搜一次，否则第 200 名以后的商品永远搜不到。
-  useEffect(() => {
-    if (item.applyOn !== 'product') return
-    const q = templateQuery.trim()
-    if (!q) return
-    const timer = setTimeout(async () => {
-      try {
-        const res = await apiGet<{ data?: ProductTemplate[]; items?: ProductTemplate[] }>(
-          `/api/product-templates?search=${encodeURIComponent(q)}&pageSize=50&status=active`,
-        )
-        const list = res.data ?? res.items ?? []
-        setRemoteTemplates(list)
-        if (list.length > 0) onTemplatesFetched(list)
-      } catch {
-        // 搜不动就退回本地已加载的那部分，不打断选品
-      }
-    }, 250)
-    return () => clearTimeout(timer)
-  // onTemplatesFetched 由父组件用 useCallback 固定，不进依赖以免每次渲染重搜
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateQuery, item.applyOn])
-
-  const templateOptions = useMemo(() => {
-    const map = new Map(templates.map(t => [t.id, t]))
-    for (const t of remoteTemplates) map.set(t.id, t)
-    return [...map.values()]
-  }, [templates, remoteTemplates])
-
-  const templateCostVal = item.applyOn === 'product' && item.productTemplateId
-    ? (templates.find(t => t.id === item.productTemplateId)?.standardPrice ?? 0)
-    : item.applyOn === 'variant' && item.productVariantId
-      ? (variantPrice(products.find(p => p.id === item.productVariantId), templates, 'standardPrice') ?? 0)
-      : 0
-
-  const templatePublicPriceVal = item.applyOn === 'product' && item.productTemplateId
-    ? (templates.find(t => t.id === item.productTemplateId)?.listPrice ?? 0)
-    : item.applyOn === 'variant' && item.productVariantId
-      ? (variantPrice(products.find(p => p.id === item.productVariantId), templates, 'listPrice') ?? 0)
-      : 0
-
-  const costLabel = item.applyOn === 'variant' ? 'Variant Cost' : 'Template Cost'
+  const scopedProduct = products.find(p => p.id === scopedProductId(item))
+  const templateCostVal = scopedProduct?.standardPrice ?? 0
+  const templatePublicPriceVal = scopedProduct?.listPrice ?? 0
+  const costLabel = 'Cost'
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4">
@@ -1065,12 +971,11 @@ function ItemDialog({
                 {([
                   ['global', 'Global'],
                   ['category', 'Product Category'],
-                  ['product', 'Product'],
-                  ['variant', 'Product Variant'],
+                  ['variant', 'Product'],
                 ] as [PricelistApplyOn, string][]).map(([opt, label]) => (
                   <label key={opt} className="flex items-center gap-2 cursor-pointer text-sm">
                     <OdooRadio
-                      checked={item.applyOn === opt}
+                      checked={item.applyOn === opt || (opt === 'variant' && item.applyOn === 'product')}
                       onChange={() => setApplyOn(opt)}
                     />
                     <span className="text-gray-700">{label}</span>
@@ -1078,34 +983,17 @@ function ItemDialog({
                 ))}
               </div>
 
-              {item.applyOn === 'product' && (
-                <div className="mb-3">
-                  <ProductSearchInput<ProductTemplate>
-                    value={templateQuery}
-                    onChange={v => {
-                      setTemplateQuery(v)
-                      if (!v.trim()) setProductTemplateId(undefined)
-                    }}
-                    onSelect={t => { setTemplateQuery(t.name); setProductTemplateId(t.id) }}
-                    products={templateOptions}
-                    placeholder={isEn ? 'Type to search a product…' : '输入关键词搜索商品…'}
-                    inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
-                    portalDropdown
-                    maxResults={30}
-                  />
-                </div>
-              )}
-              {item.applyOn === 'variant' && (
+              {(item.applyOn === 'product' || item.applyOn === 'variant') && (
                 <div className="mb-3">
                   <ProductSearchInput<Product>
-                    value={variantQuery}
+                    value={productQuery}
                     onChange={v => {
-                      setVariantQuery(v)
-                      if (!v.trim()) setProductVariantId(undefined)
+                      setProductQuery(v)
+                      if (!v.trim()) setScopedProductId(undefined)
                     }}
-                    onSelect={p => { setVariantQuery(p.name); setProductVariantId(p.id) }}
+                    onSelect={p => { setProductQuery(p.name); setScopedProductId(p.id) }}
                     products={products}
-                    placeholder={isEn ? 'Type to search a variant…' : '输入关键词搜索商品变体…'}
+                    placeholder={isEn ? 'Type to search a product…' : '输入关键词搜索商品…'}
                     inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                     portalDropdown
                     maxResults={30}

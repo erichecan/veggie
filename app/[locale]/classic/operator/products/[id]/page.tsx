@@ -105,7 +105,6 @@ export default function ClassicProductDetailPage() {
     isPackaging: false,
     canBeExpensed: false,
     images: [],
-    attributeLines: [],
     status: 'active',
     createdAt: new Date().toISOString(),
     sequence: 0,
@@ -139,7 +138,7 @@ export default function ClassicProductDetailPage() {
   async function load() {
     try {
       const [found, cats, orders, uomList] = await Promise.all([
-        isNew ? Promise.resolve(null) : apiGet<ProductTemplate>(`/api/product-templates/${id}`),
+        isNew ? Promise.resolve(null) : apiGet<ProductTemplate>(`/api/products/${id}`),
         apiGet<ProductCategory[]>('/api/product-categories'),
         apiGet<Order[]>('/api/orders?include_lines=false'),
         apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]>('/api/uoms').catch(() => [] as { id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]),
@@ -155,33 +154,32 @@ export default function ClassicProductDetailPage() {
         }
         setTmpl(normalized)
         setOriginal({ ...normalized })
-        const templateId = found.id
         let count = 0
         for (const order of orders) {
-          const matching = (order.items ?? []).filter(item => item.productId === templateId)
+          const matching = (order.items ?? []).filter(item => item.productId === found.id)
           if (matching.length > 0) count++
         }
         setSoldCount(count)
+        // 20260825 合表重构：Product 自己就是唯一的库存单元(不再有"模板下多个变体"这层)，
+        // 在手库存/库存单元直接取这一条记录，不用再拉全量 /api/products 过滤。
+        const qty = Number((found as unknown as { qtyOnHand?: number }).qtyOnHand ?? 0)
+        setOnHandQty(qty)
+        const uom = uomList.find(u => u.id === found.uomId)
+        setVariants([{
+          id: found.id, name: found.name, qtyOnHand: qty,
+          uomName: (isEn ? (uom?.name ?? uom?.nameZh) : (uom?.nameZh ?? uom?.name)) ?? undefined,
+        }])
+        setAdjVariantId(found.id)
+        setPrimaryProductId(found.id)
         try {
-          const allProducts = await apiGet<Array<{ id: string; name: string; templateId: string; qtyOnHand: number; uomName?: string }>>('/api/products')
-          const mine = allProducts.filter(p => p.templateId === templateId)
-          setOnHandQty(mine.reduce((s, p) => s + (p.qtyOnHand ?? 0), 0))
-          setVariants(mine.map(p => ({ id: p.id, name: p.name, qtyOnHand: p.qtyOnHand ?? 0, uomName: p.uomName })))
-          if (mine.length === 1) setAdjVariantId(mine[0].id)
-          const primaryId = mine[0]?.id ?? null
-          setPrimaryProductId(primaryId)
-          if (primaryId) {
-            try {
-              const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null }>>(`/api/products/${primaryId}/sale-uoms`)
-              setSaleUoms(rows.map(r => ({
-                uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
-                priceMode: r.priceMode ?? 'AUTO',
-                priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
-                priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
-              })))
-            } catch { setSaleUoms([]) }
-          }
-        } catch { /* ignore */ }
+          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null }>>(`/api/products/${found.id}/sale-uoms`)
+          setSaleUoms(rows.map(r => ({
+            uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
+            priceMode: r.priceMode ?? 'AUTO',
+            priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
+            priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
+          })))
+        } catch { setSaleUoms([]) }
       }
       setCategories(cats)
     } catch {
@@ -294,16 +292,24 @@ export default function ClassicProductDetailPage() {
     try {
       if (isNew) {
         const { id: _id, ...fields } = tmpl
-        const created = await (await import('@/lib/api')).apiPost<ProductTemplate>('/api/product-templates', {
+        const created = await (await import('@/lib/api')).apiPost<ProductTemplate>('/api/products', {
           ...fields,
           createdAt: new Date().toISOString(),
-          saleUoms,
         })
+        // 20260825 合表重构：Product 自己就是唯一的库存单元，创建即是 primaryProductId，
+        // 可售单位不再随创建事务一起落库，改成创建成功后单独调一次保存。
+        if (saleUoms.length > 0) {
+          try {
+            await apiPut(`/api/products/${created.id}/sale-uoms`, { items: saleUoms })
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : (isEn ? 'Product created, but saving sellable units failed — please retry on the detail page' : '商品已创建，但可售单位保存失败——请到详情页重试'))
+          }
+        }
         toast.success(isEn ? `Created "${created.name}"` : `已创建「${created.name}」`)
         router.push(`${prefix}/classic/operator/products/${created.id}`)
       } else {
         const updated = { ...tmpl, updatedAt: new Date().toISOString() }
-        await apiPut(`/api/product-templates/${tmpl.id}`, updated)
+        await apiPut(`/api/products/${tmpl.id}`, updated)
         setOriginal({ ...updated })
         setTmpl({ ...updated })
         setEditMode(false)
@@ -329,7 +335,7 @@ export default function ClassicProductDetailPage() {
     const nextStatus: ProductTemplate['status'] = tmpl.status === 'active' ? 'archived' : 'active'
     setArchiveToggling(true)
     try {
-      await apiPut(`/api/product-templates/${tmpl.id}`, { status: nextStatus })
+      await apiPut(`/api/products/${tmpl.id}`, { status: nextStatus })
       setTmpl(prev => prev ? { ...prev, status: nextStatus } : prev)
       setOriginal(prev => prev ? { ...prev, status: nextStatus } : prev)
       toast.success(
@@ -793,11 +799,11 @@ export default function ClassicProductDetailPage() {
                               className="w-16 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
                             />
                             <span className="text-gray-400">=</span>
-                            <span className="font-medium" style={{ color: '#875A7B' }}>€{finalPrice.toFixed(2)}</span>
+                            <span className="font-medium" style={{ color: '#875A7B' }}>€{finalPrice.toFixed(1)}</span>
                           </div>
                         ) : (
                           <div className="flex items-center h-8 px-2 text-sm text-gray-500 whitespace-nowrap">
-                            €{finalPrice.toFixed(2)}
+                            €{finalPrice.toFixed(1)}
                           </div>
                         )}
                         {editMode && !isBase && (
@@ -896,7 +902,7 @@ export default function ClassicProductDetailPage() {
 
         <div className="pt-4">
           <ChatterFeed
-            resource="product-template"
+            resource="product"
             resourceId={isNew ? undefined : tmpl.id}
             isNew={isNew}
             fallbackCreatedAt={tmpl.createdAt}

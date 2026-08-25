@@ -60,7 +60,7 @@ export interface ResolvedLine {
 
 export interface PricingContext {
   prisma: Pick<PrismaClient,
-    'user' | 'customer' | 'product' | 'productTemplate' | 'odooPricelist' | 'order' | 'orderLine' | 'productSaleUom' | 'uom'>
+    'user' | 'customer' | 'product' | 'odooPricelist' | 'order' | 'orderLine' | 'productSaleUom' | 'uom'>
   /**
    * 前端传入的 restaurantId 可能是 User.id（老流程）或 Customer.id（新流程）。
    * 统一在这里解析成 Customer 记录，不存在则报错。
@@ -304,7 +304,6 @@ export async function resolveOrderLines(
   const productIds = [...new Set(submittedItems.map((i) => i.productId))]
   const products = await ctx.prisma.product.findMany({
     where: { id: { in: productIds } },
-    include: { template: true },
   })
   const productMap = new Map(products.map((p) => [p.id, p]))
 
@@ -365,17 +364,16 @@ export async function resolveOrderLines(
     // 所有 Decimal 字段在此做边界转换，变成 number。
     const productForEngine: ProductType = {
       id: dbProduct.id,
-      templateId: dbProduct.templateId,
       name: dbProduct.name,
       variantAttributes: (dbProduct.variantAttributes as unknown as ProductType['variantAttributes']) ?? [],
       internalRef: dbProduct.internalRef ?? undefined,
-      listPrice: toNum(dbProduct.listPrice ?? dbProduct.template.listPrice ?? dbProduct.price ?? 0),
-      standardPrice: toNum(dbProduct.standardPrice ?? dbProduct.template.standardPrice ?? 0),
+      listPrice: toNum(dbProduct.listPrice ?? dbProduct.price ?? 0),
+      standardPrice: toNum(dbProduct.standardPrice ?? 0),
       qtyOnHand: toNum(dbProduct.qtyOnHand),
       active: dbProduct.active,
-      categoryId: dbProduct.categoryId ?? dbProduct.template.categoryId ?? undefined,
-      customerTaxRate: toNumOpt(dbProduct.customerTaxRate ?? dbProduct.template.customerTaxRate),
-      commissionPrice: toNumOpt(dbProduct.commissionPrice ?? dbProduct.template.commissionPrice),
+      categoryId: dbProduct.categoryId ?? undefined,
+      customerTaxRate: toNumOpt(dbProduct.customerTaxRate),
+      commissionPrice: toNumOpt(dbProduct.commissionPrice),
       images: dbProduct.images,
       spec: dbProduct.spec ?? undefined,
       price: toNumOpt(dbProduct.price),
@@ -414,7 +412,7 @@ export async function resolveOrderLines(
     // factor 换算——否则界面上填的数字和服务端权威价对不上，明明按规则算对了却被判"超出容差"。
     const authoritative = resolution.matchedUomId
       ? Number(resolution.price)
-      : scaleAuthoritativePrice(dbProduct.id, dbProduct.template.uomId, item.uomId, Number(resolution.price))
+      : scaleAuthoritativePrice(dbProduct.id, dbProduct.uomId, item.uomId, Number(resolution.price))
     const accepted = Math.abs(submittedUnit - authoritative) <= PRICE_TOLERANCE_EUR
 
     // 手动价（台账 X1）：只有调用方显式开了 allowManualPrice 才采纳。

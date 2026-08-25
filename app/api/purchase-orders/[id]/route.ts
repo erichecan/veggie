@@ -416,7 +416,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       // 不产生任何库存/批次副作用——避免和收货单重复计数（历史 bug，见 20260710 采购模块升级）。
 
       // 采购单位跟着采购单走(20260823)：确认采购时，把这张单里每个商品最后一次
-      // 出现的 PurchaseOrderLine.uomId 回写到该商品 ProductTemplate.purchaseUomId。
+      // 出现的 PurchaseOrderLine.uomId 回写到该商品 Product.purchaseUomId。
       // 只影响这次改动上线之后新确认的采购单，历史数据不做回填。
       if (targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED') {
         const lastUomByProductId = new Map<string, string>()
@@ -428,13 +428,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         if (lastUomByProductId.size > 0) {
           const products = await p.product.findMany({
             where: { id: { in: [...lastUomByProductId.keys()] } },
-            select: { id: true, templateId: true, template: { select: { purchaseUomId: true } } },
+            select: { id: true, purchaseUomId: true },
           })
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           for (const prod of products as any[]) {
             const newUomId = lastUomByProductId.get(prod.id)
-            if (newUomId && prod.template?.purchaseUomId !== newUomId) {
-              await p.productTemplate.update({ where: { id: prod.templateId }, data: { purchaseUomId: newUomId } })
+            if (newUomId && prod.purchaseUomId !== newUomId) {
+              await p.product.update({ where: { id: prod.id }, data: { purchaseUomId: newUomId } })
             }
           }
         }

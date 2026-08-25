@@ -48,7 +48,7 @@ export async function generateFreshDailySuggestions(): Promise<FreshSuggestionRo
       id: true,
       name: true,
       qtyOnHand: true,
-      template: { select: { uom: { select: { name: true } } } },
+      uom: { select: { name: true } },
       supplierInfos: {
         orderBy: { sequence: 'asc' },
         take: 1,
@@ -139,7 +139,7 @@ export async function generateFreshDailySuggestions(): Promise<FreshSuggestionRo
       currentStock: stock,
       inTransitQty: inTransit,
       suggestedQty,
-      uomName: p.template?.uom?.name ?? null,
+      uomName: p.uom?.name ?? null,
       supplierId: bestSupplier?.supplier.id ?? null,
       supplierName: bestSupplier?.supplier.name ?? null,
       estimatedCost,

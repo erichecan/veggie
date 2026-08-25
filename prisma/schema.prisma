@@ -215,7 +215,6 @@ model ProductCategory {
   /// 该类目商品业务上"应该"放哪个温区（业务规则），可空=未映射。与 Product.currentZoneId（实际放置）对比即可发现放错温区
   requiredZoneId String?
   requiredZone   Zone?             @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
-  templates      ProductTemplate[]
   products       Product[]
 
   @@index([groupId])
@@ -287,64 +286,8 @@ model ProductAttributeValue {
   @@index([attributeId])
 }
 
-model ProductTemplate {
-  id               String           @id @default(cuid())
-  name             String
-  internalRef      String?
-  categoryId       String?
-  category         ProductCategory? @relation(fields: [categoryId], references: [id])
-  listPrice        Decimal          @default(0) @db.Decimal(12, 2)
-  standardPrice    Decimal          @default(0) @db.Decimal(12, 2)
-  customerTaxRate  Decimal          @default(0) @db.Decimal(6, 4)
-  type             ProductType      @default(PRODUCT)
-  canBeSold        Boolean          @default(true)
-  canBePurchased   Boolean          @default(true)
-  description      String?
-  saleDescription  String?
-  images           String[]
-  attributeLines   Json             @default("[]")
-  status           ProductStatus    @default(ACTIVE)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  externalId       String?          @unique
-  sequence         Int?
-  weight           Decimal?         @db.Decimal(10, 3)
-  /// 净重（kg）。物流/报关/称重口径，独立于上面的"默认商品重量"weight。
-  netWeight        Decimal?         @db.Decimal(10, 3)
-  volume           Decimal?         @db.Decimal(10, 3)
-  commissionPrice  Decimal?         @db.Decimal(12, 2)
-  isPackaging      Boolean?
-  canBeExpensed    Boolean?
-  /// 销售单位（Odoo uom_id）。新的外键字段，指向 Uom。
-  uomId            String?
-  uom              Uom?             @relation("SaleUom", fields: [uomId], references: [id])
-  /// 采购单位（Odoo uom_po_id）
-  purchaseUomId    String?
-  purchaseUom      Uom?             @relation("PurchaseUom", fields: [purchaseUomId], references: [id])
-  /// 兼容保留：老的 String 字段，逐步迁移到 uomId
-  unitOfMeasure    String?
-  purchaseUoM      String?
-  tracking         String?
-  websitePublished Boolean?
-  websiteName      String?
-  vendorTaxRate    Decimal?         @db.Decimal(6, 4)
-  forecastQty      Decimal?         @db.Decimal(14, 3)
-  createdBy        String?
-  updatedBy        String?
-  barcode          String?
-  products         Product[]
-
-  @@index([categoryId])
-  @@index([sequence])
-  @@index([status])
-  @@index([uomId])
-  @@index([purchaseUomId])
-}
-
 model Product {
   id                String                @id @default(cuid())
-  templateId        String
-  template          ProductTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
   name              String
   variantAttributes Json                  @default("[]")
   internalRef       String?
@@ -376,10 +319,43 @@ model Product {
   saleUoms          ProductSaleUom[]
   aliases           ProductAlias[]
 
-  @@index([templateId])
+  // 20260825 从 ProductTemplate 并入（合表重构，ProductTemplate 已删，见
+  // docs/20260825-producttemplate-merge-tasks.md）。这个目录里模板与变体
+  // 恒为 1:1，从未真正用过多变体，模板层是多余的一层。
+  type              ProductType           @default(PRODUCT)
+  canBeSold         Boolean               @default(true)
+  canBePurchased    Boolean               @default(true)
+  description       String?
+  saleDescription   String?
+  weight            Decimal?              @db.Decimal(10, 3)
+  /// 净重（kg）。物流/报关/称重口径，独立于上面的"默认商品重量"weight。
+  netWeight         Decimal?              @db.Decimal(10, 3)
+  volume            Decimal?              @db.Decimal(10, 3)
+  isPackaging       Boolean?
+  canBeExpensed     Boolean?
+  /// 销售单位（Odoo uom_id）
+  uomId             String?
+  uom               Uom?                  @relation("SaleUom", fields: [uomId], references: [id])
+  /// 采购单位（Odoo uom_po_id）
+  purchaseUomId     String?
+  purchaseUom       Uom?                  @relation("PurchaseUom", fields: [purchaseUomId], references: [id])
+  /// 兼容保留：老的 String 字段，逐步迁移到 uomId
+  unitOfMeasure     String?
+  purchaseUoM       String?
+  tracking          String?
+  websitePublished  Boolean?
+  websiteName       String?
+  vendorTaxRate     Decimal?              @db.Decimal(6, 4)
+  forecastQty       Decimal?              @db.Decimal(14, 3)
+  createdBy         String?
+  updatedBy         String?
+  barcode           String?
+
   @@index([categoryId])
   @@index([sequence])
   @@index([currentZoneId])
+  @@index([uomId])
+  @@index([purchaseUomId])
 }
 
 /**
@@ -583,8 +559,8 @@ model Uom {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  saleTemplates     ProductTemplate[] @relation("SaleUom")
-  purchaseTemplates ProductTemplate[] @relation("PurchaseUom")
+  saleProducts      Product[]         @relation("SaleUom")
+  purchaseProducts  Product[]         @relation("PurchaseUom")
   productSaleUoms   ProductSaleUom[]
 
   @@unique([categoryId, name])
@@ -809,7 +785,7 @@ model OrderLine {
   invoicedQty       Decimal   @default(0) @db.Decimal(14, 3)
   /// unitPrice × orderedQty 快照
   subtotal          Decimal   @db.Decimal(12, 2)
-  /// 下单时快照该商品的件提成单价（来自 Product/ProductTemplate.commissionPrice）
+  /// 下单时快照该商品的件提成单价（来自 Product.commissionPrice）
   commissionPrice   Decimal?  @db.Decimal(10, 4)
   /// 单价来源快照（下单/编辑时计算，历史订单无此字段一律为 null）：
   /// PRICELIST=命中价格表 / DEFAULT=直接牌价 / LAST=最近成交价 / SPECIAL=客户专属价

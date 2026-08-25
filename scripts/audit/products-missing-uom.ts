@@ -1,5 +1,5 @@
 /**
- * 审计：有订单行、但商品当前没配基准单位（ProductTemplate.uomId IS NULL）的商品清单
+ * 审计：有订单行、但商品当前没配基准单位（Product.uomId IS NULL）的商品清单
  * ============================================================================
  * 背景：拣货单/送货单等打印模板按 `${productId}::${uomId}` 分组，uomId 为空时
  * `Product.uomName` 派生结果也是 null，前端兜底成通用占位字符串「Unit(s)」。
@@ -20,17 +20,16 @@ const prisma = createPrismaClient()
 async function main() {
   console.log('\n=== 有订单行但未配基准单位的商品 ===\n')
 
-  const totalTemplates = await prisma.productTemplate.count()
-  const nullUomTemplates = await prisma.productTemplate.count({ where: { uomId: null } })
-  console.log(`商品模板总数 ${totalTemplates}，其中未配基准单位 ${nullUomTemplates}（多数是从未上过订单的历史/停用商品，不影响打印）\n`)
+  const totalProducts = await prisma.product.count()
+  const nullUomProducts = await prisma.product.count({ where: { uomId: null } })
+  console.log(`商品总数 ${totalProducts}，其中未配基准单位 ${nullUomProducts}（多数是从未上过订单的历史/停用商品，不影响打印）\n`)
 
   const rows = await prisma.$queryRaw<Array<{ id: string; name: string; line_count: number }>>`
-    SELECT pt.id, pt.name, COUNT(DISTINCT ol.id)::int AS line_count
-    FROM "ProductTemplate" pt
-    JOIN "Product" p ON p."templateId" = pt.id
+    SELECT p.id, p.name, COUNT(DISTINCT ol.id)::int AS line_count
+    FROM "Product" p
     JOIN "OrderLine" ol ON ol."productId" = p.id
-    WHERE pt."uomId" IS NULL
-    GROUP BY pt.id, pt.name
+    WHERE p."uomId" IS NULL
+    GROUP BY p.id, p.name
     ORDER BY line_count DESC
   `
 

@@ -5,7 +5,6 @@ import type { Product, OdooPricelist, Customer } from '../lib/types'
 
 const product: Product = {
   id: 'prod-1',
-  templateId: 'tmpl-1',
   name: 'Test Tomato',
   listPrice: 10,
   standardPrice: 6,
@@ -28,7 +27,7 @@ function pricelist(id: string, fixedPrice: number): OdooPricelist {
     active: true,
     updatedAt: '',
     items: [
-      { applyOn: 'product', productTemplateId: 'tmpl-1', computeType: 'fixed', fixedPrice, minQty: 0, sequence: 1 },
+      { applyOn: 'variant', productVariantId: 'prod-1', computeType: 'fixed', fixedPrice, minQty: 0, sequence: 1 },
     ],
   } as unknown as OdooPricelist
 }

@@ -84,7 +84,7 @@ export async function GET(req: Request) {
         include: {
           product: {
             select: {
-              template: { select: { weight: true } },
+              weight: true,
             },
           },
         },
@@ -265,11 +265,10 @@ export async function POST(req: Request) {
       const productIds = lines.map((l) => l.productId)
       const productsForStock = await prisma.product.findMany({
         where: { id: { in: productIds } },
-        include: { template: { select: { type: true, commissionPrice: true, canBeSold: true } } },
       })
 
       // 准入闸门：新建订单/报价单里的商品必须 canBeSold=true（历史订单的老行不受此影响，见 orders/[id] PUT）
-      const notSellable = productsForStock.filter((p) => p.template?.canBeSold === false)
+      const notSellable = productsForStock.filter((p) => p.canBeSold === false)
       if (notSellable.length > 0) {
         return NextResponse.json(
           { error: `商品「${notSellable.map((p) => p.name).join('、')}」已下架，不可下单` },
@@ -278,9 +277,9 @@ export async function POST(req: Request) {
       }
 
       const stockMap = new Map(productsForStock.map((p) => [p.id, p]))
-      // 件提成单价：优先取 Product.commissionPrice，fallback 到 ProductTemplate.commissionPrice
+      // 件提成单价：Product.commissionPrice
       const commissionPriceMap = new Map(
-        productsForStock.map((p) => [p.id, p.commissionPrice ?? p.template?.commissionPrice ?? null])
+        productsForStock.map((p) => [p.id, p.commissionPrice ?? null])
       )
 
       // 3) 事务：仅创建订单，不扣库存（报价单阶段）

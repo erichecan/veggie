@@ -72,27 +72,26 @@ async function main() {
   // ⚠️ 实测：测试库 1677 个商品模板**全部没挂计量单位**（uomId 为 NULL），
   // 生产库同样需要核对。没有基准单位，toStockQty 会原样返回数量 —— 也就是说
   // 「大小单位」这套机制在当前数据下**根本没有生效的前提**。
-  let tmpl = await prisma.productTemplate.findFirst({
-    where: { uomId: pcs.id, products: { some: { active: true } } },
-    select: { id: true, products: { where: { active: true }, select: { id: true, name: true }, take: 1 } },
+  let product = await prisma.product.findFirst({
+    where: { uomId: pcs.id, active: true },
+    select: { id: true, name: true },
   })
-  if (!tmpl?.products[0]) {
+  if (!product) {
     add('库中存在基准单位规范的商品', false,
-      '⛔ 一个都没有 —— 全部商品模板 uomId 为空，大小单位机制没有生效前提。本测试改用现造商品继续验证链路')
-    const created = await prisma.productTemplate.create({
+      '⛔ 一个都没有 —— 全部商品 uomId 为空，大小单位机制没有生效前提。本测试改用现造商品继续验证链路')
+    product = await prisma.product.create({
       data: {
         name: `I3 单位测试商品 ${Date.now()}`, type: 'PRODUCT', status: 'ACTIVE',
         listPrice: 10, standardPrice: 6, uomId: pcs.id, canBeSold: true, canBePurchased: true,
-        products: { create: [{ name: `I3 单位测试商品`, listPrice: 10, standardPrice: 6, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+        qtyOnHand: 0, active: true,
       },
-      select: { id: true, products: { select: { id: true, name: true }, take: 1 } },
+      select: { id: true, name: true },
     })
-    tmpl = created
   } else {
-    add('库中存在基准单位规范的商品', true, `${tmpl.products[0].name}`)
+    add('库中存在基准单位规范的商品', true, `${product.name}`)
   }
-  const pid = tmpl!.products[0].id
-  const pname = tmpl!.products[0].name
+  const pid = product.id
+  const pname = product.name
 
   const supplier = await prisma.customer.findFirst({ where: { isVendor: true }, select: { id: true } })
   // 挑一个不会被信用冻结拦住的客户：无逾期欠款、信用额度充足。

@@ -82,7 +82,7 @@ async function ensureDriverSlots(
 /** 加载并补全商品信息，指派供应商 */
 async function buildProducts(prisma: PrismaClient, supplierIds: string[]): Promise<ProductInfo[]> {
   const rows = await prisma.product.findMany({
-    where: { active: true, status: 'ACTIVE', template: { type: 'PRODUCT', canBeSold: true } },
+    where: { active: true, status: 'ACTIVE', type: 'PRODUCT', canBeSold: true },
     select: {
       id: true,
       name: true,
@@ -91,37 +91,30 @@ async function buildProducts(prisma: PrismaClient, supplierIds: string[]): Promi
       standardPrice: true,
       price: true,
       customerTaxRate: true,
-      template: {
-        select: {
-          listPrice: true,
-          standardPrice: true,
-          customerTaxRate: true,
-          uomId: true,
-          uom: { select: { name: true, nameZh: true } },
-        },
-      },
+      uomId: true,
+      uom: { select: { name: true, nameZh: true } },
     },
     take: 600,
   })
 
   const out: ProductInfo[] = []
   for (const p of rows) {
-    let sell = num(p.listPrice) ?? num(p.price) ?? num(p.template?.listPrice) ?? 0
+    let sell = num(p.listPrice) ?? num(p.price) ?? 0
     if (sell <= 0) sell = round2(2 + (strHash(p.id) % 1800) / 100) // 2.00–19.99 兜底
-    let cost = num(p.standardPrice) ?? num(p.template?.standardPrice) ?? 0
+    let cost = num(p.standardPrice) ?? 0
     if (cost <= 0 || cost >= sell) cost = round2(sell * (0.55 + (strHash(p.id) % 20) / 100)) // 55%–74%
     // ⚠️ 量纲：Product.customerTaxRate 存小数（0.1350），而 OrderLine.taxRate 的 SSOT 是
     // **百分数**（13.5）—— lib/analytics/metrics.ts、lib/order-items.ts、lib/order-pdf.ts
     // 都按 taxRate/100 算税。种子此前直接把小数写进订单行，导致这三处对种子数据算出
     // 的税额只有真实值的 1/100，而 db:validate 不校验税额所以一路绿灯。
-    const rawTax = num(p.customerTaxRate) ?? num(p.template?.customerTaxRate) ?? 0
+    const rawTax = num(p.customerTaxRate) ?? 0
     const taxRate = rawTax > 0 && rawTax < 1 ? round2(rawTax * 100) : rawTax
     out.push({
       id: p.id,
       name: p.name,
       categoryId: p.categoryId,
-      uomId: p.template?.uomId ?? null,
-      uomName: p.template?.uom?.nameZh ?? p.template?.uom?.name ?? null,
+      uomId: p.uomId ?? null,
+      uomName: p.uom?.nameZh ?? p.uom?.name ?? null,
       sellPrice: sell,
       cost,
       taxRate,

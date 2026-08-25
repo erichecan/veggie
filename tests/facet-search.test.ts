@@ -216,15 +216,15 @@ test("all 维度多值 → OR（客户反馈：'pepper g or scall' 只出 pepper
   const or = (clauses[0] as { OR?: unknown[] }).OR
   assert.equal(or?.length, 2, '两个关键词各一条，彼此 OR')
   assert.deepEqual(JSON.parse(JSON.stringify(or)), [
-    { OR: [{ name: { contains: 'pepper g', mode: 'insensitive' } }, { internalRef: { contains: 'pepper g', mode: 'insensitive' } }] },
-    { OR: [{ name: { contains: 'scall',    mode: 'insensitive' } }, { internalRef: { contains: 'scall',    mode: 'insensitive' } }] },
+    { OR: [{ name: { contains: 'pepper g', mode: 'insensitive' } }, { internalRef: { contains: 'pepper g', mode: 'insensitive' } }, { description: { contains: 'pepper g', mode: 'insensitive' } }, { saleDescription: { contains: 'pepper g', mode: 'insensitive' } }] },
+    { OR: [{ name: { contains: 'scall',    mode: 'insensitive' } }, { internalRef: { contains: 'scall',    mode: 'insensitive' } }, { description: { contains: 'scall',    mode: 'insensitive' } }, { saleDescription: { contains: 'scall',    mode: 'insensitive' } }] },
   ])
 })
 
-test('all 维度单值 → 与旧的 search 参数完全等价', async () => {
+test('all 维度单值 → 与旧的 search 参数完全等价（含 20260825 补的描述字段）', async () => {
   const clauses = await buildFacetWhere(new URLSearchParams('search=salt'), PRODUCT_TEMPLATE_FACET_DEFS)
   assert.deepEqual(JSON.parse(JSON.stringify(clauses)), [
-    { OR: [{ name: { contains: 'salt', mode: 'insensitive' } }, { internalRef: { contains: 'salt', mode: 'insensitive' } }] },
+    { OR: [{ name: { contains: 'salt', mode: 'insensitive' } }, { internalRef: { contains: 'salt', mode: 'insensitive' } }, { description: { contains: 'salt', mode: 'insensitive' } }, { saleDescription: { contains: 'salt', mode: 'insensitive' } }] },
   ])
 })
 

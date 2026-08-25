@@ -72,15 +72,15 @@ async function main() {
   //   近3日已送达 30 → 日均 10 ；未来已确认 25 ；现有库存 10 ；在途 5
   //   建议量 = max(0, 10 + 25 − 10 − 5) = 20
   const pname = `F1 采购建议测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: pname, type: 'PRODUCT', status: 'ACTIVE', listPrice: 12, standardPrice: 5,
       uomId: 'uom_pcs', canBeSold: true, canBePurchased: true, categoryId: category.id,
-      products: { create: [{ name: pname, listPrice: 12, standardPrice: 5, qtyOnHand: 0, active: true, status: 'ACTIVE', categoryId: category.id }] },
+      qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   await prisma.$transaction([
     prisma.stockMove.create({
       data: {

@@ -79,15 +79,14 @@ async function main() {
 
   // ── 夹具：1 个专用商品（单价 10）+ 3 家现结客户，各下一单 3 / 5 / 2 件 ──────
   const pname = `D8 指标测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: pname, type: 'PRODUCT', status: 'ACTIVE', listPrice: 10, standardPrice: 6,
-      canBeSold: true, canBePurchased: true,
-      products: { create: [{ name: pname, listPrice: 10, standardPrice: 6, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   await prisma.$transaction([
     prisma.stockMove.create({
       data: {

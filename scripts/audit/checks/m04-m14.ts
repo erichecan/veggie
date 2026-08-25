@@ -74,7 +74,7 @@ defineCheck({
 
     const [customers, templates, products, orders, lines, pricelists, plItems] = await Promise.all([
       prisma.customer.count(),
-      prisma.productTemplate.count(),
+      prisma.product.count(),
       prisma.product.count(),
       prisma.order.count(),
       prisma.orderLine.count(),

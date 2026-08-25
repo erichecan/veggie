@@ -177,7 +177,7 @@ function migrateStore(s: AppStore): AppStore {
     }
   })
   s.products.forEach((p, i) => {
-    if (!p.templateId) s.products[i] = { ...p, templateId: `tmpl_${p.id}`, variantAttributes: [], active: p.status === 'active' }
+    if (!p.variantAttributes) s.products[i] = { ...p, variantAttributes: [], active: p.status === 'active' }
     if (p.active === undefined) s.products[i] = { ...s.products[i], active: p.status === 'active' }
   })
   return s
@@ -321,7 +321,6 @@ export const StoreAPI = {
     const s = loadStore()
     if (!s.productTemplates) return
     s.productTemplates = s.productTemplates.filter(x => x.id !== id)
-    s.products = s.products.filter(x => x.templateId !== id)
     saveStore(s)
     api(`/api/product-templates/${id}`, 'DELETE')
       .catch(err => console.error('[store] deleteProductTemplate API error', err))
@@ -377,10 +376,9 @@ export const StoreAPI = {
     api(`/api/products/${id}`, 'DELETE')
       .catch(err => console.error('[store] deleteProduct API error', err))
   },
-  newProduct(templateId?: string): Product {
+  newProduct(): Product {
     return {
       id: genId('prod'),
-      templateId: templateId ?? genId('tmpl'),
       name: '',
       variantAttributes: [],
       spec: '',

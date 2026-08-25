@@ -24,7 +24,7 @@ const PO_COUNTED = `'CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED'`
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
 /** 多单位销售(20260714)：换算逻辑同 analytics/margin/route.ts 的 STOCK_QTY_EXPR，与 lib/inventory.ts toStockQty 一致 */
-const SOLD_STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <> pt."uomId"
+const SOLD_STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <> sp."uomId"
        AND line_uom.factor IS NOT NULL AND anchor_uom.factor IS NOT NULL AND anchor_uom.factor <> 0
        THEN ol."orderedQty" * (line_uom.factor / anchor_uom.factor)
        ELSE ol."orderedQty" END)`
@@ -99,9 +99,8 @@ export async function GET(req: Request) {
            FROM "OrderLine" ol
            JOIN "Order" o ON o.id = ol."orderId"
            LEFT JOIN "Product" sp ON sp.id = ol."productId"
-           LEFT JOIN "ProductTemplate" pt ON pt.id = sp."templateId"
            LEFT JOIN "Uom" line_uom ON line_uom.id = ol."uomId"
-           LEFT JOIN "Uom" anchor_uom ON anchor_uom.id = pt."uomId"
+           LEFT JOIN "Uom" anchor_uom ON anchor_uom.id = sp."uomId"
            WHERE o.status::text IN (${SALES_STATUS_SQL})
              AND o."confirmationDate" >= NOW() - INTERVAL '${TURNOVER_WINDOW_DAYS} days'
            GROUP BY ol."productId"
@@ -126,15 +125,14 @@ export async function GET(req: Request) {
       const scrapRows = (await p.$queryRawUnsafe(
         `SELECT sm."productId" AS product_id, MAX(sm."productName") AS product_name,
                 SUM(ABS(sm.qty))::float AS qty,
-                SUM(ABS(sm.qty) * COALESCE(l."unitCost", p."standardPrice", pt."standardPrice", 0))::float AS amount
+                SUM(ABS(sm.qty) * COALESCE(l."unitCost", p."standardPrice", 0))::float AS amount
          FROM "StockMove" sm
          LEFT JOIN "Lot" l ON l.id = sm."lotId"
          LEFT JOIN "Product" p ON p.id = sm."productId"
-         LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
          WHERE sm."movedAt" >= $1 AND sm."movedAt" < $2
            AND (sm.type = 'SCRAP' OR (sm.type = 'ADJUSTMENT' AND sm."sourceType" = 'STOCK_TAKE' AND sm.qty < 0))
          GROUP BY sm."productId"
-         ORDER BY SUM(ABS(sm.qty) * COALESCE(l."unitCost", p."standardPrice", pt."standardPrice", 0)) DESC
+         ORDER BY SUM(ABS(sm.qty) * COALESCE(l."unitCost", p."standardPrice", 0)) DESC
          LIMIT 10`,
         start, end,
       )) as Array<{ product_id: string; product_name: string; qty: number; amount: number }>

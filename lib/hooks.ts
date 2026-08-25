@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiGet } from './api'
 import { getSession, toRoleSession } from './session'
-import type { Product, Order, PickingWave, Trip, RoleSession, Customer, OdooPricelist, Invoice, PurchaseRecord, StockMove, ProductTemplate, ProductCategory } from './types'
+import type { Product, Order, PickingWave, Trip, RoleSession, Customer, OdooPricelist, Invoice, PurchaseRecord, StockMove, ProductCategory } from './types'
 
 // ─── Role ─────────────────────────────────────────────────────────────────────
 
@@ -54,11 +54,6 @@ function useApiData<T>(path: string, deps: unknown[] = []) {
 export function useProducts() {
   const { data: products, loading, error, refresh } = useApiData<Product>('/api/products')
   return { products, loading, error, refresh }
-}
-
-export function useProductTemplates() {
-  const { data: templates, loading, error, refresh } = useApiData<ProductTemplate>('/api/product-templates')
-  return { templates, loading, error, refresh }
 }
 
 export function useProductCategories() {

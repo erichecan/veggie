@@ -22,9 +22,9 @@ export async function POST(req: Request) {
 
       const product = await prisma.product.findUnique({
         where: { id: productId },
-        select: { id: true, template: { select: { canBePurchased: true } } },
+        select: { id: true, canBePurchased: true },
       })
-      if (!product || !product.template.canBePurchased) {
+      if (!product || !product.canBePurchased) {
         return NextResponse.json({ error: '商品不存在或不可采购' }, { status: 400 })
       }
 

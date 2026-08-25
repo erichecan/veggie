@@ -45,15 +45,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const product = await px.product.findUnique({
         where: { id },
-        select: { id: true, name: true, templateId: true, template: { select: { uomId: true } } },
+        select: { id: true, name: true, uomId: true },
       })
       if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
 
       // 基准单位单一入口(20260823)：只有页头「Unit of Measure」下拉框能改基准单位，
-      // 这里的 isDefault 变成纯派生 —— 等于 template.uomId 的那一行才是基础行；
+      // 这里的 isDefault 变成纯派生 —— 等于 product.uomId 的那一行才是基础行；
       // 服务端据此重新计算，忽略客户端提交的每行 isDefault。
-      // 模板尚未设置销售单位时（历史遗留、从未设置过）维持旧行为：按客户端提交的 isDefault 回填一次。
-      const templateUomId: string | null = product.template?.uomId ?? null
+      // 商品尚未设置销售单位时（历史遗留、从未设置过）维持旧行为：按客户端提交的 isDefault 回填一次。
+      const templateUomId: string | null = product.uomId ?? null
       let normalizedItems: Array<Record<string, unknown>> = items
       if (templateUomId) {
         normalizedItems = items.map((it: { uomId?: string; factor?: unknown }) => {
@@ -81,13 +81,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         })
 
         if (!templateUomId) {
-          // 模板还没设过销售单位（生产历史遗留）：顺带补一次 ——
-          // 老逻辑「顺带修掉模板没设销售单位」的兜底价值还在，只是从
-          // 「每次都覆盖」降级成「仅当前模板还没设过才补一次」。
+          // 商品还没设过销售单位（生产历史遗留）：顺带补一次 ——
+          // 老逻辑「顺带修掉没设销售单位」的兜底价值还在，只是从
+          // 「每次都覆盖」降级成「仅当前商品还没设过才补一次」。
           const baseItem = normalizedItems.find(it => it.isDefault)
           if (baseItem?.uomId) {
-            await txAny.productTemplate.update({
-              where: { id: product.templateId },
+            await txAny.product.update({
+              where: { id: product.id },
               data: { uomId: String(baseItem.uomId) },
             })
           }

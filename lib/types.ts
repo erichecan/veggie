@@ -54,7 +54,8 @@ export interface ProductTemplate {
   description?: string       // 内部备注
   saleDescription?: string   // 销售描述（打印到报价单）
   images: string[]
-  attributeLines: TemplateAttributeLine[]  // 属性配置 → 用于生成变体
+  /** @deprecated 合表重构(20260825)后 Product 表无此列，不再持久化，仅历史 mock 数据兼容读取 */
+  attributeLines?: TemplateAttributeLine[]
   status: ProductStatus
   createdAt: string
   updatedAt?: string
@@ -102,19 +103,16 @@ export interface VariantAttributeValue {
 
 export interface Product {
   id: string
-  templateId: string           // 必须关联到 ProductTemplate
-  name: string                 // = template.name + " " + 属性值组合，或 template.name（单变体）
-  variantAttributes: VariantAttributeValue[]   // 空数组 = 单变体
+  name: string
+  variantAttributes: VariantAttributeValue[]   // 空数组 = 单变体（20260825 合表重构后无变体场景，恒为空）
 
-  // 变体级别可覆盖模板的字段
-  internalRef?: string         // 变体专属 SKU
-  listPrice?: number           // 覆盖模板售价（空=用模板价）
-  standardPrice?: number       // 覆盖模板成本（空=用模板成本）
+  internalRef?: string
+  listPrice?: number
+  standardPrice?: number
   qtyOnHand: number
   active: boolean
 
-  // 兼容旧代码的字段（通过 template 补全显示）
-  categoryId?: string          // 冗余存一份，方便查询
+  categoryId?: string
   customerTaxRate?: number
   commissionPrice?: number
   images: string[]
@@ -130,6 +128,32 @@ export interface Product {
   updatedAt?: string
   externalId?: string
   sequence?: number
+
+  // ↓ 20260825 从 ProductTemplate 并入（合表重构，ProductTemplate 已删）
+  type?: ProductType
+  canBeSold?: boolean
+  canBePurchased?: boolean
+  description?: string
+  saleDescription?: string
+  weight?: number
+  /** 净重（kg），物流/报关/称重用，独立于 weight */
+  netWeight?: number
+  volume?: number
+  isPackaging?: boolean
+  canBeExpensed?: boolean
+  purchaseUomId?: string
+  /** @deprecated 旧字符串字段，逐步迁移到 uomId，仅保留兼容读取 */
+  unitOfMeasure?: string
+  /** @deprecated 旧字符串字段，逐步迁移到 purchaseUomId，仅保留兼容读取 */
+  purchaseUoM?: string
+  tracking?: 'none' | 'lot' | 'serial'
+  websitePublished?: boolean
+  websiteName?: string
+  vendorTaxRate?: number
+  forecastQty?: number
+  createdBy?: string
+  updatedBy?: string
+  barcode?: string
 }
 
 // ─── 商品分类 ─────────────────────────────────────────────────────────────────

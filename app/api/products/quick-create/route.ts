@@ -6,7 +6,6 @@ import { serializeApi } from '@/lib/api-serializer'
 
 /**
  * POST /api/products/quick-create — 采购下单时"选不到商品，当场建一个"的快速建档入口。
- * 系统约定商品必须挂模板（同 /api/products/bulk），这里同一事务里把 ProductTemplate + Product 一起建好。
  * 默认 canBeSold=false / canBePurchased=true：只是先能被采购选中，销售上架前还要去商品库补全销售价/税率/图片。
  */
 export async function POST(req: Request) {
@@ -22,27 +21,16 @@ export async function POST(req: Request) {
         ? Number(data.unitCost)
         : null
 
-      const product = await prisma.$transaction(async tx => {
-        const template = await tx.productTemplate.create({
-          data: {
-            name,
-            categoryId,
-            purchaseUomId,
-            standardPrice: unitCost ?? 0,
-            canBeSold: false,
-            canBePurchased: true,
-            status: 'ACTIVE',
-          },
-        })
-        return tx.product.create({
-          data: {
-            templateId: template.id,
-            name,
-            categoryId,
-            standardPrice: unitCost,
-            status: 'ACTIVE',
-          },
-        })
+      const product = await prisma.product.create({
+        data: {
+          name,
+          categoryId,
+          purchaseUomId,
+          standardPrice: unitCost,
+          canBeSold: false,
+          canBePurchased: true,
+          status: 'ACTIVE',
+        },
       })
 
       await writeLog({

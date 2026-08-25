@@ -147,16 +147,15 @@ async function getPendingReturnCount(): Promise<number> {
 
 /**
  * 报废损耗值：Σ ABS(qty) × 单价，单价取 Lot.unitCost（收货时从 PO 行写入），
- * 缺失（历史批次未回填/未指定批次）则退回 Product.standardPrice，再退回 ProductTemplate.standardPrice，
+ * 缺失（历史批次未回填/未指定批次）则退回 Product.standardPrice，
  * 与 app/api/analytics/procurement/route.ts 的损耗查询同一口径（COALESCE 顺序一致）。
  */
 async function getScrapValueSum(start: Date, end: Date): Promise<number> {
   const rows = (await p.$queryRawUnsafe(
-    `SELECT COALESCE(SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", pt."standardPrice", 0)), 0)::float AS amount
+    `SELECT COALESCE(SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", 0)), 0)::float AS amount
      FROM "StockMove" sm
      LEFT JOIN "Lot" l ON l.id = sm."lotId"
      LEFT JOIN "Product" pr ON pr.id = sm."productId"
-     LEFT JOIN "ProductTemplate" pt ON pt.id = pr."templateId"
      WHERE sm."movedAt" >= $1 AND sm."movedAt" < $2 AND sm.type = 'SCRAP'`,
     start, end,
   )) as Array<{ amount: number }>
@@ -316,14 +315,13 @@ export async function getTopLossProducts(days: number, limit: number): Promise<T
   const rows = (await p.$queryRawUnsafe(
     `SELECT sm."productId" AS product_id, MAX(sm."productName") AS product_name,
             SUM(ABS(sm.qty))::float AS qty,
-            SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", pt."standardPrice", 0))::float AS amount
+            SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", 0))::float AS amount
      FROM "StockMove" sm
      LEFT JOIN "Lot" l ON l.id = sm."lotId"
      LEFT JOIN "Product" pr ON pr.id = sm."productId"
-     LEFT JOIN "ProductTemplate" pt ON pt.id = pr."templateId"
      WHERE sm."movedAt" >= $1 AND sm."movedAt" < $2 AND sm.type = 'SCRAP'
      GROUP BY sm."productId"
-     ORDER BY SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", pt."standardPrice", 0)) DESC
+     ORDER BY SUM(ABS(sm.qty) * COALESCE(l."unitCost", pr."standardPrice", 0)) DESC
      LIMIT $3`,
     start, end, limit,
   )) as Array<{ product_id: string; product_name: string; qty: number; amount: number }>

@@ -79,15 +79,14 @@ async function main() {
     select: { id: true, name: true },
   })
   const pname = `G1 对账测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: pname, type: 'PRODUCT', status: 'ACTIVE', listPrice: 10, standardPrice: 4,
-      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true,
-      products: { create: [{ name: pname, listPrice: 10, standardPrice: 4, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   await prisma.$transaction([
     prisma.stockMove.create({
       data: { productId, productName: pname, type: 'ADJUSTMENT', qty: 1000, movedAt: new Date(), note: 'G1 期初', sourceType: 'TEST_OPENING', sourceRef: 'G1' },

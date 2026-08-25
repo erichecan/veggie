@@ -72,23 +72,22 @@ async function loadProductTypeMap(productIds: string[]): Promise<Map<string, str
   if (productIds.length === 0) return map
   try {
     const rows = await prisma.$queryRaw<Array<{ id: string; type: string | null }>>`
-      SELECT p.id, pt.type
+      SELECT p.id, p.type
       FROM "Product" p
-      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
       WHERE p.id = ANY(${productIds})
     `
     for (const r of rows) {
       map.set(r.id, r.type ?? null)
     }
   } catch (e) {
-    console.warn('[trip-print] ProductTemplate.type not available:', (e as Error).message)
+    console.warn('[trip-print] Product.type not available:', (e as Error).message)
   }
   return map
 }
 
 /**
  * OrderLine.uomId 历史全空，goodsType 判断实际靠这个兜底：
- * 按 productId 找到商品所属 ProductTemplate.uomId，再查其 goodsType。
+ * 按 productId 找到商品的 Product.uomId，再查其 goodsType。
  */
 async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string, GoodsType>> {
   const map = new Map<string, GoodsType>()
@@ -97,8 +96,7 @@ async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string
     const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
       SELECT p.id, u."goodsType"
       FROM "Product" p
-      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
-      LEFT JOIN "Uom" u ON u.id = pt."uomId"
+      LEFT JOIN "Uom" u ON u.id = p."uomId"
       WHERE p.id = ANY(${productIds})
     `
     for (const r of rows) {
@@ -106,7 +104,7 @@ async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string
       map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
     }
   } catch (e) {
-    console.warn('[trip-print] ProductTemplate.uomId goodsType fallback not available:', (e as Error).message)
+    console.warn('[trip-print] Product.uomId goodsType fallback not available:', (e as Error).message)
   }
   return map
 }
@@ -131,8 +129,7 @@ async function loadPackSpecMap(productIds: string[]): Promise<Map<string, { fact
       FROM "ProductSaleUom" psu
       JOIN "Uom" u ON u.id = psu."uomId"
       LEFT JOIN "Product" p ON p.id = psu."productId"
-      LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
-      LEFT JOIN "Uom" base ON base.id = pt."uomId"
+      LEFT JOIN "Uom" base ON base.id = p."uomId"
       WHERE psu."productId" = ANY(${productIds}) AND psu.active = true
     `
     const byProduct = new Map<string, typeof rows>()

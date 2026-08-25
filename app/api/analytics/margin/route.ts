@@ -21,11 +21,11 @@ import { withCachedAuth } from '@/lib/analytics/cache'
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
 /**
- * 多单位销售(20260714)：ol."orderedQty" 按行选用单位计数，非商品"基准单位"(pt."uomId")时
+ * 多单位销售(20260714)：ol."orderedQty" 按行选用单位计数，非商品"基准单位"(p."uomId")时
  * 需要按 Uom.factor 比例换算成基准单位数量再参与 SUM，否则"箱"和"个"直接相加/相乘会失真。
  * 逻辑与 lib/inventory.ts 的 toStockQty 换算公式一致。
  */
-const STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <> pt."uomId"
+const STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <> p."uomId"
        AND line_uom.factor IS NOT NULL AND anchor_uom.factor IS NOT NULL AND anchor_uom.factor <> 0
        THEN ol."orderedQty" * (line_uom.factor / anchor_uom.factor)
        ELSE ol."orderedQty" END)`
@@ -61,7 +61,7 @@ export async function GET(req: Request) {
 
       const params: unknown[] = [start, end]
       const filters: string[] = []
-      if (categoryId) { params.push(categoryId); filters.push(`COALESCE(p."categoryId", pt."categoryId") = $${params.length}`) }
+      if (categoryId) { params.push(categoryId); filters.push(`p."categoryId" = $${params.length}`) }
       if (customerId) { params.push(customerId); filters.push(`o."restaurantId" = $${params.length}`) }
       if (salesUserId) { params.push(salesUserId); filters.push(`o."salesUserId" = $${params.length}`) }
       const extraWhere = filters.length ? ` AND ${filters.join(' AND ')}` : ''
@@ -77,15 +77,14 @@ export async function GET(req: Request) {
                 COUNT(*)::int AS line_count,
                 SUM(${STOCK_QTY_EXPR})::float AS qty,
                 SUM(ol.subtotal)::float AS revenue_ex,
-                SUM(COALESCE(lc.unit_cost, p."standardPrice", pt."standardPrice", 0) * ${STOCK_QTY_EXPR})::float AS cost,
-                SUM(ol.subtotal - COALESCE(lc.unit_cost, p."standardPrice", pt."standardPrice", 0) * ${STOCK_QTY_EXPR})::float AS gross_profit,
+                SUM(COALESCE(lc.unit_cost, p."standardPrice", 0) * ${STOCK_QTY_EXPR})::float AS cost,
+                SUM(ol.subtotal - COALESCE(lc.unit_cost, p."standardPrice", 0) * ${STOCK_QTY_EXPR})::float AS gross_profit,
                 SUM(CASE WHEN lc.unit_cost IS NOT NULL THEN ol.subtotal ELSE 0 END)::float AS costed_amount
          FROM "OrderLine" ol
          JOIN "Order" o ON o.id = ol."orderId"
          LEFT JOIN "Product" p ON p.id = ol."productId"
-         LEFT JOIN "ProductTemplate" pt ON pt.id = p."templateId"
          LEFT JOIN "Uom" line_uom ON line_uom.id = ol."uomId"
-         LEFT JOIN "Uom" anchor_uom ON anchor_uom.id = pt."uomId"
+         LEFT JOIN "Uom" anchor_uom ON anchor_uom.id = p."uomId"
          ${rowDef.extraJoin}
          ${colJoin}
          LEFT JOIN LATERAL (
@@ -98,7 +97,7 @@ export async function GET(req: Request) {
            AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
            ${extraWhere}
          GROUP BY ${rowDef.keyExpr}${colGroupBy}
-         ORDER BY SUM(ol.subtotal - COALESCE(lc.unit_cost, p."standardPrice", pt."standardPrice", 0) * ${STOCK_QTY_EXPR}) DESC`,
+         ORDER BY SUM(ol.subtotal - COALESCE(lc.unit_cost, p."standardPrice", 0) * ${STOCK_QTY_EXPR}) DESC`,
         ...params,
       )) as Array<{
         row_key: string; row_name: string; col_key?: string; col_name?: string

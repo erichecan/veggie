@@ -60,15 +60,14 @@ async function main() {
   // ── ① 采购单确认时自动生成供应商账单（"按采购单自动生成对账单"这一条本已存在，
   //      本轮核实它真的跑通，而不是只看代码里写了）───────────────────────────
   const pname = `G2 结算测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: pname, type: 'PRODUCT', status: 'ACTIVE', listPrice: 20, standardPrice: 5,
-      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true,
-      products: { create: [{ name: pname, listPrice: 20, standardPrice: 5, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
 
   const poRes = await fetch(`${BASE}/api/purchase-orders`, {
     method: 'POST', headers: auth,

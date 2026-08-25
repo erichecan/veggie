@@ -62,16 +62,15 @@ async function main() {
     select: { id: true, name: true },
   })
   const mkProduct = async (label: string, list: number) => {
-    const t = await prisma.productTemplate.create({
+    const p = await prisma.product.create({
       data: {
         name: `X ${label} ${stamp}`, type: 'PRODUCT', status: 'ACTIVE',
         listPrice: list, standardPrice: Math.round(list * 0.8 * 100) / 100,
-        uomId: 'uom_pcs', canBeSold: true,
-        products: { create: [{ name: `X ${label} ${stamp}`, listPrice: list, standardPrice: Math.round(list * 0.8 * 100) / 100, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+        uomId: 'uom_pcs', canBeSold: true, qtyOnHand: 0, active: true,
       },
-      select: { products: { select: { id: true }, take: 1 } },
+      select: { id: true },
     })
-    return t.products[0]!.id
+    return p.id
   }
   const pA = await mkProduct('商品甲', 22.5)
 

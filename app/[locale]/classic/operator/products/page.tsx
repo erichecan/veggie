@@ -132,7 +132,7 @@ export default function ClassicProductsPage() {
       const res = await apiGet<{
         data: ProductTemplate[]; items: ProductTemplate[]; total: number; page: number; pageSize: number
         totalPages: number; alertCounts: { negative: number; low: number }
-      }>(`/api/product-templates?${params}`)
+      }>(`/api/products?${params}`)
       const source = res.data ?? res.items ?? []
       setTemplates(source.map(t => {
         const uom = (t as unknown as { uom?: { name: string; nameZh?: string | null } }).uom
@@ -157,7 +157,7 @@ export default function ClassicProductsPage() {
 
   useEffect(() => {
     apiGet<ProductCategory[]>('/api/product-categories').then(setCategories).catch(() => {})
-    apiGet<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>('/api/product-templates/filter-options')
+    apiGet<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>('/api/products/filter-options')
       .then(setMultiSelectOptions).catch(() => {})
     loadPage(1, '')
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,7 +181,7 @@ export default function ClassicProductsPage() {
   // 排序只在当前页内进行(与订单/报价单列表页一致的服务端分页限制：排序、筛选不跨页)
   const filteredTemplates = useMemo(() => sortRows(templates, sortKey, sortDir), [templates, sortKey, sortDir])
 
-  // ─── 单元格保存：调 PUT /api/product-templates/[id]，并刷新本地 row ──
+  // ─── 单元格保存：调 PUT /api/products/[id]，并刷新本地 row ──
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
     const t = row as unknown as ProductTemplate
     let payloadVal: unknown = newValue
@@ -202,7 +202,7 @@ export default function ClassicProductsPage() {
       payloadVal = n
     }
     try {
-      await apiPut(`/api/product-templates/${t.id}`, { [key]: payloadVal })
+      await apiPut(`/api/products/${t.id}`, { [key]: payloadVal })
       setTemplates(prev => prev.map(row => row.id === t.id ? { ...row, [key]: payloadVal } as ProductTemplate : row))
       toast.success(isEn ? 'Saved' : '已保存')
     } catch (e) {

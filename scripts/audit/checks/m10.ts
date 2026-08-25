@@ -107,7 +107,7 @@ defineCheck({
       批次: hasModel('Lot'),
       保质期: modelField('Lot', 'bestBefore').length > 0,
       图片: modelField('Product', 'images').length > 0,
-      条码: modelField('ProductTemplate', 'barcode').length > 0,
+      条码: modelField('Product', 'barcode').length > 0,
       产地溯源: grepMatrix(['origin', '产地', 'provenance'], 'prisma/schema.prisma')['产地'] > 0,
     }
     evidence.push(`能力矩阵: ${Object.entries(caps).map(([k, v]) => `${k}=${v ? '✓' : '✗'}`).join(' ')}`)
@@ -117,9 +117,9 @@ defineCheck({
     ])
     evidence.push(`实际数据：分类 ${cats} 个 / 计量单位 ${uoms} 个 / 商品 ${prods} 个`)
 
-    const tmplTotal = await prisma.productTemplate.count()
-    const withBarcode = await prisma.productTemplate.count({ where: { barcode: { not: null } } })
-    evidence.push(`带条码的商品模板: ${withBarcode}/${tmplTotal}（条码在 ProductTemplate 上，非变体级）`)
+    const tmplTotal = await prisma.product.count()
+    const withBarcode = await prisma.product.count({ where: { barcode: { not: null } } })
+    evidence.push(`带条码的商品: ${withBarcode}/${tmplTotal}`)
 
     const missing = Object.entries(caps).filter(([, v]) => !v).map(([k]) => k)
     return missing.length === 0

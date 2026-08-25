@@ -158,57 +158,7 @@ async function main() {
   }
   const csvProducts = skipBulkMaster ? [] : loadCsvProducts()
 
-  // 1. ProductTemplate (one per CSV row — CSV is product.product = variant level,
-  //    but each product in this dataset is a single-variant template)
-  for (let i = 0; i < csvProducts.length; i += BATCH) {
-    const batch = csvProducts.slice(i, i + BATCH)
-    await Promise.all(batch.map(t =>
-      (prisma.productTemplate.upsert as any)({
-        where: { id: t.tmplId },
-        update: {
-          name: t.name,
-          listPrice: t.listPrice,
-          standardPrice: t.standardPrice,
-          customerTaxRate: t.customerTaxRate,
-          vendorTaxRate: t.vendorTaxRate,
-          forecastQty: t.forecastQty,
-          commissionPrice: t.commissionPrice,
-          weight: t.weight,
-          saleDescription: t.saleDescription,
-          sequence: t.sequence,
-          updatedBy: t.updatedBy,
-        },
-        create: {
-          id: t.tmplId,
-          name: t.name,
-          internalRef: t.internalRef,
-          categoryId: t.categoryId,
-          listPrice: t.listPrice,
-          standardPrice: t.standardPrice,
-          customerTaxRate: t.customerTaxRate,
-          vendorTaxRate: t.vendorTaxRate,
-          forecastQty: t.forecastQty,
-          type: t.type,
-          canBeSold: true,
-          canBePurchased: true,
-          saleDescription: t.saleDescription,
-          images: [],
-          attributeLines: [],
-          status: 'ACTIVE',
-          externalId: t.externalId,
-          sequence: t.sequence,
-          weight: t.weight,
-          commissionPrice: t.commissionPrice,
-          createdBy: t.createdBy,
-          updatedBy: t.updatedBy,
-        },
-      })
-    ))
-    if (i % 500 === 0 && i > 0) console.log(`  模板: ${i}/${csvProducts.length}`)
-  }
-  console.log(`✅ 商品模板: ${csvProducts.length} 条`)
-
-  // 2. Product variants (one-to-one with templates for single-variant products)
+  // Product（模板/变体已合并为一张表：一次 upsert 写全字段）
   for (let i = 0; i < csvProducts.length; i += BATCH) {
     const batch = csvProducts.slice(i, i + BATCH)
     await Promise.all(batch.map(p =>
@@ -220,32 +170,45 @@ async function main() {
           standardPrice: p.standardPrice,
           qtyOnHand: p.qtyOnHand,
           customerTaxRate: p.customerTaxRate,
+          vendorTaxRate: p.vendorTaxRate,
+          forecastQty: p.forecastQty,
           commissionPrice: p.commissionPrice,
+          weight: p.weight,
+          saleDescription: p.saleDescription,
           sequence: p.sequence,
+          updatedBy: p.updatedBy,
         },
         create: {
           id: p.prodId,
-          templateId: p.tmplId,
           name: p.name,
           variantAttributes: [],
           internalRef: p.internalRef,
+          categoryId: p.categoryId,
           listPrice: p.listPrice,
           standardPrice: p.standardPrice,
           qtyOnHand: p.qtyOnHand,
           active: true,
-          categoryId: p.categoryId,
           customerTaxRate: p.customerTaxRate,
-          commissionPrice: p.commissionPrice,
+          vendorTaxRate: p.vendorTaxRate,
+          forecastQty: p.forecastQty,
+          type: p.type,
+          canBeSold: true,
+          canBePurchased: true,
+          saleDescription: p.saleDescription,
           images: [],
           status: 'ACTIVE',
           externalId: p.externalId,
           sequence: p.sequence,
+          weight: p.weight,
+          commissionPrice: p.commissionPrice,
+          createdBy: p.createdBy,
+          updatedBy: p.updatedBy,
         },
       })
     ))
-    if (i % 500 === 0 && i > 0) console.log(`  商品变体: ${i}/${csvProducts.length}`)
+    if (i % 500 === 0 && i > 0) console.log(`  商品: ${i}/${csvProducts.length}`)
   }
-  console.log(`✅ 商品变体: ${csvProducts.length} 条`)
+  console.log(`✅ 商品: ${csvProducts.length} 条`)
 
   // Pricelists
   for (const pl of SEED_PRICELISTS) {

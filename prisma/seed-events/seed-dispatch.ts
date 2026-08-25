@@ -98,19 +98,19 @@ async function cleanup(): Promise<void> {
 
 async function loadProducts(): Promise<Prod[]> {
   const rows = await prisma.product.findMany({
-    where: { active: true, status: 'ACTIVE', template: { type: 'PRODUCT', canBeSold: true } },
+    where: { active: true, status: 'ACTIVE', type: 'PRODUCT', canBeSold: true },
     select: {
       id: true, name: true, listPrice: true, price: true,
-      template: { select: { listPrice: true, uomId: true, uom: { select: { name: true, nameZh: true } } } },
+      uomId: true, uom: { select: { name: true, nameZh: true } },
     },
     take: 200,
   })
   return rows.map(p => {
-    const sell = Number(p.listPrice ?? p.price ?? p.template?.listPrice ?? 0) || round2(3 + Math.random() * 10)
+    const sell = Number(p.listPrice ?? p.price ?? 0) || round2(3 + Math.random() * 10)
     return {
       id: p.id, name: p.name, sell: round2(sell),
-      uomId: p.template?.uomId ?? null,
-      uomName: p.template?.uom?.nameZh ?? p.template?.uom?.name ?? '份',
+      uomId: p.uomId ?? null,
+      uomName: p.uom?.nameZh ?? p.uom?.name ?? '份',
     }
   })
 }

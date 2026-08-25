@@ -87,15 +87,14 @@ async function main() {
     select: { id: true, name: true },
   })
   const pname = `C4 测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const product = await prisma.product.create({
     data: {
       name: pname, type: 'PRODUCT', status: 'ACTIVE', listPrice: 10, standardPrice: 4,
-      uomId: 'uom_pcs', canBeSold: true,
-      products: { create: [{ name: pname, listPrice: 10, standardPrice: 4, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      uomId: 'uom_pcs', canBeSold: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const productId = tmpl.products[0]!.id
+  const productId = product.id
   // 库存连流水一起造 —— 直接塞 qtyOnHand 会破坏 db:validate 的头号不变量
   await ensureOpeningStock(prisma, { target: 500, backdate: new Date('2026-08-05T00:00:00Z'), productIds: [productId] })
 

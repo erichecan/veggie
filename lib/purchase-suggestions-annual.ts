@@ -37,7 +37,7 @@ export async function generateAnnualDryGoodsPlan(): Promise<AnnualPlanRow[]> {
     select: {
       id: true,
       name: true,
-      template: { select: { uom: { select: { name: true } } } },
+      uom: { select: { name: true } },
       supplierInfos: {
         orderBy: { sequence: 'asc' },
         take: 1,
@@ -100,7 +100,7 @@ export async function generateAnnualDryGoodsPlan(): Promise<AnnualPlanRow[]> {
       priorYearQty: Number(priorQty.toFixed(2)),
       growthPct,
       suggestedQty,
-      uomName: p.template?.uom?.name ?? null,
+      uomName: p.uom?.name ?? null,
       supplierId: bestSupplier?.supplier.id ?? null,
       supplierName: bestSupplier?.supplier.name ?? null,
       estimatedUnitCost,

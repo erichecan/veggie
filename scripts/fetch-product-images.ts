@@ -152,14 +152,14 @@ async function main() {
   // Step 0：清空旧图片（续跑模式跳过）
   if (!RESUME_MODE) {
     process.stdout.write('Step 0: 清空旧图片... ')
-    await prisma.productTemplate.updateMany({ data: { images: [] } })
+    await prisma.product.updateMany({ data: { images: [] } })
     console.log('✅\n')
   } else {
     console.log('Step 0: 续跑模式，跳过清空\n')
   }
 
   // Step 1：读取商品（续跑模式只取没有图片的商品）
-  const templates = await prisma.productTemplate.findMany({
+  const templates = await prisma.product.findMany({
     where: RESUME_MODE ? { images: { equals: [] } } : undefined,
     select: { id: true, name: true, categoryId: true },
   })
@@ -216,7 +216,7 @@ async function main() {
       // 批量写入
       const BATCH = 50
       for (let b = 0; b < ids.length; b += BATCH) {
-        await prisma.productTemplate.updateMany({
+        await prisma.product.updateMany({
           where: { id: { in: ids.slice(b, b + BATCH) } },
           data: { images: [url] },
         })
@@ -262,7 +262,7 @@ async function main() {
     if (url) {
       const BATCH = 50
       for (let b = 0; b < ids.length; b += BATCH) {
-        await prisma.productTemplate.updateMany({
+        await prisma.product.updateMany({
           where: { id: { in: ids.slice(b, b + BATCH) } },
           data: { images: [url] },
         })

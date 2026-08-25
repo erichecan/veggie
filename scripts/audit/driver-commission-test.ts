@@ -89,25 +89,23 @@ async function main() {
 
   // 商品甲：按基准单位（件）卖，件提成 €0.50
   const nameA = `H3 提成商品甲 ${stamp}`
-  const tA = await prisma.productTemplate.create({
+  const tA = await prisma.product.create({
     data: { name: nameA, type: 'PRODUCT', status: 'ACTIVE', listPrice: 10, standardPrice: 4,
-            uomId: 'uom_pcs', canBeSold: true, commissionPrice: 0.5,
-            products: { create: [{ name: nameA, listPrice: 10, standardPrice: 4, qtyOnHand: 0, active: true, status: 'ACTIVE', commissionPrice: 0.5 }] } },
-    select: { products: { select: { id: true }, take: 1 } },
+            uomId: 'uom_pcs', canBeSold: true, commissionPrice: 0.5, qtyOnHand: 0, active: true },
+    select: { id: true },
   })
-  const prodA = tA.products[0]!.id
+  const prodA = tA.id
 
   const caseUom = await prisma.uom.findFirst({ where: { id: 'uom_case' }, select: { id: true, factor: true } })
   const anchor = await prisma.uom.findFirst({ where: { id: 'uom_pcs' }, select: { factor: true } })
 
   const nameB = `H3 提成商品乙 ${stamp}`
-  const tB = await prisma.productTemplate.create({
+  const tB = await prisma.product.create({
     data: { name: nameB, type: 'PRODUCT', status: 'ACTIVE', listPrice: 30, standardPrice: 12,
-            uomId: 'uom_pcs', canBeSold: true, commissionPrice: 1.2,
-            products: { create: [{ name: nameB, listPrice: 30, standardPrice: 12, qtyOnHand: 0, active: true, status: 'ACTIVE', commissionPrice: 1.2 }] } },
-    select: { products: { select: { id: true }, take: 1 } },
+            uomId: 'uom_pcs', canBeSold: true, commissionPrice: 1.2, qtyOnHand: 0, active: true },
+    select: { id: true },
   })
-  const prodB = tB.products[0]!.id
+  const prodB = tB.id
 
   // ⛔ 库存必须**连流水一起**造。直接塞 qtyOnHand 会让 db:validate 的头号不变量
   // （qtyOnHand == ΣStockMove）当场破掉 —— 那不是产品缺陷，是夹具自己不守恒，

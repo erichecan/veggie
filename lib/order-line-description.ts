@@ -6,11 +6,8 @@
  * 先加的行有值、后加的行空白，而且错误被永久固化进历史数据（2026-08-18 客户实测反馈：
  * 同一张报价单里 4 行 Tomato Beef CASE，只有创建时那行有 Description）。
  *
- * 兜底成商品名是有意为之：生产库 5477 个商品里 3970 个（72.5%）spec 为空，
- * 不兜底的话这一列对绝大多数商品都是空白。
- *
- * 用 `||` 而不是 `??`：spec 存成空串的商品同样要兜底，`??` 只挡 null/undefined。
+ * 商品没有 spec 就留空，不兜底成商品名。
  */
 export function lineDescription(p: { name: string; spec?: string | null }): string {
-  return p.spec?.trim() || p.name
+  return p.spec?.trim() || ''
 }

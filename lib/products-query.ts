@@ -28,7 +28,7 @@ const NUMERIC_TEXT_FIELDS = new Set([
 ])
 
 async function idsMatchingNumericSubstring(field: string, needle: string): Promise<string[]> {
-  const rows = await prisma.productTemplate.findMany({
+  const rows = await prisma.product.findMany({
     select: { id: true, [field]: true },
   }) as unknown as Array<{ id: string; [key: string]: unknown }>
   const q = needle.toLowerCase()
@@ -53,9 +53,9 @@ export async function productStockAlertCounts(): Promise<{ negative: number; low
     return stockAlertCountsCache.value
   }
   const [counts] = await prisma.$queryRawUnsafe<{ negative: number; low: number }[]>(
-    `SELECT count(*) FILTER (WHERE s < 0)::int AS negative,
-            count(*) FILTER (WHERE s >= 0 AND s < $1)::int AS low
-     FROM (SELECT "templateId", sum("qtyOnHand") AS s FROM "Product" GROUP BY "templateId") t`,
+    `SELECT count(*) FILTER (WHERE "qtyOnHand" < 0)::int AS negative,
+            count(*) FILTER (WHERE "qtyOnHand" >= 0 AND "qtyOnHand" < $1)::int AS low
+     FROM "Product"`,
     LOW_STOCK_THRESHOLD,
   )
   const value = { negative: counts?.negative ?? 0, low: counts?.low ?? 0 }
@@ -143,18 +143,9 @@ export async function buildProductTemplatesWhere(
   }
 
   // ── 库存告警(negative/low) ────────────────────────────────────────────
-  // 在手库存是 Product 表按 templateId 聚合出来的，不是 ProductTemplate 上的列，
-  // 所以只能先查出符合条件的 templateId 再收窄，没法写成 where 条件。
   const stockAlert = searchParams.get('stockAlert')
-  if (stockAlert === 'negative' || stockAlert === 'low') {
-    const cond = stockAlert === 'negative' ? 's < 0' : `s >= 0 AND s < $1`
-    const rows = await prisma.$queryRawUnsafe<{ templateId: string }[]>(
-      `SELECT "templateId" FROM (SELECT "templateId", sum("qtyOnHand") AS s FROM "Product" GROUP BY "templateId") t
-       WHERE ${cond}`,
-      ...(stockAlert === 'low' ? [LOW_STOCK_THRESHOLD] : []),
-    )
-    restrictToIds = intersect(restrictToIds, rows.map(r => r.templateId))
-  }
+  if (stockAlert === 'negative') where.qtyOnHand = { lt: 0 }
+  else if (stockAlert === 'low') where.qtyOnHand = { gte: 0, lt: LOW_STOCK_THRESHOLD }
 
   if (restrictToIds !== null) where.id = { in: [...restrictToIds] }
 
@@ -168,18 +159,3 @@ export const PRODUCT_TEMPLATE_ORDER_BY = [
   { createdAt: 'desc' as const },
 ]
 
-/**
- * 给一批模板补上实时在手库存（Product 表按 templateId 聚合）。
- * 列表页与导出都要这一列，且都只对**本次要返回的那批** id 聚合，不做全表。
- */
-export async function attachQtyOnHand(
-  rows: Array<Record<string, unknown>>,
-): Promise<Array<Record<string, unknown>>> {
-  const ids = rows.map(r => r.id as string)
-  const qtyRows = ids.length > 0
-    ? await prisma.product.groupBy({ by: ['templateId'], where: { templateId: { in: ids } }, _sum: { qtyOnHand: true } })
-    : []
-  const qtyMap = new Map(qtyRows.map(r => [r.templateId, Number(r._sum.qtyOnHand ?? 0)]))
-  for (const r of rows) r.qtyOnHand = qtyMap.get(r.id as string) ?? 0
-  return rows
-}

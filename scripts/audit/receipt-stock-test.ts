@@ -233,15 +233,14 @@ async function main() {
   // 确认收货是批次与成本现在的唯一入口，这条链必须有回归测试守着。
   const stamp = Date.now()
   const dedicatedName = `E5x 批次成本测试商品 ${stamp}`
-  const tmpl = await prisma.productTemplate.create({
+  const dedicatedProduct = await prisma.product.create({
     data: {
       name: dedicatedName, type: 'PRODUCT', status: 'ACTIVE', listPrice: 30, standardPrice: 10,
-      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true,
-      products: { create: [{ name: dedicatedName, listPrice: 30, standardPrice: 10, qtyOnHand: 0, active: true, status: 'ACTIVE' }] },
+      uomId: 'uom_pcs', canBeSold: true, canBePurchased: true, qtyOnHand: 0, active: true,
     },
-    select: { products: { select: { id: true }, take: 1 } },
+    select: { id: true },
   })
-  const dpid = tmpl.products[0]!.id
+  const dpid = dedicatedProduct.id
   // 期初 100 件 @ €10，连流水一起写（夹具自身必须守恒）
   await prisma.$transaction([
     prisma.stockMove.create({

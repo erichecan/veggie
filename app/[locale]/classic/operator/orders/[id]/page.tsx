@@ -293,6 +293,16 @@ export default function SalesOrderDetailPage() {
     setEditLines(prev => prev.filter((_, i) => i !== idx))
   }
 
+  function reorderLine(from: number, to: number) {
+    setEditLines(prev => {
+      if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
   function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec' | 'note', value: number | string) {
     setEditLines(prev => {
       const next = [...prev]
@@ -839,6 +849,7 @@ export default function SalesOrderDetailPage() {
               lines={displayLines}
               editing={editing}
               onDeleteLine={(_lineId, i) => deleteLine(i)}
+              onReorder={reorderLine}
               emptyColSpan={16}
               products={allProducts}
               onPickProduct={selectProductIntoLine}
@@ -870,7 +881,7 @@ export default function SalesOrderDetailPage() {
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Invoiced<br/>Quantity</div></th>
                 </tr>
               )}
-              renderRow={(l, i, { inputCls, deleteButton, focusSearch, firstFieldRef, productCell }) => {
+              renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef, productCell }) => {
                 const fc = forecastMap.get(l.productId)
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
@@ -878,7 +889,12 @@ export default function SalesOrderDetailPage() {
                 return (
                   <>
                     <td className="px-2 py-2">
-                      {deleteButton ?? <span className="text-gray-300">▶</span>}
+                      {editing ? (
+                        <div className="flex items-center gap-1.5">
+                          {dragHandle}
+                          {deleteButton}
+                        </div>
+                      ) : <span className="text-gray-300 select-none" title={isEn ? 'Enable editing to drag and reorder' : '编辑后可拖动调整顺序'}>☰</span>}
                     </td>
                     <td className="px-2 py-2 text-gray-700">
                       {i + 1}

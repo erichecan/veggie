@@ -235,9 +235,9 @@ defineCheck({
   prev: 'deferred',
   async run() {
     const evidence: string[] = []
-    const tmplTotal = await prisma.productTemplate.count()
-    const withBarcode = await prisma.productTemplate.count({ where: { barcode: { not: null } } })
-    evidence.push(`条码覆盖率: ${withBarcode}/${tmplTotal} 商品模板有条码`)
+    const tmplTotal = await prisma.product.count()
+    const withBarcode = await prisma.product.count({ where: { barcode: { not: null } } })
+    evidence.push(`条码覆盖率: ${withBarcode}/${tmplTotal} 商品有条码`)
     const gen = grepMatrix(['jsbarcode', 'barcode'], 'app lib components')
     evidence.push(`条码相关能力: ${JSON.stringify(gen)}（已能生成/打印条码）`)
     return {
