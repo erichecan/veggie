@@ -108,7 +108,18 @@
 - 产出：生产库依次执行 T4 的 remap（先 dry-run 核实真实规模是否仍是本地库的 621/2651/49）→ T1/T3/T5 的 schema 迁移 → 部署新代码。
 - 验收：生产验证 DEV-PLAN 第五节清单关键项（商品改名同步、下单选品、库存记账）。
 - 依赖：T10 全部通过。**此步骤涉及生产数据不可逆变更（DROP TABLE），执行前必须向用户汇报本地验证结果并等待明确同意才能对生产库操作**，不属于"能自己判断的自己解决并继续"范围。
-- 状态：⬜
+- 状态：✅ 已完成（20260825，用户明确同意后执行）——
+
+  **执行前发现并规避的一个关键风险**：`deploy-droplet.yml` push 触发后自动跑 `prisma migrate deploy`，会把当时的 3 个迁移文件（加列/改视图/删表）一次性顺序跑完，**中间没有窗口跑 T3 的字段回填脚本**——20 个新字段会被加成空值，紧接着源数据表（ProductTemplate）就被删掉，回填数据永久丢失。已把回填脚本原样落成一个新的迁移文件（`20260825000004_backfill_product_template_fields`，与原 TS 脚本的 SQL 逐字节比对完全一致），插在"加列"和"删表"之间，原本的 000004/000005 顺延成 000005/000006；本地库 `_prisma_migrations` 记录同步改名重建，`migrate status` 确认无残留/无 drift。
+
+  **执行前的三层验证**：
+  1. 用 `pg_dump --schema-only` + `_prisma_migrations` 表数据从生产库拉出真实当前状态，在本地一次性 Postgres 17 容器里精确复现生产的 schema + 迁移记录（当时卡在 `20260825000002`），插入一条模拟数据，完整跑一遍 4 个新迁移的 `prisma migrate deploy`，确认：ProductTemplate 表正确删除、Product.templateId 列正确删除、两个报表视图查询正常、**回填的 20 个字段数值正确从模板抄到了 Product**（含 COALESCE 兜底字段的两种分支都验证过）。
+  2. `OdooPricelistItem` 621 条 `applyOn='product'` 松引用：先在生产库跑只读 SQL 核实规模（621/2651/49，0 孤儿），与本地库完全一致；再用**当时仍部署着旧 schema 的 migrator 镜像**（挂载脚本到 `/tmp`，不用等新镜像构建）跑通 T4 remap 脚本的 dry-run + `--apply`，跑完再查一遍确认 621 条全部改指向 `Product.id`。
+  3. 推送前额外在生产库跑了一次 T2 的字段分歧报表（只读）：`internalRef`/`categoryId`/`customerTaxRate`/`images` 这几个迁移会读的字段分歧条数与本地库一致（11/1/1/0）；`name`/`status`/`sequence` 在生产上比本地库多几条分歧（属正常，生产是持续在用的活系统），但迁移的回填 SQL 本来就不写这三个字段，不受影响。
+
+  **实际部署**：`git commit` + `git push` 触发 `deploy-droplet.yml`（run 32852413309），镜像构建→推送→SSH 部署→`prisma migrate deploy`→健康检查全部成功（约 66 秒完成 4 个迁移）。部署后核实：`_prisma_migrations` 显示 4 个迁移按正确顺序落地；`ProductTemplate` 表已不存在、`Product.templateId` 列已不存在；5478 个 Product，1739 个已有 `uomId`、5475 个 `canBeSold=true`（抽查 Broccoli 系列字段回填正确）；两个报表视图查询正常（133.7 万 / 50 行）；`OdooPricelistItem` 的 621 条引用生产库上也已在 remap 步骤里改好；`/api/health` 返回 `db:ok`；未登录访问 `/api/products`、`/api/products/filter-options` 正确返回 401（不是 500）；应用容器 `docker logs` 近 10 分钟内无 error/exception/fatal、无 5xx。
+
+  **未做的**：没有用真实生产账号登录做端到端点击验证（没有生产密码，且不打算为测试重置真实用户密码）——用本地库（同一份代码+数据结构）做过的 Playwright 实测 + 生产侧的数据库直查/日志检查/健康检查作为替代证据链。下单选品、库存记账等更深的业务流程验证仍建议后续找时间用真实业务场景走一遍。
 
 ---
 
