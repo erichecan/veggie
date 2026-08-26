@@ -21,10 +21,10 @@
 - [x] C1. `lib/server-pricing.ts` 的 `scaleAuthoritativePrice` 改成直接调用 `lib/sale-uom.ts:priceOf()`，不再自己维护一份只算 `basePrice×factor`、完全没管 `priceDiscountPct`/`priceSurcharge` 的公式
 - [x] C2. build 通过 + 本地 dev 库端到端验证：造一个 FORMULA 模式(factor=0.5, surcharge=€2)的可售单位，真实 POST /api/orders 提交单价 €12.00（=20×0.5+2，公式完整值）——修复前权威价会算成 €10.00（漏了 surcharge）导致提交价被判"超出容差"强制打回；修复后 `authoritativePrice: 12, priceMatched: true, pricingWarnings: []`，验证通过。测试数据已清理
 
-## 模块 D：Pricelist Items 页面显示实际售价
+## 模块 D：Pricelist Items 页面显示实际售价 ✅ 20260826 完成
 
-- [ ] D1. 导出/复用 `lib/pricing-engine.ts` 的 `computeItemPrice`，在价格表明细表格 formula 行也算出并显示"预计售价 ≈ €X.XX"
-- [ ] D2. build 通过 + 本地浏览器实测：价格表详情页能看到每一行的预计售价
+- [x] D1. 导出 `lib/pricing-engine.ts` 的 `computeItemPrice`；`pricelists/[id]/page.tsx` 在渲染每一行时调用它算出 `estimatedPrice`，formula 行显示"≈ €X.XX (公式文字)"，拿不到商品(如已归档)时优雅降级只显示公式文字
+- [x] D2. build 通过 + 本地浏览器实测（Playwright，Wholesale Pricelist 56）：formula 行正确显示"≈ €19.50 (0.0% discount and -1.0 surcharge)"，跟 Public Price(20.50)+surcharge(-1.0) 手算对上；商品解析不到的一行（Applicable On 显示"—"）正确降级只显示公式文字、无崩溃
 
 ## 模块 E：账期灵活化 + 会计延期审批（最大，最后做）
 

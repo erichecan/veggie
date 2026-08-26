@@ -10,7 +10,7 @@ import type {
   PricelistApplyOn, PricelistComputeType, PricelistFormulaBase,
   Product, ProductCategory,
 } from '@/lib/types'
-import { resolvePrice } from '@/lib/pricing-engine'
+import { resolvePrice, computeItemPrice } from '@/lib/pricing-engine'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ActionLogPanel from '@/components/shared/action-log-panel'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
@@ -660,6 +660,12 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     const scopedProduct = products.find(p => p.id === scopedProductId(item))
                     const cost = scopedProduct?.standardPrice
                     const publicPrice = scopedProduct?.listPrice
+                    // formula 模式的条目此前只显示"X% discount and Y surcharge"公式文字，
+                    // 看不出实际卖多少钱——这里用跟真实下单同一份 computeItemPrice 算出来，
+                    // 拿不到商品(比如已归档/删除)时就不算，交给下面公式文字兜底。
+                    const estimatedPrice = scopedProduct
+                      ? computeItemPrice(item, scopedProduct, publicPrice ?? 0, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
+                      : undefined
                     return (
                       <ItemRow
                         key={item.id}
@@ -669,6 +675,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         uoms={uoms}
                         cost={cost}
                         publicPrice={publicPrice}
+                        estimatedPrice={estimatedPrice}
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
@@ -793,13 +800,14 @@ function ExternalLinkIcon() {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, products, categories, uoms, cost, publicPrice, showDelete, onEdit, onDelete, isEn }: {
+function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, showDelete, onEdit, onDelete, isEn }: {
   item: OdooPricelistItem
   products: Product[]
   categories: ProductCategory[]
   uoms: Uom[]
   cost: number | undefined
   publicPrice: number | undefined
+  estimatedPrice: number | undefined
   showDelete: boolean
   onEdit: () => void
   onDelete: () => void
@@ -808,10 +816,13 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, showDele
   const [hover, setHover] = useState(false)
   const scopedUom = uomScopeLabel(item, uoms, isEn)
 
+  const formulaText = `${(item.priceDiscount ?? 0).toFixed(1)} % discount and ${(item.priceSurcharge ?? 0).toFixed(1)} surcharge`
   const priceText = item.computeType === 'fixed'
     ? `€${(item.fixedPrice ?? 0).toFixed(2)}`
     : item.computeType === 'formula'
-      ? `${(item.priceDiscount ?? 0).toFixed(1)} % discount and ${(item.priceSurcharge ?? 0).toFixed(1)} surcharge`
+      ? (estimatedPrice != null
+          ? `≈ €${estimatedPrice.toFixed(2)} (${formulaText})`
+          : formulaText)
       : ''
 
   const discountText = item.computeType === 'percentage' ? `${item.percentDiscount ?? 0}%` : ''

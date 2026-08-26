@@ -158,8 +158,13 @@ function matchesItem(item: OdooPricelistItem, product: Product, uomId?: string):
 /**
  * 根据条目计算价格
  * 返回 null 表示无法计算（如 pricelist formulaBase 但找不到目标表）
+ *
+ * 导出给价格表管理页用：formula 模式的条目只展示"X% discount and Y surcharge"公式
+ * 文字，看不出实际卖多少钱，运营得自己拿 Cost/Public Price 手算。必须复用这同一份
+ * 计算逻辑，不能在页面上照公式另抄一份——否则会重蹈 scaleAuthoritativePrice 那种
+ * "两份实现算出两个数字"的覆辙（20260826）。
  */
-function computeItemPrice(
+export function computeItemPrice(
   item: OdooPricelistItem,
   product: Product,
   basePrice: number,
