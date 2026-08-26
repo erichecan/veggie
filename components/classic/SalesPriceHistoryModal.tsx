@@ -13,6 +13,7 @@ interface SalesPriceHistoryEntry {
   orderNumber: string
   quantity: number
   unitPrice: number
+  uom: string | null
 }
 
 interface SalesPriceHistoryResponse {
@@ -100,7 +101,7 @@ function SalesPriceHistoryModal({
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3"
+        className="bg-white rounded-xl shadow-xl w-full max-w-xl p-5 space-y-3"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -120,7 +121,9 @@ function SalesPriceHistoryModal({
               <thead className="sticky top-0 bg-white">
                 <tr className="text-gray-500 border-b border-gray-200">
                   <th className="text-left font-medium py-2 px-2">{isEn ? 'Date' : '日期'}</th>
+                  <th className="text-left font-medium py-2 px-2">{isEn ? 'Order No.' : '单号'}</th>
                   <th className="text-right font-medium py-2 px-2">{isEn ? 'Quantity' : '数量'}</th>
+                  <th className="text-left font-medium py-2 px-2">{isEn ? 'Unit' : '单位'}</th>
                   <th className="text-right font-medium py-2 px-2">{isEn ? 'Unit Price' : '单价'}</th>
                   {onSelectPrice && <th className="py-2 px-2"></th>}
                 </tr>
@@ -131,7 +134,9 @@ function SalesPriceHistoryModal({
                     <td className="py-1.5 px-2 text-gray-500">
                       {new Date(h.date).toLocaleString('en-CA', { hour12: false })}
                     </td>
+                    <td className="py-1.5 px-2 text-gray-500">{h.orderNumber}</td>
                     <td className="py-1.5 px-2 text-right">{h.quantity.toFixed(3)}</td>
+                    <td className="py-1.5 px-2 text-gray-500">{h.uom ?? '—'}</td>
                     <td className="py-1.5 px-2 text-right font-medium">{h.unitPrice.toFixed(2)}</td>
                     {onSelectPrice && (
                       <td className="py-1.5 px-2 text-right">

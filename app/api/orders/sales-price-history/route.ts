@@ -53,6 +53,7 @@ export async function GET(req: Request) {
         select: {
           orderedQty: true,
           unitPrice: true,
+          uomName: true,
           order: { select: { id: true, code: true, createdAt: true } },
         },
       })
@@ -63,6 +64,9 @@ export async function GET(req: Request) {
         orderNumber: displayOrderCode(l.order),
         quantity: toNum(l.orderedQty),
         unitPrice: toNum(l.unitPrice),
+        // 同一商品配了多个可售单位时，单价差得很大——不带单位这个历史价没法看懂
+        // 对不对得上，客户 20260826 报过。
+        uom: l.uomName || null,
       }))
 
       return NextResponse.json({ history })
