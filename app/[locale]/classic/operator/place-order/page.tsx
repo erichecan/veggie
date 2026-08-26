@@ -34,6 +34,8 @@ type CreditInfo = {
   overdueAmount: number
   canOrder: boolean
   blockReason?: string
+  isTermExtended?: boolean
+  termExtendedUntil?: string | null
 }
 
 type QuotationLine = {
@@ -1314,6 +1316,11 @@ export default function ClassicPlaceOrderPage() {
                       )}
                       {!creditInfo.canOrder && !['BOSS', 'FINANCE'].includes(userRole) && (
                         <div className="mt-1 font-medium">{isEn ? 'Requires BOSS or Finance approval' : '需 BOSS 或财务特批'}</div>
+                      )}
+                      {creditInfo.isTermExtended && creditInfo.termExtendedUntil && (
+                        <div className="mt-1">
+                          {isEn ? 'Term temporarily extended until' : '账期已临时延长至'} {new Date(creditInfo.termExtendedUntil).toLocaleDateString('en-CA')}
+                        </div>
                       )}
                     </>
                   )}

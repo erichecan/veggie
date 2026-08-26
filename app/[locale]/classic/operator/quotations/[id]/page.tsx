@@ -50,6 +50,8 @@ interface CreditInfo {
   creditLimit: number
   canOrder: boolean
   blockReason?: string
+  isTermExtended?: boolean
+  termExtendedUntil?: string | null
 }
 
 interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
@@ -748,6 +750,11 @@ export default function QuotationDetailPage() {
                       <span>⚠️</span>
                       <span>{creditInfo.blockReason || (isEn ? 'Credit blocked, cannot confirm' : '信用冻结，无法确认')}</span>
                       {canOverrideCredit && <span className="text-gray-500 font-normal">{isEn ? '(overridden with admin privilege)' : '(已用管理员权限覆盖)'}</span>}
+                    </div>
+                  )}
+                  {creditInfo.isTermExtended && creditInfo.termExtendedUntil && (
+                    <div className="w-full text-amber-700">
+                      {isEn ? 'Term temporarily extended until' : '账期已临时延长至'} {new Date(creditInfo.termExtendedUntil).toLocaleDateString('en-CA')}
                     </div>
                   )}
                 </div>

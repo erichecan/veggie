@@ -9,6 +9,8 @@ import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import CustomerContactsPanel from '@/components/customers/contacts-panel'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
+import CreditTermExtensionPanel from '@/components/classic/CreditTermExtensionPanel'
+import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import type { Customer, OdooPricelist } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -796,11 +798,16 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                 <OdooField label="Payment Terms">
                   <select value={form.paymentTerm} onChange={e => setField('paymentTerm', e.target.value)} className={selectCls}>
                     <option value=""></option>
-                    <option value="cash">Immediate Payment</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
+                    {PAYMENT_TERM_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{isEn ? o.labelEn : o.labelZh}</option>
+                    ))}
                   </select>
                 </OdooField>
+                {!isNew && (
+                  <OdooField label="Term Extension" wide>
+                    <CreditTermExtensionPanel customerId={id} isEn={isEn} />
+                  </OdooField>
+                )}
                 <OdooField label="Pricelists" wide>
                   <div className="space-y-1">
                     {form.pricelistIds.length === 0 && (
