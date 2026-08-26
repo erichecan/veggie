@@ -308,10 +308,12 @@ export default function ClassicPlaceOrderPage() {
   // key = productId, value = 所有未出库订单已占用量
   const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
 
-  // 重复商品检测：同一 productId 在订单行中出现多次（客户/录单员可能重复添加）
+  // 重复商品检测：同一 productId **且同一可售单位** 在订单行中出现多次才算重复
+  // （客户/录单员可能重复添加）——同商品配两个不同单位是合法的两行，不该误报
+  const dupKey = (l: QuotationLine) => `${l.productId}__${l.uomId ?? ''}`
   const duplicateCounts = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const l of lines) if (l.productId) counts.set(l.productId, (counts.get(l.productId) ?? 0) + 1)
+    for (const l of lines) if (l.productId) counts.set(dupKey(l), (counts.get(dupKey(l)) ?? 0) + 1)
     return counts
   }, [lines])
 
@@ -461,6 +463,12 @@ export default function ClassicPlaceOrderPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  function fetchLatestProducts() {
+    return apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1&slim=1')
+      .then(setProducts)
+      .catch(() => {})
+  }
+
   // 商品管理侧改了 canBeSold 等字段后，希望回到这个已经打开的页面时能看到最新数据，
   // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案。
   useEffect(() => {
@@ -468,9 +476,7 @@ export default function ClassicPlaceOrderPage() {
     function refetchProducts() {
       if (Date.now() - lastFetch < 30_000) return
       lastFetch = Date.now()
-      apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1&slim=1')
-        .then(setProducts)
-        .catch(() => {})
+      fetchLatestProducts()
     }
     function onVisibility() {
       if (document.visibilityState === 'visible') refetchProducts()
@@ -702,8 +708,21 @@ export default function ClassicPlaceOrderPage() {
       toast.warning(isEn ? '⚠ This product is out of stock. Added to order — please arrange stock.' : `⚠ 该产品库存不足，已添加至订单，请注意备货`, { duration: 5000 })
     }
 
-    setLines(prev =>
-      prev.map(l =>
+    const targetUomId = (p as Product & { uomId?: string }).uomId ?? undefined
+    let merged = false
+    setLines(prev => {
+      // 这个商品(同一 productId+同一可售单位)已经在单子里有一行了 —— 不再插新行，
+      // 直接给已有那行数量+1，并把这次刚插的空白草稿行去掉。避免"选两次同一个商品
+      // 出现两行、价格还对不上"，客户 20260826 报过。商品相同但单位不同不算重复。
+      const key = dupKey({ productId: p.id, uomId: targetUomId } as QuotationLine)
+      const existing = prev.find(l => l.id !== lineId && l.productId && dupKey(l) === key)
+      if (existing) {
+        merged = true
+        return prev
+          .filter(l => l.id !== lineId)
+          .map(l => (l.id === existing.id ? { ...l, orderedQty: l.orderedQty + 1 } : l))
+      }
+      return prev.map(l =>
         l.id !== lineId
           ? l
           : {
@@ -715,15 +734,19 @@ export default function ClassicPlaceOrderPage() {
               qtyOnHand:   p.qtyOnHand ?? 0,
               forecastQty: null,
               uom:         (p as Product & { uomName?: string }).uomName ?? UNSET_UOM_LABEL,
-              uomId:       (p as Product & { uomId?: string }).uomId ?? undefined,
+              uomId:       targetUomId,
               unitPrice,
               cost:        p.standardPrice ?? 0,
               priceLabel,
               priceLabelDetail,
               taxRate:     (p.customerTaxRate ?? 0) * 100,
             },
-      ),
-    )
+      )
+    })
+    if (merged) {
+      toast.success(isEn ? 'Already on this order — quantity increased by 1' : '这个商品已经在单子里了，数量+1')
+      return
+    }
     // 后台拉 lastPrice，回来后如有变化再 patch 一次
     if (effectiveCustomer && !(p.id in lastPrices)) {
       void fetchLastPrices([p.id]).then(merged => {
@@ -804,19 +827,19 @@ export default function ClassicPlaceOrderPage() {
     if (missing.length) toast.warning(isEn ? `Skipped discontinued products: ${missing.join(', ')}` : `跳过下架商品：${missing.join('、')}`)
   }
 
-  // 合并重复商品：同一 productId 的行合并为一行，数量相加，保留第一行的价格等
+  // 合并重复商品：同一 productId 且同一可售单位的行合并为一行，数量相加，保留第一行的价格等
   function mergeDuplicates() {
     setLines(prev => {
       const seen = new Map<string, QuotationLine>()
       const result: QuotationLine[] = []
       for (const l of prev) {
         if (!l.productId) { result.push(l); continue }
-        const existing = seen.get(l.productId)
+        const existing = seen.get(dupKey(l))
         if (existing) {
           existing.orderedQty += l.orderedQty
         } else {
           const copy = { ...l }
-          seen.set(l.productId, copy)
+          seen.set(dupKey(l), copy)
           result.push(copy)
         }
       }
@@ -1604,7 +1627,7 @@ export default function ClassicPlaceOrderPage() {
               {(() => {
                 const dups = [...duplicateCounts.entries()].filter(([, c]) => c > 1)
                 if (dups.length === 0) return null
-                const nameOf = (pid: string) => lines.find(l => l.productId === pid)?.productName ?? pid
+                const nameOf = (key: string) => lines.find(l => dupKey(l) === key)?.productName ?? key
                 return (
                   <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
                     <span className="text-lg leading-none mt-0.5">🔁</span>
@@ -1613,7 +1636,7 @@ export default function ClassicPlaceOrderPage() {
                       <span className="text-purple-600">
                         {isEn ? `${dups.length} product(s) added more than once` : `${dups.length} 个商品被重复添加`}
                         <span className="text-xs text-purple-500 ml-1">
-                          ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join(isEn ? ', ' : '、')})
+                          ({dups.map(([key, c]) => `${nameOf(key)} ×${c}`).join(isEn ? ', ' : '、')})
                         </span>
                       </span>
                       <span className="text-xs text-gray-500 ml-1">{isEn ? '— Click "Merge" on the right to combine into one line (quantities added), or leave as is and adjust manually' : '— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整'}</span>
@@ -1659,7 +1682,7 @@ export default function ClassicPlaceOrderPage() {
                   const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
                   const isOutOfStock = line.productId && lineAtp <= 0
                   const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
-                  const isDuplicate  = !!line.productId && (duplicateCounts.get(line.productId) ?? 0) > 1
+                  const isDuplicate  = !!line.productId && (duplicateCounts.get(dupKey(line)) ?? 0) > 1
                   return (
                     <>
                       {/* NO */}
@@ -1848,12 +1871,13 @@ export default function ClassicPlaceOrderPage() {
                   background: (line.productId && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) <= 0) ? '#fee2e2'
                     : (line.productId && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) > 0 && (line.qtyOnHand - (pendingDemand[line.productId] ?? 0)) < LOW_STOCK_THRESHOLD) ? '#fffbeb'
                     : undefined,
-                  boxShadow: (!!line.productId && (duplicateCounts.get(line.productId) ?? 0) > 1) ? 'inset 3px 0 0 0 #875A7B' : undefined,
+                  boxShadow: (!!line.productId && (duplicateCounts.get(dupKey(line)) ?? 0) > 1) ? 'inset 3px 0 0 0 #875A7B' : undefined,
                 })}
                 defaultRowCls="group align-middle"
                 products={products}
                 onPickProduct={(lineId, p) => selectProduct(lineId, p)}
                 onPickByEnter={() => addLine({ force: true })}
+                onPickerActivate={fetchLatestProducts}
                 onAddBlankLine={() => addLine()}
                 pickerTexts={{
                   empty: isEn ? 'No matching products' : '没有匹配商品',

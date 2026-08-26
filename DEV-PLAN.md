@@ -1,125 +1,147 @@
-# DEV-PLAN：合并 ProductTemplate 到 Product，删除模板/变体两层结构
+# DEV-PLAN：账期灵活化 + 加商品重复行修复
 
 ## 背景与结论
 
-商品名兜底排查中发现：管理后台改商品名改的是 `ProductTemplate.name`，下单/报价选品读的是 `Product.name`，两者独立存储、只有价格字段有单向传播，改名不传播 → 生产库实测 6 个商品出现"列表页新名字、选品下拉旧名字"。
+客户反馈：现有账期（现结/周结/月结三档）太死板，一旦到期就把客户下单卡死，希望会计能有权限灵活延长 1～2 周。
 
-进一步核查发现这不是孤立 bug，是结构性问题：全库只有 `Product.templateId` 这一处外键指向 `ProductTemplate`，其余几十处外键（OrderLine、Lot、ProductSaleUom、ProductAlias、ProductSupplierInfo、StockMove、采购单行、盘点记录……）全部指向 `Product`。而生产库 5479 个模板对 5479 个商品，**严格 1:1，从未真正使用过"一个模板多个变体"**。模板层是仿 Odoo product.template/product.product 抄来的骨架，在这个项目里没有承载任何实际业务，只是让同一份"商品名"多存了一份、多一处会分叉的地方。
+排查代码后发现现状比预想更粗糙，这次要一起解决：
 
-**结论：删除 ProductTemplate，把它的字段并入 Product。** 保留 Product 是因为它是全系统事务外键的真正落点，改动面远小于反过来做。
+1. **账期档位不全**：`Customer.paymentTerm` 只有 `cash/weekly/monthly` 三档，客户提到的"两周""两个月"目前都不存在。
+2. **逾期检测只覆盖月结客户**：`orders/route.ts`、`customers/[id]/credit/route.ts` 里的拦截逻辑是 `if (overdueAmount > 0 && paymentTerm === 'monthly')`，现结/周结客户完全不检查逾期——这本身是个漏洞，与"账期"这个词的字面意思不符。
+3. **到期日从未自动算过**：`Invoice.dueDate` 是手填字符串字段，没有任何"开票日 + 账期天数"的推算逻辑。
+4. **⚠️ 关键事实（已用生产库核实，20260826）**：生产库 148,285 条 `Invoice` 全部是 2026-07-18 那次 Odoo 迁移一次性导入的历史快照（`createdAt` 精确落在每月 1 日 00:00:00，是批量写入的痕迹），**本月（8月）及此后，Invoice/Statement/Payment 三张表新增记录数都是 0**。也就是说，现在这套"逾期 → 拦截下单"机制，判断依据是一份从生产上线后就没再更新过的历史快照——不管客户是否已经把陈年欠款还清，系统都不知道，因为没有新的开票/收款记录进来刷新它。
+   → 这次做的"会计延期"，本质是在这份可能已经过时的自动判断之上，给会计一个**可控、留痕的手动豁免入口**，不是把整条开票/收款流程修好（那是另一个大得多的项目，不在本次范围）。这点必须让你知道，避免做完了才发现"拦截其实很久没真正拦过"。
+5. **会计"绕过"目前不是正式功能**：`orders/route.ts:239` 硬编码 `['BOSS', 'FINANCE'].includes(user.role)` 就能无条件绕过所有信用检查，没有审批记录、没有时效——本次要把它换成一个真正的"延期审批"操作。
 
-## 读取的文档
+## 本次范围（已与你确认）
 
-无独立 PRD，本次需求来自对话内排查（商品改名不同步 → 追问设计逻辑 → 用户决定去掉多余的一层）。事实依据来自一次全库调查（90 文件 / 320 处引用扫描 + 生产库/本地库实测数据）。
+- 延期作用对象：**客户整体**（不是单张发票）——延长后这段时间内该客户所有订单都不因逾期/超额度被拦，到期自动恢复
+- 放宽范围：**逾期拦截 + 信用额度超限拦截，一起放宽**
+- 延长时长：**+1周 / +2周 预设按钮 + 自定义天数输入**，都要求填备注
+- 账期档位：**扩展为现结 / 周结 / 双周结 / 月结 / 双月结 五档**，到期日按固定天数（0/7/14/30/60）自动从开票日推算，不按自然月对齐
+- 逾期检测覆盖所有账期类型（不再只查月结）
 
-## 一、字段合并设计
+**明确不做**：
+- 不重建开票/收款（Invoice/Statement/Payment）自动生成流程——这是本次发现的更大的问题，先记录，不在本轮解决
+- 不改 `Order.paymentTerm`（订单级覆盖，目前是自由文本、不参与信用拦截）——继续保持纯展示用途
+- 不做到期提醒/通知（到期自动发消息给会计之类）
 
-### 1.1 从 ProductTemplate 并入 Product 的字段（20个）
+## 模块拆解
 
-`type` `canBeSold` `canBePurchased` `description` `saleDescription` `weight` `netWeight` `volume` `isPackaging` `canBeExpensed` `uomId`+关系 `purchaseUomId`+关系 `unitOfMeasure`(deprecated) `purchaseUoM`(deprecated) `tracking` `websitePublished` `websiteName` `vendorTaxRate` `forecastQty` `createdBy` `updatedBy` `barcode`
+### 1. 数据层（schema 改动）
+- `Customer` 新增：`termExtendedUntil DateTime?`、`termExtendedNote String?`（当前生效的延期状态，用于下单时快速判断，不用每次查历史表）
+- 新表 `CustomerTermExtension`（审计履历，谁在什么时候批了多少天、备注）：`id / customerId / days / until / note / createdBy / createdByName / createdAt`
+- `paymentTerm` 保持 `String` 类型不变（不改数据库层枚举，改动小），但收敛前端可选值为 5 档，并在 `lib/payment-terms.ts` 里定义唯一口径的天数映射表
 
-`attributeLines`（变体属性生成配置）**不迁移，直接废弃**——没有变体场景，留着就是死字段。
+### 2. 共享逻辑（新增 lib）
+- `lib/payment-terms.ts`：`PAYMENT_TERM_OPTIONS`（5 档 value/label/days）+ `computeDueDate(baseDate, paymentTerm)`
+- `lib/credit-check.ts`：把现在重复在 `orders/route.ts` 和 `customers/[id]/credit/route.ts` 里的两份信用校验代码合并成一个函数，覆盖所有账期类型（非 cash 即检查），并加入 `termExtendedUntil` 判断——今天 ≤ `termExtendedUntil` 时两类拦截都跳过
 
-### 1.2 Product 保留、模板从不涉及的字段
+### 3. API
+- `POST /api/customers/[id]/term-extension`（新增）：写 `CustomerTermExtension` + 更新 `Customer.termExtendedUntil/termExtendedNote`，写 action-log，需要新权限点
+- `GET /api/customers/[id]/credit`：改用 `lib/credit-check.ts`，返回里加 `termExtendedUntil`
+- `POST /api/orders`：信用校验部分改用共享函数，去掉硬编码的角色绕过（改成"是否在延期豁免窗口内"这一条件，BOSS 仍保留特批能力但走同一套函数，不再是裸角色判断）
+- `POST /api/invoices`：`dueDate` 未显式传入时，按 `customer.paymentTerm` 自动推算
 
-`qtyOnHand` `active` `spec` `stock`(旧兼容) `price`(旧兼容) `safetyStockMin` `currentZoneId`+关系，及五个反向关系（`supplierInfos`/`orderLines`/`lots`/`saleUoms`/`aliases`）。
+### 4. 权限（RBAC）
+- `lib/rbac/catalog.ts` 的 `master.customer` 模块加一个新 action：`extend_term`（"延长账期"）
+- `prisma/seed-rbac.json`：默认授予 `FINANCE`、`BOSS`
 
-### 1.3 两边同名字段的合并取舍
+### 5. 前端
+- 客户详情页（`.../customers/[id]/page.tsx`）：`paymentTerm` 下拉从 3 档扩到 5 档；有生效延期时显示"账期已临时延长至 X，操作人 Y"；新增"延长账期"按钮（仅持有 `master.customer.extend_term` 的用户可见），弹出 +1周/+2周/自定义天数 + 备注
+- 下单页信用面板（place-order / quotations 里展示 Outstanding Balance / Credit Limit / Payment Terms 的那块）：有生效延期时加一行提示，说明当前是"临时豁免中"
 
-| 字段 | 取舍规则 | 依据 |
-|---|---|---|
-| `name` | 以 **Product 侧当前值**为准 | 选品/下单实际展示的就是这个值 |
-| `listPrice`/`standardPrice`/`customerTaxRate`/`commissionPrice` | 理论应一致（已有传播机制），迁移前跑 diff 校验，有分歧按 Product 侧 | 定价引擎读 Product-first |
-| `internalRef`/`categoryId`/`images` | Product 非空则用 Product，否则退回 Template | 与 `/api/products` 现有兜底逻辑一致 |
-| `status`/`sequence`/`externalId`/`createdAt`/`updatedAt` | 迁移前各查一次 diff 数量，逐类裁决 | 目前无强制同步机制 |
+## 路由/文件清单
 
-回填 SQL 前必须先跑一次**全字段 diff 报表**（不只是 name 那 6 条），把所有分歧字段和条数列出来，异常多的话要停下来问，不能悄悄拿 COALESCE 糊过去。
+新增：
+- `lib/payment-terms.ts`
+- `lib/credit-check.ts`
+- `app/api/customers/[id]/term-extension/route.ts`
+- 一条 Prisma 迁移
 
-## 二、迁移阶段
+修改：
+- `prisma/schema.prisma`
+- `app/api/customers/[id]/credit/route.ts`
+- `app/api/orders/route.ts`
+- `app/api/invoices/route.ts`
+- `lib/rbac/catalog.ts`、`prisma/seed-rbac.json`
+- `app/[locale]/classic/operator/customers/[id]/page.tsx`
+- `app/[locale]/classic/operator/place-order/page.tsx`
+- `app/[locale]/classic/operator/quotations/[id]/page.tsx`（如有同款信用面板）
 
-### Phase 0：数据前置修复（必须在 schema 迁移前完成，且**必须在生产库上跑**，不能只在本地库验证）
+预计 11 个文件。
 
-- `OdooPricelistItem.items` 是 JSON 字段，`applyOn:'product'` 的条目里存的 `productTemplateId` 是**没有数据库级 FK 约束的松引用**，指向 `ProductTemplate.id`。本地库实测 621 条这样的记录（`applyOn:'variant'` 的 2651 条已经指向 `Product.id`，不用管）。删表前必须先跑一个 `scripts/backfill-pricelist-item-product-ids-<日期>.ts`，把这 621 条的 `productTemplateId` remap 成对应的 `Product.id`，否则删表瞬间这批定价规则全部失效或指向不存在的 id。
-- **本地库数字不代表生产库**，落地前先在生产库重新跑一遍同样的统计，确认真实规模，再决定是否需要人工抽查。
+## 验收标准
 
-### Phase 1：schema 迁移
-
-1. Prisma schema：Product 加上 1.1 列出的 20 个字段（含 `uom`/`purchaseUom` 关系）；写一条手工迁移：
-   - `ALTER TABLE "Product" ADD COLUMN ...`（20 个字段）
-   - `UPDATE "Product" p SET ... FROM "ProductTemplate" t WHERE p."templateId" = t.id`（回填，按 1.3 规则处理冲突字段）
-   - 跑一次完整性校验（每个 Product 都成功回填、没有孤儿行）
-   - `ALTER TABLE "Product" DROP COLUMN "templateId"`
-   - `DROP TABLE "ProductTemplate"`
-2. 项目里 88 条历史迁移没有"合并两表删表"的先例可抄，这条要新写，但可以照抄 `scripts/backfill-*.ts` 的运行习惯（dry-run 先行、`--apply` 才真正写、走 `.env.local`）。
-
-### Phase 2：后端 API 改写
-
-- 删除整个 `app/api/product-templates/` 目录（`route.ts` GET列表+POST创建、`[id]/route.ts` PUT+DELETE、`filter-options/route.ts`）。
-- `app/api/products/route.ts`：GET 去掉 `include: {template:...}` 和之后的字段提升 `.map()`，直接 select/return 新字段；POST 补上原本模板专属字段的校验（`canBeSold`/`canBePurchased`/`uomId` 等）。
-- `app/api/products/[id]/route.ts`：补上目前**没有**做的模板字段合并——这个路由以前不需要合并是因为可售/UoM 这些字段本来就不在 Product 上，现在字段并过来了，直接读写即可，反而变简单。
-- 创建商品的三处唯一入口（`product-templates/route.ts` 内的事务创建、`products/bulk/route.ts`、`products/quick-create/route.ts`）改成"一次 `prisma.product.create`"，不再需要 `$transaction` 里先建模板再建变体。
-- 删除 `product-templates/[id]/route.ts:71-83` 那段价格/改名"传播"逻辑（含我上一轮加的 name 传播）——合表后没有"传播"这回事，只有一次更新。
-- 两处 PATCH 回写模板的调用改成回写 Product：`app/api/products/[id]/sale-uoms/route.ts:89`、`app/api/purchase-orders/[id]/route.ts:437`。
-
-### Phase 3：业务逻辑改写
-
-- **`lib/pricing-engine.ts:145`（需要你确认的产品语义决策，见下）**：`item.productTemplateId === product.templateId` 这行没有 `templateId` 就无法工作。
-- `lib/order-line-stock.ts:20-61`：判断"是否实物记库存流水"的 `type` 字段直接从 Product 读，去掉 `productTemplate.findUnique`。**这是库存记账写路径，改完要重点测**。
-- `lib/commission.ts:39-47`：提成价 fallback 逻辑简化，不再需要两层 include。
-- 7 个 print/loader 文件（`lib/print/dispatch-loader.ts`、`trip-loader.ts`、`trip-common.ts`、`trip-picking-template.ts`、`line-sort.ts`、`product-sequence.ts`、`uom-conversion-loader.ts`）：去掉 `LEFT JOIN ProductTemplate` / `include: {template:...}`，字段直接在 Product 行上，是纯粹的简化。
-- `lib/wave-zones.ts`、`lib/product-similarity.ts`：同上，去掉多余 JOIN。
-- `lib/products-query.ts`：`attachQtyOnHand()` 目前按 templateId 分组求和，1:1 场景下这段聚合逻辑直接删除。
-- `lib/facets/product-templates.ts`：`variant` 这个分面维度失去意义（本来是"模板下有没有叫这个名字的变体"），删除或与 `name` 合并。
-- `lib/export/entities.ts`、`lib/export/registry.ts`、`lib/export/loaders/product-templates.ts`：导出实体改注册到 Product，权限点从 `master.product_template.read` 改成 `master.product.read`。
-- **action-log `resource` 约定统一（三处必须同步改，改漏一处商品详情页操作历史会断档）**：`app/api/product-templates/[id]/route.ts:99,116`、`app/api/product-templates/route.ts:126`、以及故意对齐这个约定的 `app/api/stock-moves/route.ts:117-120`，全部统一成 `resource:'product'` + `resourceId: product.id`；商品详情页的 `<ChatterFeed resource="product-template".../>`（`products/[id]/page.tsx:899`）同步改成 `resource="product"`。
-- **RBAC 权限点（需要你确认，见下）**：`lib/permissions.ts`、`lib/rbac/catalog.ts`、`lib/rbac/route-map.ts`、`scripts/rbac/generate-business-roles.ts` 里 `product` 和 `product_template` 是两套独立权限点，实测所有角色模板对两者授权一致（没有"能改变体不能改模板"的分裂）。
-
-### Phase 4：前端改写
-
-- `app/[locale]/classic/operator/products/page.tsx`：**改造量最大的一块**。整页数据源从 `GET /api/product-templates`（分页/分面/库存告警/内联编辑）切到 `GET /api/products`。
-- `app/[locale]/classic/operator/products/[id]/page.tsx`：现在的写法是"先查模板、再查全表过滤出变体、再拿变体 id 查可售单位"三段式（`load()` 第139-184行），合表后压成一次查询，是简化不是重写。
-- `app/[locale]/classic/operator/pricelists/[id]/page.tsx`：31 处引用，UI 上现有"模板级选择器"和"变体级选择器"两个不同的选品下拉——处理方式取决于下面的产品语义决策。
-- 轻量引用（`print/pricelist/page.tsx`、`pricelists/page.tsx`）跟着类型改名即可。
-- `lib/hooks.ts` 的 `useProductTemplates()`：确认调用方清空后随手删除。
-
-### Phase 5：脚本 / 测试跟进
-
-- `prisma/seed.ts:161-166`：种子脚本改成直接建 Product。
-- `scripts/db/bootstrap-fresh.ts`：本地空库启动链路要跟着新 schema 走。
-- `scripts/audit/*`（约 20 个文件）：仍在运行的合同功能核实探针，多是只读 `prisma.productTemplate.count()/findFirst`，逐个替换成 `prisma.product.*`。
-- 6 个测试文件（`tests/pricing-engine-*.test.ts`、`export-columns.test.ts`、`facet-search.test.ts`、`public-api-routes.test.ts`）跟着 schema 改。
-- 历史一次性脚本（`scripts/import-odoo-products-full-20260717.ts` 等 16 个，已在调查报告列出）不需要迁移，建议顺手挪进一个 archive 目录，不占实施工作量。
-
-## 三、产品语义决策（已确认）
-
-**1. 价格表"模板级/变体级"→ 选 B，合并成一个选择器。** `pricelists/[id]/page.tsx` 现有的两个选品下拉（`applyOn:'product'` 锁模板 / `applyOn:'variant'` 锁变体）合并成一个，`applyOn` 概念一并清理。这块 UI 需要重新设计，不是简单改字段名。
-
-**2. `product_template.*` 权限点 → 选 B，保留为 `product.*` 的别名。** 不从权限目录删除这四个点，只是让它们在校验逻辑上等同于对应的 `product.*` 点，避免这次改动触碰权限目录结构（结构不变就不强制全员重登录，只是常规部署）。
-
-**3. 并行分支时序 → 不等，main 直接开始。** `can-be-sold-purchased-enforcement` 已经合并进 main（两次 merge commit，worktree 已不存在，磁盘残留目录可忽略）。`purchase-rfq-copy-history` 还有大量未提交改动（含未完工的财务中心整块功能，且触碰 `prisma/schema.prisma`），不满足"改好了"的前提，保持现状不动，这次重构只在 main 主工作区进行，不碰那个 worktree 目录。
-
-## 四、风险总览
-
-| 风险 | 应对 |
-|---|---|
-| `OdooPricelistItem` 621 条松引用（JSON 字段无 FK 约束） | Phase 0 前置 remap，先在生产库核实真实规模 |
-| `lib/order-line-stock.ts` 库存记账写路径改动 | 改完后用真实订单走一遍确认/发货流程，核对 StockMove 是否正常生成 |
-| action-log resource 约定三处不同步 | 清单已列全，作为一个原子改动一起提交，不要拆开改 |
-| RBAC 权限目录结构变化 | 已决定保留别名，权限目录结构不变，不触发强制重登录 |
-| 两表同名字段历史分叉（不止 name） | Phase 0 先跑全字段 diff 报表，异常多要停下来问，不能默默 COALESCE |
-
-## 五、验证清单（完成前必须全部过一遍）
-
-- `npm run build` 无报错，迁移在本地库（`.env.local`）先跑通
-- 商品管理列表页：新建/改名/改价/归档/恢复，改完立刻在下单页/报价单页选品验证名字一致
-- 下单页、报价单编辑页、销售单编辑页：新建行、编辑行、可售单位切换均正常
-- 采购下单页"当场建档"新建商品流程正常
-- 价格表编辑页：两级规则按选定方案验证匹配行为符合预期
-- 库存流水：确认订单后 StockMove 正常生成，缺货判断正常
-- 商品详情页 ChatterFeed 操作历史：改名后能查到新记录，历史记录（迁移前产生的）也还能查到
-- RBAC：迁移后重新登录，抽查 2-3 个角色的商品相关权限行为未变化
-- `scripts/audit/*` 探针跑一遍不报错
+- `npm run build` 无报错，迁移在本地 dev 库跑通
+- 客户详情页能看到 5 档账期下拉；"延长账期"按钮只有 FINANCE/BOSS 可见，其他角色调用接口应返回 403
+- 造一个测试客户：置为逾期 + 超额度 → 验证下单被拦截 → 会计延期 2 周 → 验证下单放行，且欠款数字仍如实显示（不是隐藏，只是不拦）→ 手动把 `termExtendedUntil` 改到过去 → 验证恢复拦截
+- 开一张新发票不传 `dueDate` → 验证按客户账期自动推算出正确日期
+- 现结/周结客户在有逾期发票时也会被正常检测到（验证之前的漏洞已堵上）
 
 ---
 
-✅ 计划已确认（价格表选 B 合并成一层选择器 / 权限点选 B 留别名 / 不等并行分支，main 直接开始）。这是预计超 30 分钟的大改，按台账制执行：`docs/20260825-producttemplate-merge-tasks.md`。
+# 追加模块：Quotation / Sales Order 加商品出现重复行、价格不一致
+
+客户反馈：改了商品库之后，去建 Quotation / Sales Order 选品经常出问题；截图具体现象：
+1. 同一个商品（Broccoli 6KG CASE，internalRef BRC）在订单里出现两行：Row1 单价 €6.33（来源 Manual），Row2 单价 €17.50（来源 Default），系统弹出 "Duplicate product alert" 提示需要手动 Merge
+2. 商品搜索下拉里 "Broccoli 5KG CASE 5kg [BRKG]" 这一项看起来是灰置/不可选状态，客户说"重新进入、也刷新过"依然如此
+
+## 现状核实（已排查代码，20260826）
+
+- **两个页面代码其实早就统一了**：20260818（commit `9053868`）已经把 Quotation 和 Sales Order 的"加商品"交互合并成同一个共享组件 `useInlineProductPicker` + `OrderLineEditor`，两页此后用的是**同一份代码**，商品列表都是"打开页面时拉一次 + 切回 tab 时最多 30 秒节流重拉"，没有发现 Sales Order 缺 Quotation 特有的刷新机制——用户"sales order 没有像 quotation 一样修改加载机制"这个判断，从当前代码看不成立，两页现在是同构的。
+- **候选项"灰置"在现有源码里找不到对应实现**：下拉列表渲染代码（`components/classic/useInlineProductPicker.tsx:262-277`）里所有候选项样式一致，没有基于 `canBeSold`/`active`/库存状态的禁用渲染；`internalRef` 那行小字固定是灰色，但这是所有候选项统一的样式，不是单独禁用某一项。不可售商品会被 API 整条过滤掉，不会以"灰色可见但不可点"的形式出现。**这一点需要用浏览器实测复现才能确认到底是什么——现有源码里定位不到对应逻辑**，怀疑要么是把统一的灰色小字误认成禁用态，要么是浏览器裝了旧的静态资源缓存（不是代码 bug）。
+- **⚠️ 但排查过程中找到一个真实、可复现的 bug**（跟用户截图现象吻合）：`selectProductIntoLine`（`orders/[id]/page.tsx:495-537`、`quotations/[id]/page.tsx:459` 起，两页逻辑一致）在把选中的商品塞进订单行时，**完全不检查这个商品是不是已经在当前订单里有一行了**——每次选中都无条件新增一行，价格现算（走 `resolveCustomerPrice` 或客户价目表）。所以如果订单里已经有一行 Broccoli（比如之前手动改过价 →`Manual` €6.33），操作员再从下拉里选一次同一个商品，就会凭空多出一行、用当前定价规则重新算出一个新价格（`Default` €17.50）——这正是截图里 Row1/Row2 的由来。现有的"Duplicate alert + 手动 Merge"只是**事后**提醒，不能阻止重复行产生，也不能保证 Merge 之后价格是对的（两行价格来源都不一样，Merge 该保留哪个价格也没定义）。
+
+## 补充范围（20260826 二次修正：识别键要带上单位）
+
+客户指出一个我最初漏想的点：**同一个商品选两个不同可售单位（比如 2×CASE + 5×1KG）是合法的两行，不该被当成重复、也不该被合并**——"重复"与否的判断依据必须是"**商品 + 可售单位**"这个组合，不能只看商品。这也意味着现有的 `duplicateCounts` 检测逻辑本身还有一个既有 bug：目前只按 `productId` 计数（`orders/[id]/page.tsx:193-198`、`quotations/[id]/page.tsx:102-107`），今天如果有人正常地给同一商品配两个不同单位下单，系统就会误报"重复"——这个要一并修掉，不只是"选择时合并"这一半。
+
+- 修 `duplicateCounts`：识别键从 `productId` 改成 `` `${productId}__${uomId}` ``，避免同商品不同单位被误判重复
+- 修 `selectProductIntoLine`：选中一个订单里已存在（**同 `productId` 且同 `uomId`**）的行时，不再新增一行，直接给已有行数量 +1；商品相同但单位不同则正常新增一行，不触发合并、不触发 Duplicate 提示
+- 涉及文件：`components/classic/useInlineProductPicker.tsx`（或调用它的三个页面各自的 `selectProductIntoLine`，具体由实现时确认是否已经在共享 hook 里）、`orders/[id]/page.tsx`、`quotations/[id]/page.tsx`、下单新建页（如同样受影响）
+- "候选项灰置不刷新"这一条**先不写修复代码**，开发时用浏览器实测复现一次（改个商品名/单位 → 立刻去下单页搜索 → 观察是否真的显示旧数据/灰置），确认现象后再决定是缓存问题还是别的；如果实测复现不了，就在报告里如实说明，不能凭代码推测就说"已修复"
+
+## 3KG 规格价格算错（20260826 新增，已用生产库坐实是缓存问题）
+
+客户截图：商品 "Broccoli 5KG CASE 5kg" 在一张未保存的订单里切到 3KG 规格，界面显示 Unit Price = €11.98，客户质疑算错了。
+
+**排查过程**：先查清楚"切换单位"这一步真正调用的代码——`quotations/[id]/page.tsx:231-274` 的 `switchLineUnit`：先查价格表链有没有专门限定这个单位的规则（命中就直接用价格表的价，不叠加换算系数），没命中才退回 `priceOf(rows, newUomId, basePrice)` 按 `ProductSaleUom.factor + 加价/折扣` 换算。用生产库把这条链上所有数据都查了一遍坐实：
+- 这个商品当前 `listPrice=15.00`、3KG 那行 `factor=0.59988、surcharge=1.50`——按公式应该是 15×0.59988+1.50≈**€10.50**
+- 客户绑定的价格表 "CITY CENTREtest"（含它链式引用的备用表 "M7N3M1test"）逐条查过，**都没有一条规则是配给这个商品的**，所以确定走的是 `priceOf` 这条换算路径，不是价格表命中
+- 但 €10.50 ≠ 客户看到的 €11.98，两个数都对不上——于是查了这个商品的操作日志（`ActionLog`）：**这个商品今天（20260826）被连续编辑了 7 次，主档和可售单位交替改了 00:35 / 01:24 / 01:25 / 01:42 / 01:43 五个时间点**，跟客户截图的时间高度重合
+
+**结论**：€11.98 用现在数据库里的"最终版"数值反推不出来，但从操作日志看，这个商品在客户截图前后正被反复编辑——**€11.98 极可能是订单页缓存的旧版本商品/可售单位数据（编辑到一半的中间值）算出来的，客户编辑商品之后没有等订单页刷新缓存就去切单位**，这跟前面"候选项灰置不刷新"怀疑的是同一个根因，现在有了更硬的证据（操作日志时间线），不再是纯猜测。
+
+**补充范围**：把"候选项灰置不刷新"和这条合并成一个问题来修——现有"打开页面拉一次 + tab 切回 30 秒节流"这套缓存策略，对客户"编辑商品 → 马上回订单页测试"这种同一浏览器会话内的高频操作根本不够用。开发时要做的：
+1. 打开商品选择下拉框时，强制重新拉一次最新商品列表（不再依赖 30 秒节流），从源头避免用旧数据
+2. `switchLineUnit` 这类直接使用 `saleUomOptions` 缓存算价的地方，评估要不要在切换单位时也顺带刷新一下这个商品的最新 `ProductSaleUom` 配置，而不是全程信任页面打开时那一份
+3. 附带发现一个小 bug：切换单位后 `priceSourceType` 被强制清空成 `null`（`quotations/[id]/page.tsx:270`），`lib/price-source.ts` 把空值渲染成灰色文字，看起来很像"Default"来源，但其实只是"来源信息被清掉了"，不是真的重新判定过来源——这个也顺手修，切完单位应该如实反映这行价格到底是通过 pricelist 命中的还是走 factor 换算的，不能显示一个假来源标签误导操作员
+
+## 价格表 ↔ 可售单位关系（20260826 已核实并与客户对齐，不需要开发）
+
+客户原本担心"新增可售单位后价格没同步回价格表"。核实代码后确认：这套级联机制**已经是现在的真实实现**，不需要额外开发——
+
+- 价格表(Pricelist)规则默认不限定单位（`uomId` 留空），对该商品**所有**可售单位都生效，等于只维护一份"基础价"
+- 新增可售单位并配好换算系数(factor)后，下单选这个新单位时，系统会自动拿"价格表基础价 × 该单位 factor"实时算出最终价（`lib/server-pricing.ts` 的 `scaleAuthoritativePrice`），标签仍是 Plist，不需要、也不应该反向写回价格表
+- 只有价格表对某个单位**单独配了专属规则**（`PricelistItem.uomId` 显式指定）时，那条规则的价格才会原样生效、不再叠加 factor——这是刻意的"精确覆盖优先于公式换算"设计，同样不需要同步
+- "Manual"标签只在"人工改价 + 有改价权限"时出现，跟新增可售单位无关；客户截图里那两行 Manual/Default 价格不一致，成因是选品重复新增了一行（见上一节），不是价格表和可售单位没同步
+
+⚠️ **但排查过程中发现级联这一层本身有真 bug，需要修**：算"基础价 × 该单位 factor"这件事，代码里其实有两份不同实现，算出来的结果不一样——
+- `lib/sale-uom.ts` 的 `priceOf()`（前端实时预览用）：`priceMode='FORMULA'` 时是 `基础价 × factor × (1+折扣%) + 加价`，把可售单位自己配的加价/折扣算进去了
+- `lib/server-pricing.ts` 的 `scaleAuthoritativePrice()`（后端保存订单时的权威算价）：只算 `基础价 × factor`，**完全没有管 `priceDiscountPct`/`priceSurcharge`**，同一个可售单位保存前后能算出两个不同数字
+- 影响面：只要某个可售单位配的是 FORMULA 模式、且 discount%或surcharge 不是 0（从抽查的几个商品看这很常见，比如前面 Broccoli 系列的 1KG/3KG 都配了 surcharge），保存后的价格就会跟界面上预览/操作员看到的对不上——这可能是客户反馈"价格不对"的一个共同成因，需要修 `scaleAuthoritativePrice` 让它跟 `priceOf` 用同一套公式（或者干脆直接复用 `priceOf`，别再维护两份）
+
+## Pricelist Items 页面未显示实际售价（20260826 新增）
+
+客户反馈：价格表详情页（`app/[locale]/classic/operator/pricelists/[id]/page.tsx`）的商品明细表格，大部分行的"Price"列（表头是空白的，容易被忽略）显示的是"0.0% discount and 5.0 surcharge"这种公式描述文字，看不出这个商品在这张价格表下实际卖多少钱，只有配了固定价(`computeType='fixed'`)的少数行才直接显示数字。
+
+**现状核实**：`page.tsx:811-815` 的 `ItemRow` 组件，`computeType==='fixed'` 才显示 `€${fixedPrice}`，`computeType==='formula'`（大多数行）只是把 `priceDiscount`/`priceSurcharge` 原样拼成文字，从未调用任何函数把它解析成具体金额。折扣/加价的计算基准由 `formulaBase`（`list_price`=Public Price 列 / `standard_price`=Cost 列）决定，真正的计算公式在 `lib/pricing-engine.ts` 的 `computeItemPrice`（162-232行，内部函数未导出）：`基准×(1-折扣%) → 按舍入规则取整 → +加价 → 按 min/max 利润夹取`。Cost/Public Price 两列是页面实时联查 `Product.standardPrice`/`Product.listPrice` 显示的，不是快照。
+
+**补充范围**：把 `computeItemPrice` 导出（或包一层同名调用），在 formula 模式的行里也算出并显示一个"预计售价 ≈ €X.XX"，公式文字作为补充说明保留，不删——这样运营一眼就能看出实际卖多少钱，不用自己拿 Cost/Public Price 手算。**必须复用 `computeItemPrice` 这同一份计算逻辑**，不能照公式抄一份新的，否则又会重蹈上面 `scaleAuthoritativePrice` 那种"两份实现算出两个数字"的覆辙。
+
+---
+
+📋 计划已生成，请确认：账期模块「本次范围」和「⚠️ 关键事实」两节，尤其第 4 点（逾期拦截吃的是停更的历史快照）你是否知情。商品/订单相关的四个补充模块（重复行识别键、价格表关系、3KG 缓存问题、Pricelist Items 未显示实际售价）都已核实清楚，不再需要额外拍板。
+
+确认无误后回复"确认，开始开发"，我按 数据层 → API → 页面 顺序开发（模块分开提交，账期模块改动最大，先做；商品选择器缓存刷新那个改动最小、影响客户最直接，可以考虑最先上）。

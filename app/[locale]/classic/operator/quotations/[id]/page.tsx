@@ -99,10 +99,12 @@ export default function QuotationDetailPage() {
 
   type EditLine = NonNullable<Order['lines']>[number]
   const [editLines, setEditLines] = useState<EditLine[]>([])
-  // 重复商品检测：同一 productId 在编辑缓冲区中出现多次（与 place-order 创建页一致）
+  // 重复商品检测：同一 productId **且同一可售单位** 在编辑缓冲区中出现多次才算重复
+  // （与 place-order 创建页一致）——同商品配两个不同单位是合法的两行，不该误报重复
+  const dupKey = (l: EditLine) => `${l.productId}__${l.uomId ?? ''}`
   const duplicateCounts = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const l of editLines) if (l.productId) counts.set(l.productId, (counts.get(l.productId) ?? 0) + 1)
+    for (const l of editLines) if (l.productId) counts.set(dupKey(l), (counts.get(dupKey(l)) ?? 0) + 1)
     return counts
   }, [editLines])
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
@@ -170,6 +172,12 @@ export default function QuotationDetailPage() {
     apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
   }, [])
 
+  function fetchLatestProducts() {
+    return apiGet<AllProduct[]>('/api/products?sellable=1&slim=1')
+      .then(p => setAllProducts(Array.isArray(p) ? p : []))
+      .catch(() => {})
+  }
+
   // 商品管理侧改了 canBeSold 等字段后，希望回到这个已经打开的页面时能看到最新数据，
   // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案。
   useEffect(() => {
@@ -177,9 +185,7 @@ export default function QuotationDetailPage() {
     function refetchProducts() {
       if (Date.now() - lastFetch < 30_000) return
       lastFetch = Date.now()
-      apiGet<AllProduct[]>('/api/products?sellable=1&slim=1')
-        .then(p => setAllProducts(Array.isArray(p) ? p : []))
-        .catch(() => {})
+      fetchLatestProducts()
     }
     function onVisibility() {
       if (document.visibilityState === 'visible') refetchProducts()
@@ -256,7 +262,8 @@ export default function QuotationDetailPage() {
         : null
       const oldFactor = factorOf(rows, currentUomId)
       const basePrice = oldFactor ? Number(line.unitPrice) / oldFactor : Number(line.unitPrice)
-      const newUnitPrice = uomScoped?.matchedUomId === newUomId ? uomScoped.price : priceOf(rows, newUomId, basePrice)
+      const uomMatched = uomScoped?.matchedUomId === newUomId
+      const newUnitPrice = uomMatched ? uomScoped.price : priceOf(rows, newUomId, basePrice)
       const qty = Number(line.orderedQty)
       const next = [...prev]
       next[idx] = {
@@ -265,8 +272,11 @@ export default function QuotationDetailPage() {
         uomName: nameOf(newUomId),
         unitPrice: newUnitPrice,
         subtotal: Math.round(qty * newUnitPrice * 100) / 100,
-        priceSourceType: null,
-        priceSourceDetail: null,
+        // 换单位换算出的新价要如实标来源，不能留着旧单位那份标签——
+        // 命中价格表的单位限定规则就是 PRICELIST，否则是按基础价×换算系数走出来的 DEFAULT，
+        // 两者都不是「未记录」，别再显示成空白的 "—"。
+        priceSourceType: uomMatched ? 'PRICELIST' : 'DEFAULT',
+        priceSourceDetail: uomMatched ? (uomScoped.pricelistName ?? null) : null,
         priceSourceDate: null,
       }
       return next
@@ -496,8 +506,24 @@ export default function QuotationDetailPage() {
       priceSourceDetail: resolution?.sourceType === 'pricelist' ? resolution.pricelistName : null,
       priceSourceDate: resolution?.sourceType === 'last' ? (lastPriceHit?.date ?? null) : null,
     } as unknown as EditLine
-    // 填充的是「已经插好的那一行」，不是往末尾追加 —— 行是点 + Add a product 时就建好的
-    setEditLines(prev => prev.map(l => (l.id === lineId ? { ...newLine, id: lineId } : l)))
+    setEditLines(prev => {
+      // 这个商品(同一 productId+同一可售单位)已经在单子里有一行了 —— 不再插新行，
+      // 直接给已有那行数量+1，并把这次刚插的空白草稿行去掉。避免"选两次同一个商品
+      // 出现两行、价格还对不上"，客户 20260826 报过。商品相同但单位不同不算重复，
+      // 正常插成新行。
+      const key = dupKey({ productId: newLine.productId, uomId: newLine.uomId } as EditLine)
+      const existing = prev.find(l => l.id !== lineId && l.productId && dupKey(l) === key)
+      if (existing) {
+        const qty = Number(existing.orderedQty) + 1
+        const merged = prev
+          .filter(l => l.id !== lineId)
+          .map(l => (l.id === existing.id ? { ...l, orderedQty: qty, subtotal: Math.round(Number(l.unitPrice) * qty * 100) / 100 } : l))
+        toast.success(isEn ? 'Already on this order — quantity increased by 1' : '这个商品已经在单子里了，数量+1')
+        return merged
+      }
+      // 填充的是「已经插好的那一行」，不是往末尾追加 —— 行是点 + Add a product 时就建好的
+      return prev.map(l => (l.id === lineId ? { ...newLine, id: lineId } : l))
+    })
   }
 
   /**
@@ -525,21 +551,21 @@ export default function QuotationDetailPage() {
     } as unknown as EditLine])
     activatePickerRef.current(draftId)
   }
-  // 合并重复商品：同一 productId 的行合并为一行，数量相加（与 place-order 创建页一致）
+  // 合并重复商品：同一 productId 且同一可售单位的行合并为一行，数量相加（与 place-order 创建页一致）
   function mergeDuplicateLines() {
     setEditLines(prev => {
       const seen = new Map<string, EditLine>()
       const result: EditLine[] = []
       for (const l of prev) {
         if (!l.productId) { result.push(l); continue }
-        const existing = seen.get(l.productId)
+        const existing = seen.get(dupKey(l))
         if (existing) {
           const qty = Number(existing.orderedQty) + Number(l.orderedQty)
           existing.orderedQty = qty
           existing.subtotal = Math.round(Number(existing.unitPrice) * qty * 100) / 100
         } else {
           const copy = { ...l }
-          seen.set(l.productId, copy)
+          seen.set(dupKey(l), copy)
           result.push(copy)
         }
       }
@@ -877,7 +903,7 @@ export default function QuotationDetailPage() {
             {editing && (() => {
               const dups = [...duplicateCounts.entries()].filter(([, c]) => c > 1)
               if (dups.length === 0) return null
-              const nameOf = (pid: string) => editLines.find(l => l.productId === pid)?.productName ?? pid
+              const nameOf = (key: string) => editLines.find(l => dupKey(l) === key)?.productName ?? key
               return (
                 <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
                   <span className="text-lg leading-none mt-0.5">🔁</span>
@@ -886,7 +912,7 @@ export default function QuotationDetailPage() {
                     <span className="text-purple-600">
                       {isEn ? `${dups.length} product(s) added more than once` : `${dups.length} 个商品被重复添加`}
                       <span className="text-xs text-purple-500 ml-1">
-                        ({dups.map(([pid, c]) => `${nameOf(pid)} ×${c}`).join(isEn ? ', ' : '、')})
+                        ({dups.map(([key, c]) => `${nameOf(key)} ×${c}`).join(isEn ? ', ' : '、')})
                       </span>
                     </span>
                     <span className="text-xs text-gray-500 ml-1">{isEn ? '— click "Merge" on the right to combine into one line (quantities added), or leave as-is and adjust manually' : '— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整'}</span>
@@ -909,6 +935,7 @@ export default function QuotationDetailPage() {
               products={allProducts}
               onPickProduct={selectProductIntoLine}
               onPickByEnter={() => addBlankLine({ force: true })}
+              onPickerActivate={fetchLatestProducts}
               onAddBlankLine={editing ? addBlankLine : undefined}
               pickerTexts={{
                 empty: isEn ? 'No matching products' : '没有匹配商品',
@@ -950,7 +977,7 @@ export default function QuotationDetailPage() {
                 const fc = forecastMap.get(l.productId)
                 const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
-                const isDuplicate = !!l.productId && (duplicateCounts.get(l.productId) ?? 0) > 1
+                const isDuplicate = !!l.productId && (duplicateCounts.get(dupKey(l)) ?? 0) > 1
                 const atp = editing && fc ? Number(fc.qtyOnHand) - atpDemand(l.productId) : null
                 const isOutOfStock = atp != null && atp <= 0
                 const isLowStock = atp != null && atp > 0 && atp < LOW_STOCK_THRESHOLD

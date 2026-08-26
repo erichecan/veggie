@@ -53,6 +53,12 @@ export interface UseInlineProductPickerOptions<P extends InlineProductPickerProd
    * 传了就用调用方的实现。
    */
   onSelectByTab?: (lineId: string) => void
+  /**
+   * 搜索框刚激活（用户点开选品）时触发。调用方用来强制刷新 `products`——
+   * 客户 20260826 报过：编辑完商品/可售单位马上回来下单，页面打开时拉的那份
+   * 缓存还没过 30 秒节流窗口，选品选到了旧数据。这里只发信号，不管怎么刷新。
+   */
+  onActivate?: (lineId: string) => void
   /** 下拉无匹配时的文案 */
   emptyText?: string
   /** 未选商品时单元格的占位文案 */
@@ -89,6 +95,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   onSelect,
   onSelectByEnter,
   onSelectByTab,
+  onActivate,
   emptyText = '没有匹配商品',
   placeholderText = '点击选择商品…',
   searchPlaceholder = '搜索商品…',
@@ -123,7 +130,8 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   const activate = useCallback((lineId: string) => {
     setActiveLineId(lineId)
     updateSearch('')
-  }, [updateSearch])
+    onActivate?.(lineId)
+  }, [updateSearch, onActivate])
 
   // 点到别处就收起。注意判定用的是 dropRef（输入框那一小块），
   // 不是下拉本身——下拉在 portal 里，不是它的后代。下拉自己靠 onMouseDown
