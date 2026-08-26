@@ -28,13 +28,19 @@
 
 ## 模块 E：账期灵活化 + 会计延期审批（最大，最后做）
 
-- [ ] E1. schema：Customer 加 `termExtendedUntil`/`termExtendedNote`；新表 `CustomerTermExtension`；迁移
-- [ ] E2. `lib/payment-terms.ts`：5 档账期 + 天数映射 + `computeDueDate`
-- [ ] E3. `lib/credit-check.ts`：合并 orders/route.ts 与 customers/[id]/credit/route.ts 的重复校验逻辑，覆盖所有账期类型，接入延期豁免判断
-- [ ] E4. API：`POST /api/customers/[id]/term-extension`（新增）；`GET /api/customers/[id]/credit` 和 `POST /api/orders` 改用共享函数；`POST /api/invoices` 的 dueDate 自动推算
-- [ ] E5. RBAC：`master.customer.extend_term` 权限点，授予 FINANCE/BOSS
+- [x] E1. schema：Customer 加 `termExtendedUntil`/`termExtendedNote`；新表 `CustomerTermExtension`；迁移 `20260826000001_customer_term_extension`（本地已用 `prisma db execute` 精确应用，未用 `db push`——开发库跨 worktree 共享，`db push` 会因为别的分支加的 `settlementCycle` 列触发数据丢失警告）
+- [x] E2. `lib/payment-terms.ts`：5 档账期 + 天数映射 + `computeDueDate`
+- [x] E3. `lib/credit-check.ts`：合并 orders/route.ts 与 customers/[id]/credit/route.ts 的重复校验逻辑，覆盖所有账期类型，接入延期豁免判断
+- [x] E4. API：`POST /api/customers/[id]/term-extension`（新增）；`GET /api/customers/[id]/credit` 和 `POST /api/orders` 改用共享函数（BOSS/FINANCE 角色特批保留，跟延期机制并存不是互相替代）；`POST /api/invoices` 的 dueDate 自动推算
+- [x] E5. RBAC：`master.customer.extend_term` 权限点（sortKey 184，`sync-sortkeys.ts` 分配），迁移 `20260826000002_customer_extend_term_permission` 幂等追加给 boss/finance 两个预置角色 + bump permVersion。⚠️ 踩坑：光这样还不够，`lib/rbac/route-map.ts` 是 middleware 层单独一张静态权限表，新路由不登记会被默认拒绝——已补登记，详见记忆 `new-protected-api-route-needs-route-map-registration-20260826.md`
 - [ ] E6. 前端：客户详情页账期下拉扩到 5 档 + "延长账期"按钮；下单页信用面板显示延期状态
-- [ ] E7. build 通过 + 本地浏览器实测走一遍：造测试客户逾期→拦截→延期→放行→到期恢复拦截；开票不传 dueDate 自动推算
+- [x] E1-E5 端到端验证（本地 dev 库真实 HTTP 调用，造测试客户+测试 FINANCE 账号）：
+  - weekly 客户造出逾期发票 → `GET credit` 返回 `canOrder:false`（改造前这类客户不会被拦，验证了漏洞已堵上）
+  - OPERATOR 账号调用延期接口 → 403（权限门禁生效）
+  - FINANCE 测试账号延期 7 天 → 200，`CustomerTermExtension` 表落库一条审批履历
+  - 延期后再查 `GET credit` → `canOrder:true`，欠款/逾期金额仍如实返回（€100，没被隐藏）
+  - `POST /api/invoices` 不传 dueDate → 按客户账期(weekly)自动推出 7 天后的到期日，`paymentTerms` 也正确回填
+  - 测试数据（客户/发票/延期记录/测试账号）已清理
 
 ---
 

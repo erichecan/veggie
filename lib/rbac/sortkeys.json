@@ -160,6 +160,7 @@
     "tool.geo.use": 104,
     "tool.upload.use": 105,
     "tool.fx.read": 106,
+    "tool.bulletin.use": 182,
     "page.operator.access": 120,
     "page.boss.access": 121,
     "page.finance.access": 122,
@@ -171,6 +172,7 @@
     "page.print.access": 128,
     "page.portal.access": 129,
     "page.restaurant.access": 160,
+    "page.bulletin.access": 183,
     "system.user.read": 107,
     "system.user.manage": 108,
     "system.rbac.read": 109,
@@ -184,7 +186,6 @@
     "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "tool.bulletin.use": 182,
-    "page.bulletin.access": 183
+    "master.customer.extend_term": 184
   }
 }

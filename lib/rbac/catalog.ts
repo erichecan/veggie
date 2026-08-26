@@ -359,6 +359,7 @@ export const PERMISSION_GROUPS: GroupDef[] = [
           { action: 'delete_gdpr', labelZh: 'GDPR 删除', labelEn: 'GDPR Erase' },
           { action: 'read_detail', labelZh: '查看客户详情', labelEn: 'View Detail' },
           { action: 'read_credit', labelZh: '查看信用与账期', labelEn: 'View Credit' },
+          { action: 'extend_term', labelZh: '延长账期', labelEn: 'Extend Payment Term' },
           { action: 'read_last_prices', labelZh: '查看历史成交价', labelEn: 'View Last Prices' },
           { action: 'bulk_import', labelZh: '批量导入', labelEn: 'Bulk Import' },
         ],

@@ -238,6 +238,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // ── 基础档案 ────────────────────────────────────────────────────────────
   { pattern: '/api/customers/coordinates', permission: ['master.customer.read', 'dispatch.trip.read'] },
   { pattern: '/api/customers/*/credit', permission: 'master.customer.read_credit' },
+  { pattern: '/api/customers/*/term-extension', methods: ['POST'], permission: 'master.customer.extend_term' },
   { pattern: '/api/customers/*/last-prices', permission: 'master.customer.read_last_prices' },
   { pattern: '/api/customers/bulk', permission: 'master.customer.bulk_import' },
   // 联系人（多邮箱）。读跟着「客户详情」走，写跟着「编辑客户」走 —— 不单开权限点：

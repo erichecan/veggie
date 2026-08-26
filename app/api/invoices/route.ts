@@ -4,6 +4,7 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writebackInvoicedQty } from '@/lib/invoice-invoiced-qty'
+import { computeDueDate } from '@/lib/payment-terms'
 
 /**
  * 不分页调用的兜底上限。
@@ -164,6 +165,19 @@ export async function POST(req: Request) {
 
       const saleOrderIds: string[] = Array.isArray(data.saleOrderIds) ? data.saleOrderIds : []
 
+      // dueDate 未显式传入时按账期天数自动推算（20260826）：此前这里永远是
+      // `data.dueDate ?? null`，没有任何调用方会传 dueDate，导致新开的发票
+      // dueDate 恒为 null——逾期检测（lib/credit-check.ts）因此从来查不到任何
+      // 逾期发票，形同虚设。paymentTerms 优先用调用方传的值，没传则回退客户档案。
+      let paymentTerms = typeof data.paymentTerms === 'string' ? data.paymentTerms : undefined
+      if (!paymentTerms) {
+        const cust = await prisma.customer.findUnique({ where: { id: customerId }, select: { paymentTerm: true } })
+        paymentTerms = cust?.paymentTerm ?? 'monthly'
+      }
+      const dueDate = typeof data.dueDate === 'string' && data.dueDate
+        ? data.dueDate
+        : computeDueDate(new Date(), paymentTerms).toISOString().slice(0, 10)
+
       // 事务：发票创建 + 回写 OrderLine.invoicedQty = deliveredQty
       const invoice = await prisma.$transaction(async (tx) => {
         const created = await tx.invoice.create({
@@ -179,8 +193,8 @@ export async function POST(req: Request) {
             amountPaid: 0,
             amountDue: totalIncTax,
             status: String(data.status ?? 'DRAFT').toUpperCase() as 'DRAFT',
-            paymentTerms: String(data.paymentTerms ?? 'monthly'),
-            dueDate: data.dueDate ?? null,
+            paymentTerms,
+            dueDate,
           },
         })
 

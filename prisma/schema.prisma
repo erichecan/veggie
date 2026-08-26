@@ -471,6 +471,12 @@ model Customer {
   /// 默认配送批次（P1-4：客户↔司机绑定）
   defaultDriverSlotId String?
   defaultDriverSlot   DriverSlot?            @relation("CustomerDefaultSlot", fields: [defaultDriverSlotId], references: [id], onDelete: SetNull)
+  /// 账期临时延期（20260826）：会计/主管手动给逾期客户放宽一段时间，两项拦截
+  /// （逾期检查 + 信用额度超限）在此之前都不生效；到期后自动恢复正常检查。
+  /// 存在这个字段是为了下单时一次查询就能判断，不用每次去连 termExtensions 算最新一条。
+  termExtendedUntil   DateTime?
+  termExtendedNote    String?
+  termExtensions      CustomerTermExtension[]
   specialPrices       CustomerSpecialPrice[]
   supplierInfos       ProductSupplierInfo[]  @relation("PartnerSupplierInfos")
   pricelists          CustomerPricelist[]
@@ -620,6 +626,30 @@ model ProductAlias {
   updatedAt      DateTime @updatedAt
 
   @@index([productId])
+}
+
+/**
+ * 客户账期临时延期审批履历（20260826）
+ * ================================================================================
+ * 会计/主管给逾期客户放宽账期时的操作记录——谁批的、批了几天、到什么时候、为什么。
+ * `Customer.termExtendedUntil` 是从这张表派生出来的"当前生效值"缓存（每次新延期
+ * 覆盖它），这张表本身是不可变的审批履历，两者都要写，缺一个都不完整：前者用于
+ * 下单时快速判断，后者用于事后追溯"这个客户到底被延期过几次、每次是谁批的"。
+ */
+model CustomerTermExtension {
+  id              String   @id @default(cuid())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// 本次延长的天数（1周=7、2周=14，或自定义）
+  days            Int
+  /// 延长到的日期——延期期间(今天 <= until)逾期检查与信用额度检查都不生效
+  until           DateTime
+  note            String?
+  createdById     String
+  createdByName   String
+  createdAt       DateTime @default(now())
+
+  @@index([customerId])
 }
 
 model CustomerSpecialPrice {

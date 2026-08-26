@@ -10,6 +10,7 @@ import { deriveOrderItemsList } from '@/lib/order-items'
 import { attachWaveDisplay } from '@/lib/wave-assign'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { ORDER_STATUSES, buildOrdersWhere } from '@/lib/orders-query'
+import { checkCustomerCredit } from '@/lib/credit-check'
 
 // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面(报表/打印/列表)
 // 不用改动就能继续显示业务员姓名。写入路径一律走 salesUserId,不读这个字段。
@@ -212,7 +213,10 @@ export async function POST(req: Request) {
       // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
       const custDefaults = await prisma.customer.findUnique({
         where: { id: restaurantId },
-        select: { name: true, defaultDriverSlotId: true, commissionRate: true, commissionFixed: true, salesUserId: true, paymentTerm: true, creditLimit: true },
+        select: {
+          name: true, defaultDriverSlotId: true, commissionRate: true, commissionFixed: true,
+          salesUserId: true, paymentTerm: true, creditLimit: true, termExtendedUntil: true,
+        },
       })
 
       // 客户名是订单上的展示快照。原先只认客户端传的值，不传就写死"未知餐馆"——
@@ -221,22 +225,19 @@ export async function POST(req: Request) {
       // 一串同名项无法区分。客户端不给就从客户档案取，取不到才退回占位符。
       const restaurantName = submittedName || custDefaults?.name || '未知餐馆'
 
-      // 服务端信用管控校验
-      if (custDefaults && custDefaults.paymentTerm !== 'cash') {
-        const creditInvoices = await prisma.invoice.findMany({
-          where: { customerId: restaurantId, status: 'POSTED' },
-          select: { amountDue: true, dueDate: true },
+      // 服务端信用管控校验（20260826 改用 lib/credit-check.ts 的共享逻辑：覆盖所有
+      // 账期类型，不再只查月结客户；接入账期临时延期，延期窗口内不拦）
+      if (custDefaults) {
+        const credit = await checkCustomerCredit(prisma, {
+          customerId: restaurantId,
+          paymentTerm: custDefaults.paymentTerm,
+          creditLimit: custDefaults.creditLimit,
+          termExtendedUntil: custDefaults.termExtendedUntil,
         })
-        const outstandingBalance = creditInvoices.reduce((s, inv) => s + Number(inv.amountDue), 0)
-        const today = new Date().toISOString().slice(0, 10)
-        const overdueAmount = creditInvoices
-          .filter(inv => inv.dueDate && inv.dueDate < today)
-          .reduce((s, inv) => s + Number(inv.amountDue), 0)
-        const creditLimit = Number(custDefaults.creditLimit ?? 0)
-        let blocked = false
-        if (creditLimit > 0 && outstandingBalance >= creditLimit) blocked = true
-        if (overdueAmount > 0 && custDefaults.paymentTerm === 'monthly') blocked = true
-        if (blocked && !['BOSS', 'FINANCE'].includes(user.role)) {
+        // BOSS/FINANCE 保留特批能力（沿用改造前的行为）——账期延期是给一段时间内所有
+        // 操作员都能正常下单的正式机制，角色特批是留给"延期没批、又必须马上放行"的应急口子，
+        // 两者并存，互不替代。
+        if (credit.blocked && !['BOSS', 'FINANCE'].includes(user.role)) {
           return NextResponse.json({ error: '客户信用冻结，请联系财务或主管特批' }, { status: 403 })
         }
       }
