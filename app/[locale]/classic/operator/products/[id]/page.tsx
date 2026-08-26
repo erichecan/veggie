@@ -262,6 +262,14 @@ export default function ClassicProductDetailPage() {
     }
     setSaleUomsSaving(true)
     try {
+      // 页头 Unit of Measure 是基准单位的唯一入口，但它和这里的保存是两个独立请求；
+      // 若用户刚改了还没点主表单 Save，后端这时查到的 product.uomId 还是旧值，会导致
+      // 提交的行里没有一行匹配基准单位而报"必须且只能有一个默认单位"。这里先把 uomId
+      // 落库，保证后端拿到的基准单位跟页面上看到的一致。
+      if (tmpl?.uomId && tmpl.uomId !== original?.uomId) {
+        await apiPut(`/api/products/${primaryProductId}`, { uomId: tmpl.uomId })
+        setOriginal(prev => (prev ? { ...prev, uomId: tmpl.uomId } : prev))
+      }
       const payload = saleUoms.map(r => ({ ...r, isDefault: tmpl?.uomId ? r.uomId === tmpl.uomId : r.isDefault }))
       const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null }>>(
         `/api/products/${primaryProductId}/sale-uoms`,
