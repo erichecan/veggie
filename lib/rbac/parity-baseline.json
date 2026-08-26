@@ -3806,5 +3806,19 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "POST /api/customers/[id]/term-extension": {
+    "BOSS": "y",
+    "OPERATOR": "n",
+    "FINANCE": "y",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }

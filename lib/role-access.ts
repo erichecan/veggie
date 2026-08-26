@@ -169,6 +169,10 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/analytics/**', methods: READ },
     { pattern: '/api/customers/**', methods: READ },
     exportOf('customers'),
+    // 账期临时延期（20260826）：上面那句"主数据只读"从今天起有一个刻意的例外——
+    // 会计能给逾期客户批延期，这正是本次功能的目的，不是漏改。新体系里走
+    // master.customer.extend_term 权限点，这里补齐旧 token 路径。
+    { pattern: '/api/customers/*/term-extension', methods: ['POST'] },
     { pattern: '/api/orders/**', methods: READ },
     exportOf('orders'),
     // 把单据邮件发给客户。财务对订单其余部分仍是只读 —— 这条精确到 send-email，
