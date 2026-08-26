@@ -79,6 +79,7 @@ function SalesPriceHistoryModal({
 }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [loading, setLoading] = useState(true)
   const [history, setHistory] = useState<SalesPriceHistoryEntry[]>([])
 
@@ -134,7 +135,18 @@ function SalesPriceHistoryModal({
                     <td className="py-1.5 px-2 text-gray-500">
                       {new Date(h.date).toLocaleString('en-CA', { hour12: false })}
                     </td>
-                    <td className="py-1.5 px-2 text-gray-500">{h.orderNumber}</td>
+                    <td className="py-1.5 px-2">
+                      <a
+                        href={`${prefix}/classic/operator/orders/${h.orderId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="text-gray-600 hover:underline"
+                        style={{ color: PURPLE }}
+                      >
+                        {h.orderNumber}
+                      </a>
+                    </td>
                     <td className="py-1.5 px-2 text-right">{h.quantity.toFixed(3)}</td>
                     <td className="py-1.5 px-2 text-gray-500">{h.uom ?? '—'}</td>
                     <td className="py-1.5 px-2 text-right font-medium">{h.unitPrice.toFixed(2)}</td>
