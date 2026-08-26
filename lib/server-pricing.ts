@@ -21,6 +21,7 @@ import type {
   OrderItem,
 } from './types'
 import { resolveCustomerPrice, type PriceResolution } from './pricing-engine'
+import { priceOf, type SaleUomPriceMode } from './sale-uom'
 import { SALE_ORDER_STATUSES } from './order-status'
 import { toNum, toNumOpt } from './decimal-helpers'
 
@@ -332,17 +333,32 @@ export async function resolveOrderLines(
   })
   const saleUomMap = new Map(saleUomRows.map((r) => [`${r.productId}::${r.uomId}`, r]))
 
-  /** 把"基准单位"权威价换算成行选单位的权威价：优先 priceOverride，否则按 ProductSaleUom.factor 缩放 */
+  /**
+   * 把"基准单位"权威价换算成行选单位的权威价。
+   *
+   * ⚠️ 20260826 修：这里以前是自己手算 `basePrice * factor`，完全没管 FORMULA 模式的
+   * `priceDiscountPct`/`priceSurcharge`，跟前端预览用的 `lib/sale-uom.ts:priceOf()`
+   * 是两份不同实现——同一个 FORMULA + 非零 surcharge 的可售单位，前端看到的预览价
+   * 和保存后的权威价对不上（客户 20260826 报过价格算错）。现在直接复用 `priceOf`，
+   * 别再维护第二份公式。
+   */
   function scaleAuthoritativePrice(productId: string, anchorUomId: string | null, lineUomId: string | undefined, basePrice: number): number {
     if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) return basePrice
     const saleUom = saleUomMap.get(`${productId}::${lineUomId}`)
     if (!saleUom) return basePrice
-    if (saleUom.priceOverride != null) return toNum(saleUom.priceOverride)
-    const lineFactor = toNum(saleUom.factor)
-    if (!lineFactor) return basePrice
-    // 基准单位自己的 ProductSaleUom 行 factor 恒为 1，不需要再除以"锚点单位系数"——
-    // 与 lib/sale-uom.ts:priceOf() 的 `basePrice * factor` 逐字一致。
-    return basePrice * lineFactor
+    return priceOf(
+      [{
+        uomId: saleUom.uomId,
+        isDefault: saleUom.isDefault,
+        factor: toNum(saleUom.factor),
+        priceOverride: saleUom.priceOverride != null ? toNum(saleUom.priceOverride) : null,
+        priceMode: saleUom.priceMode as SaleUomPriceMode,
+        priceDiscountPct: toNum(saleUom.priceDiscountPct),
+        priceSurcharge: toNum(saleUom.priceSurcharge),
+      }],
+      lineUomId,
+      basePrice,
+    )
   }
 
   const lines: ResolvedLine[] = []

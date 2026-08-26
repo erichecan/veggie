@@ -16,10 +16,10 @@
 - [x] B2. `selectProductIntoLine`/`selectProduct` 选中已存在的同商品同单位行时合并数量+1并丢弃空白草稿行；同商品不同单位正常新增，不误判重复
 - [x] B3. build 通过 + 本地浏览器实测（place-order 页，Playwright）：同商品(vest)选两次 → 只剩一行、数量从1变2、总额€1→€2，无 Duplicate 提示 —— 确认生效
 
-## 模块 C：scaleAuthoritativePrice 公式对齐 priceOf
+## 模块 C：scaleAuthoritativePrice 公式对齐 priceOf ✅ 20260826 完成
 
-- [ ] C1. `lib/server-pricing.ts` 的 `scaleAuthoritativePrice` 改为把 `priceDiscountPct`/`priceSurcharge` 也算进去，跟 `lib/sale-uom.ts:priceOf()` 同一套公式（优先直接复用 priceOf，避免第三份实现）
-- [ ] C2. build 通过 + 写一个小验证：某 FORMULA 模式、surcharge≠0 的可售单位，前端预览价格 = 保存后订单行价格
+- [x] C1. `lib/server-pricing.ts` 的 `scaleAuthoritativePrice` 改成直接调用 `lib/sale-uom.ts:priceOf()`，不再自己维护一份只算 `basePrice×factor`、完全没管 `priceDiscountPct`/`priceSurcharge` 的公式
+- [x] C2. build 通过 + 本地 dev 库端到端验证：造一个 FORMULA 模式(factor=0.5, surcharge=€2)的可售单位，真实 POST /api/orders 提交单价 €12.00（=20×0.5+2，公式完整值）——修复前权威价会算成 €10.00（漏了 surcharge）导致提交价被判"超出容差"强制打回；修复后 `authoritativePrice: 12, priceMatched: true, pricingWarnings: []`，验证通过。测试数据已清理
 
 ## 模块 D：Pricelist Items 页面显示实际售价
 
