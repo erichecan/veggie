@@ -75,7 +75,9 @@ export async function POST(req: Request) {
       const p = prisma as any
       const po = await p.$transaction((tx: typeof p) => createPurchaseOrder(tx, {
         supplierId: String(data.supplierId ?? ''),
-        lines: Array.isArray(data.lines) ? data.lines : [],
+        lines: Array.isArray(data.lines)
+          ? data.lines.map((l: Record<string, unknown>) => ({ ...l, spec: l.spec !== undefined ? String(l.spec ?? '') : undefined }))
+          : [],
         orderDate: data.orderDate ?? null,
         expectedDate: data.expectedDate ?? null,
         currency: data.currency,

@@ -124,8 +124,7 @@ export function buildOrderHtml(
     </div>
     <div class="company-addr">
       141 Slaney Close<br/>
-      Dublin 11, D11 C3NX<br/>
-      Ireland
+      Dublin 11, D11 C3NX
     </div>
   </div>
 

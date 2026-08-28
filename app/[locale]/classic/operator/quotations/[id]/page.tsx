@@ -267,12 +267,16 @@ export default function QuotationDetailPage() {
       const uomMatched = uomScoped?.matchedUomId === newUomId
       const newUnitPrice = uomMatched ? uomScoped.price : priceOf(rows, newUomId, basePrice)
       const qty = Number(line.orderedQty)
+      // Cost 也要跟着单位换算，不然切到非默认单位后 Cost 列还停在换单位前那个分母上，
+      // 和已经按新单位算好的 unitPrice 对不上（客户 20260827 反馈价格低于成本，实为显示误导）。
+      const newCost = Math.round(Number(p.standardPrice ?? 0) * factorOf(rows, newUomId) * 100) / 100
       const next = [...prev]
       next[idx] = {
         ...line,
         uomId: newUomId,
         uomName: nameOf(newUomId),
         unitPrice: newUnitPrice,
+        cost: newCost,
         subtotal: Math.round(qty * newUnitPrice * 100) / 100,
         // 换单位换算出的新价要如实标来源，不能留着旧单位那份标签——
         // 命中价格表的单位限定规则就是 PRICELIST，否则是按基础价×换算系数走出来的 DEFAULT，
@@ -476,7 +480,7 @@ export default function QuotationDetailPage() {
     if (customer && priceType !== 'default') {
       try {
         const res = await apiGet<{ price: number | null; createdAt?: string }>(
-          `/api/orders/last-price?customerId=${customer.id}&productId=${p.id}`
+          `/api/orders/last-price?customerId=${customer.id}&productId=${p.id}${p.uomId ? `&uomId=${p.uomId}` : ''}`
         )
         if (res.price != null && res.price > 0) {
           lastPriceHit = { price: res.price, date: res.createdAt ?? '' }

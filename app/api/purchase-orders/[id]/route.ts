@@ -13,6 +13,7 @@ import { withProductSequence } from '@/lib/print/product-sequence'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { sendPurchaseOrderRfq } from '@/lib/email'
 import { handleReceiveAction } from '@/lib/purchase/receive-purchase-order'
+import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 
 const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'notes', 'expectedDate', 'editApprovalRequired']
 
@@ -122,12 +123,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           .map((l: Record<string, unknown>) => String(l.productId ?? ''))
           .filter(Boolean)
         if (newLinePOProductIds.length > 0) {
+          // ⛔ canBePurchased 20260825 合表重构后直接挂在 Product 上，`template` 关系已删——
+          // 这里之前的 include: { template: ... } 会让 Prisma 抛 "Unknown field `template`"，
+          // 给已有采购单加新行时保存 500（与 lib/create-purchase-order.ts 是同一个坑）。
           const newLinePOProducts = await p.product.findMany({
             where: { id: { in: newLinePOProductIds } },
-            include: { template: { select: { canBePurchased: true } } },
+            select: { id: true, name: true, canBePurchased: true },
           })
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const notPurchasable = newLinePOProducts.filter((prod: any) => prod.template?.canBePurchased === false)
+          const notPurchasable = newLinePOProducts.filter((prod: any) => prod.canBePurchased === false)
           if (notPurchasable.length > 0) {
             return NextResponse.json(
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -137,16 +141,34 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           }
         }
 
+        // 描述同步（客户 20260827 要求）：报价单/销售单的 Description 读 Product.spec
+        // （见 lib/order-line-description.ts），采购单编辑页现在也是一个入口——改了 spec
+        // 就回写商品库。老行的 payload 不一定带 productId（见 [id]/page.tsx handleSave），
+        // 缺了就从改动前的行里补，同一商品出现多次以最后一行为准。
+        const specByProductId = new Map<string, string>()
+
         const lineOps = linesPayload.map((l: Record<string, unknown>) => {
           const orderedQty = Number(l.orderedQty)
           const unitCost = Number(l.unitCost)
           const taxRate = l.taxRate !== undefined ? Number(l.taxRate) : 0
+          // 只挡"新加的行"和"这次真改了税率的行"——历史行税率一字不动地原样传回来时放行，
+          // 不然生产库里这条新规矩生效前就存下的脏税率会让老单从此保存不了(20260827)。
+          const oldTaxRate = !isNewLine(l) ? toNum(oldLines[String(l.id)]?.taxRate) : null
+          const taxRateChanged = isNewLine(l) || oldTaxRate === null || Math.abs(oldTaxRate - taxRate) > 1e-9
+          if (taxRateChanged && !isValidPurchaseTaxRate(taxRate)) {
+            throw Object.assign(new Error(`税率只能是 0%/13.5%/23%：${l.productName ?? l.id}`), { status: 400 })
+          }
           const subtotalExTax = orderedQty * unitCost
           const taxAmount = subtotalExTax * taxRate / 100
           const subtotalIncTax = subtotalExTax + taxAmount
           const bestBefore = l.bestBefore
             ? new Date(l.bestBefore as string)
             : null
+
+          if (l.spec !== undefined) {
+            const productId = String(l.productId ?? oldLines[String(l.id)]?.productId ?? '')
+            if (productId) specByProductId.set(productId, String(l.spec ?? '').trim())
+          }
 
           if (isNewLine(l)) {
             const productId = String(l.productId ?? '')
@@ -206,6 +228,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
 
         await prisma.$transaction(lineOps)
+
+        for (const [productId, spec] of specByProductId) {
+          await p.product.update({ where: { id: productId }, data: { spec: spec || null } })
+        }
 
         // Recalculate PO totals from the final line set (更新行 + 新增行，去掉被删的)
         const finalLines = linesPayload.filter((l: Record<string, unknown>) => !deletedIds.includes(String(l.id)))

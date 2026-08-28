@@ -24,7 +24,7 @@ interface ReportLine {
 }
 
 const COMPANY = 'JohnstoneBros'
-const COMPANY_ADDR = '141 Slaney Close, Dublin 11, D11 C3NX, Ireland'
+const COMPANY_ADDR = '141 Slaney Close, Dublin 11, D11 C3NX'
 const COMPANY_COLOR = '#1a3a2a'
 
 const CSS = `

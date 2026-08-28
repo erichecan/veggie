@@ -82,8 +82,7 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[]): string {
   <div class="company-addr">
     JohnstoneBros Ltd<br/>
     141 Slaney Close<br/>
-    Dublin 11, D11 C3NX<br/>
-    Ireland
+    Dublin 11, D11 C3NX
   </div>
 </div>
 <hr class="header-rule"/>

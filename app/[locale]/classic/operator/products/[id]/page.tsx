@@ -644,11 +644,13 @@ export default function ClassicProductDetailPage() {
                     {baseUoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
                   </select>
                 </Row>
-                <Row label={isEn ? 'Weight (kg)' : '默认重量 Weight (kg)'}>
+                <Row label={isEn ? 'Gross Weight (kg)' : '毛重 Gross Weight (kg)'}>
                   <NumericInput step="0.001" min={0} value={tmpl.weight ?? 0} onChange={e => setField('weight', parseFloat(e.target.value) || undefined)} className={fieldClass} style={focusStyle} />
                 </Row>
-                {/* 净重与上面的"默认商品重量"是两个独立字段，供物流、报关、称重使用。
-                    毛重(grossWeight)20260825 已删除——跟"默认商品重量"重复,生产 5482 个商品无一个填过。 */}
+                {/* 净重与上面的"毛重"（仍是同一个 weight 字段，只是改了名字）是两个独立字段，
+                    供物流、报关、称重使用。独立的 grossWeight 字段 20260825 已删除——跟这个
+                    字段重复,生产 5482 个商品无一个填过；20260828 客户要求把 weight 的显示名
+                    从"默认重量"改成"毛重"，字段本身没变。 */}
                 <Row label={isEn ? 'Net Weight (kg)' : '净重 Net Weight (kg)'}>
                   <NumericInput step="0.001" min={0} value={tmpl.netWeight ?? 0} onChange={e => setField('netWeight', parseFloat(e.target.value) || undefined)} className={fieldClass} style={focusStyle} />
                 </Row>
@@ -675,7 +677,7 @@ export default function ClassicProductDetailPage() {
                     ? (() => { const u = uoms.find(u => u.id === tmpl.purchaseUomId); return isEn ? (u?.name || u?.nameZh) : (u?.nameZh ?? u?.name) })()
                     : 'Unit(s)'
                 } />
-                <ReadField label={isEn ? 'Weight (kg)' : '默认重量 Weight (kg)'} value={tmpl.weight != null ? `${tmpl.weight} kg` : undefined} />
+                <ReadField label={isEn ? 'Gross Weight (kg)' : '毛重 Gross Weight (kg)'} value={tmpl.weight != null ? `${tmpl.weight} kg` : undefined} />
                 <ReadField label={isEn ? 'Net Weight (kg)' : '净重 Net Weight (kg)'} value={tmpl.netWeight != null ? `${tmpl.netWeight} kg` : undefined} />
                 <ReadField label="Volume (L)" value={tmpl.volume != null ? `${tmpl.volume} L` : undefined} />
                 <ReadField label="Tracking" value={
@@ -807,11 +809,11 @@ export default function ClassicProductDetailPage() {
                               className="w-16 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
                             />
                             <span className="text-gray-400">=</span>
-                            <span className="font-medium" style={{ color: '#875A7B' }}>€{finalPrice.toFixed(1)}</span>
+                            <span className="font-medium" style={{ color: '#875A7B' }}>€{finalPrice.toFixed(2)}</span>
                           </div>
                         ) : (
                           <div className="flex items-center h-8 px-2 text-sm text-gray-500 whitespace-nowrap">
-                            €{finalPrice.toFixed(1)}
+                            €{finalPrice.toFixed(2)}
                           </div>
                         )}
                         {editMode && !isBase && (

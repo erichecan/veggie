@@ -16,6 +16,7 @@ import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { formatUomConversionHint, uomConversionKey } from '@/lib/print/uom-conversion'
 import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
+import { factorOf } from '@/lib/sale-uom'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
@@ -53,6 +54,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
                 // 打印顺序按商品 sequence（客户要求 2026-08-18）。打印页是纯前端渲染，
                 // 拿不到数据库，所以在这里就把它展平到行上。见 lib/print/line-sort.ts
                 sequence: true,
+                // standardPrice 是基础单位（isDefault=true 那行）成本，行选了别的单位时
+                // 要按 ProductSaleUom.factor 换算，否则 Cost 列和该行 unitPrice 分母对不上
+                // （客户 20260827 反馈价格低于成本，实为整箱成本 vs 每公斤单价的显示误导）。
+                saleUoms: { select: { uomId: true, factor: true, isDefault: true } },
               },
             },
           },
@@ -92,9 +97,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           uomConversionMap.get(uomConversionKey(line.productId, line.uomId)),
           toNum(line.orderedQty),
         )
+        const uomFactor = factorOf(
+          (product?.saleUoms ?? []).map(su => ({ uomId: su.uomId, isDefault: su.isDefault, factor: toNum(su.factor), priceOverride: null })),
+          line.uomId,
+        )
         return {
           ...line,
-          cost: toNum(product?.standardPrice),
+          cost: round2(toNum(product?.standardPrice) * uomFactor),
           internalRef: product?.internalRef ?? null,
           productSequence: product?.sequence ?? null,
           uomConversionHint: uomHint?.conversionLine ?? null,

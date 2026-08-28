@@ -49,7 +49,20 @@ export async function GET(
       return NextResponse.json({ error: '客户不存在' }, { status: 404 })
     }
 
-    const detailed = await queryLastSoldPricesDetailed(prisma, customerId, productIds)
+    // 这里返回的是"加商品到订单行那一刻"用的价，加行时行单位恒为商品自己的基准单位
+    // （见 place-order 页 selectProduct），所以按商品各自的基准单位过滤历史成交价——
+    // 不然同一商品不同可售单位单价天差地别，不分单位会把小单位历史价当基准单位价用
+    // （2026-08-27 修，客户反馈价格低于成本）。没配基准单位的商品维持老行为（任意单位）。
+    const productsWithUom = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, uomId: true },
+    })
+    const uomFilter: Record<string, string> = {}
+    for (const p of productsWithUom) {
+      if (p.uomId) uomFilter[p.id] = p.uomId
+    }
+
+    const detailed = await queryLastSoldPricesDetailed(prisma, customerId, productIds, uomFilter)
 
     const prices: Record<string, number> = {}
     const dates: Record<string, string> = {}

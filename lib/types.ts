@@ -290,6 +290,8 @@ export interface OrderLine {
   productSequence?: number | null
   /** 商品件提成单价·下单快照（不下发到下单/报价/销售单详情页，见 PRD 20260703） */
   commissionPrice?: number | null
+  /** 该行按下单单位换算后的单位成本（GET /api/orders/[id] 展平自 Product.standardPrice × ProductSaleUom.factor），非 DB 列 */
+  cost?: number | null
   /** 单价来源快照：PRICELIST/DEFAULT/LAST/SPECIAL，历史订单为 null */
   priceSourceType?: string | null
   /** 来源明细：PRICELIST 时为命中的价格表名字 */

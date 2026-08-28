@@ -97,6 +97,28 @@ function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: 
   return '-'
 }
 
+/**
+ * Product Category 列——规则本身锁定的是"分类"（applyOn=category）时显示那个分类；
+ * 锁定的是具体商品（product/variant）时，Odoo 显示的是**那个商品自己所属的分类**，
+ * 不是规则的 categoryId（这类规则压根没有 categoryId）。
+ * ⛔ 我们的分类是平的，没有父子层级，做不出截图里 "All / Stockable / Vegetable" 那种
+ * 面包屑，只能显示叶子分类名。
+ */
+function productCategoryLabel(
+  item: OdooPricelistItem,
+  scopedProduct: Product | undefined,
+  categories: ProductCategory[],
+  isEn: boolean,
+): string {
+  if (item.applyOn === 'category') {
+    const c = categories.find(c => c.id === item.categoryId)
+    return c ? (isEn ? (c.name || c.nameZh || '') : (c.nameZh || c.name)) : ''
+  }
+  if (!scopedProduct?.categoryId) return ''
+  const c = categories.find(c => c.id === scopedProduct.categoryId)
+  return c ? (isEn ? (c.name || c.nameZh || '') : (c.nameZh || c.name)) : ''
+}
+
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export default function ClassicPricelistDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -643,21 +665,29 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Min. Quantity</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-600">Start Date</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-600">End Date</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600 min-w-[160px]">Price</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">Product Category</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600 min-w-[160px]">Price</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Preview Price</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Price Discount</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Cost</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Public Price</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Variant Cost</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Template Cost</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Public Cost Price</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Sale Price</th>
                     {editMode && <th className="w-8 px-3 py-2" />}
                   </tr>
                 </thead>
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 9 : 8} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
+                      <td colSpan={editMode ? 13 : 12} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
                     </tr>
                   )}
                   {pagedItems.map(item => {
                     const scopedProduct = products.find(p => p.id === scopedProductId(item))
+                    // 20260828 客户拍板：合表重构后 template/variant 已经是同一份数据，
+                    // Variant Cost / Template Cost / Public Cost Price 三列都取同一个
+                    // Product.standardPrice——数字会重复，是为了跟客户参照的 Odoo 截图列名对齐，
+                    // 不是算错了。锁定分类(applyOn=category)时没有具体商品，三列都留空。
                     const cost = scopedProduct?.standardPrice
                     const publicPrice = scopedProduct?.listPrice
                     // formula 模式的条目此前只显示"X% discount and Y surcharge"公式文字，
@@ -676,6 +706,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         cost={cost}
                         publicPrice={publicPrice}
                         estimatedPrice={estimatedPrice}
+                        productCategoryLabel={productCategoryLabel(item, scopedProduct, categories, isEn)}
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
@@ -800,7 +831,7 @@ function ExternalLinkIcon() {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, showDelete, onEdit, onDelete, isEn }: {
+function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, isEn }: {
   item: OdooPricelistItem
   products: Product[]
   categories: ProductCategory[]
@@ -808,6 +839,7 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
   cost: number | undefined
   publicPrice: number | undefined
   estimatedPrice: number | undefined
+  productCategoryLabel: string
   showDelete: boolean
   onEdit: () => void
   onDelete: () => void
@@ -816,16 +848,21 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
   const [hover, setHover] = useState(false)
   const scopedUom = uomScopeLabel(item, uoms, isEn)
 
-  const formulaText = `${(item.priceDiscount ?? 0).toFixed(1)} % discount and ${(item.priceSurcharge ?? 0).toFixed(1)} surcharge`
+  // Price 列只放规则本身的定义（跟 Odoo 一致——公式/固定价/折扣文字），
+  // 算出来的具体金额挪到 Preview Price 单独一列，两者不再挤在一个格子里。
   const priceText = item.computeType === 'fixed'
     ? `€${(item.fixedPrice ?? 0).toFixed(2)}`
-    : item.computeType === 'formula'
-      ? (estimatedPrice != null
-          ? `≈ €${estimatedPrice.toFixed(2)} (${formulaText})`
-          : formulaText)
-      : ''
+    : item.computeType === 'percentage'
+      ? `${(item.percentDiscount ?? 0).toFixed(1)} % discount`
+      : `${(item.priceDiscount ?? 0).toFixed(1)} % discount and ${(item.priceSurcharge ?? 0).toFixed(1)} surcharge`
 
-  const discountText = item.computeType === 'percentage' ? `${item.percentDiscount ?? 0}%` : ''
+  // Price Discount：formula 模式下就是 item.priceDiscount 本身（不是"整条公式文字"）；
+  // percentage 模式下是 item.percentDiscount；fixed 模式没有折扣概念，留空。
+  const priceDiscountValue = item.computeType === 'formula'
+    ? item.priceDiscount ?? 0
+    : item.computeType === 'percentage'
+      ? item.percentDiscount ?? 0
+      : null
 
   return (
     <tr
@@ -849,8 +886,20 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
       <td className="px-3 py-1.5 text-right text-gray-600">{item.minQty}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateStart ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateEnd ?? ''}</td>
-      <td className="px-3 py-1.5 text-right text-gray-800">{priceText}</td>
-      <td className="px-3 py-1.5 text-right text-gray-500">{discountText}</td>
+      <td className="px-3 py-1.5 text-gray-500">{productCategoryLabel}</td>
+      <td className="px-3 py-1.5 text-gray-800">{priceText}</td>
+      <td className="px-3 py-1.5 text-right text-gray-800">
+        {estimatedPrice != null ? `€${estimatedPrice.toFixed(2)}` : ''}
+      </td>
+      <td className="px-3 py-1.5 text-right text-gray-500">
+        {priceDiscountValue != null ? priceDiscountValue.toFixed(2) : ''}
+      </td>
+      <td className="px-3 py-1.5 text-right text-gray-500">
+        {cost != null ? cost.toFixed(2) : ''}
+      </td>
+      <td className="px-3 py-1.5 text-right text-gray-500">
+        {cost != null ? cost.toFixed(2) : ''}
+      </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
         {cost != null ? cost.toFixed(2) : ''}
       </td>

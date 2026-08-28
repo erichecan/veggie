@@ -3,8 +3,9 @@
  * 销售代客下单页（经典版 — Odoo Sales Quotation 1:1 还原）
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { priceOf, UNSET_UOM_LABEL } from '@/lib/sale-uom'
+import { priceOf, factorOf, UNSET_UOM_LABEL } from '@/lib/sale-uom'
 import type { SaleUomPriceMode } from '@/lib/sale-uom'
+import { round2 } from '@/lib/decimal-helpers'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
@@ -690,7 +691,11 @@ export default function ClassicPlaceOrderPage() {
       ? (p.uomName ?? UNSET_UOM_LABEL)
       : (saleUomOptions[p.id] ?? []).find(o => o.uomId === uomId)?.uomName ?? line.uom
     const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, line.orderedQty, uomId)
-    patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail })
+    // Cost 要跟着单位换算，不然切到非默认单位后 Cost 列还是整箱成本、
+    // Unit Price 已经是按公斤算的，两者分母对不上，看起来像"卖亏了"（客户 20260827 反馈）。
+    const rows = (saleUomOptions[p.id] ?? []).map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride ?? null }))
+    const cost = round2((p.standardPrice ?? 0) * factorOf(rows, uomId))
+    patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail, cost })
   }
 
   // ── Select product for a line ─────────────────────────────────────────────

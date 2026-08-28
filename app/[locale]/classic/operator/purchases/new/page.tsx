@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -15,6 +15,8 @@ import PdfExtractDialog, { type PdfExtractResult } from './_components/PdfExtrac
 import PdfSidePanel from './_components/PdfSidePanel'
 import PriceHistoryModal from './_components/PriceHistoryModal'
 import CopyFromHistoryModal, { type HistoryPO } from './_components/CopyFromHistoryModal'
+import { rankByRelevance } from '@/lib/search-rank'
+import { PURCHASE_TAX_RATES, nearestPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 
 const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CNY']
 
@@ -55,8 +57,14 @@ interface PurchaseProduct {
   name: string
   internalRef?: string | null
   category?: string | null
+  /// 描述（同步 sales order 的 Description，见 lib/order-line-description.ts，两边共用 Product.spec）
+  spec?: string | null
+  /// 销售单位——仅作为采购单位缺失时的兜底，不是本页应该用的字段（见下方 purchaseUomId）
   uomId?: string | null
   uomName?: string | null
+  /// 采购单位——这里才是"这箱/这包是多大"的真值；确认采购时会把 PO 行最后一次用到的
+  /// uomId 回写到这个字段（见 app/api/purchase-orders/[id]/route.ts PATCH action=confirm）
+  purchaseUomId?: string | null
   standardPrice?: number | null
   price?: number | null
 }
@@ -77,6 +85,19 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+/**
+ * 采购行的单位取"采购单位"（Product.purchaseUomId），没配过才兜底用销售单位——
+ * 这个值会在「确认采购」时回写进 Product.purchaseUomId（20260823），
+ * 从一开始就拿销售单位糊弄的话，确认时就把采购单位悄悄改成了销售单位。
+ */
+function purchaseUom(prod: PurchaseProduct, uoms: Uom[], isEn: boolean): { uomId: string | null; uomName: string | null } {
+  const uomId = prod.purchaseUomId ?? prod.uomId ?? null
+  if (!uomId) return { uomId: null, uomName: null }
+  if (uomId === prod.uomId && !prod.purchaseUomId) return { uomId, uomName: prod.uomName ?? null }
+  const u = uoms.find(x => x.id === uomId)
+  return { uomId, uomName: u ? (isEn ? (u.name || u.nameZh) : (u.nameZh || u.name)) ?? null : null }
+}
+
 export default function NewPurchaseOrderPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -85,6 +106,12 @@ export default function NewPurchaseOrderPage() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [supplierId, setSupplierId] = useState('')
+  // ── 供应商下拉搜索（与 place-order 页客户选择同一套交互，20260827 换掉原生 <select>）──
+  const [supSearch, setSupSearch] = useState('')
+  const [supOpen, setSupOpen] = useState(false)
+  const [supHighlight, setSupHighlight] = useState(0)
+  const supRef = useRef<HTMLDivElement>(null)
+  const supListRef = useRef<HTMLDivElement>(null)
   const [orderDate, setOrderDate] = useState(today())
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
@@ -138,6 +165,53 @@ export default function NewPurchaseOrderPage() {
     apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
   }, [])
 
+  const filteredSuppliers = useMemo(
+    () => rankByRelevance(suppliers, supSearch, s => s.name),
+    [suppliers, supSearch],
+  )
+
+  useEffect(() => {
+    function onMouse(e: MouseEvent) {
+      if (supRef.current && !supRef.current.contains(e.target as Node)) setSupOpen(false)
+    }
+    document.addEventListener('mousedown', onMouse)
+    return () => document.removeEventListener('mousedown', onMouse)
+  }, [])
+
+  useEffect(() => { setSupHighlight(0) }, [supSearch])
+
+  useEffect(() => {
+    if (!supOpen) return
+    const el = supListRef.current?.querySelector(`[data-idx="${supHighlight}"]`) as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [supHighlight, supOpen])
+
+  function selectSupplier(s: Supplier) {
+    setSupplierId(s.id)
+    setSupOpen(false)
+    setSupSearch('')
+  }
+
+  function handleSupKey(e: React.KeyboardEvent) {
+    if (!supOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); setSupOpen(true) }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSupHighlight(i => Math.min(i + 1, filteredSuppliers.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSupHighlight(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filteredSuppliers[supHighlight]) selectSupplier(filteredSuppliers[supHighlight])
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setSupOpen(false)
+    }
+  }
+
   // 币种变化时自动回填当日汇率；接口不可用时不阻塞下单，允许手动填
   useEffect(() => {
     setRateManuallyEdited(false)
@@ -155,15 +229,16 @@ export default function NewPurchaseOrderPage() {
   function addProductLine(prod: PurchaseProduct, overrides?: { qty?: number; unitCost?: number }) {
     const unitCost = overrides?.unitCost ?? Number(prod.standardPrice ?? prod.price ?? 0)
     const qty = overrides?.qty ?? 1
+    const uom = purchaseUom(prod, uoms, isEn)
     setLines(prev => [
       ...prev,
       {
         id: newDraftLineId(),
         productId: prod.id,
         productName: prod.name,
-        spec: prod.category ?? null,
-        uomId: prod.uomId ?? null,
-        uomName: prod.uomName ?? null,
+        spec: prod.spec ?? null,
+        uomId: uom.uomId,
+        uomName: uom.uomName,
         orderedQty: qty,
         unitCost,
         taxRate: 0,
@@ -212,6 +287,7 @@ export default function NewPurchaseOrderPage() {
   /** 就地选品：把选中的商品填进已经插好的那一行（草稿行由 addBlankLine 建好） */
   function fillLineWithProduct(lineId: string, prod: PurchaseProduct) {
     const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
+    const uom = purchaseUom(prod, uoms, isEn)
     setLines(prev => prev.map(l => {
       if (l.id !== lineId) return l
       const qty = Number(l.orderedQty) || 1
@@ -221,9 +297,9 @@ export default function NewPurchaseOrderPage() {
         ...l,
         productId: prod.id,
         productName: prod.name,
-        spec: prod.category ?? null,
-        uomId: prod.uomId ?? null,
-        uomName: prod.uomName ?? null,
+        spec: prod.spec ?? null,
+        uomId: uom.uomId,
+        uomName: uom.uomName,
         orderedQty: qty,
         unitCost,
         subtotalExTax,
@@ -243,16 +319,18 @@ export default function NewPurchaseOrderPage() {
       const product = purchaseProducts.find(p => p.id === hl.productId)
       const qty = Number(hl.orderedQty)
       const unitCost = Number(hl.unitCost)
-      const taxRate = Number(hl.taxRate)
+      // 历史单的税率可能是改这个坑之前存下的脏数据，四舍五入到最近的一档，不拦复制操作
+      const taxRate = nearestPurchaseTaxRate(Number(hl.taxRate))
       const subtotalExTax = qty * unitCost
       const taxAmount = subtotalExTax * taxRate / 100
+      const uomRecord = uoms.find(u => u.id === hl.uomId)
       return {
         id: newDraftLineId(),
         productId: hl.productId,
         productName: hl.productName,
-        spec: product?.category ?? null,
+        spec: product?.spec ?? null,
         uomId: hl.uomId,
-        uomName: product?.uomName ?? null,
+        uomName: uomRecord ? (isEn ? (uomRecord.name || uomRecord.nameZh) : (uomRecord.nameZh || uomRecord.name)) ?? null : null,
         orderedQty: qty,
         unitCost,
         taxRate,
@@ -342,6 +420,18 @@ export default function NewPurchaseOrderPage() {
     })
   }
 
+  /**
+   * 描述在采购单这个"源头"改——保存时会回写 Product.spec，sales order/quotation 的
+   * Description 读的就是这个字段（见 lib/order-line-description.ts），改这里以后处处生效。
+   */
+  function updateSpec(idx: number, value: string) {
+    setLines(prev => {
+      const next = [...prev]
+      next[idx] = { ...next[idx], spec: value }
+      return next
+    })
+  }
+
   function openQuickCreate(prefill?: { name: string; unitCost: number | null; qty: number | null }) {
     setQcName(prefill?.name ?? '')
     setQcCategoryId('')
@@ -417,6 +507,7 @@ export default function NewPurchaseOrderPage() {
           unitCost: Number(l.unitCost),
           taxRate: Number(l.taxRate),
           bestBefore: l.bestBefore,
+          spec: l.spec ?? '',
         })),
       })
       toast.success(isEn ? 'Purchase order created' : '采购单已创建')
@@ -486,14 +577,52 @@ export default function NewPurchaseOrderPage() {
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Supplier *' : '供应商 *'}</label>
-                  <select
-                    value={supplierId}
-                    onChange={e => setSupplierId(e.target.value)}
-                    className={`flex-1 ${inputCls}`}
-                  >
-                    <option value="">{isEn ? 'Please select a supplier...' : '请选择供应商...'}</option>
-                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <div ref={supRef} className="relative flex-1" onKeyDown={handleSupKey}>
+                    <div
+                      tabIndex={0}
+                      onClick={() => setSupOpen(o => !o)}
+                      className="border border-gray-300 rounded px-3 py-1.5 text-sm flex items-center justify-between cursor-pointer bg-white hover:border-[#875A7B] min-h-[34px]"
+                    >
+                      <span className={supplier ? 'text-gray-900' : 'text-gray-400'}>
+                        {supplier ? supplier.name : (isEn ? 'Search supplier…' : '搜索供应商…')}
+                      </span>
+                      <span className="text-gray-400 text-xs ml-2">▾</span>
+                    </div>
+                    {supOpen && (
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded shadow-lg">
+                        <div className="p-2 border-b border-gray-100">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={supSearch}
+                            onChange={e => setSupSearch(e.target.value)}
+                            placeholder={isEn ? 'Search supplier…' : '搜索供应商…'}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </div>
+                        <div ref={supListRef} className="max-h-52 overflow-y-auto">
+                          {filteredSuppliers.length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-gray-400 text-center">{isEn ? 'No matching suppliers' : '没有匹配供应商'}</div>
+                          ) : (
+                            filteredSuppliers.map((s, idx) => (
+                              <div
+                                key={s.id}
+                                data-idx={idx}
+                                onMouseEnter={() => setSupHighlight(idx)}
+                                onClick={() => selectSupplier(s)}
+                                className={`px-3 py-2 text-sm cursor-pointer hover:bg-[#875A7B]/20 ${
+                                  idx === supHighlight ? 'bg-[#875A7B]/20' : ''
+                                } ${s.id === supplierId ? 'text-[#875A7B] font-medium' : 'text-gray-700'}`}
+                              >
+                                {s.name}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {supplierId && (
                     <button
                       onClick={() => setShowCopyFromHistory(true)}
@@ -607,7 +736,9 @@ export default function NewPurchaseOrderPage() {
             </div>
           )}
 
-          {/* Product line table —— 就地选品 + Tab/Enter 走位与 quotation/sale order 共用同一套（useInlineProductPicker） */}
+          {/* Product line table —— 就地选品 + Tab/Enter 走位与 quotation/sale order 共用同一套（useInlineProductPicker）。
+              描述框现在可编辑了(20260827)，Tab 选完商品不再自定义 onPickByTab，交给默认行为聚焦
+              本行的 [data-desc-line]，与 quotation/sale order 编辑页一致 */}
           <div className="border-t border-gray-200">
             <OrderLineEditor
               lines={lines}
@@ -616,12 +747,6 @@ export default function NewPurchaseOrderPage() {
               onDeleteLine={lineId => deleteLine(lineId)}
               onPickProduct={fillLineWithProduct}
               onPickByEnter={() => addBlankLine({ force: true })}
-              onPickByTab={lineId => {
-                // 没有可编辑的描述框，Tab 选完商品后把焦点交给数量——本行第一个该填的字段
-                setTimeout(() => {
-                  document.querySelector<HTMLInputElement>(`[data-qty-line="${lineId}"]`)?.focus()
-                }, 50)
-              }}
               onAddBlankLine={addBlankLine}
               addBlankLineText={isEn ? '+ Add a product' : '+ 添加商品'}
               pickerTexts={{
@@ -630,7 +755,7 @@ export default function NewPurchaseOrderPage() {
                 search: isEn ? 'Search product…' : '搜索商品…',
               }}
               onReady={handleEditorReady}
-              emptyColSpan={9}
+              emptyColSpan={11}
               emptyMessage={isEn ? 'No lines yet — click "+ Add a product" below' : '暂无明细行，点下方「+ 添加商品」'}
               tableClassName="w-full text-sm border-collapse"
               renderHeaders={() => (
@@ -641,21 +766,35 @@ export default function NewPurchaseOrderPage() {
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Quantity' : '数量'}</th>
                   <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Unit' : '单位'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Unit price incl. allocated freight' : '单价 + 按比例分摊的运费'}>{isEn ? 'Cost' : 'Cost'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Ex-tax line total incl. allocated freight' : '税前小计 + 分摊运费'}>Untaxed Total</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Tax-inclusive line total incl. allocated freight' : '含税总额 + 分摊运费'}>{isEn ? 'Subtotal' : '小计'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                 </tr>
               )}
               defaultRowCls="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
               renderRow={(l, i, { deleteButton, focusSearch, productCell }) => {
                 const isLast = i === lines.length - 1
+                const allocatedFreight = landedCosts[i]?.allocatedFreight ?? 0
+                const costUnit = landedCosts[i]?.landedUnitCost ?? Number(l.unitCost)
+                const untaxedTotal = l.subtotalExTax + allocatedFreight
+                const inclTotal = untaxedTotal * (1 + Number(l.taxRate) / 100)
                 return (
                   <>
                     <td className="px-2 py-2.5 text-center">{deleteButton}</td>
                     <td className="px-4 py-2.5 font-medium" style={{ color: PURPLE }}>
                       {productCell({ lineId: l.id, productName: l.productName })}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[180px] truncate">{l.spec || ''}</td>
+                    <td className="px-4 py-2.5">
+                      <input type="text"
+                        data-desc-line={l.id}
+                        className={`${inputCls} w-full`} style={{ minWidth: '140px' }}
+                        value={l.spec ?? ''}
+                        placeholder={isEn ? 'Description (synced to product library)' : '描述（会同步回商品库）'}
+                        onChange={e => updateSpec(i, e.target.value)}
+                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
+                    </td>
                     <td className="px-4 py-2.5 text-right">
                       <input type="number" step="0.001" min="0"
                         data-qty-line={l.id}
@@ -685,12 +824,24 @@ export default function NewPurchaseOrderPage() {
                         )}
                       </div>
                     </td>
+                    <td className="px-4 py-2.5 text-right text-gray-600">
+                      {costUnit.toFixed(2)}
+                    </td>
                     <td className="px-4 py-2.5 text-right">
-                      <input type="number" step="0.1" min="0"
-                        className={numInputCls} style={{ width: '60px' }}
+                      <select
+                        className={`${numInputCls} text-right`} style={{ width: '72px' }}
                         value={Number(l.taxRate)}
                         onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
-                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
+                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
+                      >
+                        {PURCHASE_TAX_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-700">
+                      {untaxedTotal.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-medium text-gray-800">
+                      {inclTotal.toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <input type="date"
@@ -698,14 +849,6 @@ export default function NewPurchaseOrderPage() {
                         value={l.bestBefore ?? ''}
                         onChange={e => updateBestBefore(i, e.target.value)}
                         onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch, isLastFieldOfLastRow: isLast })} />
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium text-gray-800">
-                      {l.subtotalExTax.toFixed(2)}
-                      {freightAmount > 0 && l.productId && (
-                        <div className="text-[10px] font-normal text-gray-400">
-                          {isEn ? 'Landed unit price' : '落地单价'} {landedCosts[i]?.landedUnitCost.toFixed(2)}
-                        </div>
-                      )}
                     </td>
                   </>
                 )
