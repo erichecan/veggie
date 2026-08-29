@@ -65,6 +65,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1101.0",
     "@base-ui/react": "^1.3.0",
     "@google-cloud/storage": "^7.15.2",
+    "@google/genai": "^2.19.0",
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-neon": "^7.7.0",
     "@prisma/adapter-pg": "^7.9.1",

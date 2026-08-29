@@ -56,6 +56,8 @@ interface ParseApiResponse {
   lines: ExtractedLine[]
   stats: { total: number; exact: number; strong: number; weak: number; none: number; ambiguous: number } | null
   error?: string | null
+  /** 实际生效的解析路径——engine=ai 但未配置 key / 调用失败时会回退到 deterministic */
+  engineUsed?: 'ai' | 'deterministic'
 }
 
 const CONFIDENCE_STYLE: Record<ExtractedLine['confidence'], string> = {
@@ -82,6 +84,7 @@ export default function PdfExtractDialog({ onApply, products }: {
   const isEn = locale !== routing.defaultLocale
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [useAi, setUseAi] = useState(false)
   const [result, setResult] = useState<ParseApiResponse | null>(null)
   const [editableLines, setEditableLines] = useState<ExtractedLine[]>([])
   const [searchingIndex, setSearchingIndex] = useState<number | null>(null)
@@ -94,6 +97,7 @@ export default function PdfExtractDialog({ onApply, products }: {
     try {
       const form = new FormData()
       form.append('file', file)
+      if (useAi) form.append('engine', 'ai')
       const res = await apiUpload<ParseApiResponse>('/api/purchase-orders/parse', form)
       setResult(res)
       setEditableLines(res.lines ?? [])
@@ -167,22 +171,36 @@ export default function PdfExtractDialog({ onApply, products }: {
         className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleFileChosen(f) }}
       />
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploading}
-        className="h-8 px-3 text-sm rounded border font-medium hover:bg-gray-50 disabled:opacity-50"
-        style={{ borderColor: PURPLE, color: PURPLE }}
-      >
-        {uploading
-          ? (isEn ? 'Extracting…' : '识别中…')
-          : (isEn ? '📄 Upload PDF / Excel' : '📄 上传单据识别')}
-      </button>
+      <span className="inline-flex items-center gap-2">
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="h-8 px-3 text-sm rounded border font-medium hover:bg-gray-50 disabled:opacity-50"
+          style={{ borderColor: PURPLE, color: PURPLE }}
+        >
+          {uploading
+            ? (isEn ? 'Extracting…' : '识别中…')
+            : (isEn ? '📄 Upload PDF / Excel' : '📄 上传单据识别')}
+        </button>
+        {/* 20260828 原型：默认关闭，仅对比效果用。见 lib/purchase/ai-pdf-parser.ts */}
+        <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none" title={isEn ? 'Experimental: send PDF to Gemini instead of the default rule-based parser' : '实验性：改用 Gemini 解析 PDF，而非默认的规则解析'}>
+          <input type="checkbox" checked={useAi} onChange={e => setUseAi(e.target.checked)} className="accent-purple-600" />
+          {isEn ? 'AI (Beta)' : 'AI 试一试（Beta）'}
+        </label>
+      </span>
 
       {result && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl p-6 space-y-4 max-h-[85vh] overflow-auto">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Review extraction result' : '识别结果核对'}</h2>
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                {isEn ? 'Review extraction result' : '识别结果核对'}
+                {result.engineUsed === 'ai' && (
+                  <span className="text-xs font-normal px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
+                    {isEn ? 'via AI' : 'AI 识别'}
+                  </span>
+                )}
+              </h2>
               <button onClick={() => setResult(null)} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
             </div>
             <p className="text-xs text-gray-400">

@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { serializeApi } from '@/lib/api-serializer'
 import { getObjectStore } from '@/lib/storage/object-store'
 import { parsePdfLines, type SupplierCandidate } from '@/lib/purchase/pdf-line-parser'
+import { parsePdfWithGemini } from '@/lib/purchase/ai-pdf-parser'
 import { parseImportFile } from '@/lib/import-parser'
 import { matchOne, matchStats, normalizeName, type MatchedLine } from '@/lib/purchase/product-match'
 import { findAliasMatches } from '@/lib/purchase/product-alias'
@@ -35,6 +36,14 @@ import { findAliasMatches } from '@/lib/purchase/product-alias'
  *   4. 同一份 PDF 必须永远得到同一个结果，出错时能指着某一行说「这行没认出来」。
  *
  * 认不出来时返回 rawText + 明确的 error，让人手填 —— 比模型猜一个更可控。
+ *
+ * ## AI 辅助路径（20260828 原型，默认关闭）
+ *
+ * 上面 4 条理由里，第 1、4 条已经被更好的确定性规则解决；第 3 条（单据外发第三方）
+ * 是需要客户拍板的政策问题，不是技术问题。客户想先看看效果再决定要不要正式启用，
+ * 所以加了 `engine=ai` 这个显式开关：不传就是原来的默认路径（唯一动过的确定性行为
+ * 不变），传了才会调用 `parsePdfWithGemini`；没配 `GEMINI_API_KEY` 时自动回退到
+ * 确定性解析并在 error 里说明。
  */
 
 const MAX_SIZE = 15 * 1024 * 1024 // 15 MB
@@ -58,6 +67,7 @@ export async function POST(req: Request) {
     try {
       const formData = await req.formData()
       const file = formData.get('file') as File | null
+      const engine = (formData.get('engine') as string | null) === 'ai' ? 'ai' : 'deterministic'
 
       if (!file) return NextResponse.json({ error: '未提供文件' }, { status: 400 })
 
@@ -93,6 +103,7 @@ export async function POST(req: Request) {
       let sourceDocumentUrl: string | null = null
       let diagnostics: unknown = null
       let parseError: string | null = null
+      let engineUsed: 'ai' | 'deterministic' = 'deterministic'
 
       if (isPdf) {
         // 单据原件必须存档：识别结果有争议时要能翻回原文。
@@ -118,16 +129,41 @@ export async function POST(req: Request) {
           }))
         }
 
-        const parsed = parsePdfLines(rawText, { suppliers: suppliers as SupplierCandidate[] })
-        rows = parsed.lines.map(l => ({
-          productName: l.productName, quantity: l.quantity,
-          unitCost: l.unitCost, uom: l.uom, raw: l.raw,
-        }))
-        currency = parsed.currency
-        supplierId = parsed.supplierId
-        supplierName = parsed.supplierName
-        diagnostics = parsed.diagnostics
-        parseError = parsed.error
+        // engine=ai 时优先走 AI 辅助（原始 PDF 多模态输入）；没配 key 或调用失败
+        // 都不当成"识别出 0 行"，而是回退到确定性解析并把原因带在 error 里。
+        let usedAi = false
+        let aiFallbackNotice: string | null = null
+        if (engine === 'ai') {
+          const aiResult = await parsePdfWithGemini(buffer, { suppliers: suppliers as SupplierCandidate[] })
+          if ('unavailable' in aiResult) {
+            aiFallbackNotice = `${aiResult.reason}，已自动改用默认识别`
+          } else {
+            usedAi = true
+            rows = aiResult.lines.map(l => ({
+              productName: l.productName, quantity: l.quantity,
+              unitCost: l.unitCost, uom: l.uom, raw: l.raw,
+            }))
+            currency = aiResult.currency
+            supplierId = aiResult.supplierId
+            supplierName = aiResult.supplierName
+            diagnostics = { strategy: 'ai' as const, matchedLines: rows.length }
+            parseError = aiResult.error
+          }
+        }
+
+        if (!usedAi) {
+          const parsed = parsePdfLines(rawText, { suppliers: suppliers as SupplierCandidate[] })
+          rows = parsed.lines.map(l => ({
+            productName: l.productName, quantity: l.quantity,
+            unitCost: l.unitCost, uom: l.uom, raw: l.raw,
+          }))
+          currency = parsed.currency
+          supplierId = parsed.supplierId
+          supplierName = parsed.supplierName
+          diagnostics = parsed.diagnostics
+          parseError = aiFallbackNotice ? [aiFallbackNotice, parsed.error].filter(Boolean).join('；') : parsed.error
+        }
+        engineUsed = usedAi ? 'ai' : 'deterministic'
       } else {
         let raw
         try {
@@ -174,6 +210,7 @@ export async function POST(req: Request) {
         stats: matchStats(lines),
         diagnostics,
         error: parseError,
+        engineUsed,
       }))
     } catch (error) {
       console.error('[POST /api/purchase-orders/parse]', error)
