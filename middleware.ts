@@ -85,37 +85,41 @@ export async function middleware(req: NextRequest) {
     return intlMiddleware(req)
   }
 
-  const token = req.cookies.get('veggie_token')?.value
-  if (!token) {
-    const enterUrl = new URL(localePrefix ? `/${localePrefix}/enter` : '/enter', req.url)
-    return NextResponse.redirect(enterUrl)
+  // 同名 cookie 可能存在多份（不同 domain 作用域、或历史遗留的 JS cookie 与
+  // 新的 HttpOnly cookie 并存）。get() 只回第一份 —— 若那份恰好是失效的旧值，
+  // 会把有效的那份顶掉，用户陷入「登录成功→被踢回登录页」的死循环。
+  // 逐个验签，任一通过即放行。
+  let payload: Awaited<ReturnType<typeof jwtVerify>>['payload'] | null = null
+  for (const c of req.cookies.getAll('veggie_token')) {
+    try {
+      payload = (await jwtVerify(c.value, secret)).payload
+      break
+    } catch { /* 这份无效，试下一份 */ }
   }
-
-  try {
-    const { payload } = await jwtVerify(token, secret)
-    // 弱口令账号在页面层直接送去改密页，别让他先看到一屏 403
-    if (mustChangePassword(payload) && !isPasswordFlowPath(barePath)) {
-      const url = new URL(
-        localePrefix ? `/${localePrefix}/change-password` : '/change-password',
-        req.url,
-      )
-      url.searchParams.set('forced', '1')
-      return NextResponse.redirect(url)
-    }
-    // 页面层同样收窄：餐馆客户不能登录运营后台（2026-08-06 用户明确要求），
-    // 各内部岗位也只看得到自己那块。光挡 API 不够 —— 页面能打开但数据全 403，
-    // 用户看到的是一堆空壳和报错，既暴露了别人后台的存在，也说不清是权限问题还是系统坏了。
-    if (!canAccessPage(payload, barePath)) {
-      const home = homeFor(rolesOf(payload))
-      return NextResponse.redirect(new URL(localePrefix ? `/${localePrefix}${home}` : home, req.url))
-    }
-    return intlMiddleware(req)
-  } catch {
+  if (!payload) {
     const enterUrl = new URL(localePrefix ? `/${localePrefix}/enter` : '/enter', req.url)
     const res = NextResponse.redirect(enterUrl)
     res.cookies.delete('veggie_token')
     return res
   }
+
+  // 弱口令账号在页面层直接送去改密页，别让他先看到一屏 403
+  if (mustChangePassword(payload) && !isPasswordFlowPath(barePath)) {
+    const url = new URL(
+      localePrefix ? `/${localePrefix}/change-password` : '/change-password',
+      req.url,
+    )
+    url.searchParams.set('forced', '1')
+    return NextResponse.redirect(url)
+  }
+  // 页面层同样收窄：餐馆客户不能登录运营后台（2026-08-06 用户明确要求），
+  // 各内部岗位也只看得到自己那块。光挡 API 不够 —— 页面能打开但数据全 403，
+  // 用户看到的是一堆空壳和报错，既暴露了别人后台的存在，也说不清是权限问题还是系统坏了。
+  if (!canAccessPage(payload, barePath)) {
+    const home = homeFor(rolesOf(payload))
+    return NextResponse.redirect(new URL(localePrefix ? `/${localePrefix}${home}` : home, req.url))
+  }
+  return intlMiddleware(req)
 }
 
 export const config = {

@@ -23,6 +23,7 @@ import { PUBLIC_API_ROUTES, isPublicApiRoute } from '../lib/public-routes'
  */
 const EXPECTED_PUBLIC: Record<string, string> = {
   '/api/auth/login': '登录本身，必须匿名可达；自带 rateLimit 防爆破',
+  '/api/auth/logout': '只删自己浏览器的 HttpOnly 登录 cookie，无业务数据；token 失效也得能退出',
   '/api/health': '只回 {ok:true} 与时间戳，无业务数据',
   '/api/tile': '地图瓦片代理，纯转发第三方瓦片',
   '/api/cron/backup-database': '定时任务，自带 CRON_SECRET 校验，不走 JWT',

@@ -127,7 +127,12 @@ export async function POST(req: Request) {
       detail: `${user.name}（${user.role}）登录系统`,
     })
 
-    return NextResponse.json({
+    // ⛔ cookie 由服务端下发（HttpOnly），不再靠前端 document.cookie 写。
+    // 实测 2026-08-31：部分浏览器的隐私模式/反跟踪策略会静默丢弃或不回传
+    // JS 写的 cookie，表现是「登录接口 200、服务端一切正常，却反复弹回登录页」。
+    // Secure 按 x-forwarded-proto 判定（nginx 终结 TLS 后透传）；本地 HTTP 开发
+    // 不带 Secure，否则浏览器直接丢弃，登录就坏了。
+    const res = NextResponse.json({
       token,
       user: {
         userId: user.id,
@@ -144,6 +149,14 @@ export async function POST(req: Request) {
         mustChangePassword: user.mustChangePassword,
       },
     })
+    res.cookies.set('veggie_token', token, {
+      httpOnly: true,
+      path: '/',
+      maxAge: 7 * 24 * 3600,
+      sameSite: 'lax',
+      secure: req.headers.get('x-forwarded-proto') === 'https',
+    })
+    return res
   } catch (error) {
     console.error('[login] error:', error)
     return NextResponse.json({ error: '服务器错误' }, { status: 500 })

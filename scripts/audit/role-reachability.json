@@ -335,6 +335,20 @@
   "RESTAURANT": "anon",
   "OTHER": "anon"
  },
+ "POST /api/auth/logout": {
+  "BOSS": "anon",
+  "OPERATOR": "anon",
+  "FINANCE": "anon",
+  "WAREHOUSE": "anon",
+  "DISPATCH": "anon",
+  "SALES": "anon",
+  "EXTERNAL_SALES": "anon",
+  "SORTER": "anon",
+  "PICKER": "anon",
+  "DRIVER": "anon",
+  "RESTAURANT": "anon",
+  "OTHER": "anon"
+ },
  "GET /api/backups/[id]/download": {
   "BOSS": "y",
   "OPERATOR": "n",

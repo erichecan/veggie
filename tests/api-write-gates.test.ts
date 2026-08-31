@@ -28,6 +28,7 @@ const EXEMPT: Record<string, string> = {
   'POST /api/upload-image': '上传图片；闸在 middleware 层（tool.upload.use）',
   'POST /api/demo/reset': '演示数据重置；闸在 middleware 层（system.settings.manage）',
   'POST /api/auth/login': '登录本身必须匿名可达，自带 rateLimit',
+  'POST /api/auth/logout': '退出只删自己浏览器的 HttpOnly 登录 cookie，不碰任何业务数据；必须匿名可达（token 失效时也要能退出）',
   'POST /api/auth/change-password': '改自己的密码，用 requireAuth 取本人身份，无角色概念',
   'POST /api/cron/backup-database': '定时任务，走 CRON_SECRET 共享密钥（迁服务器后由 systemd timer 触发）',
   'POST /api/action-logs/cleanup': '同上，走 CRON_SECRET',

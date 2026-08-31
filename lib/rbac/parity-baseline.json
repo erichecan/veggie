@@ -3820,5 +3820,19 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "POST /api/auth/logout": {
+    "BOSS": "anon",
+    "OPERATOR": "anon",
+    "FINANCE": "anon",
+    "WAREHOUSE": "anon",
+    "DISPATCH": "anon",
+    "SALES": "anon",
+    "EXTERNAL_SALES": "anon",
+    "SORTER": "anon",
+    "PICKER": "anon",
+    "DRIVER": "anon",
+    "RESTAURANT": "anon",
+    "OTHER": "anon"
   }
 }

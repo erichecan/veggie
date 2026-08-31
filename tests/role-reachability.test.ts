@@ -51,13 +51,14 @@ test('可达性矩阵与快照一致', () => {
   )
 })
 
-test('⛔ 匿名可达的必须只有那 4 条 —— 泄露客户名册那次就是这里破的', () => {
+test('⛔ 匿名可达的必须只有这 5 条 —— 泄露客户名册那次就是这里破的', () => {
   const now = buildReachabilityMatrix()
   const anon = Object.entries(now)
     .filter(([, row]) => row.BOSS === 'anon')
     .map(([k]) => k.split(' ')[1])
+  // logout 只删自己浏览器的登录 cookie，不吐任何业务数据
   assert.deepEqual([...new Set(anon)].sort(), [
-    '/api/auth/login', '/api/cron/backup-database', '/api/health', '/api/tile',
+    '/api/auth/login', '/api/auth/logout', '/api/cron/backup-database', '/api/health', '/api/tile',
   ])
 })
 

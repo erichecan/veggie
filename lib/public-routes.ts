@@ -15,6 +15,8 @@
 export const PUBLIC_API_ROUTES = [
   /** 登录本身，必须匿名可达 */
   '/api/auth/login',
+  /** 退出只删自己浏览器里的 HttpOnly cookie，无业务数据；token 失效了也得能退 */
+  '/api/auth/logout',
   /** 健康检查，只回 {ok:true}+时间戳，无业务数据 */
   '/api/health',
   /** 地图瓦片代理，纯转发第三方瓦片，无业务数据 */

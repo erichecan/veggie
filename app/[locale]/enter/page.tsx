@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { writeAuthCookie } from '@/lib/session'
 
 export default function EnterPage() {
   const router = useRouter()
@@ -47,7 +46,8 @@ export default function EnterPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || t('networkError')); return }
-      writeAuthCookie(data.token)
+      // cookie 由登录接口的 Set-Cookie 下发（HttpOnly），这里只存 localStorage
+      // 供 lib/api.ts 的 Authorization 头使用
       localStorage.setItem('veggie_token', data.token)
       localStorage.setItem('veggie_user', JSON.stringify(data.user))
       // 还在用初始密码的账号先去改密码 —— 后端也会挡（withAuth 的
