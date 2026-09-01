@@ -6,6 +6,7 @@ import { resolveCommissionPrice } from '@/lib/commission'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { UNSET_UOM_LABEL } from '@/lib/sale-uom'
+import { findInvalidLineUom } from '@/lib/sale-uom-server'
 
 /**
  * POST /api/orders/:id/lines
@@ -55,6 +56,15 @@ export async function POST(
           { status: 400 },
         )
       }
+
+      // 多单位销售：追加的这行是新行，恒校验单位合法（锚点单位或已启用的
+      // ProductSaleUom）——「Sellable」开关的服务端兜底，见 lib/sale-uom.ts。
+      const uomError = await findInvalidLineUom([{
+        productId: String(productId),
+        productName: productName ? String(productName) : productToAdd?.name,
+        uomId: uomId ? String(uomId) : null,
+      }])
+      if (uomError) return NextResponse.json({ error: uomError }, { status: 400 })
 
       // 服务端权威定价：追加行与下单同一套引擎，前端传的 unitPrice 只作参考，
       // 容差外一律按引擎权威价入库（见 lib/server-pricing.ts 顶部注释）。

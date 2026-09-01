@@ -4,6 +4,7 @@ import { writeLog } from '@/lib/action-log'
 import { withAuth, userHasPermission } from '@/lib/auth'
 import { sendOrderConfirmation } from '@/lib/email'
 import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
+import { findInvalidLineUom } from '@/lib/sale-uom-server'
 import { toNum } from '@/lib/decimal-helpers'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItemsList } from '@/lib/order-items'
@@ -209,6 +210,12 @@ export async function POST(req: Request) {
       if (submittedItems.length === 0) {
         return NextResponse.json({ error: '订单商品不能为空' }, { status: 400 })
       }
+
+      // 多单位销售：新建订单/报价单的每一行都是新行，单位是否合法（锚点单位或
+      // 已启用的 ProductSaleUom）恒要校验——这是「Sellable」开关的服务端兜底，
+      // 挡住绕过前端下拉框直接调接口选中已停用单位（如客户关掉的整箱 Case）。
+      const uomError = await findInvalidLineUom(submittedItems)
+      if (uomError) return NextResponse.json({ error: uomError }, { status: 400 })
 
       // P1-4: 自动获取客户默认司机 + 快照佣金率(下单时点)
       const custDefaults = await prisma.customer.findUnique({

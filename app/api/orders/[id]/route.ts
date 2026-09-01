@@ -14,6 +14,7 @@ import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commiss
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
+import { findInvalidLineUom } from '@/lib/sale-uom-server'
 import { formatUomConversionHint, uomConversionKey } from '@/lib/print/uom-conversion'
 import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
 
@@ -254,40 +255,29 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
         const currentLineMap = new Map(currentLines.map(l => [l.id, l]))
 
-        // 多单位销售(20260714)：编辑已有行允许切换该行的销售单位。校验新单位必须是该商品的
-        // 锚点单位(ProductTemplate.uomId)或已配置的 active ProductSaleUom，防止乱传/脏数据。
-        const uomEditCandidates = (linesPayload as Record<string, unknown>[]).filter(l => l.id && l.uomId !== undefined)
-        if (uomEditCandidates.length > 0) {
-          const affectedProductIds = Array.from(new Set(
-            uomEditCandidates
-              .map(l => currentLineMap.get(String(l.id))?.productId)
-              .filter((v): v is string => !!v)
-          ))
-          const productsForUomCheck = affectedProductIds.length > 0
-            ? await prisma.product.findMany({
-                where: { id: { in: affectedProductIds } },
-                select: {
-                  id: true,
-                  uomId: true,
-                  saleUoms: { where: { active: true }, select: { uomId: true } },
-                },
-              })
-            : []
-          const allowedUomMap = new Map(
-            productsForUomCheck.map(p => [
-              p.id,
-              new Set([p.uomId, ...p.saleUoms.map(s => s.uomId)].filter((v): v is string => !!v)),
-            ])
-          )
-          for (const l of uomEditCandidates) {
+        // 多单位销售(20260714)：新增行、以及编辑已有行时切换该行单位，都要校验单位合法——
+        // 锚点单位或已启用(active)的 ProductSaleUom，防止乱传/脏数据，也是「Sellable」开关
+        // 的服务端兜底（见 lib/sale-uom.ts findInvalidLineUom）。
+        // 已有行的单位若未变化，即使后来那个单位被停用，也不因此挡住这次保存——
+        // 与下面 canBeSold 闸门"仅新增行受后续配置变化影响"同一原则，历史行不因外部配置变化失效。
+        const uomCheckTargets = (linesPayload as Record<string, unknown>[])
+          .filter(l => {
+            if (l.uomId === undefined || !l.uomId) return false
+            if (!l.id) return true // 新增行，恒校验
             const oldLine = currentLineMap.get(String(l.id))
-            if (!oldLine) continue
-            const newUomId = l.uomId ? String(l.uomId) : null
-            if (newUomId === (oldLine.uomId ?? null)) continue // 未变化
-            if (!newUomId || !allowedUomMap.get(oldLine.productId)?.has(newUomId)) {
-              return NextResponse.json({ error: `商品「${oldLine.productName}」不支持切换到该单位` }, { status: 400 })
+            return !oldLine || String(l.uomId) !== (oldLine.uomId ?? null) // 已有行仅在单位真的变了才校验
+          })
+          .map(l => {
+            const oldLine = l.id ? currentLineMap.get(String(l.id)) : undefined
+            return {
+              productId: String(l.productId ?? oldLine?.productId ?? ''),
+              productName: l.productName ? String(l.productName) : (oldLine?.productName ?? undefined),
+              uomId: String(l.uomId),
             }
-          }
+          })
+        if (uomCheckTargets.length > 0) {
+          const uomError = await findInvalidLineUom(uomCheckTargets)
+          if (uomError) return NextResponse.json({ error: uomError }, { status: 400 })
         }
 
         const existingIds = new Set(currentLines.map(l => l.id))
