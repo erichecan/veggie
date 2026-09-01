@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -15,6 +15,8 @@ import PdfExtractDialog, { type PdfExtractResult } from './_components/PdfExtrac
 import PdfSidePanel from './_components/PdfSidePanel'
 import PriceHistoryModal from './_components/PriceHistoryModal'
 import CopyFromHistoryModal, { type HistoryPO } from './_components/CopyFromHistoryModal'
+import { rankByRelevance } from '@/lib/search-rank'
+import { PURCHASE_TAX_RATES, nearestPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 
 const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CNY']
 
@@ -55,8 +57,13 @@ interface PurchaseProduct {
   name: string
   internalRef?: string | null
   category?: string | null
+  /// 描述（同步 sales order 的 Description，见 lib/order-line-description.ts，两边共用 Product.spec）
+  spec?: string | null
+  /// 销售单位——仅作为采购单位缺失时的兜底，不是本页应该用的字段（见下方 purchaseUomId）
   uomId?: string | null
   uomName?: string | null
+  /// 采购单位——这里才是"这箱/这包是多大"的真值；确认采购时会把 PO 行最后一次用到的
+  /// uomId 回写到这个字段（见 app/api/purchase-orders/[id]/route.ts PATCH action=confirm）
   purchaseUomId?: string | null
   purchaseUomName?: string | null
   standardPrice?: number | null
@@ -93,6 +100,12 @@ export default function NewPurchaseOrderPage() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [supplierId, setSupplierId] = useState('')
+  // ── 供应商下拉搜索（与 place-order 页客户选择同一套交互，20260827 换掉原生 <select>）──
+  const [supSearch, setSupSearch] = useState('')
+  const [supOpen, setSupOpen] = useState(false)
+  const [supHighlight, setSupHighlight] = useState(0)
+  const supRef = useRef<HTMLDivElement>(null)
+  const supListRef = useRef<HTMLDivElement>(null)
   const [orderDate, setOrderDate] = useState(today())
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
@@ -146,6 +159,53 @@ export default function NewPurchaseOrderPage() {
     apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
   }, [])
 
+  const filteredSuppliers = useMemo(
+    () => rankByRelevance(suppliers, supSearch, s => s.name),
+    [suppliers, supSearch],
+  )
+
+  useEffect(() => {
+    function onMouse(e: MouseEvent) {
+      if (supRef.current && !supRef.current.contains(e.target as Node)) setSupOpen(false)
+    }
+    document.addEventListener('mousedown', onMouse)
+    return () => document.removeEventListener('mousedown', onMouse)
+  }, [])
+
+  useEffect(() => { setSupHighlight(0) }, [supSearch])
+
+  useEffect(() => {
+    if (!supOpen) return
+    const el = supListRef.current?.querySelector(`[data-idx="${supHighlight}"]`) as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [supHighlight, supOpen])
+
+  function selectSupplier(s: Supplier) {
+    setSupplierId(s.id)
+    setSupOpen(false)
+    setSupSearch('')
+  }
+
+  function handleSupKey(e: React.KeyboardEvent) {
+    if (!supOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); setSupOpen(true) }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSupHighlight(i => Math.min(i + 1, filteredSuppliers.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSupHighlight(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filteredSuppliers[supHighlight]) selectSupplier(filteredSuppliers[supHighlight])
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setSupOpen(false)
+    }
+  }
+
   // 币种变化时自动回填当日汇率；接口不可用时不阻塞下单，允许手动填
   useEffect(() => {
     setRateManuallyEdited(false)
@@ -170,7 +230,10 @@ export default function NewPurchaseOrderPage() {
         id: newDraftLineId(),
         productId: prod.id,
         productName: prod.name,
-        spec: prod.category ?? null,
+        // 20260827：Description 统一读 Product.spec（与 [id] 编辑页同源，
+        // 见 lib/order-line-description.ts）；这里之前一直用 category，是采购侧
+        // 唯一没跟上那次统一的分叉。
+        spec: prod.spec ?? null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -231,7 +294,7 @@ export default function NewPurchaseOrderPage() {
         ...l,
         productId: prod.id,
         productName: prod.name,
-        spec: prod.category ?? null,
+        spec: prod.spec ?? null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -253,16 +316,18 @@ export default function NewPurchaseOrderPage() {
       const product = purchaseProducts.find(p => p.id === hl.productId)
       const qty = Number(hl.orderedQty)
       const unitCost = Number(hl.unitCost)
-      const taxRate = Number(hl.taxRate)
+      // 历史单的税率可能是改这个坑之前存下的脏数据，四舍五入到最近的一档，不拦复制操作
+      const taxRate = nearestPurchaseTaxRate(Number(hl.taxRate))
       const subtotalExTax = qty * unitCost
       const taxAmount = subtotalExTax * taxRate / 100
+      const uomRecord = uoms.find(u => u.id === hl.uomId)
       return {
         id: newDraftLineId(),
         productId: hl.productId,
         productName: hl.productName,
-        spec: product?.category ?? null,
+        spec: product?.spec ?? null,
         uomId: hl.uomId,
-        uomName: product?.uomName ?? null,
+        uomName: uomRecord ? (isEn ? (uomRecord.name || uomRecord.nameZh) : (uomRecord.nameZh || uomRecord.name)) ?? null : null,
         orderedQty: qty,
         unitCost,
         taxRate,
@@ -427,6 +492,7 @@ export default function NewPurchaseOrderPage() {
           unitCost: Number(l.unitCost),
           taxRate: Number(l.taxRate),
           bestBefore: l.bestBefore,
+          spec: l.spec ?? '',
         })),
       })
       toast.success(isEn ? 'Purchase order created' : '采购单已创建')
@@ -496,14 +562,52 @@ export default function NewPurchaseOrderPage() {
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Supplier *' : '供应商 *'}</label>
-                  <select
-                    value={supplierId}
-                    onChange={e => setSupplierId(e.target.value)}
-                    className={`flex-1 ${inputCls}`}
-                  >
-                    <option value="">{isEn ? 'Please select a supplier...' : '请选择供应商...'}</option>
-                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <div ref={supRef} className="relative flex-1" onKeyDown={handleSupKey}>
+                    <div
+                      tabIndex={0}
+                      onClick={() => setSupOpen(o => !o)}
+                      className="border border-gray-300 rounded px-3 py-1.5 text-sm flex items-center justify-between cursor-pointer bg-white hover:border-[#875A7B] min-h-[34px]"
+                    >
+                      <span className={supplier ? 'text-gray-900' : 'text-gray-400'}>
+                        {supplier ? supplier.name : (isEn ? 'Search supplier…' : '搜索供应商…')}
+                      </span>
+                      <span className="text-gray-400 text-xs ml-2">▾</span>
+                    </div>
+                    {supOpen && (
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded shadow-lg">
+                        <div className="p-2 border-b border-gray-100">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={supSearch}
+                            onChange={e => setSupSearch(e.target.value)}
+                            placeholder={isEn ? 'Search supplier…' : '搜索供应商…'}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </div>
+                        <div ref={supListRef} className="max-h-52 overflow-y-auto">
+                          {filteredSuppliers.length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-gray-400 text-center">{isEn ? 'No matching suppliers' : '没有匹配供应商'}</div>
+                          ) : (
+                            filteredSuppliers.map((s, idx) => (
+                              <div
+                                key={s.id}
+                                data-idx={idx}
+                                onMouseEnter={() => setSupHighlight(idx)}
+                                onClick={() => selectSupplier(s)}
+                                className={`px-3 py-2 text-sm cursor-pointer hover:bg-[#875A7B]/20 ${
+                                  idx === supHighlight ? 'bg-[#875A7B]/20' : ''
+                                } ${s.id === supplierId ? 'text-[#875A7B] font-medium' : 'text-gray-700'}`}
+                              >
+                                {s.name}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {supplierId && (
                     <button
                       onClick={() => setShowCopyFromHistory(true)}
@@ -711,9 +815,7 @@ export default function NewPurchaseOrderPage() {
                         value={Number(l.taxRate)}
                         onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
                         onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}>
-                        <option value={0}>0%</option>
-                        <option value={13.5}>13.5%</option>
-                        <option value={23}>23%</option>
+                        {PURCHASE_TAX_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                       </select>
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-600">

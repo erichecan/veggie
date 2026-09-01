@@ -310,6 +310,16 @@ export function resolveCustomerPrice(
   qty = 1,
   lastPrice?: number,
   uomId?: string,
+  /**
+   * 20260827：`lastPrice` 是否已经精确匹配 `uomId` 这个单位本身的历史成交价
+   * （调用方按 uomId 查出来的，不是跨单位或按基准单位查到后准备再换算的）。
+   * 为 true 时把 `matchedUomId` 回填成 `uomId`，下游（scaleAuthoritativePrice /
+   * 前端 priceOf）据此知道这个价已经是目标单位的最终价，不能再乘 factor 二次换算——
+   * 否则会把"1KG 历史价"当成"基准单位(如 CASE)历史价"再折算一次，越算越离谱
+   * （客户 20260827 反馈价格低于成本，见 docs 排查记录）。
+   * 不传 = 与改造前行为一致：lastPrice 视为基准单位价，交给下游按 factor 换算。
+   */
+  lastPriceMatchedUom = false,
 ): PriceResolution {
   const basePrice = product.listPrice ?? product.price ?? 0
   const today = new Date().toISOString().slice(0, 10)
@@ -373,6 +383,7 @@ export function resolveCustomerPrice(
         itemDesc: `最近一次售价 €${fmtMoney(lastPrice)}`,
         isFallback: false,
         sourceType: 'last',
+        matchedUomId: lastPriceMatchedUom ? uomId : undefined,
       }
     }
     // 若查不到历史成交价，回退牌价
@@ -397,6 +408,7 @@ export function resolveCustomerPrice(
       itemDesc: `${fromDesc}，改用最近售价 €${fmtMoney(lastPrice)}`,
       isFallback: false,
       sourceType: 'last',
+      matchedUomId: lastPriceMatchedUom ? uomId : undefined,
     }
   }
 

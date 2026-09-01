@@ -141,8 +141,10 @@ export async function queryLastSoldPriceWithDate(
   prisma: PricingContext['prisma'],
   customerId: string,
   productId: string,
+  /** 只认这一个单位的历史成交价；不传 = 不分单位、任意单位取最近一次（改造前行为） */
+  uomId?: string,
 ): Promise<{ price: number; date: Date } | undefined> {
-  const map = await queryLastSoldPricesDetailed(prisma, customerId, [productId])
+  const map = await queryLastSoldPricesDetailed(prisma, customerId, [productId], uomId ? { [productId]: uomId } : undefined)
   return map[productId]
 }
 
@@ -177,6 +179,14 @@ export async function queryLastSoldPricesDetailed(
   prisma: PricingContext['prisma'],
   customerId: string,
   productIds: string[],
+  /**
+   * 20260827 修：按商品限定只认哪个单位的历史成交价（productId → uomId）。
+   * 同一商品不同可售单位（箱/公斤/500g……）单价天差地别，之前这里完全不分单位，
+   * 直接拿"这个商品最近一次成交"当"最近成交价"，会把 500g 的历史价当成 1KG 甚至
+   * 整箱的历史价用，越换算越离谱（客户 20260827 反馈价格低于成本，见 docs 排查记录）。
+   * 某商品不在这个映射里 = 不限单位、任意单位取最近一次（改造前行为，兼容不关心单位的调用方）。
+   */
+  uomFilter?: Record<string, string>,
 ): Promise<Record<string, { price: number; date: Date }>> {
   const result: Record<string, { price: number; date: Date }> = {}
   if (productIds.length === 0) return result
@@ -197,11 +207,13 @@ export async function queryLastSoldPricesDetailed(
       order: { restaurantId: { in: restaurantIds }, status: { in: SALE_ORDER_STATUSES } },
     },
     orderBy: { order: { createdAt: 'desc' } },
-    select: { productId: true, unitPrice: true, order: { select: { createdAt: true } } },
+    select: { productId: true, unitPrice: true, uomId: true, order: { select: { createdAt: true } } },
   })
 
   for (const line of lines) {
     if (result[line.productId]) continue
+    const wantUom = uomFilter?.[line.productId]
+    if (wantUom !== undefined && line.uomId !== wantUom) continue
     result[line.productId] = { price: toNum(line.unitPrice), date: line.order.createdAt }
   }
 
@@ -407,10 +419,27 @@ export async function resolveOrderLines(
     const normalizedPriceType = (effectiveCustomer.priceType ?? 'multi').toLowerCase()
     let lastPrice: number | undefined
     let lastPriceDate: Date | undefined
+    let lastPriceMatchedUom = false
     if (normalizedPriceType === 'last' || normalizedPriceType === 'multi') {
-      const hit = await queryLastSoldPriceWithDate(ctx.prisma, customer.id, item.productId)
-      lastPrice = hit?.price
-      lastPriceDate = hit?.date
+      // ⛔ 20260827 修：先按这一行选用的单位精确匹配历史成交价——不同可售单位（箱/公斤/500g）
+      // 单价天差地别，直接拿"最近一笔、不管哪个单位"当基准单位价去换算，会把小单位的
+      // 历史价当整箱价用，越算越离谱（客户 20260827 反馈价格低于成本，见 docs 排查记录）。
+      // 该单位从没成交过时，退回按商品基准单位查——这样查到的才真是 scaleAuthoritativePrice
+      // 期望的"基准单位价"，换算链路与改造前一致。
+      const exact = item.uomId
+        ? await queryLastSoldPriceWithDate(ctx.prisma, customer.id, item.productId, item.uomId)
+        : undefined
+      if (exact) {
+        lastPrice = exact.price
+        lastPriceDate = exact.date
+        lastPriceMatchedUom = true
+      } else {
+        const fallback = await queryLastSoldPriceWithDate(
+          ctx.prisma, customer.id, item.productId, dbProduct.uomId ?? undefined,
+        )
+        lastPrice = fallback?.price
+        lastPriceDate = fallback?.date
+      }
     }
 
     const resolution = resolveCustomerPrice(
@@ -420,6 +449,7 @@ export async function resolveOrderLines(
       qty,
       lastPrice,
       item.uomId,
+      lastPriceMatchedUom,
     )
 
     const submittedUnit = Number(item.price ?? 0)

@@ -50,17 +50,24 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
 
   // 销售口径：销售额/毛利/订单数/活跃客户（confirmationDate 归日）
   // 成本优先级：≤当日最近的批次加权成本 → Product.standardPrice
+  // 成本单价按基础单位计（Product.standardPrice / v_lot_daily_cost.unit_cost 都是），
+  // 该行选用的单位不是基础单位时要乘 ProductSaleUom.factor 换算——不换算的话，比如
+  // 本例基础单位是 3kg 一箱的 CASE、行选 1KG，会拿整箱成本去跟每公斤单价比，
+  // 显得"卖亏了"实际没有（客户 20260827 反馈价格与成本对不上，见 docs 排查记录）。
+  // 换算口径与 lib/sale-uom.ts 的 factorOf、app/api/analytics/margin/route.ts 的
+  // STOCK_QTY_EXPR 保持一致。
   const salesRows = (await p.$queryRawUnsafe(
     `SELECT
        COALESCE(SUM(ol.subtotal), 0)::float AS sales_ex,
        COALESCE(SUM(ol.subtotal * (1 + COALESCE(ol."taxRate", 0) / 100)), 0)::float AS sales_inc,
        COUNT(DISTINCT o.id)::int AS order_count,
        COUNT(DISTINCT o."restaurantId")::int AS active_customers,
-       COALESCE(SUM((ol."unitPrice" - COALESCE(lc.unit_cost, p."standardPrice", 0)) * ol."orderedQty"), 0)::float AS gross_profit,
+       COALESCE(SUM((ol."unitPrice" - COALESCE(lc.unit_cost, p."standardPrice", 0) * COALESCE(psu.factor, 1)) * ol."orderedQty"), 0)::float AS gross_profit,
        COALESCE(SUM(CASE WHEN lc.unit_cost IS NOT NULL THEN ol.subtotal ELSE 0 END), 0)::float AS costed_amount
      FROM "OrderLine" ol
      JOIN "Order" o ON o.id = ol."orderId"
      LEFT JOIN "Product" p ON p.id = ol."productId"
+     LEFT JOIN "ProductSaleUom" psu ON psu."productId" = ol."productId" AND psu."uomId" = ol."uomId"
      LEFT JOIN LATERAL (
        SELECT c.unit_cost FROM v_lot_daily_cost c
        WHERE c.product_id = ol."productId" AND c.cost_date <= $1::date

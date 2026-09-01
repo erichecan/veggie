@@ -22,13 +22,15 @@ const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
 /**
  * 多单位销售(20260714)：ol."orderedQty" 按行选用单位计数，非商品"基准单位"(p."uomId")时
- * 需要按 Uom.factor 比例换算成基准单位数量再参与 SUM，否则"箱"和"个"直接相加/相乘会失真。
- * 逻辑与 lib/inventory.ts 的 toStockQty 换算公式一致。
+ * 需要换算成基准单位数量再参与 SUM，否则"箱"和"个"直接相加/相乘会失真。
+ *
+ * ⛔ 20260827 修复：换算系数必须来自 ProductSaleUom.factor（挂在商品上，一箱几包各商品不同），
+ * 不能用全局 Uom.factor —— 20260819 换算系数改挂商品之后，生产库 Unit/Weight 类目下
+ * Uom.factor 早就不再维护，实测同名 CASE/1KG/500g 全部还是 1，导致这里原来的换算公式
+ * 恒等于"不换算"（比例算出来永远是 1/1），和口径注释描述的行为完全对不上。
+ * 换算口径与 lib/inventory.ts 的 toStockQty、lib/sale-uom.ts 的 factorOf 保持一致。
  */
-const STOCK_QTY_EXPR = `(CASE WHEN ol."uomId" IS NOT NULL AND ol."uomId" <> p."uomId"
-       AND line_uom.factor IS NOT NULL AND anchor_uom.factor IS NOT NULL AND anchor_uom.factor <> 0
-       THEN ol."orderedQty" * (line_uom.factor / anchor_uom.factor)
-       ELSE ol."orderedQty" END)`
+const STOCK_QTY_EXPR = `(ol."orderedQty" * COALESCE(psu.factor, 1))`
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -83,8 +85,7 @@ export async function GET(req: Request) {
          FROM "OrderLine" ol
          JOIN "Order" o ON o.id = ol."orderId"
          LEFT JOIN "Product" p ON p.id = ol."productId"
-         LEFT JOIN "Uom" line_uom ON line_uom.id = ol."uomId"
-         LEFT JOIN "Uom" anchor_uom ON anchor_uom.id = p."uomId"
+         LEFT JOIN "ProductSaleUom" psu ON psu."productId" = ol."productId" AND psu."uomId" = ol."uomId"
          ${rowDef.extraJoin}
          ${colJoin}
          LEFT JOIN LATERAL (

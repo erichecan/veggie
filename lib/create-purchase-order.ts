@@ -1,5 +1,6 @@
 import { round2 } from '@/lib/decimal-helpers'
 import { eurAmount, resolveExchangeRate } from '@/lib/fx-eur'
+import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 
 /**
  * 采购单创建 SSOT —— POST /api/purchase-orders 和"采购建议转采购单"共用同一份
@@ -15,6 +16,8 @@ export interface CreatePOLineInput {
   taxRate?: number
   sequence?: number
   bestBefore?: string | Date | null
+  /// 商品描述（回传到 Product.spec，见下方"描述同步"）；未传/undefined 时不动商品库
+  spec?: string | null
 }
 
 export interface CreatePOInput {
@@ -42,10 +45,14 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   // 询价单允许先只定供应商+日期开单，产品之后在详情页逐条加（见 PurchaseOrderLine 的 POST/DELETE）
 
   // 准入闸门：新增采购行必须 canBePurchased=true（已存在的 PO 老行不受此校验，见 [id]/route.ts PUT）
+  // ⛔ canBePurchased 20260825 合表重构后直接挂在 Product 上，`template` 关系已删——
+  // 这里之前还在 include: { template: ... } 查一个不存在的关系，Prisma 直接抛
+  // "Unknown field `template`" 500，导致每一次新建采购单都保存不了(20260827 实测复现)。
   const productIds = [...new Set(input.lines.map(l => l.productId))]
   if (productIds.length > 0) {
     const products = await tx.product.findMany({
       where: { id: { in: productIds } },
+      select: { id: true, name: true, canBePurchased: true },
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const notPurchasable = products.filter((p: any) => p.canBePurchased === false)
@@ -72,6 +79,9 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
     }
     if (!Number.isFinite(unitCost) || unitCost < 0 || unitCost > 1_000_000) {
       throw Object.assign(new Error(`采购行单价无效：${raw.productName ?? raw.productId}`), { status: 400 })
+    }
+    if (!isValidPurchaseTaxRate(taxRate)) {
+      throw Object.assign(new Error(`税率只能是 0%/13.5%/23%：${raw.productName ?? raw.productId}`), { status: 400 })
     }
     const ex = round2(qty * unitCost)
     // taxRate 是百分数(如 23 表示 23%)，不是小数——PUT /api/purchase-orders/[id]:144 与
@@ -113,7 +123,7 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   const count = await tx.purchaseOrder.count()
   const name = `PO-${String(count + 1).padStart(5, '0')}`
 
-  return tx.purchaseOrder.create({
+  const po = await tx.purchaseOrder.create({
     data: {
       name,
       supplierId,
@@ -139,4 +149,24 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
     },
     include: { lines: true },
   })
+
+  await syncProductSpecFromLines(tx, input.lines)
+
+  return po
+}
+
+/**
+ * 描述同步（客户 20260827 要求）：报价单/销售单的 Description 一律读 Product.spec
+ * （见 lib/order-line-description.ts），但录入入口一直只有商品库自己。采购单现在是
+ * 另一个"源头"——采购时在这里改一下描述，同一个商品以后在任何报价/销售单里都跟着变。
+ * 只回写"这次提交时真的带了 spec 字段"的行，同一单里同一商品出现多行时以最后一行为准。
+ */
+async function syncProductSpecFromLines(tx: Tx, lines: CreatePOLineInput[]) {
+  const specByProductId = new Map<string, string>()
+  for (const l of lines) {
+    if (l.spec !== undefined) specByProductId.set(l.productId, (l.spec ?? '').trim())
+  }
+  for (const [productId, spec] of specByProductId) {
+    await tx.product.update({ where: { id: productId }, data: { spec: spec || null } })
+  }
 }
