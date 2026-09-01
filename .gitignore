@@ -76,3 +76,9 @@ docs/dev-server-info/
 # Office 打开文档时生成的锁文件（~$开头）。20260807 发现有一个被 git add -A 扫进了
 # 提交历史，而它在 Word 关掉时就消失了 —— 只会留下一条莫名其妙的删除记录。
 ~$*
+
+# Qoder 编辑器本地权限配置，个人本地设置不入库（同 .claude/settings.local.json）
+/.qoder/
+
+# 本地文件上传落盘目录（lib/storage.ts 默认本地磁盘 driver 的运行时产物，可能含真实业务单据）
+/uploads/
