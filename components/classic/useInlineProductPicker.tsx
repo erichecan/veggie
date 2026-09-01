@@ -161,6 +161,25 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
     return () => clearTimeout(t)
   }, [activeLineId])
 
+  // 下拉是 fixed 定位、量一次就不再自己动——下拉开着的时候如果页面或表格的
+  // overflow-x-auto 容器滚动，输入框会跟着移动，下拉却停在原地，两者就错位了
+  // （客户 20260828 反馈）。这里在 scroll/resize 时重新量一次位置；scroll 监听要带
+  // capture:true，才能抓到内层可滚动容器（不带 capture 的话 scroll 事件不冒泡，
+  // 挂在 window 上的监听器收不到表格内部滚动）。
+  useEffect(() => {
+    if (!activeLineId) return
+    function reposition() {
+      const r = inputRef.current?.getBoundingClientRect()
+      if (r) setDropRect({ top: r.bottom + 2, left: r.left, width: Math.max(288, r.width) })
+    }
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    return () => {
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [activeLineId])
+
   const pick = useCallback((lineId: string, p: P) => {
     onSelect(lineId, p)
     setActiveLineId(null)
