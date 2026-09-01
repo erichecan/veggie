@@ -19,6 +19,9 @@ export default function EnterPage() {
     BOSS: `${prefix}/classic/boss`,
     FINANCE: `${prefix}/classic/accounting`,
     WAREHOUSE: `${prefix}/classic/warehouse`,
+    // 现网 SALES 账号全部兼任 OPERATOR（见 lib/rbac/page-guard.ts 注释），落地页同 OPERATOR。
+    // 缺这一条时 data.user.role === 'SALES' 落进 ?? `${prefix}/`，再被首页的同名兜底弹回 /enter。
+    SALES: `${prefix}/classic/operator/quotations`,
   }
 
   const [email, setEmail] = useState('')
