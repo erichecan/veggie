@@ -622,11 +622,14 @@ export default function ClassicPlaceOrderPage() {
   }
 
   // ── 多单位销售(20260714 试点) ──────────────────────────────────────────────
-  // 懒加载某商品配置的额外可售单位；已加载过就跳过
-  function ensureSaleUomOptions(productId: string) {
-    if (productId in saleUomOptions) return
+  // 懒加载某商品配置的额外可售单位；已加载过就跳过。返回 Promise：selectProduct
+  // 要在插入行之前先等这次 fetch 回来，才知道基础单位是否 active(20260901 补——
+  // 之前 fire-and-forget，选品时无条件用 p.uomId，基础单位被关掉那一行照样落库
+  // 成禁用单位，只是下拉框不显示而已)。
+  function ensureSaleUomOptions(productId: string): Promise<SaleUomOption[]> {
+    if (productId in saleUomOptions) return Promise.resolve(saleUomOptions[productId] ?? [])
     setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
+    return apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
@@ -648,8 +651,12 @@ export default function ClassicPlaceOrderPage() {
             active: r.active,
           }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
+        return opts
       })
-      .catch(() => setSaleUomOptions(prev => ({ ...prev, [productId]: [] })))
+      .catch(() => {
+        setSaleUomOptions(prev => ({ ...prev, [productId]: [] }))
+        return []
+      })
   }
 
   // 统一算价：基准单位价按定价引擎算好后，非默认单位按换算系数放大/缩小
@@ -701,12 +708,33 @@ export default function ClassicPlaceOrderPage() {
     patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail, cost })
   }
 
+  // 基础单位若被关掉(active=false)，选品时不能再默认用它——落到第一个仍 active 的
+  // 额外单位；没有任何可下单单位时直接拒绝加行，而不是静默塞一个禁用单位进去。
+  function resolveAddableUom(p: { id: string; uomId?: string | null; uomName?: string | null }, opts: SaleUomOption[]) {
+    const baseUomId = (p as { uomId?: string }).uomId ?? undefined
+    const baseRow = opts.find(o => o.uomId === baseUomId)
+    const baseActive = baseRow ? baseRow.active : true
+    if (!baseUomId || baseActive) {
+      return { uomId: baseUomId, uomName: p.uomName ?? UNSET_UOM_LABEL, blocked: false as const }
+    }
+    const firstActiveExtra = opts.find(o => o.uomId !== baseUomId && o.active)
+    if (firstActiveExtra) {
+      return { uomId: firstActiveExtra.uomId, uomName: firstActiveExtra.uomName, blocked: false as const }
+    }
+    return { uomId: undefined, uomName: UNSET_UOM_LABEL, blocked: true as const }
+  }
+
   // ── Select product for a line ─────────────────────────────────────────────
-  // 异步：选商品后会异步拉一次该商品的 lastPrice，拉到后再 patch 行价。
-  // 第一次渲染时 lastPrice 还没回来，引擎会按 fallback 走（multi → listPrice / last → listPrice）。
-  function selectProduct(lineId: string, p: Product) {
-    ensureSaleUomOptions(p.id)
-    const computeLine = (cache: Record<string, number>) => computeLinePrice(p, 1, p.uomId, cache)
+  // 异步：先等可售单位拉回来才知道基础单位是否 active(20260901)，再异步拉一次该
+  // 商品的 lastPrice，拉到后再 patch 行价。
+  async function selectProduct(lineId: string, p: Product) {
+    const saleUomOpts = await ensureSaleUomOptions(p.id)
+    const target = resolveAddableUom(p as { id: string; uomId?: string | null; uomName?: string | null }, saleUomOpts)
+    if (target.blocked) {
+      toast.error(isEn ? `"${p.name}" has no sellable unit configured — check product settings` : `「${p.name}」没有可下单的单位，请先去商品设置里配置`)
+      return
+    }
+    const computeLine = (cache: Record<string, number>) => computeLinePrice(p, 1, target.uomId, cache)
 
     const { unitPrice, priceLabel, priceLabelDetail } = computeLine(lastPrices)
 
@@ -718,7 +746,9 @@ export default function ClassicPlaceOrderPage() {
       toast.warning(isEn ? '⚠ This product is out of stock. Added to order — please arrange stock.' : `⚠ 该产品库存不足，已添加至订单，请注意备货`, { duration: 5000 })
     }
 
-    const targetUomId = (p as Product & { uomId?: string }).uomId ?? undefined
+    const targetUomId = target.uomId
+    const rows = saleUomOpts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride }))
+    const uomFactor = targetUomId ? factorOf(rows, targetUomId) : 1
     let merged = false
     setLines(prev => {
       // 这个商品(同一 productId+同一可售单位)已经在单子里有一行了 —— 不再插新行，
@@ -743,10 +773,12 @@ export default function ClassicPlaceOrderPage() {
               orderedQty:  1,
               qtyOnHand:   p.qtyOnHand ?? 0,
               forecastQty: null,
-              uom:         (p as Product & { uomName?: string }).uomName ?? UNSET_UOM_LABEL,
+              uom:         target.uomName,
               uomId:       targetUomId,
               unitPrice,
-              cost:        p.standardPrice ?? 0,
+              // 落到非基础单位(基础单位被关掉时的兜底)要按换算系数放大成本，
+              // 否则 Cost 列还是按基础单位算的，跟已按新单位算好的 unitPrice 对不上。
+              cost:        Math.round((p.standardPrice ?? 0) * uomFactor * 100) / 100,
               priceLabel,
               priceLabelDetail,
               taxRate:     (p.customerTaxRate ?? 0) * 100,
@@ -787,20 +819,22 @@ export default function ClassicPlaceOrderPage() {
   }
 
   // 用当前价格表/lastPrice 为历史行的商品重算价格，构造一条订单行
-  function buildHistoryLine(p: Product, qty: number, note: string, cache: Record<string, number>): QuotationLine {
-    const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, qty, p.uomId, cache)
+  function buildHistoryLine(
+    p: Product, qty: number, note: string, cache: Record<string, number>, target: { uomId?: string; uomName: string }, uomFactor: number,
+  ): QuotationLine {
+    const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, qty, target.uomId, cache)
     return {
       id: uid(), productId: p.id, productName: p.name,
       description: lineDescription(p), note,
       orderedQty: qty, forecastQty: null, qtyOnHand: p.qtyOnHand ?? 0,
-      uom: (p as Product & { uomName?: string }).uomName ?? UNSET_UOM_LABEL,
-      uomId: (p as Product & { uomId?: string }).uomId ?? undefined,
-      unitPrice, cost: p.standardPrice ?? 0, priceLabel, priceLabelDetail,
+      uom: target.uomName,
+      uomId: target.uomId,
+      unitPrice, cost: Math.round((p.standardPrice ?? 0) * uomFactor * 100) / 100, priceLabel, priceLabelDetail,
       taxRate: (p.customerTaxRate ?? 0) * 100,
     }
   }
 
-  function importHistoryOrder(order: HistoryOrder) {
+  async function importHistoryOrder(order: HistoryOrder) {
     const histLines = order.lines ?? order.items ?? []
     const newLines: QuotationLine[] = []
     const missing: string[] = []
@@ -810,8 +844,14 @@ export default function ClassicPlaceOrderPage() {
       const rawQty = Number(hl.orderedQty) || 1
       // 历史脏数据（如 0.001 占位值）规整为 1，避免把不合理小数带入新订单
       const qty = rawQty > 0 && rawQty < 0.01 ? 1 : rawQty
-      ensureSaleUomOptions(p.id)
-      newLines.push(buildHistoryLine(p, qty, hl.note ?? '', lastPrices))
+      const saleUomOpts = await ensureSaleUomOptions(p.id)
+      // 历史订单当时用的单位现在可能已被停用(基础单位被关掉)——同样要落到
+      // 第一个仍 active 的单位，没有就跳过这条(计进 missing)，不能带禁用单位入单。
+      const target = resolveAddableUom(p as { id: string; uomId?: string | null; uomName?: string | null }, saleUomOpts)
+      if (target.blocked) { missing.push(hl.productName); continue }
+      const rows = saleUomOpts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride }))
+      const uomFactor = target.uomId ? factorOf(rows, target.uomId) : 1
+      newLines.push(buildHistoryLine(p, qty, hl.note ?? '', lastPrices, target, uomFactor))
     }
     if (newLines.length === 0) { toast.error(isEn ? 'All products in this order are discontinued, cannot import' : '该订单商品均已下架，无法导入'); return }
     setLines(prev => [...prev, ...newLines])

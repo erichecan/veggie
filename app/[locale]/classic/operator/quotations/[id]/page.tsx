@@ -170,12 +170,14 @@ export default function QuotationDetailPage() {
   const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    apiGet<AllProduct[]>('/api/products?sellable=1&slim=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
+    // status=ACTIVE: 服务端过滤，不传输已归档商品——与 place-order 创建页保持一致，
+    // 否则归档商品在这里(编辑态)拉取的候选列表里漏了这个参数又冒出来(20260901 客户反馈)
+    apiGet<AllProduct[]>('/api/products?status=ACTIVE&sellable=1&slim=1').then(p => setAllProducts(Array.isArray(p) ? p : [])).catch(() => {})
     apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
   }, [])
 
   function fetchLatestProducts() {
-    return apiGet<AllProduct[]>('/api/products?sellable=1&slim=1')
+    return apiGet<AllProduct[]>('/api/products?status=ACTIVE&sellable=1&slim=1')
       .then(p => setAllProducts(Array.isArray(p) ? p : []))
       .catch(() => {})
   }
@@ -209,10 +211,14 @@ export default function QuotationDetailPage() {
   }
 
   // 多单位销售(20260714 试点)：懒加载某商品配置的额外可售单位；已加载过就跳过
-  function ensureSaleUomOptions(productId: string) {
-    if (!productId || productId in saleUomOptions) return
+  // 返回 Promise：selectProductIntoLine 要在插入行之前先知道基础单位是否 active，
+  // 不能像渲染期间那样 fire-and-forget(20260901 补——之前默认 uomId=p.uomId 完全不看
+  // active，基础单位被关掉时那一行还是照样落库成禁用单位，只是下拉框不显示而已)。
+  function ensureSaleUomOptions(productId: string): Promise<SaleUomOption[]> {
+    if (!productId) return Promise.resolve([])
+    if (productId in saleUomOptions) return Promise.resolve(saleUomOptions[productId] ?? [])
     setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
+    return apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
@@ -232,8 +238,28 @@ export default function QuotationDetailPage() {
             active: r.active,
           }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
+        return opts
       })
-      .catch(() => setSaleUomOptions(prev => ({ ...prev, [productId]: [] })))
+      .catch(() => {
+        setSaleUomOptions(prev => ({ ...prev, [productId]: [] }))
+        return []
+      })
+  }
+
+  // 基础单位若被关掉(active=false)，选品时不能再默认用它——落到第一个仍 active 的
+  // 额外单位；没有任何可下单单位时直接拒绝加行，而不是静默塞一个禁用单位进去。
+  function resolveAddableUom(p: { id: string; uomId?: string | null; uomName?: string | null }, opts: SaleUomOption[]) {
+    const baseUomId = p.uomId ?? undefined
+    const baseRow = opts.find(o => o.uomId === baseUomId)
+    const baseActive = baseRow ? baseRow.active : true
+    if (!baseUomId || baseActive) {
+      return { uomId: baseUomId, uomName: p.uomName ?? UNSET_UOM_LABEL, blocked: false as const }
+    }
+    const firstActiveExtra = opts.find(o => o.uomId !== baseUomId && o.active)
+    if (firstActiveExtra) {
+      return { uomId: firstActiveExtra.uomId, uomName: firstActiveExtra.uomName, blocked: false as const }
+    }
+    return { uomId: undefined, uomName: UNSET_UOM_LABEL, blocked: true as const }
   }
 
   // 切换某行的单位：按换算系数(或该单位的独立售价)重算单价，不重新触发定价引擎，
@@ -475,14 +501,19 @@ export default function QuotationDetailPage() {
     : Number(order.totalAmount)
 
   async function selectProductIntoLine(lineId: string, p: AllProduct) {
-    ensureSaleUomOptions(p.id)
+    const saleUomOpts = await ensureSaleUomOptions(p.id)
+    const target = resolveAddableUom(p, saleUomOpts)
+    if (target.blocked) {
+      toast.error(isEn ? `"${p.name}" has no sellable unit configured — check product settings` : `「${p.name}」没有可下单的单位，请先去商品设置里配置`)
+      return
+    }
     ensureForecast(p.id)
     // priceType='default' 的定价链从不查最近成交价，跳过这次查询
     let lastPriceHit: { price: number; date: string } | undefined
     if (customer && priceType !== 'default') {
       try {
         const res = await apiGet<{ price: number | null; createdAt?: string }>(
-          `/api/orders/last-price?customerId=${customer.id}&productId=${p.id}${p.uomId ? `&uomId=${p.uomId}` : ''}`
+          `/api/orders/last-price?customerId=${customer.id}&productId=${p.id}${target.uomId ? `&uomId=${target.uomId}` : ''}`
         )
         if (res.price != null && res.price > 0) {
           lastPriceHit = { price: res.price, date: res.createdAt ?? '' }
@@ -490,9 +521,13 @@ export default function QuotationDetailPage() {
       } catch { /* 查询失败不阻塞加行，回退到价格表/牌价 */ }
     }
     const resolution = effectiveCustomer
-      ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, 1, lastPriceHit?.price, p.uomId ?? undefined)
+      ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, 1, lastPriceHit?.price, target.uomId)
       : null
-    const price = resolution ? resolution.price : Number(p.listPrice ?? 0)
+    // 落到非基础单位(基础单位被关掉时的兜底)要按该单位换算系数放大成本/牌价，
+    // 否则 Cost/Price 还是按基础单位算的，分母对不上(同 switchLineUnit 的处理)。
+    const rows = saleUomOpts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride }))
+    const uomFactor = target.uomId ? factorOf(rows, target.uomId) : 1
+    const price = resolution ? resolution.price : Number(p.listPrice ?? 0) * uomFactor
     const newLine = {
       id: lineId,
       orderId: order!.id,
@@ -500,8 +535,8 @@ export default function QuotationDetailPage() {
       productName: p.name,
       spec: lineDescription(p),
       note: '',
-      uomId: p.uomId ?? null,
-      uomName: p.uomName ?? UNSET_UOM_LABEL,
+      uomId: target.uomId ?? null,
+      uomName: target.uomName,
       unitPrice: price,
       orderedQty: 1,
       deliveredQty: 0,
@@ -509,7 +544,7 @@ export default function QuotationDetailPage() {
       subtotal: Math.round(price * 100) / 100,
       taxRate: Number(p.customerTaxRate ?? 0) * 100,
       sequence: editLines.length,
-      cost: Number(p.standardPrice ?? 0),
+      cost: Math.round(Number(p.standardPrice ?? 0) * uomFactor * 100) / 100,
       priceSourceType: resolution ? resolution.sourceType.toUpperCase() : null,
       priceSourceDetail: resolution?.sourceType === 'pricelist' ? resolution.pricelistName : null,
       priceSourceDate: resolution?.sourceType === 'last' ? (lastPriceHit?.date ?? null) : null,

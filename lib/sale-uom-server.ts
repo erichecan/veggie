@@ -33,14 +33,19 @@ export async function findInvalidLineUom(
       id: true,
       name: true,
       uomId: true,
-      saleUoms: { where: { active: true }, select: { uomId: true } },
+      saleUoms: { select: { uomId: true, active: true } },
     },
   })
   const infoMap = new Map(
-    products.map((p) => [
-      p.id,
-      { name: p.name, allowed: new Set([p.uomId, ...p.saleUoms.map((s) => s.uomId)].filter((v): v is string => !!v)) },
-    ]),
+    products.map((p) => {
+      // 锚点(基础)单位没有独立配置行时，历史上一直允许——只有真的建了那一行
+      // 且 active=false 才算被停用；额外单位则维持"只认 active=true 那些行"。
+      const baseRow = p.saleUoms.find((s) => s.uomId === p.uomId)
+      const baseAllowed = baseRow ? baseRow.active : true
+      const extra = p.saleUoms.filter((s) => s.uomId !== p.uomId && s.active).map((s) => s.uomId)
+      const allowed = new Set([...(baseAllowed && p.uomId ? [p.uomId] : []), ...extra].filter((v): v is string => !!v))
+      return [p.id, { name: p.name, allowed }]
+    }),
   )
 
   for (const l of candidates) {
