@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -83,6 +83,11 @@ export default function PdfExtractDialog({ onApply, products }: {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // ⛔ 原生「打开文件」对话框弹出到用户真正选完/取消之间有一段人眼能感知的延迟——
+  // 这期间按钮一直是可点的。用户以为没反应而连点两三下，Chrome/系统会真的一次
+  // 弹出好几个叠在一起的对话框，选中最上面那个也像「选了没反应」（其余的还悬在那）。
+  // 用这个标记把「已经弹出一个、还没等到结果」这段时间内的按钮点击挡掉。
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [useAi, setUseAi] = useState(false)
   const [result, setResult] = useState<ParseApiResponse | null>(null)
@@ -91,6 +96,22 @@ export default function PdfExtractDialog({ onApply, products }: {
   const [searchQuery, setSearchQuery] = useState('')
   /** 识别出的原文，永远不随人工编辑 productName 而变——记忆表要记的是「单据本来写的什么」 */
   const originalNamesRef = useRef<string[]>([])
+
+  // 用户点「取消」不选文件时，原生 input 只会触发 cancel、不会触发 change——
+  // 不接这个事件，pickerOpen 就会卡 true，取消一次以后这颗按钮就再也点不动了。
+  // 另外接一道 window focus 兜底（浏览器太老、不认 cancel 事件时用得上）：
+  // 原生文件对话框开着的时候页面拿不到焦点，它一关，焦点必然还给页面。
+  useEffect(() => {
+    const el = fileInputRef.current
+    const onCancel = () => setPickerOpen(false)
+    const onFocus = () => setTimeout(() => setPickerOpen(false), 150)
+    el?.addEventListener('cancel', onCancel)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      el?.removeEventListener('cancel', onCancel)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
 
   async function handleFileChosen(file: File) {
     setUploading(true)
@@ -169,12 +190,22 @@ export default function PdfExtractDialog({ onApply, products }: {
         type="file"
         accept=".pdf,.xlsx,.xls,.csv,application/pdf"
         className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleFileChosen(f) }}
+        onChange={e => {
+          setPickerOpen(false)
+          const f = e.target.files?.[0]
+          // 清空 value：不然连续两次选同一个文件，第二次 change 不会触发
+          e.target.value = ''
+          if (f) handleFileChosen(f)
+        }}
       />
       <span className="inline-flex items-center gap-2">
         <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
+          onClick={() => {
+            if (pickerOpen || uploading) return
+            setPickerOpen(true)
+            fileInputRef.current?.click()
+          }}
+          disabled={uploading || pickerOpen}
           className="h-8 px-3 text-sm rounded border font-medium hover:bg-gray-50 disabled:opacity-50"
           style={{ borderColor: PURPLE, color: PURPLE }}
         >
