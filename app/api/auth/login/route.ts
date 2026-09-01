@@ -38,7 +38,9 @@ export async function POST(req: Request) {
       )
     }
 
-    const user = await prisma.user.findUnique({ where: { email } })
+    // 建号接口存邮箱时会 trim + toLowerCase（app/api/users/route.ts），这里查找必须用同一套
+    // 归一化，否则大小写/首尾空格不同就查不到人，或（若库里存在大小写重复行）查到错的那条
+    const user = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } })
 
     // 账号不存在也要记失败并走同一条返回路径 —— 分开处理的话，
     // 「哪个邮箱存在」会从行为差异里漏出去，等于送一份用户名枚举。

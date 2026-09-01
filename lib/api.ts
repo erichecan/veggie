@@ -77,6 +77,7 @@ export async function api<T = unknown>(
   options?: RequestInit
 ): Promise<T> {
   let res: Response
+  const tokenAtRequestTime = getToken()
   try {
     // FormData 请求不能带 Content-Type: application/json，浏览器要自己加 multipart boundary
     const baseHeaders = authHeaders()
@@ -107,9 +108,15 @@ export async function api<T = unknown>(
       ? (isEn ? 'Your permissions were changed, please sign in again' : '权限已变更，请重新登录')
       : (isEn ? 'Session expired, please log in again' : '登录已过期，请重新登录')
 
-    if (typeof window !== 'undefined') {
+    // 这次失败请求发出时用的 token，若已不是 localStorage 里当前的 token，
+    // 说明这期间已经有另一次登录/登出把状态换掉了 —— 不能顺手把刚写入的新 token
+    // 清掉、把用户重新弹回登录页（多标签页下会出现"明明刚登录成功却又被踢出"）
+    if (typeof window !== 'undefined' && localStorage.getItem('veggie_token') === tokenAtRequestTime) {
       localStorage.removeItem('veggie_token')
       localStorage.removeItem('veggie_user')
+      // 同步清掉服务端下发的 HttpOnly cookie，否则页面级 middleware 仍认为已登录，
+      // 出现"页面能开、一操作就被踢"的分裂状态
+      fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
       const target = `${isEn ? '/en/enter' : '/enter'}${permissionChanged ? '?reason=permission-changed' : ''}`
       // 延迟一点跳转，让 toast 有机会显示
       setTimeout(() => { window.location.href = target }, 300)
