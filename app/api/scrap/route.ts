@@ -60,10 +60,9 @@ export async function POST(req: Request) {
       const p = prisma as any
       const product = await p.product.findUnique({
         where: { id: productId },
-        include: { template: { select: { type: true } } },
       })
       if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
-      if (product.template?.type !== 'PRODUCT') {
+      if (product.type !== 'PRODUCT') {
         return NextResponse.json({ error: '只有实物商品可以报废' }, { status: 400 })
       }
 

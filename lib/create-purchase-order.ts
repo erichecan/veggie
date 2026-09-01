@@ -46,10 +46,9 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   if (productIds.length > 0) {
     const products = await tx.product.findMany({
       where: { id: { in: productIds } },
-      include: { template: { select: { canBePurchased: true } } },
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const notPurchasable = products.filter((p: any) => p.template?.canBePurchased === false)
+    const notPurchasable = products.filter((p: any) => p.canBePurchased === false)
     if (notPurchasable.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       throw Object.assign(new Error(`商品「${notPurchasable.map((p: any) => p.name).join('、')}」不可采购，无法加入采购单`), { status: 400 })
@@ -75,7 +74,10 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
       throw Object.assign(new Error(`采购行单价无效：${raw.productName ?? raw.productId}`), { status: 400 })
     }
     const ex = round2(qty * unitCost)
-    const tax = round2(ex * taxRate)
+    // taxRate 是百分数(如 23 表示 23%)，不是小数——PUT /api/purchase-orders/[id]:144 与
+    // return 路由同一处计算都是 `subtotalExTax * taxRate / 100`，这里漏了 /100，
+    // 新建采购单/询价单算出的税额恒是应有值的 100 倍。
+    const tax = round2(ex * taxRate / 100)
     const inc = round2(ex + tax)
     subtotalExTax += ex
     totalTax += tax

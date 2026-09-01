@@ -124,10 +124,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (newLinePOProductIds.length > 0) {
           const newLinePOProducts = await p.product.findMany({
             where: { id: { in: newLinePOProductIds } },
-            include: { template: { select: { canBePurchased: true } } },
           })
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const notPurchasable = newLinePOProducts.filter((prod: any) => prod.template?.canBePurchased === false)
+          const notPurchasable = newLinePOProducts.filter((prod: any) => prod.canBePurchased === false)
           if (notPurchasable.length > 0) {
             return NextResponse.json(
               // eslint-disable-next-line @typescript-eslint/no-explicit-any

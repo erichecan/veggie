@@ -788,7 +788,7 @@ export default function PurchaseDetailPage() {
                 </div>
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Currency' : '货币'}</label>
-                  <span className="text-sm text-gray-700">CNY</span>
+                  <span className="text-sm text-gray-700">{po.currency}</span>
                 </div>
               </div>
 
