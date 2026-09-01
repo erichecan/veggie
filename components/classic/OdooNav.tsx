@@ -2,7 +2,8 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { logout as clearSession } from '@/lib/session'
+import { logout as clearSession, getSession } from '@/lib/session'
+import { decodePermissions } from '@/lib/rbac/bitmap'
 import { StoreAPI } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
@@ -80,6 +81,11 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const APPS = isEn ? APPS_EN : APPS_ZH
+  // ⛔ 20260901：这两个下拉项原来按 session.role（单值，来自 toRoleSession 里的
+  // user.role 主角色）显隐——多角色账号（如主角色 SALES、兼任 BOSS）主角色
+  // 永远不等于 'boss'，入口就永远不出现，即使该账号确实拥有对应权限点。
+  // 改按权限位图判，与 lib/rbac/page-guard.ts 的 canEnterPage 同一套依据。
+  const perms = decodePermissions(session ? getSession()?.pm : undefined)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [appSwitcherOpen, setAppSwitcherOpen] = useState(false)
   const [pwdOpen, setPwdOpen] = useState(false)
@@ -523,7 +529,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                 >
                   <span>🔑</span> {isEn ? 'Change Password' : '修改密码'}
                 </button>
-                {session?.role === 'operator' && (
+                {perms.has('page.operator.access') && (
                   <>
                     <div className="border-t border-gray-100 my-1" />
                     <button
@@ -547,7 +553,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                     </button>
                   </>
                 )}
-                {session?.role === 'boss' && (
+                {perms.has('system.user.read') && (
                   <>
                     <div className="border-t border-gray-100 my-1" />
                     <button

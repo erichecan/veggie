@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth } from '@/lib/auth'
+import { withAuth, effectiveRoles } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
 import { toNum, round2 } from '@/lib/decimal-helpers'
@@ -54,8 +54,12 @@ export async function POST(req: Request) {
       if (before.length === 0) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
       // ── 权限检查 ──────────────────────────────────────────────────────────────
-      const isFinance = user.role === 'FINANCE'
-      const isOperatorOrBoss = ['OPERATOR', 'BOSS'].includes(user.role)
+      // ⛔ 20260901：原来只看 user.role（单值主角色），兼任角色（如主角色 SALES、
+      // 兼任 OPERATOR/BOSS）永远判不过，即使 route-map 那层已经放行。改用
+      // effectiveRoles（roles[] 优先，回退单 role），与 withAuth 内部同一套口径。
+      const roles = effectiveRoles(user)
+      const isFinance = roles.includes('FINANCE')
+      const isOperatorOrBoss = roles.some(r => ['OPERATOR', 'BOSS'].includes(r))
 
       if (action === 'mark_returned') {
         if (!isFinance && !isOperatorOrBoss) {

@@ -8,9 +8,14 @@ import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { canEnterPage } from '@/lib/rbac/page-guard'
+import { decodePermissions } from '@/lib/rbac/bitmap'
 
 export default function ClassicBossLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RoleSession | null>(null)
+  // ⛔ 20260901：数据库备份入口原来按 session.role === 'boss' 显隐，
+  // session 是 toRoleSession() 出来的单角色，兼任 BOSS 但主角色不是 BOSS 的账号
+  // 永远看不到这条入口，即使确实有 system.backup.* 权限。改按权限位图判。
+  const [canBackup, setCanBackup] = useState(false)
   const router = useRouter()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
@@ -38,9 +43,8 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     { href: `${prefix}/classic/boss/reports/sales`, label: '销售分析' },
     { href: `${prefix}/classic/boss/reports/purchasing`, label: '采购分析' },
     { href: `${prefix}/classic/boss/reports/logistics`, label: '物流分析（报表）' },
-    // 数据库备份涉及全库敏感数据，仅 BOSS 可见（本 layout 本身放行 BOSS+OPERATOR，这里额外收紧）
-    // 注：RoleSession.role 是小写（toRoleSession 内部 .toLowerCase()），brief 原文示例用大写 'BOSS' 与 lib/types.ts 的 Role 类型不符，会导致 tsc 报 TS2367，这里改用 'boss'
-    ...(session?.role === 'boss'
+    // 数据库备份涉及全库敏感数据，按权限点收紧（本 layout 本身放行 BOSS+OPERATOR）
+    ...(canBackup
       ? [
           { href: '', label: '│' },
           { href: `${prefix}/classic/boss/system/backups`, label: '数据库备份' },
@@ -55,6 +59,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
       return
     }
     setSession(toRoleSession(user))
+    setCanBackup(decodePermissions(user.pm).has('system.backup.read'))
     hydrate()
   }, [router, prefix])
 
