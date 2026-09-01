@@ -57,8 +57,16 @@ interface PurchaseProduct {
   category?: string | null
   uomId?: string | null
   uomName?: string | null
+  purchaseUomId?: string | null
+  purchaseUomName?: string | null
   standardPrice?: number | null
   price?: number | null
+}
+
+/** 采购单选品：优先用商品的采购单位，没配过才退回销售/基础单位 */
+function purchaseUomOf(prod: PurchaseProduct): { uomId: string | null; uomName: string | null } {
+  if (prod.purchaseUomId) return { uomId: prod.purchaseUomId, uomName: prod.purchaseUomName ?? null }
+  return { uomId: prod.uomId ?? null, uomName: prod.uomName ?? null }
 }
 
 interface Category {
@@ -155,6 +163,7 @@ export default function NewPurchaseOrderPage() {
   function addProductLine(prod: PurchaseProduct, overrides?: { qty?: number; unitCost?: number }) {
     const unitCost = overrides?.unitCost ?? Number(prod.standardPrice ?? prod.price ?? 0)
     const qty = overrides?.qty ?? 1
+    const uom = purchaseUomOf(prod)
     setLines(prev => [
       ...prev,
       {
@@ -162,8 +171,8 @@ export default function NewPurchaseOrderPage() {
         productId: prod.id,
         productName: prod.name,
         spec: prod.category ?? null,
-        uomId: prod.uomId ?? null,
-        uomName: prod.uomName ?? null,
+        uomId: uom.uomId,
+        uomName: uom.uomName,
         orderedQty: qty,
         unitCost,
         taxRate: 0,
@@ -212,6 +221,7 @@ export default function NewPurchaseOrderPage() {
   /** 就地选品：把选中的商品填进已经插好的那一行（草稿行由 addBlankLine 建好） */
   function fillLineWithProduct(lineId: string, prod: PurchaseProduct) {
     const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
+    const uom = purchaseUomOf(prod)
     setLines(prev => prev.map(l => {
       if (l.id !== lineId) return l
       const qty = Number(l.orderedQty) || 1
@@ -222,8 +232,8 @@ export default function NewPurchaseOrderPage() {
         productId: prod.id,
         productName: prod.name,
         spec: prod.category ?? null,
-        uomId: prod.uomId ?? null,
-        uomName: prod.uomName ?? null,
+        uomId: uom.uomId,
+        uomName: uom.uomName,
         orderedQty: qty,
         unitCost,
         subtotalExTax,
@@ -630,7 +640,7 @@ export default function NewPurchaseOrderPage() {
                 search: isEn ? 'Search product…' : '搜索商品…',
               }}
               onReady={handleEditorReady}
-              emptyColSpan={9}
+              emptyColSpan={11}
               emptyMessage={isEn ? 'No lines yet — click "+ Add a product" below' : '暂无明细行，点下方「+ 添加商品」'}
               tableClassName="w-full text-sm border-collapse"
               renderHeaders={() => (
@@ -640,8 +650,12 @@ export default function NewPurchaseOrderPage() {
                   <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Description' : '描述'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Quantity' : '数量'}</th>
                   <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Unit' : '单位'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Reference cost — last known cost price, not saved on this order' : '参考成本价——上次收货成本，仅供对比，不写入本单'}>
+                    {isEn ? 'Cost' : '参考成本'}
+                  </th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Untaxed Total' : '税前小计'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                 </tr>
@@ -666,6 +680,12 @@ export default function NewPurchaseOrderPage() {
                         onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                     </td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{l.uomName || '—'}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-400 text-xs">
+                      {(() => {
+                        const refCost = purchaseProducts.find(p => p.id === l.productId)?.standardPrice
+                        return refCost != null ? Number(refCost).toFixed(2) : '—'
+                      })()}
+                    </td>
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <input type="number" step="0.01" min="0"
@@ -686,11 +706,18 @@ export default function NewPurchaseOrderPage() {
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      <input type="number" step="0.1" min="0"
-                        className={numInputCls} style={{ width: '60px' }}
+                      <select
+                        className={numInputCls} style={{ width: '68px' }}
                         value={Number(l.taxRate)}
                         onChange={e => updateLine(i, 'taxRate', Number(e.target.value))}
-                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
+                        onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}>
+                        <option value={0}>0%</option>
+                        <option value={13.5}>13.5%</option>
+                        <option value={23}>23%</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-600">
+                      {l.subtotalExTax.toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <input type="date"
@@ -700,7 +727,7 @@ export default function NewPurchaseOrderPage() {
                         onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch, isLastFieldOfLastRow: isLast })} />
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium text-gray-800">
-                      {l.subtotalExTax.toFixed(2)}
+                      {l.subtotalIncTax.toFixed(2)}
                       {freightAmount > 0 && l.productId && (
                         <div className="text-[10px] font-normal text-gray-400">
                           {isEn ? 'Landed unit price' : '落地单价'} {landedCosts[i]?.landedUnitCost.toFixed(2)}

@@ -75,13 +75,15 @@ export async function GET(req: Request) {
           images: true,
           category: { select: { name: true } },
           uomId: true, uom: { select: { id: true, name: true } },
-          purchaseUomId: true,
+          purchaseUomId: true, purchaseUom: { select: { id: true, name: true } },
           canBeSold: true, canBePurchased: true,
         },
       })
-      const slimResult = rows.map(({ category, uom, ...p }) => ({
+      const slimResult = rows.map(({ category, uom, purchaseUom, ...p }) => ({
         ...p,
         uomName: uom?.name ?? null,
+        // 采购单位名——之前只取了裸 purchaseUomId 没 join 名字，采购单页面拿不到显示文本
+        purchaseUomName: purchaseUom?.name ?? null,
         category: category?.name ?? null,
       }))
       return NextResponse.json(serializeApi(slimResult))
