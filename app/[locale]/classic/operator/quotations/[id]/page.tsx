@@ -40,7 +40,7 @@ interface AllProduct {
 // 多单位销售(20260714 试点)：商品挂的额外可售单位，与 place-order 创建页同构
 type SaleUomOption = {
   uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null
-  priceMode: SaleUomPriceMode; priceDiscountPct: number; priceSurcharge: number
+  priceMode: SaleUomPriceMode; priceDiscountPct: number; priceSurcharge: number; active: boolean
 }
 
 interface CreditInfo {
@@ -217,8 +217,9 @@ export default function QuotationDetailPage() {
     )
       .then(rows => {
         // factor 取 ProductSaleUom.factor（这个商品自己的箱规），不是全局 uom.factor
+        // ⛔ 不能只留 active=true 的行——基础单位那行也可能被关掉(20260901)，下拉框
+        // 要知道它 active=false 才能把它从选项里剔除；筛活跃的活儿挪到渲染处做。
         const opts = rows
-          .filter(r => r.active)
           .map(r => ({
             uomId: r.uomId,
             uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
@@ -228,6 +229,7 @@ export default function QuotationDetailPage() {
             priceMode: r.priceMode ?? 'AUTO',
             priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
             priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
+            active: r.active,
           }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
@@ -1044,10 +1046,12 @@ export default function QuotationDetailPage() {
                       ) : Number(l.orderedQty).toFixed(2)}
                     </td>
                     <td className="px-2 py-2 text-gray-600">
-                      {editing && l.productId && (saleUomOptions[l.productId]?.length ?? 0) > 0 ? (
+                      {editing && l.productId && (saleUomOptions[l.productId] ?? []).some(o => o.active) ? (
                         (() => {
                           const p = allProducts.find(pp => pp.id === l.productId)
                           const anchorUomId = p?.uomId
+                          const opts = saleUomOptions[l.productId] ?? []
+                          const anchorActive = opts.find(o => o.uomId === anchorUomId)?.active ?? true
                           return (
                             <select
                               value={l.uomId ?? anchorUomId ?? ''}
@@ -1055,10 +1059,10 @@ export default function QuotationDetailPage() {
                               onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                               className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                             >
-                              {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
+                              {anchorUomId && anchorActive && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
                               {/* ⛔ 排除锚点，否则默认单位在下拉里出现两次（见 place-order 同处注释） */}
-                              {(saleUomOptions[l.productId] ?? [])
-                                .filter(o => o.uomId !== anchorUomId)
+                              {opts
+                                .filter(o => o.uomId !== anchorUomId && o.active)
                                 .map(o => (
                                   <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
                                 ))}

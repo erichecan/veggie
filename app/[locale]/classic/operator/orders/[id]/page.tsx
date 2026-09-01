@@ -25,7 +25,7 @@ const PURPLE = '#875A7B'
 
 type SaleUomOption = {
   uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null
-  priceMode: SaleUomPriceMode; priceDiscountPct: number; priceSurcharge: number
+  priceMode: SaleUomPriceMode; priceDiscountPct: number; priceSurcharge: number; active: boolean
 }
 
 interface AllProduct {
@@ -129,7 +129,9 @@ export default function SalesOrderDetailPage() {
       `/api/products/${productId}/sale-uoms`,
     )
       .then(rows => {
-        const opts = rows.filter(r => r.active).map(r => ({
+        // ⛔ 不能只留 active=true 的行——基础单位那行也可能被关掉(20260901)，下拉框
+        // 要知道它 active=false 才能把它从选项里剔除；筛活跃的活儿挪到渲染处做。
+        const opts = rows.map(r => ({
           uomId: r.uomId,
           uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
           isDefault: r.isDefault,
@@ -138,6 +140,7 @@ export default function SalesOrderDetailPage() {
           priceMode: r.priceMode ?? 'AUTO',
           priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
           priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
+          active: r.active,
         }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
@@ -971,10 +974,12 @@ export default function SalesOrderDetailPage() {
                       ) : Number(l.orderedQty).toFixed(2)}
                     </td>
                     <td className="px-2 py-2 text-gray-600">
-                      {editing && l.productId && (saleUomOptions[l.productId]?.length ?? 0) > 0 ? (
+                      {editing && l.productId && (saleUomOptions[l.productId] ?? []).some(o => o.active) ? (
                         (() => {
                           const p = allProducts.find(pp => pp.id === l.productId)
                           const anchorUomId = (p as { uomId?: string | null } | undefined)?.uomId ?? null
+                          const opts = saleUomOptions[l.productId] ?? []
+                          const anchorActive = opts.find(o => o.uomId === anchorUomId)?.active ?? true
                           return (
                             <select
                               value={l.uomId ?? anchorUomId ?? ''}
@@ -982,12 +987,12 @@ export default function SalesOrderDetailPage() {
                               onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                               className="w-full text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300"
                             >
-                              {anchorUomId && (
+                              {anchorUomId && anchorActive && (
                                 <option value={anchorUomId}>{(p as { uomName?: string } | undefined)?.uomName ?? UNSET_UOM_LABEL}</option>
                               )}
                               {/* 排除锚点，否则默认单位在下拉里出现两次 */}
-                              {(saleUomOptions[l.productId] ?? [])
-                                .filter(o => o.uomId !== anchorUomId)
+                              {opts
+                                .filter(o => o.uomId !== anchorUomId && o.active)
                                 .map(o => (
                                   <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
                                 ))}

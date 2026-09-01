@@ -67,6 +67,7 @@ type SaleUomOption = {
   priceMode: SaleUomPriceMode
   priceDiscountPct: number
   priceSurcharge: number
+  active: boolean
 }
 
 type ChatterEntry = {
@@ -632,8 +633,9 @@ export default function ClassicPlaceOrderPage() {
         // ⛔ factor 取的是 **ProductSaleUom.factor**（这个商品自己的箱规），
         //    不是全局 uom.factor —— 后者在生产库 Unit 类目下全是 1，
         //    切了单位价格纹丝不动，多规格等于没做（20260819 实测）。
+        // ⛔ 这里不能只留 active=true 的行 —— 基础单位那行也可能被关掉(20260901)，
+        // 下拉框要知道它 active=false 才能把它从选项里剔除；筛活跃的活儿挪到渲染处做。
         const opts = rows
-          .filter(r => r.active)
           .map(r => ({
             uomId: r.uomId,
             uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
@@ -643,6 +645,7 @@ export default function ClassicPlaceOrderPage() {
             priceMode: r.priceMode ?? 'AUTO',
             priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
             priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
+            active: r.active,
           }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
       })
@@ -1752,22 +1755,26 @@ export default function ClassicPlaceOrderPage() {
 
                       {/* UoM — 有额外可售单位(20260714 试点)时显示切换下拉，否则只读文本 */}
                       <td className="px-2 py-1 text-gray-500 truncate">
-                        {line.productId && (saleUomOptions[line.productId]?.length ?? 0) > 0 ? (
+                        {line.productId && (saleUomOptions[line.productId] ?? []).some(o => o.active) ? (
                           (() => {
                             const p = products.find(pp => pp.id === line.productId)
                             const anchorUomId = p?.uomId
+                            const opts = saleUomOptions[line.productId] ?? []
+                            // 基础单位没有独立行时(从没配过 sale-uoms)视为默认可下单；
+                            // 有行则以那行的 active 为准 —— 关掉了就不能再出现在下拉里(20260901)
+                            const anchorActive = opts.find(o => o.uomId === anchorUomId)?.active ?? true
                             return (
                               <select
                                 value={line.uomId ?? anchorUomId ?? ''}
                                 onChange={e => switchLineUnit(line.id, e.target.value)}
                                 className="w-full text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
                               >
-                                {anchorUomId && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
+                                {anchorUomId && anchorActive && <option value={anchorUomId}>{p?.uomName ?? UNSET_UOM_LABEL}</option>}
                                 {/* ⛔ 排除锚点：saleUomOptions 本来就含默认单位，
                                     不排的话它会在下拉里出现两次（一次英文 name、一次中文 nameZh，
                                     同一个 uomId）——看起来像两个不同的单位 */}
-                                {(saleUomOptions[line.productId] ?? [])
-                                  .filter(o => o.uomId !== anchorUomId)
+                                {opts
+                                  .filter(o => o.uomId !== anchorUomId && o.active)
                                   .map(o => (
                                     <option key={o.uomId} value={o.uomId}>{o.uomName}</option>
                                   ))}
