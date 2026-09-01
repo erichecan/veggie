@@ -173,12 +173,24 @@ export default function ClassicProductDetailPage() {
         setPrimaryProductId(found.id)
         try {
           const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null }>>(`/api/products/${found.id}/sale-uoms`)
-          setSaleUoms(rows.map(r => ({
+          const mapped = rows.map(r => ({
             uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
             priceMode: r.priceMode ?? 'AUTO',
             priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
             priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
-          })))
+          }))
+          // 基础单位这一行只在「保存过一次可售单位」之后才会真的落库(见 PUT 路由注释里
+          // "提交列表里没有基准单位时自动补一行")——从没保存过的商品，GET 回来的列表里
+          // 压根没有它，「基础单位是否可下单」这个开关就没地方挂。这里前端补一份默认
+          // active:true 的虚拟行，保证这个开关任何时候都在，不用逼用户先随便加一个
+          // 额外单位、保存一次才能看到。
+          if (found.uomId && !mapped.some(r => r.uomId === found.uomId)) {
+            mapped.push({
+              uomId: found.uomId, isDefault: true, factor: 1, priceOverride: null, active: true,
+              priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
+            })
+          }
+          setSaleUoms(mapped)
         } catch { setSaleUoms([]) }
       }
       setCategories(cats)
@@ -226,7 +238,12 @@ export default function ClassicProductDetailPage() {
     return tmpl?.uomId ? row.uomId === tmpl.uomId : row.isDefault
   }
   function addSaleUomRow() {
+    // 基准单位不能作为"额外可售单位"加进来——它已经隐式存在(见上面 isBaseUom 的
+    // return null)。这里如果不排除 tmpl.uomId，候选一旦落到它头上，新行会被塞进
+    // state 但因为 isBaseUom 判断永远不渲染，表现就是点了「+ 添加单位」界面上
+    // 什么反应都没有，像按钮坏了(20260901 客户反馈"添加不了"实测复现)。
     const used = new Set(saleUoms.map(r => r.uomId))
+    if (tmpl?.uomId) used.add(tmpl.uomId)
     const candidate = uoms.find(u => !used.has(u.id) && (!tmpl?.uomId || u.categoryId === uoms.find(x => x.id === tmpl.uomId)?.categoryId))
     if (!candidate) { toast.error(isEn ? 'No more units available in this category' : '该计量类别下已没有可选的单位了'); return }
     setSaleUoms(prev => [...prev, {
@@ -698,16 +715,15 @@ export default function ClassicProductDetailPage() {
               </p>
               <div className="max-w-3xl space-y-2">
                 {saleUoms.map((row, i) => {
-                  // 基础行已经在上面「Unit of Measure」里显示/管理过一次，这里不用再列一遍——
-                  // 纯前端不渲染而已，saveSaleUoms/后端 upsert 仍然照常保住这一行的数据
-                  // （PUT 路由提交列表里没有基准单位时会自动补一行，见该路由注释），
-                  // 不会因为这里不渲染就把它从数据库删掉。
-                  if (isBaseUom(row)) return null
                   // ⛔ 单位不再按类目限制：`10*700g CASE` 的基础单位是 PKT（Unit 类目），
                   //    而它也按 KG 卖（Weight 类目）—— 跨类目在真实业务里就是常态，
                   //    因为换算系数现在是这个商品自己的，不依赖全局类目体系。
-                  const options = uoms
                   const isBase = isBaseUom(row)
+                  // 非基础行的下拉里不能选基准单位本身——选了会因为上面 isBaseUom 判断
+                  // 变成新的「基础行」，把当前这行的换算/价格配置全部作废。基础行本身的
+                  // 下拉锁死不可改（唯一入口是页头「Unit of Measure」），但选项列表必须
+                  // 包含它自己的值，否则 <select> 找不到匹配项会显示空白。
+                  const options = isBase ? uoms : (tmpl?.uomId ? uoms.filter(u => u.id !== tmpl.uomId) : uoms)
                   // 具体数量有两种真实场景，同一个数字含义相反，必须让用户自己选×/÷，不能瞎猜：
                   // 整箱/大包装(case of 10 packets)是"放大" → factor=数量本身；
                   // 半份/拆零(拆成 1/10)是"缩小" → factor=1/数量，更常见，默认就是这个方向。
@@ -731,7 +747,8 @@ export default function ClassicProductDetailPage() {
                             const nextIsBase = tmpl?.uomId ? nextUomId === tmpl.uomId : row.isDefault
                             updateSaleUomRow(i, { uomId: nextUomId, factor: nextIsBase ? 1 : row.factor })
                           }}
-                          disabled={!editMode}
+                          disabled={!editMode || isBase}
+                          title={isBase ? (isEn ? 'Change the base unit from "Unit of Measure" above' : '基准单位只能在上面「Unit of Measure」改') : undefined}
                           className={fieldClass}
                           style={{ ...focusStyle, maxWidth: 180 }}
                         >
@@ -816,15 +833,19 @@ export default function ClassicProductDetailPage() {
                             €{finalPrice.toFixed(2)}
                           </div>
                         )}
-                        {editMode && !isBase && (
+                        {editMode && (
                           <button
                             type="button"
                             onClick={() => updateSaleUomRow(i, { active: !row.active })}
                             role="switch"
                             aria-checked={row.active}
-                            title={isEn
-                              ? (row.active ? 'Click to disable — hidden when placing orders/quotations; factor & price relationships still apply if re-enabled' : 'Click to enable')
-                              : (row.active ? '点击停用 —— 下单/报价时不再出现；换算与价格关系仍保留，重新启用即可用' : '点击启用')}
+                            title={isBase
+                              ? (isEn
+                                ? (row.active ? 'Click to disable selling in the base unit itself — the product can still be ordered in the other units configured below' : 'Click to enable')
+                                : (row.active ? '点击停用「按基础单位本身售卖」——其余已配置的单位不受影响，仍可下单' : '点击启用'))
+                              : (isEn
+                                ? (row.active ? 'Click to disable — hidden when placing orders/quotations; factor & price relationships still apply if re-enabled' : 'Click to enable')
+                                : (row.active ? '点击停用 —— 下单/报价时不再出现；换算与价格关系仍保留，重新启用即可用' : '点击启用'))}
                             className="h-8 px-2 flex items-center gap-1.5 text-xs rounded border border-gray-300 bg-white transition-colors whitespace-nowrap"
                           >
                             <span className={row.active ? 'text-gray-700' : 'text-gray-400'}>{isEn ? 'Sellable' : '可下单'}</span>
@@ -833,10 +854,10 @@ export default function ClassicProductDetailPage() {
                             </span>
                           </button>
                         )}
-                        {!editMode && !isBase && !row.active && (
+                        {!editMode && !row.active && (
                           <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-400 whitespace-nowrap">{isEn ? 'Disabled' : '已停用'}</span>
                         )}
-                        {editMode && (
+                        {editMode && !isBase && (
                           <button onClick={() => removeSaleUomRow(i)} className="text-gray-400 hover:text-red-500 text-sm px-1">✕</button>
                         )}
                       </div>
