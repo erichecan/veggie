@@ -2,6 +2,10 @@
  * canBePurchased 准入闸门：createPurchaseOrder 是 POST /api/purchase-orders 和
  * "采购建议转采购单"共用的唯一创建入口，改这一处即可同时覆盖两条路径。
  * 用 mock tx，不碰真实 DB。
+ *
+ * ⛔ 20260901：canBePurchased 是 Product 直属标量字段（20260825 ProductTemplate
+ * 并入 Product 时移过来的），不再嵌套在 template 关联下——之前 mock 还按旧结构
+ * 造数据，跟改完的源码（读 p.canBePurchased）对不上，测试才会"漏检"。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -13,7 +17,7 @@ function mockTx(products: Array<{ id: string; name: string; canBePurchased: bool
       findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
         products
           .filter(p => where.id.in.includes(p.id))
-          .map(p => ({ id: p.id, name: p.name, template: { canBePurchased: p.canBePurchased } })),
+          .map(p => ({ id: p.id, name: p.name, canBePurchased: p.canBePurchased })),
     },
     purchaseOrder: {
       count: async () => 0,
@@ -47,9 +51,9 @@ test('全部商品可采购 → 正常创建 PO', async () => {
 })
 
 test('商品模板缺失 canBePurchased 字段（undefined）→ 默认放行', async () => {
-  // Prisma 默认值是 true；mock 里模拟"没查到 template"这种边界情况，不应误伤
+  // Prisma 默认值是 true；mock 里模拟"字段未取到"这种边界情况，不应误伤
   const tx = {
-    product: { findMany: async () => [{ id: 'p1', name: '洋葱', template: null }] },
+    product: { findMany: async () => [{ id: 'p1', name: '洋葱', canBePurchased: undefined }] },
     purchaseOrder: {
       count: async () => 0,
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'po_test', ...data }),
