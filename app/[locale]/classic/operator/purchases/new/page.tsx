@@ -759,14 +759,17 @@ export default function NewPurchaseOrderPage() {
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Untaxed Total' : '税前小计'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Ex-tax line total incl. allocated freight' : '税前小计 + 分摊运费'}>{isEn ? 'Untaxed Total' : '税前小计'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Tax-inclusive line total incl. allocated freight' : '含税总额 + 分摊运费'}>{isEn ? 'Subtotal' : '小计'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                 </tr>
               )}
               defaultRowCls="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
               renderRow={(l, i, { deleteButton, focusSearch, productCell }) => {
                 const isLast = i === lines.length - 1
+                const allocatedFreight = landedCosts[i]?.allocatedFreight ?? 0
+                const untaxedTotal = l.subtotalExTax + allocatedFreight
+                const inclTotal = untaxedTotal * (1 + Number(l.taxRate) / 100)
                 return (
                   <>
                     <td className="px-2 py-2.5 text-center">{deleteButton}</td>
@@ -818,8 +821,11 @@ export default function NewPurchaseOrderPage() {
                         {PURCHASE_TAX_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
                       </select>
                     </td>
-                    <td className="px-4 py-2.5 text-right text-gray-600">
-                      {l.subtotalExTax.toFixed(2)}
+                    <td className="px-4 py-2.5 text-right text-gray-700">
+                      {untaxedTotal.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-medium text-gray-800">
+                      {inclTotal.toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <input type="date"
@@ -827,14 +833,6 @@ export default function NewPurchaseOrderPage() {
                         value={l.bestBefore ?? ''}
                         onChange={e => updateBestBefore(i, e.target.value)}
                         onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch, isLastFieldOfLastRow: isLast })} />
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium text-gray-800">
-                      {l.subtotalIncTax.toFixed(2)}
-                      {freightAmount > 0 && l.productId && (
-                        <div className="text-[10px] font-normal text-gray-400">
-                          {isEn ? 'Landed unit price' : '落地单价'} {landedCosts[i]?.landedUnitCost.toFixed(2)}
-                        </div>
-                      )}
                     </td>
                   </>
                 )
