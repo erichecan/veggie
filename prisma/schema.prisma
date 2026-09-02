@@ -827,6 +827,11 @@ model OrderLine {
   subtotal          Decimal   @db.Decimal(12, 2)
   /// 下单时快照该商品的件提成单价（来自 Product.commissionPrice）
   commissionPrice   Decimal?  @db.Decimal(10, 4)
+  /// 下单/改价时快照该行可售单位下的采购成本（来自 Product.standardPrice × 该单位换算系数，
+  /// standardPrice 本身是收货时按加权平均从采购单回写的，见 lib/purchase/receive-purchase-order.ts）。
+  /// 落库后不再跟着今天的成本波动——历史订单要看的是"当时"的成本，不是"现在"。
+  /// 历史订单（此字段上线前）一律为 null，页面按"—"展示，不臆造。
+  unitCost          Decimal?  @db.Decimal(12, 4)
   /// 单价来源快照（下单/编辑时计算，历史订单无此字段一律为 null）：
   /// PRICELIST=命中价格表 / DEFAULT=直接牌价 / LAST=最近成交价 / SPECIAL=客户专属价
   priceSourceType   String?

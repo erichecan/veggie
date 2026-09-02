@@ -17,7 +17,6 @@ import { resolveOrderLines } from '@/lib/server-pricing'
 import { findInvalidLineUom } from '@/lib/sale-uom-server'
 import { formatUomConversionHint, uomConversionKey } from '@/lib/print/uom-conversion'
 import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
-import { factorOf } from '@/lib/sale-uom'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
@@ -50,15 +49,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           include: {
             product: {
               select: {
-                standardPrice: true,
                 internalRef: true,
                 // 打印顺序按商品 sequence（客户要求 2026-08-18）。打印页是纯前端渲染，
                 // 拿不到数据库，所以在这里就把它展平到行上。见 lib/print/line-sort.ts
                 sequence: true,
-                // standardPrice 是基础单位（isDefault=true 那行）成本，行选了别的单位时
-                // 要按 ProductSaleUom.factor 换算，否则 Cost 列和该行 unitPrice 分母对不上
-                // （客户 20260827 反馈价格低于成本，实为整箱成本 vs 每公斤单价的显示误导）。
-                saleUoms: { select: { uomId: true, factor: true, isDefault: true } },
               },
             },
           },
@@ -93,18 +87,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       deliveryBatchDisplay: waveDisplay[order.id] ?? null,
       // 编辑态下拉框预选:所属 wave 的 driverSlotId(真相),回退到下单意向列
       currentDriverSlotId: waveDriverSlot[order.id] ?? order.driverSlotId ?? null,
-      lines: order.lines.map(({ product, commissionPrice: _commissionPrice, ...line }) => {
+      lines: order.lines.map(({ product, commissionPrice: _commissionPrice, unitCost, ...line }) => {
         const uomHint = formatUomConversionHint(
           uomConversionMap.get(uomConversionKey(line.productId, line.uomId)),
           toNum(line.orderedQty),
         )
-        const uomFactor = factorOf(
-          (product?.saleUoms ?? []).map(su => ({ uomId: su.uomId, isDefault: su.isDefault, factor: toNum(su.factor), priceOverride: null })),
-          line.uomId,
-        )
         return {
           ...line,
-          cost: round2(toNum(product?.standardPrice) * uomFactor),
+          // 成本快照(20260902)：读下单/改价那一刻落库的 OrderLine.unitCost，不再实时
+          // 用商品"今天"的 standardPrice 现算。此字段上线前的历史行没有快照，一律为
+          // null，页面按"—"展示——不拿今天的成本冒充当时的成本。
+          cost: unitCost != null ? toNum(unitCost) : null,
           internalRef: product?.internalRef ?? null,
           productSequence: product?.sequence ?? null,
           uomConversionHint: uomHint?.conversionLine ?? null,
@@ -372,6 +365,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             // 20260901：跟 unitPrice 同一套引擎权威值，不再区分"新增行才写、已有行不写"——
             // 已有行如果这次编辑换了单位，提成也要跟着按新单位重新折算，否则会停留在换单位前的值。
             commissionPrice: resolved.resolvedCommissionPrice,
+            // 采购成本快照(20260902)：该行选用单位下的 Product.standardPrice，
+            // 编辑换单位/换数量时一起跟着重算，跟 unitPrice/commissionPrice 同一套引擎权威值
+            unitCost: resolved.unitCost,
             // 单价来源快照：手动改价要能一眼看出来,并留下"当时的价格表价是多少"
             priceSourceType: resolved.manualOverride ? 'MANUAL' : resolved.resolution.sourceType.toUpperCase(),
             priceSourceDetail: resolved.manualOverride
