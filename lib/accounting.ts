@@ -293,6 +293,7 @@ export const STANDARD_ACCOUNTS: Array<{ code: string; name: string; nameZh: stri
   { code: '4000', name: 'Sales Revenue',       nameZh: '销售收入', type: 'INCOME' },
   { code: '5000', name: 'Purchases / COGS',    nameZh: '采购成本', type: 'EXPENSE' },
   { code: '6000', name: 'Operating Expenses',  nameZh: '运营费用', type: 'EXPENSE', allowManual: true },
+  { code: '2300', name: 'Customer Prepayments', nameZh: '客户预收款', type: 'LIABILITY' },
 ]
 
 // 保持 PrismaClient 类型引用以避免 tsc "unused import" 提示

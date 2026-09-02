@@ -63,7 +63,8 @@ export interface StatementOrderRow {
 
 export interface StatementPaymentRow {
   id: string
-  invoiceId: string
+  /// 预收款登记（无关联发票）时为 null
+  invoiceId: string | null
   amount: number
   method?: string | null
   paidAt?: Date | string | null
@@ -116,7 +117,7 @@ export function summarizeStatement(
     totalPayments,
     closingBalance: round2(round2(openingBalance) + totalSales - totalPayments),
     orderIds: orders.map(o => o.id),
-    invoiceIds: [...new Set(payments.map(p => p.invoiceId))],
+    invoiceIds: [...new Set(payments.map(p => p.invoiceId).filter((id): id is string => id != null))],
   }
 }
 

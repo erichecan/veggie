@@ -57,9 +57,10 @@ export async function GET(
         }),
       ])
 
-      const invoiceNames = paymentRows.length > 0
+      const paymentInvoiceIds = [...new Set(paymentRows.map(p => p.invoiceId).filter((id): id is string => id != null))]
+      const invoiceNames = paymentInvoiceIds.length > 0
         ? await prisma.invoice.findMany({
-            where: { id: { in: [...new Set(paymentRows.map(p => p.invoiceId))] } },
+            where: { id: { in: paymentInvoiceIds } },
             select: { id: true, name: true, totalIncTax: true, amountDue: true, status: true },
           })
         : []
@@ -71,7 +72,7 @@ export async function GET(
         incTaxTotal: orderIncTaxTotal(o.lines),
       }))
       const payments = paymentRows.map(p => {
-        const inv = invoiceById.get(p.invoiceId)
+        const inv = p.invoiceId ? invoiceById.get(p.invoiceId) : undefined
         return {
           id: p.id, invoiceId: p.invoiceId, invoiceName: inv?.name ?? null,
           invoiceStatus: inv?.status ?? null,
