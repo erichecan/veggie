@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/db'
 import { Prisma } from '@/lib/generated/prisma/client'
-import { toStockQty } from '@/lib/inventory'
 
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
@@ -35,32 +34,21 @@ const ORDER_COMMISSION_SELECT = {
 } as const
 
 /**
- * 查询某商品的件提成单价。
- * 如果没有则返回 null（代表该行不计件提成）。
- */
-export async function resolveCommissionPrice(productId: string): Promise<Decimal | null> {
-  const product = await prisma.product.findUnique({
-    where: { id: productId },
-    select: { commissionPrice: true },
-  })
-  if (!product) return null
-  return product.commissionPrice ?? null
-}
-
-/**
  * 按公式算出一单的提成分项与合计。
  * 公式：件提成 + 客户固定费 + 实送税前额 × commissionRate
  * 边界：整单实送量为 0（所有 deliveredQty=0）→ 固定费也不计（没去成没有辛苦费）。
- * 多单位销售(20260714)：commissionPrice 按商品"基准单位"定价；行选用非基准单位下单时
- * (如按箱)，件提成按换算系数自动放大——等价于把 deliveredQty 换算成基准单位数量再乘单价,
- * 与 lib/inventory.ts 里库存换算用的是同一套 Uom.factor 比例(toStockQty)。
+ * 多单位销售(20260714)：`OrderLine.commissionPrice` 从 20260901 起已经是"该行在其选用
+ * 单位下、折算好的提成单价"（在 lib/server-pricing.ts:resolveOrderLines 落库时算好，
+ * 跟单价同一套 factor/FIXED override/FORMULA 折扣加价机制，见 lib/sale-uom.ts
+ * commissionPriceOf）。这里不再需要像改造前那样把 deliveredQty 换算成基准单位数量，
+ * 直接按行自己单位下的数量相乘即可。
  */
-async function sumCommission(order: OrderForCommission, client: DbClient): Promise<{
+function sumCommission(order: OrderForCommission): {
   itemTotal: Decimal
   fixedFee: Decimal
   rateTotal: Decimal
   grandTotal: Decimal
-}> {
+} {
   let itemTotal = new Decimal(0)
   let deliveredSubtotal = new Decimal(0)
   let anyDelivered = false
@@ -69,9 +57,7 @@ async function sumCommission(order: OrderForCommission, client: DbClient): Promi
     const dQty = new Decimal(line.deliveredQty ?? 0)
     if (dQty.gt(0)) anyDelivered = true
     if (line.commissionPrice) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const commissionQty = await toStockQty(client as any, line.productId, dQty.toNumber(), line.uomId)
-      itemTotal = itemTotal.add(line.commissionPrice.mul(commissionQty))
+      itemTotal = itemTotal.add(line.commissionPrice.mul(dQty))
     }
     if (line.unitPrice) {
       deliveredSubtotal = deliveredSubtotal.add(line.unitPrice.mul(dQty))
@@ -99,7 +85,7 @@ export async function calcOrderCommission(orderId: string): Promise<{
     where: { id: orderId },
     select: ORDER_COMMISSION_SELECT,
   })
-  return sumCommission(order, prisma)
+  return sumCommission(order)
 }
 
 /**
@@ -114,7 +100,7 @@ export async function recalcOrderCommission(
     where: { id: orderId },
     select: ORDER_COMMISSION_SELECT,
   })
-  const { grandTotal } = await sumCommission(order, tx)
+  const { grandTotal } = sumCommission(order)
   await tx.order.update({
     where: { id: orderId },
     data: {
@@ -174,7 +160,7 @@ export async function freezeTripCommission(
   })
 
   for (const order of orders) {
-    const { grandTotal } = await sumCommission(order, tx)
+    const { grandTotal } = sumCommission(order)
     await tx.order.update({
       where: { id: order.id },
       data: {

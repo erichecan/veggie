@@ -8,6 +8,7 @@ import { apiPost, apiGet } from '@/lib/api'
 import { getSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { fmtMoney } from '@/lib/format-money'
+import { lineDescription } from '@/lib/order-line-description'
 import type { Product, CartItem, Customer, OdooPricelist, PaymentMethod } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -83,7 +84,7 @@ export default function ClassicRestaurantPage() {
       saveCart([...cart, {
         productId: p.id,
         productName: p.name,
-        spec: p.spec ?? '',
+        spec: lineDescription(p),
         price,
         image: p.images[0] ?? '',
         quantity: 1,
@@ -191,7 +192,7 @@ export default function ClassicRestaurantPage() {
               </div>
               <div className="p-3">
                 <h3 className="font-medium text-gray-900 truncate">{p.name}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">{p.spec}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{lineDescription(p)}</p>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-bold" style={{ color: PURPLE }}>€{fmtMoney(displayPrice)}</span>
                   {hasDiscount && (

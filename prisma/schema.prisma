@@ -412,6 +412,16 @@ model ProductSaleUom {
   priceDiscountPct Decimal          @default(0) @db.Decimal(6, 4)
   /// FORMULA 模式下的加减金额（可正可负），折扣之后再加
   priceSurcharge   Decimal          @default(0) @db.Decimal(12, 2)
+  /// 20260901 新增：司机提成价照抄价格的换算机制。留空 = 按 AUTO 用「基础提成价 × factor」
+  /// 自动折算（与改造前"提成只按 factor 线性折算"逐字一致）。填了 override / 用 FORMULA
+  /// 才会让某个可售单位的提成脱离 factor 线性关系（如 FIXED 一口价箱装）。
+  commissionPriceOverride Decimal? @db.Decimal(12, 2)
+  /// 提成价的计算方式；复用 SaleUomPriceMode，语义与价格那边完全一致
+  commissionPriceMode     SaleUomPriceMode @default(AUTO)
+  /// FORMULA 模式下提成价的百分比调整（可正可负）
+  commissionDiscountPct   Decimal          @default(0) @db.Decimal(6, 4)
+  /// FORMULA 模式下提成价再加减的绝对金额（可正可负）
+  commissionSurcharge     Decimal          @default(0) @db.Decimal(12, 2)
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

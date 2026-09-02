@@ -285,10 +285,6 @@ export async function POST(req: Request) {
       }
 
       const stockMap = new Map(productsForStock.map((p) => [p.id, p]))
-      // 件提成单价：Product.commissionPrice
-      const commissionPriceMap = new Map(
-        productsForStock.map((p) => [p.id, p.commissionPrice ?? null])
-      )
 
       // 3) 事务：仅创建订单，不扣库存（报价单阶段）
       // 业务编号：创建者缩写-YYMMDD-NNN（CJ-260424-001）。
@@ -340,7 +336,9 @@ export async function POST(req: Request) {
                     deliveredQty: 0,
                     invoicedQty: 0,
                     subtotal: Number((l.finalUnitPrice * l.quantity).toFixed(2)),
-                    commissionPrice: commissionPriceMap.get(l.productId) ?? null,
+                    // 20260901：commissionPrice 已在 resolveOrderLines 里按该行选用单位折算好
+                    // （factor / FIXED override / FORMULA 折扣加价，跟价格同一套机制）
+                    commissionPrice: l.resolvedCommissionPrice ?? null,
                     // 单价来源快照：服务端权威定价(resolveOrderLines)算出的 sourceType，
                     // 供订单详情页"Price"列 hover 展示来源，历史订单没有这三个字段
                     priceSourceType: l.manualOverride ? 'MANUAL' : l.resolution.sourceType.toUpperCase(),

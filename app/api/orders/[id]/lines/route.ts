@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth, userHasPermission } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
-import { resolveCommissionPrice } from '@/lib/commission'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { UNSET_UOM_LABEL } from '@/lib/sale-uom'
@@ -89,8 +88,9 @@ export async function POST(
       )
       const resolved = resolvedLines[0]
 
-      // SSOT: 追加行同样要写件提成快照,否则该行提成恒为 null
-      const commissionPrice = await resolveCommissionPrice(String(productId))
+      // SSOT: 追加行同样要写件提成快照,否则该行提成恒为 null。20260901 起
+      // resolveOrderLines 顺带按该行选用单位折算好提成价，不用再单独查一次。
+      const commissionPrice = resolved.resolvedCommissionPrice
 
       const newLine = await prisma.orderLine.create({
         data: {

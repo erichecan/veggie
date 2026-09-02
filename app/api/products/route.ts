@@ -67,7 +67,7 @@ export async function GET(req: Request) {
         where,
         orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
         select: {
-          id: true, name: true, internalRef: true, spec: true,
+          id: true, name: true, internalRef: true, spec: true, saleDescription: true,
           listPrice: true, price: true, standardPrice: true, qtyOnHand: true,
           customerTaxRate: true, status: true, categoryId: true,
           // images 留着：实测全库 5,480 条**全是空数组**，总共才 74 KB，

@@ -33,6 +33,7 @@ interface AllProduct {
   name: string
   internalRef?: string | null
   spec?: string | null
+  saleDescription?: string | null
   listPrice?: number
   standardPrice?: number
   customerTaxRate?: number

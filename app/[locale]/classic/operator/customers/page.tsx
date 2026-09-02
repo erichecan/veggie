@@ -17,6 +17,8 @@ const PAGE_SIZE = 20
 
 const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
 const PAYMENT_LABELS_EN: Record<string, string> = { cash: 'Cash', weekly: 'Weekly', monthly: 'Monthly' }
+// Price Type 沿用下单页(place-order)的说法，中英文界面下都不翻译——与那边保持一致
+const PRICE_TYPE_LABELS: Record<string, string> = { multi: 'Multi Price', default: 'Default Price', last: 'Last Purchase Price' }
 
 export default function ClassicCustomersPage() {
   const router = useRouter()
@@ -128,7 +130,7 @@ export default function ClassicCustomersPage() {
       ),
     },
     { key: 'address', label: isEn ? 'Address' : '地址', render: (v) => <span className="text-gray-600 text-xs">{String(v || '')}</span> },
-    { key: 'vatNumber', label: isEn ? 'VAT Number' : '税号' },
+    { key: 'salesman', label: isEn ? 'Salesperson' : '销售员', render: (v) => v ? String(v) : <span className="text-gray-400">—</span> },
     {
       key: 'paymentTerm',
       label: isEn ? 'Payment Term' : '结算方式',
@@ -147,6 +149,11 @@ export default function ClassicCustomersPage() {
         const primaryName = pricelistMap.get(links[0].pricelistId) ?? links[0].pricelistId
         return links.length > 1 ? `${primaryName} (+${links.length - 1})` : primaryName
       },
+    },
+    {
+      key: 'priceType',
+      label: 'Price Type',
+      render: (v) => PRICE_TYPE_LABELS[String(v)] ?? PRICE_TYPE_LABELS.multi,
     },
     {
       key: 'creditLimit',
@@ -186,8 +193,9 @@ export default function ClassicCustomersPage() {
                 { label: 'Edit', onClick: () => {}, primary: true },
                 { label: 'Mode', onClick: () => setIsReadMode(true) },
               ]),
+          // 导出吃的是当前筛选参数（跟 selected 无关），所以常驻显示，不依赖勾选行
+          exportAction,
           ...(selected.size > 0 ? [
-            exportAction,
             { label: isEn ? `Delete (${selected.size})` : `删除 (${selected.size})`, onClick: () => toast.info(isEn ? 'Delete coming soon' : '删除功能即将推出') },
           ] : []),
         ]}

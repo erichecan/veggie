@@ -141,10 +141,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           }
         }
 
-        // 描述同步（客户 20260827 要求）：报价单/销售单的 Description 读 Product.spec
-        // （见 lib/order-line-description.ts），采购单编辑页现在也是一个入口——改了 spec
-        // 就回写商品库。老行的 payload 不一定带 productId（见 [id]/page.tsx handleSave），
-        // 缺了就从改动前的行里补，同一商品出现多次以最后一行为准。
+        // 描述同步（客户 20260827 要求，20260902 改回写字段）：报价单/销售单的 Description
+        // 优先读 Product.saleDescription（见 lib/order-line-description.ts），采购单编辑页
+        // 现在也是一个入口——改了 Description 就回写商品库的 saleDescription，而不是已经被
+        // saleDescription 取代优先级的旧字段 spec（写 spec 会被优先级更高的 saleDescription
+        // 悄悄遮住，回写等于白改）。老行的 payload 不一定带 productId（见 [id]/page.tsx
+        // handleSave），缺了就从改动前的行里补，同一商品出现多次以最后一行为准。
         const specByProductId = new Map<string, string>()
 
         const lineOps = linesPayload.map((l: Record<string, unknown>) => {
@@ -230,7 +232,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await prisma.$transaction(lineOps)
 
         for (const [productId, spec] of specByProductId) {
-          await p.product.update({ where: { id: productId }, data: { spec: spec || null } })
+          await p.product.update({ where: { id: productId }, data: { saleDescription: spec || null } })
         }
 
         // Recalculate PO totals from the final line set (更新行 + 新增行，去掉被删的)

@@ -29,6 +29,11 @@ export interface SaleUomItemInput {
   priceDiscountPct?: number | string | null
   /** FORMULA 模式下再加减的绝对金额（可正可负） */
   priceSurcharge?: number | string | null
+  /** 提成价照抄价格机制（20260901）：留空按 AUTO 用「基础提成价 × factor」自动折算 */
+  commissionPriceOverride?: number | string | null
+  commissionPriceMode?: SaleUomPriceMode
+  commissionDiscountPct?: number | string | null
+  commissionSurcharge?: number | string | null
 }
 
 /** factor 的合理区间。上限 100000 足够覆盖「1 托盘 = N 个最小包装」这类真实场景 */
@@ -60,6 +65,22 @@ export function validateSaleUomItems(items: SaleUomItemInput[]): string | null {
       if (!Number.isFinite(s) || s < -1000000 || s > 1000000) return '加减金额必须在 −1,000,000–1,000,000 之间'
     }
 
+    if (it.commissionPriceOverride != null && it.commissionPriceOverride !== '') {
+      const n = Number(it.commissionPriceOverride)
+      if (!Number.isFinite(n) || n < 0 || n > 1000000) return '独立提成价必须在 0–1,000,000 之间'
+    }
+
+    if (it.commissionPriceMode === 'FORMULA') {
+      // ⚠️ 不能照抄 priceDiscountPct 的 0–100 下限：那条校验只认「折扣」不认「负数=折扣」，
+      // 跟价格公式编辑器自己的 UI 提示（"负数就是打折"）互相矛盾，本身就是一个既有的校验漏洞。
+      // 提成这里既然从头设计，直接按公式的真实语义来——pct=-100 时 (1+pct/100)=0，提成正好归零，
+      // 再往下没意义所以设成下限；上限给一个宽松但有限的值，防止误填出天文数字。
+      const d = it.commissionDiscountPct == null || it.commissionDiscountPct === '' ? 0 : Number(it.commissionDiscountPct)
+      if (!Number.isFinite(d) || d < -100 || d > 1000) return '提成百分比调整必须在 −100–1000 之间'
+      const s = it.commissionSurcharge == null || it.commissionSurcharge === '' ? 0 : Number(it.commissionSurcharge)
+      if (!Number.isFinite(s) || s < -1000000 || s > 1000000) return '提成加减金额必须在 −1,000,000–1,000,000 之间'
+    }
+
     const f = it.factor == null || it.factor === '' ? 1 : Number(it.factor)
     if (!Number.isFinite(f) || f < FACTOR_MIN || f > FACTOR_MAX) {
       return `换算系数必须在 ${FACTOR_MIN} – ${FACTOR_MAX} 之间`
@@ -88,6 +109,10 @@ export interface SaleUomRow {
   priceMode?: SaleUomPriceMode
   priceDiscountPct?: number
   priceSurcharge?: number
+  commissionPriceOverride?: number | null
+  commissionPriceMode?: SaleUomPriceMode
+  commissionDiscountPct?: number
+  commissionSurcharge?: number
 }
 
 /**
@@ -137,6 +162,41 @@ export function priceOf(
   }
   if (hit.priceOverride != null) return hit.priceOverride
   return round2(basePrice * factor)
+}
+
+/**
+ * 某一行选用 `lineUomId` 时的司机提成单价（20260901）。
+ *
+ * 逐字镜像 `priceOf()`——同样的三态分支、同样的 factor 折算、同样要四舍五入两位小数。
+ * 唯一区别：提成价可以是 `null`（该商品不计件提成），null 沿基础值原样传导，
+ * 不会因为配了可售单位就凭空造出一个提成来。
+ *
+ * 没配多规格、或选的就是基础单位 → 原样返回 `baseCommissionPrice`（与改造前
+ * "提成只按 factor 线性折算"逐字一致，未特意配置的商品/可售单位完全不受影响）。
+ */
+export function commissionPriceOf(
+  saleUoms: SaleUomRow[],
+  lineUomId: string | null | undefined,
+  baseCommissionPrice: number | null,
+): number | null {
+  if (!lineUomId || saleUoms.length === 0) return baseCommissionPrice
+  const hit = saleUoms.find(r => r.uomId === lineUomId)
+  if (!hit) return baseCommissionPrice
+  const factor = hit.factor > 0 ? hit.factor : 1
+  const base = baseCommissionPrice ?? 0
+  if (hit.commissionPriceMode === 'FIXED') {
+    if (hit.commissionPriceOverride != null) return hit.commissionPriceOverride
+    return baseCommissionPrice == null ? null : round2(base * factor)
+  }
+  if (hit.commissionPriceMode === 'FORMULA') {
+    if (baseCommissionPrice == null && hit.commissionPriceOverride == null) return null
+    const pct = hit.commissionDiscountPct ?? 0
+    const surcharge = hit.commissionSurcharge ?? 0
+    return round2(base * factor * (1 + pct / 100) + surcharge)
+  }
+  // AUTO（含未配置 commissionPriceMode 的旧行为）
+  if (hit.commissionPriceOverride != null) return hit.commissionPriceOverride
+  return baseCommissionPrice == null ? null : round2(base * factor)
 }
 
 /** 基础单位（库存计数单位）；没配多规格时为 null */

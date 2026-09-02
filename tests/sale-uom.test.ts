@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  validateSaleUomItems, normalizeFactor, factorOf, priceOf, baseUomId,
+  validateSaleUomItems, normalizeFactor, factorOf, priceOf, commissionPriceOf, baseUomId,
   type SaleUomRow,
 } from '../lib/sale-uom'
 
@@ -115,6 +115,99 @@ describe('计价：独立售价优先，否则按系数换算', () => {
   })
   it('没配多规格时原样返回基础价', () => {
     assert.equal(priceOf([], 'u-case', 12), 12)
+  })
+})
+
+describe('提成价换算（20260901）：照抄价格机制，可 null（不计提成）', () => {
+  // 基础单位提成价 €0.50/包；箱(u-case) 没配提成 override → 按 AUTO 用 factor 折算；
+  // 整托(u-pallet) 配了 FIXED 一口价；再加一个 FORMULA 折扣/加价的规格 u-formula。
+  const SHRIMP_COMMISSION: SaleUomRow[] = [
+    { uomId: 'u-pkt', isDefault: true, factor: 1, priceOverride: null },
+    { uomId: 'u-case', isDefault: false, factor: 10, priceOverride: null },
+    {
+      uomId: 'u-pallet', isDefault: false, factor: 400, priceOverride: 3800,
+      commissionPriceMode: 'FIXED', commissionPriceOverride: 150,
+    },
+    {
+      uomId: 'u-formula', isDefault: false, factor: 20, priceOverride: null,
+      commissionPriceMode: 'FORMULA', commissionDiscountPct: -10, commissionSurcharge: 2,
+    },
+  ]
+
+  it('基础单位用基础提成价原样返回', () => {
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-pkt', 0.5), 0.5)
+  })
+
+  it('AUTO（未配置提成 override）→ 按 factor 线性折算，与改造前行为一致', () => {
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-case', 0.5), 5)
+  })
+
+  it('FIXED → 用独立提成价，不是 0.5 × 400 = 200', () => {
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-pallet', 0.5), 150)
+  })
+
+  it('FORMULA → base × factor × (1 + pct/100) + surcharge', () => {
+    // 0.5 × 20 × (1 - 10/100) + 2 = 10 × 0.9 + 2 = 11
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-formula', 0.5), 11)
+  })
+
+  it('商品本身不计提成（base=null）时，AUTO/FORMULA 折算不出提成', () => {
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-case', null), null)
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-formula', null), null)
+  })
+
+  it('商品本身不计提成，但该单位配了 FIXED override → 仍按 override 给', () => {
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-pallet', null), 150)
+  })
+
+  it('没配多规格 / 选的就是基础单位 → 原样返回基础提成价', () => {
+    assert.equal(commissionPriceOf([], 'u-case', 0.5), 0.5)
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, null, 0.5), 0.5)
+  })
+
+  it('选了个没配过的单位 → 回落到基础提成价，不抛错', () => {
+    assert.equal(commissionPriceOf(SHRIMP_COMMISSION, 'u-unknown', 0.5), 0.5)
+  })
+})
+
+describe('提成校验（20260901）：跟价格的校验规则一样', () => {
+  it('独立提成价必须在 0–1,000,000 之间', () => {
+    assert.match(validateSaleUomItems([
+      { uomId: 'a', isDefault: true, factor: 1 },
+      { uomId: 'b', isDefault: false, factor: 1, commissionPriceOverride: -1 },
+    ]) ?? '', /独立提成价/)
+  })
+
+  it('FORMULA 模式下提成百分比调整必须在 −100–1000 之间（下限对应"打到 0 折"，不是 0）', () => {
+    assert.match(validateSaleUomItems([
+      { uomId: 'a', isDefault: true, factor: 1 },
+      { uomId: 'b', isDefault: false, factor: 1, commissionPriceMode: 'FORMULA', commissionDiscountPct: -150 },
+    ]) ?? '', /提成百分比/)
+    assert.match(validateSaleUomItems([
+      { uomId: 'a', isDefault: true, factor: 1 },
+      { uomId: 'b', isDefault: false, factor: 1, commissionPriceMode: 'FORMULA', commissionDiscountPct: 2000 },
+    ]) ?? '', /提成百分比/)
+  })
+
+  it('负数（打折）合法——跟价格公式编辑器"负数=打折"的 UI 提示一致', () => {
+    assert.equal(validateSaleUomItems([
+      { uomId: 'a', isDefault: true, factor: 1 },
+      { uomId: 'b', isDefault: false, factor: 1, commissionPriceMode: 'FORMULA', commissionDiscountPct: -20 },
+    ]), null)
+  })
+
+  it('FORMULA 模式下提成加减金额必须在 ±1,000,000 之间', () => {
+    assert.match(validateSaleUomItems([
+      { uomId: 'a', isDefault: true, factor: 1 },
+      { uomId: 'b', isDefault: false, factor: 1, commissionPriceMode: 'FORMULA', commissionSurcharge: 2_000_000 },
+    ]) ?? '', /提成加减金额/)
+  })
+
+  it('不配置提成字段的合法配置照常通过（未特意配置的商品完全不受影响）', () => {
+    assert.equal(validateSaleUomItems([
+      { uomId: 'u-pkt', isDefault: true, factor: 1 },
+      { uomId: 'u-case', isDefault: false, factor: 10 },
+    ]), null)
   })
 })
 

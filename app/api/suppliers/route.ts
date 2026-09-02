@@ -20,8 +20,13 @@ export async function GET(req: Request) {
     const q = searchParams.get('q')?.trim() ?? ''
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
     const pageSize = Math.min(500, Math.max(1, parseInt(searchParams.get('pageSize') ?? '100', 10)))
+    const includeArchived = searchParams.get('includeArchived') === '1'
 
-    const where: Record<string, unknown> = { isVendor: true }
+    // 归档口径与 lib/customers-query.ts 的 buildCustomersWhere 一致：
+    // 默认排除已归档，采购单等选品下拉不该继续弹出已归档的供应商。
+    const where: Record<string, unknown> = includeArchived
+      ? { isVendor: true }
+      : { isVendor: true, isActive: true }
     if (q) {
       where.OR = [
         { name:      { contains: q, mode: 'insensitive' } },

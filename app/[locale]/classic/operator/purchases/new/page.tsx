@@ -8,6 +8,7 @@ import { TrendingUp } from 'lucide-react'
 import { apiGet, apiPost } from '@/lib/api'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
+import { lineDescription } from '@/lib/order-line-description'
 import { newDraftLineId } from '@/lib/order-line-draft'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import { computeOrderLandedCosts } from '@/lib/purchase-landed-cost'
@@ -57,8 +58,10 @@ interface PurchaseProduct {
   name: string
   internalRef?: string | null
   category?: string | null
-  /// 描述（同步 sales order 的 Description，见 lib/order-line-description.ts，两边共用 Product.spec）
+  /// 描述（同步 sales order 的 Description，见 lib/order-line-description.ts：
+  /// 优先取 saleDescription，商品还没填过时落回旧的 Product.spec）
   spec?: string | null
+  saleDescription?: string | null
   /// 销售单位——仅作为采购单位缺失时的兜底，不是本页应该用的字段（见下方 purchaseUomId）
   uomId?: string | null
   uomName?: string | null
@@ -230,10 +233,9 @@ export default function NewPurchaseOrderPage() {
         id: newDraftLineId(),
         productId: prod.id,
         productName: prod.name,
-        // 20260827：Description 统一读 Product.spec（与 [id] 编辑页同源，
-        // 见 lib/order-line-description.ts）；这里之前一直用 category，是采购侧
-        // 唯一没跟上那次统一的分叉。
-        spec: prod.spec ?? null,
+        // 20260827：Description 统一读 lib/order-line-description.ts（与 [id] 编辑页同源）；
+        // 这里之前一直用 category，是采购侧唯一没跟上那次统一的分叉。
+        spec: lineDescription(prod) || null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -294,7 +296,7 @@ export default function NewPurchaseOrderPage() {
         ...l,
         productId: prod.id,
         productName: prod.name,
-        spec: prod.spec ?? null,
+        spec: lineDescription(prod) || null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -325,7 +327,7 @@ export default function NewPurchaseOrderPage() {
         id: newDraftLineId(),
         productId: hl.productId,
         productName: hl.productName,
-        spec: product?.spec ?? null,
+        spec: product ? (lineDescription(product) || null) : null,
         uomId: hl.uomId,
         uomName: uomRecord ? (isEn ? (uomRecord.name || uomRecord.nameZh) : (uomRecord.nameZh || uomRecord.name)) ?? null : null,
         orderedQty: qty,

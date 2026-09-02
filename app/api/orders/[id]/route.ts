@@ -322,10 +322,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           )
         }
 
-        const newLineCommissionMap = new Map(
-          newLineProducts.map(p => [p.id, p.commissionPrice ?? null])
-        )
-
         // 服务端权威定价：编辑订单行与下单同一套引擎(resolveOrderLines)，前端传的
         // unitPrice 只作参考，容差外一律按引擎权威价入库——不再信任"编辑态由客户端算好
         // 传上来、手动改价直接原样落库"的旧行为(见本次改动前的注释)。
@@ -373,6 +369,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             orderedQty: Number(l.orderedQty),
             unitPrice: resolved.finalUnitPrice,
             subtotal: resolved.subtotal,
+            // 20260901：跟 unitPrice 同一套引擎权威值，不再区分"新增行才写、已有行不写"——
+            // 已有行如果这次编辑换了单位，提成也要跟着按新单位重新折算，否则会停留在换单位前的值。
+            commissionPrice: resolved.resolvedCommissionPrice,
             // 单价来源快照：手动改价要能一眼看出来,并留下"当时的价格表价是多少"
             priceSourceType: resolved.manualOverride ? 'MANUAL' : resolved.resolution.sourceType.toUpperCase(),
             priceSourceDetail: resolved.manualOverride
@@ -412,7 +411,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 deliveredQty: 0,
                 invoicedQty: 0,
                 sequence: Number(l.sequence ?? 0),
-                commissionPrice: newLineCommissionMap.get(String(l.productId ?? '')) ?? null,
               },
             }))
           }

@@ -97,6 +97,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           const priceMode = it.priceMode === 'FIXED' || it.priceMode === 'FORMULA' ? it.priceMode : 'AUTO'
           const priceDiscountPct = it.priceDiscountPct != null && it.priceDiscountPct !== '' ? Number(it.priceDiscountPct) : 0
           const priceSurcharge = it.priceSurcharge != null && it.priceSurcharge !== '' ? Number(it.priceSurcharge) : 0
+          // 20260901：提成价照抄价格机制，写法与上面四行一一对应
+          const commissionPriceMode = it.commissionPriceMode === 'FIXED' || it.commissionPriceMode === 'FORMULA' ? it.commissionPriceMode : 'AUTO'
+          const commissionDiscountPct = it.commissionDiscountPct != null && it.commissionDiscountPct !== '' ? Number(it.commissionDiscountPct) : 0
+          const commissionSurcharge = it.commissionSurcharge != null && it.commissionSurcharge !== '' ? Number(it.commissionSurcharge) : 0
           await txAny.productSaleUom.upsert({
             where: { productId_uomId: { productId: id, uomId: it.uomId } },
             create: {
@@ -107,6 +111,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               factor: it.isDefault ? 1 : normalizeFactor(it.factor as number | string | null | undefined),
               priceOverride: it.priceOverride != null ? Number(it.priceOverride) : null,
               priceMode, priceDiscountPct, priceSurcharge,
+              commissionPriceOverride: it.commissionPriceOverride != null ? Number(it.commissionPriceOverride) : null,
+              commissionPriceMode, commissionDiscountPct, commissionSurcharge,
               active: it.active !== false,
             },
             update: {
@@ -114,6 +120,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               factor: it.isDefault ? 1 : normalizeFactor(it.factor as number | string | null | undefined),
               priceOverride: it.priceOverride != null ? Number(it.priceOverride) : null,
               priceMode, priceDiscountPct, priceSurcharge,
+              commissionPriceOverride: it.commissionPriceOverride != null ? Number(it.commissionPriceOverride) : null,
+              commissionPriceMode, commissionDiscountPct, commissionSurcharge,
               active: it.active !== false,
             },
           })

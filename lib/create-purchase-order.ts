@@ -156,10 +156,12 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
 }
 
 /**
- * 描述同步（客户 20260827 要求）：报价单/销售单的 Description 一律读 Product.spec
- * （见 lib/order-line-description.ts），但录入入口一直只有商品库自己。采购单现在是
- * 另一个"源头"——采购时在这里改一下描述，同一个商品以后在任何报价/销售单里都跟着变。
- * 只回写"这次提交时真的带了 spec 字段"的行，同一单里同一商品出现多行时以最后一行为准。
+ * 描述同步（客户 20260827 要求，20260902 改回写字段）：报价单/销售单的 Description
+ * 优先读 Product.saleDescription（见 lib/order-line-description.ts），但录入入口一直只有
+ * 商品库自己。采购单现在是另一个"源头"——采购时在这里改一下描述，同一个商品以后在任何
+ * 报价/销售单里都跟着变。回写目标是 saleDescription，不是已经被它取代优先级的旧字段
+ * spec（写 spec 会被 saleDescription 遮住，回写等于白改）。只回写"这次提交时真的带了
+ * spec 字段"的行，同一单里同一商品出现多行时以最后一行为准。
  */
 async function syncProductSpecFromLines(tx: Tx, lines: CreatePOLineInput[]) {
   const specByProductId = new Map<string, string>()
@@ -167,6 +169,6 @@ async function syncProductSpecFromLines(tx: Tx, lines: CreatePOLineInput[]) {
     if (l.spec !== undefined) specByProductId.set(l.productId, (l.spec ?? '').trim())
   }
   for (const [productId, spec] of specByProductId) {
-    await tx.product.update({ where: { id: productId }, data: { spec: spec || null } })
+    await tx.product.update({ where: { id: productId }, data: { saleDescription: spec || null } })
   }
 }

@@ -9,7 +9,7 @@ import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import type { ProductTemplate, ProductCategory, Order } from '@/lib/types'
-import { validateSaleUomItems, priceOf, type SaleUomPriceMode } from '@/lib/sale-uom'
+import { validateSaleUomItems, priceOf, commissionPriceOf, type SaleUomPriceMode } from '@/lib/sale-uom'
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
 function IconSales() {
@@ -81,6 +81,11 @@ interface SaleUomRow {
   priceMode: SaleUomPriceMode
   priceDiscountPct: number
   priceSurcharge: number
+  /** 司机提成价照抄价格机制（20260901） */
+  commissionPriceOverride: number | null
+  commissionPriceMode: SaleUomPriceMode
+  commissionDiscountPct: number
+  commissionSurcharge: number
 }
 
 export default function ClassicProductDetailPage() {
@@ -172,12 +177,16 @@ export default function ClassicProductDetailPage() {
         setAdjVariantId(found.id)
         setPrimaryProductId(found.id)
         try {
-          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null }>>(`/api/products/${found.id}/sale-uoms`)
+          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null }>>(`/api/products/${found.id}/sale-uoms`)
           const mapped = rows.map(r => ({
             uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
             priceMode: r.priceMode ?? 'AUTO',
             priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
             priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
+            commissionPriceOverride: r.commissionPriceOverride ?? null,
+            commissionPriceMode: r.commissionPriceMode ?? 'AUTO',
+            commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
+            commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
           }))
           // 基础单位这一行只在「保存过一次可售单位」之后才会真的落库(见 PUT 路由注释里
           // "提交列表里没有基准单位时自动补一行")——从没保存过的商品，GET 回来的列表里
@@ -188,6 +197,7 @@ export default function ClassicProductDetailPage() {
             mapped.push({
               uomId: found.uomId, isDefault: true, factor: 1, priceOverride: null, active: true,
               priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
+              commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
             })
           }
           setSaleUoms(mapped)
@@ -253,6 +263,7 @@ export default function ClassicProductDetailPage() {
       // 价格公式(20260823 改行内摊平后)不再有单独的"自动/固定/公式"模式选择，统一用 FORMULA，
       // 折扣/加价都是 0 时等价于"自动按系数折算"，行为跟以前的 AUTO 模式完全一致。
       priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
+      commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
     }])
   }
   function updateSaleUomRow(index: number, patch: Partial<SaleUomRow>) {
@@ -288,7 +299,7 @@ export default function ClassicProductDetailPage() {
         setOriginal(prev => (prev ? { ...prev, uomId: tmpl.uomId } : prev))
       }
       const payload = saleUoms.map(r => ({ ...r, isDefault: tmpl?.uomId ? r.uomId === tmpl.uomId : r.isDefault }))
-      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null }>>(
+      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null }>>(
         `/api/products/${primaryProductId}/sale-uoms`,
         { items: payload },
       )
@@ -297,6 +308,10 @@ export default function ClassicProductDetailPage() {
         priceMode: r.priceMode ?? 'AUTO',
         priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
         priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
+        commissionPriceOverride: r.commissionPriceOverride ?? null,
+        commissionPriceMode: r.commissionPriceMode ?? 'AUTO',
+        commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
+        commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
       })))
       toast.success(isEn ? 'Sellable units saved' : '可售单位已保存')
     } catch (e) {
@@ -351,6 +366,36 @@ export default function ClassicProductDetailPage() {
     if (isNew) { router.push(`${prefix}/classic/operator/products`); return }
     if (original) { setTmpl({ ...original }) }
     setEditMode(false)
+  }
+
+  // 复制商品(20260902)：整份字段原样带到新商品，只排除 id/时间戳/externalId(有唯一约束)/
+  // qtyOnHand(库存是物理状态不是"内容"，新商品该从 0 开始，不带 Lot/StockMove)。
+  // 可售单位配置(saleUoms)是关联表，跟 handleSave 的 isNew 分支一样，创建成功后单独 PUT 一次。
+  const [duplicating, setDuplicating] = useState(false)
+  async function handleDuplicate() {
+    if (!tmpl || isNew || duplicating) return
+    setDuplicating(true)
+    try {
+      const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, externalId: _externalId, qtyOnHand: _qtyOnHand, ...fields } = tmpl
+      const created = await apiPost<ProductTemplate>('/api/products', {
+        ...fields,
+        name: `${tmpl.name} (duplicated)`,
+        createdAt: new Date().toISOString(),
+      })
+      if (saleUoms.length > 0) {
+        try {
+          await apiPut(`/api/products/${created.id}/sale-uoms`, { items: saleUoms })
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : (isEn ? 'Product duplicated, but copying sellable units failed — please retry on the new product page' : '商品已复制，但可售单位复制失败——请到新商品详情页重试'))
+        }
+      }
+      toast.success(isEn ? `Duplicated as "${created.name}"` : `已复制为「${created.name}」`)
+      router.push(`${prefix}/classic/operator/products/${created.id}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to duplicate product' : '复制商品失败'))
+    } finally {
+      setDuplicating(false)
+    }
   }
 
   // 归档/恢复(20260821)：独立于 Save/Discard 流程，点击即生效，不进编辑态、不需二次确认
@@ -474,6 +519,13 @@ export default function ClassicProductDetailPage() {
                 className={btnBase}
               >
                 Create
+              </button>
+              <button
+                onClick={handleDuplicate}
+                disabled={duplicating}
+                className={`${btnBase} disabled:opacity-50`}
+              >
+                {duplicating ? 'Duplicating...' : 'Duplicate'}
               </button>
               {activeToggle}
 
@@ -736,6 +788,11 @@ export default function ClassicProductDetailPage() {
                   // 公式行要展示"从这个数出发再调整"，不能直接用 finalPrice(已经算完调整)。
                   const stepPrice = priceOf([{ ...row, priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0 }], row.uomId, tmpl.listPrice)
                   const finalPrice = priceOf([row], row.uomId, tmpl.listPrice)
+                  // 提成价照抄价格机制(20260901)：同样借道 FORMULA(折扣/加价都是 0) 拿到
+                  // "基础提成价 × factor"这个干净的数，公式行从这个数出发再调整。
+                  const baseCommission = tmpl.commissionPrice ?? null
+                  const stepCommission = commissionPriceOf([{ ...row, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0 }], row.uomId, baseCommission)
+                  const finalCommission = commissionPriceOf([row], row.uomId, baseCommission)
                   return (
                     <div key={i}>
                       <div className="flex items-center gap-2">
@@ -861,6 +918,41 @@ export default function ClassicProductDetailPage() {
                           <button onClick={() => removeSaleUomRow(i)} className="text-gray-400 hover:text-red-500 text-sm px-1">✕</button>
                         )}
                       </div>
+                      {/* 提成公式：跟价格那行同一套摊平写法，只在配了基础提成价的商品上出现——
+                          没配提成的商品没必要在每个可售单位下都摆一行用不上的"提成"输入。 */}
+                      {!isBase && baseCommission != null && (
+                        <div className="flex items-center gap-2 mt-1 pl-1">
+                          <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
+                            {isEn ? 'Commission' : '提成'}
+                          </span>
+                          {editMode ? (
+                            <div className="flex items-center gap-1 border border-gray-200 rounded h-7 px-2 bg-white text-xs whitespace-nowrap">
+                              <span className="text-gray-400">€{(stepCommission ?? 0).toFixed(2)} +</span>
+                              <NumericInput
+                                step="0.01"
+                                value={row.commissionDiscountPct ?? 0}
+                                onChange={e => updateSaleUomRow(i, { commissionPriceMode: 'FORMULA', commissionDiscountPct: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                title={isEn ? 'Percentage adjustment, negative = discount' : '百分比调整，填负数就是打折'}
+                                className="w-14 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
+                              />
+                              <span className="text-gray-400">% +</span>
+                              <NumericInput
+                                step="0.01"
+                                value={row.commissionSurcharge ?? 0}
+                                onChange={e => updateSaleUomRow(i, { commissionPriceMode: 'FORMULA', commissionSurcharge: e.target.value === '' ? 0 : Number(e.target.value) })}
+                                title={isEn ? 'Flat amount, can be negative' : '绝对值，可以是负数'}
+                                className="w-16 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
+                              />
+                              <span className="text-gray-400">=</span>
+                              <span className="font-medium" style={{ color: '#00A09D' }}>€{(finalCommission ?? 0).toFixed(2)}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center h-7 px-2 text-xs text-gray-500 whitespace-nowrap">
+                              €{(finalCommission ?? 0).toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

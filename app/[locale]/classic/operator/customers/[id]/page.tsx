@@ -231,6 +231,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   const [driverSlots, setDriverSlots] = useState<{ id: string; driverName: string; timeOfDay: string; batchNum: number }[]>([])
   const [activeTab, setActiveTab] = useState<Tab>('contacts')
   const [saving, setSaving] = useState(false)
+  const [archiveToggling, setArchiveToggling] = useState(false)
   const [loading, setLoading] = useState(!isNew)
   const [dirty, setDirty] = useState(isNew)
   const [createdTime] = useState(() => new Date())
@@ -410,6 +411,26 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
     )
   }
 
+  // 归档/恢复：独立于 Save/Discard，点击即生效，不进编辑态、不需二次确认（照搬商品详情页 20260821 的模式）
+  async function toggleActive() {
+    if (isNew || archiveToggling) return
+    const next = !isActive
+    setArchiveToggling(true)
+    try {
+      const updated = await apiPut<Customer>(`/api/customers/${id}`, { isActive: next })
+      setOriginal(updated)
+      toast.success(
+        next
+          ? (isEn ? 'Restored to Active' : '已恢复为 Active')
+          : (isEn ? 'Archived' : '已归档')
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update status' : '状态更新失败'))
+    } finally {
+      setArchiveToggling(false)
+    }
+  }
+
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
 
@@ -455,7 +476,9 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
         <div className="mx-auto mt-3 px-5 py-2 flex items-center gap-2 text-sm font-medium"
           style={{ background: '#fef3c7', color: '#92400e', borderBottom: '1px solid #fcd34d' }}
         >
-          ⚠️ {isEn ? 'This customer is archived and will not appear in the regular list.' : '该客户已归档，不会出现在常规列表中。'}
+          ⚠️ {isEn
+            ? 'This contact is archived — it will not appear in the regular list, or when picking a customer/supplier on order, quotation or purchase pages.'
+            : '该联系人已归档 —— 不会出现在常规列表中，也不会出现在下单/报价/采购页面的客户或供应商选择中。'}
         </div>
       )}
 
@@ -568,11 +591,19 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                   <span>Unpublished<br/>On Website</span>
                 </button>
                 <button
-                  className="flex items-center gap-1.5 px-3 py-2 rounded border border-gray-100 hover:bg-gray-50 text-[11px] font-medium"
-                  style={{ color: '#28a745' }}
+                  type="button"
+                  onClick={toggleActive}
+                  disabled={isNew || archiveToggling}
+                  role="switch"
+                  aria-checked={isActive}
+                  title={isEn
+                    ? (isActive ? 'Click to archive this contact' : 'Click to restore to Active')
+                    : (isActive ? '点击归档该联系人' : '点击恢复为 Active')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded border border-gray-100 hover:bg-gray-50 text-[11px] font-medium disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                  style={{ color: isActive ? '#28a745' : '#9ca3af' }}
                 >
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#28a745' }} />
-                  Active
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ background: isActive ? '#28a745' : '#9ca3af' }} />
+                  {isActive ? 'Active' : (isEn ? 'Archived' : '已归档')}
                 </button>
               </div>
             </div>

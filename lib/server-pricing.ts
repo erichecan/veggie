@@ -21,7 +21,7 @@ import type {
   OrderItem,
 } from './types'
 import { resolveCustomerPrice, type PriceResolution } from './pricing-engine'
-import { priceOf, type SaleUomPriceMode } from './sale-uom'
+import { priceOf, commissionPriceOf, type SaleUomPriceMode } from './sale-uom'
 import { SALE_ORDER_STATUSES } from './order-status'
 import { toNum, toNumOpt } from './decimal-helpers'
 
@@ -57,6 +57,12 @@ export interface ResolvedLine {
   uomId?: string
   uomName?: string
   taxRate?: number
+  /**
+   * 该行在其选用单位下、已经折算好的司机提成单价（20260901）。null = 该商品不计提成。
+   * 落库到 OrderLine.commissionPrice 时直接写这个值，不要再写 Product.commissionPrice 原值——
+   * 单位换算（factor/FIXED override/FORMULA 折扣加价）已经在这里算完，跟价格是同一套机制。
+   */
+  resolvedCommissionPrice: number | null
 }
 
 export interface PricingContext {
@@ -373,6 +379,35 @@ export async function resolveOrderLines(
     )
   }
 
+  /**
+   * 把"基准单位"提成价换算成行选单位的提成价——跟 `scaleAuthoritativePrice` 同源，
+   * 复用同一份已批量拉好的 `saleUomMap`，不再单独查一次 `ProductSaleUom`（20260901）。
+   */
+  function scaleAuthoritativeCommission(
+    productId: string,
+    anchorUomId: string | null,
+    lineUomId: string | undefined,
+    baseCommissionPrice: number | null,
+  ): number | null {
+    if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) return baseCommissionPrice
+    const saleUom = saleUomMap.get(`${productId}::${lineUomId}`)
+    if (!saleUom) return baseCommissionPrice
+    return commissionPriceOf(
+      [{
+        uomId: saleUom.uomId,
+        isDefault: saleUom.isDefault,
+        factor: toNum(saleUom.factor),
+        priceOverride: saleUom.priceOverride != null ? toNum(saleUom.priceOverride) : null,
+        commissionPriceOverride: saleUom.commissionPriceOverride != null ? toNum(saleUom.commissionPriceOverride) : null,
+        commissionPriceMode: saleUom.commissionPriceMode as SaleUomPriceMode,
+        commissionDiscountPct: toNum(saleUom.commissionDiscountPct),
+        commissionSurcharge: toNum(saleUom.commissionSurcharge),
+      }],
+      lineUomId,
+      baseCommissionPrice,
+    )
+  }
+
   const lines: ResolvedLine[] = []
   const warnings: string[] = []
   let total = 0
@@ -481,6 +516,10 @@ export async function resolveOrderLines(
     const subtotal = Math.round(finalUnit * qty * 100) / 100
     total += subtotal
 
+    const resolvedCommissionPrice = scaleAuthoritativeCommission(
+      dbProduct.id, dbProduct.uomId, item.uomId, productForEngine.commissionPrice ?? null,
+    )
+
     lines.push({
       productId: dbProduct.id,
       productName: (item.productName ?? dbProduct.name).trim().slice(0, 200),
@@ -506,6 +545,7 @@ export async function resolveOrderLines(
       // 于是门户下的每一单税率都是 NULL —— 实测 PORTAL 来源 5/5 行为空，
       // 而后台创建的 1444/1446 行都有值。后果不是显示难看，是**开票时按 0 计税**。
       taxRate: normalizeTaxRate(item.taxRate ?? productForEngine.customerTaxRate),
+      resolvedCommissionPrice,
     })
   }
 

@@ -8,6 +8,7 @@ import {
 } from '@/lib/server-pricing'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { toNum, toNumOpt } from '@/lib/decimal-helpers'
+import { lineDescription } from '@/lib/order-line-description'
 import type { OdooPricelist as OdooPricelistType, Product as ProductType } from '@/lib/types'
 
 /**
@@ -93,7 +94,8 @@ export async function GET(req: Request) {
         return {
           id: p.id,
           name: p.name,
-          spec: p.spec,
+          // 优先用商品详情页维护的 Sale Description，没填过才落回旧的 spec（历史数据）
+          spec: lineDescription({ name: p.name, saleDescription: p.saleDescription, spec: p.spec }),
           images: p.images,
           uomId: p.uom?.id ?? p.uomId ?? null,
           uomName: p.uom?.name ?? null,

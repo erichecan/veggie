@@ -21,12 +21,14 @@
  *
  * ## 与 lib/commission.ts 的关系
  *
- * `lib/commission.ts` 是提成的**唯一计算入口**，但它逐单逐行走 `toStockQty`
- * （每行 4 次查询），报表拿它算几百单会直接超时。这里用等价的 SQL 表达同一个公式：
+ * `lib/commission.ts` 是提成的**唯一计算入口**，报表拿它算几百单会因逐单查询直接超时。
+ * 这里用等价的 SQL 表达同一个公式：
  *
- *     提成 = Σ(件提成价 × 实送量 × 单位换算比) + 客户固定费 + Σ(单价 × 实送量) × 提成率
+ *     提成 = Σ(件提成价 × 实送量) + 客户固定费 + Σ(单价 × 实送量) × 提成率
  *
- * 单位换算比与 `toStockQty` 逐条对齐（见下方 `UOM_RATIO_SQL` 注释）。
+ * 20260901 起 `OrderLine.commissionPrice` 落库时就已经按该行选用单位折算好
+ * （factor / FIXED override / FORMULA 折扣加价，见 lib/server-pricing.ts
+ * resolveOrderLines），这里不再需要单独乘一遍单位换算比。
  * ⛔ **两套实现必须靠外部比对来守**：`scripts/audit/driver-commission-test.ts` 用
  * `calcOrderCommission` 逐单重算再与本模块的输出比对。拿同一段实现两边一比毫无信息量。
  */
@@ -160,25 +162,6 @@ export function pivotPeriods(rows: DriverPeriodRow[]): {
 }
 
 /**
- * 单位换算比，与 `lib/inventory.ts` 的 `toStockQty` 逐条对齐：
- *   · 行没有 uomId → 不换算
- *   · 模板没有基准单位 → 不换算
- *   · 行单位 == 基准单位 → 不换算
- *   · 任一 factor 缺失或为 0 → 不换算（toStockQty 里的 `!lineFactor || !anchorFactor`）
- * 否则 ratio = 行单位 factor / 基准单位 factor。
- */
-const UOM_RATIO_SQL = `
-  CASE
-    WHEN ol."uomId" IS NULL
-      OR p."uomId" IS NULL
-      OR ol."uomId" = p."uomId"
-      OR lu.factor IS NULL OR au.factor IS NULL
-      OR lu.factor = 0 OR au.factor = 0
-    THEN 1
-    ELSE lu.factor / au.factor
-  END`
-
-/**
  * 公共 CTE：把「区间内的 Trip」展开成「Trip × 订单」，再把每单的行级构成算好。
  *
  * 日期口径与 `/api/analytics/logistics` 保持一致：取所属波次的 waveDate，
@@ -216,14 +199,11 @@ WITH trip_order AS (
 ),
 line_agg AS (
   SELECT ol."orderId" AS order_id,
-         SUM(COALESCE(ol."commissionPrice", 0) * COALESCE(ol."deliveredQty", 0) * (${UOM_RATIO_SQL})) AS item_total,
-         SUM(COALESCE(ol."unitPrice", 0) * COALESCE(ol."deliveredQty", 0))                            AS delivered_subtotal,
-         SUM(COALESCE(ol."deliveredQty", 0))                                                          AS delivered_qty
+         SUM(COALESCE(ol."commissionPrice", 0) * COALESCE(ol."deliveredQty", 0)) AS item_total,
+         SUM(COALESCE(ol."unitPrice", 0) * COALESCE(ol."deliveredQty", 0))       AS delivered_subtotal,
+         SUM(COALESCE(ol."deliveredQty", 0))                                    AS delivered_qty
   FROM "OrderLine" ol
   JOIN trip_order to2            ON to2.order_id = ol."orderId"
-  LEFT JOIN "Product" p          ON p.id  = ol."productId"
-  LEFT JOIN "Uom" lu             ON lu.id = ol."uomId"
-  LEFT JOIN "Uom" au             ON au.id = p."uomId"
   GROUP BY ol."orderId"
 ),
 order_calc AS (

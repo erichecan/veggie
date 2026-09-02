@@ -10,6 +10,7 @@ export interface CustomerExportRow {
   vatNumber?: string | null
   paymentTerm?: string | null
   pricelistNames?: string | null
+  priceType?: string | null
   creditLimit?: number | null
   isActive?: boolean | null
   salesman?: string | null
@@ -17,6 +18,8 @@ export interface CustomerExportRow {
 
 const PAYMENT_LABEL_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
 const PAYMENT_LABEL_EN: Record<string, string> = { cash: 'Cash', weekly: 'Weekly', monthly: 'Monthly' }
+// 与列表页 Price Type 列保持一致：不分中英文界面，沿用下单页(place-order)的说法
+const PRICE_TYPE_LABEL: Record<string, string> = { multi: 'Multi Price', default: 'Default Price', last: 'Last Purchase Price' }
 
 export const CUSTOMER_EXPORT_COLUMNS: readonly ExportColumn<CustomerExportRow>[] = [
   { header: '客户名称', headerEn: 'Customer Name', get: r => r.name ?? '' },
@@ -30,6 +33,7 @@ export const CUSTOMER_EXPORT_COLUMNS: readonly ExportColumn<CustomerExportRow>[]
     },
   },
   { header: '价格表', headerEn: 'Pricelist', get: r => r.pricelistNames ?? '' },
+  { header: 'Price Type', headerEn: 'Price Type', get: r => PRICE_TYPE_LABEL[String(r.priceType ?? 'multi')] ?? PRICE_TYPE_LABEL.multi },
   {
     // 屏幕上空值显示「无限额」，导出留空 —— 写成 0 会被当成"额度为零"
     header: '信用额度 (€)', headerEn: 'Credit Limit (€)',

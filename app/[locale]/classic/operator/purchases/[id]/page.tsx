@@ -8,6 +8,7 @@ import { Trash2 } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiPatch, authHeaders } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
 import { parseStoredQc, lineVerdict, formatQcSummary, QC_REJECT_REASON_LABELS, type QcRejectReason } from '@/lib/purchase/qc'
+import { lineDescription } from '@/lib/order-line-description'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 
@@ -121,6 +122,7 @@ interface PurchaseProduct {
   internalRef?: string | null
   category?: string | null
   spec?: string | null
+  saleDescription?: string | null
   uomId?: string | null
   uomName?: string | null
   standardPrice?: number | null
@@ -273,7 +275,7 @@ export default function PurchaseDetailPage() {
         sequence: (prev[prev.length - 1]?.sequence ?? 0) + 10,
         productId: prod.id,
         productName: prod.name,
-        spec: prod.spec ?? null,
+        spec: lineDescription(prod) || null,
         uomName: prod.uomName ?? null,
         orderedQty: 1,
         unitCost,
