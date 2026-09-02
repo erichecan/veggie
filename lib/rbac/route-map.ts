@@ -282,6 +282,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/pricelists/print', permission: 'master.pricelist.print' },
   { pattern: '/api/pricelists', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/pricelists', methods: ['POST'], permission: 'master.pricelist.create' },
+  { pattern: '/api/pricelists/*/reference', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/pricelists/*', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/pricelists/*', methods: ['PUT'], permission: 'master.pricelist.update' },
   { pattern: '/api/pricelists/*', methods: ['DELETE'], permission: 'master.pricelist.delete' },
