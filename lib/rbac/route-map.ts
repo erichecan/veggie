@@ -308,6 +308,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/analytics/driver-commission', permission: 'analytics.commission.read' },
   { pattern: '/api/analytics/ap-aging', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/ar-aging', permission: 'analytics.finance.read' },
+  { pattern: '/api/analytics/income-statement', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/internal-control', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/inventory-overview', permission: 'analytics.inventory.read' },
   { pattern: '/api/analytics/zone-inventory', permission: 'analytics.inventory.read' },

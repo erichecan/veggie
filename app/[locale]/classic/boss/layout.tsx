@@ -27,12 +27,10 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     { href: `${prefix}/classic/boss/analytics/sales-overview`, label: '销售统计' },
     { href: `${prefix}/classic/boss/analytics/customers`, label: '客户分析' },
     { href: `${prefix}/classic/boss/analytics/margin`, label: '毛利分析' },
-    // 「利润表」入口于 20260802 摘除：它指向的页面与 API 从未存在，点进去是 404。
-    // 不补的理由：利润表 = 收入 − 成本 − 费用，而**费用这一项没有数据来源**——
-    // 系统没有「其他收入/支出」录入模块，Account 虽有 10 个科目但 JournalEntry 与
-    // JournalEntryLine 均为 0 条，复式记账是空壳。硬做只能产出一张缺全部运营费用的表。
-    // 恢复此入口的前置条件：① 建费用录入（或把 VendorBill 中非采购类账单归入费用科目）；
-    // ② 让 JournalEntry 真正产生分录；③ 出成本结转，使销售成本不再只依赖 Lot.unitCost 覆盖率。
+    // 「利润表」20260902 重新补上：过账链路（postInvoiceToJournal/postVendorBillToJournal）
+    // 已经接进 /api/invoices/[id]/post 和 /api/vendor-bills/[id]，JournalEntry 不再是死代码。
+    // 但页面口径仍是"毛利"（营收−COGS），运营费用录入入口依然不存在，页面自己会标注清楚。
+    { href: `${prefix}/classic/boss/analytics/income-statement`, label: '利润表' },
     { href: `${prefix}/classic/boss/analytics/ar-aging`, label: '应收账龄' },
     { href: `${prefix}/classic/boss/analytics/ap-aging`, label: '应付账龄' },
     { href: `${prefix}/classic/boss/analytics/procurement`, label: '采购运营' },
