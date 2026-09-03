@@ -169,7 +169,14 @@ export default function OdooTable<T extends Record<string, unknown>>({
   }
 
   return (
-    <div className="border border-gray-200 rounded overflow-visible bg-white" style={{ position: 'relative' }}>
+    // 表格常有 50 行 × 十几列，横向撑破视口宽度是常态。此前外层容器高度不设限，
+    // 横向滚动条只会出现在"滚完全部行"之后的最底端——早就滚出视口，用户根本看不到、
+    // 摸不到，看起来就像"没有滚动条"。这里把容器高度收在视口内、纵向也交给它自己滚，
+    // 横向滚动条因此始终贴着可见区域底部，够得着。
+    <div
+      className="border border-gray-200 rounded bg-white"
+      style={{ position: 'relative', overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}
+    >
       {loading && rows.length > 0 && (
         <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden rounded-t" style={{ zIndex: 10 }}>
           <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
