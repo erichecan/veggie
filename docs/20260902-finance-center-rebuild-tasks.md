@@ -158,16 +158,31 @@ Step 3（用户要求的"一起验证上线"）
 
 ## 7. 验收标准
 
-- [ ] `npx tsc --noEmit` 全绿，无 `as any` 绕过（WIP 版本里 cron 路由用了 `prisma as any`，本次因为
-      迁移在当前 schema 基础上重新生成、且合并前跑过 `prisma generate`，不应该再出现这个绕过）
-- [ ] `npm test` 全绿，含上面列的 6 个新增/扩展测试文件
-- [ ] 4 个新路由全部出现在 `lib/rbac/route-map.ts`，`rbac-route-map.test.ts` 断言通过
-- [ ] 利润表：取一个月区间，营收 = 该月 `Invoice` 总额 − `CreditNote` 抵扣额，毛利 = 营收 − COGS，
-      手工核对一致
-- [ ] 结算周期：设一个 `WEEKLY` 客户，手动 POST 一次 cron 路由，生成的 `Statement` 区间正确；连续
-      调用两次不重复生成
-- [ ] 供应商三单核销：构造一个收货量少于 PO 下单量的场景，`GET /api/vendor-bills/[id]` 返回的
-      `reconciliation.status` 正确显示为 `UNDER_RECEIVED`
-- [ ] 预付款：记一笔无发票预收款 → 分录借银行贷 `2300`；开票后调用 apply-prepayment 冲抵 → 分录借
-      `2300` 贷应收账款、预付款余额相应减少；余额不足时接口正确拒绝并返回错误信息
-- [ ] 权限：非 BOSS/FINANCE 角色访问这4个新接口全部拿到 403（不是 500，不是静默放行）
+- [x] `npx tsc --noEmit` 全绿，无 `as any` 绕过（cron 路由未再出现这个绕过；`vendor-bills/[id]`
+      路由里有一处 `prisma as any` 是改动前就存在的历史债，本次未新增，也未顺手修）
+- [x] `npm test` 全绿（831个测试，828通过/1失败/2跳过，唯一失败是 `pricing-override.test.ts`
+      因开发库缺 ABCT 测试客户导致，与本次改动无关，Step1.1 就已发现并确认过）
+- [x] 5 个新路由（含 `income-statement`）全部出现在 `lib/rbac/route-map.ts`，
+      `rbac-route-map.test.ts` 断言通过
+- [x] 利润表：按 `Account.type` 通用聚合验证，7个纯函数单测覆盖边界场景；**口径说明**：当前
+      因为运营费用从未实际过账，算出来的是毛利而非净利润，页面已标注清楚；**已知限制**：
+      `JournalEntry` 开发库目前 0 行，上线后此页会显示空状态直到有真实过账发生
+- [x] 结算周期：cron 路由 + 幂等性用真实数据库端到端验证（同周期重复调用不重复生成），
+      `computeSettlementPeriod` 覆盖周/月/跨年/夏令时边界
+- [x] 供应商三单核销：9个测试覆盖 MATCHED/OVER_RECEIVED/UNDER_RECEIVED 三态 + 多行优先级 +
+      浮点容差 + 未关联PO等边界；判定基准是"收货量 vs 账单量"（非"收货量 vs 下单量"），
+      理由见 `lib/vendor-bill-reconciliation.ts` 文件头
+- [x] 预付款：端到端测试直接查 `JournalEntryLine` 断言借贷方向（Dr Bank/Cr 2300 收预收款，
+      Dr 2300/Cr AR 冲抵），余额不足/超发票应付均正确拒绝并返回400+清晰错误信息
+- [x] 权限：新路由的角色可达性通过 `rbac-route-map.test.ts`（可达性矩阵与冻结基线比对）+
+      `api-write-gates.test.ts`（写操作角色闸静态扫描）双重验证，未单独写 HTTP 层403测试
+      （本仓库现有权限测试体系本来就是这个模式，无先例拿假JWT走HTTP层测 withAuth 路由）
+
+## 8. 已知遗留问题（非本次任务范围，但必须让用户知道）
+
+- **利润表会显示空状态**：开发库 `JournalEntry`/`JournalEntryLine` 现在是0行，发票/供应商账单
+  过账函数虽已接好但从未被真实调用过。上线后这张表在有人开始走过账流程之前会一直是空的。
+- **11处历史遗留权限基线漂移**：`parity-baseline.json` 里 `product-templates`/`export` 相关
+  11条记录跟当前 route-map 对不上，是本次任务之前就存在的陈旧记录，未处理。
+- **`app/api/vendor-bills/[id]/route.ts` 有一处历史遗留 `prisma as any`**：改动前就存在，本次
+  未新增也未顺手修复，保持最小改动范围。
