@@ -755,6 +755,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/customers/[id]/prepayment-balance": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "n",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "POST /api/customers/[id]/term-extension": {
   "BOSS": "y",
   "OPERATOR": "n",
@@ -1230,6 +1244,20 @@
   "DRIVER": "anon",
   "RESTAURANT": "anon",
   "OTHER": "anon"
+ },
+ "POST /api/invoices/[id]/apply-prepayment": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "n",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
  },
  "POST /api/invoices/[id]/post": {
   "BOSS": "y",

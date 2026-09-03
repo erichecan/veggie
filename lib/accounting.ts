@@ -169,23 +169,32 @@ export async function postVendorBillToJournal(
   return entry
 }
 
-/** 客户收款过账：Dr Bank / Cr AR（之前缺失,导致总账 AR 只增不减、永久虚高 — P1-6） */
+/**
+ * 客户收款过账：Dr Bank / Cr AR（之前缺失,导致总账 AR 只增不减、永久虚高 — P1-6）
+ *
+ * `opts.creditAccountCode` 覆盖默认贷方科目（1100 AR）——预收款登记
+ * （source=PREPAYMENT_RECEIVED，还没有对应发票）传 '2300'，贷方记客户预收款
+ * 负债而不是冲减应收账款，本质是"收了钱但还没确认收入"，跟普通收款方向不同。
+ */
 export async function postPaymentToJournal(
   tx: TxClient,
   payment: { id: string; invoiceName: string; customerId: string; amount: unknown },
   userId: string,
+  opts?: { creditAccountCode?: string; narration?: string },
 ): Promise<{ id: string; name: string } | null> {
   const bank = await findAccountByCode(tx, '1200')
-  const ar = await findAccountByCode(tx, '1100')
-  if (!bank || !ar) return null
+  const creditCode = opts?.creditAccountCode ?? '1100'
+  const creditAccount = await findAccountByCode(tx, creditCode)
+  if (!bank || !creditAccount) return null
   const amt = Number(payment.amount)
   if (!(amt > 0)) return null
 
+  const creditLabel = creditCode === '2300' ? 'Customer Prepayment' : 'AR settle'
   const name = await genEntryName(tx)
   return tx.journalEntry.create({
     data: {
       name,
-      narration: `Payment received for ${payment.invoiceName}`,
+      narration: opts?.narration ?? `Payment received for ${payment.invoiceName}`,
       sourceType: 'payment',
       sourceId: payment.id,
       status: 'POSTED',
@@ -196,6 +205,45 @@ export async function postPaymentToJournal(
       lines: {
         create: [
           { accountId: bank.id, description: `Bank - ${payment.invoiceName}`, debit: amt, credit: 0, sequence: 10 },
+          { accountId: creditAccount.id, description: `${creditLabel} - ${payment.invoiceName}`, debit: 0, credit: amt, partnerId: payment.customerId, sequence: 20 },
+        ],
+      },
+    },
+    select: { id: true, name: true },
+  })
+}
+
+/**
+ * 预付款冲抵发票过账：Dr 客户预收款(2300) / Cr AR(1100)。
+ * 不产生新现金流——只是负债科目（欠客户的预收款）转成应收账款科目的减少，
+ * 银行科目两边都不动，跟"收到预收款"（Dr Bank / Cr 2300）方向刚好互补。
+ */
+export async function postPrepaymentApplicationToJournal(
+  tx: TxClient,
+  payment: { id: string; invoiceName: string; customerId: string; amount: unknown },
+  userId: string,
+): Promise<{ id: string; name: string } | null> {
+  const prepayment = await findAccountByCode(tx, '2300')
+  const ar = await findAccountByCode(tx, '1100')
+  if (!prepayment || !ar) return null
+  const amt = Number(payment.amount)
+  if (!(amt > 0)) return null
+
+  const name = await genEntryName(tx)
+  return tx.journalEntry.create({
+    data: {
+      name,
+      narration: `Prepayment applied to ${payment.invoiceName}`,
+      sourceType: 'payment',
+      sourceId: payment.id,
+      status: 'POSTED',
+      totalDebit: amt,
+      totalCredit: amt,
+      createdBy: userId,
+      postedAt: new Date(),
+      lines: {
+        create: [
+          { accountId: prepayment.id, description: `Prepayment applied - ${payment.invoiceName}`, debit: amt, credit: 0, partnerId: payment.customerId, sequence: 10 },
           { accountId: ar.id, description: `AR settle - ${payment.invoiceName}`, debit: 0, credit: amt, partnerId: payment.customerId, sequence: 20 },
         ],
       },

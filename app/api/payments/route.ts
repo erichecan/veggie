@@ -4,18 +4,23 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { postPaymentToJournal } from '@/lib/accounting'
+import { recordPrepaymentReceived } from '@/lib/prepayments'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 
 /**
- * /api/payments — 发票分笔收款
+ * /api/payments — 发票分笔收款 / 客户预收款登记
  * ============================================================================
  * GET  ?invoiceId= | ?customerId=  — 收款流水
  * POST { invoiceId, amount, method?, paidAt?, note? }
  *   事务内:创建 Payment + 重算 Invoice.amountPaid/amountDue;
  *   付清自动转 PAID;仅 POSTED/PAID 状态的发票可收款。
+ * POST { source: 'PREPAYMENT_RECEIVED', customerId, amount, method?, paidAt?, note? }
+ *   收到客户预收款，此时还没有对应发票——不校验/更新 Invoice，过账
+ *   Dr Bank / Cr 2300(客户预收款负债)，与普通收款(Cr AR)方向不同。
  */
 
 const VALID_METHODS = new Set(['cash', 'transfer', 'other'])
+const VALID_SOURCES = new Set(['CASH', 'PREPAYMENT_RECEIVED'])
 
 export async function GET(req: Request) {
   return withAuth(req, async () => {
@@ -44,17 +49,44 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const data = await req.json()
-      const invoiceId = String(data.invoiceId ?? '').trim()
+      const source = String(data.source ?? 'CASH').toUpperCase()
       const amount = round2(Number(data.amount))
       const method = String(data.method ?? 'transfer').toLowerCase()
 
-      if (!invoiceId) return NextResponse.json({ error: 'invoiceId 必填' }, { status: 400 })
       if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: '收款金额必须大于 0' }, { status: 400 })
       }
       if (!VALID_METHODS.has(method)) {
         return NextResponse.json({ error: '收款方式无效(cash/transfer/other)' }, { status: 400 })
       }
+      if (!VALID_SOURCES.has(source)) {
+        return NextResponse.json({ error: 'source 无效(CASH/PREPAYMENT_RECEIVED)' }, { status: 400 })
+      }
+
+      // 预收款：还没有对应发票，走独立分支——不碰 Invoice，贷方记 2300 而非 AR
+      if (source === 'PREPAYMENT_RECEIVED') {
+        const customerId = String(data.customerId ?? '').trim()
+        if (!customerId) return NextResponse.json({ error: 'customerId 必填(预收款登记)' }, { status: 400 })
+
+        const result = await prisma.$transaction(tx => recordPrepaymentReceived(tx, {
+          customerId,
+          amount,
+          method,
+          paidAt: data.paidAt ? new Date(data.paidAt) : undefined,
+          note: data.note ? String(data.note).trim().slice(0, 500) : null,
+          actor: { userId: user.userId, name: user.name, email: user.email },
+        }))
+
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'CREATE', resource: 'payment', resourceId: result.payment.id,
+          detail: `客户 ${customerId} 收到预付款 €${amount.toFixed(2)} (${method})`,
+        })
+        return NextResponse.json(serializeApi(result), { status: 201 })
+      }
+
+      const invoiceId = String(data.invoiceId ?? '').trim()
+      if (!invoiceId) return NextResponse.json({ error: 'invoiceId 必填' }, { status: 400 })
 
       const result = await prisma.$transaction(async tx => {
         const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } })

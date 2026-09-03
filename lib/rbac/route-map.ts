@@ -203,6 +203,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
 
   // ── 财务 ────────────────────────────────────────────────────────────────
   { pattern: '/api/invoices/*/post', permission: 'finance.invoice.pay' },
+  { pattern: '/api/invoices/*/apply-prepayment', permission: 'finance.invoice.pay' },
   { pattern: '/api/invoices/ar-summary', permission: 'finance.invoice.read' },
   { pattern: '/api/invoices', methods: R, permission: 'finance.invoice.read' },
   { pattern: '/api/invoices', methods: ['POST'], permission: 'finance.invoice.create' },
@@ -240,6 +241,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/customers/*/credit', permission: 'master.customer.read_credit' },
   { pattern: '/api/customers/*/term-extension', methods: ['POST'], permission: 'master.customer.extend_term' },
   { pattern: '/api/customers/*/last-prices', permission: 'master.customer.read_last_prices' },
+  { pattern: '/api/customers/*/prepayment-balance', permission: 'finance.payment.read' },
   { pattern: '/api/customers/bulk', permission: 'master.customer.bulk_import' },
   // 联系人（多邮箱）。读跟着「客户详情」走，写跟着「编辑客户」走 —— 不单开权限点：
   // 拆细子动作而不同步补给原本够得着的角色，会让功能对全公司静默中断（20260807）。
