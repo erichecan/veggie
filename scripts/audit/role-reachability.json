@@ -1875,6 +1875,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/pricelists/[id]/reference": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "DELETE /api/pricelists/[id]": {
   "BOSS": "y",
   "OPERATOR": "y",
