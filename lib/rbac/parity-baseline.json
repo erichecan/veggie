@@ -3848,5 +3848,19 @@
     "DRIVER": "anon",
     "RESTAURANT": "anon",
     "OTHER": "anon"
+  },
+  "POST /api/cron/generate-statements": {
+    "BOSS": "anon",
+    "OPERATOR": "anon",
+    "FINANCE": "anon",
+    "WAREHOUSE": "anon",
+    "DISPATCH": "anon",
+    "SALES": "anon",
+    "EXTERNAL_SALES": "anon",
+    "SORTER": "anon",
+    "PICKER": "anon",
+    "DRIVER": "anon",
+    "RESTAURANT": "anon",
+    "OTHER": "anon"
   }
 }

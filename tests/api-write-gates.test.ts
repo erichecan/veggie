@@ -31,6 +31,7 @@ const EXEMPT: Record<string, string> = {
   'POST /api/auth/logout': '退出只删自己浏览器的 HttpOnly 登录 cookie，不碰任何业务数据；必须匿名可达（token 失效时也要能退出）',
   'POST /api/auth/change-password': '改自己的密码，用 requireAuth 取本人身份，无角色概念',
   'POST /api/cron/backup-database': '定时任务，走 CRON_SECRET 共享密钥（迁服务器后由 systemd timer 触发）',
+  'POST /api/cron/generate-statements': '定时任务，走 CRON_SECRET 共享密钥，同上',
   'POST /api/action-logs/cleanup': '同上，走 CRON_SECRET',
   'POST /api/mfa/enroll': '给自己开二次验证',
   'DELETE /api/mfa/enroll': '关自己的二次验证',

@@ -12,6 +12,7 @@ const TRACKED_FIELDS = [
   'isActive', 'isCustomer', 'isVendor', 'notes', 'externalNote',
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
   'salesUserId',
+  'settlementCycle',  // 对账单生成周期：NONE | WEEKLY | MONTHLY
   // 经纬度（C7）：原先**只能由 Google geocode 写入**，而那需要客户出钱开通的
   // API key —— 实测生产与测试库都没配，于是 1411 个客户里 0 个有坐标，
   // 地图与路线整块是死的。放开手工填写，让地图不依赖外部服务也能用起来。
@@ -101,6 +102,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           return NextResponse.json({ error: `${k} 超出有效范围（±${range}）` }, { status: 400 })
         }
         updateData[k] = v
+      }
+      if (updateData.settlementCycle !== undefined && !['NONE', 'WEEKLY', 'MONTHLY'].includes(String(updateData.settlementCycle))) {
+        return NextResponse.json({ error: 'settlementCycle 只能是 NONE / WEEKLY / MONTHLY' }, { status: 400 })
       }
       const customer = await prisma.customer.update({
         where: { id },
