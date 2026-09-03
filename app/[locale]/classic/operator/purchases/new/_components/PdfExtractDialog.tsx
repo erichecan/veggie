@@ -89,7 +89,8 @@ export default function PdfExtractDialog({ onApply, products }: {
   // 用这个标记把「已经弹出一个、还没等到结果」这段时间内的按钮点击挡掉。
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [useAi, setUseAi] = useState(false)
+  // 20260902：AI 识别（Gemini，支持拍照单据）已转正为默认；勾掉才退回旧的规则解析
+  const [useAi, setUseAi] = useState(true)
   const [result, setResult] = useState<ParseApiResponse | null>(null)
   const [editableLines, setEditableLines] = useState<ExtractedLine[]>([])
   const [searchingIndex, setSearchingIndex] = useState<number | null>(null)
@@ -118,7 +119,10 @@ export default function PdfExtractDialog({ onApply, products }: {
     try {
       const form = new FormData()
       form.append('file', file)
-      if (useAi) form.append('engine', 'ai')
+      // 图片（拍照单据）没有确定性解析可用，不管开关状态都必须走 AI
+      const isImageFile = file.type.startsWith('image/') || /\.(jpe?g|png)$/i.test(file.name)
+      if (isImageFile && !useAi) toast.info(isEn ? 'Images can only use AI recognition' : '图片仅支持 AI 识别，已自动改用 AI')
+      form.append('engine', (isImageFile || useAi) ? 'ai' : 'deterministic')
       const res = await apiUpload<ParseApiResponse>('/api/purchase-orders/parse', form)
       setResult(res)
       setEditableLines(res.lines ?? [])
@@ -188,7 +192,7 @@ export default function PdfExtractDialog({ onApply, products }: {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.xlsx,.xls,.csv,application/pdf"
+        accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
         className="hidden"
         onChange={e => {
           setPickerOpen(false)
@@ -211,12 +215,12 @@ export default function PdfExtractDialog({ onApply, products }: {
         >
           {uploading
             ? (isEn ? 'Extracting…' : '识别中…')
-            : (isEn ? '📄 Upload PDF / Excel' : '📄 上传单据识别')}
+            : (isEn ? '📄 Upload document (PDF / Photo / Excel)' : '📄 上传单据识别（PDF/拍照/Excel）')}
         </button>
-        {/* 20260828 原型：默认关闭，仅对比效果用。见 lib/purchase/ai-pdf-parser.ts */}
-        <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none" title={isEn ? 'Experimental: send PDF to Gemini instead of the default rule-based parser' : '实验性：改用 Gemini 解析 PDF，而非默认的规则解析'}>
+        {/* 20260902：AI（Gemini）已转正为默认路径，见 lib/purchase/ai-pdf-parser.ts 与 parse/route.ts 顶部说明 */}
+        <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none" title={isEn ? 'Uncheck to use the old rule-based parser instead (text-layer PDF only, not sent anywhere)' : '取消勾选可改回旧的规则解析（仅支持文字版 PDF，不联网）'}>
           <input type="checkbox" checked={useAi} onChange={e => setUseAi(e.target.checked)} className="accent-purple-600" />
-          {isEn ? 'AI (Beta)' : 'AI 试一试（Beta）'}
+          {isEn ? 'AI recognition' : 'AI 识别'}
         </label>
       </span>
 
@@ -389,16 +393,22 @@ export default function PdfExtractDialog({ onApply, products }: {
             ) : (
               <>
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
-                  {isEn
-                    ? 'No line items were recognised. The raw text below is what we read from the document — please fill the form manually.'
-                    : '未识别到明细行。下面是从单据里读到的原始文字，请手动填入表单。'}
+                  {result.rawText
+                    ? (isEn
+                      ? 'No line items were recognised. The raw text below is what we read from the document — please fill the form manually.'
+                      : '未识别到明细行。下面是从单据里读到的原始文字，请手动填入表单。')
+                    : (isEn
+                      ? 'No line items were recognised, and there is no text to show (photos have no text layer) — please fill the form manually.'
+                      : '未识别到明细行，且没有可展示的原文（图片没有文字层）——请手动填入表单。')}
                 </p>
-                <textarea
-                  readOnly
-                  value={result.rawText}
-                  rows={12}
-                  className="w-full border border-gray-200 rounded p-2 text-xs font-mono text-gray-600"
-                />
+                {result.rawText && (
+                  <textarea
+                    readOnly
+                    value={result.rawText}
+                    rows={12}
+                    className="w-full border border-gray-200 rounded p-2 text-xs font-mono text-gray-600"
+                  />
+                )}
               </>
             )}
 

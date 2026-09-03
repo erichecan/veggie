@@ -25,30 +25,31 @@ import { findAliasMatches } from '@/lib/purchase/product-alias'
  * 所以这个接口有一条铁律：**只解析，绝不落库**。
  * 返回的是「预填草稿 + 匹配候选」，由人核对后在前端提交建单。
  *
- * ## 为什么没有 AI 兜底
+ * ## 引擎选择：AI 优先，确定性解析兜底（20260902 起）
  *
- * 原来的 pdf-extract 在确定性解析失败时会把原文发给 Claude 结构化。移除了，因为：
- *   1. 确定性解析现在自己就能认出**供应商、币种、商品行**（20260819 补齐），
- *      原先"只有 AI 能给供应商/币种"的理由已不成立；
- *   2. 生产从未配过 `ANTHROPIC_API_KEY`，这条分支在真实环境里一次都没跑过 ——
- *      留着只会让人误以为有兜底；
- *   3. 私有化部署（客户自有服务器）不该把供应商单据外发给第三方；
- *   4. 同一份 PDF 必须永远得到同一个结果，出错时能指着某一行说「这行没认出来」。
+ * 20260819 客户曾拍板「尽量不用 AI 兜底」，理由见下方历史记录；20260828 加了
+ * `engine=ai` 原型对比效果后，20260902 客户已确认接受把供应商单据发给 Google
+ * Gemini 解析，**AI 转正为默认引擎**（`engine` 不传或传 `ai` 都走 AI；显式传
+ * `deterministic` 才退回纯规则解析）。原因：
+ *   1. 真实单据版式远比规整电子发票复杂（表头跨多行、多语言、拍照件），
+ *      纯正则的确定性解析在这类单据上会把发票号、IBAN、VAT 号这类"单据信息"
+ *      误判成商品行——这正是确定性解析这条路线本身的局限，不是没写全规则；
+ *   2. **拍照的纸质单据（jpg/png）只能走这条路径**——正则做不了 OCR；
+ *   3. 没配 `GEMINI_API_KEY`、或调用失败时自动回退到确定性解析（仅 PDF 有效，
+ *      图片没有可回退的确定性路径，直接报错让人手填）。
  *
- * 认不出来时返回 rawText + 明确的 error，让人手填 —— 比模型猜一个更可控。
- *
- * ## AI 辅助路径（20260828 原型，默认关闭）
- *
- * 上面 4 条理由里，第 1、4 条已经被更好的确定性规则解决；第 3 条（单据外发第三方）
- * 是需要客户拍板的政策问题，不是技术问题。客户想先看看效果再决定要不要正式启用，
- * 所以加了 `engine=ai` 这个显式开关：不传就是原来的默认路径（唯一动过的确定性行为
- * 不变），传了才会调用 `parsePdfWithGemini`；没配 `GEMINI_API_KEY` 时自动回退到
- * 确定性解析并在 error 里说明。
+ * ### 历史：为什么曾经没有 AI 兜底
+ * 原来的 pdf-extract 在确定性解析失败时会把原文发给 Claude 结构化，20260819 移除，
+ * 因为彼时确定性解析刚补齐供应商/币种识别、生产从未配过 key、且私有化部署单据外发
+ * 第三方是待客户拍板的政策问题——第三条现已由客户 20260902 拍板同意，其余两条
+ * 已被本轮的真实单据测试证伪（确定性解析在复杂单据上仍会把单据信息当商品）。
  */
 
 const MAX_SIZE = 15 * 1024 * 1024 // 15 MB
 const PDF_EXT = /\.pdf$/i
+const IMAGE_EXT = /\.(jpe?g|png)$/i
 const TABULAR_EXT = /\.(xlsx|xls|csv)$/i
+const IMAGE_MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' }
 
 interface ParsedRow {
   productName: string
@@ -67,14 +68,16 @@ export async function POST(req: Request) {
     try {
       const formData = await req.formData()
       const file = formData.get('file') as File | null
-      const engine = (formData.get('engine') as string | null) === 'ai' ? 'ai' : 'deterministic'
+      // 20260902：AI 转正为默认，只有显式传 deterministic 才退回纯规则解析。
+      const engine = (formData.get('engine') as string | null) === 'deterministic' ? 'deterministic' : 'ai'
 
       if (!file) return NextResponse.json({ error: '未提供文件' }, { status: 400 })
 
       const isPdf = PDF_EXT.test(file.name) || file.type === 'application/pdf'
+      const isImage = IMAGE_EXT.test(file.name) || /^image\/(jpe?g|png)$/.test(file.type)
       const isTabular = TABULAR_EXT.test(file.name)
-      if (!isPdf && !isTabular) {
-        return NextResponse.json({ error: '仅支持 PDF / Excel / CSV 文件' }, { status: 400 })
+      if (!isPdf && !isImage && !isTabular) {
+        return NextResponse.json({ error: '仅支持 PDF / 图片(jpg、png) / Excel / CSV 文件' }, { status: 400 })
       }
       if (file.size > MAX_SIZE) {
         return NextResponse.json({ error: '文件大小不能超过 15MB' }, { status: 400 })
@@ -105,40 +108,50 @@ export async function POST(req: Request) {
       let sourceDocumentUrl: string | null = null
       let diagnostics: unknown = null
       let parseError: string | null = null
-      let engineUsed: 'ai' | 'deterministic' = 'deterministic'
+      let engineUsed: 'ai' | 'deterministic' | 'unavailable' = 'deterministic'
 
-      if (isPdf) {
+      if (isPdf || isImage) {
         // 单据原件必须存档：识别结果有争议时要能翻回原文。
         // 走 object-store 抽象（默认本地磁盘），不直接依赖 GCS。
-        const objectPath = `purchase-docs/${Date.now()}-${crypto.randomUUID()}.pdf`
-        const stored = await getObjectStore().put(objectPath, buffer, 'application/pdf', {
+        const ext = isPdf ? 'pdf' : (file.name.split('.').pop() ?? 'jpg').toLowerCase()
+        const mimeType = isPdf ? 'application/pdf' : (IMAGE_MIME[ext] ?? 'image/jpeg')
+        const objectPath = `purchase-docs/${Date.now()}-${crypto.randomUUID()}.${ext}`
+        const stored = await getObjectStore().put(objectPath, buffer, mimeType, {
           uploadedBy: user.userId,
           uploadedByEmail: user.email,
         })
         sourceDocumentUrl = stored.url
 
-        const { PDFParse } = await import('pdf-parse')
-        const parser = new PDFParse({ data: new Uint8Array(buffer) })
-        rawText = (await parser.getText()).text ?? ''
-        await parser.destroy()
+        // 文字层只有 PDF 才可能有；图片（拍照单据）从不存在文字层，也就没有
+        // 确定性解析可回退——纯正则做不了 OCR。
+        if (isPdf) {
+          const { PDFParse } = await import('pdf-parse')
+          const parser = new PDFParse({ data: new Uint8Array(buffer) })
+          rawText = (await parser.getText()).text ?? ''
+          await parser.destroy()
+        }
 
-        if (!rawText.trim()) {
+        // 显式选择确定性解析时，没有文字层就直接报错（不联网，也没有别的路可走）。
+        if (engine === 'deterministic' && !rawText.trim()) {
           return NextResponse.json(serializeApi({
             sourceDocumentUrl, sourceDocumentName: file.name,
             rawText: '', lines: [], stats: null, diagnostics: null,
             currency: null, supplierId: null, supplierName: null,
-            error: 'PDF 内容为空或是扫描图片，无法抽取文字层（本功能仅支持文字版 PDF）',
+            error: isImage
+              ? '图片没有可用的确定性解析路径，请改用 AI 识别或手工填单'
+              : 'PDF 内容为空或是扫描图片，无法抽取文字层，请改用 AI 识别或手工填单',
           }))
         }
 
-        // engine=ai 时优先走 AI 辅助（原始 PDF 多模态输入）；没配 key 或调用失败
-        // 都不当成"识别出 0 行"，而是回退到确定性解析并把原因带在 error 里。
+        // 默认走 AI：直接把原始文件（PDF 或图片）作为多模态输入喂给模型，
+        // 版面结构本身就是"这行是商品还是地址"的强信号。没配 key 或调用失败
+        // 都不当成"识别出 0 行"——PDF 还能回退到确定性解析，图片没有退路，直接报错让人手填。
         let usedAi = false
         let aiFallbackNotice: string | null = null
         if (engine === 'ai') {
-          const aiResult = await parsePdfWithGemini(buffer, { suppliers: suppliers as SupplierCandidate[] })
+          const aiResult = await parsePdfWithGemini(buffer, { suppliers: suppliers as SupplierCandidate[] }, mimeType)
           if ('unavailable' in aiResult) {
-            aiFallbackNotice = `${aiResult.reason}，已自动改用默认识别`
+            aiFallbackNotice = isPdf ? `${aiResult.reason}，已自动改用默认识别` : aiResult.reason
           } else {
             usedAi = true
             rows = aiResult.lines.map(l => ({
@@ -153,19 +166,29 @@ export async function POST(req: Request) {
           }
         }
 
-        if (!usedAi) {
-          const parsed = parsePdfLines(rawText, { suppliers: suppliers as SupplierCandidate[] })
-          rows = parsed.lines.map(l => ({
-            productName: l.productName, quantity: l.quantity,
-            unitCost: l.unitCost, uom: l.uom, raw: l.raw,
-          }))
-          currency = parsed.currency
-          supplierId = parsed.supplierId
-          supplierName = parsed.supplierName
-          diagnostics = parsed.diagnostics
-          parseError = aiFallbackNotice ? [aiFallbackNotice, parsed.error].filter(Boolean).join('；') : parsed.error
+        if (!usedAi && isImage) {
+          engineUsed = 'unavailable'
+          parseError = aiFallbackNotice ?? 'AI 识别不可用，图片没有其他可用的解析路径，请手工填单'
+        } else if (!usedAi) {
+          if (!rawText.trim()) {
+            parseError = `${aiFallbackNotice ?? 'AI 识别未返回结果'}；PDF 无文字层（可能是扫描件），确定性解析也无法回退，请手工填单`
+            engineUsed = 'unavailable'
+          } else {
+            const parsed = parsePdfLines(rawText, { suppliers: suppliers as SupplierCandidate[] })
+            rows = parsed.lines.map(l => ({
+              productName: l.productName, quantity: l.quantity,
+              unitCost: l.unitCost, uom: l.uom, raw: l.raw,
+            }))
+            currency = parsed.currency
+            supplierId = parsed.supplierId
+            supplierName = parsed.supplierName
+            diagnostics = parsed.diagnostics
+            parseError = aiFallbackNotice ? [aiFallbackNotice, parsed.error].filter(Boolean).join('；') : parsed.error
+            engineUsed = 'deterministic'
+          }
+        } else {
+          engineUsed = 'ai'
         }
-        engineUsed = usedAi ? 'ai' : 'deterministic'
       } else {
         let raw
         try {

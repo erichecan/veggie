@@ -135,6 +135,18 @@ describe('模式兜底（认不出表头时）', () => {
     assert.equal(r.lines.length, 1)
     assert.equal(r.lines[0].productName.includes('Carrot'), true)
   })
+
+  test('⛔ 20260902 实测（真实供应商发票 Valstar Holland）：页码/银行账号/税号不能混进商品行', () => {
+    // 这几行原样摘自 pdf-parse 抽出的文字层——注意 "Page: 1/1" 挤在同一行文字末尾，
+    // 不是独占一行；银行信息行同样满足"文字+两个数"的兜底门槛，不专门排除会被当成商品。
+    const r = parsePdfLines([
+      'Sales Invoice \tPage: 1/1',
+      '60 \tAvocado Hass RTE 18 \t16,75 \t1.005,00',
+      'Account no. 112738397 / IBAN NL93ABNA0112738397 / Swift code ABNANL2A / VAT NL001571229B01 / COC no. 27208643 / GLN no. 8718367999913',
+    ].join('\n'))
+    assert.equal(r.lines.length, 1)
+    assert.equal(r.lines[0].productName.includes('Avocado'), true)
+  })
 })
 
 describe('失败时必须明确报错，不能静默出空表', () => {

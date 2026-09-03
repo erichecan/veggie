@@ -69,8 +69,16 @@ const NON_PRODUCT_PATTERNS = [
   /\bvat\b.*%/i,
   /^\s*(合计|小计|总计|税额|税金|运费|折扣)/,
   /^\s*(page|第)\s*[:：]?\s*\d+/i,
+  // ⚠️ 20260902 实测：真实发票里页码常混在同一行文字末尾（`Sales Invoice  Page: 1/1`），
+  // 不是独占一行——上面那条锚定行首的规则抓不到，加一条不锚定的。
+  /\bpage\s*[:：]?\s*\d+\s*\/\s*\d+\b/i,
   /^\s*(tel|mail|web|e-?mail|address)\b/i,
   /^\s*(discount|shipping|freight|delivery\s+charge)\b/i,
+  // ⚠️ 20260902 实测（真实供应商发票 Valstar）：银行/税号这类单据信息行同样是
+  // 「文字 + 一串数字」，兜底模式的门槛（≥3个拉丁字母+≥2个数）拦不住，
+  // 实测被解析成了一个把 IBAN 号当单价的假商品行。这几个词是有限、专有的词汇表，
+  // 真实商品名撞上的概率接近零，穷举足够安全。
+  /\b(iban|swift\s*code|bic\s*code|account\s*no|vat\s*(registration\s*)?no|coc\s*no|gln\s*no)\b/i,
 ]
 
 /**

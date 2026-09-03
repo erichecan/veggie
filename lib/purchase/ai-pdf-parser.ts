@@ -1,13 +1,15 @@
 /**
- * 采购 PDF 商品行解析 — AI 辅助路径（20260828 原型，默认关闭）
+ * 采购单据商品行解析 — AI 辅助路径（20260828 原型 → 20260902 转正为默认）
  * ============================================================================
- * 确定性解析（`pdf-line-parser.ts`）是客户 20260819 拍板的默认路径，此文件
- * 不替换它 —— 只有前端显式传 `engine=ai` 才会走到这里，用于对比效果，
- * 是否转正、是否允许把供应商单据发到第三方云端，等看到效果后再由客户拍板。
+ * 20260828 原型阶段默认关闭，只有显式传 `engine=ai` 才会走到这里，用于跟
+ * 确定性解析（`pdf-line-parser.ts`）对比效果。20260902 客户已确认接受把
+ * 供应商单据发给 Google Gemini 解析，转正为 `/api/purchase-orders/parse`
+ * 的默认路径（见 route.ts）；确定性解析退为"AI 不可用时的兜底"。
  *
- * 直接把原始 PDF 作为多模态输入交给模型（而不是先用 pdf-parse 抽文字层再喂
+ * 直接把原始文件（PDF 或图片）作为多模态输入交给模型（而不是先抽文字层再喂
  * 纯文本）：商品明细在表格里、供应商/客户信息在表头表尾，这层版面结构对模型
- * 判断"这行是商品还是地址"是强信号，纯文字层会把它丢掉。
+ * 判断"这行是商品还是地址"是强信号，纯文字层会把它丢掉——对拍照单据更是如此，
+ * 拍照单据往往没有文字层可抽，只能靠这条路径。
  */
 import { GoogleGenAI, Type } from '@google/genai'
 import type { ParsedPdfLine, SupplierCandidate } from './pdf-line-parser'
@@ -64,7 +66,7 @@ const RESPONSE_SCHEMA = {
   required: ['lines'],
 } as const
 
-const PROMPT = `你在阅读一份采购/供应商单据 PDF（发票、报价单或送货单）。
+const PROMPT = `你在阅读一份采购/供应商单据（发票、报价单或送货单），可能是电子版 PDF，也可能是手机拍的纸质单据照片（可能有褶皱、反光、倾斜、手写批注，尽力识别）。
 
 请只提取"商品明细表格"里的行，明确排除：
 - 单据抬头/页眉页脚里的公司名、地址、电话、税号、邮箱
@@ -141,12 +143,17 @@ export function buildResultFromModelJson(parsed: RawModelJson, suppliers: Suppli
 }
 
 /**
+ * @param mimeType 'application/pdf' | 'image/jpeg' | 'image/png' —— 20260902 起兼容拍照单据。
+ *   同一套 prompt/schema 对图片同样成立：版面结构（表格 vs 表头表尾）是视觉信号，
+ *   不是 PDF 专属的东西，手机拍的纸质发票一样有表头、表格、页脚。
  * @returns 未配置 GEMINI_API_KEY 时返回 { unavailable: true }，调用方应回退到
  *   确定性解析，而不是把这当成"识别出 0 行"处理——两者含义不同。
+ *   ⚠️ 图片没有确定性解析可回退（正则做不了 OCR），调用方需自行处理这种情况。
  */
 export async function parsePdfWithGemini(
-  pdfBuffer: Buffer,
+  fileBuffer: Buffer,
   options: { suppliers: SupplierCandidate[] } = { suppliers: [] },
+  mimeType: string = 'application/pdf',
 ): Promise<AiPdfParseResult | AiPdfParseUnavailable> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
@@ -163,7 +170,7 @@ export async function parsePdfWithGemini(
         role: 'user',
         parts: [
           { text: PROMPT },
-          { inlineData: { mimeType: 'application/pdf', data: pdfBuffer.toString('base64') } },
+          { inlineData: { mimeType, data: fileBuffer.toString('base64') } },
         ],
       }],
       config: {

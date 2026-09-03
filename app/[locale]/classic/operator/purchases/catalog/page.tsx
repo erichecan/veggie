@@ -294,10 +294,10 @@ export default function CatalogPickingPage() {
               <option value="">{isEn ? 'Select a supplier...' : '请选择供应商...'}</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Quotation file (PDF / Excel / CSV)' : '报价单文件（PDF / Excel / CSV）'}</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Quotation file (PDF / Photo / Excel / CSV)' : '报价单文件（PDF / 拍照 / Excel / CSV）'}</label>
             <input
               type="file"
-              accept=".pdf,.xlsx,.xls,.csv"
+              accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
               onChange={e => setFile(e.target.files?.[0] ?? null)}
               className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
             />
