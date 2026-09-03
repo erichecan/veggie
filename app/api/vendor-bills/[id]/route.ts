@@ -4,11 +4,12 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { postVendorBillToJournal, postVendorPaymentToJournal } from '@/lib/accounting'
+import { reconcileVendorBill, type ReconciliationBillLine, type ReconciliationPoLine } from '@/lib/vendor-bill-reconciliation'
 
 /**
  * /api/vendor-bills/[id]
  * ============================================================================
- * GET — 账单详情
+ * GET — 账单详情，含 reconciliation（供应商三单核销，见 lib/vendor-bill-reconciliation.ts）
  * PUT — 状态流转 + 登记付款:
  *   状态机:DRAFT → POSTED → PAID;DRAFT/POSTED → CANCELLED
  *   body: { status?, amountPaid?, notes? }
@@ -27,7 +28,29 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       const p = prisma as any
       const bill = await p.vendorBill.findUnique({ where: { id } })
       if (!bill) return NextResponse.json({ error: '账单不存在' }, { status: 404 })
-      return NextResponse.json(serializeApi(bill))
+
+      let poLines: ReconciliationPoLine[] = []
+      if (bill.purchaseOrderId) {
+        const lines = await p.purchaseOrderLine.findMany({
+          where: { purchaseOrderId: bill.purchaseOrderId },
+          select: { productId: true, orderedQty: true, receivedQty: true },
+        })
+        poLines = lines.map((l: { productId: string | null; orderedQty: unknown; receivedQty: unknown }) => ({
+          productId: l.productId ?? '',
+          orderedQty: Number(l.orderedQty),
+          receivedQty: Number(l.receivedQty),
+        }))
+      }
+      const billLines: ReconciliationBillLine[] = (Array.isArray(bill.lines) ? bill.lines : []).map(
+        (l: { productId?: string; productName?: string; qty?: unknown }) => ({
+          productId: l.productId ?? '',
+          productName: l.productName ?? '',
+          billedQty: Number(l.qty ?? 0),
+        }),
+      )
+      const reconciliation = reconcileVendorBill(poLines, billLines)
+
+      return NextResponse.json({ ...serializeApi(bill), reconciliation })
     } catch (error) {
       console.error('[GET /api/vendor-bills/[id]]', error)
       return NextResponse.json({ error: '获取账单失败' }, { status: 500 })
