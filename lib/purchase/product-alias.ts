@@ -15,8 +15,9 @@ export interface AliasHit {
 }
 
 /**
- * 批量查原文对照。只认还能被采购的商品 —— 商品下架/转成不可采购之后，
+ * 批量查原文对照。只认还能被采购的商品 —— 商品转成不可采购之后，
  * 旧的别名不该继续把人导向一个选不了的商品，那种情况退回正常匹配流程。
+ * 归档（status）不算在内：归档只挡销售端选品，采购端认 canBePurchased。
  */
 export async function findAliasMatches(rawNames: string[]): Promise<Map<string, AliasHit>> {
   const normalizedNames = [...new Set(rawNames.map(normalizeName).filter(Boolean))]
@@ -27,14 +28,14 @@ export async function findAliasMatches(rawNames: string[]): Promise<Map<string, 
     select: {
       normalizedName: true,
       product: {
-        select: { id: true, name: true, status: true, canBePurchased: true },
+        select: { id: true, name: true, canBePurchased: true },
       },
     },
   })
 
   const map = new Map<string, AliasHit>()
   for (const row of rows) {
-    if (row.product.status !== 'ACTIVE' || !row.product.canBePurchased) continue
+    if (!row.product.canBePurchased) continue
     map.set(row.normalizedName, { productId: row.product.id, productName: row.product.name })
   }
   return map

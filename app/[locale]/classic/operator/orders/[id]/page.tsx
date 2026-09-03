@@ -958,7 +958,9 @@ export default function SalesOrderDetailPage() {
               )}
               renderRow={(l, i, { inputCls, dragHandle, deleteButton, focusSearch, firstFieldRef, productCell }) => {
                 const fc = forecastMap.get(l.productId)
-                const cost = Number((l as unknown as { cost?: number }).cost ?? 0)
+                // 历史行(此字段上线前)没有成本快照，null 与真实 €0 要分得开，不能都显示成 0.00
+                const costRaw = (l as unknown as { cost?: number | null }).cost
+                const cost = Number(costRaw ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
                 const isDuplicate = !!l.productId && (duplicateCounts.get(dupKey(l)) ?? 0) > 1
                 return (
@@ -1047,7 +1049,7 @@ export default function SalesOrderDetailPage() {
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
                       ) : Number(l.unitPrice).toFixed(2)}
                     </td>
-                    <td className="px-2 py-2 text-right text-gray-400">{cost.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-gray-400">{costRaw != null ? cost.toFixed(2) : '—'}</td>
                     <td className="px-2 py-2 text-center">
                       {(() => {
                         const badge = formatPriceSourceBadge(l as unknown as { priceSourceType?: string | null; priceSourceDetail?: string | null; priceSourceDate?: string | null }, isEn)

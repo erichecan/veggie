@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { Trash2 } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiPatch, authHeaders } from '@/lib/api'
+import { computeOrderLandedCosts } from '@/lib/purchase-landed-cost'
 import { formatDateOnly } from '@/lib/format-date'
 import { parseStoredQc, lineVerdict, formatQcSummary, QC_REJECT_REASON_LABELS, type QcRejectReason } from '@/lib/purchase/qc'
 import { lineDescription } from '@/lib/order-line-description'
@@ -103,6 +104,7 @@ interface PurchaseOrder {
   totalTax: number
   totalIncTax: number
   totalIncTaxEur?: number | null
+  freightAmount?: number | null
   createdAt: string
   lines: POLine[]
   bills?: POBill[]
@@ -533,6 +535,8 @@ export default function PurchaseDetailPage() {
   const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotalExTax), 0)
   const totalTax = displayLines.reduce((s, l) => s + Number(l.taxAmount), 0)
   const totalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0)
+  // 参考成本/税前小计两列与新建页（purchases/new）对齐：运费按行 subtotal 占比分摊，只做展示，不落库。
+  const landedCosts = computeOrderLandedCosts({ freightAmount: po.freightAmount ?? 0, subtotalExTax }, displayLines)
 
   const supplier = suppliers.find(s => s.id === (editing ? editSupplierId : po.supplierId))
   const supplierName = supplier?.name ?? po.supplierName ?? po.supplierId
@@ -852,8 +856,12 @@ export default function PurchaseDetailPage() {
                       <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Description' : '描述'}</th>
                       <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Qty' : '数量'}</th>
                       <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'UoM' : '单位'}</th>
+                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Reference cost — last known cost price, not saved on this order' : '参考成本价——上次收货成本，仅供对比，不写入本单'}>
+                        {isEn ? 'Cost' : '参考成本'}
+                      </th>
                       <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
                       <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
+                      <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Ex-tax line total incl. allocated freight' : '税前小计 + 分摊运费'}>{isEn ? 'Untaxed Total' : '税前小计'}</th>
                       <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
                       <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                     </tr>
@@ -881,6 +889,12 @@ export default function PurchaseDetailPage() {
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-gray-500 text-xs">{l.uomName || '—'}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-400 text-xs">
+                          {(() => {
+                            const refCost = purchaseProducts.find(p => p.id === l.productId)?.standardPrice
+                            return refCost != null ? Number(refCost).toFixed(2) : '—'
+                          })()}
+                        </td>
                         <td className="px-4 py-2.5 text-right">
                           {editing ? (
                             <input type="number" step="0.01" min="0"
@@ -900,6 +914,9 @@ export default function PurchaseDetailPage() {
                           ) : (
                             <span className="text-gray-600 text-xs">{Number(l.taxRate ?? 0).toFixed(1)}%</span>
                           )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">
+                          {(Number(l.subtotalExTax) + (landedCosts[i]?.allocatedFreight ?? 0)).toFixed(2)}
                         </td>
                         <td className="px-4 py-2.5 text-right">
                           {editing ? (
@@ -924,13 +941,13 @@ export default function PurchaseDetailPage() {
                     ))}
                     {displayLines.length === 0 && (
                       <tr>
-                        <td colSpan={editing ? 9 : 8} className="px-4 py-10 text-center text-gray-400 text-sm">{isEn ? 'No lines yet' : '暂无明细行'}</td>
+                        <td colSpan={editing ? 11 : 10} className="px-4 py-10 text-center text-gray-400 text-sm">{isEn ? 'No lines yet' : '暂无明细行'}</td>
                       </tr>
                     )}
                     {editing && (
                       <tr>
                         <td className="px-2 py-2" />
-                        <td className="px-2 py-2" colSpan={7}>
+                        <td className="px-2 py-2" colSpan={9}>
                           <div className="flex items-center gap-2">
                             <ProductSearchInput
                               value={productQuery}

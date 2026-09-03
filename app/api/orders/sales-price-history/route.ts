@@ -54,6 +54,10 @@ export async function GET(req: Request) {
           orderedQty: true,
           unitPrice: true,
           uomName: true,
+          subtotal: true,
+          // 成交那一刻的成本快照(20260902)，不是今天的商品成本——此字段上线前的
+          // 历史行为 null，前端按"—"展示，不拿今天的成本冒充当时的成本。
+          unitCost: true,
           order: { select: { id: true, code: true, createdAt: true } },
         },
       })
@@ -64,6 +68,9 @@ export async function GET(req: Request) {
         orderNumber: displayOrderCode(l.order),
         quantity: toNum(l.orderedQty),
         unitPrice: toNum(l.unitPrice),
+        // 单价 × 数量的成交总价，同样是落库快照（OrderLine.subtotal），不是现算
+        totalPrice: toNum(l.subtotal),
+        unitCost: l.unitCost != null ? toNum(l.unitCost) : null,
         // 同一商品配了多个可售单位时，单价差得很大——不带单位这个历史价没法看懂
         // 对不对得上，客户 20260826 报过。
         uom: l.uomName || null,

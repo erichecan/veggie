@@ -29,6 +29,25 @@ interface SaleUomOption {
   uomId: string
   uomName: string
   isDefault: boolean
+  /** 1 个此单位 = factor 个基础单位；换算 Cost 到该单位用，跟单价换算同一套系数 */
+  factor: number
+}
+
+interface PriceReferenceEntry {
+  date: string
+  orderId: string
+  orderNumber: string
+  customerName: string | null
+  quantity: number
+  unitPrice: number
+  uom: string | null
+}
+
+interface PriceReference {
+  lastPrices: PriceReferenceEntry[]
+  avgLastPrice: number | null
+  customerCount: number
+  lastPurchase: { unitCost: number; date: string; sourceRef: string | null } | null
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -746,6 +765,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           onSaveNew={item => { saveAndNew(item) }}
           onDiscard={() => setDialogOpen(false)}
           onRemove={isNewItem ? undefined : () => { handleDeleteItem(editingItem.id); setDialogOpen(false) }}
+          pricelistId={id}
           products={products}
           categories={categories}
           uoms={uoms}
@@ -919,7 +939,7 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
 
 function ItemDialog({
   item, onChange, onSaveClose, onSaveNew, onDiscard, onRemove,
-  products, categories, uoms, allLists, isNew, scopeTitle, isEn,
+  pricelistId, products, categories, uoms, allLists, isNew, scopeTitle, isEn,
 }: {
   item: OdooPricelistItem
   onChange: (item: OdooPricelistItem) => void
@@ -927,6 +947,7 @@ function ItemDialog({
   onSaveNew: (item: OdooPricelistItem) => void
   onDiscard: () => void
   onRemove?: () => void
+  pricelistId: string
   products: Product[]
   categories: ProductCategory[]
   uoms: Uom[]
@@ -957,14 +978,14 @@ function ItemDialog({
   useEffect(() => {
     if (!saleUomProductId) { setSaleUomOptions([]); return }
     let cancelled = false
-    apiGet<Array<{ uomId: string; isDefault: boolean; active: boolean; uom: { name: string; nameZh?: string | null } }>>(
+    apiGet<Array<{ uomId: string; isDefault: boolean; active: boolean; factor: number; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${saleUomProductId}/sale-uoms`,
     )
       .then(rows => {
         if (cancelled) return
         setSaleUomOptions(
           rows.filter(r => r.active).map(r => ({
-            uomId: r.uomId, isDefault: r.isDefault,
+            uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor) || 1,
             uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
           })),
         )
@@ -972,6 +993,21 @@ function ItemDialog({
       .catch(() => { if (!cancelled) setSaleUomOptions([]) })
     return () => { cancelled = true }
   }, [saleUomProductId, isEn])
+
+  // 定价参考数据(20260902)：用这条价格表的客户们最近的真实成交价 + 该商品最近一次采购成本。
+  // 只在弹窗打开、选好商品之后拉——不是列表页每行都查，避免价格表条目一多就 N+1。
+  const [priceRef, setPriceRef] = useState<PriceReference | null>(null)
+  const [priceRefLoading, setPriceRefLoading] = useState(false)
+  useEffect(() => {
+    if (!saleUomProductId || pricelistId === 'new') { setPriceRef(null); return }
+    let cancelled = false
+    setPriceRefLoading(true)
+    apiGet<PriceReference>(`/api/pricelists/${pricelistId}/reference?productId=${saleUomProductId}`)
+      .then(r => { if (!cancelled) setPriceRef(r) })
+      .catch(() => { if (!cancelled) setPriceRef(null) })
+      .finally(() => { if (!cancelled) setPriceRefLoading(false) })
+    return () => { cancelled = true }
+  }, [saleUomProductId, pricelistId])
 
   // 优先用刚加载的该商品可售单位列表（更准确、也是同一份数据源），全局 uoms 只是兜底
   // （比如商品还没加载出可售单位列表、但 item.uomId 已经存在于历史数据里的情况）
@@ -1007,6 +1043,27 @@ function ItemDialog({
   const templateCostVal = scopedProduct?.standardPrice ?? 0
   const templatePublicPriceVal = scopedProduct?.listPrice ?? 0
   const costLabel = 'Cost'
+
+  // ── 定价参考(20260902)：成本换算到规则限定的单位 + 预估毛利 + 该商品在其他价格表的价 ──
+  // 这条规则如果限定了某个可售单位(item.uomId)，成本也要跟着换算，否则毛利率会用
+  // "基准单位成本 ÷ 这个单位的价"算出一个没有意义的数字（同类问题在订单侧 20260827 修过）。
+  const uomFactor = item.uomId ? (saleUomOptions.find(o => o.uomId === item.uomId)?.factor ?? 1) : 1
+  const scopedCostVal = templateCostVal * uomFactor
+  const estimatedPrice = scopedProduct
+    ? computeItemPrice(item, scopedProduct, templatePublicPriceVal, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
+    : undefined
+  const marginAmount = estimatedPrice != null ? estimatedPrice - scopedCostVal : null
+  const marginPct = estimatedPrice != null && estimatedPrice > 0 && marginAmount != null
+    ? (marginAmount / estimatedPrice) * 100
+    : null
+  // 同商品在别的价格表里按同样的数量/单位会算出多少钱——防止不同表之间定价倒挂。
+  // allLists 这里已经是父页面过滤掉"当前这张表自己"之后传进来的（见调用处），不用再排除一次。
+  const otherPricelistPrices = scopedProduct
+    ? allLists.map(otherPl => {
+        const r = resolvePrice(scopedProduct, otherPl, allLists, item.minQty || 1, undefined, item.uomId)
+        return { id: otherPl.id, name: otherPl.name, currency: otherPl.currency, price: r.price, isFallback: r.isFallback }
+      })
+    : []
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4">
@@ -1075,7 +1132,12 @@ function ItemDialog({
 
               <div className="flex items-center gap-4 text-sm">
                 <span className="text-gray-600">{costLabel}</span>
-                <span className="text-gray-800">{templateCostVal.toFixed(2)}</span>
+                <span className="text-gray-800">{scopedCostVal.toFixed(2)}</span>
+                {item.uomId && (
+                  <span className="text-[11px] text-gray-400">
+                    {isEn ? '(scaled to selected unit)' : '（已按选定单位换算）'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-4 text-sm mt-1">
                 <span className="text-gray-600">Public Price</span>
@@ -1141,6 +1203,113 @@ function ItemDialog({
               </div>
             </div>
           </div>
+
+          {/* ── Pricing Reference(20260902)：定价时手边就能看到的参考数据，避免瞎猜 ── */}
+          {scopedProduct && (
+            <div className="mb-6 border border-gray-200 rounded-sm overflow-hidden">
+              <div className="px-3 py-1.5 text-xs font-semibold text-gray-600" style={{ background: '#f5f5f5', borderBottom: '1px solid #e5e5e5' }}>
+                {isEn ? 'Pricing Reference' : '定价参考'}
+              </div>
+              <div className="p-3 space-y-3 text-sm">
+                {/* 预估毛利：拿这条规则算出来的 Preview Price 减掉(已按单位换算的)成本 */}
+                <div className="flex items-center gap-4">
+                  <span className="text-gray-600 w-32 flex-shrink-0">{isEn ? 'Est. Margin' : '预估毛利'}</span>
+                  {estimatedPrice != null && marginAmount != null && marginPct != null ? (
+                    <span className={marginAmount < 0 ? 'text-red-600 font-medium' : 'text-gray-800 font-medium'}>
+                      {estimatedPrice.toFixed(2)} − {scopedCostVal.toFixed(2)} = {marginAmount.toFixed(2)}
+                      <span className="text-gray-500 font-normal"> （{marginPct.toFixed(1)}%）</span>
+                    </span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
+                  )}
+                </div>
+
+                {/* 最近一次采购成本：Lot.unitCost，不是移动平均，专治"均价还没反映最新涨价" */}
+                <div className="flex items-center gap-4">
+                  <span className="text-gray-600 w-32 flex-shrink-0">{isEn ? 'Last Purchase Cost' : '最近采购成本'}</span>
+                  {priceRefLoading ? (
+                    <span className="text-gray-300 text-xs">{isEn ? 'Loading…' : '加载中…'}</span>
+                  ) : priceRef?.lastPurchase ? (
+                    <span className="text-gray-800">
+                      {priceRef.lastPurchase.unitCost.toFixed(2)}
+                      <span className="text-gray-400 text-xs ml-1">
+                        ({new Date(priceRef.lastPurchase.date).toLocaleDateString('en-CA')}
+                        {priceRef.lastPurchase.sourceRef ? ` · ${priceRef.lastPurchase.sourceRef}` : ''})
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
+                  )}
+                </div>
+
+                {/* 历史成交价：只看用这条价格表的客户，不是全平台——见接口注释 */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-gray-600">
+                      {isEn ? 'Recent Sales' : '最近成交'}
+                      {priceRef && priceRef.customerCount > 0 && (
+                        <span className="text-gray-400 text-xs ml-1">
+                          {isEn
+                            ? `(customers on this pricelist, ${priceRef.customerCount})`
+                            : `（用这条价格表的 ${priceRef.customerCount} 个客户）`}
+                        </span>
+                      )}
+                    </span>
+                    {priceRef?.avgLastPrice != null && (
+                      <span className="text-xs text-gray-500">
+                        {isEn ? `avg €${priceRef.avgLastPrice.toFixed(2)}` : `均价 €${priceRef.avgLastPrice.toFixed(2)}`}
+                      </span>
+                    )}
+                  </div>
+                  {priceRefLoading ? (
+                    <p className="text-gray-300 text-xs">{isEn ? 'Loading…' : '加载中…'}</p>
+                  ) : !priceRef || priceRef.lastPrices.length === 0 ? (
+                    <p className="text-gray-300 text-xs">
+                      {priceRef && priceRef.customerCount === 0
+                        ? (isEn ? 'No customer uses this pricelist yet' : '还没有客户在用这条价格表')
+                        : (isEn ? 'No sales history yet' : '暂无历史成交记录')}
+                    </p>
+                  ) : (
+                    <div className="border border-gray-100 rounded max-h-32 overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <tbody>
+                          {priceRef.lastPrices.map((h, i) => (
+                            <tr key={h.orderId + i} className="border-b border-gray-50 last:border-0">
+                              <td className="py-1 px-2 text-gray-500 whitespace-nowrap">
+                                {new Date(h.date).toLocaleDateString('en-CA')}
+                              </td>
+                              <td className="py-1 px-2 text-gray-600 truncate max-w-[120px]">{h.customerName ?? '—'}</td>
+                              <td className="py-1 px-2 text-right text-gray-500">{h.quantity.toFixed(2)} {h.uom ?? ''}</td>
+                              <td className="py-1 px-2 text-right text-gray-800 font-medium">€{h.unitPrice.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* 同商品在别的价格表里的价，防止不同表之间倒挂 */}
+                {otherPricelistPrices.length > 0 && (
+                  <div>
+                    <span className="text-gray-600 block mb-1">
+                      {isEn ? 'This Product on Other Pricelists' : '该商品在其他价格表'}
+                    </span>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {otherPricelistPrices.map(p => (
+                        <span key={p.id} className="text-xs" title={p.isFallback ? (isEn ? 'No rule for this product — falls back to public price' : '没有对应规则，回退到牌价') : undefined}>
+                          <span className="text-gray-500">{p.name}:</span>{' '}
+                          <span className={p.isFallback ? 'text-gray-400' : 'text-gray-800 font-medium'}>
+                            {p.currency} {p.price.toFixed(2)}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Price Computation */}
           <div style={{ borderTop: '1px solid #e5e5e5', paddingTop: 16 }}>

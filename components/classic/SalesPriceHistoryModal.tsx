@@ -13,6 +13,10 @@ interface SalesPriceHistoryEntry {
   orderNumber: string
   quantity: number
   unitPrice: number
+  /** 成交总价（unitPrice × quantity 落库快照），不是现算 */
+  totalPrice: number
+  /** 成交那一刻的成本快照；此功能上线前的历史行为 null */
+  unitCost: number | null
   uom: string | null
 }
 
@@ -126,6 +130,10 @@ function SalesPriceHistoryModal({
                   <th className="text-right font-medium py-2 px-2">{isEn ? 'Quantity' : '数量'}</th>
                   <th className="text-left font-medium py-2 px-2">{isEn ? 'Unit' : '单位'}</th>
                   <th className="text-right font-medium py-2 px-2">{isEn ? 'Unit Price' : '单价'}</th>
+                  <th className="text-right font-medium py-2 px-2">{isEn ? 'Total' : '总价'}</th>
+                  <th className="text-right font-medium py-2 px-2" title={isEn ? 'Cost at the time of this sale' : '成交那一刻的成本快照'}>
+                    {isEn ? 'Cost' : '成本'}
+                  </th>
                   {onSelectPrice && <th className="py-2 px-2"></th>}
                 </tr>
               </thead>
@@ -150,6 +158,8 @@ function SalesPriceHistoryModal({
                     <td className="py-1.5 px-2 text-right">{h.quantity.toFixed(3)}</td>
                     <td className="py-1.5 px-2 text-gray-500">{h.uom ?? '—'}</td>
                     <td className="py-1.5 px-2 text-right font-medium">{h.unitPrice.toFixed(2)}</td>
+                    <td className="py-1.5 px-2 text-right">{h.totalPrice.toFixed(2)}</td>
+                    <td className="py-1.5 px-2 text-right text-gray-500">{h.unitCost != null ? h.unitCost.toFixed(2) : '—'}</td>
                     {onSelectPrice && (
                       <td className="py-1.5 px-2 text-right">
                         <button

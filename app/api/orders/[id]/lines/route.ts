@@ -107,6 +107,8 @@ export async function POST(
           taxRate: taxRate != null ? Number(taxRate) : null,
           sequence: sequence ?? 0,
           commissionPrice,
+          // 采购成本快照(20260902)：该行选用单位下的 Product.standardPrice
+          unitCost: resolved.unitCost,
           priceSourceType: resolved.manualOverride ? 'MANUAL' : resolved.resolution.sourceType.toUpperCase(),
           priceSourceDetail: resolved.manualOverride
             ? `手动改价（价格表价 €${resolved.authoritativeUnitPrice.toFixed(2)}）`

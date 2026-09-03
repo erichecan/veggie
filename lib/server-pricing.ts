@@ -23,7 +23,7 @@ import type {
 import { resolveCustomerPrice, type PriceResolution } from './pricing-engine'
 import { priceOf, commissionPriceOf, type SaleUomPriceMode } from './sale-uom'
 import { SALE_ORDER_STATUSES } from './order-status'
-import { toNum, toNumOpt } from './decimal-helpers'
+import { toNum, toNumOpt, round2 } from './decimal-helpers'
 
 // ─── 价格校验容差 ─────────────────────────────────────────────────────────────
 //
@@ -63,6 +63,12 @@ export interface ResolvedLine {
    * 单位换算（factor/FIXED override/FORMULA 折扣加价）已经在这里算完，跟价格是同一套机制。
    */
   resolvedCommissionPrice: number | null
+  /**
+   * 该行在其选用单位下的采购成本快照（20260902）。落库到 OrderLine.unitCost，
+   * 之后订单/报价单详情页与"历史成交价"弹窗的成本都读这个字段，不再实时现算——
+   * 历史订单要看的是"当时"的成本，不是打开页面那一刻商品"今天"的成本。
+   */
+  unitCost: number
 }
 
 export interface PricingContext {
@@ -408,6 +414,19 @@ export async function resolveOrderLines(
     )
   }
 
+  /**
+   * 把"基准单位"成本（Product.standardPrice，收货时按加权平均从采购单回写）换算成
+   * 行选单位的成本，落库到 OrderLine.unitCost —— 这行价是多少，成本就该按同一个单位算，
+   * 不能拿整箱成本去对每公斤单价。跟价格/提成不同：成本是单纯的单位换算，不走价格表的
+   * FIXED/FORMULA 规则（那是"卖多少钱"的政策，不是"进价换算成什么单位"），所以只用 factor。
+   */
+  function scaleCost(productId: string, anchorUomId: string | null, lineUomId: string | undefined, baseStandardPrice: number): number {
+    if (!lineUomId || !anchorUomId || lineUomId === anchorUomId) return baseStandardPrice
+    const saleUom = saleUomMap.get(`${productId}::${lineUomId}`)
+    if (!saleUom) return baseStandardPrice
+    return baseStandardPrice * toNum(saleUom.factor)
+  }
+
   const lines: ResolvedLine[] = []
   const warnings: string[] = []
   let total = 0
@@ -519,6 +538,7 @@ export async function resolveOrderLines(
     const resolvedCommissionPrice = scaleAuthoritativeCommission(
       dbProduct.id, dbProduct.uomId, item.uomId, productForEngine.commissionPrice ?? null,
     )
+    const unitCost = round2(scaleCost(dbProduct.id, dbProduct.uomId, item.uomId, productForEngine.standardPrice ?? 0))
 
     lines.push({
       productId: dbProduct.id,
@@ -546,6 +566,7 @@ export async function resolveOrderLines(
       // 而后台创建的 1444/1446 行都有值。后果不是显示难看，是**开票时按 0 计税**。
       taxRate: normalizeTaxRate(item.taxRate ?? productForEngine.customerTaxRate),
       resolvedCommissionPrice,
+      unitCost,
     })
   }
 

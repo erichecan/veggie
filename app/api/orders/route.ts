@@ -339,6 +339,9 @@ export async function POST(req: Request) {
                     // 20260901：commissionPrice 已在 resolveOrderLines 里按该行选用单位折算好
                     // （factor / FIXED override / FORMULA 折扣加价，跟价格同一套机制）
                     commissionPrice: l.resolvedCommissionPrice ?? null,
+                    // 采购成本快照(20260902)：该行选用单位下的 Product.standardPrice，
+                    // 之后详情页 Cost 列与"历史成交价"弹窗都读这个，不再实时现算
+                    unitCost: l.unitCost,
                     // 单价来源快照：服务端权威定价(resolveOrderLines)算出的 sourceType，
                     // 供订单详情页"Price"列 hover 展示来源，历史订单没有这三个字段
                     priceSourceType: l.manualOverride ? 'MANUAL' : l.resolution.sourceType.toUpperCase(),

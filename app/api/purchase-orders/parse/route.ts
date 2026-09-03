@@ -90,7 +90,9 @@ export async function POST(req: Request) {
           select: { id: true, name: true },
         }),
         prisma.product.findMany({
-          where: { canBePurchased: true, status: 'ACTIVE' },
+          // 归档只影响能不能被销售选中，不影响能不能被采购——
+          // 只要 canBePurchased 还开着，供应商单据里的写法就该继续匹配得上。
+          where: { canBePurchased: true },
           select: { id: true, name: true, internalRef: true },
         }),
       ])
