@@ -123,6 +123,8 @@ export async function POST(req: Request) {
           type: data.type !== undefined ? String(data.type).toUpperCase() : undefined,
           variantAttributes: data.variantAttributes ?? [],
           images: data.images ?? [],
+          createdBy: user.name || user.email,
+          updatedBy: user.name || user.email,
         },
       })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,

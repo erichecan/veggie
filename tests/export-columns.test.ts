@@ -71,8 +71,8 @@ test('日期用 yyyy-mm-dd，不用会被 Excel 猜错月日的 dd/mm/yyyy', () 
   assert.equal(byHeader({ updatedAt: 'not a date' }, 'Last Updated on'), '')
 })
 
-test('创建人/修改人空值回落 Administrator，与屏幕一致', () => {
-  assert.equal(byHeader({}, 'Created by'), 'Administrator')
+test('创建人/修改人空值留空（不编造 Administrator），与屏幕一致', () => {
+  assert.equal(byHeader({}, 'Created by'), '')
   assert.equal(byHeader({ updatedBy: 'eric' }, 'Last Updated by'), 'eric')
 })
 

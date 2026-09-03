@@ -76,8 +76,10 @@ export const PRODUCT_TEMPLATE_EXPORT_COLUMNS: readonly ExportColumn<ProductExpor
   { header: 'Unit of Measure', get: r => r.uomName ?? '' },
   { header: 'Product Type', get: r => TYPE_LABEL[String(r.type ?? '').toLowerCase()] ?? (r.type ?? '') },
   { header: 'Commission Price (€)', get: r => fixed(r.commissionPrice, 2) },
-  { header: 'Created by', get: r => r.createdBy ?? 'Administrator' },
+  // 曾经空值回落写死的 'Administrator'，与列表页一样是编造的假身份（20260902 客户反馈实测
+  // 编辑记录里的更新人从未回写，屏幕上却显示这个不存在的人）。与其余空字段一致，留空。
+  { header: 'Created by', get: r => r.createdBy ?? '' },
   { header: 'Created on', get: r => isoDate(r.createdAt) },
-  { header: 'Last Updated by', get: r => r.updatedBy ?? 'Administrator' },
+  { header: 'Last Updated by', get: r => r.updatedBy ?? '' },
   { header: 'Last Updated on', get: r => isoDate(r.updatedAt) },
 ]

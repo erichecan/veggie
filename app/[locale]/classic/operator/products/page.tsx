@@ -436,9 +436,9 @@ export default function ClassicProductsPage() {
       key: 'createdBy',
       label: 'Created by',
       filterType: 'multi-select',
-      filterOptions: multiSelectOptions.createdBy.map(v => ({ value: v, label: v || 'Administrator' })),
-      filterLabelGetter: (val) => val || 'Administrator',
-      render: (v) => <span className="text-xs text-gray-500">{String(v || 'Administrator')}</span>,
+      filterOptions: multiSelectOptions.createdBy.map(v => ({ value: v, label: v || emptyLabel })),
+      filterLabelGetter: (val) => val || emptyLabel,
+      render: (v) => <span className="text-xs text-gray-500">{v ? String(v) : <span className="text-gray-300">—</span>}</span>,
     },
     {
       key: 'createdAt',
@@ -452,9 +452,12 @@ export default function ClassicProductsPage() {
       width: 92,
       label: 'Last Updated by',
       filterType: 'multi-select',
-      filterOptions: multiSelectOptions.updatedBy.map(v => ({ value: v, label: v || 'Administrator' })),
-      filterLabelGetter: (val) => val || 'Administrator',
-      render: (v) => <span className="text-xs text-gray-500">{String(v || 'Administrator')}</span>,
+      // ⛔ 这里曾经把空值兜底显示成写死的 'Administrator'——PUT /api/products/[id] 此前从不回写
+      // 这个字段，编辑商品的人显示的却是一个不存在的固定假名，误导排查（20260902 客户反馈）。
+      // 现在 PUT/POST 已补上真实写入，这里的兜底改回诚实的"空"，不再编造身份。
+      filterOptions: multiSelectOptions.updatedBy.map(v => ({ value: v, label: v || emptyLabel })),
+      filterLabelGetter: (val) => val || emptyLabel,
+      render: (v) => <span className="text-xs text-gray-500">{v ? String(v) : <span className="text-gray-300">—</span>}</span>,
     },
     {
       key: 'updatedAt',

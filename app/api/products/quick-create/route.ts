@@ -30,6 +30,8 @@ export async function POST(req: Request) {
           canBeSold: false,
           canBePurchased: true,
           status: 'ACTIVE',
+          createdBy: user.name || user.email,
+          updatedBy: user.name || user.email,
         },
       })
 

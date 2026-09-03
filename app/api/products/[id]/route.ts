@@ -59,6 +59,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           type: data.type !== undefined ? String(data.type).toUpperCase() : undefined,
           variantAttributes: data.variantAttributes ?? undefined,
           images: data.images ?? undefined,
+          // 只是导入时的一次性快照，此前编辑商品从不回写，"最后更新人"永远停在
+          // Odoo 导入那一刻的值——哪怕 updatedAt 已经变了。以当前登录用户为准，
+          // 不接受客户端传入（...data 展开在前，这里覆盖，越权改不了别人名字）。
+          updatedBy: user.name || user.email,
         },
       })
       const changes = diffChanges(
