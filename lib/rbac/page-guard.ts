@@ -16,6 +16,7 @@
  */
 import { decodePermissions } from './bitmap'
 import { PAGE_ROUTE_RULES, requiredPermissionsFor } from './route-map'
+import { ROLE_HOME } from '../role-access'
 
 export interface GuardSession {
   role?: string | null
@@ -51,4 +52,36 @@ export function canEnterPage(
         ? [String(session.role)]
         : []
   return own.some((r) => legacyRoles.includes(r))
+}
+
+/** 有 quotations 页面权限（page.operator.access）的预置角色，供旧会话（无位图）兜底判断用 */
+const QUOTATIONS_LEGACY_ROLES = ['OPERATOR', 'BOSS', 'SALES', 'EXTERNAL_SALES'] as const
+
+const QUOTATIONS_PATH = '/classic/operator/quotations'
+
+/** 所有角色都能进的公共页面，作为兜底的兜底（既没有 quotations 权限，角色也没配 ROLE_HOME） */
+const UNIVERSAL_FALLBACK_PATH = '/classic/bulletin'
+
+/**
+ * 登录 / 打开首页后该落到哪个页面：优先 quotations（有权限就去），没有权限
+ * 再退到该角色自己的主页（`lib/role-access.ts` 的 `ROLE_HOME`），再没有就退到信息广场。
+ *
+ * 与 `canEnterPage` 用同一张权限表判断，不按角色名单硬编码 —— 一个角色是否落地 quotations
+ * 完全取决于它有没有 `page.operator.access`，改角色权限配置不用来改这里的路径表。
+ *
+ * @param pagePrefix locale 前缀（如 `/zh`），根路径场景传 `''`
+ */
+export function getDefaultLandingPath(
+  session: GuardSession | null | undefined,
+  pagePrefix: string,
+): string {
+  if (!session) return `${pagePrefix}/enter`
+
+  if (canEnterPage(session, QUOTATIONS_PATH, QUOTATIONS_LEGACY_ROLES)) {
+    return `${pagePrefix}${QUOTATIONS_PATH}`
+  }
+
+  const role = session.role ? String(session.role) : undefined
+  const home = role ? ROLE_HOME[role] : undefined
+  return `${pagePrefix}${home ?? UNIVERSAL_FALLBACK_PATH}`
 }

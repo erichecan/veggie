@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { getDefaultLandingPath } from '@/lib/rbac/page-guard'
 
 export default function EnterPage() {
   const router = useRouter()
@@ -10,19 +11,6 @@ export default function EnterPage() {
   const t = useTranslations('enter')
 
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
-
-  const ROLE_PATHS: Record<string, string> = {
-    OPERATOR: `${prefix}/classic/operator/quotations`,
-    RESTAURANT: `${prefix}/customer-portal`,
-    SORTER: `${prefix}/classic/sorter`,
-    DRIVER: `${prefix}/classic/driver`,
-    BOSS: `${prefix}/classic/boss`,
-    FINANCE: `${prefix}/classic/accounting`,
-    WAREHOUSE: `${prefix}/classic/warehouse`,
-    // 现网 SALES 账号全部兼任 OPERATOR（见 lib/rbac/page-guard.ts 注释），落地页同 OPERATOR。
-    // 缺这一条时 data.user.role === 'SALES' 落进 ?? `${prefix}/`，再被首页的同名兜底弹回 /enter。
-    SALES: `${prefix}/classic/operator/quotations`,
-  }
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -59,7 +47,7 @@ export default function EnterPage() {
         router.replace(`${prefix}/change-password?forced=1`)
         return
       }
-      router.replace(ROLE_PATHS[data.user.role] ?? `${prefix}/`)
+      router.replace(getDefaultLandingPath(data.user, prefix))
     } catch {
       setError(t('networkError'))
     } finally {
