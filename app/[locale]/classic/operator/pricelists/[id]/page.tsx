@@ -14,10 +14,11 @@ import { resolvePrice, computeItemPrice } from '@/lib/pricing-engine'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ActionLogPanel from '@/components/shared/action-log-panel'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
+import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
 
 const PURPLE = '#875A7B'
 const PURPLE_LIGHT = '#f3eff5'
-const ITEMS_PAGE_SIZE = 40
+const ITEMS_PAGE_SIZE_DEFAULT = 40
 
 interface Uom {
   id: string
@@ -157,6 +158,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
   const [editMode, setEditMode] = useState(searchParams.get('new') === '1')
   const [itemPage, setItemPage] = useState(1)
+  const [itemPageSize, setItemPageSize] = useState(ITEMS_PAGE_SIZE_DEFAULT)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<OdooPricelistItem | null>(null)
@@ -322,6 +324,30 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     }
   }
 
+  /**
+   * 条目没有独立的排序表，`sequence` 就是唯一的顺序依据；新建条目一律给固定的
+   * `sequence: 10`（见 emptyItem），多条目挤在同一个值上时上/下移单纯交换两条的
+   * sequence 不足以稳定改变显示顺序。所以每次移动都按"当前显示顺序"整体重新
+   * 编号（10/20/30…），跟 Odoo 里拖拽排序后重新分配 sequence 是同一个思路。
+   */
+  async function moveItem(itemId: string, direction: 'up' | 'down') {
+    if (!pl) return
+    const ordered = [...pl.items].sort((a, b) => a.sequence - b.sequence)
+    const idx = ordered.findIndex(i => i.id === itemId)
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (idx === -1 || targetIdx < 0 || targetIdx >= ordered.length) return
+    ;[ordered[idx], ordered[targetIdx]] = [ordered[targetIdx], ordered[idx]]
+    const renumbered = ordered.map((it, i) => ({ ...it, sequence: (i + 1) * 10 }))
+    const updated = { ...pl, items: renumbered, updatedAt: new Date().toISOString() }
+    try {
+      await apiPut(`/api/pricelists/${pl.id}`, updated)
+      setPl(updated)
+      setOriginalPl(updated)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Reorder failed' : '排序失败'))
+    }
+  }
+
   function addCountryGroup() {
     const name = cgInput.trim()
     if (!name) return
@@ -348,10 +374,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
   const sortedItems = [...pl.items].sort((a, b) => a.sequence - b.sequence)
   const totalItems = sortedItems.length
-  const itemFrom = (itemPage - 1) * ITEMS_PAGE_SIZE + 1
-  const itemTo = Math.min(itemPage * ITEMS_PAGE_SIZE, totalItems)
-  const pagedItems = sortedItems.slice((itemPage - 1) * ITEMS_PAGE_SIZE, itemPage * ITEMS_PAGE_SIZE)
-  const itemTotalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PAGE_SIZE))
+  const pagedItems = sortedItems.slice((itemPage - 1) * itemPageSize, itemPage * itemPageSize)
 
   const countryGroups: string[] = Array.isArray(pl.countryGroups) ? pl.countryGroups as string[] : []
 
@@ -661,19 +684,13 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                 Pricelist Items
               </span>
               {totalItems > 0 && (
-                <div className="flex items-center gap-1 text-xs text-gray-500">
-                  <span>{totalItems > 0 ? `${itemFrom}-${itemTo}` : '0'} / {totalItems}</span>
-                  <button
-                    onClick={() => setItemPage(p => Math.max(1, p - 1))}
-                    disabled={itemPage <= 1}
-                    className="w-5 h-5 flex items-center justify-center rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                  >‹</button>
-                  <button
-                    onClick={() => setItemPage(p => Math.min(itemTotalPages, p + 1))}
-                    disabled={itemPage >= itemTotalPages}
-                    className="w-5 h-5 flex items-center justify-center rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                  >›</button>
-                </div>
+                <RowsPerPagePagination
+                  total={totalItems}
+                  page={itemPage}
+                  pageSize={itemPageSize}
+                  onPageChange={setItemPage}
+                  onPageSizeChange={ps => { setItemPageSize(ps); setItemPage(1) }}
+                />
               )}
             </div>
             <div className="overflow-x-auto">
@@ -686,22 +703,22 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <th className="text-left px-3 py-2 font-medium text-gray-600">End Date</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-600">Product Category</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-600 min-w-[160px]">Price</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Preview Price</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Price Discount</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Variant Cost</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Template Cost</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Public Cost Price</th>
                     <th className="text-right px-3 py-2 font-medium text-gray-600">Sale Price</th>
-                    {editMode && <th className="w-8 px-3 py-2" />}
+                    {editMode && <th className="w-20 px-3 py-2" />}
                   </tr>
                 </thead>
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 13 : 12} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
+                      <td colSpan={editMode ? 12 : 11} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
                     </tr>
                   )}
                   {pagedItems.map(item => {
+                    const globalIdx = sortedItems.findIndex(i => i.id === item.id)
                     const scopedProduct = products.find(p => p.id === scopedProductId(item))
                     // 20260828 客户拍板：合表重构后 template/variant 已经是同一份数据，
                     // Variant Cost / Template Cost / Public Cost Price 三列都取同一个
@@ -729,6 +746,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
+                        canMoveUp={globalIdx > 0}
+                        canMoveDown={globalIdx < totalItems - 1}
+                        onMoveUp={() => moveItem(item.id, 'up')}
+                        onMoveDown={() => moveItem(item.id, 'down')}
                         isEn={isEn}
                       />
                     )
@@ -851,7 +872,7 @@ function ExternalLinkIcon() {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, isEn }: {
+function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isEn }: {
   item: OdooPricelistItem
   products: Product[]
   categories: ProductCategory[]
@@ -863,13 +884,20 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
   showDelete: boolean
   onEdit: () => void
   onDelete: () => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
   isEn: boolean
 }) {
   const [hover, setHover] = useState(false)
   const scopedUom = uomScopeLabel(item, uoms, isEn)
 
-  // Price 列只放规则本身的定义（跟 Odoo 一致——公式/固定价/折扣文字），
-  // 算出来的具体金额挪到 Preview Price 单独一列，两者不再挤在一个格子里。
+  // ⛔ 20260903 客户反馈：percentage/formula 模式下 Price 列只放公式文字（"5% 折扣"），
+  // 实际卖多少钱藏在很靠右的 Preview Price 列——手机上要横向滚很远才看得到，
+  // 等于"没显示"。现在两列合一：能算出具体金额（scopedProduct 存在）就把金额放前面、
+  // 公式文字降级成下面一行小字说明；算不出来（分类/全场规则，没有单一商品可套算）
+  // 才继续显示公式文字兜底，因为这类规则本来就没有"唯一一个真实价格"可给。
   const priceText = item.computeType === 'fixed'
     ? `€${(item.fixedPrice ?? 0).toFixed(2)}`
     : item.computeType === 'percentage'
@@ -907,9 +935,13 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
       <td className="px-3 py-1.5 text-gray-500">{item.dateStart ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{item.dateEnd ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{productCategoryLabel}</td>
-      <td className="px-3 py-1.5 text-gray-800">{priceText}</td>
-      <td className="px-3 py-1.5 text-right text-gray-800">
-        {estimatedPrice != null ? `€${estimatedPrice.toFixed(2)}` : ''}
+      <td className="px-3 py-1.5 text-gray-800">
+        {item.computeType !== 'fixed' && estimatedPrice != null ? (
+          <>
+            <div className="font-medium text-gray-900">€{estimatedPrice.toFixed(2)}</div>
+            <div className="text-[10px] text-gray-400">{priceText}</div>
+          </>
+        ) : priceText}
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
         {priceDiscountValue != null ? priceDiscountValue.toFixed(2) : ''}
@@ -927,8 +959,28 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
         {publicPrice != null ? publicPrice.toFixed(2) : ''}
       </td>
       {showDelete && (
-        <td className="px-3 py-1.5 text-center" onClick={e => { e.stopPropagation(); onDelete() }}>
-          <span className="text-gray-300 hover:text-red-400 text-base leading-none cursor-pointer select-none">🗑</span>
+        <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-center gap-1.5">
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+              title={isEn ? 'Move up' : '上移'}
+              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
+            >▲</button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              title={isEn ? 'Move down' : '下移'}
+              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
+            >▼</button>
+            <span
+              onClick={onDelete}
+              title={isEn ? 'Delete' : '删除'}
+              className="text-gray-300 hover:text-red-400 text-base leading-none cursor-pointer select-none"
+            >🗑</span>
+          </div>
         </td>
       )}
     </tr>
