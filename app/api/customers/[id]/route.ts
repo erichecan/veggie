@@ -75,6 +75,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // 则这五个字段会被 Prisma 忽略（不会报错）。
       const updateData: Record<string, unknown> = {
         ...data,
+        // 不接受客户端传入，越权改不了别人名字（同 products 路由的写法）
+        updatedBy: user.name || user.email,
         specialPrices: specialPrices?.length
           ? { create: specialPrices.map(({ id: _id, customerId: _cid, ...sp }: Record<string, unknown>) => sp) }
           : undefined,

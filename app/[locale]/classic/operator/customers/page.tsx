@@ -27,6 +27,7 @@ export default function ClassicCustomersPage() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const isEn = locale !== routing.defaultLocale
   const PAYMENT_LABELS = isEn ? PAYMENT_LABELS_EN : PAYMENT_LABELS_ZH
+  const emptyLabel = isEn ? '(empty)' : '（空）'
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [pricelists, setPricelists] = useState<OdooPricelist[]>([])
@@ -58,12 +59,21 @@ export default function ClassicCustomersPage() {
   }
   const [groupBy, setGroupBy] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  // 列头日期区间筛选(Last Updated on)，转成 cf_<key>_from/_to 参数，与商品页同一套惯例
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  // Last Updated by 下拉选项：去重历史值，同商品页 /api/products/filter-options 的模式
+  const [updatedByOptions, setUpdatedByOptions] = useState<string[]>([])
 
   // OdooTable 列 key → 后端 cfm_* 参数名（primaryPricelistId 是前端派生列，落地时映射回真实字段名）
   const CFM_PARAM_NAME: Record<string, string> = { primaryPricelistId: 'cfm_pricelistId', priceType: 'cfm_priceType' }
   function applyColumnMultiFilters(params: URLSearchParams) {
     for (const [key, vals] of Object.entries(columnMultiFilters)) {
       if (vals && vals.length > 0) params.set(CFM_PARAM_NAME[key] ?? `cfm_${key}`, vals.join(','))
+    }
+  }
+  function applyColumnFilters(params: URLSearchParams) {
+    for (const [key, val] of Object.entries(columnFilters)) {
+      if (val) params.set(`cf_${key}`, val)
     }
   }
 
@@ -78,6 +88,7 @@ export default function ClassicCustomersPage() {
       if (includeArchived) params.set('includeArchived', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
+      applyColumnFilters(params)
       return params
     },
     fallbackFilename: isEn ? 'customers.csv' : '客户.csv',
@@ -92,6 +103,7 @@ export default function ClassicCustomersPage() {
       if (archived) params.set('includeArchived', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
+      applyColumnFilters(params)
       const res = await apiGet<{ data: Customer[]; total: number; page: number; pageSize: number }>(`/api/customers?${params}`)
       setCustomers(res.data)
       setTotal(res.total)
@@ -107,11 +119,12 @@ export default function ClassicCustomersPage() {
   useEffect(() => {
     loadPage(1, searchInput, paymentFilter, includeArchived)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facets, columnMultiFilters])
+  }, [facets, columnMultiFilters, columnFilters])
 
   useEffect(() => {
     loadPage(1, '', paymentFilter, includeArchived)
     apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d.filter(pl => pl.active) : [])).catch(() => {})
+    apiGet<{ updatedBy: string[] }>('/api/customers/filter-options').then(d => setUpdatedByOptions(d.updatedBy ?? [])).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeArchived])
 
@@ -200,6 +213,21 @@ export default function ClassicCustomersPage() {
         </span>
       ),
     },
+    {
+      key: 'updatedBy',
+      label: isEn ? 'Last Updated by' : '最后修改人',
+      filterType: 'multi-select',
+      filterOptions: updatedByOptions.map(v => ({ value: v, label: v || emptyLabel })),
+      filterLabelGetter: (val) => val || emptyLabel,
+      render: (v) => <span className="text-xs text-gray-500">{v ? String(v) : <span className="text-gray-300">—</span>}</span>,
+    },
+    {
+      key: 'updatedAt',
+      label: isEn ? 'Last Updated on' : '最后修改时间',
+      sortable: true,
+      filterType: 'date-range',
+      render: (v) => v ? <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB')}</span> : <span className="text-gray-400">—</span>,
+    },
   ]
 
   const activeFilters = [
@@ -257,7 +285,7 @@ export default function ClassicCustomersPage() {
         }}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, paymentFilter, includeArchived, groupBy, facets, columnMultiFilters }}
+        favouriteState={{ searchInput, paymentFilter, includeArchived, groupBy, facets, columnMultiFilters, columnFilters }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           const pf = String(s.paymentFilter ?? '')
@@ -267,6 +295,7 @@ export default function ClassicCustomersPage() {
           // 分面搜索(名称/城市/地址/电话/邮箱/税号/业务员)与列头筛选此前没进收藏，同商品页那个坑
           setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
           setColumnMultiFilters((s.columnMultiFilters as Record<string, string[]>) ?? {})
+          setColumnFilters((s.columnFilters as Record<string, string>) ?? {})
           loadPage(1, String(s.searchInput ?? ''), pf, Boolean(s.includeArchived))
         }}
         storageKey="classic_customers_favs"
@@ -304,6 +333,8 @@ export default function ClassicCustomersPage() {
               return next
             })
           }}
+          columnFilters={columnFilters}
+          onColumnFilterChange={(key, val) => setColumnFilters(prev => ({ ...prev, [key]: val }))}
           loading={loading}
           selected={selected}
           onSelectAll={checked => {

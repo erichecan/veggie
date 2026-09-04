@@ -96,6 +96,8 @@ export async function POST(req: Request) {
       const customer = await prisma.customer.create({
         data: {
           ...data,
+          // 不接受客户端传入，越权改不了别人名字（同 products 路由的写法）
+          updatedBy: user.name || user.email,
           specialPrices: specialPrices?.length
             ? { create: specialPrices.map(({ id: _id, customerId: _cid, ...sp }: any) => sp) }
             : undefined,

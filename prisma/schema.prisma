@@ -456,6 +456,9 @@ model Customer {
   /// 司机送货给此客户的固定佣金（EUR / 单）
   commissionFixed     Decimal?               @db.Decimal(10, 2)
   createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  /// 最后修改人（自由文本，同 Product.updatedBy 的模式，不关联 User 表）
+  updatedBy           String?
   externalId          String?                @unique
   city                String?
   notes               String?
@@ -498,6 +501,7 @@ model Customer {
   @@index([isVendor])
   @@index([defaultDriverSlotId])
   @@index([salesUserId])
+  @@index([updatedAt])
 }
 
 /**

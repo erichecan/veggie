@@ -61,6 +61,21 @@ export async function buildCustomersWhere(
     const vals = cfmPricelistId.split(',').filter(Boolean)
     if (vals.length > 0) where.pricelists = { some: { pricelistId: { in: vals } } }
   }
+  const cfmUpdatedBy = searchParams.get('cfm_updatedBy')
+  if (cfmUpdatedBy) {
+    const vals = cfmUpdatedBy.split(',').filter(Boolean)
+    if (vals.length > 0) where.updatedBy = { in: vals }
+  }
+
+  // 列头日期区间筛选(cf_<field>_from/_to)，同 lib/products-query.ts 惯例
+  const updatedFrom = searchParams.get('cf_updatedAt_from')
+  const updatedTo = searchParams.get('cf_updatedAt_to')
+  if (updatedFrom || updatedTo) {
+    where.updatedAt = {
+      ...(updatedFrom ? { gte: new Date(updatedFrom + 'T00:00:00Z') } : {}),
+      ...(updatedTo ? { lte: new Date(updatedTo + 'T23:59:59Z') } : {}),
+    }
+  }
 
   // 购买频次：近30天订单数 >= N
   // Order.restaurantId → User.id (RESTAURANT role) → User.customerId → Customer.id

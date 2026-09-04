@@ -211,6 +211,9 @@ export interface Customer {
   creditLimit?: number
   commissionRate?: number
   createdAt: string
+  updatedAt?: string
+  /** 最后修改人（自由文本，同 Product.updatedBy 的模式，不关联 User 表） */
+  updatedBy?: string | null
   isActive?: boolean
   // Odoo 对齐
   externalId?: string
