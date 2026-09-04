@@ -98,7 +98,12 @@ export async function POST(
           productId,
           productName: resolved.productName,
           uomId: uomId ?? null,
-          uomName: uomName ?? UNSET_UOM_LABEL,
+          // ⛔ 不直接信前端传的 uomName——它是按操作员当时的界面语言现算的中/英文本，
+          // 同一个 uomId 会因为不同订单在不同语言环境下追加/编辑，快照出"1公斤"/"1KG"这种
+          // 一中一英的不一致文本（20260904 客户反馈：History price 弹窗同一商品的历史行 Unit
+          // 列中英文混显，看着像两个不同单位）。改用 resolveOrderLines 按 uomId 解析出的正式
+          // 名（resolved.uomName），与 POST /api/orders 新建订单那条路径保持一致。
+          uomName: resolved.uomName ?? UNSET_UOM_LABEL,
           unitPrice: resolved.finalUnitPrice,
           orderedQty: Number(orderedQty),
           deliveredQty: 0,

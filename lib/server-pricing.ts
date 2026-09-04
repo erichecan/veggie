@@ -473,27 +473,22 @@ export async function resolveOrderLines(
     const normalizedPriceType = (effectiveCustomer.priceType ?? 'multi').toLowerCase()
     let lastPrice: number | undefined
     let lastPriceDate: Date | undefined
-    let lastPriceMatchedUom = false
     if (normalizedPriceType === 'last' || normalizedPriceType === 'multi') {
       // ⛔ 20260827 修：先按这一行选用的单位精确匹配历史成交价——不同可售单位（箱/公斤/500g）
       // 单价天差地别，直接拿"最近一笔、不管哪个单位"当基准单位价去换算，会把小单位的
       // 历史价当整箱价用，越算越离谱（客户 20260827 反馈价格低于成本，见 docs 排查记录）。
-      // 该单位从没成交过时，退回按商品基准单位查——这样查到的才真是 scaleAuthoritativePrice
-      // 期望的"基准单位价"，换算链路与改造前一致。
+      //
+      // 20260904 进一步澄清：该单位从没成交过时，也**不**退回查商品基准单位的历史价再折算——
+      // 每个可售单位的定价（含成本）在"商品详情"里各自独立配置好了，单位之间的历史成交价
+      // 互不相关，拿基准单位的成交价顶替非基准单位（哪怕只是折算）依然是"拿一个单位的价格
+      // 冒充另一个单位"，跟 20260827 那次要修的问题是同一类错误，只是换了个更隐蔽的形式。
+      // 查不到这个单位自己的历史价，就老老实实回退到 resolveCustomerPrice 的牌价/价格表兜底
+      // （下面 lastPrice 留 undefined 即可触发），不再有第二级回退。
       const exact = item.uomId
         ? await queryLastSoldPriceWithDate(ctx.prisma, customer.id, item.productId, item.uomId)
         : undefined
-      if (exact) {
-        lastPrice = exact.price
-        lastPriceDate = exact.date
-        lastPriceMatchedUom = true
-      } else {
-        const fallback = await queryLastSoldPriceWithDate(
-          ctx.prisma, customer.id, item.productId, dbProduct.uomId ?? undefined,
-        )
-        lastPrice = fallback?.price
-        lastPriceDate = fallback?.date
-      }
+      lastPrice = exact?.price
+      lastPriceDate = exact?.date
     }
 
     const resolution = resolveCustomerPrice(
@@ -503,7 +498,7 @@ export async function resolveOrderLines(
       qty,
       lastPrice,
       item.uomId,
-      lastPriceMatchedUom,
+      lastPrice !== undefined,
     )
 
     const submittedUnit = Number(item.price ?? 0)

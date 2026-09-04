@@ -1,7 +1,11 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { priceOf, factorOf, UNSET_UOM_LABEL } from '@/lib/sale-uom'
-import type { SaleUomPriceMode } from '@/lib/sale-uom'
+import {
+  priceOf, factorOf, UNSET_UOM_LABEL, resolveAddableUom, dupKey,
+  computeDuplicateCounts, mergeDuplicateLines as mergeDuplicateLinesCore,
+} from '@/lib/sale-uom'
+import { useSaleUomOptions } from '@/hooks/use-sale-uom-options'
+import { DuplicateProductAlert } from '@/components/classic/DuplicateProductAlert'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -36,12 +40,6 @@ interface AllProduct {
   customerTaxRate?: number
   uomName?: string
   uomId?: string
-}
-
-// 多单位销售(20260714 试点)：商品挂的额外可售单位，与 place-order 创建页同构
-type SaleUomOption = {
-  uomId: string; uomName: string; isDefault?: boolean; factor: number; priceOverride: number | null
-  priceMode: SaleUomPriceMode; priceDiscountPct: number; priceSurcharge: number; active: boolean
 }
 
 interface CreditInfo {
@@ -103,13 +101,9 @@ export default function QuotationDetailPage() {
   type EditLine = NonNullable<Order['lines']>[number]
   const [editLines, setEditLines] = useState<EditLine[]>([])
   // 重复商品检测：同一 productId **且同一可售单位** 在编辑缓冲区中出现多次才算重复
-  // （与 place-order 创建页一致）——同商品配两个不同单位是合法的两行，不该误报重复
-  const dupKey = (l: EditLine) => `${l.productId}__${l.uomId ?? ''}`
-  const duplicateCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const l of editLines) if (l.productId) counts.set(dupKey(l), (counts.get(dupKey(l)) ?? 0) + 1)
-    return counts
-  }, [editLines])
+  // （与另外两个订单页一致，判重/合并逻辑收口在 lib/sale-uom.ts，见 20260904 改动说明）
+  // ——同商品配两个不同单位是合法的两行，不该误报重复
+  const duplicateCounts = useMemo(() => computeDuplicateCounts(editLines), [editLines])
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
   // 本单覆盖：编辑页可临时切换 pricelist/priceType（不写回客户档案），
   // 加行询价必须用叠加后的客户对象，否则永远只按客户档案默认链定价（与 place-order 创建页一致）
@@ -118,7 +112,7 @@ export default function QuotationDetailPage() {
     : null,
   [customer, priceType, pricelistId])
   // 多单位销售(20260714 试点)：全局单位 factor 表 + 按商品懒加载的额外可售单位
-  const [saleUomOptions, setSaleUomOptions] = useState<Record<string, SaleUomOption[]>>({})
+  const { saleUomOptions, ensureSaleUomOptions } = useSaleUomOptions(isEn)
   const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
   const [session, setSession] = useState<UserSession | null>(null)
   useEffect(() => { setSession(getSession()) }, [])
@@ -211,108 +205,82 @@ export default function QuotationDetailPage() {
       .catch(() => {})
   }
 
-  // 多单位销售(20260714 试点)：懒加载某商品配置的额外可售单位；已加载过就跳过
-  // 返回 Promise：selectProductIntoLine 要在插入行之前先知道基础单位是否 active，
-  // 不能像渲染期间那样 fire-and-forget(20260901 补——之前默认 uomId=p.uomId 完全不看
-  // active，基础单位被关掉时那一行还是照样落库成禁用单位，只是下拉框不显示而已)。
-  function ensureSaleUomOptions(productId: string): Promise<SaleUomOption[]> {
-    if (!productId) return Promise.resolve([])
-    if (productId in saleUomOptions) return Promise.resolve(saleUomOptions[productId] ?? [])
-    setSaleUomOptions(prev => ({ ...prev, [productId]: [] })) // 占位，避免并发重复请求
-    return apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; uom: { name: string; nameZh?: string | null } }>>(
-      `/api/products/${productId}/sale-uoms`,
-    )
-      .then(rows => {
-        // factor 取 ProductSaleUom.factor（这个商品自己的箱规），不是全局 uom.factor
-        // ⛔ 不能只留 active=true 的行——基础单位那行也可能被关掉(20260901)，下拉框
-        // 要知道它 active=false 才能把它从选项里剔除；筛活跃的活儿挪到渲染处做。
-        const opts = rows
-          .map(r => ({
-            uomId: r.uomId,
-            uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
-            isDefault: r.isDefault,
-            factor: Number(r.factor ?? 1) || 1,
-            priceOverride: r.priceOverride,
-            priceMode: r.priceMode ?? 'AUTO',
-            priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
-            priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
-            active: r.active,
-          }))
-        setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
-        return opts
-      })
-      .catch(() => {
-        setSaleUomOptions(prev => ({ ...prev, [productId]: [] }))
-        return []
-      })
-  }
+  // 切换某行的单位：优先按新单位重新查一次最近成交价——Last 定价模式下不同单位的历史成交价
+  // 互不相关，用旧单位价格按换算系数折算等于把两个不相干的数字硬凑在一起（20260904 客户反馈：
+  // 同一订单里 CASE 行查到的历史价 22.00 是对的，1KG 行却被按换算系数折算成 8.33，与该单位真实
+  // 历史价 5.83 对不上，还被服务端权威定价判成"手动改价"）。
+  //
+  // 只认这一行选用单位自己的历史成交价（与 lib/server-pricing.ts resolveOrderLines 同一套
+  // 口径）——查不到就是牌价/价格表 Default，不会退回查商品基准单位的历史价再折算：不同可售
+  // 单位的定价（含成本）在"商品详情"里各自独立配置好了，单位之间的历史成交价互不相关，拿
+  // 基准单位的成交价顶替非基准单位依然是"拿一个单位的价格冒充另一个单位"，跟最初 20260827
+  // 要修的问题是同一类错误（20260904 客户进一步澄清：查不到就该老实显示 Default，不该被
+  // 悄悄折算出一个数字、也不该因为这个数字和服务端对不上就被存成 Manual）。
+  //
+  // 命中单位限定价格表规则（决策#6）优先于历史价，与 selectProductIntoLine 同一套判断。
+  // 例外：用户已经手动改过这一行的单价（updateLine 会把 priceSourceType 清成 null）——这时
+  // 换单位要保留用户的改价意图，继续用"旧单价 ÷ 旧换算系数"折算，不套定价引擎的结果。
+  async function switchLineUnit(idx: number, newUomId: string) {
+    const line = editLines[idx]
+    if (!line || !line.productId) return
+    const p = allProducts.find(pp => pp.id === line.productId)
+    if (!p) return
+    const anchorUomId = p.uomId
+    const currentUomId = line.uomId ?? anchorUomId
+    if (!currentUomId || newUomId === currentUomId) return
+    const opts = saleUomOptions[p.id] ?? []
+    const rows = opts.map(o => ({
+      uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+      priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
+    }))
+    const nameOf = (uid: string) => uid === anchorUomId
+      ? (p.uomName ?? UNSET_UOM_LABEL)
+      : (opts.find(o => o.uomId === uid)?.uomName ?? line.uomName)
 
-  // 基础单位若被关掉(active=false)，选品时不能再默认用它——落到第一个仍 active 的
-  // 额外单位；没有任何可下单单位时直接拒绝加行，而不是静默塞一个禁用单位进去。
-  function resolveAddableUom(p: { id: string; uomId?: string | null; uomName?: string | null }, opts: SaleUomOption[]) {
-    const baseUomId = p.uomId ?? undefined
-    const baseRow = opts.find(o => o.uomId === baseUomId)
-    const baseActive = baseRow ? baseRow.active : true
-    if (!baseUomId || baseActive) {
-      return { uomId: baseUomId, uomName: p.uomName ?? UNSET_UOM_LABEL, blocked: false as const }
+    // 新单位的最近成交价：与 selectProductIntoLine 同一条查询，priceType='default' 从不查
+    let lastPriceHit: { price: number; date: string } | undefined
+    if (customer && priceType !== 'default') {
+      try {
+        const res = await apiGet<{ price: number | null; createdAt?: string }>(
+          `/api/orders/last-price?customerId=${customer.id}&productId=${p.id}&uomId=${newUomId}`
+        )
+        if (res.price != null && res.price > 0) lastPriceHit = { price: res.price, date: res.createdAt ?? '' }
+      } catch { /* 查询失败不阻塞切单位，回退到价格表/换算系数 */ }
     }
-    const firstActiveExtra = opts.find(o => o.uomId !== baseUomId && o.active)
-    if (firstActiveExtra) {
-      return { uomId: firstActiveExtra.uomId, uomName: firstActiveExtra.uomName, blocked: false as const }
-    }
-    return { uomId: undefined, uomName: UNSET_UOM_LABEL, blocked: true as const }
-  }
 
-  // 切换某行的单位：按换算系数(或该单位的独立售价)重算单价，不重新触发定价引擎，
-  // 避免把用户手动改过的单价/来源覆盖掉——与本页"改数量/改单价不触发定价引擎重算"的既有行为一致
-  function switchLineUnit(idx: number, newUomId: string) {
     setEditLines(prev => {
-      const line = prev[idx]
-      if (!line || !line.productId) return prev
-      const p = allProducts.find(pp => pp.id === line.productId)
-      if (!p) return prev
-      const anchorUomId = p.uomId
-      const currentUomId = line.uomId ?? anchorUomId
-      if (!currentUomId || newUomId === currentUomId) return prev
-      const opts = saleUomOptions[p.id] ?? []
-      const rows = opts.map(o => ({
-        uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
-        priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
-      }))
-      const nameOf = (uid: string) => uid === anchorUomId
-        ? (p.uomName ?? UNSET_UOM_LABEL)
-        : (opts.find(o => o.uomId === uid)?.uomName ?? line.uomName)
-      // 从当前行价倒推基础单价，再按新单位折算 —— 这样用户手改过的单价不会被定价引擎冲掉，
-      // 与本页"改数量/改单价不触发定价引擎重算"的既有行为一致。
-      // 换算与库存扣减共用 lib/sale-uom.ts，两边不会算得不一样。
-      // 单位限定价格表规则（决策#6）优先：命中就直接用规则算出的最终价，不走"从旧价倒推基础价"
-      // 那套 factor 换算——否则用户手改过的价没关系，但如果价格表已经给这个单位单独定过价，
-      // 换单位就该按那条规则来，而不是继续沿用旧单位的价格比例。
+      const cur = prev[idx]
+      // 查询期间这一行被删了/换成别的商品了 —— 换算出来的价已经对不上，不应用
+      if (!cur || cur.productId !== line.productId) return prev
+      const userTypedPrice = cur.priceSourceType === null
       const uomScoped = effectiveCustomer
-        ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, Number(line.orderedQty) || 1, undefined, newUomId)
+        ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, Number(cur.orderedQty) || 1, lastPriceHit?.price, newUomId, lastPriceHit !== undefined)
         : null
+      const matched = uomScoped && uomScoped.matchedUomId === newUomId ? uomScoped : null
       const oldFactor = factorOf(rows, currentUomId)
-      const basePrice = oldFactor ? Number(line.unitPrice) / oldFactor : Number(line.unitPrice)
-      const uomMatched = uomScoped?.matchedUomId === newUomId
-      const newUnitPrice = uomMatched ? uomScoped.price : priceOf(rows, newUomId, basePrice)
-      const qty = Number(line.orderedQty)
+      const basePrice = userTypedPrice
+        ? (oldFactor ? Number(cur.unitPrice) / oldFactor : Number(cur.unitPrice))
+        : (uomScoped ? uomScoped.price : Number(p.listPrice ?? 0))
+      const newUnitPrice = matched ? matched.price : priceOf(rows, newUomId, basePrice)
+      const qty = Number(cur.orderedQty)
       // Cost 也要跟着单位换算，不然切到非默认单位后 Cost 列还停在换单位前那个分母上，
       // 和已经按新单位算好的 unitPrice 对不上（客户 20260827 反馈价格低于成本，实为显示误导）。
       const newCost = Math.round(Number(p.standardPrice ?? 0) * factorOf(rows, newUomId) * 100) / 100
       const next = [...prev]
       next[idx] = {
-        ...line,
+        ...cur,
         uomId: newUomId,
         uomName: nameOf(newUomId),
         unitPrice: newUnitPrice,
         cost: newCost,
         subtotal: Math.round(qty * newUnitPrice * 100) / 100,
-        // 换单位换算出的新价要如实标来源，不能留着旧单位那份标签——
-        // 命中价格表的单位限定规则就是 PRICELIST，否则是按基础价×换算系数走出来的 DEFAULT，
-        // 两者都不是「未记录」，别再显示成空白的 "—"。
-        priceSourceType: uomMatched ? 'PRICELIST' : 'DEFAULT',
-        priceSourceDetail: uomMatched ? (uomScoped.pricelistName ?? null) : null,
-        priceSourceDate: null,
+        // 换单位换算出的新价要如实标来源：用户手改过的价保留 null（未标注，与 updateLine 手动
+        // 改价同一套约定）；否则命中价格表单位限定规则是 PRICELIST，命中历史成交价（哪怕是
+        // 基准单位那级回退）是 LAST，都没有就是牌价 DEFAULT——三者都不是「未记录」，也都不是
+        // 用户没碰过输入框却被打成的 Manual。
+        priceSourceType: userTypedPrice ? null : (matched ? matched.sourceType.toUpperCase() : (uomScoped ? uomScoped.sourceType.toUpperCase() : 'DEFAULT')),
+        priceSourceDetail: !userTypedPrice && (matched ?? uomScoped)?.sourceType === 'pricelist' ? (matched ?? uomScoped)!.pricelistName : null,
+        priceSourceDate: !userTypedPrice && (matched ?? uomScoped)?.sourceType === 'last' ? (lastPriceHit?.date ?? null) : null,
       }
       return next
     })
@@ -551,20 +519,17 @@ export default function QuotationDetailPage() {
       priceSourceDate: resolution?.sourceType === 'last' ? (lastPriceHit?.date ?? null) : null,
     } as unknown as EditLine
     setEditLines(prev => {
-      // 这个商品(同一 productId+同一可售单位)已经在单子里有一行了 —— 不再插新行，
-      // 直接给已有那行数量+1，并把这次刚插的空白草稿行去掉。避免"选两次同一个商品
-      // 出现两行、价格还对不上"，客户 20260826 报过。商品相同但单位不同不算重复，
-      // 正常插成新行。
-      const key = dupKey({ productId: newLine.productId, uomId: newLine.uomId } as EditLine)
-      const existing = prev.find(l => l.id !== lineId && l.productId && dupKey(l) === key)
-      if (existing) {
-        const qty = Number(existing.orderedQty) + 1
-        const merged = prev
-          .filter(l => l.id !== lineId)
-          .map(l => (l.id === existing.id ? { ...l, orderedQty: qty, subtotal: Math.round(Number(l.unitPrice) * qty * 100) / 100 } : l))
-        toast.success(isEn ? 'Already on this order — quantity increased by 1' : '这个商品已经在单子里了，数量+1')
-        return merged
-      }
+      // 20260904 改回"总是新插一行"，不再按 productId+uomId 撞上就静默数量+1
+      // （原逻辑是为修客户 20260826 反馈的"选两次同一商品出两行"而加的）。
+      // 问题：resolveAddableUom 在加行这一步只会返回商品固定的默认单位，
+      // 同一商品第三次、第四次加行只要还落在这个默认单位上就必然撞上已有行——
+      // 用户其实是想加"另一个单位的新行"（已有 CASE 行，这次想加 500G/1KG），
+      // 却被当成重复商品直接吞进已有行、数量莫名其妙+1（20260904 客户反馈：
+      // Fresh Red Chilli / Broccoli 加第三次都被合并成 CASE 行 +1，新单位那行凭空消失）。
+      // 真正的"防误加两次同商品"已有独立机制兜底：dupKey/duplicateCounts 驱动的
+      // 紫色提醒条 +「合并重复项」按钮（见下方 JSX 与 mergeDuplicateLines），
+      // 检测到重复后交给用户自己决定要不要合并，不该在加行这一步替用户悄悄做主。
+      //
       // 填充的是「已经插好的那一行」，不是往末尾追加 —— 行是点 + Add a product 时就建好的
       return prev.map(l => (l.id === lineId ? { ...newLine, id: lineId } : l))
     })
@@ -595,26 +560,12 @@ export default function QuotationDetailPage() {
     } as unknown as EditLine])
     activatePickerRef.current(draftId)
   }
-  // 合并重复商品：同一 productId 且同一可售单位的行合并为一行，数量相加（与 place-order 创建页一致）
+  // 合并重复商品：同一 productId 且同一可售单位的行合并为一行，数量相加
+  // （核心逻辑收口在 lib/sale-uom.ts mergeDuplicateLines，三个订单页共用，见 20260904 改动说明）
   function mergeDuplicateLines() {
-    setEditLines(prev => {
-      const seen = new Map<string, EditLine>()
-      const result: EditLine[] = []
-      for (const l of prev) {
-        if (!l.productId) { result.push(l); continue }
-        const existing = seen.get(dupKey(l))
-        if (existing) {
-          const qty = Number(existing.orderedQty) + Number(l.orderedQty)
-          existing.orderedQty = qty
-          existing.subtotal = Math.round(Number(existing.unitPrice) * qty * 100) / 100
-        } else {
-          const copy = { ...l }
-          seen.set(dupKey(l), copy)
-          result.push(copy)
-        }
-      }
-      return result
-    })
+    setEditLines(prev => mergeDuplicateLinesCore(prev, (l) => {
+      l.subtotal = Math.round(Number(l.unitPrice) * Number(l.orderedQty) * 100) / 100
+    }))
     toast.success(isEn ? 'Duplicate products merged' : '已合并重复商品')
   }
   const totalTax = displayLines.reduce((s, l) => s + Number(l.subtotal) * (Number(l.taxRate ?? 0) / 100), 0)
@@ -949,33 +900,14 @@ export default function QuotationDetailPage() {
                 </div>
               )
             })()}
-            {editing && (() => {
-              const dups = [...duplicateCounts.entries()].filter(([, c]) => c > 1)
-              if (dups.length === 0) return null
-              const nameOf = (key: string) => editLines.find(l => dupKey(l) === key)?.productName ?? key
-              return (
-                <div className="mx-3 mt-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-2.5 flex items-start gap-3">
-                  <span className="text-lg leading-none mt-0.5">🔁</span>
-                  <div className="text-sm flex-1">
-                    <span className="font-semibold text-purple-700">{isEn ? 'Duplicate product alert: ' : '重复商品提醒：'}</span>
-                    <span className="text-purple-600">
-                      {isEn ? `${dups.length} product(s) added more than once` : `${dups.length} 个商品被重复添加`}
-                      <span className="text-xs text-purple-500 ml-1">
-                        ({dups.map(([key, c]) => `${nameOf(key)} ×${c}`).join(isEn ? ', ' : '、')})
-                      </span>
-                    </span>
-                    <span className="text-xs text-gray-500 ml-1">{isEn ? '— click "Merge" on the right to combine into one line (quantities added), or leave as-is and adjust manually' : '— 可点右侧「合并」合并为一行（数量相加），或保留现状手动调整'}</span>
-                  </div>
-                  <button
-                    onClick={mergeDuplicateLines}
-                    className="shrink-0 px-3 py-1 rounded text-xs font-medium text-white"
-                    style={{ background: PURPLE }}
-                  >
-                    {isEn ? 'Merge Duplicates' : '合并重复项'}
-                  </button>
-                </div>
-              )
-            })()}
+            {editing && (
+              <DuplicateProductAlert
+                lines={editLines}
+                duplicateCounts={duplicateCounts}
+                isEn={isEn}
+                onMerge={mergeDuplicateLines}
+              />
+            )}
             <OrderLineEditor
               lines={displayLines}
               editing={editing}

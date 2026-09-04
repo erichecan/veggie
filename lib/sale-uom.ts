@@ -226,3 +226,107 @@ export function displayUomName(uomName: string | null | undefined): string {
   if (!uomName || uomName === 'Unit(s)') return UNSET_UOM_LABEL
   return uomName
 }
+
+/**
+ * 加商品/编辑订单行的共用逻辑（20260904 抽取）
+ * ============================================================================
+ * 三个订单页（下单页 place-order、报价单编辑页 quotations/[id]、销售单编辑页 orders/[id]）
+ * 各自复制粘贴了一份几乎逐字相同的"加商品该落哪个单位""判重""合并重复行"逻辑——
+ * 直接后果是 20260904 客户反馈的一个 bug（选品第三次起被静默合并进已有行、新单位那行
+ * 凭空消失）只改了其中一份就漏了另外两份。现在收口到这一处，往后同类 bug 只用改一处。
+ *
+ * ⚠️ 定价计算（selectProductIntoLine 里查最近成交价/套定价引擎那部分）三个页面的实现
+ * 仍分开——那部分本来就在往不同方向演化（quotations/orders 两级历史价回退 vs. place-order
+ * 的 computeLinePrice），贸然拉平风险和工作量都远大于这次真正出问题的部分，不在本次收口范围内。
+ */
+
+/** 判重的最小行形状：productId 未选品时可能是空字符串/undefined，uomId 允许 null。 */
+export interface DupKeyLine {
+  productId?: string | null
+  uomId?: string | null
+}
+
+/** 商品+单位的判重键。三页原先各自手写 `${l.productId}__${l.uomId ?? ''}`，逐字一致。 */
+export function dupKey(l: DupKeyLine): string {
+  return `${l.productId ?? ''}__${l.uomId ?? ''}`
+}
+
+/** 统计编辑缓冲区里每个 (productId, uomId) 组合出现了几次，供"重复商品提醒"横幅与行高亮共用。 */
+export function computeDuplicateCounts<T extends DupKeyLine>(lines: T[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const l of lines) {
+    if (!l.productId) continue
+    const key = dupKey(l)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
+}
+
+/**
+ * 手动「合并重复项」：同一 productId+uomId 的行合并成一行，数量相加，保留先出现那行的其它字段。
+ * `afterMerge` 供调用方在数量改完后补算派生字段（如 EditLine 的 subtotal；place-order 的
+ * QuotationLine 没有存 subtotal 字段，不需要传）。
+ */
+export function mergeDuplicateLines<T extends DupKeyLine & { orderedQty: number }>(
+  lines: T[],
+  afterMerge?: (line: T) => void,
+): T[] {
+  const seen = new Map<string, T>()
+  const result: T[] = []
+  for (const l of lines) {
+    if (!l.productId) { result.push(l); continue }
+    const key = dupKey(l)
+    const existing = seen.get(key)
+    if (existing) {
+      // Number() 强制转换：orderedQty 类型标的是 number，但过一遍 JSON 序列化的行
+      // （EditLine 来自 API 响应）历史上出现过以字符串落地的情况，直接 `+` 会变成拼接。
+      existing.orderedQty = Number(existing.orderedQty) + Number(l.orderedQty)
+      afterMerge?.(existing)
+    } else {
+      const copy = { ...l }
+      seen.set(key, copy)
+      result.push(copy)
+    }
+  }
+  return result
+}
+
+/** 一个商品可选的可售单位；对应 GET /api/products/[id]/sale-uoms 拉回来整形后的形状。 */
+export interface SaleUomOption {
+  uomId: string
+  uomName: string
+  isDefault?: boolean
+  factor: number
+  priceOverride: number | null
+  priceMode: SaleUomPriceMode
+  priceDiscountPct: number
+  priceSurcharge: number
+  active: boolean
+}
+
+/**
+ * 加商品时该落哪个单位：基础单位若被关掉(active=false)不能再默认用它——落到第一个仍
+ * active 的额外单位；没有任何可下单单位时 blocked=true，调用方应拒绝加行，而不是
+ * 静默塞一个禁用单位进去。
+ *
+ * ⚠️ 这只解决"该用哪个单位当默认值"，不知道、也不该猜用户到底想要哪个单位——
+ * 那是"加商品"这一步先天做不到的事（商品搜索列表里一个商品只有一条，不按单位拆开）。
+ * 真正想要别的单位，加完之后用行内「Unit of Measure」下拉切换（switchLineUnit，三页各自实现，
+ * 不在本次收口范围）。
+ */
+export function resolveAddableUom(
+  p: { id: string; uomId?: string | null; uomName?: string | null },
+  opts: SaleUomOption[],
+): { uomId?: string; uomName: string; blocked: boolean } {
+  const baseUomId = p.uomId ?? undefined
+  const baseRow = opts.find(o => o.uomId === baseUomId)
+  const baseActive = baseRow ? baseRow.active : true
+  if (!baseUomId || baseActive) {
+    return { uomId: baseUomId, uomName: p.uomName ?? UNSET_UOM_LABEL, blocked: false }
+  }
+  const firstActiveExtra = opts.find(o => o.uomId !== baseUomId && o.active)
+  if (firstActiveExtra) {
+    return { uomId: firstActiveExtra.uomId, uomName: firstActiveExtra.uomName, blocked: false }
+  }
+  return { uomId: undefined, uomName: UNSET_UOM_LABEL, blocked: true }
+}

@@ -31,7 +31,9 @@ const VALID_PRICE_TYPES = new Set(['multi', 'default', 'last'])
 const ALLOWED_TRANSITIONS: Record<string, Set<string>> = {
   PENDING: new Set(['CONFIRMED', 'CANCELLED']),
   CONFIRMED: new Set(['PENDING', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'CANCELLED']),
-  WAVE_ASSIGNED: new Set(['CONFIRMED', 'IN_DELIVERY', 'CANCELLED']),
+  // 允许已生成拣货单(WAVE_ASSIGNED)的订单直接撤回报价单——此前只能先到调度台移出待分配
+  // (退回 CONFIRMED)才能再撤回一次，用户在详情页找不到入口(见 20260904 反馈截图)。
+  WAVE_ASSIGNED: new Set(['CONFIRMED', 'IN_DELIVERY', 'CANCELLED', 'PENDING']),
   IN_DELIVERY: new Set(['COMPLETED', 'CANCELLED']),
   COMPLETED: new Set(['LOCKED']),
   LOCKED: new Set(),      // 不可变
@@ -381,9 +383,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           if (l.note !== undefined) lineData.note = l.note ? String(l.note) : null
           // 多单位销售(20260714)：编辑已有行时也允许写入新单位(此前只有新增行分支才写 uomId/uomName，
           // 已有行传了新单位会被静默忽略)。合法性已在上面 uomEditCandidates 校验过。
+          //
+          // ⛔ uomName 一律用服务端 resolveOrderLines 按 uomId 解析出的正式名（resolved.uomName），
+          // 不直接信前端传的 l.uomName——前端是按操作员当时的界面语言现算的中/英文本
+          // （isEn ? uom.name : uom.nameZh），同一个 uomId 会因为不同订单是不同语言环境下
+          // 编辑/追加的，快照出"1公斤"/"1KG"这种一中一英的不一致文本（20260904 客户反馈：
+          // History price 弹窗同一商品的历史行 Unit 列中英文混显，看着像是两个不同单位）。
+          // POST /api/orders 新建订单那条路径本来就是这么做的（见 resolveOrderLines
+          // uomNameMap，只取 Uom.name），这里补齐保持一致。
           if (l.uomId !== undefined) {
             lineData.uomId = l.uomId ? String(l.uomId) : null
-            lineData.uomName = l.uomName ? String(l.uomName) : null
+            lineData.uomName = l.uomId ? (resolved?.uomName ?? null) : null
           }
 
           if (l.id) {
@@ -402,8 +412,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 productName: String(l.productName ?? ''),
                 spec: l.spec ? String(l.spec) : null,
                 note: l.note ? String(l.note) : null,
-                uomId: l.uomId ? String(l.uomId) : null,
-                uomName: l.uomName ? String(l.uomName) : null,
+                // uomId/uomName 不再在这里用 l.uomId/l.uomName 覆盖一遍 —— 上面 lineData 已经按
+                // l.uomId !== undefined 的判断写好了（uomName 取服务端 resolved.uomName），这里
+                // 重复赋值等于把刚归一化好的名字又换回前端原始文本，白改了（20260904 客户反馈的
+                // 中英文混显 bug 就是被这里的重复赋值悄悄抵消过一次）。新增行没传 uomId 时两个
+                // 字段沿用 lineData 里已经算好的 null。
                 deliveredQty: 0,
                 invoicedQty: 0,
                 sequence: Number(l.sequence ?? 0),
@@ -592,14 +605,32 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // 撤回报价单(PENDING)/取消(CANCELLED):订单退出配送流程,同步移出所属波次,
       // 否则调度台/打印中心会残留"幽灵单"(报价单却出现在波次里,数量对不上销售单列表)。
+      // ⚠️ 移出波次可能因波次已拣货锁定(pickLockedAt)而失败——此时上面的 order.update 已经
+      // 把状态改成了 PENDING/CANCELLED,若在这里静默吞掉异常,会留下"订单已撤回但仍挂在
+      // 波次 orderIds 里"的孤儿态(此前 WAVE_ASSIGNED→PENDING 未开放故未暴露,现开放后必须处理)。
+      // 命中锁定要回滚订单状态并把 409 原样报给前端,提示先去每日销售解锁。
       if (newStatus === 'PENDING' || newStatus === 'CANCELLED') {
-        await removeOrderFromAllWaves(id).catch((e) => console.error('[removeOrderFromAllWaves on status change]', e))
+        try {
+          await removeOrderFromAllWaves(id)
+        } catch (e) {
+          if (e instanceof WavePickLockedError) {
+            await prisma.order.update({
+              where: { id },
+              data: { status: orderBefore.status, confirmationDate: orderBefore.confirmationDate },
+            }).catch(() => {})
+            return NextResponse.json({ error: `波次已拣货锁定，请先到每日销售解锁：${e.message}` }, { status: 409 })
+          }
+          console.error('[removeOrderFromAllWaves on status change]', e)
+        }
       }
 
       // Determine audit action
+      // 撤回报价单：CONFIRMED 与 WAVE_ASSIGNED(已生成拣货单但未出发)两个来源状态都算撤回，
+      // 二者都已扣过库存预留，下面几处"On WITHDRAWN"逻辑同样按这个集合判断。
+      const withdrawableFromStatuses = new Set(['CONFIRMED', 'WAVE_ASSIGNED'])
       let auditAction = 'updated'
       if (newStatus === 'CONFIRMED') auditAction = 'confirmed'
-      else if (newStatus === 'PENDING' && String(orderBefore.status) === 'CONFIRMED') auditAction = 'withdrawn'
+      else if (newStatus === 'PENDING' && withdrawableFromStatuses.has(String(orderBefore.status))) auditAction = 'withdrawn'
       else if (newStatus === 'COMPLETED') auditAction = 'completed'
       else if (newStatus === 'CANCELLED') auditAction = 'cancelled'
 
@@ -802,8 +833,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
-      // On WITHDRAWN (CONFIRMED → PENDING): 恢复库存预留
-      if (newStatus === 'PENDING' && String(orderBefore.status) === 'CONFIRMED') {
+      // On WITHDRAWN (CONFIRMED/WAVE_ASSIGNED → PENDING): 恢复库存预留
+      if (newStatus === 'PENDING' && withdrawableFromStatuses.has(String(orderBefore.status))) {
         const withdrawLines = await prisma.orderLine.findMany({
           where: { orderId: id },
           include: { product: { select: { type: true } } },
@@ -837,8 +868,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
-      // On WITHDRAWN (CONFIRMED → PENDING): cancel associated PENDING_ASSIGNMENT trips
-      if (newStatus === 'PENDING' && String(orderBefore.status) === 'CONFIRMED') {
+      // On WITHDRAWN (CONFIRMED/WAVE_ASSIGNED → PENDING): cancel associated PENDING_ASSIGNMENT trips
+      if (newStatus === 'PENDING' && withdrawableFromStatuses.has(String(orderBefore.status))) {
         await prismaAny.trip.updateMany({
           where: {
             status: 'PENDING_ASSIGNMENT',
