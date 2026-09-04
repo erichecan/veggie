@@ -273,7 +273,7 @@ export default function ClassicInvoicesPage() {
     }
   }
 
-  const { facets, chips, controlPanelProps } = useFacets(fieldsOf(INVOICE_FACET_DEFS))
+  const { facets, chips, controlPanelProps } = useFacets(fieldsOf(INVOICE_FACET_DEFS, isEn))
 
   const filtered = useMemo(() => {
     let base = invoices

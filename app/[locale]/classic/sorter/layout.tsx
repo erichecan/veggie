@@ -13,10 +13,11 @@ export default function ClassicSorterLayout({ children }: { children: React.Reac
   const [session, setSession] = useState<RoleSession | null>(null)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const LINKS = [
-    { href: `${prefix}/classic/sorter`, label: '分货任务' },
+    { href: `${prefix}/classic/sorter`, label: isEn ? 'Sorting Tasks' : '分货任务' },
   ]
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export default function ClassicSorterLayout({ children }: { children: React.Reac
 
   return (
     <div className="min-h-screen bg-white">
-      <OdooNav appName="仓库" menuItems={LINKS} session={session} />
+      <OdooNav appName={isEn ? 'Warehouse' : '仓库'} menuItems={LINKS} session={session} />
       <main className="max-w-4xl mx-auto px-4 py-6">{children}</main>
     </div>
   )

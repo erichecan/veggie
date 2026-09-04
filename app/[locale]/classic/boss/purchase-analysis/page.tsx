@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
 
@@ -61,25 +63,32 @@ function colorFor(i: number) { return PALETTE[i % PALETTE.length] }
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 interface Segment { label: string; value: number }
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL_ZH: Record<string, string> = {
   DRAFT: '询价单', SENT: '询价单已发送', CONFIRMED: '采购订单',
   RECEIVED: '已收货', INVOICED: '已开票', CANCELLED: '已取消',
 }
+const STATUS_LABEL_EN: Record<string, string> = {
+  DRAFT: 'Quotation', SENT: 'Quotation Sent', CONFIRMED: 'Purchase Order',
+  RECEIVED: 'Received', INVOICED: 'Invoiced', CANCELLED: 'Cancelled',
+}
 
-function aggregate(orders: PurchaseOrder[], group: GroupKey, measure: MeasureKey): Segment[] {
+function aggregate(orders: PurchaseOrder[], group: GroupKey, measure: MeasureKey, isEn: boolean): Segment[] {
   const map = new Map<string, number>()
+  const statusLabel = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const unknownSupplier = isEn ? '(Unknown Supplier)' : '(未知供应商)'
+  const unknownProduct = isEn ? '(Unknown Product)' : '(未知商品)'
 
   for (const po of orders) {
     if (group === 'supplier') {
-      const key = po.supplierName || po.supplierId || '(未知供应商)'
+      const key = po.supplierName || po.supplierId || unknownSupplier
       map.set(key, (map.get(key) ?? 0) + measurePO(po, measure))
     } else if (group === 'status') {
-      const key = STATUS_LABEL[po.status] ?? po.status
+      const key = statusLabel[po.status] ?? po.status
       map.set(key, (map.get(key) ?? 0) + measurePO(po, measure))
     } else {
       // group by product
       for (const line of po.lines) {
-        const key = line.productName || '(未知商品)'
+        const key = line.productName || unknownProduct
         const val = measureLine(line, measure)
         map.set(key, (map.get(key) ?? 0) + val)
       }
@@ -130,12 +139,13 @@ interface ChartProps {
   hoveredIndex: number | null
   onHover: (i: number | null) => void
   formatValue: (v: number) => string
+  isEn: boolean
 }
 
-function PieChart({ segments, hoveredIndex, onHover, formatValue }: ChartProps) {
+function PieChart({ segments, hoveredIndex, onHover, formatValue, isEn }: ChartProps) {
   const total = segments.reduce((s, x) => s + x.value, 0)
   if (total === 0 || segments.length === 0) {
-    return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">暂无数据</div>
+    return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</div>
   }
   const CX = 160, CY = 160, R = 130
   let cursor = 0
@@ -185,9 +195,9 @@ function PieChart({ segments, hoveredIndex, onHover, formatValue }: ChartProps) 
   )
 }
 
-function BarChart({ segments, hoveredIndex, onHover, formatValue }: ChartProps) {
+function BarChart({ segments, hoveredIndex, onHover, formatValue, isEn }: ChartProps) {
   if (segments.length === 0) {
-    return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">暂无数据</div>
+    return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</div>
   }
   const max = Math.max(...segments.map(s => s.value))
   return (
@@ -221,11 +231,17 @@ function fmtValue(measure: MeasureKey, v: number): string {
 // ─── Filter ───────────────────────────────────────────────────────────────────
 type FilterType = 'all' | 'today' | 'week' | 'month'
 
-const FILTERS: { key: FilterType; label: string }[] = [
+const FILTERS_ZH: { key: FilterType; label: string }[] = [
   { key: 'all',   label: '全部' },
   { key: 'today', label: '今日' },
   { key: 'week',  label: '本周' },
   { key: 'month', label: '本月' },
+]
+const FILTERS_EN: { key: FilterType; label: string }[] = [
+  { key: 'all',   label: 'All' },
+  { key: 'today', label: 'Today' },
+  { key: 'week',  label: 'This Week' },
+  { key: 'month', label: 'This Month' },
 ]
 
 function filterPOs(orders: PurchaseOrder[], filter: FilterType): PurchaseOrder[] {
@@ -240,6 +256,9 @@ function filterPOs(orders: PurchaseOrder[], filter: FilterType): PurchaseOrder[]
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PurchaseAnalysisPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const FILTERS = isEn ? FILTERS_EN : FILTERS_ZH
   const [orders, setOrders] = useState<PurchaseOrder[] | null>(null)
   const [measure, setMeasure] = useState<MeasureKey>('subtotalExTax')
   const [group, setGroup] = useState<GroupKey>('supplier')
@@ -265,10 +284,10 @@ export default function PurchaseAnalysisPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  if (!orders) return <div className="text-gray-400 py-20 text-center">加载中…</div>
+  if (!orders) return <div className="text-gray-400 py-20 text-center">{isEn ? 'Loading…' : '加载中…'}</div>
 
   const filtered = filterPOs(orders, filter)
-  const segments = aggregate(filtered, group, measure)
+  const segments = aggregate(filtered, group, measure, isEn)
   const total = segments.reduce((s, x) => s + x.value, 0)
   const measureLabel = MEASURES.find(m => m.key === measure)?.label ?? measure
   const groupLabel = GROUPS.find(g => g.key === group)?.label ?? group
@@ -286,23 +305,25 @@ export default function PurchaseAnalysisPage() {
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Purchase Analysis</h1>
-          <p className="text-sm text-gray-400 mt-0.5">采购订单分析报表</p>
+          <p className="text-sm text-gray-400 mt-0.5">{isEn ? 'Purchase order analytics report' : '采购订单分析报表'}</p>
         </div>
       </div>
 
       {orders.length >= REQUEST_LIMIT && (
         <div className="mb-4 px-3 py-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-700">
-          已达到单次拉取上限（{REQUEST_LIMIT} 条），"全部"视图可能不包含更早的历史采购单，统计仅供参考。
+          {isEn
+            ? `Reached the single-fetch limit (${REQUEST_LIMIT} records) — the "All" view may not include older historical purchase orders; figures are for reference only.`
+            : `已达到单次拉取上限（${REQUEST_LIMIT} 条），"全部"视图可能不包含更早的历史采购单，统计仅供参考。`}
         </div>
       )}
 
       {/* ── KPI strip ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {[
-          { label: '采购单数', value: String(filtered.length), sub: `已确认 ${confirmedPOs.length}` },
-          { label: '总采购额（税前）', value: eur(totalSpend), sub: `${activePOs.length} 笔有效单` },
-          { label: '已收货', value: String(receivedPOs.length), sub: `占比 ${filtered.length > 0 ? ((receivedPOs.length / filtered.length) * 100).toFixed(0) : 0}%` },
-          { label: '供应商数', value: String(new Set(filtered.map(o => o.supplierId)).size), sub: '活跃供应商' },
+          { label: isEn ? 'PO Count' : '采购单数', value: String(filtered.length), sub: isEn ? `${confirmedPOs.length} confirmed` : `已确认 ${confirmedPOs.length}` },
+          { label: isEn ? 'Total Spend (ex. Tax)' : '总采购额（税前）', value: eur(totalSpend), sub: isEn ? `${activePOs.length} active POs` : `${activePOs.length} 笔有效单` },
+          { label: isEn ? 'Received' : '已收货', value: String(receivedPOs.length), sub: isEn ? `${filtered.length > 0 ? ((receivedPOs.length / filtered.length) * 100).toFixed(0) : 0}% of total` : `占比 ${filtered.length > 0 ? ((receivedPOs.length / filtered.length) * 100).toFixed(0) : 0}%` },
+          { label: isEn ? 'Suppliers' : '供应商数', value: String(new Set(filtered.map(o => o.supplierId)).size), sub: isEn ? 'Active suppliers' : '活跃供应商' },
         ].map(k => (
           <div key={k.label} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
             <p className="text-xs text-gray-400 mb-1">{k.label}</p>
@@ -316,7 +337,10 @@ export default function PurchaseAnalysisPage() {
       <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3 shadow-sm">
         {/* View toggle */}
         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-          {([['pie','🥧','饼图'],['bar','📊','柱状'],['list','☰','列表']] as const).map(([v, icon, label]) => (
+          {(isEn
+            ? [['pie','🥧','Pie'],['bar','📊','Bar'],['list','☰','List']] as const
+            : [['pie','🥧','饼图'],['bar','📊','柱状'],['list','☰','列表']] as const
+          ).map(([v, icon, label]) => (
             <button key={v} onClick={() => setView(v)} title={label}
               className="px-3 py-1.5 text-sm transition-colors"
               style={view === v ? { background: TEAL, color: 'white' } : { background: 'white', color: '#6b7280' }}>
@@ -379,7 +403,7 @@ export default function PurchaseAnalysisPage() {
         </div>
 
         <div className="ml-auto text-xs text-gray-400">
-          {filtered.length} 笔采购单 · {groupLabel} by {measureLabel}
+          {isEn ? `${filtered.length} POs · ${groupLabel} by ${measureLabel}` : `${filtered.length} 笔采购单 · ${groupLabel} by ${measureLabel}`}
         </div>
       </div>
 
@@ -389,21 +413,21 @@ export default function PurchaseAnalysisPage() {
           <div className="flex flex-col lg:flex-row">
             <div className="flex-1 flex items-center justify-center py-8 px-4 min-h-[340px]">
               {view === 'pie' ? (
-                <PieChart segments={segments} hoveredIndex={hoveredIndex} onHover={setHoveredIndex} formatValue={fmt} />
+                <PieChart segments={segments} hoveredIndex={hoveredIndex} onHover={setHoveredIndex} formatValue={fmt} isEn={isEn} />
               ) : (
                 <div className="w-full max-w-xl">
-                  <BarChart segments={segments} hoveredIndex={hoveredIndex} onHover={setHoveredIndex} formatValue={fmt} />
+                  <BarChart segments={segments} hoveredIndex={hoveredIndex} onHover={setHoveredIndex} formatValue={fmt} isEn={isEn} />
                 </div>
               )}
             </div>
             <div className="lg:w-72 border-t lg:border-t-0 lg:border-l border-gray-100 p-4 overflow-y-auto max-h-[500px]">
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{groupLabel}</div>
               {segments.length === 0 ? (
-                <p className="text-sm text-gray-400">暂无数据</p>
+                <p className="text-sm text-gray-400">{isEn ? 'No data' : '暂无数据'}</p>
               ) : (
                 <div className="space-y-2">
                   <div className="text-xs text-gray-400 mb-2">
-                    合计：<span className="font-semibold text-gray-700">{fmt(total)}</span>
+                    {isEn ? 'Total: ' : '合计：'}<span className="font-semibold text-gray-700">{fmt(total)}</span>
                   </div>
                   {segments.map((seg, i) => (
                     <div key={i}
@@ -430,12 +454,12 @@ export default function PurchaseAnalysisPage() {
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">{groupLabel}</th>
                 <th className="text-right px-4 py-3 font-semibold text-gray-600">{measureLabel}</th>
-                <th className="text-right px-4 py-3 font-semibold text-gray-600">占比</th>
+                <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Share' : '占比'}</th>
               </tr>
             </thead>
             <tbody>
               {segments.length === 0 ? (
-                <tr><td colSpan={3} className="text-center py-12 text-gray-400">暂无数据</td></tr>
+                <tr><td colSpan={3} className="text-center py-12 text-gray-400">{isEn ? 'No data' : '暂无数据'}</td></tr>
               ) : segments.map((seg, i) => (
                 <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-2.5 flex items-center gap-2">
@@ -449,7 +473,7 @@ export default function PurchaseAnalysisPage() {
                 </tr>
               ))}
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                <td className="px-4 py-2.5">合计</td>
+                <td className="px-4 py-2.5">{isEn ? 'Total' : '合计'}</td>
                 <td className="px-4 py-2.5 text-right font-mono">{fmt(total)}</td>
                 <td className="px-4 py-2.5 text-right">100%</td>
               </tr>

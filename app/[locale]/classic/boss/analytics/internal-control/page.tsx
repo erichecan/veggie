@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
@@ -14,6 +16,8 @@ interface TimelinessRow { creator: string; orderCount: number; avgHours: number 
 interface Payload { priceChanges: PriceChange[]; byOperator: OperatorRow[]; timeliness: TimelinessRow[] }
 
 export default function InternalControlPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [range, setRange] = useState<DateRange>(defaultRange())
   const [data, setData] = useState<Payload | null>(null)
   const [tab, setTab] = useState<'changes' | 'operator' | 'timeliness'>('changes')
@@ -28,22 +32,22 @@ export default function InternalControlPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">内控审计</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Internal Control Audit' : '内控审计'}</h1>
         <DateRangeBar value={range} onChange={(r) => { setRange(r); load(r) }} />
       </div>
 
       {!data ? (
-        <div className="text-center text-gray-400 py-24 text-sm">加载中…</div>
+        <div className="text-center text-gray-400 py-24 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">期内改单次数</div>
+            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">{isEn ? 'Order Edits in Period' : '期内改单次数'}</div>
               <div className="text-2xl font-semibold mt-1">{data.priceChanges.length}</div></div>
-            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">降价总额</div>
+            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">{isEn ? 'Total Price Decrease' : '降价总额'}</div>
               <div className="text-2xl font-semibold mt-1 tabular-nums text-red-600">
                 {eur(data.priceChanges.filter(c => c.delta < 0).reduce((s, c) => s - c.delta, 0))}
               </div></div>
-            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">平均创建→确认耗时</div>
+            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">{isEn ? 'Avg. Create→Confirm Time' : '平均创建→确认耗时'}</div>
               <div className="text-2xl font-semibold mt-1">
                 {data.timeliness.length > 0
                   ? `${(data.timeliness.reduce((s, t) => s + (t.avgHours ?? 0) * t.orderCount, 0) / data.timeliness.reduce((s, t) => s + t.orderCount, 0)).toFixed(1)}h`
@@ -52,7 +56,10 @@ export default function InternalControlPage() {
           </div>
 
           <div className="flex items-center gap-2 border-b">
-            {([['changes', `改价明细（${data.priceChanges.length}）`], ['operator', '按操作员'], ['timeliness', '操作时效']] as const).map(([k, label]) => (
+            {(isEn
+              ? [['changes', `Price Changes (${data.priceChanges.length})`], ['operator', 'By Operator'], ['timeliness', 'Timeliness']] as const
+              : [['changes', `改价明细（${data.priceChanges.length}）`], ['operator', '按操作员'], ['timeliness', '操作时效']] as const
+            ).map(([k, label]) => (
               <button
                 key={k}
                 onClick={() => setTab(k)}
@@ -68,12 +75,12 @@ export default function InternalControlPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-left">
                   <tr>
-                    <th className="px-3 py-2 font-medium">订单</th>
-                    <th className="px-3 py-2 font-medium">操作员</th>
-                    <th className="px-3 py-2 font-medium text-right">改前金额</th>
-                    <th className="px-3 py-2 font-medium text-right">改后金额</th>
-                    <th className="px-3 py-2 font-medium text-right">变化</th>
-                    <th className="px-3 py-2 font-medium text-right">时间</th>
+                    <th className="px-3 py-2 font-medium">{isEn ? 'Order' : '订单'}</th>
+                    <th className="px-3 py-2 font-medium">{isEn ? 'Operator' : '操作员'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Before' : '改前金额'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'After' : '改后金额'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Change' : '变化'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Time' : '时间'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -92,7 +99,7 @@ export default function InternalControlPage() {
                     </tr>
                   ))}
                   {data.priceChanges.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">期内没有改价记录</td></tr>
+                    <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No price changes in this period' : '期内没有改价记录'}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -104,10 +111,10 @@ export default function InternalControlPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-left">
                   <tr>
-                    <th className="px-3 py-2 font-medium">操作员</th>
-                    <th className="px-3 py-2 font-medium text-right">改单次数</th>
-                    <th className="px-3 py-2 font-medium text-right">降价次数</th>
-                    <th className="px-3 py-2 font-medium text-right">降价总额</th>
+                    <th className="px-3 py-2 font-medium">{isEn ? 'Operator' : '操作员'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Edits' : '改单次数'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Decreases' : '降价次数'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Total Decrease' : '降价总额'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -120,7 +127,7 @@ export default function InternalControlPage() {
                     </tr>
                   ))}
                   {data.byOperator.length === 0 && (
-                    <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400">期内没有改单记录</td></tr>
+                    <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No order edits in this period' : '期内没有改单记录'}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -132,9 +139,9 @@ export default function InternalControlPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-left">
                   <tr>
-                    <th className="px-3 py-2 font-medium">创建人</th>
-                    <th className="px-3 py-2 font-medium text-right">已确认订单数</th>
-                    <th className="px-3 py-2 font-medium text-right">平均创建→确认耗时</th>
+                    <th className="px-3 py-2 font-medium">{isEn ? 'Creator' : '创建人'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Confirmed Orders' : '已确认订单数'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Avg. Create→Confirm Time' : '平均创建→确认耗时'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -146,7 +153,7 @@ export default function InternalControlPage() {
                     </tr>
                   ))}
                   {data.timeliness.length === 0 && (
-                    <tr><td colSpan={3} className="px-3 py-8 text-center text-gray-400">期内没有已确认订单</td></tr>
+                    <tr><td colSpan={3} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No confirmed orders in this period' : '期内没有已确认订单'}</td></tr>
                   )}
                 </tbody>
               </table>

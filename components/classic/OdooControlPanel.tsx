@@ -1,5 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
 import { splitOrTerms } from '@/lib/list-filters'
 
@@ -36,6 +38,8 @@ interface SavedFavourite {
 interface OdooControlPanelProps {
   breadcrumb?: string[]
   onNew?: () => void
+  /** "新建" 按钮文案；不传时按 locale 自动取 'New'/'新建' */
+  newLabel?: string
   permanentActions?: ActionItem[]
   actions?: ActionItem[]
   searchValue: string
@@ -76,6 +80,7 @@ function Chevron() {
 export default function OdooControlPanel({
   breadcrumb = [],
   onNew,
+  newLabel,
   permanentActions = [],
   actions = [],
   searchValue,
@@ -101,6 +106,8 @@ export default function OdooControlPanel({
   pageSizeMax = 200,
   className = '',
 }: OdooControlPanelProps) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [actionsOpen, setActionsOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [groupByOpen, setGroupByOpen] = useState(false)
@@ -211,7 +218,7 @@ export default function OdooControlPanel({
                 ;(e.currentTarget as HTMLElement).style.borderColor = '#875A7B'
               }}
             >
-              新建
+              {newLabel ?? (isEn ? 'New' : '新建')}
             </button>
           )}
 
@@ -239,7 +246,7 @@ export default function OdooControlPanel({
                 onClick={() => setActionsOpen(v => !v)}
                 className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1 transition-colors"
               >
-                操作 <Chevron />
+                {isEn ? 'Actions' : '操作'} <Chevron />
               </button>
               {actionsOpen && (
                 <div className="absolute left-0 top-full mt-1 w-36 bg-white rounded border border-gray-200 shadow-lg py-1 z-30 text-sm">
@@ -343,7 +350,7 @@ export default function OdooControlPanel({
               </button>
               {filterOpen && (
                 <div className="absolute right-0 top-full mt-1 bg-white rounded border border-gray-200 shadow-lg z-30 text-sm min-w-[160px]">
-                  <p className="px-3 pt-2 pb-1 text-xs text-gray-400 font-medium uppercase tracking-wide">按条件筛选</p>
+                  <p className="px-3 pt-2 pb-1 text-xs text-gray-400 font-medium uppercase tracking-wide">{isEn ? 'Filter By' : '按条件筛选'}</p>
                   {filterOptions.map(opt => (
                     <button
                       key={opt.value}
@@ -377,7 +384,7 @@ export default function OdooControlPanel({
               </button>
               {groupByOpen && (
                 <div className="absolute right-0 top-full mt-1 bg-white rounded border border-gray-200 shadow-lg z-30 text-sm min-w-[160px]">
-                  <p className="px-3 pt-2 pb-1 text-xs text-gray-400 font-medium uppercase tracking-wide">分组方式</p>
+                  <p className="px-3 pt-2 pb-1 text-xs text-gray-400 font-medium uppercase tracking-wide">{isEn ? 'Group By' : '分组方式'}</p>
                   {groupByOptions.map(opt => {
                     const active = groupByValue === opt.value
                     return (
@@ -413,7 +420,7 @@ export default function OdooControlPanel({
               {favOpen && (
                 <div className="absolute right-0 top-full mt-1 bg-white rounded border border-gray-200 shadow-lg z-30 w-56 overflow-hidden">
                   {savedFavourites.length === 0 && (
-                    <p className="px-3 py-2 text-xs text-gray-400">暂无保存的筛选</p>
+                    <p className="px-3 py-2 text-xs text-gray-400">{isEn ? 'No saved filters' : '暂无保存的筛选'}</p>
                   )}
                   {savedFavourites.map(f => (
                     <div key={f.name} className="flex items-center hover:bg-gray-50">
@@ -438,7 +445,7 @@ export default function OdooControlPanel({
                         className="w-full px-3 py-2 text-left text-sm hover:bg-[#875A7B]/20"
                         style={{ color: '#875A7B' }}
                       >
-                        + 收藏当前筛选
+                        {isEn ? '+ Save current search' : '+ 收藏当前筛选'}
                       </button>
                     ) : (
                       <div className="px-3 py-2 flex gap-1">
@@ -446,7 +453,7 @@ export default function OdooControlPanel({
                           value={favName}
                           onChange={e => setFavName(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && saveFavourite()}
-                          placeholder="筛选名称…"
+                          placeholder={isEn ? 'Filter name…' : '筛选名称…'}
                           className="flex-1 border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-purple-400"
                           autoFocus
                         />
@@ -455,7 +462,7 @@ export default function OdooControlPanel({
                           className="px-2 py-0.5 text-white text-xs rounded"
                           style={{ background: '#875A7B' }}
                         >
-                          保存
+                          {isEn ? 'Save' : '保存'}
                         </button>
                       </div>
                     )}

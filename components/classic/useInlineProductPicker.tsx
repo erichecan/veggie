@@ -24,6 +24,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { rankByRelevance } from '@/lib/search-rank'
 
 /** 下拉最多展示多少条 —— 与改造前 place-order 的行为保持一致 */
@@ -96,10 +98,17 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   onSelectByEnter,
   onSelectByTab,
   onActivate,
-  emptyText = '没有匹配商品',
-  placeholderText = '点击选择商品…',
-  searchPlaceholder = '搜索商品…',
+  emptyText,
+  placeholderText,
+  searchPlaceholder,
 }: UseInlineProductPickerOptions<P>): InlineProductPicker {
+  // 调用方（三个页面）不传这几个文案时，兜底也要跟着 locale 走——之前的硬编码中文默认值
+  // 在 place-order 页（没传 pickerTexts）会在英文界面下漏出中文（20260904 全库排查发现）。
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const resolvedEmptyText = emptyText ?? (isEn ? 'No matching products' : '没有匹配商品')
+  const resolvedPlaceholderText = placeholderText ?? (isEn ? 'Click to select product…' : '点击选择商品…')
+  const resolvedSearchPlaceholder = searchPlaceholder ?? (isEn ? 'Search product…' : '搜索商品…')
   const [activeLineId, setActiveLineId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [highlight, setHighlight] = useState(0)
@@ -251,7 +260,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
             value={search}
             onChange={e => updateSearch(e.target.value)}
             onKeyDown={handleKey}
-            placeholder={searchPlaceholder}
+            placeholder={resolvedSearchPlaceholder}
             className="w-full border border-[#875A7B] rounded px-2 py-0.5 text-xs focus:outline-none"
             onClick={e => e.stopPropagation()}
             onFocus={() => {
@@ -268,12 +277,12 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
         className={`px-2 py-0.5 rounded cursor-pointer hover:bg-[#875A7B]/20 min-h-[22px] truncate ${
           productName ? 'text-[#875A7B] underline-offset-2' : 'text-gray-400 italic'
         }`}
-        title={productName || placeholderText}
+        title={productName || resolvedPlaceholderText}
       >
-        {productName || placeholderText}
+        {productName || resolvedPlaceholderText}
       </div>
     )
-  }, [activeLineId, search, updateSearch, handleKey, searchPlaceholder, placeholderText, activate])
+  }, [activeLineId, search, updateSearch, handleKey, resolvedSearchPlaceholder, resolvedPlaceholderText, activate])
 
   const dropdown: ReactNode =
     activeLineId && dropRect && typeof document !== 'undefined'
@@ -284,7 +293,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
           >
             <div ref={listRef} className="bg-white border border-gray-200 rounded shadow-xl max-h-52 overflow-y-auto">
               {items.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-gray-400 text-center">{emptyText}</div>
+                <div className="px-3 py-2 text-xs text-gray-400 text-center">{resolvedEmptyText}</div>
               ) : (
                 items.map((p, idx) => (
                   <div

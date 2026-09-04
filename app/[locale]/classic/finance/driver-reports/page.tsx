@@ -1,12 +1,14 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
 import DriverReconTable from '@/components/finance/DriverReconTable'
 import {
   filterReconciliationRows, reconciliationCsvRows,
-  RECON_CSV_HEADERS, RECON_FILTER_LABEL,
+  RECON_CSV_HEADERS, RECON_CSV_HEADERS_EN, RECON_FILTER_LABEL, RECON_FILTER_LABEL_EN,
   type ReconRow, type ReconFilter, type ReconSummary,
 } from '@/lib/driver-reconciliation'
 
@@ -22,6 +24,9 @@ interface Payload { from: string; to: string; rows: ReconRow[]; summary: ReconSu
 const TABS: ReconFilter[] = ['all', 'not_submitted', 'submitted', 'confirmed', 'has_diff']
 
 export default function DriverReconciliationPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const FILTER_LABEL = isEn ? RECON_FILTER_LABEL_EN : RECON_FILTER_LABEL
   const [data, setData] = useState<Payload | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<ReconFilter>('all')
@@ -36,11 +41,11 @@ export default function DriverReconciliationPage() {
       setData(d)
       if (!r) setRange({ from: d.from, to: d.to })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isEn])
 
   useEffect(() => { load(null) }, [load])
 
@@ -53,18 +58,23 @@ export default function DriverReconciliationPage() {
 
   async function confirmRow(row: ReconRow) {
     const warn = row.hasDiff
-      ? `\n\n⚠️ 这条有 ${row.diffs.length} 项对不上：` +
-        row.diffs.map(d => `${d.label} 申报 ${d.declared} / 系统 ${d.system}`).join('；')
+      ? (isEn
+        ? `\n\n⚠️ ${row.diffs.length} field(s) do not match: ` +
+          row.diffs.map(d => `${d.label} declared ${d.declared} / system ${d.system}`).join('; ')
+        : `\n\n⚠️ 这条有 ${row.diffs.length} 项对不上：` +
+          row.diffs.map(d => `${d.label} 申报 ${d.declared} / 系统 ${d.system}`).join('；'))
       : ''
-    if (!confirm(`确认 ${row.driverName} ${row.date} 的当日货款？${warn}`)) return
+    if (!confirm(isEn
+      ? `Confirm ${row.driverName}'s daily takings for ${row.date}?${warn}`
+      : `确认 ${row.driverName} ${row.date} 的当日货款？${warn}`)) return
     const key = `${row.driverId}|${row.date}`
     setActing(key)
     try {
       await apiPut('/api/driver-reports/daily', { date: row.date, driverId: row.driverId })
-      toast.success('已确认')
+      toast.success(isEn ? 'Confirmed' : '已确认')
       await load(range)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '确认失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Confirmation failed' : '确认失败'))
     } finally {
       setActing(null)
     }
@@ -74,9 +84,11 @@ export default function DriverReconciliationPage() {
   function exportCsv() {
     if (!data) return
     downloadCsv(
-      `司机对账_${data.from}_${data.to}${tab === 'all' ? '' : '_' + RECON_FILTER_LABEL[tab]}`,
-      [...RECON_CSV_HEADERS],
-      reconciliationCsvRows(rows),
+      isEn
+        ? `driver-reconciliation_${data.from}_${data.to}${tab === 'all' ? '' : '_' + RECON_FILTER_LABEL_EN[tab]}`
+        : `司机对账_${data.from}_${data.to}${tab === 'all' ? '' : '_' + RECON_FILTER_LABEL[tab]}`,
+      isEn ? [...RECON_CSV_HEADERS_EN] : [...RECON_CSV_HEADERS],
+      reconciliationCsvRows(rows, isEn),
     )
   }
 
@@ -90,27 +102,27 @@ export default function DriverReconciliationPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">司机对账</h1>
-          <p className="text-sm text-gray-500">按司机按日核对申报值与系统值，就地确认当日货款</p>
+          <h1 className="text-xl font-semibold">{isEn ? 'Driver Reconciliation' : '司机对账'}</h1>
+          <p className="text-sm text-gray-500">{isEn ? 'Compare declared vs. system values by driver and day, and confirm daily takings in place' : '按司机按日核对申报值与系统值，就地确认当日货款'}</p>
         </div>
         <div className="flex items-end gap-2">
           <label className="text-sm">
-            <span className="block text-xs text-gray-500">起</span>
+            <span className="block text-xs text-gray-500">{isEn ? 'From' : '起'}</span>
             <input type="date" value={range?.from ?? ''} className="border rounded px-2 py-1"
                    onChange={e => setRange(r => r && { ...r, from: e.target.value })} />
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-gray-500">止</span>
+            <span className="block text-xs text-gray-500">{isEn ? 'To' : '止'}</span>
             <input type="date" value={range?.to ?? ''} className="border rounded px-2 py-1"
                    onChange={e => setRange(r => r && { ...r, to: e.target.value })} />
           </label>
           <button onClick={() => load(range)} disabled={loading}
                   className="px-3 py-1.5 rounded bg-gray-800 text-white text-sm disabled:opacity-50">
-            查询
+            {isEn ? 'Search' : '查询'}
           </button>
           <button onClick={exportCsv} disabled={!data || rows.length === 0}
                   className="px-3 py-1.5 rounded border text-sm disabled:opacity-50">
-            导出 CSV
+            {isEn ? 'Export CSV' : '导出 CSV'}
           </button>
         </div>
       </div>
@@ -121,14 +133,14 @@ export default function DriverReconciliationPage() {
                   className={`px-3 py-1.5 rounded text-sm border ${
                     tab === t ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700'
                   } ${t === 'has_diff' && (COUNT.has_diff ?? 0) > 0 && tab !== t ? 'border-red-300 text-red-700' : ''}`}>
-            {RECON_FILTER_LABEL[t]}
+            {FILTER_LABEL[t]}
             {COUNT[t] !== undefined && <span className="ml-1 opacity-70">{COUNT[t]}</span>}
           </button>
         ))}
       </div>
 
       {loading
-        ? <div className="border rounded p-10 text-center text-gray-500">加载中…</div>
+        ? <div className="border rounded p-10 text-center text-gray-500">{isEn ? 'Loading…' : '加载中…'}</div>
         : <DriverReconTable rows={rows} onConfirm={confirmRow} acting={acting} />}
     </div>
   )

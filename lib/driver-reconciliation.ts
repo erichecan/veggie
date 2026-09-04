@@ -40,6 +40,11 @@ export const RECON_STATUS_LABEL: Record<ReconStatus, string> = {
   submitted: '待确认',
   confirmed: '已确认',
 }
+export const RECON_STATUS_LABEL_EN: Record<ReconStatus, string> = {
+  not_submitted: 'Not Submitted',
+  submitted: 'Pending Confirmation',
+  confirmed: 'Confirmed',
+}
 
 /** 界面筛选项：三个生命周期状态 + 横切的「有差异」+ 全部 */
 export type ReconFilter = 'all' | ReconStatus | 'has_diff'
@@ -50,6 +55,13 @@ export const RECON_FILTER_LABEL: Record<ReconFilter, string> = {
   submitted: '待确认',
   confirmed: '已确认',
   has_diff: '有差异',
+}
+export const RECON_FILTER_LABEL_EN: Record<ReconFilter, string> = {
+  all: 'All',
+  not_submitted: 'Not Submitted',
+  submitted: 'Pending Confirmation',
+  confirmed: 'Confirmed',
+  has_diff: 'Has Discrepancy',
 }
 
 export interface DeclaredValues {
@@ -202,6 +214,13 @@ export const RECON_CSV_HEADERS = [
   '申报退货', '系统退货', '申报换货', '系统换货',
   '行程数', '未交账行程', '提交人', '确认时间', '确认人', '备注',
 ] as const
+export const RECON_CSV_HEADERS_EN = [
+  'Business Date', 'Driver', 'Status',
+  'Declared Cash', 'System Cash', 'Cash Diff',
+  'Declared Order Total', 'System Order Total', 'Order Total Diff',
+  'Declared Returns', 'System Returns', 'Declared Exchanges', 'System Exchanges',
+  'Trips', 'Unsettled Trips', 'Submitted By', 'Confirmed At', 'Confirmed By', 'Note',
+] as const
 
 /** 未提交的行申报列留空而不是填 0 —— CSV 落到 Excel 里，0 会被当成「报了 0」 */
 const blankIfNull = (v: number | null | undefined): number | string =>
@@ -211,13 +230,14 @@ const blankIfNull = (v: number | null | undefined): number | string =>
  * 导出用的二维数组。**入参就是屏幕上那份 `rows`**（已筛选、已排序），
  * 不重新聚合 —— 「导出的和屏幕上不一样」因此在结构上不可能发生（D9 定的做法）。
  */
-export function reconciliationCsvRows(rows: ReconRow[]): unknown[][] {
+export function reconciliationCsvRows(rows: ReconRow[], isEn = false): unknown[][] {
   const diffOf = (r: ReconRow, field: ReportDiff['field']) =>
     r.diffs.find(d => d.field === field)?.diff ?? ''
+  const statusLabel = isEn ? RECON_STATUS_LABEL_EN : RECON_STATUS_LABEL
   return rows.map(r => [
     r.date,
     r.driverName,
-    RECON_STATUS_LABEL[r.status] + (r.hasDiff ? '（有差异）' : ''),
+    statusLabel[r.status] + (r.hasDiff ? (isEn ? ' (has discrepancy)' : '（有差异）') : ''),
     blankIfNull(r.declared?.cashCollected), r.system.cashCollected, diffOf(r, 'cashCollected'),
     blankIfNull(r.declared?.orderTotal), r.system.orderTotal, diffOf(r, 'orderTotal'),
     blankIfNull(r.declared?.returnCount), r.system.returnCount,

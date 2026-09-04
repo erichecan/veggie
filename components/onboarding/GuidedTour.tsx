@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 
 // ─── Tour step definitions ────────────────────────────────────────────────────
 
@@ -10,7 +12,7 @@ interface TourStep {
   emoji?: string
 }
 
-const TOUR_STEPS: Record<string, TourStep[]> = {
+const TOUR_STEPS_ZH: Record<string, TourStep[]> = {
   OPERATOR: [
     {
       emoji: '👋',
@@ -116,6 +118,112 @@ const TOUR_STEPS: Record<string, TourStep[]> = {
   ],
 }
 
+const TOUR_STEPS_EN: Record<string, TourStep[]> = {
+  OPERATOR: [
+    {
+      emoji: '👋',
+      title: 'Welcome to the Operator Console',
+      description: 'This is the operator console, where you manage products, customers and orders, and track daily delivery progress.',
+    },
+    {
+      emoji: '📦',
+      title: 'Product Management',
+      description: 'View and manage every product on the "Products" page. Click any product row to edit its price, stock and description.',
+      hint: '👆 Top nav → Products',
+    },
+    {
+      emoji: '➕',
+      title: 'Create a Product',
+      description: 'Click "+ New" in the top right of the product list, fill in the name, unit and price, upload a photo, then remember to toggle "Can be Sold" so restaurants can see it.',
+      hint: '📍 Products page → top right +',
+    },
+    {
+      emoji: '💰',
+      title: 'Pricelist Management',
+      description: 'Set differentiated pricing per customer group on the "Pricelists" page — fixed price, discount price or tiered pricing. Changes apply to restaurant orders immediately.',
+      hint: '👆 Top nav → Pricelists',
+    },
+    {
+      emoji: '🗂️',
+      title: 'Picking Waves',
+      description: 'Once orders come in, create a wave on the "Picking Waves" page to bundle multiple orders together for pickers, improving warehouse throughput.',
+      hint: '👆 Top nav → Picking Waves',
+    },
+    {
+      emoji: '🚛',
+      title: 'Delivery Trips',
+      description: 'After picking is done, create a trip and assign a driver on the "Delivery Trips" page. The driver scans to confirm delivery at each stop, fully trackable.',
+      hint: '👆 Top nav → Delivery Trips',
+    },
+  ],
+
+  RESTAURANT: [
+    {
+      emoji: '👋',
+      title: 'Welcome to Online Ordering',
+      description: "Hi! This is your online ordering platform. Place orders quickly here every day — no phone calls needed, and your order syncs to the warehouse in real time.",
+    },
+    {
+      emoji: '🛒',
+      title: 'Browse & Select Products',
+      description: 'Filter products by category on the left, then click "Add to Cart" once you find what you need. Your special pricing is applied automatically.',
+      hint: '📍 Category sidebar on this page',
+    },
+    {
+      emoji: '✅',
+      title: 'Confirm & Submit Your Order',
+      description: 'Review products and quantities in the cart on the right, choose a payment method (bank transfer or cash on delivery), then click "Submit Order" to finish.',
+      hint: '📍 Cart area on the right',
+    },
+    {
+      emoji: '📋',
+      title: 'View Order History',
+      description: 'See all your past orders on the "My Orders" page and track delivery status (To Pick → In Delivery → Delivered).',
+      hint: '👆 Top nav → My Orders',
+    },
+  ],
+
+  PICKER: [
+    {
+      emoji: '👋',
+      title: "Welcome! You're a Picker",
+      description: 'Your job is to complete warehouse picking tasks by wave. Each wave contains several orders — pick the matching products for each one.',
+    },
+    {
+      emoji: '📋',
+      title: 'View Waves Assigned to You',
+      description: 'This lists every picking wave assigned to you, with status (To Pick / In Progress / Completed) and total item count. Tap in to start picking.',
+      hint: '📍 Current wave list',
+    },
+    {
+      emoji: '✅',
+      title: 'Complete a Pick',
+      description: 'Inside a wave, go through products and quantities line by line. Check off each item and enter the actual picked quantity, then click "Submit Complete" when done.',
+      hint: '📍 Wave detail page → check items one by one',
+    },
+  ],
+
+  DRIVER: [
+    {
+      emoji: '👋',
+      title: 'Hi, Driver!',
+      description: "Your job is to complete today's deliveries by trip. Each trip covers several restaurants — deliver to each stop in order.",
+    },
+    {
+      emoji: '🗺️',
+      title: "View Today's Trips",
+      description: 'This shows every delivery trip assigned to you, with each restaurant\'s address and item list. Tap a trip to start delivering.',
+      hint: '📍 Current trip list',
+    },
+    {
+      emoji: '📸',
+      title: 'Confirm Delivery',
+      description: 'On arrival, expand the stop, check the item list, enter the amount collected, take a proof-of-delivery photo, then click "Confirm Delivered". Click "Complete Trip" once every stop is done.',
+      hint: '📍 Trip detail → confirm each stop',
+    },
+  ],
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface GuidedTourProps {
@@ -124,10 +232,12 @@ interface GuidedTourProps {
 }
 
 export default function GuidedTour({ role, onReplay }: GuidedTourProps) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [visible, setVisible] = useState(false)
   const [step, setStep] = useState(0)
 
-  const steps = TOUR_STEPS[role] ?? []
+  const steps = (isEn ? TOUR_STEPS_EN : TOUR_STEPS_ZH)[role] ?? []
   const storageKey = `hasSeenTour_${role}`
 
   const startTour = useCallback(() => {
@@ -215,9 +325,9 @@ export default function GuidedTour({ role, onReplay }: GuidedTourProps) {
             <button
               onClick={handleSkip}
               className="text-gray-400 hover:text-gray-600 text-xs transition-colors"
-              aria-label="跳过引导"
+              aria-label={isEn ? 'Skip tour' : '跳过引导'}
             >
-              跳过
+              {isEn ? 'Skip' : '跳过'}
             </button>
           </div>
 
@@ -239,14 +349,14 @@ export default function GuidedTour({ role, onReplay }: GuidedTourProps) {
               disabled={step === 0}
               className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded-lg hover:bg-gray-100"
             >
-              ← 上一步
+              {isEn ? '← Back' : '← 上一步'}
             </button>
 
             <button
               onClick={handleNext}
               className="flex-1 px-4 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
             >
-              {isLast ? '🎉 完成引导' : '下一步 →'}
+              {isLast ? (isEn ? '🎉 Finish' : '🎉 完成引导') : (isEn ? 'Next →' : '下一步 →')}
             </button>
           </div>
         </div>

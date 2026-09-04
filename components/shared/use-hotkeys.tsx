@@ -20,6 +20,8 @@
  *   return <>{...页面内容}{helpOverlay}</>
  */
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { comboMatches, formatCombo, isTypingTarget, parseCombo } from '@/lib/hotkeys'
 
 export interface Hotkey {
@@ -41,6 +43,8 @@ export interface Hotkey {
 const HELP_COMBO = '?'
 
 export function useHotkeys(hotkeys: Hotkey[], opts?: { enabled?: boolean }) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const enabled = opts?.enabled ?? true
   const [helpOpen, setHelpOpen] = useState(false)
 
@@ -96,19 +100,20 @@ export function useHotkeys(hotkeys: Hotkey[], opts?: { enabled?: boolean }) {
   }, [enabled, isMac])
 
   const helpOverlay = helpOpen
-    ? <HotkeyHelpOverlay hotkeys={hotkeys} isMac={isMac} onClose={() => setHelpOpen(false)} />
+    ? <HotkeyHelpOverlay hotkeys={hotkeys} isMac={isMac} isEn={isEn} onClose={() => setHelpOpen(false)} />
     : null
 
   return { helpOpen, setHelpOpen, helpOverlay }
 }
 
 function HotkeyHelpOverlay({
-  hotkeys, isMac, onClose,
-}: { hotkeys: Hotkey[]; isMac: boolean; onClose: () => void }): ReactElement {
+  hotkeys, isMac, isEn, onClose,
+}: { hotkeys: Hotkey[]; isMac: boolean; isEn: boolean; onClose: () => void }): ReactElement {
+  const defaultGroup = isEn ? 'Actions' : '操作'
   const groups = new Map<string, Hotkey[]>()
   for (const hk of hotkeys) {
     if (hk.hidden) continue
-    const g = hk.group ?? '操作'
+    const g = hk.group ?? defaultGroup
     if (!groups.has(g)) groups.set(g, [])
     groups.get(g)!.push(hk)
   }
@@ -119,18 +124,18 @@ function HotkeyHelpOverlay({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="键盘快捷键"
+      aria-label={isEn ? 'Keyboard shortcuts' : '键盘快捷键'}
     >
       <div
         className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">键盘快捷键</h2>
+          <h2 className="text-base font-semibold text-gray-900">{isEn ? 'Keyboard shortcuts' : '键盘快捷键'}</h2>
           <button
             onClick={onClose}
             className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
-            aria-label="关闭"
+            aria-label={isEn ? 'Close' : '关闭'}
           >
             ✕
           </button>
@@ -153,8 +158,13 @@ function HotkeyHelpOverlay({
         ))}
 
         <div className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-400">
-          按 <kbd className="rounded border border-gray-300 bg-gray-50 px-1 font-mono">?</kbd> 随时唤出本表，
-          <kbd className="rounded border border-gray-300 bg-gray-50 px-1 font-mono">Esc</kbd> 关闭
+          {isEn ? (
+            <>Press <kbd className="rounded border border-gray-300 bg-gray-50 px-1 font-mono">?</kbd> anytime to open this list,{' '}
+            <kbd className="rounded border border-gray-300 bg-gray-50 px-1 font-mono">Esc</kbd> to close</>
+          ) : (
+            <>按 <kbd className="rounded border border-gray-300 bg-gray-50 px-1 font-mono">?</kbd> 随时唤出本表，
+            <kbd className="rounded border border-gray-300 bg-gray-50 px-1 font-mono">Esc</kbd> 关闭</>
+          )}
         </div>
       </div>
     </div>

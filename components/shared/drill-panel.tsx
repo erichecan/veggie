@@ -1,6 +1,8 @@
 'use client'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 
 export interface DrillColumn<T> {
   key: string
@@ -27,16 +29,20 @@ interface DrillPanelProps<T> {
 export function DrillPanel<T>({
   title,
   fullListHref,
-  fullListLabel = '在新页打开完整列表',
+  fullListLabel,
   columns,
   rows,
   rowKey,
   onRowClick,
-  emptyText = '暂无数据',
+  emptyText,
   onClose,
   footer,
   maxHeight = '420px',
 }: DrillPanelProps<T>) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const resolvedFullListLabel = fullListLabel ?? (isEn ? 'Open full list in new page' : '在新页打开完整列表')
+  const resolvedEmptyText = emptyText ?? (isEn ? 'No data' : '暂无数据')
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
       <div
@@ -44,7 +50,7 @@ export function DrillPanel<T>({
         style={{ background: '#f3eff5' }}
       >
         <span className="font-semibold text-gray-800">{title}</span>
-        <span className="text-xs text-gray-500">共 {rows.length} 条</span>
+        <span className="text-xs text-gray-500">{isEn ? `${rows.length} total` : `共 ${rows.length} 条`}</span>
         <div className="ml-auto flex items-center gap-3">
           {fullListHref && (
             <Link
@@ -54,21 +60,21 @@ export function DrillPanel<T>({
               className="text-xs font-medium hover:underline"
               style={{ color: '#875A7B' }}
             >
-              {fullListLabel} →
+              {resolvedFullListLabel} →
             </Link>
           )}
           <button
             onClick={onClose}
-            aria-label="收起"
+            aria-label={isEn ? 'Collapse' : '收起'}
             className="text-xs text-gray-400 hover:text-gray-700"
           >
-            收起 ✕
+            {isEn ? 'Collapse ✕' : '收起 ✕'}
           </button>
         </div>
       </div>
 
       {rows.length === 0 ? (
-        <div className="py-10 text-center text-gray-400 text-sm">{emptyText}</div>
+        <div className="py-10 text-center text-gray-400 text-sm">{resolvedEmptyText}</div>
       ) : (
         <div className="overflow-auto" style={{ maxHeight }}>
           <table className="w-full text-sm">

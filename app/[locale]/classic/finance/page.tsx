@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
 import type { Order, Customer } from '@/lib/types'
@@ -17,18 +19,30 @@ function todayStart(): string {
   return d.toISOString()
 }
 
-const TERM_LABEL: Record<string, string> = {
+const TERM_LABEL_ZH: Record<string, string> = {
   cash: '现付',
   weekly: '周结',
   monthly: '月结',
 }
+const TERM_LABEL_EN: Record<string, string> = {
+  cash: 'Cash',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+}
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL_ZH: Record<string, string> = {
   pending: '待处理',
   wave_assigned: '拣货中',
   in_delivery: '配送中',
   confirmed: '已确认',
   completed: '已完成',
+}
+const STATUS_LABEL_EN: Record<string, string> = {
+  pending: 'Pending',
+  wave_assigned: 'Picking',
+  in_delivery: 'In Delivery',
+  confirmed: 'Confirmed',
+  completed: 'Completed',
 }
 
 interface UnpaidGroup {
@@ -47,6 +61,10 @@ interface CommissionGroup {
 
 export default function ClassicFinancePage() {
   const router = useRouter()
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const TERM_LABEL = isEn ? TERM_LABEL_EN : TERM_LABEL_ZH
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const [orders, setOrders] = useState<Order[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [arByCustomer, setArByCustomer] = useState<Record<string, number>>({})
@@ -130,22 +148,26 @@ export default function ClassicFinancePage() {
         rows.push([
           g.customer.name, TERM_LABEL[g.customer.paymentTerm] ?? g.customer.paymentTerm,
           o.code ?? o.id.slice(-8), formatDateTime(o.createdAt),
-          o.paymentMethod === 'cash' ? '现收' : '转账',
+          o.paymentMethod === 'cash' ? (isEn ? 'Cash' : '现收') : (isEn ? 'Transfer' : '转账'),
           STATUS_LABEL[o.status.toLowerCase()] ?? o.status, o.totalAmount.toFixed(2), '',
         ])
       }
       if (g.historicalDebt > 0) {
         rows.push([g.customer.name, TERM_LABEL[g.customer.paymentTerm] ?? g.customer.paymentTerm,
-          '上期结转欠款', '', '', '', '', g.historicalDebt.toFixed(2)])
+          isEn ? 'Prior balance carried forward' : '上期结转欠款', '', '', '', '', g.historicalDebt.toFixed(2)])
       }
     }
     downloadCsv('unpaid-by-customer',
-      ['客户', '账期', '订单号', '下单时间', '支付方式', '状态', '订单金额', '历史欠款'], rows)
+      isEn
+        ? ['Customer', 'Terms', 'Order #', 'Order Date', 'Payment Method', 'Status', 'Order Amount', 'Prior Balance']
+        : ['客户', '账期', '订单号', '下单时间', '支付方式', '状态', '订单金额', '历史欠款'], rows)
   }
 
   function exportCommissionCsv() {
     downloadCsv('sales-commission',
-      ['客户', '已完成订单额(税前)', '佣金率', '应付佣金'],
+      isEn
+        ? ['Customer', 'Completed Orders (Ex. Tax)', 'Commission Rate', 'Commission Payable']
+        : ['客户', '已完成订单额(税前)', '佣金率', '应付佣金'],
       commissionGroups.map(g => [
         g.customer.name, g.completedTotal.toFixed(2),
         `${(g.commissionRate * 100).toFixed(1)}%`, g.commission.toFixed(2),
@@ -155,40 +177,40 @@ export default function ClassicFinancePage() {
   // ─── 列定义 ─────────────────────────────────────────────────────────────────
   const orderColumns: DrillColumn<Order>[] = [
     {
-      key: 'code', label: '订单号', render: o =>
+      key: 'code', label: isEn ? 'Order #' : '订单号', render: o =>
         <span className="font-mono text-xs text-gray-700">{o.code ?? o.id.slice(-8)}</span>,
     },
-    { key: 'restaurant', label: '客户', render: o => <span className="text-gray-800">{o.restaurantName}</span> },
+    { key: 'restaurant', label: isEn ? 'Customer' : '客户', render: o => <span className="text-gray-800">{o.restaurantName}</span> },
     {
-      key: 'time', label: '时间', render: o =>
+      key: 'time', label: isEn ? 'Time' : '时间', render: o =>
         <span className="text-xs text-gray-500">
           {formatDateTime(o.createdAt)}
         </span>,
     },
     {
-      key: 'payment', label: '付款方式', align: 'center', render: o => (
+      key: 'payment', label: isEn ? 'Payment Method' : '付款方式', align: 'center', render: o => (
         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
           o.paymentMethod === 'cash' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
         }`}>
-          {o.paymentMethod === 'cash' ? '现付' : '转账'}
+          {o.paymentMethod === 'cash' ? (isEn ? 'Cash' : '现付') : (isEn ? 'Transfer' : '转账')}
         </span>
       ),
     },
     {
-      key: 'status', label: '状态', align: 'center', render: o =>
+      key: 'status', label: isEn ? 'Status' : '状态', align: 'center', render: o =>
         <span className="text-xs text-gray-600">{STATUS_LABEL[o.status.toLowerCase()] ?? o.status}</span>,
     },
     {
-      key: 'amount', label: '金额', align: 'right', render: o =>
+      key: 'amount', label: isEn ? 'Amount' : '金额', align: 'right', render: o =>
         <span className="font-semibold text-gray-900">€{(o.totalAmountIncTax ?? o.totalAmount).toFixed(2)}</span>,
     },
   ]
 
   type UnpaidRow = UnpaidGroup & { totalDue: number }
   const unpaidColumns: DrillColumn<UnpaidRow>[] = [
-    { key: 'name', label: '客户', render: g => <span className="text-gray-800 font-medium">{g.customer.name}</span> },
+    { key: 'name', label: isEn ? 'Customer' : '客户', render: g => <span className="text-gray-800 font-medium">{g.customer.name}</span> },
     {
-      key: 'term', label: '账期', align: 'center', render: g => (
+      key: 'term', label: isEn ? 'Terms' : '账期', align: 'center', render: g => (
         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
           g.customer.paymentTerm === 'monthly' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
         }`}>
@@ -197,33 +219,33 @@ export default function ClassicFinancePage() {
       ),
     },
     {
-      key: 'orderCount', label: '未结订单', align: 'right', render: g =>
-        <span className="text-gray-700">{g.orders.length} 单</span>,
+      key: 'orderCount', label: isEn ? 'Open Orders' : '未结订单', align: 'right', render: g =>
+        <span className="text-gray-700">{g.orders.length} {isEn ? '' : '单'}</span>,
     },
     {
-      key: 'history', label: '历史欠款', align: 'right', render: g =>
+      key: 'history', label: isEn ? 'Prior Balance' : '历史欠款', align: 'right', render: g =>
         g.historicalDebt > 0
           ? <span className="text-red-700">€{g.historicalDebt.toFixed(2)}</span>
           : <span className="text-gray-300">—</span>,
     },
     {
-      key: 'total', label: '合计应收', align: 'right', render: g =>
+      key: 'total', label: isEn ? 'Total Due' : '合计应收', align: 'right', render: g =>
         <span className="font-bold text-red-700">€{g.totalDue.toFixed(2)}</span>,
     },
   ]
 
   const commissionColumns: DrillColumn<CommissionGroup>[] = [
-    { key: 'name', label: '客户', render: g => <span className="text-gray-800 font-medium">{g.customer.name}</span> },
+    { key: 'name', label: isEn ? 'Customer' : '客户', render: g => <span className="text-gray-800 font-medium">{g.customer.name}</span> },
     {
-      key: 'completed', label: '已完成订单额(税前)', align: 'right', render: g =>
+      key: 'completed', label: isEn ? 'Completed Orders (Ex. Tax)' : '已完成订单额(税前)', align: 'right', render: g =>
         <span className="text-gray-700">€{g.completedTotal.toFixed(2)}</span>,
     },
     {
-      key: 'rate', label: '佣金率', align: 'right', render: g =>
+      key: 'rate', label: isEn ? 'Commission Rate' : '佣金率', align: 'right', render: g =>
         <span className="font-medium" style={{ color: PURPLE }}>{Math.round(g.commissionRate * 100)}%</span>,
     },
     {
-      key: 'commission', label: '应付佣金', align: 'right', render: g =>
+      key: 'commission', label: isEn ? 'Commission Payable' : '应付佣金', align: 'right', render: g =>
         <span className="font-bold" style={{ color: PURPLE }}>€{g.commission.toFixed(2)}</span>,
     },
   ]
@@ -238,30 +260,30 @@ export default function ClassicFinancePage() {
     if (activeCard === 'todayCash') {
       return (
         <DrillPanel<Order>
-          title="今日现金收款明细"
+          title={isEn ? "Today's Cash Collected — Detail" : '今日现金收款明细'}
           fullListHref="/classic/operator/orders"
           columns={orderColumns}
           rows={todayCashOrders}
           rowKey={o => o.id}
           onRowClick={gotoOrder}
-          emptyText="今日暂无现金收款"
+          emptyText={isEn ? 'No cash collected today' : '今日暂无现金收款'}
           onClose={close}
-          footer={`合计 €${todayCash.toFixed(2)}`}
+          footer={`${isEn ? 'Total' : '合计'} €${todayCash.toFixed(2)}`}
         />
       )
     }
     if (activeCard === 'todayOnline') {
       return (
         <DrillPanel<Order>
-          title="今日转账收款明细"
+          title={isEn ? "Today's Online Payments — Detail" : '今日转账收款明细'}
           fullListHref="/classic/operator/orders"
           columns={orderColumns}
           rows={todayOnlineOrders}
           rowKey={o => o.id}
           onRowClick={gotoOrder}
-          emptyText="今日暂无转账收款"
+          emptyText={isEn ? 'No online payments today' : '今日暂无转账收款'}
           onClose={close}
-          footer={`合计 €${todayOnline.toFixed(2)}`}
+          footer={`${isEn ? 'Total' : '合计'} €${todayOnline.toFixed(2)}`}
         />
       )
     }
@@ -276,32 +298,36 @@ export default function ClassicFinancePage() {
         .sort((a, b) => b.totalDue - a.totalDue)
       return (
         <DrillPanel<UnpaidRow>
-          title={includeHistorical ? '欠款客户明细（含历史）' : '本期未结款客户'}
+          title={includeHistorical
+            ? (isEn ? 'Outstanding Customers (incl. Prior Balance)' : '欠款客户明细（含历史）')
+            : (isEn ? 'Outstanding Customers (Current Period)' : '本期未结款客户')}
           fullListHref="/classic/operator/customers"
           columns={unpaidColumns}
           rows={rows}
           rowKey={g => g.customer.id}
           onRowClick={g => gotoCustomer(g.customer)}
-          emptyText="暂无欠款客户"
+          emptyText={isEn ? 'No outstanding customers' : '暂无欠款客户'}
           onClose={close}
           footer={includeHistorical
-            ? `本期 €${totalCurrentUnpaid.toFixed(2)} + 历史 €${totalHistoricalDebt.toFixed(2)} = €${totalUnpaid.toFixed(2)}`
-            : `合计 €${totalCurrentUnpaid.toFixed(2)}`}
+            ? (isEn
+              ? `Current €${totalCurrentUnpaid.toFixed(2)} + Prior €${totalHistoricalDebt.toFixed(2)} = €${totalUnpaid.toFixed(2)}`
+              : `本期 €${totalCurrentUnpaid.toFixed(2)} + 历史 €${totalHistoricalDebt.toFixed(2)} = €${totalUnpaid.toFixed(2)}`)
+            : `${isEn ? 'Total' : '合计'} €${totalCurrentUnpaid.toFixed(2)}`}
         />
       )
     }
     if (activeCard === 'commission') {
       return (
         <DrillPanel<CommissionGroup>
-          title="应付销售佣金明细"
+          title={isEn ? 'Sales Commission Payable — Detail' : '应付销售佣金明细'}
           fullListHref="/classic/operator/customers"
           columns={commissionColumns}
           rows={[...commissionGroups].sort((a, b) => b.commission - a.commission)}
           rowKey={g => g.customer.id}
           onRowClick={g => gotoCustomer(g.customer)}
-          emptyText="暂无佣金应付"
+          emptyText={isEn ? 'No commission payable' : '暂无佣金应付'}
           onClose={close}
-          footer={`合计 €${totalCommission.toFixed(2)}`}
+          footer={`${isEn ? 'Total' : '合计'} €${totalCommission.toFixed(2)}`}
         />
       )
     }
@@ -311,16 +337,16 @@ export default function ClassicFinancePage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">财务总览</h1>
-        <p className="text-sm text-gray-500 mt-1">{todayLabel} · 数据实时来自数据库</p>
+        <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Finance Overview' : '财务总览'}</h1>
+        <p className="text-sm text-gray-500 mt-1">{todayLabel} · {isEn ? 'Live data from the database' : '数据实时来自数据库'}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <MetricCard label="今日现金收款" value={`€${todayCash.toFixed(2)}`} sub="司机现收·已到账" icon="💵" color="text-orange-600" border="border-orange-200" bg="bg-orange-50" active={activeCard === 'todayCash'} onClick={() => toggleCard('todayCash')} />
-        <MetricCard label="今日转账收款" value={`€${todayOnline.toFixed(2)}`} sub="线上支付·已到账" icon="💳" color="text-emerald-700" border="border-emerald-200" bg="bg-emerald-50" active={activeCard === 'todayOnline'} onClick={() => toggleCard('todayOnline')} />
-        <MetricCard label="本期未结款" value={`€${totalCurrentUnpaid.toFixed(2)}`} sub={`${unpaidGroups.filter(g => g.orders.length > 0).length} 家客户·待收`} icon="📋" color="text-amber-700" border="border-amber-200" bg="bg-amber-50" active={activeCard === 'unpaid'} onClick={() => toggleCard('unpaid')} />
-        <MetricCard label="欠款总额（含上期）" value={`€${totalUnpaid.toFixed(2)}`} sub={`含上期历史欠款 €${totalHistoricalDebt.toFixed(2)}`} icon="⚠️" color="text-red-700" border="border-red-200" bg="bg-red-50" active={activeCard === 'totalDebt'} onClick={() => toggleCard('totalDebt')} />
-        <MetricCard label="应付销售佣金" value={`€${totalCommission.toFixed(2)}`} sub={`${commissionGroups.length} 家客户·已完成订单`} icon="🤝" color="text-purple-700" border="border-purple-200" bg="bg-purple-50" active={activeCard === 'commission'} onClick={() => toggleCard('commission')} />
+        <MetricCard label={isEn ? 'Cash Collected Today' : '今日现金收款'} value={`€${todayCash.toFixed(2)}`} sub={isEn ? 'Collected by driver · Settled' : '司机现收·已到账'} icon="💵" color="text-orange-600" border="border-orange-200" bg="bg-orange-50" active={activeCard === 'todayCash'} onClick={() => toggleCard('todayCash')} />
+        <MetricCard label={isEn ? 'Online Payments Today' : '今日转账收款'} value={`€${todayOnline.toFixed(2)}`} sub={isEn ? 'Online payment · Settled' : '线上支付·已到账'} icon="💳" color="text-emerald-700" border="border-emerald-200" bg="bg-emerald-50" active={activeCard === 'todayOnline'} onClick={() => toggleCard('todayOnline')} />
+        <MetricCard label={isEn ? 'Outstanding (Current Period)' : '本期未结款'} value={`€${totalCurrentUnpaid.toFixed(2)}`} sub={isEn ? `${unpaidGroups.filter(g => g.orders.length > 0).length} customers · Outstanding` : `${unpaidGroups.filter(g => g.orders.length > 0).length} 家客户·待收`} icon="📋" color="text-amber-700" border="border-amber-200" bg="bg-amber-50" active={activeCard === 'unpaid'} onClick={() => toggleCard('unpaid')} />
+        <MetricCard label={isEn ? 'Total Outstanding (incl. Prior)' : '欠款总额（含上期）'} value={`€${totalUnpaid.toFixed(2)}`} sub={isEn ? `Incl. prior balance €${totalHistoricalDebt.toFixed(2)}` : `含上期历史欠款 €${totalHistoricalDebt.toFixed(2)}`} icon="⚠️" color="text-red-700" border="border-red-200" bg="bg-red-50" active={activeCard === 'totalDebt'} onClick={() => toggleCard('totalDebt')} />
+        <MetricCard label={isEn ? 'Sales Commission Payable' : '应付销售佣金'} value={`€${totalCommission.toFixed(2)}`} sub={isEn ? `${commissionGroups.length} customers · Completed orders` : `${commissionGroups.length} 家客户·已完成订单`} icon="🤝" color="text-purple-700" border="border-purple-200" bg="bg-purple-50" active={activeCard === 'commission'} onClick={() => toggleCard('commission')} />
       </div>
 
       {renderPanel()}
@@ -328,20 +354,20 @@ export default function ClassicFinancePage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3" style={{ background: '#f3eff5' }}>
           <span className="text-lg">📋</span>
-          <h2 className="font-bold text-gray-800">未结款明细（按客户）</h2>
-          <span className="ml-auto text-xs text-gray-500">仅展示周结 / 月结客户</span>
+          <h2 className="font-bold text-gray-800">{isEn ? 'Outstanding by Customer' : '未结款明细（按客户）'}</h2>
+          <span className="ml-auto text-xs text-gray-500">{isEn ? 'Weekly / Monthly customers only' : '仅展示周结 / 月结客户'}</span>
           {unpaidGroups.length > 0 && (
             <button
               onClick={exportUnpaidCsv}
               className="text-xs px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-600 hover:border-gray-500"
             >
-              ⬇ 导出 CSV
+              {isEn ? '⬇ Export CSV' : '⬇ 导出 CSV'}
             </button>
           )}
         </div>
 
         {unpaidGroups.length === 0 ? (
-          <div className="py-12 text-center text-gray-400 text-sm">暂无未结款项 · 所有订单已结清</div>
+          <div className="py-12 text-center text-gray-400 text-sm">{isEn ? 'No outstanding balance · All orders settled' : '暂无未结款项 · 所有订单已结清'}</div>
         ) : (
           <div className="divide-y divide-gray-100">
             {unpaidGroups.map(g => (
@@ -359,7 +385,7 @@ export default function ClassicFinancePage() {
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-red-700">€{(g.totalOwed + g.historicalDebt).toFixed(2)}</div>
-                    <div className="text-xs text-gray-500">合计应收</div>
+                    <div className="text-xs text-gray-500">{isEn ? 'Total Due' : '合计应收'}</div>
                   </div>
                 </div>
 
@@ -368,11 +394,11 @@ export default function ClassicFinancePage() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-gray-200">
-                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">订单号</th>
-                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">下单时间</th>
-                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">支付方式</th>
-                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">状态</th>
-                          <th className="text-right px-3 py-1.5 text-gray-500 font-medium">金额</th>
+                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">{isEn ? 'Order #' : '订单号'}</th>
+                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">{isEn ? 'Order Date' : '下单时间'}</th>
+                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">{isEn ? 'Payment Method' : '支付方式'}</th>
+                          <th className="text-left px-3 py-1.5 text-gray-500 font-medium">{isEn ? 'Status' : '状态'}</th>
+                          <th className="text-right px-3 py-1.5 text-gray-500 font-medium">{isEn ? 'Amount' : '金额'}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -384,7 +410,7 @@ export default function ClassicFinancePage() {
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                 o.paymentMethod === 'cash' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
                               }`}>
-                                {o.paymentMethod === 'cash' ? '现收' : '转账'}
+                                {o.paymentMethod === 'cash' ? (isEn ? 'Cash' : '现收') : (isEn ? 'Transfer' : '转账')}
                               </span>
                             </td>
                             <td className="px-3 py-1.5 text-gray-500">
@@ -400,7 +426,7 @@ export default function ClassicFinancePage() {
 
                 {g.historicalDebt > 0 && (
                   <div className="flex items-center justify-between px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-sm">
-                    <span className="text-red-600">📌 上期结转欠款</span>
+                    <span className="text-red-600">{isEn ? '📌 Prior Balance Carried Forward' : '📌 上期结转欠款'}</span>
                     <span className="font-bold text-red-700">€{g.historicalDebt.toFixed(2)}</span>
                   </div>
                 )}
@@ -413,27 +439,27 @@ export default function ClassicFinancePage() {
       <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3" style={{ background: '#f3eff5' }}>
           <span className="text-lg">🤝</span>
-          <h2 className="font-bold text-gray-800">销售佣金明细</h2>
-          <span className="ml-auto text-xs text-gray-500">仅统计已完成订单</span>
+          <h2 className="font-bold text-gray-800">{isEn ? 'Sales Commission Detail' : '销售佣金明细'}</h2>
+          <span className="ml-auto text-xs text-gray-500">{isEn ? 'Completed orders only' : '仅统计已完成订单'}</span>
           {commissionGroups.length > 0 && (
             <button
               onClick={exportCommissionCsv}
               className="text-xs px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-600 hover:border-gray-500"
             >
-              ⬇ 导出 CSV
+              {isEn ? '⬇ Export CSV' : '⬇ 导出 CSV'}
             </button>
           )}
         </div>
         {commissionGroups.length === 0 ? (
-          <div className="py-10 text-center text-gray-400 text-sm">暂无已完成订单，佣金数据为 0</div>
+          <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'No completed orders — commission is €0' : '暂无已完成订单，佣金数据为 0'}</div>
         ) : (
           <table className="w-full text-sm">
             <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
               <tr>
-                <th className="text-left px-5 py-2.5 text-xs font-medium text-gray-600">客户</th>
-                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">已完成订单额(税前)</th>
-                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">佣金率</th>
-                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">应付佣金</th>
+                <th className="text-left px-5 py-2.5 text-xs font-medium text-gray-600">{isEn ? 'Customer' : '客户'}</th>
+                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">{isEn ? 'Completed Orders (Ex. Tax)' : '已完成订单额(税前)'}</th>
+                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">{isEn ? 'Commission Rate' : '佣金率'}</th>
+                <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-600">{isEn ? 'Commission Payable' : '应付佣金'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -450,7 +476,7 @@ export default function ClassicFinancePage() {
             </tbody>
             <tfoot className="border-t border-gray-200" style={{ background: '#f3eff5' }}>
               <tr>
-                <td colSpan={3} className="px-5 py-2.5 text-sm font-semibold text-gray-700">合计</td>
+                <td colSpan={3} className="px-5 py-2.5 text-sm font-semibold text-gray-700">{isEn ? 'Total' : '合计'}</td>
                 <td className="px-5 py-2.5 text-right font-bold text-base" style={{ color: PURPLE }}>€{totalCommission.toFixed(2)}</td>
               </tr>
             </tfoot>
@@ -459,12 +485,23 @@ export default function ClassicFinancePage() {
       </div>
 
       <div className="mt-6 rounded-xl p-4 text-sm" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
-        <p className="font-semibold mb-1" style={{ color: PURPLE }}>💡 结算说明</p>
+        <p className="font-semibold mb-1" style={{ color: PURPLE }}>{isEn ? '💡 Settlement Notes' : '💡 结算说明'}</p>
         <ul className="space-y-0.5 text-xs list-disc list-inside text-gray-600">
-          <li>现付客户：司机送达时当场收款，行程完成后自动入账</li>
-          <li>周结客户：每周汇总本期应收，下单后进入待收账款</li>
-          <li>月结客户：每月月末统一结算，订单金额累积至本期账款</li>
-          <li>历史欠款为上一结算周期的未清余额，需单独追收</li>
+          {isEn ? (
+            <>
+              <li>Cash customers: the driver collects payment on delivery; recorded automatically once the trip is completed</li>
+              <li>Weekly customers: receivables are summarized weekly; orders enter accounts receivable once placed</li>
+              <li>Monthly customers: settled at month end; order amounts accrue to the current balance</li>
+              <li>Prior balance is the unpaid balance carried over from the previous settlement cycle and must be collected separately</li>
+            </>
+          ) : (
+            <>
+              <li>现付客户：司机送达时当场收款，行程完成后自动入账</li>
+              <li>周结客户：每周汇总本期应收，下单后进入待收账款</li>
+              <li>月结客户：每月月末统一结算，订单金额累积至本期账款</li>
+              <li>历史欠款为上一结算周期的未清余额，需单独追收</li>
+            </>
+          )}
         </ul>
       </div>
     </div>

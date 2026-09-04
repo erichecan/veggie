@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
@@ -26,6 +28,8 @@ const KLASS_CLS: Record<string, string> = {
 }
 
 export default function CustomersAnalyticsPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [range, setRange] = useState<DateRange>(defaultRange())
   const [data, setData] = useState<Payload | null>(null)
   const [tab, setTab] = useState<'abc' | 'churn'>('abc')
@@ -48,29 +52,32 @@ export default function CustomersAnalyticsPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">客户分析</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Customer Analysis' : '客户分析'}</h1>
         <DateRangeBar value={range} onChange={(r) => { setRange(r); load(r) }} />
       </div>
 
       {!data ? (
-        <div className="text-center text-gray-400 py-24 text-sm">加载中…</div>
+        <div className="text-center text-gray-400 py-24 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">期内活跃客户</div>
+            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">{isEn ? 'Active Customers' : '期内活跃客户'}</div>
               <div className="text-2xl font-semibold mt-1">{data.summary.activeCustomers}</div></div>
-            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">新客户（首单在期内）</div>
+            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">{isEn ? 'New Customers (first order in period)' : '新客户（首单在期内）'}</div>
               <div className="text-2xl font-semibold mt-1">{data.summary.newCustomers}</div></div>
-            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">期内销售额（税前）</div>
+            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">{isEn ? 'Revenue (ex. Tax)' : '期内销售额（税前）'}</div>
               <div className="text-2xl font-semibold mt-1 tabular-nums">{eur(data.summary.salesExTax)}</div></div>
-            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">流失预警</div>
+            <div className="border rounded-lg p-4"><div className="text-xs text-gray-500">{isEn ? 'Churn Alerts' : '流失预警'}</div>
               <div className={`text-2xl font-semibold mt-1 ${data.summary.churnCount > 0 ? 'text-red-600' : ''}`}>
                 {data.summary.churnCount}
               </div></div>
           </div>
 
           <div className="flex items-center gap-2 border-b">
-            {([['abc', `ABC 分层（${data.abc.length}）`], ['churn', `流失预警（${data.churn.length}）`]] as const).map(([k, label]) => (
+            {(isEn
+              ? [['abc', `ABC Tiering (${data.abc.length})`], ['churn', `Churn Alerts (${data.churn.length})`]] as const
+              : [['abc', `ABC 分层（${data.abc.length}）`], ['churn', `流失预警（${data.churn.length}）`]] as const
+            ).map(([k, label]) => (
               <button
                 key={k}
                 onClick={() => setTab(k)}
@@ -86,7 +93,7 @@ export default function CustomersAnalyticsPage() {
               <div className="flex items-center gap-2">
                 <input
                   className="border rounded px-3 py-1.5 text-sm w-64"
-                  placeholder="搜索客户名…"
+                  placeholder={isEn ? 'Search customer name…' : '搜索客户名…'}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -96,11 +103,13 @@ export default function CustomersAnalyticsPage() {
                     onClick={() => setKlassFilter(k)}
                     className={`text-xs border rounded px-2.5 py-1 ${klassFilter === k ? 'bg-[#875A7B] text-white border-[#875A7B]' : 'text-gray-600'}`}
                   >
-                    {k === 'ALL' ? '全部' : `${k} 类`}
+                    {k === 'ALL' ? (isEn ? 'All' : '全部') : (isEn ? `Class ${k}` : `${k} 类`)}
                   </button>
                 ))}
                 <span className="text-xs text-gray-400 ml-2">
-                  A = 累计贡献 80% 销售额的头部客户；B = 80~95%；C = 长尾
+                  {isEn
+                    ? 'A = top customers contributing 80% of cumulative revenue; B = 80~95%; C = long tail'
+                    : 'A = 累计贡献 80% 销售额的头部客户；B = 80~95%；C = 长尾'}
                 </span>
               </div>
               <div className="border rounded overflow-hidden">
@@ -108,12 +117,12 @@ export default function CustomersAnalyticsPage() {
                   <thead className="bg-gray-50 text-left">
                     <tr>
                       <th className="px-3 py-2 font-medium w-14">#</th>
-                      <th className="px-3 py-2 font-medium">客户</th>
-                      <th className="px-3 py-2 font-medium w-16">分层</th>
-                      <th className="px-3 py-2 font-medium text-right">单数</th>
-                      <th className="px-3 py-2 font-medium text-right">销售额（税前）</th>
-                      <th className="px-3 py-2 font-medium text-right">客单价</th>
-                      <th className="px-3 py-2 font-medium text-right">最后下单</th>
+                      <th className="px-3 py-2 font-medium">{isEn ? 'Customer' : '客户'}</th>
+                      <th className="px-3 py-2 font-medium w-16">{isEn ? 'Tier' : '分层'}</th>
+                      <th className="px-3 py-2 font-medium text-right">{isEn ? 'Orders' : '单数'}</th>
+                      <th className="px-3 py-2 font-medium text-right">{isEn ? 'Revenue (ex. Tax)' : '销售额（税前）'}</th>
+                      <th className="px-3 py-2 font-medium text-right">{isEn ? 'Avg. Order' : '客单价'}</th>
+                      <th className="px-3 py-2 font-medium text-right">{isEn ? 'Last Order' : '最后下单'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -131,7 +140,7 @@ export default function CustomersAnalyticsPage() {
                       </tr>
                     ))}
                     {filtered.length === 0 && (
-                      <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">期内没有匹配的客户</td></tr>
+                      <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No matching customers in this period' : '期内没有匹配的客户'}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -144,11 +153,11 @@ export default function CustomersAnalyticsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-left">
                   <tr>
-                    <th className="px-3 py-2 font-medium">客户</th>
-                    <th className="px-3 py-2 font-medium text-right">前 30 天单数</th>
-                    <th className="px-3 py-2 font-medium text-right">前 30 天金额（税前）</th>
-                    <th className="px-3 py-2 font-medium text-right">最后下单</th>
-                    <th className="px-3 py-2 font-medium text-right">沉默天数</th>
+                    <th className="px-3 py-2 font-medium">{isEn ? 'Customer' : '客户'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Orders (prior 30d)' : '前 30 天单数'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Amount (prior 30d, ex. Tax)' : '前 30 天金额（税前）'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Last Order' : '最后下单'}</th>
+                    <th className="px-3 py-2 font-medium text-right">{isEn ? 'Days Silent' : '沉默天数'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -160,12 +169,12 @@ export default function CustomersAnalyticsPage() {
                         <td className="px-3 py-1.5 text-right tabular-nums">{c.prior_orders}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums font-medium">{eur(c.prior_amount)}</td>
                         <td className="px-3 py-1.5 text-right text-gray-500">{String(c.last_order_at).slice(0, 10)}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-red-600">{silentDays} 天</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-red-600">{isEn ? `${silentDays} days` : `${silentDays} 天`}</td>
                       </tr>
                     )
                   })}
                   {data.churn.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">没有流失预警 👍</td></tr>
+                    <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No churn alerts 👍' : '没有流失预警 👍'}</td></tr>
                   )}
                 </tbody>
               </table>

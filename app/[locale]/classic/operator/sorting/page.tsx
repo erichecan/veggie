@@ -8,7 +8,7 @@ import { apiGet } from '@/lib/api'
 import type { PickingWave, WaveStatus } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
 import { DAY_ABBR, DAY_COLORS, formatDateTime } from '@/lib/format-date'
@@ -39,9 +39,9 @@ const STATUS_COLOR: Record<WaveStatus, string> = {
 const SORTING_STATUSES: WaveStatus[] = ['picked', 'sorting']
 
 const FACET_DEFS: ClientFacetDef<PickingWave>[] = [
-  { key: 'name',   label: '波次', values: r => [r.name ?? r.id] },
-  { key: 'driver', label: '司机', values: r => [r.driverName] },
-  { key: 'status', label: '状态', values: r => [r.status] },
+  { key: 'name',   label: '波次', labelEn: 'Wave',   values: r => [r.name ?? r.id] },
+  { key: 'driver', label: '司机', labelEn: 'Driver', values: r => [r.driverName] },
+  { key: 'status', label: '状态', labelEn: 'Status', values: r => [r.status] },
 ]
 
 export default function ClassicSortingPage() {
@@ -81,7 +81,7 @@ export default function ClassicSortingPage() {
 
   useEffect(() => { load() }, [])
 
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
   const filtered = useMemo(() => {
     const base = waves.filter(w => {

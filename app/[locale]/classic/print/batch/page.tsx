@@ -61,7 +61,7 @@ export default function BatchPrintPage() {
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${docTitle}（${validOrders.length} 单）</title>
+<title>${docTitle} (${validOrders.length} orders)</title>
 <style>${CSS}</style>
 </head>
 <body>

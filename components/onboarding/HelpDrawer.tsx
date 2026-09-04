@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 
 // ─── Role-specific help content ───────────────────────────────────────────────
 
@@ -16,7 +18,7 @@ interface RoleHelp {
   tips: HelpItem[]
 }
 
-const ROLE_HELP: Record<string, RoleHelp> = {
+const ROLE_HELP_ZH: Record<string, RoleHelp> = {
   OPERATOR: {
     label: '运营控制台',
     emoji: '🏭',
@@ -118,6 +120,108 @@ const ROLE_HELP: Record<string, RoleHelp> = {
   },
 }
 
+const ROLE_HELP_EN: Record<string, RoleHelp> = {
+  OPERATOR: {
+    label: 'Operator Console',
+    emoji: '🏭',
+    intro: 'The operator console covers the full flow from placing orders on a customer\'s behalf through to invoicing. Here are quick tips for each step.',
+    tips: [
+      {
+        q: '① Place order: how do I order on behalf of a restaurant?',
+        a: 'Go to "Place Order" → pick a customer at the top → browse products by category and add to cart → confirm quantities and click "Submit Order" → choose a payment method (bank transfer / cash on delivery) → confirm. The order automatically enters "Pending" status.',
+      },
+      {
+        q: '② Process orders: how do I generate a picking wave?',
+        a: 'Go to "Orders" → select a batch of pending orders (select-all works) → click "Generate Pick Wave" → the system compiles the pick list and notifies pickers to start. Each order belongs to exactly one wave.',
+      },
+      {
+        q: '③ Sorting: how do I sort after picking is done?',
+        a: 'Once a picker submits, go to "Sorting" → find the matching wave task → split the picked items into boxes for each restaurant\'s order → confirm the actual quantity per restaurant to finish sorting; the system auto-generates a delivery trip.',
+      },
+      {
+        q: '④ Delivery: how do I assign a driver and track delivery?',
+        a: 'Go to "Delivery" → click an orange "Driver Not Assigned" trip → expand the "Assign Driver" panel → pick a driver and departure time → click "Confirm Assignment". Once signed in, the driver sees the trip and confirms each stop as delivered.',
+      },
+      {
+        q: '⑤ Invoicing: how do I invoice after delivery?',
+        a: 'A draft invoice is generated automatically once delivery is done. Go to "Invoices" → verify the actual delivered quantity and amount → click "Confirm Invoice" to finish. The invoice status becomes "Invoiced" and is recorded against the customer\'s receivables.',
+      },
+      {
+        q: 'What does the whole flow look like?',
+        a: 'Place order → generate wave → pick → sort → assign driver → driver delivers & confirms → invoice draft auto-generated → confirm invoice. See the full diagram on the "Business Flow" page.',
+      },
+    ],
+  },
+
+  RESTAURANT: {
+    label: 'Online Ordering',
+    emoji: '🍜',
+    intro: 'Welcome to the online ordering platform! Here are common questions about placing orders.',
+    tips: [
+      {
+        q: 'How do I quickly find the product I need?',
+        a: 'Use the category sidebar on the left to filter by product type, or type a product name into the search box. Your special pricing is shown automatically.',
+      },
+      {
+        q: 'Can I change the quantity of an item in my cart?',
+        a: 'Yes. Click the "+"/"-" buttons next to the quantity in the cart, or type a quantity directly — the total updates in real time.',
+      },
+      {
+        q: 'What payment methods are available?',
+        a: 'Two are supported: 💳 bank transfer (settled on your payment term) and 💵 cash on delivery (pay the driver in cash at delivery).',
+      },
+      {
+        q: 'How do I check whether an order has been delivered?',
+        a: 'View all your orders on the "My Orders" page at the top — status updates automatically from "To Pick" → "In Delivery" → "Delivered".',
+      },
+    ],
+  },
+
+  PICKER: {
+    label: 'Picking',
+    emoji: '📦',
+    intro: 'The picking system helps you complete wave tasks quickly. Here are common questions.',
+    tips: [
+      {
+        q: 'How do I know which waves are assigned to me?',
+        a: 'After signing in you automatically see the list of waves assigned to you. Waves marked "To Pick" need attention soon; "In Progress" means picking has started.',
+      },
+      {
+        q: 'What if the actual picked quantity differs from the order?',
+        a: 'Edit the quantity field directly on the picking screen and enter the actual amount picked. The system records the discrepancy and automatically notifies operations.',
+      },
+      {
+        q: 'What do I do once I\'m finished?',
+        a: 'Once every item is checked off, click "Submit Complete" at the bottom. The wave status automatically becomes "Completed" and the warehouse supervisor is notified.',
+      },
+    ],
+  },
+
+  DRIVER: {
+    label: 'Delivery',
+    emoji: '🚛',
+    intro: 'The delivery system helps you complete deliveries efficiently, trip by trip. Here are common questions.',
+    tips: [
+      {
+        q: 'How do I see where I\'m delivering today?',
+        a: 'The "My Trips" page after signing in shows every trip assigned to you, including each restaurant\'s name, address and expected departure time.',
+      },
+      {
+        q: 'What do I do when I arrive at a restaurant?',
+        a: 'Expand that stop → check the item list → enter the amount collected → tap "Photo Proof" to upload a delivery photo → tap "Confirm Delivered" to finish that stop.',
+      },
+      {
+        q: 'What if a restaurant refuses an item?',
+        a: 'Edit the actual delivered quantity next to that item, add a note explaining why, then tap "Confirm Delivered". The exception is synced to operations automatically.',
+      },
+      {
+        q: 'What do I do once everything is delivered?',
+        a: 'Once every stop is confirmed delivered, tap "Complete Trip" to end today\'s trip — the system automatically totals collections and proof-of-delivery records.',
+      },
+    ],
+  },
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface HelpDrawerProps {
@@ -126,11 +230,13 @@ interface HelpDrawerProps {
 }
 
 export default function HelpDrawer({ role, onReplayTour }: HelpDrawerProps) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [open, setOpen] = useState(false)
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
 
-  const help = ROLE_HELP[role]
+  const help = (isEn ? ROLE_HELP_EN : ROLE_HELP_ZH)[role]
 
   // Close on ESC
   useEffect(() => {
@@ -167,8 +273,8 @@ export default function HelpDrawer({ role, onReplayTour }: HelpDrawerProps) {
       {/* Trigger button */}
       <button
         onClick={() => setOpen(o => !o)}
-        aria-label="打开帮助中心"
-        title="帮助"
+        aria-label={isEn ? 'Open help center' : '打开帮助中心'}
+        title={isEn ? 'Help' : '帮助'}
         className="w-7 h-7 rounded-full border border-gray-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 text-gray-500 hover:text-emerald-700 text-sm font-bold flex items-center justify-center transition-all shadow-sm"
       >
         ?
@@ -194,12 +300,12 @@ export default function HelpDrawer({ role, onReplayTour }: HelpDrawerProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xl">{help.emoji}</span>
-              <span className="text-white font-semibold text-sm">{help.label} · 帮助</span>
+              <span className="text-white font-semibold text-sm">{help.label} · {isEn ? 'Help' : '帮助'}</span>
             </div>
             <button
               onClick={() => setOpen(false)}
               className="text-emerald-200 hover:text-white transition-colors text-lg leading-none"
-              aria-label="关闭"
+              aria-label={isEn ? 'Close' : '关闭'}
             >
               ×
             </button>
@@ -209,7 +315,7 @@ export default function HelpDrawer({ role, onReplayTour }: HelpDrawerProps) {
 
         {/* FAQ list */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">常见问题</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{isEn ? 'FAQ' : '常见问题'}</p>
           {help.tips.map((item, idx) => (
             <div key={idx} className="border border-gray-100 rounded-xl overflow-hidden">
               <button
@@ -242,7 +348,7 @@ export default function HelpDrawer({ role, onReplayTour }: HelpDrawerProps) {
               }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium text-emerald-700 border border-emerald-200 rounded-xl hover:bg-emerald-50 transition-colors"
             >
-              <span>▶</span> 重新播放新手引导
+              <span>▶</span> {isEn ? 'Replay Guided Tour' : '重新播放新手引导'}
             </button>
           )}
           <Link
@@ -250,7 +356,7 @@ export default function HelpDrawer({ role, onReplayTour }: HelpDrawerProps) {
             onClick={() => setOpen(false)}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
           >
-            <span>📖</span> 查看完整帮助文档
+            <span>📖</span> {isEn ? 'View Full Help Docs' : '查看完整帮助文档'}
           </Link>
         </div>
       </div>

@@ -219,7 +219,9 @@ export default function CatalogPickingPage() {
         currency: result?.currency ?? 'EUR',
         sourceDocumentUrl: result?.sourceDocumentUrl ?? null,
         sourceDocumentName: result?.sourceDocumentName ?? null,
-        notes: `从单据识别导入：${result?.sourceDocumentName ?? ''}`,
+        notes: isEn
+          ? `Imported from document recognition: ${result?.sourceDocumentName ?? ''}`
+          : `从单据识别导入：${result?.sourceDocumentName ?? ''}`,
         lines: matched.map(l => ({
           productId: l.matchedProductId!,
           productName: l.matchedProductName ?? l.productName,

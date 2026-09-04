@@ -13,11 +13,12 @@ export default function ClassicWarehouseLayout({ children }: { children: React.R
   const [session, setSession] = useState<RoleSession | null>(null)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const LINKS = [
-    { href: `${prefix}/classic/warehouse`, label: '仓库管理' },
-    { href: `${prefix}/classic/warehouse/stock-take`, label: '库存盘点' },
+    { href: `${prefix}/classic/warehouse`, label: isEn ? 'Warehouse' : '仓库管理' },
+    { href: `${prefix}/classic/warehouse/stock-take`, label: isEn ? 'Stock Take' : '库存盘点' },
   ]
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export default function ClassicWarehouseLayout({ children }: { children: React.R
 
   return (
     <div className="min-h-screen bg-white">
-      <OdooNav appName="库存" menuItems={LINKS} session={session} />
+      <OdooNav appName={isEn ? 'Inventory' : '库存'} menuItems={LINKS} session={session} />
       <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
     </div>
   )

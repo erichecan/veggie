@@ -185,7 +185,7 @@ export function buildOrderHtml(
   </div>` : ''}
 
   ${order.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
-    <div style="font-weight:600;margin-bottom:4px;">备注</div>
+    <div style="font-weight:600;margin-bottom:4px;">备注 / Order Note</div>
     <div style="white-space:pre-wrap;">${order.externalNote}</div>
   </div>` : ''}
 

@@ -12,7 +12,7 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { creditNoteExportColumns } from '@/lib/export/columns/credit-notes'
 import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 
 type CnStatus = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 
@@ -67,10 +67,10 @@ const STATUS_COLOR: Record<CnStatus, string> = {
 const PAGE_SIZE = 20
 
 const FACET_DEFS: ClientFacetDef<CreditNote>[] = [
-  { key: 'name',     label: '单号', values: r => [r.name] },
-  { key: 'customer', label: '客户', values: r => [r.customerName] },
-  { key: 'status',   label: '状态', values: r => [r.status] },
-  { key: 'product',  label: '商品', values: r => r.lines.map(l => l.productName) },
+  { key: 'name',     label: '单号', labelEn: 'Reference', values: r => [r.name] },
+  { key: 'customer', label: '客户', labelEn: 'Customer',  values: r => [r.customerName] },
+  { key: 'status',   label: '状态', labelEn: 'Status',    values: r => [r.status] },
+  { key: 'product',  label: '商品', labelEn: 'Product',   values: r => r.lines.map(l => l.productName) },
 ]
 
 export default function CreditNotesPage() {
@@ -93,7 +93,7 @@ export default function CreditNotesPage() {
 
   useEffect(() => { load() }, [load])
 
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
   const filtered = useMemo(() => {
     let rows = notes

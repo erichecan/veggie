@@ -56,11 +56,18 @@ export async function GET(req: Request) {
         }
       }
 
-      // 在途采购：未收完的 PO Line
+      // 在途采购：未收完的 PO Line。
+      // ⛔ 曾错写成 status in ['CONFIRMED', 'PARTIAL']——PurchaseOrderStatus 压根没有
+      // PARTIAL 这个值（部分收货时 PO 仍停在 CONFIRMED，全部收完才转 RECEIVED，
+      // 见 lib/purchase/receive-purchase-order.ts:116），Prisma 校验整条 in 数组时
+      // 直接抛错，又被下面 .catch(() => []) 悄悄吞掉，导致「在途采购」永远算成 0
+      // （20260904 排查商品列表页 forecast 死字段时顺带发现）。RECEIVED 状态下
+      // 理论上各行 receivedQty>=orderedQty，pending<=0 会被下面的判断自然滤掉，
+      // 放进来是防御性的，不会引入新的计入。
       const poLines = await prismaAny.purchaseOrderLine.findMany({
         where: {
           productId: { in: ids },
-          purchaseOrder: { status: { in: ['CONFIRMED', 'PARTIAL'] } },
+          purchaseOrder: { status: { in: ['CONFIRMED', 'RECEIVED'] } },
         },
         select: { productId: true, orderedQty: true, receivedQty: true },
       }).catch(() => [])

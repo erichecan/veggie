@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import UserPermissionDialog from './user-permission-dialog'
 import type { PermissionCatalog, RoleRow } from './rbac-client'
 
@@ -167,9 +167,9 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onTo
 }
 
 const FACET_DEFS: ClientFacetDef<SystemUser>[] = [
-  { key: 'name',  label: '姓名', values: r => [r.name] },
-  { key: 'email', label: '邮箱', values: r => [r.email] },
-  { key: 'role',  label: '角色', values: r => (r.roles && r.roles.length > 0 ? r.roles : [r.role]) },
+  { key: 'name',  label: '姓名', labelEn: 'Name',  values: r => [r.name] },
+  { key: 'email', label: '邮箱', labelEn: 'Email', values: r => [r.email] },
+  { key: 'role',  label: '角色', labelEn: 'Role',  values: r => (r.roles && r.roles.length > 0 ? r.roles : [r.role]) },
 ]
 
 export default function UsersTab({
@@ -293,7 +293,7 @@ export default function UsersTab({
     }
   }
 
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
   const searched = searchInput
     ? users.filter(u =>

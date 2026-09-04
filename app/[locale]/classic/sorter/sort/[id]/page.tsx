@@ -22,6 +22,7 @@ export default function ClassicSortingExecutePage({ params }: { params: Promise<
   const { id } = use(params)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [wave, setWave] = useState<PickingWave | null>(null)
   const [restaurants, setRestaurants] = useState<RestaurantSort[]>([])
@@ -66,15 +67,18 @@ export default function ClassicSortingExecutePage({ params }: { params: Promise<
     if (!wave) return
     const incomplete = restaurants.filter(r => !r.done)
     if (incomplete.length > 0) {
-      if (!confirm(`还有 ${incomplete.length} 家餐馆未完成分货，确认提交？`)) return
+      const msg = isEn
+        ? `${incomplete.length} restaurant(s) not yet sorted. Submit anyway?`
+        : `还有 ${incomplete.length} 家餐馆未完成分货，确认提交？`
+      if (!confirm(msg)) return
     }
     const updated: PickingWave = { ...wave, status: 'sorted' }
     await apiPut(`/api/waves/${updated.id}`, updated)
-    toast.success('分货完成！已通知司机')
+    toast.success(isEn ? 'Sorting complete! Driver notified' : '分货完成！已通知司机')
     router.push(`${prefix}/classic/sorter`)
   }
 
-  if (!wave) return <div className="text-center py-16 text-gray-400">波次不存在</div>
+  if (!wave) return <div className="text-center py-16 text-gray-400">{isEn ? 'Wave not found' : '波次不存在'}</div>
 
   const doneCount = restaurants.filter(r => r.done).length
 
@@ -87,10 +91,10 @@ export default function ClassicSortingExecutePage({ params }: { params: Promise<
               onClick={() => router.push(`${prefix}/classic/sorter`)}
               className="text-sm text-gray-500 hover:text-gray-700"
             >
-              ← 返回分货任务
+              {isEn ? '← Back to Sorting Tasks' : '← 返回分货任务'}
             </button>
           </div>
-          <h1 className="text-xl font-bold text-gray-900">分货执行</h1>
+          <h1 className="text-xl font-bold text-gray-900">{isEn ? 'Sorting' : '分货执行'}</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="font-mono text-xs text-gray-400">{wave.id}</span>
             <WaveStatusBadge status={wave.status} />
@@ -102,7 +106,7 @@ export default function ClassicSortingExecutePage({ params }: { params: Promise<
           className="text-white hover:opacity-90"
           disabled={wave.status.toLowerCase() === 'sorted'}
         >
-          完成分货 ({doneCount}/{restaurants.length})
+          {isEn ? `Complete Sorting (${doneCount}/${restaurants.length})` : `完成分货 (${doneCount}/${restaurants.length})`}
         </Button>
       </div>
 

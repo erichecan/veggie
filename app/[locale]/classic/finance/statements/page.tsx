@@ -68,10 +68,15 @@ interface Customer {
   name: string
 }
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL_ZH: Record<string, string> = {
   draft: '草稿',
   confirmed: '已确认',
   sent: '已发送',
+}
+const STATUS_LABEL_EN: Record<string, string> = {
+  draft: 'Draft',
+  confirmed: 'Confirmed',
+  sent: 'Sent',
 }
 const STATUS_COLOR: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-600',
@@ -79,11 +84,17 @@ const STATUS_COLOR: Record<string, string> = {
   sent: 'bg-green-50 text-green-700',
 }
 
-const STATUS_TABS = [
+const STATUS_TABS_ZH = [
   { key: 'all', label: '全部' },
   { key: 'draft', label: '草稿' },
   { key: 'confirmed', label: '已确认' },
   { key: 'sent', label: '已发送' },
+]
+const STATUS_TABS_EN = [
+  { key: 'all', label: 'All' },
+  { key: 'draft', label: 'Draft' },
+  { key: 'confirmed', label: 'Confirmed' },
+  { key: 'sent', label: 'Sent' },
 ]
 
 const PAGE_SIZE = 50
@@ -91,7 +102,10 @@ const PAGE_SIZE = 50
 export default function StatementsPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const STATUS_TABS = isEn ? STATUS_TABS_EN : STATUS_TABS_ZH
 
   const [items, setItems] = useState<Statement[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,11 +135,11 @@ export default function StatementsPage() {
     try {
       setDetailData(await apiGet<StatementDetail>(`/api/statements/${s.id}?withDetail=1`))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载明细失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load details' : '加载明细失败'))
     } finally {
       setDetailLoading(false)
     }
-  }, [])
+  }, [isEn])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -138,11 +152,11 @@ export default function StatementsPage() {
       setItems(data.items ?? [])
       setTotal(data.total ?? 0)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [activeTab, page])
+  }, [activeTab, page, isEn])
 
   // 导出与列表同参（状态页签），服务端复用同一个 buildStatementsWhere
   const exportAction = useCsvExport({
@@ -152,7 +166,7 @@ export default function StatementsPage() {
       if (activeTab !== 'all') params.set('status', activeTab)
       return params
     },
-    fallbackFilename: '对账单.csv',
+    fallbackFilename: isEn ? 'statements.csv' : '对账单.csv',
   })
 
   useEffect(() => { load() }, [load])
@@ -170,7 +184,7 @@ export default function StatementsPage() {
 
   async function handleCreate() {
     if (!formCustomerId || !formStart || !formEnd) {
-      toast.error('请填写完整信息')
+      toast.error(isEn ? 'Please fill in all fields' : '请填写完整信息')
       return
     }
     setCreating(true)
@@ -180,14 +194,14 @@ export default function StatementsPage() {
         periodStart: formStart,
         periodEnd: formEnd,
       })
-      toast.success('对账单已生成')
+      toast.success(isEn ? 'Statement generated' : '对账单已生成')
       setShowCreate(false)
       setFormCustomerId('')
       setFormStart('')
       setFormEnd('')
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to create' : '创建失败'))
     } finally {
       setCreating(false)
     }
@@ -197,25 +211,27 @@ export default function StatementsPage() {
     setUpdating(true)
     try {
       const updated = await apiPut<Statement>(`/api/statements/${id}`, { status: newStatus })
-      toast.success(`状态已更新为 ${STATUS_LABEL[newStatus] ?? newStatus}`)
+      toast.success(isEn
+        ? `Status updated to ${STATUS_LABEL[newStatus] ?? newStatus}`
+        : `状态已更新为 ${STATUS_LABEL[newStatus] ?? newStatus}`)
       if (detail?.id === id) setDetail(updated)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '更新失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to update' : '更新失败'))
     } finally {
       setUpdating(false)
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('确定删除此对账单？')) return
+    if (!confirm(isEn ? 'Delete this statement?' : '确定删除此对账单？')) return
     try {
       await apiDelete(`/api/statements/${id}`)
-      toast.success('已删除')
+      toast.success(isEn ? 'Deleted' : '已删除')
       setDetail(null)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to delete' : '删除失败'))
     }
   }
 
@@ -226,16 +242,16 @@ export default function StatementsPage() {
     return (
       <div className="flex flex-col h-full bg-gray-50">
         <OdooControlPanel
-          breadcrumb={['财务', '对账单', detail.customerName]}
+          breadcrumb={isEn ? ['Finance', 'Statements', detail.customerName] : ['财务', '对账单', detail.customerName]}
           permanentActions={[
-            { label: '← 返回', onClick: () => setDetail(null) },
+            { label: isEn ? '← Back' : '← 返回', onClick: () => setDetail(null) },
             ...(detail.status === 'draft' ? [
-              { label: '确认', onClick: () => handleStatusChange(detail.id, 'confirmed'), primary: true },
-              { label: '删除', onClick: () => handleDelete(detail.id) },
+              { label: isEn ? 'Confirm' : '确认', onClick: () => handleStatusChange(detail.id, 'confirmed'), primary: true },
+              { label: isEn ? 'Delete' : '删除', onClick: () => handleDelete(detail.id) },
             ] : []),
             ...(detail.status === 'confirmed' ? [
-              { label: '发送', onClick: () => handleStatusChange(detail.id, 'sent'), primary: true },
-              { label: '退回草稿', onClick: () => handleStatusChange(detail.id, 'draft') },
+              { label: isEn ? 'Send' : '发送', onClick: () => handleStatusChange(detail.id, 'sent'), primary: true },
+              { label: isEn ? 'Revert to Draft' : '退回草稿', onClick: () => handleStatusChange(detail.id, 'draft') },
             ] : []),
           ]}
           searchValue=""
@@ -248,42 +264,47 @@ export default function StatementsPage() {
             <span className={`inline-block px-3 py-1 rounded text-sm font-medium ${STATUS_COLOR[detail.status] ?? 'bg-gray-100 text-gray-600'}`}>
               {STATUS_LABEL[detail.status] ?? detail.status}
             </span>
-            {updating && <span className="text-xs text-gray-400">更新中...</span>}
+            {updating && <span className="text-xs text-gray-400">{isEn ? 'Updating...' : '更新中...'}</span>}
           </div>
 
           {/* Info cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <InfoCard label="客户" value={detail.customerName} />
-            <InfoCard label="账期" value={`${fmtDate(detail.periodStart)} ~ ${fmtDate(detail.periodEnd)}`} />
-            <InfoCard label="创建时间" value={fmtDateTime(detail.createdAt)} />
-            {detail.sentAt && <InfoCard label="发送时间" value={fmtDateTime(detail.sentAt)} />}
+            <InfoCard label={isEn ? 'Customer' : '客户'} value={detail.customerName} />
+            <InfoCard label={isEn ? 'Period' : '账期'} value={`${fmtDate(detail.periodStart)} ~ ${fmtDate(detail.periodEnd)}`} />
+            <InfoCard label={isEn ? 'Created' : '创建时间'} value={fmtDateTime(detail.createdAt)} />
+            {detail.sentAt && <InfoCard label={isEn ? 'Sent' : '发送时间'} value={fmtDateTime(detail.sentAt)} />}
           </div>
 
           {/* Financial summary */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">财务汇总</div>
+            <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">{isEn ? 'Financial Summary' : '财务汇总'}</div>
             <div className="divide-y divide-gray-100">
-              <FinanceRow label="期初余额" amount={detail.openingBalance} />
-              <FinanceRow label="+ 本期销售额" amount={detail.totalSales} positive />
-              <FinanceRow label="- 本期付款额" amount={detail.totalPayments} negative />
-              <FinanceRow label="期末余额" amount={detail.closingBalance} bold />
+              <FinanceRow label={isEn ? 'Opening Balance' : '期初余额'} amount={detail.openingBalance} />
+              <FinanceRow label={isEn ? '+ Sales This Period' : '+ 本期销售额'} amount={detail.totalSales} positive />
+              <FinanceRow label={isEn ? '- Payments This Period' : '- 本期付款额'} amount={detail.totalPayments} negative />
+              <FinanceRow label={isEn ? 'Closing Balance' : '期末余额'} amount={detail.closingBalance} bold />
             </div>
           </div>
 
           {/* 逐笔明细 —— 验收要求「金额与订单明细可逐笔对上」。
               核对结果由服务端当场算（lib/finance/statement.reconcileStatement），
               页面不自己再算一遍：两边各算一次，差异出现时反而说不清谁对。 */}
-          {detailLoading && <div className="text-sm text-gray-400">明细加载中...</div>}
+          {detailLoading && <div className="text-sm text-gray-400">{isEn ? 'Loading details...' : '明细加载中...'}</div>}
           {detailData && (
             <>
               <div className={`rounded-lg border p-4 ${detailData.reconciliation.ok ? 'border-emerald-200 bg-emerald-50/50' : 'border-red-300 bg-red-50/60'}`}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-sm font-medium ${detailData.reconciliation.ok ? 'text-emerald-700' : 'text-red-700'}`}>
-                    {detailData.reconciliation.ok ? '✓ 与明细逐笔对上' : '⚠ 与明细对不上'}
+                    {detailData.reconciliation.ok
+                      ? (isEn ? '✓ Reconciled with line items' : '✓ 与明细逐笔对上')
+                      : (isEn ? '⚠ Does not reconcile with line items' : '⚠ 与明细对不上')}
                   </span>
                   <span className="text-xs text-gray-600">
-                    订单明细合计 €{detailData.reconciliation.salesFromOrders.toFixed(2)}（{detailData.orders.length} 单）
-                    · 收款流水合计 €{detailData.reconciliation.paymentsFromRecords.toFixed(2)}（{detailData.payments.length} 笔）
+                    {isEn
+                      ? <>Order total €{detailData.reconciliation.salesFromOrders.toFixed(2)} ({detailData.orders.length} orders)
+                        {' '}· Payment total €{detailData.reconciliation.paymentsFromRecords.toFixed(2)} ({detailData.payments.length} entries)</>
+                      : <>订单明细合计 €{detailData.reconciliation.salesFromOrders.toFixed(2)}（{detailData.orders.length} 单）
+                        · 收款流水合计 €{detailData.reconciliation.paymentsFromRecords.toFixed(2)}（{detailData.payments.length} 笔）</>}
                   </span>
                 </div>
                 {detailData.reconciliation.problems.map((p, i) => (
@@ -291,26 +312,28 @@ export default function StatementsPage() {
                 ))}
                 {detailData.missingOrderIds.length > 0 && (
                   <p className="text-xs text-red-700 mt-1">
-                    有 {detailData.missingOrderIds.length} 张单据已不存在（生成后被删），明细条数比对账单少
+                    {isEn
+                      ? `${detailData.missingOrderIds.length} order(s) no longer exist (deleted after generation) — fewer line items than the statement total`
+                      : `有 ${detailData.missingOrderIds.length} 张单据已不存在（生成后被删），明细条数比对账单少`}
                   </p>
                 )}
               </div>
 
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">
-                  本期订单明细 <span className="text-xs font-normal text-gray-400">按销售确认日</span>
+                  {isEn ? 'Orders This Period' : '本期订单明细'} <span className="text-xs font-normal text-gray-400">{isEn ? 'by confirmation date' : '按销售确认日'}</span>
                 </div>
                 {detailData.orders.length === 0 ? (
-                  <div className="px-5 py-6 text-sm text-gray-400">本期没有已确认的订单</div>
+                  <div className="px-5 py-6 text-sm text-gray-400">{isEn ? 'No confirmed orders this period' : '本期没有已确认的订单'}</div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-xs text-gray-500 bg-gray-50 border-b border-gray-100">
-                        <th className="text-left px-5 py-2">订单号</th>
-                        <th className="text-left px-3 py-2">确认日期</th>
-                        <th className="text-left px-3 py-2">配送日期</th>
-                        <th className="text-left px-3 py-2">状态</th>
-                        <th className="text-right px-5 py-2">含税金额</th>
+                        <th className="text-left px-5 py-2">{isEn ? 'Order #' : '订单号'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Confirmed' : '确认日期'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Delivery Date' : '配送日期'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Status' : '状态'}</th>
+                        <th className="text-right px-5 py-2">{isEn ? 'Amount (Inc. Tax)' : '含税金额'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -326,7 +349,7 @@ export default function StatementsPage() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-gray-200 font-medium">
-                        <td className="px-5 py-2 text-gray-600" colSpan={4}>合计</td>
+                        <td className="px-5 py-2 text-gray-600" colSpan={4}>{isEn ? 'Total' : '合计'}</td>
                         <td className="px-5 py-2 text-right text-gray-800">€{detailData.reconciliation.salesFromOrders.toFixed(2)}</td>
                       </tr>
                     </tfoot>
@@ -336,19 +359,19 @@ export default function StatementsPage() {
 
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 font-medium text-gray-700">
-                  本期收款明细 <span className="text-xs font-normal text-gray-400">司机现金与汇款分开标注</span>
+                  {isEn ? 'Payments This Period' : '本期收款明细'} <span className="text-xs font-normal text-gray-400">{isEn ? 'Driver cash and transfers are labeled separately' : '司机现金与汇款分开标注'}</span>
                 </div>
                 {detailData.payments.length === 0 ? (
-                  <div className="px-5 py-6 text-sm text-gray-400">本期没有收款流水</div>
+                  <div className="px-5 py-6 text-sm text-gray-400">{isEn ? 'No payments this period' : '本期没有收款流水'}</div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-xs text-gray-500 bg-gray-50 border-b border-gray-100">
-                        <th className="text-left px-5 py-2">收款日期</th>
-                        <th className="text-left px-3 py-2">核销到发票</th>
-                        <th className="text-left px-3 py-2">来源</th>
-                        <th className="text-left px-3 py-2">经手</th>
-                        <th className="text-right px-5 py-2">金额</th>
+                        <th className="text-left px-5 py-2">{isEn ? 'Payment Date' : '收款日期'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Applied to Invoice' : '核销到发票'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Source' : '来源'}</th>
+                        <th className="text-left px-3 py-2">{isEn ? 'Handled By' : '经手'}</th>
+                        <th className="text-right px-5 py-2">{isEn ? 'Amount' : '金额'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -358,9 +381,11 @@ export default function StatementsPage() {
                           <td className="px-3 py-2 text-gray-800">{p.invoiceName ?? p.invoiceId.slice(0, 8)}</td>
                           <td className="px-3 py-2">
                             {p.source === 'DRIVER_CASH' ? (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700" title={p.note ?? ''}>司机现金交账</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700" title={p.note ?? ''}>{isEn ? 'Driver cash handover' : '司机现金交账'}</span>
                             ) : (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">{p.method === 'cash' ? '现金' : p.method === 'transfer' ? '汇款' : '其他'}</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                                {p.method === 'cash' ? (isEn ? 'Cash' : '现金') : p.method === 'transfer' ? (isEn ? 'Transfer' : '汇款') : (isEn ? 'Other' : '其他')}
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-2 text-gray-500">{p.createdBy ?? '—'}</td>
@@ -370,7 +395,7 @@ export default function StatementsPage() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-gray-200 font-medium">
-                        <td className="px-5 py-2 text-gray-600" colSpan={4}>合计</td>
+                        <td className="px-5 py-2 text-gray-600" colSpan={4}>{isEn ? 'Total' : '合计'}</td>
                         <td className="px-5 py-2 text-right text-gray-800">€{detailData.reconciliation.paymentsFromRecords.toFixed(2)}</td>
                       </tr>
                     </tfoot>
@@ -388,9 +413,9 @@ export default function StatementsPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50">
       <OdooControlPanel
-        breadcrumb={['财务', '对账单']}
+        breadcrumb={isEn ? ['Finance', 'Statements'] : ['财务', '对账单']}
         permanentActions={[
-          { label: '生成对账单', onClick: () => setShowCreate(true), primary: true },
+          { label: isEn ? 'Generate Statement' : '生成对账单', onClick: () => setShowCreate(true), primary: true },
           exportAction,
         ]}
         total={total}
@@ -423,22 +448,22 @@ export default function StatementsPage() {
         {loading ? (
           <div className="flex items-center justify-center py-24 text-gray-400">
             <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: '#875A7B' }} />
-            加载中...
+            {isEn ? 'Loading...' : '加载中...'}
           </div>
         ) : items.length === 0 ? (
-          <div className="py-24 text-center text-gray-400 text-sm">暂无对账单</div>
+          <div className="py-24 text-center text-gray-400 text-sm">{isEn ? 'No statements' : '暂无对账单'}</div>
         ) : (
           <table className="w-full text-sm border-collapse bg-white">
             <thead>
               <tr className="border-b border-gray-200" style={{ background: '#f9f9f9' }}>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">客户</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">账期</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">期初余额</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">销售额</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">付款额</th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">期末余额</th>
-                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs">状态</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">创建时间</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Customer' : '客户'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Period' : '账期'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Opening Balance' : '期初余额'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Sales' : '销售额'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Payments' : '付款额'}</th>
+                <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Closing Balance' : '期末余额'}</th>
+                <th className="px-4 py-2.5 text-center font-medium text-gray-500 text-xs">{isEn ? 'Status' : '状态'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Created' : '创建时间'}</th>
               </tr>
             </thead>
             <tbody>
@@ -476,16 +501,16 @@ export default function StatementsPage() {
       {showCreate && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-base font-semibold text-gray-800">生成对账单</h2>
+            <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Generate Statement' : '生成对账单'}</h2>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">客户</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Customer' : '客户'}</label>
               <select
                 value={formCustomerId}
                 onChange={e => setFormCustomerId(e.target.value)}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
               >
-                <option value="">请选择客户...</option>
+                <option value="">{isEn ? 'Select a customer...' : '请选择客户...'}</option>
                 {customers.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
@@ -494,7 +519,7 @@ export default function StatementsPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">开始日期</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Start Date' : '开始日期'}</label>
                 <input
                   type="date"
                   value={formStart}
@@ -503,7 +528,7 @@ export default function StatementsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">结束日期</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'End Date' : '结束日期'}</label>
                 <input
                   type="date"
                   value={formEnd}
@@ -518,7 +543,7 @@ export default function StatementsPage() {
                 onClick={() => { setShowCreate(false); setFormCustomerId(''); setFormStart(''); setFormEnd('') }}
                 className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
               >
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={handleCreate}
@@ -526,7 +551,7 @@ export default function StatementsPage() {
                 className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
                 style={{ background: '#875A7B' }}
               >
-                {creating ? '生成中...' : '生成'}
+                {creating ? (isEn ? 'Generating...' : '生成中...') : (isEn ? 'Generate' : '生成')}
               </button>
             </div>
           </div>
@@ -572,4 +597,3 @@ function FinanceRow({ label, amount, positive, negative, bold }: {
     </div>
   )
 }
-

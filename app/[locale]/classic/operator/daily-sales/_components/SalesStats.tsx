@@ -377,7 +377,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
   }
 
   function handlePrint(mode: 'day' | 'multiline' | 'summary') {
-    openAuthedPdf(buildPrintUrl(mode)).catch(e => alert(e instanceof Error ? e.message : '打印失败'))
+    openAuthedPdf(buildPrintUrl(mode)).catch(e => alert(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败')))
   }
 
   // 会计导出:跟屏幕/打印同一套筛选参数(buildPrintUrl 的 querystring 部分)，走 CSV 路由
@@ -391,9 +391,11 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     if (exporting) return
     setExporting(kind)
     try {
-      await downloadAuthedFile(buildExportUrl(kind), `${kind === 'summary' ? '订单汇总' : '产品明细'}.csv`)
+      const filenameZh = kind === 'summary' ? '订单汇总' : '产品明细'
+      const filenameEn = kind === 'summary' ? 'order-summary' : 'product-detail'
+      await downloadAuthedFile(buildExportUrl(kind), `${isEn ? filenameEn : filenameZh}.csv`)
     } catch (e) {
-      alert(e instanceof Error ? e.message : '导出失败')
+      alert(e instanceof Error ? e.message : (isEn ? 'Export failed' : '导出失败'))
     } finally {
       setExporting(null)
     }

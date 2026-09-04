@@ -50,6 +50,18 @@ export async function buildCustomersWhere(
   if (paymentTermFilter) where.paymentTerm = paymentTermFilter
   if (pricelistFilter) where.pricelists = { some: { pricelistId: pricelistFilter } }
 
+  // 列头多选筛选(cfm_*，逗号分隔的精确值集合)，与商品列表页 lib/products-query.ts 同一套惯例
+  const cfmPriceType = searchParams.get('cfm_priceType')
+  if (cfmPriceType) {
+    const vals = cfmPriceType.split(',').filter(Boolean)
+    if (vals.length > 0) where.priceType = { in: vals }
+  }
+  const cfmPricelistId = searchParams.get('cfm_pricelistId')
+  if (cfmPricelistId) {
+    const vals = cfmPricelistId.split(',').filter(Boolean)
+    if (vals.length > 0) where.pricelists = { some: { pricelistId: { in: vals } } }
+  }
+
   // 购买频次：近30天订单数 >= N
   // Order.restaurantId → User.id (RESTAURANT role) → User.customerId → Customer.id
   if (minOrderCount > 0) {

@@ -13,11 +13,12 @@ export default function ClassicDriverLayout({ children }: { children: React.Reac
   const [session, setSession] = useState<RoleSession | null>(null)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const LINKS = [
-    { href: `${prefix}/classic/driver`, label: '配送任务' },
-    { href: `${prefix}/classic/driver/settlement`, label: '交账' },
+    { href: `${prefix}/classic/driver`, label: isEn ? 'Delivery Tasks' : '配送任务' },
+    { href: `${prefix}/classic/driver/settlement`, label: isEn ? 'Settlement' : '交账' },
   ]
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export default function ClassicDriverLayout({ children }: { children: React.Reac
 
   return (
     <div className="min-h-screen bg-white">
-      <OdooNav appName="配送" menuItems={LINKS} session={session} />
+      <OdooNav appName={isEn ? 'Delivery' : '配送'} menuItems={LINKS} session={session} />
       <main className="max-w-4xl mx-auto px-4 py-6">{children}</main>
     </div>
   )

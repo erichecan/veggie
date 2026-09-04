@@ -259,7 +259,7 @@ ${body}
         setReady(true)
       })
       .catch(err => {
-        setHtml(`<html><body><p style="color:red;padding:20px">${err instanceof Error ? err.message : '加载失败'}</p></body></html>`)
+        setHtml(`<html><body><p style="color:red;padding:20px">${err instanceof Error ? err.message : '加载失败 / Loading failed'}</p></body></html>`)
         setReady(true)
       })
   }, [ids])

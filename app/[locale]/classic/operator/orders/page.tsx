@@ -15,7 +15,7 @@ import { useServerList } from '@/hooks/use-server-list'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 import { getSession } from '@/lib/session'
-import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
+import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
 import { downloadAuthedFile } from '@/lib/print/open-pdf'
 
 const PAGE_SIZE = 50
@@ -178,7 +178,7 @@ export default function ClassicOrdersPage() {
     setExporting(kind)
     try {
       const url = baseUrl.replace('/api/orders?', `/api/orders/export-csv?kind=${kind}&`)
-      await downloadAuthedFile(url, `订单${kind === 'summary' ? '汇总' : '明细'}.csv`)
+      await downloadAuthedFile(url, isEn ? `orders-${kind}.csv` : `订单${kind === 'summary' ? '汇总' : '明细'}.csv`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Export failed' : '导出失败'))
     } finally {
@@ -519,7 +519,7 @@ export default function ClassicOrdersPage() {
         searchValue={search}
         onSearch={v => { setServerSearch(v) }}
         onSearchSubmit={() => {}}
-        facetFields={ORDER_FACET_FIELDS}
+        facetFields={localizeFacetFields(ORDER_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         filterOptions={[
           { label: myActive ? '✓ My Sales Order' : 'My Sales Order', value: '__my__' },

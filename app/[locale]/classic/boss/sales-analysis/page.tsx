@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { eur } from '@/lib/format-money'
@@ -54,25 +56,29 @@ function aggregate(
   orders: (Order & { salesman?: string })[],
   group: GroupKey,
   measure: MeasureKey,
+  isEn: boolean,
 ): Segment[] {
   const map = new Map<string, number>()
+  const unassigned = isEn ? '(Unassigned)' : '(未分配)'
+  const unknownCustomer = isEn ? '(Unknown Customer)' : '(未知客户)'
+  const unknownProduct = isEn ? '(Unknown Product)' : '(未知商品)'
 
   for (const o of orders) {
     const items = o.items ?? []
 
     if (group === 'salesperson') {
-      const key = o.salesman || '(未分配)'
+      const key = o.salesman || unassigned
       const val = measureOrder(o, items, measure)
       map.set(key, (map.get(key) ?? 0) + val)
     } else if (group === 'customer') {
-      const key = o.restaurantName || '(未知客户)'
+      const key = o.restaurantName || unknownCustomer
       const val = measureOrder(o, items, measure)
       map.set(key, (map.get(key) ?? 0) + val)
     } else {
       // group by product — one segment per product
       if (items.length === 0) continue
       for (const item of items) {
-        const key = item.productName || '(未知商品)'
+        const key = item.productName || unknownProduct
         const val = measureItem(o, item, measure)
         map.set(key, (map.get(key) ?? 0) + val)
       }
@@ -154,14 +160,15 @@ interface PieChartProps {
   hoveredIndex: number | null
   onHover: (i: number | null) => void
   formatValue: (v: number) => string
+  isEn: boolean
 }
 
-function PieChart({ segments, hoveredIndex, onHover, formatValue }: PieChartProps) {
+function PieChart({ segments, hoveredIndex, onHover, formatValue, isEn }: PieChartProps) {
   const total = segments.reduce((s, x) => s + x.value, 0)
   if (total === 0 || segments.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
-        暂无数据
+        {isEn ? 'No data' : '暂无数据'}
       </div>
     )
   }
@@ -231,9 +238,9 @@ function PieChart({ segments, hoveredIndex, onHover, formatValue }: PieChartProp
 }
 
 // ─── Bar Chart ────────────────────────────────────────────────────────────────
-function BarChart({ segments, hoveredIndex, onHover, formatValue }: PieChartProps) {
+function BarChart({ segments, hoveredIndex, onHover, formatValue, isEn }: PieChartProps) {
   if (segments.length === 0) {
-    return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">暂无数据</div>
+    return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">{isEn ? 'No data' : '暂无数据'}</div>
   }
   const max = Math.max(...segments.map(s => s.value))
   return (
@@ -284,11 +291,17 @@ function fmtValue(measure: MeasureKey, v: number): string {
 // ─── Filter ──────────────────────────────────────────────────────────────────
 type FilterType = 'all' | 'today' | 'week' | 'month'
 
-const FILTERS: { key: FilterType; label: string }[] = [
+const FILTERS_ZH: { key: FilterType; label: string }[] = [
   { key: 'all',   label: '全部' },
   { key: 'today', label: '今日' },
   { key: 'week',  label: '本周' },
   { key: 'month', label: '本月' },
+]
+const FILTERS_EN: { key: FilterType; label: string }[] = [
+  { key: 'all',   label: 'All' },
+  { key: 'today', label: 'Today' },
+  { key: 'week',  label: 'This Week' },
+  { key: 'month', label: 'This Month' },
 ]
 
 function filterOrders(orders: Order[], filter: FilterType): Order[] {
@@ -303,6 +316,9 @@ function filterOrders(orders: Order[], filter: FilterType): Order[] {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SalesAnalysisPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const FILTERS = isEn ? FILTERS_EN : FILTERS_ZH
   const [orders, setOrders] = useState<(Order & { salesman?: string })[] | null>(null)
   const [measure, setMeasure] = useState<MeasureKey>('total')
   const [group, setGroup] = useState<GroupKey>('salesperson')
@@ -328,10 +344,10 @@ export default function SalesAnalysisPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  if (!orders) return <div className="text-gray-400 py-20 text-center">加载中…</div>
+  if (!orders) return <div className="text-gray-400 py-20 text-center">{isEn ? 'Loading…' : '加载中…'}</div>
 
   const filtered = filterOrders(orders, filter)
-  const segments = aggregate(filtered, group, measure)
+  const segments = aggregate(filtered, group, measure, isEn)
   const total = segments.reduce((s, x) => s + x.value, 0)
   const measureLabel = MEASURES.find(m => m.key === measure)?.label ?? measure
   const groupLabel = GROUPS.find(g => g.key === group)?.label ?? group
@@ -344,7 +360,7 @@ export default function SalesAnalysisPage() {
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Sales Analysis</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Odoo 风格销售分析报表</p>
+          <p className="text-sm text-gray-400 mt-0.5">{isEn ? 'Odoo-style sales analysis report' : 'Odoo 风格销售分析报表'}</p>
         </div>
       </div>
 
@@ -353,7 +369,10 @@ export default function SalesAnalysisPage() {
 
         {/* View toggle */}
         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-          {([['pie','🥧','饼图'],['bar','📊','柱状'],['list','☰','列表']] as const).map(([v, icon, label]) => (
+          {(isEn
+            ? [['pie','🥧','Pie'],['bar','📊','Bar'],['list','☰','List']] as const
+            : [['pie','🥧','饼图'],['bar','📊','柱状'],['list','☰','列表']] as const
+          ).map(([v, icon, label]) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -443,7 +462,7 @@ export default function SalesAnalysisPage() {
         </div>
 
         <div className="ml-auto text-xs text-gray-400">
-          {filtered.length} 笔订单 · {groupLabel} by {measureLabel}
+          {isEn ? `${filtered.length} orders · ${groupLabel} by ${measureLabel}` : `${filtered.length} 笔订单 · ${groupLabel} by ${measureLabel}`}
         </div>
       </div>
 
@@ -460,6 +479,7 @@ export default function SalesAnalysisPage() {
                   hoveredIndex={hoveredIndex}
                   onHover={setHoveredIndex}
                   formatValue={fmt}
+                  isEn={isEn}
                 />
               ) : (
                 <div className="w-full max-w-xl">
@@ -468,6 +488,7 @@ export default function SalesAnalysisPage() {
                     hoveredIndex={hoveredIndex}
                     onHover={setHoveredIndex}
                     formatValue={fmt}
+                    isEn={isEn}
                   />
                 </div>
               )}
@@ -479,7 +500,7 @@ export default function SalesAnalysisPage() {
                 {groupLabel}
               </div>
               {segments.length === 0 && (
-                <div className="text-sm text-gray-400 text-center py-8">暂无数据</div>
+                <div className="text-sm text-gray-400 text-center py-8">{isEn ? 'No data' : '暂无数据'}</div>
               )}
               {segments.map((seg, i) => {
                 const pct = total > 0 ? ((seg.value / total) * 100).toFixed(1) : '0.0'
@@ -529,7 +550,7 @@ export default function SalesAnalysisPage() {
               <tbody>
                 {segments.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="text-center py-16 text-gray-400">暂无数据</td>
+                    <td colSpan={3} className="text-center py-16 text-gray-400">{isEn ? 'No data' : '暂无数据'}</td>
                   </tr>
                 )}
                 {segments.map((seg, i) => {
@@ -568,7 +589,7 @@ export default function SalesAnalysisPage() {
       {/* ── Summary bar ─────────────────────────────────────────────────────── */}
       {segments.length > 0 && (
         <div className="mt-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">占比分布</div>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{isEn ? 'Share Distribution' : '占比分布'}</div>
           <div className="flex h-3 rounded-full overflow-hidden gap-px">
             {segments.map((seg, i) => (
               <div
@@ -589,7 +610,7 @@ export default function SalesAnalysisPage() {
               </div>
             ))}
             {segments.length > 8 && (
-              <div className="text-xs text-gray-400">+{segments.length - 8} 更多</div>
+              <div className="text-xs text-gray-400">{isEn ? `+${segments.length - 8} more` : `+${segments.length - 8} 更多`}</div>
             )}
           </div>
         </div>

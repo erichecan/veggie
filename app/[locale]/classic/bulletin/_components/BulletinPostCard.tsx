@@ -4,7 +4,7 @@ import { apiDelete, apiPatch } from '@/lib/api'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime } from '@/lib/format-date'
-import { BULLETIN_CATEGORY_LABELS } from '@/lib/bulletin-categories'
+import { bulletinCategoryLabel } from '@/lib/bulletin-categories'
 import type { BulletinPost } from './types'
 
 const CATEGORY_BADGE_VARIANT: Record<BulletinPost['category'], string> = {
@@ -16,12 +16,14 @@ const CATEGORY_BADGE_VARIANT: Record<BulletinPost['category'], string> = {
 
 export default function BulletinPostCard({
   post,
+  isEn = false,
   currentUserId,
   canManage,
   onDeleted,
   onPinToggled,
 }: {
   post: BulletinPost
+  isEn?: boolean
   currentUserId: string | undefined
   canManage: boolean
   onDeleted: (id: string) => void
@@ -32,13 +34,13 @@ export default function BulletinPostCard({
   const canDelete = isOwner || canManage
 
   async function handleDelete() {
-    if (!window.confirm('确定删除这条信息吗？')) return
+    if (!window.confirm(isEn ? 'Delete this post?' : '确定删除这条信息吗？')) return
     setBusy(true)
     try {
       await apiDelete(`/api/bulletin-posts/${post.id}`)
       onDeleted(post.id)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Failed to delete' : '删除失败'))
     } finally {
       setBusy(false)
     }
@@ -52,7 +54,7 @@ export default function BulletinPostCard({
       })
       onPinToggled(updated)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '操作失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Action failed' : '操作失败'))
     } finally {
       setBusy(false)
     }
@@ -62,12 +64,12 @@ export default function BulletinPostCard({
     <div className={`border rounded-lg p-4 ${post.pinned ? 'border-purple-300 bg-purple-50/40' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
-          {post.pinned && <span className="text-xs text-purple-600 font-medium">📌 置顶</span>}
+          {post.pinned && <span className="text-xs text-purple-600 font-medium">📌 {isEn ? 'Pinned' : '置顶'}</span>}
           <Badge variant="outline" className={CATEGORY_BADGE_VARIANT[post.category]}>
-            {BULLETIN_CATEGORY_LABELS[post.category]}
+            {bulletinCategoryLabel(post.category, isEn)}
           </Badge>
           <span className="text-sm font-medium text-gray-800">
-            {post.author?.name ?? '系统'}
+            {post.author?.name ?? (isEn ? 'System' : '系统')}
           </span>
           <span className="text-xs text-gray-400">{formatDateTime(post.createdAt)}</span>
         </div>
@@ -81,7 +83,7 @@ export default function BulletinPostCard({
                 onClick={handleTogglePin}
                 className="text-xs text-gray-400 hover:text-purple-600"
               >
-                {post.pinned ? '取消置顶' : '置顶'}
+                {post.pinned ? (isEn ? 'Unpin' : '取消置顶') : (isEn ? 'Pin' : '置顶')}
               </button>
             )}
             {canDelete && (
@@ -91,7 +93,7 @@ export default function BulletinPostCard({
                 onClick={handleDelete}
                 className="text-xs text-gray-400 hover:text-red-600"
               >
-                删除
+                {isEn ? 'Delete' : '删除'}
               </button>
             )}
           </div>

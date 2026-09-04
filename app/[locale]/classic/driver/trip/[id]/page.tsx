@@ -14,7 +14,8 @@ import SignaturePad from '@/components/driver/SignaturePad'
 
 const PURPLE = '#875A7B'
 
-const EXCEPTION_REASONS = ['品质问题', '数量错误', '客户拒收', '配送延误', '包装破损', '其他']
+const EXCEPTION_REASONS_ZH = ['品质问题', '数量错误', '客户拒收', '配送延误', '包装破损', '其他']
+const EXCEPTION_REASONS_EN = ['Quality issue', 'Wrong quantity', 'Customer refused', 'Delivery delay', 'Damaged packaging', 'Other']
 
 interface ExceptionProduct {
   productId: string
@@ -27,6 +28,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const { id } = use(params)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const EXCEPTION_REASONS = isEn ? EXCEPTION_REASONS_EN : EXCEPTION_REASONS_ZH
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [trip, setTrip] = useState<Trip | null>(null)
   const [expandedRest, setExpandedRest] = useState<string | null>(null)
@@ -37,11 +40,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [exceptionReasons, setExceptionReasons] = useState<string[]>([])
   const [exceptionAction, setExceptionAction] = useState<'return' | 'exchange'>('return')
 
-  // 旧退货 modal（保留兼容性）
-  const [returnModal, setReturnModal] = useState<{ restId: string } | null>(null)
-  const [returnForm, setReturnForm] = useState<{ productId: string; productName: string; qty: number; photo: string }>({
-    productId: '', productName: '', qty: 1, photo: ''
-  })
   // 电子签收 modal（Sign on Glass）
   const [signModal, setSignModal] = useState<{ restId: string; restName: string } | null>(null)
   const [signData, setSignData] = useState<string | null>(null)
@@ -49,7 +47,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [signing, setSigning] = useState(false)
 
   const podInputRef = useRef<HTMLInputElement>(null)
-  const returnPhotoRef = useRef<HTMLInputElement>(null)
   const [podRestId, setPodRestId] = useState<string | null>(null)
 
   // 站点坐标（只读，独立于 trip state：绝不随 saveTrip 原样 PUT 回去，
@@ -101,7 +98,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     updated.restaurants = updated.restaurants.map(r => ({ ...r, cargoVerified: true }))
     updated.status = 'verifying'
     await saveTrip(updated)
-    toast.success('货物核查完成')
+    toast.success(isEn ? 'Cargo verification complete' : '货物核查完成')
   }
 
   async function startDelivery() {
@@ -109,7 +106,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     const updated = cloneTrip()
     updated.status = 'in_progress'
     await saveTrip(updated)
-    toast.success('已确认出发，开始配送')
+    toast.success(isEn ? 'Departure confirmed, delivery started' : '已确认出发，开始配送')
   }
 
   /**
@@ -144,9 +141,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   async function submitException() {
     if (!trip || !exceptionModal) return
     const selected = exceptionProducts.filter(p => p.selected)
-    if (selected.length === 0) { toast.error('请勾选有异常的商品'); return }
-    const reasonText = exceptionReasons.join('、')
-    if (!reasonText.trim()) { toast.error('请填写异常原因'); return }
+    if (selected.length === 0) { toast.error(isEn ? 'Please select the affected products' : '请勾选有异常的商品'); return }
+    const reasonText = exceptionReasons.join(isEn ? ', ' : '、')
+    if (!reasonText.trim()) { toast.error(isEn ? 'Please enter a reason' : '请填写异常原因'); return }
 
     const updated = cloneTrip()
     const r = updated.restaurants.find(r => r.restaurantId === exceptionModal.restId)
@@ -176,27 +173,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
     await saveTrip(updated)
     setExceptionModal(null)
-    toast.success('异常已记录，已添加到退换货记录')
-  }
-
-  async function addReturn(restId: string) {
-    if (!trip) return
-    const { productId, productName, qty, photo } = returnForm
-    if (!productId || qty <= 0) { toast.error('请填写退货商品和数量'); return }
-    const updated = cloneTrip()
-    const r = updated.restaurants.find(r => r.restaurantId === restId)
-    if (!r) return
-    const existing = r.returns.find(x => x.productId === productId)
-    if (existing) {
-      existing.quantity += qty
-      if (photo) existing.photo = photo
-    } else {
-      r.returns.push({ productId, productName, quantity: qty, photo: photo || undefined })
-    }
-    await saveTrip(updated)
-    setReturnModal(null)
-    setReturnForm({ productId: '', productName: '', qty: 1, photo: '' })
-    toast.success('退货记录已添加')
+    toast.success(isEn ? 'Exception recorded and added to returns/exchanges' : '异常已记录，已添加到退换货记录')
   }
 
   function handlePodUpload(e: React.ChangeEvent<HTMLInputElement>, restId: string) {
@@ -208,18 +185,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       const r = updated.restaurants.find(r => r.restaurantId === restId)
       if (r) r.pods.push(reader.result as string)
       await saveTrip(updated)
-      toast.success('POD 图片已上传')
-    }
-    reader.readAsDataURL(file)
-    e.target.value = ''
-  }
-
-  function handleReturnPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setReturnForm(f => ({ ...f, photo: reader.result as string }))
+      toast.success(isEn ? 'POD photo uploaded' : 'POD 图片已上传')
     }
     reader.readAsDataURL(file)
     e.target.value = ''
@@ -230,7 +196,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     if (!trip) return
     const r = trip.restaurants.find(r => r.restaurantId === restId)
     if (!r) return
-    if (r.payment === undefined) { toast.error('请先填写实收货款'); return }
+    if (r.payment === undefined) { toast.error(isEn ? 'Please enter the amount collected first' : '请先填写实收货款'); return }
     setSignData(null)
     setSignerName('')
     setSignModal({ restId, restName: r.restaurantName })
@@ -239,8 +205,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   /** 客户签完字才算送达。签名与签名人一并写进该站点，服务端补时间戳 */
   async function confirmDelivery() {
     if (!trip || !signModal) return
-    if (!signData) { toast.error('请先请客户签名'); return }
-    if (!signerName.trim()) { toast.error('请填写签收人姓名'); return }
+    if (!signData) { toast.error(isEn ? 'Please get the customer to sign first' : '请先请客户签名'); return }
+    if (!signerName.trim()) { toast.error(isEn ? 'Please enter the recipient name' : '请填写签收人姓名'); return }
 
     setSigning(true)
     try {
@@ -256,7 +222,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       await saveTrip(updated)
       setExpandedRest(null)
       setSignModal(null)
-      toast.success(`${signModal.restName} 已签收`)
+      toast.success(isEn ? `${signModal.restName} signed for` : `${signModal.restName} 已签收`)
     } finally {
       setSigning(false)
     }
@@ -266,19 +232,19 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     if (!trip) return
     const unprocessed = trip.restaurants.filter(r => !r.delivered && r.returns.length === 0)
     if (unprocessed.length > 0) {
-      const names = unprocessed.map(r => r.restaurantName).join('、')
-      toast.error(`请先完成以下站点（送达或报告异常）：${names}`)
+      const names = unprocessed.map(r => r.restaurantName).join(isEn ? ', ' : '、')
+      toast.error(isEn ? `Please complete these stops first (deliver or report exception): ${names}` : `请先完成以下站点（送达或报告异常）：${names}`)
       return
     }
     const updated = cloneTrip()
     updated.status = 'completed'
     updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
     await saveTrip(updated)
-    toast.success('行程已结束，订单已更新为完成')
+    toast.success(isEn ? 'Trip ended, orders updated to completed' : '行程已结束，订单已更新为完成')
     router.push(`${prefix}/classic/driver`)
   }
 
-  if (!trip) return <div className="text-center py-16 text-gray-400">行程不存在</div>
+  if (!trip) return <div className="text-center py-16 text-gray-400">{isEn ? 'Trip not found' : '行程不存在'}</div>
 
   const allVerified = trip.restaurants.every(r => r.cargoVerified)
   const processedCount = trip.restaurants.filter(r => r.delivered || r.returns.length > 0).length
@@ -303,10 +269,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
               onClick={() => router.push(`${prefix}/classic/driver`)}
               className="text-sm text-gray-500 hover:text-gray-700"
             >
-              ← 返回任务列表
+              {isEn ? '← Back to task list' : '← 返回任务列表'}
             </button>
           </div>
-          <h1 className="text-xl font-bold text-gray-900">配送执行</h1>
+          <h1 className="text-xl font-bold text-gray-900">{isEn ? 'Delivery Execution' : '配送执行'}</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="font-mono text-xs text-gray-400">{trip.id}</span>
             <TripStatusBadge status={trip.status} />
@@ -320,7 +286,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
             variant={allProcessed ? 'default' : 'outline'}
             disabled={tripStatus === 'pending' || tripStatus === 'verifying' || !allProcessed}
           >
-            结束行程 ({processedCount}/{trip.restaurants.length})
+            {isEn ? `End Trip (${processedCount}/${trip.restaurants.length})` : `结束行程 (${processedCount}/${trip.restaurants.length})`}
           </Button>
         )}
       </div>
@@ -331,7 +297,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           <BatchMap markers={routeMarkers} height="200px" />
           {missingCoordsCount > 0 && (
             <p className="text-xs text-gray-400 mt-1">
-              {missingCoordsCount} 个站点未标定位置，暂不显示在地图上
+              {isEn ? `${missingCoordsCount} stops have no location set, not shown on map` : `${missingCoordsCount} 个站点未标定位置，暂不显示在地图上`}
             </p>
           )}
         </div>
@@ -340,16 +306,16 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       {/* 核货阶段 */}
       {tripStatus === 'pending' && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-5">
-          <p className="font-medium text-yellow-800 mb-3">📦 出发前货物核查</p>
+          <p className="font-medium text-yellow-800 mb-3">{isEn ? '📦 Cargo Check Before Departure' : '📦 出发前货物核查'}</p>
           <div className="space-y-2 mb-4">
             {trip.restaurants.map(r => (
               <div key={r.restaurantId} className="flex items-center justify-between text-sm">
                 <span className="text-gray-700">🏪 {r.restaurantName}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-gray-500">{r.items.length} 种商品</span>
+                  <span className="text-gray-500">{isEn ? `${r.items.length} SKUs` : `${r.items.length} 种商品`}</span>
                   {r.cargoVerified
-                    ? <span className="text-green-600 font-medium">✓ 已核</span>
-                    : <span className="text-gray-400">待核</span>
+                    ? <span className="text-green-600 font-medium">{isEn ? '✓ Verified' : '✓ 已核'}</span>
+                    : <span className="text-gray-400">{isEn ? 'Pending' : '待核'}</span>
                   }
                 </div>
               </div>
@@ -357,7 +323,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
           </div>
           <div className="flex gap-3">
             <Button variant="outline" onClick={verifyAllCargo} className="flex-1">
-              一键核货完成
+              {isEn ? 'Verify All' : '一键核货完成'}
             </Button>
             <Button
               onClick={startDelivery}
@@ -365,7 +331,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
               className="flex-1 text-white hover:opacity-90"
               disabled={!allVerified}
             >
-              确认出发 🚛
+              {isEn ? 'Confirm Departure 🚛' : '确认出发 🚛'}
             </Button>
           </div>
         </div>
@@ -373,13 +339,13 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
       {tripStatus === 'verifying' && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-5">
-          <p className="font-medium text-yellow-800 mb-2">✅ 货物核查完成，可以出发</p>
+          <p className="font-medium text-yellow-800 mb-2">{isEn ? '✅ Cargo verified, ready to depart' : '✅ 货物核查完成，可以出发'}</p>
           <Button
             onClick={startDelivery}
             style={{ background: PURPLE, borderColor: PURPLE }}
             className="w-full text-white hover:opacity-90"
           >
-            确认出发 🚛
+            {isEn ? 'Confirm Departure 🚛' : '确认出发 🚛'}
           </Button>
         </div>
       )}
@@ -387,7 +353,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
       {/* 总收款信息 */}
       {(tripStatus === 'in_progress' || tripStatus === 'completed') && (
         <div className="rounded-xl p-4 mb-5 flex justify-between items-center" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
-          <span className="font-medium" style={{ color: PURPLE }}>💰 累计实收</span>
+          <span className="font-medium" style={{ color: PURPLE }}>{isEn ? '💰 Total Collected' : '💰 累计实收'}</span>
           <span className="text-2xl font-bold" style={{ color: PURPLE }}>€{trip.totalPayment.toFixed(2)}</span>
         </div>
       )}
@@ -418,16 +384,16 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   >
                     🏪 {r.restaurantName}
                   </button>
-                  {r.delivered && <span className="text-xs text-green-600 font-medium">✓ 已送达</span>}
+                  {r.delivered && <span className="text-xs text-green-600 font-medium">{isEn ? '✓ Delivered' : '✓ 已送达'}</span>}
                   {!r.delivered && hasException && (
-                    <span className="text-xs text-orange-600 font-medium">⚠ 有异常</span>
+                    <span className="text-xs text-orange-600 font-medium">{isEn ? '⚠ Exception' : '⚠ 有异常'}</span>
                   )}
                   {navUrl && (
                     <button
                       className="text-xs px-2 py-0.5 rounded border border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100 whitespace-nowrap"
                       onClick={e => { e.stopPropagation(); window.open(navUrl, '_blank') }}
                     >
-                      🧭 导航
+                      {isEn ? '🧭 Navigate' : '🧭 导航'}
                     </button>
                   )}
                   {!isProcessed && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
@@ -435,7 +401,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       className="text-xs px-2 py-0.5 rounded border border-orange-300 text-orange-600 bg-orange-50 hover:bg-orange-100 whitespace-nowrap"
                       onClick={e => { e.stopPropagation(); openExceptionModal(r.restaurantId) }}
                     >
-                      报告异常
+                      {isEn ? 'Report Exception' : '报告异常'}
                     </button>
                   )}
                 </div>
@@ -444,8 +410,8 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   className="flex items-center gap-3 text-sm text-gray-500 shrink-0 ml-2"
                   onClick={() => setExpandedRest(expandedRest === r.restaurantId ? null : r.restaurantId)}
                 >
-                  <span>应收 €{r.items.reduce((s, i) => s + i.subtotal, 0).toFixed(2)}</span>
-                  {r.payment !== undefined && <span className="font-medium" style={{ color: PURPLE }}>实收 €{r.payment.toFixed(2)}</span>}
+                  <span>{isEn ? 'Due' : '应收'} €{r.items.reduce((s, i) => s + i.subtotal, 0).toFixed(2)}</span>
+                  {r.payment !== undefined && <span className="font-medium" style={{ color: PURPLE }}>{isEn ? 'Collected' : '实收'} €{r.payment.toFixed(2)}</span>}
                   <span className="text-gray-400">{expandedRest === r.restaurantId ? '▲' : '▼'}</span>
                 </button>
               </div>
@@ -455,10 +421,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-gray-500">
-                        <th className="pb-2 font-medium">商品</th>
-                        <th className="pb-2 font-medium">规格</th>
-                        <th className="pb-2 text-right font-medium">数量</th>
-                        <th className="pb-2 text-right font-medium">小计</th>
+                        <th className="pb-2 font-medium">{isEn ? 'Product' : '商品'}</th>
+                        <th className="pb-2 font-medium">{isEn ? 'Spec' : '规格'}</th>
+                        <th className="pb-2 text-right font-medium">{isEn ? 'Qty' : '数量'}</th>
+                        <th className="pb-2 text-right font-medium">{isEn ? 'Subtotal' : '小计'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -473,7 +439,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-gray-200">
-                        <td colSpan={3} className="pt-2 text-right font-medium text-gray-700">应收合计</td>
+                        <td colSpan={3} className="pt-2 text-right font-medium text-gray-700">{isEn ? 'Total Due' : '应收合计'}</td>
                         <td className="pt-2 text-right font-bold" style={{ color: PURPLE }}>
                           €{r.items.reduce((s, i) => s + i.subtotal, 0).toFixed(2)}
                         </td>
@@ -483,10 +449,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
                   {!r.delivered && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
                     <div className="border-t pt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">💰 实收货款（元）</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? '💰 Amount Collected (€)' : '💰 实收货款（元）'}</label>
                       <NumericInput
                         step="0.01"
-                        placeholder="输入实收金额"
+                        placeholder={isEn ? 'Enter amount collected' : '输入实收金额'}
                         defaultValue={r.payment ?? ''}
                         onBlur={e => setPayment(r.restaurantId, parseFloat(e.target.value) || 0)}
                         className="w-48"
@@ -496,7 +462,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
                   {r.returns.length > 0 && (
                     <div className="border-t pt-4">
-                      <p className="text-sm font-medium text-gray-700 mb-2">📦 退换货记录</p>
+                      <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? '📦 Returns/Exchanges' : '📦 退换货记录'}</p>
                       <div className="space-y-2">
                         {r.returns.map((ret, i) => (
                           <div key={i} className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
@@ -504,12 +470,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                             <span className="text-red-500">×{ret.quantity}</span>
                             {ret.actionType && (
                               <span className={`text-xs px-1.5 py-0.5 rounded ${ret.actionType === 'exchange' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
-                                {ret.actionType === 'exchange' ? '换货' : '退货'}
+                                {ret.actionType === 'exchange' ? (isEn ? 'Exchange' : '换货') : (isEn ? 'Return' : '退货')}
                               </span>
                             )}
                             {ret.reason && <span className="text-gray-400 text-xs">{ret.reason}</span>}
                             {ret.photo && (
-                              <img src={ret.photo} alt="退货图" className="w-10 h-10 rounded object-cover border" />
+                              <img src={ret.photo} alt={isEn ? 'Return photo' : '退货图'} className="w-10 h-10 rounded object-cover border" />
                             )}
                           </div>
                         ))}
@@ -519,20 +485,20 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
 
                   {r.signature && (
                     <div className="border-t pt-4">
-                      <p className="text-sm font-medium text-gray-700 mb-2">✍️ 客户签收</p>
+                      <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? '✍️ Customer Signature' : '✍️ 客户签收'}</p>
                       <div className="inline-block rounded border bg-white p-2">
-                        <img src={r.signature} alt="客户签名" className="h-20 object-contain" />
+                        <img src={r.signature} alt={isEn ? 'Customer signature' : '客户签名'} className="h-20 object-contain" />
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        签收人：{r.signerName ?? '—'}
-                        {r.signedAt && ` · ${new Date(r.signedAt).toLocaleString('zh-CN')}`}
+                        {isEn ? 'Signed by' : '签收人'}：{r.signerName ?? '—'}
+                        {r.signedAt && ` · ${new Date(r.signedAt).toLocaleString(isEn ? 'en-GB' : 'zh-CN')}`}
                       </p>
                     </div>
                   )}
 
                   {r.pods.length > 0 && (
                     <div className="border-t pt-4">
-                      <p className="text-sm font-medium text-gray-700 mb-2">📷 POD 签收照片</p>
+                      <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? '📷 POD Photos' : '📷 POD 签收照片'}</p>
                       <div className="flex gap-2 flex-wrap">
                         {r.pods.map((pod, i) => (
                           <img key={i} src={pod} alt={`POD ${i+1}`} className="w-20 h-20 rounded object-cover border" />
@@ -548,7 +514,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         size="sm"
                         onClick={() => openExceptionModal(r.restaurantId)}
                       >
-                        ⚠ 报告异常
+                        {isEn ? '⚠ Report Exception' : '⚠ 报告异常'}
                       </Button>
                       <Button
                         variant="outline"
@@ -558,14 +524,14 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                           podInputRef.current?.click()
                         }}
                       >
-                        📷 上传 POD
+                        {isEn ? '📷 Upload POD' : '📷 上传 POD'}
                       </Button>
                       <Button
                         size="sm"
                         className="bg-green-600 hover:bg-green-700 ml-auto"
                         onClick={() => openSignModal(r.restaurantId)}
                       >
-                        ✍️ 客户签收
+                        {isEn ? '✍️ Customer Sign-off' : '✍️ 客户签收'}
                       </Button>
                     </div>
                   )}
@@ -590,28 +556,28 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
-              <h3 className="font-bold text-gray-900">客户签收 — {signModal.restName}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">请把手机递给客户，由客户本人在下方签名确认收货</p>
+              <h3 className="font-bold text-gray-900">{isEn ? `Customer Sign-off — ${signModal.restName}` : `客户签收 — ${signModal.restName}`}</h3>
+              <p className="text-xs text-gray-500 mt-0.5">{isEn ? 'Hand the phone to the customer to sign below and confirm receipt' : '请把手机递给客户，由客户本人在下方签名确认收货'}</p>
             </div>
 
             <SignaturePad onChange={setSignData} disabled={signing} />
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">签收人姓名</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Recipient Name' : '签收人姓名'}</label>
               <input
                 className="w-full border rounded px-3 py-2 text-sm"
-                placeholder="请客户写下或司机代填姓名"
+                placeholder={isEn ? "Customer's name, or driver fills in" : '请客户写下或司机代填姓名'}
                 value={signerName}
                 onChange={e => setSignerName(e.target.value)}
                 disabled={signing}
                 maxLength={40}
               />
-              <p className="text-xs text-gray-400 mt-1">签名图像认不出是谁签的，姓名要单独记，日后追责才有依据</p>
+              <p className="text-xs text-gray-400 mt-1">{isEn ? "The signature image alone can't identify the signer, so the name is recorded separately for accountability" : '签名图像认不出是谁签的，姓名要单独记，日后追责才有依据'}</p>
             </div>
 
             <div className="flex gap-2 justify-end pt-1">
               <Button variant="outline" size="sm" onClick={() => setSignModal(null)} disabled={signing}>
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </Button>
               <Button
                 size="sm"
@@ -619,7 +585,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 onClick={confirmDelivery}
                 disabled={signing || !signData || !signerName.trim()}
               >
-                {signing ? '提交中…' : '✓ 确认签收'}
+                {signing ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? '✓ Confirm' : '✓ 确认签收')}
               </Button>
             </div>
           </div>
@@ -632,10 +598,10 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         return (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="font-bold text-gray-900">报告异常 — {rest.restaurantName}</h3>
+              <h3 className="font-bold text-gray-900">{isEn ? `Report Exception — ${rest.restaurantName}` : `报告异常 — ${rest.restaurantName}`}</h3>
 
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">选择有异常的商品（可多选）</p>
+                <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Select affected products (multiple allowed)' : '选择有异常的商品（可多选）'}</p>
                 <div className="space-y-2 border rounded-lg divide-y">
                   {exceptionProducts.map((p, i) => (
                     <div key={p.productId} className="flex items-center gap-3 px-3 py-2.5">
@@ -651,7 +617,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       />
                       <label htmlFor={`exc-${i}`} className="flex-1 text-sm cursor-pointer">
                         <span className="font-medium text-gray-800">{p.productName}</span>
-                        <span className="text-gray-400 ml-2">已配 {p.quantity}</span>
+                        <span className="text-gray-400 ml-2">{isEn ? `Allocated ${p.quantity}` : `已配 ${p.quantity}`}</span>
                       </label>
                       {p.selected && (
                         <NumericInput
@@ -671,7 +637,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
               </div>
 
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">异常原因（可多选）</p>
+                <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Reason (multiple allowed)' : '异常原因（可多选）'}</p>
                 <div className="flex flex-wrap gap-2 mb-2">
                   {EXCEPTION_REASONS.map(r => {
                     const active = exceptionReasons.includes(r)
@@ -693,7 +659,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 </div>
                 <input
                   type="text"
-                  placeholder="或输入自定义原因"
+                  placeholder={isEn ? 'Or enter a custom reason' : '或输入自定义原因'}
                   value={exceptionReasons.filter(r => !EXCEPTION_REASONS.includes(r)).join('')}
                   onChange={e => {
                     const custom = e.target.value
@@ -708,7 +674,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
               </div>
 
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">处理方式</p>
+                <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Action' : '处理方式'}</p>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -717,7 +683,7 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       onChange={() => setExceptionAction('return')}
                       style={{ accentColor: PURPLE }}
                     />
-                    <span className="text-sm text-gray-700">退货</span>
+                    <span className="text-sm text-gray-700">{isEn ? 'Return' : '退货'}</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -726,19 +692,19 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       onChange={() => setExceptionAction('exchange')}
                       style={{ accentColor: PURPLE }}
                     />
-                    <span className="text-sm text-gray-700">换货</span>
+                    <span className="text-sm text-gray-700">{isEn ? 'Exchange' : '换货'}</span>
                   </label>
                 </div>
               </div>
 
               <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setExceptionModal(null)}>取消</Button>
+                <Button variant="outline" className="flex-1" onClick={() => setExceptionModal(null)}>{isEn ? 'Cancel' : '取消'}</Button>
                 <Button
                   className="flex-1 text-white"
                   style={{ background: '#ea580c' }}
                   onClick={submitException}
                 >
-                  确认报告异常
+                  {isEn ? 'Confirm Exception' : '确认报告异常'}
                 </Button>
               </div>
             </div>
@@ -746,57 +712,6 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
         )
       })()}
 
-      {/* 旧退货 Modal（保留兼容性）*/}
-      {returnModal && (() => {
-        const rest = trip.restaurants.find(r => r.restaurantId === returnModal.restId)
-        if (!rest) return null
-        return (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl p-5 w-full max-w-sm space-y-4">
-              <h3 className="font-bold text-gray-900">记录退货 — {rest.restaurantName}</h3>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">选择退货商品</label>
-                <select
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                  value={returnForm.productId}
-                  onChange={e => {
-                    const item = rest.items.find(i => i.productId === e.target.value)
-                    setReturnForm(f => ({ ...f, productId: e.target.value, productName: item?.productName ?? '' }))
-                  }}
-                >
-                  <option value="">请选择</option>
-                  {rest.items.map(item => (
-                    <option key={item.productId} value={item.productId}>{item.productName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">退货数量</label>
-                <NumericInput
-                  min={0.001}
-                  step="0.001"
-                  value={returnForm.qty}
-                  onChange={e => setReturnForm(f => ({ ...f, qty: Number(e.target.value) || 0 }))}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">退货图片（可选）</label>
-                {returnForm.photo ? <img src={returnForm.photo} alt="退货图" className="w-20 h-20 rounded object-cover border mb-2" /> : null}
-                <Button variant="outline" size="sm" onClick={() => returnPhotoRef.current?.click()}>
-                  📷 拍照 / 上传
-                </Button>
-                <input ref={returnPhotoRef} type="file" accept="image/*" className="hidden" onChange={handleReturnPhoto} />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setReturnModal(null)}>取消</Button>
-                <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={() => addReturn(returnModal.restId)}>
-                  确认退货
-                </Button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
     </div>
   )
 }

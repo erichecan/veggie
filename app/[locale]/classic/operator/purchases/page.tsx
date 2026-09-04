@@ -8,7 +8,7 @@ import { apiGet } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
-import { applyFacets, groupFacets, PURCHASE_FACET_FIELDS, type Facet } from '@/lib/list-filters'
+import { applyFacets, groupFacets, localizeFacetFields, PURCHASE_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import ProcurementOverviewPage from './overview/page'
 import FreshDailySuggestionsPage from './fresh/page'
 import CatalogPickingPage from './catalog/page'
@@ -168,7 +168,7 @@ export default function PurchasesPage() {
       applyFacets(params, facets)
       return params
     },
-    fallbackFilename: '采购单.csv',
+    fallbackFilename: isEn ? 'purchase-orders.csv' : '采购单.csv',
   })
 
   useEffect(() => { load() }, [load])
@@ -232,7 +232,7 @@ export default function PurchasesPage() {
         searchValue={searchInput}
         onSearch={v => setSearchInput(v)}
         onSearchSubmit={() => { setSearch(searchInput); setPage(1) }}
-        facetFields={PURCHASE_FACET_FIELDS}
+        facetFields={localizeFacetFields(PURCHASE_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         activeFilters={[
           ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
@@ -247,12 +247,14 @@ export default function PurchasesPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, activeTab, groupBy }}
+        favouriteState={{ searchInput, activeTab, groupBy, facets }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           setSearch(String(s.searchInput ?? ''))
           handleTabChange(String(s.activeTab ?? 'all'))
           setGroupBy(String(s.groupBy ?? ''))
+          // 分面搜索(单号/供应商/商品/备注)此前没进收藏，与商品页同一个坑
+          setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
         }}
         storageKey="classic_purchases_favs"
         total={total}

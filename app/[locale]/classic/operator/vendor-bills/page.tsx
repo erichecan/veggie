@@ -14,7 +14,7 @@ import { vendorBillExportColumns } from '@/lib/export/columns/vendor-bills'
 import { useFacets } from '@/lib/use-facets'
 import { formatDateOnly } from '@/lib/format-date'
 import { VENDOR_PAYMENT_METHODS, VENDOR_PAYMENT_METHOD_LABELS } from '@/lib/finance/vendor-settlement'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 
 type VbStatus = 'DRAFT' | 'POSTED' | 'PAID' | 'CANCELLED'
 
@@ -79,9 +79,9 @@ const EMPTY_LINE: VendorBillLine = { productName: '', qty: 1, unitCost: 0, taxRa
 const PAGE_SIZE = 20
 
 const FACET_DEFS: ClientFacetDef<VendorBill>[] = [
-  { key: 'name',    label: '单号', values: r => [r.name] },
-  { key: 'product', label: '商品', values: r => r.lines.map(l => l.productName) },
-  { key: 'status',  label: '状态', values: r => [r.status] },
+  { key: 'name',    label: '单号', labelEn: 'Reference', values: r => [r.name] },
+  { key: 'product', label: '商品', labelEn: 'Product',   values: r => r.lines.map(l => l.productName) },
+  { key: 'status',  label: '状态', labelEn: 'Status',    values: r => [r.status] },
 ]
 
 export default function VendorBillsPage() {
@@ -141,7 +141,7 @@ export default function VendorBillsPage() {
       .catch(() => {})
   }, [load])
 
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
   const filtered = useMemo(() => {
     let rows = bills

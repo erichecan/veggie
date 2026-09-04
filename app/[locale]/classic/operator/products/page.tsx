@@ -10,7 +10,7 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
 import { sortRows, type SortDir } from '@/components/shared/sort-th'
-import { applyFacets, groupFacets, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
+import { applyFacets, groupFacets, localizeFacetFields, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import { useCsvExport } from '@/hooks/use-csv-export'
 
@@ -50,6 +50,10 @@ export default function ClassicProductsPage() {
   const isEn = locale !== routing.defaultLocale
   const emptyLabel = isEn ? '(empty)' : '（空）'
   const [templates, setTemplates] = useState<ProductTemplate[]>([])
+  // Forecast Quantity 实时值：Product.forecastQty 是导入时定格的死字段，不会随收货/出货变化
+  // （20260904 客户反馈"收货后 forecast 不变"）。改走 /api/products/forecast 现算，
+  // 与订单/报价单详情页用的是同一个接口、同一套口径。
+  const [forecastMap, setForecastMap] = useState<Map<string, { forecast: number; qtyOnHand: number }>>(new Map())
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [multiSelectOptions, setMultiSelectOptions] = useState<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>({ uomName: [], createdBy: [], updatedBy: [] })
   const [total, setTotal] = useState(0)
@@ -119,7 +123,7 @@ export default function ClassicProductsPage() {
       if (searchInput) params.set('search', searchInput)
       return params
     },
-    fallbackFilename: '商品.csv',
+    fallbackFilename: isEn ? 'products.csv' : '商品.csv',
   })
 
   async function loadPage(p: number, q: string, ps: number = pageSize) {
@@ -148,6 +152,18 @@ export default function ClassicProductsPage() {
       setPageSize(res.pageSize ?? ps)
       setTotalPages(res.totalPages)
       setAlertCounts(res.alertCounts ?? { negative: 0, low: 0 })
+
+      const ids = source.map(t => t.id).filter(Boolean)
+      if (ids.length > 0) {
+        apiGet<{ productId: string; forecast: number; qtyOnHand: number }[]>(`/api/products/forecast?ids=${ids.join(',')}`)
+          .then(rows => {
+            const m = new Map<string, { forecast: number; qtyOnHand: number }>()
+            rows.forEach(r => m.set(r.productId, r))
+            setForecastMap(m)
+          }).catch(() => {})
+      } else {
+        setForecastMap(new Map())
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load products' : '加载商品失败'))
     } finally {
@@ -178,8 +194,17 @@ export default function ClassicProductsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryParams])
 
+  // Product Category 列显示的是 categoryId 反查出的名称，不是裸 id 本身；
+  // 直接按 categoryId 排序会得到一串跟界面顺序对不上的乱序，所以额外挂一个
+  // categoryLabel 字段专供排序用（渲染/编辑仍然认 categoryId，互不影响）。
+  const templatesForSort = useMemo(() => templates.map(t => {
+    const cat = categories.find(c => c.id === t.categoryId)
+    const categoryLabel = (isEn ? (cat?.name || cat?.nameZh) : (cat?.nameZh || cat?.name)) ?? (t.categoryId ? String(t.categoryId) : '')
+    return { ...t, categoryLabel }
+  }), [templates, categories, isEn])
+
   // 排序只在当前页内进行(与订单/报价单列表页一致的服务端分页限制：排序、筛选不跨页)
-  const filteredTemplates = useMemo(() => sortRows(templates, sortKey, sortDir), [templates, sortKey, sortDir])
+  const filteredTemplates = useMemo(() => sortRows(templatesForSort, sortKey, sortDir), [templatesForSort, sortKey, sortDir])
 
   // ─── 单元格保存：调 PUT /api/products/[id]，并刷新本地 row ──
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
@@ -384,13 +409,22 @@ export default function ClassicProductsPage() {
       key: 'forecastQty',
       width: 76,
       label: 'Forecast Quantity',
-      filterType: 'text',
-      render: (v) => v != null ? <span>{Number(v).toFixed(1)}</span> : <span className="text-gray-400">0.0</span>,
+      // 实时值来自 forecastMap（/api/products/forecast），不再是 DB 里那个只在导入时
+      // 赋过值、此后永不更新的 forecastQty 死字段，所以这里不再提供子串筛选——
+      // 筛的是数据库旧值、显示的是现算值，两边对不上比没有筛选更糟。
+      render: (_, row) => {
+        const t = row as unknown as ProductTemplate
+        const fc = forecastMap.get(t.id)
+        return fc != null ? <span>{fc.forecast.toFixed(1)}</span> : <span className="text-gray-400">—</span>
+      },
     },
     {
       key: 'categoryId',
       label: 'Product Category',
       filterType: 'text',
+      // 排序按显示名称（categoryLabel，见 templatesForSort），而非裸 categoryId
+      sortable: true,
+      sortKey: 'categoryLabel',
       editable: true,
       editType: 'select',
       editOptions: [
@@ -476,6 +510,7 @@ export default function ClassicProductsPage() {
       <OdooControlPanel
         breadcrumb={isEn ? ['Inventory', 'Products'] : ['库存', '商品']}
         onNew={() => router.push(`${prefix}/classic/operator/products/new`)}
+        newLabel={isEn ? 'New' : '新建'}
         permanentActions={[
           { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
           exportAction,
@@ -492,7 +527,7 @@ export default function ClassicProductsPage() {
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => loadPage(1, searchInput)}
-        facetFields={PRODUCT_FACET_FIELDS}
+        facetFields={localizeFacetFields(PRODUCT_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         activeFilters={[
           ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
@@ -521,7 +556,7 @@ export default function ClassicProductsPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, groupBy }}
+        favouriteState={{ searchInput, showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, groupBy, facets, columnFilters, columnMultiFilters }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           setShowArchived(Boolean(s.showArchived))
@@ -529,6 +564,11 @@ export default function ClassicProductsPage() {
           setProductTypeFilter(String(s.productTypeFilter ?? ''))
           setStockAlertFilter((s.stockAlertFilter as StockAlertFilter) ?? 'all')
           setGroupBy(String(s.groupBy ?? ''))
+          // 分面搜索(name/ref/category/description)与列头筛选此前没进收藏，收藏"pepper veg"这类
+          // 靠分面搜出来的筛选结果，点开收藏等于什么都没恢复(客户反馈"收藏的筛选条件不起作用")
+          setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
+          setColumnFilters((s.columnFilters as Record<string, string>) ?? {})
+          setColumnMultiFilters((s.columnMultiFilters as Record<string, string[]>) ?? {})
           setPage(1)
         }}
         storageKey="classic_products_favs"

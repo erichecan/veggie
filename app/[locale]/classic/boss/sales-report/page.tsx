@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
 import type { Order, OrderItem } from '@/lib/types'
@@ -12,21 +14,28 @@ const BTN = 'px-4 py-1.5 text-sm font-medium text-white rounded transition-color
 const BTN_STYLE = { background: '#875A7B' }
 const BTN_HOVER = '#7a5070'
 
-const PRODUCT_TYPES = [
+const PRODUCT_TYPES_ZH = [
   { value: '', label: '全部' },
+  { value: 'consumable', label: 'Consumable' },
+  { value: 'service', label: 'Service' },
+  { value: 'storable', label: 'Stockable Product' },
+]
+const PRODUCT_TYPES_EN = [
+  { value: '', label: 'All' },
   { value: 'consumable', label: 'Consumable' },
   { value: 'service', label: 'Service' },
   { value: 'storable', label: 'Stockable Product' },
 ]
 
 function TagInput({
-  label, values, suggestions, onAdd, onRemove,
+  label, values, suggestions, onAdd, onRemove, isEn,
 }: {
   label: string
   values: string[]
   suggestions: string[]
   onAdd: (v: string) => void
   onRemove: (v: string) => void
+  isEn: boolean
 }) {
   const [input, setInput] = useState('')
   const filtered = suggestions.filter(s => !values.includes(s) && s.toLowerCase().includes(input.toLowerCase()))
@@ -46,7 +55,7 @@ function TagInput({
             className="w-full text-xs outline-none py-0.5"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder={values.length === 0 ? '输入搜索...' : ''}
+            placeholder={values.length === 0 ? (isEn ? 'Type to search...' : '输入搜索...') : ''}
           />
           {input && filtered.length > 0 && (
             <div className="absolute z-10 top-full left-0 w-48 bg-white border shadow-lg rounded text-xs max-h-40 overflow-y-auto" style={{ borderColor: '#d4b8d0' }}>
@@ -64,13 +73,14 @@ function TagInput({
 }
 
 function LineSelector({
-  label, values, suggestions, onAdd, onRemove,
+  label, values, suggestions, onAdd, onRemove, isEn,
 }: {
   label: string
   values: string[]
   suggestions: string[]
   onAdd: (v: string) => void
   onRemove: (v: string) => void
+  isEn: boolean
 }) {
   const [search, setSearch] = useState('')
   const filtered = suggestions.filter(s => !values.includes(s) && s.toLowerCase().includes(search.toLowerCase()))
@@ -85,7 +95,7 @@ function LineSelector({
               <tr key={v} className="border-b last:border-0" style={{ borderColor: '#f0e4ee' }}>
                 <td className="px-3 py-1.5">{v}</td>
                 <td className="px-3 py-1.5 text-right">
-                  <button onClick={() => onRemove(v)} className="text-red-400 hover:text-red-600">&times; 删除</button>
+                  <button onClick={() => onRemove(v)} className="text-red-400 hover:text-red-600">&times; {isEn ? 'Remove' : '删除'}</button>
                 </td>
               </tr>
             ))}
@@ -96,7 +106,7 @@ function LineSelector({
         <input
           className="flex-1 text-xs border rounded px-2 py-1 outline-none"
           style={{ borderColor: '#d4b8d0' }}
-          placeholder="搜索并添加..."
+          placeholder={isEn ? 'Search and add...' : '搜索并添加...'}
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -138,6 +148,9 @@ function fmtDate(d: string | Date | null | undefined) {
 }
 
 export default function SalesReportPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const PRODUCT_TYPES = isEn ? PRODUCT_TYPES_EN : PRODUCT_TYPES_ZH
   const [orders, setOrders] = useState<SaleOrder[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -201,7 +214,7 @@ export default function SalesReportPage() {
   function printSaleSummary() {
     const byCustomer = new Map<string, { count: number; total: number }>()
     filtered.forEach(o => {
-      const name = o.restaurantName ?? '未知客户'
+      const name = o.restaurantName ?? (isEn ? 'Unknown Customer' : '未知客户')
       const prev = byCustomer.get(name) ?? { count: 0, total: 0 }
       byCustomer.set(name, { count: prev.count + 1, total: prev.total + Number(o.totalAmount ?? 0) })
     })
@@ -216,12 +229,12 @@ export default function SalesReportPage() {
       <h2>Sales Summary Report</h2>
       <p style="font-size:11px;color:#666;margin-bottom:12px">
         ${dateFrom || ''}${dateFrom && dateTo ? ' ~ ' : ''}${dateTo || ''}
-        &nbsp;&nbsp;共 ${filtered.length} 单
+        &nbsp;&nbsp;${isEn ? `${filtered.length} orders total` : `共 ${filtered.length} 单`}
       </p>
       <table>
-        <thead><tr><th>客户</th><th>订单数</th><th style="text-align:right">合计金额</th></tr></thead>
+        <thead><tr><th>${isEn ? 'Customer' : '客户'}</th><th>${isEn ? 'Order Count' : '订单数'}</th><th style="text-align:right">${isEn ? 'Total Amount' : '合计金额'}</th></tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr class="total-row"><td colspan="2">合计</td><td style="text-align:right">${eur(grandTotal)}</td></tr></tfoot>
+        <tfoot><tr class="total-row"><td colspan="2">${isEn ? 'Total' : '合计'}</td><td style="text-align:right">${eur(grandTotal)}</td></tr></tfoot>
       </table>`)
   }
 
@@ -248,17 +261,17 @@ export default function SalesReportPage() {
       <h2>Multi Line Sales Report</h2>
       <p style="font-size:11px;color:#666;margin-bottom:12px">
         ${dateFrom || ''}${dateFrom && dateTo ? ' ~ ' : ''}${dateTo || ''}
-        &nbsp;&nbsp;共 ${filtered.length} 单
+        &nbsp;&nbsp;${isEn ? `${filtered.length} orders total` : `共 ${filtered.length} 单`}
       </p>
       <table>
         <thead><tr>
-          <th>日期</th><th>单号</th><th>客户</th><th>业务员</th>
-          <th>产品</th><th style="text-align:right">数量</th>
-          <th style="text-align:right">单价</th><th style="text-align:right">小计</th>
+          <th>${isEn ? 'Date' : '日期'}</th><th>${isEn ? 'Ref' : '单号'}</th><th>${isEn ? 'Customer' : '客户'}</th><th>${isEn ? 'Salesperson' : '业务员'}</th>
+          <th>${isEn ? 'Product' : '产品'}</th><th style="text-align:right">${isEn ? 'Qty' : '数量'}</th>
+          <th style="text-align:right">${isEn ? 'Unit Price' : '单价'}</th><th style="text-align:right">${isEn ? 'Subtotal' : '小计'}</th>
         </tr></thead>
         <tbody>${rows.join('')}</tbody>
         <tfoot><tr class="total-row">
-          <td colspan="7">合计</td>
+          <td colspan="7">${isEn ? 'Total' : '合计'}</td>
           <td style="text-align:right">${eur(grandTotal)}</td>
         </tr></tfoot>
       </table>`)
@@ -280,7 +293,9 @@ export default function SalesReportPage() {
     })
     const range = [dateFrom, dateTo].filter(Boolean).join('_') || 'all'
     downloadCsv(`sales-report-${range}`,
-      ['日期', '单号', '客户', '业务员', '状态', '产品', '数量', '单价', '小计'], rows)
+      isEn
+        ? ['Date', 'Ref', 'Customer', 'Salesperson', 'Status', 'Product', 'Qty', 'Unit Price', 'Subtotal']
+        : ['日期', '单号', '客户', '业务员', '状态', '产品', '数量', '单价', '小计'], rows)
   }
 
   function printOrders() {
@@ -298,16 +313,16 @@ export default function SalesReportPage() {
       <h2>Sales Report</h2>
       <p style="font-size:11px;color:#666;margin-bottom:12px">
         ${dateFrom || ''}${dateFrom && dateTo ? ' ~ ' : ''}${dateTo || ''}
-        &nbsp;&nbsp;共 ${filtered.length} 单
+        &nbsp;&nbsp;${isEn ? `${filtered.length} orders total` : `共 ${filtered.length} 单`}
       </p>
       <table>
         <thead><tr>
-          <th>日期</th><th>单号</th><th>客户</th><th>业务员</th>
-          <th>状态</th><th style="text-align:right">金额</th>
+          <th>${isEn ? 'Date' : '日期'}</th><th>${isEn ? 'Ref' : '单号'}</th><th>${isEn ? 'Customer' : '客户'}</th><th>${isEn ? 'Salesperson' : '业务员'}</th>
+          <th>${isEn ? 'Status' : '状态'}</th><th style="text-align:right">${isEn ? 'Amount' : '金额'}</th>
         </tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr class="total-row">
-          <td colspan="5">合计</td>
+          <td colspan="5">${isEn ? 'Total' : '合计'}</td>
           <td style="text-align:right">${eur(grandTotal)}</td>
         </tr></tfoot>
       </table>`)
@@ -323,12 +338,12 @@ export default function SalesReportPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold" style={{ color: '#4a2545' }}>Sales Report</h1>
         {!loading && (
-          <span className="text-xs text-gray-400">已筛选 {filtered.length} 条订单</span>
+          <span className="text-xs text-gray-400">{isEn ? `${filtered.length} orders matched` : `已筛选 ${filtered.length} 条订单`}</span>
         )}
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-gray-400 text-sm">加载中...</div>
+        <div className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>
       ) : (
         <>
           {/* Filter form */}
@@ -346,6 +361,7 @@ export default function SalesReportPage() {
                   suggestions={allSalesmen}
                   onAdd={v => setSelectedSalesmen(prev => [...prev, v])}
                   onRemove={v => setSelectedSalesmen(prev => prev.filter(x => x !== v))}
+                  isEn={isEn}
                 />
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="quotations" checked={isQuotation} onChange={e => setIsQuotation(e.target.checked)} className="accent-purple-700" />
@@ -379,6 +395,7 @@ export default function SalesReportPage() {
               suggestions={allCustomers}
               onAdd={v => setFilterCustomers(prev => [...prev, v])}
               onRemove={v => setFilterCustomers(prev => prev.filter(x => x !== v))}
+              isEn={isEn}
             />
 
             {/* Products */}
@@ -388,6 +405,7 @@ export default function SalesReportPage() {
               suggestions={allProducts}
               onAdd={v => setFilterProducts(prev => [...prev, v])}
               onRemove={v => setFilterProducts(prev => prev.filter(x => x !== v))}
+              isEn={isEn}
             />
           </div>
 
@@ -427,7 +445,7 @@ export default function SalesReportPage() {
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = BTN_STYLE.background }}
               onClick={exportCsv}
             >
-              导出 CSV
+              {isEn ? 'Export CSV' : '导出 CSV'}
             </button>
           </div>
 
@@ -435,18 +453,18 @@ export default function SalesReportPage() {
           {filtered.length > 0 && (
             <div className="border rounded-lg overflow-hidden" style={{ borderColor: '#d4b8d0' }}>
               <div className="px-4 py-2 text-xs font-medium border-b" style={{ background: '#f5f0f8', borderColor: '#d4b8d0', color: '#875A7B' }}>
-                预览（共 {filtered.length} 条）
+                {isEn ? `Preview (${filtered.length} rows)` : `预览（共 ${filtered.length} 条）`}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr style={{ background: '#f5f0f8' }}>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>日期</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>单号</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>客户</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>业务员</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>状态</th>
-                      <th className="px-3 py-2 text-right font-medium" style={{ color: '#875A7B' }}>金额</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>{isEn ? 'Date' : '日期'}</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>{isEn ? 'Ref' : '单号'}</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>{isEn ? 'Customer' : '客户'}</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>{isEn ? 'Salesperson' : '业务员'}</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: '#875A7B' }}>{isEn ? 'Status' : '状态'}</th>
+                      <th className="px-3 py-2 text-right font-medium" style={{ color: '#875A7B' }}>{isEn ? 'Amount' : '金额'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -468,7 +486,7 @@ export default function SalesReportPage() {
 
           {filtered.length === 0 && (
             <div className="text-center py-12 text-gray-400 text-sm border rounded-lg" style={{ borderColor: '#d4b8d0' }}>
-              没有符合条件的订单
+              {isEn ? 'No orders match the current filters' : '没有符合条件的订单'}
             </div>
           )}
         </>

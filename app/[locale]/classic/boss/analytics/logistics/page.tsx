@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
@@ -22,6 +24,8 @@ interface Payload {
 }
 
 export default function LogisticsAnalyticsPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [range, setRange] = useState<DateRange>(defaultRange())
   const [data, setData] = useState<Payload | null>(null)
 
@@ -34,49 +38,51 @@ export default function LogisticsAnalyticsPage() {
 
   const trendData = (data?.daily ?? []).map((d) => ({
     day: String(d.day).slice(5, 10),
-    配送金额: d.total_payment,
-    行程数: d.trip_count,
+    totalPayment: d.total_payment,
+    tripCount: d.trip_count,
   }))
+  const tripCountLabel = isEn ? 'Trip Count' : '行程数'
+  const paymentLabel = isEn ? 'Delivery Amount' : '配送金额'
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">物流分析</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Logistics Analysis' : '物流分析'}</h1>
         <DateRangeBar value={range} onChange={(r) => { setRange(r); load(r) }} />
       </div>
 
       {!data ? (
-        <div className="text-center text-gray-400 py-24 text-sm">加载中…</div>
+        <div className="text-center text-gray-400 py-24 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : (
         <>
           <div className="border rounded-lg p-4">
-            <h2 className="text-sm font-medium text-gray-500 mb-3">每日配送金额 / 行程数</h2>
+            <h2 className="text-sm font-medium text-gray-500 mb-3">{isEn ? 'Daily Delivery Amount / Trip Count' : '每日配送金额 / 行程数'}</h2>
             <ResponsiveContainer width="100%" height={200}>
               <ComposedChart data={trendData} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
                 <XAxis dataKey="day" fontSize={11} />
                 <YAxis yAxisId="amt" fontSize={11} tickFormatter={(v) => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
                 <YAxis yAxisId="cnt" orientation="right" fontSize={11} allowDecimals={false} />
-                <Tooltip formatter={(v: unknown, name: unknown) => name === '行程数' ? Number(v) : eur(Number(v))} />
+                <Tooltip formatter={(v: unknown, name: unknown) => name === tripCountLabel ? Number(v) : eur(Number(v))} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar yAxisId="cnt" dataKey="行程数" fill="#E5E0EC" radius={[2, 2, 0, 0]} />
-                <Line yAxisId="amt" type="monotone" dataKey="配送金额" stroke="#875A7B" strokeWidth={2} dot={false} />
+                <Bar yAxisId="cnt" dataKey="tripCount" name={tripCountLabel} fill="#E5E0EC" radius={[2, 2, 0, 0]} />
+                <Line yAxisId="amt" type="monotone" dataKey="totalPayment" name={paymentLabel} stroke="#875A7B" strokeWidth={2} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
 
           <div className="border rounded overflow-hidden">
-            <div className="px-3 py-2 bg-gray-50 text-sm font-medium">司机日装载 & 交账差异</div>
+            <div className="px-3 py-2 bg-gray-50 text-sm font-medium">{isEn ? 'Driver Daily Loading & Settlement Discrepancy' : '司机日装载 & 交账差异'}</div>
             <table className="w-full text-sm">
               <thead className="text-left text-gray-500">
                 <tr>
-                  <th className="px-3 py-1.5 font-medium">司机</th>
-                  <th className="px-3 py-1.5 font-medium text-right">行程数</th>
-                  <th className="px-3 py-1.5 font-medium text-right">配送站点数</th>
-                  <th className="px-3 py-1.5 font-medium text-right">配送金额</th>
-                  <th className="px-3 py-1.5 font-medium text-right">单站均金额</th>
-                  <th className="px-3 py-1.5 font-medium text-right">已收金额</th>
-                  <th className="px-3 py-1.5 font-medium text-right">交账差异</th>
-                  <th className="px-3 py-1.5 font-medium text-right">已确认交账</th>
+                  <th className="px-3 py-1.5 font-medium">{isEn ? 'Driver' : '司机'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Trips' : '行程数'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Stops' : '配送站点数'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Delivery Amount' : '配送金额'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Amount / Stop' : '单站均金额'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Collected' : '已收金额'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Settlement Diff.' : '交账差异'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Settled' : '已确认交账'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -95,22 +101,22 @@ export default function LogisticsAnalyticsPage() {
                   </tr>
                 ))}
                 {data.byDriver.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">期内没有行程记录</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No trip records in this period' : '期内没有行程记录'}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
 
           <div className="border rounded overflow-hidden">
-            <div className="px-3 py-2 bg-gray-50 text-sm font-medium">出发记录（最近 100 条，按出发时间倒序）</div>
+            <div className="px-3 py-2 bg-gray-50 text-sm font-medium">{isEn ? 'Dispatch Log (latest 100, most recent first)' : '出发记录（最近 100 条，按出发时间倒序）'}</div>
             <table className="w-full text-sm">
               <thead className="text-left text-gray-500">
                 <tr>
-                  <th className="px-3 py-1.5 font-medium">日期</th>
-                  <th className="px-3 py-1.5 font-medium">班次</th>
-                  <th className="px-3 py-1.5 font-medium">司机</th>
-                  <th className="px-3 py-1.5 font-medium text-right">订单数</th>
-                  <th className="px-3 py-1.5 font-medium text-right">出发时间</th>
+                  <th className="px-3 py-1.5 font-medium">{isEn ? 'Date' : '日期'}</th>
+                  <th className="px-3 py-1.5 font-medium">{isEn ? 'Batch' : '班次'}</th>
+                  <th className="px-3 py-1.5 font-medium">{isEn ? 'Driver' : '司机'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Orders' : '订单数'}</th>
+                  <th className="px-3 py-1.5 font-medium text-right">{isEn ? 'Dispatch Time' : '出发时间'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -118,7 +124,7 @@ export default function LogisticsAnalyticsPage() {
                   <tr key={i} className="border-t">
                     <td className="px-3 py-1.5 text-gray-500">{String(d.day).slice(0, 10)}</td>
                     <td className="px-3 py-1.5">{d.wave_type ?? '—'}</td>
-                    <td className="px-3 py-1.5">{d.driver ?? '未指定'}</td>
+                    <td className="px-3 py-1.5">{d.driver ?? (isEn ? 'Unassigned' : '未指定')}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{d.order_count}</td>
                     <td className="px-3 py-1.5 text-right text-gray-500">
                       {formatDateTime(d.dispatched_at)}
@@ -126,7 +132,7 @@ export default function LogisticsAnalyticsPage() {
                   </tr>
                 ))}
                 {data.dispatchLog.length === 0 && (
-                  <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">期内没有出发记录</td></tr>
+                  <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No dispatch records in this period' : '期内没有出发记录'}</td></tr>
                 )}
               </tbody>
             </table>

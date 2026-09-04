@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import { getSession } from '@/lib/session'
 import { formatDateTime } from '@/lib/format-date'
 import DailyReportCard from '@/components/driver/DailyReportCard'
@@ -41,10 +41,15 @@ interface TripSettlement {
   commissionTotal: number
 }
 
-const SETTLEMENT_LABEL: Record<string, string> = {
+const SETTLEMENT_LABEL_ZH: Record<string, string> = {
   pending: '待提交',
   submitted: '已提交',
   confirmed: '已确认',
+}
+const SETTLEMENT_LABEL_EN: Record<string, string> = {
+  pending: 'Not Submitted',
+  submitted: 'Submitted',
+  confirmed: 'Confirmed',
 }
 const SETTLEMENT_COLOR: Record<string, string> = {
   pending: 'bg-yellow-50 text-yellow-700',
@@ -53,14 +58,16 @@ const SETTLEMENT_COLOR: Record<string, string> = {
 }
 
 const FACET_DEFS: ClientFacetDef<TripSettlement>[] = [
-  { key: 'name',   label: '行程', values: r => [r.name] },
-  { key: 'driver', label: '司机', values: r => [r.driverName] },
-  { key: 'status', label: '状态', values: r => [r.status] },
+  { key: 'name',   label: '行程', labelEn: 'Trip',   values: r => [r.name] },
+  { key: 'driver', label: '司机', labelEn: 'Driver', values: r => [r.driverName] },
+  { key: 'status', label: '状态', labelEn: 'Status', values: r => [r.status] },
 ]
 
 export default function DriverSettlementPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const SETTLEMENT_LABEL = isEn ? SETTLEMENT_LABEL_EN : SETTLEMENT_LABEL_ZH
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const [trips, setTrips] = useState<TripSettlement[]>([])
@@ -92,15 +99,15 @@ export default function DriverSettlementPage() {
       )
       setTrips(settlements.filter((s): s is TripSettlement => s !== null))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isEn])
 
   useEffect(() => { loadTrips() }, [loadTrips])
 
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
   const filtered = filterByFacets(trips, facets, FACET_DEFS)
 
   async function handleSubmitSettlement() {
@@ -108,7 +115,7 @@ export default function DriverSettlementPage() {
     const cash = parseFloat(cashAmount)
     const online = parseFloat(onlineAmount)
     if (isNaN(cash) || isNaN(online)) {
-      toast.error('请输入有效金额')
+      toast.error(isEn ? 'Please enter a valid amount' : '请输入有效金额')
       return
     }
     setSubmitting(true)
@@ -118,14 +125,14 @@ export default function DriverSettlementPage() {
         onlineCollected: online,
         settlementNote: note || undefined,
       })
-      toast.success('交账已提交')
+      toast.success(isEn ? 'Settlement submitted' : '交账已提交')
       setSelected(null)
       setCashAmount('')
       setOnlineAmount('')
       setNote('')
       loadTrips()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '提交失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to submit' : '提交失败'))
     } finally {
       setSubmitting(false)
     }
@@ -134,7 +141,7 @@ export default function DriverSettlementPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50">
       <OdooControlPanel
-        breadcrumb={['配送', '交账']}
+        breadcrumb={isEn ? ['Delivery', 'Settlement'] : ['配送', '交账']}
         searchValue=""
         onSearch={() => {}}
         {...controlPanelProps}
@@ -144,15 +151,15 @@ export default function DriverSettlementPage() {
       <div className="flex-1 overflow-auto">
         {/* C8 收车回传：一天一条，四项预填系统值供司机核对 */}
         <div className="p-4 pb-0">
-          <DailyReportCard date={new Date().toISOString().slice(0, 10)} />
+          <DailyReportCard date={new Date().toISOString().slice(0, 10)} isEn={isEn} />
         </div>
         {loading ? (
           <div className="flex items-center justify-center py-24 text-gray-400">
             <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: '#875A7B' }} />
-            加载中...
+            {isEn ? 'Loading...' : '加载中...'}
           </div>
         ) : trips.length === 0 ? (
-          <div className="py-24 text-center text-gray-400 text-sm">暂无需要交账的配送单</div>
+          <div className="py-24 text-center text-gray-400 text-sm">{isEn ? 'No deliveries need settlement' : '暂无需要交账的配送单'}</div>
         ) : (
           <div className="p-4 space-y-3">
             {filtered.map(t => (
@@ -173,15 +180,15 @@ export default function DriverSettlementPage() {
                 {/* Financial summary */}
                 <div className="grid grid-cols-3 gap-3 text-center mb-3">
                   <div className="bg-gray-50 rounded px-3 py-2">
-                    <div className="text-[10px] text-gray-400 mb-0.5">应收总额</div>
+                    <div className="text-[10px] text-gray-400 mb-0.5">{isEn ? 'Total Due' : '应收总额'}</div>
                     <div className="text-sm font-semibold text-gray-900">€{t.totalPayment.toFixed(2)}</div>
                   </div>
                   <div className="bg-gray-50 rounded px-3 py-2">
-                    <div className="text-[10px] text-gray-400 mb-0.5">已收总额</div>
+                    <div className="text-[10px] text-gray-400 mb-0.5">{isEn ? 'Total Collected' : '已收总额'}</div>
                     <div className="text-sm font-semibold text-blue-700">€{t.totalCollected.toFixed(2)}</div>
                   </div>
                   <div className="bg-gray-50 rounded px-3 py-2">
-                    <div className="text-[10px] text-gray-400 mb-0.5">差额</div>
+                    <div className="text-[10px] text-gray-400 mb-0.5">{isEn ? 'Difference' : '差额'}</div>
                     <div className={`text-sm font-semibold ${t.difference === 0 ? 'text-green-600' : t.difference > 0 ? 'text-blue-600' : 'text-red-600'}`}>
                       €{t.difference.toFixed(2)}
                     </div>
@@ -191,14 +198,14 @@ export default function DriverSettlementPage() {
                 {t.commissionOrders.length > 0 && (
                   <div className="mb-3 border border-gray-100 rounded">
                     <div className="px-3 py-1.5 bg-gray-50 text-[10px] text-gray-400 flex justify-between">
-                      <span>提成明细</span>
-                      <span>合计工钱 €{t.commissionTotal.toFixed(2)}</span>
+                      <span>{isEn ? 'Commission Detail' : '提成明细'}</span>
+                      <span>{isEn ? `Total pay €${t.commissionTotal.toFixed(2)}` : `合计工钱 €${t.commissionTotal.toFixed(2)}`}</span>
                     </div>
                     {t.commissionOrders.map(o => (
                       <div key={o.id} className="px-3 py-1 flex justify-between text-xs border-t border-gray-100">
                         <span className="text-gray-500">{o.code ?? o.id.slice(-8)} · {o.restaurantName}</span>
                         <span className={o.driverCommissionTotal == null ? 'text-gray-300' : 'text-gray-700 font-medium'}>
-                          {o.driverCommissionTotal == null ? '未冻结' : `€${o.driverCommissionTotal.toFixed(2)}`}
+                          {o.driverCommissionTotal == null ? (isEn ? 'Not frozen' : '未冻结') : `€${o.driverCommissionTotal.toFixed(2)}`}
                         </span>
                       </div>
                     ))}
@@ -207,20 +214,20 @@ export default function DriverSettlementPage() {
 
                 {t.cashCollected != null && t.onlineCollected != null && (
                   <div className="flex gap-4 text-xs text-gray-500 mb-3">
-                    <span>现金: €{t.cashCollected.toFixed(2)}</span>
-                    <span>在线: €{t.onlineCollected.toFixed(2)}</span>
+                    <span>{isEn ? 'Cash' : '现金'}: €{t.cashCollected.toFixed(2)}</span>
+                    <span>{isEn ? 'Online' : '在线'}: €{t.onlineCollected.toFixed(2)}</span>
                   </div>
                 )}
 
                 {t.settlementNote && (
                   <div className="text-xs text-gray-500 mb-3 bg-yellow-50 px-3 py-1.5 rounded">
-                    备注: {t.settlementNote}
+                    {isEn ? 'Note' : '备注'}: {t.settlementNote}
                   </div>
                 )}
 
                 {t.settledAt && (
                   <div className="text-[10px] text-gray-400 mb-3">
-                    确认时间: {formatDateTime(t.settledAt)}
+                    {isEn ? 'Confirmed at' : '确认时间'}: {formatDateTime(t.settledAt)}
                   </div>
                 )}
 
@@ -236,14 +243,14 @@ export default function DriverSettlementPage() {
                     className="w-full py-2 rounded text-sm font-medium text-white"
                     style={{ background: '#875A7B' }}
                   >
-                    提交交账
+                    {isEn ? 'Submit Settlement' : '提交交账'}
                   </button>
                 )}
                 {t.settlementStatus === 'submitted' && (
-                  <div className="text-center text-xs text-blue-600 py-1">等待财务确认</div>
+                  <div className="text-center text-xs text-blue-600 py-1">{isEn ? 'Awaiting finance confirmation' : '等待财务确认'}</div>
                 )}
                 {t.settlementStatus === 'confirmed' && (
-                  <div className="text-center text-xs text-green-600 py-1">✓ 交账已确认</div>
+                  <div className="text-center text-xs text-green-600 py-1">{isEn ? '✓ Settlement confirmed' : '✓ 交账已确认'}</div>
                 )}
               </div>
             ))}
@@ -256,16 +263,16 @@ export default function DriverSettlementPage() {
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
             <h2 className="text-base font-semibold text-gray-800">
-              提交交账 — {selected.name}
+              {isEn ? `Submit Settlement — ${selected.name}` : `提交交账 — ${selected.name}`}
             </h2>
 
             <div className="bg-gray-50 rounded px-4 py-3 text-center">
-              <div className="text-xs text-gray-400">应收总额</div>
+              <div className="text-xs text-gray-400">{isEn ? 'Total Due' : '应收总额'}</div>
               <div className="text-xl font-bold text-gray-900">€{selected.totalPayment.toFixed(2)}</div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">现金收款 (€)</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Cash Collected (€)' : '现金收款 (€)'}</label>
               <input
                 type="number"
                 step="0.01"
@@ -277,7 +284,7 @@ export default function DriverSettlementPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">在线收款 (€)</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Online Collected (€)' : '在线收款 (€)'}</label>
               <input
                 type="number"
                 step="0.01"
@@ -290,7 +297,7 @@ export default function DriverSettlementPage() {
 
             {(cashAmount || onlineAmount) && (
               <div className="bg-blue-50 rounded px-4 py-2 text-center">
-                <div className="text-xs text-blue-600">合计收款</div>
+                <div className="text-xs text-blue-600">{isEn ? 'Total Collected' : '合计收款'}</div>
                 <div className="text-lg font-bold text-blue-700">
                   €{((parseFloat(cashAmount) || 0) + (parseFloat(onlineAmount) || 0)).toFixed(2)}
                 </div>
@@ -299,7 +306,7 @@ export default function DriverSettlementPage() {
                   if (Math.abs(diff) < 0.01) return null
                   return (
                     <div className={`text-xs mt-1 ${diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                      差额: €{diff.toFixed(2)}
+                      {isEn ? 'Difference' : '差额'}: €{diff.toFixed(2)}
                     </div>
                   )
                 })()}
@@ -307,12 +314,12 @@ export default function DriverSettlementPage() {
             )}
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">备注（可选）</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Note (optional)' : '备注（可选）'}</label>
               <textarea
                 value={note}
                 onChange={e => setNote(e.target.value)}
                 rows={2}
-                placeholder="如有差异请说明原因..."
+                placeholder={isEn ? 'Explain any difference...' : '如有差异请说明原因...'}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none resize-none"
               />
             </div>
@@ -322,7 +329,7 @@ export default function DriverSettlementPage() {
                 onClick={() => setSelected(null)}
                 className="flex-1 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
               >
-                取消
+                {isEn ? 'Cancel' : '取消'}
               </button>
               <button
                 onClick={handleSubmitSettlement}
@@ -330,7 +337,7 @@ export default function DriverSettlementPage() {
                 className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
                 style={{ background: '#875A7B' }}
               >
-                {submitting ? '提交中...' : '确认提交'}
+                {submitting ? (isEn ? 'Submitting...' : '提交中...') : (isEn ? 'Confirm' : '确认提交')}
               </button>
             </div>
           </div>

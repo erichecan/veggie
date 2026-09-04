@@ -13,14 +13,15 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
   const [session, setSession] = useState<RoleSession | null>(null)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const LINKS = [
-    { href: `${prefix}/classic/finance`, label: '财务总览' },
-    { href: `${prefix}/classic/finance/statements`, label: '对账单' },
-    { href: `${prefix}/classic/finance/settlements`, label: '司机交账' },
-    { href: `${prefix}/classic/finance/driver-reports`, label: '司机对账' },
-    { href: `${prefix}/classic/accounting`, label: '核销管理' },
+    { href: `${prefix}/classic/finance`, label: isEn ? 'Finance Overview' : '财务总览' },
+    { href: `${prefix}/classic/finance/statements`, label: isEn ? 'Statements' : '对账单' },
+    { href: `${prefix}/classic/finance/settlements`, label: isEn ? 'Driver Settlements' : '司机交账' },
+    { href: `${prefix}/classic/finance/driver-reports`, label: isEn ? 'Driver Reconciliation' : '司机对账' },
+    { href: `${prefix}/classic/accounting`, label: isEn ? 'Write-off' : '核销管理' },
   ]
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
 
   return (
     <div className="min-h-screen bg-white">
-      <OdooNav appName="财务" menuItems={LINKS} session={session} />
+      <OdooNav appName={isEn ? 'Finance' : '财务'} menuItems={LINKS} session={session} />
       <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
     </div>
   )

@@ -15,6 +15,9 @@ export interface OdooColumn<T = Record<string, unknown>> {
   key: string
   label: string
   sortable?: boolean
+  /** 排序实际使用的字段名，默认等于 key。用于「渲染/编辑用的是原始值（如关联 id），
+   *  但排序要按其显示名称」这类场景——调用方需在行数据上额外提供该字段。 */
+  sortKey?: string
   /** text=普通文本搜索, date-range=日期区间, multi-select=列头下拉多选, none=不可筛选 */
   filterType?: 'text' | 'date-range' | 'multi-select' | 'none'
   /** multi-select 列头筛选时，每行用于匹配/分组的值（默认从 row[col.key] 取） */
@@ -209,12 +212,12 @@ export default function OdooTable<T extends Record<string, unknown>>({
                   <div className="flex items-center gap-1">
                     {col.sortable ? (
                       <button
-                        onClick={() => onSort?.(col.key)}
+                        onClick={() => onSort?.(col.sortKey ?? col.key)}
                         className="flex items-center gap-1 hover:text-gray-900 transition-colors"
                       >
                         {col.label}
                         <span className="text-gray-400">
-                          {sortKey === col.key ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          {sortKey === (col.sortKey ?? col.key) ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
                         </span>
                       </button>
                     ) : (

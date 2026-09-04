@@ -30,12 +30,29 @@ interface PivotPayload {
 
 interface LookupItem { id: string; name: string }
 
-const MEASURE_TABS: Array<{ key: Measure; label: string }> = [
+const MEASURE_TABS_ZH: Array<{ key: Measure; label: string }> = [
   { key: 'revenueExTax', label: '销售额' },
   { key: 'grossProfit', label: '毛利' },
   { key: 'marginPct', label: '毛利率' },
   { key: 'qty', label: '数量' },
 ]
+const MEASURE_TABS_EN: Array<{ key: Measure; label: string }> = [
+  { key: 'revenueExTax', label: 'Revenue' },
+  { key: 'grossProfit', label: 'Gross Profit' },
+  { key: 'marginPct', label: 'Margin %' },
+  { key: 'qty', label: 'Qty' },
+]
+
+// DIMENSION_OPTIONS(lib/analytics/pivot.ts)的 label 是中文，本页是这个常量唯一的消费点，
+// 就地维护一份英文对照，不动共享 lib（该文件还有 PivotTooManyColumnsError 等其他消费方）。
+const DIMENSION_LABEL_EN: Record<string, string> = {
+  product: 'Product', category: 'Category', customer: 'Customer',
+  salesUser: 'Salesperson', day: 'Day', week: 'Week', month: 'Month',
+}
+function dimLabel(key: string, isEn: boolean): string {
+  if (isEn) return DIMENSION_LABEL_EN[key] ?? key
+  return DIMENSION_OPTIONS.find((o) => o.key === key)?.label ?? key
+}
 
 function formatMeasure(measure: Measure, value: number): string {
   if (measure === 'marginPct') return `${value.toFixed(1)}%`
@@ -49,7 +66,8 @@ function csvMeasure(measure: Measure, value: number): string {
   return value.toFixed(2)
 }
 
-export default function PivotView({ range }: { range: DateRange }) {
+export default function PivotView({ range, isEn }: { range: DateRange; isEn: boolean }) {
+  const MEASURE_TABS = isEn ? MEASURE_TABS_EN : MEASURE_TABS_ZH
   const [rowBy, setRowBy] = useState('customer')
   const [colBy, setColBy] = useState('month')
   const [measure, setMeasure] = useState<Measure>('revenueExTax')
@@ -111,8 +129,8 @@ export default function PivotView({ range }: { range: DateRange }) {
 
   function exportCsv() {
     if (!data) return
-    const rowLabel = DIMENSION_OPTIONS.find((o) => o.key === rowBy)?.label ?? '行'
-    const headers = [rowLabel, ...data.cols.map((c) => c.name), '小计']
+    const rowLabel = dimLabel(rowBy, isEn) || (isEn ? 'Row' : '行')
+    const headers = [rowLabel, ...data.cols.map((c) => c.name), isEn ? 'Subtotal' : '小计']
     const rows = data.rows.map((r) => [
       r.name,
       ...data.cols.map((c) => {
@@ -122,7 +140,7 @@ export default function PivotView({ range }: { range: DateRange }) {
       csvMeasure(measure, r.subtotal[measure]),
     ])
     rows.push([
-      '总计',
+      isEn ? 'Grand Total' : '总计',
       ...data.cols.map((c) => csvMeasure(measure, c.subtotal[measure])),
       csvMeasure(measure, data.grandTotal[measure]),
     ])
@@ -135,20 +153,22 @@ export default function PivotView({ range }: { range: DateRange }) {
     <div className="space-y-3">
       {data && coverage < 70 && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded px-4 py-2.5">
-          ⚠ 实际批次成本覆盖率仅 {coverage.toFixed(0)}%，其余按标准成本（收货加权平均）估算。
+          {isEn
+            ? `⚠ Actual lot-cost coverage is only ${coverage.toFixed(0)}% — the rest is estimated at standard cost (weighted-average on receipt).`
+            : `⚠ 实际批次成本覆盖率仅 ${coverage.toFixed(0)}%，其余按标准成本（收货加权平均）估算。`}
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <label className="text-gray-500">行</label>
+        <label className="text-gray-500">{isEn ? 'Row' : '行'}</label>
         <select className="border rounded px-2 py-1" value={rowBy} onChange={(e) => handleRowByChange(e.target.value)}>
-          {DIMENSION_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          {DIMENSION_OPTIONS.map((o) => <option key={o.key} value={o.key}>{dimLabel(o.key, isEn)}</option>)}
         </select>
-        <label className="text-gray-500">列</label>
+        <label className="text-gray-500">{isEn ? 'Column' : '列'}</label>
         <select className="border rounded px-2 py-1" value={colBy} onChange={(e) => handleColByChange(e.target.value)}>
-          {DIMENSION_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          {DIMENSION_OPTIONS.map((o) => <option key={o.key} value={o.key}>{dimLabel(o.key, isEn)}</option>)}
         </select>
-        <label className="text-gray-500 ml-2">度量</label>
+        <label className="text-gray-500 ml-2">{isEn ? 'Measure' : '度量'}</label>
         <div className="flex border rounded overflow-hidden">
           {MEASURE_TABS.map((t) => (
             <button
@@ -161,20 +181,20 @@ export default function PivotView({ range }: { range: DateRange }) {
           ))}
         </div>
         <select className="border rounded px-2 py-1 ml-2" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-          <option value="">全部分类</option>
+          <option value="">{isEn ? 'All Categories' : '全部分类'}</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <select className="border rounded px-2 py-1" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-          <option value="">全部客户</option>
+          <option value="">{isEn ? 'All Customers' : '全部客户'}</option>
           {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <select className="border rounded px-2 py-1" value={salesUserId} onChange={(e) => setSalesUserId(e.target.value)}>
-          <option value="">全部业务员</option>
+          <option value="">{isEn ? 'All Salespeople' : '全部业务员'}</option>
           {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <input
           className="border rounded px-3 py-1 w-48 ml-2"
-          placeholder="搜索行名…"
+          placeholder={isEn ? 'Search row name…' : '搜索行名…'}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -184,7 +204,7 @@ export default function PivotView({ range }: { range: DateRange }) {
           disabled={!data}
           onClick={exportCsv}
         >
-          导出 CSV
+          {isEn ? 'Export CSV' : '导出 CSV'}
         </button>
       </div>
 
@@ -193,19 +213,19 @@ export default function PivotView({ range }: { range: DateRange }) {
       )}
 
       {!data && !error ? (
-        <div className="text-center text-gray-400 py-24 text-sm">加载中…</div>
+        <div className="text-center text-gray-400 py-24 text-sm">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : data ? (
         <div className="border rounded overflow-auto max-h-[70vh]">
           <table className="text-sm border-collapse">
             <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th className="px-3 py-2 text-left font-medium sticky left-0 bg-gray-50 z-20 border-r whitespace-nowrap">
-                  {DIMENSION_OPTIONS.find((o) => o.key === rowBy)?.label} \ {DIMENSION_OPTIONS.find((o) => o.key === colBy)?.label}
+                  {dimLabel(rowBy, isEn)} \ {dimLabel(colBy, isEn)}
                 </th>
                 {data.cols.map((c) => (
                   <th key={c.key} className="px-3 py-2 text-right font-medium whitespace-nowrap">{c.name}</th>
                 ))}
-                <th className="px-3 py-2 text-right font-medium whitespace-nowrap border-l">小计</th>
+                <th className="px-3 py-2 text-right font-medium whitespace-nowrap border-l">{isEn ? 'Subtotal' : '小计'}</th>
               </tr>
             </thead>
             <tbody>
@@ -227,13 +247,13 @@ export default function PivotView({ range }: { range: DateRange }) {
                 </tr>
               ))}
               {filteredRows.length === 0 && (
-                <tr><td colSpan={data.cols.length + 2} className="px-3 py-8 text-center text-gray-400">没有匹配的数据</td></tr>
+                <tr><td colSpan={data.cols.length + 2} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No matching data' : '没有匹配的数据'}</td></tr>
               )}
             </tbody>
             {filteredRows.length > 0 && (
               <tfoot className="bg-gray-50 border-t-2">
                 <tr>
-                  <td className="px-3 py-1.5 sticky left-0 bg-gray-50 border-r font-medium whitespace-nowrap">总计</td>
+                  <td className="px-3 py-1.5 sticky left-0 bg-gray-50 border-r font-medium whitespace-nowrap">{isEn ? 'Grand Total' : '总计'}</td>
                   {data.cols.map((c) => (
                     <td key={c.key} className="px-3 py-1.5 text-right tabular-nums font-medium whitespace-nowrap">
                       {formatMeasure(measure, c.subtotal[measure])}

@@ -12,7 +12,7 @@ import { batchPeriod } from '@/lib/delivery-batches'
 import { formatDriverSlot, type DriverSlotInfo } from '@/lib/driver-slot'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -90,10 +90,10 @@ function groupOrdersByRestaurant(
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const FACET_DEFS: ClientFacetDef<Trip>[] = [
-  { key: 'name',   label: '行程', values: r => [r.name ?? r.id] },
-  { key: 'driver', label: '司机', values: r => [r.driverName] },
-  { key: 'slot',   label: '时段', values: r => [r.timeSlot] },
-  { key: 'status', label: '状态', values: r => [r.status] },
+  { key: 'name',   label: '行程', labelEn: 'Trip',   values: r => [r.name ?? r.id] },
+  { key: 'driver', label: '司机', labelEn: 'Driver', values: r => [r.driverName] },
+  { key: 'slot',   label: '时段', labelEn: 'Slot',   values: r => [r.timeSlot] },
+  { key: 'status', label: '状态', labelEn: 'Status', values: r => [r.status] },
 ]
 
 export default function ClassicTripsPage() {
@@ -240,7 +240,7 @@ export default function ClassicTripsPage() {
     : driverSlots
 
   // ── Filter ────────────────────────────────────────────────────────────────
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
   const searched = searchInput
     ? trips.filter(t =>

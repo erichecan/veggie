@@ -5,13 +5,14 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
-import { applyFacets, groupFacets, CUSTOMER_FACET_FIELDS, type Facet } from '@/lib/list-filters'
+import { applyFacets, groupFacets, localizeFacetFields, CUSTOMER_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import { sortRows, type SortDir } from '@/components/shared/sort-th'
 
 const PAGE_SIZE = 20
 
@@ -40,6 +41,12 @@ export default function ClassicCustomersPage() {
   const [isReadMode, setIsReadMode] = useState(true)
   // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
   const [facets, setFacets] = useState<Facet[]>([])
+  // 列头排序：Customer Name / Salesperson / Pricelist / Price Type 均可点表头排序，
+  // 与商品页(products/page.tsx)同一套约定——排序只在当前页内进行，与该页服务端分页的限制一致
+  const [sortKey, setSortKey] = useState('')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  // 列头多选筛选(Pricelist / Price Type)，转成 cfm_* 参数发给后端，与商品页同一套惯例
+  const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>({})
 
   function addFacet(key: string, value: string) {
     const field = CUSTOMER_FACET_FIELDS.find(f => f.key === key)
@@ -52,6 +59,14 @@ export default function ClassicCustomersPage() {
   const [groupBy, setGroupBy] = useState('')
   const [importOpen, setImportOpen] = useState(false)
 
+  // OdooTable 列 key → 后端 cfm_* 参数名（primaryPricelistId 是前端派生列，落地时映射回真实字段名）
+  const CFM_PARAM_NAME: Record<string, string> = { primaryPricelistId: 'cfm_pricelistId', priceType: 'cfm_priceType' }
+  function applyColumnMultiFilters(params: URLSearchParams) {
+    for (const [key, vals] of Object.entries(columnMultiFilters)) {
+      if (vals && vals.length > 0) params.set(CFM_PARAM_NAME[key] ?? `cfm_${key}`, vals.join(','))
+    }
+  }
+
   // 导出吃与列表请求完全相同的筛选参数（含分面），所以导出的就是屏幕上筛出来的那批，
   // 且服务端复用同一个 buildCustomersWhere —— 销售的行级隔离在导出上照样生效
   const exportAction = useCsvExport({
@@ -62,9 +77,10 @@ export default function ClassicCustomersPage() {
       if (paymentFilter) params.set('paymentTerm', paymentFilter)
       if (includeArchived) params.set('includeArchived', '1')
       applyFacets(params, facets)
+      applyColumnMultiFilters(params)
       return params
     },
-    fallbackFilename: '客户.csv',
+    fallbackFilename: isEn ? 'customers.csv' : '客户.csv',
   })
 
   async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived, ps: number = pageSize) {
@@ -75,6 +91,7 @@ export default function ClassicCustomersPage() {
       if (payTerm) params.set('paymentTerm', payTerm)
       if (archived) params.set('includeArchived', '1')
       applyFacets(params, facets)
+      applyColumnMultiFilters(params)
       const res = await apiGet<{ data: Customer[]; total: number; page: number; pageSize: number }>(`/api/customers?${params}`)
       setCustomers(res.data)
       setTotal(res.total)
@@ -90,7 +107,7 @@ export default function ClassicCustomersPage() {
   useEffect(() => {
     loadPage(1, searchInput, paymentFilter, includeArchived)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facets])
+  }, [facets, columnMultiFilters])
 
   useEffect(() => {
     loadPage(1, '', paymentFilter, includeArchived)
@@ -123,6 +140,7 @@ export default function ClassicCustomersPage() {
     {
       key: 'name',
       label: isEn ? 'Customer Name' : '客户名称',
+      sortable: true,
       render: (_, row) => (
         <span className="font-medium" style={{ color: '#875A7B' }}>
           {String(row.name ?? '')}
@@ -130,7 +148,12 @@ export default function ClassicCustomersPage() {
       ),
     },
     { key: 'address', label: isEn ? 'Address' : '地址', render: (v) => <span className="text-gray-600 text-xs">{String(v || '')}</span> },
-    { key: 'salesman', label: isEn ? 'Salesperson' : '销售员', render: (v) => v ? String(v) : <span className="text-gray-400">—</span> },
+    {
+      key: 'salesman',
+      label: isEn ? 'Salesperson' : '销售员',
+      sortable: true,
+      render: (v) => v ? String(v) : <span className="text-gray-400">—</span>,
+    },
     {
       key: 'paymentTerm',
       label: isEn ? 'Payment Term' : '结算方式',
@@ -143,6 +166,10 @@ export default function ClassicCustomersPage() {
     {
       key: 'primaryPricelistId',
       label: isEn ? 'Pricelist' : '价格表',
+      sortable: true,
+      filterType: 'multi-select',
+      filterOptions: pricelists.map(p => ({ value: p.id, label: p.name })),
+      filterLabelGetter: (v) => pricelistMap.get(v) ?? v,
       render: (_v, row) => {
         const links = (row.pricelists as { pricelistId: string }[] | undefined) ?? []
         if (links.length === 0) return <span className="text-gray-400">—</span>
@@ -153,6 +180,10 @@ export default function ClassicCustomersPage() {
     {
       key: 'priceType',
       label: 'Price Type',
+      sortable: true,
+      filterType: 'multi-select',
+      filterOptions: Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => ({ value, label })),
+      filterLabelGetter: (v) => PRICE_TYPE_LABELS[v] ?? v,
       render: (v) => PRICE_TYPE_LABELS[String(v)] ?? PRICE_TYPE_LABELS.multi,
     },
     {
@@ -182,6 +213,7 @@ export default function ClassicCustomersPage() {
       <OdooControlPanel
         breadcrumb={isEn ? ['Sales', 'Customers'] : ['销售', '客户']}
         onNew={openAdd}
+        newLabel={isEn ? 'New' : '新建'}
         permanentActions={[
           { label: 'Import', onClick: () => setImportOpen(true) },
           ...(isReadMode
@@ -202,7 +234,7 @@ export default function ClassicCustomersPage() {
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => loadPage(1, searchInput)}
-        facetFields={CUSTOMER_FACET_FIELDS}
+        facetFields={localizeFacetFields(CUSTOMER_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         activeFilters={activeFilters}
         filterOptions={[
@@ -225,13 +257,16 @@ export default function ClassicCustomersPage() {
         }}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, paymentFilter, includeArchived, groupBy }}
+        favouriteState={{ searchInput, paymentFilter, includeArchived, groupBy, facets, columnMultiFilters }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           const pf = String(s.paymentFilter ?? '')
           setPaymentFilter(pf)
           setIncludeArchived(Boolean(s.includeArchived))
           setGroupBy(String(s.groupBy ?? ''))
+          // 分面搜索(名称/城市/地址/电话/邮箱/税号/业务员)与列头筛选此前没进收藏，同商品页那个坑
+          setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
+          setColumnMultiFilters((s.columnMultiFilters as Record<string, string[]>) ?? {})
           loadPage(1, String(s.searchInput ?? ''), pf, Boolean(s.includeArchived))
         }}
         storageKey="classic_customers_favs"
@@ -245,7 +280,30 @@ export default function ClassicCustomersPage() {
       <div className="p-4">
         <OdooTable
           columns={columns}
-          rows={customers.map(c => ({ ...c, primaryPricelistId: c.pricelists?.[0]?.pricelistId ?? null })) as unknown as Record<string, unknown>[]}
+          rows={sortRows(
+            customers.map(c => {
+              const primaryPricelistId = c.pricelists?.[0]?.pricelistId ?? null
+              return { ...c, primaryPricelistId, pricelistName: primaryPricelistId ? (pricelistMap.get(primaryPricelistId) ?? primaryPricelistId) : '' }
+            }),
+            // primaryPricelistId 本身是 id，排序要按显示名走 pricelistName（同一行的派生字段）
+            sortKey === 'primaryPricelistId' ? 'pricelistName' : sortKey,
+            sortDir,
+          ) as unknown as Record<string, unknown>[]}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={key => {
+            if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+            else { setSortKey(key); setSortDir('asc') }
+          }}
+          columnMultiFilters={columnMultiFilters}
+          onColumnMultiFilterChange={(key, vals) => {
+            setColumnMultiFilters(prev => {
+              const next = { ...prev }
+              if (vals.length === 0) delete next[key]
+              else next[key] = vals
+              return next
+            })
+          }}
           loading={loading}
           selected={selected}
           onSelectAll={checked => {

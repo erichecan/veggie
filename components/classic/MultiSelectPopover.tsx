@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 
 export interface MultiOption { value: string; label: string }
 
@@ -23,6 +25,8 @@ interface Props {
 export default function MultiSelectPopover({
   label, options, selected, onChange, searchable = false, searchPlaceholder, buttonLabel,
 }: Props) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
@@ -53,7 +57,9 @@ export default function MultiSelectPopover({
   const selCount = selected.length
   const btnLabel = buttonLabel
     ? buttonLabel(selCount)
-    : (selCount === 0 ? `全部${label}` : `${label}：${selCount} 项`)
+    : (selCount === 0
+      ? (isEn ? `All ${label}` : `全部${label}`)
+      : (isEn ? `${label}: ${selCount}` : `${label}：${selCount} 项`))
 
   function toggle(v: string) {
     onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
@@ -82,14 +88,14 @@ export default function MultiSelectPopover({
                 autoFocus
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder={searchPlaceholder ?? '搜索…'}
+                placeholder={searchPlaceholder ?? (isEn ? 'Search…' : '搜索…')}
                 className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-[#875A7B]"
               />
             </div>
           )}
           <div className="max-h-60 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-center text-xs text-gray-400">无匹配</div>
+              <div className="px-3 py-4 text-center text-xs text-gray-400">{isEn ? 'No matches' : '无匹配'}</div>
             ) : filtered.map(o => {
               const on = selected.includes(o.value)
               return (
@@ -108,9 +114,9 @@ export default function MultiSelectPopover({
             })}
           </div>
           <div className="flex items-center justify-between px-3 py-1.5 border-t border-gray-100 text-xs">
-            <span className="text-gray-400">{selCount} 已选</span>
+            <span className="text-gray-400">{isEn ? `${selCount} selected` : `${selCount} 已选`}</span>
             {selCount > 0 && (
-              <button onClick={() => onChange([])} className="text-[#875A7B] hover:underline">清除</button>
+              <button onClick={() => onChange([])} className="text-[#875A7B] hover:underline">{isEn ? 'Clear' : '清除'}</button>
             )}
           </div>
         </div>,

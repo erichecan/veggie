@@ -27,13 +27,13 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
   useEffect(() => {
     // driverSlotId / batchLabel 皆空 = 整日全部批次打印
     if (!date) {
-      setError('缺少参数 date')
+      setError('缺少参数 date / Missing parameter: date')
       return
     }
     let cancelled = false
     fetchDispatchPrintHtml({ type, date, fromDate, driverSlotId, batchLabel, waveIds, variant })
       .then(h => { if (!cancelled) setHtml(h) })
-      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : '加载失败') })
+      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : '加载失败 / Loading failed') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, fromDate, driverSlotId, batchLabel, waveIdsRaw, type, variant])
@@ -41,7 +41,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
   if (error) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial,sans-serif', color: '#dc2626' }}>
-        {TITLES[type]} 加载失败：{error}
+        {TITLES[type]} — 加载失败 / Loading failed: {error}
       </div>
     )
   }
@@ -49,7 +49,7 @@ export default function DispatchPrintClient({ type }: { type: PrintType }) {
   if (!html) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial,sans-serif', color: '#666' }}>
-        正在准备 {TITLES[type]} …
+        正在准备 / Preparing {TITLES[type]} …
       </div>
     )
   }

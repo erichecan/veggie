@@ -4,10 +4,10 @@ import { apiPost, apiUpload } from '@/lib/api'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { BULLETIN_CATEGORIES, BULLETIN_CATEGORY_LABELS, type BulletinCategoryValue } from '@/lib/bulletin-categories'
+import { BULLETIN_CATEGORIES, bulletinCategoryLabel, type BulletinCategoryValue } from '@/lib/bulletin-categories'
 import type { BulletinPost } from './types'
 
-export default function BulletinComposer({ onCreated }: { onCreated: (post: BulletinPost) => void }) {
+export default function BulletinComposer({ isEn = false, onCreated }: { isEn?: boolean; onCreated: (post: BulletinPost) => void }) {
   const [category, setCategory] = useState<BulletinCategoryValue>('OTHER')
   const [content, setContent] = useState('')
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -25,7 +25,7 @@ export default function BulletinComposer({ onCreated }: { onCreated: (post: Bull
       const { url } = await apiUpload<{ url: string }>('/api/bulletin-posts/upload-image', form)
       setImageUrl(url)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '图片上传失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Image upload failed' : '图片上传失败'))
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -35,7 +35,7 @@ export default function BulletinComposer({ onCreated }: { onCreated: (post: Bull
   async function handleSubmit() {
     const trimmed = content.trim()
     if (!trimmed) {
-      toast.error('说点什么再发布吧')
+      toast.error(isEn ? 'Write something before posting' : '说点什么再发布吧')
       return
     }
     setSubmitting(true)
@@ -50,7 +50,7 @@ export default function BulletinComposer({ onCreated }: { onCreated: (post: Bull
       setImageUrl(null)
       setCategory('OTHER')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '发布失败')
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Failed to post' : '发布失败'))
     } finally {
       setSubmitting(false)
     }
@@ -65,16 +65,18 @@ export default function BulletinComposer({ onCreated }: { onCreated: (post: Bull
           className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-400"
         >
           {BULLETIN_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{BULLETIN_CATEGORY_LABELS[c]}</option>
+            <option key={c} value={c}>{bulletinCategoryLabel(c, isEn)}</option>
           ))}
         </select>
-        <span className="text-xs text-gray-400">提醒：报价、成本等保密数字不要发在这里</span>
+        <span className="text-xs text-gray-400">
+          {isEn ? "Reminder: don't post confidential numbers like quotes or costs here" : '提醒：报价、成本等保密数字不要发在这里'}
+        </span>
       </div>
 
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        placeholder="缺货了？到货了？供应商调价了？发出来让大家都看到……"
+        placeholder={isEn ? 'Out of stock? Just arrived? Supplier price change? Let everyone know…' : '缺货了？到货了？供应商调价了？发出来让大家都看到……'}
         rows={3}
         className="bg-white"
       />
@@ -109,11 +111,11 @@ export default function BulletinComposer({ onCreated }: { onCreated: (post: Bull
             disabled={uploading}
             onClick={() => fileInputRef.current?.click()}
           >
-            {uploading ? '上传中…' : imageUrl ? '换一张图' : '📷 加图片'}
+            {uploading ? (isEn ? 'Uploading…' : '上传中…') : imageUrl ? (isEn ? 'Change Photo' : '换一张图') : (isEn ? '📷 Add Photo' : '📷 加图片')}
           </Button>
         </div>
         <Button type="button" size="sm" disabled={submitting} onClick={handleSubmit}>
-          {submitting ? '发布中…' : '发布'}
+          {submitting ? (isEn ? 'Posting…' : '发布中…') : (isEn ? 'Post' : '发布')}
         </Button>
       </div>
     </div>

@@ -19,6 +19,7 @@ export default function ClassicBulletinLayout({ children }: { children: React.Re
   const [session, setSession] = useState<RoleSession | null>(null)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   useEffect(() => {
@@ -35,11 +36,11 @@ export default function ClassicBulletinLayout({ children }: { children: React.Re
     hydrate()
   }, [router, prefix])
 
-  const LINKS = [{ href: `${prefix}/classic/operator`, label: '← 返回' }]
+  const LINKS = [{ href: `${prefix}/classic/operator`, label: isEn ? '← Back' : '← 返回' }]
 
   return (
     <div className="min-h-screen bg-white">
-      <OdooNav appName="信息广场" menuItems={LINKS} session={session} />
+      <OdooNav appName={isEn ? 'Bulletin Board' : '信息广场'} menuItems={LINKS} session={session} />
       <main className="max-w-3xl mx-auto px-4 py-6">{children}</main>
     </div>
   )

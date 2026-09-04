@@ -9,7 +9,7 @@ import { formatDateOnly } from '@/lib/format-date'
 
 const PURPLE = '#875A7B'
 
-const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
+const STATUS_MAP_ZH: Record<string, { label: string; color: string; bg: string }> = {
   PENDING:        { label: '待确认', color: '#b45309', bg: '#fef3c7' },
   CONFIRMED:      { label: '已确认', color: '#1d4ed8', bg: '#dbeafe' },
   WAVE_ASSIGNED:  { label: '拣货中', color: '#6d28d9', bg: '#ede9fe' },
@@ -17,6 +17,16 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
   COMPLETED:      { label: '已完成', color: '#15803d', bg: '#dcfce7' },
   LOCKED:         { label: '已锁定', color: '#374151', bg: '#e5e7eb' },
   CANCELLED:      { label: '已取消', color: '#dc2626', bg: '#fee2e2' },
+}
+
+const STATUS_MAP_EN: Record<string, { label: string; color: string; bg: string }> = {
+  PENDING:        { label: 'Pending', color: '#b45309', bg: '#fef3c7' },
+  CONFIRMED:      { label: 'Confirmed', color: '#1d4ed8', bg: '#dbeafe' },
+  WAVE_ASSIGNED:  { label: 'Picking', color: '#6d28d9', bg: '#ede9fe' },
+  IN_DELIVERY:    { label: 'In Delivery', color: '#0891b2', bg: '#cffafe' },
+  COMPLETED:      { label: 'Completed', color: '#15803d', bg: '#dcfce7' },
+  LOCKED:         { label: 'Locked', color: '#374151', bg: '#e5e7eb' },
+  CANCELLED:      { label: 'Cancelled', color: '#dc2626', bg: '#fee2e2' },
 }
 
 const STATUS_TABS = ['ALL', 'PENDING', 'CONFIRMED', 'IN_DELIVERY', 'COMPLETED'] as const
@@ -52,7 +62,9 @@ export default function CustomerOrdersPage() {
   const [search, setSearch] = useState('')
 
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const STATUS_MAP = isEn ? STATUS_MAP_EN : STATUS_MAP_ZH
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -69,17 +81,17 @@ export default function CustomerOrdersPage() {
       setTotal(data.total)
       setTotalPages(data.totalPages)
     } catch {
-      toast.error('加载订单失败')
+      toast.error(isEn ? 'Failed to load orders' : '加载订单失败')
     } finally {
       setLoading(false)
     }
-  }, [page, statusFilter, search])
+  }, [page, statusFilter, search, isEn])
 
   useEffect(() => { load() }, [load])
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold" style={{ color: PURPLE }}>我的订单</h1>
+      <h1 className="text-xl font-bold" style={{ color: PURPLE }}>{isEn ? 'My Orders' : '我的订单'}</h1>
 
       {/* Status tabs */}
       <div className="flex gap-2 flex-wrap">
@@ -91,7 +103,7 @@ export default function CustomerOrdersPage() {
               ? { background: PURPLE, color: 'white', borderColor: PURPLE }
               : { borderColor: '#ddd', color: '#666' }
             }>
-            {s === 'ALL' ? '全部' : STATUS_MAP[s]?.label || s}
+            {s === 'ALL' ? (isEn ? 'All' : '全部') : STATUS_MAP[s]?.label || s}
           </button>
         ))}
       </div>
@@ -99,16 +111,16 @@ export default function CustomerOrdersPage() {
       {/* Search */}
       <input type="text" value={search}
         onChange={e => { setSearch(e.target.value); setPage(1) }}
-        placeholder="搜索订单编号..."
+        placeholder={isEn ? 'Search order number...' : '搜索订单编号...'}
         className="w-full border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2"
         style={{ borderColor: '#ddd' }}
       />
 
       {/* Order list */}
       {loading ? (
-        <div className="text-center py-16 text-gray-400">加载中...</div>
+        <div className="text-center py-16 text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>
       ) : orders.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">暂无订单</div>
+        <div className="text-center py-16 text-gray-400">{isEn ? 'No orders yet' : '暂无订单'}</div>
       ) : (
         <div className="space-y-3">
           {orders.map(order => {
@@ -126,9 +138,9 @@ export default function CustomerOrdersPage() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">
-                      下单: {formatDateOnly(order.createdAt)}
-                      {order.deliveryDate && <span> · 配送: {formatDateOnly(order.deliveryDate)}</span>}
-                      <span> · {order.paymentMethod === 'CASH' ? '现金' : '在线支付'}</span>
+                      {isEn ? 'Placed' : '下单'}: {formatDateOnly(order.createdAt)}
+                      {order.deliveryDate && <span> · {isEn ? 'Delivery' : '配送'}: {formatDateOnly(order.deliveryDate)}</span>}
+                      <span> · {order.paymentMethod === 'CASH' ? (isEn ? 'Cash' : '现金') : (isEn ? 'Online Payment' : '在线支付')}</span>
                     </p>
                   </div>
                   <span className="text-lg font-bold" style={{ color: PURPLE }}>
@@ -137,8 +149,8 @@ export default function CustomerOrdersPage() {
                 </div>
                 {order.lines && order.lines.length > 0 && (
                   <div className="mt-2 text-xs text-gray-500">
-                    {order.lines.slice(0, 3).map(l => l.productName).join('、')}
-                    {order.lines.length > 3 && ` 等${order.lines.length}项`}
+                    {order.lines.slice(0, 3).map(l => l.productName).join(isEn ? ', ' : '、')}
+                    {order.lines.length > 3 && (isEn ? ` and ${order.lines.length} items total` : ` 等${order.lines.length}项`)}
                   </div>
                 )}
               </Link>
@@ -151,13 +163,13 @@ export default function CustomerOrdersPage() {
               <button onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
                 className="px-3 py-1.5 border rounded text-sm disabled:opacity-30">
-                上一页
+                {isEn ? 'Previous' : '上一页'}
               </button>
-              <span className="px-3 py-1.5 text-sm text-gray-500">{page} / {totalPages} (共{total}单)</span>
+              <span className="px-3 py-1.5 text-sm text-gray-500">{page} / {totalPages} {isEn ? `(${total} orders)` : `(共${total}单)`}</span>
               <button onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
                 className="px-3 py-1.5 border rounded text-sm disabled:opacity-30">
-                下一页
+                {isEn ? 'Next' : '下一页'}
               </button>
             </div>
           )}

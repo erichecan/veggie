@@ -486,19 +486,19 @@ export default function SalesOrderDetailPage() {
   // ⚠️ 必须放在所有提前 return 之前，否则 hook 数量随渲染变化 → React error #310（见报价单详情页同处注释）
   const { helpOverlay } = useHotkeys([
     {
-      combo: 'mod+s', label: '保存', group: '编辑',
+      combo: 'mod+s', label: isEn ? 'Save' : '保存', group: isEn ? 'Edit' : '编辑',
       when: () => editing,
       run: () => { void handleSave() },
       allowInInput: true,
     },
     {
-      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
+      combo: 'alt+n', label: isEn ? 'Add line (focus product search)' : '新增一行（聚焦商品搜索）', group: isEn ? 'Edit' : '编辑',
       when: () => editing,
       run: () => focusLineSearchRef.current?.(),
       allowInInput: true,
     },
     {
-      combo: 'mod+p', label: '打印销售单', group: '流转',
+      combo: 'mod+p', label: isEn ? 'Print sales order' : '打印销售单', group: isEn ? 'Workflow' : '流转',
       // 与 Print 按钮同条件：打印中不可重复触发，锁定单不可打
       when: () => !!order && !printing,
       run: () => { void handlePrint() },

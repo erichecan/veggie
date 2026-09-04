@@ -508,7 +508,7 @@ function DayWiseReportInner() {
   // 脚本不执行。iframe 把它当独立文档解析,表格正常对齐、CSS 生效、自动打印可用。
   return (
     <iframe
-      title="报表"
+      title="Report"
       srcDoc={html}
       style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', border: 'none' }}
     />

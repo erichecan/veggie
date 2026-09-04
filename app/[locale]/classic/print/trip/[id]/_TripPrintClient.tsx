@@ -62,7 +62,7 @@ export default function TripPrintClient({
         setHtml(renderer(data, variant))
       } catch (e) {
         if (cancelled) return
-        setError(e instanceof Error ? e.message : '加载失败')
+        setError(e instanceof Error ? e.message : '加载失败 / Loading failed')
       }
     }
     load()
@@ -72,7 +72,7 @@ export default function TripPrintClient({
   if (error) {
     return (
       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Arial,sans-serif', color:'#dc2626' }}>
-        ❌ {TITLES[type]} 加载失败：{error}
+        ❌ {TITLES[type]} — 加载失败 / Loading failed: {error}
       </div>
     )
   }
@@ -80,7 +80,7 @@ export default function TripPrintClient({
   if (!html) {
     return (
       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Arial,sans-serif', color:'#666' }}>
-        正在准备 {TITLES[type]} …
+        正在准备 / Preparing {TITLES[type]} …
       </div>
     )
   }

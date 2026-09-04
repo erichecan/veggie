@@ -444,27 +444,27 @@ export default function QuotationDetailPage() {
   // 都查不出这类错误，只有真在浏览器打开才会崩。
   const { helpOverlay } = useHotkeys([
     {
-      combo: 'mod+s', label: '保存', group: '编辑',
+      combo: 'mod+s', label: isEn ? 'Save' : '保存', group: isEn ? 'Edit' : '编辑',
       when: () => editing,
       run: () => { void handleSave() },
       // 编辑时焦点几乎总在某个输入框里，不放行就等于这条快捷键不存在
       allowInInput: true,
     },
     {
-      combo: 'alt+n', label: '新增一行（聚焦商品搜索）', group: '编辑',
+      combo: 'alt+n', label: isEn ? 'Add line (focus product search)' : '新增一行（聚焦商品搜索）', group: isEn ? 'Edit' : '编辑',
       when: () => editing,
       run: () => focusLineSearchRef.current?.(),
       allowInInput: true,
     },
     {
-      combo: 'mod+enter', label: '确认报价单', group: '流转',
+      combo: 'mod+enter', label: isEn ? 'Confirm quotation' : '确认报价单', group: isEn ? 'Workflow' : '流转',
       // 与 Confirm 按钮的 disabled 保持同一套条件，避免按钮灰着但快捷键还能按下去
       when: () => isQuotation && !editing && !confirming && !creditBlocked,
       run: () => { void handleConfirm() },
       allowInInput: true,
     },
     {
-      combo: 'mod+p', label: '打印', group: '流转',
+      combo: 'mod+p', label: isEn ? 'Print' : '打印', group: isEn ? 'Workflow' : '流转',
       when: () => !!order,
       run: () => window.open(`${prefix}/classic/print/${order!.id}`, '_blank', 'noopener,noreferrer'),
       allowInInput: true,

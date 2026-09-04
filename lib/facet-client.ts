@@ -8,10 +8,17 @@ import type { Facet } from './list-filters'
 export interface ClientFacetDef<T> {
   /** 维度 key，与 Facet.key 对应 */
   key: string
-  /** 下拉里显示的维度名 */
+  /** 下拉里显示的维度名（中文） */
   label: string
+  /** 下拉里显示的维度名（英文）。不传时英文界面下会回退显示中文 label —— 新增维度定义时应一并填上。 */
+  labelEn?: string
   /** 从一行数据里取出该维度所有可被匹配的文本 */
   values: (row: T) => (string | null | undefined)[]
+}
+
+/** 把 ClientFacetDef 转成 useFacets/OdooControlPanel 需要的 {key,label}，按 isEn 选中英文名。 */
+export function localizeClientFacetDefs<T>(defs: ClientFacetDef<T>[], isEn = false): { key: string; label: string }[] {
+  return defs.map(d => ({ key: d.key, label: isEn ? (d.labelEn ?? d.label) : d.label }))
 }
 
 export function filterByFacets<T>(rows: T[], facets: Facet[], defs: ClientFacetDef<T>[]): T[] {

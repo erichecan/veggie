@@ -8,7 +8,7 @@ import { Pagination } from '@/components/ui/pagination'
 import type { Trip, ReturnItem as CanonicalReturnItem, OrderItem } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -549,10 +549,10 @@ const FILTER_TABS_EN: { key: FilterStatus; label: string }[] = [
 ]
 
 const FACET_DEFS: ClientFacetDef<FlatReturn>[] = [
-  { key: 'customer', label: '客户', values: r => [r.restaurantName] },
-  { key: 'product',  label: '商品', values: r => [r.productName] },
-  { key: 'driver',   label: '司机', values: r => [r.driverName] },
-  { key: 'status',   label: '状态', values: r => [r.status] },
+  { key: 'customer', label: '客户', labelEn: 'Customer', values: r => [r.restaurantName] },
+  { key: 'product',  label: '商品', labelEn: 'Product',  values: r => [r.productName] },
+  { key: 'driver',   label: '司机', labelEn: 'Driver',   values: r => [r.driverName] },
+  { key: 'status',   label: '状态', labelEn: 'Status',   values: r => [r.status] },
 ]
 
 export default function ClassicReturnsPage() {
@@ -585,7 +585,7 @@ export default function ClassicReturnsPage() {
 
   const allRows = flatten(trips)
 
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, en))
 
   const filtered = filterByFacets(allRows, facets, FACET_DEFS).filter(r => {
     if (filterStatus !== 'ALL' && r.status !== filterStatus) return false

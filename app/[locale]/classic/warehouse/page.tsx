@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Product, Order, PurchaseRecord } from '@/lib/types'
@@ -31,11 +33,17 @@ interface ExpiringLot {
   product?: { id: string; name: string; spec?: string | null }
 }
 
-const TAB_LABELS: { id: Tab; label: string; icon: string }[] = [
+const TAB_LABELS_ZH: { id: Tab; label: string; icon: string }[] = [
   { id: 'incoming', label: '今日到货', icon: '📥' },
   { id: 'outgoing', label: '今日出货', icon: '📤' },
   { id: 'inventory', label: '库存总览', icon: '📊' },
   { id: 'purchases', label: '采购记录', icon: '🧾' },
+]
+const TAB_LABELS_EN: { id: Tab; label: string; icon: string }[] = [
+  { id: 'incoming', label: 'Today\'s Arrivals', icon: '📥' },
+  { id: 'outgoing', label: 'Today\'s Outgoing', icon: '📤' },
+  { id: 'inventory', label: 'Stock Overview', icon: '📊' },
+  { id: 'purchases', label: 'Purchase Records', icon: '🧾' },
 ]
 
 function todayStart(): string {
@@ -58,6 +66,9 @@ interface AdjustForm {
 }
 
 export default function ClassicWarehousePage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const TAB_LABELS = isEn ? TAB_LABELS_EN : TAB_LABELS_ZH
   const [tab, setTab] = useState<Tab>('incoming')
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
   const [products, setProducts] = useState<Product[]>([])
@@ -127,12 +138,12 @@ export default function ClassicWarehousePage() {
 
   async function handlePurchaseSave() {
     if (purchaseSaving) return
-    if (!purchaseForm.productId) { toast.error('请选择商品'); return }
+    if (!purchaseForm.productId) { toast.error(isEn ? 'Please select a product' : '请选择商品'); return }
     const qty = Number(purchaseForm.quantity)
     const cost = Number(purchaseForm.unitCost)
-    if (!qty || qty <= 0 || qty > 100000) { toast.error('数量必须在 1–100,000 之间'); return }
-    if (!cost || cost <= 0 || cost > 1000000) { toast.error('单价必须大于0'); return }
-    if (!purchaseForm.supplier.trim()) { toast.error('供应商不能为空'); return }
+    if (!qty || qty <= 0 || qty > 100000) { toast.error(isEn ? 'Quantity must be between 1 and 100,000' : '数量必须在 1–100,000 之间'); return }
+    if (!cost || cost <= 0 || cost > 1000000) { toast.error(isEn ? 'Unit price must be greater than 0' : '单价必须大于0'); return }
+    if (!purchaseForm.supplier.trim()) { toast.error(isEn ? 'Supplier cannot be empty' : '供应商不能为空'); return }
 
     setPurchaseSaving(true)
     const prod = products.find(p => p.id === purchaseForm.productId)!
@@ -149,9 +160,9 @@ export default function ClassicWarehousePage() {
       load()
       setPurchaseOpen(false)
       setPurchaseForm({ productId: '', quantity: '', unitCost: '', supplier: '' })
-      toast.success(`已录入 ${prod.name} 入库 ${qty} 件，成本已更新`)
+      toast.success(isEn ? `Recorded ${qty} units of ${prod.name}, cost updated` : `已录入 ${prod.name} 入库 ${qty} 件，成本已更新`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '录入失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to record' : '录入失败'))
     } finally {
       setPurchaseSaving(false)
     }
@@ -159,11 +170,11 @@ export default function ClassicWarehousePage() {
 
   async function handleAdjustSave() {
     if (adjustSaving) return
-    if (!adjustForm.productId) { toast.error('请选择商品'); return }
+    if (!adjustForm.productId) { toast.error(isEn ? 'Please select a product' : '请选择商品'); return }
     const qty = Number(adjustForm.qty)
-    if (!qty) { toast.error('调整数量不能为0'); return }
-    if (Math.abs(qty) > 100000) { toast.error('调整数量过大（最大 100,000）'); return }
-    if (!adjustForm.note.trim()) { toast.error('请填写调整原因'); return }
+    if (!qty) { toast.error(isEn ? 'Adjustment quantity cannot be 0' : '调整数量不能为0'); return }
+    if (Math.abs(qty) > 100000) { toast.error(isEn ? 'Adjustment quantity too large (max 100,000)' : '调整数量过大（最大 100,000）'); return }
+    if (!adjustForm.note.trim()) { toast.error(isEn ? 'Please enter a reason for the adjustment' : '请填写调整原因'); return }
 
     setAdjustSaving(true)
     try {
@@ -175,9 +186,9 @@ export default function ClassicWarehousePage() {
       load()
       setAdjustOpen(false)
       setAdjustForm({ productId: '', qty: '', note: '' })
-      toast.success('库存已调整')
+      toast.success(isEn ? 'Stock adjusted' : '库存已调整')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '调整失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to adjust' : '调整失败'))
     } finally {
       setAdjustSaving(false)
     }
@@ -187,9 +198,9 @@ export default function ClassicWarehousePage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">仓库管理</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Warehouse' : '仓库管理'}</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · 实时库存与进出货记录
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · {isEn ? 'Live stock and shipment records' : '实时库存与进出货记录'}
           </p>
         </div>
         <div className="flex gap-2">
@@ -199,54 +210,56 @@ export default function ClassicWarehousePage() {
             style={{ borderColor: PURPLE, color: PURPLE }}
             className="hover:opacity-80"
           >
-            调整库存
+            {isEn ? 'Adjust Stock' : '调整库存'}
           </Button>
           <Button
             onClick={() => setPurchaseOpen(true)}
             style={{ background: PURPLE }}
             className="text-white hover:opacity-90"
           >
-            + 录入采购
+            {isEn ? '+ Record Purchase' : '+ 录入采购'}
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <MiniCard
-          label="今日到货批次"
-          value={`${todayIncoming.length} 批`}
+          label={isEn ? "Today's Arrival Batches" : '今日到货批次'}
+          value={isEn ? `${todayIncoming.length} batches` : `${todayIncoming.length} 批`}
           icon="📥"
           color="text-blue-700"
           active={activeCard === 'incoming'}
           onClick={() => setActiveCard(prev => prev === 'incoming' ? null : 'incoming')}
         />
         <MiniCard
-          label="今日出货品类"
-          value={`${Object.keys(todayOutgoing).length} 种`}
+          label={isEn ? "Today's Outgoing SKUs" : '今日出货品类'}
+          value={isEn ? `${Object.keys(todayOutgoing).length} SKUs` : `${Object.keys(todayOutgoing).length} 种`}
           icon="📤"
           color="text-emerald-700"
           active={activeCard === 'outgoing'}
           onClick={() => setActiveCard(prev => prev === 'outgoing' ? null : 'outgoing')}
         />
         <MiniCard
-          label="低库存预警"
-          value={`${activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length} 种`}
+          label={isEn ? 'Low Stock Alerts' : '低库存预警'}
+          value={isEn
+            ? `${activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length} SKUs`
+            : `${activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length} 种`}
           icon="⚠️"
           color="text-amber-700"
           active={activeCard === 'lowStock'}
           onClick={() => setActiveCard(prev => prev === 'lowStock' ? null : 'lowStock')}
         />
         <MiniCard
-          label="临期/过期批次"
-          value={`${expiringLots.length} 批`}
+          label={isEn ? 'Expiring/Expired Lots' : '临期/过期批次'}
+          value={isEn ? `${expiringLots.length} lots` : `${expiringLots.length} 批`}
           icon="🕐"
           color={expiringLots.some(l => l.isExpired) ? 'text-red-700' : 'text-orange-700'}
           active={activeCard === 'expiring'}
           onClick={() => setActiveCard(prev => prev === 'expiring' ? null : 'expiring')}
         />
         <MiniCard
-          label="在售商品"
-          value={`${activeProducts.length} 种`}
+          label={isEn ? 'Active Products' : '在售商品'}
+          value={isEn ? `${activeProducts.length} SKUs` : `${activeProducts.length} 种`}
           icon="🥬"
           color="text-gray-700"
           active={activeCard === 'active'}
@@ -255,6 +268,7 @@ export default function ClassicWarehousePage() {
       </div>
 
       <WarehouseDrillPanel
+        isEn={isEn}
         activeCard={activeCard}
         close={() => setActiveCard(null)}
         todayIncoming={todayIncoming}
@@ -285,8 +299,8 @@ export default function ClassicWarehousePage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between" style={{ background: '#f3eff5' }}>
             <div>
-              <h3 className="font-semibold text-gray-800">📥 今日到货清单</h3>
-              <p className="text-xs text-gray-500 mt-0.5">共 {todayIncoming.length} 批次入库</p>
+              <h3 className="font-semibold text-gray-800">{isEn ? "📥 Today's Arrivals" : '📥 今日到货清单'}</h3>
+              <p className="text-xs text-gray-500 mt-0.5">{isEn ? `${todayIncoming.length} batches received` : `共 ${todayIncoming.length} 批次入库`}</p>
             </div>
             <Button
               size="sm"
@@ -294,21 +308,21 @@ export default function ClassicWarehousePage() {
               style={{ background: PURPLE }}
               className="text-white hover:opacity-90 text-xs"
             >
-              + 录入到货
+              {isEn ? '+ Record Arrival' : '+ 录入到货'}
             </Button>
           </div>
           {todayIncoming.length === 0 ? (
-            <div className="py-12 text-center text-gray-400 text-sm">今日暂无到货记录，点击「录入到货」添加</div>
+            <div className="py-12 text-center text-gray-400 text-sm">{isEn ? 'No arrivals today. Click "Record Arrival" to add one' : '今日暂无到货记录，点击「录入到货」添加'}</div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">商品</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">规格</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">供应商</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">数量</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">单价</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">到货时间</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Product' : '商品'}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Spec' : '规格'}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Supplier' : '供应商'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Qty' : '数量'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Unit Price' : '单价'}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Arrival Time' : '到货时间'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -333,18 +347,18 @@ export default function ClassicWarehousePage() {
       {tab === 'outgoing' && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100" style={{ background: '#f3eff5' }}>
-            <h3 className="font-semibold text-gray-800">📤 今日出货汇总</h3>
-            <p className="text-xs text-gray-500 mt-0.5">基于今日已完成订单汇总</p>
+            <h3 className="font-semibold text-gray-800">{isEn ? "📤 Today's Outgoing Summary" : '📤 今日出货汇总'}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{isEn ? "Based on today's completed orders" : '基于今日已完成订单汇总'}</p>
           </div>
           {Object.keys(todayOutgoing).length === 0 ? (
-            <div className="py-12 text-center text-gray-400 text-sm">今日暂无出货记录（订单需完成后才计入）</div>
+            <div className="py-12 text-center text-gray-400 text-sm">{isEn ? 'No outgoing records today (only counted once orders complete)' : '今日暂无出货记录（订单需完成后才计入）'}</div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">商品</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">规格</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">出货量</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Product' : '商品'}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Spec' : '规格'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Qty Shipped' : '出货量'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -365,7 +379,7 @@ export default function ClassicWarehousePage() {
         <div className="space-y-3">
           {activeProducts.filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD).length > 0 && (
             <div className="rounded-xl p-4" style={{ background: '#f3eff5', border: '1px solid #d4c0d4' }}>
-              <h3 className="font-semibold mb-3" style={{ color: PURPLE }}>⚠️ 低库存预警（≤{LOW_STOCK_THRESHOLD}件）</h3>
+              <h3 className="font-semibold mb-3" style={{ color: PURPLE }}>{isEn ? `⚠️ Low Stock Alert (≤${LOW_STOCK_THRESHOLD} units)` : `⚠️ 低库存预警（≤${LOW_STOCK_THRESHOLD}件）`}</h3>
               <div className="space-y-2">
                 {activeProducts
                   .filter(p => (p.qtyOnHand ?? 0) <= LOW_STOCK_THRESHOLD)
@@ -375,14 +389,14 @@ export default function ClassicWarehousePage() {
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-gray-500">{p.spec}</span>
                         <span className="text-sm font-bold px-2 py-0.5 rounded-full" style={{ background: '#f3eff5', color: PURPLE }}>
-                          剩余 {(p.qtyOnHand ?? 0)} 件
+                          {isEn ? `${(p.qtyOnHand ?? 0)} left` : `剩余 ${(p.qtyOnHand ?? 0)} 件`}
                         </span>
                         <button
-                          onClick={() => { setAdjustForm({ productId: p.id, qty: '', note: '补货入库' }); setAdjustOpen(true) }}
+                          onClick={() => { setAdjustForm({ productId: p.id, qty: '', note: isEn ? 'Restock' : '补货入库' }); setAdjustOpen(true) }}
                           className="text-xs hover:underline"
                           style={{ color: PURPLE }}
                         >
-                          调整库存
+                          {isEn ? 'Adjust Stock' : '调整库存'}
                         </button>
                       </div>
                     </div>
@@ -393,21 +407,21 @@ export default function ClassicWarehousePage() {
 
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-800">📊 全部商品库存</h3>
+              <h3 className="font-semibold text-gray-800">{isEn ? '📊 All Product Stock' : '📊 全部商品库存'}</h3>
               <Button size="sm" variant="outline" onClick={() => setAdjustOpen(true)} className="text-xs">
-                + 库存调整
+                {isEn ? '+ Adjust Stock' : '+ 库存调整'}
               </Button>
             </div>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">商品</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">规格</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">库存</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">成本价</th>
-                  <th className="text-center px-4 py-2.5 font-medium text-gray-600">状态</th>
-                  <th className="text-center px-4 py-2.5 font-medium text-gray-600">动销</th>
-                  <th className="text-center px-4 py-2.5 font-medium text-gray-600">操作</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Product' : '商品'}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Spec' : '规格'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Stock' : '库存'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Cost' : '成本价'}</th>
+                  <th className="text-center px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
+                  <th className="text-center px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Turnover' : '动销'}</th>
+                  <th className="text-center px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Action' : '操作'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -428,15 +442,15 @@ export default function ClassicWarehousePage() {
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           isActive(p) ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
                         }`}>
-                          {isActive(p) ? '在售' : '下架'}
+                          {isActive(p) ? (isEn ? 'Active' : '在售') : (isEn ? 'Inactive' : '下架')}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {isActive(p) && (
                           isSlow ? (
-                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">滞销</span>
+                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{isEn ? 'Slow-moving' : '滞销'}</span>
                           ) : (
-                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">正常</span>
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{isEn ? 'Normal' : '正常'}</span>
                           )
                         )}
                       </td>
@@ -446,7 +460,7 @@ export default function ClassicWarehousePage() {
                           className="text-xs hover:underline"
                           style={{ color: PURPLE }}
                         >
-                          调整
+                          {isEn ? 'Adjust' : '调整'}
                         </button>
                       </td>
                     </tr>
@@ -462,8 +476,8 @@ export default function ClassicWarehousePage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between" style={{ background: '#f3eff5' }}>
             <div>
-              <h3 className="font-semibold text-gray-800">🧾 采购记录</h3>
-              <p className="text-xs text-gray-500 mt-0.5">共 {purchases.length} 条</p>
+              <h3 className="font-semibold text-gray-800">{isEn ? '🧾 Purchase Records' : '🧾 采购记录'}</h3>
+              <p className="text-xs text-gray-500 mt-0.5">{isEn ? `${purchases.length} total` : `共 ${purchases.length} 条`}</p>
             </div>
             <Button
               size="sm"
@@ -471,21 +485,21 @@ export default function ClassicWarehousePage() {
               style={{ background: PURPLE }}
               className="text-white hover:opacity-90 text-xs"
             >
-              + 录入采购
+              {isEn ? '+ Record Purchase' : '+ 录入采购'}
             </Button>
           </div>
           {purchases.length === 0 ? (
-            <div className="py-12 text-center text-gray-400 text-sm">暂无采购记录</div>
+            <div className="py-12 text-center text-gray-400 text-sm">{isEn ? 'No purchase records' : '暂无采购记录'}</div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">商品</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">供应商</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">数量</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">单价</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">金额</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">到货时间</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Product' : '商品'}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Supplier' : '供应商'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Qty' : '数量'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Unit Price' : '单价'}</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Amount' : '金额'}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-600">{isEn ? 'Arrival Time' : '到货时间'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -509,7 +523,7 @@ export default function ClassicWarehousePage() {
               </tbody>
               <tfoot className="bg-gray-50 border-t border-gray-200">
                 <tr>
-                  <td colSpan={4} className="px-4 py-2.5 text-right text-sm text-gray-600 font-medium">采购总额</td>
+                  <td colSpan={4} className="px-4 py-2.5 text-right text-sm text-gray-600 font-medium">{isEn ? 'Total Purchases' : '采购总额'}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-gray-900">
                     €{purchases.reduce((s, p) => s + p.quantity * p.unitCost, 0).toFixed(2)}
                   </td>
@@ -525,11 +539,11 @@ export default function ClassicWarehousePage() {
       <Dialog open={purchaseOpen} onOpenChange={setPurchaseOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>录入采购入库</DialogTitle>
+            <DialogTitle>{isEn ? 'Record Purchase' : '录入采购入库'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label>选择商品 *</Label>
+              <Label>{isEn ? 'Select Product *' : '选择商品 *'}</Label>
               <div className="mt-1">
                 <ProductSearchInput
                   value={purchaseQuery}
@@ -540,7 +554,7 @@ export default function ClassicWarehousePage() {
                   }}
                   onSelect={p => setPurchaseForm(f => ({ ...f, productId: p.id }))}
                   products={purchaseOptions}
-                  placeholder="输入名称或编码搜索商品…"
+                  placeholder={isEn ? 'Search by name or code…' : '输入名称或编码搜索商品…'}
                   inputClassName="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
                   portalDropdown
                   maxResults={30}
@@ -549,7 +563,7 @@ export default function ClassicWarehousePage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="pur-qty">入库数量 *</Label>
+                <Label htmlFor="pur-qty">{isEn ? 'Quantity *' : '入库数量 *'}</Label>
                 <NumericInput
                   id="pur-qty"
                   min={0.001}
@@ -557,11 +571,11 @@ export default function ClassicWarehousePage() {
                   className="mt-1"
                   value={purchaseForm.quantity}
                   onChange={e => setPurchaseForm(f => ({ ...f, quantity: e.target.value }))}
-                  placeholder="如 100 或 0.6"
+                  placeholder={isEn ? 'e.g. 100 or 0.6' : '如 100 或 0.6'}
                 />
               </div>
               <div>
-                <Label htmlFor="pur-cost">进货单价（€）*</Label>
+                <Label htmlFor="pur-cost">{isEn ? 'Unit Cost (€) *' : '进货单价（€）*'}</Label>
                 <NumericInput
                   id="pur-cost"
                   min={0}
@@ -569,33 +583,33 @@ export default function ClassicWarehousePage() {
                   className="mt-1"
                   value={purchaseForm.unitCost}
                   onChange={e => setPurchaseForm(f => ({ ...f, unitCost: e.target.value }))}
-                  placeholder="如 1.50"
+                  placeholder={isEn ? 'e.g. 1.50' : '如 1.50'}
                 />
               </div>
             </div>
             <div>
-              <Label htmlFor="pur-supplier">供应商 *</Label>
+              <Label htmlFor="pur-supplier">{isEn ? 'Supplier *' : '供应商 *'}</Label>
               <Input
                 id="pur-supplier"
                 className="mt-1"
                 value={purchaseForm.supplier}
                 onChange={e => setPurchaseForm(f => ({ ...f, supplier: e.target.value }))}
-                placeholder="如 Dublin Fresh Produce Ltd"
+                placeholder={isEn ? 'e.g. Dublin Fresh Produce Ltd' : '如 Dublin Fresh Produce Ltd'}
               />
             </div>
             <div className="p-3 rounded-lg text-xs" style={{ background: '#f3eff5', border: '1px solid #d4c0d4', color: PURPLE }}>
-              录入后将自动更新商品库存和加权平均成本价
+              {isEn ? "This will automatically update the product's stock and weighted-average cost" : '录入后将自动更新商品库存和加权平均成本价'}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPurchaseOpen(false)} disabled={purchaseSaving}>取消</Button>
+            <Button variant="outline" onClick={() => setPurchaseOpen(false)} disabled={purchaseSaving}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               style={{ background: PURPLE }}
               className="text-white hover:opacity-90"
               onClick={handlePurchaseSave}
               disabled={purchaseSaving}
             >
-              {purchaseSaving ? '保存中…' : '确认入库'}
+              {purchaseSaving ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Confirm' : '确认入库')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -605,11 +619,11 @@ export default function ClassicWarehousePage() {
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>库存调整</DialogTitle>
+            <DialogTitle>{isEn ? 'Adjust Stock' : '库存调整'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label>选择商品 *</Label>
+              <Label>{isEn ? 'Select Product *' : '选择商品 *'}</Label>
               <div className="mt-1">
                 <ProductSearchInput
                   value={adjustQuery}
@@ -619,7 +633,7 @@ export default function ClassicWarehousePage() {
                   }}
                   onSelect={p => setAdjustForm(f => ({ ...f, productId: p.id }))}
                   products={products}
-                  placeholder="输入名称或编码搜索商品…"
+                  placeholder={isEn ? 'Search by name or code…' : '输入名称或编码搜索商品…'}
                   inputClassName="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
                   portalDropdown
                   showAtp
@@ -628,36 +642,36 @@ export default function ClassicWarehousePage() {
               </div>
             </div>
             <div>
-              <Label htmlFor="adj-qty">调整数量 *</Label>
+              <Label htmlFor="adj-qty">{isEn ? 'Adjustment Quantity *' : '调整数量 *'}</Label>
               <NumericInput
                 id="adj-qty"
                 step="0.001"
                 className="mt-1"
                 value={adjustForm.qty}
                 onChange={e => setAdjustForm(f => ({ ...f, qty: e.target.value }))}
-                placeholder="正数=增加，负数=减少，如 +10 或 -0.5"
+                placeholder={isEn ? 'Positive to add, negative to subtract, e.g. +10 or -0.5' : '正数=增加，负数=减少，如 +10 或 -0.5'}
               />
             </div>
             <div>
-              <Label htmlFor="adj-note">调整原因 *</Label>
+              <Label htmlFor="adj-note">{isEn ? 'Reason *' : '调整原因 *'}</Label>
               <Input
                 id="adj-note"
                 className="mt-1"
                 value={adjustForm.note}
                 onChange={e => setAdjustForm(f => ({ ...f, note: e.target.value }))}
-                placeholder="如：损耗处理、盘点调整、客户退货"
+                placeholder={isEn ? 'e.g. spoilage, stock take adjustment, customer return' : '如：损耗处理、盘点调整、客户退货'}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAdjustOpen(false)} disabled={adjustSaving}>取消</Button>
+            <Button variant="outline" onClick={() => setAdjustOpen(false)} disabled={adjustSaving}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               style={{ background: PURPLE }}
               className="text-white hover:opacity-90"
               onClick={handleAdjustSave}
               disabled={adjustSaving}
             >
-              {adjustSaving ? '调整中…' : '确认调整'}
+              {adjustSaving ? (isEn ? 'Adjusting…' : '调整中…') : (isEn ? 'Confirm' : '确认调整')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -701,8 +715,9 @@ function MiniCard({ label, value, icon, color, active, onClick }: {
 interface OutgoingItem { productName: string; spec: string; quantity: number }
 
 function WarehouseDrillPanel({
-  activeCard, close, todayIncoming, todayOutgoing, lowStockProducts, activeProducts, expiringLots, switchTab, openAdjust,
+  isEn, activeCard, close, todayIncoming, todayOutgoing, lowStockProducts, activeProducts, expiringLots, switchTab, openAdjust,
 }: {
+  isEn: boolean
   activeCard: CardKey | null
   close: () => void
   todayIncoming: PurchaseRecord[]
@@ -717,30 +732,30 @@ function WarehouseDrillPanel({
 
   if (activeCard === 'incoming') {
     const cols: DrillColumn<PurchaseRecord>[] = [
-      { key: 'name', label: '商品', render: p => <span className="font-medium text-gray-800">{p.productName}</span> },
-      { key: 'spec', label: '规格', render: p => <span className="text-xs text-gray-500">{p.spec}</span> },
-      { key: 'supplier', label: '供应商', render: p => <span className="text-gray-600">{p.supplier}</span> },
-      { key: 'qty', label: '数量', align: 'right', render: p => <span className="font-bold text-blue-700">{p.quantity}</span> },
-      { key: 'cost', label: '单价', align: 'right', render: p => <span className="text-gray-600">€{p.unitCost.toFixed(2)}</span> },
+      { key: 'name', label: isEn ? 'Product' : '商品', render: p => <span className="font-medium text-gray-800">{p.productName}</span> },
+      { key: 'spec', label: isEn ? 'Spec' : '规格', render: p => <span className="text-xs text-gray-500">{p.spec}</span> },
+      { key: 'supplier', label: isEn ? 'Supplier' : '供应商', render: p => <span className="text-gray-600">{p.supplier}</span> },
+      { key: 'qty', label: isEn ? 'Qty' : '数量', align: 'right', render: p => <span className="font-bold text-blue-700">{p.quantity}</span> },
+      { key: 'cost', label: isEn ? 'Unit Price' : '单价', align: 'right', render: p => <span className="text-gray-600">€{p.unitCost.toFixed(2)}</span> },
       {
-        key: 'time', label: '到货时间', render: p =>
+        key: 'time', label: isEn ? 'Arrival Time' : '到货时间', render: p =>
           <span className="text-xs text-gray-500">{new Date(p.arrivedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>,
       },
     ]
     return (
       <div className="mb-6">
         <DrillPanel<PurchaseRecord>
-          title="今日到货批次"
-          fullListLabel="切换到「今日到货」页签"
+          title={isEn ? "Today's Arrival Batches" : '今日到货批次'}
+          fullListLabel={isEn ? 'Switch to "Today\'s Arrivals" tab' : '切换到「今日到货」页签'}
           columns={cols}
           rows={todayIncoming}
           rowKey={p => p.id}
           onClose={close}
-          emptyText="今日暂无到货记录"
+          emptyText={isEn ? 'No arrivals today' : '今日暂无到货记录'}
         />
         <div className="-mt-4 mb-2 text-right">
           <button onClick={() => { switchTab('incoming'); close() }} className="text-xs hover:underline" style={{ color: PURPLE }}>
-            切换到「今日到货」页签 →
+            {isEn ? 'Switch to "Today\'s Arrivals" tab →' : '切换到「今日到货」页签 →'}
           </button>
         </div>
       </div>
@@ -750,24 +765,24 @@ function WarehouseDrillPanel({
   if (activeCard === 'outgoing') {
     const rows = Object.entries(todayOutgoing).map(([productId, item]) => ({ productId, ...item }))
     const cols: DrillColumn<typeof rows[0]>[] = [
-      { key: 'name', label: '商品', render: r => <span className="font-medium text-gray-800">{r.productName}</span> },
-      { key: 'spec', label: '规格', render: r => <span className="text-xs text-gray-500">{r.spec}</span> },
-      { key: 'qty', label: '出货量', align: 'right', render: r => <span className="font-bold text-emerald-700">{r.quantity}</span> },
+      { key: 'name', label: isEn ? 'Product' : '商品', render: r => <span className="font-medium text-gray-800">{r.productName}</span> },
+      { key: 'spec', label: isEn ? 'Spec' : '规格', render: r => <span className="text-xs text-gray-500">{r.spec}</span> },
+      { key: 'qty', label: isEn ? 'Qty Shipped' : '出货量', align: 'right', render: r => <span className="font-bold text-emerald-700">{r.quantity}</span> },
     ]
     return (
       <div className="mb-6">
         <DrillPanel
-          title="今日出货品类"
-          fullListLabel="切换到「今日出货」页签"
+          title={isEn ? "Today's Outgoing SKUs" : '今日出货品类'}
+          fullListLabel={isEn ? 'Switch to "Today\'s Outgoing" tab' : '切换到「今日出货」页签'}
           columns={cols}
           rows={rows}
           rowKey={r => r.productId}
           onClose={close}
-          emptyText="今日暂无出货记录"
+          emptyText={isEn ? 'No outgoing records today' : '今日暂无出货记录'}
         />
         <div className="-mt-4 mb-2 text-right">
           <button onClick={() => { switchTab('outgoing'); close() }} className="text-xs hover:underline" style={{ color: PURPLE }}>
-            切换到「今日出货」页签 →
+            {isEn ? 'Switch to "Today\'s Outgoing" tab →' : '切换到「今日出货」页签 →'}
           </button>
         </div>
       </div>
@@ -777,47 +792,47 @@ function WarehouseDrillPanel({
   if (activeCard === 'expiring') {
     const cols: DrillColumn<ExpiringLot>[] = [
       {
-        key: 'product', label: '商品', render: l =>
-          <span className="font-medium text-gray-800">{l.product?.name ?? '未知商品'}</span>,
+        key: 'product', label: isEn ? 'Product' : '商品', render: l =>
+          <span className="font-medium text-gray-800">{l.product?.name ?? (isEn ? 'Unknown product' : '未知商品')}</span>,
       },
       {
-        key: 'lot', label: '批号', render: l =>
+        key: 'lot', label: isEn ? 'Lot #' : '批号', render: l =>
           <span className="text-xs font-mono text-gray-600">{l.lotNumber}</span>,
       },
       {
-        key: 'qty', label: '剩余库存', align: 'right', render: l =>
+        key: 'qty', label: isEn ? 'Remaining Stock' : '剩余库存', align: 'right', render: l =>
           <span className="font-bold text-gray-900">{Number(l.currentQty)}</span>,
       },
       {
-        key: 'bestBefore', label: '保质期', render: l => {
+        key: 'bestBefore', label: isEn ? 'Best Before' : '保质期', render: l => {
           const d = new Date(l.bestBefore)
           return (
             <span className={`text-xs font-medium ${l.isExpired ? 'text-red-600' : 'text-orange-600'}`}>
               {formatDateOnly(d)}
-              {l.isExpired
-                ? ` (已过期 ${Math.abs(l.daysRemaining)} 天)`
-                : ` (剩 ${l.daysRemaining} 天)`}
+              {isEn
+                ? (l.isExpired ? ` (expired ${Math.abs(l.daysRemaining)}d ago)` : ` (${l.daysRemaining}d left)`)
+                : (l.isExpired ? ` (已过期 ${Math.abs(l.daysRemaining)} 天)` : ` (剩 ${l.daysRemaining} 天)`)}
             </span>
           )
         },
       },
       {
-        key: 'status', label: '状态', align: 'center', render: l =>
+        key: 'status', label: isEn ? 'Status' : '状态', align: 'center', render: l =>
           l.isExpired
-            ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">已过期</span>
-            : <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">临期</span>,
+            ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">{isEn ? 'Expired' : '已过期'}</span>
+            : <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">{isEn ? 'Expiring Soon' : '临期'}</span>,
       },
     ]
     const sorted = [...expiringLots].sort((a, b) => a.daysRemaining - b.daysRemaining)
     return (
       <div className="mb-6">
         <DrillPanel<ExpiringLot>
-          title="临期/过期批次"
+          title={isEn ? 'Expiring/Expired Lots' : '临期/过期批次'}
           columns={cols}
           rows={sorted}
           rowKey={l => l.id}
           onClose={close}
-          emptyText="暂无临期或过期批次"
+          emptyText={isEn ? 'No expiring or expired lots' : '暂无临期或过期批次'}
         />
       </div>
     )
@@ -829,26 +844,26 @@ function WarehouseDrillPanel({
       ? [...lowStockProducts].sort((a, b) => (a.qtyOnHand ?? 0) - (b.qtyOnHand ?? 0))
       : activeProducts
     const cols: DrillColumn<Product>[] = [
-      { key: 'name', label: '商品', render: p => <span className="font-medium text-gray-800">{p.name}</span> },
-      { key: 'spec', label: '规格', render: p => <span className="text-xs text-gray-500">{p.spec}</span> },
+      { key: 'name', label: isEn ? 'Product' : '商品', render: p => <span className="font-medium text-gray-800">{p.name}</span> },
+      { key: 'spec', label: isEn ? 'Spec' : '规格', render: p => <span className="text-xs text-gray-500">{p.spec}</span> },
       {
-        key: 'qty', label: '库存', align: 'right', render: p => {
+        key: 'qty', label: isEn ? 'Stock' : '库存', align: 'right', render: p => {
           const q = p.qtyOnHand ?? 0
           return <span className={`font-bold ${q <= 20 ? 'text-amber-700' : 'text-gray-900'}`}>{q}</span>
         },
       },
       {
-        key: 'cost', label: '成本价', align: 'right', render: p =>
+        key: 'cost', label: isEn ? 'Cost' : '成本价', align: 'right', render: p =>
           p.standardPrice != null ? <span className="text-gray-600">€{p.standardPrice.toFixed(2)}</span> : <span className="text-gray-300">—</span>,
       },
       {
-        key: 'action', label: '操作', align: 'center', render: p => (
+        key: 'action', label: isEn ? 'Action' : '操作', align: 'center', render: p => (
           <button
             onClick={(e) => { e.stopPropagation(); openAdjust(p.id) }}
             className="text-xs hover:underline"
             style={{ color: PURPLE }}
           >
-            调整库存
+            {isEn ? 'Adjust Stock' : '调整库存'}
           </button>
         ),
       },
@@ -856,17 +871,17 @@ function WarehouseDrillPanel({
     return (
       <div className="mb-6">
         <DrillPanel<Product>
-          title={isLow ? '低库存预警商品' : '在售商品'}
-          fullListLabel="切换到「库存总览」页签"
+          title={isLow ? (isEn ? 'Low Stock Products' : '低库存预警商品') : (isEn ? 'Active Products' : '在售商品')}
+          fullListLabel={isEn ? 'Switch to "Stock Overview" tab' : '切换到「库存总览」页签'}
           columns={cols}
           rows={rows}
           rowKey={p => p.id}
           onClose={close}
-          emptyText={isLow ? '暂无低库存商品' : '暂无在售商品'}
+          emptyText={isLow ? (isEn ? 'No low stock products' : '暂无低库存商品') : (isEn ? 'No active products' : '暂无在售商品')}
         />
         <div className="-mt-4 mb-2 text-right">
           <button onClick={() => { switchTab('inventory'); close() }} className="text-xs hover:underline" style={{ color: PURPLE }}>
-            切换到「库存总览」页签 →
+            {isEn ? 'Switch to "Stock Overview" tab →' : '切换到「库存总览」页签 →'}
           </button>
         </div>
       </div>

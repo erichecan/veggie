@@ -13,6 +13,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
   const router = useRouter()
   const pathname = usePathname()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   useEffect(() => {
@@ -25,8 +26,8 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
   }, [router, prefix])
 
   const nav = [
-    { href: `${prefix}/customer-portal`, label: '商品目录', icon: '📦' },
-    { href: `${prefix}/customer-portal/orders`, label: '我的订单', icon: '📋' },
+    { href: `${prefix}/customer-portal`, label: isEn ? 'Catalog' : '商品目录', icon: '📦' },
+    { href: `${prefix}/customer-portal/orders`, label: isEn ? 'My Orders' : '我的订单', icon: '📋' },
   ]
 
   function handleLogout() {
@@ -39,7 +40,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
       <header className="sticky top-0 z-30 border-b bg-white shadow-sm">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <span className="text-lg font-bold" style={{ color: PURPLE }}>🥬 蔬菜订购</span>
+            <span className="text-lg font-bold" style={{ color: PURPLE }}>🥬 {isEn ? 'Order Vegetables' : '蔬菜订购'}</span>
             <nav className="flex gap-1">
               {nav.map(n => {
                 const active = n.href === `${prefix}/customer-portal`
@@ -60,7 +61,7 @@ export default function CustomerPortalLayout({ children }: { children: React.Rea
             <span className="text-gray-600">{userName}</span>
             <button onClick={handleLogout}
               className="text-gray-400 hover:text-red-500 transition-colors text-xs">
-              退出
+              {isEn ? 'Sign Out' : '退出'}
             </button>
           </div>
         </div>

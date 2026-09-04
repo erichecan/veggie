@@ -1,6 +1,8 @@
 'use client'
 import { type ReactNode, type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import {
   useInlineProductPicker,
   type InlineProductPickerProduct,
@@ -93,9 +95,12 @@ export default function OrderLineEditor<
   rowStyle,
   footer,
   emptyColSpan = 1,
-  emptyMessage = '暂无明细',
+  emptyMessage,
   onReady,
 }: Props<L, P>) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const resolvedEmptyMessage = emptyMessage ?? (isEn ? 'No line items' : '暂无明细')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
   const [handleActive, setHandleActive] = useState(false)
@@ -144,7 +149,7 @@ export default function OrderLineEditor<
 
               const dragHandle: ReactNode = canDrag ? (
                 <span
-                  title="拖动以调整顺序"
+                  title={isEn ? 'Drag to reorder' : '拖动以调整顺序'}
                   onMouseDown={() => setHandleActive(true)}
                   onMouseUp={() => setHandleActive(false)}
                   className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none leading-none"
@@ -226,7 +231,7 @@ export default function OrderLineEditor<
             {lines.length === 0 && (
               <tr>
                 <td colSpan={emptyColSpan} className="px-3 py-8 text-center text-gray-400">
-                  {emptyMessage}
+                  {resolvedEmptyMessage}
                 </td>
               </tr>
             )}

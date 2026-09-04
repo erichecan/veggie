@@ -1,5 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 
 interface Props<C extends { id: string; name: string; city?: string | null }> {
@@ -19,10 +21,13 @@ export default function CustomerSearchInput<
   onChange,
   onSelect,
   excludeIds = [],
-  placeholder = '搜索客户…',
+  placeholder,
   inputClassName,
   maxResults = 12,
 }: Props<C>) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const resolvedPlaceholder = placeholder ?? (isEn ? 'Search customer…' : '搜索客户…')
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
   const [results, setResults] = useState<C[]>([])
@@ -69,7 +74,7 @@ export default function CustomerSearchInput<
       <input
         type="text"
         value={value}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         className={inputClassName}
         onChange={e => { onChange(e.target.value); setOpen(true); setHighlight(-1) }}
         onFocus={() => setOpen(true)}
@@ -87,7 +92,7 @@ export default function CustomerSearchInput<
       />
       {showDropdown && (
         <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-200 rounded shadow-lg min-w-[220px] max-h-52 overflow-y-auto">
-          {loading && <div className="px-3 py-2 text-xs text-gray-400">搜索中…</div>}
+          {loading && <div className="px-3 py-2 text-xs text-gray-400">{isEn ? 'Searching…' : '搜索中…'}</div>}
           {!loading && filtered.map((c, idx) => (
             <button
               key={c.id}

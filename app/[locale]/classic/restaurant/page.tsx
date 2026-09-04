@@ -34,6 +34,7 @@ function getDefaultTaxRate(p: Product | undefined): number {
 export default function ClassicRestaurantPage() {
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [products, setProducts] = useState<Product[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -91,7 +92,7 @@ export default function ClassicRestaurantPage() {
         taxRate: getDefaultTaxRate(p),
       }])
     }
-    toast.success(`${p.name} 已加入购物车`)
+    toast.success(isEn ? `${p.name} added to cart` : `${p.name} 已加入购物车`)
   }
 
   function updateQty(productId: string, qty: number) {
@@ -139,10 +140,10 @@ export default function ClassicRestaurantPage() {
       saveCart([])
       sessionStorage.removeItem('cart')
       setPayOpen(false)
-      toast.success('付款成功！订单已生成')
+      toast.success(isEn ? 'Payment successful! Order created' : '付款成功！订单已生成')
       router.push(`${prefix}/classic/restaurant/orders`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '下单失败，请重试')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to place order, please try again' : '下单失败，请重试'))
     } finally {
       setSubmitting(false)
     }
@@ -156,13 +157,13 @@ export default function ClassicRestaurantPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">商品选购</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Shop' : '商品选购'}</h1>
         <Button
           onClick={() => setCartOpen(true)}
           style={{ background: PURPLE }}
           className="text-white hover:opacity-90 relative"
         >
-          🛒 购物车
+          🛒 {isEn ? 'Cart' : '购物车'}
           {cartCount > 0 && (
             <span className="ml-2 bg-white rounded-full text-xs font-bold px-1.5" style={{ color: PURPLE }}>
               {cartCount}
@@ -220,7 +221,7 @@ export default function ClassicRestaurantPage() {
                       className="w-full py-1.5 rounded-lg text-sm font-medium transition-colors border"
                       style={{ background: '#f3eff5', color: PURPLE, borderColor: '#d4c0d4' }}
                     >
-                      加入购物车
+                      {isEn ? 'Add to Cart' : '加入购物车'}
                     </button>
                   )}
                 </div>
@@ -238,7 +239,7 @@ export default function ClassicRestaurantPage() {
             disabled={page === 1}
             className="px-3 py-1.5 text-sm rounded border border-gray-200 text-gray-600 disabled:opacity-40 hover:border-gray-400 transition-colors"
           >
-            上一页
+            {isEn ? 'Previous' : '上一页'}
           </button>
           {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
             <button
@@ -257,7 +258,7 @@ export default function ClassicRestaurantPage() {
             disabled={page === totalPages}
             className="px-3 py-1.5 text-sm rounded border border-gray-200 text-gray-600 disabled:opacity-40 hover:border-gray-400 transition-colors"
           >
-            下一页
+            {isEn ? 'Next' : '下一页'}
           </button>
         </div>
       )}
@@ -266,11 +267,11 @@ export default function ClassicRestaurantPage() {
       <Dialog open={cartOpen} onOpenChange={setCartOpen}>
         <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>购物车</DialogTitle>
+            <DialogTitle>{isEn ? 'Cart' : '购物车'}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
             {cart.length === 0 && (
-              <p className="text-center py-8 text-gray-400">购物车是空的</p>
+              <p className="text-center py-8 text-gray-400">{isEn ? 'Your cart is empty' : '购物车是空的'}</p>
             )}
             {cart.map(item => {
               const product = products.find(p => p.id === item.productId)
@@ -292,11 +293,11 @@ export default function ClassicRestaurantPage() {
                     <span className="w-16 text-right text-sm font-medium">€{fmtMoney(item.price * item.quantity)}</span>
                   </div>
                   <div className="mt-1.5 ml-[60px] flex items-center gap-1">
-                    <span className="text-xs text-gray-400">税率:</span>
+                    <span className="text-xs text-gray-400">{isEn ? 'Tax:' : '税率:'}</span>
                     <select
                       value={currentTaxRate}
                       onChange={e => updateTaxRate(item.productId, parseFloat(e.target.value))}
-                      aria-label={`${item.productName} 税率`}
+                      aria-label={isEn ? `${item.productName} tax rate` : `${item.productName} 税率`}
                       className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:ring-1"
                       style={{ outlineColor: PURPLE }}
                     >
@@ -311,7 +312,7 @@ export default function ClassicRestaurantPage() {
           </div>
           <div className="border-t pt-3 mt-1">
             <div className="flex justify-between items-center mb-3">
-              <span className="font-medium text-gray-700">合计</span>
+              <span className="font-medium text-gray-700">{isEn ? 'Total' : '合计'}</span>
               <span className="text-xl font-bold" style={{ color: PURPLE }}>€{fmtMoney(total)}</span>
             </div>
             <Button
@@ -320,7 +321,7 @@ export default function ClassicRestaurantPage() {
               disabled={cart.length === 0}
               onClick={() => { setCartOpen(false); setPayOpen(true) }}
             >
-              提交订单
+              {isEn ? 'Submit Order' : '提交订单'}
             </Button>
           </div>
         </DialogContent>
@@ -330,11 +331,13 @@ export default function ClassicRestaurantPage() {
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-w-sm text-center">
           <DialogHeader>
-            <DialogTitle>确认付款</DialogTitle>
+            <DialogTitle>{isEn ? 'Confirm Payment' : '确认付款'}</DialogTitle>
           </DialogHeader>
           <div className="py-6">
             <p className="text-4xl font-bold mb-2" style={{ color: PURPLE }}>€{fmtMoney(total)}</p>
-            <p className="text-gray-500 text-sm">{cart.length} 种商品，共 {cartCount} 件</p>
+            <p className="text-gray-500 text-sm">
+              {isEn ? `${cart.length} item(s), ${cartCount} unit(s) total` : `${cart.length} 种商品，共 ${cartCount} 件`}
+            </p>
 
             <div className="mt-5 flex gap-3">
               <button
@@ -344,7 +347,7 @@ export default function ClassicRestaurantPage() {
                   ? { borderColor: PURPLE, background: '#f3eff5', color: PURPLE }
                   : { borderColor: '#e5e7eb', color: '#6b7280' }}
               >
-                💳 线上支付
+                💳 {isEn ? 'Pay Online' : '线上支付'}
               </button>
               <button
                 onClick={() => setPaymentMethod('cash')}
@@ -353,23 +356,23 @@ export default function ClassicRestaurantPage() {
                   ? { borderColor: PURPLE, background: '#f3eff5', color: PURPLE }
                   : { borderColor: '#e5e7eb', color: '#6b7280' }}
               >
-                💵 司机现收
+                💵 {isEn ? 'Cash to Driver' : '司机现收'}
               </button>
             </div>
 
             <div className="mt-4 p-3 bg-yellow-50 rounded-lg text-sm text-yellow-700 border border-yellow-200">
-              🔔 Demo 演示 · 点击确认即模拟付款成功
+              🔔 {isEn ? 'Demo · Click confirm to simulate a successful payment' : 'Demo 演示 · 点击确认即模拟付款成功'}
             </div>
           </div>
           <DialogFooter className="flex gap-2">
-            <Button variant="outline" onClick={() => setPayOpen(false)} disabled={submitting}>取消</Button>
+            <Button variant="outline" onClick={() => setPayOpen(false)} disabled={submitting}>{isEn ? 'Cancel' : '取消'}</Button>
             <Button
               className="flex-1 text-white hover:opacity-90"
               style={{ background: PURPLE }}
               onClick={handlePay}
               disabled={submitting}
             >
-              {submitting ? '提交中…' : '确认付款'}
+              {submitting ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Confirm Payment' : '确认付款')}
             </Button>
           </DialogFooter>
         </DialogContent>

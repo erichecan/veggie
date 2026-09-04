@@ -13,11 +13,12 @@ export default function ClassicRestaurantLayout({ children }: { children: React.
   const [session, setSession] = useState<RoleSession | null>(null)
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   const LINKS = [
-    { href: `${prefix}/classic/restaurant`, label: '商品选购' },
-    { href: `${prefix}/classic/restaurant/orders`, label: '我的订单' },
+    { href: `${prefix}/classic/restaurant`, label: isEn ? 'Shop' : '商品选购' },
+    { href: `${prefix}/classic/restaurant/orders`, label: isEn ? 'My Orders' : '我的订单' },
   ]
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export default function ClassicRestaurantLayout({ children }: { children: React.
 
   return (
     <div className="min-h-screen bg-white">
-      <OdooNav appName="采购" menuItems={LINKS} session={session} />
+      <OdooNav appName={isEn ? 'Shopping' : '采购'} menuItems={LINKS} session={session} />
       <main className="max-w-5xl mx-auto px-4 py-6">{children}</main>
     </div>
   )

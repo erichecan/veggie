@@ -1,6 +1,8 @@
 'use client'
 import { useRef, useState } from 'react'
+import { useLocale } from 'next-intl'
 import { toast } from 'sonner'
+import { routing } from '@/i18n/routing'
 import { apiPost } from '@/lib/api'
 import { downloadCsv, parseCsv } from '@/lib/csv-export'
 import { Button } from '@/components/ui/button'
@@ -31,6 +33,8 @@ export default function CsvImportDialog({
   endpoint: string
   onDone?: () => void
 }) {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const fileRef = useRef<HTMLInputElement>(null)
   const [rows, setRows] = useState<Record<string, string>[]>([])
   const [fileName, setFileName] = useState('')
@@ -44,7 +48,7 @@ export default function CsvImportDialog({
 
   function downloadTemplate() {
     downloadCsv(templateName, columns.map(c => c.label), [
-      columns.map(c => (c.required ? '(必填)' : '')),
+      columns.map(c => (c.required ? (isEn ? '(required)' : '(必填)') : '')),
     ])
   }
 
@@ -52,7 +56,7 @@ export default function CsvImportDialog({
     const text = await file.text()
     const parsed = parseCsv(text)
     if (parsed.length < 2) {
-      toast.error('文件至少需要表头 + 1 行数据')
+      toast.error(isEn ? 'File needs a header row plus at least 1 data row' : '文件至少需要表头 + 1 行数据')
       return
     }
     const header = parsed[0].map(h => h.trim().toLowerCase())
@@ -63,7 +67,7 @@ export default function CsvImportDialog({
     }
     const missing = columns.filter(c => c.required && !colIdx.has(c.key))
     if (missing.length > 0) {
-      toast.error(`缺少必填列:${missing.map(c => c.label).join('、')}`)
+      toast.error(isEn ? `Missing required columns: ${missing.map(c => c.label).join(', ')}` : `缺少必填列:${missing.map(c => c.label).join('、')}`)
       return
     }
     const dataRows = parsed.slice(1)
@@ -75,9 +79,9 @@ export default function CsvImportDialog({
         }
         return obj
       })
-      .filter(o => Object.values(o).some(v => v && v !== '(必填)'))
+      .filter(o => Object.values(o).some(v => v && v !== '(必填)' && v !== '(required)'))
     if (dataRows.length === 0) {
-      toast.error('没有有效数据行')
+      toast.error(isEn ? 'No valid data rows' : '没有有效数据行')
       return
     }
     setFileName(file.name)
@@ -90,10 +94,10 @@ export default function CsvImportDialog({
     try {
       const r = await apiPost<ImportResult>(endpoint, { rows })
       setResult(r)
-      toast.success(`导入完成:成功 ${r.created} 条,跳过 ${r.skipped.length} 条`)
+      toast.success(isEn ? `Import finished: ${r.created} created, ${r.skipped.length} skipped` : `导入完成:成功 ${r.created} 条,跳过 ${r.skipped.length} 条`)
       onDone?.()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '导入失败')
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Import failed' : '导入失败'))
     } finally {
       setBusy(false)
     }
@@ -109,10 +113,12 @@ export default function CsvImportDialog({
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <span className="text-xs text-gray-600">
-              第一行为表头,列名:{columns.map(c => c.label + (c.required ? '*' : '')).join('、')}
+              {isEn
+                ? `Row 1 is the header, columns: ${columns.map(c => c.label + (c.required ? '*' : '')).join(', ')}`
+                : `第一行为表头,列名:${columns.map(c => c.label + (c.required ? '*' : '')).join('、')}`}
             </span>
             <button onClick={downloadTemplate} className="text-xs text-purple-700 hover:underline whitespace-nowrap ml-2">
-              ⬇ 下载模板
+              {isEn ? '⬇ Download template' : '⬇ 下载模板'}
             </button>
           </div>
 
@@ -127,7 +133,9 @@ export default function CsvImportDialog({
           {rows.length > 0 && !result && (
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-600">
-                {fileName} · 共 <b>{rows.length}</b> 行,预览前 5 行
+                {isEn
+                  ? <>{fileName} · <b>{rows.length}</b> rows total, previewing first 5</>
+                  : <>{fileName} · 共 <b>{rows.length}</b> 行,预览前 5 行</>}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -154,10 +162,12 @@ export default function CsvImportDialog({
 
           {result && (
             <div className="border border-green-200 bg-green-50 rounded-lg px-3 py-2 text-xs text-green-800">
-              ✅ 成功导入 <b>{result.created}</b> 条
+              {isEn ? <>✅ Successfully imported <b>{result.created}</b> rows</> : <>✅ 成功导入 <b>{result.created}</b> 条</>}
               {result.skipped.length > 0 && (
                 <span className="block mt-1 text-amber-700">
-                  ⚠ 重名跳过 {result.skipped.length} 条:{result.skipped.slice(0, 10).join('、')}{result.skipped.length > 10 ? '…' : ''}
+                  {isEn
+                    ? <>⚠ Skipped {result.skipped.length} duplicates: {result.skipped.slice(0, 10).join(', ')}{result.skipped.length > 10 ? '…' : ''}</>
+                    : <>⚠ 重名跳过 {result.skipped.length} 条:{result.skipped.slice(0, 10).join('、')}{result.skipped.length > 10 ? '…' : ''}</>}
                 </span>
               )}
             </div>
@@ -165,10 +175,10 @@ export default function CsvImportDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose() }}>{result ? '关闭' : '取消'}</Button>
+          <Button variant="outline" onClick={() => { reset(); onClose() }}>{result ? (isEn ? 'Close' : '关闭') : (isEn ? 'Cancel' : '取消')}</Button>
           {!result && (
             <Button disabled={busy || rows.length === 0} onClick={submit}>
-              {busy ? '导入中…' : `导入 ${rows.length} 行`}
+              {busy ? (isEn ? 'Importing…' : '导入中…') : (isEn ? `Import ${rows.length} rows` : `导入 ${rows.length} 行`)}
             </Button>
           )}
         </DialogFooter>

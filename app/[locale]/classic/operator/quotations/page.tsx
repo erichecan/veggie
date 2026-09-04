@@ -13,7 +13,7 @@ import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
 import { buildOrderHtml, CSS as PRINT_CSS } from '../../print/[id]/page'
 import { getSession } from '@/lib/session'
-import { type Facet, ORDER_FACET_FIELDS, applyFacets, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
+import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
 import { useServerList } from '@/hooks/use-server-list'
 import { Pagination } from '@/components/ui/pagination'
 
@@ -319,7 +319,7 @@ export default function ClassicQuotationsPage() {
   const exportAction = useCsvExport({
     entity: 'orders',
     params: () => baseUrl.split('?')[1] ?? '',
-    fallbackFilename: '报价单.csv',
+    fallbackFilename: isEn ? 'quotations.csv' : '报价单.csv',
   })
 
   const {
@@ -1075,7 +1075,7 @@ ${orderSections}
         ]}
         searchValue={search}
         onSearch={v => { setServerSearch(v) }}
-        facetFields={ORDER_FACET_FIELDS}
+        facetFields={localizeFacetFields(ORDER_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         filterOptions={[
           { label: myActive ? '✓ My Quotations' : 'My Quotations', value: '__my__' },

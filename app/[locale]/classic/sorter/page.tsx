@@ -8,11 +8,11 @@ import type { PickingWave } from '@/lib/types'
 import { WaveStatusBadge } from '@/components/shared/status-badge'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, type ClientFacetDef } from '@/lib/facet-client'
+import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 
 const PURPLE = '#875A7B'
 
-function WaveRow({ w, onClick }: { w: PickingWave; onClick: () => void }) {
+function WaveRow({ w, isEn, onClick }: { w: PickingWave; isEn: boolean; onClick: () => void }) {
   const [hover, setHover] = useState(false)
   const allItems = w.zones.flatMap(z => z.items)
   return (
@@ -33,7 +33,7 @@ function WaveRow({ w, onClick }: { w: PickingWave; onClick: () => void }) {
       </td>
       <td className="px-4 py-3 text-center">
         <button className="text-xs hover:underline" style={{ color: PURPLE }} onClick={e => { e.stopPropagation(); onClick() }}>
-          执行分货
+          {isEn ? 'Sort' : '执行分货'}
         </button>
       </td>
     </tr>
@@ -41,9 +41,9 @@ function WaveRow({ w, onClick }: { w: PickingWave; onClick: () => void }) {
 }
 
 const FACET_DEFS: ClientFacetDef<PickingWave>[] = [
-  { key: 'name',   label: '波次', values: r => [r.name ?? r.id] },
-  { key: 'driver', label: '司机', values: r => [r.driverName] },
-  { key: 'status', label: '状态', values: r => [r.status] },
+  { key: 'name',   label: '波次', labelEn: 'Wave',   values: r => [r.name ?? r.id] },
+  { key: 'driver', label: '司机', labelEn: 'Driver', values: r => [r.driverName] },
+  { key: 'status', label: '状态', labelEn: 'Status', values: r => [r.status] },
 ]
 
 export default function ClassicSorterPage() {
@@ -52,6 +52,7 @@ export default function ClassicSorterPage() {
   const [searchInput, setSearchInput] = useState('')
   const router = useRouter()
   const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
   async function load() {
@@ -67,7 +68,7 @@ export default function ClassicSorterPage() {
 
   useEffect(() => { load() }, [])
 
-  const { facets, chips, controlPanelProps } = useFacets(FACET_DEFS.map(d => ({ key: d.key, label: d.label })))
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
   const searched = searchInput
     ? waves.filter(w => w.id.toLowerCase().includes(searchInput.toLowerCase()))
@@ -79,8 +80,8 @@ export default function ClassicSorterPage() {
       <OdooControlPanel
         {...controlPanelProps}
         activeFilters={chips}
-        breadcrumb={['仓库', '分货任务']}
-        permanentActions={[{ label: '刷新', onClick: load }]}
+        breadcrumb={isEn ? ['Warehouse', 'Sorting Tasks'] : ['仓库', '分货任务']}
+        permanentActions={[{ label: isEn ? 'Refresh' : '刷新', onClick: load }]}
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => {}}
@@ -90,31 +91,32 @@ export default function ClassicSorterPage() {
       />
       <div className="p-4">
         {loading && (
-          <div className="bg-white border border-gray-200 py-16 text-center text-gray-400">加载中...</div>
+          <div className="bg-white border border-gray-200 py-16 text-center text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>
         )}
         {!loading && (
           <div className="bg-white border border-gray-200 overflow-hidden">
             <table className="w-full text-sm">
               <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">波次号</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">状态</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">订单数</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">商品种数</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">创建时间</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">操作</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Wave #' : '波次号'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Orders' : '订单数'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Product Lines' : '商品种数'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Created' : '创建时间'}</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Action' : '操作'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center py-16 text-gray-400">暂无分货任务</td>
+                    <td colSpan={6} className="text-center py-16 text-gray-400">{isEn ? 'No sorting tasks' : '暂无分货任务'}</td>
                   </tr>
                 )}
                 {filtered.map(w => (
                   <WaveRow
                     key={w.id}
                     w={w}
+                    isEn={isEn}
                     onClick={() => router.push(`${prefix}/classic/sorter/sort/${w.id}`)}
                   />
                 ))}

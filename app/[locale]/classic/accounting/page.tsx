@@ -1,15 +1,24 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 
-const FLOW_STEPS = [
+const FLOW_STEPS_ZH = [
   { step: 1, icon: '📋', title: '确认已送订单', desc: '查看当日所有已确认（CONFIRMED）的订单，这些货已出仓' },
   { step: 2, icon: '🚚', title: '司机带回签收单', desc: '司机送货回来后，签收单（纸质）交到会计手里' },
   { step: 3, icon: '🔍', title: '核对漏单', desc: '按订单列表逐一核对，没有带回签收单的即为"漏单"，需立即追查' },
   { step: 4, icon: '✅', title: '核销确认', desc: '签收单到手后，扫码或勾选，点击"批量核销"，标记送货单已回' },
   { step: 5, icon: '💰', title: '现金核对', desc: '现付订单需核对司机带回的现金金额，与系统金额一致后完成核销' },
+]
+const FLOW_STEPS_EN = [
+  { step: 1, icon: '📋', title: 'Confirmed Orders', desc: "View all CONFIRMED orders for today — these have left the warehouse" },
+  { step: 2, icon: '🚚', title: 'Driver Returns Note', desc: 'When the driver gets back, the paper delivery note is handed to accounting' },
+  { step: 3, icon: '🔍', title: 'Check Missing Notes', desc: 'Go through the order list — any order with no returned delivery note is "missing" and needs immediate follow-up' },
+  { step: 4, icon: '✅', title: 'Confirm Write-off', desc: 'Once the delivery note is in hand, scan or check it and click "Bulk Write-off" to mark it as returned' },
+  { step: 5, icon: '💰', title: 'Cash Verification', desc: 'For cash orders, verify the amount the driver brings back against the system amount before completing the write-off' },
 ]
 
 // BATCH_OPTIONS removed — now uses dynamic driverSlots
@@ -23,6 +32,9 @@ type SortKey = 'code' | 'restaurantName' | 'deliveryBatch' | 'totalAmount' | 'pa
 type SortDir = 'asc' | 'desc'
 
 export default function AccountingPage() {
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const FLOW_STEPS = isEn ? FLOW_STEPS_EN : FLOW_STEPS_ZH
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [filterBatch, setFilterBatch] = useState('')
@@ -100,9 +112,9 @@ export default function AccountingPage() {
     if (!code) return
     const found = orders.find(o => o.code === code || o.id === code)
     if (!found) {
-      setScanMsg({ type: 'err', text: `找不到订单：${code}` })
+      setScanMsg({ type: 'err', text: isEn ? `Order not found: ${code}` : `找不到订单：${code}` })
     } else if (found.orderReturn) {
-      setScanMsg({ type: 'warn', text: `${code} 已核销` })
+      setScanMsg({ type: 'warn', text: isEn ? `${code} already written off` : `${code} 已核销` })
       flashRow(found.id)
     } else {
       setSelected(prev => {
@@ -111,7 +123,7 @@ export default function AccountingPage() {
         return next
       })
       flashRow(found.id)
-      setScanMsg({ type: 'ok', text: `✅ ${code} 已选中，共选 ${selected.size + 1} 张` })
+      setScanMsg({ type: 'ok', text: isEn ? `✅ ${code} selected, ${selected.size + 1} total selected` : `✅ ${code} 已选中，共选 ${selected.size + 1} 张` })
     }
     setScanInput('')
     setTimeout(() => setScanMsg(null), 4000)
@@ -157,7 +169,7 @@ export default function AccountingPage() {
       ))
       setSelected(new Set())
     } catch {
-      alert('批量操作失败，请重试')
+      alert(isEn ? 'Bulk operation failed, please retry' : '批量操作失败，请重试')
     } finally {
       setBulkLoading(false)
     }
@@ -240,8 +252,8 @@ export default function AccountingPage() {
           className="w-full flex items-center justify-between px-5 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
           onClick={() => setShowGuide(g => !g)}
         >
-          <span className="font-semibold text-gray-700 text-sm">📌 会计核销业务流程指引</span>
-          <span className="text-xs" style={{ color: '#875A7B' }}>{showGuide ? '收起 ▲' : '展开 ▼'}</span>
+          <span className="font-semibold text-gray-700 text-sm">{isEn ? '📌 Accounting Write-off Workflow Guide' : '📌 会计核销业务流程指引'}</span>
+          <span className="text-xs" style={{ color: '#875A7B' }}>{showGuide ? (isEn ? 'Collapse ▲' : '收起 ▲') : (isEn ? 'Expand ▼' : '展开 ▼')}</span>
         </button>
         {showGuide && (
           <div className="px-5 py-4 grid grid-cols-5 gap-3">
@@ -263,20 +275,30 @@ export default function AccountingPage() {
 
       {/* 统计卡片 */}
       <div className="grid grid-cols-4 gap-4">
-        <StatCard label="今日总单" value={totalOrders} active={activeCard === 'all'} onClick={() => applyCardFilter('all')} />
-        <StatCard label="已核销" value={returnedCount} active={activeCard === 'returned'} onClick={() => applyCardFilter('returned')} />
-        <StatCard label="漏单（未回）" value={missingCount} urgent={missingCount > 0} active={activeCard === 'missing'} onClick={() => applyCardFilter('missing')} />
-        <StatCard label="现金未核（€）" value={cashPending.toFixed(2)} urgent={cashPending > 0} active={activeCard === 'cashPending'} onClick={() => applyCardFilter('cashPending')} />
+        <StatCard label={isEn ? "Today's Orders" : '今日总单'} value={totalOrders} active={activeCard === 'all'} onClick={() => applyCardFilter('all')} />
+        <StatCard label={isEn ? 'Written Off' : '已核销'} value={returnedCount} active={activeCard === 'returned'} onClick={() => applyCardFilter('returned')} />
+        <StatCard label={isEn ? 'Missing (Not Returned)' : '漏单（未回）'} value={missingCount} urgent={missingCount > 0} active={activeCard === 'missing'} onClick={() => applyCardFilter('missing')} />
+        <StatCard label={isEn ? 'Cash Pending (€)' : '现金未核（€）'} value={cashPending.toFixed(2)} urgent={cashPending > 0} active={activeCard === 'cashPending'} onClick={() => applyCardFilter('cashPending')} />
       </div>
       {activeCard && (
         <div className="px-4 py-2 rounded text-xs flex items-center gap-2" style={{ background: '#f3eff5', color: '#875A7B' }}>
-          <span className="font-medium">已按「
-            {activeCard === 'all' ? '今日全部' :
-             activeCard === 'returned' ? '已核销' :
-             activeCard === 'missing' ? '漏单' : '现金未核'}
-          」筛选下方列表</span>
+          <span className="font-medium">
+            {isEn ? (
+              <>Filtered below by &quot;{
+                activeCard === 'all' ? 'All Today' :
+                activeCard === 'returned' ? 'Written Off' :
+                activeCard === 'missing' ? 'Missing' : 'Cash Pending'
+              }&quot;</>
+            ) : (
+              <>已按「{
+                activeCard === 'all' ? '今日全部' :
+                activeCard === 'returned' ? '已核销' :
+                activeCard === 'missing' ? '漏单' : '现金未核'
+              }」筛选下方列表</>
+            )}
+          </span>
           <button onClick={() => applyCardFilter(activeCard)} className="ml-auto hover:underline">
-            清除筛选 ✕
+            {isEn ? 'Clear Filter ✕' : '清除筛选 ✕'}
           </button>
         </div>
       )}
@@ -289,9 +311,9 @@ export default function AccountingPage() {
             onClick={() => setShowDriverPanel(v => !v)}
           >
             <span className="font-semibold text-gray-700 text-sm">
-              💰 司机收款汇总 — {driverGroups.length} 位司机
+              {isEn ? `💰 Driver Collections Summary — ${driverGroups.length} drivers` : `💰 司机收款汇总 — ${driverGroups.length} 位司机`}
             </span>
-            <span className="text-xs" style={{ color: '#875A7B' }}>{showDriverPanel ? '收起 ▲' : '展开 ▼'}</span>
+            <span className="text-xs" style={{ color: '#875A7B' }}>{showDriverPanel ? (isEn ? 'Collapse ▲' : '收起 ▲') : (isEn ? 'Expand ▼' : '展开 ▼')}</span>
           </button>
           {showDriverPanel && (
             <div className="divide-y divide-gray-100">
@@ -307,20 +329,20 @@ export default function AccountingPage() {
                     >
                       <span className="font-semibold text-gray-900 w-24 shrink-0">{g.driver}</span>
                       <span className="flex items-center gap-1 text-gray-700">
-                        <span className="text-xs text-gray-400">现金</span>
+                        <span className="text-xs text-gray-400">{isEn ? 'Cash' : '现金'}</span>
                         <span className="font-mono font-medium">€{g.cashTotal.toFixed(2)}</span>
                       </span>
                       <span className="flex items-center gap-1 text-gray-700">
-                        <span className="text-xs text-gray-400">转账</span>
+                        <span className="text-xs text-gray-400">{isEn ? 'Transfer' : '转账'}</span>
                         <span className="font-mono font-medium">€{g.onlineTotal.toFixed(2)}</span>
                       </span>
                       <span className="flex items-center gap-1 text-gray-700">
-                        <span className="text-xs text-gray-400">合计</span>
+                        <span className="text-xs text-gray-400">{isEn ? 'Total' : '合计'}</span>
                         <span className="font-mono font-semibold">€{total.toFixed(2)}</span>
                       </span>
                       <span className="ml-auto flex items-center gap-2 text-xs text-gray-500 shrink-0">
                         <span className={`px-2 py-0.5 rounded font-medium ${allReturned ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                          {g.returned}/{g.orders.length} 已核销
+                          {isEn ? `${g.returned}/${g.orders.length} written off` : `${g.returned}/${g.orders.length} 已核销`}
                         </span>
                         <span className="text-gray-400">{isExpanded ? '▲' : '▼'}</span>
                       </span>
@@ -330,11 +352,11 @@ export default function AccountingPage() {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="text-gray-400 border-b border-gray-200">
-                              <th className="text-left pb-1.5 font-medium">餐厅</th>
-                              <th className="text-left pb-1.5 font-medium">单号</th>
-                              <th className="text-right pb-1.5 font-medium">金额</th>
-                              <th className="text-center pb-1.5 font-medium">付款</th>
-                              <th className="text-center pb-1.5 font-medium">状态</th>
+                              <th className="text-left pb-1.5 font-medium">{isEn ? 'Restaurant' : '餐厅'}</th>
+                              <th className="text-left pb-1.5 font-medium">{isEn ? 'Order #' : '单号'}</th>
+                              <th className="text-right pb-1.5 font-medium">{isEn ? 'Amount' : '金额'}</th>
+                              <th className="text-center pb-1.5 font-medium">{isEn ? 'Payment' : '付款'}</th>
+                              <th className="text-center pb-1.5 font-medium">{isEn ? 'Status' : '状态'}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -345,20 +367,20 @@ export default function AccountingPage() {
                                 <td className="py-1.5 text-right font-mono font-medium text-gray-900">€{(o.totalAmount ?? 0).toFixed(2)}</td>
                                 <td className="py-1.5 text-center">
                                   {String(o.paymentMethod).toUpperCase() === 'CASH'
-                                    ? <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">现金</span>
-                                    : <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">转账</span>}
+                                    ? <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">{isEn ? 'Cash' : '现金'}</span>
+                                    : <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">{isEn ? 'Transfer' : '转账'}</span>}
                                 </td>
                                 <td className="py-1.5 text-center">
                                   {o.orderReturn
-                                    ? <span className="text-green-600">✓ 已核销</span>
-                                    : <span className="text-gray-400">待核销</span>}
+                                    ? <span className="text-green-600">{isEn ? '✓ Written off' : '✓ 已核销'}</span>
+                                    : <span className="text-gray-400">{isEn ? 'Pending' : '待核销'}</span>}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                           <tfoot>
                             <tr className="border-t border-gray-200 font-semibold text-gray-700">
-                              <td colSpan={2} className="pt-2 text-gray-500">小计</td>
+                              <td colSpan={2} className="pt-2 text-gray-500">{isEn ? 'Subtotal' : '小计'}</td>
                               <td className="pt-2 text-right font-mono">€{total.toFixed(2)}</td>
                               <td colSpan={2} />
                             </tr>
@@ -376,13 +398,13 @@ export default function AccountingPage() {
 
       {/* 扫码核销 */}
       <div className="bg-white rounded border border-gray-200 shadow-sm px-5 py-4">
-        <div className="text-sm font-semibold text-gray-700 mb-1">📷 扫码枪 / 输入单号 — 自动勾选</div>
-        <div className="text-xs text-gray-400 mb-3">扫码后订单自动勾选，批量扫完后点击「批量核销」一次提交</div>
+        <div className="text-sm font-semibold text-gray-700 mb-1">{isEn ? '📷 Scanner / Enter Order # — Auto-select' : '📷 扫码枪 / 输入单号 — 自动勾选'}</div>
+        <div className="text-xs text-gray-400 mb-3">{isEn ? 'Scanning auto-selects the order; after scanning a batch, click "Bulk Write-off" to submit all at once' : '扫码后订单自动勾选，批量扫完后点击「批量核销」一次提交'}</div>
         <form onSubmit={handleScan} className="flex gap-2">
           <input
             value={scanInput}
             onChange={e => setScanInput(e.target.value)}
-            placeholder="扫描二维码或输入订单号（如 CJ-260427-001）"
+            placeholder={isEn ? 'Scan QR code or enter order # (e.g. CJ-260427-001)' : '扫描二维码或输入订单号（如 CJ-260427-001）'}
             className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
             autoFocus
           />
@@ -393,7 +415,7 @@ export default function AccountingPage() {
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#7a5070' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#875A7B' }}
           >
-            选中
+            {isEn ? 'Select' : '选中'}
           </button>
         </form>
         {scanMsg && (
@@ -414,7 +436,7 @@ export default function AccountingPage() {
           onChange={e => setFilterBatch(e.target.value)}
           className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white"
         >
-          <option value="">全部批次</option>
+          <option value="">{isEn ? 'All Batches' : '全部批次'}</option>
           {driverSlots.map(s => <option key={s.id} value={`${s.batchNum} ${s.timeOfDay} ${s.driverName}`}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
         </select>
         <select
@@ -422,24 +444,24 @@ export default function AccountingPage() {
           onChange={e => setFilterPayment(e.target.value)}
           className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white"
         >
-          <option value="">全部付款方式</option>
-          <option value="CASH">现付</option>
-          <option value="ONLINE">转账</option>
+          <option value="">{isEn ? 'All Payment Methods' : '全部付款方式'}</option>
+          <option value="CASH">{isEn ? 'Cash' : '现付'}</option>
+          <option value="ONLINE">{isEn ? 'Transfer' : '转账'}</option>
         </select>
         <select
           value={filterReturn}
           onChange={e => { setFilterReturn(e.target.value as 'all' | 'returned' | 'missing'); setActiveCard(null) }}
           className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white"
         >
-          <option value="all">全部回单状态</option>
-          <option value="returned">仅已核销</option>
-          <option value="missing">仅漏单</option>
+          <option value="all">{isEn ? 'All Return Status' : '全部回单状态'}</option>
+          <option value="returned">{isEn ? 'Written Off Only' : '仅已核销'}</option>
+          <option value="missing">{isEn ? 'Missing Only' : '仅漏单'}</option>
         </select>
 
         {selected.size > 0 && (
           <div className="ml-auto flex items-center gap-2">
             <span className="text-sm text-gray-600 font-medium">
-              已选 {visibleSelectedCount} / {visible.length} 张
+              {isEn ? `${visibleSelectedCount} / ${visible.length} selected` : `已选 ${visibleSelectedCount} / ${visible.length} 张`}
             </span>
             <div className="relative" ref={actionRef}>
               <button
@@ -450,7 +472,7 @@ export default function AccountingPage() {
                 onMouseEnter={e => { if (!bulkLoading) (e.currentTarget as HTMLElement).style.background = '#7a5070' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#875A7B' }}
               >
-                {bulkLoading ? '处理中…' : 'Action ▾'}
+                {bulkLoading ? (isEn ? 'Processing…' : '处理中…') : 'Action ▾'}
               </button>
               {showAction && (
                 <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg z-20 w-44 overflow-hidden">
@@ -458,13 +480,13 @@ export default function AccountingPage() {
                     onClick={() => bulkMarkReturned(true)}
                     className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 text-gray-700"
                   >
-                    ✅ 批量核销（已回单）
+                    {isEn ? '✅ Bulk Write-off (Returned)' : '✅ 批量核销（已回单）'}
                   </button>
                   <button
                     onClick={() => bulkMarkReturned(false)}
                     className="w-full px-4 py-2.5 text-left text-sm hover:bg-red-50 text-red-600"
                   >
-                    ↩️ 批量撤销核销
+                    {isEn ? '↩️ Bulk Undo Write-off' : '↩️ 批量撤销核销'}
                   </button>
                 </div>
               )}
@@ -473,21 +495,21 @@ export default function AccountingPage() {
               onClick={() => setSelected(new Set())}
               className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-500 hover:text-gray-700 bg-white"
             >
-              取消选择
+              {isEn ? 'Clear Selection' : '取消选择'}
             </button>
           </div>
         )}
 
         {selected.size === 0 && (
-          <span className="ml-auto text-xs text-gray-400">共 {visible.length} 条 · 今日 {today}</span>
+          <span className="ml-auto text-xs text-gray-400">{isEn ? `${visible.length} total · Today ${today}` : `共 ${visible.length} 条 · 今日 ${today}`}</span>
         )}
       </div>
 
       {/* 订单列表 */}
       {loading ? (
-        <div className="text-center py-16 text-gray-400">加载中…</div>
+        <div className="text-center py-16 text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : visible.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">今日暂无订单</div>
+        <div className="text-center py-16 text-gray-400">{isEn ? 'No orders today' : '今日暂无订单'}</div>
       ) : (
         <div ref={tableRef} className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden scroll-mt-6">
           <table className="w-full text-sm">
@@ -499,17 +521,17 @@ export default function AccountingPage() {
                     checked={allVisibleSelected}
                     onChange={() => toggleAll(selectableIds)}
                     style={{ accentColor: '#875A7B' }}
-                    title="全选可勾选订单"
+                    title={isEn ? 'Select all eligible orders' : '全选可勾选订单'}
                   />
                 </th>
-                <SortTh label="订单号" sk="code" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
-                <SortTh label="餐馆" sk="restaurantName" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
-                <SortTh label="批次/司机" sk="deliveryBatch" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
-                <SortTh label="金额" sk="totalAmount" cur={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
-                <SortTh label="付款方式" sk="paymentMethod" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" />
-                <SortTh label="状态" sk="status" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" />
-                <SortTh label="送货单" sk="orderReturn" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" />
-                <th className="px-4 py-2.5 text-center">操作</th>
+                <SortTh label={isEn ? 'Order #' : '订单号'} sk="code" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
+                <SortTh label={isEn ? 'Restaurant' : '餐馆'} sk="restaurantName" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
+                <SortTh label={isEn ? 'Batch/Driver' : '批次/司机'} sk="deliveryBatch" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
+                <SortTh label={isEn ? 'Amount' : '金额'} sk="totalAmount" cur={sortKey} dir={sortDir} onClick={toggleSort} align="right" isEn={isEn} />
+                <SortTh label={isEn ? 'Payment Method' : '付款方式'} sk="paymentMethod" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" isEn={isEn} />
+                <SortTh label={isEn ? 'Status' : '状态'} sk="status" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" isEn={isEn} />
+                <SortTh label={isEn ? 'Delivery Note' : '送货单'} sk="orderReturn" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" isEn={isEn} />
+                <th className="px-4 py-2.5 text-center">{isEn ? 'Action' : '操作'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -550,7 +572,7 @@ export default function AccountingPage() {
                       {o.restaurantName}
                     </td>
                     <td className="px-4 py-2.5 text-gray-600">
-                      {formatDriverSlotFromOrder(o) || <span className="text-gray-300">未分配</span>}
+                      {formatDriverSlotFromOrder(o) || <span className="text-gray-300">{isEn ? 'Unassigned' : '未分配'}</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold text-gray-800">
                       €{(o.totalAmount ?? 0).toFixed(2)}
@@ -559,7 +581,7 @@ export default function AccountingPage() {
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                         isCash ? 'bg-gray-100 text-gray-700' : 'bg-gray-50 text-gray-600'
                       }`}>
-                        {isCash ? '现付' : '转账'}
+                        {isCash ? (isEn ? 'Cash' : '现付') : (isEn ? 'Transfer' : '转账')}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-center">
@@ -569,16 +591,20 @@ export default function AccountingPage() {
                         String(o.status).toUpperCase() === 'IN_DELIVERY' ? 'bg-purple-50 text-purple-700' :
                         'bg-green-50 text-green-700'
                       }`}>
-                        {String(o.status).toUpperCase() === 'CONFIRMED' ? '已确认' :
-                         String(o.status).toUpperCase() === 'WAVE_ASSIGNED' ? '司机分配结束' :
-                         String(o.status).toUpperCase() === 'IN_DELIVERY' ? '配送中' : '已完成'}
+                        {isEn
+                          ? (String(o.status).toUpperCase() === 'CONFIRMED' ? 'Confirmed' :
+                             String(o.status).toUpperCase() === 'WAVE_ASSIGNED' ? 'Driver Assigned' :
+                             String(o.status).toUpperCase() === 'IN_DELIVERY' ? 'In Delivery' : 'Completed')
+                          : (String(o.status).toUpperCase() === 'CONFIRMED' ? '已确认' :
+                             String(o.status).toUpperCase() === 'WAVE_ASSIGNED' ? '司机分配结束' :
+                             String(o.status).toUpperCase() === 'IN_DELIVERY' ? '配送中' : '已完成')}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-center">
                       {isReturned ? (
-                        <span className="text-green-600 font-semibold text-xs">✅ 已回</span>
+                        <span className="text-green-600 font-semibold text-xs">{isEn ? '✅ Returned' : '✅ 已回'}</span>
                       ) : (
-                        <span className="text-red-500 font-semibold text-xs animate-pulse">⚠️ 未回</span>
+                        <span className="text-red-500 font-semibold text-xs animate-pulse">{isEn ? '⚠️ Not Returned' : '⚠️ 未回'}</span>
                       )}
                     </td>
                     <td className="px-4 py-2.5 text-center">
@@ -590,7 +616,7 @@ export default function AccountingPage() {
                           }}
                           className="text-xs text-gray-400 hover:text-red-500 underline"
                         >
-                          撤销
+                          {isEn ? 'Undo' : '撤销'}
                         </button>
                       ) : (
                         <button
@@ -603,7 +629,7 @@ export default function AccountingPage() {
                           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#7a5070' }}
                           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#875A7B' }}
                         >
-                          核销
+                          {isEn ? 'Write off' : '核销'}
                         </button>
                       )}
                     </td>
@@ -618,9 +644,9 @@ export default function AccountingPage() {
       {/* 漏单警告 */}
       {missingCount > 0 && (
         <div className="bg-red-50 border border-red-200 rounded px-5 py-4">
-          <div className="font-semibold text-red-700 mb-1">⚠️ 今日共有 {missingCount} 张送货单未回</div>
+          <div className="font-semibold text-red-700 mb-1">{isEn ? `⚠️ ${missingCount} delivery note(s) not yet returned today` : `⚠️ 今日共有 ${missingCount} 张送货单未回`}</div>
           <div className="text-sm text-red-600">
-            请立即联系对应司机追查签收单。现付漏单风险最高，优先处理现付订单。
+            {isEn ? 'Contact the driver immediately to trace the delivery note. Cash orders carry the highest risk — prioritize those.' : '请立即联系对应司机追查签收单。现付漏单风险最高，优先处理现付订单。'}
           </div>
         </div>
       )}
@@ -628,13 +654,14 @@ export default function AccountingPage() {
   )
 }
 
-function SortTh({ label, sk, cur, dir, onClick, align }: {
+function SortTh({ label, sk, cur, dir, onClick, align, isEn }: {
   label: string
   sk: SortKey
   cur: SortKey
   dir: SortDir
   onClick: (k: SortKey) => void
   align: 'left' | 'right' | 'center'
+  isEn: boolean
 }) {
   const active = cur === sk
   const arrow = active ? (dir === 'asc' ? ' ↑' : ' ↓') : ''
@@ -643,7 +670,7 @@ function SortTh({ label, sk, cur, dir, onClick, align }: {
     <th
       className={`px-4 py-2.5 ${alignCls} cursor-pointer select-none hover:bg-gray-100 transition-colors whitespace-nowrap`}
       onClick={() => onClick(sk)}
-      title={`按「${label}」排序`}
+      title={isEn ? `Sort by "${label}"` : `按「${label}」排序`}
     >
       <span style={active ? { color: '#875A7B', fontWeight: 600 } : {}}>{label}</span>
       <span style={{ color: '#875A7B' }}>{arrow}</span>
