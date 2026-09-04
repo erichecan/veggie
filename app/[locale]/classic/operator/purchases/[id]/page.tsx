@@ -10,6 +10,7 @@ import { computeOrderLandedCosts } from '@/lib/purchase-landed-cost'
 import { formatDateOnly } from '@/lib/format-date'
 import { parseStoredQc, lineVerdict, formatQcSummary, QC_REJECT_REASON_LABELS, type QcRejectReason } from '@/lib/purchase/qc'
 import { lineDescription } from '@/lib/order-line-description'
+import { nearestPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 
@@ -129,6 +130,14 @@ interface PurchaseProduct {
   uomName?: string | null
   standardPrice?: number | null
   price?: number | null
+  /// 商品详情页"Vendor Taxes"——存的是小数(0/0.135/0.23)，采购单行 taxRate 存百分数(0/13.5/23)
+  vendorTaxRate?: number | string | null
+}
+
+/** 采购单加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0（客户 20260904 反馈） */
+function purchaseTaxRateOf(prod: PurchaseProduct): number {
+  if (prod.vendorTaxRate == null) return 0
+  return nearestPurchaseTaxRate(Number(prod.vendorTaxRate) * 100)
 }
 
 interface Category {
@@ -256,7 +265,8 @@ export default function PurchaseDetailPage() {
   const productsLoaded = useRef(false)
 
   function loadPurchaseProducts() {
-    apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1').then(setPurchaseProducts).catch(() => {})
+    // status=ACTIVE：已归档商品不该出现在采购单选品里，与下单/报价页同一套过滤（客户 20260904 反馈）
+    apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1&status=ACTIVE').then(setPurchaseProducts).catch(() => {})
   }
 
   async function loadPickerData() {
@@ -270,6 +280,8 @@ export default function PurchaseDetailPage() {
   function addProductLine(prod: PurchaseProduct) {
     newLineSeq.current += 1
     const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
+    const taxRate = purchaseTaxRateOf(prod)
+    const taxAmount = unitCost * taxRate / 100
     setEditLines(prev => [
       ...prev,
       {
@@ -281,11 +293,11 @@ export default function PurchaseDetailPage() {
         uomName: prod.uomName ?? null,
         orderedQty: 1,
         unitCost,
-        taxRate: 0,
+        taxRate,
         bestBefore: null,
         subtotalExTax: unitCost,
-        taxAmount: 0,
-        subtotalIncTax: unitCost,
+        taxAmount,
+        subtotalIncTax: unitCost + taxAmount,
       },
     ])
   }

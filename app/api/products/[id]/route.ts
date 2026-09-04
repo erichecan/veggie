@@ -86,10 +86,53 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
+      const product = await prisma.product.findUnique({ where: { id }, select: { id: true, name: true } })
+      if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
+
+      // 删除前必须核实这个商品「没在销售和购进用过」（客户 20260904 要求：复制出来的商品，
+      // 若没在销售和购进用过，就可以真删除；用过的只能归档）。不能指望数据库外键来兜底——
+      // 这些表里只有 OrderLine 声明了到 Product 的 relation 且没设 onDelete（默认 RESTRICT），
+      // 其余全是裸 productId 字段、DB 层毫无约束，直接删商品会留下一堆指向不存在 id 的悬空
+      // 记录；Lot 更麻烦，schema 里对它设的是 onDelete: Cascade，不先查它就直接删的话，会把
+      // 这个商品的库存批次历史一并静默清空。
+      const [
+        orderLineCount, poLineCount, stockMoveCount, lotCount,
+        creditNoteLineCount, stockTakeLineCount, discrepancyCount,
+        purchaseRecordCount, purchaseSuggestionCount, specialPriceCount,
+      ] = await Promise.all([
+        prisma.orderLine.count({ where: { productId: id } }),
+        prisma.purchaseOrderLine.count({ where: { productId: id } }),
+        prisma.stockMove.count({ where: { productId: id } }),
+        prisma.lot.count({ where: { productId: id } }),
+        prisma.creditNoteLine.count({ where: { productId: id } }),
+        prisma.stockTakeLine.count({ where: { productId: id } }),
+        prisma.orderDiscrepancy.count({ where: { productId: id } }),
+        prisma.purchaseRecord.count({ where: { productId: id } }),
+        prisma.purchaseSuggestion.count({ where: { productId: id } }),
+        prisma.customerSpecialPrice.count({ where: { productId: id } }),
+      ])
+      const reasons: string[] = []
+      if (orderLineCount > 0) reasons.push(`${orderLineCount} 条销售/报价单行`)
+      if (poLineCount > 0) reasons.push(`${poLineCount} 条采购单行`)
+      if (stockMoveCount > 0) reasons.push(`${stockMoveCount} 条库存流水`)
+      if (lotCount > 0) reasons.push(`${lotCount} 个批次记录`)
+      if (creditNoteLineCount > 0) reasons.push(`${creditNoteLineCount} 条贷记单行`)
+      if (stockTakeLineCount > 0) reasons.push(`${stockTakeLineCount} 条盘点行`)
+      if (discrepancyCount > 0) reasons.push(`${discrepancyCount} 条拣货差异记录`)
+      if (purchaseRecordCount > 0) reasons.push(`${purchaseRecordCount} 条历史采购记录`)
+      if (purchaseSuggestionCount > 0) reasons.push(`${purchaseSuggestionCount} 条采购建议`)
+      if (specialPriceCount > 0) reasons.push(`${specialPriceCount} 条客户专属价`)
+      if (reasons.length > 0) {
+        return NextResponse.json(
+          { error: `商品「${product.name}」已被使用（${reasons.join('、')}），不可删除，请改为归档` },
+          { status: 409 },
+        )
+      }
+
       await prisma.product.delete({ where: { id } })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'DELETE', resource: 'product', resourceId: id,
-        detail: `删除商品: ${id}` })
+        detail: `删除商品: ${product.name}` })
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/products/[id]]', error)

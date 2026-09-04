@@ -4,7 +4,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut, apiPost } from '@/lib/api'
+import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/api'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
@@ -398,6 +398,30 @@ export default function ClassicProductDetailPage() {
     }
   }
 
+  // 删除商品(20260904)：仅当这个商品从没在销售/采购里用过才允许——服务端会做真正的
+  // 使用检查(DELETE /api/products/[id])，这里只负责二次确认(不可撤销)与失败提示。
+  // 客户诉求场景是"复制出来的商品从没用过，想删掉，不想让它一直占着归档列表"。
+  const [deleting, setDeleting] = useState(false)
+  async function handleDelete() {
+    if (!tmpl || isNew || deleting) return
+    const ok = window.confirm(
+      isEn
+        ? `Delete "${tmpl.name}" permanently? This cannot be undone.`
+        : `确定永久删除「${tmpl.name}」？此操作不可撤销。`
+    )
+    if (!ok) return
+    setDeleting(true)
+    try {
+      await apiDelete(`/api/products/${tmpl.id}`)
+      toast.success(isEn ? 'Product deleted' : '商品已删除')
+      router.push(`${prefix}/classic/operator/products`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to delete product' : '删除商品失败'))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   // 归档/恢复(20260821)：独立于 Save/Discard 流程，点击即生效，不进编辑态、不需二次确认
   const [archiveToggling, setArchiveToggling] = useState(false)
   async function toggleActive() {
@@ -526,6 +550,16 @@ export default function ClassicProductDetailPage() {
                 className={`${btnBase} disabled:opacity-50`}
               >
                 {duplicating ? 'Duplicating...' : 'Duplicate'}
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                title={isEn
+                  ? 'Only allowed when this product has never been used in any sales or purchase record'
+                  : '仅当该商品从未在任何销售/采购记录里被使用过才能删除'}
+                className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+              >
+                {deleting ? (isEn ? 'Deleting...' : '删除中...') : (isEn ? 'Delete' : '删除')}
               </button>
               {activeToggle}
 

@@ -71,6 +71,17 @@ interface PurchaseProduct {
   purchaseUomName?: string | null
   standardPrice?: number | null
   price?: number | null
+  /// 商品详情页"Vendor Taxes"——存的是小数(0/0.135/0.23)，采购单行 taxRate 存百分数(0/13.5/23)，
+  /// 两边单位不一样，取用处必须 ×100 再对齐到 PURCHASE_TAX_RATES 那三档（见 purchaseTaxRateOf）
+  vendorTaxRate?: number | string | null
+}
+
+/** 采购单新加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0——
+ * 客户 20260904 反馈：新建采购单加商品，Tax % 应该自动带出商品自己配置的供应商税率，
+ * 不该每次都要操作员手动选一遍。 */
+function purchaseTaxRateOf(prod: PurchaseProduct): number {
+  if (prod.vendorTaxRate == null) return 0
+  return nearestPurchaseTaxRate(Number(prod.vendorTaxRate) * 100)
 }
 
 /** 采购单选品：优先用商品的采购单位，没配过才退回销售/基础单位 */
@@ -157,7 +168,9 @@ export default function NewPurchaseOrderPage() {
     apiGet<{ items: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
       .then(d => setSuppliers(Array.isArray(d) ? d : (d.items ?? [])))
       .catch(() => {})
-    apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1').then(setPurchaseProducts).catch(() => {})
+    // status=ACTIVE：已归档商品不该出现在采购单选品里，与下单/报价页同一套过滤（客户 20260904
+    // 反馈：销售单那边归档商品已经不出现了，采购单这边漏加了这个参数，归档商品照样能被搜出来）
+    apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1&status=ACTIVE').then(setPurchaseProducts).catch(() => {})
     apiGet<Category[]>('/api/product-categories').then(setCategories).catch(() => {})
     apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
   }, [])
@@ -227,6 +240,9 @@ export default function NewPurchaseOrderPage() {
     const unitCost = overrides?.unitCost ?? Number(prod.standardPrice ?? prod.price ?? 0)
     const qty = overrides?.qty ?? 1
     const uom = purchaseUomOf(prod)
+    const taxRate = purchaseTaxRateOf(prod)
+    const subtotalExTax = qty * unitCost
+    const taxAmount = subtotalExTax * taxRate / 100
     setLines(prev => [
       ...prev,
       {
@@ -240,11 +256,11 @@ export default function NewPurchaseOrderPage() {
         uomName: uom.uomName,
         orderedQty: qty,
         unitCost,
-        taxRate: 0,
+        taxRate,
         bestBefore: null,
-        subtotalExTax: qty * unitCost,
-        taxAmount: 0,
-        subtotalIncTax: qty * unitCost,
+        subtotalExTax,
+        taxAmount,
+        subtotalIncTax: subtotalExTax + taxAmount,
       },
     ])
   }
@@ -287,11 +303,15 @@ export default function NewPurchaseOrderPage() {
   function fillLineWithProduct(lineId: string, prod: PurchaseProduct) {
     const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
     const uom = purchaseUomOf(prod)
+    // 草稿行的 taxRate 是 addBlankLine 留下的 0（那时还没选商品），选好商品后要用它自己的
+    // Vendor Taxes 覆盖——不能继续沿用草稿行的 0，否则"+ Add a product"这条路径（本页最常用
+    // 的加行方式）永远读不到供应商税率（客户 20260904 反馈的正是这条路径）。
+    const taxRate = purchaseTaxRateOf(prod)
     setLines(prev => prev.map(l => {
       if (l.id !== lineId) return l
       const qty = Number(l.orderedQty) || 1
       const subtotalExTax = qty * unitCost
-      const taxAmount = subtotalExTax * Number(l.taxRate) / 100
+      const taxAmount = subtotalExTax * taxRate / 100
       return {
         ...l,
         productId: prod.id,
@@ -301,6 +321,7 @@ export default function NewPurchaseOrderPage() {
         uomName: uom.uomName,
         orderedQty: qty,
         unitCost,
+        taxRate,
         subtotalExTax,
         taxAmount,
         subtotalIncTax: subtotalExTax + taxAmount,

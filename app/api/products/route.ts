@@ -69,7 +69,7 @@ export async function GET(req: Request) {
         select: {
           id: true, name: true, internalRef: true, spec: true, saleDescription: true,
           listPrice: true, price: true, standardPrice: true, qtyOnHand: true,
-          customerTaxRate: true, status: true, categoryId: true,
+          customerTaxRate: true, vendorTaxRate: true, status: true, categoryId: true,
           // images 留着：实测全库 5,480 条**全是空数组**，总共才 74 KB，
           // 但少了它下单页就没法显示商品图，得为一个字段再开一套接口。
           images: true,
