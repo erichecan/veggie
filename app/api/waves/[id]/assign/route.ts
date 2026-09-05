@@ -61,8 +61,22 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const merged = Array.from(new Set([...(wave.orderIds as string[]), ...orderIds]))
       const mergedZones = await buildZonesByRestaurant(merged)
 
-      // 原子：从其他波次移除 + 并入本波次 + 回写订单状态（进入波次即 WAVE_ASSIGNED，
-      // 仅升级 CONFIRMED，move 过来的 WAVE_ASSIGNED 保持不变，IN_DELIVERY/COMPLETED 不动）。
+      // 托盘子分组：拖进了具体某个托盘(driverSlotId=该托盘的 batchNum 对应的 DriverSlot)时,
+      // 把这些订单整单落进那个 Pallet;没带 driverSlotId(如整卡拖入)则只并入波次,不动托盘。
+      // slot 校验放事务外(纯读+参数校验，失败不该产生任何写入)。
+      let slot: { id: string; batchNum: number; driverName: string; timeOfDay: string } | null = null
+      if (driverSlotId) {
+        slot = await prisma.driverSlot.findUnique({ where: { id: driverSlotId } })
+        if (!slot) return NextResponse.json({ error: '托盘不存在' }, { status: 400 })
+        if (slot.driverName !== wave.driverName || slot.timeOfDay !== wave.timeOfDay) {
+          return NextResponse.json({ error: '托盘与目标批次的司机/时段不匹配' }, { status: 400 })
+        }
+      }
+
+      // 原子：从其他波次移除 + 并入本波次 + 回写订单状态 + 落盘到具体托盘。
+      // wave.orderIds 的更新和 Pallet.items 的写入必须在同一个事务里——分开提交曾经在中间
+      // 夹一次失败，留下"订单已不在/已并入 orderIds、行数据却没跟着搬"的孤儿态
+      // (2026-09-05 生产事故，订正见 scripts/fix-orphan-and-duplicate-wave-20260906.ts)。
       const updated = await prisma.$transaction(async (tx) => {
         for (const u of otherWaveUpdates) {
           await tx.pickingWave.update({
@@ -88,25 +102,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             data: { deliveryDate: wave.waveDate },
           })
         }
+        if (slot) {
+          for (const ow of otherWaves) {
+            for (const orderId of orderIds) await removeOrderFromPalletsInWave(ow.id, orderId, tx)
+          }
+          for (const order of orders) {
+            await removeOrderFromPalletsInWave(id, order.id, tx)
+            await putOrderIntoPallet(id, slot.batchNum, order, tx)
+          }
+        }
         return w
       })
-
-      // 托盘子分组：拖进了具体某个托盘(driverSlotId=该托盘的 batchNum 对应的 DriverSlot)时,
-      // 把这些订单整单落进那个 Pallet;没带 driverSlotId(如整卡拖入)则只并入波次,不动托盘。
-      if (driverSlotId) {
-        const slot = await prisma.driverSlot.findUnique({ where: { id: driverSlotId } })
-        if (!slot) return NextResponse.json({ error: '托盘不存在' }, { status: 400 })
-        if (slot.driverName !== wave.driverName || slot.timeOfDay !== wave.timeOfDay) {
-          return NextResponse.json({ error: '托盘与目标批次的司机/时段不匹配' }, { status: 400 })
-        }
-        for (const ow of otherWaves) {
-          for (const orderId of orderIds) await removeOrderFromPalletsInWave(ow.id, orderId)
-        }
-        for (const order of orders) {
-          await removeOrderFromPalletsInWave(id, order.id)
-          await putOrderIntoPallet(id, slot.batchNum, order)
-        }
-      }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,

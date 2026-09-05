@@ -24,8 +24,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const remaining = (wave.orderIds as string[]).filter(oid => !orderIds.includes(oid))
       const zones = await buildZonesForOrders(remaining)
 
-      // 原子：移出波次 + 回写订单状态（移出即退回 CONFIRMED，仅回退 WAVE_ASSIGNED，
-      // 已出发(IN_DELIVERY)/已完成(COMPLETED) 不回退）。
+      // 原子：移出波次 + 回写订单状态 + 清理托盘残留（移出即退回 CONFIRMED，仅回退
+      // WAVE_ASSIGNED，已出发(IN_DELIVERY)/已完成(COMPLETED) 不回退）。三步必须在同一个事务里——
+      // 分开提交曾经在 orderIds 更新之后、Pallet 清理之前夹一次失败，留下"订单已不在 orderIds、
+      // 行数据却还卡在 Pallet.items 里"的孤儿态(2026-09-05 生产事故，订正见
+      // scripts/fix-orphan-and-duplicate-wave-20260906.ts)。
       const updated = await prisma.$transaction(async (tx) => {
         const w = await tx.pickingWave.update({
           where: { id },
@@ -42,12 +45,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           where: { id: { in: orderIds }, status: 'WAVE_ASSIGNED' },
           data: { status: 'CONFIRMED' },
         })
+        for (const orderId of orderIds) {
+          await removeOrderFromPalletsInWave(id, orderId, tx)
+        }
         return w
       })
-
-      for (const orderId of orderIds) {
-        await removeOrderFromPalletsInWave(id, orderId)
-      }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
