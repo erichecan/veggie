@@ -6,8 +6,33 @@
  * UI 渲染时优先使用 components/shared/date-with-day.tsx 中的 React 组件，
  * 它会按星期几给出加粗+不同颜色的样式。
  */
+import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 
 export const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+
+/**
+ * 把 Date 拆成它在**业务时区**（都柏林）下的年/月/日/时/分/星期几。
+ * 时间戳类字段（createdAt/printedAt 等，真有"几点几分"含义）必须按业务时区展示，
+ * 不能按查看者浏览器本地时区——否则同一条记录在都柏林/北美设备上会显示成不同的
+ * 日期和时间（同客户列表 20260905 修过的那个坑，见 customer-list-sort-filter-tz-bug 记忆）。
+ */
+function zonedDateTimeParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BUSINESS_TIMEZONE, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', weekday: 'short',
+  }).formatToParts(date)
+  const g = (t: string) => parts.find(p => p.type === t)?.value ?? ''
+  return {
+    year: g('year'),
+    month: g('month'),
+    day: g('day'),
+    // hour12:false 在午夜偶发返回 "24" 而非 "00"，取模纠正
+    hour: String(Number(g('hour')) % 24).padStart(2, '0'),
+    minute: g('minute'),
+    dayIdx: DAY_ABBR.indexOf(g('weekday') as typeof DAY_ABBR[number]),
+  }
+}
 
 /** 7 天对应的颜色（周日→周六） */
 export const DAY_COLORS = [
@@ -66,12 +91,8 @@ export function formatDateTime(date: Date | string | number | null | undefined):
   if (!date) return '—'
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) return '—'
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}`
+  const { year, month, day, hour, minute } = zonedDateTimeParts(d)
+  return `${day}/${month}/${year} ${hour}:${minute}`
 }
 
 /**
@@ -81,13 +102,8 @@ export function formatDateTimeShort(date: Date | string | number | null | undefi
   if (!date) return '—'
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) return '—'
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  const day = DAY_ABBR[d.getDay()]
-  return `${dd}/${mm}/${yyyy} ${day} ${hh}:${min}`
+  const { year, month, day, hour, minute, dayIdx } = zonedDateTimeParts(d)
+  return `${day}/${month}/${year} ${DAY_ABBR[dayIdx]} ${hour}:${minute}`
 }
 
 /**
@@ -109,11 +125,6 @@ export function formatDateTimeShortHtml(date: Date | string | number | null | un
   if (!date) return '—'
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) return '—'
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  const idx = d.getDay()
-  return `${dd}/${mm}/${yyyy} <strong style="color:${DAY_COLORS[idx]}">${DAY_ABBR[idx]}</strong> ${hh}:${min}`
+  const { year, month, day, hour, minute, dayIdx } = zonedDateTimeParts(d)
+  return `${day}/${month}/${year} <strong style="color:${DAY_COLORS[dayIdx]}">${DAY_ABBR[dayIdx]}</strong> ${hour}:${minute}`
 }

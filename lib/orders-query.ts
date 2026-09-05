@@ -8,10 +8,21 @@ import { tryAuth } from '@/lib/auth'
 import { salesRowScope, withRowScope } from '@/lib/row-scope'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { buildFacetWhere, type FacetDef } from '@/lib/facet-sql'
+import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
 
 export const ORDER_STATUSES = new Set<$Enums.OrderStatus>([
   'PENDING', 'CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED',
 ])
+
+/**
+ * 把日期筛选框里的 "YYYY-MM-DD" 转成**都柏林日历日**的起点（真实 UTC 时刻）。
+ * ⛔ 不能直接 `new Date(dateStr + 'T00:00:00Z')`——那是 UTC 零点，跟"都柏林的那一天"
+ * 差最多 1 小时（夏令时期间），会导致边界附近的记录筛选不到。同 lib/customers-query.ts /
+ * lib/products-query.ts 的 dublinDayStart，三处筛选口径必须一致。
+ */
+function dublinDayStart(dateStr: string): Date {
+  return businessDayStart(new Date(`${dateStr}T12:00:00Z`))
+}
 
 /** 订单来源白名单。用于把 ?source= 里的非法值挡在 Prisma 之外（否则是 500 而非空列表） */
 export const ORDER_SOURCES = new Set<string>(['PORTAL', 'INTERNAL', 'IMPORT'])
@@ -90,8 +101,8 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   if (fromDate || toDate) {
     const field = allowedDateFields.has(dateField) ? dateField : 'createdAt'
     const range: Record<string, Date> = {}
-    if (fromDate) range.gte = new Date(fromDate + 'T00:00:00Z')
-    if (toDate) range.lte = new Date(toDate + 'T23:59:59Z')
+    if (fromDate) range.gte = dublinDayStart(fromDate)
+    if (toDate) range.lt = addBusinessDays(dublinDayStart(toDate), 1)
     where[field] = range
   }
 
@@ -135,9 +146,21 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   const deliveryTo = searchParams.get('deliveryTo')
   if (deliveryFrom || deliveryTo) {
     const range: Record<string, Date> = {}
-    if (deliveryFrom) range.gte = new Date(deliveryFrom + 'T00:00:00Z')
-    if (deliveryTo) range.lte = new Date(deliveryTo + 'T23:59:59Z')
+    if (deliveryFrom) range.gte = dublinDayStart(deliveryFrom)
+    if (deliveryTo) range.lt = addBusinessDays(dublinDayStart(deliveryTo), 1)
     facetAnd.push({ deliveryDate: range })
+  }
+
+  // 「Created on」列筛选专用参数，与上面通用的 dateField=createdAt&fromDate&toDate 相互独立
+  // （同一请求里 deliveryDate 列筛选已经占用了 dateField/fromDate/toDate），
+  // 同 deliveryFrom/deliveryTo 的做法，允许两列筛选同时生效。
+  const createdAtFrom = searchParams.get('createdAtFrom')
+  const createdAtTo = searchParams.get('createdAtTo')
+  if (createdAtFrom || createdAtTo) {
+    const range: Record<string, Date> = {}
+    if (createdAtFrom) range.gte = dublinDayStart(createdAtFrom)
+    if (createdAtTo) range.lt = addBusinessDays(dublinDayStart(createdAtTo), 1)
+    facetAnd.push({ createdAt: range })
   }
   if (facetAnd.length > 0) where.AND = facetAnd
 

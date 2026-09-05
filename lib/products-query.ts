@@ -18,8 +18,19 @@ import { prisma } from '@/lib/db'
 import { buildFacetWhere } from '@/lib/facet-sql'
 import { PRODUCT_TEMPLATE_FACET_DEFS } from '@/lib/facets/product-templates'
 import { TTL_STATIC_MS } from '@/lib/http-cache'
+import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
 
 export const LOW_STOCK_THRESHOLD = 10
+
+/**
+ * 把日期筛选框里的 "YYYY-MM-DD" 转成**都柏林日历日**的起点（真实 UTC 时刻）。
+ * ⛔ 不能直接 `new Date(dateStr + 'T00:00:00Z')`——那是 UTC 零点，跟"都柏林的那一天"
+ * 差最多 1 小时（夏令时期间），会导致边界附近的记录筛选不到。同 lib/customers-query.ts
+ * 的 dublinDayStart，两处筛选口径必须一致。
+ */
+function dublinDayStart(dateStr: string): Date {
+  return businessDayStart(new Date(`${dateStr}T12:00:00Z`))
+}
 
 // Decimal/Int 字段做不了 Prisma 原生 contains 子串匹配，用两步查：
 // 只拉 id+该字段这两列（比拉整行便宜得多），在内存里做子串匹配后收窄成 id 列表。
@@ -136,8 +147,8 @@ export async function buildProductTemplatesWhere(
     const to = searchParams.get(`cf_${field}_to`)
     if (from || to) {
       const range: Record<string, Date> = {}
-      if (from) range.gte = new Date(from + 'T00:00:00Z')
-      if (to) range.lte = new Date(to + 'T23:59:59Z')
+      if (from) range.gte = dublinDayStart(from)
+      if (to) range.lt = addBusinessDays(dublinDayStart(to), 1)
       where[field] = range
     }
   }

@@ -13,6 +13,7 @@ import { sortRows, type SortDir } from '@/components/shared/sort-th'
 import { applyFacets, groupFacets, localizeFacetFields, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import { useCsvExport } from '@/hooks/use-csv-export'
+import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 
 const PAGE_SIZE = 50
 const LOW_STOCK_THRESHOLD = 10
@@ -479,7 +480,7 @@ export default function ClassicProductsPage() {
       label: 'Created on',
       sortable: true,
       filterType: 'date-range',
-      render: (v) => <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB')}</span>,
+      render: (v) => <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB', { timeZone: BUSINESS_TIMEZONE })}</span>,
     },
     {
       key: 'updatedBy',
@@ -498,7 +499,7 @@ export default function ClassicProductsPage() {
       label: 'Last Updated on',
       sortable: true,
       filterType: 'date-range',
-      render: (v) => v ? <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB')}</span> : <span className="text-gray-400">—</span>,
+      render: (v) => v ? <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB', { timeZone: BUSINESS_TIMEZONE })}</span> : <span className="text-gray-400">—</span>,
     },
   ]
 

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { History as HistoryIcon } from 'lucide-react'
 import { routing } from '@/i18n/routing'
@@ -87,6 +87,30 @@ function SalesPriceHistoryModal({
   const [loading, setLoading] = useState(true)
   const [history, setHistory] = useState<SalesPriceHistoryEntry[]>([])
 
+  // 弹窗可拖动:标题栏按下后跟随鼠标位移,位置以初始居中位置为基准做 translate 偏移
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 })
+  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+
+  function onDragStart(e: React.MouseEvent) {
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: dragPos.x, origY: dragPos.y }
+    window.addEventListener('mousemove', onDragMove)
+    window.addEventListener('mouseup', onDragEnd)
+  }
+  function onDragMove(e: MouseEvent) {
+    const s = dragState.current
+    if (!s) return
+    setDragPos({ x: s.origX + (e.clientX - s.startX), y: s.origY + (e.clientY - s.startY) })
+  }
+  function onDragEnd() {
+    dragState.current = null
+    window.removeEventListener('mousemove', onDragMove)
+    window.removeEventListener('mouseup', onDragEnd)
+  }
+  useEffect(() => () => {
+    window.removeEventListener('mousemove', onDragMove)
+    window.removeEventListener('mouseup', onDragEnd)
+  }, [])
+
   async function load() {
     setLoading(true)
     try {
@@ -107,9 +131,13 @@ function SalesPriceHistoryModal({
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={onClose}>
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-xl p-5 space-y-3"
+        style={{ transform: `translate(${dragPos.x}px, ${dragPos.y}px)` }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
+        <div
+          className="flex items-center justify-between cursor-move select-none"
+          onMouseDown={onDragStart}
+        >
           <h2 className="text-sm font-semibold text-gray-800">
             {isEn ? 'History price of ' : '历史价格：'}{productName}
           </h2>

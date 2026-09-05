@@ -152,6 +152,10 @@ export default function ClassicOrdersPage() {
       if (colFilters.deliveryDateFrom) params.set('fromDate', colFilters.deliveryDateFrom)
       if (colFilters.deliveryDateTo) params.set('toDate', colFilters.deliveryDateTo)
     }
+    // Created on 列筛选：独立参数 createdAtFrom/createdAtTo，走服务端(此前只对当前页客户端过滤，
+    // 翻页/总数会对不上，见 lib/orders-query.ts 的同名参数)
+    if (colFilters.createdAtFrom) params.set('createdAtFrom', colFilters.createdAtFrom)
+    if (colFilters.createdAtTo) params.set('createdAtTo', colFilters.createdAtTo)
     // 单号/客户/销售员/司机列筛选框(与分面 chip 独立,AND 语义) → colCode/colCustomer/colSalesman/colDriver
     if (debouncedColText.code) params.set('colCode', debouncedColText.code)
     if (debouncedColText.customer) params.set('colCustomer', debouncedColText.customer)
@@ -169,7 +173,7 @@ export default function ClassicOrdersPage() {
     const range = timeKey ? computeTimeRange(timeKey) : null
     if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     return `/api/orders?${params.toString()}`
-  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
+  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, colFilters.createdAtFrom, colFilters.createdAtTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
 
   // 会计导出:跟列表当前筛选结果(baseUrl)完全同一套参数,只是换个路由+加 kind
   const [exporting, setExporting] = useState<'summary' | 'detail' | null>(null)
@@ -252,12 +256,10 @@ export default function ClassicOrdersPage() {
     }
 
     const cf = colFilters
-    // 交货日期/单号/客户/销售员/司机已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
+    // 交货日期/创建日期/单号/客户/销售员/司机已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
     // 避免"只筛当前页导致可见行数与分页总数对不上"(客户反馈:同一关键词每次搜到的页数/条数都不一样)
     if (cf.invoiceStatus) result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
     if (cf.status) result = result.filter(o => o.status === cf.status)
-    if (cf.createdAtFrom) result = result.filter(o => (o.createdAt ?? '').slice(0, 10) >= cf.createdAtFrom)
-    if (cf.createdAtTo)   result = result.filter(o => (o.createdAt ?? '').slice(0, 10) <= cf.createdAtTo)
 
     return result
   }, [orders, activeFilter, invoicedOrderIds, colFilters])
