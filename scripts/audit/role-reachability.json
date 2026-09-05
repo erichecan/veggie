@@ -839,6 +839,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "GET /api/customers/filter-options": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "y",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "y",
+  "EXTERNAL_SALES": "y",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/customers": {
   "BOSS": "y",
   "OPERATOR": "y",
