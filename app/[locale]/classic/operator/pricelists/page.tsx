@@ -6,44 +6,70 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
-import type { OdooPricelist } from '@/lib/types'
+import type { OdooPricelist, Product } from '@/lib/types'
 import { formatDateTime } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
+import type { Facet } from '@/lib/list-filters'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 
 const PAGE_SIZE = 80
 
-const FACET_DEFS: ClientFacetDef<OdooPricelist>[] = [
-  { key: 'name',     label: '名称', labelEn: 'Name',     values: r => [r.name] },
-  { key: 'currency', label: '货币', labelEn: 'Currency', values: r => [r.currency] },
-  // 不做「商品」维度：OdooPricelistItem 只存 productTemplateId/productVariantId，
-  // 没有商品名，按名字搜必然搜不到（同 barcode 的处理原则）。
-  // 若要支持，需在页面里先加载 id→名称 映射再匹配，属独立改动。
-]
+/**
+ * 搜索出结果点进去改保存、退回来接着改下一条——这个来回不能把筛选条件冲掉，
+ * 所以把列表页的搜索/筛选状态整体存进 sessionStorage，每次状态变化都回写，
+ * 列表页每次挂载（含从详情页返回）都从这里恢复，而不是从空状态重新来过。
+ */
+const LIST_STATE_KEY = 'classic_pricelists_list_state'
+
+interface SavedListState {
+  searchInput: string
+  facets: Facet[]
+  columnFilters: Record<string, string>
+  selectableFilter: boolean
+  activeListFilter: boolean
+  groupBy: string
+  page: number
+}
+
+function readSavedListState(): SavedListState | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(LIST_STATE_KEY)
+    return raw ? JSON.parse(raw) as SavedListState : null
+  } catch {
+    return null
+  }
+}
 
 export default function ClassicPricelistsPage() {
   const router = useRouter()
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const [saved] = useState<SavedListState | null>(() => readSavedListState())
   const [lists, setLists] = useState<OdooPricelist[]>([])
+  const [productNameById, setProductNameById] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(false)
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState(saved?.searchInput ?? '')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(saved?.columnFilters ?? {})
   const [isReadMode, setIsReadMode] = useState(true)
-  const [page, setPage] = useState(1)
-  const [selectableFilter, setSelectableFilter] = useState(false)
-  const [activeListFilter, setActiveListFilter] = useState(false)
-  const [groupBy, setGroupBy] = useState('')
+  const [page, setPage] = useState(saved?.page ?? 1)
+  const [selectableFilter, setSelectableFilter] = useState(saved?.selectableFilter ?? false)
+  const [activeListFilter, setActiveListFilter] = useState(saved?.activeListFilter ?? false)
+  const [groupBy, setGroupBy] = useState(saved?.groupBy ?? '')
 
   async function load() {
     setLoading(true)
     try {
-      const data = await apiGet<OdooPricelist[]>('/api/pricelists')
+      const [data, products] = await Promise.all([
+        apiGet<OdooPricelist[]>('/api/pricelists'),
+        apiGet<Product[]>('/api/products').catch(() => [] as Product[]),
+      ])
       setLists([...data].sort((a, b) => a.sequence - b.sequence))
+      setProductNameById(new Map(products.map(p => [p.id, p.name])))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load pricelists' : '加载价格表失败'))
     } finally {
@@ -71,10 +97,31 @@ export default function ClassicPricelistsPage() {
     }
   }
 
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+  const facetDefs = useMemo<ClientFacetDef<OdooPricelist>[]>(() => [
+    { key: 'name',     label: '名称', labelEn: 'Name',     values: r => [r.name] },
+    { key: 'currency', label: '货币', labelEn: 'Currency', values: r => [r.currency] },
+    {
+      key: 'product', label: '产品', labelEn: 'Product',
+      // OdooPricelistItem 只存 productTemplateId/productVariantId，没有商品名快照，
+      // 靠列表页额外拉一份 /api/products 建 id→名称映射再匹配（同 barcode 处理原则）。
+      values: r => r.items.map(it => {
+        const pid = it.productVariantId ?? it.productTemplateId
+        return pid ? productNameById.get(pid) : undefined
+      }).filter((v): v is string => !!v),
+    },
+  ], [productNameById])
+
+  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(facetDefs, isEn), saved?.facets)
+
+  // 搜索/筛选状态整体持久化，供从详情页返回时恢复（见 LIST_STATE_KEY 顶部注释）。
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, activeListFilter, groupBy, page }
+    try { sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(state)) } catch { /* 存储不可用时静默跳过,不影响筛选本身 */ }
+  }, [searchInput, facets, columnFilters, selectableFilter, activeListFilter, groupBy, page])
 
   const filteredLists = useMemo(() => {
-    let rows = filterByFacets(lists, facets, FACET_DEFS)
+    let rows = filterByFacets(lists, facets, facetDefs)
     if (searchInput) {
       rows = rows.filter(pl => pl.name.toLowerCase().includes(searchInput.toLowerCase()))
     }
@@ -102,7 +149,7 @@ export default function ClassicPricelistsPage() {
       }
     }
     return rows
-  }, [lists, searchInput, columnFilters, selectableFilter, activeListFilter])
+  }, [lists, facets, facetDefs, searchInput, columnFilters, selectableFilter, activeListFilter])
 
   const pagedLists = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE

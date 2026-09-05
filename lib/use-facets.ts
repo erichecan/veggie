@@ -28,8 +28,9 @@ export interface UseFacetsResult {
   }
 }
 
-export function useFacets(fields: { key: string; label: string }[]): UseFacetsResult {
-  const [facets, setFacets] = useState<Facet[]>([])
+/** initialFacets：从外部(如 sessionStorage)恢复上次的分面状态，仅用作 useState 初始值，不会响应后续变化。 */
+export function useFacets(fields: { key: string; label: string }[], initialFacets?: Facet[]): UseFacetsResult {
+  const [facets, setFacets] = useState<Facet[]>(initialFacets ?? [])
 
   const add = useCallback((key: string, value: string) => {
     const field = fields.find(f => f.key === key)
