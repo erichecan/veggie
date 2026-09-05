@@ -133,7 +133,7 @@ export default function PurchasesPage() {
   function addFacet(key: string, value: string) {
     const field = PURCHASE_FACET_FIELDS.find(f => f.key === key)
     if (!field) return
-    setFacets(prev => [...prev, { key, label: field.label, value }])
+    setFacets(prev => [...prev, { key, label: isEn ? field.labelEn : field.label, value }])
   }
   function removeFacetGroup(key: string) {
     setFacets(prev => prev.filter(f => f.key !== key))

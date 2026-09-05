@@ -781,7 +781,7 @@ ${orderSections}
     const field = ORDER_FACET_FIELDS.find(f => f.key === key)
     if (!field) return
     // 同一维度可累积多个关键词(后端 buildFacetWhere 组成 OR)；不同维度之间 AND
-    setFacets(prev => [...prev, { key, label: field.label, value }])
+    setFacets(prev => [...prev, { key, label: isEn ? field.labelEn : field.label, value }])
   }
   function removeFacet(idx: number) {
     setFacets(prev => prev.filter((_, i) => i !== idx))
