@@ -25,12 +25,14 @@ export class ApiError extends Error {
   status: number
   code?: string          // 业务错误码（如 INSUFFICIENT_STOCK）
   rawMessage?: string    // 后端原始 message（用于调试）
-  constructor(message: string, status: number, code?: string, rawMessage?: string) {
+  details?: Record<string, unknown> // 后端错误体里除 error/message 外的其余字段（如 waveId）
+  constructor(message: string, status: number, code?: string, rawMessage?: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.rawMessage = rawMessage
+    this.details = details
   }
 }
 
@@ -149,14 +151,20 @@ export async function api<T = unknown>(
   if (!res.ok) {
     let rawMessage: string | undefined
     let code: string | undefined
+    let details: Record<string, unknown> | undefined
     try {
       const body = await res.json()
       rawMessage = body.message ?? body.error
       code = body.error && typeof body.error === 'string' &&
              /^[A-Z_]+$/.test(body.error) ? body.error : undefined
+      const rest: Record<string, unknown> = {}
+      for (const k of Object.keys(body ?? {})) {
+        if (k !== 'error' && k !== 'message') rest[k] = body[k]
+      }
+      if (Object.keys(rest).length > 0) details = rest
     } catch { /* ignore */ }
 
-    throw new ApiError(humanizeError(res.status, code, rawMessage), res.status, code, rawMessage)
+    throw new ApiError(humanizeError(res.status, code, rawMessage), res.status, code, rawMessage, details)
   }
 
   // 204 No Content

@@ -618,7 +618,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               where: { id },
               data: { status: orderBefore.status, confirmationDate: orderBefore.confirmationDate },
             }).catch(() => {})
-            return NextResponse.json({ error: `波次已拣货锁定，请先到每日销售解锁：${e.message}` }, { status: 409 })
+            return NextResponse.json({ error: `波次已拣货锁定，请先到每日销售解锁：${e.message}`, waveId: e.waveId }, { status: 409 })
           }
           console.error('[removeOrderFromAllWaves on status change]', e)
         }

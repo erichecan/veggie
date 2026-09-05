@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
+import { apiGet, apiPost, apiPut, apiDelete, ApiError } from '@/lib/api'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import type { Order, Customer, OdooPricelist as Pricelist, CustomerPriceType } from '@/lib/types'
@@ -24,6 +24,7 @@ import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryM
 import { useHotkeys } from '@/components/shared/use-hotkeys'
 import { lineDescription } from '@/lib/order-line-description'
 import { newDraftLineId, isDraftLineId, toSubmittableLines } from '@/lib/order-line-draft'
+import { getSession, type UserSession } from '@/lib/session'
 
 const PURPLE = '#875A7B'
 
@@ -41,6 +42,19 @@ interface AllProduct {
 }
 
 interface ForecastRow { productId: string; forecast: number; qtyOnHand: number }
+
+// 与报价单详情页(quotations/[id])同一份信用冻结口径:重新确认(PENDING→CONFIRMED)
+// 也要过这道闸，否则这里新加的 Confirm 按钮就成了绕过信用冻结的后门。
+interface CreditInfo {
+  outstandingBalance: number
+  overdueAmount: number
+  paymentTerm: string
+  creditLimit: number
+  canOrder: boolean
+  blockReason?: string
+  isTermExtended?: boolean
+  termExtendedUntil?: string | null
+}
 
 const STATUS_LABEL_ZH: Record<string, string> = {
   PENDING: '待处理',
@@ -83,6 +97,9 @@ export default function SalesOrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
+  const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
   const [pricelist, setPricelist] = useState<Pricelist | null>(null)
   const [pricelists, setPricelists] = useState<Pricelist[]>([])
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
@@ -251,6 +268,7 @@ export default function SalesOrderDetailPage() {
       // 首屏只依赖订单本身:拿到订单即渲染,客户/价格表异步补(不再为一条订单 await 全量客户表)
       if (ord.restaurantId) {
         apiGet<Customer>(`/api/customers/${ord.restaurantId}`).then(setCustomer).catch(() => {})
+        apiGet<CreditInfo>(`/api/customers/${ord.restaurantId}/credit`).then(setCreditInfo).catch(() => {})
       }
       apiGet<Pricelist[]>('/api/pricelists')
         .then(pls => {
@@ -390,7 +408,34 @@ export default function SalesOrderDetailPage() {
       // 撤回后想接着删除（本次改动要解决的场景）只有这个页面在 status===PENDING 时才有 Delete。
       await load()
     } catch (e) {
+      // 波次已拣货锁定：后端 409 附带 waveId，二次确认后一次性解锁+重试撤回，
+      // 免得用户跑去 Daily Sale 页面手动 unlock 再回来点一次（20260905 客户反馈两步太绕）。
+      const waveId = e instanceof ApiError ? (e.details?.waveId as string | undefined) : undefined
+      if (waveId && confirm(isEn
+        ? 'The wave is print-locked. Unlock it and revert to quotation now?'
+        : '所在波次已拣货锁定，是否一并解锁并撤回到报价单？')) {
+        try {
+          await apiPost(`/api/waves/${waveId}/pick-unlock`, {})
+          await apiPut(`/api/orders/${order.id}`, { status: 'PENDING', confirmationDate: null })
+          toast.success(isEn ? 'Unlocked and reverted to quotation' : '已解锁并撤回到报价单')
+          await load()
+        } catch (e2) {
+          toast.error(e2 instanceof Error ? e2.message : (isEn ? 'Revert failed' : '撤回失败'))
+        }
+        return
+      }
       toast.error(e instanceof Error ? e.message : (isEn ? 'Revert failed' : '撤回失败'))
+    }
+  }
+
+  async function handleConfirm() {
+    if (!order || creditBlocked) return
+    try {
+      await apiPut(`/api/orders/${order.id}`, { status: 'CONFIRMED' })
+      toast.success(isEn ? 'Confirmed' : '已重新确认')
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Confirm failed' : '确认失败'))
     }
   }
 
@@ -504,6 +549,9 @@ export default function SalesOrderDetailPage() {
   // 比 driverLocked 多盖 WAVE_ASSIGNED 这一档——driverSlotId 在这一档还能改(会同步波次)，
   // 但 deliveryDate 的改动没有联动同步逻辑，必须先到调度台移出待分配、状态退回 CONFIRMED 才能改期。
   const dateLocked = statusUp === 'WAVE_ASSIGNED' || driverLocked
+  // 与报价单详情页同一份信用冻结口径，见上方 CreditInfo 注释
+  const canOverrideCredit = session?.roles?.includes('BOSS') || session?.roles?.includes('FINANCE') || session?.role === 'BOSS' || session?.role === 'FINANCE'
+  const creditBlocked = creditInfo?.canOrder === false && !canOverrideCredit
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing && editLines.length > 0 ? editLines : lines
@@ -669,6 +717,14 @@ export default function SalesOrderDetailPage() {
               </button>
             )}
             {statusUp === 'PENDING' && !editing && (
+              <button onClick={handleConfirm} disabled={creditBlocked}
+                title={creditBlocked ? (creditInfo?.blockReason || (isEn ? 'Credit blocked, cannot confirm' : '信用冻结，无法确认')) : undefined}
+                className="h-8 px-3 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ color: PURPLE }}>
+                {isEn ? 'Confirm' : '重新确认'}
+              </button>
+            )}
+            {statusUp === 'PENDING' && !editing && (
               <button onClick={handleDeleteOrder}
                 className="h-8 px-3 text-sm rounded border border-red-300 bg-white text-red-600 hover:bg-red-50">
                 {isEn ? 'Delete' : '删除'}
@@ -680,14 +736,38 @@ export default function SalesOrderDetailPage() {
           </span>
         </div>
 
-        {/* Status flow */}
-        <div className="flex items-center gap-1 mt-3 pb-1">
-          <span className="px-3 py-1 text-xs rounded-full text-gray-400">Quotation</span>
-          <span className="text-gray-300">›</span>
-          <span className="px-3 py-1 text-xs rounded-full text-gray-400">Quotation Sent</span>
-          <span className="text-gray-300">›</span>
-          <span className="px-3 py-1 text-xs rounded-full text-white font-medium" style={{ background: PURPLE }}>Sales Order</span>
-        </div>
+        {/* Status flow：按 order.status/sentAt 动态高亮，而不是写死"Sales Order"
+            （20260905 客户反馈：撤回到报价单后这里没跟着变，跟右上角状态徽章自相矛盾） */}
+        {statusUp === 'CANCELLED' ? (
+          <div className="flex items-center gap-1 mt-3 pb-1">
+            <span className="px-3 py-1 text-xs rounded-full bg-red-50 text-red-600 font-medium">
+              {isEn ? 'Cancelled' : '已取消'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 mt-3 pb-1">
+            {(() => {
+              const flowStage: 'quotation' | 'quotation_sent' | 'sales_order' =
+                statusUp !== 'PENDING' ? 'sales_order' : (order.sentAt ? 'quotation_sent' : 'quotation')
+              const pill = (label: string, stage: typeof flowStage) => (
+                <span
+                  className={`px-3 py-1 text-xs rounded-full ${flowStage === stage ? 'text-white font-medium' : 'text-gray-400'}`}
+                  style={flowStage === stage ? { background: PURPLE } : undefined}>
+                  {label}
+                </span>
+              )
+              return (
+                <>
+                  {pill(isEn ? 'Quotation' : '报价单', 'quotation')}
+                  <span className="text-gray-300">›</span>
+                  {pill(isEn ? 'Quotation Sent' : '已发送', 'quotation_sent')}
+                  <span className="text-gray-300">›</span>
+                  {pill(isEn ? 'Sales Order' : '销售单', 'sales_order')}
+                </>
+              )
+            })()}
+          </div>
+        )}
       </div>
 
       <div className="px-6 py-4">
