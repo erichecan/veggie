@@ -62,6 +62,34 @@ interface AggProduct {
   byCustomer: Map<string, CustomerBreakdown>
 }
 
+/**
+ * 商品级分组（20260904）：同一商品在这一趟车里被不同订单用不同可售单位下单时
+ * （比如一部分订单按 CASE、一部分按 EA），此前会拆成互不相干的两行平铺，拣货员
+ * 看不出这俩其实是同一个商品。现在把 productId 相同的 AggProduct 收进一组：
+ * 只有一个单位时按原样单行显示；多个单位时印一个父行（按 ProductSaleUom.factor
+ * 换算成基础单位的合计）+ 每个单位各自一行子行（原始下单数量，拣货员照单位去拿）。
+ */
+interface ProductGroup {
+  productId: string
+  productName: string
+  productSequence: number | null
+  spec: string
+  productType: string | null
+  uoms: AggProduct[]
+}
+
+/** 多单位分组的父行合计：把每个子行数量按 factor 换算成基础单位后加总 */
+function summarizeGroup(g: ProductGroup): { baseQty: number; baseUomName: string | null } {
+  let baseQty = 0
+  let baseUomName: string | null = null
+  for (const u of g.uoms) {
+    const factor = u.uomConversion?.factor ?? 1
+    baseQty += u.totalQty * factor
+    if (!baseUomName) baseUomName = u.uomConversion?.baseUomName ?? u.packSpec?.baseUomName ?? null
+  }
+  return { baseQty, baseUomName }
+}
+
 export type PickingVariant = 'all' | 'storable' | 'consumable'
 
 export function generateTripPickingHtml(
@@ -129,10 +157,28 @@ export function generateTripPickingHtml(
   }
 
   const allProducts = Array.from(aggMap.values())
+
+  const groupMap = new Map<string, ProductGroup>()
+  for (const p of allProducts) {
+    let g = groupMap.get(p.productId)
+    if (!g) {
+      g = {
+        productId: p.productId,
+        productName: p.productName,
+        productSequence: p.productSequence,
+        spec: p.spec,
+        productType: p.productType,
+        uoms: [],
+      }
+      groupMap.set(p.productId, g)
+    }
+    g.uoms.push(p)
+  }
+  const allGroups = Array.from(groupMap.values())
   // ⚠️ 大货/散货这个分组**不动** —— 那是仓库的作业顺序（先整箱后零散），
   // 2026-08-18 客户要的「按 sequence 排」只改组内顺序，不该打乱仓库习惯。
-  const consumableProducts = sortLinesBySequence(allProducts.filter(p => p.productType === 'CONSU'))
-  const storableProducts = sortLinesBySequence(allProducts.filter(p => p.productType !== 'CONSU'))
+  const consumableGroups = sortLinesBySequence(allGroups.filter(g => g.productType === 'CONSU'))
+  const storableGroups = sortLinesBySequence(allGroups.filter(g => g.productType !== 'CONSU'))
 
   const showStorable = variant !== 'consumable'
   const showConsumable = variant !== 'storable'
@@ -141,15 +187,30 @@ export function generateTripPickingHtml(
     : variant === 'consumable' ? '零散货 CONSUMABLE'
     : ''
 
-  function productTableHtml(title: string, products: AggProduct[], icon: string, startNewPage = false): string {
-    if (products.length === 0) return ''
-    const rows = products.map((p, i) => {
-      const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
-      const hasNote = Array.from(p.byCustomer.values()).some(bd => bd.note)
-      const uomHint = formatUomConversionHint(p.uomConversion ?? undefined, p.totalQty)
-      const mainRow = `
+  /** 按客户展开的明细子行（散称/带备注商品）；`nested=true` 表示挂在「单位子行」下面，多缩进一级 */
+  function customerBreakdownRows(byCustomer: Map<string, CustomerBreakdown>, nested: boolean): string {
+    return Array.from(byCustomer.values())
+      .sort((a, b) => a.customerName.localeCompare(b.customerName))
+      .map(bd => `
+      <tr class="row-bd${nested ? ' row-bd-nested' : ''}">
+        <td class="col-seq"></td>
+        <td class="col-name bd-name">
+          ↳ ${escapeHtml(bd.customerName)}
+          ${bd.note ? `<span class="note-badge">⚠️ ${escapeHtml(bd.note)}</span>` : ''}
+        </td>
+        <td class="col-qty bd-qty">${fmtQty(bd.qty)}</td>
+        <td class="col-uom"></td>
+        <td class="col-check"></td>
+      </tr>`).join('')
+  }
+
+  /** 单一单位的商品行（组内只有一个可售单位时，跟改造前逐字一致） */
+  function singleUomRow(p: AggProduct, seq: number, rowClass: string): string {
+    const hasNote = Array.from(p.byCustomer.values()).some(bd => bd.note)
+    const uomHint = formatUomConversionHint(p.uomConversion ?? undefined, p.totalQty)
+    const mainRow = `
       <tr class="${rowClass}">
-        <td class="col-seq">${i + 1}</td>
+        <td class="col-seq">${seq}</td>
         <td class="col-name">
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
@@ -168,27 +229,71 @@ export function generateTripPickingHtml(
         <td class="col-uom">${escapeHtml(displayUomName(p.uomName))}</td>
         <td class="col-check"></td>
       </tr>`
-      // 散称/按重量卖的商品按客户展示明细子行；带备注的商品即便不是散称，也强制展开，避免备注被折叠看不到
-      const breakdownRows = (p.goodsType === 'LOOSE' || hasNote)
-        ? Array.from(p.byCustomer.values())
-            .sort((a, b) => a.customerName.localeCompare(b.customerName))
-            .map(bd => `
-      <tr class="row-bd">
+    // 散称/按重量卖的商品按客户展示明细子行；带备注的商品即便不是散称，也强制展开，避免备注被折叠看不到
+    const breakdownRows = (p.goodsType === 'LOOSE' || hasNote) ? customerBreakdownRows(p.byCustomer, false) : ''
+    return mainRow + breakdownRows
+  }
+
+  /**
+   * 同一商品挂了多个可售单位时的两层行：父行（按 factor 换算成基础单位的合计）+
+   * 每个单位各自一行子行（原始下单数量，拣货员照单位去拿）。
+   */
+  function multiUomRows(g: ProductGroup, seq: number, rowClass: string): string {
+    const { baseQty, baseUomName } = summarizeGroup(g)
+    const hasNote = g.uoms.some(u => Array.from(u.byCustomer.values()).some(bd => bd.note))
+    const parentRow = `
+      <tr class="${rowClass} row-group-parent">
+        <td class="col-seq">${seq}</td>
+        <td class="col-name">
+          ${escapeHtml(g.productName)}
+          ${g.spec ? `<span class="spec">${escapeHtml(g.spec)}</span>` : ''}
+          ${hasNote ? `<span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
+        </td>
+        <td class="col-qty">
+          共 ${fmtQty(baseQty)}
+          ${!baseUomName ? `<span class="note-flag">⚠️ 单位未换算，仅供参考</span>` : ''}
+        </td>
+        <td class="col-uom">${baseUomName ? escapeHtml(displayUomName(baseUomName)) : ''}</td>
+        <td class="col-check"></td>
+      </tr>`
+    const childRows = g.uoms.map(u => {
+      const factor = u.uomConversion?.factor ?? 1
+      const uHasNote = Array.from(u.byCustomer.values()).some(bd => bd.note)
+      const convNote = (baseUomName && factor !== 1)
+        ? `<span class="pack-split">(= ${fmtQty(u.totalQty * factor)} ${escapeHtml(baseUomName)})</span>`
+        : ''
+      const childRow = `
+      <tr class="row-uom-child">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
-          ↳ ${escapeHtml(bd.customerName)}
-          ${bd.note ? `<span class="note-badge">⚠️ ${escapeHtml(bd.note)}</span>` : ''}
+          ↳${uHasNote ? ` <span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
         </td>
-        <td class="col-qty bd-qty">${fmtQty(bd.qty)}</td>
-        <td class="col-uom"></td>
+        <td class="col-qty bd-qty">
+          ${fmtQty(u.totalQty)}
+          ${convNote}
+          ${(() => {
+            const sp = splitIntoPacks(u.totalQty, u.packSpec)
+            return sp?.mixed ? `<span class="pack-split">${escapeHtml(sp.text)}</span>` : ''
+          })()}
+        </td>
+        <td class="col-uom">${escapeHtml(displayUomName(u.uomName))}</td>
         <td class="col-check"></td>
-      </tr>`).join('')
-        : ''
-      return mainRow + breakdownRows
+      </tr>`
+      const breakdownRows = (u.goodsType === 'LOOSE' || uHasNote) ? customerBreakdownRows(u.byCustomer, true) : ''
+      return childRow + breakdownRows
+    }).join('')
+    return parentRow + childRows
+  }
+
+  function productTableHtml(title: string, groups: ProductGroup[], icon: string, startNewPage = false): string {
+    if (groups.length === 0) return ''
+    const rows = groups.map((g, i) => {
+      const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd'
+      return g.uoms.length === 1 ? singleUomRow(g.uoms[0], i + 1, rowClass) : multiUomRows(g, i + 1, rowClass)
     }).join('')
 
     return `
-    <div class="section-header${startNewPage ? ' section-2nd' : ''}">${icon} ${escapeHtml(title)}（${products.length} 种）</div>
+    <div class="section-header${startNewPage ? ' section-2nd' : ''}">${icon} ${escapeHtml(title)}（${groups.length} 种）</div>
     <table class="pick-table">
       <thead>
         <tr>
@@ -242,6 +347,13 @@ export function generateTripPickingHtml(
   tr.row-bd td{border-bottom:1px dashed #e0e0e0;padding-top:2px;padding-bottom:2px}
   .bd-name{padding-left:26px!important;color:#555;font-size:10px}
   .bd-qty{font-weight:600!important;font-size:11px!important;color:#555}
+  /* 客户明细子行挂在「单位子行」下面时，多缩进一级，跟单位子行分层看得出来 */
+  tr.row-bd-nested .bd-name{padding-left:40px!important}
+
+  /* 一个商品挂了多个可售单位时：父行=按基础单位换算的合计，子行=各单位原始下单数量 */
+  tr.row-group-parent td{font-weight:700;background:#eef5f0!important}
+  tr.row-uom-child td{border-bottom:1px dashed #e0e0e0;padding-top:2px;padding-bottom:2px}
+  tr.row-uom-child .bd-name{padding-left:26px!important;color:#555;font-size:11px;font-weight:700}
 
   .stats{margin-top:12px;font-size:10px;color:#555;display:flex;gap:16px}
   .stats .num{font-weight:700;color:#000}
@@ -285,13 +397,13 @@ export function generateTripPickingHtml(
     <div class="item"><span class="label">客户数：</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
 
-  ${showStorable ? productTableHtml('整箱整袋 STOCKABLE', storableProducts, '📦') : ''}
-  ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableProducts, '🧴', showStorable && storableProducts.length > 0) : ''}
+  ${showStorable ? productTableHtml('整箱整袋 STOCKABLE', storableGroups, '📦') : ''}
+  ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableGroups, '🧴', showStorable && storableGroups.length > 0) : ''}
 
   <div class="stats">
-    ${showStorable ? `<span>整箱整袋 <span class="num">${storableProducts.length}</span> 种</span>` : ''}
-    ${showConsumable ? `<span>零散货 <span class="num">${consumableProducts.length}</span> 种</span>` : ''}
-    ${variant === 'all' ? `<span>合计 <span class="num">${allProducts.length}</span> 种</span>` : ''}
+    ${showStorable ? `<span>整箱整袋 <span class="num">${storableGroups.length}</span> 种</span>` : ''}
+    ${showConsumable ? `<span>零散货 <span class="num">${consumableGroups.length}</span> 种</span>` : ''}
+    ${variant === 'all' ? `<span>合计 <span class="num">${allGroups.length}</span> 种</span>` : ''}
   </div>
 
 <script>

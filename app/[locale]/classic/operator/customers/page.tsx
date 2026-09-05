@@ -12,7 +12,8 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
-import { sortRows, type SortDir } from '@/components/shared/sort-th'
+import { type SortDir } from '@/components/shared/sort-th'
+import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 
 const PAGE_SIZE = 20
 
@@ -104,6 +105,9 @@ export default function ClassicCustomersPage() {
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
       applyColumnFilters(params)
+      // 排序是整个数据集的排序（服务端 orderBy），不是只对当前这一页重排——
+      // 否则翻页/换排序方向时，看到的顺序会跟其余 1500+ 条客户脱节
+      if (sortKey) { params.set('sortKey', sortKey); params.set('sortDir', sortDir) }
       const res = await apiGet<{ data: Customer[]; total: number; page: number; pageSize: number }>(`/api/customers?${params}`)
       setCustomers(res.data)
       setTotal(res.total)
@@ -119,7 +123,7 @@ export default function ClassicCustomersPage() {
   useEffect(() => {
     loadPage(1, searchInput, paymentFilter, includeArchived)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facets, columnMultiFilters, columnFilters])
+  }, [facets, columnMultiFilters, columnFilters, sortKey, sortDir])
 
   useEffect(() => {
     loadPage(1, '', paymentFilter, includeArchived)
@@ -226,7 +230,9 @@ export default function ClassicCustomersPage() {
       label: isEn ? 'Last Updated on' : '最后修改时间',
       sortable: true,
       filterType: 'date-range',
-      render: (v) => v ? <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB')}</span> : <span className="text-gray-400">—</span>,
+      // ⛔ 必须显式指定 timeZone：不然按查看者浏览器本地时区渲染，同一条记录在
+      // 都柏林和北美的设备上可能显示成不同的日期，跟按都柏林日历日算的筛选边界对不上
+      render: (v) => v ? <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB', { timeZone: BUSINESS_TIMEZONE })}</span> : <span className="text-gray-400">—</span>,
     },
   ]
 
@@ -285,7 +291,7 @@ export default function ClassicCustomersPage() {
         }}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, paymentFilter, includeArchived, groupBy, facets, columnMultiFilters, columnFilters }}
+        favouriteState={{ searchInput, paymentFilter, includeArchived, groupBy, facets, columnMultiFilters, columnFilters, sortKey, sortDir }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           const pf = String(s.paymentFilter ?? '')
@@ -296,6 +302,8 @@ export default function ClassicCustomersPage() {
           setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
           setColumnMultiFilters((s.columnMultiFilters as Record<string, string[]>) ?? {})
           setColumnFilters((s.columnFilters as Record<string, string>) ?? {})
+          setSortKey(String(s.sortKey ?? ''))
+          setSortDir(s.sortDir === 'desc' ? 'desc' : 'asc')
           loadPage(1, String(s.searchInput ?? ''), pf, Boolean(s.includeArchived))
         }}
         storageKey="classic_customers_favs"
@@ -309,15 +317,12 @@ export default function ClassicCustomersPage() {
       <div className="p-4">
         <OdooTable
           columns={columns}
-          rows={sortRows(
-            customers.map(c => {
-              const primaryPricelistId = c.pricelists?.[0]?.pricelistId ?? null
-              return { ...c, primaryPricelistId, pricelistName: primaryPricelistId ? (pricelistMap.get(primaryPricelistId) ?? primaryPricelistId) : '' }
-            }),
-            // primaryPricelistId 本身是 id，排序要按显示名走 pricelistName（同一行的派生字段）
-            sortKey === 'primaryPricelistId' ? 'pricelistName' : sortKey,
-            sortDir,
-          ) as unknown as Record<string, unknown>[]}
+          // 排序已经由后端做（按整个筛选结果集排序，见 loadPage 里的 sortKey/sortDir 参数），
+          // 这里只需要把 primaryPricelistId 这个派生展示字段挂上去，不再客户端重排
+          rows={customers.map(c => {
+            const primaryPricelistId = c.pricelists?.[0]?.pricelistId ?? null
+            return { ...c, primaryPricelistId, pricelistName: primaryPricelistId ? (pricelistMap.get(primaryPricelistId) ?? primaryPricelistId) : '' }
+          }) as unknown as Record<string, unknown>[]}
           sortKey={sortKey}
           sortDir={sortDir}
           onSort={key => {

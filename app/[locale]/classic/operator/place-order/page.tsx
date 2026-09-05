@@ -924,6 +924,24 @@ export default function ClassicPlaceOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
 
+  // Forecast Qty 实时值：与商品列表页、订单/报价单详情页用同一个 /api/products/forecast 接口
+  // 现算（口径见该接口内注释：订单一确认 qtyOnHand 就已扣减，forecast 立刻反映，不必等分配
+  // 司机）。此前这里一直硬编码 forecastQty: null，整列常年只显示"—"（20260904 客户反馈）。
+  // 只按本单已选中的商品拉取，不整表预取——避免撞上该接口一次最多 200 个 id 的上限。
+  const lineProductIds = lines.map(l => l.productId).filter(Boolean).join(',')
+  useEffect(() => {
+    const ids = Array.from(new Set(lineProductIds ? lineProductIds.split(',') : []))
+    if (ids.length === 0) return
+    apiGet<{ productId: string; forecast: number }[]>(`/api/products/forecast?ids=${ids.join(',')}`)
+      .then(rows => {
+        const m = new Map(rows.map(r => [r.productId, r.forecast]))
+        setLines(prev => prev.map(l => (l.productId && m.has(l.productId) && m.get(l.productId) !== l.forecastQty)
+          ? { ...l, forecastQty: m.get(l.productId)! }
+          : l))
+      })
+      .catch(() => {})
+  }, [lineProductIds])
+
   // salesTeam 存的是 salesUserId,打印/预览要显示姓名
   const salesTeamName = salesUsers.find(u => u.id === salesTeam)?.name ?? ''
 

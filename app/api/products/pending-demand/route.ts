@@ -3,12 +3,17 @@ import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
 
 /**
- * 聚合所有未出库订单（PENDING / CONFIRMED / WAVE_ASSIGNED）中每个商品的待履行需求量。
- * 返回 Record<productId, demandQty>，前端用来计算"可承诺量" = qtyOnHand - pendingDemand。
+ * 聚合"尚未反映在 qtyOnHand 里"的需求量，前端用来计算"可承诺量" = qtyOnHand - pendingDemand。
+ *
+ * ⛔ 只能统计 PENDING（草稿/未确认）订单。CONFIRMED/WAVE_ASSIGNED/IN_DELIVERY 的数量
+ * 在订单确认那一刻已经从 qtyOnHand 里扣减过了（见 orders/[id]/route.ts 的 CONFIRMED 分支），
+ * 若在这里再次计入会造成双重扣减——同一份已确认库存被减两次，ATP 显示的可用量比实际低一倍。
+ * 这正是 /api/products/forecast 里 outboundReserved 特意排除 CONFIRMED 的同一个坑
+ * （20260904 排查 forecast 死字段时顺带发现这里还留着旧逻辑）。
  */
 export async function GET() {
   try {
-    const pendingStatuses = ['PENDING', 'CONFIRMED', 'WAVE_ASSIGNED']
+    const pendingStatuses = ['PENDING']
 
     const lines = await prisma.orderLine.groupBy({
       by: ['productId'],

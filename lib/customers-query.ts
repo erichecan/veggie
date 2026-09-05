@@ -14,6 +14,20 @@ import { buildFacetWhere } from '@/lib/facet-sql'
 import { CUSTOMER_FACET_DEFS } from '@/lib/facets/customers'
 import { salesRowScope } from '@/lib/row-scope'
 import type { JwtPayload } from '@/lib/auth'
+import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
+
+/**
+ * 把日期筛选框里的 "YYYY-MM-DD" 转成**都柏林日历日**的起点（真实 UTC 时刻）。
+ * ⛔ 不能直接 `new Date(dateStr + 'T00:00:00Z')`——那是 UTC 零点，跟"都柏林的那一天"
+ * 差最多 1 小时（夏令时期间）。这正是 lib/analytics/metrics.ts 里 resolveDateRange 已经
+ * 踩过、锁死的同一类坑：容器时区是 UTC，业务时区是 Europe/Dublin，边界必须按后者算，
+ * 不能按进程/请求方所在时区，否则同一条记录在筛选边界附近算不算"选中的这一天"会跟
+ * 列表页展示的日期（也按都柏林时区渲染）对不上。用中午 12:00 UTC 当锚点，
+ * 避免时区偏移把日期本身也带偏。
+ */
+function dublinDayStart(dateStr: string): Date {
+  return businessDayStart(new Date(`${dateStr}T12:00:00Z`))
+}
 
 export async function buildCustomersWhere(
   searchParams: URLSearchParams,
@@ -43,8 +57,8 @@ export async function buildCustomersWhere(
   const where: Record<string, unknown> = andConditions.length > 0 ? { AND: andConditions } : {}
   if (createdFrom || createdTo) {
     where.createdAt = {
-      ...(createdFrom ? { gte: new Date(createdFrom) } : {}),
-      ...(createdTo ? { lte: new Date(createdTo + 'T23:59:59.999Z') } : {}),
+      ...(createdFrom ? { gte: dublinDayStart(createdFrom) } : {}),
+      ...(createdTo ? { lt: addBusinessDays(dublinDayStart(createdTo), 1) } : {}),
     }
   }
   if (paymentTermFilter) where.paymentTerm = paymentTermFilter
@@ -72,8 +86,8 @@ export async function buildCustomersWhere(
   const updatedTo = searchParams.get('cf_updatedAt_to')
   if (updatedFrom || updatedTo) {
     where.updatedAt = {
-      ...(updatedFrom ? { gte: new Date(updatedFrom + 'T00:00:00Z') } : {}),
-      ...(updatedTo ? { lte: new Date(updatedTo + 'T23:59:59Z') } : {}),
+      ...(updatedFrom ? { gte: dublinDayStart(updatedFrom) } : {}),
+      ...(updatedTo ? { lt: addBusinessDays(dublinDayStart(updatedTo), 1) } : {}),
     }
   }
 
