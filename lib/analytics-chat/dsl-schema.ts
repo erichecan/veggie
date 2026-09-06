@@ -49,7 +49,9 @@ export function parseDsl(raw: unknown): AnalysisDsl | DslError {
 
   const confirmedParamsRaw = raw.confirmedParams
   const confirmedParams: AnalysisDsl['confirmedParams'] = {}
-  if (confirmedParamsRaw !== undefined) {
+  // Gemini 的 responseSchema 标了 nullable 之后，"没有值"有时吐 null 有时干脆不带这个 key，
+  // 两种都当"没提供"处理，只有非 null 又不是对象时才算格式错误。
+  if (confirmedParamsRaw !== undefined && confirmedParamsRaw !== null) {
     if (!isPlainObject(confirmedParamsRaw)) return { message: 'confirmedParams 必须是对象' }
     if (confirmedParamsRaw.taxBasis !== undefined) {
       if (confirmedParamsRaw.taxBasis !== 'preTax' && confirmedParamsRaw.taxBasis !== 'incTax') {
@@ -70,7 +72,7 @@ export function parseDsl(raw: unknown): AnalysisDsl | DslError {
 
   const filtersRaw = raw.filters
   const filters: AnalysisDsl['filters'] = {}
-  if (filtersRaw !== undefined) {
+  if (filtersRaw !== undefined && filtersRaw !== null) {
     if (!isPlainObject(filtersRaw)) return { message: 'filters 必须是对象' }
     for (const key of Object.keys(filtersRaw)) {
       if (!(FILTER_KEYS as readonly string[]).includes(key)) {
@@ -86,7 +88,7 @@ export function parseDsl(raw: unknown): AnalysisDsl | DslError {
 
   const dateRangeRaw = raw.dateRange
   const dateRange: AnalysisDsl['dateRange'] = {}
-  if (dateRangeRaw !== undefined) {
+  if (dateRangeRaw !== undefined && dateRangeRaw !== null) {
     if (!isPlainObject(dateRangeRaw)) return { message: 'dateRange 必须是对象' }
     for (const key of ['from', 'to'] as const) {
       const v = dateRangeRaw[key]

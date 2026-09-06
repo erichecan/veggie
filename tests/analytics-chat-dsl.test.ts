@@ -56,6 +56,13 @@ test('parseDsl：dateRange 格式不对拒绝', () => {
   assert.match(e.message, /dateRange/)
 })
 
+test('parseDsl：confirmedParams/filters/dateRange 显式给 null 时当"没提供"处理，不报错（Gemini nullable 字段实测会吐字面 null，不只是缺字段）', () => {
+  const dsl = ok(parseDsl({ metric: 'grossMargin', confirmedParams: null, filters: null, dateRange: null }))
+  assert.deepEqual(dsl.confirmedParams, {})
+  assert.deepEqual(dsl.filters, {})
+  assert.deepEqual(dsl.dateRange, {})
+})
+
 test('parseDsl：非对象输入拒绝', () => {
   assert.ok('message' in parseDsl('本月销售额'))
   assert.ok('message' in parseDsl(null))

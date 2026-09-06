@@ -24,11 +24,13 @@
 - [x] U5 查询编译器：`lib/analytics-chat/compiler.ts`
   - 验收：手工交叉验证——`compileAndRun` 按 salesUser 分组算出的 salesAmount/grossMargin 与 `/api/analytics/margin?groupBy=salesUser` 返回的 revenueExTax/grossProfit **完全一致**（22.5 / 4）；incTax 换算公式对了一个真实 taxRate=23% 的行验证（38 → 46.74）；不分组时踩了一个坑：`GROUP BY '__total__'` 报 Postgres 42601"non-integer constant in GROUP BY"，改成不分组时省略 GROUP BY 子句
   - 依赖：U3、U4
-- [ ] U6 Gemini 交互层：`lib/analytics-chat/llm.ts`
-  - 验收：能把至少 8 个手工样例问题正确翻成 DSL；结果解读文本合理
-  - 依赖：U3（要把白名单喂给 prompt）
-- [ ] U7 确认模板：`lib/analytics-chat/confirm-template.ts`
-  - 验收：任意合法 DSL 渲染出的句子覆盖该指标全部 confirmableParams
+- [x] U6 Gemini 交互层：`lib/analytics-chat/llm.ts`
+  - 验收：实测 8/8 手工样例问题正确翻成 DSL（含 2 条应拒绝的问法："按邮编统计"、"库存周转率"，模型都正确拒绝没有瞎编）；`narrateResult` 解读文本合理，还主动指出了"未指定业务员"这个数据质量问题
+  - `filters` 字段刻意没放进 responseSchema 给 LLM：v1 没做客户名/商品名→id 的解析，给了字段只会诱使模型自己编一个 id
+  - **实测中发现并修复一个真 bug**：Gemini 的 nullable 字段有时吐字面 `null` 而不是干脆不带这个 key（如 `confirmedParams: null`），`parseDsl` 原来会把这种情况误判成格式错误拒绝掉——已修复三处（confirmedParams/filters/dateRange）并补了回归测试
+  - 依赖：U3
+- [x] U7 确认模板：`lib/analytics-chat/confirm-template.ts`
+  - 验收：5 个单测覆盖——salesAmount 默认值也要列出来、grossMargin 不列任何税前税后条目、显式含税覆盖默认值、不分组文案、显式日期范围文案
   - 依赖：U3
 - [ ] U8 API 路由：message / confirm / reports(POST+GET)
   - 验收：4 条路由都要求 BOSS 权限，非 BOSS 403；已登记 route-map（U1 已做，这里接线）
