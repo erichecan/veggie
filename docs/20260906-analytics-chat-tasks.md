@@ -13,14 +13,16 @@
 - [x] U2 Schema：`AnalysisQueryLog` + `SavedAnalysisReport` 两张表
   - 验收：`db push` 本地库同步 + 手写迁移 SQL（生产用）+ `migrate resolve --applied` 标记两条迁移 + `prisma generate` 通过
   - 依赖：U1（同一批迁移或分开均可，本次分开写更清楚）
-- [ ] U3 语义模型：`lib/analytics/semantic-model.ts`
-  - 验收：扩展 `DIMENSION_DEFS`（status/paymentTerm/orderSource）+ 新增 `METRIC_DEFS`（salesAmount/grossMargin，含 confirmableParams + 粒度规则），有单测覆盖"按业务员" vs "按商品"两条粒度路径
-  - 依赖：U2 不需要，可并行
-- [ ] U4 DSL 校验：`lib/analytics-chat/dsl-schema.ts`
-  - 验收：zod schema + 业务级二次校验（维度/指标粒度兼容性），单测覆盖非法输入
+- [x] U3 语义模型：`lib/analytics/semantic-model.ts`
+  - ⚠️ **范围比计划收紧**：实现前核对了 `lib/analytics/metrics.ts` 头部注释，发现"销售口径=confirmationDate"和"毛利按税前算"是已经写死的 SSOT，不是可选项。改成：dateBasis 不作为可确认参数（固定 confirmationDate）；taxBasis 只对 salesAmount 开放，grossMargin 零可确认参数。statusScope 也不开放，固定 `SALES_COUNTED_STATUSES`。
+  - 验收：直接复用 `DIMENSION_DEFS`（product/category/customer/salesUser/day/week/month）作为维度白名单，未新增维度（v1 不需要 status/paymentTerm 筛选维度，先精简）
+  - 依赖：无
+- [x] U4 DSL 校验：`lib/analytics-chat/dsl-schema.ts`
+  - 未引入 zod（项目里只是 node_modules 里的间接依赖，从未被业务代码使用），改成手写校验，跟 `lib/customers-query.ts` 等既有风格一致
+  - 验收：13 个单测全过（`tests/analytics-chat-dsl.test.ts`），覆盖非法 metric/dimension/filters/dateRange、grossMargin 不允许 taxBasis
   - 依赖：U3
-- [ ] U5 查询编译器：`lib/analytics-chat/compiler.ts`
-  - 验收：DSL → 参数化 SQL，数字与现有 `/api/analytics/margin` 同口径结果一致（交叉验证），LIMIT/超时生效
+- [x] U5 查询编译器：`lib/analytics-chat/compiler.ts`
+  - 验收：手工交叉验证——`compileAndRun` 按 salesUser 分组算出的 salesAmount/grossMargin 与 `/api/analytics/margin?groupBy=salesUser` 返回的 revenueExTax/grossProfit **完全一致**（22.5 / 4）；incTax 换算公式对了一个真实 taxRate=23% 的行验证（38 → 46.74）；不分组时踩了一个坑：`GROUP BY '__total__'` 报 Postgres 42601"non-integer constant in GROUP BY"，改成不分组时省略 GROUP BY 子句
   - 依赖：U3、U4
 - [ ] U6 Gemini 交互层：`lib/analytics-chat/llm.ts`
   - 验收：能把至少 8 个手工样例问题正确翻成 DSL；结果解读文本合理
