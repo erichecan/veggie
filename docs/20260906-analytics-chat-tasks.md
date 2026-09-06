@@ -36,8 +36,9 @@
   - 验收：curl 实测全通——OPERATOR 打 message 得 403；BOSS 问"本月按业务员分组的销售额"拿到正确 DSL+确认文案；confirm 执行后写入 AnalysisQueryLog(status=confirmed) 且返回结果+解读；问"按邮编统计"正确返回 unsupported；给 grossMargin 塞 taxBasis 正确 400 拒绝；空问题 400；报表保存+列表 GET 正常
   - `npx tsx scripts/rbac/update-parity-baseline.ts` 把 4 个新 handler 纳入平迁基线，逐条打印确认全部"可达：BOSS"，40 个 rbac 测试复跑全绿
   - 依赖：U4 U5 U6 U7
-- [ ] U9 前端页面：`boss/analytics/chat`
-  - 验收：Playwright 走一遍完整对话，boss layout 导航能进入
+- [x] U9 前端页面：`boss/analytics/chat`
+  - 验收：Playwright 实测完整走通——BOSS 登录后导航栏出现"AI Data Chat"（OPERATOR 不会，改成按 `analytics.chat.read` 位图条件渲染，不能像其它 analytics 链接那样无条件放进 LINKS，否则 operator 点进去死链接）；问"本月按业务员分组的销售额"→确认卡片→点 Confirm→结果+解读+存为报表全部正常；追问"毛利，含税的"正确丢弃不支持的税率请求、同时保留上一轮 salesUser 分组(多轮追问的增量修改验证通过)；控制台 0 错误
+  - page.tsx 拆到 139 行（含 ChatEntryView.tsx、SaveReportBar.tsx 两个子组件），符合 150 行限制
   - 依赖：U8
 - [ ] U10 端到端验证 + DEV-REPORT.md
   - 验收：CLAUDE.md 第五节清单全过，交叉验证数字口径正确

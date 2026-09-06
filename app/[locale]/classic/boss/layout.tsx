@@ -16,6 +16,9 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
   // session 是 toRoleSession() 出来的单角色，兼任 BOSS 但主角色不是 BOSS 的账号
   // 永远看不到这条入口，即使确实有 system.backup.* 权限。改按权限位图判。
   const [canBackup, setCanBackup] = useState(false)
+  // AI 问数只发给 boss（[[analytics.chat.read]] 未像其它 analytics.* 权限那样普发 operator），
+  // 跟其它 analytics 链接不一样，这里不能无条件放进 LINKS，否则 operator 点进去会 403。
+  const [canUseAiChat, setCanUseAiChat] = useState(false)
   const router = useRouter()
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -25,6 +28,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     // 20260821：数据中心不再新标签页打开，需要一个返回销售系统的入口
     { href: `${prefix}/classic/operator`, label: isEn ? '← Back to Sales' : '← 返回销售' },
     { href: `${prefix}/classic/boss`, label: isEn ? 'Overview' : '经营总览' },
+    ...(canUseAiChat ? [{ href: `${prefix}/classic/boss/analytics/chat`, label: isEn ? 'AI Data Chat' : 'AI 问数' }] : []),
     { href: `${prefix}/classic/boss/analytics/sales-overview`, label: isEn ? 'Sales Overview' : '销售统计' },
     { href: `${prefix}/classic/boss/analytics/customers`, label: isEn ? 'Customer Analysis' : '客户分析' },
     { href: `${prefix}/classic/boss/analytics/margin`, label: isEn ? 'Margin Analysis' : '毛利分析' },
@@ -59,6 +63,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     }
     setSession(toRoleSession(user))
     setCanBackup(decodePermissions(user.pm).has('system.backup.read'))
+    setCanUseAiChat(decodePermissions(user.pm).has('analytics.chat.read'))
     hydrate()
   }, [router, prefix])
 
