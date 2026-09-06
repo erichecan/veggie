@@ -47,16 +47,26 @@ export type PalletItem = {
   uomName?: string
 }
 
-/** 把某订单从「某个波次下的所有托盘」里摘除(改派/重新码放/退回待分配前先清干净旧位置)。 */
+/**
+ * 把某订单从「某个波次下的所有托盘」里摘除(改派/重新码放/退回待分配前先清干净旧位置)。
+ *
+ * 摘除后如果这个托盘变空了,直接删掉这一行,而不是留一个 items=[] 的空壳——unassign/
+ * pick-unlock/assign 改派等高频路径都走这里,不删的话空托盘会持续产生、越积越多
+ * (2026-09-06 客户反馈：调度台一堆 0 orders 的托盘删不掉，生产库实测已积压 40 个)。
+ * 空托盘本身没有意义:调度台的托盘 lane 是按 DriverSlot.batchNum 渲染的,找不到对应
+ * Pallet 行就当空托盘显示(见 BatchTab.tsx palletOf)，删掉这行不影响 lane 继续显示。
+ */
 export async function removeOrderFromPalletsInWave(waveId: string, orderId: string, db: Db = prisma): Promise<void> {
   const pallets = await db.pallet.findMany({ where: { waveId } })
   for (const p of pallets) {
     const items = (p.items as PalletItem[]) ?? []
     if (!items.some((it) => it.orderId === orderId)) continue
-    await db.pallet.update({
-      where: { id: p.id },
-      data: { items: items.filter((it) => it.orderId !== orderId) },
-    })
+    const remaining = items.filter((it) => it.orderId !== orderId)
+    if (remaining.length === 0) {
+      await db.pallet.delete({ where: { id: p.id } })
+    } else {
+      await db.pallet.update({ where: { id: p.id }, data: { items: remaining } })
+    }
   }
 }
 
@@ -138,9 +148,11 @@ export async function deletePalletForDriverSlot(slot: {
   for (const wave of waves) {
     const pallet = await prisma.pallet.findUnique({ where: { waveId_seq: { waveId: wave.id, seq: slot.batchNum } } })
     if (!pallet) continue
-    await assertWaveNotPickLocked(wave.id)
     const orderIdsInPallet = [...new Set(((pallet.items as PalletItem[]) ?? []).map((it) => it.orderId))]
     if (orderIdsInPallet.length > 0) {
+      // 只有真的要把订单退回待分配、改动订单归属时才需要拦锁；空托盘删除不涉及任何订单，
+      // 不该被同一司机+时段下、其他日期的已锁定波次误伤(实测反馈：空托盘一直报"已锁定"删不掉)。
+      await assertWaveNotPickLocked(wave.id)
       const remaining = (wave.orderIds as string[]).filter((oid) => !orderIdsInPallet.includes(oid))
       const zones = await buildZonesByRestaurant(remaining)
       await prisma.$transaction([

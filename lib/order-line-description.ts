@@ -15,10 +15,16 @@
  * 比商品级的 saleDescription 更具体（同一商品不同单位规格不同，如基础单位 500g/包、
  * CASE 10 包一箱共 5kg）。有配置就优先用它，没配置才落回商品级兜底——不影响没配过
  * 单位规格的存量商品。调用方在知道本行选用哪个 uomId 时把对应的 unitSpec 传进来。
+ *
+ * 2026-09-06：客户实测发现 unitSpec 会把 saleDescription 整个吃掉——打印模板上配了
+ * 单位规格（如 CASE "10*3pc"）的商品，销售描述完全不显示。改成两者都非空时拼接
+ * （unitSpec 在前、saleDescription 在后，用 " · " 分隔），谁都不覆盖谁；只有一方有值
+ * 就单独显示那一方；两者都没有才落回旧的 spec 字段兼容历史数据。
  */
 export function lineDescription(
   p: { name: string; saleDescription?: string | null; spec?: string | null },
   unitSpec?: string | null,
 ): string {
-  return unitSpec?.trim() || p.saleDescription?.trim() || p.spec?.trim() || ''
+  const parts = [unitSpec?.trim(), p.saleDescription?.trim()].filter((s): s is string => !!s)
+  return parts.length > 0 ? parts.join(' · ') : p.spec?.trim() || ''
 }

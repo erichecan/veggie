@@ -15,6 +15,11 @@
  * 并入 Product）漏更新的一个消费方——同一批商品在详情页填了 Sale Description，
  * 加进报价单/销售单/采购单却还是空的。取值改成优先 saleDescription，
  * 没有才落回旧的 spec（兼容合表重构前就存在的历史数据）。
+ *
+ * 2026-09-06：客户实测发现 unitSpec（可售单位规格）会把 saleDescription 整个
+ * 吃掉——打印模板上配了单位规格的商品，销售描述完全不显示。改成两者都有值
+ * 时拼接（unitSpec 在前、saleDescription 在后，" · " 分隔），只有一方有值就
+ * 显示那一方，都没有才落回旧的 spec。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -45,6 +50,27 @@ test('saleDescription/spec 是空串或纯空白时按顺序落回，都空则�
   assert.equal(lineDescription({ name: 'Tomato Beef CASE', saleDescription: '', spec: '红辣椒' }), '红辣椒')
   assert.equal(lineDescription({ name: 'Tomato Beef CASE', saleDescription: '   ', spec: '' }), '')
   assert.equal(lineDescription({ name: 'Tomato Beef CASE', spec: '   ' }), '')
+})
+
+test('unitSpec 与 saleDescription 都有值时拼接展示，产品规格在前、销售描述在后，不互相覆盖', () => {
+  assert.equal(
+    lineDescription({ name: 'Fuji Apple P/P', saleDescription: '国产红富士' }, '10*3pc'),
+    '10*3pc · 国产红富士',
+  )
+})
+
+test('只有 unitSpec 时只显示 unitSpec，不落回旧 spec', () => {
+  assert.equal(
+    lineDescription({ name: 'Fuji Apple P/P', spec: '旧规格文本' }, '10*3pc'),
+    '10*3pc',
+  )
+})
+
+test('unitSpec 为空白串时按未传处理，落回 saleDescription', () => {
+  assert.equal(
+    lineDescription({ name: 'X', saleDescription: '西兰花' }, '   '),
+    '西兰花',
+  )
 })
 
 test('保留原文两端以外的内容，不做多余加工', () => {
