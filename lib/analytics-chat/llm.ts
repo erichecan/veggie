@@ -95,10 +95,13 @@ const DSL_RESPONSE_SCHEMA = {
   required: ['understood'],
 } as const
 
-function buildInterpretPrompt(question: string, priorDsl: AnalysisDsl | null): string {
+function buildInterpretPrompt(question: string, priorDsl: AnalysisDsl | null, retryHint: string | null): string {
   const today = toDayKey(new Date())
   const priorContext = priorDsl
     ? `\n上一轮已经理解出的查询（如果这句话是对上一轮的追问/修改，比如"那按客户再看一下"，请在这份基础上只改动被要求改动的部分，其余原样保留）：\n${JSON.stringify(priorDsl)}\n`
+    : ''
+  const retryContext = retryHint
+    ? `\n⚠️ 你上一次的回答有问题，原因：${retryHint}——请修正后重新给出，不要重复同样的错误。\n`
     : ''
   return `你是一个数据分析问题理解助手。今天是 ${today}（欧洲/都柏林时区），把老板的自然语言问题翻译成一份结构化查询——你**只产出结构化参数，不产出任何 SQL 或代码**。
 
@@ -109,11 +112,15 @@ ${metricCatalogText()}
 ${CHAT_DIMENSION_KEYS.map((k) => `${k}=${DIMENSION_LABELS_ZH[k] ?? k}`).join('、')}
 
 如果问题问的指标/维度不在上面这两份清单里（比如问"按邮编分组"、"库存周转率"这种系统没有的东西），把 understood 设成 false，unsupportedReason 用一句话说明，dsl 给 null——不要凑一个近似的指标或维度顶上去。
-${priorContext}
+${priorContext}${retryContext}
 老板的问题：「${question}」`
 }
 
-export async function interpretQuestion(question: string, priorDsl: AnalysisDsl | null = null): Promise<InterpretOutcome> {
+export async function interpretQuestion(
+  question: string,
+  priorDsl: AnalysisDsl | null = null,
+  retryHint: string | null = null,
+): Promise<InterpretOutcome> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return { unavailable: true, reason: '未配置 GEMINI_API_KEY，AI 问数不可用' }
 
@@ -121,7 +128,7 @@ export async function interpretQuestion(question: string, priorDsl: AnalysisDsl 
   try {
     const response = await ai.models.generateContent({
       model: MODEL,
-      contents: [{ role: 'user', parts: [{ text: buildInterpretPrompt(question, priorDsl) }] }],
+      contents: [{ role: 'user', parts: [{ text: buildInterpretPrompt(question, priorDsl, retryHint) }] }],
       config: { responseMimeType: 'application/json', responseSchema: DSL_RESPONSE_SCHEMA },
     })
     const text = response.text

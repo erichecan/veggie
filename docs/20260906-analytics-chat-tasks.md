@@ -32,8 +32,9 @@
 - [x] U7 确认模板：`lib/analytics-chat/confirm-template.ts`
   - 验收：5 个单测覆盖——salesAmount 默认值也要列出来、grossMargin 不列任何税前税后条目、显式含税覆盖默认值、不分组文案、显式日期范围文案
   - 依赖：U3
-- [ ] U8 API 路由：message / confirm / reports(POST+GET)
-  - 验收：4 条路由都要求 BOSS 权限，非 BOSS 403；已登记 route-map（U1 已做，这里接线）
+- [x] U8 API 路由：message / confirm / reports(POST+GET)
+  - 验收：curl 实测全通——OPERATOR 打 message 得 403；BOSS 问"本月按业务员分组的销售额"拿到正确 DSL+确认文案；confirm 执行后写入 AnalysisQueryLog(status=confirmed) 且返回结果+解读；问"按邮编统计"正确返回 unsupported；给 grossMargin 塞 taxBasis 正确 400 拒绝；空问题 400；报表保存+列表 GET 正常
+  - `npx tsx scripts/rbac/update-parity-baseline.ts` 把 4 个新 handler 纳入平迁基线，逐条打印确认全部"可达：BOSS"，40 个 rbac 测试复跑全绿
   - 依赖：U4 U5 U6 U7
 - [ ] U9 前端页面：`boss/analytics/chat`
   - 验收：Playwright 走一遍完整对话，boss layout 导航能进入

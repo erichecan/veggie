@@ -3932,5 +3932,61 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "POST /api/analytics-chat/confirm": {
+    "BOSS": "y",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "POST /api/analytics-chat/message": {
+    "BOSS": "y",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "GET /api/analytics-chat/reports": {
+    "BOSS": "y",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "POST /api/analytics-chat/reports": {
+    "BOSS": "y",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }
