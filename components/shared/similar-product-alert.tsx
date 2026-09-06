@@ -13,8 +13,18 @@ interface SimilarProductCandidate {
 
 /**
  * 软提醒：不阻断表单提交，仅在输入名称时列出可能重复的已有商品供人工核对。
+ * onPick 可选：传入后每条候选旁多一个「使用此商品」按钮，点击即回调选中的商品
+ * （供调用方直接绑定到已有商品，跳过新建）。
  */
-export default function SimilarProductAlert({ name, excludeId }: { name: string; excludeId?: string }) {
+export default function SimilarProductAlert({
+  name,
+  excludeId,
+  onPick,
+}: {
+  name: string
+  excludeId?: string
+  onPick?: (candidate: SimilarProductCandidate) => void
+}) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
@@ -47,7 +57,7 @@ export default function SimilarProductAlert({ name, excludeId }: { name: string;
       </div>
       <ul className="space-y-0.5">
         {candidates.map(c => (
-          <li key={c.id}>
+          <li key={c.id} className="flex items-center gap-2">
             <a
               href={`${prefix}/classic/operator/products/${c.id}`}
               target="_blank"
@@ -60,6 +70,15 @@ export default function SimilarProductAlert({ name, excludeId }: { name: string;
               <span className="text-yellow-700">
                 {isEn ? ` (Internal ref ${c.internalRef})` : ` （内部编号 ${c.internalRef}）`}
               </span>
+            )}
+            {onPick && (
+              <button
+                type="button"
+                onClick={() => onPick(c)}
+                className="px-1.5 py-0.5 rounded border border-yellow-400 text-yellow-800 hover:bg-yellow-100 text-xs"
+              >
+                {isEn ? 'Use this product' : '使用此商品'}
+              </button>
             )}
           </li>
         ))}

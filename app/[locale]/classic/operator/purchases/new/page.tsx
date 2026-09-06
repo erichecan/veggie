@@ -478,6 +478,29 @@ export default function NewPurchaseOrderPage() {
     }
   }
 
+  /**
+   * 「新建商品」弹窗里发现相似商品，点「使用此商品」直接绑定这次采购到已有商品，
+   * 跳过 quick-create（不产生重复商品）。原文若来自 PDF 识别行，顺带记一条别名，
+   * 下次同样写法再出现时 /api/purchase-orders/parse 可以直接精确命中。
+   */
+  async function bindExistingProduct(candidate: { id: string; name: string }) {
+    const rawName = qcName.trim()
+    let product = purchaseProducts.find(p => p.id === candidate.id)
+    if (!product) {
+      try {
+        product = await apiGet<PurchaseProduct>(`/api/products/${candidate.id}`)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load product' : '加载商品失败'))
+        return
+      }
+    }
+    addProductLine(product, { qty: pendingQuickCreateQty, unitCost: qcUnitCost ? Number(qcUnitCost) : undefined })
+    resolveUnmatchedLine(rawName)
+    setShowQuickCreate(false)
+    if (rawName) apiPost('/api/purchase-orders/product-aliases', { rawName, productId: candidate.id }).catch(() => {})
+    toast.success(isEn ? `Bound to existing product "${product.name}"` : `已绑定到已有商品「${product.name}」`)
+  }
+
   const subtotalExTax = lines.reduce((s, l) => s + l.subtotalExTax, 0)
   const totalTax = lines.reduce((s, l) => s + l.taxAmount, 0)
   const totalIncTax = lines.reduce((s, l) => s + l.subtotalIncTax, 0)
@@ -940,7 +963,7 @@ export default function NewPurchaseOrderPage() {
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 autoFocus
               />
-              <SimilarProductAlert name={qcName} />
+              <SimilarProductAlert name={qcName} onPick={bindExistingProduct} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
