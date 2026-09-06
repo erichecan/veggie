@@ -410,12 +410,14 @@ export default function SalesOrderDetailPage() {
     } catch (e) {
       // 波次已拣货锁定：后端 409 附带 waveId，二次确认后一次性解锁+重试撤回，
       // 免得用户跑去 Daily Sale 页面手动 unlock 再回来点一次（20260905 客户反馈两步太绕）。
+      // ⚠️ 这里必须走 DELETE pick-lock（只清锁，不动订单归属）——POST pick-unlock 20260906 起
+      // 改语义为"取消整批司机安排"，只想撤回这一张单的场景不能连带把同波次其他订单也退回待分配。
       const waveId = e instanceof ApiError ? (e.details?.waveId as string | undefined) : undefined
       if (waveId && confirm(isEn
         ? 'The wave is print-locked. Unlock it and revert to quotation now?'
         : '所在波次已拣货锁定，是否一并解锁并撤回到报价单？')) {
         try {
-          await apiPost(`/api/waves/${waveId}/pick-unlock`, {})
+          await apiDelete(`/api/waves/${waveId}/pick-lock`)
           await apiPut(`/api/orders/${order.id}`, { status: 'PENDING', confirmationDate: null })
           toast.success(isEn ? 'Unlocked and reverted to quotation' : '已解锁并撤回到报价单')
           await load()

@@ -61,3 +61,38 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }, { require: 'stock.pick.manage' })
 }
+
+/**
+ * DELETE /api/waves/[id]/pick-lock
+ * 只解开拣货锁（清 pickLockedAt/pickLockedBy），不动订单归属/波次/司机安排——
+ * 这是 20260906 之前 POST pick-unlock 的老行为。POST pick-unlock 已改语义为
+ * "取消整批司机安排"（客户拍板，见该路由注释），但销售单详情页"撤回到报价单"
+ * 命中拣货锁 409 时的自动解锁重试（只想撤回这一张单）不能连带把同波次其他订单
+ * 一起打散退回待分配，所以单独留这条只清锁的轻量接口给那个场景用。
+ */
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return withAuth(req, async (user) => {
+    try {
+      const wave = await prisma.pickingWave.findUnique({ where: { id }, select: { id: true, name: true, pickLockedAt: true } })
+      if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
+      if (!wave.pickLockedAt) return NextResponse.json({ error: '该批次未锁定' }, { status: 400 })
+
+      const updated = await prisma.pickingWave.update({
+        where: { id },
+        data: { pickLockedAt: null, pickLockedBy: null, pickUnlockedAt: new Date() },
+      })
+
+      await writeLog({
+        userId: user.userId, userEmail: user.email, userName: user.name,
+        action: 'UPDATE', resource: 'picking-wave', resourceId: id,
+        detail: `解锁批次 ${wave.name ?? id}（仅解锁，订单归属不变）`,
+      })
+
+      return NextResponse.json(serializeApi(updated))
+    } catch (error) {
+      console.error('[DELETE /api/waves/[id]/pick-lock]', error)
+      return NextResponse.json({ error: '解锁批次失败' }, { status: 500 })
+    }
+  }, { require: 'stock.pick.manage' })
+}

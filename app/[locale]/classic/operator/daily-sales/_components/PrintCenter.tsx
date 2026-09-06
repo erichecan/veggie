@@ -247,11 +247,17 @@ function BatchCard({
     }
   }
 
+  // 20260906 客户拍板：解锁 = 取消整波司机安排，订单全部退回待分配池（不再是"临时开锁调完重锁"）。
+  // 这是破坏性操作，点了就回不去、要重新分配，必须二次确认。
   async function unlock() {
+    const msg = isEn
+      ? `Unlock will cancel the driver assignment for this whole batch — all ${orders.length} order(s) go back to the unassigned pool and need to be reassigned. Continue?`
+      : `解锁会取消这一整批的司机安排——全部 ${orders.length} 张订单都会退回待分配池，需要重新分配。确认继续？`
+    if (!confirm(msg)) return
     setBusy(true)
     try {
       await apiPost(`/api/waves/${waveId}/pick-unlock`, {})
-      toast.success(isEn ? 'Unlocked' : '已解锁')
+      toast.success(isEn ? 'Unlocked · orders returned to unassigned pool' : '已解锁 · 订单已退回待分配')
       onLockChange()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Unlock failed' : '解锁失败'))
@@ -370,7 +376,7 @@ function BatchCard({
               onClick={unlock}
               disabled={busy}
               className="px-2.5 py-1 text-xs rounded border border-amber-400 text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-40"
-              title={isEn ? 'Unlock this wave (BOSS / WAREHOUSE only)' : '解锁该波次（仅 BOSS / WAREHOUSE 可操作）'}
+              title={isEn ? 'Cancel driver assignment for this whole batch — orders return to unassigned pool' : '取消整批司机安排——订单退回待分配池'}
             >
               {isEn ? '🔒 Unlock' : '🔒 解锁'}
             </button>
