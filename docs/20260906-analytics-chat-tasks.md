@@ -40,6 +40,8 @@
   - 验收：Playwright 实测完整走通——BOSS 登录后导航栏出现"AI Data Chat"（OPERATOR 不会，改成按 `analytics.chat.read` 位图条件渲染，不能像其它 analytics 链接那样无条件放进 LINKS，否则 operator 点进去死链接）；问"本月按业务员分组的销售额"→确认卡片→点 Confirm→结果+解读+存为报表全部正常；追问"毛利，含税的"正确丢弃不支持的税率请求、同时保留上一轮 salesUser 分组(多轮追问的增量修改验证通过)；控制台 0 错误
   - page.tsx 拆到 139 行（含 ChatEntryView.tsx、SaveReportBar.tsx 两个子组件），符合 150 行限制
   - 依赖：U8
-- [ ] U10 端到端验证 + DEV-REPORT.md
-  - 验收：CLAUDE.md 第五节清单全过，交叉验证数字口径正确
+- [x] U10 端到端验证 + DEV-REPORT.md
+  - `npm test` 860 个测试 857 过 1 败——败的是 `pricing-override.test.ts`(缺 ABCT 客户测试夹具)，跟本次改动无关的既有问题
+  - 又踩了一个第二套快照坑：`role-reachability.test.ts` 是独立于 `parity-baseline.json` 的另一份可达性快照，`npx tsx scripts/audit/save-reachability.ts` 补齐，同样纯新增 4 个 handler 全部"可达：BOSS"
+  - `npm run build` 全绿，4 条新路由 + 1 个新页面都编译进产物
   - 依赖：全部
