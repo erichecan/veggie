@@ -158,27 +158,44 @@ export function generateTripPickingHtml(
 
   const allProducts = Array.from(aggMap.values())
 
-  const groupMap = new Map<string, ProductGroup>()
-  for (const p of allProducts) {
-    let g = groupMap.get(p.productId)
-    if (!g) {
-      g = {
-        productId: p.productId,
-        productName: p.productName,
-        productSequence: p.productSequence,
-        spec: p.spec,
-        productType: p.productType,
-        uoms: [],
-      }
-      groupMap.set(p.productId, g)
-    }
-    g.uoms.push(p)
+  /**
+   * 表格归属判断（20260905 改）：不能只看 Product.type（实物/耗材的会计分类）——
+   * "整箱整袋"这张表的字面意思是「按整箱/整袋卖」，哪怕商品本身是 Storable，
+   * 只要这一单实际是按 Loose（散装/称重）单位卖的（Uom.goodsType==='LOOSE'），
+   * 拣货员也得去"零散货"那张表找，不能指望它出现在整箱整袋表里。
+   * CONSU 类型商品维持恒进零散货表。同一商品若在这一趟车里被不同订单分别按
+   * 整箱、按散装两种单位下单，会按行拆开分别出现在两张表里——这是预期行为，
+   * 不是重复/bug：拣货员应该按各自单位分别去两处找货。
+   */
+  function belongsToConsumableTable(p: AggProduct): boolean {
+    return p.productType === 'CONSU' || p.goodsType === 'LOOSE'
   }
-  const allGroups = Array.from(groupMap.values())
+
+  function buildGroups(products: AggProduct[]): ProductGroup[] {
+    const groupMap = new Map<string, ProductGroup>()
+    for (const p of products) {
+      let g = groupMap.get(p.productId)
+      if (!g) {
+        g = {
+          productId: p.productId,
+          productName: p.productName,
+          productSequence: p.productSequence,
+          spec: p.spec,
+          productType: p.productType,
+          uoms: [],
+        }
+        groupMap.set(p.productId, g)
+      }
+      g.uoms.push(p)
+    }
+    return Array.from(groupMap.values())
+  }
+
   // ⚠️ 大货/散货这个分组**不动** —— 那是仓库的作业顺序（先整箱后零散），
   // 2026-08-18 客户要的「按 sequence 排」只改组内顺序，不该打乱仓库习惯。
-  const consumableGroups = sortLinesBySequence(allGroups.filter(g => g.productType === 'CONSU'))
-  const storableGroups = sortLinesBySequence(allGroups.filter(g => g.productType !== 'CONSU'))
+  const consumableGroups = sortLinesBySequence(buildGroups(allProducts.filter(belongsToConsumableTable)))
+  const storableGroups = sortLinesBySequence(buildGroups(allProducts.filter(p => !belongsToConsumableTable(p))))
+  const totalProductCount = new Set(allProducts.map(p => p.productId)).size
 
   const showStorable = variant !== 'consumable'
   const showConsumable = variant !== 'storable'
@@ -403,7 +420,7 @@ export function generateTripPickingHtml(
   <div class="stats">
     ${showStorable ? `<span>整箱整袋 <span class="num">${storableGroups.length}</span> 种</span>` : ''}
     ${showConsumable ? `<span>零散货 <span class="num">${consumableGroups.length}</span> 种</span>` : ''}
-    ${variant === 'all' ? `<span>合计 <span class="num">${allGroups.length}</span> 种</span>` : ''}
+    ${variant === 'all' ? `<span>合计 <span class="num">${totalProductCount}</span> 种</span>` : ''}
   </div>
 
 <script>

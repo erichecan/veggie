@@ -56,7 +56,7 @@ export default function ClassicProductsPage() {
   // 与订单/报价单详情页用的是同一个接口、同一套口径。
   const [forecastMap, setForecastMap] = useState<Map<string, { forecast: number; qtyOnHand: number }>>(new Map())
   const [categories, setCategories] = useState<ProductCategory[]>([])
-  const [multiSelectOptions, setMultiSelectOptions] = useState<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>({ uomName: [], createdBy: [], updatedBy: [] })
+  const [multiSelectOptions, setMultiSelectOptions] = useState<{ uomName: string[]; updatedBy: string[] }>({ uomName: [], updatedBy: [] })
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [page, setPage] = useState(1)
@@ -174,7 +174,7 @@ export default function ClassicProductsPage() {
 
   useEffect(() => {
     apiGet<ProductCategory[]>('/api/product-categories').then(setCategories).catch(() => {})
-    apiGet<{ uomName: string[]; createdBy: string[]; updatedBy: string[] }>('/api/products/filter-options')
+    apiGet<{ uomName: string[]; updatedBy: string[] }>('/api/products/filter-options')
       .then(setMultiSelectOptions).catch(() => {})
     loadPage(1, '')
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -466,21 +466,6 @@ export default function ClassicProductsPage() {
       editable: true,
       editType: 'number',
       render: (v) => v != null ? <span>€{Number(v).toFixed(2)}</span> : <span className="text-gray-400">—</span>,
-    },
-    {
-      key: 'createdBy',
-      label: 'Created by',
-      filterType: 'multi-select',
-      filterOptions: multiSelectOptions.createdBy.map(v => ({ value: v, label: v || emptyLabel })),
-      filterLabelGetter: (val) => val || emptyLabel,
-      render: (v) => <span className="text-xs text-gray-500">{v ? String(v) : <span className="text-gray-300">—</span>}</span>,
-    },
-    {
-      key: 'createdAt',
-      label: 'Created on',
-      sortable: true,
-      filterType: 'date-range',
-      render: (v) => <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB', { timeZone: BUSINESS_TIMEZONE })}</span>,
     },
     {
       key: 'updatedBy',

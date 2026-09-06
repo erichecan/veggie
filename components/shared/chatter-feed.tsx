@@ -199,7 +199,7 @@ export default function ChatterFeed({
 
   // 没有日志时的兜底（用 fallbackCreatedAt + fallbackCreatedBy 模拟一条 "Created" 条目）
   const displayLogs: ActionLog[] = logs.length > 0
-    ? logs.slice().reverse() // 让旧的在上、新的在下，时间线感更强
+    ? logs // API 已按 createdAt desc 排序，最新的在最上面
     : (fallbackCreatedAt
       ? [{
           id: 'fallback',
