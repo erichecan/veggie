@@ -30,6 +30,12 @@ interface ActionItem {
   style?: 'green' | 'red'
 }
 
+interface ToggleButton {
+  label: string
+  active: boolean
+  onClick: () => void
+}
+
 interface SavedFavourite {
   name: string
   state: Record<string, unknown>
@@ -49,6 +55,8 @@ interface OdooControlPanelProps {
   facetFields?: FacetField[]
   onFacetAdd?: (key: string, value: string) => void
   activeFilters?: ActiveFilter[]
+  /** 独立的一键切换按钮（如"供货商"），点一下直接生效，不像 filterOptions 那样要先展开下拉 */
+  toggleButtons?: ToggleButton[]
   filterOptions?: FilterOption[]
   groupByOptions?: FilterOption[]
   groupByValue?: string
@@ -89,6 +97,7 @@ export default function OdooControlPanel({
   facetFields,
   onFacetAdd,
   activeFilters = [],
+  toggleButtons = [],
   filterOptions = [],
   groupByOptions = [],
   groupByValue = '',
@@ -331,6 +340,20 @@ export default function OdooControlPanel({
               </div>
             )}
           </div>
+
+          {/* 一键切换按钮：点一下直接生效，不需要先展开下拉 */}
+          {toggleButtons.map((btn, i) => (
+            <button
+              key={i}
+              onClick={btn.onClick}
+              className="h-8 px-2.5 text-xs rounded border flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+              style={btn.active
+                ? { background: '#f5f0f7', borderColor: '#875A7B', color: '#875A7B' }
+                : { background: 'white', borderColor: '#d1d5db', color: '#4b5563' }}
+            >
+              {btn.label}
+            </button>
+          ))}
 
           {/* Filters 下拉 */}
           {filterOptions.length > 0 && (

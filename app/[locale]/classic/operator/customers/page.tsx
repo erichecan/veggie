@@ -40,6 +40,7 @@ export default function ClassicCustomersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [paymentFilter, setPaymentFilter] = useState('')
   const [includeArchived, setIncludeArchived] = useState(false)
+  const [isVendorOnly, setIsVendorOnly] = useState(false)
   const [isReadMode, setIsReadMode] = useState(true)
   // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
   const [facets, setFacets] = useState<Facet[]>([])
@@ -87,6 +88,7 @@ export default function ClassicCustomersPage() {
       if (searchInput) params.set('search', searchInput)
       if (paymentFilter) params.set('paymentTerm', paymentFilter)
       if (includeArchived) params.set('includeArchived', '1')
+      if (isVendorOnly) params.set('isVendor', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
       applyColumnFilters(params)
@@ -95,13 +97,14 @@ export default function ClassicCustomersPage() {
     fallbackFilename: isEn ? 'customers.csv' : '客户.csv',
   })
 
-  async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived, ps: number = pageSize) {
+  async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived, ps: number = pageSize, vendorOnly = isVendorOnly) {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(p), pageSize: String(ps) })
       if (q) params.set('search', q)
       if (payTerm) params.set('paymentTerm', payTerm)
       if (archived) params.set('includeArchived', '1')
+      if (vendorOnly) params.set('isVendor', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
       applyColumnFilters(params)
@@ -149,6 +152,12 @@ export default function ClassicCustomersPage() {
   function removePaymentFilter() {
     setPaymentFilter('')
     loadPage(1, searchInput, '', includeArchived)
+  }
+
+  function toggleVendorOnly() {
+    const next = !isVendorOnly
+    setIsVendorOnly(next)
+    loadPage(1, searchInput, paymentFilter, includeArchived, pageSize, next)
   }
 
   const pricelistMap = new Map(pricelists.map(p => [p.id, p.name]))
@@ -240,6 +249,7 @@ export default function ClassicCustomersPage() {
     ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
     ...(paymentFilter ? [{ label: isEn ? `Payment Term: ${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}` : `结算方式：${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}`, onRemove: removePaymentFilter }] : []),
     ...(includeArchived ? [{ label: isEn ? 'Include Archived' : '包含已归档', onRemove: () => setIncludeArchived(false) }] : []),
+    ...(isVendorOnly ? [{ label: isEn ? 'Vendors' : '供货商', onRemove: toggleVendorOnly }] : []),
   ]
 
   return (
@@ -271,6 +281,9 @@ export default function ClassicCustomersPage() {
         facetFields={localizeFacetFields(CUSTOMER_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         activeFilters={activeFilters}
+        toggleButtons={[
+          { label: isEn ? 'Vendors' : '供货商', active: isVendorOnly, onClick: toggleVendorOnly },
+        ]}
         filterOptions={[
           { label: isEn ? 'Cash Customers' : '现付客户', value: 'cash' },
           { label: isEn ? 'Weekly Customers' : '周结客户', value: 'weekly' },
@@ -291,12 +304,14 @@ export default function ClassicCustomersPage() {
         }}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, paymentFilter, includeArchived, groupBy, facets, columnMultiFilters, columnFilters, sortKey, sortDir }}
+        favouriteState={{ searchInput, paymentFilter, includeArchived, isVendorOnly, groupBy, facets, columnMultiFilters, columnFilters, sortKey, sortDir }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           const pf = String(s.paymentFilter ?? '')
           setPaymentFilter(pf)
           setIncludeArchived(Boolean(s.includeArchived))
+          const vendorOnly = Boolean(s.isVendorOnly)
+          setIsVendorOnly(vendorOnly)
           setGroupBy(String(s.groupBy ?? ''))
           // 分面搜索(名称/城市/地址/电话/邮箱/税号/业务员)与列头筛选此前没进收藏，同商品页那个坑
           setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
@@ -304,7 +319,7 @@ export default function ClassicCustomersPage() {
           setColumnFilters((s.columnFilters as Record<string, string>) ?? {})
           setSortKey(String(s.sortKey ?? ''))
           setSortDir(s.sortDir === 'desc' ? 'desc' : 'asc')
-          loadPage(1, String(s.searchInput ?? ''), pf, Boolean(s.includeArchived))
+          loadPage(1, String(s.searchInput ?? ''), pf, Boolean(s.includeArchived), pageSize, vendorOnly)
         }}
         storageKey="classic_customers_favs"
         total={total}
