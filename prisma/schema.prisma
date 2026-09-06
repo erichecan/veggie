@@ -422,6 +422,10 @@ model ProductSaleUom {
   commissionDiscountPct   Decimal          @default(0) @db.Decimal(6, 4)
   /// FORMULA 模式下提成价再加减的绝对金额（可正可负）
   commissionSurcharge     Decimal          @default(0) @db.Decimal(12, 2)
+  /// 20260905 新增：按这个单位卖，客户实际拿到的规格说明（如"500g/包"、"10包一箱共5kg"）。
+  /// 加订单行时优先取这里的值写进 OrderLine.spec（行快照），没填才落回 lib/order-line-description.ts
+  /// 的商品级兜底（Product.saleDescription / Product.spec）。
+  spec          String?
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

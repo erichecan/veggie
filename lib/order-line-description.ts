@@ -10,7 +10,15 @@
  * 才是现在客户往商品上填说明用的地方；旧的 `Product.spec` 合表重构后已经没人写了，
  * 只剩历史数据。取值优先用 saleDescription，兼容旧数据时才落回 spec，都没有就留空
  * ——不兜底成商品名。
+ *
+ * 2026-09-05：可售单位（`ProductSaleUom.spec`）新增「按这个单位卖，客户拿到什么规格」，
+ * 比商品级的 saleDescription 更具体（同一商品不同单位规格不同，如基础单位 500g/包、
+ * CASE 10 包一箱共 5kg）。有配置就优先用它，没配置才落回商品级兜底——不影响没配过
+ * 单位规格的存量商品。调用方在知道本行选用哪个 uomId 时把对应的 unitSpec 传进来。
  */
-export function lineDescription(p: { name: string; saleDescription?: string | null; spec?: string | null }): string {
-  return p.saleDescription?.trim() || p.spec?.trim() || ''
+export function lineDescription(
+  p: { name: string; saleDescription?: string | null; spec?: string | null },
+  unitSpec?: string | null,
+): string {
+  return unitSpec?.trim() || p.saleDescription?.trim() || p.spec?.trim() || ''
 }

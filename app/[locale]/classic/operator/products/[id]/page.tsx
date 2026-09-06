@@ -86,6 +86,8 @@ interface SaleUomRow {
   commissionPriceMode: SaleUomPriceMode
   commissionDiscountPct: number
   commissionSurcharge: number
+  /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
+  spec: string | null
 }
 
 export default function ClassicProductDetailPage() {
@@ -177,7 +179,7 @@ export default function ClassicProductDetailPage() {
         setAdjVariantId(found.id)
         setPrimaryProductId(found.id)
         try {
-          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null }>>(`/api/products/${found.id}/sale-uoms`)
+          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null }>>(`/api/products/${found.id}/sale-uoms`)
           const mapped = rows.map(r => ({
             uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
             priceMode: r.priceMode ?? 'AUTO',
@@ -187,6 +189,7 @@ export default function ClassicProductDetailPage() {
             commissionPriceMode: r.commissionPriceMode ?? 'AUTO',
             commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
             commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
+            spec: r.spec ?? null,
           }))
           // 基础单位这一行只在「保存过一次可售单位」之后才会真的落库(见 PUT 路由注释里
           // "提交列表里没有基准单位时自动补一行")——从没保存过的商品，GET 回来的列表里
@@ -198,6 +201,7 @@ export default function ClassicProductDetailPage() {
               uomId: found.uomId, isDefault: true, factor: 1, priceOverride: null, active: true,
               priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
               commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
+              spec: null,
             })
           }
           setSaleUoms(mapped)
@@ -264,6 +268,7 @@ export default function ClassicProductDetailPage() {
       // 折扣/加价都是 0 时等价于"自动按系数折算"，行为跟以前的 AUTO 模式完全一致。
       priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
       commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
+      spec: null,
     }])
   }
   function updateSaleUomRow(index: number, patch: Partial<SaleUomRow>) {
@@ -299,7 +304,7 @@ export default function ClassicProductDetailPage() {
         setOriginal(prev => (prev ? { ...prev, uomId: tmpl.uomId } : prev))
       }
       const payload = saleUoms.map(r => ({ ...r, isDefault: tmpl?.uomId ? r.uomId === tmpl.uomId : r.isDefault }))
-      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null }>>(
+      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null }>>(
         `/api/products/${primaryProductId}/sale-uoms`,
         { items: payload },
       )
@@ -312,6 +317,7 @@ export default function ClassicProductDetailPage() {
         commissionPriceMode: r.commissionPriceMode ?? 'AUTO',
         commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
         commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
+        spec: r.spec ?? null,
       })))
       toast.success(isEn ? 'Sellable units saved' : '可售单位已保存')
     } catch (e) {
@@ -987,6 +993,25 @@ export default function ClassicProductDetailPage() {
                           )}
                         </div>
                       )}
+                      {/* 产品规格(20260905)：按这个单位卖，客户实际拿到什么规格——每一行(含基础单位)独立填一条，
+                          写入订单行后会出现在交货单/销售单/拣货单/司机回单/发票打印模版上(见 lib/order-line-description.ts)。 */}
+                      <div className="flex items-center gap-2 mt-1 pl-1">
+                        <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
+                          {isEn ? 'Product Spec' : '产品规格'}
+                        </span>
+                        {editMode ? (
+                          <input
+                            type="text"
+                            value={row.spec ?? ''}
+                            onChange={e => updateSaleUomRow(i, { spec: e.target.value })}
+                            placeholder={isEn ? 'e.g. 500g/packet' : '如：500g/包'}
+                            className="h-7 px-2 border border-gray-200 rounded text-xs outline-none flex-1 max-w-xs"
+                            style={focusStyle}
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-500">{row.spec || '—'}</span>
+                        )}
+                      </div>
                     </div>
                   )
                 })}

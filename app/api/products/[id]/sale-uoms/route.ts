@@ -101,6 +101,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           const commissionPriceMode = it.commissionPriceMode === 'FIXED' || it.commissionPriceMode === 'FORMULA' ? it.commissionPriceMode : 'AUTO'
           const commissionDiscountPct = it.commissionDiscountPct != null && it.commissionDiscountPct !== '' ? Number(it.commissionDiscountPct) : 0
           const commissionSurcharge = it.commissionSurcharge != null && it.commissionSurcharge !== '' ? Number(it.commissionSurcharge) : 0
+          const spec = typeof it.spec === 'string' && it.spec.trim() ? it.spec.trim() : null
           await txAny.productSaleUom.upsert({
             where: { productId_uomId: { productId: id, uomId: it.uomId } },
             create: {
@@ -113,6 +114,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               priceMode, priceDiscountPct, priceSurcharge,
               commissionPriceOverride: it.commissionPriceOverride != null ? Number(it.commissionPriceOverride) : null,
               commissionPriceMode, commissionDiscountPct, commissionSurcharge,
+              spec,
               active: it.active !== false,
             },
             update: {
@@ -122,6 +124,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               priceMode, priceDiscountPct, priceSurcharge,
               commissionPriceOverride: it.commissionPriceOverride != null ? Number(it.commissionPriceOverride) : null,
               commissionPriceMode, commissionDiscountPct, commissionSurcharge,
+              spec,
               active: it.active !== false,
             },
           })

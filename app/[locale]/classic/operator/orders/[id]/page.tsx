@@ -201,6 +201,11 @@ export default function SalesOrderDetailPage() {
       // Cost 也要跟着单位换算，不然切到非默认单位后 Cost 列还停在换单位前那个分母上，
       // 和已经按新单位算好的 unitPrice 对不上（客户 20260827 反馈价格低于成本，实为显示误导）。
       const newCost = Math.round(Number(p.standardPrice ?? 0) * factorOf(rows, newUomId) * 100) / 100
+      // 产品规格(20260905)跟着单位走：只在这一行的规格还是"派生值"(没被手动改过)时才刷新，
+      // 否则用户手打的规格描述会被切单位悄悄覆盖(同一套"只覆盖未手改内容"的约定见上面价格来源注释)。
+      const oldUnitSpec = opts.find(o => o.uomId === currentUomId)?.spec ?? null
+      const newUnitSpec = opts.find(o => o.uomId === newUomId)?.spec ?? null
+      const isDerivedSpec = cur.spec === lineDescription(p, oldUnitSpec)
       const next = [...prev]
       next[idx] = {
         ...cur,
@@ -209,6 +214,7 @@ export default function SalesOrderDetailPage() {
         unitPrice: newUnitPrice,
         cost: newCost,
         subtotal: Math.round(qty * newUnitPrice * 100) / 100,
+        ...(isDerivedSpec ? { spec: lineDescription(p, newUnitSpec) } : {}),
         // 换单位换算出的新价要如实标来源：用户手改过的价保留 null（未标注，与 updateLine 手动
         // 改价同一套约定）；否则命中价格表单位限定规则是 PRICELIST，命中历史成交价（哪怕是
         // 基准单位那级回退）是 LAST，都没有就是牌价 DEFAULT——三者都不是「未记录」，也都不是
@@ -596,12 +602,13 @@ export default function SalesOrderDetailPage() {
     const rows = saleUomOpts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride }))
     const uomFactor = target.uomId ? factorOf(rows, target.uomId) : 1
     const price = resolution ? resolution.price : Number(p.listPrice ?? 0) * uomFactor
+    const unitSpec = saleUomOpts.find(o => o.uomId === target.uomId)?.spec ?? null
     const newLine = {
       id: lineId,
       orderId: order!.id,
       productId: p.id,
       productName: p.name,
-      spec: lineDescription(p),
+      spec: lineDescription(p, unitSpec),
       note: '',
       uomId: target.uomId ?? null,
       uomName: target.uomName,

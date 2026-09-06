@@ -34,6 +34,8 @@ export interface SaleUomItemInput {
   commissionPriceMode?: SaleUomPriceMode
   commissionDiscountPct?: number | string | null
   commissionSurcharge?: number | string | null
+  /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
+  spec?: string | null
 }
 
 /** factor 的合理区间。上限 100000 足够覆盖「1 托盘 = N 个最小包装」这类真实场景 */
@@ -302,6 +304,8 @@ export interface SaleUomOption {
   priceDiscountPct: number
   priceSurcharge: number
   active: boolean
+  /** 按这个单位卖，客户实际拿到的规格说明（20260905）；未配置为 null */
+  spec: string | null
 }
 
 /**

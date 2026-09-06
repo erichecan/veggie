@@ -684,9 +684,18 @@ export default function ClassicPlaceOrderPage() {
     const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, stillThere.orderedQty, uomId, cache, matchedUom)
     // Cost 要跟着单位换算，不然切到非默认单位后 Cost 列还是整箱成本、
     // Unit Price 已经是按公斤算的，两者分母对不上，看起来像"卖亏了"（客户 20260827 反馈）。
-    const rows = (saleUomOptions[p.id] ?? []).map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride ?? null }))
+    const opts = saleUomOptions[p.id] ?? []
+    const rows = opts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride ?? null }))
     const cost = round2((p.standardPrice ?? 0) * factorOf(rows, uomId))
-    patchLine(lineId, { uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail, cost })
+    // 产品规格(20260905)跟着单位走：只在这一行的描述还是"派生值"(没被手动改过)时才刷新，
+    // 否则用户手打的规格描述会被切单位悄悄覆盖(同一套"只覆盖未手改内容"的约定，见 quotations/orders 编辑页同名注释)。
+    const oldUnitSpec = opts.find(o => o.uomId === stillThere.uomId)?.spec ?? null
+    const newUnitSpec = opts.find(o => o.uomId === uomId)?.spec ?? null
+    const isDerivedDescription = stillThere.description === lineDescription(p, oldUnitSpec)
+    patchLine(lineId, {
+      uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail, cost,
+      ...(isDerivedDescription ? { description: lineDescription(p, newUnitSpec) } : {}),
+    })
   }
 
   // ── Select product for a line ─────────────────────────────────────────────
@@ -714,6 +723,7 @@ export default function ClassicPlaceOrderPage() {
     const targetUomId = target.uomId
     const rows = saleUomOpts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride }))
     const uomFactor = targetUomId ? factorOf(rows, targetUomId) : 1
+    const unitSpec = saleUomOpts.find(o => o.uomId === targetUomId)?.spec ?? null
     setLines(prev => {
       // 20260904 改回"总是新插一行"，不再按 productId+uomId 撞上就静默数量+1
       // （原逻辑是为修客户 20260826 反馈的"选两次同一商品出两行"而加的）。
@@ -732,7 +742,7 @@ export default function ClassicPlaceOrderPage() {
               ...l,
               productId:   p.id,
               productName: p.name,
-              description: lineDescription(p),
+              description: lineDescription(p, unitSpec),
               orderedQty:  1,
               qtyOnHand:   p.qtyOnHand ?? 0,
               forecastQty: null,
@@ -779,12 +789,12 @@ export default function ClassicPlaceOrderPage() {
 
   // 用当前价格表/lastPrice 为历史行的商品重算价格，构造一条订单行
   function buildHistoryLine(
-    p: Product, qty: number, note: string, cache: Record<string, number>, target: { uomId?: string; uomName: string }, uomFactor: number,
+    p: Product, qty: number, note: string, cache: Record<string, number>, target: { uomId?: string; uomName: string }, uomFactor: number, unitSpec: string | null,
   ): QuotationLine {
     const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, qty, target.uomId, cache)
     return {
       id: uid(), productId: p.id, productName: p.name,
-      description: lineDescription(p), note,
+      description: lineDescription(p, unitSpec), note,
       orderedQty: qty, forecastQty: null, qtyOnHand: p.qtyOnHand ?? 0,
       uom: target.uomName,
       uomId: target.uomId,
@@ -810,7 +820,8 @@ export default function ClassicPlaceOrderPage() {
       if (target.blocked) { missing.push(hl.productName); continue }
       const rows = saleUomOpts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride }))
       const uomFactor = target.uomId ? factorOf(rows, target.uomId) : 1
-      newLines.push(buildHistoryLine(p, qty, hl.note ?? '', lastPrices, target, uomFactor))
+      const unitSpec = saleUomOpts.find(o => o.uomId === target.uomId)?.spec ?? null
+      newLines.push(buildHistoryLine(p, qty, hl.note ?? '', lastPrices, target, uomFactor, unitSpec))
     }
     if (newLines.length === 0) { toast.error(isEn ? 'All products in this order are discontinued, cannot import' : '该订单商品均已下架，无法导入'); return }
     setLines(prev => [...prev, ...newLines])

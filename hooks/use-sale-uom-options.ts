@@ -28,6 +28,7 @@ export function useSaleUomOptions(isEn: boolean) {
       priceMode?: SaleUomPriceMode
       priceDiscountPct?: number | string | null
       priceSurcharge?: number | string | null
+      spec?: string | null
       uom: { name: string; nameZh?: string | null }
     }>>(`/api/products/${productId}/sale-uoms`)
       .then(rows => {
@@ -44,6 +45,7 @@ export function useSaleUomOptions(isEn: boolean) {
           priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
           priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
           active: r.active,
+          spec: r.spec ?? null,
         }))
         setSaleUomOptions(prev => ({ ...prev, [productId]: opts }))
         return opts
