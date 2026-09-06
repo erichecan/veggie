@@ -1,111 +1,112 @@
-# DEV-PLAN：商品去重/合并（60 组重名 Product，132 条记录）
+# DEV-PLAN：数据分析聊天中台（自然语言问数，BOSS 专属）
 
 ## 读取的文档
 
-无独立 PRD。需求来自用户口述："库里有 60 组重名 Product，其中 8+ 组重名记录 type 还不一致
-(CONSU/PRODUCT 混杂)，是 6/21 和 7/17 两批导入留下的重复数据"。已用只读诊断脚本对生产/本地共用的
-Neon 开发库（`.env.local`）核实，结论与用户描述一致，见下方"现状核实"。
+无独立 PRD。需求来自本次对话逐轮讨论确认，没有冲突文档需要合并。核心结论回顾：
 
-## 现状核实（只读诊断，脚本见 `scripts/diagnose-duplicate-products*-20260905.ts`）
+- 客户已确认"只给老板级别看、数据出境合规客户自行解决"，权限/合规不是本轮要处理的问题
+- LLM（Gemini）只负责"自然语言 → 结构化查询参数（DSL）"，不生成 SQL/Prisma 代码
+- 指标公式与正确性规则（税区、时区边界、防重复计数）锁死在代码里，不给 LLM/客户选；只有"税前/税后""按哪个日期口径""哪些状态算销售"这类真正的业务口径可以做成"可确认参数"，每次都摆出来给老板确认
+- 维度/筛选/join 走白名单，采用"路线 2"（通用语义层），但要在建表前先核对真实 schema——已发现 `Order.restaurantId`/`Invoice.customerId` 是约定型软外键，没有声明 Prisma relation，需要手写 join
+- 要支持"学习并固化"：记录问题日志用于个性化默认值 + 老板确认后可存成常用报表；但**新增指标/维度/join 永远需要开发者审核**，不能靠使用频率自动扩展白名单
 
-- 商品总数 5480，重名分组 60 组，涉及 132 条 `Product` 记录。
-- **引用面比预期小**：`PurchaseOrderLine`/`PurchaseRecord`/`PurchaseSuggestion`/`CreditNoteLine`/
-  `StockTakeLine`/`OrderDiscrepancy`/`OdooPricelist.items`（JSON 松引用）**全部 0 命中**——这批重复
-  商品几乎没有进入采购侧和定价流程。真正挂数据的只有 `OrderLine`（订单行）、`StockMove`（库存流水）、
-  `qtyOnHand`（库存数字），个别有 `ProductSupplierInfo`。`Lot`/`ProductAlias`/`ProductSaleUom`/
-  `CustomerSpecialPrice` 在这 132 条上全部 0 命中，但脚本仍会防御性处理（万一生产库跟本地有 drift）。
-- 60 组呈现三种形态：
-  1. **约 33 组·安全型**：6/21 批次那份 `status=ACTIVE` 且挂真实 `orderLines`/`stockMoves`，
-     7/17 批次那份 `status=ARCHIVED` 且是空壳（0 引用）。
-  2. **19 组·纯 7/17 批次内部重复**（如 "Reuseable" 一口气 5 份、"Broccoli 5KG CASE"、
-     "Cabbage Primo 12 CASE"）：没有 6/21 对照，两份都 `ARCHIVED`，`orderLines` 都是 0，但
-     `qtyOnHand` 数字不一致。
-  3. **8 组·type 不一致**（CONSU/PRODUCT 混杂）：6/21 那份 `CONSU`/`ACTIVE`，7/17 那份
-     `PRODUCT`/`ARCHIVED`；其中 2 组（GL Barley、GL White Back Black Fungus）库存和流水**实际挂在
-     7/17 那份**上（500 件级别），其余 6 组两份都没有库存流水。
+## 现状核实（复用性检查，避免重复造轮子）
 
-## 已与用户确认的合并政策（2026-09-05，T1 之后已修正一次）
+`lib/analytics/pivot.ts` 的 `DIMENSION_DEFS` 已经是一份可工作的"维度白名单 + 原始 SQL 片段"机制（`app/api/analytics/margin/route.ts` 在生产上跑着），并且已经用 `o."restaurantId"` 直接处理了 Order→Customer 这条软外键 join，跟本次讨论的方案完全一致——**这次是扩展这套机制，不是另起一套**。`lib/analytics/metrics.ts` 已经是"锁死规则"的唯一真相来源（`SALES_COUNTED_STATUSES`、`resolveDateRange`、`BUSINESS_TIMEZONE`）。`lib/purchase/ai-pdf-parser.ts` 已经有一套验证过的 Gemini 调用范式（`@google/genai`、JSON mode + `responseSchema` 强约束输出、模型选型踩坑记录：`gemini-2.5`/`3.6` 在这个 API 项目上全系 404，能用的是 `gemini-3.1-flash-lite`），本次直接复用这套调用方式。
 
-1. **type 归属**：谁有 `StockMove` 就归谁的 type（8 组里有 2 组适用；其余 6 组两边流水都是 0，
-   走下面统一的 winner 选择规则兜底）。
-2. ~~qtyOnHand 冲突：以较新批次（7/17）那份的数字为准，另一份归零处理~~
-   **已推翻（见下方"T1 执行后发现的关键事实"）**。修正为：**组内所有候选的 `qtyOnHand` 直接相加**
-   作为最终库存（不区分谁是 7/17、谁是 6/21）。
-3. **19 组纯 7/17 内部重复 + 38 组跨 id 都有真实订单的商品**：统一信任下方的确定性算法自动处理，
-   不逐组人工复核（用户已确认，2026-09-05）。
-4. **输家记录**：物理删除；执行前对受影响的 132 条 `Product` 行单独建表备份（不是本地 JSON，
-   直接在生产库建 `product_dedup_backup_20260905` 表存档，同一事务内完成）。
+## 架构决策摘要
 
-## T1 执行后发现的关键事实（2026-09-05，推翻了原计划的风险评估前提）
+1. LLM 只产出结构化 DSL，不产出可执行代码——杜绝"LLM 写的查询直接跑在生产库上"这个最大风险
+2. 每个指标声明：锁死公式（含正确性规则）+ 一组可确认参数（如 `taxBasis`/`dateBasis`/`statusScope`）+ 默认粒度 + 允许的维度集合
+3. 维度/筛选走白名单，复用并扩展 `DIMENSION_DEFS`
+4. 执行层复用 `$queryRawUnsafe` + `$N` 参数化占位符（margin route.ts 同款手法），带行数上限和语句超时
+5. 确认环节用固定模板把 DSL 渲染成一句人话，不让 LLM 自由描述查询过程——保证"客户确认的话术"与"实际会跑的查询"100% 对得上
+6. 学习/固化：日志驱动个性化默认值 + 老板手动确认后"存为常用报表"；指标/维度/join 白名单本身只能由开发者扩展
 
-T1 决策表最初是拿本地开发库（Neon，数据停在导入时刻）跑的分析结果，据此判断"约 33 组安全型
-（6/21 有真实订单、7/17 是空壳）"。但直连生产库（167.99.86.19）复核后发现**完全不是这么回事**：
-生产库带着这批重复商品已经**实际运营了两个多月**，**60 组里有 38 组（63%）两个重复 id 上都挂着
-真实订单行**——不是一个在用一个废弃，而是业务员下单时系统交替选中了同名的两个不同 id，把同一款
-商品的真实销售历史劈成了两条独立台账（例：`Cooking Wine 10L DRUM` 一个 id 2143 行订单、另一个
-1334 行；`VIP 3 BOX` 一个 id 挂 20 张订单但库存显示 0，另一个 id 库存 545 但从没被下过单）。
+## Schema 设计（新增，需要迁移）
 
-**结论**：FK remap（把两条历史都改指向同一个幸存 id）不受影响仍然安全；受影响的只是 qtyOnHand
-的合并算法——原"以 7/17 为准、另一份归零"的前提（假设一份是没人用过的空壳）在生产库大批不成立，
-已改为"两份现有数字直接相加"（用户已确认，2026-09-05）。winner 选择算法（4 条优先级规则）本身
-不受影响：cnt_ol>1（两边都有订单）时规则天然落到 stockMoves/status/externalId 兜底层，逻辑无需改。
+```prisma
+model AnalysisQueryLog {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation("AnalysisQueryLogUser", fields: [userId], references: [id])
+  rawQuestion     String
+  dsl             Json
+  confirmedParams Json
+  status          String    // 'confirmed' | 'rejected' | 'failed_validation' | 'unsupported'
+  rowCount        Int?
+  durationMs      Int?
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
 
-## 合并算法（统一规则，覆盖三种形态，不需要为 8 组/19 组单独分叉代码路径）
+  @@index([userId])
+  @@index([createdAt])
+}
 
-对每个重名分组，按以下优先级选出 **winner**（其余为 loser）：
+model SavedAnalysisReport {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation("SavedAnalysisReportUser", fields: [userId], references: [id])
+  name       String
+  dsl        Json
+  useCount   Int       @default(0)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
 
-1. 唯一一个候选 `orderLines > 0` → 该候选为 winner（覆盖形态 1 的 33 组）。
-2. 否则，唯一一个候选 `stockMoves > 0` → 该候选为 winner（覆盖 8 组里 GL Barley / GL White Back
-   Black Fungus 这 2 组——同时满足用户确认的"政策 1"，因为 winner 的 type 就是 winner 自己的 type，
-   不需要额外分叉）。
-3. 否则，唯一一个候选 `status === ACTIVE` → 该候选为 winner（覆盖 8 组里剩余 6 组：两边流水都是 0，
-   6/21 的 CONSU/ACTIVE 那份胜出，type 保持 CONSU——业务上合理，这几条本来就没有真实库存记录）。
-4. 否则（两边条件全平局，覆盖形态 2 的 19 组），取 `externalId` 数值较小的候选为 winner。
+  @@unique([userId, name])
+  @@index([userId])
+}
+```
 
-winner 确定后：
-- **最终 type / status**：直接取 winner 自身字段（见上，规则 1-3 已经让"谁有数据谁定 type"这条政策
-  自然成立，不需要独立判断）；`status` 额外做一次修正——若 loser 里有任何一个 `status===ACTIVE`
-  而 winner 是 `ARCHIVED`，winner 改为 `ACTIVE`（避免把仍在用的商品误归档掉）。
-- **最终 qtyOnHand**：
-  - 若组内只有一个候选 `qtyOnHand ≠ 0` → winner 最终值取该数字（不管是不是 winner 自己的）。
-  - 若组内 ≥2 个候选 `qtyOnHand ≠ 0`（真正冲突）→ 按政策 2，取 `createdAt` 日期为 `2026-07-17`
-    的那个候选的数值；若冲突双方都不是 7/17（理论上不应发生，防御性判断），停止并人工确认。
-  - 否则（全 0）→ 0。
-- **FK remap**（把所有 loser id 出现的地方改指向 winner id）：`OrderLine.productId`、
-  `StockMove.productId`、`ProductSupplierInfo.productId`（注意 `@@unique([productId,supplierId])`，
-  remap 撞唯一键时保留 winner 侧已有的一条、丢弃 loser 侧重复的一条）、`Lot.productId`、
-  `ProductAlias.productId`、`ProductSaleUom.productId`（同样处理 `@@unique([productId,uomId])`
-  冲突）、`CustomerSpecialPrice.productId`（无 FK 约束，直接 UPDATE）。
-- **删除 loser**：FK 全部 remap 完成后物理删除 loser 的 `Product` 行。
+`User` model 需要补两条反向关系字段。本地开发库是多 worktree 共用的 Neon 库，动之前先 `prisma migrate status` 核对没有别的 worktree 落下的未应用迁移。
 
-## 执行步骤
+## 模块拆解
 
-- **T1（只读）**：写"合并决策表"生成脚本，对 60 组分别打印 winner/loser id、最终 type/status/qty、
-  以及触发的规则编号(1-4)，不写库。
-- **T2（人工核对）**：把 T1 结果贴给用户过一遍，重点看 8 个 type 组 + qty 冲突的 10-15 组是否符合预期，
-  19 组自动规则的结果也抽查几条。**此步骤是硬性停顿点，不确认不进入 T3。**
-- **T3（备份）**：本地库执行前，对生产库 `Product` 表做一次 `pg_dump`/JSON 导出全量备份，落盘存档。
-- **T4（本地库试跑）**：在本地 Neon 开发库（`.env.local`，与生产结构一致）完整跑一遍 FK remap +
-  Product 更新 + 删除 loser，验证：重跑诊断脚本确认 0 重名分组；各引用表记录数前后一致（loser 侧的
-  行数应等量转移到 winner）；`npx tsc`/`npm run build` 通过；抽查几张受影响的历史订单详情页/库存流水
-  页面显示正常。
-- **T5（生产落地，不可逆操作，执行前必须停下汇报并等待用户明确同意）**：生产库先跑一次 T1 的
-  只读决策表脚本核实规模与本地库一致，再执行 T3 备份，再执行 FK remap + 删除。
-- **T6（验证）**：生产库重跑诊断脚本确认 0 重名分组；核对总 `qtyOnHand` 变化清单（哪些组的库存因
-  qty 冲突被清零，列一份人工可读的清单留档）；`/api/health`、商品列表页、下单选品页抽查正常。
+**M1 指标与维度注册表扩展** — `lib/analytics/semantic-model.ts`（新文件）
+复用 `DIMENSION_DEFS` 现有 7 个维度（product/category/customer/salesUser/day/week/month），新增 `status`/`paymentTerm`/`orderSource` 三个筛选用维度。新增 `METRIC_DEFS`：v1 先做 **销售额、毛利** 两个指标，各自声明 `confirmableParams`（`taxBasis`/`dateBasis`/`statusScope`）、默认粒度（Order 级）、以及"按产品分组时切换到 OrderLine 粒度公式"的规则。库存需求/ATP、司机提成、客户欠款先不做，验证链路跑通再扩展——这是上几轮定下的"保守路线，按实际提问频率长大"。
+
+**M2 DSL 校验** — `lib/analytics-chat/dsl-schema.ts`
+zod schema 对齐 M1 白名单；编译前二次校验维度是否与指标粒度兼容（哪怕 Gemini 的 `responseSchema` 已经卡过一次格式，业务级约束还要再查一遍，双保险）。
+
+**M3 查询编译器** — `lib/analytics-chat/compiler.ts`
+DSL → `$queryRawUnsafe` + 参数数组；处理软外键 join；固定 `LIMIT`；确认 Prisma 连接的语句超时配置，没有就显式加，防止理解错的大查询拖垮 2vCPU 的生产机器。
+
+**M4 Gemini 交互层** — `lib/analytics-chat/llm.ts`
+两个用途：① 自然语言 → DSL（`responseSchema` 强约束）② 聚合结果 → 自然语言解读（纯文本）。模型先沿用 `gemini-3.1-flash-lite`；校验失败重试上限 2 次，把错误原文喂回去。
+
+**M5 确认渲染模板** — `lib/analytics-chat/confirm-template.ts`
+纯函数：DSL → 人话，覆盖该指标声明的每一个 `confirmableParams`。
+
+**M6 API 路由**（均需登记进 `route-map.ts`，否则 middleware 层直接全员 403）
+- `POST /api/analytics-chat/message`（BOSS-only）：问题 → DSL 校验 → 返回确认文案，不执行不落库
+- `POST /api/analytics-chat/confirm`（BOSS-only）：确认后的 DSL → 二次校验 → 执行 → 写 `AnalysisQueryLog` → 生成解读 → 返回结果
+- `POST /api/analytics-chat/reports`（BOSS-only）：保存常用报表
+- `GET /api/analytics-chat/reports`（BOSS-only）：拉取 + 一键重跑（跳过 LLM，直接执行存好的 DSL）
+
+**M7 前端页面**
+`app/[locale]/classic/boss/analytics/chat/page.tsx`：聊天式 UI（输入框 + 消息流 + 确认卡片 + "存为常用报表"），挂进 boss layout 导航。layout 本身放行 BOSS+OPERATOR，API 层用 `withAuth(req, h, ['BOSS'])` 单独收紧，满足"只给老板看"。
 
 ## 风险点
 
-- **qty 冲突"以 7/17 为准"可能清零掉 6/21 以来真实发生过的库存变动**（如果 6/21 那份的非零库存其实
-  是最新盘点结果、7/17 只是导入时的陈旧快照）。T2 人工核对阶段务必把这批清单单独列出来重点看一遍。
-- **物理删除不可逆**：T3 备份是唯一的回退手段，T5 前必须确认备份文件可读、字段完整。
-- **`ProductSupplierInfo`/`ProductSaleUom` 唯一键冲突**丢弃 loser 侧重复行时会丢失该行独有的非唯一键
-  字段（如报价/换算系数），脚本需要打印被丢弃的具体内容供人工复核，不能静默丢弃。
+1. **LLM 理解质量是最大不确定性**：`gemini-3.1-flash-lite` 只在 PDF 抽取这种窄任务上验证过，能否稳定应对"多指标+多维度+多轮追问"没有实测过。计划开发中用 10-15 个真实问题手工测准确率，不够再考虑升级模型档位（增加成本/延迟）。
+2. **粒度切换**（按产品分组要换成 OrderLine 级公式）是编译器最容易写错的地方，必须专门写单测覆盖"按业务员" vs "按商品"两条路径，确认不会重复计数。
+3. **多轮追问的增量修改**若第一版做不稳，降级为"每次当新问题重新理解"，避免为了体验引入难排查的状态管理 bug。
+4. **数据库迁移**：本地开发库要先核对 `migrate status`，避免冲掉其它 worktree 的改动。
 
-## 停下确认
+## 验证清单
 
-📋 计划已生成。请确认：
-1. 上面的合并算法（含 4 条 winner 优先级规则、qty 冲突处理、`ACTIVE` 状态修正规则）是否符合预期？
-2. 是否先做 T1（只读决策表），出结果后再一起看，还是希望现在就有不清楚的地方先问？
+- BOSS 账号问"本月销售额"类问题，走完 确认→执行→解读 全流程，数字与现有 `/api/analytics/margin` 页面同口径下的结果一致（交叉验证正确性，这是最重要的验收标准）
+- 非 BOSS 账号调用 `/api/analytics-chat/*` 一律 403
+- 问一个白名单外的维度（如"按邮编分组"），系统友好拒绝，不 500、不瞎编
+- 追问里前后矛盾（先说税前又说含税），确认卡片反映最新一次选择
+- `npm run build` 无报错，迁移在本地库跑通
 
-回复"确认，开始开发"后我从 T1 开始执行；T3（生产备份）和 T5（生产落地）会再单独停下等你明确同意。
+---
+
+📋 计划已生成，请确认以下几点后我再开始写代码：
+
+1. **v1 指标范围**：先只做「销售额」「毛利」这两个指标（复用现有 margin 口径），其余（库存需求、司机提成、客户欠款）先不做，OK 吗？
+2. **模型选型**：先用现有 `gemini-3.1-flash-lite`（省事、已有踩坑记录），效果不够再评估升级，这个节奏可以吗？
+3. 功能挂在 `boss/analytics` 下新增一个"AI 问数"页面，API 层单独收紧到仅 BOSS 角色，这个位置合适吗？
+
+回复"确认，开始开发"后我就按这个计划开始写代码。

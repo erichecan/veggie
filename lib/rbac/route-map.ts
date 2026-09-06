@@ -323,6 +323,13 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/reports/**', methods: ['POST'], permission: 'analytics.report.generate' },
   { pattern: '/api/reports/**', permission: 'analytics.report.read' },
 
+  // AI 问数（20260906）：只发给 boss，见迁移 20260906000002_analytics_chat_permission。
+  // message/confirm 是"翻译+执行"动作，读权限即可；reports 的写入(POST)单独收 manage。
+  { pattern: '/api/analytics-chat/message', methods: ['POST'], permission: 'analytics.chat.read' },
+  { pattern: '/api/analytics-chat/confirm', methods: ['POST'], permission: 'analytics.chat.read' },
+  { pattern: '/api/analytics-chat/reports', methods: R, permission: 'analytics.chat.read' },
+  { pattern: '/api/analytics-chat/reports', methods: ['POST'], permission: 'analytics.chat.manage' },
+
   // ── 打印 ────────────────────────────────────────────────────────────────
   { pattern: '/api/print/**', permission: 'print.center.access' },
 

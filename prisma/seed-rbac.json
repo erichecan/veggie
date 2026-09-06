@@ -146,6 +146,8 @@
         "analytics.report.read",
         "analytics.report.manage",
         "analytics.report.generate",
+        "analytics.chat.read",
+        "analytics.chat.manage",
         "print.center.access",
         "tool.geo.use",
         "tool.upload.use",

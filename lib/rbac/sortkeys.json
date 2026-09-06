@@ -114,6 +114,7 @@
     "master.customer.delete_gdpr": 78,
     "master.customer.read_detail": 176,
     "master.customer.read_credit": 150,
+    "master.customer.extend_term": 184,
     "master.customer.read_last_prices": 169,
     "master.customer.bulk_import": 151,
     "master.product.read": 79,
@@ -186,6 +187,7 @@
     "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "master.customer.extend_term": 184
+    "analytics.chat.read": 185,
+    "analytics.chat.manage": 186
   }
 }

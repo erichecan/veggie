@@ -442,6 +442,13 @@ export const PERMISSION_GROUPS: GroupDef[] = [
         note: 'manage 用于生成分析快照（写入 Snapshot 表）；generate 用于按需跑通用报表。',
         actions: [A.read, A.manage, { action: 'generate', labelZh: '生成报表', labelEn: 'Generate' }],
       },
+      {
+        module: 'analytics.chat',
+        labelZh: 'AI 问数',
+        labelEn: 'AI Data Chat',
+        note: '自然语言问数（Gemini 翻译成结构化查询，经确认后在生产库只读执行）。read=提问查看；manage=存为常用报表。',
+        actions: [A.read, A.manage],
+      },
     ],
   },
   {

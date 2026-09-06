@@ -197,6 +197,10 @@ model User {
   bulletinPostsAuthored BulletinPost[] @relation("BulletinPostAuthor")
   /// 反向关系：该用户置顶的信息广场帖子
   bulletinPostsPinned   BulletinPost[] @relation("BulletinPostPinnedBy")
+  /// 反向关系：该用户发起的 AI 问数记录
+  analysisQueryLogs     AnalysisQueryLog[]     @relation("AnalysisQueryLogUser")
+  /// 反向关系：该用户保存的常用分析报表
+  savedAnalysisReports  SavedAnalysisReport[]  @relation("SavedAnalysisReportUser")
 
   @@index([role])
   @@index([customerId])
@@ -1908,4 +1912,54 @@ model BulletinPost {
 
   @@index([category, createdAt])
   @@index([pinned, createdAt])
+}
+
+/**
+ * AI 问数 · 提问日志（20260906）
+ * ================================================================================
+ * 每次老板确认并执行一次分析问题都落一条：既是审计日志，也是后续"学习并固化"
+ * （个性化默认参数、老板确认后存为常用报表）的数据源。status 区分校验/执行的
+ * 各个失败阶段，方便排查"这句话为什么问不出来"而不是只留一条空记录。
+ */
+model AnalysisQueryLog {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation("AnalysisQueryLogUser", fields: [userId], references: [id])
+  rawQuestion     String   @db.Text
+  /// LLM 产出、经校验通过的结构化查询（未通过校验时为 null）
+  dsl             Json?
+  /// 指标声明的可确认参数，本次实际取值（税前/税后、日期口径等）
+  confirmedParams Json?
+  /// confirmed=已确认并执行 | rejected=老板未确认 | failed_validation=DSL 校验不通过 | unsupported=指标/维度不在白名单
+  status          String
+  rowCount        Int?
+  durationMs      Int?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+/**
+ * AI 问数 · 常用报表（20260906）
+ * ================================================================================
+ * 老板把一次问答手动确认"存成常用报表"后落一条，命中时跳过 LLM 直接拿存好的
+ * DSL 去查——更快、更省 token，也不会因为同一句话某天被模型理解出不一样的结果。
+ * 是否要自动从 AnalysisQueryLog 里挖掘重复问题主动建议入库，是后续迭代的事，
+ * 本表现在只承接"老板主动确认"这一条路径。
+ */
+model SavedAnalysisReport {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation("SavedAnalysisReportUser", fields: [userId], references: [id])
+  name       String
+  dsl        Json
+  useCount   Int       @default(0)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, name])
+  @@index([userId])
 }
