@@ -156,7 +156,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
 
-  const [editMode, setEditMode] = useState(searchParams.get('new') === '1')
+  const [editMode, setEditMode] = useState(id === 'new' || searchParams.get('new') === '1')
   const [itemPage, setItemPage] = useState(1)
   const [itemPageSize, setItemPageSize] = useState(ITEMS_PAGE_SIZE_DEFAULT)
 
@@ -186,23 +186,30 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   useEffect(() => {
     async function loadAll() {
       try {
-        // Handle "new" — create a blank pricelist and redirect to its real ID
-        if (id === 'new') {
-          const created = await apiPost<OdooPricelist>('/api/pricelists', {
-            name: '', currency: 'EUR', items: [], sequence: 99,
-            selectable: true, active: true, updatedAt: new Date().toISOString(),
-          })
-          router.replace(`${prefix}/classic/operator/pricelists/${created.id}?new=1`)
-          return
-        }
-
-        const [found, allProducts, allCategories, allPricelists, allUoms] = await Promise.all([
-          apiGet<OdooPricelist>(`/api/pricelists/${id}`),
+        const [allProducts, allCategories, allPricelists, allUoms] = await Promise.all([
           apiGet<Product[]>('/api/products'),
           apiGet<ProductCategory[]>('/api/product-categories'),
           apiGet<OdooPricelist[]>('/api/pricelists'),
           apiGet<Uom[]>('/api/uoms').catch(() => [] as Uom[]),
         ])
+        setProducts(allProducts.filter(p => p.status?.toLowerCase() === 'active' && p.active !== false))
+        setCategories(allCategories)
+        setUoms(allUoms)
+        setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
+
+        // "new" 是本地草稿态，不落库——真正创建推迟到用户点 Save（见 handleSave），
+        // 避免"点了新建但没填名字就退出"在库里留下永久空名孤儿记录。
+        if (id === 'new') {
+          setPl({
+            id: 'new', name: '', currency: 'EUR', items: [], sequence: 99,
+            selectable: true, active: true, updatedAt: new Date().toISOString(), countryGroups: [],
+          })
+          setOriginalPl(null)
+          setEditMode(true)
+          return
+        }
+
+        const found = await apiGet<OdooPricelist>(`/api/pricelists/${id}`)
         if (!found) {
           toast.error(isEn ? 'Pricelist not found' : '价格表不存在')
           router.push(`${prefix}/classic/operator/pricelists`)
@@ -214,10 +221,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         }
         setPl(loaded)
         setOriginalPl(loaded)
-        setProducts(allProducts.filter(p => p.status?.toLowerCase() === 'active' && p.active !== false))
-        setCategories(allCategories)
-        setUoms(allUoms)
-        setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
       } catch {
         toast.error(isEn ? 'Pricelist not found' : '价格表不存在')
         router.push(`${prefix}/classic/operator/pricelists`)
@@ -233,7 +236,18 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
   async function handleSave() {
     if (!pl) return
+    if (!pl.name.trim()) {
+      toast.error(isEn ? 'Pricelist name is required' : '价格表名称不能为空')
+      return
+    }
     try {
+      if (id === 'new') {
+        const { id: _draftId, ...rest } = pl
+        const created = await apiPost<OdooPricelist>('/api/pricelists', { ...rest, updatedAt: new Date().toISOString() })
+        toast.success(isEn ? 'Created' : '已创建')
+        router.replace(`${prefix}/classic/operator/pricelists/${created.id}?new=1`)
+        return
+      }
       const payload = { ...pl, updatedAt: new Date().toISOString() }
       const saved = await apiPut<OdooPricelist>(`/api/pricelists/${pl.id}`, payload)
       const updated = saved ?? pl
@@ -247,6 +261,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   }
 
   async function handleDiscard() {
+    if (id === 'new') {
+      // 新建场景：还没落库，直接退出回列表，不留垃圾数据
+      router.push(`${prefix}/classic/operator/pricelists`)
+      return
+    }
     try {
       const found = await apiGet<OdooPricelist>(`/api/pricelists/${id}`)
       if (found) {
@@ -261,6 +280,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   }
 
   function openNewItem() {
+    if (id === 'new') {
+      toast.info(isEn ? 'Please save the pricelist name first' : '请先保存价格表名称')
+      return
+    }
     setEditingItem(emptyItem())
     setIsNewItem(true)
     setDialogOpen(true)
@@ -771,9 +794,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           </div>
         </div>
 
-        <div className="mt-4">
-          <ActionLogPanel resource="pricelist" resourceId={id} />
-        </div>
+        {id !== 'new' && (
+          <div className="mt-4">
+            <ActionLogPanel resource="pricelist" resourceId={id} />
+          </div>
+        )}
       </div>
 
       {/* ── Item dialog ── */}

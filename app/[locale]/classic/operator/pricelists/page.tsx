@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPost } from '@/lib/api'
+import { apiGet } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import type { OdooPricelist, Product } from '@/lib/types'
 import { formatDateTime } from '@/lib/format-date'
@@ -79,22 +79,10 @@ export default function ClassicPricelistsPage() {
 
   useEffect(() => { load() }, [])
 
-  async function handleCreate() {
-    const payload = {
-      name: '',
-      currency: 'EUR',
-      items: [],
-      sequence: 99,
-      selectable: true,
-      active: true,
-      updatedAt: new Date().toISOString(),
-    }
-    try {
-      const created = await apiPost<OdooPricelist>('/api/pricelists', payload)
-      router.push(`${prefix}/classic/operator/pricelists/${created.id}`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
-    }
+  function handleCreate() {
+    // 详情页会以本地草稿态展示，真正落库推迟到用户点 Save，
+    // 避免"点了新建但没填名字就退出"在库里留下永久空名孤儿记录。
+    router.push(`${prefix}/classic/operator/pricelists/new`)
   }
 
   const facetDefs = useMemo<ClientFacetDef<OdooPricelist>[]>(() => [

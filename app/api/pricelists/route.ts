@@ -17,7 +17,10 @@ export async function GET() {
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
-      const data = await req.json()
+      const { id: _ignoredId, ...data } = await req.json()
+      if (!data.name || !String(data.name).trim()) {
+        return NextResponse.json({ error: '价格表名称不能为空' }, { status: 400 })
+      }
       const pricelist = await prisma.odooPricelist.create({
         data: { ...data, items: data.items ?? [] },
       })
