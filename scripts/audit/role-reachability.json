@@ -3611,6 +3611,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "DELETE /api/waves/[id]/pick-lock": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "y",
+  "SALES": "n",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "POST /api/waves/[id]/pick-lock": {
   "BOSS": "y",
   "OPERATOR": "y",
