@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiGet } from '@/lib/api'
 import { docBadge } from '@/lib/print/doc-badge'
@@ -225,7 +225,7 @@ body {
 }
 `
 
-export default function PricelistPrintPage() {
+function PricelistPrintInner() {
   const searchParams = useSearchParams()
   const ids = searchParams.get('ids') ?? ''
   const [html, setHtml] = useState('')
@@ -309,5 +309,19 @@ ${body}
         title="Pricelist Print"
       />
     </>
+  )
+}
+
+// useSearchParams() 要求外层套 Suspense，否则构建期会报错（同
+// print/day-wise-report/page.tsx 的写法，这里之前漏了）
+export default function PricelistPrintPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial, sans-serif', color: '#666' }}>
+        Loading…
+      </div>
+    }>
+      <PricelistPrintInner />
+    </Suspense>
   )
 }
