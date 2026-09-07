@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, use, useRef } from 'react'
+import { useState, useEffect, use, useRef, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -50,6 +50,9 @@ interface PriceReference {
   customerCount: number
   lastPurchase: { unitCost: number; date: string; sourceRef: string | null } | null
 }
+
+/** Pricelist Items 表格可点击表头排序的列；点第三次回到默认的 sequence 顺序 */
+type ItemSortKey = 'applyOn' | 'minQty' | 'dateStart' | 'dateEnd' | 'category' | 'price' | 'priceDiscount' | 'cost' | 'publicPrice'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -159,6 +162,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [editMode, setEditMode] = useState(id === 'new' || searchParams.get('new') === '1')
   const [itemPage, setItemPage] = useState(1)
   const [itemPageSize, setItemPageSize] = useState(ITEMS_PAGE_SIZE_DEFAULT)
+  const [itemSort, setItemSort] = useState<{ key: ItemSortKey; dir: 'asc' | 'desc' } | null>(null)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<OdooPricelistItem | null>(null)
@@ -371,6 +375,16 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     }
   }
 
+  /** 点表头：第一次升序、第二次降序、第三次回到 sequence 默认顺序（也让 ▲▼ 手动排序重新生效） */
+  function toggleItemSort(key: ItemSortKey) {
+    setItemSort(prev => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' }
+      if (prev.dir === 'asc') return { key, dir: 'desc' }
+      return null
+    })
+    setItemPage(1)
+  }
+
   function addCountryGroup() {
     const name = cgInput.trim()
     if (!name) return
@@ -395,7 +409,51 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const totalLists = sortedLists.length
   const currentPos = currentIdx >= 0 ? currentIdx + 1 : 1
 
-  const sortedItems = [...pl.items].sort((a, b) => a.sequence - b.sequence)
+  const itemsBySequence = [...pl.items].sort((a, b) => a.sequence - b.sequence)
+
+  // 排序要用到的派生值（Cost/Price 等）跟渲染那份是同一套算法，这里先算一遍供 sort 用，
+  // 渲染时把结果原样传给 ItemRow，不重复计算。
+  const enrichedItems = itemsBySequence.map(item => {
+    const scopedProduct = products.find(p => p.id === scopedProductId(item))
+    const cost = scopedProduct?.standardPrice
+    const publicPrice = scopedProduct?.listPrice
+    const estimatedPrice = scopedProduct
+      ? computeItemPrice(item, scopedProduct, publicPrice ?? 0, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
+      : undefined
+    return {
+      item,
+      cost,
+      publicPrice,
+      estimatedPrice,
+      applyLabel: applyOnLabel(item, products, categories, isEn),
+      categoryLabel: productCategoryLabel(item, scopedProduct, categories, isEn),
+      priceValue: estimatedPrice ?? item.fixedPrice ?? 0,
+      priceDiscountValue: item.computeType === 'formula'
+        ? item.priceDiscount ?? 0
+        : item.computeType === 'percentage'
+          ? item.percentDiscount ?? 0
+          : 0,
+    }
+  })
+
+  const sortedItems = itemSort
+    ? [...enrichedItems].sort((a, b) => {
+        const dir = itemSort.dir === 'asc' ? 1 : -1
+        switch (itemSort.key) {
+          case 'applyOn': return a.applyLabel.localeCompare(b.applyLabel) * dir
+          case 'minQty': return (a.item.minQty - b.item.minQty) * dir
+          case 'dateStart': return (a.item.dateStart ?? '').localeCompare(b.item.dateStart ?? '') * dir
+          case 'dateEnd': return (a.item.dateEnd ?? '').localeCompare(b.item.dateEnd ?? '') * dir
+          case 'category': return a.categoryLabel.localeCompare(b.categoryLabel) * dir
+          case 'price': return (a.priceValue - b.priceValue) * dir
+          case 'priceDiscount': return (a.priceDiscountValue - b.priceDiscountValue) * dir
+          case 'cost': return ((a.cost ?? 0) - (b.cost ?? 0)) * dir
+          case 'publicPrice': return ((a.publicPrice ?? 0) - (b.publicPrice ?? 0)) * dir
+          default: return 0
+        }
+      })
+    : enrichedItems
+
   const totalItems = sortedItems.length
   const pagedItems = sortedItems.slice((itemPage - 1) * itemPageSize, itemPage * itemPageSize)
 
@@ -720,17 +778,17 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               <table className="w-full text-xs" style={{ borderTop: '1px solid #e9e9e9' }}>
                 <thead style={{ background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
                   <tr>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">Applicable On</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Min. Quantity</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">Start Date</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">End Date</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">Product Category</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600 min-w-[160px]">Price</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Price Discount</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Variant Cost</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Template Cost</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Public Cost Price</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Sale Price</th>
+                    <SortableTh sortKey="applyOn" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-4 py-2 min-w-[220px]">Applicable On</SortableTh>
+                    <SortableTh sortKey="minQty" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Min. Quantity</SortableTh>
+                    <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Start Date</SortableTh>
+                    <SortableTh sortKey="dateEnd" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">End Date</SortableTh>
+                    <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Product Category</SortableTh>
+                    <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2 min-w-[160px]">Price</SortableTh>
+                    <SortableTh sortKey="priceDiscount" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Price Discount</SortableTh>
+                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Variant Cost</SortableTh>
+                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Template Cost</SortableTh>
+                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Public Cost Price</SortableTh>
+                    <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Sale Price</SortableTh>
                     {editMode && <th className="w-20 px-3 py-2" />}
                   </tr>
                 </thead>
@@ -740,21 +798,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                       <td colSpan={editMode ? 12 : 11} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
                     </tr>
                   )}
-                  {pagedItems.map(item => {
-                    const globalIdx = sortedItems.findIndex(i => i.id === item.id)
-                    const scopedProduct = products.find(p => p.id === scopedProductId(item))
-                    // 20260828 客户拍板：合表重构后 template/variant 已经是同一份数据，
-                    // Variant Cost / Template Cost / Public Cost Price 三列都取同一个
-                    // Product.standardPrice——数字会重复，是为了跟客户参照的 Odoo 截图列名对齐，
-                    // 不是算错了。锁定分类(applyOn=category)时没有具体商品，三列都留空。
-                    const cost = scopedProduct?.standardPrice
-                    const publicPrice = scopedProduct?.listPrice
-                    // formula 模式的条目此前只显示"X% discount and Y surcharge"公式文字，
-                    // 看不出实际卖多少钱——这里用跟真实下单同一份 computeItemPrice 算出来，
-                    // 拿不到商品(比如已归档/删除)时就不算，交给下面公式文字兜底。
-                    const estimatedPrice = scopedProduct
-                      ? computeItemPrice(item, scopedProduct, publicPrice ?? 0, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
-                      : undefined
+                  {pagedItems.map(row => {
+                    const { item } = row
+                    const globalIdx = sortedItems.findIndex(r => r.item.id === item.id)
                     return (
                       <ItemRow
                         key={item.id}
@@ -762,15 +808,15 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         products={products}
                         categories={categories}
                         uoms={uoms}
-                        cost={cost}
-                        publicPrice={publicPrice}
-                        estimatedPrice={estimatedPrice}
-                        productCategoryLabel={productCategoryLabel(item, scopedProduct, categories, isEn)}
+                        cost={row.cost}
+                        publicPrice={row.publicPrice}
+                        estimatedPrice={row.estimatedPrice}
+                        productCategoryLabel={row.categoryLabel}
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
-                        canMoveUp={globalIdx > 0}
-                        canMoveDown={globalIdx < totalItems - 1}
+                        canMoveUp={!itemSort && globalIdx > 0}
+                        canMoveDown={!itemSort && globalIdx < totalItems - 1}
                         onMoveUp={() => moveItem(item.id, 'up')}
                         onMoveDown={() => moveItem(item.id, 'down')}
                         isEn={isEn}
@@ -892,6 +938,29 @@ function ExternalLinkIcon() {
           d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
       </svg>
     </span>
+  )
+}
+
+// ─── SortableTh ───────────────────────────────────────────────────────────────
+
+function SortableTh({ sortKey, itemSort, onSort, className, children }: {
+  sortKey: ItemSortKey
+  itemSort: { key: ItemSortKey; dir: 'asc' | 'desc' } | null
+  onSort: (key: ItemSortKey) => void
+  className: string
+  children: ReactNode
+}) {
+  const active = itemSort?.key === sortKey
+  return (
+    <th
+      className={`font-medium text-gray-600 cursor-pointer select-none hover:text-gray-900 ${className}`}
+      onClick={() => onSort(sortKey)}
+    >
+      {children}
+      <span className="ml-1 text-[9px] inline-block w-2" style={{ color: active ? PURPLE : '#c9c9c9' }}>
+        {active ? (itemSort!.dir === 'asc' ? '▲' : '▼') : '▲'}
+      </span>
+    </th>
   )
 }
 
