@@ -13,10 +13,11 @@ import ProcurementOverviewPage from './overview/page'
 import FreshDailySuggestionsPage from './fresh/page'
 import CatalogPickingPage from './catalog/page'
 import AnnualPlanPage from './annual-plan/page'
+import VendorsPage from './vendors/page'
 
 const PURPLE = '#875A7B'
 
-type MainTab = 'quotations' | 'overview' | 'fresh' | 'catalog' | 'annual-plan'
+type MainTab = 'quotations' | 'overview' | 'fresh' | 'catalog' | 'annual-plan' | 'vendors'
 
 const MAIN_TABS_ZH: { k: MainTab; icon: string; label: string }[] = [
   { k: 'quotations', icon: '📝', label: '询价单' },
@@ -24,6 +25,7 @@ const MAIN_TABS_ZH: { k: MainTab; icon: string; label: string }[] = [
   { k: 'fresh', icon: '🥬', label: '生鲜次日备货' },
   { k: 'catalog', icon: '🛒', label: '目录挑选' },
   { k: 'annual-plan', icon: '🌾', label: '干货年度计划' },
+  { k: 'vendors', icon: '🏭', label: '供应商' },
 ]
 
 const MAIN_TABS_EN: { k: MainTab; icon: string; label: string }[] = [
@@ -32,6 +34,7 @@ const MAIN_TABS_EN: { k: MainTab; icon: string; label: string }[] = [
   { k: 'fresh', icon: '🥬', label: 'Next-Day Fresh Stocking' },
   { k: 'catalog', icon: '🛒', label: 'Catalog Picking' },
   { k: 'annual-plan', icon: '🌾', label: 'Dry Goods Annual Plan' },
+  { k: 'vendors', icon: '🏭', label: 'Vendors' },
 ]
 
 type POStatus = 'DRAFT' | 'SENT' | 'CONFIRMED' | 'RECEIVED' | 'INVOICED' | 'LOCKED' | 'TO_APPROVE' | 'CANCELLED'
@@ -221,6 +224,7 @@ export default function PurchasesPage() {
       {mainTab === 'fresh' && <FreshDailySuggestionsPage />}
       {mainTab === 'catalog' && <CatalogPickingPage />}
       {mainTab === 'annual-plan' && <AnnualPlanPage />}
+      {mainTab === 'vendors' && <VendorsPage />}
 
       {mainTab === 'quotations' && <>
       <OdooControlPanel

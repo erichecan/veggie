@@ -65,16 +65,20 @@ interface FormState {
   paymentTerm: string
   pricelistIds: string[]
   defaultDriverSlotId: string
-  isVendor: boolean
-  supplierPaymentTerm: string
-  supplierCurrency: string
   internalReference: string
   barcode: string
-  fiscalPosition: string
   notes: string
   externalNote: string
 }
 
+/**
+ * 客户/供应商彻底分离(20260907 客户决策)：这个表单只管客户。
+ * 供应商专属字段(isVendor/supplierPaymentTerm/vendorTaxRate)已搬到独立的
+ * `purchases/vendors/[id]/page.tsx`；「一个联系人既是客户又是供应商」的场景
+ * 按客户要求"分两条编辑"——不在这张表单里再出现 isVendor 勾选框。
+ * Fiscal Position / Loyalty 两块一并删除：纯 Odoo 表单抄来的摆设，没有数据库
+ * 字段、没有保存逻辑，从未生效过。
+ */
 function emptyForm(): FormState {
   return {
     name: '',
@@ -86,10 +90,10 @@ function emptyForm(): FormState {
     title: '', language: 'English (UK)',
     creditLimit: '0.00', tags: '', commissionRate: '1.00', commissionFixed: '0.00',
     priceType: 'Default Price',
-    isCustomer: true, salesperson: '', salesTeam: '',
+    isCustomer: true,
+    salesperson: '', salesTeam: '',
     paymentTerm: '', pricelistIds: [], defaultDriverSlotId: '',
-    isVendor: false, supplierPaymentTerm: '', supplierCurrency: '',
-    internalReference: '', barcode: '', fiscalPosition: '',
+    internalReference: '', barcode: '',
     notes: '',
     externalNote: '',
   }
@@ -125,18 +129,14 @@ function customerToForm(c: Customer): FormState {
     commissionRate: c.commissionRate != null ? String(Math.round(c.commissionRate * 100)) : '1.00',
     commissionFixed: '0.00',
     priceType: c.priceType === 'multi' ? 'Multi Price' : c.priceType === 'last' ? 'Last Purchase Price' : 'Default Price',
-    isCustomer: true,
+    isCustomer: c.isCustomer ?? true,
     salesperson: (cAny.salesUserId ?? '') as string,
     salesTeam: '',
     paymentTerm: c.paymentTerm ?? '',
     pricelistIds: (c.pricelists ?? []).slice().sort((a, b) => a.sequence - b.sequence).map(p => p.pricelistId),
     defaultDriverSlotId: (cAny.defaultDriverSlotId ?? '') as string,
-    isVendor: false,
-    supplierPaymentTerm: '',
-    supplierCurrency: '',
     internalReference: '',
     barcode: '',
-    fiscalPosition: '',
     notes: c.notes ?? '',
     externalNote: c.externalNote ?? '',
   }
@@ -176,7 +176,7 @@ type Tab = 'contacts' | 'notes' | 'sales' | 'invoicing' | 'specialprices' | 'car
 const ALL_TABS: { key: Tab; label: string }[] = [
   { key: 'contacts',     label: 'Contacts & Addresses' },
   { key: 'notes',        label: 'Internal Notes' },
-  { key: 'sales',        label: 'Sales & Purchases' },
+  { key: 'sales',        label: 'Sales' },
   { key: 'invoicing',    label: 'Invoicing' },
   { key: 'specialprices', label: 'Special Prices' },
   { key: 'cards',        label: 'Cards' },
@@ -323,6 +323,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       priceType: priceTypeMap[form.priceType] ?? 'default',
       salesUserId: form.salesperson || null,
       defaultDriverSlotId: form.defaultDriverSlotId || null,
+      // isCustomer 之前没进这个对象，勾选框点了跟没点一样——现在带上。
+      // isVendor 已彻底搬到独立的供应商表单(purchases/vendors/[id])，这里不再提交，
+      // 免得客户表单顺手把已有供应商标记翻掉
+      isCustomer: form.isCustomer,
       specialPrices,
     }
 
@@ -795,13 +799,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             </div>
           )}
 
-          {/* Sales & Purchases */}
+          {/* Sales */}
           {activeTab === 'sales' && (
-            <div className="grid grid-cols-2 gap-x-12">
-
-              {/* Left column: Sales + Misc */}
-              <div>
-                <SectionTitle>Sales</SectionTitle>
+            <div className="max-w-xl">
+              <SectionTitle>Sales</SectionTitle>
                 <OdooField label="Is a Customer">
                   <div className="flex items-center h-8">
                     <input type="checkbox" checked={form.isCustomer}
@@ -910,61 +911,6 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                       className={inputCls} />
                   </OdooField>
                 </div>
-              </div>
-
-              {/* Right column: Purchase + Fiscal + Loyalty */}
-              <div>
-                <SectionTitle>Purchase</SectionTitle>
-                <OdooField label="Is a Vendor">
-                  <div className="flex items-center h-8">
-                    <input type="checkbox" checked={form.isVendor}
-                      onChange={e => setField('isVendor', e.target.checked)}
-                      className="accent-[#875A7B] w-4 h-4" />
-                  </div>
-                </OdooField>
-                <OdooField label="Payment Terms">
-                  <select value={form.supplierPaymentTerm} onChange={e => setField('supplierPaymentTerm', e.target.value)} className={selectCls}>
-                    <option value=""></option>
-                    <option value="immediate">Immediate Payment</option>
-                    <option value="30days">Net 30 Days</option>
-                  </select>
-                </OdooField>
-                <OdooField label="Supplier Currency">
-                  <select value={form.supplierCurrency} onChange={e => setField('supplierCurrency', e.target.value)} className={selectCls}>
-                    <option value=""></option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="USD">USD</option>
-                  </select>
-                </OdooField>
-
-                <div className="mt-5">
-                  <SectionTitle>Fiscal Information</SectionTitle>
-                  <OdooField label="Fiscal Position">
-                    <select value={form.fiscalPosition} onChange={e => setField('fiscalPosition', e.target.value)} className={selectCls}>
-                      <option value=""></option>
-                    </select>
-                  </OdooField>
-                </div>
-
-                <div className="mt-5">
-                  <SectionTitle>Loyalty</SectionTitle>
-                  <OdooField label="Remaining Loyalty Points">
-                    <span className="block px-2 py-1 text-sm text-gray-700">0.00</span>
-                  </OdooField>
-                  <OdooField label="Points to Amount">
-                    <span className="block px-2 py-1 text-sm text-gray-700">0.00</span>
-                  </OdooField>
-                  <OdooField label="Total Loyalty Points">
-                    <span className="block px-2 py-1 text-sm text-gray-700">0.00</span>
-                  </OdooField>
-                  <OdooField label="Send Loyalty Mail">
-                    <div className="flex items-center h-8">
-                      <input type="checkbox" defaultChecked className="accent-[#875A7B] w-4 h-4" />
-                    </div>
-                  </OdooField>
-                </div>
-              </div>
             </div>
           )}
 

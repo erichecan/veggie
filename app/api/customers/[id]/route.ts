@@ -10,6 +10,7 @@ const TRACKED_FIELDS = [
   'phone', 'email', 'vatNumber', 'paymentTerm', 'creditLimit',
   'commissionRate', 'commissionFixed', 'pricelistIds', 'priceType',
   'isActive', 'isCustomer', 'isVendor', 'notes', 'externalNote',
+  'supplierPaymentTerm', 'vendorTaxRate',  // 供应商专属字段——之前漏在白名单外，编辑页怎么改都存不进去
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
   'salesUserId',
   'settlementCycle',  // 对账单生成周期：NONE | WEEKLY | MONTHLY

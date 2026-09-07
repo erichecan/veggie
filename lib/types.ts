@@ -238,6 +238,14 @@ export interface Customer {
   salesUserId?: string | null
   /** 关联业务员姓名（只读展示，由 API 从 salesUserId 关联展平） */
   salesman?: string
+  /** 这个 Partner 是否是客户（客户/供应商共用同一张表，Odoo is_customer 语义） */
+  isCustomer?: boolean
+  /** 这个 Partner 是否是供应商（Odoo is_vendor 语义） */
+  isVendor?: boolean
+  /** 供应商专属：付款条款（与客户自己的 paymentTerm 是两个字段） */
+  supplierPaymentTerm?: string | null
+  /** 供应商专属：默认采购税率（小数，如 0.135 表示 13.5%），采购建议页读它兜底默认税率 */
+  vendorTaxRate?: number | null
 }
 
 // ─── 订单 ───────────────────────────────────────────────────────────────────
