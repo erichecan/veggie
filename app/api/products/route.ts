@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { buildProductTemplatesWhere, productStockAlertCounts, PRODUCT_TEMPLATE_ORDER_BY } from '@/lib/products-query'
+import { buildProductTemplatesWhere, productStockAlertCounts, buildProductTemplatesOrderBy } from '@/lib/products-query'
 
 export async function GET(req: Request) {
   try {
@@ -16,6 +16,8 @@ export async function GET(req: Request) {
       const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
       const rawSize = searchParams.get('pageSize') ?? searchParams.get('limit') ?? '20'
       const limit = Math.min(200, Math.max(1, parseInt(rawSize, 10)))
+      const sortDir: 'asc' | 'desc' = searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
+      const orderBy = buildProductTemplatesOrderBy(searchParams.get('sortKey'), sortDir)
       const [where, alertCounts] = await Promise.all([
         buildProductTemplatesWhere(searchParams),
         productStockAlertCounts(),
@@ -25,7 +27,7 @@ export async function GET(req: Request) {
         prisma.product.findMany({
           where,
           include: { uom: true },
-          orderBy: PRODUCT_TEMPLATE_ORDER_BY,
+          orderBy,
           skip: (page - 1) * limit,
           take: limit,
         }),

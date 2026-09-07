@@ -9,7 +9,7 @@ import type { ProductTemplate, ProductCategory } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
-import { sortRows, type SortDir } from '@/components/shared/sort-th'
+import { type SortDir } from '@/components/shared/sort-th'
 import { applyFacets, groupFacets, localizeFacetFields, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import { useCsvExport } from '@/hooks/use-csv-export'
@@ -112,8 +112,12 @@ export default function ClassicProductsPage() {
       if (vals && vals.length > 0) params.set(`cfm_${key}`, vals.join(','))
     }
     applyFacets(params, facets)
+    // 排序是整个筛选结果集的排序（服务端 orderBy），不是只对当前这一页重排——
+    // 否则翻页/换排序方向时，看到的顺序会跟其余 5000+ 条商品脱节（20260907 客户反馈：
+    // 按 Last Updated on 排序时，同一天改的商品没有排在一起，散落在好几页里）
+    if (sortKey) { params.set('sortKey', sortKey); params.set('sortDir', sortDir) }
     return params.toString()
-  }, [showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets])
+  }, [showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets, sortKey, sortDir])
 
   // 导出：吃的就是 queryParams —— 与列表请求同一份筛选参数，同一份 where 构造，
   // 所以导出的是当前筛选下的**全部**结果，不是屏幕上这 50 条。
@@ -195,17 +199,9 @@ export default function ClassicProductsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryParams])
 
-  // Product Category 列显示的是 categoryId 反查出的名称，不是裸 id 本身；
-  // 直接按 categoryId 排序会得到一串跟界面顺序对不上的乱序，所以额外挂一个
-  // categoryLabel 字段专供排序用（渲染/编辑仍然认 categoryId，互不影响）。
-  const templatesForSort = useMemo(() => templates.map(t => {
-    const cat = categories.find(c => c.id === t.categoryId)
-    const categoryLabel = (isEn ? (cat?.name || cat?.nameZh) : (cat?.nameZh || cat?.name)) ?? (t.categoryId ? String(t.categoryId) : '')
-    return { ...t, categoryLabel }
-  }), [templates, categories, isEn])
-
-  // 排序只在当前页内进行(与订单/报价单列表页一致的服务端分页限制：排序、筛选不跨页)
-  const filteredTemplates = useMemo(() => sortRows(templatesForSort, sortKey, sortDir), [templatesForSort, sortKey, sortDir])
+  // 排序已经由后端做（按整个筛选结果集排序，见 loadPage 里的 sortKey/sortDir 参数，
+  // Product Category 列传的 sortKey 是 'categoryLabel'，后端按 category 关系的 name 排序）
+  const filteredTemplates = templates
 
   // ─── 单元格保存：调 PUT /api/products/[id]，并刷新本地 row ──
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
@@ -423,7 +419,7 @@ export default function ClassicProductsPage() {
       key: 'categoryId',
       label: 'Product Category',
       filterType: 'text',
-      // 排序按显示名称（categoryLabel，见 templatesForSort），而非裸 categoryId
+      // 排序按显示名称传参(categoryLabel)，而非裸 categoryId——后端映射成按 category 关系的 name 排序
       sortable: true,
       sortKey: 'categoryLabel',
       editable: true,
@@ -442,9 +438,8 @@ export default function ClassicProductsPage() {
       key: 'uomName',
       width: 86,
       label: 'Unit of Measure',
-      filterType: 'multi-select',
-      filterOptions: multiSelectOptions.uomName.map(v => ({ value: v, label: v })),
-      filterLabelGetter: (val) => val || emptyLabel,
+      // 20260907 客户反馈这一列不需要筛选下拉框，去掉
+      filterType: 'none',
       render: (v) => v ? <span className="text-xs text-gray-600">{String(v)}</span> : <span className="text-gray-300">—</span>,
     },
     {

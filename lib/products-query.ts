@@ -170,3 +170,30 @@ export const PRODUCT_TEMPLATE_ORDER_BY = [
   { createdAt: 'desc' as const },
 ]
 
+type SortDir = 'asc' | 'desc'
+
+/**
+ * 列表页点表头排序 → 服务端 orderBy（20260907）。此前 sortKey/sortDir 只在前端对
+ * 已分页的这 50 条 `sortRows`，翻页/换排序方向时看到的顺序跟其余 5000+ 条商品脱节——
+ * 客户反馈："设定 Last Updated 日期时显示 11 个产品，取消日期后光靠排序，
+ * 9/6 修改的商品不是集中在一起，分散在好几页"。与 lib/customers-query.ts 的
+ * SIMPLE_SORT 同一套修法：按整个筛选结果集在数据库里排序，而不是对当前页重排。
+ */
+const PRODUCT_TEMPLATE_SORT_MAP: Record<string, (dir: SortDir) => object> = {
+  internalRef: (dir) => ({ internalRef: dir }),
+  externalId: (dir) => ({ externalId: dir }),
+  sequence: (dir) => ({ sequence: { sort: dir, nulls: 'last' } }),
+  name: (dir) => ({ name: dir }),
+  listPrice: (dir) => ({ listPrice: dir }),
+  standardPrice: (dir) => ({ standardPrice: dir }),
+  weight: (dir) => ({ weight: dir }),
+  updatedAt: (dir) => ({ updatedAt: dir }),
+  // 分类列排序按显示名称(categoryLabel)传参，其实按 relation 的 name 字段排序
+  categoryLabel: (dir) => ({ category: { name: dir } }),
+}
+
+export function buildProductTemplatesOrderBy(sortKey: string | null, sortDir: SortDir) {
+  const build = sortKey ? PRODUCT_TEMPLATE_SORT_MAP[sortKey] : undefined
+  return build ? [build(sortDir)] : PRODUCT_TEMPLATE_ORDER_BY
+}
+
