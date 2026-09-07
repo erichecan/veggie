@@ -163,6 +163,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [itemPage, setItemPage] = useState(1)
   const [itemPageSize, setItemPageSize] = useState(ITEMS_PAGE_SIZE_DEFAULT)
   const [itemSort, setItemSort] = useState<{ key: ItemSortKey; dir: 'asc' | 'desc' } | null>(null)
+  // 拖拽排序状态（与 OrderLineEditor 同一套：拖拽手柄按下才让 <tr draggable> 生效，
+  // 不然整行文字选取/点击都会被 HTML5 drag 劫持）
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
+  const [handleActive, setHandleActive] = useState(false)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<OdooPricelistItem | null>(null)
@@ -353,17 +358,21 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
   /**
    * 条目没有独立的排序表，`sequence` 就是唯一的顺序依据；新建条目一律给固定的
-   * `sequence: 10`（见 emptyItem），多条目挤在同一个值上时上/下移单纯交换两条的
-   * sequence 不足以稳定改变显示顺序。所以每次移动都按"当前显示顺序"整体重新
-   * 编号（10/20/30…），跟 Odoo 里拖拽排序后重新分配 sequence 是同一个思路。
+   * `sequence: 10`（见 emptyItem），多条目挤在同一个值上时挪一条不足以稳定改变
+   * 显示顺序。所以每次拖拽都按"当前显示顺序"整体重新编号（10/20/30…），跟 Odoo
+   * 里拖拽排序后重新分配 sequence 是同一个思路。
+   *
+   * 20260907 客户反馈：不要 ▲▼ 箭头，要跟报价单/订单/采购单行编辑
+   * （components/classic/OrderLineEditor.tsx）一样鼠标拖拽——那边是「拖拽手柄+
+   * onDragStart/onDragOver/onDrop」三件套换序，这里换成同一套交互，
+   * 只是这边条目多，直接挪任意两行之间（fromIdx→toIdx），不再局限于相邻交换。
    */
-  async function moveItem(itemId: string, direction: 'up' | 'down') {
-    if (!pl) return
+  async function reorderItems(fromIdx: number, toIdx: number) {
+    if (!pl || fromIdx === toIdx) return
     const ordered = [...pl.items].sort((a, b) => a.sequence - b.sequence)
-    const idx = ordered.findIndex(i => i.id === itemId)
-    const targetIdx = direction === 'up' ? idx - 1 : idx + 1
-    if (idx === -1 || targetIdx < 0 || targetIdx >= ordered.length) return
-    ;[ordered[idx], ordered[targetIdx]] = [ordered[targetIdx], ordered[idx]]
+    if (fromIdx < 0 || fromIdx >= ordered.length || toIdx < 0 || toIdx >= ordered.length) return
+    const [moved] = ordered.splice(fromIdx, 1)
+    ordered.splice(toIdx, 0, moved)
     const renumbered = ordered.map((it, i) => ({ ...it, sequence: (i + 1) * 10 }))
     const updated = { ...pl, items: renumbered, updatedAt: new Date().toISOString() }
     try {
@@ -375,7 +384,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     }
   }
 
-  /** 点表头：第一次升序、第二次降序、第三次回到 sequence 默认顺序（也让 ▲▼ 手动排序重新生效） */
+  /** 点表头：第一次升序、第二次降序、第三次回到 sequence 默认顺序（也让拖拽排序重新生效） */
   function toggleItemSort(key: ItemSortKey) {
     setItemSort(prev => {
       if (!prev || prev.key !== key) return { key, dir: 'asc' }
@@ -804,6 +813,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                   {pagedItems.map(row => {
                     const { item } = row
                     const globalIdx = sortedItems.findIndex(r => r.item.id === item.id)
+                    // 拖拽排序只在默认 sequence 顺序下有意义——按某一列排序时，行的显示位置
+                    // 跟 sequence 已经脱节，拖拽换的是"看起来的顺序"而不是真实存储顺序，
+                    // 跟点表头第三次回到默认顺序才重新生效是同一个理由（原 ▲▼ 就是这个约束）。
+                    const canDrag = !itemSort
                     return (
                       <ItemRow
                         key={item.id}
@@ -818,10 +831,25 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
-                        canMoveUp={!itemSort && globalIdx > 0}
-                        canMoveDown={!itemSort && globalIdx < totalItems - 1}
-                        onMoveUp={() => moveItem(item.id, 'up')}
-                        onMoveDown={() => moveItem(item.id, 'down')}
+                        canDrag={canDrag}
+                        isDragging={dragIndex === globalIdx}
+                        isOver={canDrag && overIndex === globalIdx && dragIndex !== null && dragIndex !== globalIdx}
+                        handleActive={handleActive}
+                        onHandleDown={() => setHandleActive(true)}
+                        onHandleUp={() => setHandleActive(false)}
+                        onDragStartRow={() => setDragIndex(globalIdx)}
+                        onDragOverRow={() => { if (overIndex !== globalIdx) setOverIndex(globalIdx) }}
+                        onDropRow={() => {
+                          if (dragIndex !== null) reorderItems(dragIndex, globalIdx)
+                          setDragIndex(null)
+                          setOverIndex(null)
+                          setHandleActive(false)
+                        }}
+                        onDragEndRow={() => {
+                          setDragIndex(null)
+                          setOverIndex(null)
+                          setHandleActive(false)
+                        }}
                         isEn={isEn}
                       />
                     )
@@ -969,7 +997,7 @@ function SortableTh({ sortKey, itemSort, onSort, className, children }: {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isEn }: {
+function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
   item: OdooPricelistItem
   products: Product[]
   categories: ProductCategory[]
@@ -981,10 +1009,18 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
   showDelete: boolean
   onEdit: () => void
   onDelete: () => void
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onMoveUp: () => void
-  onMoveDown: () => void
+  /** 20260907 客户反馈改用拖拽排序，不要 ▲▼ 箭头——与
+      components/classic/OrderLineEditor.tsx（报价单/订单/采购单行编辑）同一套交互 */
+  canDrag: boolean
+  isDragging: boolean
+  isOver: boolean
+  handleActive: boolean
+  onHandleDown: () => void
+  onHandleUp: () => void
+  onDragStartRow: () => void
+  onDragOverRow: () => void
+  onDropRow: () => void
+  onDragEndRow: () => void
   isEn: boolean
 }) {
   const [hover, setHover] = useState(false)
@@ -1011,7 +1047,18 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
 
   return (
     <tr
-      style={{ background: hover ? PURPLE_LIGHT : undefined, cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}
+      draggable={canDrag && handleActive}
+      onDragStart={canDrag ? onDragStartRow : undefined}
+      onDragOver={canDrag ? e => { e.preventDefault(); onDragOverRow() } : undefined}
+      onDrop={canDrag ? e => { e.preventDefault(); onDropRow() } : undefined}
+      onDragEnd={onDragEndRow}
+      style={{
+        background: isDragging ? '#f3f4f6' : (hover ? PURPLE_LIGHT : undefined),
+        cursor: 'pointer',
+        borderBottom: '1px solid #f0f0f0',
+        borderTop: isOver ? '2px solid #875A7B' : undefined,
+        opacity: isDragging ? 0.4 : 1,
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={onEdit}
@@ -1019,20 +1066,14 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
       {showDelete && (
         <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-center gap-1.5">
-            <button
-              type="button"
-              onClick={onMoveUp}
-              disabled={!canMoveUp}
-              title={isEn ? 'Move up' : '上移'}
-              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
-            >▲</button>
-            <button
-              type="button"
-              onClick={onMoveDown}
-              disabled={!canMoveDown}
-              title={isEn ? 'Move down' : '下移'}
-              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
-            >▼</button>
+            {canDrag && (
+              <span
+                title={isEn ? 'Drag to reorder' : '拖动以调整顺序'}
+                onMouseDown={onHandleDown}
+                onMouseUp={onHandleUp}
+                className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none leading-none"
+              >☰</span>
+            )}
             <span
               onClick={onDelete}
               title={isEn ? 'Delete' : '删除'}
