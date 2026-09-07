@@ -580,7 +580,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       </div>
 
       {/* ── Main card (centered on gray bg) ── */}
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-6">
         <div className="bg-white border border-gray-200 rounded-sm shadow-sm">
 
           {/* Name + Active toggle */}
