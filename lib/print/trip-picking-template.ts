@@ -41,6 +41,11 @@ function fmtQty(v: number): string {
   return v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
 }
 
+/** 装货顺序印在拣货单上的显示形式：没设置就是空线，不印 0 或"未设置"这类噪音文字 */
+function fmtPackSeq(v: number | null): string {
+  return v == null ? '—' : String(v)
+}
+
 interface CustomerBreakdown {
   customerId: string
   customerName: string
@@ -235,6 +240,7 @@ export function generateTripPickingHtml(
         </td>
         <td class="col-qty bd-qty">${fmtQty(bd.qty)}</td>
         <td class="col-uom"></td>
+        <td class="col-pack"></td>
         <td class="col-check"></td>
       </tr>`).join('')
   }
@@ -262,6 +268,7 @@ export function generateTripPickingHtml(
           })()}
         </td>
         <td class="col-uom">${escapeHtml(displayUomName(p.uomName))}</td>
+        <td class="col-pack">${fmtPackSeq(p.uomSequence)}</td>
         <td class="col-check"></td>
       </tr>`
     // 散称/按重量卖的商品按客户展示明细子行；带备注的商品即便不是散称，也强制展开，避免备注被折叠看不到
@@ -272,6 +279,8 @@ export function generateTripPickingHtml(
   /**
    * 同一商品挂了多个可售单位时的两层行：父行（按 factor 换算成基础单位的合计）+
    * 每个单位各自一行子行（原始下单数量，拣货员照单位去拿）。
+   * 父行的「装货顺序」留空——它是多个单位的合计行，不对应某个具体要放的物理位置，
+   * 真正要看的顺序数字在下面每个单位子行各自的值上。
    */
   function multiUomRows(g: ProductGroup, seq: number, rowClass: string): string {
     const { baseQty, baseUomName } = summarizeGroup(g)
@@ -289,6 +298,7 @@ export function generateTripPickingHtml(
           ${!baseUomName ? `<span class="note-flag">⚠️ 单位未换算，仅供参考</span>` : ''}
         </td>
         <td class="col-uom">${baseUomName ? escapeHtml(displayUomName(baseUomName)) : ''}</td>
+        <td class="col-pack"></td>
         <td class="col-check"></td>
       </tr>`
     const childRows = g.uoms.map(u => {
@@ -312,6 +322,7 @@ export function generateTripPickingHtml(
           })()}
         </td>
         <td class="col-uom">${escapeHtml(displayUomName(u.uomName))}</td>
+        <td class="col-pack">${fmtPackSeq(u.uomSequence)}</td>
         <td class="col-check"></td>
       </tr>`
       const breakdownRows = (u.goodsType === 'LOOSE' || uHasNote) ? customerBreakdownRows(u.byCustomer, true) : ''
@@ -336,6 +347,7 @@ export function generateTripPickingHtml(
           <th class="col-name">商品名称</th>
           <th class="col-qty">总数量</th>
           <th class="col-uom">单位</th>
+          <th class="col-pack">装货顺序</th>
           <th class="col-check">✓</th>
         </tr>
       </thead>
@@ -373,7 +385,13 @@ export function generateTripPickingHtml(
   /* 拆箱副标：印在总数量下面一行，比总数小一号，仓库先看总数再看怎么拿 */
   .pack-split{display:block;font-weight:600;font-size:10px;color:#1a5c2e;white-space:nowrap;margin-top:1px}
   .col-uom{width:80px;text-align:center;color:#555}
+  /* 装货顺序：数字越小越先装/放最下，越大越后装/放最上——具体解释印在 .pack-legend 里，
+     不在每行重复文字，列本身只放数字，保持表格紧凑 */
+  .col-pack{width:60px;text-align:center;font-weight:700;color:#1a3a2a}
   .col-check{width:40px;text-align:center;border:1px solid #ccc!important}
+
+  .pack-legend{margin-bottom:10px;padding:5px 8px;font-size:10px;color:#555;background:#fff8e6;border:1px solid #f0d98c;border-radius:4px}
+  .pack-legend b{color:#1a3a2a}
 
   .spec{display:block;font-size:9px;color:#888;margin-top:1px}
   .note-flag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;vertical-align:middle}
@@ -431,6 +449,8 @@ export function generateTripPickingHtml(
     <div class="item"><span class="label">司机/批次：</span>${escapeHtml(teamStr)}</div>
     <div class="item"><span class="label">客户数：</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
+
+  <div class="pack-legend">📦 <b>装货顺序</b>：数字越小＝越先装 / 放最下面（重货、耐压）　数字越大＝越后装 / 放最上面（怕压）　"—"＝未设置该单位的装货顺序</div>
 
   ${showStorable ? productTableHtml('整箱整袋 STOCKABLE', storableGroups, '📦') : ''}
   ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableGroups, '🧴', showStorable && storableGroups.length > 0) : ''}
