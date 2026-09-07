@@ -51,16 +51,26 @@ export const ORDER_FACET_DEFS: FacetDef[] = [
 ]
 
 /**
- * 按交货星期(周一/wed…)筛选：deliveryDate 落在指定星期几的订单。
- * PG 会话时区已是 Europe/Dublin(见 businessDayStart 系列注释)，EXTRACT(DOW ...)
- * 直接得到的就是都柏林日历日的星期数，与 parseWeekday 的 JS getDay() 约定一致(周日=0)。
- * 无法识别的关键词返回恒假子句，而不是抛错或匹配全部。
+ * 单个星期几在全表(15 万+订单)里平均能匹配 1/7，约 2-3 万条——两个维度值 OR 在一起
+ * 逼近 5-6 万个字面量 id，"先选周一能查、再加选周三就 500"就是这么炸的(20260907 客户
+ * 实测复现，生产 Monday=29527/Wednesday=24449 条，两个一起 IN 列表撑爆查询)。
+ * 换成按 distinct deliveryDate 取值治不了本病——deliveryDate 本身就接近"一订单一值"
+ * (Monday 29026 个 distinct 日期 vs 29527 单)，跟按 id 取没有本质区别。
+ * 真正的根治是给 Order 加一列 EXTRACT(DOW) 生成列 + 索引，原生 where 过滤，
+ * 零 id 具象化——留作后续迁移；这里先按"最近优先"截断到安全量级，配合客户实际用途
+ * (找最近/近期哪天交货，不是翻五年前的星期几)：单个维度值最多取 3000 条最新匹配，
+ * 就算把 7 天全选也只有 21000 个字面量 id，稳稳低于把查询炸掉的量级。
  */
+const WEEKDAY_MATCH_CAP = 3000
+
 async function weekdayClause(term: string): Promise<Record<string, unknown>> {
   const dow = parseWeekday(term)
   if (dow === null) return { id: { in: [] } }
   const rows = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT id FROM "Order" WHERE "deliveryDate" IS NOT NULL AND EXTRACT(DOW FROM "deliveryDate") = ${dow}
+    SELECT id FROM "Order"
+    WHERE "deliveryDate" IS NOT NULL AND EXTRACT(DOW FROM "deliveryDate") = ${dow}
+    ORDER BY "deliveryDate" DESC
+    LIMIT ${WEEKDAY_MATCH_CAP}
   `
   return { id: { in: rows.map(r => r.id) } }
 }
