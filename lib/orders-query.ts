@@ -8,6 +8,7 @@ import { tryAuth } from '@/lib/auth'
 import { salesRowScope, withRowScope } from '@/lib/row-scope'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { buildFacetWhere, type FacetDef } from '@/lib/facet-sql'
+import { parseWeekday } from '@/lib/list-filters'
 import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
 
 export const ORDER_STATUSES = new Set<$Enums.OrderStatus>([
@@ -46,7 +47,23 @@ export const ORDER_FACET_DEFS: FacetDef[] = [
     { name: like(v) }, { nameZh: like(v) },
   ] } } } } }) },
   { key: 'driver',   label: '司机',     toClause: v => driverNameClause(v) },
+  { key: 'weekday',  label: '交货星期', toClause: v => weekdayClause(v) },
 ]
+
+/**
+ * 按交货星期(周一/wed…)筛选：deliveryDate 落在指定星期几的订单。
+ * PG 会话时区已是 Europe/Dublin(见 businessDayStart 系列注释)，EXTRACT(DOW ...)
+ * 直接得到的就是都柏林日历日的星期数，与 parseWeekday 的 JS getDay() 约定一致(周日=0)。
+ * 无法识别的关键词返回恒假子句，而不是抛错或匹配全部。
+ */
+async function weekdayClause(term: string): Promise<Record<string, unknown>> {
+  const dow = parseWeekday(term)
+  if (dow === null) return { id: { in: [] } }
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Order" WHERE "deliveryDate" IS NOT NULL AND EXTRACT(DOW FROM "deliveryDate") = ${dow}
+  `
+  return { id: { in: rows.map(r => r.id) } }
+}
 
 /**
  * 「这单归哪个司机」的筛选口径（两条并集，与显示口径一致）：

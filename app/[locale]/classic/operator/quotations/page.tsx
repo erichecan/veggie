@@ -13,7 +13,7 @@ import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
 import { buildOrderHtml, CSS as PRINT_CSS } from '../../print/[id]/page'
 import { getSession } from '@/lib/session'
-import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
+import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets, parseWeekday } from '@/lib/list-filters'
 import { useServerList } from '@/hooks/use-server-list'
 import { Pagination } from '@/components/ui/pagination'
 
@@ -561,6 +561,16 @@ export default function ClassicQuotationsPage() {
           facetPredicates.push(o => getField(o, 'salesman').toLowerCase().includes(v))
         } else if (f.key === 'driver') {
           facetPredicates.push(o => (orderDriverMap.get(o.id) ?? '').toLowerCase().includes(v))
+        } else if (f.key === 'weekday') {
+          // getUTCDay(非 getDay)——deliveryDate 存的是都柏林日历日对应的 UTC 零点瞬间，
+          // 按查看者本地时区取 getDay 会在非 UTC/都柏林时区下算错星期(实测 Toronto 时区
+          // 把周六误判成周五，跟服务端 EXTRACT(DOW...) 结果对不上导致"服务端有数据、前端显示No data")。
+          const dow = parseWeekday(v)
+          facetPredicates.push(o => {
+            if (dow === null) return false
+            const dd = getField(o, 'deliveryDate')
+            return dd !== '' && new Date(dd).getUTCDay() === dow
+          })
         }
         // product/category 维度已由服务端 f_product/f_category 原生过滤(见 baseUrl)，
         // 这里拿到的 orders 已经只剩匹配行，不需要再本地判重
