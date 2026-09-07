@@ -39,10 +39,13 @@ function translateWaveLogDetail(detail: string, isEn: boolean): string {
   return detail
 }
 
-type BatchLine = OrderLine & { product?: { template?: { weight?: number | null } | null } | null }
+// ⛔ 20260907 修：weight 直接挂在 Product 上，不是嵌套的 product.template.weight——那是
+// 20260825 Product/ProductTemplate 合表前的老结构，/api/orders 早就只返回扁平的 product.weight，
+// 这里一直读不到值，导致这张打印页统计出来的总重量恒为 0（与调度台 BatchTab.tsx 同一个坑）。
+type BatchLine = OrderLine & { product?: { weight?: number | null } | null }
 
 function lineWeight(l: BatchLine): number {
-  const w = Number(l.product?.template?.weight ?? 0)
+  const w = Number(l.product?.weight ?? 0)
   return w * Number(l.orderedQty)
 }
 

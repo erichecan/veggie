@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
+import { apiGet, apiPut, apiDelete } from '@/lib/api'
 import { waveStage } from '@/lib/wave-stage'
 import { DRIVER_APP_ENABLED } from '@/lib/features'
 import { restaurantColor } from './colors'
@@ -13,7 +13,10 @@ const PALLET_BLUE = '#2563eb'
 
 interface DriverSlot { id: string; timeOfDay: string; batchNum: number; driverName: string; userId?: string | null }
 interface OrderItem { productId: string; productName: string; quantity: number; uomName?: string }
-interface OrderLine { orderedQty: number | string; product?: { template?: { weight?: number | null } | null } | null }
+// ⛔ 20260907 修：weight 字段直接挂在 Product 上，不是嵌套的 product.template.weight——
+// 那是 20260825 Product/ProductTemplate 合表前的老结构，合表后 API 一直没跟着改，
+// 导致这里读到的永远是 undefined，每个托盘重量恒显示 0kg（客户反馈截图里所有托盘都是 0kg）。
+interface OrderLine { orderedQty: number | string; product?: { weight?: number | null } | null }
 interface Order {
   id: string; code: string | null; restaurantId: string; restaurantName: string
   items: OrderItem[]; totalAmount: number | string; status: string
@@ -47,8 +50,6 @@ const WAVE_STATUS_EN: Record<string, { text: string; cls: string; pct: number }>
 const num = (v: number | string) => (typeof v === 'number' ? v : Number(v) || 0)
 const SRC = 'application/x-source-wave'
 const groupKey = (driverName: string, timeOfDay: string) => `${driverName}::${timeOfDay}`
-// 一趟车能装的托盘数固定，不能无限新增；到上限后"+新增托盘"按钮直接消失(后端同步兜底校验)。
-const MAX_PALLETS_PER_DRIVER = 5
 
 function shiftDate(base: string, days: number) {
   const d = new Date(base + 'T00:00:00Z')
@@ -195,6 +196,18 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const selAmGroups = amGroups.filter(([, list]) => selectedDrivers.has(list[0].driverName))
   const selPmGroups = pmGroups.filter(([, list]) => selectedDrivers.has(list[0].driverName))
   const allSelected = driverNames.length > 0 && selectedDrivers.size === driverNames.length
+
+  // "N trips" 标题数字只算「真有单」的车次，不算空占位卡——groupsMap/selAmGroups 按
+  // /api/driver-slots 里配置过的司机+时段枚举（不分日期，是长期固定配置），哪怕这个司机
+  // 今天这个时段压根没排单也会枚举出一张空占位卡（见 Lane 里的注释）。客户反馈：
+  // "PM 应该是 2 trip，显示是 7 trip"——多出来的 5 个正是这类今天没排单的空占位配置。
+  // 空占位卡本身不能去掉（拖单要落点），只改这里显示的计数口径。
+  const hasRealOrders = (list: DriverSlot[]) => {
+    const w = waveForGroup(list[0].driverName, list[0].timeOfDay)
+    return !!w && w.orderIds.length > 0
+  }
+  const amTripCount = selAmGroups.filter(([, list]) => hasRealOrders(list)).length
+  const pmTripCount = selPmGroups.filter(([, list]) => hasRealOrders(list)).length
 
   function toggleDriver(name: string) {
     setSelectedDrivers(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
@@ -345,16 +358,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     load({ silent: true })
   }
 
-  // 新增托盘：建一条同司机+时段、batchNum=当前最大值+1 的 DriverSlot；托盘是预先配好的固定组合，
-  // 不是波次里临时状态，所以走 driver-slots 接口，和司机配置页共用同一份数据。
-  async function addPallet(driverName: string, timeOfDay: string, groupSlots: DriverSlot[]) {
-    const nextBatchNum = Math.max(...groupSlots.map(s => s.batchNum)) + 1
-    try {
-      await apiPost('/api/driver-slots', { timeOfDay, batchNum: nextBatchNum, driverName, userId: groupSlots[0]?.userId ?? null })
-      toast.success(isEn ? `Added ${nextBatchNum} ${timeOfDay} ${driverName}` : `已新增 ${nextBatchNum} ${timeOfDay} ${driverName}`)
-      load({ silent: true })
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to add pallet' : '新增托盘失败')) }
-  }
+  // ⛔ 20260907 客户要求取消：托盘数量只在「司机配置」页设定，调度台这里不能随意加
+  // （此前有 addPallet 在这里临时新增 DriverSlot，与司机配置页脱节，已删除）。
 
   // 删除托盘：归档这个 DriverSlot；后端联动把该托盘里的订单整单退回待分配(未出发波次才生效)。
   async function deletePallet(slot: DriverSlot, orderCount: number) {
@@ -422,7 +427,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   function ordersMetrics(orders: Order[]) {
     const lines = orders.flatMap(o => o.lines ?? [])
     const itemCount = lines.reduce((s, l) => s + num(l.orderedQty), 0)
-    const weight = Math.round(lines.reduce((s, l) => s + num(l.orderedQty) * num(l.product?.template?.weight ?? 0), 0) * 10) / 10
+    const weight = Math.round(lines.reduce((s, l) => s + num(l.orderedQty) * num(l.product?.weight ?? 0), 0) * 10) / 10
     const amount = Math.round(orders.reduce((s, o) => s + num(o.totalAmount), 0) * 100) / 100
     return { itemCount, weight, amount }
   }
@@ -574,7 +579,14 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               title={isEn ? 'Collapse' : '收起'}
             >▴</button>
           </div>
-          <div className="text-[11px] text-gray-500 mt-1">{isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets (one trip)` : `${m.orderCount}单 · ${groupSlots.length}个托盘(一趟车)`}</div>
+          {/* "(one trip)" 只在这个司机+时段真有单时才提示——否则一个 0 单的空占位卡也会
+              自称"一趟车"，跟上面 AM/PM 标题栏"N trips"只数真有单的车次自相矛盾
+              （20260907 客户反馈：标题栏改成只数真车次后，单张空卡还在各说各的）。 */}
+          <div className="text-[11px] text-gray-500 mt-1">
+            {m.orderCount > 0
+              ? (isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets (one trip)` : `${m.orderCount}单 · ${groupSlots.length}个托盘(一趟车)`)
+              : (isEn ? `${m.orderCount} orders · ${groupSlots.length} pallets` : `${m.orderCount}单 · ${groupSlots.length}个托盘`)}
+          </div>
           {reallyDispatched && <div className="text-[10px] text-blue-400 mt-0.5">{isEn ? `Departed at ${departTime}` : `已于 ${departTime} 出发`}</div>}
           <div className="h-1.5 rounded bg-gray-200 mt-2 overflow-hidden"><div className="h-full" style={{ width: `${realLabel ? 100 : st.pct}%`, background: PURPLE }} /></div>
 
@@ -674,15 +686,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 </div>
               )}
 
-              {/* 一趟车能装的托盘数固定，到上限(MAX_PALLETS_PER_DRIVER)后按钮直接消失，
-                  不能无限新增(后端 POST /api/driver-slots 同步兜底校验，防止绕开前端直接调接口)。 */}
-              {!dispatched && !locked && groupSlots.length < MAX_PALLETS_PER_DRIVER && (
-                <button
-                  onClick={() => addPallet(driverName, timeOfDay, groupSlots)}
-                  className="self-start mt-0.5 border border-dashed rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-gray-400 hover:text-blue-600 hover:border-blue-400"
-                  style={{ borderColor: '#d1d5db' }}
-                >{isEn ? '＋ Add pallet' : '＋ 新增托盘'}</button>
-              )}
             </div>
           )}
 
@@ -843,7 +846,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
               </div>
             ) : (
               <>
-                <GroupTitle time="am" count={selAmGroups.length} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} isEn={isEn} />
+                <GroupTitle time="am" count={amTripCount} collapsed={amCollapsed} onToggle={() => setAmCollapsed(v => !v)} isEn={isEn} />
                 {!amCollapsed && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
                     {selAmGroups.map(([k, list]) => (
@@ -857,7 +860,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                     {selAmGroups.length === 0 && <Empty text={isEn ? 'No AM shift for selected drivers' : '选中司机无上午班'} />}
                   </div>
                 )}
-                <GroupTitle time="pm" count={selPmGroups.length} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} isEn={isEn} />
+                <GroupTitle time="pm" count={pmTripCount} collapsed={pmCollapsed} onToggle={() => setPmCollapsed(v => !v)} isEn={isEn} />
                 {!pmCollapsed && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-2.5">
                     {selPmGroups.map(([k, list]) => (
