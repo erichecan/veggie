@@ -778,6 +778,10 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               <table className="w-full text-xs" style={{ borderTop: '1px solid #e9e9e9' }}>
                 <thead style={{ background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
                   <tr>
+                    {/* 上/下移+删除紧跟在 Applicable On 前面（20260907 客户反馈：这几个按钮之前
+                        排在最后一列 Sale Price 之后，表格一宽就要横向滚很远才找得到，
+                        看起来像"这个功能没有了"）。 */}
+                    {editMode && <th className="w-16 px-2 py-2" />}
                     <SortableTh sortKey="applyOn" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-4 py-2 min-w-[220px]">Applicable On</SortableTh>
                     <SortableTh sortKey="minQty" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Min. Quantity</SortableTh>
                     <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Start Date</SortableTh>
@@ -789,7 +793,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Template Cost</SortableTh>
                     <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Public Cost Price</SortableTh>
                     <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Sale Price</SortableTh>
-                    {editMode && <th className="w-20 px-3 py-2" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -1013,6 +1016,31 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
       onMouseLeave={() => setHover(false)}
       onClick={onEdit}
     >
+      {showDelete && (
+        <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-center gap-1.5">
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+              title={isEn ? 'Move up' : '上移'}
+              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
+            >▲</button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              title={isEn ? 'Move down' : '下移'}
+              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
+            >▼</button>
+            <span
+              onClick={onDelete}
+              title={isEn ? 'Delete' : '删除'}
+              className="text-gray-300 hover:text-red-400 text-base leading-none cursor-pointer select-none"
+            >🗑</span>
+          </div>
+        </td>
+      )}
       <td className="px-4 py-1.5 text-gray-800">
         {applyOnLabel(item, products, categories, isEn)}
         {scopedUom && (
@@ -1052,31 +1080,6 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
       <td className="px-3 py-1.5 text-right text-gray-500">
         {publicPrice != null ? publicPrice.toFixed(2) : ''}
       </td>
-      {showDelete && (
-        <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-center gap-1.5">
-            <button
-              type="button"
-              onClick={onMoveUp}
-              disabled={!canMoveUp}
-              title={isEn ? 'Move up' : '上移'}
-              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
-            >▲</button>
-            <button
-              type="button"
-              onClick={onMoveDown}
-              disabled={!canMoveDown}
-              title={isEn ? 'Move down' : '下移'}
-              className="text-gray-300 hover:text-gray-600 disabled:opacity-30 disabled:hover:text-gray-300 text-xs leading-none cursor-pointer disabled:cursor-default"
-            >▼</button>
-            <span
-              onClick={onDelete}
-              title={isEn ? 'Delete' : '删除'}
-              className="text-gray-300 hover:text-red-400 text-base leading-none cursor-pointer select-none"
-            >🗑</span>
-          </div>
-        </td>
-      )}
     </tr>
   )
 }
