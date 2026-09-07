@@ -54,3 +54,29 @@ export function compareByProductSequence(a: SortableLine, b: SortableLine): numb
 export function sortLinesBySequence<T extends SortableLine>(lines: readonly T[]): T[] {
   return [...lines].sort(compareByProductSequence)
 }
+
+/**
+ * 装货顺序排序（20260907）：仓库配货/司机卸货堆叠顺序，跟上面的商品 sequence（单据里排
+ * 第几行）是两个独立维度——这里先按 ProductSaleUom.sequence（数字越小越先装/放最下，越大
+ * 越后装/放最上，没有值排最后）排，同值/都没有值时再按商品 sequence→商品名排。
+ */
+export interface UomSequenceSortableLine extends SortableLine {
+  /** 装货顺序（ProductSaleUom.sequence）。没有值时排在最后 */
+  uomSequence?: number | null
+}
+
+function uomSeqKey(line: UomSequenceSortableLine): number {
+  const s = line.uomSequence
+  return typeof s === 'number' && Number.isFinite(s) ? s : Number.POSITIVE_INFINITY
+}
+
+export function compareByUomSequenceThenProductSequence(a: UomSequenceSortableLine, b: UomSequenceSortableLine): number {
+  const sa = uomSeqKey(a)
+  const sb = uomSeqKey(b)
+  if (sa !== sb) return sa < sb ? -1 : 1
+  return compareByProductSequence(a, b)
+}
+
+export function sortLinesByUomSequence<T extends UomSequenceSortableLine>(lines: readonly T[]): T[] {
+  return [...lines].sort(compareByUomSequenceThenProductSequence)
+}

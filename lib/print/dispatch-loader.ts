@@ -17,6 +17,7 @@ import {
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
 import { fetchProductSequences } from './product-sequence'
+import { fetchUomSequences, resolveUomSequence } from './uom-sequence'
 import { uomConversionKey } from './uom-conversion'
 import { loadUomConversionMap } from './uom-conversion-loader'
 import {
@@ -315,7 +316,7 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap] = await Promise.all([
+  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductTypeMap(productIds),
     loadProductGoodsTypeMap(productIds),
@@ -326,6 +327,9 @@ export async function loadDispatchPrintData(
     // 打印顺序按商品 sequence（客户要求 2026-08-18）。模板拿不到数据库，在这里附上。
     fetchProductSequences(productIds),
     loadUomConversionMap(orders.flatMap(o => o.lines).map(l => ({ productId: l.productId, uomId: l.uomId }))),
+    // 装货顺序（20260907）：拣货单按它做堆叠排序，是单位级的 ProductSaleUom.sequence，
+    // 不是商品级的 Product.sequence，见 lib/print/uom-sequence.ts
+    fetchUomSequences(orders.flatMap(o => o.lines).map(l => ({ productId: l.productId, uomId: l.uomId }))),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -368,6 +372,7 @@ export async function loadDispatchPrintData(
           productId: l.productId,
           productName: l.productName,
           productSequence: productSeqMap.get(l.productId) ?? null,
+          uomSequence: resolveUomSequence(uomSeqMap, l.productId, l.uomId),
           spec: l.spec ?? null,
           uomId: l.uomId,
           uomName: l.uomName,

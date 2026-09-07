@@ -36,6 +36,9 @@ export interface SaleUomItemInput {
   commissionSurcharge?: number | string | null
   /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
   spec?: string | null
+  /** 装货顺序（20260907）：仓库配货/司机卸货用，数字越小越先装/放最下（重），越大越后装/放最上（怕压）。
+   * 语义/校验都照抄 Product.sequence——可空、不做唯一性校验。 */
+  sequence?: number | string | null
 }
 
 /** factor 的合理区间。上限 100000 足够覆盖「1 托盘 = N 个最小包装」这类真实场景 */
@@ -306,6 +309,8 @@ export interface SaleUomOption {
   active: boolean
   /** 按这个单位卖，客户实际拿到的规格说明（20260905）；未配置为 null */
   spec: string | null
+  /** 装货顺序（20260907）；不是所有调用方都需要，未取的留空不代表没配置 */
+  sequence?: number | null
 }
 
 /**

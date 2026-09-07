@@ -88,6 +88,8 @@ interface SaleUomRow {
   commissionSurcharge: number
   /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
   spec: string | null
+  /** 装货顺序（20260907）：仓库配货/司机卸货用，数字越小越先装/放最下（重），越大越后装/放最上（怕压） */
+  sequence: number | null
 }
 
 export default function ClassicProductDetailPage() {
@@ -179,7 +181,7 @@ export default function ClassicProductDetailPage() {
         setAdjVariantId(found.id)
         setPrimaryProductId(found.id)
         try {
-          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null }>>(`/api/products/${found.id}/sale-uoms`)
+          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null; sequence?: number | null }>>(`/api/products/${found.id}/sale-uoms`)
           const mapped = rows.map(r => ({
             uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
             priceMode: r.priceMode ?? 'AUTO',
@@ -190,6 +192,7 @@ export default function ClassicProductDetailPage() {
             commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
             commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
             spec: r.spec ?? null,
+            sequence: r.sequence ?? null,
           }))
           // 基础单位这一行只在「保存过一次可售单位」之后才会真的落库(见 PUT 路由注释里
           // "提交列表里没有基准单位时自动补一行")——从没保存过的商品，GET 回来的列表里
@@ -202,6 +205,7 @@ export default function ClassicProductDetailPage() {
               priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
               commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
               spec: null,
+              sequence: null,
             })
           }
           setSaleUoms(mapped)
@@ -269,6 +273,7 @@ export default function ClassicProductDetailPage() {
       priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
       commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
       spec: null,
+      sequence: null,
     }])
   }
   function updateSaleUomRow(index: number, patch: Partial<SaleUomRow>) {
@@ -304,7 +309,7 @@ export default function ClassicProductDetailPage() {
         setOriginal(prev => (prev ? { ...prev, uomId: tmpl.uomId } : prev))
       }
       const payload = saleUoms.map(r => ({ ...r, isDefault: tmpl?.uomId ? r.uomId === tmpl.uomId : r.isDefault }))
-      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null }>>(
+      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null; sequence?: number | null }>>(
         `/api/products/${primaryProductId}/sale-uoms`,
         { items: payload },
       )
@@ -318,6 +323,7 @@ export default function ClassicProductDetailPage() {
         commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
         commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
         spec: r.spec ?? null,
+        sequence: r.sequence ?? null,
       })))
       toast.success(isEn ? 'Sellable units saved' : '可售单位已保存')
     } catch (e) {
@@ -1010,6 +1016,28 @@ export default function ClassicProductDetailPage() {
                           />
                         ) : (
                           <span className="text-xs text-gray-500">{row.spec || '—'}</span>
+                        )}
+                      </div>
+                      {/* 装货顺序(20260907)：仓库配货/司机卸货堆叠顺序——数字越小越先装/放最下（重、
+                          耐压），越大越后装/放最上（怕压）；每一行(含基础单位)独立设置，不继承别的单位。
+                          语义跟上面页头的 Product Sequence 一致，但那个排的是单据里第几行，这个排的是
+                          物理堆叠顺序，两者互不影响。留空＝没设置，排序时按"没有 sequence"处理排最后。 */}
+                      <div className="flex items-center gap-2 mt-1 pl-1">
+                        <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
+                          {isEn ? 'Pack Sequence' : '装货顺序'}
+                        </span>
+                        {editMode ? (
+                          <NumericInput
+                            step="1"
+                            value={row.sequence ?? ''}
+                            onChange={e => updateSaleUomRow(i, { sequence: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
+                            placeholder={isEn ? 'smaller = load first / bottom' : '数字越小越先装/放最下'}
+                            title={isEn ? 'Smaller = load first / bottom (heavy); larger = load last / top (fragile)' : '数字越小越先装/放最下（重）；越大越后装/放最上（怕压）'}
+                            className="h-7 px-2 border border-gray-200 rounded text-xs outline-none no-spinner"
+                            style={{ ...focusStyle, width: 90 }}
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-500">{row.sequence ?? '—'}</span>
                         )}
                       </div>
                     </div>

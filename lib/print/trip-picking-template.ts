@@ -21,11 +21,20 @@ import {
   formatPrintTimestamp,
   renderTripNoticeHtml,
 } from './trip-common'
-import { sortLinesBySequence } from '@/lib/print/line-sort'
+import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 import { displayUomName } from '@/lib/sale-uom'
 import { formatUomConversionHint, type UomConversionInfo } from '@/lib/print/uom-conversion'
+
+/** 组内多个单位装货顺序不一致时，取数字更大的那个（越大越后装/越靠上、越需要小心）——
+ * 宁可保守多垫一层，也不要因为某个单位的顺序覆盖了另一个单位怕压的事实。
+ * 一边没设置(null)时用另一边有值的那个，不让"没配置"意外压过一个明确设置的值。 */
+function maxUomSequence(a: number | null, b: number | null): number | null {
+  if (a == null) return b
+  if (b == null) return a
+  return a > b ? a : b
+}
 
 function fmtQty(v: number): string {
   if (v === Math.floor(v)) return String(v)
@@ -47,6 +56,8 @@ interface AggProduct {
   productName: string
   /** 商品 sequence，组内排序用（大货/散货的分组本身不变，见下方注释） */
   productSequence: number | null
+  /** 装货顺序（20260907），排序用 */
+  uomSequence: number | null
   spec: string
   uomName: string
   /** 箱规；行本身就是按大单位下的单时为 null（已经是整箱，不必再拆） */
@@ -73,6 +84,8 @@ interface ProductGroup {
   productId: string
   productName: string
   productSequence: number | null
+  /** 组内各单位装货顺序取数字更大的那个，见 maxUomSequence */
+  uomSequence: number | null
   spec: string
   productType: string | null
   uoms: AggProduct[]
@@ -124,6 +137,7 @@ export function generateTripPickingHtml(
           uomId: line.uomId,
           productName: line.productName,
           productSequence: line.productSequence ?? null,
+          uomSequence: line.uomSequence ?? null,
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',
           uomConversion: line.uomConversion ?? null,
@@ -180,11 +194,14 @@ export function generateTripPickingHtml(
           productId: p.productId,
           productName: p.productName,
           productSequence: p.productSequence,
+          uomSequence: p.uomSequence,
           spec: p.spec,
           productType: p.productType,
           uoms: [],
         }
         groupMap.set(p.productId, g)
+      } else {
+        g.uomSequence = maxUomSequence(g.uomSequence, p.uomSequence)
       }
       g.uoms.push(p)
     }
@@ -192,9 +209,10 @@ export function generateTripPickingHtml(
   }
 
   // ⚠️ 大货/散货这个分组**不动** —— 那是仓库的作业顺序（先整箱后零散），
-  // 2026-08-18 客户要的「按 sequence 排」只改组内顺序，不该打乱仓库习惯。
-  const consumableGroups = sortLinesBySequence(buildGroups(allProducts.filter(belongsToConsumableTable)))
-  const storableGroups = sortLinesBySequence(buildGroups(allProducts.filter(p => !belongsToConsumableTable(p))))
+  // 2026-08-18 客户要的「按 sequence 排」、20260907 加的「按装货顺序排」都只改组内顺序，
+  // 不该打乱仓库习惯。组内先按装货顺序（数字小的先装/在前，大的后装/在后），同层再按商品 sequence。
+  const consumableGroups = sortLinesByUomSequence(buildGroups(allProducts.filter(belongsToConsumableTable)))
+  const storableGroups = sortLinesByUomSequence(buildGroups(allProducts.filter(p => !belongsToConsumableTable(p))))
   const totalProductCount = new Set(allProducts.map(p => p.productId)).size
 
   const showStorable = variant !== 'consumable'

@@ -430,6 +430,10 @@ model ProductSaleUom {
   /// 加订单行时优先取这里的值写进 OrderLine.spec（行快照），没填才落回 lib/order-line-description.ts
   /// 的商品级兜底（Product.saleDescription / Product.spec）。
   spec          String?
+  /// 20260907 新增：装货顺序，仓库配货/司机卸货用——数字越小越先装/放最下（重、耐压），
+  /// 越大越后装/放最上（轻、怕压）。跟 Product.sequence（单据里排第几行）是两个独立维度，
+  /// 语义/用法逐字照抄 Product.sequence：可空、不做唯一性校验，允许大量商品共用同一个数字。
+  sequence      Int?
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

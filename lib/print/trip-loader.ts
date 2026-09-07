@@ -21,6 +21,7 @@ import { loadInvoiceNoMap } from './invoice-lookup'
 import { uomConversionKey } from './uom-conversion'
 import { loadUomConversionMap } from './uom-conversion-loader'
 import { fetchProductSequences } from '@/lib/print/product-sequence'
+import { fetchUomSequences, resolveUomSequence } from '@/lib/print/uom-sequence'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 
 const toNum = (v: unknown): number => {
@@ -189,7 +190,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productGoodsTypeMap, productTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap] = await Promise.all([
+  const [goodsTypeMap, productGoodsTypeMap, productTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductGoodsTypeMap(productIds),
     loadProductTypeMap(productIds),
@@ -200,6 +201,8 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     // 拿不到数据库，所以在这里附到行上。见 lib/print/line-sort.ts
     fetchProductSequences(productIds),
     loadUomConversionMap(orders.flatMap(o => o.lines).map(l => ({ productId: l.productId, uomId: l.uomId }))),
+    // 装货顺序（20260907）：拣货单按它做堆叠排序，见 lib/print/uom-sequence.ts
+    fetchUomSequences(orders.flatMap(o => o.lines).map(l => ({ productId: l.productId, uomId: l.uomId }))),
   ])
 
   const customers: TripCustomer[] = customerRows.map(c => ({
@@ -235,6 +238,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
           productId: l.productId,
           productName: l.productName,
           productSequence: productSeqMap.get(l.productId) ?? null,
+          uomSequence: resolveUomSequence(uomSeqMap, l.productId, l.uomId),
           spec: l.spec ?? null,
           uomId: l.uomId,
           uomName: l.uomName,

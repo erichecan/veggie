@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
+import { fetchUomSequenceRows, resolveUomSequenceByName, uomSequenceKey } from '@/lib/print/uom-sequence'
 
 /** 托盘内一条货物明细：来自某订单某餐馆的某商品 */
 type PalletItem = {
@@ -91,6 +92,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           a.productName.localeCompare(b.productName, 'zh-CN'),
       )
 
+      // 装货顺序排序（20260907）：已入盘的托盘明细按数字小的先拣/放最下（重）、数字大的
+      // 最后拣/放最上（怕压）排一遍，操作员在拼盘时就能看到最终应该摆放的顺序。待分盘池
+      // 仍按餐馆/商品名排——那是"找货"的工作队列，跟装车顺序是两个目的，不混排。
+      const seqRows = await fetchUomSequenceRows(
+        pallets.flatMap(p => ((p.items as PalletItem[]) ?? []).map(it => it.productId)),
+      )
+      const palletViews = pallets.map(p => ({
+        id: p.id,
+        seq: p.seq,
+        label: p.label,
+        items: [...((p.items as PalletItem[]) ?? [])].sort((a, b) => {
+          const sa = uomSequenceKey(resolveUomSequenceByName(seqRows, a.productId, a.uomName))
+          const sb = uomSequenceKey(resolveUomSequenceByName(seqRows, b.productId, b.uomName))
+          return sa - sb
+        }),
+      }))
+
       return NextResponse.json({
         wave: {
           id: wave.id,
@@ -99,7 +117,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           waveType: wave.waveType,
           waveNumber: wave.waveNumber,
         },
-        pallets: pallets.map(p => ({ id: p.id, seq: p.seq, label: p.label, items: p.items })),
+        pallets: palletViews,
         pool,
       })
     } catch (error) {

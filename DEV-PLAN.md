@@ -1,112 +1,68 @@
-# DEV-PLAN：数据分析聊天中台（自然语言问数，BOSS 专属）
+# DEV-PLAN：商品可售单位装货顺序（UoM Sequence）—— 拣货/卸货堆叠顺序
 
 ## 读取的文档
 
-无独立 PRD。需求来自本次对话逐轮讨论确认，没有冲突文档需要合并。核心结论回顾：
+无独立 PRD。需求来自本次对话确认：仓库配货 / 司机卸货时，重的商品要放最下面、轻的不放最下面、怕压的放最上面；商品用了多单位销售（UoM）的话，基础单位和每个可售单位都要能单独设置。
 
-- 客户已确认"只给老板级别看、数据出境合规客户自行解决"，权限/合规不是本轮要处理的问题
-- LLM（Gemini）只负责"自然语言 → 结构化查询参数（DSL）"，不生成 SQL/Prisma 代码
-- 指标公式与正确性规则（税区、时区边界、防重复计数）锁死在代码里，不给 LLM/客户选；只有"税前/税后""按哪个日期口径""哪些状态算销售"这类真正的业务口径可以做成"可确认参数"，每次都摆出来给老板确认
-- 维度/筛选/join 走白名单，采用"路线 2"（通用语义层），但要在建表前先核对真实 schema——已发现 `Order.restaurantId`/`Invoice.customerId` 是约定型软外键，没有声明 Prisma relation，需要手写 join
-- 要支持"学习并固化"：记录问题日志用于个性化默认值 + 老板确认后可存成常用报表；但**新增指标/维度/join 永远需要开发者审核**，不能靠使用频率自动扩展白名单
+⚠️ **设计经过一次推翻，这里记录最终定案**：第一版按对话讨论定成"分层"（BOTTOM/NORMAL/TOP 三档枚举），已经实现、验证、部署到本地开发库。客户随后明确表态：**还是要纯数字 sequence**（跟 `Product.sequence` 语义一致的可编辑整数），只是要求在可售单位（`ProductSaleUom`）这一级也各自有一个值，不要枚举下拉。本文档描述的是**这一版**——数字方案；分层版已被完全替换（迁移 `20260907000001` 加的字段被 `20260907000002` 撤掉重建，没有保留双轨）。
 
-## 现状核实（复用性检查，避免重复造轮子）
+最终确认的两点设计：
 
-`lib/analytics/pivot.ts` 的 `DIMENSION_DEFS` 已经是一份可工作的"维度白名单 + 原始 SQL 片段"机制（`app/api/analytics/margin/route.ts` 在生产上跑着），并且已经用 `o."restaurantId"` 直接处理了 Order→Customer 这条软外键 join，跟本次讨论的方案完全一致——**这次是扩展这套机制，不是另起一套**。`lib/analytics/metrics.ts` 已经是"锁死规则"的唯一真相来源（`SALES_COUNTED_STATUSES`、`resolveDateRange`、`BUSINESS_TIMEZONE`）。`lib/purchase/ai-pdf-parser.ts` 已经有一套验证过的 Gemini 调用范式（`@google/genai`、JSON mode + `responseSchema` 强约束输出、模型选型踩坑记录：`gemini-2.5`/`3.6` 在这个 API 项目上全系 404，能用的是 `gemini-3.1-flash-lite`），本次直接复用这套调用方式。
+1. **纯数字**，语义/校验逐字照抄 `Product.sequence`：可编辑整数，可空，**不做唯一性/重复校验**——同一个数字可以有很多商品共用，不需要处理冲突。数字越小越先装/放最下（重、耐压），越大越后装/放最上（轻、怕压）。
+2. **粒度**：基础单位 + 每个可售单位（`ProductSaleUom` 每一行）都要能单独设置，不是只设基础单位、其它单位继承。
 
-## 架构决策摘要
+## 现状核实（复用性检查）
 
-1. LLM 只产出结构化 DSL，不产出可执行代码——杜绝"LLM 写的查询直接跑在生产库上"这个最大风险
-2. 每个指标声明：锁死公式（含正确性规则）+ 一组可确认参数（如 `taxBasis`/`dateBasis`/`statusScope`）+ 默认粒度 + 允许的维度集合
-3. 维度/筛选走白名单，复用并扩展 `DIMENSION_DEFS`
-4. 执行层复用 `$queryRawUnsafe` + `$N` 参数化占位符（margin route.ts 同款手法），带行数上限和语句超时
-5. 确认环节用固定模板把 DSL 渲染成一句人话，不让 LLM 自由描述查询过程——保证"客户确认的话术"与"实际会跑的查询"100% 对得上
-6. 学习/固化：日志驱动个性化默认值 + 老板手动确认后"存为常用报表"；指标/维度/join 白名单本身只能由开发者扩展
+- **`Product.sequence`（已存在）不是本次要动的字段，也不能直接拿来用**：它是"该商品在打印单据/商品目录里排第几行"（`lib/print/line-sort.ts` 注释：2026-08-18 客户要求，Odoo 的目录/拣货顺序），已经接入全部打印单据（`lib/print/trip-picking-template.ts`、`dispatch-loader.ts`、`invoices/[id]`）和商品列表页排序。它是**单个数字挂在 Product 上**，语义是"单据里第几行"，跟本次要的"物理上放第几层"是两个维度，会同时存在、互不覆盖、互不合并。
+- 这个字段的真实数据也是本次"不做唯一性校验"这个决定的直接依据：`line-sort.ts` 注释记录生产实测——132,847 张多行订单里 77.5% 所有行 sequence 相同（排了等于没排），18.4% 的订单行干脆没有值。客户明确表示接受这个现状（"客户需要的就是这个"），所以新字段照抄它的语义，不额外加防重复机制。
+- **基础单位本来就是 `ProductSaleUom` 里 `isDefault=true`（factor=1）的那一行**，不是 `Product` 上的独立字段。所以"基础单位 + 每个可售单位都要设置"只需要在 `ProductSaleUom` 一张表上加字段，不用在 `Product` 和 `ProductSaleUom` 两处重复。
+- 拣货/卸货相关的现有页面和数据流：
+  - **打印路径**（司机拣货单 `print/trip/[id]/picking`、调度拣货单 `print/dispatch/picking`）：都走 `lib/print/dispatch-loader.ts` / `lib/print/trip-loader.ts` 取数 → `lib/print/trip-picking-template.ts` 渲染，行上有真实的 `productId`+`uomId`（来自 `OrderLine`），已有 `fetchProductSequences` + `sortLinesBySequence` 的排序范式可以照抄。
+  - **网页拣货单/托盘**（`/api/waves/[id]/pick-sheet`、`/api/waves/[id]/pallets`）：数据来自 `Pallet.items` JSON 快照，字段是 `productId` + `uomName`（字符串），**没有 `uomId`**。按单位精确取 sequence 时只能用 `productId + uomName` 反查 `ProductSaleUom`，理论上存在同商品下单位重名的碰撞风险（业务上目前不会出现，可接受）。
 
-## Schema 设计（新增，需要迁移）
+## Schema 设计
 
 ```prisma
-model AnalysisQueryLog {
-  id              String    @id @default(cuid())
-  userId          String
-  user            User      @relation("AnalysisQueryLogUser", fields: [userId], references: [id])
-  rawQuestion     String
-  dsl             Json
-  confirmedParams Json
-  status          String    // 'confirmed' | 'rejected' | 'failed_validation' | 'unsupported'
-  rowCount        Int?
-  durationMs      Int?
-  errorMessage    String?
-  createdAt       DateTime  @default(now())
-
-  @@index([userId])
-  @@index([createdAt])
-}
-
-model SavedAnalysisReport {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation("SavedAnalysisReportUser", fields: [userId], references: [id])
-  name       String
-  dsl        Json
-  useCount   Int       @default(0)
-  lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@unique([userId, name])
-  @@index([userId])
+model ProductSaleUom {
+  // ...现有字段不变
+  /// 装货顺序：仓库配货/司机卸货用。数字越小越先装/放最下（重、耐压），
+  /// 越大越后装/放最上（轻、怕压）。与 Product.sequence（单据里排第几行）
+  /// 是两个独立维度，互不覆盖。语义/校验逐字照抄 Product.sequence：可空、
+  /// 不做唯一性校验，允许大量商品共用同一个数字。
+  sequence Int?
 }
 ```
 
-`User` model 需要补两条反向关系字段。本地开发库是多 worktree 共用的 Neon 库，动之前先 `prisma migrate status` 核对没有别的 worktree 落下的未应用迁移。
+- 可空、无默认值——跟 `Product.sequence` 一致，不强制每条历史数据都补值，未设置的排序时按"没有"处理（排最后）。
+- 不加唯一约束、不加索引——重复是设计目标，不是异常。
 
 ## 模块拆解
 
-**M1 指标与维度注册表扩展** — `lib/analytics/semantic-model.ts`（新文件）
-复用 `DIMENSION_DEFS` 现有 7 个维度（product/category/customer/salesUser/day/week/month），新增 `status`/`paymentTerm`/`orderSource` 三个筛选用维度。新增 `METRIC_DEFS`：v1 先做 **销售额、毛利** 两个指标，各自声明 `confirmableParams`（`taxBasis`/`dateBasis`/`statusScope`）、默认粒度（Order 级）、以及"按产品分组时切换到 OrderLine 粒度公式"的规则。库存需求/ATP、司机提成、客户欠款先不做，验证链路跑通再扩展——这是上几轮定下的"保守路线，按实际提问频率长大"。
+1. **数据层**：`prisma/schema.prisma` 加字段 + 迁移。
+2. **商品编辑页录入**：`app/[locale]/classic/operator/products/[id]/page.tsx` 的可售单位表格，每行加一个"装货顺序"数字输入框（跟页头 Product Sequence 同款 `NumericInput`），随现有整份保存流程（`PUT /api/products/[id]/sale-uoms`）一起提交，不新增接口。
+3. **API 透传**：`app/api/products/[id]/sale-uoms/route.ts`（GET/PUT）、`lib/sale-uom.ts`（`SaleUomItemInput` 类型）。
+4. **拣货/卸货单据接入排序**（本轮范围）：
+   - `lib/print/uom-sequence.ts`（新建，仿 `product-sequence.ts`）：按 `productId+uomId` 精确查；`lib/print/line-sort.ts` 新增 `sortLinesByUomSequence`，先按装货顺序排，同值/都没有时再按现有商品 sequence→商品名排（二级键，不改现有行为）。
+   - `lib/print/trip-picking-template.ts`（司机/调度打印拣货单）接入。同一商品多单位混装成一组时，取数字更大的那个（更保守，偏向"当怕压处理"）。
+   - `app/api/waves/[id]/pick-sheet/route.ts`（网页拣货单）—— 按 `productId+uomName` 反查装货顺序后排序 `pallet.items`。
+   - `app/api/waves/[id]/pallets/route.ts` 的已入盘托盘明细 —— 同上；待分盘池维持按餐馆/商品名排序不变（那是"找货"用途，不是装车顺序）。
+5. **暂不覆盖**：`dispatch-summary-pdf` 等未确认包含逐品明细的打印路由，先不动；如果打印出来客户觉得也要按顺序排，复用第 4 步同一套工具函数二次接入即可，不算大改。
 
-**M2 DSL 校验** — `lib/analytics-chat/dsl-schema.ts`
-zod schema 对齐 M1 白名单；编译前二次校验维度是否与指标粒度兼容（哪怕 Gemini 的 `responseSchema` 已经卡过一次格式，业务级约束还要再查一遍，双保险）。
+## 路由/文件清单
 
-**M3 查询编译器** — `lib/analytics-chat/compiler.ts`
-DSL → `$queryRawUnsafe` + 参数数组；处理软外键 join；固定 `LIMIT`；确认 Prisma 连接的语句超时配置，没有就显式加，防止理解错的大查询拖垮 2vCPU 的生产机器。
-
-**M4 Gemini 交互层** — `lib/analytics-chat/llm.ts`
-两个用途：① 自然语言 → DSL（`responseSchema` 强约束）② 聚合结果 → 自然语言解读（纯文本）。模型先沿用 `gemini-3.1-flash-lite`；校验失败重试上限 2 次，把错误原文喂回去。
-
-**M5 确认渲染模板** — `lib/analytics-chat/confirm-template.ts`
-纯函数：DSL → 人话，覆盖该指标声明的每一个 `confirmableParams`。
-
-**M6 API 路由**（均需登记进 `route-map.ts`，否则 middleware 层直接全员 403）
-- `POST /api/analytics-chat/message`（BOSS-only）：问题 → DSL 校验 → 返回确认文案，不执行不落库
-- `POST /api/analytics-chat/confirm`（BOSS-only）：确认后的 DSL → 二次校验 → 执行 → 写 `AnalysisQueryLog` → 生成解读 → 返回结果
-- `POST /api/analytics-chat/reports`（BOSS-only）：保存常用报表
-- `GET /api/analytics-chat/reports`（BOSS-only）：拉取 + 一键重跑（跳过 LLM，直接执行存好的 DSL）
-
-**M7 前端页面**
-`app/[locale]/classic/boss/analytics/chat/page.tsx`：聊天式 UI（输入框 + 消息流 + 确认卡片 + "存为常用报表"），挂进 boss layout 导航。layout 本身放行 BOSS+OPERATOR，API 层用 `withAuth(req, h, ['BOSS'])` 单独收紧，满足"只给老板看"。
+- `prisma/schema.prisma` + 迁移（`20260907000001` 加分层字段 → `20260907000002` 撤掉重建为数字字段，两条迁移都保留，不改写已应用的历史）
+- `lib/sale-uom.ts`
+- `app/api/products/[id]/sale-uoms/route.ts`
+- `app/[locale]/classic/operator/products/[id]/page.tsx`
+- `lib/print/uom-sequence.ts`（新建）
+- `lib/print/line-sort.ts`
+- `lib/print/dispatch-loader.ts` / `lib/print/trip-loader.ts` / `lib/print/trip-common.ts`
+- `lib/print/trip-picking-template.ts`
+- `app/api/waves/[id]/pick-sheet/route.ts`
+- `app/api/waves/[id]/pallets/route.ts`
 
 ## 风险点
 
-1. **LLM 理解质量是最大不确定性**：`gemini-3.1-flash-lite` 只在 PDF 抽取这种窄任务上验证过，能否稳定应对"多指标+多维度+多轮追问"没有实测过。计划开发中用 10-15 个真实问题手工测准确率，不够再考虑升级模型档位（增加成本/延迟）。
-2. **粒度切换**（按产品分组要换成 OrderLine 级公式）是编译器最容易写错的地方，必须专门写单测覆盖"按业务员" vs "按商品"两条路径，确认不会重复计数。
-3. **多轮追问的增量修改**若第一版做不稳，降级为"每次当新问题重新理解"，避免为了体验引入难排查的状态管理 bug。
-4. **数据库迁移**：本地开发库要先核对 `migrate status`，避免冲掉其它 worktree 的改动。
-
-## 验证清单
-
-- BOSS 账号问"本月销售额"类问题，走完 确认→执行→解读 全流程，数字与现有 `/api/analytics/margin` 页面同口径下的结果一致（交叉验证正确性，这是最重要的验收标准）
-- 非 BOSS 账号调用 `/api/analytics-chat/*` 一律 403
-- 问一个白名单外的维度（如"按邮编分组"），系统友好拒绝，不 500、不瞎编
-- 追问里前后矛盾（先说税前又说含税），确认卡片反映最新一次选择
-- `npm run build` 无报错，迁移在本地库跑通
-
----
-
-📋 计划已生成，请确认以下几点后我再开始写代码：
-
-1. **v1 指标范围**：先只做「销售额」「毛利」这两个指标（复用现有 margin 口径），其余（库存需求、司机提成、客户欠款）先不做，OK 吗？
-2. **模型选型**：先用现有 `gemini-3.1-flash-lite`（省事、已有踩坑记录），效果不够再评估升级，这个节奏可以吗？
-3. 功能挂在 `boss/analytics` 下新增一个"AI 问数"页面，API 层单独收紧到仅 BOSS 角色，这个位置合适吗？
-
-回复"确认，开始开发"后我就按这个计划开始写代码。
+1. **不做防重复/唯一性校验**是客户明确要的行为，等同 `Product.sequence` 现状（77.5% 订单行 sequence 相同、18.4% 缺失）——后续如果同一批商品的装货顺序全填一样的数字，排序会退化成"没排"，这是已知、被接受的权衡，不是 bug。
+2. **`Product.sequence`（单据行序）与新的 `ProductSaleUom.sequence`（装货顺序）会同时存在**，两者互不影响、互不合并，命名相似容易混淆，代码里已用完整变量名（`productSequence` / `uomSequence`）区分。
+3. **网页拣货单/托盘明细按 `uomName` 字符串反查单位**（因为 `Pallet.items` 快照没存 `uomId`），理论上有重名碰撞风险，实测目前业务里不会撞名，本轮按可接受处理，不改动 `Pallet.items` 的数据结构。
