@@ -435,14 +435,6 @@ export default function ClassicProductsPage() {
       },
     },
     {
-      key: 'uomName',
-      width: 86,
-      label: 'Unit of Measure',
-      // 20260907 客户反馈这一列不需要筛选下拉框，去掉
-      filterType: 'none',
-      render: (v) => v ? <span className="text-xs text-gray-600">{String(v)}</span> : <span className="text-gray-300">—</span>,
-    },
-    {
       key: 'type',
       label: 'Product Type',
       filterType: 'multi-select',
