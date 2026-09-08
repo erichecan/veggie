@@ -11,6 +11,7 @@ import { loadTripPrintData } from '@/lib/print/trip-loader'
 import { stripAutoPrintScript } from '@/lib/print/trip-common'
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
+import { resolvePrintLang } from '@/lib/print/print-i18n'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,13 +21,15 @@ const ALLOWED_ROLES = ['OPERATOR', 'BOSS', 'DRIVER', 'FINANCE', 'SALES']
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   return withAuth(req, async () => {
     const { id } = await params
+    const { searchParams } = new URL(req.url)
+    const lang = resolvePrintLang(searchParams.get('lang'))
     try {
       const wire = await loadTripPrintData(id)
       if (!wire) {
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
       }
       const data = { trip: wire.trip, orders: wire.orders, customers: new Map(wire.customers.map(c => [c.id, c])) }
-      const html = stripAutoPrintScript(generateTripSummaryHtml(data))
+      const html = stripAutoPrintScript(generateTripSummaryHtml(data, lang))
       const pdf = await renderHtmlToPdf(html)
       return new NextResponse(new Uint8Array(pdf), {
         headers: {

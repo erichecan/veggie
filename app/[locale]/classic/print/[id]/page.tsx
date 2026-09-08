@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import type { Order, Customer } from '@/lib/types'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
@@ -12,6 +14,68 @@ import { eur } from '@/lib/format-money'
 import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
 import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { displayUomName } from '@/lib/sale-uom'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+/**
+ * 这个页面本来就是英文优先写的(发票/送货单/销售单面向英文客户)，默认语言是 'en'，
+ * 跟其它中文优先的打印模板(拣货单等)刚好反过来——不能默认 'zh'，否则会改变现有默认行为。
+ */
+const T = {
+  en: {
+    docNo: { delivery: 'Delivery NO', sales: 'Sale Order NO', invoice: 'Invoice NO' },
+    customer: 'Customer',
+    delivery: 'Delivery',
+    payment: 'Payment',
+    driver: 'Driver:',
+    salesman: 'Salesman:',
+    paymentLabel: { cash: 'Immediate Payment', weekly: 'Weekly', monthly: 'Monthly' },
+    qty: 'QTY',
+    unit: 'UNIT',
+    description: 'DESCRIPTION',
+    price: 'PRICE',
+    vat: 'VAT',
+    inclVat: 'INCL VAT',
+    noItems: 'No items',
+    subtotal: 'Subtotal',
+    total: 'Total',
+    paymentBadge: 'PAYMENT',
+    customerNote: 'Customer Note',
+    orderNote: 'Order Note',
+    deliveryNote: '🚚 Delivery Note',
+    pageOf: (cur: number, total: number) => `Page ${cur}/${total}`,
+    printAt: 'Print at:',
+    docTitle: { delivery: 'Delivery Note', sales: 'Sale Order', invoice: 'Invoice' },
+    loading: 'Loading invoice…',
+    printBtn: '🖨 Print',
+  },
+  zh: {
+    docNo: { delivery: '送货单号', sales: '销售单号', invoice: '发票号' },
+    customer: '客户',
+    delivery: '送货信息',
+    payment: '付款方式',
+    driver: '司机：',
+    salesman: '业务员：',
+    paymentLabel: { cash: '即时付款', weekly: '按周结算', monthly: '按月结算' },
+    qty: '数量',
+    unit: '单位',
+    description: '商品描述',
+    price: '单价',
+    vat: '税率',
+    inclVat: '含税金额',
+    noItems: '无商品',
+    subtotal: '小计',
+    total: '合计',
+    paymentBadge: '付款方式',
+    customerNote: '客户备注',
+    orderNote: '订单备注',
+    deliveryNote: '🚚 送货备注',
+    pageOf: (cur: number, total: number) => `第 ${cur}/${total} 页`,
+    printAt: '打印时间：',
+    docTitle: { delivery: '送货单', sales: '销售单', invoice: '发票' },
+    loading: '发票加载中…',
+    printBtn: '🖨 打印',
+  },
+} as const
 
 /**
  * 最后一块除了富页脚(联系方式+页码)，还要放 Totals/Payment 徽章(sales/invoice)或最多 3 个
@@ -41,9 +105,12 @@ function barcodeSvg(code: string): string {
 export function buildOrderHtml(
   order: Order & { code?: string; deliveryDate?: string; internalNote?: string; externalNote?: string; salesman?: string; deliveryBatch?: string },
   customer: Customer | null,
-  opts: { pageBreakAfter?: boolean; docType?: 'delivery' | 'sales' } = {}
+  opts: { pageBreakAfter?: boolean; docType?: 'delivery' | 'sales' } = {},
+  lang: PrintLang = 'en'
 ): string {
-  const docNoLabel = opts.docType === 'delivery' ? 'Delivery NO' : opts.docType === 'sales' ? 'Sale Order NO' : 'Invoice NO'
+  const t = T[lang]
+  const docType = opts.docType ?? 'invoice'
+  const docNoLabel = t.docNo[docType]
   // 送货单不含价格:隐藏单价/税/金额列与合计(价格在销售订单/发票上体现)
   const hidePrice = opts.docType === 'delivery'
   // 按商品 sequence 排（客户要求 2026-08-18）。原先靠 OrderLine.sequence，
@@ -79,7 +146,7 @@ export function buildOrderHtml(
   const deliveryDate = formatDateOnly(order.deliveryDate ?? order.quotationDate)
 
   const paymentTerm = customer?.paymentTerm ?? ''
-  const paymentLabel = paymentTerm === 'cash' ? 'Immediate Payment' : paymentTerm === 'weekly' ? 'Weekly' : paymentTerm === 'monthly' ? 'Monthly' : ''
+  const paymentLabel = paymentTerm === 'cash' ? t.paymentLabel.cash : paymentTerm === 'weekly' ? t.paymentLabel.weekly : paymentTerm === 'monthly' ? t.paymentLabel.monthly : ''
   const isImmediatePayment = paymentTerm === 'cash'
   const paymentColor = isImmediatePayment ? '#dc2626' : '#15803d'
   const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
@@ -131,11 +198,11 @@ export function buildOrderHtml(
   <table class="info-table">
     <tr>
       <td>
-        <div class="info-head">Customer</div>
+        <div class="info-head">${t.customer}</div>
         <div class="info-val">
           <strong>${order.restaurantName}</strong><br/>
           ${customerAddr ? customerAddr + '<br/>' : ''}
-          ${deliveryBatch ? '<strong>Driver:</strong> ' + deliveryBatch : ''}
+          ${deliveryBatch ? `<strong>${t.driver}</strong> ` + deliveryBatch : ''}
         </div>
       </td>
       <td class="barcode-cell">
@@ -144,14 +211,14 @@ export function buildOrderHtml(
         <div class="barcode-code">${orderCode}</div>
       </td>
       <td>
-        <div class="info-head">Delivery</div>
+        <div class="info-head">${t.delivery}</div>
         <div class="info-val">
           ${deliveryDate}<br/>
-          ${salesman ? '<strong>Salesman:</strong> ' + salesman : ''}
+          ${salesman ? `<strong>${t.salesman}</strong> ` + salesman : ''}
         </div>
       </td>
       <td>
-        <div class="info-head">Payment</div>
+        <div class="info-head">${t.payment}</div>
         <div class="info-val">
           ${paymentLabel ? `<div style="font-weight:bold;color:${paymentColor};font-size:9.5pt;">${paymentLabel}</div>` : '<div style="color:#999;">—</div>'}
           ${customerPhone ? `<div style="margin-top:2mm;font-size:8.5pt;color:#555;">${customerPhone}</div>` : ''}
@@ -164,33 +231,33 @@ export function buildOrderHtml(
   ${hidePrice ? '' : `<div class="totals-wrap">
     <table class="totals-table">
       <tr>
-        <td class="total-label">Subtotal</td>
+        <td class="total-label">${t.subtotal}</td>
         <td class="total-value">${eur(subtotal)}</td>
       </tr>
       ${vatRowsHtml}
       <tr class="total-grand">
-        <td class="total-label">Total</td>
+        <td class="total-label">${t.total}</td>
         <td class="total-value">${eur(total)}</td>
       </tr>
     </table>
   </div>`}
 
   ${paymentLabel ? `<div style="margin-top:12px;padding:8px 14px;border-radius:6px;border:2px solid ${paymentBorder};background:${paymentBg};display:inline-block;">
-    <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">PAYMENT: ${paymentLabel}</span>
+    <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">${t.paymentBadge}: ${paymentLabel}</span>
   </div>` : ''}
 
   ${(opts.docType === 'sales' || opts.docType === 'delivery') && customer?.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
-    <div style="font-weight:600;margin-bottom:4px;">客户备注 / Customer Note</div>
+    <div style="font-weight:600;margin-bottom:4px;">${t.customerNote}</div>
     <div style="white-space:pre-wrap;">${customer.externalNote}</div>
   </div>` : ''}
 
   ${order.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
-    <div style="font-weight:600;margin-bottom:4px;">备注 / Order Note</div>
+    <div style="font-weight:600;margin-bottom:4px;">${t.orderNote}</div>
     <div style="white-space:pre-wrap;">${order.externalNote}</div>
   </div>` : ''}
 
   ${opts.docType === 'delivery' && order.deliveryNote ? `<div style="margin-top:16px;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;font-size:12px;color:#374151;">
-    <div style="font-weight:600;margin-bottom:4px;">🚚 送货备注 / Delivery Note</div>
+    <div style="font-weight:600;margin-bottom:4px;">${t.deliveryNote}</div>
     <div style="white-space:pre-wrap;">${order.deliveryNote}</div>
   </div>` : ''}`
 
@@ -212,16 +279,16 @@ export function buildOrderHtml(
   <table class="lines-table">
     <thead>
       <tr>
-        <th class="col-qty">QTY</th>
-        <th class="col-unit">UNIT</th>
-        <th class="col-desc">DESCRIPTION</th>
-        ${hidePrice ? '' : `<th class="col-price">PRICE</th>
-        <th class="col-vat">VAT</th>
-        <th class="col-incl">INCL VAT</th>`}
+        <th class="col-qty">${t.qty}</th>
+        <th class="col-unit">${t.unit}</th>
+        <th class="col-desc">${t.description}</th>
+        ${hidePrice ? '' : `<th class="col-price">${t.price}</th>
+        <th class="col-vat">${t.vat}</th>
+        <th class="col-incl">${t.inclVat}</th>`}
       </tr>
     </thead>
     <tbody>
-      ${linesHtml || (isLastChunk ? `<tr><td colspan="${hidePrice ? 3 : 6}" style="text-align:center;padding:6mm;color:#999">No items</td></tr>` : '')}
+      ${linesHtml || (isLastChunk ? `<tr><td colspan="${hidePrice ? 3 : 6}" style="text-align:center;padding:6mm;color:#999">${t.noItems}</td></tr>` : '')}
     </tbody>
   </table>
 
@@ -234,8 +301,8 @@ export function buildOrderHtml(
       Web: https://m.johnstonebros.ie/ &nbsp;&nbsp; VAT: IE9739451J
     </div>
     <div class="footer-page-row">
-      <span>${orderCode} - Page ${chunkIdx + 1}/${chunks.length}</span>
-      <span>Print at: <span class="print-ts"></span></span>
+      <span>${orderCode} - ${t.pageOf(chunkIdx + 1, chunks.length)}</span>
+      <span>${t.printAt} <span class="print-ts"></span></span>
     </div>
   </div>
 </div>`
@@ -307,6 +374,9 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
 export default function PrintPage() {
   const params = useParams<{ id: string }>()
   const id = params.id
+  const locale = useLocale()
+  const lang: PrintLang = locale === routing.defaultLocale ? 'zh' : 'en'
+  const t = T[lang]
   const [html, setHtml] = useState<string>('')
   const [ready, setReady] = useState(false)
 
@@ -322,7 +392,7 @@ export default function PrintPage() {
         setIsPreview(preview)
         const docType: 'delivery' | 'sales' | undefined =
           docParam === 'delivery' ? 'delivery' : docParam === 'sales' ? 'sales' : undefined
-        const docTitle = docType === 'delivery' ? 'Delivery Note' : docType === 'sales' ? 'Sale Order' : 'Invoice'
+        const docTitle = t.docTitle[docType ?? 'invoice']
         const [order, customers] = await Promise.all([
           apiGet<Order & { code?: string; deliveryDate?: string; internalNote?: string; externalNote?: string; salesman?: string; deliveryBatch?: string }>(`/api/orders/${id}`),
           apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
@@ -330,10 +400,10 @@ export default function PrintPage() {
         const customer = customers.find(c => c.id === order.restaurantId) ?? null
         const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
 
-        const bodyHtml = buildOrderHtml(order, customer, { docType })
+        const bodyHtml = buildOrderHtml(order, customer, { docType }, lang)
 
         setHtml(`<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -363,12 +433,12 @@ ${bodyHtml}
       }
     }
     load()
-  }, [id])
+  }, [id, lang])
 
   if (!ready) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial, sans-serif', color: '#666' }}>
-        Loading invoice…
+        {t.loading}
       </div>
     )
   }
@@ -391,7 +461,7 @@ ${bodyHtml}
             cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           }}
         >
-          🖨 Print
+          {t.printBtn}
         </button>
       )}
     </>

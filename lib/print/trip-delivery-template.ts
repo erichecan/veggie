@@ -31,13 +31,52 @@ import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { displayUomName } from '@/lib/sale-uom'
 import { formatUomConversionHint } from '@/lib/print/uom-conversion'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+// 这份单据的字段(Customer/Delivery NO/QTY/UNIT/DESCRIPTION/Driver/No items/Delivery Orders)
+// 从一开始就是纯英文(客户面向单据，见文件头注释)，zh 分支保持这些英文原样不翻——只有
+// 三个 note-head 原本就是"中文 / English"并列写死的，才有真正需要区分 zh/en 的翻译需求。
+const T = {
+  zh: {
+    docTitle: 'Delivery Orders',
+    customer: 'Customer',
+    deliveryNo: 'Delivery NO',
+    delivery: 'Delivery',
+    comment: 'Comment',
+    driverPrefix: 'Driver:',
+    qty: 'QTY',
+    unit: 'UNIT',
+    desc: 'DESCRIPTION',
+    noItems: 'No items',
+    customerNoteHead: '客户备注 / Customer Note',
+    orderNoteHead: '订单备注 / Order Note',
+    deliveryNoteHead: '🚚 送货备注 / Delivery Note',
+  },
+  en: {
+    docTitle: 'Delivery Orders',
+    customer: 'Customer',
+    deliveryNo: 'Delivery NO',
+    delivery: 'Delivery',
+    comment: 'Comment',
+    driverPrefix: 'Driver:',
+    qty: 'QTY',
+    unit: 'UNIT',
+    desc: 'DESCRIPTION',
+    noItems: 'No items',
+    customerNoteHead: 'Customer Note',
+    orderNoteHead: 'Order Note',
+    deliveryNoteHead: '🚚 Delivery Note',
+  },
+} as const
 
 function buildDeliveryOrderHtml(
   order: TripOrder,
   customer: TripCustomer | undefined,
   driverLabel: string,
   opts: { pageBreakAfter?: boolean } = {},
+  lang: PrintLang = 'zh',
 ): string {
+  const t = T[lang]
   // 按商品 sequence 排（客户要求 2026-08-18），与销售单/发票 PDF 同一口径
   const lines = sortLinesBySequence<TripLine>(order.lines ?? [])
 
@@ -66,26 +105,26 @@ function buildDeliveryOrderHtml(
   <table class="info-table">
     <tr>
       <td>
-        <div class="info-head">Customer</div>
+        <div class="info-head">${t.customer}</div>
         <div class="info-val">
           <strong>${escapeHtml(order.customerName)}</strong><br/>
           ${customerAddr ? escapeHtml(customerAddr) + '<br/>' : ''}
-          ${driverLabel ? '<strong>Driver:</strong> ' + escapeHtml(driverLabel) : ''}
+          ${driverLabel ? `<strong>${t.driverPrefix}</strong> ` + escapeHtml(driverLabel) : ''}
         </div>
       </td>
       <td class="barcode-cell">
-        <div class="info-head">Delivery NO</div>
+        <div class="info-head">${t.deliveryNo}</div>
         <svg class="barcode-svg bc-${safeCode}"></svg>
         <div class="barcode-code">${escapeHtml(orderCode)}</div>
       </td>
       <td>
-        <div class="info-head">Delivery</div>
+        <div class="info-head">${t.delivery}</div>
         <div class="info-val">
           ${deliveryDate}<br/>
         </div>
       </td>
       <td>
-        <div class="info-head">Comment</div>
+        <div class="info-head">${t.comment}</div>
         <div class="info-val">${escapeHtml(customerPhone) || '—'}</div>
       </td>
     </tr>
@@ -93,15 +132,15 @@ function buildDeliveryOrderHtml(
 
   const notesHtml = `
   ${customer?.externalNote ? `<div class="note-box">
-    <div class="note-head">客户备注 / Customer Note</div>
+    <div class="note-head">${t.customerNoteHead}</div>
     <div class="note-body">${escapeHtml(customer.externalNote)}</div>
   </div>` : ''}
   ${order.externalNote ? `<div class="note-box">
-    <div class="note-head">订单备注 / Order Note</div>
+    <div class="note-head">${t.orderNoteHead}</div>
     <div class="note-body">${escapeHtml(order.externalNote)}</div>
   </div>` : ''}
   ${order.deliveryNote ? `<div class="note-box note-box-delivery">
-    <div class="note-head">🚚 送货备注 / Delivery Note</div>
+    <div class="note-head">${t.deliveryNoteHead}</div>
     <div class="note-body">${escapeHtml(order.deliveryNote)}</div>
   </div>` : ''}`
 
@@ -139,13 +178,13 @@ function buildDeliveryOrderHtml(
   <table class="lines-table">
     <thead>
       <tr>
-        <th class="col-qty">QTY</th>
-        <th class="col-unit">UNIT</th>
-        <th class="col-desc">DESCRIPTION</th>
+        <th class="col-qty">${t.qty}</th>
+        <th class="col-unit">${t.unit}</th>
+        <th class="col-desc">${t.desc}</th>
       </tr>
     </thead>
     <tbody>
-      ${linesHtml || (isLastChunk ? `<tr><td colspan="3" style="text-align:center;padding:6mm;color:#999">No items</td></tr>` : '')}
+      ${linesHtml || (isLastChunk ? `<tr><td colspan="3" style="text-align:center;padding:6mm;color:#999">${t.noItems}</td></tr>` : '')}
     </tbody>
   </table>
 
@@ -218,8 +257,9 @@ ${PRINT_PAGE_FOOTER_CSS}
 }
 `
 
-export function generateTripDeliveryHtml(data: TripPrintData): string {
+export function generateTripDeliveryHtml(data: TripPrintData, lang: PrintLang = 'zh'): string {
   const { trip, orders, customers } = data
+  const t = T[lang]
 
   // 筛选打印/全部打印可能横跨多个司机,trip 级标签会是空的——每单优先用自己实际所属的
   // 批次(driverBatchLabel),查不到才退回 trip 级(单批次打印时两者本就一致)。
@@ -229,7 +269,7 @@ export function generateTripDeliveryHtml(data: TripPrintData): string {
     const customer = customers.get(order.customerId)
     return buildDeliveryOrderHtml(order, customer, order.driverBatchLabel || tripDriverLabel, {
       pageBreakAfter: idx < orders.length - 1,
-    })
+    }, lang)
   }).join('')
 
   const barcodeInits = orders.map(order => {
@@ -257,7 +297,7 @@ export function generateTripDeliveryHtml(data: TripPrintData): string {
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Delivery Orders</title>
+<title>${t.docTitle}</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>${CSS}</style>
 </head>

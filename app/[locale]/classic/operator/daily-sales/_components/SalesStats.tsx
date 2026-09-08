@@ -373,6 +373,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     if (selectedCategories.length > 0) params.set('categoryIds', selectedCategories.join(','))
     if (selectedSalesman) params.set('salesUserId', selectedSalesman)
     if (sortBySequence) params.set('sortBySequence', '1')
+    if (isEn) params.set('lang', 'en')
     return `/api/print/day-wise-report-pdf?${params.toString()}`
   }
 

@@ -13,6 +13,48 @@ import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { compareSequenceThenName } from '@/lib/print/line-sort'
 import { computeOrderTotals } from '@/lib/order-totals'
 import type { Order } from '@/lib/types'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+/** 这个文件里的文案原来就是纯英文（现有默认行为 = 'en'，不是 'zh'——跟其它打印模板相反，
+ * 改造时默认值必须保 'en' 才能保证不传 lang 时输出跟改造前逐字节一致）。zh 是新增的可选项。 */
+const T = {
+  en: {
+    printed: 'Printed:',
+    saleNo: 'Sale No.',
+    customer: 'Customer',
+    driver: 'Driver',
+    untaxedAmount: 'Untaxed Amount',
+    totalVat: 'Total VAT',
+    total: 'Total',
+    grandTotalOrders: (n: number) => `Grand Total (${n} orders)`,
+    date: 'Date',
+    product: 'Product',
+    qty: 'Qty',
+    unitPrice: 'Unit Price',
+    amount: 'Amount',
+    grandTotal: 'Grand Total',
+    totalQty: 'Total Qty',
+    dayHeaders: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  },
+  zh: {
+    printed: '打印时间：',
+    saleNo: '单号',
+    customer: '客户',
+    driver: '司机',
+    untaxedAmount: '税前金额',
+    totalVat: '税额合计',
+    total: '总计',
+    grandTotalOrders: (n: number) => `总计（共 ${n} 单）`,
+    date: '日期',
+    product: '商品',
+    qty: '数量',
+    unitPrice: '单价',
+    amount: '金额',
+    grandTotal: '总计',
+    totalQty: '总数量',
+    dayHeaders: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+  },
+} as const
 
 export type PrintMode = 'day' | 'multiline' | 'summary'
 
@@ -94,7 +136,8 @@ function formatDateOnly(dateStr: string): string {
 
 // ─── Print mode: Order Summary (Odoo "Print") ──────────────────────────────
 // Shows: Sale No. | Customer | Driver | Amount | Total VAT
-export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], title: string, meta: string): string {
+export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], title: string, meta: string, lang: PrintLang = 'en'): string {
+  const t = T[lang]
   const orderMap = new Map<string, {
     code: string
     customerName: string
@@ -142,23 +185,24 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
   return wrapHtml(title, meta, `
     <table>
       <thead><tr>
-        <th>Sale No.</th><th>Customer</th><th>Driver</th>
-        <th class="r">Untaxed Amount</th><th class="r">Total VAT</th><th class="r">Total</th>
+        <th>${t.saleNo}</th><th>${t.customer}</th><th>${t.driver}</th>
+        <th class="r">${t.untaxedAmount}</th><th class="r">${t.totalVat}</th><th class="r">${t.total}</th>
       </tr></thead>
       <tbody>
         ${rows}
         <tr class="grand-total">
-          <td colspan="3">Grand Total (${sorted.length} orders)</td>
+          <td colspan="3">${t.grandTotalOrders(sorted.length)}</td>
           <td class="r">${eur(grandUntaxed)}</td>
           <td class="r">${eur(grandTax)}</td>
           <td class="r">${eur(grandTotal)}</td>
         </tr>
       </tbody>
-    </table>`)
+    </table>`, lang)
 }
 
 // ─── Multiline mode: flat table ─────────────────────────────────────────────
-export function buildMultilineHtml(lines: ReportLine[], title: string, meta: string, sortBySequence: boolean): string {
+export function buildMultilineHtml(lines: ReportLine[], title: string, meta: string, sortBySequence: boolean, lang: PrintLang = 'en'): string {
+  const t = T[lang]
   // 排序口径与单据打印统一（见 lib/print/line-sort.ts）：没有 sequence 的排最后按名称，
   // 而不是相减得 NaN —— 实测 18.4% 的订单行拿不到商品 sequence
   const sorted = [...lines].sort((a, b) => sortBySequence
@@ -181,21 +225,22 @@ export function buildMultilineHtml(lines: ReportLine[], title: string, meta: str
   return wrapHtml(title, meta, `
     <table>
       <thead><tr>
-        <th>Date</th><th>Customer</th><th>Product</th>
-        <th class="r">Qty</th><th class="r">Unit Price</th><th class="r">Amount</th>
+        <th>${t.date}</th><th>${t.customer}</th><th>${t.product}</th>
+        <th class="r">${t.qty}</th><th class="r">${t.unitPrice}</th><th class="r">${t.amount}</th>
       </tr></thead>
       <tbody>
         ${rows}
         <tr class="grand-total">
-          <td colspan="5">Grand Total</td>
+          <td colspan="5">${t.grandTotal}</td>
           <td class="r">${eur(grand)}</td>
         </tr>
       </tbody>
-    </table>`)
+    </table>`, lang)
 }
 
 // ─── Summary mode: Product × Day-of-Week (Mon-Sun) like Odoo ────────────────
-export function buildSummaryHtml(lines: ReportLine[], title: string, meta: string, sortBySequence: boolean): string {
+export function buildSummaryHtml(lines: ReportLine[], title: string, meta: string, sortBySequence: boolean, lang: PrintLang = 'en'): string {
+  const t = T[lang]
   // Group by product → accumulate qty per day-of-week（金额列已按需求移除，按总数量降序排）
   const prodMap = new Map<string, { dayQty: number[]; totalQty: number; sequence: number }>()
 
@@ -231,7 +276,7 @@ export function buildSummaryHtml(lines: ReportLine[], title: string, meta: strin
   }).join('')
 
   const grandDayCells = grandDayQty.map(q => `<td class="r">${q > 0 ? q.toFixed(2) : ''}</td>`).join('')
-  const dayHeaders = DAY_NAMES.map(d => `<th class="r">${d}</th>`).join('')
+  const dayHeaders = t.dayHeaders.map(d => `<th class="r">${d}</th>`).join('')
 
   return wrapHtml(title, meta, `
     <table class="grid">
@@ -241,27 +286,28 @@ export function buildSummaryHtml(lines: ReportLine[], title: string, meta: strin
         <col style="width:15%" />
       </colgroup>
       <thead><tr>
-        <th>Product</th>
+        <th>${t.product}</th>
         ${dayHeaders}
-        <th class="r">Total Qty</th>
+        <th class="r">${t.totalQty}</th>
       </tr></thead>
       <tbody>
         ${rows}
         <tr class="grand-total">
-          <td>Grand Total</td>
+          <td>${t.grandTotal}</td>
           ${grandDayCells}
           <td class="r">${grandQty.toFixed(2)}</td>
         </tr>
       </tbody>
-    </table>`)
+    </table>`, lang)
 }
 
-export function wrapHtml(title: string, meta: string, body: string): string {
+export function wrapHtml(title: string, meta: string, body: string, lang: PrintLang = 'en'): string {
+  const t = T[lang]
   const badgeKind: DocKind = title.includes('Multi Line') ? 'reportMultiline'
     : title.includes('Sale Summary') ? 'reportSummary'
     : 'reportDay'
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8"/>
 <title>${title}</title>
@@ -272,7 +318,7 @@ export function wrapHtml(title: string, meta: string, body: string): string {
   <div style="margin-bottom:3mm;">${docBadge(badgeKind)}</div>
   <div class="header">
     <div class="co-name">${COMPANY}</div>
-    <div class="printed-at">Printed: ${formatPrintTimestamp()}</div>
+    <div class="printed-at">${t.printed} ${formatPrintTimestamp()}</div>
   </div>
   <div class="report-title">${title}</div>
   <div class="report-meta">${meta}</div>

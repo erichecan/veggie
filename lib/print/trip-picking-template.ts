@@ -26,6 +26,54 @@ import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 import { displayUomName } from '@/lib/sale-uom'
 import { formatUomConversionHint, type UomConversionInfo } from '@/lib/print/uom-conversion'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+const T = {
+  zh: {
+    docTitle: '拣货单',
+    storableLabel: '整箱整袋 STOCKABLE',
+    consumableLabel: '零散货 CONSUMABLE',
+    deliveryDate: '配送日期：',
+    driverBatch: '司机/批次：',
+    customerCount: '客户数：',
+    legend: '📦 <b>装货顺序</b>：数字越小＝越先装 / 放最下面（重货、耐压）　数字越大＝越后装 / 放最上面（怕压）　"—"＝未设置该单位的装货顺序',
+    colSeq: '#',
+    colName: '商品名称',
+    colQty: '总数量',
+    colUom: '单位',
+    colPack: '装货顺序',
+    colCheck: '✓',
+    unitCountSuffix: '种',
+    total: '共',
+    unconverted: '⚠️ 单位未换算，仅供参考',
+    hasNote: '⚠️ 有备注，见下方明细',
+    statStorable: '整箱整袋',
+    statConsumable: '零散货',
+    statTotal: '合计',
+  },
+  en: {
+    docTitle: 'Picking List',
+    storableLabel: 'Full Case/Bag (STOCKABLE)',
+    consumableLabel: 'Loose Goods (CONSUMABLE)',
+    deliveryDate: 'Delivery Date:',
+    driverBatch: 'Driver/Batch:',
+    customerCount: 'Customers:',
+    legend: '📦 <b>Load Order</b>: lower number = load first / place at bottom (heavy, sturdy) — higher number = load last / place on top (fragile) — "—" = not set for this unit',
+    colSeq: '#',
+    colName: 'Product',
+    colQty: 'Total Qty',
+    colUom: 'Unit',
+    colPack: 'Load Order',
+    colCheck: '✓',
+    unitCountSuffix: 'items',
+    total: 'Total',
+    unconverted: '⚠️ Unit not converted, for reference only',
+    hasNote: '⚠️ Has note, see details below',
+    statStorable: 'Full Case/Bag',
+    statConsumable: 'Loose Goods',
+    statTotal: 'Total',
+  },
+} as const
 
 /** 组内多个单位装货顺序不一致时，取数字更大的那个（越大越后装/越靠上、越需要小心）——
  * 宁可保守多垫一层，也不要因为某个单位的顺序覆盖了另一个单位怕压的事实。
@@ -113,12 +161,14 @@ export type PickingVariant = 'all' | 'storable' | 'consumable'
 export function generateTripPickingHtml(
   data: TripPrintData,
   variant: PickingVariant = 'all',
+  lang: PrintLang = 'zh',
 ): string {
   const { trip, orders } = data
+  const t = T[lang]
 
   // 拣货单是按商品汇总的整趟车视角,没有"每单一页"的粒度可退回订单级司机——筛选打印/
   // 全部打印横跨多个司机时,trip 级司机身份是空的,退回按订单 driverBatchLabel 去重列出。
-  const teamStr = formatTripDriverList(trip, orders)
+  const teamStr = formatTripDriverList(trip, orders, lang)
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)
@@ -223,8 +273,8 @@ export function generateTripPickingHtml(
   const showStorable = variant !== 'consumable'
   const showConsumable = variant !== 'storable'
   const variantLabel =
-    variant === 'storable' ? '整箱整袋 STOCKABLE'
-    : variant === 'consumable' ? '零散货 CONSUMABLE'
+    variant === 'storable' ? t.storableLabel
+    : variant === 'consumable' ? t.consumableLabel
     : ''
 
   /** 按客户展开的明细子行（散称/带备注商品）；`nested=true` 表示挂在「单位子行」下面，多缩进一级 */
@@ -256,7 +306,7 @@ export function generateTripPickingHtml(
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
           ${uomHint ? `<span class="spec">${escapeHtml(uomHint.conversionLine)}${uomHint.weightLine ? ` (${escapeHtml(uomHint.weightLine)})` : ''}</span>` : ''}
-          ${hasNote ? `<span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
+          ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-qty">
           ${fmtQty(p.totalQty)}
@@ -291,11 +341,11 @@ export function generateTripPickingHtml(
         <td class="col-name">
           ${escapeHtml(g.productName)}
           ${g.spec ? `<span class="spec">${escapeHtml(g.spec)}</span>` : ''}
-          ${hasNote ? `<span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
+          ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-qty">
-          共 ${fmtQty(baseQty)}
-          ${!baseUomName ? `<span class="note-flag">⚠️ 单位未换算，仅供参考</span>` : ''}
+          ${t.total} ${fmtQty(baseQty)}
+          ${!baseUomName ? `<span class="note-flag">${t.unconverted}</span>` : ''}
         </td>
         <td class="col-uom">${baseUomName ? escapeHtml(displayUomName(baseUomName)) : ''}</td>
         <td class="col-pack"></td>
@@ -311,7 +361,7 @@ export function generateTripPickingHtml(
       <tr class="row-uom-child">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
-          ↳${uHasNote ? ` <span class="note-flag">⚠️ 有备注，见下方明细</span>` : ''}
+          ↳${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-qty bd-qty">
           ${fmtQty(u.totalQty)}
@@ -339,16 +389,16 @@ export function generateTripPickingHtml(
     }).join('')
 
     return `
-    <div class="section-header${startNewPage ? ' section-2nd' : ''}">${icon} ${escapeHtml(title)}（${groups.length} 种）</div>
+    <div class="section-header${startNewPage ? ' section-2nd' : ''}">${icon} ${escapeHtml(title)}（${groups.length} ${t.unitCountSuffix}）</div>
     <table class="pick-table">
       <thead>
         <tr>
-          <th class="col-seq">#</th>
-          <th class="col-name">商品名称</th>
-          <th class="col-qty">总数量</th>
-          <th class="col-uom">单位</th>
-          <th class="col-pack">装货顺序</th>
-          <th class="col-check">✓</th>
+          <th class="col-seq">${t.colSeq}</th>
+          <th class="col-name">${t.colName}</th>
+          <th class="col-qty">${t.colQty}</th>
+          <th class="col-uom">${t.colUom}</th>
+          <th class="col-pack">${t.colPack}</th>
+          <th class="col-check">${t.colCheck}</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -359,7 +409,7 @@ export function generateTripPickingHtml(
 <html lang="zh">
 <head>
 <meta charset="utf-8"/>
-<title>拣货单${variantLabel ? ' · ' + escapeHtml(variantLabel) : ''} — ${escapeHtml(teamStr)}</title>
+<title>${t.docTitle}${variantLabel ? ' · ' + escapeHtml(variantLabel) : ''} — ${escapeHtml(teamStr)}</title>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{font-family:Arial,Helvetica,"Noto Sans CJK SC","Noto Sans SC",sans-serif;font-size:11px;color:#000;background:#fff}
@@ -445,20 +495,20 @@ export function generateTripPickingHtml(
   ${renderTripNoticeHtml(trip.notice)}
 
   <div class="info-row">
-    <div class="item"><span class="label">配送日期：</span>${dateStr}</div>
-    <div class="item"><span class="label">司机/批次：</span>${escapeHtml(teamStr)}</div>
-    <div class="item"><span class="label">客户数：</span>${new Set(orders.map(o => o.customerId)).size}</div>
+    <div class="item"><span class="label">${t.deliveryDate}</span>${dateStr}</div>
+    <div class="item"><span class="label">${t.driverBatch}</span>${escapeHtml(teamStr)}</div>
+    <div class="item"><span class="label">${t.customerCount}</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
 
-  <div class="pack-legend">📦 <b>装货顺序</b>：数字越小＝越先装 / 放最下面（重货、耐压）　数字越大＝越后装 / 放最上面（怕压）　"—"＝未设置该单位的装货顺序</div>
+  <div class="pack-legend">${t.legend}</div>
 
-  ${showStorable ? productTableHtml('整箱整袋 STOCKABLE', storableGroups, '📦') : ''}
-  ${showConsumable ? productTableHtml('零散货 CONSUMABLE', consumableGroups, '🧴', showStorable && storableGroups.length > 0) : ''}
+  ${showStorable ? productTableHtml(t.storableLabel, storableGroups, '📦') : ''}
+  ${showConsumable ? productTableHtml(t.consumableLabel, consumableGroups, '🧴', showStorable && storableGroups.length > 0) : ''}
 
   <div class="stats">
-    ${showStorable ? `<span>整箱整袋 <span class="num">${storableGroups.length}</span> 种</span>` : ''}
-    ${showConsumable ? `<span>零散货 <span class="num">${consumableGroups.length}</span> 种</span>` : ''}
-    ${variant === 'all' ? `<span>合计 <span class="num">${totalProductCount}</span> 种</span>` : ''}
+    ${showStorable ? `<span>${t.statStorable} <span class="num">${storableGroups.length}</span> ${t.unitCountSuffix}</span>` : ''}
+    ${showConsumable ? `<span>${t.statConsumable} <span class="num">${consumableGroups.length}</span> ${t.unitCountSuffix}</span>` : ''}
+    ${variant === 'all' ? `<span>${t.statTotal} <span class="num">${totalProductCount}</span> ${t.unitCountSuffix}</span>` : ''}
   </div>
 
 <script>

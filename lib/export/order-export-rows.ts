@@ -8,16 +8,39 @@ import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { computeOrderTotals } from '@/lib/order-totals'
 import { money } from './csv'
 import type { Order } from '@/lib/types'
+import type { PrintLang } from '@/lib/print/print-i18n'
 
-const STATUS_LABEL_ZH: Record<string, string> = {
-  PENDING: '待处理',
-  CONFIRMED: '已确认',
-  WAVE_ASSIGNED: '司机分配结束',
-  IN_DELIVERY: '配送中',
-  COMPLETED: '已完成',
-  LOCKED: '拣货中',
-  CANCELLED: '已取消',
+const STATUS_LABEL: Record<PrintLang, Record<string, string>> = {
+  zh: {
+    PENDING: '待处理',
+    CONFIRMED: '已确认',
+    WAVE_ASSIGNED: '司机分配结束',
+    IN_DELIVERY: '配送中',
+    COMPLETED: '已完成',
+    LOCKED: '拣货中',
+    CANCELLED: '已取消',
+  },
+  en: {
+    PENDING: 'Pending',
+    CONFIRMED: 'Confirmed',
+    WAVE_ASSIGNED: 'Driver Assigned',
+    IN_DELIVERY: 'In Delivery',
+    COMPLETED: 'Completed',
+    LOCKED: 'Picking',
+    CANCELLED: 'Cancelled',
+  },
 }
+
+const HEADERS = {
+  zh: {
+    summary: ['订单号', '交货日期', '状态', '客户', '销售员', '司机', '未税金额', '税额', '含税总额'],
+    detail: ['订单号', '交货日期', '客户', '产品', '数量', '单价', '税率(%)', '金额'],
+  },
+  en: {
+    summary: ['Order No', 'Delivery Date', 'Status', 'Customer', 'Salesperson', 'Driver', 'Untaxed Amount', 'Tax', 'Total incl. Tax'],
+    detail: ['Order No', 'Delivery Date', 'Customer', 'Product', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
+  },
+} as const
 
 // deliveryDate 视调用方是否过 serializeApi 而定，可能是 ISO 字符串(orders-list 导出)
 // 或原始 Prisma Date 对象(day-wise-report 导出直接吃 loader 的 raw 结果，未 serialize)。
@@ -36,16 +59,20 @@ function orderCode(order: { code?: string | null; id: string }): string {
   return order.code ?? order.id
 }
 
-export const ORDER_SUMMARY_HEADERS = ['订单号', '交货日期', '状态', '客户', '销售员', '司机', '未税金额', '税额', '含税总额']
+export function orderSummaryHeaders(lang: PrintLang = 'zh'): string[] {
+  return [...HEADERS[lang].summary]
+}
+/** @deprecated 用 orderSummaryHeaders(lang) 代替；留着只为兼容还没切过来的调用点 */
+export const ORDER_SUMMARY_HEADERS: string[] = [...HEADERS.zh.summary]
 
 /** 订单列表页导出用：order.salesUser 需已 include，否则销售员列留空 */
-export function buildOrderSummaryRows(orders: (Order & { salesUser?: { name: string } | null })[]): (string | number)[][] {
+export function buildOrderSummaryRows(orders: (Order & { salesUser?: { name: string } | null })[], lang: PrintLang = 'zh'): (string | number)[][] {
   return orders.map(order => {
     const { untaxed, tax, total } = computeOrderTotals(order)
     return [
       orderCode(order),
       dateOnly(order.deliveryDate),
-      STATUS_LABEL_ZH[order.status] ?? order.status,
+      STATUS_LABEL[lang][order.status] ?? order.status,
       order.restaurantName,
       order.salesUser?.name ?? '',
       formatDriverSlotFromOrder(order) || '',
@@ -56,7 +83,11 @@ export function buildOrderSummaryRows(orders: (Order & { salesUser?: { name: str
   })
 }
 
-export const ORDER_DETAIL_HEADERS = ['订单号', '交货日期', '客户', '产品', '数量', '单价', '税率(%)', '金额']
+export function orderDetailHeaders(lang: PrintLang = 'zh'): string[] {
+  return [...HEADERS[lang].detail]
+}
+/** @deprecated 用 orderDetailHeaders(lang) 代替；留着只为兼容还没切过来的调用点 */
+export const ORDER_DETAIL_HEADERS: string[] = [...HEADERS.zh.detail]
 
 export function buildOrderDetailRows(orders: Order[]): (string | number)[][] {
   const rows: (string | number)[][] = []

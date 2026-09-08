@@ -7,6 +7,8 @@
  * veggie/ 走客户端打印模式：API 返回 JSON → 前端组件渲染 → window.print()。
  */
 
+import type { PrintLang } from './print-i18n'
+
 export type GoodsType = 'BULK' | 'LOOSE' | null
 
 export interface TripBasic {
@@ -309,11 +311,11 @@ export function formatTripDriverLabel(trip: TripBasic): string {
  * 横跨多个司机时(该函数返回空)，从各订单的 driverBatchLabel(wave 派生，订单粒度的真实司机身份)
  * 去重列出，不再显示 trip.name 里的"筛选批次"占位文案(客户反馈)。
  */
-export function formatTripDriverList(trip: TripBasic, orders: TripOrder[]): string {
+export function formatTripDriverList(trip: TripBasic, orders: TripOrder[], lang: PrintLang = 'zh'): string {
   const single = formatTripDriverLabel(trip)
   if (single) return single
   const labels = [...new Set(orders.map(o => o.driverBatchLabel).filter((x): x is string => !!x))]
-  return labels.length > 0 ? labels.join('、') : '—'
+  return labels.length > 0 ? labels.join(lang === 'en' ? ', ' : '、') : '—'
 }
 
 /** 拣货单页头「Print at」时间戳：爱尔兰本地时区(自动处理 GMT/BST)，服务端渲染 PDF 那一刻/客户端打印那一刻 */
@@ -333,15 +335,15 @@ export function formatPrintTimestamp(date: Date | string | number = new Date()):
   return `${get('day')}/${get('month')}/${get('year')}, ${get('hour')}:${get('minute')}`
 }
 
-export function timeSlotLabel(slot?: string | null): string {
-  if (slot === 'AM') return '上午'
-  if (slot === 'PM') return '下午'
+export function timeSlotLabel(slot?: string | null, lang: PrintLang = 'zh'): string {
+  if (slot === 'AM') return lang === 'en' ? 'AM' : '上午'
+  if (slot === 'PM') return lang === 'en' ? 'PM' : '下午'
   return slot ?? '—'
 }
 
-export function fullAddress(c: TripCustomer): string {
+export function fullAddress(c: TripCustomer, lang: PrintLang = 'zh'): string {
   return [c.street, c.street2, [c.city, c.state, c.zip].filter(Boolean).join(' '), c.country]
-    .filter(Boolean).join('，')
+    .filter(Boolean).join(lang === 'en' ? ', ' : '，')
 }
 
 const num = (v: unknown): number => {

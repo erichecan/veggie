@@ -23,6 +23,62 @@ import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { displayUomName } from '@/lib/sale-uom'
 import { formatUomConversionHint } from '@/lib/print/uom-conversion'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+const T = {
+  zh: {
+    docTitle: '客户签收单',
+    noLineDetail: '本站无明细',
+    customerSignatureAlt: '客户签名',
+    signedBy: '签收人：',
+    signedAt: '签收时间：',
+    signHereLabel: '签收人签名 / 日期　　',
+    pendingSign: '未电子签收，请客户在此手签',
+    deliveryDate: '配送日期',
+    driver: '司机',
+    relatedOrders: '关联订单',
+    phone: '电话',
+    actualPayment: '实收货款',
+    totalDue: '应收合计',
+    colProduct: '商品',
+    colSpec: '规格',
+    colQtyReceived: '实收数量',
+    colUnit: '单位',
+    colAmount: '金额',
+    total: '合计',
+    signConfirmLabel: '客户签收确认（签字即表示已核对上述货品与数量）',
+    footNote: '本单一式一份，作为收货凭证',
+    noSignoffRecords: '本行程无可打印的签收记录',
+    orderCodeSep: '、',
+    dateLocale: 'zh-CN',
+  },
+  en: {
+    docTitle: 'Proof of Delivery',
+    noLineDetail: 'No items for this stop',
+    customerSignatureAlt: 'Customer signature',
+    signedBy: 'Signed by: ',
+    signedAt: 'Signed at: ',
+    signHereLabel: 'Customer signature / date',
+    pendingSign: 'Not signed electronically, please sign here',
+    deliveryDate: 'Delivery Date',
+    driver: 'Driver',
+    relatedOrders: 'Related Orders',
+    phone: 'Phone',
+    actualPayment: 'Payment Received',
+    totalDue: 'Total Due',
+    colProduct: 'Product',
+    colSpec: 'Spec',
+    colQtyReceived: 'Qty Received',
+    colUnit: 'Unit',
+    colAmount: 'Amount',
+    total: 'Total',
+    signConfirmLabel: 'Customer confirmation (signing confirms the goods and quantities above)',
+    footNote: 'This is a single-copy proof of delivery',
+    noSignoffRecords: 'No printable signoff records for this trip',
+    orderCodeSep: ', ',
+    dateLocale: 'en-IE',
+  },
+} as const
 
 const CSS = `
   @page { size: A4; margin: 12mm 10mm; }
@@ -78,11 +134,12 @@ function buildReceiptPage(
   customer: TripCustomer | undefined,
   driverLabel: string,
   tripDate: string,
+  t: typeof T[PrintLang],
 ): string {
   // 按商品 sequence 排（客户要求 2026-08-18），与其它单据同口径
   const lines = sortLinesBySequence(orders.flatMap(o => o.lines ?? []))
   const total = lines.reduce((s, l) => s + (l.subtotal ?? 0), 0)
-  const orderCodes = orders.map(o => o.code ?? o.id.slice(-8).toUpperCase()).join('、')
+  const orderCodes = orders.map(o => o.code ?? o.id.slice(-8).toUpperCase()).join(t.orderCodeSep)
 
   const rows = lines.length > 0
     ? lines.map(l => {
@@ -97,17 +154,17 @@ function buildReceiptPage(
         <td class="num">${money(l.subtotal ?? 0)}</td>
       </tr>`
     }).join('')
-    : `<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:6mm;">本站无明细</td></tr>`
+    : `<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:6mm;">${t.noLineDetail}</td></tr>`
 
   // 已签收印签名图；未签收留空白签名栏供纸质补签
   const signCell = sign.signature
-    ? `<div class="sigimg"><img src="${sign.signature}" alt="客户签名"/></div>
+    ? `<div class="sigimg"><img src="${sign.signature}" alt="${t.customerSignatureAlt}"/></div>
        <div class="sigmeta">
-         签收人：<b>${escapeHtml(sign.signerName ?? '—')}</b>
-         ${sign.signedAt ? ` · 签收时间：${new Date(sign.signedAt).toLocaleString('zh-CN')}` : ''}
+         ${t.signedBy}<b>${escapeHtml(sign.signerName ?? '—')}</b>
+         ${sign.signedAt ? ` · ${t.signedAt}${new Date(sign.signedAt).toLocaleString(t.dateLocale)}` : ''}
        </div>`
     : `<div class="sigline"></div>
-       <div class="sigmeta">签收人签名 / 日期　　<span class="pending">未电子签收，请客户在此手签</span></div>`
+       <div class="sigmeta">${t.signHereLabel}<span class="pending">${t.pendingSign}</span></div>`
 
   return `
 <div class="page">
@@ -118,9 +175,9 @@ function buildReceiptPage(
       <div class="co-sub">Fresh Produce Wholesale</div>
     </div>
     <div class="meta">
-      <div><b>配送日期</b> ${escapeHtml(tripDate)}</div>
-      <div><b>司机</b> ${escapeHtml(driverLabel)}</div>
-      <div><b>关联订单</b> ${escapeHtml(orderCodes || '—')}</div>
+      <div><b>${t.deliveryDate}</b> ${escapeHtml(tripDate)}</div>
+      <div><b>${t.driver}</b> ${escapeHtml(driverLabel)}</div>
+      <div><b>${t.relatedOrders}</b> ${escapeHtml(orderCodes || '—')}</div>
     </div>
   </div>
 
@@ -128,43 +185,44 @@ function buildReceiptPage(
     <div>
       <h2>${escapeHtml(sign.restaurantName || customer?.name || '')}</h2>
       <div class="addr">${addressOf(customer)}</div>
-      ${customer?.phone ? `<div class="addr">电话 ${escapeHtml(customer.phone)}</div>` : ''}
+      ${customer?.phone ? `<div class="addr">${t.phone} ${escapeHtml(customer.phone)}</div>` : ''}
     </div>
     <div class="meta">
-      ${sign.payment != null ? `<div><b>实收货款</b> ${money(sign.payment)}</div>` : ''}
-      <div><b>应收合计</b> ${money(total)}</div>
+      ${sign.payment != null ? `<div><b>${t.actualPayment}</b> ${money(sign.payment)}</div>` : ''}
+      <div><b>${t.totalDue}</b> ${money(total)}</div>
     </div>
   </div>
 
   <table>
     <thead>
       <tr>
-        <th>商品</th><th>规格</th>
-        <th class="num">实收数量</th><th class="num">单位</th><th class="num">金额</th>
+        <th>${t.colProduct}</th><th>${t.colSpec}</th>
+        <th class="num">${t.colQtyReceived}</th><th class="num">${t.colUnit}</th><th class="num">${t.colAmount}</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
     <tfoot>
-      <tr><td colspan="4" class="num">合计</td><td class="num">${money(total)}</td></tr>
+      <tr><td colspan="4" class="num">${t.total}</td><td class="num">${money(total)}</td></tr>
     </tfoot>
   </table>
 
   <div class="signbox">
     <div class="sigcell">
-      <div class="siglabel">客户签收确认（签字即表示已核对上述货品与数量）</div>
+      <div class="siglabel">${t.signConfirmLabel}</div>
       ${signCell}
     </div>
   </div>
 
   <div class="foot">
-    <span>本单一式一份，作为收货凭证</span>
+    <span>${t.footNote}</span>
     <span>${escapeHtml(sign.restaurantName || '')}</span>
   </div>
 </div>`
 }
 
-export function generateTripReceiptHtml(data: TripPrintData): string {
+export function generateTripReceiptHtml(data: TripPrintData, lang: PrintLang = 'zh'): string {
   const { trip, orders, customers, signoffs } = data
+  const t = T[lang]
   const driverLabel = formatTripDriverLabel(trip)
   const tripDate = formatDateOnly(trip.createdAt) ?? ''
 
@@ -186,19 +244,19 @@ export function generateTripReceiptHtml(data: TripPrintData): string {
     const mine = orders.filter(o => sign.orderIds.includes(o.id))
     const customer = customers.get(sign.restaurantId)
       ?? (mine[0]?.customerId ? customers.get(mine[0].customerId) : undefined)
-    return buildReceiptPage(sign, mine, customer, driverLabel, tripDate)
+    return buildReceiptPage(sign, mine, customer, driverLabel, tripDate, t)
   }).join('\n')
 
   return `<!DOCTYPE html>
-<html lang="zh">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>客户签收单</title>
+<title>${t.docTitle}</title>
 <style>${CSS}</style>
 </head>
 <body>
-${pages || '<p style="padding:20mm;text-align:center;color:#9ca3af;">本行程无可打印的签收记录</p>'}
+${pages || `<p style="padding:20mm;text-align:center;color:#9ca3af;">${t.noSignoffRecords}</p>`}
 <script>
   window.print();
 <\/script>

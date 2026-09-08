@@ -20,14 +20,49 @@ import {
 } from './trip-common'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
+import type { PrintLang } from '@/lib/print/print-i18n'
 
-export function generateTripSummaryHtml(data: TripPrintData): string {
+const T = {
+  zh: {
+    docTitle: 'Johnstone Bros Delivery Summary（汇总单）',
+    deliveryDate: '配送日期：',
+    driver: '司机：',
+    colOrderNo: '订单号',
+    colCustomer: '客户',
+    colCity: '城市',
+    colAddress: '地址',
+    colPhone: '电话',
+    colNote: '备注',
+    colAmount: '金额',
+    noOrders: '无订单',
+    customers: '客户数：',
+    orders: '订单数：',
+  },
+  en: {
+    docTitle: 'Johnstone Bros Delivery Summary',
+    deliveryDate: 'Delivery Date:',
+    driver: 'Driver:',
+    colOrderNo: 'Order No.',
+    colCustomer: 'Customer',
+    colCity: 'City',
+    colAddress: 'Address',
+    colPhone: 'Phone',
+    colNote: 'Note',
+    colAmount: 'Net Amount',
+    noOrders: 'No orders',
+    customers: 'Customers:',
+    orders: 'Orders:',
+  },
+} as const
+
+export function generateTripSummaryHtml(data: TripPrintData, lang: PrintLang = 'zh'): string {
   const { trip, orders, customers } = data
+  const t = T[lang]
 
   // 波次级(含全部托盘)打印走 waveIds 多批次筛选模式,trip 级 driverName/batchNum 留空
   // (dispatch-loader.ts multiMode 分支)，必须退回按订单 driverBatchLabel 去重取司机身份，
   // 否则 Driver 栏会空白——送货单/销售单/拣货单早就用这个 fallback了,汇总单漏了(20260716)。
-  const driverStr = formatTripDriverList(trip, orders)
+  const driverStr = formatTripDriverList(trip, orders, lang)
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)
@@ -69,10 +104,10 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
   const now = formatDateTime(new Date().toISOString())
 
   return `<!doctype html>
-<html lang="zh">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8" />
-<title>Johnstone Bros Delivery Summary（汇总单）</title>
+<title>${escapeHtml(t.docTitle)}</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -144,38 +179,38 @@ export function generateTripSummaryHtml(data: TripPrintData): string {
 <body>
   <div class="page-header">
     <div class="left">Print at: ${now}</div>
-    <div class="center">Johnstone Bros Delivery Summary（汇总单）</div>
+    <div class="center">${escapeHtml(t.docTitle)}</div>
     <div class="right"></div>
   </div>
 
   ${renderTripNoticeHtml(trip.notice)}
 
   <div class="filter-row">
-    <div class="item"><span class="label">配送日期 Delivery Date：</span>${formatDateOnly(startDate)}</div>
-    <div class="item"><span class="label">司机 Driver：</span>${escapeHtml(driverStr)}</div>
+    <div class="item"><span class="label">${t.deliveryDate}</span>${formatDateOnly(startDate)}</div>
+    <div class="item"><span class="label">${t.driver}</span>${escapeHtml(driverStr)}</div>
   </div>
 
   <table class="summary">
     <thead>
       <tr>
         <th class="col-seq">#</th>
-        <th>订单号 Order No.</th>
-        <th>客户 Customer</th>
-        <th>城市 City</th>
-        <th>地址 Address</th>
-        <th>电话 Phone</th>
-        <th>备注 Note</th>
-        <th class="num">金额 Net Amount</th>
+        <th>${t.colOrderNo}</th>
+        <th>${t.colCustomer}</th>
+        <th>${t.colCity}</th>
+        <th>${t.colAddress}</th>
+        <th>${t.colPhone}</th>
+        <th>${t.colNote}</th>
+        <th class="num">${t.colAmount}</th>
       </tr>
     </thead>
     <tbody>
-      ${nameRowsHtml || '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">无订单 No orders</td></tr>'}
+      ${nameRowsHtml || `<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">${t.noOrders}</td></tr>`}
     </tbody>
   </table>
 
   <div class="stats-row">
-    <span>客户数 Customers：<span class="num">${new Set(orders.map(o => o.customerId)).size}</span></span>
-    <span>订单数 Orders：<span class="num">${orders.length}</span></span>
+    <span>${t.customers}<span class="num">${new Set(orders.map(o => o.customerId)).size}</span></span>
+    <span>${t.orders}<span class="num">${orders.length}</span></span>
   </div>
 
 <script>

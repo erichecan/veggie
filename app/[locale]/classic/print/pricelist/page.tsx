@@ -1,9 +1,45 @@
 'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { docBadge } from '@/lib/print/doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+const T = {
+  en: {
+    noPricingRules: 'No pricing rules',
+    pricelistPrefix: 'Pricelist: ',
+    colProduct: 'Product',
+    colMinQty: 'Min.Qty',
+    colStartDate: 'Start Date',
+    colEndDate: 'End Date',
+    colPrice: 'Price',
+    reportTitle: 'Customer Pricelist Report',
+    singleTitle: (name: string) => `Pricelist – ${name}`,
+    loadingPricelist: 'Loading pricelist…',
+    loading: 'Loading…',
+    loadFailed: 'Loading failed',
+    printButton: '🖨 Print / Save PDF',
+  },
+  zh: {
+    noPricingRules: '暂无定价规则',
+    pricelistPrefix: '价格表：',
+    colProduct: '产品',
+    colMinQty: '最小订购量',
+    colStartDate: '开始日期',
+    colEndDate: '结束日期',
+    colPrice: '价格',
+    reportTitle: '客户价格表报告',
+    singleTitle: (name: string) => `价格表 – ${name}`,
+    loadingPricelist: '价格表加载中…',
+    loading: '加载中…',
+    loadFailed: '加载失败',
+    printButton: '🖨 打印 / 保存 PDF',
+  },
+} as const
 
 interface EnrichedItem {
   id: string
@@ -39,7 +75,8 @@ function fmtPrice(item: EnrichedItem, currency: string): string {
   return '0.00'
 }
 
-function buildPricelistHtml(pricelists: EnrichedPricelist[]): string {
+function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = 'en'): string {
+  const t = T[lang]
   const sectionsHtml = pricelists.map(pl => {
     const rows = [...pl.items].sort((a, b) => a.sequence - b.sequence)
 
@@ -54,19 +91,19 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[]): string {
           <td class="col-date">${formatDateOnly(item.dateEnd)}</td>
           <td class="col-price">${fmtPrice(item, pl.currency)}</td>
         </tr>`).join('')
-      : `<tr><td colspan="5" class="empty-row">No pricing rules</td></tr>`
+      : `<tr><td colspan="5" class="empty-row">${t.noPricingRules}</td></tr>`
 
     return `
 <div class="pricelist-section">
-  <div class="pricelist-title">Pricelist: ${pl.name}</div>
+  <div class="pricelist-title">${t.pricelistPrefix}${pl.name}</div>
   <table class="price-table">
     <thead>
       <tr>
-        <th class="col-product">Product</th>
-        <th class="col-minqty">Min.Qty</th>
-        <th class="col-date">Start Date</th>
-        <th class="col-date">End Date</th>
-        <th class="col-price">Price</th>
+        <th class="col-product">${t.colProduct}</th>
+        <th class="col-minqty">${t.colMinQty}</th>
+        <th class="col-date">${t.colStartDate}</th>
+        <th class="col-date">${t.colEndDate}</th>
+        <th class="col-price">${t.colPrice}</th>
       </tr>
     </thead>
     <tbody>
@@ -230,15 +267,19 @@ function PricelistPrintInner() {
   const ids = searchParams.get('ids') ?? ''
   const [html, setHtml] = useState('')
   const [ready, setReady] = useState(false)
+  const locale = useLocale()
+  const isEn = locale !== routing.defaultLocale
+  const lang: PrintLang = isEn ? 'en' : 'zh'
+  const t = T[lang]
 
   useEffect(() => {
     const query = ids ? `?ids=${ids}` : ''
     apiGet<EnrichedPricelist[]>(`/api/pricelists/print${query}`)
       .then(pricelists => {
-        const body = buildPricelistHtml(pricelists)
-        const title = pricelists.length === 1 ? `Pricelist – ${pricelists[0].name}` : 'Customer Pricelist Report'
+        const body = buildPricelistHtml(pricelists, lang)
+        const title = pricelists.length === 1 ? t.singleTitle(pricelists[0].name) : t.reportTitle
         setHtml(`<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8"/>
 <title>${title}</title>
@@ -259,10 +300,10 @@ ${body}
         setReady(true)
       })
       .catch(err => {
-        setHtml(`<html><body><p style="color:red;padding:20px">${err instanceof Error ? err.message : '加载失败 / Loading failed'}</p></body></html>`)
+        setHtml(`<html><body><p style="color:red;padding:20px">${err instanceof Error ? err.message : t.loadFailed}</p></body></html>`)
         setReady(true)
       })
-  }, [ids])
+  }, [ids, lang, t])
 
   useEffect(() => {
     if (ready && html) {
@@ -279,7 +320,7 @@ ${body}
   if (!ready) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial, sans-serif', color: '#666' }}>
-        Loading pricelist…
+        {t.loadingPricelist}
       </div>
     )
   }
@@ -299,9 +340,9 @@ ${body}
             cursor: 'pointer', fontSize: '13px',
           }}
         >
-          🖨 Print / Save PDF
+          {t.printButton}
         </button>
-        <span style={{ color: '#a8c8b0', fontSize: '13px' }}>Customer Pricelist Report</span>
+        <span style={{ color: '#a8c8b0', fontSize: '13px' }}>{t.reportTitle}</span>
       </div>
       <iframe
         id="print-frame"

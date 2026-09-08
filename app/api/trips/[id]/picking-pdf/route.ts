@@ -12,6 +12,7 @@ import { stripAutoPrintScript } from '@/lib/print/trip-common'
 import { generateTripPickingHtml } from '@/lib/print/trip-picking-template'
 import { parsePickingVariant } from '@/lib/print/dispatch-print-html'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
+import { resolvePrintLang } from '@/lib/print/print-i18n'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,13 +24,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const { id } = await params
     const { searchParams } = new URL(req.url)
     const variant = parsePickingVariant(searchParams.get('variant'))
+    const lang = resolvePrintLang(searchParams.get('lang'))
     try {
       const wire = await loadTripPrintData(id)
       if (!wire) {
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
       }
       const data = { trip: wire.trip, orders: wire.orders, customers: new Map(wire.customers.map(c => [c.id, c])) }
-      const html = stripAutoPrintScript(generateTripPickingHtml(data, variant))
+      const html = stripAutoPrintScript(generateTripPickingHtml(data, variant, lang))
 
       // ?format=html：直接返回排版好的 HTML，不过无头 Chromium。
       // 用途一是在浏览器里调打印样式（分页、拆箱副标这类改 CSS 要反复看），

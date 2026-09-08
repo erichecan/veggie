@@ -17,15 +17,52 @@ import {
   buildSummaryHtml,
 } from '@/lib/print/day-wise-report-template'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
+import type { PrintLang } from '@/lib/print/print-i18n'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_ROLES = ['OPERATOR', 'BOSS', 'DRIVER', 'FINANCE', 'SALES']
 
+/** 这几个 label 是路由自己拼的 meta/页脚摘要，不在 day-wise-report-template.ts 的字典里，单独维护 */
+const META_T = {
+  en: {
+    period: 'Period', allCustomers: 'All customers', allProducts: 'All products',
+    customersSelected: (n: number) => `${n} customer(s) selected`,
+    productsSelected: (n: number) => `${n} product(s) selected`,
+    categoriesSelected: (n: number) => ` · ${n} categor${n > 1 ? 'ies' : 'y'} selected`,
+    drivers: 'Drivers', batch: 'Batch#', weekday: 'Weekday',
+    allBatches: 'All batches',
+    orders: (n: number) => `${n} orders`,
+    lines: (n: number) => `${n} lines`,
+    cust: (n: number) => `${n} cust`,
+    categ: (n: number) => `${n} categ`,
+    titles: { day: 'Order Summary Report', multiline: 'Product Sales Multi Line Report', summary: 'Product Sale Summary Report' } as Record<PrintMode, string>,
+    genericError: 'Failed to generate report',
+  },
+  zh: {
+    period: '期间', allCustomers: '全部客户', allProducts: '全部产品',
+    customersSelected: (n: number) => `已选 ${n} 个客户`,
+    productsSelected: (n: number) => `已选 ${n} 个产品`,
+    categoriesSelected: (n: number) => ` · 已选 ${n} 个分类`,
+    drivers: '司机', batch: '批次#', weekday: '星期',
+    allBatches: '全部批次',
+    orders: (n: number) => `${n} 单`,
+    lines: (n: number) => `${n} 行`,
+    cust: (n: number) => `${n} 客户`,
+    categ: (n: number) => `${n} 分类`,
+    titles: { day: '订单汇总报表', multiline: '产品销售明细报表', summary: '产品销售汇总报表' } as Record<PrintMode, string>,
+    genericError: '生成报表失败',
+  },
+} as const
+
 export async function GET(req: Request) {
   return withAuth(req, async () => {
     const { searchParams } = new URL(req.url)
+    // 这个路由改造前输出恒为英文，默认必须留 'en'（不能像其它路由那样缺参数就退回 'zh'，
+    // 否则不传 lang 的旧链接/旧调用方行为会被悄悄改变）
+    const lang: PrintLang = searchParams.get('lang') === 'zh' ? 'zh' : 'en'
+    const mt = META_T[lang]
     const mode = (searchParams.get('mode') ?? 'day') as PrintMode
     const fromDate = searchParams.get('from') ?? ''
     const toDate = searchParams.get('to') ?? ''
@@ -49,42 +86,38 @@ export async function GET(req: Request) {
       })
 
       const dateLabel = fromDate === toDate ? fromDate : `${fromDate} → ${toDate}`
-      const custLabel = customerIds.length > 0 ? `${customerIds.length} customer(s) selected` : 'All customers'
-      const prodLabel = productNames.length > 0 ? `${productNames.length} product(s) selected` : 'All products'
-      const catLabel = categoryIds.length > 0 ? ` · ${categoryIds.length} categor${categoryIds.length > 1 ? 'ies' : 'y'} selected` : ''
+      const custLabel = customerIds.length > 0 ? mt.customersSelected(customerIds.length) : mt.allCustomers
+      const prodLabel = productNames.length > 0 ? mt.productsSelected(productNames.length) : mt.allProducts
+      const catLabel = categoryIds.length > 0 ? mt.categoriesSelected(categoryIds.length) : ''
       const batchFilterParts = [
-        drivers.length > 0 ? `Drivers: ${drivers.join(', ')}` : '',
+        drivers.length > 0 ? `${mt.drivers}: ${drivers.join(', ')}` : '',
         times.length > 0 ? `${times.map(t => t.toUpperCase()).join('/')}` : '',
-        batchNums.length > 0 ? `Batch# ${batchNums.join(', ')}` : '',
-        weekdays.length > 0 ? `Weekday: ${weekdays.map(w => DAY_NAMES[w]).join(', ')}` : '',
+        batchNums.length > 0 ? `${mt.batch} ${batchNums.join(', ')}` : '',
+        weekdays.length > 0 ? `${mt.weekday}: ${weekdays.map(w => DAY_NAMES[w]).join(', ')}` : '',
       ].filter(Boolean)
-      const batchLabel = batchFilterParts.length > 0 ? batchFilterParts.join(' · ') : 'All batches'
-      const countLabel = mode === 'day' ? `${orders.length} orders` : `${lines.length} lines`
-      const meta = `Period: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}${catLabel}  |  ${batchLabel}  |  ${countLabel}`
+      const batchLabel = batchFilterParts.length > 0 ? batchFilterParts.join(' · ') : mt.allBatches
+      const countLabel = mode === 'day' ? mt.orders(orders.length) : mt.lines(lines.length)
+      const meta = `${mt.period}: ${dateLabel}  |  ${custLabel}  |  ${prodLabel}${catLabel}  |  ${batchLabel}  |  ${countLabel}`
 
       // 页脚筛选摘要：只列出真正生效的筛选条件（不列 All customers 这类默认值），
       // 一叠纸打乱后靠页脚就能认出这是哪一份筛选结果的第几页（客户要求，20260718）
       const footerParts = [
         dateLabel,
-        customerIds.length > 0 ? `${customerIds.length} cust` : '',
-        categoryIds.length > 0 ? `${categoryIds.length} categ` : '',
+        customerIds.length > 0 ? mt.cust(customerIds.length) : '',
+        categoryIds.length > 0 ? mt.categ(categoryIds.length) : '',
         ...batchFilterParts,
       ].filter(Boolean)
       const pageLabel = footerParts.join(' · ')
 
-      const TITLES: Record<PrintMode, string> = {
-        day: 'Order Summary Report',
-        multiline: 'Product Sales Multi Line Report',
-        summary: 'Product Sale Summary Report',
-      }
+      const TITLES = mt.titles
 
       let html: string
       if (mode === 'multiline') {
-        html = buildMultilineHtml(lines, TITLES.multiline, meta, sortBySequence)
+        html = buildMultilineHtml(lines, TITLES.multiline, meta, sortBySequence, lang)
       } else if (mode === 'summary') {
-        html = buildSummaryHtml(lines, TITLES.summary, meta, sortBySequence)
+        html = buildSummaryHtml(lines, TITLES.summary, meta, sortBySequence, lang)
       } else {
-        html = buildOrderSummaryHtml(lines, orders, TITLES.day, meta)
+        html = buildOrderSummaryHtml(lines, orders, TITLES.day, meta, lang)
       }
 
       const pdf = await renderHtmlToPdf(html, { pageNumbers: true, pageLabel })
@@ -96,7 +129,7 @@ export async function GET(req: Request) {
       })
     } catch (error) {
       console.error('[GET /api/print/day-wise-report-pdf]', error)
-      return NextResponse.json({ error: '生成报表失败' }, { status: 500 })
+      return NextResponse.json({ error: mt.genericError }, { status: 500 })
     }
   }, { require: 'print.center.access' })
 }

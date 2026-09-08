@@ -748,13 +748,13 @@ export default function ClassicQuotationsPage() {
 
       const orderSections = fetched.map((o, idx) => {
         const customer = customerMap.get(o.restaurantId) ?? null
-        return buildOrderHtml(o, customer, { pageBreakAfter: idx < fetched.length - 1 })
+        return buildOrderHtml(o, customer, { pageBreakAfter: idx < fetched.length - 1 }, isEn ? 'en' : 'zh')
       }).join('')
 
       const win = window.open('', '_blank')
       if (!win) { toast.error(isEn ? 'Pop-up blocked, please allow pop-ups' : '弹窗被拦截，请允许弹出窗口'); return }
       win.document.write(`<!DOCTYPE html>
-<html lang="en">
+<html lang="${isEn ? 'en' : 'zh'}">
 <head>
 <meta charset="UTF-8"/>
 <title>${isEn ? 'Bulk Print' : '批量打印'} (${ids.length})</title>

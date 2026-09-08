@@ -7,6 +7,7 @@ import { apiGet, apiPost, apiDelete } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { fetchDispatchPrintHtml, buildDispatchSummaryPdfUrl, buildDispatchPickingPdfUrl } from '@/lib/print/dispatch-print-html'
 import { type PrintContentFilter, applyPrintContentFilter, hasContentFilter } from '@/lib/print/print-filters'
+import type { PrintLang } from '@/lib/print/print-i18n'
 import { openAuthedPdf } from '@/lib/print/open-pdf'
 import { formatDateTime } from '@/lib/format-date'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
@@ -171,6 +172,7 @@ function BatchCard({
   const { waveId, driverName, timeOfDay, pickLockedAt, pickLockedBy, pallets, unassignedOrders, orders, totalAmount, untaxTotal } = group
   const label = waveLabel(group, isEn)
   const uniqueCustomers = new Set(orders.map(o => o.restaurantId)).size
+  const lang: PrintLang = isEn ? 'en' : 'zh'
 
   // 点任何打印按钮(送货单/汇总单/销售单)都必须自动锁定批次，不能只有拣货单锁——
   // 否则打印后调度台仍能改派，纸质单据和系统状态就对不上了(2026-07-10 复盘)。
@@ -199,9 +201,9 @@ function BatchCard({
       notifyFirstLock()
       if (type === 'summary') {
         // 汇总单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId], ...filter }))
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, waveIds: [waveId], lang, ...filter }))
       } else {
-        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId], ...filter })
+        const html = await fetchDispatchPrintHtml({ type, date, waveIds: [waveId], lang, ...filter })
         onQueuePrint(html)
       }
       onPrint()
@@ -226,7 +228,7 @@ function BatchCard({
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
       // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant, ...filter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant, lang, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -277,7 +279,7 @@ function BatchCard({
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant, ...filter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant, lang, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -293,9 +295,9 @@ function BatchCard({
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', printType: type })
       notifyFirstLock()
       if (type === 'summary') {
-        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq), ...filter }))
+        await openAuthedPdf(buildDispatchSummaryPdfUrl({ date, batchLabel: palletBatchLabel(seq), lang, ...filter }))
       } else {
-        const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq), ...filter })
+        const html = await fetchDispatchPrintHtml({ type, date, batchLabel: palletBatchLabel(seq), lang, ...filter })
         onQueuePrint(html)
       }
       onPrint()
@@ -632,6 +634,7 @@ function printedTimes(status: PrintStatus, waveId: string, docType?: string): nu
 export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?: number; onRefresh?: () => void }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
+  const lang: PrintLang = isEn ? 'en' : 'zh'
 
   // 解锁权限的唯一开关：当前先全部放开（能进打印中心的人都可解锁）。
   // 日后要收口到某个具体用户，把这里换成 useAbility() 判断即可（如 ability.userId === 'xxx'）。
@@ -898,7 +901,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds, ...contentFilter })
+      const html = await fetchDispatchPrintHtml({ type, date, waveIds: filteredWaveIds, lang, ...contentFilter })
       queuePrint(html)
     } catch {
       toast.error(isEn ? 'Print failed' : '打印失败')
@@ -920,7 +923,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant, ...contentFilter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant, lang, ...contentFilter }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     }

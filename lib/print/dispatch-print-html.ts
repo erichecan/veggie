@@ -13,22 +13,43 @@ import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-p
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
 import { generateTripSalesHtml } from '@/lib/print/trip-sales-template'
 import { type PrintContentFilter, appendPrintFilterParams } from '@/lib/print/print-filters'
+import { resolvePrintLang, type PrintLang } from '@/lib/print/print-i18n'
 
 export type DispatchPrintType = 'summary' | 'picking' | 'delivery' | 'sales'
 
-export const DISPATCH_PRINT_RENDERERS: Record<DispatchPrintType, (d: TripPrintData, variant?: PickingVariant) => string> = {
-  summary: generateTripSummaryHtml,
-  picking: generateTripPickingHtml,
-  delivery: generateTripDeliveryHtml,
-  sales: generateTripSalesHtml,
+/**
+ * 统一签名 (data, variant, lang)——只有 picking 真的用 variant，其余三个模板的生成函数
+ * 是 (data, lang) 两参，这里包一层把「变体」和「语言」都摆在固定位置，调用方不用关心
+ * 每个模板自己的参数个数。
+ */
+export const DISPATCH_PRINT_RENDERERS: Record<DispatchPrintType, (d: TripPrintData, variant: PickingVariant | undefined, lang: PrintLang) => string> = {
+  summary: (d, _variant, lang) => generateTripSummaryHtml(d, lang),
+  picking: (d, variant, lang) => generateTripPickingHtml(d, variant, lang),
+  delivery: (d, _variant, lang) => generateTripDeliveryHtml(d, lang),
+  sales: (d, _variant, lang) => generateTripSalesHtml(d, lang),
 }
 
-export const DISPATCH_PRINT_TITLES: Record<DispatchPrintType, string> = {
-  summary: '送货汇总单',
-  picking: '拣货单 · 备货清单',
-  delivery: '送货单 · DELIVERY SLIP',
-  sales: '销售单 · SALES ORDER',
+const DISPATCH_PRINT_TITLES_BY_LANG: Record<PrintLang, Record<DispatchPrintType, string>> = {
+  zh: {
+    summary: '送货汇总单',
+    picking: '拣货单 · 备货清单',
+    delivery: '送货单 · DELIVERY SLIP',
+    sales: '销售单 · SALES ORDER',
+  },
+  en: {
+    summary: 'Delivery Summary',
+    picking: 'Picking List',
+    delivery: 'Delivery Slip',
+    sales: 'Sales Order',
+  },
 }
+
+export function getDispatchPrintTitle(type: DispatchPrintType, lang: PrintLang = 'zh'): string {
+  return DISPATCH_PRINT_TITLES_BY_LANG[lang][type]
+}
+
+/** @deprecated 用 getDispatchPrintTitle(type, lang) 代替；留着只为兼容还没切过来的调用点 */
+export const DISPATCH_PRINT_TITLES = DISPATCH_PRINT_TITLES_BY_LANG.zh
 
 export function parsePickingVariant(v: string | null | undefined): PickingVariant {
   return v === 'storable' || v === 'consumable' ? v : 'all'
@@ -42,6 +63,7 @@ export interface DispatchPrintParams extends PrintContentFilter {
   batchLabel?: string
   waveIds?: string[]
   variant?: PickingVariant
+  lang?: PrintLang
 }
 
 /**
@@ -57,6 +79,7 @@ function buildDispatchParams(p: Omit<DispatchPrintParams, 'type'>): URLSearchPar
   if (p.waveIds && p.waveIds.length > 0) params.set('waveIds', p.waveIds.join(','))
   if (p.fromDate) params.set('fromDate', p.fromDate)
   if (p.variant) params.set('variant', p.variant)
+  if (p.lang === 'en') params.set('lang', 'en')
   appendPrintFilterParams(params, p)
   return params
 }
@@ -64,9 +87,10 @@ function buildDispatchParams(p: Omit<DispatchPrintParams, 'type'>): URLSearchPar
 export async function fetchDispatchPrintHtml(p: DispatchPrintParams): Promise<string> {
   const params = buildDispatchParams(p)
   params.delete('variant') // 变体只影响渲染，取数接口不认这个参数
+  params.delete('lang') // 语言只影响渲染，取数接口不认这个参数
   const wire = await apiGet<TripPrintDataWire>(`/api/orders/dispatch-print-data?${params}`)
   const data = toMemoryShape(wire)
-  return DISPATCH_PRINT_RENDERERS[p.type](data, p.variant)
+  return DISPATCH_PRINT_RENDERERS[p.type](data, p.variant, resolvePrintLang(p.lang))
 }
 
 /** 汇总单走真·服务端 PDF：路由参数与上面的 print-data 接口一致，见 app/api/print/dispatch-summary-pdf */

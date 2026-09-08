@@ -12,6 +12,7 @@ import { loadDispatchPrintData, parseDispatchSelector } from '@/lib/print/dispat
 import { stripAutoPrintScript, formatTripDriverList } from '@/lib/print/trip-common'
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
+import { resolvePrintLang } from '@/lib/print/print-i18n'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
     const date = searchParams.get('date')
     const fromDate = searchParams.get('fromDate') ?? undefined
     const selector = parseDispatchSelector(searchParams)
+    const lang = resolvePrintLang(searchParams.get('lang'))
 
     if (!date) {
       return NextResponse.json({ error: '缺少参数 date' }, { status: 400 })
@@ -35,11 +37,11 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: '该批次无订单数据' }, { status: 404 })
       }
       const data = { trip: wire.trip, orders: wire.orders, customers: new Map(wire.customers.map(c => [c.id, c])) }
-      const html = stripAutoPrintScript(generateTripSummaryHtml(data))
+      const html = stripAutoPrintScript(generateTripSummaryHtml(data, lang))
       // 汇总单不是按订单分页(是连续表格，多单挤一起)，"订单号-Page X/Y"套不上——改成
       // 整份文档统一页码，用 Puppeteer 原生页码(按真实渲染页数计数)，前缀带日期+司机方便辨认
       // 是哪一叠(客户要求，20260718)。
-      const driverLabel = formatTripDriverList(wire.trip, wire.orders)
+      const driverLabel = formatTripDriverList(wire.trip, wire.orders, lang)
       const pageLabel = `Summary ${date}${driverLabel && driverLabel !== '—' ? ' ' + driverLabel : ''}`
       const pdf = await renderHtmlToPdf(html, { pageNumbers: true, pageLabel })
       return new NextResponse(new Uint8Array(pdf), {

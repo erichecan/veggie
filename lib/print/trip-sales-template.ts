@@ -37,13 +37,27 @@ import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
 import { displayUomName } from '@/lib/sale-uom'
 import { formatUomConversionHint } from '@/lib/print/uom-conversion'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+const T = {
+  zh: {
+    customerNote: '客户备注',
+    orderNote: '订单备注',
+  },
+  en: {
+    customerNote: 'Customer Note',
+    orderNote: 'Order Note',
+  },
+} as const
 
 function buildSalesOrderHtml(
   order: TripOrder,
   customer: TripCustomer | undefined,
   driverLabel: string,
+  lang: PrintLang,
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
+  const t = T[lang]
   // 按商品 sequence 排（客户要求 2026-08-18），与销售单/发票 PDF 同一口径
   const lines = sortLinesBySequence<TripLine>(order.lines ?? [])
 
@@ -170,11 +184,11 @@ function buildSalesOrderHtml(
   </div>` : ''}
 
   ${customer?.externalNote ? `<div class="note-box">
-    <div class="note-head">客户备注 / Customer Note</div>
+    <div class="note-head">${t.customerNote}</div>
     <div class="note-body">${escapeHtml(customer.externalNote)}</div>
   </div>` : ''}
   ${order.externalNote ? `<div class="note-box">
-    <div class="note-head">订单备注 / Order Note</div>
+    <div class="note-head">${t.orderNote}</div>
     <div class="note-body">${escapeHtml(order.externalNote)}</div>
   </div>` : ''}`
 
@@ -278,7 +292,7 @@ ${PRINT_PAGE_FOOTER_CSS}
 }
 `
 
-export function generateTripSalesHtml(data: TripPrintData): string {
+export function generateTripSalesHtml(data: TripPrintData, lang: PrintLang = 'zh'): string {
   const { trip, orders, customers } = data
 
   // 筛选打印/全部打印可能横跨多个司机,trip 级标签会是空的——每单优先用自己实际所属的
@@ -287,7 +301,7 @@ export function generateTripSalesHtml(data: TripPrintData): string {
 
   const pagesHtml = orders.map((order, idx) => {
     const customer = customers.get(order.customerId)
-    return buildSalesOrderHtml(order, customer, order.driverBatchLabel || tripDriverLabel, {
+    return buildSalesOrderHtml(order, customer, order.driverBatchLabel || tripDriverLabel, lang, {
       pageBreakAfter: idx < orders.length - 1,
     })
   }).join('')

@@ -15,7 +15,7 @@ function escapeCsvField(value: unknown): string {
 
 const BOM = '﻿'
 
-export function buildCsv(headers: string[], rows: unknown[][]): string {
+export function buildCsv(headers: readonly string[], rows: unknown[][]): string {
   const lines = [headers, ...rows].map(row => row.map(escapeCsvField).join(','))
   return BOM + lines.join('\r\n')
 }

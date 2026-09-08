@@ -1,8 +1,16 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import type { Order, Customer } from '@/lib/types'
 import { buildOrderHtml, CSS } from '../[id]/page'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+const DOC_TITLE = {
+  en: { delivery: 'Delivery Note', sales: 'Sale Order', invoice: 'Invoice', noOrders: 'No orders to print.', loading: 'Loading…', printBtn: '🖨 Print' },
+  zh: { delivery: '送货单', sales: '销售单', invoice: '发票', noOrders: '没有可打印的订单。', loading: '加载中…', printBtn: '🖨 打印' },
+} as const
 
 type PrintOrder = Order & {
   code?: string
@@ -14,6 +22,9 @@ type PrintOrder = Order & {
 }
 
 export default function BatchPrintPage() {
+  const locale = useLocale()
+  const lang: PrintLang = locale === routing.defaultLocale ? 'zh' : 'en'
+  const t = DOC_TITLE[lang]
   const [html, setHtml] = useState<string>('')
   const [ready, setReady] = useState(false)
   const [isPreview, setIsPreview] = useState(false)
@@ -32,10 +43,10 @@ export default function BatchPrintPage() {
         setIsPreview(preview)
         const docType: 'delivery' | 'sales' | undefined =
           docParam === 'delivery' ? 'delivery' : docParam === 'sales' ? 'sales' : undefined
-        const docTitle = docType === 'delivery' ? 'Delivery Note' : docType === 'sales' ? 'Sale Order' : 'Invoice'
+        const docTitle = t[docType ?? 'invoice']
 
         if (ids.length === 0) {
-          setHtml('<!DOCTYPE html><html><body style="font-family:Arial;color:#666;padding:40px">No orders to print.</body></html>')
+          setHtml(`<!DOCTYPE html><html><body style="font-family:Arial;color:#666;padding:40px">${t.noOrders}</body></html>`)
           setReady(true)
           return
         }
@@ -52,12 +63,12 @@ export default function BatchPrintPage() {
             return buildOrderHtml(order, customer, {
               docType,
               pageBreakAfter: i < validOrders.length - 1,
-            })
+            }, lang)
           })
           .join('\n')
 
         setHtml(`<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -88,12 +99,12 @@ ${bodyHtml}
       }
     }
     load()
-  }, [])
+  }, [lang])
 
   if (!ready) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial, sans-serif', color: '#666' }}>
-        Loading…
+        {t.loading}
       </div>
     )
   }
@@ -116,7 +127,7 @@ ${bodyHtml}
             cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           }}
         >
-          🖨 Print
+          {t.printBtn}
         </button>
       )}
     </>

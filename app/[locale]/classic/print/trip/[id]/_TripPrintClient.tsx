@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState, use } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import {
   type TripPrintData,
@@ -11,25 +13,35 @@ import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
 import { generateTripReceiptHtml } from '@/lib/print/trip-receipt-template'
+import type { PrintLang } from '@/lib/print/print-i18n'
 
 type PrintType = 'summary' | 'picking' | 'delivery' | 'receipt'
 
-const RENDERERS: Record<PrintType, (d: TripPrintData, variant?: PickingVariant) => string> = {
-  summary: generateTripSummaryHtml,
-  picking: generateTripPickingHtml,
-  delivery: generateTripDeliveryHtml,
-  receipt: generateTripReceiptHtml,
+/** 统一签名 (data, variant, lang)——只有 picking 真的用 variant，跟 dispatch-print-html.ts 同一思路 */
+const RENDERERS: Record<PrintType, (d: TripPrintData, variant: PickingVariant | undefined, lang: PrintLang) => string> = {
+  summary: (d, _variant, lang) => generateTripSummaryHtml(d, lang),
+  picking: (d, variant, lang) => generateTripPickingHtml(d, variant, lang),
+  delivery: (d, _variant, lang) => generateTripDeliveryHtml(d, lang),
+  receipt: (d, _variant, lang) => generateTripReceiptHtml(d, lang),
 }
 
 function parsePickingVariant(v: string | null): PickingVariant {
   return v === 'storable' || v === 'consumable' ? v : 'all'
 }
 
-const TITLES: Record<PrintType, string> = {
-  summary: '配送汇总单',
-  picking: '拣货单 · 备货清单',
-  delivery: '送货单 · DELIVERY SLIP',
-  receipt: '客户签收单 · PROOF OF DELIVERY',
+const TITLES: Record<PrintLang, Record<PrintType, string>> = {
+  zh: {
+    summary: '配送汇总单',
+    picking: '拣货单 · 备货清单',
+    delivery: '送货单 · DELIVERY SLIP',
+    receipt: '客户签收单 · PROOF OF DELIVERY',
+  },
+  en: {
+    summary: 'Delivery Summary',
+    picking: 'Picking List',
+    delivery: 'Delivery Slip',
+    receipt: 'Proof of Delivery',
+  },
 }
 
 /**
@@ -48,6 +60,8 @@ export default function TripPrintClient({
   const { id } = use(params)
   const searchParams = useSearchParams()
   const variant = parsePickingVariant(searchParams.get('variant'))
+  const locale = useLocale()
+  const lang: PrintLang = locale === routing.defaultLocale ? 'zh' : 'en'
   const [html, setHtml] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
 
@@ -59,7 +73,7 @@ export default function TripPrintClient({
         if (cancelled) return
         const data = toMemoryShape(wire)
         const renderer = RENDERERS[type]
-        setHtml(renderer(data, variant))
+        setHtml(renderer(data, variant, lang))
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : '加载失败 / Loading failed')
@@ -67,12 +81,12 @@ export default function TripPrintClient({
     }
     load()
     return () => { cancelled = true }
-  }, [id, type, variant])
+  }, [id, type, variant, lang])
 
   if (error) {
     return (
       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Arial,sans-serif', color:'#dc2626' }}>
-        ❌ {TITLES[type]} — 加载失败 / Loading failed: {error}
+        ❌ {TITLES[lang][type]} — 加载失败 / Loading failed: {error}
       </div>
     )
   }
@@ -80,7 +94,7 @@ export default function TripPrintClient({
   if (!html) {
     return (
       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Arial,sans-serif', color:'#666' }}>
-        正在准备 / Preparing {TITLES[type]} …
+        正在准备 / Preparing {TITLES[lang][type]} …
       </div>
     )
   }
@@ -89,7 +103,7 @@ export default function TripPrintClient({
   // window.print）浏览器不会执行；iframe 会把它当完整文档解析，脚本正常运行。
   return (
     <iframe
-      title={TITLES[type]}
+      title={TITLES[lang][type]}
       srcDoc={html}
       style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', border: 'none' }}
     />

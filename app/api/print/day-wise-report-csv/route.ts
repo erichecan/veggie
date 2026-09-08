@@ -11,18 +11,27 @@ import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadDayWiseReportData } from '@/lib/print/day-wise-report-loader'
 import { buildCsv, csvResponseHeaders, money } from '@/lib/export/csv'
-import { ORDER_SUMMARY_HEADERS, buildOrderSummaryRows } from '@/lib/export/order-export-rows'
+import { orderSummaryHeaders, buildOrderSummaryRows } from '@/lib/export/order-export-rows'
+import { resolvePrintLang } from '@/lib/print/print-i18n'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_ROLES = ['OPERATOR', 'BOSS', 'DRIVER', 'FINANCE', 'SALES']
 
-const DETAIL_HEADERS = ['日期', '订单号', '客户', '配送批次', '产品', '数量', '单价', '税率(%)', '金额']
+const DETAIL_HEADERS = {
+  zh: ['日期', '订单号', '客户', '配送批次', '产品', '数量', '单价', '税率(%)', '金额'],
+  en: ['Date', 'Order No', 'Customer', 'Batch', 'Product', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
+} as const
+const FILENAME = {
+  zh: { detail: '产品明细', summary: '订单汇总' },
+  en: { detail: 'product-detail', summary: 'order-summary' },
+} as const
 
 export async function GET(req: Request) {
   return withAuth(req, async () => {
     const { searchParams } = new URL(req.url)
+    const lang = resolvePrintLang(searchParams.get('lang'))
     const kind = searchParams.get('kind') === 'detail' ? 'detail' : 'summary'
     const fromDate = searchParams.get('from') ?? ''
     const toDate = searchParams.get('to') ?? ''
@@ -57,11 +66,11 @@ export async function GET(req: Request) {
         money(l.taxRate > 1 ? l.taxRate : l.taxRate * 100),
         money(l.amount),
       ])
-      const csv = buildCsv(DETAIL_HEADERS, rows)
-      return new NextResponse(csv, { headers: csvResponseHeaders(`产品明细-${rangeTag}.csv`) })
+      const csv = buildCsv(DETAIL_HEADERS[lang], rows)
+      return new NextResponse(csv, { headers: csvResponseHeaders(`${FILENAME[lang].detail}-${rangeTag}.csv`) })
     }
 
-    const csv = buildCsv(ORDER_SUMMARY_HEADERS, buildOrderSummaryRows(orders))
-    return new NextResponse(csv, { headers: csvResponseHeaders(`订单汇总-${rangeTag}.csv`) })
+    const csv = buildCsv(orderSummaryHeaders(lang), buildOrderSummaryRows(orders, lang))
+    return new NextResponse(csv, { headers: csvResponseHeaders(`${FILENAME[lang].summary}-${rangeTag}.csv`) })
   }, { require: 'print.center.access' })
 }
