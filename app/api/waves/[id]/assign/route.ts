@@ -51,16 +51,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await assertWaveNotDispatched(ow.id)
       }
 
-      // 预先计算各波次的 zones（读操作放事务外），写操作再统一进事务保证原子。
-      const otherWaveUpdates = await Promise.all(
-        otherWaves.map(async (ow) => {
-          const remaining = (ow.orderIds as string[]).filter(oid => !orderIds.includes(oid))
-          return { id: ow.id, remaining, zones: await buildZonesByRestaurant(remaining) }
-        }),
-      )
-      const merged = Array.from(new Set([...(wave.orderIds as string[]), ...orderIds]))
-      const mergedZones = await buildZonesByRestaurant(merged)
-
       // 托盘子分组：拖进了具体某个托盘(driverSlotId=该托盘的 batchNum 对应的 DriverSlot)时,
       // 把这些订单整单落进那个 Pallet;没带 driverSlotId(如整卡拖入)则只并入波次,不动托盘。
       // slot 校验放事务外(纯读+参数校验，失败不该产生任何写入)。
@@ -78,12 +68,30 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // 夹一次失败，留下"订单已不在/已并入 orderIds、行数据却没跟着搬"的孤儿态
       // (2026-09-05 生产事故，订正见 scripts/fix-orphan-and-duplicate-wave-20260906.ts)。
       const updated = await prisma.$transaction(async (tx) => {
-        for (const u of otherWaveUpdates) {
-          await tx.pickingWave.update({
-            where: { id: u.id },
-            data: { orderIds: u.remaining, zones: u.zones },
+        // 行锁：并发的两次分配请求必须排队，否则各自基于分配前读到的旧 orderIds 快照
+        // 计算 merged/remaining，后提交的一次会把先提交那次刚并入的订单 id 整体覆盖掉——
+        // Pallet.items 各自独立 append 不受影响，于是出现"托盘里有货、orderIds 却漏了一单，
+        // 打印中心/司机汇总按 orderIds 计数因此少算一单"(2026-09-05 YANG/hanhua 各丢一单，
+        // 20260907 排查确认)。锁完必须在同一事务里重新读一遍 orderIds 再计算，不能沿用锁之前的值。
+        const lockIds = [id, ...otherWaves.map(ow => ow.id)]
+        await tx.$queryRaw`SELECT id FROM "PickingWave" WHERE id = ANY(${lockIds}) FOR UPDATE`
+
+        for (const ow of otherWaves) {
+          const freshOtherWave = await tx.pickingWave.findUniqueOrThrow({
+            where: { id: ow.id },
+            select: { orderIds: true },
           })
+          const remaining = (freshOtherWave.orderIds as string[]).filter(oid => !orderIds.includes(oid))
+          const zones = await buildZonesByRestaurant(remaining)
+          await tx.pickingWave.update({ where: { id: ow.id }, data: { orderIds: remaining, zones } })
         }
+
+        const freshWave = await tx.pickingWave.findUniqueOrThrow({
+          where: { id },
+          select: { orderIds: true },
+        })
+        const merged = Array.from(new Set([...(freshWave.orderIds as string[]), ...orderIds]))
+        const mergedZones = await buildZonesByRestaurant(merged)
         const w = await tx.pickingWave.update({
           where: { id },
           data: { orderIds: merged, zones: mergedZones, assignmentDoneAt: null },

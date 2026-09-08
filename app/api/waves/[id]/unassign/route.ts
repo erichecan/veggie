@@ -21,15 +21,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       await assertWaveNotPickLocked(id)
       await assertWaveNotDispatched(id)
 
-      const remaining = (wave.orderIds as string[]).filter(oid => !orderIds.includes(oid))
-      const zones = await buildZonesForOrders(remaining)
-
       // 原子：移出波次 + 回写订单状态 + 清理托盘残留（移出即退回 CONFIRMED，仅回退
       // WAVE_ASSIGNED，已出发(IN_DELIVERY)/已完成(COMPLETED) 不回退）。三步必须在同一个事务里——
       // 分开提交曾经在 orderIds 更新之后、Pallet 清理之前夹一次失败，留下"订单已不在 orderIds、
       // 行数据却还卡在 Pallet.items 里"的孤儿态(2026-09-05 生产事故，订正见
       // scripts/fix-orphan-and-duplicate-wave-20260906.ts)。
       const updated = await prisma.$transaction(async (tx) => {
+        // 行锁：与 app/api/waves/[id]/assign/route.ts 同一处竞态——并发的 assign/unassign
+        // 若基于分锁之前读到的旧 orderIds 快照计算 remaining，后提交的一次会把另一次的改动
+        // 整体覆盖掉。锁完必须在同一事务里重新读一遍 orderIds 再计算，不能沿用锁之前的值。
+        await tx.$queryRaw`SELECT id FROM "PickingWave" WHERE id = ${id} FOR UPDATE`
+        const freshWave = await tx.pickingWave.findUniqueOrThrow({ where: { id }, select: { orderIds: true } })
+        const remaining = (freshWave.orderIds as string[]).filter(oid => !orderIds.includes(oid))
+        const zones = await buildZonesForOrders(remaining)
         const w = await tx.pickingWave.update({
           where: { id },
           data: { orderIds: remaining, zones, assignmentDoneAt: null },

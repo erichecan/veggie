@@ -105,26 +105,26 @@ export async function putOrderIntoPallet(
 export async function removeOrderFromAllWaves(orderId: string): Promise<number> {
   const currentWaves = await prisma.pickingWave.findMany({ where: { orderIds: { has: orderId } } })
   for (const w of currentWaves) await assertWaveNotPickLocked(w.id)
-  // zones 是纯读构建(不依赖本次事务内的写入结果),放事务外算完再传进去，事务内只做写入，
-  // 缩短持锁时间。wave.orderIds 更新与 Pallet.items 清理必须在同一个事务里提交/回滚——
-  // 分开两步曾经在中间夹一次失败，留下"订单已不在 orderIds、行数据却还卡在 Pallet.items"的
-  // 孤儿态(2026-09-05 生产事故，订正见 scripts/fix-orphan-and-duplicate-wave-20260906.ts)。
-  const zonesByWave = new Map<string, Prisma.InputJsonValue>()
-  for (const w of currentWaves) {
-    const remaining = (w.orderIds as string[]).filter((oid) => oid !== orderId)
-    zonesByWave.set(w.id, await buildZonesByRestaurant(remaining))
-  }
+  const count = currentWaves.length
+  if (count === 0) return 0
+
   await prisma.$transaction(async (tx) => {
+    // 行锁：与 assignOrderToWave 同一处竞态——并发的移除/分配若各自基于旧 orderIds 快照
+    // 计算 remaining，后提交的一次可能把另一次刚做的改动整体覆盖掉。锁完必须在同一事务里
+    // 重新读一遍 orderIds 再计算，不能沿用锁之前的值。
+    await tx.$queryRaw`SELECT id FROM "PickingWave" WHERE id = ANY(${currentWaves.map((w) => w.id)}) FOR UPDATE`
     for (const w of currentWaves) {
-      const remaining = (w.orderIds as string[]).filter((oid) => oid !== orderId)
-      await tx.pickingWave.update({ where: { id: w.id }, data: { orderIds: remaining, zones: zonesByWave.get(w.id) } })
+      const freshWave = await tx.pickingWave.findUniqueOrThrow({ where: { id: w.id }, select: { orderIds: true } })
+      const remaining = (freshWave.orderIds as string[]).filter((oid) => oid !== orderId)
+      const zones = await buildZonesByRestaurant(remaining)
+      await tx.pickingWave.update({ where: { id: w.id }, data: { orderIds: remaining, zones } })
       await removeOrderFromPalletsInWave(w.id, orderId, tx)
     }
     // 移出波次即退回待分配:仅回退 WAVE_ASSIGNED→CONFIRMED(IN_DELIVERY/COMPLETED/PENDING 不动),
     // 与调度台 unassign 口径一致,避免"已移出但订单仍是 WAVE_ASSIGNED"的孤儿状态。
     await tx.order.updateMany({ where: { id: orderId, status: 'WAVE_ASSIGNED' }, data: { status: 'CONFIRMED' } })
   })
-  return currentWaves.length
+  return count
 }
 
 /**
@@ -234,24 +234,28 @@ export async function assignOrderToWave(
     await assertWaveNotPickLocked(ow.id)
     await assertWaveNotDispatched(ow.id)
   }
-  // zones 是纯读构建，放事务外先算好；wave.orderIds 的更新和 Pallet.items 的写入必须在同一个
-  // 事务里提交——分两步曾经在中间夹一次失败，留下"orderIds 干净、Pallet.items 残留"的孤儿态
-  // (同上,2026-09-05 生产事故)。
-  const otherZones = new Map<string, Prisma.InputJsonValue>()
-  for (const ow of otherWaves) {
-    const remaining = (ow.orderIds as string[]).filter((oid) => oid !== orderId)
-    otherZones.set(ow.id, await buildZonesByRestaurant(remaining))
-  }
-  const merged = Array.from(new Set([...(wave.orderIds as string[]), orderId]))
-  const targetZones = await buildZonesByRestaurant(merged)
   const finalWave = wave
 
   await prisma.$transaction(async (tx) => {
+    // 行锁：与 app/api/waves/[id]/assign/route.ts 同一处竞态——两次单单分配（如调度台连续
+    // 拖两单进同一司机同一时段）若各自基于旧快照计算 merged/remaining，后提交的一次会把先
+    // 提交那次刚并入的订单 id 整体覆盖掉，Pallet.items 各自独立写入不受影响，于是出现
+    // "托盘里有货、orderIds 却漏一单"(2026-09-05 生产事故：YANG/hanhua 各丢一单，20260907 排查确认)。
+    // 锁完必须在同一事务里重新读一遍 orderIds 再计算，不能沿用锁之前的值。
+    const lockIds = [finalWave.id, ...otherWaves.map((ow) => ow.id)]
+    await tx.$queryRaw`SELECT id FROM "PickingWave" WHERE id = ANY(${lockIds}) FOR UPDATE`
+
     for (const ow of otherWaves) {
-      const remaining = (ow.orderIds as string[]).filter((oid) => oid !== orderId)
-      await tx.pickingWave.update({ where: { id: ow.id }, data: { orderIds: remaining, zones: otherZones.get(ow.id) } })
+      const freshOtherWave = await tx.pickingWave.findUniqueOrThrow({ where: { id: ow.id }, select: { orderIds: true } })
+      const remaining = (freshOtherWave.orderIds as string[]).filter((oid) => oid !== orderId)
+      const zones = await buildZonesByRestaurant(remaining)
+      await tx.pickingWave.update({ where: { id: ow.id }, data: { orderIds: remaining, zones } })
       await removeOrderFromPalletsInWave(ow.id, orderId, tx)
     }
+
+    const freshWave = await tx.pickingWave.findUniqueOrThrow({ where: { id: finalWave.id }, select: { orderIds: true } })
+    const merged = Array.from(new Set([...(freshWave.orderIds as string[]), orderId]))
+    const targetZones = await buildZonesByRestaurant(merged)
     // driverSlotId 快照随最近一次指派更新——一个波次现在可能横跨多个 batchNum,这个字段只作
     // "任取一个属于本波次的 DriverSlot"的兼容读兜底(打印/交接摘要等未接 Pallet 的旧消费方用),
     // 精确到"这单在第几个托盘"的口径一律走 Pallet,不读这个字段。
