@@ -26,7 +26,18 @@ export async function GET(req: Request) {
         prisma.product.count({ where }),
         prisma.product.findMany({
           where,
-          include: { uom: true },
+          include: {
+            uom: true,
+            // 商品列表页「可售单位」列用的摘要（20260908）：只取徽章渲染需要的字段，
+            // 一次 include 查完，不是逐行再查一次 —— 一页 50 个商品，逐行查就是 50 次往返。
+            // 只取 active——这一列展示的是"当前能按哪些单位卖"，已停用的单位不该出现在这个提示灯里
+            // （详情页/弹窗里改可售单位仍能看到并重新启用它，这里只是列表快速浏览的摘要）。
+            saleUoms: {
+              where: { active: true },
+              orderBy: { sequence: 'asc' },
+              select: { uomId: true, isDefault: true, factor: true, active: true, uom: { select: { name: true, nameZh: true } } },
+            },
+          },
           orderBy,
           skip: (page - 1) * limit,
           take: limit,

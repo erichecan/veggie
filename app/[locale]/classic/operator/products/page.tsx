@@ -5,15 +5,17 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
-import type { ProductTemplate, ProductCategory } from '@/lib/types'
+import type { ProductTemplate, ProductCategory, ProductSaleUomSummary } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import SaleUomsDialog, { type SaleUomsDialogProduct } from '@/components/classic/SaleUomsDialog'
 import { type SortDir } from '@/components/shared/sort-th'
 import { applyFacets, groupFacets, localizeFacetFields, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
+import type { SaleUomFormRow } from '@/lib/sale-uom'
 
 const PAGE_SIZE = 50
 const LOW_STOCK_THRESHOLD = 10
@@ -57,6 +59,9 @@ export default function ClassicProductsPage() {
   const [forecastMap, setForecastMap] = useState<Map<string, { forecast: number; qtyOnHand: number }>>(new Map())
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [multiSelectOptions, setMultiSelectOptions] = useState<{ uomName: string[]; updatedBy: string[] }>({ uomName: [], updatedBy: [] })
+  // 可售单位弹窗（20260908）：uoms 是弹窗里单位下拉的候选列表，跟商品详情页共用同一个 /api/uoms
+  const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; categoryId?: string }[]>([])
+  const [uomDialogProduct, setUomDialogProduct] = useState<SaleUomsDialogProduct | null>(null)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [page, setPage] = useState(1)
@@ -180,6 +185,8 @@ export default function ClassicProductsPage() {
     apiGet<ProductCategory[]>('/api/product-categories').then(setCategories).catch(() => {})
     apiGet<{ uomName: string[]; updatedBy: string[] }>('/api/products/filter-options')
       .then(setMultiSelectOptions).catch(() => {})
+    apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string }[]>('/api/uoms')
+      .then(setUoms).catch(() => {})
     loadPage(1, '')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -240,6 +247,37 @@ export default function ClassicProductsPage() {
     if (qty < 0) return { background: '#fff1f2' }
     if (qty < LOW_STOCK_THRESHOLD) return { background: '#fffbeb' }
     return undefined
+  }
+
+  // ─── 「可售单位」列（20260908）：只做提示灯，不在列表里展开全部信息 ───
+  // 只有 1 个单位就显示它的名字；多个单位只显示"默认单位 + N"，不管背后有几个单位、
+  // 名字多长，这一列宽度都不变——列表已经很多列很宽了，这一列不该再抢地方。
+  // 完整信息（换算/定价/规格/装货顺序）在点开的弹窗里，不在列表里摊开。
+  function saleUnitName(u: ProductSaleUomSummary): string {
+    return isEn ? (u.uom.name || u.uom.nameZh || '') : (u.uom.nameZh || u.uom.name || '')
+  }
+  function renderSaleUnitsBadge(row: ProductTemplate) {
+    const list = row.saleUoms ?? []
+    if (list.length === 0) return <span className="text-gray-300 text-xs">—</span>
+    const def = list.find(u => u.isDefault) ?? list[0]
+    const tooltip = list.map(saleUnitName).join(' · ')
+    const label = list.length === 1 ? saleUnitName(def) : `${saleUnitName(def)} +${list.length - 1}`
+    if (!editMode) {
+      return <span className="text-xs text-gray-600" title={tooltip}>{label}</span>
+    }
+    return (
+      <button
+        type="button"
+        title={isEn ? `${tooltip} — click to manage` : `${tooltip} — 点击管理`}
+        onClick={e => {
+          e.stopPropagation()
+          setUomDialogProduct({ id: row.id, name: row.name, uomId: row.uomId, listPrice: row.listPrice, commissionPrice: row.commissionPrice ?? null })
+        }}
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+      >
+        {label}
+      </button>
+    )
   }
 
   const columns: OdooColumn[] = [
@@ -315,6 +353,15 @@ export default function ClassicProductsPage() {
       render: (v) => v ? <span className="text-xs text-gray-500 truncate max-w-xs block">{String(v)}</span> : <span className="text-gray-300">—</span>,
     },
     {
+      key: 'spec',
+      width: 110,
+      label: 'Spec',
+      filterType: 'text',
+      editable: true,
+      editType: 'text',
+      render: (v) => v ? <span className="text-xs text-gray-600">{String(v)}</span> : <span className="text-gray-300">—</span>,
+    },
+    {
       key: 'listPrice',
       width: 84,
       label: 'Sale Price',
@@ -375,6 +422,13 @@ export default function ClassicProductsPage() {
       editable: true,
       editType: 'number',
       render: (v) => v != null ? <span className="text-xs">{Number(v).toFixed(2)} kg</span> : <span className="text-gray-400">—</span>,
+    },
+    {
+      // 只读提示灯，不走通用的行内编辑机制（管理走点击弹窗，见 renderSaleUnitsBadge）
+      key: 'saleUoms',
+      width: 100,
+      label: 'Sale Units',
+      render: (_, row) => renderSaleUnitsBadge(row as unknown as ProductTemplate),
     },
     {
       // Quantity On Hand 是实时计算值(后端按 templateId 聚合后逐行附加到 qtyOnHand)，
@@ -778,6 +832,25 @@ export default function ClassicProductsPage() {
           { key: 'internalRef', label: isEn ? 'Internal Ref' : '内部编号' },
         ]}
         onDone={() => loadPage(1, searchInput)}
+      />
+
+      <SaleUomsDialog
+        open={uomDialogProduct != null}
+        product={uomDialogProduct}
+        uoms={uoms}
+        isEn={isEn}
+        onClose={() => setUomDialogProduct(null)}
+        onSaved={(rows: SaleUomFormRow[]) => {
+          if (!uomDialogProduct) return
+          const uomMap = new Map(uoms.map(u => [u.id, u]))
+          const summaries: ProductSaleUomSummary[] = rows
+            .filter(r => r.active)
+            .map(r => ({
+              uomId: r.uomId, isDefault: r.isDefault, factor: r.factor, active: r.active,
+              uom: { name: uomMap.get(r.uomId)?.name ?? '', nameZh: uomMap.get(r.uomId)?.nameZh },
+            }))
+          setTemplates(prev => prev.map(t => t.id === uomDialogProduct.id ? { ...t, saleUoms: summaries } : t))
+        }}
       />
     </div>
   )

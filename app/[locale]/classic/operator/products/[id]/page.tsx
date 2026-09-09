@@ -9,7 +9,11 @@ import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import type { ProductTemplate, ProductCategory, Order } from '@/lib/types'
-import { validateSaleUomItems, priceOf, commissionPriceOf, type SaleUomPriceMode } from '@/lib/sale-uom'
+import {
+  validateSaleUomItems, withBaseUomFallback, mapSaleUomApiRows,
+  type SaleUomFormRow, type SaleUomApiRow,
+} from '@/lib/sale-uom'
+import SaleUomsEditor from '@/components/classic/SaleUomsEditor'
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
 function IconSales() {
@@ -70,27 +74,6 @@ const TYPE_OPTIONS = [
 ]
 const TYPE_LABEL: Record<string, string> = { product: 'Storable Product', consu: 'Consumable', service: 'Service' }
 
-// 多单位销售(20260714)：ProductSaleUom 行的前端形态
-interface SaleUomRow {
-  uomId: string
-  isDefault: boolean
-  /** 1 个此单位 = factor 个基础单位（基础单位自身恒为 1） */
-  factor: number
-  priceOverride: number | null
-  active: boolean
-  priceMode: SaleUomPriceMode
-  priceDiscountPct: number
-  priceSurcharge: number
-  /** 司机提成价照抄价格机制（20260901） */
-  commissionPriceOverride: number | null
-  commissionPriceMode: SaleUomPriceMode
-  commissionDiscountPct: number
-  commissionSurcharge: number
-  /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
-  spec: string | null
-  /** 装货顺序（20260907）：仓库配货/司机卸货用，数字越小越先装/放最下（重），越大越后装/放最上（怕压） */
-  sequence: number | null
-}
 
 export default function ClassicProductDetailPage() {
   const router = useRouter()
@@ -141,7 +124,7 @@ export default function ClassicProductDetailPage() {
 
   // 多单位销售(20260714 试点)：可售单位配置，挂在该商品模板下唯一/主变体 Product 上
   const [primaryProductId, setPrimaryProductId] = useState<string | null>(null)
-  const [saleUoms, setSaleUoms] = useState<SaleUomRow[]>([])
+  const [saleUoms, setSaleUoms] = useState<SaleUomFormRow[]>([])
   const [saleUomsSaving, setSaleUomsSaving] = useState(false)
 
   async function load() {
@@ -181,34 +164,13 @@ export default function ClassicProductDetailPage() {
         setAdjVariantId(found.id)
         setPrimaryProductId(found.id)
         try {
-          const rows = await apiGet<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null; sequence?: number | null }>>(`/api/products/${found.id}/sale-uoms`)
-          const mapped = rows.map(r => ({
-            uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
-            priceMode: r.priceMode ?? 'AUTO',
-            priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
-            priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
-            commissionPriceOverride: r.commissionPriceOverride ?? null,
-            commissionPriceMode: r.commissionPriceMode ?? 'AUTO',
-            commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
-            commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
-            spec: r.spec ?? null,
-            sequence: r.sequence ?? null,
-          }))
+          const rows = await apiGet<SaleUomApiRow[]>(`/api/products/${found.id}/sale-uoms`)
           // 基础单位这一行只在「保存过一次可售单位」之后才会真的落库(见 PUT 路由注释里
           // "提交列表里没有基准单位时自动补一行")——从没保存过的商品，GET 回来的列表里
-          // 压根没有它，「基础单位是否可下单」这个开关就没地方挂。这里前端补一份默认
-          // active:true 的虚拟行，保证这个开关任何时候都在，不用逼用户先随便加一个
+          // 压根没有它，「基础单位是否可下单」这个开关就没地方挂。withBaseUomFallback 补一份
+          // 默认 active:true 的虚拟行，保证这个开关任何时候都在，不用逼用户先随便加一个
           // 额外单位、保存一次才能看到。
-          if (found.uomId && !mapped.some(r => r.uomId === found.uomId)) {
-            mapped.push({
-              uomId: found.uomId, isDefault: true, factor: 1, priceOverride: null, active: true,
-              priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
-              commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
-              spec: null,
-              sequence: null,
-            })
-          }
-          setSaleUoms(mapped)
+          setSaleUoms(withBaseUomFallback(mapSaleUomApiRows(rows), found.uomId))
         } catch { setSaleUoms([]) }
       }
       setCategories(cats)
@@ -250,44 +212,8 @@ export default function ClassicProductDetailPage() {
   }
 
   // ── 可售单位(ProductSaleUom)本地编辑 ──────────────────────────────────────────
-  // 基准单位单一入口(20260823)：谁是「基础」行不再由本区块的单选钮决定，
-  // 纯派生自页头「Unit of Measure」——只有它能改基准单位。
-  function isBaseUom(row: SaleUomRow) {
-    return tmpl?.uomId ? row.uomId === tmpl.uomId : row.isDefault
-  }
-  function addSaleUomRow() {
-    // 基准单位不能作为"额外可售单位"加进来——它已经隐式存在(见上面 isBaseUom 的
-    // return null)。这里如果不排除 tmpl.uomId，候选一旦落到它头上，新行会被塞进
-    // state 但因为 isBaseUom 判断永远不渲染，表现就是点了「+ 添加单位」界面上
-    // 什么反应都没有，像按钮坏了(20260901 客户反馈"添加不了"实测复现)。
-    const used = new Set(saleUoms.map(r => r.uomId))
-    if (tmpl?.uomId) used.add(tmpl.uomId)
-    const candidate = uoms.find(u => !used.has(u.id) && (!tmpl?.uomId || u.categoryId === uoms.find(x => x.id === tmpl.uomId)?.categoryId))
-    if (!candidate) { toast.error(isEn ? 'No more units available in this category' : '该计量类别下已没有可选的单位了'); return }
-    setSaleUoms(prev => [...prev, {
-      uomId: candidate.id,
-      isDefault: tmpl?.uomId ? candidate.id === tmpl.uomId : prev.length === 0,
-      factor: 1, priceOverride: null, active: true,
-      // 价格公式(20260823 改行内摊平后)不再有单独的"自动/固定/公式"模式选择，统一用 FORMULA，
-      // 折扣/加价都是 0 时等价于"自动按系数折算"，行为跟以前的 AUTO 模式完全一致。
-      priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
-      commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
-      spec: null,
-      sequence: null,
-    }])
-  }
-  function updateSaleUomRow(index: number, patch: Partial<SaleUomRow>) {
-    setSaleUoms(prev => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
-  }
-  function removeSaleUomRow(index: number) {
-    setSaleUoms(prev => {
-      const next = prev.filter((_, i) => i !== index)
-      if (next.length > 0 && !next.some(r => r.isDefault) && !next.some(r => tmpl?.uomId && r.uomId === tmpl.uomId)) {
-        next[0] = { ...next[0], isDefault: true }
-      }
-      return next
-    })
-  }
+  // 行的增删改渲染都在共享组件 components/classic/SaleUomsEditor.tsx 里（20260908 抽取，
+  // 商品列表页的可售单位弹窗也用它），这里只留数据获取/保存这两件事。
   async function saveSaleUoms() {
     if (!primaryProductId) return
     if (saleUoms.some(r => !r.uomId)) { toast.error(isEn ? 'Please select a unit for every row' : '请为每一行选择单位'); return }
@@ -309,22 +235,11 @@ export default function ClassicProductDetailPage() {
         setOriginal(prev => (prev ? { ...prev, uomId: tmpl.uomId } : prev))
       }
       const payload = saleUoms.map(r => ({ ...r, isDefault: tmpl?.uomId ? r.uomId === tmpl.uomId : r.isDefault }))
-      const rows = await apiPut<Array<{ uomId: string; isDefault: boolean; factor: number | string | null; priceOverride: number | null; active: boolean; priceMode?: SaleUomPriceMode; priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null; commissionPriceOverride?: number | null; commissionPriceMode?: SaleUomPriceMode; commissionDiscountPct?: number | string | null; commissionSurcharge?: number | string | null; spec?: string | null; sequence?: number | null }>>(
+      const rows = await apiPut<SaleUomApiRow[]>(
         `/api/products/${primaryProductId}/sale-uoms`,
         { items: payload },
       )
-      setSaleUoms(rows.map(r => ({
-        uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
-        priceMode: r.priceMode ?? 'AUTO',
-        priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
-        priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
-        commissionPriceOverride: r.commissionPriceOverride ?? null,
-        commissionPriceMode: r.commissionPriceMode ?? 'AUTO',
-        commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
-        commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
-        spec: r.spec ?? null,
-        sequence: r.sequence ?? null,
-      })))
+      setSaleUoms(mapSaleUomApiRows(rows))
       toast.success(isEn ? 'Sellable units saved' : '可售单位已保存')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -811,261 +726,18 @@ export default function ClassicProductDetailPage() {
                   ? 'Configure the units this product can be sold in. The unit marked "Base" is what stock is counted in — set each other unit\'s factor to how many base units it contains (e.g. a case of 10 packets → 10). Leave the price blank to auto-scale from the base price by that factor.'
                   : '配置这个商品能按哪些单位卖。标为「基础」的那个单位就是库存的计数单位 —— 其余每个单位填「1 个它等于多少个基础单位」（如一箱装 10 包就填 10）。独立售价留空则按系数自动折算。'}
               </p>
-              <div className="max-w-3xl space-y-2">
-                {saleUoms.map((row, i) => {
-                  // ⛔ 单位不再按类目限制：`10*700g CASE` 的基础单位是 PKT（Unit 类目），
-                  //    而它也按 KG 卖（Weight 类目）—— 跨类目在真实业务里就是常态，
-                  //    因为换算系数现在是这个商品自己的，不依赖全局类目体系。
-                  const isBase = isBaseUom(row)
-                  // 非基础行的下拉里不能选基准单位本身——选了会因为上面 isBaseUom 判断
-                  // 变成新的「基础行」，把当前这行的换算/价格配置全部作废。基础行本身的
-                  // 下拉锁死不可改（唯一入口是页头「Unit of Measure」），但选项列表必须
-                  // 包含它自己的值，否则 <select> 找不到匹配项会显示空白。
-                  const options = isBase ? uoms : (tmpl?.uomId ? uoms.filter(u => u.id !== tmpl.uomId) : uoms)
-                  // 具体数量有两种真实场景，同一个数字含义相反，必须让用户自己选×/÷，不能瞎猜：
-                  // 整箱/大包装(case of 10 packets)是"放大" → factor=数量本身；
-                  // 半份/拆零(拆成 1/10)是"缩小" → factor=1/数量，更常见，默认就是这个方向。
-                  // factor<=1 时按"缩小"展示(含新行默认的 factor=1，边界给÷不给×)，这样刷新页面
-                  // 读旧数据也能还原出正确的×/÷，不用额外存一个 mode 字段。
-                  const rowFactor = isBase ? 1 : (row.factor ?? 1)
-                  const isDivideMode = rowFactor > 0 && rowFactor <= 1
-                  const displayQty = isDivideMode ? Math.round((1 / rowFactor) * 1e6) / 1e6 : rowFactor
-                  // "基准 × 系数"这一步的结果，与折扣/加价无关——借道 FORMULA(折扣/加减都是 0) 拿到这个干净的数，
-                  // 公式行要展示"从这个数出发再调整"，不能直接用 finalPrice(已经算完调整)。
-                  const stepPrice = priceOf([{ ...row, priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0 }], row.uomId, tmpl.listPrice)
-                  const finalPrice = priceOf([row], row.uomId, tmpl.listPrice)
-                  // 提成价照抄价格机制(20260901)：同样借道 FORMULA(折扣/加价都是 0) 拿到
-                  // "基础提成价 × factor"这个干净的数，公式行从这个数出发再调整。
-                  const baseCommission = tmpl.commissionPrice ?? null
-                  const stepCommission = commissionPriceOf([{ ...row, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0 }], row.uomId, baseCommission)
-                  const finalCommission = commissionPriceOf([row], row.uomId, baseCommission)
-                  return (
-                    <div key={i}>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={row.uomId}
-                          onChange={e => {
-                            const nextUomId = e.target.value
-                            // 换成基准单位的那一行系数要归 1 —— 否则携带着换基准单位前的旧系数去保存会被后端拦下
-                            const nextIsBase = tmpl?.uomId ? nextUomId === tmpl.uomId : row.isDefault
-                            updateSaleUomRow(i, { uomId: nextUomId, factor: nextIsBase ? 1 : row.factor })
-                          }}
-                          disabled={!editMode || isBase}
-                          title={isBase ? (isEn ? 'Change the base unit from "Unit of Measure" above' : '基准单位只能在上面「Unit of Measure」改') : undefined}
-                          className={fieldClass}
-                          style={{ ...focusStyle, maxWidth: 180 }}
-                        >
-                          {options.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
-                        </select>
-                        {isBase ? (
-                          <span className="px-2 py-1 text-xs rounded font-medium whitespace-nowrap" style={{ background: '#f3e8f5', color: '#875A7B' }}>
-                            {isEn ? 'Base' : '基础'}
-                          </span>
-                        ) : (
-                          <span className="w-0" />
-                        )}
-                        {/* 具体数量：纯数字，不带方向——方向(×/÷)由后面「= base」那个开关决定。
-                            基础单位恒为 1 且不可改 —— 它是库存的计数尺子。 */}
-                        <NumericInput
-                          step="0.000001" min={0}
-                          value={isBase ? 1 : displayQty}
-                          onChange={e => {
-                            const n = e.target.value === '' ? 1 : Number(e.target.value)
-                            const nextFactor = isDivideMode ? (n > 0 ? 1 / n : 1) : n
-                            updateSaleUomRow(i, { factor: nextFactor })
-                          }}
-                          disabled={!editMode || isBase}
-                          title={isEn
-                            ? 'How many — pick × or ÷ on the right for the direction'
-                            : '具体数量——方向(×放大/÷缩小)用右边的开关选'}
-                          className="h-8 px-2 border border-gray-300 rounded text-sm text-center outline-none disabled:bg-gray-50 disabled:text-gray-400"
-                          style={{ width: 90 }}
-                        />
-                        {/* 跟基础单位的关系：= base [×/÷开关] 数量。开关点一下就在放大/缩小间切换，
-                            默认缩小(÷)更常见(拆零比整箱常见)；符号字号调大，纯展示+开关，不带计算器。 */}
-                        {isBase ? (
-                          <span className="w-0" />
-                        ) : (
-                          <div className="flex items-center gap-1.5 h-8 px-2 border border-gray-300 rounded text-xs bg-gray-50 whitespace-nowrap">
-                            <span className="text-gray-500">{isEn ? '= base' : '= 基础'}</span>
-                            <button
-                              type="button"
-                              disabled={!editMode}
-                              onClick={() => {
-                                const nextFactor = isDivideMode ? displayQty : (displayQty > 0 ? 1 / displayQty : 1)
-                                updateSaleUomRow(i, { factor: nextFactor })
-                              }}
-                              title={isEn ? 'Toggle between "× multiply base" and "÷ split base"' : '在"×放大 base"和"÷拆分 base"之间切换'}
-                              className="text-base leading-none font-bold px-0.5 disabled:cursor-not-allowed"
-                              style={{ color: '#875A7B' }}
-                            >
-                              {isDivideMode ? '÷' : '×'}
-                            </button>
-                            <span className="font-medium" style={{ color: '#875A7B' }}>{displayQty}</span>
-                          </div>
-                        )}
-                        {/* 价格：基础行价格恒等于 Sales Price，不再单独可编辑；其余行公式直接摊平在行内，
-                            不用再点开才看到——price = base price + 一个百分比(可负=加价) + 一个绝对值(可负) */}
-                        {isBase ? (
-                          <div className="flex items-center h-8 px-2 text-sm text-gray-500 whitespace-nowrap">
-                            €{tmpl.listPrice.toFixed(2)}
-                          </div>
-                        ) : editMode ? (
-                          <div className="flex items-center gap-1 border border-gray-300 rounded h-8 px-2 bg-white text-xs whitespace-nowrap">
-                            <span className="text-gray-400">€{stepPrice.toFixed(2)} +</span>
-                            <NumericInput
-                              step="0.01"
-                              value={row.priceDiscountPct ?? 0}
-                              onChange={e => updateSaleUomRow(i, { priceMode: 'FORMULA', priceDiscountPct: e.target.value === '' ? 0 : Number(e.target.value) })}
-                              title={isEn ? 'Percentage adjustment, negative = discount' : '百分比调整，填负数就是打折'}
-                              className="w-14 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
-                            />
-                            <span className="text-gray-400">% +</span>
-                            <NumericInput
-                              step="0.01"
-                              value={row.priceSurcharge ?? 0}
-                              onChange={e => updateSaleUomRow(i, { priceMode: 'FORMULA', priceSurcharge: e.target.value === '' ? 0 : Number(e.target.value) })}
-                              title={isEn ? 'Flat amount, can be negative' : '绝对值，可以是负数'}
-                              className="w-16 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
-                            />
-                            <span className="text-gray-400">=</span>
-                            <span className="font-medium" style={{ color: '#875A7B' }}>€{finalPrice.toFixed(2)}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center h-8 px-2 text-sm text-gray-500 whitespace-nowrap">
-                            €{finalPrice.toFixed(2)}
-                          </div>
-                        )}
-                        {editMode && (
-                          <button
-                            type="button"
-                            onClick={() => updateSaleUomRow(i, { active: !row.active })}
-                            role="switch"
-                            aria-checked={row.active}
-                            title={isBase
-                              ? (isEn
-                                ? (row.active ? 'Click to disable selling in the base unit itself — the product can still be ordered in the other units configured below' : 'Click to enable')
-                                : (row.active ? '点击停用「按基础单位本身售卖」——其余已配置的单位不受影响，仍可下单' : '点击启用'))
-                              : (isEn
-                                ? (row.active ? 'Click to disable — hidden when placing orders/quotations; factor & price relationships still apply if re-enabled' : 'Click to enable')
-                                : (row.active ? '点击停用 —— 下单/报价时不再出现；换算与价格关系仍保留，重新启用即可用' : '点击启用'))}
-                            className="h-8 px-2 flex items-center gap-1.5 text-xs rounded border border-gray-300 bg-white transition-colors whitespace-nowrap"
-                          >
-                            <span className={row.active ? 'text-gray-700' : 'text-gray-400'}>{isEn ? 'Sellable' : '可下单'}</span>
-                            <span className="relative inline-block w-7 h-3.5 rounded-full transition-colors" style={{ background: row.active ? '#875A7B' : '#d1d5db' }}>
-                              <span className="absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform" style={{ left: row.active ? '15px' : '2px' }} />
-                            </span>
-                          </button>
-                        )}
-                        {!editMode && !row.active && (
-                          <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-400 whitespace-nowrap">{isEn ? 'Disabled' : '已停用'}</span>
-                        )}
-                        {editMode && !isBase && (
-                          <button onClick={() => removeSaleUomRow(i)} className="text-gray-400 hover:text-red-500 text-sm px-1">✕</button>
-                        )}
-                      </div>
-                      {/* 提成公式：跟价格那行同一套摊平写法，只在配了基础提成价的商品上出现——
-                          没配提成的商品没必要在每个可售单位下都摆一行用不上的"提成"输入。 */}
-                      {!isBase && baseCommission != null && (
-                        <div className="flex items-center gap-2 mt-1 pl-1">
-                          <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
-                            {isEn ? 'Commission' : '提成'}
-                          </span>
-                          {editMode ? (
-                            <div className="flex items-center gap-1 border border-gray-200 rounded h-7 px-2 bg-white text-xs whitespace-nowrap">
-                              <span className="text-gray-400">€{(stepCommission ?? 0).toFixed(2)} +</span>
-                              <NumericInput
-                                step="0.01"
-                                value={row.commissionDiscountPct ?? 0}
-                                onChange={e => updateSaleUomRow(i, { commissionPriceMode: 'FORMULA', commissionDiscountPct: e.target.value === '' ? 0 : Number(e.target.value) })}
-                                title={isEn ? 'Percentage adjustment, negative = discount' : '百分比调整，填负数就是打折'}
-                                className="w-14 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
-                              />
-                              <span className="text-gray-400">% +</span>
-                              <NumericInput
-                                step="0.01"
-                                value={row.commissionSurcharge ?? 0}
-                                onChange={e => updateSaleUomRow(i, { commissionPriceMode: 'FORMULA', commissionSurcharge: e.target.value === '' ? 0 : Number(e.target.value) })}
-                                title={isEn ? 'Flat amount, can be negative' : '绝对值，可以是负数'}
-                                className="w-16 h-6 px-1 border border-gray-200 rounded text-xs no-spinner"
-                              />
-                              <span className="text-gray-400">=</span>
-                              <span className="font-medium" style={{ color: '#00A09D' }}>€{(finalCommission ?? 0).toFixed(2)}</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center h-7 px-2 text-xs text-gray-500 whitespace-nowrap">
-                              €{(finalCommission ?? 0).toFixed(2)}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {/* 产品规格(20260905)：按这个单位卖，客户实际拿到什么规格——每一行(含基础单位)独立填一条，
-                          写入订单行后会出现在交货单/销售单/拣货单/司机回单/发票打印模版上(见 lib/order-line-description.ts)。 */}
-                      <div className="flex items-center gap-2 mt-1 pl-1">
-                        <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
-                          {isEn ? 'Product Spec' : '产品规格'}
-                        </span>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={row.spec ?? ''}
-                            onChange={e => updateSaleUomRow(i, { spec: e.target.value })}
-                            placeholder={isEn ? 'e.g. 500g/packet' : '如：500g/包'}
-                            className="h-7 px-2 border border-gray-200 rounded text-xs outline-none flex-1 max-w-xs"
-                            style={focusStyle}
-                          />
-                        ) : (
-                          <span className="text-xs text-gray-500">{row.spec || '—'}</span>
-                        )}
-                      </div>
-                      {/* 装货顺序(20260907)：仓库配货/司机卸货堆叠顺序——数字越小越先装/放最下（重、
-                          耐压），越大越后装/放最上（怕压）；每一行(含基础单位)独立设置，不继承别的单位。
-                          语义跟上面页头的 Product Sequence 一致，但那个排的是单据里第几行，这个排的是
-                          物理堆叠顺序，两者互不影响。留空＝没设置，排序时按"没有 sequence"处理排最后。 */}
-                      <div className="flex items-center gap-2 mt-1 pl-1">
-                        <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
-                          {isEn ? 'Pack Sequence' : '装货顺序'}
-                        </span>
-                        {editMode ? (
-                          <NumericInput
-                            step="1"
-                            value={row.sequence ?? ''}
-                            onChange={e => updateSaleUomRow(i, { sequence: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
-                            placeholder={isEn ? 'smaller = load first / bottom' : '数字越小越先装/放最下'}
-                            title={isEn ? 'Smaller = load first / bottom (heavy); larger = load last / top (fragile)' : '数字越小越先装/放最下（重）；越大越后装/放最上（怕压）'}
-                            className="h-7 px-2 border border-gray-200 rounded text-xs outline-none no-spinner"
-                            style={{ ...focusStyle, width: 90 }}
-                          />
-                        ) : (
-                          <span className="text-xs text-gray-500">{row.sequence ?? '—'}</span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-                {saleUoms.filter(r => !isBaseUom(r)).length === 0 && (
-                  <p className="text-xs text-gray-300">{isEn ? 'No additional sellable units configured yet.' : '尚未配置额外可售单位。'}</p>
-                )}
-                {editMode && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <button onClick={addSaleUomRow} className={btnBase}>{isEn ? '+ Add Unit' : '＋ 添加单位'}</button>
-                    {isNew ? (
-                      <span className="text-xs text-gray-400">
-                        {isEn ? 'Saved together with the product below' : '随下方"保存"按钮一起创建'}
-                      </span>
-                    ) : (
-                      <button
-                        onClick={saveSaleUoms}
-                        disabled={saleUomsSaving}
-                        className="h-8 px-4 text-sm font-medium text-white rounded transition-colors disabled:opacity-50"
-                        style={{ background: '#875A7B' }}
-                      >
-                        {saleUomsSaving ? (isEn ? 'Saving...' : '保存中...') : (isEn ? 'Save Sellable Units' : '保存可售单位')}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+              <SaleUomsEditor
+                saleUoms={saleUoms}
+                onChange={setSaleUoms}
+                uoms={uoms}
+                baseUomId={tmpl.uomId}
+                baseListPrice={tmpl.listPrice}
+                baseCommissionPrice={tmpl.commissionPrice ?? null}
+                editMode={editMode}
+                isEn={isEn}
+                onSave={isNew ? undefined : saveSaleUoms}
+                saving={saleUomsSaving}
+              />
             </Section>
           )}
 

@@ -314,6 +314,125 @@ export interface SaleUomOption {
 }
 
 /**
+ * 商品可售单位编辑表单里一行的完整形态（20260714 起陆续加了 priceMode/spec/sequence 等字段）。
+ * 商品详情页与商品列表页的「可售单位」弹窗共用这一份形状与下面几个纯函数（20260908 抽取，
+ * 原本这套增删改逻辑只写在详情页 products/[id]/page.tsx 里，见 components/classic/SaleUomsEditor.tsx）。
+ */
+export interface SaleUomFormRow {
+  uomId: string
+  isDefault: boolean
+  /** 1 个此单位 = factor 个基础单位（基础单位自身恒为 1） */
+  factor: number
+  priceOverride: number | null
+  active: boolean
+  priceMode: SaleUomPriceMode
+  priceDiscountPct: number
+  priceSurcharge: number
+  commissionPriceOverride: number | null
+  commissionPriceMode: SaleUomPriceMode
+  commissionDiscountPct: number
+  commissionSurcharge: number
+  /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
+  spec: string | null
+  /** 装货顺序（20260907）：数字越小越先装/放最下（重），越大越后装/放最上（怕压） */
+  sequence: number | null
+}
+
+/**
+ * 基准单位单一入口：谁是「基础」行不由本区块的单选钮决定，纯派生自商品页头的
+ * 「Unit of Measure」——只有那里能改基准单位。没配 baseUomId（罕见的历史数据/新建流程
+ * 尚未选基准单位）时退回旧行为，按行自己的 isDefault 判断。
+ */
+export function isBaseSaleUomRow(row: { uomId: string; isDefault: boolean }, baseUomId?: string | null): boolean {
+  return baseUomId ? row.uomId === baseUomId : row.isDefault
+}
+
+/** 新增一行的默认值：价格/提成都用 FORMULA(折扣加价都是 0)，等价于"自动按系数折算"。 */
+export function makeDefaultSaleUomFormRow(uomId: string, isDefault: boolean): SaleUomFormRow {
+  return {
+    uomId, isDefault, factor: 1, priceOverride: null, active: true,
+    priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
+    commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
+    spec: null, sequence: null,
+  }
+}
+
+/**
+ * 没保存过可售单位的商品，GET 回来的列表里压根没有基础单位那一行（见
+ * app/api/products/[id]/sale-uoms/route.ts 的 PUT 注释："提交列表里没有基准单位时自动补一行"）——
+ * 前端需要补一条默认 active:true 的虚拟行，保证「基础单位是否可下单」这个开关任何时候都有地方挂，
+ * 不用逼用户先随便加一个额外单位、保存一次才能看到。
+ */
+export function withBaseUomFallback(rows: SaleUomFormRow[], baseUomId: string | null | undefined): SaleUomFormRow[] {
+  if (!baseUomId || rows.some(r => r.uomId === baseUomId)) return rows
+  return [...rows, makeDefaultSaleUomFormRow(baseUomId, true)]
+}
+
+/**
+ * 「+ 添加单位」该建议哪个单位：基准单位不能作为"额外可售单位"加进来（它已经隐式存在），
+ * 已用过的单位不能重复选；同类目优先（如重量类目的商品优先建议重量类目下的其它单位）。
+ * 找不到候选时返回 null，调用方应提示"该类目下已没有可选的单位了"，不静默塞入。
+ */
+export function findAddableSaleUom(
+  existing: SaleUomFormRow[],
+  uoms: readonly { id: string; categoryId?: string }[],
+  baseUomId?: string | null,
+): string | null {
+  const used = new Set(existing.map(r => r.uomId))
+  if (baseUomId) used.add(baseUomId)
+  const baseCategoryId = baseUomId ? uoms.find(u => u.id === baseUomId)?.categoryId : undefined
+  const candidate = uoms.find(u => !used.has(u.id) && (!baseUomId || u.categoryId === baseCategoryId))
+  return candidate?.id ?? null
+}
+
+/**
+ * 删除一行后重新指定默认单位：如果被删的那行正好是默认、且剩下的行里也没有匹配基准单位的行，
+ * 剩余行群龙无首，落到第一行头上——保证任何时候「必须且只能有一个默认单位」这条校验不会被
+ * 删除操作破坏。
+ */
+export function removeSaleUomFormRow(rows: SaleUomFormRow[], index: number, baseUomId?: string | null): SaleUomFormRow[] {
+  const next = rows.filter((_, i) => i !== index)
+  if (next.length > 0 && !next.some(r => r.isDefault) && !next.some(r => baseUomId && r.uomId === baseUomId)) {
+    next[0] = { ...next[0], isDefault: true }
+  }
+  return next
+}
+
+/** GET /api/products/[id]/sale-uoms 的原始行形状——数值字段可能以字符串落地（Decimal 序列化）。 */
+export interface SaleUomApiRow {
+  uomId: string
+  isDefault: boolean
+  factor: number | string | null
+  priceOverride: number | null
+  active: boolean
+  priceMode?: SaleUomPriceMode
+  priceDiscountPct?: number | string | null
+  priceSurcharge?: number | string | null
+  commissionPriceOverride?: number | null
+  commissionPriceMode?: SaleUomPriceMode
+  commissionDiscountPct?: number | string | null
+  commissionSurcharge?: number | string | null
+  spec?: string | null
+  sequence?: number | null
+}
+
+/** API 行 → 表单行：数值兜底、Decimal 字符串转 number，两处调用点（GET 加载 / PUT 保存回填）共用一份映射。 */
+export function mapSaleUomApiRows(rows: SaleUomApiRow[]): SaleUomFormRow[] {
+  return rows.map(r => ({
+    uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
+    priceMode: r.priceMode ?? 'AUTO',
+    priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
+    priceSurcharge: Number(r.priceSurcharge ?? 0) || 0,
+    commissionPriceOverride: r.commissionPriceOverride ?? null,
+    commissionPriceMode: r.commissionPriceMode ?? 'AUTO',
+    commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
+    commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
+    spec: r.spec ?? null,
+    sequence: r.sequence ?? null,
+  }))
+}
+
+/**
  * 加商品时该落哪个单位：基础单位若被关掉(active=false)不能再默认用它——落到第一个仍
  * active 的额外单位；没有任何可下单单位时 blocked=true，调用方应拒绝加行，而不是
  * 静默塞一个禁用单位进去。

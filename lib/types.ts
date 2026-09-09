@@ -40,11 +40,26 @@ export interface TemplateAttributeLine {
   valueIds: string[]   // 勾选了哪些属性值 → 生成变体
 }
 
+/** 商品列表页「可售单位」列的摘要行——GET /api/products?page=... 一次 include 带出来，见该路由注释。
+ *  跟同一接口里的顶层 `uom` 字段一样保持 Prisma include 的原始嵌套形状，不在服务端拍平，
+ *  列表页渲染时跟顶层 uom 用同一套取名逻辑（isEn ? uom.name : uom.nameZh ?? uom.name）。 */
+export interface ProductSaleUomSummary {
+  uomId: string
+  isDefault: boolean
+  factor: number
+  active: boolean
+  uom: { name: string; nameZh?: string | null }
+}
+
 export interface ProductTemplate {
   id: string
   name: string
   internalRef?: string
   categoryId?: string
+  /** 商品规格（20260908 起商品列表页可内联编辑），如"6*2kg" */
+  spec?: string
+  /** 只在列表分页接口 (?page=...) 里附带；其它 GET 端点不返回 */
+  saleUoms?: ProductSaleUomSummary[]
   listPrice: number          // 默认销售单价
   standardPrice: number      // 默认成本价
   customerTaxRate: number    // 客户税率 0.135 / 0.23 / 0
