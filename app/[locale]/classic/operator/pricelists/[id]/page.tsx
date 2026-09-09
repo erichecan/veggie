@@ -179,10 +179,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const printRef = useRef<HTMLDivElement>(null)
   const actionRef = useRef<HTMLDivElement>(null)
 
-  // Country groups inline edit state
-  const [cgInput, setCgInput] = useState('')
-  const [cgEditing, setCgEditing] = useState<number | null>(null)
-
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (printRef.current && !printRef.current.contains(e.target as Node)) setPrintOpen(false)
@@ -289,10 +285,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   }
 
   function openNewItem() {
-    if (id === 'new') {
-      toast.info(isEn ? 'Please save the pricelist name first' : '请先保存价格表名称')
-      return
-    }
     setEditingItem(emptyItem())
     setIsNewItem(true)
     setDialogOpen(true)
@@ -302,6 +294,29 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     setEditingItem({ ...item })
     setIsNewItem(false)
     setDialogOpen(true)
+  }
+
+  /**
+   * 价格表还没落库（id==='new'，草稿态）时，明细行只能改本地 state——
+   * 跟这条一样的字段（Country Groups）等页面顶部 Save 一起提交；
+   * 已落库的价格表则维持原有"点一下明细就立即调 API"的行为。
+   */
+  async function persistItems(nextItems: OdooPricelistItem[]): Promise<boolean> {
+    if (!pl) return false
+    const updated = { ...pl, items: nextItems, updatedAt: new Date().toISOString() }
+    if (pl.id === 'new') {
+      setPl(updated)
+      return true
+    }
+    try {
+      await apiPut(`/api/pricelists/${pl.id}`, updated)
+      setPl(updated)
+      setOriginalPl(updated)
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
+      return false
+    }
   }
 
   async function saveItem(item: OdooPricelistItem): Promise<boolean> {
@@ -321,17 +336,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     const updatedItems = isNewItem
       ? [...pl.items, item]
       : pl.items.map(i => i.id === item.id ? item : i)
-    const updated = { ...pl, items: updatedItems, updatedAt: new Date().toISOString() }
-    try {
-      await apiPut(`/api/pricelists/${pl.id}`, updated)
-      setPl(updated)
-      setOriginalPl(updated)
-      toast.success(isNewItem ? (isEn ? 'Item added' : '条目已添加') : (isEn ? 'Item updated' : '条目已更新'))
-      return true
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
-      return false
-    }
+    const ok = await persistItems(updatedItems)
+    if (ok) toast.success(isNewItem ? (isEn ? 'Item added' : '条目已添加') : (isEn ? 'Item updated' : '条目已更新'))
+    return ok
   }
 
   async function saveAndNew(item: OdooPricelistItem) {
@@ -345,15 +352,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   async function handleDeleteItem(itemId: string) {
     if (!pl) return
     if (!confirm(isEn ? 'Delete this item?' : '确认删除此条目？')) return
-    const updated = { ...pl, items: pl.items.filter(i => i.id !== itemId), updatedAt: new Date().toISOString() }
-    try {
-      await apiPut(`/api/pricelists/${pl.id}`, updated)
-      setPl(updated)
-      setOriginalPl(updated)
-      toast.success(isEn ? 'Deleted' : '已删除')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : (isEn ? 'Delete failed' : '删除失败'))
-    }
+    const ok = await persistItems(pl.items.filter(i => i.id !== itemId))
+    if (ok) toast.success(isEn ? 'Deleted' : '已删除')
   }
 
   /**
@@ -374,14 +374,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     const [moved] = ordered.splice(fromIdx, 1)
     ordered.splice(toIdx, 0, moved)
     const renumbered = ordered.map((it, i) => ({ ...it, sequence: (i + 1) * 10 }))
-    const updated = { ...pl, items: renumbered, updatedAt: new Date().toISOString() }
-    try {
-      await apiPut(`/api/pricelists/${pl.id}`, updated)
-      setPl(updated)
-      setOriginalPl(updated)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : (isEn ? 'Reorder failed' : '排序失败'))
-    }
+    await persistItems(renumbered)
   }
 
   /** 点表头：第一次升序、第二次降序、第三次回到 sequence 默认顺序（也让拖拽排序重新生效） */
@@ -392,21 +385,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       return null
     })
     setItemPage(1)
-  }
-
-  function addCountryGroup() {
-    const name = cgInput.trim()
-    if (!name) return
-    update('countryGroups', [...(pl?.countryGroups ?? []), name])
-    setCgInput('')
-  }
-
-  function removeCountryGroup(idx: number) {
-    update('countryGroups', (pl?.countryGroups ?? []).filter((_, i) => i !== idx))
-  }
-
-  function updateCountryGroup(idx: number, val: string) {
-    update('countryGroups', (pl?.countryGroups ?? []).map((g, i) => i === idx ? val : g))
   }
 
   if (!pl) {
@@ -465,8 +443,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
   const totalItems = sortedItems.length
   const pagedItems = sortedItems.slice((itemPage - 1) * itemPageSize, itemPage * itemPageSize)
-
-  const countryGroups: string[] = Array.isArray(pl.countryGroups) ? pl.countryGroups as string[] : []
 
   const navigateTo = (pos: number) => {
     const target = sortedLists[pos - 1]
@@ -587,14 +563,15 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           <div className="flex items-start justify-between px-5 pt-5 pb-3">
             <div className="flex-1 mr-4">
               {editMode ? (
-                <input
-                  type="text"
-                  value={pl.name}
-                  onChange={e => update('name', e.target.value)}
-                  placeholder="e.g. USD Retailers"
-                  className="w-full max-w-sm text-base font-normal text-gray-800 rounded px-3 py-1.5 outline-none focus:border-[#875A7B] placeholder-gray-400"
-                  style={{ background: '#e8e5f3', border: '1px solid transparent' }}
-                />
+                <OdooField label="Name">
+                  <input
+                    type="text"
+                    value={pl.name}
+                    onChange={e => update('name', e.target.value)}
+                    placeholder="e.g. USD Retailers"
+                    className="odoo-input flex-1"
+                  />
+                </OdooField>
               ) : (
                 <h2 className="text-lg font-semibold text-gray-800">{pl.name || <span className="text-gray-400 italic">{isEn ? '(Unnamed)' : '（未命名）'}</span>}</h2>
               )}
@@ -627,19 +604,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
           {/* Form fields */}
           <div className="px-5 pb-4" style={{ borderBottom: '1px solid #e9e9e9' }}>
-            <OdooField label={<>E-commerce<br />Promotional Code</>}>
-              {editMode ? (
-                <input
-                  type="text"
-                  value={pl.promotionalCode ?? ''}
-                  onChange={e => update('promotionalCode', e.target.value || undefined)}
-                  className="odoo-input"
-                />
-              ) : (
-                <ReadValue>{pl.promotionalCode || <span className="text-gray-300">—</span>}</ReadValue>
-              )}
-            </OdooField>
-
             <OdooField label="Currency">
               {editMode ? (
                 <div className="flex items-center gap-1 flex-1">
@@ -677,93 +641,6 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                   }
                 </ReadValue>
               )}
-            </OdooField>
-
-            <OdooField label="Website">
-              {editMode ? (
-                <div className="flex items-center gap-1 flex-1">
-                  <input
-                    type="text"
-                    value={pl.website ?? ''}
-                    onChange={e => update('website', e.target.value || undefined)}
-                    placeholder="—"
-                    className="odoo-input flex-1"
-                  />
-                  <ExternalLinkIcon />
-                </div>
-              ) : (
-                <ReadValue>
-                  {pl.website
-                    ? <><span style={{ color: PURPLE }}>{pl.website}</span><ExternalLinkIcon /></>
-                    : <span className="text-gray-300">—</span>
-                  }
-                </ReadValue>
-              )}
-            </OdooField>
-
-            {/* Country Groups inline table */}
-            <OdooField label="Country Groups" alignTop>
-              <div className="flex-1 border border-gray-200 rounded-sm overflow-hidden" style={{ minWidth: 0 }}>
-                <div className="px-3 py-1.5 text-xs font-semibold text-gray-600" style={{ background: '#f5f5f5', borderBottom: '1px solid #e5e5e5' }}>
-                  Name
-                </div>
-                {countryGroups.map((g, idx) => (
-                  <div key={idx} className="flex items-center group" style={{ borderBottom: '1px solid #f0f0f0' }}>
-                    {editMode && cgEditing === idx ? (
-                      <input
-                        autoFocus
-                        type="text"
-                        value={g}
-                        onChange={e => updateCountryGroup(idx, e.target.value)}
-                        onBlur={() => setCgEditing(null)}
-                        onKeyDown={e => e.key === 'Enter' && setCgEditing(null)}
-                        className="flex-1 px-3 py-1.5 text-sm outline-none border-0"
-                      />
-                    ) : (
-                      <span
-                        className="flex-1 px-3 py-1.5 text-sm text-gray-700"
-                        style={{ cursor: editMode ? 'text' : 'default' }}
-                        onClick={() => editMode && setCgEditing(idx)}
-                      >
-                        {g}
-                      </span>
-                    )}
-                    {editMode && (
-                      <button
-                        onClick={() => removeCountryGroup(idx)}
-                        className="px-2 py-1 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {editMode && (
-                  <div className="flex items-center px-3 py-1.5 gap-2">
-                    <input
-                      type="text"
-                      value={cgInput}
-                      onChange={e => setCgInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && addCountryGroup()}
-                      className="flex-1 text-sm outline-none border-0 bg-transparent"
-                    />
-                    <button
-                      onClick={addCountryGroup}
-                      className="text-xs hover:underline"
-                      style={{ color: PURPLE }}
-                    >
-                      Add a line
-                    </button>
-                  </div>
-                )}
-                {countryGroups.length === 0 && (
-                  <>
-                    <div style={{ height: 32, borderBottom: '1px solid #f5f5f5' }} />
-                    <div style={{ height: 32, borderBottom: '1px solid #f5f5f5' }} />
-                    <div style={{ height: 32 }} />
-                  </>
-                )}
-              </div>
             </OdooField>
           </div>
 
