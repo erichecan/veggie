@@ -25,7 +25,6 @@ import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 import { displayUomName } from '@/lib/sale-uom'
-import { formatUomConversionHint, type UomConversionInfo } from '@/lib/print/uom-conversion'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -44,8 +43,6 @@ const T = {
     colPack: '装货顺序',
     colCheck: '✓',
     unitCountSuffix: '种',
-    total: '共',
-    unconverted: '⚠️ 单位未换算，仅供参考',
     hasNote: '⚠️ 有备注，见下方明细',
     statStorable: '整箱整袋',
     statConsumable: '零散货',
@@ -66,8 +63,6 @@ const T = {
     colPack: 'Load Order',
     colCheck: '✓',
     unitCountSuffix: 'items',
-    total: 'Total',
-    unconverted: '⚠️ Unit not converted, for reference only',
     hasNote: '⚠️ Has note, see details below',
     statStorable: 'Full Case/Bag',
     statConsumable: 'Loose Goods',
@@ -115,8 +110,6 @@ interface AggProduct {
   uomName: string
   /** 箱规；行本身就是按大单位下的单时为 null（已经是整箱，不必再拆） */
   packSpec: PackSpec | null
-  /** 可售单位换算信息（原始，未格式化），配合 totalQty 现算「= N 基准单位」说明 */
-  uomConversion: UomConversionInfo | null
   totalQty: number
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType: string | null
@@ -130,8 +123,8 @@ interface AggProduct {
  * 商品级分组（20260904）：同一商品在这一趟车里被不同订单用不同可售单位下单时
  * （比如一部分订单按 CASE、一部分按 EA），此前会拆成互不相干的两行平铺，拣货员
  * 看不出这俩其实是同一个商品。现在把 productId 相同的 AggProduct 收进一组：
- * 只有一个单位时按原样单行显示；多个单位时印一个父行（按 ProductSaleUom.factor
- * 换算成基础单位的合计）+ 每个单位各自一行子行（原始下单数量，拣货员照单位去拿）。
+ * 只有一个单位时按原样单行显示；多个单位时印一个父行（只显示商品名，20260909 起
+ * 不再汇总/换算成基础单位）+ 每个单位各自一行子行（原始下单数量，拣货员照单位去拿）。
  */
 interface ProductGroup {
   productId: string
@@ -142,18 +135,6 @@ interface ProductGroup {
   spec: string
   productType: string | null
   uoms: AggProduct[]
-}
-
-/** 多单位分组的父行合计：把每个子行数量按 factor 换算成基础单位后加总 */
-function summarizeGroup(g: ProductGroup): { baseQty: number; baseUomName: string | null } {
-  let baseQty = 0
-  let baseUomName: string | null = null
-  for (const u of g.uoms) {
-    const factor = u.uomConversion?.factor ?? 1
-    baseQty += u.totalQty * factor
-    if (!baseUomName) baseUomName = u.uomConversion?.baseUomName ?? u.packSpec?.baseUomName ?? null
-  }
-  return { baseQty, baseUomName }
 }
 
 export type PickingVariant = 'all' | 'storable' | 'consumable'
@@ -195,7 +176,6 @@ export function generateTripPickingHtml(
           uomSequence: line.uomSequence ?? null,
           spec: line.spec ?? '',
           uomName: line.uomName ?? '',
-          uomConversion: line.uomConversion ?? null,
           // 下单单位就是大单位时（如直接订 2 箱），数量本身已是整箱数，再按箱规拆
           // 会拆成「0 箱 + 2 箱」这种废话。只有按基准单位下单（订 30 包）才需要拆。
           packSpec: line.uomId && line.packSpec && line.uomName === line.packSpec.caseUomName
@@ -288,8 +268,8 @@ export function generateTripPickingHtml(
           ↳ ${escapeHtml(bd.customerName)}
           ${bd.note ? `<span class="note-badge">⚠️ ${escapeHtml(bd.note)}</span>` : ''}
         </td>
-        <td class="col-qty bd-qty">${fmtQty(bd.qty)}</td>
         <td class="col-uom"></td>
+        <td class="col-qty bd-qty">${fmtQty(bd.qty)}</td>
         <td class="col-pack"></td>
         <td class="col-check"></td>
       </tr>`).join('')
@@ -298,16 +278,15 @@ export function generateTripPickingHtml(
   /** 单一单位的商品行（组内只有一个可售单位时，跟改造前逐字一致） */
   function singleUomRow(p: AggProduct, seq: number, rowClass: string): string {
     const hasNote = Array.from(p.byCustomer.values()).some(bd => bd.note)
-    const uomHint = formatUomConversionHint(p.uomConversion ?? undefined, p.totalQty)
     const mainRow = `
       <tr class="${rowClass}">
         <td class="col-seq">${seq}</td>
         <td class="col-name">
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
-          ${uomHint ? `<span class="spec">${escapeHtml(uomHint.conversionLine)}${uomHint.weightLine ? ` (${escapeHtml(uomHint.weightLine)})` : ''}</span>` : ''}
           ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
+        <td class="col-uom">${escapeHtml(displayUomName(p.uomName))}</td>
         <td class="col-qty">
           ${fmtQty(p.totalQty)}
           ${(() => {
@@ -317,7 +296,6 @@ export function generateTripPickingHtml(
             return sp?.mixed ? `<span class="pack-split">${escapeHtml(sp.text)}</span>` : ''
           })()}
         </td>
-        <td class="col-uom">${escapeHtml(displayUomName(p.uomName))}</td>
         <td class="col-pack">${fmtPackSeq(p.uomSequence)}</td>
         <td class="col-check"></td>
       </tr>`
@@ -327,13 +305,13 @@ export function generateTripPickingHtml(
   }
 
   /**
-   * 同一商品挂了多个可售单位时的两层行：父行（按 factor 换算成基础单位的合计）+
-   * 每个单位各自一行子行（原始下单数量，拣货员照单位去拿）。
-   * 父行的「装货顺序」留空——它是多个单位的合计行，不对应某个具体要放的物理位置，
-   * 真正要看的顺序数字在下面每个单位子行各自的值上。
+   * 同一商品挂了多个可售单位时的两层行：父行（只印商品名，不再汇总/换算成基础单位）+
+   * 每个单位各自一行子行（原始下单数量，拣货员照单位去拿——每行数量本身就是准确的，
+   * 不需要再额外标注"等于多少基础单位"）。
+   * 父行的「数量/单位/装货顺序」都留空——它不对应某个具体要拿的数量或要放的物理位置，
+   * 真正要看的数字在下面每个单位子行各自的值上。
    */
   function multiUomRows(g: ProductGroup, seq: number, rowClass: string): string {
-    const { baseQty, baseUomName } = summarizeGroup(g)
     const hasNote = g.uoms.some(u => Array.from(u.byCustomer.values()).some(bd => bd.note))
     const parentRow = `
       <tr class="${rowClass} row-group-parent">
@@ -343,35 +321,27 @@ export function generateTripPickingHtml(
           ${g.spec ? `<span class="spec">${escapeHtml(g.spec)}</span>` : ''}
           ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
-        <td class="col-qty">
-          ${t.total} ${fmtQty(baseQty)}
-          ${!baseUomName ? `<span class="note-flag">${t.unconverted}</span>` : ''}
-        </td>
-        <td class="col-uom">${baseUomName ? escapeHtml(displayUomName(baseUomName)) : ''}</td>
+        <td class="col-uom"></td>
+        <td class="col-qty"></td>
         <td class="col-pack"></td>
         <td class="col-check"></td>
       </tr>`
     const childRows = g.uoms.map(u => {
-      const factor = u.uomConversion?.factor ?? 1
       const uHasNote = Array.from(u.byCustomer.values()).some(bd => bd.note)
-      const convNote = (baseUomName && factor !== 1)
-        ? `<span class="pack-split">(= ${fmtQty(u.totalQty * factor)} ${escapeHtml(baseUomName)})</span>`
-        : ''
       const childRow = `
       <tr class="row-uom-child">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
           ↳${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
+        <td class="col-uom">${escapeHtml(displayUomName(u.uomName))}</td>
         <td class="col-qty bd-qty">
           ${fmtQty(u.totalQty)}
-          ${convNote}
           ${(() => {
             const sp = splitIntoPacks(u.totalQty, u.packSpec)
             return sp?.mixed ? `<span class="pack-split">${escapeHtml(sp.text)}</span>` : ''
           })()}
         </td>
-        <td class="col-uom">${escapeHtml(displayUomName(u.uomName))}</td>
         <td class="col-pack">${fmtPackSeq(u.uomSequence)}</td>
         <td class="col-check"></td>
       </tr>`
@@ -395,8 +365,8 @@ export function generateTripPickingHtml(
         <tr>
           <th class="col-seq">${t.colSeq}</th>
           <th class="col-name">${t.colName}</th>
-          <th class="col-qty">${t.colQty}</th>
           <th class="col-uom">${t.colUom}</th>
+          <th class="col-qty">${t.colQty}</th>
           <th class="col-pack">${t.colPack}</th>
           <th class="col-check">${t.colCheck}</th>
         </tr>
@@ -453,7 +423,7 @@ export function generateTripPickingHtml(
   /* 客户明细子行挂在「单位子行」下面时，多缩进一级，跟单位子行分层看得出来 */
   tr.row-bd-nested .bd-name{padding-left:40px!important}
 
-  /* 一个商品挂了多个可售单位时：父行=按基础单位换算的合计，子行=各单位原始下单数量 */
+  /* 一个商品挂了多个可售单位时：父行只显示商品名（数量/单位留空），子行=各单位原始下单数量 */
   tr.row-group-parent td{font-weight:700;background:#eef5f0!important}
   tr.row-uom-child td{border-bottom:1px dashed #e0e0e0;padding-top:2px;padding-bottom:2px}
   tr.row-uom-child .bd-name{padding-left:26px!important;color:#555;font-size:11px;font-weight:700}
