@@ -140,15 +140,13 @@ ProductTemplate.sequence 为空     3,758  (69%)
       ⚠️ 遗留：25 行那一档仍会把「汇总+页脚」挤到第 2 页（首页塞满 25 行）。
       优先塞行是客户的明确要求，故接受。
 
-- [ ] **T5 发票页面打印 + 单据打印页 + 批量打印**
-      验收：三个页面各渲染一次，顺序与 T3 一致；每页行数达标
+- [x] **T5 发票页面打印 + 单据打印页 + 批量打印** `b25bd31`（台账当时漏回写，20260908 补记）
       产出：`operator/invoices/[id]/print/page.tsx`、`print/[id]/page.tsx`、`print/batch/page.tsx`
-      依赖：T1 T2 T4
 
-- [ ] **T6 配送四单 + 行程五单**
-      验收：逐个渲染核对；**拣货单的大货/散货分组必须保持**，只有组内顺序变
+- [x] **T6 配送四单 + 行程五单** `0032a08`（台账当时漏回写，20260908 补记）
       产出：`lib/print/dispatch-print-html.ts`、`trip-*.ts` 五个模板及其 loader
-      依赖：T1 T2 T4
+      ⚠️ `trip-summary-template.ts`（行程汇总单）实为**订单/客户清单**，不是商品明细表，
+      本条不适用——已核实其排序键是客户名+订单号，跟商品 sequence 无关
 
 - [ ] **T7 日报口径对齐**
       验收：勾选项行为不变；与其它单据的排序规则一致（NULL 处理相同）
@@ -180,6 +178,18 @@ ProductTemplate.sequence 为空     3,758  (69%)
 - [ ] **T8b 部署与生产验证**（待 Eric 本人确认部署范围后执行）
       验收：每个打印入口出一份样张，列表记录「行数 / 页数 / 首行末行」；
             `npm run build`、`npm run lint`、全量单测通过
+
+- [x] **T9 价格表打印排的是 PricelistItem.sequence，不是商品 sequence**（20260908 发现并修）
+      根因：`print/pricelist/page.tsx` 一直按 `item.sequence`（`PricelistItem.sequence`）排；
+      这个字段跟 `OrderLine.sequence` 是同一种病——生产实测同一价格表 50 行清一色 Odoo 导入
+      默认值 10（见 `pricelist-sequence-conflicts-cleaned-20260906` 记忆），按它排等于没排，
+      顺序落回数据库返回顺序。之前 T-4「价格表打印 | 已按 sequence」这条判断是错的，把
+      "有一个叫 sequence 的字段在排" 当成了 "按商品 sequence 排"。
+      修复：`app/api/pricelists/print/route.ts` 补查 `Product.sequence` 并附到
+      `productSequence` 字段；`print/pricelist/page.tsx` 改用 `compareSequenceThenName`
+      （商品 sequence 升序，NULL 排最后按商品名）。
+      验证：脚本直查生产库同一价格表，改前 50 行 `PricelistItem.sequence` 全为 10
+      （distinct=1，顺序=DB 返回序）；改后按 `Product.sequence` 正确升序排列。`tsc --noEmit` 全量通过。
       依赖：T1–T7
 
 ---

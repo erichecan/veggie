@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     const products = productIds.size > 0
       ? await prisma.product.findMany({
           where: { id: { in: [...productIds] } },
-          select: { id: true, name: true, internalRef: true },
+          select: { id: true, name: true, internalRef: true, sequence: true },
         })
       : []
     const productMap = new Map(products.map(p => [p.id, p]))
@@ -57,6 +57,9 @@ export async function GET(req: NextRequest) {
             ? 'All Products'
             : pid ? (productMap.get(pid)?.name ?? pid) : null,
           productRef: pid ? (productMap.get(pid)?.internalRef ?? null) : null,
+          // 打印排序用商品的 sequence（目录/拣货顺序），不是 PricelistItem.sequence——
+          // 后者 97% 都是 Odoo 导入默认值 10，从未维护，按它排等于没排（见 lib/print/line-sort.ts）
+          productSequence: pid ? (productMap.get(pid)?.sequence ?? null) : null,
         }
       })
       return { ...serializeApi(pl), items: enrichedItems }

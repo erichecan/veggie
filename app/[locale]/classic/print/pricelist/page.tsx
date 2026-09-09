@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { docBadge } from '@/lib/print/doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
+import { compareSequenceThenName } from '@/lib/print/line-sort'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -54,6 +55,8 @@ interface EnrichedItem {
   fixedPrice?: number | null
   percentDiscount?: number | null
   sequence: number
+  /** 商品的 sequence（目录/拣货顺序），排序用这个，不是上面 PricelistItem 自己的 sequence */
+  productSequence?: number | null
 }
 
 interface EnrichedPricelist {
@@ -78,7 +81,10 @@ function fmtPrice(item: EnrichedItem, currency: string): string {
 function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = 'en'): string {
   const t = T[lang]
   const sectionsHtml = pricelists.map(pl => {
-    const rows = [...pl.items].sort((a, b) => a.sequence - b.sequence)
+    // 按商品 sequence 排，不用 PricelistItem.sequence——那个字段绝大多数是 Odoo 导入的
+    // 默认值 10，从未维护，按它排等于没排（见 lib/print/line-sort.ts）
+    const rows = [...pl.items].sort((a, b) =>
+      compareSequenceThenName(a.productSequence, a.productName, b.productSequence, b.productName))
 
     const rowsHtml = rows.length > 0
       ? rows.map(item => `
@@ -149,7 +155,7 @@ body {
 .page-wrap {
   width: 210mm;
   margin: 0 auto;
-  padding: 14mm 14mm 28mm;
+  padding: 14mm;
   position: relative;
   min-height: 297mm;
 }
@@ -237,12 +243,16 @@ body {
   font-style: italic;
 }
 
-/* ── Footer (fixed at bottom of each printed page) ── */
+/* ── Footer ──
+   曾经是 position:fixed + bottom:0，想让它在每页底部重复出现。这个写法在
+   lib/order-pdf.ts 已经踩过并改掉（见那边 .footer 上的注释），这里当时没跟着改：
+   fixed 元素的 bottom 定位跟文档整体的 padding-bottom 打架，Chrome 认为内容溢出
+   页面，会在正文前多插入一整张空白页。改成普通块、跟在正文后面，只在文档末尾出现
+   一次，配合 @page 的每页边距，不再触发这个问题。 */
 .page-footer {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  padding: 0 14mm 5mm;
-  background: #fff;
+  margin-top: 6mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .footer-rule {
   border: none;
@@ -257,9 +267,10 @@ body {
 
 @media print {
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .page-wrap { padding: 10mm 14mm 28mm; }
+  .page-wrap { padding: 0; min-height: auto; }
   .pricelist-section { page-break-inside: avoid; }
 }
+@page { size: A4; margin: 10mm 14mm; }
 `
 
 function PricelistPrintInner() {
