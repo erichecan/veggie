@@ -190,6 +190,8 @@ const PRODUCT_TEMPLATE_SORT_MAP: Record<string, (dir: SortDir) => object> = {
   updatedAt: (dir) => ({ updatedAt: dir }),
   // 分类列排序按显示名称(categoryLabel)传参，其实按 relation 的 name 字段排序
   categoryLabel: (dir) => ({ category: { name: dir } }),
+  // Sale Units 列没有标量字段可排，按挂了几个可售单位（relation count）排序
+  saleUnitsCount: (dir) => ({ saleUoms: { _count: dir } }),
 }
 
 export function buildProductTemplatesOrderBy(sortKey: string | null, sortDir: SortDir) {

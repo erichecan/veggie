@@ -256,15 +256,15 @@ export default function ClassicProductsPage() {
   function saleUnitName(u: ProductSaleUomSummary): string {
     return isEn ? (u.uom.name || u.uom.nameZh || '') : (u.uom.nameZh || u.uom.name || '')
   }
+  // 管理可售单位是弹窗动作,不是行内文本编辑——不该跟随 Quick Edit 开关(否则默认
+  // 关着的时候点这列毫无反应,点击反而被行点击接管跳去详情页,20260910 客户反馈实测踩坑)。
   function renderSaleUnitsBadge(row: ProductTemplate) {
     const list = row.saleUoms ?? []
     if (list.length === 0) return <span className="text-gray-300 text-xs">—</span>
     const def = list.find(u => u.isDefault) ?? list[0]
     const tooltip = list.map(saleUnitName).join(' · ')
     const label = list.length === 1 ? saleUnitName(def) : `${saleUnitName(def)} +${list.length - 1}`
-    if (!editMode) {
-      return <span className="text-xs text-gray-600" title={tooltip}>{label}</span>
-    }
+    const isMulti = list.length > 1
     return (
       <button
         type="button"
@@ -273,7 +273,9 @@ export default function ClassicProductsPage() {
           e.stopPropagation()
           setUomDialogProduct({ id: row.id, name: row.name, uomId: row.uomId, listPrice: row.listPrice, commissionPrice: row.commissionPrice ?? null })
         }}
-        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+        className={isMulti
+          ? 'inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors'
+          : 'text-xs text-gray-600 hover:text-[#875A7B] hover:underline'}
       >
         {label}
       </button>
@@ -428,6 +430,8 @@ export default function ClassicProductsPage() {
       key: 'saleUoms',
       width: 100,
       label: 'Sale Units',
+      sortable: true,
+      sortKey: 'saleUnitsCount',
       render: (_, row) => renderSaleUnitsBadge(row as unknown as ProductTemplate),
     },
     {
