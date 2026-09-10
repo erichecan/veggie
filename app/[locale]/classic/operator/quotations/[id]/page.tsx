@@ -931,7 +931,7 @@ export default function QuotationDetailPage() {
                 search: isEn ? 'Search product…' : '搜索商品…',
               }}
               onReady={handleEditorReady}
-              emptyColSpan={16}
+              emptyColSpan={17}
               rowStyle={(l) => {
                 if (!editing || !l.productId) return undefined
                 const fc = forecastMap.get(l.productId)
@@ -948,6 +948,7 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Internal<br/>Reference</div></th>
                   <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
+                  <th className="px-2 py-3 text-left">Note</th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
@@ -1011,6 +1012,19 @@ export default function QuotationDetailPage() {
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
                         />
                       ) : (l.spec || '')}
+                    </td>
+                    {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
+                    <td className="px-2 py-2 text-gray-600 text-xs">
+                      {editing ? (
+                        <input
+                          type="text"
+                          data-note-line={l.id}
+                          className="border border-amber-300 rounded px-1 py-0.5 text-xs bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-300 w-24"
+                          value={l.note ?? ''}
+                          onChange={e => updateLine(i, 'note', e.target.value)}
+                          onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })}
+                        />
+                      ) : (l.note || '')}
                     </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (

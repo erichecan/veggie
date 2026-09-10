@@ -1660,20 +1660,21 @@ export default function ClassicPlaceOrderPage() {
                 onMerge={mergeDuplicates}
               />
 
-              {/* Horizontally scrollable 12-column table */}
+              {/* Horizontally scrollable 13-column table */}
               <OrderLineEditor
                 lines={lines}
                 editing={true}
                 tableClassName="text-xs border-collapse"
                 tableStyle={{ minWidth: '1190px', width: '100%' }}
                 tbodyClassName="divide-y divide-gray-100"
-                emptyColSpan={12}
+                emptyColSpan={13}
                 emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
                     <th className="px-2 py-2 text-left"  style={{ width: 40  }}>NO</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
@@ -1713,6 +1714,19 @@ export default function ClassicPlaceOrderPage() {
                           onChange={e => patchLine(line.id, { description: e.target.value })}
                           onKeyDown={e => handleFieldKey(e)}
                           className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                        />
+                      </td>
+
+                      {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
+                      <td className="px-2 py-1">
+                        <input
+                          type="text"
+                          data-note-line={line.id}
+                          value={line.note}
+                          onChange={e => patchLine(line.id, { note: e.target.value })}
+                          onKeyDown={e => handleFieldKey(e)}
+                          placeholder={isEn ? 'Note…' : '备注…'}
+                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-amber-400 focus:outline-none bg-transparent placeholder:text-gray-300"
                         />
                       </td>
 
