@@ -97,7 +97,9 @@ export default function AnalyticsChatPage() {
       <div className="flex-1 overflow-y-auto space-y-3 p-2 bg-gray-50 rounded border border-gray-100">
         {entries.length === 0 && (
           <p className="text-sm text-gray-400 text-center mt-8">
-            {isEn ? 'Try: "sales amount by salesperson this month"' : '试试问："本月按业务员分组的销售额"'}
+            {isEn
+              ? 'Try: "sales amount by salesperson this month" or "what did we deliver to each customer on July 3rd"'
+              : '试试问："本月按业务员分组的销售额"，或"7月3号每家客户都送了什么货，单价数量"'}
           </p>
         )}
         {entries.map((entry, i) => (

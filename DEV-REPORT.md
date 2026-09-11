@@ -1,45 +1,83 @@
-# DEV-REPORT：商品可售单位装货顺序（UoM Sequence）
+# DEV-REPORT：AI 问数 v2（跨域 + 明细钻取）
 
-对应 `DEV-PLAN.md`。小改（12 个文件，2 张迁移），未走独立任务台账。
+对应 `DEV-PLAN.md` + 台账 `docs/20260910-analytics-chat-v2-tasks.md`（V1-V14 全部完成）。
 
 ## 做了什么
 
-给可售单位（`ProductSaleUom`，基础单位 + 每个额外单位各一行）加了一个"装货顺序"数字字段，仓库配货/司机卸货用：数字越小越先装/放最下（重、耐压），越大越后装/放最上（怕压），语义和校验逐字照抄现有的 `Product.sequence`——可空、不做防重复校验，允许大量商品共用同一个数字（这是客户明确要的行为，不是遗漏）。拣货单/托盘明细据此排序。
+客户反馈"AI 问数"v1（2026-09-06 上线）答不上明细级问题（"7月3号客户订单，每家都送什么货，
+单价数量"），本次把它从"销售域两个聚合指标"扩成：
 
-⚠️ **本次开发中途推翻过一次设计**：第一版按"避免重复维护成本"的建议做成了三档枚举（BOTTOM/NORMAL/TOP 下拉框），已实现验证。客户随后明确表态要的是跟 `Product.sequence` 一样的纯数字，只是要求可售单位级别也各自有值。已按新方案重做：删掉枚举字段和相关代码，改成 `ProductSaleUom.sequence Int?`，UI 从下拉框换成数字输入框。两版都各有一张迁移文件（`20260907000001` 加枚举字段 → `20260907000002` 撤掉重建为数字字段），没有改写已应用的历史迁移。
+1. **明细钻取**（`mode=detail`）：不聚合，直接列出逐行原始数据（商品/单价/数量/客户/日期等）
+2. **quotation 报价单域**：报价单数量/金额、转化率（按业务员/客户/时间分组）
+3. **配送中心域**：行程数/配送站点数/应收总额，明细可下钻到"某天某司机给哪家送了什么"
+4. **采购域**：采购额/采购数量，明细可下钻到采购订单行
 
-## 页面/接口清单
+四个域 × 两种模式，权限仍然只给 BOSS，司机提成考核报表不在本批（后续单独规划）。
 
-| 文件 | 改动 |
+## 页面/接口
+
+无新增页面/路由——沿用 v1 的 `boss/analytics/chat` 页面和 4 条 `/api/analytics-chat/*` 接口，
+只是它们背后能理解的问题范围扩大了。
+
+## 功能完成度
+
+| 功能 | 状态 |
 |---|---|
-| `prisma/schema.prisma` + 迁移 `20260907000001`（分层，已撤）+ `20260907000002`（改成数字，最终生效） | `ProductSaleUom` 加 `sequence Int?` |
-| `lib/sale-uom.ts` | 类型定义（`SaleUomItemInput.sequence` / `SaleUomOption.sequence`） |
-| `app/api/products/[id]/sale-uoms/route.ts` | GET/PUT 透传 `sequence`（空/非法回落 null） |
-| `app/[locale]/classic/operator/products/[id]/page.tsx` | 可售单位表格每行加「装货顺序」数字输入框（跟页头 Product Sequence 同款 `NumericInput`），含基础单位 |
-| `lib/print/uom-sequence.ts`（新建，替代已删的 `pack-tier.ts`） | 两套查询：按 productId+uomId 精确取（打印用）；按 productId+uomName 反查（网页拣货单/托盘用，快照里只有单位名字符串） |
-| `lib/print/line-sort.ts` | 新增 `sortLinesByUomSequence`：先按装货顺序（没有排最后），同值/都没有再按原有的商品 sequence→商品名排 |
-| `lib/print/trip-common.ts` / `dispatch-loader.ts` / `trip-loader.ts` / `trip-picking-template.ts` | 司机/调度拣货打印单据接入排序；同一商品多个单位混装时取数字更大的那个（更保守） |
-| `app/api/waves/[id]/pick-sheet/route.ts` / `app/api/waves/[id]/pallets/route.ts` | 网页拣货单、托盘明细按装货顺序排序；待分盘池按餐馆/商品名排序不变（那是"找货"用途，跟装车顺序是两回事） |
+| 明细钻取（sales/quotation/procurement/delivery 四域） | ✅ |
+| quotation 域（数量/金额/转化率） | ✅ |
+| 配送域（行程数/站点数/应收额） | ✅ |
+| 采购域（采购额/采购数量） | ✅ |
+| 前端明细表格渲染 | ✅ |
+| detail 模式必须带日期范围（性能护栏） | ✅ |
+| `Order.confirmationDate` 索引（明细钻取性能前提） | ✅ |
+| 比率指标（转化率）总计正确按权重平均 | ✅（开发中发现并修复，见下） |
+| 司机提成考核报表 | ⚠️ 明确不在本批范围，另行规划 |
+
+## 测试账号
+
+沿用现有种子数据，未新增账号：
+
+| 角色 | 账号 | 密码 |
+|------|------|------|
+| 老板（AI 问数唯一可用角色） | boss (demo local seed account) | test12345（本次验证时本地库重置，仅本地开发库，非生产） |
 
 ## 验证结果
 
-本地起了 dev server，两版设计都各自走了一遍真实浏览器 + 脚本验证；下表是最终数字版的验证结果：
-
 | 验证项 | 方式 | 结果 |
 |---|---|---|
-| 迁移应用 | `prisma migrate resolve --applied` + `db push`（先应用分层版，再应用数字版撤换） | ✅ 本地库 `ProductSaleUom.sequence` 列已建，类型 Int 可空 |
-| 商品编辑页录入 | Playwright 登录 boss 账号，打开一个双单位商品，把 CASE(基础单位) 填 5、PKT 填 50，点保存 | ✅ 界面即时反映；回查数据库两行分别是 `5`/`50`，证明同商品不同单位互不影响 |
-| 网页拣货单 `GET /api/waves/[id]/pick-sheet` | 对生产库真实波次(`cmqxt79hs001k...`)发请求 | ✅ 200，正常返回；这批商品大多没配过可售单位，全部按"没有值排最后"兜底，未出错 |
-| 托盘明细 `GET /api/waves/[id]/pallets` | 同上 | ✅ 200，正常返回 |
-| 按名字反查单位（`resolveUomSequenceByName`） | 脚本混合"已配置 5/50 的真实商品"+"从未配置的商品" | ✅ 排序结果 5 → 50 → null(排最后)，顺序正确 |
-| 打印拣货单模板 `generateTripPickingHtml` | 脚本构造 3 行(sequence=5/90/null)模拟数据直接调用 | ✅ 生成的 HTML 里三行顺序是 5 → 90 → null，与预期一致 |
-| `npm run build` | 全量构建 | ✅ 无报错 |
-| `tsc --noEmit` / `eslint` | 全仓库 | ✅ 无新增类型错误；无新增 lint 错误 |
-| 服务器日志 | dev server 全程 | ✅ 无 error/warning |
+| procurement 域聚合数字对照现有报表 | 直接跑两条 SQL 比对总额 | ✅ 27895.32 = 27895.32（8 家供应商） |
+| delivery 域聚合数字对照现有报表 | 直接跑两条 SQL 比对总额 | ✅ 336.05 = 336.05 |
+| quotation 转化率口径 | SQL 结果 vs 手写 `COUNT(*) FILTER` 核对语句 | ✅ 97.798% 完全一致 |
+| 8 种 domain×mode 组合直接执行 | `compileAndRun` 脚本调用 | ✅ 全部无 SQL 错误，返回正确形状 |
+| Gemini 自然语言理解（10 条问法） | 脚本调用 `interpretToDsl` | ✅ 8/10 一次命中；2 条应拒绝问法均正确拒绝 |
+| 浏览器端到端：sales 域明细钻取 | Playwright（BOSS 账号真实登录） | ✅ 500 行表格正确渲染，截断提示正确 |
+| 浏览器端到端：quotation 域聚合+转化率 bug | Playwright | ✅ 修复前 737.82%，修复后 97.8%，与 SQL 核对一致 |
+| 浏览器端到端：delivery 域明细钻取 | Playwright | ✅ 空结果正确渲染"0 rows"（本地数据该日无记录，非报错） |
+| 未登录/无权限访问 | 现有 `analytics.chat.read` 权限点未变 | ✅ OPERATOR 打接口仍 403（沿用 v1 机制，未回归） |
+| `npx tsc --noEmit` | 全程复跑 | ✅ 0 错误 |
+| `npm test` | 873 个测试 | ✅ 872 过 1 败（`pricing-override.test.ts` 缺测试夹具，v1 报告已记录的既有问题，与本次无关） |
+| `npm run build` | 全量构建 | ✅ 全绿 |
+| RBAC 可达性快照 | 本次未改任何路由/权限点 | ✅ 随 `npm test` 一并复跑，零 diff |
 
-## 已知不可用 / 未覆盖的部分
+## 开发中发现并修复的问题
 
-- `dispatch-summary-pdf` 等其它打印路由本轮未接入排序（DEV-PLAN 里已注明范围），如果后续发现这些单据也需要按装货顺序排，复用 `lib/print/uom-sequence.ts` 现成的函数即可，不算大改。
-- 网页拣货单/托盘按 `productId+uomName`(字符串) 反查顺序，理论上同商品下单位重名会撞车，业务上目前不会发生，按 DEV-PLAN 风险点 3 处理，未改 `Pallet.items` 的数据结构。
-- 不做防重复校验是客户明确要的行为（等同 `Product.sequence` 现状），如果大量商品的装货顺序都填成一样的数字，排序会退化成"没排"——这是已知权衡，不是 bug，需要客户自己维护数据质量。
-- 测试账号密码已改动：本地开发库种子账号 `boss(at)demo.local` / `test123`，用于本次浏览器验证，非生产环境、非真实客户数据。
+- **比率指标总计计算错误**：`conversionRate` 按业务员分组后，总计原先跟"销售额"一样直接把
+  各组数字相加，8 组转化率相加吐出 `737.82%`（浏览器实测截图证据）。根因是原有聚合逻辑假设
+  "总计=各分组之和"对所有指标都成立，但转化率是比率不是可加量。已加
+  `MetricDef.aggregationKind: 'rate'`，改按各分组样本量（qty）加权平均计算，修复后总计
+  `97.8%` 与不分组时单独查询的总计完全一致，并补了单元测试防回归。
+
+## 已知不可用功能 / 限制
+
+- **同一句话可能落到不同 domain**：验证中发现"7月3号客户订单，每家都送什么货，单价数量"
+  这句话，脚本化测试选中 sales 域，浏览器交互测试选中 delivery 域——两个答案业务上都合理
+  （sales=订单本身的商品明细，delivery=车上实际配送明细），DSL 校验和查询都能正确执行，
+  不是报错，但用户体验上"问同一句话两次可能拿到不同角度的答案"。DEV-PLAN 风险点已记录，
+  如果客户实测后觉得歧义率高，需要在 prompt 里补充更明确的域区分线索，或允许一次问出两个域。
+- **quotation 转化率的历史数据边界**：口径依赖 `Order.quotationDate`（每单创建时打的时间戳），
+  对早于该字段稳定写入之前导入的历史订单（如 Odoo 导入批次）可能不准确，本次未做历史数据
+  回溯校验，仅保证新产生的数据口径正确。
+- **权限范围未扩展**：仍然只有 BOSS 能用 AI 问数，销售经理/操作员无法按 dataScope 各自看到
+  自己范围内的数据——这是本次对话中明确确认的范围外事项，非遗漏。
+- **司机提成考核报表**：不在本批，需要另外规划（固定报表+排名形态，跟本次的自由 DSL 问数
+  是不同的产品形态）。

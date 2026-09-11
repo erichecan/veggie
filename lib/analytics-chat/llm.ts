@@ -1,18 +1,21 @@
 /**
- * AI 问数 · Gemini 交互层（20260906）
+ * AI 问数 · Gemini 交互层（20260906，20260910 扩成跨域 + 明细模式）
  * ============================================================================
  * 调用范式沿用 `lib/purchase/ai-pdf-parser.ts`（`@google/genai`、JSON mode +
  * `responseSchema` 强约束输出、同一档模型）。两个用途：
- *   1. `interpretQuestion`：自然语言 → DSL 草稿（只产出结构化 JSON，不产出
- *      SQL/代码；`filters` 字段刻意不放进 responseSchema——客户名/商品名到
- *      id 的解析 v1 没做，给了字段只会诱使模型自己编一个 id 出来）
- *   2. `narrateResult`：聚合后的小结果 → 自然语言解读（这一步模型只看得到
- *      聚合数字，不接触任何明细行）
- * 两个函数都不做校验，校验是 `dsl-schema.ts` 的职责——这里只负责"问模型"。
+ *   1. `interpretQuestion`：自然语言 → DSL 草稿。responseSchema 里 metric/
+ *      dimension 用的是**全部四个 domain 合并后的枚举**（Gemini 的 schema 不
+ *      支持"选了 domain=X 之后 metric 枚举收窄成 X 的"这种条件依赖），真正
+ *      "这个 metric 是不是这个 domain 的"由 dsl-schema.ts 兜底校验，校验不过
+ *      走 interpret.ts 的重试机制把错误原因喂回去让模型自己修正。
+ *   2. `narrateResult`：聚合后的小结果 → 自然语言解读（只对 aggregate 模式；
+ *      detail 模式直接给明细表格，不需要 AI 复述一遍）
+ * `filters` 字段刻意不放进 responseSchema——客户名/商品名到 id 的解析 v1 没做，
+ * 给了字段只会诱使模型自己编一个 id。
  */
 import { GoogleGenAI, Type } from '@google/genai'
 import { toDayKey } from '@/lib/analytics/metrics'
-import { METRIC_DEFS, CHAT_DIMENSION_KEYS, type MetricKey } from '@/lib/analytics/semantic-model'
+import { DOMAIN_DEFS, type MetricDef } from './domains'
 import type { AnalysisDsl } from './dsl-schema'
 
 // 与 ai-pdf-parser.ts 同一档：gemini-2.5/3.6 在这个 API 项目上全系 404，
@@ -34,19 +37,25 @@ export type InterpretOutcome =
   | InterpretUnavailable
   | InterpretFailure
 
-const DIMENSION_LABELS_ZH: Record<string, string> = {
-  product: '商品', category: '分类', customer: '客户', salesUser: '业务员',
-  day: '日', week: '周', month: '月',
+const ALL_METRIC_KEYS = Object.values(DOMAIN_DEFS).flatMap((d) => Object.keys(d.metrics))
+const ALL_DIMENSION_KEYS = Array.from(new Set(Object.values(DOMAIN_DEFS).flatMap((d) => Object.keys(d.dimensions))))
+const DOMAIN_KEYS = Object.keys(DOMAIN_DEFS)
+
+function metricLine(m: MetricDef): string {
+  const params = Object.entries(m.confirmableParams)
+    .map(([k, def]) => def && `${k}（${def.labelZh}，可选：${def.options.map((o) => `${o}=${def.optionLabelsZh[o]}`).join('/')}，默认 ${def.default}）`)
+    .filter(Boolean)
+    .join('；')
+  return `  - ${m.key}（${m.labelZh}）：${params || '无可选参数，口径固定'}`
 }
 
-function metricCatalogText(): string {
-  return Object.values(METRIC_DEFS).map((m) => {
-    const params = Object.entries(m.confirmableParams)
-      .map(([k, def]) => def && `${k}（${def.labelZh}，可选：${def.options.map((o) => `${o}=${def.optionLabelsZh[o]}`).join('/')}，默认 ${def.default}）`)
-      .filter(Boolean)
-      .join('；')
-    return `- ${m.key}（${m.labelZh}）：${params || '无可选参数，口径固定'}`
-  }).join('\n')
+function domainCatalogText(): string {
+  return Object.values(DOMAIN_DEFS).map((d) => {
+    const metrics = Object.values(d.metrics).map(metricLine).join('\n')
+    const dims = Object.keys(d.dimensions).map((k) => `${k}=${d.dimensionLabelsZh[k] ?? k}`).join('、')
+    const detailNote = d.detail ? `本域支持"明细"模式（mode=detail）：直接列出逐行原始数据（如商品/单价/数量），不做汇总，此时不填 metric/dimension` : '本域不支持明细模式'
+    return `【${d.key}（${d.labelZh}）】\n指标：\n${metrics}\n可分组维度：${dims}\n${detailNote}`
+  }).join('\n\n')
 }
 
 const DSL_RESPONSE_SCHEMA = {
@@ -54,7 +63,7 @@ const DSL_RESPONSE_SCHEMA = {
   properties: {
     understood: {
       type: Type.BOOLEAN,
-      description: '这句话是否能映射到下面列出的指标体系；映射不到（比如问了不存在的维度/指标）就给 false',
+      description: '这句话是否能映射到下面列出的指标体系；映射不到（比如问了不存在的域/维度/指标）就给 false',
     },
     unsupportedReason: {
       type: Type.STRING,
@@ -66,7 +75,19 @@ const DSL_RESPONSE_SCHEMA = {
       nullable: true,
       description: 'understood=true 时必须给出；understood=false 时给 null',
       properties: {
-        metric: { type: Type.STRING, enum: Object.keys(METRIC_DEFS) },
+        domain: { type: Type.STRING, enum: DOMAIN_KEYS, description: '这句话问的是哪个业务域' },
+        mode: {
+          type: Type.STRING,
+          nullable: true,
+          enum: ['aggregate', 'detail'],
+          description: '问的是汇总数字给 aggregate（默认）；问的是逐行明细/清单（如"每家送了什么/单价/数量"）给 detail',
+        },
+        metric: {
+          type: Type.STRING,
+          nullable: true,
+          enum: ALL_METRIC_KEYS,
+          description: 'mode=aggregate 时必填，且必须是所选 domain 下真正存在的指标；mode=detail 时给 null',
+        },
         confirmedParams: {
           type: Type.OBJECT,
           nullable: true,
@@ -77,19 +98,19 @@ const DSL_RESPONSE_SCHEMA = {
         dimension: {
           type: Type.STRING,
           nullable: true,
-          enum: CHAT_DIMENSION_KEYS,
-          description: '按哪个维度分组；问题里没提到"按 XX 看/分"这类分组意图就给 null（只要一个总计）',
+          enum: ALL_DIMENSION_KEYS,
+          description: '按哪个维度分组；问题里没提到"按 XX 看/分"这类分组意图，或 mode=detail，就给 null',
         },
         dateRange: {
           type: Type.OBJECT,
           nullable: true,
           properties: {
-            from: { type: Type.STRING, nullable: true, description: 'YYYY-MM-DD，问题没给出明确/可推算的日期范围就给 null' },
+            from: { type: Type.STRING, nullable: true, description: 'YYYY-MM-DD，问题没给出明确/可推算的日期范围就给 null（mode=detail 时必须给出，问题没说清楚就把 understood 设 false 并说明原因）' },
             to: { type: Type.STRING, nullable: true, description: 'YYYY-MM-DD' },
           },
         },
       },
-      required: ['metric'],
+      required: ['domain'],
     },
   },
   required: ['understood'],
@@ -105,13 +126,11 @@ function buildInterpretPrompt(question: string, priorDsl: AnalysisDsl | null, re
     : ''
   return `你是一个数据分析问题理解助手。今天是 ${today}（欧洲/都柏林时区），把老板的自然语言问题翻译成一份结构化查询——你**只产出结构化参数，不产出任何 SQL 或代码**。
 
-系统当前只支持下面这些指标，每个指标的可选参数（这些是真正允许客户选的业务口径；没列出来的规则，比如统计哪些订单状态、按哪个日期字段，都是系统写死的，不接受任何变体，也不要在 dsl 里编造）：
-${metricCatalogText()}
+系统按四个业务域组织数据，每个域各自的指标/维度如下（没列出来的规则，比如统计哪些订单状态、按哪个日期字段，都是系统写死的，不接受任何变体，也不要在 dsl 里编造）：
 
-可以按下面这些维度分组（同一份 dimension 枚举，中文对照仅供你理解问题，dsl.dimension 必须原样用英文 key）：
-${CHAT_DIMENSION_KEYS.map((k) => `${k}=${DIMENSION_LABELS_ZH[k] ?? k}`).join('、')}
+${domainCatalogText()}
 
-如果问题问的指标/维度不在上面这两份清单里（比如问"按邮编分组"、"库存周转率"这种系统没有的东西），把 understood 设成 false，unsupportedReason 用一句话说明，dsl 给 null——不要凑一个近似的指标或维度顶上去。
+如果问题问的域/指标/维度不在上面这份清单里（比如问"库存周转率"这种系统没有的东西），把 understood 设成 false，unsupportedReason 用一句话说明，dsl 给 null——不要凑一个近似的指标或维度顶上去。
 ${priorContext}${retryContext}
 老板的问题：「${question}」`
 }
@@ -141,25 +160,27 @@ export async function interpretQuestion(
 }
 
 export interface NarrateInput {
-  metric: MetricKey
+  domain: string
+  metric: string
   dimensionLabel: string | null
   total: number
   truncated: boolean
   topRows: Array<{ name: string; value: number }>
 }
 
-/** 结果解读失败不影响主流程——降级成不给解读文字，前端只显示数字，不是整条链路失败 */
+/** 结果解读失败不影响主流程——降级成不给解读文字，前端只显示数字，不是整条链路失败。仅 aggregate 模式调用 */
 export async function narrateResult(input: NarrateInput): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return null
 
-  const metricLabel = METRIC_DEFS[input.metric]?.labelZh ?? input.metric
+  const domainDef = DOMAIN_DEFS[input.domain as keyof typeof DOMAIN_DEFS]
+  const metricLabel = domainDef?.metrics[input.metric]?.labelZh ?? input.metric
   const prompt = `你在给老板做一份数据分析结果的口头汇报，只看得到下面这些已经算好的聚合数字，看不到任何原始订单明细，不要编造任何数字之外的信息。
 
 指标：${metricLabel}
 ${input.dimensionLabel ? `分组维度：${input.dimensionLabel}` : '未分组（总计）'}
 合计：${input.total}
-${input.truncated ? '（分组结果超过 500 行，只取了排名前 500）' : ''}
+${input.truncated ? `（分组结果超过 ${500} 行，只取了排名前 500）` : ''}
 排名前几的分组：${input.topRows.map((r) => `${r.name}: ${r.value}`).join('；') || '无'}
 
 用 2-3 句中文口语化总结这份数据，不要罗列表格，不要用 markdown。`

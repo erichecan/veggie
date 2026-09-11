@@ -818,6 +818,9 @@ model Order {
   @@index([driverSlotId])
   @@index([salesUserId])
   @@index([printedById])
+  /// AI 问数 v2 明细钻取/quotation 域按日期范围直查此字段；此前只靠 status 索引筛小
+  /// 再 join OrderLine，明细钻取绕过 status 收窄时在 133 万行 OrderLine 上有全表扫风险
+  @@index([confirmationDate])
 }
 
 /// 订单行（Odoo 对齐）— 每条记录对应一种商品的一行明细，含 ordered/delivered/invoiced 三个数量

@@ -6,12 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { parseDsl, validateDslSemantics, fillDefaults } from '@/lib/analytics-chat/dsl-schema'
 import { compileAndRun } from '@/lib/analytics-chat/compiler'
 import { narrateResult } from '@/lib/analytics-chat/llm'
-import { getMetricDef } from '@/lib/analytics/semantic-model'
-
-const DIMENSION_LABELS_ZH: Record<string, string> = {
-  product: '商品', category: '分类', customer: '客户', salesUser: '业务员',
-  day: '日', week: '周', month: '月',
-}
+import { getDomainDef } from '@/lib/analytics-chat/domains'
 
 /**
  * POST /api/analytics-chat/confirm
@@ -51,15 +46,18 @@ export async function POST(req: Request) {
     try {
       const result = await compileAndRun(dsl)
       const durationMs = Date.now() - startedAt
+      const domainDef = getDomainDef(dsl.domain)
 
-      const metricDef = getMetricDef(dsl.metric)
-      const narrative = await narrateResult({
-        metric: dsl.metric,
-        dimensionLabel: dsl.dimension ? (DIMENSION_LABELS_ZH[dsl.dimension] ?? dsl.dimension) : null,
-        total: result.total,
-        truncated: result.truncated,
-        topRows: result.rows.slice(0, 10).map((r) => ({ name: r.name, value: r.value })),
-      })
+      const narrative = result.mode === 'aggregate'
+        ? await narrateResult({
+            domain: dsl.domain,
+            metric: dsl.metric ?? '',
+            dimensionLabel: dsl.dimension ? (domainDef?.dimensionLabelsZh[dsl.dimension] ?? dsl.dimension) : null,
+            total: result.total,
+            truncated: result.truncated,
+            topRows: result.rows.slice(0, 10).map((r) => ({ name: r.name, value: r.value })),
+          })
+        : null
 
       await prisma.analysisQueryLog.create({
         data: {
@@ -75,7 +73,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json(serializeApi({
         dsl,
-        metricLabel: metricDef?.labelZh ?? dsl.metric,
+        metricLabel: dsl.mode === 'aggregate' ? (domainDef?.metrics[dsl.metric ?? '']?.labelZh ?? dsl.metric) : null,
         result,
         narrative,
       }))

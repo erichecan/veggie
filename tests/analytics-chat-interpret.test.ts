@@ -9,7 +9,7 @@ function fakeInterpreter(...outcomes: InterpretOutcome[]) {
 }
 
 test('interpretToDsl：一次就理解成功', async () => {
-  const fake = fakeInterpreter({ raw: { understood: true, dsl: { metric: 'salesAmount' } } })
+  const fake = fakeInterpreter({ raw: { understood: true, dsl: { domain: 'sales', metric: 'salesAmount' } } })
   const result = await interpretToDsl('本月销售额', null, fake as never)
   assert.equal(result.status, 'confirm')
   if (result.status === 'confirm') {
@@ -29,8 +29,8 @@ test('interpretToDsl：understood=false 直接返回 unsupported，不重试', a
 
 test('interpretToDsl：第一次格式错误，第二次修正成功', async () => {
   const fake = fakeInterpreter(
-    { raw: { understood: true, dsl: { metric: 'not-a-metric' } } },
-    { raw: { understood: true, dsl: { metric: 'grossMargin' } } },
+    { raw: { understood: true, dsl: { domain: 'sales', metric: 'not-a-metric' } } },
+    { raw: { understood: true, dsl: { domain: 'sales', metric: 'grossMargin' } } },
   )
   const result = await interpretToDsl('毛利', null, fake as never)
   assert.equal(result.status, 'confirm')
@@ -38,8 +38,8 @@ test('interpretToDsl：第一次格式错误，第二次修正成功', async () 
 
 test('interpretToDsl：第一次语义错误（grossMargin 带 taxBasis），重试后修正', async () => {
   const fake = fakeInterpreter(
-    { raw: { understood: true, dsl: { metric: 'grossMargin', confirmedParams: { taxBasis: 'preTax' } } } },
-    { raw: { understood: true, dsl: { metric: 'grossMargin' } } },
+    { raw: { understood: true, dsl: { domain: 'sales', metric: 'grossMargin', confirmedParams: { taxBasis: 'preTax' } } } },
+    { raw: { understood: true, dsl: { domain: 'sales', metric: 'grossMargin' } } },
   )
   const result = await interpretToDsl('毛利，税前的', null, fake as never)
   assert.equal(result.status, 'confirm')
@@ -47,7 +47,7 @@ test('interpretToDsl：第一次语义错误（grossMargin 带 taxBasis），重
 
 test('interpretToDsl：连续 3 次都错，返回 error 而不是硬跑一个近似查询', async () => {
   let calls = 0
-  const fake = async () => { calls++; return { raw: { understood: true, dsl: { metric: 'not-a-metric' } } } }
+  const fake = async () => { calls++; return { raw: { understood: true, dsl: { domain: 'sales', metric: 'not-a-metric' } } } }
   const result = await interpretToDsl('随便问点什么', null, fake as never)
   assert.equal(result.status, 'error')
   assert.equal(calls, 3) // 首次 + 最多 2 次重试

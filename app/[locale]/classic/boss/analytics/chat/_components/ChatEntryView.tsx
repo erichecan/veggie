@@ -1,9 +1,24 @@
 'use client'
 import type { AnalysisDsl } from '@/lib/analytics-chat/dsl-schema'
 
+export interface AggregateResult {
+  mode: 'aggregate'
+  rows: Array<{ key: string; name: string; value: number; qty: number }>
+  total: number
+  truncated: boolean
+}
+
+export interface DetailResult {
+  mode: 'detail'
+  columns: Array<{ key: string; labelZh: string }>
+  rows: Array<Record<string, unknown>>
+  truncated: boolean
+}
+
 export interface ResultData {
-  metricLabel: string
-  result: { rows: Array<{ key: string; name: string; value: number; qty: number }>; total: number; truncated: boolean }
+  /** detail 模式为 null——明细不聚合，没有"指标"这个概念 */
+  metricLabel: string | null
+  result: AggregateResult | DetailResult
   narrative: string | null
 }
 
@@ -73,6 +88,49 @@ export function ChatEntryView({
 
   // result
   const { data } = entry
+
+  if (data.result.mode === 'detail') {
+    const { columns, rows, truncated } = data.result
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[90%] w-full rounded-lg px-3 py-2 text-sm bg-white border border-gray-200">
+          <p className="font-medium" style={{ color: '#875A7B' }}>
+            {isEn ? `${rows.length} rows` : `共 ${rows.length} 行明细`}
+          </p>
+          {rows.length > 0 && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-xs whitespace-nowrap">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    {columns.map((c) => (
+                      <th key={c.key} className="py-1 pr-3 text-left text-gray-500 font-medium">{c.labelZh}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, 100).map((r, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      {columns.map((c) => (
+                        <td key={c.key} className="py-1 pr-3 text-gray-700">{String(r[c.key] ?? '')}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {truncated && <p className="mt-1 text-xs text-gray-400">{isEn ? 'Showing top 500 rows only' : '仅显示前 500 行'}</p>}
+          <button
+            onClick={() => onSaveReport(entry.dsl)}
+            className="mt-2 h-6 px-2 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+          >
+            {isEn ? '+ Save as report' : '+ 存为常用报表'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex justify-start">
       <div className="max-w-[90%] w-full rounded-lg px-3 py-2 text-sm bg-white border border-gray-200">
