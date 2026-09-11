@@ -14,6 +14,14 @@
 import type { AggregateSqlArgs, DetailSqlArgs, DimensionDef, DomainDef, MetricDef, SqlQuery } from './types'
 
 const TRIP_DATE_EXPR = `COALESCE(w."waveDate", t."createdAt"::date)`
+/**
+ * ⛔ 边界比较专用：`waveDate` 是 `@db.Date`，直接用 `date 列 >= $1 AND < $2`（$ 是 JS Date）
+ * 会被 Postgres 隐式推成 `date`↔`date` 比较，$2 被截成纯日期丢掉时区偏移，实测把区间末日
+ * 整天漏掉（`docs/20260811-requirements-backlog-tasks.md` 待决策 #15 记录的同款坑，本地库
+ * 复现：查 2026-06-24 当天 tripCount 应为 1，未加 ::timestamp 时查出 0）。分组/排序不受影响，
+ * 只有跟 $1/$2 做大小比较的地方需要这个显式 cast。
+ */
+const TRIP_DATE_TS = `${TRIP_DATE_EXPR}::timestamp`
 
 const DIMENSIONS: Record<string, DimensionDef> = {
   driver: {
@@ -94,7 +102,7 @@ function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }:
                 ${valueExpr}::float AS value
          FROM "Trip" t
          LEFT JOIN "PickingWave" w ON w.id = t."waveId"
-         WHERE ${TRIP_DATE_EXPR} >= $1 AND ${TRIP_DATE_EXPR} < $2
+         WHERE ${TRIP_DATE_TS} >= $1 AND ${TRIP_DATE_TS} < $2
            ${extraWhere}
          ${groupByClause}
          ORDER BY value DESC
@@ -117,7 +125,7 @@ function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQu
          LEFT JOIN "PickingWave" w ON w.id = t."waveId"
          CROSS JOIN LATERAL jsonb_array_elements(t.restaurants) r
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(r->'items', '[]'::jsonb)) i
-         WHERE ${TRIP_DATE_EXPR} >= $1 AND ${TRIP_DATE_EXPR} < $2
+         WHERE ${TRIP_DATE_TS} >= $1 AND ${TRIP_DATE_TS} < $2
            ${extraWhere}
          ORDER BY ${TRIP_DATE_EXPR} DESC
          LIMIT ${rowLimit + 1}`
