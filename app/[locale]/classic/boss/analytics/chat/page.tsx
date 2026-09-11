@@ -5,13 +5,14 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiPost } from '@/lib/api'
 import type { AnalysisDsl } from '@/lib/analytics-chat/dsl-schema'
-import { ChatEntryView, type ChatEntry, type ResultData } from './_components/ChatEntryView'
+import { ChatEntryView, type AmbiguousCandidate, type ChatEntry, type ResultData } from './_components/ChatEntryView'
 import { SaveReportBar } from './_components/SaveReportBar'
 
 interface MessageResponse {
-  status: 'confirm' | 'unsupported' | 'error'
+  status: 'confirm' | 'ambiguous' | 'unsupported' | 'error'
   dsl?: AnalysisDsl
   confirmationText?: string
+  candidates?: AmbiguousCandidate[]
   reason?: string
 }
 
@@ -43,6 +44,8 @@ export default function AnalyticsChatPage() {
       })
       if (res.status === 'confirm' && res.dsl && res.confirmationText) {
         setEntries((prev) => [...prev, { kind: 'confirm', dsl: res.dsl!, text: res.confirmationText! }])
+      } else if (res.status === 'ambiguous' && res.candidates?.length) {
+        setEntries((prev) => [...prev, { kind: 'ambiguous', candidates: res.candidates! }])
       } else {
         setEntries((prev) => [...prev, { kind: 'info', text: res.reason ?? (isEn ? 'Sorry, I could not understand this question.' : '抱歉，这个问题我理解不了。') }])
       }
@@ -67,6 +70,18 @@ export default function AnalyticsChatPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function pickAmbiguous(candidate: AmbiguousCandidate) {
+    setEntries((prev) => {
+      const idx = [...prev].reverse().findIndex((e) => e.kind === 'ambiguous' && !e.resolved)
+      if (idx === -1) return prev
+      const realIdx = prev.length - 1 - idx
+      const next = [...prev]
+      next[realIdx] = { ...(next[realIdx] as Extract<ChatEntry, { kind: 'ambiguous' }>), resolved: true }
+      next.push({ kind: 'confirm', dsl: candidate.dsl, text: candidate.confirmationText })
+      return next
+    })
   }
 
   function cancelConfirm() {
@@ -111,6 +126,7 @@ export default function AnalyticsChatPage() {
             onConfirm={confirmDsl}
             onCancel={cancelConfirm}
             onSaveReport={setSavingDsl}
+            onPickAmbiguous={pickAmbiguous}
           />
         ))}
         <div ref={listEndRef} />

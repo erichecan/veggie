@@ -1,21 +1,32 @@
 /**
- * AI 问数 · Gemini 交互层（20260906，20260910 扩成跨域 + 明细模式）
+ * AI 问数 · Gemini 交互层（20260906，20260910 扩成跨域 + 明细模式，20260911 加歧义消歧）
  * ============================================================================
  * 调用范式沿用 `lib/purchase/ai-pdf-parser.ts`（`@google/genai`、JSON mode +
- * `responseSchema` 强约束输出、同一档模型）。两个用途：
+ * `responseSchema` 强约束输出、同一档模型）。三个用途：
  *   1. `interpretQuestion`：自然语言 → DSL 草稿。responseSchema 里 metric/
  *      dimension 用的是**全部四个 domain 合并后的枚举**（Gemini 的 schema 不
  *      支持"选了 domain=X 之后 metric 枚举收窄成 X 的"这种条件依赖），真正
  *      "这个 metric 是不是这个 domain 的"由 dsl-schema.ts 兜底校验，校验不过
  *      走 interpret.ts 的重试机制把错误原因喂回去让模型自己修正。
- *   2. `narrateResult`：聚合后的小结果 → 自然语言解读（只对 aggregate 模式；
+ *   2. `checkAlternativeDomain`：歧义探测，独立的小 schema 调用（见下方
+ *      "为什么歧义检测要拆成单独一次调用" 说明）。
+ *   3. `narrateResult`：聚合后的小结果 → 自然语言解读（只对 aggregate 模式；
  *      detail 模式直接给明细表格，不需要 AI 复述一遍）
  * `filters` 字段刻意不放进 responseSchema——客户名/商品名到 id 的解析 v1 没做，
  * 给了字段只会诱使模型自己编一个 id。
+ *
+ * ⛔ 为什么歧义检测要拆成单独一次调用，不直接在 DSL_RESPONSE_SCHEMA 里加
+ * `ambiguous`+`alternativeDsl` 两个字段：
+ * 20260911 实测过，一旦加了这两个字段（哪怕只是加字段、prompt 反复强调"其它字段照常填"），
+ * `gemini-3.1-flash-lite`（本项目能用的最轻量档）在"7月3号客户订单，每家都送什么货，
+ * 单价数量"这类问题上会稳定地（4/4 次复现）丢掉 dateRange 甚至整个 alternativeDsl，
+ * 哪怕这句话单独问（不带歧义字段的旧 schema）时抽取 dateRange 100% 稳定。schema 一复杂，
+ * 这档模型的结构化输出质量就会滑坡。所以歧义检测必须是一次独立的、schema 极简的调用，
+ * 不能和主 DSL 抽取合并，主 DSL 抽取的 schema/prompt 保持 20260910 验证过的原样不动。
  */
 import { GoogleGenAI, Type } from '@google/genai'
 import { toDayKey } from '@/lib/analytics/metrics'
-import { DOMAIN_DEFS, type MetricDef } from './domains'
+import { DOMAIN_DEFS, isDomainKey, type DomainKey, type MetricDef } from './domains'
 import type { AnalysisDsl } from './dsl-schema'
 
 // 与 ai-pdf-parser.ts 同一档：gemini-2.5/3.6 在这个 API 项目上全系 404，
@@ -116,13 +127,16 @@ const DSL_RESPONSE_SCHEMA = {
   required: ['understood'],
 } as const
 
-function buildInterpretPrompt(question: string, priorDsl: AnalysisDsl | null, retryHint: string | null): string {
+function buildInterpretPrompt(question: string, priorDsl: AnalysisDsl | null, retryHint: string | null, forcedDomain: DomainKey | null): string {
   const today = toDayKey(new Date())
   const priorContext = priorDsl
     ? `\n上一轮已经理解出的查询（如果这句话是对上一轮的追问/修改，比如"那按客户再看一下"，请在这份基础上只改动被要求改动的部分，其余原样保留）：\n${JSON.stringify(priorDsl)}\n`
     : ''
   const retryContext = retryHint
     ? `\n⚠️ 你上一次的回答有问题，原因：${retryHint}——请修正后重新给出，不要重复同样的错误。\n`
+    : ''
+  const forcedDomainContext = forcedDomain
+    ? `\n⚠️ 这次不用你自己判断业务域——把 domain 固定为 "${forcedDomain}"，按这个域重新理解这句话，其它字段（mode/metric/dimension/dateRange）仍要正常按问题内容填好。\n`
     : ''
   return `你是一个数据分析问题理解助手。今天是 ${today}（欧洲/都柏林时区），把老板的自然语言问题翻译成一份结构化查询——你**只产出结构化参数，不产出任何 SQL 或代码**。
 
@@ -131,7 +145,7 @@ function buildInterpretPrompt(question: string, priorDsl: AnalysisDsl | null, re
 ${domainCatalogText()}
 
 如果问题问的域/指标/维度不在上面这份清单里（比如问"库存周转率"这种系统没有的东西），把 understood 设成 false，unsupportedReason 用一句话说明，dsl 给 null——不要凑一个近似的指标或维度顶上去。
-${priorContext}${retryContext}
+${forcedDomainContext}${priorContext}${retryContext}
 老板的问题：「${question}」`
 }
 
@@ -139,6 +153,7 @@ export async function interpretQuestion(
   question: string,
   priorDsl: AnalysisDsl | null = null,
   retryHint: string | null = null,
+  forcedDomain: DomainKey | null = null,
 ): Promise<InterpretOutcome> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return { unavailable: true, reason: '未配置 GEMINI_API_KEY，AI 问数不可用' }
@@ -147,7 +162,7 @@ export async function interpretQuestion(
   try {
     const response = await ai.models.generateContent({
       model: MODEL,
-      contents: [{ role: 'user', parts: [{ text: buildInterpretPrompt(question, priorDsl, retryHint) }] }],
+      contents: [{ role: 'user', parts: [{ text: buildInterpretPrompt(question, priorDsl, retryHint, forcedDomain) }] }],
       config: { responseMimeType: 'application/json', responseSchema: DSL_RESPONSE_SCHEMA },
     })
     const text = response.text
@@ -157,6 +172,68 @@ export async function interpretQuestion(
     console.error('[interpretQuestion] generateContent failed', err)
     return { failed: true, reason: 'AI 理解调用失败，请稍后重试' }
   }
+}
+
+const AMBIGUITY_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    alternativeDomain: {
+      type: Type.STRING,
+      nullable: true,
+      enum: DOMAIN_KEYS,
+      description: '如果这句话除了已选中的域，换一个域理解也同样说得通，给出那个域的 key；只有一种域说得通就给 null，不要为了显得谨慎而滥用',
+    },
+  },
+  required: [],
+} as const
+
+const DOMAIN_ONE_LINERS = Object.values(DOMAIN_DEFS)
+  .map((d) => `- ${d.key}（${d.labelZh}）`)
+  .join('\n')
+
+/**
+ * 独立的歧义探测调用：schema 极简（只有一个可空字符串字段），不带 dateRange/metric 这些
+ * 容易被"顺带问"拖垮质量的复杂字段。只在 interpret.ts 拿到主候选之后调用一次。
+ */
+export async function checkAlternativeDomain(
+  question: string,
+  primaryDomain: DomainKey,
+): Promise<InterpretOutcome> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return { unavailable: true, reason: '未配置 GEMINI_API_KEY，AI 问数不可用' }
+
+  const prompt = `业务系统按下面几个域组织数据：
+${DOMAIN_ONE_LINERS}
+
+已经把这句话理解成"${primaryDomain}"域的问题。除了这个域，这句话换一个域理解是否也同样合理？
+比如"客户订单送了什么货"，既可能是问 sales 域记的订单本身，也可能是问 delivery 域实际配送执行——
+这种情况给出那个域的 key；如果只有当前这一种域说得通，给 null。
+
+问题：「${question}」`
+
+  const ai = new GoogleGenAI({ apiKey })
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { responseMimeType: 'application/json', responseSchema: AMBIGUITY_SCHEMA },
+    })
+    const text = response.text
+    if (!text) return { failed: true, reason: 'AI 未返回可解析内容' }
+    return { raw: JSON.parse(text) }
+  } catch (err) {
+    console.error('[checkAlternativeDomain] generateContent failed', err)
+    return { failed: true, reason: 'AI 歧义探测调用失败' }
+  }
+}
+
+/** 从 checkAlternativeDomain 的 raw 输出里取出一个合法且与 primaryDomain 不同的候选域，取不到就 null */
+export function parseAlternativeDomain(outcome: InterpretOutcome, primaryDomain: DomainKey): DomainKey | null {
+  if (!('raw' in outcome)) return null
+  const raw = outcome.raw as { alternativeDomain?: unknown }
+  const candidate = raw.alternativeDomain
+  if (!isDomainKey(candidate) || candidate === primaryDomain) return null
+  return candidate
 }
 
 export interface NarrateInput {

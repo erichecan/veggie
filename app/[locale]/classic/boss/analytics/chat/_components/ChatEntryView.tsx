@@ -22,14 +22,20 @@ export interface ResultData {
   narrative: string | null
 }
 
+export interface AmbiguousCandidate {
+  dsl: AnalysisDsl
+  confirmationText: string
+}
+
 export type ChatEntry =
   | { kind: 'user'; text: string }
   | { kind: 'confirm'; dsl: AnalysisDsl; text: string; resolved?: 'confirmed' | 'cancelled' }
+  | { kind: 'ambiguous'; candidates: AmbiguousCandidate[]; resolved?: boolean }
   | { kind: 'result'; dsl: AnalysisDsl; data: ResultData }
   | { kind: 'info'; text: string }
 
 export function ChatEntryView({
-  entry, isEn, busy, onConfirm, onCancel, onSaveReport,
+  entry, isEn, busy, onConfirm, onCancel, onSaveReport, onPickAmbiguous,
 }: {
   entry: ChatEntry
   isEn: boolean
@@ -37,6 +43,7 @@ export function ChatEntryView({
   onConfirm: (dsl: AnalysisDsl, text: string) => void
   onCancel: () => void
   onSaveReport: (dsl: AnalysisDsl) => void
+  onPickAmbiguous: (candidate: AmbiguousCandidate) => void
 }) {
   if (entry.kind === 'user') {
     return (
@@ -81,6 +88,32 @@ export function ChatEntryView({
             </div>
           )}
           {entry.resolved === 'cancelled' && <p className="mt-1 text-xs text-gray-400">{isEn ? 'Cancelled' : '已取消'}</p>}
+        </div>
+      </div>
+    )
+  }
+
+  if (entry.kind === 'ambiguous') {
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-gray-50 border border-gray-200">
+          <p className="text-gray-800">
+            {isEn ? 'This could mean a couple of things — which one did you mean?' : '这句话有点模糊，你是想问：'}
+          </p>
+          {!entry.resolved && (
+            <div className="mt-2 flex flex-col gap-2">
+              {entry.candidates.map((c, i) => (
+                <button
+                  key={i}
+                  disabled={busy}
+                  onClick={() => onPickAmbiguous(c)}
+                  className="text-left h-auto py-1.5 px-3 text-xs rounded border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  {c.confirmationText}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )

@@ -47,6 +47,13 @@ export async function POST(req: Request) {
         }))
       }
 
+      if (result.status === 'ambiguous') {
+        return NextResponse.json(serializeApi({
+          status: 'ambiguous',
+          candidates: result.candidates.map((dsl) => ({ dsl, confirmationText: renderConfirmationText(dsl) })),
+        }))
+      }
+
       await prisma.analysisQueryLog.create({
         data: {
           userId: user.userId,
