@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
+import { openPrintWindow } from '@/lib/print-export'
 import type { Order, OrderItem } from '@/lib/types'
 import { eur } from '@/lib/format-money'
 import { formatDateOnly } from '@/lib/format-date'
@@ -122,24 +123,6 @@ function LineSelector({
       </div>
     </div>
   )
-}
-
-function openPrintWindow(title: string, html: string) {
-  const win = window.open('', '_blank', 'noopener')
-  if (!win) return
-  win.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
-<style>
-  body { font-family: Arial, sans-serif; font-size: 12px; margin: 20px; }
-  h2 { font-size: 16px; margin-bottom: 16px; }
-  table { width: 100%; border-collapse: collapse; }
-  th { background: #875A7B; color: white; padding: 6px 8px; text-align: left; font-size: 11px; }
-  td { padding: 5px 8px; border-bottom: 1px solid #eee; font-size: 11px; }
-  tr:nth-child(even) td { background: #faf5ff; }
-  .total-row td { font-weight: bold; border-top: 2px solid #875A7B; }
-  @media print { body { margin: 0; } }
-</style></head><body>${html}<script>window.print();<\/script></body></html>`)
-  win.document.close()
-  win.focus()
 }
 
 function fmtDate(d: string | Date | null | undefined) {
