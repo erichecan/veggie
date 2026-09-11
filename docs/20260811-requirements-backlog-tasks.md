@@ -1137,13 +1137,13 @@
     合理但需业务确认 —— 供应商多送了到底算收下还是退回。确认前 `scripts/audit/receipt-stock-test.ts`
     的该用例只排除「按订购量入库」这一种错误行为，不锁定另两种。
 
-15. **`date` 列与 timestamp 参数比较会丢最后一天（C8 查出，待复核）**：
+15. ✅ **`date` 列与 timestamp 参数比较会丢最后一天（C8 查出）—— 20260910/11 已修**：
     `COALESCE(w."waveDate", ...) < $end` 里的 `$end` 是 JS `Date`，与 date 列比较时被序列化成 date，
     上界因此变成「小于当天」而把当天整个排除。C8 已改用 `= $2::date`。
-    **同样写法仍在 `/api/analytics/logistics`、`lib/analytics/driver-commission.ts` 里**，
-    表现是「按日期范围查，最后一天的数据不见了」—— 跨多天时不易察觉。
-    要不要统一改：范围查询把上界写成 `< ($2::date + 1)` 或显式 `::timestamp` 转换。
-    ⚠️ 改之前先构造「区间末日有数据」的用例复现，别凭推断改 SQL。
+    按建议先构造复现用例：AI 问数 v2 新写的 `lib/analytics-chat/domains/delivery.ts` 踩了同一个坑
+    （本地库查"仅含 2026-06-24 当天"区间，count 应为 1 实际查出 0），复现后确认改法有效
+    （边界比较表达式显式 `::timestamp`），随即把 `/api/analytics/logistics`、
+    `lib/analytics/driver-commission.ts` 里同款写法一并修完，三处全部验证通过。
 
 14. **地图供应商（C7 查出）**：前端会尝试加载 Google Maps JS 但被 CSP 挡下，降级到 Leaflet + OSM（实测完全可用）。
     二选一：**(a)** 把 `maps.googleapis.com` 加进 CSP 并配 `GOOGLE_MAPS_API_KEY`（付费；前端 key 需配 referrer 限制；
