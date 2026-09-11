@@ -13,6 +13,9 @@ import { withCachedAuth } from '@/lib/analytics/cache'
  *         PickingWave（出发时间记录，dispatchedAt 由「确认出发」回填）。
  * 日期口径：Trip 无自身业务日期字段，取所属 PickingWave.waveDate，
  *          无关联波次（手动建的 Trip）退回 Trip.createdAt::date。
+ * ⛔ waveDate 是 @db.Date，边界比较（>= $1 AND < $2，$ 是 JS Date）必须显式 ::timestamp，
+ *   否则 Postgres 把参数隐式推成 date 丢时区偏移，查询区间末日整天消失
+ *   （20260910 在 analytics-chat delivery 域复现实证，见台账 docs/20260811 待决策 #15）。
  */
 
 export async function GET(req: Request) {
@@ -33,8 +36,8 @@ export async function GET(req: Request) {
                 COUNT(*) FILTER (WHERE t."settlementStatus" = 'confirmed')::int AS settled_count
          FROM "Trip" t
          LEFT JOIN "PickingWave" w ON w.id = t."waveId"
-         WHERE COALESCE(w."waveDate", t."createdAt"::date) >= $1
-           AND COALESCE(w."waveDate", t."createdAt"::date) < $2
+         WHERE COALESCE(w."waveDate", t."createdAt"::date)::timestamp >= $1
+           AND COALESCE(w."waveDate", t."createdAt"::date)::timestamp < $2
          GROUP BY t."driverName"
          ORDER BY SUM(t."totalPayment") DESC`,
         start, end,
@@ -50,8 +53,8 @@ export async function GET(req: Request) {
                 SUM(t."totalPayment")::float AS total_payment
          FROM "Trip" t
          LEFT JOIN "PickingWave" w ON w.id = t."waveId"
-         WHERE COALESCE(w."waveDate", t."createdAt"::date) >= $1
-           AND COALESCE(w."waveDate", t."createdAt"::date) < $2
+         WHERE COALESCE(w."waveDate", t."createdAt"::date)::timestamp >= $1
+           AND COALESCE(w."waveDate", t."createdAt"::date)::timestamp < $2
          GROUP BY COALESCE(w."waveDate", t."createdAt"::date)
          ORDER BY day`,
         start, end,
@@ -62,7 +65,7 @@ export async function GET(req: Request) {
                 COALESCE(array_length(w."orderIds", 1), 0)::int AS order_count,
                 w."dispatchedAt" AS dispatched_at
          FROM "PickingWave" w
-         WHERE w."waveDate" >= $1 AND w."waveDate" < $2 AND w."dispatchedAt" IS NOT NULL
+         WHERE w."waveDate"::timestamp >= $1 AND w."waveDate"::timestamp < $2 AND w."dispatchedAt" IS NOT NULL
          ORDER BY w."dispatchedAt" DESC
          LIMIT 100`,
         start, end,

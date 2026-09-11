@@ -168,6 +168,9 @@ export function pivotPeriods(rows: DriverPeriodRow[]): {
  * 手工建的无波次 Trip 退回 `Trip.createdAt::date`。两页口径不同的话，
  * 同一个司机在物流分析里跑了 8 趟、在提成报表里只有 6 趟，没人说得清哪个对。
  *
+ * ⛔ waveDate 是 @db.Date，边界比较必须显式 ::timestamp，否则 Postgres 把 $1/$2
+ * 隐式推成 date 丢时区偏移，区间末日整天消失（20260910 修复，见 docs/20260811 待决策 #15）。
+ *
  * `restaurants` 里 orderIds 可能整个缺失（历史/异常数据），用 COALESCE 兜住，
  * 否则 jsonb_array_elements_text(NULL) 会把整个 Trip 悄悄丢掉。
  */
@@ -193,8 +196,8 @@ WITH trip_order AS (
     CASE WHEN jsonb_typeof(r->'orderIds') = 'array' THEN r->'orderIds' ELSE '[]'::jsonb END
   ) oid
   WHERE t.status <> 'PENDING'
-    AND COALESCE(w."waveDate", t."createdAt"::date) >= $1
-    AND COALESCE(w."waveDate", t."createdAt"::date) <  $2
+    AND COALESCE(w."waveDate", t."createdAt"::date)::timestamp >= $1
+    AND COALESCE(w."waveDate", t."createdAt"::date)::timestamp <  $2
     ${conds}
 ),
 line_agg AS (
