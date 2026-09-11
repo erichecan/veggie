@@ -10,23 +10,27 @@ import {
   toMemoryShape,
 } from '@/lib/print/trip-common'
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
-import { generateTripPickingHtml, type PickingVariant } from '@/lib/print/trip-picking-template'
+import { generateTripPickingHtml, type PickingVariant, type PickingExpandMode } from '@/lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
 import { generateTripReceiptHtml } from '@/lib/print/trip-receipt-template'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 type PrintType = 'summary' | 'picking' | 'delivery' | 'receipt'
 
-/** 统一签名 (data, variant, lang)——只有 picking 真的用 variant，跟 dispatch-print-html.ts 同一思路 */
-const RENDERERS: Record<PrintType, (d: TripPrintData, variant: PickingVariant | undefined, lang: PrintLang) => string> = {
+/** 统一签名 (data, variant, lang, expand)——只有 picking 真的用 variant/expand，跟 dispatch-print-html.ts 同一思路 */
+const RENDERERS: Record<PrintType, (d: TripPrintData, variant: PickingVariant | undefined, lang: PrintLang, expand: PickingExpandMode | undefined) => string> = {
   summary: (d, _variant, lang) => generateTripSummaryHtml(d, lang),
-  picking: (d, variant, lang) => generateTripPickingHtml(d, variant, lang),
+  picking: (d, variant, lang, expand) => generateTripPickingHtml(d, variant, lang, expand),
   delivery: (d, _variant, lang) => generateTripDeliveryHtml(d, lang),
   receipt: (d, _variant, lang) => generateTripReceiptHtml(d, lang),
 }
 
 function parsePickingVariant(v: string | null): PickingVariant {
   return v === 'storable' || v === 'consumable' ? v : 'all'
+}
+
+function parsePickingExpandMode(v: string | null): PickingExpandMode {
+  return v === 'all' ? 'all' : 'auto'
 }
 
 const TITLES: Record<PrintLang, Record<PrintType, string>> = {
@@ -60,6 +64,7 @@ export default function TripPrintClient({
   const { id } = use(params)
   const searchParams = useSearchParams()
   const variant = parsePickingVariant(searchParams.get('variant'))
+  const expandMode = parsePickingExpandMode(searchParams.get('expand'))
   const locale = useLocale()
   const lang: PrintLang = locale === routing.defaultLocale ? 'zh' : 'en'
   const [html, setHtml] = useState<string>('')
@@ -73,7 +78,7 @@ export default function TripPrintClient({
         if (cancelled) return
         const data = toMemoryShape(wire)
         const renderer = RENDERERS[type]
-        setHtml(renderer(data, variant, lang))
+        setHtml(renderer(data, variant, lang, expandMode))
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : '加载失败 / Loading failed')
@@ -81,7 +86,7 @@ export default function TripPrintClient({
     }
     load()
     return () => { cancelled = true }
-  }, [id, type, variant, lang])
+  }, [id, type, variant, expandMode, lang])
 
   if (error) {
     return (

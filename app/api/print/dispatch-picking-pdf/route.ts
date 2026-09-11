@@ -11,7 +11,7 @@ import { withAuth } from '@/lib/auth'
 import { loadDispatchPrintData, parseDispatchSelector } from '@/lib/print/dispatch-loader'
 import { stripAutoPrintScript } from '@/lib/print/trip-common'
 import { generateTripPickingHtml } from '@/lib/print/trip-picking-template'
-import { parsePickingVariant } from '@/lib/print/dispatch-print-html'
+import { parsePickingVariant, parsePickingExpandMode } from '@/lib/print/dispatch-print-html'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { resolvePrintLang } from '@/lib/print/print-i18n'
 
@@ -27,6 +27,7 @@ export async function GET(req: Request) {
     const fromDate = searchParams.get('fromDate') ?? undefined
     const selector = parseDispatchSelector(searchParams)
     const variant = parsePickingVariant(searchParams.get('variant'))
+    const expandMode = parsePickingExpandMode(searchParams.get('expand'))
     const lang = resolvePrintLang(searchParams.get('lang'))
 
     if (!date) {
@@ -39,7 +40,7 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: '该批次无订单数据' }, { status: 404 })
       }
       const data = { trip: wire.trip, orders: wire.orders, customers: new Map(wire.customers.map(c => [c.id, c])) }
-      const html = stripAutoPrintScript(generateTripPickingHtml(data, variant, lang))
+      const html = stripAutoPrintScript(generateTripPickingHtml(data, variant, lang, expandMode))
       const pdf = await renderHtmlToPdf(html, { pageNumbers: true })
       return new NextResponse(new Uint8Array(pdf), {
         headers: {

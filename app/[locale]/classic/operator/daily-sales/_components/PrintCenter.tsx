@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { apiGet, apiPost, apiDelete } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { fetchDispatchPrintHtml, buildDispatchSummaryPdfUrl, buildDispatchPickingPdfUrl } from '@/lib/print/dispatch-print-html'
+import type { PickingExpandMode } from '@/lib/print/trip-picking-template'
 import { type PrintContentFilter, applyPrintContentFilter, hasContentFilter } from '@/lib/print/print-filters'
 import type { PrintLang } from '@/lib/print/print-i18n'
 import { openAuthedPdf } from '@/lib/print/open-pdf'
@@ -166,6 +167,10 @@ function BatchCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
+  // 拣货单客户展开开关：勾上后，本卡片（含各托盘）打出来的拣货单不管有没有备注，
+  // 都按客户逐行展开；默认关——只把带备注的客户单独摘出来，其余合并成一行，见 trip-picking-template.ts
+  const [expandNote, setExpandNote] = useState(false)
+  const expandMode: PickingExpandMode = expandNote ? 'all' : 'auto'
   // 每个托盘（子批次）自己的打印按钮各自忙碌，不跟整卡片的 busy 共用一个开关，
   // 否则点一个托盘的按钮会把同卡片其它托盘/整卡按钮也一起 disable。
   const [palletBusy, setPalletBusy] = useState<Record<number, boolean>>({})
@@ -228,7 +233,7 @@ function BatchCard({
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
       // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再走隐藏 iframe + window.print()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant, lang, ...filter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: [waveId], variant, expand: expandMode, lang, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -279,7 +284,7 @@ function BatchCard({
     try {
       await apiPost(`/api/waves/${waveId}/pick-lock`, { reason: 'print', variant })
       notifyFirstLock()
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant, lang, ...filter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, batchLabel: palletBatchLabel(seq), variant, expand: expandMode, lang, ...filter }))
       onPrint()
       onLockChange()
     } catch (e) {
@@ -382,6 +387,15 @@ function BatchCard({
               {isEn ? '🔒 Unlock' : '🔒 解锁'}
             </button>
           )}
+          <label
+            className="flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer select-none"
+            title={isEn
+              ? 'When on, picking lists print every customer on a separate line (default: only lines with a note are broken out, the rest stay merged)'
+              : '勾上后拣货单按客户逐行展开（默认只把带备注的客户单独列出，其余合并成一行）'}
+          >
+            <input type="checkbox" checked={expandNote} onChange={e => setExpandNote(e.target.checked)} className="w-3 h-3" />
+            {isEn ? 'Expand by customer' : '按客户展开'}
+          </label>
           <span className="inline-flex rounded border border-orange-400 overflow-hidden">
             <button
               onClick={() => printPicking('storable')}
@@ -641,6 +655,9 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   const canUnlock = true
 
   const [date, setDate] = useState(today)
+  // 批量拣货单的客户展开开关，跟单波次卡片那个是各自独立的两处开关（作用域不同）
+  const [bulkExpandNote, setBulkExpandNote] = useState(false)
+  const bulkExpandMode: PickingExpandMode = bulkExpandNote ? 'all' : 'auto'
   const [waves, setWaves] = useState<Wave[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
@@ -923,7 +940,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     )
     const failed = results.filter(r => r.status === 'rejected').length
     try {
-      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant, lang, ...contentFilter }))
+      await openAuthedPdf(buildDispatchPickingPdfUrl({ date, waveIds: filteredWaveIds, variant, expand: bulkExpandMode, lang, ...contentFilter }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
     }
@@ -1005,6 +1022,15 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
                   : `已筛选 · 打印 ${batchGroups.length} 波次 / ${visibleOrderCount} 单`}
               </span>
             )}
+            <label
+              className="flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer select-none"
+              title={isEn
+                ? 'When on, picking lists print every customer on a separate line (default: only lines with a note are broken out, the rest stay merged)'
+                : '勾上后拣货单按客户逐行展开（默认只把带备注的客户单独列出，其余合并成一行）'}
+            >
+              <input type="checkbox" checked={bulkExpandNote} onChange={e => setBulkExpandNote(e.target.checked)} className="w-3 h-3" />
+              {isEn ? 'Expand by customer' : '按客户展开'}
+            </label>
             <span className="inline-flex rounded overflow-hidden">
               <button
                 onClick={() => bulkPrintPicking('storable')}

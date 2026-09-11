@@ -122,6 +122,9 @@ export default function ClassicTripsPage() {
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
   useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
+  // 拣货单客户展开开关：勾上后本页所有行程的拣货单都按客户逐行展开；
+  // 默认关——只把带备注的客户摘出来，其余合并成一行，见 trip-picking-template.ts
+  const [expandNote, setExpandNote] = useState(false)
 
   // ── List ──────────────────────────────────────────────────────────────────
   async function load() {
@@ -325,7 +328,7 @@ export default function ClassicTripsPage() {
         const openPicking = (variant: 'storable' | 'consumable') => (e: React.MouseEvent) => {
           e.stopPropagation()
           // 拣货单走真·服务端 PDF（无浏览器打印页眉），不再导航到 /classic/print/trip/[id]/picking
-          openAuthedPdf(`/api/trips/${id}/picking-pdf?variant=${variant}`).catch(err => {
+          openAuthedPdf(`/api/trips/${id}/picking-pdf?variant=${variant}&expand=${expandNote ? 'all' : 'auto'}`).catch(err => {
             toast.error(err instanceof Error ? err.message : (isEn ? 'Print failed' : '打印失败'))
           })
         }
@@ -394,6 +397,17 @@ export default function ClassicTripsPage() {
       />
 
       <div className="p-4">
+        <div className="flex justify-end mb-2">
+          <label
+            className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none"
+            title={isEn
+              ? 'When on, picking lists print every customer on a separate line (default: only lines with a note are broken out, the rest stay merged)'
+              : '勾上后拣货单按客户逐行展开（默认只把带备注的客户单独列出，其余合并成一行）'}
+          >
+            <input type="checkbox" checked={expandNote} onChange={e => setExpandNote(e.target.checked)} className="w-3 h-3" />
+            {isEn ? 'Expand picking list by customer' : '拣货单按客户展开'}
+          </label>
+        </div>
         <OdooTable
           columns={columns}
           rows={pageRows as unknown as Record<string, unknown>[]}
