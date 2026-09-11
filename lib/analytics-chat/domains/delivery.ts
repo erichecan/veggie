@@ -48,6 +48,19 @@ const DIMENSIONS: Record<string, DimensionDef> = {
     extraJoin: '',
     isTimeBucket: true,
   },
+  /**
+   * ⛔ 跟其它三个维度不是一回事：driver/day/week/month 是 Trip 粒度直接分组，
+   * customer 要把 restaurants 这个 JSON 数组展开成"每个客户一行"才能分组——
+   * 一趟车送 3 家展开后变 3 行，trip 粒度那套 valueExpr（COUNT(DISTINCT t.id)/
+   * SUM(jsonb_array_length)/SUM(t.totalPayment)）在这里全部不对，
+   * buildAggregateSql 里单独分支处理，这里的 keyExpr/nameExpr 只在那个分支里用到。
+   */
+  customer: {
+    keyExpr: `r->>'restaurantId'`,
+    nameExpr: `MAX(r->>'restaurantName')`,
+    extraJoin: `CROSS JOIN LATERAL jsonb_array_elements(t.restaurants) r`,
+    isTimeBucket: false,
+  },
 }
 
 const FILTER_KEYS = ['driverId'] as const
@@ -86,6 +99,34 @@ function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }:
   const dimDef = dimension ? DIMENSIONS[dimension] : null
   const params: unknown[] = [start, end]
   const extraWhere = buildFilterClauses(filters, params)
+
+  if (dimension === 'customer') {
+    // 客户维度：数据在 restaurants JSON 数组里，展开后一行=一次配送（同一客户
+    // 同一天被拆两趟车送也会算两行）。totalPayment 不能用 r.payment——那是结算时
+    // 手工登记的实收现金，绝大多数行程从未走过结算，生产实测该字段全是 NULL；
+    // 改成对每次配送自带的 items 求 SUM(subtotal)（税前，跟 sales 域 SUM(ol.subtotal)
+    // 同一口径），用子查询而不是再 CROSS JOIN 一层 items，避免行数被 items 撑大
+    // 而破坏 COUNT(*) 语义（stopCount 依赖 COUNT(*) = 配送次数）。
+    const valueExpr = metric.key === 'totalPayment'
+      ? `SUM((SELECT COALESCE(SUM((it->>'subtotal')::float), 0) FROM jsonb_array_elements(COALESCE(r->'items', '[]'::jsonb)) it))`
+      : metric.key === 'tripCount'
+        ? `COUNT(DISTINCT t.id)`
+        : `COUNT(*)`
+
+    const sql = `SELECT r->>'restaurantId' AS row_key, MAX(r->>'restaurantName') AS row_name,
+                  COUNT(*)::float AS qty,
+                  ${valueExpr}::float AS value
+           FROM "Trip" t
+           LEFT JOIN "PickingWave" w ON w.id = t."waveId"
+           CROSS JOIN LATERAL jsonb_array_elements(t.restaurants) r
+           WHERE ${TRIP_DATE_TS} >= $1 AND ${TRIP_DATE_TS} < $2
+             ${extraWhere}
+           GROUP BY r->>'restaurantId'
+           ORDER BY value DESC
+           LIMIT ${rowLimit + 1}`
+
+    return { sql, params }
+  }
 
   const groupExpr = dimDef ? dimDef.keyExpr : `'__total__'`
   const nameExpr = dimDef ? dimDef.nameExpr : `'合计'`
@@ -138,7 +179,7 @@ export const deliveryDomain: DomainDef = {
   labelZh: '配送',
   metrics: METRICS,
   dimensions: DIMENSIONS,
-  dimensionLabelsZh: { driver: '司机', day: '日', week: '周', month: '月' },
+  dimensionLabelsZh: { driver: '司机', day: '日', week: '周', month: '月', customer: '客户' },
   filterKeys: FILTER_KEYS,
   filterLabelsZh: { driverId: '司机' },
   buildAggregateSql,
