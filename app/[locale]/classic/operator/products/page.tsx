@@ -38,12 +38,6 @@ const TAX_OPTIONS = [
   { value: '0.23', label: '23%' },
 ]
 
-const TYPE_OPTIONS = [
-  { value: 'product', label: 'Storable Product' },
-  { value: 'consu', label: 'Consumable' },
-  { value: 'service', label: 'Service' },
-]
-
 type StockAlertFilter = 'all' | 'negative' | 'low'
 
 export default function ClassicProductsPage() {
@@ -236,7 +230,7 @@ export default function ClassicProductsPage() {
       return
     }
     let payloadVal: unknown = newValue
-    if (['listPrice', 'standardPrice', 'commissionPrice', 'weight', 'sequence'].includes(key)) {
+    if (['listPrice', 'standardPrice', 'commissionPrice', 'weight'].includes(key)) {
       const n = Number(newValue)
       if (!Number.isFinite(n) || n < 0) {
         toast.error(isEn ? 'Please enter a valid non-negative number' : '请输入合法的非负数字')
@@ -319,26 +313,10 @@ export default function ClassicProductsPage() {
       render: (v) => <span className="font-mono text-xs text-gray-500">{String(v || '')}</span>,
     },
     {
-      key: 'externalId',
-      width: 70,
-      label: 'ID',
-      filterType: 'text',
-      sortable: true,
-      render: (v) => <span className="text-xs text-gray-500 font-mono">{v ? String(v) : '—'}</span>,
-    },
-    {
-      key: 'sequence',
-      width: 76,
-      label: 'Sequence',
-      filterType: 'text',
-      sortable: true,
-      editable: true,
-      editType: 'number',
-      render: (v) => <span className="text-xs text-gray-500">{v != null ? String(v) : '0'}</span>,
-    },
-    {
+      // 不设 width 会让这列按最长商品名无上限撑开（无 table-fixed，浏览器自动布局
+      // 只在有显式 width 时才收窄换行），是横向滚动条的最大来源，故这里给硬上限。
       key: 'name',
-      minWidth: 280,
+      width: 260,
       label: 'Name',
       filterType: 'text',
       sortable: true,
@@ -372,7 +350,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'saleDescription',
-      minWidth: 180,
+      width: 160,
       label: 'Sale Description',
       filterType: 'text',
       editable: true,
@@ -505,6 +483,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'categoryId',
+      width: 110,
       label: 'Product Category',
       filterType: 'text',
       // 排序按显示名称传参(categoryLabel)，而非裸 categoryId——后端映射成按 category 关系的 name 排序
@@ -521,17 +500,6 @@ export default function ClassicProductsPage() {
         const label = (isEn ? (cat?.name || cat?.nameZh) : (cat?.nameZh || cat?.name)) ?? (v ? String(v) : '—')
         return <span className="text-xs text-gray-600">{label}</span>
       },
-    },
-    {
-      key: 'type',
-      label: 'Product Type',
-      filterType: 'multi-select',
-      editable: true,
-      editType: 'select',
-      editOptions: TYPE_OPTIONS,
-      filterOptions: TYPE_OPTIONS,
-      filterLabelGetter: (val) => TYPE_LABEL[val] ?? val ?? emptyLabel,
-      render: (v) => <span className="text-xs">{TYPE_LABEL[String(v)] ?? String(v)}</span>,
     },
     {
       key: 'commissionPrice',
@@ -556,6 +524,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'updatedAt',
+      width: 90,
       label: 'Last Updated on',
       sortable: true,
       filterType: 'date-range',
