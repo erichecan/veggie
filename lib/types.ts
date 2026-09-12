@@ -48,7 +48,37 @@ export interface ProductSaleUomSummary {
   isDefault: boolean
   factor: number
   active: boolean
+  /** 装货顺序（ProductSaleUom.sequence，20260907）：数字越小越先装/放最下 */
+  sequence: number | null
   uom: { name: string; nameZh?: string | null }
+}
+
+/** GET /api/products/by-sale-unit 的一行——一个可售单位一行（20260912）。
+ *  商品级字段（internalRef 只在默认单位行/name/saleDescription/customerTaxRate/
+ *  vendorTaxRate/category/qtyOnHand/qtyForecast）同一商品的所有行理应相同；
+ *  单位级字段（spec/uomName/salePrice/costPrice/grossWeight/packSequence/
+ *  commissionPrice/updatedAt/updatedBy）按各自 ProductSaleUom 行取。 */
+export interface SaleUnitRow {
+  rowId: string
+  productId: string
+  uomId: string | null
+  internalRef?: string | null
+  name: string
+  saleDescription?: string | null
+  spec: string | null
+  uomName: string | null
+  salePrice: number
+  customerTaxRate: number | null
+  costPrice: number
+  vendorTaxRate: number | null
+  grossWeight: number | null
+  qtyOnHand: number | null
+  qtyForecast: number | null
+  category: string | null
+  packSequence: number | null
+  commissionPrice: number | null
+  updatedAt: string | null
+  updatedBy: string | null
 }
 
 export interface ProductTemplate {

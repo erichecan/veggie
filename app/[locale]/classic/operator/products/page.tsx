@@ -249,12 +249,15 @@ export default function ClassicProductsPage() {
     return undefined
   }
 
-  // ─── 「可售单位」列（20260908）：只做提示灯，不在列表里展开全部信息 ───
-  // 只有 1 个单位就显示它的名字；多个单位只显示"默认单位 + N"，不管背后有几个单位、
-  // 名字多长，这一列宽度都不变——列表已经很多列很宽了，这一列不该再抢地方。
-  // 完整信息（换算/定价/规格/装货顺序）在点开的弹窗里，不在列表里摊开。
+  // ─── 「装货顺序」列（20260908 建列 / 20260912 改为展示 pack sequence 而非单位名）───
+  // 只有 1 个单位就显示它的装货顺序；多个单位显示"默认单位的顺序 + N"，不管背后有几个单位，
+  // 这一列宽度都不变——列表已经很多列很宽了，这一列不该再抢地方。
+  // 完整信息（换算/定价/规格/各单位装货顺序）在点开的弹窗里，不在列表里摊开。
   function saleUnitName(u: ProductSaleUomSummary): string {
     return isEn ? (u.uom.name || u.uom.nameZh || '') : (u.uom.nameZh || u.uom.name || '')
+  }
+  function saleUnitSequenceLabel(u: ProductSaleUomSummary): string {
+    return u.sequence != null ? String(u.sequence) : '—'
   }
   // 管理可售单位是弹窗动作,不是行内文本编辑——不该跟随 Quick Edit 开关(否则默认
   // 关着的时候点这列毫无反应,点击反而被行点击接管跳去详情页,20260910 客户反馈实测踩坑)。
@@ -262,8 +265,8 @@ export default function ClassicProductsPage() {
     const list = row.saleUoms ?? []
     if (list.length === 0) return <span className="text-gray-300 text-xs">—</span>
     const def = list.find(u => u.isDefault) ?? list[0]
-    const tooltip = list.map(saleUnitName).join(' · ')
-    const label = list.length === 1 ? saleUnitName(def) : `${saleUnitName(def)} +${list.length - 1}`
+    const tooltip = list.map(u => `${saleUnitName(u)}: ${saleUnitSequenceLabel(u)}`).join(' · ')
+    const label = list.length === 1 ? saleUnitSequenceLabel(def) : `${saleUnitSequenceLabel(def)} +${list.length - 1}`
     const isMulti = list.length > 1
     return (
       <button
@@ -357,7 +360,7 @@ export default function ClassicProductsPage() {
     {
       key: 'spec',
       width: 110,
-      label: 'Spec',
+      label: 'Product Spec',
       filterType: 'text',
       editable: true,
       editType: 'text',
@@ -429,7 +432,7 @@ export default function ClassicProductsPage() {
       // 只读提示灯，不走通用的行内编辑机制（管理走点击弹窗，见 renderSaleUnitsBadge）
       key: 'saleUoms',
       width: 100,
-      label: 'Sale Units',
+      label: 'Pack Sequence',
       sortable: true,
       sortKey: 'saleUnitsCount',
       render: (_, row) => renderSaleUnitsBadge(row as unknown as ProductTemplate),
@@ -748,6 +751,16 @@ export default function ClassicProductsPage() {
           </button>
         </div>
 
+        {/* 按可售单位查看商品（20260912）：入口按钮放这一行工具栏最后——每个可售单位
+            单独一行展开显示，客户反馈原来塞进「Pack Sequence」列点开的弹窗不够直观。 */}
+        <button
+          type="button"
+          onClick={() => router.push(`${prefix}/classic/operator/products/by-sale-unit`)}
+          className="h-7 px-2.5 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors font-medium ml-auto"
+        >
+          {isEn ? 'View by Sale Unit' : '按可售单位查看商品'}
+        </button>
+
         {editMode && (
           <span className="text-xs text-gray-500">
             {isEn ? (
@@ -850,7 +863,7 @@ export default function ClassicProductsPage() {
           const summaries: ProductSaleUomSummary[] = rows
             .filter(r => r.active)
             .map(r => ({
-              uomId: r.uomId, isDefault: r.isDefault, factor: r.factor, active: r.active,
+              uomId: r.uomId, isDefault: r.isDefault, factor: r.factor, active: r.active, sequence: r.sequence,
               uom: { name: uomMap.get(r.uomId)?.name ?? '', nameZh: uomMap.get(r.uomId)?.nameZh },
             }))
           setTemplates(prev => prev.map(t => t.id === uomDialogProduct.id ? { ...t, saleUoms: summaries } : t))

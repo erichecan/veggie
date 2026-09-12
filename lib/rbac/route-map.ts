@@ -263,9 +263,15 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/products/forecast', permission: 'master.product.read_detail' },
   { pattern: '/api/products/pending-demand', permission: 'master.product.read_detail' },
   { pattern: '/api/products/similar', permission: 'master.product.read_detail' },
+  // "按可售单位查看商品"页专用列表接口（20260912）：跟 GET /api/products 同权限，
+  // 必须放在 /api/products/* 通配之前——否则会被那条 3 段通配先吃掉，权限点变成
+  // read_detail（详情）而不是这里要的 read（列表）。
+  { pattern: '/api/products/by-sale-unit', methods: R, permission: 'master.product.read' },
   { pattern: '/api/products/*/price-history', permission: 'master.product.read_price_history' },
   { pattern: '/api/products/*/sale-uoms', methods: R, permission: 'master.product.read_detail' },
   { pattern: '/api/products/*/sale-uoms', methods: ['PUT'], permission: 'master.product.update' },
+  // 单条可售单位行的局部修改（spec/sequence/grossWeight），与整份替换(PUT)同权限
+  { pattern: '/api/products/*/sale-uoms/*', methods: ['PATCH'], permission: 'master.product.update' },
   { pattern: '/api/products/*/zone', permission: ['master.product.update', 'stock.zone.manage'] },
   { pattern: '/api/products', methods: R, permission: 'master.product.read' },
   { pattern: '/api/products', methods: ['POST'], permission: 'master.product.create' },

@@ -35,7 +35,7 @@ export async function GET(req: Request) {
             saleUoms: {
               where: { active: true },
               orderBy: { sequence: 'asc' },
-              select: { uomId: true, isDefault: true, factor: true, active: true, uom: { select: { name: true, nameZh: true } } },
+              select: { uomId: true, isDefault: true, factor: true, active: true, sequence: true, uom: { select: { name: true, nameZh: true } } },
             },
           },
           orderBy,

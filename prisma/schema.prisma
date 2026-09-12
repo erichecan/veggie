@@ -438,6 +438,10 @@ model ProductSaleUom {
   /// （UI 上也显示"毛重"，但那是基础单位层级、历史遗留字段名叫 weight）是两个独立字段，
   /// 每个可售单位各自配置，打印单据里折进规格说明文字显示，见 lib/print/uom-conversion.ts
   grossWeight   Decimal? @db.Decimal(10, 3)
+  /// 20260912 新增：最后改动这一行的用户名/邮箱，配合"按可售单位查看商品"页的
+  /// Last Updated by 列——历史数据从未记录，这个字段之前不存在时改的行显示为空，
+  /// 不编造身份（同类教训见 Product.updatedBy 的踩坑记录）
+  updatedBy     String?
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

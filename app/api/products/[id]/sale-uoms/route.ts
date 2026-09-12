@@ -3,21 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { validateSaleUomItems, normalizeFactor } from '@/lib/sale-uom'
-
-/** 装货顺序：空/非法一律落回 null，语义跟 Product.sequence 的输入处理一致 */
-function normalizeUomSequence(raw: unknown): number | null {
-  if (raw == null || raw === '') return null
-  const n = Number(raw)
-  return Number.isFinite(n) ? Math.trunc(n) : null
-}
-
-/** 毛重(kg)：空/非法/负数一律落回 null，不强行清零挡住保存 */
-function normalizeGrossWeight(raw: unknown): number | null {
-  if (raw == null || raw === '') return null
-  const n = Number(raw)
-  return Number.isFinite(n) && n >= 0 ? n : null
-}
+import { validateSaleUomItems, normalizeFactor, normalizeUomSequence, normalizeGrossWeight } from '@/lib/sale-uom'
 
 /**
  * /api/products/[id]/sale-uoms — 商品可售单位(20260714 多单位销售试点)
@@ -118,6 +104,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           const spec = typeof it.spec === 'string' && it.spec.trim() ? it.spec.trim() : null
           const sequence = normalizeUomSequence(it.sequence)
           const grossWeight = normalizeGrossWeight(it.grossWeight)
+          const updatedBy = user.name || user.email
           await txAny.productSaleUom.upsert({
             where: { productId_uomId: { productId: id, uomId: it.uomId } },
             create: {
@@ -133,6 +120,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               spec,
               sequence,
               grossWeight,
+              updatedBy,
               active: it.active !== false,
             },
             update: {
@@ -145,6 +133,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               spec,
               sequence,
               grossWeight,
+              updatedBy,
               active: it.active !== false,
             },
           })

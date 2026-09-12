@@ -107,6 +107,21 @@ export function normalizeFactor(raw: number | string | null | undefined): number
   return n
 }
 
+/** 装货顺序：空/非法一律落回 null，语义跟 Product.sequence 的输入处理一致。
+ *  两处写入点共用（整份替换的 PUT /sale-uoms、单行局部改的 PATCH /sale-uoms/[uomId]）。 */
+export function normalizeUomSequence(raw: unknown): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? Math.trunc(n) : null
+}
+
+/** 毛重(kg)：空/非法/负数一律落回 null，不强行清零挡住保存。两处写入点共用，同上。 */
+export function normalizeGrossWeight(raw: unknown): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 export interface SaleUomRow {
   uomId: string
   isDefault: boolean
