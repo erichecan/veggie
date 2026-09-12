@@ -4,10 +4,11 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPatch } from '@/lib/api'
+import { apiGet, apiPatch, apiPut } from '@/lib/api'
 import type { SaleUnitRow } from '@/lib/types'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Pagination } from '@/components/ui/pagination'
+import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 
 const PAGE_SIZE = 50
@@ -32,26 +33,28 @@ export default function ProductsBySaleUnitPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [loading, setLoading] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
-  async function loadPage(p: number, q: string, sk: string | null = sortKey, sd: 'asc' | 'desc' = sortDir) {
+  async function loadPage(p: number, q: string, sk: string | null = sortKey, sd: 'asc' | 'desc' = sortDir, ps: number = pageSize) {
     setLoading(true)
     try {
       const params = new URLSearchParams()
       params.set('page', String(p))
-      params.set('pageSize', String(PAGE_SIZE))
+      params.set('pageSize', String(ps))
       if (q) params.set('search', q)
       if (sk) { params.set('sortKey', sk); params.set('sortDir', sd) }
-      const res = await apiGet<{ data: SaleUnitRow[]; total: number; page: number; totalPages: number }>(
+      const res = await apiGet<{ data: SaleUnitRow[]; total: number; page: number; totalPages: number; pageSize: number }>(
         `/api/products/by-sale-unit?${params}`,
       )
       setRows(res.data)
       setTotal(res.total)
       setPage(res.page)
       setTotalPages(res.totalPages)
+      setPageSize(res.pageSize ?? ps)
 
       // Qty Forecast 实时值：跟商品列表页同一套口径(/api/products/forecast)，
       // 只补在默认单位那一行(qtyOnHand 不为 null 的行)，其余单位行保持留空。
@@ -89,6 +92,29 @@ export default function ProductsBySaleUnitPage() {
 
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
     const r = row as unknown as SaleUnitRow
+    // Product.sequence 是商品级字段（同一商品的所有可售单位行共享），走商品自身的
+    // PUT 接口，跟商品列表页「Sequence」列同一套写法；不需要 uomId。
+    if (key === 'sequence') {
+      let n: number | null
+      if (newValue === '' || newValue == null) {
+        n = null
+      } else {
+        n = Number(newValue)
+        if (!Number.isFinite(n) || n < 0) {
+          toast.error(isEn ? 'Please enter a valid non-negative number' : '请输入合法的非负数字')
+          throw new Error('invalid number')
+        }
+      }
+      try {
+        await apiPut(`/api/products/${r.productId}`, { sequence: n })
+        setRows(prev => prev.map(row2 => row2.productId === r.productId ? { ...row2, sequence: n } : row2))
+        toast.success(isEn ? 'Saved' : '已保存')
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+        throw e
+      }
+      return
+    }
     if (!r.uomId) {
       toast.error(isEn ? 'This product has no configured sale unit to edit' : '该商品还没配置可售单位，无法在这里编辑')
       throw new Error('no uomId')
@@ -156,16 +182,24 @@ export default function ProductsBySaleUnitPage() {
     )
   }
   const columns: OdooColumn<Record<string, unknown>>[] = [
+    // Product.sequence——商品本身的排序位置，跟下面的「装货顺序」(ProductSaleUom.sequence)
+    // 是两个独立维度，客户反馈混在一起看不出商品自己的排序，20260912 拆成两列。
+    { key: 'sequence', label: 'Sequence', width: 70, sortable: true, editable: true, editType: 'number',
+      render: v => <span className="text-xs text-gray-500">{v != null ? String(v) : '0'}</span> },
     { key: 'internalRef', label: isEn ? 'Internal Reference' : '内部编号', width: 90, sortable: true,
       render: v => v ? <span className="text-xs">{String(v)}</span> : emptyDash },
-    { key: 'name', label: isEn ? 'Name' : '名称', minWidth: 200, sortable: true,
+    { key: 'name', label: isEn ? 'Name' : '名称', minWidth: 260, sortable: true,
       render: renderName },
     { key: 'saleDescription', label: isEn ? 'Sale Description' : '销售描述', minWidth: 140, sortable: true,
       render: v => v ? <span className="text-xs text-gray-500">{String(v)}</span> : emptyDash },
     { key: 'spec', label: isEn ? 'Product Spec' : '产品规格', width: 110, sortable: true, editable: true, editType: 'text',
       render: v => v ? <span className="text-xs">{String(v)}</span> : emptyDash },
     { key: 'uomName', label: 'UoM', width: 80, sortable: true,
-      render: v => v ? <span className="text-xs font-medium">{String(v)}</span> : emptyDash },
+      render: (_v, row) => {
+        const uom = (row as unknown as SaleUnitRow).uom
+        const label = uom ? (isEn ? (uom.name ?? uom.nameZh) : (uom.nameZh ?? uom.name)) : null
+        return label ? <span className="text-xs font-medium">{label}</span> : emptyDash
+      } },
     { key: 'salePrice', label: isEn ? 'Sale Price' : '售价', width: 80, sortable: true,
       render: v => <span className="text-xs">€{Number(v).toFixed(2)}</span> },
     { key: 'customerTaxRate', label: isEn ? 'Customer Tax' : '客户税率', width: 70, sortable: true,
@@ -181,7 +215,11 @@ export default function ProductsBySaleUnitPage() {
     { key: 'qtyForecast', label: isEn ? 'QTY Forecast' : '预测库存', width: 80,
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(1)}</span> : emptyDash },
     { key: 'category', label: isEn ? 'Product Category' : '商品类别', width: 100, sortable: true,
-      render: v => v ? <span className="text-xs">{String(v)}</span> : emptyDash },
+      render: (_v, row) => {
+        const category = (row as unknown as SaleUnitRow).category
+        const label = category ? (isEn ? (category.name ?? category.nameZh) : (category.nameZh ?? category.name)) : null
+        return label ? <span className="text-xs">{label}</span> : emptyDash
+      } },
     { key: 'packSequence', label: isEn ? 'Pack Sequence' : '装货顺序', width: 80, sortable: true, editable: true, editType: 'number',
       render: v => v != null ? <span className="text-xs">{String(v)}</span> : emptyDash },
     { key: 'commissionPrice', label: isEn ? 'CMS Price' : '提成价', width: 80, sortable: true,
@@ -208,17 +246,26 @@ export default function ProductsBySaleUnitPage() {
         </div>
       </div>
 
-      <div className="px-4 pb-2">
-        <input
-          type="text"
-          value={searchInput}
-          onChange={e => setSearchInput(e.target.value)}
-          placeholder={isEn ? 'Search name / internal ref / spec...' : '搜索名称/内部编号/规格...'}
-          className="h-8 w-72 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#875A7B] focus:ring-1 focus:ring-[#875A7B]"
+      <div className="px-4 pb-2 flex items-center justify-between">
+        <div className="flex items-center">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder={isEn ? 'Search name / internal ref / spec...' : '搜索名称/内部编号/规格...'}
+            className="h-8 w-72 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#875A7B] focus:ring-1 focus:ring-[#875A7B]"
+          />
+          <span className="ml-3 text-xs text-gray-400">
+            {isEn ? `${total} products` : `共 ${total} 个商品`}
+          </span>
+        </div>
+        <RowsPerPagePagination
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={p => loadPage(p, searchInput)}
+          onPageSizeChange={ps => loadPage(1, searchInput, sortKey, sortDir, ps)}
         />
-        <span className="ml-3 text-xs text-gray-400">
-          {isEn ? `${total} products` : `共 ${total} 个商品`}
-        </span>
       </div>
 
       <div className="p-4 pt-0 overflow-x-auto">

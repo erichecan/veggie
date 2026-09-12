@@ -133,7 +133,7 @@ async function sortedProductIdsByDerivedKey(
 }
 
 const DETAIL_SELECT = {
-  id: true, internalRef: true, name: true, saleDescription: true,
+  id: true, internalRef: true, name: true, saleDescription: true, sequence: true,
   listPrice: true, standardPrice: true, commissionPrice: true,
   customerTaxRate: true, vendorTaxRate: true, qtyOnHand: true,
   uom: { select: { name: true, nameZh: true } },
@@ -152,7 +152,7 @@ const DETAIL_SELECT = {
 }
 
 function flattenProduct(p: {
-  id: string; internalRef: string | null; name: string; saleDescription: string | null
+  id: string; internalRef: string | null; name: string; saleDescription: string | null; sequence: number | null
   listPrice: unknown; standardPrice: unknown; commissionPrice: unknown
   customerTaxRate: unknown; vendorTaxRate: unknown; qtyOnHand: unknown
   uom: { name: string; nameZh: string | null } | null
@@ -162,7 +162,7 @@ function flattenProduct(p: {
   const basePrice = toNum(p.listPrice)
   const baseCost = toNumOpt(p.standardPrice) ?? 0
   const baseCommission = toNumOpt(p.commissionPrice) ?? null
-  const category = p.category?.nameZh || p.category?.name || null
+  const category = p.category ? { name: p.category.name, nameZh: p.category.nameZh } : null
 
   if (p.saleUoms.length === 0) {
     // 没配过可售单位的商品（历史遗留/新建未配置）：仍要出现，退化成"只有基础单位"这一行，
@@ -171,8 +171,9 @@ function flattenProduct(p: {
       rowId: `${p.id}::__base`,
       productId: p.id, uomId: null, isDefault: true,
       internalRef: p.internalRef, name: p.name, saleDescription: p.saleDescription,
+      sequence: p.sequence,
       spec: null,
-      uomName: p.uom?.nameZh || p.uom?.name || null,
+      uom: p.uom ? { name: p.uom.name, nameZh: p.uom.nameZh } : null,
       salePrice: basePrice, customerTaxRate: toNumOpt(p.customerTaxRate) ?? null,
       costPrice: baseCost, vendorTaxRate: toNumOpt(p.vendorTaxRate) ?? null,
       grossWeight: null,
@@ -198,8 +199,9 @@ function flattenProduct(p: {
       productId: p.id, uomId: u.uomId, isDefault: u.isDefault,
       internalRef: u.isDefault ? p.internalRef : null,
       name: p.name, saleDescription: p.saleDescription,
+      sequence: p.sequence,
       spec: u.spec,
-      uomName: u.uom.nameZh || u.uom.name,
+      uom: { name: u.uom.name, nameZh: u.uom.nameZh },
       salePrice: priceOf(calcRows, u.uomId, basePrice),
       customerTaxRate: toNumOpt(p.customerTaxRate) ?? null,
       costPrice: round2(baseCost * factor),
@@ -224,7 +226,8 @@ export async function GET(req: Request) {
       const { searchParams } = new URL(req.url)
       const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
       const rawSize = searchParams.get('pageSize') ?? '25'
-      const limit = Math.min(100, Math.max(1, parseInt(rawSize, 10)))
+      // 上限跟商品列表页 /api/products 一致（200），配合前端 RowsPerPagePagination 的 pageSizeMax
+      const limit = Math.min(200, Math.max(1, parseInt(rawSize, 10)))
       const sortDir: 'asc' | 'desc' = searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
       const sortKey = searchParams.get('sortKey')
       const where = await buildProductTemplatesWhere(searchParams)

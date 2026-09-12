@@ -55,9 +55,14 @@ export interface ProductSaleUomSummary {
 
 /** GET /api/products/by-sale-unit 的一行——一个可售单位一行（20260912）。
  *  商品级字段（internalRef 只在默认单位行/name/saleDescription/customerTaxRate/
- *  vendorTaxRate/category/qtyOnHand/qtyForecast）同一商品的所有行理应相同；
- *  单位级字段（spec/uomName/salePrice/costPrice/grossWeight/packSequence/
- *  commissionPrice/updatedAt/updatedBy）按各自 ProductSaleUom 行取。 */
+ *  vendorTaxRate/category/qtyOnHand/qtyForecast/sequence）同一商品的所有行理应相同；
+ *  单位级字段（spec/uom/salePrice/costPrice/grossWeight/packSequence/
+ *  commissionPrice/updatedAt/updatedBy）按各自 ProductSaleUom 行取。
+ *  uom/category 保持 Prisma 原始嵌套形状不在服务端拍平，跟 ProductSaleUomSummary
+ *  同一套取名逻辑（isEn ? name ?? nameZh : nameZh ?? name），在前端按 locale 解析。
+ *  ⚠️ sequence（Product.sequence，商品单据排序）与 packSequence（ProductSaleUom.sequence，
+ *  按单位装货顺序）是两个独立字段——客户反馈这页此前只显示后者，混在一起看不出商品本身
+ *  的排序位置，20260912 补上前者单独一列。 */
 export interface SaleUnitRow {
   rowId: string
   productId: string
@@ -67,8 +72,10 @@ export interface SaleUnitRow {
   internalRef?: string | null
   name: string
   saleDescription?: string | null
+  /** Product.sequence——商品本身的排序位置，同一商品的所有可售单位行取值相同 */
+  sequence: number | null
   spec: string | null
-  uomName: string | null
+  uom: { name: string; nameZh?: string | null } | null
   salePrice: number
   customerTaxRate: number | null
   costPrice: number
@@ -76,7 +83,8 @@ export interface SaleUnitRow {
   grossWeight: number | null
   qtyOnHand: number | null
   qtyForecast: number | null
-  category: string | null
+  category: { name: string; nameZh?: string | null } | null
+  /** ProductSaleUom.sequence——按该可售单位的装货顺序，同一商品的不同单位行可以不同 */
   packSequence: number | null
   commissionPrice: number | null
   updatedAt: string | null
