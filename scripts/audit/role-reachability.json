@@ -2169,6 +2169,20 @@
   "RESTAURANT": "n",
   "OTHER": "n"
  },
+ "PATCH /api/products/[id]/sale-uoms/[uomId]": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "n",
+  "DISPATCH": "n",
+  "SALES": "n",
+  "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
  "GET /api/products/[id]/sale-uoms": {
   "BOSS": "y",
   "OPERATOR": "y",
@@ -2261,6 +2275,20 @@
   "DISPATCH": "n",
   "SALES": "n",
   "EXTERNAL_SALES": "n",
+  "SORTER": "n",
+  "PICKER": "n",
+  "DRIVER": "n",
+  "RESTAURANT": "n",
+  "OTHER": "n"
+ },
+ "GET /api/products/by-sale-unit": {
+  "BOSS": "y",
+  "OPERATOR": "y",
+  "FINANCE": "n",
+  "WAREHOUSE": "y",
+  "DISPATCH": "y",
+  "SALES": "y",
+  "EXTERNAL_SALES": "y",
   "SORTER": "n",
   "PICKER": "n",
   "DRIVER": "n",
