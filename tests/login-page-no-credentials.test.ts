@@ -58,6 +58,11 @@ test('登录只能通过用户自己填的邮箱与密码发起', () => {
 })
 
 test('密码输入框是 type=password 且不禁用浏览器密码管理', () => {
-  assert.ok(/type="password"/.test(code), '密码框不是 type=password')
+  // 允许小眼睛切换明文：type={showPassword ? 'text' : 'password'}，
+  // 只要 'password' 还在类型表达式里、且没把 type 写死成别的东西就算数。
+  assert.ok(
+    /type="password"/.test(code) || /type=\{[^}]*['"]password['"][^}]*\}/.test(code),
+    '密码框不是 type=password（也不是小眼睛切换 text/password 的写法）',
+  )
   assert.ok(/autoComplete="current-password"/.test(code), '缺 autoComplete，密码管理器认不出来')
 })
