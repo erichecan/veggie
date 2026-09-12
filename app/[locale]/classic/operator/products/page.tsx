@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet, apiPut, apiPatch } from '@/lib/api'
 import type { ProductTemplate, ProductCategory, ProductSaleUomSummary } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
@@ -213,6 +213,28 @@ export default function ClassicProductsPage() {
   // ─── 单元格保存：调 PUT /api/products/[id]，并刷新本地 row ──
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
     const t = row as unknown as ProductTemplate
+    // Product Spec 列（20260912 改造）：Product.spec 已废弃清空，这列改读/写默认单位的
+    // ProductSaleUom.spec —— 走可售单位的 PATCH 接口，不是商品自己的 PUT，否则会把值
+    // 写回那个没人再读的废字段。多单位商品只改得到默认单位，其它单位仍要去可售单位弹窗改。
+    if (key === 'spec') {
+      const def = t.saleUoms?.find(u => u.isDefault)
+      if (!def) {
+        toast.error(isEn ? 'This product has no configured sale unit to edit' : '该商品还没配置可售单位，无法在这里编辑')
+        throw new Error('no default sale unit')
+      }
+      const specVal = newValue == null || newValue === '' ? null : String(newValue).trim() || null
+      try {
+        await apiPatch(`/api/products/${t.id}/sale-uoms/${def.uomId}`, { spec: specVal })
+        setTemplates(prev => prev.map(row => row.id === t.id
+          ? { ...row, saleUoms: row.saleUoms?.map(u => u.uomId === def.uomId ? { ...u, spec: specVal } : u) }
+          : row))
+        toast.success(isEn ? 'Saved' : '已保存')
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+        throw e
+      }
+      return
+    }
     let payloadVal: unknown = newValue
     if (['listPrice', 'standardPrice', 'commissionPrice', 'weight', 'sequence'].includes(key)) {
       const n = Number(newValue)
@@ -358,13 +380,18 @@ export default function ClassicProductsPage() {
       render: (v) => v ? <span className="text-xs text-gray-500 truncate max-w-xs block">{String(v)}</span> : <span className="text-gray-300">—</span>,
     },
     {
+      // Product.spec 已废弃清空（20260912），这列改显示/编辑默认可售单位的 spec
+      // （如"6*2kg"）——见 handleCellEdit 里的特殊分支。没有配置可售单位的商品这里恒为空，
+      // 不能在这内联编辑（跟"没有 uomId"时 by-sale-unit 页的提示一致）。
       key: 'spec',
       width: 110,
       label: 'Product Spec',
-      filterType: 'text',
       editable: true,
       editType: 'text',
-      render: (v) => v ? <span className="text-xs text-gray-600">{String(v)}</span> : <span className="text-gray-300">—</span>,
+      render: (_v, row) => {
+        const spec = (row as unknown as ProductTemplate).saleUoms?.find(u => u.isDefault)?.spec
+        return spec ? <span className="text-xs text-gray-600">{spec}</span> : <span className="text-gray-300">—</span>
+      },
     },
     {
       key: 'listPrice',
@@ -863,7 +890,7 @@ export default function ClassicProductsPage() {
           const summaries: ProductSaleUomSummary[] = rows
             .filter(r => r.active)
             .map(r => ({
-              uomId: r.uomId, isDefault: r.isDefault, factor: r.factor, active: r.active, sequence: r.sequence,
+              uomId: r.uomId, isDefault: r.isDefault, factor: r.factor, active: r.active, sequence: r.sequence, spec: r.spec ?? null,
               uom: { name: uomMap.get(r.uomId)?.name ?? '', nameZh: uomMap.get(r.uomId)?.nameZh },
             }))
           setTemplates(prev => prev.map(t => t.id === uomDialogProduct.id ? { ...t, saleUoms: summaries } : t))

@@ -35,7 +35,9 @@ export async function GET(req: Request) {
             saleUoms: {
               where: { active: true },
               orderBy: { sequence: 'asc' },
-              select: { uomId: true, isDefault: true, factor: true, active: true, sequence: true, uom: { select: { name: true, nameZh: true } } },
+              // spec（20260912）：Product.spec 已废弃清空，商品列表页「Product Spec」列改
+              // 显示/编辑默认单位的 ProductSaleUom.spec ——同一份 include 顺带取，不加往返。
+              select: { uomId: true, isDefault: true, factor: true, active: true, sequence: true, spec: true, uom: { select: { name: true, nameZh: true } } },
             },
           },
           orderBy,

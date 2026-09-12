@@ -50,6 +50,9 @@ export interface ProductSaleUomSummary {
   active: boolean
   /** 装货顺序（ProductSaleUom.sequence，20260907）：数字越小越先装/放最下 */
   sequence: number | null
+  /** 该单位的规格说明（20260912）：商品列表页「Product Spec」列改显示/编辑默认单位这个值——
+   *  Product.spec（商品级）已废弃清空，规格现在按可售单位各自维护 */
+  spec: string | null
   uom: { name: string; nameZh?: string | null }
 }
 
@@ -96,7 +99,9 @@ export interface ProductTemplate {
   name: string
   internalRef?: string
   categoryId?: string
-  /** 商品规格（20260908 起商品列表页可内联编辑），如"6*2kg" */
+  /** ⛔ 20260912 起废弃：Product.spec 是导入时留下的旧数据，已被 saleDescription(商品说明)
+   *  和 ProductSaleUom.spec(按单位的规格，如"6*2kg")取代，全库已清空，不要再往这个字段写。
+   *  商品列表页「Product Spec」列改读/写 saleUoms 里默认单位的 spec，见该列注释。 */
   spec?: string
   /** 只在列表分页接口 (?page=...) 里附带；其它 GET 端点不返回 */
   saleUoms?: ProductSaleUomSummary[]
