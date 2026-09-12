@@ -62,6 +62,8 @@ export interface SaleUnitRow {
   rowId: string
   productId: string
   uomId: string | null
+  /** 这一行是不是该商品的默认/基础单位——决定是否缩进显示、是否带库存数量 */
+  isDefault: boolean
   internalRef?: string | null
   name: string
   saleDescription?: string | null

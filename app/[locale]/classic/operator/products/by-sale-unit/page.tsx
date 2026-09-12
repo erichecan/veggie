@@ -34,14 +34,17 @@ export default function ProductsBySaleUnitPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [searchInput, setSearchInput] = useState('')
+  const [sortKey, setSortKey] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
-  async function loadPage(p: number, q: string) {
+  async function loadPage(p: number, q: string, sk: string | null = sortKey, sd: 'asc' | 'desc' = sortDir) {
     setLoading(true)
     try {
       const params = new URLSearchParams()
       params.set('page', String(p))
       params.set('pageSize', String(PAGE_SIZE))
       if (q) params.set('search', q)
+      if (sk) { params.set('sortKey', sk); params.set('sortDir', sd) }
       const res = await apiGet<{ data: SaleUnitRow[]; total: number; page: number; totalPages: number }>(
         `/api/products/by-sale-unit?${params}`,
       )
@@ -76,6 +79,13 @@ export default function ProductsBySaleUnitPage() {
     const timer = setTimeout(() => loadPage(1, searchInput), 400)
     return () => clearTimeout(timer)
   }, [searchInput]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleSort(key: string) {
+    const nextDir = key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc'
+    setSortKey(key)
+    setSortDir(nextDir)
+    loadPage(1, searchInput, key, nextDir)
+  }
 
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
     const r = row as unknown as SaleUnitRow
@@ -133,40 +143,52 @@ export default function ProductsBySaleUnitPage() {
   }
 
   const emptyDash = <span className="text-gray-300">—</span>
+  // 可售单位行相对基准商品行缩进——是这次改动要解决的"看不出从属关系"问题的核心：
+  // 光靠交替底色分组还不够直观，非默认单位行的名称往右缩进一截，一眼就能看出
+  // "这几行是同一个商品拆出来的可售单位"，不是平行无关的商品。
+  function renderName(v: unknown, row: Record<string, unknown>) {
+    const r = row as unknown as SaleUnitRow
+    return (
+      <span className="text-xs" style={{ paddingLeft: r.isDefault ? 0 : 20 }}>
+        {!r.isDefault && <span className="text-gray-300 mr-1">↳</span>}
+        {String(v ?? '')}
+      </span>
+    )
+  }
   const columns: OdooColumn<Record<string, unknown>>[] = [
-    { key: 'internalRef', label: isEn ? 'Internal Reference' : '内部编号', width: 90,
+    { key: 'internalRef', label: isEn ? 'Internal Reference' : '内部编号', width: 90, sortable: true,
       render: v => v ? <span className="text-xs">{String(v)}</span> : emptyDash },
-    { key: 'name', label: isEn ? 'Name' : '名称', minWidth: 200,
-      render: v => <span className="text-xs">{String(v ?? '')}</span> },
-    { key: 'saleDescription', label: isEn ? 'Sale Description' : '销售描述', minWidth: 140,
+    { key: 'name', label: isEn ? 'Name' : '名称', minWidth: 200, sortable: true,
+      render: renderName },
+    { key: 'saleDescription', label: isEn ? 'Sale Description' : '销售描述', minWidth: 140, sortable: true,
       render: v => v ? <span className="text-xs text-gray-500">{String(v)}</span> : emptyDash },
-    { key: 'spec', label: isEn ? 'Product Spec' : '产品规格', width: 110, editable: true, editType: 'text',
+    { key: 'spec', label: isEn ? 'Product Spec' : '产品规格', width: 110, sortable: true, editable: true, editType: 'text',
       render: v => v ? <span className="text-xs">{String(v)}</span> : emptyDash },
-    { key: 'uomName', label: 'UoM', width: 80,
+    { key: 'uomName', label: 'UoM', width: 80, sortable: true,
       render: v => v ? <span className="text-xs font-medium">{String(v)}</span> : emptyDash },
-    { key: 'salePrice', label: isEn ? 'Sale Price' : '售价', width: 80,
+    { key: 'salePrice', label: isEn ? 'Sale Price' : '售价', width: 80, sortable: true,
       render: v => <span className="text-xs">€{Number(v).toFixed(2)}</span> },
-    { key: 'customerTaxRate', label: isEn ? 'Customer Tax' : '客户税率', width: 70,
+    { key: 'customerTaxRate', label: isEn ? 'Customer Tax' : '客户税率', width: 70, sortable: true,
       render: v => v != null ? <span className="text-xs">{(Number(v) * 100).toFixed(1)}%</span> : emptyDash },
-    { key: 'costPrice', label: isEn ? 'Cost Price' : '成本价', width: 80,
+    { key: 'costPrice', label: isEn ? 'Cost Price' : '成本价', width: 80, sortable: true,
       render: v => <span className="text-xs text-gray-500">€{Number(v).toFixed(2)}</span> },
-    { key: 'vendorTaxRate', label: isEn ? 'Vendor Tax' : '供应商税率', width: 70,
+    { key: 'vendorTaxRate', label: isEn ? 'Vendor Tax' : '供应商税率', width: 70, sortable: true,
       render: v => v != null ? <span className="text-xs">{(Number(v) * 100).toFixed(1)}%</span> : emptyDash },
-    { key: 'grossWeight', label: isEn ? 'Gross Weight (kg)' : '毛重(kg)', width: 90, editable: true, editType: 'number',
+    { key: 'grossWeight', label: isEn ? 'Gross Weight (kg)' : '毛重(kg)', width: 90, sortable: true, editable: true, editType: 'number',
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(2)}</span> : emptyDash },
-    { key: 'qtyOnHand', label: isEn ? 'QTY On Hand' : '现有库存', width: 80,
+    { key: 'qtyOnHand', label: isEn ? 'QTY On Hand' : '现有库存', width: 80, sortable: true,
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(1)}</span> : emptyDash },
     { key: 'qtyForecast', label: isEn ? 'QTY Forecast' : '预测库存', width: 80,
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(1)}</span> : emptyDash },
-    { key: 'category', label: isEn ? 'Product Category' : '商品类别', width: 100,
+    { key: 'category', label: isEn ? 'Product Category' : '商品类别', width: 100, sortable: true,
       render: v => v ? <span className="text-xs">{String(v)}</span> : emptyDash },
-    { key: 'packSequence', label: isEn ? 'Pack Sequence' : '装货顺序', width: 80, editable: true, editType: 'number',
+    { key: 'packSequence', label: isEn ? 'Pack Sequence' : '装货顺序', width: 80, sortable: true, editable: true, editType: 'number',
       render: v => v != null ? <span className="text-xs">{String(v)}</span> : emptyDash },
-    { key: 'commissionPrice', label: isEn ? 'CMS Price' : '提成价', width: 80,
+    { key: 'commissionPrice', label: isEn ? 'CMS Price' : '提成价', width: 80, sortable: true,
       render: v => v != null ? <span className="text-xs text-gray-500">€{Number(v).toFixed(2)}</span> : emptyDash },
-    { key: 'updatedAt', label: isEn ? 'Last Updated on' : '最后更新时间', width: 90,
+    { key: 'updatedAt', label: isEn ? 'Last Updated on' : '最后更新时间', width: 90, sortable: true, sortKey: 'suUpdatedAt',
       render: v => v ? <span className="text-xs text-gray-500">{new Date(String(v)).toLocaleDateString('en-GB', { timeZone: BUSINESS_TIMEZONE })}</span> : emptyDash },
-    { key: 'updatedBy', label: isEn ? 'Last Updated by' : '最后更新人', width: 90,
+    { key: 'updatedBy', label: isEn ? 'Last Updated by' : '最后更新人', width: 90, sortable: true,
       render: v => v ? <span className="text-xs text-gray-500">{String(v)}</span> : emptyDash },
   ]
 
@@ -208,6 +230,9 @@ export default function ProductsBySaleUnitPage() {
           getRowStyle={getRowStyle}
           inlineEditEnabled
           onCellEdit={handleCellEdit}
+          sortKey={sortKey ?? undefined}
+          sortDir={sortDir}
+          onSort={handleSort}
           emptyText={isEn ? 'No products found' : '没有找到商品'}
         />
       </div>
