@@ -221,6 +221,9 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     exportOf('customers'),
     { pattern: '/api/customers/coordinates', methods: READ },
     { pattern: '/api/products', methods: READ },
+    // 位图里 DISPATCH 本就有 master.product.read（调度台要看商品），这里补一条
+    // 只是让旧 token 立刻够得着，不用等重新登录——同 C10 daily-sales/summary 的理由。
+    { pattern: '/api/products/by-sale-unit', methods: READ },
     exportOf('product-templates'),
     { pattern: '/api/batch-analysis', methods: READ },
     { pattern: '/api/geocode', methods: READ },
