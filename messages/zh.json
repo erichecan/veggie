@@ -42,6 +42,8 @@
     "manualTitle": "或手动输入",
     "emailPlaceholder": "邮箱",
     "passwordPlaceholder": "密码",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "loginBtn": "登录",
     "loggingIn": "登录中...",
     "networkError": "网络错误，请稍后重试",

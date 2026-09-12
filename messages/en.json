@@ -42,6 +42,8 @@
     "manualTitle": "Or enter manually",
     "emailPlaceholder": "Email",
     "passwordPlaceholder": "Password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "loginBtn": "Sign In",
     "loggingIn": "Signing in...",
     "networkError": "Network error. Please try again.",

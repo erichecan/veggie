@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
+import { Eye, EyeOff } from 'lucide-react'
 import { routing } from '@/i18n/routing'
 import { getDefaultLandingPath } from '@/lib/rbac/page-guard'
 
@@ -14,6 +15,7 @@ export default function EnterPage() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
   const [permissionChanged, setPermissionChanged] = useState(false)
@@ -100,18 +102,29 @@ export default function EnterPage() {
             required
             autoComplete="email"
           />
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder={t('passwordPlaceholder')}
-            className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border"
-            style={{ borderColor: '#d4b8d0' }}
-            onFocus={e => { (e.currentTarget as HTMLElement).style.borderColor = '#875A7B'; (e.currentTarget as HTMLElement).style.boxShadow = '0 0 0 2px #e8d5f0' }}
-            onBlur={e => { (e.currentTarget as HTMLElement).style.borderColor = '#d4b8d0'; (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
-            required
-            autoComplete="current-password"
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder={t('passwordPlaceholder')}
+              className="w-full rounded-lg pl-3 pr-10 py-2.5 text-sm outline-none border"
+              style={{ borderColor: '#d4b8d0' }}
+              onFocus={e => { (e.currentTarget as HTMLElement).style.borderColor = '#875A7B'; (e.currentTarget as HTMLElement).style.boxShadow = '0 0 0 2px #e8d5f0' }}
+              onBlur={e => { (e.currentTarget as HTMLElement).style.borderColor = '#d4b8d0'; (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
+              required
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(v => !v)}
+              aria-label={showPassword ? t('hidePassword') : t('showPassword')}
+              tabIndex={-1}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
           {error && (
             <div className="text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2">{error}</div>
           )}
