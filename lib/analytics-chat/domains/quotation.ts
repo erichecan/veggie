@@ -149,7 +149,7 @@ export const quotationDomain: DomainDef = {
       { key: 'customer_name', labelZh: '客户' },
       { key: 'sales_user_name', labelZh: '业务员' },
       { key: 'status', labelZh: '当前状态' },
-      { key: 'amount', labelZh: '金额' },
+      { key: 'amount', labelZh: '金额', summable: true },
     ],
     buildSql: buildDetailSql,
   },

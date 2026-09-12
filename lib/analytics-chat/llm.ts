@@ -64,7 +64,7 @@ function domainCatalogText(): string {
   return Object.values(DOMAIN_DEFS).map((d) => {
     const metrics = Object.values(d.metrics).map(metricLine).join('\n')
     const dims = Object.keys(d.dimensions).map((k) => `${k}=${d.dimensionLabelsZh[k] ?? k}`).join('、')
-    const detailNote = d.detail ? `本域支持"明细"模式（mode=detail）：直接列出逐行原始数据（如商品/单价/数量），不做汇总，此时不填 metric/dimension` : '本域不支持明细模式'
+    const detailNote = d.detail ? `本域支持"明细"模式（mode=detail）：直接列出逐行原始数据（如商品/单价/数量），不按维度分组，此时不填 metric/dimension` : '本域不支持明细模式'
     return `【${d.key}（${d.labelZh}）】\n指标：\n${metrics}\n可分组维度：${dims}\n${detailNote}`
   }).join('\n\n')
 }
@@ -103,7 +103,7 @@ const DSL_RESPONSE_SCHEMA = {
           type: Type.OBJECT,
           nullable: true,
           properties: {
-            taxBasis: { type: Type.STRING, nullable: true, enum: ['preTax', 'incTax'] },
+            taxBasis: { type: Type.STRING, nullable: true, enum: ['preTax', 'incTax', 'both'] },
           },
         },
         dimension: {
@@ -143,6 +143,8 @@ function buildInterpretPrompt(question: string, priorDsl: AnalysisDsl | null, re
 系统按四个业务域组织数据，每个域各自的指标/维度如下（没列出来的规则，比如统计哪些订单状态、按哪个日期字段，都是系统写死的，不接受任何变体，也不要在 dsl 里编造）：
 
 ${domainCatalogText()}
+
+如果问题里税前、税后两种口径都要（比如"税前税后都告诉我"/"分别列出含税和不含税"），confirmedParams.taxBasis 填 both，两个数字会一起给客户，不要因为要两种口径就判定 understood=false。
 
 如果问题问的域/指标/维度不在上面这份清单里（比如问"库存周转率"这种系统没有的东西），把 understood 设成 false，dsl 给 null——不要凑一个近似的指标或维度顶上去。
 unsupportedReason 不能只说"不支持"就结束，必须再加一句引导老板改问法的建议，且建议只能从上面清单里挑真实存在的东西（不能编）：
@@ -248,6 +250,9 @@ export interface NarrateInput {
   total: number
   truncated: boolean
   topRows: Array<{ name: string; value: number }>
+  /** 20260912：taxBasis=both 这类"两种口径都要"的查询才会有 */
+  secondaryLabel?: string
+  secondaryTotal?: number
 }
 
 /** 结果解读失败不影响主流程——降级成不给解读文字，前端只显示数字，不是整条链路失败。仅 aggregate 模式调用 */
@@ -262,10 +267,11 @@ export async function narrateResult(input: NarrateInput): Promise<string | null>
 指标：${metricLabel}
 ${input.dimensionLabel ? `分组维度：${input.dimensionLabel}` : '未分组（总计）'}
 合计：${input.total}
+${input.secondaryLabel ? `另一口径「${input.secondaryLabel}」合计：${input.secondaryTotal}` : ''}
 ${input.truncated ? `（分组结果超过 ${500} 行，只取了排名前 500）` : ''}
 排名前几的分组：${input.topRows.map((r) => `${r.name}: ${r.value}`).join('；') || '无'}
 
-用 2-3 句中文口语化总结这份数据，不要罗列表格，不要用 markdown。`
+用 2-3 句中文口语化总结这份数据，不要罗列表格，不要用 markdown。${input.secondaryLabel ? '两个口径的合计都要提到，不要只说一个。' : ''}`
 
   const ai = new GoogleGenAI({ apiKey })
   try {

@@ -30,6 +30,8 @@ export interface CompiledRow {
   name: string
   value: number
   qty: number
+  /** 20260912：taxBasis=both 这类"两种口径都要"的查询才会有，其余情况恒为 undefined */
+  value2?: number
 }
 
 export interface AggregateCompileResult {
@@ -37,12 +39,23 @@ export interface AggregateCompileResult {
   rows: CompiledRow[]
   total: number
   truncated: boolean
+  /** 20260912：第二列的合计 + 中文名，只有 metric.secondaryValueLabel 返回非 null 时才有 */
+  total2?: number
+  secondaryLabel?: string
+}
+
+export interface DetailSummaryItem {
+  key: string
+  labelZh: string
+  value: number
 }
 
 export interface DetailCompileResult {
   mode: 'detail'
   columns: Array<{ key: string; labelZh: string }>
   rows: Array<Record<string, unknown>>
+  /** 20260912：逐行明细的汇总小计（只对 domain 声明了 summable:true 的字段求和，口径与 truncated 一致——只对已取回的行求和） */
+  summary: DetailSummaryItem[]
   truncated: boolean
 }
 
@@ -63,10 +76,18 @@ export async function compileAndRun(dsl: AnalysisDsl): Promise<CompileResult> {
     const rows = (await p.$queryRawUnsafe(sql, ...params)) as Array<Record<string, unknown>>
     const truncated = rows.length > COMPILER_ROW_LIMIT
     const kept = truncated ? rows.slice(0, COMPILER_ROW_LIMIT) : rows
+    const summary: DetailSummaryItem[] = domainDef.detail.fields
+      .filter((f) => f.summable)
+      .map((f) => ({
+        key: f.key,
+        labelZh: f.labelZh,
+        value: round2(kept.reduce((s, r) => s + (Number(r[f.key]) || 0), 0)),
+      }))
     return {
       mode: 'detail',
       columns: domainDef.detail.fields.map((f) => ({ key: f.key, labelZh: f.labelZh })),
       rows: kept,
+      summary,
       truncated,
     }
   }
@@ -85,7 +106,7 @@ export async function compileAndRun(dsl: AnalysisDsl): Promise<CompileResult> {
   })
 
   const rows = (await p.$queryRawUnsafe(sql, ...params)) as Array<{
-    row_key: string; row_name: string; qty: number; value: number
+    row_key: string; row_name: string; qty: number; value: number; value2?: number
   }>
 
   const truncated = rows.length > COMPILER_ROW_LIMIT
@@ -94,6 +115,13 @@ export async function compileAndRun(dsl: AnalysisDsl): Promise<CompileResult> {
     ? weightedAverage(kept)
     : kept.reduce((s, r) => s + r.value, 0)
 
+  const secondaryLabel = metricDef.secondaryValueLabel?.(dsl.confirmedParams) ?? undefined
+  const total2 = secondaryLabel
+    ? (metricDef.aggregationKind === 'rate'
+        ? weightedAverage(kept.map((r) => ({ value: r.value2 ?? 0, qty: r.qty })))
+        : kept.reduce((s, r) => s + (r.value2 ?? 0), 0))
+    : undefined
+
   return {
     mode: 'aggregate',
     rows: kept.map((r) => ({
@@ -101,8 +129,10 @@ export async function compileAndRun(dsl: AnalysisDsl): Promise<CompileResult> {
       name: r.row_name,
       value: round2(r.value),
       qty: Math.round(r.qty * 1000) / 1000,
+      value2: secondaryLabel && r.value2 != null ? round2(r.value2) : undefined,
     })),
     total: round2(total),
+    ...(secondaryLabel ? { total2: round2(total2!), secondaryLabel } : {}),
     truncated,
   }
 }

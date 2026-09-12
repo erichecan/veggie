@@ -6,15 +6,19 @@ import { escapeHtml, openPrintWindow } from '@/lib/print-export'
 
 export interface AggregateResult {
   mode: 'aggregate'
-  rows: Array<{ key: string; name: string; value: number; qty: number }>
+  rows: Array<{ key: string; name: string; value: number; qty: number; value2?: number }>
   total: number
   truncated: boolean
+  /** taxBasis=both 这类"两种口径都要"的查询才会有 */
+  total2?: number
+  secondaryLabel?: string
 }
 
 export interface DetailResult {
   mode: 'detail'
   columns: Array<{ key: string; labelZh: string }>
   rows: Array<Record<string, unknown>>
+  summary: Array<{ key: string; labelZh: string; value: number }>
   truncated: boolean
 }
 
@@ -55,6 +59,9 @@ function reportFilename(dsl: AnalysisDsl): string {
 function exportDetailCsv(dsl: AnalysisDsl, result: DetailResult) {
   const headers = result.columns.map((c) => c.labelZh)
   const rows = result.rows.map((r) => result.columns.map((c) => r[c.key] ?? ''))
+  if (result.summary.length > 0) {
+    rows.push(result.columns.map((c) => result.summary.find((s) => s.key === c.key)?.value ?? (c === result.columns[0] ? '小计' : '')))
+  }
   downloadCsv(reportFilename(dsl), headers, rows)
 }
 
@@ -64,18 +71,26 @@ function printDetail(dsl: AnalysisDsl, result: DetailResult, isEn: boolean) {
   const body = result.rows.map((r) =>
     `<tr>${result.columns.map((c) => `<td>${escapeHtml(String(r[c.key] ?? ''))}</td>`).join('')}</tr>`
   ).join('')
+  const summaryRow = result.summary.length > 0
+    ? `<tr class="total-row">${result.columns.map((c, i) => {
+        const s = result.summary.find((s) => s.key === c.key)
+        if (s) return `<td>${escapeHtml(String(s.value))}</td>`
+        return `<td>${i === 0 ? escapeHtml(isEn ? 'Subtotal' : '小计') : ''}</td>`
+      }).join('')}</tr>`
+    : ''
   openPrintWindow(title, `
     <h2>${escapeHtml(title)}</h2>
     <p style="font-size:11px;color:#666;margin-bottom:12px">${isEn ? `${result.rows.length} rows` : `共 ${result.rows.length} 行`}</p>
-    <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`)
+    <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot>${summaryRow}</tfoot></table>`)
 }
 
 function exportAggregateCsv(dsl: AnalysisDsl, data: ResultData, result: AggregateResult, isEn: boolean) {
   const domainDef = getDomainDef(dsl.domain)
   const dimLabel = dsl.dimension ? (domainDef?.dimensionLabelsZh[dsl.dimension] ?? dsl.dimension) : (isEn ? 'Item' : '分组')
   const headers = [dimLabel, data.metricLabel ?? (isEn ? 'Value' : '数值')]
-  const rows: unknown[][] = result.rows.map((r) => [r.name, r.value])
-  rows.push([isEn ? 'Total' : '合计', result.total])
+  if (result.secondaryLabel) headers.push(result.secondaryLabel)
+  const rows: unknown[][] = result.rows.map((r) => result.secondaryLabel ? [r.name, r.value, r.value2 ?? ''] : [r.name, r.value])
+  rows.push(result.secondaryLabel ? [isEn ? 'Total' : '合计', result.total, result.total2] : [isEn ? 'Total' : '合计', result.total])
   downloadCsv(reportFilename(dsl), headers, rows)
 }
 
@@ -84,15 +99,16 @@ function printAggregate(dsl: AnalysisDsl, data: ResultData, result: AggregateRes
   const domainDef = getDomainDef(dsl.domain)
   const dimLabel = dsl.dimension ? (domainDef?.dimensionLabelsZh[dsl.dimension] ?? dsl.dimension) : (isEn ? 'Item' : '分组')
   const metricLabel = data.metricLabel ?? ''
+  const secondaryHead = result.secondaryLabel ? `<th style="text-align:right">${escapeHtml(result.secondaryLabel)}</th>` : ''
   const rows = result.rows.map((r) =>
-    `<tr><td>${escapeHtml(r.name)}</td><td style="text-align:right">${r.value}</td></tr>`
+    `<tr><td>${escapeHtml(r.name)}</td><td style="text-align:right">${r.value}</td>${result.secondaryLabel ? `<td style="text-align:right">${r.value2 ?? ''}</td>` : ''}</tr>`
   ).join('')
   openPrintWindow(title, `
     <h2>${escapeHtml(title)}</h2>
     <table>
-      <thead><tr><th>${escapeHtml(dimLabel)}</th><th style="text-align:right">${escapeHtml(metricLabel)}</th></tr></thead>
+      <thead><tr><th>${escapeHtml(dimLabel)}</th><th style="text-align:right">${escapeHtml(metricLabel)}</th>${secondaryHead}</tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr class="total-row"><td>${isEn ? 'Total' : '合计'}</td><td style="text-align:right">${result.total}</td></tr></tfoot>
+      <tfoot><tr class="total-row"><td>${isEn ? 'Total' : '合计'}</td><td style="text-align:right">${result.total}</td>${result.secondaryLabel ? `<td style="text-align:right">${result.total2}</td>` : ''}</tr></tfoot>
     </table>`)
 }
 
@@ -185,14 +201,19 @@ export function ChatEntryView({
   const { data } = entry
 
   if (data.result.mode === 'detail') {
-    const { columns, rows, truncated } = data.result
-    const detailResult: DetailResult = { mode: 'detail', columns, rows, truncated }
+    const { columns, rows, summary, truncated } = data.result
+    const detailResult: DetailResult = { mode: 'detail', columns, rows, summary, truncated }
     return (
       <div className="flex justify-start">
         <div className="max-w-[90%] w-full rounded-lg px-3 py-2 text-sm bg-white border border-gray-200">
           <p className="font-medium" style={{ color: '#875A7B' }}>
             {isEn ? `${rows.length} rows` : `共 ${rows.length} 行明细`}
           </p>
+          {summary.length > 0 && (
+            <p className="mt-1 text-xs text-gray-600">
+              {(isEn ? 'Subtotal: ' : '小计：') + summary.map((s) => `${s.labelZh} ${s.value}`).join(isEn ? ', ' : '，')}
+            </p>
+          )}
           {rows.length > 0 && (
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-xs whitespace-nowrap">
@@ -248,7 +269,10 @@ export function ChatEntryView({
   return (
     <div className="flex justify-start">
       <div className="max-w-[90%] w-full rounded-lg px-3 py-2 text-sm bg-white border border-gray-200">
-        <p className="font-medium" style={{ color: '#875A7B' }}>{data.metricLabel}{isEn ? ' total: ' : '合计：'}{data.result.total}</p>
+        <p className="font-medium" style={{ color: '#875A7B' }}>
+          {data.metricLabel}{isEn ? ' total: ' : '合计：'}{data.result.total}
+          {aggResult.secondaryLabel && ` ／ ${aggResult.secondaryLabel}${isEn ? ' total: ' : '合计：'}${aggResult.total2}`}
+        </p>
         {data.narrative && <p className="mt-1 text-gray-700">{data.narrative}</p>}
         {data.result.rows.length > 0 && (
           <table className="mt-2 w-full text-xs">
@@ -257,6 +281,7 @@ export function ChatEntryView({
                 <tr key={r.key} className="border-t border-gray-100">
                   <td className="py-1 text-gray-600">{r.name}</td>
                   <td className="py-1 text-right font-medium">{r.value}</td>
+                  {aggResult.secondaryLabel && <td className="py-1 text-right font-medium text-gray-500">{r.value2}</td>}
                 </tr>
               ))}
             </tbody>

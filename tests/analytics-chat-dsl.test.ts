@@ -165,6 +165,12 @@ test('fillDefaults：已显式指定的值不被默认值覆盖', () => {
   assert.equal(filled.confirmedParams.taxBasis, 'incTax')
 })
 
+test('parseDsl：taxBasis=both 合法（20260912：税前税后都要，不用被迫二选一）', () => {
+  const dsl = ok(parseDsl({ domain: 'sales', metric: 'salesAmount', confirmedParams: { taxBasis: 'both' } }))
+  assert.equal(dsl.confirmedParams.taxBasis, 'both')
+  assert.equal(validateDslSemantics(dsl), null)
+})
+
 test('fillDefaults：detail 模式原样返回，不补任何默认值', () => {
   const dsl = ok(parseDsl({ domain: 'sales', mode: 'detail', dateRange: { from: '2026-09-01', to: '2026-09-06' } }))
   const filled = fillDefaults(dsl)

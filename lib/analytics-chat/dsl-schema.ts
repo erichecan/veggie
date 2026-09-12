@@ -44,7 +44,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
  * 而不是在格式层就直接拒绝掉，否则 validateDslSemantics 那条"锁死规则"校验永远测不到。
  */
 const KNOWN_CONFIRMABLE_PARAMS: Record<string, readonly string[]> = {
-  taxBasis: ['preTax', 'incTax'],
+  // 20260912：加 both——问题同时要税前和税后两个口径时不用被迫二选一
+  taxBasis: ['preTax', 'incTax', 'both'],
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

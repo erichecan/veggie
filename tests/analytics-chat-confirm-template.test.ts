@@ -42,3 +42,16 @@ test('renderConfirmationText：给了日期范围就原样展示，不用默认�
   const text = renderConfirmationText(dsl)
   assert.match(text, /2026-09-01 至 2026-09-06/)
 })
+
+test('renderConfirmationText：taxBasis=both 显式列出"都要"（20260912）', () => {
+  const dsl = parsed({ domain: 'sales', metric: 'salesAmount', confirmedParams: { taxBasis: 'both' } })
+  const text = renderConfirmationText(dsl)
+  assert.match(text, /税前\+税后（都要）/)
+})
+
+test('renderConfirmationText：detail 模式说明含汇总小计，不再说"不做汇总"（20260912）', () => {
+  const dsl = parsed({ domain: 'sales', mode: 'detail', dateRange: { from: '2026-09-01', to: '2026-09-06' } })
+  const text = renderConfirmationText(dsl)
+  assert.match(text, /汇总小计/)
+  assert.doesNotMatch(text, /不做汇总/)
+})

@@ -56,6 +56,8 @@ export async function POST(req: Request) {
             total: result.total,
             truncated: result.truncated,
             topRows: result.rows.slice(0, 10).map((r) => ({ name: r.name, value: r.value })),
+            secondaryLabel: result.secondaryLabel,
+            secondaryTotal: result.total2,
           })
         : null
 

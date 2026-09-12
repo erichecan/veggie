@@ -161,7 +161,8 @@ function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQu
                 r->>'restaurantName' AS restaurant_name,
                 i->>'productName' AS product_name,
                 NULLIF(i->>'price', '')::float AS unit_price,
-                NULLIF(i->>'quantity', '')::float AS qty
+                NULLIF(i->>'quantity', '')::float AS qty,
+                (COALESCE(NULLIF(i->>'price', '')::float, 0) * COALESCE(NULLIF(i->>'quantity', '')::float, 0)) AS subtotal
          FROM "Trip" t
          LEFT JOIN "PickingWave" w ON w.id = t."waveId"
          CROSS JOIN LATERAL jsonb_array_elements(t.restaurants) r
@@ -190,7 +191,8 @@ export const deliveryDomain: DomainDef = {
       { key: 'restaurant_name', labelZh: '客户' },
       { key: 'product_name', labelZh: '商品' },
       { key: 'unit_price', labelZh: '单价' },
-      { key: 'qty', labelZh: '数量' },
+      { key: 'qty', labelZh: '数量', summable: true },
+      { key: 'subtotal', labelZh: '金额', summable: true },
     ],
     buildSql: buildDetailSql,
   },

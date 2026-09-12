@@ -19,7 +19,7 @@ export function renderConfirmationText(dsl: AnalysisDsl): string {
   const domainLabel = domainDef?.labelZh ?? dsl.domain
 
   if (dsl.mode === 'detail') {
-    return `我理解为：查${dateRangeText(dsl)}的"${domainLabel}"明细（逐行列出，不做汇总）。确认要这样查吗？`
+    return `我理解为：查${dateRangeText(dsl)}的"${domainLabel}"明细（逐行列出，并给出汇总小计）。确认要这样查吗？`
   }
 
   const metricDef = domainDef?.metrics[dsl.metric ?? '']

@@ -13,10 +13,11 @@ const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 const STOCK_QTY_EXPR = `(ol."orderedQty" * COALESCE(psu.factor, 1))`
 
 const TAX_BASIS_PARAM = {
-  options: ['preTax', 'incTax'] as const,
+  options: ['preTax', 'incTax', 'both'] as const,
   default: 'preTax' as const,
   labelZh: '税前/税后口径',
-  optionLabelsZh: { preTax: '税前', incTax: '税后（含税）' },
+  // 20260912：both——问题里两种口径都要时，不再被迫二选一，两个数字一起给
+  optionLabelsZh: { preTax: '税前', incTax: '税后（含税）', both: '税前+税后（都要）' },
 }
 
 const DIMENSION_KEYS = Object.keys(DIMENSION_DEFS)
@@ -29,6 +30,7 @@ const METRICS: Record<string, MetricDef> = {
     confirmableParams: { taxBasis: TAX_BASIS_PARAM },
     allowedDimensions: DIMENSION_KEYS,
     allowedFilters: FILTER_KEYS,
+    secondaryValueLabel: (params) => (params.taxBasis === 'both' ? '税后（含税）' : null),
   },
   grossMargin: {
     key: 'grossMargin',
@@ -68,6 +70,12 @@ function buildAggregateSql({ metric, confirmedParams, dimension, filters, start,
     ? `SUM(ol.subtotal - COALESCE(lc.unit_cost, p."standardPrice", 0) * ${STOCK_QTY_EXPR})`
     : revenueExpr(confirmedParams.taxBasis)
 
+  // 20260912：taxBasis=both 时主列固定给税前（跟不选 both 时的默认口径一致），
+  // 第二列额外算一份税后，两个数字一起吐给客户，不用被迫二选一
+  const value2Expr = metric.key === 'salesAmount' && confirmedParams.taxBasis === 'both'
+    ? revenueExpr('incTax')
+    : null
+
   const costJoin = metric.key === 'grossMargin'
     ? `LEFT JOIN LATERAL (
          SELECT c.unit_cost FROM v_lot_daily_cost c
@@ -83,6 +91,7 @@ function buildAggregateSql({ metric, confirmedParams, dimension, filters, start,
   const sql = `SELECT ${groupExpr} AS row_key, ${nameExpr} AS row_name,
                 SUM(${STOCK_QTY_EXPR})::float AS qty,
                 ${valueExpr}::float AS value
+                ${value2Expr ? `, ${value2Expr}::float AS value2` : ''}
          FROM "OrderLine" ol
          JOIN "Order" o ON o.id = ol."orderId"
          LEFT JOIN "Product" p ON p.id = ol."productId"
@@ -141,8 +150,8 @@ export const salesDomain: DomainDef = {
       { key: 'customer_name', labelZh: '客户' },
       { key: 'product_name', labelZh: '商品' },
       { key: 'unit_price', labelZh: '单价' },
-      { key: 'qty', labelZh: '数量' },
-      { key: 'subtotal', labelZh: '金额' },
+      { key: 'qty', labelZh: '数量', summable: true },
+      { key: 'subtotal', labelZh: '金额', summable: true },
     ],
     buildSql: buildDetailSql,
   },

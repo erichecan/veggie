@@ -43,11 +43,19 @@ export interface MetricDef {
    * "737.82%" 这种没有业务含义的数字，改成 Σ(qty·value)/Σqty 才对）。
    */
   aggregationKind?: 'sum' | 'rate'
+  /**
+   * 20260912：某些确认参数选了"都要"（如 taxBasis=both）时，SQL 会多吐一列
+   * `value2`，这里给它起个中文名；返回 null 表示这次查询不需要第二列。
+   * 不用这个函数就永远不会有第二列，其余指标不受影响。
+   */
+  secondaryValueLabel?: (confirmedParams: Record<string, string | undefined>) => string | null
 }
 
 export interface DetailFieldDef {
   key: string
   labelZh: string
+  /** 20260912：该字段是否要在明细结果里给一个汇总小计（金额/数量类打 true，客户名等文本字段不要打） */
+  summable?: boolean
 }
 
 export interface SqlQuery {
