@@ -12,6 +12,13 @@ function normalizeUomSequence(raw: unknown): number | null {
   return Number.isFinite(n) ? Math.trunc(n) : null
 }
 
+/** 毛重(kg)：空/非法/负数一律落回 null，不强行清零挡住保存 */
+function normalizeGrossWeight(raw: unknown): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 /**
  * /api/products/[id]/sale-uoms — 商品可售单位(20260714 多单位销售试点)
  * ============================================================================
@@ -110,6 +117,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           const commissionSurcharge = it.commissionSurcharge != null && it.commissionSurcharge !== '' ? Number(it.commissionSurcharge) : 0
           const spec = typeof it.spec === 'string' && it.spec.trim() ? it.spec.trim() : null
           const sequence = normalizeUomSequence(it.sequence)
+          const grossWeight = normalizeGrossWeight(it.grossWeight)
           await txAny.productSaleUom.upsert({
             where: { productId_uomId: { productId: id, uomId: it.uomId } },
             create: {
@@ -124,6 +132,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               commissionPriceMode, commissionDiscountPct, commissionSurcharge,
               spec,
               sequence,
+              grossWeight,
               active: it.active !== false,
             },
             update: {
@@ -135,6 +144,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               commissionPriceMode, commissionDiscountPct, commissionSurcharge,
               spec,
               sequence,
+              grossWeight,
               active: it.active !== false,
             },
           })

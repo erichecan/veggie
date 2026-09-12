@@ -25,6 +25,7 @@ import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 import { displayUomName } from '@/lib/sale-uom'
+import { formatUomConversionHint, type UomConversionInfo } from '@/lib/print/uom-conversion'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -117,6 +118,8 @@ interface AggProduct {
   goodsType: GoodsType
   orderCodes: string[]
   byCustomer: Map<string, CustomerBreakdown>
+  /** 这个单位自己的换算/毛重信息（20260911），同一 productId::uomId 恒定，取第一行的值即可 */
+  uomConversion: UomConversionInfo | null
 }
 
 /**
@@ -197,6 +200,7 @@ export function generateTripPickingHtml(
           goodsType: line.goodsType ?? null,
           orderCodes: [],
           byCustomer: new Map<string, CustomerBreakdown>(),
+          uomConversion: line.uomConversion ?? null,
         }
         aggMap.set(key, agg)
       }
@@ -291,15 +295,22 @@ export function generateTripPickingHtml(
       </tr>`).join('')
   }
 
+  /** 这个聚合行（总量 qty）对应的毛重说明文字，如"毛重 ≈ 3.4kg"；没配毛重返回空串 */
+  function grossWeightSpec(uomConversion: UomConversionInfo | null, qty: number): string {
+    return formatUomConversionHint(uomConversion ?? undefined, qty)?.grossWeightLine ?? ''
+  }
+
   /** 单一单位的商品行（组内只有一个可售单位时，跟改造前逐字一致） */
   function singleUomRow(p: AggProduct, seq: number, rowClass: string): string {
     const hasNote = Array.from(p.byCustomer.values()).some(bd => bd.note)
+    const grossWeightText = grossWeightSpec(p.uomConversion, p.totalQty)
     const mainRow = `
       <tr class="${rowClass}">
         <td class="col-seq">${seq}</td>
         <td class="col-name">
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
+          ${grossWeightText ? `<span class="spec">${escapeHtml(grossWeightText)}</span>` : ''}
           ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-uom">${escapeHtml(displayUomName(p.uomName))}</td>
@@ -356,11 +367,12 @@ export function generateTripPickingHtml(
       </tr>`
     const childRows = g.uoms.map(u => {
       const uHasNote = Array.from(u.byCustomer.values()).some(bd => bd.note)
+      const uGrossWeightText = grossWeightSpec(u.uomConversion, u.totalQty)
       const childRow = `
       <tr class="row-uom-child">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
-          ↳${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
+          ↳${uGrossWeightText ? ` <span class="spec">${escapeHtml(uGrossWeightText)}</span>` : ''}${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-uom">${escapeHtml(displayUomName(u.uomName))}</td>
         <td class="col-qty bd-qty">

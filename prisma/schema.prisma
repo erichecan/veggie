@@ -434,6 +434,10 @@ model ProductSaleUom {
   /// 越大越后装/放最上（轻、怕压）。跟 Product.sequence（单据里排第几行）是两个独立维度，
   /// 语义/用法逐字照抄 Product.sequence：可空、不做唯一性校验，允许大量商品共用同一个数字。
   sequence      Int?
+  /// 20260911 新增：该可售单位自己的毛重(kg)，如"1箱=3.2kg"——跟 Product.weight
+  /// （UI 上也显示"毛重"，但那是基础单位层级、历史遗留字段名叫 weight）是两个独立字段，
+  /// 每个可售单位各自配置，打印单据里折进规格说明文字显示，见 lib/print/uom-conversion.ts
+  grossWeight   Decimal? @db.Decimal(10, 3)
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

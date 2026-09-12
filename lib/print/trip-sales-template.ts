@@ -97,6 +97,9 @@ function buildSalesOrderHtml(
     const rate = Number(l.taxRate ?? 0)
     const inclVat = Number(l.subtotal) * (1 + rate / 100)
     const uomHint = formatUomConversionHint(l.uomConversion ?? undefined, Number(l.orderedQty))
+    const hintLine = uomHint
+      ? [uomHint.conversionLine, uomHint.weightLine ? `(${uomHint.weightLine})` : null, uomHint.grossWeightLine].filter(Boolean).join(' ')
+      : ''
     return `
     <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
       <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
@@ -104,7 +107,7 @@ function buildSalesOrderHtml(
       <td class="col-desc">
         <div class="prod-name">${escapeHtml(l.productName)}</div>
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
-        ${uomHint ? `<div class="prod-spec">${escapeHtml(uomHint.conversionLine)}${uomHint.weightLine ? ` (${escapeHtml(uomHint.weightLine)})` : ''}</div>` : ''}
+        ${hintLine ? `<div class="prod-spec">${escapeHtml(hintLine)}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
       <td class="col-price">${fmtMoney(Number(l.unitPrice))}</td>

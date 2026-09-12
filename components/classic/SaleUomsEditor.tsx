@@ -296,6 +296,27 @@ export default function SaleUomsEditor({
                 <span className="text-xs text-gray-500">{row.sequence ?? '—'}</span>
               )}
             </div>
+            {/* 毛重(20260911)：该可售单位自己的毛重(kg)，如"1箱=3.2kg"——每一行(含基础单位)
+                独立填写，跟商品页头 Unit of Measure 那个"毛重 Gross Weight"(Product.weight，
+                基础单位层级)是两个独立字段。填了会折进交货单/销售单/拣货单/司机回单的
+                规格说明文字里(见 lib/print/uom-conversion.ts)。 */}
+            <div className="flex items-center gap-2 mt-1 pl-1">
+              <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
+                {isEn ? 'Gross Weight (kg)' : '毛重 Gross Weight (kg)'}
+              </span>
+              {editMode ? (
+                <NumericInput
+                  step="0.01"
+                  value={row.grossWeight ?? ''}
+                  onChange={e => updateRow(i, { grossWeight: e.target.value === '' ? null : Number(e.target.value) })}
+                  placeholder={isEn ? 'e.g. 3.2' : '如：3.2'}
+                  className="h-7 px-2 border border-gray-200 rounded text-xs outline-none no-spinner"
+                  style={{ ...focusStyle, width: 90 }}
+                />
+              ) : (
+                <span className="text-xs text-gray-500">{row.grossWeight ?? '—'}</span>
+              )}
+            </div>
           </div>
         )
       })}

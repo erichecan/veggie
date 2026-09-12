@@ -39,6 +39,8 @@ export interface SaleUomItemInput {
   /** 装货顺序（20260907）：仓库配货/司机卸货用，数字越小越先装/放最下（重），越大越后装/放最上（怕压）。
    * 语义/校验都照抄 Product.sequence——可空、不做唯一性校验。 */
   sequence?: number | string | null
+  /** 该可售单位自己的毛重(kg)（20260911），如"1箱=3.2kg"；打印单据折进规格说明文字显示 */
+  grossWeight?: number | string | null
 }
 
 /** factor 的合理区间。上限 100000 足够覆盖「1 托盘 = N 个最小包装」这类真实场景 */
@@ -336,6 +338,8 @@ export interface SaleUomFormRow {
   spec: string | null
   /** 装货顺序（20260907）：数字越小越先装/放最下（重），越大越后装/放最上（怕压） */
   sequence: number | null
+  /** 该可售单位自己的毛重(kg)（20260911），如"1箱=3.2kg"；打印单据折进规格说明文字显示 */
+  grossWeight: number | null
 }
 
 /**
@@ -353,7 +357,7 @@ export function makeDefaultSaleUomFormRow(uomId: string, isDefault: boolean): Sa
     uomId, isDefault, factor: 1, priceOverride: null, active: true,
     priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
     commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
-    spec: null, sequence: null,
+    spec: null, sequence: null, grossWeight: null,
   }
 }
 
@@ -414,6 +418,7 @@ export interface SaleUomApiRow {
   commissionSurcharge?: number | string | null
   spec?: string | null
   sequence?: number | null
+  grossWeight?: number | string | null
 }
 
 /** API 行 → 表单行：数值兜底、Decimal 字符串转 number，两处调用点（GET 加载 / PUT 保存回填）共用一份映射。 */
@@ -429,6 +434,7 @@ export function mapSaleUomApiRows(rows: SaleUomApiRow[]): SaleUomFormRow[] {
     commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
     spec: r.spec ?? null,
     sequence: r.sequence ?? null,
+    grossWeight: r.grossWeight != null ? Number(r.grossWeight) : null,
   }))
 }
 

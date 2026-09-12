@@ -35,13 +35,15 @@ export async function loadUomConversionMap(
     factor: string
     baseName: string | null
     netWeight: string | null
+    grossWeight: string | null
   }>>`
     SELECT psu."productId",
            psu."uomId",
            u.name           AS "uomName",
            psu.factor::text AS factor,
            base.name        AS "baseName",
-           p."netWeight"::text AS "netWeight"
+           p."netWeight"::text AS "netWeight",
+           psu."grossWeight"::text AS "grossWeight"
     FROM "ProductSaleUom" psu
     JOIN "Uom" u ON u.id = psu."uomId"
     LEFT JOIN "Product" p ON p.id = psu."productId"
@@ -51,13 +53,17 @@ export async function loadUomConversionMap(
 
   for (const r of rows) {
     const factor = Number(r.factor)
-    // factor=1（就是基准单位本身）或没有基准单位名可比对时不生成换算说明——没有信息量
-    if (!Number.isFinite(factor) || factor === 1 || !r.baseName) continue
+    // 没有基准单位名可比对（join 不到）时整条都没法生成——直接跳过；
+    // factor=1（就是基准单位本身）以前也跳过，但那只是「换算说明没有信息量」，
+    // 毛重/净重信息量还在，20260911 起改成保留，交给 formatUomConversionHint
+    // 自己判断 conversionLine 要不要显示（factor=1 时不显示换算，但重量照常算）
+    if (!Number.isFinite(factor) || !r.baseName) continue
     map.set(uomConversionKey(r.productId, r.uomId), {
       factor,
       thisUomName: r.uomName,
       baseUomName: r.baseName,
       netWeight: r.netWeight != null ? Number(r.netWeight) : null,
+      grossWeight: r.grossWeight != null ? Number(r.grossWeight) : null,
     })
   }
   return map

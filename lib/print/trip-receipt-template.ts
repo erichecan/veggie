@@ -144,7 +144,7 @@ function buildReceiptPage(
   const rows = lines.length > 0
     ? lines.map(l => {
       const uomHint = formatUomConversionHint(l.uomConversion ?? undefined, Number(l.orderedQty ?? 0))
-      const specText = [l.spec, uomHint?.conversionLine, uomHint?.weightLine].filter(Boolean).join(' · ')
+      const specText = [l.spec, uomHint?.conversionLine, uomHint?.weightLine, uomHint?.grossWeightLine].filter(Boolean).join(' · ')
       return `
       <tr>
         <td>${escapeHtml(l.productName ?? '')}</td>

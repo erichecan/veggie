@@ -147,6 +147,9 @@ function buildDeliveryOrderHtml(
   // 送货单不含价格:只列数量/单位/品名,不显示单价/税/金额(价格在发票上体现)
   function renderLineRow(l: TripLine, i: number): string {
     const uomHint = formatUomConversionHint(l.uomConversion ?? undefined, Number(l.orderedQty))
+    const hintLine = uomHint
+      ? [uomHint.conversionLine, uomHint.weightLine ? `(${uomHint.weightLine})` : null, uomHint.grossWeightLine].filter(Boolean).join(' ')
+      : ''
     return `
     <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
       <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
@@ -154,7 +157,7 @@ function buildDeliveryOrderHtml(
       <td class="col-desc">
         <div class="prod-name">${escapeHtml(l.productName)}</div>
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
-        ${uomHint ? `<div class="prod-spec">${escapeHtml(uomHint.conversionLine)}${uomHint.weightLine ? ` (${escapeHtml(uomHint.weightLine)})` : ''}</div>` : ''}
+        ${hintLine ? `<div class="prod-spec">${escapeHtml(hintLine)}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
     </tr>`
