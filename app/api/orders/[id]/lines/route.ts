@@ -43,6 +43,7 @@ export async function POST(
         orderedQty,
         taxRate,
         sequence,
+        isGift,
       } = body
 
       const productToAdd = await prisma.product.findUnique({
@@ -91,12 +92,19 @@ export async function POST(
       // SSOT: 追加行同样要写件提成快照,否则该行提成恒为 null。20260901 起
       // resolveOrderLines 顺带按该行选用单位折算好提成价，不用再单独查一次。
       const commissionPrice = resolved.resolvedCommissionPrice
+      // 赠品标记(20260913)：与 PUT /api/orders/[id] 同一条铁律——isGift=true 时
+      // 强制单价/小计/提成归零，见 OrderLine.isGift 字段注释。
+      const isGiftLine = isGift === true
+      const finalUnitPrice = isGiftLine ? 0 : resolved.finalUnitPrice
+      const finalSubtotal = isGiftLine ? 0 : resolved.subtotal
+      const finalCommissionPrice = isGiftLine ? 0 : commissionPrice
 
       const newLine = await prisma.orderLine.create({
         data: {
           orderId: id,
           productId,
           productName: resolved.productName,
+          isGift: isGiftLine,
           uomId: uomId ?? null,
           // ⛔ 不直接信前端传的 uomName——它是按操作员当时的界面语言现算的中/英文本，
           // 同一个 uomId 会因为不同订单在不同语言环境下追加/编辑，快照出"1公斤"/"1KG"这种
@@ -104,14 +112,14 @@ export async function POST(
           // 列中英文混显，看着像两个不同单位）。改用 resolveOrderLines 按 uomId 解析出的正式
           // 名（resolved.uomName），与 POST /api/orders 新建订单那条路径保持一致。
           uomName: resolved.uomName ?? UNSET_UOM_LABEL,
-          unitPrice: resolved.finalUnitPrice,
+          unitPrice: finalUnitPrice,
           orderedQty: Number(orderedQty),
           deliveredQty: 0,
           invoicedQty: 0,
-          subtotal: resolved.subtotal,
+          subtotal: finalSubtotal,
           taxRate: taxRate != null ? Number(taxRate) : null,
           sequence: sequence ?? 0,
-          commissionPrice,
+          commissionPrice: finalCommissionPrice,
           // 采购成本快照(20260902)：该行选用单位下的 Product.standardPrice
           unitCost: resolved.unitCost,
           priceSourceType: resolved.manualOverride ? 'MANUAL' : resolved.resolution.sourceType.toUpperCase(),
@@ -139,9 +147,10 @@ export async function POST(
         action: 'CREATE',
         resource: 'order',
         resourceId: id,
-        // 单价记**落库值** —— 记权威价的话，手动改价后日志与订单行会各说各话
-        detail: `追加订单行: ${productName}（数量 ${Number(orderedQty)}，单价 ${resolved.finalUnitPrice}`
-          + `${resolved.manualOverride ? `，手动改价，价格表价 ${resolved.authoritativeUnitPrice}` : ''}）`
+        // 单价记**落库值** —— 记权威价的话，手动改价/赠品归零后日志与订单行会各说各话
+        detail: `追加订单行: ${productName}（数量 ${Number(orderedQty)}，单价 ${finalUnitPrice}`
+          + `${isGiftLine ? '，赠品不计销售额/提成' : ''}`
+          + `${!isGiftLine && resolved.manualOverride ? `，手动改价，价格表价 ${resolved.authoritativeUnitPrice}` : ''}）`
           + `${warnings.length ? '，警告: ' + warnings.join('; ') : ''}`,
       })
 

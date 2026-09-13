@@ -380,6 +380,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           if (l.taxRate !== undefined) lineData.taxRate = Number(l.taxRate)
           if (l.sequence !== undefined) lineData.sequence = Number(l.sequence)
           if (l.spec !== undefined) lineData.spec = l.spec ? String(l.spec) : null
+          // 赠品标记(20260913)：isGift=true 时强制单价/小计/提成归零，不采纳引擎算出的
+          // 权威价——不允许"又是赠品又收钱"或"赠品还照算提成"的矛盾状态。物理上仍是
+          // 正常商品行，照常扣库存、照常出现在拣货单，见 OrderLine.isGift 字段注释。
+          if (l.isGift !== undefined) lineData.isGift = Boolean(l.isGift)
+          if (l.isGift === true) {
+            lineData.unitPrice = 0
+            lineData.subtotal = 0
+            lineData.commissionPrice = 0
+          }
           if (l.note !== undefined) lineData.note = l.note ? String(l.note) : null
           // 多单位销售(20260714)：编辑已有行时也允许写入新单位(此前只有新增行分支才写 uomId/uomName，
           // 已有行传了新单位会被静默忽略)。合法性已在上面 uomEditCandidates 校验过。
@@ -696,7 +705,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         for (let i = 0; i < linesArrForAudit.length; i++) {
           const l = linesArrForAudit[i]!
           const written = writtenLines[i]
-          const writtenPrice = written ? written.finalUnitPrice : Number(l.unitPrice)
+          // 赠品行落库价恒为 0（上面已强制覆盖），审计日志同样必须取落库值，
+          // 否则会重现 20260814 那次"日志记了根本没发生的价格"事故。
+          const writtenPrice = l.isGift === true ? 0 : (written ? written.finalUnitPrice : Number(l.unitPrice))
           if (!l.id) {
             // New line
             lineChanges.added.push({
