@@ -36,7 +36,7 @@ const T = {
     deliveryDate: '配送日期：',
     driverBatch: '司机/批次：',
     customerCount: '客户数：',
-    legend: '📦 <b>装货顺序</b>：数字越小＝越先装 / 放最下面（重货、耐压）　数字越大＝越后装 / 放最上面（怕压）　"—"＝未设置该单位的装货顺序',
+    legend: '📦 <b>装货顺序</b>：1＝最下面（最重/最不怕压，最先装）……4＝最上面（最轻/最怕压，最后装）　"—"＝普通商品，未特意分层',
     colSeq: '#',
     colName: '商品名称',
     colQty: '总数量',
@@ -56,7 +56,7 @@ const T = {
     deliveryDate: 'Delivery Date:',
     driverBatch: 'Driver/Batch:',
     customerCount: 'Customers:',
-    legend: '📦 <b>Load Order</b>: lower number = load first / place at bottom (heavy, sturdy) — higher number = load last / place on top (fragile) — "—" = not set for this unit',
+    legend: '📦 <b>Load Order</b>: 1 = bottom (heaviest, loaded first) … 4 = top (most fragile, loaded last) — "—" = ordinary item, no tier set',
     colSeq: '#',
     colName: 'Product',
     colQty: 'Total Qty',
@@ -85,9 +85,10 @@ function fmtQty(v: number): string {
   return v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
 }
 
-/** 装货顺序印在拣货单上的显示形式：没设置就是空线，不印 0 或"未设置"这类噪音文字 */
+/** 装货顺序印在拣货单上的显示形式（20260912 改为 4 档）：0＝没特意分层的普通商品（多数商品都是
+ *  这一档），不印"0"这个数字制造噪音；只有 1-4 这四个需要特殊摆放的档位才印出来醒目提示。 */
 function fmtPackSeq(v: number | null): string {
-  return v == null ? '—' : String(v)
+  return v == null || v === 0 ? '—' : String(v)
 }
 
 interface CustomerBreakdown {

@@ -430,10 +430,11 @@ model ProductSaleUom {
   /// 加订单行时优先取这里的值写进 OrderLine.spec（行快照），没填才落回 lib/order-line-description.ts
   /// 的商品级兜底（Product.saleDescription / Product.spec）。
   spec          String?
-  /// 20260907 新增：装货顺序，仓库配货/司机卸货用——数字越小越先装/放最下（重、耐压），
-  /// 越大越后装/放最上（轻、怕压）。跟 Product.sequence（单据里排第几行）是两个独立维度，
-  /// 语义/用法逐字照抄 Product.sequence：可空、不做唯一性校验，允许大量商品共用同一个数字。
-  sequence      Int?
+  /// 20260907 新增、20260912 改为 4 档：装货顺序，仓库配货/司机卸货用——1=最下面（重/不怕压，
+  /// 最先装）……4=最上面（轻/怕压，最后装）。0=没特意设分层的基础货，排在 1-4 最前面（最底层）。
+  /// 只允许 0-4（CHECK 约束），不再是自由数字。跟 Product.sequence（单据里排第几行）是两个
+  /// 独立维度。允许大量商品共用同一个数字。
+  sequence      Int      @default(0)
   /// 20260911 新增：该可售单位自己的毛重(kg)，如"1箱=3.2kg"——跟 Product.weight
   /// （UI 上也显示"毛重"，但那是基础单位层级、历史遗留字段名叫 weight）是两个独立字段，
   /// 每个可售单位各自配置，打印单据里折进规格说明文字显示，见 lib/print/uom-conversion.ts

@@ -199,3 +199,46 @@ export function buildProductTemplatesOrderBy(sortKey: string | null, sortDir: So
   return build ? [build(sortDir)] : PRODUCT_TEMPLATE_ORDER_BY
 }
 
+/**
+ * Pack Sequence 列排序（20260912，此前误用 saleUnitsCount 按可售单位个数排）：按该商品
+ * 各可售单位里最小的装货顺序值排。
+ *
+ * 走不了 `buildProductTemplatesOrderBy` 那条路——Prisma 的一对多关系在 `findMany.orderBy`
+ * 里只支持按 `_count` 排，`_min`/`_max` 不支持（只有 `groupBy` 的 orderBy 才支持聚合值排序，
+ * 实测 `orderBy: { saleUoms: { _min: {...} } }` 直接报 `Unknown argument _min`）。
+ * 所以这里用两步：调用方先用现有 where 拿到全部候选 id，这里对这批 id 原始 SQL 聚合出
+ * 排序键，JS 里排完序、分页切片，调用方再按这个顺序查详情。候选 id 数量受列表筛选条件
+ * 限制（不是整张 133 万行的 OrderLine 那种量级），`ProductSaleUom.productId` 又有索引，
+ * 这一步不是全表扫描。
+ *
+ * ⛔ 20260912 浏览器实测踩坑：生产/开发库里绝大多数商品压根没配置任何可售单位
+ * （实测 1736 个商品里只有 3 个有 ProductSaleUom 行），这些商品会全部落到"没有值"的
+ * fallback、彼此打平——如果不给次级排序键，打平之后谁在前全看 SQL 不带 ORDER BY 时
+ * 数据库恰好返回的物理顺序，跟这个项目自己在 lib/print/line-sort.ts 头部记录过的
+ * "77.5% 订单行 sequence 相同、看似排序其实没排"是同一类坑。这里按名称兜底，跟
+ * print 那边的排序哲学（sequence → name）保持一致。
+ */
+export async function sortProductIdsByPackSequence(
+  products: readonly { id: string; name: string }[],
+  dir: SortDir,
+): Promise<string[]> {
+  if (products.length === 0) return []
+  const ids = products.map(p => p.id)
+  const rows = await prisma.$queryRaw<{ productId: string; seq: number }[]>`
+    SELECT "productId", MIN(sequence) AS seq
+    FROM "ProductSaleUom"
+    WHERE "productId" = ANY(${ids}) AND active = true
+    GROUP BY "productId"
+  `
+  const seqMap = new Map(rows.map(r => [r.productId, Number(r.seq)]))
+  // 没有任何激活可售单位的商品：升序排最后、降序排最前，跟"没有值的排最后"这个通用
+  // 列表排序习惯保持一致；同为"没有值"或同一档位时按商品名兜底，避免打平后顺序不确定。
+  const fallback = dir === 'asc' ? Infinity : -Infinity
+  return [...products].sort((a, b) => {
+    const av = seqMap.get(a.id) ?? fallback
+    const bv = seqMap.get(b.id) ?? fallback
+    if (av !== bv) return dir === 'asc' ? av - bv : bv - av
+    return a.name.localeCompare(b.name, 'en')
+  }).map(p => p.id)
+}
+

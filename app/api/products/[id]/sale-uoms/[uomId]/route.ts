@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { normalizeUomSequence, normalizeGrossWeight } from '@/lib/sale-uom'
+import { normalizeUomSequence, normalizeGrossWeight, validateUomSequence } from '@/lib/sale-uom'
 
 /**
  * /api/products/[id]/sale-uoms/[uomId] — 单条可售单位行的局部修改（20260912）
@@ -20,7 +20,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const body = await req.json()
       const data: Record<string, unknown> = {}
       if ('spec' in body) data.spec = typeof body.spec === 'string' && body.spec.trim() ? body.spec.trim() : null
-      if ('sequence' in body) data.sequence = normalizeUomSequence(body.sequence)
+      if ('sequence' in body) {
+        const sequenceError = validateUomSequence(body.sequence)
+        if (sequenceError) return NextResponse.json({ error: sequenceError }, { status: 400 })
+        data.sequence = normalizeUomSequence(body.sequence)
+      }
       if ('grossWeight' in body) data.grossWeight = normalizeGrossWeight(body.grossWeight)
       if (Object.keys(data).length === 0) {
         return NextResponse.json({ error: '没有可更新的字段' }, { status: 400 })

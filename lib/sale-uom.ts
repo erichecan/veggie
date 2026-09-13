@@ -36,8 +36,8 @@ export interface SaleUomItemInput {
   commissionSurcharge?: number | string | null
   /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
   spec?: string | null
-  /** 装货顺序（20260907）：仓库配货/司机卸货用，数字越小越先装/放最下（重），越大越后装/放最上（怕压）。
-   * 语义/校验都照抄 Product.sequence——可空、不做唯一性校验。 */
+  /** 装货顺序（20260907 新增、20260912 改为 4 档）：仓库配货/司机卸货用。0=基础/未特意分层，
+   * 1=最下面最重最不怕压……4=最上面最轻最怕压。只允许 0-4，不做唯一性校验。 */
   sequence?: number | string | null
   /** 该可售单位自己的毛重(kg)（20260911），如"1箱=3.2kg"；打印单据折进规格说明文字显示 */
   grossWeight?: number | string | null
@@ -95,6 +95,9 @@ export function validateSaleUomItems(items: SaleUomItemInput[]): string | null {
     // 基础单位是库存的计数尺子，它自己对自己的换算只能是 1。
     // 允许填别的值等于让「1 包 = 2 包」，库存会立刻算错。
     if (it.isDefault && f !== 1) return '默认单位就是库存的计数单位，换算系数必须为 1'
+
+    const sequenceError = validateUomSequence(it.sequence)
+    if (sequenceError) return sequenceError
   }
   return null
 }
@@ -107,12 +110,23 @@ export function normalizeFactor(raw: number | string | null | undefined): number
   return n
 }
 
-/** 装货顺序：空/非法一律落回 null，语义跟 Product.sequence 的输入处理一致。
- *  两处写入点共用（整份替换的 PUT /sale-uoms、单行局部改的 PATCH /sale-uoms/[uomId]）。 */
-export function normalizeUomSequence(raw: unknown): number | null {
+/** 装货顺序只允许 0-4 这五档（0=基础/未特意分层，1-4=从最下面/最重到最上面/最怕压）。
+ *  UI 是按钮点选，理论上不会产生非法值，这里独立兜底防止绕过 UI 直接调 API 写入脏数据。
+ *  返回 null=合法，否则返回给用户看的错误信息。空/未传视为合法（=不改这个字段）。 */
+export function validateUomSequence(raw: unknown): string | null {
   if (raw == null || raw === '') return null
   const n = Number(raw)
-  return Number.isFinite(n) ? Math.trunc(n) : null
+  if (!Number.isInteger(n) || n < 0 || n > 4) return '装货顺序只能是 0-4 之间的整数'
+  return null
+}
+
+/** 装货顺序的规范化：空/未传落回 0（基础档，对应数据库 NOT NULL DEFAULT 0）。
+ *  只负责已经过 validateUomSequence 校验的合法输入——两处写入点共用
+ *  （整份替换的 PUT /sale-uoms、单行局部改的 PATCH /sale-uoms/[uomId]）。 */
+export function normalizeUomSequence(raw: unknown): number {
+  if (raw == null || raw === '') return 0
+  const n = Number(raw)
+  return Number.isInteger(n) ? n : 0
 }
 
 /** 毛重(kg)：空/非法/负数一律落回 null，不强行清零挡住保存。两处写入点共用，同上。 */
@@ -351,8 +365,8 @@ export interface SaleUomFormRow {
   commissionSurcharge: number
   /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
   spec: string | null
-  /** 装货顺序（20260907）：数字越小越先装/放最下（重），越大越后装/放最上（怕压） */
-  sequence: number | null
+  /** 装货顺序（20260907 新增、20260912 改为 4 档）：0=基础/未特意分层，1=最下面最重……4=最上面最轻最怕压 */
+  sequence: number
   /** 该可售单位自己的毛重(kg)（20260911），如"1箱=3.2kg"；打印单据折进规格说明文字显示 */
   grossWeight: number | null
 }
@@ -372,7 +386,7 @@ export function makeDefaultSaleUomFormRow(uomId: string, isDefault: boolean): Sa
     uomId, isDefault, factor: 1, priceOverride: null, active: true,
     priceMode: 'FORMULA', priceDiscountPct: 0, priceSurcharge: 0,
     commissionPriceOverride: null, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0,
-    spec: null, sequence: null, grossWeight: null,
+    spec: null, sequence: 0, grossWeight: null,
   }
 }
 
@@ -448,7 +462,7 @@ export function mapSaleUomApiRows(rows: SaleUomApiRow[]): SaleUomFormRow[] {
     commissionDiscountPct: Number(r.commissionDiscountPct ?? 0) || 0,
     commissionSurcharge: Number(r.commissionSurcharge ?? 0) || 0,
     spec: r.spec ?? null,
-    sequence: r.sequence ?? null,
+    sequence: r.sequence ?? 0,
     grossWeight: r.grossWeight != null ? Number(r.grossWeight) : null,
   }))
 }

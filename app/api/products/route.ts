@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { buildProductTemplatesWhere, productStockAlertCounts, buildProductTemplatesOrderBy } from '@/lib/products-query'
+import { buildProductTemplatesWhere, productStockAlertCounts, buildProductTemplatesOrderBy, sortProductIdsByPackSequence } from '@/lib/products-query'
 
 export async function GET(req: Request) {
   try {
@@ -17,34 +17,46 @@ export async function GET(req: Request) {
       const rawSize = searchParams.get('pageSize') ?? searchParams.get('limit') ?? '20'
       const limit = Math.min(200, Math.max(1, parseInt(rawSize, 10)))
       const sortDir: 'asc' | 'desc' = searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
-      const orderBy = buildProductTemplatesOrderBy(searchParams.get('sortKey'), sortDir)
+      const sortKey = searchParams.get('sortKey')
       const [where, alertCounts] = await Promise.all([
         buildProductTemplatesWhere(searchParams),
         productStockAlertCounts(),
       ])
-      const [total, products] = await Promise.all([
-        prisma.product.count({ where }),
-        prisma.product.findMany({
-          where,
-          include: {
-            uom: true,
-            // 商品列表页「可售单位」列用的摘要（20260908）：只取徽章渲染需要的字段，
-            // 一次 include 查完，不是逐行再查一次 —— 一页 50 个商品，逐行查就是 50 次往返。
-            // 只取 active——这一列展示的是"当前能按哪些单位卖"，已停用的单位不该出现在这个提示灯里
-            // （详情页/弹窗里改可售单位仍能看到并重新启用它，这里只是列表快速浏览的摘要）。
-            saleUoms: {
-              where: { active: true },
-              orderBy: { sequence: 'asc' },
-              // spec（20260912）：Product.spec 已废弃清空，商品列表页「Product Spec」列改
-              // 显示/编辑默认单位的 ProductSaleUom.spec ——同一份 include 顺带取，不加往返。
-              select: { uomId: true, isDefault: true, factor: true, active: true, sequence: true, spec: true, uom: { select: { name: true, nameZh: true } } },
-            },
-          },
-          orderBy,
-          skip: (page - 1) * limit,
-          take: limit,
-        }),
-      ])
+      const productInclude = {
+        uom: true,
+        // 商品列表页「可售单位」列用的摘要（20260908）：只取徽章渲染需要的字段，
+        // 一次 include 查完，不是逐行再查一次 —— 一页 50 个商品，逐行查就是 50 次往返。
+        // 只取 active——这一列展示的是"当前能按哪些单位卖"，已停用的单位不该出现在这个提示灯里
+        // （详情页/弹窗里改可售单位仍能看到并重新启用它，这里只是列表快速浏览的摘要）。
+        saleUoms: {
+          where: { active: true },
+          orderBy: { sequence: 'asc' as const },
+          // spec（20260912）：Product.spec 已废弃清空，商品列表页「Product Spec」列改
+          // 显示/编辑默认单位的 ProductSaleUom.spec ——同一份 include 顺带取，不加往返。
+          select: { uomId: true, isDefault: true, factor: true, active: true, sequence: true, spec: true, uom: { select: { name: true, nameZh: true } } },
+        },
+      }
+
+      let total: number
+      let products: Awaited<ReturnType<typeof prisma.product.findMany<{ where: typeof where; include: typeof productInclude }>>>
+      if (sortKey === 'packSequence') {
+        // Pack Sequence 列按可售单位的装货顺序值排——Prisma 的 findMany.orderBy 对一对多关系
+        // 只支持按 _count 排，_min 不支持（见 lib/products-query.ts 里 sortProductIdsByPackSequence
+        // 的注释），只能先拿候选 id 再原始 SQL 聚合排序、分页后按顺序查详情。
+        const allCandidates = await prisma.product.findMany({ where, select: { id: true, name: true } })
+        const sortedIds = await sortProductIdsByPackSequence(allCandidates, sortDir)
+        total = sortedIds.length
+        const pageIds = sortedIds.slice((page - 1) * limit, (page - 1) * limit + limit)
+        const rows = await prisma.product.findMany({ where: { id: { in: pageIds } }, include: productInclude })
+        const byId = new Map(rows.map(r => [r.id, r]))
+        products = pageIds.map(id => byId.get(id)).filter((r): r is typeof rows[number] => !!r)
+      } else {
+        const orderBy = buildProductTemplatesOrderBy(sortKey, sortDir)
+        ;[total, products] = await Promise.all([
+          prisma.product.count({ where }),
+          prisma.product.findMany({ where, include: productInclude, orderBy, skip: (page - 1) * limit, take: limit }),
+        ])
+      }
       const serialized = serializeApi(products)
       return NextResponse.json({
         data: serialized, items: serialized, total, page, pageSize: limit, totalPages: Math.ceil(total / limit),

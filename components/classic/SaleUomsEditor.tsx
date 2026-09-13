@@ -274,26 +274,36 @@ export default function SaleUomsEditor({
                 <span className="text-xs text-gray-500">{row.spec || '—'}</span>
               )}
             </div>
-            {/* 装货顺序(20260907)：仓库配货/司机卸货堆叠顺序——数字越小越先装/放最下（重、
-                耐压），越大越后装/放最上（怕压）；每一行(含基础单位)独立设置，不继承别的单位。
-                语义跟商品页头的 Product Sequence 一致，但那个排的是单据里第几行，这个排的是
-                物理堆叠顺序，两者互不影响。留空＝没设置，排序时按"没有 sequence"处理排最后。 */}
+            {/* 装货顺序(20260907 新增、20260912 改为 4 档)：仓库配货/司机卸货堆叠顺序——
+                1=最下面最重最不怕压……4=最上面最轻最怕压；每一行(含基础单位)独立设置，不继承
+                别的单位。语义跟商品页头的 Product Sequence 一致，但那个排的是单据里第几行，
+                这个排的是物理堆叠顺序，两者互不影响。0=没特意分层的基础货，排在 1-4 最前面
+                （最底层）——再点一次已选中的按钮就是取消选中、回到 0。 */}
             <div className="flex items-center gap-2 mt-1 pl-1">
               <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
                 {isEn ? 'Pack Sequence' : '装货顺序'}
               </span>
               {editMode ? (
-                <NumericInput
-                  step="1"
-                  value={row.sequence ?? ''}
-                  onChange={e => updateRow(i, { sequence: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
-                  placeholder={isEn ? 'smaller = load first / bottom' : '数字越小越先装/放最下'}
-                  title={isEn ? 'Smaller = load first / bottom (heavy); larger = load last / top (fragile)' : '数字越小越先装/放最下（重）；越大越后装/放最上（怕压）'}
-                  className="h-7 px-2 border border-gray-200 rounded text-xs outline-none no-spinner"
-                  style={{ ...focusStyle, width: 90 }}
-                />
+                <div className="flex items-center gap-1" title={isEn ? '1 = bottom (heaviest); 4 = top (most fragile). Click again to clear.' : '1=最下面（最重）；4=最上面（最怕压）。再点一次取消'}>
+                  {[1, 2, 3, 4].map(tier => {
+                    const active = row.sequence === tier
+                    return (
+                      <button
+                        key={tier}
+                        type="button"
+                        onClick={() => updateRow(i, { sequence: active ? 0 : tier })}
+                        className="w-7 h-7 text-xs rounded border transition-colors"
+                        style={active
+                          ? { background: '#875A7B', borderColor: '#875A7B', color: 'white' }
+                          : { background: 'white', borderColor: '#d1d5db', color: '#374151' }}
+                      >
+                        {tier}
+                      </button>
+                    )
+                  })}
+                </div>
               ) : (
-                <span className="text-xs text-gray-500">{row.sequence ?? '—'}</span>
+                <span className="text-xs text-gray-500">{row.sequence || '—'}</span>
               )}
             </div>
             {/* 毛重(20260911)：该可售单位自己的毛重(kg)，如"1箱=3.2kg"——每一行(含基础单位)

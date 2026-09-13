@@ -435,11 +435,13 @@ export default function ClassicProductsPage() {
     },
     {
       // 只读提示灯，不走通用的行内编辑机制（管理走点击弹窗，见 renderSaleUnitsBadge）
+      // 20260912：sortKey 此前误用 saleUnitsCount（按可售单位个数排），跟列名毫无关系，
+      // 改成真按装货顺序值排（见 lib/products-query.ts 的 packSequence）。
       key: 'saleUoms',
       width: 100,
       label: 'Pack Sequence',
       sortable: true,
-      sortKey: 'saleUnitsCount',
+      sortKey: 'packSequence',
       render: (_, row) => renderSaleUnitsBadge(row as unknown as ProductTemplate),
     },
     {
