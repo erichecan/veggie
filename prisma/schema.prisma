@@ -57,6 +57,16 @@ enum OrderSource {
   IMPORT
 }
 
+/// 订单调整行类型（20260913）：折扣/配送费/差价修正/其他，见 lib/order-adjustments.ts。
+/// 不计入 Order.totalAmount（商品税前额 SSOT 不变），只在计算客户实际应付总额
+/// （getOrderPayableTotal）时叠加，不参与销售额/毛利/提成统计。
+enum OrderAdjustmentType {
+  DISCOUNT // 折扣/让利，金额通常为负
+  DELIVERY_FEE // 配送费，金额通常为正
+  PRICE_CORRECTION // 补差价/价格修正，可正可负
+  OTHER
+}
+
 enum PaymentMethod {
   ONLINE
   CASH
@@ -184,23 +194,25 @@ model User {
   permissionGrants UserPermissionGrant[]
 
   /// 反向关系：该用户作为创建者的订单
-  ordersCreated        Order[]         @relation("OrderCreator")
+  ordersCreated         Order[]               @relation("OrderCreator")
   /// 反向关系：该用户作为业务员的订单
-  ordersAsSalesUser    Order[]         @relation("OrderSalesUser")
+  ordersAsSalesUser     Order[]               @relation("OrderSalesUser")
+  /// 反向关系：该用户创建的订单调整行（折扣/配送费/差价修正）
+  orderAdjustments      OrderAdjustment[]     @relation("OrderAdjustmentCreator")
   /// 反向关系：该用户作为默认业务员的客户
-  customersAsSalesUser Customer[]      @relation("CustomerSalesUser")
+  customersAsSalesUser  Customer[]            @relation("CustomerSalesUser")
   /// 反向关系：绑定到该用户的司机配送批次(DriverSlot.userId)
-  driverSlots          DriverSlot[]    @relation("DriverSlotUser")
+  driverSlots           DriverSlot[]          @relation("DriverSlotUser")
   /// 反向关系：该用户作为负责人的采购品类分组
-  categoryGroupsOwned  CategoryGroup[] @relation("CategoryGroupOwner")
+  categoryGroupsOwned   CategoryGroup[]       @relation("CategoryGroupOwner")
   /// 反向关系：该用户发布的信息广场帖子
-  bulletinPostsAuthored BulletinPost[] @relation("BulletinPostAuthor")
+  bulletinPostsAuthored BulletinPost[]        @relation("BulletinPostAuthor")
   /// 反向关系：该用户置顶的信息广场帖子
-  bulletinPostsPinned   BulletinPost[] @relation("BulletinPostPinnedBy")
+  bulletinPostsPinned   BulletinPost[]        @relation("BulletinPostPinnedBy")
   /// 反向关系：该用户发起的 AI 问数记录
-  analysisQueryLogs     AnalysisQueryLog[]     @relation("AnalysisQueryLogUser")
+  analysisQueryLogs     AnalysisQueryLog[]    @relation("AnalysisQueryLogUser")
   /// 反向关系：该用户保存的常用分析报表
-  savedAnalysisReports  SavedAnalysisReport[]  @relation("SavedAnalysisReportUser")
+  savedAnalysisReports  SavedAnalysisReport[] @relation("SavedAnalysisReportUser")
 
   @@index([role])
   @@index([customerId])
@@ -209,16 +221,16 @@ model User {
 }
 
 model ProductCategory {
-  id             String            @id @default(cuid())
+  id             String         @id @default(cuid())
   name           String
   nameZh         String?
-  externalId     String?           @unique
+  externalId     String?        @unique
   /// 归属的采购品类分组（干货/日韩/超市/生鲜冷冻），可空=未映射
   groupId        String?
-  group          CategoryGroup?    @relation(fields: [groupId], references: [id])
+  group          CategoryGroup? @relation(fields: [groupId], references: [id])
   /// 该类目商品业务上"应该"放哪个温区（业务规则），可空=未映射。与 Product.currentZoneId（实际放置）对比即可发现放错温区
   requiredZoneId String?
-  requiredZone   Zone?             @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
+  requiredZone   Zone?          @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
   products       Product[]
 
   @@index([groupId])
@@ -326,34 +338,34 @@ model Product {
   // 20260825 从 ProductTemplate 并入（合表重构，ProductTemplate 已删，见
   // docs/20260825-producttemplate-merge-tasks.md）。这个目录里模板与变体
   // 恒为 1:1，从未真正用过多变体，模板层是多余的一层。
-  type              ProductType           @default(PRODUCT)
-  canBeSold         Boolean               @default(true)
-  canBePurchased    Boolean               @default(true)
-  description       String?
-  saleDescription   String?
-  weight            Decimal?              @db.Decimal(10, 3)
+  type             ProductType @default(PRODUCT)
+  canBeSold        Boolean     @default(true)
+  canBePurchased   Boolean     @default(true)
+  description      String?
+  saleDescription  String?
+  weight           Decimal?    @db.Decimal(10, 3)
   /// 净重（kg）。物流/报关/称重口径，独立于上面的"默认商品重量"weight。
-  netWeight         Decimal?              @db.Decimal(10, 3)
-  volume            Decimal?              @db.Decimal(10, 3)
-  isPackaging       Boolean?
-  canBeExpensed     Boolean?
+  netWeight        Decimal?    @db.Decimal(10, 3)
+  volume           Decimal?    @db.Decimal(10, 3)
+  isPackaging      Boolean?
+  canBeExpensed    Boolean?
   /// 销售单位（Odoo uom_id）
-  uomId             String?
-  uom               Uom?                  @relation("SaleUom", fields: [uomId], references: [id])
+  uomId            String?
+  uom              Uom?        @relation("SaleUom", fields: [uomId], references: [id])
   /// 采购单位（Odoo uom_po_id）
-  purchaseUomId     String?
-  purchaseUom       Uom?                  @relation("PurchaseUom", fields: [purchaseUomId], references: [id])
+  purchaseUomId    String?
+  purchaseUom      Uom?        @relation("PurchaseUom", fields: [purchaseUomId], references: [id])
   /// 兼容保留：老的 String 字段，逐步迁移到 uomId
-  unitOfMeasure     String?
-  purchaseUoM       String?
-  tracking          String?
-  websitePublished  Boolean?
-  websiteName       String?
-  vendorTaxRate     Decimal?              @db.Decimal(6, 4)
-  forecastQty       Decimal?              @db.Decimal(14, 3)
-  createdBy         String?
-  updatedBy         String?
-  barcode           String?
+  unitOfMeasure    String?
+  purchaseUoM      String?
+  tracking         String?
+  websitePublished Boolean?
+  websiteName      String?
+  vendorTaxRate    Decimal?    @db.Decimal(6, 4)
+  forecastQty      Decimal?    @db.Decimal(14, 3)
+  createdBy        String?
+  updatedBy        String?
+  barcode          String?
 
   @@index([categoryId])
   @@index([sequence])
@@ -366,60 +378,54 @@ model Product {
  * 商品可售单位（大小单位灵活出单，20260714 新增；20260819 换算系数改挂商品）
  * ================================================================================
  * 一个商品可以挂多个可售单位（如 CASE 整箱 + PKT 拆零），共享同一份 Product.qtyOnHand。
- *
  * ## 换算系数为什么必须挂在**商品**上，而不是全局 Uom 上
- *
  * 20260819 生产库实测：`ASIAN CHOICE Black Tiger Shrimp 10*700g CASE` 与
  * `Chuannan Pickled Vegetable 30*62g CASE` 都叫 CASE，一箱一个装 10 包、一个装 30 包。
  * 「1 CASE 等于多少」根本不是 CASE 这个词的属性，而是**这个商品**的属性。
  * 全局 `Uom.factor` 承担不了 —— 生产库里 Unit 类目下的 factor 干脆全是 1，
  * 于是多规格报价形同虚设（切了单位价格不变、库存也不换算）。
- *
  * 所以 `factor` 落在这张表上：**1 个此单位 = factor 个基础单位**。
  * 基础单位就是 `isDefault = true` 那一行，其 factor 恒为 1。
- *
  * ## 库存口径（客户 20260819 拍板）
- *
  * `Product.qtyOnHand` 按**基础单位**（最小可售单位）计数。
  * 进 10 箱、每箱 10 包 → 库存记 100 包；卖 1 CASE 扣 10，卖 3 PKT 扣 3。
  * 这样拆箱散卖不需要任何人工调账 —— 而拆成两个商品的老办法（生产库有 67 组）
  * 必须靠人把 CASE 库存减 1、LOOSE 库存加 N，没人做，散装商品库存就长期是错的。
- *
  * `priceOverride` 留空则按「基础单价 × factor」自动换算，填了就用这个固定值
  * （整箱优惠价这类场景）。
  */
 enum SaleUomPriceMode {
-  AUTO     // 基准单价 × factor，四舍五入两位小数（现状默认行为）
-  FIXED    // 直接用 priceOverride（现状"填了就固定"，只是显式建模成一个状态）
-  FORMULA  // 基准单价 × factor × (1 − priceDiscountPct/100) + priceSurcharge
+  AUTO // 基准单价 × factor，四舍五入两位小数（现状默认行为）
+  FIXED // 直接用 priceOverride（现状"填了就固定"，只是显式建模成一个状态）
+  FORMULA // 基准单价 × factor × (1 − priceDiscountPct/100) + priceSurcharge
 }
 
 model ProductSaleUom {
-  id            String   @id @default(cuid())
-  productId     String
-  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  uomId         String
-  uom           Uom      @relation(fields: [uomId], references: [id])
+  id                      String           @id @default(cuid())
+  productId               String
+  product                 Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  uomId                   String
+  uom                     Uom              @relation(fields: [uomId], references: [id])
   /// 下单页默认选中的单位；一个商品应恰好有一个 isDefault=true（应用层保证，无数据库级约束）
   /// 它同时是**基础单位**：库存按它计数，其 factor 恒为 1
-  isDefault     Boolean  @default(false)
+  isDefault               Boolean          @default(false)
   /// 1 个此单位 = factor 个基础单位。如 CASE 装 10 包则填 10；基础单位自身恒为 1。
   /// ⛔ 不要用全局 Uom.factor —— 同名 CASE 在不同商品里箱规不同（见 model 注释）
   /// ⛔ 精度必须够存"1/n"这类除不尽的小数（20260825 前只有 6 位小数，"÷3"存成
   ///    0.333333，页面反算 1/0.333333 显形成 3.000003——不是精度够用只是没显出来，
   ///    是反算会把截断误差放大）。10 位小数能让 n 到几万都反算干净。
-  factor        Decimal  @default(1) @db.Decimal(18, 10)
-  priceOverride Decimal? @db.Decimal(12, 2)
+  factor                  Decimal          @default(1) @db.Decimal(18, 10)
+  priceOverride           Decimal?         @db.Decimal(12, 2)
   /// 价格计算方式；默认 AUTO 与现状完全一致，存量数据据 priceOverride 是否有值一次性回填
-  priceMode        SaleUomPriceMode @default(AUTO)
+  priceMode               SaleUomPriceMode @default(AUTO)
   /// FORMULA 模式下的折扣百分比，如 10 表示"打 9 折"
-  priceDiscountPct Decimal          @default(0) @db.Decimal(6, 4)
+  priceDiscountPct        Decimal          @default(0) @db.Decimal(6, 4)
   /// FORMULA 模式下的加减金额（可正可负），折扣之后再加
-  priceSurcharge   Decimal          @default(0) @db.Decimal(12, 2)
+  priceSurcharge          Decimal          @default(0) @db.Decimal(12, 2)
   /// 20260901 新增：司机提成价照抄价格的换算机制。留空 = 按 AUTO 用「基础提成价 × factor」
   /// 自动折算（与改造前"提成只按 factor 线性折算"逐字一致）。填了 override / 用 FORMULA
   /// 才会让某个可售单位的提成脱离 factor 线性关系（如 FIXED 一口价箱装）。
-  commissionPriceOverride Decimal? @db.Decimal(12, 2)
+  commissionPriceOverride Decimal?         @db.Decimal(12, 2)
   /// 提成价的计算方式；复用 SaleUomPriceMode，语义与价格那边完全一致
   commissionPriceMode     SaleUomPriceMode @default(AUTO)
   /// FORMULA 模式下提成价的百分比调整（可正可负）
@@ -429,23 +435,23 @@ model ProductSaleUom {
   /// 20260905 新增：按这个单位卖，客户实际拿到的规格说明（如"500g/包"、"10包一箱共5kg"）。
   /// 加订单行时优先取这里的值写进 OrderLine.spec（行快照），没填才落回 lib/order-line-description.ts
   /// 的商品级兜底（Product.saleDescription / Product.spec）。
-  spec          String?
+  spec                    String?
   /// 20260907 新增、20260912 改为 4 档：装货顺序，仓库配货/司机卸货用——1=最下面（重/不怕压，
   /// 最先装）……4=最上面（轻/怕压，最后装）。0=没特意设分层的基础货，排在 1-4 最前面（最底层）。
   /// 只允许 0-4（CHECK 约束），不再是自由数字。跟 Product.sequence（单据里排第几行）是两个
   /// 独立维度。允许大量商品共用同一个数字。
-  sequence      Int      @default(0)
+  sequence                Int              @default(0)
   /// 20260911 新增：该可售单位自己的毛重(kg)，如"1箱=3.2kg"——跟 Product.weight
   /// （UI 上也显示"毛重"，但那是基础单位层级、历史遗留字段名叫 weight）是两个独立字段，
   /// 每个可售单位各自配置，打印单据里折进规格说明文字显示，见 lib/print/uom-conversion.ts
-  grossWeight   Decimal? @db.Decimal(10, 3)
+  grossWeight             Decimal?         @db.Decimal(10, 3)
   /// 20260912 新增：最后改动这一行的用户名/邮箱，配合"按可售单位查看商品"页的
   /// Last Updated by 列——历史数据从未记录，这个字段之前不存在时改的行显示为空，
   /// 不编造身份（同类教训见 Product.updatedBy 的踩坑记录）
-  updatedBy     String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  updatedBy               String?
+  active                  Boolean          @default(true)
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
 
   @@unique([productId, uomId])
   @@index([productId])
@@ -453,68 +459,68 @@ model ProductSaleUom {
 }
 
 model Customer {
-  id                  String                 @id @default(cuid())
+  id                  String                  @id @default(cuid())
   name                String
   /// 兼容旧数据：合并后的整体地址（仍由后端自动维护，前端不直接编辑）
-  address             String                 @default("")
+  address             String                  @default("")
   /// 街道 1（独立保存，不再与 street2 合并到 address）
-  street              String                 @default("")
+  street              String                  @default("")
   /// 街道 2（Bug 修复 #3B：保存后保持独立字段，不再合并到 address）
-  street2             String                 @default("")
+  street2             String                  @default("")
   /// 州/省（拆分自旧的 address 字段）
-  state               String                 @default("")
+  state               String                  @default("")
   /// 邮编
-  zip                 String                 @default("")
+  zip                 String                  @default("")
   /// 国家（默认空，可在前端下拉选择）
-  country             String                 @default("")
-  phone               String                 @default("")
-  email               String                 @default("")
-  vatNumber           String                 @default("")
-  paymentTerm         String                 @default("monthly")
-  creditLimit         Decimal?               @db.Decimal(12, 2)
+  country             String                  @default("")
+  phone               String                  @default("")
+  email               String                  @default("")
+  vatNumber           String                  @default("")
+  paymentTerm         String                  @default("monthly")
+  creditLimit         Decimal?                @db.Decimal(12, 2)
   /// 司机送货给此客户的佣金比率（0-1），例如 0.05 = 司机拿 5%
-  commissionRate      Decimal?               @db.Decimal(6, 4)
+  commissionRate      Decimal?                @db.Decimal(6, 4)
   /// 司机送货给此客户的固定佣金（EUR / 单）
-  commissionFixed     Decimal?               @db.Decimal(10, 2)
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
+  commissionFixed     Decimal?                @db.Decimal(10, 2)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
   /// 最后修改人（自由文本，同 Product.updatedBy 的模式，不关联 User 表）
   updatedBy           String?
-  externalId          String?                @unique
+  externalId          String?                 @unique
   city                String?
   notes               String?
   /// 客户级外部备注（客户可见，打印在报价单/送货单上，如收货注意事项、结算方式）；与内部 notes 区分
   externalNote        String?
   /// 定价模式：multi=走价格表引擎, default=直接用牌价, last=用最近一次售价
-  priceType           String                 @default("multi")
-  isActive            Boolean                @default(true)
+  priceType           String                  @default("multi")
+  isActive            Boolean                 @default(true)
   /// 是否是客户（Odoo res.partner.is_customer）
-  isCustomer          Boolean                @default(true)
+  isCustomer          Boolean                 @default(true)
   /// 是否是供应商（Odoo res.partner.is_vendor），两者可同时为 true
-  isVendor            Boolean                @default(false)
+  isVendor            Boolean                 @default(false)
   /// 供应商专属：采购税率
-  vendorTaxRate       Decimal?               @db.Decimal(6, 4)
+  vendorTaxRate       Decimal?                @db.Decimal(6, 4)
   /// 供应商专属：供应商付款条款
   supplierPaymentTerm String?
   /// 默认业务员用户 ID（下单时作为 Order.salesUserId 的默认来源）
   salesUserId         String?
-  salesUser           User?                  @relation("CustomerSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
+  salesUser           User?                   @relation("CustomerSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
   /// 经纬度（Google Geocoding API 填充）
   latitude            Float?
   longitude           Float?
   /// 默认配送批次（P1-4：客户↔司机绑定）
   defaultDriverSlotId String?
-  defaultDriverSlot   DriverSlot?            @relation("CustomerDefaultSlot", fields: [defaultDriverSlotId], references: [id], onDelete: SetNull)
+  defaultDriverSlot   DriverSlot?             @relation("CustomerDefaultSlot", fields: [defaultDriverSlotId], references: [id], onDelete: SetNull)
   /// 账期临时延期（20260826）：会计/主管手动给逾期客户放宽一段时间，两项拦截
   /// （逾期检查 + 信用额度超限）在此之前都不生效；到期后自动恢复正常检查。
   /// 存在这个字段是为了下单时一次查询就能判断，不用每次去连 termExtensions 算最新一条。
   termExtendedUntil   DateTime?
   termExtendedNote    String?
   /// 对账单生成周期：NONE | WEEKLY | MONTHLY（应用层校验，风格同 priceType）
-  settlementCycle     String                 @default("NONE")
+  settlementCycle     String                  @default("NONE")
   termExtensions      CustomerTermExtension[]
   specialPrices       CustomerSpecialPrice[]
-  supplierInfos       ProductSupplierInfo[]  @relation("PartnerSupplierInfos")
+  supplierInfos       ProductSupplierInfo[]   @relation("PartnerSupplierInfos")
   pricelists          CustomerPricelist[]
   contacts            CustomerContact[]
 
@@ -602,9 +608,9 @@ model Uom {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  saleProducts      Product[]         @relation("SaleUom")
-  purchaseProducts  Product[]         @relation("PurchaseUom")
-  productSaleUoms   ProductSaleUom[]
+  saleProducts     Product[]        @relation("SaleUom")
+  purchaseProducts Product[]        @relation("PurchaseUom")
+  productSaleUoms  ProductSaleUom[]
 
   @@unique([categoryId, name])
   @@index([categoryId])
@@ -648,7 +654,6 @@ model ProductSupplierInfo {
  * 且同一份写法反复出现在多期单据里。与其做一次性通用翻译（不准、还要引外部 AI 服务），
  * 不如让操作员在核对界面选一次商品后就把这行原文记住 —— 下次同样的写法出现，
  * 直接精确命中，界面上也会显示当时选定的系统商品名（相当于变相"翻译"）。
- *
  * 全局生效，不分供应商：同一段原文不管出自哪家供应商的单据都指向同一个系统商品。
  */
 model ProductAlias {
@@ -674,17 +679,17 @@ model ProductAlias {
  * 下单时快速判断，后者用于事后追溯"这个客户到底被延期过几次、每次是谁批的"。
  */
 model CustomerTermExtension {
-  id              String   @id @default(cuid())
-  customerId      String
-  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   /// 本次延长的天数（1周=7、2周=14，或自定义）
-  days            Int
+  days          Int
   /// 延长到的日期——延期期间(今天 <= until)逾期检查与信用额度检查都不生效
-  until           DateTime
-  note            String?
-  createdById     String
-  createdByName   String
-  createdAt       DateTime @default(now())
+  until         DateTime
+  note          String?
+  createdById   String
+  createdByName String
+  createdAt     DateTime @default(now())
 
   @@index([customerId])
 }
@@ -816,6 +821,7 @@ model Order {
   deliverySlip  DeliverySlip?
   lines         OrderLine[]
   discrepancies OrderDiscrepancy[]
+  adjustments   OrderAdjustment[]
 
   @@index([restaurantId])
   @@index([status])
@@ -872,10 +878,36 @@ model OrderLine {
   sequence          Int       @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  /// true 时该行不计入销售额/毛利/提成统计（lib/commission.ts、lib/analytics/metrics.ts
+  /// 均据此排除），但仍正常走库存扣减、拣货单、发票展示——物理上是真实发出的货，
+  /// 只是不计钱。true 时 API 层强制 unitPrice=0，不允许"又是赠品又收钱"的矛盾状态。
+  isGift            Boolean   @default(false)
 
   @@index([orderId])
   @@index([productId])
   @@index([uomId])
+}
+
+/// 订单调整行（20260913）：折扣/配送费/差价修正等不对应任何库存商品的金额调整，
+/// 详见 lib/order-adjustments.ts。产生背景：生产库里长期靠新建虚构商品
+/// （price difference / Small Offer Set / Discount / Deliver Service）塞进订单行
+/// 将就实现这类需求，导致提成/毛利/拣货单分表全部被污染，见
+/// docs/20260913-consu-missing-uom-checklist.md、DEV-PLAN.md。
+model OrderAdjustment {
+  id          String              @id @default(cuid())
+  orderId     String
+  order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type        OrderAdjustmentType
+  /// 展示用说明文字，如"9月促销折扣"/"退货补差价"
+  label       String
+  /// 可正可负；折扣/差价修正通常为负，配送费通常为正
+  amount      Decimal             @db.Decimal(12, 2)
+  note        String?
+  createdById String?
+  createdBy   User?               @relation("OrderAdjustmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime            @default(now())
+
+  @@index([orderId])
 }
 
 /// 拣货差异记录（拣货数量与下单数量不符时由运营记录）
@@ -1917,7 +1949,7 @@ model BulletinPost {
 
   /// AUTO 来源的帖子没有人类作者，故可空
   authorId String?
-  author   User?  @relation("BulletinPostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  author   User?   @relation("BulletinPostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   pinned         Boolean   @default(false)
   pinnedAt       DateTime?
