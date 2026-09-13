@@ -1,6 +1,6 @@
 'use client'
 import type { AnalysisDsl } from '@/lib/analytics-chat/dsl-schema'
-import { getDomainDef } from '@/lib/analytics-chat/domains'
+import { getDomainDef, COMPILER_ROW_LIMIT } from '@/lib/analytics-chat/domains'
 import { downloadCsv } from '@/lib/csv-export'
 import { escapeHtml, openPrintWindow } from '@/lib/print-export'
 
@@ -236,7 +236,7 @@ export function ChatEntryView({
               </table>
             </div>
           )}
-          {truncated && <p className="mt-1 text-xs text-gray-400">{isEn ? 'Showing top 500 rows only' : '仅显示前 500 行'}</p>}
+          {truncated && <p className="mt-1 text-xs text-gray-400">{isEn ? `Showing top ${COMPILER_ROW_LIMIT} rows only` : `仅显示前 ${COMPILER_ROW_LIMIT} 行`}</p>}
           <div className="mt-2 flex gap-2">
             <button
               onClick={() => onSaveReport(entry.dsl)}
@@ -287,7 +287,7 @@ export function ChatEntryView({
             </tbody>
           </table>
         )}
-        {data.result.truncated && <p className="mt-1 text-xs text-gray-400">{isEn ? 'Showing top 500 rows only' : '仅显示前 500 行'}</p>}
+        {data.result.truncated && <p className="mt-1 text-xs text-gray-400">{isEn ? `Showing top ${COMPILER_ROW_LIMIT} rows only` : `仅显示前 ${COMPILER_ROW_LIMIT} 行`}</p>}
         <div className="mt-2 flex gap-2">
           <button
             onClick={() => onSaveReport(entry.dsl)}

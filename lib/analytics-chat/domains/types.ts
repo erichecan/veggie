@@ -7,6 +7,15 @@
  * 所以把"怎么拼 SQL"的职责下放到各域自己的文件里，这里只定义共享的形状。
  */
 
+/**
+ * 行数硬上限：防止理解错的问题（比如维度选了个基数很大的字段）拖垮生产库。
+ * 20260912：500→1000（客户反馈明细/交叉分组常常刚好卡在 500 附近）。
+ * 定义在这个纯类型文件里（不是 compiler.ts）是因为 compiler.ts 顶层 import 了
+ * prisma，客户端组件（ChatEntryView.tsx）要展示"仅显示前 N 行"文案又不能把
+ * prisma 打进浏览器包，这份常量必须放在两边都能安全 import 的地方。
+ */
+export const COMPILER_ROW_LIMIT = 1000
+
 export type DomainKey = 'sales' | 'quotation' | 'procurement' | 'delivery'
 
 export const DOMAIN_KEYS: readonly DomainKey[] = ['sales', 'quotation', 'procurement', 'delivery']

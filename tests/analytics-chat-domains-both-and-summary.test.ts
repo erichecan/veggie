@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { DOMAIN_DEFS } from '../lib/analytics-chat/domains'
+import { DOMAIN_DEFS, COMPILER_ROW_LIMIT } from '../lib/analytics-chat/domains'
+
+test('COMPILER_ROW_LIMIT：20260912 客户反馈 500 太小，改成 1000', () => {
+  assert.equal(COMPILER_ROW_LIMIT, 1000)
+})
 
 /**
  * 20260912：两个客户反馈的回归测试——

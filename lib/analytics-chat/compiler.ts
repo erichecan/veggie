@@ -9,11 +9,10 @@
  */
 import { prisma } from '@/lib/db'
 import { resolveDateRange } from '@/lib/analytics/metrics'
-import { getDomainDef } from './domains'
+import { getDomainDef, COMPILER_ROW_LIMIT } from './domains'
 import type { AnalysisDsl } from './dsl-schema'
 
-/** 行数硬上限：防止理解错的问题（比如维度选了个基数很大的字段）拖垮生产库 */
-export const COMPILER_ROW_LIMIT = 500
+export { COMPILER_ROW_LIMIT }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 

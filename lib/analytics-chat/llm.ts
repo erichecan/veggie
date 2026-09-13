@@ -26,7 +26,7 @@
  */
 import { GoogleGenAI, Type } from '@google/genai'
 import { toDayKey } from '@/lib/analytics/metrics'
-import { DOMAIN_DEFS, isDomainKey, type DomainKey, type MetricDef } from './domains'
+import { DOMAIN_DEFS, isDomainKey, COMPILER_ROW_LIMIT, type DomainKey, type MetricDef } from './domains'
 import type { AnalysisDsl } from './dsl-schema'
 
 // 与 ai-pdf-parser.ts 同一档：gemini-2.5/3.6 在这个 API 项目上全系 404，
@@ -268,7 +268,7 @@ export async function narrateResult(input: NarrateInput): Promise<string | null>
 ${input.dimensionLabel ? `分组维度：${input.dimensionLabel}` : '未分组（总计）'}
 合计：${input.total}
 ${input.secondaryLabel ? `另一口径「${input.secondaryLabel}」合计：${input.secondaryTotal}` : ''}
-${input.truncated ? `（分组结果超过 ${500} 行，只取了排名前 500）` : ''}
+${input.truncated ? `（分组结果超过 ${COMPILER_ROW_LIMIT} 行，只取了排名前 ${COMPILER_ROW_LIMIT}）` : ''}
 排名前几的分组：${input.topRows.map((r) => `${r.name}: ${r.value}`).join('；') || '无'}
 
 用 2-3 句中文口语化总结这份数据，不要罗列表格，不要用 markdown。${input.secondaryLabel ? '两个口径的合计都要提到，不要只说一个。' : ''}`
