@@ -45,9 +45,10 @@
 - `lib/invoice-from-order.ts`、`lib/trip-from-wave.ts`、`lib/print/{dispatch-loader,trip-loader}.ts`：接入调整合计
 - `lib/commission.ts`、`lib/analytics/driver-commission.ts`、`app/api/analytics/{sales-overview,margin}/route.ts`、`lib/analytics/snapshot.ts`、`lib/analytics-chat/domains/sales.ts`：排除赠品行
 
-前端：销售单详情页（`orders/[id]`）商品行加"Gift"勾选列 + 新增"Adjustments"调整行面板
-（增/删/列表，联动 Amount Due）。**报价单页、新建下单页暂未接入同款 UI**（后端接口已可用，
-留作后续，见"已知不可用功能"）。
+前端：销售单详情页（`orders/[id]`）、报价单详情页（`quotations/[id]`）商品行均加"Gift"
+勾选列 + "Adjustments"调整行面板（增/删/列表，联动 Amount Due）。新建下单页
+（`place-order`）加了 Gift 勾选列，但不含调整面板——调整行需要已存在的 orderId 才能挂载，
+新建阶段还没有 id，保存后跳转到 quotations/[id] 即可继续加调整行。
 
 ## 功能完成度
 
@@ -60,7 +61,9 @@
 | 提成/毛利/销售额统计排除赠品行 | ✅ |
 | 发票/司机对账/打印单据接入调整行 | ✅ |
 | 销售单详情页 UI（勾选+调整面板） | ✅ |
-| 报价单/新建下单页 UI | ⚠️ 未做 |
+| 报价单详情页 UI（勾选+调整面板） | ✅ |
+| 新建下单页 UI（仅 Gift 勾选，无调整面板） | ✅（调整面板需已存在 orderId，设计如此） |
+| 订单创建接口（POST /api/orders）isGift 支持 | ✅（含 totalAmount/items 快照/审计日志/邮件确认全部改读归零后的落库值） |
 | 存量假商品下架 | ✅（生产库已执行） |
 | 历史假商品订单数据迁移 | ⚠️ 明确不做（DEV-PLAN 既定方案） |
 
@@ -85,19 +88,18 @@
 | 角色可达性零意外扩权 | `tests/role-reachability.test.ts` + `rbac-route-map.test.ts` | ✅（新增 3 个 handler 已按项目机制显式登记） |
 | 全量测试套件 | `node --test tests/*.test.ts` | ✅ 905 例，901 通过、2 跳过、2 失败（均为既存的 ABCT 客户测试数据缺口，与本次改动无关） |
 | 生产库假商品下架 | SSH + psql 核实 | ✅ 4 个商品 active 均已改为 false |
+| 报价单页/新建下单页 UI | Playwright 实测 | ✅ Gift 列渲染正常，控制台无错误 |
+| 新建订单赠品行金额一致性 | curl 复核 | ✅ unitPrice/subtotal/totalAmount/items 快照全部归零一致，测试订单已清理 |
 
 ## 已知不可用功能 / 遗留问题
 
-1. **报价单页（quotations/[id]）、新建下单页（place-order）未接入赠品勾选/调整面板 UI**——
-   后端接口对 PENDING 状态订单本身可用，只是前端界面还没加，需要客户确认是否需要提前到
-   报价阶段就能用这两个功能。
-2. **68 个 Consumable 商品完全没配置销售单位（goodsType）**，其中 9 个是真实商品，见
+1. **68 个 Consumable 商品完全没配置销售单位（goodsType）**，其中 9 个是真实商品，见
    `docs/20260913-consu-missing-uom-checklist.md`——需要运营去 Settings→计量单位 补配。
-3. **历史 106 笔用假商品记录的订单不会被迁移**，历史报表数字维持现状，不追溯修正（DEV-PLAN
+2. **历史 106 笔用假商品记录的订单不会被迁移**，历史报表数字维持现状，不追溯修正（DEV-PLAN
    既定方案，非本次遗漏）。
-4. **赠品可以被"手动改价成 0"绕过而不走 Gift 勾选**——效果一样能免单，但不会被统计口径
+3. **赠品可以被"手动改价成 0"绕过而不走 Gift 勾选**——效果一样能免单，但不会被统计口径
    排除在外，commission/analytics 会把它当正常低价单算。这不是代码能堵死的漏洞，只能靠
    培训/流程约束："免单一律用赠品勾选，不要手动改价成 0"。
-5. **会计口径决定沿用 DEV-PLAN 默认方案**：配送费/折扣不计入销售额与毛利统计、提成基数
+4. **会计口径决定沿用 DEV-PLAN 默认方案**：配送费/折扣不计入销售额与毛利统计、提成基数
    不扣折扣、四种调整类型共用一个权限点——如果客户后续有不同要求（比如运费要单独算一笔
    "其他收入"科目，或折扣需要经理审批），需要另开需求评估。

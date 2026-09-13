@@ -64,6 +64,13 @@
 
 ## 台账状态：全部完成（U1-U9）
 
+- [x] U10（用户追加需求）：报价单页（quotations/[id]）、新建下单页（place-order）接入 Gift 勾选/调整面板
+  - 完成于 23857cb；quotations/[id] 与 orders/[id] 完全对称（Gift 列 + OrderAdjustmentsPanel）；
+    place-order 只加 Gift 勾选（调整面板需要已存在 orderId，新建阶段没有，设计如此，
+    保存后跳转 quotations/[id] 即可继续加）；顺带修了 POST /api/orders 的真实 bug——
+    赠品行落库价归零但 totalAmount/items 快照/审计日志/邮件确认此前仍读引擎权威价，
+    统一收口成 linesForPersist 消除该口径分裂；Playwright + curl 端到端验证，测试数据已清理
+
 ## 周期记录
 
 （每周期完成后在此追加一行：日期 · 完成单元 · commit hash · 遗留问题）
