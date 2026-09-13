@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
+import OrderAdjustmentsPanel from '@/components/orders/order-adjustments-panel'
 import type { Order, Customer, OdooPricelist as Pricelist, CustomerPriceType } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { OrderChatter } from '@/components/order/OrderChatter'
@@ -70,6 +71,8 @@ export default function QuotationDetailPage() {
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
+  // 折扣/配送费/差价调整合计，由 OrderAdjustmentsPanel 回报，并入下方"应付总额"展示
+  const [adjustmentsTotal, setAdjustmentsTotal] = useState(0)
   // OrderLineEditor 内部的商品搜索框 ref 是私有的，靠 onReady 把 focus 能力递出来给快捷键用
   const focusLineSearchRef = useRef<(() => void) | null>(null)
   // 插完空行要让那一行立刻进搜索态 —— 与新建页同一套交互
@@ -312,7 +315,7 @@ export default function QuotationDetailPage() {
     })
   }
 
-  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec' | 'note', value: number | string) {
+  function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec' | 'note' | 'isGift', value: number | string | boolean) {
     setEditLines(prev => {
       const next = [...prev]
       const line: EditLine = { ...next[idx], [field]: value }
@@ -326,6 +329,11 @@ export default function QuotationDetailPage() {
         line.priceSourceType = null
         line.priceSourceDetail = null
         line.priceSourceDate = null
+      }
+      // 赠品标记(20260913)：勾选即单价/小计归零，与后端强制校验保持一致
+      if (field === 'isGift' && value === true) {
+        line.unitPrice = 0
+        line.subtotal = 0
       }
       next[idx] = line
       return next
@@ -462,6 +470,8 @@ export default function QuotationDetailPage() {
   const creditBlocked = creditInfo?.canOrder === false && !canOverrideCredit
   const isSalesOrder = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED'].includes(statusUp)
   const isLocked = statusUp === 'LOCKED' || statusUp === 'CANCELLED'
+  // 与后端 app/api/orders/[id]/adjustments/route.ts 的 LOCKED_STATUSES 同一口径
+  const adjustmentsEditable = !['LOCKED', 'CANCELLED', 'COMPLETED'].includes(statusUp)
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
   const lines = order.lines ?? []
   const displayLines = editing ? editLines : lines
@@ -931,7 +941,7 @@ export default function QuotationDetailPage() {
                 search: isEn ? 'Search product…' : '搜索商品…',
               }}
               onReady={handleEditorReady}
-              emptyColSpan={17}
+              emptyColSpan={18}
               rowStyle={(l) => {
                 if (!editing || !l.productId) return undefined
                 const fc = forecastMap.get(l.productId)
@@ -949,6 +959,7 @@ export default function QuotationDetailPage() {
                   <th className="px-2 py-3 text-left">Product</th>
                   <th className="px-2 py-3 text-left">Description</th>
                   <th className="px-2 py-3 text-left">Note</th>
+                  <th className="px-2 py-3 text-center" title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Ordered<br/>Qty</div></th>
                   <th className="px-2 py-3 text-left"><div className="leading-tight">Unit of<br/>Measure</div></th>
                   <th className="px-2 py-3 text-right"><div className="leading-tight">Unit<br/>Price</div></th>
@@ -1026,6 +1037,17 @@ export default function QuotationDetailPage() {
                         />
                       ) : (l.note || '')}
                     </td>
+                    {/* 赠品(20260913)：勾选后单价/小计归零，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
+                    <td className="px-2 py-2 text-center">
+                      {editing ? (
+                        <input
+                          type="checkbox"
+                          checked={!!(l as unknown as { isGift?: boolean }).isGift}
+                          onChange={e => updateLine(i, 'isGift', e.target.checked)}
+                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
+                        />
+                      ) : ((l as unknown as { isGift?: boolean }).isGift ? '🎁' : '')}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       {editing ? (
                         <input type="number" step="0.001" min="0" className={inputCls}
@@ -1066,6 +1088,8 @@ export default function QuotationDetailPage() {
                       {editing ? (
                         <input type="number" step="0.01" min="0" className={inputCls}
                           value={Number(l.unitPrice)}
+                          disabled={!!(l as unknown as { isGift?: boolean }).isGift}
+                          title={(l as unknown as { isGift?: boolean }).isGift ? (isEn ? 'Gift line — price locked at 0' : '赠品行——单价锁定为 0') : undefined}
                           onChange={e => updateLine(i, 'unitPrice', Number(e.target.value))}
                           onFocus={e => e.target.select()}
                           onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
@@ -1121,6 +1145,14 @@ export default function QuotationDetailPage() {
             />
           </>
 
+          {/* 调整行：折扣/配送费/差价调整，不属于商品行，独立于 OrderLineEditor 之外 */}
+          <OrderAdjustmentsPanel
+            orderId={order.id}
+            editable={adjustmentsEditable}
+            isEn={isEn}
+            onTotalChange={setAdjustmentsTotal}
+          />
+
           {/* Region 6: totals */}
           <div className="border-t border-gray-200 px-6 py-4 flex items-start justify-end bg-gray-50">
             <div className="text-sm text-right space-y-1 min-w-[260px]">
@@ -1129,7 +1161,10 @@ export default function QuotationDetailPage() {
               <div className="border-t border-gray-200 my-1" />
               <div className="flex justify-between text-base"><span className="font-bold text-gray-700">Total:</span><span className="font-bold text-gray-900">€ {(subtotalExTax + totalTax).toFixed(2)}</span></div>
               <div className="flex justify-between text-xs"><span className="text-gray-500">Margin:</span><span className="text-gray-500">€ {margin.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{(subtotalExTax + totalTax).toFixed(2)}</span></div>
+              {adjustmentsTotal !== 0 && (
+                <div className="flex justify-between text-xs"><span className="text-gray-500">{isEn ? 'Adjustments:' : '调整合计:'}</span><span className={adjustmentsTotal < 0 ? 'text-red-600' : 'text-gray-500'}>€ {adjustmentsTotal.toFixed(2)}</span></div>
+              )}
+              <div className="flex justify-between"><span className="text-gray-600">Amount Due:</span><span className="text-gray-800">{(subtotalExTax + totalTax + adjustmentsTotal).toFixed(2)}</span></div>
             </div>
           </div>
         </div>

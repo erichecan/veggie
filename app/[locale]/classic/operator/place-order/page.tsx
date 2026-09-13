@@ -59,6 +59,8 @@ type QuotationLine = {
   priceLabel: string       // 'Price' | 'PriceList' | 'Last' | 'Special'
   priceLabelDetail?: string   // PriceList 命中的价格表名字；Last 命中的最近成交时间(ISO)
   taxRate: number          // %
+  /** 赠品标记(20260913)：勾选后单价锁定为 0，不计入销售额/毛利/提成，仍正常扣库存+拣货单 */
+  isGift?: boolean
 }
 
 type ChatterEntry = {
@@ -975,12 +977,13 @@ export default function ClassicPlaceOrderPage() {
         productName: l.productName,
         spec:        l.description,
         note:        l.note || undefined,
-        price:       l.unitPrice,
+        price:       l.isGift ? 0 : l.unitPrice,
         quantity:    Math.max(0.001, Number(l.orderedQty)),
-        subtotal:    l.unitPrice * l.orderedQty,
+        subtotal:    l.isGift ? 0 : l.unitPrice * l.orderedQty,
         uomId:       l.uomId || undefined,
         uomName:     l.uom || undefined,
         taxRate:     l.taxRate,
+        isGift:      !!l.isGift,
       })),
       totalAmount:    untaxed,
       status:         statusOverride,
@@ -1667,7 +1670,7 @@ export default function ClassicPlaceOrderPage() {
                 tableClassName="text-xs border-collapse"
                 tableStyle={{ minWidth: '1190px', width: '100%' }}
                 tbodyClassName="divide-y divide-gray-100"
-                emptyColSpan={13}
+                emptyColSpan={14}
                 emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
@@ -1675,6 +1678,7 @@ export default function ClassicPlaceOrderPage() {
                     <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
+                    <th className="px-2 py-2 text-center" style={{ width: 50 }} title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
@@ -1687,7 +1691,7 @@ export default function ClassicPlaceOrderPage() {
                   </tr>
                 )}
                 renderRow={(line, idx, opts) => {
-                  const lineTotal = line.unitPrice * line.orderedQty
+                  const lineTotal = line.isGift ? 0 : line.unitPrice * line.orderedQty
                   const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
                   const isOutOfStock = line.productId && lineAtp <= 0
                   const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
@@ -1727,6 +1731,16 @@ export default function ClassicPlaceOrderPage() {
                           onKeyDown={e => handleFieldKey(e)}
                           placeholder={isEn ? 'Note…' : '备注…'}
                           className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-amber-400 focus:outline-none bg-transparent placeholder:text-gray-300"
+                        />
+                      </td>
+
+                      {/* 赠品(20260913)：勾选后单价锁定为 0，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
+                      <td className="px-2 py-1 text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!line.isGift}
+                          onChange={e => patchLine(line.id, { isGift: e.target.checked, ...(e.target.checked ? { unitPrice: 0 } : {}) })}
+                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
                         />
                       </td>
 
@@ -1797,7 +1811,9 @@ export default function ClassicPlaceOrderPage() {
                           type="number"
                           min="0"
                           step="0.01"
-                          value={line.unitPrice}
+                          value={line.isGift ? 0 : line.unitPrice}
+                          disabled={!!line.isGift}
+                          title={line.isGift ? (isEn ? 'Gift line — price locked at 0' : '赠品行——单价锁定为 0') : undefined}
                           onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0 })}
                           onFocus={e => e.target.select()}
                           onKeyDown={e => handleFieldKey(e)}

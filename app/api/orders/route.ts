@@ -256,7 +256,6 @@ export async function POST(req: Request) {
       // 1) 服务端权威定价（同步查 customer / products / pricelists / last-price）
       const {
         lines,
-        totalAmount,
         pricelistId,
         priceType,
         warnings,
@@ -267,6 +266,19 @@ export async function POST(req: Request) {
         // 只是下单路径的表头是按落库值算的，所以只表现为"改不了价"，没有烂数据
         allowManualPrice: userHasPermission(user, 'sales.order.override_price'),
       })
+
+      // 赠品标记(20260913)：resolveOrderLines 算出的价格/小计/提成不知道 isGift。
+      // 在这里统一改写一份"实际要落库"的行数据——lines.create、Order.items 快照、
+      // totalAmount、审计日志、邮件确认全部读这份，不允许各自零散判断 isGift，
+      // 否则漏改一处就会重现"客户收到的邮件金额和实际落库金额对不上"这类事故
+      // （与 PUT /api/orders/[id] 的"落库价"铁律同一理由）。
+      const linesForPersist = lines.map((l, idx) => {
+        if (submittedItems[idx]?.isGift !== true) return l
+        return { ...l, finalUnitPrice: 0, subtotal: 0, resolvedCommissionPrice: 0 }
+      })
+      const giftAdjustedTotalAmount = Number(
+        linesForPersist.reduce((s, l) => s + l.subtotal, 0).toFixed(2),
+      )
 
       // 2) 预加载商品数据（用于后续事务；报价单阶段不做库存检查）
       //    库存充足性检查推迟到「确认订单」时执行（Odoo 行为：PENDING 阶段不占用库存）
@@ -305,8 +317,8 @@ export async function POST(req: Request) {
                 createdByName: user.name,
                 restaurantId,
                 restaurantName,
-                items: toOrderItems(lines) as unknown as object,
-                totalAmount,
+                items: toOrderItems(linesForPersist) as unknown as object,
+                totalAmount: giftAdjustedTotalAmount,
                 status: normalizeStatus(data.status),
                 paymentMethod: normalizePaymentMethod(data.paymentMethod),
                 pricelistId,
@@ -323,19 +335,20 @@ export async function POST(req: Request) {
                 // SSOT: 业务员关联用户。优先手选值,未选则回退客户默认业务员(Customer.salesUserId)。
                 salesUserId: (data.salesUserId ? String(data.salesUserId) : custDefaults?.salesUserId) || undefined,
                 lines: {
-                  create: lines.map((l, idx) => ({
+                  create: linesForPersist.map((l, idx) => ({
                     productId: l.productId,
                     productName: l.productName,
                     spec: l.spec ?? null,
                     note: l.note ?? null,
                     uomId: l.uomId ?? null,
                     uomName: l.uomName ?? null,
+                    isGift: submittedItems[idx]?.isGift === true,
                     unitPrice: l.finalUnitPrice,
                     taxRate: l.taxRate ?? null,
                     orderedQty: l.quantity,
                     deliveredQty: 0,
                     invoicedQty: 0,
-                    subtotal: Number((l.finalUnitPrice * l.quantity).toFixed(2)),
+                    subtotal: l.subtotal,
                     // 20260901：commissionPrice 已在 resolveOrderLines 里按该行选用单位折算好
                     // （factor / FIXED override / FORMULA 折扣加价，跟价格同一套机制）
                     commissionPrice: l.resolvedCommissionPrice ?? null,
@@ -388,7 +401,9 @@ export async function POST(req: Request) {
             status: { before: null, after: String(order.status) },
             itemCount: lines.length,
             lineChanges: {
-              added: lines.map(l => ({
+              // 单价记落库值（linesForPersist 已按 isGift 归零），不能记引擎权威价——
+              // 会重现 20260814 那次"日志记了根本没发生的价格"事故
+              added: linesForPersist.map(l => ({
                 productName: l.productName,
                 qty: l.quantity,
                 unitPrice: l.finalUnitPrice,
@@ -407,7 +422,7 @@ export async function POST(req: Request) {
         action: 'CREATE',
         resource: 'order',
         resourceId: order.id,
-        detail: `创建订单: ${order.id}, 金额 €${totalAmount}, pricelist=${pricelistId ?? 'N/A'}, priceType=${priceType ?? 'multi'}${warnings.length ? ', 警告: ' + warnings.join('; ') : ''}`,
+        detail: `创建订单: ${order.id}, 金额 €${giftAdjustedTotalAmount}, pricelist=${pricelistId ?? 'N/A'}, priceType=${priceType ?? 'multi'}${warnings.length ? ', 警告: ' + warnings.join('; ') : ''}`,
       })
 
       // 邮件确认（不阻塞）
@@ -421,13 +436,14 @@ export async function POST(req: Request) {
             to: cust.email,
             customerName: cust.name,
             orderId: order.id,
-            items: lines.map((l) => ({
+            // 赠品行给客户显示 €0（linesForPersist 已归零），不能显示引擎算出的权威价
+            items: linesForPersist.map((l) => ({
               name: l.productName,
               qty: l.quantity,
               unit: l.spec || '件',
               price: l.finalUnitPrice,
             })),
-            total: totalAmount,
+            total: giftAdjustedTotalAmount,
           }).catch(async (e) => {
             // 发信失败不该拖垮下单，但也**不能只 console.error 了事** ——
             // 那样运营永远不知道这单的确认信没送出去（2026-08-08 之前生产上
