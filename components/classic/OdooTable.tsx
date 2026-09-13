@@ -18,8 +18,9 @@ export interface OdooColumn<T = Record<string, unknown>> {
   /** 排序实际使用的字段名，默认等于 key。用于「渲染/编辑用的是原始值（如关联 id），
    *  但排序要按其显示名称」这类场景——调用方需在行数据上额外提供该字段。 */
   sortKey?: string
-  /** text=普通文本搜索, date-range=日期区间, multi-select=列头下拉多选, none=不可筛选 */
-  filterType?: 'text' | 'date-range' | 'multi-select' | 'none'
+  /** text=普通文本搜索(常驻筛选行), text-popover=同为文本搜索但默认隐藏、点列头图标才弹出（给窄列用），
+   *  date-range=日期区间, multi-select=列头下拉多选, none=不可筛选 */
+  filterType?: 'text' | 'text-popover' | 'date-range' | 'multi-select' | 'none'
   /** multi-select 列头筛选时，每行用于匹配/分组的值（默认从 row[col.key] 取） */
   filterValueGetter?: (row: T) => string
   /** multi-select 列头筛选时，把原始值映射成展示标签（默认 String(value)） */
@@ -37,6 +38,8 @@ export interface OdooColumn<T = Record<string, unknown>> {
   width?: number
   /** 列最小宽度(px)。给内容会被挤扁的列(名称、描述)留出空间 */
   minWidth?: number
+  /** 列头与单元格内容的水平对齐方式，默认 left */
+  align?: 'left' | 'center' | 'right'
 }
 
 interface OdooTableProps<T extends Record<string, unknown>> {
@@ -93,7 +96,9 @@ export default function OdooTable<T extends Record<string, unknown>>({
   groupByFormatter,
 }: OdooTableProps<T>) {
   const showCheckbox = !!onSelectRow && !!selected
-  const hasFilters = !!onColumnFilterChange && columns.some(c => c.filterType === 'text' || c.filterType === 'date-range')
+  // date-range 筛选已挪到列头点击弹窗（见下方 openDateKey），不再占用这一行，
+  // 故这里只看 text 类型是否需要常驻筛选行。
+  const hasFilters = !!onColumnFilterChange && columns.some(c => c.filterType === 'text')
 
   // ─── 列头多选下拉的开关状态 ──
   const [openMultiKey, setOpenMultiKey] = useState<string | null>(null)
@@ -108,6 +113,38 @@ export default function OdooTable<T extends Record<string, unknown>>({
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [openMultiKey])
+
+  // ─── 列头日期区间筛选的开关状态（默认隐藏，点击才弹出）──
+  // 此前 From/To 两个 <input type="date"> 常驻在筛选行里，浏览器原生日期输入框
+  // 最小宽度 ~110px，撑破了列宽固定 90px 的单元格，是横向滚动条的来源之一
+  // （20260912 客户反馈"日期选择器能不能默认隐藏，点了才弹出"）。
+  const [openDateKey, setOpenDateKey] = useState<string | null>(null)
+  const datePopoverRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!openDateKey) return
+    function onDocClick(e: MouseEvent) {
+      if (datePopoverRef.current && !datePopoverRef.current.contains(e.target as Node)) {
+        setOpenDateKey(null)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [openDateKey])
+
+  // ─── 列头文本筛选(text-popover)的开关状态（默认隐藏，点击才弹出）──
+  // 给 Internal Reference 这类本就很窄、不想被筛选输入框撑宽的列用（20260912 客户反馈）。
+  const [openTextKey, setOpenTextKey] = useState<string | null>(null)
+  const textPopoverRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!openTextKey) return
+    function onDocClick(e: MouseEvent) {
+      if (textPopoverRef.current && !textPopoverRef.current.contains(e.target as Node)) {
+        setOpenTextKey(null)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [openTextKey])
 
   // ─── 单击单元格进入编辑态 ──
   const [editing, setEditing] = useState<{ rowId: string; key: string } | null>(null)
@@ -203,22 +240,31 @@ export default function OdooTable<T extends Record<string, unknown>>({
             {columns.map(col => {
               const activeMulti = (columnMultiFilters?.[col.key]?.length ?? 0) > 0
               const isOpen = openMultiKey === col.key
+              const activeDate = !!(columnFilters?.[`${col.key}_from`] || columnFilters?.[`${col.key}_to`])
+              const isDateOpen = openDateKey === col.key
+              const activeText = !!columnFilters?.[col.key]
+              const isTextOpen = openTextKey === col.key
+              const alignCls = col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'
+              const justifyCls = col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : ''
               return (
                 <th
                   key={col.key}
-                  className={`px-2 py-1 text-left font-medium text-gray-600 ${col.width ? 'whitespace-normal break-words' : 'whitespace-nowrap'}`}
+                  className={`px-2 py-1 ${alignCls} font-medium text-gray-600 ${col.width ? 'whitespace-normal break-words' : 'whitespace-nowrap'}`}
                   style={{ fontSize: '11px', position: 'relative', ...colSizeStyle(col) }}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className={`flex items-center gap-1 ${justifyCls}`}>
                     {col.sortable ? (
                       <button
                         onClick={() => onSort?.(col.sortKey ?? col.key)}
                         className="flex items-center gap-1 hover:text-gray-900 transition-colors"
                       >
                         {col.label}
-                        <span className="text-gray-400">
-                          {sortKey === (col.sortKey ?? col.key) ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
-                        </span>
+                        {/* 未排序时不显示任何箭头字符——之前用 ↕ 占位，在客户设备上被
+                           备用字体画成两个小点、看着像冒号（20260912 客户截图实测）；
+                           干脆不显示，只在真正排序时才用 ↑/↓ 指明方向。 */}
+                        {sortKey === (col.sortKey ?? col.key) && (
+                          <span className="text-gray-400">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                        )}
                       </button>
                     ) : (
                       <span>{col.label}</span>
@@ -241,7 +287,129 @@ export default function OdooTable<T extends Record<string, unknown>>({
                         ▼
                       </button>
                     )}
+                    {col.filterType === 'date-range' && onColumnFilterChange && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setOpenDateKey(isDateOpen ? null : col.key) }}
+                        className="ml-0.5 inline-flex items-center justify-center"
+                        style={{
+                          width: 16, height: 16, borderRadius: 3,
+                          background: activeDate ? '#875A7B' : 'transparent',
+                          color: activeDate ? 'white' : '#9ca3af',
+                          fontSize: 10, lineHeight: 1,
+                          border: activeDate ? '1px solid #875A7B' : '1px solid #d1d5db',
+                        }}
+                        title={activeDate ? '已筛选日期，点击修改' : '点击筛选日期'}
+                        aria-label={`筛选 ${col.label}`}
+                      >
+                        📅
+                      </button>
+                    )}
+                    {col.filterType === 'text-popover' && onColumnFilterChange && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setOpenTextKey(isTextOpen ? null : col.key) }}
+                        className="ml-0.5 inline-flex items-center justify-center"
+                        style={{
+                          width: 16, height: 16, borderRadius: 3,
+                          background: activeText ? '#875A7B' : 'transparent',
+                          color: activeText ? 'white' : '#9ca3af',
+                          fontSize: 10, lineHeight: 1,
+                          border: activeText ? '1px solid #875A7B' : '1px solid #d1d5db',
+                        }}
+                        title={activeText ? '已筛选，点击修改' : '点击筛选'}
+                        aria-label={`筛选 ${col.label}`}
+                      >
+                        🔍
+                      </button>
+                    )}
                   </div>
+                  {isTextOpen && col.filterType === 'text-popover' && onColumnFilterChange && (
+                    <div
+                      ref={textPopoverRef}
+                      className="bg-white border border-gray-200 rounded shadow-lg"
+                      style={{
+                        position: 'absolute',
+                        top: '100%', left: 0,
+                        zIndex: 50,
+                        minWidth: 160,
+                        marginTop: 4,
+                        padding: '8px',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        autoFocus
+                        value={columnFilters?.[col.key] ?? ''}
+                        onChange={e => onColumnFilterChange(col.key, e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') setOpenTextKey(null) }}
+                        className="w-full border border-gray-300 rounded bg-white px-1.5 py-1 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                        style={{ fontSize: '12px' }}
+                      />
+                      {activeText && (
+                        <div className="flex justify-end mt-1.5 pt-1.5 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => onColumnFilterChange(col.key, '')}
+                            className="text-[11px] text-[#875A7B] hover:underline"
+                          >
+                            清除
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {isDateOpen && col.filterType === 'date-range' && onColumnFilterChange && (
+                    <div
+                      ref={datePopoverRef}
+                      className="bg-white border border-gray-200 rounded shadow-lg"
+                      // 右对齐：这列几乎总是表格最右侧一列（Last Updated on），弹窗若像
+                      // multi-select 那样贴左边展开，会把整块内容推出容器右边界，反而撑宽了表格
+                      // 横向滚动范围——跟这个功能本要解决的问题（撑宽表格）背道而驰。
+                      style={{
+                        position: 'absolute',
+                        top: '100%', right: 0,
+                        zIndex: 50,
+                        minWidth: 180,
+                        marginTop: 4,
+                        padding: '8px',
+                      }}
+                    >
+                      <div className="flex flex-col gap-1.5">
+                        <label className="flex items-center gap-1.5">
+                          <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '10px' }}>From</span>
+                          <input
+                            type="date"
+                            value={columnFilters?.[`${col.key}_from`] ?? ''}
+                            onChange={e => onColumnFilterChange(`${col.key}_from`, e.target.value)}
+                            className="flex-1 border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                            style={{ fontSize: '11px' }}
+                          />
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '10px' }}>To</span>
+                          <input
+                            type="date"
+                            value={columnFilters?.[`${col.key}_to`] ?? ''}
+                            onChange={e => onColumnFilterChange(`${col.key}_to`, e.target.value)}
+                            className="flex-1 border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                            style={{ fontSize: '11px' }}
+                          />
+                        </label>
+                      </div>
+                      {activeDate && (
+                        <div className="flex justify-end mt-1.5 pt-1.5 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => { onColumnFilterChange(`${col.key}_from`, ''); onColumnFilterChange(`${col.key}_to`, '') }}
+                            className="text-[11px] text-[#875A7B] hover:underline"
+                          >
+                            清除
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {isOpen && col.filterType === 'multi-select' && onColumnMultiFilterChange && (
                     <div
                       ref={popoverRef}
@@ -336,30 +504,6 @@ export default function OdooTable<T extends Record<string, unknown>>({
                       style={{ fontSize: '11px' }}
                     />
                   )}
-                  {col.filterType === 'date-range' && onColumnFilterChange && (
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '9px' }}>From:</span>
-                        <input
-                          type="date"
-                          value={columnFilters?.[`${col.key}_from`] ?? ''}
-                          onChange={e => onColumnFilterChange(`${col.key}_from`, e.target.value)}
-                          className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
-                          style={{ fontSize: '10px' }}
-                        />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '9px' }}>To:</span>
-                        <input
-                          type="date"
-                          value={columnFilters?.[`${col.key}_to`] ?? ''}
-                          onChange={e => onColumnFilterChange(`${col.key}_to`, e.target.value)}
-                          className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
-                          style={{ fontSize: '10px' }}
-                        />
-                      </div>
-                    </div>
-                  )}
                 </td>
               ))}
             </tr>
@@ -432,7 +576,7 @@ export default function OdooTable<T extends Record<string, unknown>>({
                     return (
                       <td
                         key={col.key}
-                        className="px-2 py-1 text-gray-700 break-words"
+                        className={`px-2 py-1 text-gray-700 break-words ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : ''}`}
                         style={{
                           ...colSizeStyle(col),
                           background: cellEditable && !isEditingCell ? 'rgba(135, 90, 123, 0.04)' : undefined,

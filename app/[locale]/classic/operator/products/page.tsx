@@ -306,7 +306,7 @@ export default function ClassicProductsPage() {
       key: 'internalRef',
       width: 84,
       label: 'Internal Reference',
-      filterType: 'text',
+      filterType: 'text-popover',
       sortable: true,
       editable: true,
       editType: 'text',
@@ -350,7 +350,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'saleDescription',
-      width: 160,
+      width: 145,
       label: 'Sale Description',
       filterType: 'text',
       editable: true,
@@ -362,8 +362,9 @@ export default function ClassicProductsPage() {
       // （如"6*2kg"）——见 handleCellEdit 里的特殊分支。没有配置可售单位的商品这里恒为空，
       // 不能在这内联编辑（跟"没有 uomId"时 by-sale-unit 页的提示一致）。
       key: 'spec',
-      width: 110,
+      width: 95,
       label: 'Product Spec',
+      align: 'center',
       editable: true,
       editType: 'text',
       render: (_v, row) => {
@@ -373,8 +374,9 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'listPrice',
-      width: 84,
+      width: 70,
       label: 'Sale Price',
+      align: 'center',
       filterType: 'text',
       sortable: true,
       editable: true,
@@ -383,7 +385,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'customerTaxRate',
-      width: 74,
+      width: 60,
       label: 'Customer Taxes',
       filterType: 'multi-select',
       editable: true,
@@ -399,8 +401,9 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'standardPrice',
-      width: 80,
+      width: 70,
       label: 'Cost',
+      align: 'center',
       filterType: 'text',
       sortable: true,
       editable: true,
@@ -409,7 +412,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'vendorTaxRate',
-      width: 74,
+      width: 60,
       label: 'Vendor Taxes',
       filterType: 'multi-select',
       editable: true,
@@ -425,8 +428,9 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'weight',
-      width: 78,
+      width: 66,
       label: 'Weight',
+      align: 'center',
       filterType: 'text',
       sortable: true,
       editable: true,
@@ -438,8 +442,9 @@ export default function ClassicProductsPage() {
       // 20260912：sortKey 此前误用 saleUnitsCount（按可售单位个数排），跟列名毫无关系，
       // 改成真按装货顺序值排（见 lib/products-query.ts 的 packSequence）。
       key: 'saleUoms',
-      width: 100,
+      width: 80,
       label: 'Pack Sequence',
+      align: 'center',
       sortable: true,
       sortKey: 'packSequence',
       render: (_, row) => renderSaleUnitsBadge(row as unknown as ProductTemplate),
@@ -448,7 +453,7 @@ export default function ClassicProductsPage() {
       // Quantity On Hand 是实时计算值(后端按 templateId 聚合后逐行附加到 qtyOnHand)，
       // 没有稳定的原始字段可供通用文本筛选匹配，故此列不给筛选框(Odoo 原版这一列同样没有)。
       key: 'id',
-      width: 80,
+      width: 72,
       label: 'Quantity On Hand',
       render: (_, row) => {
         const t = row as unknown as ProductTemplate
@@ -472,7 +477,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'forecastQty',
-      width: 76,
+      width: 62,
       label: 'Forecast Quantity',
       // 实时值来自 forecastMap（/api/products/forecast），不再是 DB 里那个只在导入时
       // 赋过值、此后永不更新的 forecastQty 死字段，所以这里不再提供子串筛选——
@@ -505,7 +510,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'commissionPrice',
-      width: 84,
+      width: 70,
       label: 'Commission Price',
       filterType: 'text',
       editable: true,
@@ -514,7 +519,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'updatedBy',
-      width: 92,
+      width: 84,
       label: 'Last Updated by',
       filterType: 'multi-select',
       // ⛔ 这里曾经把空值兜底显示成写死的 'Administrator'——PUT /api/products/[id] 此前从不回写
@@ -526,7 +531,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'updatedAt',
-      width: 90,
+      width: 76,
       label: 'Last Updated on',
       sortable: true,
       filterType: 'date-range',
