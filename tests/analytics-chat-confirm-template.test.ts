@@ -55,3 +55,17 @@ test('renderConfirmationText：detail 模式说明含汇总小计，不再说"�
   assert.match(text, /汇总小计/)
   assert.doesNotMatch(text, /不做汇总/)
 })
+
+test('renderConfirmationText：detail 模式时间跨度短（<=60天）不提示截断风险（20260913）', () => {
+  const dsl = parsed({ domain: 'sales', mode: 'detail', dateRange: { from: '2026-09-01', to: '2026-09-30' } })
+  const text = renderConfirmationText(dsl)
+  assert.doesNotMatch(text, /截断/)
+})
+
+test('renderConfirmationText：detail 模式时间跨度超过 60 天提前提示会截断 + 给出两个改法（20260913）', () => {
+  const dsl = parsed({ domain: 'sales', mode: 'detail', dateRange: { from: '2026-01-01', to: '2026-09-01' } })
+  const text = renderConfirmationText(dsl)
+  assert.match(text, /截断/)
+  assert.match(text, /汇总/)
+  assert.match(text, /缩小/)
+})

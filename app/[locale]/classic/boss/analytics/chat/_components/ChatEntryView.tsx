@@ -236,7 +236,13 @@ export function ChatEntryView({
               </table>
             </div>
           )}
-          {truncated && <p className="mt-1 text-xs text-gray-400">{isEn ? `Showing top ${COMPILER_ROW_LIMIT} rows only` : `仅显示前 ${COMPILER_ROW_LIMIT} 行`}</p>}
+          {truncated && (
+            <p className="mt-1 text-xs text-amber-600">
+              {isEn
+                ? `More than ${COMPILER_ROW_LIMIT} rows — showing the first ${COMPILER_ROW_LIMIT}. Try a shorter date range, or ask for a summary instead.`
+                : `结果超过 ${COMPILER_ROW_LIMIT} 行，仅显示前 ${COMPILER_ROW_LIMIT} 条——建议缩短时间范围，或改问汇总看整体趋势。`}
+            </p>
+          )}
           <div className="mt-2 flex gap-2">
             <button
               onClick={() => onSaveReport(entry.dsl)}
@@ -287,7 +293,13 @@ export function ChatEntryView({
             </tbody>
           </table>
         )}
-        {data.result.truncated && <p className="mt-1 text-xs text-gray-400">{isEn ? `Showing top ${COMPILER_ROW_LIMIT} rows only` : `仅显示前 ${COMPILER_ROW_LIMIT} 行`}</p>}
+        {data.result.truncated && (
+          <p className="mt-1 text-xs text-amber-600">
+            {isEn
+              ? `More than ${COMPILER_ROW_LIMIT} groups — showing the top ${COMPILER_ROW_LIMIT} by value. Try a coarser grouping (e.g. month instead of day) or a shorter date range.`
+              : `分组结果超过 ${COMPILER_ROW_LIMIT} 个，仅显示金额排名前 ${COMPILER_ROW_LIMIT}——建议换一个基数更小的分组（比如按月代替按日），或缩短时间范围。`}
+          </p>
+        )}
         <div className="mt-2 flex gap-2">
           <button
             onClick={() => onSaveReport(entry.dsl)}

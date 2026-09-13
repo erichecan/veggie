@@ -114,6 +114,7 @@ function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQu
 
   const sql = `SELECT to_char(o."confirmationDate", 'YYYY-MM-DD') AS order_date,
                 o."restaurantName" AS customer_name,
+                COALESCE(su.name, '未指定') AS sales_user_name,
                 ol."productName" AS product_name,
                 ol."unitPrice"::float AS unit_price,
                 ${STOCK_QTY_EXPR}::float AS qty,
@@ -121,6 +122,7 @@ function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQu
          FROM "OrderLine" ol
          JOIN "Order" o ON o.id = ol."orderId"
          LEFT JOIN "ProductSaleUom" psu ON psu."productId" = ol."productId" AND psu."uomId" = ol."uomId"
+         LEFT JOIN "User" su ON su.id = o."salesUserId"
          WHERE o.status::text IN (${SALES_STATUS_SQL})
            AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
            ${extraWhere}
@@ -148,6 +150,7 @@ export const salesDomain: DomainDef = {
     fields: [
       { key: 'order_date', labelZh: '日期' },
       { key: 'customer_name', labelZh: '客户' },
+      { key: 'sales_user_name', labelZh: '业务员' },
       { key: 'product_name', labelZh: '商品' },
       { key: 'unit_price', labelZh: '单价' },
       { key: 'qty', labelZh: '数量', summable: true },

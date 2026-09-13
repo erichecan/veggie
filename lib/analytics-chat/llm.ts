@@ -60,11 +60,17 @@ function metricLine(m: MetricDef): string {
   return `  - ${m.key}（${m.labelZh}）：${params || '无可选参数，口径固定'}`
 }
 
-function domainCatalogText(): string {
+/** 导出仅为了让"给 Gemini 的域说明是否跟真实字段列表一致"这条回归可测（20260913） */
+export function domainCatalogText(): string {
   return Object.values(DOMAIN_DEFS).map((d) => {
     const metrics = Object.values(d.metrics).map(metricLine).join('\n')
     const dims = Object.keys(d.dimensions).map((k) => `${k}=${d.dimensionLabelsZh[k] ?? k}`).join('、')
-    const detailNote = d.detail ? `本域支持"明细"模式（mode=detail）：直接列出逐行原始数据（如商品/单价/数量），不按维度分组，此时不填 metric/dimension` : '本域不支持明细模式'
+    // 20260913：字段列表必须是每个域真实的 detail.fields，不能用同一句占位文案糊弄——
+    // 之前"改问明细"这类引导建议是模型自己猜的字段名，实测猜出了 sales 域其实没有的
+    // "业务员"列，客户照着建议问了也拿不到，等于开了空头支票
+    const detailNote = d.detail
+      ? `本域支持"明细"模式（mode=detail）：直接列出逐行原始数据，字段有：${d.detail.fields.map((f) => f.labelZh).join('/')}；不按维度分组，此时不填 metric/dimension`
+      : '本域不支持明细模式'
     return `【${d.key}（${d.labelZh}）】\n指标：\n${metrics}\n可分组维度：${dims}\n${detailNote}`
   }).join('\n\n')
 }

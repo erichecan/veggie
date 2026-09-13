@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DOMAIN_DEFS, COMPILER_ROW_LIMIT } from '../lib/analytics-chat/domains'
+import { domainCatalogText } from '../lib/analytics-chat/llm'
 
 test('COMPILER_ROW_LIMIT：20260912 客户反馈 500 太小，改成 1000', () => {
   assert.equal(COMPILER_ROW_LIMIT, 1000)
@@ -56,6 +57,25 @@ test('四个域的明细模式：金额/数量字段都标了 summable，供 com
     const summableKeys = fields.filter((f) => f.summable).map((f) => f.key)
     assert.deepEqual(summableKeys.sort(), keys.sort(), `${domainKey} 域 summable 字段应为 ${keys.join('/')}`)
   }
+})
+
+test('domainCatalogText：喂给 Gemini 的每个域明细字段列表必须来自真实 detail.fields，不是写死的占位文案（20260913）', () => {
+  const text = domainCatalogText()
+  for (const domainDef of Object.values(DOMAIN_DEFS)) {
+    if (!domainDef.detail) continue
+    for (const field of domainDef.detail.fields) {
+      assert.ok(text.includes(field.labelZh), `${domainDef.key} 域说明里应该出现真实字段"${field.labelZh}"`)
+    }
+  }
+})
+
+test('sales 域明细：补上业务员列（此前"改问明细"的引导建议曾承诺过这一列但实际没有）', () => {
+  const fields = DOMAIN_DEFS.sales.detail!.fields.map((f) => f.key)
+  assert.ok(fields.includes('sales_user_name'), 'sales 域明细应包含 sales_user_name')
+  const { sql } = DOMAIN_DEFS.sales.detail!.buildSql({
+    filters: {}, start: new Date('2026-09-01'), end: new Date('2026-09-02'), rowLimit: 500,
+  })
+  assert.match(sql, /AS sales_user_name/)
 })
 
 test('delivery 域明细：新增 subtotal 列 = unit_price * qty（此前完全没有金额汇总）', () => {
