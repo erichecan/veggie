@@ -156,6 +156,8 @@
     "analytics.report.read": 101,
     "analytics.report.manage": 118,
     "analytics.report.generate": 159,
+    "analytics.chat.read": 185,
+    "analytics.chat.manage": 186,
     "print.center.access": 102,
     "portal.self.access": 103,
     "tool.geo.use": 104,
@@ -187,7 +189,6 @@
     "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "analytics.chat.read": 185,
-    "analytics.chat.manage": 186
+    "sales.order.manage_adjustment": 187
   }
 }

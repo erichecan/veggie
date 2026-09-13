@@ -96,6 +96,9 @@ export const PERMISSION_GROUPS: GroupDef[] = [
           // （不是报错，是安静地换掉你填的数）——所以它必须发给原本就能改单的角色，
           // 否则等于把一个一直存在的能力对全公司静默关掉
           { action: 'override_price', labelZh: '手动改价', labelEn: 'Override Price' },
+          // 20260913：折扣/配送费/差价调整/赠品标记的统一入口，见 lib/order-adjustments.ts。
+          // 默认按「谁有 sales.order.update 就给谁」发放（与 override_price 同一理由）。
+          { action: 'manage_adjustment', labelZh: '管理调整行(折扣/差价/配送费/赠品)', labelEn: 'Manage Order Adjustments' },
         ],
       },
       {

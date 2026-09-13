@@ -38,6 +38,9 @@ const DATA_MIGRATIONS = [
   // override_price，于是改价被静默换成价格表价 —— 恰好回到本条要修的那个 bug。
   // 「只被迁移填过的表，重建库时一律是空的」这条已经栽过 Z7（整套 RBAC）和 F1（采购品类）
   '20260814000001_sales_order_override_price',
+  // 订单调整行权限点（DEV-PLAN.md：折扣/差价/配送费/赠品）。同款「只被迁移填过的表，
+  // 重建库时一律是空的」风险，漏加这一行会导致全新库上没人有 manage_adjustment。
+  '20260913000002_sales_order_manage_adjustment',
 ]
 
 async function main() {
