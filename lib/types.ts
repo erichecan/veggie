@@ -369,6 +369,8 @@ export interface OrderLine {
   priceSourceDetail?: string | null
   /** LAST 来源时，最近一次成交发生的时间 */
   priceSourceDate?: string | null
+  /** 赠品标记：true 时不计入销售额/毛利/提成，但仍正常扣库存、正常出现在拣货单 */
+  isGift?: boolean
   createdAt: string
   updatedAt: string
 }
