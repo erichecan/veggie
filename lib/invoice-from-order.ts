@@ -15,6 +15,7 @@ type InvoiceTx = {
   }
   order: { findUnique: (a: unknown) => Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown }> } | null> }
   customer: { findUnique: (a: unknown) => Promise<{ name: string } | null> }
+  orderAdjustment: { findMany: (a: unknown) => Promise<Array<{ id: string; type: string; label: string; amount: unknown }>> }
 }
 
 async function nextInvoiceName(tx: InvoiceTx): Promise<string> {
@@ -61,6 +62,24 @@ export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string)
     })
   }
   if (lines.length === 0) return null
+
+  // 订单调整行（折扣/配送费/差价修正，20260913）随发票一起体现，否则客户永远收不到
+  // 这笔调整的账单——单据里发票才是"要客户签字认账"的那张，Order.totalAmount 本身
+  // 不含调整（sales-accounting-tax-convention SSOT 不变），发票必须补上。
+  // 按无税处理（税率 0）：这些不是应税商品销售，不重新分摊已开票商品的税额。
+  const adjustments = await tx.orderAdjustment.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' } })
+  for (const adj of adjustments) {
+    const amount = round2(Number(adj.amount))
+    subEx += amount
+    lines.push({
+      orderLineId: null,
+      isAdjustment: true,
+      adjustmentType: adj.type,
+      productId: null, productName: adj.label, spec: '',
+      qty: 1, unitPrice: amount, taxRate: 0,
+      subtotalExTax: amount, taxAmount: 0, subtotalIncTax: amount,
+    })
+  }
 
   subEx = round2(subEx)
   tax = round2(tax)

@@ -15,6 +15,7 @@ type TripTx = {
   driverSlot: { findUnique: (a: unknown) => Promise<{ userId: string | null; driverName: string; timeOfDay: string } | null> }
   order: { findMany: (a: unknown) => Promise<Array<{ id: string; restaurantId: string; restaurantName: string; totalAmount: unknown; lines: unknown[] }>> }
   customer: { findMany: (a: unknown) => Promise<Array<{ id: string; street: string; street2: string; city: string | null; zip: string; address: string }>> }
+  orderAdjustment: { findMany: (a: unknown) => Promise<Array<{ orderId: string; amount: unknown }>> }
   trip: { create: (a: unknown) => Promise<{ id: string }> }
 }
 
@@ -43,11 +44,20 @@ export async function createTripFromWave(tx: TripTx, waveId: string): Promise<{ 
     include: { lines: { orderBy: { sequence: 'asc' } } },
   })
 
+  // 客户实际应付总额 = 商品小计 + 调整合计（折扣/配送费/差价修正，20260913）。
+  // 司机上门收的是这个数，不是 Order.totalAmount 本身——否则有折扣/配送费的单
+  // 现金对不上。见 lib/order-adjustments.ts 顶部注释。
+  const adjustmentRows = await tx.orderAdjustment.findMany({ where: { orderId: { in: orderIds } } })
+  const adjustmentTotalByOrder = new Map<string, number>()
+  for (const a of adjustmentRows) {
+    adjustmentTotalByOrder.set(a.orderId, (adjustmentTotalByOrder.get(a.orderId) ?? 0) + Number(a.amount))
+  }
+
   // 按餐馆聚合(一个波次可含多家餐馆)
   const grouped = new Map<string, { restaurantId: string; restaurantName: string; orderIds: string[]; items: unknown[] }>()
   let totalPayment = 0
   for (const o of orders) {
-    totalPayment += Number(o.totalAmount)
+    totalPayment += Number(o.totalAmount) + (adjustmentTotalByOrder.get(o.id) ?? 0)
     const g = grouped.get(o.restaurantId) ?? { restaurantId: o.restaurantId, restaurantName: o.restaurantName, orderIds: [], items: [] }
     g.orderIds.push(o.id)
     g.items.push(...orderItemsFromLines(serializeApi(o.lines) as Parameters<typeof orderItemsFromLines>[0]))

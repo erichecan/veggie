@@ -16,6 +16,7 @@ import {
   type TripPrintDataWire,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
+import { loadAdjustmentTotalMap } from '@/lib/order-adjustments'
 import { fetchProductSequences } from './product-sequence'
 import { fetchUomSequences, resolveUomSequence } from './uom-sequence'
 import { uomConversionKey } from './uom-conversion'
@@ -316,11 +317,14 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
+  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, adjustmentTotalMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductTypeMap(productIds),
     loadProductGoodsTypeMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
+    // 客户应付总额 = totalAmount + 调整合计（折扣/配送费/差价修正，20260913），
+    // 只在整单打印（未按商品筛选）时叠加，见下方 orderTotal()。
+    loadAdjustmentTotalMap(orders.map(o => o.id)),
     // 筛选打印/全部打印可能横跨多个司机,trip 级 driverName 是空的——每单实际司机身份
     // 只能按单查(与销售单列表司机列同一 SSOT),见 TripOrder.driverBatchLabel。
     getOrderWaveDisplayMap(orders.map(o => o.id)),
@@ -352,7 +356,9 @@ export async function loadDispatchPrintData(
   // 口径与 OrderLine.subtotal 一致（税前，SSOT 见 docs/20260701）。
   const lineFiltered = (selector.productIds ?? []).filter(Boolean).length > 0
   const orderTotal = (o: (typeof orders)[number]): number =>
-    lineFiltered ? o.lines.reduce((s, l) => s + toNum(l.subtotal), 0) : toNum(o.totalAmount)
+    lineFiltered
+      ? o.lines.reduce((s, l) => s + toNum(l.subtotal), 0)
+      : toNum(o.totalAmount) + (adjustmentTotalMap.get(o.id) ?? 0)
 
   const printOrders: TripOrder[] = orders.map(o => ({
     id: o.id,

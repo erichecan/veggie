@@ -72,6 +72,23 @@ export async function deleteAdjustment(orderId: string, adjustmentId: string) {
   await prisma.orderAdjustment.delete({ where: { id: adjustmentId } })
 }
 
+/**
+ * 批量版：orderId → 调整合计。供需要一次性给一批订单算应付总额的场景用
+ * （打印汇总单、Trip 生成），避免 N+1 逐单查询。
+ */
+export async function loadAdjustmentTotalMap(orderIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>()
+  if (orderIds.length === 0) return map
+  const rows = await prisma.orderAdjustment.findMany({
+    where: { orderId: { in: orderIds } },
+    select: { orderId: true, amount: true },
+  })
+  for (const r of rows) {
+    map.set(r.orderId, round2((map.get(r.orderId) ?? 0) + Number(r.amount)))
+  }
+  return map
+}
+
 /** 该订单所有调整行金额之和（可正可负，未做四舍五入前的原始值累加后再入 2 位小数）*/
 export async function getAdjustmentsTotal(orderId: string): Promise<number> {
   const agg = await prisma.orderAdjustment.aggregate({

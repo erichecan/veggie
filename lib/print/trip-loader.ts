@@ -18,6 +18,7 @@ import {
   type TripPrintDataWire,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
+import { loadAdjustmentTotalMap } from '@/lib/order-adjustments'
 import { uomConversionKey } from './uom-conversion'
 import { loadUomConversionMap } from './uom-conversion-loader'
 import { fetchProductSequences } from '@/lib/print/product-sequence'
@@ -190,12 +191,14 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productGoodsTypeMap, productTypeMap, packSpecMap, invoiceNoMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
+  const [goodsTypeMap, productGoodsTypeMap, productTypeMap, packSpecMap, invoiceNoMap, adjustmentTotalMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
     loadGoodsTypeMap(uomIds),
     loadProductGoodsTypeMap(productIds),
     loadProductTypeMap(productIds),
     loadPackSpecMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
+    // 客户应付总额 = totalAmount + 调整合计（折扣/配送费/差价修正，20260913）
+    loadAdjustmentTotalMap(orders.map(o => o.id)),
     getOrderWaveDisplayMap(orders.map(o => o.id)),
     // 打印顺序按商品 sequence（客户要求 2026-08-18）。模板是纯字符串拼接、
     // 拿不到数据库，所以在这里附到行上。见 lib/print/line-sort.ts
@@ -225,7 +228,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     code: o.code,
     customerId: o.restaurantId,
     customerName: o.restaurantName,
-    totalAmount: toNum(o.totalAmount),
+    totalAmount: toNum(o.totalAmount) + (adjustmentTotalMap.get(o.id) ?? 0),
     internalNote: o.internalNote,
     externalNote: o.externalNote,
     deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
