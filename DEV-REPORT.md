@@ -1,108 +1,103 @@
-# DEV-REPORT：AI 问数 v2（跨域 + 明细钻取 + 歧义消歧）
+# DEV-REPORT：订单调整行体系（折扣/差价/配送费/赠品）
 
-对应 `DEV-PLAN.md` + 台账 `docs/20260910-analytics-chat-v2-tasks.md`（V1-V14 全部完成）。
-20260911 追加一轮：歧义消歧功能 + 顺手修掉两个既有日期边界 bug（见文末追加记录）。
+对应 `DEV-PLAN.md` + 台账 `docs/20260913-order-adjustments-tasks.md`（U1-U9 全部完成）。
+
+## 背景
+
+排查"拣货单商品分表看 Product.type 还是销售单位"问题时，在生产库里发现四个"假商品"
+（`price difference`/`Small Offer Set`/`Discount`/`Deliver Service`），一查发现系统对
+差价调整、促销赠品、折扣、配送费这四类需求**完全没有正式承接点**，业务只能新建虚构商品
+塞进订单行将就实现，污染了提成、毛利统计和拣货单分表。
 
 ## 做了什么
 
-客户反馈"AI 问数"v1（2026-09-06 上线）答不上明细级问题（"7月3号客户订单，每家都送什么货，
-单价数量"），本次把它从"销售域两个聚合指标"扩成：
+**1. 拣货单分表 bug 修复**：`belongsToConsumableTable` 此前靠 `Product.type==='CONSU'`
+硬编码把商品塞进"零散货"表，即便实际按整箱整袋规格下单也不例外。改成只看这一单实际用的
+销售单位（`Uom.goodsType`），与 Storable 商品走同一套判定。生产库实测影响 21 个商品，见
+`docs/20260913-consu-missing-uom-checklist.md`（其中 9 个真实商品需要运营去补配销售单位）。
 
-1. **明细钻取**（`mode=detail`）：不聚合，直接列出逐行原始数据（商品/单价/数量/客户/日期等）
-2. **quotation 报价单域**：报价单数量/金额、转化率（按业务员/客户/时间分组）
-3. **配送中心域**：行程数/配送站点数/应收总额，明细可下钻到"某天某司机给哪家送了什么"
-4. **采购域**：采购额/采购数量，明细可下钻到采购订单行
+**2. 新增 `OrderAdjustment` 模型**：折扣（DISCOUNT）、配送费（DELIVERY_FEE）、差价修正
+（PRICE_CORRECTION）、其他（OTHER）四种类型，金额可正可负。`Order.totalAmount` 语义
+不变（仍是税前商品合计），"客户实际应付总额" = `totalAmount + Σ调整金额`，统一由
+`lib/order-adjustments.ts:getOrderPayableTotal()` 计算。
 
-四个域 × 两种模式，权限仍然只给 BOSS，司机提成考核报表不在本批（后续单独规划）。
+**3. 新增 `OrderLine.isGift` 字段**：赠品用真实商品行 + 单价归零表达，而不是发明一个
+"套装商品"目录——赠品仍照常扣库存、照常出现在拣货单（物理上真的发货了），只是不计入
+销售额/毛利/提成。
+
+**4. 权限点 `sales.order.manage_adjustment`**：按"谁有 sales.order.update 就给谁"默认
+发放（与既有"手动改价"权限点同一理由）。
+
+**5. 发票/司机对账/打印单据接入调整行**：发票生成时把调整行追加成独立发票行；司机上门
+收现总额（Trip.totalPayment）叠加调整合计；打印汇总单每单金额一列同步叠加——这三处是
+真正"客户应付金额"的场景，其余统计报表（销售分析/毛利报表）明确不受影响。
+
+**6. 存量四个假商品已在生产库下架**（`Product.active=false`），防止业务继续用旧方式下单，
+历史订单数据不迁移、不追溯。
 
 ## 页面/接口
 
-无新增页面/路由——沿用 v1 的 `boss/analytics/chat` 页面和 4 条 `/api/analytics-chat/*` 接口，
-只是它们背后能理解的问题范围扩大了。
+新增：
+- `GET/POST /api/orders/[id]/adjustments`、`DELETE /api/orders/[id]/adjustments/[adjustmentId]`
+
+改动：
+- `PUT /api/orders/[id]`、`POST /api/orders/[id]/lines`：接入 `isGift` 写入通道
+- `lib/invoice-from-order.ts`、`lib/trip-from-wave.ts`、`lib/print/{dispatch-loader,trip-loader}.ts`：接入调整合计
+- `lib/commission.ts`、`lib/analytics/driver-commission.ts`、`app/api/analytics/{sales-overview,margin}/route.ts`、`lib/analytics/snapshot.ts`、`lib/analytics-chat/domains/sales.ts`：排除赠品行
+
+前端：销售单详情页（`orders/[id]`）商品行加"Gift"勾选列 + 新增"Adjustments"调整行面板
+（增/删/列表，联动 Amount Due）。**报价单页、新建下单页暂未接入同款 UI**（后端接口已可用，
+留作后续，见"已知不可用功能"）。
 
 ## 功能完成度
 
 | 功能 | 状态 |
 |---|---|
-| 明细钻取（sales/quotation/procurement/delivery 四域） | ✅ |
-| quotation 域（数量/金额/转化率） | ✅ |
-| 配送域（行程数/站点数/应收额） | ✅ |
-| 采购域（采购额/采购数量） | ✅ |
-| 前端明细表格渲染 | ✅ |
-| detail 模式必须带日期范围（性能护栏） | ✅ |
-| `Order.confirmationDate` 索引（明细钻取性能前提） | ✅ |
-| 比率指标（转化率）总计正确按权重平均 | ✅（开发中发现并修复，见下） |
-| 同域歧义时改为让用户选择（新增） | ✅ 20260911 追加 |
-| 司机提成考核报表 | ✅ **更正**：其实早在 2026-08-13（H3）就已上线生产，不属于本批，之前的说法有误 |
-
-## 测试账号
-
-沿用现有种子数据，未新增账号：
-
-| 角色 | 账号 | 密码 |
-|------|------|------|
-| 老板（AI 问数唯一可用角色） | boss (demo local seed account) | test123（本地开发库标准测试密码，非生产；⚠️ 本次验证前该账号原始密码无任何记录，已在 20260911 改成这个约定值并记录，此后新会话应延用不再擅改） |
+| 拣货单分表按销售单位判断 | ✅ |
+| OrderAdjustment 模型 + 权限点 | ✅ |
+| 调整行 API（增/删/列表） | ✅ |
+| 赠品标记（isGift）写入+校验 | ✅ |
+| 提成/毛利/销售额统计排除赠品行 | ✅ |
+| 发票/司机对账/打印单据接入调整行 | ✅ |
+| 销售单详情页 UI（勾选+调整面板） | ✅ |
+| 报价单/新建下单页 UI | ⚠️ 未做 |
+| 存量假商品下架 | ✅（生产库已执行） |
+| 历史假商品订单数据迁移 | ⚠️ 明确不做（DEV-PLAN 既定方案） |
 
 ## 验证结果
 
 | 验证项 | 方式 | 结果 |
 |---|---|---|
-| procurement 域聚合数字对照现有报表 | 直接跑两条 SQL 比对总额 | ✅ 27895.32 = 27895.32（8 家供应商） |
-| delivery 域聚合数字对照现有报表 | 直接跑两条 SQL 比对总额 | ✅ 336.05 = 336.05 |
-| quotation 转化率口径 | SQL 结果 vs 手写 `COUNT(*) FILTER` 核对语句 | ✅ 97.798% 完全一致 |
-| 8 种 domain×mode 组合直接执行 | `compileAndRun` 脚本调用 | ✅ 全部无 SQL 错误，返回正确形状 |
-| Gemini 自然语言理解（10 条问法） | 脚本调用 `interpretToDsl` | ✅ 8/10 一次命中；2 条应拒绝问法均正确拒绝 |
-| 浏览器端到端：sales 域明细钻取 | Playwright（BOSS 账号真实登录） | ✅ 500 行表格正确渲染，截断提示正确 |
-| 浏览器端到端：quotation 域聚合+转化率 bug | Playwright | ✅ 修复前 737.82%，修复后 97.8%，与 SQL 核对一致 |
-| 浏览器端到端：delivery 域明细钻取 | Playwright | ✅ 空结果正确渲染"0 rows"（本地数据该日无记录，非报错） |
-| 未登录/无权限访问 | 现有 `analytics.chat.read` 权限点未变 | ✅ OPERATOR 打接口仍 403（沿用 v1 机制，未回归） |
-| `npx tsc --noEmit` | 全程复跑 | ✅ 0 错误 |
-| `npm test` | 873 个测试 | ✅ 872 过 1 败（`pricing-override.test.ts` 缺测试夹具，v1 报告已记录的既有问题，与本次无关） |
-| `npm run build` | 全量构建 | ✅ 全绿 |
-| RBAC 可达性快照 | 本次未改任何路由/权限点 | ✅ 随 `npm test` 一并复跑，零 diff |
+| `npm run build` | 本地构建 | ✅ 无报错 |
+| `npm run dev` 启动 | 本地 | ✅ 正常启动，日志无 error/warn |
+| 未登录访问受保护接口 | curl GET /api/orders/:id/adjustments | ✅ 401 |
+| 错误密码登录 | curl POST /api/auth/login | ✅ 返回提示，不崩溃 |
+| 访问不存在的订单 | curl GET /api/orders/nonexistent-id/adjustments | ✅ 404 |
+| 新增调整行（折扣/配送费） | curl POST | ✅ 201，金额正负均正常 |
+| 非法类型/零金额 | curl POST | ✅ 400 |
+| 删除调整行 / 重复删除 | curl DELETE ×2 | ✅ 200 → 404 |
+| `getOrderPayableTotal` 加减一致性 | 脚本核算 | ✅ 382+5=387 |
+| 拣货单/发票/司机对账口径 | 单测（8 例，4 文件） | ✅ 全过 |
+| 前端 UI 增删调整行 | Playwright 实测（本地 BOSS 测试账号） | ✅ Amount Due 382→388.50 |
+| 前端 Gift 勾选即时归零锁价 | Playwright 实测 | ✅ |
+| Discard 后无脏数据落库 | 复核 DB | ✅ 调整行/isGift 均已还原 |
+| 权限点默认发放 | `tests/role-access.test.ts` 33/33 | ✅ |
+| 角色可达性零意外扩权 | `tests/role-reachability.test.ts` + `rbac-route-map.test.ts` | ✅（新增 3 个 handler 已按项目机制显式登记） |
+| 全量测试套件 | `node --test tests/*.test.ts` | ✅ 905 例，901 通过、2 跳过、2 失败（均为既存的 ABCT 客户测试数据缺口，与本次改动无关） |
+| 生产库假商品下架 | SSH + psql 核实 | ✅ 4 个商品 active 均已改为 false |
 
-## 开发中发现并修复的问题
+## 已知不可用功能 / 遗留问题
 
-- **比率指标总计计算错误**：`conversionRate` 按业务员分组后，总计原先跟"销售额"一样直接把
-  各组数字相加，8 组转化率相加吐出 `737.82%`（浏览器实测截图证据）。根因是原有聚合逻辑假设
-  "总计=各分组之和"对所有指标都成立，但转化率是比率不是可加量。已加
-  `MetricDef.aggregationKind: 'rate'`，改按各分组样本量（qty）加权平均计算，修复后总计
-  `97.8%` 与不分组时单独查询的总计完全一致，并补了单元测试防回归。
-
-## 已知不可用功能 / 限制
-
-- **quotation 转化率的历史数据边界**：口径依赖 `Order.quotationDate`（每单创建时打的时间戳），
-  对早于该字段稳定写入之前导入的历史订单（如 Odoo 导入批次）可能不准确，本次未做历史数据
-  回溯校验，仅保证新产生的数据口径正确。
-- **权限范围未扩展**：仍然只有 BOSS 能用 AI 问数，销售经理/操作员无法按 dataScope 各自看到
-  自己范围内的数据——这是本次对话中明确确认的范围外事项，非遗漏。
-
----
-
-## 20260911 追加：歧义消歧 + 两个既有 bug 修复
-
-### 1. 更正一个错误信息
-上面"已知不可用功能"原来写了"司机提成考核报表不在本批"，这是基于一份过期的 2026-08-07
-需求存档给出的错误判断——**该报表实际在 2026-08-13（H3）已开发完成并部署生产**
-（`app/api/analytics/driver-commission/route.ts`），走实时计算，不是空壳。已更新相关记忆。
-
-### 2. 同域歧义时改为让用户选择
-之前"已知限制"里提到的"同一句话可能落到不同 domain"问题，用户要求改成"问客户，让客户选"。
-已实现：探测到一句话在两个域之间都说得通时，先给出两个候选卡片让用户点选，而不是模型
-自己拍板选一个。技术上拆成三次独立、schema 都很小的调用（不能塞进一次大 schema——
-实测过合并成一次调用会让 `gemini-3.1-flash-lite` 稳定丢失日期字段，见下）。
-
-浏览器实测：原问题"7月3号客户订单，每家都送什么货，单价数量"正确弹出"销售明细/配送明细"
-两个候选，选"销售"后走完整确认拿到 329 行明细数据。10 条问法回归测试里只有 3 条真正存在
-双重解读的被标记为歧义，其余不受影响。
-
-### 3. 顺手发现并修复的 bug（不在原计划内，用户同意后一并处理）
-- **Gemini schema 复杂度会拖累已验证字段**：给 responseSchema 加 `ambiguous`+`alternativeDsl`
-  两个字段后，4/4 次稳定复现模型丢失 `dateRange`（同一问题用旧 schema 时 100% 稳定抽取）。
-  加强 prompt 措辞完全无效，最终改成"多次简单调用"取代"一次复杂调用"解决。
-- **`@db.Date` 列跟 JS Date 参数比较丢失区间末日**：AI 问数新写的 delivery 域复现了一个
-  2026-08-11 就记录在案、但一直没排期修的既有 bug（`docs/20260811-requirements-backlog-tasks.md`
-  待决策 #15）。本地库实测复现后，顺手把已知的另外两处同款写法也修了：
-  `app/api/analytics/logistics/route.ts`（3 处查询）+ `lib/analytics/driver-commission.ts`
-  （提成计算的日期过滤）。修复前后用同一个复现用例验证：查"仅含 2026-06-24 当天"区间，
-  修复前 count=0，修复后 count=1。该待决策条目已在台账里勾掉。
+1. **报价单页（quotations/[id]）、新建下单页（place-order）未接入赠品勾选/调整面板 UI**——
+   后端接口对 PENDING 状态订单本身可用，只是前端界面还没加，需要客户确认是否需要提前到
+   报价阶段就能用这两个功能。
+2. **68 个 Consumable 商品完全没配置销售单位（goodsType）**，其中 9 个是真实商品，见
+   `docs/20260913-consu-missing-uom-checklist.md`——需要运营去 Settings→计量单位 补配。
+3. **历史 106 笔用假商品记录的订单不会被迁移**，历史报表数字维持现状，不追溯修正（DEV-PLAN
+   既定方案，非本次遗漏）。
+4. **赠品可以被"手动改价成 0"绕过而不走 Gift 勾选**——效果一样能免单，但不会被统计口径
+   排除在外，commission/analytics 会把它当正常低价单算。这不是代码能堵死的漏洞，只能靠
+   培训/流程约束："免单一律用赠品勾选，不要手动改价成 0"。
+5. **会计口径决定沿用 DEV-PLAN 默认方案**：配送费/折扣不计入销售额与毛利统计、提成基数
+   不扣折扣、四种调整类型共用一个权限点——如果客户后续有不同要求（比如运费要单独算一笔
+   "其他收入"科目，或折扣需要经理审批），需要另开需求评估。
