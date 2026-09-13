@@ -96,6 +96,7 @@ export async function GET(req: Request) {
          ) lc ON TRUE
          WHERE o.status::text IN (${SALES_STATUS_SQL})
            AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND ol."isGift" = false
            ${extraWhere}
          GROUP BY ${rowDef.keyExpr}${colGroupBy}
          ORDER BY SUM(ol.subtotal - COALESCE(lc.unit_cost, p."standardPrice", 0) * ${STOCK_QTY_EXPR}) DESC`,

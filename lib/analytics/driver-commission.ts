@@ -207,6 +207,8 @@ line_agg AS (
          SUM(COALESCE(ol."deliveredQty", 0))                                    AS delivered_qty
   FROM "OrderLine" ol
   JOIN trip_order to2            ON to2.order_id = ol."orderId"
+  -- 赠品行不计提成基数，与 lib/commission.ts:sumCommission 同一口径
+  WHERE ol."isGift" = false
   GROUP BY ol."orderId"
 ),
 order_calc AS (

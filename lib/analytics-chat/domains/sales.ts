@@ -100,6 +100,7 @@ function buildAggregateSql({ metric, confirmedParams, dimension, filters, start,
          ${costJoin}
          WHERE o.status::text IN (${SALES_STATUS_SQL})
            AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND ol."isGift" = false
            ${extraWhere}
          ${groupByClause}
          ORDER BY value DESC

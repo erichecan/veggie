@@ -83,6 +83,7 @@ export async function GET(req: Request) {
          JOIN "Order" o ON o.id = ol."orderId"
          WHERE o.status::text IN (${SALES_STATUS_SQL})
            AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND ol."isGift" = false
          GROUP BY ol."productId"
          ORDER BY SUM(ol.subtotal) DESC
          LIMIT 10`,

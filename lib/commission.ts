@@ -16,6 +16,7 @@ type OrderForCommission = {
     commissionPrice: Decimal | null
     deliveredQty: Decimal | number | null
     unitPrice: Decimal | null
+    isGift: boolean
   }>
 }
 
@@ -29,6 +30,7 @@ const ORDER_COMMISSION_SELECT = {
       commissionPrice: true,
       deliveredQty: true,
       unitPrice: true,
+      isGift: true,
     },
   },
 } as const
@@ -54,6 +56,9 @@ function sumCommission(order: OrderForCommission): {
   let anyDelivered = false
 
   for (const line of order.lines) {
+    // 赠品行不计提成基数：物理上真的发出去了（照常扣库存、照常拣货），
+    // 但既没收客户的钱也不该给业务员/司机算提成。见 OrderLine.isGift 注释。
+    if (line.isGift) continue
     const dQty = new Decimal(line.deliveredQty ?? 0)
     if (dQty.gt(0)) anyDelivered = true
     if (line.commissionPrice) {

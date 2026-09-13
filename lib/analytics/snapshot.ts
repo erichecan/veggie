@@ -74,7 +74,8 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
        ORDER BY c.cost_date DESC LIMIT 1
      ) lc ON TRUE
      WHERE o.status::text IN (${SALES_STATUS_SQL})
-       AND o."confirmationDate" >= $2 AND o."confirmationDate" < $3`,
+       AND o."confirmationDate" >= $2 AND o."confirmationDate" < $3
+       AND ol."isGift" = false`,
     toDayKey(start), start, end,
   )) as Array<{
     sales_ex: number; sales_inc: number; order_count: number
