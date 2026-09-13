@@ -1,15 +1,18 @@
 /**
- * Trip 拣货单 — 按商品汇总，区分实物商品/耗材，给拣货员使用
+ * Trip 拣货单 — 按商品汇总，区分整箱整袋/零散货，给拣货员使用
  *
  * 布局：
  *   顶部：批次信息 + 日期 + 司机
- *   实物商品表格（ProductTemplate.type === 'PRODUCT'，或 type 未知）
- *   耗材表格（ProductTemplate.type === 'CONSU'）
+ *   整箱整袋表（销售单位 Uom.goodsType !== 'LOOSE'，含未配置的兜底情形）
+ *   零散货表（销售单位 Uom.goodsType === 'LOOSE'）
+ *
+ * 分表依据的是这一单实际下单用的销售单位，与 Product.type（实物/耗材的会计
+ * 分类，只管扣不扣库存）无关，见下方 belongsToConsumableTable。
  *
  * variant 决定印出哪一部分，供两个拣货员分开作业：
- *   'all'        —— 实物 + 耗材（默认，兼容旧链接）
- *   'storable'   —— 只印实物，给整箱整袋的拣货员
- *   'consumable' —— 只印耗材，给零散货的拣货员
+ *   'all'        —— 整箱整袋 + 零散货（默认，兼容旧链接）
+ *   'storable'   —— 只印整箱整袋，给整箱整袋的拣货员
+ *   'consumable' —— 只印零散货，给零散货的拣货员
  *
  */
 
@@ -224,16 +227,18 @@ export function generateTripPickingHtml(
   const allProducts = Array.from(aggMap.values())
 
   /**
-   * 表格归属判断（20260905 改）：不能只看 Product.type（实物/耗材的会计分类）——
-   * "整箱整袋"这张表的字面意思是「按整箱/整袋卖」，哪怕商品本身是 Storable，
-   * 只要这一单实际是按 Loose（散装/称重）单位卖的（Uom.goodsType==='LOOSE'），
-   * 拣货员也得去"零散货"那张表找，不能指望它出现在整箱整袋表里。
-   * CONSU 类型商品维持恒进零散货表。同一商品若在这一趟车里被不同订单分别按
-   * 整箱、按散装两种单位下单，会按行拆开分别出现在两张表里——这是预期行为，
-   * 不是重复/bug：拣货员应该按各自单位分别去两处找货。
+   * 表格归属判断（20260913 改）：完全不看 Product.type（实物/耗材的会计分类，
+   * 决定的是要不要扣库存，跟拣货单物理分表是两件事）——只看这一单实际下单用的
+   * 销售单位 Uom.goodsType。是 Loose（散装/称重）就去"零散货"表，否则（含未
+   * 配置 goodsType 的兜底情形）进"整箱整袋"表。此前 CONSU 类型商品恒进零散货
+   * 表这条硬编码短路已删除：生产库实测过，按 PKT/BAG/DRUM 等整袋规格卖的
+   * CONSU 商品（如 CHEF Tomato Ketchup 5.6kg DRUM）本该在整箱整袋表，被 type
+   * 字段误判进了零散货表。同一商品若在这一趟车里被不同订单分别按整箱、按散装
+   * 两种单位下单，会按行拆开分别出现在两张表里——这是预期行为，不是重复/bug：
+   * 拣货员应该按各自单位分别去两处找货。
    */
   function belongsToConsumableTable(p: AggProduct): boolean {
-    return p.productType === 'CONSU' || p.goodsType === 'LOOSE'
+    return p.goodsType === 'LOOSE'
   }
 
   function buildGroups(products: AggProduct[]): ProductGroup[] {
