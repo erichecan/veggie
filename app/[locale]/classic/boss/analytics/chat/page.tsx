@@ -111,11 +111,18 @@ export default function AnalyticsChatPage() {
       <h1 className="text-lg font-medium mb-3" style={{ color: '#875A7B' }}>{isEn ? 'AI Data Chat' : 'AI 问数'}</h1>
       <div className="flex-1 overflow-y-auto space-y-3 p-2 bg-gray-50 rounded border border-gray-100">
         {entries.length === 0 && (
-          <p className="text-sm text-gray-400 text-center mt-8">
-            {isEn
-              ? 'Try: "sales amount by salesperson this month" or "what did we deliver to each customer on July 3rd"'
-              : '试试问："本月按业务员分组的销售额"，或"7月3号每家客户都送了什么货，单价数量"'}
-          </p>
+          <div className="text-sm text-gray-400 text-center mt-8 space-y-1">
+            <p>
+              {isEn
+                ? 'Just say what you want to know — no need to specify fields, grouping or filters yourself, the AI will figure that out.'
+                : '直接说你想知道什么就行，不用自己设计按什么字段/维度/条件查，这些交给 AI 判断。'}
+            </p>
+            <p>
+              {isEn
+                ? 'Try: "sales amount by salesperson this month" or "what did we deliver to each customer on July 3rd"'
+                : '试试问："本月按业务员分组的销售额"，或"7月3号每家客户都送了什么货，单价数量"'}
+            </p>
+          </div>
         )}
         {entries.map((entry, i) => (
           <ChatEntryView
