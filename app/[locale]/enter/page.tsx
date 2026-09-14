@@ -57,8 +57,15 @@ export default function EnterPage() {
     }
   }
 
+  // items-start + sm:items-center：手机端顶部对齐，不强制垂直居中。
+  // 根因（20260914 客户反馈"手机端点登录没反应，没报错没日志"）：CookieBanner 是
+  // fixed bottom-4 的全局组件，首次访问必弹；桌面端屏幕高，居中后的登录卡片离底部
+  // 够远不会被挡；手机端视口窄矮，居中会把登录按钮推到屏幕下半部分，正好被 Cookie
+  // 横幅盖住——点击落在横幅的空白背景上，事件根本到不了 <button>，所以点击后
+  // "没反应、没报错、没日志"（不是网络问题，请求从没发出去）。
+  // 顶部对齐让卡片天然远离底部，不需要跟 CookieBanner 的高度做像素级联动。
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ background: '#f5f0f8' }}>
+    <div className="min-h-screen flex items-start sm:items-center justify-center px-4 pt-12 pb-8 sm:py-8" style={{ background: '#f5f0f8' }}>
       <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
           <div className="text-4xl mb-3">🟣</div>

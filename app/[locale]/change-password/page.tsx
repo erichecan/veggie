@@ -60,8 +60,11 @@ export default function ChangePasswordPage() {
     }
   }
 
+  // 手机端顶部对齐，不强制垂直居中——原因同 app/[locale]/enter/page.tsx 顶部注释：
+  // 全局 CookieBanner 固定在屏幕底部，居中布局在窄矮的手机视口上会把提交按钮推到
+  // 底部被横幅盖住，点击没反应也没报错（事件根本没到按钮上）。
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ background: '#f5f0f8' }}>
+    <div className="min-h-screen flex items-start sm:items-center justify-center px-4 pt-12 pb-8 sm:py-8" style={{ background: '#f5f0f8' }}>
       <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
           <div className="text-4xl mb-3">🔒</div>
