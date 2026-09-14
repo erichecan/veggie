@@ -15,8 +15,6 @@ import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-l
 import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { findInvalidLineUom } from '@/lib/sale-uom-server'
-import { formatUomConversionHint, uomConversionKey } from '@/lib/print/uom-conversion'
-import { loadUomConversionMap } from '@/lib/print/uom-conversion-loader'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
@@ -77,10 +75,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const { commissionRate: _commissionRate, commissionFixed: _commissionFixed,
       driverCommissionTotal: _driverCommissionTotal, commissionFrozenAt: _commissionFrozenAt,
       ...orderWithoutCommission } = order
-    // 打印页（报价单/发票）用：可售单位换算说明，见 DEV-PLAN 20260823 模块 B
-    const uomConversionMap = await loadUomConversionMap(
-      order.lines.map(l => ({ productId: l.productId, uomId: l.uomId })),
-    )
     const enrichedOrder = {
       ...orderWithoutCommission,
       // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
@@ -90,10 +84,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       // 编辑态下拉框预选:所属 wave 的 driverSlotId(真相),回退到下单意向列
       currentDriverSlotId: waveDriverSlot[order.id] ?? order.driverSlotId ?? null,
       lines: order.lines.map(({ product, commissionPrice: _commissionPrice, unitCost, ...line }) => {
-        const uomHint = formatUomConversionHint(
-          uomConversionMap.get(uomConversionKey(line.productId, line.uomId)),
-          toNum(line.orderedQty),
-        )
         return {
           ...line,
           // 成本快照(20260902)：读下单/改价那一刻落库的 OrderLine.unitCost，不再实时
@@ -102,8 +92,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           cost: unitCost != null ? toNum(unitCost) : null,
           internalRef: product?.internalRef ?? null,
           productSequence: product?.sequence ?? null,
-          uomConversionHint: uomHint?.conversionLine ?? null,
-          uomWeightHint: uomHint?.weightLine ?? null,
         }
       }),
     }

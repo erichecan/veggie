@@ -22,7 +22,6 @@ import { sortLinesBySequence } from '@/lib/print/line-sort'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { displayUomName } from '@/lib/sale-uom'
-import { formatUomConversionHint } from '@/lib/print/uom-conversion'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -141,10 +140,10 @@ function buildReceiptPage(
   const total = lines.reduce((s, l) => s + (l.subtotal ?? 0), 0)
   const orderCodes = orders.map(o => o.code ?? o.id.slice(-8).toUpperCase()).join(t.orderCodeSep)
 
+  // 20260914 客户要求：可售单位与基础单位的换算关系提示、毛重都不再打印在这类客户单据上
   const rows = lines.length > 0
     ? lines.map(l => {
-      const uomHint = formatUomConversionHint(l.uomConversion ?? undefined, Number(l.orderedQty ?? 0))
-      const specText = [l.spec, uomHint?.conversionLine, uomHint?.weightLine, uomHint?.grossWeightLine].filter(Boolean).join(' · ')
+      const specText = l.spec ?? ''
       return `
       <tr>
         <td>${escapeHtml(l.productName ?? '')}</td>

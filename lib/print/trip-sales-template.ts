@@ -36,7 +36,6 @@ import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
 import { displayUomName } from '@/lib/sale-uom'
-import { formatUomConversionHint } from '@/lib/print/uom-conversion'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -93,13 +92,10 @@ function buildSalesOrderHtml(
   const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
   const paymentBorder = isImmediatePayment ? '#ef4444' : '#16a34a'
 
+  // 20260914 客户要求：可售单位与基础单位的换算关系提示、毛重都不再打印在这类客户单据上
   function renderLineRow(l: TripLine, i: number): string {
     const rate = Number(l.taxRate ?? 0)
     const inclVat = Number(l.subtotal) * (1 + rate / 100)
-    const uomHint = formatUomConversionHint(l.uomConversion ?? undefined, Number(l.orderedQty))
-    const hintLine = uomHint
-      ? [uomHint.conversionLine, uomHint.weightLine ? `(${uomHint.weightLine})` : null, uomHint.grossWeightLine].filter(Boolean).join(' ')
-      : ''
     return `
     <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
       <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
@@ -107,7 +103,6 @@ function buildSalesOrderHtml(
       <td class="col-desc">
         <div class="prod-name">${escapeHtml(l.productName)}</div>
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
-        ${hintLine ? `<div class="prod-spec">${escapeHtml(hintLine)}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
       <td class="col-price">${fmtMoney(Number(l.unitPrice))}</td>

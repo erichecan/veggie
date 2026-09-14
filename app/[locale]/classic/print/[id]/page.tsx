@@ -155,8 +155,6 @@ export function buildOrderHtml(
   function renderLineRow(l: (typeof lines)[number], i: number): string {
     const spec = (l as unknown as { spec?: string }).spec
     const uomName = displayUomName((l as unknown as { uomName?: string }).uomName)
-    const uomConversionHint = (l as unknown as { uomConversionHint?: string | null }).uomConversionHint
-    const uomWeightHint = (l as unknown as { uomWeightHint?: string | null }).uomWeightHint
     const taxRate = Number(l.taxRate ?? 0)
     const inclVat = Number(l.subtotal) * (1 + taxRate / 100)
     return `
@@ -166,7 +164,6 @@ export function buildOrderHtml(
       <td class="col-desc">
         <div class="prod-name">${l.productName}</div>
         ${spec ? `<div class="prod-spec">${spec}</div>` : ''}
-        ${uomConversionHint ? `<div class="prod-spec">${uomConversionHint}${uomWeightHint ? ` (${uomWeightHint})` : ''}</div>` : ''}
         ${l.note ? `<div class="prod-note">${l.note}</div>` : ''}
       </td>
       ${hidePrice ? '' : `<td class="col-price">${eur(l.unitPrice)}</td>
