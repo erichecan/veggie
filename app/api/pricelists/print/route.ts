@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       ? await prisma.product.findMany({
           where: { id: { in: [...productIds] } },
           select: {
-            id: true, name: true, internalRef: true,
+            id: true, name: true, internalRef: true, saleDescription: true,
             listPrice: true, price: true, standardPrice: true, commissionPrice: true, categoryId: true,
             category: { select: { name: true, nameZh: true } },
           },
@@ -66,6 +66,18 @@ export async function GET(req: NextRequest) {
       : []
     const productMap = new Map(products.map(p => [p.id, p]))
     const today = new Date().toISOString().slice(0, 10)
+
+    // Pack Spec 列：ProductSaleUom.spec（"按这个单位卖，客户实际拿到的规格说明"，
+    // 同 lib/order-line-description.ts 的取值口径）。价格表规则的 item.uomId 限定了
+    // 具体单位就用那个单位的 spec，没限定（对该商品所有单位生效）就落回默认单位。
+    const saleUoms = productIds.size > 0
+      ? await prisma.productSaleUom.findMany({
+          where: { productId: { in: [...productIds] } },
+          select: { productId: true, uomId: true, spec: true, isDefault: true },
+        })
+      : []
+    const saleUomByExact = new Map(saleUoms.map(su => [`${su.productId}:${su.uomId}`, su.spec]))
+    const saleUomByDefault = new Map(saleUoms.filter(su => su.isDefault).map(su => [su.productId, su.spec]))
 
     // Enrich items with product names
     const enriched = pricelists.map(pl => {
@@ -90,6 +102,10 @@ export async function GET(req: NextRequest) {
           computedPrice = computeItemPrice(item, productForEngine, basePrice, allPricelistsForEngine, item.minQty || 1, today, 0, item.uomId)
         }
 
+        const packSpec = pid
+          ? (item.uomId ? saleUomByExact.get(`${pid}:${item.uomId}`) : undefined) ?? saleUomByDefault.get(pid) ?? null
+          : null
+
         return {
           ...item,
           // global 规则本来就不锁定具体商品，"All Products" 不是缺数据，是这条规则的真实含义
@@ -102,6 +118,8 @@ export async function GET(req: NextRequest) {
           productCategory: product?.category?.name ?? null,
           productCategoryZh: product?.category?.nameZh ?? null,
           computedPrice,
+          saleDescription: product?.saleDescription ?? null,
+          packSpec: packSpec ?? null,
         }
       })
       return { ...serializeApi(pl), items: enrichedItems }

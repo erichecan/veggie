@@ -13,6 +13,8 @@ const T = {
     noPricingRules: 'No pricing rules',
     pricelistPrefix: 'Pricelist: ',
     colProduct: 'Product',
+    colSaleDescription: 'Sale Description',
+    colPackSpec: 'Pack Spec',
     colMinQty: 'Min.Qty',
     colStartDate: 'Start Date',
     colEndDate: 'End Date',
@@ -29,6 +31,8 @@ const T = {
     noPricingRules: '暂无定价规则',
     pricelistPrefix: '价格表：',
     colProduct: '产品',
+    colSaleDescription: '销售描述',
+    colPackSpec: '包装规格',
     colMinQty: '最小订购量',
     colStartDate: '开始日期',
     colEndDate: '结束日期',
@@ -61,6 +65,10 @@ interface EnrichedItem {
   productCategoryZh?: string | null
   /** computeType==='formula' 时，服务端用 lib/pricing-engine.ts 现算出的实际价格；算不出来是 null */
   computedPrice?: number | null
+  /** Product.saleDescription（商品级销售说明） */
+  saleDescription?: string | null
+  /** ProductSaleUom.spec（按 item.uomId 限定的单位取那个单位的规格，没限定就落回默认单位） */
+  packSpec?: string | null
 }
 
 interface EnrichedPricelist {
@@ -118,20 +126,22 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = '
     const rowsHtml = rows.length > 0
       ? rows.map(item => {
           const cat = categoryLabel(item)
-          const headerHtml = cat !== lastCategory ? `<tr class="category-row"><td colspan="5">${cat}</td></tr>` : ''
+          const headerHtml = cat !== lastCategory ? `<tr class="category-row"><td colspan="7">${cat}</td></tr>` : ''
           lastCategory = cat
           return `${headerHtml}
         <tr>
           <td class="col-product">
             ${item.productRef ? `<span class="product-ref">[${item.productRef}]</span> ` : ''}${item.productName ?? '—'}
           </td>
+          <td class="col-desc">${item.saleDescription ?? '—'}</td>
+          <td class="col-desc">${item.packSpec ?? '—'}</td>
           <td class="col-minqty">${item.minQty ?? 1}</td>
           <td class="col-date">${formatDateOnly(item.dateStart)}</td>
           <td class="col-date">${formatDateOnly(item.dateEnd)}</td>
           <td class="col-price">${fmtPrice(item, pl.currency)}</td>
         </tr>`
         }).join('')
-      : `<tr><td colspan="5" class="empty-row">${t.noPricingRules}</td></tr>`
+      : `<tr><td colspan="7" class="empty-row">${t.noPricingRules}</td></tr>`
 
     return `
 <div class="pricelist-section">
@@ -140,6 +150,8 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = '
     <thead>
       <tr>
         <th class="col-product">${t.colProduct}</th>
+        <th class="col-desc">${t.colSaleDescription}</th>
+        <th class="col-desc">${t.colPackSpec}</th>
         <th class="col-minqty">${t.colMinQty}</th>
         <th class="col-date">${t.colStartDate}</th>
         <th class="col-date">${t.colEndDate}</th>
@@ -266,10 +278,11 @@ body {
   font-size: 9pt;
   color: #1a3a2a;
 }
-.col-product { width: 55%; }
-.col-minqty  { width: 10%; }
-.col-date    { width: 15%; }
-.col-price   { width: 10%; text-align: right; }
+.col-product { width: 24%; }
+.col-desc    { width: 18%; font-size: 8.5pt; color: #444; }
+.col-minqty  { width: 8%; }
+.col-date    { width: 11%; }
+.col-price   { width: 9%; text-align: right; }
 .price-table thead th.col-price { text-align: right; }
 
 .product-ref {
