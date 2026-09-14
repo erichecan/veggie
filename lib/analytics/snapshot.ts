@@ -14,6 +14,7 @@ import {
   businessDayStart,
   businessTodayStart,
   toDayKey,
+  toNaiveTimestampParam,
 } from '@/lib/analytics/metrics'
 
 /** 常量状态集合 → SQL IN 字面量（非用户输入，安全内联） */
@@ -44,6 +45,11 @@ export interface DayMetrics {
  */
 export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
   const { start, end } = businessDayRange(day)
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：confirmationDate/deliveryDate/
+  // creditDate/movedAt/createdAt 都是无时区列，直接绑 JS Date 会被当会话时区(UTC)反算，
+  // 每天边界少算最后一个夏令时偏移的小时——20260913 实测单日漏 17 行/€281.05
+  const startParam = toNaiveTimestampParam(start)
+  const endParam = toNaiveTimestampParam(end)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = prisma as any
@@ -74,9 +80,9 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
        ORDER BY c.cost_date DESC LIMIT 1
      ) lc ON TRUE
      WHERE o.status::text IN (${SALES_STATUS_SQL})
-       AND o."confirmationDate" >= $2 AND o."confirmationDate" < $3
+       AND o."confirmationDate" >= $2::timestamp AND o."confirmationDate" < $3::timestamp
        AND ol."isGift" = false`,
-    toDayKey(start), start, end,
+    toDayKey(start), startParam, endParam,
   )) as Array<{
     sales_ex: number; sales_inc: number; order_count: number
     active_customers: number; gross_profit: number; costed_amount: number
@@ -88,13 +94,13 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
     `SELECT
        (SELECT COUNT(*)::int FROM "OrderDiscrepancy" d
           JOIN "Order" o ON o.id = d."orderId"
-         WHERE o."deliveryDate" >= $1 AND o."deliveryDate" < $2
+         WHERE o."deliveryDate" >= $1::timestamp AND o."deliveryDate" < $2::timestamp
            AND d.status <> 'CANCELLED') AS shortage_lines,
        (SELECT COUNT(*)::int FROM "OrderLine" ol
           JOIN "Order" o ON o.id = ol."orderId"
-         WHERE o."deliveryDate" >= $1 AND o."deliveryDate" < $2
+         WHERE o."deliveryDate" >= $1::timestamp AND o."deliveryDate" < $2::timestamp
            AND o.status::text IN (${SALES_STATUS_SQL})) AS order_lines`,
-    start, end,
+    startParam, endParam,
   )) as Array<{ shortage_lines: number; order_lines: number }>
   const lg = logisticsRows[0]
 
@@ -103,8 +109,8 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
     `SELECT COALESCE(SUM("subtotalExTax"), 0)::float AS amount
      FROM "CreditNote"
      WHERE status IN ('CONFIRMED', 'APPLIED')
-       AND "creditDate" >= $1 AND "creditDate" < $2`,
-    start, end,
+       AND "creditDate" >= $1::timestamp AND "creditDate" < $2::timestamp`,
+    startParam, endParam,
   )) as Array<{ amount: number }>
 
   // 损耗额：SCRAP 全部 + 盘亏（STOCK_TAKE 的负向 ADJUSTMENT），按批次成本 fallback standardPrice
@@ -113,9 +119,9 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
      FROM "StockMove" sm
      LEFT JOIN "Lot" l ON l.id = sm."lotId"
      LEFT JOIN "Product" p ON p.id = sm."productId"
-     WHERE sm."movedAt" >= $1 AND sm."movedAt" < $2
+     WHERE sm."movedAt" >= $1::timestamp AND sm."movedAt" < $2::timestamp
        AND (sm.type = 'SCRAP' OR (sm.type = 'ADJUSTMENT' AND sm."sourceType" = 'STOCK_TAKE' AND sm.qty < 0))`,
-    start, end,
+    startParam, endParam,
   )) as Array<{ amount: number }>
 
   // 采购额（税前）：按 PO 确认日（orderDate 无确认时间戳，用 createdAt 归日的 CONFIRMED+ 单）
@@ -124,8 +130,8 @@ export async function computeDayMetrics(day: Date): Promise<DayMetrics> {
      FROM "PurchaseOrderLine" pol
      JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
      WHERE po.status::text IN ('CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED')
-       AND po."createdAt" >= $1 AND po."createdAt" < $2`,
-    start, end,
+       AND po."createdAt" >= $1::timestamp AND po."createdAt" < $2::timestamp`,
+    startParam, endParam,
   )) as Array<{ amount: number }>
 
   // 应收快照：当前 POSTED 且 amountDue > 0（历史日无法回溯当日余额，快照存生成时点的值）

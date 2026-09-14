@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
-import { resolveDateRange } from '@/lib/analytics/metrics'
+import { resolveDateRange, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
@@ -20,6 +20,10 @@ export async function GET(req: Request) {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))
+      // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：createdAt/confirmationDate
+      // 是无时区列，直接绑 JS Date 会被当会话时区(UTC)反算，边界少算一个夏令时偏移
+      const startParam = toNaiveTimestampParam(start)
+      const endParam = toNaiveTimestampParam(end)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
 
@@ -36,10 +40,10 @@ export async function GET(req: Request) {
          WHERE al.action = 'updated'
            AND al."totalBefore" IS NOT NULL AND al."totalAfter" IS NOT NULL
            AND al."totalBefore" <> al."totalAfter"
-           AND al."createdAt" >= $1 AND al."createdAt" < $2
+           AND al."createdAt" >= $1::timestamp AND al."createdAt" < $2::timestamp
          ORDER BY (al."totalAfter" - al."totalBefore") ASC
          LIMIT 100`,
-        start, end,
+        startParam, endParam,
       )) as Array<{
         id: string; order_id: string; order_code: string | null; operator: string
         total_before: number; total_after: number; delta: number; changed_at: Date
@@ -56,10 +60,10 @@ export async function GET(req: Request) {
          WHERE al.action = 'updated'
            AND al."totalBefore" IS NOT NULL AND al."totalAfter" IS NOT NULL
            AND al."totalBefore" <> al."totalAfter"
-           AND al."createdAt" >= $1 AND al."createdAt" < $2
+           AND al."createdAt" >= $1::timestamp AND al."createdAt" < $2::timestamp
          GROUP BY COALESCE(u.name, al."userId")
          ORDER BY decrease_amount DESC`,
-        start, end,
+        startParam, endParam,
       )) as Array<{ operator: string; change_count: number; decrease_count: number; decrease_amount: number }>
 
       const timeliness = (await p.$queryRawUnsafe(
@@ -68,10 +72,10 @@ export async function GET(req: Request) {
                 AVG(EXTRACT(EPOCH FROM (o."confirmationDate" - o."createdAt")) / 3600)::float AS avg_hours
          FROM "Order" o
          WHERE o."confirmationDate" IS NOT NULL
-           AND o."createdAt" >= $1 AND o."createdAt" < $2
+           AND o."createdAt" >= $1::timestamp AND o."createdAt" < $2::timestamp
          GROUP BY o."createdByName"
          ORDER BY avg_hours DESC`,
-        start, end,
+        startParam, endParam,
       )) as Array<{ creator: string; order_count: number; avg_hours: number }>
 
       const round2 = (n: number) => Math.round(n * 100) / 100

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
-import { SALES_COUNTED_STATUSES, TURNOVER_WINDOW_DAYS, resolveDateRange } from '@/lib/analytics/metrics'
+import { SALES_COUNTED_STATUSES, TURNOVER_WINDOW_DAYS, resolveDateRange, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import { getTopProductPriceTrends } from '@/lib/analytics/price-trend'
 import { round2 } from '@/lib/decimal-helpers'
 import { withCachedAuth } from '@/lib/analytics/cache'
@@ -34,6 +34,10 @@ export async function GET(req: Request) {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))
+      // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：以下几列都是无时区列，
+      // 直接绑 JS Date 会被当会话时区(UTC)反算，边界少算一个夏令时偏移
+      const startParam = toNaiveTimestampParam(start)
+      const endParam = toNaiveTimestampParam(end)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
 
@@ -48,11 +52,11 @@ export async function GET(req: Request) {
          JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
          LEFT JOIN "Customer" s ON s.id = po."supplierId"
          WHERE po.status::text IN (${PO_COUNTED})
-           AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-           AND COALESCE(po."confirmedAt", po."orderDate") < $2
+           AND COALESCE(po."confirmedAt", po."orderDate") >= $1::timestamp
+           AND COALESCE(po."confirmedAt", po."orderDate") < $2::timestamp
          GROUP BY po."supplierId"
          ORDER BY SUM(pol."subtotalExTax") DESC`,
-        start, end,
+        startParam, endParam,
       )) as Array<{
         supplier_id: string; supplier_name: string; po_count: number
         amount_ex: number; ordered_qty: number; received_qty: number
@@ -69,10 +73,10 @@ export async function GET(req: Request) {
          FROM "PurchaseOrder" po
          LEFT JOIN "PurchaseOrderLine" pol ON pol."purchaseOrderId" = po.id
          WHERE po.status::text IN (${PO_COUNTED})
-           AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-           AND COALESCE(po."confirmedAt", po."orderDate") < $2
+           AND COALESCE(po."confirmedAt", po."orderDate") >= $1::timestamp
+           AND COALESCE(po."confirmedAt", po."orderDate") < $2::timestamp
          GROUP BY po.id, po."supplierId", po."expectedDate", po."lastArrivedAt"`,
-        start, end,
+        startParam, endParam,
       )) as Array<{
         supplier_id: string; expected_date: Date | null
         last_arrived_at: Date | null; fully_received: boolean | null
@@ -129,12 +133,12 @@ export async function GET(req: Request) {
          FROM "StockMove" sm
          LEFT JOIN "Lot" l ON l.id = sm."lotId"
          LEFT JOIN "Product" p ON p.id = sm."productId"
-         WHERE sm."movedAt" >= $1 AND sm."movedAt" < $2
+         WHERE sm."movedAt" >= $1::timestamp AND sm."movedAt" < $2::timestamp
            AND (sm.type = 'SCRAP' OR (sm.type = 'ADJUSTMENT' AND sm."sourceType" = 'STOCK_TAKE' AND sm.qty < 0))
          GROUP BY sm."productId"
          ORDER BY SUM(ABS(sm.qty) * COALESCE(l."unitCost", p."standardPrice", 0)) DESC
          LIMIT 10`,
-        start, end,
+        startParam, endParam,
       )) as Array<{ product_id: string; product_name: string; qty: number; amount: number }>
 
       const totalAmount = bySupplier.reduce((s, r) => s + r.amount_ex, 0)

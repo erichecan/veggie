@@ -11,7 +11,7 @@
  * 不该算已转化。population = quotationDate 落在区间内的全部订单（不管当前
  * 状态），converted = 其中当前状态已经是 CONFIRMED 及之后的子集。
  */
-import { SALES_COUNTED_STATUSES } from '@/lib/analytics/metrics'
+import { SALES_COUNTED_STATUSES, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import type { AggregateSqlArgs, DetailSqlArgs, DimensionDef, DomainDef, MetricDef, SqlQuery } from './types'
 
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
@@ -87,7 +87,8 @@ function buildFilterClauses(filters: Record<string, string | undefined>, params:
 
 function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }: AggregateSqlArgs): SqlQuery {
   const dimDef = dimension ? DIMENSIONS[dimension] : null
-  const params: unknown[] = [start, end]
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：quotationDate 无时区列
+  const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
   const extraWhere = buildFilterClauses(filters, params)
 
   const groupExpr = dimDef ? dimDef.keyExpr : `'__total__'`
@@ -106,7 +107,7 @@ function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }:
                 ${valueExpr}::float AS value
          FROM "Order" o
          ${extraJoin}
-         WHERE o."quotationDate" >= $1 AND o."quotationDate" < $2
+         WHERE o."quotationDate" >= $1::timestamp AND o."quotationDate" < $2::timestamp
            ${extraWhere}
          ${groupByClause}
          ORDER BY value DESC
@@ -116,7 +117,8 @@ function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }:
 }
 
 function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQuery {
-  const params: unknown[] = [start, end]
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：quotationDate 无时区列
+  const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
   const extraWhere = buildFilterClauses(filters, params)
 
   const sql = `SELECT to_char(o."quotationDate", 'YYYY-MM-DD') AS quotation_date,
@@ -126,7 +128,7 @@ function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQu
                 o."totalAmount"::float AS amount
          FROM "Order" o
          LEFT JOIN "User" su ON su.id = o."salesUserId"
-         WHERE o."quotationDate" >= $1 AND o."quotationDate" < $2
+         WHERE o."quotationDate" >= $1::timestamp AND o."quotationDate" < $2::timestamp
            ${extraWhere}
          ORDER BY o."quotationDate" DESC
          LIMIT ${rowLimit + 1}`

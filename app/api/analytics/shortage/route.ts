@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
-import { resolveDateRange } from '@/lib/analytics/metrics'
+import { resolveDateRange, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/shortage'
 import { withCachedAuth } from '@/lib/analytics/cache'
 
@@ -44,11 +44,11 @@ export async function GET(req: Request) {
           AND pol."receivedQty" < pol."orderedQty"
           AND EXISTS (SELECT 1 FROM "PurchaseOrder" po2
                       WHERE po2.id = pol."purchaseOrderId" AND po2.status::text IN ('CONFIRMED', 'SENT'))
-         WHERE o."deliveryDate" >= $1 AND o."deliveryDate" < $2
+         WHERE o."deliveryDate" >= $1::timestamp AND o."deliveryDate" < $2::timestamp
            AND dc.status <> 'CANCELLED'
          GROUP BY dc."productId"
          ORDER BY COUNT(*) DESC, SUM(dc."diffQty") DESC`,
-        start, end,
+        toNaiveTimestampParam(start), toNaiveTimestampParam(end),
       )) as Array<{
         product_id: string; product_name: string; times: number; short_qty: number
         affected_orders: number; qty_on_hand: number | null

@@ -6,6 +6,7 @@
  * 计入状态 = CONFIRMED/RECEIVED/INVOICED/LOCKED，时间口径 = COALESCE(confirmedAt, orderDate)。
  * 供应商复用 Customer 表（项目里客户/供应商是同一张表）。
  */
+import { toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import type { AggregateSqlArgs, DetailSqlArgs, DimensionDef, DomainDef, MetricDef, SqlQuery } from './types'
 
 const PO_COUNTED = `'CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED'`
@@ -81,7 +82,8 @@ function buildFilterClauses(filters: Record<string, string | undefined>, params:
 
 function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }: AggregateSqlArgs): SqlQuery {
   const dimDef = dimension ? DIMENSIONS[dimension] : null
-  const params: unknown[] = [start, end]
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：confirmedAt/orderDate 无时区列
+  const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
   // category 维度已经自带 Product JOIN（别名 p），筛选条件复用它，不重复 JOIN
   const extraWhere = buildFilterClauses(filters, params, dimension === 'category')
 
@@ -99,8 +101,8 @@ function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }:
          JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
          ${extraJoin}
          WHERE po.status::text IN (${PO_COUNTED})
-           AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-           AND COALESCE(po."confirmedAt", po."orderDate") < $2
+           AND COALESCE(po."confirmedAt", po."orderDate") >= $1::timestamp
+           AND COALESCE(po."confirmedAt", po."orderDate") < $2::timestamp
            ${extraWhere}
          ${groupByClause}
          ORDER BY value DESC
@@ -110,7 +112,8 @@ function buildAggregateSql({ metric, dimension, filters, start, end, rowLimit }:
 }
 
 function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQuery {
-  const params: unknown[] = [start, end]
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：confirmedAt/orderDate 无时区列
+  const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
   const extraWhere = buildFilterClauses(filters, params, false)
 
   const sql = `SELECT to_char(COALESCE(po."confirmedAt", po."orderDate"), 'YYYY-MM-DD') AS po_date,
@@ -124,8 +127,8 @@ function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQu
          JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
          LEFT JOIN "Customer" s ON s.id = po."supplierId"
          WHERE po.status::text IN (${PO_COUNTED})
-           AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-           AND COALESCE(po."confirmedAt", po."orderDate") < $2
+           AND COALESCE(po."confirmedAt", po."orderDate") >= $1::timestamp
+           AND COALESCE(po."confirmedAt", po."orderDate") < $2::timestamp
            ${extraWhere}
          ORDER BY COALESCE(po."confirmedAt", po."orderDate") DESC
          LIMIT ${rowLimit + 1}`

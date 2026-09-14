@@ -6,7 +6,7 @@
  * 缺货行 = OrderDiscrepancy 非 CANCELLED 行数，订单行 = SALES_COUNTED_STATUSES 内订单行数。
  */
 import { prisma } from '@/lib/db'
-import { SALES_COUNTED_STATUSES, addBusinessDays, deriveShortageRate, toDayKey } from '@/lib/analytics/metrics'
+import { SALES_COUNTED_STATUSES, addBusinessDays, deriveShortageRate, toDayKey, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 
 const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
@@ -45,6 +45,10 @@ export async function computeShortageDaily(start: Date, end: Date): Promise<Shor
   const p = prisma as any
   const dayKeys = businessDayKeys(start, end)
   if (dayKeys.length === 0) return []
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：deliveryDate 无时区列，
+  // 直接绑 JS Date 会被当会话时区(UTC)反算，边界少算一个夏令时偏移
+  const startParam = toNaiveTimestampParam(start)
+  const endParam = toNaiveTimestampParam(end)
   return (await p.$queryRawUnsafe(
     `WITH days AS (
        SELECT unnest($3::date[]) AS d
@@ -53,14 +57,14 @@ export async function computeShortageDaily(start: Date, end: Date): Promise<Shor
        SELECT o."deliveryDate"::date AS d, COUNT(*)::int AS cnt
        FROM "OrderDiscrepancy" dc
        JOIN "Order" o ON o.id = dc."orderId"
-       WHERE o."deliveryDate" >= $1 AND o."deliveryDate" < $2 AND dc.status <> 'CANCELLED'
+       WHERE o."deliveryDate" >= $1::timestamp AND o."deliveryDate" < $2::timestamp AND dc.status <> 'CANCELLED'
        GROUP BY o."deliveryDate"::date
      ),
      lines AS (
        SELECT o."deliveryDate"::date AS d, COUNT(*)::int AS cnt
        FROM "OrderLine" ol
        JOIN "Order" o ON o.id = ol."orderId"
-       WHERE o."deliveryDate" >= $1 AND o."deliveryDate" < $2
+       WHERE o."deliveryDate" >= $1::timestamp AND o."deliveryDate" < $2::timestamp
          AND o.status::text IN (${SALES_STATUS_SQL})
        GROUP BY o."deliveryDate"::date
      )
@@ -71,7 +75,7 @@ export async function computeShortageDaily(start: Date, end: Date): Promise<Shor
      LEFT JOIN short ON short.d = days.d
      LEFT JOIN lines ON lines.d = days.d
      ORDER BY days.d`,
-    start, end, dayKeys,
+    startParam, endParam, dayKeys,
   )) as ShortageDailyRow[]
 }
 

@@ -174,7 +174,7 @@ export function pivotPeriods(rows: DriverPeriodRow[]): {
  * `restaurants` 里 orderIds 可能整个缺失（历史/异常数据），用 COALESCE 兜住，
  * 否则 jsonb_array_elements_text(NULL) 会把整个 Trip 悄悄丢掉。
  */
-function baseCte(filters: { byId: boolean; byName: boolean }): string {
+export function baseCte(filters: { byId: boolean; byName: boolean }): string {
   const conds = [
     filters.byId ? 'AND t."driverId" = $3' : '',
     filters.byName ? `AND COALESCE(NULLIF(t."driverName", ''), '未指定') = $${filters.byId ? 4 : 3}` : '',
@@ -372,4 +372,67 @@ export async function fetchDriverCommission(
   totals.diff = round2(totals.computedTotal - totals.frozenTotal)
 
   return { byDriver, byPeriod, detail, totals, detailTruncated }
+}
+
+export interface DriverDaySalesRow {
+  driverId: string | null
+  driverName: string
+  totalIncTax: number
+  revenueExTax: number
+  grossProfit: number
+  commissionTotal: number
+}
+
+/**
+ * 「按司机」销售额+毛利+提成汇总（20260914，Sales Analysis 页的天粒度钻取用）。
+ * ============================================================================
+ * 归属复用 baseCte 的 Trip→订单展开（跟提成计算同一套口径，不会出现"提成报表跑了
+ * 8 趟、这里 6 趟"的分叉，见文件头部大注释）。
+ *
+ * ⛔ 计数基准是 deliveredQty（送达口径），不是 orderedQty（销售口径，margin 路由用的
+ * 那个）——司机对"实际送到手上的"负责，日期口径也是 waveDate（送货日）而不是
+ * confirmationDate（确认日），跟本页其余"按天"面板不是同一批订单，UI 上要分清楚。
+ * 毛利成本查法（v_lot_daily_cost → standardPrice 兜底、按 ProductSaleUom.factor 换算基准单位）
+ * 与 app/api/analytics/margin/route.ts 逐字一致，含税换算与其 TAX_FRACTION_EXPR 一致。
+ */
+export async function fetchDriverDaySales(db: Db, start: Date, end: Date): Promise<DriverDaySalesRow[]> {
+  const cte = baseCte({ byId: false, byName: false })
+  const taxFrac = `(CASE WHEN COALESCE(ol."taxRate", 0) > 1 THEN COALESCE(ol."taxRate", 0) / 100.0 ELSE COALESCE(ol."taxRate", 0) END)`
+  const sql = `${cte},
+  cost_agg AS (
+    SELECT ol."orderId" AS order_id,
+           SUM(ol."unitPrice" * COALESCE(ol."deliveredQty", 0) * (1 + ${taxFrac}))::float AS total_inc_tax,
+           SUM(ol."unitPrice" * COALESCE(ol."deliveredQty", 0))::float AS revenue_ex,
+           SUM(COALESCE(lc.unit_cost, p."standardPrice", 0) * COALESCE(ol."deliveredQty", 0) * COALESCE(psu.factor, 1))::float AS cost
+    FROM "OrderLine" ol
+    JOIN order_calc oc2 ON oc2.order_id = ol."orderId"
+    LEFT JOIN "Product" p ON p.id = ol."productId"
+    LEFT JOIN "ProductSaleUom" psu ON psu."productId" = ol."productId" AND psu."uomId" = ol."uomId"
+    LEFT JOIN LATERAL (
+      SELECT c.unit_cost FROM v_lot_daily_cost c
+      WHERE c.product_id = ol."productId" AND c.cost_date <= oc2.biz_date
+      ORDER BY c.cost_date DESC LIMIT 1
+    ) lc ON TRUE
+    WHERE ol."isGift" = false
+    GROUP BY ol."orderId"
+  )
+  SELECT oc.driver_id, oc.driver_name,
+         SUM(COALESCE(ca.total_inc_tax, 0))::float AS total_inc_tax,
+         SUM(COALESCE(ca.revenue_ex, 0))::float AS revenue_ex,
+         SUM(COALESCE(ca.revenue_ex, 0) - COALESCE(ca.cost, 0))::float AS gross_profit,
+         SUM(${TOTAL_EXPR})::float AS commission_total
+  FROM order_calc oc
+  LEFT JOIN cost_agg ca ON ca.order_id = oc.order_id
+  GROUP BY oc.driver_id, oc.driver_name
+  ORDER BY SUM(COALESCE(ca.total_inc_tax, 0)) DESC`
+
+  const rows = (await db.$queryRawUnsafe(sql, start, end)) as Array<Record<string, unknown>>
+  return rows.map((r) => ({
+    driverId: r.driver_id == null ? null : String(r.driver_id),
+    driverName: String(r.driver_name),
+    totalIncTax: round2(num(r.total_inc_tax)),
+    revenueExTax: round2(num(r.revenue_ex)),
+    grossProfit: round2(num(r.gross_profit)),
+    commissionTotal: round2(num(r.commission_total)),
+  }))
 }

@@ -274,18 +274,18 @@ export default function SaleUomsEditor({
                 <span className="text-xs text-gray-500">{row.spec || '—'}</span>
               )}
             </div>
-            {/* 装货顺序(20260907 新增、20260912 改为 4 档)：仓库配货/司机卸货堆叠顺序——
-                1=最下面最重最不怕压……4=最上面最轻最怕压；每一行(含基础单位)独立设置，不继承
+            {/* 装货顺序(20260907 新增、20260912 改为 4 档、20260913 扩到 8 档)：仓库配货/司机卸货堆叠顺序——
+                1=最下面最重最不怕压……8=最上面最轻最怕压；每一行(含基础单位)独立设置，不继承
                 别的单位。语义跟商品页头的 Product Sequence 一致，但那个排的是单据里第几行，
-                这个排的是物理堆叠顺序，两者互不影响。0=没特意分层的基础货，排在 1-4 最前面
+                这个排的是物理堆叠顺序，两者互不影响。0=没特意分层的基础货，排在 1-8 最前面
                 （最底层）——再点一次已选中的按钮就是取消选中、回到 0。 */}
             <div className="flex items-center gap-2 mt-1 pl-1">
               <span className="text-xs text-gray-400 whitespace-nowrap" style={{ width: 180 }}>
                 {isEn ? 'Pack Sequence' : '装货顺序'}
               </span>
               {editMode ? (
-                <div className="flex items-center gap-1" title={isEn ? '1 = bottom (heaviest); 4 = top (most fragile). Click again to clear.' : '1=最下面（最重）；4=最上面（最怕压）。再点一次取消'}>
-                  {[1, 2, 3, 4].map(tier => {
+                <div className="flex items-center gap-1" title={isEn ? '1 = bottom (heaviest); 8 = top (most fragile). Click again to clear.' : '1=最下面（最重）；8=最上面（最怕压）。再点一次取消'}>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map(tier => {
                     const active = row.sequence === tier
                     return (
                       <button

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
-import { SALES_COUNTED_STATUSES, resolveDateRange } from '@/lib/analytics/metrics'
+import { SALES_COUNTED_STATUSES, resolveDateRange, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import { DIMENSION_DEFS, buildPivot, PivotTooManyColumnsError, type PivotRawCell } from '@/lib/analytics/pivot'
 import { withCachedAuth } from '@/lib/analytics/cache'
 
@@ -10,7 +10,7 @@ import { withCachedAuth } from '@/lib/analytics/cache'
  * ============================================================================
  * GET ?from&to&groupBy=product|category|customer|salesUser|day|week|month
  *     &colBy=<同上，可选，传了就是透视模式>
- *     &categoryId&customerId&salesUserId（可选精确过滤）
+ *     &categoryId&customerId&salesUserId&productId（可选精确过滤）
  * 毛利口径（税前）：Σ (unitPrice − unitCostRef) × orderedQty
  * unitCostRef 优先级：≤确认日最近的批次加权成本（v_lot_daily_cost）
  *                    → Product.standardPrice → Template.standardPrice → 0
@@ -32,6 +32,13 @@ const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
  */
 const STOCK_QTY_EXPR = `(ol."orderedQty" * COALESCE(psu.factor, 1))`
 
+/**
+ * 含税总额(税后)行级换算，口径与 lib/order-items.ts 的 orderIncTaxTotal 一致：
+ * subtotal(税前) × (1 + taxRate 归一后的小数)。仅供本路由 sales-analysis 周/日钻取用，
+ * 不进 buildPivot/PivotRawCell（那条链路是 margin 分析页的行列交叉透视，保持不动）。
+ */
+const TAX_FRACTION_EXPR = `(CASE WHEN COALESCE(ol."taxRate", 0) > 1 THEN COALESCE(ol."taxRate", 0) / 100.0 ELSE COALESCE(ol."taxRate", 0) END)`
+
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export async function GET(req: Request) {
@@ -44,6 +51,7 @@ export async function GET(req: Request) {
       const categoryId = searchParams.get('categoryId')
       const customerId = searchParams.get('customerId')
       const salesUserId = searchParams.get('salesUserId')
+      const productId = searchParams.get('productId')
 
       const rowDef = DIMENSION_DEFS[groupBy]
       if (!rowDef) {
@@ -61,11 +69,12 @@ export async function GET(req: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
 
-      const params: unknown[] = [start, end]
+      const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
       const filters: string[] = []
       if (categoryId) { params.push(categoryId); filters.push(`p."categoryId" = $${params.length}`) }
       if (customerId) { params.push(customerId); filters.push(`o."restaurantId" = $${params.length}`) }
       if (salesUserId) { params.push(salesUserId); filters.push(`o."salesUserId" = $${params.length}`) }
+      if (productId) { params.push(productId); filters.push(`ol."productId" = $${params.length}`) }
       const extraWhere = filters.length ? ` AND ${filters.join(' AND ')}` : ''
 
       const colSelect = colDef ? `, ${colDef.keyExpr} AS col_key, ${colDef.nameExpr} AS col_name` : ''
@@ -79,6 +88,7 @@ export async function GET(req: Request) {
                 COUNT(*)::int AS line_count,
                 SUM(${STOCK_QTY_EXPR})::float AS qty,
                 SUM(ol.subtotal)::float AS revenue_ex,
+                SUM(ol.subtotal * (1 + ${TAX_FRACTION_EXPR}))::float AS total_inc_tax,
                 SUM(COALESCE(lc.unit_cost, p."standardPrice", 0) * ${STOCK_QTY_EXPR})::float AS cost,
                 SUM(ol.subtotal - COALESCE(lc.unit_cost, p."standardPrice", 0) * ${STOCK_QTY_EXPR})::float AS gross_profit,
                 SUM(CASE WHEN lc.unit_cost IS NOT NULL THEN ol.subtotal ELSE 0 END)::float AS costed_amount
@@ -95,7 +105,7 @@ export async function GET(req: Request) {
            ORDER BY c.cost_date DESC LIMIT 1
          ) lc ON TRUE
          WHERE o.status::text IN (${SALES_STATUS_SQL})
-           AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND o."confirmationDate" >= $1::timestamp AND o."confirmationDate" < $2::timestamp
            AND ol."isGift" = false
            ${extraWhere}
          GROUP BY ${rowDef.keyExpr}${colGroupBy}
@@ -103,14 +113,16 @@ export async function GET(req: Request) {
         ...params,
       )) as Array<{
         row_key: string; row_name: string; col_key?: string; col_name?: string
-        line_count: number; qty: number; revenue_ex: number; cost: number; gross_profit: number; costed_amount: number
+        line_count: number; qty: number; revenue_ex: number; total_inc_tax: number; cost: number; gross_profit: number; costed_amount: number
       }>
 
       const totalRevenue = rows.reduce((s, r) => s + r.revenue_ex, 0)
+      const totalIncTax = rows.reduce((s, r) => s + r.total_inc_tax, 0)
       const totalProfit = rows.reduce((s, r) => s + r.gross_profit, 0)
       const totalCosted = rows.reduce((s, r) => s + r.costed_amount, 0)
       const summary = {
         revenueExTax: round2(totalRevenue),
+        totalIncTax: round2(totalIncTax),
         grossProfit: round2(totalProfit),
         marginPct: totalRevenue > 0 ? round2((totalProfit / totalRevenue) * 100) : 0,
         costCoverageRate: totalRevenue > 0 ? Math.round((totalCosted / totalRevenue) * 10000) / 10000 : 0,
@@ -125,6 +137,7 @@ export async function GET(req: Request) {
             lineCount: r.line_count,
             qty: Math.round(r.qty * 1000) / 1000,
             revenueExTax: round2(r.revenue_ex),
+            totalIncTax: round2(r.total_inc_tax),
             cost: round2(r.cost),
             grossProfit: round2(r.gross_profit),
             marginPct: r.revenue_ex > 0 ? round2((r.gross_profit / r.revenue_ex) * 100) : 0,

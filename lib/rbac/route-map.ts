@@ -317,6 +317,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // H3：这条规则让 analytics.commission.read 从「假开关」变成真闸门 ——
   // 它此前在权限目录里挂了一个月，没有任何 handler 引用（I2 查出的 13 个之一）。
   { pattern: '/api/analytics/driver-commission', permission: 'analytics.commission.read' },
+  // 20260914：Sales Analysis 页「按司机」钻取，权限跟主表一致——提成是薪酬数据，
+  // 不因为挂在销售分析页下面就放宽。matchesPattern 精确匹配段数，子路径必须单独登记。
+  { pattern: '/api/analytics/driver-commission/day-sales', permission: 'analytics.commission.read' },
   { pattern: '/api/analytics/ap-aging', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/ar-aging', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/income-statement', permission: 'analytics.finance.read' },

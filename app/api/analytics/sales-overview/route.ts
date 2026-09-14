@@ -7,6 +7,7 @@ import {
   deriveAov,
   businessTodayStart,
   summarizeSalesSeries,
+  toNaiveTimestampParam,
 } from '@/lib/analytics/metrics'
 import { ensureSnapshots, computeDayMetrics } from '@/lib/analytics/snapshot'
 import { computeShortageDaily, summarizeShortageDaily } from '@/lib/analytics/shortage'
@@ -82,12 +83,12 @@ export async function GET(req: Request) {
          FROM "OrderLine" ol
          JOIN "Order" o ON o.id = ol."orderId"
          WHERE o.status::text IN (${SALES_STATUS_SQL})
-           AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND o."confirmationDate" >= $1::timestamp AND o."confirmationDate" < $2::timestamp
            AND ol."isGift" = false
          GROUP BY ol."productId"
          ORDER BY SUM(ol.subtotal) DESC
          LIMIT 10`,
-        start, end,
+        toNaiveTimestampParam(start), toNaiveTimestampParam(end),
       )) as Array<{ product_id: string; product_name: string; subtotal: number; qty: number }>
 
       const topProducts = topProductsRows.map((r) => ({

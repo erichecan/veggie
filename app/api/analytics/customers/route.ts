@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
 import {
   SALES_COUNTED_STATUSES, CHURN_QUIET_DAYS, CHURN_LOOKBACK_DAYS, CHURN_MIN_PRIOR_ORDERS,
-  resolveDateRange,
+  resolveDateRange, toNaiveTimestampParam,
 } from '@/lib/analytics/metrics'
 import { withCachedAuth } from '@/lib/analytics/cache'
 
@@ -25,6 +25,10 @@ export async function GET(req: Request) {
     try {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))
+      // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：confirmationDate 是无时区列，
+      // 存的是都柏林墙上时间数字；直接绑 JS Date 会被当会话时区(UTC)反算，边界少算一个夏令时偏移
+      const startParam = toNaiveTimestampParam(start)
+      const endParam = toNaiveTimestampParam(end)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
 
@@ -37,10 +41,10 @@ export async function GET(req: Request) {
                 MIN(o."confirmationDate") AS first_order_in_range
          FROM "Order" o
          WHERE o.status::text IN (${SALES_STATUS_SQL})
-           AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND o."confirmationDate" >= $1::timestamp AND o."confirmationDate" < $2::timestamp
          GROUP BY o."restaurantId"
          ORDER BY SUM(o."totalAmount") DESC`,
-        start, end,
+        startParam, endParam,
       )) as Array<{
         customer_id: string; customer_name: string; order_count: number
         sales_ex: number; last_order_at: Date; first_order_in_range: Date
@@ -53,9 +57,9 @@ export async function GET(req: Request) {
            FROM "Order" o
            WHERE o.status::text IN (${SALES_STATUS_SQL}) AND o."confirmationDate" IS NOT NULL
            GROUP BY o."restaurantId"
-           HAVING MIN(o."confirmationDate") >= $1 AND MIN(o."confirmationDate") < $2
+           HAVING MIN(o."confirmationDate") >= $1::timestamp AND MIN(o."confirmationDate") < $2::timestamp
          ) t`,
-        start, end,
+        startParam, endParam,
       )) as Array<{ cnt: number }>
 
       const totalSales = rows.reduce((s, r) => s + r.sales_ex, 0)

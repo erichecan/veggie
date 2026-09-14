@@ -185,6 +185,32 @@ export function toDayKey(d: Date): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+/**
+ * 把 resolveDateRange 算出的真实 UTC 时刻，转回「都柏林墙上时间」的裸字符串
+ * （'YYYY-MM-DD HH:MI:SS'，不带时区），供 raw SQL 边界比较绑参用。
+ *
+ * ⛔ 20260913 发现：Order.confirmationDate 是 `timestamp`（无时区）列，写入时存的是
+ * 都柏林墙上时间的数字本身（未转 UTC）；而这台机器的 Postgres 会话时区是默认的
+ * UTC/GMT（代码里从未 SET TIME ZONE）。resolveDateRange 给的 start/end 是"都柏林
+ * 那一刻对应的真实 UTC 时刻"（已经做了夏令时换算），如果直接把这个 Date 当参数绑给
+ * `queryRawUnsafe`（会被当 timestamptz），Postgres 按 UTC 会话时区把它转成裸时间戳
+ * 去跟 confirmationDate 比 —— 相当于又按时区换算了一次，整体错位一个夏令时偏移量
+ * （实测 2026-06-28 当天查询丢了 23:00 之后确认的 17 单/€281.05）。
+ * 必须先用本函数把 start/end 转成都柏林墙上时间的裸字符串，SQL 里 `$n::timestamp`
+ * 直接按字面值比较，绕开任何时区换算。
+ */
+export function toNaiveTimestampParam(d: Date, tz = BUSINESS_TIMEZONE): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(d)
+  const g = (t: string) => parts.find((p) => p.type === t)!.value
+  // Intl 在部分实现下午夜会给 "24" 而不是 "00"（hour12:false 的已知怪癖），归一一下
+  const hour = String(Number(g('hour')) % 24).padStart(2, '0')
+  return `${g('year')}-${g('month')}-${g('day')} ${hour}:${g('minute')}:${g('second')}`
+}
+
 /** 客单价 = 销售额（税前） / 订单数，订单数为 0 时记 0，避免除零。四舍五入到分。 */
 export function deriveAov(salesExTax: number, orderCount: number): number {
   return orderCount > 0 ? Math.round((salesExTax / orderCount) * 100) / 100 : 0

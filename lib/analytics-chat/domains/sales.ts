@@ -5,7 +5,7 @@
  * 计入状态固定 SALES_COUNTED_STATUSES，taxBasis 只有 salesAmount 能选。
  * 新增：detail（订单行明细，不聚合），对照客户截图"每家送什么货/单价/数量"。
  */
-import { SALES_COUNTED_STATUSES } from '@/lib/analytics/metrics'
+import { SALES_COUNTED_STATUSES, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import { DIMENSION_DEFS } from '@/lib/analytics/pivot'
 import type { AggregateSqlArgs, DetailSqlArgs, DomainDef, MetricDef, SqlQuery } from './types'
 
@@ -59,7 +59,8 @@ function buildFilterClauses(filters: Record<string, string | undefined>, params:
 
 function buildAggregateSql({ metric, confirmedParams, dimension, filters, start, end, rowLimit }: AggregateSqlArgs): SqlQuery {
   const dimDef = dimension ? DIMENSION_DEFS[dimension] : null
-  const params: unknown[] = [start, end]
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：confirmationDate 无时区列
+  const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
   const extraWhere = buildFilterClauses(filters, params)
 
   const groupExpr = dimDef ? dimDef.keyExpr : `'__total__'`
@@ -99,7 +100,7 @@ function buildAggregateSql({ metric, confirmedParams, dimension, filters, start,
          ${extraJoin}
          ${costJoin}
          WHERE o.status::text IN (${SALES_STATUS_SQL})
-           AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND o."confirmationDate" >= $1::timestamp AND o."confirmationDate" < $2::timestamp
            AND ol."isGift" = false
            ${extraWhere}
          ${groupByClause}
@@ -110,7 +111,8 @@ function buildAggregateSql({ metric, confirmedParams, dimension, filters, start,
 }
 
 function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQuery {
-  const params: unknown[] = [start, end]
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：confirmationDate 无时区列
+  const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
   const extraWhere = buildFilterClauses(filters, params)
 
   const sql = `SELECT to_char(o."confirmationDate", 'YYYY-MM-DD') AS order_date,
@@ -125,7 +127,7 @@ function buildDetailSql({ filters, start, end, rowLimit }: DetailSqlArgs): SqlQu
          LEFT JOIN "ProductSaleUom" psu ON psu."productId" = ol."productId" AND psu."uomId" = ol."uomId"
          LEFT JOIN "User" su ON su.id = o."salesUserId"
          WHERE o.status::text IN (${SALES_STATUS_SQL})
-           AND o."confirmationDate" >= $1 AND o."confirmationDate" < $2
+           AND o."confirmationDate" >= $1::timestamp AND o."confirmationDate" < $2::timestamp
            ${extraWhere}
          ORDER BY o."confirmationDate" DESC, o."restaurantName"
          LIMIT ${rowLimit + 1}`

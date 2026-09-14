@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { toNaiveTimestampParam } from '@/lib/analytics/metrics'
 
 /**
  * 商品进价环比 —— SSOT，从 app/api/analytics/procurement/route.ts 的"进价趋势"tab
@@ -94,14 +95,18 @@ export async function getProductPriceTrendsByIds(productIds: string[]): Promise<
 export async function getTopProductPriceTrends(start: Date, end: Date, topN = 20): Promise<ProductPriceTrend[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = prisma as any
+  // ⛔ 见 lib/analytics/metrics.ts toNaiveTimestampParam 注释：confirmedAt/orderDate 无时区列，
+  // 直接绑 JS Date 会被当会话时区(UTC)反算，边界少算一个夏令时偏移
+  const startParam = toNaiveTimestampParam(start)
+  const endParam = toNaiveTimestampParam(end)
   const pricePoints = (await p.$queryRawUnsafe(
     `WITH top_products AS (
        SELECT pol."productId" AS product_id, SUM(pol."subtotalExTax") AS amt
        FROM "PurchaseOrderLine" pol
        JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
        WHERE po.status::text IN (${PO_COUNTED})
-         AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-         AND COALESCE(po."confirmedAt", po."orderDate") < $2
+         AND COALESCE(po."confirmedAt", po."orderDate") >= $1::timestamp
+         AND COALESCE(po."confirmedAt", po."orderDate") < $2::timestamp
        GROUP BY pol."productId"
        ORDER BY SUM(pol."subtotalExTax") DESC
        LIMIT $3
@@ -116,11 +121,11 @@ export async function getTopProductPriceTrends(start: Date, end: Date, topN = 20
      LEFT JOIN "Customer" s ON s.id = po."supplierId"
      JOIN top_products tp ON tp.product_id = pol."productId"
      WHERE po.status::text IN (${PO_COUNTED})
-       AND COALESCE(po."confirmedAt", po."orderDate") >= $1
-       AND COALESCE(po."confirmedAt", po."orderDate") < $2
+       AND COALESCE(po."confirmedAt", po."orderDate") >= $1::timestamp
+       AND COALESCE(po."confirmedAt", po."orderDate") < $2::timestamp
      GROUP BY pol."productId", COALESCE(po."confirmedAt", po."orderDate"), po.id
      ORDER BY pol."productId", po_date ASC`,
-    start, end, topN,
+    startParam, endParam, topN,
   )) as Array<{ product_id: string; product_name: string; po_date: Date; supplier_name: string; unit_cost: number }>
 
   return [...buildTrends(pricePoints).values()].sort((a, b) => Math.abs(b.changePct ?? 0) - Math.abs(a.changePct ?? 0))

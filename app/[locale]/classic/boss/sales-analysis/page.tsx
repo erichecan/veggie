@@ -5,6 +5,7 @@ import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { eur } from '@/lib/format-money'
+import WeeklyDrilldown from './WeeklyDrilldown'
 
 const PURPLE = '#875A7B'
 
@@ -38,7 +39,7 @@ const GROUPS: { key: GroupKey; label: string }[] = [
 ]
 
 // ─── View types ───────────────────────────────────────────────────────────────
-type ViewType = 'pie' | 'bar' | 'list'
+type ViewType = 'pie' | 'bar' | 'list' | 'week'
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 const PALETTE = [
@@ -370,8 +371,8 @@ export default function SalesAnalysisPage() {
         {/* View toggle */}
         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
           {(isEn
-            ? [['pie','🥧','Pie'],['bar','📊','Bar'],['list','☰','List']] as const
-            : [['pie','🥧','饼图'],['bar','📊','柱状'],['list','☰','列表']] as const
+            ? [['pie','🥧','Pie'],['bar','📊','Bar'],['list','☰','List'],['week','📅','Weekly']] as const
+            : [['pie','🥧','饼图'],['bar','📊','柱状'],['list','☰','列表'],['week','📅','按周']] as const
           ).map(([v, icon, label]) => (
             <button
               key={v}
@@ -388,88 +389,95 @@ export default function SalesAnalysisPage() {
           ))}
         </div>
 
-        <div className="h-5 w-px bg-gray-200" />
+        {view !== 'week' && (
+          <>
+            <div className="h-5 w-px bg-gray-200" />
 
-        {/* Measures dropdown */}
-        <div className="relative" ref={measureRef}>
-          <button
-            onClick={() => setMeasureOpen(o => !o)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:border-gray-400 bg-white"
-          >
-            <span>Measures</span>
-            <span className="text-gray-400">▾</span>
-          </button>
-          {measureOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 min-w-[180px] py-1">
-              {MEASURES.map(m => (
+            {/* Measures dropdown */}
+            <div className="relative" ref={measureRef}>
+              <button
+                onClick={() => setMeasureOpen(o => !o)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:border-gray-400 bg-white"
+              >
+                <span>Measures</span>
+                <span className="text-gray-400">▾</span>
+              </button>
+              {measureOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 min-w-[180px] py-1">
+                  {MEASURES.map(m => (
+                    <button
+                      key={m.key}
+                      onClick={() => { setMeasure(m.key); setMeasureOpen(false) }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      {measure === m.key && <span style={{ color: PURPLE }}>✓</span>}
+                      {measure !== m.key && <span className="w-4" />}
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Group By dropdown */}
+            <div className="relative" ref={groupRef}>
+              <button
+                onClick={() => setGroupOpen(o => !o)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:border-gray-400 bg-white"
+              >
+                <span>Group By</span>
+                <span className="text-gray-400">▾</span>
+              </button>
+              {groupOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 min-w-[160px] py-1">
+                  {GROUPS.map(g => (
+                    <button
+                      key={g.key}
+                      onClick={() => { setGroup(g.key); setGroupOpen(false) }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      {group === g.key && <span style={{ color: PURPLE }}>✓</span>}
+                      {group !== g.key && <span className="w-4" />}
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="h-5 w-px bg-gray-200" />
+
+            {/* Filters */}
+            <div className="flex items-center gap-1">
+              {FILTERS.map(f => (
                 <button
-                  key={m.key}
-                  onClick={() => { setMeasure(m.key); setMeasureOpen(false) }}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className="px-3 py-1.5 rounded-lg text-sm transition-colors border"
+                  style={filter === f.key
+                    ? { background: PURPLE, color: 'white', borderColor: PURPLE }
+                    : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }
+                  }
                 >
-                  {measure === m.key && <span style={{ color: PURPLE }}>✓</span>}
-                  {measure !== m.key && <span className="w-4" />}
-                  {m.label}
+                  {f.label}
                 </button>
               ))}
             </div>
-          )}
-        </div>
 
-        {/* Group By dropdown */}
-        <div className="relative" ref={groupRef}>
-          <button
-            onClick={() => setGroupOpen(o => !o)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:border-gray-400 bg-white"
-          >
-            <span>Group By</span>
-            <span className="text-gray-400">▾</span>
-          </button>
-          {groupOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 min-w-[160px] py-1">
-              {GROUPS.map(g => (
-                <button
-                  key={g.key}
-                  onClick={() => { setGroup(g.key); setGroupOpen(false) }}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
-                >
-                  {group === g.key && <span style={{ color: PURPLE }}>✓</span>}
-                  {group !== g.key && <span className="w-4" />}
-                  {g.label}
-                </button>
-              ))}
+            <div className="ml-auto text-xs text-gray-400">
+              {isEn ? `${filtered.length} orders · ${groupLabel} by ${measureLabel}` : `${filtered.length} 笔订单 · ${groupLabel} by ${measureLabel}`}
             </div>
-          )}
-        </div>
-
-        <div className="h-5 w-px bg-gray-200" />
-
-        {/* Filters */}
-        <div className="flex items-center gap-1">
-          {FILTERS.map(f => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className="px-3 py-1.5 rounded-lg text-sm transition-colors border"
-              style={filter === f.key
-                ? { background: PURPLE, color: 'white', borderColor: PURPLE }
-                : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }
-              }
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="ml-auto text-xs text-gray-400">
-          {isEn ? `${filtered.length} orders · ${groupLabel} by ${measureLabel}` : `${filtered.length} 笔订单 · ${groupLabel} by ${measureLabel}`}
-        </div>
+          </>
+        )}
       </div>
 
       {/* ── Main Content ───────────────────────────────────────────────────── */}
+      {view === 'week' && <WeeklyDrilldown isEn={isEn} />}
+
+      {view !== 'week' && (
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
 
-        {view !== 'list' && (
+        {(view === 'pie' || view === 'bar') && (
           <div className="flex flex-col lg:flex-row">
             {/* Chart */}
             <div className="flex-1 flex items-center justify-center py-8 px-4 min-h-[340px]">
@@ -585,9 +593,10 @@ export default function SalesAnalysisPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Summary bar ─────────────────────────────────────────────────────── */}
-      {segments.length > 0 && (
+      {view !== 'week' && segments.length > 0 && (
         <div className="mt-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{isEn ? 'Share Distribution' : '占比分布'}</div>
           <div className="flex h-3 rounded-full overflow-hidden gap-px">
