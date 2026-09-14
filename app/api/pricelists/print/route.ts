@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     const products = productIds.size > 0
       ? await prisma.product.findMany({
           where: { id: { in: [...productIds] } },
-          select: { id: true, name: true, internalRef: true, sequence: true },
+          select: { id: true, name: true, internalRef: true, category: { select: { name: true, nameZh: true } } },
         })
       : []
     const productMap = new Map(products.map(p => [p.id, p]))
@@ -50,16 +50,18 @@ export async function GET(req: NextRequest) {
       const items = (pl.items as unknown as OdooPricelistItem[]) ?? []
       const enrichedItems = items.map(item => {
         const pid = resolveProductId(item)
+        const product = pid ? productMap.get(pid) : undefined
         return {
           ...item,
           // global 规则本来就不锁定具体商品，"All Products" 不是缺数据，是这条规则的真实含义
           productName: item.applyOn === 'global'
             ? 'All Products'
-            : pid ? (productMap.get(pid)?.name ?? pid) : null,
-          productRef: pid ? (productMap.get(pid)?.internalRef ?? null) : null,
-          // 打印排序用商品的 sequence（目录/拣货顺序），不是 PricelistItem.sequence——
-          // 后者 97% 都是 Odoo 导入默认值 10，从未维护，按它排等于没排（见 lib/print/line-sort.ts）
-          productSequence: pid ? (productMap.get(pid)?.sequence ?? null) : null,
+            : pid ? (product?.name ?? pid) : null,
+          productRef: pid ? (product?.internalRef ?? null) : null,
+          // 打印分组用商品分类（20260913 改：Product.sequence 只有 31% 有值、且是 Odoo
+          // 导入遗留的无规律编号，按它排跟不排没区别，见对话记录）；category 填充率 97.6%
+          productCategory: product?.category?.name ?? null,
+          productCategoryZh: product?.category?.nameZh ?? null,
         }
       })
       return { ...serializeApi(pl), items: enrichedItems }

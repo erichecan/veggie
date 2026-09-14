@@ -6,7 +6,6 @@ import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { docBadge } from '@/lib/print/doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
-import { compareSequenceThenName } from '@/lib/print/line-sort'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -24,6 +23,7 @@ const T = {
     loading: 'Loading…',
     loadFailed: 'Loading failed',
     printButton: '🖨 Print / Save PDF',
+    uncategorized: 'Uncategorized',
   },
   zh: {
     noPricingRules: '暂无定价规则',
@@ -39,6 +39,7 @@ const T = {
     loading: '加载中…',
     loadFailed: '加载失败',
     printButton: '🖨 打印 / 保存 PDF',
+    uncategorized: '未分类',
   },
 } as const
 
@@ -55,8 +56,9 @@ interface EnrichedItem {
   fixedPrice?: number | null
   percentDiscount?: number | null
   sequence: number
-  /** 商品的 sequence（目录/拣货顺序），排序用这个，不是上面 PricelistItem 自己的 sequence */
-  productSequence?: number | null
+  /** 商品分类（打印分组用），英文/中文名各留一份，跟着 lang 选着显示 */
+  productCategory?: string | null
+  productCategoryZh?: string | null
 }
 
 interface EnrichedPricelist {
@@ -80,14 +82,37 @@ function fmtPrice(item: EnrichedItem, currency: string): string {
 
 function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = 'en'): string {
   const t = T[lang]
-  const sectionsHtml = pricelists.map(pl => {
-    // 按商品 sequence 排，不用 PricelistItem.sequence——那个字段绝大多数是 Odoo 导入的
-    // 默认值 10，从未维护，按它排等于没排（见 lib/print/line-sort.ts）
-    const rows = [...pl.items].sort((a, b) =>
-      compareSequenceThenName(a.productSequence, a.productName, b.productSequence, b.productName))
+  const localeTag = lang === 'zh' ? 'zh' : 'en'
 
+  // 打印分组用商品分类：Product.sequence 只有 31% 有值，且是 Odoo 导入遗留的无规律编号，
+  // 按它排等于没排；category 填充率 97.6%，分组浏览也比一串杂乱名字有意义得多（20260913）。
+  // 没有分类的行（含 applyOn:'global' 的 "All Products"）统一归到"未分类"，垫底显示。
+  function categoryLabel(item: EnrichedItem): string {
+    const label = lang === 'en'
+      ? (item.productCategory || item.productCategoryZh)
+      : (item.productCategoryZh || item.productCategory)
+    return label || t.uncategorized
+  }
+
+  const sectionsHtml = pricelists.map(pl => {
+    const rows = [...pl.items].sort((a, b) => {
+      const catA = categoryLabel(a)
+      const catB = categoryLabel(b)
+      if (catA !== catB) {
+        if (catA === t.uncategorized) return 1
+        if (catB === t.uncategorized) return -1
+        return catA.localeCompare(catB, localeTag)
+      }
+      return (a.productName ?? '').localeCompare(b.productName ?? '', localeTag)
+    })
+
+    let lastCategory: string | null = null
     const rowsHtml = rows.length > 0
-      ? rows.map(item => `
+      ? rows.map(item => {
+          const cat = categoryLabel(item)
+          const headerHtml = cat !== lastCategory ? `<tr class="category-row"><td colspan="5">${cat}</td></tr>` : ''
+          lastCategory = cat
+          return `${headerHtml}
         <tr>
           <td class="col-product">
             ${item.productRef ? `<span class="product-ref">[${item.productRef}]</span> ` : ''}${item.productName ?? '—'}
@@ -96,7 +121,8 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = '
           <td class="col-date">${formatDateOnly(item.dateStart)}</td>
           <td class="col-date">${formatDateOnly(item.dateEnd)}</td>
           <td class="col-price">${fmtPrice(item, pl.currency)}</td>
-        </tr>`).join('')
+        </tr>`
+        }).join('')
       : `<tr><td colspan="5" class="empty-row">${t.noPricingRules}</td></tr>`
 
     return `
@@ -225,6 +251,12 @@ body {
   padding: 2mm 3mm;
   vertical-align: middle;
   color: #111;
+}
+.price-table tr.category-row td {
+  background: #eef3ef;
+  font-weight: bold;
+  font-size: 9pt;
+  color: #1a3a2a;
 }
 .col-product { width: 55%; }
 .col-minqty  { width: 10%; }

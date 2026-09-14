@@ -44,7 +44,13 @@ export async function buildCustomersWhere(
   if (!includeArchived) andConditions.push({ isActive: true })
 
   const isVendorParam = searchParams.get('isVendor')
-  if (isVendorParam === 'true' || isVendorParam === '1') andConditions.push({ isVendor: true })
+  if (isVendorParam === 'true' || isVendorParam === '1') {
+    andConditions.push({ isVendor: true })
+  } else {
+    // 默认视图是"客户列表"：纯供应商（isCustomer=false）不该出现在这里；
+    // 客户+供应商二合一（isCustomer=true 且 isVendor=true）仍然是客户，予以保留。
+    andConditions.push({ isCustomer: true })
+  }
 
   // 分面搜索：同维度 OR、跨维度 AND（搜索框的「全部」维度也在其中，参数名 search）
   andConditions.push(...await buildFacetWhere(searchParams, CUSTOMER_FACET_DEFS))
