@@ -36,8 +36,8 @@ export interface SaleUomItemInput {
   commissionSurcharge?: number | string | null
   /** 按这个单位卖，客户实际拿到的规格说明（20260905），如"500g/包" */
   spec?: string | null
-  /** 装货顺序（20260907 新增、20260912 改为 4 档）：仓库配货/司机卸货用。0=基础/未特意分层，
-   * 1=最下面最重最不怕压……4=最上面最轻最怕压。只允许 0-4，不做唯一性校验。 */
+  /** 装货顺序（20260907 新增、20260912 改为 4 档、20260914 扩到 8 档）：仓库配货/司机卸货用。
+   * 0=基础/未特意分层，1=最下面最重最不怕压……8=最上面最轻最怕压。只允许 0-8，不做唯一性校验。 */
   sequence?: number | string | null
   /** 该可售单位自己的毛重(kg)（20260911），如"1箱=3.2kg"；打印单据折进规格说明文字显示 */
   grossWeight?: number | string | null
@@ -110,13 +110,13 @@ export function normalizeFactor(raw: number | string | null | undefined): number
   return n
 }
 
-/** 装货顺序只允许 0-4 这五档（0=基础/未特意分层，1-4=从最下面/最重到最上面/最怕压）。
+/** 装货顺序只允许 0-8 这九档（0=基础/未特意分层，1-8=从最下面/最重到最上面/最怕压）。
  *  UI 是按钮点选，理论上不会产生非法值，这里独立兜底防止绕过 UI 直接调 API 写入脏数据。
  *  返回 null=合法，否则返回给用户看的错误信息。空/未传视为合法（=不改这个字段）。 */
 export function validateUomSequence(raw: unknown): string | null {
   if (raw == null || raw === '') return null
   const n = Number(raw)
-  if (!Number.isInteger(n) || n < 0 || n > 4) return '装货顺序只能是 0-4 之间的整数'
+  if (!Number.isInteger(n) || n < 0 || n > 8) return '装货顺序只能是 0-8 之间的整数'
   return null
 }
 
