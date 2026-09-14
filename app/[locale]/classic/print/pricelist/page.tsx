@@ -59,6 +59,8 @@ interface EnrichedItem {
   /** 商品分类（打印分组用），英文/中文名各留一份，跟着 lang 选着显示 */
   productCategory?: string | null
   productCategoryZh?: string | null
+  /** computeType==='formula' 时，服务端用 lib/pricing-engine.ts 现算出的实际价格；算不出来是 null */
+  computedPrice?: number | null
 }
 
 interface EnrichedPricelist {
@@ -76,6 +78,12 @@ function fmtPrice(item: EnrichedItem, currency: string): string {
   }
   if (item.computeType === 'percentage' && item.percentDiscount != null) {
     return `-${Number(item.percentDiscount).toFixed(2)}%`
+  }
+  // formula（折扣→舍入→加价→利润夹取）之前没实现，一律吐 0.00——现在用服务端算好的
+  // computedPrice（lib/pricing-engine.ts 同一份计算逻辑，见 route.ts）。算不出来（如嵌套
+  // 引用的价格表已被删）显示 "—"，不能再吐假的 0.00 骗人。
+  if (item.computeType === 'formula') {
+    return item.computedPrice != null ? Number(item.computedPrice).toFixed(2) : '—'
   }
   return '0.00'
 }
