@@ -354,25 +354,68 @@ export async function getOrderWaveDriverSlotMap(orderIds: string[]): Promise<Rec
   if (orderIds.length === 0) return {}
   const info = await getOrderPalletInfo(orderIds)
   const entries = Object.entries(info)
-  if (entries.length === 0) return {}
-
-  const comboMap = new Map<string, { driverName: string; timeOfDay: string; seq: number }>()
-  for (const [, p] of entries) {
-    if (!p.driverName || !p.timeOfDay) continue
-    comboMap.set(`${p.driverName}::${p.timeOfDay}::${p.seq}`, { driverName: p.driverName, timeOfDay: p.timeOfDay, seq: p.seq })
-  }
-  const combos = [...comboMap.values()]
-  if (combos.length === 0) return {}
-  const slots = await prisma.driverSlot.findMany({
-    where: { OR: combos.map((c) => ({ driverName: c.driverName, timeOfDay: c.timeOfDay, batchNum: c.seq })) },
-  })
-  const slotKey = (driverName: string, timeOfDay: string, batchNum: number) => `${driverName}::${timeOfDay}::${batchNum}`
-  const slotIdMap = new Map(slots.map((s) => [slotKey(s.driverName, s.timeOfDay, s.batchNum), s.id]))
-
   const map: Record<string, string> = {}
-  for (const [oid, p] of entries) {
-    const id = slotIdMap.get(slotKey(p.driverName, p.timeOfDay, p.seq))
-    if (id) map[oid] = id
+
+  if (entries.length > 0) {
+    const comboMap = new Map<string, { driverName: string; timeOfDay: string; seq: number }>()
+    for (const [, p] of entries) {
+      if (!p.driverName || !p.timeOfDay) continue
+      comboMap.set(`${p.driverName}::${p.timeOfDay}::${p.seq}`, { driverName: p.driverName, timeOfDay: p.timeOfDay, seq: p.seq })
+    }
+    const combos = [...comboMap.values()]
+    if (combos.length > 0) {
+      const slots = await prisma.driverSlot.findMany({
+        where: { OR: combos.map((c) => ({ driverName: c.driverName, timeOfDay: c.timeOfDay, batchNum: c.seq })) },
+      })
+      const slotKey = (driverName: string, timeOfDay: string, batchNum: number) => `${driverName}::${timeOfDay}::${batchNum}`
+      const slotIdMap = new Map(slots.map((s) => [slotKey(s.driverName, s.timeOfDay, s.batchNum), s.id]))
+      for (const [oid, p] of entries) {
+        const id = slotIdMap.get(slotKey(p.driverName, p.timeOfDay, p.seq))
+        if (id) map[oid] = id
+      }
+    }
+  }
+
+  // 未落进任何托盘的订单(调度台"整卡拖入"只并了 wave.orderIds,没有细分到具体托盘)：
+  // 与展示态 getOrderWaveDisplayMap 的第二段兜底同源——按订单所属 wave 的 driverName+timeOfDay
+  // 任取一个未归档的 DriverSlot 作为编辑表单预选值。缺这一层时编辑态会拿到空字符串,用户不管
+  // 有没有碰过司机下拉框、原样保存都会被 orders/[id] PUT 当成"主动清空司机"提交,进而调用
+  // removeOrderFromAllWaves 把订单真的从波次里摘掉(2026-09-14 实测复现：解锁后随手加一行商品
+  // 保存，订单原有司机分配直接丢失)。
+  const missing = orderIds.filter((oid) => !map[oid])
+  if (missing.length > 0) {
+    const waves = await prisma.pickingWave.findMany({
+      where: { orderIds: { hasSome: missing }, driverName: { not: null }, timeOfDay: { not: null } },
+      select: { orderIds: true, driverName: true, timeOfDay: true },
+    })
+    if (waves.length > 0) {
+      const idSet = new Set(missing)
+      const orderCombo: Record<string, string> = {}
+      const comboSet = new Map<string, { driverName: string; timeOfDay: string }>()
+      for (const w of waves) {
+        if (!w.driverName || !w.timeOfDay) continue
+        const key = `${w.driverName}::${w.timeOfDay}`
+        comboSet.set(key, { driverName: w.driverName, timeOfDay: w.timeOfDay })
+        for (const oid of w.orderIds as string[]) {
+          if (idSet.has(oid) && !orderCombo[oid]) orderCombo[oid] = key
+        }
+      }
+      if (comboSet.size > 0) {
+        const fallbackSlots = await prisma.driverSlot.findMany({
+          where: { archived: false, OR: [...comboSet.values()].map((c) => ({ driverName: c.driverName, timeOfDay: c.timeOfDay })) },
+          orderBy: { batchNum: 'asc' },
+        })
+        const firstSlotByCombo = new Map<string, string>()
+        for (const s of fallbackSlots) {
+          const key = `${s.driverName}::${s.timeOfDay}`
+          if (!firstSlotByCombo.has(key)) firstSlotByCombo.set(key, s.id)
+        }
+        for (const [oid, key] of Object.entries(orderCombo)) {
+          const id = firstSlotByCombo.get(key)
+          if (id) map[oid] = id
+        }
+      }
+    }
   }
   return map
 }
