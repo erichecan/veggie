@@ -34,8 +34,8 @@
   - sales-analysis：list 视图三维度(时间/产品/客户)+四粒度(周/月/季/年，抽测季)数字真实且時間维度已排序；产品多选筛选后数字与手算吻合(112=39+39+34)；detail 明细清单保留筛选状态，逐行date/customer/product/price/qty/amount 全对；week 视图(未改动)仍正常
   - procurement-analysis：进货情况按产品/按供应商分组均正确；supplierId 单选筛选后 Lucky Bistro 合计€8033.20 与之前 curl 独立验证的数字完全一致；库存趋势 on-hand 从0跳到260.344、周出货量39/39/34，与 StockMove 手工核对结果完全一致；月粒度切换后总量守恒(56+56=112)
   - 全程浏览器控制台/dev server 日志均无应用产生的报错(唯一1条401是测试脚本自己用错token key导致，非应用bug)
-- [ ] T16 提交 + 部署 + 生产验证
-- [ ] T17 出 DEV-REPORT.md
+- [x] T16 两批提交(后端 7e4fe8d / 前端 20e35ba)已推送，GitHub Actions deploy-droplet 均 completed success；SSH 核实容器镜像 tag = 最新 commit，状态 healthy；首页/health/新页面路由(307未登录跳转) 全部 curl 验证过
+- [x] T17 DEV-REPORT.md 已出
 
 ## 设计要点（供下一周期直接读，不用重新推导）
 - 无 schema 变更，全部基于现有表/视图运行时聚合
