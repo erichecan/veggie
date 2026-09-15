@@ -49,7 +49,7 @@ export interface TripLine {
   productName: string
   /** 商品的 sequence（ProductTemplate.sequence）。打印排序按它，见 lib/print/line-sort.ts */
   productSequence?: number | null
-  /** 装货顺序（ProductSaleUom.sequence，20260907）。拣货单排序用，见 sortLinesByUomSequence */
+  /** 装货顺序（ProductSaleUom.sequence，20260907）。所有客户单据排序主键（20260914），见 sortLinesByUomSequence */
   uomSequence?: number | null
   spec: string | null
   uomId: string | null

@@ -18,7 +18,7 @@ import {
   fmtQty,
   formatTripDriverLabel,
 } from './trip-common'
-import { sortLinesBySequence } from '@/lib/print/line-sort'
+import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { displayUomName } from '@/lib/sale-uom'
@@ -135,8 +135,8 @@ function buildReceiptPage(
   tripDate: string,
   t: typeof T[PrintLang],
 ): string {
-  // 按商品 sequence 排（客户要求 2026-08-18），与其它单据同口径
-  const lines = sortLinesBySequence(orders.flatMap(o => o.lines ?? []))
+  // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径），与其它客户单据同口径
+  const lines = sortLinesByUomSequence(orders.flatMap(o => o.lines ?? []))
   const total = lines.reduce((s, l) => s + (l.subtotal ?? 0), 0)
   const orderCodes = orders.map(o => o.code ?? o.id.slice(-8).toUpperCase()).join(t.orderCodeSep)
 

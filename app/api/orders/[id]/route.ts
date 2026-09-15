@@ -15,6 +15,7 @@ import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-l
 import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { findInvalidLineUom } from '@/lib/sale-uom-server'
+import { fetchUomSequences, resolveUomSequence } from '@/lib/print/uom-sequence'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
@@ -75,6 +76,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const { commissionRate: _commissionRate, commissionFixed: _commissionFixed,
       driverCommissionTotal: _driverCommissionTotal, commissionFrozenAt: _commissionFrozenAt,
       ...orderWithoutCommission } = order
+    // 打印排序主键：装货顺序（客户要求 2026-09-14），见 lib/print/line-sort.ts
+    const uomSeqMap = await fetchUomSequences(order.lines.map(l => ({ productId: l.productId, uomId: l.uomId })))
     const enrichedOrder = {
       ...orderWithoutCommission,
       // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
@@ -92,6 +95,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           cost: unitCost != null ? toNum(unitCost) : null,
           internalRef: product?.internalRef ?? null,
           productSequence: product?.sequence ?? null,
+          uomSequence: resolveUomSequence(uomSeqMap, line.productId, line.uomId),
         }
       }),
     }

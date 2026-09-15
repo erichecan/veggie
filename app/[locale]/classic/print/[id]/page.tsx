@@ -12,7 +12,7 @@ import { docBadge } from '@/lib/print/doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
 import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
-import { sortLinesBySequence } from '@/lib/print/line-sort'
+import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { displayUomName } from '@/lib/sale-uom'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
@@ -113,9 +113,9 @@ export function buildOrderHtml(
   const docNoLabel = t.docNo[docType]
   // 送货单不含价格:隐藏单价/税/金额列与合计(价格在销售订单/发票上体现)
   const hidePrice = opts.docType === 'delivery'
-  // 按商品 sequence 排（客户要求 2026-08-18）。原先靠 OrderLine.sequence，
-  // 而实测 77.5% 的多行订单那个字段所有行都一样 —— 等于没排。见 lib/print/line-sort.ts
-  const lines = sortLinesBySequence(order.lines ?? [])
+  // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
+  // 与拣货单堆叠顺序一致。见 lib/print/line-sort.ts
+  const lines = sortLinesByUomSequence(order.lines ?? [])
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)
 
   const vatGroups: Record<string, { base: number; vat: number }> = {}

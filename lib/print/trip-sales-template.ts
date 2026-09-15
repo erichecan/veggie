@@ -31,7 +31,7 @@ import {
   renderTripNoticeHtml,
   PRINT_PAGE_FOOTER_CSS,
 } from './trip-common'
-import { sortLinesBySequence } from '@/lib/print/line-sort'
+import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
@@ -57,8 +57,9 @@ function buildSalesOrderHtml(
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
   const t = T[lang]
-  // 按商品 sequence 排（客户要求 2026-08-18），与销售单/发票 PDF 同一口径
-  const lines = sortLinesBySequence<TripLine>(order.lines ?? [])
+  // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
+  // 与拣货单堆叠顺序一致，客户拿着单子跟仓库出货顺序对得上。见 lib/print/line-sort.ts
+  const lines = sortLinesByUomSequence<TripLine>(order.lines ?? [])
 
   const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
   const safeCode = orderCode.replace(/['"\\]/g, '')

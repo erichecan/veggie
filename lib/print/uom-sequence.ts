@@ -99,6 +99,17 @@ export function resolveUomSequenceByName(
   return forProduct.find(r => r.isDefault)?.sequence ?? null
 }
 
+/**
+ * 一步到位：查装货顺序并附到行上（口径同 lib/print/product-sequence.ts 的 withProductSequence）。
+ * 打印路由里就一行调用，少一次「查了但忘了附」的机会。
+ */
+export async function withUomSequence<T extends { productId?: string | null; uomId?: string | null }>(
+  lines: readonly T[],
+): Promise<Array<T & { uomSequence: number | null }>> {
+  const map = await fetchUomSequences(lines)
+  return lines.map(l => ({ ...l, uomSequence: resolveUomSequence(map, l.productId, l.uomId) }))
+}
+
 /** 排序键：没有值排最后，跟 lib/print/line-sort.ts 的商品 sequence 同一套规则 */
 export function uomSequenceKey(v: number | null | undefined): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : Number.POSITIVE_INFINITY

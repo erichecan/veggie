@@ -4,6 +4,7 @@ import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { fetchProductSequences } from '@/lib/print/product-sequence'
+import { fetchUomSequences, resolveUomSequence } from '@/lib/print/uom-sequence'
 
 const INVOICE_TRACKED_FIELDS = [
   'name', 'status', 'customerName', 'subtotalExTax', 'totalTax', 'totalIncTax',
@@ -21,9 +22,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // 见 lib/print/line-sort.ts
     const rawLines = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
     const seqMap = await fetchProductSequences(rawLines.map(l => l.productId as string | undefined))
+    // 装货顺序（客户要求 2026-09-14，见 lib/print/line-sort.ts）：发票行 JSON 快照没存 uomId，
+    // 只能按 productId 落回该商品基础单位的顺序（resolveUomSequence 的 fallback 分支），非精确匹配。
+    const uomSeqMap = await fetchUomSequences(rawLines.map(l => ({ productId: l.productId as string | undefined, uomId: undefined })))
     const lines = rawLines.map(l => ({
       ...l,
       productSequence: l.productId ? (seqMap.get(l.productId as string) ?? null) : null,
+      uomSequence: resolveUomSequence(uomSeqMap, l.productId as string | undefined, undefined),
     }))
 
     return NextResponse.json(serializeApi({ ...invoice, lines }))

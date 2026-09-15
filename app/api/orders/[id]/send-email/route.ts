@@ -7,6 +7,7 @@ import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import { renderOrderHtml, type OrderDocInput } from '@/lib/order-pdf'
 import { withProductSequence } from '@/lib/print/product-sequence'
+import { withUomSequence } from '@/lib/print/uom-sequence'
 import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { sendOrderDocument } from '@/lib/email'
 import { normalizeEmail, MAX_RECIPIENTS_PER_EMAIL } from '@/lib/customer-contacts'
@@ -182,7 +183,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       try {
         const pdfBuffer = await renderHtmlToPdf(
           renderOrderHtml(
-            { ...order, lines: await withProductSequence(order.lines) } as unknown as OrderDocInput,
+            { ...order, lines: await withUomSequence(await withProductSequence(order.lines)) } as unknown as OrderDocInput,
             customer,
             deliveryBatch,
           ),

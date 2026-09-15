@@ -8,7 +8,7 @@ import { apiGet } from '@/lib/api'
 import { barcodeValue } from '@/lib/barcode'
 import type { Invoice } from '@/lib/types'
 import { formatDateOnly } from '@/lib/format-date'
-import { sortLinesBySequence } from '@/lib/print/line-sort'
+import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 
 const PURPLE = '#875A7B'
 
@@ -179,7 +179,7 @@ export default function InvoicePrintPage() {
           </thead>
           <tbody>
             {/* 按商品 sequence 排，与销售单/发票 PDF 同一口径（见 lib/print/line-sort.ts） */}
-            {sortLinesBySequence(inv.lines).map((line, i) => (
+            {sortLinesByUomSequence(inv.lines).map((line, i) => (
               <tr key={i} className="border-b border-gray-100">
                 <td className="py-1">
                   <p className="font-medium text-gray-800">{line.productName}</p>

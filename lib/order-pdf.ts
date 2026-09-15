@@ -1,7 +1,7 @@
 import { barcodeValue } from './barcode'
 import { formatDateOnly } from './format-date'
 import { eur } from './format-money'
-import { sortLinesBySequence } from '@/lib/print/line-sort'
+import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 
 /**
  * 销售单 / 报价单的单据 HTML。
@@ -22,10 +22,15 @@ import { sortLinesBySequence } from '@/lib/print/line-sort'
 export interface OrderDocLine {
   productName: string
   /**
-   * 商品的 sequence，由调用方用 lib/print/product-sequence.ts 的 withProductSequence()
-   * 附上。不附也不会报错，但那样整单会退化成"按商品名排" —— 别忘了附。
+   * 商品的 sequence（排序次级键），由调用方用 lib/print/product-sequence.ts 的
+   * withProductSequence() 附上。不附也不会报错，但那样整单会退化成"按商品名排" —— 别忘了附。
    */
   productSequence?: number | null
+  /**
+   * 装货顺序（排序主键，20260914），由调用方用 lib/print/uom-sequence.ts 的
+   * withUomSequence() 附上。不附会退化成只按 productSequence 排。
+   */
+  uomSequence?: number | null
   orderedQty: unknown
   unitPrice: unknown
   subtotal: unknown
@@ -72,10 +77,9 @@ export function renderOrderHtml(
   /** 司机归属。SSOT 是所属 wave 派生的结果，调用方负责算好传进来 */
   deliveryBatch: string,
 ): string {
-  // 按商品 sequence 排（客户要求，2026-08-18）。以前是按 OrderLine.sequence，
-  // 而实测 77.5% 的多行订单那个字段所有行都相同 —— 等于没排序，顺序由数据库
-  // 返回顺序决定，同一张单两次打印都可能不一样。规则见 lib/print/line-sort.ts
-  const lines = sortLinesBySequence(order.lines ?? [])
+  // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
+  // 与拣货单堆叠顺序一致。规则见 lib/print/line-sort.ts
+  const lines = sortLinesByUomSequence(order.lines ?? [])
 
   // Compute totals
   const subtotal = lines.reduce((s, l) => s + Number(l.subtotal), 0)

@@ -357,8 +357,10 @@ export interface OrderLine {
    * 见 lib/print/line-sort.ts 与 docs/20260818-print-sequence-and-density-tasks.md
    */
   sequence: number
-  /** 商品的 sequence（ProductTemplate.sequence），打印排序用。GET /api/orders/[id] 会带出来 */
+  /** 商品的 sequence（ProductTemplate.sequence），打印排序次级键用。GET /api/orders/[id] 会带出来 */
   productSequence?: number | null
+  /** 装货顺序（ProductSaleUom.sequence），打印排序主键用（20260914，见 lib/print/line-sort.ts）。GET /api/orders/[id] 会带出来 */
+  uomSequence?: number | null
   /** 商品件提成单价·下单快照（不下发到下单/报价/销售单详情页，见 PRD 20260703） */
   commissionPrice?: number | null
   /** 该行按下单单位换算后的单位成本（GET /api/orders/[id] 展平自 Product.standardPrice × ProductSaleUom.factor），非 DB 列 */
@@ -714,8 +716,11 @@ export type InvoiceStatus = 'draft' | 'posted' | 'paid' | 'cancelled'
 
 export interface InvoiceLine {
   productId: string
-  /** 商品的 sequence，打印排序用。GET /api/invoices/[id] 回查后附上（JSON 快照里没有） */
+  /** 商品的 sequence，打印排序次级键用。GET /api/invoices/[id] 回查后附上（JSON 快照里没有） */
   productSequence?: number | null
+  /** 装货顺序（ProductSaleUom.sequence），打印排序主键用（20260914）。GET /api/invoices/[id] 回查后附上；
+   * 发票行 JSON 快照没存 uomId，只能按 productId 落回该商品基础单位的顺序，非精确匹配 */
+  uomSequence?: number | null
   productName: string
   spec: string
   qty: number

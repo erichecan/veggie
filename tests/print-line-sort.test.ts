@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { sortLinesBySequence } from '../lib/print/line-sort'
+import { sortLinesBySequence, sortLinesByUomSequence } from '../lib/print/line-sort'
 
 const names = <T extends { productName: string }>(rows: readonly T[]) => rows.map(r => r.productName)
 
@@ -76,4 +76,50 @@ test('sequence 为 0 是有效值，不能当成"没有"', () => {
     { productName: '零号', productSequence: 0 },
   ])
   assert.deepEqual(names(out), ['零号', '没序号'])
+})
+
+/**
+ * 装货顺序排序（客户 2026-09-14 要求：送货单/发票/销售单/签收单四类客户单据改用它）。
+ * 主键是 uomSequence（ProductSaleUom.sequence），打平时退回商品 sequence→商品名，
+ * 跟 sortLinesBySequence 是同一套"没有排最后"规则叠了一层。
+ */
+test('装货顺序：有 uomSequence 的按升序', () => {
+  const out = sortLinesByUomSequence([
+    { productName: 'C', uomSequence: 3, productSequence: null },
+    { productName: 'A', uomSequence: 1, productSequence: null },
+    { productName: 'B', uomSequence: 2, productSequence: null },
+  ])
+  assert.deepEqual(names(out), ['A', 'B', 'C'])
+})
+
+test('装货顺序：没有 uomSequence 的排在最后，不当成 0', () => {
+  const out = sortLinesByUomSequence([
+    { productName: '没装货顺序', uomSequence: null, productSequence: null },
+    { productName: '有装货顺序', uomSequence: 5, productSequence: null },
+  ])
+  assert.deepEqual(names(out), ['有装货顺序', '没装货顺序'])
+})
+
+test('装货顺序：uomSequence 打平时按商品 sequence 排（次级键）', () => {
+  const out = sortLinesByUomSequence([
+    { productName: 'Z', uomSequence: 1, productSequence: 200 },
+    { productName: 'A', uomSequence: 1, productSequence: 100 },
+  ])
+  assert.deepEqual(names(out), ['A', 'Z'])
+})
+
+test('装货顺序：uomSequence 与商品 sequence 都打平时按商品名排', () => {
+  const out = sortLinesByUomSequence([
+    { productName: 'Zucchini', uomSequence: 1, productSequence: 100 },
+    { productName: 'Apple', uomSequence: 1, productSequence: 100 },
+  ])
+  assert.deepEqual(names(out), ['Apple', 'Zucchini'])
+})
+
+test('装货顺序：uomSequence 为 0 是有效值，排在没有值的前面', () => {
+  const out = sortLinesByUomSequence([
+    { productName: '没装货顺序', uomSequence: null, productSequence: null },
+    { productName: '零号', uomSequence: 0, productSequence: null },
+  ])
+  assert.deepEqual(names(out), ['零号', '没装货顺序'])
 })
