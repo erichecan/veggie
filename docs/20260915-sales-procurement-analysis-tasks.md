@@ -22,15 +22,18 @@
 - [x] T8 新路由登记 `lib/rbac/route-map.ts`（sales-analysis/detail 复用 analytics.margin.read；procurement-analysis/* 复用 analytics.purchase_detail.read）；无 token 全部 401 已验证
 
 ### 前端
-- [ ] T9 `components/boss/analytics-shared.tsx` 新增 `MultiSelectDropdown` 共享组件
-- [ ] T10 `sales-analysis/page.tsx` 改造：ViewType 简化为 list/week/detail（砍掉 pie/bar）；加自定义时间区间+粒度下拉(周/月/季/年)；加产品/客户多选；list 视图改接服务端透视接口(margin route)
-- [ ] T11 新建 `procurement-analysis/page.tsx`：交互范式照抄 sales-analysis；供应商单选+产品多选+时间区间粒度；视图含采购明细+库存趋势
-- [ ] T12 `boss/layout.tsx` 挂 procurement-analysis 导航入口（sales-analysis 已有）
+- [x] T9 `components/boss/analytics-shared.tsx` 新增 `SearchSelectDropdown` 共享组件(服务端debounce搜索,单选/多选通用) + `searchProductOptions`/`searchCustomerOptions`/`searchSupplierOptions` 三个 fetchOptions 实现
+- [x] T10 `sales-analysis/page.tsx` 改造：ViewType 简化为 list/week/detail（砍掉 pie/bar）；加自定义时间区间+维度(时间/产品/客户)+粒度下拉(周/月/季/年)；加产品/客户多选；list 视图改接服务端 `/api/analytics/margin`；**顺带修复**：时间维度按 key 升序重排(否则跟 margin 路由的毛利降序混在一起没法当时间序列看)
+- [x] T11 新建 `procurement-analysis/page.tsx`：交互范式照抄 sales-analysis；供应商单选(需求5)+产品多选(需求6/7)+时间区间粒度(周/月，需求6)；视图含进货情况(按产品/按供应商切换)+库存趋势
+- [x] T12 `boss/layout.tsx` 挂 procurement-analysis 导航入口（sales-analysis 已有）
 
 ### 验证与收尾
-- [ ] T13 `npm run build` / `tsc --noEmit` 全绿
-- [ ] T14 curl 逐条测试新路由的鉴权与返回 shape
-- [ ] T15 浏览器实测（Playwright）：筛选组合(时间粒度×多选产品×多选客户)不崩、数字与生产库抽查一致、导航可点击进入
+- [x] T13 `npm run build` 全绿(仅 1 次 "Compiled successfully")，`tsc --noEmit` 全程无报错
+- [x] T14 curl 逐条测试新路由：鉴权(无 token 401)+多值过滤(单/双客户金额验证)+边界(无productIds 400、超10个产品 400)全过
+- [x] T15 **浏览器实测(Playwright，本地开发库 boss 测试账号，localhost:3211)全部通过**：
+  - sales-analysis：list 视图三维度(时间/产品/客户)+四粒度(周/月/季/年，抽测季)数字真实且時間维度已排序；产品多选筛选后数字与手算吻合(112=39+39+34)；detail 明细清单保留筛选状态，逐行date/customer/product/price/qty/amount 全对；week 视图(未改动)仍正常
+  - procurement-analysis：进货情况按产品/按供应商分组均正确；supplierId 单选筛选后 Lucky Bistro 合计€8033.20 与之前 curl 独立验证的数字完全一致；库存趋势 on-hand 从0跳到260.344、周出货量39/39/34，与 StockMove 手工核对结果完全一致；月粒度切换后总量守恒(56+56=112)
+  - 全程浏览器控制台/dev server 日志均无应用产生的报错(唯一1条401是测试脚本自己用错token key导致，非应用bug)
 - [ ] T16 提交 + 部署 + 生产验证
 - [ ] T17 出 DEV-REPORT.md
 
