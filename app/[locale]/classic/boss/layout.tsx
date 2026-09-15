@@ -32,6 +32,9 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     { href: `${prefix}/classic/boss/analytics/sales-overview`, label: isEn ? 'Sales Overview' : '销售统计' },
     { href: `${prefix}/classic/boss/analytics/customers`, label: isEn ? 'Customer Analysis' : '客户分析' },
     { href: `${prefix}/classic/boss/analytics/margin`, label: isEn ? 'Margin Analysis' : '毛利分析' },
+    // 20260913 新增的周/日钻取页面 (boss/sales-analysis) 当时漏挂导航入口，成了打不开的孤儿页；
+    // 与下面「Sales Report」(boss/reports/sales，透视表口径) 是两套不同实现，标签要能分清楚。
+    { href: `${prefix}/classic/boss/sales-analysis`, label: isEn ? 'Sales Drilldown (Week/Day)' : '销售钻取(周/日)' },
     // 「利润表」20260902 重新补上：过账链路（postInvoiceToJournal/postVendorBillToJournal）
     // 已经接进 /api/invoices/[id]/post 和 /api/vendor-bills/[id]，JournalEntry 不再是死代码。
     // 但页面口径仍是"毛利"（营收−COGS），运营费用录入入口依然不存在，页面自己会标注清楚。
