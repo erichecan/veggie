@@ -313,6 +313,10 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/analytics/price-trends', permission: 'analytics.margin.read' },
   { pattern: '/api/analytics/procurement', permission: 'analytics.purchase_detail.read' },
   { pattern: '/api/analytics/procurement-overview', permission: 'analytics.purchase.read' },
+  // 20260915：销售/采购数据分析扩展（7条需求）新增路由，子路径需单独登记
+  { pattern: '/api/analytics/sales-analysis/detail', permission: 'analytics.margin.read' },
+  { pattern: '/api/analytics/procurement-analysis/pivot', permission: 'analytics.purchase_detail.read' },
+  { pattern: '/api/analytics/procurement-analysis/stock-trend', permission: 'analytics.purchase_detail.read' },
   { pattern: '/api/analytics/logistics', permission: 'analytics.logistics.read' },
   // H3：这条规则让 analytics.commission.read 从「假开关」变成真闸门 ——
   // 它此前在权限目录里挂了一个月，没有任何 handler 引用（I2 查出的 13 个之一）。

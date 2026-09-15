@@ -1,160 +1,80 @@
-# DEV-PLAN：订单调整行体系 —— 折扣/差价调整/配送费 + 赠品标记
+# DEV-PLAN：销售/采购数据分析扩展（7 条新需求）
 
 ## 读取的文档
 
-无独立 PRD。需求来自本次对话：排查"拣货单商品分表看 Product.type 还是销售单位"问题时，
-在生产库里发现 `price difference`（26 单）、`Small Offer Set`（75 单）、`Discount`（2 单）、
-`Deliver Service`（3 单）四个"假商品"，经代码调研确认——系统对差价调整/折扣/配送费三类
-需求**完全没有正式承接点**，业务只能靠新建一个虚构商品塞进订单行来实现，产出记录见
-`docs/20260913-consu-missing-uom-checklist.md`。用户已确认"四个都要，一次性出完整方案"。
+无独立产品文档。需求来自对话中用户直接提出的 7 条口述需求（销售 4 条 + 采购 3 条），以及此前对现有 `sales-analysis`、`reports/*`、`analytics/margin`、`analytics/procurement` 等页面的代码核实结论（详见对话记录，不重复贴出）。
 
-## 问题核实（代码调研结论）
+## 背景：现状缺口回顾
 
-- **差价调整**：`OrderLine` 只有 `unitPrice/subtotal/priceSourceType`（PRICELIST/DEFAULT/
-  LAST/SPECIAL/MANUAL）这套价格溯源，没有"调价行"概念。
-- **折扣**：`ProductSaleUom.priceDiscountPct` 是价格表 FORMULA 定价规则的一部分，跟下单时
-  临时打折是两回事。系统确有正式的"手动改价"通道（`sales.order.override_price` 权限 +
-  `resolveOrderLines(overrides.allowManualPrice)`，`app/api/orders/route.ts:268`），但只能
-  改**某一真实商品行自己的单价**，没有"整单减免"或"独立折扣行"的概念。
-- **配送费**：`Order`/`DriverSlot`/`Trip` 都没有 deliveryFee 字段，`lib/commission.ts` 只算
-  商品提成不算运费。
-- **促销赠品套装**：`Product` 没有 isBundle/组合明细表，`Pricelist` 只支持单品定价规则，不
-  支持"买 A 送 B"或套装价；`OrderLine.note`（`schema.prisma:844` 注释提到"如 free 赠品"）
-  是唯一沾边的字段，但那是给**真实单品**打免费标记，业务显然没在用它，才会去建假商品。
+| 需求 | 现状 |
+|---|---|
+| 1. 时间维度(周/月/季/年)+多产品+多客户+qty/price/untaxed/vat/total/margin | 不满足：`sales-analysis` 无月/季/年、无多选筛选，margin 硬编码 0 |
+| 2. 按产品+多客户+qty/price/total/untaxed/margin | 部分满足：`margin` 页面有真实 margin，但客户筛选是单选、无季/年 |
+| 3. 按客户+qty/price/untaxed/total/margin | 部分满足：同上 |
+| 4. 明细点货清单(日期/客户/产品/单价/数量/金额，1-3客户×1-2产品) | 不满足：字段在 AI 问数 detail SQL 里已具备，但只支持单客户单产品筛选，且是对话入口非表单 |
+| 5. 按供应商查进货 | 部分满足：`reports/purchasing` 能查，但供应商是纯文本框手输，无下拉 |
+| 6. 按产品看销售数量+on hand QTY+forecast QTY，按周/月展开趋势 | 不满足：forecast 只有"当前时刻"静态快照，无历史/趋势数据基础 |
+| 7. 按产品查进货 | 部分满足：同需求5，缺产品下拉选择器 |
 
-## 设计方案与理由
+## 复用评估结论（已调研，不重复造轮子）
 
-**不做**一个独立的 Bundle/组合商品目录系统——那是四个需求里唯一"新增一类商品概念"的做法，
-复杂度和风险都远高于其余三个，而实际业务场景（赠品、打包优惠）用现有"真实商品行"就能表达：
-
-- **赠品** = 真实商品行 + `unitPrice=0`/`isGift=true` 标记，该商品仍会正确扣库存、正确显示在
-  拣货单，只是不计入销售额和提成——这比发明"套装商品"更贴近物理事实（仓库拣的是真货，不是
-  一个叫"Small Offer Set"的抽象商品）。
-- **套装打包优惠** = 各真实商品各自成行 + 一条"折扣"调整行体现整单让利，不需要新建目录。
-
-三个真正缺失的能力（差价、折扣、配送费）共性是"订单需要一笔不对应任何库存商品、可正可负的
-金额调整"，因此统一设计成一张新表 **OrderAdjustment**，而不是三套各自的字段/表：
-
-```prisma
-enum OrderAdjustmentType {
-  DISCOUNT          // 折扣/让利，通常为负
-  DELIVERY_FEE      // 配送费，通常为正
-  PRICE_CORRECTION  // 补差价/价格修正，可正可负
-  OTHER
-}
-
-model OrderAdjustment {
-  id          String              @id @default(cuid())
-  orderId     String
-  order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  type        OrderAdjustmentType
-  label       String              // 展示用说明，如"9月促销折扣"/"退货补差价"
-  amount      Decimal             @db.Decimal(12, 2)
-  note        String?
-  createdById String
-  createdBy   User                @relation(fields: [createdById], references: [id])
-  createdAt   DateTime            @default(now())
-  @@index([orderId])
-}
-```
-
-`OrderLine` 加一个字段：
-
-```prisma
-  isGift Boolean @default(false)  // true 时该行不计入销售额/提成基数，仍正常走库存扣减与拣货单
-```
-
-（不复用 `note` 文本约定——note 是自由备注，拿它做统计过滤等于拿注释当数据源，`isGift` 才是
-"显式优于聪明"该有的样子。）
-
-**`Order.totalAmount` 语义不变，保持只等于商品行合计**（这是 `sales-accounting-tax-convention`
-既有 SSOT——税前商品额，`taxRate`/`orderIncTaxTotal` 等派生量全建立在这个不变量上，改了会牵一
-发动全身）。发票/结算/司机对账等"客户实际应付/应收金额"的场景，改为读
-`totalAmount + Σ(OrderAdjustment.amount)`（新增一个 `lib/order-adjustments.ts` 里的
-`getOrderPayableTotal(orderId)` 辅助函数统一计算，不允许每个消费端各自手写加总）。
-
-**提成（`lib/commission.ts`）与商品维度分析（毛利/透视）不需要改动**——两者都基于
-`OrderLine`，`OrderAdjustment` 是独立表，天然不会被算进去；`isGift=true` 的行需要在
-`lib/commission.ts` 和 `lib/analytics/metrics.ts` 里加一行"排除 isGift 行"的判断（这是唯一
-需要动这两个文件的地方）。
-
-**拣货单/司机打印**：`OrderAdjustment` 独立于 `OrderLine`，不会出现在
-`lib/print/trip-picking-template.ts` 的商品聚合里，无需改动；但发票/账单类打印模板
-（如有）需要补一段展示调整行明细。
+- **margin(毛利)计算**：`app/api/analytics/margin/route.ts` 里已有一条成熟 SQL（JOIN `v_lot_daily_cost` 批次加权成本，查不到退 `Product.standardPrice`），数据库端一次 `GROUP BY` 聚合出 qty/untaxed/total/cost/margin，133万行 OrderLine 已在生产验证过，**直接复用这套 SQL 模式**，不重写。
+- **vat(税额)**：`total_inc_tax − revenue_ex` 或 `SUM(subtotal × taxRate换算)`，在同一条聚合 SQL 里加一列即可，改动量极小。
+- **明细清单**：`lib/analytics-chat/domains/sales.ts` 的 `buildDetailSql()` 字段结构（date/customer/product/unit_price/qty/subtotal）与需求4完全对应，**抽取成共享函数**，同时给 AI 问数和新接口用；过滤条件从单值 `=` 改成 `= ANY($::text[])` 支持多选。
+- **时间粒度**：`lib/analytics/pivot.ts` 的 `DIMENSION_DEFS` 现有 day/week/month，quarter/year 照抄 `date_trunc` 模式各加一条即可。`lib/reports/sql-builder.ts`（reports 透视表的后端引擎）本身是纯函数、跟 UI 无耦合，天然支持五档粒度，采购侧筛选/聚合骨架直接复用它，**只是不用 `components/reporting/` 那套 UI**。
+- **on-hand 历史 + forecast 趋势**：`StockMove` 表记录带符号 qty，可以"时间旅行"重建任意历史时点的 on-hand（当前 qtyOnHand − 该日期之后所有 StockMove 累计和）；forecast 现有口径是静态快照、没有"未来"概念。**这部分需要新写，且有一个产品决策悬而未决，见下方风险点第1条**。
 
 ## 模块拆解
 
-1. **Schema**：新增 `OrderAdjustment` 模型 + `OrderAdjustmentType` 枚举；`OrderLine` 加
-   `isGift Boolean @default(false)`；迁移文件。
-2. **计算层**：新建 `lib/order-adjustments.ts`——`getOrderPayableTotal()`、
-   `listAdjustments()`、`createAdjustment()`、`deleteAdjustment()`，所有对 Order 应付金额的
-   读取统一走这里，不允许 API 路由内联加总逻辑。
-3. **权限**：新增权限点 `sales.order.manage_adjustment`（按现有 RBAC 流程：`role-access` +
-   `middleware/route-map.ts` 注册 + `scripts/sync-sortkeys.ts` + 幂等迁移 + `permVersion`
-   bump，见 memory `new-protected-api-route-needs-route-map-registration`）。是否需要按
-   `type` 再拆细粒度权限（比如折扣需要经理审批、差价不需要）——**见下方"需要确认"**。
-4. **API**：`app/api/orders/[id]/adjustments/route.ts`（POST 新增/GET 列出）、
-   `app/api/orders/[id]/adjustments/[adjustmentId]/route.ts`（DELETE），走
-   `assertOrderNotPickLockedForLineEdit` 同款拣货锁校验（调整金额本质也是订单内容变更）。
-   `OrderLine` 的 PATCH 接口加 `isGift` 字段透传（连带 `unitPrice` 校验：`isGift=true` 时
-   强制 `unitPrice=0`，不允许"又是赠品又收钱"的矛盾状态）。
-5. **下单页/订单详情页 UI**：
-   - 商品行加"标为赠品"勾选（勾选后单价锁定为 0、行内 UI 提示"赠品，不计入销售额/提成"）。
-   - 新增"调整"面板：类型下拉（折扣/配送费/差价调整/其他）+ 说明文字 + 金额（可正可负）+
-     增/删列表；应付合计单独一行显示 `商品小计 + 调整合计 = 实际应收`。
-6. **发票/结算/司机对账等下游读取点**：梳理所有当前直接读 `order.totalAmount` 当"客户应付
-   金额"用的地方（发票生成、Trip 结算、Statement），改为调用 `getOrderPayableTotal()`；
-   **单纯统计销售额/毛利/提成的地方维持读 `totalAmount`/`OrderLine`，不改**——这两类消费端
-   要在实现时逐个标注清楚，避免混用出错。
-7. **存量四个假商品**：不迁移历史订单数据（106 笔历史假商品订单行保持原样，本次不追溯）；
-   新机制上线后把 `price difference`/`Small Offer Set`/`Discount`/`Deliver Service` 四个
-   `Product.active` 置为 `false`，防止上线后业务还习惯性地继续用旧方式下单。
-8. **测试**：`OrderAdjustment` CRUD 单测；`getOrderPayableTotal` 含"无调整/多条调整/正负混合"
-   用例；`isGift` 行不计入 commission/analytics 的回归测试；权限点 403/401 测试
-   （`api-auth-templates` 清单）。
+### 1. 后端 lib 层（可复用逻辑，不跟 UI 耦合）
+- 扩展 `lib/analytics/pivot.ts`：`DIMENSION_DEFS` 加 quarter/year；度量加 vat；filter 支持 productIds[]/customerIds[] 多值（`= ANY`）
+- 新建 `lib/analytics/sales-detail.ts`：从 `analytics-chat/domains/sales.ts` 抽取 `buildDetailSql`，改造成支持 1-3 客户 × 1-2 产品的多值过滤，两边（AI 问数 + 新明细接口）共用一份
+- 新建 `lib/analytics/stock-trend.ts`：基于 `StockMove` 重建选定产品的历史 on-hand 时间序列（按周/月分桶取桶尾时点值），forecast 先按"该分桶的历史实际出货量"近似（见风险点1）
 
-## 路由/文件清单
+### 2. 后端 API 层（新增/扩展路由，见下方路由清单）
+- 全部挂 `withAuth` + 复用现有 `analytics.*` 权限点（预计不需要新权限点，按最小改动原则）
+- 新路由必须登记 `route-map.ts`（历史教训：漏登记会导致 middleware 层全员 403，即使 withAuth 本身写对了）
 
-- `prisma/schema.prisma` + 新迁移（`OrderAdjustment` 模型、`OrderLine.isGift`）
-- `lib/order-adjustments.ts`（新建）
-- `app/api/orders/[id]/adjustments/route.ts`（新建）
-- `app/api/orders/[id]/adjustments/[adjustmentId]/route.ts`（新建）
-- `app/api/orders/[id]/lines/[lineId]/route.ts`（加 `isGift` 透传与校验）
-- `lib/commission.ts`（排除 `isGift` 行）
-- `lib/analytics/metrics.ts`（排除 `isGift` 行）
-- 发票/结算/司机对账相关路由与模板（具体清单需先梳理"谁在读 totalAmount 当应付金额"，
-  开发时第一步产出，不在此处先猜）
-- 下单页/订单详情页对应前端组件（`app/[locale]/classic/**/orders/**`）
-- `middleware`/`route-map.ts` + `scripts/sync-sortkeys.ts`（新权限点登记）
-- 测试文件（`tests/order-adjustments.test.ts` 等，新建）
+### 3. 前端组件层
+- `sales-analysis/page.tsx` 改造（**已定案**：砍掉 pie/bar 图表视图，只保留表格类视图，不用给三套视图分别接真实数据源）：
+  - `ViewType` 从 `'pie'|'bar'|'list'|'week'` 简化为 `'list'|'week'|'detail'`：`list` 改接新的服务端透视接口（真实 qty/price/untaxed/vat/total/margin，支持按产品/客户/不分组切换），`week` 保留现有 `WeeklyDrilldown`，新增 `detail` 对应需求4的明细清单
+  - 时间筛选行在现有"全部/今日/本周/本月"按钮组后加"自定义区间"（复用 `components/boss/analytics-shared.tsx` 的 `DateRangeBar` 模式）+ 粒度下拉（周/月/季/年）
+  - 新增"产品多选""客户多选"两个筛选下拉，复用页面自身已有的 Measures/GroupBy 自定义下拉交互（checklist 样式，改成多选不自动关闭）
+  - `WeeklyDrilldown.tsx` 保留，接口层复用同一套扩展后的 pivot 函数
+- 新建 `app/[locale]/classic/boss/procurement-analysis/page.tsx`：整体交互范式照抄 `sales-analysis`（用户明确要求），筛选行含：时间区间+粒度、供应商单选下拉（需求5）、产品多选下拉（需求6/7），视图含：进货明细表、库存趋势图（on-hand+forecast 按周/月，需求6）
+- `boss/layout.tsx` 补导航入口（避免重蹈"做完忘挂导航"的坑，上次刚踩过）
+- 新增一个共享组件 `MultiSelectDropdown`（放 `components/boss/analytics-shared.tsx`），两个页面的产品/客户多选筛选器共用，避免重复实现
 
-## 风险点
+## 路由清单（新增/扩展）
 
-1. **发票/结算消费端清单需要先枚举，遗漏一处就会导致对账不平**——这是本计划影响面最大的
-   不确定项，开发第一步就要做，不能等实现到一半才发现漏改。
-2. **会计口径需要人工拍板，不能由开发自行决定**（见下方"需要确认"）：配送费/折扣算不算进
-   销售额和毛利统计？提成基数要不要扣掉折扣？这些决定会实际改变客户看到的报表数字，做错了
-   等同于之前分析中心那次"CONFIRMED 双重扣减"级别的数字失真事故。
-3. **isGift 与手动改价（`sales.order.override_price`）两条路径并存，容易被绕过**——如果销售
-   员不用"标为赠品"而是直接手动改价成 0，效果一样能免单，但不会被 `isGift` 统计口径排除，
-   commission/analytics 会把它当正常低价单算——这不是本计划能堵死的漏洞，只能在文档/培训层
-   说明"免单一律用赠品勾选，不要手动改价成 0"。
-4. **权限粒度**：`sales.order.manage_adjustment` 目前设计成单一权限点管四种类型，如果客户
-   要求"折扣需要经理审批、差价不需要"这类差异化管控，需要拆细（对照
-   `decorative-permission-points` 的教训——拆权限点必须同步补给原本够用的角色，否则会造成
-   静默功能中断）。
+| 方法 | 路径 | 用途 | 对应需求 |
+|---|---|---|---|
+| GET | `/api/analytics/sales-analysis/pivot` | 通用销售透视：粒度(day/week/month/quarter/year)+groupBy(none/product/customer)+多选产品/客户筛选，返回 qty/price/untaxed/vat/total/margin | 1,2,3 |
+| GET | `/api/analytics/sales-analysis/detail` | 明细点货清单：1-3客户×1-2产品，逐行返回日期/客户/产品/单价/数量/金额 | 4 |
+| GET | `/api/analytics/procurement-analysis/pivot` | 采购透视：供应商单选 或 产品多选 + 时间区间，返回商品/数量/金额 | 5,7 |
+| GET | `/api/analytics/procurement-analysis/stock-trend` | 选定产品的 on-hand + forecast 按周/月展开趋势 | 6 |
 
-## 需要确认（停下等回复，不属于"能自己判断的细节"）
+## Schema 设计
 
-1. **配送费/折扣是否计入销售额与毛利统计？** 默认方案是"不计入"（`OrderAdjustment` 独立于
-   `OrderLine`，天然不影响 `totalAmount`/毛利口径），只影响客户应付总额。如果客户希望运费单
-   独算一笔"其他收入"科目体现在财务报表里，需要另外设计，不在本计划范围内。
-2. **提成基数要不要扣掉折扣？** 默认方案是"不扣"（提成走 `lib/commission.ts` 现有 `OrderLine`
-   逻辑，`OrderAdjustment` 不参与）。如果折扣应该冲减对应商品行的提成基数，需要在
-   `commission.ts` 里加关联逻辑（比如折扣行可选择关联到具体订单，而不只是整单）。
-3. **是否需要按调整类型做差异化审批权限？**（如折扣需经理审批、差价不需要）默认方案是单一
-   权限点 `sales.order.manage_adjustment` 覆盖全部四种类型。
-4. **历史 106 笔假商品订单行是否需要一次性迁移成 OrderAdjustment 记录？** 默认方案是不迁移，
-   只保证以后新单不再产生假商品行；历史报表数字维持现状不追溯修正。
+**本次不需要新增数据库迁移。** margin/vat 靠现有 `v_lot_daily_cost` 视图+聚合 SQL；明细清单靠现有表直查；on-hand 趋势靠 `StockMove` 运行时重建（不落盘新表），控制在"选定的少数产品 × 有限时间桶"范围内，避免全表扫描性能问题。
 
-技术栈沿用项目默认（Next.js/Prisma/PostgreSQL/本地开发库），无需再问。
+## 风险点（已定案）
+
+1. **forecast 口径 —— 已确认用"历史实际出货量近似"**：按周/月分桶，展示该分桶的历史实际出货数量，帮助判断囤货趋势；不是移动平均/线性回归那种真预测算法。
+
+2. **pie/bar/list 的 margin=0 bug —— 已确认处理方式：直接砍掉 pie/bar 图表视图**，`sales-analysis` 只保留表格类视图（list 透视表 + week 钻取 + 新增 detail 明细），不需要为图表视图单独接真实数据源，改动面比"三个视图都修"更小。
+
+3. **多选下拉的候选项来源**：产品/客户数量可能有上千个，多选下拉需要支持搜索过滤（不是把全部选项摊开），会复用现有商品/客户搜索接口做 autocomplete，不新建接口。
+
+4. **权限**：复用现有 `analytics.*` 权限点，不新增。
+
+## 验收标准
+
+- `npm run build` 无报错，4 个新/改路由 curl 实测鉴权（无 token 401、正常 token 200）
+- 7 条需求逐条用真实生产库数据（或本地同步数据）跑一遍，人工核对数字（尤其 margin/vat 抽查几笔订单手算对账）
+- 新采购分析页面挂上导航入口并实测可点击进入（不重蹈上次孤儿页面的坑）
+- pie/bar/list/week/detail 五个视图切换正常，筛选组合（时间粒度×多选产品×多选客户）不出现 500/崩溃
+
+---
+
+✅ 计划已确认（forecast 用历史出货近似；pie/bar 视图砍掉只留表格类视图），开始按台账推进：`docs/20260915-sales-procurement-analysis-tasks.md`。

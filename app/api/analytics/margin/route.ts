@@ -72,9 +72,11 @@ export async function GET(req: Request) {
       const params: unknown[] = [toNaiveTimestampParam(start), toNaiveTimestampParam(end)]
       const filters: string[] = []
       if (categoryId) { params.push(categoryId); filters.push(`p."categoryId" = $${params.length}`) }
-      if (customerId) { params.push(customerId); filters.push(`o."restaurantId" = $${params.length}`) }
+      // 20260915：customerId/productId 改支持逗号分隔多值（销售钻取新增"多选客户/产品"筛选），
+      // 用 = ANY(text[]) 统一处理，单值传入等价于原来的 = 比较，不破坏现有单选调用方
+      if (customerId) { params.push(customerId.split(',').filter(Boolean)); filters.push(`o."restaurantId" = ANY($${params.length}::text[])`) }
       if (salesUserId) { params.push(salesUserId); filters.push(`o."salesUserId" = $${params.length}`) }
-      if (productId) { params.push(productId); filters.push(`ol."productId" = $${params.length}`) }
+      if (productId) { params.push(productId.split(',').filter(Boolean)); filters.push(`ol."productId" = ANY($${params.length}::text[])`) }
       const extraWhere = filters.length ? ` AND ${filters.join(' AND ')}` : ''
 
       const colSelect = colDef ? `, ${colDef.keyExpr} AS col_key, ${colDef.nameExpr} AS col_name` : ''
@@ -130,7 +132,7 @@ export async function GET(req: Request) {
 
       if (!colDef) {
         return NextResponse.json(serializeApi({
-          summary,
+          summary: { ...summary, vat: round2(totalIncTax - totalRevenue) },
           rows: rows.map((r) => ({
             key: r.row_key,
             name: r.row_name,
@@ -138,6 +140,9 @@ export async function GET(req: Request) {
             qty: Math.round(r.qty * 1000) / 1000,
             revenueExTax: round2(r.revenue_ex),
             totalIncTax: round2(r.total_inc_tax),
+            // 20260915：销售钻取新增指标——vat(税额)、avgPrice(均价，税前单价)
+            vat: round2(r.total_inc_tax - r.revenue_ex),
+            avgPrice: r.qty > 0 ? round2(r.revenue_ex / r.qty) : 0,
             cost: round2(r.cost),
             grossProfit: round2(r.gross_profit),
             marginPct: r.revenue_ex > 0 ? round2((r.gross_profit / r.revenue_ex) * 100) : 0,

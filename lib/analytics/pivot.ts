@@ -58,6 +58,19 @@ export const DIMENSION_DEFS: Record<string, DimensionDef> = {
     extraJoin: '',
     isTimeBucket: true,
   },
+  // 20260915：销售钻取新增按季/按年，格式跟 week 的 'IYYY-"W"IW' 同一套写法
+  quarter: {
+    keyExpr: `to_char(date_trunc('quarter', o."confirmationDate"), 'YYYY-"Q"Q')`,
+    nameExpr: `MAX(to_char(date_trunc('quarter', o."confirmationDate"), 'YYYY-"Q"Q'))`,
+    extraJoin: '',
+    isTimeBucket: true,
+  },
+  year: {
+    keyExpr: `to_char(date_trunc('year', o."confirmationDate"), 'YYYY')`,
+    nameExpr: `MAX(to_char(date_trunc('year', o."confirmationDate"), 'YYYY'))`,
+    extraJoin: '',
+    isTimeBucket: true,
+  },
 }
 
 /** 前端行/列维度下拉的展示顺序与文案（顺序即 UI 顺序） */
@@ -69,6 +82,8 @@ export const DIMENSION_OPTIONS: Array<{ key: string; label: string }> = [
   { key: 'day', label: '日' },
   { key: 'week', label: '周' },
   { key: 'month', label: '月' },
+  { key: 'quarter', label: '季' },
+  { key: 'year', label: '年' },
 ]
 
 export const PIVOT_MAX_COLS = 60
