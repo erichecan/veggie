@@ -184,6 +184,13 @@ export async function assignOrderToWave(
 ): Promise<{ waveId: string; driverName: string } | null> {
   const order = await prisma.order.findUnique({ where: { id: orderId } })
   if (!order) return null
+  // 报价单(PENDING)/已取消(CANCELLED)不属于配送流程,任何调用方都不得把它放进波次。
+  // ⛔ 2026-09-16 客户反馈的"撤回成报价单后还在调度台显示"就出在这里:撤回时
+  // removeOrderFromAllWaves 清理是对的,但紧接着编辑这张报价单时,编辑页把订单上残留的
+  // driverSlotId(下单意向)原样提交(quotations/[id]/page.tsx:354 无条件带上),
+  // orders/[id] PUT 便又调本函数把报价单塞回波次和托盘。守卫放在这里而不是某个调用方,
+  // 才能保证"报价单不在波次里"这条不变量对所有入口成立。确认转 CONFIRMED 后照常可分配。
+  if (order.status === 'PENDING' || order.status === 'CANCELLED') return null
   const slot = await prisma.driverSlot.findUnique({ where: { id: driverSlotId } })
   if (!slot) return null
 

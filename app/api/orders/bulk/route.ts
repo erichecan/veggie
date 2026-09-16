@@ -4,6 +4,8 @@ import { withAuth, effectiveRoles } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
 import { toNum, round2 } from '@/lib/decimal-helpers'
+import { removeOrderFromAllWaves } from '@/lib/wave-assign'
+import { WavePickLockedError } from '@/lib/wave-pick-lock'
 
 /**
  * POST /api/orders/bulk
@@ -99,9 +101,30 @@ export async function POST(req: Request) {
       } else if (action === 'cancel') {
         // 只取消非 COMPLETED / LOCKED 的订单
         const cancellableStatuses = new Set(['PENDING', 'CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'])
-        const cancellable = before.filter(o => cancellableStatuses.has(String(o.status).toUpperCase()))
-        if (cancellable.length === 0) {
+        const candidates = before.filter(o => cancellableStatuses.has(String(o.status).toUpperCase()))
+        if (candidates.length === 0) {
           return NextResponse.json({ error: '选中订单中没有可取消的订单' }, { status: 400 })
+        }
+
+        // 取消即退出配送流程,必须同步移出波次:调度台按 wave.orderIds 取数渲染,
+        // 只清状态不清波次会留下"已取消却仍占着司机托盘"的幽灵单。
+        // 清理放在状态更新之前——波次已拣货锁定的单移不出去,直接踢出本次取消名单,
+        // 而不是先改完状态再发现清不掉(与单单取消路径 orders/[id] 同口径)。
+        const lockedIds = new Set<string>()
+        for (const ord of candidates) {
+          try {
+            await removeOrderFromAllWaves(ord.id)
+          } catch (e) {
+            if (e instanceof WavePickLockedError) {
+              lockedIds.add(ord.id)
+              continue
+            }
+            throw e
+          }
+        }
+        const cancellable = candidates.filter(o => !lockedIds.has(o.id))
+        if (cancellable.length === 0) {
+          return NextResponse.json({ error: '选中订单所在波次已拣货锁定，请先到每日销售解锁' }, { status: 409 })
         }
         const cancellableIds = cancellable.map(o => o.id)
         affectedOrders = cancellable.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
@@ -145,7 +168,7 @@ export async function POST(req: Request) {
           where: { id: { in: cancellableIds } },
           data: { status: 'CANCELLED' },
         })
-        detail = `批量取消 ${cancellableIds.length} 单`
+        detail = `批量取消 ${cancellableIds.length} 单${lockedIds.size > 0 ? `（${lockedIds.size} 单因波次已拣货锁定跳过）` : ''}`
 
         // Write audit logs for cancelled orders
         await Promise.all(affectedOrders.map(o =>

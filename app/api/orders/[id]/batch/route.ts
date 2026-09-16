@@ -19,8 +19,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     try {
       const { driverSlotId } = (await req.json()) as { driverSlotId: string | null }
 
-      const order = await prisma.order.findUnique({ where: { id }, select: { id: true, code: true } })
+      const order = await prisma.order.findUnique({ where: { id }, select: { id: true, code: true, status: true } })
       if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
+      // assignOrderToWave 对报价单/已取消单返回 null(不进波次),这里先拦一道给出准确提示,
+      // 否则会落到下面 !result 的分支报"司机批次不存在",与真实原因南辕北辙。
+      if (driverSlotId && (order.status === 'PENDING' || order.status === 'CANCELLED')) {
+        return NextResponse.json({ error: '报价单/已取消订单不能分配配送批次，请先确认订单' }, { status: 400 })
+      }
 
       if (!driverSlotId) {
         await removeOrderFromAllWaves(id)

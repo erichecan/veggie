@@ -621,7 +621,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             }).catch(() => {})
             return NextResponse.json({ error: `波次已拣货锁定，请先到每日销售解锁：${e.message}`, waveId: e.waveId }, { status: 409 })
           }
+          // 非锁定类异常同样不能吞:状态已提交而波次没清干净 = 调度台幽灵单
+          // (客户实测:取消后的单仍挂在司机托盘上)。一律回滚状态并让保存整体失败。
           console.error('[removeOrderFromAllWaves on status change]', e)
+          await prisma.order.update({
+            where: { id },
+            data: { status: orderBefore.status, confirmationDate: orderBefore.confirmationDate },
+          }).catch(() => {})
+          return NextResponse.json({ error: '从波次移除失败，订单状态已回滚，请重试或联系管理员' }, { status: 500 })
         }
       }
 
