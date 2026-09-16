@@ -12,10 +12,15 @@ const HIGHLIGHT_BORDER = '#F3C551'
 /** 「按司机」用另一种颜色，跟「按产品」区分开——两者日期口径不同（送货日 vs 确认日） */
 const DRIVER_BG = '#DBEAFE'
 const DRIVER_BORDER = '#60A5FA'
+/** 「按客户」（某天全量客户构成，非某产品下的客户）用第三种颜色，跟前两者区分 */
+const CUSTOMER_BG = '#D1FAE5'
+const CUSTOMER_BORDER = '#34D399'
 
 interface BucketRow {
   key: string
   name: string
+  qty: number
+  avgPrice: number
   revenueExTax: number
   totalIncTax: number
   grossProfit: number
@@ -78,7 +83,7 @@ function dayLabel(key: string, isEn: boolean): string {
   return d.toLocaleDateString(isEn ? 'en-GB' : 'zh-CN', { month: '2-digit', day: '2-digit', weekday: 'short' })
 }
 
-export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
+export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '' }: { isEn: boolean; productIds?: string; customerIds?: string }) {
   const [weeksBack, setWeeksBack] = useState(WEEKS_PAGE_SIZE)
   const [data, setData] = useState<BucketPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -93,18 +98,38 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
   // 跟按产品/按客户互斥——同一时刻右侧只有一张明细表
   const [driverDay, setDriverDay] = useState<string | null>(null)
   const [driverRows, setDriverRows] = useState<DriverDaySalesRow[] | 'loading' | 'error' | null>(null)
+  // 「按客户」：某天全量客户构成（非某产品下的客户，跟上面第二级下钻的 customerRows 是两回事）
+  const [customerDay, setCustomerDay] = useState<string | null>(null)
+  const [customerDayRows, setCustomerDayRows] = useState<BucketRow[] | 'loading' | 'error' | null>(null)
+
+  const extraFilterQs = (customerIds ? `&customerId=${encodeURIComponent(customerIds)}` : '') + (productIds ? `&productId=${encodeURIComponent(productIds)}` : '')
 
   const load = useCallback(() => {
     setError(null)
     const today = new Date()
     const from = fmtYMD(new Date(mondayOf(today).getTime() - (weeksBack - 1) * 7 * 86400000))
     const to = fmtYMD(today)
-    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=week&from=${from}&to=${to}`)
+    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=week&from=${from}&to=${to}${extraFilterQs}`)
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-  }, [weeksBack])
+  }, [weeksBack, extraFilterQs])
 
   useEffect(() => { load() }, [load])
+
+  // 产品/客户筛选变了：之前展开/下钻的日、产品、司机、客户明细都是按旧筛选拉的，全部失效重置，
+  // 避免面板里挂着一份跟当前筛选对不上的数据
+  useEffect(() => {
+    setExpanded({})
+    setDaysByWeek({})
+    setProductDay(null)
+    setProductRows(null)
+    setSelectedProduct(null)
+    setCustomerRows(null)
+    setDriverDay(null)
+    setDriverRows(null)
+    setCustomerDay(null)
+    setCustomerDayRows(null)
+  }, [productIds, customerIds])
 
   function toggleWeek(row: BucketRow) {
     const willExpand = !expanded[row.key]
@@ -113,7 +138,7 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
       const range = isoWeekRange(row.key)
       if (!range) return
       setDaysByWeek((prev) => ({ ...prev, [row.key]: 'loading' }))
-      apiGet<BucketPayload>(`/api/analytics/margin?groupBy=day&from=${range.from}&to=${range.to}`)
+      apiGet<BucketPayload>(`/api/analytics/margin?groupBy=day&from=${range.from}&to=${range.to}${extraFilterQs}`)
         .then((payload) => setDaysByWeek((prev) => ({ ...prev, [row.key]: payload.rows })))
         .catch(() => setDaysByWeek((prev) => ({ ...prev, [row.key]: 'error' })))
     }
@@ -124,6 +149,8 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
     setCustomerRows(null)
     setDriverDay(null)
     setDriverRows(null)
+    setCustomerDay(null)
+    setCustomerDayRows(null)
     if (productDay === dayKey) {
       setProductDay(null)
       setProductRows(null)
@@ -131,7 +158,7 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
     }
     setProductDay(dayKey)
     setProductRows('loading')
-    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=product&from=${dayKey}&to=${dayKey}`)
+    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=product&from=${dayKey}&to=${dayKey}${extraFilterQs}`)
       .then((payload) => setProductRows(payload.rows))
       .catch(() => setProductRows('error'))
   }
@@ -143,6 +170,8 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
     setProductRows(null)
     setSelectedProduct(null)
     setCustomerRows(null)
+    setCustomerDay(null)
+    setCustomerDayRows(null)
     if (driverDay === dayKey) {
       setDriverDay(null)
       setDriverRows(null)
@@ -155,11 +184,31 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
       .catch(() => setDriverRows('error'))
   }
 
+  // 某天全量客户构成（确认日口径，跟按产品同口径），跟按产品/按司机互斥
+  function toggleCustomerDayDetail(dayKey: string) {
+    setProductDay(null)
+    setProductRows(null)
+    setSelectedProduct(null)
+    setCustomerRows(null)
+    setDriverDay(null)
+    setDriverRows(null)
+    if (customerDay === dayKey) {
+      setCustomerDay(null)
+      setCustomerDayRows(null)
+      return
+    }
+    setCustomerDay(dayKey)
+    setCustomerDayRows('loading')
+    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=customer&from=${dayKey}&to=${dayKey}${extraFilterQs}`)
+      .then((payload) => setCustomerDayRows(payload.rows))
+      .catch(() => setCustomerDayRows('error'))
+  }
+
   function openCustomerBreakdown(product: BucketRow) {
     if (!productDay) return
     setSelectedProduct(product)
     setCustomerRows('loading')
-    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=customer&from=${productDay}&to=${productDay}&productId=${encodeURIComponent(product.key)}`)
+    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=customer&from=${productDay}&to=${productDay}&productId=${encodeURIComponent(product.key)}${customerIds ? `&customerId=${encodeURIComponent(customerIds)}` : ''}`)
       .then((payload) => setCustomerRows(payload.rows))
       .catch(() => setCustomerRows('error'))
   }
@@ -179,6 +228,9 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
   // /api/analytics/margin 非透视分支按毛利降序排（给毛利分析页用），不是按时间——
   // 这里必须显式按 key（'YYYY-Www' / 'YYYY-MM-DD'）升序重排，不能假设 API 返回顺序
   const rowsAsc = [...data.rows].sort((a, b) => a.key.localeCompare(b.key))
+  // API 汇总(summary)不带 qty —— 总数量/总均价用各周行相加/推导，跟各行的 qty/avgPrice 口径一致
+  const totalQty = rowsAsc.reduce((s, r) => s + r.qty, 0)
+  const totalAvgPrice = totalQty > 0 ? data.summary.revenueExTax / totalQty : 0
 
   // 导出当前已经展开/下钻到的全部内容（周→已展开的日→已打开的产品→已选中客户），
   // 折叠/没点开的部分不在导出范围——跟屏幕上看到的保持一致，不额外发请求硬拉全量
@@ -189,8 +241,8 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
       product: isEn ? 'Product' : '产品', customer: isEn ? 'Customer' : '客户', driver: isEn ? 'Driver' : '司机',
     }
     const rows: string[][] = []
-    const pushRow = (level: keyof typeof levelLabel, name: string, r: BucketRow | BucketPayload['summary'], commission?: number) =>
-      rows.push([levelLabel[level], name, fmtMoney(r.totalIncTax), fmtMoney(r.revenueExTax), fmtMoney(r.grossProfit), commission === undefined ? '' : fmtMoney(commission)])
+    const pushRow = (level: keyof typeof levelLabel, name: string, r: { qty?: number; avgPrice?: number; revenueExTax: number; totalIncTax: number; grossProfit: number }, commission?: number) =>
+      rows.push([levelLabel[level], name, r.qty === undefined ? '' : String(r.qty), r.avgPrice === undefined ? '' : fmtMoney(r.avgPrice), fmtMoney(r.totalIncTax), fmtMoney(r.revenueExTax), fmtMoney(r.grossProfit), commission === undefined ? '' : fmtMoney(commission)])
 
     pushRow('total', levelLabel.total, data.summary)
     for (const week of rowsAsc) {
@@ -210,10 +262,13 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
         if (driverDay === d.key && Array.isArray(driverRows)) {
           for (const dr of driverRows) pushRow('driver', dr.driverName, dr, dr.commissionTotal)
         }
+        if (customerDay === d.key && Array.isArray(customerDayRows)) {
+          for (const c of customerDayRows) pushRow('customer', c.name, c)
+        }
       }
     }
 
-    const headers = [isEn ? 'Level' : '层级', isEn ? 'Name' : '名称', isEn ? 'Total' : '总额', isEn ? 'Untaxed Total' : '未税总额', isEn ? 'Margin' : '毛利', isEn ? 'Commission' : '提成']
+    const headers = [isEn ? 'Level' : '层级', isEn ? 'Name' : '名称', isEn ? 'Qty' : '数量', isEn ? 'Avg Price' : '价格', isEn ? 'Total' : '总额', isEn ? 'Untaxed Total' : '未税总额', isEn ? 'Margin' : '毛利', isEn ? 'Commission' : '提成']
     downloadCsv(`sales-analysis-weekly-${new Date().toISOString().slice(0, 10)}`, headers, rows)
   }
 
@@ -230,11 +285,13 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
         </button>
       </div>
       <div className="flex flex-col lg:flex-row gap-4 items-start">
-      <div className={((productDay || driverDay) ? 'lg:w-[480px] lg:shrink-0 ' : 'flex-1 ') + 'bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden overflow-x-auto'}>
+      <div className={((productDay || driverDay || customerDay) ? 'lg:w-[480px] lg:shrink-0 ' : 'flex-1 ') + 'bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden overflow-x-auto'}>
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50">
             <th className="text-left px-3 py-3 font-semibold text-gray-600">{isEn ? 'Week' : '周'}</th>
+            <th className="text-right px-3 py-3 font-semibold text-gray-600">{isEn ? 'Qty' : '数量'}</th>
+            <th className="text-right px-3 py-3 font-semibold text-gray-600">{isEn ? 'Avg Price' : '价格'}</th>
             <th className="text-right px-3 py-3 font-semibold text-gray-600">{isEn ? 'Total' : '总额'}</th>
             <th className="text-right px-3 py-3 font-semibold text-gray-600">{isEn ? 'Untaxed Total' : '未税总额'}</th>
             <th className="text-right px-3 py-3 font-semibold text-gray-600">{isEn ? 'Margin' : '毛利'}</th>
@@ -243,12 +300,14 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
         <tbody>
           <tr className="border-b border-gray-100 bg-gray-50 font-bold">
             <td className="px-3 py-2.5 text-gray-700">{isEn ? 'Total' : '总计'}</td>
+            <td className="text-right px-3 py-2.5 tabular-nums text-gray-900">{Math.round(totalQty * 1000) / 1000}</td>
+            <td className="text-right px-3 py-2.5 tabular-nums text-gray-900">{eur(totalAvgPrice)}</td>
             <td className="text-right px-3 py-2.5 tabular-nums text-gray-900">{eur(data.summary.totalIncTax)}</td>
             <td className="text-right px-3 py-2.5 tabular-nums text-gray-900">{eur(data.summary.revenueExTax)}</td>
             <td className="text-right px-3 py-2.5 tabular-nums text-gray-900">{eur(data.summary.grossProfit)}</td>
           </tr>
           {rowsAsc.length === 0 && (
-            <tr><td colSpan={4} className="text-center py-16 text-gray-400">{isEn ? 'No data' : '暂无数据'}</td></tr>
+            <tr><td colSpan={6} className="text-center py-16 text-gray-400">{isEn ? 'No data' : '暂无数据'}</td></tr>
           )}
           {rowsAsc.map((row) => {
             const isOpen = !!expanded[row.key]
@@ -263,24 +322,27 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
                     <span className="w-3 text-gray-400 inline-block" style={{ color: PURPLE }}>{isOpen ? '−' : '+'}</span>
                     {weekLabel(row.key, isEn)}
                   </td>
+                  <td className="text-right px-3 py-2.5 tabular-nums text-gray-800">{Math.round(row.qty * 1000) / 1000}</td>
+                  <td className="text-right px-3 py-2.5 tabular-nums text-gray-800">{eur(row.avgPrice)}</td>
                   <td className="text-right px-3 py-2.5 tabular-nums text-gray-800">{eur(row.totalIncTax)}</td>
                   <td className="text-right px-3 py-2.5 tabular-nums text-gray-800">{eur(row.revenueExTax)}</td>
                   <td className="text-right px-3 py-2.5 tabular-nums text-gray-800">{eur(row.grossProfit)}</td>
                 </tr>
                 {isOpen && days === 'loading' && (
-                  <tr><td colSpan={4} className="px-3 py-2 text-center text-xs text-gray-400">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-2 text-center text-xs text-gray-400">{isEn ? 'Loading…' : '加载中…'}</td></tr>
                 )}
                 {isOpen && days === 'error' && (
-                  <tr><td colSpan={4} className="px-3 py-2 text-center text-xs text-red-500">{isEn ? 'Failed to load' : '加载失败'}</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-2 text-center text-xs text-red-500">{isEn ? 'Failed to load' : '加载失败'}</td></tr>
                 )}
                 {isOpen && Array.isArray(days) && [...days].sort((a, b) => a.key.localeCompare(b.key)).map((d) => {
                   const isProductOpen = productDay === d.key
                   const isDriverOpen = driverDay === d.key
+                  const isCustomerOpen = customerDay === d.key
                   return (
                     <tr
                       key={d.key}
                       className="border-b border-gray-50 text-gray-500"
-                      style={isProductOpen ? { background: HIGHLIGHT_BG } : isDriverOpen ? { background: DRIVER_BG } : undefined}
+                      style={isProductOpen ? { background: HIGHLIGHT_BG } : isDriverOpen ? { background: DRIVER_BG } : isCustomerOpen ? { background: CUSTOMER_BG } : undefined}
                     >
                       <td className="pl-10 pr-5 py-1.5 whitespace-nowrap">
                         <button
@@ -296,6 +358,17 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
                         </button>
                         <button
                           type="button"
+                          onClick={() => toggleCustomerDayDetail(d.key)}
+                          className="mr-1 w-5 h-5 shrink-0 rounded border align-middle text-xs leading-none"
+                          style={isCustomerOpen
+                            ? { borderColor: CUSTOMER_BORDER, background: 'white', color: '#047857' }
+                            : { borderColor: '#e5e7eb', color: '#9ca3af' }}
+                          title={isEn ? 'By customer' : '按客户明细'}
+                        >
+                          👥
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => toggleDriverDetail(d.key)}
                           className="mr-2 w-5 h-5 shrink-0 rounded border align-middle text-xs leading-none"
                           style={isDriverOpen
@@ -307,6 +380,8 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
                         </button>
                         {dayLabel(d.key, isEn)}
                       </td>
+                      <td className="text-right px-3 py-1.5 tabular-nums">{Math.round(d.qty * 1000) / 1000}</td>
+                      <td className="text-right px-3 py-1.5 tabular-nums">{eur(d.avgPrice)}</td>
                       <td className="text-right px-3 py-1.5 tabular-nums">{eur(d.totalIncTax)}</td>
                       <td className="text-right px-3 py-1.5 tabular-nums">{eur(d.revenueExTax)}</td>
                       <td className="text-right px-3 py-1.5 tabular-nums">{eur(d.grossProfit)}</td>
@@ -472,6 +547,61 @@ export default function WeeklyDrilldown({ isEn }: { isEn: boolean }) {
                     <td className="text-right px-5 py-1.5 tabular-nums">{eur(r.totalIncTax)}</td>
                     <td className="text-right px-5 py-1.5 tabular-nums">{eur(r.grossProfit)}</td>
                     <td className="text-right px-5 py-1.5 tabular-nums font-medium" style={{ color: DRIVER_BORDER }}>{eur(r.commissionTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {customerDay && (
+        <div
+          className="flex-1 min-w-0 rounded-xl shadow-sm overflow-hidden border"
+          style={{ background: CUSTOMER_BG, borderColor: CUSTOMER_BORDER }}
+        >
+          <div className="flex items-center justify-between px-5 py-3">
+            <div className="text-sm font-semibold text-gray-700 min-w-0">
+              {isEn ? 'By Customer' : '按客户'}
+              <span className="ml-2 text-xs font-normal text-gray-500">{dayLabel(customerDay, isEn)}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setCustomerDay(null); setCustomerDayRows(null) }}
+              className="text-gray-400 hover:text-gray-600 text-sm px-1 shrink-0"
+              title={isEn ? 'Close' : '关闭'}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="overflow-y-auto max-h-[560px]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-black/5">
+                  <th className="text-left px-5 py-2 font-semibold text-gray-600">{isEn ? 'Customer' : '客户'}</th>
+                  <th className="text-right px-5 py-2 font-semibold text-gray-600">{isEn ? 'Qty' : '数量'}</th>
+                  <th className="text-right px-5 py-2 font-semibold text-gray-600">{isEn ? 'Total' : '总额'}</th>
+                  <th className="text-right px-5 py-2 font-semibold text-gray-600">{isEn ? 'Untaxed' : '未税'}</th>
+                  <th className="text-right px-5 py-2 font-semibold text-gray-600">{isEn ? 'Margin' : '毛利'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customerDayRows === 'loading' && (
+                  <tr><td colSpan={5} className="text-center py-10 text-xs text-gray-400">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+                )}
+                {customerDayRows === 'error' && (
+                  <tr><td colSpan={5} className="text-center py-10 text-xs text-red-500">{isEn ? 'Failed to load' : '加载失败'}</td></tr>
+                )}
+                {Array.isArray(customerDayRows) && customerDayRows.length === 0 && (
+                  <tr><td colSpan={5} className="text-center py-10 text-xs text-gray-400">{isEn ? 'No data' : '暂无数据'}</td></tr>
+                )}
+                {Array.isArray(customerDayRows) && customerDayRows.map((c) => (
+                  <tr key={c.key} className="border-b border-black/5">
+                    <td className="px-5 py-1.5 text-gray-700">{c.name}</td>
+                    <td className="text-right px-5 py-1.5 tabular-nums">{Math.round(c.qty * 1000) / 1000}</td>
+                    <td className="text-right px-5 py-1.5 tabular-nums">{eur(c.totalIncTax)}</td>
+                    <td className="text-right px-5 py-1.5 tabular-nums">{eur(c.revenueExTax)}</td>
+                    <td className="text-right px-5 py-1.5 tabular-nums">{eur(c.grossProfit)}</td>
                   </tr>
                 ))}
               </tbody>
