@@ -6,10 +6,19 @@ import { downloadCsv } from '@/lib/csv-export'
 
 const PURPLE = '#875A7B'
 const WEEKS_PAGE_SIZE = 8
+/**
+ * 本页全部面板统一按**送货日**（Order.deliveryDate，空则回落确认日）归集，
+ * 见 lib/analytics/pivot.ts DATE_BASIS_EXPR。
+ *
+ * ⛔ 别改回默认的确认日：客户是"先送货、事后补录确认"的作业方式，实测 2026-09-13
+ * 送货的 6 张单里有 3 张拖到 09-16 凌晨才确认，按确认日统计会把它们甩到下一周，
+ * 页面上看就是"那天漏了一半的单"。毛利分析页/AI 问数仍是确认日口径，两页数字不等是预期的。
+ */
+const DATE_BASIS_QS = '&dateBasis=delivery'
 /** 选中某天「按产品明细」时，日行与右侧新表共用的高亮色 */
 const HIGHLIGHT_BG = '#FEF3C7'
 const HIGHLIGHT_BORDER = '#F3C551'
-/** 「按司机」用另一种颜色，跟「按产品」区分开——两者日期口径不同（送货日 vs 确认日） */
+/** 「按司机」用另一种颜色，跟「按产品」区分开（同日期口径，只是维度不同） */
 const DRIVER_BG = '#DBEAFE'
 const DRIVER_BORDER = '#60A5FA'
 /** 「按客户」（某天全量客户构成，非某产品下的客户）用第三种颜色，跟前两者区分 */
@@ -94,15 +103,17 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
   // 右侧面板第二级下钻：某天 × 某产品 → 卖给了哪些客户。点产品行进，点返回/换天/关面板退
   const [selectedProduct, setSelectedProduct] = useState<BucketRow | null>(null)
   const [customerRows, setCustomerRows] = useState<BucketRow[] | 'loading' | 'error' | null>(null)
-  // 「按司机」是另一条独立的钻取路径（送货日口径，跟按产品的确认日口径不是同一批订单），
-  // 跟按产品/按客户互斥——同一时刻右侧只有一张明细表
+  // 「按司机」是另一条钻取路径，20260916 起与按产品/按客户同口径同一批订单，
+  // 三者互斥——同一时刻右侧只有一张明细表
   const [driverDay, setDriverDay] = useState<string | null>(null)
   const [driverRows, setDriverRows] = useState<DriverDaySalesRow[] | 'loading' | 'error' | null>(null)
   // 「按客户」：某天全量客户构成（非某产品下的客户，跟上面第二级下钻的 customerRows 是两回事）
   const [customerDay, setCustomerDay] = useState<string | null>(null)
   const [customerDayRows, setCustomerDayRows] = useState<BucketRow[] | 'loading' | 'error' | null>(null)
 
-  const extraFilterQs = (customerIds ? `&customerId=${encodeURIComponent(customerIds)}` : '') + (productIds ? `&productId=${encodeURIComponent(productIds)}` : '')
+  const extraFilterQs = DATE_BASIS_QS
+    + (customerIds ? `&customerId=${encodeURIComponent(customerIds)}` : '')
+    + (productIds ? `&productId=${encodeURIComponent(productIds)}` : '')
 
   const load = useCallback(() => {
     setError(null)
@@ -163,8 +174,8 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
       .catch(() => setProductRows('error'))
   }
 
-  // 送货日口径（waveDate），跟上面按产品的确认日口径不是同一批订单——两者互斥，
-  // 打开一个会关掉另一个，避免右侧同时出现两张口径不同的表让人误以为是同一批数据
+  // 20260916 起与本页其余面板同口径（送货日、同一批订单），按司机加总应等于左侧该日金额。
+  // 仍与按产品/按客户互斥——同一时刻右侧只放一张明细表
   function toggleDriverDetail(dayKey: string) {
     setProductDay(null)
     setProductRows(null)
@@ -184,7 +195,7 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
       .catch(() => setDriverRows('error'))
   }
 
-  // 某天全量客户构成（确认日口径，跟按产品同口径），跟按产品/按司机互斥
+  // 某天全量客户构成（跟按产品同口径），跟按产品/按司机互斥
   function toggleCustomerDayDetail(dayKey: string) {
     setProductDay(null)
     setProductRows(null)
@@ -208,7 +219,7 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
     if (!productDay) return
     setSelectedProduct(product)
     setCustomerRows('loading')
-    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=customer&from=${productDay}&to=${productDay}&productId=${encodeURIComponent(product.key)}${customerIds ? `&customerId=${encodeURIComponent(customerIds)}` : ''}`)
+    apiGet<BucketPayload>(`/api/analytics/margin?groupBy=customer&from=${productDay}&to=${productDay}${DATE_BASIS_QS}&productId=${encodeURIComponent(product.key)}${customerIds ? `&customerId=${encodeURIComponent(customerIds)}` : ''}`)
       .then((payload) => setCustomerRows(payload.rows))
       .catch(() => setCustomerRows('error'))
   }
@@ -226,10 +237,11 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
   }
 
   // /api/analytics/margin 非透视分支按毛利降序排（给毛利分析页用），不是按时间——
-  // 这里必须显式按 key（'YYYY-Www' / 'YYYY-MM-DD'）升序重排，不能假设 API 返回顺序
-  const rowsAsc = [...data.rows].sort((a, b) => a.key.localeCompare(b.key))
+  // 这里必须显式按 key（'YYYY-Www' / 'YYYY-MM-DD'）重排，不能假设 API 返回顺序。
+  // 排序方向：倒序（越近的周/日越靠上），周内展开的日行同向，CSV 导出也跟屏幕一致
+  const rowsDesc = [...data.rows].sort((a, b) => b.key.localeCompare(a.key))
   // API 汇总(summary)不带 qty —— 总数量/总均价用各周行相加/推导，跟各行的 qty/avgPrice 口径一致
-  const totalQty = rowsAsc.reduce((s, r) => s + r.qty, 0)
+  const totalQty = rowsDesc.reduce((s, r) => s + r.qty, 0)
   const totalAvgPrice = totalQty > 0 ? data.summary.revenueExTax / totalQty : 0
 
   // 导出当前已经展开/下钻到的全部内容（周→已展开的日→已打开的产品→已选中客户），
@@ -245,11 +257,11 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
       rows.push([levelLabel[level], name, r.qty === undefined ? '' : String(r.qty), r.avgPrice === undefined ? '' : fmtMoney(r.avgPrice), fmtMoney(r.totalIncTax), fmtMoney(r.revenueExTax), fmtMoney(r.grossProfit), commission === undefined ? '' : fmtMoney(commission)])
 
     pushRow('total', levelLabel.total, data.summary)
-    for (const week of rowsAsc) {
+    for (const week of rowsDesc) {
       pushRow('week', weekLabel(week.key, isEn), week)
       const days = daysByWeek[week.key]
       if (!expanded[week.key] || !Array.isArray(days)) continue
-      for (const d of [...days].sort((a, b) => a.key.localeCompare(b.key))) {
+      for (const d of [...days].sort((a, b) => b.key.localeCompare(a.key))) {
         pushRow('day', dayLabel(d.key, isEn), d)
         if (productDay === d.key && Array.isArray(productRows)) {
           for (const p of productRows) {
@@ -274,7 +286,11 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
 
   return (
     <div>
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-between items-center mb-2">
+        {/* 口径标注：本页按送货日，毛利分析页按确认日，两页数字不等是预期的 */}
+        <span className="text-xs text-gray-400">
+          {isEn ? 'Grouped by delivery date' : '按送货日统计（订单确认日不同者以送货日为准）'}
+        </span>
         <button
           type="button"
           onClick={exportCsv}
@@ -306,10 +322,10 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
             <td className="text-right px-3 py-2.5 tabular-nums text-gray-900">{eur(data.summary.revenueExTax)}</td>
             <td className="text-right px-3 py-2.5 tabular-nums text-gray-900">{eur(data.summary.grossProfit)}</td>
           </tr>
-          {rowsAsc.length === 0 && (
+          {rowsDesc.length === 0 && (
             <tr><td colSpan={6} className="text-center py-16 text-gray-400">{isEn ? 'No data' : '暂无数据'}</td></tr>
           )}
-          {rowsAsc.map((row) => {
+          {rowsDesc.map((row) => {
             const isOpen = !!expanded[row.key]
             const days = daysByWeek[row.key]
             return (
@@ -334,7 +350,7 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
                 {isOpen && days === 'error' && (
                   <tr><td colSpan={6} className="px-3 py-2 text-center text-xs text-red-500">{isEn ? 'Failed to load' : '加载失败'}</td></tr>
                 )}
-                {isOpen && Array.isArray(days) && [...days].sort((a, b) => a.key.localeCompare(b.key)).map((d) => {
+                {isOpen && Array.isArray(days) && [...days].sort((a, b) => b.key.localeCompare(a.key)).map((d) => {
                   const isProductOpen = productDay === d.key
                   const isDriverOpen = driverDay === d.key
                   const isCustomerOpen = customerDay === d.key
@@ -374,7 +390,7 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
                           style={isDriverOpen
                             ? { borderColor: DRIVER_BORDER, background: 'white', color: '#1D4ED8' }
                             : { borderColor: '#e5e7eb', color: '#9ca3af' }}
-                          title={isEn ? 'By driver (delivery date)' : '按司机（送货日口径）'}
+                          title={isEn ? 'By driver' : '按司机'}
                         >
                           🚚
                         </button>
@@ -507,7 +523,7 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
             <div className="text-sm font-semibold text-gray-700 min-w-0">
               {isEn ? 'By Driver' : '按司机'}
               <span className="ml-2 text-xs font-normal text-gray-500">
-                {dayLabel(driverDay, isEn)} · {isEn ? 'delivery date' : '送货日口径'}
+                {dayLabel(driverDay, isEn)}
               </span>
             </div>
             <button

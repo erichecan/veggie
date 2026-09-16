@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
 import { SALES_COUNTED_STATUSES, resolveDateRange, toNaiveTimestampParam } from '@/lib/analytics/metrics'
-import { DIMENSION_DEFS, buildPivot, PivotTooManyColumnsError, type PivotRawCell } from '@/lib/analytics/pivot'
+import { DATE_BASIS_EXPR, dimensionDefs, buildPivot, PivotTooManyColumnsError, type DateBasis, type PivotRawCell } from '@/lib/analytics/pivot'
 import { withCachedAuth } from '@/lib/analytics/cache'
 
 /**
@@ -11,6 +11,7 @@ import { withCachedAuth } from '@/lib/analytics/cache'
  * GET ?from&to&groupBy=product|category|customer|salesUser|day|week|month
  *     &colBy=<同上，可选，传了就是透视模式>
  *     &categoryId&customerId&salesUserId&productId（可选精确过滤）
+ *     &dateBasis=confirmation|delivery（默认 confirmation，见 lib/analytics/pivot.ts DATE_BASIS_EXPR）
  * 毛利口径（税前）：Σ (unitPrice − unitCostRef) × orderedQty
  * unitCostRef 优先级：≤确认日最近的批次加权成本（v_lot_daily_cost）
  *                    → Product.standardPrice → Template.standardPrice → 0
@@ -47,6 +48,15 @@ export async function GET(req: Request) {
       const { searchParams } = new URL(req.url)
       const { start, end } = resolveDateRange(searchParams.get('from'), searchParams.get('to'))
       const groupBy = searchParams.get('groupBy') ?? 'product'
+      // 20260916：日期口径可选。销售钻取页传 delivery（按送货日归集），其余调用方
+      // 不传 → confirmation，行为与改造前完全一致。白名单取值，不拼请求参数进 SQL。
+      const basisParam = searchParams.get('dateBasis')
+      if (basisParam && !(basisParam in DATE_BASIS_EXPR)) {
+        return NextResponse.json({ error: `dateBasis 必须是 ${Object.keys(DATE_BASIS_EXPR).join('/')}` }, { status: 400 })
+      }
+      const dateBasis = (basisParam ?? 'confirmation') as DateBasis
+      const dateExpr = DATE_BASIS_EXPR[dateBasis]
+      const DIMENSION_DEFS = dimensionDefs(dateBasis)
       const colByParam = searchParams.get('colBy')
       const categoryId = searchParams.get('categoryId')
       const customerId = searchParams.get('customerId')
@@ -103,11 +113,11 @@ export async function GET(req: Request) {
          LEFT JOIN LATERAL (
            SELECT c.unit_cost FROM v_lot_daily_cost c
            WHERE c.product_id = ol."productId"
-             AND c.cost_date <= COALESCE(o."confirmationDate", o."createdAt")::date
+             AND c.cost_date <= COALESCE(${dateExpr}, o."createdAt")::date
            ORDER BY c.cost_date DESC LIMIT 1
          ) lc ON TRUE
          WHERE o.status::text IN (${SALES_STATUS_SQL})
-           AND o."confirmationDate" >= $1::timestamp AND o."confirmationDate" < $2::timestamp
+           AND ${dateExpr} >= $1::timestamp AND ${dateExpr} < $2::timestamp
            AND ol."isGift" = false
            ${extraWhere}
          GROUP BY ${rowDef.keyExpr}${colGroupBy}

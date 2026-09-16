@@ -14,64 +14,91 @@ export interface DimensionDef {
   isTimeBucket: boolean
 }
 
-/** 行/列维度白名单——所有 SQL 片段均为代码里写死的常量，禁止拼接任何请求参数进 SQL 文本 */
-export const DIMENSION_DEFS: Record<string, DimensionDef> = {
-  product: {
-    keyExpr: `ol."productId"`,
-    nameExpr: `MAX(ol."productName")`,
-    extraJoin: '',
-    isTimeBucket: false,
-  },
-  category: {
-    keyExpr: `COALESCE(cat.id, 'uncategorized')`,
-    nameExpr: `COALESCE(MAX(COALESCE(cat."nameZh", cat.name)), '未分类')`,
-    extraJoin: `LEFT JOIN "ProductCategory" cat ON cat.id = p."categoryId"`,
-    isTimeBucket: false,
-  },
-  customer: {
-    keyExpr: `o."restaurantId"`,
-    nameExpr: `MAX(o."restaurantName")`,
-    extraJoin: '',
-    isTimeBucket: false,
-  },
-  salesUser: {
-    keyExpr: `COALESCE(o."salesUserId", 'none')`,
-    nameExpr: `COALESCE(MAX(su.name), '未指定业务员')`,
-    extraJoin: `LEFT JOIN "User" su ON su.id = o."salesUserId"`,
-    isTimeBucket: false,
-  },
-  day: {
-    keyExpr: `to_char(date_trunc('day', o."confirmationDate"), 'YYYY-MM-DD')`,
-    nameExpr: `MAX(to_char(date_trunc('day', o."confirmationDate"), 'YYYY-MM-DD'))`,
-    extraJoin: '',
-    isTimeBucket: true,
-  },
-  week: {
-    keyExpr: `to_char(date_trunc('week', o."confirmationDate"), 'IYYY-"W"IW')`,
-    nameExpr: `MAX(to_char(date_trunc('week', o."confirmationDate"), 'IYYY-"W"IW'))`,
-    extraJoin: '',
-    isTimeBucket: true,
-  },
-  month: {
-    keyExpr: `to_char(date_trunc('month', o."confirmationDate"), 'YYYY-MM')`,
-    nameExpr: `MAX(to_char(date_trunc('month', o."confirmationDate"), 'YYYY-MM'))`,
-    extraJoin: '',
-    isTimeBucket: true,
-  },
-  // 20260915：销售钻取新增按季/按年，格式跟 week 的 'IYYY-"W"IW' 同一套写法
-  quarter: {
-    keyExpr: `to_char(date_trunc('quarter', o."confirmationDate"), 'YYYY-"Q"Q')`,
-    nameExpr: `MAX(to_char(date_trunc('quarter', o."confirmationDate"), 'YYYY-"Q"Q'))`,
-    extraJoin: '',
-    isTimeBucket: true,
-  },
-  year: {
-    keyExpr: `to_char(date_trunc('year', o."confirmationDate"), 'YYYY')`,
-    nameExpr: `MAX(to_char(date_trunc('year', o."confirmationDate"), 'YYYY'))`,
-    extraJoin: '',
-    isTimeBucket: true,
-  },
+/**
+ * 时间维度（日/周/月/季/年）挂在哪个日期列上。
+ *
+ * confirmation = Order.confirmationDate（订单确认日），analytics 全域历史口径，毛利分析页/AI 问数在用。
+ * delivery     = Order.deliveryDate（送货日），销售钻取页在用。
+ *
+ * ⛔ 两者在生产上差得很远：客户是「先送货、事后补录确认」的作业方式，实测 2026-09-13
+ * 送货的 6 张单里有 3 张拖到 09-16 凌晨才确认——按确认日统计会把它们甩进下一周，
+ * 看上去就是「当天漏了一半的单」。deliveryDate 可空（未排程的单），COALESCE 回落到
+ * 确认日，避免这批单直接从统计里消失。
+ */
+export type DateBasis = 'confirmation' | 'delivery'
+
+export const DATE_BASIS_EXPR: Record<DateBasis, string> = {
+  confirmation: `o."confirmationDate"`,
+  delivery: `COALESCE(o."deliveryDate", o."confirmationDate")`,
 }
+
+/**
+ * 行/列维度白名单——所有 SQL 片段均为代码里写死的常量，禁止拼接任何请求参数进 SQL 文本。
+ * basis 只能取 DATE_BASIS_EXPR 的键，同样不接受请求参数直接入 SQL。
+ */
+export function dimensionDefs(basis: DateBasis = 'confirmation'): Record<string, DimensionDef> {
+  const d = DATE_BASIS_EXPR[basis]
+  return {
+    product: {
+      keyExpr: `ol."productId"`,
+      nameExpr: `MAX(ol."productName")`,
+      extraJoin: '',
+      isTimeBucket: false,
+    },
+    category: {
+      keyExpr: `COALESCE(cat.id, 'uncategorized')`,
+      nameExpr: `COALESCE(MAX(COALESCE(cat."nameZh", cat.name)), '未分类')`,
+      extraJoin: `LEFT JOIN "ProductCategory" cat ON cat.id = p."categoryId"`,
+      isTimeBucket: false,
+    },
+    customer: {
+      keyExpr: `o."restaurantId"`,
+      nameExpr: `MAX(o."restaurantName")`,
+      extraJoin: '',
+      isTimeBucket: false,
+    },
+    salesUser: {
+      keyExpr: `COALESCE(o."salesUserId", 'none')`,
+      nameExpr: `COALESCE(MAX(su.name), '未指定业务员')`,
+      extraJoin: `LEFT JOIN "User" su ON su.id = o."salesUserId"`,
+      isTimeBucket: false,
+    },
+    day: {
+      keyExpr: `to_char(date_trunc('day', ${d}), 'YYYY-MM-DD')`,
+      nameExpr: `MAX(to_char(date_trunc('day', ${d}), 'YYYY-MM-DD'))`,
+      extraJoin: '',
+      isTimeBucket: true,
+    },
+    week: {
+      keyExpr: `to_char(date_trunc('week', ${d}), 'IYYY-"W"IW')`,
+      nameExpr: `MAX(to_char(date_trunc('week', ${d}), 'IYYY-"W"IW'))`,
+      extraJoin: '',
+      isTimeBucket: true,
+    },
+    month: {
+      keyExpr: `to_char(date_trunc('month', ${d}), 'YYYY-MM')`,
+      nameExpr: `MAX(to_char(date_trunc('month', ${d}), 'YYYY-MM'))`,
+      extraJoin: '',
+      isTimeBucket: true,
+    },
+    // 20260915：销售钻取新增按季/按年，格式跟 week 的 'IYYY-"W"IW' 同一套写法
+    quarter: {
+      keyExpr: `to_char(date_trunc('quarter', ${d}), 'YYYY-"Q"Q')`,
+      nameExpr: `MAX(to_char(date_trunc('quarter', ${d}), 'YYYY-"Q"Q'))`,
+      extraJoin: '',
+      isTimeBucket: true,
+    },
+    year: {
+      keyExpr: `to_char(date_trunc('year', ${d}), 'YYYY')`,
+      nameExpr: `MAX(to_char(date_trunc('year', ${d}), 'YYYY'))`,
+      extraJoin: '',
+      isTimeBucket: true,
+    },
+  }
+}
+
+/** 历史默认口径（确认日），毛利分析页 / AI 问数等既有调用方保持不变 */
+export const DIMENSION_DEFS: Record<string, DimensionDef> = dimensionDefs('confirmation')
 
 /** 前端行/列维度下拉的展示顺序与文案（顺序即 UI 顺序） */
 export const DIMENSION_OPTIONS: Array<{ key: string; label: string }> = [

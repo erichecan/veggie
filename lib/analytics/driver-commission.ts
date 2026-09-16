@@ -33,6 +33,7 @@
  * `calcOrderCommission` 逐单重算再与本模块的输出比对。拿同一段实现两边一比毫无信息量。
  */
 import type { PrismaClient } from '@/lib/generated/prisma/client'
+import { SALES_COUNTED_STATUSES, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PrismaClient | any
@@ -427,6 +428,103 @@ export async function fetchDriverDaySales(db: Db, start: Date, end: Date): Promi
   ORDER BY SUM(COALESCE(ca.total_inc_tax, 0)) DESC`
 
   const rows = (await db.$queryRawUnsafe(sql, start, end)) as Array<Record<string, unknown>>
+  return rows.map((r) => ({
+    driverId: r.driver_id == null ? null : String(r.driver_id),
+    driverName: String(r.driver_name),
+    totalIncTax: round2(num(r.total_inc_tax)),
+    revenueExTax: round2(num(r.revenue_ex)),
+    grossProfit: round2(num(r.gross_profit)),
+    commissionTotal: round2(num(r.commission_total)),
+  }))
+}
+
+/**
+ * 「按司机」销售额+毛利+提成汇总 —— 订单口径（20260916 起 Sales Analysis 页在用）。
+ * ============================================================================
+ * ## 为什么不再走 Trip
+ *
+ * `fetchDriverDaySales`（Trip 口径，保留在上面）在生产上**查不出任何东西**：Trip 只在
+ * 波次点「确认出发」时生成（app/api/waves/[id]/dispatch → lib/trip-from-wave.ts），
+ * 而生产库实测 8 月起 31 个波次 `dispatchedAt` 全为 null，整库只有 8 条 Trip、最晚
+ * 2026-07-04，其中 7 条是 PENDING——又正好被 baseCte 的 `t.status <> 'PENDING'` 滤掉。
+ * 结果就是"随便点开哪天，按司机面板都是空的"。
+ *
+ * 所以这里换成订单自己的归属：**优先所属波次的司机**（波次唯一性 = 司机+时段，
+ * 见 schema PickingWave 注释），订单不在任何波次时回落到 `Order.driverSlotId`
+ * （下单时的派车意向）。这与订单详情页 `currentDriverSlotId` 的取值顺序同源，
+ * 区别是这里只解析到波次级、不细分到托盘级——同一波次跨托盘换司机的情况这里会算作一个人。
+ *
+ * ## 计数基准
+ *
+ * 销售额/毛利用 **orderedQty**（与 margin 路由逐字一致），这样这张表按司机加总 =
+ * 左侧那一行的当日金额，两张表能对上；Trip 那版用 deliveredQty，司机未回单时全是 0。
+ * 提成仍按 **deliveredQty**——提成本来就只认实送量（与 lib/commission.ts 同公式），
+ * 所以未送达的单提成为 0 是正确表现，不是漏算。
+ * 日期口径 = COALESCE(deliveryDate, confirmationDate)，与本页其余面板（dateBasis=delivery）同口径。
+ */
+export async function fetchDriverDaySalesByOrder(db: Db, start: Date, end: Date): Promise<DriverDaySalesRow[]> {
+  const statusSql = SALES_COUNTED_STATUSES.map((x) => `'${x}'`).join(', ')
+  const taxFrac = `(CASE WHEN COALESCE(ol."taxRate", 0) > 1 THEN COALESCE(ol."taxRate", 0) / 100.0 ELSE COALESCE(ol."taxRate", 0) END)`
+  const bizDate = `COALESCE(o."deliveryDate", o."confirmationDate")`
+  const sql = `
+  WITH scoped AS (
+    SELECT o.id                                                              AS order_id,
+           COALESCE(NULLIF(w."driverName", ''), NULLIF(ds."driverName", ''), '未指定') AS driver_name,
+           ds."userId"                                                       AS driver_user_id,
+           COALESCE(${bizDate}, o."createdAt")                               AS biz_date,
+           COALESCE(o."commissionFixed", 0)                                  AS commission_fixed,
+           COALESCE(o."commissionRate", 0)                                   AS commission_rate
+    FROM "Order" o
+    LEFT JOIN "DriverSlot" ds ON ds.id = o."driverSlotId"
+    LEFT JOIN LATERAL (
+      SELECT pw."driverName"
+      FROM "PickingWave" pw
+      WHERE o.id = ANY(pw."orderIds")
+      ORDER BY pw."dispatchedAt" DESC NULLS LAST, pw."createdAt" DESC
+      LIMIT 1
+    ) w ON TRUE
+    WHERE o.status::text IN (${statusSql})
+      AND ${bizDate} >= $1::timestamp
+      AND ${bizDate} <  $2::timestamp
+  ),
+  line_agg AS (
+    SELECT ol."orderId" AS order_id,
+           SUM(ol.subtotal)::float                                                                AS revenue_ex,
+           SUM(ol.subtotal * (1 + ${taxFrac}))::float                                             AS total_inc_tax,
+           SUM(COALESCE(lc.unit_cost, p."standardPrice", 0) * ol."orderedQty" * COALESCE(psu.factor, 1))::float AS cost,
+           SUM(COALESCE(ol."commissionPrice", 0) * COALESCE(ol."deliveredQty", 0))::float         AS comm_item,
+           SUM(COALESCE(ol."unitPrice", 0) * COALESCE(ol."deliveredQty", 0))::float               AS delivered_subtotal,
+           SUM(COALESCE(ol."deliveredQty", 0))::float                                             AS delivered_qty
+    FROM "OrderLine" ol
+    JOIN scoped sc ON sc.order_id = ol."orderId"
+    LEFT JOIN "Product" p ON p.id = ol."productId"
+    LEFT JOIN "ProductSaleUom" psu ON psu."productId" = ol."productId" AND psu."uomId" = ol."uomId"
+    LEFT JOIN LATERAL (
+      SELECT c.unit_cost FROM v_lot_daily_cost c
+      WHERE c.product_id = ol."productId" AND c.cost_date <= sc.biz_date::date
+      ORDER BY c.cost_date DESC LIMIT 1
+    ) lc ON TRUE
+    WHERE ol."isGift" = false
+    GROUP BY ol."orderId"
+  )
+  SELECT sc.driver_name,
+         MAX(sc.driver_user_id)                                                       AS driver_id,
+         SUM(COALESCE(la.total_inc_tax, 0))::float                                     AS total_inc_tax,
+         SUM(COALESCE(la.revenue_ex, 0))::float                                        AS revenue_ex,
+         SUM(COALESCE(la.revenue_ex, 0) - COALESCE(la.cost, 0))::float                 AS gross_profit,
+         SUM(COALESCE(la.comm_item, 0)
+             + CASE WHEN COALESCE(la.delivered_qty, 0) > 0 THEN sc.commission_fixed ELSE 0 END
+             + COALESCE(la.delivered_subtotal, 0) * sc.commission_rate)::float         AS commission_total
+  FROM scoped sc
+  LEFT JOIN line_agg la ON la.order_id = sc.order_id
+  GROUP BY sc.driver_name
+  ORDER BY SUM(COALESCE(la.total_inc_tax, 0)) DESC`
+
+  // deliveryDate/confirmationDate 都是无时区 timestamp，存的是都柏林墙上时间——
+  // 必须按裸字符串绑参，否则会被当 timestamptz 再换算一次（见 metrics.ts toNaiveTimestampParam）
+  const rows = (await db.$queryRawUnsafe(
+    sql, toNaiveTimestampParam(start), toNaiveTimestampParam(end),
+  )) as Array<Record<string, unknown>>
   return rows.map((r) => ({
     driverId: r.driver_id == null ? null : String(r.driver_id),
     driverName: String(r.driver_name),

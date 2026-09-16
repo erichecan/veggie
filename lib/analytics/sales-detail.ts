@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { SALES_COUNTED_STATUSES, toNaiveTimestampParam } from '@/lib/analytics/metrics'
+import { DATE_BASIS_EXPR } from '@/lib/analytics/pivot'
 
 /**
  * 销售明细点货清单（20260915，客户需求4：某段时间+1-3家客户+1-2个产品，逐行看
@@ -16,6 +17,13 @@ const SALES_STATUS_SQL = SALES_COUNTED_STATUSES.map((s) => `'${s}'`).join(', ')
 const STOCK_QTY_EXPR = `(ol."orderedQty" * COALESCE(psu.factor, 1))`
 
 const DETAIL_ROW_LIMIT = 2000
+
+/**
+ * 20260916：日期口径改送货日，与同页「按周」视图（margin?dateBasis=delivery）一致。
+ * 客户是"先送货、事后补录确认"的作业方式，按确认日排的明细，日期列跟客户记忆中的
+ * 送货日对不上（实测 2026-09-13 送的 6 张单里 3 张 09-16 才确认）。
+ */
+const DATE_EXPR = DATE_BASIS_EXPR.delivery
 
 export interface SalesDetailFilters {
   customerIds?: string[]
@@ -56,7 +64,7 @@ export async function fetchSalesDetail(
   const extraWhere = clauses.length ? ` AND ${clauses.join(' AND ')}` : ''
 
   const rows = (await p.$queryRawUnsafe(
-    `SELECT to_char(o."confirmationDate", 'YYYY-MM-DD') AS order_date,
+    `SELECT to_char(${DATE_EXPR}, 'YYYY-MM-DD') AS order_date,
             o."restaurantName" AS customer_name,
             ol."productName" AS product_name,
             ol."unitPrice"::float AS unit_price,
@@ -66,10 +74,10 @@ export async function fetchSalesDetail(
      JOIN "Order" o ON o.id = ol."orderId"
      LEFT JOIN "ProductSaleUom" psu ON psu."productId" = ol."productId" AND psu."uomId" = ol."uomId"
      WHERE o.status::text IN (${SALES_STATUS_SQL})
-       AND o."confirmationDate" >= $1::timestamp AND o."confirmationDate" < $2::timestamp
+       AND ${DATE_EXPR} >= $1::timestamp AND ${DATE_EXPR} < $2::timestamp
        AND ol."isGift" = false
        ${extraWhere}
-     ORDER BY o."confirmationDate" DESC, o."restaurantName", ol."productName"
+     ORDER BY ${DATE_EXPR} DESC, o."restaurantName", ol."productName"
      LIMIT ${DETAIL_ROW_LIMIT + 1}`,
     ...params,
   )) as Array<{
