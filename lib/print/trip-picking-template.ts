@@ -48,6 +48,7 @@ const T = {
     colCheck: '✓',
     unitCountSuffix: '种',
     hasNote: '⚠️ 有备注，见下方明细',
+    restCustomers: (n: number) => `其余 ${n} 家`,
     statStorable: '整箱整袋',
     statConsumable: '零散货',
     statTotal: '合计',
@@ -68,6 +69,7 @@ const T = {
     colCheck: '✓',
     unitCountSuffix: 'items',
     hasNote: '⚠️ Has note, see details below',
+    restCustomers: (n: number) => `${n} other customer${n > 1 ? 's' : ''}`,
     statStorable: 'Full Case/Bag',
     statConsumable: 'Loose Goods',
     statTotal: 'Total',
@@ -119,8 +121,10 @@ interface AggProduct {
   totalQty: number
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType: string | null
-  /** 'LOOSE'(散称,按重量卖) 时按客户展示明细子行；'BULK'/null 只显示总量 */
+  /** 分表用：'LOOSE' 进零散货表，'BULK'/null 进整箱整袋表 */
   goodsType: GoodsType
+  /** 该单位是否配了「按客户展开」（Uom.expandByCustomer，20260916），与分表无关 */
+  expandByCustomer: boolean
   orderCodes: string[]
   byCustomer: Map<string, CustomerBreakdown>
   /** 这个单位自己的换算/毛重信息（20260911），同一 productId::uomId 恒定，取第一行的值即可 */
@@ -148,11 +152,11 @@ interface ProductGroup {
 export type PickingVariant = 'all' | 'storable' | 'consumable'
 
 /**
- * 客户展开粒度（20260911 新增，对应"print"/"print multi line"两个打印口）：
- *   'auto' —— 默认。散称商品照旧强制按客户展开；非散称商品只把**带备注**的客户行
- *             单独摘出来，其余没备注的客户继续合并在主行总数里，不逐个列出
- *             （避免"一个客户有备注，其余几个客户也被迫展开"这种噪音）。
- *   'all'  —— 不管有没有备注/是否散称，每个商品都按客户逐行展开，给需要看清
+ * 客户展开粒度（20260911 新增，20260916 改口径，对应"print"/"print multi line"两个打印口）：
+ *   'auto' —— 默认。配了 `Uom.expandByCustomer` 的单位强制按客户展开；其余单位只把
+ *             **带备注**的客户行单独摘出来，其余没备注的客户合并成一行「其余 N 家」
+ *             （避免"一个客户有备注，其余几个客户也被迫展开"这种噪音，同时保证账能对上）。
+ *   'all'  —— 不管有没有备注、单位怎么配，每个商品都按客户逐行展开，给需要看清
  *             "这批货具体是哪几家、各多少"的场景（如司机自己核对、异常处理）。
  */
 export type PickingExpandMode = 'auto' | 'all'
@@ -203,14 +207,17 @@ export function generateTripPickingHtml(
           totalQty: 0,
           productType: line.productType ?? null,
           goodsType: line.goodsType ?? null,
+          expandByCustomer: line.expandByCustomer === true,
           orderCodes: [],
           byCustomer: new Map<string, CustomerBreakdown>(),
           uomConversion: line.uomConversion ?? null,
         }
         aggMap.set(key, agg)
       }
-      // 同一商品理论上 goodsType 恒定；任一行判为 LOOSE 就展示明细，容错优先
+      // 同一聚合键理论上单位恒定；任一行判为 LOOSE / 需展开就从宽，容错优先 ——
+      // 少印一份客户明细会让拣货员无从下手，多印一份只是多占几行。
       if (line.goodsType === 'LOOSE') agg.goodsType = 'LOOSE'
+      if (line.expandByCustomer === true) agg.expandByCustomer = true
       agg.totalQty += line.orderedQty
       if (!agg.orderCodes.includes(orderCode)) {
         agg.orderCodes.push(orderCode)
@@ -285,10 +292,11 @@ export function generateTripPickingHtml(
    * 他们的数量已经算在主行总数里，不用再单独刷一行出来。
    */
   function customerBreakdownRows(byCustomer: Map<string, CustomerBreakdown>, nested: boolean, onlyNoted: boolean): string {
-    return Array.from(byCustomer.values())
+    const all = Array.from(byCustomer.values())
+    const shown = all
       .filter(bd => !onlyNoted || bd.note)
       .sort((a, b) => a.customerName.localeCompare(b.customerName))
-      .map(bd => `
+    const rows = shown.map(bd => `
       <tr class="row-bd${nested ? ' row-bd-nested' : ''}">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
@@ -300,6 +308,26 @@ export function generateTripPickingHtml(
         <td class="col-pack"></td>
         <td class="col-check"></td>
       </tr>`).join('')
+
+    /**
+     * 其余客户汇总行（20260916）：onlyNoted 模式下只列写了备注的客户，其余客户的数量
+     * 会被静默并进主行总数 —— 纸面上就出现「总量 41、只列出 7+2=9，剩下 32 箱没有交代」
+     * 这种对不上的账（生产实测截图），拣货员没法判断是漏印了还是自己看错了。
+     * 补一行把差额兜住，让每一个展开的商品都满足：主行总量 = 各明细行之和。
+     * 固定一行，不随隐藏客户数增长，不退回「一条备注拖累整商品全展开」（见 20260824 那次改动）。
+     */
+    const hiddenCount = all.length - shown.length
+    if (hiddenCount <= 0) return rows
+    const hiddenQty = all.reduce((sum, bd) => sum + bd.qty, 0) - shown.reduce((sum, bd) => sum + bd.qty, 0)
+    return rows + `
+      <tr class="row-bd row-bd-rest${nested ? ' row-bd-nested' : ''}">
+        <td class="col-seq"></td>
+        <td class="col-name bd-name">↳ ${escapeHtml(t.restCustomers(hiddenCount))}</td>
+        <td class="col-uom"></td>
+        <td class="col-qty bd-qty">${fmtQty(hiddenQty)}</td>
+        <td class="col-pack"></td>
+        <td class="col-check"></td>
+      </tr>`
   }
 
   /** 这个聚合行（总量 qty）对应的毛重说明文字，如"毛重 ≈ 3.4kg"；没配毛重返回空串 */
@@ -333,19 +361,26 @@ export function generateTripPickingHtml(
         <td class="col-pack">${fmtPackSeq(p.uomSequence)}</td>
         <td class="col-check"></td>
       </tr>`
-    const breakdownRows = pickBreakdownRows(p.byCustomer, p.goodsType, hasNote, false)
+    const breakdownRows = pickBreakdownRows(p.byCustomer, p.expandByCustomer, hasNote, false)
     return mainRow + breakdownRows
   }
 
   /**
-   * 三处（单一单位行/多单位子行）共用的展开判断：
+   * 三处（单一单位行/多单位子行）共用的展开判断（20260916 改）：
    *   expandMode='all' —— 不管什么情况，全部客户都列出来；
-   *   expandMode='auto' —— 散称维持全展开（业务需要称重核对，不受本次改动影响），
-   *     非散称只有在有备注时才展开，且只列带备注的客户（onlyNoted=true）。
+   *   expandMode='auto' —— 两张表一视同仁：
+   *     · 单位配了 expandByCustomer → 全展开（配货时现切现称、每份贴客户标签的货，
+   *       如冬瓜按 KG 卖，客户点 2.5kg / 6.2kg，拣货员必须知道每家各多少）
+   *     · 否则只有在有备注时才展开，且只列带备注的客户（onlyNoted=true）
+   *
+   * ⛔ 20260916 之前这里是 `goodsType === 'LOOSE'` 恒全展开 —— 用分表字段兼任展开判断。
+   * 生产实测该耦合是错的：散货表里 86% 的行是 PACK / PKT / PACKET / TRAY 这类定量包装，
+   * 留在散货表是对的（分表＝哪个组在哪个区域拣），但整包拿、不需要逐客户列。
+   * 两个决策已拆成 Uom 上的两个独立字段，不要再用 goodsType 推展开。
    */
-  function pickBreakdownRows(byCustomer: Map<string, CustomerBreakdown>, goodsType: GoodsType, hasNote: boolean, nested: boolean): string {
+  function pickBreakdownRows(byCustomer: Map<string, CustomerBreakdown>, expandByCustomer: boolean, hasNote: boolean, nested: boolean): string {
     if (expandMode === 'all') return customerBreakdownRows(byCustomer, nested, false)
-    if (goodsType === 'LOOSE') return customerBreakdownRows(byCustomer, nested, false)
+    if (expandByCustomer) return customerBreakdownRows(byCustomer, nested, false)
     if (hasNote) return customerBreakdownRows(byCustomer, nested, true)
     return ''
   }
@@ -392,7 +427,7 @@ export function generateTripPickingHtml(
         <td class="col-pack">${fmtPackSeq(u.uomSequence)}</td>
         <td class="col-check"></td>
       </tr>`
-      const breakdownRows = pickBreakdownRows(u.byCustomer, u.goodsType, uHasNote, true)
+      const breakdownRows = pickBreakdownRows(u.byCustomer, u.expandByCustomer, uHasNote, true)
       return childRow + breakdownRows
     }).join('')
     return parentRow + childRows
@@ -466,6 +501,10 @@ export function generateTripPickingHtml(
 
   tr.row-bd td{border-bottom:1px dashed #e0e0e0;padding-top:2px;padding-bottom:2px}
   .bd-name{padding-left:26px!important;color:#555;font-size:10px}
+  /* 「其余 N 家」汇总行：斜体+浅灰，一眼能跟真实客户行区分开。它存在的意义是让
+     「主行总量 = 各明细行之和」这个账在纸面上永远成立，不是一个要去拣的客户。 */
+  tr.row-bd-rest .bd-name{font-style:italic;color:#999}
+  tr.row-bd-rest .bd-qty{color:#999!important}
   .bd-qty{font-weight:600!important;font-size:11px!important;color:#555}
   /* 客户明细子行挂在「单位子行」下面时，多缩进一级，跟单位子行分层看得出来 */
   tr.row-bd-nested .bd-name{padding-left:40px!important}

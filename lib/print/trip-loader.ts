@@ -12,10 +12,10 @@ import { prisma } from '@/lib/db'
 import { pickLargestPack } from '@/lib/pack-split'
 import {
   buildLinesFromItems,
-  type GoodsType,
   type TripCustomer,
   type TripOrder,
   type TripPrintDataWire,
+  type UomPickAttrs,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
 import { loadAdjustmentTotalMap } from '@/lib/order-adjustments'
@@ -43,22 +43,26 @@ const toIso = (v: unknown): string | null => {
 }
 
 /**
- * 取 Uom.goodsType 映射。
- * DB 列还没同步时不会报错，全部返回 null（拣货单会归入「未分类」组）。
+ * 取单位的拣货属性（goodsType 分表 + expandByCustomer 是否按客户展开）。
+ * 两个字段必须一起取、一起回退，理由见 trip-common.ts 的 UomPickAttrs 注释。
+ * DB 列还没同步时不会报错，整体退化为「BULK 表 + 不展开」。
  */
-async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType>> {
-  const map = new Map<string, GoodsType>()
+async function loadUomPickAttrMap(uomIds: string[]): Promise<Map<string, UomPickAttrs>> {
+  const map = new Map<string, UomPickAttrs>()
   if (uomIds.length === 0) return map
   try {
-    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
-      SELECT id, "goodsType" FROM "Uom" WHERE id = ANY(${uomIds})
+    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null; expandByCustomer: boolean | null }>>`
+      SELECT id, "goodsType", "expandByCustomer" FROM "Uom" WHERE id = ANY(${uomIds})
     `
     for (const r of rows) {
       const g = r.goodsType
-      map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
+      map.set(r.id, {
+        goodsType: g === 'BULK' || g === 'LOOSE' ? g : null,
+        expandByCustomer: r.expandByCustomer === true,
+      })
     }
   } catch (e) {
-    console.warn('[trip-print] Uom.goodsType column not available, all items will be 未分类:', (e as Error).message)
+    console.warn('[trip-print] Uom 拣货属性列不可用，全部按「整箱表 + 不展开」处理:', (e as Error).message)
   }
   return map
 }
@@ -88,25 +92,28 @@ async function loadProductTypeMap(productIds: string[]): Promise<Map<string, str
 }
 
 /**
- * OrderLine.uomId 历史全空，goodsType 判断实际靠这个兜底：
- * 按 productId 找到商品的 Product.uomId，再查其 goodsType。
+ * OrderLine.uomId 历史全空，分表与展开判断实际靠这个兜底：
+ * 按 productId 找到商品的 Product.uomId，再查该单位的拣货属性。
  */
-async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string, GoodsType>> {
-  const map = new Map<string, GoodsType>()
+async function loadProductUomPickAttrMap(productIds: string[]): Promise<Map<string, UomPickAttrs>> {
+  const map = new Map<string, UomPickAttrs>()
   if (productIds.length === 0) return map
   try {
-    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
-      SELECT p.id, u."goodsType"
+    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null; expandByCustomer: boolean | null }>>`
+      SELECT p.id, u."goodsType", u."expandByCustomer"
       FROM "Product" p
       LEFT JOIN "Uom" u ON u.id = p."uomId"
       WHERE p.id = ANY(${productIds})
     `
     for (const r of rows) {
       const g = r.goodsType
-      map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
+      map.set(r.id, {
+        goodsType: g === 'BULK' || g === 'LOOSE' ? g : null,
+        expandByCustomer: r.expandByCustomer === true,
+      })
     }
   } catch (e) {
-    console.warn('[trip-print] Product.uomId goodsType fallback not available:', (e as Error).message)
+    console.warn('[trip-print] Product.uomId 拣货属性兜底不可用:', (e as Error).message)
   }
   return map
 }
@@ -191,9 +198,9 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productGoodsTypeMap, productTypeMap, packSpecMap, invoiceNoMap, adjustmentTotalMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
-    loadGoodsTypeMap(uomIds),
-    loadProductGoodsTypeMap(productIds),
+  const [uomAttrMap, productUomAttrMap, productTypeMap, packSpecMap, invoiceNoMap, adjustmentTotalMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
+    loadUomPickAttrMap(uomIds),
+    loadProductUomPickAttrMap(productIds),
     loadProductTypeMap(productIds),
     loadPackSpecMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
@@ -246,7 +253,9 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
           uomId: l.uomId,
           uomName: l.uomName,
           // OrderLine.uomId 历史全空，先看行级 uom，没有再回退到商品自己的 uom
-          goodsType: (l.uomId ? goodsTypeMap.get(l.uomId) : null) ?? productGoodsTypeMap.get(l.productId) ?? null,
+          goodsType: (l.uomId ? uomAttrMap.get(l.uomId)?.goodsType : null) ?? productUomAttrMap.get(l.productId)?.goodsType ?? null,
+          expandByCustomer: (l.uomId ? uomAttrMap.get(l.uomId)?.expandByCustomer : undefined)
+            ?? productUomAttrMap.get(l.productId)?.expandByCustomer ?? false,
           productType: productTypeMap.get(l.productId) ?? null,
           note: l.note ?? null,
           packSpec: packSpecMap.get(l.productId) ?? null,

@@ -47,11 +47,13 @@ export async function POST(req: Request) {
       const rounding = 0.01
       const type = 'REFERENCE' as const
 
-      // 货物类型白名单（BULK 大货 / LOOSE 散货 / null 未分类）
+      // 货物类型白名单（BULK 大货 / LOOSE 散货）。20260915 起界面不再提供「未分类」，
+      // 传别的值一律落成 BULK —— 打印侧对 null 本来就按 BULK 处理，不再制造新的空值。
       const rawGoodsType = data.goodsType
-      const goodsType: 'BULK' | 'LOOSE' | null =
-        rawGoodsType === 'BULK' ? 'BULK' :
-        rawGoodsType === 'LOOSE' ? 'LOOSE' : null
+      const goodsType: 'BULK' | 'LOOSE' = rawGoodsType === 'LOOSE' ? 'LOOSE' : 'BULK'
+
+      // 拣货时是否按客户展开明细（20260916）。与 goodsType 独立，见 schema 注释。
+      const expandByCustomer = data.expandByCustomer === true
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
@@ -64,6 +66,7 @@ export async function POST(req: Request) {
           rounding,
           type,
           goodsType,
+          expandByCustomer,
         },
       })
       await writeLog({

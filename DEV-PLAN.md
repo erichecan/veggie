@@ -1,80 +1,216 @@
-# DEV-PLAN：销售/采购数据分析扩展（7 条新需求）
+# DEV-PLAN：拣货单「按客户展开」改为可配置（Uom.expandByCustomer）
 
 ## 读取的文档
 
-无独立产品文档。需求来自对话中用户直接提出的 7 条口述需求（销售 4 条 + 采购 3 条），以及此前对现有 `sales-analysis`、`reports/*`、`analytics/margin`、`analytics/procurement` 等页面的代码核实结论（详见对话记录，不重复贴出）。
+无独立产品文档。需求来自对话中客户口述三条：
 
-## 背景：现状缺口回顾
+> 拣货单分两部分，整箱整袋拣货单和零散的散货拣货单。散货中有些产品需要展开，有些产品不要展开。
+> 留言的展开，没有留言的不要展开。整箱拣货单没有留言就不要展开。散货拣货单没必要的就不要展开。
 
-| 需求 | 现状 |
-|---|---|
-| 1. 时间维度(周/月/季/年)+多产品+多客户+qty/price/untaxed/vat/total/margin | 不满足：`sales-analysis` 无月/季/年、无多选筛选，margin 硬编码 0 |
-| 2. 按产品+多客户+qty/price/total/untaxed/margin | 部分满足：`margin` 页面有真实 margin，但客户筛选是单选、无季/年 |
-| 3. 按客户+qty/price/untaxed/total/margin | 部分满足：同上 |
-| 4. 明细点货清单(日期/客户/产品/单价/数量/金额，1-3客户×1-2产品) | 不满足：字段在 AI 问数 detail SQL 里已具备，但只支持单客户单产品筛选，且是对话入口非表单 |
-| 5. 按供应商查进货 | 部分满足：`reports/purchasing` 能查，但供应商是纯文本框手输，无下拉 |
-| 6. 按产品看销售数量+on hand QTY+forecast QTY，按周/月展开趋势 | 不满足：forecast 只有"当前时刻"静态快照，无历史/趋势数据基础 |
-| 7. 按产品查进货 | 部分满足：同需求5，缺产品下拉选择器 |
+客户同时提出备选方案："如果不行，就在可售单位那里加一个开关。"
 
-## 复用评估结论（已调研，不重复造轮子）
+依据的既有代码口径：`lib/print/trip-picking-template.ts` 顶部注释与 `belongsToConsumableTable`
+（分表口径，20260913 commit `6d3d820` 定下"只看销售单位 goodsType、不看 Product.type"）。
 
-- **margin(毛利)计算**：`app/api/analytics/margin/route.ts` 里已有一条成熟 SQL（JOIN `v_lot_daily_cost` 批次加权成本，查不到退 `Product.standardPrice`），数据库端一次 `GROUP BY` 聚合出 qty/untaxed/total/cost/margin，133万行 OrderLine 已在生产验证过，**直接复用这套 SQL 模式**，不重写。
-- **vat(税额)**：`total_inc_tax − revenue_ex` 或 `SUM(subtotal × taxRate换算)`，在同一条聚合 SQL 里加一列即可，改动量极小。
-- **明细清单**：`lib/analytics-chat/domains/sales.ts` 的 `buildDetailSql()` 字段结构（date/customer/product/unit_price/qty/subtotal）与需求4完全对应，**抽取成共享函数**，同时给 AI 问数和新接口用；过滤条件从单值 `=` 改成 `= ANY($::text[])` 支持多选。
-- **时间粒度**：`lib/analytics/pivot.ts` 的 `DIMENSION_DEFS` 现有 day/week/month，quarter/year 照抄 `date_trunc` 模式各加一条即可。`lib/reports/sql-builder.ts`（reports 透视表的后端引擎）本身是纯函数、跟 UI 无耦合，天然支持五档粒度，采购侧筛选/聚合骨架直接复用它，**只是不用 `components/reporting/` 那套 UI**。
-- **on-hand 历史 + forecast 趋势**：`StockMove` 表记录带符号 qty，可以"时间旅行"重建任意历史时点的 on-hand（当前 qtyOnHand − 该日期之后所有 StockMove 累计和）；forecast 现有口径是静态快照、没有"未来"概念。**这部分需要新写，且有一个产品决策悬而未决，见下方风险点第1条**。
+## 需求辨析：为什么不照客户的原方案做
 
-## 模块拆解
+计划成立与否取决于四个生产库实测数字（本次查证，非推断）：
 
-### 1. 后端 lib 层（可复用逻辑，不跟 UI 耦合）
-- 扩展 `lib/analytics/pivot.ts`：`DIMENSION_DEFS` 加 quarter/year；度量加 vat；filter 支持 productIds[]/customerIds[] 多值（`= ANY`）
-- 新建 `lib/analytics/sales-detail.ts`：从 `analytics-chat/domains/sales.ts` 抽取 `buildDetailSql`，改造成支持 1-3 客户 × 1-2 产品的多值过滤，两边（AI 问数 + 新明细接口）共用一份
-- 新建 `lib/analytics/stock-trend.ts`：基于 `StockMove` 重建选定产品的历史 on-hand 时间序列（按周/月分桶取桶尾时点值），forecast 先按"该分桶的历史实际出货量"近似（见风险点1）
+| 实测项 | 结果 | 推论 |
+|---|---|---|
+| 近 180 天订单行写了留言的比例 | 107,589 行中 **23 条**（BULK 21 / LOOSE 2） | 「有留言才展开」= 散货表 36,772 行里展开 2 行，等于功能消失 |
+| `ProductSaleUom` 活跃行数 | **147 行**（多单位销售仍是试点） | 开关挂这里覆盖不到大多数商品 |
+| 近 180 天落在散货表的商品 | 475 个，其中 **444 个（93.5%）没有 ProductSaleUom 行** | 这些商品单位走 `Product.uomId` 回退路径，无处挂开关 |
+| `KG` 单位下单量为小数的比例 | 9,546 行中 8.3%（`LOOSE` 为 0%） | 无法用"小数=称重"自动推断，客户下单写整数，真实重量在秤上才产生 |
 
-### 2. 后端 API 层（新增/扩展路由，见下方路由清单）
-- 全部挂 `withAuth` + 复用现有 `analytics.*` 权限点（预计不需要新权限点，按最小改动原则）
-- 新路由必须登记 `route-map.ts`（历史教训：漏登记会导致 middleware 层全员 403，即使 withAuth 本身写对了）
+结论：
 
-### 3. 前端组件层
-- `sales-analysis/page.tsx` 改造（**已定案**：砍掉 pie/bar 图表视图，只保留表格类视图，不用给三套视图分别接真实数据源）：
-  - `ViewType` 从 `'pie'|'bar'|'list'|'week'` 简化为 `'list'|'week'|'detail'`：`list` 改接新的服务端透视接口（真实 qty/price/untaxed/vat/total/margin，支持按产品/客户/不分组切换），`week` 保留现有 `WeeklyDrilldown`，新增 `detail` 对应需求4的明细清单
-  - 时间筛选行在现有"全部/今日/本周/本月"按钮组后加"自定义区间"（复用 `components/boss/analytics-shared.tsx` 的 `DateRangeBar` 模式）+ 粒度下拉（周/月/季/年）
-  - 新增"产品多选""客户多选"两个筛选下拉，复用页面自身已有的 Measures/GroupBy 自定义下拉交互（checklist 样式，改成多选不自动关闭）
-  - `WeeklyDrilldown.tsx` 保留，接口层复用同一套扩展后的 pivot 函数
-- 新建 `app/[locale]/classic/boss/procurement-analysis/page.tsx`：整体交互范式照抄 `sales-analysis`（用户明确要求），筛选行含：时间区间+粒度、供应商单选下拉（需求5）、产品多选下拉（需求6/7），视图含：进货明细表、库存趋势图（on-hand+forecast 按周/月，需求6）
-- `boss/layout.tsx` 补导航入口（避免重蹈"做完忘挂导航"的坑，上次刚踩过）
-- 新增一个共享组件 `MultiSelectDropdown`（放 `components/boss/analytics-shared.tsx`），两个页面的产品/客户多选筛选器共用，避免重复实现
+1. **留言是例外通道，不是配置通道**。它按行、临时、99.98% 为空，不能承担"这个商品要不要按客户拆"这种结构属性。
+2. **开关必须放在 `Uom`（37 行，其中 30 个 LOOSE）而不是 `ProductSaleUom`**。Uom 是两条解析路径
+   （`OrderLine.uomId` 与回退的 `Product.uomId`）最终都会落到的层级，覆盖率 100%，且 37 行一屏可复核。
+3. **"进哪张表"和"要不要展开"是两个独立决策**，现在由 `goodsType` 一个字段兼任，这是本次要拆开的根因。
+   前者决定哪个组在哪个区域拣，后者决定那个组需不需要按客户分装的数字。
 
-## 路由清单（新增/扩展）
+## 目标行为
 
-| 方法 | 路径 | 用途 | 对应需求 |
-|---|---|---|---|
-| GET | `/api/analytics/sales-analysis/pivot` | 通用销售透视：粒度(day/week/month/quarter/year)+groupBy(none/product/customer)+多选产品/客户筛选，返回 qty/price/untaxed/vat/total/margin | 1,2,3 |
-| GET | `/api/analytics/sales-analysis/detail` | 明细点货清单：1-3客户×1-2产品，逐行返回日期/客户/产品/单价/数量/金额 | 4 |
-| GET | `/api/analytics/procurement-analysis/pivot` | 采购透视：供应商单选 或 产品多选 + 时间区间，返回商品/数量/金额 | 5,7 |
-| GET | `/api/analytics/procurement-analysis/stock-trend` | 选定产品的 on-hand + forecast 按周/月展开趋势 | 6 |
+打印规则统一为一句，两张表一视同仁：
+
+```
+展开该商品的客户明细 = 该行有留言 OR 该销售单位配了 expandByCustomer
+```
+
+- 删除现在"`goodsType === 'LOOSE'` 恒展开"的特例（`trip-picking-template.ts:348`）
+- 有留言时仍只列带留言的那个客户（`onlyNoted=true`），不因一个客户有备注就把整商品展开——现状逻辑保留
+- "print multi line"按钮（`expandMode='all'`）行为不变，作为需要看全量时的人工兜底
+
+### 判定标准（客户 20260916 口述，作为配置这个字段的唯一依据）
+
+> **要展开**：配货时现切现称、每份包装上贴客户标签的。例：冬瓜基础单位是 `KG`，
+> 客户可能点 2.5kg 或 6.2kg，拣货员得知道每家各多少才能切、才能贴标。
+>
+> **不展开**：提前备好的定量包装，按包数拿即可。例：`Fresh Red Chilli Class I` 可售单位 `1KG`，
+> 一包就是 1kg，客户点 2 公斤就给两包，拣货员只需要总包数。
+
+这条标准直接对应 `KG` / `g` / `LOOSE`（现称现切）与其余 27 个单位（定量包装）的分界。
+
+### 补充模块：其余客户汇总行（必须与主改动同批做）
+
+现状 `onlyNoted=true` 只列写了留言的客户，其余客户的数量被静默并进总数，纸面上账对不上。
+生产实测（20260916 拣货单截图）：`FX Udon Noodle` 总量 41，只列出 7 + 2 = 9，**剩下 32 箱没有任何一行交代**；
+同页 `Red Unicorn Rice`（9 vs 7）、`Pepper Green`（7 vs 3）同样有缺口。
+
+**这不是顺带优化，是本次改动的必要配套**：现在散货表因为恒全展开，账一直是平的（截图 5+15=20）；
+改成"按单位开关 + 有留言"之后，一个 `PACKET` 商品若 4 家里有 1 家写了留言，就会变成
+"总量 20、只列一行 5"——今天不会发生的缺口会被引入散货表。
+
+做法：`onlyNoted` 模式下，把被隐藏的客户合并成一行追加在末尾。
+
+```
+FX Udon Noodle 30's*200g CASE        41
+  ↳ 818 Cake Studio D13  ⚠️ DS        7
+  ↳ AE D5                ⚠️ ds        2
+  ↳ 其余 3 家                        32     ← 新增
+```
+
+固定一行，不随隐藏客户数增长，不退回"一条留言拖累整商品全展开"（commit `88ff11b` 当初要解决的问题）。
 
 ## Schema 设计
 
-**本次不需要新增数据库迁移。** margin/vat 靠现有 `v_lot_daily_cost` 视图+聚合 SQL；明细清单靠现有表直查；on-hand 趋势靠 `StockMove` 运行时重建（不落盘新表），控制在"选定的少数产品 × 有限时间桶"范围内，避免全表扫描性能问题。
+`model Uom` 新增一列：
 
-## 风险点（已定案）
+```prisma
+/// 拣货时是否需要按客户拆开列明细。true = 称重分装类（拣货动作本身就是按客户过秤），
+/// 拣货员必须看到每家各多少；false = 可数包装（整包拿，按总数拣即可，下游分拣再按送货单拆）。
+/// ⛔ 与 goodsType 是两个独立维度：goodsType 决定进哪张表（哪个组、哪个区域），
+/// 这个字段决定那张表里要不要列客户明细。不要用其中一个去推另一个。
+expandByCustomer Boolean @default(false)
+```
 
-1. **forecast 口径 —— 已确认用"历史实际出货量近似"**：按周/月分桶，展示该分桶的历史实际出货数量，帮助判断囤货趋势；不是移动平均/线性回归那种真预测算法。
+迁移（手写 SQL，不用 `db push`）：
 
-2. **pie/bar/list 的 margin=0 bug —— 已确认处理方式：直接砍掉 pie/bar 图表视图**，`sales-analysis` 只保留表格类视图（list 透视表 + week 钻取 + 新增 detail 明细），不需要为图表视图单独接真实数据源，改动面比"三个视图都修"更小。
+```sql
+ALTER TABLE "Uom" ADD COLUMN "expandByCustomer" BOOLEAN NOT NULL DEFAULT false;
 
-3. **多选下拉的候选项来源**：产品/客户数量可能有上千个，多选下拉需要支持搜索过滤（不是把全部选项摊开），会复用现有商品/客户搜索接口做 autocomplete，不新建接口。
+-- 只有真·称重单位需要按客户展开；其余 27 个 LOOSE 单位都是可数包装，保持 false
+UPDATE "Uom" SET "expandByCustomer" = true
+WHERE "goodsType" = 'LOOSE' AND upper(btrim(name)) IN ('KG', 'G', 'LOOSE');
 
-4. **权限**：复用现有 `analytics.*` 权限点，不新增。
+-- PALLET 分类纠正（客户 20260916 确认）：托盘是最大的整装单位，不该出现在零散货表。
+-- 它已被停用（active=false），但停用只影响新建/编辑的下拉，历史订单行仍按 id 解析到它，
+-- 打印时照样进散货表 —— 所以必须改 goodsType，不能靠停用解决。
+-- ⛔ 只改分类，不动任何订单数据：那 3 条行所在的两张单里还有 11 条真实商品行。
+UPDATE "Uom" SET "goodsType" = 'BULK' WHERE upper(btrim(name)) = 'PALLET';
+```
 
-## 验收标准
+按 `name` 而非 `id` 匹配的理由：本地开发库与生产库的 Uom 行不同源（本地 27 行 / 生产 37 行），
+按 id 写死在本地回填不到。已实测生产 30 个 LOOSE 单位名单，`KG` / `g` / `LOOSE` 三个名字唯一，
+`1KG` / `500g` 这类定量包装不会被 `upper()` 精确匹配误伤。
 
-- `npm run build` 无报错，4 个新/改路由 curl 实测鉴权（无 token 401、正常 token 200）
-- 7 条需求逐条用真实生产库数据（或本地同步数据）跑一遍，人工核对数字（尤其 margin/vat 抽查几笔订单手算对账）
-- 新采购分析页面挂上导航入口并实测可点击进入（不重蹈上次孤儿页面的坑）
-- pie/bar/list/week/detail 五个视图切换正常，筛选组合（时间粒度×多选产品×多选客户）不出现 500/崩溃
+**回填后的结果（需你确认）**：展开 = `KG`、`g`、`LOOSE` 三个；收起 = 其余 27 个，包括
+`PACK`(8154 行) `PACKET`(5670) `PKT`(5189) `TRAY`(880) `PUNNET`(348) `BOTTLE`(316) `EACH`(272)
+`JAR`(270) `TIN`(181) `PALLET`(5) 以及 `1KG` `2KG` `2.5KG` `3KG` `5KG` `500g` `100g` `UK 4KG` `CAF 4KG` 等定量包装。
 
----
+## 模块拆解（按依赖顺序执行）
 
-✅ 计划已确认（forecast 用历史出货近似；pie/bar 视图砍掉只留表格类视图），开始按台账推进：`docs/20260915-sales-procurement-analysis-tasks.md`。
+| # | 模块 | 内容 |
+|---|---|---|
+| 1 | 数据层 | `prisma/schema.prisma` 加列 + 手写迁移 + 回填；同一迁移里把 `PALLET` 的 `goodsType` 改成 `BULK` |
+| 2 | 装载层 ⚠️ | **两条** loader 各自把新字段取出来并挂到行上 |
+| 3 | 模板层 | `pickBreakdownRows` 规则统一，删 LOOSE 特例 |
+| 4 | 模板层 | `customerBreakdownRows` 在 `onlyNoted` 模式下追加「其余 N 家 合计 X」汇总行 |
+| 5 | 配置入口 | 设置页「计量单位」表加一列开关；两个 uoms API 加字段白名单 |
+| 6 | 文档 | help 页「如何新建/管理计量单位」补一句说明 |
+
+## 文件清单（约 9 个）
+
+```
+prisma/schema.prisma                                    加列
+prisma/migrations/<timestamp>_uom_expand_by_customer/   新建迁移
+lib/print/trip-common.ts                                TripLine 加 expandByCustomer 字段
+lib/print/trip-loader.ts                                ⚠️ 路径 A：取值 + 挂行
+lib/print/dispatch-loader.ts                            ⚠️ 路径 B：取值 + 挂行（与 A 逻辑重复但独立）
+lib/print/trip-picking-template.ts                      AggProduct 带字段 + pickBreakdownRows 改规则
+app/api/uoms/route.ts                                   POST 白名单
+app/api/uoms/[id]/route.ts                              PUT 白名单
+app/[locale]/classic/operator/settings/page.tsx         列表加一列开关
+app/[locale]/classic/operator/help/page.tsx             说明文案
+```
+
+## 路由清单
+
+不新增任何路由。受影响的既有入口：
+
+**写入（2 个）**：`POST /api/uoms`、`PUT /api/uoms/[id]` —— 加字段白名单，权限沿用现有配置，不动 route-map。
+
+**读取 / 打印（4 个入口，2 条装载路径）**：
+
+| 打印入口 | 装载路径 |
+|---|---|
+| `app/[locale]/classic/print/trip/[id]/_TripPrintClient.tsx`（浏览器打印·行程） | `trip-loader.ts` |
+| `app/api/trips/[id]/picking-pdf/route.ts`（服务端 PDF·行程） | `trip-loader.ts` |
+| `lib/print/dispatch-print-html.ts`（浏览器打印·配送中心） | `dispatch-loader.ts` |
+| `app/api/print/dispatch-picking-pdf/route.ts`（服务端 PDF·配送中心） | `dispatch-loader.ts` |
+
+（已核实 `app/api/waves/[id]/pick-sheet/route.ts` 只读波次记录，不走打印模板，不受影响。）
+
+## 风险点
+
+**R1 ⚠️ 最高：两条 loader 漏改一条。** `trip-loader.ts:249` 与 `dispatch-loader.ts:386` 各写了一份
+完全相同的 goodsType 解析逻辑，是两份独立代码。只改一条，另一条打印入口会静默拿到 `undefined`，
+表现为"行程单是对的、配送中心单不对"。
+同类历史事故：20260801 `attachWaveDisplay` 漏了发票 PDF 与日报两条打印路径，102 单中 83 单司机错/缺。
+**对策**：改完四个入口逐个实际出纸核对，不靠读代码判断。
+
+**R2 配置错误是静默的。** 这个字段配错不会报错、不会留白，只会在打印出来的实体单据上错。
+同类历史事故：20260907 `TRAY` 被配成 BULK，商品被印到错误的表。
+**对策**：回填名单先给用户确认（见上），上线后拿真实波次打样核对，不只看设置页能存。
+
+**R3 迁移回填误伤。** 已实测名字唯一性，`upper()` 精确匹配不会命中 `1KG`/`500g` 等定量包装。
+
+**R4 `PALLET` 只改分类，绝不动订单数据。** 客户原话是"把 pallet 的历史订单取消"，核查后发现
+那 3 条 `Transport PALLET`（€160 运费项，type=CONSU）分布在两张单上，而这两张单里还有 **11 条真实商品行**
+（OP-260721-001 有 9 条：豆芽/茴香/辣椒/大米/蘑菇/洋葱/马蹄/西瓜…，OP-260718-001 有 2 条）。
+整单取消会连带废掉这些真货，且 `CANCELLED` 在应用层是终态（`CANCELLED: new Set()`），取消后改不回来。
+已与客户确认改为**只改 goodsType**（见迁移 SQL），订单一个字不动。
+
+**R6 汇总行的"其余 N 家"必须用隐藏客户数，不能用总客户数。** 容易写错成
+`byCustomer.size - 已列出数` 之外的口径。数量同理：必须是 `总量 − 已列出客户数量之和`，
+不能重新去查库（那会引入与主行不同源的第二份真相）。
+
+**R5 迁移执行方式。** 按既有约定写迁移文件，不用 `db push --accept-data-loss`（共享开发库会冲掉
+其他 worktree 的字段）。生产走 `git push` → GitHub Actions → `migrate deploy`，不手动跑迁移
+（会与 Cloud Build 的 migrate 步骤抢 advisory lock）。
+
+## 大改附加评估
+
+**架构边界**：不新增表、不新增模块，只在既有 `Uom` 上加一列布尔。不引入任何云厂商专有依赖，
+符合项目「一切按迁到客户自有服务器设计」的铁律。
+
+**复用而非新造**：完全复用既有的单位解析链路（`OrderLine.uomId` → 回退 `Product.uomId` → `Uom`），
+新字段与 `goodsType` 在同一条 `$queryRaw` 里一起取，不新写解析逻辑、不新增解析分支。
+
+**N+1 / 分页**：无。新字段并入既有的两条批量查询（`SELECT id, "goodsType" FROM "Uom" WHERE id = ANY(...)`
+与 Product 基础单位 JOIN），查询次数不变。拣货单本身按整趟车聚合，无分页。
+
+## 验证清单
+
+- `npm run build` 与 `npx tsc --noEmit` 通过
+- 迁移在本地跑通；生产经 Actions `migrate deploy` 应用成功
+- 设置页开关能存、刷新后能回读、toast 正确
+- **四个打印入口各出一张纸**，核对四件事：
+  1. 称重货（`KG` / `LOOSE`）客户明细仍在 —— 冬瓜那类现切货必须能看到每家各多少
+  2. 可数包装（`PACK` / `PKT` / `TRAY` / `1KG`）收成总量行，不再逐客户列
+  3. 带留言的行仍然醒目展开，且只列写了留言的客户
+  4. **每一个展开的商品，纸面上的账要平**：主行总量 = 列出的各客户数量之和 + 「其余 N 家」行的数量。
+     拿截图里的 `FX Udon Noodle`（41 = 7 + 2 + 32）做基准用例逐个核对
+- 生产库抽查：确认回填后 `expandByCustomer=true` 的恰好是 3 个单位；`PALLET` 的 goodsType 已是 `BULK`
+- 回归确认：`PALLET` 那两张历史单（OP-260718-001 / OP-260721-001）的订单行、金额、状态一个字没变
+
+## 已确认的决策（20260916）
+
+1. **回填名单**：只有 `KG` / `g` / `LOOSE` 三个单位展开；其余 27 个（含 PACK / PKT / PACKET / TRAY /
+   PUNNET / BOTTLE / JAR / TIN / EACH 及 1KG / 3KG / 500g / 2.5KG / 2KG / 5KG / UK 4KG 等定量包装）
+   一律收起。依据是客户给的判定标准（见「目标行为」节）：现切现称贴标签的展开，按包数拿的收起。
+2. **`PALLET`**：只改 goodsType 为 BULK，不动订单数据（见 R4）。
+3. **其余客户汇总行**：与主改动同批实现，不拆开（见「补充模块」节）。
+4. **配置入口只做设置页**，不进「按可售单位查看商品」页的批量编辑——37 行不值得再建一套批量工具。

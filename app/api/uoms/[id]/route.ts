@@ -7,8 +7,9 @@ import { serializeApi } from '@/lib/api-serializer'
 /**
  * PUT /api/uoms/[id]
  * ============================================================================
- * 编辑 UoM。白名单允许的字段：name / nameZh / goodsType / active
- * - goodsType 限定 BULK / LOOSE / null
+ * 编辑 UoM。白名单允许的字段：name / nameZh / goodsType / expandByCustomer / active
+ * - goodsType 限定 BULK / LOOSE / null（null 是历史数据，界面 20260915 起不再产生新的）
+ * - expandByCustomer：拣货单要不要按客户展开明细，与 goodsType 独立，见 schema 注释
  * - 20260823 起不再接受 factor / rounding：换算系数改挂商品（ProductSaleUom.factor），
  *   单位本身只剩名称与货物类型。DB 列仍在（分析 SQL 等处仍读），只是不再从这里改。
  * - 不允许直接改 categoryId（迁移单位会破坏已有商品换算）
@@ -40,6 +41,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (update.goodsType === undefined) {
           return NextResponse.json({ error: 'goodsType 必须是 BULK / LOOSE / null' }, { status: 400 })
         }
+      }
+      if (body.expandByCustomer !== undefined) {
+        update.expandByCustomer = Boolean(body.expandByCustomer)
       }
       if (body.active !== undefined) {
         update.active = Boolean(body.active)

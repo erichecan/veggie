@@ -10,10 +10,10 @@ import { prisma } from '@/lib/db'
 import { dateOnlyUTC, getOrderWaveDisplayMap } from '@/lib/wave-assign'
 import {
   buildLinesFromItems,
-  type GoodsType,
   type TripCustomer,
   type TripOrder,
   type TripPrintDataWire,
+  type UomPickAttrs,
 } from './trip-common'
 import { loadInvoiceNoMap } from './invoice-lookup'
 import { loadAdjustmentTotalMap } from '@/lib/order-adjustments'
@@ -70,44 +70,55 @@ async function loadProductTypeMap(productIds: string[]): Promise<Map<string, str
   return map
 }
 
-async function loadGoodsTypeMap(uomIds: string[]): Promise<Map<string, GoodsType>> {
-  const map = new Map<string, GoodsType>()
+/**
+ * 取单位的拣货属性（goodsType 分表 + expandByCustomer 是否按客户展开）。
+ * ⚠️ 与 trip-loader.ts 的 loadUomPickAttrMap 是两份独立代码，改一处必须同时改另一处 ——
+ * 这两条装载路径分别喂配送中心打印与行程打印，漏一条的症状是「一边对一边不对」。
+ */
+async function loadUomPickAttrMap(uomIds: string[]): Promise<Map<string, UomPickAttrs>> {
+  const map = new Map<string, UomPickAttrs>()
   if (uomIds.length === 0) return map
   try {
-    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
-      SELECT id, "goodsType" FROM "Uom" WHERE id = ANY(${uomIds})
+    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null; expandByCustomer: boolean | null }>>`
+      SELECT id, "goodsType", "expandByCustomer" FROM "Uom" WHERE id = ANY(${uomIds})
     `
     for (const r of rows) {
       const g = r.goodsType
-      map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
+      map.set(r.id, {
+        goodsType: g === 'BULK' || g === 'LOOSE' ? g : null,
+        expandByCustomer: r.expandByCustomer === true,
+      })
     }
   } catch (e) {
-    console.warn('[dispatch-print] Uom.goodsType column not available:', (e as Error).message)
+    console.warn('[dispatch-print] Uom 拣货属性列不可用，全部按「整箱表 + 不展开」处理:', (e as Error).message)
   }
   return map
 }
 
 /**
- * OrderLine.uomId 历史全空，goodsType 判断实际靠这个兜底：
- * 按 productId 找到商品的 Product.uomId，再查其 goodsType。
+ * OrderLine.uomId 历史全空，分表与展开判断实际靠这个兜底：
+ * 按 productId 找到商品的 Product.uomId，再查该单位的拣货属性。
  * 与 loadProductTypeMap 是同一个 join 模式，只是多连一层 Uom。
  */
-async function loadProductGoodsTypeMap(productIds: string[]): Promise<Map<string, GoodsType>> {
-  const map = new Map<string, GoodsType>()
+async function loadProductUomPickAttrMap(productIds: string[]): Promise<Map<string, UomPickAttrs>> {
+  const map = new Map<string, UomPickAttrs>()
   if (productIds.length === 0) return map
   try {
-    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null }>>`
-      SELECT p.id, u."goodsType"
+    const rows = await prisma.$queryRaw<Array<{ id: string; goodsType: string | null; expandByCustomer: boolean | null }>>`
+      SELECT p.id, u."goodsType", u."expandByCustomer"
       FROM "Product" p
       LEFT JOIN "Uom" u ON u.id = p."uomId"
       WHERE p.id = ANY(${productIds})
     `
     for (const r of rows) {
       const g = r.goodsType
-      map.set(r.id, g === 'BULK' || g === 'LOOSE' ? g : null)
+      map.set(r.id, {
+        goodsType: g === 'BULK' || g === 'LOOSE' ? g : null,
+        expandByCustomer: r.expandByCustomer === true,
+      })
     }
   } catch (e) {
-    console.warn('[dispatch-print] Product.uomId goodsType fallback not available:', (e as Error).message)
+    console.warn('[dispatch-print] Product.uomId 拣货属性兜底不可用:', (e as Error).message)
   }
   return map
 }
@@ -317,10 +328,10 @@ export async function loadDispatchPrintData(
   const productIds = [...new Set(
     orders.flatMap(o => o.lines).map(l => l.productId).filter((x): x is string => !!x),
   )]
-  const [goodsTypeMap, productTypeMap, productGoodsTypeMap, invoiceNoMap, adjustmentTotalMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
-    loadGoodsTypeMap(uomIds),
+  const [uomAttrMap, productTypeMap, productUomAttrMap, invoiceNoMap, adjustmentTotalMap, waveDisplayMap, productSeqMap, uomConversionMap, uomSeqMap] = await Promise.all([
+    loadUomPickAttrMap(uomIds),
     loadProductTypeMap(productIds),
-    loadProductGoodsTypeMap(productIds),
+    loadProductUomPickAttrMap(productIds),
     loadInvoiceNoMap(orders.map(o => o.id)),
     // 客户应付总额 = totalAmount + 调整合计（折扣/配送费/差价修正，20260913），
     // 只在整单打印（未按商品筛选）时叠加，见下方 orderTotal()。
@@ -383,7 +394,9 @@ export async function loadDispatchPrintData(
           uomId: l.uomId,
           uomName: l.uomName,
           // OrderLine.uomId 历史全空，先看行级 uom，没有再回退到商品自己的 uom
-          goodsType: (l.uomId ? goodsTypeMap.get(l.uomId) : null) ?? productGoodsTypeMap.get(l.productId) ?? null,
+          goodsType: (l.uomId ? uomAttrMap.get(l.uomId)?.goodsType : null) ?? productUomAttrMap.get(l.productId)?.goodsType ?? null,
+          expandByCustomer: (l.uomId ? uomAttrMap.get(l.uomId)?.expandByCustomer : undefined)
+            ?? productUomAttrMap.get(l.productId)?.expandByCustomer ?? false,
           productType: productTypeMap.get(l.productId) ?? null,
           note: l.note ?? null,
           uomConversion: uomConversionMap.get(uomConversionKey(l.productId, l.uomId)) ?? null,

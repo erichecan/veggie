@@ -11,6 +11,21 @@ import type { PrintLang } from './print-i18n'
 
 export type GoodsType = 'BULK' | 'LOOSE' | null
 
+/**
+ * 一个计量单位在拣货单上的两个属性（20260916）。
+ * 两条 loader（trip-loader / dispatch-loader）各自查库但共用这个形状 ——
+ * 它们是两份独立代码，历史上出过「只改一条、另一条静默丢字段」的事故
+ * （20260801 attachWaveDisplay），所以类型至少要同源，改一处编译器会逼另一处跟上。
+ *
+ * ⚠️ 两个字段必须从**同一个单位**解析出来。此前只有 goodsType，解析链是
+ * 「行上的 uom → 回退到商品基础单位的 uom」；expandByCustomer 走同一条链，
+ * 不要拆成两次独立查找，否则可能出现 goodsType 取自 A 单位、expand 取自 B 单位。
+ */
+export interface UomPickAttrs {
+  goodsType: GoodsType
+  expandByCustomer: boolean
+}
+
 export interface TripBasic {
   id: string
   name: string | null
@@ -55,6 +70,12 @@ export interface TripLine {
   uomId: string | null
   uomName: string | null
   goodsType: GoodsType
+  /**
+   * 该销售单位是否配了「拣货时按客户展开」（Uom.expandByCustomer，20260916）。
+   * 与 goodsType 独立：goodsType 决定进哪张拣货单，这个决定那张单里要不要列客户明细。
+   * undefined = 取不到单位（如旧版 Order.items 回退行）→ 按不展开处理。
+   */
+  expandByCustomer?: boolean
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType?: string | null
   /** 行级备注（商品级 note，如"free"赠品/注意事项），客户可见，打印在明细行下 */

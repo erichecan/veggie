@@ -602,8 +602,17 @@ model Uom {
   factor     Decimal     @default(1) @db.Decimal(14, 6)
   /// 四舍五入精度：订单数量会对齐到这个精度（如 0.01 表示两位小数）
   rounding   Decimal     @default(0.01) @db.Decimal(14, 6)
-  /// 货物类型："BULK"（大货）/ "LOOSE"（散货）。司机备货分拣单按此分组。可空=未分类。
+  /// 货物类型："BULK"（大货）/ "LOOSE"（散货）。司机备货分拣单按此分组。
+  /// 历史数据可能为 null（20260915 起「未分类」已从下拉去掉，打印侧按 BULK 处理）。
   goodsType  String?
+  /// 拣货时是否需要按客户拆开列明细（20260916）。
+  /// true  = 配货时现切现称、每份贴客户标签的货，拣货员必须看到每家各多少
+  ///         （如冬瓜基础单位 KG，客户点 2.5kg / 6.2kg，现切现包）
+  /// false = 提前备好的定量包装，按包数拿即可（如 1KG 一包就是 1kg，点 2 公斤给两包）
+  /// ⛔ 与 goodsType 是两个独立维度：goodsType 决定进哪张拣货单（哪个组、哪个区域），
+  ///    这个字段决定那张单里要不要列客户明细。不要用其中一个去推另一个 ——
+  ///    生产实测存在「留在散货表（分表对）但不该展开」的单位，如 PACK / PKT / PACKET。
+  expandByCustomer Boolean @default(false)
   active     Boolean     @default(true)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt

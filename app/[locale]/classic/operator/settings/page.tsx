@@ -24,6 +24,8 @@ interface Uom {
   nameZh?: string
   categoryId: string
   goodsType?: GoodsType | null
+  /** 拣货单是否按客户展开明细，与 goodsType 是两个独立维度 */
+  expandByCustomer?: boolean
 }
 
 // ─── Product Types (fixed enum, read-only reference) ──────────────────────────
@@ -106,6 +108,54 @@ function GoodsTypeEditor({
   )
 }
 
+// ─── Expand-by-customer Inline Editor ─────────────────────────────────────────
+// 与货物类型同样的行内即改即存；失败时由 onRevert 重载
+
+function ExpandEditor({
+  uom,
+  isEn,
+  onChange,
+  onRevert,
+}: {
+  uom: Uom
+  isEn: boolean
+  onChange: (next: boolean) => void
+  onRevert: () => void
+}) {
+  const [saving, setSaving] = useState(false)
+  const current = uom.expandByCustomer === true
+
+  async function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value === 'YES'
+    if (next === current) return
+    onChange(next)
+    setSaving(true)
+    try {
+      await apiPut(`/api/uoms/${uom.id}`, { expandByCustomer: next })
+      toast.success(`${uom.name}: ${next ? (isEn ? 'Expand by customer' : '按客户展开') : (isEn ? 'Total only' : '只显示总量')}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
+      onRevert()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <select
+      value={current ? 'YES' : 'NO'}
+      onChange={handleChange}
+      disabled={saving}
+      className={`text-xs rounded px-1.5 py-0.5 border font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400 ${
+        current ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-500 border-gray-200'
+      } ${saving ? 'opacity-60' : ''}`}
+    >
+      <option value="NO">{isEn ? 'Total only' : '只显示总量'}</option>
+      <option value="YES">{isEn ? 'By customer' : '按客户展开'}</option>
+    </select>
+  )
+}
+
 // ─── Uom Name Inline Editor ────────────────────────────────────────────────────
 // 名称/中文名行内可编辑，失焦时才保存；name 不允许清空，nameZh 允许清空为 null
 
@@ -169,6 +219,7 @@ function UomSection({ isEn }: { isEn: boolean }) {
   const [newUomNameZh, setNewUomNameZh] = useState('')
   const [newUomCategoryId, setNewUomCategoryId] = useState('')
   const [newUomGoodsType, setNewUomGoodsType] = useState<GoodsType>('BULK')
+  const [newUomExpand, setNewUomExpand] = useState(false)
   const [savingUom, setSavingUom] = useState(false)
 
   async function load() {
@@ -198,9 +249,10 @@ function UomSection({ isEn }: { isEn: boolean }) {
         nameZh: newUomNameZh.trim() || undefined,
         categoryId: newUomCategoryId,
         goodsType: newUomGoodsType,
+        expandByCustomer: newUomExpand,
       })
       toast.success(isEn ? 'Unit of Measure created' : '计量单位已创建')
-      setNewUomName(''); setNewUomNameZh(''); setNewUomGoodsType('BULK')
+      setNewUomName(''); setNewUomNameZh(''); setNewUomGoodsType('BULK'); setNewUomExpand(false)
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
@@ -251,6 +303,7 @@ function UomSection({ isEn }: { isEn: boolean }) {
                           <th className="px-4 py-2 font-medium">{isEn ? 'Name' : '名称'}</th>
                           <th className="px-4 py-2 font-medium">{isEn ? 'Chinese Name' : '中文名'}</th>
                           <th className="px-4 py-2 font-medium text-center">{isEn ? 'Goods' : '货物类型'}</th>
+                          <th className="px-4 py-2 font-medium text-center">{isEn ? 'Picking Detail' : '拣货明细'}</th>
                           <th className="px-4 py-2 w-16"></th>
                         </tr>
                       </thead>
@@ -286,6 +339,16 @@ function UomSection({ isEn }: { isEn: boolean }) {
                                 onChange={(next) => {
                                   // 乐观更新本地状态
                                   setAllUoms(prev => prev.map(x => x.id === u.id ? { ...x, goodsType: next } : x))
+                                }}
+                                onRevert={() => load()}
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <ExpandEditor
+                                uom={u}
+                                isEn={isEn}
+                                onChange={(next) => {
+                                  setAllUoms(prev => prev.map(x => x.id === u.id ? { ...x, expandByCustomer: next } : x))
                                 }}
                                 onRevert={() => load()}
                               />
@@ -345,17 +408,35 @@ function UomSection({ isEn }: { isEn: boolean }) {
               <option value="LOOSE">{isEn ? 'Loose' : '散货'}</option>
             </select>
           </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Picking Detail' : '拣货明细'}</label>
+            <select
+              value={newUomExpand ? 'YES' : 'NO'}
+              onChange={e => setNewUomExpand(e.target.value === 'YES')}
+              className="border border-gray-300 rounded px-2 py-1.5 text-sm w-36 focus:outline-none focus:border-purple-400 bg-white"
+            >
+              <option value="NO">{isEn ? 'Total only' : '只显示总量'}</option>
+              <option value="YES">{isEn ? 'By customer' : '按客户展开'}</option>
+            </select>
+          </div>
           <button onClick={createUom} disabled={savingUom}
             className="h-9 px-4 text-white text-sm rounded disabled:opacity-40"
             style={{ background: PURPLE }}>
             {savingUom ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create Unit' : '创建单位')}
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">
-          {isEn
-            ? 'Goods Type: drives the picking-list grouping (BULK first, then LOOSE).'
-            : '货物类型：决定拣货单的分组顺序（先大货，后散货）。'}
-        </p>
+        <div className="text-xs text-gray-400 mt-2 space-y-1">
+          <p>
+            {isEn
+              ? 'Goods Type: which picking list the item lands on — Bulk goes to the full case/bag sheet, Loose to the loose-goods sheet.'
+              : '货物类型：决定这个货出现在哪张拣货单上——大货进整箱整袋单，散货进零散货单。'}
+          </p>
+          <p>
+            {isEn
+              ? 'Picking Detail: whether that sheet lists each customer separately. Pick "By customer" for goods cut/weighed per order at picking (e.g. winter melon by KG — one customer wants 2.5kg, another 6.2kg). Keep "Total only" for pre-packed units where the picker just counts packs (e.g. 1KG — one pack is 1kg, an order of 2kg is two packs). Lines with a note always show that customer regardless.'
+              : '拣货明细：决定那张单上要不要逐个客户列出来。配货时现切现称、每份贴客户标签的选「按客户展开」（如冬瓜按 KG 卖，一家要 2.5kg、另一家 6.2kg，拣货员得知道每家各多少）；提前备好按包数拿的保持「只显示总量」（如 1KG 一包就是 1kg，点 2 公斤给两包）。写了备注的行不受此设置影响，永远会列出该客户。'}
+          </p>
+        </div>
       </div>
     </div>
   )
