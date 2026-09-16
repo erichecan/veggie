@@ -659,6 +659,11 @@ export default function ClassicProductDetailPage() {
                       <option value="">{isEn ? '— Select —' : '— 请选择 —'}</option>
                       {baseUoms.map(u => <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh ?? u.name)}</option>)}
                     </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {isEn
+                        ? 'Pick this based on how the product should appear on the picking list (its Goods Type, set under Settings → Units of Measure) — do not just copy the vendor\'s incoming packing unit.'
+                        : '按拣货单希望它出现在哪张表来选（取决于该单位在「设置→计量单位」里配的货物类型），不要直接照抄供应商来货单的包装单位。'}
+                    </p>
                     {saleUoms.length > 0 && (
                       <p className="text-xs text-amber-600 mt-1">
                         {isEn

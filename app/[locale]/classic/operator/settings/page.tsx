@@ -16,14 +16,14 @@ interface UomCategory {
   nameZh?: string
 }
 
-type GoodsType = 'BULK' | 'LOOSE' | null
+type GoodsType = 'BULK' | 'LOOSE'
 
 interface Uom {
   id: string
   name: string
   nameZh?: string
   categoryId: string
-  goodsType?: GoodsType
+  goodsType?: GoodsType | null
 }
 
 // ─── Product Types (fixed enum, read-only reference) ──────────────────────────
@@ -67,24 +67,23 @@ function GoodsTypeEditor({
   onRevert: () => void
 }) {
   const [saving, setSaving] = useState(false)
-  const current: GoodsType = uom.goodsType ?? null
+  // 历史遗留数据仍可能是 null（未分类已下线，不再可选）；display 兜底为 BULK，但不会自动写回
+  const current: GoodsType = uom.goodsType ?? 'BULK'
 
   const bgClass =
-    current === 'BULK'  ? 'bg-red-50    text-red-700    border-red-200' :
-    current === 'LOOSE' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                          'bg-gray-50   text-gray-500   border-gray-200'
+    current === 'BULK' ? 'bg-red-50    text-red-700    border-red-200' :
+                          'bg-orange-50 text-orange-700 border-orange-200'
 
-  const label = current === 'BULK' ? (isEn ? 'Bulk' : '大货') : current === 'LOOSE' ? (isEn ? 'Loose' : '散货') : (isEn ? 'Uncategorized' : '未分类')
+  const label = current === 'BULK' ? (isEn ? 'Bulk' : '大货') : (isEn ? 'Loose' : '散货')
 
   async function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const raw = e.target.value
-    const next: GoodsType = raw === 'BULK' ? 'BULK' : raw === 'LOOSE' ? 'LOOSE' : null
+    const next: GoodsType = e.target.value === 'LOOSE' ? 'LOOSE' : 'BULK'
     if (next === current) return
     onChange(next)
     setSaving(true)
     try {
       await apiPut(`/api/uoms/${uom.id}`, { goodsType: next })
-      toast.success(`${uom.name}: ${next === 'BULK' ? (isEn ? 'Bulk' : '大货') : next === 'LOOSE' ? (isEn ? 'Loose' : '散货') : (isEn ? 'Uncategorized' : '未分类')}`)
+      toast.success(`${uom.name}: ${next === 'BULK' ? (isEn ? 'Bulk' : '大货') : (isEn ? 'Loose' : '散货')}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
       onRevert()
@@ -95,13 +94,12 @@ function GoodsTypeEditor({
 
   return (
     <select
-      value={current ?? ''}
+      value={current}
       onChange={handleChange}
       disabled={saving}
       title={label}
       className={`text-xs rounded px-1.5 py-0.5 border font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400 ${bgClass} ${saving ? 'opacity-60' : ''}`}
     >
-      <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
       <option value="BULK">{isEn ? 'Bulk' : '大货'}</option>
       <option value="LOOSE">{isEn ? 'Loose' : '散货'}</option>
     </select>
@@ -170,7 +168,7 @@ function UomSection({ isEn }: { isEn: boolean }) {
   const [newUomName, setNewUomName] = useState('')
   const [newUomNameZh, setNewUomNameZh] = useState('')
   const [newUomCategoryId, setNewUomCategoryId] = useState('')
-  const [newUomGoodsType, setNewUomGoodsType] = useState<GoodsType>(null)
+  const [newUomGoodsType, setNewUomGoodsType] = useState<GoodsType>('BULK')
   const [savingUom, setSavingUom] = useState(false)
 
   async function load() {
@@ -202,7 +200,7 @@ function UomSection({ isEn }: { isEn: boolean }) {
         goodsType: newUomGoodsType,
       })
       toast.success(isEn ? 'Unit of Measure created' : '计量单位已创建')
-      setNewUomName(''); setNewUomNameZh(''); setNewUomGoodsType(null)
+      setNewUomName(''); setNewUomNameZh(''); setNewUomGoodsType('BULK')
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
@@ -339,14 +337,10 @@ function UomSection({ isEn }: { isEn: boolean }) {
           <div>
             <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Goods Type' : '货物类型'}</label>
             <select
-              value={newUomGoodsType ?? ''}
-              onChange={e => {
-                const v = e.target.value
-                setNewUomGoodsType(v === 'BULK' ? 'BULK' : v === 'LOOSE' ? 'LOOSE' : null)
-              }}
+              value={newUomGoodsType}
+              onChange={e => setNewUomGoodsType(e.target.value === 'LOOSE' ? 'LOOSE' : 'BULK')}
               className="border border-gray-300 rounded px-2 py-1.5 text-sm w-32 focus:outline-none focus:border-purple-400 bg-white"
             >
-              <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
               <option value="BULK">{isEn ? 'Bulk' : '大货'}</option>
               <option value="LOOSE">{isEn ? 'Loose' : '散货'}</option>
             </select>

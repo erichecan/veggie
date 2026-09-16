@@ -273,7 +273,7 @@ const HELP_CONTENT_ZH: HelpRole[] = [
             steps: [
               '进入顶部导航「设置」页面，默认打开的就是「计量单位」标签页。',
               '如果需要的分类还不存在，先在「新建单位分类」区块填写分类名（英文必填，中文可选，如 Weight / 重量），点「创建分类」。',
-              '在「新建计量单位」区块：选择所属分类 → 填单位名（英文 / 中文）→ 填 Factor（换算系数，必须大于 0）→ 填 Rounding（精度，默认 0.01，如 kg 常设 0.001）→ 选择「货物类型」（大货 BULK / 散货 LOOSE / 未分类）→ 点「创建单位」。',
+              '在「新建计量单位」区块：选择所属分类 → 填单位名（英文 / 中文）→ 填 Factor（换算系数，必须大于 0）→ 填 Rounding（精度，默认 0.01，如 kg 常设 0.001）→ 选择「货物类型」（大货 BULK / 散货 LOOSE）→ 点「创建单位」。',
               '列表每一行能看到该单位的 Factor、精度、自动判定的类型（基准 / 大单位 / 小单位），以及货物类型（可在列表里直接改，行内下拉即改即生效）。',
               '不需要的单位点「停用」即可，不是物理删除——历史订单、商品上已经用过这个单位的数据保留不受影响，只是新建 / 编辑时的下拉菜单里不再出现。',
             ],
@@ -765,7 +765,7 @@ const HELP_CONTENT_EN: HelpRole[] = [
             steps: [
               'Go to the "Settings" page from the top navigation — the "Units of Measure" tab is open by default.',
               'If the category you need doesn\'t exist yet, fill in the "New UoM Category" block first (English name required, Chinese name optional, e.g. Weight), then click "Create Category".',
-              'In the "New Unit of Measure" block: pick the category → enter the unit name (EN / ZH) → enter Factor (conversion coefficient, must be > 0) → enter Rounding (precision, default 0.01 — kg is often set to 0.001) → pick "Goods Type" (Bulk / Loose / Uncategorized) → click "Create Unit".',
+              'In the "New Unit of Measure" block: pick the category → enter the unit name (EN / ZH) → enter Factor (conversion coefficient, must be > 0) → enter Rounding (precision, default 0.01 — kg is often set to 0.001) → pick "Goods Type" (Bulk / Loose) → click "Create Unit".',
               'Each row in the list shows that unit\'s Factor, Rounding, auto-derived Type (Reference / Bigger / Smaller), and Goods Type (editable inline — the dropdown in the row saves immediately).',
               'Click "Deactivate" on a unit you no longer need — this isn\'t a hard delete. Historical orders and products that already used this unit keep their data untouched; it just stops appearing in dropdowns for new entries.',
             ],
