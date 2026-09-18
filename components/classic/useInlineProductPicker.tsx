@@ -112,6 +112,15 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   const [activeLineId, setActiveLineId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [highlight, setHighlight] = useState(0)
+  /**
+   * 这次选品里用户有没有用方向键显式挑过高亮项。
+   *
+   * 搜索框还空着时，下拉列的是「全部商品的前 30 条」——它跟用户想找什么毫无关系。
+   * 此时 Enter/Tab 若照常"选中高亮的第一条"，一次误触就会把一个陌生商品录进订单
+   * （客户 20260918 反馈：录单页莫名多出商品行与空行）。所以空搜索词时只认
+   * "用户自己按方向键挑过"这一种显式选择。
+   */
+  const [arrowUsed, setArrowUsed] = useState(false)
   const [dropRect, setDropRect] = useState<{ top: number; left: number; width: number } | null>(null)
 
   const dropRef = useRef<HTMLDivElement>(null)
@@ -127,6 +136,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
     setActiveLineId(null)
     setSearch('')
     setHighlight(0)
+    setArrowUsed(false)
     setDropRect(null)
   }, [])
 
@@ -134,6 +144,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   const updateSearch = useCallback((v: string) => {
     setSearch(v)
     setHighlight(0)
+    setArrowUsed(false)
   }, [])
 
   const activate = useCallback((lineId: string) => {
@@ -208,19 +219,25 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
     if (!activeLineId) return
     const hit = items[highlight]
 
+    // 高亮这一条算不算"用户真的选了它"：搜过词，或者用方向键挑过。
+    // 两者都没有时下拉只是「全部商品前 30 条」的默认展示，不能被一次回车/Tab 录进订单。
+    const pickable = hit && (search.trim() !== '' || arrowUsed)
+
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      setArrowUsed(true)
       setHighlight(i => Math.min(i + 1, items.length - 1))
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
+      setArrowUsed(true)
       setHighlight(i => Math.max(i - 1, 0))
       return
     }
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (!hit) return
+      if (!pickable) return
       const lineId = activeLineId
       pick(lineId, hit)
       // 连续录入：选完立刻开下一个商品行，再按回车就能接着录
@@ -234,7 +251,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
     }
     if (e.key === 'Tab') {
       e.preventDefault()
-      if (hit) {
+      if (pickable) {
         const lineId = activeLineId
         pick(lineId, hit)
         if (onSelectByTab) onSelectByTab(lineId)
@@ -244,7 +261,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
         close()
       }
     }
-  }, [activeLineId, items, highlight, pick, onSelectByEnter, onSelectByTab, focusDescription, search, close])
+  }, [activeLineId, items, highlight, arrowUsed, pick, onSelectByEnter, onSelectByTab, focusDescription, search, close])
 
   const productCell = useCallback(({ lineId, productName, readOnly }: ProductCellOptions): ReactNode => {
     if (readOnly) {

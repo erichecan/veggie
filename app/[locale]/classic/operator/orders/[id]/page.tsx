@@ -694,22 +694,32 @@ export default function SalesOrderDetailPage() {
    * force 只给「Enter 连续录入」用：那一刻 setEditLines 还没落地，
    * 闭包里的末行仍是刚填好的草稿行，走守卫会把它再激活一次而不是开新行。
    */
-  function addBlankLine(opts?: { force?: boolean }) {
+  function addBlankLine(opts?: { force?: boolean; keepLineId?: string }) {
     const last = editLines[editLines.length - 1]
     if (!opts?.force && last && !last.productId) {
       activatePickerRef.current(last.id)
       return
     }
     const draftId = newDraftLineId()
-    setEditLines(prev => [...prev, {
-      id: draftId,
-      orderId: order!.id,
-      productId: '', productName: '', spec: '', note: '',
-      uomId: null, uomName: UNSET_UOM_LABEL,
-      unitPrice: 0, orderedQty: 1, deliveredQty: 0, invoicedQty: 0,
-      subtotal: 0, taxRate: 0, sequence: prev.length, cost: 0,
-      priceSourceType: null, priceSourceDetail: null, priceSourceDate: null,
-    } as unknown as EditLine])
+    setEditLines(prev => [
+      // 留在中间的空行（点开选品又没选、误触回车开出来的）跟着这次新增一起清掉 ——
+      // 新行总是追加在末尾，遗留的空行就被夹在中间越积越多（客户 20260918 截图里两处）。
+      // 没选商品的行提交时本来就会被过滤，留着只是噪音；任何时刻只保留正在录的这一行。
+      //
+      // ⛔ keepLineId 不能省：「Enter 连续录入」是在 selectProductIntoLine 还没落地时
+      // 就调过来的（它要 await 可售单位/最近成交价），那一刻刚选中的行 productId 还是
+      // 空字符串，一并过滤掉的话商品填回来时行已经没了 —— 选完直接消失。
+      ...prev.filter(l => l.productId || l.id === opts?.keepLineId),
+      {
+        id: draftId,
+        orderId: order!.id,
+        productId: '', productName: '', spec: '', note: '',
+        uomId: null, uomName: UNSET_UOM_LABEL,
+        unitPrice: 0, orderedQty: 1, deliveredQty: 0, invoicedQty: 0,
+        subtotal: 0, taxRate: 0, sequence: prev.length, cost: 0,
+        priceSourceType: null, priceSourceDetail: null, priceSourceDate: null,
+      } as unknown as EditLine,
+    ])
     activatePickerRef.current(draftId)
   }
   // 合并重复商品：同一 productId 且同一可售单位的行合并为一行，数量相加
@@ -1005,7 +1015,7 @@ export default function SalesOrderDetailPage() {
               emptyColSpan={18}
               products={allProducts}
               onPickProduct={selectProductIntoLine}
-              onPickByEnter={() => addBlankLine({ force: true })}
+              onPickByEnter={lineId => addBlankLine({ force: true, keepLineId: lineId })}
               onPickerActivate={fetchLatestProducts}
               onAddBlankLine={editing ? addBlankLine : undefined}
               pickerTexts={{

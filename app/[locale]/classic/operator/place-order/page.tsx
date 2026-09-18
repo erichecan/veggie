@@ -863,7 +863,7 @@ export default function ClassicPlaceOrderPage() {
   }
 
   // ── Line CRUD ─────────────────────────────────────────────────────────────
-  function addLine(opts?: { force?: boolean }) {
+  function addLine(opts?: { force?: boolean; keepLineId?: string }) {
     if (!customerId) {
       toast.warning(isEn ? 'Please select a customer first, then add products' : '请先选择客户，再添加商品')
       setCustOpen(true)
@@ -880,7 +880,14 @@ export default function ClassicPlaceOrderPage() {
     }
     const newId = uid()
     setLines(prev => [
-      ...prev,
+      // 留在中间的空行（点开选品又没选、误触回车开出来的）跟着这次新增一起清掉 ——
+      // 新行总是追加在末尾，遗留的空行就被夹在中间越积越多（客户 20260918 截图里两处）。
+      // 没选商品的行提交时本来就会被过滤，留着只是噪音；任何时刻只保留正在录的这一行。
+      //
+      // ⛔ keepLineId 不能省：「Enter 连续录入」是在 selectProduct 还没落地时就调过来的
+      // （它要 await 可售单位/最近成交价），那一刻刚选中的行 productId 还是空字符串，
+      // 一并过滤掉的话商品填回来时行已经没了 —— 选完直接消失。
+      ...prev.filter(l => l.productId || l.id === opts?.keepLineId),
       {
         id: newId, productId: '', productName: '', description: '', note: '',
         orderedQty: 1, forecastQty: null, qtyOnHand: 0, uom: '', uomId: undefined,
@@ -1936,7 +1943,7 @@ export default function ClassicPlaceOrderPage() {
                 products={products}
                 onDeleteLine={lineId => removeLine(lineId)}
                 onPickProduct={(lineId, p) => selectProduct(lineId, p)}
-                onPickByEnter={() => addLine({ force: true })}
+                onPickByEnter={lineId => addLine({ force: true, keepLineId: lineId })}
                 onPickerActivate={fetchLatestProducts}
                 onAddBlankLine={() => addLine()}
                 pickerTexts={{
