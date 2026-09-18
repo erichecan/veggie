@@ -51,6 +51,8 @@ interface Props<
   onPickByTab?: (lineId: string) => void
   /** 搜索框刚激活时的动作——调用方在这里强制刷新 `products`，别信 30 秒节流那份缓存 */
   onPickerActivate?: (lineId: string) => void
+  /** 选品被取消（Esc / 点别处 / 空格上 Tab / 跳去另一行）——调用方据此丢掉没选商品的空行 */
+  onPickerCancel?: (lineId: string) => void
   /** 点底部「+ Add a product」——通常是往 lines 末尾插一个空行并激活它 */
   onAddBlankLine?: () => void
   /** 底部「+ Add a product」的文案，跟随页面语言 */
@@ -87,6 +89,7 @@ export default function OrderLineEditor<
   onPickByEnter,
   onPickByTab,
   onPickerActivate,
+  onPickerCancel,
   onAddBlankLine,
   addBlankLineText = '+ Add a product',
   pickerTexts,
@@ -125,6 +128,7 @@ export default function OrderLineEditor<
     onSelectByEnter: onPickByEnter,
     onSelectByTab: onPickByTab,
     onActivate: onPickerActivate,
+    onCancel: onPickerCancel,
     emptyText: pickerTexts?.empty,
     placeholderText: pickerTexts?.placeholder,
     searchPlaceholder: pickerTexts?.search,

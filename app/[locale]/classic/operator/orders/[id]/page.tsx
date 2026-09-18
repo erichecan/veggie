@@ -343,6 +343,15 @@ export default function SalesOrderDetailPage() {
     setEditLines(prev => prev.filter((_, i) => i !== idx))
   }
 
+  /**
+   * 选品取消（Esc / 点到别处 / 空格上 Tab / 跳去另一行）时，这一行还没选商品就直接丢掉。
+   * 草稿行本来就是为了选品才插的，没选就没有存在意义 —— 留着就是客户 20260918 截图里
+   * 那种空白行。已落库的行 productId 一定有值，不会被这里删到。
+   */
+  function discardEmptyLine(id: string) {
+    setEditLines(prev => prev.filter(l => l.id !== id || !!l.productId))
+  }
+
   function reorderLine(from: number, to: number) {
     setEditLines(prev => {
       if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev
@@ -1017,6 +1026,7 @@ export default function SalesOrderDetailPage() {
               onPickProduct={selectProductIntoLine}
               onPickByEnter={lineId => addBlankLine({ force: true, keepLineId: lineId })}
               onPickerActivate={fetchLatestProducts}
+              onPickerCancel={discardEmptyLine}
               onAddBlankLine={editing ? addBlankLine : undefined}
               pickerTexts={{
                 empty: isEn ? 'No matching products' : '没有匹配商品',

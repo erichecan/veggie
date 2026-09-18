@@ -902,6 +902,15 @@ export default function ClassicPlaceOrderPage() {
     setLines(prev => prev.filter(l => l.id !== id))
   }
 
+  /**
+   * 选品取消（Esc / 点到别处 / 空格上 Tab / 跳去另一行）时，这一行还没选商品就直接丢掉。
+   * 那一行本来就是为了选品才插的，没选就没有存在意义 —— 留着就是客户 20260918 截图里
+   * 那种空白行。已经有商品的行（重选商品时也会走这里）不动。
+   */
+  function discardEmptyLine(id: string) {
+    setLines(prev => prev.filter(l => l.id !== id || !!l.productId))
+  }
+
   function patchLine(id: string, patch: Partial<QuotationLine>) {
     setLines(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)))
   }
@@ -1945,6 +1954,7 @@ export default function ClassicPlaceOrderPage() {
                 onPickProduct={(lineId, p) => selectProduct(lineId, p)}
                 onPickByEnter={lineId => addLine({ force: true, keepLineId: lineId })}
                 onPickerActivate={fetchLatestProducts}
+                onPickerCancel={discardEmptyLine}
                 onAddBlankLine={() => addLine()}
                 pickerTexts={{
                   empty: isEn ? 'No matching products' : '没有匹配商品',

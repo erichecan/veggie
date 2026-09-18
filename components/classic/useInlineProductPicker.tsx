@@ -61,6 +61,15 @@ export interface UseInlineProductPickerOptions<P extends InlineProductPickerProd
    * 缓存还没过 30 秒节流窗口，选品选到了旧数据。这里只发信号，不管怎么刷新。
    */
   onActivate?: (lineId: string) => void
+  /**
+   * 选品被取消时触发：Esc、点到别处、空搜索框上按 Tab，或者直接跑去点另一行的商品格。
+   * 选中商品**不**走这里（那条路径不经过 close）。
+   *
+   * 三个订单页用它把「点开选品又没选商品」的行直接丢掉 —— 那一行本来就是为了选品
+   * 才插进来的，没选就没有存在意义，留着只会变成客户 20260918 截图里那种空白行。
+   * 是否真的删由调用方决定（已经有商品的行重选时同样会走这里，不能删）。
+   */
+  onCancel?: (lineId: string) => void
   /** 下拉无匹配时的文案 */
   emptyText?: string
   /** 未选商品时单元格的占位文案 */
@@ -98,6 +107,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   onSelectByEnter,
   onSelectByTab,
   onActivate,
+  onCancel,
   emptyText,
   placeholderText,
   searchPlaceholder,
@@ -126,6 +136,20 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   const dropRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // 放 ref 里：close/activate 已经被一串 useCallback 依赖着，再多一个会变身份的
+  // 依赖只会让那串回调和 mousedown 监听跟着反复重建
+  const onCancelRef = useRef(onCancel)
+  useEffect(() => { onCancelRef.current = onCancel }, [onCancel])
+  /**
+   * 刚刚**选中商品**结束的那一行。
+   *
+   * ⛔ 不能靠 activeLineId 判断这一行是"选中"还是"取消"：pick() 之后紧跟着的
+   * activate(下一行) / close 拿到的闭包里，activeLineId 还是刚选完的那一行；而调用方
+   * 的填充是异步的（要 await 可售单位、最近成交价），那一刻它的 productId 仍是空。
+   * 不记住它，取消回调就会把正在填充的行当成"点开没选的空行"删掉
+   * （实测：回车选品后商品行直接消失）。
+   */
+  const pickedLineRef = useRef<string | null>(null)
 
   const items = useMemo(
     () => rankByRelevance(products, search, p => [p.name, p.internalRef]).slice(0, MAX_ITEMS),
@@ -133,12 +157,20 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   )
 
   const close = useCallback(() => {
+    // 取消而非选中 —— 调用方据此丢掉没选商品的空行。
+    // ⛔ 必须在事件阶段直接调，不能塞进 setActiveLineId 的 updater：updater 跑在渲染
+    // 阶段，在里面触发调用方的 setState 会撞上 React 的
+    // "Cannot update a component while rendering a different component"（实测报错）。
+    // 代价是 close 要依赖 activeLineId，于是每次激活都会重建它和那个 mousedown 监听——
+    // 这点开销换掉一条渲染期副作用，值。
+    if (activeLineId && activeLineId !== pickedLineRef.current) onCancelRef.current?.(activeLineId)
+    pickedLineRef.current = null
     setActiveLineId(null)
     setSearch('')
     setHighlight(0)
     setArrowUsed(false)
     setDropRect(null)
-  }, [])
+  }, [activeLineId])
 
   /** 改搜索词就把高亮拉回第一条 —— 跟 setSearch 绑在一起，不走 effect */
   const updateSearch = useCallback((v: string) => {
@@ -148,10 +180,15 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   }, [])
 
   const activate = useCallback((lineId: string) => {
+    // 从一个没选完的行直接跳到另一行的商品格，前一行同样算"取消"（同 close：事件阶段调）
+    if (activeLineId && activeLineId !== lineId && activeLineId !== pickedLineRef.current) {
+      onCancelRef.current?.(activeLineId)
+    }
+    pickedLineRef.current = null
     setActiveLineId(lineId)
     updateSearch('')
     onActivate?.(lineId)
-  }, [updateSearch, onActivate])
+  }, [activeLineId, updateSearch, onActivate])
 
   // 点到别处就收起。注意判定用的是 dropRef（输入框那一小块），
   // 不是下拉本身——下拉在 portal 里，不是它的后代。下拉自己靠 onMouseDown
@@ -201,6 +238,7 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   }, [activeLineId])
 
   const pick = useCallback((lineId: string, p: P) => {
+    pickedLineRef.current = lineId
     onSelect(lineId, p)
     setActiveLineId(null)
     setSearch('')
