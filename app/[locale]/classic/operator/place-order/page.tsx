@@ -1694,9 +1694,9 @@ export default function ClassicPlaceOrderPage() {
                     <th className="px-2 py-2 text-left"  style={{ width: 62  }}>NO</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
                     <th className="px-2 py-2 text-center" style={{ width: 50 }} title={isEn ? 'Gift — excluded from sales/margin/commission, still deducts stock and appears on picking sheets' : '赠品——不计销售额/毛利/提成，仍正常扣库存、出现在拣货单'}>{isEn ? 'Gift' : '赠品'}</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 90  }}>Ordered Qty</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>UoM</th>
                     <th className="px-2 py-2 text-right" style={{ width: 90  }}>Unit Price</th>
                     <th className="px-2 py-2 text-right" style={{ width: 80  }}>Cost</th>
@@ -1745,29 +1745,6 @@ export default function ClassicPlaceOrderPage() {
                         />
                       </td>
 
-                      {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
-                      <td className="px-2 py-1">
-                        <input
-                          type="text"
-                          data-note-line={line.id}
-                          value={line.note}
-                          onChange={e => patchLine(line.id, { note: e.target.value })}
-                          onKeyDown={e => handleFieldKey(e)}
-                          placeholder={isEn ? 'Note…' : '备注…'}
-                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-amber-400 focus:outline-none bg-transparent placeholder:text-gray-300"
-                        />
-                      </td>
-
-                      {/* 赠品(20260913)：勾选后单价锁定为 0，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
-                      <td className="px-2 py-1 text-center">
-                        <input
-                          type="checkbox"
-                          checked={!!line.isGift}
-                          onChange={e => patchLine(line.id, applyGiftToggle(line, e.target.checked, () => repriceGiftLine(line)))}
-                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
-                        />
-                      </td>
-
                       {/* Ordered Qty */}
                       <td className="px-2 py-1">
                         <input
@@ -1795,6 +1772,29 @@ export default function ClassicPlaceOrderPage() {
                           onFocus={e => e.target.select()}
                           onKeyDown={e => handleFieldKey(e)}
                           className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
+                        />
+                      </td>
+
+                      {/* Note — 客户可见，会在拣货单上以警告徽章突出显示（如临期/不新鲜提醒） */}
+                      <td className="px-2 py-1">
+                        <input
+                          type="text"
+                          data-note-line={line.id}
+                          value={line.note}
+                          onChange={e => patchLine(line.id, { note: e.target.value })}
+                          onKeyDown={e => handleFieldKey(e)}
+                          placeholder={isEn ? 'Note…' : '备注…'}
+                          className="w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-amber-400 focus:outline-none bg-transparent placeholder:text-gray-300"
+                        />
+                      </td>
+
+                      {/* 赠品(20260913)：勾选后单价锁定为 0，不计销售额/毛利/提成，仍正常扣库存+拣货单 */}
+                      <td className="px-2 py-1 text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!line.isGift}
+                          onChange={e => patchLine(line.id, applyGiftToggle(line, e.target.checked, () => repriceGiftLine(line)))}
+                          title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
                         />
                       </td>
 
