@@ -164,6 +164,7 @@ export default function OrderLineEditor<
                 editing && onDeleteLine ? (
                   <button
                     onClick={() => onDeleteLine(line.id, i)}
+                    title={isEn ? 'Delete this line' : '删除此行'}
                     className="text-red-400 hover:text-red-600 leading-none"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

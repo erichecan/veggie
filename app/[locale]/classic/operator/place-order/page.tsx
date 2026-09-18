@@ -1691,7 +1691,7 @@ export default function ClassicPlaceOrderPage() {
                 emptyMessage={isEn ? 'No order lines yet. Click "+ Add a product" below to start' : '暂无订单行，点击下方 "+ Add a product" 开始添加'}
                 renderHeaders={() => (
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium">
-                    <th className="px-2 py-2 text-left"  style={{ width: 40  }}>NO</th>
+                    <th className="px-2 py-2 text-left"  style={{ width: 62  }}>NO</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 170 }}>Product</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 180 }}>Description</th>
                     <th className="px-2 py-2 text-left"  style={{ width: 130 }}>Note</th>
@@ -1715,10 +1715,17 @@ export default function ClassicPlaceOrderPage() {
                   const isDuplicate  = !!line.productId && (duplicateCounts.get(dupKey(line)) ?? 0) > 1
                   return (
                     <>
-                      {/* NO */}
+                      {/* NO + 删除。删除按钮必须常显：录单过程中选错商品是常事，
+                          此前它藏在 Total 后面且 opacity-0 只在 hover 整行时才浮现，
+                          客户 20260918 反馈「创建的过程就要允许删除商品」——功能一直在，
+                          只是看不见。这里换成两个编辑页用的那个红色垃圾桶（OrderLineEditor
+                          的 deleteButton），三个订单页的删除入口至此长一个样。 */}
                       <td className="px-2 py-1 text-gray-400 select-none">
-                        {idx + 1}
-                        {isDuplicate && <span className="ml-1 text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
+                        <span className="inline-flex items-center gap-1.5">
+                          {opts.deleteButton}
+                          <span>{idx + 1}</span>
+                          {isDuplicate && <span className="text-[10px] text-purple-600" title={isEn ? 'Duplicate product' : '重复商品'}>🔁</span>}
+                        </span>
                       </td>
 
                       {/* Product — 就地搜索，与编辑页共用同一份实现 */}
@@ -1886,18 +1893,11 @@ export default function ClassicPlaceOrderPage() {
                         </select>
                       </td>
 
-                      {/* Total + delete */}
+                      {/* Total（删除按钮已移到 NO 列常显，见该处注释） */}
                       <td className="px-2 py-1 text-right">
                         <span className="font-medium text-gray-700">
                           {lineTotal > 0 ? eur(lineTotal) : '—'}
                         </span>
-                        <button
-                          onClick={() => removeLine(line.id)}
-                          className="ml-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity align-middle"
-                          title={isEn ? 'Delete this line' : '删除此行'}
-                        >
-                          🗑
-                        </button>
                       </td>
 
                       {/* Forecast Qty */}
@@ -1934,6 +1934,7 @@ export default function ClassicPlaceOrderPage() {
                 })}
                 defaultRowCls="group align-middle"
                 products={products}
+                onDeleteLine={lineId => removeLine(lineId)}
                 onPickProduct={(lineId, p) => selectProduct(lineId, p)}
                 onPickByEnter={() => addLine({ force: true })}
                 onPickerActivate={fetchLatestProducts}
