@@ -28,7 +28,7 @@ import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 import { displayUomName } from '@/lib/sale-uom'
-import { formatUomConversionHint, type UomConversionInfo } from '@/lib/print/uom-conversion'
+import { type UomConversionInfo } from '@/lib/print/uom-conversion'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -330,22 +330,23 @@ export function generateTripPickingHtml(
       </tr>`
   }
 
-  /** 这个聚合行（总量 qty）对应的毛重说明文字，如"毛重 ≈ 3.4kg"；没配毛重返回空串 */
-  function grossWeightSpec(uomConversion: UomConversionInfo | null, qty: number): string {
-    return formatUomConversionHint(uomConversion ?? undefined, qty)?.grossWeightLine ?? ''
-  }
+  /**
+   * 20260917 客户要求：拣货单的商品名下面只印规格(spec)，不再印毛重
+   * （「毛重 ≈ 3.4kg」那行）。20260914 已把销售单/交货单/收货单上的毛重与
+   * 换算提示去掉，这次补上拣货单这最后一处 —— 至此四张单据口径一致。
+   * ⚠️ 毛重数据链路（ProductSaleUom.grossWeight → uom-conversion-loader →
+   * TripLine.uomConversion）保留不动，只是不再有模板去渲染它。
+   */
 
   /** 单一单位的商品行（组内只有一个可售单位时，跟改造前逐字一致） */
   function singleUomRow(p: AggProduct, seq: number, rowClass: string): string {
     const hasNote = Array.from(p.byCustomer.values()).some(bd => bd.note)
-    const grossWeightText = grossWeightSpec(p.uomConversion, p.totalQty)
     const mainRow = `
       <tr class="${rowClass}">
         <td class="col-seq">${seq}</td>
         <td class="col-name">
           ${escapeHtml(p.productName)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
-          ${grossWeightText ? `<span class="spec">${escapeHtml(grossWeightText)}</span>` : ''}
           ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-uom">${escapeHtml(displayUomName(p.uomName))}</td>
@@ -409,12 +410,11 @@ export function generateTripPickingHtml(
       </tr>`
     const childRows = g.uoms.map(u => {
       const uHasNote = Array.from(u.byCustomer.values()).some(bd => bd.note)
-      const uGrossWeightText = grossWeightSpec(u.uomConversion, u.totalQty)
       const childRow = `
       <tr class="row-uom-child">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
-          ↳${uGrossWeightText ? ` <span class="spec">${escapeHtml(uGrossWeightText)}</span>` : ''}${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
+          ↳${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-uom">${escapeHtml(displayUomName(u.uomName))}</td>
         <td class="col-qty bd-qty">
