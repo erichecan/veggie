@@ -25,6 +25,7 @@ import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryM
 import { useHotkeys } from '@/components/shared/use-hotkeys'
 import { lineDescription } from '@/lib/order-line-description'
 import { newDraftLineId, isDraftLineId, toSubmittableLines } from '@/lib/order-line-draft'
+import { applyGiftToggle, stripGiftSnapshot, type GiftPriceSnapshot } from '@/lib/order-line-gift'
 import { getSession, type UserSession } from '@/lib/session'
 
 const PURPLE = '#875A7B'
@@ -212,6 +213,8 @@ export default function SalesOrderDetailPage() {
       const next = [...prev]
       next[idx] = {
         ...cur,
+        // 换单位后赠品快照同样过期，见 updateLine 同处注释
+        preGiftPrice: null,
         uomId: newUomId,
         uomName: nameOf(newUomId),
         unitPrice: newUnitPrice,
@@ -350,6 +353,34 @@ export default function SalesOrderDetailPage() {
     })
   }
 
+  /**
+   * 取消赠品勾选、行上又没有勾选前的快照时（页面打开时这行本来就是赠品，库里存的就是 0）
+   * 按当前客户 / 单位重新询价，不能把操作员丢在一个 0 上自己去翻价格表。
+   * 最近成交价要打接口才知道，这里同步拿不到，只到价格表 / 牌价这一层；
+   * 保存时后端定价引擎会按完整口径给出权威价（见 lib/server-pricing.ts），不会把 0 留在库里。
+   */
+  function repriceGiftLine(line: EditLine): GiftPriceSnapshot | null {
+    const p = allProducts.find(pp => pp.id === line.productId)
+    if (!p) return null
+    const uomId = line.uomId ?? undefined
+    // 客户档案没拉到时（/api/customers 只返回第一页，历史单的客户可能不在其中）退回商品牌价，
+    // 与 selectProductIntoLine 的兜底同一套 —— 总比把操作员丢在一个 0 上强
+    const resolution = effectiveCustomer
+      ? resolveCustomerPrice(p as never, effectiveCustomer, pricelists, Number(line.orderedQty) || 1, undefined, uomId)
+      : null
+    const rows = (saleUomOptions[line.productId] ?? []).map(o => ({
+      uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride,
+      priceMode: o.priceMode, priceDiscountPct: o.priceDiscountPct, priceSurcharge: o.priceSurcharge,
+    }))
+    const basePrice = resolution ? resolution.price : Number(p.listPrice ?? 0)
+    return {
+      unitPrice: resolution && resolution.matchedUomId === uomId ? resolution.price : priceOf(rows, uomId, basePrice),
+      priceSourceType: (resolution?.sourceType ?? 'default').toUpperCase(),
+      priceSourceDetail: resolution?.sourceType === 'pricelist' ? resolution.pricelistName : null,
+      priceSourceDate: null,
+    }
+  }
+
   function updateLine(idx: number, field: 'orderedQty' | 'unitPrice' | 'taxRate' | 'spec' | 'note' | 'isGift', value: number | string | boolean) {
     setEditLines(prev => {
       const next = [...prev]
@@ -358,6 +389,9 @@ export default function SalesOrderDetailPage() {
         const qty = field === 'orderedQty' ? Number(value) : Number(next[idx].orderedQty)
         const price = field === 'unitPrice' ? Number(value) : Number(next[idx].unitPrice)
         line.subtotal = Math.round(qty * price * 100) / 100
+        // 数量一变，勾选赠品时存的那份快照就过期了（阶梯价随数量走）：清掉它，
+        // 取消勾选时改走 repriceGiftLine 按当下口径重新询价（见 lib/order-line-gift.ts）
+        if (field === 'orderedQty') line.preGiftPrice = null
       }
       if (field === 'unitPrice') {
         // 手动改价，原来的来源判断（价格表/牌价/最近成交）不再成立
@@ -365,11 +399,14 @@ export default function SalesOrderDetailPage() {
         line.priceSourceDetail = null
         line.priceSourceDate = null
       }
-      // 赠品标记(20260913)：勾选即单价/小计归零，与后端强制校验保持一致，
-      // 保存前 UI 上就应该看到零，不是等提交回来才发现被后端改了
-      if (field === 'isGift' && value === true) {
-        line.unitPrice = 0
-        line.subtotal = 0
+      // 赠品标记(20260913)：勾选即单价/小计归零，与后端强制校验保持一致。
+      // 取消勾选要把勾选前的单价与价格来源徽章原样还原 —— 20260918 客户反馈
+      // 「Gift tick 完之后取消 tick，价格没办法变回去，还是 0」：原实现只处理了勾上
+      // 这一半，原价早被 0 覆盖。逻辑收口在 lib/order-line-gift.ts，三个订单页共用。
+      if (field === 'isGift') {
+        const before = next[idx]
+        Object.assign(line, applyGiftToggle(before, value === true, () => repriceGiftLine(before)))
+        line.subtotal = Math.round(Number(line.orderedQty) * Number(line.unitPrice) * 100) / 100
       }
       next[idx] = line
       return next
@@ -393,7 +430,7 @@ export default function SalesOrderDetailPage() {
         pricelistId: pricelistId || null, priceType,
         paymentTerm: paymentTerm || null,
         // 草稿 id 只在前端存活；带着它提交，后端会拿不存在的 id 去 update（见 lib/order-line-draft.ts）
-        ...(validLines.length > 0 && { lines: toSubmittableLines(validLines), totalAmount: newTotalAmount }),
+        ...(validLines.length > 0 && { lines: stripGiftSnapshot(toSubmittableLines(validLines)), totalAmount: newTotalAmount }),
       })
       toast.success(isEn ? 'Saved' : '已保存')
       // 定价引擎对价格另有说法时必须说出来。此前接口一直返回 pricingWarnings，

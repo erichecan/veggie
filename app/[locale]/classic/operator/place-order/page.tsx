@@ -24,6 +24,7 @@ import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 import JsBarcode from 'jsbarcode'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { lineDescription } from '@/lib/order-line-description'
+import { applyGiftToggle, type GiftPriceSnapshot } from '@/lib/order-line-gift'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const LOW_STOCK_THRESHOLD = 20
@@ -61,6 +62,8 @@ type QuotationLine = {
   taxRate: number          // %
   /** 赠品标记(20260913)：勾选后单价锁定为 0，不计入销售额/毛利/提成，仍正常扣库存+拣货单 */
   isGift?: boolean
+  /** 勾选赠品前的价格快照，取消勾选时用它还原（见 lib/order-line-gift.ts），不提交后端 */
+  preGiftPrice?: GiftPriceSnapshot | null
 }
 
 type ChatterEntry = {
@@ -696,6 +699,9 @@ export default function ClassicPlaceOrderPage() {
     const isDerivedDescription = stillThere.description === lineDescription(p, oldUnitSpec)
     patchLine(lineId, {
       uomId, uom: uomName, unitPrice, priceLabel, priceLabelDetail, cost,
+      // 换单位后，勾选赠品时存的那份快照就过期了：清掉它，取消勾选时改走 repriceGiftLine
+      // 按当下口径重新询价（见 lib/order-line-gift.ts）
+      preGiftPrice: null,
       ...(isDerivedDescription ? { description: lineDescription(p, newUnitSpec) } : {}),
     })
   }
@@ -893,6 +899,15 @@ export default function ClassicPlaceOrderPage() {
     setLines(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)))
   }
 
+  // 取消赠品勾选、行上又没有勾选前的快照时（页面打开时这行就是赠品）按当前客户/单位重新询价，
+  // 不能把操作员丢在一个 0 上自己去翻价格表。见 lib/order-line-gift.ts。
+  function repriceGiftLine(line: QuotationLine): GiftPriceSnapshot | null {
+    const p = products.find(pp => pp.id === line.productId)
+    if (!p) return null
+    const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, line.orderedQty || 1, line.uomId)
+    return { unitPrice, priceLabel, priceLabelDetail }
+  }
+
   function updateQty(lineId: string, qty: number) {
     const line = lines.find(l => l.id === lineId)
     if (!line) return
@@ -901,7 +916,8 @@ export default function ClassicPlaceOrderPage() {
       const p = products.find(pp => pp.id === line.productId)
       if (p) unitPrice = computeLinePrice(p, qty, line.uomId).unitPrice
     }
-    patchLine(lineId, { orderedQty: qty, unitPrice })
+    // 改数量同样让赠品快照过期（阶梯价会随数量变），取消勾选时重新询价
+    patchLine(lineId, { orderedQty: qty, unitPrice, preGiftPrice: null })
   }
 
   // ── 当 priceType / pricelistId / customerId / lastPrices 变化时，重算所有已添加 line。
@@ -921,7 +937,8 @@ export default function ClassicPlaceOrderPage() {
         const { unitPrice, priceLabel: newLabel, priceLabelDetail: newDetail } = computeLinePrice(p, l.orderedQty || 1, l.uomId)
         if (l.unitPrice === unitPrice && l.priceLabel === newLabel && l.priceLabelDetail === newDetail) return l
         changed = true
-        return { ...l, unitPrice, priceLabel: newLabel, priceLabelDetail: newDetail }
+        // 切价格表/价格口径后赠品快照同样过期，见 switchLineUnit 同处注释
+        return { ...l, unitPrice, priceLabel: newLabel, priceLabelDetail: newDetail, preGiftPrice: null }
       })
       return changed ? next : prev
     })
@@ -1739,7 +1756,7 @@ export default function ClassicPlaceOrderPage() {
                         <input
                           type="checkbox"
                           checked={!!line.isGift}
-                          onChange={e => patchLine(line.id, { isGift: e.target.checked, ...(e.target.checked ? { unitPrice: 0 } : {}) })}
+                          onChange={e => patchLine(line.id, applyGiftToggle(line, e.target.checked, () => repriceGiftLine(line)))}
                           title={isEn ? 'Gift — excluded from sales/margin/commission' : '赠品——不计销售额/毛利/提成'}
                         />
                       </td>

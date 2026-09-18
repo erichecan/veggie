@@ -562,7 +562,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         //
         // 改成按**真正落库的那份** subtotal 求和 —— resolvedLines 与写 OrderLine 用的是
         // 同一个数组同一个字段,不存在"算总额和写行各按各的"的空间。
-        const computedTotal = resolvedLines.reduce((s, r) => s + r.subtotal, 0)
+        //
+        // ⛔ 赠品行是同一个坑的第二次：resolvedLines 来自定价引擎,**不知道 isGift**,
+        // 而行落库时 isGift=true 会被强制归零(见上面 lineData)。只读 resolvedLines
+        // 就又是"行 0 / 表头按引擎价"的分叉(20260918 实测:整单唯一一行勾成赠品后
+        // 行 subtotal=0,totalAmount 仍是 85)。POST /api/orders 早就按 linesForPersist
+        // 求和,这条编辑路径 20260913 加赠品时漏了,这里补齐。
+        // isGift 未随本次提交传上来(只改数量等)时以库里的现值为准,不能默认成 false。
+        const computedTotal = resolvedLines.reduce((s, r, idx) => {
+          const submitted = linesArr[idx]
+          const persistedGift = submitted?.isGift !== undefined
+            ? Boolean(submitted.isGift)
+            : Boolean(submitted?.id ? currentLineMap.get(String(submitted.id))?.isGift : false)
+          return s + (persistedGift ? 0 : r.subtotal)
+        }, 0)
         updateData.totalAmount = Math.round(computedTotal * 100) / 100
         // 改动 OrderLine 后同步 items 快照(随本次 order.update 一并写),
         // 下游直接读 items 列的端点(波次/配送/司机汇总/核货)拿到新数量

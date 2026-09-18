@@ -1,3 +1,5 @@
+import type { GiftPriceSnapshot } from './order-line-gift'
+
 // ─── 系统用户 ─────────────────────────────────────────────────────────────────
 export type UserRole = 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER' | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE' | 'SALES' | 'EXTERNAL_SALES' | 'DISPATCH' | 'OTHER'
 
@@ -373,6 +375,11 @@ export interface OrderLine {
   priceSourceDate?: string | null
   /** 赠品标记：true 时不计入销售额/毛利/提成，但仍正常扣库存、正常出现在拣货单 */
   isGift?: boolean
+  /**
+   * 勾选赠品前的价格快照，用于取消勾选时把单价与来源徽章还原（见 lib/order-line-gift.ts）。
+   * ⛔ 前端编辑缓冲区专用，非 DB 列，提交前由 stripGiftSnapshot 剔除。
+   */
+  preGiftPrice?: GiftPriceSnapshot | null
   createdAt: string
   updatedAt: string
 }
