@@ -13,7 +13,7 @@ type InvoiceTx = {
     findFirst: (a: unknown) => Promise<{ id: string; name?: string } | null>
     create: (a: unknown) => Promise<{ id: string }>
   }
-  order: { findUnique: (a: unknown) => Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown }> } | null> }
+  order: { findUnique: (a: unknown) => Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown; isGift?: boolean }> } | null> }
   customer: { findUnique: (a: unknown) => Promise<{ name: string } | null> }
   orderAdjustment: { findMany: (a: unknown) => Promise<Array<{ id: string; type: string; label: string; amount: unknown }>> }
 }
@@ -57,6 +57,11 @@ export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string)
       // B-2: 发票行携带 orderLineId,供过账时按行精确回写 invoicedQty(部分/多次开票不误刷全单)
       orderLineId: l.id,
       productId: l.productId, productName: l.productName, spec: l.spec ?? '',
+      // 赠品标记(20260918)随行快照进发票：打印时金额列印 GIFT 而不是 €0.00，
+      // 否则客户在发票上分不清"送的"和"该收钱但价格填漏了"。
+      // ⚠️ 本次改动之前开出的发票没有这个键，打印端按非赠品渲染（不拿 unitPrice===0
+      // 反推——生产库里 0 价还有漏价/样品/Odoo 导入脏数据等成因）。
+      isGift: l.isGift === true,
       qty, unitPrice: unit, taxRate: trn,
       subtotalExTax: ex, taxAmount: ta, subtotalIncTax: round2(ex + ta),
     })

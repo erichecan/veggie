@@ -11,6 +11,7 @@ import { formatPrintTimestamp } from './trip-common'
 import { eur } from '@/lib/format-money'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { compareSequenceThenName } from '@/lib/print/line-sort'
+import { giftMoneyCell } from './gift-mark'
 import { computeOrderTotals } from '@/lib/order-totals'
 import type { Order } from '@/lib/types'
 import type { PrintLang } from '@/lib/print/print-i18n'
@@ -67,6 +68,8 @@ export interface ReportLine {
   unitPrice: number
   amount: number
   taxRate: number
+  /** 赠品行（OrderLine.isGift，20260918）：multiline 模式的单价/金额列印 GIFT 而不是 €0.00 */
+  isGift?: boolean
   orderCode: string
   deliveryBatch: string
   /** 商品目录/仓库拣货顺序号，勾选「按 sequence 排序」时用来排序；查不到的商品兜底 0 排最前 */
@@ -217,8 +220,8 @@ export function buildMultilineHtml(lines: ReportLine[], title: string, meta: str
       <td>${l.customerName}</td>
       <td>${l.productName}</td>
       <td class="r">${l.qty.toFixed(2)}</td>
-      <td class="r">${eur(l.unitPrice)}</td>
-      <td class="r">${eur(l.amount)}</td>
+      <td class="r">${giftMoneyCell(l.isGift, eur(l.unitPrice))}</td>
+      <td class="r">${giftMoneyCell(l.isGift, eur(l.amount))}</td>
     </tr>`
   }).join('')
 

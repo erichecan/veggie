@@ -9,6 +9,7 @@ import { barcodeValue } from '@/lib/barcode'
 import type { Invoice } from '@/lib/types'
 import { formatDateOnly } from '@/lib/format-date'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { GiftAmount } from '@/components/shared/gift-amount'
 
 const PURPLE = '#875A7B'
 
@@ -186,11 +187,11 @@ export default function InvoicePrintPage() {
                   {line.spec && <p className="text-xs text-gray-400">{line.spec}</p>}
                 </td>
                 <td className="py-1 text-center">{line.qty}</td>
-                <td className="py-1 text-right">€{line.unitPrice.toFixed(2)}</td>
+                <td className="py-1 text-right"><GiftAmount isGift={line.isGift} value={`€${line.unitPrice.toFixed(2)}`} /></td>
                 <td className="py-1 text-center text-gray-500">{(line.taxRate * 100).toFixed(1)}%</td>
-                <td className="py-1 text-right">€{line.subtotalExTax.toFixed(2)}</td>
+                <td className="py-1 text-right"><GiftAmount isGift={line.isGift} value={`€${line.subtotalExTax.toFixed(2)}`} /></td>
                 <td className="py-1 text-right text-gray-500">€{line.taxAmount.toFixed(2)}</td>
-                <td className="py-1 text-right font-medium">€{line.subtotalIncTax.toFixed(2)}</td>
+                <td className="py-1 text-right font-medium"><GiftAmount isGift={line.isGift} value={`€${line.subtotalIncTax.toFixed(2)}`} /></td>
               </tr>
             ))}
           </tbody>

@@ -92,6 +92,7 @@ export async function loadDayWiseReportData(p: DayWiseReportParams): Promise<{ l
         unitPrice: Number(l.unitPrice),
         amount: Number(l.subtotal),
         taxRate: Number(l.taxRate ?? 0),
+        isGift: l.isGift === true,
         orderCode: order.code ?? '',
         deliveryBatch: formatDriverSlotFromOrder(order as unknown as Order),
         productSequence: prod?.sequence ?? 0,

@@ -736,6 +736,11 @@ export interface InvoiceLine {
   subtotalExTax: number
   taxAmount: number
   subtotalIncTax: number
+  /**
+   * 赠品行（快照自 OrderLine.isGift，20260918）：打印/详情的金额列印 GIFT 而不是 €0.00。
+   * 本次改动前开出的发票快照里没有这个键 → undefined，按非赠品渲染。
+   */
+  isGift?: boolean
 }
 
 export interface Invoice {

@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadDayWiseReportData } from '@/lib/print/day-wise-report-loader'
 import { buildCsv, csvResponseHeaders, money } from '@/lib/export/csv'
-import { orderSummaryHeaders, buildOrderSummaryRows } from '@/lib/export/order-export-rows'
+import { orderSummaryHeaders, buildOrderSummaryRows, giftFlag } from '@/lib/export/order-export-rows'
 import { resolvePrintLang } from '@/lib/print/print-i18n'
 
 export const runtime = 'nodejs'
@@ -19,9 +19,11 @@ export const dynamic = 'force-dynamic'
 
 const ALLOWED_ROLES = ['OPERATOR', 'BOSS', 'DRIVER', 'FINANCE', 'SALES']
 
+// 「赠品」是独立一列而不是把金额写成 GIFT —— CSV 给 Excel 算，金额列混进文字
+// 会让整列变文本、求和失效。理由与 lib/export/order-export-rows.ts giftFlag 一致。
 const DETAIL_HEADERS = {
-  zh: ['日期', '订单号', '客户', '配送批次', '产品', '数量', '单价', '税率(%)', '金额'],
-  en: ['Date', 'Order No', 'Customer', 'Batch', 'Product', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
+  zh: ['日期', '订单号', '客户', '配送批次', '产品', '赠品', '数量', '单价', '税率(%)', '金额'],
+  en: ['Date', 'Order No', 'Customer', 'Batch', 'Product', 'Gift', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
 } as const
 const FILENAME = {
   zh: { detail: '产品明细', summary: '订单汇总' },
@@ -61,6 +63,7 @@ export async function GET(req: Request) {
         l.customerName,
         l.deliveryBatch,
         l.productName,
+        giftFlag(l.isGift, lang),
         l.qty,
         money(l.unitPrice),
         money(l.taxRate > 1 ? l.taxRate : l.taxRate * 100),

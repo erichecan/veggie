@@ -19,6 +19,7 @@ import {
   formatTripDriverLabel,
 } from './trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { giftMoneyCell } from './gift-mark'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { displayUomName } from '@/lib/sale-uom'
@@ -150,7 +151,7 @@ function buildReceiptPage(
         <td>${escapeHtml(specText)}</td>
         <td class="num">${fmtQty(l.orderedQty ?? 0)}</td>
         <td class="num">${escapeHtml(displayUomName(l.uomName))}</td>
-        <td class="num">${money(l.subtotal ?? 0)}</td>
+        <td class="num">${giftMoneyCell(l.isGift, money(l.subtotal ?? 0))}</td>
       </tr>`
     }).join('')
     : `<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:6mm;">${t.noLineDetail}</td></tr>`

@@ -8,6 +8,7 @@ import { apiGet, apiPut, apiPost } from '@/lib/api'
 import type { Invoice } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import ActionLogPanel from '@/components/shared/action-log-panel'
+import { GiftAmount } from '@/components/shared/gift-amount'
 import Link from 'next/link'
 
 const PURPLE = '#875A7B'
@@ -257,11 +258,11 @@ export default function ClassicInvoiceDetailPage() {
                   <p className="text-xs text-gray-400">{line.spec}</p>
                 </td>
                 <td className="px-4 py-3 text-center">{Number(line.qty ?? 0)}</td>
-                <td className="px-4 py-3 text-right">€{Number(line.unitPrice ?? 0).toFixed(2)}</td>
+                <td className="px-4 py-3 text-right"><GiftAmount isGift={line.isGift} value={`€${Number(line.unitPrice ?? 0).toFixed(2)}`} /></td>
                 <td className="px-4 py-3 text-center text-gray-500">{(Number(line.taxRate ?? 0) * 100).toFixed(1)}%</td>
-                <td className="px-4 py-3 text-right">€{Number(line.subtotalExTax ?? 0).toFixed(2)}</td>
+                <td className="px-4 py-3 text-right"><GiftAmount isGift={line.isGift} value={`€${Number(line.subtotalExTax ?? 0).toFixed(2)}`} /></td>
                 <td className="px-4 py-3 text-right text-gray-500">€{Number(line.taxAmount ?? 0).toFixed(2)}</td>
-                <td className="px-4 py-3 text-right font-medium">€{Number(line.subtotalIncTax ?? 0).toFixed(2)}</td>
+                <td className="px-4 py-3 text-right font-medium"><GiftAmount isGift={line.isGift} value={`€${Number(line.subtotalIncTax ?? 0).toFixed(2)}`} /></td>
               </tr>
             ))}
           </tbody>

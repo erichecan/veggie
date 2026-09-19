@@ -27,6 +27,7 @@ import {
   PRINT_PAGE_FOOTER_CSS,
 } from './trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { giftBadgeHtml } from './gift-mark'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { displayUomName } from '@/lib/sale-uom'
@@ -152,7 +153,7 @@ function buildDeliveryOrderHtml(
       <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
       <td class="col-unit">${escapeHtml(displayUomName(l.uomName).toUpperCase())}</td>
       <td class="col-desc">
-        <div class="prod-name">${escapeHtml(l.productName)}</div>
+        <div class="prod-name">${escapeHtml(l.productName)}${l.isGift ? giftBadgeHtml() : ''}</div>
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>

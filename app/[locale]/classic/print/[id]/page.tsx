@@ -13,6 +13,7 @@ import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
 import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { giftBadgeHtml, giftMoneyCell } from '@/lib/print/gift-mark'
 import { displayUomName } from '@/lib/sale-uom'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
@@ -157,18 +158,20 @@ export function buildOrderHtml(
     const uomName = displayUomName((l as unknown as { uomName?: string }).uomName)
     const taxRate = Number(l.taxRate ?? 0)
     const inclVat = Number(l.subtotal) * (1 + taxRate / 100)
+    // 赠品(20260918)：有价格列时金额列印 GIFT；送货单没有价格列，退化成商品名后的徽标
+    const isGift = l.isGift === true
     return `
     <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
       <td class="col-qty">${Number(l.orderedQty).toFixed(2)}</td>
       <td class="col-unit">${uomName.toUpperCase()}</td>
       <td class="col-desc">
-        <div class="prod-name">${l.productName}</div>
+        <div class="prod-name">${l.productName}${hidePrice && isGift ? giftBadgeHtml() : ''}</div>
         ${spec ? `<div class="prod-spec">${spec}</div>` : ''}
         ${l.note ? `<div class="prod-note">${l.note}</div>` : ''}
       </td>
-      ${hidePrice ? '' : `<td class="col-price">${eur(l.unitPrice)}</td>
+      ${hidePrice ? '' : `<td class="col-price">${giftMoneyCell(isGift, eur(l.unitPrice))}</td>
       <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
-      <td class="col-incl">${eur(inclVat)}</td>`}
+      <td class="col-incl">${giftMoneyCell(isGift, eur(inclVat))}</td>`}
     </tr>`
   }
 

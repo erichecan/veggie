@@ -2,6 +2,7 @@ import { barcodeValue } from './barcode'
 import { formatDateOnly } from './format-date'
 import { eur } from './format-money'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { giftMoneyCell } from '@/lib/print/gift-mark'
 
 /**
  * 销售单 / 报价单的单据 HTML。
@@ -38,6 +39,11 @@ export interface OrderDocLine {
   spec?: string | null
   note?: string | null
   uomName?: string | null
+  /**
+   * 赠品行（OrderLine.isGift）。true 时 PRICE 与 INCL VAT 两列印 GIFT 而不是 €0.00 ——
+   * 客户要求 20260918，见 lib/print/gift-mark.ts。
+   */
+  isGift?: boolean
 }
 
 export interface OrderDocInput {
@@ -124,9 +130,9 @@ export function renderOrderHtml(
           ${spec ? `<div class="prod-spec">${spec}</div>` : ''}
           ${note ? `<div class="prod-note">📝 ${note}</div>` : ''}
         </td>
-        <td class="col-price">${eur(l.unitPrice as number)}</td>
+        <td class="col-price">${giftMoneyCell(l.isGift, eur(l.unitPrice as number))}</td>
         <td class="col-vat">${taxRate > 0 ? formatVatRate(taxRate) : '0%'}</td>
-        <td class="col-incl">${eur(inclVat)}</td>
+        <td class="col-incl">${giftMoneyCell(l.isGift, eur(inclVat))}</td>
       </tr>`
   }).join('')
 

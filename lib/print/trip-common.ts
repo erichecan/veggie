@@ -93,6 +93,12 @@ export interface TripLine {
   unitPrice: number
   taxRate: number
   subtotal: number
+  /**
+   * 赠品行（OrderLine.isGift，20260918）。有价格列的单据（销售单/签收单）金额列印 GIFT，
+   * 没有价格列的（送货单/拣货单）在商品名后挂徽标，见 lib/print/gift-mark.ts。
+   * 旧版 Order.items JSON 回退行没有这个概念 → undefined，按非赠品渲染。
+   */
+  isGift?: boolean
 }
 
 export interface TripOrder {

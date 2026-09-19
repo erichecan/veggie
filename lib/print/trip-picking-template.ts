@@ -25,6 +25,7 @@ import {
   renderTripNoticeHtml,
 } from './trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { giftBadgeHtml } from './gift-mark'
 import { formatDateOnly } from '@/lib/format-date'
 import { splitIntoPacks, type PackSpec } from '@/lib/pack-split'
 import { displayUomName } from '@/lib/sale-uom'
@@ -101,6 +102,12 @@ interface CustomerBreakdown {
   customerId: string
   customerName: string
   qty: number
+  /**
+   * 其中属于赠品行（OrderLine.isGift）的数量（20260918）。拣货单按商品聚合，
+   * 同一商品在一趟车里可能一部分订单是赠品、一部分不是，所以记的是数量不是布尔 ——
+   * 光标一个「是赠品」会让拣货员以为整堆都是送的。
+   */
+  giftQty: number
   /** 行级备注（如"15个正常价+5个打折处理"），拣货时需要醒目提示 */
   note?: string
 }
@@ -119,6 +126,8 @@ interface AggProduct {
   /** 箱规；行本身就是按大单位下的单时为 null（已经是整箱，不必再拆） */
   packSpec: PackSpec | null
   totalQty: number
+  /** totalQty 里属于赠品行的数量（20260918），见 CustomerBreakdown.giftQty */
+  giftQty: number
   /** ProductTemplate.type: 'PRODUCT' | 'CONSU' | 'SERVICE' | null */
   productType: string | null
   /** 分表用：'LOOSE' 进零散货表，'BULK'/null 进整箱整袋表 */
@@ -205,6 +214,7 @@ export function generateTripPickingHtml(
             ? null
             : (line.packSpec ?? null),
           totalQty: 0,
+          giftQty: 0,
           productType: line.productType ?? null,
           goodsType: line.goodsType ?? null,
           expandByCustomer: line.expandByCustomer === true,
@@ -219,15 +229,23 @@ export function generateTripPickingHtml(
       if (line.goodsType === 'LOOSE') agg.goodsType = 'LOOSE'
       if (line.expandByCustomer === true) agg.expandByCustomer = true
       agg.totalQty += line.orderedQty
+      if (line.isGift) agg.giftQty += line.orderedQty
       if (!agg.orderCodes.includes(orderCode)) {
         agg.orderCodes.push(orderCode)
       }
       const bd = agg.byCustomer.get(customerId)
       if (bd) {
         bd.qty += line.orderedQty
+        if (line.isGift) bd.giftQty += line.orderedQty
         if (line.note && line.note !== bd.note) bd.note = bd.note ? `${bd.note}；${line.note}` : line.note
       } else {
-        agg.byCustomer.set(customerId, { customerId, customerName, qty: line.orderedQty, note: line.note ?? undefined })
+        agg.byCustomer.set(customerId, {
+          customerId,
+          customerName,
+          qty: line.orderedQty,
+          giftQty: line.isGift ? line.orderedQty : 0,
+          note: line.note ?? undefined,
+        })
       }
     }
   }
@@ -247,6 +265,15 @@ export function generateTripPickingHtml(
    */
   function belongsToConsumableTable(p: AggProduct): boolean {
     return p.goodsType === 'LOOSE'
+  }
+
+  /**
+   * 赠品徽标（20260918）：全量是赠品就只印 GIFT，部分是赠品要把数量带上 ——
+   * 「GIFT ×2」告诉拣货员这 10 箱里有 2 箱是送的，不带数量会被读成整堆都免费。
+   */
+  function giftMark(giftQty: number, totalQty: number): string {
+    if (giftQty <= 0) return ''
+    return giftQty >= totalQty ? giftBadgeHtml() : giftBadgeHtml(fmtQty(giftQty))
   }
 
   function buildGroups(products: AggProduct[]): ProductGroup[] {
@@ -300,7 +327,7 @@ export function generateTripPickingHtml(
       <tr class="row-bd${nested ? ' row-bd-nested' : ''}">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
-          ↳ ${escapeHtml(bd.customerName)}
+          ↳ ${escapeHtml(bd.customerName)}${giftMark(bd.giftQty, bd.qty)}
           ${bd.note ? `<span class="note-badge">⚠️ ${escapeHtml(bd.note)}</span>` : ''}
         </td>
         <td class="col-uom"></td>
@@ -319,10 +346,11 @@ export function generateTripPickingHtml(
     const hiddenCount = all.length - shown.length
     if (hiddenCount <= 0) return rows
     const hiddenQty = all.reduce((sum, bd) => sum + bd.qty, 0) - shown.reduce((sum, bd) => sum + bd.qty, 0)
+    const hiddenGiftQty = all.reduce((sum, bd) => sum + bd.giftQty, 0) - shown.reduce((sum, bd) => sum + bd.giftQty, 0)
     return rows + `
       <tr class="row-bd row-bd-rest${nested ? ' row-bd-nested' : ''}">
         <td class="col-seq"></td>
-        <td class="col-name bd-name">↳ ${escapeHtml(t.restCustomers(hiddenCount))}</td>
+        <td class="col-name bd-name">↳ ${escapeHtml(t.restCustomers(hiddenCount))}${giftMark(hiddenGiftQty, hiddenQty)}</td>
         <td class="col-uom"></td>
         <td class="col-qty bd-qty">${fmtQty(hiddenQty)}</td>
         <td class="col-pack"></td>
@@ -345,7 +373,7 @@ export function generateTripPickingHtml(
       <tr class="${rowClass}">
         <td class="col-seq">${seq}</td>
         <td class="col-name">
-          ${escapeHtml(p.productName)}
+          ${escapeHtml(p.productName)}${giftMark(p.giftQty, p.totalQty)}
           ${p.spec ? `<span class="spec">${escapeHtml(p.spec)}</span>` : ''}
           ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
@@ -399,7 +427,10 @@ export function generateTripPickingHtml(
       <tr class="${rowClass} row-group-parent">
         <td class="col-seq">${seq}</td>
         <td class="col-name">
-          ${escapeHtml(g.productName)}
+          ${escapeHtml(g.productName)}${giftMark(
+            g.uoms.reduce((sum, u) => sum + u.giftQty, 0),
+            g.uoms.reduce((sum, u) => sum + u.totalQty, 0),
+          )}
           ${g.spec ? `<span class="spec">${escapeHtml(g.spec)}</span>` : ''}
           ${hasNote ? `<span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
@@ -414,7 +445,7 @@ export function generateTripPickingHtml(
       <tr class="row-uom-child">
         <td class="col-seq"></td>
         <td class="col-name bd-name">
-          ↳${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
+          ↳${giftMark(u.giftQty, u.totalQty)}${uHasNote ? ` <span class="note-flag">${t.hasNote}</span>` : ''}
         </td>
         <td class="col-uom">${escapeHtml(displayUomName(u.uomName))}</td>
         <td class="col-qty bd-qty">

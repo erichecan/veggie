@@ -34,11 +34,11 @@ const STATUS_LABEL: Record<PrintLang, Record<string, string>> = {
 const HEADERS = {
   zh: {
     summary: ['订单号', '交货日期', '状态', '客户', '销售员', '司机', '未税金额', '税额', '含税总额'],
-    detail: ['订单号', '交货日期', '客户', '产品', '数量', '单价', '税率(%)', '金额'],
+    detail: ['订单号', '交货日期', '客户', '产品', '赠品', '数量', '单价', '税率(%)', '金额'],
   },
   en: {
     summary: ['Order No', 'Delivery Date', 'Status', 'Customer', 'Salesperson', 'Driver', 'Untaxed Amount', 'Tax', 'Total incl. Tax'],
-    detail: ['Order No', 'Delivery Date', 'Customer', 'Product', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
+    detail: ['Order No', 'Delivery Date', 'Customer', 'Product', 'Gift', 'Qty', 'Unit Price', 'Tax Rate (%)', 'Amount'],
   },
 } as const
 
@@ -89,7 +89,18 @@ export function orderDetailHeaders(lang: PrintLang = 'zh'): string[] {
 /** @deprecated 用 orderDetailHeaders(lang) 代替；留着只为兼容还没切过来的调用点 */
 export const ORDER_DETAIL_HEADERS: string[] = [...HEADERS.zh.detail]
 
-export function buildOrderDetailRows(orders: Order[]): (string | number)[][] {
+/**
+ * 赠品标记（20260918）在 CSV 里是**独立一列**，不是把金额写成 "GIFT" ——
+ * 打印单据给人看，CSV 给 Excel 算：金额列一旦混进文字，那一列就变成文本，
+ * 会计的求和公式当场失效。所以纸面上印 GIFT（见 lib/print/gift-mark.ts），
+ * 这里把 0.00 原样留在金额列，另开一列说明它为什么是 0。
+ */
+export function giftFlag(isGift: boolean | undefined, lang: PrintLang = 'zh'): string {
+  if (!isGift) return ''
+  return lang === 'en' ? 'Y' : '是'
+}
+
+export function buildOrderDetailRows(orders: Order[], lang: PrintLang = 'zh'): (string | number)[][] {
   const rows: (string | number)[][] = []
   for (const order of orders) {
     const code = orderCode(order)
@@ -102,6 +113,7 @@ export function buildOrderDetailRows(orders: Order[]): (string | number)[][] {
         date,
         order.restaurantName,
         l.productName,
+        giftFlag(l.isGift, lang),
         l.orderedQty,
         money(Number(l.unitPrice)),
         money(ratePct),

@@ -404,6 +404,7 @@ export async function loadDispatchPrintData(
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),
           subtotal: toNum(l.subtotal),
+          isGift: l.isGift === true,
         }))
       : buildLinesFromItems(o.items),
   }))

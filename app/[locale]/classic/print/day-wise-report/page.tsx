@@ -7,6 +7,7 @@ import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot
 import { docBadge, type DocKind } from '@/lib/print/doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
+import { giftMoneyCell } from '@/lib/print/gift-mark'
 
 type PrintMode = 'day' | 'multiline' | 'summary'
 
@@ -19,6 +20,8 @@ interface ReportLine {
   unitPrice: number
   amount: number
   taxRate: number
+  /** 赠品行（OrderLine.isGift，20260918）：multiline 模式单价/金额列印 GIFT，见 lib/print/gift-mark.ts */
+  isGift?: boolean
   orderCode: string
   deliveryBatch: string
 }
@@ -195,8 +198,8 @@ function buildDayHtml(lines: ReportLine[], title: string, meta: string): string 
         tbody += `<tr class="line-row">
           <td>${l.productName}</td>
           <td class="r">${l.qty.toFixed(2)}</td>
-          <td class="r">${eur(l.unitPrice)}</td>
-          <td class="r">${eur(l.amount)}</td>
+          <td class="r">${giftMoneyCell(l.isGift, eur(l.unitPrice))}</td>
+          <td class="r">${giftMoneyCell(l.isGift, eur(l.amount))}</td>
         </tr>`
         dateQty += l.qty; dateAmt += l.amount
         grandQty += l.qty; grandAmt += l.amount
@@ -238,8 +241,8 @@ function buildMultilineHtml(lines: ReportLine[], title: string, meta: string): s
       <td>${l.customerName}</td>
       <td>${l.productName}</td>
       <td class="r">${l.qty.toFixed(2)}</td>
-      <td class="r">${eur(l.unitPrice)}</td>
-      <td class="r">${eur(l.amount)}</td>
+      <td class="r">${giftMoneyCell(l.isGift, eur(l.unitPrice))}</td>
+      <td class="r">${giftMoneyCell(l.isGift, eur(l.amount))}</td>
     </tr>`
   }).join('')
 
@@ -428,6 +431,7 @@ function DayWiseReportInner() {
                 unitPrice: Number(l.unitPrice),
                 amount: Number(l.subtotal),
                 taxRate: Number(l.taxRate ?? 0),
+                isGift: l.isGift === true,
                 orderCode: order.code ?? '',
                 deliveryBatch: formatDriverSlotFromOrder(order),
               })

@@ -32,6 +32,7 @@ import {
   PRINT_PAGE_FOOTER_CSS,
 } from './trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
+import { giftMoneyCell } from './gift-mark'
 import { docBadge } from './doc-badge'
 import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
@@ -106,9 +107,9 @@ function buildSalesOrderHtml(
         ${l.spec ? `<div class="prod-spec">${escapeHtml(l.spec)}</div>` : ''}
         ${l.note ? `<div class="prod-note">${escapeHtml(l.note)}</div>` : ''}
       </td>
-      <td class="col-price">${fmtMoney(Number(l.unitPrice))}</td>
+      <td class="col-price">${giftMoneyCell(l.isGift, fmtMoney(Number(l.unitPrice)))}</td>
       <td class="col-vat">${rate > 0 ? rate.toFixed(0) + '%' : '0%'}</td>
-      <td class="col-incl">€ ${fmtMoney(inclVat)}</td>
+      <td class="col-incl">${giftMoneyCell(l.isGift, `€ ${fmtMoney(inclVat)}`)}</td>
     </tr>`
   }
 

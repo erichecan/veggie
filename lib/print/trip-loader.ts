@@ -264,6 +264,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
           unitPrice: toNum(l.unitPrice),
           taxRate: toNum(l.taxRate),
           subtotal: toNum(l.subtotal),
+          isGift: l.isGift === true,
         }))
       : buildLinesFromItems(o.items),
   }))
