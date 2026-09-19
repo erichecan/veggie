@@ -27,6 +27,8 @@ import { useHotkeys } from '@/components/shared/use-hotkeys'
 import { lineDescription } from '@/lib/order-line-description'
 import { newDraftLineId, isDraftLineId, toSubmittableLines } from '@/lib/order-line-draft'
 import { applyGiftToggle, stripGiftSnapshot, type GiftPriceSnapshot } from '@/lib/order-line-gift'
+import CustomerPickerInline from '@/components/orders/customer-picker-inline'
+import { overrideCustomerPricing, repriceLinesForCustomer } from '@/lib/order-customer-switch'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -67,6 +69,10 @@ export default function QuotationDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
+  // 换客户(20260918)：下拉候选 + 当前选中的客户 id(编辑态的真相，order.restaurantId 是保存前的旧值)
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [restaurantId, setRestaurantId] = useState('')
+  const [switchingCustomer, setSwitchingCustomer] = useState(false)
   const [pricelist, setPricelist] = useState<Pricelist | null>(null)
   const [pricelists, setPricelists] = useState<Pricelist[]>([])
   const [forecastMap, setForecastMap] = useState<Map<string, ForecastRow>>(new Map())
@@ -111,10 +117,9 @@ export default function QuotationDetailPage() {
   const [allProducts, setAllProducts] = useState<AllProduct[]>([])
   // 本单覆盖：编辑页可临时切换 pricelist/priceType（不写回客户档案），
   // 加行询价必须用叠加后的客户对象，否则永远只按客户档案默认链定价（与 place-order 创建页一致）
-  const effectiveCustomer = useMemo(() => customer
-    ? { ...customer, priceType: priceType as CustomerPriceType, pricelists: pricelistId ? [{ pricelistId, sequence: 1 }] : customer.pricelists }
-    : null,
-  [customer, priceType, pricelistId])
+  const effectiveCustomer = useMemo(
+    () => (customer ? overrideCustomerPricing(customer, priceType, pricelistId) : null),
+    [customer, priceType, pricelistId])
   // 多单位销售(20260714 试点)：全局单位 factor 表 + 按商品懒加载的额外可售单位
   const { saleUomOptions, ensureSaleUomOptions } = useSaleUomOptions(isEn)
   const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
@@ -136,14 +141,21 @@ export default function QuotationDetailPage() {
       setPriceType((ord as unknown as { priceType?: string }).priceType ?? 'multi')
       setPaymentTerm((ord as unknown as { paymentTerm?: string }).paymentTerm ?? '')
 
+      setRestaurantId(ord.restaurantId ?? '')
+
       const [cs, pls] = await Promise.all([
-        apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
+        // slim=1：换客户下拉的候选列表不需要 specialPrices(定价要用的完整客户对象单独按 id 取)
+        apiGet<Customer[]>('/api/customers?slim=1').catch(() => [] as Customer[]),
         apiGet<Pricelist[]>('/api/pricelists').catch(() => [] as Pricelist[]),
       ])
-      setCustomer(cs.find(c => c.id === ord.restaurantId) ?? null)
+      setCustomers(cs.filter(c => c.isActive !== false))
       setPricelists(pls)
       if (ord.pricelistId) setPricelist(pls.find(p => p.id === ord.pricelistId) ?? null)
       if (ord.restaurantId) {
+        // ⛔ 这里原先是在客户列表里 find：定价要用的 specialPrices 不在候选列表里，
+        // 客户一旦不在候选里(归档客户的历史单)还会直接 customer=null，整条定价链
+        // 静默退化成牌价。改成按 id 取完整对象，与销售单详情页同一套。
+        apiGet<Customer>(`/api/customers/${ord.restaurantId}`).then(setCustomer).catch(() => {})
         apiGet<CreditInfo>(`/api/customers/${ord.restaurantId}/credit`).then(setCreditInfo).catch(() => {})
       }
 
@@ -387,6 +399,62 @@ export default function QuotationDetailPage() {
     })
   }
 
+  // 下拉候选：当前客户可能不在候选列表里（归档客户、或被标成纯供应商的历史单据），
+  // 漏了它下拉框就显示成"未选客户"。把它并进去，既能正常显示，也能选回来。
+  const customerOptions = useMemo(() => {
+    if (!customer) return customers
+    return customers.some(c => c.id === customer.id) ? customers : [customer, ...customers]
+  }, [customers, customer])
+
+  /**
+   * 换客户(20260918)：客户换了，整单的价格体系就换了 —— 价格表链/账期/业务员跟着客户带出来，
+   * 已录入的行全部按新客户重新询价(客户明确要求"按新客户全部重新询价"，手动改过的价也一并
+   * 覆盖：那个价是跟上一个客户谈的)。赠品行不动，它的单价按业务约定恒为 0。
+   * 保存时后端会按新客户再权威定价一遍，两边同源，见 lib/order-customer-switch.ts。
+   */
+  async function selectCustomer(c: Customer) {
+    if (!order || switchingCustomer || c.id === restaurantId) return
+    setSwitchingCustomer(true)
+    try {
+      // 候选列表是 slim 的，定价必须用含 specialPrices 的完整对象
+      const full = await apiGet<Customer>(`/api/customers/${c.id}`).catch(() => c)
+      const nextPricelistId = full.pricelists?.[0]?.pricelistId ?? ''
+      const nextPriceType = (full.priceType as string) || 'multi'
+      setRestaurantId(full.id)
+      setCustomer(full)
+      setPricelistId(nextPricelistId)
+      setPricelist(pricelists.find(p => p.id === nextPricelistId) ?? null)
+      setPriceType(nextPriceType)
+      setPaymentTerm(full.paymentTerm ?? '')
+      if (full.salesUserId) setSalesUserId(full.salesUserId)
+      setCreditInfo(null)
+      apiGet<CreditInfo>(`/api/customers/${full.id}/credit`).then(setCreditInfo).catch(() => setCreditInfo(null))
+
+      // 单位换算表要先备齐，否则非基准单位的行会按基准单位的价落下来
+      const productIds = Array.from(new Set(editLines.map(l => l.productId).filter(Boolean)))
+      const uomEntries = await Promise.all(productIds.map(async pid => [pid, await ensureSaleUomOptions(pid)] as const))
+      const patches = await repriceLinesForCustomer({
+        lines: editLines.map(l => ({
+          id: l.id, productId: l.productId, uomId: l.uomId,
+          orderedQty: l.orderedQty, isGift: l.isGift,
+        })),
+        customerId: full.id,
+        effectiveCustomer: overrideCustomerPricing(full, nextPriceType, nextPricelistId),
+        priceType: nextPriceType,
+        pricelists,
+        products: allProducts,
+        saleUomOptions: { ...saleUomOptions, ...Object.fromEntries(uomEntries) },
+      })
+      setEditLines(prev => prev.map(l => (patches[l.id] ? { ...l, ...patches[l.id] } : l)))
+      const n = Object.keys(patches).length
+      toast.success(n > 0
+        ? (isEn ? `Customer switched to ${full.name} — ${n} line(s) repriced` : `已换成客户 ${full.name}，${n} 行按新客户重新询价`)
+        : (isEn ? `Customer switched to ${full.name}` : `已换成客户 ${full.name}`))
+    } finally {
+      setSwitchingCustomer(false)
+    }
+  }
+
   async function handleSave() {
     if (!order) return
     try {
@@ -396,6 +464,8 @@ export default function QuotationDetailPage() {
       // 草稿 id 只在前端存活；带着它提交，后端会拿不存在的 id 去 update（见 lib/order-line-draft.ts）
       const orderedLines = stripGiftSnapshot(toSubmittableLines(validLines))
       const saved = await apiPut<{ pricingWarnings?: string[] }>(`/api/orders/${order.id}`, {
+        // 只在真的换过客户时才传：后端据此触发换客户的整套守卫与联动
+        ...(restaurantId && restaurantId !== order.restaurantId ? { restaurantId } : {}),
         internalNote, externalNote: externalNote || null, salesUserId: salesUserId || null,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
         driverSlotId: driverSlotId || null,
@@ -517,6 +587,9 @@ export default function QuotationDetailPage() {
   const creditBlocked = creditInfo?.canOrder === false && !canOverrideCredit
   const isSalesOrder = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED'].includes(statusUp)
   const isLocked = statusUp === 'LOCKED' || statusUp === 'CANCELLED'
+  // 换客户只在「还没进波次」时开放，与后端 orders/[id] PUT 的守卫同一集合 ——
+  // 进了波次就意味着拣货/配送已按原客户在排活，改抬头等于让司机把货送给另一个人。
+  const customerLocked = ['WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED'].includes(statusUp)
   // 与后端 app/api/orders/[id]/adjustments/route.ts 的 LOCKED_STATUSES 同一口径
   const adjustmentsEditable = !['LOCKED', 'CANCELLED', 'COMPLETED'].includes(statusUp)
   const balance = customer ? Number((customer as unknown as { balance?: number }).balance ?? 0) : 0
@@ -781,11 +854,27 @@ export default function QuotationDetailPage() {
           <div className="grid grid-cols-2 gap-12 mt-6">
             {/* Left col */}
             <div className="space-y-3 text-sm">
-              <div className="flex">
-                <div className="w-32 font-bold text-gray-700">Customer</div>
+              <div className={`flex rounded ${editing && !customerLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Customer</div>
                 <div className="flex-1">
-                  <div style={{ color: PURPLE }} className="font-medium">{order.restaurantName}</div>
-                  {customer?.address && <div className="text-xs text-gray-500">{customer.address}</div>}
+                  {editing ? (
+                    <CustomerPickerInline
+                      customers={customerOptions}
+                      selectedId={restaurantId}
+                      onSelect={selectCustomer}
+                      isEn={isEn}
+                      disabled={customerLocked}
+                      disabledHint={isEn
+                        ? 'Bound to its trip — remove from the dispatch console to change'
+                        : '已进入配送波次，请到调度台移出待分配后再改'}
+                    />
+                  ) : (
+                    <div style={{ color: PURPLE }} className="font-medium">{order.restaurantName}</div>
+                  )}
+                  {switchingCustomer && (
+                    <div className="text-xs text-amber-600 mt-1">{isEn ? 'Repricing all lines for the new customer…' : '正在按新客户重新询价…'}</div>
+                  )}
+                  {customer?.address && <div className="text-xs text-gray-500 mt-0.5">{customer.address}</div>}
                 </div>
               </div>
               <div className="flex">

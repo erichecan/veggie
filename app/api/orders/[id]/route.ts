@@ -16,11 +16,13 @@ import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
 import { findInvalidLineUom } from '@/lib/sale-uom-server'
 import { fetchUomSequences, resolveUomSequence } from '@/lib/print/uom-sequence'
+import { checkCustomerCredit } from '@/lib/credit-check'
 
 const ORDER_TRACKED_FIELDS = [
   'status', 'paymentMethod', 'totalAmount',
   'confirmationDate', 'deliveryDate', 'invoiceDate', 'quotationDate',
-  'internalNote', 'externalNote', 'deliveryNote', 'pricelistId', 'priceType', 'paymentTerm', 'restaurantName',
+  'internalNote', 'externalNote', 'deliveryNote', 'pricelistId', 'priceType', 'paymentTerm',
+  'restaurantId', 'restaurantName',
   'driverSlotId', 'deliveryBatch',
 ]
 
@@ -181,6 +183,69 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
+      // ── 换客户(20260918)：客户是订单的定价起点 ────────────────────────────
+      // 换客户不是改一行抬头文字——价格表链、客户专属价、最近成交价、定价模式、司机提成
+      // 快照全挂在客户身上。因此这里既要挡住"改了会出事"的状态，也要把跟着客户走的东西
+      // 一起换掉，不能只写 restaurantId 就了事：
+      //  1) 没进波次才允许改(PENDING/CONFIRMED)——一旦进波次，拣货单/送货单/调度台都已按
+      //     原客户在排活，改抬头等于让司机把货送给另一个人；
+      //  2) 已开票的单不许改：发票上的客户是财务凭证，不能被订单侧悄悄换掉；
+      //  3) 过一遍信用闸，与下单 POST /api/orders 同一套 checkCustomerCredit；
+      //  4) 行价按**新客户**重新询价(见下面 pricingRestaurantId)，提成快照换成新客户的费率，
+      //     已生成的送货单抬头同步——任何一处漏了，就会留下"抬头是 A、价格是 B"的分叉单。
+      const submittedRestaurantId = data.restaurantId ? String(data.restaurantId) : null
+      const customerChanged = !!submittedRestaurantId && submittedRestaurantId !== orderBefore.restaurantId
+      let newCustomer: Awaited<ReturnType<typeof prisma.customer.findUnique>> = null
+      if (customerChanged) {
+        const customerLockedStatuses = new Set(['WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED', 'LOCKED', 'CANCELLED'])
+        if (customerLockedStatuses.has(String(orderBefore.status).toUpperCase())) {
+          return NextResponse.json(
+            { error: `${orderBefore.status} 状态的订单不可更换客户，请先到调度台移出待分配` },
+            { status: 409 },
+          )
+        }
+        // 状态还停在 CONFIRMED、却已经被拖进波次的情况(历史脏数据/并发)：以 wave 为准再挡一道
+        if ((await getOrderWaveDisplayMap([id]))[id]) {
+          return NextResponse.json(
+            { error: '订单已进入配送波次，请先到调度台移出待分配再更换客户' },
+            { status: 409 },
+          )
+        }
+        const linkedInvoice = await prisma.invoice.findFirst({
+          where: { saleOrderIds: { has: id }, status: { not: 'CANCELLED' } },
+          select: { name: true },
+        })
+        if (linkedInvoice) {
+          return NextResponse.json(
+            { error: `订单已开票（${linkedInvoice.name}），不可更换客户` },
+            { status: 409 },
+          )
+        }
+        newCustomer = await prisma.customer.findUnique({ where: { id: submittedRestaurantId! } })
+        if (!newCustomer) {
+          return NextResponse.json({ error: '目标客户不存在' }, { status: 400 })
+        }
+        if (newCustomer.isActive === false) {
+          return NextResponse.json({ error: '目标客户已归档，不可选为订单客户' }, { status: 400 })
+        }
+        // 纯供应商(isCustomer=false)不是能下单的对象——客户/供应商二合一的记录仍然算客户
+        if (newCustomer.isCustomer === false) {
+          return NextResponse.json({ error: '目标是供应商档案，不可选为订单客户' }, { status: 400 })
+        }
+        const credit = await checkCustomerCredit(prisma, {
+          customerId: newCustomer.id,
+          paymentTerm: newCustomer.paymentTerm,
+          creditLimit: newCustomer.creditLimit,
+          termExtendedUntil: newCustomer.termExtendedUntil,
+        })
+        // BOSS/FINANCE 特批口径与下单一致
+        if (credit.blocked && !['BOSS', 'FINANCE'].includes(user.role)) {
+          return NextResponse.json({ error: '目标客户信用冻结，请联系财务或主管特批' }, { status: 403 })
+        }
+      }
+      /** 行价询价用的客户：换客户时必须是**新**客户，否则会按旧客户的价格体系把行价改回去 */
+      const pricingRestaurantId = customerChanged ? submittedRestaurantId! : orderBefore.restaurantId
+
       // ── 拣货锁：订单在已锁定波次里时，禁止改内容(明细/合计)。锁定=拣货作业进行中，
       // 不许再动这张单。仅拦内容编辑，不拦纯状态流转(确认出发/完成/撤回走其它路径需放行)。
       if (Array.isArray(linesPayload) || totalAmountPayload !== undefined) {
@@ -216,6 +281,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         updateData.priceType = pt
       }
       if (paymentTerm !== undefined) updateData.paymentTerm = paymentTerm ? String(paymentTerm) : null
+      // 换客户：抬头快照 + 跟着客户走的司机提成快照一起换(与下单时 POST /api/orders 取
+      // custDefaults 的口径一致)。restaurantName 一律取客户档案上的名字，不采纳前端传值。
+      if (customerChanged && newCustomer) {
+        updateData.restaurantId = newCustomer.id
+        updateData.restaurantName = newCustomer.name
+        updateData.commissionRate = newCustomer.commissionRate
+        updateData.commissionFixed = newCustomer.commissionFixed
+      }
 
       // Auto-set confirmationDate when confirming
       if (newStatus === 'CONFIRMED' && !confirmationDate) {
@@ -323,7 +396,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           : orderBefore.priceType
         const linesArr = linesPayload as Record<string, unknown>[]
         const { lines: resolvedLines, warnings: resolvedWarnings } = await resolveOrderLines(
-          { prisma, restaurantId: orderBefore.restaurantId },
+          { prisma, restaurantId: pricingRestaurantId },
           linesArr.map(l => ({
             productId: String(l.productId ?? currentLineMap.get(String(l.id ?? ''))?.productId ?? ''),
             productName: l.productName !== undefined ? String(l.productName) : undefined,
@@ -667,6 +740,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
 
       // Scalar field changes
+      if (customerChanged && newCustomer) {
+        auditChangedFields.customer = {
+          before: orderBefore.restaurantName,
+          after: newCustomer.name,
+        }
+      }
       if (paymentMethod && String(paymentMethod).toUpperCase() !== String(orderBefore.paymentMethod)) {
         auditChangedFields.paymentMethod = { before: orderBefore.paymentMethod, after: String(paymentMethod).toUpperCase() }
       }
@@ -824,6 +903,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             await prismaAny.stockMove.create({ data: row })
           }
         }
+      }
+
+      // 换客户后，确认订单时已生成的送货单抬头要跟着换 —— 它是 1:1 快照(customerId/
+      // customerName)，留着旧客户就会出现"订单是 A、送货单是 B"的分叉，司机拿到的是旧抬头。
+      if (customerChanged && newCustomer) {
+        await prismaAny.deliverySlip.updateMany({
+          where: { orderId: id },
+          data: { customerId: newCustomer.id, customerName: newCustomer.name },
+        }).catch((e: unknown) => console.error('[DeliverySlip customer sync]', e))
       }
 
       // On CONFIRMED: 仅建送货单。Trip 不再在确认时建(P0-2/A):配送调度统一归 wave,
