@@ -5,12 +5,15 @@ import {
   type PivotRawCell,
 } from '../lib/analytics/pivot'
 
-test('DIMENSION_DEFS 覆盖 7 个维度，时间桶维度标记正确', () => {
+test('DIMENSION_DEFS 覆盖 9 个维度，时间桶维度标记正确', () => {
   const keys = Object.keys(DIMENSION_DEFS).sort()
-  assert.deepEqual(keys, ['category', 'customer', 'day', 'month', 'product', 'salesUser', 'week'])
+  // 20260915 销售钻取新增 quarter / year（7e4fe8d），与 day/week/month 同属时间桶
+  assert.deepEqual(keys, ['category', 'customer', 'day', 'month', 'product', 'quarter', 'salesUser', 'week', 'year'])
   assert.equal(DIMENSION_DEFS.day.isTimeBucket, true)
   assert.equal(DIMENSION_DEFS.week.isTimeBucket, true)
   assert.equal(DIMENSION_DEFS.month.isTimeBucket, true)
+  assert.equal(DIMENSION_DEFS.quarter.isTimeBucket, true)
+  assert.equal(DIMENSION_DEFS.year.isTimeBucket, true)
   assert.equal(DIMENSION_DEFS.product.isTimeBucket, false)
   assert.equal(DIMENSION_DEFS.category.isTimeBucket, false)
   assert.equal(DIMENSION_DEFS.customer.isTimeBucket, false)

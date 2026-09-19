@@ -19,8 +19,32 @@ const baseline = JSON.parse(readFileSync('lib/rbac/parity-baseline.json', 'utf-8
  * 其中一层，所以全绿。这里补上：把两层合起来，逐个 handler 比对旧 token 的
  * 最终可达性与改造前基线。
  */
-test('旧 token 的最终可达性与改造前基线逐格相同', () => {
-  const diffs: string[] = []
+/**
+ * 旧 token 与基线之间**允许存在**的差异。
+ *
+ * 只有一种情形能进这张表：那次权限发放的迁移自己 bump 了 permVersion，
+ * 把受影响的人当场踢下线。旧 token 因此不存在，也就谈不上「没重新登录的人
+ * 功能坏掉」—— 这条测试要防的场景不成立。
+ *
+ * ⚠️ 不是「测试红了就往这里加一条」。加之前必须能指出是哪条迁移、哪一段 SQL
+ * 做的 permVersion bump；指不出来的，就是真的有人会看到功能坏掉。
+ */
+const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
+  // 20260913000002_sales_order_manage_adjustment：把 sales.order.manage_adjustment
+  // 发给所有持有 sales.order.update 的角色（生产实测 boss/operator/sales/external_sales
+  // 四个角色都拿到了），同一条迁移末尾 UPDATE "User" SET "permVersion" = "permVersion" + 1
+  // 踢掉了这些角色下的全部用户。
+  // 旧体系的角色边界（role-access.ts ROLE_API_SCOPE）对 SALES / EXTERNAL_SALES 只放行
+  // /api/orders/** 的 GET/POST/PUT/PATCH，不含 DELETE —— 所以只有旧 token 这条路径判 n。
+  'DELETE /api/orders/[id]/adjustments/[adjustmentId] [SALES]':
+    '20260913000002 发权限时已 bump permVersion 强制重登，旧 token 不存在',
+  'DELETE /api/orders/[id]/adjustments/[adjustmentId] [EXTERNAL_SALES]':
+    '同上',
+}
+
+/** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */
+function legacyTokenDiffs(): Array<{ cell: string; detail: string }> {
+  const diffs: Array<{ cell: string; detail: string }> = []
 
   for (const { key, path, verb, gate } of probeRoutes()) {
     if (isPublicApiRoute(path)) continue
@@ -37,15 +61,34 @@ test('旧 token 的最终可达性与改造前基线逐格相同', () => {
 
       const now: Reach = passMiddleware && passGate ? 'y' : 'n'
       const before = baseline[key]?.[role]
-      if (before !== now) diffs.push(`${key} [${role}]: 改造前 ${before} → 旧 token 现在 ${now}`)
+      if (before !== now) {
+        diffs.push({
+          cell: `${key} [${role}]`,
+          detail: `${key} [${role}]: 改造前 ${before} → 旧 token 现在 ${now}`,
+        })
+      }
     }
   }
+  return diffs
+}
+
+test('旧 token 的最终可达性与改造前基线逐格相同', () => {
+  const diffs = legacyTokenDiffs()
+    .filter(d => !(d.cell in LEGACY_TOKEN_EXEMPT))
+    .map(d => d.detail)
 
   assert.deepEqual(
     diffs.slice(0, 20),
     [],
     `旧 token 的可达性变了 ${diffs.length} 格 —— 部署后没重新登录的人会看到功能坏掉或越权`,
   )
+})
+
+test('旧 token 例外表没有烂掉（差异消失了就删掉那条登记）', () => {
+  const actual = new Set(legacyTokenDiffs().map(d => d.cell))
+  for (const cell of Object.keys(LEGACY_TOKEN_EXEMPT)) {
+    assert.ok(actual.has(cell), `例外表里的 ${cell} 已经没有差异了，请删掉这条登记`)
+  }
 })
 
 test('权限点反查表认得真权限点', () => {

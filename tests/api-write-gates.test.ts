@@ -76,6 +76,11 @@ test('例外表里的条目仍然存在（免得例外表烂掉变成后门）',
  */
 const LINE_LEVEL_DELETES: Record<string, string> = {
   'DELETE /api/orders/[id]/lines/[lineId]': '删订单里的一行 = 编辑单据内容，销售本来就在做；删整单仍只给 OPERATOR/BOSS',
+  // 调整行（折扣 / 差价 / 配送费 / 赠品）与订单行是同一类东西：都是单据内容，
+  // 不是整条记录。20260913000002 迁移按「谁有 sales.order.update 就给谁」发放
+  // sales.order.manage_adjustment，生产实测落到 boss/operator/sales/external_sales；
+  // 能加行删行改单价却不能撤掉一笔折扣，权限面不自洽。
+  'DELETE /api/orders/[id]/adjustments/[adjustmentId]': '删一条调整行 = 编辑单据内容，与删订单行同级；删整单仍只给 OPERATOR/BOSS',
 }
 
 /**
