@@ -1584,7 +1584,7 @@ export default function ClassicPlaceOrderPage() {
         </div>
 
         {/* ══ Tabs ══════════════════════════════════════════════════════════ */}
-        <div className="bg-white rounded border border-gray-200 mb-4">
+        <div className="order-lines-zoom bg-white rounded border border-gray-200 mb-4">
 
           {/* Tab headers */}
           <div className="flex border-b border-gray-200 overflow-x-auto">
@@ -1956,6 +1956,8 @@ export default function ClassicPlaceOrderPage() {
                 onPickerActivate={fetchLatestProducts}
                 onPickerCancel={discardEmptyLine}
                 onAddBlankLine={() => addLine()}
+                pickerDropdownClassName="order-lines-zoom"
+                pickerDropdownMinWidth={380}
                 pickerTexts={{
                   empty: isEn ? 'No matching products' : '没有匹配商品',
                   placeholder: isEn ? 'Click to select product…' : '点击选择商品…',
@@ -1977,7 +1979,7 @@ export default function ClassicPlaceOrderPage() {
         </div>
 
         {/* ══ Summary row ═══════════════════════════════════════════════════ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div className="order-summary-zoom grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 
           {/* Left: commission total + terms */}
           <div className="bg-white rounded border border-gray-200 p-4 space-y-3">

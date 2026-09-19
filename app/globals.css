@@ -175,3 +175,9 @@
     margin-right: 0.5rem;
   }
 }
+
+/* 下单页字号（20260919 客户要求）：Order Lines 整块放大到 16px，底部汇总整块缩到 10px。
+   区内元素几乎都带 text-xs/text-sm/text-[10px] 这类工具类，优先级高于父级继承，
+   所以必须连后代一起用 !important 压住，光给容器设 font-size 不起作用。 */
+.order-lines-zoom, .order-lines-zoom * { font-size: 16px !important; }
+.order-summary-zoom, .order-summary-zoom * { font-size: 10px !important; }

@@ -58,6 +58,9 @@ interface Props<
   /** 底部「+ Add a product」的文案，跟随页面语言 */
   addBlankLineText?: string
   pickerTexts?: { empty?: string; placeholder?: string; search?: string }
+  /** 透传给选品下拉：class 与最小宽度（下单页用它把候选列表字号一起放大） */
+  pickerDropdownClassName?: string
+  pickerDropdownMinWidth?: number
   renderHeaders: () => ReactNode
   renderRow: (line: L, index: number, opts: RowRenderOpts) => ReactNode
   rowStyle?: (line: L, index: number) => CSSProperties | undefined
@@ -93,6 +96,8 @@ export default function OrderLineEditor<
   onAddBlankLine,
   addBlankLineText = '+ Add a product',
   pickerTexts,
+  pickerDropdownClassName,
+  pickerDropdownMinWidth,
   renderHeaders,
   renderRow,
   rowStyle,
@@ -132,6 +137,8 @@ export default function OrderLineEditor<
     emptyText: pickerTexts?.empty,
     placeholderText: pickerTexts?.placeholder,
     searchPlaceholder: pickerTexts?.search,
+    dropdownClassName: pickerDropdownClassName,
+    dropdownMinWidth: pickerDropdownMinWidth,
   })
   const { activate: activateProductPicker, productCell } = picker
 

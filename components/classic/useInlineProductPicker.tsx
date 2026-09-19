@@ -76,6 +76,17 @@ export interface UseInlineProductPickerOptions<P extends InlineProductPickerProd
   placeholderText?: string
   /** 搜索框的 placeholder */
   searchPlaceholder?: string
+  /**
+   * 挂在下拉最外层的 class。下单页传 `order-lines-zoom` 把候选列表的字号
+   * 跟着订单行一起放大 —— 下拉是 portal 到 body 的，不在那个卡片里，
+   * 光给卡片加类管不到它（客户 20260919 截图专门圈了这块）。
+   */
+  dropdownClassName?: string
+  /**
+   * 下拉最小宽度(px)。默认跟随商品格宽度；字号放大后商品名容易被 truncate，
+   * 调用方可以放宽。
+   */
+  dropdownMinWidth?: number
 }
 
 export interface ProductCellOptions {
@@ -111,6 +122,8 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
   emptyText,
   placeholderText,
   searchPlaceholder,
+  dropdownClassName,
+  dropdownMinWidth,
 }: UseInlineProductPickerOptions<P>): InlineProductPicker {
   // 调用方（三个页面）不传这几个文案时，兜底也要跟着 locale 走——之前的硬编码中文默认值
   // 在 place-order 页（没传 pickerTexts）会在英文界面下漏出中文（20260904 全库排查发现）。
@@ -343,7 +356,8 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
     activeLineId && dropRect && typeof document !== 'undefined'
       ? createPortal(
           <div
-            style={{ position: 'fixed', top: dropRect.top, left: dropRect.left, width: dropRect.width, zIndex: 9999 }}
+            className={dropdownClassName}
+            style={{ position: 'fixed', top: dropRect.top, left: dropRect.left, width: dropRect.width, minWidth: dropdownMinWidth, zIndex: 9999 }}
             onMouseDown={e => e.preventDefault()}  // 别让 mousedown 抢走输入框的焦点
           >
             <div ref={listRef} className="bg-white border border-gray-200 rounded shadow-xl max-h-52 overflow-y-auto">
