@@ -15,7 +15,7 @@ const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
  * PurchaseOrder 只存 supplierId，没有到 Customer 的关系字段（供应商名是路由事后补的），
  * 所以按名字搜必须两步：先在 Customer 里找出匹配的 id，再收窄 supplierId。
  */
-async function supplierClause(term: string): Promise<Record<string, unknown>> {
+export async function supplierClause(term: string): Promise<Record<string, unknown>> {
   const suppliers = await prisma.customer.findMany({
     where: { name: like(term) },
     select: { id: true },

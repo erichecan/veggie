@@ -45,6 +45,8 @@ interface PurchaseOrder {
   status: POStatus
   supplierId: string
   supplierName?: string
+  createdBy?: string | null
+  createdByName?: string | null
   orderDate: string
   expectedDate?: string | null
   subtotalExTax: number
@@ -113,6 +115,8 @@ const STATUS_TABS_EN = [
 
 const PAGE_SIZE = 40
 
+const FILTER_INPUT_CLS = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
+
 export default function PurchasesPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -132,6 +136,30 @@ export default function PurchasesPage() {
   const [groupBy, setGroupBy] = useState('')
   // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
   const [facets, setFacets] = useState<Facet[]>([])
+  // 列头排序 + 列头筛选：全部下推服务端（只排/只筛当前页会让翻页后顺序断档、匹配记录被误判为空）
+  const [sortField, setSortField] = useState('createdAt')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [colSupplier, setColSupplier] = useState('')
+  const [orderDateFrom, setOrderDateFrom] = useState('')
+  const [orderDateTo, setOrderDateTo] = useState('')
+  // 供应商筛选框防抖 400ms，避免逐字符打一次请求
+  const [debouncedSupplier, setDebouncedSupplier] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSupplier(colSupplier.trim()), 400)
+    return () => clearTimeout(t)
+  }, [colSupplier])
+
+  function setDateFilter(which: 'from' | 'to', value: string) {
+    setPage(1)
+    if (which === 'from') setOrderDateFrom(value)
+    else setOrderDateTo(value)
+  }
+
+  function toggleSort(field: string) {
+    setPage(1)
+    if (sortField === field) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortField(field); setSortDir('asc') }
+  }
 
   function addFacet(key: string, value: string) {
     const field = PURCHASE_FACET_FIELDS.find(f => f.key === key)
@@ -142,15 +170,26 @@ export default function PurchasesPage() {
     setFacets(prev => prev.filter(f => f.key !== key))
   }
 
+  // 状态页签 + 搜索 + 分面 + 列筛选 + 排序。列表与导出共用，保证"导出的就是看到的"
+  const buildParams = useCallback(() => {
+    const params = new URLSearchParams()
+    if (activeTab !== 'all') params.set('status', activeTab)
+    if (search) params.set('search', search)
+    if (debouncedSupplier) params.set('colSupplier', debouncedSupplier)
+    if (orderDateFrom) params.set('orderDateFrom', orderDateFrom)
+    if (orderDateTo) params.set('orderDateTo', orderDateTo)
+    params.set('sortField', sortField)
+    params.set('sortDir', sortDir)
+    applyFacets(params, facets)
+    return params
+  }, [activeTab, search, debouncedSupplier, orderDateFrom, orderDateTo, sortField, sortDir, facets])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (activeTab !== 'all') params.set('status', activeTab)
-      if (search) params.set('search', search)
+      const params = buildParams()
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String((page - 1) * PAGE_SIZE))
-      applyFacets(params, facets)
       const data = await apiGet<{ items: PurchaseOrder[]; total: number }>(`/api/purchase-orders?${params}`)
       setPos(data.items ?? (data as unknown as PurchaseOrder[]))
       setTotal(data.total ?? (data as unknown as PurchaseOrder[]).length)
@@ -159,18 +198,12 @@ export default function PurchasesPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeTab, search, page, isEn, facets])
+  }, [buildParams, page, isEn])
 
   // 导出与列表同参（状态页签 + 搜索 + 分面），服务端复用同一个 buildPurchaseOrdersWhere
   const exportAction = useCsvExport({
     entity: 'purchase-orders',
-    params: () => {
-      const params = new URLSearchParams()
-      if (activeTab !== 'all') params.set('status', activeTab)
-      if (search) params.set('search', search)
-      applyFacets(params, facets)
-      return params
-    },
+    params: buildParams,
     fallbackFilename: isEn ? 'purchase-orders.csv' : '采购单.csv',
   })
 
@@ -248,10 +281,11 @@ export default function PurchasesPage() {
           { label: isEn ? 'Supplier' : '供应商', value: 'supplier' },
           { label: isEn ? 'Status' : '状态', value: 'status' },
           { label: isEn ? 'Order Date' : '订购日期', value: 'orderDate' },
+          { label: isEn ? 'Created By' : '录入人', value: 'createdBy' },
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, activeTab, groupBy, facets }}
+        favouriteState={{ searchInput, activeTab, groupBy, facets, sortField, sortDir, colSupplier, orderDateFrom, orderDateTo }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           setSearch(String(s.searchInput ?? ''))
@@ -259,6 +293,12 @@ export default function PurchasesPage() {
           setGroupBy(String(s.groupBy ?? ''))
           // 分面搜索(单号/供应商/商品/备注)此前没进收藏，与商品页同一个坑
           setFacets(Array.isArray(s.facets) ? (s.facets as Facet[]) : [])
+          // 列头排序/列筛选也进收藏——否则"存下来的视图"跟当时看到的顺序和筛选对不上
+          setSortField(String(s.sortField ?? 'createdAt'))
+          setSortDir(s.sortDir === 'asc' ? 'asc' : 'desc')
+          setColSupplier(String(s.colSupplier ?? ''))
+          setOrderDateFrom(String(s.orderDateFrom ?? ''))
+          setOrderDateTo(String(s.orderDateTo ?? ''))
         }}
         storageKey="classic_purchases_favs"
         total={total}
@@ -294,13 +334,59 @@ export default function PurchasesPage() {
                   />
                 </th>
                 <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'No.' : '编号'}</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Supplier' : '供应商'}</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Order Date' : '订购日期'}</th>
+                <th
+                  className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs cursor-pointer select-none hover:bg-gray-100"
+                  onClick={() => toggleSort('supplier')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {isEn ? 'Supplier' : '供应商'}
+                    {sortField === 'supplier' && <span className="text-[10px]" style={{ color: PURPLE }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                  </span>
+                </th>
+                <th
+                  className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs cursor-pointer select-none hover:bg-gray-100"
+                  onClick={() => toggleSort('orderDate')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {isEn ? 'Order Date' : '订购日期'}
+                    {sortField === 'orderDate' && <span className="text-[10px]" style={{ color: PURPLE }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                  </span>
+                </th>
                 <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Expected Arrival' : '预计到货'}</th>
                 <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Source Document' : '来源单据'}</th>
                 <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Status' : '状态'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Created By' : '录入人'}</th>
                 <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Amount Ex. Tax' : '税前金额'}</th>
                 <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Total Inc. Tax' : '含税总额'}</th>
+              </tr>
+              {/* 列筛选行：供应商模糊 + 订购日期区间，与分面 chip 独立（彼此 AND），均走服务端 */}
+              <tr className="border-b border-gray-200 bg-white">
+                <td className="w-10 px-3 py-1.5 text-center text-gray-300">✎</td>
+                <td className="px-4 py-1.5" />
+                <td className="px-4 py-1.5">
+                  <input
+                    value={colSupplier}
+                    onChange={e => { setPage(1); setColSupplier(e.target.value) }}
+                    placeholder={isEn ? 'Filter supplier' : '筛选供应商'}
+                    className={FILTER_INPUT_CLS}
+                  />
+                </td>
+                <td className="px-4 py-1.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-400 w-8">{isEn ? 'From' : '起'}</span>
+                    <input type="date" value={orderDateFrom} onChange={e => setDateFilter('from', e.target.value)} className={FILTER_INPUT_CLS} />
+                  </div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className="text-[10px] text-gray-400 w-8">{isEn ? 'To' : '止'}</span>
+                    <input type="date" value={orderDateTo} onChange={e => setDateFilter('to', e.target.value)} className={FILTER_INPUT_CLS} />
+                  </div>
+                </td>
+                <td className="px-4 py-1.5" />
+                <td className="px-4 py-1.5" />
+                <td className="px-4 py-1.5" />
+                <td className="px-4 py-1.5" />
+                <td className="px-4 py-1.5" />
+                <td className="px-4 py-1.5" />
               </tr>
             </thead>
             <tbody>
@@ -309,6 +395,7 @@ export default function PurchasesPage() {
                   supplier: 'supplierName',
                   status: 'status',
                   orderDate: 'orderDate',
+                  createdBy: 'createdByName',
                 }
                 const field = GB_FIELD[groupBy]
                 const renderRow = (po: PurchaseOrder) => (
@@ -340,6 +427,7 @@ export default function PurchasesPage() {
                         {STATUS_LABEL[po.status]}
                       </span>
                     </td>
+                    <td className="px-4 py-2.5 text-gray-700">{po.createdByName ?? '-'}</td>
                     <td className="px-4 py-2.5 text-right text-gray-700">{Number(po.subtotalExTax).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right font-medium text-gray-900">{Number(po.totalIncTax).toFixed(2)}</td>
                   </tr>
@@ -353,7 +441,7 @@ export default function PurchasesPage() {
                 }
                 return Array.from(groups.entries()).flatMap(([key, groupPos]) => [
                   <tr key={`__group__${key}`} style={{ background: '#f5f0f7', borderBottom: '2px solid #d4b8d0' }}>
-                    <td colSpan={9} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
+                    <td colSpan={10} className="px-3 py-1.5 font-semibold text-sm" style={{ color: '#6d4a66' }}>
                       {groupBy === 'status' ? STATUS_LABEL[key as POStatus] ?? key
                         : groupBy === 'orderDate' ? (key ? new Date(key).toLocaleDateString('en-GB') : (isEn ? '(None)' : '（空）'))
                         : key || (isEn ? '(None)' : '（空）')}

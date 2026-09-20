@@ -7,6 +7,7 @@ import type { ExportColumn } from '../types'
 export interface PurchaseOrderExportRow {
   name?: string | null
   supplierName?: string | null
+  createdByName?: string | null
   status?: string | null
   orderDate?: string | Date | null
   expectedDate?: string | Date | null
@@ -42,6 +43,7 @@ export function purchaseOrderExportColumns(isEn: boolean): readonly ExportColumn
     { header: '采购单号', headerEn: 'PO No', get: r => r.name ?? '' },
     { header: '供应商', headerEn: 'Supplier', get: r => r.supplierName ?? '' },
     { header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
+    { header: '录入人', headerEn: 'Created By', get: r => r.createdByName ?? '' },
     { header: '下单日期', headerEn: 'Order Date', get: r => dateOnly(r.orderDate) },
     { header: '预计到货', headerEn: 'Expected Date', get: r => dateOnly(r.expectedDate) },
     { header: '行数', headerEn: 'Lines', get: r => r.lineCount ?? 0 },
