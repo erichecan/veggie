@@ -243,6 +243,24 @@ async function main() {
     missing.length === 0,
     missing.length ? `⛔ 白名单里缺 ${missing.join(', ')}` : `库里 ${dbStatuses.length} 种，白名单 ${declared.size} 种，无遗漏`)
 
+  // ── ④ 币种守卫：采购报表的金额是**原币**，页面却一律标 € ──────────────────
+  // veggie_purchasing_report 的 subtotal_ex_tax 映射的是 PurchaseOrderLine.subtotalExTax，
+  // 即原币值；schema 里写明下游应读 subtotalExTaxEur（= 原币 × exchangeRate）。
+  // 20260920 实测生产库 35 张非取消采购单全是 EUR、两个字段零差异，所以当前
+  // 「原币直接当欧元显示并相加」不会给出错数字 —— 但这是"今天恰好成立"。
+  // 这条断言就是那个铃：哪天真的进了外币采购单，它先红，而不是让采购分析页
+  // 静默把不同币种加在一起。届时的修法是视图层换列（连带口径决策），不是改 UI。
+  const fx = await prisma.$queryRaw<Array<{ currency: string; pos: bigint }>>`
+    SELECT currency, COUNT(*) AS pos FROM "PurchaseOrder"
+    WHERE status::text <> 'CANCELLED' GROUP BY currency`
+  const nonEur = fx.filter(r => r.currency !== 'EUR')
+  add('④ 采购单全部是 EUR（采购报表把原币当欧元显示的前提）',
+    nonEur.length === 0,
+    nonEur.length
+      ? `⛔ 出现外币采购单：${nonEur.map(r => `${r.currency}×${Number(r.pos)}`).join(', ')}。` +
+        `采购分析页会把它们当欧元直接相加，必须改视图读 *Eur 列`
+      : `${fx.map(r => `${r.currency}×${Number(r.pos)}`).join(', ')}`)
+
   // ── 角色可见性 ──────────────────────────────────────────────────────────
   // ⚠️ 这里断言的是**实际行为**，不是路由里那张 ROLE_REPORT_ACCESS 表写了什么。
   // 实测：`sales` 与 `driver` 角色一个 analytics.* 权限都没有，请求在 gate 层就 403，

@@ -21,6 +21,14 @@ import type { FilterSpec, ReportRequest } from '@/lib/reports/types'
  * 不用 `AVG(unit_cost)`：那是**采购行单价的算术平均**，一旦进了透视表的合计格就只能
  * 把若干个平均数再加起来，是个纯粹的假数。代价是与 Odoo 的 Average Price 口径不同
  * （Odoo 给的正是算术平均），同一格数字会不一样 —— 这是有意为之。
+ *
+ * ⚠️ 金额是**原币**。视图 `veggie_purchasing_report` 的 `subtotal_ex_tax` 映射
+ * `PurchaseOrderLine.subtotalExTax`，而 schema 写明下游应读 `subtotalExTaxEur`
+ * （= 原币 × `PurchaseOrder.exchangeRate`，汇率待确认时为 null）。
+ * 20260920 实测生产库 35 张非取消采购单全是 EUR、两个字段零差异，所以现在标 €
+ * 并相加不会出错。**这个前提由 `scripts/audit/reports-pivot-test.ts` 的币种断言守着**，
+ * 一旦出现外币采购单它会先红。届时要改的是视图层的列（连带「Eur 为 null 怎么算」
+ * 这个口径决策），不是这个组件。
  */
 
 /** 只统计已确认及之后的采购单。DRAFT/SENT/TO_APPROVE 还是询价阶段，不算采购。
@@ -62,6 +70,10 @@ interface ApiResponse {
 /** 一个格子里的原始两个量。均价永远由这两个现推，不单独存 */
 interface Cell { amount: number; qty: number }
 
+/** 一行供应商。`name` 为 null 表示视图里 supplier_name 是 NULL（档案没打 isVendor），
+ *  `key` 是这一行在各种 Record 里的稳定标识 */
+interface SupplierRow { key: string; name: string | null; cells: Map<string, Cell> }
+
 const emptyCell = (): Cell => ({ amount: 0, qty: 0 })
 const addInto = (acc: Cell, c: Cell) => { acc.amount += c.amount; acc.qty += c.qty }
 const avgOf = (c: Cell) => (c.qty > 0 ? c.amount / c.qty : 0)
@@ -98,8 +110,15 @@ export default function SupplierMonthMatrix({
 }) {
   const [monthsBack, setMonthsBack] = useState(MONTHS_PAGE_SIZE)
   const [measures, setMeasures] = useState<MeasureKey[]>(['amount', 'qty', 'avgPrice'])
-  const [data, setData] = useState<ApiResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  /**
+   * 取数结果连同**它是为哪套条件取的**一起存。
+   * 这样「正在加载」是个派生值（结果的 scope != 当前 scope），不需要在 effect 里
+   * 先 setState(true) 再 setState(false) —— 那会多触发一轮渲染，eslint 的
+   * react-hooks/set-state-in-effect 拦的就是它。
+   * 副产品：重新取数期间旧数字仍在屏幕上，而我们能明确说出「这还是上一次的结果」。
+   */
+  const [loaded, setLoaded] = useState<{ scope: string; res: ApiResponse } | null>(null)
+  const [failure, setFailure] = useState<{ scope: string; message: string } | null>(null)
   /**
    * 展开到商品。key 是 `${scope}|${供应商名}` —— **scope 必须进 key**：
    * 换了筛选或时间窗口之后，旧的商品明细是按旧条件拉回来的，挂在同名供应商下面
@@ -129,6 +148,7 @@ export default function SupplierMonthMatrix({
 
   useEffect(() => {
     let cancelled = false
+    const reqScope = scope
     const body: ReportRequest = {
       rowDimensions: [{ field: 'supplier_name' }],
       colDimensions: [{ field: 'order_date', interval: 'month' }],
@@ -137,10 +157,18 @@ export default function SupplierMonthMatrix({
       limit: ROW_LIMIT,
     }
     apiPost<ApiResponse>('/api/reports/purchasing', body)
-      .then((res) => { if (!cancelled) { setData(res); setError(null) } })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
+      .then((res) => { if (!cancelled) { setLoaded({ scope: reqScope, res }); setFailure(null) } })
+      .catch((e) => {
+        if (!cancelled) setFailure({ scope: reqScope, message: e instanceof Error ? e.message : String(e) })
+      })
     return () => { cancelled = true }
-  }, [baseFilters])
+    // scope 与 baseFilters 同源（都来自 supplierIds/productIds/monthsBack），
+    // 列在依赖里只是为了让 reqScope 的捕获值可被 lint 校验
+  }, [baseFilters, scope])
+
+  const data = loaded?.res ?? null
+  const error = failure?.scope === scope ? failure.message : null
+  const pending = loaded?.scope !== scope && failure?.scope !== scope
 
   function toggleMeasure(m: MeasureKey) {
     setMeasures((prev) => {
@@ -150,11 +178,23 @@ export default function SupplierMonthMatrix({
     })
   }
 
+  /**
+   * ⛔ 能否展开。视图 `veggie_purchasing_report` 对 Customer 的 JOIN 带
+   * `AND sup."isVendor" = true`，供应商档案没打供应商标记时 `supplier_name` 就是 NULL，
+   * 这一行照样挂着真金额。那时行名是占位串「（无供应商）」，拿它去
+   * `supplier_name = '（无供应商）'` 一条都匹配不上，展开后显示「这家供应商下面没有商品明细」——
+   * 一个看起来很笃定的假答案。宁可不给点。
+   * （lib/reports/drilldown.ts 的 rowFilterFor 对空值返回 null 就是同一个道理。）
+   */
+  function canExpand(s: SupplierRow): boolean { return s.name !== null }
+
   function toggleSupplier(name: string) {
     const key = scoped(name)
     const willExpand = !expanded[key]
     setExpanded((prev) => ({ ...prev, [key]: willExpand }))
-    if (!willExpand || productsBySupplier[key]) return
+    // ⛔ 'error' 也是一个已存在的值。把它当成"已缓存"会让一次网络抖动变成永久失败：
+    // 收起再展开不会重新请求，那一行一直挂着「加载失败」，直到筛选或月份窗口变化
+    if (!willExpand || (productsBySupplier[key] && productsBySupplier[key] !== 'error')) return
 
     setProductsBySupplier((prev) => ({ ...prev, [key]: 'loading' }))
     const body: ReportRequest = {
@@ -189,9 +229,11 @@ export default function SupplierMonthMatrix({
 
   // ── 把扁平结果集折成 供应商 → 月 → 格子 ────────────────────────────────────
   const monthSet = new Set<string>()
+  // key 用 '' 代表「视图里 supplier_name 为 NULL」，与真名区分开 ——
+  // 行名上的占位串只是给人看的，不能拿去当查询条件（见 canExpand）
   const bySupplier = new Map<string, Map<string, Cell>>()
   for (const r of data.rows) {
-    const sname = r.supplier_name ?? (isEn ? '(no supplier)' : '（无供应商）')
+    const sname = r.supplier_name ?? ''
     const mk = monthKey(r.order_date_month)
     monthSet.add(mk)
     if (!bySupplier.has(sname)) bySupplier.set(sname, new Map())
@@ -203,9 +245,12 @@ export default function SupplierMonthMatrix({
   // 列序：月份升序（老的在左、新的在右），与 Odoo 一致；合计列恒在最右
   const months = Array.from(monthSet).sort((a, b) => a.localeCompare(b))
   // 行序：按期间总金额倒序 —— 老板先看的永远是花钱最多的那几家
-  const suppliers = Array.from(bySupplier.entries())
-    .map(([name, cells]) => ({ name, cells }))
+  const suppliers: SupplierRow[] = Array.from(bySupplier.entries())
+    .map(([key, cells]) => ({ key, name: key === '' ? null : key, cells }))
     .sort((a, b) => totalOf(b.cells).amount - totalOf(a.cells).amount)
+
+  const noSupplierLabel = isEn ? '(supplier not flagged as vendor)' : '（档案未标记为供应商）'
+  const rowLabel = (s: SupplierRow) => s.name ?? noSupplierLabel
 
   const colTotals = new Map<string, Cell>()
   months.forEach((m) => colTotals.set(m, emptyCell()))
@@ -289,9 +334,9 @@ export default function SupplierMonthMatrix({
 
     // 只导出屏幕上看得到的：展开了的供应商，跟着导出它的商品明细
     for (const s of suppliers) {
-      rows.push(line(s.name, s.cells))
-      const kids = productsBySupplier[scoped(s.name)]
-      if (!expanded[scoped(s.name)] || !Array.isArray(kids)) continue
+      rows.push(line(rowLabel(s), s.cells))
+      const kids = productsBySupplier[scoped(s.key)]
+      if (!expanded[scoped(s.key)] || !Array.isArray(kids)) continue
       for (const p of kids) rows.push(line(`    ${p.name}`, p.cells))
     }
 
@@ -333,6 +378,11 @@ export default function SupplierMonthMatrix({
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden overflow-x-auto">
+        {pending && (
+          <div className="px-4 py-1.5 text-xs text-gray-500 bg-gray-50 border-b border-gray-100">
+            {isEn ? 'Updating… the figures below are from the previous query' : '正在更新…下面显示的还是上一次的结果'}
+          </div>
+        )}
         {truncated && (
           <div className="px-4 py-2 text-xs text-amber-600 bg-amber-50 border-b border-amber-100">
             {isEn
@@ -402,16 +452,27 @@ export default function SupplierMonthMatrix({
             )}
 
             {suppliers.map((s) => {
-              const isOpen = !!expanded[scoped(s.name)]
-              const kids = productsBySupplier[scoped(s.name)]
+              const expandable = canExpand(s)
+              const isOpen = expandable && !!expanded[scoped(s.key)]
+              const kids = productsBySupplier[scoped(s.key)]
               return (
-                <Fragment key={s.name}>
-                  <tr className="group border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onClick={() => toggleSupplier(s.name)}>
-                    <td className={`px-3 py-2.5 whitespace-nowrap text-gray-800 ${STICKY_CELL} bg-white group-hover:bg-gray-50`}>
-                      <span className="w-3 inline-block" style={{ color: PURPLE }}>{isOpen ? '−' : '+'}</span>
-                      {s.name}
+                <Fragment key={s.key}>
+                  <tr
+                    className={`group border-b border-gray-50 hover:bg-gray-50 ${expandable ? 'cursor-pointer' : ''}`}
+                    onClick={expandable ? () => toggleSupplier(s.key) : undefined}
+                  >
+                    <td
+                      className={`px-3 py-2.5 whitespace-nowrap text-gray-800 ${STICKY_CELL} bg-white group-hover:bg-gray-50`}
+                      title={expandable ? undefined : (isEn
+                        ? 'This row has no supplier on the view (partner not flagged as vendor), so it cannot be expanded'
+                        : '这一行在视图里没有供应商名（对方档案没打「供应商」标记），因此无法展开')}
+                    >
+                      <span className="w-3 inline-block" style={{ color: expandable ? PURPLE : '#d1d5db' }}>
+                        {expandable ? (isOpen ? '−' : '+') : '·'}
+                      </span>
+                      <span className={expandable ? '' : 'text-gray-400 italic'}>{rowLabel(s)}</span>
                     </td>
-                    {measureCells(s.cells, s.name, 'py-2.5 text-gray-800')}
+                    {measureCells(s.cells, s.key, 'py-2.5 text-gray-800')}
                   </tr>
                   {isOpen && kids === 'loading' && (
                     <tr><td colSpan={totalCols} className="px-3 py-2 text-center text-xs text-gray-400">{isEn ? 'Loading…' : '加载中…'}</td></tr>
@@ -423,9 +484,9 @@ export default function SupplierMonthMatrix({
                     <tr><td colSpan={totalCols} className="px-3 py-2 text-center text-xs text-gray-400">{isEn ? 'No products' : '这家供应商下面没有商品明细'}</td></tr>
                   )}
                   {isOpen && Array.isArray(kids) && kids.map((p) => (
-                    <tr key={`${s.name}|${p.name}`} className="border-b border-gray-50 text-gray-500">
+                    <tr key={`${s.key}|${p.name}`} className="border-b border-gray-50 text-gray-500">
                       <td className={`pl-10 pr-3 py-1.5 whitespace-nowrap ${STICKY_CELL} bg-white`}>{p.name}</td>
-                      {measureCells(p.cells, `${s.name}|${p.name}`, 'py-1.5')}
+                      {measureCells(p.cells, `${s.key}|${p.name}`, 'py-1.5')}
                     </tr>
                   ))}
                 </Fragment>
@@ -436,7 +497,8 @@ export default function SupplierMonthMatrix({
         <div className="text-center py-3 border-t border-gray-50">
           <button
             onClick={() => setMonthsBack((n) => n + MONTHS_PAGE_SIZE)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-400"
+            disabled={pending}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-gray-200"
           >
             {isEn ? 'Show more months' : '显示更多月'}
           </button>

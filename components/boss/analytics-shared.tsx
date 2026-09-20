@@ -89,6 +89,17 @@ export async function searchProductOptions(q: string): Promise<SearchOption[]> {
   const rows = await apiGet<Array<{ id: string; name: string }>>(`/api/products?slim=1&sellable=1&search=${encodeURIComponent(q)}`)
   return rows.slice(0, 30).map((r) => ({ id: r.id, label: r.name }))
 }
+/**
+ * 采购侧选品。
+ *
+ * ⛔ 别在采购页复用上面那个：它带 `sellable=1`（`canBeSold`），
+ * 而包材、耗材、只进不卖的货是 `canBePurchased && !canBeSold` —— 这些商品的采购金额
+ * 会出现在采购分析的表里，却永远筛不出来，而下拉框不会告诉你它少了东西。
+ */
+export async function searchPurchasableProductOptions(q: string): Promise<SearchOption[]> {
+  const rows = await apiGet<Array<{ id: string; name: string }>>(`/api/products?slim=1&purchasable=1&search=${encodeURIComponent(q)}`)
+  return rows.slice(0, 30).map((r) => ({ id: r.id, label: r.name }))
+}
 export async function searchCustomerOptions(q: string): Promise<SearchOption[]> {
   const rows = await apiGet<Array<{ id: string; name: string }>>(`/api/customers?slim=1&search=${encodeURIComponent(q)}`)
   return rows.slice(0, 30).map((r) => ({ id: r.id, label: r.name }))

@@ -163,9 +163,33 @@ export function PivotTable() {
     )
   }
 
-  if (!hasCols || !pivotData) return <FlatTable {...{ rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon, isEn, dimensionDefs, drill: state.drill, drillDown, dispatch }} />
+  /**
+   * 主查询也有 limit（ReportingContext 的 state.limit），而页脚「合计」来自
+   * 不带 limit 的 totalsSql。被截断时，屏幕上的行加起来不等于合计，且没有任何提示 ——
+   * 与 20260920 修掉的下钻截断是同一个失效模式，话术也保持一致。
+   */
+  const truncated = rows.length < state.total
+  const banner = truncated ? (
+    <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-md px-3 py-2 mb-2">
+      {isEn
+        ? `Showing ${rows.length} of ${state.total} rows — the rows below do not add up to the Total line. Narrow the filters to see all of it.`
+        : `共 ${state.total} 行，只显示前 ${rows.length} 行 —— 下面的行加起来不等于页脚的「合计」。请缩小筛选范围看全。`}
+    </div>
+  ) : null
 
-  return <CrossTab pivotData={pivotData} {...{ rowDimensions, colDimensions, activeMetas, totals, getDimLabel, isEn }} />
+  if (!hasCols || !pivotData) return (
+    <>
+      {banner}
+      <FlatTable {...{ rows, rowDimensions, activeMetas, totals, getDimLabel, handleSort, sortIcon, isEn, dimensionDefs, drill: state.drill, drillDown, dispatch }} />
+    </>
+  )
+
+  return (
+    <>
+      {banner}
+      <CrossTab pivotData={pivotData} {...{ rowDimensions, colDimensions, activeMetas, totals, getDimLabel, isEn }} />
+    </>
+  )
 }
 
 function FlatTable({
@@ -235,7 +259,13 @@ function FlatTable({
                           onChange={e => {
                             const f = e.target.value
                             const by = candidates.find(c => c.field === f)
-                            if (by) drillDown(rk, row, { field: by.field })
+                            // ⛔ 日期维度必须带粒度。不带的话 SQL 按未分桶的原始 timestamp
+                            // 分组 —— 每个不同的时刻一行，子行能铺出上千条，而标签
+                            // 印的是 2026-08-01T00:00:00.000Z。默认取月，与页面上
+                            // 其余时间维度的默认一致。
+                            if (by) drillDown(rk, row, by.dateIntervals?.length
+                              ? { field: by.field, interval: by.dateIntervals.includes('month') ? 'month' : by.dateIntervals[0] }
+                              : { field: by.field })
                             e.target.value = ''
                           }}>
                           <option value="">▸</option>

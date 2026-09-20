@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import {
-  SearchSelectDropdown, searchProductOptions, searchSupplierOptions, type SearchOption,
+  SearchSelectDropdown, searchPurchasableProductOptions, searchSupplierOptions, type SearchOption,
 } from '@/components/boss/analytics-shared'
 import SupplierMonthMatrix from './SupplierMonthMatrix'
 
@@ -52,7 +52,7 @@ export default function PurchasingReportPage() {
           label={isEn ? 'Products' : '产品'}
           selected={productFilter}
           onChange={setProductFilter}
-          fetchOptions={searchProductOptions}
+          fetchOptions={searchPurchasableProductOptions}
           isEn={isEn}
         />
       </div>

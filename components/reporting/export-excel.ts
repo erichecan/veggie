@@ -1,6 +1,27 @@
 import * as XLSX from 'xlsx'
 import type { ReportingState } from './ReportingContext'
-import type { MeasureMeta } from '@/lib/reports/types'
+import type { DimensionSpec, MeasureMeta } from '@/lib/reports/types'
+import { rowFieldAlias } from '@/lib/reports/drilldown'
+import { bucketLabel } from '@/lib/reports/date-label'
+
+/**
+ * ⛔ 维度取值必须经 `rowFieldAlias` 取、经 `bucketLabel` 显示。
+ * 日期维度在结果集里的列名带粒度后缀（`order_date` + month → `order_date_month`，
+ * 见 lib/reports/sql-builder.ts），直接读 `row[d.field]` 恒为 undefined。
+ *
+ * 20260920 修屏幕上那张表（PivotTable.tsx）时，这个文件被漏掉了一轮 ——
+ * 结果是**屏幕对、下载错**，比两边都错更容易骗人：用户核对过页面之后才导出。
+ * 交叉表里它的后果是所有时间桶塌成一个空列且后一个月覆盖前一个月；
+ * 扁平表里是日期那一列整列空白。
+ */
+function dimValue(dim: DimensionSpec, row: Record<string, unknown>): unknown {
+  return row[rowFieldAlias(dim)]
+}
+
+function dimText(dim: DimensionSpec, value: unknown, isEn: boolean): string {
+  if (dim.interval) return bucketLabel(value, dim.interval, isEn)
+  return String(value ?? '')
+}
 
 const REPORT_LABELS_ZH: Record<string, string> = { sales: '销售分析', purchasing: '采购分析', logistics: '物流分析' }
 const REPORT_LABELS_EN: Record<string, string> = { sales: 'Sales Analysis', purchasing: 'Purchasing Analysis', logistics: 'Logistics Analysis' }
@@ -38,7 +59,7 @@ function exportFlatTable(
   ]
 
   const data = rows.map(row => [
-    ...rowDimensions.map(d => row[d.field] ?? ''),
+    ...rowDimensions.map(d => dimText(d, dimValue(d, row), isEn)),
     ...activeMetas.map(m => Number(row[m.field] ?? 0)),
   ])
 
@@ -74,19 +95,19 @@ function exportCrossTable(
   const rowLabelMap = new Map<string, Record<string, unknown>>()
 
   for (const row of rows) {
-    const colKey = colDimensions.map(d => String(row[d.field] ?? '')).join('|')
-    const rowKey = rowDimensions.map(d => String(row[d.field] ?? '')).join('|')
+    const colKey = colDimensions.map(d => String(dimValue(d, row) ?? '')).join('|')
+    const rowKey = rowDimensions.map(d => String(dimValue(d, row) ?? '')).join('|')
 
     if (!colLabelMap.has(colKey)) {
       colKeySet.add(colKey)
       const labels: Record<string, unknown> = {}
-      colDimensions.forEach(d => { labels[d.field] = row[d.field] })
+      colDimensions.forEach(d => { labels[d.field] = dimValue(d, row) })
       colLabelMap.set(colKey, labels)
     }
     if (!rowMap.has(rowKey)) {
       rowMap.set(rowKey, new Map())
       const labels: Record<string, unknown> = {}
-      rowDimensions.forEach(d => { labels[d.field] = row[d.field] })
+      rowDimensions.forEach(d => { labels[d.field] = dimValue(d, row) })
       rowLabelMap.set(rowKey, labels)
     }
 
@@ -95,13 +116,15 @@ function exportCrossTable(
     rowMap.get(rowKey)!.set(colKey, measures)
   }
 
-  const colKeys = Array.from(colKeySet)
+  // 列序与屏幕上那张表一致（PivotTable 同样排过）：不排的话，第一行恰好缺某个月，
+  // 整张表的列序就跟着数据到达顺序乱掉，导出的 xlsx 与页面对不上
+  const colKeys = Array.from(colKeySet).sort((a, b) => a.localeCompare(b))
   const multi = activeMetas.length > 1
 
   const colLabel = (ck: string) => {
     const labels = colLabelMap.get(ck)
     if (!labels) return ck
-    return colDimensions.map(d => String(labels[d.field] ?? '')).join(' / ')
+    return colDimensions.map(d => dimText(d, labels[d.field], isEn)).join(' / ')
   }
 
   const dimHeaders = rowDimensions.map(d => getDimLabel(d.field))
@@ -124,7 +147,7 @@ function exportCrossTable(
   const dataRows: (string | number)[][] = []
   for (const [rk, colMap] of rowMap) {
     const labels = rowLabelMap.get(rk)!
-    const dimVals = rowDimensions.map(d => String(labels[d.field] ?? ''))
+    const dimVals = rowDimensions.map(d => dimText(d, labels[d.field], isEn))
 
     const rowTotals: Record<string, number> = {}
     activeMeasures.forEach(m => { rowTotals[m] = 0 })
