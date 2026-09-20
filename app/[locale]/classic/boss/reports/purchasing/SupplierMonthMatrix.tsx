@@ -242,8 +242,10 @@ export default function SupplierMonthMatrix({
     addInto(cells.get(mk)!, { amount: num(r.subtotal_ex_tax), qty: num(r.ordered_qty) })
   }
 
-  // 列序：月份升序（老的在左、新的在右），与 Odoo 一致；合计列恒在最右
-  const months = Array.from(monthSet).sort((a, b) => a.localeCompare(b))
+  // 列序：月份倒序（新的在左、老的在右）—— 越近的月份越先看到，不必横向滚到最右。
+  // 这一条与 Odoo 的升序不同，是客户 20260920 明确要的。
+  // '' 是「无下单日期」那一列，倒序下自然落到所有月份之后；合计列恒在最右。
+  const months = Array.from(monthSet).sort((a, b) => b.localeCompare(a))
   // 行序：按期间总金额倒序 —— 老板先看的永远是花钱最多的那几家
   const suppliers: SupplierRow[] = Array.from(bySupplier.entries())
     .map(([key, cells]) => ({ key, name: key === '' ? null : key, cells }))
