@@ -191,3 +191,38 @@
 为了能跑发号验证，把 `20260920000001_order_invoice_no`（纯加列 + UNIQUE 索引，不动数据）
 应用到了**本地开发库**，并登记进 `_prisma_migrations`。生产未动。
 这个迁移本来就会在下次部署由 `migrate deploy` 执行。
+
+
+## 提交与部署（20260920）
+
+- `b03e203` 打印单据 6 项改动 + 发票号两处高危修复
+- `410d658` 销售分析：月/周/日三级 + 维度面板 + 毛重/提成/单位三列
+
+### 单位（unit）列 —— 用户 20260920 追加需求
+
+两处都加了：产品明细面板（产品名后，可排序）与明细视图（产品后），CSV 同步。
+
+⛔ **不能假设「一个产品一个单位」**：生产实测 6227 个产品×天分组里 345 组（**5.54%**）
+同时用了多种单位，所以是 `string_agg` 不是 `MAX`。实测输出：
+- 单一单位：`Spanish Onion → BAG`、`Tomato Beef CASE → CASE`（与客户截图里的产品对得上）
+- 多单位：`Fresh Red Chilli-3 → 1KG, 1公斤, 500g, CASE`
+
+⚠️ 顺带暴露一个**主数据问题**：`1KG` 和 `1公斤` 是同一个单位的中英文两条记录。
+显示是对的，脏的是数据。要不要合并待用户决定。
+
+空 uomName（生产 3.8%，20260823 之前的历史行）按 `displayUomName` 口径显示 `⚠ Unit(s)`。
+
+### 提交时的两处阻碍
+
+1. pre-commit 拦下预览脚本里硬编码的一个**客户真实域名的账号**（不在这里复述，否则这份文档自己又会被拦）。
+   **没有用 --no-verify 绕过**，改成必须由环境变量提供。
+2. 另一个会话在同一工作目录并发作业（采购分析）。逐个文件 add + worktree 干净验证，
+   没带走对方的 `next.config.ts` 与 `boss/reports/*`。做法已补进记忆
+   `parallel-fork-git-stash-race-20260904`。
+
+### 干净树验证（git worktree 检出 410d658，symlink node_modules + lib/generated）
+
+- `npx tsc --noEmit` 0 错
+- 926 用例：923 通过 / 1 失败（pricing-override 缺 ABCT 前置数据，改动前同样失败）/ 2 跳过
+- 权限安全绳（role-reachability 等 5 个）**52/52 全绿**
+- CI 在 main 上 success
