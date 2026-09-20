@@ -1,46 +1,18 @@
-'use client'
-
-import { usePathname } from 'next/navigation'
-import Link from 'next/link'
-import { useLocale } from 'next-intl'
-import { routing } from '@/i18n/routing'
-
 /**
- * 报表分析的三张表共用一条 tab（台账 H2）。
+ * 报表分析三张表（sales / purchasing / logistics）的公共外壳。
  *
- * ⚠️ 这三个页面此前**没有任何导航入口** —— 代码、接口、SQL 视图全都在，
- * 权限也配好了，但整个系统里没有一个链接指向它们。功能到不了 = 等于不存在，
- * 这才是 H2 真正的缺口（清单里写的「采购侧完全没有可组合分析」不准确）。
+ * 历史：这三个页面此前**没有任何导航入口** —— 代码、接口、SQL 视图、权限全都在，
+ * 但整个系统里没有一个链接指向它们。功能到不了 = 等于不存在。
+ * 于是 20260807 给它们加了一条 tab。
+ *
+ * 20260920：客户要求数据中心只留「销售分析」「采购分析」两项，
+ * sales / logistics 两张报表从导航撤下，这条 tab 因此只剩一个标签 —— 一个标签的
+ * tab 条是纯噪音，而且它顶在采购分析页上方，破坏了与「销售分析」页的视觉一致
+ * （那页没有 tab 条）。整条移除，外壳退化成透传。
+ * 两个页面本身与接口都还在，直链 `/classic/boss/reports/sales`、
+ * `/classic/boss/reports/logistics` 仍可访问；要把入口加回来，改
+ * `app/[locale]/classic/boss/layout.tsx` 的 LINKS 数组即可。
  */
-// 20260920：客户要求「销售分析」「物流分析（报表）」从导航里撤下，
-// 这条 tab 因此只剩采购分析；两个页面本身与接口都还在，直链可达。
-const TABS = [
-  { seg: 'purchasing', zh: '采购分析', en: 'Purchasing' },
-]
-
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
-  const locale = useLocale()
-  const isEn = locale !== routing.defaultLocale
-  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
-  const pathname = usePathname()
-
-  return (
-    <div>
-      <div className="flex items-center gap-1 border-b bg-white px-4 pt-3">
-        {TABS.map(t => {
-          const href = `${prefix}/classic/boss/reports/${t.seg}`
-          const active = pathname?.startsWith(href)
-          return (
-            <Link key={t.seg} href={href}
-              className={`px-4 py-2 text-sm rounded-t-md border-b-2 transition-colors ${
-                active ? 'border-[#875A7B] text-[#875A7B] font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}>
-              {isEn ? t.en : t.zh}
-            </Link>
-          )
-        })}
-      </div>
-      {children}
-    </div>
-  )
+  return <>{children}</>
 }

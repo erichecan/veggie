@@ -47,8 +47,10 @@ export interface ReportingState {
   loading: boolean
   error: string | null
 
-  /** 下钻结果（台账 H2）：行 key → 展开成哪个维度 + 子行。行顺序会随排序变，所以按 key 记 */
-  drill: Record<string, { by: DimensionSpec; rows: Record<string, unknown>[]; loading: boolean; error: string | null }>
+  /** 下钻结果（台账 H2）：行 key → 展开成哪个维度 + 子行。行顺序会随排序变，所以按 key 记。
+   *  `total` 是**未截断时的子行总数**，与 rows.length 不等即说明被 DRILL_LIMIT 砍过，
+   *  此时「子行合计 == 父行」不再成立，必须在界面上说出来。 */
+  drill: Record<string, { by: DimensionSpec; rows: Record<string, unknown>[]; total: number; loading: boolean; error: string | null }>
 }
 
 export type ReportingAction =
@@ -72,7 +74,7 @@ export type ReportingAction =
   | { type: 'FETCH_SUCCESS'; data: ReportResponse }
   | { type: 'FETCH_ERROR'; error: string }
   | { type: 'DRILL_START'; rowKey: string; by: DimensionSpec }
-  | { type: 'DRILL_SUCCESS'; rowKey: string; rows: Record<string, unknown>[] }
+  | { type: 'DRILL_SUCCESS'; rowKey: string; rows: Record<string, unknown>[]; total: number }
   | { type: 'DRILL_ERROR'; rowKey: string; error: string }
   | { type: 'DRILL_COLLAPSE'; rowKey: string }
   | { type: 'DRILL_RESET' }
@@ -132,11 +134,11 @@ function reducer(state: ReportingState, action: ReportingAction): ReportingState
     // 下钻（台账 H2）。⚠️ 任何会改变主查询结果的动作都必须 DRILL_RESET ——
     // 否则换了维度/筛选之后，旧的子行还挂在长得一样的行 key 下，看起来像是新数据的明细。
     case 'DRILL_START':
-      return { ...state, drill: { ...state.drill, [action.rowKey]: { by: action.by, rows: [], loading: true, error: null } } }
+      return { ...state, drill: { ...state.drill, [action.rowKey]: { by: action.by, rows: [], total: 0, loading: true, error: null } } }
     case 'DRILL_SUCCESS': {
       const cur = state.drill[action.rowKey]
       if (!cur) return state
-      return { ...state, drill: { ...state.drill, [action.rowKey]: { ...cur, rows: action.rows, loading: false } } }
+      return { ...state, drill: { ...state.drill, [action.rowKey]: { ...cur, rows: action.rows, total: action.total, loading: false } } }
     }
     case 'DRILL_ERROR': {
       const cur = state.drill[action.rowKey]
@@ -267,7 +269,7 @@ export function ReportingProvider({ reportType, children }: ProviderProps) {
     dispatch({ type: 'DRILL_START', rowKey, by })
     try {
       const data = await apiPost<ReportResponse>(`/api/reports/${reportType}`, req)
-      dispatch({ type: 'DRILL_SUCCESS', rowKey, rows: data.rows ?? [] })
+      dispatch({ type: 'DRILL_SUCCESS', rowKey, rows: data.rows ?? [], total: data.total ?? (data.rows?.length ?? 0) })
     } catch (err) {
       dispatch({ type: 'DRILL_ERROR', rowKey, error: err instanceof Error ? err.message : (isEn ? 'Drill-down failed' : '下钻失败') })
     }

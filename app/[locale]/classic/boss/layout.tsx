@@ -31,7 +31,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     // 20260913 的周/日钻取页面。20260920 标签从「销售钻取(月/周/日)」改名为「销售分析」：
     // 旧的同名页 boss/reports/sales（透视表口径，两套不同实现）已从导航撤下，名字不再撞车。
     { href: `${prefix}/classic/boss/sales-analysis`, label: isEn ? 'Sales Analysis' : '销售分析' },
-    { href: `${prefix}/classic/boss/reports/purchasing`, label: isEn ? 'Purchasing Report' : '采购分析' },
+    { href: `${prefix}/classic/boss/reports/purchasing`, label: isEn ? 'Purchase Analysis' : '采购分析' },
     // 数据库备份涉及全库敏感数据，按权限点收紧（本 layout 本身放行 BOSS+OPERATOR）
     ...(canBackup
       ? [

@@ -80,10 +80,24 @@ export interface DrillInput {
 }
 
 /**
+ * 子行条数上限。
+ *
+ * ⛔ 原来写死 200。「子行合计 == 父行」这条恒等式**只在没被截断时成立** ——
+ * 20260920 实测：销售报表按月下钻到商品，那个月有 454 个商品，取回前 200 个，
+ * 子行加起来 €26294.85，父行 €65486.93，差了 60%，而界面上没有任何提示，
+ * 看上去就是「这个月的明细对不上汇总」。
+ *
+ * 抬高上限只是把悬崖往后挪，真正的保险是调用方拿 `total` 与 `rows.length` 比对后
+ * 显式告警（components/reporting/PivotTable.tsx 已按此渲染「还有 N 行未显示」）。
+ */
+export const DRILL_LIMIT = 2000
+
+/**
  * 构造下钻子请求。
  *
  * 语义：把当前**所有行维度**都锁成该行的取值，再按 `by` 分一次组。
  * 于是「子行合计 == 父行」这条恒等式天然成立 —— 它也正是端到端脚本里断言的那条。
+ * ⚠️ 前提是结果没被 `DRILL_LIMIT` 截断，见上。
  */
 export function buildDrillRequest({ base, row, by }: DrillInput): ReportRequest | null {
   const lockFilters: FilterSpec[] = []
@@ -98,7 +112,7 @@ export function buildDrillRequest({ base, row, by }: DrillInput): ReportRequest 
     colDimensions: base.colDimensions ?? [],
     measures: base.measures,
     filters: [...(base.filters ?? []), ...lockFilters],
-    limit: 200,
+    limit: DRILL_LIMIT,
   }
 }
 

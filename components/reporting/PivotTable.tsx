@@ -11,6 +11,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { useReporting } from './ReportingContext'
 import type { MeasureMeta, DimensionMeta, DimensionSpec } from '@/lib/reports/types'
 import { drillCandidates, rowFieldAlias, rowKeyOf } from '@/lib/reports/drilldown'
+import { bucketLabel } from '@/lib/reports/date-label'
 import type { ReportingState, ReportingAction } from './ReportingContext'
 import { ChevronDown } from 'lucide-react'
 import { eur } from '@/lib/format-money'
@@ -34,6 +35,15 @@ export function formatValue(value: unknown, format: MeasureMeta['format']): stri
     default:
       return String(num)
   }
+}
+
+/**
+ * 维度取值的显示文本。日期维度的值是 `DATE_TRUNC` 之后的 timestamp，
+ * 原样印出来是 `2026-08-01T00:00:00.000Z`，得翻成「2026 年 8 月」。
+ */
+function dimValueLabel(dim: DimensionSpec, value: unknown, isEn: boolean): string {
+  if (dim.interval) return bucketLabel(value, dim.interval, isEn)
+  return String(value ?? '-')
 }
 
 export function PivotTable() {
@@ -66,20 +76,25 @@ export function PivotTable() {
     const rowMap = new Map<string, Map<string, Record<string, number>>>()
     const rowLabelMap = new Map<string, Record<string, unknown>>()
 
+    // ⛔ 取值必须经 rowFieldAlias：日期维度在结果集里的列名带粒度后缀
+    // （`order_date` + month → `order_date_month`，见 lib/reports/sql-builder.ts）。
+    // 直接读 `row[d.field]` 会拿到 undefined，于是所有时间桶塌成同一个空 key，
+    // 而下面 `set(colKey, …)` 是覆盖不是累加 —— 结果是"只剩最后一个月的数字"，
+    // 没有任何报错，表格看上去完全正常。（20260920 实测：某供应商 €5401.73 → €4.63）
     for (const row of rows) {
-      const colKey = colDimensions.map(d => String(row[d.field] ?? '')).join('|')
-      const rowKey = rowDimensions.map(d => String(row[d.field] ?? '')).join('|')
+      const colKey = colDimensions.map(d => String(row[rowFieldAlias(d)] ?? '')).join('|')
+      const rowKey = rowDimensions.map(d => String(row[rowFieldAlias(d)] ?? '')).join('|')
 
       if (!colLabelMap.has(colKey)) {
         colKeySet.add(colKey)
         const labels: Record<string, unknown> = {}
-        colDimensions.forEach(d => { labels[d.field] = row[d.field] })
+        colDimensions.forEach(d => { labels[d.field] = row[rowFieldAlias(d)] })
         colLabelMap.set(colKey, labels)
       }
       if (!rowMap.has(rowKey)) {
         rowMap.set(rowKey, new Map())
         const labels: Record<string, unknown> = {}
-        rowDimensions.forEach(d => { labels[d.field] = row[d.field] })
+        rowDimensions.forEach(d => { labels[d.field] = row[rowFieldAlias(d)] })
         rowLabelMap.set(rowKey, labels)
       }
 
@@ -88,7 +103,9 @@ export function PivotTable() {
       rowMap.get(rowKey)!.set(colKey, measures)
     }
 
-    const colKeys = Array.from(colKeySet)
+    // 列序按维度原始值升序固定下来。不排的话列序取决于数据到达顺序 ——
+    // 第一家供应商恰好缺 8 月，整张表的月份列就会变成 9、8、10 这种顺序。
+    const colKeys = Array.from(colKeySet).sort((a, b) => a.localeCompare(b))
 
     const rowTotals = new Map<string, Record<string, number>>()
     rowMap.forEach((colMap, rk) => {
@@ -228,7 +245,7 @@ function FlatTable({
                         </select>
                       )
                   )}
-                  <span>{String(row[rowFieldAlias(dim)] ?? '-')}</span>
+                  <span>{dimValueLabel(dim, row[rowFieldAlias(dim)], isEn)}</span>
                 </div>
               </TableCell>
             ))}
@@ -249,11 +266,20 @@ function FlatTable({
               {isEn ? 'No detail rows' : '这一行下面没有明细'}
             </TableCell></TableRow>
           )}
+          {/* 子行被 DRILL_LIMIT 截断时，「子行相加 == 父行」不再成立。
+              不说出来的话，用户看到的就是一组永远对不上汇总的明细。 */}
+          {d && !d.loading && !d.error && d.rows.length < d.total && (
+            <TableRow><TableCell colSpan={rowDimensions.length + activeMetas.length} className="text-xs text-amber-600 bg-amber-50 pl-8">
+              {isEn
+                ? `Showing ${d.rows.length} of ${d.total} rows — the detail below does not add up to the row above. Narrow the filters to see all of it.`
+                : `共 ${d.total} 行，只显示前 ${d.rows.length} 行 —— 下面的明细加起来不等于上面那一行。请缩小筛选范围看全。`}
+            </TableCell></TableRow>
+          )}
           {d?.rows.map((child, ci) => (
             <TableRow key={`${rk}|c${ci}`} className="bg-muted/20">
               <TableCell colSpan={rowDimensions.length} className="pl-8 text-muted-foreground">
                 <span className="mr-1 opacity-50">└</span>
-                {String(child[rowFieldAlias(d.by)] ?? '-')}
+                {dimValueLabel(d.by, child[rowFieldAlias(d.by)], isEn)}
                 <span className="ml-2 text-[10px] opacity-60">{getDimLabel(d.by.field)}</span>
               </TableCell>
               {activeMetas.map(m => (
@@ -307,7 +333,7 @@ function CrossTab({
   const colLabel = (ck: string) => {
     const labels = colLabelMap.get(ck)
     if (!labels) return ck
-    return colDimensions.map(d => String(labels[d.field] ?? '')).join(' / ')
+    return colDimensions.map(d => dimValueLabel(d, labels[d.field], isEn)).join(' / ')
   }
 
   return (
@@ -355,7 +381,7 @@ function CrossTab({
           return (
             <TableRow key={rk}>
               {rowDimensions.map(d => (
-                <TableCell key={d.field} className="font-medium border-r">{String(labels[d.field] ?? '-')}</TableCell>
+                <TableCell key={d.field} className="font-medium border-r">{dimValueLabel(d, labels[d.field], isEn)}</TableCell>
               ))}
               {multi
                 ? colKeys.flatMap(ck => {

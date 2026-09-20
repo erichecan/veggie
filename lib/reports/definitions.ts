@@ -54,11 +54,20 @@ export const SALES_MEASURES: Record<string, MeasureMeta> = {
 
 export const PURCHASING_DIMENSIONS: Record<string, DimensionMeta> = {
   supplier_name:   { field: 'supplier_name',   label: 'Supplier',      labelZh: '供应商',     type: 'string' },
+  // 20260920：供应商/商品的筛选下拉给的是**内部 id**，而不是名字。
+  // 只放 *_name 的话，按名字筛会被重名档案串在一起（生产库历史上有重复壳记录）。
+  // sql-builder 只允许筛白名单里的字段，所以这两个必须登记在册。
+  supplier_id:     { field: 'supplier_id',      label: 'Supplier ID',   labelZh: '供应商(内部ID)', type: 'string' },
   supplier_city:   { field: 'supplier_city',    label: 'Supplier City', labelZh: '供应商城市', type: 'string' },
   product_name:    { field: 'product_name',     label: 'Product',       labelZh: '商品',       type: 'string' },
+  product_id:      { field: 'product_id',        label: 'Product ID',    labelZh: '商品(内部ID)', type: 'string' },
   category_name:   { field: 'category_name',    label: 'Category',      labelZh: '商品分类',   type: 'string' },
+  // ⛔ 这里必须与 schema.prisma 的 PurchaseOrderStatus 对齐。原来只列了 4 个，
+  // 漏掉 SENT / TO_APPROVE / LOCKED —— 筛选面板因此筛不到这三种状态的单，
+  // 而界面上看不出少了选项，只会觉得"这些单怎么查不到"。
+  // （CANCELLED 不在列：视图 veggie_purchasing_report 本身就把它排除了。）
   po_status:       { field: 'po_status',         label: 'PO Status',     labelZh: '采购单状态', type: 'enum',
-    options: ['DRAFT', 'CONFIRMED', 'RECEIVED', 'INVOICED']
+    options: ['DRAFT', 'SENT', 'TO_APPROVE', 'CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED']
       .map(s => ({ value: s, label: s })) },
   order_date:      { field: 'order_date',        label: 'Order Date',    labelZh: '下单日期',   type: 'date',
     dateIntervals: ['day', 'week', 'month', 'quarter', 'year'] },

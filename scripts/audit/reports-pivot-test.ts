@@ -19,6 +19,7 @@
  */
 import { createPrismaClient } from '../../lib/prisma-factory'
 import { buildDrillRequest } from '../../lib/reports/drilldown'
+import { PURCHASING_DIMENSIONS } from '../../lib/reports/definitions'
 import type { ReportRequest } from '../../lib/reports/types'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3002'
@@ -61,8 +62,11 @@ async function main() {
   }
 
   // ── ① 三张报表都能出数（视图必须存在，全新库 db push 会漏建，见 D8）───────
+  // ⛔ `pg_views.viewname` 的类型是 `name`，Neon 适配器反序列化不了（P2010
+  // UnsupportedNativeDataType），整个脚本会在第一条断言就崩。必须 ::text 转一下，
+  // 否则这个探针只能在 adapter-pg 的 .env.test 上跑，本机开发库一跑就炸。
   const views = await prisma.$queryRaw<Array<{ viewname: string }>>`
-    SELECT viewname FROM pg_views WHERE schemaname='public' AND viewname LIKE 'veggie_%_report'`
+    SELECT viewname::text AS viewname FROM pg_views WHERE schemaname='public' AND viewname LIKE 'veggie_%_report'`
   add('① 三张报表视图都存在（db push 只建表不建视图，全新库会漏）',
     views.length === 3, views.map(v => v.viewname).join(', ') || '⛔ 一张都没有')
 
@@ -172,6 +176,72 @@ async function main() {
       !!child && child.status === 200 && near(childSum, num(monthRow.line_subtotal)),
       `子 €${childSum.toFixed(2)} vs 父 €${num(monthRow.line_subtotal).toFixed(2)}（${String(monthRow.confirmation_date_month).slice(0, 10)}）`)
   }
+
+  // ── ④ 日期维度当**列**用：采购分析页（供应商 × 下单月份）靠的就是这条 ─────────
+  // 20260920 修的 bug 就藏在这里：结果集里日期列叫 `order_date_month`（带粒度后缀），
+  // 渲染层却按 `order_date` 去读，取到 undefined → 所有月份塌成同一个 key，
+  // 而合并时是覆盖不是累加 → 只剩最后一个月的数字。接口一直是对的，所以这组断言
+  // 既验接口、也把"多个时间桶必须各自成列且可相加"这条钉死，供渲染层比对。
+  const flat = await query('purchasing', {
+    rowDimensions: [{ field: 'supplier_name' }], measures: ['subtotal_ex_tax', 'ordered_qty'],
+  })
+  const byMonthCols = await query('purchasing', {
+    rowDimensions: [{ field: 'supplier_name' }],
+    colDimensions: [{ field: 'order_date', interval: 'month' }],
+    measures: ['subtotal_ex_tax', 'ordered_qty'],
+    limit: 5000,
+  })
+  const monthKeys = new Set((byMonthCols.rows ?? []).map(r => String(r.order_date_month ?? '')))
+  add('④ 日期维度作列时，结果集带 order_date_month 且不止一个桶',
+    byMonthCols.status === 200 && monthKeys.size > 1
+      && (byMonthCols.rows ?? []).every(r => 'order_date_month' in r),
+    `${monthKeys.size} 个月桶 · ${byMonthCols.rows?.length ?? 0} 行 · 字段 ${Object.keys((byMonthCols.rows ?? [])[0] ?? {}).join(',')}`)
+
+  const colSum = (byMonthCols.rows ?? []).reduce((acc, r) => acc + num(r.subtotal_ex_tax), 0)
+  add('④ 各月相加 == 不分月的合计（证明是累加而非覆盖）',
+    near(colSum, num(flat.totals?.subtotal_ex_tax)) && colSum > 0,
+    `分月相加 €${colSum.toFixed(2)} vs 合计 €${num(flat.totals?.subtotal_ex_tax).toFixed(2)}`)
+
+  // 采购分析页的展开：锁住一家供应商，按商品再分一次组，逐月必须与父行对齐
+  const pivotParent = (flat.rows ?? []).find(r => num(r.subtotal_ex_tax) > 0)
+  if (!pivotParent) {
+    skip('④ 供应商 × 月 的展开', '采购报表里没有金额大于 0 的供应商')
+  } else {
+    const sName = String(pivotParent.supplier_name)
+    const parentByMonth = new Map<string, number>()
+    for (const r of byMonthCols.rows ?? []) {
+      if (String(r.supplier_name) !== sName) continue
+      parentByMonth.set(String(r.order_date_month ?? ''), num(r.subtotal_ex_tax))
+    }
+    const kids = await query('purchasing', {
+      rowDimensions: [{ field: 'product_name' }],
+      colDimensions: [{ field: 'order_date', interval: 'month' }],
+      measures: ['subtotal_ex_tax', 'ordered_qty'],
+      filters: [{ field: 'supplier_name', operator: '=', value: sName }],
+      limit: 5000,
+    })
+    const kidByMonth = new Map<string, number>()
+    for (const r of kids.rows ?? []) {
+      const k = String(r.order_date_month ?? '')
+      kidByMonth.set(k, (kidByMonth.get(k) ?? 0) + num(r.subtotal_ex_tax))
+    }
+    let offBy = 0
+    for (const [k, v] of parentByMonth) if (!near(v, kidByMonth.get(k) ?? 0)) offBy++
+    add('④ 展开到商品后，逐月与供应商行逐格相等',
+      kids.status === 200 && parentByMonth.size > 0 && offBy === 0,
+      `${sName} · ${parentByMonth.size} 个月，对不上 ${offBy} 个`)
+  }
+
+  // ── ④ 采购单状态白名单必须与 schema 对齐 ─────────────────────────────────
+  // 采购分析页默认只统计 CONFIRMED 及之后；筛选面板的可选项来自 PURCHASING_DIMENSIONS。
+  // 两边对不上的表现是"某些单怎么都查不到"，界面上看不出少了选项。
+  const dbStatuses = await prisma.$queryRaw<Array<{ po_status: string }>>`
+    SELECT DISTINCT po_status FROM veggie_purchasing_report WHERE po_status IS NOT NULL`
+  const declared = new Set((PURCHASING_DIMENSIONS.po_status.options ?? []).map(o => o.value))
+  const missing = dbStatuses.map(r => r.po_status).filter(v => !declared.has(v))
+  add('④ 采购单状态选项覆盖库里实际出现的所有状态',
+    missing.length === 0,
+    missing.length ? `⛔ 白名单里缺 ${missing.join(', ')}` : `库里 ${dbStatuses.length} 种，白名单 ${declared.size} 种，无遗漏`)
 
   // ── 角色可见性 ──────────────────────────────────────────────────────────
   // ⚠️ 这里断言的是**实际行为**，不是路由里那张 ROLE_REPORT_ACCESS 表写了什么。
