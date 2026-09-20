@@ -36,6 +36,31 @@ export const DATE_BASIS_EXPR: Record<DateBasis, string> = {
  * 行/列维度白名单——所有 SQL 片段均为代码里写死的常量，禁止拼接任何请求参数进 SQL 文本。
  * basis 只能取 DATE_BASIS_EXPR 的键，同样不接受请求参数直接入 SQL。
  */
+/**
+ * 司机归属：波次上的司机名优先，回落到订单的派车意向 DriverSlot，都没有则「未指定」。
+ * 与 driver-commission.ts 同一套写法，两处要一起改。
+ */
+export const DRIVER_NAME_EXPR = `COALESCE(NULLIF(w."driverName", ''), NULLIF(ds."driverName", ''), '未指定')`
+/**
+ * ⛔ 这里**不要**用 driver-commission.ts 那种 `LEFT JOIN LATERAL … WHERE o.id = ANY(pw."orderIds")`。
+ * 那边的 LATERAL 挂在**订单**粒度的 CTE 里，一单求值一次；而本文件的维度 JOIN 是拼进
+ * **订单行**粒度的查询的，同一单的每一行都要再求值一次。
+ *
+ * 生产实测（20260920，400 天范围 / 33 万行）：LATERAL 写法 **1194ms**，
+ * 换成下面这种「把 orderIds 一次性 unnest 开、再普通 LEFT JOIN」**407ms**，
+ * 快 2.9 倍，12 个司机的金额逐个对过、完全一致。
+ * PickingWave 只有 76 行，整表展开的代价可以忽略；贵的是被求值 3 万多次这件事本身。
+ */
+export const DRIVER_JOIN = `LEFT JOIN "DriverSlot" ds ON ds.id = o."driverSlotId"
+         LEFT JOIN (
+           SELECT DISTINCT ON (x.oid) x.oid, x."driverName"
+           FROM (
+             SELECT unnest(pw."orderIds") AS oid, pw."driverName", pw."dispatchedAt", pw."createdAt"
+             FROM "PickingWave" pw
+           ) x
+           ORDER BY x.oid, x."dispatchedAt" DESC NULLS LAST, x."createdAt" DESC
+         ) w ON w.oid = o.id`
+
 export function dimensionDefs(basis: DateBasis = 'confirmation'): Record<string, DimensionDef> {
   const d = DATE_BASIS_EXPR[basis]
   return {
@@ -61,6 +86,23 @@ export function dimensionDefs(basis: DateBasis = 'confirmation'): Record<string,
       keyExpr: `COALESCE(o."salesUserId", 'none')`,
       nameExpr: `COALESCE(MAX(su.name), '未指定业务员')`,
       extraJoin: `LEFT JOIN "User" su ON su.id = o."salesUserId"`,
+      isTimeBucket: false,
+    },
+    /**
+     * 20260920 新增。归属口径与 lib/analytics/driver-commission.ts:fetchDriverDaySalesByOrder
+     * **逐字一致**：所属波次的司机优先，订单不在任何波次时回落 Order.driverSlotId
+     * （下单时的派车意向），都没有则「未指定」。
+     *
+     * ⛔ 不要改成走 Trip 表：生产库 Trip 自 20260704 起就不再生成（波次没人点「确认出发」），
+     * 基于 Trip 的按司机统计恒为空。
+     * ⛔ key 用**司机名**而不是 id：DriverSlot.userId 大量为空，而波次上只存了 driverName。
+     * 改名只对未来生效、快照保留旧名，所以同一个人改名前后会是两行——这与提成报表同病，
+     * 不在本次处理范围。
+     */
+    driver: {
+      keyExpr: DRIVER_NAME_EXPR,
+      nameExpr: `MAX(${DRIVER_NAME_EXPR})`,
+      extraJoin: DRIVER_JOIN,
       isTimeBucket: false,
     },
     day: {
@@ -106,6 +148,7 @@ export const DIMENSION_OPTIONS: Array<{ key: string; label: string }> = [
   { key: 'category', label: '分类' },
   { key: 'customer', label: '客户' },
   { key: 'salesUser', label: '业务员' },
+  { key: 'driver', label: '司机' },
   { key: 'day', label: '日' },
   { key: 'week', label: '周' },
   { key: 'month', label: '月' },

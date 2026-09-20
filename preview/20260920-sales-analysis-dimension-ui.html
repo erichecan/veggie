@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>销售分析 · 多维度交互方案演示</title>
+<style>
+  :root{
+    --purple:#875A7B; --purple-soft:#F3EDF1; --ink:#1f2937; --ink-2:#4b5563; --ink-3:#9ca3af;
+    --line:#e5e7eb; --line-soft:#f3f4f6; --bg:#f6f7f9; --card:#ffffff;
+    --amber-bg:#FEF3C7; --amber-line:#F3C551;
+    --blue-bg:#DBEAFE; --blue-line:#60A5FA;
+    --green-bg:#D1FAE5; --green-line:#34D399;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif}
+  .wrap{max-width:1500px;margin:0 auto;padding:28px 16px 80px}
+  h1{font-size:22px;margin:0 0 6px}
+  .sub{color:var(--ink-3);font-size:13px;margin:0 0 20px}
+
+  .note{background:#fff;border:1px solid var(--line);border-left:3px solid var(--purple);
+    border-radius:10px;padding:14px 16px;margin-bottom:22px;font-size:13px;line-height:1.7}
+  .note b{color:var(--purple)}
+  .note code{background:var(--purple-soft);padding:1px 5px;border-radius:4px;font-size:12px}
+
+  .tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .tab{padding:9px 16px;border:1px solid var(--line);background:#fff;border-radius:10px;
+    cursor:pointer;font-size:13px;color:var(--ink-2);transition:.15s}
+  .tab:hover{border-color:var(--ink-3)}
+  .tab.on{background:var(--purple);color:#fff;border-color:var(--purple)}
+  .tab .k{display:inline-block;width:18px;height:18px;line-height:18px;text-align:center;
+    border-radius:5px;background:rgba(0,0,0,.08);margin-right:7px;font-size:11px;font-weight:700}
+  .tab.on .k{background:rgba(255,255,255,.22)}
+
+  .pane{display:none}
+  .pane.on{display:block}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}
+  @media(max-width:1100px){.layout{grid-template-columns:1fr}}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:hidden}
+
+  /* ── toolbar ── */
+  .bar{padding:11px 14px;border-bottom:1px solid var(--line-soft);display:flex;
+    gap:12px;align-items:center;flex-wrap:wrap}
+  .barlab{font-size:12px;color:var(--ink-3);white-space:nowrap}
+  .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+  .seg button{border:0;background:#fff;color:var(--ink-2);padding:6px 13px;font-size:12.5px;
+    cursor:pointer;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:var(--purple);color:#fff}
+
+  /* 拆分路径胶囊 */
+  .path{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .pill{display:inline-flex;align-items:center;gap:7px;background:var(--purple-soft);
+    color:var(--purple);border:1px solid #e3d5dd;border-radius:999px;padding:5px 7px 5px 12px;
+    font-size:12.5px;font-weight:600;cursor:grab}
+  .pill.fixed{background:#f3f4f6;color:var(--ink-2);border-color:var(--line);cursor:default}
+  .pill .x{width:17px;height:17px;border-radius:50%;border:0;background:rgba(135,90,123,.14);
+    color:var(--purple);cursor:pointer;font-size:12px;line-height:1;padding:0}
+  .pill .x:hover{background:rgba(135,90,123,.28)}
+  .joiner{border:1px solid var(--line);background:#fff;border-radius:7px;color:var(--ink-3);
+    font-size:11px;padding:3px 7px;cursor:pointer;white-space:nowrap}
+  .joiner:hover{border-color:var(--purple);color:var(--purple)}
+  .joiner b{color:var(--purple)}
+  .addbtn{border:1px dashed var(--line);background:#fff;border-radius:999px;color:var(--ink-3);
+    font-size:12.5px;padding:5px 12px;cursor:pointer}
+  .addbtn:hover{border-color:var(--purple);color:var(--purple)}
+
+  .menu{position:absolute;z-index:40;background:#fff;border:1px solid var(--line);
+    border-radius:10px;box-shadow:0 8px 28px rgba(16,24,40,.14);padding:6px;min-width:184px}
+  .menu button{display:block;width:100%;text-align:left;border:0;background:#fff;padding:7px 10px;
+    border-radius:7px;font-size:13px;color:var(--ink-2);cursor:pointer}
+  .menu button:hover{background:var(--purple-soft);color:var(--purple)}
+  .menu button[disabled]{opacity:.35;cursor:not-allowed}
+  .menu .hd{font-size:11px;color:var(--ink-3);padding:5px 10px 3px}
+  .menu label{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:7px;
+    font-size:13px;color:var(--ink-2);cursor:pointer}
+  .menu label:hover{background:var(--purple-soft)}
+  .menu .warn{font-size:11px;color:#b45309;padding:6px 10px;line-height:1.5}
+
+  /* ── table ── */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{background:#fafafa;border-bottom:1px solid var(--line);padding:9px 12px;
+    font-weight:600;color:var(--ink-2);font-size:12px;text-align:right;white-space:nowrap}
+  thead th:first-child{text-align:left}
+  tbody td{padding:7px 12px;border-bottom:1px solid var(--line-soft);text-align:right;
+    font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap}
+  tbody td:first-child{text-align:left;color:var(--ink)}
+  tbody tr.total td{background:#fafafa;font-weight:700;color:var(--ink)}
+  tbody tr.clickable{cursor:pointer}
+  tbody tr.clickable:hover td{background:#fafbfc}
+  tbody tr.sel td{background:var(--amber-bg)!important}
+  .tw{display:inline-flex;align-items:center;gap:8px}
+  .caret{width:13px;color:var(--purple);font-weight:700;display:inline-block;text-align:center}
+  .dimtag{font-size:10.5px;color:var(--ink-3);border:1px solid var(--line);border-radius:5px;
+    padding:0 5px;margin-right:2px}
+  .more{opacity:0;border:1px solid var(--line);background:#fff;border-radius:6px;color:var(--ink-3);
+    font-size:12px;line-height:1;padding:3px 6px;cursor:pointer;margin-left:6px}
+  tr:hover .more{opacity:1}
+  .more:hover{border-color:var(--purple);color:var(--purple)}
+  .side{display:grid;gap:12px}
+  .parallel{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 12px;background:#fcfcfd}
+  .parallel h5{margin:0 0 6px;font-size:11.5px;color:var(--ink-3);font-weight:600}
+  .parallel table{font-size:12px}
+  .parallel tbody td{padding:4px 8px}
+
+  /* ── side panel ── */
+  .panel{border:1px solid var(--amber-line);background:var(--amber-bg);border-radius:12px;overflow:hidden}
+  .panel.b{border-color:var(--green-line);background:var(--green-bg)}
+  .panel.c{border-color:var(--blue-line);background:var(--blue-bg)}
+  .panel .ph{display:flex;justify-content:space-between;align-items:center;padding:9px 13px;gap:8px}
+  .crumb{font-size:12px;color:var(--ink-2);font-weight:600;display:flex;gap:5px;
+    align-items:center;flex-wrap:wrap;min-width:0}
+  .crumb .sep{color:var(--ink-3);font-weight:400}
+  .crumb .dim{background:rgba(255,255,255,.75);border-radius:6px;padding:1px 7px}
+  .ptabs{display:flex;gap:4px;padding:0 10px 9px;flex-wrap:wrap}
+  .ptabs button{border:1px solid rgba(0,0,0,.08);background:rgba(255,255,255,.6);border-radius:7px;
+    font-size:11.5px;padding:4px 9px;cursor:pointer;color:var(--ink-2)}
+  .ptabs button.on{background:#fff;color:var(--ink);font-weight:600;border-color:rgba(0,0,0,.16)}
+  .panel table{background:rgba(255,255,255,.55)}
+  .panel thead th{background:transparent;border-bottom-color:rgba(0,0,0,.07)}
+  .panel tbody td{border-bottom-color:rgba(0,0,0,.05)}
+  .xbtn{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:14px;padding:2px 4px}
+  .empty{padding:34px 16px;text-align:center;color:var(--ink-3);font-size:12.5px;line-height:1.7}
+
+  /* ── explainer ── */
+  .exp{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-size:12.5px;
+    line-height:1.75;position:sticky;top:18px}
+  .exp h4{margin:0 0 10px;font-size:13.5px;color:var(--purple)}
+  .exp .q{font-weight:700;color:var(--ink);margin-top:13px}
+  .exp .q:first-of-type{margin-top:0}
+  .exp p{margin:3px 0 0;color:var(--ink-2)}
+  .exp .tagrow{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .badge{font-size:11px;border-radius:999px;padding:2px 9px;font-weight:600}
+  .badge.good{background:#dcfce7;color:#15803d}
+  .badge.warn{background:#fef3c7;color:#b45309}
+  .badge.rec{background:var(--purple);color:#fff}
+  .foot{margin-top:26px;font-size:12px;color:var(--ink-3);line-height:1.8}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>销售分析 · 多维度交互方案演示</h1>
+  <p class="sub">假数据、纯前端演示，只为看交互手感。2026-09-20</p>
+
+  <div class="note">
+    先把两件被混在一起的事分开，后面三个方案才好比较：<br>
+    ① <b>看什么数字</b>（表格的<b>列</b>）—— 数量、单价、未税总额、毛利、<code>毛重</code>、<code>提成总额</code>。
+    你截图里圈的那一排就是这个，它们<b>天然每一层都有</b>（月、周、日都显示），不存在"只能下钻到日"的问题，加列就行。<br>
+    ② <b>按什么拆开</b>（表格的<b>行</b>）—— 时间、产品、客户、司机、销售员、品类。
+    这才是现在只做在日那一层的三个图标 ▤👥🚚，也是真正需要重新设计交互的部分。<br>
+    下面三个方案比的都是第 ②件事；第 ①件事在每个方案里都用同一个「列」下拉解决。
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-p="A"><span class="k">A</span>拆分路径（推荐）</button>
+    <button class="tab" data-p="B"><span class="k">B</span>左时间骨架 + 右维度面板</button>
+    <button class="tab" data-p="C"><span class="k">C</span>两个下拉，最简</button>
+  </div>
+
+  <!-- ════════════ A ════════════ -->
+  <div class="pane on" data-pane="A">
+    <div class="layout">
+      <div class="card">
+        <div class="bar">
+          <span class="barlab">拆分：</span>
+          <div class="path" id="pathA"></div>
+          <span style="flex:1"></span>
+          <button class="joiner" id="colsA">列：<b><span id="colsCountA">5</span> 项</b> ▾</button>
+        </div>
+        <div id="tableA"></div>
+      </div>
+      <div class="exp">
+        <div class="tagrow"><span class="badge rec">推荐</span><span class="badge good">能表达三级以上</span><span class="badge warn">要学一下</span></div>
+        <h4>它怎么回答你那三个问题</h4>
+        <div class="q">"怎么知道选的是哪个时间段？"</div>
+        <p>不需要"选"。上面的胶囊只决定 <b>展开的顺序</b>，你点哪一行的 <b>+</b>，那一行就是当前时间段——选择动作和展开动作合成了一个，中间没有"先选时间再选维度"的空档。</p>
+        <div class="q">"维度之间是合并还是交集？"</div>
+        <p>两种都要，但别混在一张表里。胶囊之间的连接符<b>可以点</b>：<br>
+          <code>›</code> = 嵌套（先按产品分，产品里再分客户 → 回答"这个产品卖给了谁"）<br>
+          <code>+</code> = 并列（产品榜、客户榜并排两张小表 → 回答"这周谁卖得多"）<br>
+          点一下连接符就切换，当场能看出差别。</p>
+        <div class="q">"日期左边图标放不下了"</div>
+        <p>图标全删。行尾 hover 才出现一个 <b>⋯</b>，用来临时看一个不在拆分路径里的维度，不占宽度、不随维度增多而膨胀。</p>
+        <div class="q">跟 Odoo 的区别</div>
+        <p>Odoo 把 Group By 藏在右上角下拉里，选完只在筛选条上留一行小字。这里把它<b>摊平放在表头正上方</b>，顺序即层级，拖着就能换——没有右上角筛选芯片。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ B ════════════ -->
+  <div class="pane" data-pane="B">
+    <div class="layout">
+      <div>
+        <div class="layout" style="grid-template-columns:minmax(0,1fr) minmax(0,380px)">
+          <div class="card">
+            <div class="bar">
+              <span class="barlab">时间：</span>
+              <div class="seg" id="grainB">
+                <button data-g="month" class="on">月 › 周 › 日</button>
+                <button data-g="week">周 › 日</button>
+              </div>
+              <span style="flex:1"></span>
+              <button class="joiner" id="colsB">列：<b><span id="colsCountB">5</span> 项</b> ▾</button>
+            </div>
+            <div id="tableB"></div>
+          </div>
+          <div class="side" id="sideB"></div>
+        </div>
+      </div>
+      <div class="exp">
+        <div class="tagrow"><span class="badge good">改动最小</span><span class="badge good">零学习成本</span><span class="badge warn">只能两级</span></div>
+        <h4>它怎么回答你那三个问题</h4>
+        <div class="q">"怎么知道选的是哪个时间段？"</div>
+        <p>左表整行<b>点一下就选中</b>（黄色高亮），右侧面板标题用面包屑写清楚是谁：<code>2026年9月 › 第38周 › 09-18</code>。选中态一眼可见，这就是现在这页已经在用的模式，只是从"只有日能点"扩展到<b>月、周、日都能点</b>。</p>
+        <div class="q">"维度之间是合并还是交集？"</div>
+        <p>这个方案天然是<b>并列</b>：面板顶上是标签页（产品 / 客户 / 司机 / 销售员），切着看。想要交集就点面板里的某一行，面板面包屑加一级变成 <code>… › 按产品 › Onion 60/80</code>，下面换成这个产品的客户构成。</p>
+        <div class="q">"日期左边图标放不下了"</div>
+        <p>左表一个图标都不留，维度全在右面板的标签页里，加多少个维度都只是多一个标签。</p>
+        <div class="q">代价</div>
+        <p>① 嵌套最多到两层（时间 × 维度 × 再一层）。想看"9 月里每个销售员各自的产品排行"这种三级交叉，这个形态撑不住。<br>
+        ② 面板一开，左表就被挤窄——上面这张图里「毛重」「提成」两列已经被盖掉了。列一多就得二选一：要么面板改成抽屉浮在上层，要么开面板时自动只留 3 列。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ C ════════════ -->
+  <div class="pane" data-pane="C">
+    <div class="layout">
+      <div class="card">
+        <div class="bar">
+          <span class="barlab">时间粒度：</span>
+          <div class="seg" id="grainC">
+            <button data-g="month" class="on">按月</button>
+            <button data-g="week">按周</button>
+            <button data-g="day">按日</button>
+          </div>
+          <span class="barlab" style="margin-left:6px">拆开看：</span>
+          <div class="seg" id="dimC">
+            <button data-d="" class="on">不拆</button>
+            <button data-d="product">产品</button>
+            <button data-d="customer">客户</button>
+            <button data-d="driver">司机</button>
+            <button data-d="sales">销售员</button>
+          </div>
+          <span style="flex:1"></span>
+          <button class="joiner" id="colsC">列：<b><span id="colsCountC">5</span> 项</b> ▾</button>
+        </div>
+        <div id="tableC"></div>
+      </div>
+      <div class="exp">
+        <div class="tagrow"><span class="badge good">一眼会用</span><span class="badge warn">只有两级</span><span class="badge warn">换维度要重看</span></div>
+        <h4>它怎么回答你那三个问题</h4>
+        <div class="q">"怎么知道选的是哪个时间段？"</div>
+        <p>没有"选中"这个概念——时间粒度是个开关，整张表一起变。想看别的时间段就换粒度、往下翻。心智最轻。</p>
+        <div class="q">"维度之间是合并还是交集？"</div>
+        <p>直接回避：<b>一次只能拆一个维度</b>。想同时看产品和客户，只能来回切。</p>
+        <div class="q">"日期左边图标放不下了"</div>
+        <p>没有图标，维度是工具条上的单选按钮，加维度就是多一个按钮，加到七八个时按钮条会开始换行。</p>
+        <div class="q">代价</div>
+        <p>丢掉了现在已经有的下钻能力（某天 × 某产品 → 卖给了哪些客户）。如果客户平时主要靠这条路径查账，这个方案是倒退。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    我的建议：<b>A 做主结构，B 的右侧面板作为 A 的「⋯」临时查看保留</b>——两者不冲突，A 的行尾 ⋯ 打开的就是 B 那种面板。C 只适合做手机端的降级形态。<br>
+    另外两件我发现的、跟方案无关但会影响这张表对不对的事：<br>
+    ① <b>「单价」这一列在合计行是求和的</b>（总计 €5,513,949.91）——Odoo 就是这么算的，但它没有业务含义，
+    把一堆单价加起来不等于任何东西。这页现在用的是<b>加权均价</b>（未税总额 ÷ 数量），是对的。
+    要不要为了跟 Odoo 对得上而改成求和，你说了算；不说我就保持现在的加权均价。<br>
+    ② <b>毛重</b>这一列的数据来源。系统里重量有两处（可售单位的 <code>grossWeight</code>、商品基础的 <code>weight</code>），覆盖率不满，算出来的"毛重合计"会漏掉没维护重量的商品。要么先只在明细里显示、不做合计，要么先补数据——这个我需要你拍板，其余我自己定。
+  </div>
+</div>
+
+<script>
+/* ═══════ 假数据 ═══════ */
+const MONTHS=[
+  ['2026-09','September 2026',37631.35,423890.95,635807.65,136244.76,208631.51,11714.75],
+  ['2026-08','August 2026',58690.78,662891.15,954940.12,211432.39,332343.53,18696.51],
+  ['2026-07','July 2026',64595.50,642387.13,995338.68,212190.65,343891.43,20536.04],
+  ['2026-06','June 2026',62115.90,635618.92,959128.31,210409.09,333461.99,23978.01],
+  ['2026-05','May 2026',57925.41,631388.29,944314.70,203376.75,313686.91,20939.37],
+  ['2026-04','April 2026',60718.06,663611.31,1005108.50,214717.98,344747.02,21332.86],
+  ['2026-03','March 2026',60377.60,674820.70,1011363.68,217765.22,350489.84,19709.67],
+  ['2026-02','February 2026',53849.49,603111.17,900443.62,186139.26,301791.95,17856.42],
+  ['2026-01','January 2026',53849.46,576230.29,912357.28,177314.39,314514.36,17937.57],
+].map(r=>mk(r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7]));
+
+function mk(key,label,qty,price,untaxed,margin,weight,comm){
+  return {key,label,qty,price,untaxed,total:untaxed*1.09,margin,weight,comm};
+}
+function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0)/4294967295}
+/** 把一行按给定名字拆成子行，份额确定性伪随机，合计守恒 */
+function split(parent,names,tagPrefix,keepOrder){
+  const w=names.map((n,i)=>0.35+hash(parent.key+n+i)*1.3), s=w.reduce((a,b)=>a+b,0);
+  const out=names.map((n,i)=>{
+    const f=w[i]/s;
+    return {key:parent.key+'|'+tagPrefix+i,label:n,qty:parent.qty*f,price:parent.price*f,
+      untaxed:parent.untaxed*f,total:parent.total*f,margin:parent.margin*f,
+      weight:parent.weight*f,comm:parent.comm*f};
+  });
+  return keepOrder?out:out.sort((a,b)=>b.untaxed-a.untaxed);
+}
+const POOL={
+  product:['Onion 60/80 19.1kg BAG','[ONSP] BAG Onion SP. 20kg','[UNIRB] Unicorn Long Grain Rice 20kg','Potato Rooster 20kg','Fried Onion 2.5kg PKT','Carrot 10kg BAG','Broccoli Crown Box','Mushroom Button 3kg'],
+  customer:['Golden Dragon Takeaway','Eastern Spice Ltd','Happy Wok Dublin','Panda Express Cork','Lotus Garden','Sea Palace Galway'],
+  driver:['John K.','Marek P.','Declan O.','Wei Z.'],
+  sales:['Hosea Hoo','Lucy X.','Tom B.'],
+  category:['根茎类','叶菜类','米面粮油','菌菇类'],
+};
+const DIM_LABEL={time:'时间',product:'产品',customer:'客户',driver:'司机',sales:'销售员',category:'品类'};
+
+function childrenOf(row,dim){
+  if(dim==='time') return timeChildren(row);
+  return split(row,POOL[dim],dim);
+}
+/** 时间维度：月 → 4~5 周 → 每周 5 天 */
+function timeChildren(row){
+  const depth=(row.key.match(/\|/g)||[]).length;
+  if(row.key.length===7){ // 月
+    const n=4+(hash(row.key)>.5?1:0);
+    return split(row,Array.from({length:n},(_,i)=>`第 ${36-i} 周`),'w',true);
+  }
+  if(row.key.includes('|d')) return [];   // 日是时间轴的最后一级
+  if(row.key.includes('|w')) return split(row,['周五','周四','周三','周二','周一'].map((d,i)=>`09-${18-i} ${d}`),'d',true);
+  return [];
+}
+
+/* ═══════ 列 ═══════ */
+const COLS=[
+  {k:'qty',   t:'数量',      on:true,  fmt:n=>n.toLocaleString('en',{maximumFractionDigits:2})},
+  {k:'price', t:'单价',      on:true,  fmt:eur},
+  {k:'untaxed',t:'未税总额', on:true,  fmt:eur},
+  {k:'total', t:'含税总额',  on:false, fmt:eur},
+  {k:'margin',t:'毛利',      on:true,  fmt:eur},
+  {k:'weight',t:'毛重 (kg)', on:false, fmt:n=>n.toLocaleString('en',{maximumFractionDigits:2}), warn:'重量数据覆盖率不满，合计会偏低'},
+  {k:'comm',  t:'提成总额',  on:true,  fmt:eur},
+];
+function eur(n){return '€'+n.toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function onCols(){return COLS.filter(c=>c.on)}
+function sumAll(rows,k){return rows.reduce((s,r)=>s+r[k],0)}
+
+function colMenu(anchor,onChange){
+  openMenu(anchor,m=>{
+    m.innerHTML='<div class="hd">表格显示哪几列</div>';
+    COLS.forEach(c=>{
+      const l=document.createElement('label');
+      l.innerHTML=`<input type="checkbox" ${c.on?'checked':''}> ${c.t}`;
+      l.querySelector('input').onchange=e=>{c.on=e.target.checked;onChange()};
+      m.appendChild(l);
+      if(c.warn){const w=document.createElement('div');w.className='warn';w.textContent='⚠ '+c.warn;m.appendChild(w)}
+    });
+  });
+}
+let openedMenu=null;
+function openMenu(anchor,build){
+  closeMenu();
+  const m=document.createElement('div');m.className='menu';
+  build(m);document.body.appendChild(m);
+  const r=anchor.getBoundingClientRect();
+  m.style.top=(r.bottom+window.scrollY+6)+'px';
+  m.style.left=Math.min(r.left+window.scrollX,innerWidth-m.offsetWidth-14)+'px';
+  openedMenu=m;
+  setTimeout(()=>document.addEventListener('click',onDoc),0);
+}
+function onDoc(e){if(openedMenu&&!openedMenu.contains(e.target))closeMenu()}
+function closeMenu(){if(openedMenu){openedMenu.remove();openedMenu=null;document.removeEventListener('click',onDoc)}}
+
+/* ═══════ 表头 / 数字单元 ═══════ */
+function thead(first){
+  return '<thead><tr><th>'+first+'</th>'+onCols().map(c=>`<th>${c.t}</th>`).join('')+'</tr></thead>';
+}
+function cells(row){return onCols().map(c=>`<td>${c.fmt(row[c.k])}</td>`).join('')}
+function totalRow(label){
+  return `<tr class="total"><td>${label}</td>`+onCols().map(c=>`<td>${c.fmt(sumAll(MONTHS,c.k))}</td>`).join('')+'</tr>';
+}
+
+/* ═══════════════ 方案 A ═══════════════ */
+const A={path:[{dim:'time'},{dim:'product',join:'›'}],open:{},side:null};
+
+function renderPathA(){
+  const el=document.getElementById('pathA');el.innerHTML='';
+  A.path.forEach((p,i)=>{
+    if(i>0){
+      const j=document.createElement('button');j.className='joiner';
+      j.innerHTML=p.join==='›'?'<b>›</b> 嵌套':'<b>+</b> 并列';
+      j.title='点一下切换：嵌套（层层下钻）↔ 并列（并排两张榜）';
+      j.onclick=()=>{p.join=p.join==='›'?'+':'›';A.open={};renderA()};
+      el.appendChild(j);
+    }
+    const s=document.createElement('span');s.className='pill'+(p.dim==='time'?' fixed':'');
+    s.innerHTML=DIM_LABEL[p.dim]+(p.dim==='time'?'':'<button class="x">×</button>');
+    const x=s.querySelector('.x');
+    if(x)x.onclick=ev=>{ev.stopPropagation();A.path.splice(i,1);A.open={};renderA()};
+    if(p.dim!=='time')s.onclick=ev=>{
+      openMenu(s,m=>{
+        m.innerHTML='<div class="hd">换成</div>';
+        Object.keys(DIM_LABEL).filter(d=>d!=='time').forEach(d=>{
+          const b=document.createElement('button');b.textContent=DIM_LABEL[d];
+          b.disabled=A.path.some(q=>q.dim===d);
+          b.onclick=()=>{p.dim=d;A.open={};closeMenu();renderA()};
+          m.appendChild(b);
+        });
+      });
+      ev.stopPropagation();
+    };
+    el.appendChild(s);
+  });
+  if(A.path.length<4){
+    const add=document.createElement('button');add.className='addbtn';add.textContent='+ 再加一层';
+    add.onclick=ev=>{
+      openMenu(add,m=>{
+        m.innerHTML='<div class="hd">再按什么拆</div>';
+        Object.keys(DIM_LABEL).filter(d=>d!=='time').forEach(d=>{
+          const b=document.createElement('button');b.textContent=DIM_LABEL[d];
+          b.disabled=A.path.some(q=>q.dim===d);
+          b.onclick=()=>{A.path.push({dim:d,join:'›'});A.open={};closeMenu();renderA()};
+          m.appendChild(b);
+        });
+      });
+      ev.stopPropagation();
+    };
+    el.appendChild(add);
+  }
+  document.getElementById('colsCountA').textContent=onCols().length;
+}
+
+function renderA(){
+  renderPathA();
+  const body=[];
+  body.push(totalRow('总计'));
+  MONTHS.forEach(m=>walkA(m,0,body));
+  document.getElementById('tableA').innerHTML=
+    '<table>'+thead(A.path.map(p=>DIM_LABEL[p.dim]).join(' › '))+'<tbody>'+body.join('')+'</tbody></table>';
+  bindA();
+  renderSideA();
+}
+function walkA(row,level,out){
+  const isOpen=!!A.open[row.key];
+  const hasKids=level<A.path.length-1||(A.path[level].dim==='time'&&timeChildren(row).length>0);
+  const tag=level>0?`<span class="dimtag">${DIM_LABEL[A.path[level].dim]}</span>`:'';
+  out.push(`<tr class="${hasKids?'clickable':''}" data-k="${row.key}" data-l="${level}">
+    <td style="padding-left:${12+level*20}px"><span class="tw">
+      <span class="caret">${hasKids?(isOpen?'−':'+'):''}</span>${tag}${row.label}
+      <button class="more" data-more="${row.key}" title="临时看一个不在路径里的维度">⋯</button>
+    </span></td>${cells(row)}</tr>`);
+  if(!isOpen||!hasKids)return;
+  const nextIdx=Math.min(level+1,A.path.length-1);
+  const nextDim=A.path[level].dim==='time'&&timeChildren(row).length?'time':A.path[nextIdx].dim;
+  // 并列：'+' 表示这个维度跟前一个**同级**，一起并排出榜，不再往下嵌套
+  if(nextDim!=='time'){
+    const group=[A.path[nextIdx].dim];
+    for(let i=nextIdx+1;i<A.path.length&&A.path[i].join==='+';i++)group.push(A.path[i].dim);
+    if(group.length>1){
+    const dims=group;
+    out.push(`<tr><td colspan="${1+onCols().length}" style="padding:0">
+      <div class="parallel" style="grid-template-columns:repeat(${dims.length},1fr)">${dims.map(d=>`<div><h5>${DIM_LABEL[d]}（并列，各看各的）</h5>
+        <table><tbody>${childrenOf(row,d).slice(0,5).map(c=>
+          `<tr><td>${c.label}</td><td>${eur(c.untaxed)}</td></tr>`).join('')}</tbody></table></div>`).join('')}
+      </div></td></tr>`);
+    return;
+    }
+  }
+  childrenOf(row,nextDim).forEach(c=>walkA(c,nextDim==='time'?level:level+1,out));
+}
+function bindA(){
+  document.querySelectorAll('#tableA tr.clickable').forEach(tr=>{
+    tr.onclick=e=>{
+      if(e.target.dataset.more!==undefined)return;
+      const k=tr.dataset.k;A.open[k]=!A.open[k];renderA();
+    };
+  });
+  document.querySelectorAll('#tableA .more').forEach(b=>{
+    b.onclick=e=>{
+      e.stopPropagation();
+      const k=b.dataset.more;
+      openMenu(b,m=>{
+        m.innerHTML='<div class="hd">这一行单独按…看</div>';
+        Object.keys(DIM_LABEL).filter(d=>d!=='time').forEach(d=>{
+          const btn=document.createElement('button');btn.textContent=DIM_LABEL[d];
+          btn.onclick=()=>{A.side={key:k,dim:d};closeMenu();renderA()};
+          m.appendChild(btn);
+        });
+      });
+    };
+  });
+}
+function findRow(key){
+  // 演示用：从月往下按 key 前缀找
+  let cur=MONTHS.find(m=>key.startsWith(m.key));if(!cur)return null;
+  while(cur.key!==key){
+    const kids=[...timeChildren(cur),...Object.keys(POOL).flatMap(d=>split(cur,POOL[d],d))];
+    const nx=kids.find(k=>key===k.key||key.startsWith(k.key+'|'));
+    if(!nx)return cur;cur=nx;
+  }
+  return cur;
+}
+function renderSideA(){
+  const host=document.querySelector('[data-pane="A"] .layout');
+  let old=document.getElementById('sideA');if(old)old.remove();
+  if(!A.side)return;
+  const row=findRow(A.side.key);if(!row)return;
+  const rows=childrenOf(row,A.side.dim);
+  const d=document.createElement('div');d.id='sideA';d.className='panel';d.style.marginTop='12px';
+  d.innerHTML=`<div class="ph"><div class="crumb">${row.label}<span class="sep">›</span>
+      <span class="dim">按${DIM_LABEL[A.side.dim]}</span></div>
+      <button class="xbtn">✕</button></div>
+    <table><thead><tr><th>${DIM_LABEL[A.side.dim]}</th><th>未税总额</th><th>毛利</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td>${r.label}</td><td>${eur(r.untaxed)}</td><td>${eur(r.margin)}</td></tr>`).join('')}</tbody></table>`;
+  d.querySelector('.xbtn').onclick=()=>{A.side=null;renderA()};
+  document.querySelector('[data-pane="A"] .card').after(d);
+}
+
+/* ═══════════════ 方案 B ═══════════════ */
+const B={grain:'month',open:{},sel:null,dim:'product',drill:null};
+function renderB(){
+  document.getElementById('colsCountB').textContent=onCols().length;
+  const out=[];out.push(totalRow('总计'));
+  const roots=B.grain==='month'?MONTHS:MONTHS.flatMap(m=>timeChildren(m)).slice(0,10);
+  roots.forEach(r=>walkB(r,0,out));
+  document.getElementById('tableB').innerHTML=
+    '<table>'+thead(B.grain==='month'?'月 › 周 › 日':'周 › 日')+'<tbody>'+out.join('')+'</tbody></table>';
+  document.querySelectorAll('#tableB tr[data-k]').forEach(tr=>{
+    tr.onclick=e=>{
+      const k=tr.dataset.k;
+      if(e.target.classList.contains('caret')){B.open[k]=!B.open[k];renderB();return}
+      B.sel=k;B.drill=null;
+      if(timeChildren(findRow(k)||{key:k}).length)B.open[k]=true;
+      renderB();
+    };
+  });
+  renderSideB();
+}
+function walkB(row,level,out){
+  const kids=timeChildren(row),isOpen=!!B.open[row.key];
+  out.push(`<tr class="clickable ${B.sel===row.key?'sel':''}" data-k="${row.key}">
+    <td style="padding-left:${12+level*20}px"><span class="tw">
+      <span class="caret">${kids.length?(isOpen?'−':'+'):''}</span>${row.label}</span></td>${cells(row)}</tr>`);
+  if(isOpen)kids.forEach(k=>walkB(k,level+1,out));
+}
+function renderSideB(){
+  const host=document.getElementById('sideB');
+  if(!B.sel){host.innerHTML=`<div class="card"><div class="empty">
+    点左边任意一行<br>（月、周、日都可以）<br>这里出该时间段的维度明细</div></div>`;return}
+  const row=findRow(B.sel)||MONTHS[0];
+  const dims=['product','customer','driver','sales','category'];
+  const rows=B.drill?childrenOf(B.drill.row,'customer'):childrenOf(row,B.dim);
+  host.innerHTML=`<div class="panel b">
+    <div class="ph"><div class="crumb">${row.label}<span class="sep">›</span>
+      <span class="dim">按${DIM_LABEL[B.dim]}</span>
+      ${B.drill?`<span class="sep">›</span><span class="dim">${B.drill.row.label}</span>`:''}</div>
+      <button class="xbtn" id="bx">✕</button></div>
+    ${B.drill?'':`<div class="ptabs">${dims.map(d=>
+      `<button class="${d===B.dim?'on':''}" data-d="${d}">${DIM_LABEL[d]}</button>`).join('')}</div>`}
+    <table><thead><tr><th>${B.drill?'客户':DIM_LABEL[B.dim]}</th><th>未税总额</th><th>毛利</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr class="clickable" data-r="${r.key}"><td>${r.label}</td>
+      <td>${eur(r.untaxed)}</td><td>${eur(r.margin)}</td></tr>`).join('')}</tbody></table></div>`;
+  host.querySelector('#bx').onclick=()=>{if(B.drill){B.drill=null}else{B.sel=null}renderB()};
+  host.querySelectorAll('.ptabs button').forEach(b=>b.onclick=()=>{B.dim=b.dataset.d;B.drill=null;renderB()});
+  if(!B.drill)host.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>{
+    const r=rows.find(x=>x.key===tr.dataset.r);if(r){B.drill={row:r};renderB()}
+  });
+}
+
+/* ═══════════════ 方案 C ═══════════════ */
+const C={grain:'month',dim:''};
+function renderC(){
+  document.getElementById('colsCountC').textContent=onCols().length;
+  let roots=MONTHS;
+  if(C.grain==='week')roots=MONTHS.flatMap(m=>timeChildren(m)).slice(0,12);
+  if(C.grain==='day')roots=MONTHS.flatMap(m=>timeChildren(m).flatMap(w=>timeChildren(w))).slice(0,14);
+  const out=[totalRow('总计')];
+  roots.forEach(r=>{
+    out.push(`<tr><td><span class="tw">${r.label}</span></td>${cells(r)}</tr>`);
+    if(C.dim)childrenOf(r,C.dim).slice(0,5).forEach(c=>
+      out.push(`<tr><td style="padding-left:34px;color:#6b7280">${c.label}</td>${cells(c)}</tr>`));
+  });
+  document.getElementById('tableC').innerHTML='<table>'+
+    thead(C.dim?`${C.grain==='month'?'月':C.grain==='week'?'周':'日'} × ${DIM_LABEL[C.dim]}`:'时间')+
+    '<tbody>'+out.join('')+'</tbody></table>';
+}
+
+/* ═══════ 挂载 ═══════ */
+document.getElementById('tabs').onclick=e=>{
+  const t=e.target.closest('.tab');if(!t)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.dataset.pane===t.dataset.p));
+};
+document.getElementById('colsA').onclick=e=>{e.stopPropagation();colMenu(e.currentTarget,()=>{renderA();renderB();renderC()})};
+document.getElementById('colsB').onclick=e=>{e.stopPropagation();colMenu(e.currentTarget,()=>{renderA();renderB();renderC()})};
+document.getElementById('colsC').onclick=e=>{e.stopPropagation();colMenu(e.currentTarget,()=>{renderA();renderB();renderC()})};
+document.getElementById('grainB').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  B.grain=b.dataset.g;B.open={};B.sel=null;B.drill=null;
+  e.currentTarget.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderB()};
+document.getElementById('grainC').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  C.grain=b.dataset.g;e.currentTarget.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderC()};
+document.getElementById('dimC').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  C.dim=b.dataset.d;e.currentTarget.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderC()};
+
+renderA();renderB();renderC();
+</script>
+</body>
+</html>

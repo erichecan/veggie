@@ -23,6 +23,8 @@ interface DetailRow {
   orderDate: string
   customerName: string
   productName: string
+  /** 20260920 客户要求：产品后面要能看到单位（见 lib/sale-uom.ts displayUomName 口径） */
+  uomName: string
   unitPrice: number
   qty: number
   subtotal: number
@@ -62,9 +64,9 @@ export default function SalesAnalysisPage() {
   function exportDetailCsv() {
     if (!detailData) return
     const headers = isEn
-      ? ['Date', 'Customer', 'Product', 'Unit Price', 'Qty', 'Amount']
-      : ['日期', '客户', '产品', '单价', '数量', '金额']
-    const rows = detailData.rows.map((r) => [r.orderDate, r.customerName, r.productName, eur(r.unitPrice), String(r.qty), eur(r.subtotal)])
+      ? ['Date', 'Customer', 'Product', 'Unit', 'Unit Price', 'Qty', 'Amount']
+      : ['日期', '客户', '产品', '单位', '单价', '数量', '金额']
+    const rows = detailData.rows.map((r) => [r.orderDate, r.customerName, r.productName, r.uomName, eur(r.unitPrice), String(r.qty), eur(r.subtotal)])
     downloadCsv(`sales-detail-${range.from}_${range.to}`, headers, rows)
   }
 
@@ -84,8 +86,8 @@ export default function SalesAnalysisPage() {
         {/* View toggle */}
         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
           {(isEn
-            ? [['week', '📅', 'Weekly'], ['detail', '📋', 'Detail']] as const
-            : [['week', '📅', '按周'], ['detail', '📋', '明细']] as const
+            ? [['week', '📅', 'Drilldown'], ['detail', '📋', 'Detail']] as const
+            : [['week', '📅', '钻取'], ['detail', '📋', '明细']] as const
           ).map(([v, icon, label]) => (
             <button
               key={v}
@@ -160,6 +162,7 @@ export default function SalesAnalysisPage() {
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">{isEn ? 'Date' : '日期'}</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">{isEn ? 'Customer' : '客户'}</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">{isEn ? 'Product' : '产品'}</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600">{isEn ? 'Unit' : '单位'}</th>
                     <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Unit Price' : '单价'}</th>
                     <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Qty' : '数量'}</th>
                     <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Amount' : '金额'}</th>
@@ -167,13 +170,14 @@ export default function SalesAnalysisPage() {
                 </thead>
                 <tbody>
                   {detailData.rows.length === 0 && (
-                    <tr><td colSpan={6} className="text-center py-16 text-gray-400">{isEn ? 'No data — pick a time range and, optionally, a few customers/products' : '暂无数据，选一个时间段，也可以再选几个客户/产品缩小范围'}</td></tr>
+                    <tr><td colSpan={7} className="text-center py-16 text-gray-400">{isEn ? 'No data — pick a time range and, optionally, a few customers/products' : '暂无数据，选一个时间段，也可以再选几个客户/产品缩小范围'}</td></tr>
                   )}
                   {detailData.rows.map((r, i) => (
                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="px-4 py-2 text-gray-700">{r.orderDate}</td>
                       <td className="px-4 py-2 text-gray-700">{r.customerName}</td>
                       <td className="px-4 py-2 text-gray-700">{r.productName}</td>
+                      <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{r.uomName}</td>
                       <td className="text-right px-4 py-2 tabular-nums text-gray-700">{eur(r.unitPrice)}</td>
                       <td className="text-right px-4 py-2 tabular-nums text-gray-700">{r.qty}</td>
                       <td className="text-right px-4 py-2 tabular-nums text-gray-900">{eur(r.subtotal)}</td>

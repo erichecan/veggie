@@ -5,10 +5,11 @@ import {
   type PivotRawCell,
 } from '../lib/analytics/pivot'
 
-test('DIMENSION_DEFS 覆盖 9 个维度，时间桶维度标记正确', () => {
+test('DIMENSION_DEFS 覆盖 10 个维度，时间桶维度标记正确', () => {
   const keys = Object.keys(DIMENSION_DEFS).sort()
   // 20260915 销售钻取新增 quarter / year（7e4fe8d），与 day/week/month 同属时间桶
-  assert.deepEqual(keys, ['category', 'customer', 'day', 'month', 'product', 'quarter', 'salesUser', 'week', 'year'])
+  // 20260920 新增 driver（销售钻取右面板的「司机 › 客户 › 产品」链，口径见 pivot.ts）
+  assert.deepEqual(keys, ['category', 'customer', 'day', 'driver', 'month', 'product', 'quarter', 'salesUser', 'week', 'year'])
   assert.equal(DIMENSION_DEFS.day.isTimeBucket, true)
   assert.equal(DIMENSION_DEFS.week.isTimeBucket, true)
   assert.equal(DIMENSION_DEFS.month.isTimeBucket, true)
@@ -18,6 +19,7 @@ test('DIMENSION_DEFS 覆盖 9 个维度，时间桶维度标记正确', () => {
   assert.equal(DIMENSION_DEFS.category.isTimeBucket, false)
   assert.equal(DIMENSION_DEFS.customer.isTimeBucket, false)
   assert.equal(DIMENSION_DEFS.salesUser.isTimeBucket, false)
+  assert.equal(DIMENSION_DEFS.driver.isTimeBucket, false)
 })
 
 test('DIMENSION_OPTIONS 顺序与 DIMENSION_DEFS 一一对应，供前端下拉直接渲染', () => {

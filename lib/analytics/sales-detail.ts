@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { SALES_COUNTED_STATUSES, toNaiveTimestampParam } from '@/lib/analytics/metrics'
 import { DATE_BASIS_EXPR } from '@/lib/analytics/pivot'
+import { displayUomName } from '@/lib/sale-uom'
 
 /**
  * 销售明细点货清单（20260915，客户需求4：某段时间+1-3家客户+1-2个产品，逐行看
@@ -67,6 +68,7 @@ export async function fetchSalesDetail(
     `SELECT to_char(${DATE_EXPR}, 'YYYY-MM-DD') AS order_date,
             o."restaurantName" AS customer_name,
             ol."productName" AS product_name,
+            ol."uomName" AS uom_name,
             ol."unitPrice"::float AS unit_price,
             ${STOCK_QTY_EXPR}::float AS qty,
             ol.subtotal::float AS subtotal
@@ -82,6 +84,7 @@ export async function fetchSalesDetail(
     ...params,
   )) as Array<{
     order_date: string; customer_name: string; product_name: string
+    uom_name: string | null
     unit_price: number; qty: number; subtotal: number
   }>
 
@@ -94,6 +97,8 @@ export async function fetchSalesDetail(
       orderDate: r.order_date,
       customerName: r.customer_name,
       productName: r.product_name,
+      // 单位与单据上同口径：历史行落的 'Unit(s)'/空值统一显示成 ⚠ Unit(s)（见 lib/sale-uom.ts）
+      uomName: displayUomName(r.uom_name),
       unitPrice: Math.round(r.unit_price * 100) / 100,
       qty: Math.round(r.qty * 1000) / 1000,
       subtotal: Math.round(r.subtotal * 100) / 100,
