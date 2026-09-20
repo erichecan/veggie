@@ -17,7 +17,8 @@ import SupplierMonthMatrix from './SupplierMonthMatrix'
  * 一眼就是两套系统。
  *
  * 通用透视引擎（lib/reports/* + components/reporting/*）**没有删**，
- * `boss/reports/sales` 与 `boss/reports/logistics` 仍在用它，直链可达；
+ * `boss/reports/logistics` 仍在用它，直链可达；
+ * （`boss/reports/sales` 已于 20260920 整页改为重定向到 boss/sales-analysis，不再是它的使用者。）
  * 本页只是不再走那套 UI，数据仍然打同一个 `/api/reports/purchasing`。
  */
 export default function PurchasingReportPage() {

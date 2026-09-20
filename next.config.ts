@@ -106,6 +106,25 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: SECURITY_HEADERS }]
   },
+  // 20260920：`boss/reports/sales`（透视表口径的旧「销售分析」）停用，统一落到
+  // `boss/sales-analysis`。页面里那层 server-side redirect() 也留着做兜底，但它跑在
+  // 已经开始流式渲染的 client layout 之下，Next 只能退化成 `<meta http-equiv=refresh>`，
+  // 直链访问会先白屏 1 秒。config 这条在 middleware 之前执行，是真正的 307。
+  // 用 307 不用 308：308 会被浏览器永久缓存，日后想把这页恢复就救不回来了。
+  async redirects() {
+    return [
+      {
+        source: '/classic/boss/reports/sales',
+        destination: '/classic/boss/sales-analysis',
+        permanent: false,
+      },
+      {
+        source: '/:locale(zh|en)/classic/boss/reports/sales',
+        destination: '/:locale/classic/boss/sales-analysis',
+        permanent: false,
+      },
+    ]
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = { ...config.resolve.fallback, fs: false, path: false }

@@ -9,9 +9,11 @@
  * sales / logistics 两张报表从导航撤下，这条 tab 因此只剩一个标签 —— 一个标签的
  * tab 条是纯噪音，而且它顶在采购分析页上方，破坏了与「销售分析」页的视觉一致
  * （那页没有 tab 条）。整条移除，外壳退化成透传。
- * 两个页面本身与接口都还在，直链 `/classic/boss/reports/sales`、
- * `/classic/boss/reports/logistics` 仍可访问；要把入口加回来，改
- * `app/[locale]/classic/boss/layout.tsx` 的 LINKS 数组即可。
+ * logistics 页本身与接口都还在，直链 `/classic/boss/reports/logistics` 仍可访问；
+ * 要把入口加回来，改 `app/[locale]/classic/boss/layout.tsx` 的 LINKS 数组即可。
+ *
+ * 20260920 晚些时候：`sales` 不再保留直链 —— 它与 boss/sales-analysis 同名不同口径，
+ * 客户只要后者，整页改为重定向（见 reports/sales/page.tsx）。
  */
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>
