@@ -798,6 +798,11 @@ model Order {
   deliveryDate          DateTime?
   /// 发票日期（跟随交货日期，可手动覆盖）
   invoiceDate           DateTime?
+  /// 印在销售单上的发票号（20260920）。客户要求这张单能直接交给会计进账，
+  /// 因此号必须与 Odoo 历史发票同一序列（V#####，接着 V59085 往下排）。
+  /// 第一次打印销售单时分配并固化，之后重复打印不变；unique 保证不重号。
+  /// 发号逻辑见 lib/invoice-number.ts。
+  invoiceNo             String?       @unique
   /// 送货单是否已回（司机送完货带回签收单，会计核销时标记）
   orderReturn           Boolean       @default(false)
   /// 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧合并字段，逐步弃用）

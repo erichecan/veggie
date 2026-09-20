@@ -4,7 +4,6 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv-export'
-import { openPrintWindow } from '@/lib/print-export'
 import type { Order, OrderItem } from '@/lib/types'
 import { eur } from '@/lib/format-money'
 import { formatDateOnly } from '@/lib/format-date'
@@ -194,72 +193,6 @@ export default function SalesReportPage() {
     })
   }, [orders, dateFrom, dateTo, selectedSalesmen, isQuotation, filterCustomers, filterProducts])
 
-  function printSaleSummary() {
-    const byCustomer = new Map<string, { count: number; total: number }>()
-    filtered.forEach(o => {
-      const name = o.restaurantName ?? (isEn ? 'Unknown Customer' : '未知客户')
-      const prev = byCustomer.get(name) ?? { count: 0, total: 0 }
-      byCustomer.set(name, { count: prev.count + 1, total: prev.total + Number(o.totalAmount ?? 0) })
-    })
-    const grandTotal = filtered.reduce((s, o) => s + Number(o.totalAmount ?? 0), 0)
-    const rows = Array.from(byCustomer.entries())
-      .sort((a, b) => b[1].total - a[1].total)
-      .map(([name, { count, total }]) =>
-        `<tr><td>${name}</td><td>${count}</td><td style="text-align:right">${eur(total)}</td></tr>`
-      ).join('')
-
-    openPrintWindow('Sales Summary', `
-      <h2>Sales Summary Report</h2>
-      <p style="font-size:11px;color:#666;margin-bottom:12px">
-        ${dateFrom || ''}${dateFrom && dateTo ? ' ~ ' : ''}${dateTo || ''}
-        &nbsp;&nbsp;${isEn ? `${filtered.length} orders total` : `共 ${filtered.length} 单`}
-      </p>
-      <table>
-        <thead><tr><th>${isEn ? 'Customer' : '客户'}</th><th>${isEn ? 'Order Count' : '订单数'}</th><th style="text-align:right">${isEn ? 'Total Amount' : '合计金额'}</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr class="total-row"><td colspan="2">${isEn ? 'Total' : '合计'}</td><td style="text-align:right">${eur(grandTotal)}</td></tr></tfoot>
-      </table>`)
-  }
-
-  function printMultiLine() {
-    const rows: string[] = []
-    filtered.forEach(o => {
-      const date = fmtDate(o.confirmationDate ?? o.quotationDate)
-      ;(o.items ?? []).forEach((it: OrderItem) => {
-        rows.push(`<tr>
-          <td>${date}</td>
-          <td>${o.code ?? o.id.slice(0, 8)}</td>
-          <td>${o.restaurantName ?? ''}</td>
-          <td>${o.salesman ?? ''}</td>
-          <td>${it.productName ?? ''}</td>
-          <td style="text-align:right">${it.quantity ?? ''}</td>
-          <td style="text-align:right">${it.price != null ? eur(Number(it.price)) : ''}</td>
-          <td style="text-align:right">${it.subtotal != null ? eur(Number(it.subtotal)) : ''}</td>
-        </tr>`)
-      })
-    })
-    const grandTotal = filtered.reduce((s, o) => s + Number(o.totalAmount ?? 0), 0)
-
-    openPrintWindow('Multi Line Sales Report', `
-      <h2>Multi Line Sales Report</h2>
-      <p style="font-size:11px;color:#666;margin-bottom:12px">
-        ${dateFrom || ''}${dateFrom && dateTo ? ' ~ ' : ''}${dateTo || ''}
-        &nbsp;&nbsp;${isEn ? `${filtered.length} orders total` : `共 ${filtered.length} 单`}
-      </p>
-      <table>
-        <thead><tr>
-          <th>${isEn ? 'Date' : '日期'}</th><th>${isEn ? 'Ref' : '单号'}</th><th>${isEn ? 'Customer' : '客户'}</th><th>${isEn ? 'Salesperson' : '业务员'}</th>
-          <th>${isEn ? 'Product' : '产品'}</th><th style="text-align:right">${isEn ? 'Qty' : '数量'}</th>
-          <th style="text-align:right">${isEn ? 'Unit Price' : '单价'}</th><th style="text-align:right">${isEn ? 'Subtotal' : '小计'}</th>
-        </tr></thead>
-        <tbody>${rows.join('')}</tbody>
-        <tfoot><tr class="total-row">
-          <td colspan="7">${isEn ? 'Total' : '合计'}</td>
-          <td style="text-align:right">${eur(grandTotal)}</td>
-        </tr></tfoot>
-      </table>`)
-  }
-
   function exportCsv() {
     const rows: unknown[][] = []
     filtered.forEach(o => {
@@ -279,36 +212,6 @@ export default function SalesReportPage() {
       isEn
         ? ['Date', 'Ref', 'Customer', 'Salesperson', 'Status', 'Product', 'Qty', 'Unit Price', 'Subtotal']
         : ['日期', '单号', '客户', '业务员', '状态', '产品', '数量', '单价', '小计'], rows)
-  }
-
-  function printOrders() {
-    const rows = filtered.map(o => `<tr>
-      <td>${fmtDate(o.confirmationDate ?? o.quotationDate)}</td>
-      <td>${o.code ?? o.id.slice(0, 8)}</td>
-      <td>${o.restaurantName ?? ''}</td>
-      <td>${o.salesman ?? ''}</td>
-      <td>${o.status ?? ''}</td>
-      <td style="text-align:right">${eur(Number(o.totalAmount ?? 0))}</td>
-    </tr>`).join('')
-    const grandTotal = filtered.reduce((s, o) => s + Number(o.totalAmount ?? 0), 0)
-
-    openPrintWindow('Sales Report', `
-      <h2>Sales Report</h2>
-      <p style="font-size:11px;color:#666;margin-bottom:12px">
-        ${dateFrom || ''}${dateFrom && dateTo ? ' ~ ' : ''}${dateTo || ''}
-        &nbsp;&nbsp;${isEn ? `${filtered.length} orders total` : `共 ${filtered.length} 单`}
-      </p>
-      <table>
-        <thead><tr>
-          <th>${isEn ? 'Date' : '日期'}</th><th>${isEn ? 'Ref' : '单号'}</th><th>${isEn ? 'Customer' : '客户'}</th><th>${isEn ? 'Salesperson' : '业务员'}</th>
-          <th>${isEn ? 'Status' : '状态'}</th><th style="text-align:right">${isEn ? 'Amount' : '金额'}</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr class="total-row">
-          <td colspan="5">${isEn ? 'Total' : '合计'}</td>
-          <td style="text-align:right">${eur(grandTotal)}</td>
-        </tr></tfoot>
-      </table>`)
   }
 
   const inputCls = 'w-full border rounded px-2 py-1.5 text-sm outline-none'
@@ -392,35 +295,8 @@ export default function SalesReportPage() {
             />
           </div>
 
-          {/* Print buttons */}
+          {/* Export */}
           <div className="flex gap-3">
-            <button
-              className={BTN}
-              style={BTN_STYLE}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = BTN_HOVER }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = BTN_STYLE.background }}
-              onClick={printSaleSummary}
-            >
-              Print Sale Summary
-            </button>
-            <button
-              className={BTN}
-              style={BTN_STYLE}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = BTN_HOVER }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = BTN_STYLE.background }}
-              onClick={printMultiLine}
-            >
-              Print Multi Line
-            </button>
-            <button
-              className={BTN}
-              style={BTN_STYLE}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = BTN_HOVER }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = BTN_STYLE.background }}
-              onClick={printOrders}
-            >
-              Print
-            </button>
             <button
               className={BTN}
               style={BTN_STYLE}

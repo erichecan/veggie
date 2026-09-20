@@ -743,13 +743,34 @@ export interface InvoiceLine {
   isGift?: boolean
 }
 
+/**
+ * Odoo 迁移进来的老发票行（20260718 那次一次性导入，见
+ * `scripts/import-odoo-invoices-20260718.ts`）：按**订单**汇总，一张订单一行，
+ * 没有商品明细。生产库 14.8 万张历史发票用的都是这个形状。
+ *
+ * 现在线上两条开票路径（`POST /api/invoices`、`lib/invoice-from-order.ts`）写的
+ * 仍然是 InvoiceLine（商品明细），所以库里是两种结构混存——读的一方必须判型。
+ */
+export interface InvoiceOrderLine {
+  orderId: string
+  orderCode: string
+  amount: number
+}
+
+/** 判型：拿到一行发票明细时，先问它是不是「按订单」的那种 */
+export function isInvoiceOrderLine(
+  line: InvoiceLine | InvoiceOrderLine,
+): line is InvoiceOrderLine {
+  return 'orderCode' in line && !('productName' in line)
+}
+
 export interface Invoice {
   id: string
   name: string
   customerId: string
   customerName: string
   saleOrderIds: string[]
-  lines: InvoiceLine[]
+  lines: Array<InvoiceLine | InvoiceOrderLine>
   subtotalExTax: number
   totalTax: number
   totalIncTax: number

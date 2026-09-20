@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import ActionLogPanel from '@/components/shared/action-log-panel'
 import { GiftAmount } from '@/components/shared/gift-amount'
 import Link from 'next/link'
+import { toInvoiceLineViews, isOrderBasedInvoice, formatMoney } from '@/lib/invoice-lines-view'
 
 const PURPLE = '#875A7B'
 
@@ -144,6 +145,10 @@ export default function ClassicInvoiceDetailPage() {
     )
   }
 
+  // 发票行有两种结构（Odoo 历史按订单 / 现在开票按商品明细），归一后再渲染
+  const lineViews = toInvoiceLineViews(inv.lines ?? [], isEn)
+  const orderBased = isOrderBasedInvoice(inv.lines ?? [])
+
   return (
     <div className="max-w-3xl mx-auto p-4">
       {/* 顶部操作栏 */}
@@ -238,31 +243,36 @@ export default function ClassicInvoiceDetailPage() {
         <div className="px-5 py-3 border-b border-gray-200" style={{ background: '#f3eff5' }}>
           <h2 className="font-semibold text-gray-700">{isEn ? 'Invoice Lines' : '发票明细'}</h2>
         </div>
+        {/* 两种行结构共用视图模型：Odoo 历史发票按订单记，没有商品/数量/税额这些列 */}
         <table className="w-full text-sm">
           <thead className="border-b border-gray-100">
             <tr className="text-xs text-gray-500 uppercase">
-              <th className="text-left px-4 py-2 font-medium">{isEn ? 'Product' : '商品'}</th>
-              <th className="text-center px-4 py-2 font-medium">{isEn ? 'Qty' : '数量'}</th>
-              <th className="text-right px-4 py-2 font-medium">{isEn ? 'Unit Price (incl. tax)' : '单价（含税）'}</th>
-              <th className="text-center px-4 py-2 font-medium">{isEn ? 'Tax Rate' : '税率'}</th>
-              <th className="text-right px-4 py-2 font-medium">{isEn ? 'Subtotal (ex. tax)' : '税前小计'}</th>
-              <th className="text-right px-4 py-2 font-medium">{isEn ? 'Tax Amount' : '税额'}</th>
-              <th className="text-right px-4 py-2 font-medium">{isEn ? 'Subtotal (incl. tax)' : '含税小计'}</th>
+              <th className="text-left px-4 py-2 font-medium">{orderBased ? (isEn ? 'Sales Order' : '销售订单') : (isEn ? 'Product' : '商品')}</th>
+              {!orderBased && <>
+                <th className="text-center px-4 py-2 font-medium">{isEn ? 'Qty' : '数量'}</th>
+                <th className="text-right px-4 py-2 font-medium">{isEn ? 'Unit Price (incl. tax)' : '单价（含税）'}</th>
+                <th className="text-center px-4 py-2 font-medium">{isEn ? 'Tax Rate' : '税率'}</th>
+                <th className="text-right px-4 py-2 font-medium">{isEn ? 'Subtotal (ex. tax)' : '税前小计'}</th>
+                <th className="text-right px-4 py-2 font-medium">{isEn ? 'Tax Amount' : '税额'}</th>
+              </>}
+              <th className="text-right px-4 py-2 font-medium">{orderBased ? (isEn ? 'Amount' : '金额') : (isEn ? 'Subtotal (incl. tax)' : '含税小计')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {(inv.lines ?? []).map((line, i) => (
+            {lineViews.map((line, i) => (
               <tr key={i} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  <p className="font-medium text-gray-800">{line.productName}</p>
-                  <p className="text-xs text-gray-400">{line.spec}</p>
+                  <p className="font-medium text-gray-800">{line.title}</p>
+                  {line.subtitle && <p className="text-xs text-gray-400">{line.subtitle}</p>}
                 </td>
-                <td className="px-4 py-3 text-center">{Number(line.qty ?? 0)}</td>
-                <td className="px-4 py-3 text-right"><GiftAmount isGift={line.isGift} value={`€${Number(line.unitPrice ?? 0).toFixed(2)}`} /></td>
-                <td className="px-4 py-3 text-center text-gray-500">{(Number(line.taxRate ?? 0) * 100).toFixed(1)}%</td>
-                <td className="px-4 py-3 text-right"><GiftAmount isGift={line.isGift} value={`€${Number(line.subtotalExTax ?? 0).toFixed(2)}`} /></td>
-                <td className="px-4 py-3 text-right text-gray-500">€{Number(line.taxAmount ?? 0).toFixed(2)}</td>
-                <td className="px-4 py-3 text-right font-medium"><GiftAmount isGift={line.isGift} value={`€${Number(line.subtotalIncTax ?? 0).toFixed(2)}`} /></td>
+                {!orderBased && <>
+                  <td className="px-4 py-3 text-center">{line.qty}</td>
+                  <td className="px-4 py-3 text-right"><GiftAmount isGift={line.isGift} value={formatMoney(line.unitPrice)} /></td>
+                  <td className="px-4 py-3 text-center text-gray-500">{((line.taxRate ?? 0) * 100).toFixed(1)}%</td>
+                  <td className="px-4 py-3 text-right"><GiftAmount isGift={line.isGift} value={formatMoney(line.subtotalExTax)} /></td>
+                  <td className="px-4 py-3 text-right text-gray-500">{formatMoney(line.taxAmount)}</td>
+                </>}
+                <td className="px-4 py-3 text-right font-medium"><GiftAmount isGift={line.isGift} value={formatMoney(line.amount)} /></td>
               </tr>
             ))}
           </tbody>

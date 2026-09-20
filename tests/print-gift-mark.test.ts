@@ -13,7 +13,6 @@ import assert from 'node:assert/strict'
 import { generateTripPickingHtml } from '../lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '../lib/print/trip-delivery-template'
 import { generateTripSalesHtml } from '../lib/print/trip-sales-template'
-import { generateTripReceiptHtml } from '../lib/print/trip-receipt-template'
 import { renderOrderHtml } from '../lib/order-pdf'
 import type { TripPrintData, TripCustomer, TripOrder, TripLine } from '../lib/print/trip-common'
 import { buildOrderDetailRows, orderDetailHeaders } from '../lib/export/order-export-rows'
@@ -74,11 +73,7 @@ describe('有价格列的单据：金额列印 GIFT，不印 €0.00', () => {
     for (const cell of priceCells) assert.match(cell, /GIFT/)
   })
 
-  test('客户签收单：金额列印 GIFT', () => {
-    const html = generateTripReceiptHtml(data([{ customer: 'Old Garden', qty: 5, isGift: true }]))
-    assert.match(html, /GIFT/)
-  })
-
+  
   test('发票 / 销售单 PDF（邮件附件同一份模板）：单价与含税列印 GIFT', () => {
     const html = renderOrderHtml(
       {

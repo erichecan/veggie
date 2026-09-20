@@ -20,7 +20,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // 发票行是 JSON 快照，里面没有商品 sequence；打印页要按它排序（客户要求
     // 2026-08-18），而打印页是纯前端渲染碰不到数据库，所以在这里回查一次附上。
     // 见 lib/print/line-sort.ts
+    //
+    // ⚠️ 只对「按商品明细」的行有意义。Odoo 20260718 迁移进来的历史发票行是
+    // `{orderId, orderCode, amount}`，没有 productId —— 对它们回查等于拿一串 undefined
+    // 去查两次库、再给每行贴一对 null。生产库 14.8 万张历史发票走的都是这条路，
+    // 所以这里先判型，按订单记的直接跳过回查。
     const rawLines = Array.isArray(invoice.lines) ? invoice.lines as Array<Record<string, unknown>> : []
+    const hasProductLines = rawLines.some(l => l.productId != null)
+
+    if (!hasProductLines) {
+      return NextResponse.json(serializeApi(invoice))
+    }
+
     const seqMap = await fetchProductSequences(rawLines.map(l => l.productId as string | undefined))
     // 装货顺序（客户要求 2026-09-14，见 lib/print/line-sort.ts）：发票行 JSON 快照没存 uomId，
     // 只能按 productId 落回该商品基础单位的顺序（resolveUomSequence 的 fallback 分支），非精确匹配。

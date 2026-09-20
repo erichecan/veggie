@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth } from '@/lib/auth'
 import { loadDispatchPrintData, parseDispatchSelector } from '@/lib/print/dispatch-loader'
+import { ensureInvoiceNumbers } from '@/lib/invoice-number'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,6 +28,18 @@ export async function GET(req: Request) {
       if (!data) {
         return NextResponse.json({ error: '该批次无订单数据' }, { status: 404 })
       }
+
+      // 销售单要印 Invoice No.（客户拿这张纸去记账），所以取数时顺带把还没有号的
+      // 订单发一个。只有 doc=sales 才发 —— 拣货单/送货单/汇总单不该消耗号段。
+      // 发号是幂等的：已有号的订单原样返回，重复打印号不变。
+      if (searchParams.get('doc') === 'sales') {
+        const assigned = await ensureInvoiceNumbers(data.orders.map(o => o.id))
+        for (const order of data.orders) {
+          const no = assigned.get(order.id)
+          if (no && !order.invoiceNo) order.invoiceNo = no
+        }
+      }
+
       return NextResponse.json(data, {
         headers: { 'Cache-Control': 'no-store' },
       })

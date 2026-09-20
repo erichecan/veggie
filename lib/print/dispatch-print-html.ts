@@ -96,6 +96,9 @@ export async function fetchDispatchPrintHtml(p: DispatchPrintParams): Promise<st
   params.delete('variant') // 变体只影响渲染，取数接口不认这个参数
   params.delete('expand') // 展开粒度只影响渲染，取数接口不认这个参数
   params.delete('lang') // 语言只影响渲染，取数接口不认这个参数
+  // 只有销售单要印 Invoice No.，取数时顺带给没号的订单发一个（幂等）。
+  // 拣货单/送货单/汇总单不传这个参数，免得白占号段。见 app/api/orders/dispatch-print-data。
+  if (p.type === 'sales') params.set('doc', 'sales')
   const wire = await apiGet<TripPrintDataWire>(`/api/orders/dispatch-print-data?${params}`)
   const data = toMemoryShape(wire)
   return DISPATCH_PRINT_RENDERERS[p.type](data, p.variant, resolvePrintLang(p.lang), p.expand)

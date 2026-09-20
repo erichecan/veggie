@@ -46,3 +46,39 @@ export function computeDueDate(invoiceDate: Date, term: string | null | undefine
   const days = termDays(term) ?? 0
   return new Date(invoiceDate.getTime() + days * 86_400_000)
 }
+
+/**
+ * 纸质单据上的付款方式文案（20260920）
+ * ============================================================================
+ * 之前销售单只认 cash/weekly/monthly 三档，其余一律印成「—」。实际生产库里
+ * 还有 Odoo 遗留的 `COD`(37 家) / `30 Net Days` / `15 Days`，其中 COD 是货到付款——
+ * 恰恰是最该提醒司机当场收钱的那类，却什么都不印。
+ *
+ * 处理原则：
+ * - 认识的值按中英文字典印；
+ * - 不认识但非空的值**原样印出**（`COD`、`30 Net Days` 这些对一线仍然是有效信息，
+ *   印出来比印空白有用），不要因为「不在枚举里」就丢掉；
+ * - `immediate` 用来决定是否红色高亮：现结与货到付款都要当场收款。
+ */
+export function paymentTermPrintLabel(
+  term: string | null | undefined,
+  lang: 'zh' | 'en' = 'en',
+): { label: string; immediate: boolean } {
+  const raw = (term ?? '').trim()
+  if (!raw) return { label: '', immediate: false }
+
+  const known = PAYMENT_TERM_OPTIONS.find(o => o.value === raw)
+  if (known) {
+    return {
+      label: lang === 'zh' ? known.labelZh : known.labelEn,
+      immediate: known.value === 'cash',
+    }
+  }
+
+  // Odoo 遗留值：COD 需要当场收款，其余原样印出
+  const isCod = /^cod$/i.test(raw) || /cash on delivery/i.test(raw)
+  return {
+    label: isCod ? (lang === 'zh' ? '货到付款 COD' : 'Cash on Delivery') : raw,
+    immediate: isCod,
+  }
+}

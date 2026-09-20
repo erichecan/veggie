@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { toast } from 'sonner'
@@ -39,7 +39,6 @@ export default function ClassicWaveDetailPage() {
   const [shortages, setShortages] = useState<{ productId: string; productName: string; demandQty: number; stockQty: number; shortageQty: number; shortageRate: number }[]>([])
   const [shortageSummary, setShortageSummary] = useState<{ totalProducts: number; shortageProducts: number; shortageRate: number } | null>(null)
   const [showShortages, setShowShortages] = useState(false)
-  const printRef = useRef<HTMLDivElement>(null)
 
   async function load() {
     setLoading(true)
@@ -67,72 +66,6 @@ export default function ClassicWaveDetailPage() {
   }
 
   useEffect(() => { load() }, [id])
-
-  function handlePrint() {
-    if (!wave) return
-    const w = window.open('', '_blank', 'noopener,width=900,height=720')
-    if (!w) { toast.error(isEn ? 'Please allow pop-ups to print' : '请允许弹出窗口以打印'); return }
-    const wLabel = wave.name ?? `Wave ${wave.waveNumber ?? '?'}`
-    const dLabel = wave.driverName ?? (isEn ? 'Unassigned' : '未指定')
-    const isBulk = wave.waveType === 'bulk'
-    const zonesHtml = wave.zones.length === 0
-      ? `<p style="color:#999;text-align:center;padding:32px;">${isEn ? 'No picking items' : '暂无拣货明细'}</p>`
-      : wave.zones.map(z => `
-          <div style="border:1px solid #e0e0e0;border-radius:6px;overflow:hidden;margin-bottom:12px;background:#fff;">
-            <div style="padding:8px 14px;background:#f3eff5;color:#875A7B;font-weight:600;font-size:13px;border-bottom:1px solid #e0e0e0;">
-              📦 ${z.name} <span style="font-weight:400;color:#888;font-size:12px;">${z.items.length} ${isEn ? 'products' : '种商品'}</span>
-            </div>
-            <table style="width:100%;border-collapse:collapse;font-size:13px;">
-              <thead>
-                <tr style="background:#f8f8f8;border-bottom:1px solid #e0e0e0;">
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Product' : '商品'}</th>
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Spec' : '规格'}</th>
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Unit' : '单位'}</th>
-                  <th style="padding:6px 12px;text-align:right;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Required Qty' : '需拣量'}</th>
-                  <th style="padding:6px 12px;text-align:center;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Done' : '完成'}</th>
-                  <th style="padding:6px 12px;text-align:left;font-weight:500;color:#555;font-size:12px;">${isEn ? 'Restaurants' : '涉及餐馆'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${z.items.map((it, i) => `
-                  <tr style="border-bottom:1px solid #e8e8e8;background:${i % 2 === 1 ? '#fafafa' : '#fff'};">
-                    <td style="padding:7px 12px;color:#333;">
-                      ${it.productName}
-                      ${it.note ? `<div style="margin-top:3px;display:inline-block;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:bold;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;">⚠️ ${it.note}</div>` : ''}
-                    </td>
-                    <td style="padding:7px 12px;color:#888;">${it.spec ?? ''}</td>
-                    <td style="padding:7px 12px;color:#888;">${it.uomName ?? ''}</td>
-                    <td style="padding:7px 12px;text-align:right;font-weight:bold;color:#111;">${isKgUom(it.uomName) ? Number(it.requiredQty).toFixed(2) : it.requiredQty}</td>
-                    <td style="padding:7px 12px;text-align:center;color:#ccc;font-size:16px;">☐</td>
-                    <td style="padding:7px 12px;font-size:11px;color:#888;">${it.restaurants.join(isEn ? ', ' : '、')}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `).join('')
-    const printTitle = isEn ? 'Picking List' : '拣货单'
-    const typeLabel = isEn ? (isBulk ? 'Bulk' : 'Retail') : (isBulk ? '大货' : '散货')
-    w.document.write(`<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<title>${wLabel} ${printTitle}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;padding:20px}@media print{@page{margin:1cm}body{padding:0}}</style>
-</head><body>
-<div style="margin-bottom:16px;">
-  <h1 style="font-size:18px;font-weight:bold;color:#111;">${wLabel} — ${printTitle}</h1>
-  <p style="font-size:13px;color:#555;margin-top:4px;">
-    ${isEn ? 'Driver' : '司机'}：<strong>${dLabel}</strong>
-    <span style="margin-left:16px;">${isEn ? 'Type' : '类型'}：<strong>${typeLabel}</strong></span>
-    <span style="margin-left:16px;">${isEn ? 'Printed at' : '打印时间'}：${formatDateTime(new Date())}</span>
-  </p>
-</div>
-${zonesHtml}
-<script>window.print();<\/script>
-</body></html>`)
-    w.document.close()
-    w.focus()
-  }
 
   if (loading) {
     return (
@@ -164,24 +97,12 @@ ${zonesHtml}
 
   return (
     <>
-      {/* Print styles */}
-      <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          .print-only { display: block !important; }
-          body { background: white; }
-          .print-area { padding: 0; }
-        }
-        .print-only { display: none; }
-      `}</style>
-
       <div>
-        <div className="no-print">
+        <div>
           <OdooControlPanel
             breadcrumb={isEn ? ['Warehouse', 'Pick Waves', waveLabel] : ['仓库', '拣货波次', waveLabel]}
             permanentActions={[
               { label: isEn ? '← Back to List' : '← 返回列表', onClick: () => router.back() },
-              { label: isEn ? '🖨 Print Picking List' : '🖨 打印拣货单', onClick: handlePrint },
             ]}
             searchValue=""
             onSearch={() => {}}
@@ -191,17 +112,7 @@ ${zonesHtml}
           />
         </div>
 
-        <div className="p-4 space-y-4 print-area" ref={printRef}>
-          {/* Print header */}
-          <div className="print-only mb-4">
-            <h1 className="text-xl font-bold">{waveLabel} — {isEn ? 'Picking List' : '拣货单'}</h1>
-            <p className="text-sm text-gray-700 mt-0.5">
-              {isEn ? 'Driver' : '司机'}：<strong>{driverLabel}</strong>
-              <span className="ml-3">{isEn ? 'Type' : '类型'}：<strong>{isEn ? (isBulk ? 'Bulk' : 'Retail') : (isBulk ? '大货' : '散货')}</strong></span>
-            </p>
-            <p className="text-sm text-gray-500 mt-0.5">{isEn ? 'Printed at' : '打印时间'}：{formatDateTime(new Date())}</p>
-          </div>
-
+        <div className="p-4 space-y-4">
           {/* Meta info with slot-colored header */}
           <div className="bg-white border border-gray-200 rounded overflow-hidden" style={{ borderLeft: `4px solid ${isBulk ? '#f59e0b' : '#875A7B'}` }}>
             <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-100">

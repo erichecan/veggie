@@ -10,6 +10,7 @@ import ChatterFeed from '@/components/shared/chatter-feed'
 import CustomerContactsPanel from '@/components/customers/contacts-panel'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CreditTermExtensionPanel from '@/components/classic/CreditTermExtensionPanel'
+import PricelistSearchInput from '@/components/classic/PricelistSearchInput'
 import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import type { Customer, OdooPricelist } from '@/lib/types'
 
@@ -882,21 +883,18 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                         </div>
                       )
                     })}
-                    <select
-                      value=""
-                      onChange={e => {
-                        const val = e.target.value
-                        if (val && !form.pricelistIds.includes(val)) {
-                          setField('pricelistIds', [...form.pricelistIds, val])
+                    <PricelistSearchInput
+                      pricelists={pricelists}
+                      excludeIds={form.pricelistIds}
+                      onSelect={pl => {
+                        if (!form.pricelistIds.includes(pl.id)) {
+                          setField('pricelistIds', [...form.pricelistIds, pl.id])
                         }
                       }}
-                      className={selectCls}
-                    >
-                      <option value="">{isEn ? '+ Add a pricelist…' : '+ 添加价格表…'}</option>
-                      {pricelists.filter(pl => !form.pricelistIds.includes(pl.id)).map(pl => (
-                        <option key={pl.id} value={pl.id}>{pl.name}</option>
-                      ))}
-                    </select>
+                      placeholder={isEn ? '+ Search a pricelist to add…' : '+ 搜索价格表以添加…'}
+                      emptyText={isEn ? 'No matching pricelist' : '没有匹配的价格表'}
+                      inputClassName={inputCls}
+                    />
                   </div>
                 </OdooField>
 

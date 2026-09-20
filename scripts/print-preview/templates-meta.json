@@ -1,0 +1,226 @@
+{
+  "groups": [
+    {
+      "id": "dispatch",
+      "title": "配送作业单据",
+      "intro": "一天的配送作业从这几张纸走完：仓库照拣货单备货 → 司机拿送货单和销售单出车 → 办公室用汇总单对账。数据取自生产库 2026-09-13 BAO 司机那趟车（7 单 5 客户）。",
+      "items": [
+        {
+          "file": "01-picking-all-zh.html",
+          "alt": {
+            "01-picking-all-en.html": "英文",
+            "01-picking-storable-zh.html": "只看整箱整袋",
+            "01-picking-consumable-zh.html": "只看零散货"
+          },
+          "name": "拣货单",
+          "en": "PICKING LIST",
+          "where": "打印中心（日销售中心 → 打印中心 Tab）按钮「📦 整箱整袋」/「🧴 零散货」；配送行程页同名按钮",
+          "who": "仓库 / 调度 / 老板",
+          "note": "按商品汇总整趟车，不是按客户分开。带装货顺序提示（1＝最下面）。点打印会自动锁定该波次，锁定后订单不能再加量。",
+          "paper": "A4 纵向，商品多时自动分页，页脚带 Page X / Y"
+        },
+        {
+          "file": "02-delivery-zh.html",
+          "alt": {
+            "02-delivery-en.html": "英文"
+          },
+          "name": "送货单",
+          "en": "DELIVERY NOTE",
+          "where": "打印中心按钮「🚚 送货单」；配送行程页「🚚 送货」",
+          "who": "司机 / 调度",
+          "note": "一个客户一张纸。不印单价和金额，只有数量——给司机和客户核货用。",
+          "paper": "A4，每客户一张，行多时自动续页并重复表头"
+        },
+        {
+          "file": "03-sales-zh.html",
+          "alt": {
+            "03-sales-en.html": "英文"
+          },
+          "name": "销售单",
+          "en": "SALES ORDER",
+          "where": "打印中心按钮「🧾 销售单」，或顶部「全部打印销售单」",
+          "who": "销售 / 司机 / 财务",
+          "note": "和送货单同源，但带单价、VAT、合计。⚠️ 这就是你要改成 Invoice No. 的那张单——现在印的标签是 SALE ORDER NO。",
+          "paper": "A4，每客户一张",
+          "flags": [
+            "invoice-no",
+            "payment-dirty"
+          ]
+        },
+        {
+          "file": "04-summary-zh.html",
+          "alt": {
+            "04-summary-en.html": "英文"
+          },
+          "name": "送货汇总单",
+          "en": "DELIVERY SUMMARY",
+          "where": "打印中心按钮「📋 汇总单」；配送行程页「📋 汇总」",
+          "who": "调度 / 财务",
+          "note": "一趟车所有客户一张表，用来核「这车拉了多少货、收多少钱」。",
+          "paper": "A4，连续表格，页脚带日期+司机+页码"
+        }
+      ]
+    },
+    {
+      "id": "order",
+      "title": "单张订单的三种印法",
+      "intro": "同一张订单，从订单详情页可以印成三种不同用途的纸。三者共用一套模板，只是显示的字段不同。",
+      "items": [
+        {
+          "file": "06-invoice-zh.html",
+          "alt": {
+            "06-invoice-en.html": "英文"
+          },
+          "name": "发票（按订单）",
+          "en": "INVOICE",
+          "where": "订单详情页按钮「Print」（快捷键 Cmd/Ctrl+P）",
+          "who": "销售 / 财务",
+          "note": "带条码、单价、税、合计。注意这张和下面第 8 项「发票 INVOICE（Invoice 实体）」不是同一个东西——这张是按订单直接印，那张是财务开票后按发票记录印。",
+          "paper": "A4，自动分页"
+        },
+        {
+          "file": "06-delivery-zh.html",
+          "name": "送货单（按订单）",
+          "en": "DELIVERY NOTE",
+          "where": "订单详情页按钮「🖨️ 打印送货单」",
+          "who": "销售 / 仓库",
+          "note": "同一张订单，去掉单价和金额的版本。",
+          "paper": "A4"
+        },
+        {
+          "file": "06-salesorder-zh.html",
+          "name": "销售订单（按订单）",
+          "en": "SALES ORDER",
+          "where": "订单详情页 / 报价单详情页「打印」「预览」",
+          "who": "销售",
+          "note": "报价单也走这套模板。",
+          "paper": "A4",
+          "flags": [
+            "invoice-no"
+          ]
+        },
+        {
+          "file": "07-batch-delivery.html",
+          "name": "批量订单打印",
+          "en": "BATCH PRINT",
+          "where": "缺货处理页「打印」；报价单列表「批量打印 (N)」",
+          "who": "销售 / 仓库",
+          "note": "选中多张订单连续印，一单一页。预览里是 3 张订单连打。",
+          "paper": "A4，逐单分页"
+        }
+      ]
+    },
+    {
+      "id": "finance",
+      "title": "财务单据",
+      "items": [
+        {
+          "file": "08-invoice-entity-zh.html",
+          "alt": {
+            "08-invoice-entity-en.html": "英文"
+          },
+          "name": "发票（按发票记录）",
+          "en": "INVOICE",
+          "where": "发票详情页 → 打印页按钮「🖨 打印 / 保存 PDF」",
+          "who": "财务",
+          "note": "⛔ 这张模板对生产库里的真实发票是打不开的——页面直接报 500。原因：库里 14.8 万张发票的行数据是 Odoo 导入时的老结构（每行只有「订单号 + 金额」），而这个页面按「商品明细」渲染（要商品名、数量、单价、税额）。两者对不上，页面读税额时就崩了。预览里这张是用一张真实订单的行数据临时拼出来的样例，只能看版式，不代表系统现在能印出来。",
+          "paper": "A4",
+          "flags": [
+            "broken"
+          ]
+        },
+        {
+          "file": "09-purchase-order.html",
+          "name": "采购单",
+          "en": "PURCHASE ORDER",
+          "where": "采购单详情页按钮「打印」",
+          "who": "采购",
+          "note": "发给供应商的正式订货单。同一份 HTML 也会作为邮件附件发出。",
+          "paper": "A4",
+          "flags": [
+            "en-only"
+          ]
+        },
+        {
+          "file": "09-purchase-rfq.html",
+          "name": "询价单",
+          "en": "REQUEST FOR QUOTATION",
+          "where": "采购单详情页（草稿状态专属）按钮「打印询价单」",
+          "who": "采购",
+          "note": "和采购单同一套模板，草稿状态时抬头变成 REQUEST FOR QUOTATION。",
+          "paper": "A4",
+          "flags": [
+            "en-only"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "title": "统计报表",
+      "intro": "这些不是给客户的单据，是内部用来看生意的纸。",
+      "items": [
+        {
+          "file": "11a-day-summary-en.html",
+          "alt": {
+            "11a-day-summary-zh.html": "中文"
+          },
+          "name": "订单汇总报表",
+          "en": "ORDER SUMMARY",
+          "where": "日销售中心 → 销售统计 Tab → 按钮「日报（按客户）」",
+          "who": "销售 / 老板",
+          "note": "按客户汇总当期订单。支持按客户/商品/司机/时段/批次/星期/分类/业务员多维筛选后再打印。",
+          "paper": "A4，页脚带筛选条件摘要 + 页码"
+        },
+        {
+          "file": "11b-multiline-en.html",
+          "name": "商品明细清单",
+          "en": "PRODUCT LINES",
+          "where": "销售统计 Tab → 按钮「明细清单」",
+          "who": "销售 / 财务",
+          "note": "逐行列出每单每个商品，用来核对细账。",
+          "paper": "A4，连续表格"
+        },
+        {
+          "file": "11c-weekly-summary-en.html",
+          "name": "商品×星期汇总",
+          "en": "WEEKLY SUMMARY",
+          "where": "销售统计 Tab → 按钮「商品×星期汇总」",
+          "who": "销售 / 采购",
+          "note": "横轴是星期，纵轴是商品——用来看「周几该订多少货」。",
+          "paper": "A4"
+        },
+        {
+          "file": "12-category-totals.html",
+          "name": "分类总量单",
+          "en": "CATEGORY TOTALS",
+          "where": "销售统计 Tab → 视图切到「按分类」→ 按钮「打印分类总量」",
+          "who": "仓库备货",
+          "note": "按商品分类汇总当日需求量，带 ATP 库存色标（绿=够、黄=刚好、紫=缺）。这张刻意保持中文，因为是给一线仓库员工用的。",
+          "paper": "A4",
+          "flags": [
+            "zh-only"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "title": "其他",
+      "items": [
+        {
+          "file": "10-pricelist.html",
+          "alt": {
+            "10-pricelist-en.html": "英文"
+          },
+          "name": "价格表",
+          "en": "PRICE LIST",
+          "where": "价格表列表页按钮「🖨 打印 (N)」（选中若干张）或「🖨 打印全部」",
+          "who": "销售 / 老板",
+          "note": "按商品分类分组，列出生效价格、包装规格、最小订购量、生效日期。预览里是「Johnstone」和「MUSASHI」两张表（406 + 184 条规则）。",
+          "paper": "A4，按分类分组"
+        }
+      ]
+    }
+  ]
+}

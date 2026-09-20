@@ -38,6 +38,7 @@ import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
 import { displayUomName } from '@/lib/sale-uom'
 import type { PrintLang } from '@/lib/print/print-i18n'
+import { paymentTermPrintLabel } from '@/lib/payment-terms'
 
 const T = {
   zh: {
@@ -62,14 +63,17 @@ function buildSalesOrderHtml(
   // 与拣货单堆叠顺序一致，客户拿着单子跟仓库出货顺序对得上。见 lib/print/line-sort.ts
   const lines = sortLinesByUomSequence<TripLine>(order.lines ?? [])
 
-  const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
+  // 20260920 客户要求：销售单印发票号，客户拿这张纸直接交给会计进账。
+  // 号来自 Order.invoiceNo 或已开具的发票（见 lib/print/invoice-lookup.ts）；
+  // 万一没取到就退回订单号，纸上总得有个可追溯的编号，不能开天窗。
+  const invoiceNo = order.invoiceNo?.trim() || null
+  const orderCode = invoiceNo ?? order.code ?? order.id.slice(-8).toUpperCase()
   const safeCode = orderCode.replace(/['"\\]/g, '')
 
   const customerAddr = customer
     ? [customer.street, customer.street2, customer.city, customer.zip].filter(Boolean).join(', ')
     : ''
 
-  const customerPhone = customer?.phone ?? order.internalNote ?? ''
   const deliveryDate = formatDateOnly(order.deliveryDate)
 
   // 税前小计 subtotal 直接用(unitPrice×qty,SSOT 口径),按税率分组算 VAT
@@ -88,8 +92,9 @@ function buildSalesOrderHtml(
   const total = subtotal + totalVat
 
   const paymentTerm = customer?.paymentTerm ?? ''
-  const paymentLabel = paymentTerm === 'cash' ? 'Immediate Payment' : paymentTerm === 'weekly' ? 'Weekly' : paymentTerm === 'monthly' ? 'Monthly' : ''
-  const isImmediatePayment = paymentTerm === 'cash'
+  // 20260920：原来只认 cash/weekly/monthly，COD(生产库 37 家) 等一律印成空白；
+  // 现在统一走 paymentTermPrintLabel，未知值也原样印出，货到付款同样红色高亮
+  const { label: paymentLabel, immediate: isImmediatePayment } = paymentTermPrintLabel(paymentTerm, lang)
   const paymentColor = isImmediatePayment ? '#dc2626' : '#15803d'
   const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
   const paymentBorder = isImmediatePayment ? '#ef4444' : '#16a34a'
@@ -144,7 +149,7 @@ function buildSalesOrderHtml(
         </div>
       </td>
       <td class="barcode-cell">
-        <div class="info-head">Sale Order NO</div>
+        <div class="info-head">${invoiceNo ? 'Invoice No.' : 'Sale Order NO'}</div>
         <svg class="barcode-svg bc-${safeCode}"></svg>
         <div class="barcode-code">${escapeHtml(orderCode)}</div>
       </td>
@@ -157,8 +162,7 @@ function buildSalesOrderHtml(
       <td>
         <div class="info-head">Payment</div>
         <div class="info-val">
-          ${paymentLabel ? `<div style="font-weight:bold;color:${paymentColor};font-size:9.5pt;">${paymentLabel}</div>` : '<div style="color:#999;">—</div>'}
-          ${customerPhone ? `<div style="margin-top:2mm;font-size:8.5pt;color:#555;">${escapeHtml(customerPhone)}</div>` : ''}
+          ${paymentLabel ? `<div style="font-weight:bold;color:${paymentColor};font-size:9.5pt;">${escapeHtml(paymentLabel)}</div>` : '<div style="color:#999;">—</div>'}
         </div>
       </td>
     </tr>
@@ -180,7 +184,7 @@ function buildSalesOrderHtml(
   </div>
 
   ${paymentLabel ? `<div style="margin-bottom:6mm;padding:8px 14px;border-radius:6px;border:2px solid ${paymentBorder};background:${paymentBg};display:inline-block;">
-    <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">PAYMENT: ${paymentLabel}</span>
+    <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">PAYMENT: ${escapeHtml(paymentLabel)}</span>
   </div>` : ''}
 
   ${customer?.externalNote ? `<div class="note-box">
@@ -307,7 +311,9 @@ export function generateTripSalesHtml(data: TripPrintData, lang: PrintLang = 'zh
   }).join('')
 
   const barcodeInits = orders.map(order => {
-    const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
+    // 条码必须和纸面上印的号一致，取值口径与页头保持同一套
+    const invoiceNo = order.invoiceNo?.trim() || null
+    const orderCode = invoiceNo ?? order.code ?? order.id.slice(-8).toUpperCase()
     const safeCode = orderCode.replace(/['"\\]/g, '')
     // 长订单被 chunkOrderLinesForPrint 拆成多页时,每页都重画一次页头,同一订单的
     // 条码 svg 会出现多份——用 class 选择器一次性渲染到所有份(JsBarcode 支持

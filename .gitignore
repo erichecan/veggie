@@ -82,3 +82,7 @@ docs/dev-server-info/
 
 # 本地文件上传落盘目录（lib/storage.ts 默认本地磁盘 driver 的运行时产物，可能含真实业务单据）
 /uploads/
+
+# 打印模板评审页：口令哈希与生产数据渲染产物，不进版本库
+deploy/print-preview/.htpasswd
+deploy/print-preview/site/

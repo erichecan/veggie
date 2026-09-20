@@ -12,17 +12,15 @@ import {
 import { generateTripSummaryHtml } from '@/lib/print/trip-summary-template'
 import { generateTripPickingHtml, type PickingVariant, type PickingExpandMode } from '@/lib/print/trip-picking-template'
 import { generateTripDeliveryHtml } from '@/lib/print/trip-delivery-template'
-import { generateTripReceiptHtml } from '@/lib/print/trip-receipt-template'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
-type PrintType = 'summary' | 'picking' | 'delivery' | 'receipt'
+type PrintType = 'summary' | 'picking' | 'delivery'
 
 /** 统一签名 (data, variant, lang, expand)——只有 picking 真的用 variant/expand，跟 dispatch-print-html.ts 同一思路 */
 const RENDERERS: Record<PrintType, (d: TripPrintData, variant: PickingVariant | undefined, lang: PrintLang, expand: PickingExpandMode | undefined) => string> = {
   summary: (d, _variant, lang) => generateTripSummaryHtml(d, lang),
   picking: (d, variant, lang, expand) => generateTripPickingHtml(d, variant, lang, expand),
   delivery: (d, _variant, lang) => generateTripDeliveryHtml(d, lang),
-  receipt: (d, _variant, lang) => generateTripReceiptHtml(d, lang),
 }
 
 function parsePickingVariant(v: string | null): PickingVariant {
@@ -38,13 +36,11 @@ const TITLES: Record<PrintLang, Record<PrintType, string>> = {
     summary: '配送汇总单',
     picking: '拣货单 · 备货清单',
     delivery: '送货单 · DELIVERY SLIP',
-    receipt: '客户签收单 · PROOF OF DELIVERY',
   },
   en: {
     summary: 'Delivery Summary',
     picking: 'Picking List',
     delivery: 'Delivery Slip',
-    receipt: 'Proof of Delivery',
   },
 }
 
