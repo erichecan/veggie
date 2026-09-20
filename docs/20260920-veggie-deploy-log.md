@@ -275,4 +275,18 @@ config 这条在 middleware 之前执行，是真正的 307。页面里那层留
 
 问谁：用户本人（必要时转问提这条需求的客户）。
 
+**生产部署验证（2026-09-20 15:51 UTC）**
+
+| 项 | 结果 |
+|---|---|
+| GitHub Actions | ✅ CI + Deploy to droplet 双绿 |
+| 生产镜像 | ✅ `ghcr.io/erichecan/veggie:9a32279fe09278fea1922f185c819f2092126b75` —— 就是本次提交 |
+| 迁移 | ✅ `113 migrations found / No pending migrations to apply`（本次无 schema 变更，符合预期） |
+| 生产 URL | ✅ `/` 200 · `/enter` 200 · `/classic/boss/reports/purchasing` 307（未登录跳登录） |
+| 未登录打接口 | ✅ `POST /api/reports/purchasing` → 401「未授权访问」，不是 500 |
+
+⛔ **我没能验证的**：生产上没有可供我登录的账号，**9 月排到最左这一点在生产上未经我直接看到**，
+只验到镜像、状态码与接口层。本地已用浏览器逐项实测（列序、数字、展开子行），
+生产渲染需用户本人确认。
+
 **状态**：待观测
