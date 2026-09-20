@@ -12,10 +12,10 @@ import { routing } from '@/i18n/routing'
  * 权限也配好了，但整个系统里没有一个链接指向它们。功能到不了 = 等于不存在，
  * 这才是 H2 真正的缺口（清单里写的「采购侧完全没有可组合分析」不准确）。
  */
+// 20260920：客户要求「销售分析」「物流分析（报表）」从导航里撤下，
+// 这条 tab 因此只剩采购分析；两个页面本身与接口都还在，直链可达。
 const TABS = [
-  { seg: 'sales', zh: '销售分析', en: 'Sales' },
   { seg: 'purchasing', zh: '采购分析', en: 'Purchasing' },
-  { seg: 'logistics', zh: '物流分析', en: 'Logistics' },
 ]
 
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
