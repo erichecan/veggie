@@ -4,7 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
-import { downloadCsv } from '@/lib/csv-export'
+import { downloadXlsx } from '@/lib/xlsx-export'
 import {
   defaultRange, SearchSelectDropdown, searchProductOptions, searchSupplierOptions, type SearchOption,
 } from '@/components/boss/analytics-shared'
@@ -28,9 +28,13 @@ interface PurchaseRow {
   taxAmount: number
   amountIncTax: number
   avgUnitCost: number
+  // 20260922：只在 groupBy=product 时后端才返回这三列（按供应商维度"毛利"没有意义）
+  salesQty?: number
+  salesAmount?: number
+  grossProfit?: number
 }
 interface PurchasePayload {
-  summary: { amountExTax: number; taxAmount: number; amountIncTax: number; orderedQty: number }
+  summary: { amountExTax: number; taxAmount: number; amountIncTax: number; orderedQty: number; salesQty?: number; salesAmount?: number; grossProfit?: number }
   groupBy: GroupBy
   rows: PurchaseRow[]
 }
@@ -68,6 +72,10 @@ export default function ProcurementAnalysisPage() {
   useEffect(() => {
     setLoading(true)
     setError(null)
+    // 20260922 code review：groupBy 切换时不清空 data，旧 groupBy 的行(含/不含销售三列)
+    // 留在屏幕上、也留在 exportPurchaseExcel 可导出的状态，直到新请求落地——这段窗口内
+    // 点"下载 Excel"，表头按新 groupBy 算、数据却是旧 groupBy 查出来的，对不上。
+    setData(null)
 
     if (view === 'trend') {
       if (productFilter.length === 0) { setTrendData(null); setLoading(false); return }
@@ -88,13 +96,19 @@ export default function ProcurementAnalysisPage() {
       .finally(() => setLoading(false))
   }, [view, groupBy, range, granularity, supplierFilter, productFilter])
 
-  function exportPurchaseCsv() {
+  function exportPurchaseExcel() {
     if (!data) return
-    const headers = isEn
-      ? ['Name', 'PO Count', 'Ordered Qty', 'Received Qty', 'Untaxed', 'Tax', 'Total (inc. tax)', 'Avg Unit Cost']
-      : ['名称', 'PO数', '订购数量', '已收数量', '未税金额', '税额', '含税金额', '平均单价']
-    const rows = data.rows.map((r) => [r.name, String(r.poCount), String(r.orderedQty), String(r.receivedQty), eur(r.amountExTax), eur(r.taxAmount), eur(r.amountIncTax), eur(r.avgUnitCost)])
-    downloadCsv(`procurement-${groupBy}-${range.from}_${range.to}`, headers, rows)
+    const withSales = groupBy === 'product'
+    const headers = [
+      ...(isEn ? ['Name', 'PO Count', 'Ordered Qty', 'Received Qty', 'Untaxed', 'Tax', 'Total (inc. tax)', 'Avg Unit Cost']
+               : ['名称', 'PO数', '订购数量', '已收数量', '未税金额', '税额', '含税金额', '平均单价']),
+      ...(withSales ? (isEn ? ['Sales Qty', 'Sales Amount', 'Gross Profit'] : ['销售数量', '销售额', '毛利']) : []),
+    ]
+    const rows = data.rows.map((r) => [
+      r.name, r.poCount, r.orderedQty, r.receivedQty, r.amountExTax, r.taxAmount, r.amountIncTax, r.avgUnitCost,
+      ...(withSales ? [r.salesQty ?? 0, r.salesAmount ?? 0, r.grossProfit ?? 0] : []),
+    ])
+    downloadXlsx(`procurement-vs-sales-${groupBy}-${range.from}_${range.to}`, headers, rows)
   }
 
   return (
@@ -102,8 +116,8 @@ export default function ProcurementAnalysisPage() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="mb-5 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Procurement Analysis' : '采购分析'}</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{isEn ? 'Purchases by supplier/product + stock trend' : '按供应商/产品查进货情况 + 库存趋势'}</p>
+          <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Purchase vs Sales Analysis' : '进销对比分析'}</h1>
+          <p className="text-sm text-gray-400 mt-0.5">{isEn ? 'Purchases by supplier/product, sales & margin, + stock trend' : '按供应商/产品查进货情况，按产品对比销售与毛利 + 库存趋势'}</p>
         </div>
       </div>
 
@@ -205,10 +219,11 @@ export default function ProcurementAnalysisPage() {
         {view === 'purchase' && (
           <button
             type="button"
-            onClick={exportPurchaseCsv}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white"
+            onClick={exportPurchaseExcel}
+            disabled={!data}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white disabled:opacity-40"
           >
-            ⬇ {isEn ? 'Download CSV' : '下载 CSV'}
+            ⬇ {isEn ? 'Download Excel' : '下载 Excel'}
           </button>
         )}
       </div>
@@ -230,11 +245,18 @@ export default function ProcurementAnalysisPage() {
                   <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Untaxed' : '未税'}</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Tax' : '税额'}</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Total (inc. tax)' : '含税总额'}</th>
+                  {groupBy === 'product' && (
+                    <>
+                      <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Sales Qty' : '销售数量'}</th>
+                      <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Sales Amount' : '销售额'}</th>
+                      <th className="text-right px-4 py-3 font-semibold text-gray-600">{isEn ? 'Gross Profit' : '毛利'}</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {data.rows.length === 0 && (
-                  <tr><td colSpan={8} className="text-center py-16 text-gray-400">{isEn ? 'No data' : '暂无数据'}</td></tr>
+                  <tr><td colSpan={groupBy === 'product' ? 11 : 8} className="text-center py-16 text-gray-400">{isEn ? 'No data' : '暂无数据'}</td></tr>
                 )}
                 {data.rows.map((r) => (
                   <tr key={r.key} className="border-b border-gray-50 hover:bg-gray-50">
@@ -246,6 +268,13 @@ export default function ProcurementAnalysisPage() {
                     <td className="text-right px-4 py-2.5 tabular-nums text-gray-700">{eur(r.amountExTax)}</td>
                     <td className="text-right px-4 py-2.5 tabular-nums text-gray-700">{eur(r.taxAmount)}</td>
                     <td className="text-right px-4 py-2.5 tabular-nums text-gray-900 font-medium">{eur(r.amountIncTax)}</td>
+                    {groupBy === 'product' && (
+                      <>
+                        <td className="text-right px-4 py-2.5 tabular-nums text-gray-700">{r.salesQty ?? 0}</td>
+                        <td className="text-right px-4 py-2.5 tabular-nums text-gray-700">{eur(r.salesAmount ?? 0)}</td>
+                        <td className={`text-right px-4 py-2.5 tabular-nums font-medium ${(r.grossProfit ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{eur(r.grossProfit ?? 0)}</td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -260,6 +289,13 @@ export default function ProcurementAnalysisPage() {
                     <td className="text-right px-4 py-3 tabular-nums text-gray-900">{eur(data.summary.amountExTax)}</td>
                     <td className="text-right px-4 py-3 tabular-nums text-gray-900">{eur(data.summary.taxAmount)}</td>
                     <td className="text-right px-4 py-3 tabular-nums text-gray-900">{eur(data.summary.amountIncTax)}</td>
+                    {groupBy === 'product' && (
+                      <>
+                        <td className="text-right px-4 py-3 tabular-nums text-gray-900">{data.summary.salesQty ?? 0}</td>
+                        <td className="text-right px-4 py-3 tabular-nums text-gray-900">{eur(data.summary.salesAmount ?? 0)}</td>
+                        <td className={`text-right px-4 py-3 tabular-nums ${(data.summary.grossProfit ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{eur(data.summary.grossProfit ?? 0)}</td>
+                      </>
+                    )}
                   </tr>
                 </tfoot>
               )}

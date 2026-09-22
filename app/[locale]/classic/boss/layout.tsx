@@ -26,7 +26,9 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
 
   // 20260920：客户要求数据中心只留几项，摘掉了 15 个分析页的导航入口，页面与接口原样保留。
   // 20260920 当天再按用户要求恢复其中 4 项：AI 问数 / 毛利分析 / 利润表 / 司机提成。
-  // 其余 11 项（经营总览 / 销售统计 / 客户分析 / 采购进货分析 / 应收账龄 / 应付账龄 /
+  // 20260922 再恢复第 5 项：procurement-analysis（客户截图批注要"进货+销售+毛利"对比，
+  // 这个页面本来就有"时间段+多选产品+进货数量/金额"，补了销售/毛利列后改名挂回来）。
+  // 其余 10 项（经营总览 / 销售统计 / 客户分析 / 应收账龄 / 应付账龄 /
   // 采购运营 / 物流分析 / 内控审计 / 销售分析(reports/sales) / 物流分析（报表））仍摘除，
   // 要加回来就是把链接写回这个数组。
   const LINKS = [
@@ -36,6 +38,9 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     // 旧的同名页 boss/reports/sales（透视表口径，两套不同实现）已从导航撤下，名字不再撞车。
     { href: `${prefix}/classic/boss/sales-analysis`, label: isEn ? 'Sales Analysis' : '销售分析' },
     { href: `${prefix}/classic/boss/reports/purchasing`, label: isEn ? 'Purchase Analysis' : '采购分析' },
+    // 20260922：跟上面「采购分析」（供应商×月矩阵）刻意不同名，避免撞车——这个是按产品
+    // 对比进货与销售/毛利的新入口。
+    { href: `${prefix}/classic/boss/procurement-analysis`, label: isEn ? 'Purchase vs Sales' : '进销对比分析' },
     ...(canUseAiChat ? [{ href: `${prefix}/classic/boss/analytics/chat`, label: isEn ? 'AI Data Chat' : 'AI 问数' }] : []),
     { href: `${prefix}/classic/boss/analytics/margin`, label: isEn ? 'Margin Analysis' : '毛利分析' },
     { href: `${prefix}/classic/boss/analytics/income-statement`, label: isEn ? 'Income Statement' : '利润表' },
