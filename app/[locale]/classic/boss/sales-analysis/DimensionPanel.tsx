@@ -75,7 +75,7 @@ const PURPLE = '#875A7B'
 
 type NodeState = DimRow[] | 'loading' | 'error'
 
-type SortKey = 'name' | 'uom' | 'qty' | 'totalIncTax' | 'revenueExTax' | 'grossProfit' | 'grossWeight' | 'commission'
+type SortKey = 'name' | 'uom' | 'qty' | 'avgPrice' | 'totalIncTax' | 'revenueExTax' | 'grossProfit' | 'grossWeight' | 'commission'
 
 /**
  * 面板的列。表头、排序、单元格、CSV 都读这一份，改列只改这里。
@@ -87,6 +87,8 @@ const COLUMNS: Array<{ key: SortKey; zh: string; en: string; num: boolean; fmt: 
   // 20260920 客户要求：产品后面要看到单位。只有产品那一层有值，其余层留空
   { key: 'uom', zh: '单位', en: 'Unit', num: false, fmt: (r) => r.uomNames ?? '' },
   { key: 'qty', zh: '数量', en: 'Qty', num: true, fmt: (r) => String(Math.round(r.qty * 1000) / 1000) },
+  // 20260921 客户截图要求：加一列单价（= 总额÷数量的加权均价，口径与左表「价格」列一致）
+  { key: 'avgPrice', zh: '单价', en: 'Unit Price', num: true, fmt: (r) => eur(r.avgPrice) },
   { key: 'totalIncTax', zh: '总额', en: 'Total', num: true, fmt: (r) => eur(r.totalIncTax) },
   { key: 'revenueExTax', zh: '未税', en: 'Untaxed', num: true, fmt: (r) => eur(r.revenueExTax) },
   { key: 'grossProfit', zh: '毛利', en: 'Margin', num: true, fmt: (r) => eur(r.grossProfit) },
@@ -211,7 +213,7 @@ export default function DimensionPanel({
         const depth = ancestors.length
         rows.push([
           sel.label, label(chain[depth]), '  '.repeat(depth) + r.name, r.uomNames ?? '',
-          String(Math.round(r.qty * 1000) / 1000), fmtMoney(r.totalIncTax), fmtMoney(r.revenueExTax),
+          String(Math.round(r.qty * 1000) / 1000), fmtMoney(r.avgPrice), fmtMoney(r.totalIncTax), fmtMoney(r.revenueExTax),
           fmtMoney(r.grossProfit), String(Math.round(r.grossWeight * 100) / 100), fmtMoney(r.commission),
         ])
         const next = [...ancestors, { dim: chain[depth], key: r.key }]
@@ -225,8 +227,8 @@ export default function DimensionPanel({
       if (Array.isArray(root)) walk(sel, [], root)
     }
     const headers = isEn
-      ? ['Period', 'Level', 'Name', 'Unit', 'Qty', 'Total', 'Untaxed', 'Margin', 'Gross Weight', 'Commission']
-      : ['时间段', '层级', '名称', '单位', '数量', '总额', '未税', '毛利', '毛重', '提成']
+      ? ['Period', 'Level', 'Name', 'Unit', 'Qty', 'Unit Price', 'Total', 'Untaxed', 'Margin', 'Gross Weight', 'Commission']
+      : ['时间段', '层级', '名称', '单位', '数量', '单价', '总额', '未税', '毛利', '毛重', '提成']
     downloadCsv(`sales-analysis-${dim}-${new Date().toISOString().slice(0, 10)}`, headers, rows)
   }
 
@@ -324,7 +326,7 @@ export default function DimensionPanel({
               </button>
               {!closed && (
                 <div className="overflow-x-auto">
-                <table className="w-full text-[13px]" style={{ background: 'rgba(255,255,255,.55)', minWidth: 700 }}>
+                <table className="w-full text-[13px]" style={{ background: 'rgba(255,255,255,.55)', minWidth: 800 }}>
                   <thead>
                     <tr className="border-b" style={{ borderColor: 'rgba(0,0,0,.07)' }}>
                       {COLUMNS.map((c) => {

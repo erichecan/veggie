@@ -64,7 +64,9 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Reports' : '报表'} menuItems={LINKS} session={session} />
-      <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
+      {/* 20260921 客户截图反馈：销售分析/采购分析两张表格要横向滚动才能看全，
+          容器加宽到 1720px（原 max-w-6xl=1152px 太窄），其余报表页只是获得更多留白，无副作用 */}
+      <main className="max-w-[1720px] mx-auto px-4 py-6">{children}</main>
     </div>
   )
 }

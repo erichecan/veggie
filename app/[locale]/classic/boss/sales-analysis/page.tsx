@@ -40,6 +40,13 @@ export default function SalesAnalysisPage() {
   const [range, setRange] = useState(() => defaultRange(30))
   const [productFilter, setProductFilter] = useState<SearchOption[]>([])
   const [customerFilter, setCustomerFilter] = useState<SearchOption[]>([])
+  /**
+   * 20260921 客户截图要求：钻取视图也要能选任意时间段，不只是"从今天往回滚 N 周/月"。
+   * 空字符串＝未设置，此时 WeeklyDrilldown 保持原来的滚动窗口行为；两个都填了才生效。
+   * 单独一份 state（不复用 detail 的 range）——那个默认非空（defaultRange(30)），
+   * 复用的话钻取视图一开始就会被强制成固定 30 天窗口，而不是默认的滚动窗口。
+   */
+  const [weekRange, setWeekRange] = useState<{ from: string; to: string }>({ from: '', to: '' })
 
   const [detailData, setDetailData] = useState<DetailPayload | null>(null)
   const [loading, setLoading] = useState(false)
@@ -131,6 +138,39 @@ export default function SalesAnalysisPage() {
           isEn={isEn}
         />
 
+        {view === 'week' && (
+          <>
+            <div className="h-5 w-px bg-gray-200" />
+            <div className="flex items-center gap-1.5 text-sm">
+              <input
+                type="date"
+                value={weekRange.from}
+                onChange={(e) => setWeekRange((r) => ({ ...r, from: e.target.value }))}
+                className="border border-gray-200 rounded-lg px-2 py-1"
+                title={isEn ? 'Custom period start (leave blank to use the rolling window)' : '自定义区间起点（留空则用默认的滚动窗口）'}
+              />
+              <span className="text-gray-400">→</span>
+              <input
+                type="date"
+                value={weekRange.to}
+                onChange={(e) => setWeekRange((r) => ({ ...r, to: e.target.value }))}
+                className="border border-gray-200 rounded-lg px-2 py-1"
+                title={isEn ? 'Custom period end' : '自定义区间终点'}
+              />
+              {(weekRange.from || weekRange.to) && (
+                <button
+                  type="button"
+                  onClick={() => setWeekRange({ from: '', to: '' })}
+                  className="text-gray-400 hover:text-gray-600 text-xs px-1"
+                  title={isEn ? 'Clear (back to the rolling window)' : '清除（恢复滚动窗口）'}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
         {view === 'detail' && (
           <button
             type="button"
@@ -143,7 +183,15 @@ export default function SalesAnalysisPage() {
       </div>
 
       {/* ── Main Content ───────────────────────────────────────────────────── */}
-      {view === 'week' && <WeeklyDrilldown isEn={isEn} productIds={productIds} customerIds={customerIds} />}
+      {view === 'week' && (
+        <WeeklyDrilldown
+          isEn={isEn}
+          productIds={productIds}
+          customerIds={customerIds}
+          customFrom={weekRange.from || undefined}
+          customTo={weekRange.to || undefined}
+        />
+      )}
 
       {view === 'detail' && (
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">

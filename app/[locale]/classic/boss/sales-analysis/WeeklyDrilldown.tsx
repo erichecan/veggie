@@ -133,7 +133,17 @@ function dayLabel(key: string, isEn: boolean): string {
   return d.toLocaleDateString(isEn ? 'en-GB' : 'zh-CN', { month: '2-digit', day: '2-digit', weekday: 'short' })
 }
 
-export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '' }: { isEn: boolean; productIds?: string; customerIds?: string }) {
+export default function WeeklyDrilldown({
+  isEn, productIds = '', customerIds = '', customFrom, customTo,
+}: {
+  isEn: boolean
+  productIds?: string
+  customerIds?: string
+  /** 20260921：两个都传了才生效，覆盖下面"从今天往回滚"的默认窗口，改成任意起止区间 */
+  customFrom?: string
+  customTo?: string
+}) {
+  const customRangeActive = !!(customFrom && customTo)
   // 顶层粒度：按周（原有，默认）或按月（20260920 加，钻取变三级 月→周→日）
   const [topLevel, setTopLevel] = useState<'week' | 'month'>('week')
   const [weeksBack, setWeeksBack] = useState(WEEKS_PAGE_SIZE)
@@ -160,18 +170,31 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
 
   const load = useCallback(() => {
     setError(null)
-    const today = new Date()
-    const rawFrom = topLevel === 'month'
-      ? new Date(today.getFullYear(), today.getMonth() - (monthsBack - 1), 1)
-      : new Date(mondayOf(today).getTime() - (weeksBack - 1) * 7 * 86400000)
-    // 封顶到后端能接受的范围，超了它会悄悄截断，页面上看不出来
-    const floor = new Date(today.getTime() - MAX_RANGE_DAYS * 86400000)
-    const from = fmtYMD(rawFrom < floor ? floor : rawFrom)
-    const to = fmtYMD(today)
+    let from: string
+    let to: string
+    if (customRangeActive) {
+      // 自定义区间：直接把用户选的起止传给后端——/api/analytics/margin 本来就按任意
+      // from/to 过滤再用 date_trunc('week'/'month', …) 分桶，不要求对齐周一/月初，
+      // 头尾桶天然是"部分周/月"，这是对的（只统计区间内实际发生的部分）。
+      to = customTo!
+      const rawFrom = new Date(`${customFrom}T00:00:00`)
+      const rawTo = new Date(`${to}T00:00:00`)
+      const floor = new Date(rawTo.getTime() - MAX_RANGE_DAYS * 86400000)
+      from = fmtYMD(rawFrom < floor ? floor : rawFrom)
+    } else {
+      const today = new Date()
+      const rawFrom = topLevel === 'month'
+        ? new Date(today.getFullYear(), today.getMonth() - (monthsBack - 1), 1)
+        : new Date(mondayOf(today).getTime() - (weeksBack - 1) * 7 * 86400000)
+      // 封顶到后端能接受的范围，超了它会悄悄截断，页面上看不出来
+      const floor = new Date(today.getTime() - MAX_RANGE_DAYS * 86400000)
+      from = fmtYMD(rawFrom < floor ? floor : rawFrom)
+      to = fmtYMD(today)
+    }
     apiGet<BucketPayload>(`/api/analytics/margin?groupBy=${topLevel}&from=${from}&to=${to}${extraFilterQs}`)
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-  }, [topLevel, weeksBack, monthsBack, extraFilterQs])
+  }, [topLevel, weeksBack, monthsBack, extraFilterQs, customRangeActive, customFrom, customTo])
 
   useEffect(() => { load() }, [load])
 
@@ -183,7 +206,7 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
     setExpandedWeek({})
     setDaysByWeek({})
     setSelections([])
-  }, [productIds, customerIds, topLevel])
+  }, [productIds, customerIds, topLevel, customFrom, customTo])
 
   /** 勾选/取消一个时间段。月、周、日三层都能勾，也可以混着勾 */
   function toggleSelection(sel: TimeSel) {
@@ -240,6 +263,9 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
       : new Date(mondayOf(today).getTime() - (weeksBack + WEEKS_PAGE_SIZE - 1) * 7 * 86400000)
     return (today.getTime() - next.getTime()) / 86400000 > MAX_RANGE_DAYS
   })()
+  /** 自定义区间版本的同一个判断：用户选的 to-from 本身就超过上限 */
+  const rangeTooWide = customRangeActive
+    && (new Date(`${customTo}T00:00:00`).getTime() - new Date(`${customFrom}T00:00:00`).getTime()) / 86400000 > MAX_RANGE_DAYS
   // API 汇总(summary)不带 qty —— 总数量/总均价用各周行相加/推导，跟各行的 qty/avgPrice 口径一致
   const totalQty = rowsDesc.reduce((s, r) => s + r.qty, 0)
   const totalAvgPrice = totalQty > 0 ? data.summary.revenueExTax / totalQty : 0
@@ -358,7 +384,7 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
         </button>
       </div>
       <div className="flex flex-col lg:flex-row gap-4 items-start">
-      <div className={(selections.length > 0 ? 'lg:w-[460px] lg:shrink-0 ' : 'flex-1 ') + 'bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden overflow-x-auto'}>
+      <div className={(selections.length > 0 ? 'lg:w-[620px] lg:shrink-0 ' : 'flex-1 ') + 'bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden overflow-x-auto'}>
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50">
@@ -460,24 +486,37 @@ export default function WeeklyDrilldown({ isEn, productIds = '', customerIds = '
           })}
         </tbody>
       </table>
-      <div className="text-center py-3 border-t border-gray-50">
-        {atRangeLimit ? (
-          <span className="text-xs text-gray-400">
-            {isEn
-              ? `Reached the ${MAX_RANGE_DAYS}-day analysis limit — pick a narrower period to go further back.`
-              : `已到分析范围上限（${MAX_RANGE_DAYS} 天），再往前看请换个时间段查`}
-          </span>
-        ) : (
-          <button
-            onClick={() => topLevel === 'month' ? setMonthsBack((n) => n + MONTHS_PAGE_SIZE) : setWeeksBack((n) => n + WEEKS_PAGE_SIZE)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-400"
-          >
-            {topLevel === 'month'
-              ? (isEn ? 'Show more months' : '显示更多月')
-              : (isEn ? 'Show more weeks' : '显示更多周')}
-          </button>
-        )}
-      </div>
+      {/* 自定义区间下范围是用户自己选的，没有"往回翻页"这回事——只在超过 400 天上限时提示 */}
+      {customRangeActive ? (
+        rangeTooWide && (
+          <div className="text-center py-3 border-t border-gray-50">
+            <span className="text-xs text-gray-400">
+              {isEn
+                ? `The selected period exceeds the ${MAX_RANGE_DAYS}-day analysis limit — only the most recent ${MAX_RANGE_DAYS} days are shown.`
+                : `所选区间超过分析范围上限（${MAX_RANGE_DAYS} 天），只显示最近 ${MAX_RANGE_DAYS} 天`}
+            </span>
+          </div>
+        )
+      ) : (
+        <div className="text-center py-3 border-t border-gray-50">
+          {atRangeLimit ? (
+            <span className="text-xs text-gray-400">
+              {isEn
+                ? `Reached the ${MAX_RANGE_DAYS}-day analysis limit — pick a narrower period to go further back.`
+                : `已到分析范围上限（${MAX_RANGE_DAYS} 天），再往前看请换个时间段查`}
+            </span>
+          ) : (
+            <button
+              onClick={() => topLevel === 'month' ? setMonthsBack((n) => n + MONTHS_PAGE_SIZE) : setWeeksBack((n) => n + WEEKS_PAGE_SIZE)}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-400"
+            >
+              {topLevel === 'month'
+                ? (isEn ? 'Show more months' : '显示更多月')
+                : (isEn ? 'Show more weeks' : '显示更多周')}
+            </button>
+          )}
+        </div>
+      )}
       </div>
 
       <div className="flex-1 min-w-0 w-full">
