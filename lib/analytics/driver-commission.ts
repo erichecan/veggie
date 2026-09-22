@@ -187,6 +187,12 @@ WITH trip_order AS (
          t."driverId"                                AS driver_id,
          COALESCE(NULLIF(t."driverName", ''), '未指定') AS driver_name,
          COALESCE(w."waveDate", t."createdAt"::date)  AS biz_date,
+         -- 20260922：波次的时段优先，手工建的无波次 Trip 回落到 Trip 自己的 timeSlot。
+         -- ⛔ 两边大小写不统一：PickingWave.timeOfDay 是 "am"/"pm"（schema 注释），
+         -- Trip.timeSlot 校验/写入的却是 "AM"/"PM"（app/api/trips/route.ts:62、
+         -- lib/trip-from-wave.ts:39）。下游 timeOfDayLabel 只认小写，这里统一转小写，
+         -- 不要指望调用方每处都做大小写兼容。
+         LOWER(COALESCE(w."timeOfDay", t."timeSlot")) AS time_of_day,
          oid                                          AS order_id
   FROM "Trip" t
   LEFT JOIN "PickingWave" w ON w.id = t."waveId"
@@ -373,6 +379,100 @@ export async function fetchDriverCommission(
   totals.diff = round2(totals.computedTotal - totals.frozenTotal)
 
   return { byDriver, byPeriod, detail, totals, detailTruncated }
+}
+
+export interface DriverProductDetailRow {
+  bizDate: string
+  /** "am" | "pm" | null —— 无波次也无 Trip.timeSlot 的历史/手工数据取不到时段 */
+  timeOfDay: string | null
+  driverId: string | null
+  driverName: string
+  restaurantName: string
+  productName: string
+  uomName: string | null
+  deliveredQty: number
+  /** 送达金额 / 送达数量的加权均价 —— 同一产品同一天同一客户可能来自多单，单价未必完全一致 */
+  avgUnitPrice: number
+  deliveredSubtotal: number
+}
+
+/**
+ * 每司机 × 每客户 × 每产品 × 每天(上午/下午) 送货明细（20260922，客户手写需求"司机一份，
+ * 公司留一份"——用于司机与公司核对当天到底送了哪个客户多少件什么货，不是提成计算）。
+ * ============================================================================
+ * 归属/日期口径与 fetchDriverCommission 同一套 baseCte（Trip 展开），只是不再按订单聚合，
+ * 而是下钻到 OrderLine 按（司机, 客户, 产品, 日期, 半天）分组——粒度比逐单明细更细。
+ * 金额基准用 deliveredQty（实送量），与提成口径一致，不是下单量。
+ */
+export async function fetchDriverProductDetail(
+  db: Db,
+  q: DriverCommissionQuery,
+): Promise<{ rows: DriverProductDetailRow[]; truncated: boolean }> {
+  const { start, end, driverId, driverName } = q
+  const detailLimit = q.detailLimit ?? 500
+  const byId = !!driverId
+  const byName = !!driverName
+  const params: unknown[] = [start, end, ...(byId ? [driverId] : []), ...(byName ? [driverName] : [])]
+  const cte = baseCte({ byId, byName })
+
+  const rows = (await db.$queryRawUnsafe(
+    `${cte}
+     SELECT to_char(tord.biz_date, 'YYYY-MM-DD') AS biz_date,
+            tord.time_of_day, tord.driver_id, tord.driver_name,
+            o."restaurantName" AS restaurant_name,
+            ol."productName" AS product_name, ol."uomName" AS uom_name,
+            SUM(COALESCE(ol."deliveredQty", 0))::float AS delivered_qty,
+            SUM(ol."unitPrice" * COALESCE(ol."deliveredQty", 0))::float AS delivered_subtotal
+     FROM trip_order tord
+     JOIN "Order" o ON o.id = tord.order_id
+     JOIN "OrderLine" ol ON ol."orderId" = o.id
+     WHERE ol."isGift" = false
+     GROUP BY tord.biz_date, tord.time_of_day, tord.driver_id, tord.driver_name,
+              o."restaurantName", ol."productName", ol."uomName"
+     ORDER BY tord.biz_date DESC, tord.time_of_day, tord.driver_name, o."restaurantName", ol."productName"
+     LIMIT ${detailLimit + 1}`,
+    ...params,
+  )) as Array<Record<string, unknown>>
+
+  const truncated = rows.length > detailLimit
+  const detail: DriverProductDetailRow[] = rows.slice(0, detailLimit).map((r) => {
+    const qty = num(r.delivered_qty)
+    const subtotal = round2(num(r.delivered_subtotal))
+    return {
+      bizDate: String(r.biz_date),
+      timeOfDay: r.time_of_day == null ? null : String(r.time_of_day),
+      driverId: r.driver_id == null ? null : String(r.driver_id),
+      driverName: String(r.driver_name),
+      restaurantName: String(r.restaurant_name ?? ''),
+      productName: String(r.product_name),
+      uomName: r.uom_name == null ? null : String(r.uom_name),
+      deliveredQty: round2(qty),
+      avgUnitPrice: qty > 0 ? round2(subtotal / qty) : 0,
+      deliveredSubtotal: subtotal,
+    }
+  })
+
+  return { rows: detail, truncated }
+}
+
+/**
+ * 明细导出成 CSV，字段与 fetchDriverProductDetail 一一对应。放在 lib 里而不是页面里，
+ * 理由同 detailToCsv —— 导出的数字必须来自同一个结果对象，能单测。
+ */
+export function productDetailToCsv(rows: DriverProductDetailRow[]): string {
+  const head = ['日期', '时段', '司机', '客户', '产品', '单位', '送达数量', '均价', '送达金额']
+  // 20260922 code review：裸 \r（无配对 \n）不转义会拼出畸形 CSV 行，
+  // 跟 lib/csv-export.ts 的 escapeCell 对齐，加上 \r
+  const esc = (v: string | number | null) => {
+    const s = String(v ?? '')
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const timeOfDayLabel = (t: string | null) => (t === 'am' ? '上午' : t === 'pm' ? '下午' : '—')
+  const lines = rows.map(r => [
+    r.bizDate, timeOfDayLabel(r.timeOfDay), r.driverName, r.restaurantName, r.productName,
+    r.uomName ?? '', r.deliveredQty, r.avgUnitPrice, r.deliveredSubtotal,
+  ].map(esc).join(','))
+  return '﻿' + [head.join(','), ...lines].join('\n')
 }
 
 export interface DriverDaySalesRow {

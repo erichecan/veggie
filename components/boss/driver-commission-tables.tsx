@@ -1,10 +1,59 @@
 'use client'
-import { eur } from '@/components/boss/analytics-shared'
+import { eur, type DateRange } from '@/components/boss/analytics-shared'
 import { formatDateTime } from '@/lib/format-date'
 import {
-  pivotPeriods,
-  type DriverSummaryRow, type DriverPeriodRow, type DriverCommissionDetailRow,
+  pivotPeriods, detailToCsv, productDetailToCsv,
+  type DriverSummaryRow, type DriverPeriodRow, type DriverCommissionDetailRow, type DriverProductDetailRow,
+  type DriverCommissionPayload,
 } from '@/lib/analytics/driver-commission'
+
+/**
+ * 两个导出按钮（+ 各自的下载函数）从页面文件挪过来——纯 UI 逻辑，不需要留在
+ * page.tsx 里，挪出来是为了把页面文件压回 CLAUDE.md 第八节的 150 行以内。
+ */
+export function ExportButtons({ data, productDetail, range, picked, isEn }: {
+  data: DriverCommissionPayload | null
+  productDetail: { rows: DriverProductDetailRow[]; truncated: boolean } | null
+  range: DateRange
+  picked: { id: string | null; name: string } | null
+  isEn: boolean
+}) {
+  const download = () => {
+    if (!data) return
+    const blob = new Blob([detailToCsv(data.detail)], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${isEn ? 'driver-commission' : '司机提成'}_${range.from}_${range.to}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  const downloadProductDetail = () => {
+    if (!productDetail) return
+    const suffix = picked ? `_${picked.name}` : ''
+    const blob = new Blob([productDetailToCsv(productDetail.rows)], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${isEn ? 'driver-delivery-detail' : '司机送货明细'}${suffix}_${range.from}_${range.to}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  return (
+    <>
+      <button
+        onClick={download}
+        disabled={!data || data.detail.length === 0}
+        className="px-3 py-1 text-sm border rounded text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+      >{isEn ? 'Export Detail CSV' : '导出明细 CSV'}</button>
+      <button
+        onClick={downloadProductDetail}
+        disabled={!productDetail || productDetail.rows.length === 0}
+        className="px-3 py-1 text-sm border rounded text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+      >{isEn ? 'Export Delivery Detail CSV' : '导出送货明细 CSV'}</button>
+    </>
+  )
+}
 
 const th = 'px-3 py-1.5 font-medium'
 const tdNum = 'px-3 py-1.5 text-right tabular-nums'
@@ -186,6 +235,70 @@ export function DetailTable({ rows, truncated, locale, isEn = false }: {
           ))}
           {rows.length === 0 && (
             <tr><td colSpan={12} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No detail in this period' : '期内没有明细'}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function timeOfDayLabel(t: string | null, isEn: boolean): string {
+  if (t === 'am') return isEn ? 'AM' : '上午'
+  if (t === 'pm') return isEn ? 'PM' : '下午'
+  return '—'
+}
+
+/**
+ * 每司机 × 每客户 × 每产品 × 每天(上午/下午) 送货明细——核对用，不是提成计算。
+ * 选中某个司机（SummaryTable 点一行）时这张表天然只剩他自己的行，就是"司机一份"。
+ */
+export function ProductDetailTable({ rows, truncated, isEn = false }: {
+  rows: DriverProductDetailRow[]
+  truncated: boolean
+  isEn?: boolean
+}) {
+  return (
+    <div className="border rounded overflow-x-auto">
+      <div className="px-3 py-2 bg-gray-50 text-sm font-medium flex items-center justify-between">
+        <span>{isEn ? 'Delivery Detail by Driver × Customer × Product × AM/PM (for driver/company reconciliation)' : '按司机×客户×产品×半天的送货明细（司机与公司核对用）'}</span>
+        {truncated && (
+          <span className="text-xs text-amber-700">
+            {isEn
+              ? `Truncated: showing only the first ${rows.length} rows — narrow the date range or filter by driver to see all`
+              : `已截断：只显示前 ${rows.length} 行，缩短日期区间或按司机筛选可看全`}
+          </span>
+        )}
+      </div>
+      <table className="w-full text-sm min-w-[900px]">
+        <thead className="text-left text-gray-500">
+          <tr>
+            <th className={th}>{isEn ? 'Date' : '日期'}</th>
+            <th className={th}>{isEn ? 'AM/PM' : '时段'}</th>
+            <th className={th}>{isEn ? 'Driver' : '司机'}</th>
+            <th className={th}>{isEn ? 'Customer' : '客户'}</th>
+            <th className={th}>{isEn ? 'Product' : '产品'}</th>
+            <th className={th}>{isEn ? 'Unit' : '单位'}</th>
+            <th className={`${th} text-right`}>{isEn ? 'Delivered Qty' : '送达数量'}</th>
+            <th className={`${th} text-right`}>{isEn ? 'Avg Price' : '均价'}</th>
+            <th className={`${th} text-right`}>{isEn ? 'Amount' : '送达金额'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={`${r.bizDate}-${r.timeOfDay}-${r.driverName}-${r.restaurantName}-${r.productName}-${i}`} className="border-t">
+              <td className="px-3 py-1.5 text-gray-500">{r.bizDate}</td>
+              <td className="px-3 py-1.5 text-gray-500">{timeOfDayLabel(r.timeOfDay, isEn)}</td>
+              <td className="px-3 py-1.5">{r.driverName}</td>
+              <td className="px-3 py-1.5 text-gray-600">{r.restaurantName}</td>
+              <td className="px-3 py-1.5">{r.productName}</td>
+              <td className="px-3 py-1.5 text-gray-500">{r.uomName ?? ''}</td>
+              <td className={tdNum}>{r.deliveredQty}</td>
+              <td className={`${tdNum} text-gray-500`}>{eur(r.avgUnitPrice)}</td>
+              <td className={`${tdNum} font-medium`}>{eur(r.deliveredSubtotal)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-400">{isEn ? 'No delivery detail in this period' : '期内没有送货明细'}</td></tr>
           )}
         </tbody>
       </table>

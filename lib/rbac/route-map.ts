@@ -324,6 +324,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 20260914：Sales Analysis 页「按司机」钻取，权限跟主表一致——提成是薪酬数据，
   // 不因为挂在销售分析页下面就放宽。matchesPattern 精确匹配段数，子路径必须单独登记。
   { pattern: '/api/analytics/driver-commission/day-sales', permission: 'analytics.commission.read' },
+  // 20260922：司机×客户×产品×半天送货明细，子路径同上必须单独登记，否则 middleware 全员 403
+  { pattern: '/api/analytics/driver-commission/product-detail', permission: 'analytics.commission.read' },
   { pattern: '/api/analytics/ap-aging', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/ar-aging', permission: 'analytics.finance.read' },
   { pattern: '/api/analytics/income-statement', permission: 'analytics.finance.read' },

@@ -5,8 +5,10 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
-import { SummaryTable, PeriodTable, DetailTable } from '@/components/boss/driver-commission-tables'
-import { detailToCsv, type DriverCommissionPayload, type PeriodGrain } from '@/lib/analytics/driver-commission'
+import { SummaryTable, PeriodTable, DetailTable, ProductDetailTable, ExportButtons } from '@/components/boss/driver-commission-tables'
+import {
+  type DriverCommissionPayload, type PeriodGrain, type DriverProductDetailRow,
+} from '@/lib/analytics/driver-commission'
 
 const GRAINS_ZH: Array<{ v: PeriodGrain; label: string }> = [
   { v: 'day', label: '日' }, { v: 'week', label: '周' }, { v: 'month', label: '月' },
@@ -25,28 +27,28 @@ export default function DriverCommissionPage() {
   // 只存 id 的话，同一个 driverId 下的几个司机名会被一起选中（实测数据就是这样）。
   const [picked, setPicked] = useState<{ id: string | null; name: string } | null>(null)
   const [data, setData] = useState<DriverCommissionPayload | null>(null)
+  const [productDetail, setProductDetail] = useState<{ rows: DriverProductDetailRow[]; truncated: boolean } | null>(null)
 
   const load = useCallback((r: DateRange, g: PeriodGrain, d: { id: string | null; name: string } | null) => {
     setData(null)
+    setProductDetail(null)
     const qs = new URLSearchParams({ from: r.from, to: r.to, grain: g })
     if (d?.id) qs.set('driverId', d.id)
     if (d?.name) qs.set('driverName', d.name)
     apiGet<DriverCommissionPayload>(`/api/analytics/driver-commission?${qs}`)
       .then(setData).catch((e) => toast.error(e.message))
+
+    // 20260922：客户手写需求"每司机每客户每产品每天(上午下午)的明细"——独立请求，
+    // 不塞进上面那个 payload，免得平时只看提成汇总的人也要背这份更细的查询。
+    const detailQs = new URLSearchParams({ from: r.from, to: r.to })
+    if (d?.id) detailQs.set('driverId', d.id)
+    if (d?.name) detailQs.set('driverName', d.name)
+    apiGet<{ rows: DriverProductDetailRow[]; truncated: boolean }>(`/api/analytics/driver-commission/product-detail?${detailQs}`)
+      .then(setProductDetail).catch((e) => toast.error(e.message))
   }, [])
   useEffect(() => { load(range, grain, picked) }, [load, grain, picked]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const grainLabel = useMemo(() => GRAINS.find(g => g.v === grain)?.label ?? GRAINS[0].label, [grain, GRAINS])
-
-  const download = () => {
-    if (!data) return
-    const blob = new Blob([detailToCsv(data.detail)], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${isEn ? 'driver-commission' : '司机提成'}_${range.from}_${range.to}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
 
   const t = data?.totals
   const pending = t ? t.orderCount - t.frozenOrderCount : 0
@@ -65,11 +67,7 @@ export default function DriverCommissionPage() {
               >{g.label}</button>
             ))}
           </div>
-          <button
-            onClick={download}
-            disabled={!data || data.detail.length === 0}
-            className="px-3 py-1 text-sm border rounded text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-          >{isEn ? 'Export Detail CSV' : '导出明细 CSV'}</button>
+          <ExportButtons data={data} productDetail={productDetail} range={range} picked={picked} isEn={isEn} />
           <DateRangeBar value={range} onChange={(r) => { setRange(r); load(r, grain, picked) }} />
         </div>
       </div>
@@ -108,6 +106,12 @@ export default function DriverCommissionPage() {
           <SummaryTable rows={data.byDriver} onPick={setPicked} picked={picked} isEn={isEn} />
           <PeriodTable rows={data.byPeriod} grainLabel={grainLabel} isEn={isEn} />
           <DetailTable rows={data.detail} truncated={data.detailTruncated} locale={locale} isEn={isEn} />
+
+          {productDetail ? (
+            <ProductDetailTable rows={productDetail.rows} truncated={productDetail.truncated} isEn={isEn} />
+          ) : (
+            <div className="text-center text-gray-400 py-8 text-sm">{isEn ? 'Loading delivery detail…' : '送货明细加载中…'}</div>
+          )}
 
           <p className="text-xs text-gray-400 leading-relaxed">
             {isEn ? (
