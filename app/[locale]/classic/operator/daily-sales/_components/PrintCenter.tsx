@@ -12,6 +12,7 @@ import type { PrintLang } from '@/lib/print/print-i18n'
 import { openAuthedPdf } from '@/lib/print/open-pdf'
 import { formatDateTime } from '@/lib/format-date'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
+import { DatePicker } from '@/components/ui/date-picker'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
 
 // 操作日志 detail 是写入时(app/api/waves/**)拼好的中文句子，只读展示时按已知模板做最佳努力翻译；
@@ -958,10 +959,9 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-600">{isEn ? 'Delivery Date' : '配送日期'}</label>
-            <input
-              type="date"
+            <DatePicker
               value={date}
-              onChange={e => setDate(e.target.value)}
+              onChange={setDate}
               className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#875A7B]"
             />
           </div>

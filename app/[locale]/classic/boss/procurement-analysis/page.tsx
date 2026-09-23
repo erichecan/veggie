@@ -8,6 +8,7 @@ import { downloadXlsx } from '@/lib/xlsx-export'
 import {
   defaultRange, SearchSelectDropdown, searchProductOptions, searchSupplierOptions, type SearchOption,
 } from '@/components/boss/analytics-shared'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 
@@ -145,9 +146,9 @@ export default function ProcurementAnalysisPage() {
 
         {/* 时间段 */}
         <div className="flex items-center gap-1.5 text-sm">
-          <input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} className="border border-gray-200 rounded-lg px-2 py-1" />
+          <DatePicker value={range.from} onChange={(v) => setRange((r) => ({ ...r, from: v }))} className="border border-gray-200 rounded-lg px-2 py-1" />
           <span className="text-gray-400">→</span>
-          <input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className="border border-gray-200 rounded-lg px-2 py-1" />
+          <DatePicker value={range.to} onChange={(v) => setRange((r) => ({ ...r, to: v }))} className="border border-gray-200 rounded-lg px-2 py-1" />
         </div>
 
         {view === 'purchase' && (

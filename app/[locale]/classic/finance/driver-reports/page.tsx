@@ -11,6 +11,7 @@ import {
   RECON_CSV_HEADERS, RECON_CSV_HEADERS_EN, RECON_FILTER_LABEL, RECON_FILTER_LABEL_EN,
   type ReconRow, type ReconFilter, type ReconSummary,
 } from '@/lib/driver-reconciliation'
+import { DatePicker } from '@/components/ui/date-picker'
 
 /**
  * 司机对账状态统计（台账 C10）
@@ -108,13 +109,13 @@ export default function DriverReconciliationPage() {
         <div className="flex items-end gap-2">
           <label className="text-sm">
             <span className="block text-xs text-gray-500">{isEn ? 'From' : '起'}</span>
-            <input type="date" value={range?.from ?? ''} className="border rounded px-2 py-1"
-                   onChange={e => setRange(r => r && { ...r, from: e.target.value })} />
+            <DatePicker value={range?.from ?? ''} className="border rounded px-2 py-1"
+                   onChange={v => setRange(r => r && { ...r, from: v })} />
           </label>
           <label className="text-sm">
             <span className="block text-xs text-gray-500">{isEn ? 'To' : '止'}</span>
-            <input type="date" value={range?.to ?? ''} className="border rounded px-2 py-1"
-                   onChange={e => setRange(r => r && { ...r, to: e.target.value })} />
+            <DatePicker value={range?.to ?? ''} className="border rounded px-2 py-1"
+                   onChange={v => setRange(r => r && { ...r, to: v })} />
           </label>
           <button onClick={() => load(range)} disabled={loading}
                   className="px-3 py-1.5 rounded bg-gray-800 text-white text-sm disabled:opacity-50">

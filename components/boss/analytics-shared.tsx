@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 
@@ -56,15 +57,15 @@ export function DateRangeBar({ value, onChange }: {
           {preset.label}
         </button>
       ))}
-      <input
-        type="date" value={local.from}
-        onChange={(e) => setLocal((prev) => ({ ...prev, from: e.target.value }))}
+      <DatePicker
+        value={local.from}
+        onChange={(v) => setLocal((prev) => ({ ...prev, from: v }))}
         className="border rounded px-2 py-1"
       />
       <span className="text-gray-400">→</span>
-      <input
-        type="date" value={local.to}
-        onChange={(e) => setLocal((prev) => ({ ...prev, to: e.target.value }))}
+      <DatePicker
+        value={local.to}
+        onChange={(v) => setLocal((prev) => ({ ...prev, to: v }))}
         className="border rounded px-2 py-1"
       />
       <button

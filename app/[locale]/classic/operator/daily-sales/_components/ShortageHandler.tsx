@@ -9,6 +9,7 @@ import type { Order } from '@/lib/types'
 import type { DriverSlotInfo } from '@/lib/driver-slot'
 import { today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
+import { DatePicker } from '@/components/ui/date-picker'
 
 // SSOT：订单归属司机/时段以 PickingWave.orderIds 为准（拖拽调度不回填 Order.driverSlotId），
 // 与配送调度中心、打印中心口径一致；只看 Order.driverSlot 会漏掉只拖拽分配的司机。
@@ -413,10 +414,9 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-500">{isEn ? 'Delivery Date' : '配送日期'}</label>
-            <input
-              type="date"
+            <DatePicker
               value={date}
-              onChange={e => setDate(e.target.value)}
+              onChange={setDate}
               className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#875A7B]"
             />
           </div>

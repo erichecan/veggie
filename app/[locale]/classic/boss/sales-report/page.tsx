@@ -7,6 +7,7 @@ import { downloadCsv } from '@/lib/csv-export'
 import type { Order, OrderItem } from '@/lib/types'
 import { eur } from '@/lib/format-money'
 import { formatDateOnly } from '@/lib/format-date'
+import { DatePicker } from '@/components/ui/date-picker'
 
 type SaleOrder = Order & { salesman?: string | null }
 
@@ -239,7 +240,7 @@ export default function SalesReportPage() {
               <div className="space-y-3">
                 <div>
                   <label className={labelCls} style={labelStyle}>From <span className="text-red-500">*</span></label>
-                  <input type="date" className={inputCls} style={inputStyle} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                  <DatePicker className={inputCls} style={inputStyle} value={dateFrom} onChange={setDateFrom} />
                 </div>
                 <TagInput
                   label="Salesman"
@@ -259,7 +260,7 @@ export default function SalesReportPage() {
               <div className="space-y-3">
                 <div>
                   <label className={labelCls} style={labelStyle}>To <span className="text-red-500">*</span></label>
-                  <input type="date" className={inputCls} style={inputStyle} value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                  <DatePicker className={inputCls} style={inputStyle} value={dateTo} onChange={setDateTo} />
                 </div>
                 <div>
                   <label className={labelCls} style={labelStyle}>Product Type</label>

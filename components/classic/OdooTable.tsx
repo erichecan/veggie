@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
+import { DatePicker } from '@/components/ui/date-picker'
 
 /** 把列上的 width / minWidth 翻译成表格单元格样式：width 同时当上限用，避免被表头文字撑开 */
 function colSizeStyle(col: { width?: number; minWidth?: number }): React.CSSProperties {
@@ -378,22 +379,24 @@ export default function OdooTable<T extends Record<string, unknown>>({
                       <div className="flex flex-col gap-1.5">
                         <label className="flex items-center gap-1.5">
                           <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '10px' }}>From</span>
-                          <input
-                            type="date"
+                          <DatePicker
                             value={columnFilters?.[`${col.key}_from`] ?? ''}
-                            onChange={e => onColumnFilterChange(`${col.key}_from`, e.target.value)}
-                            className="flex-1 border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                            onChange={v => onColumnFilterChange(`${col.key}_from`, v)}
+                            wrapperClassName="flex-1"
+                            className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
                             style={{ fontSize: '11px' }}
+                            clearable={false}
                           />
                         </label>
                         <label className="flex items-center gap-1.5">
                           <span className="text-gray-400 flex-shrink-0" style={{ fontSize: '10px' }}>To</span>
-                          <input
-                            type="date"
+                          <DatePicker
                             value={columnFilters?.[`${col.key}_to`] ?? ''}
-                            onChange={e => onColumnFilterChange(`${col.key}_to`, e.target.value)}
-                            className="flex-1 border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                            onChange={v => onColumnFilterChange(`${col.key}_to`, v)}
+                            wrapperClassName="flex-1"
+                            className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
                             style={{ fontSize: '11px' }}
+                            clearable={false}
                           />
                         </label>
                       </div>

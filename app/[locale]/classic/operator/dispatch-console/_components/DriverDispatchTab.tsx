@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 const WEEKDAYS_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -145,9 +146,9 @@ export default function DriverDispatchTab({ date }: { date: string }) {
         {/* 日期范围 */}
         <div className="flex items-center gap-3 flex-wrap">
           <span className={labelCls.replace('pt-1', '')}>From</span>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inputCls} style={{ borderColor: '#e5e7eb' }} />
+          <DatePicker value={from} onChange={setFrom} className={inputCls} style={{ borderColor: '#e5e7eb' }} />
           <span className="text-xs text-gray-500">To</span>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} className={inputCls} style={{ borderColor: '#e5e7eb' }} />
+          <DatePicker value={to} onChange={setTo} className={inputCls} style={{ borderColor: '#e5e7eb' }} />
           <button onClick={load} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ background: PURPLE }}>{isEn ? 'Refresh' : '刷新'}</button>
         </div>
 

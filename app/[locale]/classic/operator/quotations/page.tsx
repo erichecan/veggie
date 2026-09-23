@@ -16,6 +16,7 @@ import { getSession } from '@/lib/session'
 import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets, parseWeekday } from '@/lib/list-filters'
 import { useServerList } from '@/hooks/use-server-list'
 import { Pagination } from '@/components/ui/pagination'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PAGE_SIZE = 50
 
@@ -838,12 +839,10 @@ ${orderSections}
           {/* Delivery Date */}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             {!isReadMode && editDateId === o.id ? (
-              <input
-                type="date"
+              <DatePicker
                 autoFocus
                 value={editDateVal}
-                onChange={e => setEditDateVal(e.target.value)}
-                onBlur={() => saveDeliveryDate(o.id, editDateVal)}
+                onChange={v => { setEditDateVal(v); saveDeliveryDate(o.id, v) }}
                 className="border border-purple-400 rounded px-1 py-0.5 text-xs bg-white focus:outline-none"
               />
             ) : (
@@ -1009,11 +1008,11 @@ ${orderSections}
       <td className="px-2 py-1 align-top">
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-gray-400 w-9">From:</span>
-          <input type="date" value={colFilters[fromKey]} onChange={e => setCf(fromKey, e.target.value)} className={inputCls} />
+          <DatePicker value={colFilters[fromKey]} onChange={v => setCf(fromKey, v)} className={inputCls} clearable={false} />
         </div>
         <div className="flex items-center gap-1 mt-0.5">
           <span className="text-[10px] text-gray-400 w-9">To:</span>
-          <input type="date" value={colFilters[toKey]} onChange={e => setCf(toKey, e.target.value)} className={inputCls} />
+          <DatePicker value={colFilters[toKey]} onChange={v => setCf(toKey, v)} className={inputCls} clearable={false} />
         </div>
       </td>
     )

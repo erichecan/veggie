@@ -7,6 +7,7 @@ import { apiGet, apiPut, apiDelete } from '@/lib/api'
 import { waveStage } from '@/lib/wave-stage'
 import { DRIVER_APP_ENABLED } from '@/lib/features'
 import { restaurantColor } from './colors'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 const PALLET_BLUE = '#2563eb'
@@ -749,10 +750,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         )}
         <label className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm" style={{ borderColor: '#e5e7eb' }} title={isEn ? 'Select delivery date' : '选择配送日期'}>
           📅
-          <input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={e => onPickDate?.(e.target.value)}
+            onChange={v => onPickDate?.(v)}
             className="outline-none text-sm"
           />
         </label>

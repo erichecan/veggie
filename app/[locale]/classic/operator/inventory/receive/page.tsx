@@ -13,6 +13,7 @@ import {
   parseStoredQc, lineVerdict, validateQcLines, formatQcSummary,
   type QcRecord, type QcRejectReason,
 } from '@/lib/purchase/qc'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 
@@ -366,7 +367,7 @@ function ReceivePageInner() {
             <div className="bg-white rounded-lg border border-gray-200 p-4 grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Arrival Date' : '到货日期'}</label>
-                <input type="date" value={arrivedAt} onChange={e => setArrivedAt(e.target.value)} className={`w-full ${inputCls}`} />
+                <DatePicker value={arrivedAt} onChange={setArrivedAt} className={`w-full ${inputCls}`} />
                 {/* 预计到货日就摆在实际到货日旁边（台账 E6）——收货现场当场就能看出早了还是晚了，
                     不用事后再去采购单里对一遍；准时率也才有可信的原始数据 */}
                 {(() => {
@@ -435,8 +436,8 @@ function ReceivePageInner() {
                             className={numInputCls} style={{ width: '90px' }} />
                         </td>
                         <td className="px-3 py-2.5">
-                          <input type="date" value={d.bestBefore}
-                            onChange={e => updateDraft(l.id, 'bestBefore', e.target.value)}
+                          <DatePicker value={d.bestBefore}
+                            onChange={v => updateDraft(l.id, 'bestBefore', v)}
                             className={inputCls} style={{ width: '150px' }} />
                         </td>
                         <td className="px-3 py-2.5">

@@ -1,108 +1,92 @@
-# DEV-REPORT：拣货单「按客户展开」改为可配置
+# DEV-REPORT：全站日期选择器改为「日-月-年」
 
-对应计划：[DEV-PLAN.md](./DEV-PLAN.md) · 完成日期：2026-09-16
+对应计划：[DEV-PLAN.md](./DEV-PLAN.md) · 完成日期：2026-09-22
 
-## 做了什么
+## 给你看的
 
-拣货单上「这个商品要不要逐个客户列出来」以前是跟着货物类型走的——散货一律全展开，
-整箱整袋只有写了备注才展开。客户反映散货单上很多货没必要展开（一包就是一包，
-按包数拿就行），而真正需要现切现称的货又跟它们混在一起。
+| 场景 | 来源 | 截图 | 状态 |
+|---|---|---|---|
+| 打印中心「配送日期」筛选框，原来是月/日/年（09/13/2026），改成日/月/年 | [你原话](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/20260922-date-picker-dmy-%E9%9C%80%E6%B1%82%E5%8E%9F%E8%AF%9D.md) | 改前见截图批注；改后：[打印中心](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-daily-sales.png) | 符合 |
+| 切换打印中心日期后，列表数据正确联动刷新 | 功能完整性延伸验证 | [切换后](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-daily-sales-changed.png) | 符合 |
+| Quotation（报价单）列表页的日期筛选、详情页 Delivery Date | 你原话点名 | [列表](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-quotations-list.png) · [筛选生效](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-quotations-filtered.png) · [日历弹窗](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-quotations-calendar-open.png) · [选中后](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-quotations-after-select.png) | 符合 |
+| Sale Order（销售单）列表页日期筛选、详情页编辑态 Delivery Date | 你原话点名 | [列表](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-orders-list.png) · [详情只读态](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-order-detail.png) · [详情编辑态](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-order-detail-editing.png) | 符合 |
+| 采购单新建页 Order Date / Expected Date / 行内 Best Before，且 Tab/Enter 跳行逻辑未被破坏 | 我推断的（你未点名，但全站统一） | [截图](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260922-date-picker-purchases-new.png) | 符合 |
+| 全站其余 24 个文件 / 43 处原生日期选择器（boss 报表、财务、库存收货、价格表、客户详情、司机调度台、customer-portal 等） | 我推断的（不止三处，全站统一） | 逐条见 [任务台账](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/20260922-date-picker-dmy-tasks.md) | 符合（其中 dispatch-console、customer-portal 因当天无业务数据/需客户端登录，未逐一截图，仅代码走查+类型检查，见台账说明） |
 
-现在把这件事拆成了**两个互不影响的设置**，都在「设置 → 计量单位」那张表上配：
+访问地址：`http://localhost:3000/en/classic/operator/daily-sales`（打印中心）、`/en/classic/operator/quotations`、`/en/classic/operator/orders`
 
-| 设置项 | 管什么 | 例子 |
-|---|---|---|
-| **货物类型**（原有） | 这个货出现在**哪张**拣货单上 | 大货 → 整箱整袋单；散货 → 零散货单 |
-| **拣货明细**（新增） | 那张单上**要不要**逐个客户列出来 | 按客户展开 / 只显示总量 |
+**改动范围**：只改「显示格式」，不改逻辑——所有日期在数据库、API、URL 参数里仍是 `yyyy-MM-dd`，只是选择器统一换成自建组件（`components/ui/date-picker.tsx`），固定按 `dd/MM/yyyy`（如 `23/09/2026`）显示和录入，不再受浏览器/操作系统 locale 影响。支持直接键入数字，也支持点击图标弹出日历选择。
 
-判定标准按你给的说法直接写进了系统说明：**配货时现切现称、每份贴客户标签的选「按客户展开」**
-（如冬瓜按公斤卖，一家要 2.5kg、一家要 6.2kg）；**提前备好按包数拿的选「只显示总量」**
-（如 1KG 一包就是 1kg，客户点 2 公斤就给两包）。写了备注的行不受这个设置影响，永远会列出该客户。
+## 存档用的（你不用看，出问题时我回来查）
 
-### 顺带修的一个老问题：纸面上的账对不上
+### 技术验收
 
-以前只要某个客户写了备注，那个商品就只列出**写了备注的客户**，其余客户的数量被默默并进总数。
-你给的截图里就是这个现象：`FX Udon Noodle` 总量 41，只列出 7 + 2 = 9，**剩下 32 箱没有任何一行交代**，
-同一页的 `Red Unicorn Rice`（9 对 7）、`Pepper Green`（7 对 3）也一样。
+```bash
+$ grep -rn 'type="date"' app components --include="*.tsx" | grep -v "date-picker.tsx\|OdooTable.tsx"
+（无输出——全站原生 <input type="date"> 已清零，仅剩 2 处代码注释提及）
 
-现在补了一行「其余 N 家」把差额兜住，**每个展开的商品，主行总量一定等于下面各明细行之和**：
+$ npx tsc --noEmit -p tsconfig.json
+（无输出——本次改动涉及的全部文件类型检查通过）
 
-```
-FX Udon Noodle 30's*200g CASE        41
-  ↳ 818 Cake Studio D13  ⚠️ DS        7
-  ↳ AE D5                ⚠️ ds        2
-  ↳ 其余 3 家                        32     ← 新增（斜体浅灰，跟真实客户行区分开）
+$ npm run build
+✓ Compiled successfully
 ```
 
-固定就一行，不管隐藏了多少家，所以不会把单子撑长。
+⚠️ **说明**：`npx tsc --noEmit` 当前对全仓库还报 4 个错误，但都在 `purchases/[id]/page.tsx` 和 `purchases/new/page.tsx` 的 Category/Purchase UoM 下拉框（`SearchableDropdown` 的 `label` 类型），与本次日期选择器改动的代码位置、字段都无关——是仓库里另一个并发会话正在做的 `SearchableDropdown` 改造留下的未完成状态（`components/shared/searchable-dropdown.tsx`、`app/[locale]/classic/operator/invoices/page.tsx`、`app/[locale]/classic/boss/analytics/margin/PivotView.tsx` 这几个文件我全程没有碰过，是它改的），不在本次提交范围内，也不是我引入的问题。
 
-**这一条不是可选的顺手优化**：散货表以前恒全展开，账一直是平的；改成按单位开关之后，
-一个定量包装的商品若有一家写了备注，就会变成"总量 20、只列一行 5"——今天不会发生的缺口
-会被这次改动引进散货表。所以它必须跟主改动同批做。
+### 技术方案
 
-### PALLET 分类纠正
+- 新增 `react-day-picker@^10.0.1`（shadcn 官方 calendar 组件同款依赖）+ `date-fns@^4.4.0`；纯前端库，不依赖任何云服务，符合 [[deploy-target-is-own-server-20260802]] 部署铁律。
+- `npx shadcn add calendar` 生成 `components/ui/calendar.tsx` 后，把它默认的 `import { cn } from "cn"` 改回项目自有的 `@/lib/utils`，并 `npm uninstall cn`（避免同一个 `cn` 工具函数在仓库里出现两份实现）。
+- 新写 `components/ui/date-picker.tsx`：文本框固定显示/录入 `dd/MM/yyyy`，对外 `value`/`onChange` 契约与原生 `<input type="date">` 完全一致（`yyyy-MM-dd` 字符串），min/max/disabled/title/style/autoFocus/onKeyDown 等原生 input 常用能力均已透传，最大程度贴合各调用点原有写法，43 处替换里没有一处需要改调用方的状态管理逻辑。
+- 唯一需要特别处理的风险点：采购单新建/编辑页的行内 Best Before 字段挂了 `lib/order-line-keys.ts` 的 `lineFieldKeyHandler`（Tab/Enter 跳格，客户 20260814 反馈过的交互）。给 `DatePicker` 加了 `onKeyDown` 透传口——组件自己先把 Enter 提交的日期值 commit 给 `onChange`，再把事件转发给调用方的跳格逻辑，两者不冲突。已用浏览器实测验证：键入日期 → Enter → 值正确提交 + 焦点正确跳到下一行的「Search product」输入框。
 
-`PALLET`（托盘）之前被归在"散货"，出现在零散货拣货单上，这个分类是错的，已改成大货。
+### 改动文件清单（26 个：2 个共享组件 + 24 个页面）
 
-⚠️ 你原话是"把 pallet 的历史订单取消"，核查后**没有动任何订单数据**，只改了分类。原因是那 3 条
-`Transport PALLET`（€160 的运费项）分布在两张单上，而**这两张单里还有 11 条真实商品行**
-（OP-260721-001 有 9 条：豆芽、茴香、辣椒、大米、蘑菇、洋葱、马蹄、西瓜…；OP-260718-001 有 2 条），
-整单取消会把这些真货一起废掉，而且订单取消在系统里是终态、改不回来。
-改分类能达到同样效果（那些行以后打印时进整箱表，不再出现在散货单上），且零风险。
+共享组件：`components/classic/OdooTable.tsx`（覆盖 orders + quotations 列表筛选）、`components/boss/analytics-shared.tsx`（覆盖 boss 报表系列区间筛选）
 
-## 涉及的页面
+页面（按目录）：
+- boss：`procurement-analysis`、`sales-report`、`sales-analysis`
+- finance：`driver-reports`、`statements`
+- operator：`customers/[id]`、`place-order`、`purchases`（列表/新建/详情）、`pricelists/[id]`、`inventory/receive`、`quotations`（列表/详情）、`vendor-bills`、`orders`（列表/详情）
+- dispatch-console：`DriverDispatchTab`、`BatchTab`
+- daily-sales：`PrintCenter`、`SalesStats`、`ShortageHandler`
+- customer-portal：`page.tsx`
 
-| 页面 | 变化 |
-|---|---|
-| 设置 → 计量单位 | 表格新增「拣货明细」列，可行内直接改，改完即生效；新建单位表单也加了这一项；底部补了两段说明文字 |
-| 帮助中心 → 如何新建/管理计量单位 | 中英文都补了这两个设置分别管什么、怎么选 |
-| 拣货单（4 个打印入口，见下） | 展开规则按新设置走；补「其余 N 家」汇总行 |
+### ⚠️ 提交状态：25 个文件里有 9 个暂不提交（并发会话冲突）
 
-## 配置现状（上线后生效）
+仓库里另一个并发会话（`veggie-79`）正在做一次全站 `<select>` → `SearchableDropdown` 的改造，跟这次日期选择器改动在下面 9 个文件里物理交叉在一起（同一文件、不同代码块），且它目前还有 4 处未修完的 TS 类型错误：
 
-只有这 3 个单位会**按客户展开**：`KG`、`g`、`LOOSE`。
+`finance/statements/page.tsx`、`operator/customers/[id]/page.tsx`、`daily-sales/_components/SalesStats.tsx`、`operator/orders/[id]/page.tsx`、`operator/place-order/page.tsx`、`operator/purchases/[id]/page.tsx`、`operator/purchases/new/page.tsx`、`operator/quotations/[id]/page.tsx`、`operator/vendor-bills/page.tsx`
 
-其余 27 个一律**只显示总量**，包括 `PACK`、`PKT`、`PACKET`、`TRAY`、`PUNNET`、`BOTTLE`、
-`JAR`、`TIN`、`EACH`、`BOX`、`CAN`，以及 `1KG`、`2KG`、`2.5KG`、`3KG`、`5KG`、`500g`、
-`100g`、`UK 4KG`、`CAF 4KG` 这类定量包装。
+按路径提交这 9 个文件会把它没写完、还报错的改动一起打包进本次提交。经和你确认，这 9 个文件里我做的日期选择器改动**已经改完、测过、留在工作区磁盘上**，但**暂不提交**，等 `veggie-79` 那边先把自己的改动提交掉之后再补提交这 9 个文件。其余 16 个文件 + 新增组件/文档不受影响，正常提交。
 
-以后要调整，直接去「设置 → 计量单位」点那一列的下拉即可，不需要改代码。
+### 已知限制 / 假设清单
 
-## 测试账号
+- 日期格式取 `dd/MM/yyyy`（斜杠分隔，如 `23/09/2026`）——沿用原来的斜杠分隔符，只调换月日顺序；如果想要横杠 `23-09-2026` 说一声即可改，改动集中在 `date-picker.tsx` 一处常量。
+- 只改了「选择器」控件；详情页非编辑态展示原始 `yyyy-mm-dd` 字符串的地方（如 `2026-08-13`）未改动——那是纯文本展示不是选择器，且 ISO 格式无月/日顺序歧义，不在本次范围内。
+- dispatch-console、customer-portal 两组未能像其余页面一样端到端截图验证（前者当天无待分配波次、后者需要客户端账号登录），已用代码走查 + 类型检查 + 与已实测组件同构确认替代，详见任务台账。
 
-本次**未新增任何账号**，也没有改动权限。验证用的是本地开发库既有的老板账号
-（用户名与密码沿用项目既有约定，见团队内部记录；生产账号不受本次改动影响）。
+### /code-review high 与 /security-review
 
-## 验证结果
+`/security-review`：无发现——纯前端日期格式改动，无新增接口/鉴权逻辑/注入面。
 
-| 验证项 | 验证方式 | 结果 |
-|---|---|---|
-| 数据库加列 + 回填 | 本地 `prisma migrate deploy` 后回读 | ✅ `KG`/`g`/`LOOSE` 为展开，`PALLET` 已改为大货 |
-| **行程打印路径**带上新字段 | `GET /api/trips/[id]/print-data` | ✅ 21 行都有该字段，4 个称重货判为展开 |
-| **配送中心打印路径**带上新字段 | `GET /api/orders/dispatch-print-data` | ✅ 同上，两条路径结果一致 |
-| 称重货仍按客户展开 | 生成真实 PDF 看纸面 | ✅ `Tongkwa KG` 6.5、`Lemon LOOSE` 14 等都列出了客户 |
-| 定量包装收起 | 同上 | ✅ `Tofu PKT`、`Scallion PACK`、`Pepper Green 2.5KG` 只显示总量 |
-| **账要平** | 同上 | ✅ `Mushroom CASE` 总量 5 = Silver Bistro 1（带备注）+ 其余 1 家 4 |
-| 两条打印路径输出一致 | 逐字比对两份 PDF 的散货表 | ✅ 完全一致 |
-| 设置页开关能存 | 浏览器实际点击 + 回读数据库 | ✅ 改 PACK 为展开后数据库确实写入（验证后已还原） |
-| 单元测试 | `tests/trip-picking-expand.test.ts` | ✅ 7 条全过 |
-| 编译 | `npm run build` / `tsc --noEmit` | ✅ 无报错 |
+`/code-review high` 报了 5 条，逐条处理：
 
-验证用的临时数据（一条测试备注、一个测试行程）**已全部清理还原**。
+| # | 问题 | 归属 | 处理 |
+|---|---|---|---|
+| 1 | `date-fns` 的 `parse('dd/MM/yyyy')` 对年份位数不设限，`1/1/26` 会被解析成公元 26 年而不是拒绝，静默写脏数据 | 我的代码（`date-picker.tsx`） | **已修**：调用 `parse` 前先用 `/^\d{1,2}\/\d{1,2}\/\d{4}$/` 卡掉非 4 位年份；已用浏览器实测「输入 01/01/26 → 回退到原值」 |
+| 2 | `customers/[id]/page.tsx` Salesperson / Default Driver 从原生 `<select>` 换成 `SearchableDropdown` 后丢了「清空」选项 | **不是我的改动** | 不处理——这是仓库里另一个并发会话（`veggie-79`）正在做的 `SearchableDropdown` 改造引入的，我全程没碰这两个下拉框，出问题该找那边 |
+| 3 | `purchases/[id]/page.tsx` / `purchases/new/page.tsx` 的 QC Category / Purchase UoM 同款问题 | **不是我的改动** | 同上，不处理 |
+| 4 | 采购单行内 Best Before 字段：输入非法日期按 Enter 时，值静默回退**但仍然**把焦点跳到下一行，用户不知道日期没存上 | 我的代码（`date-picker.tsx`） | **已修**：`commitText` 改为返回是否成功，只有提交成功（含清空）才把 Enter 事件转发给调用方的跳格逻辑；已用浏览器实测「输入 31/02/2026 → 停在原地，不跳行」 |
+| 5 | `OdooTable.tsx` 列头日期区间筛选从原生 input 换成 `DatePicker` 时漏传 `style={{fontSize:'11px'}}`，筛选框在窄弹窗里变成默认字号 | 我的代码（`OdooTable.tsx`） | **已修**：补回 `style` 传参；已截图确认 customers 列表页「Last Updated on」筛选弹窗字号恢复正常 |
 
-## 已知问题
+修复后重新跑过 `npx tsc --noEmit` 与 `npm run build`，均通过。
 
-**1. 全量测试有 7 条失败，但都不是本次引入的。**
-已用只读 worktree 跑过改动前的基线，失败的是同一批：RBAC 可达性快照（4 条）、
-删除类操作权限、分析维度定义、价格表默认值。根因是**上一次**「销售/采购数据分析扩展」
-新增了 4 个 analytics 路由但没同步 RBAC 快照。建议单独处理，这是安全网测试，长期红着不好。
+### 台账
 
-**2. 本次只改了拣货单，其他单据没动。** 送货单、签收单、销售单的客户明细展示逻辑与此无关，未受影响。
+[docs/20260922-date-picker-dmy-tasks.md](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/20260922-date-picker-dmy-tasks.md)
 
-## 下一步
+### 需求原话存档
 
-1. **部署前确认时机**：这会改变仓库明早拿到的纸，建议不要在临近早班时上线。
-2. **上线后必须实地核对一张真单**：拿下一批真实波次各打一张整箱单和散货单，确认
-   ①称重货客户明细还在 ②定量包装收成总量 ③带备注的行仍醒目 ④每个展开商品的账能对上。
-   这块的历史教训是配置错了代码不报错，只在打印出来的纸上错。
-3. 如果发现某个单位归类不对，直接在设置页点一下改，不用等发版。
+[docs/20260922-date-picker-dmy-需求原话.md](file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/20260922-date-picker-dmy-%E9%9C%80%E6%B1%82%E5%8E%9F%E8%AF%9D.md)

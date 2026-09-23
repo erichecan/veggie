@@ -14,6 +14,7 @@ import FreshDailySuggestionsPage from './fresh/page'
 import CatalogPickingPage from './catalog/page'
 import AnnualPlanPage from './annual-plan/page'
 import VendorsPage from './vendors/page'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 
@@ -374,11 +375,11 @@ export default function PurchasesPage() {
                 <td className="px-4 py-1.5">
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-gray-400 w-8">{isEn ? 'From' : '起'}</span>
-                    <input type="date" value={orderDateFrom} onChange={e => setDateFilter('from', e.target.value)} className={FILTER_INPUT_CLS} />
+                    <DatePicker value={orderDateFrom} onChange={v => setDateFilter('from', v)} className={FILTER_INPUT_CLS} clearable={false} />
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
                     <span className="text-[10px] text-gray-400 w-8">{isEn ? 'To' : '止'}</span>
-                    <input type="date" value={orderDateTo} onChange={e => setDateFilter('to', e.target.value)} className={FILTER_INPUT_CLS} />
+                    <DatePicker value={orderDateTo} onChange={v => setDateFilter('to', v)} className={FILTER_INPUT_CLS} clearable={false} />
                   </div>
                 </td>
                 <td className="px-4 py-1.5" />

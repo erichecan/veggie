@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { eur } from '@/lib/format-money'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
@@ -295,8 +296,8 @@ export default function CustomerProductsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">{isEn ? 'Delivery Date' : '配送日期'}</label>
-                    <input type="date" value={deliveryDate} min={minDate}
-                      onChange={e => setDeliveryDate(e.target.value)}
+                    <DatePicker value={deliveryDate} min={minDate}
+                      onChange={setDeliveryDate}
                       className="w-full border rounded px-3 py-2 text-sm" />
                   </div>
                   <div>

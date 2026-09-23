@@ -15,6 +15,7 @@ import { NumericInput } from '@/components/ui/numeric-input'
 import ActionLogPanel from '@/components/shared/action-log-panel'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const PURPLE = '#875A7B'
 const PURPLE_LIGHT = '#f3eff5'
@@ -1252,19 +1253,17 @@ function ItemDialog({
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-                <input
-                  type="date"
+                <DatePicker
                   value={item.dateStart ?? ''}
-                  onChange={e => set('dateStart', e.target.value || undefined)}
+                  onChange={v => set('dateStart', v || undefined)}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-                <input
-                  type="date"
+                <DatePicker
                   value={item.dateEnd ?? ''}
-                  onChange={e => set('dateEnd', e.target.value || undefined)}
+                  onChange={v => set('dateEnd', v || undefined)}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                 />
               </div>
