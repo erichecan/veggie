@@ -19,6 +19,7 @@
     "sales.order.export": 161,
     "sales.order.delete_line": 162,
     "sales.order.override_price": 181,
+    "sales.order.manage_adjustment": 187,
     "sales.quotation.access": 6,
     "sales.daily_report.read": 7,
     "sales.daily_report.manage": 117,
@@ -189,6 +190,6 @@
     "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "sales.order.manage_adjustment": 187
+    "stock.pick.lock": 188
   }
 }

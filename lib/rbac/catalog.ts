@@ -190,8 +190,13 @@ export const PERMISSION_GROUPS: GroupDef[] = [
         module: 'stock.pick',
         labelZh: '配货出库',
         labelEn: 'Picking',
+        note: 'lock（锁定批次）与 manage（解锁/取消司机安排）刻意拆成两个点：'
+          + '锁定是打印拣货单/送货单/销售单/汇总单的必经副作用，人人可锁没有风险；'
+          + '解锁才是会让已打印纸质单据与系统状态对不上的敏感操作，需要单独授权。',
         actions: [
-          A.read, A.manage,
+          A.read,
+          { action: 'lock', labelZh: '锁定批次（含打印联动）', labelEn: 'Lock Batch (incl. print flow)' },
+          A.manage,
           { action: 'read_pallets', labelZh: '查看托盘', labelEn: 'View Pallets' },
           { action: 'manage_pallets', labelZh: '维护托盘', labelEn: 'Manage Pallets' },
         ],

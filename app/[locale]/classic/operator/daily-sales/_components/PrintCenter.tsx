@@ -13,6 +13,7 @@ import { openAuthedPdf } from '@/lib/print/open-pdf'
 import { formatDateTime } from '@/lib/format-date'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
 import { DatePicker } from '@/components/ui/date-picker'
+import { useAbility, hasPermission } from '@/lib/permissions'
 import { ChipMultiSelect, today, fmtMoney, lineUntax } from './shared'
 
 // 操作日志 detail 是写入时(app/api/waves/**)拼好的中文句子，只读展示时按已知模板做最佳努力翻译；
@@ -651,9 +652,11 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   const isEn = locale !== routing.defaultLocale
   const lang: PrintLang = isEn ? 'en' : 'zh'
 
-  // 解锁权限的唯一开关：当前先全部放开（能进打印中心的人都可解锁）。
-  // 日后要收口到某个具体用户，把这里换成 useAbility() 判断即可（如 ability.userId === 'xxx'）。
-  const canUnlock = true
+  // 解锁权限收口到 stock.pick.manage（20260922）——与"锁定"不是同一个权限点，
+  // 锁定含打印自动上锁、人人可用，解锁才是会让已打印单据与系统状态对不上的敏感操作，
+  // 走个人级授权（UserPermissionGrant，用户管理页可给具体账号单独开）。
+  const ability = useAbility()
+  const canUnlock = hasPermission(ability, 'stock.pick.manage')
 
   const [date, setDate] = useState(today)
   // 批量拣货单的客户展开开关，跟单波次卡片那个是各自独立的两处开关（作用域不同）

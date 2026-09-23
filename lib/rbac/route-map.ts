@@ -153,7 +153,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/waves/*/shortage', permission: 'stock.pick.read' },
   { pattern: '/api/waves/*/pallets', methods: R, permission: 'stock.pick.read_pallets' },
   { pattern: '/api/waves/*/pallets', methods: ['PUT'], permission: 'stock.pick.manage_pallets' },
-  { pattern: '/api/waves/*/pick-lock', permission: 'stock.pick.manage' },
+  // 锁定(含打印自动上锁)与解锁刻意拆成两个权限点，见 lib/rbac/catalog.ts stock.pick 模块注释
+  { pattern: '/api/waves/*/pick-lock', methods: ['POST'], permission: 'stock.pick.lock' },
+  { pattern: '/api/waves/*/pick-lock', methods: ['DELETE'], permission: 'stock.pick.manage' },
   { pattern: '/api/waves/*/pick-unlock', permission: 'stock.pick.manage' },
   { pattern: '/api/waves/*/assign', permission: 'dispatch.wave.update' },
   { pattern: '/api/waves/*/unassign', permission: 'dispatch.wave.update' },

@@ -40,6 +40,15 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
     '20260913000002 发权限时已 bump permVersion 强制重登，旧 token 不存在',
   'DELETE /api/orders/[id]/adjustments/[adjustmentId] [EXTERNAL_SALES]':
     '同上',
+  // 20260922000002_stock_pick_split_lock_unlock：新增 stock.pick.lock，发给
+  // boss/operator/sales/external_sales（= page.operator.access 的受众），
+  // 同一条迁移末尾 bump 了这四个角色下所有用户的 permVersion。
+  // 旧体系的角色边界（role-access.ts ROLE_API_SCOPE）里 SALES 对 /api/waves/**
+  // 只放行 print-status 和列表 GET，不含 pick-lock —— 所以只有旧 token 这条路径判 n。
+  'POST /api/waves/[id]/pick-lock [SALES]':
+    '20260922000002 发权限时已 bump permVersion 强制重登，旧 token 不存在',
+  'POST /api/waves/[id]/pick-lock [EXTERNAL_SALES]':
+    '同上',
 }
 
 /** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */

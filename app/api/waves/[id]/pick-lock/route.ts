@@ -8,6 +8,10 @@ import { serializeApi } from '@/lib/api-serializer'
  * POST /api/waves/[id]/pick-lock
  * 打印员打印拣货单时触发：锁定该批次，调度台/销售单列表不可再改其订单归属。
  * 重打拣货单会再次调用此接口，刷新 pickLockedAt/pickLockedBy（重新上锁）。
+ *
+ * 权限点用 stock.pick.lock（不是 DELETE 用的 stock.pick.manage）——手动锁定按钮
+ * 和这几个打印动作共用这一个接口，锁定本身可逆无风险，不该跟"解锁"一样收紧到
+ * 个人授权（20260922，见 lib/rbac/catalog.ts stock.pick 模块注释）。
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -59,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       console.error('[POST /api/waves/[id]/pick-lock]', error)
       return NextResponse.json({ error: '锁定批次失败' }, { status: 500 })
     }
-  }, { require: 'stock.pick.manage' })
+  }, { require: 'stock.pick.lock' })
 }
 
 /**
