@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import OdooNav from '@/components/classic/OdooNav'
+import SecondRowNav from '@/components/boss/second-row-nav'
 import { getSession, toRoleSession } from '@/lib/session'
 import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
@@ -28,9 +29,10 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
   // 20260920 当天再按用户要求恢复其中 4 项：AI 问数 / 毛利分析 / 利润表 / 司机提成。
   // 20260922 再恢复第 5 项：procurement-analysis（客户截图批注要"进货+销售+毛利"对比，
   // 这个页面本来就有"时间段+多选产品+进货数量/金额"，补了销售/毛利列后改名挂回来）。
-  // 其余 10 项（经营总览 / 销售统计 / 客户分析 / 应收账龄 / 应付账龄 /
-  // 采购运营 / 物流分析 / 内控审计 / 销售分析(reports/sales) / 物流分析（报表））仍摘除，
-  // 要加回来就是把链接写回这个数组。
+  // 20260923：客户/用户要求把剩下的入口也恢复，但一行放不下，拆成第二行（SecondRowNav）。
+  // 原第 15 项「销售分析」(reports/sales) 已在 20260920 当天被改写成纯 redirect 到
+  // boss/sales-analysis（同名不同实现，客户明确只要新的那套），不是"摘了入口"而是内容已经
+  // 不存在了，因此不在恢复范围内——恢复入口也只会跳回本行已有的「销售分析」。
   const LINKS = [
     // 20260821：数据中心不再新标签页打开，需要一个返回销售系统的入口
     { href: `${prefix}/classic/operator`, label: isEn ? '← Back to Sales' : '← 返回销售' },
@@ -54,6 +56,23 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
       : []),
   ]
 
+  // 20260923 恢复的第二行：20260920 被摘掉、当时没跟着第一批（AI问数/毛利/利润表/司机提成/
+  // 进销对比）一起挂回来的剩余 9 项。顺序沿用摘除前 (f0163d6^) 的原始排列。
+  // 物流分析（analytics/logistics）图表/司机交账表依赖 Trip 表，该表自 20260704 起
+  // 因无人点"确认出发"而不再产生新数据（全库仅 8 条基本 PENDING），恢复后这两块会长期空白，
+  // 只有"出发记录"表格（走 PickingWave）是活的——页面本身有对应空态文案，不会报错。
+  const RESTORED_LINKS = [
+    { href: `${prefix}/classic/boss/overview`, label: isEn ? 'Overview' : '经营总览' },
+    { href: `${prefix}/classic/boss/analytics/sales-overview`, label: isEn ? 'Sales Overview' : '销售统计' },
+    { href: `${prefix}/classic/boss/analytics/customers`, label: isEn ? 'Customer Analysis' : '客户分析' },
+    { href: `${prefix}/classic/boss/analytics/ar-aging`, label: isEn ? 'AR Aging' : '应收账龄' },
+    { href: `${prefix}/classic/boss/analytics/ap-aging`, label: isEn ? 'AP Aging' : '应付账龄' },
+    { href: `${prefix}/classic/boss/analytics/procurement`, label: isEn ? 'Procurement' : '采购运营' },
+    { href: `${prefix}/classic/boss/analytics/logistics`, label: isEn ? 'Logistics Analysis' : '物流分析' },
+    { href: `${prefix}/classic/boss/analytics/internal-control`, label: isEn ? 'Internal Control' : '内控审计' },
+    { href: `${prefix}/classic/boss/reports/logistics`, label: isEn ? 'Logistics Report' : '物流分析（报表）' },
+  ]
+
   useEffect(() => {
     const user = getSession()
     if (!user || !canEnterPage(user, '/classic/boss', ['BOSS', 'OPERATOR'])) {
@@ -69,6 +88,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen bg-white">
       <OdooNav appName={isEn ? 'Reports' : '报表'} menuItems={LINKS} session={session} />
+      <SecondRowNav links={RESTORED_LINKS} />
       {/* 20260921 客户截图反馈：销售分析/采购分析两张表格要横向滚动才能看全，
           容器加宽到 1720px（原 max-w-6xl=1152px 太窄），其余报表页只是获得更多留白，无副作用 */}
       <main className="max-w-[1720px] mx-auto px-4 py-6">{children}</main>
