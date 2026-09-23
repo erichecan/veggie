@@ -22,10 +22,19 @@ import { dispatchWave, businessTodayDateOnly } from '@/lib/wave-dispatch'
  * 交货日期、还各生成一条 Trip。业务场景是"忘了点、隔几天才想起来"，不是"永远往回找"，
  * 30 天足够覆盖任何请假/连续假期的场景，同时挡住无边界扫描的风险。
  *
+ * 20260923 首次上线实测又加了一道硬下界：生产库里当时有 14 个横跨 2026-08-31~09-13
+ * 的历史遗留波次，从这功能 7 月被 DRIVER_APP_ENABLED 关掉后就一直没人确认出发。
+ * 用户确认这些订单其实早就真实送达，只是系统里没人点——cron 不该把它们也当"刚出发"
+ * 处理（标成 IN_DELIVERY 后，因为"标记完成"按钮也被同一开关隐藏，会永久卡在"在途"
+ * 出不来）。HISTORICAL_FLOOR_DATE 之前的一律跳过，只处理 2026-09-13 之后的批次。
+ * 随着时间推移、SCAN_LOOKBACK_DAYS 的滚动窗口早晚会自然滑到这个日期之后，届时这道
+ * 硬下界不再生效（两者取较晚者），不需要以后手动摘掉。
+ *
  * 逐个波次独立处理、互不影响：单个波次失败（比如缺排程日期）不能让其余波次也跟着
  * 兜底失败，做法参考 generate-statements 对每个客户单独 try/catch 的写法。
  */
 const SCAN_LOOKBACK_DAYS = 30
+const HISTORICAL_FLOOR_DATE = new Date('2026-09-13T00:00:00Z')
 
 export async function POST(req: Request) {
   const secret = req.headers.get('x-cron-secret')
@@ -38,9 +47,10 @@ export async function POST(req: Request) {
     const todayStart = new Date(`${today}T00:00:00Z`)
     const lookbackStart = new Date(todayStart)
     lookbackStart.setUTCDate(lookbackStart.getUTCDate() - SCAN_LOOKBACK_DAYS)
+    const scanFloor = lookbackStart > HISTORICAL_FLOOR_DATE ? lookbackStart : HISTORICAL_FLOOR_DATE
 
     const candidates = await prisma.pickingWave.findMany({
-      where: { dispatchedAt: null, waveDate: { gte: lookbackStart, lte: todayStart } },
+      where: { dispatchedAt: null, waveDate: { gt: scanFloor, lte: todayStart } },
       select: { id: true, name: true, orderIds: true },
     })
     const withOrders = candidates.filter(w => w.orderIds.length > 0)
@@ -64,6 +74,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       scannedBusinessDate: today,
+      scanFloorDate: scanFloor.toISOString().slice(0, 10),
       total: withOrders.length,
       dispatched: results.filter(r => r.status === 'dispatched').length,
       skipped: results.filter(r => r.status === 'skipped').length,
