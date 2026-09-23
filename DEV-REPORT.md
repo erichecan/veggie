@@ -102,23 +102,15 @@ cron 接口 `POST /api/cron/auto-confirm-departure` 探针：
 - **代码审查还提了 1 条我核实后确认不是问题，不处理**：审查以为库存扣减实现的是用户"没选中"的方案（认为出发应该真扣库存），但对照 `docs/20260922-confirm-departure-需求原话.md` 和 DEV-PLAN「库存扣减口径」一节——那次追问后我明确把"两段式"落地成"确认时预留（不变）+ 出发不新增扣减动作，只作为审计留痕"这个保守方案，并把这个具体落地方式写进了计划、你也回复"确认"通过了，审查 agent 没有看到这段对话上下文，只看到需求原始引语就判断"实现和选择矛盾"，是误判。
 - 另有 1 条是重复实现（`businessTodayDateOnly` 本可以直接复用 `lib/analytics/metrics.ts` 里已经在用的 `toDayKey`），已改成直接调用它，不再自己重新实现一遍时区换算。
 
-### 部署（需要你确认后再执行，涉及生产服务器变更）
+### 部署（已执行，2026-09-23 凌晨）
 
-新的 cron 定时任务不会自动在生产 droplet 上生效，需要手动安装启用（和当初装备份定时任务是同一套流程）：
+已完成：`git push` → GitHub Actions `Deploy to droplet` 绿（run 35815888465，6m17s）→ 生产健康检查通过 → 新/改路由鉴权探针 401 符合预期。「确认全部出发」按钮已随这次部署上线。
 
-```bash
-scp deploy/droplet/systemd/veggie-auto-dispatch.service deploy/droplet/systemd/veggie-auto-dispatch.timer dev@167.99.86.19:/tmp/
-ssh dev@167.99.86.19
-sudo mv /tmp/veggie-auto-dispatch.service /tmp/veggie-auto-dispatch.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now veggie-auto-dispatch.timer
-systemctl list-timers veggie-auto-dispatch.timer   # 确认下一次触发时间
-```
-
-「确认全部出发」按钮本身随下次正常的应用部署（push main → GitHub Actions）自动上线，不需要额外步骤。
+22 点自动兜底的 systemd 定时任务也已装到服务器（`/etc/systemd/system/veggie-auto-dispatch.{service,timer}`），但**装完后我用只读 SQL 查了一下会影响到哪些数据，发现生产库里有 14 个横跨 2026-08-31~2026-09-13 的历史遗留批次从未被确认出发过，我把定时任务临时停用了（`systemctl disable --now`，可逆，文件还在），没有让它今晚按计划自动跑**。详细原因和需要你决定的事见 `docs/20260923-veggie-deploy-log.md`，简单说：这批老数据如果被 cron 一次性"确认出发"，会因为"标记完成"按钮也被功能开关隐藏而永久卡在"在途"状态出不来，这不是我能替你决定的事。
 
 ### 已知不可用 / 需要你决定的功能点
 
+- ⛔ **22 点自动兜底定时任务目前是停用状态**，需要你决定 14 个历史遗留批次怎么处理后，我再重新启用（或者调整 cron 的回溯下界跳过它们）。见 `docs/20260923-veggie-deploy-log.md`。
 - 单个批次原有的「确认出发」按钮、「在途」徽章、「标记完成」按钮：受 `DRIVER_APP_ENABLED` 开关影响，生产环境目前大概率仍是隐藏状态（见上方"一条比功能本身更重要的背景"）。这次新功能不依赖这个开关，但也没有替你决定要不要把它打开。
 - 批量确认出发是不可逆操作，目前没有"撤销出发"的功能（前端只做了二次确认弹窗防误触）——这是 DEV-PLAN 阶段就明确不做的范围，如果后续发现需要撤销通道，需要另开一次需求讨论。
 - 顺带发现一个跟这次功能无关的既有缺口：`scripts/db/bootstrap-fresh.ts`（私有化部署"从零建库"用的脚本）第 2 步会报错 `relation "ProductTemplate" does not exist`——20260703 那条视图迁移引用了 20260825 商品合表后已经不存在的旧表名，导致全新库无法一次性跑完整个 bootstrap 流程（我为了本次测试跳过了这一步，手动执行了后续步骤）。这个跟本次"确认出发"功能无关，我没有顺手改，记在这里供你决定是否要单独安排修。
