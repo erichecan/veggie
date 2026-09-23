@@ -18,6 +18,7 @@ import { useFacets } from '@/lib/use-facets'
 import { filterByFacets } from '@/lib/facet-client'
 import { INVOICE_FACET_DEFS, fieldsOf } from '@/lib/facets/client-defs'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   draft: '草稿',
@@ -412,16 +413,14 @@ export default function ClassicInvoicesPage() {
           <div className="space-y-4 py-2">
             <div>
               <label className="text-sm font-medium text-gray-700">{isEn ? 'Select Customer' : '选择客户'}</label>
-              <select
-                className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#875A7B]"
+              <SearchableDropdown
+                className="mt-1"
+                options={[{ value: '', label: isEn ? 'Please select a customer...' : '请选择客户...' }, ...customers.map(c => ({ value: c.id, label: c.name }))]}
                 value={selectedCustomerId}
-                onChange={e => { setSelectedCustomerId(e.target.value); setSelectedOrderIds([]) }}
-              >
-                <option value="">{isEn ? 'Please select a customer...' : '请选择客户...'}</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={v => { setSelectedCustomerId(v); setSelectedOrderIds([]) }}
+                placeholder={isEn ? 'Please select a customer...' : '请选择客户...'}
+                searchPlaceholder={isEn ? 'Search customer…' : '搜索客户…'}
+              />
             </div>
 
             {selectedCustomerId && (

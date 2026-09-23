@@ -6,6 +6,7 @@ import { eur } from '@/lib/format-money'
 import { downloadCsv } from '@/lib/csv-export'
 import { DIMENSION_OPTIONS } from '@/lib/analytics/pivot'
 import type { DateRange } from '@/components/boss/analytics-shared'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 type Measure = 'revenueExTax' | 'grossProfit' | 'marginPct' | 'qty'
 
@@ -180,18 +181,28 @@ export default function PivotView({ range, isEn }: { range: DateRange; isEn: boo
             </button>
           ))}
         </div>
-        <select className="border rounded px-2 py-1 ml-2" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-          <option value="">{isEn ? 'All Categories' : '全部分类'}</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="border rounded px-2 py-1" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-          <option value="">{isEn ? 'All Customers' : '全部客户'}</option>
-          {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="border rounded px-2 py-1" value={salesUserId} onChange={(e) => setSalesUserId(e.target.value)}>
-          <option value="">{isEn ? 'All Salespeople' : '全部业务员'}</option>
-          {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+        <SearchableDropdown
+          className="w-40 ml-2"
+          options={[{ value: '', label: isEn ? 'All Categories' : '全部分类' }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
+          value={categoryId}
+          onChange={setCategoryId}
+          placeholder={isEn ? 'All Categories' : '全部分类'}
+        />
+        <SearchableDropdown
+          className="w-40"
+          options={[{ value: '', label: isEn ? 'All Customers' : '全部客户' }, ...customers.map((c) => ({ value: c.id, label: c.name }))]}
+          value={customerId}
+          onChange={setCustomerId}
+          placeholder={isEn ? 'All Customers' : '全部客户'}
+          searchPlaceholder={isEn ? 'Search customer…' : '搜索客户…'}
+        />
+        <SearchableDropdown
+          className="w-40"
+          options={[{ value: '', label: isEn ? 'All Salespeople' : '全部业务员' }, ...salesUsers.map((u) => ({ value: u.id, label: u.name }))]}
+          value={salesUserId}
+          onChange={setSalesUserId}
+          placeholder={isEn ? 'All Salespeople' : '全部业务员'}
+        />
         <input
           className="border rounded px-3 py-1 w-48 ml-2"
           placeholder={isEn ? 'Search row name…' : '搜索行名…'}

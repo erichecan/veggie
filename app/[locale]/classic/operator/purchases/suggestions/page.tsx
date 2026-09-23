@@ -7,6 +7,7 @@ import { apiGet, apiPut, apiPost } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { formatDateTime } from '@/lib/format-date'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 interface Suggestion {
   id: string
@@ -692,24 +693,21 @@ export default function PurchaseSuggestionsPage() {
               {/* Supplier */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Supplier' : '供应商'}</label>
-                <select
+                <SearchableDropdown
+                  options={[{ value: '', label: isEn ? '-- Select a supplier --' : '-- 请选择供应商 --' }, ...suppliers.map(sp => ({ value: sp.id, label: sp.name }))]}
                   value={convertForm.supplierId}
-                  onChange={e => {
-                    const sp = suppliers.find(s => s.id === e.target.value)
+                  onChange={v => {
+                    const sp = suppliers.find(s => s.id === v)
                     setConvertForm(f => ({
                       ...f,
-                      supplierId: e.target.value,
+                      supplierId: v,
                       supplierName: sp?.name ?? '',
                       taxRate: sp?.vendorTaxRate ?? f.taxRate,
                     }))
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400"
-                >
-                  <option value="">{isEn ? '-- Select a supplier --' : '-- 请选择供应商 --'}</option>
-                  {suppliers.map(sp => (
-                    <option key={sp.id} value={sp.id}>{sp.name}</option>
-                  ))}
-                </select>
+                  placeholder={isEn ? '-- Select a supplier --' : '-- 请选择供应商 --'}
+                  searchPlaceholder={isEn ? 'Search vendor…' : '搜索供应商…'}
+                />
               </div>
 
               {/* Unit cost */}

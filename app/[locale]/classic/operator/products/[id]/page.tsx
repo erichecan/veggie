@@ -14,6 +14,7 @@ import {
   type SaleUomFormRow, type SaleUomApiRow,
 } from '@/lib/sale-uom'
 import SaleUomsEditor from '@/components/classic/SaleUomsEditor'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
 function IconSales() {
@@ -592,10 +593,11 @@ export default function ClassicProductDetailPage() {
                   <NumericInput value={tmpl.sequence ?? 0} onChange={e => setField('sequence', parseInt(e.target.value) || 0)} className={fieldClass} style={focusStyle} />
                 </Row>
                 <Row label="Product Category">
-                  <select value={tmpl.categoryId ?? ''} onChange={e => setField('categoryId', e.target.value || undefined)} className={fieldClass} style={focusStyle}>
-                    <option value="">— All —</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{isEn ? (c.name || c.nameZh) : (c.nameZh ?? c.name)}</option>)}
-                  </select>
+                  <SearchableDropdown
+                    options={[{ value: '', label: '— All —' }, ...categories.map(c => ({ value: c.id, label: (isEn ? (c.name || c.nameZh) : (c.nameZh ?? c.name)) ?? '' }))]}
+                    value={tmpl.categoryId ?? ''}
+                    onChange={v => setField('categoryId', v || undefined)}
+                  />
                 </Row>
               </div>
             ) : (

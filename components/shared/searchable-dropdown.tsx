@@ -10,7 +10,7 @@
  *   - 鼠标 hover 也会移动高亮
  *   - 外部点击关闭
  */
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 
 export interface DropdownOption {
   value: string
@@ -29,7 +29,7 @@ interface SearchableDropdownProps {
   maxHeight?: string
 }
 
-export function SearchableDropdown({
+export const SearchableDropdown = forwardRef<HTMLDivElement, SearchableDropdownProps>(function SearchableDropdown({
   options,
   value,
   onChange,
@@ -38,13 +38,15 @@ export function SearchableDropdown({
   disabled = false,
   className = '',
   maxHeight = 'max-h-56',
-}: SearchableDropdownProps) {
+}, forwardedRef) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [highlightIdx, setHighlightIdx] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  useImperativeHandle(forwardedRef, () => triggerRef.current as HTMLDivElement)
 
   const filtered = options.filter(opt =>
     opt.label.toLowerCase().includes(search.toLowerCase()) ||
@@ -127,6 +129,7 @@ export function SearchableDropdown({
     <div ref={containerRef} className={`relative ${className}`} onKeyDown={handleKeyDown}>
       {/* Trigger */}
       <div
+        ref={triggerRef}
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -190,4 +193,4 @@ export function SearchableDropdown({
       )}
     </div>
   )
-}
+})

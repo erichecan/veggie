@@ -17,6 +17,7 @@ import {
   SCOPE_LABEL_EN, SCOPE_LABEL_ZH,
   type PermissionCatalog, type RoleRow, type UserGrant, type UserPermissionDetail,
 } from './rbac-client'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 const PURPLE = '#875A7B'
 
@@ -203,19 +204,14 @@ export default function UserPermissionDialog({
             </div>
 
             <div>
-              <Label htmlFor="u-manager">{isEn ? 'Manager' : '上级'}</Label>
-              <select
-                id="u-manager"
+              <Label>{isEn ? 'Manager' : '上级'}</Label>
+              <SearchableDropdown
+                className="mt-1"
+                options={[{ value: '', label: isEn ? '— none —' : '— 无 —' }, ...managerCandidates.map((u) => ({ value: u.id, label: `${u.name}（${u.email}）` }))]}
                 value={managerId}
                 disabled={!canManage}
-                onChange={(e) => setManagerId(e.target.value)}
-                className="mt-1 w-full text-sm px-2 py-2 border border-gray-200 rounded outline-none focus:border-gray-400 disabled:bg-gray-50"
-              >
-                <option value="">{isEn ? '— none —' : '— 无 —'}</option>
-                {managerCandidates.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}（{u.email}）</option>
-                ))}
-              </select>
+                onChange={setManagerId}
+              />
               <p className="text-[11px] text-gray-400 mt-1">
                 {isEn
                   ? 'Only matters for roles scoped to "Own + reports": they will see this person\'s records too.'

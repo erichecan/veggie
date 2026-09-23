@@ -5,6 +5,7 @@ import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Order } from '@/lib/types'
 import { formatDriverSlotFromOrder, type DriverSlotInfo } from '@/lib/driver-slot'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 const FLOW_STEPS_ZH = [
   { step: 1, icon: '📋', title: '确认已送订单', desc: '查看当日所有已确认（CONFIRMED）的订单，这些货已出仓' },
@@ -431,14 +432,11 @@ export default function AccountingPage() {
 
       {/* 筛选栏 + Action Bar */}
       <div className="flex items-center gap-3 flex-wrap">
-        <select
+        <SearchableDropdown
+          options={[{ value: '', label: isEn ? 'All Batches' : '全部批次' }, ...driverSlots.map(s => ({ value: `${s.batchNum} ${s.timeOfDay} ${s.driverName}`, label: `${s.batchNum} ${s.timeOfDay} ${s.driverName}` }))]}
           value={filterBatch}
-          onChange={e => setFilterBatch(e.target.value)}
-          className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white"
-        >
-          <option value="">{isEn ? 'All Batches' : '全部批次'}</option>
-          {driverSlots.map(s => <option key={s.id} value={`${s.batchNum} ${s.timeOfDay} ${s.driverName}`}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
-        </select>
+          onChange={setFilterBatch}
+        />
         <select
           value={filterPayment}
           onChange={e => setFilterPayment(e.target.value)}

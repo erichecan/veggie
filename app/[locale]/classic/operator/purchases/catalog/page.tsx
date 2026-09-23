@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiUpload } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 const PURPLE = '#875A7B'
 const REMIND_AFTER_DAYS = 7
@@ -288,14 +289,14 @@ export default function CatalogPickingPage() {
         <div className="grid grid-cols-[280px_1fr] gap-4 items-start">
           <div className="bg-white rounded border border-gray-200 shadow-sm p-4">
             <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Supplier' : '供应商'}</label>
-            <select
+            <SearchableDropdown
+              className="mb-3"
+              options={[{ value: '', label: isEn ? 'Select a supplier...' : '请选择供应商...' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]}
               value={supplierId}
-              onChange={e => setSupplierId(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none mb-3"
-            >
-              <option value="">{isEn ? 'Select a supplier...' : '请选择供应商...'}</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+              onChange={setSupplierId}
+              placeholder={isEn ? 'Select a supplier...' : '请选择供应商...'}
+              searchPlaceholder={isEn ? 'Search vendor…' : '搜索供应商…'}
+            />
             <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Quotation file (PDF / Photo / Excel / CSV)' : '报价单文件（PDF / 拍照 / Excel / CSV）'}</label>
             <input
               type="file"
