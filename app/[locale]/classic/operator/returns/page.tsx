@@ -16,7 +16,7 @@ import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type ReturnStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
+type ReturnStatus = 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
 type FilterStatus = 'ALL' | ReturnStatus
 
 interface FlatReturn extends CanonicalReturnItem {
@@ -35,6 +35,7 @@ interface FlatReturn extends CanonicalReturnItem {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS_ZH: Record<ReturnStatus, string> = {
+  WAREHOUSE_PENDING: '待仓库核实',
   PENDING_REVIEW: '待审核',
   APPROVED: '已批准',
   REJECTED: '已拒绝',
@@ -42,6 +43,7 @@ const STATUS_LABELS_ZH: Record<ReturnStatus, string> = {
 }
 
 const STATUS_LABELS_EN: Record<ReturnStatus, string> = {
+  WAREHOUSE_PENDING: 'Pending Warehouse Check',
   PENDING_REVIEW: 'Pending Review',
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
@@ -49,6 +51,7 @@ const STATUS_LABELS_EN: Record<ReturnStatus, string> = {
 }
 
 const STATUS_COLORS: Record<ReturnStatus, string> = {
+  WAREHOUSE_PENDING: 'bg-gray-100 text-gray-500',
   PENDING_REVIEW: 'bg-yellow-50 text-yellow-700',
   APPROVED: 'bg-green-50 text-green-700',
   REJECTED: 'bg-red-50 text-red-700',
@@ -139,12 +142,14 @@ async function submitReview(
     refundPct?: number
     refundAmount?: number
     refundNote?: string
+    exchangeOrderId?: string
   },
 ) {
   await apiPut(`/api/trips/${item.tripId}/returns`, {
     reviews: [{
       restaurantId: item.restaurantId,
       productId: item.productId,
+      returnId: item.id,
       action,
       ...extra,
     }],
@@ -170,6 +175,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
   const [pct, setPct] = useState<number>(item.refundPct ?? 0)
   const [fixed, setFixed] = useState<number>(0)
   const [reviewNote, setReviewNote] = useState((item.refundNote as string | undefined) ?? '')
+  const [exchangeOrderId, setExchangeOrderId] = useState((item.exchangeOrderId as string | undefined) ?? '')
   const [disposition, setDisposition] = useState<'SELLABLE' | 'SCRAP'>('SELLABLE')
   const [scrapReason, setScrapReason] = useState<'CUSTOMER_RETURN_EXPIRED' | 'CUSTOMER_RETURN_DAMAGED' | 'OTHER'>('CUSTOMER_RETURN_DAMAGED')
   const [saving, setSaving] = useState(false)
@@ -204,6 +210,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         refundPct: mode === 'pct' ? pct : undefined,
         refundAmount: calcAmount,
         refundNote: reviewNote,
+        exchangeOrderId: item.actionType === 'exchange' ? (exchangeOrderId.trim() || undefined) : undefined,
       } : {
         refundNote: reviewNote,
       })
@@ -258,6 +265,9 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
                 {ret.refundNote && (
                   <div className="mt-0.5 ml-3.5 text-xs text-gray-400">{isEn ? 'Note: ' : '备注：'}{ret.refundNote as string}</div>
                 )}
+                {(ret.exchangeOrderId as string | undefined) && (
+                  <div className="mt-0.5 ml-3.5 text-xs text-blue-500">{isEn ? 'Exchange order: ' : '换货新单号：'}{ret.exchangeOrderId as string}</div>
+                )}
               </div>
             )
           })}
@@ -308,6 +318,22 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
             className="w-20 h-20 object-cover rounded border border-gray-200 cursor-pointer"
             onClick={() => window.open(item.photo, '_blank')}
           />
+        </div>
+      )}
+
+      {/* ── Section 3.2: 换货关联新单号（20260922 拍板：换货一律新开单，不在本记录里维护第二套商品明细）── */}
+      {item.actionType === 'exchange' && (
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-gray-700">{isEn ? 'Linked Exchange Order' : '关联的换货新单号'}</p>
+          <input
+            type="text"
+            value={exchangeOrderId}
+            onChange={e => setExchangeOrderId(e.target.value)}
+            placeholder={isEn ? 'Order code of the newly created replacement order' : '新开的换货订单单号'}
+            disabled={item.status !== 'PENDING_REVIEW'}
+            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-400 disabled:bg-gray-50 disabled:text-gray-400"
+          />
+          <p className="text-xs text-gray-400">{isEn ? 'Only recorded as a reference — not validated against a real order' : '仅作记录关联，不校验单号真实性'}</p>
         </div>
       )}
 
@@ -534,6 +560,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
 
 const FILTER_TABS_ZH: { key: FilterStatus; label: string }[] = [
   { key: 'ALL', label: '全部' },
+  { key: 'WAREHOUSE_PENDING', label: '待仓库核实' },
   { key: 'PENDING_REVIEW', label: '待审核' },
   { key: 'APPROVED', label: '已批准' },
   { key: 'REJECTED', label: '已拒绝' },
@@ -542,6 +569,7 @@ const FILTER_TABS_ZH: { key: FilterStatus; label: string }[] = [
 
 const FILTER_TABS_EN: { key: FilterStatus; label: string }[] = [
   { key: 'ALL', label: 'All' },
+  { key: 'WAREHOUSE_PENDING', label: 'Pending Warehouse Check' },
   { key: 'PENDING_REVIEW', label: 'Pending Review' },
   { key: 'APPROVED', label: 'Approved' },
   { key: 'REJECTED', label: 'Rejected' },
@@ -605,6 +633,7 @@ export default function ClassicReturnsPage() {
 
   const counts: Record<FilterStatus, number> = {
     ALL: allRows.length,
+    WAREHOUSE_PENDING: allRows.filter(r => r.status === 'WAREHOUSE_PENDING').length,
     PENDING_REVIEW: allRows.filter(r => r.status === 'PENDING_REVIEW').length,
     APPROVED: allRows.filter(r => r.status === 'APPROVED').length,
     REJECTED: allRows.filter(r => r.status === 'REJECTED').length,

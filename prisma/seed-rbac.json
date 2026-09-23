@@ -448,7 +448,10 @@
         "page.warehouse.access",
         "system.notification.create",
         "tool.bulletin.use",
-        "page.bulletin.access"
+        "page.bulletin.access",
+        "dispatch.trip.warehouse_verify",
+        "dispatch.trip.read",
+        "dispatch.trip.read_returns"
       ]
     },
     {
@@ -529,7 +532,9 @@
         "page.print.access",
         "tool.bulletin.use",
         "page.bulletin.access",
-        "stock.pick.lock"
+        "stock.pick.lock",
+        "dispatch.trip.read_returns",
+        "dispatch.trip.returns"
       ]
     },
     {
@@ -607,7 +612,8 @@
         "finance.settlement.create",
         "page.driver.access",
         "tool.bulletin.use",
-        "page.bulletin.access"
+        "page.bulletin.access",
+        "dispatch.trip.report_return"
       ]
     },
     {

@@ -45,6 +45,7 @@
     "stock.quality.read": 23,
     "stock.quality.manage": 24,
     "stock.pick.read": 25,
+    "stock.pick.lock": 188,
     "stock.pick.manage": 26,
     "stock.pick.read_pallets": 163,
     "stock.pick.manage_pallets": 164,
@@ -75,6 +76,7 @@
     "dispatch.trip.verify": 143,
     "dispatch.trip.read_returns": 167,
     "dispatch.trip.returns": 144,
+    "dispatch.trip.warehouse_verify": 189,
     "dispatch.trip.read_discrepancy": 168,
     "dispatch.trip.discrepancy": 145,
     "dispatch.trip.correct_signature": 146,
@@ -190,6 +192,6 @@
     "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "stock.pick.lock": 188
+    "dispatch.trip.report_return": 190
   }
 }

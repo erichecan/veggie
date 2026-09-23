@@ -19,6 +19,7 @@ export default function ClassicWarehouseLayout({ children }: { children: React.R
   const LINKS = [
     { href: `${prefix}/classic/warehouse`, label: isEn ? 'Warehouse' : '仓库管理' },
     { href: `${prefix}/classic/warehouse/stock-take`, label: isEn ? 'Stock Take' : '库存盘点' },
+    { href: `${prefix}/classic/warehouse/returns`, label: isEn ? 'Return Check' : '退换货核实' },
   ]
 
   useEffect(() => {

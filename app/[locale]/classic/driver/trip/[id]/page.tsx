@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet, apiPost, apiPut } from '@/lib/api'
 import type { Trip, ReturnItem } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { NumericInput } from '@/components/ui/numeric-input'
@@ -39,6 +39,12 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   const [exceptionProducts, setExceptionProducts] = useState<ExceptionProduct[]>([])
   const [exceptionReasons, setExceptionReasons] = useState<string[]>([])
   const [exceptionAction, setExceptionAction] = useState<'return' | 'exchange'>('return')
+  /** 现场照片（20260922）：证明退换货商品的实际状态，与司机签名一起随上报提交 */
+  const [exceptionPhoto, setExceptionPhoto] = useState<string | null>(null)
+  /** 司机签名（20260922 拍板）：证明"这条异常是我本人记录的"，提交前必填 */
+  const [exceptionDriverSignature, setExceptionDriverSignature] = useState<string | null>(null)
+  const [submittingException, setSubmittingException] = useState(false)
+  const exceptionPhotoInputRef = useRef<HTMLInputElement>(null)
 
   // 电子签收 modal（Sign on Glass）
   const [signModal, setSignModal] = useState<{ restId: string; restName: string } | null>(null)
@@ -135,45 +141,57 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     })))
     setExceptionReasons([])
     setExceptionAction('return')
+    setExceptionPhoto(null)
+    setExceptionDriverSignature(null)
     setExceptionModal({ restId })
   }
 
+  function handleExceptionPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setExceptionPhoto(reader.result as string)
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  /**
+   * 提交走专用接口 `POST /api/trips/:id/returns`（20260922 改），不再本地拼
+   * `Trip.restaurants[].returns` 再整份 `PUT` ——那条野路子没有写 `unitPrice`
+   * 快照，导致审核时按比例退款算成 0（除非审核人手动切到"固定金额"手输）。
+   * 专用接口会自动从订单行取单价快照，并把初始状态落成 `WAREHOUSE_PENDING`
+   * （先过仓库核实，再进销售审核队列）。
+   */
   async function submitException() {
     if (!trip || !exceptionModal) return
     const selected = exceptionProducts.filter(p => p.selected)
     if (selected.length === 0) { toast.error(isEn ? 'Please select the affected products' : '请勾选有异常的商品'); return }
     const reasonText = exceptionReasons.join(isEn ? ', ' : '、')
     if (!reasonText.trim()) { toast.error(isEn ? 'Please enter a reason' : '请填写异常原因'); return }
+    if (!exceptionDriverSignature) { toast.error(isEn ? 'Please sign to confirm this report' : '请签名确认本次上报'); return }
 
-    const updated = cloneTrip()
-    const r = updated.restaurants.find(r => r.restaurantId === exceptionModal.restId)
-    if (!r) return
-
-    const now = new Date().toISOString()
-    for (const p of selected) {
-      const entry: ReturnItem = {
-        productId: p.productId,
-        productName: p.productName,
-        quantity: p.quantity,
-        reason: reasonText,
-        actionType: exceptionAction,
-        restaurantId: r.restaurantId,
-        restaurantName: r.restaurantName,
-        tripId: trip.id,
-        createdAt: now,
-      }
-      const existing = r.returns.find(x => x.productId === p.productId && x.actionType === exceptionAction)
-      if (existing) {
-        existing.quantity += p.quantity
-        existing.reason = reasonText
-      } else {
-        r.returns.push(entry)
-      }
+    setSubmittingException(true)
+    try {
+      await apiPost(`/api/trips/${trip.id}/returns`, {
+        restaurantId: exceptionModal.restId,
+        driverSignature: exceptionDriverSignature,
+        returns: selected.map(p => ({
+          productId: p.productId,
+          productName: p.productName,
+          quantity: p.quantity,
+          reason: reasonText,
+          actionType: exceptionAction,
+          photo: exceptionPhoto ?? undefined,
+        })),
+      })
+      load()
+      setExceptionModal(null)
+      toast.success(isEn ? 'Exception recorded — pending warehouse check' : '异常已记录，待仓库核实')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Submit failed' : '提交失败'))
+    } finally {
+      setSubmittingException(false)
     }
-
-    await saveTrip(updated)
-    setExceptionModal(null)
-    toast.success(isEn ? 'Exception recorded and added to returns/exchanges' : '异常已记录，已添加到退换货记录')
   }
 
   function handlePodUpload(e: React.ChangeEvent<HTMLInputElement>, restId: string) {
@@ -396,7 +414,9 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                       {isEn ? '🧭 Navigate' : '🧭 导航'}
                     </button>
                   )}
-                  {!isProcessed && (tripStatus === 'in_progress' || tripStatus === 'verifying') && (
+                  {/* 20260922：已完成的行程也能报告异常——"几天前送的货要退"这种历史订单退换货，
+                      不需要单独一个页面，同一张已完成的行程本身就是入口 */}
+                  {((!isProcessed && (tripStatus === 'in_progress' || tripStatus === 'verifying')) || tripStatus === 'completed') && (
                     <button
                       className="text-xs px-2 py-0.5 rounded border border-orange-300 text-orange-600 bg-orange-50 hover:bg-orange-100 whitespace-nowrap"
                       onClick={e => { e.stopPropagation(); openExceptionModal(r.restaurantId) }}
@@ -532,6 +552,20 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                         onClick={() => openSignModal(r.restaurantId)}
                       >
                         {isEn ? '✍️ Customer Sign-off' : '✍️ 客户签收'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* 20260922：已完成的行程（历史订单退换货入口）——货已经签收过了，
+                      这里只留"报告异常"，不再出现 POD/客户签收这些已经做完的动作 */}
+                  {tripStatus === 'completed' && (
+                    <div className="border-t pt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openExceptionModal(r.restaurantId)}
+                      >
+                        {isEn ? '⚠ Report Late Return/Exchange' : '⚠ 补报退换货'}
                       </Button>
                     </div>
                   )}
@@ -697,14 +731,51 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
                 </div>
               </div>
 
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Photo Evidence' : '现场照片'}</p>
+                {exceptionPhoto ? (
+                  <div className="flex items-center gap-3">
+                    <img src={exceptionPhoto} alt="exception" className="w-16 h-16 rounded object-cover border" />
+                    <Button variant="outline" size="sm" onClick={() => exceptionPhotoInputRef.current?.click()}>
+                      {isEn ? 'Retake' : '重新拍照'}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => exceptionPhotoInputRef.current?.click()}>
+                    {isEn ? '📷 Take Photo' : '📷 拍照'}
+                  </Button>
+                )}
+                <input
+                  ref={exceptionPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleExceptionPhotoUpload}
+                />
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  {isEn ? 'Driver Signature' : '司机签名'} <span className="text-red-500">*</span>
+                </p>
+                <p className="text-xs text-gray-400 mb-2">{isEn ? 'Confirms this exception was reported by you' : '证明这条异常是你本人上报的'}</p>
+                <SignaturePad
+                  onChange={setExceptionDriverSignature}
+                  disabled={submittingException}
+                  placeholder={isEn ? 'Sign here to confirm' : '请司机在此签名确认'}
+                />
+              </div>
+
               <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setExceptionModal(null)}>{isEn ? 'Cancel' : '取消'}</Button>
+                <Button variant="outline" className="flex-1" onClick={() => setExceptionModal(null)} disabled={submittingException}>{isEn ? 'Cancel' : '取消'}</Button>
                 <Button
                   className="flex-1 text-white"
                   style={{ background: '#ea580c' }}
                   onClick={submitException}
+                  disabled={submittingException || !exceptionDriverSignature}
                 >
-                  {isEn ? 'Confirm Exception' : '确认报告异常'}
+                  {submittingException ? (isEn ? 'Submitting…' : '提交中…') : (isEn ? 'Confirm Exception' : '确认报告异常')}
                 </Button>
               </div>
             </div>

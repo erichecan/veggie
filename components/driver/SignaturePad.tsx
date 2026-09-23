@@ -21,9 +21,11 @@ interface Props {
   /** 签名区高度，默认 180px。太矮了写不下名字 */
   height?: number
   disabled?: boolean
+  /** 空白时的提示文字。默认给客户签收场景；司机自己签名等其它场景需传自己的文案 */
+  placeholder?: string
 }
 
-export default function SignaturePad({ onChange, height = 180, disabled = false }: Props) {
+export default function SignaturePad({ onChange, height = 180, disabled = false, placeholder = '请客户在此签名' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef(false)
   const hasInk = useRef(false)
@@ -141,7 +143,7 @@ export default function SignaturePad({ onChange, height = 180, disabled = false 
         />
         {empty && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="text-sm text-gray-300">请客户在此签名</span>
+            <span className="text-sm text-gray-300">{placeholder}</span>
           </div>
         )}
         {/* 签名基线，给一个书写参照 */}

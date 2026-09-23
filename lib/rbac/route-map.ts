@@ -188,7 +188,11 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/trips/*/verify', methods: R, permission: 'dispatch.trip.read_verify' },
   { pattern: '/api/trips/*/verify', methods: ['POST'], permission: 'dispatch.trip.verify' },
   { pattern: '/api/trips/*/returns', methods: R, permission: 'dispatch.trip.read_returns' },
-  { pattern: '/api/trips/*/returns', methods: ['POST', 'PUT'], permission: 'dispatch.trip.returns' },
+  // 上报（司机）与审核（销售/运营/boss）拆成两个权限点：司机只能报告，不能自己批准/拒绝。
+  // 数组是「任一即可」——已有 dispatch.trip.returns 的角色不用额外发 report_return。
+  { pattern: '/api/trips/*/returns', methods: ['POST'], permission: ['dispatch.trip.report_return', 'dispatch.trip.returns'] },
+  { pattern: '/api/trips/*/returns', methods: ['PUT'], permission: 'dispatch.trip.returns' },
+  { pattern: '/api/trips/*/returns/warehouse-verify', methods: ['PUT'], permission: 'dispatch.trip.warehouse_verify' },
   { pattern: '/api/trips/*/discrepancy', methods: R, permission: 'dispatch.trip.read_discrepancy' },
   { pattern: '/api/trips/*/discrepancy', methods: ['PUT'], permission: 'dispatch.trip.discrepancy' },
   { pattern: '/api/trips/*/signature-correction', permission: 'dispatch.trip.correct_signature' },

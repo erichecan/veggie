@@ -521,6 +521,11 @@ export interface PickingWave {
 export type TripStatus = 'pending' | 'pending_assignment' | 'verifying' | 'in_progress' | 'completed'
 
 export interface ReturnItem {
+  /// 稳定的单条记录 id（20260922 补），仓库核实/销售审核靠它精确定位这一条，
+  /// 不再只靠 productId+status 匹配——同一商品在不同时间报告两次时，
+  /// 后者匹配会误命中前一条。历史遗留记录（此字段上线前提交的）没有 id，
+  /// 相关接口对缺 id 的旧记录仍按 productId+status 兜底匹配。
+  id?: string
   productId: string
   productName: string
   quantity: number
@@ -530,7 +535,11 @@ export interface ReturnItem {
   refundPct?: number
   refundAmount?: number
   refundNote?: string
-  status?: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
+  /// WAREHOUSE_PENDING（20260922 新增）= 司机刚上报，待仓库核实实物；仓库核实通过后
+  /// 转 PENDING_REVIEW 才进入现有销售/运营审核队列。此前已存在的记录不受影响——
+  /// 没有回填迁移，各调用点缺失时仍按 `?? 'PENDING_REVIEW'` 兜底（如
+  /// `app/[locale]/classic/operator/returns/page.tsx` 的 `flatten()`）
+  status?: 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
   restaurantId?: string
   restaurantName?: string
   tripId?: string
@@ -543,6 +552,16 @@ export interface ReturnItem {
   disposition?: 'SELLABLE' | 'SCRAP'
   /// 报废去向对应的批次消耗，便于批次追溯反查
   scrapLotId?: string
+  /// 仓库核实（20260922）：次日仓库工作人员核对实物是否真的在车上、与纸质单是否一致
+  warehouseVerifiedById?: string
+  warehouseVerifiedByName?: string
+  warehouseVerifiedAt?: string
+  warehouseNote?: string
+  /// 司机手写签名确认已上报（20260922），与客户签收（TripRestaurant.signature）是两回事
+  driverSignature?: string
+  driverSignedAt?: string
+  /// 换货场景关联的新开订单 id（20260922 拍板：换货一律新开单，不在本记录里维护第二套商品明细）
+  exchangeOrderId?: string
 }
 
 export interface TripRestaurant {

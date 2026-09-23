@@ -72,6 +72,7 @@ export async function GET(
  * 请求体:
  *   {
  *     restaurantId: string,
+ *     driverSignature?: string,   // 司机手写签名（20260922），整批一次签，覆盖本次提交的所有条目
  *     returns: [{
  *       productId: string,
  *       productName: string,
@@ -90,8 +91,9 @@ export async function POST(
     try {
       const { id } = await params
       const body = await req.json()
-      const { restaurantId, returns: returnItems } = body as {
+      const { restaurantId, returns: returnItems, driverSignature } = body as {
         restaurantId: string
+        driverSignature?: string
         returns: Array<{
           productId: string
           productName: string
@@ -108,14 +110,20 @@ export async function POST(
           { status: 400 },
         )
       }
+      // 司机手写签名确认已上报（20260922 拍板）：证明"这条异常是我本人记录的"，不是可选项
+      if (!driverSignature || !driverSignature.trim()) {
+        return NextResponse.json({ error: '请先完成司机签名确认' }, { status: 400 })
+      }
 
       const trip = await prisma.trip.findUnique({ where: { id } })
       if (!trip) {
         return NextResponse.json({ error: '行程不存在' }, { status: 404 })
       }
 
-      // 允许在配送中或已完成的行程提交退货
-      const allowedStatuses = ['IN_PROGRESS', 'COMPLETED']
+      // 允许在核货中/配送中/已完成的行程提交退货。20260922 曾漏了 VERIFYING——
+      // 司机端出发前核货阶段（tripStatus === 'verifying'）本来就有"报告异常"按钮，
+      // 漏掉这个状态会让司机点了按钮却提交 400，是本次改动引入的回归，已修复。
+      const allowedStatuses = ['VERIFYING', 'IN_PROGRESS', 'COMPLETED']
       if (!allowedStatuses.includes(String(trip.status))) {
         return NextResponse.json(
           { error: `当前状态 ${trip.status} 不允许提交退货` },
@@ -139,9 +147,13 @@ export async function POST(
         (restaurant.items ?? []).map((it: OrderItem) => [it.productId, it.price]),
       )
 
-      // 构建 ReturnItem 记录
+      // 构建 ReturnItem 记录。20260922：初始状态改为 WAREHOUSE_PENDING——次日仓库
+      // 核实实物在不在车上，核实通过才转 PENDING_REVIEW 进入现有销售/运营审核队列。
       const now = new Date().toISOString()
       const newReturns: ReturnItem[] = returnItems.map(ri => ({
+        // 稳定 id：同一商品可能被多次分别上报（不同批次的异常，或历史订单补报），
+        // 仓库核实/销售审核靠这个 id 精确定位到具体这一条，不靠 productId 猜
+        id: crypto.randomUUID(),
         productId: ri.productId,
         productName: ri.productName,
         quantity: ri.quantity,
@@ -149,11 +161,13 @@ export async function POST(
         actionType: ri.actionType ?? 'return',
         photo: ri.photo,
         unitPrice: itemPriceMap.get(ri.productId),
-        status: 'PENDING_REVIEW' as const,
+        status: 'WAREHOUSE_PENDING' as const,
         restaurantId,
         restaurantName: restaurant.restaurantName,
         tripId: id,
         createdAt: now,
+        driverSignature,
+        driverSignedAt: now,
       }))
 
       // 追加到 restaurant.returns
@@ -184,7 +198,8 @@ export async function POST(
       console.error('[POST /api/trips/[id]/returns]', error)
       return NextResponse.json({ error: '提交退货失败' }, { status: 500 })
     }
-  }, { require: 'dispatch.trip.returns' })
+    // 司机上报 ≠ 销售/运营审核（PUT 那个 dispatch.trip.returns）——司机不能自己批准自己报的退货
+  }, { require: ['dispatch.trip.report_return', 'dispatch.trip.returns'] })
 }
 
 /**
@@ -223,6 +238,8 @@ export async function PUT(
         reviews: Array<{
           restaurantId: string
           productId: string
+          /// 首选定位方式（ReturnItem.id，20260922 补）；缺失时退回 productId+status 匹配
+          returnId?: string
           action: 'approve' | 'reject'
           disposition?: 'SELLABLE' | 'SCRAP'
           scrapReason?: string
@@ -230,6 +247,8 @@ export async function PUT(
           refundPct?: number
           refundAmount?: number
           refundNote?: string
+          /// 换货场景关联的新开订单单号（20260922），只做记录，不校验真实性
+          exchangeOrderId?: string
         }>
       }
 
@@ -286,10 +305,13 @@ export async function PUT(
         const restaurant = restaurants[rIdx]
         const returns = restaurant.returns ?? []
 
-        // 找到匹配的 PENDING_REVIEW 退货记录
-        const retIdx = returns.findIndex(
-          ret => ret.productId === review.productId && ret.status === 'PENDING_REVIEW',
-        )
+        // 找到匹配的 PENDING_REVIEW 退货记录。同一商品可能被分别上报两次（不同批次
+        // 异常、或历史订单补报），优先按 returnId 精确定位；缺失时（历史遗留记录）
+        // 才退回旧的 productId 匹配——那种匹配会命中数组里第一条同状态记录，
+        // 不一定是审核人实际打开在看的那一条。
+        const retIdx = review.returnId
+          ? returns.findIndex(ret => ret.id === review.returnId && ret.status === 'PENDING_REVIEW')
+          : returns.findIndex(ret => ret.productId === review.productId && ret.status === 'PENDING_REVIEW')
         if (retIdx === -1) continue
 
         const ret = returns[retIdx]
@@ -307,6 +329,7 @@ export async function PUT(
             refundPct: review.refundPct,
             refundAmount: review.refundAmount ?? calculateRefund(ret, review),
             refundNote: review.refundNote,
+            exchangeOrderId: ret.actionType === 'exchange' ? review.exchangeOrderId?.trim() || undefined : undefined,
             approvedAt: new Date().toISOString(),
           }
           approvedCount++
