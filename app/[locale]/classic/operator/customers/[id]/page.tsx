@@ -13,6 +13,8 @@ import CreditTermExtensionPanel from '@/components/classic/CreditTermExtensionPa
 import PricelistSearchInput from '@/components/classic/PricelistSearchInput'
 import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import type { Customer, OdooPricelist } from '@/lib/types'
+import { DatePicker } from '@/components/ui/date-picker'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -812,16 +814,18 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                   </div>
                 </OdooField>
                 <OdooField label="Salesperson">
-                  <select value={form.salesperson} onChange={e => setField('salesperson', e.target.value)} className={selectCls}>
-                    <option value=""></option>
-                    {salesUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
+                  <SearchableDropdown
+                    options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
+                    value={form.salesperson}
+                    onChange={v => setField('salesperson', v)}
+                  />
                 </OdooField>
                 <OdooField label="Default Driver">
-                  <select value={form.defaultDriverSlotId} onChange={e => setField('defaultDriverSlotId', e.target.value)} className={selectCls}>
-                    <option value=""></option>
-                    {driverSlots.map(s => <option key={s.id} value={s.id}>{s.driverName} ({s.timeOfDay} #{s.batchNum})</option>)}
-                  </select>
+                  <SearchableDropdown
+                    options={[{ value: '', label: '— none —' }, ...driverSlots.map(s => ({ value: s.id, label: `${s.driverName} (${s.timeOfDay} #${s.batchNum})` }))]}
+                    value={form.defaultDriverSlotId}
+                    onChange={v => setField('defaultDriverSlotId', v)}
+                  />
                 </OdooField>
                 <OdooField label="Sales Team">
                   <select value={form.salesTeam} onChange={e => setField('salesTeam', e.target.value)} className={selectCls}>
@@ -1054,20 +1058,18 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
 
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-                <input
-                  type="date"
+                <DatePicker
                   value={editingSP.dateStart ?? ''}
-                  onChange={e => setEditingSP(s => ({ ...s, dateStart: e.target.value || undefined }))}
+                  onChange={v => setEditingSP(s => ({ ...s, dateStart: v || undefined }))}
                   className={inputCls}
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-                <input
-                  type="date"
+                <DatePicker
                   value={editingSP.dateEnd ?? ''}
-                  onChange={e => setEditingSP(s => ({ ...s, dateEnd: e.target.value || undefined }))}
+                  onChange={v => setEditingSP(s => ({ ...s, dateEnd: v || undefined }))}
                   className={inputCls}
                 />
               </div>

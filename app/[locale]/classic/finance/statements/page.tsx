@@ -9,6 +9,8 @@ import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
+import { DatePicker } from '@/components/ui/date-picker'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 interface Statement {
   id: string
@@ -505,34 +507,29 @@ export default function StatementsPage() {
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Customer' : '客户'}</label>
-              <select
+              <SearchableDropdown
+                options={[{ value: '', label: isEn ? 'Select a customer...' : '请选择客户...' }, ...customers.map(c => ({ value: c.id, label: c.name }))]}
                 value={formCustomerId}
-                onChange={e => setFormCustomerId(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
-              >
-                <option value="">{isEn ? 'Select a customer...' : '请选择客户...'}</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={setFormCustomerId}
+                placeholder={isEn ? 'Select a customer...' : '请选择客户...'}
+                searchPlaceholder={isEn ? 'Search customer…' : '搜索客户…'}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Start Date' : '开始日期'}</label>
-                <input
-                  type="date"
+                <DatePicker
                   value={formStart}
-                  onChange={e => setFormStart(e.target.value)}
+                  onChange={setFormStart}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'End Date' : '结束日期'}</label>
-                <input
-                  type="date"
+                <DatePicker
                   value={formEnd}
-                  onChange={e => setFormEnd(e.target.value)}
+                  onChange={setFormEnd}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
                 />
               </div>

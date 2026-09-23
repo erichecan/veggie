@@ -15,6 +15,8 @@ import { useFacets } from '@/lib/use-facets'
 import { formatDateOnly } from '@/lib/format-date'
 import { VENDOR_PAYMENT_METHODS, VENDOR_PAYMENT_METHOD_LABELS } from '@/lib/finance/vendor-settlement'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
+import { DatePicker } from '@/components/ui/date-picker'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 type VbStatus = 'DRAFT' | 'POSTED' | 'PAID' | 'CANCELLED'
 
@@ -525,20 +527,20 @@ export default function VendorBillsPage() {
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-xs text-gray-500">{isEn ? 'Supplier *' : '供应商 *'}</span>
-                <select
+                <SearchableDropdown
+                  className="mt-1"
+                  options={[{ value: '', label: isEn ? 'Please select…' : '请选择…' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]}
                   value={newSupplierId}
-                  onChange={e => setNewSupplierId(e.target.value)}
-                  className="mt-1 w-full border border-gray-300 rounded px-2 py-1.5"
-                >
-                  <option value="">{isEn ? 'Please select…' : '请选择…'}</option>
-                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                  onChange={setNewSupplierId}
+                  placeholder={isEn ? 'Please select…' : '请选择…'}
+                  searchPlaceholder={isEn ? 'Search vendor…' : '搜索供应商…'}
+                />
               </label>
               <label className="block">
                 <span className="text-xs text-gray-500">{isEn ? 'Due Date' : '到期日'}</span>
-                <input
-                  type="date" value={newDueDate}
-                  onChange={e => setNewDueDate(e.target.value)}
+                <DatePicker
+                  value={newDueDate}
+                  onChange={setNewDueDate}
                   className="mt-1 w-full border border-gray-300 rounded px-2 py-1.5"
                 />
               </label>
@@ -620,14 +622,13 @@ export default function VendorBillsPage() {
             <div className="space-y-4 text-sm">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Supplier' : '供应商'}</label>
-                <select
+                <SearchableDropdown
+                  options={[{ value: '', label: isEn ? 'Please select a supplier...' : '请选择供应商...' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]}
                   value={importSupplierId}
-                  onChange={e => setImportSupplierId(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
-                >
-                  <option value="">{isEn ? 'Please select a supplier...' : '请选择供应商...'}</option>
-                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                  onChange={setImportSupplierId}
+                  placeholder={isEn ? 'Please select a supplier...' : '请选择供应商...'}
+                  searchPlaceholder={isEn ? 'Search vendor…' : '搜索供应商…'}
+                />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">

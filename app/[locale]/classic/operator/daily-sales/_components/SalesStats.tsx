@@ -10,6 +10,7 @@ import { toggleValue, today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 import MultiSelectPopover from '@/components/classic/MultiSelectPopover'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { openAuthedPdf, downloadAuthedFile } from '@/lib/print/open-pdf'
 import { downloadCsv } from '@/lib/csv-export'
 import { compareSequenceThenName } from '@/lib/print/line-sort'
@@ -18,6 +19,7 @@ import {
   matrixToCsvRows,
   type MatrixGranularity,
 } from '@/lib/analytics/sales-matrix'
+import { DatePicker } from '@/components/ui/date-picker'
 
 interface CustomerRow { id: string; name: string; street?: string; city?: string; notes?: string; pricelist?: string }
 interface ProductRow { id: string; name: string; salePrice?: number; category?: string; categoryId?: string | null; qtyOnHand?: number; uomName?: string; sequence?: number | null }
@@ -471,18 +473,20 @@ ${catsHtml}
         <div className="grid grid-cols-2 gap-x-8 gap-y-3">
           <div className="flex items-center gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0">From</label>
-            <input type="date" value={fromDate} max={toDate} onChange={e => setFromDate(e.target.value)} className={`${selectCls} flex-1`} />
+            <DatePicker value={fromDate} max={toDate} onChange={setFromDate} wrapperClassName="flex-1" className={selectCls} />
           </div>
           <div className="flex items-center gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0">To</label>
-            <input type="date" value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)} className={`${selectCls} flex-1`} />
+            <DatePicker value={toDate} min={fromDate} onChange={setToDate} wrapperClassName="flex-1" className={selectCls} />
           </div>
           <div className="flex items-center gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0">Salesman</label>
-            <select value={selectedSalesman} onChange={e => setSelectedSalesman(e.target.value)} className={`${selectCls} flex-1`}>
-              <option value="">{isEn ? 'All Salespeople' : '全部业务员'}</option>
-              {allSalesmen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+            <SearchableDropdown
+              className="flex-1"
+              options={[{ value: '', label: isEn ? 'All Salespeople' : '全部业务员' }, ...allSalesmen.map(u => ({ value: u.id, label: u.name }))]}
+              value={selectedSalesman}
+              onChange={setSelectedSalesman}
+            />
           </div>
           <div className="flex items-start gap-3">
             <label className="w-28 text-xs text-gray-500 shrink-0 pt-1.5">{isEn ? 'Categories (multi)' : '分类（多选）'}</label>

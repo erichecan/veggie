@@ -13,6 +13,8 @@ import { nearestPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
+import { DatePicker } from '@/components/ui/date-picker'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 async function openPurchaseOrderPdf(poId: string, isEn: boolean) {
   // JWT 存在 localStorage，直接 window.open API 路由不会带 Authorization 头会 401，
@@ -870,13 +872,13 @@ export default function PurchaseDetailPage() {
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Vendor' : '供应商'}</label>
                   {editing ? (
-                    <select
+                    <SearchableDropdown
+                      className="flex-1"
+                      options={suppliers.map(s => ({ value: s.id, label: s.name }))}
                       value={editSupplierId}
-                      onChange={e => setEditSupplierId(e.target.value)}
-                      className={`flex-1 ${inputCls}`}
-                    >
-                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                      onChange={setEditSupplierId}
+                      searchPlaceholder={isEn ? 'Search vendor…' : '搜索供应商…'}
+                    />
                   ) : (
                     <span className="text-sm font-medium" style={{ color: PURPLE }}>{supplierName}</span>
                   )}
@@ -908,10 +910,9 @@ export default function PurchaseDetailPage() {
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Expected Arrival' : '预期到货日期'}</label>
                   {editing ? (
-                    <input
-                      type="date"
+                    <DatePicker
                       value={editExpectedDate}
-                      onChange={e => setEditExpectedDate(e.target.value)}
+                      onChange={setEditExpectedDate}
                       className={inputCls}
                       style={{ width: '180px' }}
                     />
@@ -1053,13 +1054,14 @@ export default function PurchaseDetailPage() {
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         {editing ? (
-                          <input type="date"
+                          <DatePicker
                             className={`${numInputCls} text-xs`} style={{ width: '120px' }}
+                            clearable={false}
                             value={toInputDate(l.bestBefore)}
-                            onChange={e => {
+                            onChange={v => {
                               setEditLines(prev => {
                                 const next = [...prev]
-                                next[i] = { ...next[i], bestBefore: e.target.value || null }
+                                next[i] = { ...next[i], bestBefore: v || null }
                                 return next
                               })
                             }}
@@ -1427,29 +1429,19 @@ export default function PurchaseDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Category' : '分类'}</label>
-                <select
+                <SearchableDropdown
+                  options={[{ value: '', label: isEn ? 'Uncategorized' : '未分类' }, ...categories.map(c => ({ value: c.id, label: (isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)) ?? '' }))]}
                   value={qcCategoryId}
-                  onChange={e => setQcCategoryId(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
-                >
-                  <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id}>{isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)}</option>
-                  ))}
-                </select>
+                  onChange={setQcCategoryId}
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Purchase UoM' : '采购单位'}</label>
-                <select
+                <SearchableDropdown
+                  options={[{ value: '', label: isEn ? 'Unspecified' : '未指定' }, ...uoms.map(u => ({ value: u.id, label: (isEn ? (u.name || u.nameZh) : (u.nameZh || u.name)) ?? '' }))]}
                   value={qcUomId}
-                  onChange={e => setQcUomId(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
-                >
-                  <option value="">{isEn ? 'Unspecified' : '未指定'}</option>
-                  {uoms.map(u => (
-                    <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh || u.name)}</option>
-                  ))}
-                </select>
+                  onChange={setQcUomId}
+                />
               </div>
             </div>
             <div>

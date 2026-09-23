@@ -22,6 +22,8 @@ import {
 import { useSaleUomOptions } from '@/hooks/use-sale-uom-options'
 import { DuplicateProductAlert } from '@/components/classic/DuplicateProductAlert'
 import { SalesPriceHistoryButton } from '@/components/classic/SalesPriceHistoryModal'
+import { DatePicker } from '@/components/ui/date-picker'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { useHotkeys } from '@/components/shared/use-hotkeys'
 import { lineDescription } from '@/lib/order-line-description'
 import { newDraftLineId, isDraftLineId, toSubmittableLines } from '@/lib/order-line-draft'
@@ -1006,11 +1008,11 @@ export default function SalesOrderDetailPage() {
               <div className={`flex items-center rounded ${editing && !dateLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Delivery Date</div>
                 {editing && !dateLocked ? (
-                  <input
-                    type="date"
+                  <DatePicker
                     value={deliveryDate}
-                    onChange={e => setDeliveryDate(e.target.value)}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    onChange={setDeliveryDate}
+                    wrapperClassName="flex-1"
+                    className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 ) : (
                   <div className="flex-1">
@@ -1022,11 +1024,12 @@ export default function SalesOrderDetailPage() {
               <div className={`flex items-center rounded ${editing && !driverLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Driver</div>
                 {editing && !driverLocked ? (
-                  <select value={driverSlotId} onChange={e => { setDriverSlotId(e.target.value); const s = driverSlots.find(x => x.id === e.target.value); setDeliveryBatch(s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : '') }}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none">
-                    <option value="">— unassigned —</option>
-                    {driverSlots.map(s => <option key={s.id} value={s.id}>{s.batchNum} {s.timeOfDay} {s.driverName}</option>)}
-                  </select>
+                  <SearchableDropdown
+                    className="flex-1"
+                    options={[{ value: '', label: '— unassigned —' }, ...driverSlots.map(s => ({ value: s.id, label: `${s.batchNum} ${s.timeOfDay} ${s.driverName}` }))]}
+                    value={driverSlotId}
+                    onChange={v => { setDriverSlotId(v); const s = driverSlots.find(x => x.id === v); setDeliveryBatch(s ? `${s.batchNum} ${s.timeOfDay} ${s.driverName}` : '') }}
+                  />
                 ) : (
                   <div className="flex-1">
                     <span style={{ color: PURPLE }}>{(order ? formatDriverSlotFromOrder(order) : deliveryBatch) || '—'}</span>
@@ -1037,11 +1040,12 @@ export default function SalesOrderDetailPage() {
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Pricelist</div>
                 {editing ? (
-                  <select value={pricelistId} onChange={e => setPricelistId(e.target.value)}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none">
-                    <option value="">— none —</option>
-                    {pricelists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  <SearchableDropdown
+                    className="flex-1"
+                    options={[{ value: '', label: '— none —' }, ...pricelists.map(p => ({ value: p.id, label: p.name }))]}
+                    value={pricelistId}
+                    onChange={setPricelistId}
+                  />
                 ) : <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
@@ -1055,14 +1059,12 @@ export default function SalesOrderDetailPage() {
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>
                 {editing ? (
-                  <select
+                  <SearchableDropdown
+                    className="flex-1"
+                    options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
                     value={salesUserId}
-                    onChange={e => setSalesUserId(e.target.value)}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
-                  >
-                    <option value="">— none —</option>
-                    {salesUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
+                    onChange={setSalesUserId}
+                  />
                 ) : <div className="text-gray-800">{(order as unknown as { salesman?: string })?.salesman || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>

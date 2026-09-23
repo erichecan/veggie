@@ -25,6 +25,8 @@ import JsBarcode from 'jsbarcode'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { lineDescription } from '@/lib/order-line-description'
 import { applyGiftToggle, type GiftPriceSnapshot } from '@/lib/order-line-gift'
+import { DatePicker } from '@/components/ui/date-picker'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const LOW_STOCK_THRESHOLD = 20
@@ -340,7 +342,7 @@ export default function ClassicPlaceOrderPage() {
   const activatePickerRef = useRef<(lineId: string) => void>(() => {})
   // ── Odoo-style Tab navigation ─────────────────────────────────────────────
   const orderDateRef = useRef<HTMLInputElement>(null)
-  const salesRef     = useRef<HTMLSelectElement>(null)
+  const salesRef     = useRef<HTMLDivElement>(null)
   const priceTypeRef = useRef<HTMLSelectElement>(null)
 
   // ── Credit control ────────────────────────────────────────────────────────
@@ -1456,10 +1458,9 @@ export default function ClassicPlaceOrderPage() {
               {/* Delivery Date */}
               <div className="flex items-center gap-3">
                 <label className="text-sm text-gray-600 w-36 shrink-0">Delivery Date</label>
-                <input
-                  type="date"
+                <DatePicker
                   value={deliveryDate}
-                  onChange={e => setDeliveryDate(e.target.value)}
+                  onChange={setDeliveryDate}
                   className="text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40"
                 />
               </div>
@@ -1467,23 +1468,23 @@ export default function ClassicPlaceOrderPage() {
               {/* Sales */}
               <div className="flex items-center gap-3">
                 <label className="text-sm text-gray-600 w-36 shrink-0">Sales</label>
-                <select
-                  ref={salesRef}
-                  value={salesTeam}
-                  onChange={e => setSalesTeam(e.target.value)}
+                <div
+                  className="flex-1"
                   onKeyDown={e => {
                     if (e.key === 'Tab') {
                       e.preventDefault()
                       priceTypeRef.current?.focus()
                     }
                   }}
-                  className="flex-1 text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#875A7B]/40 bg-white"
                 >
-                  <option value="">{isEn ? '— Select Salesperson —' : '— 选择业务员 —'}</option>
-                  {salesUsers.map(u => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))}
-                </select>
+                  <SearchableDropdown
+                    ref={salesRef}
+                    options={[{ value: '', label: isEn ? '— Select Salesperson —' : '— 选择业务员 —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
+                    value={salesTeam}
+                    onChange={setSalesTeam}
+                    placeholder={isEn ? '— Select Salesperson —' : '— 选择业务员 —'}
+                  />
+                </div>
               </div>
 
               {/* Pricelist */}

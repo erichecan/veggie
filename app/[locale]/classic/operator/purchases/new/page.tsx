@@ -18,6 +18,8 @@ import PriceHistoryModal from './_components/PriceHistoryModal'
 import CopyFromHistoryModal, { type HistoryPO } from './_components/CopyFromHistoryModal'
 import { rankByRelevance } from '@/lib/search-rank'
 import { PURCHASE_TAX_RATES, nearestPurchaseTaxRate } from '@/lib/purchase/tax-rates'
+import { DatePicker } from '@/components/ui/date-picker'
+import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
 const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CNY']
 
@@ -672,20 +674,18 @@ export default function NewPurchaseOrderPage() {
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Order Date' : '订购日期'}</label>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={orderDate}
-                    onChange={e => setOrderDate(e.target.value)}
+                    onChange={setOrderDate}
                     className={inputCls}
                     style={{ width: '180px' }}
                   />
                 </div>
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Expected Date' : '预计到货日期'}</label>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={expectedDate}
-                    onChange={e => setExpectedDate(e.target.value)}
+                    onChange={setExpectedDate}
                     className={inputCls}
                     style={{ width: '180px' }}
                   />
@@ -874,10 +874,11 @@ export default function NewPurchaseOrderPage() {
                       {inclTotal.toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      <input type="date"
+                      <DatePicker
                         className={`${numInputCls} text-xs`} style={{ width: '120px' }}
+                        clearable={false}
                         value={l.bestBefore ?? ''}
-                        onChange={e => updateBestBefore(i, e.target.value)}
+                        onChange={v => updateBestBefore(i, v)}
                         onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch, isLastFieldOfLastRow: isLast })} />
                     </td>
                   </>
@@ -968,29 +969,19 @@ export default function NewPurchaseOrderPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Category' : '分类'}</label>
-                <select
+                <SearchableDropdown
+                  options={[{ value: '', label: isEn ? 'Uncategorized' : '未分类' }, ...categories.map(c => ({ value: c.id, label: (isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)) ?? '' }))]}
                   value={qcCategoryId}
-                  onChange={e => setQcCategoryId(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
-                >
-                  <option value="">{isEn ? 'Uncategorized' : '未分类'}</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id}>{isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)}</option>
-                  ))}
-                </select>
+                  onChange={setQcCategoryId}
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{isEn ? 'Purchase Unit' : '采购单位'}</label>
-                <select
+                <SearchableDropdown
+                  options={[{ value: '', label: isEn ? 'Unspecified' : '未指定' }, ...uoms.map(u => ({ value: u.id, label: (isEn ? (u.name || u.nameZh) : (u.nameZh || u.name)) ?? '' }))]}
                   value={qcUomId}
-                  onChange={e => setQcUomId(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm outline-none"
-                >
-                  <option value="">{isEn ? 'Unspecified' : '未指定'}</option>
-                  {uoms.map(u => (
-                    <option key={u.id} value={u.id}>{isEn ? (u.name || u.nameZh) : (u.nameZh || u.name)}</option>
-                  ))}
-                </select>
+                  onChange={setQcUomId}
+                />
               </div>
             </div>
             <div>
