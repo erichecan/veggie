@@ -1,0 +1,15 @@
+[Unit]
+Description=每天 22 点跑一次 veggie 自动兜底确认出发
+
+[Timer]
+# 22:00 本地时间（宿主机时区 Europe/Dublin，与业务时区一致）——这个点排的车肯定都走了
+OnCalendar=*-*-* 22:00:00
+# 机器关机错过的那次，开机后补跑；就算真的错过一整天，业务逻辑本身也会在下一次
+# 22 点或下一次手动"确认全部出发"时把积压的批次一并扫出来（见 dispatchWave 的
+# 扫描范围：waveDate <= 今天，不只看当天）。
+Persistent=true
+RandomizedDelaySec=300
+Unit=veggie-auto-dispatch.service
+
+[Install]
+WantedBy=timers.target

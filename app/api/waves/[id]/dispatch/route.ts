@@ -3,12 +3,15 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { createTripFromWave } from '@/lib/trip-from-wave'
+import { dispatchWave } from '@/lib/wave-dispatch'
 
 /**
  * 确认出发：将波次内订单的交货日期(deliveryDate)回填为排程日期，
  * 状态推进到 IN_DELIVERY，并在波次上标记 dispatchedAt（防重复出发）。
  * 交货日期优先取波次自身的 waveDate（即配送中心顶部所选排程日期）。
+ *
+ * 核心事务逻辑在 lib/wave-dispatch.ts::dispatchWave，与「确认全部出发」批量按钮
+ * （前端逐个调用本路由）、22 点自动兜底 cron 共用同一份实现。
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -16,47 +19,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     try {
       const body = (await req.json().catch(() => ({}))) as { date?: string }
 
-      const wave = await prisma.pickingWave.findUnique({ where: { id } })
-      if (!wave) return NextResponse.json({ error: '波次不存在' }, { status: 404 })
-      if (wave.dispatchedAt) {
-        return NextResponse.json({ error: '该批次已确认出发' }, { status: 400 })
+      const result = await dispatchWave(id, body.date)
+      if (!result.ok) {
+        const status = result.reason === '波次不存在' ? 404 : 400
+        return NextResponse.json({ error: result.reason }, { status })
       }
 
-      const orderIds = (wave.orderIds as string[]) ?? []
-      if (orderIds.length === 0) {
-        return NextResponse.json({ error: '该批次没有订单，无法出发' }, { status: 400 })
-      }
-
-      const deliveryDate = wave.waveDate
-        ?? (body.date ? new Date(`${body.date}T00:00:00Z`) : null)
-      if (!deliveryDate) {
-        return NextResponse.json({ error: '缺少排程日期，无法确定交货日期' }, { status: 400 })
-      }
-
-      // 确认出发:回填订单交货日期+状态、刷新送货单、标记 dispatchedAt,并按波次生成司机行程(P0-2/A)
-      const { updated, trip } = await prisma.$transaction(async (tx) => {
-        const upd = await tx.order.updateMany({
-          where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
-          data: { deliveryDate, status: 'IN_DELIVERY' },
-        })
-        await tx.deliverySlip.updateMany({
-          where: { orderId: { in: orderIds } },
-          data: { deliveryDate },
-        })
-        await tx.pickingWave.update({ where: { id }, data: { dispatchedAt: new Date() } })
-        // SSOT(P0-2/A): Trip 在此按波次生成,司机身份取自 DriverSlot.userId
-        const t = await createTripFromWave(tx as never, id)
-        return { updated: upd, trip: t }
-      })
-
+      const fresh = await prisma.pickingWave.findUnique({ where: { id } })
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `确认出发：批次 ${wave.name ?? id}，${updated.count} 个订单交货日期=${deliveryDate.toISOString().slice(0, 10)}`,
+        detail: `确认出发：批次 ${fresh?.name ?? id}，${result.updatedCount} 个订单交货日期=${result.deliveryDate.toISOString().slice(0, 10)}、状态转 IN_DELIVERY（库存已在客户确认订单时预留扣减，此步不重复扣减）`,
       })
 
-      const fresh = await prisma.pickingWave.findUnique({ where: { id } })
-      return NextResponse.json(serializeApi({ ...fresh, dispatchedCount: updated.count, tripId: trip?.id ?? null }))
+      return NextResponse.json(serializeApi({ ...fresh, dispatchedCount: result.updatedCount, tripId: result.tripId }))
     } catch (error) {
       console.error('[PUT /api/waves/[id]/dispatch]', error)
       return NextResponse.json({ error: '确认出发失败' }, { status: 500 })

@@ -1,0 +1,17 @@
+[Unit]
+Description=veggie 每日 22 点自动兜底确认出发（触发应用的 cron 路由）
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 复用 veggie-backup.env 里的 CRON_SECRET——这个密钥不是备份专属的，是所有
+# /api/cron/* 路由共用的同一把共享密钥，文件名叫 backup.env 只是历史命名，
+# 没必要为同一个值再建一份文件。
+EnvironmentFile=/etc/veggie/backup.env
+# ⛔ header 是 x-cron-secret，不是 Authorization: Bearer。
+# --fail-with-body：没有它，路由返回 4xx/5xx 时 curl 仍退出 0，兜底失败会被记成成功。
+ExecStart=/usr/bin/curl --fail-with-body -sS -X POST \
+          -H "x-cron-secret: ${CRON_SECRET}" \
+          --max-time 600 \
+          http://127.0.0.1:3000/api/cron/auto-confirm-departure
