@@ -17,6 +17,7 @@ export interface VendorBillExportRow {
   amountDue?: number | null
   status?: string | null
   purchaseOrderName?: string | null
+  supplierInvoiceRef?: string | null
 }
 
 const STATUS_ZH: Record<string, string> = {
@@ -38,6 +39,7 @@ export function vendorBillExportColumns(isEn: boolean): readonly ExportColumn<Ve
     { header: '账单号', headerEn: 'Bill No.', get: r => r.name ?? '' },
     { header: '供应商', headerEn: 'Supplier', get: r => r.supplierName ?? '' },
     { header: '关联采购单', headerEn: 'Purchase Order', get: r => r.purchaseOrderName ?? '' },
+    { header: '供应商发票参考号', headerEn: 'Supplier Invoice Ref.', get: r => r.supplierInvoiceRef ?? '' },
     { header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
     { header: '账单日期', headerEn: 'Bill Date', get: r => dateOnly(r.billDate) },
     { header: '到期日', headerEn: 'Due Date', get: r => dateOnly(r.dueDate) },

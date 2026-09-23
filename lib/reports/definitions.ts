@@ -53,6 +53,7 @@ export const SALES_MEASURES: Record<string, MeasureMeta> = {
 // ─── Purchasing Report ─────────────────────────────────────────────────────────
 
 export const PURCHASING_DIMENSIONS: Record<string, DimensionMeta> = {
+  po_name:         { field: 'po_name',         label: 'PO No.',        labelZh: '采购单号',   type: 'string' },
   supplier_name:   { field: 'supplier_name',   label: 'Supplier',      labelZh: '供应商',     type: 'string' },
   // 20260920：供应商/商品的筛选下拉给的是**内部 id**，而不是名字。
   // 只放 *_name 的话，按名字筛会被重名档案串在一起（生产库历史上有重复壳记录）。
@@ -75,6 +76,10 @@ export const PURCHASING_DIMENSIONS: Record<string, DimensionMeta> = {
     dateIntervals: ['day', 'week', 'month', 'quarter', 'year'] },
   confirmed_at:    { field: 'confirmed_at',      label: 'Confirmed At',  labelZh: '确认时间',   type: 'datetime',
     dateIntervals: ['day', 'week', 'month', 'quarter', 'year'] },
+  // 20260922：采购分析明细列。一个 PO 至多一张 VendorBill，两列都可能是 null
+  // （账单还没生成，或供应商发票还没核对录入）。
+  vendor_bill_no:  { field: 'vendor_bill_no',    label: 'Bill No.',      labelZh: '系统发票号', type: 'string' },
+  vendor_bill_ref: { field: 'vendor_bill_ref',   label: 'Supplier Invoice Ref.', labelZh: '供应商发票参考号', type: 'string' },
 }
 
 export const PURCHASING_MEASURES: Record<string, MeasureMeta> = {

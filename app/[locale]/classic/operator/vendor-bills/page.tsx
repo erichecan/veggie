@@ -15,6 +15,7 @@ import { useFacets } from '@/lib/use-facets'
 import { formatDateOnly } from '@/lib/format-date'
 import { VENDOR_PAYMENT_METHODS, VENDOR_PAYMENT_METHOD_LABELS } from '@/lib/finance/vendor-settlement'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
+import { SUPPLIER_INVOICE_REF_MAX_LEN } from '@/lib/vendor-bill-fields'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
@@ -43,6 +44,8 @@ interface VendorBill {
   amountDue: number
   status: VbStatus
   notes?: string | null
+  /** 供应商自己开的发票号，人工录入。跟 name(本系统 VB-##### 序列)是两回事 */
+  supplierInvoiceRef?: string | null
 }
 
 interface Supplier { id: string; name: string }
@@ -100,6 +103,10 @@ export default function VendorBillsPage() {
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState('bank')
   const [payNote, setPayNote] = useState('')
+  /** 供应商发票参考号：账单大多是 PO 确认后自动生成的草稿，这个字段当时是空的，
+   *  要等财务收到供应商纸质/PDF发票核对后回填，所以详情弹窗里单独可编辑保存 */
+  const [refDraft, setRefDraft] = useState('')
+  const [savingRef, setSavingRef] = useState(false)
   /** 该账单的付款流水（台账 G2）—— 「分批付款」的价值全在这张表上 */
   const [payments, setPayments] = useState<VendorPaymentRow[]>([])
 
@@ -107,6 +114,7 @@ export default function VendorBillsPage() {
   const [newSupplierId, setNewSupplierId] = useState('')
   const [newDueDate, setNewDueDate] = useState('')
   const [newNotes, setNewNotes] = useState('')
+  const [newSupplierInvoiceRef, setNewSupplierInvoiceRef] = useState('')
   const [newLines, setNewLines] = useState<VendorBillLine[]>([{ ...EMPTY_LINE }])
 
   const [importOpen, setImportOpen] = useState(false)
@@ -227,16 +235,35 @@ export default function VendorBillsPage() {
         supplierId: newSupplierId,
         dueDate: newDueDate || undefined,
         notes: newNotes || undefined,
+        supplierInvoiceRef: newSupplierInvoiceRef || undefined,
         lines,
       })
       toast.success(isEn ? 'Bill created (draft)' : '账单已创建(草稿)')
       setCreateOpen(false)
-      setNewSupplierId(''); setNewDueDate(''); setNewNotes(''); setNewLines([{ ...EMPTY_LINE }])
+      setNewSupplierId(''); setNewDueDate(''); setNewNotes(''); setNewSupplierInvoiceRef(''); setNewLines([{ ...EMPTY_LINE }])
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败'))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function saveSupplierInvoiceRef(bill: VendorBill) {
+    const value = refDraft.trim()
+    setSavingRef(true)
+    try {
+      const res = await apiPut<VendorBill>(`/api/vendor-bills/${bill.id}`, { supplierInvoiceRef: value })
+      toast.success(isEn ? 'Reference saved' : '发票参考号已保存')
+      setDetail(res)
+      // 服务端会 slice(0, 100)——草稿框跟着回填成真正落库的值，
+      // 否则粘贴超长文本时按钮保存后立刻又变回可点，像是"没保存成功"
+      setRefDraft(res.supplierInvoiceRef ?? '')
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
+    } finally {
+      setSavingRef(false)
     }
   }
 
@@ -344,7 +371,7 @@ export default function VendorBillsPage() {
               )}
               {pageRows.map(b => (
                 <tr key={b.id} className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => { setDetail(b); setPayAmount(''); setPayNote(''); setPayments([]); loadPayments(b.id) }}>
+                  onClick={() => { setDetail(b); setPayAmount(''); setPayNote(''); setPayments([]); setRefDraft(b.supplierInvoiceRef ?? ''); loadPayments(b.id) }}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-700">{b.name}</td>
                   <td className="px-4 py-3 text-gray-800">{supplierName(b.supplierId)}</td>
                   <td className="px-4 py-3 text-center">
@@ -388,6 +415,28 @@ export default function VendorBillsPage() {
                   <span>{isEn ? 'Supplier: ' : '供应商：'}<b className="text-gray-900">{supplierName(detail.supplierId)}</b></span>
                   <span>{isEn ? 'Paid ' : '已付 '}€{Number(detail.amountPaid).toFixed(2)} / {isEn ? 'Due ' : '未付 '}<b className="text-red-600">€{Number(detail.amountDue).toFixed(2)}</b></span>
                 </div>
+
+                {/* 供应商发票参考号：账单自动生成时是空的，等财务对着供应商纸质/PDF发票核对后回填 */}
+                <label className="block">
+                  <span className="text-xs text-gray-500">{isEn ? 'Supplier Invoice Ref.' : '供应商发票参考号'}</span>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      value={refDraft}
+                      onChange={e => setRefDraft(e.target.value)}
+                      maxLength={SUPPLIER_INVOICE_REF_MAX_LEN}
+                      placeholder={isEn ? 'e.g. the number on the supplier’s own invoice' : '如：供应商发票上印的号'}
+                      className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={savingRef || refDraft.trim() === (detail.supplierInvoiceRef ?? '')}
+                      onClick={() => saveSupplierInvoiceRef(detail)}
+                    >
+                      {savingRef ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}
+                    </Button>
+                  </div>
+                </label>
 
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
@@ -543,6 +592,13 @@ export default function VendorBillsPage() {
                   onChange={setNewDueDate}
                   className="mt-1 w-full border border-gray-300 rounded px-2 py-1.5"
                 />
+              </label>
+              <label className="block col-span-2">
+                <span className="text-xs text-gray-500">{isEn ? 'Supplier Invoice Ref.' : '供应商发票参考号'}</span>
+                <input value={newSupplierInvoiceRef} onChange={e => setNewSupplierInvoiceRef(e.target.value)}
+                  maxLength={SUPPLIER_INVOICE_REF_MAX_LEN}
+                  placeholder={isEn ? 'Optional' : '选填'}
+                  className="mt-1 w-full border border-gray-300 rounded px-2 py-1.5" />
               </label>
             </div>
 

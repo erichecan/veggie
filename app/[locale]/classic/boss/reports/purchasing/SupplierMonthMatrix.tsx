@@ -5,6 +5,7 @@ import { eur, fmtMoney } from '@/lib/format-money'
 import { downloadCsv } from '@/lib/csv-export'
 import { bucketLabel } from '@/lib/reports/date-label'
 import type { FilterSpec, ReportRequest } from '@/lib/reports/types'
+import { nextDay } from './date-range'
 
 /**
  * 采购分析：供应商（行）× 下单月份（列）
@@ -39,7 +40,6 @@ const PURPLE = '#875A7B'
 /** 首列钉在左边。z 值要压过普通单元格，否则滚动时数字会盖在供应商名上面 */
 const STICKY_HEAD = 'sticky left-0 z-20 bg-gray-50'
 const STICKY_CELL = 'sticky left-0 z-10'
-const MONTHS_PAGE_SIZE = 6
 /** 一次取回的 供应商×月 组合数上限。超了会在表头挂告警，不静默截断 */
 const ROW_LIMIT = 5000
 
@@ -93,22 +93,16 @@ const monthKey = (v: unknown): string => {
 /** 从 'YYYY-MM' 还原成可给 bucketLabel 的日期 */
 const monthDate = (key: string) => (key ? `${key}-01T00:00:00.000Z` : '')
 
-/** 本页取数窗口：从 N 个月前的 1 号起，到今天（含）。用本地日历月切，跟用户看日历一致 */
-function windowStart(monthsBack: number): string {
-  const now = new Date()
-  const d = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
 export default function SupplierMonthMatrix({
-  isEn, supplierIds, productIds,
+  isEn, supplierIds, productIds, from, to,
 }: {
   isEn: boolean
   supplierIds: string[]
   productIds: string[]
+  /** 'YYYY-MM-DD'，闭区间，两端都含 */
+  from: string
+  to: string
 }) {
-  const [monthsBack, setMonthsBack] = useState(MONTHS_PAGE_SIZE)
   const [measures, setMeasures] = useState<MeasureKey[]>(['amount', 'qty', 'avgPrice'])
   /**
    * 取数结果连同**它是为哪套条件取的**一起存。
@@ -132,19 +126,20 @@ export default function SupplierMonthMatrix({
 
   const supplierKey = supplierIds.join(',')
   const productKey = productIds.join(',')
-  const scope = `${supplierKey}|${productKey}|${monthsBack}`
+  const scope = `${supplierKey}|${productKey}|${from}|${to}`
   const scoped = (name: string) => `${scope}|${name}`
 
   /** 行/列以外的固定筛选。下钻子请求必须原样带上，否则父子两行对不上账 */
   const baseFilters = useCallback((): FilterSpec[] => {
     const f: FilterSpec[] = [
-      { field: 'order_date', operator: '>=', value: windowStart(monthsBack) },
+      { field: 'order_date', operator: '>=', value: from },
+      { field: 'order_date', operator: '<', value: nextDay(to) },
       { field: 'po_status', operator: 'in', value: COUNTED_STATUSES },
     ]
     if (supplierIds.length) f.push({ field: 'supplier_id', operator: 'in', value: supplierIds })
     if (productIds.length) f.push({ field: 'product_id', operator: 'in', value: productIds })
     return f
-  }, [monthsBack, supplierIds, productIds])
+  }, [from, to, supplierIds, productIds])
 
   useEffect(() => {
     let cancelled = false
@@ -162,7 +157,7 @@ export default function SupplierMonthMatrix({
         if (!cancelled) setFailure({ scope: reqScope, message: e instanceof Error ? e.message : String(e) })
       })
     return () => { cancelled = true }
-    // scope 与 baseFilters 同源（都来自 supplierIds/productIds/monthsBack），
+    // scope 与 baseFilters 同源（都来自 supplierIds/productIds/from/to），
     // 列在依赖里只是为了让 reqScope 的捕获值可被 lint 校验
   }, [baseFilters, scope])
 
@@ -496,15 +491,6 @@ export default function SupplierMonthMatrix({
             })}
           </tbody>
         </table>
-        <div className="text-center py-3 border-t border-gray-50">
-          <button
-            onClick={() => setMonthsBack((n) => n + MONTHS_PAGE_SIZE)}
-            disabled={pending}
-            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-gray-200"
-          >
-            {isEn ? 'Show more months' : '显示更多月'}
-          </button>
-        </div>
       </div>
     </div>
   )

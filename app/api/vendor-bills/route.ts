@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { normalizeSupplierInvoiceRef } from '@/lib/vendor-bill-fields'
 
 /**
  * /api/vendor-bills
@@ -14,7 +15,9 @@ import { serializeApi } from '@/lib/api-serializer'
  *   * → CANCELLED
  *
  * POST body:
- *   { purchaseOrderId?, supplierId, billDate, dueDate?, lines: [{ productId, productName, qty, unitCost, taxRate }] }
+ *   { purchaseOrderId?, supplierId, billDate, dueDate?, supplierInvoiceRef?, lines: [{ productId, productName, qty, unitCost, taxRate }] }
+ *
+ * supplierInvoiceRef：供应商自己开的发票号，人工录入，跟 name(本系统 VB-##### 序列)是两回事。
  */
 
 function round2(n: number): number {
@@ -93,6 +96,7 @@ export async function POST(req: Request) {
           supplierId,
           billDate: data.billDate ? new Date(data.billDate) : new Date(),
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
+          supplierInvoiceRef: normalizeSupplierInvoiceRef(data.supplierInvoiceRef),
           lines: recomputed,
           subtotalExTax, totalTax, totalIncTax,
           amountPaid: 0, amountDue: totalIncTax,

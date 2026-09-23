@@ -4,9 +4,14 @@ import { useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import {
-  SearchSelectDropdown, searchPurchasableProductOptions, searchSupplierOptions, type SearchOption,
+  SearchSelectDropdown, searchPurchasableProductOptions, searchSupplierOptions, defaultRange, type SearchOption,
 } from '@/components/boss/analytics-shared'
+import { DatePicker } from '@/components/ui/date-picker'
 import SupplierMonthMatrix from './SupplierMonthMatrix'
+import PurchaseOrderDetailTable from './PurchaseOrderDetailTable'
+
+const PURPLE = '#875A7B'
+type ViewMode = 'summary' | 'detail'
 
 /**
  * 采购分析（数据中心导航里的第二项，与「销售分析」并排）
@@ -27,6 +32,13 @@ export default function PurchasingReportPage() {
 
   const [supplierFilter, setSupplierFilter] = useState<SearchOption[]>([])
   const [productFilter, setProductFilter] = useState<SearchOption[]>([])
+  // 20260922 客户要求加时间段选择器：原来是"从 N 个月前到今天"的滚动窗口(monthsBack)，
+  // 现在换成显式 from/to，与 procurement-analysis / sales-analysis 同款交互。
+  // 默认给 180 天，接近原来 6 个月的默认窗口。
+  const [range, setRange] = useState(() => defaultRange(180))
+  // 20260922 客户要加一张明细表(按采购单逐行：审批日期/发票参考号/系统发票号/供应商/数量/金额)，
+  // 跟原来的供应商×月矩阵是两种看法，做成 tab 切换而不是硬塞进同一张表。
+  const [view, setView] = useState<ViewMode>('summary')
 
   return (
     <div>
@@ -56,13 +68,50 @@ export default function PurchasingReportPage() {
           fetchOptions={searchPurchasableProductOptions}
           isEn={isEn}
         />
+        <div className="h-5 w-px bg-gray-200" />
+        {/* 时间段 */}
+        <div className="flex items-center gap-1.5 text-sm">
+          <DatePicker value={range.from} onChange={(v) => setRange((r) => ({ ...r, from: v }))} className="border border-gray-200 rounded-lg px-2 py-1" />
+          <span className="text-gray-400">→</span>
+          <DatePicker value={range.to} onChange={(v) => setRange((r) => ({ ...r, to: v }))} className="border border-gray-200 rounded-lg px-2 py-1" />
+        </div>
+        <div className="h-5 w-px bg-gray-200" />
+        {/* 视图：汇总(供应商×月矩阵) / 明细(按采购单逐行) */}
+        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+          {([
+            ['summary', isEn ? 'Summary' : '汇总'],
+            ['detail', isEn ? 'Detail' : '明细'],
+          ] as const).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className="px-3 py-1.5 text-sm transition-colors"
+              style={view === v ? { background: PURPLE, color: 'white' } : { background: 'white', color: '#6b7280' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <SupplierMonthMatrix
-        isEn={isEn}
-        supplierIds={supplierFilter.map((s) => s.id)}
-        productIds={productFilter.map((p) => p.id)}
-      />
+      {view === 'summary' ? (
+        <SupplierMonthMatrix
+          isEn={isEn}
+          supplierIds={supplierFilter.map((s) => s.id)}
+          productIds={productFilter.map((p) => p.id)}
+          from={range.from}
+          to={range.to}
+        />
+      ) : (
+        <PurchaseOrderDetailTable
+          isEn={isEn}
+          supplierIds={supplierFilter.map((s) => s.id)}
+          productIds={productFilter.map((p) => p.id)}
+          from={range.from}
+          to={range.to}
+        />
+      )}
     </div>
   )
 }

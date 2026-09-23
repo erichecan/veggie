@@ -5,6 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { postVendorBillToJournal, postVendorPaymentToJournal } from '@/lib/accounting'
 import { reconcileVendorBill, type ReconciliationBillLine, type ReconciliationPoLine } from '@/lib/vendor-bill-reconciliation'
+import { normalizeSupplierInvoiceRef } from '@/lib/vendor-bill-fields'
 
 /**
  * /api/vendor-bills/[id]
@@ -12,7 +13,7 @@ import { reconcileVendorBill, type ReconciliationBillLine, type ReconciliationPo
  * GET — 账单详情，含 reconciliation（供应商三单核销，见 lib/vendor-bill-reconciliation.ts）
  * PUT — 状态流转 + 登记付款:
  *   状态机:DRAFT → POSTED → PAID;DRAFT/POSTED → CANCELLED
- *   body: { status?, amountPaid?, notes? }
+ *   body: { status?, amountPaid?, notes?, supplierInvoiceRef? }
  *   amountPaid 为累计已付金额,amountDue 服务端重算;POSTED 下付清自动转 PAID
  */
 
@@ -112,6 +113,11 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
       if (data.notes !== undefined) {
         updateData.notes = data.notes ? String(data.notes).trim().slice(0, 1000) : null
+      }
+
+      if (data.supplierInvoiceRef !== undefined) {
+        updateData.supplierInvoiceRef = normalizeSupplierInvoiceRef(data.supplierInvoiceRef)
+        detail.push(`供应商发票参考号 → ${updateData.supplierInvoiceRef ?? '(清空)'}`)
       }
 
       if (Object.keys(updateData).length === 0) {

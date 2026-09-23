@@ -593,18 +593,18 @@ model UomCategory {
  * qty_in_uom = qty_in_ref / factor
  */
 model Uom {
-  id         String      @id @default(cuid())
-  name       String
-  nameZh     String?
-  categoryId String
-  category   UomCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  type       UomType     @default(BIGGER)
-  factor     Decimal     @default(1) @db.Decimal(14, 6)
+  id               String      @id @default(cuid())
+  name             String
+  nameZh           String?
+  categoryId       String
+  category         UomCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  type             UomType     @default(BIGGER)
+  factor           Decimal     @default(1) @db.Decimal(14, 6)
   /// 四舍五入精度：订单数量会对齐到这个精度（如 0.01 表示两位小数）
-  rounding   Decimal     @default(0.01) @db.Decimal(14, 6)
+  rounding         Decimal     @default(0.01) @db.Decimal(14, 6)
   /// 货物类型："BULK"（大货）/ "LOOSE"（散货）。司机备货分拣单按此分组。
   /// 历史数据可能为 null（20260915 起「未分类」已从下拉去掉，打印侧按 BULK 处理）。
-  goodsType  String?
+  goodsType        String?
   /// 拣货时是否需要按客户拆开列明细（20260916）。
   /// true  = 配货时现切现称、每份贴客户标签的货，拣货员必须看到每家各多少
   ///         （如冬瓜基础单位 KG，客户点 2.5kg / 6.2kg，现切现包）
@@ -612,10 +612,10 @@ model Uom {
   /// ⛔ 与 goodsType 是两个独立维度：goodsType 决定进哪张拣货单（哪个组、哪个区域），
   ///    这个字段决定那张单里要不要列客户明细。不要用其中一个去推另一个 ——
   ///    生产实测存在「留在散货表（分表对）但不该展开」的单位，如 PACK / PKT / PACKET。
-  expandByCustomer Boolean @default(false)
-  active     Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  expandByCustomer Boolean     @default(false)
+  active           Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   saleProducts     Product[]        @relation("SaleUom")
   purchaseProducts Product[]        @relation("PurchaseUom")
@@ -1534,33 +1534,40 @@ model VendorPayment {
 }
 
 model VendorBill {
-  id              String           @id @default(cuid())
-  name            String           @unique
-  purchaseOrderId String?
-  purchaseOrder   PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id])
-  supplierId      String
-  billDate        DateTime         @default(now())
-  dueDate         DateTime?
-  lines           Json             @default("[]")
+  id                 String           @id @default(cuid())
+  name               String           @unique
+  /// 一个采购单至多一张账单——lib/vendor-bill-from-po.ts 的幂等检查、
+  /// 以及 veggie_purchasing_report 视图对 VendorBill 的 LEFT JOIN 都假定这一点。
+  /// 之前只是注释里的约定，20260922 code review 指出没有 DB 约束兜底，改成 @@unique
+  /// 真正堵住（Postgres 唯一索引允许任意多个 NULL，不影响没挂 PO 的手工账单）。
+  purchaseOrderId    String?          @unique
+  purchaseOrder      PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id])
+  supplierId         String
+  billDate           DateTime         @default(now())
+  dueDate            DateTime?
+  /// 供应商自己开的发票号/参考号，人工录入(收到纸质/PDF发票后核对填写)。
+  /// 与 `name`(本系统自动生成的 VB-##### 序列)是两个概念，不要混淆——
+  /// 20260922 客户在采购分析明细里要同时看这两列("发票参考号" vs "系统生成的 invoice NO.")。
+  supplierInvoiceRef String?
+  lines              Json             @default("[]")
   /// 币种/汇率快照，跟随来源采购单，仅用于财务核对原始外币发票；下面的金额字段
   /// (subtotalExTax 等)始终存欧元折算值，会计过账(lib/accounting.ts)直接读这几个字段即可(20260713)
-  currency        String           @default("EUR")
-  exchangeRate    Decimal?         @default(1) @db.Decimal(14, 6)
-  subtotalExTax   Decimal          @default(0) @db.Decimal(12, 2)
-  totalTax        Decimal          @default(0) @db.Decimal(12, 2)
-  totalIncTax     Decimal          @default(0) @db.Decimal(12, 2)
-  amountPaid      Decimal          @default(0) @db.Decimal(12, 2)
-  amountDue       Decimal          @default(0) @db.Decimal(12, 2)
-  status          VendorBillStatus @default(DRAFT)
-  notes           String?
-  createdAt       DateTime         @default(now())
-  postedAt        DateTime?
-  paidAt          DateTime?
+  currency           String           @default("EUR")
+  exchangeRate       Decimal?         @default(1) @db.Decimal(14, 6)
+  subtotalExTax      Decimal          @default(0) @db.Decimal(12, 2)
+  totalTax           Decimal          @default(0) @db.Decimal(12, 2)
+  totalIncTax        Decimal          @default(0) @db.Decimal(12, 2)
+  amountPaid         Decimal          @default(0) @db.Decimal(12, 2)
+  amountDue          Decimal          @default(0) @db.Decimal(12, 2)
+  status             VendorBillStatus @default(DRAFT)
+  notes              String?
+  createdAt          DateTime         @default(now())
+  postedAt           DateTime?
+  paidAt             DateTime?
 
   payments VendorPayment[]
 
   @@index([supplierId])
-  @@index([purchaseOrderId])
   @@index([status])
   @@index([billDate])
 }
