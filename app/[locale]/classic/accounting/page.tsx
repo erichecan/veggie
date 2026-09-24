@@ -107,25 +107,41 @@ export default function AccountingPage() {
     return () => document.removeEventListener('mousedown', handle)
   }, [])
 
+  // 手机键盘的「前往/搜索」键等同于表单 submit —— 边打字边看下方列表实时筛选是主用法，
+  // 这个提交只处理两种「确定选中」场景：扫码枪整单号命中，或者手打的部分单号已经把
+  // visible（今日列表叠加所有筛选条件后）缩到只剩一条。除此之外不清空输入框、不报错，
+  // 免得每次手滑碰到「前往」就把刚筛出来的列表和输入内容一起清没了。
   function handleScan(e: React.FormEvent) {
     e.preventDefault()
     const code = scanInput.trim()
     if (!code) return
     const codeUpper = code.toUpperCase()
-    const found = orders.find(o => o.code?.toUpperCase() === codeUpper || o.id === code)
-    if (!found) {
-      setScanMsg({ type: 'err', text: isEn ? `Order not found: ${code}` : `找不到订单：${code}` })
-    } else if (found.orderReturn) {
-      setScanMsg({ type: 'warn', text: isEn ? `${code} already written off` : `${code} 已核销` })
-      flashRow(found.id)
+    const exact = orders.find(o => o.code?.toUpperCase() === codeUpper || o.id === code)
+    const target = exact ?? (visible.length === 1 ? visible[0] : undefined)
+
+    if (!target) {
+      if (todayOrders.length === 0) {
+        setScanMsg({ type: 'err', text: isEn ? 'No orders today to search' : '今日没有可核销的订单' })
+      } else if (visible.length > 1) {
+        setScanMsg({ type: 'warn', text: isEn ? `${visible.length} orders match — tap one below, or keep typing to narrow it down` : `已筛出 ${visible.length} 条匹配，点击下方对应行选中，或继续输入缩小范围` })
+      } else {
+        setScanMsg({ type: 'err', text: isEn ? `Order not found: ${code}` : `找不到订单：${code}` })
+      }
+      setTimeout(() => setScanMsg(null), 4000)
+      return
+    }
+
+    if (target.orderReturn) {
+      setScanMsg({ type: 'warn', text: isEn ? `${target.code} already written off` : `${target.code} 已核销` })
+      flashRow(target.id)
     } else {
       setSelected(prev => {
         const next = new Set(prev)
-        next.add(found.id)
+        next.add(target.id)
         return next
       })
-      flashRow(found.id)
-      setScanMsg({ type: 'ok', text: isEn ? `✅ ${code} selected, ${selected.size + 1} total selected` : `✅ ${code} 已选中，共选 ${selected.size + 1} 张` })
+      flashRow(target.id)
+      setScanMsg({ type: 'ok', text: isEn ? `✅ ${target.code} selected, ${selected.size + 1} total selected` : `✅ ${target.code} 已选中，共选 ${selected.size + 1} 张` })
     }
     setScanInput('')
     setTimeout(() => setScanMsg(null), 4000)
