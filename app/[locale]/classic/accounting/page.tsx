@@ -183,6 +183,7 @@ export default function AccountingPage() {
     return dateStr === today
   })
   const visible = todayOrders.filter(o => {
+    if (scanInput.trim() && !o.code?.toUpperCase().includes(scanInput.trim().toUpperCase())) return false
     if (filterBatch && !formatDriverSlotFromOrder(o).toLowerCase().includes(filterBatch.toLowerCase())) return false
     if (filterPayment && String(o.paymentMethod).toUpperCase() !== filterPayment) return false
     if (filterReturn === 'missing' && o.orderReturn) return false
@@ -401,7 +402,7 @@ export default function AccountingPage() {
       {/* 扫码核销 */}
       <div className="bg-white rounded border border-gray-200 shadow-sm px-5 py-4">
         <div className="text-sm font-semibold text-gray-700 mb-1">{isEn ? '📷 Scanner / Enter Order # — Auto-select' : '📷 扫码枪 / 输入单号 — 自动勾选'}</div>
-        <div className="text-xs text-gray-400 mb-3">{isEn ? 'Scanning auto-selects the order; after scanning a batch, click "Bulk Write-off" to submit all at once' : '扫码后订单自动勾选，批量扫完后点击「批量核销」一次提交'}</div>
+        <div className="text-xs text-gray-400 mb-3">{isEn ? 'Scanning the full code auto-selects the order; typing part of it (e.g. "MJ") filters the list below as you type' : '扫完整单号会自动勾选；只输入单号的一部分（如"MJ"）会实时筛选下方列表'}</div>
         <form onSubmit={handleScan} className="flex gap-2">
           <input
             value={scanInput}
@@ -508,7 +509,11 @@ export default function AccountingPage() {
       {loading ? (
         <div className="text-center py-16 text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
       ) : visible.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">{isEn ? 'No orders today' : '今日暂无订单'}</div>
+        <div className="text-center py-16 text-gray-400">
+          {scanInput.trim() || filterBatch || filterPayment || filterReturn !== 'all'
+            ? (isEn ? 'No orders match the current filters' : '没有匹配当前筛选条件的订单')
+            : (isEn ? 'No orders today' : '今日暂无订单')}
+        </div>
       ) : (
         <div ref={tableRef} className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden scroll-mt-6">
           <table className="w-full text-sm">
