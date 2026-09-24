@@ -226,6 +226,20 @@ describe('页面边界', () => {
     assert.ok(canRolesAccessPage(['OPERATOR'], '/classic/boss'))
     assert.ok(canRolesAccessPage(['BOSS'], '/classic/warehouse'))
   })
+  /**
+   * 20260923：发票/供应商账单从「销售」模块（/classic/operator/invoices）
+   * 并入「财务」模块（/classic/finance/invoices）后，销售角色不能因为路由
+   * 搬家就摸不到——旧会话（无位图）走这张 ROLE_PAGE_SCOPE 兜底名单判定。
+   */
+  test('✅ 发票/供应商账单并入财务模块后，销售仍摸得到这两个子路径', () => {
+    assert.ok(canRolesAccessPage(['SALES'], '/classic/finance/invoices'))
+    assert.ok(canRolesAccessPage(['SALES'], '/classic/finance/vendor-bills'))
+  })
+  test('⛔ 但销售拿不到财务模块的其余部分（未整体放宽）', () => {
+    assert.equal(canRolesAccessPage(['SALES'], '/classic/finance'), false)
+    assert.equal(canRolesAccessPage(['SALES'], '/classic/finance/statements'), false)
+    assert.equal(canRolesAccessPage(['SALES'], '/classic/accounting'), false)
+  })
   test('落点：被拦下后回自己的主页而不是死循环', () => {
     assert.equal(homeFor(['DRIVER']), '/classic/driver')
     assert.equal(homeFor(['RESTAURANT']), '/customer-portal')

@@ -45,8 +45,8 @@ const IFRAME_DOC_TARGETS = [
 ]
 
 const FULL_PAGE_TARGETS = [
-  { file: '08-invoice-entity-zh.html', label: '发票 INVOICE（Invoice 实体）', url: `/zh/classic/operator/invoices/${ARGS.invoiceId}/print` },
-  { file: '08-invoice-entity-en.html', label: '发票 INVOICE（Invoice 实体）EN', url: `/en/classic/operator/invoices/${ARGS.invoiceId}/print` },
+  { file: '08-invoice-entity-zh.html', label: '发票 INVOICE（Invoice 实体）', url: `/zh/classic/finance/invoices/${ARGS.invoiceId}/print` },
+  { file: '08-invoice-entity-en.html', label: '发票 INVOICE（Invoice 实体）EN', url: `/en/classic/finance/invoices/${ARGS.invoiceId}/print` },
 ]
 
 const written = []

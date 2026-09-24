@@ -321,7 +321,7 @@ export default function VendorBillsPage() {
   return (
     <div>
       <OdooControlPanel
-        breadcrumb={isEn ? ['Purchasing', 'Vendor Bills'] : ['采购', '供应商账单']}
+        breadcrumb={isEn ? ['Finance', 'Vendor Bills'] : ['财务', '供应商账单']}
         permanentActions={[
           { label: isEn ? 'New Bill' : '新建账单', onClick: () => setCreateOpen(true), primary: true },
           { label: 'Import', onClick: () => { setImportOpen(true); setImportResult(null); setImportFile(null); setImportSupplierId('') } },

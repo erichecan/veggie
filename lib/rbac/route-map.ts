@@ -397,6 +397,11 @@ export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/classic/driver/**', permission: 'page.driver.access' },
   { pattern: '/classic/sorter/**', permission: 'page.sorter.access' },
   { pattern: '/classic/warehouse/**', permission: 'page.warehouse.access' },
+  // 20260923：发票/供应商账单原挂在「销售」模块（page.operator.access）下，
+  // 并入财务模块导航后路由变了，但不能让原来摸得着的人（销售）突然摸不到——
+  // 具体路径写在下面的 /classic/finance/** 通配之前，两个权限点任一即可放行。
+  { pattern: '/classic/finance/invoices/**', permission: ['page.operator.access', 'page.finance.access'] },
+  { pattern: '/classic/finance/vendor-bills/**', permission: ['page.operator.access', 'page.finance.access'] },
   { pattern: '/classic/finance/**', permission: 'page.finance.access' },
   { pattern: '/classic/accounting/**', permission: 'page.accounting.access' },
   { pattern: '/classic/print/**', permission: 'page.print.access' },

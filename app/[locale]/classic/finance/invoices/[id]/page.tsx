@@ -137,7 +137,7 @@ export default function ClassicInvoiceDetailPage() {
       <div className="text-center py-20 text-gray-400">
         {isEn ? 'Invoice not found or has been deleted' : '发票不存在或已删除'}
         <div className="mt-4">
-          <Button variant="outline" onClick={() => router.push(`${prefix}/classic/operator/invoices`)}>
+          <Button variant="outline" onClick={() => router.push(`${prefix}/classic/finance/invoices`)}>
             {isEn ? 'Back to list' : '返回列表'}
           </Button>
         </div>
@@ -155,7 +155,7 @@ export default function ClassicInvoiceDetailPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push(`${prefix}/classic/operator/invoices`)}
+            onClick={() => router.push(`${prefix}/classic/finance/invoices`)}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
             {isEn ? '← Back to invoices' : '← 返回发票列表'}
@@ -167,7 +167,7 @@ export default function ClassicInvoiceDetailPage() {
         </div>
         <div className="flex gap-2">
           <Link
-            href={`${prefix}/classic/operator/invoices/${inv.id}/print`}
+            href={`${prefix}/classic/finance/invoices/${inv.id}/print`}
             target="_blank"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
           >

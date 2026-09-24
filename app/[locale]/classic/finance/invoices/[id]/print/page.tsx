@@ -72,7 +72,7 @@ export default function InvoicePrintPage() {
         {isEn ? 'Invoice not found or has been deleted' : '发票不存在或已删除'}
         <div className="mt-4">
           <button
-            onClick={() => router.push(`${prefix}/classic/operator/invoices`)}
+            onClick={() => router.push(`${prefix}/classic/finance/invoices`)}
             className="px-4 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
           >
             {isEn ? 'Back to list' : '返回列表'}
@@ -112,7 +112,7 @@ export default function InvoicePrintPage() {
       {/* 工具栏（不打印） */}
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <button
-          onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)}
+          onClick={() => router.push(`${prefix}/classic/finance/invoices/${inv.id}`)}
           className="text-sm text-gray-500 hover:text-gray-700"
         >
           {isEn ? '← Back to invoice details' : '← 返回发票详情'}

@@ -72,6 +72,21 @@ test('新会话（位图）判定与 middleware 的页面规则一致', () => {
 })
 
 /**
+ * 20260923：发票/供应商账单从「销售」模块并入「财务」模块路由后，在
+ * route-map 里对这两个子路径单独放宽了 page.operator.access（见 route-map.ts）。
+ * 位图会话（新 token）下，SALES 应该仍能进这两个子页面，但进不去财务模块其余部分——
+ * 这条锁住 finance/layout.tsx 必须按*实际访问路径*判断，不能写死模块根路径
+ * （写死根路径会让这条放宽规则形同虚设，client 层照样把销售踢出去）。
+ */
+test('位图会话：发票/供应商账单并入财务模块后，销售摸得到这两页、摸不到财务其余部分', () => {
+  const salesPm = bitmapOf.get('SALES')
+  assert.ok(canEnterPage({ role: 'SALES', roles: ['SALES'], pm: salesPm }, '/classic/finance/invoices', []))
+  assert.ok(canEnterPage({ role: 'SALES', roles: ['SALES'], pm: salesPm }, '/classic/finance/vendor-bills', []))
+  assert.ok(!canEnterPage({ role: 'SALES', roles: ['SALES'], pm: salesPm }, '/classic/finance/statements', []))
+  assert.ok(!canEnterPage({ role: 'SALES', roles: ['SALES'], pm: salesPm }, '/classic/finance', []))
+})
+
+/**
  * 8/6 审计的未解决问题：/classic/print 的 layout 没有任何判定，全靠 middleware
  * 的 matcher 兜着。打印中心里是整天的销售单、拣货单、配送单，含客户与价格。
  */

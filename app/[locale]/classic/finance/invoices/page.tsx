@@ -266,7 +266,7 @@ export default function ClassicInvoicesPage() {
       setSelectedOrderIds([])
       setSelectedCustomerId('')
       toast.success(isEn ? `Invoice ${created.name} generated` : `发票 ${created.name} 已生成`)
-      router.push(`${prefix}/classic/operator/invoices/${created.id}`)
+      router.push(`${prefix}/classic/finance/invoices/${created.id}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to generate invoice' : '生成发票失败'))
     } finally {
@@ -376,7 +376,7 @@ export default function ClassicInvoicesPage() {
                 const field = INVOICE_GB_FIELD[groupBy]
                 if (!groupBy || !field || pageRows.length === 0) {
                   return pageRows.map(inv => (
-                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)} />
+                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/finance/invoices/${inv.id}`)} />
                   ))
                 }
                 const groups = new Map<string, Invoice[]>()
@@ -395,7 +395,7 @@ export default function ClassicInvoicesPage() {
                     </td>
                   </tr>,
                   ...groupInvs.map(inv => (
-                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/operator/invoices/${inv.id}`)} />
+                    <InvoiceRow key={inv.id} inv={inv} locale={locale} isEn={isEn} onClick={() => router.push(`${prefix}/classic/finance/invoices/${inv.id}`)} />
                   )),
                 ])
               })()}

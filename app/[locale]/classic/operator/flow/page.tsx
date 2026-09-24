@@ -110,7 +110,7 @@ const FLOW_STEPS_ZH: FlowStep[] = [
     who: '销售 / 财务',
     whoColor: '#047857',
     desc: '系统根据实际送达数量自动生成发票草稿，销售确认后发送给餐馆。',
-    href: '/classic/operator/invoices',
+    href: '/classic/finance/invoices',
     details: [
       '配送完成后系统生成发票草稿',
       '核对数量与金额后点「确认发票」',
@@ -208,10 +208,10 @@ const FLOW_STEPS_EN: FlowStep[] = [
     id: 'invoice',
     emoji: '🧾',
     title: 'Invoicing & Reconciliation',
-    who: 'Sales / Accounting',
+    who: 'Sales / Finance',
     whoColor: '#047857',
     desc: 'The system auto-generates a draft invoice based on actual delivered quantities; sales confirms it and sends it to the restaurant.',
-    href: '/classic/operator/invoices',
+    href: '/classic/finance/invoices',
     details: [
       'A draft invoice is generated once delivery is complete',
       'Verify quantities and amounts, then click "Confirm Invoice"',

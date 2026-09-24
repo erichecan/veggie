@@ -325,7 +325,10 @@ export const ROLE_PAGE_SCOPE: Record<string, readonly string[]> = {
   WAREHOUSE: ['/classic/warehouse', '/classic/bulletin', '/enter'],
   FINANCE: ['/classic/finance', '/classic/accounting', '/classic/print', '/classic/bulletin', '/enter'],
   DISPATCH: ['/classic/operator/dispatch-console', '/classic/print', '/classic/bulletin', '/enter'],
-  SALES: ['/classic/operator', '/classic/print', '/classic/bulletin', '/enter'],
+  // 20260923：发票/供应商账单并入财务模块路由后，单独放两条子路径回来，
+  // 跟 route-map.ts 的 page.operator.access/page.finance.access 双许可保持一致
+  // ——这两条只是旧 token（无位图）兜底用的，别整段给 /classic/finance。
+  SALES: ['/classic/operator', '/classic/finance/invoices', '/classic/finance/vendor-bills', '/classic/print', '/classic/bulletin', '/enter'],
   EXTERNAL_SALES: ['/classic/operator', '/classic/bulletin', '/enter'],
   PICKER: ['/classic/bulletin', '/enter'],
   OTHER: ['/classic/bulletin', '/enter'],

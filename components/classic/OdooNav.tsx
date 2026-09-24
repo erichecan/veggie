@@ -50,9 +50,10 @@ const APPS_ZH = [
   { label: '拣货', icon: '🏭', href: '/classic/operator/dispatch-console' },
   { label: '仓库', icon: '🏪', href: '/classic/warehouse' },
   { label: '配送', icon: '🚚', href: '/classic/operator/trips' },
-  { label: '发票', icon: '🧾', href: '/classic/operator/invoices' },
   // 20260821：退换货已迁入库存管理 tab，数据分析/账户已分别迁入数据中心与头像下拉菜单，此处不再重复暴露
-  { label: '会计', icon: '📒', href: '/classic/accounting' },
+  // 20260923：原"会计"（核销管理）与"发票"两个图标合并——发票/供应商账单/对账单/司机交账/核销管理
+  // 都已收进「财务」模块自己的二级导航，这里只留一个统一入口
+  { label: '财务', icon: '💰', href: '/classic/finance' },
   { label: '采购', icon: '🛍️', href: '/classic/operator/purchases' },
   { label: '商品', icon: '🥦', href: '/classic/operator/products' },
   { label: '价格表', icon: '🏷️', href: '/classic/operator/pricelists' },
@@ -66,8 +67,7 @@ const APPS_EN = [
   { label: 'Picking', icon: '🏭', href: '/classic/operator/dispatch-console' },
   { label: 'Warehouse', icon: '🏪', href: '/classic/warehouse' },
   { label: 'Delivery', icon: '🚚', href: '/classic/operator/trips' },
-  { label: 'Invoices', icon: '🧾', href: '/classic/operator/invoices' },
-  { label: 'Accounting', icon: '📒', href: '/classic/accounting' },
+  { label: 'Finance', icon: '💰', href: '/classic/finance' },
   { label: 'Purchases', icon: '🛍️', href: '/classic/operator/purchases' },
   { label: 'Products', icon: '🥦', href: '/classic/operator/products' },
   { label: 'Pricelists', icon: '🏷️', href: '/classic/operator/pricelists' },
