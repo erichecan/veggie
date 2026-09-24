@@ -36,7 +36,7 @@ function incTaxAmount(o: Order): number {
 }
 
 type CardKey = 'all' | 'returned' | 'missing' | 'cashPending'
-type SortKey = 'code' | 'deliveryDate' | 'restaurantName' | 'deliveryBatch' | 'totalAmount' | 'paymentMethod' | 'status' | 'orderReturn'
+type SortKey = 'code' | 'deliveryDate' | 'restaurantName' | 'deliveryBatch' | 'totalAmount' | 'paymentMethod' | 'status' | 'orderReturn' | 'scanOrder'
 type SortDir = 'asc' | 'desc'
 
 export default function AccountingPage() {
@@ -66,6 +66,11 @@ export default function AccountingPage() {
   const [rangeTo, setRangeTo] = useState('')
   const [rangeLoading, setRangeLoading] = useState(false)
   const [rangeResults, setRangeResults] = useState<Order[] | null>(null)
+  // 扫描/勾选先后顺序——点「扫描顺序」表头排序时用，方便对着手里那摞纸质签收单
+  // 一张对一张地核，不用在按批次/司机排的表里找。只记「第一次被选中」的顺序号，
+  // 取消勾选不清除、重新选中也不重新编号，避免来回勾选时编号跳来跳去。
+  const [scanSeq, setScanSeq] = useState<Record<string, number>>({})
+  const scanSeqCounter = useRef(0)
   useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
   const actionRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
@@ -137,6 +142,21 @@ export default function AccountingPage() {
     return () => document.removeEventListener('mousedown', handle)
   }, [])
 
+  function markScanned(ids: string[]) {
+    setScanSeq(prev => {
+      let changed = false
+      const next = { ...prev }
+      for (const id of ids) {
+        if (!(id in next)) {
+          scanSeqCounter.current += 1
+          next[id] = scanSeqCounter.current
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }
+
   // 手机键盘的「前往/搜索」键等同于表单 submit —— 边打字边看下方列表实时筛选是主用法，
   // 这个提交只处理两种「确定选中」场景：扫码枪整单号命中，或者手打的部分单号已经把
   // visible（今日列表叠加所有筛选条件后）缩到只剩一条。除此之外不清空输入框、不报错，
@@ -161,6 +181,7 @@ export default function AccountingPage() {
       return
     }
 
+    markScanned([target.id])
     if (target.orderReturn) {
       setScanMsg({ type: 'warn', text: isEn ? `${target.code} already written off` : `${target.code} 已核销` })
       flashRow(target.id)
@@ -188,13 +209,14 @@ export default function AccountingPage() {
   function toggle(id: string) {
     setSelected(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) { next.delete(id) } else { next.add(id); markScanned([id]) }
       return next
     })
   }
 
   function toggleAll(ids: string[]) {
     const allSelected = ids.every(id => selected.has(id))
+    if (!allSelected) markScanned(ids)
     setSelected(prev => {
       const next = new Set(prev)
       if (allSelected) {
@@ -280,6 +302,15 @@ export default function AccountingPage() {
     const o = sortDir === 'asc' ? 1 : -1
     // 「金额」排序也要按含税口径，跟列表里实际显示的数字一致，不能直接读税前的 totalAmount。
     if (sortKey === 'totalAmount') return (incTaxAmount(a) - incTaxAmount(b)) * o
+    // 未扫描/未勾选的排在最后（Infinity），不受升降序影响——降序时也不该把「没扫过的」冲到最前面。
+    if (sortKey === 'scanOrder') {
+      const av = scanSeq[a.id] ?? Infinity
+      const bv = scanSeq[b.id] ?? Infinity
+      if (av === Infinity && bv === Infinity) return 0
+      if (av === Infinity) return 1
+      if (bv === Infinity) return -1
+      return (av - bv) * o
+    }
     const av = (a as unknown as Record<string, unknown>)[sortKey]
     const bv = (b as unknown as Record<string, unknown>)[sortKey]
     if (av == null && bv == null) return 0
@@ -651,6 +682,7 @@ export default function AccountingPage() {
                     title={isEn ? 'Select all eligible orders' : '全选可勾选订单'}
                   />
                 </th>
+                <SortTh label={isEn ? 'Scan Order' : '扫描顺序'} sk="scanOrder" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
                 <SortTh label={isEn ? 'Order #' : '订单号'} sk="code" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
                 <SortTh label={isEn ? 'Delivery Date' : '送货日期'} sk="deliveryDate" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
                 <SortTh label={isEn ? 'Restaurant' : '客户'} sk="restaurantName" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
@@ -692,6 +724,9 @@ export default function AccountingPage() {
                         style={{ accentColor: '#875A7B' }}
                         className="disabled:opacity-40 disabled:cursor-not-allowed"
                       />
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">
+                      {scanSeq[o.id] != null ? `#${scanSeq[o.id]}` : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
                       {o.code ?? o.id.slice(-8)}
