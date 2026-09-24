@@ -28,8 +28,15 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
 
+// 会计核销是拿司机带回的现金/签收单对账——客户实际支付、司机实际收的都是含税价，
+// totalAmount 是税前 SSOT（见 lib/types.ts），对账必须用含税总额，历史无行订单
+// 退回 totalAmount（同 finance/page.tsx 的口径）。
+function incTaxAmount(o: Order): number {
+  return o.totalAmountIncTax ?? o.totalAmount ?? 0
+}
+
 type CardKey = 'all' | 'returned' | 'missing' | 'cashPending'
-type SortKey = 'code' | 'restaurantName' | 'deliveryBatch' | 'totalAmount' | 'paymentMethod' | 'status' | 'orderReturn'
+type SortKey = 'code' | 'deliveryDate' | 'restaurantName' | 'deliveryBatch' | 'totalAmount' | 'paymentMethod' | 'status' | 'orderReturn'
 type SortDir = 'asc' | 'desc'
 
 export default function AccountingPage() {
@@ -54,6 +61,11 @@ export default function AccountingPage() {
   const [showDriverPanel, setShowDriverPanel] = useState(true)
   const [expandedDriver, setExpandedDriver] = useState<string | null>(null)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
+  const [showRangeQuery, setShowRangeQuery] = useState(false)
+  const [rangeFrom, setRangeFrom] = useState('')
+  const [rangeTo, setRangeTo] = useState('')
+  const [rangeLoading, setRangeLoading] = useState(false)
+  const [rangeResults, setRangeResults] = useState<Order[] | null>(null)
   useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
   const actionRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
@@ -96,6 +108,24 @@ export default function AccountingPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // 「按时间段查漏单」是独立于上面日常核销流程的核对工具——用 deliveryFrom/deliveryTo
+  // 让服务端按送货日期区间过滤（lib/orders-query.ts 已支持，都柏林业务日边界），
+  // 而不是复用 orders 状态在客户端按「今日」硬过滤那条路径：orders 默认只按
+  // createdAt 倒序取最近 500 条（app/api/orders/route.ts），跨天查询容易漏掉更早的订单。
+  // limit=5000 与该路由「带日期过滤放宽到 5000」的既有口径一致。
+  async function queryMissingInRange() {
+    if (!rangeFrom || !rangeTo) return
+    setRangeLoading(true)
+    try {
+      const data = await apiGet<Order[]>(
+        `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,COMPLETED,IN_DELIVERY&include_lines=false&deliveryFrom=${rangeFrom}&deliveryTo=${rangeTo}&limit=5000`
+      )
+      setRangeResults((data ?? []).filter(o => !o.orderReturn))
+    } finally {
+      setRangeLoading(false)
+    }
+  }
 
   useEffect(() => {
     function handle(e: MouseEvent) {
@@ -211,7 +241,7 @@ export default function AccountingPage() {
   const returnedCount = todayOrders.filter(o => o.orderReturn).length
   const missingCount = totalOrders - returnedCount
   const cashPending = todayOrders.filter(o => !o.orderReturn && String(o.paymentMethod).toUpperCase() === 'CASH')
-    .reduce((s, o) => s + (o.totalAmount ?? 0), 0)
+    .reduce((s, o) => s + incTaxAmount(o), 0)
 
   const driverGroups = useMemo(() => {
     const map = new Map<string, { orders: Order[]; cashTotal: number; onlineTotal: number; returned: number }>()
@@ -226,9 +256,9 @@ export default function AccountingPage() {
       const g = map.get(driver)!
       g.orders.push(o)
       if (String(o.paymentMethod).toUpperCase() === 'CASH') {
-        g.cashTotal += o.totalAmount ?? 0
+        g.cashTotal += incTaxAmount(o)
       } else {
-        g.onlineTotal += o.totalAmount ?? 0
+        g.onlineTotal += incTaxAmount(o)
       }
       if (o.orderReturn) g.returned++
     })
@@ -248,6 +278,8 @@ export default function AccountingPage() {
 
   const sorted = [...visible].sort((a, b) => {
     const o = sortDir === 'asc' ? 1 : -1
+    // 「金额」排序也要按含税口径，跟列表里实际显示的数字一致，不能直接读税前的 totalAmount。
+    if (sortKey === 'totalAmount') return (incTaxAmount(a) - incTaxAmount(b)) * o
     const av = (a as unknown as Record<string, unknown>)[sortKey]
     const bv = (b as unknown as Record<string, unknown>)[sortKey]
     if (av == null && bv == null) return 0
@@ -322,6 +354,81 @@ export default function AccountingPage() {
         </div>
       )}
 
+      {/* 按时间段查漏单——独立于上面「今日」日常核销，用来倒查更早日期还没回的送货单 */}
+      <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-5 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+          onClick={() => {
+            if (!showRangeQuery && !rangeFrom && !rangeTo) {
+              const to = todayStr()
+              const from = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)
+              setRangeFrom(from)
+              setRangeTo(to)
+            }
+            setShowRangeQuery(v => !v)
+          }}
+        >
+          <span className="font-semibold text-gray-700 text-sm">{isEn ? '🔍 Query Missing Returns by Date Range' : '🔍 按时间段查漏单'}</span>
+          <span className="text-xs" style={{ color: '#875A7B' }}>{showRangeQuery ? (isEn ? 'Collapse ▲' : '收起 ▲') : (isEn ? 'Expand ▼' : '展开 ▼')}</span>
+        </button>
+        {showRangeQuery && (
+          <div className="px-5 py-4">
+            <div className="flex items-center gap-2 flex-wrap mb-3">
+              <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" />
+              <span className="text-gray-400 text-sm">{isEn ? 'to' : '至'}</span>
+              <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" />
+              <button
+                onClick={queryMissingInRange}
+                disabled={!rangeFrom || !rangeTo || rangeLoading}
+                className="px-4 py-1.5 text-white rounded text-sm font-medium disabled:opacity-50"
+                style={{ background: '#875A7B' }}
+              >
+                {rangeLoading ? (isEn ? 'Querying…' : '查询中…') : (isEn ? 'Query' : '查询')}
+              </button>
+            </div>
+            {rangeResults === null ? (
+              <div className="text-xs text-gray-400">{isEn ? 'Pick a date range and click Query to see unreturned delivery notes in that period' : '选好时间段点「查询」，看这段时间里还有哪些送货单没回'}</div>
+            ) : rangeResults.length === 0 ? (
+              <div className="text-xs text-green-600">{isEn ? '✅ All delivery notes in this period have been returned' : '✅ 这段时间的送货单全部已回'}</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-200">
+                      <th className="text-left pb-1.5 font-medium">{isEn ? 'Order #' : '单号'}</th>
+                      <th className="text-left pb-1.5 font-medium">{isEn ? 'Delivery Date' : '送货日期'}</th>
+                      <th className="text-left pb-1.5 font-medium">{isEn ? 'Restaurant' : '客户'}</th>
+                      <th className="text-left pb-1.5 font-medium">{isEn ? 'Batch/Driver' : '批次/司机'}</th>
+                      <th className="text-right pb-1.5 font-medium">{isEn ? 'Amount (Inc. VAT)' : '含税金额'}</th>
+                      <th className="text-center pb-1.5 font-medium">{isEn ? 'Payment' : '付款'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rangeResults.map(o => (
+                      <tr key={o.id} className="hover:bg-gray-50">
+                        <td className="py-1.5 font-mono text-gray-700">{o.code ?? o.id.slice(-8)}</td>
+                        <td className="py-1.5 text-gray-600 whitespace-nowrap">{o.deliveryDate ? o.deliveryDate.slice(0, 10) : '—'}</td>
+                        <td className="py-1.5 text-gray-800 max-w-[160px] truncate">{o.restaurantName}</td>
+                        <td className="py-1.5 text-gray-600">{formatDriverSlotFromOrder(o) || '—'}</td>
+                        <td className="py-1.5 text-right font-mono font-medium text-gray-900">€{incTaxAmount(o).toFixed(2)}</td>
+                        <td className="py-1.5 text-center">
+                          {String(o.paymentMethod).toUpperCase() === 'CASH' ? (isEn ? 'Cash' : '现付') : (isEn ? 'Transfer' : '转账')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="mt-2 text-xs text-gray-400">
+                  {isEn ? `${rangeResults.length} not yet returned` : `共 ${rangeResults.length} 张未回`}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* 司机收款汇总 */}
       {driverGroups.length > 0 && (
         <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
@@ -383,7 +490,7 @@ export default function AccountingPage() {
                               <tr key={o.id} className="hover:bg-white transition-colors">
                                 <td className="py-1.5 text-gray-700 max-w-[160px] truncate">{o.restaurantName}</td>
                                 <td className="py-1.5 text-gray-500 font-mono">{o.code}</td>
-                                <td className="py-1.5 text-right font-mono font-medium text-gray-900">€{(o.totalAmount ?? 0).toFixed(2)}</td>
+                                <td className="py-1.5 text-right font-mono font-medium text-gray-900">€{incTaxAmount(o).toFixed(2)}</td>
                                 <td className="py-1.5 text-center">
                                   {String(o.paymentMethod).toUpperCase() === 'CASH'
                                     ? <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">{isEn ? 'Cash' : '现金'}</span>
@@ -545,9 +652,10 @@ export default function AccountingPage() {
                   />
                 </th>
                 <SortTh label={isEn ? 'Order #' : '订单号'} sk="code" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
-                <SortTh label={isEn ? 'Restaurant' : '餐馆'} sk="restaurantName" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
+                <SortTh label={isEn ? 'Delivery Date' : '送货日期'} sk="deliveryDate" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
+                <SortTh label={isEn ? 'Restaurant' : '客户'} sk="restaurantName" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
                 <SortTh label={isEn ? 'Batch/Driver' : '批次/司机'} sk="deliveryBatch" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" isEn={isEn} />
-                <SortTh label={isEn ? 'Amount' : '金额'} sk="totalAmount" cur={sortKey} dir={sortDir} onClick={toggleSort} align="right" isEn={isEn} />
+                <SortTh label={isEn ? 'Amount (Inc. VAT)' : '含税金额'} sk="totalAmount" cur={sortKey} dir={sortDir} onClick={toggleSort} align="right" isEn={isEn} />
                 <SortTh label={isEn ? 'Payment Method' : '付款方式'} sk="paymentMethod" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" isEn={isEn} />
                 <SortTh label={isEn ? 'Status' : '状态'} sk="status" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" isEn={isEn} />
                 <SortTh label={isEn ? 'Delivery Note' : '送货单'} sk="orderReturn" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" isEn={isEn} />
@@ -588,6 +696,9 @@ export default function AccountingPage() {
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
                       {o.code ?? o.id.slice(-8)}
                     </td>
+                    <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">
+                      {o.deliveryDate ? o.deliveryDate.slice(0, 10) : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-2.5 text-gray-800 max-w-[140px] truncate">
                       {o.restaurantName}
                     </td>
@@ -595,7 +706,7 @@ export default function AccountingPage() {
                       {formatDriverSlotFromOrder(o) || <span className="text-gray-300">{isEn ? 'Unassigned' : '未分配'}</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold text-gray-800">
-                      €{(o.totalAmount ?? 0).toFixed(2)}
+                      €{incTaxAmount(o).toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5 text-center">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
