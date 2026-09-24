@@ -44,9 +44,12 @@ export async function dispatchWave(waveId: string, fallbackDateStr?: string): Pr
       // 之前的写法是函数最上面单独 SELECT 判断 dispatchedAt 再在事务里 update，两次并发
       // 调用能同时通过那次 SELECT，各自生成一条 Trip（Trip.waveId 无唯一约束）——
       // /code-review high 指出后改成这个版本。
+      // 出发即视为拣货阶段结束：一并清掉 pickLockedAt/pickLockedBy，否则波次会一直
+      // 挂着「拣货中」标签（BatchTab.tsx 的 locked 判定），跟「已出发」同时显示，
+      // 两个独立字段各管各的、互不联动是原本的缺口（20260924 补上）。
       const lockUpd = await tx.pickingWave.updateMany({
         where: { id: waveId, dispatchedAt: null },
-        data: { dispatchedAt: new Date() },
+        data: { dispatchedAt: new Date(), pickLockedAt: null, pickLockedBy: null },
       })
       if (lockUpd.count === 0) throw new DispatchRaceLostError()
 

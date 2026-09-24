@@ -13,6 +13,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# 司机端+拣货 iPad 已上线(20260924 用户拍板)，配送中心"确认出发/在途/标记完成"链路
+# 开灯——见 lib/features.ts 注释：NEXT_PUBLIC_ 变量必须在构建期烧录进前端 bundle，
+# 运行时改环境变量不生效，所以放在这里而不是部署时的 docker run -e。
+ENV NEXT_PUBLIC_DRIVER_APP_ENABLED=true
 # 重新生成 Prisma Client（output 指向 lib/generated/prisma，需要在此阶段执行）
 RUN npx prisma generate
 RUN npm run build
