@@ -397,6 +397,16 @@ export async function PUT(
         restaurants[rIdx] = { ...restaurant, returns }
       }
 
+      // 20260923 补：reviews 非空但一条都没匹配上（returnId 传错/记录已被处理过/客户端数据过期），
+      // 不能悄悄返回 200——前端只看请求成不成功就弹"已批准"，实测过一次真实回归：一条都没生效，
+      // 用户却看到成功提示，Trip 状态原地不动
+      if (approvedCount === 0 && rejectedCount === 0) {
+        return NextResponse.json(
+          { error: '没有匹配到可审核的退货记录（可能已被处理，或数据已过期，请刷新后重试）' },
+          { status: 409 },
+        )
+      }
+
       // 事务: 更新 Trip JSON + 创建 StockMove + 调整 OrderLine
       await prisma.$transaction(async (tx) => {
         await tx.trip.update({

@@ -13,6 +13,7 @@ import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
+import { round2 } from '@/lib/decimal-helpers'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,9 @@ type FilterStatus = 'ALL' | ReturnStatus
 
 interface FlatReturn extends CanonicalReturnItem {
   id: string
+  /** 真实的 ReturnItem.id（后端审核接口按它精确匹配）；`id` 字段被下面复用成表格行 key，
+   *  两者不是一回事——历史遗留记录没有 id，这里可能是 undefined，交给后端退回 productId 匹配 */
+  returnId?: string
   tripId: string
   tripCreatedAt: string
   driverName: string
@@ -72,6 +76,7 @@ function flatten(trips: Trip[]): FlatReturn[] {
         rows.push({
           ...ret,
           id: `${trip.id}-${ri}-${ei}`,
+          returnId: ret.id,
           tripId: trip.id,
           tripCreatedAt: trip.createdAt,
           driverName: (trip as unknown as Record<string, string>).driverName ?? '—',
@@ -149,7 +154,7 @@ async function submitReview(
     reviews: [{
       restaurantId: item.restaurantId,
       productId: item.productId,
-      returnId: item.id,
+      returnId: item.returnId,
       action,
       ...extra,
     }],
@@ -182,8 +187,12 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
   const [ordersExpanded, setOrdersExpanded] = useState(false)
   const [profileExpanded, setProfileExpanded] = useState(false)
 
+  // 退款百分比的计算基数：这条退货本身的原始货值（单价×数量），不是 item.refundAmount——
+  // 那个字段只有审核通过之后才会被后端写回，首次审核时永远是 undefined，20260923 实测发现
+  // 拿 undefined 当基数会让百分比退款金额恒为 0（UI 不报错，静默把 €0 发给后端）
+  const baseTotal = (item.unitPrice ?? 0) * (item.quantity ?? 0)
   const calcAmount = mode === 'pct'
-    ? (((item.refundAmount ?? 0) * pct) / 100)
+    ? round2((baseTotal * pct) / 100)
     : fixed
 
   // All returns for this restaurant in this trip (including current)
@@ -428,9 +437,9 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
                 className="w-24 border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-400"
               />
               <span className="text-sm text-gray-500">%</span>
-              {item.refundAmount != null && (
+              {baseTotal > 0 && (
                 <span className="text-sm text-gray-400 ml-2">
-                  ≈ €{((item.refundAmount * pct) / 100).toFixed(2)}
+                  ≈ €{round2((baseTotal * pct) / 100).toFixed(2)}
                 </span>
               )}
             </div>
