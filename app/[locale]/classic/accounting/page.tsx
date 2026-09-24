@@ -111,7 +111,8 @@ export default function AccountingPage() {
     e.preventDefault()
     const code = scanInput.trim()
     if (!code) return
-    const found = orders.find(o => o.code === code || o.id === code)
+    const codeUpper = code.toUpperCase()
+    const found = orders.find(o => o.code?.toUpperCase() === codeUpper || o.id === code)
     if (!found) {
       setScanMsg({ type: 'err', text: isEn ? `Order not found: ${code}` : `找不到订单：${code}` })
     } else if (found.orderReturn) {
