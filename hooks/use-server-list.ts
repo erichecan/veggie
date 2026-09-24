@@ -99,6 +99,22 @@ export function useServerList<T>(options: Options): ServerListPage<T> & Controls
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
+  // 切回本标签页/切回本窗口时自动重拉当前页 —— 员工常把列表页开在后台标签,
+  // 别处(如确认出发)改了状态后不会自动推送,回来看到的还是打开时的旧数据。
+  useEffect(() => {
+    function refetchIfVisible() {
+      if (document.visibilityState === 'visible') {
+        fetchPage(pageRef.current, searchRef.current, pageSizeRef.current)
+      }
+    }
+    document.addEventListener('visibilitychange', refetchIfVisible)
+    window.addEventListener('focus', refetchIfVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', refetchIfVisible)
+      window.removeEventListener('focus', refetchIfVisible)
+    }
+  }, [fetchPage])
+
   const setPage = useCallback((p: number) => {
     fetchPage(p, searchRef.current, pageSizeRef.current)
   }, [fetchPage])
