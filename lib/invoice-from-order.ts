@@ -8,14 +8,17 @@ import { round2 } from '@/lib/decimal-helpers'
  * 幂等:订单已被任何发票引用则跳过。按 deliveredQty 开票(已交货量);无已交货行则不建。
  */
 
-type InvoiceTx = {
+// ⛔ 方法写法（`findFirst(a: unknown): ...`）而非属性写法（`findFirst: (a: unknown) => ...`）：
+// 前者 TS 按方法双变规则检查参数，真实 PrismaClient/事务客户端（参数类型比 unknown 更窄）
+// 能直接满足这个结构化类型；写成属性会被按严格逆变检查，逼着调用方转 any 才能传参。
+export type InvoiceTx = {
   invoice: {
-    findFirst: (a: unknown) => Promise<{ id: string; name?: string } | null>
-    create: (a: unknown) => Promise<{ id: string }>
+    findFirst(a: unknown): Promise<{ id: string; name?: string } | null>
+    create(a: unknown): Promise<{ id: string }>
   }
-  order: { findUnique: (a: unknown) => Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown; isGift?: boolean }> } | null> }
-  customer: { findUnique: (a: unknown) => Promise<{ name: string } | null> }
-  orderAdjustment: { findMany: (a: unknown) => Promise<Array<{ id: string; type: string; label: string; amount: unknown }>> }
+  order: { findUnique(a: unknown): Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown; isGift?: boolean }> } | null> }
+  customer: { findUnique(a: unknown): Promise<{ name: string } | null> }
+  orderAdjustment: { findMany(a: unknown): Promise<Array<{ id: string; type: string; label: string; amount: unknown }>> }
 }
 
 async function nextInvoiceName(tx: InvoiceTx): Promise<string> {
