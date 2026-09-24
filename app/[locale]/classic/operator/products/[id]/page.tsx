@@ -532,7 +532,9 @@ export default function ClassicProductDetailPage() {
                     value={tmpl.name}
                     onChange={e => setField('name', e.target.value)}
                     placeholder="Product Name"
-                    className="w-full text-xl font-semibold text-gray-900 placeholder-gray-300 border-0 outline-none bg-transparent mb-2 p-0"
+                    // 20260924 用户反馈：编辑态商品名原来无边框(border-0)，跟旁边一堆有框的字段混在一起
+                    // 不够显眼，容易改错商品都没意识到。加个明显的框，不用是黑色，只要够醒目。
+                    className="w-full text-xl font-semibold text-gray-900 placeholder-gray-300 border-2 border-gray-400 rounded outline-none focus:border-[#875A7B] bg-white mb-2 px-2 py-1"
                   />
                 ) : (
                   <h1 className="text-xl font-semibold text-gray-900 mb-2">{tmpl.name || (isEn ? '(Unnamed)' : '（未命名）')}</h1>
