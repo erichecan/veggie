@@ -28,6 +28,7 @@ const EXPECTED_PUBLIC: Record<string, string> = {
   '/api/tile': '地图瓦片代理，纯转发第三方瓦片',
   '/api/cron/backup-database': '定时任务，自带 CRON_SECRET 校验，不走 JWT',
   '/api/cron/generate-statements': '定时任务，自带 CRON_SECRET 校验，不走 JWT（与 backup-database 同类）',
+  '/api/cron/auto-confirm-departure': '定时任务，自带 CRON_SECRET 校验，不走 JWT（与 backup-database 同类）',
 }
 
 /** 扫 app/api，把每个 route.ts 还原成 URL 路径 */

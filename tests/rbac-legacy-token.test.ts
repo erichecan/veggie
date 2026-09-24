@@ -49,6 +49,21 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
     '20260922000002 发权限时已 bump permVersion 强制重登，旧 token 不存在',
   'POST /api/waves/[id]/pick-lock [EXTERNAL_SALES]':
     '同上',
+  // 20260923001437_return_flow_permissions：WAREHOUSE 新增 dispatch.trip.warehouse_verify/
+  // read/read_returns，SALES 新增 dispatch.trip.read_returns/returns，migration 末尾对
+  // warehouse、sales 两个角色下的全部用户 bump 了 permVersion 强制重登，旧 token 不存在。
+  'GET /api/customers/coordinates [WAREHOUSE]': '20260923001437 发权限时已 bump permVersion 强制重登，旧 token 不存在',
+  'GET /api/trips/[id] [WAREHOUSE]': '同上',
+  'GET /api/trips [WAREHOUSE]': '同上',
+  'GET /api/trips/[id]/returns [WAREHOUSE]': '同上',
+  'PUT /api/trips/[id]/returns/warehouse-verify [WAREHOUSE]': '同上',
+  'GET /api/trips/[id]/returns [SALES]': '同上',
+  'PUT /api/trips/[id]/returns [SALES]': '同上',
+  'POST /api/trips/[id]/returns [SALES]': '同上',
+  // 20260923002138_return_report_permission：DRIVER 新增 dispatch.trip.report_return，
+  // migration 末尾对 driver 角色下的全部用户 bump 了 permVersion 强制重登，旧 token 不存在。
+  'POST /api/trips/[id]/returns [DRIVER]':
+    '20260923002138 发权限时已 bump permVersion 强制重登，旧 token 不存在',
 }
 
 /** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */
