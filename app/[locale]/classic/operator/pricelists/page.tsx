@@ -28,7 +28,7 @@ interface SavedListState {
   facets: Facet[]
   columnFilters: Record<string, string>
   selectableFilter: boolean
-  activeListFilter: boolean
+  tab: 'active' | 'archived'
   groupBy: string
   page: number
 }
@@ -58,8 +58,16 @@ export default function ClassicPricelistsPage() {
   const [isReadMode, setIsReadMode] = useState(true)
   const [page, setPage] = useState(saved?.page ?? 1)
   const [selectableFilter, setSelectableFilter] = useState(saved?.selectableFilter ?? false)
-  const [activeListFilter, setActiveListFilter] = useState(saved?.activeListFilter ?? false)
+  // 使用中/已停用分开两个 Tab，不再靠一个"Active"筛选开关把已归档价格表混进同一张表——
+  // 20260924 用户反馈"archived 的价格表要单独归一个界面"。
+  const [tab, setTab] = useState<'active' | 'archived'>(saved?.tab ?? 'active')
   const [groupBy, setGroupBy] = useState(saved?.groupBy ?? '')
+
+  function handleTabChange(next: 'active' | 'archived') {
+    setTab(next)
+    setPage(1)
+    setSelected(new Set())
+  }
 
   async function load() {
     setLoading(true)
@@ -104,17 +112,17 @@ export default function ClassicPricelistsPage() {
   // 搜索/筛选状态整体持久化，供从详情页返回时恢复（见 LIST_STATE_KEY 顶部注释）。
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, activeListFilter, groupBy, page }
+    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page }
     try { sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(state)) } catch { /* 存储不可用时静默跳过,不影响筛选本身 */ }
-  }, [searchInput, facets, columnFilters, selectableFilter, activeListFilter, groupBy, page])
+  }, [searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page])
 
   const filteredLists = useMemo(() => {
     let rows = filterByFacets(lists, facets, facetDefs)
+    rows = rows.filter(pl => pl.active === (tab === 'active'))
     if (searchInput) {
       rows = rows.filter(pl => pl.name.toLowerCase().includes(searchInput.toLowerCase()))
     }
     if (selectableFilter) rows = rows.filter(pl => pl.selectable)
-    if (activeListFilter) rows = rows.filter(pl => pl.active)
     for (const [key, val] of Object.entries(columnFilters)) {
       if (!val) continue
       if (key.endsWith('_from')) {
@@ -137,7 +145,7 @@ export default function ClassicPricelistsPage() {
       }
     }
     return rows
-  }, [lists, facets, facetDefs, searchInput, columnFilters, selectableFilter, activeListFilter])
+  }, [lists, facets, facetDefs, tab, searchInput, columnFilters, selectableFilter])
 
   const pagedLists = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
@@ -154,9 +162,6 @@ export default function ClassicPricelistsPage() {
         return (
           <span className="font-medium" style={{ color: '#875A7B' }}>
             {pl.name || <span className="text-gray-400 italic">{isEn ? '(Unnamed)' : '（未命名）'}</span>}
-            {!pl.active && (
-              <span className="ml-2 text-xs text-gray-400 border border-gray-300 rounded px-1 font-normal">{isEn ? 'Archived' : '已停用'}</span>
-            )}
           </span>
         )
       },
@@ -188,6 +193,21 @@ export default function ClassicPricelistsPage() {
 
   return (
     <div>
+      <div className="flex gap-2 px-4 pt-3 pb-1 flex-wrap bg-gray-50">
+        {(['active', 'archived'] as const).map(t => {
+          const on = tab === t
+          return (
+            <button
+              key={t}
+              onClick={() => handleTabChange(t)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border bg-white hover:shadow-sm transition-all"
+              style={on ? { borderColor: '#875A7B', color: '#875A7B', background: '#f3eff5' } : { borderColor: '#e5e7eb', color: '#6b7280' }}
+            >
+              {t === 'active' ? (isEn ? 'Active' : '使用中') : (isEn ? 'Archived' : '已停用')}
+            </button>
+          )
+        })}
+      </div>
       <OdooControlPanel
         breadcrumb={isEn ? ['Sales', 'Pricelists'] : ['销售', '价格表']}
         permanentActions={[
@@ -217,15 +237,12 @@ export default function ClassicPricelistsPage() {
         activeFilters={[
           ...chips,
           ...(selectableFilter ? [{ label: 'Selectable', onRemove: () => setSelectableFilter(false) }] : []),
-          ...(activeListFilter ? [{ label: 'Active', onRemove: () => setActiveListFilter(false) }] : []),
         ]}
         filterOptions={[
           { label: 'Selectable', value: 'selectable' },
-          { label: 'Active', value: 'active' },
         ]}
         onFilterSelect={v => {
           if (v === 'selectable') setSelectableFilter(prev => !prev)
-          else if (v === 'active') setActiveListFilter(prev => !prev)
           setPage(1)
         }}
         groupByOptions={[
@@ -233,11 +250,11 @@ export default function ClassicPricelistsPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, selectableFilter, activeListFilter, groupBy }}
+        favouriteState={{ searchInput, selectableFilter, tab, groupBy }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           setSelectableFilter(Boolean(s.selectableFilter))
-          setActiveListFilter(Boolean(s.activeListFilter))
+          setTab(s.tab === 'archived' ? 'archived' : 'active')
           setGroupBy(String(s.groupBy ?? ''))
           setPage(1)
         }}
