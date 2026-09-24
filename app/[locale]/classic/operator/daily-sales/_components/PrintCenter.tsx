@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import { apiGet, apiPost, apiDelete } from '@/lib/api'
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import type { Order, OrderLine } from '@/lib/types'
 import { fetchDispatchPrintHtml, buildDispatchSummaryPdfUrl, buildDispatchPickingPdfUrl } from '@/lib/print/dispatch-print-html'
 import type { PickingExpandMode } from '@/lib/print/trip-picking-template'
@@ -741,6 +741,26 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
     }
   }, [date])
 
+  // 批量确认出发（20260924 从调度台的 BatchTab 移过来，客户反馈那个按钮该跟"打印/锁定"
+  // 这套下班前收尾动作放一起，不该单独留在调度台）：有单、还没出发的批次一次性出发，
+  // 每个批次仍各走一次 /api/waves/[id]/dispatch，跟调度台原来同一个接口、同一份事务逻辑。
+  // waves 这里已经过滤成"分配完成或已锁定、未完成"的批次，比调度台原来的候选范围更窄——
+  // 一个都还没分配完成/没锁定的批次，本来就不该在这一步被批量确认出发。
+  const pendingDispatchWaves = waves.filter(w => w.orderIds.length > 0 && !w.dispatchedAt)
+
+  async function confirmAllDeparture() {
+    if (pendingDispatchWaves.length === 0) { toast.info(isEn ? 'No trips to confirm in bulk' : '没有可批量确认出发的车次'); return }
+    if (!window.confirm(isEn
+      ? `Confirm departure for all ${pendingDispatchWaves.length} trips at once? Delivery date/customer/driver can no longer be changed afterward, and this cannot be undone.`
+      : `确认 ${pendingDispatchWaves.length} 个批次全部出发吗？出发后交货日期/客户/司机不可再改，且不可撤销。`)) return
+    const ids = pendingDispatchWaves.map(w => w.id)
+    const results = await Promise.allSettled(ids.map(id => apiPut(`/api/waves/${id}/dispatch`, { date })))
+    const failed = results.filter(r => r.status === 'rejected').length
+    if (failed > 0) toast.error(isEn ? `${failed} trips failed to confirm departure` : `${failed} 个批次确认出发失败`)
+    else toast.success(isEn ? `Confirmed departure for ${ids.length} trips` : `已批量确认 ${ids.length} 个批次出发`)
+    void load()
+  }
+
   // 操作记录：锁定/解锁/打印都写在 resource=picking-wave，detail 里带配送日期，
   // 按当前选中的配送日期过滤，只显示屏幕上这批批次的操作。
   const loadLogs = useCallback(async () => {
@@ -1008,6 +1028,14 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {pendingDispatchWaves.length > 0 && (
+              <button
+                onClick={confirmAllDeparture}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white hover:opacity-90"
+                style={{ background: '#2563eb' }}
+                title={isEn ? 'Confirm departure for every trip on this date that has orders and hasn\'t departed yet, all at once — for end-of-day wrap-up instead of clicking each driver lane' : '把当天所有已有单、还没出发的批次一次性确认出发,用于下班前统一确认,不用逐个司机车道点'}
+              >{isEn ? `🚚 Confirm all departures (${pendingDispatchWaves.length})` : `🚚 确认全部出发（${pendingDispatchWaves.length}）`}</button>
+            )}
             {onRefresh && (
               <button
                 onClick={onRefresh}

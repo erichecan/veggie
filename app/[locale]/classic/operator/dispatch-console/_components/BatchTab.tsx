@@ -259,10 +259,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     .map(list => waveForGroup(list[0].driverName, list[0].timeOfDay))
     .filter((w): w is Wave => !!w && w.orderIds.length > 0 && !w.dispatchedAt && !w.assignmentDoneAt)
 
-  // 批量确认出发的候选:有单、还没出发——不看是否"分配完成"(调度收工前忘标那个不该拦这个)。
-  // waves 本身已经是 /api/waves?date=${date} 按选中日期过滤过的，这里不用再收窄日期范围。
-  const pendingDispatchWaves = waves.filter(w => w.orderIds.length > 0 && !w.dispatchedAt)
-
   /* ── 乐观分配 / 移除（参考 waves 页，不整页 reload）──
    * 拖进具体某个托盘 = 带上 driverSlotId 调 assign；同波次内托盘间挪动也走这条(assign 内部
    * 会先把订单从本波次其它托盘摘除再放进目标托盘，wave.orderIds 本身不变，是 no-op 合并)。
@@ -363,23 +359,10 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     load({ silent: true })
   }
 
-  // 确认全部出发：调度/运营人员下班前统一点一次，把当天所有还没出发的批次一次性
-  // 出发(每个批次仍各走一次 /api/waves/[id]/dispatch，跟单个"确认出发"按钮同一接口、
-  // 同一份事务逻辑，只是这里前端 Promise.allSettled 逐个调，参考 markAllAssignmentDone
-  // 同款批量写法)。不可逆操作，二次确认弹窗防误触；单个批次原来的按钮继续保留，
-  // 用于事后纠正个别例外(比如某司机确实还没走)。
-  async function confirmAllDeparture() {
-    if (pendingDispatchWaves.length === 0) { toast.info(isEn ? 'No trips to confirm in bulk' : '没有可批量确认出发的车次'); return }
-    if (!confirm(isEn
-      ? `Confirm departure for all ${pendingDispatchWaves.length} trips at once? Delivery date/customer/driver can no longer be changed afterward, and this cannot be undone.`
-      : `确认 ${pendingDispatchWaves.length} 个批次全部出发吗？出发后交货日期/客户/司机不可再改，且不可撤销。`)) return
-    const ids = pendingDispatchWaves.map(w => w.id)
-    const results = await Promise.allSettled(ids.map(id => apiPut(`/api/waves/${id}/dispatch`, { date })))
-    const failed = results.filter(r => r.status === 'rejected').length
-    if (failed > 0) toast.error(isEn ? `${failed} trips failed to confirm departure` : `${failed} 个批次确认出发失败`)
-    else toast.success(isEn ? `Confirmed departure for ${ids.length} trips` : `已批量确认 ${ids.length} 个批次出发`)
-    load({ silent: true })
-  }
+  // ⛔ 20260924 客户要求把「确认全部出发」批量按钮移到日销售中心的打印中心
+  // （见 daily-sales/_components/PrintCenter.tsx 的 confirmAllDeparture）——那边已经
+  // 拿着「分配完成/已锁定」的批次列表，同一个 /api/waves/[id]/dispatch 接口，不重复实现。
+  // 单个批次原来的「确认出发」按钮继续留在这里，用于事后纠正个别例外。
 
   // ⛔ 20260907 客户要求取消：托盘数量只在「司机配置」页设定，调度台这里不能随意加
   // （此前有 addPallet 在这里临时新增 DriverSlot，与司机配置页脱节，已删除）。
@@ -769,14 +752,6 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
             style={{ background: PURPLE }}
             title={isEn ? 'Mark every trip that has orders assigned but hasn\'t been flagged "assignment done" yet, all at once, instead of clicking each driver card' : '把所有已排好车、还没标「分配完成」的车次一次性标记完成，不用逐个司机卡片点'}
           >{isEn ? `✅ Bulk assignment done (${pendingDoneWaves.length})` : `✅ 批量分配完成（${pendingDoneWaves.length}）`}</button>
-        )}
-        {pendingDispatchWaves.length > 0 && (
-          <button
-            onClick={confirmAllDeparture}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-90"
-            style={{ background: '#2563eb' }}
-            title={isEn ? 'Confirm departure for every trip on this date that has orders and hasn\'t departed yet, all at once — for end-of-day wrap-up instead of clicking each driver lane' : '把当天所有已有单、还没出发的批次一次性确认出发,用于下班前统一确认,不用逐个司机车道点'}
-          >{isEn ? `🚚 Confirm all departures (${pendingDispatchWaves.length})` : `🚚 确认全部出发（${pendingDispatchWaves.length}）`}</button>
         )}
         <label className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm" style={{ borderColor: '#e5e7eb' }} title={isEn ? 'Select delivery date' : '选择配送日期'}>
           📅
