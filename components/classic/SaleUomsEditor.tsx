@@ -71,7 +71,7 @@ export default function SaleUomsEditor({
   }
 
   return (
-    <div className="max-w-3xl space-y-2">
+    <div className="max-w-3xl">
       {saleUoms.map((row, i) => {
         const isBase = isBaseSaleUomRow(row, baseUomId)
         // 非基础行的下拉里不能选基准单位本身——选了会因为 isBaseSaleUomRow 判断变成新的
@@ -96,7 +96,10 @@ export default function SaleUomsEditor({
         const stepCommission = commissionPriceOf([{ ...row, commissionPriceMode: 'FORMULA', commissionDiscountPct: 0, commissionSurcharge: 0 }], row.uomId, baseCommissionPrice)
         const finalCommission = commissionPriceOf([row], row.uomId, baseCommissionPrice)
         return (
-          <div key={i}>
+          // 每个单位一个视觉分块——原来只靠 space-y-2 挤在一起，几行叠在一起分不清
+          // 从哪儿到哪儿是同一个单位（20260924 用户反馈）。第一块不用上边框，不然贴着
+          // 标题再画一条线显得多余。
+          <div key={i} className={i > 0 ? 'mt-4 pt-4 border-t border-gray-100' : ''}>
             <div className="flex items-center gap-2">
               <select
                 value={row.uomId}
@@ -331,10 +334,10 @@ export default function SaleUomsEditor({
         )
       })}
       {saleUoms.filter(r => !isBaseSaleUomRow(r, baseUomId)).length === 0 && (
-        <p className="text-xs text-gray-300">{isEn ? 'No additional sellable units configured yet.' : '尚未配置额外可售单位。'}</p>
+        <p className="mt-3 text-xs text-gray-300">{isEn ? 'No additional sellable units configured yet.' : '尚未配置额外可售单位。'}</p>
       )}
       {editMode && (
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
           <button onClick={addRow} className={btnBase}>{isEn ? '+ Add Unit' : '＋ 添加单位'}</button>
           {onSave ? (
             <button

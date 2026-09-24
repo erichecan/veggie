@@ -391,6 +391,16 @@ export function makeDefaultSaleUomFormRow(uomId: string, isDefault: boolean): Sa
 }
 
 /**
+ * 大货在前、散货在后（20260924 用户反馈）：factor 本身就是"1 个此单位 = factor 个基础单位"，
+ * 天然就是以基础单位计的体积/规格大小，降序排就是大货靠前、散货靠后，不用另外猜"CASE"
+ * 这种单位名字。只在**加载时**排一次（GET 回来 / 保存回填后），不在编辑器每次渲染时重排——
+ * 用户正在改某一行的数量时,如果这一步跟着实时重排,那一行会在输入过程中跳位置、抢焦点。
+ */
+function sortSaleUomRowsBySize(rows: SaleUomFormRow[]): SaleUomFormRow[] {
+  return [...rows].sort((a, b) => (Number(b.factor) || 1) - (Number(a.factor) || 1))
+}
+
+/**
  * 没保存过可售单位的商品，GET 回来的列表里压根没有基础单位那一行（见
  * app/api/products/[id]/sale-uoms/route.ts 的 PUT 注释："提交列表里没有基准单位时自动补一行"）——
  * 前端需要补一条默认 active:true 的虚拟行，保证「基础单位是否可下单」这个开关任何时候都有地方挂，
@@ -398,7 +408,7 @@ export function makeDefaultSaleUomFormRow(uomId: string, isDefault: boolean): Sa
  */
 export function withBaseUomFallback(rows: SaleUomFormRow[], baseUomId: string | null | undefined): SaleUomFormRow[] {
   if (!baseUomId || rows.some(r => r.uomId === baseUomId)) return rows
-  return [...rows, makeDefaultSaleUomFormRow(baseUomId, true)]
+  return sortSaleUomRowsBySize([...rows, makeDefaultSaleUomFormRow(baseUomId, true)])
 }
 
 /**
@@ -452,7 +462,7 @@ export interface SaleUomApiRow {
 
 /** API 行 → 表单行：数值兜底、Decimal 字符串转 number，两处调用点（GET 加载 / PUT 保存回填）共用一份映射。 */
 export function mapSaleUomApiRows(rows: SaleUomApiRow[]): SaleUomFormRow[] {
-  return rows.map(r => ({
+  return sortSaleUomRowsBySize(rows.map(r => ({
     uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor ?? 1) || 1, priceOverride: r.priceOverride, active: r.active,
     priceMode: r.priceMode ?? 'AUTO',
     priceDiscountPct: Number(r.priceDiscountPct ?? 0) || 0,
@@ -464,7 +474,7 @@ export function mapSaleUomApiRows(rows: SaleUomApiRow[]): SaleUomFormRow[] {
     spec: r.spec ?? null,
     sequence: r.sequence ?? 0,
     grossWeight: r.grossWeight != null ? Number(r.grossWeight) : null,
-  }))
+  })))
 }
 
 /**
