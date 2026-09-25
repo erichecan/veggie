@@ -9,7 +9,7 @@ import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
 const ACCENT = '#875A7B'
 
 type SortKey = 'code' | 'deliveryDate' | 'restaurantName' | 'deliveryBatch' | 'totalAmount' | 'paymentMethod' | 'status' | 'returnStatus' | 'scanOrder'
-type CardKey = 'all' | 'returned' | 'issue' | 'pending' | 'cashPending'
+type CardKey = 'all' | 'returned' | 'issue' | 'pending' | 'cashPending' | 'pendingConfirm'
 
 function incTaxAmount(o: Order): number {
   return o.totalAmountIncTax ?? o.totalAmount ?? 0
@@ -138,6 +138,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     if (filterBatch && !formatDriverSlotFromOrder(o).toLowerCase().includes(filterBatch.toLowerCase())) return false
     if (filterPayment && String(o.paymentMethod).toUpperCase() !== filterPayment) return false
     if (filterStatus !== 'all' && (o.returnStatus ?? 'PENDING') !== filterStatus) return false
+    if (activeCard === 'pendingConfirm' && !selected.has(o.id)) return false
     return true
   })
 
@@ -145,6 +146,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
   const returnedCount = todayOrders.filter(o => o.returnStatus === 'RETURNED').length
   const issueCount = todayOrders.filter(o => o.returnStatus === 'ISSUE').length
   const pendingCount = totalOrders - returnedCount - issueCount
+  const pendingConfirmCount = selected.size
   const cashPending = todayOrders.filter(o => o.returnStatus !== 'RETURNED' && String(o.paymentMethod).toUpperCase() === 'CASH')
     .reduce((s, o) => s + incTaxAmount(o), 0)
 
@@ -156,6 +158,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     else if (key === 'issue') { setFilterStatus('ISSUE'); setFilterPayment('') }
     else if (key === 'pending') { setFilterStatus('PENDING'); setFilterPayment('') }
     else if (key === 'cashPending') { setFilterStatus('PENDING'); setFilterPayment('CASH') }
+    else if (key === 'pendingConfirm') { setFilterStatus('all'); setFilterPayment('') }
     setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
@@ -174,9 +177,10 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-6 gap-3">
         <StatCard label="今日总单" value={totalOrders} active={activeCard === 'all'} onClick={() => applyCardFilter('all')} />
         <StatCard label="已核销" value={returnedCount} active={activeCard === 'returned'} onClick={() => applyCardFilter('returned')} />
+        <StatCard label="待确认" value={pendingConfirmCount} urgent={pendingConfirmCount > 0} active={activeCard === 'pendingConfirm'} onClick={() => applyCardFilter('pendingConfirm')} />
         <StatCard label="有问题" value={issueCount} urgent={issueCount > 0} active={activeCard === 'issue'} onClick={() => applyCardFilter('issue')} />
         <StatCard label="未回" value={pendingCount} urgent={pendingCount > 0} active={activeCard === 'pending'} onClick={() => applyCardFilter('pending')} />
         <StatCard label="现金未核（€）" value={cashPending.toFixed(2)} urgent={cashPending > 0} active={activeCard === 'cashPending'} onClick={() => applyCardFilter('cashPending')} />
