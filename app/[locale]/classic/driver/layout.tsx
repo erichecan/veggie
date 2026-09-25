@@ -16,9 +16,9 @@ export default function ClassicDriverLayout({ children }: { children: React.Reac
   const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
+  // 20260924：交账/对账页面下线——钱由会计核销页按系统数据直接确认，司机不用再自己报数
   const LINKS = [
     { href: `${prefix}/classic/driver`, label: isEn ? 'Delivery Tasks' : '配送任务' },
-    { href: `${prefix}/classic/driver/settlement`, label: isEn ? 'Settlement' : '交账' },
   ]
 
   useEffect(() => {

@@ -88,6 +88,12 @@ enum TripStatus {
   COMPLETED
 }
 
+enum OrderReturnStatus {
+  PENDING
+  RETURNED
+  ISSUE
+}
+
 enum InvoiceStatus {
   DRAFT
   POSTED
@@ -754,25 +760,25 @@ model OdooPricelist {
 }
 
 model Order {
-  id                    String        @id @default(cuid())
+  id                    String            @id @default(cuid())
   /// 业务编号：创建者缩写-YYMMDD-NNN（如 CJ-260424-001），历史订单可为空
-  code                  String?       @unique
+  code                  String?           @unique
   /// 创建者用户 ID（历史订单可为空）
   createdById           String?
-  createdBy             User?         @relation("OrderCreator", fields: [createdById], references: [id])
+  createdBy             User?             @relation("OrderCreator", fields: [createdById], references: [id])
   /// 创建者姓名快照（避免日后改名影响历史显示）
   createdByName         String?
   /// 下单渠道。默认 INTERNAL 保证加字段不破坏历史数据；门户下单处显式写 PORTAL。
   /// 历史订单只在 OrderAuditLog 留过痕，迁移里据此回填真正的门户单，其余不做臆测。
-  source                OrderSource   @default(INTERNAL)
+  source                OrderSource       @default(INTERNAL)
   restaurantId          String
   restaurantName        String
-  items                 Json          @default("[]")
-  totalAmount           Decimal       @default(0) @db.Decimal(12, 2)
-  status                OrderStatus   @default(PENDING)
-  paymentMethod         PaymentMethod @default(ONLINE)
-  externalRef           String?       @unique
-  createdAt             DateTime      @default(now())
+  items                 Json              @default("[]")
+  totalAmount           Decimal           @default(0) @db.Decimal(12, 2)
+  status                OrderStatus       @default(PENDING)
+  paymentMethod         PaymentMethod     @default(ONLINE)
+  externalRef           String?           @unique
+  createdAt             DateTime          @default(now())
   /// 下单时快照客户的价格表 ID（对应 Odoo sale.order.pricelist_id）
   pricelistId           String?
   /// 下单时快照客户的定价模式（multi/default/last）
@@ -780,7 +786,7 @@ model Order {
   /// 订单级付款条件覆盖（如 monthly / cod），为空则沿用客户 Customer.paymentTerm 默认设置
   paymentTerm           String?
   /// 下单时快照司机佣金率（commissionRate）
-  commissionRate        Decimal?      @db.Decimal(6, 4)
+  commissionRate        Decimal?          @db.Decimal(6, 4)
   /// 内部备注（仅内部可见，不打印在客户单据上）
   internalNote          String?
   /// 外部备注（打印在报价单/送货单上，客户可见）
@@ -789,7 +795,7 @@ model Order {
   deliveryNote          String?
   /// 业务员用户 ID（对应 Odoo sale.order.user_id）
   salesUserId           String?
-  salesUser             User?         @relation("OrderSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
+  salesUser             User?             @relation("OrderSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
   /// 报价日期（创建时自动设置）
   quotationDate         DateTime?
   /// 确认日期（确认时自动设置）
@@ -802,14 +808,16 @@ model Order {
   /// 因此号必须与 Odoo 历史发票同一序列（V#####，接着 V59085 往下排）。
   /// 第一次打印销售单时分配并固化，之后重复打印不变；unique 保证不重号。
   /// 发号逻辑见 lib/invoice-number.ts。
-  invoiceNo             String?       @unique
-  /// 送货单是否已回（司机送完货带回签收单，会计核销时标记）
-  orderReturn           Boolean       @default(false)
+  invoiceNo             String?           @unique
+  /// 送货单回收状态：会计扫码核销用（PENDING 未回 / RETURNED 已核销 / ISSUE 有问题待司机核实）
+  returnStatus          OrderReturnStatus @default(PENDING)
+  /// 「退回核实」时会计填的问题说明（少货/字迹不清等），仅 returnStatus=ISSUE 时有意义
+  returnIssueNote       String?
   /// 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧合并字段，逐步弃用）
   deliveryBatch         String?
   /// 关联 DriverSlot（拆分后的配送批次），替代 deliveryBatch 字符串
   driverSlotId          String?
-  driverSlot            DriverSlot?   @relation(fields: [driverSlotId], references: [id])
+  driverSlot            DriverSlot?       @relation(fields: [driverSlotId], references: [id])
   /// 报价单发送给客户的时间（PENDING + sentAt → "Quotation Sent" 子状态）
   sentAt                DateTime?
   /// 锁定时间（开票后置 LOCKED 状态时回填）
@@ -823,11 +831,11 @@ model Order {
   /// 最近一次打印的单据类型：DELIVERY | SALES
   printType             String?
   /// 累计打印次数
-  printCount            Int           @default(0)
+  printCount            Int               @default(0)
   /// 下单时快照客户的固定佣金（EUR / 单）
-  commissionFixed       Decimal?      @db.Decimal(10, 2)
+  commissionFixed       Decimal?          @db.Decimal(10, 2)
   /// 冻结后的司机提成总额（Trip 核实交账时写入，写入后不再随实时计算变动）
-  driverCommissionTotal Decimal?      @db.Decimal(10, 2)
+  driverCommissionTotal Decimal?          @db.Decimal(10, 2)
   /// 提成冻结时间（写入 driverCommissionTotal 时回填）
   commissionFrozenAt    DateTime?
 
@@ -1151,6 +1159,32 @@ model Payment {
   @@index([customerId])
   @@index([paidAt])
   @@index([source])
+}
+
+/**
+ * 司机收款确认（会计核销页「钱」板块）
+ * ================================================================================
+ * 按「司机 × 业务日」记一条：会计核对系统算出的今日应收现金/转账无误后点「确认」，
+ * 这一刻会调用 lib/trip-settlement-payment.ts 里的核销分配逻辑真正生成 Payment、
+ * 核销到发票上——不可撤销，写错了要走人工冲正，不提供反向操作。
+ */
+model DriverCashConfirmation {
+  id              String   @id @default(cuid())
+  driverName      String
+  /// YYYY-MM-DD，都柏林业务日
+  businessDate    String
+  cashTotal       Decimal  @db.Decimal(12, 2)
+  transferTotal   Decimal  @db.Decimal(12, 2)
+  /// 确认那一刻纳入计算的订单 id 快照，供事后追溯
+  orderIds        String[]
+  /// 入账产生的 Payment id，供人工冲正时定位
+  paymentIds      String[]
+  confirmedAt     DateTime @default(now())
+  confirmedById   String
+  confirmedByName String
+
+  @@unique([driverName, businessDate])
+  @@index([businessDate])
 }
 
 /**

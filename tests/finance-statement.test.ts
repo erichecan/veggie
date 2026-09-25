@@ -8,7 +8,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   resolveStatementPeriod, summarizeStatement, reconcileStatement,
-  paymentSource, paymentTripId, StatementInputError,
+  paymentSource, paymentConfirmationId, StatementInputError,
 } from '../lib/finance/statement'
 
 const iso = (d: Date) => d.toISOString()
@@ -107,10 +107,10 @@ test('reconcileStatement: 半分以内的浮点误差不算差异', () => {
   assert.equal(r.ok, true)
 })
 
-test('paymentSource: 司机交账写的 TRIP 标记能认出来，并取得行程 id', () => {
-  assert.equal(paymentSource('司机交账核销 · 老王饭店 · TRIP:cmsp123abc'), 'DRIVER_CASH')
-  assert.equal(paymentTripId('司机交账核销 · 老王饭店 · TRIP:cmsp123abc'), 'cmsp123abc')
+test('paymentSource: 司机收款核销写的 DRIVER_CASH_CONFIRM 标记能认出来，并取得确认 id', () => {
+  assert.equal(paymentSource('司机收款核销 · 老王饭店 · DRIVER_CASH_CONFIRM:cmsp123abc'), 'DRIVER_CASH')
+  assert.equal(paymentConfirmationId('司机收款核销 · 老王饭店 · DRIVER_CASH_CONFIRM:cmsp123abc'), 'cmsp123abc')
   assert.equal(paymentSource('客户银行汇款'), 'MANUAL')
   assert.equal(paymentSource(null), 'MANUAL')
-  assert.equal(paymentTripId('客户银行汇款'), null)
+  assert.equal(paymentConfirmationId('客户银行汇款'), null)
 })

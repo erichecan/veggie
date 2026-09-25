@@ -90,17 +90,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     ...COMMON,
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: ['GET', 'PUT'] },
-    { pattern: '/api/trips/*/settlement', methods: ['GET', 'POST'] },
-    // C8：司机收车时提交当日回传。行级隔离在 handler 里（driverRowScope），
-    // 司机改一个 driverId 也只能报自己的
-    { pattern: '/api/driver-reports/daily', methods: ['GET', 'POST'] },
-    // C10 对账汇总。给司机是**为了让两条路径一致**，不是顺手放开：司机的位图里本来
-    // 就有 `finance.settlement.read`（C8 那张卡片要用），所以**新 token 的司机本就
-    // 够得着**这个接口；这里不补的话，同一个人拿新 token 能调、拿旧 token 403 ——
-    // 一个只在重登前后表现不同的接口，比一直开着或一直关着都难查。
-    // 安全性由 handler 的 driverRowScope 保证：司机传别人的 driverId 也只拿到自己的
-    // （端到端实测在 scripts/audit/driver-reconciliation-test.ts 的 ⑦）
-    { pattern: '/api/driver-reports/summary', methods: READ },
+    // 20260924：交账（/api/trips/*/settlement）、对账（/api/driver-reports/**）
+    // 两个独立入口下线，司机不用再自己报数——钱由会计核销页按系统数据直接确认
     { pattern: '/api/customers/coordinates', methods: READ },
     // 信息广场：所有内部角色都能用，见 lib/bulletin.ts 与 DEV-PLAN 20260824 §3
     { pattern: '/api/bulletin-posts/**' },
@@ -184,12 +175,10 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     exportOf('purchase-orders'),
     { pattern: '/api/trips', methods: READ },
     { pattern: '/api/trips/*', methods: READ },
-    { pattern: '/api/trips/*/settlement', methods: ['GET', 'PUT'] },   // 确认/退回交账
-    { pattern: '/api/driver-reports/daily', methods: ['GET', 'PUT'] },  // C8 查看 / C9 确认当日货款
-    // C10 对账状态统计。⛔ 段级匹配是精确的，`/daily` 那条**不覆盖** `/summary` ——
-    // 漏了这条，旧 token（部署后未重登）的财务打开对账页就是 403，
-    // 而页面拿不到数据会退化成「一条待办都没有」，比报错更危险（D1 栽过一次）
-    { pattern: '/api/driver-reports/summary', methods: READ },
+    // 20260924：交账/对账两个独立入口下线，改走 /api/accounting/driver-cash/**
+    // （新体系用 finance.settlement.* 权限点判定，旧 token 走这条兜底名单）
+    { pattern: '/api/accounting/driver-cash', methods: READ },
+    { pattern: '/api/accounting/driver-cash/confirm', methods: ['POST'] },
     { pattern: '/api/driver-slots', methods: READ },
     { pattern: '/api/users', methods: READ },
     // 打印状态查询：这两个角色本来就能调 /api/print/** 打单，能打印却看不到

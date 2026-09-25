@@ -1,19 +1,21 @@
 /**
- * 司机交账 → 收款记录（Payment）
+ * 司机收款确认 → 收款记录（Payment）
  *
- * 审计发现的缺口（M03-07 / M08-03）：行程完成会自动回写发票草稿、订单状态、司机提成冻结，
- * 司机交账也有结构化流程（提交 cashCollected → 财务确认），但**财务确认只翻转
- * `Trip.settlementStatus`，不生成任何 Payment**。结果是生产库里 Invoice 148,285 张、
- * Payment 0 条——现金收了，账上看不出来，对账仍靠人工比纸。
+ * 前身是"财务确认司机交账"（M03-07 / M08-03 审计发现的缺口）：行程完成会自动回写
+ * 发票草稿、订单状态、司机提成冻结，但交账确认只翻转一个状态字段，不生成任何
+ * Payment——现金收了，账上看不出来。20260924 起，交账/对账两个独立入口下线，
+ * 这套入账逻辑改由会计核销页「钱」板块的「确认」动作触发（见
+ * `app/api/accounting/driver-cash/confirm/route.ts`），核销的对象也从"一趟行程"
+ * 改成"司机 + 送货日"这组订单，但分配算法本身不关心调用方是谁，原样复用。
  *
- * 这个模块把「财务确认交账」变成真正的入账动作。三条设计取舍：
+ * 三条设计取舍：
  *
  * 1. **不自动过账发票**。行程完成自动建的是 DRAFT 发票，而过账（POSTED）是财务动作，
- *    不该是交账确认的副作用。所以只往 POSTED 发票上核销；遇到 DRAFT 的如实报告，
+ *    不该是收款确认的副作用。所以只往 POSTED 发票上核销；遇到 DRAFT 的如实报告，
  *    让财务自己决定要不要先过账。
  * 2. **按到期日从早到晚核销**（标准 AR 应用顺序），不是平均分摊。
- * 3. **幂等**。确认动作可能因网络重试触发两次，靠 `Payment.note` 里的
- *    `TRIP:<tripId>` 标记去重，不会重复记两笔钱。
+ * 3. **幂等**。确认动作可能因网络重试触发两次，靠 `Payment.note` 里的标记去重，
+ *    不会重复记两笔钱；标记前缀由调用方指定（见 `driverCashConfirmationMarker`）。
  */
 
 export interface InvoiceForAllocation {
@@ -214,8 +216,8 @@ export function allocateCollections(
 }
 
 /** 幂等标记：写进 Payment.note，重复确认时据此跳过 */
-export function tripPaymentMarker(tripId: string): string {
-  return `TRIP:${tripId}`
+export function driverCashConfirmationMarker(confirmationId: string): string {
+  return `DRIVER_CASH_CONFIRM:${confirmationId}`
 }
 
 // ── 落库 ────────────────────────────────────────────────────────────────────
@@ -230,32 +232,38 @@ export interface SettlementPostingResult {
   historicalDebtRecovered: number
   /** 冲抵了哪几张历史发票，供财务核对与留痕 */
   historicalDebtInvoices: Array<{ name: string; amount: number; customerName?: string }>
+  /** 本次创建的 Payment id，供调用方存进自己的确认记录里做追溯/人工冲正定位 */
+  paymentIds: string[]
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * 把一趟行程各站的实收核销到发票上并写 Payment。
- * 幂等：同一 trip 重复确认不会重复记账。
+ * 把一组收款（按客户/站点分组）核销到发票上并写 Payment。
+ * 幂等：同一 marker 重复确认不会重复记账。
  */
-export async function postTripCollections(
+export async function postCollections(
   prisma: any,
-  trip: { id: string; restaurants: unknown },
+  source: {
+    /** 幂等标记，写进 Payment.note；调用方自己拼（如 driverCashConfirmationMarker(id)） */
+    marker: string
+    restaurants: unknown
+  },
   /** 经手人显示名 —— 写进 `Payment.createdBy`，与 /api/payments 手工登记同语义。
    *  ⛔ 别传 userId：那一列会直接显示在对账单明细的「经手」列上 */
   actorName: string,
 ): Promise<SettlementPostingResult> {
-  const marker = tripPaymentMarker(trip.id)
+  const marker = source.marker
 
   const already = await prisma.payment.count({ where: { note: { contains: marker } } })
   if (already > 0) {
     return {
       created: 0, totalAllocated: 0, skippedAsDuplicate: true, unallocated: [],
-      invoicesPaidOff: [], historicalDebtRecovered: 0, historicalDebtInvoices: [],
+      invoicesPaidOff: [], historicalDebtRecovered: 0, historicalDebtInvoices: [], paymentIds: [],
     }
   }
 
-  const rests = (Array.isArray(trip.restaurants) ? trip.restaurants : []) as Array<{
+  const rests = (Array.isArray(source.restaurants) ? source.restaurants : []) as Array<{
     restaurantId?: string; restaurantName?: string; payment?: number; orderIds?: string[]
   }>
 
@@ -271,7 +279,7 @@ export async function postTripCollections(
   if (stops.length === 0) {
     return {
       created: 0, totalAllocated: 0, skippedAsDuplicate: false, unallocated: [],
-      invoicesPaidOff: [], historicalDebtRecovered: 0, historicalDebtInvoices: [],
+      invoicesPaidOff: [], historicalDebtRecovered: 0, historicalDebtInvoices: [], paymentIds: [],
     }
   }
 
@@ -326,10 +334,11 @@ export async function postTripCollections(
   )
 
   const paidOff: string[] = []
+  const paymentIds: string[] = []
   const historicalDebtInvoices: SettlementPostingResult['historicalDebtInvoices'] = []
   for (const p of plan.payments) {
     await prisma.$transaction(async (tx: any) => {
-      await tx.payment.create({
+      const created = await tx.payment.create({
         data: {
           invoiceId: p.invoiceId,
           customerId: p.customerId,
@@ -338,11 +347,12 @@ export async function postTripCollections(
           // ⛔ 历史欠款回收要**在备注里写明**：对账单明细的「经手/摘要」列直接显示这一行，
           // 财务翻账时必须一眼看出这笔钱不是今天送的货收的
           note: p.isHistoricalDebt
-            ? `司机交账核销 · ${p.restaurantName} · 历史欠款回收（${p.invoiceName}） · ${marker}`
-            : `司机交账核销 · ${p.restaurantName} · ${marker}`,
+            ? `司机收款核销 · ${p.restaurantName} · 历史欠款回收（${p.invoiceName}） · ${marker}`
+            : `司机收款核销 · ${p.restaurantName} · ${marker}`,
           createdBy: actorName,
         },
       })
+      paymentIds.push(created.id)
       if (p.isHistoricalDebt) {
         historicalDebtInvoices.push({ name: p.invoiceName, amount: p.amount })
       }
@@ -370,5 +380,6 @@ export async function postTripCollections(
     invoicesPaidOff: paidOff,
     historicalDebtRecovered: plan.historicalDebtRecovered,
     historicalDebtInvoices,
+    paymentIds,
   }
 }

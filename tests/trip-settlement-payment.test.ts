@@ -1,12 +1,12 @@
 /**
- * 司机交账 → 收款核销。
- * 缺口来自审计：生产库 Invoice 148,285 张、Payment 0 条——财务确认交账只翻状态，不入账。
+ * 司机收款确认 → 收款核销。
+ * 缺口来自审计：生产库 Invoice 148,285 张、Payment 0 条——原交账确认只翻状态，不入账。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   allocateCollections,
-  tripPaymentMarker,
+  driverCashConfirmationMarker,
   type InvoiceForAllocation,
   type StopCollection,
 } from '../lib/trip-settlement-payment'
@@ -120,6 +120,6 @@ test('金额保留两位，不出现浮点毛刺', () => {
   assert.equal(r.totalAllocated, 33.33)
 })
 
-test('幂等标记带上 trip id', () => {
-  assert.equal(tripPaymentMarker('t123'), 'TRIP:t123')
+test('幂等标记带上 confirmation id', () => {
+  assert.equal(driverCashConfirmationMarker('c123'), 'DRIVER_CASH_CONFIRM:c123')
 })

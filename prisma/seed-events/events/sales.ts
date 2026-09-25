@@ -213,7 +213,7 @@ async function makeTrip(
         ids,
       ),
     )
-    ops.push(ctx.prisma.order.updateMany({ where: { id: { in: ids } }, data: { status: 'COMPLETED', orderReturn: true } }))
+    ops.push(ctx.prisma.order.updateMany({ where: { id: { in: ids } }, data: { status: 'COMPLETED', returnStatus: 'RETURNED' } }))
   }
   ops.push(
     ctx.prisma.trip.create({

@@ -74,7 +74,12 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
     note: '订单列表同时是分拣与拣货的取数入口，所以三个场景任一即可',
   },
   { pattern: '/api/orders', methods: ['POST'], permission: 'sales.order.create' },
-  { pattern: '/api/orders/bulk', permission: 'sales.order.bulk_import' },
+  // 20260924 发现：这一条外层闸门此前只挂 sales.order.bulk_import，FINANCE 角色
+  // 没有这个点——批量核销（mark_returned）真正的授权在路由内部按 finance.write_off.*
+  // 判定，但请求连外层闸门都过不去，FINANCE 一直够不到 /api/orders/bulk。
+  // 加 finance.write_off.confirm 任一即可放行，内层判定不变，其余 action
+  // （cancel/delete/confirm/start_delivery/mass_edit）仍然只有 OPERATOR/BOSS 能用。
+  { pattern: '/api/orders/bulk', permission: ['sales.order.bulk_import', 'finance.write_off.confirm'] },
   { pattern: '/api/orders/export-csv', permission: 'sales.order.export' },
   { pattern: '/api/orders/last-price', permission: 'sales.order.read' },
   { pattern: '/api/orders/sales-price-history', permission: 'sales.order.read' },
@@ -173,18 +178,10 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/waves/*', methods: ['PUT'], permission: ['dispatch.wave.update', 'stock.quality.manage'] },
   { pattern: '/api/waves/*', methods: ['DELETE'], permission: 'dispatch.wave.delete' },
 
-  { pattern: '/api/trips/*/settlement', methods: R, permission: 'finance.settlement.read' },
-  { pattern: '/api/trips/*/settlement', methods: ['POST'], permission: 'finance.settlement.create' },
-  { pattern: '/api/trips/*/settlement', methods: ['PUT'], permission: 'finance.settlement.confirm' },
-  // C8 司机每日回传：是「司机交账」的日级形态，同一件事复用同一组权限点 ——
-  // 新开一个权限点的话，derive 不会自动发给任何人（新 handler 不在冻结基线里），
-  // 结果就是又一个够不着的开关（C4/H3 各踩过一次）
-  { pattern: '/api/driver-reports/daily', methods: R, permission: 'finance.settlement.read' },
-  { pattern: '/api/driver-reports/daily', methods: ['POST'], permission: 'finance.settlement.create' },
-  // C9 财务确认当日货款：独立权限，司机有 create 但没有 confirm（职责分离）
-  { pattern: '/api/driver-reports/daily', methods: ['PUT'], permission: 'finance.settlement.confirm' },
-  // C10 对账状态统计：同一件事的汇总视图，只读，与 daily 的 GET 同权限
-  { pattern: '/api/driver-reports/summary', methods: R, permission: 'finance.settlement.read' },
+  // 20260924：司机交账（Trip.settlement）与司机对账（DriverDailyReport）两个独立
+  // 入口下线，合并进会计核销页「钱」板块，见下面 /api/accounting/driver-cash/**
+  { pattern: '/api/accounting/driver-cash', methods: R, permission: 'finance.settlement.read' },
+  { pattern: '/api/accounting/driver-cash/confirm', methods: ['POST'], permission: 'finance.settlement.confirm' },
   { pattern: '/api/trips/*/verify', methods: R, permission: 'dispatch.trip.read_verify' },
   { pattern: '/api/trips/*/verify', methods: ['POST'], permission: 'dispatch.trip.verify' },
   { pattern: '/api/trips/*/returns', methods: R, permission: 'dispatch.trip.read_returns' },
@@ -406,6 +403,12 @@ export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/classic/accounting/**', permission: 'page.accounting.access' },
   { pattern: '/classic/print/**', permission: 'page.print.access' },
   { pattern: '/classic/operator/dispatch-console/**', permission: 'page.dispatch_console.access' },
+  // 20260924：财务角色被单独授予 sales.order.read（API 早已放行），但页面权限点
+  // 是独立的一套（见上面 383-386 行的说明），此前没人给页面开口子，财务点开
+  // 销售订单直接被 middleware 弹回。仿照 403-404 行发票/供应商账单的先例，
+  // 单开这条子路径，两个权限点任一即可，不把整个运营后台（客户/商品/采购等）
+  // 一并开给财务。
+  { pattern: '/classic/operator/orders/**', permission: ['page.operator.access', 'page.finance.access'] },
   { pattern: '/classic/operator/**', permission: 'page.operator.access' },
   { pattern: '/classic/boss/**', permission: 'page.boss.access' },
 ]

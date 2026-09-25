@@ -19,12 +19,14 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
 
   const LINKS = [
     { href: `${prefix}/classic/finance`, label: isEn ? 'Finance Overview' : '财务总览' },
+    // 20260924：财务角色被单独授予 sales.order.read，配套开一个导航入口
+    // （权限点见 route-map.ts /classic/operator/orders/** 的例外规则）
+    { href: `${prefix}/classic/operator/orders`, label: isEn ? 'Sales Orders' : '销售订单' },
     // 20260923：原挂在「销售」模块下的发票、供应商账单一并并入财务模块导航
     { href: `${prefix}/classic/finance/invoices`, label: isEn ? 'Invoices' : '发票' },
     { href: `${prefix}/classic/finance/vendor-bills`, label: isEn ? 'Vendor Bills' : '供应商账单' },
     { href: `${prefix}/classic/finance/statements`, label: isEn ? 'Statements' : '对账单' },
-    { href: `${prefix}/classic/finance/settlements`, label: isEn ? 'Driver Settlements' : '司机交账' },
-    { href: `${prefix}/classic/finance/driver-reports`, label: isEn ? 'Driver Reconciliation' : '司机对账' },
+    // 20260924：司机交账/司机对账两个独立入口下线，合并进「核销管理」页的钱/单两板块
     { href: `${prefix}/classic/accounting`, label: isEn ? 'Write-off' : '核销管理' },
   ]
 

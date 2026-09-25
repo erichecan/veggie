@@ -21,7 +21,6 @@ export default function AccountingLayout({ children }: { children: React.ReactNo
     { href: `${prefix}/classic/accounting`, label: en ? 'Write-off' : '核销管理' },
     { href: `${prefix}/classic/finance`, label: en ? 'Finance Overview' : '财务总览' },
     { href: `${prefix}/classic/finance/statements`, label: en ? 'Statements' : '对账单' },
-    { href: `${prefix}/classic/finance/settlements`, label: en ? 'Driver Settlements' : '司机交账' },
   ]
 
   useEffect(() => {

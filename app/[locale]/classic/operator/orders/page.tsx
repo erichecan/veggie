@@ -453,7 +453,7 @@ export default function ClassicOrdersPage() {
             <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
               {STATUS_LABEL[o.status] ?? String(o.status)}
             </span>
-            {!!(o as unknown as Record<string, unknown>).orderReturn && (
+            {o.returnStatus === 'RETURNED' && (
               <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-600 font-medium">{isEn ? 'Has Return' : '有退货'}</span>
             )}
           </div>

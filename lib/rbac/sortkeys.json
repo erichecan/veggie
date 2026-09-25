@@ -1,5 +1,6 @@
 {
   "retired": [
+    71,
     137
   ],
   "keys": {
@@ -75,6 +76,7 @@
     "dispatch.trip.read_verify": 166,
     "dispatch.trip.verify": 143,
     "dispatch.trip.read_returns": 167,
+    "dispatch.trip.report_return": 190,
     "dispatch.trip.returns": 144,
     "dispatch.trip.warehouse_verify": 189,
     "dispatch.trip.read_discrepancy": 168,
@@ -107,7 +109,6 @@
     "finance.account.read": 68,
     "finance.account.manage": 69,
     "finance.settlement.read": 70,
-    "finance.settlement.create": 71,
     "finance.settlement.confirm": 72,
     "master.customer.read": 73,
     "master.customer.create": 74,
@@ -192,6 +193,8 @@
     "system.notification.create": 180,
     "system.settings.read": 115,
     "system.settings.manage": 116,
-    "dispatch.trip.report_return": 190
+    "finance.write_off.read": 191,
+    "finance.write_off.confirm": 192,
+    "finance.write_off.return": 193
   }
 }

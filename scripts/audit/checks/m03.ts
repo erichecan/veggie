@@ -253,18 +253,19 @@ defineCheck({
     })
     evidence.push(...invAuto.map(l => `完成即回写: ${l.slice(0, 120)}`))
 
-    // 司机交账：现金是否自动落成收款
+    // 20260924 前的司机交账机制：Trip.settlementStatus 字段还在，但入口已下线，只留作历史数据参考
     const settle = await prisma.trip.groupBy({
       by: ['settlementStatus'],
       _count: true,
     }).catch(() => [] as { settlementStatus: string | null; _count: number }[])
-    evidence.push(`交账状态分布: ${settle.map(s => `${s.settlementStatus}=${s._count}`).join(' ') || '无'}`)
+    evidence.push(`旧交账状态分布（入口已下线，仅供参考）: ${settle.map(s => `${s.settlementStatus}=${s._count}`).join(' ') || '无'}`)
 
     // 20260802：入账逻辑落在 lib/trip-settlement-payment.ts，不在路由文件里
-    const paymentOnSettle = grepCode('payment.create|postTripCollections', {
-      roots: 'app/api/trips lib/trip-settlement-payment.ts', max: 4,
+    // 20260924：交账/对账两个独立入口下线，触发点改到会计核销页的司机收款确认 API
+    const paymentOnSettle = grepCode('payment.create|postCollections', {
+      roots: 'app/api/accounting lib/trip-settlement-payment.ts', max: 4,
     })
-    evidence.push(`财务确认交账时创建 Payment: ${paymentOnSettle.length > 0 ? '是' : '否'}`)
+    evidence.push(`会计确认司机收款时创建 Payment: ${paymentOnSettle.length > 0 ? '是' : '否'}`)
     evidence.push(...paymentOnSettle.slice(0, 2).map(l => `  ${l.slice(0, 120)}`))
 
     const invCount = await prisma.invoice.count()
@@ -275,18 +276,17 @@ defineCheck({
     if (posts) {
       return {
         verdict: 'done' as const,
-        gap: '行程完成自动回写发票草稿/订单状态/提成冻结；财务确认交账（20260802 起）' +
-          '会按到期日把各站实收核销到已过账发票并生成 Payment，结清即推进为 PAID，' +
-          '带 TRIP:<id> 标记幂等。刻意保留的人工环节：DRAFT 发票不自动过账、超收不硬塞，' +
-          '两者都如实报给财务处理',
+        gap: '行程完成自动回写发票草稿/订单状态/提成冻结；会计核销页「钱」板块的司机收款确认' +
+          '（20260924 起，取代此前的司机交账/对账两个独立入口）会按到期日把各司机当日实收' +
+          '核销到已过账发票并生成 Payment，结清即推进为 PAID，带 DRIVER_CASH_CONFIRM:<id>' +
+          '标记幂等。刻意保留的人工环节：DRAFT 发票不自动过账、超收不硬塞，两者都如实报给财务处理',
         evidence,
       }
     }
     return {
       verdict: 'partial' as const,
-      gap: '行程完成会自动回写发票草稿、订单状态、司机提成冻结；司机交账也有结构化流程' +
-        '（司机提交 cashCollected → 财务确认/退回）。但财务确认只翻转 Trip.settlementStatus，' +
-        '不生成 Payment 收款记录，现金入账仍需在收款模块另行录入',
+      gap: '行程完成会自动回写发票草稿、订单状态、司机提成冻结；司机收款确认入账逻辑' +
+        '（lib/trip-settlement-payment.ts 的 postCollections）尚未接入调用方',
       evidence,
     }
   },

@@ -32,3 +32,16 @@ export function parseDriverSlotKey(key: string): { num: number; time: string; dr
     driver: parts.slice(2).join(' '),
   }
 }
+
+/**
+ * 从订单拿"司机姓名"（不含批次号/早晚班）。会计核销页按司机×业务日汇总收款用
+ * 这个粒度——同一司机同天跑早班+午班是常见场景（见 PickingWave 唯一性设计），
+ * 但会计只跟人对一次账，不按批次拆开对。空字符串代表这单还没分配司机。
+ */
+export function driverNameFromOrder(order: {
+  driverSlot?: DriverSlotInfo | null
+  deliveryBatch?: string | null
+  deliveryBatchDisplay?: string | null
+}): string {
+  return parseDriverSlotKey(formatDriverSlotFromOrder(order)).driver
+}

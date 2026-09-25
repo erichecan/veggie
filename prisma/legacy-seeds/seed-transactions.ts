@@ -336,7 +336,7 @@ async function main() {
         invoiceDate: invoiced ? deliveryDate : null,
         sentAt: status === 'PENDING' && Math.random() < 0.5 ? new Date(createdAt.getTime() + 1800_000) : null,
         lockedAt: invoiced && deliveryDate ? new Date(deliveryDate.getTime() + 3600_000) : null,
-        orderReturn: status === 'COMPLETED' && Math.random() < 0.3,
+        returnStatus: status === 'COMPLETED' && Math.random() < 0.3 ? 'RETURNED' : 'PENDING',
         driverSlotId: a.slotId,
         lines: {
           create: lines.map(l => ({

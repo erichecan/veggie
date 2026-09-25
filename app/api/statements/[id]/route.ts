@@ -6,7 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { orderIncTaxTotal } from '@/lib/order-items'
 import { addBusinessDays } from '@/lib/analytics/metrics'
-import { reconcileStatement, paymentSource, paymentTripId } from '@/lib/finance/statement'
+import { reconcileStatement, paymentSource, paymentConfirmationId } from '@/lib/finance/statement'
 
 /**
  * P1-1: 对账单单条操作
@@ -78,7 +78,7 @@ export async function GET(
           invoiceStatus: inv?.status ?? null,
           amount: toNum(p.amount), method: p.method, paidAt: p.paidAt,
           note: p.note, createdBy: p.createdBy,
-          source: paymentSource(p.note), tripId: paymentTripId(p.note),
+          source: paymentSource(p.note), confirmationId: paymentConfirmationId(p.note),
         }
       })
 

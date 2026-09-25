@@ -100,7 +100,6 @@
         "finance.account.read",
         "finance.account.manage",
         "finance.settlement.read",
-        "finance.settlement.create",
         "finance.settlement.confirm",
         "master.customer.read",
         "master.customer.create",
@@ -176,7 +175,10 @@
         "system.mfa.enroll",
         "system.notification.create",
         "tool.bulletin.use",
-        "page.bulletin.access"
+        "page.bulletin.access",
+        "finance.write_off.read",
+        "finance.write_off.confirm",
+        "finance.write_off.return"
       ]
     },
     {
@@ -278,7 +280,6 @@
         "finance.account.read",
         "finance.account.manage",
         "finance.settlement.read",
-        "finance.settlement.create",
         "finance.settlement.confirm",
         "master.customer.read",
         "master.customer.create",
@@ -351,7 +352,10 @@
         "system.notification.create",
         "system.settings.manage",
         "tool.bulletin.use",
-        "page.bulletin.access"
+        "page.bulletin.access",
+        "finance.write_off.read",
+        "finance.write_off.confirm",
+        "finance.write_off.return"
       ]
     },
     {
@@ -410,7 +414,10 @@
         "page.print.access",
         "system.user.read",
         "tool.bulletin.use",
-        "page.bulletin.access"
+        "page.bulletin.access",
+        "finance.write_off.read",
+        "finance.write_off.confirm",
+        "finance.write_off.return"
       ]
     },
     {
@@ -608,8 +615,6 @@
       "permissions": [
         "dispatch.trip.read",
         "dispatch.trip.update",
-        "finance.settlement.read",
-        "finance.settlement.create",
         "page.driver.access",
         "tool.bulletin.use",
         "page.bulletin.access",

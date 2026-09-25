@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { withAuth, effectiveRoles } from '@/lib/auth'
+import { withAuth, effectiveRoles, userHasPermission } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
 import { toNum, round2 } from '@/lib/decimal-helpers'
@@ -14,7 +14,8 @@ import { WavePickLockedError } from '@/lib/wave-pick-lock'
  * Actions:
  *   cancel          → status=COMPLETED（暂）      权限: OPERATOR / BOSS
  *   delete          → 物理删除                   权限: OPERATOR / BOSS
- *   mark_returned   → orderReturn=value(bool)    权限: FINANCE / OPERATOR / BOSS
+ *   mark_returned   → returnStatus=PENDING/RETURNED/ISSUE
+ *                     权限: finance.write_off.confirm（核销/重置）或 .return（退回核实）
  *   confirm         → status=CONFIRMED (PENDING) 权限: OPERATOR / BOSS
  *   start_delivery  → status=IN_DELIVERY         权限: OPERATOR / BOSS
  *   mass_edit       → 批量改 fields              权限: OPERATOR / BOSS
@@ -30,11 +31,15 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const body = await req.json()
-      const { ids, action, value, fields } = body as {
+      const { ids, action, value, fields, status, note } = body as {
         ids: string[]
         action: BulkAction
         value?: boolean
         fields?: Record<string, unknown>
+        /** mark_returned 专用：三态 */
+        status?: 'PENDING' | 'RETURNED' | 'ISSUE'
+        /** mark_returned=ISSUE 时必填：问题说明 */
+        note?: string
       }
 
       if (!Array.isArray(ids) || ids.length === 0) {
@@ -51,7 +56,7 @@ export async function POST(req: Request) {
 
       const before = await prisma.order.findMany({
         where: { id: { in: ids } },
-        select: { id: true, status: true, restaurantName: true, orderReturn: true, deliveryDate: true },
+        select: { id: true, status: true, restaurantName: true, deliveryDate: true, returnStatus: true },
       })
       if (before.length === 0) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
 
@@ -60,12 +65,18 @@ export async function POST(req: Request) {
       // 兼任 OPERATOR/BOSS）永远判不过，即使 route-map 那层已经放行。改用
       // effectiveRoles（roles[] 优先，回退单 role），与 withAuth 内部同一套口径。
       const roles = effectiveRoles(user)
-      const isFinance = roles.includes('FINANCE')
       const isOperatorOrBoss = roles.some(r => ['OPERATOR', 'BOSS'].includes(r))
 
       if (action === 'mark_returned') {
-        if (!isFinance && !isOperatorOrBoss) {
-          return NextResponse.json({ error: '仅会计/运营/老板可批量核销' }, { status: 403 })
+        if (!['PENDING', 'RETURNED', 'ISSUE'].includes(String(status))) {
+          return NextResponse.json({ error: 'status 必须是 PENDING/RETURNED/ISSUE 之一' }, { status: 400 })
+        }
+        if (status === 'ISSUE' && !note?.trim()) {
+          return NextResponse.json({ error: '退回核实必须填写问题说明' }, { status: 400 })
+        }
+        const need = status === 'ISSUE' ? 'finance.write_off.return' : 'finance.write_off.confirm'
+        if (!userHasPermission(user, need)) {
+          return NextResponse.json({ error: '权限不足' }, { status: 403 })
         }
       } else if (!isOperatorOrBoss) {
         return NextResponse.json({ error: '权限不足' }, { status: 403 })
@@ -186,15 +197,19 @@ export async function POST(req: Request) {
         ))
 
       } else if (action === 'mark_returned') {
-        const returnValue = value !== false // default true
         await prisma.order.updateMany({
           where: { id: { in: ids } },
-          data: { orderReturn: returnValue },
+          data: {
+            returnStatus: status,
+            returnIssueNote: status === 'ISSUE' ? note!.trim() : null,
+          },
         })
-        detail = `批量${returnValue ? '核销' : '撤销核销'} ${ids.length} 单`
+        const label = status === 'RETURNED' ? '核销' : status === 'ISSUE' ? '退回核实' : '重置为未回'
+        detail = `批量${label} ${ids.length} 单`
         affectedOrders = before.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
 
         // Write audit logs for mark_returned
+        const returnStatusBefore = new Map(before.map(o => [o.id, o.returnStatus]))
         await Promise.all(affectedOrders.map(o =>
           prismaAny.orderAuditLog.create({
             data: {
@@ -202,8 +217,8 @@ export async function POST(req: Request) {
               userId: user.userId,
               action: 'updated',
               changedFields: {
-                detail: returnValue ? '批量标记已核销' : '批量撤销核销',
-                orderReturn: { before: !returnValue, after: returnValue },
+                detail: `批量${label}`,
+                returnStatus: { before: returnStatusBefore.get(o.id) ?? null, after: status },
               },
             },
           }).catch((e: unknown) => console.error('[BulkAudit mark_returned]', e))
@@ -371,5 +386,10 @@ export async function POST(req: Request) {
       console.error('[POST /api/orders/bulk]', error)
       return NextResponse.json({ error: '批量操作失败' }, { status: 500 })
     }
-  }, { require: 'sales.order.bulk_import' })
+  // ⛔ 20260924 发现：route-map.ts 那层外层闸门已放行 finance.write_off.confirm，
+  // 但 withAuth 自己这层 require 是第二道独立闸门，之前漏改，FINANCE 请求会在
+  // 进 handler 前就被这里拦成 403，route-map 的修复形同虚设。三个权限点任一即可，
+  // 具体 action 允许哪个角色仍由函数体内 70-83 行按 action 精确判定，这里只负责
+  // "能不能进门"。
+  }, { require: ['sales.order.bulk_import', 'finance.write_off.confirm', 'finance.write_off.return'] })
 }

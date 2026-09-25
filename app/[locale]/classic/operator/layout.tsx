@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import OdooNav from '@/components/classic/OdooNav'
 import { getSession, toRoleSession } from '@/lib/session'
 import { hydrate } from '@/lib/store'
@@ -12,6 +12,7 @@ import { canEnterPage } from '@/lib/rbac/page-guard'
 export default function ClassicOperatorLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RoleSession | null>(null)
   const router = useRouter()
+  const pathname = usePathname()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
 
@@ -62,13 +63,18 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
 
   useEffect(() => {
     const user = getSession()
-    if (!user || !canEnterPage(user, '/classic/operator', ['OPERATOR'])) {
+    // ⛔ 必须传实际访问路径，不能写死 '/classic/operator'：/orders 20260924 起
+    // 对财务角色单开了子路径例外（见 route-map.ts），写死根路径会让这层客户端
+    // 守卫忽略那条例外规则，把 middleware 已经放行的人又弹回去（同一个坑
+    // finance/layout.tsx 20260923 已经踩过一次）。
+    const barePath = prefix && pathname.startsWith(prefix) ? pathname.slice(prefix.length) || '/' : pathname
+    if (!user || !canEnterPage(user, barePath, ['OPERATOR'])) {
       router.push(`${prefix}/enter`)
       return
     }
     setSession(toRoleSession(user))
     hydrate()
-  }, [router, prefix])
+  }, [router, prefix, pathname])
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>

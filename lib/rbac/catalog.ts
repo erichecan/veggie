@@ -344,10 +344,20 @@ export const PERMISSION_GROUPS: GroupDef[] = [
       },
       {
         module: 'finance.settlement',
-        labelZh: '司机交账',
-        labelEn: 'Driver Settlement',
-        note: 'DRIVER 提交交账用 create；FINANCE 确认/退回用 confirm。',
-        actions: [A.read, A.create, A.confirm],
+        labelZh: '司机收款确认',
+        labelEn: 'Driver Cash Confirmation',
+        note: '会计核销页「钱」板块：按司机汇总当日应收，会计核对无误后 confirm——' +
+          '真正入账（生成 Payment、核销发票），不可撤销。20260924 起不再需要司机' +
+          '自己申报，故去掉 create。',
+        actions: [A.read, A.confirm],
+      },
+      {
+        module: 'finance.write_off',
+        labelZh: '送货单核销',
+        labelEn: 'Delivery Note Write-off',
+        note: '会计核销页「单」板块：扫码标记待确认后，confirm 真正核销，' +
+          'return 退回司机核实（单据有问题）。',
+        actions: [A.read, A.confirm, { action: 'return', labelZh: '退回核实', labelEn: 'Return for Review' }],
       },
     ],
   },

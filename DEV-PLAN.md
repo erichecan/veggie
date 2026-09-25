@@ -1,118 +1,108 @@
-# DEV-PLAN：退换货流程补缺口（仓库核实 + 销售权限 + 司机签名 + 换货新单 + 历史订单入口）
+# DEV-PLAN：会计核销页面重构（合并交账/对账/核销）
 
-## 读取的文档
+日期：2026-09-24
+来源：本次对话讨论 + 已确认的可点原型（https://claude.ai/artifact/Qb5CtaHvKeaBjkH7P85LCm）+ 现状调查（docs/20260924-财务模块交账对账核销梳理.md）
+无产品文档参与本次改动（不是从 PRD 出发，是从"现有页面混乱"的问题出发）。
 
-无独立产品文档。需求来自 2026-09-22 用户口述完整业务流程 + 两轮 AskUserQuestion 拍板（共 5 条决策）。已存档：`docs/20260922-司机端退换货结算流程-需求原话.md`。
+## 一、这次要解决什么
 
-## ⚠️ 本计划是对同一天早些时候一版 DEV-PLAN 的推翻重写
+现状：司机交账（`/classic/finance/settlements`）、司机对账（`/classic/finance/driver-reports`）、会计核销（`/classic/accounting`）三个入口，数据模型分裂、状态机各自独立，生产库实测显示前两条流水线从未真正走完过一次完整流程（Trip 从未 confirm、DriverDailyReport 表 0 条）。
 
-早些时候基于"退换货系统完全不存在"的误判，设计了一整套新的 `ReturnCase` 数据模型 + 4 个新权限点 + 4 个新页面。用户已对那版计划回复"确认"，但在动手前的现状核实阶段（读代码，不是臆测）发现：**这套系统的审批/退款/库存/结算大半早就建好在跑了**。已经把误建的 `ReturnCase` 表、迁移、Prisma Client 全部撤回（`git status` 已确认 `prisma/schema.prisma` 干净），没有留下任何垃圾代码。这是本次唯一的一次方向性返工，后面不会再有。
+改法：砍掉前两个入口和背后的 Trip/DriverDailyReport 机制，把「钱」和「单」两件事合并进**一个页面**——沿用现有路径和名字 `/classic/accounting`（会计核销）：
+- **钱**：不再要求司机先申报，直接显示系统按司机汇总的今日应收（现金/转账），会计核对无误后点「确认」——这次改动会让「确认」**真正入账**：生成 `Payment` 记录，核销到对应发票上。
+- **单**：现有扫码核销改成两步（扫中→待确认→会计再点「确认核销」才真正核销），新增「退回核实」第三态，用于单据有问题（少货/字迹不清等）要求司机核实的场景。
 
-## 现状核实（这次是真的查到底了）
+## 二、模块拆解
 
-已经建好、在生产可用的部分：
-- **司机上报**：`POST /api/trips/:id/returns`（专用接口，含照片、`status='PENDING_REVIEW'`、`unitPrice` 自动从订单行取快照）
-- **审核 + 退款 + 库存**：`app/[locale]/classic/operator/returns/page.tsx` + `PUT /api/trips/:id/returns`。批准/拒绝、退款按比例或固定金额、货物去向（`SELLABLE` 回补库存走 FIFO / `SCRAP` 计入损耗仪表盘）、`OrderLine.deliveredQty` 联动扣减、司机提成 `recalcOrderCommission` 重算——全部在一个事务里做完
-- **会计结算**：`POST /api/credit-notes/generate-from-returns`。把 `APPROVED` 状态的退货按客户合并，生成 `CreditNote`（贷记单）冲抵欠款，退货记录标记 `SETTLED`。这就是"退货造成的金额调整"现有的落地方式——不是改原发票，是另开一张贷记单冲抵，财务上等价且改动面更小
+| 模块 | 改动 |
+|---|---|
+| Schema | `Order.orderReturn`(Boolean) → `Order.returnStatus`(枚举) + `returnIssueNote`；新增 `DriverCashConfirmation` 表 |
+| `/classic/accounting` 页面 | 按原型重写：钱板块 + 单板块（两步核销+退回核实） |
+| API | `/api/orders/bulk` 的 `mark_returned` 改造成三态；新增 `/api/accounting/driver-cash` 读取 + 确认 |
+| 入账逻辑 | 改造 `lib/trip-settlement-payment.ts`，让 `postTripCollections` 不再只吃 Trip，能吃「司机+送货日」这组订单 |
+| 下线 | `/classic/finance/settlements`、`/classic/finance/driver-reports` 页面 + 对应 API（`/api/trips/*/settlement`、`/api/driver-reports/**`）+ 财务导航两个链接 |
+| RBAC | `finance.settlement` 模块瘦身（去掉 `create`，改名义为"司机收款确认"）；新增 `finance.write_off` 模块（读/确认/退回）取代现在挂错的 `sales.order.bulk_import` |
+| 司机端 | 待执行前核实 `/classic/driver/settlement` 页面里 Trip 状态推进到 COMPLETED 是否还有其他用途，再决定整页下线还是留精简版（见风险点） |
 
-权限现状：`dispatch.trip.returns`（审核动作）只挂给 `boss`/`operator`，**`sales` 角色没有**——尽管 `operator/returns` 页面自己画的流程图上写的是"Salesperson"。这是本次要调整的第一条。
+## 三、Schema 设计
 
-真正缺失、需要新建的（用户已就前两条拍板）：
+```prisma
+enum OrderReturnStatus {
+  PENDING   // 未回（默认）
+  RETURNED  // 已核销
+  ISSUE     // 有问题，待司机核实
+}
 
-1. **仓库核实这一环完全不存在**。现状是"司机报了 → 直接进 operator/boss 审核"，没有你说的"次日仓库核对实物在不在车上"这道门。
-2. **销售角色没有审核权限**（已拍板：加给 `SALES`，与 `boss`/`operator` 并存，不收回后者）。
-3. **司机没有单独签名**，只有客户签（已拍板：司机也手写签一次）。
-4. **换货没有"新开单"关联动作**，现在换货和退货走同一套审批（已拍板：换货这次要能关联一个新开的订单号）。
-5. **没有"历史订单退换货"入口**——但后端接口本身已支持对着一张早就 `COMPLETED` 的历史行程提交退货（`allowedStatuses` 里就含 `COMPLETED`），缺的只是司机端一个"查我以前送过的行程"入口，**不需要改后端**。
-6. **顺手修一个隐藏 bug**：司机端 `driver/trip/[id]/page.tsx` 的异常上报（`submitException`）现在是直接改本地 `Trip.restaurants[].returns` 再整份 `PUT /api/trips/:id`，没有走专用的 `POST .../returns`——导致提交的退货记录**没有 `unitPrice` 快照**，审核时如果按"比例"退款会算成 0（除非审核人手动切到"固定金额"模式手输）。这次改成调用专用接口，顺带补上拍照采集（现有 UI 会显示 `ret.photo` 但从来没人写过这个字段）。
+model Order {
+  // ... 现有字段不变，替换：
+  // orderReturn Boolean @default(false)   // 删除
+  returnStatus    OrderReturnStatus @default(PENDING)
+  returnIssueNote String?                  // 「退回核实」时会计填的问题说明
+}
 
-已拍板不做的：
-- 不新建 `ReturnCase` 或任何新表——`ReturnItem` 已经是 `Trip.restaurants[].returns` 里的 JSON 数组，加字段不需要迁移。
-- 不新建会计"打勾"人工关卡——现有自动开票 + 贷记单冲抵机制已经财务等价，维持现状。
+model DriverCashConfirmation {
+  id              String   @id @default(cuid())
+  driverName      String
+  businessDate    String   // YYYY-MM-DD，都柏林业务日，与 businessDayStart 系列口径一致
+  cashTotal       Decimal  @db.Decimal(12, 2)
+  transferTotal   Decimal  @db.Decimal(12, 2)
+  orderIds        String[] // 确认那一刻纳入计算的订单快照，供事后追溯
+  paymentIds      String[] // 入账产生的 Payment id，供人工冲正时定位
+  confirmedAt     DateTime @default(now())
+  confirmedById   String
+  confirmedByName String   // 显示名快照，同 Payment.createdBy 的既有约定
 
----
+  @@unique([driverName, businessDate])
+  @@index([businessDate])
+}
+```
 
-## 模块拆解
+迁移写法：新增列 → 用 `UPDATE "Order" SET "returnStatus" = CASE WHEN "orderReturn" THEN 'RETURNED' ELSE 'PENDING' END` 回填 → 同一个迁移文件里删掉 `orderReturn` 列。三步在同一个迁移文件内完成，不拆成两次迁移（20260825 的教训：跨迁移的回填背靠背执行会把数据丢光）。
 
-### 1. `ReturnItem` 类型扩展（`lib/types.ts`，纯 TS 类型，JSON 字段不需要 migration）
+## 四、入账逻辑改造
 
-新增字段：
-- `warehouseVerifiedById?`, `warehouseVerifiedByName?`, `warehouseVerifiedAt?`, `warehouseNote?`
-- `driverSignature?`, `driverSignedAt?`
-- `exchangeOrderId?`（换货关联的新订单 id）
-- `status` 联合类型增加 `'WAREHOUSE_PENDING'`，作为司机上报后的**新初始状态**（原来直接是 `PENDING_REVIEW`）
+`lib/trip-settlement-payment.ts` 的 `postTripCollections(prisma, trip, actorName)` 只依赖 `trip.id`（幂等 marker）和 `trip.restaurants`（`{restaurantId, restaurantName, payment, orderIds}[]`），核销分配算法本身是纯函数、跟 Trip 无耦合，可以直接复用，只需要两处小改：
 
-### 2. 仓库核实：新增专用接口 + 页面
+1. 幂等 marker 目前写死 `TRIP:${trip.id}`，改成可传入的前缀参数（如 `sourceType: 'TRIP' | 'DRIVER_CASH_CONFIRM'`），新调用方传 `DRIVER_CASH_CONFIRM:${DriverCashConfirmation.id}`，历史 Trip 那条路径不变（兼容旧数据的幂等判断）。
+2. 新增一个构造函数 `buildCollectionInput(driverName, businessDate, orders)`：按 `restaurantId` 分组，`payment` = 该客户这组订单的含税金额合计，`orderIds` = 对应订单 id 列表，拼成 `postTripCollections` 需要的 shape。
 
-- 新增 `PUT /api/trips/:id/returns/warehouse-verify`，body `{ restaurantId, productId, action: 'verify'|'reject', note? }`。`verify` → 状态转 `PENDING_REVIEW`（自然流入现有 operator/returns 审核队列，不用改审核那部分代码）；`reject` → 状态转 `REJECTED`，同时记录 `warehouseNote`。只允许对 `WAREHOUSE_PENDING` 状态的记录操作，非法状态 400。
-- `POST /api/trips/:id/returns`：新提交的退货状态改成 `WAREHOUSE_PENDING`（原来是 `PENDING_REVIEW`）。
-- `operator/returns` 页面：过滤/排除 `WAREHOUSE_PENDING` 状态的记录（未经仓库核实的不该出现在销售审核队列里），状态筛选 tab 增加"待仓库核实"计数展示（只读，不可操作，避免用户以为漏了数据）。
-- 新增页面 `app/[locale]/classic/warehouse/returns/page.tsx`：列出 `WAREHOUSE_PENDING` 的记录，展示司机照片/原因/签名/所属客户，操作"核实通过"/"核实不通过"（要求填写原因）。挂进 `warehouse/layout.tsx` 现有的 `LINKS` 导航。
-- 新增权限点 `logistics.return.warehouse_verify`，挂给 `WAREHOUSE` 角色（`page.warehouse.access` 该角色已有，是活跃角色）。
+`/api/accounting/driver-cash/confirm` 收到请求后**服务端重新计算**当前这个司机今天的订单集合与金额（不信任客户端传来的数字），创建 `DriverCashConfirmation` 记录，调用上面改造后的函数入账，把返回的 Payment id 写回 `paymentIds`。
 
-### 3. 销售角色获得审核权限
+## 五、路由清单
 
-- `prisma/seed-rbac.json`：给 `sales` 角色的 `permissions` 数组追加 `dispatch.trip.read_returns`、`dispatch.trip.returns`（复用现有权限点，不新建）。
-- `operator/returns` 页面目前挂在 `operator` 路由下，`SALES` 角色进不去这个 URL——检查 `sales` 相关 layout 的角色白名单，把这个页面的路由也加进 `sales` 布局可达范围（或在销售模块导航里加一条链接指向同一个页面，不复制代码）。
+新增：
+- `GET /api/accounting/driver-cash?date=YYYY-MM-DD` — 按司机汇总今日应收 + 是否已确认，权限点 `finance.write_off.read`
+- `POST /api/accounting/driver-cash/confirm` — 确认并入账，权限点 `finance.write_off.confirm`
 
-### 4. 司机端改动（`driver/trip/[id]/page.tsx`）
+修改：
+- `POST /api/orders/bulk`（`mark_returned` action）— `value: boolean` 改成 `status: 'PENDING'|'RETURNED'|'ISSUE'` + 可选 `note`；内部权限判断从硬编码角色名单改成读位图判断 `finance.write_off.confirm`（确认核销）/ `finance.write_off.return`（退回核实）
 
-- `submitException` 改成调用 `POST /api/trips/:id/returns`（专用接口），不再本地拼 `Trip.restaurants[].returns` 再整份 `PUT`——顺带修好"没有 unitPrice 快照"这个 bug。
-- 异常上报 modal 增加拍照环节（`<input type="file" accept="image/*">` 转 base64，同 POD 上传的做法）。
-- 增加"司机签名"步骤：复用 `SignaturePad` 组件，紧跟在异常提交表单里（不是客户签，是司机自己签一次，证明"我确认上报了这条"）。
+删除：
+- `app/api/trips/[id]/settlement/route.ts`、`app/api/driver-reports/**`
+- `app/[locale]/classic/finance/settlements/`、`app/[locale]/classic/finance/driver-reports/`
+- `components/finance/DriverReconTable.tsx`、`lib/driver-daily-report.ts`、`lib/driver-reconciliation.ts`
+- `finance/layout.tsx` 里"司机交账""司机对账"两条导航链接
+- route-map.ts 里对应的 `/api/trips/*/settlement`、`/api/driver-reports/**` 三条规则
 
-### 5. 换货关联新单（`operator/returns` 审核 Dialog）
+## 六、RBAC 改动
 
-- `ReviewDialog`：当 `item.actionType === 'exchange'` 时，批准环节增加一个输入框"关联的换货新单号"（写入 `exchangeOrderId`），只做记录关联，不做强绑定校验（不检查这个单号是否真实存在，销售自己填对）。
+- `finance.settlement` 模块：动作从 `read/create/confirm` 瘦身为 `read/confirm`，`labelZh` 改为「司机收款确认」；迁移收回所有角色的 `finance.settlement.create` 授予（DRIVER 原本靠这个权限点提交交账，现在司机端不用交了）
+- 新增 `finance.write_off` 模块：动作 `read/confirm/return`；`prisma/seed-rbac.json` 授予 BOSS/OPERATOR/FINANCE 三个动作，DRIVER 不给
+- `lib/rbac/route-map.ts` 登记新路径，`scripts/rbac/sync-sortkeys.ts` 补排序键，bump `permVersion`（否则老 token 拿不到新权限点）
+- 迁移必须真正回写 `prisma/seed-rbac.json`（20260919 的教训：只在生产库 UPDATE "AppRole" 会让 CI 静态守卫失明）
 
-### 6. 历史订单退换货入口（司机端新页面）
+## 七、风险点
 
-- 新增 `app/[locale]/classic/driver/returns/page.tsx`：列出该司机名下所有 `COMPLETED` 状态的历史 `Trip`（不限今天），选中后进入一个精简版执行页（复用 `driver/trip/[id]` 的"报告异常"弹窗逻辑，隐藏签收/收款等已经完成的动作），调用同一个 `POST /api/trips/:id/returns`。
-- `driver/page.tsx`（司机任务列表首页）加一个入口链接过去。
+1. **入账不可撤销**：`postTripCollections` 没有冲正机制，一旦「确认」就真的核销了发票，写错了没法一键撤销（这跟改造前的旧机制风险一致，不是新引入的问题，但这次会第一次被真的用起来）。UI 上「确认」按钮会加一次真实的二次确认交互（不是浏览器 `confirm()`——正式页面可以用，但为了跟现有页面风格一致会做成 inline 二次确认条），并且不提供「撤销确认」按钮。
+2. **司机端 `/classic/driver/settlement` 页面的归属未定**：这个页面里 Trip 状态推进到 `COMPLETED` 除了触发交账流程，还有没有给司机提成冻结（`lib/commission.ts` 提到的 `trips PUT COMPLETED批量`）当触发器，执行时第一步会先查清楚这条链路，再决定整页下线还是留一个不带现金字段的精简版。如果查出来确实有依赖，我会保留必要的最小交互，不会因为要下线交账功能就顺带砍掉提成冻结的触发点。
+3. **`driverName` 字符串分组的既有缺陷会被继续沿用**：现有代码按司机姓名字符串分组（不是 driverSlotId），生产数据显示同一司机同天跑多个批次（早班+午班）是设计内的常见场景，这次沿用同样的分组粒度——对「钱」这个场景是合理的（会计一天跟一个司机对一次账，不分批次），不算新问题。
+4. **改动范围**：schema 改动 + 新模块 + 删除 3 个页面/多个 API + RBAC 迁移，属于「大改」，按流程需要在完成前跑 `/code-review high` 与 `/security-review`，findings 逐条处理或写明不处理的理由。
 
-### 7. RBAC 配套
+## 附录 A：技术验收标准（verify.sh 覆盖，我自己保证，不用你看）
 
-- 新权限点 `logistics.return.warehouse_verify`：写入 `prisma/seed-rbac.json`（新建 `logistics.return` 模块，挂给 `warehouse`）、`lib/rbac/route-map.ts`（登记 `PUT /api/trips/*/returns/warehouse-verify`）、`lib/rbac/catalog.ts`（登记模块，否则是"配置页上看不见的假权限点"）、`lib/rbac/sortkeys.json`（跑 `sync-sortkeys.ts`）。
-- `sales` 角色追加已有的两个权限点：只改 `seed-rbac.json` 的 `sales.permissions` 数组，不用动 `route-map.ts`（路由已经按权限点匹配，不按角色）。
-- 两处改动都要 bump `permVersion`（角色-权限映射变了，已登录用户的 JWT 位图不会自动刷新，需要强制重登生效）。
-
----
-
-## 风险点
-
-1. **`operator/returns` 页面的 `flatten()`/`buildReturnProfile()` 默认值处理**：现在 `ret.status` 缺失时默认当 `PENDING_REVIEW`；改成新增 `WAREHOUSE_PENDING` 状态后，要确认所有默认值兜底逻辑没有漏改（否则历史遗留的、状态本来就缺失的旧数据会被误判成"待仓库核实"或"待销售审核"，需要用一条迁移脚本把**已存在的旧退货记录**（这次改动前提交的，状态非空的那些）保持原状，只有新提交的才走 `WAREHOUSE_PENDING`——不回填历史数据。
-2. **`sales` 角色能不能看到 `operator/returns` 页面**取决于该路由所在 layout 的角色白名单，执行时需要先读一遍 `operator/layout.tsx` 的门禁逻辑确认怎么开口子，不是只加权限点就够。
-3. **历史订单退换货页面**要做行级隔离：司机只能看到自己驾驶过的 Trip（`driverId` 过滤），不能翻别的司机的历史行程。
-
----
-
-## 附录 A：技术验收标准（`scripts/verify-return-flow.sh`）
-
-- `npx tsc --noEmit`、`npm run build`
-- 鉴权探针：`logistics.return.warehouse_verify` 用「无 token / 错 token / 无该权限角色（如 SALES）」调用仓库核实接口，断言 401/401/403
-- 权限生效探针：`SALES` 角色调用 `PUT /api/trips/:id/returns`（审核）此前应 403，加权限后应 200
-- 状态机探针：`WAREHOUSE_PENDING` 状态下直接调用审核接口（跳过仓库核实）应 400；`PENDING_REVIEW`/`REJECTED`/`SETTLED` 状态下调用仓库核实接口应 400
-- `unitPrice` 快照探针：走新的司机提交接口创建一条退货，断言 `unitPrice` 非空且等于订单行单价
-- 历史行程探针：对一张 3 天前 `COMPLETED` 的 Trip 提交退货，断言成功且状态为 `WAREHOUSE_PENDING`
-- 旧数据兼容探针：迁移脚本跑完后，此前已存在的、状态非空的退货记录状态不变（不会被误判成 WAREHOUSE_PENDING）
-
----
-
-## 需要您判断的场景清单
-
-- [你说的] 司机送货正常完成要有电子签名+拍照上传。（已有，不改）
-- [你说的] 到店有异常/退回几天前的货，司机要能记录，仓库次日核实实物，销售决定处理方式并审批，会计确认。
-- [你拍板的] 司机也要手写签名。
-- [你拍板的] 换货新发的货走新开一张单。
-- [你拍板的] 一次性做完整条链路，不分阶段。
-- [你拍板的] 销售角色加审核权限，与 operator/boss 并存，不收回。
-- [你拍板的] 会计打勾环节不新建，维持现有自动开票+贷记单机制。
-- [我推断的] 换货的"关联新单号"只做文本记录，不做强绑定校验——如果您希望能直接从审核弹窗里跳转/创建那张新单，而不是手填单号，请告诉我，这个改动会更大一些。
-
-## 一次性告知
-
-**假设清单**：
-- 历史订单退换货页面不允许查看/操作不是自己送过的行程（行级隔离），如果需要跨司机查询（比如司机离职了，客户还要退当时的货），这次不做，需要另外走运营后台的 `operator/returns` 处理。
-- 仓库核实"不通过"只做一次性打回（状态转 `REJECTED`），不做多级申诉。
-
-回复"确认"后我不再就实现细节打断你。
+- `npx tsc --noEmit`、`npm run build`、`npx prisma migrate status`
+- 新增两个 API 路由的鉴权探针：无 token/错 token/低权限（DRIVER）→ 401/401/403；FINANCE → 200
+- `/api/orders/bulk` mark_returned 三态转换探针：PENDING→ISSUE（必须带 note）→PENDING→RETURNED，每一步落库后 `GET /api/orders` 读到的状态与操作一致
+- 入账幂等探针：对同一 `driverName`+`businessDate` 连续调用两次 confirm，第二次必须 `skippedAsDuplicate`，且 `Payment` 表该 marker 下只有一批记录、`Invoice.amountDue` 不被二次扣减
+- 现有 54 条 RBAC 测试全绿 + 新增覆盖 `finance.write_off.*` 权限点的用例
+- 路由清单第五节里"删除"的路径，探针要断言它们现在返回 404（确认真的下线了，不是改了个寂寞）

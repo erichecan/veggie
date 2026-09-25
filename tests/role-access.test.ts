@@ -86,12 +86,11 @@ describe('RESTAURANT —— 审计实测泄露过的接口必须全拒', () => {
 })
 
 describe('DRIVER —— 生产 21 人，唯一有真实用户的收窄角色', () => {
-  test('✅ 司机端页面实际调用的 5 个接口全放行（漏一个司机就干不了活）', () => {
+  // 20260924：交账（/api/trips/*/settlement）下线，司机端接口从 5 个减到 4 个
+  test('✅ 司机端页面实际调用的 4 个接口全放行（漏一个司机就干不了活）', () => {
     assert.ok(allow(['DRIVER'], '/api/trips'))
     assert.ok(allow(['DRIVER'], '/api/trips/t1'))
     assert.ok(allow(['DRIVER'], '/api/trips/t1', 'PUT'))          // 签收/退货/完成站点
-    assert.ok(allow(['DRIVER'], '/api/trips/t1/settlement'))
-    assert.ok(allow(['DRIVER'], '/api/trips/t1/settlement', 'POST'))  // 交账提交
     assert.ok(allow(['DRIVER'], '/api/customers/coordinates'))     // 地图打点
   })
   test('⛔ 建行程/删行程是调度的事', () => {
@@ -137,10 +136,11 @@ describe('SORTER / WAREHOUSE', () => {
 })
 
 describe('FINANCE / DISPATCH', () => {
+  // 20260924：确认交账（PUT /api/trips/*/settlement）下线，改走
+  // POST /api/accounting/driver-cash/confirm（新体系权限点判定，见 rbac-route-map.test.ts）
   test('✅ 财务：钱那一摊可写，主数据只读', () => {
     assert.ok(allow(['FINANCE'], '/api/invoices/i1', 'PUT'))
     assert.ok(allow(['FINANCE'], '/api/statements', 'POST'))
-    assert.ok(allow(['FINANCE'], '/api/trips/t1/settlement', 'PUT'))   // 确认交账
     assert.ok(allow(['FINANCE'], '/api/customers'))
     assert.ok(allow(['FINANCE'], '/api/analytics/ar-aging'))
   })

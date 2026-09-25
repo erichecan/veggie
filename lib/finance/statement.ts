@@ -23,7 +23,7 @@
  */
 
 import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
-import { tripPaymentMarker } from '@/lib/trip-settlement-payment'
+import { driverCashConfirmationMarker } from '@/lib/trip-settlement-payment'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -75,21 +75,21 @@ export type PaymentSource = 'DRIVER_CASH' | 'MANUAL'
 
 /**
  * 这笔钱是司机带回来的现金，还是财务手工登记的汇款？
- * 判据是 `postTripCollections` 写进 note 的 `TRIP:<id>` 幂等标记 ——
+ * 判据是 `postCollections` 写进 note 的 `DRIVER_CASH_CONFIRM:<id>` 幂等标记 ——
  * 复用它而不是新加一列：那个标记本来就必须写，再存一份就会有两处真相。
  */
 export function paymentSource(note: string | null | undefined): PaymentSource {
-  return typeof note === 'string' && note.includes('TRIP:') ? 'DRIVER_CASH' : 'MANUAL'
+  return typeof note === 'string' && note.includes('DRIVER_CASH_CONFIRM:') ? 'DRIVER_CASH' : 'MANUAL'
 }
 
-/** 从 note 里取出行程 id（取不到返回 null） */
-export function paymentTripId(note: string | null | undefined): string | null {
-  const m = typeof note === 'string' ? note.match(/TRIP:([A-Za-z0-9_-]+)/) : null
+/** 从 note 里取出 DriverCashConfirmation id（取不到返回 null） */
+export function paymentConfirmationId(note: string | null | undefined): string | null {
+  const m = typeof note === 'string' ? note.match(/DRIVER_CASH_CONFIRM:([A-Za-z0-9_-]+)/) : null
   return m ? m[1] : null
 }
 
-/** 给定 tripId，反推它写下的标记（与落库端共用同一实现） */
-export const markerForTrip = tripPaymentMarker
+/** 给定 confirmationId，反推它写下的标记（与落库端共用同一实现） */
+export const markerForDriverCashConfirmation = driverCashConfirmationMarker
 
 export interface StatementSummary {
   openingBalance: number

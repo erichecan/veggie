@@ -46,7 +46,7 @@ interface StatementPaymentLine {
   note: string | null
   createdBy: string | null
   source: 'DRIVER_CASH' | 'MANUAL'
-  tripId: string | null
+  confirmationId: string | null
 }
 
 interface StatementDetail extends Statement {

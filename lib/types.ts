@@ -422,8 +422,10 @@ export interface Order {
   deliveryDate?: string
   /** 发票日期 */
   invoiceDate?: string
-  /** 送货单是否已回（会计核销标记） */
-  orderReturn?: boolean
+  /** 送货单回收状态：PENDING 未回 / RETURNED 已核销 / ISSUE 有问题待司机核实 */
+  returnStatus?: 'PENDING' | 'RETURNED' | 'ISSUE'
+  /** 「退回核实」时会计填的问题说明，仅 returnStatus=ISSUE 时有意义 */
+  returnIssueNote?: string | null
   /** 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧字段，已弃用，显示改用 deliveryBatchDisplay） */
   deliveryBatch?: string
   /** 调度归属显示（由所属 PickingWave + 实时 DriverSlot 派生，单一真相，SSOT P0-1） */

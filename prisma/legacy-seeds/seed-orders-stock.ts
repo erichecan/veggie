@@ -121,7 +121,7 @@ async function main() {
           salesman: rand(SALESMEN),
           deliveryBatch: driverBatch,
           driverSlotId: (() => { const parts = driverBatch.trim().split(/\s+/); const name = parts.length >= 3 ? parts.slice(2).join(' ') : parts[parts.length - 1]; return slotByName.get(name.toUpperCase()) ?? null })(),
-          orderReturn: status === 'COMPLETED' ? Math.random() < 0.6 : false,
+          returnStatus: status === 'COMPLETED' && Math.random() < 0.6 ? 'RETURNED' : 'PENDING',
           lines: { create: lineRows },
         },
       })
