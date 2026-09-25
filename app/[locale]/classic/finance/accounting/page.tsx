@@ -15,6 +15,9 @@ const FLOW_STEPS = [
 /**
  * 会计核销：原「司机交账」「司机对账」「会计核销」三个独立入口（20260924）合并
  * 成这一个页面，钱和单各自成一块，见 DEV-PLAN 20260924-会计核销重构-tasks.md。
+ * 20260925：从独立顶层路由 /classic/accounting 搬进 /classic/finance/accounting，
+ * 跟发票/供应商账单/对账单共用同一套财务模块布局，不再有自己单独的导航栏
+ * （之前每次从财务其它页面点过来都会整个导航条重新挂载，体验上像切去另一个系统）。
  */
 export default function AccountingPage() {
   const [showGuide, setShowGuide] = useState(true)

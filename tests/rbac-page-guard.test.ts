@@ -16,7 +16,9 @@ const PAGES: Array<[string, string[]]> = [
   ['/classic/operator', ['OPERATOR']],
   ['/classic/boss', ['BOSS', 'OPERATOR']],
   ['/classic/finance', ['FINANCE', 'OPERATOR', 'BOSS']],
-  ['/classic/accounting', ['FINANCE', 'OPERATOR']],
+  // 20260925：核销管理从独立顶层路由搬进 /classic/finance/accounting；
+  // page.accounting.access 目前授予 BOSS/OPERATOR/FINANCE 三个角色（与 page.finance.access 一致）
+  ['/classic/finance/accounting', ['FINANCE', 'OPERATOR', 'BOSS']],
   ['/classic/warehouse', ['WAREHOUSE', 'OPERATOR', 'BOSS']],
   ['/classic/sorter', ['SORTER', 'OPERATOR']],
   ['/classic/driver', ['DRIVER', 'OPERATOR']],

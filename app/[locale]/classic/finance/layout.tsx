@@ -27,7 +27,8 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
     { href: `${prefix}/classic/finance/vendor-bills`, label: isEn ? 'Vendor Bills' : '供应商账单' },
     { href: `${prefix}/classic/finance/statements`, label: isEn ? 'Statements' : '对账单' },
     // 20260924：司机交账/司机对账两个独立入口下线，合并进「核销管理」页的钱/单两板块
-    { href: `${prefix}/classic/accounting`, label: isEn ? 'Write-off' : '核销管理' },
+    // 20260925：核销管理从独立顶层路由 /classic/accounting 搬进本模块，不再单独起一套导航
+    { href: `${prefix}/classic/finance/accounting`, label: isEn ? 'Write-off' : '核销管理' },
   ]
 
   useEffect(() => {

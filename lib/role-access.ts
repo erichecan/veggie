@@ -142,7 +142,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
   ],
 
   /**
-   * 财务：页面 `/classic/finance/*` 与 `/classic/accounting/*`。
+   * 财务：页面 `/classic/finance/*`（核销管理 20260925 起并入其子路径 /classic/finance/accounting，
+   * 不再单独列）。
    * 钱的那一摊全给（发票、对账单、收付款、供应商账单、退款单），
    * 主数据只读，**不给任何写**（改客户信用额度、改商品价格不是财务的活）。
    */
@@ -312,7 +313,7 @@ export const ROLE_PAGE_SCOPE: Record<string, readonly string[]> = {
   DRIVER: ['/classic/driver', '/classic/bulletin', '/enter'],
   SORTER: ['/classic/sorter', '/classic/bulletin', '/enter'],
   WAREHOUSE: ['/classic/warehouse', '/classic/bulletin', '/enter'],
-  FINANCE: ['/classic/finance', '/classic/accounting', '/classic/print', '/classic/bulletin', '/enter'],
+  FINANCE: ['/classic/finance', '/classic/print', '/classic/bulletin', '/enter'],
   DISPATCH: ['/classic/operator/dispatch-console', '/classic/print', '/classic/bulletin', '/enter'],
   // 20260923：发票/供应商账单并入财务模块路由后，单独放两条子路径回来，
   // 跟 route-map.ts 的 page.operator.access/page.finance.access 双许可保持一致

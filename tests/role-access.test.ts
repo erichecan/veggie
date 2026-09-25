@@ -212,7 +212,7 @@ describe('页面边界', () => {
     assert.ok(canRolesAccessPage(['RESTAURANT'], '/customer-portal'))
     assert.ok(canRolesAccessPage(['DRIVER'], '/classic/driver/trip/t1'))
     assert.ok(canRolesAccessPage(['SORTER'], '/classic/sorter'))
-    assert.ok(canRolesAccessPage(['FINANCE'], '/classic/accounting'))
+    assert.ok(canRolesAccessPage(['FINANCE'], '/classic/finance/accounting'))
   })
   test('⛔ 进不去别人那块', () => {
     assert.equal(canRolesAccessPage(['DRIVER'], '/classic/operator/customers'), false)
@@ -238,7 +238,7 @@ describe('页面边界', () => {
   test('⛔ 但销售拿不到财务模块的其余部分（未整体放宽）', () => {
     assert.equal(canRolesAccessPage(['SALES'], '/classic/finance'), false)
     assert.equal(canRolesAccessPage(['SALES'], '/classic/finance/statements'), false)
-    assert.equal(canRolesAccessPage(['SALES'], '/classic/accounting'), false)
+    assert.equal(canRolesAccessPage(['SALES'], '/classic/finance/accounting'), false)
   })
   test('落点：被拦下后回自己的主页而不是死循环', () => {
     assert.equal(homeFor(['DRIVER']), '/classic/driver')

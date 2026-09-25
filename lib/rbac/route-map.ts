@@ -399,8 +399,11 @@ export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   // 具体路径写在下面的 /classic/finance/** 通配之前，两个权限点任一即可放行。
   { pattern: '/classic/finance/invoices/**', permission: ['page.operator.access', 'page.finance.access'] },
   { pattern: '/classic/finance/vendor-bills/**', permission: ['page.operator.access', 'page.finance.access'] },
+  // 20260925：核销管理从独立顶层路由 /classic/accounting 搬进本模块，沿用它原来的
+  // 权限点 page.accounting.access（目前跟 page.finance.access 授予的角色完全一样，
+  // 留着没有实际区分度，但改路径这次不顺带做权限点合并，两件事分开动）
+  { pattern: '/classic/finance/accounting/**', permission: 'page.accounting.access' },
   { pattern: '/classic/finance/**', permission: 'page.finance.access' },
-  { pattern: '/classic/accounting/**', permission: 'page.accounting.access' },
   { pattern: '/classic/print/**', permission: 'page.print.access' },
   { pattern: '/classic/operator/dispatch-console/**', permission: 'page.dispatch_console.access' },
   // 20260924：财务角色被单独授予 sales.order.read（API 早已放行），但页面权限点
