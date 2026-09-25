@@ -22,6 +22,11 @@ function incTaxAmount(o: Order): number {
  */
 export function WriteOffBoard({ businessDate }: { businessDate: string | null }) {
   const [orders, setOrders] = useState<Order[]>([])
+  // 扫到的单不在今天的默认加载范围内时（比如司机昨天忘了回单，今天才来核销）落在这里，
+  // 跟 orders 分开存：这样 load() 重新拉今天的数据时不会把它们冲掉（20260925 用户反馈：
+  // 只能扫今天的单不合理）
+  const [extraOrders, setExtraOrders] = useState<Order[]>([])
+  const [scanSearching, setScanSearching] = useState(false)
   // 初始 false：businessDate 来自「钱」板块的回调，若那次请求失败会永远不回调，
   // 这里若默认 true 会在没有 businessDate 时永远卡在「加载中」（20260924 code-review 发现）
   const [loading, setLoading] = useState(false)
@@ -76,17 +81,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     setTimeout(() => rowRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30)
   }
 
-  function handleScan(e: React.FormEvent) {
-    e.preventDefault()
-    const code = scanInput.trim()
-    if (!code) return
-    const codeUpper = code.toUpperCase()
-    const target = orders.find(o => o.code?.toUpperCase() === codeUpper) ?? (visible.length === 1 ? visible[0] : undefined)
-    if (!target) {
-      setScanMsg({ type: 'err', text: `找不到订单：${code}` })
-      setTimeout(() => setScanMsg(null), 3500)
-      return
-    }
+  function selectFoundOrder(target: Order, prefixMsg?: string) {
     if (target.returnStatus === 'RETURNED') {
       setScanMsg({ type: 'warn', text: `${target.code} 已经核销过了` })
     } else if (target.returnStatus === 'ISSUE') {
@@ -94,11 +89,47 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     } else {
       setSelected(prev => new Set(prev).add(target.id))
       markScanned([target.id])
-      setScanMsg({ type: 'ok', text: `✅ ${target.code} 已标记待确认` })
+      setScanMsg({ type: 'ok', text: `${prefixMsg ?? ''}✅ ${target.code} 已标记待确认` })
     }
     flashRow(target.id)
+    setTimeout(() => setScanMsg(null), 4500)
+  }
+
+  async function handleScan(e: React.FormEvent) {
+    e.preventDefault()
+    const code = scanInput.trim()
+    if (!code) return
+    const codeUpper = code.toUpperCase()
+    const local = todayOrders.find(o => o.code?.toUpperCase() === codeUpper) ?? (visible.length === 1 ? visible[0] : undefined)
+    if (local) {
+      selectFoundOrder(local)
+      setScanInput('')
+      return
+    }
+    // 本地（今天）没找到——服务端按单号跨日期查一次，覆盖"司机昨天忘了回单，今天才来核销"
+    // 这种场景（不能只让核销卡死在"今天"这个范围里）
+    setScanSearching(true)
+    try {
+      const results = await apiGet<Order[]>(
+        `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,COMPLETED,IN_DELIVERY&include_lines=false&colCode=${encodeURIComponent(code)}&limit=20`,
+      )
+      const exact = (results ?? []).filter(o => o.code?.toUpperCase() === codeUpper)
+      if (exact.length === 1) {
+        const target = exact[0]
+        setExtraOrders(prev => prev.some(o => o.id === target.id) ? prev : [...prev, target])
+        const day = target.deliveryDate ? target.deliveryDate.slice(0, 10) : '未知日期'
+        selectFoundOrder(target, `⚠️ 不是今天的单（送货日期 ${day}），已补进下方列表——`)
+      } else if (exact.length > 1) {
+        setScanMsg({ type: 'err', text: `单号 ${code} 匹配到多条，请到下方「按时间段查漏单」核对` })
+        setTimeout(() => setScanMsg(null), 4500)
+      } else {
+        setScanMsg({ type: 'err', text: `找不到订单：${code}` })
+        setTimeout(() => setScanMsg(null), 3500)
+      }
+    } finally {
+      setScanSearching(false)
+    }
     setScanInput('')
-    setTimeout(() => setScanMsg(null), 3500)
   }
 
   function toggle(id: string) {
@@ -115,7 +146,11 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     setBulkLoading(true)
     try {
       await apiPost('/api/orders/bulk', { ids, action: 'mark_returned', status, note })
-      setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, returnStatus: status, returnIssueNote: status === 'ISSUE' ? (note ?? null) : null } : o))
+      const patch = (o: Order) => ids.includes(o.id) ? { ...o, returnStatus: status, returnIssueNote: status === 'ISSUE' ? (note ?? null) : null } : o
+      setOrders(prev => prev.map(patch))
+      // extraOrders 是扫码跨日期补进来的单，applyStatus 后端写库不区分来源，这里也要同步更新，
+      // 否则跨日期核销的单会出现"数据库已改、界面没跟着变"的假象（20260925 实测踩过一次）
+      setExtraOrders(prev => prev.map(patch))
       setSelected(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next })
       setIssueMode(null)
       setIssueNote('')
@@ -132,7 +167,8 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     applyStatus(ids, 'ISSUE', issueNote.trim())
   }
 
-  const todayOrders = orders // 已经是服务端按 businessDate 精确过滤的结果
+  // orders 是服务端按 businessDate 精确过滤的结果；extraOrders 是扫码补进来的跨日期单
+  const todayOrders = extraOrders.length > 0 ? [...orders, ...extraOrders] : orders
   const visible = todayOrders.filter(o => {
     if (scanInput.trim() && !o.code?.toUpperCase().includes(scanInput.trim().toUpperCase())) return false
     if (filterBatch && !formatDriverSlotFromOrder(o).toLowerCase().includes(filterBatch.toLowerCase())) return false
@@ -188,7 +224,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
 
       <div className="bg-white rounded border border-gray-200 shadow-sm px-5 py-4">
         <div className="text-sm font-semibold text-gray-700 mb-1">📷 扫码枪 / 输入单号</div>
-        <div className="text-xs text-gray-400 mb-3">扫完整单号会把这一行标记「待确认」，还要再点「确认核销」才真正核销；只输入一部分会实时筛选下方列表</div>
+        <div className="text-xs text-gray-400 mb-3">扫完整单号会把这一行标记「待确认」，还要再点「确认核销」才真正核销；只输入一部分会实时筛选下方列表；今天列表里没有的单号会自动按单号跨日期查一次（司机昨天忘了回单也能在这里核销）</div>
         <form onSubmit={handleScan} className="flex gap-2">
           <input
             value={scanInput} onChange={e => setScanInput(e.target.value)}
@@ -196,7 +232,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
             className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
             autoFocus
           />
-          <button type="submit" className="px-4 py-2 text-white rounded text-sm font-medium" style={{ background: ACCENT }}>标记选中</button>
+          <button type="submit" disabled={scanSearching} className="px-4 py-2 text-white rounded text-sm font-medium disabled:opacity-50" style={{ background: ACCENT }}>{scanSearching ? '查询中…' : '标记选中'}</button>
         </form>
         {scanMsg && (
           <div className={`mt-2 px-3 py-2 rounded text-sm font-medium ${scanMsg.type === 'ok' ? 'bg-green-50 text-green-700' : scanMsg.type === 'warn' ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-700'}`}>
@@ -281,7 +317,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
             <tbody className="divide-y divide-gray-100">
               {sorted.map(o => (
                 <WriteOffRow
-                  key={o.id} order={o}
+                  key={o.id} order={o} businessDate={businessDate}
                   isSelected={selected.has(o.id)} isFlashing={flashId === o.id}
                   scanOrder={scanSeq[o.id]}
                   rowRef={el => { rowRefs.current[o.id] = el }}
@@ -307,8 +343,9 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
   )
 }
 
-function WriteOffRow({ order: o, isSelected, isFlashing, scanOrder, rowRef, onToggle, onConfirm, onReturn, onUndo, onReopen }: {
+function WriteOffRow({ order: o, businessDate, isSelected, isFlashing, scanOrder, rowRef, onToggle, onConfirm, onReturn, onUndo, onReopen }: {
   order: Order
+  businessDate: string | null
   isSelected: boolean
   isFlashing: boolean
   scanOrder: number | undefined
@@ -320,6 +357,8 @@ function WriteOffRow({ order: o, isSelected, isFlashing, scanOrder, rowRef, onTo
   onReopen: () => void
 }) {
   const status = o.returnStatus ?? 'PENDING'
+  const orderDay = o.deliveryDate ? o.deliveryDate.slice(0, 10) : null
+  const isOtherDay = !!orderDay && !!businessDate && orderDay !== businessDate
   const isCash = String(o.paymentMethod).toUpperCase() === 'CASH'
   let rowBg = ''
   if (isFlashing) rowBg = 'bg-purple-50 transition-colors duration-500'
@@ -335,7 +374,10 @@ function WriteOffRow({ order: o, isSelected, isFlashing, scanOrder, rowRef, onTo
           style={{ accentColor: ACCENT }} className="disabled:opacity-40 disabled:cursor-not-allowed" />
       </td>
       <td className="px-4 py-2.5 text-gray-500 text-xs">{scanOrder != null ? `#${scanOrder}` : <span className="text-gray-300">—</span>}</td>
-      <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{o.code ?? o.id.slice(-8)}</td>
+      <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
+        {o.code ?? o.id.slice(-8)}
+        {isOtherDay && <div className="font-sans text-[10px] text-amber-600 mt-0.5">⚠️ {orderDay}</div>}
+      </td>
       <td className="px-4 py-2.5 text-gray-800 max-w-[140px] truncate">{o.restaurantName}</td>
       <td className="px-4 py-2.5 text-gray-600">{formatDriverSlotFromOrder(o) || <span className="text-gray-300">未分配</span>}</td>
       <td className="px-4 py-2.5 text-right font-semibold text-gray-800">€{incTaxAmount(o).toFixed(2)}</td>
