@@ -109,6 +109,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     // 本地（今天）没找到——服务端按单号跨日期查一次，覆盖"司机昨天忘了回单，今天才来核销"
     // 这种场景（不能只让核销卡死在"今天"这个范围里）
     setScanSearching(true)
+    let keepInput = false
     try {
       const results = await apiGet<Order[]>(
         `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,COMPLETED,IN_DELIVERY&include_lines=false&colCode=${encodeURIComponent(code)}&limit=20`,
@@ -127,8 +128,19 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
           ? `⚠️ 不是今天的单（送货日期 ${day}），已补进下方列表——`
           : `⚠️ 按「${code}」模糊匹配到唯一一条（${target.code}，送货日期 ${day}），已补进下方列表——`)
       } else if (candidates.length > 1) {
-        setScanMsg({ type: 'err', text: `单号 ${code} 匹配到多条，请到下方「按时间段查漏单」核对` })
-        setTimeout(() => setScanMsg(null), 4500)
+        // 名副其实的"模糊搜索"：不能只甩一句话让用户自己去翻别的面板核对，
+        // 而是把匹配到的这些单直接补进列表——scanInput 保留不清空，下面表格的
+        // 实时筛选（第 173 行左右）会自己把范围收窄到这几条，用户直接点选正确的一条
+        // （20260926 用户反馈：之前只提示"到下方核对"其实没把结果摆出来，等于没做）
+        setExtraOrders(prev => {
+          const known = new Set(prev.map(o => o.id))
+          const additions = candidates.filter(o => !known.has(o.id))
+          return additions.length > 0 ? [...prev, ...additions] : prev
+        })
+        keepInput = true
+        setScanMsg({ type: 'warn', text: `按「${code}」模糊匹配到 ${candidates.length} 条，已列在下方，请点选正确的一条` })
+        setTimeout(() => setScanMsg(null), 5000)
+        setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
       } else {
         setScanMsg({ type: 'err', text: `找不到订单：${code}` })
         setTimeout(() => setScanMsg(null), 3500)
@@ -136,7 +148,7 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     } finally {
       setScanSearching(false)
     }
-    setScanInput('')
+    if (!keepInput) setScanInput('')
   }
 
   function toggle(id: string) {
