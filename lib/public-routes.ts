@@ -17,6 +17,13 @@ export const PUBLIC_API_ROUTES = [
   '/api/auth/login',
   /** 退出只删自己浏览器里的 HttpOnly cookie，无业务数据；token 失效了也得能退 */
   '/api/auth/logout',
+  /**
+   * 餐馆自助注册（/register 页面）。这条是白名单里唯一的匿名**写**接口——
+   * 但响应只回 { ok: true } 或校验错误文案，不回显任何已存在的客户/用户数据，
+   * 新建的账号也是 isActive=false + pendingApproval=true，提交后立即被锁死，
+   * 不满足「只放不含业务数据的端点」字面意思，但满足其精神：不会把任何数据读出去。
+   */
+  '/api/auth/register',
   /** 健康检查，只回 {ok:true}+时间戳，无业务数据 */
   '/api/health',
   /** 地图瓦片代理，纯转发第三方瓦片，无业务数据 */

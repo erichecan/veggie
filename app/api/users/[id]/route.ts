@@ -57,7 +57,60 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (me) => {
     try {
-      const { name, role, roles, isActive, newPassword, managerId } = await req.json()
+      const body = await req.json()
+      const { name, role, roles, isActive, newPassword, managerId, approve, reject } = body
+
+      // 待审核餐馆账号的批准 / 拒绝——跟下面的通用字段更新分开处理，早返回。
+      if (approve === true || reject === true) {
+        const pending = await prisma.user.findUnique({
+          where: { id },
+          select: { id: true, name: true, email: true, pendingApproval: true, customerId: true },
+        })
+        if (!pending) return NextResponse.json({ error: '用户不存在' }, { status: 404 })
+        if (!pending.pendingApproval) {
+          return NextResponse.json({ error: '这个账号不在待审核状态' }, { status: 400 })
+        }
+
+        if (approve === true) {
+          const user = await prisma.user.update({
+            where: { id },
+            data: { isActive: true, pendingApproval: false },
+            select: { id: true, email: true, name: true, isActive: true, updatedAt: true },
+          })
+          await writeLog({
+            userId: me.userId, userEmail: me.email, userName: me.name,
+            action: 'UPDATE', resource: 'user', resourceId: id,
+            detail: `批准餐馆账号 ${user.name}（${user.email}）`,
+          })
+          return NextResponse.json(serializeApi(user))
+        }
+
+        // 拒绝：连同注册时一起新建的 Customer 一并删除。删除前必须显式确认这个
+        // Customer 名下没有任何订单/发票——不能只假设"待审核期间不可能有单"，
+        // 万一日后有别的流程给它挂了数据，级联删就会把真实业务数据也删没。
+        if (pending.customerId) {
+          const [orderCount, invoiceCount] = await Promise.all([
+            // Order 表的客户外键字段叫 restaurantId（历史命名），不是 customerId
+            prisma.order.count({ where: { restaurantId: pending.customerId } }),
+            prisma.invoice.count({ where: { customerId: pending.customerId } }),
+          ])
+          if (orderCount > 0 || invoiceCount > 0) {
+            return NextResponse.json({
+              error: `该客户名下已有 ${orderCount} 个订单 / ${invoiceCount} 张发票，不能直接删除，请改用「停用」`,
+            }, { status: 409 })
+          }
+        }
+        await prisma.$transaction(async (tx) => {
+          await tx.user.delete({ where: { id } })
+          if (pending.customerId) await tx.customer.delete({ where: { id: pending.customerId } })
+        })
+        await writeLog({
+          userId: me.userId, userEmail: me.email, userName: me.name,
+          action: 'DELETE', resource: 'user', resourceId: id,
+          detail: `拒绝并删除待审核餐馆账号 ${pending.name}（${pending.email}）`,
+        })
+        return NextResponse.json({ ok: true })
+      }
 
       // ⛔ 与 prisma enum Role 保持一致。EXTERNAL_SALES 是 2026-08-06 加的，
       //    这份白名单当时漏了更新 —— 管理员因此一直设不了外部销售这个角色。

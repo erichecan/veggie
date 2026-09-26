@@ -21,6 +21,7 @@ export async function GET(req: Request) {
           role: true,
           roles: true,
           isActive: true,
+          pendingApproval: true,
           customerId: true,
           createdAt: true,
           updatedAt: true,

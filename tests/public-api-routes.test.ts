@@ -24,6 +24,7 @@ import { PUBLIC_API_ROUTES, isPublicApiRoute } from '../lib/public-routes'
 const EXPECTED_PUBLIC: Record<string, string> = {
   '/api/auth/login': '登录本身，必须匿名可达；自带 rateLimit 防爆破',
   '/api/auth/logout': '只删自己浏览器的 HttpOnly 登录 cookie，无业务数据；token 失效也得能退出',
+  '/api/auth/register': '餐馆自助注册（/register 页面），自带 rateLimit；只写不读——新建的账号 isActive=false + pendingApproval=true，提交后立即锁死，响应只回 {ok:true} 或校验错误文案，不回显任何已存在的客户/用户数据（20260926）',
   '/api/health': '只回 {ok:true} 与时间戳，无业务数据',
   '/api/tile': '地图瓦片代理，纯转发第三方瓦片',
   '/api/cron/backup-database': '定时任务，自带 CRON_SECRET 校验，不走 JWT',

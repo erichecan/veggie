@@ -18,7 +18,7 @@ import { fetchCatalog, fetchRoles, type PermissionCatalog, type RoleRow } from '
 
 const PURPLE = '#875A7B'
 
-type TabKey = 'users' | 'roles'
+type TabKey = 'staff' | 'restaurant' | 'roles'
 
 /**
  * 旧登录态没有权限位图（`pm`），`hasPermission` 一律返回 false，权限 tab 会整个消失 ——
@@ -42,7 +42,7 @@ export default function PermissionCenterPage() {
   const canSeeRbac = hasPermission(ability, 'system.rbac.read') || legacyFallback
   const canManageRbac = hasPermission(ability, 'system.rbac.manage') || legacyFallback
 
-  const [tab, setTab] = useState<TabKey>('users')
+  const [tab, setTab] = useState<TabKey>('staff')
   const [users, setUsers] = useState<SystemUser[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [roles, setRoles] = useState<RoleRow[]>([])
@@ -79,8 +79,11 @@ export default function PermissionCenterPage() {
 
   const reloadAll = useCallback(() => { loadUsers(); loadRbac() }, [loadUsers, loadRbac])
 
-  const TABS: Array<{ k: TabKey; icon: string; label: string }> = [
-    { k: 'users', icon: '👤', label: isEn ? 'Users' : '用户' },
+  const pendingRestaurantCount = users.filter(u => u.pendingApproval).length
+
+  const TABS: Array<{ k: TabKey; icon: string; label: string; badge?: number }> = [
+    { k: 'staff', icon: '👤', label: isEn ? 'Staff' : '内部员工' },
+    { k: 'restaurant', icon: '🍽️', label: isEn ? 'Restaurants' : '餐馆账号', badge: pendingRestaurantCount || undefined },
     ...(canSeeRbac ? [{ k: 'roles' as TabKey, icon: '🎭', label: isEn ? 'Roles' : '角色' }] : []),
   ]
 
@@ -93,17 +96,37 @@ export default function PermissionCenterPage() {
             <button
               key={t.k}
               onClick={() => setTab(t.k)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-semibold transition-colors relative"
               style={on ? { background: PURPLE, color: '#fff' } : { color: '#6b7280' }}
             >
               <span>{t.icon}</span>{t.label}
+              {!!t.badge && (
+                <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-red-500 text-white">
+                  {t.badge}
+                </span>
+              )}
             </button>
           )
         })}
       </div>
 
-      {tab === 'users' && (
+      {tab === 'staff' && (
         <UsersTab
+          roleGroup="staff"
+          users={users}
+          loading={usersLoading}
+          isEn={isEn}
+          roles={roles}
+          catalog={catalog}
+          canSeeRbac={canSeeRbac}
+          canManageRbac={canManageRbac}
+          onReload={reloadAll}
+        />
+      )}
+
+      {tab === 'restaurant' && (
+        <UsersTab
+          roleGroup="restaurant"
           users={users}
           loading={usersLoading}
           isEn={isEn}

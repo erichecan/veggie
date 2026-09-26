@@ -81,7 +81,7 @@ function userInitials(name: string): string {
   return name.trim().slice(0, 2).toUpperCase() || '?'
 }
 
-function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onToggle, onPerms }: {
+function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onToggle, onPerms, onApprove, onReject }: {
   u: SystemUser
   isEn: boolean
   roleLabel: Record<UserRole, string>
@@ -90,16 +90,20 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onTo
   onChangePwd: () => void
   onToggle: () => void
   onPerms: () => void
+  /** 只有「餐馆账号」tab 会传，待审核行才用得到 */
+  onApprove?: () => void
+  onReject?: () => void
 }) {
   const [hover, setHover] = useState(false)
   // 多角色账号（现网 19 个 SALES 兼 OPERATOR）只显示主角色是骗人的，全列出来
   const allRoles = (u.roles && u.roles.length > 0 ? u.roles : [u.role]) as UserRole[]
+  const pending = u.pendingApproval === true
   return (
     <tr
-      style={{ background: hover ? '#f3eff5' : undefined }}
+      style={{ background: pending ? '#fffbeb' : hover ? '#f3eff5' : undefined }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      className={!u.isActive ? 'opacity-50' : ''}
+      className={!u.isActive && !pending ? 'opacity-50' : ''}
     >
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
@@ -123,7 +127,11 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onTo
         {u.manager?.name ?? <span className="text-gray-300">—</span>}
       </td>
       <td className="px-4 py-3 text-center">
-        {u.isActive ? (
+        {pending ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
+            {isEn ? 'Pending review' : '待审核'}
+          </span>
+        ) : u.isActive ? (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
             {isEn ? 'Active' : '启用'}
           </span>
@@ -137,30 +145,42 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onTo
         {new Date(u.createdAt).toLocaleDateString('en-GB')}
       </td>
       <td className="px-4 py-3 text-center">
-        <div className="flex items-center justify-center gap-2">
-          {canManagePerms && (
-            <>
-              <button onClick={onPerms} className="text-xs hover:underline font-medium" style={{ color: PURPLE }}>
-                {isEn ? 'Permissions' : '权限'}
-              </button>
-              <span className="text-gray-300">|</span>
-            </>
-          )}
-          <button onClick={onEdit} className="text-xs hover:underline" style={{ color: PURPLE }}>
-            {isEn ? 'Edit' : '编辑'}
-          </button>
-          <span className="text-gray-300">|</span>
-          <button onClick={onChangePwd} className="text-xs text-orange-500 hover:underline">
-            {isEn ? 'Change Password' : '修改密码'}
-          </button>
-          <span className="text-gray-300">|</span>
-          <button
-            onClick={onToggle}
-            className={`text-xs hover:underline ${u.isActive ? 'text-red-500' : 'text-green-600'}`}
-          >
-            {isEn ? (u.isActive ? 'Deactivate' : 'Activate') : (u.isActive ? '停用' : '启用')}
-          </button>
-        </div>
+        {pending ? (
+          <div className="flex items-center justify-center gap-2">
+            <button onClick={onApprove} className="text-xs font-medium hover:underline text-green-600">
+              {isEn ? 'Approve' : '批准'}
+            </button>
+            <span className="text-gray-300">|</span>
+            <button onClick={onReject} className="text-xs font-medium hover:underline text-red-500">
+              {isEn ? 'Reject' : '拒绝'}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-2">
+            {canManagePerms && (
+              <>
+                <button onClick={onPerms} className="text-xs hover:underline font-medium" style={{ color: PURPLE }}>
+                  {isEn ? 'Permissions' : '权限'}
+                </button>
+                <span className="text-gray-300">|</span>
+              </>
+            )}
+            <button onClick={onEdit} className="text-xs hover:underline" style={{ color: PURPLE }}>
+              {isEn ? 'Edit' : '编辑'}
+            </button>
+            <span className="text-gray-300">|</span>
+            <button onClick={onChangePwd} className="text-xs text-orange-500 hover:underline">
+              {isEn ? 'Change Password' : '修改密码'}
+            </button>
+            <span className="text-gray-300">|</span>
+            <button
+              onClick={onToggle}
+              className={`text-xs hover:underline ${u.isActive ? 'text-red-500' : 'text-green-600'}`}
+            >
+              {isEn ? (u.isActive ? 'Deactivate' : 'Activate') : (u.isActive ? '停用' : '启用')}
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   )
@@ -173,7 +193,7 @@ const FACET_DEFS: ClientFacetDef<SystemUser>[] = [
 ]
 
 export default function UsersTab({
-  users, loading, isEn, roles, catalog, canSeeRbac, canManageRbac, onReload,
+  users, loading, isEn, roles, catalog, canSeeRbac, canManageRbac, onReload, roleGroup,
 }: {
   users: SystemUser[]
   loading: boolean
@@ -183,13 +203,25 @@ export default function UsersTab({
   canSeeRbac: boolean
   canManageRbac: boolean
   onReload: () => void
+  /** staff=内部员工（非 RESTAURANT 角色），restaurant=餐馆客户账号 */
+  roleGroup: 'staff' | 'restaurant'
 }) {
   const ROLE_LABEL = isEn ? ROLE_LABEL_EN : ROLE_LABEL_ZH
   const [searchInput, setSearchInput] = useState('')
 
+  const isRestaurantGroup = roleGroup === 'restaurant'
+  // 一个账号的 roles[] 目前不会同时含 RESTAURANT 和内部角色（两类账号体系分开建），
+  // 按主角色分组即可
+  const scoped = users.filter(u => {
+    const allRoles = (u.roles && u.roles.length > 0 ? u.roles : [u.role]) as UserRole[]
+    const isRestaurant = allRoles.includes('RESTAURANT')
+    return isRestaurantGroup ? isRestaurant : !isRestaurant
+  })
+  const roleOptions = isRestaurantGroup ? (['RESTAURANT'] as UserRole[]) : ALL_ROLES.filter(r => r !== 'RESTAURANT')
+
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<FormState>(emptyForm())
+  const [form, setForm] = useState<FormState>(() => ({ ...emptyForm(), role: isRestaurantGroup ? 'RESTAURANT' : 'OPERATOR' }))
   const [saving, setSaving] = useState(false)
 
   const [pwdDialogOpen, setPwdDialogOpen] = useState(false)
@@ -203,7 +235,7 @@ export default function UsersTab({
 
   function openAdd() {
     setEditingId(null)
-    setForm(emptyForm())
+    setForm({ ...emptyForm(), role: isRestaurantGroup ? 'RESTAURANT' : 'OPERATOR' })
     setDialogOpen(true)
   }
 
@@ -293,24 +325,50 @@ export default function UsersTab({
     }
   }
 
+  async function handleApprove(u: SystemUser) {
+    try {
+      await apiPut<SystemUser>(`/api/users/${u.id}`, { approve: true })
+      toast.success(isEn ? `${u.name} approved` : `${u.name} 已批准，可以登录下单了`)
+      onReload()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败'))
+    }
+  }
+
+  async function handleReject(u: SystemUser) {
+    if (!confirm(isEn ? `Reject and delete "${u.name}"? This also deletes the customer record created with it.` : `拒绝并删除「${u.name}」这条待审核记录？会连同一起新建的客户档案一并删除，不可恢复。`)) return
+    try {
+      await apiPut(`/api/users/${u.id}`, { reject: true })
+      toast.success(isEn ? `${u.name} rejected` : `${u.name} 已拒绝并删除`)
+      onReload()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败'))
+    }
+  }
+
   const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
   const searched = searchInput
-    ? users.filter(u =>
+    ? scoped.filter(u =>
         u.name.toLowerCase().includes(searchInput.toLowerCase()) ||
         u.email.toLowerCase().includes(searchInput.toLowerCase())
       )
-    : users
+    : scoped
+  // 待审核的排最前面，不用另外做筛选器就能第一时间看到
   const filtered = filterByFacets(searched, facets, FACET_DEFS)
+    .slice()
+    .sort((a, b) => Number(b.pendingApproval === true) - Number(a.pendingApproval === true))
 
   return (
     <div>
       <OdooControlPanel
         {...controlPanelProps}
         activeFilters={chips}
-        breadcrumb={isEn ? ['System', 'User Management'] : ['系统', '用户管理']}
+        breadcrumb={isEn
+          ? ['System', isRestaurantGroup ? 'Restaurant Accounts' : 'Staff Accounts']
+          : ['系统', isRestaurantGroup ? '餐馆账号' : '内部员工']}
         permanentActions={[
-          { label: isEn ? 'New User' : '新建用户', onClick: openAdd },
+          { label: isRestaurantGroup ? (isEn ? 'New Restaurant' : '新建餐馆账号') : (isEn ? 'New Staff' : '新建员工'), onClick: openAdd },
           { label: isEn ? 'Refresh' : '刷新', onClick: onReload },
         ]}
         searchValue={searchInput}
@@ -344,7 +402,7 @@ export default function UsersTab({
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={7} className="text-center py-16 text-gray-400 text-sm">
-                      {isEn ? 'No users' : '暂无用户'}
+                      {isEn ? 'No users' : isRestaurantGroup ? '暂无餐馆账号' : '暂无员工账号'}
                     </td>
                   </tr>
                 )}
@@ -359,6 +417,8 @@ export default function UsersTab({
                     onChangePwd={() => openChangePwd(u)}
                     onToggle={() => handleToggleActive(u)}
                     onPerms={() => { setPermUserId(u.id); setPermOpen(true) }}
+                    onApprove={() => handleApprove(u)}
+                    onReject={() => handleReject(u)}
                   />
                 ))}
               </tbody>
@@ -415,11 +475,11 @@ export default function UsersTab({
                 <p className="text-xs text-gray-400">{isEn ? 'Email cannot be changed after creation' : '邮箱创建后不可修改'}</p>
               </div>
             )}
-            {!editingId && (
+            {!editingId && roleOptions.length > 1 && (
               <div>
                 <Label>{isEn ? 'Role *' : '角色 *'}</Label>
                 <div className="mt-1 grid grid-cols-4 gap-1.5">
-                  {ALL_ROLES.map(r => (
+                  {roleOptions.map(r => (
                     <button
                       key={r}
                       onClick={() => setForm(f => ({ ...f, role: r }))}
@@ -441,6 +501,11 @@ export default function UsersTab({
                   </p>
                 )}
               </div>
+            )}
+            {!editingId && roleOptions.length === 1 && (
+              <p className="text-xs text-gray-400">
+                {isEn ? 'Role: Restaurant (this tab only creates restaurant accounts)' : '角色：餐馆（此 tab 只建餐馆账号，管理员手工建号直接生效，不经过审核）'}
+              </p>
             )}
             {editingId && canSeeRbac && (
               <p className="text-[11px] text-gray-400">
