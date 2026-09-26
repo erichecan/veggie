@@ -25,7 +25,8 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
     // 20260923：原挂在「销售」模块下的发票、供应商账单一并并入财务模块导航
     { href: `${prefix}/classic/finance/invoices`, label: isEn ? 'Invoices' : '发票' },
     { href: `${prefix}/classic/finance/vendor-bills`, label: isEn ? 'Vendor Bills' : '供应商账单' },
-    { href: `${prefix}/classic/finance/statements`, label: isEn ? 'Statements' : '对账单' },
+    // 20260926：对账单从没走完过一次真实流程（生产库 0 张），先从导航下线；
+    // 路由 /classic/finance/statements 和后端逻辑都还在，没删代码，只是先不给入口
     // 20260924：司机交账/司机对账两个独立入口下线，合并进「核销管理」页的钱/单两板块
     // 20260925：核销管理从独立顶层路由 /classic/accounting 搬进本模块，不再单独起一套导航
     { href: `${prefix}/classic/finance/accounting`, label: isEn ? 'Write-off' : '核销管理' },

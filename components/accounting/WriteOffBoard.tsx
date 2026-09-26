@@ -113,13 +113,20 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
       const results = await apiGet<Order[]>(
         `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,COMPLETED,IN_DELIVERY&include_lines=false&colCode=${encodeURIComponent(code)}&limit=20`,
       )
-      const exact = (results ?? []).filter(o => o.code?.toUpperCase() === codeUpper)
-      if (exact.length === 1) {
-        const target = exact[0]
+      const list = results ?? []
+      const exact = list.filter(o => o.code?.toUpperCase() === codeUpper)
+      // 只输入一部分（比如 "mj"）时 exact 恒为空，但服务端 contains 搜索可能真的搜到了单——
+      // 之前只认 exact，搜到多条也一律回「找不到」，误导用户以为单不存在（20260926 用户反馈）
+      const candidates = exact.length > 0 ? exact : list
+      if (candidates.length === 1) {
+        const target = candidates[0]
+        const isExact = target.code?.toUpperCase() === codeUpper
         setExtraOrders(prev => prev.some(o => o.id === target.id) ? prev : [...prev, target])
         const day = target.deliveryDate ? target.deliveryDate.slice(0, 10) : '未知日期'
-        selectFoundOrder(target, `⚠️ 不是今天的单（送货日期 ${day}），已补进下方列表——`)
-      } else if (exact.length > 1) {
+        selectFoundOrder(target, isExact
+          ? `⚠️ 不是今天的单（送货日期 ${day}），已补进下方列表——`
+          : `⚠️ 按「${code}」模糊匹配到唯一一条（${target.code}，送货日期 ${day}），已补进下方列表——`)
+      } else if (candidates.length > 1) {
         setScanMsg({ type: 'err', text: `单号 ${code} 匹配到多条，请到下方「按时间段查漏单」核对` })
         setTimeout(() => setScanMsg(null), 4500)
       } else {
