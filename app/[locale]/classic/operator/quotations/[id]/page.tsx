@@ -846,7 +846,7 @@ export default function QuotationDetailPage() {
           </div>
 
           {editing && (
-            <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
+            <div className="mb-4 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
               <span>✏️</span>
               <span className="font-medium">Editing</span>
               <span className="text-amber-500 text-xs">— highlighted fields below are editable</span>
