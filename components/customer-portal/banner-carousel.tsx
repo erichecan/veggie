@@ -13,7 +13,14 @@ export function BannerCarousel({ banners, onBannerClick }: { banners: PortalBann
     return () => clearInterval(t)
   }, [banners.length])
 
-  if (banners.length === 0) return null
+  if (banners.length === 0) {
+    return (
+      <div className="relative rounded-xl overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element -- 占位图，本地静态资源 */}
+        <img src="/banner-placeholder.svg" alt="暂无促销广告" className="w-full h-32 sm:h-44 object-cover" />
+      </div>
+    )
+  }
 
   const current = banners[Math.min(idx, banners.length - 1)]
 
@@ -25,6 +32,10 @@ export function BannerCarousel({ banners, onBannerClick }: { banners: PortalBann
         alt={current.title}
         className="w-full h-32 sm:h-44 object-cover cursor-pointer"
         onClick={() => onBannerClick(current)}
+        onError={(e) => {
+          const el = e.currentTarget as HTMLImageElement
+          if (!el.src.endsWith('/banner-placeholder.svg')) el.src = '/banner-placeholder.svg'
+        }}
       />
       {banners.length > 1 && (
         <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-1.5">
