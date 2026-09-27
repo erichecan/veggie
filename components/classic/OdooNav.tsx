@@ -44,34 +44,21 @@ interface OdooNavProps {
   menuItems: MenuItem[]
 }
 
+// 20260927：九宫格定位收窄为"切换到另一个独立 app"的粗粒度入口，
+// 不再和当前 app 自己的顶部二级导航重复列同样的页面。
+// 四个独立 app：运营（销售）/仓库/财务/老板，各自跳自己的 app 根路径，
+// 由根路径的重定向/默认页决定落地在哪（与仓库/财务/老板三个已有写法保持一致）。
 const APPS_ZH = [
-  { label: '运营', icon: '📦', href: '/classic/operator/place-order' },
-  { label: '销售单', icon: '🛒', href: '/classic/operator/orders' },
-  { label: '拣货', icon: '🏭', href: '/classic/operator/dispatch-console' },
+  { label: '运营', icon: '📦', href: '/classic/operator' },
   { label: '仓库', icon: '🏪', href: '/classic/warehouse' },
-  { label: '配送', icon: '🚚', href: '/classic/operator/trips' },
-  // 20260821：退换货已迁入库存管理 tab，数据分析/账户已分别迁入数据中心与头像下拉菜单，此处不再重复暴露
-  // 20260923：原"会计"（核销管理）与"发票"两个图标合并——发票/供应商账单/对账单/司机交账/核销管理
-  // 都已收进「财务」模块自己的二级导航，这里只留一个统一入口
   { label: '财务', icon: '💰', href: '/classic/finance' },
-  { label: '采购', icon: '🛍️', href: '/classic/operator/purchases' },
-  { label: '商品', icon: '🥦', href: '/classic/operator/products' },
-  { label: '价格表', icon: '🏷️', href: '/classic/operator/pricelists' },
-  { label: '分货员', icon: '🔀', href: '/classic/operator/sorting' },
   { label: '老板', icon: '📊', href: '/classic/boss' },
 ]
 
 const APPS_EN = [
-  { label: 'Operations', icon: '📦', href: '/classic/operator/customers' },
-  { label: 'Orders', icon: '🛒', href: '/classic/operator/orders' },
-  { label: 'Picking', icon: '🏭', href: '/classic/operator/dispatch-console' },
+  { label: 'Operations', icon: '📦', href: '/classic/operator' },
   { label: 'Warehouse', icon: '🏪', href: '/classic/warehouse' },
-  { label: 'Delivery', icon: '🚚', href: '/classic/operator/trips' },
   { label: 'Finance', icon: '💰', href: '/classic/finance' },
-  { label: 'Purchases', icon: '🛍️', href: '/classic/operator/purchases' },
-  { label: 'Products', icon: '🥦', href: '/classic/operator/products' },
-  { label: 'Pricelists', icon: '🏷️', href: '/classic/operator/pricelists' },
-  { label: 'Sorter', icon: '🔀', href: '/classic/operator/sorting' },
   { label: 'Manager', icon: '📊', href: '/classic/boss' },
 ]
 
