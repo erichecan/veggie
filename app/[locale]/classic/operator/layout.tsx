@@ -55,6 +55,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
     { href: `${prefix}/classic/operator/products`,  label: en ? 'Products'   : '商品' },
     { href: `${prefix}/classic/operator/customers`, label: en ? 'Customers'  : '客户' },
     { href: `${prefix}/classic/operator/pricelists`,label: en ? 'Pricelists' : '价格表' },
+    { href: `${prefix}/classic/operator/banners`,   label: en ? 'Banners'    : '轮播图' },
     { href: `${prefix}/classic/operator/settings/units`, label: en ? 'Units' : '计量单位' },
     // 司机配置已并入「配送调度中心」，隐藏独立导航入口
     // { href: `${prefix}/classic/operator/drivers`,        label: en ? 'Drivers'          : '司机配置' },

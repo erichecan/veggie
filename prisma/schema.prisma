@@ -2020,6 +2020,25 @@ model BulletinPost {
   @@index([pinned, createdAt])
 }
 
+/// 客户门户首页顶部促销轮播图。点击可跳转商品或任意链接（二选一，都不填=纯展示图不可点）。
+/// productId 不设 FK 约束，沿用本项目对宽松引用的一贯做法（CustomerPricelist.pricelistId 等同例）：
+/// 商品被删除/下架不应该连带炸掉一条已经在展示的 banner。
+model Banner {
+  id        String    @id @default(cuid())
+  title     String
+  imageUrl  String
+  linkUrl   String?
+  productId String?
+  sequence  Int       @default(0)
+  active    Boolean   @default(true)
+  dateStart DateTime?
+  dateEnd   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([active, sequence])
+}
+
 /**
  * AI 问数 · 提问日志（20260906）
  * ================================================================================

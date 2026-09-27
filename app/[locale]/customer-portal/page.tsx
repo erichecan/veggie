@@ -6,6 +6,8 @@ import { FavoritesPanel } from '@/components/customer-portal/favorites-panel'
 import { FrequentTab } from '@/components/customer-portal/frequent-tab'
 import { CartPanel } from '@/components/customer-portal/cart-panel'
 import { ProductGrid } from '@/components/customer-portal/product-grid'
+import { BannerCarousel } from '@/components/customer-portal/banner-carousel'
+import { CategorySidebar } from '@/components/customer-portal/category-sidebar'
 import { useCustomerPortal } from '@/components/customer-portal/use-customer-portal'
 import { useState } from 'react'
 
@@ -31,6 +33,8 @@ export default function CustomerProductsPage() {
 
   return (
     <div className="space-y-4">
+      <BannerCarousel banners={p.banners} onBannerClick={p.handleBannerClick} />
+
       <div className="flex items-center gap-3">
         <div className="flex-1 relative">
           <input type="text" value={p.searchInput} onChange={(e) => p.setSearchInput(e.target.value)}
@@ -85,14 +89,19 @@ export default function CustomerProductsPage() {
         />
       )}
 
-      {p.gridLoading ? (
-        <div className="text-center py-20 text-gray-400">{isEn ? 'Loading products...' : '加载商品中...'}</div>
-      ) : (
-        <ProductGrid
-          products={p.products} cart={p.cart} addToCart={p.addToCart} setQty={p.setQty}
-          page={p.page} totalPages={p.totalPages} setPage={p.setPage} activeSearch={p.activeSearch} isEn={isEn}
-        />
-      )}
+      <div className="flex gap-4 items-start">
+        <CategorySidebar categories={p.categories} activeCategoryId={p.categoryId} onSelect={p.selectCategory} isEn={isEn} />
+        <div className="flex-1 min-w-0">
+          {p.gridLoading ? (
+            <div className="text-center py-20 text-gray-400">{isEn ? 'Loading products...' : '加载商品中...'}</div>
+          ) : (
+            <ProductGrid
+              products={p.products} cart={p.cart} addToCart={p.addToCart} setQty={p.setQty}
+              page={p.page} totalPages={p.totalPages} setPage={p.setPage} activeSearch={p.activeSearch} isEn={isEn}
+            />
+          )}
+        </div>
+      </div>
     </div>
   )
 }

@@ -29,7 +29,8 @@ const PRODUCT_INCLUDE = { uom: { select: { id: true, name: true } as const } } a
  * 两种模式：
  *   ?ids=a,b,c   — 定向查询（"再来一单"核对历史订单里的商品现价/是否还在售），
  *                  不受 status=ACTIVE 限制、不分页，好让调用方判断"这个商品下架了"
- *   ?page=&pageSize=&search=  — 分页浏览（首页商品网格），只返回上架商品
+ *   ?page=&pageSize=&search=&categoryId=&productId=  — 分页浏览（首页商品网格），只返回上架商品；
+ *                  productId 精确定位某一个商品（banner 点商品跳转用，避免同名商品搜错）
  *   都不传          — 等价于 page=1
  */
 export async function GET(req: Request) {
@@ -66,9 +67,16 @@ export async function GET(req: Request) {
       const page = parsePositiveInt(searchParams.get('page'), 1)
       const pageSize = Math.min(MAX_PAGE_SIZE, parsePositiveInt(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE))
       const search = searchParams.get('search')?.trim()
+      const categoryId = searchParams.get('categoryId')?.trim()
+      // 20260927（code-review 发现）：banner"跳转到商品"原来靠把商品名塞进 search 框实现，
+      // 同名商品（本库有过 60+ 组重名，见 product-dedup-merge 记录）会连带搜出别的商品。
+      // 精确按 id 命中，跳过名字这层不可靠的中间层。
+      const productId = searchParams.get('productId')?.trim()
 
       const where = {
         status: 'ACTIVE' as const,
+        ...(productId ? { id: productId } : {}),
+        ...(categoryId ? { categoryId } : {}),
         // 20260926（code-review 发现）：`spec` 是废弃字段，绝大多数商品早已清空（历史数据见
         // order-line-description.ts 的说明），客户搜索框里输入的规格文字实际来自 `saleDescription`
         // （lineDescription() 的优先取值），漏了它会导致搜规格词基本搜不到东西。

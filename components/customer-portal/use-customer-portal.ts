@@ -7,6 +7,21 @@ import { eur } from '@/lib/format-money'
 import { loadCart, saveCart, toPercent, mergeCartItems, type CartItem } from './cart-utils'
 import type { Product, FrequentCard } from './product-types'
 
+export interface PortalCategory {
+  id: string
+  name: string
+  nameZh: string | null
+  count: number
+}
+
+export interface PortalBanner {
+  id: string
+  title: string
+  imageUrl: string
+  linkUrl: string | null
+  productId: string | null
+}
+
 const PAGE_SIZE = 24
 const SEARCH_DEBOUNCE_MS = 350
 
@@ -30,6 +45,11 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
   const [totalPages, setTotalPages] = useState(1)
   const [searchInput, setSearchInput] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
+  const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [categories, setCategories] = useState<PortalCategory[]>([])
+  const [banners, setBanners] = useState<PortalBanner[]>([])
+  // banner 点"跳转到商品"时精确定位到这一个商品 id（不走名字搜索，见 handleBannerClick 注释）
+  const [jumpProductId, setJumpProductId] = useState<string | null>(null)
   const [paymentTerm, setPaymentTerm] = useState<string | null>(null)
   const [frequent, setFrequent] = useState<FrequentCard[]>([])
   // 初始值必须是 []，不能直接拿 loadCart() 做懒初始化——SSR 阶段没有 localStorage，
@@ -47,7 +67,14 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
 
   // 搜索防抖：每敲一个字就打服务端不合适，商品名比订单号长得多
   useEffect(() => {
-    const t = setTimeout(() => { setActiveSearch(searchInput.trim()); setPage(1) }, SEARCH_DEBOUNCE_MS)
+    const t = setTimeout(() => {
+      const trimmed = searchInput.trim()
+      setActiveSearch(trimmed)
+      // 只在用户真的敲了字才清掉 banner 跳转的定位——handleBannerClick 会把搜索框重置成
+      // 空字符串来清视觉残留，那次重置不该反过来把它刚设的 jumpProductId 顶掉
+      if (trimmed) setJumpProductId(null)
+      setPage(1)
+    }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(t)
   }, [searchInput])
 
@@ -56,7 +83,13 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
     let cancelled = false
     setGridLoading(true)
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
-    if (activeSearch) params.set('search', activeSearch)
+    if (jumpProductId) {
+      // 精确定位单个商品时不叠加搜索/分类，避免"同时命中 id + 其他条件"的组合怪状态
+      params.set('productId', jumpProductId)
+    } else {
+      if (activeSearch) params.set('search', activeSearch)
+      if (categoryId) params.set('categoryId', categoryId)
+    }
     apiGet<{ products: Product[]; paymentTerm?: string; totalPages: number }>(`/api/customer-portal/products?${params}`)
       .then((d) => {
         if (cancelled) return
@@ -68,13 +101,66 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
       .finally(() => { if (!cancelled) setGridLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, activeSearch])
+  }, [page, activeSearch, categoryId, jumpProductId])
 
   useEffect(() => {
     apiGet<FrequentCard[]>('/api/customer-portal/frequently-ordered')
       .then(setFrequent)
       .catch(() => {}) // 常购清单是锦上添花，加载失败不影响正常下单
   }, [])
+
+  useEffect(() => {
+    apiGet<PortalCategory[]>('/api/customer-portal/categories').then(setCategories).catch(() => {})
+    apiGet<PortalBanner[]>('/api/customer-portal/banners').then(setBanners).catch(() => {})
+  }, [])
+
+  function selectCategory(id: string | null) {
+    setCategoryId(id)
+    setJumpProductId(null)
+    setPage(1)
+  }
+
+  // 只有两个 locale（zh 默认无前缀 / en 前缀 /en），与 i18n/routing.ts 的配置保持一致
+  const localePrefix = isEn ? '/en' : ''
+
+  /**
+   * 门户没有独立商品详情页（有意为之，减少下单步骤），banner 点商品时"跳转"
+   * 就是把商品网格精确筛到这一个商品 id（20260927 code-review 发现：原来靠把商品名塞进
+   * 搜索框实现，本库有过 60+ 组商品重名，同名商品会被一起搜出来，客户可能点进另一个商品；
+   * 改成按 id 精确命中，与搜索/分类完全独立）。
+   */
+  async function handleBannerClick(banner: PortalBanner) {
+    if (banner.linkUrl) {
+      if (/^https?:\/\//.test(banner.linkUrl)) {
+        window.open(banner.linkUrl, '_blank', 'noopener,noreferrer')
+      } else {
+        // 站内相对路径必须带上 locale 前缀，否则英文界面点了会静默跳回中文版
+        router.push(`${localePrefix}${banner.linkUrl}`)
+      }
+      return
+    }
+    if (banner.productId) {
+      try {
+        // 用不受 status 限制的 ids= 先查一次，商品下架/删除时能给出明确提示，
+        // 而不是让精确匹配的 productId 查询悄悄返回空网格（schema 注释里承诺过
+        // "商品下架不应该连带炸掉一条已经在展示的 banner"，这里是那个承诺的另一半：
+        // banner 本身还在，但点进去要说清楚"这个商品下架了"，不能什么都不说）
+        const data = await apiGet<{ products: Product[] }>(`/api/customer-portal/products?ids=${banner.productId}`)
+        const target = data.products[0]
+        if (!target || target.status !== 'ACTIVE') {
+          toast.error(isEn ? 'This product is no longer available' : '该商品已下架')
+          return
+        }
+        setSearchInput('')
+        setActiveSearch('')
+        setCategoryId(null)
+        setJumpProductId(banner.productId)
+        setPage(1)
+      } catch {
+        toast.error(isEn ? 'Failed to open this product' : '打开商品失败')
+      }
+    }
+  }
 
   const updateCart = useCallback((newCart: CartItem[]) => {
     setCart(newCart)
@@ -152,6 +238,7 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
   return {
     products, gridLoading, page, setPage, totalPages,
     searchInput, setSearchInput, activeSearch, paymentTerm,
+    categoryId, selectCategory, categories, banners, handleBannerClick,
     frequent, cart, submitting, showCart, setShowCart,
     deliveryDate, setDeliveryDate, minDate, capacityWarning,
     paymentMethod, setPaymentMethod, note, setNote,

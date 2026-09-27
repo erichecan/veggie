@@ -300,6 +300,13 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/pricelists/*', methods: ['PUT'], permission: 'master.pricelist.update' },
   { pattern: '/api/pricelists/*', methods: ['DELETE'], permission: 'master.pricelist.delete' },
 
+  // 客户门户首页轮播图管理——复用 pricelist 的权限点，同一批 BOSS/OPERATOR 管理营销/定价内容，
+  // 不为这一个小功能单独开一套权限点+RBAC 迁移
+  { pattern: '/api/banners', methods: R, permission: 'master.pricelist.read' },
+  { pattern: '/api/banners', methods: ['POST'], permission: 'master.pricelist.create' },
+  { pattern: '/api/banners/*', methods: ['PUT'], permission: 'master.pricelist.update' },
+  { pattern: '/api/banners/*', methods: ['DELETE'], permission: 'master.pricelist.delete' },
+
   { pattern: '/api/suppliers/**', methods: R, permission: 'master.supplier.read' },
   { pattern: '/api/suppliers', methods: ['POST'], permission: 'master.supplier.create' },
   { pattern: '/api/uoms/**', methods: R, permission: 'master.uom.read' },
