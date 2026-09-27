@@ -858,7 +858,7 @@ export default function QuotationDetailPage() {
             <div className="space-y-3 text-sm">
               <div className={`flex rounded ${editing && !customerLocked ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Customer</div>
-                <div className="flex-1">
+                <div className="flex-1 max-w-xs">
                   {editing ? (
                     <CustomerPickerInline
                       customers={customerOptions}
@@ -878,6 +878,25 @@ export default function QuotationDetailPage() {
                   )}
                   {customer?.address && <div className="text-xs text-gray-500 mt-0.5">{customer.address}</div>}
                 </div>
+              </div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Payment Terms</div>
+                {editing ? (
+                  <input type="text" value={paymentTerm} onChange={e => setPaymentTerm(e.target.value)}
+                    placeholder={customer?.paymentTerm ?? ''}
+                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                ) : <div className="text-gray-800">{(order as unknown as { paymentTerm?: string })?.paymentTerm ?? customer?.paymentTerm ?? '—'}</div>}
+              </div>
+              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>
+                {editing ? (
+                  <SearchableDropdown
+                    className="flex-1"
+                    options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
+                    value={salesUserId}
+                    onChange={setSalesUserId}
+                  />
+                ) : <div className="text-gray-800">{(order as unknown as { salesman?: string })?.salesman || '—'}</div>}
               </div>
               <div className="flex">
                 <div className="w-32 font-bold text-gray-700">Balance</div>
@@ -977,25 +996,6 @@ export default function QuotationDetailPage() {
                     onChange={setPricelistId}
                   />
                 ) : <div style={{ color: PURPLE }}>{pricelist?.name || '—'}</div>}
-              </div>
-              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
-                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Payment Terms</div>
-                {editing ? (
-                  <input type="text" value={paymentTerm} onChange={e => setPaymentTerm(e.target.value)}
-                    placeholder={customer?.paymentTerm ?? ''}
-                    className="flex-1 border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
-                ) : <div className="text-gray-800">{(order as unknown as { paymentTerm?: string })?.paymentTerm ?? customer?.paymentTerm ?? '—'}</div>}
-              </div>
-              <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
-                <div className="w-32 font-bold text-gray-700 flex-shrink-0">Sales Person</div>
-                {editing ? (
-                  <SearchableDropdown
-                    className="flex-1"
-                    options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
-                    value={salesUserId}
-                    onChange={setSalesUserId}
-                  />
-                ) : <div className="text-gray-800">{(order as unknown as { salesman?: string })?.salesman || '—'}</div>}
               </div>
               <div className={`flex items-center rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
                 <div className="w-32 font-bold text-gray-700 flex-shrink-0">Price Type</div>
