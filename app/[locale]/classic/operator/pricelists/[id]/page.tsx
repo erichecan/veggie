@@ -1267,6 +1267,25 @@ function ItemDialog({
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  {isEn ? 'Promo Badge Label (customer portal)' : '促销角标文案（客户门户展示）'}
+                </label>
+                <input
+                  type="text"
+                  value={item.badgeLabel ?? ''}
+                  onChange={e => set('badgeLabel', e.target.value || undefined)}
+                  placeholder={isEn ? 'e.g. 20% off this week' : '例如：限时8折'}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
+                />
+                {!item.dateStart && !item.dateEnd && item.badgeLabel && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    {isEn
+                      ? 'No Start/End Date set — this will show as a permanent promo badge. Consider adding a date range for a real "limited-time" offer.'
+                      : '未设置起止日期——角标会一直显示。真正的"限时"促销建议配合起止日期一起填。'}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

@@ -36,6 +36,10 @@ export interface PriceResolution {
    *  这里回填该 uomId —— 调用方据此知道 `price` 已经是这个单位的最终价，
    *  不能再乘 `ProductSaleUom.factor` 二次换算（否则界面填的数字和实际生效的对不上）。 */
   matchedUomId?: string
+  /** 20260926：命中的条目配了 `badgeLabel` 时回填，客户门户拿去渲染促销角标文案 */
+  promoLabel?: string
+  /** 20260926：命中促销条目时的折前基准价，配合 promoLabel 在门户画划线原价；未命中促销时不填 */
+  originalPrice?: number
 }
 
 // ─── 主函数 ───────────────────────────────────────────────────────────────────
@@ -87,13 +91,20 @@ export function resolvePrice(
     const computed = computeItemPrice(item, product, basePrice, allPricelists, qty, date, _depth, uomId)
     if (computed === null) continue
 
+    const roundedComputed = round2(computed)
+    // 20260926（code-review 发现）：badgeLabel 只代表"这条规则想营销"，不代表算出来的价真的比牌价低——
+    // formula 类规则可能因为 priceMinMargin 夹取反而比牌价贵。角标+划线原价只在真降价时才展示，
+    // 否则客户会看到一个"划线原价比现价还低"的诡异促销角标。
+    const isRealDiscount = item.badgeLabel && roundedComputed < round2(basePrice)
+
     return {
-      price: round2(computed),
+      price: roundedComputed,
       pricelistName: pricelist.name,
       itemDesc: describeItem(item),
       isFallback: false,
       sourceType: 'pricelist',
       matchedUomId: item.uomId,
+      ...(isRealDiscount ? { promoLabel: item.badgeLabel, originalPrice: round2(basePrice) } : {}),
     }
   }
 

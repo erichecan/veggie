@@ -2,14 +2,22 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import {
-  loadCustomerFromRestaurantId,
-  queryLastSoldPrices,
-} from '@/lib/server-pricing'
-import { resolveCustomerPrice } from '@/lib/pricing-engine'
-import { toNum, toNumOpt } from '@/lib/decimal-helpers'
-import { lineDescription } from '@/lib/order-line-description'
-import type { OdooPricelist as OdooPricelistType, Product as ProductType } from '@/lib/types'
+import { loadCustomerFromRestaurantId } from '@/lib/server-pricing'
+import { buildCustomerProductCards } from '@/lib/customer-portal-products'
+
+const DEFAULT_PAGE_SIZE = 24
+const MAX_PAGE_SIZE = 100
+// 一次"再来一单"/收藏清单最多几百个品类不现实地会超过这个数，留够余量，
+// 免得客户单子行数多一点就有商品被悄悄截掉、被误判成"已下架"
+const MAX_IDS_LOOKUP = 500
+
+/** parseInt 对非数字输入返回 NaN，NaN 传进 Prisma skip/take 会直接抛异常——先兜底成合法整数 */
+function parsePositiveInt(raw: string | null, fallback: number): number {
+  const n = raw == null ? NaN : parseInt(raw, 10)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
+const PRODUCT_INCLUDE = { uom: { select: { id: true, name: true } as const } } as const
 
 /**
  * P1-2: 客户小程序 — 商品目录（含客户专属价格）
@@ -17,7 +25,12 @@ import type { OdooPricelist as OdooPricelistType, Product as ProductType } from 
  * GET /api/customer-portal/products
  *   - 需要 RESTAURANT 角色（客户登录后自动获得）
  *   - 根据 JWT 中 userId 解析出 Customer，计算每个商品的客户专属价格
- *   - 返回商品列表 + customerPrice + 价格来源
+ *
+ * 两种模式：
+ *   ?ids=a,b,c   — 定向查询（"再来一单"核对历史订单里的商品现价/是否还在售），
+ *                  不受 status=ACTIVE 限制、不分页，好让调用方判断"这个商品下架了"
+ *   ?page=&pageSize=&search=  — 分页浏览（首页商品网格），只返回上架商品
+ *   都不传          — 等价于 page=1
  */
 export async function GET(req: Request) {
   return withAuth(req, async (user) => {
@@ -30,92 +43,66 @@ export async function GET(req: Request) {
         )
       }
 
-      // 拉所有上架商品
-      const products = await prisma.product.findMany({
-        where: { status: 'ACTIVE' },
-        orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
-        include: {
-          uom: { select: { id: true, name: true } },
-        },
-      })
+      const { searchParams } = new URL(req.url)
+      const idsParam = searchParams.get('ids')?.trim()
 
-      // 拉所有 pricelist
-      const pricelistsDb = await prisma.odooPricelist.findMany()
-      const allPricelists: OdooPricelistType[] = pricelistsDb.map((p) => ({
-        id: p.id,
-        externalId: p.externalId ?? undefined,
-        name: p.name,
-        currency: p.currency,
-        items: (p.items as unknown as OdooPricelistType['items']) ?? [],
-        sequence: p.sequence,
-        selectable: p.selectable,
-        active: p.active,
-        updatedAt: p.updatedAt.toISOString(),
-      }))
-
-      // 批量查询客户历史成交价
-      const productIds = products.map((p) => p.id)
-      const lastPrices = await queryLastSoldPrices(prisma, customer.id, productIds)
-
-      // 逐商品计算客户专属价
-      const result = products.map((p) => {
-        const productForEngine: ProductType = {
-          id: p.id,
-          name: p.name,
-          variantAttributes: (p.variantAttributes as unknown as ProductType['variantAttributes']) ?? [],
-          internalRef: p.internalRef ?? undefined,
-          listPrice: toNum(p.listPrice ?? p.price ?? 0),
-          standardPrice: toNum(p.standardPrice ?? 0),
-          qtyOnHand: toNum(p.qtyOnHand),
-          active: p.active,
-          categoryId: p.categoryId ?? undefined,
-          customerTaxRate: toNumOpt(p.customerTaxRate),
-          commissionPrice: toNumOpt(p.commissionPrice),
-          images: p.images,
-          spec: p.spec ?? undefined,
-          price: toNumOpt(p.price),
-          stock: toNumOpt(p.qtyOnHand),
-          status: (p.status?.toLowerCase() as ProductType['status']) ?? 'active',
-          createdAt: p.createdAt.toISOString(),
-          updatedAt: p.updatedAt.toISOString(),
-          externalId: p.externalId ?? undefined,
-          sequence: p.sequence ?? undefined,
-        }
-
-        const lastPrice = lastPrices[p.id]
-        const resolution = resolveCustomerPrice(
-          productForEngine,
-          customer,
-          allPricelists,
-          1,
-          lastPrice,
-        )
-
-        return {
-          id: p.id,
-          name: p.name,
-          // 优先用商品详情页维护的 Sale Description，没填过才落回旧的 spec（历史数据）
-          spec: lineDescription({ name: p.name, saleDescription: p.saleDescription, spec: p.spec }),
-          images: p.images,
-          uomId: p.uom?.id ?? p.uomId ?? null,
-          uomName: p.uom?.name ?? null,
-          customerTaxRate: toNumOpt(p.customerTaxRate) ?? 0,
-          customerPrice: resolution.price,
-          priceSource: resolution.itemDesc,
-          pricelistName: resolution.pricelistName,
-          isSpecialPrice: resolution.isSpecialPrice ?? false,
-          lastPrice: lastPrice ?? null,
-          internalRef: p.internalRef,
-          categoryId: p.categoryId ?? null,
-        }
-      })
-
-      return NextResponse.json(serializeApi({
+      const meta = {
         customerId: customer.id,
         customerName: customer.name,
         priceType: customer.priceType ?? 'multi',
         paymentTerm: customer.paymentTerm ?? 'cash',
-        products: result,
+      }
+
+      if (idsParam) {
+        const ids = [...new Set(idsParam.split(',').map((s) => s.trim()).filter(Boolean))].slice(0, MAX_IDS_LOOKUP)
+        const products = await prisma.product.findMany({
+          where: { id: { in: ids } },
+          include: PRODUCT_INCLUDE,
+        })
+        const cards = await buildCustomerProductCards(prisma, customer, products)
+        return NextResponse.json(serializeApi({ ...meta, products: cards }))
+      }
+
+      const page = parsePositiveInt(searchParams.get('page'), 1)
+      const pageSize = Math.min(MAX_PAGE_SIZE, parsePositiveInt(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE))
+      const search = searchParams.get('search')?.trim()
+
+      const where = {
+        status: 'ACTIVE' as const,
+        // 20260926（code-review 发现）：`spec` 是废弃字段，绝大多数商品早已清空（历史数据见
+        // order-line-description.ts 的说明），客户搜索框里输入的规格文字实际来自 `saleDescription`
+        // （lineDescription() 的优先取值），漏了它会导致搜规格词基本搜不到东西。
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' as const } },
+                { saleDescription: { contains: search, mode: 'insensitive' as const } },
+                { spec: { contains: search, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      }
+
+      const [total, products] = await Promise.all([
+        prisma.product.count({ where }),
+        prisma.product.findMany({
+          where,
+          orderBy: [{ sequence: 'asc' }, { createdAt: 'desc' }],
+          include: PRODUCT_INCLUDE,
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+      ])
+
+      const cards = await buildCustomerProductCards(prisma, customer, products)
+
+      return NextResponse.json(serializeApi({
+        ...meta,
+        products: cards,
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
       }))
     } catch (error) {
       console.error('[GET /api/customer-portal/products]', error)

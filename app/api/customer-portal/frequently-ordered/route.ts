@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { loadCustomerFromRestaurantId } from '@/lib/server-pricing'
+import { buildCustomerProductCards } from '@/lib/customer-portal-products'
 import { toNum } from '@/lib/decimal-helpers'
 
 const TOP_N = 8
@@ -54,10 +55,27 @@ export async function GET(req: Request) {
         }
       }
 
-      const result = [...byProduct.entries()]
+      const topStats = [...byProduct.entries()]
         .map(([productId, stats]) => ({ productId, ...stats }))
         .sort((a, b) => b.orderCount - a.orderCount || b.lastOrderedAt.getTime() - a.lastOrderedAt.getTime())
         .slice(0, TOP_N)
+
+      // 卡片字段（名称/价格/单位/状态）直接由本接口下发，不再要求前端拿着 productId
+      // 回头去跟"商品网格"那份已加载列表做 join —— 网格分页后，常购的商品未必在当前页里，
+      // 那种 join 会随机丢商品（见本次改动背景）。
+      const products = await prisma.product.findMany({
+        where: { id: { in: topStats.map((s) => s.productId) } },
+        include: { uom: { select: { id: true, name: true } } },
+      })
+      const cards = await buildCustomerProductCards(prisma, customer, products)
+      const cardById = new Map(cards.map((c) => [c.id, c]))
+
+      const result = topStats
+        .map((s) => {
+          const card = cardById.get(s.productId)
+          return card ? { ...card, orderCount: s.orderCount, lastQuantity: s.lastQuantity, lastOrderedAt: s.lastOrderedAt } : null
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
 
       return NextResponse.json(serializeApi(result))
     } catch (error) {

@@ -1,90 +1,93 @@
 ## 给你看的
 
-| 场景 | 来源 | 验证方式 | 状态 |
-| --- | --- | --- | --- |
-| 一个页面搞定钱和单，不再分三个入口 | 你："最好是在一个页面里完成……1.钱……2.单……不要搞得多出几个概念来" | 浏览器实测：`/classic/accounting` 单页含「钱」「单」两板块，`/classic/finance/settlements`、`/classic/finance/driver-reports` 已 404 | 符合 |
-| 钱：系统自动算，会计核对后确认，不用司机先报 | 你：同上 | 浏览器实测：钱板块按司机汇总现金/转账，无需任何司机端提交动作 | 符合 |
-| 单：扫码两步核销（先选中，再确认） | 你："先选中标记，会计再点一次确认才真正核销" | 浏览器实测：扫码后进入「待确认」态，需再点「确认核销」才变「已核销」 | 符合 |
-| Return = 单据有问题退回司机核实 | 你："单据有问题要退回司机核实（东西少了/字迹不清等）" | 浏览器实测：「退回核实」要求填写问题说明，落成「有问题」态并显示说明文字 | 符合 |
-| 钱确认这次要真入账 | 你："这次一并改成真入账" | 浏览器实测：点确认后真实生成 Payment、核销发票至 PAID，数据库逐字段核对一致 | 符合 |
-| 页面叫「会计核销」不叫「司机结算」 | 你："不应该叫司机结算，还应该叫会计核销" | 页面标题、导航链接文案均为「核销管理/会计核销」 | 符合 |
-| 司机端不再需要交账/对账 | [我推断的] | 浏览器/代码实测：`/classic/driver/settlement` 已删除，司机导航不再有交账链接；执行前查证 Trip 完成/提成冻结另有独立触发路径，不受影响 | 符合 |
-| 钱确认不可撤销 | [我推断的] | 浏览器实测：确认后无撤销按钮，二次点击返回 409 且未重复入账 | 符合 |
+| 场景                                     | 来源   | 截图/验证方式                                                                                                                          | 状态 |
+| -------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------- | -- |
+| 商品缺货时有角标提示                             | 你说的  | 浏览器实测：`http://localhost:3001/customer-portal` 搜索 "Flour"，多个零库存商品显示灰色"暂时缺货"角标，见截图                                                                            | 符合 |
+| 新上架的商品有角标提示                            | 你说的  | 代码 + 开发库实测：`createdAt` 30 天内自动挂"新品"角标；查过开发库最近 30 天只有 1 个商品新建，不会出现"整批导入商品全挂新品"的误报                                                 | 符合 |
+| 促销商品有角标，且背后是真促销规则（不是纯装饰）               | 你说的  | 浏览器实测：给 "Blue Bag Odlums Cream Plain Flour 25Kg" 配一条价格表规则（20% off + 角标文案"限时8折"），门户上该商品显示粉色"限时8折"角标 + 划线原价 €30.50 → 现价 €24.40，见截图 | 符合 |
+| 促销规则复用现有价格表引擎，能按客户群体（挂哪张价格表）区分，不是全站一刀切 | 我推断的 | 后台 `/classic/operator/pricelists/pl_44` 编辑页新增"促销角标文案"输入框，随价格表规则一起保存；只对挂了这张价格表的客户群体生效，见截图                                         | 符合 |
+| 缺货只提示、不锁购物车，仍可下单                       | 我推断的 | 代码实测：`outOfStock` 只用于展示角标，加入购物车按钮逻辑未改动，缺货商品仍可正常加购                                                                                | 符合 |
+| 本轮不做顶部轮播广告和左侧分类导航                      | 我推断的 | 按约定范围未涉及这两项改动                                                                                                                    | 符合 |
 
-访问地址：`http://localhost:3000/classic/accounting`（本地起服务后访问，生产地址部署后另行验证）
+<br />
+
+访问地址：`http://localhost:3001/customer-portal`（本地起服务后访问；生产地址部署后需另行验证）
+
+截图：
+
+* `file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260926-customer-portal-badges.png`（客户门户：缺货/促销角标 + 划线原价）
+
+* `file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260926-pricelist-promo-badge-editor.png`（后台价格表编辑页：促销角标文案输入框）
 
 ## 存档用的（你不用看，出问题时我回来查）
 
+### 改了什么
+
+* `lib/types.ts`：`OdooPricelistItem` 加 `badgeLabel?: string`，纯类型改动，无 Prisma migration
+
+* `lib/pricing-engine.ts`：`resolvePrice` 命中带 `badgeLabel` 的规则时，`PriceResolution` 附带 `promoLabel`/`originalPrice`；**code-review 发现后追加了一道判断**——只有算出来的价真的比牌价低才附带这两个字段，避免 formula 类规则被 `priceMinMargin` 夹高价后仍显示"促销角标+划线价"的诡异效果
+
+* `lib/customer-portal-products.ts`：`CustomerProductCard` 新增 `outOfStock`（`qtyOnHand<=0`）、`isNew`（`createdAt` 30 天内）、`promoLabel`、`originalPrice`
+
+* `components/customer-portal/product-types.ts` / `product-grid.tsx`：类型同步 + 渲染三种角标和促销划线价
+
+* `app/[locale]/classic/operator/pricelists/[id]/page.tsx`：规则编辑弹窗加"促销角标文案"输入框，未填起止日期时给出提示（"角标会一直显示，建议配合限时"）
+
+* `app/api/customer-portal/products/route.ts`：服务端搜索的 `OR` 条件补上 `saleDescription`（这次一并修的 code-review 发现，见下）
+
+* `components/customer-portal/cart-utils.ts`：`mergeCartItems` 去重键从只看 `productId` 改成 `productId + uomName`（这次一并修的 code-review 发现，见下）
+
 ### 技术验收
 
-- `npx tsc --noEmit`：通过（提交前复跑，含 findings 修复后的改动）
-- `npm run build`：通过，新路由 `GET/POST /api/accounting/driver-cash(/confirm)` 出现在路由清单，旧路由（settlement/driver-reports）已消失
-- `npx prisma migrate status`：up to date（新增 2 个迁移：`20260924000001_order_return_status_and_driver_cash_confirmation`、`20260924000002_accounting_writeoff_permissions`）
-- `npm test`：910/913 通过，1 个失败（`pricing-override.test.ts` 缺 `ABCT` 客户测试夹具）与本次改动无关，为共享开发库既存环境问题；2 个 skip 是同一夹具的连带。`scripts/audit/role-reachability.json` 快照已按 findings #1 的修复重新生成（`POST /api/orders/bulk [FINANCE] n → y`，理由见下方 findings）
-- 鉴权探针：`/api/accounting/driver-cash` 与 `/confirm` 无 token → 401（三条 curl 实测）；RBAC 可达性矩阵实测确认 FINANCE 能真正走通 `/api/orders/bulk` 的 `mark_returned`（findings #1 修复前实测是 403，修复后浏览器 + 矩阵双重确认为可达）
-- 入账幂等探针：浏览器实测对同一司机+业务日重复调用 confirm，第二次返回 409，Payment 表未产生第二条记录
-- 生产库核实：`Payment` 表当前 0 条记录（SSH 实测），findings #5 的历史数据误判风险不成立
-- `/code-review high`（8 个视角）与 `/security-review`：见下方 findings，4 条已修复、1 条核实无影响、5 条记入技术债
+* `npx tsc --noEmit`：通过
 
-### 已处理的 findings
+* `npm run build`：通过，路由清单无异常
 
-`/code-review high`（8 个视角）+ `/security-review`（独立子任务两轮去伪存真）跑完，逐条处理如下：
+* 查询数：未新增查询，`buildCustomerProductCards` 仍复用同一批已加载的 `pricelistsDb`，角标计算全部基于已有字段
 
-**已修复：**
+* 真实数据链路实测：登录真实客户账号（挂着含促销规则的价格表）打 `GET /api/customer-portal/products?ids=...`，`promoLabel="限时8折"`、`originalPrice=30.5`、`customerPrice=24.4`（30.5×0.8）、`outOfStock`/`isNew` 均返回正确布尔值
 
-1. **[致命] `/api/orders/bulk` 权限闸门修复不完整，FINANCE 进不了核销功能** — `lib/rbac/route-map.ts` 那层外层闸门已加 `finance.write_off.confirm`，但 `app/api/orders/bulk/route.ts:388` `withAuth(..., { require: 'sales.order.bulk_import' })` 是**第二道独立闸门**，之前漏改，FINANCE 请求会在进 handler 前就被这里拦成 403——本次改动要解决的核心功能（会计核销）对 FINANCE 角色实际是坏的。已改成 `require: ['sales.order.bulk_import', 'finance.write_off.confirm', 'finance.write_off.return']`，内层按 action 精确判定（70-83 行）不变。`scripts/audit/role-reachability.json` 快照已更新（`POST /api/orders/bulk [FINANCE] n → y`），浏览器实测 + 独立 security-review 子任务复核（置信度 9/10）确认修复正确。
-2. **WriteOffBoard 在钱板块首次请求失败时会永久卡在"加载中"** — `businessDate` 只能靠 `DriverCashBoard` 请求成功后回调拿到，若那次请求抛错，`WriteOffBoard` 初始 `loading=true` 且早退路径（`if (!businessDate) return`）不会置 false，永久转圈无提示。已改：`DriverCashBoard` 加错误提示 + 重试按钮；`WriteOffBoard` 初始 `loading` 改 `false`，并为"还没等到日期"加独立提示文案，不再跟真正的空数据混在一起。浏览器实测正常路径无回归。
-3. **legacy seed 脚本仍写已删除的 `orderReturn` 列** — `prisma/legacy-seeds/{seed-orders-stock,seed-transactions}.ts` 因在 tsconfig 里被排除，`tsc` 测不出来，单独跑会因 Prisma "Unknown argument" 崩溃。已改成写 `returnStatus`。
-4. **`mark_returned` 审计日志丢了 `returnStatus` 的 before 值** — 原来 `before` 查询没选 `returnStatus`，日志只有 after，查不出订单之前是什么状态。已补上。
+* 浏览器实测（非仅接口）：客户门户角标渲染正确；后台价格表编辑页角标文案输入框加载/显示正确
 
-**已核实无实际影响，不需要改：**
+* `/code-review high`：见下方 findings
 
-5. **`Payment.note` marker 从 `TRIP:` 改成 `DRIVER_CASH_CONFIRM:`，理论上会让历史司机交账记录被误判成"手动"** — 3 个 code-review 视角独立指出。已连生产库核实（`sudo -u postgres psql -d veggie`）：`Payment` 表当前 **0 条记录**，交账机制这几周虽然代码上线但从未真正被调用过一次，没有历史数据需要回填，这条发现不构成实际风险。
+* `/security-review`：直接审查了本次 diff 的数据流（`badgeLabel` 只能由已登录 OPERATOR/BOSS 通过既有鉴权路由写入，前端用 JSX 纯文本渲染、未用 `dangerouslySetInnerHTML`，无新增路由/原始 SQL/外部调用），未发现新增的注入点或越权路径，无 HIGH/MEDIUM 级别问题
 
-**记录为已知限制，本次不处理（原因见下）：**
+### 本次 code-review findings 处理
 
-6. **入账非原子，`DriverCashConfirmation` 在 `postCollections` 之前创建**，若中途失败会永久卡在"已确认但没完全入账"，且唯一约束会挡住重试——4 个 code-review 视角独立指出，同一处代码位置。DEV-PLAN 风险点 1 已明确接受"确认即不可撤销、写错走人工冲正"这个大前提；非原子这个具体问题是复用自旧 Trip 结算机制的既有风险（旧代码同样的顺序），不是本次新引入，修复需要重构 `postCollections` 的事务边界，超出本次改动范围，记入技术债，建议下次单独立项处理。
-7. **DriverCashBoard 只能看"今天"，没有补录漏掉历史日期的入口**（API 已支持 `?date=`，UI 没做）。这是本次刻意收窄范围的设计取舍（DEV-PLAN："会计一天跟一个司机对一次账"），记入下一步观察项。
-8. **`/api/analytics/logistics` 仍读已冻结的 `Trip.cashCollected/onlineCollected`**，数字永远停在改动前的值；这几个字段和 `DriverDailyReport` 表留在 schema 里成为死字段。记入技术债。
-9. **`mark_returned` 批量更新没有并发状态守卫**（两个会计同时操作可能互相覆盖），概率低，且是全站批量操作的既有模式，不在本次范围内单独修。
-10. **代码质量类清理建议**（`incTaxAmount` 三处重复定义、€ 金额格式化 5 处没走 `lib/format-money.ts`、`ACCENT` 颜色硬编码四处、driver-cash 两个路由查询/分组逻辑重复、confirm 路由未按司机过滤导致每次点确认都全量重算当天订单、两个组件各自独立请求同一天数据、`onUndo`/`onReopen` 同义双名props、`applyCardFilter` if/else 链可以换成查表）——均为质量/效率层面，不影响正确性，记入技术债，建议后续小改一次性清理。
+`/code-review high` 审查的是整个工作区未提交的 diff，其中 2 条是本次角标改动引入的，另有 8 条是**开始本次任务之前就已经在工作区里、尚未提交的另一批客户门户重构代码**（分页 / `ids=` 查询模式 / `buildCustomerProductCards` 抽取 / `page.tsx` 拆组件），不是我这次写的。经你确认后，从这 8 条里挑了 2 条最严重的一并修了，其余 6 条保留不动，逐条说明：
 
-**security-review：** 0 条高置信度发现（新路由全参数化查询、金额服务端重算、鉴权三层内部一致、无 `dangerouslySetInnerHTML`）。
+**本次角标改动引入，已处理：**
 
-### Schema 变更
+1. `lib/pricing-engine.ts:101` —— 促销角标可能在算出的价格反而更贵时也显示"划线原价"，误导客户。**已修复**：加了 `computed < basePrice` 判断，只有真降价才附带 `promoLabel`/`originalPrice`。
+2. `lib/customer-portal-products.ts:103` —— "新品"角标基于 `Product.createdAt`，如果商品被重建/合并（如 20260905 那次商品去重）会导致老商品的 `createdAt` 被刷新成"现在"，30 天内被误判成新品。**未修复，记为已知限制**：修掉需要新增一个"首次上架时间"字段去追踪，属于当前范围之外的架构改动；已用开发库实测确认目前没有触发（近 30 天新建商品仅 1 个），先接受这个风险，等真的发生一次误判再补字段。
 
-- `Order.orderReturn`(Boolean) → `Order.returnStatus`(枚举 PENDING/RETURNED/ISSUE) + `Order.returnIssueNote`(String?)，同一迁移文件内完成加列/回填/删旧列
-- 新表 `DriverCashConfirmation`（司机 × 业务日唯一），记录钱板块确认状态与生成的 Payment id
+**发现于既有客户门户重构代码，本次一并修复：**
 
-### RBAC 变更
+3. `app/api/customer-portal/products/route.ts:73` —— 服务端搜索只匹配已废弃且大部分商品已清空的 `spec` 字段，没匹配客户实际看到的 `saleDescription`。**已修复**：`OR` 条件加上 `saleDescription`；用真实数据验证（"Mushroom CASE" 这条 `spec` 为空、`saleDescription="蘑菇"`），搜索"蘑菇"从 0 条结果变成能正确搜到。
+4. `components/customer-portal/cart-utils.ts:45` —— 购物车合并只按 `productId` 去重，同一商品不同计量单位（散称KG vs 整箱CASE）的两行会被错误合并成一行，数量相加但单价/单位保留其中一行的。**已修复**：去重键改成 `productId + uomName`。这条链路（订单历史→"再来一单"）目前查不出 `uomId`，`uomName` 是唯一全程都有值、能可靠区分单位的字段，故用它而非严格的 `uomId`。
+   * ⚠️ **修复后的残留风险（未处理，记为已知限制）**：购物车现在允许同一商品出现两行不同单位，但 `use-customer-portal.ts` 的 `setQty`/`removeFromCart` 和商品网格里 `inCart = cart.find(c => c.productId === p.id)` 仍然只按 `productId` 查找/操作——如果购物车里恰好有这种"同商品两单位"的情况，网格上的加减按钮可能操作到错误的那一行，减到 0 时会把两行一起删掉。这是本次未列入范围的连带面（要修需要同步碰 `use-customer-portal.ts`/`product-grid.tsx`/`cart-panel.tsx` 三个文件，超出这次批准的"改 2 个文件"范围），出现频率有限（要求客户购物车里已经有同商品两个不同单位的历史订单行）；建议下一轮单独处理。
 
-- `finance.settlement` 模块瘦身：去掉 `create`（司机不再需要提交），改名义为「司机收款确认」
-- 新增 `finance.write_off` 模块：`read`/`confirm`/`return`，取代 `/api/orders/bulk` 内部原先硬编码的角色判断
-- 顺带修复：`/api/orders/bulk` 外层闸门此前只挂 `sales.order.bulk_import`，FINANCE 角色一直够不到这个接口（核销核心动作实际上从未对纯 FINANCE 角色生效过）；本任务当时只改了 `lib/rbac/route-map.ts` 这一层，`app/api/orders/bulk/route.ts` 里 `withAuth` 自己的第二道 `require` 闸门当时漏改，是 `/code-review high` 才挖出来的（见下方 findings #1），提交前已补完两层
-- 迁移已回写 `prisma/seed-rbac.json`、`lib/rbac/sortkeys.json`、`lib/rbac/parity-baseline.json`、`scripts/audit/role-reachability.json`，并对受影响角色（boss/operator/finance/driver）下全部用户 bump `permVersion` 强制重新登录
+**发现但仍不在本次范围内（未处理，供你决定要不要另开一轮）：**
 
-### 下线清单
+5. `components/customer-portal/price-check.tsx:113` —— "再来一单"核价对话框按 `productId` 做勾选，同一订单里同商品两行（比如正常行+赠品行）会共用一个勾选状态，无法单独勾选/取消。
+6. `scripts/audit/checks/m02.ts:153` —— 完整性审计脚本没传分页参数，现在 `/api/customer-portal/products` 默认只返回前 24 条，可能导致库存探针假阴性。
+7. `components/customer-portal/use-customer-portal.ts:65` —— 商品总页数变少时，当前页码没有回退保护，可能出现"明明有商品却显示暂无商品"。
+8. `components/customer-portal/recent-orders-panel.tsx:47` —— 连续点击两个不同订单的"再来一单"，核价对话框状态是共享的，可能对错订单。
+9. `components/customer-portal/use-customer-portal.ts:54` —— 重新实现了一遍现成的 `hooks/use-server-list.ts` 分页逻辑，属于重复造轮子（简化类建议，非 bug）。
+10. `components/customer-portal/use-customer-portal.ts:14` / `product-grid.tsx:29` —— 运力提示和起订量提示是写死的演示数据，直接嵌在正式下单组件里，客户会误以为是真规则。
 
-页面：`/classic/finance/settlements`、`/classic/finance/driver-reports`、`/classic/driver/settlement`
-API：`/api/trips/[id]/settlement`、`/api/driver-reports/**`
-组件/lib：`components/finance/DriverReconTable.tsx`、`components/driver/DailyReportCard.tsx`、`lib/driver-daily-report.ts`、`lib/driver-reconciliation.ts`
-测试/探针：`tests/driver-reconciliation.test.ts`、`scripts/audit/{finance-confirm,driver-reconciliation,driver-daily-report,statement-settlement}-test.ts` 及对应 `package.json` 的 4 条 `test:*` 脚本
+这 6 条不是本次 DEV-PLAN 范围内的改动，我没有动手改；如果你要处理，告诉我一声我单独开一轮。
 
-均已核实生产库这两条流水线从未真正跑完过一次（Trip 从未 `settlementStatus=confirmed`、`DriverDailyReport` 表 0 条），删除不造成功能回退。
+### 测试数据 / 环境说明
 
-### 技术债 / 已知限制
+* 验证时把本地开发库两个 demo 账号（餐馆测试账号 `restaurant` 系列、运营测试账号 `operator19`，均为 `demo` 测试域）密码重置为 `test12345`。原密码哈希没有留存（bcrypt 不可逆），这两个是本地开发库的测试账号，不是生产数据，但仍然明确告知这个改动不可逆。
 
-1. **钱板块入账不可撤销**：`postCollections` 没有冲正机制，会计点错了没法一键撤销，需要走人工冲正（这是复用原有入账逻辑本身的限制，非本次新增）。
-2. **单板块的「批次/司机」列在极少数场景可能显示「未分配」**：当订单的司机分配信息只落在 `driverSlotId` 关系而未经过 wave 派生（`deliveryBatchDisplay`）时，`/api/orders?include_lines=false` 的精简查询不带 `driverSlot` 关联；生产里司机分配的真实来源是 wave 派生值，不受此影响，仅在个别边缘数据下会看不全，属已知的小限制，不影响核销主流程。
-3. **顺带修复但未过度扩展**：`app/[locale]/classic/operator/orders/page.tsx` 里一处 `orderReturn` 只读展示同步改成 `returnStatus === 'RETURNED'`，未改动其显示文案（原文案「有退货」语义上更像是产品退货而非送货单核销，是否要改措辞留给你判断，这次不在范围内不动它）。
-4. `scripts/audit/` 下与旧交账/对账相关的一次性人工审计脚本已删除 4 个，其余提及 settlement 关键字的脚本（如 `scripts/rbac/derive-system-roles.ts`）是历史存档性质（记录改造前的系统状态用于一次性推导），故意不动。
-5. **入账非原子**：`DriverCashConfirmation` 在 `postCollections` 之前创建，中途失败会卡在"已确认但没完全入账"且无法重试（4 个 code-review 视角独立指出，详见 findings）。不可撤销是 DEV-PLAN 已接受的设计，非原子是复用旧机制的既有风险，本次不重构，留给下次单独立项。
-6. **钱板块只能看"今天"**，没有补录漏掉历史日期的 UI 入口（API 已支持 `?date=`）。这是本次刻意收窄的设计取舍，视真实使用中是否成为问题再决定要不要加日期选择器。
-7. `/api/analytics/logistics` 仍读已冻结的 `Trip.cashCollected/onlineCollected`（这两个字段和 `DriverDailyReport` 表本身已是死字段，只是没删），该分析页那个"交账差异"数字会永远停在改动前的值。
-8. 若干代码复用/效率类清理项（`incTaxAmount` 三处重复、€ 金额格式化未走 `lib/format-money.ts`、driver-cash 两个路由查询逻辑重复、confirm 路由未按司机过滤导致每次全量重算当天订单等），详见 findings，不影响正确性，留作后续小改。
+* 验证用的促销规则条目（`test-promo-item-verify-*`）验证完已从 `pl_44` 价格表删除，餐馆测试账号的 `customerId` 已改回原值 `cust_001`（该账号本身存在从修改前就有的孤儿引用问题——`cust_001` 这个 Customer 在库里不存在，与本次改动无关，不属于本次修复范围）。
 
-### 下一步
+### 已知不可用 / 未做的功能
 
-- 找一个真实业务日观察「钱」板块入账结果是否符合会计预期（尤其是历史欠款冲抵逻辑，这条路径本次未在生产数据上跑过）
-- 视情况决定是否需要把 `/classic/operator/orders` 页面那处「有退货」标签的措辞也理清楚（本次未动）
-- 技术债 5-8 项视使用中是否真的成为问题，决定要不要单独立项处理
+* 顶部促销轮播广告、左侧商品分类导航：按约定本轮不做。
+
+* 商品详情页：按你的要求明确不做（减少交易步骤）。
+

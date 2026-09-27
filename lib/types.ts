@@ -719,6 +719,9 @@ export interface OdooPricelistItem {
    *  可售单位（ProductSaleUom.uomId）生效；不填 = 对该商品所有可售单位（含基准单位）都生效，与现状一致。
    *  命中单位限定规则后，算出的价格就是该单位的最终价，不再叠加 ProductSaleUom.factor。 */
   uomId?: string
+  /** 20260926：客户门户促销角标文案（如"限时8折"）。填了才会在门户显示角标+划线原价；
+   *  只建议配合 dateStart/dateEnd 一起填——永久生效的规则不该顶着"限时促销"的名义展示。 */
+  badgeLabel?: string
 }
 
 export interface OdooPricelist {

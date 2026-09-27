@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { formatDateOnly } from '@/lib/format-date'
+import { Pagination } from '@/components/ui/pagination'
 
 const PURPLE = '#875A7B'
 
@@ -157,20 +158,11 @@ export default function CustomerOrdersPage() {
             )
           })}
 
-          {/* Pagination */}
+          {/* Pagination —— 全站统一分页组件，与商品目录页同款 */}
           {totalPages > 1 && (
-            <div className="flex justify-center gap-2 pt-4">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-3 py-1.5 border rounded text-sm disabled:opacity-30">
-                {isEn ? 'Previous' : '上一页'}
-              </button>
-              <span className="px-3 py-1.5 text-sm text-gray-500">{page} / {totalPages} {isEn ? `(${total} orders)` : `(共${total}单)`}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-3 py-1.5 border rounded text-sm disabled:opacity-30">
-                {isEn ? 'Next' : '下一页'}
-              </button>
+            <div className="space-y-1 pt-2">
+              <p className="text-center text-xs text-gray-400">{isEn ? `${total} orders total` : `共 ${total} 单`}</p>
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
             </div>
           )}
         </div>
