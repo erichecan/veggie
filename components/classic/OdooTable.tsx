@@ -124,9 +124,14 @@ export default function OdooTable<T extends Record<string, unknown>>({
   useEffect(() => {
     if (!openDateKey) return
     function onDocClick(e: MouseEvent) {
-      if (datePopoverRef.current && !datePopoverRef.current.contains(e.target as Node)) {
-        setOpenDateKey(null)
-      }
+      const target = e.target as Node
+      if (datePopoverRef.current && datePopoverRef.current.contains(target)) return
+      // From/To 里各自的 <Calendar> 通过 base-ui Portal 挂到 document.body 末尾，
+      // 不是 datePopoverRef 的 DOM 子节点；不排除的话点日期格子会被这里的
+      // mousedown 提前判定为"点了外面"而把整个筛选弹层连带日历一起卸载掉，
+      // 导致日历的 onSelect 从未触发（20260927 客户反馈"日历点日期没反应"）。
+      if (target instanceof Element && target.closest('[data-slot="popover-content"]')) return
+      setOpenDateKey(null)
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
