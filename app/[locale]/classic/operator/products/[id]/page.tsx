@@ -15,6 +15,7 @@ import {
 } from '@/lib/sale-uom'
 import SaleUomsEditor from '@/components/classic/SaleUomsEditor'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { readProductNavList } from '@/lib/product-nav-list'
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
 function IconSales() {
@@ -84,6 +85,18 @@ export default function ClassicProductDetailPage() {
   const params = useParams()
   const id = params.id as string
   const isNew = id === 'new'
+
+  // 上一个/下一个翻页（20261001）：列表页点进来前存的那一页商品 id 顺序，只读一次——
+  // 同一趟浏览（prev/next 互相跳转）用的都是同一份，不用每次 id 变了重新去读。
+  // 不是从列表页点进来的（直接开链接/刷新页面）navList 是空数组，"1 / —" 原样保留。
+  const [navList] = useState(readProductNavList)
+  const navIndex = navList.indexOf(id)
+  const canGoPrev = navIndex > 0
+  const canGoNext = navIndex >= 0 && navIndex < navList.length - 1
+  function goToNav(offset: number) {
+    const target = navList[navIndex + offset]
+    if (target) router.push(`${prefix}/classic/operator/products/${target}`)
+  }
 
   const [tmpl, setTmpl] = useState<ProductTemplate | null>(isNew ? {
     id: 'new',
@@ -491,11 +504,21 @@ export default function ClassicProductDetailPage() {
               </button>
               {activeToggle}
 
-              {/* 1 / — < > */}
+              {/* 上一个/下一个：navList 为空(不是从列表页点进来的)时原样显示 1 / —，按钮保持禁用 */}
               <div className="flex items-center gap-1 ml-auto text-sm text-gray-500">
-                <span>1 / —</span>
-                <button className="w-6 h-6 flex items-center justify-center rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-30" disabled>‹</button>
-                <button className="w-6 h-6 flex items-center justify-center rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-30" disabled>›</button>
+                <span>{navIndex >= 0 ? `${navIndex + 1} / ${navList.length}` : '1 / —'}</span>
+                <button
+                  onClick={() => goToNav(-1)}
+                  disabled={!canGoPrev}
+                  title={isEn ? 'Previous product' : '上一个商品'}
+                  className="w-6 h-6 flex items-center justify-center rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-30"
+                >‹</button>
+                <button
+                  onClick={() => goToNav(1)}
+                  disabled={!canGoNext}
+                  title={isEn ? 'Next product' : '下一个商品'}
+                  className="w-6 h-6 flex items-center justify-center rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-30"
+                >›</button>
               </div>
             </>
           )}

@@ -299,6 +299,13 @@ export default function OdooControlPanel({
                 }}
                 onFocus={() => { if (facetMode && draft) setFacetOpen(true) }}
                 onKeyDown={e => {
+                  // 输入框空着时按 Backspace 删掉最后一个筛选 chip（Gmail/Jira 式搜索框的常见交互）——
+                  // 之前只能一个个点 chip 上的 × 关掉，用户反馈"没法直接按删除键删过滤条件"。
+                  if (e.key === 'Backspace' && !(facetMode ? draft : searchValue) && activeFilters.length > 0) {
+                    e.preventDefault()
+                    activeFilters[activeFilters.length - 1].onRemove()
+                    return
+                  }
                   if (!facetMode) { if (e.key === 'Enter') onSearchSubmit?.(); return }
                   if (!facetOpen || !facetFields) { if (e.key === 'Enter' && draft.trim()) commitFacet(0); return }
                   if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, facetFields.length - 1)) }
