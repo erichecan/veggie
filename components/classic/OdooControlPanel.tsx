@@ -262,8 +262,10 @@ export default function OdooControlPanel({
                   {actions.map((a, i) => (
                     <button
                       key={i}
-                      onClick={() => { a.onClick(); setActionsOpen(false) }}
-                      className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50"
+                      onClick={a.disabled ? undefined : () => { a.onClick(); setActionsOpen(false) }}
+                      disabled={a.disabled}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-50 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                      style={{ color: a.style === 'red' ? '#dc2626' : '#374151' }}
                     >
                       {a.label}
                     </button>

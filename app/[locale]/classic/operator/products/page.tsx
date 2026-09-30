@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut, apiPatch } from '@/lib/api'
+import { apiGet, apiPut, apiPatch, apiPost, apiDelete } from '@/lib/api'
 import type { ProductTemplate, ProductCategory, ProductSaleUomSummary } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
@@ -178,6 +178,81 @@ export default function ClassicProductsPage() {
   const exportActionLabeled = selected.size > 0
     ? { ...exportAction, label: isEn ? `Export (${selected.size} selected)` : `导出(已选 ${selected.size})` }
     : exportAction
+
+  // 批量操作(20261001)：勾选商品后弹出 Actions 下拉，逐条复用现有单条接口(创建/改状态/删除)，
+  // 不新开批量后端路由——跟本次会话里订单/采购单批量导入同一个思路(见那两处提交)。
+  // 顺序执行而不是 Promise.all：有限并发能跑得更快，但顺序执行足够简单可靠，批量对象
+  // 上限就是当前页的行数(pageSize，默认 50)，串行也不会慢到不可接受。
+  const [bulkRunning, setBulkRunning] = useState(false)
+  async function runBulkAction(confirmMsg: string | null, fn: (row: ProductTemplate) => Promise<void>) {
+    if (selected.size === 0 || bulkRunning) return
+    if (confirmMsg && !window.confirm(confirmMsg)) return
+    setBulkRunning(true)
+    const rows = templates.filter(t => selected.has(t.id))
+    let success = 0
+    const failures: string[] = []
+    for (const row of rows) {
+      try {
+        await fn(row)
+        success++
+      } catch (e) {
+        failures.push(`${row.name}: ${e instanceof Error ? e.message : (isEn ? 'failed' : '失败')}`)
+      }
+    }
+    setBulkRunning(false)
+    setSelected(new Set())
+    if (failures.length === 0) {
+      toast.success(isEn ? `Done — ${success} succeeded` : `完成，成功 ${success} 条`)
+    } else {
+      toast.warning(
+        isEn
+          ? `${success} succeeded, ${failures.length} failed: ${failures.slice(0, 5).join('; ')}${failures.length > 5 ? '…' : ''}`
+          : `成功 ${success} 条，失败 ${failures.length} 条：${failures.slice(0, 5).join('；')}${failures.length > 5 ? '…' : ''}`,
+      )
+    }
+    loadPage(page, searchInput)
+  }
+
+  function bulkDuplicate() {
+    return runBulkAction(
+      isEn ? `Duplicate ${selected.size} selected products?` : `复制这 ${selected.size} 个商品？`,
+      async (row) => {
+        // 跟商品详情页单条复制(handleDuplicate)同一套排除字段：id/时间戳/externalId(唯一约束)/
+        // qtyOnHand(库存是物理状态不是"内容"，新商品从 0 开始)；saleUoms 单独摘出来接可售单位创建。
+        const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, externalId: _externalId, qtyOnHand: _qtyOnHand, saleUoms, ...fields } = row
+        const created = await apiPost<ProductTemplate>('/api/products', {
+          ...fields,
+          name: `${row.name} (duplicated)`,
+          createdAt: new Date().toISOString(),
+        })
+        if (saleUoms && saleUoms.length > 0) {
+          await apiPut(`/api/products/${created.id}/sale-uoms`, {
+            items: saleUoms.map(u => ({
+              uomId: u.uomId, isDefault: u.isDefault, factor: u.factor, active: u.active, sequence: u.sequence, spec: u.spec,
+            })),
+          })
+        }
+      },
+    )
+  }
+
+  function bulkArchive(archived: boolean) {
+    return runBulkAction(
+      // 归档影响下单/报价选品，批量操作前确认一下；恢复是低风险操作，跟详情页单条
+      // Active 开关(点了就生效、不二次确认)保持一致，不额外挡一道。
+      archived ? (isEn ? `Archive ${selected.size} selected products?` : `归档这 ${selected.size} 个商品？`) : null,
+      (row) => apiPut(`/api/products/${row.id}`, { status: archived ? 'archived' : 'active' }),
+    )
+  }
+
+  function bulkDelete() {
+    return runBulkAction(
+      isEn
+        ? `Permanently delete ${selected.size} selected products? This cannot be undone. Products already used in sales/purchases will be reported as failed instead (delete them individually to see why, or archive them).`
+        : `永久删除这 ${selected.size} 个商品？此操作不可撤销。已在销售/采购中用过的会报失败(不会被跳过归档)——逐条查看失败原因，或改用归档。`,
+      (row) => apiDelete(`/api/products/${row.id}`),
+    )
+  }
 
   async function loadPage(p: number, q: string, ps: number = pageSize) {
     setLoading(true)
@@ -635,6 +710,13 @@ export default function ClassicProductsPage() {
                 { label: 'Mode', onClick: () => setIsReadMode(true) },
               ]),
         ]}
+        actions={selected.size > 0 ? [
+          { label: exportActionLabeled.label, onClick: exportActionLabeled.onClick, disabled: bulkRunning },
+          { label: isEn ? 'Duplicate' : '复制', onClick: bulkDuplicate, disabled: bulkRunning },
+          { label: isEn ? 'Archive' : '归档', onClick: () => bulkArchive(true), disabled: bulkRunning },
+          { label: isEn ? 'Unarchive' : '恢复', onClick: () => bulkArchive(false), disabled: bulkRunning },
+          { label: isEn ? 'Delete' : '删除', onClick: bulkDelete, disabled: bulkRunning, style: 'red' as const },
+        ] : []}
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => loadPage(1, searchInput)}
