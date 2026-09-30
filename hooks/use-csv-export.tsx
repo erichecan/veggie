@@ -115,7 +115,6 @@ export function useCsvExport<T>(options: ServerExportOptions<T> | LocalExportOpt
     } finally {
       setExporting(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exporting, options, isEn, resolvedColumns])
 
   const wantsPicker = resolvedColumns !== null
@@ -125,7 +124,6 @@ export function useCsvExport<T>(options: ServerExportOptions<T> | LocalExportOpt
     if (exporting) return
     if (wantsPicker) { setPickerOpen(true); return }
     runExport(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exporting, wantsPicker, runExport])
 
   const dialog = resolvedColumns ? (
