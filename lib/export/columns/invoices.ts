@@ -29,16 +29,16 @@ export function invoiceExportColumns(isEn: boolean): readonly ExportColumn<Invoi
   const status = isEn ? STATUS_EN : STATUS_ZH
   const term = isEn ? TERM_EN : TERM_ZH
   return [
-    { header: '发票号', headerEn: 'Invoice No.', get: i => i.name ?? '' },
-    { header: '客户', headerEn: 'Customer', get: i => i.customerName ?? '' },
-    { header: '状态', headerEn: 'Status', get: i => status[String(i.status)] ?? i.status },
-    { header: '未税金额 (€)', headerEn: 'Untaxed (€)', get: i => money(i.subtotalExTax) },
-    { header: '税额 (€)', headerEn: 'Tax (€)', get: i => money(i.totalTax) },
-    { header: '含税总额 (€)', headerEn: 'Total (€)', get: i => money(i.totalIncTax) },
-    { header: '已收款 (€)', headerEn: 'Paid (€)', get: i => money(i.amountPaid) },
-    { header: '待收款 (€)', headerEn: 'Amount Due (€)', get: i => money(i.amountDue) },
-    { header: '结款方式', headerEn: 'Payment Terms', get: i => term[String(i.paymentTerms)] ?? i.paymentTerms },
-    { header: '到期日', headerEn: 'Due Date', get: i => dateOnly(i.dueDate) },
-    { header: '创建时间', headerEn: 'Created At', get: i => dateOnly(i.createdAt) },
+    { key: 'name', header: '发票号', headerEn: 'Invoice No.', get: i => i.name ?? '' },
+    { key: 'customerName', header: '客户', headerEn: 'Customer', get: i => i.customerName ?? '' },
+    { key: 'status', header: '状态', headerEn: 'Status', get: i => status[String(i.status)] ?? i.status },
+    { key: 'subtotalExTax', header: '未税金额 (€)', headerEn: 'Untaxed (€)', get: i => money(i.subtotalExTax) },
+    { key: 'totalTax', header: '税额 (€)', headerEn: 'Tax (€)', get: i => money(i.totalTax) },
+    { key: 'totalIncTax', header: '含税总额 (€)', headerEn: 'Total (€)', get: i => money(i.totalIncTax) },
+    { key: 'amountPaid', header: '已收款 (€)', headerEn: 'Paid (€)', get: i => money(i.amountPaid) },
+    { key: 'amountDue', header: '待收款 (€)', headerEn: 'Amount Due (€)', get: i => money(i.amountDue) },
+    { key: 'paymentTerms', header: '结款方式', headerEn: 'Payment Terms', get: i => term[String(i.paymentTerms)] ?? i.paymentTerms },
+    { key: 'dueDate', header: '到期日', headerEn: 'Due Date', get: i => dateOnly(i.dueDate) },
+    { key: 'createdAt', header: '创建时间', headerEn: 'Created At', get: i => dateOnly(i.createdAt) },
   ]
 }

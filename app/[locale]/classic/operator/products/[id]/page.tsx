@@ -580,6 +580,11 @@ export default function ClassicProductDetailPage() {
           <Section title="Basic Info">
             {editMode ? (
               <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
+                {!isNew && (
+                  <Row label={isEn ? 'Product No.' : '产品编号'}>
+                    <span className="text-sm text-gray-500">{tmpl.productNo ?? '—'}</span>
+                  </Row>
+                )}
                 <Row label="Internal Reference">
                   <input value={tmpl.internalRef ?? ''} onChange={e => setField('internalRef', e.target.value || undefined)} className={fieldClass} style={{ ...focusStyle, color: '#875A7B' }} />
                 </Row>
@@ -604,6 +609,7 @@ export default function ClassicProductDetailPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
+                {!isNew && <ReadField label={isEn ? 'Product No.' : '产品编号'} value={tmpl.productNo} />}
                 <ReadField label="Internal Reference" value={tmpl.internalRef ? <span style={{ color: '#875A7B' }}>{tmpl.internalRef}</span> : undefined} />
                 <ReadField label="Product Type" value={TYPE_LABEL[tmpl.type] ?? tmpl.type} />
                 <ReadField label="Barcode" value={tmpl.barcode} />
@@ -639,8 +645,8 @@ export default function ClassicProductDetailPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
-                <ReadField label="Sales Price" value={`€${tmpl.listPrice.toFixed(2)}`} />
-                <ReadField label="Cost" value={`€${tmpl.standardPrice.toFixed(2)}`} />
+                <ReadField label="Sales Price" value={`€${(tmpl.listPrice ?? 0).toFixed(2)}`} />
+                <ReadField label="Cost" value={`€${(tmpl.standardPrice ?? 0).toFixed(2)}`} />
                 <ReadField label="Customer Taxes" value={TAX_LABEL[String(tmpl.customerTaxRate)] ?? `${(tmpl.customerTaxRate * 100).toFixed(0)}%`} />
                 <ReadField label="Vendor Taxes" value={tmpl.vendorTaxRate != null ? (TAX_LABEL[String(tmpl.vendorTaxRate)] ?? `${(tmpl.vendorTaxRate * 100).toFixed(0)}%`) : undefined} />
                 <ReadField label="Commission Price" value={tmpl.commissionPrice != null ? `€${tmpl.commissionPrice.toFixed(2)}` : undefined} />

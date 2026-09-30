@@ -36,18 +36,18 @@ const dateOnly = (v: unknown) => {
 export function vendorBillExportColumns(isEn: boolean): readonly ExportColumn<VendorBillExportRow>[] {
   const status = isEn ? STATUS_EN : STATUS_ZH
   return [
-    { header: '账单号', headerEn: 'Bill No.', get: r => r.name ?? '' },
-    { header: '供应商', headerEn: 'Supplier', get: r => r.supplierName ?? '' },
-    { header: '关联采购单', headerEn: 'Purchase Order', get: r => r.purchaseOrderName ?? '' },
-    { header: '供应商发票参考号', headerEn: 'Supplier Invoice Ref.', get: r => r.supplierInvoiceRef ?? '' },
-    { header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
-    { header: '账单日期', headerEn: 'Bill Date', get: r => dateOnly(r.billDate) },
-    { header: '到期日', headerEn: 'Due Date', get: r => dateOnly(r.dueDate) },
-    { header: '币种', headerEn: 'Currency', get: r => r.currency ?? 'EUR' },
-    { header: '未税金额', headerEn: 'Untaxed', get: r => money(r.subtotalExTax) },
-    { header: '税额', headerEn: 'Tax', get: r => money(r.totalTax) },
-    { header: '含税总额', headerEn: 'Total', get: r => money(r.totalIncTax) },
-    { header: '已付款', headerEn: 'Paid', get: r => money(r.amountPaid) },
-    { header: '待付款', headerEn: 'Amount Due', get: r => money(r.amountDue) },
+    { key: 'name', header: '账单号', headerEn: 'Bill No.', get: r => r.name ?? '' },
+    { key: 'supplierName', header: '供应商', headerEn: 'Supplier', get: r => r.supplierName ?? '' },
+    { key: 'purchaseOrderName', header: '关联采购单', headerEn: 'Purchase Order', get: r => r.purchaseOrderName ?? '' },
+    { key: 'supplierInvoiceRef', header: '供应商发票参考号', headerEn: 'Supplier Invoice Ref.', get: r => r.supplierInvoiceRef ?? '' },
+    { key: 'status', header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
+    { key: 'billDate', header: '账单日期', headerEn: 'Bill Date', get: r => dateOnly(r.billDate) },
+    { key: 'dueDate', header: '到期日', headerEn: 'Due Date', get: r => dateOnly(r.dueDate) },
+    { key: 'currency', header: '币种', headerEn: 'Currency', get: r => r.currency ?? 'EUR' },
+    { key: 'subtotalExTax', header: '未税金额', headerEn: 'Untaxed', get: r => money(r.subtotalExTax) },
+    { key: 'totalTax', header: '税额', headerEn: 'Tax', get: r => money(r.totalTax) },
+    { key: 'totalIncTax', header: '含税总额', headerEn: 'Total', get: r => money(r.totalIncTax) },
+    { key: 'amountPaid', header: '已付款', headerEn: 'Paid', get: r => money(r.amountPaid) },
+    { key: 'amountDue', header: '待付款', headerEn: 'Amount Due', get: r => money(r.amountDue) },
   ]
 }

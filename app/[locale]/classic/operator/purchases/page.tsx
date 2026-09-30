@@ -1,13 +1,16 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
+import { parseCsv, downloadCsv } from '@/lib/csv-export'
+import { purchaseOrderExportColumns } from '@/lib/export/columns/purchase-orders'
+import { isValidPurchaseTaxRate, PURCHASE_TAX_RATES } from '@/lib/purchase/tax-rates'
 import { applyFacets, groupFacets, localizeFacetFields, PURCHASE_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import ProcurementOverviewPage from './overview/page'
 import FreshDailySuggestionsPage from './fresh/page'
@@ -118,6 +121,23 @@ const PAGE_SIZE = 40
 
 const FILTER_INPUT_CLS = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
 
+function norm(s: string | null | undefined): string {
+  return s ? s.toLowerCase().trim() : ''
+}
+
+// CSV 导入列定义(采购单)：中文表头为主约定，英文表头作为别名同样可被识别(匹配大小写不敏感)。
+// key 是解析后 Record 的固定字段名，不随界面语言变化。
+const PO_IMPORT_COLUMNS: { key: string; zh: string; en: string; required?: boolean }[] = [
+  { key: 'supplier',     zh: '供应商名称', en: 'Supplier Name', required: true },
+  { key: 'product',      zh: '商品名称',   en: 'Product Name',  required: true },
+  { key: 'productRef',   zh: '商品编号',   en: 'Product Ref' },
+  { key: 'quantity',     zh: '数量',       en: 'Quantity',      required: true },
+  { key: 'unitCost',     zh: '单价',       en: 'Unit Cost',     required: true },
+  { key: 'taxRate',      zh: '税率',       en: 'Tax Rate' },
+  { key: 'expectedDate', zh: '预计到货',   en: 'Expected Date' },
+  { key: 'notes',        zh: '备注',       en: 'Notes' },
+]
+
 export default function PurchasesPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -149,6 +169,13 @@ export default function PurchasesPage() {
     const t = setTimeout(() => setDebouncedSupplier(colSupplier.trim()), 400)
     return () => clearTimeout(t)
   }, [colSupplier])
+
+  // ── Import modal ─────────────────────────────────────────────────────────
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importParsed, setImportParsed] = useState<Array<Record<string, string>>>([])
+  const [importLoading, setImportLoading] = useState(false)
+  const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   function setDateFilter(which: 'from' | 'to', value: string) {
     setPage(1)
@@ -206,9 +233,159 @@ export default function PurchasesPage() {
     entity: 'purchase-orders',
     params: buildParams,
     fallbackFilename: isEn ? 'purchase-orders.csv' : '采购单.csv',
+    columns: (isEn: boolean) => purchaseOrderExportColumns(isEn),
   })
 
   useEffect(() => { load() }, [load])
+
+  // ── CSV import helpers ────────────────────────────────────────────────────
+
+  function downloadImportTemplate() {
+    const headers = PO_IMPORT_COLUMNS.map(c => isEn ? c.en : c.zh)
+    const sample = isEn
+      ? ['Supplier A', 'Cabbage', '', '10', '2.50', '23', '', '']
+      : ['Supplier A', '白菜', '', '10', '2.50', '23', '', '']
+    downloadCsv(isEn ? 'purchase_order_import_template' : '采购单导入模板', headers, [sample])
+  }
+
+  // 共享的健壮 CSV 解析器(引号包裹字段/内嵌逗号换行/BOM/CRLF)；表头按中/英文列名匹配
+  // (大小写不敏感)后统一映射到固定 key 上，下游逻辑不关心上传文件用的是哪种语言的表头。
+  function parseImportCSV(text: string): Array<Record<string, string>> {
+    const rows = parseCsv(text)
+    if (rows.length < 2) return []
+    const header = rows[0].map(h => h.trim().toLowerCase())
+    const colIdx = new Map<string, number>()
+    for (const c of PO_IMPORT_COLUMNS) {
+      const idx = header.findIndex(h => h === c.zh.toLowerCase() || h === c.en.toLowerCase())
+      if (idx >= 0) colIdx.set(c.key, idx)
+    }
+    return rows.slice(1).map(r => {
+      const row: Record<string, string> = {}
+      for (const [key, idx] of colIdx) row[key] = (r[idx] ?? '').trim()
+      return row
+    })
+  }
+
+  function handleImportFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = e => {
+      const text = e.target?.result as string
+      setImportParsed(parseImportCSV(text))
+      setImportResult(null)
+    }
+    reader.readAsText(file, 'utf-8')
+  }
+
+  async function handleImportSubmit() {
+    if (!importParsed.length) return
+    setImportLoading(true)
+    setImportResult(null)
+
+    // 供应商 = Customer 里 isVendor=true 的那批；不传 pageSize 走legacy 扁平数组分支，
+    // 一次拿到全部匹配行，不会像分页接口那样只搜到第一页。
+    let vendors: Array<{ id: string; name: string }> = []
+    // 商品匹配沿用报价单导入同一套口径：优先按商品编号(internalRef)，其次按名称精确匹配。
+    let products: Array<{ id: string; name: string; internalRef?: string | null }> = []
+    try {
+      [vendors, products] = await Promise.all([
+        apiGet<typeof vendors>('/api/customers?isVendor=1&slim=1'),
+        apiGet<typeof products>('/api/products?slim=1'),
+      ])
+    } catch { /* ignore — 会在下方按"未找到"逐组报错 */ }
+
+    function findProduct(productRef: string, productName: string) {
+      if (productRef) {
+        const byRef = products.find(p => p.internalRef && norm(p.internalRef) === norm(productRef))
+        if (byRef) return byRef
+      }
+      return products.find(p => norm(p.name) === norm(productName)) ?? null
+    }
+
+    // 按供应商名分组，构建采购单
+    const groups = new Map<string, typeof importParsed>()
+    for (const row of importParsed) {
+      const key = row.supplier?.trim()
+      if (!key) continue
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(row)
+    }
+
+    let success = 0
+    const errors: string[] = []
+
+    for (const [supplierName, rows] of groups) {
+      const vendor = vendors.find(v => norm(v.name) === norm(supplierName))
+      if (!vendor) { errors.push(isEn ? `Supplier not found: ${supplierName}` : `找不到供应商: ${supplierName}`); continue }
+
+      const lines: Array<{ productId: string; productName: string; orderedQty: number; unitCost: number; taxRate: number }> = []
+      const missingProducts: string[] = []
+      const invalidRows: string[] = []
+
+      for (const row of rows) {
+        const productName = row.product?.trim() || ''
+        if (!productName) continue
+        const productRef = row.productRef?.trim() || ''
+        const quantity = parseFloat(row.quantity)
+        const unitCost = parseFloat(row.unitCost)
+        const taxRateRaw = row.taxRate?.trim()
+        const taxRate = taxRateRaw ? parseFloat(taxRateRaw) : 0
+
+        if (!row.quantity?.trim() || !row.unitCost?.trim()) {
+          invalidRows.push(isEn ? `${productName}: quantity and unit cost are required` : `${productName}: 数量和单价为必填项`)
+          continue
+        }
+        // 数量/单价的范围校验(>0、0~1,000,000)留给服务端(POST /api/purchase-orders → createPurchaseOrder)
+        // 统一把关——那里的报错信息本来就带商品名，直接透传比在这里另写一套校验话术更可靠。
+        // 税率单独在这里先挡一道：它是枚举值而不是范围，服务端报错话术("税率只能是 0%/13.5%/23%")
+        // 不点名是哪一行，客户端能拿到 productName 给出更精确的提示。
+        if (!isValidPurchaseTaxRate(taxRate)) {
+          invalidRows.push(isEn
+            ? `${productName}: tax rate must be one of ${PURCHASE_TAX_RATES.join('/')}`
+            : `${productName}: 税率只能是 ${PURCHASE_TAX_RATES.join('/')}`)
+          continue
+        }
+        const matched = findProduct(productRef, productName)
+        if (!matched) { missingProducts.push(productName); continue }
+        lines.push({ productId: matched.id, productName, orderedQty: quantity, unitCost, taxRate })
+      }
+
+      if (missingProducts.length || invalidRows.length) {
+        const parts: string[] = []
+        if (missingProducts.length) {
+          parts.push(isEn ? `product not found — ${missingProducts.join(', ')}` : `商品未找到 — ${missingProducts.join('、')}`)
+        }
+        if (invalidRows.length) parts.push(invalidRows.join('; '))
+        errors.push(`${supplierName}: ${parts.join('; ')}`)
+        continue
+      }
+      if (!lines.length) {
+        errors.push(isEn ? `${supplierName}: no valid item rows` : `${supplierName}: 无有效商品行`)
+        continue
+      }
+
+      const expectedDate = rows[0].expectedDate?.trim() || undefined
+      const notes = rows[0].notes?.trim() || undefined
+
+      try {
+        await apiPost('/api/purchase-orders', {
+          supplierId: vendor.id,
+          lines,
+          expectedDate,
+          notes,
+        })
+        success++
+      } catch (e) {
+        errors.push(`${supplierName}: ${e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败')}`)
+      }
+    }
+
+    setImportResult({ success, failed: errors.length, errors })
+    setImportLoading(false)
+    if (success > 0) {
+      toast.success(isEn ? `Successfully imported ${success} purchase orders` : `成功导入 ${success} 个采购单`)
+      load()
+    }
+  }
 
   function handleTabChange(tab: string) {
     setActiveTab(tab)
@@ -265,6 +442,7 @@ export default function PurchasesPage() {
         breadcrumb={isEn ? ['Purchases', 'Quotations'] : ['采购', '询价单']}
         permanentActions={[
           exportAction,
+          { label: isEn ? 'Import' : '导入', onClick: () => { setShowImportModal(true); setImportParsed([]); setImportResult(null) } },
           { label: isEn ? 'New' : '新建', onClick: () => router.push('purchases/new'), primary: true },
         ]}
         searchValue={searchInput}
@@ -457,6 +635,93 @@ export default function PurchasesPage() {
         )}
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
+
+      {exportAction.dialog}
+
+      {/* ── Import Modal ── */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowImportModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-base font-semibold text-gray-900">{isEn ? 'Import Purchase Orders (CSV)' : '导入采购单 (CSV)'}</h2>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              {/* Template download */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">{isEn ? '1. Download the template, fill in data, then upload' : '1. 下载模板，填写数据后上传'}</span>
+                <button
+                  onClick={downloadImportTemplate}
+                  className="px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                >
+                  {isEn ? '↓ Download Template' : '↓ 下载模板'}
+                </button>
+              </div>
+
+              {/* File input */}
+              <div>
+                <span className="text-sm text-gray-600 block mb-2">{isEn ? '2. Select CSV file' : '2. 选择 CSV 文件'}</span>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="text-sm text-gray-600 file:mr-3 file:px-3 file:py-1 file:rounded file:border file:border-gray-300 file:bg-white file:text-xs file:text-gray-700 file:hover:bg-gray-50 file:cursor-pointer"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f) }}
+                />
+              </div>
+
+              {/* Preview table */}
+              {importParsed.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">{isEn ? `Preview (first 5 of ${importParsed.length} rows):` : `预览（前 5 行，共 ${importParsed.length} 行）：`}</p>
+                  <div className="overflow-x-auto border rounded">
+                    <table className="text-xs w-full">
+                      <thead>
+                        <tr className="bg-gray-50 border-b">
+                          {PO_IMPORT_COLUMNS.map(c => <th key={c.key} className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">{isEn ? c.en : c.zh}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importParsed.slice(0, 5).map((row, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            {PO_IMPORT_COLUMNS.map(c => <td key={c.key} className="px-2 py-1 text-gray-700 whitespace-nowrap">{row[c.key] || '—'}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Import result */}
+              {importResult && (
+                <div className={`rounded-lg px-4 py-3 text-sm ${importResult.failed === 0 ? 'bg-green-50 text-green-800' : 'bg-yellow-50 text-yellow-800'}`}>
+                  <p className="font-medium">{isEn ? `${importResult.success} purchase orders succeeded, ${importResult.failed} failed` : `成功 ${importResult.success} 个采购单，失败 ${importResult.failed} 个`}</p>
+                  {importResult.errors.length > 0 && (
+                    <ul className="mt-1 list-disc list-inside text-xs space-y-0.5 text-red-700">
+                      {importResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                {isEn ? 'Close' : '关闭'}
+              </button>
+              <button
+                onClick={handleImportSubmit}
+                disabled={importParsed.length === 0 || importLoading}
+                className="px-4 py-2 text-sm rounded text-white disabled:opacity-50"
+                style={{ background: PURPLE }}
+              >
+                {importLoading ? (isEn ? 'Importing…' : '导入中…') : (isEn ? `Import ${importParsed.length} rows` : `导入 ${importParsed.length} 行`)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       </>}
     </div>

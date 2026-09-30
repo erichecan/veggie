@@ -313,6 +313,8 @@ model ProductAttributeValue {
 
 model Product {
   id                String                @id @default(cuid())
+  /// 用户友好的自增编号，纯内部展示/搜索用；cuid `id` 仍是真正主键和所有外键目标，不受影响
+  productNo         Int                   @unique @default(autoincrement())
   name              String
   variantAttributes Json                  @default("[]")
   internalRef       String?

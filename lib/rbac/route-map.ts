@@ -248,6 +248,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/customers/*/last-prices', permission: 'master.customer.read_last_prices' },
   { pattern: '/api/customers/*/prepayment-balance', permission: 'finance.payment.read' },
   { pattern: '/api/customers/bulk', permission: 'master.customer.bulk_import' },
+  // 供应商批量导入 = Customer{isVendor:true} 批量创建，复用同一个权限点（与 suppliers
+  // 导出复用 master.customer.read 是同一个理由：不为同一张表的供应商视图另开权限点）。
+  { pattern: '/api/suppliers/bulk', permission: 'master.customer.bulk_import' },
   // 联系人（多邮箱）。读跟着「客户详情」走，写跟着「编辑客户」走 —— 不单开权限点：
   // 拆细子动作而不同步补给原本够得着的角色，会让功能对全公司静默中断（20260807）。
   // ⛔ 必须排在下面的 /api/customers/* 通配之前，否则 PATCH/DELETE 会先被

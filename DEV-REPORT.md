@@ -1,93 +1,92 @@
 ## 给你看的
 
-| 场景                                     | 来源   | 截图/验证方式                                                                                                                          | 状态 |
-| -------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------- | -- |
-| 商品缺货时有角标提示                             | 你说的  | 浏览器实测：`http://localhost:3001/customer-portal` 搜索 "Flour"，多个零库存商品显示灰色"暂时缺货"角标，见截图                                                                            | 符合 |
-| 新上架的商品有角标提示                            | 你说的  | 代码 + 开发库实测：`createdAt` 30 天内自动挂"新品"角标；查过开发库最近 30 天只有 1 个商品新建，不会出现"整批导入商品全挂新品"的误报                                                 | 符合 |
-| 促销商品有角标，且背后是真促销规则（不是纯装饰）               | 你说的  | 浏览器实测：给 "Blue Bag Odlums Cream Plain Flour 25Kg" 配一条价格表规则（20% off + 角标文案"限时8折"），门户上该商品显示粉色"限时8折"角标 + 划线原价 €30.50 → 现价 €24.40，见截图 | 符合 |
-| 促销规则复用现有价格表引擎，能按客户群体（挂哪张价格表）区分，不是全站一刀切 | 我推断的 | 后台 `/classic/operator/pricelists/pl_44` 编辑页新增"促销角标文案"输入框，随价格表规则一起保存；只对挂了这张价格表的客户群体生效，见截图                                         | 符合 |
-| 缺货只提示、不锁购物车，仍可下单                       | 我推断的 | 代码实测：`outOfStock` 只用于展示角标，加入购物车按钮逻辑未改动，缺货商品仍可正常加购                                                                                | 符合 |
-| 本轮不做顶部轮播广告和左侧分类导航                      | 我推断的 | 按约定范围未涉及这两项改动                                                                                                                    | 符合 |
+| 场景 | 来源 | 验证方式 | 状态 |
+| --- | --- | --- | --- |
+| 商品库导出可选字段，含完整 UoM 配置 | 你说的 | 代码 + typecheck/lint/单测三项通过；本环境无数据库连接，未能起服务实际点一遍导出弹窗（见下方"未能完成的验证"） | 代码完成，**未做端到端验证** |
+| 商品导入模板（尤其 UoM 配置） | 你说的 | 同上——模板列与导出列逐一对应，支持"导出→Excel 改→重新导入"；未能起服务实际走一遍导入 | 代码完成，**未做端到端验证** |
+| 订单/采购/客户（餐馆）/供应商都要做导入导出 | 你说的 | 订单：已有导入功能做了健壮化（真正的 CSV 解析器、双语表头、模板下载）；采购单：全新导入（复用已有创建接口）；客户：已有导入导出沿用；供应商：全新导入 + 导出 | 代码完成，**未做端到端验证** |
+| 导入测试产品后打不开详情页 | 你说的 | 已定位根因（批量导入从不写 `standardPrice`，落库 `null`，详情页非编辑态对 `null.toFixed()` 崩溃）并修复；新导入逻辑本身也会给出默认值 0，双重防护 | 代码完成，**未做端到端验证** |
+| 自增长产品 ID，内部主键使用，cuid 对外展示 | 你说的 | 按确认的方案：新增 `Product.productNo`（自增、唯一）作为好记编号，cuid `id` 仍是真正主键和所有外键目标——改动小、不碰 14 张关联表 | 代码完成，**未做端到端验证** |
 
 <br />
 
-访问地址：`http://localhost:3001/customer-portal`（本地起服务后访问；生产地址部署后需另行验证）
+### ⛔ 本环境没有数据库连接，无法按 CLAUDE.md 的"完成标准"做种子数据/curl/浏览器验证
 
-截图：
+这个会话的容器里没有配置 `DATABASE_URL`（没有 `.env.local`），我在过程中已经跟你说明过一次。这意味着：
 
-* `file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260926-customer-portal-badges.png`（客户门户：缺货/促销角标 + 划线原价）
+* 没跑过 `npx prisma migrate dev` / `db push`——新增的 `Product.productNo` 迁移是我**手写的 SQL**（`prisma/migrations/20260930000001_add_product_no/migration.sql`），逻辑上是标准的 Postgres `SERIAL` 列写法，`npx prisma validate` 通过、`npx prisma generate` 生成的 client 类型也确认了字段存在，但**没有在真实数据库上跑过这条迁移**。
+* 没有种子数据、没有起过 `next dev`、没有 curl 过任何一个改动的接口、没有打开过浏览器点一遍导入/导出弹窗。
+* 没有测试账号可给（数据库是空的，不存在"至少建 1 个测试用户 + 1 条业务数据"这一步的执行环境）。
 
-* `file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20260926-pricelist-promo-badge-editor.png`（后台价格表编辑页：促销角标文案输入框）
+**这不等于"改完了、大概率没问题"——这是一个明确的、尚未做完的验收缺口。** 在你（或有数据库权限的环境）跑以下步骤之前，我不能对"功能真的可用"打包票：
+
+```bash
+# 1. 在有 DATABASE_URL 的环境里跑迁移
+npm run db:migrate:dev   # 或 npx dotenv -e .env.local prisma migrate dev
+
+# 2. 起服务
+npm run dev
+
+# 3. 建 1-2 个测试商品(含分类/UoM)，走一遍：
+#    商品列表页 → 导出(勾字段) → 检查 CSV 是否含 UoM 列
+#    商品列表页 → 导入 → 用刚导出的 CSV 改几行 → 重新导入 → 点进详情页确认能正常打开(这是本次要修的 bug 的直接回归验证)
+#    Purchases → Vendors → 导入/导出供应商
+#    报价单页 → 导入订单(CSV) / 采购页 → 导入采购单(CSV)
+```
+
+访问地址：本地起服务后 `http://localhost:3000`（具体端口以 `npm run dev` 输出为准）；生产地址部署后需另行验证。
+
+<br />
 
 ## 存档用的（你不用看，出问题时我回来查）
 
-### 改了什么
+### 改了什么（4 次提交，可用 `git log` 看逐条 diff）
 
-* `lib/types.ts`：`OdooPricelistItem` 加 `badgeLabel?: string`，纯类型改动，无 Prisma migration
+**1. Bug 修复 + `productNo` 字段**
+* `app/[locale]/classic/operator/products/[id]/page.tsx`：非编辑态渲染 `listPrice`/`standardPrice` 时补 `?? 0`，修掉 `null.toFixed()` 崩溃；新增"产品编号"只读展示（编辑态和只读态各一处）
+* `prisma/schema.prisma`：`Product` 新增 `productNo Int @unique @default(autoincrement())`；cuid `id` 不受影响，仍是主键和全部外键目标
+* `prisma/migrations/20260930000001_add_product_no/migration.sql`：手写迁移（`ALTER TABLE ... ADD COLUMN "productNo" SERIAL NOT NULL` + 唯一索引）——**未在真实库跑过**，见上方验收缺口
+* `app/[locale]/classic/operator/products/page.tsx`：列表页加"编号"列
 
-* `lib/pricing-engine.ts`：`resolvePrice` 命中带 `badgeLabel` 的规则时，`PriceResolution` 附带 `promoLabel`/`originalPrice`；**code-review 发现后追加了一道判断**——只有算出来的价真的比牌价低才附带这两个字段，避免 formula 类规则被 `priceMinMargin` 夹高价后仍显示"促销角标+划线价"的诡异效果
+**2. 导出框架泛化（字段可选）+ 供应商导出**
+* `lib/export/types.ts`：`ExportColumn` 加必填的 `key` 字段（勾选/`?fields=` 用的稳定标识，不随 locale 变化），新增 `filterColumnsByKeys()`
+* `lib/export/columns/*.ts`（8 个文件：product-templates / customers / purchase-orders / orders / statements / invoices / vendor-bills / credit-notes）：给每一列补 `key`；`product-templates.ts` 额外加了 `productNo`/`barcode`/`netWeight`/`volume`/`purchaseUomName`/`saleUomsSummary`（UoM 配置摘要，格式 `单位名:系数:是否默认`，用 `;` 分隔多个单位）
+* `lib/export/loaders/product-templates.ts`：相应地查出 `purchaseUom`、`saleUoms`（含 `uom`/`factor`/`isDefault`）
+* `components/shared/export-field-picker-dialog.tsx`（新增）：字段勾选弹窗，全选/单选
+* `hooks/use-csv-export.tsx`（原 `.ts` 改 `.tsx`）：`useCsvExport` 支持可选的 `columns`，传了就先弹字段勾选框，返回值多了 `dialog` 字段（调用方要把它渲染进 JSX 才会弹出来）；没传 `columns` 的调用方（多数财务类页面）行为不变
+* `app/api/export/[entity]/route.ts`：支持 `?fields=k1,k2` 按 key 过滤导出列
+* `lib/export/registry.ts` / `lib/export/entities.ts`：新注册 `suppliers` 实体（复用 `customers` 的列定义和查询逻辑，服务端强制加 `isVendor=1` 过滤，不依赖调用方记得传）
+* `lib/rbac/route-map.ts`：`/api/export/suppliers` 自动跟着 `EXPORT_ENTITY_META` 生成规则，无需手改
+* `lib/role-access.ts`：旧 token 白名单里，凡是已经有 `exportOf('customers')` 的角色都配套加 `exportOf('suppliers')`
+* 页面接入字段勾选：`products/page.tsx`、`customers/page.tsx`、`purchases/vendors/page.tsx`、`quotations/page.tsx`（订单）、`purchases/page.tsx`（采购单）
 
-* `lib/customer-portal-products.ts`：`CustomerProductCard` 新增 `outOfStock`（`qtyOnHand<=0`）、`isNew`（`createdAt` 30 天内）、`promoLabel`、`originalPrice`
+**3. 供应商批量导入**
+* `app/api/suppliers/bulk/route.ts`（新增）：镜像 `/api/customers/bulk`，固定写 `isVendor:true, isCustomer:false`，字段换成供应商场景（`supplierPaymentTerm`/`vendorTaxRate` 而非客户的 `paymentTerm`/`salesman`）；复用同一个权限点 `master.customer.bulk_import`（不为供应商视图另开权限点，与导出的思路一致）
+* `lib/rbac/route-map.ts` / `lib/role-access.ts`：给 `/api/suppliers/bulk` 补权限规则，镜像 `/api/customers/bulk` 已有的角色授权
+* `app/[locale]/classic/operator/purchases/vendors/page.tsx`：加导入/导出按钮和弹窗（这个页面原来两个都没有）
 
-* `components/customer-portal/product-types.ts` / `product-grid.tsx`：类型同步 + 渲染三种角标和促销划线价
+**4. 商品批量导入全面重写**
+* `lib/product-sale-uom-upsert.ts`（新增）：从 `PUT /api/products/[id]/sale-uoms` 抽出的可售单位(UoM)落库逻辑，逐字保留原有的"基准单位单一入口"规则，供该路由和新的批量导入共用
+* `app/api/products/[id]/sale-uoms/route.ts`：改成调用上面的共享函数，行为不变（`tests/sale-uom.test.ts` 45 个用例全过）
+* `app/api/products/bulk/route.ts`（重写）：全字段支持（分类/UoM/条码/含税成本/类型/状态等），支持按 `internalRef→barcode→externalId` 优先级匹配做**更新**（不再是只能创建），未匹配上按名称判重（撞了跳过，保留原有安全行为），支持批量写入可售单位配置；返回 `{created, updated, skipped, warnings}`，不再是只有 `{created, skipped}`
+* `components/classic/ProductImportDialog.tsx`（新增）：专用导入弹窗，列头与导出列逐一对应（"导出→Excel 改→重新导入"闭环），税率/商品类型的百分数/长标签自动转换成入库需要的格式，导入结果展示新建/更新/跳过计数 + 完整 warning 列表（不只是一个 toast）
+* `app/[locale]/classic/operator/products/page.tsx`：接入新弹窗，替换掉原来那个只有 7 个字段、纯新建的旧导入
 
-* `app/[locale]/classic/operator/pricelists/[id]/page.tsx`：规则编辑弹窗加"促销角标文案"输入框，未填起止日期时给出提示（"角标会一直显示，建议配合限时"）
-
-* `app/api/customer-portal/products/route.ts`：服务端搜索的 `OR` 条件补上 `saleDescription`（这次一并修的 code-review 发现，见下）
-
-* `components/customer-portal/cart-utils.ts`：`mergeCartItems` 去重键从只看 `productId` 改成 `productId + uomName`（这次一并修的 code-review 发现，见下）
+**5. 订单导入健壮化 + 采购单导入（新）**
+* `app/[locale]/classic/operator/quotations/page.tsx`：订单导入原本就有（分组按餐馆名、逐个调现有 `POST /api/orders`），这次把手写的 `text.split(',')` 解析器换成正规的、处理引号/BOM/换行的共享解析器，表头中英文都认，加了"商品编号"作为比商品名更可靠的匹配键，补了模板下载按钮
+* `app/[locale]/classic/operator/purchases/page.tsx`：采购单原来完全没有导入——新增，做法跟订单导入一致（分组按供应商名、逐个调现有 `POST /api/purchase-orders`，复用它已有的定价/校验逻辑，不新开一套采购单批量创建的后端接口）；同时补上了这个页面之前漏掉的导出字段勾选弹窗
 
 ### 技术验收
 
 * `npx tsc --noEmit`：通过
-
-* `npm run build`：通过，路由清单无异常
-
-* 查询数：未新增查询，`buildCustomerProductCards` 仍复用同一批已加载的 `pricelistsDb`，角标计算全部基于已有字段
-
-* 真实数据链路实测：登录真实客户账号（挂着含促销规则的价格表）打 `GET /api/customer-portal/products?ids=...`，`promoLabel="限时8折"`、`originalPrice=30.5`、`customerPrice=24.4`（30.5×0.8）、`outOfStock`/`isNew` 均返回正确布尔值
-
-* 浏览器实测（非仅接口）：客户门户角标渲染正确；后台价格表编辑页角标文案输入框加载/显示正确
-
-* `/code-review high`：见下方 findings
-
-* `/security-review`：直接审查了本次 diff 的数据流（`badgeLabel` 只能由已登录 OPERATOR/BOSS 通过既有鉴权路由写入，前端用 JSX 纯文本渲染、未用 `dangerouslySetInnerHTML`，无新增路由/原始 SQL/外部调用），未发现新增的注入点或越权路径，无 HIGH/MEDIUM 级别问题
-
-### 本次 code-review findings 处理
-
-`/code-review high` 审查的是整个工作区未提交的 diff，其中 2 条是本次角标改动引入的，另有 8 条是**开始本次任务之前就已经在工作区里、尚未提交的另一批客户门户重构代码**（分页 / `ids=` 查询模式 / `buildCustomerProductCards` 抽取 / `page.tsx` 拆组件），不是我这次写的。经你确认后，从这 8 条里挑了 2 条最严重的一并修了，其余 6 条保留不动，逐条说明：
-
-**本次角标改动引入，已处理：**
-
-1. `lib/pricing-engine.ts:101` —— 促销角标可能在算出的价格反而更贵时也显示"划线原价"，误导客户。**已修复**：加了 `computed < basePrice` 判断，只有真降价才附带 `promoLabel`/`originalPrice`。
-2. `lib/customer-portal-products.ts:103` —— "新品"角标基于 `Product.createdAt`，如果商品被重建/合并（如 20260905 那次商品去重）会导致老商品的 `createdAt` 被刷新成"现在"，30 天内被误判成新品。**未修复，记为已知限制**：修掉需要新增一个"首次上架时间"字段去追踪，属于当前范围之外的架构改动；已用开发库实测确认目前没有触发（近 30 天新建商品仅 1 个），先接受这个风险，等真的发生一次误判再补字段。
-
-**发现于既有客户门户重构代码，本次一并修复：**
-
-3. `app/api/customer-portal/products/route.ts:73` —— 服务端搜索只匹配已废弃且大部分商品已清空的 `spec` 字段，没匹配客户实际看到的 `saleDescription`。**已修复**：`OR` 条件加上 `saleDescription`；用真实数据验证（"Mushroom CASE" 这条 `spec` 为空、`saleDescription="蘑菇"`），搜索"蘑菇"从 0 条结果变成能正确搜到。
-4. `components/customer-portal/cart-utils.ts:45` —— 购物车合并只按 `productId` 去重，同一商品不同计量单位（散称KG vs 整箱CASE）的两行会被错误合并成一行，数量相加但单价/单位保留其中一行的。**已修复**：去重键改成 `productId + uomName`。这条链路（订单历史→"再来一单"）目前查不出 `uomId`，`uomName` 是唯一全程都有值、能可靠区分单位的字段，故用它而非严格的 `uomId`。
-   * ⚠️ **修复后的残留风险（未处理，记为已知限制）**：购物车现在允许同一商品出现两行不同单位，但 `use-customer-portal.ts` 的 `setQty`/`removeFromCart` 和商品网格里 `inCart = cart.find(c => c.productId === p.id)` 仍然只按 `productId` 查找/操作——如果购物车里恰好有这种"同商品两单位"的情况，网格上的加减按钮可能操作到错误的那一行，减到 0 时会把两行一起删掉。这是本次未列入范围的连带面（要修需要同步碰 `use-customer-portal.ts`/`product-grid.tsx`/`cart-panel.tsx` 三个文件，超出这次批准的"改 2 个文件"范围），出现频率有限（要求客户购物车里已经有同商品两个不同单位的历史订单行）；建议下一轮单独处理。
-
-**发现但仍不在本次范围内（未处理，供你决定要不要另开一轮）：**
-
-5. `components/customer-portal/price-check.tsx:113` —— "再来一单"核价对话框按 `productId` 做勾选，同一订单里同商品两行（比如正常行+赠品行）会共用一个勾选状态，无法单独勾选/取消。
-6. `scripts/audit/checks/m02.ts:153` —— 完整性审计脚本没传分页参数，现在 `/api/customer-portal/products` 默认只返回前 24 条，可能导致库存探针假阴性。
-7. `components/customer-portal/use-customer-portal.ts:65` —— 商品总页数变少时，当前页码没有回退保护，可能出现"明明有商品却显示暂无商品"。
-8. `components/customer-portal/recent-orders-panel.tsx:47` —— 连续点击两个不同订单的"再来一单"，核价对话框状态是共享的，可能对错订单。
-9. `components/customer-portal/use-customer-portal.ts:54` —— 重新实现了一遍现成的 `hooks/use-server-list.ts` 分页逻辑，属于重复造轮子（简化类建议，非 bug）。
-10. `components/customer-portal/use-customer-portal.ts:14` / `product-grid.tsx:29` —— 运力提示和起订量提示是写死的演示数据，直接嵌在正式下单组件里，客户会误以为是真规则。
-
-这 6 条不是本次 DEV-PLAN 范围内的改动，我没有动手改；如果你要处理，告诉我一声我单独开一轮。
-
-### 测试数据 / 环境说明
-
-* 验证时把本地开发库两个 demo 账号（餐馆测试账号 `restaurant` 系列、运营测试账号 `operator19`，均为 `demo` 测试域）密码重置为 `test12345`。原密码哈希没有留存（bcrypt 不可逆），这两个是本地开发库的测试账号，不是生产数据，但仍然明确告知这个改动不可逆。
-
-* 验证用的促销规则条目（`test-promo-item-verify-*`）验证完已从 `pl_44` 价格表删除，餐馆测试账号的 `customerId` 已改回原值 `cust_001`（该账号本身存在从修改前就有的孤儿引用问题——`cust_001` 这个 Customer 在库里不存在，与本次改动无关，不属于本次修复范围）。
+* `npx prisma validate`：通过；`npx prisma generate` 正常生成（无数据库连接，无法 `migrate`/`db push`，见上方缺口说明）
+* `npx eslint`（本次改动到的文件）：0 error，剩余 warning 全部逐一核对过是改动前就有的（用 `git stash` 对照验证），未新增
+* `node --test --import=tsx tests/*.test.ts`：913 个测试，900 通过、7 个 skip、**6 个失败**——这 6 个失败在改动前（`git stash -u` 到完全干净的树）就已经存在，是关于 `/api/auth/register` 缺权限闸和几个 RBAC 可达性矩阵快照的既有问题，与本次改动无关，未修（不在本次任务范围）
+* `npm run build` / 起服务 / curl / 浏览器实测：**均未执行**（无数据库连接），见上方"未能完成的验证"
 
 ### 已知不可用 / 未做的功能
 
-* 顶部促销轮播广告、左侧商品分类导航：按约定本轮不做。
-
-* 商品详情页：按你的要求明确不做（减少交易步骤）。
-
+* **本环境无法验证的部分**（不是没做，是没法测）：`productNo` 迁移是否能在真实 Postgres 上干净跑通、批量导入/导出接口的真实请求/响应是否符合预期、UI 弹窗交互是否顺畅——全部需要你在有数据库的环境里跑一遍上面列的验证步骤。
+* 商品导入/导出没有支持"批量导入图片"，图片仍需逐个商品上传。
+* 供应商批量导入目前只做"创建，撞名跳过"，不像商品那样支持"按编号匹配后更新"——如果你需要供应商也支持更新导入，需要再开一轮（现有客户/供应商都没有对外的"内部编号"字段可作为可靠匹配键，得先补一个）。
+* 订单/采购单的批量导入沿用"整份 CSV 一次性提交、失败的整组跳过"策略，没有做"部分行成功、部分行失败"的行级颗粒度报告——报错信息是按订单/采购单分组给的，不是逐行。

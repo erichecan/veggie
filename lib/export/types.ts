@@ -11,6 +11,11 @@
  */
 
 export interface ExportColumn<T> {
+  /**
+   * 稳定字段标识（不随 locale 变化），用于字段勾选导出 UI 与 ?fields= 参数。
+   * 同一实体内必须唯一。⛔ 不要用 header 当标识——它会随 isEn 切换成不同字符串。
+   */
+  key: string
   /** 中文表头 */
   header: string
   /** 英文表头，不写则回落到 header */
@@ -24,4 +29,15 @@ export function exportHeaders<T>(columns: readonly ExportColumn<T>[], isEn: bool
 
 export function exportRows<T>(columns: readonly ExportColumn<T>[], rows: readonly T[]): unknown[][] {
   return rows.map(row => columns.map(c => c.get(row)))
+}
+
+/** 按 ?fields=key1,key2 过滤列，保持原始列顺序；未传或全部无效时原样返回全部列 */
+export function filterColumnsByKeys<T>(
+  columns: readonly ExportColumn<T>[],
+  keys: readonly string[] | null | undefined,
+): readonly ExportColumn<T>[] {
+  if (!keys || keys.length === 0) return columns
+  const wanted = new Set(keys)
+  const filtered = columns.filter(c => wanted.has(c.key))
+  return filtered.length > 0 ? filtered : columns
 }

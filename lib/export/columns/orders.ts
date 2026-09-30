@@ -37,15 +37,15 @@ const orderCode = (o: OrderExportRow) => o.code ?? o.id
 export function orderExportColumns(isEn: boolean): readonly ExportColumn<OrderExportRow>[] {
   const status = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   return [
-    { header: '订单号', headerEn: 'Order No', get: orderCode },
-    { header: '交货日期', headerEn: 'Delivery Date', get: o => dateOnly(o.deliveryDate) },
-    { header: '下单日期', headerEn: 'Order Date', get: o => dateOnly(o.quotationDate) },
-    { header: '状态', headerEn: 'Status', get: o => status[o.status] ?? o.status },
-    { header: '客户', headerEn: 'Customer', get: o => o.restaurantName ?? '' },
-    { header: '销售员', headerEn: 'Salesman', get: o => o.salesUser?.name ?? '' },
-    { header: '司机', headerEn: 'Driver', get: o => formatDriverSlotFromOrder(o) || '' },
-    { header: '未税金额 (€)', headerEn: 'Untaxed (€)', get: o => money(computeOrderTotals(o).untaxed) },
-    { header: '税额 (€)', headerEn: 'Tax (€)', get: o => money(computeOrderTotals(o).tax) },
-    { header: '含税总额 (€)', headerEn: 'Total (€)', get: o => money(computeOrderTotals(o).total) },
+    { key: 'code', header: '订单号', headerEn: 'Order No', get: orderCode },
+    { key: 'deliveryDate', header: '交货日期', headerEn: 'Delivery Date', get: o => dateOnly(o.deliveryDate) },
+    { key: 'quotationDate', header: '下单日期', headerEn: 'Order Date', get: o => dateOnly(o.quotationDate) },
+    { key: 'status', header: '状态', headerEn: 'Status', get: o => status[o.status] ?? o.status },
+    { key: 'restaurantName', header: '客户', headerEn: 'Customer', get: o => o.restaurantName ?? '' },
+    { key: 'salesman', header: '销售员', headerEn: 'Salesman', get: o => o.salesUser?.name ?? '' },
+    { key: 'driver', header: '司机', headerEn: 'Driver', get: o => formatDriverSlotFromOrder(o) || '' },
+    { key: 'untaxed', header: '未税金额 (€)', headerEn: 'Untaxed (€)', get: o => money(computeOrderTotals(o).untaxed) },
+    { key: 'tax', header: '税额 (€)', headerEn: 'Tax (€)', get: o => money(computeOrderTotals(o).tax) },
+    { key: 'total', header: '含税总额 (€)', headerEn: 'Total (€)', get: o => money(computeOrderTotals(o).total) },
   ]
 }

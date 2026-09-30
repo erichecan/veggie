@@ -23,6 +23,9 @@ import { Pagination } from '@/components/ui/pagination'
 import type { Customer } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
+import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
 
 const PAGE_SIZE = 20
 
@@ -38,6 +41,21 @@ export default function VendorsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [includeArchived, setIncludeArchived] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+
+  // 导出吃与列表请求相同的筛选参数，服务端 suppliers 实体已经强制 isVendor=1
+  // （见 lib/export/registry.ts），这里不用再自己拼一次
+  const exportAction = useCsvExport({
+    entity: 'suppliers',
+    params: () => {
+      const params = new URLSearchParams()
+      if (searchInput) params.set('search', searchInput)
+      if (includeArchived) params.set('includeArchived', '1')
+      return params
+    },
+    fallbackFilename: isEn ? 'suppliers.csv' : '供应商.csv',
+    columns: isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS,
+  })
 
   async function loadPage(p: number, q: string, archived = includeArchived) {
     setLoading(true)
@@ -116,6 +134,10 @@ export default function VendorsPage() {
         breadcrumb={isEn ? ['Purchases', 'Vendors'] : ['采购', '供应商']}
         onNew={openNew}
         newLabel={isEn ? 'New' : '新建'}
+        permanentActions={[
+          { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
+          exportAction,
+        ]}
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => loadPage(1, searchInput)}
@@ -140,6 +162,28 @@ export default function VendorsPage() {
         />
         <Pagination page={page} totalPages={Math.max(1, Math.ceil(total / PAGE_SIZE))} onPageChange={p => loadPage(p, searchInput)} />
       </div>
+
+      <CsvImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title={isEn ? 'Bulk Import Vendors (CSV)' : '批量导入供应商(CSV)'}
+        templateName="vendors-import-template"
+        endpoint="/api/suppliers/bulk"
+        columns={[
+          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
+          { key: 'phone', label: isEn ? 'Phone' : '电话' },
+          { key: 'email', label: isEn ? 'Email' : '邮箱' },
+          { key: 'address', label: isEn ? 'Address' : '地址' },
+          { key: 'city', label: isEn ? 'City' : '城市' },
+          { key: 'zip', label: isEn ? 'ZIP' : '邮编' },
+          { key: 'vatNumber', label: isEn ? 'VAT Number' : '税号' },
+          { key: 'supplierPaymentTerm', label: isEn ? 'Payment Terms' : '付款条款' },
+          { key: 'vendorTaxRate', label: isEn ? 'Vendor Tax Rate (0-1)' : '采购税率(0-1)' },
+          { key: 'notes', label: isEn ? 'Notes' : '备注' },
+        ]}
+        onDone={() => loadPage(1, searchInput)}
+      />
+      {exportAction.dialog}
     </div>
   )
 }

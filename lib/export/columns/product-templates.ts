@@ -6,12 +6,18 @@
  *     Excel 会把整列当文本，求和、排序、透视全做不了。
  *   - 日期用 yyyy-mm-dd 而不是屏幕上的 dd/mm/yyyy。后者在 Excel 里会按机器区域
  *     设置猜month/day，02/03 到底是 2 月 3 号还是 3 月 2 号取决于打开它的人。
+ *
+ * UoM 配置（20260930 补充）：Base/Purchase UoM 单独列出名字；可售单位(ProductSaleUom)
+ * 是一对多，展开成一列摘要（"单位:系数:是否默认" 用 ; 分隔），能完整还原每个商品的
+ * 多单位配置，同时又不需要每个商品几十列。
  */
 import type { ExportColumn } from '../types'
 
 /** loader 拍平后的行形状（uom / category 已按 locale 取好名字） */
 export interface ProductExportRow {
+  productNo?: number | null
   internalRef?: string | null
+  barcode?: string | null
   externalId?: string | null
   sequence?: number | null
   name?: string | null
@@ -21,10 +27,14 @@ export interface ProductExportRow {
   standardPrice?: number | null
   vendorTaxRate?: number | null
   weight?: number | null
+  netWeight?: number | null
+  volume?: number | null
   qtyOnHand?: number | null
   forecastQty?: number | null
   categoryName?: string | null
   uomName?: string | null
+  purchaseUomName?: string | null
+  saleUomsSummary?: string | null
   type?: string | null
   commissionPrice?: number | null
   createdBy?: string | null
@@ -60,26 +70,32 @@ function isoDate(v: unknown): string {
 }
 
 export const PRODUCT_TEMPLATE_EXPORT_COLUMNS: readonly ExportColumn<ProductExportRow>[] = [
-  { header: 'Internal Reference', get: r => r.internalRef ?? '' },
-  { header: 'ID', get: r => r.externalId ?? '' },
-  { header: 'Sequence', get: r => r.sequence ?? '' },
-  { header: 'Name', get: r => r.name ?? '' },
-  { header: 'Sale Description', get: r => r.saleDescription ?? '' },
-  { header: 'Sale Price (€)', get: r => fixed(r.listPrice, 2) },
-  { header: 'Customer Taxes (%)', get: r => taxPercent(r.customerTaxRate) },
-  { header: 'Cost (€)', get: r => fixed(r.standardPrice ?? 0, 2) },
-  { header: 'Vendor Taxes (%)', get: r => taxPercent(r.vendorTaxRate) },
-  { header: 'Weight (kg)', get: r => fixed(r.weight, 2) },
-  { header: 'Quantity On Hand', get: r => fixed(r.qtyOnHand ?? 0, 1) },
-  { header: 'Forecast Quantity', get: r => fixed(r.forecastQty ?? 0, 1) },
-  { header: 'Product Category', get: r => r.categoryName ?? '' },
-  { header: 'Unit of Measure', get: r => r.uomName ?? '' },
-  { header: 'Product Type', get: r => TYPE_LABEL[String(r.type ?? '').toLowerCase()] ?? (r.type ?? '') },
-  { header: 'Commission Price (€)', get: r => fixed(r.commissionPrice, 2) },
+  { key: 'productNo', header: 'Product No.', get: r => r.productNo ?? '' },
+  { key: 'internalRef', header: 'Internal Reference', get: r => r.internalRef ?? '' },
+  { key: 'barcode', header: 'Barcode', get: r => r.barcode ?? '' },
+  { key: 'externalId', header: 'ID', get: r => r.externalId ?? '' },
+  { key: 'sequence', header: 'Sequence', get: r => r.sequence ?? '' },
+  { key: 'name', header: 'Name', get: r => r.name ?? '' },
+  { key: 'saleDescription', header: 'Sale Description', get: r => r.saleDescription ?? '' },
+  { key: 'listPrice', header: 'Sale Price (€)', get: r => fixed(r.listPrice, 2) },
+  { key: 'customerTaxRate', header: 'Customer Taxes (%)', get: r => taxPercent(r.customerTaxRate) },
+  { key: 'standardPrice', header: 'Cost (€)', get: r => fixed(r.standardPrice ?? 0, 2) },
+  { key: 'vendorTaxRate', header: 'Vendor Taxes (%)', get: r => taxPercent(r.vendorTaxRate) },
+  { key: 'weight', header: 'Weight (kg)', get: r => fixed(r.weight, 2) },
+  { key: 'netWeight', header: 'Net Weight (kg)', get: r => fixed(r.netWeight, 2) },
+  { key: 'volume', header: 'Volume (L)', get: r => fixed(r.volume, 2) },
+  { key: 'qtyOnHand', header: 'Quantity On Hand', get: r => fixed(r.qtyOnHand ?? 0, 1) },
+  { key: 'forecastQty', header: 'Forecast Quantity', get: r => fixed(r.forecastQty ?? 0, 1) },
+  { key: 'categoryName', header: 'Product Category', get: r => r.categoryName ?? '' },
+  { key: 'uomName', header: 'Unit of Measure', get: r => r.uomName ?? '' },
+  { key: 'purchaseUomName', header: 'Purchase UoM', get: r => r.purchaseUomName ?? '' },
+  { key: 'saleUomsSummary', header: 'Sellable Units (unit:factor:default)', get: r => r.saleUomsSummary ?? '' },
+  { key: 'type', header: 'Product Type', get: r => TYPE_LABEL[String(r.type ?? '').toLowerCase()] ?? (r.type ?? '') },
+  { key: 'commissionPrice', header: 'Commission Price (€)', get: r => fixed(r.commissionPrice, 2) },
   // 曾经空值回落写死的 'Administrator'，与列表页一样是编造的假身份（20260902 客户反馈实测
   // 编辑记录里的更新人从未回写，屏幕上却显示这个不存在的人）。与其余空字段一致，留空。
-  { header: 'Created by', get: r => r.createdBy ?? '' },
-  { header: 'Created on', get: r => isoDate(r.createdAt) },
-  { header: 'Last Updated by', get: r => r.updatedBy ?? '' },
-  { header: 'Last Updated on', get: r => isoDate(r.updatedAt) },
+  { key: 'createdBy', header: 'Created by', get: r => r.createdBy ?? '' },
+  { key: 'createdAt', header: 'Created on', get: r => isoDate(r.createdAt) },
+  { key: 'updatedBy', header: 'Last Updated by', get: r => r.updatedBy ?? '' },
+  { key: 'updatedAt', header: 'Last Updated on', get: r => isoDate(r.updatedAt) },
 ]

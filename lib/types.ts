@@ -100,6 +100,8 @@ export interface SaleUnitRow {
 
 export interface ProductTemplate {
   id: string
+  /** 用户友好的自增编号，仅供内部展示/搜索；不是主键，真正的主键/外键目标仍是 id(cuid) */
+  productNo?: number
   name: string
   internalRef?: string
   categoryId?: string
