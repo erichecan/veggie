@@ -72,11 +72,16 @@ function normKey(s: string): string {
   return s.trim().toLowerCase()
 }
 
-interface SaleUomEntry { uomName: string; factor: number }
+interface SaleUomEntry { uomName: string; factor: number; spec?: string; sequence?: number; grossWeight?: number }
 
 /**
- * 解析导出侧 "UomName:factor:Y|N" 摘要格式(分号分隔，与
- * lib/export/loaders/product-templates.ts 的 saleUomsSummary 逐字对应)。
+ * 解析导出侧 "UomName:factor:Y|N[:spec[:sequence[:grossWeight]]]" 摘要格式(分号分隔，
+ * 与 lib/export/loaders/product-templates.ts 的 saleUomsSummary 逐字对应)。
+ * 前 3 段(单位名/系数/是否默认)必填，spec/装货顺序/毛重 3 段可选、可省略、可留空——
+ * 20261001 客户反馈"产品规格/装货顺序/毛重这几个字段怎么批量导入"，在原有 3 段格式后面
+ * 顺延加 3 个可选段，旧的 3 段格式(没有这 3 个字段的历史导出文件)原样兼容，不用重新导出。
+ * 第 3 段(Y|N，是否默认单位)本身不参与解析——默认单位由下面 normalizeAndValidateSaleUomItems
+ * 按 product.uomId 匹配派生，Y|N 只是给人看的标注，跟原有行为一致。
  * 坏段落只跳过那一段，不让整行导入失败。
  */
 function parseSaleUomsSummary(raw: string): { entries: SaleUomEntry[]; malformed: string[] } {
@@ -86,11 +91,24 @@ function parseSaleUomsSummary(raw: string): { entries: SaleUomEntry[]; malformed
     const seg = part.trim()
     if (!seg) continue
     const bits = seg.split(':')
-    if (bits.length !== 3) { malformed.push(seg); continue }
+    if (bits.length < 3) { malformed.push(seg); continue }
     const name = bits[0].trim()
     const factor = Number(bits[1].trim())
     if (!name || !Number.isFinite(factor) || factor <= 0) { malformed.push(seg); continue }
-    entries.push({ uomName: name, factor })
+    const entry: SaleUomEntry = { uomName: name, factor }
+    const specRaw = bits[3]?.trim()
+    if (specRaw) entry.spec = specRaw
+    const seqRaw = bits[4]?.trim()
+    if (seqRaw) {
+      const seq = Number(seqRaw)
+      if (Number.isInteger(seq) && seq >= 0 && seq <= 8) entry.sequence = seq
+    }
+    const gwRaw = bits[5]?.trim()
+    if (gwRaw) {
+      const gw = Number(gwRaw)
+      if (Number.isFinite(gw) && gw >= 0) entry.grossWeight = gw
+    }
+    entries.push(entry)
   }
   return { entries, malformed }
 }
@@ -257,7 +275,7 @@ export async function POST(req: Request) {
           for (const e of entries) {
             const uomId = uomByName.get(normKey(e.uomName))
             if (!uomId) { warnings.push(`${rowLabel}: sellable unit '${e.uomName}' not found, skipped`); continue }
-            items.push({ uomId, factor: e.factor })
+            items.push({ uomId, factor: e.factor, spec: e.spec, sequence: e.sequence, grossWeight: e.grossWeight })
           }
           if (items.length > 0) row.saleUomItems = items
         }

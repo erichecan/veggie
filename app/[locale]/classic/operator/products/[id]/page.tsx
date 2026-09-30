@@ -27,17 +27,37 @@ function IconSales() {
 }
 
 // ── SmartButton ────────────────────────────────────────────────────────────────
-function SmartButton({ icon, value, label }: { icon: React.ReactNode; value: string | number; label: string }) {
-  return (
-    <div
-      className="flex flex-col items-center gap-0.5 px-4 py-2 rounded border text-center min-w-[90px]"
-      style={{ borderColor: '#d4b8d0' }}
-    >
+// onClick 可选(20261001)：之前是纯展示的死按钮，客户反馈"Sales 数字应该能点进去看分析"。
+// 传了 onClick 就渲染成真正的 <button>(带 hover 反馈)，不传保持原来的纯展示 <div>。
+function SmartButton({ icon, value, label, onClick, title }: { icon: React.ReactNode; value: string | number; label: string; onClick?: () => void; title?: string }) {
+  const content = (
+    <>
       <div className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#875A7B' }}>
         {icon}
         <span>{value}</span>
       </div>
       <span className="text-xs text-gray-500 whitespace-nowrap">{label}</span>
+    </>
+  )
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        className="flex flex-col items-center gap-0.5 px-4 py-2 rounded border text-center min-w-[90px] hover:bg-purple-50 transition-colors cursor-pointer"
+        style={{ borderColor: '#d4b8d0' }}
+      >
+        {content}
+      </button>
+    )
+  }
+  return (
+    <div
+      className="flex flex-col items-center gap-0.5 px-4 py-2 rounded border text-center min-w-[90px]"
+      style={{ borderColor: '#d4b8d0' }}
+    >
+      {content}
     </div>
   )
 }
@@ -591,7 +611,15 @@ export default function ClassicProductDetailPage() {
             {/* Smart Buttons */}
             {!isNew && (
               <div className="flex flex-wrap gap-2 justify-end flex-shrink-0 max-w-sm">
-                <SmartButton icon={<IconSales />} value={soldCount} label="Sales" />
+                <SmartButton
+                  icon={<IconSales />}
+                  value={soldCount}
+                  label="Sales"
+                  title={isEn ? 'View sales analysis for this product' : '查看这个商品的销售分析'}
+                  onClick={() => router.push(
+                    `${prefix}/classic/boss/sales-analysis?productId=${tmpl.id}&productName=${encodeURIComponent(tmpl.name)}`
+                  )}
+                />
               </div>
             )}
           </div>

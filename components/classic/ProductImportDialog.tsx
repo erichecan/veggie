@@ -84,7 +84,7 @@ const COLUMNS: ImportColumn[] = [
   { label: 'Product Category', key: 'category' },
   { label: 'Unit of Measure', key: 'uomName' },
   { label: 'Purchase UoM', key: 'purchaseUomName' },
-  { label: 'Sellable Units (unit:factor:default)', key: 'saleUoms' },
+  { label: 'Sellable Units (unit:factor:default:spec:sequence:grossWeight)', key: 'saleUoms' },
   { label: 'Product Type', key: 'type', parse: normalizeType },
   { label: 'Commission Price (€)', key: 'commissionPrice' },
   { label: 'Created by' },
@@ -102,9 +102,10 @@ const COLUMNS: ImportColumn[] = [
 const IMPORTABLE_COLUMNS = COLUMNS.filter((c): c is ImportColumn & { key: string } => !!c.key)
 
 const EXAMPLE_ROWS: string[][] = [
-  // 示例 1：多规格(基础单位 PKT，另有整箱 CASE)
+  // 示例 1：多规格(基础单位 PKT，另有整箱 CASE)——CASE 这一行顺带演示可选的
+  // 产品规格/装货顺序/毛重 3 段(跟在 Y|N 后面，"CASE:10:N:6*700g:3:8.4")
   ['', '', '', '', '', 'ASIAN CHOICE Black Tiger Shrimp 700g', '', '12.50', '13.5', '8.00', '13.5',
-    '0.7', '0.7', '', '100', '', 'Frozen', 'PKT', 'CASE', 'PKT:1:Y; CASE:10:N', 'consu', '1.00',
+    '0.7', '0.7', '', '100', '', 'Frozen', 'PKT', 'CASE', 'PKT:1:Y; CASE:10:N:6*700g:3:8.4', 'consu', '1.00',
     '', '', '', '', '', '', 'active', 'Y', 'Y', 'none'],
   // 示例 2：单一单位，不配可售单位
   ['', 'DEMO-002', '', '', '', 'Demo Potato 5kg Bag', '', '6.90', '0', '4.20', '0',
@@ -224,8 +225,8 @@ export default function ProductImportDialog({
 
           <div className="text-xs text-gray-500 bg-purple-50/50 border border-purple-100 rounded-lg px-3 py-2">
             {isEn
-              ? <>Matched by Product No. → Internal Reference → Barcode → ID (exact match) updates that product — keep the Product No. column from an exported file to reliably update prices/categories even when Internal Reference is blank; otherwise a name collision is skipped, no match creates a new one. Format for <b>Sellable Units</b>: <code>UomName:factor:Y|N</code> separated by <code>;</code>, e.g. <code>PKT:1:Y; CASE:10:N</code>.</>
-              : <>按「产品编号 → 内部编号 → 条码 → ID」精确匹配更新对应商品——保留从导出文件带出的「产品编号」列,即使内部编号是空的也能可靠更新价格/分类;都没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。<b>可售单位</b>格式:<code>单位名:系数:Y|N</code>,用 <code>;</code> 分隔,如 <code>PKT:1:Y; CASE:10:N</code>。</>}
+              ? <>Matched by Product No. → Internal Reference → Barcode → ID (exact match) updates that product — keep the Product No. column from an exported file to reliably update prices/categories even when Internal Reference is blank; otherwise a name collision is skipped, no match creates a new one. Format for <b>Sellable Units</b>: <code>UomName:factor:Y|N</code> separated by <code>;</code>, e.g. <code>PKT:1:Y; CASE:10:N</code> — optionally append <code>:spec:sequence:grossWeight</code> per unit (e.g. <code>CASE:10:N:6*700g:3:8.4</code>) to also set per-unit Product Spec / Pack Sequence(0-8) / Gross Weight; leave a segment empty to skip just that field.</>
+              : <>按「产品编号 → 内部编号 → 条码 → ID」精确匹配更新对应商品——保留从导出文件带出的「产品编号」列,即使内部编号是空的也能可靠更新价格/分类;都没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。<b>可售单位</b>格式:<code>单位名:系数:Y|N</code>,用 <code>;</code> 分隔,如 <code>PKT:1:Y; CASE:10:N</code>——可以在后面再接 <code>:产品规格:装货顺序:毛重</code>(如 <code>CASE:10:N:6*700g:3:8.4</code>)顺带把这个单位的「产品规格/装货顺序(0-8)/毛重」也设好;某一段不想填就留空。</>}
           </div>
 
           <input
