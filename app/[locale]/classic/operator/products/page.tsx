@@ -121,9 +121,12 @@ export default function ClassicProductsPage() {
 
   // 导出：吃的就是 queryParams —— 与列表请求同一份筛选参数，同一份 where 构造，
   // 所以导出的是当前筛选下的**全部**结果，不是屏幕上这 50 条。
+  // 勾了行（选中了具体商品）时改成只导出勾选的那些——传 ids= 短路其余筛选条件
+  // （见 lib/products-query.ts），所见即所得，不用先把筛选调到刚好只剩这几条。
   const exportAction = useCsvExport({
     entity: 'product-templates',
     params: () => {
+      if (selected.size > 0) return new URLSearchParams({ ids: [...selected].join(',') })
       const params = new URLSearchParams(queryParams)
       if (searchInput) params.set('search', searchInput)
       return params
@@ -131,6 +134,9 @@ export default function ClassicProductsPage() {
     fallbackFilename: isEn ? 'products.csv' : '商品.csv',
     columns: PRODUCT_TEMPLATE_EXPORT_COLUMNS,
   })
+  const exportActionLabeled = selected.size > 0
+    ? { ...exportAction, label: isEn ? `Export (${selected.size} selected)` : `导出(已选 ${selected.size})` }
+    : exportAction
 
   async function loadPage(p: number, q: string, ps: number = pageSize) {
     setLoading(true)
@@ -559,7 +565,7 @@ export default function ClassicProductsPage() {
         newLabel={isEn ? 'New' : '新建'}
         permanentActions={[
           { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
-          exportAction,
+          exportActionLabeled,
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },
@@ -850,7 +856,7 @@ export default function ClassicProductsPage() {
         onClose={() => setImportOpen(false)}
         onDone={() => loadPage(1, searchInput)}
       />
-      {exportAction.dialog}
+      {exportActionLabeled.dialog}
 
       <SaleUomsDialog
         open={uomDialogProduct != null}
