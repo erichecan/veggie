@@ -201,12 +201,16 @@ export default function ProductImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose() } }}>
-      <DialogContent className="max-w-3xl">
+      {/* 这个导入模板列数比其它 CsvImportDialog 用户多得多(20+ 列)，固定 max-w-3xl 装不下，
+          预览表格会撑破弹窗边界溢出到遮罩层上。放宽到视口宽度的 95%/桌面端 5xl，
+          再配合下面 min-w-0(grid 子项默认按内容撑宽，不会自动收缩) 让装不下的部分
+          在弹窗内部横向滚动，而不是视觉溢出。 */}
+      <DialogContent className="max-w-[95vw] sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{isEn ? 'Bulk Import Products (CSV)' : '批量导入商品(CSV)'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 text-sm">
+        <div className="space-y-3 text-sm min-w-0">
           <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <span className="text-xs text-gray-600">
               {isEn

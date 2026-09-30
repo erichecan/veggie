@@ -13,6 +13,9 @@
  *   cf_<字段>     文本列筛选；cf_<日期字段>_from/_to  日期区间列筛选
  *   cfm_<字段>    多选列筛选（逗号分隔的精确值集合）
  *   stockAlert    negative | low  库存告警筛选
+ *   ids           逗号分隔的商品 id 列表——列表页"导出勾选项"用，命中即短路其余所有
+ *                 筛选条件（用户已经手动勾了具体是哪些，不该再被当前筛选/搜索状态
+ *                 二次过滤，所见即所得）。只有导出会传这个参数，列表 API 本身不用。
  */
 import { prisma } from '@/lib/db'
 import { buildFacetWhere } from '@/lib/facet-sql'
@@ -77,6 +80,9 @@ export async function productStockAlertCounts(): Promise<{ negative: number; low
 export async function buildProductTemplatesWhere(
   searchParams: URLSearchParams,
 ): Promise<Record<string, unknown>> {
+  const ids = searchParams.get('ids')?.split(',').map(s => s.trim()).filter(Boolean)
+  if (ids && ids.length > 0) return { id: { in: ids } }
+
   const status = searchParams.get('status') ?? ''
 
   const where: Record<string, unknown> = {}
