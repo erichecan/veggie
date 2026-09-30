@@ -406,10 +406,12 @@ export default function ClassicProductsPage() {
     return undefined
   }
 
-  // ─── 「装货顺序」列（20260908 建列 / 20260912 改为展示 pack sequence 而非单位名）───
-  // 只有 1 个单位就显示它的装货顺序；多个单位显示"默认单位的顺序 + N"，不管背后有几个单位，
-  // 这一列宽度都不变——列表已经很多列很宽了，这一列不该再抢地方。
-  // 完整信息（换算/定价/规格/各单位装货顺序）在点开的弹窗里，不在列表里摊开。
+  // ─── 「装货顺序」列（20260908 建列 / 20260912 改为展示 pack sequence 而非单位名 /
+  // 20260930 改为列出全部单位的顺序数字，而非"默认单位顺序 +N"）───
+  // 之前"默认单位顺序 +N"的写法有个真实的坑：客户在弹窗里只改了非默认单位(如 BOTTLE)
+  // 的装货顺序，默认单位(如 CASE)的数字没变，这一列看着就跟没保存一样——"+1"还容易被
+  // 读成箭头"→1"。改成把每个单位的顺序数字都列出来(逗号分隔)，改了哪个单位、改成几，
+  // 列表上直接就能看见，不用再靠弹窗里的"+N"去猜。
   function saleUnitName(u: ProductSaleUomSummary): string {
     return isEn ? (u.uom.name || u.uom.nameZh || '') : (u.uom.nameZh || u.uom.name || '')
   }
@@ -423,7 +425,10 @@ export default function ClassicProductsPage() {
     if (list.length === 0) return <span className="text-gray-300 text-xs">—</span>
     const def = list.find(u => u.isDefault) ?? list[0]
     const tooltip = list.map(u => `${saleUnitName(u)}: ${saleUnitSequenceLabel(u)}`).join(' · ')
-    const label = list.length === 1 ? saleUnitSequenceLabel(def) : `${saleUnitSequenceLabel(def)} +${list.length - 1}`
+    const sorted = list.length > 1
+      ? [...list].sort((a, b) => (a.sequence ?? Number.MAX_SAFE_INTEGER) - (b.sequence ?? Number.MAX_SAFE_INTEGER))
+      : list
+    const label = list.length === 1 ? saleUnitSequenceLabel(def) : sorted.map(u => saleUnitSequenceLabel(u)).join(',')
     const isMulti = list.length > 1
     return (
       <button
