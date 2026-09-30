@@ -60,7 +60,12 @@ function normalizeType(raw: string): string {
 }
 
 const COLUMNS: ImportColumn[] = [
-  { label: 'Product No.' },
+  // 20261 追加：接回匹配-更新逻辑的最高优先级键(见 app/api/products/bulk/route.ts)——
+  // 客户初始化建库时大量商品本来就没填 Internal Reference/Barcode，只靠那两个字段
+  // 做"导出→改价改分类→重新导入"匹配不上，改的东西会被当"撞名跳过"静默丢掉。
+  // productNo 是数据库自动生成、每个商品必有、永不改变的编号，天然就在导出的第一列，
+  // 用它做匹配键才能保证批量更新对整个商品库都可靠，不依赖历史数据是否填过编号。
+  { label: 'Product No.', key: 'productNo' },
   { label: 'Internal Reference', key: 'internalRef' },
   { label: 'Barcode', key: 'barcode' },
   { label: 'ID', key: 'externalId' },
@@ -215,8 +220,8 @@ export default function ProductImportDialog({
 
           <div className="text-xs text-gray-500 bg-purple-50/50 border border-purple-100 rounded-lg px-3 py-2">
             {isEn
-              ? <>Matched by Internal Reference → Barcode → ID (exact match) updates that product; otherwise a name collision is skipped, no match creates a new one. Format for <b>Sellable Units</b>: <code>UomName:factor:Y|N</code> separated by <code>;</code>, e.g. <code>PKT:1:Y; CASE:10:N</code>.</>
-              : <>按「内部编号 → 条码 → ID」精确匹配更新对应商品;都没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。<b>可售单位</b>格式:<code>单位名:系数:Y|N</code>,用 <code>;</code> 分隔,如 <code>PKT:1:Y; CASE:10:N</code>。</>}
+              ? <>Matched by Product No. → Internal Reference → Barcode → ID (exact match) updates that product — keep the Product No. column from an exported file to reliably update prices/categories even when Internal Reference is blank; otherwise a name collision is skipped, no match creates a new one. Format for <b>Sellable Units</b>: <code>UomName:factor:Y|N</code> separated by <code>;</code>, e.g. <code>PKT:1:Y; CASE:10:N</code>.</>
+              : <>按「产品编号 → 内部编号 → 条码 → ID」精确匹配更新对应商品——保留从导出文件带出的「产品编号」列,即使内部编号是空的也能可靠更新价格/分类;都没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。<b>可售单位</b>格式:<code>单位名:系数:Y|N</code>,用 <code>;</code> 分隔,如 <code>PKT:1:Y; CASE:10:N</code>。</>}
           </div>
 
           <input

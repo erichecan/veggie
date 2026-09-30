@@ -6,21 +6,27 @@ import { normalizeAndValidateSaleUomItems, upsertProductSaleUomRows } from '@/li
 import type { SaleUomItemInput } from '@/lib/sale-uom'
 
 /**
- * POST /api/products/bulk — 商品批量导入(CSV，20260930 重写)
+ * POST /api/products/bulk — 商品批量导入(CSV，20260930 重写，20261 补 productNo 匹配键)
  * ============================================================================
- * body: { rows: [{ name*, internalRef?, barcode?, externalId?, spec?, description?,
- *   saleDescription?, category?, type?, canBeSold?, canBePurchased?, listPrice?,
- *   standardPrice?, customerTaxRate?, vendorTaxRate?, commissionPrice?, weight?,
- *   netWeight?, volume?, qtyOnHand?, uomName?, purchaseUomName?, tracking?, status?,
- *   saleUoms? }] }
+ * body: { rows: [{ name*, productNo?, internalRef?, barcode?, externalId?, spec?,
+ *   description?, saleDescription?, category?, type?, canBeSold?, canBePurchased?,
+ *   listPrice?, standardPrice?, customerTaxRate?, vendorTaxRate?, commissionPrice?,
+ *   weight?, netWeight?, volume?, qtyOnHand?, uomName?, purchaseUomName?, tracking?,
+ *   status?, saleUoms? }] }
  *
  * 与 lib/export/columns/product-templates.ts 导出的列一一对应(同一套人类可读的
  * category/uomName/purchaseUomName/saleUoms "UomName:factor:Y|N" 摘要格式)，
  * 导出 → Excel 改 → 重新导入这条路径两边共用同一份口径。
  *
- * 更新-或-创建匹配优先级：internalRef → barcode → externalId(仅精确匹配才触发更新)；
- * 都没匹配上时落回旧行为——按名字大小写不敏感判重，撞了就跳过(不覆盖)。
+ * 更新-或-创建匹配优先级：productNo → internalRef → barcode → externalId(仅精确匹配
+ * 才触发更新)；都没匹配上时落回旧行为——按名字大小写不敏感判重，撞了就跳过(不覆盖)。
  * 更新时只覆盖本行提供了非空值的字段，不会用默认值把已有数据冲掉。
+ *
+ * productNo 是数据库自增主键，只用来"查找该更新哪一条"，绝不会被写进 create/update
+ * 的 data 里——它本身是只读字段，这个端点永远不会去改它或生成它(见 Prisma schema
+ * `@default(autoincrement())`)。客户端关心的"批量更新分类/价格会不会连带把商品的
+ * ID 改掉"这个问题，答案是不会：这里走的是 Prisma `update`，商品的 cuid 主键(id)
+ * 和 productNo 两者都不受这个接口影响，历史订单/采购/库存对该商品的引用不会断。
  *
  * 一次最多 200 行，每 50 行一个事务，与旧实现一致。
  */
@@ -92,6 +98,8 @@ function parseSaleUomsSummary(raw: string): { entries: SaleUomEntry[]; malformed
 interface ResolvedRow {
   rowLabel: string
   name: string
+  /** 匹配-更新用的最高优先级键(数据库自动生成，只读，永不写回)——见下方匹配优先级注释 */
+  productNo?: number
   internalRef?: string
   barcode?: string
   externalId?: string
@@ -154,6 +162,15 @@ export async function POST(req: Request) {
         }
         const rowLabel = `Row ${i + 1} (${name})`
         const row: ResolvedRow = { rowLabel, name }
+
+        // Product No. 是自增主键(见 prisma/schema.prisma Product.productNo)，只读——
+        // 这里只用它做匹配-更新的查找键，绝不会被写进 create/update 的 data 里。
+        // 非法值(非整数/负数)当成"没填"处理，落回按 internalRef/barcode/externalId 匹配。
+        const productNoRaw = num(r.productNo)
+        if (productNoRaw !== undefined) {
+          if (Number.isInteger(productNoRaw) && productNoRaw > 0) row.productNo = productNoRaw
+          else warnings.push(`${rowLabel}: Product No. '${r.productNo}' is not a valid positive integer, ignored`)
+        }
 
         row.internalRef = str(r.internalRef, 100)
         row.barcode = str(r.barcode, 100)
@@ -252,12 +269,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '没有有效行(name 必填)' }, { status: 400 })
       }
 
-      // ── 匹配已有商品：internalRef → barcode → externalId，优先级顺序，仅精确匹配 ──
+      // ── 匹配已有商品：productNo → internalRef → barcode → externalId，优先级顺序，仅精确匹配 ──
+      // productNo 排第一优先级：它是数据库自增主键，每个商品必有、永不改变，且天然就在
+      // 商品导出文件的第一列——客户初始化建库时很多商品的 internalRef/barcode 本来就是空的，
+      // 只靠那两个字段做"导出→改价改分类→重新导入"匹配不上，会被当"撞名跳过"，改的东西
+      // 静默丢失。productNo 不依赖历史数据是否填过编号，保证批量更新对整个商品库都可靠。
+      const productNos = [...new Set(resolvedRows.map(r => r.productNo).filter((v): v is number => v !== undefined))]
       const internalRefs = [...new Set(resolvedRows.map(r => r.internalRef).filter((v): v is string => !!v))]
       const barcodes = [...new Set(resolvedRows.map(r => r.barcode).filter((v): v is string => !!v))]
       const externalIds = [...new Set(resolvedRows.map(r => r.externalId).filter((v): v is string => !!v))]
 
       const keyOrConditions: Array<Record<string, unknown>> = []
+      if (productNos.length) keyOrConditions.push({ productNo: { in: productNos } })
       if (internalRefs.length) keyOrConditions.push({ internalRef: { in: internalRefs } })
       if (barcodes.length) keyOrConditions.push({ barcode: { in: barcodes } })
       if (externalIds.length) keyOrConditions.push({ externalId: { in: externalIds } })
@@ -271,10 +294,13 @@ export async function POST(req: Request) {
 
       // internalRef/barcode 在 schema 里都不是 @unique，同名可能有多条；这里按"最早创建的那条"
       // 兜底(orderBy createdAt asc)，与"更新已有商品"的直觉一致，不做更复杂的歧义判断。
+      // productNo 本身是 @unique，不存在这个问题。
+      const byProductNo = new Map<number, (typeof matchCandidates)[number]>()
       const byInternalRef = new Map<string, (typeof matchCandidates)[number]>()
       const byBarcode = new Map<string, (typeof matchCandidates)[number]>()
       const byExternalId = new Map<string, (typeof matchCandidates)[number]>()
       for (const p of matchCandidates) {
+        byProductNo.set(p.productNo, p)
         if (p.internalRef && !byInternalRef.has(p.internalRef)) byInternalRef.set(p.internalRef, p)
         if (p.barcode && !byBarcode.has(p.barcode)) byBarcode.set(p.barcode, p)
         if (p.externalId && !byExternalId.has(p.externalId)) byExternalId.set(p.externalId, p)
@@ -289,7 +315,11 @@ export async function POST(req: Request) {
       const planned: PlannedRow[] = []
       for (const row of resolvedRows) {
         let existingId: string | null = null
-        if (row.internalRef) existingId = byInternalRef.get(row.internalRef)?.id ?? null
+        if (row.productNo !== undefined) {
+          existingId = byProductNo.get(row.productNo)?.id ?? null
+          if (!existingId) warnings.push(`${row.rowLabel}: Product No. ${row.productNo} not found, falling back to other match keys`)
+        }
+        if (!existingId && row.internalRef) existingId = byInternalRef.get(row.internalRef)?.id ?? null
         if (!existingId && row.barcode) existingId = byBarcode.get(row.barcode)?.id ?? null
         if (!existingId && row.externalId) existingId = byExternalId.get(row.externalId)?.id ?? null
 
