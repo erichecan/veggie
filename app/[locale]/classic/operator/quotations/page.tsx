@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/api'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
+import { parseCsv, downloadCsv } from '@/lib/csv-export'
 import type { Order, OrderStatus, Invoice, Customer, Trip } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import { DateWithDay } from '@/components/shared/date-with-day'
@@ -372,28 +373,42 @@ export default function ClassicQuotationsPage() {
 
   // ── CSV import helpers ────────────────────────────────────────────────────
 
-  // CSV 列名是数据格式契约(与上传文件表头及 row[key] 取值强绑定)，不随界面语言切换；
-  // 下方 CSV_HEADER_LABELS 仅用于英文界面下的显示翻译，不影响解析 key。
-  const CSV_HEADERS = ['餐馆名称', '商品名称', '规格', '数量', '单价', '配送批次', '内部备注']
-  const CSV_TEMPLATE = CSV_HEADERS.join(',') + '\nRestaurant A,白菜,500g,10,2.50,Batch 1,'
-  const CSV_HEADER_LABELS: Record<string, string> = {
-    '餐馆名称': 'Restaurant Name',
-    '商品名称': 'Product Name',
-    '规格': 'Spec',
-    '数量': 'Quantity',
-    '单价': 'Unit Price',
-    '配送批次': 'Delivery Batch',
-    '内部备注': 'Internal Note',
+  // 列定义是数据格式契约：中文表头是主约定，英文表头作为别名同样可被识别(匹配大小写不敏感)。
+  // key 是解析后 Record 的固定字段名，不随界面语言变化，下游逻辑(分组/匹配)只认 key。
+  const ORDER_IMPORT_COLUMNS: { key: string; zh: string; en: string; required?: boolean }[] = [
+    { key: 'restaurant',    zh: '餐馆名称', en: 'Restaurant Name', required: true },
+    { key: 'product',       zh: '商品名称', en: 'Product Name',    required: true },
+    { key: 'productRef',    zh: '商品编号', en: 'Product Ref' },
+    { key: 'spec',          zh: '规格',     en: 'Spec' },
+    { key: 'quantity',      zh: '数量',     en: 'Quantity',        required: true },
+    { key: 'price',         zh: '单价',     en: 'Unit Price',      required: true },
+    { key: 'deliveryBatch', zh: '配送批次', en: 'Delivery Batch' },
+    { key: 'internalNote',  zh: '内部备注', en: 'Internal Note' },
+  ]
+
+  function downloadImportTemplate() {
+    const headers = ORDER_IMPORT_COLUMNS.map(c => isEn ? c.en : c.zh)
+    const sample = isEn
+      ? ['Restaurant A', 'Cabbage', '', '500g', '10', '2.50', 'Batch 1', '']
+      : ['Restaurant A', '白菜', '', '500g', '10', '2.50', 'Batch 1', '']
+    downloadCsv(isEn ? 'order_import_template' : '订单导入模板', headers, [sample])
   }
 
+  // 用共享的健壮 CSV 解析器(引号包裹字段/内嵌逗号换行/BOM/CRLF)取代原来手写的
+  // text.split('\n') 版本；表头按中/英文列名匹配(大小写不敏感)后统一映射到固定 key 上，
+  // 下游逻辑不再关心上传文件用的是中文还是英文表头。
   function parseCSV(text: string): Array<Record<string, string>> {
-    const lines = text.trim().split('\n').filter(l => l.trim())
-    if (lines.length < 2) return []
-    const headers = lines[0].split(',').map(h => h.trim())
-    return lines.slice(1).map(line => {
-      const cells = line.split(',').map(c => c.trim())
+    const rows = parseCsv(text)
+    if (rows.length < 2) return []
+    const header = rows[0].map(h => h.trim().toLowerCase())
+    const colIdx = new Map<string, number>()
+    for (const c of ORDER_IMPORT_COLUMNS) {
+      const idx = header.findIndex(h => h === c.zh.toLowerCase() || h === c.en.toLowerCase())
+      if (idx >= 0) colIdx.set(c.key, idx)
+    }
+    return rows.slice(1).map(r => {
       const row: Record<string, string> = {}
-      headers.forEach((h, i) => { row[h] = cells[i] ?? '' })
+      for (const [key, idx] of colIdx) row[key] = (r[idx] ?? '').trim()
       return row
     })
   }
@@ -413,16 +428,25 @@ export default function ClassicQuotationsPage() {
     setImportLoading(true)
     setImportResult(null)
 
-    // 加载商品列表用于名称匹配
-    let products: Array<{ id: string; name: string; spec?: string; listPrice?: number }> = []
+    // 加载商品列表用于名称/编号匹配
+    let products: Array<{ id: string; name: string; spec?: string; listPrice?: number; internalRef?: string | null }> = []
     try {
       products = await apiGet<typeof products>('/api/products?slim=1')
     } catch { /* ignore */ }
 
+    // 商品编号(内部编号)优先——它是唯一键，比名字可靠；只有 CSV 行没给编号或编号未命中时才退回按名称精确匹配
+    function findProduct(productRef: string, productName: string) {
+      if (productRef) {
+        const byRef = products.find(p => p.internalRef && norm(p.internalRef) === norm(productRef))
+        if (byRef) return byRef
+      }
+      return products.find(p => norm(p.name) === norm(productName)) ?? null
+    }
+
     // 按餐馆名分组，构建订单
     const groups = new Map<string, typeof importParsed>()
     for (const row of importParsed) {
-      const key = row['餐馆名称']?.trim()
+      const key = row.restaurant?.trim()
       if (!key) continue
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(row)
@@ -436,14 +460,12 @@ export default function ClassicQuotationsPage() {
       if (!cust) { errors.push(isEn ? `Restaurant not found: ${restaurantName}` : `找不到餐馆: ${restaurantName}`); continue }
 
       const items = rows.map(row => {
-        const productName = row['商品名称']?.trim() || ''
-        const spec = row['规格']?.trim() || ''
-        const quantity = parseFloat(row['数量']) || 1
-        const price = parseFloat(row['单价']) || 0
-        const matched = products.find(p =>
-          norm(p.name) === norm(productName) ||
-          (norm(p.name) === norm(productName) && norm(p.spec ?? '') === norm(spec))
-        )
+        const productName = row.product?.trim() || ''
+        const productRef = row.productRef?.trim() || ''
+        const spec = row.spec?.trim() || ''
+        const quantity = parseFloat(row.quantity) || 1
+        const price = parseFloat(row.price) || 0
+        const matched = findProduct(productRef, productName)
         return {
           productId: matched?.id ?? '',
           productName: productName,
@@ -454,8 +476,8 @@ export default function ClassicQuotationsPage() {
         }
       }).filter(it => it.productName)
 
-      const deliveryBatch = rows[0]['配送批次']?.trim() || ''
-      const internalNote = rows[0]['内部备注']?.trim() || ''
+      const deliveryBatch = rows[0].deliveryBatch?.trim() || ''
+      const internalNote = rows[0].internalNote?.trim() || ''
 
       if (!items.length) { errors.push(isEn ? `${restaurantName}: no valid item rows` : `${restaurantName}: 无有效商品行`); continue }
 
@@ -1218,13 +1240,7 @@ ${orderSections}
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-600">{isEn ? '1. Download the template, fill in data, then upload' : '1. 下载模板，填写数据后上传'}</span>
                 <button
-                  onClick={() => {
-                    const blob = new Blob(['﻿' + CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' })
-                    const a = document.createElement('a')
-                    a.href = URL.createObjectURL(blob)
-                    a.download = 'import_template.csv'
-                    a.click()
-                  }}
+                  onClick={downloadImportTemplate}
                   className="px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 >
                   {isEn ? '↓ Download Template' : '↓ 下载模板'}
@@ -1251,13 +1267,13 @@ ${orderSections}
                     <table className="text-xs w-full">
                       <thead>
                         <tr className="bg-gray-50 border-b">
-                          {CSV_HEADERS.map(h => <th key={h} className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">{isEn ? (CSV_HEADER_LABELS[h] ?? h) : h}</th>)}
+                          {ORDER_IMPORT_COLUMNS.map(c => <th key={c.key} className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">{isEn ? c.en : c.zh}</th>)}
                         </tr>
                       </thead>
                       <tbody>
                         {importParsed.slice(0, 5).map((row, i) => (
                           <tr key={i} className="border-b last:border-0">
-                            {CSV_HEADERS.map(h => <td key={h} className="px-2 py-1 text-gray-700 whitespace-nowrap">{row[h] || '—'}</td>)}
+                            {ORDER_IMPORT_COLUMNS.map(c => <td key={c.key} className="px-2 py-1 text-gray-700 whitespace-nowrap">{row[c.key] || '—'}</td>)}
                           </tr>
                         ))}
                       </tbody>
@@ -1266,9 +1282,9 @@ ${orderSections}
                   {(() => {
                     const seen = new Map<string, { rest: string; product: string; count: number }>()
                     for (const row of importParsed) {
-                      const rest = (row['餐馆名称'] ?? '').trim()
-                      const product = (row['商品名称'] ?? '').trim()
-                      const spec = (row['规格'] ?? '').trim()
+                      const rest = (row.restaurant ?? '').trim()
+                      const product = (row.product ?? '').trim()
+                      const spec = (row.spec ?? '').trim()
                       if (!rest || !product) continue
                       const key = `${rest.toLowerCase()}|${product.toLowerCase()}|${spec.toLowerCase()}`
                       const e = seen.get(key)
