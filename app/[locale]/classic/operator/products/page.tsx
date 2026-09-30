@@ -17,6 +17,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 import type { SaleUomFormRow } from '@/lib/sale-uom'
+import { writeProductNavList } from '@/lib/product-nav-list'
 
 const PAGE_SIZE = 50
 const LOW_STOCK_THRESHOLD = 10
@@ -41,6 +42,45 @@ const TAX_OPTIONS = [
 
 type StockAlertFilter = 'all' | 'negative' | 'low'
 
+// 筛选/排序/分页状态持久化（20261001 客户反馈："进入单个产品后再回列表，刚输入的
+// 过滤条件都没了"）——详情页是整页路由跳转（router.push），这个列表组件会被卸载，
+// 纯 useState 挡不住状态丢失。用 sessionStorage 记一份，回到列表时原样恢复；
+// 关标签页/开新标签页不带，只解决"进详情页再返回"这一种场景，足够且不会让筛选
+// 意外地跨会话长期粘住。
+const PRODUCTS_FILTER_STORAGE_KEY = 'products-list-filters-v1'
+
+interface SavedProductsListState {
+  searchInput: string
+  columnFilters: Record<string, string>
+  columnMultiFilters: Record<string, string[]>
+  canBeSoldFilter: boolean
+  productTypeFilter: string
+  stockAlertFilter: StockAlertFilter
+  showArchived: boolean
+  sortKey: string
+  sortDir: SortDir
+  facets: Facet[]
+  page: number
+  pageSize: number
+}
+
+function readSavedProductsListState(): Partial<SavedProductsListState> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(PRODUCTS_FILTER_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function writeSavedProductsListState(state: SavedProductsListState) {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.setItem(PRODUCTS_FILTER_STORAGE_KEY, JSON.stringify(state))
+  } catch { /* 隐私模式/存储禁用/已满——丢了就丢了，不是关键功能 */ }
+}
+
 export default function ClassicProductsPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -57,33 +97,34 @@ export default function ClassicProductsPage() {
   // 可售单位弹窗（20260908）：uoms 是弹窗里单位下拉的候选列表，跟商品详情页共用同一个 /api/uoms
   const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; categoryId?: string }[]>([])
   const [uomDialogProduct, setUomDialogProduct] = useState<SaleUomsDialogProduct | null>(null)
+  const [savedFilterState] = useState(readSavedProductsListState)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(PAGE_SIZE)
+  const [page, setPage] = useState(savedFilterState?.page ?? 1)
+  const [pageSize, setPageSize] = useState(savedFilterState?.pageSize ?? PAGE_SIZE)
   const [alertCounts, setAlertCounts] = useState({ negative: 0, low: 0 })
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState(savedFilterState?.searchInput ?? '')
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
-  const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>({})
-  const [canBeSoldFilter, setCanBeSoldFilter] = useState(false)
-  const [productTypeFilter, setProductTypeFilter] = useState('')
-  const [stockAlertFilter, setStockAlertFilter] = useState<StockAlertFilter>('all')
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(savedFilterState?.columnFilters ?? {})
+  const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>(savedFilterState?.columnMultiFilters ?? {})
+  const [canBeSoldFilter, setCanBeSoldFilter] = useState(savedFilterState?.canBeSoldFilter ?? false)
+  const [productTypeFilter, setProductTypeFilter] = useState(savedFilterState?.productTypeFilter ?? '')
+  const [stockAlertFilter, setStockAlertFilter] = useState<StockAlertFilter>(savedFilterState?.stockAlertFilter ?? 'all')
   // 归档商品默认不显示（20260819）：客户曾在归档商品上配了半天规格，
   // 回到报价页却搜不到 —— 下单选品只取 ACTIVE，而这里过去把归档的一起列出来。
-  const [showArchived, setShowArchived] = useState(false)
+  const [showArchived, setShowArchived] = useState(savedFilterState?.showArchived ?? false)
   // Read / Edit 是整个列表页唯一的模式真相：顶部 Mode 按钮与下方「快速编辑」按钮共用它，
   // 表格的行内编辑也由它开关。此前两者各持一个 state，导致顶部显示 Edit 但单元格仍改不了。
   const [isReadMode, setIsReadMode] = useState(true)
   const editMode = !isReadMode
   const [groupBy, setGroupBy] = useState('')
-  const [sortKey, setSortKey] = useState('name')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [sortKey, setSortKey] = useState(savedFilterState?.sortKey ?? 'name')
+  const [sortDir, setSortDir] = useState<SortDir>(savedFilterState?.sortDir ?? 'asc')
   const [alertDismissed, setAlertDismissed] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   // Odoo 式分面：同一维度可累积多个关键词(OR)，不同维度之间 AND(后端 buildFacetWhere 保证)
-  const [facets, setFacets] = useState<Facet[]>([])
+  const [facets, setFacets] = useState<Facet[]>(savedFilterState?.facets ?? [])
 
   function addFacet(key: string, value: string) {
     const field = PRODUCT_FACET_FIELDS.find(f => f.key === key)
@@ -189,11 +230,18 @@ export default function ClassicProductsPage() {
       .then(setMultiSelectOptions).catch(() => {})
     apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string }[]>('/api/uoms')
       .then(setUoms).catch(() => {})
-    loadPage(1, '')
+    // page/searchInput 这时已经是懒初始化时从 sessionStorage 恢复出来的值(如果有)，
+    // 不再硬编码 loadPage(1, '')——否则从详情页返回时会先闪一下"未筛选的第 1 页"。
+    loadPage(page, searchInput)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // searchMountedRef 跳过首次挂载：上面那个 effect 已经用恢复出来的 page/searchInput
+  // 拉过一次了，这里如果不跳过，400ms 后会用硬编码的 page=1 再拉一次，把刚恢复的页码
+  // 悄悄冲掉（20261001 修"返回列表丢筛选"时顺带发现的连带 bug）。
+  const searchMountedRef = useRef(false)
   useEffect(() => {
+    if (!searchMountedRef.current) { searchMountedRef.current = true; return }
     const timer = setTimeout(() => loadPage(1, searchInput), 400)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -207,6 +255,16 @@ export default function ClassicProductsPage() {
     loadPage(1, searchInput)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryParams])
+
+  // 把筛选/排序/分页状态写回 sessionStorage，供下次挂载（如"进商品详情页再返回"）
+  // 时原样恢复。写的时机在 mount 时也会跑一遍，属于无害的"原样写回"。
+  useEffect(() => {
+    writeSavedProductsListState({
+      searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, productTypeFilter,
+      stockAlertFilter, showArchived, sortKey, sortDir, facets, page, pageSize,
+    })
+  }, [searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, productTypeFilter,
+      stockAlertFilter, showArchived, sortKey, sortDir, facets, page, pageSize])
 
   // 排序已经由后端做（按整个筛选结果集排序，见 loadPage 里的 sortKey/sortDir 参数，
   // Product Category 列传的 sortKey 是 'categoryLabel'，后端按 category 关系的 name 排序）
@@ -314,6 +372,7 @@ export default function ClassicProductsPage() {
       key: 'productNo',
       width: 64,
       label: isEn ? 'No.' : '编号',
+      filterType: 'text-popover',
       sortable: true,
       render: (v) => <span className="text-xs text-gray-400">{v != null ? String(v) : ''}</span>,
     },
@@ -814,7 +873,10 @@ export default function ClassicProductsPage() {
               return next
             })
           }}
-          onRowClick={row => router.push(`${prefix}/classic/operator/products/${String(row.id)}`)}
+          onRowClick={row => {
+            writeProductNavList(filteredTemplates.map(t => t.id))
+            router.push(`${prefix}/classic/operator/products/${String(row.id)}`)
+          }}
           emptyText={
             stockAlertFilter === 'negative'
               ? (isEn ? 'No products with negative stock' : '无负库存商品')

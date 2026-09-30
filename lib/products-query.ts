@@ -38,7 +38,7 @@ function dublinDayStart(dateStr: string): Date {
 // Decimal/Int 字段做不了 Prisma 原生 contains 子串匹配，用两步查：
 // 只拉 id+该字段这两列（比拉整行便宜得多），在内存里做子串匹配后收窄成 id 列表。
 const NUMERIC_TEXT_FIELDS = new Set([
-  'listPrice', 'standardPrice', 'weight', 'forecastQty', 'commissionPrice', 'sequence',
+  'listPrice', 'standardPrice', 'weight', 'forecastQty', 'commissionPrice', 'sequence', 'productNo',
 ])
 
 async function idsMatchingNumericSubstring(field: string, needle: string): Promise<string[]> {
@@ -186,6 +186,7 @@ type SortDir = 'asc' | 'desc'
  * SIMPLE_SORT 同一套修法：按整个筛选结果集在数据库里排序，而不是对当前页重排。
  */
 const PRODUCT_TEMPLATE_SORT_MAP: Record<string, (dir: SortDir) => object> = {
+  productNo: (dir) => ({ productNo: dir }),
   internalRef: (dir) => ({ internalRef: dir }),
   externalId: (dir) => ({ externalId: dir }),
   sequence: (dir) => ({ sequence: { sort: dir, nulls: 'last' } }),
