@@ -161,6 +161,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/analytics/**', methods: READ },
     { pattern: '/api/customers/**', methods: READ },
     exportOf('customers'),
+    exportOf('suppliers'),
     // 账期临时延期（20260826）：上面那句"主数据只读"从今天起有一个刻意的例外——
     // 会计能给逾期客户批延期，这正是本次功能的目的，不是漏改。新体系里走
     // master.customer.extend_term 权限点，这里补齐旧 token 路径。
@@ -209,6 +210,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/driver-slots', methods: READ },
     { pattern: '/api/customers', methods: READ },
     exportOf('customers'),
+    exportOf('suppliers'),
     { pattern: '/api/customers/coordinates', methods: READ },
     { pattern: '/api/products', methods: READ },
     // 位图里 DISPATCH 本就有 master.product.read（调度台要看商品），这里补一条
@@ -232,6 +234,10 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     exportOf('orders'),
     { pattern: '/api/customers/**', methods: ['GET', 'POST', 'PUT'] },
     exportOf('customers'),
+    exportOf('suppliers'),
+    // 供应商批量导入：镜像上面 /api/customers/** 已经放行的 POST（旧 token 靠通配符就够得着
+    // /api/customers/bulk），/api/suppliers/bulk 不在 /api/customers/** 这棵子树下，需要单独列
+    { pattern: '/api/suppliers/bulk', methods: ['POST'] },
     // 联系人（多邮箱）可以改删 —— 删客户不给销售，但删一个写错的联系人邮箱是日常。
     // ⛔ 必须精确写到 contacts 子树：直接给 /api/customers/** 放 DELETE 会连带
     //    放行删客户本身，那就是 20260802 泄露的同一种成因（宽 pattern 顺带放行整棵子树）。
@@ -271,6 +277,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     exportOf('orders'),
     { pattern: '/api/customers/**', methods: ['GET', 'POST'] },
     exportOf('customers'),
+    exportOf('suppliers'),
+    { pattern: '/api/suppliers/bulk', methods: ['POST'] },
     { pattern: '/api/products/**', methods: READ },
     { pattern: '/api/product-templates/**', methods: READ },
     exportOf('product-templates'),

@@ -30,15 +30,15 @@ const dateOnly = (v: unknown) => {
 export function creditNoteExportColumns(isEn: boolean): readonly ExportColumn<CreditNoteExportRow>[] {
   const status = isEn ? STATUS_EN : STATUS_ZH
   return [
-    { header: '贷记单号', headerEn: 'Credit Note No.', get: r => r.name ?? '' },
-    { header: '客户', headerEn: 'Customer', get: r => r.customerName ?? '' },
-    { header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
-    { header: '日期', headerEn: 'Date', get: r => dateOnly(r.creditDate) },
-    { header: '币种', headerEn: 'Currency', get: r => r.currency ?? 'EUR' },
-    { header: '未税金额', headerEn: 'Untaxed', get: r => money(r.subtotalExTax) },
-    { header: '税额', headerEn: 'Tax', get: r => money(r.totalTax) },
-    { header: '含税总额', headerEn: 'Total', get: r => money(r.totalIncTax) },
-    { header: '备注', headerEn: 'Notes', get: r => r.notes ?? '' },
-    { header: '创建人', headerEn: 'Created by', get: r => r.createdBy ?? '' },
+    { key: 'name', header: '贷记单号', headerEn: 'Credit Note No.', get: r => r.name ?? '' },
+    { key: 'customerName', header: '客户', headerEn: 'Customer', get: r => r.customerName ?? '' },
+    { key: 'status', header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
+    { key: 'creditDate', header: '日期', headerEn: 'Date', get: r => dateOnly(r.creditDate) },
+    { key: 'currency', header: '币种', headerEn: 'Currency', get: r => r.currency ?? 'EUR' },
+    { key: 'subtotalExTax', header: '未税金额', headerEn: 'Untaxed', get: r => money(r.subtotalExTax) },
+    { key: 'totalTax', header: '税额', headerEn: 'Tax', get: r => money(r.totalTax) },
+    { key: 'totalIncTax', header: '含税总额', headerEn: 'Total', get: r => money(r.totalIncTax) },
+    { key: 'notes', header: '备注', headerEn: 'Notes', get: r => r.notes ?? '' },
+    { key: 'createdBy', header: '创建人', headerEn: 'Created by', get: r => r.createdBy ?? '' },
   ]
 }

@@ -40,19 +40,19 @@ const dateOnly = (v: unknown) => {
 export function purchaseOrderExportColumns(isEn: boolean): readonly ExportColumn<PurchaseOrderExportRow>[] {
   const status = isEn ? STATUS_EN : STATUS_ZH
   return [
-    { header: '采购单号', headerEn: 'PO No', get: r => r.name ?? '' },
-    { header: '供应商', headerEn: 'Supplier', get: r => r.supplierName ?? '' },
-    { header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
-    { header: '录入人', headerEn: 'Created By', get: r => r.createdByName ?? '' },
-    { header: '下单日期', headerEn: 'Order Date', get: r => dateOnly(r.orderDate) },
-    { header: '预计到货', headerEn: 'Expected Date', get: r => dateOnly(r.expectedDate) },
-    { header: '行数', headerEn: 'Lines', get: r => r.lineCount ?? 0 },
-    { header: '币种', headerEn: 'Currency', get: r => r.currency ?? 'EUR' },
-    { header: '未税金额', headerEn: 'Untaxed', get: r => money(r.subtotalExTax) },
-    { header: '税额', headerEn: 'Tax', get: r => money(r.totalTax) },
-    { header: '运费', headerEn: 'Freight', get: r => money(r.freightAmount) },
-    { header: '含税总额', headerEn: 'Total', get: r => money(r.totalIncTax) },
+    { key: 'name', header: '采购单号', headerEn: 'PO No', get: r => r.name ?? '' },
+    { key: 'supplierName', header: '供应商', headerEn: 'Supplier', get: r => r.supplierName ?? '' },
+    { key: 'status', header: '状态', headerEn: 'Status', get: r => status[String(r.status ?? '')] ?? r.status ?? '' },
+    { key: 'createdByName', header: '录入人', headerEn: 'Created By', get: r => r.createdByName ?? '' },
+    { key: 'orderDate', header: '下单日期', headerEn: 'Order Date', get: r => dateOnly(r.orderDate) },
+    { key: 'expectedDate', header: '预计到货', headerEn: 'Expected Date', get: r => dateOnly(r.expectedDate) },
+    { key: 'lineCount', header: '行数', headerEn: 'Lines', get: r => r.lineCount ?? 0 },
+    { key: 'currency', header: '币种', headerEn: 'Currency', get: r => r.currency ?? 'EUR' },
+    { key: 'subtotalExTax', header: '未税金额', headerEn: 'Untaxed', get: r => money(r.subtotalExTax) },
+    { key: 'totalTax', header: '税额', headerEn: 'Tax', get: r => money(r.totalTax) },
+    { key: 'freightAmount', header: '运费', headerEn: 'Freight', get: r => money(r.freightAmount) },
+    { key: 'totalIncTax', header: '含税总额', headerEn: 'Total', get: r => money(r.totalIncTax) },
     // 外币单才有换算值；本币单留空而不是抄一遍总额，免得看不出哪些是换算过的
-    { header: '含税总额 (€)', headerEn: 'Total (€)', get: r => money(r.totalIncTaxEur) },
+    { key: 'totalIncTaxEur', header: '含税总额 (€)', headerEn: 'Total (€)', get: r => money(r.totalIncTaxEur) },
   ]
 }

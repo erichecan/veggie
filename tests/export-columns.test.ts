@@ -12,8 +12,8 @@ import {
 } from '../lib/export/columns/product-templates'
 
 const cols: ExportColumn<{ a: number; b: string }>[] = [
-  { header: '甲', headerEn: 'A', get: r => r.a },
-  { header: '乙', get: r => r.b },
+  { key: 'a', header: '甲', headerEn: 'A', get: r => r.a },
+  { key: 'b', header: '乙', get: r => r.b },
 ]
 
 test('表头按 locale 取，没有英文时回落中文', () => {
@@ -32,13 +32,16 @@ const byHeader = (row: ProductExportRow, header: string) => {
   return col.get(row)
 }
 
-test('商品导出列与列表页表格一一对应', () => {
-  // 屏幕上的列（app/[locale]/classic/operator/products/page.tsx 的 columns）
+test('商品导出列覆盖列表页表格列 + UoM 配置等导入/导出往返需要的额外字段', () => {
+  // 20260930：客户要求"导出产品库所有需要的信息"，尤其是 UoM 配置——这份列表不再
+  // 严格等于屏幕上的列（决策 D-2 的例外），额外补了 productNo/barcode/netWeight/
+  // volume/purchaseUomName/saleUomsSummary，目的是让导出内容能完整还原一个商品，
+  // 反过来也能被 /api/products/bulk 的导入模板消费。
   assert.deepEqual(HEADERS, [
-    'Internal Reference', 'ID', 'Sequence', 'Name', 'Sale Description',
+    'Product No.', 'Internal Reference', 'Barcode', 'ID', 'Sequence', 'Name', 'Sale Description',
     'Sale Price (€)', 'Customer Taxes (%)', 'Cost (€)', 'Vendor Taxes (%)',
-    'Weight (kg)', 'Quantity On Hand', 'Forecast Quantity', 'Product Category',
-    'Unit of Measure', 'Product Type', 'Commission Price (€)',
+    'Weight (kg)', 'Net Weight (kg)', 'Volume (L)', 'Quantity On Hand', 'Forecast Quantity', 'Product Category',
+    'Unit of Measure', 'Purchase UoM', 'Sellable Units (unit:factor:default)', 'Product Type', 'Commission Price (€)',
     'Created by', 'Created on', 'Last Updated by', 'Last Updated on',
   ])
 })

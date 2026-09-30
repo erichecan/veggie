@@ -16,7 +16,7 @@ import { withAuth } from '@/lib/auth'
 import { buildCsv, csvResponseHeaders } from '@/lib/export/csv'
 import { exportEntityMeta } from '@/lib/export/entities'
 import { EXPORT_REGISTRY, DEFAULT_EXPORT_ROW_LIMIT, resolveColumns } from '@/lib/export/registry'
-import { exportHeaders, exportRows } from '@/lib/export/types'
+import { exportHeaders, exportRows, filterColumnsByKeys } from '@/lib/export/types'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,7 +37,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ entity: 
 
       const { rows, total } = await def.load({ request: req, searchParams, user, limit, isEn })
 
-      const columns = resolveColumns(def.columns, isEn)
+      const allColumns = resolveColumns(def.columns, isEn)
+      const fieldsParam = searchParams.get('fields')
+      const columns = filterColumnsByKeys(allColumns, fieldsParam ? fieldsParam.split(',').filter(Boolean) : null)
       const csv = buildCsv(exportHeaders(columns, isEn), exportRows(columns, rows))
       const today = new Date().toISOString().slice(0, 10)
       const filename = `${isEn ? meta.labelEn : meta.labelZh}-${today}.csv`

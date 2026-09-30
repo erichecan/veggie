@@ -9,6 +9,7 @@ import type { ProductTemplate, ProductCategory, ProductSaleUomSummary } from '@/
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import { PRODUCT_TEMPLATE_EXPORT_COLUMNS } from '@/lib/export/columns/product-templates'
 import SaleUomsDialog, { type SaleUomsDialogProduct } from '@/components/classic/SaleUomsDialog'
 import { type SortDir } from '@/components/shared/sort-th'
 import { applyFacets, groupFacets, localizeFacetFields, PRODUCT_FACET_FIELDS, type Facet } from '@/lib/list-filters'
@@ -128,6 +129,7 @@ export default function ClassicProductsPage() {
       return params
     },
     fallbackFilename: isEn ? 'products.csv' : '商品.csv',
+    columns: PRODUCT_TEMPLATE_EXPORT_COLUMNS,
   })
 
   async function loadPage(p: number, q: string, ps: number = pageSize) {
@@ -302,6 +304,13 @@ export default function ClassicProductsPage() {
   }
 
   const columns: OdooColumn[] = [
+    {
+      key: 'productNo',
+      width: 64,
+      label: isEn ? 'No.' : '编号',
+      sortable: true,
+      render: (v) => <span className="text-xs text-gray-400">{v != null ? String(v) : ''}</span>,
+    },
     {
       key: 'internalRef',
       width: 84,
@@ -853,6 +862,7 @@ export default function ClassicProductsPage() {
         ]}
         onDone={() => loadPage(1, searchInput)}
       />
+      {exportAction.dialog}
 
       <SaleUomsDialog
         open={uomDialogProduct != null}

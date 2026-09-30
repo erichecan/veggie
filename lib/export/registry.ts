@@ -84,6 +84,17 @@ export const EXPORT_REGISTRY: Record<string, ErasedExportDef> = {
     columns: (isEn) => (isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS),
     load: loadCustomersForExport,
   }),
+  // 供应商 = Customer{isVendor:true}，全库没有独立的 Supplier 表（见 app/api/suppliers/route.ts）。
+  // 列定义与取数逻辑跟 customers 完全一样，只是这里在 searchParams 里强制加上 isVendor=1 ——
+  // 不依赖调用方（供应商列表页）记得自己传，服务端兜底这条过滤，避免有一天页面漏传就导出全部客户。
+  suppliers: defineExport({
+    columns: (isEn) => (isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS),
+    load: (ctx) => {
+      const params = new URLSearchParams(ctx.searchParams)
+      params.set('isVendor', '1')
+      return loadCustomersForExport({ ...ctx, searchParams: params })
+    },
+  }),
   'purchase-orders': defineExport({
     columns: (isEn) => purchaseOrderExportColumns(isEn),
     load: loadPurchaseOrdersForExport,

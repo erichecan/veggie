@@ -12,6 +12,7 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
 import { type SortDir } from '@/components/shared/sort-th'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 
@@ -95,6 +96,7 @@ export default function ClassicCustomersPage() {
       return params
     },
     fallbackFilename: isEn ? 'customers.csv' : '客户.csv',
+    columns: isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS,
   })
 
   async function loadPage(p: number, q: string, payTerm = paymentFilter, archived = includeArchived, ps: number = pageSize, vendorOnly = isVendorOnly) {
@@ -404,6 +406,7 @@ export default function ClassicCustomersPage() {
         ]}
         onDone={() => loadPage(1, searchInput)}
       />
+      {exportAction.dialog}
     </div>
   )
 }

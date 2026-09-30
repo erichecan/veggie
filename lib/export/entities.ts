@@ -47,6 +47,14 @@ export const EXPORT_ENTITY_META = {
     labelEn: 'Customers',
     listApi: '/api/customers',
   },
+  // 供应商列表页(app/[locale]/classic/operator/purchases/vendors/page.tsx)本身就查
+  // /api/customers?isVendor=1，用同一个权限点符合"能翻页就能导出"的既定原则（决策 D-3）。
+  suppliers: {
+    permission: 'master.customer.read',
+    labelZh: '供应商',
+    labelEn: 'Suppliers',
+    listApi: '/api/customers',
+  },
   // 报价单页与销售单列表吃的是同一个 /api/orders，导出也共用这一个实体。
   // 权限沿用列表的查看权（决策 D-3）；既有的 /api/orders/export-csv 仍用它自己的
   // sales.order.export，不动它以免已配置好的角色权限发生变化。
