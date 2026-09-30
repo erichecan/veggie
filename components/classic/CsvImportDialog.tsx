@@ -110,7 +110,10 @@ export default function CsvImportDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 text-sm">
+        {/* min-w-0: DialogContent 是 grid，子项默认按内容撑宽不收缩，列多的预览表格
+            会撑破弹窗边界溢出到遮罩层上而不是在弹窗内横向滚动（20260930 商品导入
+            实测复现）。这里列少还没复现，防御性地一并修，避免以后加列时同样的坑。 */}
+        <div className="space-y-3 text-sm min-w-0">
           <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <span className="text-xs text-gray-600">
               {isEn
