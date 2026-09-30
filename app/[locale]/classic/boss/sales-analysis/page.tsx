@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
@@ -33,13 +34,21 @@ interface DetailRow {
 interface DetailPayload { rows: DetailRow[]; truncated: boolean }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function SalesAnalysisPage() {
+function SalesAnalysisInner() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
+  const searchParams = useSearchParams()
 
   const [view, setView] = useState<ViewType>('week')
   const [range, setRange] = useState(() => defaultRange(30))
-  const [productFilter, setProductFilter] = useState<SearchOption[]>([])
+  // 商品详情页「Sales」智能按钮点进来时带 productId/productName(20261001)——直接用
+  // URL 带来的名字做 label 初始化，不用先发一次请求去查名字。真正的产品搜索/切换
+  // 仍走 SearchSelectDropdown 自己的 fetchOptions，这里只管"打开页面时预选哪一个"。
+  const [productFilter, setProductFilter] = useState<SearchOption[]>(() => {
+    const pid = searchParams.get('productId')
+    const pname = searchParams.get('productName')
+    return pid ? [{ id: pid, label: pname || pid }] : []
+  })
   const [customerFilter, setCustomerFilter] = useState<SearchOption[]>([])
   /**
    * 20260921 客户截图要求：钻取视图也要能选任意时间段，不只是"从今天往回滚 N 周/月"。
@@ -237,5 +246,15 @@ export default function SalesAnalysisPage() {
         </div>
       )}
     </div>
+  )
+}
+
+// useSearchParams() 要求外层套 Suspense，否则构建期会报错（同
+// print/pricelist/page.tsx、print/day-wise-report/page.tsx 的写法）
+export default function SalesAnalysisPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-gray-400 text-sm">Loading…</div>}>
+      <SalesAnalysisInner />
+    </Suspense>
   )
 }

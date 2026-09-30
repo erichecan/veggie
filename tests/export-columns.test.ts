@@ -41,7 +41,7 @@ test('商品导出列覆盖列表页表格列 + UoM 配置等导入/导出往返
     'Product No.', 'Internal Reference', 'Barcode', 'ID', 'Sequence', 'Name', 'Sale Description',
     'Sale Price (€)', 'Customer Taxes (%)', 'Cost (€)', 'Vendor Taxes (%)',
     'Weight (kg)', 'Net Weight (kg)', 'Volume (L)', 'Quantity On Hand', 'Forecast Quantity', 'Product Category',
-    'Unit of Measure', 'Purchase UoM', 'Sellable Units (unit:factor:default)', 'Product Type', 'Commission Price (€)',
+    'Unit of Measure', 'Purchase UoM', 'Sellable Units (unit:factor:default:spec:sequence:grossWeight)', 'Product Type', 'Commission Price (€)',
     'Created by', 'Created on', 'Last Updated by', 'Last Updated on',
   ])
 })

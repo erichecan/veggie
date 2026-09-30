@@ -89,7 +89,7 @@ export const PRODUCT_TEMPLATE_EXPORT_COLUMNS: readonly ExportColumn<ProductExpor
   { key: 'categoryName', header: 'Product Category', get: r => r.categoryName ?? '' },
   { key: 'uomName', header: 'Unit of Measure', get: r => r.uomName ?? '' },
   { key: 'purchaseUomName', header: 'Purchase UoM', get: r => r.purchaseUomName ?? '' },
-  { key: 'saleUomsSummary', header: 'Sellable Units (unit:factor:default)', get: r => r.saleUomsSummary ?? '' },
+  { key: 'saleUomsSummary', header: 'Sellable Units (unit:factor:default:spec:sequence:grossWeight)', get: r => r.saleUomsSummary ?? '' },
   { key: 'type', header: 'Product Type', get: r => TYPE_LABEL[String(r.type ?? '').toLowerCase()] ?? (r.type ?? '') },
   { key: 'commissionPrice', header: 'Commission Price (€)', get: r => fixed(r.commissionPrice, 2) },
   // 曾经空值回落写死的 'Administrator'，与列表页一样是编造的假身份（20260902 客户反馈实测
