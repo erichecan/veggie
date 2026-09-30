@@ -8,7 +8,7 @@ import { apiGet, apiPut, apiPatch } from '@/lib/api'
 import type { ProductTemplate, ProductCategory, ProductSaleUomSummary } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
-import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import ProductImportDialog from '@/components/classic/ProductImportDialog'
 import { PRODUCT_TEMPLATE_EXPORT_COLUMNS } from '@/lib/export/columns/product-templates'
 import SaleUomsDialog, { type SaleUomsDialogProduct } from '@/components/classic/SaleUomsDialog'
 import { type SortDir } from '@/components/shared/sort-th'
@@ -845,21 +845,9 @@ export default function ClassicProductsPage() {
 
       <Pagination page={page} totalPages={totalPages} onPageChange={p => loadPage(p, searchInput)} />
 
-      <CsvImportDialog
+      <ProductImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title={isEn ? 'Bulk Import Products (CSV)' : '批量导入商品(CSV)'}
-        templateName="products-import-template"
-        endpoint="/api/products/bulk"
-        columns={[
-          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
-          { key: 'spec', label: isEn ? 'Spec' : '规格' },
-          { key: 'price', label: isEn ? 'Price' : '售价' },
-          { key: 'stock', label: isEn ? 'Stock' : '库存' },
-          { key: 'taxRate', label: isEn ? 'Tax Rate' : '税率' },
-          { key: 'commissionPrice', label: isEn ? 'Commission Price' : '佣金价' },
-          { key: 'internalRef', label: isEn ? 'Internal Ref' : '内部编号' },
-        ]}
         onDone={() => loadPage(1, searchInput)}
       />
       {exportAction.dialog}
