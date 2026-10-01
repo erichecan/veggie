@@ -181,3 +181,15 @@
    所以必须连后代一起用 !important 压住，光给容器设 font-size 不起作用。 */
 .order-lines-zoom, .order-lines-zoom * { font-size: 16px !important; }
 .order-summary-zoom, .order-summary-zoom * { font-size: 10px !important; }
+
+/* 列表表头全局样式（20261001 客户反馈 #11：字体统一 Arial、加粗、13px，对用户更友好）。
+   用 .odoo-shell(operator/boss 两个应用壳的根 div，见各自 layout.tsx) 限定范围——
+   只罩列表页的表头，不动打印中心(classic/print，出纸面的发票/送货单不套这层壳)。
+   选择器本身(1 class + 2 元素)比各列表页表头上的 Tailwind 工具类(单 class)specificity 更高，
+   不需要 !important 就能压过去；OdooTable.tsx 表头原有的内联 fontSize 另外单独摘掉了
+   (内联样式谁都压不过，留着的话这条规则在那边不生效)。 */
+.odoo-shell thead th {
+  font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+}

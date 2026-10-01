@@ -929,13 +929,23 @@ export default function SalesOrderDetailPage() {
                 className={`h-9 px-3 text-sm rounded border ${deliveryNote ? 'border-[#fdba74] bg-[#fff7ed] text-[#9a3412]' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
                 🚚 Delivery Note{deliveryNote ? ' ●' : ''}
               </button>
-              <div className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100">
+              {/* 20261001 客户反馈：这颗 Delivery smart button 原来只是个纯展示的 div，点了没反应——
+                  系统里没有独立的"配送单"列表页，送货单本质就是同一张订单的 doc=delivery 打印视图
+                  (与下面 handlePrintDelivery 打开的是同一个路由)，这里改成跳转过去查看，不触发
+                  mark-printed(那是真正点"打印"按钮才该留的痕迹，单纯点开看不算)。 */}
+              <button
+                type="button"
+                onClick={() => { if (order) window.open(`${prefix}/classic/print/${order.id}?doc=delivery`, '_blank', 'noopener,noreferrer') }}
+                disabled={!order}
+                title={isEn ? 'View the delivery note for this order' : '查看该订单的送货单'}
+                className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-default"
+              >
                 <span className="text-xl">🚚</span>
-                <div className="text-xs">
+                <div className="text-xs text-left">
                   <div className="font-bold text-gray-800">{deliveryBatch ? 1 : 0}</div>
                   <div className="text-gray-500">Delivery</div>
                 </div>
-              </div>
+              </button>
             </div>
           </div>
 

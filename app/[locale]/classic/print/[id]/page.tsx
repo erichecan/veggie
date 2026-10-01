@@ -16,6 +16,7 @@ import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { giftBadgeHtml, giftMoneyCell } from '@/lib/print/gift-mark'
 import { displayUomName } from '@/lib/sale-uom'
+import { formatVatRate } from '@/lib/order-pdf'
 import type { PrintLang } from '@/lib/print/print-i18n'
 import { paymentTermPrintLabel } from '@/lib/payment-terms'
 
@@ -137,7 +138,11 @@ export function buildOrderHtml(
   const vatGroups: Record<string, { base: number; vat: number }> = {}
   for (const l of lines) {
     const rate = Number(l.taxRate ?? 0)
-    const key = rate.toFixed(2)
+    // 20261001 客户反馈("税率显示错误"截图)：这里分组 key 曾用 toFixed(2)，下面汇总行也按
+    // toFixed(2) 显示("13.50%")，但行级 VAT 列用的是 toFixed(0)("14%")——同一张发票上两个
+    // 税率。lib/order-pdf.ts 的 renderOrderHtml 早就用 formatVatRate + toFixed(1) 分组修过
+    // 同一个坑(见那边注释)，这里是另一条独立实现的打印路径，没跟着一起改，这次补上同一套口径。
+    const key = rate.toFixed(1)
     const base = Number(l.subtotal)
     const vatAmt = base * (rate / 100)
     if (!vatGroups[key]) vatGroups[key] = { base: 0, vat: 0 }
@@ -185,7 +190,7 @@ export function buildOrderHtml(
         ${l.note ? `<div class="prod-note">${l.note}</div>` : ''}
       </td>
       ${hidePrice ? '' : `<td class="col-price">${giftMoneyCell(isGift, eur(l.unitPrice))}</td>
-      <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
+      <td class="col-vat">${taxRate > 0 ? formatVatRate(taxRate) : '0%'}</td>
       <td class="col-incl">${giftMoneyCell(isGift, eur(inclVat))}</td>`}
     </tr>`
   }
@@ -194,7 +199,7 @@ export function buildOrderHtml(
     .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
     .map(([rate, { base, vat }]) => `
     <tr>
-      <td class="total-label">VAT ${parseFloat(rate).toFixed(2)}% on ${eur(base)}</td>
+      <td class="total-label">VAT ${rate}% on ${eur(base)}</td>
       <td class="total-value">${eur(vat)}</td>
     </tr>`).join('')
 

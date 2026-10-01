@@ -78,7 +78,7 @@ export default function ClassicOperatorLayout({ children }: { children: React.Re
   }, [router, prefix, pathname])
 
   return (
-    <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
+    <div className="min-h-screen odoo-shell" style={{ background: '#f5f5f5' }}>
       <OdooNav session={session} appName={en ? 'Sales' : '销售'} menuItems={MENU_ITEMS} />
       <main>{children}</main>
     </div>

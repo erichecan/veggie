@@ -58,6 +58,9 @@ interface OdooControlPanelProps {
   /** 独立的一键切换按钮（如"供货商"），点一下直接生效，不像 filterOptions 那样要先展开下拉 */
   toggleButtons?: ToggleButton[]
   filterOptions?: FilterOption[]
+  /** filterOptions 里当前生效的 value 集合——命中的那项在下拉里打勾，样式对齐 Group By
+   *  (20261001 客户反馈 Filters 下拉选了之后看不出哪个在生效，Group By 旁边却有勾) */
+  activeFilterValues?: string[]
   groupByOptions?: FilterOption[]
   groupByValue?: string
   onGroupByChange?: (value: string) => void
@@ -99,6 +102,7 @@ export default function OdooControlPanel({
   activeFilters = [],
   toggleButtons = [],
   filterOptions = [],
+  activeFilterValues = [],
   groupByOptions = [],
   groupByValue = '',
   onGroupByChange,
@@ -383,15 +387,20 @@ export default function OdooControlPanel({
               {filterOpen && (
                 <div className="absolute right-0 top-full mt-1 bg-white rounded border border-gray-200 shadow-lg z-30 text-sm min-w-[160px]">
                   <p className="px-3 pt-2 pb-1 text-xs text-gray-400 font-medium uppercase tracking-wide">{isEn ? 'Filter By' : '按条件筛选'}</p>
-                  {filterOptions.map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={() => { onFilterSelect?.(opt.value); setFilterOpen(false) }}
-                      className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50"
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  {filterOptions.map(opt => {
+                    const active = activeFilterValues.includes(opt.value)
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => { onFilterSelect?.(opt.value); setFilterOpen(false) }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
+                        style={{ color: active ? '#875A7B' : '#374151', fontWeight: active ? 600 : 400 }}
+                      >
+                        <span>{opt.label}</span>
+                        {active && <span className="text-xs" style={{ color: '#875A7B' }}>✓</span>}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>

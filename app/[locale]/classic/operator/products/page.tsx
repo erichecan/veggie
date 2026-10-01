@@ -57,6 +57,7 @@ interface SavedProductsListState {
   productTypeFilter: string
   stockAlertFilter: StockAlertFilter
   showArchived: boolean
+  archivedOnlyFilter: boolean
   sortKey: string
   sortDir: SortDir
   facets: Facet[]
@@ -114,6 +115,9 @@ export default function ClassicProductsPage() {
   // 归档商品默认不显示（20260819）：客户曾在归档商品上配了半天规格，
   // 回到报价页却搜不到 —— 下单选品只取 ACTIVE，而这里过去把归档的一起列出来。
   const [showArchived, setShowArchived] = useState(savedFilterState?.showArchived ?? false)
+  // "仅已归档"(20261001 客户反馈)：跟上面"含已归档"是同一个 status 筛选参数的两档不同取值
+  // (不传=只要在售, all=在售+归档都要, archived=只要归档)，互斥——开一个要把另一个关掉。
+  const [archivedOnlyFilter, setArchivedOnlyFilter] = useState(savedFilterState?.archivedOnlyFilter ?? false)
   // Read / Edit 是整个列表页唯一的模式真相：顶部 Mode 按钮与下方「快速编辑」按钮共用它，
   // 表格的行内编辑也由它开关。此前两者各持一个 state，导致顶部显示 Edit 但单元格仍改不了。
   const [isReadMode, setIsReadMode] = useState(true)
@@ -139,8 +143,9 @@ export default function ClassicProductsPage() {
   // 后端两步查(聚合定位 id → 按 id 分页)，绝不一次性拉全量模板到前端。
   const queryParams = useMemo(() => {
     const params = new URLSearchParams()
-    // 不传 status = 后端默认排除 ARCHIVED；status=all 才连归档一起返回
-    if (showArchived) params.set('status', 'all')
+    // 不传 status = 后端默认排除 ARCHIVED；status=all 连归档一起返回；status=archived 只要归档
+    if (archivedOnlyFilter) params.set('status', 'archived')
+    else if (showArchived) params.set('status', 'all')
     if (canBeSoldFilter) params.set('canBeSold', '1')
     if (stockAlertFilter !== 'all') params.set('stockAlert', stockAlertFilter)
     const typeSet = new Set([...(columnMultiFilters.type ?? []), ...(productTypeFilter ? [productTypeFilter] : [])])
@@ -158,7 +163,7 @@ export default function ClassicProductsPage() {
     // 按 Last Updated on 排序时，同一天改的商品没有排在一起，散落在好几页里）
     if (sortKey) { params.set('sortKey', sortKey); params.set('sortDir', sortDir) }
     return params.toString()
-  }, [showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets, sortKey, sortDir])
+  }, [showArchived, archivedOnlyFilter, canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets, sortKey, sortDir])
 
   // 导出：吃的就是 queryParams —— 与列表请求同一份筛选参数，同一份 where 构造，
   // 所以导出的是当前筛选下的**全部**结果，不是屏幕上这 50 条。
@@ -178,6 +183,22 @@ export default function ClassicProductsPage() {
   const exportActionLabeled = selected.size > 0
     ? { ...exportAction, label: isEn ? `Export (${selected.size} selected)` : `导出(已选 ${selected.size})` }
     : exportAction
+
+  // 勾选了具体商品时，permanentActions 里的导出按钮只导出勾选的那些(所见即所得)。
+  // 但勾选框一次最多勾到当前页(pageSize 上限 200)，客户反馈"导出全部"在有勾选时
+  // 够不到 200 条之外的商品(20261001)——另开一个不理会 selected、永远按当前筛选
+  // 导出全量的入口，只在有勾选时出现在 Actions 下拉里，跟"导出(已选 N)"并列，
+  // 不勾选时 permanentActions 的"导出"本来就是全量，不用重复摆一个。
+  const exportAllAction = useCsvExport({
+    entity: 'product-templates',
+    params: () => {
+      const params = new URLSearchParams(queryParams)
+      if (searchInput) params.set('search', searchInput)
+      return params
+    },
+    fallbackFilename: isEn ? 'products.csv' : '商品.csv',
+    columns: PRODUCT_TEMPLATE_EXPORT_COLUMNS,
+  })
 
   // 批量操作(20261001)：勾选商品后弹出 Actions 下拉，逐条复用现有单条接口(创建/改状态/删除)，
   // 不新开批量后端路由——跟本次会话里订单/采购单批量导入同一个思路(见那两处提交)。
@@ -336,10 +357,10 @@ export default function ClassicProductsPage() {
   useEffect(() => {
     writeSavedProductsListState({
       searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, productTypeFilter,
-      stockAlertFilter, showArchived, sortKey, sortDir, facets, page, pageSize,
+      stockAlertFilter, showArchived, archivedOnlyFilter, sortKey, sortDir, facets, page, pageSize,
     })
   }, [searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, productTypeFilter,
-      stockAlertFilter, showArchived, sortKey, sortDir, facets, page, pageSize])
+      stockAlertFilter, showArchived, archivedOnlyFilter, sortKey, sortDir, facets, page, pageSize])
 
   // 排序已经由后端做（按整个筛选结果集排序，见 loadPage 里的 sortKey/sortDir 参数，
   // Product Category 列传的 sortKey 是 'categoryLabel'，后端按 category 关系的 name 排序）
@@ -452,7 +473,9 @@ export default function ClassicProductsPage() {
       key: 'productNo',
       width: 64,
       label: isEn ? 'No.' : '编号',
-      filterType: 'text-popover',
+      // 20261001 客户反馈：放大镜点开弹窗搜索太绕，改成跟 Name 列一样的行内输入框
+      // （OdooTable 表头下面那行 filterType:'text' 专用的输入行）。
+      filterType: 'text',
       sortable: true,
       render: (v) => <span className="text-xs text-gray-400">{v != null ? String(v) : ''}</span>,
     },
@@ -460,7 +483,7 @@ export default function ClassicProductsPage() {
       key: 'internalRef',
       width: 84,
       label: 'Internal Reference',
-      filterType: 'text-popover',
+      filterType: 'text',
       sortable: true,
       editable: true,
       editType: 'text',
@@ -717,6 +740,7 @@ export default function ClassicProductsPage() {
         ]}
         actions={selected.size > 0 ? [
           { label: exportActionLabeled.label, onClick: exportActionLabeled.onClick, disabled: bulkRunning },
+          { label: isEn ? 'Export All (matching filter)' : '导出全部(按当前筛选)', onClick: exportAllAction.onClick, disabled: bulkRunning || exportAllAction.disabled },
           { label: isEn ? 'Duplicate' : '复制', onClick: bulkDuplicate, disabled: bulkRunning },
           { label: isEn ? 'Archive' : '归档', onClick: () => bulkArchive(true), disabled: bulkRunning },
           { label: isEn ? 'Unarchive' : '恢复', onClick: () => bulkArchive(false), disabled: bulkRunning },
@@ -730,6 +754,7 @@ export default function ClassicProductsPage() {
         activeFilters={[
           ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
           ...(showArchived ? [{ label: isEn ? 'Incl. archived' : '含已归档', onRemove: () => setShowArchived(false) }] : []),
+          ...(archivedOnlyFilter ? [{ label: isEn ? 'Archived Only' : '仅已归档', onRemove: () => setArchivedOnlyFilter(false) }] : []),
           ...(canBeSoldFilter ? [{ label: 'Can be Sold', onRemove: () => setCanBeSoldFilter(false) }] : []),
           ...(productTypeFilter ? [{ label: TYPE_LABEL[productTypeFilter] ?? productTypeFilter, onRemove: () => setProductTypeFilter('') }] : []),
           ...(stockAlertFilter !== 'all' ? [{
@@ -743,9 +768,16 @@ export default function ClassicProductsPage() {
           { label: 'Storable Product', value: 'product' },
           { label: 'Consumable', value: 'consu' },
           { label: 'Service', value: 'service' },
+          { label: isEn ? 'Archived Only' : '仅已归档', value: 'archivedOnly' },
+        ]}
+        activeFilterValues={[
+          ...(canBeSoldFilter ? ['canBeSold'] : []),
+          ...(productTypeFilter ? [productTypeFilter] : []),
+          ...(archivedOnlyFilter ? ['archivedOnly'] : []),
         ]}
         onFilterSelect={(v) => {
           if (v === 'canBeSold') setCanBeSoldFilter(prev => !prev)
+          else if (v === 'archivedOnly') setArchivedOnlyFilter(prev => { const next = !prev; if (next) setShowArchived(false); return next })
           else setProductTypeFilter(prev => prev === v ? '' : v)
         }}
         groupByOptions={[
@@ -754,10 +786,11 @@ export default function ClassicProductsPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, showArchived, canBeSoldFilter, productTypeFilter, stockAlertFilter, groupBy, facets, columnFilters, columnMultiFilters }}
+        favouriteState={{ searchInput, showArchived, archivedOnlyFilter, canBeSoldFilter, productTypeFilter, stockAlertFilter, groupBy, facets, columnFilters, columnMultiFilters }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           setShowArchived(Boolean(s.showArchived))
+          setArchivedOnlyFilter(Boolean(s.archivedOnlyFilter))
           setCanBeSoldFilter(Boolean(s.canBeSoldFilter))
           setProductTypeFilter(String(s.productTypeFilter ?? ''))
           setStockAlertFilter((s.stockAlertFilter as StockAlertFilter) ?? 'all')
@@ -889,7 +922,7 @@ export default function ClassicProductsPage() {
           {/* 归档商品开关：默认关 —— 归档 = 停售，不该混在在售商品里让人误编辑 */}
           <button
             type="button"
-            onClick={() => setShowArchived(v => !v)}
+            onClick={() => { setShowArchived(v => !v); setArchivedOnlyFilter(false) }}
             className="h-7 px-2.5 text-xs rounded border transition-colors font-medium ml-1"
             style={showArchived
               ? { background: '#f3eff5', borderColor: '#875A7B', color: '#875A7B' }
@@ -1006,6 +1039,7 @@ export default function ClassicProductsPage() {
         onDone={() => loadPage(1, searchInput)}
       />
       {exportActionLabeled.dialog}
+      {exportAllAction.dialog}
 
       <SaleUomsDialog
         open={uomDialogProduct != null}

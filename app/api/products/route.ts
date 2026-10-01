@@ -141,7 +141,11 @@ export async function POST(req: Request) {
     try {
       // saleUoms 不是 Product 自身字段（关系名同名，直接透传会被 Prisma 当成嵌套写入报错）——
       // 商品详情页新建流程创建后另调 PUT /api/products/[id]/sale-uoms 落库。
-      const { saleUoms: _saleUoms, ...data } = await req.json()
+      // id/productNo 是数据库生成的，不该由调用方指定——"复制商品"(详情页 handleDuplicate)
+      // 把原商品整份字段原样带过来创建新商品，如果不剥掉这两个会直接撞 productNo 的唯一约束，
+      // Prisma 抛 P2002 被下面 catch 吞成笼统的 500(20261001 客户反馈复制商品报
+      // "Server temporarily unavailable" 定位到的根因)。
+      const { saleUoms: _saleUoms, id: _id, productNo: _productNo, ...data } = await req.json()
       const product = await prisma.product.create({
         data: {
           ...data,
