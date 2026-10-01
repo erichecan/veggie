@@ -598,6 +598,28 @@ export default function SalesOrderDetailPage() {
     load().catch(() => {})
   }
 
+  // 20261001 客户纠正 #19：Delivery 智能按钮该跳的不是"打印送货单"(那是上面 Delivery Note
+  // 按钮 + handlePrintDelivery 的事)，而是这张订单接下来要走的配送/拣货流程本身——配送调度
+  // 中心(dispatch-console)按"交付日期"分页展示，内部又按订单状态分三个 tab：
+  //   waves(批次管理)：拣货/分货阶段(待理货→理货中→已拣货→分货中→已就绪，见 BatchTab 的
+  //     WAVE_STATUS)，订单还没到"已就绪"之前都在这个 tab 里处理。
+  //   dispatch(司机调度)：波次已就绪、交给司机的调度总览(DriverDispatchTab)。
+  //   trips(行程管理)：已完成的历史行程记录。
+  // 订单自身的 status 字段已经反映了这个进度(PENDING/CONFIRMED/WAVE_ASSIGNED → 还在拣货分货；
+  // IN_DELIVERY → 已出车；COMPLETED/LOCKED/CANCELLED → 已结束)，不用再去查具体波次状态。
+  // 带上 date=订单交付日期，一进去就是这张订单所在的那一天，不用再手动翻日期。
+  function deliveryConsoleTarget(): string {
+    const tab = order?.status === 'in_delivery'
+      ? 'dispatch'
+      : (order?.status === 'completed' || order?.status === 'locked' || order?.status === 'cancelled')
+        ? 'trips'
+        : 'waves'
+    const d = order?.deliveryDate ? new Date(order.deliveryDate) : null
+    const dateParam = d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : ''
+    const params = new URLSearchParams({ tab, ...(dateParam ? { date: dateParam } : {}) })
+    return `${prefix}/classic/operator/dispatch-console?${params}`
+  }
+
   async function handlePrintDelivery() {
     if (!order || printingDelivery) return
     setPrintingDelivery(true)
@@ -929,15 +951,14 @@ export default function SalesOrderDetailPage() {
                 className={`h-9 px-3 text-sm rounded border ${deliveryNote ? 'border-[#fdba74] bg-[#fff7ed] text-[#9a3412]' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
                 🚚 Delivery Note{deliveryNote ? ' ●' : ''}
               </button>
-              {/* 20261001 客户反馈：这颗 Delivery smart button 原来只是个纯展示的 div，点了没反应——
-                  系统里没有独立的"配送单"列表页，送货单本质就是同一张订单的 doc=delivery 打印视图
-                  (与下面 handlePrintDelivery 打开的是同一个路由)，这里改成跳转过去查看，不触发
-                  mark-printed(那是真正点"打印"按钮才该留的痕迹，单纯点开看不算)。 */}
+              {/* 20261001 客户反馈 #19：这颗 Delivery smart button 原来只是个纯展示的 div，点了没
+                  反应——第一版改成跳去打印送货单，客户纠正说要跳的是配送/拣货流程本身，不是打印。
+                  见上面 deliveryConsoleTarget()：按订单状态+交付日期跳到配送调度中心对应的 tab/日期。 */}
               <button
                 type="button"
-                onClick={() => { if (order) window.open(`${prefix}/classic/print/${order.id}?doc=delivery`, '_blank', 'noopener,noreferrer') }}
+                onClick={() => { if (order) router.push(deliveryConsoleTarget()) }}
                 disabled={!order}
-                title={isEn ? 'View the delivery note for this order' : '查看该订单的送货单'}
+                title={isEn ? 'Go to the dispatch/picking workflow for this order' : '前往该订单的配送/拣货流程'}
                 className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-default"
               >
                 <span className="text-xl">🚚</span>
