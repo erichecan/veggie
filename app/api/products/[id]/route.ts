@@ -26,7 +26,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const data = await req.json()
+      // qtyOnHand 不走这条通用编辑接口——它是 StockMove 流水表在同一事务里维护的缓存余额
+      // (见 /api/stock-moves 的 $transaction：写流水的同时原子更新这个字段)，不是可以直接
+      // 改的"内容"字段。这里之前把请求体原样展开进 Prisma update，等于留了个后门：
+      // 只要调用方(不管前端有没有暴露对应输入框)在 PUT body 里带上 qtyOnHand，就能绕开流水表
+      // 直接覆盖库存余额，账本和余额就对不上了。商品详情页目前没有任何输入框会触发这条路径
+      // (手动调库存走的是专门的 /api/stock-moves)，但接口本身不该允许——20261001 客户反馈 #17
+      // 评估后明确要求关掉这个后门，强制所有库存数量变化都必须经过有完整流水记录的那条路径。
+      const { qtyOnHand: _qtyOnHand, ...data } = await req.json()
 
       // 服务端校验数值字段
       if (data.listPrice !== undefined) {
