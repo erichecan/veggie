@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -32,9 +33,19 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export default function DispatchConsolePage() {
-  const [tab, setTab] = useState<TabKey>('waves')
-  const [date, setDate] = useState(today)
+const TAB_KEYS: TabKey[] = ['waves', 'dispatch', 'trips', 'config']
+
+function DispatchConsoleInner() {
+  const searchParams = useSearchParams()
+  // 20261001 客户反馈 #19：订单详情页的 Delivery 智能按钮要跳到"配送/拣货流程"，不是打印
+  // 送货单——这俩 query 参数就是那条跳转链路：带着订单的交付日期 + 按订单状态算出来该停在
+  // 哪个 tab(见 orders/[id]/page.tsx 的 deliveryConsoleTarget)，一进配送调度中心就直接
+  // 看到这张订单对应的那一天/那个阶段，不用再手动翻日期、切 tab 去找。
+  const initialTabParam = searchParams.get('tab')
+  const initialTab: TabKey = TAB_KEYS.includes(initialTabParam as TabKey) ? (initialTabParam as TabKey) : 'waves'
+  const initialDateParam = searchParams.get('date')
+  const [tab, setTab] = useState<TabKey>(initialTab)
+  const [date, setDate] = useState(initialDateParam && /^\d{4}-\d{2}-\d{2}$/.test(initialDateParam) ? initialDateParam : today)
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const TABS = isEn ? TABS_EN : TABS_ZH
@@ -72,5 +83,13 @@ export default function DispatchConsolePage() {
       {tab === 'trips' && <BatchAnalysis />}
       {tab === 'config' && <DriversPage />}
     </div>
+  )
+}
+
+export default function DispatchConsolePage() {
+  return (
+    <Suspense fallback={null}>
+      <DispatchConsoleInner />
+    </Suspense>
   )
 }
