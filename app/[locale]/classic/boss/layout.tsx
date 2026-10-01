@@ -86,7 +86,7 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
   }, [router, prefix])
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white odoo-shell">
       <OdooNav appName={isEn ? 'Reports' : '报表'} menuItems={LINKS} session={session} />
       <SecondRowNav links={RESTORED_LINKS} />
       {/* 20260921 客户截图反馈：销售分析/采购分析两张表格要横向滚动才能看全，

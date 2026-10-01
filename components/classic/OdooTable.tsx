@@ -255,8 +255,8 @@ export default function OdooTable<T extends Record<string, unknown>>({
               return (
                 <th
                   key={col.key}
-                  className={`px-2 py-1 ${alignCls} font-medium text-gray-600 ${col.width ? 'whitespace-normal break-words' : 'whitespace-nowrap'}`}
-                  style={{ fontSize: '11px', position: 'relative', ...colSizeStyle(col) }}
+                  className={`px-2 py-1 ${alignCls} text-gray-600 ${col.width ? 'whitespace-normal break-words' : 'whitespace-nowrap'}`}
+                  style={{ position: 'relative', ...colSizeStyle(col) }}
                 >
                   <div className={`flex items-center gap-1 ${justifyCls}`}>
                     {col.sortable ? (

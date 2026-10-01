@@ -1,10 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/api'
+import { apiGet, apiPut, apiPost, apiDelete, apiUpload } from '@/lib/api'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
@@ -245,6 +245,28 @@ export default function ClassicProductDetailPage() {
     setTmpl(prev => prev ? { ...prev, [key]: value } : null)
   }
 
+  // 商品图片上传(20261001 客户反馈点了没反应——之前那个圆形区域只有 cursor:pointer
+  // 样式和 title 提示，压根没挂 onClick/没有真正的 <input type="file">，纯摆设)。
+  // 复用 components/classic/banner-manager.tsx 同一套：隐藏 file input + apiUpload('/api/upload-image')。
+  const imageFileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  async function handleImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingImage(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const { url } = await apiUpload<{ url: string }>('/api/upload-image', fd)
+      setField('images', [url])
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (isEn ? 'Upload failed' : '上传失败'))
+    } finally {
+      setUploadingImage(false)
+      if (imageFileInputRef.current) imageFileInputRef.current.value = ''
+    }
+  }
+
   // ── 可售单位(ProductSaleUom)本地编辑 ──────────────────────────────────────────
   // 行的增删改渲染都在共享组件 components/classic/SaleUomsEditor.tsx 里（20260908 抽取，
   // 商品列表页的可售单位弹窗也用它），这里只留数据获取/保存这两件事。
@@ -337,7 +359,7 @@ export default function ClassicProductDetailPage() {
     if (!tmpl || isNew || duplicating) return
     setDuplicating(true)
     try {
-      const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, externalId: _externalId, qtyOnHand: _qtyOnHand, ...fields } = tmpl
+      const { id: _id, productNo: _productNo, createdAt: _createdAt, updatedAt: _updatedAt, externalId: _externalId, qtyOnHand: _qtyOnHand, ...fields } = tmpl
       const created = await apiPost<ProductTemplate>('/api/products', {
         ...fields,
         name: `${tmpl.name} (duplicated)`,
@@ -554,9 +576,10 @@ export default function ClassicProductDetailPage() {
             <div className="flex gap-4 flex-1">
               {/* 图片 */}
               <div
-                className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center flex-shrink-0 overflow-hidden bg-gray-50"
-                style={{ cursor: editMode ? 'pointer' : 'default' }}
+                className="relative w-24 h-24 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center flex-shrink-0 overflow-hidden bg-gray-50"
+                style={{ cursor: editMode && !uploadingImage ? 'pointer' : 'default' }}
                 title={editMode ? (isEn ? 'Click to upload image' : '点击上传图片') : undefined}
+                onClick={() => { if (editMode && !uploadingImage) imageFileInputRef.current?.click() }}
               >
                 {tmpl.images?.[0] ? (
                   <img src={tmpl.images[0]} alt="" className="w-full h-full object-cover" />
@@ -566,6 +589,22 @@ export default function ClassicProductDetailPage() {
                     <circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" strokeWidth="1.5"/>
                     <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                   </svg>
+                )}
+                {uploadingImage && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-[10px] text-gray-500">
+                    {isEn ? 'Uploading…' : '上传中…'}
+                  </div>
+                )}
+                {editMode && (
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onClick={e => e.stopPropagation()}
+                    onChange={handleImageFileChange}
+                    disabled={uploadingImage}
+                    className="hidden"
+                  />
                 )}
               </div>
 

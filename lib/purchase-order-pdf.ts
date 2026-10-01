@@ -9,6 +9,7 @@
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
 import { sortLinesBySequence } from '@/lib/print/line-sort'
+import { formatVatRate } from '@/lib/order-pdf'
 
 export interface PurchaseOrderPdfLine {
   productName: string
@@ -70,7 +71,7 @@ export function renderPurchaseOrderHtml(
         <td class="col-unit">${l.uomName ?? ''}</td>
         <td class="col-desc">${l.productName}</td>
         <td class="col-price">${eur(l.unitCost)}</td>
-        <td class="col-vat">${taxRate > 0 ? taxRate.toFixed(0) + '%' : '0%'}</td>
+        <td class="col-vat">${taxRate > 0 ? formatVatRate(taxRate) : '0%'}</td>
         <td class="col-incl">${eur(l.subtotalIncTax)}</td>
       </tr>`
   }).join('')
