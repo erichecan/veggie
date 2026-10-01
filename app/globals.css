@@ -49,6 +49,14 @@
 }
 
 :root {
+  /* 全局字体改 Arial 优先(20261001 客户反馈 #21)。之前这里没定义 --font-sans，
+     @theme inline 里的 `--font-sans: var(--font-sans)` 转发的是个空值——layout.tsx
+     只用 next/font 设了 --font-geist-sans/--font-geist-mono，从没接到 --font-sans
+     上，等于 `html { @apply font-sans }` 一直没真正生效过，网页用的是浏览器默认字体
+     (不是故意的 Geist 设计，是接线没接完)。这里直接把 --font-sans 定义成 Arial 优先栈，
+     全站 html/body 继承，之前 #11 单独给表头加的 .odoo-shell thead th 规则值一致，
+     不冲突。 */
+  --font-sans: Arial, 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
