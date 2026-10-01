@@ -72,9 +72,9 @@ function SmartButton({ icon, value, label, onClick, title }: { icon: React.React
 // ── ReadField ─────────────────────────────────────────────────────────────────
 function ReadField({ label, value, wide }: { label: string; value?: React.ReactNode; wide?: boolean }) {
   return (
-    <div className={`flex items-start gap-3 ${wide ? 'col-span-2' : ''}`}>
+    <div className={`flex items-start gap-3 min-w-0 ${wide ? 'col-span-2' : ''}`}>
       <span className="text-sm text-gray-500 w-44 flex-shrink-0 pt-0.5">{label}</span>
-      <span className="text-sm text-gray-800 flex-1">{value ?? <span className="text-gray-300">—</span>}</span>
+      <span className="text-sm text-gray-800 flex-1 min-w-0">{value ?? <span className="text-gray-300">—</span>}</span>
     </div>
   )
 }
@@ -741,13 +741,13 @@ export default function ClassicProductDetailPage() {
             {editMode ? (
               <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
                 <Row label="Sales Price">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <PriceInput value={tmpl.listPrice} onChange={v => setField('listPrice', v)} />
                     <PriceHistoryButton onClick={() => openPriceHistory('listPrice')} isEn={isEn} />
                   </div>
                 </Row>
                 <Row label="Cost">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <PriceInput value={tmpl.standardPrice} onChange={v => setField('standardPrice', v)} />
                     <PriceHistoryButton onClick={() => openPriceHistory('standardPrice')} isEn={isEn} />
                   </div>
@@ -770,13 +770,13 @@ export default function ClassicProductDetailPage() {
             ) : (
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
                 <ReadField label="Sales Price" value={
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span>€{(tmpl.listPrice ?? 0).toFixed(2)}</span>
                     <PriceHistoryButton onClick={() => openPriceHistory('listPrice')} isEn={isEn} />
                   </div>
                 } />
                 <ReadField label="Cost" value={
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span>€{(tmpl.standardPrice ?? 0).toFixed(2)}</span>
                     <PriceHistoryButton onClick={() => openPriceHistory('standardPrice')} isEn={isEn} />
                   </div>
@@ -1064,9 +1064,14 @@ function PriceHistoryButton({ onClick, isEn }: { onClick: () => void; isEn: bool
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3 min-w-0">
       <span className="text-sm text-gray-700 w-44 flex-shrink-0">{label}</span>
-      <div className="flex-1">{children}</div>
+      {/* min-w-0：没有它，flex 子元素默认不会缩到比内容本身更窄——20261001 客户反馈
+          "Cost 标签被遮盖了"实锤：Sales Price 行加了历史按钮后(见下方 PriceHistoryButton)，
+          内容变宽但撑不开两栏 grid 的列宽，又因为缺这一行而拒绝收缩，溢出去盖住了右边
+          Cost 那一列。这个坑在本会话之前修 CSV 导入弹窗溢出(ProductImportDialog)时
+          踩过一次同款根因，这次是 Row 组件本身的这个 flex-1 容器没有同样加上。 */}
+      <div className="flex-1 min-w-0">{children}</div>
     </div>
   )
 }
