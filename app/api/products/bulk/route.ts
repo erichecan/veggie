@@ -356,7 +356,26 @@ export async function POST(req: Request) {
       // 分批事务：每批 50 行，与旧实现一致
       for (let i = 0; i < planned.length; i += CHUNK_SIZE) {
         const chunk = planned.slice(i, i + CHUNK_SIZE)
+        // 价格变更留痕(20261001 客户反馈 #22：要看 Sale Price/Cost Price 历史，含谁改的、
+        // 什么时候改的)——单条编辑页的 PUT /api/products/[id] 已经靠 diffChanges+writeLog
+        // 留痕，但批量导入这条路径过去只写一条汇总级 ActionLog(resourceId='bulk'，没有
+        // changes 字段)，导入改价这条最常见的改价途径反而在历史里完全查不到。这里给每个
+        // 真的改了价的商品单独补一条 before/after 记录，口径跟单条编辑页一致。
+        // 不在 tx 回调里直接调 writeLog——那边用的是顶层 prisma 不是 tx，若本批次后面某行
+        // 导致整个事务回滚，写到一半的日志不会跟着回滚，会留下"改价了"的假记录；所以先攒到
+        // 这个数组里，等 $transaction 真正提交成功后再落盘。
+        const priceChangeLogs: { productId: string; productName: string; changes: Record<string, { before: unknown; after: unknown }> }[] = []
         await prisma.$transaction(async (tx) => {
+          const existingIds = chunk.map(c => c.existingId).filter((id): id is string => !!id)
+          const beforePrices = new Map<string, { listPrice: unknown; standardPrice: unknown }>()
+          if (existingIds.length > 0) {
+            const rows = await tx.product.findMany({
+              where: { id: { in: existingIds } },
+              select: { id: true, listPrice: true, standardPrice: true },
+            })
+            for (const r of rows) beforePrices.set(r.id, r)
+          }
+
           for (const { row, existingId } of chunk) {
             let productId: string
             let finalUomId: string | null
@@ -397,6 +416,20 @@ export async function POST(req: Request) {
               productId = product.id
               finalUomId = product.uomId
               updated++
+
+              const before = beforePrices.get(existingId)
+              if (before) {
+                const changes: Record<string, { before: unknown; after: unknown }> = {}
+                if (JSON.stringify(before.listPrice) !== JSON.stringify(product.listPrice)) {
+                  changes.listPrice = { before: before.listPrice, after: product.listPrice }
+                }
+                if (JSON.stringify(before.standardPrice) !== JSON.stringify(product.standardPrice)) {
+                  changes.standardPrice = { before: before.standardPrice, after: product.standardPrice }
+                }
+                if (Object.keys(changes).length > 0) {
+                  priceChangeLogs.push({ productId, productName: product.name, changes })
+                }
+              }
             } else {
               // CREATE 才应用默认值(canBeSold/canBePurchased=true, type=CONSU,
               // status=ACTIVE, standardPrice/listPrice/customerTaxRate/vendorTaxRate/
@@ -447,6 +480,15 @@ export async function POST(req: Request) {
             }
           }
         })
+
+        for (const log of priceChangeLogs) {
+          await writeLog({
+            userId: user.userId, userEmail: user.email, userName: user.name,
+            action: 'UPDATE', resource: 'product', resourceId: log.productId,
+            detail: `批量导入更新商品价格: ${log.productName}`,
+            changes: log.changes,
+          })
+        }
       }
 
       await writeLog({

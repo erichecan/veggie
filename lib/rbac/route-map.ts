@@ -276,6 +276,11 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // read_detail（详情）而不是这里要的 read（列表）。
   { pattern: '/api/products/by-sale-unit', methods: R, permission: 'master.product.read' },
   { pattern: '/api/products/*/price-history', permission: 'master.product.read_price_history' },
+  // 跟上面那条权限点一样，但是另一个接口：那条是采购单新建页按供应商查历史成交进价，
+  // 这条是商品详情页"Sales Price/Cost 历史"按钮查这两个字段本身的编辑历史(20261001 #22)。
+  // 两者路径不同不会互相覆盖，都归在"查看价格历史"这同一个权限点下，语义上说得通，
+  // 不另开权限点。
+  { pattern: '/api/products/*/price-change-log', permission: 'master.product.read_price_history' },
   { pattern: '/api/products/*/sale-uoms', methods: R, permission: 'master.product.read_detail' },
   { pattern: '/api/products/*/sale-uoms', methods: ['PUT'], permission: 'master.product.update' },
   // 单条可售单位行的局部修改（spec/sequence/grossWeight），与整份替换(PUT)同权限
