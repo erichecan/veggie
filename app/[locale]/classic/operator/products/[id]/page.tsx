@@ -16,6 +16,13 @@ import {
 import SaleUomsEditor from '@/components/classic/SaleUomsEditor'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { readProductNavList } from '@/lib/product-nav-list'
+import { formatDateTime } from '@/lib/format-date'
+
+interface PriceHistoryEntry {
+  value: number
+  changedAt: string
+  changedBy: string
+}
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
 function IconSales() {
@@ -155,6 +162,27 @@ export default function ClassicProductDetailPage() {
   const [adjQty, setAdjQty] = useState('')
   const [adjNote, setAdjNote] = useState('')
   const [adjSubmitting, setAdjSubmitting] = useState(false)
+
+  // 价格历史（20261001 客户反馈 #22）：Sales Price/Cost 各自的变更时间线，弹窗展示
+  // 价格 + 改动时间 + 改动人。两个字段共用一次请求(GET /api/products/[id]/price-change-log
+  // 一次把两份列表都返回)，懒加载——只在第一次点开任意一个历史按钮时才拉，之后复用。
+  const [priceHistoryField, setPriceHistoryField] = useState<'listPrice' | 'standardPrice' | null>(null)
+  const [priceHistory, setPriceHistory] = useState<{ listPrice: PriceHistoryEntry[]; standardPrice: PriceHistoryEntry[] } | null>(null)
+  const [priceHistoryLoading, setPriceHistoryLoading] = useState(false)
+
+  async function openPriceHistory(field: 'listPrice' | 'standardPrice') {
+    setPriceHistoryField(field)
+    if (priceHistory || priceHistoryLoading || isNew) return
+    setPriceHistoryLoading(true)
+    try {
+      const data = await apiGet<{ listPrice: PriceHistoryEntry[]; standardPrice: PriceHistoryEntry[] }>(`/api/products/${id}/price-change-log`)
+      setPriceHistory(data)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load price history' : '加载价格历史失败'))
+    } finally {
+      setPriceHistoryLoading(false)
+    }
+  }
 
   // 多单位销售(20260714 试点)：可售单位配置，挂在该商品模板下唯一/主变体 Product 上
   const [primaryProductId, setPrimaryProductId] = useState<string | null>(null)
@@ -713,10 +741,16 @@ export default function ClassicProductDetailPage() {
             {editMode ? (
               <div className="grid grid-cols-2 gap-x-12 gap-y-3 max-w-3xl">
                 <Row label="Sales Price">
-                  <PriceInput value={tmpl.listPrice} onChange={v => setField('listPrice', v)} />
+                  <div className="flex items-center gap-2">
+                    <PriceInput value={tmpl.listPrice} onChange={v => setField('listPrice', v)} />
+                    <PriceHistoryButton onClick={() => openPriceHistory('listPrice')} isEn={isEn} />
+                  </div>
                 </Row>
                 <Row label="Cost">
-                  <PriceInput value={tmpl.standardPrice} onChange={v => setField('standardPrice', v)} />
+                  <div className="flex items-center gap-2">
+                    <PriceInput value={tmpl.standardPrice} onChange={v => setField('standardPrice', v)} />
+                    <PriceHistoryButton onClick={() => openPriceHistory('standardPrice')} isEn={isEn} />
+                  </div>
                 </Row>
                 <Row label="Customer Taxes">
                   <select value={String(tmpl.customerTaxRate)} onChange={e => setField('customerTaxRate', parseFloat(e.target.value))} className={fieldClass} style={focusStyle}>
@@ -735,8 +769,18 @@ export default function ClassicProductDetailPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
-                <ReadField label="Sales Price" value={`€${(tmpl.listPrice ?? 0).toFixed(2)}`} />
-                <ReadField label="Cost" value={`€${(tmpl.standardPrice ?? 0).toFixed(2)}`} />
+                <ReadField label="Sales Price" value={
+                  <div className="flex items-center gap-2">
+                    <span>€{(tmpl.listPrice ?? 0).toFixed(2)}</span>
+                    <PriceHistoryButton onClick={() => openPriceHistory('listPrice')} isEn={isEn} />
+                  </div>
+                } />
+                <ReadField label="Cost" value={
+                  <div className="flex items-center gap-2">
+                    <span>€{(tmpl.standardPrice ?? 0).toFixed(2)}</span>
+                    <PriceHistoryButton onClick={() => openPriceHistory('standardPrice')} isEn={isEn} />
+                  </div>
+                } />
                 <ReadField label="Customer Taxes" value={TAX_LABEL[String(tmpl.customerTaxRate)] ?? `${(tmpl.customerTaxRate * 100).toFixed(0)}%`} />
                 <ReadField label="Vendor Taxes" value={tmpl.vendorTaxRate != null ? (TAX_LABEL[String(tmpl.vendorTaxRate)] ?? `${(tmpl.vendorTaxRate * 100).toFixed(0)}%`) : undefined} />
                 <ReadField label="Commission Price" value={tmpl.commissionPrice != null ? `€${tmpl.commissionPrice.toFixed(2)}` : undefined} />
@@ -945,11 +989,79 @@ export default function ClassicProductDetailPage() {
           </div>
         </div>
       )}
+
+      {priceHistoryField && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPriceHistoryField(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
+              <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>
+                {priceHistoryField === 'listPrice'
+                  ? (isEn ? `Sales Price History · ${tmpl?.name}` : `销售价历史 · ${tmpl?.name}`)
+                  : (isEn ? `Cost Price History · ${tmpl?.name}` : `成本价历史 · ${tmpl?.name}`)}
+              </h2>
+              <button onClick={() => setPriceHistoryField(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0 ml-2">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {priceHistoryLoading ? (
+                <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
+              ) : (() => {
+                const entries = priceHistory?.[priceHistoryField] ?? []
+                if (entries.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-400">
+                      {isEn ? 'No price changes recorded yet.' : '暂无价格变更记录。'}
+                    </p>
+                  )
+                }
+                return (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                        <th className="pb-2 font-medium">{isEn ? 'Price' : '价格'}</th>
+                        <th className="pb-2 font-medium">{isEn ? 'Changed At' : '更新时间'}</th>
+                        <th className="pb-2 font-medium">{isEn ? 'Changed By' : '更新人'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entries.map((e, i) => (
+                        <tr key={i} className="border-b border-gray-50 last:border-0">
+                          <td className="py-2 font-medium text-gray-800">€{e.value.toFixed(2)}</td>
+                          <td className="py-2 text-gray-500">{formatDateTime(e.changedAt)}</td>
+                          <td className="py-2 text-gray-500">{e.changedBy}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
+
+// 价格历史入口（20261001 #22）：一个小时钟图标，放在 Sales Price/Cost 输入框或只读值
+// 旁边，不占多余空间，hover 有文字提示说明点进去看什么。
+function PriceHistoryButton({ onClick, isEn }: { onClick: () => void; isEn: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={isEn ? 'View price change history' : '查看价格变更历史'}
+      className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-[#875A7B] hover:bg-gray-100 transition-colors flex-shrink-0"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 7v5l3 3"/>
+      </svg>
+    </button>
+  )
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3">
