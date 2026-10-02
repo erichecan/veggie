@@ -113,7 +113,24 @@ const EXAMPLE_ROWS: string[][] = [
     '', '', '', '', '', '', 'active', 'Y', 'Y', 'none'],
 ]
 
-interface ImportResult { created: number; updated: number; skipped: string[]; warnings: string[] }
+interface ImportResult {
+  created: number
+  updated: number
+  skipped: string[]
+  /** 单行写入失败(带原因)，其它行照常导入——见 app/api/products/bulk/route.ts 逐行事务 */
+  failed: string[]
+  warnings: string[]
+  /** 某一批请求整体失败(网络/服务器)时的说明；该批之后的行未提交 */
+  batchError?: string
+}
+
+/**
+ * 每批提交的行数(20261002 客户要求取消 200 行上限)。文件多大都行，这里自动切批顺序提交：
+ * 服务端逐行一个事务，数据库在 Neon 上每行要好几次网络往返，一批 100 行大约十几秒，
+ * 离 nginx 的 proxy_read_timeout(120s，见 deploy/droplet/nginx-veggie.conf)还很远；
+ * 一次性把 879 行塞进一个请求会被网关掐断，前端只看到笼统的"服务器暂时不可用"。
+ */
+const BATCH_SIZE = 100
 
 export default function ProductImportDialog({
   open, onClose, onDone,
@@ -128,6 +145,7 @@ export default function ProductImportDialog({
   const [rows, setRows] = useState<Record<string, string>[]>([])
   const [fileName, setFileName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<ImportResult | null>(null)
 
   function reset() {
@@ -182,17 +200,38 @@ export default function ProductImportDialog({
 
   async function submit() {
     setBusy(true)
+    setProgress(0)
+    const total: ImportResult = { created: 0, updated: 0, skipped: [], failed: [], warnings: [] }
     try {
-      const r = await apiPost<ImportResult>('/api/products/bulk', { rows })
-      setResult(r)
-      toast.success(
-        isEn
-          ? `Import finished: ${r.created} created, ${r.updated} updated, ${r.skipped.length} skipped`
-          : `导入完成:新建 ${r.created},更新 ${r.updated},跳过 ${r.skipped.length}`,
-      )
+      for (let start = 0; start < rows.length; start += BATCH_SIZE) {
+        const end = Math.min(start + BATCH_SIZE, rows.length)
+        try {
+          const r = await apiPost<ImportResult>('/api/products/bulk', { rows: rows.slice(start, end), rowOffset: start })
+          total.created += r.created
+          total.updated += r.updated
+          total.skipped.push(...r.skipped)
+          total.failed.push(...(r.failed ?? []))
+          total.warnings.push(...r.warnings)
+        } catch (e) {
+          // 整批请求失败(断网/服务器挂了)就停下，不继续往后打——说清楚哪些行已经进去了。
+          // 服务端是逐行提交的，失败那批里可能已有部分行写入；重新导入整个文件是安全的：
+          // 已导入的行会按产品编号/内部编号/条码/ID 匹配成"更新"，没有这些编号的会按重名跳过，不会重复新建。
+          const reason = e instanceof Error ? e.message : (isEn ? 'request failed' : '请求失败')
+          total.batchError = isEn
+            ? `Rows ${start + 1}–${end} failed (${reason}); rows 1–${start} were imported, rows after ${end} were not submitted. This batch may be partially imported — it is safe to re-import the whole file.`
+            : `第 ${start + 1}–${end} 行这一批失败(${reason});第 1–${start} 行已导入,第 ${end} 行之后未提交。这一批可能已部分写入——重新导入整个文件是安全的。`
+          break
+        }
+        setProgress(end)
+      }
+      setResult(total)
+      const summary = isEn
+        ? `${total.created} created, ${total.updated} updated, ${total.skipped.length} skipped, ${total.failed.length} failed`
+        : `新建 ${total.created},更新 ${total.updated},跳过 ${total.skipped.length},失败 ${total.failed.length}`
+      if (total.batchError) toast.error(isEn ? `Import stopped: ${summary}` : `导入中断:${summary}`)
+      else if (total.failed.length > 0) toast.warning(isEn ? `Import finished with errors: ${summary}` : `导入完成(有失败行):${summary}`)
+      else toast.success(isEn ? `Import finished: ${summary}` : `导入完成:${summary}`)
       onDone?.()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Import failed' : '导入失败'))
     } finally {
       setBusy(false)
     }
@@ -201,7 +240,8 @@ export default function ProductImportDialog({
   const previewColumns = IMPORTABLE_COLUMNS.filter(c => rows.some(r => r[c.key]))
 
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose() } }}>
+    // 导入进行中不让关：分批提交的循环还在跑，关掉弹窗会让人以为停了，其实后面几批照样在写库
+    <Dialog open={open} onOpenChange={o => { if (!o && !busy) { reset(); onClose() } }}>
       {/* 这个导入模板列数比其它 CsvImportDialog 用户多得多(20+ 列)，固定 max-w-3xl 装不下，
           预览表格会撑破弹窗边界溢出到遮罩层上。放宽到视口宽度的 95%/桌面端 5xl，
           再配合下面 min-w-0(grid 子项默认按内容撑宽，不会自动收缩) 让装不下的部分
@@ -272,6 +312,21 @@ export default function ProductImportDialog({
               {isEn
                 ? <>✅ <b>{result.created}</b> created, <b>{result.updated}</b> updated</>
                 : <>✅ 新建 <b>{result.created}</b> 条,更新 <b>{result.updated}</b> 条</>}
+              {result.batchError && (
+                <div className="mt-2 border border-red-200 bg-red-50 rounded px-2 py-1.5 text-red-700">⛔ {result.batchError}</div>
+              )}
+              {result.failed.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-red-700 mb-1">
+                    {isEn
+                      ? `⛔ ${result.failed.length} rows failed (not imported; all other rows were imported):`
+                      : `⛔ ${result.failed.length} 行导入失败(这些行没进去,其它行已正常导入):`}
+                  </div>
+                  <ul className="max-h-40 overflow-y-auto bg-white border border-red-200 rounded px-2 py-1.5 space-y-0.5 text-red-700">
+                    {result.failed.map((f, i) => <li key={i}>· {f}</li>)}
+                  </ul>
+                </div>
+              )}
               {result.skipped.length > 0 && (
                 <span className="block mt-1 text-amber-700">
                   {isEn
@@ -294,10 +349,12 @@ export default function ProductImportDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose() }}>{result ? (isEn ? 'Close' : '关闭') : (isEn ? 'Cancel' : '取消')}</Button>
+          <Button variant="outline" disabled={busy} onClick={() => { reset(); onClose() }}>{result ? (isEn ? 'Close' : '关闭') : (isEn ? 'Cancel' : '取消')}</Button>
           {!result && (
             <Button disabled={busy || rows.length === 0} onClick={submit}>
-              {busy ? (isEn ? 'Importing…' : '导入中…') : (isEn ? `Import ${rows.length} rows` : `导入 ${rows.length} 行`)}
+              {busy
+                ? (isEn ? `Importing… ${progress}/${rows.length}` : `导入中… ${progress}/${rows.length}`)
+                : (isEn ? `Import ${rows.length} rows` : `导入 ${rows.length} 行`)}
             </Button>
           )}
         </DialogFooter>

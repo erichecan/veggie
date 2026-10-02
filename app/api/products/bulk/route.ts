@@ -28,11 +28,17 @@ import type { SaleUomItemInput } from '@/lib/sale-uom'
  * ID 改掉"这个问题，答案是不会：这里走的是 Prisma `update`，商品的 cuid 主键(id)
  * 和 productNo 两者都不受这个接口影响，历史订单/采购/库存对该商品的引用不会断。
  *
- * 一次最多 200 行，每 50 行一个事务，与旧实现一致。
+ * 每行一个小事务、逐行提交，单行失败记进响应的 failed[] 带原因，不影响其它行(见写入循环注释)。
+ * 文件总行数不设上限(20261002 客户要求取消 200 行限制)：导入弹窗(ProductImportDialog)
+ * 自动按 100 行一批顺序提交，并通过 rowOffset 告诉这里本批第一行在整个文件里是第几行，
+ * 提示信息里的 "Row N" 才对得上文件。MAX_ROWS_PER_REQUEST 只是单次请求的兜底上限，
+ * 防止有人绕过弹窗一次塞几万行把请求拖过 nginx 120s 的 proxy_read_timeout。
  */
 
-const MAX_ROWS = 200
-const CHUNK_SIZE = 50
+const MAX_ROWS_PER_REQUEST = 500
+/** 单行事务的超时。Prisma 默认 5 秒；数据库在 Neon 上时每条查询都是网络往返，
+ *  一行最多也就十来条查询，给足余量，免得网络抖一下就整行失败。 */
+const ROW_TX_TIMEOUT_MS = 15_000
 
 type ProductTypeValue = 'PRODUCT' | 'CONSU' | 'SERVICE'
 type ProductStatusValue = 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
@@ -70,6 +76,27 @@ function bool(v: unknown): { value: boolean | undefined; invalid: boolean } {
 
 function normKey(s: string): string {
   return s.trim().toLowerCase()
+}
+
+/**
+ * 单行写入失败的原因，给客户看的一句话。Product 上客户能写的唯一约束字段只有 externalId
+ * (导入文件的 "ID" 列；productNo/id 由数据库生成，导入从不写)，所以撞唯一约束就是 ID 被别的
+ * 商品占用了。识别同时兼容 Prisma 原生错误码与 driver adapter 包装后的形态(同 lib/invoice-number.ts)。
+ */
+function describeRowError(e: unknown, row: { externalId?: string }): string {
+  const code = (e as { code?: string } | null)?.code
+  const msg = e instanceof Error ? e.message : String(e)
+  if (code === 'P2002' || code === '23505' || /Unique constraint|UniqueConstraintViolation|duplicate key value/i.test(msg)) {
+    return row.externalId
+      ? `ID '${row.externalId}' is already used by another product, row not imported`
+      : 'a unique field is already used by another product, row not imported'
+  }
+  if (code === 'P2028' || /Transaction API error|expired transaction|Transaction already closed|timed out/i.test(msg)) {
+    return 'database timed out, row not imported — please re-import this row'
+  }
+  // Prisma 的报错是多行的("Invalid `prisma.x.y()` invocation: ... <真正原因>")，最后一行才是原因
+  const lastLine = msg.split('\n').map(l => l.trim()).filter(Boolean).pop()
+  return (lastLine ?? 'unknown error').slice(0, 200)
 }
 
 interface SaleUomEntry { uomName: string; factor: number; spec?: string; sequence?: number; grossWeight?: number }
@@ -150,7 +177,11 @@ export async function POST(req: Request) {
       const data = await req.json()
       const rawRows = Array.isArray(data.rows) ? data.rows : []
       if (rawRows.length === 0) return NextResponse.json({ error: 'rows 不能为空' }, { status: 400 })
-      if (rawRows.length > MAX_ROWS) return NextResponse.json({ error: `一次最多导入 ${MAX_ROWS} 行` }, { status: 400 })
+      if (rawRows.length > MAX_ROWS_PER_REQUEST) {
+        return NextResponse.json({ error: `单次请求最多 ${MAX_ROWS_PER_REQUEST} 行(导入弹窗会自动分批提交)` }, { status: 400 })
+      }
+      // 本批第一行在整个文件里的序号偏移(导入弹窗分批提交时传)，提示里的 "Row N" 按整个文件计数
+      const rowOffset = Number.isInteger(data.rowOffset) && data.rowOffset >= 0 ? data.rowOffset as number : 0
 
       const warnings: string[] = []
 
@@ -173,12 +204,13 @@ export async function POST(req: Request) {
       // ── 逐行解析 + 归一化(纯内存，不碰数据库) ────────────────────────────
       const resolvedRows: ResolvedRow[] = []
       rawRows.forEach((r: Record<string, unknown>, i: number) => {
+        const rowNo = rowOffset + i + 1
         const name = str(r.name, 200)
         if (!name) {
-          warnings.push(`Row ${i + 1}: missing required 'name', skipped`)
+          warnings.push(`Row ${rowNo}: missing required 'name', skipped`)
           return
         }
-        const rowLabel = `Row ${i + 1} (${name})`
+        const rowLabel = `Row ${rowNo} (${name})`
         const row: ResolvedRow = { rowLabel, name }
 
         // Product No. 是自增主键(见 prisma/schema.prisma Product.productNo)，只读——
@@ -283,8 +315,10 @@ export async function POST(req: Request) {
         resolvedRows.push(row)
       })
 
+      // 本批没有一行带 name：照常返回(每行的原因已在 warnings 里)，不报 400——
+      // 弹窗是分批提交的，一批全是空名行不该把后面几批也一起拦掉。
       if (resolvedRows.length === 0) {
-        return NextResponse.json({ error: '没有有效行(name 必填)' }, { status: 400 })
+        return NextResponse.json({ created: 0, updated: 0, skipped: [], failed: [], warnings })
       }
 
       // ── 匹配已有商品：productNo → internalRef → barcode → externalId，优先级顺序，仅精确匹配 ──
@@ -351,34 +385,28 @@ export async function POST(req: Request) {
 
       let created = 0
       let updated = 0
+      const failed: string[] = []
       const updatedBy = user.name || user.email
 
-      // 分批事务：每批 50 行，与旧实现一致
-      for (let i = 0; i < planned.length; i += CHUNK_SIZE) {
-        const chunk = planned.slice(i, i + CHUNK_SIZE)
-        // 价格变更留痕(20261001 客户反馈 #22：要看 Sale Price/Cost Price 历史，含谁改的、
-        // 什么时候改的)——单条编辑页的 PUT /api/products/[id] 已经靠 diffChanges+writeLog
-        // 留痕，但批量导入这条路径过去只写一条汇总级 ActionLog(resourceId='bulk'，没有
-        // changes 字段)，导入改价这条最常见的改价途径反而在历史里完全查不到。这里给每个
-        // 真的改了价的商品单独补一条 before/after 记录，口径跟单条编辑页一致。
-        // 不在 tx 回调里直接调 writeLog——那边用的是顶层 prisma 不是 tx，若本批次后面某行
-        // 导致整个事务回滚，写到一半的日志不会跟着回滚，会留下"改价了"的假记录；所以先攒到
-        // 这个数组里，等 $transaction 真正提交成功后再落盘。
-        const priceChangeLogs: { productId: string; productName: string; changes: Record<string, { before: unknown; after: unknown }> }[] = []
-        await prisma.$transaction(async (tx) => {
-          const existingIds = chunk.map(c => c.existingId).filter((id): id is string => !!id)
-          const beforePrices = new Map<string, { listPrice: unknown; standardPrice: unknown }>()
-          if (existingIds.length > 0) {
-            const rows = await tx.product.findMany({
-              where: { id: { in: existingIds } },
-              select: { id: true, listPrice: true, standardPrice: true },
-            })
-            for (const r of rows) beforePrices.set(r.id, r)
-          }
+      // 价格变更留痕(#22)用的"改前价"：直接取上面匹配时已经整行查出来的商品，不再额外查库。
+      // 每成功更新一行就刷新一次——同一份文件里两行改同一个商品时，第二行的"改前"才是第一行改完的值。
+      const currentPrices = new Map<string, { listPrice: unknown; standardPrice: unknown }>()
+      for (const p of matchCandidates) currentPrices.set(p.id, { listPrice: p.listPrice, standardPrice: p.standardPrice })
 
-          for (const { row, existingId } of chunk) {
+      // 逐行提交，每行一个小事务(20261002 客户反馈：199 行导入报 "Server temporarily unavailable")。
+      // 之前是每 50 行一个交互式事务：50 × (更新商品 + 删可售单位 + 每个单位一次 upsert) ≈ 250 条
+      // 串行查询，数据库在 Neon 上每条都是一次网络往返，轻松顶破 Prisma 交互式事务默认的 5 秒上限
+      // (P2028，lib/invoice-number.ts 踩过同一个坑)；另外任意一行撞了 externalId 唯一约束(P2002)
+      // 也会把同批 49 行一起回滚。两种情况都被最外层 catch 吞成笼统的 500，前面几批却已经提交了，
+      // 客户只看到"服务器暂时不可用"，不知道哪些进去了、哪些没进去。
+      // 现在一行一个事务(商品本身 + 它的可售单位要么一起成功要么一起回滚)，单行失败只记进 failed
+      // 带上具体原因，其余行照常导入。计数和改价日志都只在该行事务真正提交之后才记。
+      for (const { row, existingId } of planned) {
+        try {
+          const outcome = await prisma.$transaction(async (tx) => {
             let productId: string
             let finalUomId: string | null
+            let product: { name: string; listPrice: unknown; standardPrice: unknown }
 
             if (existingId) {
               // 只覆盖本行提供了非空值的字段——undefined 的字段完全不进 data，
@@ -409,27 +437,13 @@ export async function POST(req: Request) {
               if (row.tracking !== undefined) updateData.tracking = row.tracking
               if (row.status !== undefined) updateData.status = row.status
 
-              const product = await tx.product.update({
+              const updatedProduct = await tx.product.update({
                 where: { id: existingId },
                 data: updateData as Parameters<typeof tx.product.update>[0]['data'],
               })
-              productId = product.id
-              finalUomId = product.uomId
-              updated++
-
-              const before = beforePrices.get(existingId)
-              if (before) {
-                const changes: Record<string, { before: unknown; after: unknown }> = {}
-                if (JSON.stringify(before.listPrice) !== JSON.stringify(product.listPrice)) {
-                  changes.listPrice = { before: before.listPrice, after: product.listPrice }
-                }
-                if (JSON.stringify(before.standardPrice) !== JSON.stringify(product.standardPrice)) {
-                  changes.standardPrice = { before: before.standardPrice, after: product.standardPrice }
-                }
-                if (Object.keys(changes).length > 0) {
-                  priceChangeLogs.push({ productId, productName: product.name, changes })
-                }
-              }
+              productId = updatedProduct.id
+              finalUomId = updatedProduct.uomId
+              product = updatedProduct
             } else {
               // CREATE 才应用默认值(canBeSold/canBePurchased=true, type=CONSU,
               // status=ACTIVE, standardPrice/listPrice/customerTaxRate/vendorTaxRate/
@@ -462,42 +476,71 @@ export async function POST(req: Request) {
                 updatedBy,
                 createdBy: updatedBy,
               }
-              const product = await tx.product.create({
+              const createdProduct = await tx.product.create({
                 data: createData as Parameters<typeof tx.product.create>[0]['data'],
               })
-              productId = product.id
-              finalUomId = product.uomId
-              created++
+              productId = createdProduct.id
+              finalUomId = createdProduct.uomId
+              product = createdProduct
             }
 
+            let saleUomWarning: string | null = null
             if (row.saleUomItems && row.saleUomItems.length > 0) {
               const { items: normalized, error } = normalizeAndValidateSaleUomItems(row.saleUomItems, finalUomId)
               if (error) {
-                warnings.push(`${row.rowLabel}: sellable units config invalid (${error}), skipped`)
+                saleUomWarning = `${row.rowLabel}: sellable units config invalid (${error}), skipped`
               } else {
                 await upsertProductSaleUomRows(tx, productId, finalUomId, normalized, updatedBy)
               }
             }
-          }
-        })
+            return { productId, product, saleUomWarning }
+          }, { timeout: ROW_TX_TIMEOUT_MS })
 
-        for (const log of priceChangeLogs) {
-          await writeLog({
-            userId: user.userId, userEmail: user.email, userName: user.name,
-            action: 'UPDATE', resource: 'product', resourceId: log.productId,
-            detail: `批量导入更新商品价格: ${log.productName}`,
-            changes: log.changes,
-          })
+          if (outcome.saleUomWarning) warnings.push(outcome.saleUomWarning)
+
+          if (!existingId) {
+            created++
+            continue
+          }
+          updated++
+
+          // 改价留痕(#22)：单条编辑页 PUT /api/products/[id] 靠 diffChanges+writeLog 留痕，
+          // 批量导入这里给每个真的改了价的商品单独补一条 before/after 记录，口径一致。
+          // 放在事务提交之后写——writeLog 用的是顶层 prisma，不在事务里，提前写的话事务回滚时
+          // 会留下一条"改价了"的假记录。
+          const after = { listPrice: outcome.product.listPrice, standardPrice: outcome.product.standardPrice }
+          const before = currentPrices.get(existingId)
+          if (before) {
+            const changes: Record<string, { before: unknown; after: unknown }> = {}
+            if (JSON.stringify(before.listPrice) !== JSON.stringify(after.listPrice)) {
+              changes.listPrice = { before: before.listPrice, after: after.listPrice }
+            }
+            if (JSON.stringify(before.standardPrice) !== JSON.stringify(after.standardPrice)) {
+              changes.standardPrice = { before: before.standardPrice, after: after.standardPrice }
+            }
+            if (Object.keys(changes).length > 0) {
+              await writeLog({
+                userId: user.userId, userEmail: user.email, userName: user.name,
+                action: 'UPDATE', resource: 'product', resourceId: outcome.productId,
+                detail: `批量导入更新商品价格: ${outcome.product.name}`,
+                changes,
+              })
+            }
+          }
+          currentPrices.set(existingId, after)
+        } catch (e) {
+          console.error(`[POST /api/products/bulk] ${row.rowLabel}`, e)
+          failed.push(`${row.rowLabel}: ${describeRowError(e, row)}`)
         }
       }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'product', resourceId: 'bulk',
-        detail: `批量导入商品：新建 ${created}，更新 ${updated}，重名跳过 ${skipped.length}`,
+        detail: `批量导入商品：新建 ${created}，更新 ${updated}，重名跳过 ${skipped.length}，失败 ${failed.length}`,
       })
 
-      return NextResponse.json({ created, updated, skipped, warnings })
+      return NextResponse.json({ created, updated, skipped, failed, warnings })
     } catch (error) {
       console.error('[POST /api/products/bulk]', error)
       return NextResponse.json({ error: '批量导入失败' }, { status: 500 })
