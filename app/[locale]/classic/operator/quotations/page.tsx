@@ -1122,7 +1122,7 @@ ${orderSections}
           else { setActiveTab(v as TabValue) }
         }}
         activeFilters={[
-          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, values: g.values, prefix: g.key === 'all' ? undefined : g.label, onRemove: () => removeFacetGroup(g.key) })),
           ...(myActive ? [{ label: 'My Quotations', onRemove: () => setMyActive(false) }] : []),
           ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(orderTodayActive ? [{ label: 'Order Today', onRemove: () => { setOrderTodayActive(false) } }] : []),

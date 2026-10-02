@@ -20,7 +20,7 @@ export interface UseFacetsResult {
   removeGroup: (key: string) => void
   clear: () => void
   /** 直接摊进 OdooControlPanel 的 activeFilters */
-  chips: { label: string; onRemove: () => void }[]
+  chips: { label: string; values: string[]; prefix?: string; onRemove: () => void }[]
   /** 直接展开到 OdooControlPanel 上：{...controlPanelProps} */
   controlPanelProps: {
     facetFields: { key: string; label: string }[]
@@ -45,7 +45,12 @@ export function useFacets(fields: { key: string; label: string }[], initialFacet
   const clear = useCallback(() => setFacets([]), [])
 
   const chips = useMemo(
-    () => groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeGroup(g.key) })),
+    () => groupFacets(facets).map(g => ({
+      label: g.chipLabel,
+      values: g.values,
+      prefix: g.key === 'all' ? undefined : g.label,
+      onRemove: () => removeGroup(g.key),
+    })),
     [facets, removeGroup],
   )
 

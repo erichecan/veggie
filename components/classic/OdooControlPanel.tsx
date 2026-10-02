@@ -7,6 +7,10 @@ import { splitOrTerms } from '@/lib/list-filters'
 
 interface ActiveFilter {
   label: string
+  /** 同一维度下的各个关键词；传入时逐词渲染成各自可省略号截断的胶囊，不传则回退成整条 label 的单一胶囊 */
+  values?: string[]
+  /** 维度名前缀（如"产品"），'all' 维度不传 */
+  prefix?: string
   onRemove: () => void
 }
 
@@ -286,16 +290,29 @@ export default function OdooControlPanel({
           {/* 搜索框（含 active filter / facet chip） */}
           <div ref={searchBoxRef} className="relative flex-1 max-w-xl min-w-[160px]">
             <div className="flex items-center border border-gray-300 rounded h-8 bg-white overflow-hidden">
-              {activeFilters.map((f, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-0.5 ml-1.5 px-2 py-0.5 rounded text-xs border shrink-0 whitespace-nowrap"
-                  style={{ background: '#f3eff5', borderColor: '#d4b8d0', color: '#6d4a66' }}
-                >
-                  {f.label}
-                  <button onClick={f.onRemove} className="hover:opacity-70 ml-0.5 leading-none">×</button>
-                </span>
-              ))}
+              {activeFilters.map((f, i) => {
+                const values = f.values && f.values.length > 0 ? f.values : [f.label]
+                return (
+                  <span key={i} className="inline-flex items-center gap-1 ml-1.5 shrink min-w-0">
+                    {f.prefix && (
+                      <span className="text-[11px] shrink-0" style={{ color: '#6d4a66', opacity: 0.75 }}>{f.prefix}:</span>
+                    )}
+                    <span className="inline-flex items-center gap-1 shrink min-w-0">
+                      {values.map((v, vi) => (
+                        <span
+                          key={vi}
+                          title={v}
+                          className="truncate px-2 py-0.5 rounded text-xs border shrink min-w-[28px] max-w-[160px]"
+                          style={{ background: '#f3eff5', borderColor: '#d4b8d0', color: '#6d4a66' }}
+                        >
+                          {v}
+                        </span>
+                      ))}
+                    </span>
+                    <button onClick={f.onRemove} className="hover:opacity-70 leading-none shrink-0 px-0.5" style={{ color: '#6d4a66' }}>×</button>
+                  </span>
+                )
+              })}
               <input
                 type="text"
                 value={facetMode ? draft : searchValue}
@@ -320,7 +337,7 @@ export default function OdooControlPanel({
                   else if (e.key === 'Escape') { setFacetOpen(false) }
                 }}
                 placeholder="Search..."
-                className="flex-1 px-2 py-1 text-sm outline-none bg-transparent min-w-0"
+                className="flex-1 min-w-[48px] px-2 py-1 text-sm outline-none bg-transparent"
               />
               <button
                 onClick={() => { if (facetMode) { if (draft.trim()) commitFacet(highlight) } else onSearchSubmit?.() }}

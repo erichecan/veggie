@@ -541,7 +541,7 @@ export default function ClassicOrdersPage() {
           setActiveFilter(v as ActiveFilter)
         }}
         activeFilters={[
-          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, values: g.values, prefix: g.key === 'all' ? undefined : g.label, onRemove: () => removeFacetGroup(g.key) })),
           ...(myActive ? [{ label: 'My Sales Order', onRemove: () => setMyActive(false) }] : []),
           ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(activeFilter !== 'all' ? [{

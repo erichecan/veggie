@@ -181,6 +181,18 @@ export default function ProductsBySaleUnitPage() {
       </span>
     )
   }
+  // spec/grossWeight/packSequence 三列背后写的是 ProductSaleUom 行，没有 uomId 的（行是
+  // GET /api/products/by-sale-unit 为"该商品还没配置任何可售单位"合成的占位基础行——生产
+  // 库 5480 个商品里只有 3 个真配置过 ProductSaleUom，20261001 实测绝大多数行会命中）点进去
+  // 填完提交必定被后端判定没有可编辑的目标而拒绝（见 handleCellEdit 的 !r.uomId 分支）。
+  // 原先这三列对所有行一视同仁地显示"可编辑"样式，用户填完数字点别处，4 秒后自动消失的
+  // toast 一晃而过、单元格却停在编辑态——跟"保存了却没生效"长得一模一样。改成按行禁用，
+  // 没有 uomId 的行从一开始就不可点，鼠标悬停说明原因。
+  const hasUom = (row: Record<string, unknown>) => !!(row as unknown as SaleUnitRow).uomId
+  const noUomHint = () => (isEn
+    ? 'This product has no configured sale unit yet — open "Sellable Units" on the product list page first'
+    : '该商品还没配置可售单位，请先在商品列表页的「可售单位」弹窗里添加')
+
   const columns: OdooColumn<Record<string, unknown>>[] = [
     // Product.sequence——商品本身的排序位置，跟下面的「装货顺序」(ProductSaleUom.sequence)
     // 是两个独立维度，客户反馈混在一起看不出商品自己的排序，20260912 拆成两列。
@@ -192,7 +204,7 @@ export default function ProductsBySaleUnitPage() {
       render: renderName },
     { key: 'saleDescription', label: isEn ? 'Sale Description' : '销售描述', minWidth: 140, sortable: true,
       render: v => v ? <span className="text-xs text-gray-500">{String(v)}</span> : emptyDash },
-    { key: 'spec', label: isEn ? 'Product Spec' : '产品规格', width: 110, sortable: true, editable: true, editType: 'text',
+    { key: 'spec', label: isEn ? 'Product Spec' : '产品规格', width: 110, sortable: true, editable: hasUom, editDisabledHint: noUomHint, editType: 'text',
       render: v => v ? <span className="text-xs">{String(v)}</span> : emptyDash },
     { key: 'uomName', label: 'UoM', width: 80, sortable: true,
       render: (_v, row) => {
@@ -208,7 +220,7 @@ export default function ProductsBySaleUnitPage() {
       render: v => <span className="text-xs text-gray-500">€{Number(v).toFixed(2)}</span> },
     { key: 'vendorTaxRate', label: isEn ? 'Vendor Tax' : '供应商税率', width: 70, sortable: true,
       render: v => v != null ? <span className="text-xs">{(Number(v) * 100).toFixed(1)}%</span> : emptyDash },
-    { key: 'grossWeight', label: isEn ? 'Gross Weight (kg)' : '毛重(kg)', width: 90, sortable: true, editable: true, editType: 'number',
+    { key: 'grossWeight', label: isEn ? 'Gross Weight (kg)' : '毛重(kg)', width: 90, sortable: true, editable: hasUom, editDisabledHint: noUomHint, editType: 'number',
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(2)}</span> : emptyDash },
     { key: 'qtyOnHand', label: isEn ? 'QTY On Hand' : '现有库存', width: 80, sortable: true,
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(1)}</span> : emptyDash },
@@ -220,7 +232,7 @@ export default function ProductsBySaleUnitPage() {
         const label = category ? (isEn ? (category.name ?? category.nameZh) : (category.nameZh ?? category.name)) : null
         return label ? <span className="text-xs">{label}</span> : emptyDash
       } },
-    { key: 'packSequence', label: isEn ? 'Pack Sequence' : '装货顺序', width: 80, sortable: true, editable: true, editType: 'number',
+    { key: 'packSequence', label: isEn ? 'Pack Sequence' : '装货顺序', width: 80, sortable: true, editable: hasUom, editDisabledHint: noUomHint, editType: 'number',
       render: v => v != null ? <span className="text-xs">{String(v)}</span> : emptyDash },
     { key: 'commissionPrice', label: isEn ? 'CMS Price' : '提成价', width: 80, sortable: true,
       render: v => v != null ? <span className="text-xs text-gray-500">€{Number(v).toFixed(2)}</span> : emptyDash },

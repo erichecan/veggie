@@ -89,8 +89,18 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
     return null
   }
 
+  // 唯一落库出口：verifyAllCargo/startDelivery/setPayment/endTrip/confirmDelivery/
+  // handlePodUpload 全部经过这里却都没包 try/catch，PUT 失败（蜂窝网络差/后端 409）时
+  // 异常直接从 onClick 里飞出去，司机看到的是点了按钮毫无反应——跟没点一样，还可能
+  // 误以为已经送达/收款成功。统一在这里兜底报错，调用方原有的"成功后才执行"的代码
+  // （toast.success/router.push/关弹窗）天然不会跑，不用逐个改调用方。
   async function saveTrip(updated: Trip) {
-    await apiPut(`/api/trips/${updated.id}`, updated)
+    try {
+      await apiPut(`/api/trips/${updated.id}`, updated)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed, please try again' : '保存失败，请重试'))
+      throw e
+    }
     setTrip(updated)
   }
 

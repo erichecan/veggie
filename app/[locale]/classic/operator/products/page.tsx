@@ -468,6 +468,14 @@ export default function ClassicProductsPage() {
     )
   }
 
+  // spec 列背后写的是默认 ProductSaleUom.spec（见 handleCellEdit 的 'spec' 分支），商品没有
+  // 配置可售单位（或没有默认单位）时后端必定拒绝；跟 by-sale-unit 页同一个坑，改成按行禁用。
+  const hasDefaultSaleUnit = (row: Record<string, unknown>) =>
+    !!(row as unknown as ProductTemplate).saleUoms?.some(u => u.isDefault)
+  const noDefaultSaleUnitHint = () => (isEn
+    ? 'This product has no configured sale unit yet — open "Sellable Units" to add one'
+    : '该商品还没配置可售单位，请先点击「装货顺序」列打开可售单位弹窗添加')
+
   const columns: OdooColumn[] = [
     {
       key: 'productNo',
@@ -537,12 +545,13 @@ export default function ClassicProductsPage() {
     {
       // Product.spec 已废弃清空（20260912），这列改显示/编辑默认可售单位的 spec
       // （如"6*2kg"）——见 handleCellEdit 里的特殊分支。没有配置可售单位的商品这里恒为空，
-      // 不能在这内联编辑（跟"没有 uomId"时 by-sale-unit 页的提示一致）。
+      // 不能在这内联编辑，按行禁用（跟 by-sale-unit 页的 uomId 守卫同款，20261001 修）。
       key: 'spec',
       width: 95,
       label: 'Product Spec',
       align: 'center',
-      editable: true,
+      editable: hasDefaultSaleUnit,
+      editDisabledHint: noDefaultSaleUnitHint,
       editType: 'text',
       render: (_v, row) => {
         const spec = (row as unknown as ProductTemplate).saleUoms?.find(u => u.isDefault)?.spec
@@ -752,7 +761,7 @@ export default function ClassicProductsPage() {
         facetFields={localizeFacetFields(PRODUCT_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         activeFilters={[
-          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, values: g.values, prefix: g.key === 'all' ? undefined : g.label, onRemove: () => removeFacetGroup(g.key) })),
           ...(showArchived ? [{ label: isEn ? 'Incl. archived' : '含已归档', onRemove: () => setShowArchived(false) }] : []),
           ...(archivedOnlyFilter ? [{ label: isEn ? 'Archived Only' : '仅已归档', onRemove: () => setArchivedOnlyFilter(false) }] : []),
           ...(canBeSoldFilter ? [{ label: 'Can be Sold', onRemove: () => setCanBeSoldFilter(false) }] : []),
