@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { normalizeItems } from '@/lib/pricelist-item'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,103 +33,6 @@ const ALLOWED_KEYS = new Set([
   'name', 'currency', 'items', 'sequence', 'selectable', 'active',
   'promotionalCode', 'notes', 'website', 'countryGroups',
 ])
-
-const VALID_APPLY_ON = new Set(['global', 'category', 'product', 'variant'])
-const VALID_COMPUTE = new Set(['fixed', 'percentage', 'formula'])
-const VALID_BASE    = new Set(['list_price', 'standard_price', 'pricelist'])
-
-function newId(): string {
-  // Node 18+ 有 crypto.randomUUID，本函数安全 fallback
-  try {
-    return crypto.randomUUID()
-  } catch {
-    return `item_${Date.now()}_${Math.random().toString(36).slice(2)}`
-  }
-}
-
-interface RawItem {
-  id?: string
-  applyOn: string
-  productTemplateId?: string
-  productVariantId?: string
-  categoryId?: string
-  minQty?: number
-  dateStart?: string
-  dateEnd?: string
-  computeType: string
-  fixedPrice?: number
-  percentDiscount?: number
-  formulaBase?: string
-  basedOnPricelistId?: string
-  priceDiscount?: number
-  priceSurcharge?: number
-  priceMinMargin?: number
-  priceMaxMargin?: number
-  roundingMethod?: number
-  sequence?: number
-  uomId?: string
-}
-
-function normalizeItems(raw: unknown): RawItem[] {
-  if (!Array.isArray(raw)) return []
-  const seen = new Set<string>()
-  const out: RawItem[] = []
-  for (const rItem of raw as RawItem[]) {
-    if (!rItem || typeof rItem !== 'object') continue
-
-    const applyOn = String(rItem.applyOn ?? '').toLowerCase()
-    const compute = String(rItem.computeType ?? '').toLowerCase()
-    if (!VALID_APPLY_ON.has(applyOn)) {
-      throw Object.assign(new Error(`applyOn 无效：${rItem.applyOn}`), { status: 400 })
-    }
-    if (!VALID_COMPUTE.has(compute)) {
-      throw Object.assign(new Error(`computeType 无效：${rItem.computeType}`), { status: 400 })
-    }
-
-    // applyOn 对应字段：允许为空（产品关联可在 UI 中后续补充，来自 Odoo 导入的数据也可能缺少此字段）
-
-    // 数值范围
-    const minQty = Number(rItem.minQty ?? 0)
-    if (!Number.isFinite(minQty) || minQty < 0) {
-      throw Object.assign(new Error(`minQty 无效：${rItem.minQty}`), { status: 400 })
-    }
-    if (compute === 'fixed') {
-      const fp = Number(rItem.fixedPrice ?? 0)
-      if (!Number.isFinite(fp) || fp < 0 || fp > 1_000_000) {
-        throw Object.assign(new Error(`fixedPrice 范围无效：${rItem.fixedPrice}`), { status: 400 })
-      }
-    }
-    if (compute === 'percentage') {
-      const pd = Number(rItem.percentDiscount ?? 0)
-      if (!Number.isFinite(pd) || pd < -100 || pd > 100) {
-        throw Object.assign(new Error(`percentDiscount 应在 -100~100：${rItem.percentDiscount}`), { status: 400 })
-      }
-    }
-    if (compute === 'formula') {
-      const base = String(rItem.formulaBase ?? 'list_price').toLowerCase()
-      if (!VALID_BASE.has(base)) {
-        throw Object.assign(new Error(`formulaBase 无效：${rItem.formulaBase}`), { status: 400 })
-      }
-      if (base === 'pricelist' && !rItem.basedOnPricelistId) {
-        throw Object.assign(new Error('formulaBase=pricelist 时 basedOnPricelistId 必填'), { status: 400 })
-      }
-    }
-
-    // id：空/重复的重新生成
-    let id = typeof rItem.id === 'string' && rItem.id.trim() !== '' ? rItem.id : newId()
-    if (seen.has(id)) id = newId()
-    seen.add(id)
-
-    // uomId 只对 product/variant 有意义（决策#4）：category/global 传了也一律丢弃，
-    // 不然改成 category 后残留的 uomId 会在引擎里悄悄拦掉这条规则却没人看得出来为什么
-    const uomId = (applyOn === 'product' || applyOn === 'variant') && typeof rItem.uomId === 'string' && rItem.uomId.trim() !== ''
-      ? rItem.uomId
-      : undefined
-
-    out.push({ ...rItem, id, minQty, applyOn, computeType: compute, uomId } as RawItem)
-  }
-  return out
-}
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

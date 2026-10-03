@@ -76,6 +76,24 @@ export const EXPORT_ENTITY_META = {
     labelEn: 'Orders',
     listApi: '/api/orders',
   },
+  uoms: {
+    permission: 'master.uom.read',
+    labelZh: '计量单位',
+    labelEn: 'Units of Measure',
+    listApi: '/api/uoms',
+  },
+  'product-categories': {
+    permission: 'master.product_category.read',
+    labelZh: '产品分类',
+    labelEn: 'Product Categories',
+    listApi: '/api/product-categories',
+  },
+  pricelists: {
+    permission: 'master.pricelist.read',
+    labelZh: '价格表',
+    labelEn: 'Pricelists',
+    listApi: '/api/pricelists',
+  },
 } as const satisfies Record<string, ExportEntityMeta>
 
 export type ExportEntityKey = keyof typeof EXPORT_ENTITY_META

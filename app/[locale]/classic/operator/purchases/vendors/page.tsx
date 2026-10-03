@@ -23,7 +23,7 @@ import { Pagination } from '@/components/ui/pagination'
 import type { Customer } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
-import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
 
@@ -163,13 +163,22 @@ export default function VendorsPage() {
         <Pagination page={page} totalPages={Math.max(1, Math.ceil(total / PAGE_SIZE))} onPageChange={p => loadPage(p, searchInput)} />
       </div>
 
-      <CsvImportDialog
+      <BulkImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title={isEn ? 'Bulk Import Vendors (CSV)' : '批量导入供应商(CSV)'}
-        templateName="vendors-import-template"
+        templateFileName="vendors-import-template"
         endpoint="/api/suppliers/bulk"
+        title={{ zh: '批量导入供应商(CSV)', en: 'Bulk Import Vendors (CSV)' }}
+        hint={{
+          zh: '第一行为表头。仅「名称」必填。',
+          en: 'Row 1 is the header. Name is the only required column.',
+        }}
+        extraHint={{
+          zh: <>按「ID」精确匹配更新对应供应商——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。</>,
+          en: <>Matched by ID (exact match) updates that vendor — keep the ID column from an exported file to reliably update; otherwise a name collision is skipped, no match creates a new one.</>,
+        }}
         columns={[
+          { key: 'externalId', label: isEn ? 'ID' : 'ID' },
           { key: 'name', label: isEn ? 'Name' : '名称', required: true },
           { key: 'phone', label: isEn ? 'Phone' : '电话' },
           { key: 'email', label: isEn ? 'Email' : '邮箱' },
@@ -180,6 +189,9 @@ export default function VendorsPage() {
           { key: 'supplierPaymentTerm', label: isEn ? 'Payment Terms' : '付款条款' },
           { key: 'vendorTaxRate', label: isEn ? 'Vendor Tax Rate (0-1)' : '采购税率(0-1)' },
           { key: 'notes', label: isEn ? 'Notes' : '备注' },
+        ]}
+        exampleRows={[
+          ['', 'Demo Supplier Ltd', '0851234567', 'demo@example.com', '12 Main Street', 'Dublin', 'D01', 'IE1234567T', '30 days', '0.135', ''],
         ]}
         onDone={() => loadPage(1, searchInput)}
       />

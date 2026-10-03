@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
-import { withAuth, tryAuth } from '@/lib/auth'
+import { withAuth, tryAuth, isSalesOnly } from '@/lib/auth'
 import { buildCustomersWhere } from '@/lib/customers-query'
 import { serializeApi } from '@/lib/api-serializer'
+import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 
 // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面继续显示业务员姓名
 function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: string } | null }>(customers: T[]): (T & { salesman: string | null })[] {
@@ -144,6 +145,9 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const { specialPrices, pricelistIds, ...data } = await req.json()
+      // Sage Account 是会计对账字段，纯销售角色不可见/不可填——即使绕过前端直接打接口也挡住
+      if (isSalesOnly(user)) delete data.sageAccount
+      if (typeof data.sageAccount === 'string') data.sageAccount = data.sageAccount.trim() || null
       const customer = await prisma.customer.create({
         data: {
           ...data,
@@ -163,6 +167,9 @@ export async function POST(req: Request) {
         detail: `创建客户: ${data.name || '未命名'}` })
       return NextResponse.json(serializeApi(attachSalesmanDisplay([customer])[0]), { status: 201 })
     } catch (error) {
+      if (isUniqueConstraintOn(error, 'sageAccount')) {
+        return NextResponse.json({ error: '该 Sage Account 已被其他客户占用，请换一个编号' }, { status: 409 })
+      }
       console.error('[POST /api/customers]', error)
       return NextResponse.json({ error: '创建客户失败' }, { status: 500 })
     }

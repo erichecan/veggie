@@ -498,6 +498,8 @@ model Customer {
   /// 最后修改人（自由文本，同 Product.updatedBy 的模式，不关联 User 表）
   updatedBy           String?
   externalId          String?                 @unique
+  /// Sage（会计系统）对账用的客户编号，财务要求全局唯一；对纯 SALES 角色隐藏，见 customers/[id]/page.tsx
+  sageAccount         String?                 @unique
   city                String?
   notes               String?
   /// 客户级外部备注（客户可见，打印在报价单/送货单上，如收货注意事项、结算方式）；与内部 notes 区分

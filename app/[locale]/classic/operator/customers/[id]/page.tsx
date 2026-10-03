@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useMemo, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -15,6 +15,16 @@ import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { getSession } from '@/lib/session'
+
+// Sage Account 是会计对账字段，纯销售（未兼任 OPERATOR/BOSS）不可见——与后端
+// app/api/customers/[id]/route.ts 的 isSalesOnly 同一套判断口径（服务端已经不会把
+// 这个字段的值发给纯销售账号，这里只是让 UI 不显示一个本来就拿不到值的输入框）。
+function isSalesOnlySession(s: ReturnType<typeof getSession>): boolean {
+  if (!s) return false
+  const roles = s.roles && s.roles.length > 0 ? s.roles : [s.role]
+  return roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +50,7 @@ interface FormState {
   name: string
   individualOrCompany: 'individual' | 'company'
   companyName: string
+  sageAccount: string
   // Address
   street: string
   street2: string
@@ -87,6 +98,7 @@ function emptyForm(): FormState {
     name: '',
     individualOrCompany: 'individual',
     companyName: '',
+    sageAccount: '',
     street: '', street2: '', city: '', state: '', zip: '', country: '',
     vatNumber: '',
     jobPosition: '', phone: '', mobile: '', email: '', website: '',
@@ -113,6 +125,7 @@ function customerToForm(c: Customer): FormState {
     name: c.name,
     individualOrCompany: 'company',
     companyName: '',
+    sageAccount: (cAny.sageAccount ?? '') as string,
     street: fallbackStreet,
     street2: newStreet2,
     city: c.city ?? '',
@@ -174,7 +187,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 // ─── Tab definition ───────────────────────────────────────────────────────────
 
-type Tab = 'contacts' | 'notes' | 'sales' | 'invoicing' | 'specialprices' | 'cards' | 'usedcards' | 'rechargedcards' | 'giftcards' | 'wallet' | 'creditdebit'
+type Tab = 'contacts' | 'notes' | 'sales' | 'invoicing' | 'specialprices'
 
 const ALL_TABS: { key: Tab; label: string }[] = [
   { key: 'contacts',     label: 'Contacts & Addresses' },
@@ -182,12 +195,6 @@ const ALL_TABS: { key: Tab; label: string }[] = [
   { key: 'sales',        label: 'Sales' },
   { key: 'invoicing',    label: 'Invoicing' },
   { key: 'specialprices', label: 'Special Prices' },
-  { key: 'cards',        label: 'Cards' },
-  { key: 'usedcards',    label: 'Used Cards' },
-  { key: 'rechargedcards', label: 'Recharged Cards' },
-  { key: 'giftcards',   label: 'Exchange Gift Card History' },
-  { key: 'wallet',       label: 'Wallet' },
-  { key: 'creditdebit',  label: 'Credit/Debit' },
 ]
 
 // ─── Stat Badge ───────────────────────────────────────────────────────────────
@@ -238,6 +245,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   const [loading, setLoading] = useState(!isNew)
   const [dirty, setDirty] = useState(isNew)
   const [createdTime] = useState(() => new Date())
+  // 新建时直接进编辑态；已有客户默认只读，点 Edit 才可改——此前这页没有只读态，
+  // Save/Discard 按钮条常驻显示，看起来"一直在编辑模式"（20261003 反馈）
+  const [isEditing, setIsEditing] = useState(isNew)
+  const hideSageAccount = useMemo(() => isSalesOnlySession(getSession()), [])
 
   function setField<K extends keyof FormState>(key: K, val: FormState[K]) {
     setForm(f => ({ ...f, [key]: val }))
@@ -249,7 +260,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       .then(d => setPricelists(d.filter(p => p.active)))
       .catch(() => {})
 
-    apiGet<{ id: string; name: string; email: string; roles: string[] }[]>('/api/users?role=SALES')
+    apiGet<{ id: string; name: string; email: string; roles: string[] }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
       .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email }))))
       .catch(() => {})
 
@@ -331,6 +342,9 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       // 免得客户表单顺手把已有供应商标记翻掉
       isCustomer: form.isCustomer,
       specialPrices,
+      // 纯销售角色看不到这个字段(hideSageAccount)，form.sageAccount 此时恒为空——
+      // 后端 isSalesOnly 会丢弃这个字段，不会真的拿空值覆盖已有编号
+      sageAccount: form.sageAccount.trim() || null,
     }
 
     setSaving(true)
@@ -340,9 +354,11 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
         toast.success(isEn ? 'Customer created' : '客户已创建')
         router.replace(`${prefix}/classic/operator/customers/${created.id}`)
       } else {
-        await apiPut(`/api/customers/${id}`, { ...original, ...fields })
+        const updated = await apiPut<Customer>(`/api/customers/${id}`, { ...original, ...fields })
+        setOriginal(updated)
         toast.success(isEn ? 'Saved successfully' : '保存成功')
         setDirty(false)
+        setIsEditing(false)
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -404,10 +420,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       setSpecialPrices(original.specialPrices ?? [])
       setDirty(false)
       toast.success(isEn ? 'Unsaved changes discarded' : '未保存的修改已撤销')
-    } else {
-      // 没有改动时，跳回列表（让按钮一定有可见反馈）
-      router.push(`${prefix}/classic/operator/customers`)
     }
+    // 退出编辑态回到只读视图——按钮条本身的变化(Save/Discard → Edit)就是可见反馈，
+    // 不需要再跳回列表
+    setIsEditing(false)
   }
 
   const isActive = isNew ? true : (original?.isActive !== false)
@@ -458,23 +474,37 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
 
         {/* Buttons row */}
         <div className="px-5 py-2 flex items-center gap-2">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="h-8 px-5 text-sm font-medium rounded border transition-colors"
-            style={{ background: '#875A7B', borderColor: '#875A7B', color: 'white' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#7a5070' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#875A7B' }}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          <button
-            onClick={handleDiscard}
-            disabled={saving}
-            className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Discard
-          </button>
+          {isEditing ? (
+            <>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="h-8 px-5 text-sm font-medium rounded border transition-colors"
+                style={{ background: '#875A7B', borderColor: '#875A7B', color: 'white' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#7a5070' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#875A7B' }}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={handleDiscard}
+                disabled={saving}
+                className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Discard
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="h-8 px-5 text-sm font-medium rounded border transition-colors"
+              style={{ background: '#875A7B', borderColor: '#875A7B', color: 'white' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#7a5070' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#875A7B' }}
+            >
+              {isEn ? 'Edit' : '编辑'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -519,6 +549,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                   <input type="radio" name="type" value="individual"
                     checked={form.individualOrCompany === 'individual'}
                     onChange={() => setField('individualOrCompany', 'individual')}
+                    disabled={!isEditing}
                     className="accent-[#875A7B]"
                   /> Individual
                 </label>
@@ -526,6 +557,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                   <input type="radio" name="type" value="company"
                     checked={form.individualOrCompany === 'company'}
                     onChange={() => setField('individualOrCompany', 'company')}
+                    disabled={!isEditing}
                     className="accent-[#875A7B]"
                   /> Company
                 </label>
@@ -537,25 +569,29 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                 value={form.name}
                 onChange={e => setField('name', e.target.value)}
                 placeholder="Name"
-                className="w-full text-xl font-semibold rounded px-2 py-1.5 focus:outline-none focus:border-[#875A7B] border border-transparent transition-colors"
+                disabled={!isEditing}
+                className="w-full text-xl font-semibold rounded px-2 py-1.5 focus:outline-none focus:border-[#875A7B] border border-transparent transition-colors disabled:cursor-default"
                 style={{ background: '#e8e0f0', color: '#333' }}
                 onFocus={e => (e.currentTarget.style.borderColor = '#875A7B')}
                 onBlur={e => (e.currentTarget.style.borderColor = 'transparent')}
               />
 
-              {/* Sage Account label */}
-              <div className="mt-1.5 ml-2 text-sm text-gray-600 font-medium">Sage Account:</div>
-
-              {/* Company dropdown */}
-              <div className="mt-1">
-                <select
-                  value={form.companyName}
-                  onChange={e => setField('companyName', e.target.value)}
-                  className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#875A7B] w-48"
-                >
-                  <option value="">Company</option>
-                </select>
-              </div>
+              {/* Sage Account —— 会计对账用，财务要求全局唯一；纯销售角色不可见(hideSageAccount) */}
+              {!hideSageAccount && (
+                <>
+                  <div className="mt-1.5 ml-2 text-sm text-gray-600 font-medium">Sage Account:</div>
+                  <div className="mt-1">
+                    <input
+                      type="text"
+                      value={form.sageAccount}
+                      onChange={e => setField('sageAccount', e.target.value)}
+                      disabled={!isEditing}
+                      placeholder={isEn ? 'e.g. 818CAKES' : '例如 818CAKES'}
+                      className={`${inputCls} w-48`}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Stat badges top-right */}
@@ -620,7 +656,8 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
         <div className="border-t border-gray-100" />
 
         {/* ── Two-column main fields ────────────────────────────────────────── */}
-        <div className="px-6 py-4 grid grid-cols-2 gap-x-10">
+        {/* fieldset disabled 会把里面所有 input/select/button 一并禁用，不用逐个加 disabled */}
+        <fieldset disabled={!isEditing} className="px-6 py-4 grid grid-cols-2 gap-x-10 border-0 m-0">
 
           {/* LEFT: Address + Tax ID */}
           <div>
@@ -737,7 +774,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
               </select>
             </OdooField>
           </div>
-        </div>
+        </fieldset>
 
         {/* ── Tab bar ──────────────────────────────────────────────────────────── */}
         <div className="border-t border-gray-200 overflow-x-auto">
@@ -776,7 +813,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
 
           {/* Internal Notes + External Note */}
           {activeTab === 'notes' && (
-            <div className="space-y-5">
+            <fieldset disabled={!isEditing} className="space-y-5 border-0 m-0 p-0">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Internal Notes</label>
                 <p className="text-xs text-gray-400 mb-1.5">{isEn ? 'Internal use only, not printed for the customer' : '仅内部可见，不会打印给客户'}</p>
@@ -799,13 +836,14 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                   placeholder={isEn ? 'e.g. Speaks Cantonese; cash payment; back-door code 1234…' : '例如：讲广东话；现金结算；后门密码 1234…'}
                 />
               </div>
-            </div>
+            </fieldset>
           )}
 
           {/* Sales */}
           {activeTab === 'sales' && (
             <div className="max-w-xl">
               <SectionTitle>Sales</SectionTitle>
+              <fieldset disabled={!isEditing} className="border-0 m-0 p-0">
                 <OdooField label="Is a Customer">
                   <div className="flex items-center h-8">
                     <input type="checkbox" checked={form.isCustomer}
@@ -818,6 +856,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                     options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
                     value={form.salesperson}
                     onChange={v => setField('salesperson', v)}
+                    disabled={!isEditing}
                   />
                 </OdooField>
                 <OdooField label="Default Driver">
@@ -825,6 +864,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                     options={[{ value: '', label: '— none —' }, ...driverSlots.map(s => ({ value: s.id, label: `${s.driverName} (${s.timeOfDay} #${s.batchNum})` }))]}
                     value={form.defaultDriverSlotId}
                     onChange={v => setField('defaultDriverSlotId', v)}
+                    disabled={!isEditing}
                   />
                 </OdooField>
                 <OdooField label="Sales Team">
@@ -840,11 +880,13 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                     ))}
                   </select>
                 </OdooField>
+              </fieldset>
                 {!isNew && (
                   <OdooField label="Term Extension" wide>
                     <CreditTermExtensionPanel customerId={id} isEn={isEn} />
                   </OdooField>
                 )}
+              <fieldset disabled={!isEditing} className="border-0 m-0 p-0">
                 <OdooField label="Pricelists" wide>
                   <div className="space-y-1">
                     {form.pricelistIds.length === 0 && (
@@ -913,6 +955,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                       className={inputCls} />
                   </OdooField>
                 </div>
+              </fieldset>
             </div>
           )}
 
@@ -932,14 +975,16 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                       : '客户专属定价——最高优先级，覆盖价格表规则和商品牌价。按商品 + 最小起订量精确匹配。'}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={openAddSP}
-                  className="h-7 px-4 text-xs rounded border font-medium transition-colors"
-                  style={{ background: '#875A7B', borderColor: '#875A7B', color: 'white' }}
-                >
-                  Add a line
-                </button>
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={openAddSP}
+                    className="h-7 px-4 text-xs rounded border font-medium transition-colors"
+                    style={{ background: '#875A7B', borderColor: '#875A7B', color: 'white' }}
+                  >
+                    Add a line
+                  </button>
+                )}
               </div>
 
               {specialPrices.length === 0 ? (
@@ -964,8 +1009,8 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                       return (
                         <tr
                           key={idx}
-                          className="hover:bg-[#875A7B]/20 cursor-pointer transition-colors"
-                          onClick={() => openEditSP(sp, idx)}
+                          className={`transition-colors ${isEditing ? 'hover:bg-[#875A7B]/20 cursor-pointer' : ''}`}
+                          onClick={isEditing ? () => openEditSP(sp, idx) : undefined}
                         >
                           <td className="px-3 py-2 font-medium">{prod?.name ?? sp.productId}</td>
                           <td className="px-3 py-2 text-right">{sp.minQty}</td>
@@ -979,13 +1024,15 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                           </td>
                           <td className="px-3 py-2 text-gray-500 text-xs">{sp.note ?? ''}</td>
                           <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={e => { e.stopPropagation(); removeSP(idx) }}
-                              className="text-red-400 hover:text-red-600 text-xs"
-                            >
-                              Delete
-                            </button>
+                            {isEditing && (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); removeSP(idx) }}
+                                className="text-red-400 hover:text-red-600 text-xs"
+                              >
+                                Delete
+                              </button>
+                            )}
                           </td>
                         </tr>
                       )
@@ -996,10 +1043,6 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             </div>
           )}
 
-          {/* Placeholder tabs */}
-          {(activeTab === 'cards' || activeTab === 'usedcards' || activeTab === 'rechargedcards' || activeTab === 'giftcards' || activeTab === 'wallet' || activeTab === 'creditdebit') && (
-            <p className="text-sm text-gray-400">No records found.</p>
-          )}
         </div>
       </div>
 

@@ -100,7 +100,7 @@ export default function QuotationDetailPage() {
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
   const [salesUserId, setSalesUserId] = useState('')
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
-  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=SALES').then(setSalesUsers).catch(() => {}) }, [])
+  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').then(setSalesUsers).catch(() => {}) }, [])
   const [deliveryDate, setDeliveryDate] = useState('')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
@@ -1328,8 +1328,8 @@ export default function QuotationDetailPage() {
             <h3 className="text-lg font-bold text-gray-900 mb-2">{isEn ? 'Cancel this quotation?' : '确认取消此报价单？'}</h3>
             <p className="text-sm text-gray-600 mb-6">
               {isEn
-                ? 'The order status will change to "Cancelled" and remain visible in the list, but cannot be restored to a quotation.'
-                : '取消后订单状态将变为「已取消」，可在列表中查看，但无法恢复为报价中。'}
+                ? 'The order status will change to "Cancelled". You can restore it to a quotation or permanently delete it afterward from the quotations list.'
+                : '取消后订单状态将变为「已取消」。之后可在报价单列表里把它恢复为报价单，或彻底删除。'}
             </p>
             <div className="flex justify-end gap-3">
               <button

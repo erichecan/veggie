@@ -38,7 +38,11 @@ const ALLOWED_TRANSITIONS: Record<string, Set<string>> = {
   IN_DELIVERY: new Set(['COMPLETED', 'CANCELLED']),
   COMPLETED: new Set(['LOCKED']),
   LOCKED: new Set(),      // 不可变
-  CANCELLED: new Set(),   // 不可变
+  // 20261003：报价单列表页需要"取消后可恢复"——只放开 CANCELLED→PENDING(恢复成报价单)，
+  // 不放开到其它状态(恢复后该走的确认/排波流程仍要走一遍，不能一步跳回 CONFIRMED 之后)。
+  // 恢复到 PENDING 复用上面已有的"撤回"分支(newStatus==='PENDING' 的波次清理/审计逻辑)，
+  // 因为只有 PENDING 报价单在这个列表页能被取消，取消时从未扣过库存，恢复也不需要补扣。
+  CANCELLED: new Set(['PENDING']),
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -725,6 +729,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       let auditAction = 'updated'
       if (newStatus === 'CONFIRMED') auditAction = 'confirmed'
       else if (newStatus === 'PENDING' && withdrawableFromStatuses.has(String(orderBefore.status))) auditAction = 'withdrawn'
+      else if (newStatus === 'PENDING' && String(orderBefore.status).toUpperCase() === 'CANCELLED') auditAction = 'restored'
       else if (newStatus === 'COMPLETED') auditAction = 'completed'
       else if (newStatus === 'CANCELLED') auditAction = 'cancelled'
 
@@ -1086,14 +1091,18 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       if (!isRowVisible(orderToDelete, salesRowScope(user))) {
         return NextResponse.json({ error: '订单不存在' }, { status: 404 })
       }
-      if (String(orderToDelete.status).toUpperCase() !== 'PENDING') {
-        return NextResponse.json({ error: '只有报价单（待处理状态）可以删除' }, { status: 409 })
+      // 报价单(PENDING)从未扣过库存；已取消(CANCELLED)的订单若原来扣过库存，取消时已经恢复
+      // (见 PUT 里"On CANCELLED"分支)——两种状态硬删都不会留下库存/Trip 的悬空账。
+      // CONFIRMED 及以后的状态必须先走取消流程，不能直接删，否则会跳过库存恢复。
+      const deletableStatuses = new Set(['PENDING', 'CANCELLED'])
+      if (!deletableStatuses.has(String(orderToDelete.status).toUpperCase())) {
+        return NextResponse.json({ error: '只有报价单（待处理）或已取消的订单可以删除' }, { status: 409 })
       }
       await prisma.order.delete({ where: { id } })
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'DELETE', resource: 'order', resourceId: id,
-        detail: `删除报价单: ${orderToDelete.code ?? id}`,
+        detail: `删除${String(orderToDelete.status).toUpperCase() === 'CANCELLED' ? '已取消订单' : '报价单'}: ${orderToDelete.code ?? id}`,
       })
       return NextResponse.json({ ok: true })
     } catch (error) {

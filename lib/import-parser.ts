@@ -6,6 +6,8 @@
  * - matchStats:      统计匹配情况（精确 / 模糊 / 未匹配）
  */
 
+import { parseCsv as parseCsvGeneric } from './csv-export'
+
 export interface RawLine {
   rawProductName: string
   quantity: number
@@ -185,17 +187,24 @@ async function parseExcel(buffer: Buffer): Promise<RawLine[]> {
   return lines
 }
 
-/** 解析 CSV（文本） */
+/**
+ * 解析 CSV（文本）。20261003 改用 lib/csv-export.ts 的引号安全分词(原来这里裸
+ * split(sep)，商品名/备注里带逗号会把整行列错位——那一列挪位之后数量/单价全部
+ * 对不上，不会报错，是静默吃错数据)。
+ */
 async function parseCsv(buffer: Buffer): Promise<RawLine[]> {
   const text = buffer.toString('utf-8')
   const lines: RawLine[] = []
 
-  const rows = text.split('\n').map(l => l.trim()).filter(Boolean)
+  // 取第一条非空行来判断分隔符(不能直接拿 text 的第一行——手动编辑过的 Excel 导出
+  // 文件常带开头空行，原来按"首个非空行"判断，这里必须保持同样的跳过逻辑)
+  const firstLine = text.split(/\r?\n/).find(l => l.trim().length > 0) ?? ''
+  const sep = firstLine.includes('\t') ? '\t' : firstLine.includes(';') ? ';' : ','
+
+  const rows = parseCsvGeneric(text, sep).map(r => r.map(c => c.trim().replace(/^'|'$/g, '')))
   if (rows.length <= 1) return lines // only header or empty
 
-  const sep = rows[0].includes('\t') ? '\t' : rows[0].includes(';') ? ';' : ','
-
-  const header = rows[0].split(sep).map(h => normalizeStr(h))
+  const header = rows[0].map(h => normalizeStr(h))
   const nameKeys = ['product', 'productname', 'name', 'item', '商品', '商品名', '品名', '商品名称', '名称']
   const qtyKeys = ['qty', 'quantity', '数量', 'amount']
   const priceKeys = ['price', 'unitprice', 'unitcost', 'cost', '单价', '价格']
@@ -206,8 +215,7 @@ async function parseCsv(buffer: Buffer): Promise<RawLine[]> {
 
   const dataRows = (nameIdx >= 0 || qtyIdx >= 0) ? rows.slice(1) : rows
 
-  for (const row of dataRows) {
-    const cols = row.split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''))
+  for (const cols of dataRows) {
     const ni = nameIdx >= 0 ? nameIdx : 0
     const qi = qtyIdx >= 0 ? qtyIdx : 1
     const pi = priceIdx >= 0 ? priceIdx : 2

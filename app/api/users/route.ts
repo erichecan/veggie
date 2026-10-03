@@ -11,7 +11,11 @@ export async function GET(req: Request) {
   return withAuth(req, async (me) => {
     try {
       const { searchParams } = new URL(req.url)
-      const roleFilter = searchParams.get('role')?.toUpperCase()
+      // role 支持逗号分隔多值，如 role=OPERATOR,SALES,EXTERNAL_SALES
+      const roleFilter = searchParams.get('role')
+      const roleFilterSet = roleFilter
+        ? new Set(roleFilter.split(',').map(r => r.trim().toUpperCase()).filter(Boolean))
+        : null
       const users = await prisma.user.findMany({
         orderBy: { createdAt: 'asc' },
         select: {
@@ -36,8 +40,8 @@ export async function GET(req: Request) {
         ...u,
         roles: Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [String(u.role)],
       }))
-      const filtered = roleFilter
-        ? normalized.filter(u => u.roles.some(r => r.toUpperCase() === roleFilter))
+      const filtered = roleFilterSet
+        ? normalized.filter(u => u.roles.some(r => roleFilterSet.has(r.toUpperCase())))
         : normalized
       return NextResponse.json(serializeApi(filtered))
     } catch (error) {

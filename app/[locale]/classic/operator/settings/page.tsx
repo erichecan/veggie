@@ -5,6 +5,10 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import type { ProductCategory } from '@/lib/types'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { UOM_EXPORT_COLUMNS } from '@/lib/export/columns/uoms'
+import { PRODUCT_CATEGORY_EXPORT_COLUMNS } from '@/lib/export/columns/product-categories'
 
 const PURPLE = '#875A7B'
 
@@ -221,6 +225,8 @@ function UomSection({ isEn }: { isEn: boolean }) {
   const [newUomGoodsType, setNewUomGoodsType] = useState<GoodsType>('BULK')
   const [newUomExpand, setNewUomExpand] = useState(false)
   const [savingUom, setSavingUom] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const exportAction = useCsvExport({ entity: 'uoms', params: () => '', columns: UOM_EXPORT_COLUMNS })
 
   async function load() {
     try {
@@ -279,6 +285,16 @@ function UomSection({ isEn }: { isEn: boolean }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end gap-2">
+        <button onClick={() => setImportOpen(true)}
+          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+          {isEn ? 'Import' : '导入'}
+        </button>
+        <button onClick={exportAction.onClick} disabled={exportAction.disabled}
+          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+          {exportAction.label}
+        </button>
+      </div>
       <div>
         {categories.length === 0 ? (
           <p className="text-sm text-gray-400">{isEn ? 'No categories yet' : '暂无分类'}</p>
@@ -438,6 +454,32 @@ function UomSection({ isEn }: { isEn: boolean }) {
           </p>
         </div>
       </div>
+
+      <BulkImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onDone={load}
+        templateFileName="uoms-import-template"
+        endpoint="/api/uoms/bulk"
+        title={{ zh: '批量导入计量单位(CSV)', en: 'Bulk Import Units of Measure (CSV)' }}
+        hint={{
+          zh: '第一行为表头。「名称」「分类」必填。',
+          en: 'Row 1 is the header. Name and Category are required.',
+        }}
+        extraHint={{
+          zh: <>只支持新建：按名称全局判重(不分单位分类)，撞了跳过，不会更新已有单位；需要改已有单位请到上方表格直接编辑。「分类」填已有的单位分类名称(中英文均可)，查不到会跳过该行。</>,
+          en: <>Create-only: name collisions (across all categories) are skipped, never updated — edit existing units directly in the table above. Category must match an existing unit category name (English or Chinese); unmatched rows are skipped.</>,
+        }}
+        columns={[
+          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
+          { key: 'nameZh', label: isEn ? 'Chinese Name' : '中文名称' },
+          { key: 'category', label: isEn ? 'Category' : '单位分类', required: true },
+          { key: 'goodsType', label: isEn ? 'Goods Type (BULK/LOOSE)' : '货物类型(BULK/LOOSE)' },
+          { key: 'expandByCustomer', label: isEn ? 'Expand By Customer (Y/N)' : '拣货按客户展开(Y/N)' },
+        ]}
+        exampleRows={[['Demo Bag', '示例包', 'Weight', 'BULK', 'N']]}
+      />
+      {exportAction.dialog}
     </div>
   )
 }
@@ -453,6 +495,8 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editNameZh, setEditNameZh] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const exportAction = useCsvExport({ entity: 'product-categories', params: () => '', columns: PRODUCT_CATEGORY_EXPORT_COLUMNS })
 
   async function load() {
     try {
@@ -508,6 +552,16 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end gap-2">
+        <button onClick={() => setImportOpen(true)}
+          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+          {isEn ? 'Import' : '导入'}
+        </button>
+        <button onClick={exportAction.onClick} disabled={exportAction.disabled}
+          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+          {exportAction.label}
+        </button>
+      </div>
       <div className="border border-gray-200 rounded overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-gray-200" style={{ background: '#f3eff5' }}>
@@ -592,6 +646,32 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
           </button>
         </div>
       </div>
+
+      <BulkImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onDone={load}
+        templateFileName="product-categories-import-template"
+        endpoint="/api/product-categories/bulk"
+        title={{ zh: '批量导入商品分类(CSV)', en: 'Bulk Import Product Categories (CSV)' }}
+        hint={{
+          zh: '第一行为表头。仅「英文名」必填。',
+          en: 'Row 1 is the header. English Name is the only required column.',
+        }}
+        extraHint={{
+          zh: <>按「ID」精确匹配更新对应分类——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。「采购品类分组」「应放温区」填已有名称(中英文均可),查不到会留空(不阻断整行)。</>,
+          en: <>Matched by ID (exact match) updates that category — keep the ID column from an exported file to reliably update; otherwise a name collision is skipped, no match creates a new one. Purchase Group / Required Zone must match an existing name (English or Chinese); unmatched values are left unset, not blocking.</>,
+        }}
+        columns={[
+          { key: 'externalId', label: isEn ? 'ID' : 'ID' },
+          { key: 'name', label: isEn ? 'Name (EN)' : '英文名', required: true },
+          { key: 'nameZh', label: isEn ? 'Name (ZH)' : '中文名' },
+          { key: 'group', label: isEn ? 'Purchase Group' : '采购品类分组' },
+          { key: 'requiredZone', label: isEn ? 'Required Zone' : '应放温区' },
+        ]}
+        exampleRows={[['', 'Vegetables', '蔬菜', '', '']]}
+      />
+      {exportAction.dialog}
     </div>
   )
 }

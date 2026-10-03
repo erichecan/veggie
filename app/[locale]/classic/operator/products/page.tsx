@@ -8,7 +8,10 @@ import { apiGet, apiPut, apiPatch, apiPost, apiDelete } from '@/lib/api'
 import type { ProductTemplate, ProductCategory, ProductSaleUomSummary } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
-import ProductImportDialog from '@/components/classic/ProductImportDialog'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
+import {
+  PRODUCT_IMPORT_COLUMNS, PRODUCT_IMPORT_EXAMPLE_ROWS, PRODUCT_IMPORT_HINT, PRODUCT_IMPORT_EXTRA_HINT,
+} from './product-import-columns'
 import { PRODUCT_TEMPLATE_EXPORT_COLUMNS } from '@/lib/export/columns/product-templates'
 import SaleUomsDialog, { type SaleUomsDialogProduct } from '@/components/classic/SaleUomsDialog'
 import { type SortDir } from '@/components/shared/sort-th'
@@ -1042,10 +1045,17 @@ export default function ClassicProductsPage() {
 
       <Pagination page={page} totalPages={totalPages} onPageChange={p => loadPage(p, searchInput)} />
 
-      <ProductImportDialog
+      <BulkImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onDone={() => loadPage(1, searchInput)}
+        templateFileName="products-import-template"
+        columns={PRODUCT_IMPORT_COLUMNS}
+        exampleRows={PRODUCT_IMPORT_EXAMPLE_ROWS}
+        endpoint="/api/products/bulk"
+        title={{ zh: '批量导入商品(CSV)', en: 'Bulk Import Products (CSV)' }}
+        hint={PRODUCT_IMPORT_HINT}
+        extraHint={PRODUCT_IMPORT_EXTRA_HINT}
       />
       {exportActionLabeled.dialog}
       {exportAllAction.dialog}
