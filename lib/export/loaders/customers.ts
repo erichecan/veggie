@@ -5,6 +5,7 @@
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
 import { buildCustomersWhere } from '@/lib/customers-query'
+import { isSalesOnly } from '@/lib/auth'
 import type { ExportLoadContext, ExportLoadResult } from '../registry'
 import type { CustomerExportRow } from '../columns/customers'
 
@@ -41,6 +42,10 @@ export async function loadCustomersForExport(
       : [],
   )
 
+  // Sage Account 对纯 SALES 角色隐藏，与详情页 hideSageAccount / 后端 PUT/POST 的
+  // isSalesOnly 过滤保持一致，见 customers/[id]/page.tsx 与 app/api/customers/route.ts
+  const hideSageAccount = isSalesOnly(ctx.user)
+
   const rows: CustomerExportRow[] = serialized.map(c => {
     const links = (c.pricelists ?? []) as Array<{ pricelistId: string }>
     return {
@@ -49,6 +54,7 @@ export async function loadCustomersForExport(
       // 省略号式的摘要在这里没有意义
       pricelistNames: links.map(l => nameById.get(l.pricelistId) ?? l.pricelistId).join(' / '),
       salesman: (c.salesUser as { name?: string } | null)?.name ?? null,
+      sageAccount: hideSageAccount ? null : ((c as unknown as CustomerExportRow).sageAccount ?? null),
     }
   })
 

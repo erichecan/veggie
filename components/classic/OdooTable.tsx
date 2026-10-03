@@ -597,7 +597,10 @@ export default function OdooTable<T extends Record<string, unknown>>({
                         className={`px-2 py-1 text-gray-700 break-words ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : ''}`}
                         style={{
                           ...colSizeStyle(col),
-                          background: cellEditable && !isEditingCell ? 'rgba(135, 90, 123, 0.04)' : undefined,
+                          // 20261003：4% 透明度太淡，Mode 切到编辑态后用户分不出哪些格子能点——
+                          // 加粗到 8% 并配一条虚线下边框，让"可编辑"在不 hover 时也看得出来
+                          background: cellEditable && !isEditingCell ? 'rgba(135, 90, 123, 0.08)' : undefined,
+                          borderBottom: cellEditable && !isEditingCell ? '1px dashed rgba(135, 90, 123, 0.4)' : undefined,
                           outline: isEditingCell ? '2px solid #875A7B' : undefined,
                           cursor: cellEditable && !isEditingCell ? 'cell' : undefined,
                         }}

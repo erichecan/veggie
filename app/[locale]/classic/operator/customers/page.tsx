@@ -69,6 +69,7 @@ export default function ClassicCustomersPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   // Last Updated by 下拉选项：去重历史值，同商品页 /api/products/filter-options 的模式
   const [updatedByOptions, setUpdatedByOptions] = useState<string[]>([])
+  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
 
   // OdooTable 列 key → 后端 cfm_* 参数名（primaryPricelistId 是前端派生列，落地时映射回真实字段名）
   const CFM_PARAM_NAME: Record<string, string> = { primaryPricelistId: 'cfm_pricelistId', priceType: 'cfm_priceType' }
@@ -137,6 +138,9 @@ export default function ClassicCustomersPage() {
     loadPage(1, '', paymentFilter, includeArchived)
     apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d.filter(pl => pl.active) : [])).catch(() => {})
     apiGet<{ updatedBy: string[] }>('/api/customers/filter-options').then(d => setUpdatedByOptions(d.updatedBy ?? [])).catch(() => {})
+    apiGet<{ id: string; name: string; email: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
+      .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email }))))
+      .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeArchived])
 
@@ -202,7 +206,12 @@ export default function ClassicCustomersPage() {
     }
     try {
       await apiPut(`/api/customers/${c.id}`, { [key]: payloadVal })
-      setCustomers(prev => prev.map(row => row.id === c.id ? { ...row, [key]: payloadVal } as Customer : row))
+      // key==='salesUserId' 时展示用的 row.salesman 是单独展平字段，不会跟着自动更新——
+      // 乐观更新里一并同步，否则要刷新整页才会显示新销售员的名字
+      const extra = key === 'salesUserId'
+        ? { salesman: salesUsers.find(u => u.id === payloadVal)?.name ?? null }
+        : {}
+      setCustomers(prev => prev.map(row => row.id === c.id ? { ...row, [key]: payloadVal, ...extra } as Customer : row))
       toast.success(isEn ? 'Saved' : '已保存')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -231,10 +240,16 @@ export default function ClassicCustomersPage() {
       render: (v) => <span className="text-gray-600 text-xs">{String(v || '')}</span>,
     },
     {
-      key: 'salesman',
+      // key 用 salesUserId（行内编辑要提交的真实字段），显示仍读 row.salesman（已展平的姓名）；
+      // sortKey 显式指回 'salesman'，后端按姓名排序的既有行为不受 key 改动影响
+      key: 'salesUserId',
+      sortKey: 'salesman',
       label: isEn ? 'Salesperson' : '销售员',
       sortable: true,
-      render: (v) => v ? String(v) : <span className="text-gray-400">—</span>,
+      editable: true,
+      editType: 'select',
+      editOptions: salesUsers.map(u => ({ value: u.id, label: u.name })),
+      render: (_v, row) => row.salesman ? String(row.salesman) : <span className="text-gray-400">—</span>,
     },
     {
       key: 'paymentTerm',
@@ -266,6 +281,9 @@ export default function ClassicCustomersPage() {
       key: 'priceType',
       label: 'Price Type',
       sortable: true,
+      editable: true,
+      editType: 'select',
+      editOptions: Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => ({ value, label })),
       filterType: 'multi-select',
       filterOptions: Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => ({ value, label })),
       filterLabelGetter: (v) => PRICE_TYPE_LABELS[v] ?? v,

@@ -1186,10 +1186,12 @@ ${orderSections}
                 { label: 'Edit', onClick: () => {}, primary: true },
                 { label: 'Mode', onClick: () => { setIsReadMode(true); setEditDateId(null); setEditItemsId(null) } },
               ]),
-          ...(selected.size >= 2 ? [{ label: bulkConfirming ? (isEn ? 'Confirming...' : '确认中...') : (isEn ? `Bulk Confirm (${selected.size})` : `批量确认 (${selected.size})`), onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
-          ...(selected.size >= 2 ? [{ label: bulkCancelling ? (isEn ? 'Cancelling...' : '取消中...') : (isEn ? `Bulk Cancel (${selected.size})` : `批量取消 (${selected.size})`), onClick: handleBulkCancel, primary: true, style: 'red' as const, disabled: bulkCancelling }] : []),
-          ...(selected.size >= 2 ? [{ label: bulkRestoring ? (isEn ? 'Restoring...' : '恢复中...') : (isEn ? `Bulk Restore (${selected.size})` : `批量恢复 (${selected.size})`), onClick: handleBulkRestore, style: 'green' as const, disabled: bulkRestoring }] : []),
-          ...(selected.size >= 2 ? [{ label: bulkRemoving ? (isEn ? 'Deleting...' : '删除中...') : (isEn ? `Bulk Delete (${selected.size})` : `批量删除 (${selected.size})`), onClick: handleBulkRemove, style: 'red' as const, disabled: bulkRemoving }] : []),
+          // 20261003：阈值从 >=2 改成 >=1 —— 原来选中单条报价单时，工具栏不出现任何批量操作
+          // 入口，用户看不到删除/恢复按钮，以为功能没做（单条场景没理由要求必须多选）
+          ...(selected.size >= 1 ? [{ label: bulkConfirming ? (isEn ? 'Confirming...' : '确认中...') : (isEn ? `Bulk Confirm (${selected.size})` : `批量确认 (${selected.size})`), onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkCancelling ? (isEn ? 'Cancelling...' : '取消中...') : (isEn ? `Bulk Cancel (${selected.size})` : `批量取消 (${selected.size})`), onClick: handleBulkCancel, primary: true, style: 'red' as const, disabled: bulkCancelling }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkRestoring ? (isEn ? 'Restoring...' : '恢复中...') : (isEn ? `Bulk Restore (${selected.size})` : `批量恢复 (${selected.size})`), onClick: handleBulkRestore, style: 'green' as const, disabled: bulkRestoring }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkRemoving ? (isEn ? 'Deleting...' : '删除中...') : (isEn ? `Bulk Delete (${selected.size})` : `批量删除 (${selected.size})`), onClick: handleBulkRemove, style: 'red' as const, disabled: bulkRemoving }] : []),
           ...(selected.size === 1 ? [{ label: duplicating ? (isEn ? 'Duplicating...' : '复制中...') : 'Duplicate', onClick: handleDuplicate, primary: true, disabled: duplicating }] : []),
           ...(selected.size >= 1 ? [{ label: bulkPrinting ? (isEn ? 'Generating...' : '生成中...') : (isEn ? `Bulk Print (${selected.size})` : `批量打印 (${selected.size})`), onClick: handleBulkPrint, primary: true, disabled: bulkPrinting }] : []),
         ]}
