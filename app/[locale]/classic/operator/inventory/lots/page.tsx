@@ -134,6 +134,20 @@ function expiryBadge(bestBefore: string | null | undefined, isEn: boolean): { la
   }
 }
 
+/**
+ * 这批已耗尽的批次(DEPLETED)耗尽时，同一商品是否还有保质期更早、仍有库存的批次没卖——
+ * 说明拣货没按保质期从短到长出。只看"同一次请求里已经拉到的这批次列表"，不额外请求，
+ * 现在还存在更早过期的可用批次这个条件本身就天然限定在当下仍可纠正的场景。
+ */
+function hasFefoViolation(lot: LotRow, allLots: LotRow[]): boolean {
+  if (lot.status !== 'DEPLETED' || !lot.bestBefore) return false
+  const thisBestBefore = new Date(lot.bestBefore).getTime()
+  return allLots.some(other =>
+    other.id !== lot.id && other.status === 'AVAILABLE' && Number(other.currentQty) > 0
+    && other.bestBefore && new Date(other.bestBefore).getTime() < thisBestBefore
+  )
+}
+
 export default function LotsPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -382,6 +396,7 @@ export default function LotsPage() {
 
                 {!lotsLoading && visibleLots.map(lot => {
                   const badge = expiryBadge(lot.bestBefore, isEn)
+                  const fefoViolation = hasFefoViolation(lot, lots)
                   return (
                     <div
                       key={lot.id}
@@ -397,13 +412,25 @@ export default function LotsPage() {
                       >
                         {lot.lotNumber}
                       </button>
-                      <span
-                        className="text-xs font-medium px-2 py-0.5 rounded-full w-fit"
-                        style={lot.status === 'AVAILABLE'
-                          ? { background: '#e7f6ec', color: '#16a34a' }
-                          : { background: '#f1f1f1', color: '#888' }}
-                      >
-                        {lot.status === 'AVAILABLE' ? (isEn ? 'Available' : '可用') : (isEn ? 'Depleted' : '已耗尽')}
+                      <span className="inline-flex items-center gap-1 w-fit">
+                        <span
+                          className="text-xs font-medium px-2 py-0.5 rounded-full"
+                          style={lot.status === 'AVAILABLE'
+                            ? { background: '#e7f6ec', color: '#16a34a' }
+                            : { background: '#f1f1f1', color: '#888' }}
+                        >
+                          {lot.status === 'AVAILABLE' ? (isEn ? 'Available' : '可用') : (isEn ? 'Depleted' : '已耗尽')}
+                        </span>
+                        {fefoViolation && (
+                          <span
+                            className="text-xs"
+                            title={isEn
+                              ? 'Sold out before an earlier-expiring lot of the same product — check whether picking followed shortest-shelf-life-first'
+                              : '已卖完，但同商品还有保质期更早的批次没卖——请核实拣货是否按保质期从短到长出'}
+                          >
+                            🔀
+                          </span>
+                        )}
                       </span>
                       <span className="text-xs text-gray-600">{formatDateOnly(lot.arrivedAt)}</span>
                       <span className="text-sm font-mono text-right text-gray-600">{Number(lot.initialQty).toFixed(2)}</span>

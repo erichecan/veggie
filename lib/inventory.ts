@@ -1,11 +1,20 @@
 import { factorOf } from '@/lib/sale-uom'
 
 /**
- * 库存批次(Lot)FIFO 消耗/回补
+ * 库存批次(Lot)FEFO 消耗 / 回补
  * ================================================================================
  * 权威库存余额 = Product.qtyOnHand(允许负数/超卖)。Lot.currentQty 记录每个已收批次
- * 的剩余量,供 FIFO 出库与效期预警使用。此前销售出库只扣 qtyOnHand 不扣 Lot,导致批次
+ * 的剩余量,供出库消耗与效期预警使用。此前销售出库只扣 qtyOnHand 不扣 Lot,导致批次
  * 余量系统性虚高、效期报表不可信(见 docs/20260624-data-ownership-audit.md P1-5)。
+ *
+ * ⛔ 20261003 改动:消耗顺序从「到货日期(arrivedAt)先后」改成「保质期(bestBefore)
+ * 早晚」——到货早不等于保质期短(供应商那边压货久的批次会出现"后到但先过期")，
+ * 按到货日期扣等于没有真正保证"先过期的先出"，客户反馈怀疑仓库发货顺序跟系统批次
+ * 逻辑对不上，根子就在这里：系统自己的自动扣减就没有严格按保质期。函数名仍叫
+ * `consumeLotsFIFO`/`restoreLotsFIFO` 没有改——真正的语义已经是 FEFO
+ * (First-Expired-First-Out)，但两个函数有 7 处调用点，纯改名不值得为了措辞精确
+ * 牵一发动全身，这段注释就是给后来者的准确说明。没有 bestBefore 的批次排在最后，
+ * 退化为按到货日期（行为与改动前对这些批次完全一致）。
  *
  * 用法:在任何销售/出库扣减 qtyOnHand 的同事务里调用 consumeLotsFIFO;撤回/回补时调用
  * restoreLotsFIFO。超卖(批次不足)时只扣到 0,差额由 qtyOnHand 负数体现,不臆造批次。
@@ -71,14 +80,14 @@ export async function toStockQty(
   return qty * factorOf(normalized, lineUomId)
 }
 
-/** FIFO(最早 arrivedAt 优先)消耗批次余量。qty 为正数(要扣减的量)。返回实际消耗的批次明细。 */
+/** FEFO(最早 bestBefore 优先，无保质期的排最后按 arrivedAt)消耗批次余量。qty 为正数(要扣减的量)。返回实际消耗的批次明细。 */
 export async function consumeLotsFIFO(client: LotClient, productId: string, qty: number): Promise<LotMovement[]> {
   if (!(qty > 0)) return []
   let remaining = qty
   const consumed: LotMovement[] = []
   const lots = await client.lot.findMany({
     where: { productId, status: 'AVAILABLE', currentQty: { gt: 0 } },
-    orderBy: { arrivedAt: 'asc' },
+    orderBy: [{ bestBefore: { sort: 'asc', nulls: 'last' } }, { arrivedAt: 'asc' }],
   })
   for (const lot of lots) {
     if (remaining <= 0) break
@@ -96,14 +105,14 @@ export async function consumeLotsFIFO(client: LotClient, productId: string, qty:
   return consumed
 }
 
-/** 回补批次余量(撤回/退货)。优先回补最近批次(newest first),不超过各批 initialQty 上限。返回实际回补的批次明细。 */
+/** 回补批次余量(撤回/退货)。按 consumeLotsFIFO 的消耗顺序反着回补——保质期最晚的批次最可能是最后才被扣到的，优先还给它，不超过各批 initialQty 上限。返回实际回补的批次明细。 */
 export async function restoreLotsFIFO(client: LotClient, productId: string, qty: number): Promise<LotMovement[]> {
   if (!(qty > 0)) return []
   let remaining = qty
   const restored: LotMovement[] = []
   const lots = await client.lot.findMany({
     where: { productId, status: { in: ['AVAILABLE', 'DEPLETED'] } },
-    orderBy: { arrivedAt: 'desc' },
+    orderBy: [{ bestBefore: { sort: 'desc', nulls: 'first' } }, { arrivedAt: 'desc' }],
   })
   for (const lot of lots) {
     if (remaining <= 0) break
