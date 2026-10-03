@@ -240,21 +240,22 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     setPl(p => p ? { ...p, [key]: val } : p)
   }
 
-  async function handleSave() {
+  async function handleSave(overrides?: Partial<OdooPricelist>) {
     if (!pl) return
-    if (!pl.name.trim()) {
+    const next = overrides ? { ...pl, ...overrides } : pl
+    if (!next.name.trim()) {
       toast.error(isEn ? 'Pricelist name is required' : '价格表名称不能为空')
       return
     }
     try {
       if (id === 'new') {
-        const { id: _draftId, ...rest } = pl
+        const { id: _draftId, ...rest } = next
         const created = await apiPost<OdooPricelist>('/api/pricelists', { ...rest, updatedAt: new Date().toISOString() })
         toast.success(isEn ? 'Created' : '已创建')
         router.replace(`${prefix}/classic/operator/pricelists/${created.id}?new=1`)
         return
       }
-      const payload = { ...pl, updatedAt: new Date().toISOString() }
+      const payload = { ...next, updatedAt: new Date().toISOString() }
       const saved = await apiPut<OdooPricelist>(`/api/pricelists/${pl.id}`, payload)
       const updated = saved ?? pl
       setPl({ ...updated })
@@ -457,7 +458,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         {editMode ? (
           <>
             <button
-              onClick={handleSave}
+              onClick={() => handleSave()}
               className="h-8 px-4 text-sm font-medium text-white rounded"
               style={{ background: PURPLE }}
             >
@@ -514,7 +515,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                   <button onClick={() => { toast.info(isEn ? 'Export feature coming soon' : '导出功能即将推出'); setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     Export
                   </button>
-                  <button onClick={() => { if (confirm(isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)) { update('active', false); handleSave() } setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                  <button onClick={() => { if (confirm(isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)) { handleSave({ active: false }) } setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     Archive
                   </button>
                 </div>
