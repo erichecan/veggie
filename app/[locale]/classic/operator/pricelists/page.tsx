@@ -31,6 +31,8 @@ interface SavedListState {
   tab: 'active' | 'archived'
   groupBy: string
   page: number
+  sortKey: string
+  sortDir: 'asc' | 'desc'
 }
 
 function readSavedListState(): SavedListState | null {
@@ -62,6 +64,8 @@ export default function ClassicPricelistsPage() {
   // 20260924 用户反馈"archived 的价格表要单独归一个界面"。
   const [tab, setTab] = useState<'active' | 'archived'>(saved?.tab ?? 'active')
   const [groupBy, setGroupBy] = useState(saved?.groupBy ?? '')
+  const [sortKey, setSortKey] = useState(saved?.sortKey ?? '')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(saved?.sortDir ?? 'asc')
 
   function handleTabChange(next: 'active' | 'archived') {
     setTab(next)
@@ -112,9 +116,9 @@ export default function ClassicPricelistsPage() {
   // 搜索/筛选状态整体持久化，供从详情页返回时恢复（见 LIST_STATE_KEY 顶部注释）。
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page }
+    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir }
     try { sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(state)) } catch { /* 存储不可用时静默跳过,不影响筛选本身 */ }
-  }, [searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page])
+  }, [searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir])
 
   const filteredLists = useMemo(() => {
     let rows = filterByFacets(lists, facets, facetDefs)
@@ -147,16 +151,33 @@ export default function ClassicPricelistsPage() {
     return rows
   }, [lists, facets, facetDefs, tab, searchInput, columnFilters, selectableFilter])
 
+  // 点列头排序前，列表恒按 sequence（后端存的任意顺序）展示——名称一栏看着大小写
+  // 随机混排、Last Updated on 一栏也不按时间先后，就是因为从没真正排过序
+  // （20261002 客户反馈截图）。name 用 localeCompare + sensitivity:'base' 做大小写
+  // 不敏感比较，updatedAt 按真实时间戳比较，不是字符串字典序。
+  const sortedLists = useMemo(() => {
+    if (!sortKey) return filteredLists
+    const dir = sortDir === 'asc' ? 1 : -1
+    const rows = [...filteredLists]
+    rows.sort((a, b) => {
+      if (sortKey === 'name') return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) * dir
+      if (sortKey === 'updatedAt') return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * dir
+      return 0
+    })
+    return rows
+  }, [filteredLists, sortKey, sortDir])
+
   const pagedLists = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
-    return filteredLists.slice(start, start + PAGE_SIZE)
-  }, [filteredLists, page])
+    return sortedLists.slice(start, start + PAGE_SIZE)
+  }, [sortedLists, page])
 
   const columns: OdooColumn[] = [
     {
       key: 'name',
       label: 'Pricelist Name',
       filterType: 'text',
+      sortable: true,
       render: (v, row) => {
         const pl = row as unknown as OdooPricelist
         return (
@@ -170,6 +191,7 @@ export default function ClassicPricelistsPage() {
       key: 'updatedAt',
       label: 'Last Updated on',
       filterType: 'date-range',
+      sortable: true,
       render: (v) => (
         <span className="text-xs text-gray-500">
           {v ? formatDateTime(String(v)) : '—'}
@@ -269,6 +291,13 @@ export default function ClassicPricelistsPage() {
           columns={columns}
           rows={pagedLists as unknown as Record<string, unknown>[]}
           loading={loading}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={key => {
+            if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+            else { setSortKey(key); setSortDir('asc') }
+            setPage(1)
+          }}
           selected={selected}
           onSelectAll={checked => {
             if (checked) setSelected(new Set(pagedLists.map(pl => pl.id)))
