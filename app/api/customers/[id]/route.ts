@@ -15,6 +15,7 @@ const TRACKED_FIELDS = [
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
   'salesUserId',
   'settlementCycle',  // 对账单生成周期：NONE | WEEKLY | MONTHLY
+  'tags',
   // 经纬度（C7）：原先**只能由 Google geocode 写入**，而那需要客户出钱开通的
   // API key —— 实测生产与测试库都没配，于是 1411 个客户里 0 个有坐标，
   // 地图与路线整块是死的。放开手工填写，让地图不依赖外部服务也能用起来。
@@ -65,6 +66,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (typeof data.sageAccount === 'string') {
         data.sageAccount = data.sageAccount.trim() || null
       }
+      if (Array.isArray(data.tags)) {
+        data.tags = [...new Set(data.tags.map((t: unknown) => String(t).trim()).filter(Boolean))]
+      }
       // 旧值（带出 pricelists 关系，供 diffChanges 比对）
       const before = await prisma.customer.findUnique({
         where: { id },
@@ -95,6 +99,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         pricelists: pricelistIds?.length
           ? { create: pricelistIds.map((pricelistId: string, idx: number) => ({ pricelistId, sequence: idx + 1 })) }
           : undefined,
+      }
+      // Prisma 7：同一次 update 里一旦出现 pricelists 这类关系嵌套写法，整个 data 对象就按
+      // "Checked" 模式校验，裸的外键标量字段（salesUserId/defaultDriverSlotId）不再是合法参数，
+      // 必须换成关系对象写法，否则报 "Unknown argument" 500（2026-10-04 浏览器实测复现）
+      if ('salesUserId' in data) {
+        updateData.salesUser = data.salesUserId ? { connect: { id: data.salesUserId as string } } : { disconnect: true }
+        delete updateData.salesUserId
+      }
+      if ('defaultDriverSlotId' in data) {
+        updateData.defaultDriverSlot = data.defaultDriverSlotId ? { connect: { id: data.defaultDriverSlotId as string } } : { disconnect: true }
+        delete updateData.defaultDriverSlotId
       }
       // SSOT: address 由地址组件后端派生(前端不再权威拼接),保证与 street/.. 一致(P2)
       const b = before as unknown as Record<string, unknown>

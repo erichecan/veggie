@@ -148,6 +148,19 @@ export async function POST(req: Request) {
       // Sage Account 是会计对账字段，纯销售角色不可见/不可填——即使绕过前端直接打接口也挡住
       if (isSalesOnly(user)) delete data.sageAccount
       if (typeof data.sageAccount === 'string') data.sageAccount = data.sageAccount.trim() || null
+      if (Array.isArray(data.tags)) {
+        data.tags = [...new Set(data.tags.map((t: unknown) => String(t).trim()).filter(Boolean))]
+      }
+      // 同 PUT：一旦 data 里混入 pricelists 这类关系嵌套写法，裸的外键标量字段
+      // （salesUserId/defaultDriverSlotId）就不再是合法参数，换成关系对象写法
+      if ('salesUserId' in data) {
+        data.salesUser = data.salesUserId ? { connect: { id: data.salesUserId } } : undefined
+        delete data.salesUserId
+      }
+      if ('defaultDriverSlotId' in data) {
+        data.defaultDriverSlot = data.defaultDriverSlotId ? { connect: { id: data.defaultDriverSlotId } } : undefined
+        delete data.defaultDriverSlotId
+      }
       const customer = await prisma.customer.create({
         data: {
           ...data,
