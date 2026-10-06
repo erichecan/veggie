@@ -5,6 +5,8 @@ export type UserRole = 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER' | 'DRIVER
 
 export interface SystemUser {
   id: string
+  /** 用户友好的自增编号，仅展示/搜索/导出用（主键仍是 id） */
+  userNo: number
   email: string
   name: string
   role: UserRole

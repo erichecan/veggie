@@ -13,6 +13,9 @@ import { readFileSync } from 'node:fs'
 
 const putSrc = readFileSync('app/api/users/[id]/route.ts', 'utf-8')
 const postSrc = readFileSync('app/api/users/route.ts', 'utf-8')
+const bulkSrc = readFileSync('app/api/users/bulk/route.ts', 'utf-8')
+/** 建号的校验与落库(20261006 从 POST /api/users 抽出，单个建号与批量导入共用) */
+const createSrc = readFileSync('lib/user-account.ts', 'utf-8')
 const schema = readFileSync('prisma/schema.prisma', 'utf-8')
 
 /** prisma enum Role 里的全部角色 */
@@ -48,8 +51,15 @@ test('权限中心分配角色时，legacy 列只写 enum 里存在的角色', (
   )
 })
 
+test('建号的两个入口都走同一份共享逻辑，不许各自内联一份白名单/校验', () => {
+  // 白名单"两份各自漂移"出过事故(EXTERNAL_SALES 漏了两个月)——单个建号和批量导入
+  // 必须都调 createUserAccount，下面针对 lib/user-account.ts 的检查才同时罩住两条路。
+  assert.ok(/createUserAccount\(/.test(postSrc), 'POST /api/users 没走 createUserAccount')
+  assert.ok(/createUserAccount\(/.test(bulkSrc), 'POST /api/users/bulk 没走 createUserAccount')
+})
+
 test('创建与修改用户的角色白名单，都要覆盖 enum Role 的全部角色', () => {
-  for (const [label, src] of [['POST /api/users', postSrc], ['PUT /api/users/[id]', putSrc]] as const) {
+  for (const [label, src] of [['lib/user-account.ts (建号)', createSrc], ['PUT /api/users/[id]', putSrc]] as const) {
     const allowed = validRolesIn(src)
     const missing = ENUM_ROLES.filter((r) => !allowed.includes(r))
     assert.deepEqual(missing, [], `${label} 的白名单漏了这些角色，管理员设不了它们`)
@@ -74,8 +84,8 @@ test('改角色后必须 bump permVersion，逼对方重新登录', () => {
 
 test('建用户时必须建 UserRoleLink，否则新账号什么都点不动', () => {
   assert.ok(
-    /userRoleLink\.createMany/.test(postSrc),
-    'POST /api/users 建了账号却没建角色链接',
+    /userRoleLink\.createMany/.test(createSrc),
+    'lib/user-account.ts(单个建号与批量导入共用)建了账号却没建角色链接',
   )
 })
 

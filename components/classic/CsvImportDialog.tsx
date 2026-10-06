@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { routing } from '@/i18n/routing'
@@ -16,14 +16,22 @@ export interface CsvColumn {
   required?: boolean
 }
 
-interface ImportResult { created: number; skipped: string[] }
+interface ImportResult {
+  created: number
+  skipped: string[]
+  /** 单行失败(带原因)——端点返回了才显示 */
+  failed?: string[]
+  warnings?: string[]
+  /** 分批提交时某一批请求整体失败的说明 */
+  batchError?: string
+}
 
 /**
  * 通用 CSV 批量导入对话框:下载模板 → 选文件 → 预览 → 提交 bulk API。
  * 表头按 label 或 key 匹配(不区分大小写),多余列忽略。
  */
 export default function CsvImportDialog({
-  open, onClose, title, columns, templateName, endpoint, onDone,
+  open, onClose, title, columns, templateName, endpoint, onDone, note, batchSize, skippedLabel,
 }: {
   open: boolean
   onClose: () => void
@@ -32,6 +40,12 @@ export default function CsvImportDialog({
   templateName: string
   endpoint: string
   onDone?: () => void
+  /** 表头说明下方的额外提示(格式/规则说明) */
+  note?: ReactNode
+  /** 传了就按这个行数分批顺序提交(带 rowOffset)，文件行数不受单次请求上限约束 */
+  batchSize?: number
+  /** "跳过"那一行的文案；默认是"重名跳过" */
+  skippedLabel?: { zh: string; en: string }
 }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -39,6 +53,7 @@ export default function CsvImportDialog({
   const [rows, setRows] = useState<Record<string, string>[]>([])
   const [fileName, setFileName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<ImportResult | null>(null)
 
   function reset() {
@@ -91,10 +106,45 @@ export default function CsvImportDialog({
 
   async function submit() {
     setBusy(true)
+    setProgress(0)
     try {
-      const r = await apiPost<ImportResult>(endpoint, { rows })
-      setResult(r)
-      toast.success(isEn ? `Import finished: ${r.created} created, ${r.skipped.length} skipped` : `导入完成:成功 ${r.created} 条,跳过 ${r.skipped.length} 条`)
+      if (!batchSize) {
+        const r = await apiPost<ImportResult>(endpoint, { rows })
+        setResult(r)
+        toast.success(isEn ? `Import finished: ${r.created} created, ${r.skipped.length} skipped` : `导入完成:成功 ${r.created} 条,跳过 ${r.skipped.length} 条`)
+        onDone?.()
+        return
+      }
+      // 分批顺序提交：某一批整体失败就停下并说明哪些行已进去(逐行提交的端点重导是安全的)
+      let created = 0
+      const skipped: string[] = []
+      const failed: string[] = []
+      const warnings: string[] = []
+      let batchError: string | undefined
+      for (let start = 0; start < rows.length; start += batchSize) {
+        const end = Math.min(start + batchSize, rows.length)
+        try {
+          const r = await apiPost<ImportResult>(endpoint, { rows: rows.slice(start, end), rowOffset: start })
+          created += r.created
+          skipped.push(...r.skipped)
+          failed.push(...(r.failed ?? []))
+          warnings.push(...(r.warnings ?? []))
+        } catch (e) {
+          const reason = e instanceof Error ? e.message : (isEn ? 'request failed' : '请求失败')
+          batchError = isEn
+            ? `Rows ${start + 1}–${end} failed (${reason}); rows 1–${start} were imported, rows after ${end} were not submitted.`
+            : `第 ${start + 1}–${end} 行这一批失败(${reason});第 1–${start} 行已导入,第 ${end} 行之后未提交。`
+          break
+        }
+        setProgress(end)
+      }
+      setResult({ created, skipped, failed, warnings, batchError })
+      const summary = isEn
+        ? `${created} created, ${skipped.length} skipped, ${failed.length} failed`
+        : `成功 ${created} 条,跳过 ${skipped.length} 条,失败 ${failed.length} 条`
+      if (batchError) toast.error(isEn ? `Import stopped: ${summary}` : `导入中断:${summary}`)
+      else if (failed.length > 0) toast.warning(isEn ? `Import finished with errors: ${summary}` : `导入完成(有失败行):${summary}`)
+      else toast.success(isEn ? `Import finished: ${summary}` : `导入完成:${summary}`)
       onDone?.()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Import failed' : '导入失败'))
@@ -104,7 +154,7 @@ export default function CsvImportDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose() } }}>
+    <Dialog open={open} onOpenChange={o => { if (!o && !busy) { reset(); onClose() } }}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -124,6 +174,10 @@ export default function CsvImportDialog({
               {isEn ? '⬇ Download template' : '⬇ 下载模板'}
             </button>
           </div>
+
+          {note && (
+            <div className="text-xs text-gray-500 bg-purple-50/50 border border-purple-100 rounded-lg px-3 py-2">{note}</div>
+          )}
 
           <input
             ref={fileRef}
@@ -169,19 +223,46 @@ export default function CsvImportDialog({
               {result.skipped.length > 0 && (
                 <span className="block mt-1 text-amber-700">
                   {isEn
-                    ? <>⚠ Skipped {result.skipped.length} duplicates: {result.skipped.slice(0, 10).join(', ')}{result.skipped.length > 10 ? '…' : ''}</>
-                    : <>⚠ 重名跳过 {result.skipped.length} 条:{result.skipped.slice(0, 10).join('、')}{result.skipped.length > 10 ? '…' : ''}</>}
+                    ? <>⚠ {skippedLabel?.en ?? 'Skipped duplicates'} ({result.skipped.length}): {result.skipped.slice(0, 10).join(', ')}{result.skipped.length > 10 ? '…' : ''}</>
+                    : <>⚠ {skippedLabel?.zh ?? '重名跳过'} {result.skipped.length} 条:{result.skipped.slice(0, 10).join('、')}{result.skipped.length > 10 ? '…' : ''}</>}
                 </span>
+              )}
+              {result.batchError && (
+                <div className="mt-2 border border-red-200 bg-red-50 rounded px-2 py-1.5 text-red-700">⛔ {result.batchError}</div>
+              )}
+              {result.failed && result.failed.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-red-700 mb-1">
+                    {isEn
+                      ? `⛔ ${result.failed.length} rows failed (not imported; all other rows were imported):`
+                      : `⛔ ${result.failed.length} 行导入失败(这些行没进去,其它行已正常导入):`}
+                  </div>
+                  <ul className="max-h-40 overflow-y-auto bg-white border border-red-200 rounded px-2 py-1.5 space-y-0.5 text-red-700">
+                    {result.failed.map((f, i) => <li key={i}>· {f}</li>)}
+                  </ul>
+                </div>
+              )}
+              {result.warnings && result.warnings.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-amber-700 mb-1">{isEn ? `⚠ ${result.warnings.length} warnings:` : `⚠ ${result.warnings.length} 条提示:`}</div>
+                  <ul className="max-h-32 overflow-y-auto bg-white border border-amber-200 rounded px-2 py-1.5 space-y-0.5 text-amber-800">
+                    {result.warnings.map((w, i) => <li key={i}>· {w}</li>)}
+                  </ul>
+                </div>
               )}
             </div>
           )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose() }}>{result ? (isEn ? 'Close' : '关闭') : (isEn ? 'Cancel' : '取消')}</Button>
+          <Button variant="outline" disabled={busy} onClick={() => { reset(); onClose() }}>{result ? (isEn ? 'Close' : '关闭') : (isEn ? 'Cancel' : '取消')}</Button>
           {!result && (
             <Button disabled={busy || rows.length === 0} onClick={submit}>
-              {busy ? (isEn ? 'Importing…' : '导入中…') : (isEn ? `Import ${rows.length} rows` : `导入 ${rows.length} 行`)}
+              {busy
+                ? (batchSize
+                    ? (isEn ? `Importing… ${progress}/${rows.length}` : `导入中… ${progress}/${rows.length}`)
+                    : (isEn ? 'Importing…' : '导入中…'))
+                : (isEn ? `Import ${rows.length} rows` : `导入 ${rows.length} 行`)}
             </Button>
           )}
         </DialogFooter>

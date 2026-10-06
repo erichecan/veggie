@@ -14,6 +14,8 @@ export interface ClientFacetDef<T> {
   labelEn?: string
   /** 从一行数据里取出该维度所有可被匹配的文本 */
   values: (row: T) => (string | null | undefined)[]
+  /** 整值相等才算命中(默认是包含匹配)。编号类维度要用：搜 "1" 不该把 10、11、12 也带出来 */
+  exact?: boolean
 }
 
 /** 把 ClientFacetDef 转成 useFacets/OdooControlPanel 需要的 {key,label}，按 isEn 选中英文名。 */
@@ -37,8 +39,9 @@ export function filterByFacets<T>(rows: T[], facets: Facet[], defs: ClientFacetD
 
   return rows.filter(row =>
     [...groups].every(([key, needles]) => {
-      const haystack = defByKey.get(key)!.values(row).map(v => (v ?? '').toLowerCase())
-      return needles.some(n => haystack.some(h => h.includes(n)))
+      const def = defByKey.get(key)!
+      const haystack = def.values(row).map(v => (v ?? '').toLowerCase())
+      return needles.some(n => haystack.some(h => (def.exact ? h === n : h.includes(n))))
     }),
   )
 }
