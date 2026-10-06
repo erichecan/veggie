@@ -4,7 +4,11 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { apiPost, apiPut } from '@/lib/api'
 import { assessNewPassword, PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
+import { getSession } from '@/lib/session'
 import type { SystemUser, UserRole } from '@/lib/types'
+import type { ExportColumn } from '@/lib/export/types'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import BulkImportDialog, { type BulkImportColumn } from '@/components/shared/BulkImportDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -81,11 +85,13 @@ function userInitials(name: string): string {
   return name.trim().slice(0, 2).toUpperCase() || '?'
 }
 
-function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onToggle, onPerms, onApprove, onReject }: {
+function UserRow({ u, isEn, roleLabel, canManagePerms, selected, onSelect, onEdit, onChangePwd, onToggle, onPerms, onApprove, onReject }: {
   u: SystemUser
   isEn: boolean
   roleLabel: Record<UserRole, string>
   canManagePerms: boolean
+  selected: boolean
+  onSelect: (checked: boolean) => void
   onEdit: () => void
   onChangePwd: () => void
   onToggle: () => void
@@ -100,11 +106,22 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, onEdit, onChangePwd, onTo
   const pending = u.pendingApproval === true
   return (
     <tr
-      style={{ background: pending ? '#fffbeb' : hover ? '#f3eff5' : undefined }}
+      style={{ background: selected ? '#ede4f0' : pending ? '#fffbeb' : hover ? '#f3eff5' : undefined }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       className={!u.isActive && !pending ? 'opacity-50' : ''}
     >
+      <td className="pl-4 pr-1 py-3 w-8">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={e => onSelect(e.target.checked)}
+          aria-label={isEn ? `Select ${u.name}` : `选择 ${u.name}`}
+          className="cursor-pointer"
+          style={{ accentColor: PURPLE }}
+        />
+      </td>
+      <td className="px-2 py-3 text-xs text-gray-400 tabular-nums">{u.userNo}</td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${ROLE_COLOR[u.role]}`}>
@@ -190,6 +207,8 @@ const FACET_DEFS: ClientFacetDef<SystemUser>[] = [
   { key: 'name',  label: '姓名', labelEn: 'Name',  values: r => [r.name] },
   { key: 'email', label: '邮箱', labelEn: 'Email', values: r => [r.email] },
   { key: 'role',  label: '角色', labelEn: 'Role',  values: r => (r.roles && r.roles.length > 0 ? r.roles : [r.role]) },
+  // 用户编号(20261006)：整值匹配，搜 1 不会带出 10、11
+  { key: 'userNo', label: '编号', labelEn: 'No.', values: r => [String(r.userNo)], exact: true },
 ]
 
 export default function UsersTab({
@@ -359,6 +378,107 @@ export default function UsersTab({
     .slice()
     .sort((a, b) => Number(b.pendingApproval === true) - Number(a.pendingApproval === true))
 
+  // ── 勾选 + 批量操作(20261006) ────────────────────────────────────────────
+  // 批量操作只作用于"勾选了且当前看得见"的行：筛选条件变了以后被筛掉的行即使还勾着也不动，
+  // 免得对着屏幕上看不到的账号做停用。
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const selectedUsers = filtered.filter(u => selected.has(u.id))
+  const allVisibleSelected = filtered.length > 0 && filtered.every(u => selected.has(u.id))
+  const someVisibleSelected = !allVisibleSelected && filtered.some(u => selected.has(u.id))
+  function toggleOne(id: string, checked: boolean) {
+    setSelected(prev => { const next = new Set(prev); if (checked) next.add(id); else next.delete(id); return next })
+  }
+  function toggleAllVisible(checked: boolean) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      for (const u of filtered) { if (checked) next.add(u.id); else next.delete(u.id) }
+      return next
+    })
+  }
+
+  const [bulkRunning, setBulkRunning] = useState(false)
+  async function bulkSetActive(active: boolean) {
+    if (bulkRunning || selectedUsers.length === 0) return
+    const myId = getSession()?.userId
+    // 待审核的餐馆账号要走「批准」，不能被批量启用绕过审核；停用不能停自己(会把自己锁在外面)
+    const targets = selectedUsers.filter(u =>
+      active ? (!u.isActive && u.pendingApproval !== true) : (u.isActive && u.id !== myId))
+    const skippedPending = active ? selectedUsers.filter(u => u.pendingApproval === true).length : 0
+    const skippedSelf = !active && selectedUsers.some(u => u.id === myId && u.isActive)
+    if (targets.length === 0) {
+      toast.info(isEn ? 'Nothing to change for the selected users' : '勾选的账号都不需要变更')
+      return
+    }
+    if (!active && !window.confirm(isEn
+      ? `Deactivate ${targets.length} user(s)? They will be signed out immediately and cannot log in until reactivated.`
+      : `确定停用 ${targets.length} 个账号？停用后立即下线，重新启用前无法登录。`)) return
+    setBulkRunning(true)
+    let ok = 0
+    const errors: string[] = []
+    for (const u of targets) {
+      try {
+        await apiPut(`/api/users/${u.id}`, { isActive: active })
+        ok++
+      } catch (e) {
+        errors.push(`${u.name}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    setBulkRunning(false)
+    const notes = [
+      skippedPending > 0 ? (isEn ? `${skippedPending} pending account(s) skipped — use Approve` : `${skippedPending} 个待审核账号已跳过（请用「批准」）`) : '',
+      skippedSelf ? (isEn ? 'your own account was skipped' : '已跳过你自己的账号') : '',
+    ].filter(Boolean).join(isEn ? '; ' : '；')
+    const verb = active ? (isEn ? 'activated' : '已启用') : (isEn ? 'deactivated' : '已停用')
+    if (errors.length > 0) {
+      toast.error(isEn ? `${ok} ${verb}, ${errors.length} failed: ${errors.slice(0, 3).join('; ')}` : `${verb} ${ok} 个，失败 ${errors.length} 个：${errors.slice(0, 3).join('；')}`)
+    } else {
+      toast.success(isEn ? `${ok} user(s) ${verb}${notes ? ` (${notes})` : ''}` : `${verb} ${ok} 个账号${notes ? `（${notes}）` : ''}`)
+    }
+    setSelected(new Set())
+    onReload()
+  }
+
+  // ── 导出(浏览器本地生成，导出的就是屏幕上筛出来的行；勾选了就只导出勾选的) ──
+  const usersById = new Map(users.map(u => [u.id, u]))
+  const statusText = (u: SystemUser) => u.pendingApproval
+    ? (isEn ? 'Pending review' : '待审核')
+    : u.isActive ? (isEn ? 'Active' : '启用') : (isEn ? 'Inactive' : '停用')
+  const rolesOf = (u: SystemUser) => (u.roles && u.roles.length > 0 ? u.roles : [u.role]) as UserRole[]
+  // 角色导出两列：角色代码(可直接回填导入) + 显示名(给人看)。导入只认代码，见 /api/users/bulk 注释。
+  const exportColumns: ExportColumn<SystemUser>[] = [
+    { key: 'userNo', header: '编号', headerEn: 'User No.', get: u => u.userNo },
+    { key: 'name', header: '姓名', headerEn: 'Name', get: u => u.name },
+    { key: 'email', header: '邮箱', headerEn: 'Email', get: u => u.email },
+    { key: 'roles', header: '角色代码', headerEn: 'Roles', get: u => rolesOf(u).join('; ') },
+    { key: 'roleNames', header: '角色', headerEn: 'Role Names', get: u => rolesOf(u).map(r => ROLE_LABEL[r] ?? r).join('; ') },
+    { key: 'managerEmail', header: '上级邮箱', headerEn: 'Manager Email', get: u => (u.managerId ? usersById.get(u.managerId)?.email ?? '' : '') },
+    { key: 'manager', header: '上级', headerEn: 'Manager', get: u => u.manager?.name ?? '' },
+    { key: 'status', header: '状态', headerEn: 'Status', get: statusText },
+    { key: 'createdAt', header: '创建时间', headerEn: 'Created', get: u => new Date(u.createdAt).toLocaleDateString('en-GB') },
+  ]
+  const exportAction = useCsvExport<SystemUser>({
+    columns: exportColumns,
+    rows: () => (selectedUsers.length > 0 ? selectedUsers : filtered),
+    filenameZh: isRestaurantGroup ? '餐馆账号' : '员工账号',
+    filenameEn: isRestaurantGroup ? 'restaurant-accounts' : 'staff-accounts',
+  })
+  const exportLabel = selectedUsers.length > 0
+    ? (isEn ? `Export (${selectedUsers.length} selected)` : `导出(已选 ${selectedUsers.length})`)
+    : exportAction.label
+
+  // ── 导入(仅员工)：只新建账号，已存在的邮箱跳过；初始密码首次登录必须修改 ──
+  const [importOpen, setImportOpen] = useState(false)
+  // 与服务端 /api/users/bulk 接受的范围一致：除 RESTAURANT 外的全部角色代码
+  const staffRoleCodes = (Object.keys(ROLE_LABEL_ZH) as UserRole[]).filter(r => r !== 'RESTAURANT')
+  // 表头用英文(模板固定)，中文表头作别名也认
+  const importColumns: BulkImportColumn[] = [
+    { label: 'Name', aliases: ['姓名'], key: 'name', required: true },
+    { label: 'Email', aliases: ['邮箱'], key: 'email', required: true },
+    { label: 'Roles', aliases: ['角色代码', '角色'], key: 'roles', required: true },
+    { label: 'Initial Password', aliases: ['初始密码', 'Password', '密码'], key: 'password', required: true },
+    { label: 'Manager Email', aliases: ['上级邮箱'], key: 'managerEmail' },
+  ]
+
   return (
     <div>
       <OdooControlPanel
@@ -369,8 +489,16 @@ export default function UsersTab({
           : ['系统', isRestaurantGroup ? '餐馆账号' : '内部员工']}
         permanentActions={[
           { label: isRestaurantGroup ? (isEn ? 'New Restaurant' : '新建餐馆账号') : (isEn ? 'New Staff' : '新建员工'), onClick: openAdd },
+          // 导入只开放给员工：餐馆账号要跟客户档案绑定，走注册审核流程
+          ...(!isRestaurantGroup ? [{ label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) }] : []),
+          { label: exportLabel, onClick: exportAction.onClick, disabled: exportAction.disabled },
           { label: isEn ? 'Refresh' : '刷新', onClick: onReload },
         ]}
+        actions={selectedUsers.length > 0 ? [
+          { label: exportLabel, onClick: exportAction.onClick, disabled: bulkRunning || exportAction.disabled },
+          { label: isEn ? 'Activate' : '启用', onClick: () => bulkSetActive(true), disabled: bulkRunning },
+          { label: isEn ? 'Deactivate' : '停用', onClick: () => bulkSetActive(false), disabled: bulkRunning, style: 'red' as const },
+        ] : []}
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => {}}
@@ -389,6 +517,18 @@ export default function UsersTab({
             <table className="w-full text-sm">
               <thead style={{ background: '#f3eff5', borderBottom: '1px solid #ddd' }}>
                 <tr>
+                  <th className="pl-4 pr-1 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={el => { if (el) el.indeterminate = someVisibleSelected }}
+                      onChange={e => toggleAllVisible(e.target.checked)}
+                      aria-label={isEn ? 'Select all' : '全选'}
+                      className="cursor-pointer"
+                      style={{ accentColor: PURPLE }}
+                    />
+                  </th>
+                  <th className="text-left px-2 py-3 font-medium text-gray-600 w-14">{isEn ? 'No.' : '编号'}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'User' : '用户'}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Email' : '邮箱'}</th>
                   <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Roles' : '角色'}</th>
@@ -401,7 +541,7 @@ export default function UsersTab({
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-16 text-gray-400 text-sm">
+                    <td colSpan={9} className="text-center py-16 text-gray-400 text-sm">
                       {isEn ? 'No users' : isRestaurantGroup ? '暂无餐馆账号' : '暂无员工账号'}
                     </td>
                   </tr>
@@ -413,6 +553,8 @@ export default function UsersTab({
                     isEn={isEn}
                     roleLabel={ROLE_LABEL}
                     canManagePerms={canSeeRbac}
+                    selected={selected.has(u.id)}
+                    onSelect={checked => toggleOne(u.id, checked)}
                     onEdit={() => openEdit(u)}
                     onChangePwd={() => openChangePwd(u)}
                     onToggle={() => handleToggleActive(u)}
@@ -426,6 +568,31 @@ export default function UsersTab({
           </div>
         )}
       </div>
+
+      {exportAction.dialog}
+
+      {/* 模板不带示例行：示例里的邮箱 + 已知密码一旦被原样导入，就是一个真能登录的账号 */}
+      {!isRestaurantGroup && (
+        <BulkImportDialog
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onDone={onReload}
+          templateFileName={isEn ? 'staff-import-template' : '员工导入模板'}
+          columns={importColumns}
+          exampleRows={[]}
+          endpoint="/api/users/bulk"
+          batchSize={50}
+          title={{ zh: '导入员工账号', en: 'Import Staff Accounts' }}
+          hint={{
+            zh: '先下载模板，按表头填写后上传。只新建账号，邮箱已存在的行跳过。',
+            en: 'Download the template, fill it in and upload. Only new accounts are created; rows whose email already exists are skipped.',
+          }}
+          extraHint={{
+            en: <>Only <b>creates new accounts</b> — rows whose email already exists are skipped (listed under “name collisions” in the result) and existing accounts are never changed — use “Permissions” or the bulk actions for that. <b>Roles</b> must be the exact upper-case role codes (not the display names — e.g. “Sales” is OPERATOR), several separated by <code>;</code>:{staffRoleCodes.map(r => `${r} (${ROLE_LABEL_EN[r]})`).join(', ')}. The initial password must meet the password policy (at least {PASSWORD_MIN_LENGTH} characters, not a common password); imported users <b>must change it at first login</b>. Manager Email is optional.</>,
+            zh: <>只<b>新建账号</b>——邮箱已存在的行直接跳过，不会改动已有账号（结果里列在「重名跳过」中；改角色/停用请用行上的「权限」或批量操作）。<b>角色代码</b>填大写英文代码（区分大小写，不要填中文名或英文显示名——英文界面的 “Sales” 其实是 OPERATOR），多个用 <code>;</code> 分隔：{staffRoleCodes.map(r => `${r}（${ROLE_LABEL_ZH[r]}）`).join('、')}。初始密码须符合密码规则（至少 {PASSWORD_MIN_LENGTH} 位、不能是常见弱口令），导入的账号<b>首次登录必须修改密码</b>。上级邮箱可不填。</>,
+          }}
+        />
+      )}
 
       <UserPermissionDialog
         open={permOpen}

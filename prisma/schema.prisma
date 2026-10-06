@@ -164,6 +164,8 @@ enum JournalEntryStatus {
 
 model User {
   id           String    @id @default(cuid())
+  /// 用户友好的自增编号（20261006），仅展示/搜索/导出用；cuid id 仍是主键和所有外键目标
+  userNo       Int       @unique @default(autoincrement())
   email        String    @unique
   passwordHash String
   /// 主角色（兼容旧字段；权限判断优先看 roles[]，roles[] 为空时回退此字段）

@@ -130,7 +130,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         updateData.role = role
         updateData.roles = [role]
       }
+      const deactivating = isActive !== undefined && !isActive
+      if (deactivating && id === me.userId) {
+        return NextResponse.json({ error: '不能停用自己的账号' }, { status: 400 })
+      }
       if (isActive !== undefined) updateData.isActive = Boolean(isActive)
+      // ⛔ 停用必须同时作废对方手里的 token：isActive 只在登录时校验一次，withAuth 不查它，
+      // 只改 isActive 的话被停用的人还能拿旧 token 用满 7 天(DELETE 那边注释写过同一件事)。
+      // 列表页的「停用」按钮和批量停用走的都是这里(PUT)，不是 DELETE——之前漏了这一下。
+      if (deactivating) updateData.permVersion = { increment: 1 }
 
       // 直属上级 —— DataScope.TEAM 靠它算下属（见 lib/row-scope.ts）
       if (managerId !== undefined) {
@@ -184,7 +192,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // permVersion 已经 +1，但 withAuth 那侧有 30 秒缓存 —— 不清掉的话
       // 被改密码的人还能拿旧 token 再用半分钟。
-      if (newPassword !== undefined) forgetPermVersions([id])
+      if (newPassword !== undefined || deactivating) forgetPermVersions([id])
 
       const changes = diffChanges(
         before as unknown as Record<string, unknown>,

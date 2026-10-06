@@ -103,15 +103,34 @@ test('管理员替别人设密码，走的是同一个 assessNewPassword', () =>
 })
 
 test('建号时的初始密码也过同一个校验', () => {
-  const post = readFileSync('app/api/users/route.ts', 'utf-8')
+  // 建号逻辑 20261006 抽到 lib/user-account.ts，单个建号与批量导入共用；
+  // 两个入口都必须走它(rbac-user-sync.test.ts 另有断言)，校验在这一处。
+  const create = readFileSync('lib/user-account.ts', 'utf-8')
   assert.ok(
-    /assessNewPassword\(/.test(post),
+    /assessNewPassword\(/.test(create),
     '建号没做强度校验 —— 生产上那 42 个 test123 就是从这条路进来的',
+  )
+  // createUserAccount 内部先调 validateNewUser；批量导入直接调 validateNewUser
+  assert.ok(/=\s*validateNewUser\(/.test(create), 'createUserAccount 没先过 validateNewUser')
+  assert.ok(
+    /createUserAccount\(/.test(readFileSync('app/api/users/route.ts', 'utf-8')),
+    'app/api/users/route.ts 绕过了共享建号逻辑，密码校验罩不住它',
+  )
+  assert.ok(
+    /validateNewUser\(/.test(readFileSync('app/api/users/bulk/route.ts', 'utf-8')),
+    'app/api/users/bulk/route.ts 绕过了共享建号校验，密码校验罩不住它',
   )
 })
 
+test('停用账号必须同时作废对方的 token', () => {
+  // isActive 只在登录时校验一次；列表页「停用」与批量停用走的是 PUT，不是 DELETE
+  const put = readFileSync('app/api/users/[id]/route.ts', 'utf-8')
+  assert.ok(/if \(deactivating\) updateData\.permVersion = \{ increment: 1 \}/.test(put), 'PUT 停用没有 bump permVersion，旧 token 还能用 7 天')
+  assert.ok(/不能停用自己的账号/.test(put), 'PUT 没挡住停用自己')
+})
+
 test('不再有 length >= 6 这种和策略对不上的旧口径', () => {
-  for (const path of ['app/api/users/[id]/route.ts', 'app/api/users/route.ts']) {
+  for (const path of ['app/api/users/[id]/route.ts', 'app/api/users/route.ts', 'lib/user-account.ts']) {
     const src = readFileSync(path, 'utf-8')
     assert.ok(
       !/密码至少 6 位/.test(src),
