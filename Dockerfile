@@ -20,6 +20,11 @@ ENV NEXT_PUBLIC_DRIVER_APP_ENABLED=true
 # 重新生成 Prisma Client（output 指向 lib/generated/prisma，需要在此阶段执行）
 RUN npx prisma generate
 RUN npm run build
+# 把 standalone 产物里的路由/业务代码编译成 V8 字节码，源码不再以明文躺在镜像里——
+# 防的是"有服务器权限的人把镜像/产物整个拷走翻源码"，不是防 root 级别的攻击者。
+# 必须在这一层跑：编译用的 V8 版本要跟下面 runner 阶段完全一致（同一个 node:20-alpine
+# 基础镜像），脚本自己也会在 Node 大版本不对时直接报错退出，见 scripts/bytenode-compile.mjs。
+RUN npm run build:bytenode
 
 # ── 迁移 / 运维镜像 ──────────────────────────────────────────────────────────
 # 为什么单独一层：运行时镜像是 Next standalone 产物，**不含 prisma CLI**

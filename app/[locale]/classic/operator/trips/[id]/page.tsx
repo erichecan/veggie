@@ -144,7 +144,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   async function markRestDelivered(restId: string) {
-    if (!trip) return
+    if (!trip || saving) return
     const r = trip.restaurants.find(r => r.restaurantId === restId)
     if (!r) return
     const payStr = stopPayments[restId] ?? ''
@@ -154,8 +154,18 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     const ur = updated.restaurants.find(r => r.restaurantId === restId)
     if (ur) { ur.delivered = true; ur.payment = payNum }
     updated.totalPayment = updated.restaurants.reduce((s, r) => s + (r.payment ?? 0), 0)
-    await saveStop(updated)
-    toast.success(isEn ? `${r.restaurantName} marked as delivered` : `${r.restaurantName} 已标记送达`)
+    // 按钮早就绑了 disabled={saving}（标记"正在保存不可再点"），但这个函数从没调用过
+    // setSaving，按钮从头到尾不会变灰；PUT 失败时也没有 try/catch，异常直接从 onClick
+    // 飞出去，操作员看到的是点了没反应——跟 by-sale-unit 页 editable 列同一类坑的变体。
+    setSaving(true)
+    try {
+      await saveStop(updated)
+      toast.success(isEn ? `${r.restaurantName} marked as delivered` : `${r.restaurantName} 已标记送达`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to mark as delivered' : '标记送达失败'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   function openExceptionModal(restId: string) {

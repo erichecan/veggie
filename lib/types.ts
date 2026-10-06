@@ -226,6 +226,7 @@ export interface Product {
 
 // ─── 商品分类 ─────────────────────────────────────────────────────────────────
 export interface ProductCategory {
+  parentId?: string | null
   id: string
   name: string
   nameZh?: string
@@ -269,6 +270,9 @@ export interface CustomerPricelistLink {
 
 // ─── 客户 ───────────────────────────────────────────────────────────────────
 export interface Customer {
+  customerNo?: number
+  individualOrCompany?: 'individual' | 'company'
+  mobile?: string
   id: string
   name: string
   address: string
@@ -306,6 +310,8 @@ export interface Customer {
   salesUserId?: string | null
   /** 关联业务员姓名（只读展示，由 API 从 salesUserId 关联展平） */
   salesman?: string
+  /** 自由标签（Odoo res.partner.category 简化版） */
+  tags?: string[]
   /** 这个 Partner 是否是客户（客户/供应商共用同一张表，Odoo is_customer 语义） */
   isCustomer?: boolean
   /** 这个 Partner 是否是供应商（Odoo is_vendor 语义） */

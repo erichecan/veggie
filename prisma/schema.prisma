@@ -232,6 +232,9 @@ model User {
 }
 
 model ProductCategory {
+  parentId       String?
+  parent         ProductCategory? @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children       ProductCategory[] @relation("CategoryTree")
   id             String         @id @default(cuid())
   name           String
   nameZh         String?
@@ -246,6 +249,7 @@ model ProductCategory {
 
   @@index([groupId])
   @@index([requiredZoneId])
+  @@index([parentId])
 }
 
 enum ZoneKey {
@@ -472,6 +476,9 @@ model ProductSaleUom {
 }
 
 model Customer {
+  customerNo Int @unique @default(autoincrement())
+  individualOrCompany String @default("company")
+  mobile String @default("")
   id                  String                  @id @default(cuid())
   name                String
   /// 兼容旧数据：合并后的整体地址（仍由后端自动维护，前端不直接编辑）
@@ -500,6 +507,10 @@ model Customer {
   /// 最后修改人（自由文本，同 Product.updatedBy 的模式，不关联 User 表）
   updatedBy           String?
   externalId          String?                 @unique
+  /// Sage（会计系统）对账用的客户编号，财务要求全局唯一；对纯 SALES 角色隐藏，见 customers/[id]/page.tsx
+  sageAccount         String?                 @unique
+  /// 自由标签（Odoo res.partner.category 的简化版，不建独立维护表，详情页就是逗号分隔文本框）
+  tags                String[]                @default([])
   city                String?
   notes               String?
   /// 客户级外部备注（客户可见，打印在报价单/送货单上，如收货注意事项、结算方式）；与内部 notes 区分

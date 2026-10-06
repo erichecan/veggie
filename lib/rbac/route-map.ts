@@ -297,12 +297,19 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/product-templates/*', methods: ['DELETE'], permission: 'master.product_template.delete' },
   { pattern: '/api/product-categories/**', methods: R, permission: 'master.product_category.read' },
   { pattern: '/api/product-categories', methods: ['POST'], permission: 'master.product_category.create' },
+  // 批量导入(20261003)既能新建也能按 ID 更新已有分类，权限点用 update(覆盖更强的那个动作)，
+  // 与 /api/products/bulk 用 master.product.update 同一个道理——用 create 的话，只有建分类权限
+  // 没有改分类权限的角色能靠批量导入绕过 update 权限点改掉已有分类
+  { pattern: '/api/product-categories/bulk', methods: ['POST'], permission: 'master.product_category.update' },
   { pattern: '/api/product-categories/*', methods: ['PUT'], permission: 'master.product_category.update' },
   { pattern: '/api/product-categories/*', methods: ['DELETE'], permission: 'master.product_category.delete' },
 
   { pattern: '/api/pricelists/print', permission: 'master.pricelist.print' },
   { pattern: '/api/pricelists', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/pricelists', methods: ['POST'], permission: 'master.pricelist.create' },
+  // 批量导入(20261003)既能新建也能按 ID/名称更新已有价格表及其规则，权限点用 update
+  // (覆盖更强的那个动作，与 products/bulk、product-categories/bulk 同一个道理)
+  { pattern: '/api/pricelists/bulk', methods: ['POST'], permission: 'master.pricelist.update' },
   { pattern: '/api/pricelists/*/reference', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/pricelists/*', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/pricelists/*', methods: ['PUT'], permission: 'master.pricelist.update' },
@@ -319,6 +326,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/suppliers', methods: ['POST'], permission: 'master.supplier.create' },
   { pattern: '/api/uoms/**', methods: R, permission: 'master.uom.read' },
   { pattern: '/api/uoms', methods: ['POST'], permission: 'master.uom.create' },
+  // 批量导入(20261003)复用「新建单位」权限点，不单开——与 customers/bulk 的既定原则一致
+  { pattern: '/api/uoms/bulk', methods: ['POST'], permission: 'master.uom.create' },
   { pattern: '/api/uoms/*', methods: ['PUT', 'DELETE'], permission: 'master.uom.update' },
   { pattern: '/api/uom-categories/**', methods: R, permission: 'master.uom_category.read' },
   { pattern: '/api/uom-categories', methods: ['POST'], permission: 'master.uom_category.create' },

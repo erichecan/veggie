@@ -12,6 +12,7 @@ import { attachWaveDisplay } from '@/lib/wave-assign'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import { ORDER_STATUSES, buildOrdersWhere } from '@/lib/orders-query'
 import { checkCustomerCredit } from '@/lib/credit-check'
+import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 
 // 只读展示兼容层：salesUser 关联展平成 salesman 字符串,方便旧的只读页面(报表/打印/列表)
 // 不用改动就能继续显示业务员姓名。写入路径一律走 salesUserId,不读这个字段。
@@ -375,9 +376,9 @@ export async function POST(req: Request) {
         } catch (e: unknown) {
           lastErr = e
           // P2002: 唯一约束冲突 —— 多半是 code 序号撞车，重算重试
-          const code = (e as { code?: string }).code
-          const meta = (e as { meta?: { target?: string[] } }).meta
-          if (code === 'P2002' && meta?.target?.includes('code')) {
+          // 20261003 修复：本项目走 driver adapter，P2002 没有经典 meta.target，
+          // 这里原来的判断恒为 false，从未真正触发过重试，撞车时直接把原始 500 抛给调用方
+          if (isUniqueConstraintOn(e, 'code')) {
             continue
           }
           throw e

@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
-import { withAuth, tryAuth } from '@/lib/auth'
+import { withAuth, tryAuth, isSalesOnly } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { salesRowScope, isRowVisible } from '@/lib/row-scope'
+import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 
 const TRACKED_FIELDS = [
+  'individualOrCompany', 'mobile',
   'name', 'address', 'street', 'street2', 'city', 'state', 'zip', 'country',
   'phone', 'email', 'vatNumber', 'paymentTerm', 'creditLimit',
   'commissionRate', 'commissionFixed', 'pricelistIds', 'priceType',
@@ -14,10 +16,12 @@ const TRACKED_FIELDS = [
   'defaultDriverSlotId',  // P1-4: 客户默认司机绑定
   'salesUserId',
   'settlementCycle',  // 对账单生成周期：NONE | WEEKLY | MONTHLY
+  'tags',
   // 经纬度（C7）：原先**只能由 Google geocode 写入**，而那需要客户出钱开通的
   // API key —— 实测生产与测试库都没配，于是 1411 个客户里 0 个有坐标，
   // 地图与路线整块是死的。放开手工填写，让地图不依赖外部服务也能用起来。
   'latitude', 'longitude',
+  'sageAccount',  // 会计 Sage 对账编号，纯 SALES 角色不可见/不可改，见 lib/auth.ts isSalesOnly
 ]
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -31,10 +35,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // 行级隔离：列表挡住了但详情没挡的话，拿到 id 依然能逐条读走
     // （id 在打印单、CSV 导出、订单详情里到处都是）。回 404 而不是 403 ——
     // 403 等于告诉对方"这个客户存在，只是不给你看"。
-    if (!isRowVisible(customer, salesRowScope(await tryAuth(_req)))) {
+    const caller = await tryAuth(_req)
+    if (!isRowVisible(customer, salesRowScope(caller))) {
       return NextResponse.json({ error: '客户不存在' }, { status: 404 })
     }
-    return NextResponse.json(serializeApi({ ...customer, salesman: customer.salesUser?.name ?? null }))
+    // Sage Account 是会计对账字段，纯销售角色不可见（见 TRACKED_FIELDS 旁注）
+    const payload: Record<string, unknown> = { ...customer, salesman: customer.salesUser?.name ?? null }
+    if (!caller || isSalesOnly(caller)) delete payload.sageAccount
+    return NextResponse.json(serializeApi(payload))
   } catch (error) {
     console.error('[GET /api/customers/[id]]', error)
     return NextResponse.json({ error: '获取客户失败' }, { status: 500 })
@@ -53,6 +61,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       for (const key of TRACKED_FIELDS) {
         if (key === 'pricelistIds') continue
         if (key in rest) data[key] = rest[key]
+      }
+      // Sage Account 是会计对账字段，纯销售角色不可改——即使前端被绕过直接打接口也挡住
+      if (isSalesOnly(user)) delete data.sageAccount
+      if (typeof data.sageAccount === 'string') {
+        data.sageAccount = data.sageAccount.trim() || null
+      }
+      if (Array.isArray(data.tags)) {
+        data.tags = [...new Set(data.tags.map((t: unknown) => String(t).trim()).filter(Boolean))]
       }
       // 旧值（带出 pricelists 关系，供 diffChanges 比对）
       const before = await prisma.customer.findUnique({
@@ -84,6 +100,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         pricelists: pricelistIds?.length
           ? { create: pricelistIds.map((pricelistId: string, idx: number) => ({ pricelistId, sequence: idx + 1 })) }
           : undefined,
+      }
+      // Prisma 7：同一次 update 里一旦出现 pricelists 这类关系嵌套写法，整个 data 对象就按
+      // "Checked" 模式校验，裸的外键标量字段（salesUserId/defaultDriverSlotId）不再是合法参数，
+      // 必须换成关系对象写法，否则报 "Unknown argument" 500（2026-10-04 浏览器实测复现）
+      if ('salesUserId' in data) {
+        updateData.salesUser = data.salesUserId ? { connect: { id: data.salesUserId as string } } : { disconnect: true }
+        delete updateData.salesUserId
+      }
+      if ('defaultDriverSlotId' in data) {
+        updateData.defaultDriverSlot = data.defaultDriverSlotId ? { connect: { id: data.defaultDriverSlotId as string } } : { disconnect: true }
+        delete updateData.defaultDriverSlotId
       }
       // SSOT: address 由地址组件后端派生(前端不再权威拼接),保证与 street/.. 一致(P2)
       const b = before as unknown as Record<string, unknown>
@@ -123,6 +150,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         changes: Object.keys(changes).length > 0 ? changes : undefined })
       return NextResponse.json(serializeApi({ ...customer, salesman: customer.salesUser?.name ?? null }))
     } catch (error) {
+      if (isUniqueConstraintOn(error, 'sageAccount')) {
+        return NextResponse.json({ error: '该 Sage Account 已被其他客户占用，请换一个编号' }, { status: 409 })
+      }
       console.error('[PUT /api/customers/[id]]', error)
       return NextResponse.json({ error: '更新客户失败' }, { status: 500 })
     }

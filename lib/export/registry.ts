@@ -23,6 +23,12 @@ import { statementExportColumns } from './columns/statements'
 import { loadStatementsForExport } from './loaders/statements'
 import { orderExportColumns } from './columns/orders'
 import { loadOrdersForExport } from './loaders/orders'
+import { UOM_EXPORT_COLUMNS } from './columns/uoms'
+import { loadUomsForExport } from './loaders/uoms'
+import { PRODUCT_CATEGORY_EXPORT_COLUMNS } from './columns/product-categories'
+import { loadProductCategoriesForExport } from './loaders/product-categories'
+import { PRICELIST_EXPORT_COLUMNS } from './columns/pricelists'
+import { loadPricelistsForExport } from './loaders/pricelists'
 
 /** 默认行数上限，与 /api/orders/export-csv 保持一致 */
 export const DEFAULT_EXPORT_ROW_LIMIT = 20000
@@ -107,5 +113,17 @@ export const EXPORT_REGISTRY: Record<string, ErasedExportDef> = {
   orders: defineExport({
     columns: (isEn) => orderExportColumns(isEn),
     load: loadOrdersForExport,
+  }),
+  uoms: defineExport({
+    columns: UOM_EXPORT_COLUMNS,
+    load: loadUomsForExport,
+  }),
+  'product-categories': defineExport({
+    columns: PRODUCT_CATEGORY_EXPORT_COLUMNS,
+    load: loadProductCategoriesForExport,
+  }),
+  pricelists: defineExport({
+    columns: PRICELIST_EXPORT_COLUMNS,
+    load: loadPricelistsForExport,
   }),
 }

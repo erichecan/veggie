@@ -4,9 +4,12 @@
  */
 
 /**
- * 解析 CSV 文本为行数组(支持引号包裹、内嵌逗号/换行、CRLF、BOM)。
+ * 解析 CSV/TSV 等分隔文本为行数组(支持引号包裹、内嵌分隔符/换行、CRLF、BOM)。
+ * @param sep 字段分隔符，默认逗号；传 '\t'/';' 可解析 TSV / 分号分隔文件
+ *   (20261003 收编 lib/import-parser.ts 里裸 split 的那份解析器——那份不认引号包裹的
+ *   分隔符，商品名/备注里带逗号会把整行列错位)。
  */
-export function parseCsv(text: string): string[][] {
+export function parseCsv(text: string, sep = ','): string[][] {
   const s = text.replace(/^\ufeff/, '')
   const rows: string[][] = []
   let row: string[] = []
@@ -20,7 +23,7 @@ export function parseCsv(text: string): string[][] {
       } else cell += ch
     } else if (ch === '"') {
       inQuotes = true
-    } else if (ch === ',') {
+    } else if (ch === sep) {
       row.push(cell); cell = ''
     } else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && s[i + 1] === '\n') i++

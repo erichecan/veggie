@@ -53,9 +53,12 @@ test('权限中心分配角色时，legacy 列只写 enum 里存在的角色', (
 
 test('建号的两个入口都走同一份共享逻辑，不许各自内联一份白名单/校验', () => {
   // 白名单"两份各自漂移"出过事故(EXTERNAL_SALES 漏了两个月)——单个建号和批量导入
-  // 必须都调 createUserAccount，下面针对 lib/user-account.ts 的检查才同时罩住两条路。
+  // 必须都走 lib/user-account.ts，下面针对它的检查才同时罩住两条路。批量导入由导入引擎
+  // 开每行事务，所以用的是拆开的 validateNewUser + insertUserAccount，而不是 createUserAccount。
   assert.ok(/createUserAccount\(/.test(postSrc), 'POST /api/users 没走 createUserAccount')
-  assert.ok(/createUserAccount\(/.test(bulkSrc), 'POST /api/users/bulk 没走 createUserAccount')
+  assert.ok(/validateNewUser\(/.test(bulkSrc), 'POST /api/users/bulk 没走 validateNewUser')
+  assert.ok(/insertUserAccount\(/.test(bulkSrc), 'POST /api/users/bulk 没走 insertUserAccount')
+  assert.ok(!/tx\.user\.create\(|prisma\.user\.create\(/.test(bulkSrc), 'POST /api/users/bulk 自己内联了建号')
 })
 
 test('创建与修改用户的角色白名单，都要覆盖 enum Role 的全部角色', () => {

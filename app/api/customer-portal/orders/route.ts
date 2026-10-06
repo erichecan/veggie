@@ -9,6 +9,7 @@ import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
 import { getInitials, nextOrderCode } from '@/lib/order-code'
 import type { $Enums } from '@/lib/generated/prisma/client'
+import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 
 /**
  * P1-2: 客户小程序 — 订单管理
@@ -241,9 +242,9 @@ export async function POST(req: Request) {
           break
         } catch (e: unknown) {
           lastErr = e
-          const code = (e as { code?: string }).code
-          const meta = (e as { meta?: { target?: string[] } }).meta
-          if (code === 'P2002' && meta?.target?.includes('code')) continue
+          // 20261003 修复：同 app/api/orders/route.ts，driver adapter 下 meta.target 不存在，
+          // 原判断恒为 false，撞车重试从未真正生效过
+          if (isUniqueConstraintOn(e, 'code')) continue
           throw e
         }
       }

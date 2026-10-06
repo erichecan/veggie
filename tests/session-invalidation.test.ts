@@ -110,9 +110,16 @@ test('建号时的初始密码也过同一个校验', () => {
     /assessNewPassword\(/.test(create),
     '建号没做强度校验 —— 生产上那 42 个 test123 就是从这条路进来的',
   )
-  for (const path of ['app/api/users/route.ts', 'app/api/users/bulk/route.ts']) {
-    assert.ok(/createUserAccount\(/.test(readFileSync(path, 'utf-8')), `${path} 绕过了共享建号逻辑，密码校验罩不住它`)
-  }
+  // createUserAccount 内部先调 validateNewUser；批量导入直接调 validateNewUser
+  assert.ok(/=\s*validateNewUser\(/.test(create), 'createUserAccount 没先过 validateNewUser')
+  assert.ok(
+    /createUserAccount\(/.test(readFileSync('app/api/users/route.ts', 'utf-8')),
+    'app/api/users/route.ts 绕过了共享建号逻辑，密码校验罩不住它',
+  )
+  assert.ok(
+    /validateNewUser\(/.test(readFileSync('app/api/users/bulk/route.ts', 'utf-8')),
+    'app/api/users/bulk/route.ts 绕过了共享建号校验，密码校验罩不住它',
+  )
 })
 
 test('停用账号必须同时作废对方的 token', () => {

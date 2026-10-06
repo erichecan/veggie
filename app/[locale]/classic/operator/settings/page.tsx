@@ -4,7 +4,10 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import type { ProductCategory } from '@/lib/types'
+import ProductCategoryManager from '@/components/classic/ProductCategoryManager'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { UOM_EXPORT_COLUMNS } from '@/lib/export/columns/uoms'
 
 const PURPLE = '#875A7B'
 
@@ -221,6 +224,8 @@ function UomSection({ isEn }: { isEn: boolean }) {
   const [newUomGoodsType, setNewUomGoodsType] = useState<GoodsType>('BULK')
   const [newUomExpand, setNewUomExpand] = useState(false)
   const [savingUom, setSavingUom] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const exportAction = useCsvExport({ entity: 'uoms', params: () => '', columns: UOM_EXPORT_COLUMNS })
 
   async function load() {
     try {
@@ -279,6 +284,16 @@ function UomSection({ isEn }: { isEn: boolean }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end gap-2">
+        <button onClick={() => setImportOpen(true)}
+          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+          {isEn ? 'Import' : '导入'}
+        </button>
+        <button onClick={exportAction.onClick} disabled={exportAction.disabled}
+          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+          {exportAction.label}
+        </button>
+      </div>
       <div>
         {categories.length === 0 ? (
           <p className="text-sm text-gray-400">{isEn ? 'No categories yet' : '暂无分类'}</p>
@@ -438,163 +453,38 @@ function UomSection({ isEn }: { isEn: boolean }) {
           </p>
         </div>
       </div>
+
+      <BulkImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onDone={load}
+        templateFileName="uoms-import-template"
+        endpoint="/api/uoms/bulk"
+        title={{ zh: '批量导入计量单位(CSV)', en: 'Bulk Import Units of Measure (CSV)' }}
+        hint={{
+          zh: '第一行为表头。「名称」「分类」必填。',
+          en: 'Row 1 is the header. Name and Category are required.',
+        }}
+        extraHint={{
+          zh: <>只支持新建：按名称全局判重(不分单位分类)，撞了跳过，不会更新已有单位；需要改已有单位请到上方表格直接编辑。「分类」填已有的单位分类名称(中英文均可)，查不到会跳过该行。</>,
+          en: <>Create-only: name collisions (across all categories) are skipped, never updated — edit existing units directly in the table above. Category must match an existing unit category name (English or Chinese); unmatched rows are skipped.</>,
+        }}
+        columns={[
+          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
+          { key: 'nameZh', label: isEn ? 'Chinese Name' : '中文名称' },
+          { key: 'category', label: isEn ? 'Category' : '单位分类', required: true },
+          { key: 'goodsType', label: isEn ? 'Goods Type (BULK/LOOSE)' : '货物类型(BULK/LOOSE)' },
+          { key: 'expandByCustomer', label: isEn ? 'Expand By Customer (Y/N)' : '拣货按客户展开(Y/N)' },
+        ]}
+        exampleRows={[['Demo Bag', '示例包', 'Weight', 'BULK', 'N']]}
+      />
+      {exportAction.dialog}
     </div>
   )
 }
 
 // ─── Product Category Section ─────────────────────────────────────────────────
 
-function ProductCategorySection({ isEn }: { isEn: boolean }) {
-  const [categories, setCategories] = useState<ProductCategory[]>([])
-  const [loading, setLoading] = useState(true)
-  const [newName, setNewName] = useState('')
-  const [newNameZh, setNewNameZh] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editNameZh, setEditNameZh] = useState('')
-
-  async function load() {
-    try {
-      const cats = await apiGet<ProductCategory[]>('/api/product-categories')
-      setCategories(cats)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Load failed' : '加载失败'))
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [])
-
-  async function create() {
-    if (!newName.trim()) { toast.error(isEn ? 'Please enter a name' : '请输入分类名称'); return }
-    setSaving(true)
-    try {
-      await apiPost('/api/product-categories', { name: newName.trim(), nameZh: newNameZh.trim() || undefined })
-      toast.success(isEn ? 'Category created' : '商品分类已创建')
-      setNewName(''); setNewNameZh('')
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function saveEdit(id: string) {
-    if (!editName.trim()) { toast.error(isEn ? 'Name cannot be empty' : '名称不能为空'); return }
-    try {
-      await apiPut(`/api/product-categories/${id}`, { name: editName.trim(), nameZh: editNameZh.trim() || undefined })
-      toast.success(isEn ? 'Saved' : '已保存')
-      setEditingId(null)
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
-    }
-  }
-
-  async function del(id: string, name: string) {
-    if (!confirm(isEn ? `Delete category "${name}"?` : `确认删除商品分类"${name}"？`)) return
-    try {
-      await apiDelete(`/api/product-categories/${id}`)
-      toast.success(isEn ? 'Deleted' : '已删除')
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Delete failed' : '删除失败'))
-    }
-  }
-
-  if (loading) return <div className="text-sm text-gray-400 py-4">{isEn ? 'Loading…' : '加载中…'}</div>
-
-  return (
-    <div className="space-y-4">
-      <div className="border border-gray-200 rounded overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-200" style={{ background: '#f3eff5' }}>
-            <tr className="text-left text-xs text-gray-600">
-              <th className="px-4 py-2 font-medium">{isEn ? 'English Name' : '英文名'}</th>
-              <th className="px-4 py-2 font-medium">{isEn ? 'Chinese Name' : '中文名'}</th>
-              <th className="px-4 py-2 w-28"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {categories.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400">{isEn ? 'No categories' : '暂无分类'}</td></tr>
-            )}
-            {categories.map(cat => (
-              <tr key={cat.id} className="hover:bg-gray-50">
-                {editingId === cat.id ? (
-                  <>
-                    <td className="px-4 py-2">
-                      <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                        className="border rounded px-2 py-1 text-sm w-full focus:outline-none focus:border-purple-400" autoFocus
-                        style={{ borderColor: PURPLE }} />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input type="text" value={editNameZh} onChange={e => setEditNameZh(e.target.value)}
-                        className="border rounded px-2 py-1 text-sm w-full focus:outline-none"
-                        style={{ borderColor: PURPLE }} />
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex gap-2">
-                        <button onClick={() => saveEdit(cat.id)}
-                          className="text-xs font-medium hover:underline" style={{ color: PURPLE }}>
-                          {isEn ? 'Save' : '保存'}
-                        </button>
-                        <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 hover:underline">
-                          {isEn ? 'Cancel' : '取消'}
-                        </button>
-                      </div>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="px-4 py-2 font-medium">{cat.name}</td>
-                    <td className="px-4 py-2 text-gray-500">{cat.nameZh || '-'}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex gap-2">
-                        <button onClick={() => { setEditingId(cat.id); setEditName(cat.name); setEditNameZh(cat.nameZh ?? '') }}
-                          className="text-xs hover:underline" style={{ color: PURPLE }}>
-                          {isEn ? 'Edit' : '编辑'}
-                        </button>
-                        <button onClick={() => del(cat.id, cat.name)} className="text-xs text-red-500 hover:underline">
-                          {isEn ? 'Delete' : '删除'}
-                        </button>
-                      </div>
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="border border-gray-200 rounded p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'New Product Category' : '新建商品分类'}</h3>
-        <div className="flex items-end gap-3 flex-wrap">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (EN)' : '英文名'}</label>
-            <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
-              placeholder={isEn ? 'e.g. Vegetables' : '如 Vegetables'}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-purple-400" />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (ZH, optional)' : '中文名（可选）'}</label>
-            <input type="text" value={newNameZh} onChange={e => setNewNameZh(e.target.value)}
-              placeholder={isEn ? 'optional' : '如 蔬菜'}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-purple-400" />
-          </div>
-          <button onClick={create} disabled={saving}
-            className="h-9 px-4 text-white text-sm rounded disabled:opacity-40"
-            style={{ background: PURPLE }}>
-            {saving ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create' : '创建')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Product Type Section ─────────────────────────────────────────────────────
 
@@ -646,7 +536,7 @@ export default function ClassicOperatorSettingsPage() {
   ]
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       {/* Odoo-style breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
         <span style={{ color: PURPLE }}>{isEn ? 'Settings' : '设置'}</span>
@@ -657,12 +547,12 @@ export default function ClassicOperatorSettingsPage() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-0 mb-6 border-b border-gray-200">
+      <div className="flex gap-0 mb-6 overflow-x-auto border-b border-gray-200">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="px-5 py-2.5 text-sm font-medium border-b-2 transition-colors"
+            className="shrink-0 whitespace-nowrap px-4 sm:px-5 py-2.5 text-sm font-medium border-b-2 transition-colors"
             style={{
               color: activeTab === tab.id ? PURPLE : '#6b7280',
               borderBottomColor: activeTab === tab.id ? PURPLE : 'transparent',
@@ -674,7 +564,7 @@ export default function ClassicOperatorSettingsPage() {
       </div>
 
       {/* Content */}
-      <div className="bg-white rounded border border-gray-200 p-6">
+      <div className="bg-white rounded border border-gray-200 p-4 sm:p-6">
         {activeTab === 'uom' && (
           <>
             <h2 className="text-base font-semibold mb-1" style={{ color: PURPLE }}>
@@ -705,7 +595,7 @@ export default function ClassicOperatorSettingsPage() {
             <p className="text-sm text-gray-500 mb-5">
               {isEn ? 'Manage product categories used in product classification and pricelist rules.' : '管理商品分类，用于商品归类和价格表规则。'}
             </p>
-            <ProductCategorySection isEn={isEn} />
+            <ProductCategoryManager isEn={isEn} />
           </>
         )}
       </div>

@@ -33,8 +33,12 @@ export interface OdooColumn<T = Record<string, unknown>> {
   editType?: 'text' | 'number' | 'select'
   /** editType=select 时使用的下拉选项 */
   editOptions?: { value: string; label: string }[]
-  /** 是否支持单击进入编辑态（必须配合 onCellEdit 才生效） */
-  editable?: boolean
+  /** 是否支持单击进入编辑态（必须配合 onCellEdit 才生效）；传函数可按行条件禁用
+   *  （如「这一行背后没有可编辑的关联记录」），不满足条件的格子不进入编辑态、
+   *  不显示可编辑的视觉提示，避免用户填完才在提交时才看到一闪而过的报错提示。 */
+  editable?: boolean | ((row: T) => boolean)
+  /** editable 按行禁用时，鼠标悬停提示禁用原因；不传则不可编辑的格子没有特殊提示 */
+  editDisabledHint?: (row: T) => string | undefined
   /** 列目标宽度(px)。设了就按此宽度收窄：列头允许换行、单元格内容超出换行，不再被表头文字撑开 */
   width?: number
   /** 列最小宽度(px)。给内容会被挤扁的列(名称、描述)留出空间 */
@@ -157,8 +161,13 @@ export default function OdooTable<T extends Record<string, unknown>>({
   const [editValue, setEditValue] = useState<string>('')
   const [savingCell, setSavingCell] = useState(false)
 
+  function isCellEditable(col: OdooColumn<T>, row: T): boolean {
+    if (!inlineEditEnabled || !onCellEdit) return false
+    return typeof col.editable === 'function' ? col.editable(row) : !!col.editable
+  }
+
   function beginEdit(row: T, col: OdooColumn<T>) {
-    if (!inlineEditEnabled || !col.editable || !onCellEdit) return
+    if (!isCellEditable(col, row)) return
     const id = String(row[rowKey])
     const v = row[col.key]
     setEditing({ rowId: id, key: col.key })
@@ -580,14 +589,18 @@ export default function OdooTable<T extends Record<string, unknown>>({
                   )}
                   {columns.map(col => {
                     const isEditingCell = editing?.rowId === id && editing?.key === col.key
-                    const cellEditable = inlineEditEnabled && !!col.editable && !!onCellEdit
+                    const cellEditable = isCellEditable(col, row)
+                    const disabledHint = !cellEditable ? col.editDisabledHint?.(row) : undefined
                     return (
                       <td
                         key={col.key}
                         className={`px-2 py-1 text-gray-700 break-words ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : ''}`}
                         style={{
                           ...colSizeStyle(col),
-                          background: cellEditable && !isEditingCell ? 'rgba(135, 90, 123, 0.04)' : undefined,
+                          // 20261003：4% 透明度太淡，Mode 切到编辑态后用户分不出哪些格子能点——
+                          // 加粗到 8% 并配一条虚线下边框，让"可编辑"在不 hover 时也看得出来
+                          background: cellEditable && !isEditingCell ? 'rgba(135, 90, 123, 0.08)' : undefined,
+                          borderBottom: cellEditable && !isEditingCell ? '1px dashed rgba(135, 90, 123, 0.4)' : undefined,
                           outline: isEditingCell ? '2px solid #875A7B' : undefined,
                           cursor: cellEditable && !isEditingCell ? 'cell' : undefined,
                         }}
@@ -598,7 +611,7 @@ export default function OdooTable<T extends Record<string, unknown>>({
                             beginEdit(row, col)
                           }
                         }}
-                        title={cellEditable ? '单击编辑（回车保存 / Esc 取消）' : undefined}
+                        title={cellEditable ? '单击编辑（回车保存 / Esc 取消）' : disabledHint}
                       >
                         {isEditingCell ? (
                           col.editType === 'select' ? (

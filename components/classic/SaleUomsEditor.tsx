@@ -49,7 +49,7 @@ export interface SaleUomsEditorProps {
 
 const fieldClass = 'w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 bg-white'
 const focusStyle = { '--tw-ring-color': '#875A7B' } as React.CSSProperties
-const btnBase = 'h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors'
+const btnBase = 'h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white'
 
 export default function SaleUomsEditor({
   saleUoms, onChange, uoms, baseUomId, baseListPrice, baseCommissionPrice, editMode, isEn, onSave, saving,
@@ -338,7 +338,16 @@ export default function SaleUomsEditor({
       )}
       {editMode && (
         <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
-          <button onClick={addRow} className={btnBase}>{isEn ? '+ Add Unit' : '＋ 添加单位'}</button>
+          <button
+            onClick={addRow}
+            disabled={!findAddableSaleUom(saleUoms, uoms, baseUomId)}
+            title={findAddableSaleUom(saleUoms, uoms, baseUomId)
+              ? undefined
+              : (isEn ? 'No more units available in this category' : '该计量类别下已没有可选的单位了')}
+            className={btnBase}
+          >
+            {isEn ? '+ Add Unit' : '＋ 添加单位'}
+          </button>
           {onSave ? (
             <button
               onClick={onSave}

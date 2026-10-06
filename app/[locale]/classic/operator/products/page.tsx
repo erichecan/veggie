@@ -8,7 +8,10 @@ import { apiGet, apiPut, apiPatch, apiPost, apiDelete } from '@/lib/api'
 import type { ProductTemplate, ProductCategory, ProductSaleUomSummary } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
-import ProductImportDialog from '@/components/classic/ProductImportDialog'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
+import {
+  PRODUCT_IMPORT_COLUMNS, PRODUCT_IMPORT_EXAMPLE_ROWS, PRODUCT_IMPORT_HINT, PRODUCT_IMPORT_EXTRA_HINT,
+} from './product-import-columns'
 import { PRODUCT_TEMPLATE_EXPORT_COLUMNS } from '@/lib/export/columns/product-templates'
 import SaleUomsDialog, { type SaleUomsDialogProduct } from '@/components/classic/SaleUomsDialog'
 import { type SortDir } from '@/components/shared/sort-th'
@@ -468,6 +471,14 @@ export default function ClassicProductsPage() {
     )
   }
 
+  // spec 列背后写的是默认 ProductSaleUom.spec（见 handleCellEdit 的 'spec' 分支），商品没有
+  // 配置可售单位（或没有默认单位）时后端必定拒绝；跟 by-sale-unit 页同一个坑，改成按行禁用。
+  const hasDefaultSaleUnit = (row: Record<string, unknown>) =>
+    !!(row as unknown as ProductTemplate).saleUoms?.some(u => u.isDefault)
+  const noDefaultSaleUnitHint = () => (isEn
+    ? 'This product has no configured sale unit yet — open "Sellable Units" to add one'
+    : '该商品还没配置可售单位，请先点击「装货顺序」列打开可售单位弹窗添加')
+
   const columns: OdooColumn[] = [
     {
       key: 'productNo',
@@ -537,12 +548,13 @@ export default function ClassicProductsPage() {
     {
       // Product.spec 已废弃清空（20260912），这列改显示/编辑默认可售单位的 spec
       // （如"6*2kg"）——见 handleCellEdit 里的特殊分支。没有配置可售单位的商品这里恒为空，
-      // 不能在这内联编辑（跟"没有 uomId"时 by-sale-unit 页的提示一致）。
+      // 不能在这内联编辑，按行禁用（跟 by-sale-unit 页的 uomId 守卫同款，20261001 修）。
       key: 'spec',
       width: 95,
       label: 'Product Spec',
       align: 'center',
-      editable: true,
+      editable: hasDefaultSaleUnit,
+      editDisabledHint: noDefaultSaleUnitHint,
       editType: 'text',
       render: (_v, row) => {
         const spec = (row as unknown as ProductTemplate).saleUoms?.find(u => u.isDefault)?.spec
@@ -728,15 +740,6 @@ export default function ClassicProductsPage() {
         permanentActions={[
           { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
           exportActionLabeled,
-          ...(isReadMode
-            ? [
-                { label: 'Mode', onClick: () => setIsReadMode(false) },
-                { label: 'Read', onClick: () => {}, primary: true },
-              ]
-            : [
-                { label: 'Edit', onClick: () => {}, primary: true },
-                { label: 'Mode', onClick: () => setIsReadMode(true) },
-              ]),
         ]}
         actions={selected.size > 0 ? [
           { label: exportActionLabeled.label, onClick: exportActionLabeled.onClick, disabled: bulkRunning },
@@ -752,7 +755,7 @@ export default function ClassicProductsPage() {
         facetFields={localizeFacetFields(PRODUCT_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         activeFilters={[
-          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, values: g.values, prefix: g.key === 'all' ? undefined : g.label, onRemove: () => removeFacetGroup(g.key) })),
           ...(showArchived ? [{ label: isEn ? 'Incl. archived' : '含已归档', onRemove: () => setShowArchived(false) }] : []),
           ...(archivedOnlyFilter ? [{ label: isEn ? 'Archived Only' : '仅已归档', onRemove: () => setArchivedOnlyFilter(false) }] : []),
           ...(canBeSoldFilter ? [{ label: 'Can be Sold', onRemove: () => setCanBeSoldFilter(false) }] : []),
@@ -1033,10 +1036,17 @@ export default function ClassicProductsPage() {
 
       <Pagination page={page} totalPages={totalPages} onPageChange={p => loadPage(p, searchInput)} />
 
-      <ProductImportDialog
+      <BulkImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onDone={() => loadPage(1, searchInput)}
+        templateFileName="products-import-template"
+        columns={PRODUCT_IMPORT_COLUMNS}
+        exampleRows={PRODUCT_IMPORT_EXAMPLE_ROWS}
+        endpoint="/api/products/bulk"
+        title={{ zh: '批量导入商品(CSV)', en: 'Bulk Import Products (CSV)' }}
+        hint={PRODUCT_IMPORT_HINT}
+        extraHint={PRODUCT_IMPORT_EXTRA_HINT}
       />
       {exportActionLabeled.dialog}
       {exportAllAction.dialog}

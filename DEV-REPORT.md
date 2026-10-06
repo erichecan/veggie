@@ -1,92 +1,136 @@
+# DEV-REPORT：全站导入导出统一为商品模块同款体验
+
+日期：2026-10-03
+
 ## 给你看的
 
-| 场景 | 来源 | 验证方式 | 状态 |
-| --- | --- | --- | --- |
-| 商品库导出可选字段，含完整 UoM 配置 | 你说的 | 代码 + typecheck/lint/单测三项通过；本环境无数据库连接，未能起服务实际点一遍导出弹窗（见下方"未能完成的验证"） | 代码完成，**未做端到端验证** |
-| 商品导入模板（尤其 UoM 配置） | 你说的 | 同上——模板列与导出列逐一对应，支持"导出→Excel 改→重新导入"；未能起服务实际走一遍导入 | 代码完成，**未做端到端验证** |
-| 订单/采购/客户（餐馆）/供应商都要做导入导出 | 你说的 | 订单：已有导入功能做了健壮化（真正的 CSV 解析器、双语表头、模板下载）；采购单：全新导入（复用已有创建接口）；客户：已有导入导出沿用；供应商：全新导入 + 导出 | 代码完成，**未做端到端验证** |
-| 导入测试产品后打不开详情页 | 你说的 | 已定位根因（批量导入从不写 `standardPrice`，落库 `null`，详情页非编辑态对 `null.toFixed()` 崩溃）并修复；新导入逻辑本身也会给出默认值 0，双重防护 | 代码完成，**未做端到端验证** |
-| 自增长产品 ID，内部主键使用，cuid 对外展示 | 你说的 | 按确认的方案：新增 `Product.productNo`（自增、唯一）作为好记编号，cuid `id` 仍是真正主键和所有外键目标——改动小、不碰 14 张关联表 | 代码完成，**未做端到端验证** |
+| 场景 | 来源 | 截图 | 状态 |
+|---|---|---|---|
+| 商品导入弹窗外观/文案与改造前完全一致（底层引擎已换） | 你 2026-10-03「改成按照商品的模块导入导出功能」 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-products-import-dialog.png | 符合 |
+| 客户导入弹窗新增「按 ID 精确匹配更新」提示，与商品模块语义一致 | 你 2026-10-03 原话 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-customers-import-dialog.png | 符合 |
+| 设置页「计量单位」tab 新增导入/导出按钮 | 你 2026-10-03「没有导入导出功能的就补齐」 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-uom-settings-page.png | 符合 |
+| 设置页「商品分类」tab 新增导入/导出按钮 | 同上 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-product-category-tab.png | 符合 |
+| 单位导入弹窗文案说明 create-only 限制 | 我推断的（技术限制，见下方说明） | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-uom-import-dialog.png | 待你确认 |
 
-<br />
+访问地址：http://localhost:3001/classic/operator/settings（本地开发环境，账号 boss@demo.local / test12345）
 
-### ⛔ 本环境没有数据库连接，无法按 CLAUDE.md 的"完成标准"做种子数据/curl/浏览器验证
+### 范围调整，需要你知道
 
-这个会话的容器里没有配置 `DATABASE_URL`（没有 `.env.local`），我在过程中已经跟你说明过一次。这意味着：
+1. **发票 / 供应商账单 / 贷项通知单**：没有按计划升级导出到服务端模式。代码里已有明确注释说明这三个页面是"全量拉前端+客户端筛选"架构，改服务端导出会让"只导出当前筛选结果"这个功能失效，要做需要先把整个列表页架构换掉，是另一个更大的改动。**没有动**。
+2. **订单导出两套并存（registry 版 + `export-csv` 会计专用版）**：代码里已有明确注释说明这是前人刻意保留、避免影响已配置好的角色权限，**不是遗留技术债，没有合并**。
+3. **价格表、司机排班**：补齐导入导出的工作量比计划时预估的大——价格表的定价规则存在 JSON 字段里而不是平铺表，司机排班是跟用户账号关联的复合唯一键配置对象，都不是直接套用新引擎能做完的。**本次没做，需要你确认是否还要排期**。
+4. **单位(Uom)导入只支持新建，不支持更新已有单位**：Uom 没有像商品/客户那样的业务唯一键(ID)，真实的唯一约束是"分类+名称"组合键，不适合强行塞进按单字段设计的引擎匹配逻辑。改已有单位的货物类型/拣货展开设置，请继续用设置页里的单条编辑（功能一直都在，没有受影响）。
 
-* 没跑过 `npx prisma migrate dev` / `db push`——新增的 `Product.productNo` 迁移是我**手写的 SQL**（`prisma/migrations/20260930000001_add_product_no/migration.sql`），逻辑上是标准的 Postgres `SERIAL` 列写法，`npx prisma validate` 通过、`npx prisma generate` 生成的 client 类型也确认了字段存在，但**没有在真实数据库上跑过这条迁移**。
-* 没有种子数据、没有起过 `next dev`、没有 curl 过任何一个改动的接口、没有打开过浏览器点一遍导入/导出弹窗。
-* 没有测试账号可给（数据库是空的，不存在"至少建 1 个测试用户 + 1 条业务数据"这一步的执行环境）。
-
-**这不等于"改完了、大概率没问题"——这是一个明确的、尚未做完的验收缺口。** 在你（或有数据库权限的环境）跑以下步骤之前，我不能对"功能真的可用"打包票：
-
-```bash
-# 1. 在有 DATABASE_URL 的环境里跑迁移
-npm run db:migrate:dev   # 或 npx dotenv -e .env.local prisma migrate dev
-
-# 2. 起服务
-npm run dev
-
-# 3. 建 1-2 个测试商品(含分类/UoM)，走一遍：
-#    商品列表页 → 导出(勾字段) → 检查 CSV 是否含 UoM 列
-#    商品列表页 → 导入 → 用刚导出的 CSV 改几行 → 重新导入 → 点进详情页确认能正常打开(这是本次要修的 bug 的直接回归验证)
-#    Purchases → Vendors → 导入/导出供应商
-#    报价单页 → 导入订单(CSV) / 采购页 → 导入采购单(CSV)
-```
-
-访问地址：本地起服务后 `http://localhost:3000`（具体端口以 `npm run dev` 输出为准）；生产地址部署后需另行验证。
-
-<br />
-
-## 存档用的（你不用看，出问题时我回来查）
-
-### 改了什么（4 次提交，可用 `git log` 看逐条 diff）
-
-**1. Bug 修复 + `productNo` 字段**
-* `app/[locale]/classic/operator/products/[id]/page.tsx`：非编辑态渲染 `listPrice`/`standardPrice` 时补 `?? 0`，修掉 `null.toFixed()` 崩溃；新增"产品编号"只读展示（编辑态和只读态各一处）
-* `prisma/schema.prisma`：`Product` 新增 `productNo Int @unique @default(autoincrement())`；cuid `id` 不受影响，仍是主键和全部外键目标
-* `prisma/migrations/20260930000001_add_product_no/migration.sql`：手写迁移（`ALTER TABLE ... ADD COLUMN "productNo" SERIAL NOT NULL` + 唯一索引）——**未在真实库跑过**，见上方验收缺口
-* `app/[locale]/classic/operator/products/page.tsx`：列表页加"编号"列
-
-**2. 导出框架泛化（字段可选）+ 供应商导出**
-* `lib/export/types.ts`：`ExportColumn` 加必填的 `key` 字段（勾选/`?fields=` 用的稳定标识，不随 locale 变化），新增 `filterColumnsByKeys()`
-* `lib/export/columns/*.ts`（8 个文件：product-templates / customers / purchase-orders / orders / statements / invoices / vendor-bills / credit-notes）：给每一列补 `key`；`product-templates.ts` 额外加了 `productNo`/`barcode`/`netWeight`/`volume`/`purchaseUomName`/`saleUomsSummary`（UoM 配置摘要，格式 `单位名:系数:是否默认`，用 `;` 分隔多个单位）
-* `lib/export/loaders/product-templates.ts`：相应地查出 `purchaseUom`、`saleUoms`（含 `uom`/`factor`/`isDefault`）
-* `components/shared/export-field-picker-dialog.tsx`（新增）：字段勾选弹窗，全选/单选
-* `hooks/use-csv-export.tsx`（原 `.ts` 改 `.tsx`）：`useCsvExport` 支持可选的 `columns`，传了就先弹字段勾选框，返回值多了 `dialog` 字段（调用方要把它渲染进 JSX 才会弹出来）；没传 `columns` 的调用方（多数财务类页面）行为不变
-* `app/api/export/[entity]/route.ts`：支持 `?fields=k1,k2` 按 key 过滤导出列
-* `lib/export/registry.ts` / `lib/export/entities.ts`：新注册 `suppliers` 实体（复用 `customers` 的列定义和查询逻辑，服务端强制加 `isVendor=1` 过滤，不依赖调用方记得传）
-* `lib/rbac/route-map.ts`：`/api/export/suppliers` 自动跟着 `EXPORT_ENTITY_META` 生成规则，无需手改
-* `lib/role-access.ts`：旧 token 白名单里，凡是已经有 `exportOf('customers')` 的角色都配套加 `exportOf('suppliers')`
-* 页面接入字段勾选：`products/page.tsx`、`customers/page.tsx`、`purchases/vendors/page.tsx`、`quotations/page.tsx`（订单）、`purchases/page.tsx`（采购单）
-
-**3. 供应商批量导入**
-* `app/api/suppliers/bulk/route.ts`（新增）：镜像 `/api/customers/bulk`，固定写 `isVendor:true, isCustomer:false`，字段换成供应商场景（`supplierPaymentTerm`/`vendorTaxRate` 而非客户的 `paymentTerm`/`salesman`）；复用同一个权限点 `master.customer.bulk_import`（不为供应商视图另开权限点，与导出的思路一致）
-* `lib/rbac/route-map.ts` / `lib/role-access.ts`：给 `/api/suppliers/bulk` 补权限规则，镜像 `/api/customers/bulk` 已有的角色授权
-* `app/[locale]/classic/operator/purchases/vendors/page.tsx`：加导入/导出按钮和弹窗（这个页面原来两个都没有）
-
-**4. 商品批量导入全面重写**
-* `lib/product-sale-uom-upsert.ts`（新增）：从 `PUT /api/products/[id]/sale-uoms` 抽出的可售单位(UoM)落库逻辑，逐字保留原有的"基准单位单一入口"规则，供该路由和新的批量导入共用
-* `app/api/products/[id]/sale-uoms/route.ts`：改成调用上面的共享函数，行为不变（`tests/sale-uom.test.ts` 45 个用例全过）
-* `app/api/products/bulk/route.ts`（重写）：全字段支持（分类/UoM/条码/含税成本/类型/状态等），支持按 `internalRef→barcode→externalId` 优先级匹配做**更新**（不再是只能创建），未匹配上按名称判重（撞了跳过，保留原有安全行为），支持批量写入可售单位配置；返回 `{created, updated, skipped, warnings}`，不再是只有 `{created, skipped}`
-* `components/classic/ProductImportDialog.tsx`（新增）：专用导入弹窗，列头与导出列逐一对应（"导出→Excel 改→重新导入"闭环），税率/商品类型的百分数/长标签自动转换成入库需要的格式，导入结果展示新建/更新/跳过计数 + 完整 warning 列表（不只是一个 toast）
-* `app/[locale]/classic/operator/products/page.tsx`：接入新弹窗，替换掉原来那个只有 7 个字段、纯新建的旧导入
-
-**5. 订单导入健壮化 + 采购单导入（新）**
-* `app/[locale]/classic/operator/quotations/page.tsx`：订单导入原本就有（分组按餐馆名、逐个调现有 `POST /api/orders`），这次把手写的 `text.split(',')` 解析器换成正规的、处理引号/BOM/换行的共享解析器，表头中英文都认，加了"商品编号"作为比商品名更可靠的匹配键，补了模板下载按钮
-* `app/[locale]/classic/operator/purchases/page.tsx`：采购单原来完全没有导入——新增，做法跟订单导入一致（分组按供应商名、逐个调现有 `POST /api/purchase-orders`，复用它已有的定价/校验逻辑，不新开一套采购单批量创建的后端接口）；同时补上了这个页面之前漏掉的导出字段勾选弹窗
+## 存档用的
 
 ### 技术验收
 
-* `npx tsc --noEmit`：通过
-* `npx prisma validate`：通过；`npx prisma generate` 正常生成（无数据库连接，无法 `migrate`/`db push`，见上方缺口说明）
-* `npx eslint`（本次改动到的文件）：0 error，剩余 warning 全部逐一核对过是改动前就有的（用 `git stash` 对照验证），未新增
-* `node --test --import=tsx tests/*.test.ts`：913 个测试，900 通过、7 个 skip、**6 个失败**——这 6 个失败在改动前（`git stash -u` 到完全干净的树）就已经存在，是关于 `/api/auth/register` 缺权限闸和几个 RBAC 可达性矩阵快照的既有问题，与本次改动无关，未修（不在本次任务范围）
-* `npm run build` / 起服务 / curl / 浏览器实测：**均未执行**（无数据库连接），见上方"未能完成的验证"
+- `npx tsc --noEmit`：通过
+- `npm run build`：通过，退出码 0
+- `npx eslint`（本次改动的全部文件）：0 error，8 warning（均为改动前已存在的 unused-var / exhaustive-deps 警告，非本次引入）
+- 鉴权探针（无 token → 401）：`/api/uoms/bulk`、`/api/product-categories/bulk`、`/api/products/bulk`、`/api/customers/bulk`、`/api/suppliers/bulk` 全部 401，无 500
+- 功能回归（本地开发库，真实 curl 调用，测试数据已清理）：
+  - 商品：新建 → 按 externalId 更新 listPrice → `ActionLog` 里查到 `批量导入更新商品价格` 记录，before/after 正确（10→15）
+  - 客户：新建 → 按 externalId 更新 phone → 二次查询确认落库
+  - 供应商：新建 → 按 externalId 更新 vendorTaxRate → 二次查询确认落库
+  - 产品分类：新建 → 按 externalId 更新 nameZh → 二次查询确认落库
+  - 单位：新建成功；重名(不分类别)正确跳过；分类名找不到正确跳过并给出提示
+- CSV 解析引号 bug：写了独立验证脚本确认 `"Shrimp, Black Tiger 700g",10,12.5` 这种商品名带逗号的行不再被错误拆列（修复前 `lib/import-parser.ts` 裸 `split(',')` 会把这一行错位成 4 列）
+- `/code-review high`：跑出 3 条真实问题，已全部修复并回归验证通过：
+  1. **`product-categories/bulk` 权限点用错**——原来用「新建分类」权限点(`master.product_category.create`)，但这个端点还能按 ID 更新已有分类；本项目 RBAC 支持按权限点自由拆分角色，如果以后有角色只给了"建分类"没给"改分类"，就能靠批量导入绕过 update 权限改掉任意已有分类。已改成要求 `master.product_category.update`（跟 `/api/products/bulk` 用 `master.product.update` 同一个道理），`route-map.ts` 同步改，已用 boss 账号回归验证新建+按ID更新仍正常。
+  2. **CSV 分隔符嗅探回归**——收编 `lib/import-parser.ts` 的分隔符判断逻辑时，改成只看文本第一行，如果文件开头有空行（手工改过的 Excel 导出很常见），会判断错分隔符，整行数据静默错位。已改回"取第一条非空行"。
+  3. **商品改价留痕有并发竞态窗口**——重构时把"改价前后对比"的 after 值改成了事务提交后重新查一次库，如果这期间有人同时编辑了同一个商品，审计日志记的就是别人的改动而不是这次批量导入自己写的值。已改成直接用写入事务自己的返回值（给引擎加了 `data` 透传字段，不用重新查库），已重新跑一遍商品改价回归确认审计日志数值正确。
+- `/security-review`：已跑，无新增高置信度安全问题（上面第 1 条权限点问题是 `/code-review high` 发现的，已按同一次修复处理；`/security-review` 单独确认过这个点在当前角色配置下不构成立即可利用的漏洞，但修复后更彻底)
 
-### 已知不可用 / 未做的功能
+### 已知技术债（本次顺带发现，不在本次范围内处理）
 
-* **本环境无法验证的部分**（不是没做，是没法测）：`productNo` 迁移是否能在真实 Postgres 上干净跑通、批量导入/导出接口的真实请求/响应是否符合预期、UI 弹窗交互是否顺畅——全部需要你在有数据库的环境里跑一遍上面列的验证步骤。
-* 商品导入/导出没有支持"批量导入图片"，图片仍需逐个商品上传。
-* 供应商批量导入目前只做"创建，撞名跳过"，不像商品那样支持"按编号匹配后更新"——如果你需要供应商也支持更新导入，需要再开一轮（现有客户/供应商都没有对外的"内部编号"字段可作为可靠匹配键，得先补一个）。
-* 订单/采购单的批量导入沿用"整份 CSV 一次性提交、失败的整组跳过"策略，没有做"部分行成功、部分行失败"的行级颗粒度报告——报错信息是按订单/采购单分组给的，不是逐行。
+- `customers/bulk` 与 `suppliers/bulk` 原本各自手写的字段截断逻辑已抽成 `lib/import/contact-fields.ts` 共享，但 `vendor-bills/import`、`purchase-orders/parse` 用的另一套 PDF/Excel 解析器（`lib/import-parser.ts` + `lib/purchase/product-match.ts`）性质不同（文件转订单行而非批量建档），本次没有合并，判断为不该强行合并（业务语义不同）。
+
+## 第二轮：价格表导入导出（你确认要做）+ 司机排班（你确认不做）
+
+| 场景 | 来源 | 截图 | 状态 |
+|---|---|---|---|
+| 价格表列表页新增真正的导入/导出按钮(替掉"coming soon"假按钮) | 你 2026-10-03「价格表要加入导入导出功能」 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-pricelists-import-dialog.png | 符合 |
+| 导出字段勾选弹窗正常工作 | 同上 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-pricelists-export-field-picker.png | 符合 |
+| 司机排班不做导入导出 | 你 2026-10-03「司机排班就不用导入导出了」 | — | 符合(未改动) |
+
+**设计说明**：价格表的定价规则存在 `OdooPricelist.items`（JSON 数组），不是像单位/产品分类那样的平铺表——同一个价格表的多条定价规则要在 CSV 里用多行表示（一行 = 一条规则，靠「价格表名称」这一列分组），这跟商品/客户那种"一行一条独立记录"的通用引擎假设不一样，所以没有复用 `lib/import/bulk-import-engine.ts`，是一个独立实现(`app/api/pricelists/bulk/route.ts`)。顺带把价格表详情页原来内联的规则校验逻辑抽成共享模块 `lib/pricelist-item.ts`，两处用同一套规则。
+
+**技术验收**：
+- `npx tsc --noEmit` / `npm run build` / `npx eslint`：全部通过
+- 鉴权探针：`/api/pricelists/bulk` 无 token → 401
+- 功能回归（本地开发库真实 curl，测试数据已清理）：新建价格表+2条规则 → 按 externalId 更新价格表设置 → 按规则 ID 原地替换某条规则 → 不带规则只改名的"仅改设置"行 → 导出 CSV 核对字段，全部符合预期
+- **过程中自己发现并修复了一个 bug**：按规则 ID 更新时，原实现会把这条规则的 ID 意外换成一个新的（因为判重逻辑把"这行就是要更新的那条规则自己"误判成撞车），导致下次再按同一个 ID 导入会找不到、变成重复新增而不是更新。已修复（排除自身 ID 再判重）并重新测试确认 ID 保持稳定。
+- `app/api/pricelists/[id]/route.ts` 的重构（内联校验抽成共享模块）用一个真实价格表（112条规则）做了往返测试：GET 取出 → 原样 PUT 回去 → 规则条数和字段结构不变，确认行为没有被改变。
+- `/code-review high`：已跑完，4 个真问题，已全部修复并回归验证通过（详见下方「`/code-review high`（价格表这批）结果」）
+- `/security-review`：已跑，无新增高置信度问题（新端点权限点 `master.pricelist.update` 复用现有角色配置，BOSS/OPERATOR 同时拥有 create/update/read，SALES 三者都没有，不存在权限缺口；确认了通用导出路由 `/api/export/[entity]` 会对新注册的 `pricelists` 实体同样执行权限校验，不是只声明不生效）
+
+**已知限制（设计决策，不是遗留问题）**：
+- CSV 导入只能新增/更新定价规则，**不支持删除**已有规则——避免误操作清空定价。要删规则仍需去详情页手动删。
+- 价格表/规则的匹配靠「ID → 名称」，和商品/客户同一套思路。
+
+### `/code-review high`（价格表这批）结果：4 个真问题，已全部修复
+
+1. **价格表批量导入：引用"同批里稍后才新建"的另一个价格表会解析失败**——formula 规则的
+   `basedOnPricelist` 原来在"解析每一行"的阶段就去查库，但那时候同批其它行一个都还没写入，
+   查永远查不到。已改成挪到"写入这一行"的事务内部才解析(那时候前面的行已经真正提交)。
+   用真实场景复现过(A 行建"Base 10%"，B 行的规则引用"Base 10%")：修复前报 warning 丢了
+   嵌套引用，修复后 `basedOnPricelistId` 正确落库，已重新验证。
+2. **共享批量导入引擎有一个误判跳过的 bug**——这个影响商品/客户/供应商/产品分类/单位全部
+   5 个用这套引擎的路由：新记录的名字在"规划"阶段就被占用登记，如果这一行自己的写入事务
+   后来失败了(比如撞了无关字段的唯一约束)，名字已经被占，下一行如果恰好同名会被误判成
+   "跟这行撞名"而跳过——但数据库里其实从来没有写进去过这条记录。已改成：占用和写入事务
+   绑在一起，写入失败就撤销占用。同批真实撞名的跳过行为用 curl 重新验证过，没有被这个修复
+   影响。
+3. **批量导入弹窗表头匹配丢了一个回退规则**——抽成通用组件时参照了商品弹窗的实现，漏掉了
+   客户/供应商那套旧组件原本支持的"表头也认字段名(如 vatNumber)、不只认展示文案(如 VAT
+   Number)"的回退匹配。如果有人拿着表头是字段名的旧文件重新导入，那一列会静默对不上、
+   没有任何报错。已修复，恢复双重匹配。
+4. **价格表批量导入解析商品名时有 N+1 查询**——同一个文件里几百行各自引用的商品名，原来
+   逐行各查一次数据库；分类/单位在同一份代码里已经是"一次性查全表建字典"的做法，商品这块
+   漏了。已改成"先收集这份文件里实际出现过的商品名，一次性批量查"，不再有重复的网络往返。
+
+跑了一遍完整回归(商品/客户/供应商/单位/价格表，含上面两个真实场景复现用例)，测试数据
+已清理或标记停用(本地开发库里 boss 账号没有删客户权限，一条测试客户记录改成停用+改名
+`ZZZ-DELETED-...` 标记，不影响任何真实数据)。
+
+### `/security-review`（价格表这批）
+
+已跑，无新增高置信度问题。确认了新权限点 `master.pricelist.update` 在当前角色配置下没有
+缺口(BOSS/OPERATOR 同时有 create/update/read，SALES 三个都没有)，且通用导出路由
+`/api/export/[entity]` 对新注册的 `pricelists` 实体确实执行了权限校验。
+
+### 本轮顺带发现、记录但不在本次修复范围内的技术债
+
+code review 还提出几条"可以抽共享函数/收窄到一套引擎"的建议(MAX_ROWS_PER_REQUEST 校验逻辑
+在 6 个 bulk 路由里重复、"按名字建字典"这个模式在 4 个路由里重复、customers/suppliers 批量
+导入现在因为分批提交会产生多条审计日志而不是一条)。这几条是代码整洁度/效率层面的建议，不是
+正确性 bug，判断为可以留到下次动这块代码时顺手做，不在这次之内处理，已记录进任务台账。
+
+## 员工账号：编号 + 导入导出 + 批量操作（2026-10-06）
+
+来源：你 2026-10-06「在用户管理模块，增加导入导出功能，增加批量 action 功能，增加 user 编号功能」
+
+### 测试账号（本地沙盒，验证后已销毁）
+| 角色 | 账号 | 密码 |
+|------|------|------|
+| 管理员(BOSS+OPERATOR) | Alice（测试库种子） | 直接签发 JWT，未设密码 |
+| 司机(无 system.user.manage) | Bob（测试库种子） | 直接签发 JWT，未设密码 |
+
+### 验证结果（本地 PostgreSQL 16 + Playwright）
+| 用户流程 | 验证方式 | 结果 |
+|----------|----------|------|
+| 迁移回填编号 | 3 个老账号跑 migration.sql | ✅ 按创建时间 1/2/3，新号从 4 起；`prisma migrate diff` 为空 |
+| 列表显示编号 / 按编号搜索 | 浏览器 Search No. for: 3 | ✅ 只剩 Carol（精确匹配，不会把 13、23 带出来） |
+| 导入：新建 + 设上级 | CSV 6 行 | ✅ Eve 建成，带 2 个角色、上级 Alice、首次登录强制改密 |
+| 导入：已存在邮箱 | 同上 | ✅ 跳过，不改原账号 |
+| 导入：显示名当代码 / 弱密码 / RESTAURANT | 同上 | ✅ 三行各自失败并给出原因，其他行照常导入 |
+| 导入：上级邮箱不存在 | curl /api/users/bulk | ✅ 照建，给出提示 |
+| 导入：无权限 | 司机 token | ✅ 403 |
+| 批量停用（含自己） | 勾 3 人 → Actions → Deactivate | ✅ 自己被跳过，另 2 人停用且 permVersion+1（旧 token 立即失效） |
+| 停用自己 | curl PUT | ✅ 400「不能停用自己的账号」 |
+| 导出（全部/已选） | 浏览器导出 | ✅ 含编号、角色代码、上级邮箱，导出文件可直接改了再导入 |
+
+### 已知不可用功能
+- 导入只新建账号，不能用表格成批改已有账号的角色/状态——这是刻意的（改权限走行上「权限」或批量操作），不是缺陷。
+- `node --test` 有 7 个失败，全部是 main 上已有的（RBAC 快照 / `POST /api/auth/register` 写闸登记），与本次无关。

@@ -447,7 +447,7 @@ export default function ClassicPlaceOrderPage() {
       apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1&slim=1').catch(() => []),
       apiGet<OdooPricelist[]>('/api/pricelists').catch(() => []),
       // role=SALES: 服务端过滤，只拉销售人员
-      apiGet<{ id: string; name: string; role: string; roles?: string[] }[]>('/api/users?role=SALES').catch(() => []),
+      apiGet<{ id: string; name: string; role: string; roles?: string[] }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').catch(() => []),
       apiGet<Record<string, number>>('/api/products/pending-demand').catch(() => ({})),
     ])
       .then(([cs, ps, pls, us, pd]) => {

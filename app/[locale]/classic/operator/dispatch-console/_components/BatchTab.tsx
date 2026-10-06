@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -83,6 +84,9 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   const [slots, setSlots] = useState<DriverSlot[]>([])
   const [waves, setWaves] = useState<Wave[]>([])
   const [orders, setOrders] = useState<Order[]>([])
+  const [mobileOrder, setMobileOrder] = useState<{ orderId: string; sourceWaveId: string | null } | null>(null)
+  const [mobileSlotId, setMobileSlotId] = useState('')
+  const [mobileAssigning, setMobileAssigning] = useState(false)
   const [loading, setLoading] = useState(false)
   // 其他日期(≠当前所选)仍有已排订单的分布,用于顶部提示条,避免「排完切到调度台一片空」
   const [otherDates, setOtherDates] = useState<{ date: string; orders: number }[]>([])
@@ -284,7 +288,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       await apiPut(`/api/waves/${waveId}/assign`, { orderIds: [orderId], driverSlotId })
       toast.success(isEn ? 'Assigned' : '已分配')
       load({ silent: true })
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load({ silent: true }) }
+      return true
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load({ silent: true }); return false }
   }
   // 拖进「这个司机+时段当天还没有波次」的卡片：没有 waveId 可用，走销售单同款的
   // find-or-create 接口(assignOrderToWave 内部按 driverName+timeOfDay+deliveryDate 找/建波次)，
@@ -294,7 +299,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       await apiPut(`/api/orders/${orderId}/batch`, { driverSlotId })
       toast.success(isEn ? 'Assigned (new trip created)' : '已分配（新建波次）')
       load({ silent: true })
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load({ silent: true }) }
+      return true
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Assignment failed' : '分配失败')); load({ silent: true }); return false }
   }
   async function unassignFromWave(waveId: string, orderId: string) {
     // 同样要把订单从它所在托盘的 items 里摘掉，不然移出前 pallet.items 里那条 orderId 没清，
@@ -309,7 +315,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       // (status 仍是 WAVE_ASSIGNED)，待分配列表按 status==='CONFIRMED' 过滤(见 confirmedOrders)，
       // 不刷新这单会"提示成功但待分配区看不到"——必须 load() 才能把新状态拉回来。
       load({ silent: true })
-    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Removal failed' : '移除失败')); load({ silent: true }) }
+      return true
+    } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Removal failed' : '移除失败')); load({ silent: true }); return false }
   }
 
   // 确认出发：回填交货日期(=排程日期)，订单转 IN_DELIVERY，波次标记已出发
@@ -398,12 +405,15 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     const orderId = e.dataTransfer.getData('text/plain')
     const src = e.dataTransfer.getData(SRC)
     if (!orderId) return
+    moveOrderIntoSlot(orderId, src, wave, slot)
+  }
+  async function moveOrderIntoSlot(orderId: string, src: string | null, wave: Wave, slot: DriverSlot) {
     if (wave.dispatchedAt) { toast.error(isEn ? 'This trip has already departed, cannot reassign' : '该批次已出发，不能再分配'); return }
     if (wave.pickLockedAt) { toast.error(isEn ? 'This trip is locked for picking, ask the print operator to unlock it' : '该批次拣货中已锁定，请找打印员解锁'); return }
     if (src && waves.find(w => w.id === src)?.dispatchedAt) { toast.error(isEn ? 'The original trip has already departed, cannot move out' : '原批次已出发，不能移出'); return }
     if (src && waves.find(w => w.id === src)?.pickLockedAt) { toast.error(isEn ? 'The original trip is locked for picking, ask the print operator to unlock it' : '原批次拣货中已锁定，请找打印员解锁'); return }
-    if (!wave.id) { assignToPalletNoWave(orderId, slot.id); return }
-    assignToPallet(wave.id, orderId, slot.id)
+    if (!wave.id) return assignToPalletNoWave(orderId, slot.id)
+    return assignToPallet(wave.id, orderId, slot.id)
   }
   function dropToPallet(e: React.DragEvent, wave: Wave, slot: DriverSlot) {
     dropOrderIntoSlot(e, wave, slot)
@@ -509,6 +519,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
     function chipDragProps(orderId: string, sourceWaveId: string) {
       const disabled = reallyDispatched || locked
       return {
+        onAssign: disabled ? undefined : () => { setMobileOrder({ orderId, sourceWaveId }); setMobileSlotId('') },
         draggable: !disabled,
         onDragStart: (e: React.DragEvent) => { if (disabled) { e.preventDefault(); return } startDrag(e, orderId, sourceWaveId) },
         onDragEnd: () => setDragging(false),
@@ -808,11 +819,11 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
       {loading && <div className="text-center text-gray-400 py-10">{isEn ? 'Loading…' : '加载中…'}</div>}
 
       {!loading && (
-        <div className="flex gap-3.5 items-start">
+        <div className="flex flex-col md:flex-row gap-3.5 items-start">
           {/* 待分配竖条（可接收拖回） */}
           <div
             ref={leftPanelRef}
-            className="flex-none w-[220px] bg-gray-50 border border-dashed rounded-xl sticky top-2.5 max-h-[640px] flex flex-col transition-shadow"
+            className="flex-none w-full md:w-[220px] bg-gray-50 border border-dashed rounded-xl md:sticky md:top-2.5 max-h-[640px] flex flex-col transition-shadow"
             style={{ borderColor: (dragOverLeft || flashLeft) ? PURPLE : '#cbd5e1', boxShadow: (dragOverLeft || flashLeft) ? `0 0 0 2px ${PURPLE}33` : undefined }}
             onDragOver={e => { e.preventDefault(); autoScrollContainer(unassignedScrollRef.current, e.clientY); e.dataTransfer.dropEffect = 'move'; setDragOverLeft(true) }}
             onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverLeft(false) }}
@@ -823,7 +834,7 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 <span className="font-bold text-sm">{isEn ? '📥 Unassigned' : '📥 待分配'}</span>
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500">{isEn ? `${unassigned.length} orders` : `${unassigned.length} 单`}</span>
               </div>
-              <div className="text-[11px] text-gray-400 mt-1">{isEn ? 'Drag to a pallet on a driver on the right; drag back here from a pallet to remove' : '拖到右侧司机的某个托盘；从托盘拖回此处可移出'}</div>
+              <div className="text-[11px] text-gray-400 mt-1"><span className="hidden md:inline">{isEn ? 'Drag to a pallet on a driver on the right; drag back here from a pallet to remove' : '拖到右侧司机的某个托盘；从托盘拖回此处可移出'}</span><span className="md:hidden">{isEn ? 'Tap Assign to batch to choose a driver and pallet' : '点击「分配到波次」选择司机和托盘'}</span></div>
             </div>
             <div ref={unassignedScrollRef} className="p-2.5 overflow-y-auto flex flex-col gap-2">
               {unassigned.length === 0 && <div className="text-center text-xs text-gray-400 py-6">{isEn ? 'All assigned 🎉' : '已全部入批 🎉'}</div>}
@@ -839,12 +850,13 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
                 >
                   <div className="font-semibold text-amber-700">{o.code ?? o.id.slice(0, 8)}</div>
                   <div className="text-gray-500 mt-0.5">{o.restaurantName} · {isEn ? `${o.items?.length ?? 0} items` : `${o.items?.length ?? 0}项`} · €{num(o.totalAmount).toLocaleString()}</div>
+                  <button onClick={() => { setMobileOrder({ orderId: o.id, sourceWaveId: null }); setMobileSlotId('') }} className="md:hidden mt-2 min-h-11 px-3 rounded border border-purple-200 text-purple-700">{isEn ? 'Assign to batch' : '分配到波次'}</button>
                 </div>
               ))}
             </div>
           </div>
 
-          <div ref={rightPanelRef} className="flex-1 min-w-0 scroll-mt-3">
+          <div ref={rightPanelRef} className="flex-1 w-full min-w-0 scroll-mt-3">
             {selectedDrivers.size === 0 ? (
               <div className="flex items-center justify-center text-gray-400 text-sm min-h-[200px] border border-dashed rounded-xl" style={{ borderColor: '#e5e7eb' }}>
                 {isEn ? '← Please select a driver above' : '← 请从上方选择司机'}
@@ -885,13 +897,39 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
         </div>
       )}
 
+      <Dialog open={!!mobileOrder} onOpenChange={open => { if (!open && !mobileAssigning) setMobileOrder(null) }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{isEn ? 'Assign / move order' : '分配 / 移动订单'}</DialogTitle></DialogHeader>
+          <p className="text-sm break-words">{ordersById.get(mobileOrder?.orderId ?? '')?.restaurantName}</p>
+          <select aria-label={isEn ? 'Target batch' : '目标波次'} value={mobileSlotId} onChange={event => setMobileSlotId(event.target.value)} disabled={mobileAssigning} className="w-full min-h-11 border rounded p-2">
+            <option value="">{isEn ? 'Select driver / pallet' : '选择司机 / 托盘'}</option>
+            {slots.filter(slot => { const wave = waveForGroup(slot.driverName, slot.timeOfDay); return !wave?.dispatchedAt && !wave?.pickLockedAt && !wave?.completedAt }).map(slot => <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>)}
+          </select>
+          <DialogFooter className="flex flex-col gap-2">
+            {mobileOrder?.sourceWaveId && <button disabled={mobileAssigning} className="min-h-11 px-3 border rounded text-red-600" onClick={async () => {
+              const source = waves.find(wave => wave.id === mobileOrder.sourceWaveId)
+              if (!source || source.dispatchedAt || source.pickLockedAt) { toast.error(isEn ? 'Trip is locked or departed' : '批次已锁定或已出发'); return }
+              setMobileAssigning(true)
+              try { if (await unassignFromWave(source.id, mobileOrder.orderId)) setMobileOrder(null) } finally { setMobileAssigning(false) }
+            }}>{isEn ? 'Move to unassigned' : '移回待分配'}</button>}
+            <button disabled={!mobileSlotId || mobileAssigning} className="min-h-11 px-3 rounded bg-[#875A7B] text-white disabled:opacity-40" onClick={async () => {
+              const slot = slots.find(slot => slot.id === mobileSlotId)
+              if (!slot || !mobileOrder) return
+              const wave = waveForGroup(slot.driverName, slot.timeOfDay) ?? { id: '', dispatchedAt: null, pickLockedAt: null } as Wave
+              setMobileAssigning(true)
+              try { if (await moveOrderIntoSlot(mobileOrder.orderId, mobileOrder.sourceWaveId, wave, slot)) setMobileOrder(null) } finally { setMobileAssigning(false) }
+            }}>{mobileAssigning ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Assign to this batch' : '分配到此波次')}</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function OrderChip({ order, draggable, isEn, onDragStart, onDragEnd }: {
+function OrderChip({ order, draggable, isEn, onDragStart, onDragEnd, onAssign }: {
   order: Order; draggable: boolean; isEn: boolean
   onDragStart?: (e: React.DragEvent) => void; onDragEnd?: () => void
+  onAssign?: () => void
 }) {
   return (
     <div
@@ -909,6 +947,7 @@ function OrderChip({ order, draggable, isEn, onDragStart, onDragEnd }: {
         </span>
         <span className="text-gray-500 flex-none ml-1">€{num(order.totalAmount).toLocaleString()}</span>
       </div>
+      {onAssign && <button onClick={onAssign} className="md:hidden mt-2 min-h-11 px-3 rounded border border-purple-200 text-purple-700">{isEn ? 'Move / unassign' : '移动 / 移出'}</button>}
     </div>
   )
 }

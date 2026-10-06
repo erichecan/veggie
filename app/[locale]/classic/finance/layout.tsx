@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import OdooNav from '@/components/classic/OdooNav'
 import { getSession, toRoleSession } from '@/lib/session'
-import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -43,7 +42,6 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
       return
     }
     setSession(toRoleSession(user))
-    hydrate()
   }, [router, prefix, pathname])
 
   return (

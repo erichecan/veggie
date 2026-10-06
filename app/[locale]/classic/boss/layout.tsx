@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import OdooNav from '@/components/classic/OdooNav'
 import SecondRowNav from '@/components/boss/second-row-nav'
 import { getSession, toRoleSession } from '@/lib/session'
-import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -82,7 +81,6 @@ export default function ClassicBossLayout({ children }: { children: React.ReactN
     setSession(toRoleSession(user))
     setCanBackup(decodePermissions(user.pm).has('system.backup.read'))
     setCanUseAiChat(decodePermissions(user.pm).has('analytics.chat.read'))
-    hydrate()
   }, [router, prefix])
 
   return (

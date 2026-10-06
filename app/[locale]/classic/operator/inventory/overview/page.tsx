@@ -113,7 +113,7 @@ export default function InventoryOverviewPage() {
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#a3690e' }} />{isEn ? 'Expiring Lots' : '临期批次'}
             </div>
             <div className="text-lg font-bold" style={{ color: '#a3690e' }}>{kpis?.expiringLotCount ?? 0}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{isEn ? 'Due within 3 days (incl. expired)' : '3 天内到期（含已过期）'}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{isEn ? 'Due within 7 days (incl. expired)' : '7 天内到期（含已过期）'}</div>
           </div>
           <div className="p-4">
             <div className="text-xs text-gray-500 flex items-center gap-1.5 mb-1">

@@ -8,7 +8,7 @@ import { getSession } from '@/lib/session'
 import type { SystemUser, UserRole } from '@/lib/types'
 import type { ExportColumn } from '@/lib/export/types'
 import { useCsvExport } from '@/hooks/use-csv-export'
-import CsvImportDialog, { type CsvColumn } from '@/components/classic/CsvImportDialog'
+import BulkImportDialog, { type BulkImportColumn } from '@/components/shared/BulkImportDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -470,12 +470,13 @@ export default function UsersTab({
   const [importOpen, setImportOpen] = useState(false)
   // 与服务端 /api/users/bulk 接受的范围一致：除 RESTAURANT 外的全部角色代码
   const staffRoleCodes = (Object.keys(ROLE_LABEL_ZH) as UserRole[]).filter(r => r !== 'RESTAURANT')
-  const importColumns: CsvColumn[] = [
-    { key: 'name', label: isEn ? 'Name' : '姓名', required: true },
-    { key: 'email', label: isEn ? 'Email' : '邮箱', required: true },
-    { key: 'roles', label: isEn ? 'Roles' : '角色代码', required: true },
-    { key: 'password', label: isEn ? 'Initial Password' : '初始密码', required: true },
-    { key: 'managerEmail', label: isEn ? 'Manager Email' : '上级邮箱' },
+  // 表头用英文(模板固定)，中文表头作别名也认
+  const importColumns: BulkImportColumn[] = [
+    { label: 'Name', aliases: ['姓名'], key: 'name', required: true },
+    { label: 'Email', aliases: ['邮箱'], key: 'email', required: true },
+    { label: 'Roles', aliases: ['角色代码', '角色'], key: 'roles', required: true },
+    { label: 'Initial Password', aliases: ['初始密码', 'Password', '密码'], key: 'password', required: true },
+    { label: 'Manager Email', aliases: ['上级邮箱'], key: 'managerEmail' },
   ]
 
   return (
@@ -570,20 +571,26 @@ export default function UsersTab({
 
       {exportAction.dialog}
 
+      {/* 模板不带示例行：示例里的邮箱 + 已知密码一旦被原样导入，就是一个真能登录的账号 */}
       {!isRestaurantGroup && (
-        <CsvImportDialog
+        <BulkImportDialog
           open={importOpen}
           onClose={() => setImportOpen(false)}
-          title={isEn ? 'Import Staff Accounts (CSV)' : '导入员工账号(CSV)'}
-          columns={importColumns}
-          templateName={isEn ? 'staff-import-template' : '员工导入模板'}
-          endpoint="/api/users/bulk"
-          batchSize={25}
-          skippedLabel={{ zh: '邮箱已存在,跳过', en: 'Skipped — email already exists' }}
           onDone={onReload}
-          note={isEn
-            ? <>Only <b>creates new accounts</b> — rows whose email already exists are skipped and existing accounts are never changed (use “Permissions” or the bulk actions for that). <b>Roles</b> must be the exact upper-case role codes (not the display names — e.g. “Sales” is OPERATOR), several separated by <code>;</code>:{staffRoleCodes.map(r => `${r} (${ROLE_LABEL_EN[r]})`).join(', ')}. The initial password must meet the password policy (at least {PASSWORD_MIN_LENGTH} characters, not a common password); imported users <b>must change it at first login</b>. Manager Email is optional.</>
-            : <>只<b>新建账号</b>——邮箱已存在的行直接跳过，不会改动已有账号（改角色/停用请用行上的「权限」或批量操作）。<b>角色代码</b>填大写英文代码（区分大小写，不要填中文名或英文显示名——英文界面的 “Sales” 其实是 OPERATOR），多个用 <code>;</code> 分隔：{staffRoleCodes.map(r => `${r}（${ROLE_LABEL_ZH[r]}）`).join('、')}。初始密码须符合密码规则（至少 {PASSWORD_MIN_LENGTH} 位、不能是常见弱口令），导入的账号<b>首次登录必须修改密码</b>。上级邮箱可不填。</>}
+          templateFileName={isEn ? 'staff-import-template' : '员工导入模板'}
+          columns={importColumns}
+          exampleRows={[]}
+          endpoint="/api/users/bulk"
+          batchSize={50}
+          title={{ zh: '导入员工账号', en: 'Import Staff Accounts' }}
+          hint={{
+            zh: '先下载模板，按表头填写后上传。只新建账号，邮箱已存在的行跳过。',
+            en: 'Download the template, fill it in and upload. Only new accounts are created; rows whose email already exists are skipped.',
+          }}
+          extraHint={{
+            en: <>Only <b>creates new accounts</b> — rows whose email already exists are skipped (listed under “name collisions” in the result) and existing accounts are never changed — use “Permissions” or the bulk actions for that. <b>Roles</b> must be the exact upper-case role codes (not the display names — e.g. “Sales” is OPERATOR), several separated by <code>;</code>:{staffRoleCodes.map(r => `${r} (${ROLE_LABEL_EN[r]})`).join(', ')}. The initial password must meet the password policy (at least {PASSWORD_MIN_LENGTH} characters, not a common password); imported users <b>must change it at first login</b>. Manager Email is optional.</>,
+            zh: <>只<b>新建账号</b>——邮箱已存在的行直接跳过，不会改动已有账号（结果里列在「重名跳过」中；改角色/停用请用行上的「权限」或批量操作）。<b>角色代码</b>填大写英文代码（区分大小写，不要填中文名或英文显示名——英文界面的 “Sales” 其实是 OPERATOR），多个用 <code>;</code> 分隔：{staffRoleCodes.map(r => `${r}（${ROLE_LABEL_ZH[r]}）`).join('、')}。初始密码须符合密码规则（至少 {PASSWORD_MIN_LENGTH} 位、不能是常见弱口令），导入的账号<b>首次登录必须修改密码</b>。上级邮箱可不填。</>,
+          }}
         />
       )}
 

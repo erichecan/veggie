@@ -138,7 +138,7 @@ export default function SalesOrderDetailPage() {
   const [deliveryDate, setDeliveryDate] = useState('')
   const [salesUserId, setSalesUserId] = useState('')
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
-  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=SALES').then(setSalesUsers).catch(() => {}) }, [])
+  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').then(setSalesUsers).catch(() => {}) }, [])
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
   const [pricelistId, setPricelistId] = useState('')

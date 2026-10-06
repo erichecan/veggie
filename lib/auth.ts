@@ -81,6 +81,16 @@ export function effectiveRoles(p: { role?: string | null; roles?: string[] | nul
   return p.role ? [String(p.role)] : []
 }
 
+/**
+ * 纯销售（未兼任 OPERATOR/BOSS）——与 lib/row-scope.ts 的 salesRowScope 同一套判断口径。
+ * 用于隐藏/禁止编辑只对纯业务员屏蔽的字段（如 Customer.sageAccount）。
+ */
+export function isSalesOnly(p: { role?: string | null; roles?: string[] | null } | null): boolean {
+  if (!p) return false
+  const roles = effectiveRoles(p)
+  return roles.includes('SALES') && !roles.includes('BOSS') && !roles.includes('OPERATOR')
+}
+
 export async function signToken(payload: JwtPayload): Promise<string> {
   return new SignJWT(payload as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: 'HS256' })

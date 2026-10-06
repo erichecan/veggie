@@ -10,6 +10,7 @@ import { useCsvExport } from '@/hooks/use-csv-export'
 import { parseCsv, downloadCsv } from '@/lib/csv-export'
 import type { Order, OrderStatus, Invoice, Customer, Trip } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
+import OrderMobileList from '@/components/classic/OrderMobileList'
 import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
 import { buildOrderHtml, CSS as PRINT_CSS } from '../../print/[id]/page'
@@ -161,7 +162,9 @@ export default function ClassicQuotationsPage() {
   const [savingItems, setSavingItems] = useState(false)
   const [bulkConfirming, setBulkConfirming] = useState(false)
   const [bulkPrinting, setBulkPrinting] = useState(false)
-  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkCancelling, setBulkCancelling] = useState(false)
+  const [bulkRemoving, setBulkRemoving] = useState(false)
+  const [bulkRestoring, setBulkRestoring] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
 
   // ── View mode (Edit vs Read) ──────────────────────────────────────────────
@@ -715,24 +718,68 @@ export default function ClassicQuotationsPage() {
     refresh()
   }
 
-  async function handleBulkDelete() {
+  async function handleBulkCancel() {
     const ids = [...selected]
     if (!confirm(isEn
-      ? `Cancel ${ids.length} quotations? You can view them under the "Cancelled" filter afterward.`
-      : `确认取消 ${ids.length} 条报价单？取消后可在「已取消」筛选中查看。`)) return
-    setBulkDeleting(true)
+      ? `Cancel ${ids.length} quotations? You can restore or permanently delete them afterward under the "Cancelled" filter.`
+      : `确认取消 ${ids.length} 条报价单？取消后可在「已取消」筛选中恢复或彻底删除。`)) return
+    setBulkCancelling(true)
     const results = await Promise.allSettled(
       ids.map(id => apiPut(`/api/orders/${id}`, { status: 'CANCELLED' }))
     )
     const successCount = results.filter(r => r.status === 'fulfilled').length
     const failCount = results.filter(r => r.status === 'rejected').length
-    setBulkDeleting(false)
+    setBulkCancelling(false)
     setSelected(new Set())
     if (failCount === 0) {
       toast.success(isEn ? `Cancelled ${successCount} quotations` : `已取消 ${successCount} 条报价单`)
     } else {
       toast.warning(isEn ? `${successCount} succeeded, ${failCount} failed` : `成功 ${successCount} 条，失败 ${failCount} 条`)
     }
+    refresh()
+  }
+
+  // 硬删除：只有报价单(PENDING)或已取消(CANCELLED)的单可以删，其余状态在接口层会被拒绝——
+  // 这里按状态先筛一遍，避免"选中一堆混合状态的单，大半个失败"的糟糕体验
+  async function handleBulkRemove() {
+    const ids = [...selected]
+    const removable = ids.filter(id => {
+      const o = orders.find(o => o.id === id)
+      return o?.status === 'pending' || o?.status === 'cancelled'
+    })
+    if (removable.length === 0) {
+      toast.info(isEn ? 'Only quotations or cancelled orders can be deleted' : '只有报价单或已取消的订单可以删除')
+      return
+    }
+    if (!confirm(isEn
+      ? `Permanently delete ${removable.length} order(s)? This cannot be undone.`
+      : `确认永久删除 ${removable.length} 条订单？此操作不可撤销。`)) return
+    setBulkRemoving(true)
+    const results = await Promise.allSettled(removable.map(id => apiDelete(`/api/orders/${id}`)))
+    const successCount = results.filter(r => r.status === 'fulfilled').length
+    const failCount = results.filter(r => r.status === 'rejected').length
+    setBulkRemoving(false)
+    setSelected(new Set())
+    if (failCount === 0) toast.success(isEn ? `Deleted ${successCount} order(s)` : `已删除 ${successCount} 条订单`)
+    else toast.warning(isEn ? `${successCount} succeeded, ${failCount} failed` : `成功 ${successCount} 条，失败 ${failCount} 条`)
+    refresh()
+  }
+
+  async function handleBulkRestore() {
+    const ids = [...selected]
+    const restorable = ids.filter(id => orders.find(o => o.id === id)?.status === 'cancelled')
+    if (restorable.length === 0) {
+      toast.info(isEn ? 'Only cancelled orders can be restored' : '只有已取消的订单可以恢复')
+      return
+    }
+    setBulkRestoring(true)
+    const results = await Promise.allSettled(restorable.map(id => apiPut(`/api/orders/${id}`, { status: 'PENDING' })))
+    const successCount = results.filter(r => r.status === 'fulfilled').length
+    const failCount = results.filter(r => r.status === 'rejected').length
+    setBulkRestoring(false)
+    setSelected(new Set())
+    if (failCount === 0) toast.success(isEn ? `Restored ${successCount} quotation(s)` : `已恢复 ${successCount} 条报价单`)
+    else toast.warning(isEn ? `${successCount} succeeded, ${failCount} failed` : `成功 ${successCount} 条，失败 ${failCount} 条`)
     refresh()
   }
 
@@ -837,6 +884,33 @@ ${orderSections}
     const isSelected = selected.has(o.id)
     const isEditingItems = editItemsId === o.id
     const canEditItems = o.status === 'pending' && !isReadMode
+    const canCancel = o.status === 'pending' && !isReadMode
+    const canRestore = o.status === 'cancelled' && !isReadMode
+    // 报价单(pending)从未扣库存；已取消(cancelled)取消时库存已恢复——两种状态都能安全硬删
+    const canRemove = (o.status === 'pending' || o.status === 'cancelled') && !isReadMode
+
+    async function removeOrder() {
+      if (!confirm(isEn
+        ? `Permanently delete ${displayOrderCode(o)}? This cannot be undone.`
+        : `确认永久删除 ${displayOrderCode(o)}？此操作不可撤销。`)) return
+      try {
+        await apiDelete(`/api/orders/${o.id}`)
+        toast.success(isEn ? 'Order deleted' : '订单已删除')
+        refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : (isEn ? 'Delete failed' : '删除失败'))
+      }
+    }
+
+    async function restoreOrder() {
+      try {
+        await apiPut(`/api/orders/${o.id}`, { status: 'PENDING' })
+        toast.success(isEn ? 'Restored to Quotation' : '已恢复为报价单')
+        refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : (isEn ? 'Restore failed' : '恢复失败'))
+      }
+    }
 
     return (
       <>
@@ -911,13 +985,13 @@ ${orderSections}
           <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2">
               <span>{getField(o, 'salesman') || '—'}</span>
-              {canEditItems && (
+              {canCancel && (
                 <button
                   onClick={async e => {
                     e.stopPropagation()
                     if (!confirm(isEn
-                      ? `Cancel quotation ${displayOrderCode(o)}? You can view it under the "Cancelled" filter afterward.`
-                      : `确认取消报价单 ${displayOrderCode(o)}？取消后可在「已取消」筛选中查看。`)) return
+                      ? `Cancel quotation ${displayOrderCode(o)}? You can restore or permanently delete it afterward under the "Cancelled" filter.`
+                      : `确认取消报价单 ${displayOrderCode(o)}？取消后可在「已取消」筛选中恢复或彻底删除。`)) return
                     try {
                       await apiPut(`/api/orders/${o.id}`, { status: 'CANCELLED' })
                       toast.success(isEn ? 'Quotation cancelled' : '报价单已取消')
@@ -928,6 +1002,20 @@ ${orderSections}
                   }}
                   className="px-2 py-0.5 text-xs rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
                   {isEn ? 'Cancel' : '取消'}
+                </button>
+              )}
+              {canRestore && (
+                <button
+                  onClick={e => { e.stopPropagation(); restoreOrder() }}
+                  className="px-2 py-0.5 text-xs rounded border border-green-300 text-green-700 bg-white hover:bg-green-50 whitespace-nowrap">
+                  {isEn ? 'Restore' : '恢复'}
+                </button>
+              )}
+              {canRemove && (
+                <button
+                  onClick={e => { e.stopPropagation(); removeOrder() }}
+                  className="px-2 py-0.5 text-xs rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 whitespace-nowrap">
+                  {isEn ? 'Delete' : '删除'}
                 </button>
               )}
             </div>
@@ -1099,8 +1187,12 @@ ${orderSections}
                 { label: 'Edit', onClick: () => {}, primary: true },
                 { label: 'Mode', onClick: () => { setIsReadMode(true); setEditDateId(null); setEditItemsId(null) } },
               ]),
-          ...(selected.size >= 2 ? [{ label: bulkConfirming ? (isEn ? 'Confirming...' : '确认中...') : (isEn ? `Bulk Confirm (${selected.size})` : `批量确认 (${selected.size})`), onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
-          ...(selected.size >= 2 ? [{ label: bulkDeleting ? (isEn ? 'Cancelling...' : '取消中...') : (isEn ? `Bulk Cancel (${selected.size})` : `批量取消 (${selected.size})`), onClick: handleBulkDelete, primary: true, style: 'red' as const, disabled: bulkDeleting }] : []),
+          // 20261003：阈值从 >=2 改成 >=1 —— 原来选中单条报价单时，工具栏不出现任何批量操作
+          // 入口，用户看不到删除/恢复按钮，以为功能没做（单条场景没理由要求必须多选）
+          ...(selected.size >= 1 ? [{ label: bulkConfirming ? (isEn ? 'Confirming...' : '确认中...') : (isEn ? `Bulk Confirm (${selected.size})` : `批量确认 (${selected.size})`), onClick: handleBulkConfirm, primary: true, style: 'green' as const, disabled: bulkConfirming }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkCancelling ? (isEn ? 'Cancelling...' : '取消中...') : (isEn ? `Bulk Cancel (${selected.size})` : `批量取消 (${selected.size})`), onClick: handleBulkCancel, primary: true, style: 'red' as const, disabled: bulkCancelling }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkRestoring ? (isEn ? 'Restoring...' : '恢复中...') : (isEn ? `Bulk Restore (${selected.size})` : `批量恢复 (${selected.size})`), onClick: handleBulkRestore, style: 'green' as const, disabled: bulkRestoring }] : []),
+          ...(selected.size >= 1 ? [{ label: bulkRemoving ? (isEn ? 'Deleting...' : '删除中...') : (isEn ? `Bulk Delete (${selected.size})` : `批量删除 (${selected.size})`), onClick: handleBulkRemove, style: 'red' as const, disabled: bulkRemoving }] : []),
           ...(selected.size === 1 ? [{ label: duplicating ? (isEn ? 'Duplicating...' : '复制中...') : 'Duplicate', onClick: handleDuplicate, primary: true, disabled: duplicating }] : []),
           ...(selected.size >= 1 ? [{ label: bulkPrinting ? (isEn ? 'Generating...' : '生成中...') : (isEn ? `Bulk Print (${selected.size})` : `批量打印 (${selected.size})`), onClick: handleBulkPrint, primary: true, disabled: bulkPrinting }] : []),
         ]}
@@ -1122,7 +1214,7 @@ ${orderSections}
           else { setActiveTab(v as TabValue) }
         }}
         activeFilters={[
-          ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
+          ...groupFacets(facets).map(g => ({ label: g.chipLabel, values: g.values, prefix: g.key === 'all' ? undefined : g.label, onRemove: () => removeFacetGroup(g.key) })),
           ...(myActive ? [{ label: 'My Quotations', onRemove: () => setMyActive(false) }] : []),
           ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(orderTodayActive ? [{ label: 'Order Today', onRemove: () => { setOrderTodayActive(false) } }] : []),
@@ -1151,7 +1243,16 @@ ${orderSections}
       />
 
       {/* ── Table ── */}
-      <div className="overflow-x-auto relative">
+      <OrderMobileList orders={paginated} selected={selected} loading={loading} isEn={isEn} statusLabels={STATUS_LABEL} statusColors={STATUS_COLOR}
+        onSelect={(id, checked) => setSelected(previous => { const next = new Set(previous); if (checked) next.add(id); else next.delete(id); return next })}
+        filterControls={<>{([{ key: 'quotationDateFrom', en: 'Quotation from', zh: '报价开始' }, { key: 'quotationDateTo', en: 'Quotation to', zh: '报价截止' }, { key: 'deliveryDateFrom', en: 'Delivery from', zh: '交货开始' }, { key: 'deliveryDateTo', en: 'Delivery to', zh: '交货截止' }] as const).map(field => <label key={field.key} className="flex flex-col gap-1">{isEn ? field.en : field.zh}<input type="date" value={colFilters[field.key]} onChange={event => setCf(field.key, event.target.value)} className="min-h-11 border rounded px-2 w-full min-w-0" /></label>)}</>}
+        onOpen={order => router.push(`${prefix}/classic/operator/orders/${order.id}`)}
+        sortKey={sortField ?? 'code'} sortDir={sortDir} onSort={(key, direction) => { setSortField(key); setSortDir(direction) }}
+        sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
+        groupLabel={groupBy === 'none' ? undefined : order => Array.from(grouped?.entries() ?? []).find(([, groupOrders]) => groupOrders.some(item => item.id === order.id))?.[0] ?? ''}
+        renderExtra={order => <p className="text-xs text-gray-500 break-words">{getField(order, 'salesman')}{order.source === 'PORTAL' ? (isEn ? ' · Customer portal' : ' · 客户自助') : ''}</p>}
+      />
+      <div className="hidden md:block overflow-x-auto relative">
         {loading && filtered.length > 0 && (
           <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-20">
             <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
@@ -1222,7 +1323,7 @@ ${orderSections}
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between px-2 py-3">
+      <div className="flex flex-wrap gap-2 items-center justify-between px-2 py-3">
         <span className="text-xs text-gray-400">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>

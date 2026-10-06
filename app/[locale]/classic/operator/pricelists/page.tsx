@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPut } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import type { OdooPricelist, Product } from '@/lib/types'
 import { formatDateTime } from '@/lib/format-date'
@@ -13,6 +13,10 @@ import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import type { Facet } from '@/lib/list-filters'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { PRICELIST_EXPORT_COLUMNS } from '@/lib/export/columns/pricelists'
+import { pricelistImportColumns, PRICELIST_IMPORT_EXAMPLE_ROWS } from './pricelist-import-columns'
 
 const PAGE_SIZE = 80
 
@@ -31,6 +35,8 @@ interface SavedListState {
   tab: 'active' | 'archived'
   groupBy: string
   page: number
+  sortKey: string
+  sortDir: 'asc' | 'desc'
 }
 
 function readSavedListState(): SavedListState | null {
@@ -56,12 +62,17 @@ export default function ClassicPricelistsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(saved?.columnFilters ?? {})
   const [isReadMode, setIsReadMode] = useState(true)
+  const editMode = !isReadMode
   const [page, setPage] = useState(saved?.page ?? 1)
   const [selectableFilter, setSelectableFilter] = useState(saved?.selectableFilter ?? false)
   // 使用中/已停用分开两个 Tab，不再靠一个"Active"筛选开关把已归档价格表混进同一张表——
   // 20260924 用户反馈"archived 的价格表要单独归一个界面"。
   const [tab, setTab] = useState<'active' | 'archived'>(saved?.tab ?? 'active')
   const [groupBy, setGroupBy] = useState(saved?.groupBy ?? '')
+  const [sortKey, setSortKey] = useState(saved?.sortKey ?? '')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(saved?.sortDir ?? 'asc')
+  const [importOpen, setImportOpen] = useState(false)
+  const exportAction = useCsvExport({ entity: 'pricelists', params: () => '', columns: PRICELIST_EXPORT_COLUMNS })
 
   function handleTabChange(next: 'active' | 'archived') {
     setTab(next)
@@ -112,9 +123,9 @@ export default function ClassicPricelistsPage() {
   // 搜索/筛选状态整体持久化，供从详情页返回时恢复（见 LIST_STATE_KEY 顶部注释）。
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page }
+    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir }
     try { sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(state)) } catch { /* 存储不可用时静默跳过,不影响筛选本身 */ }
-  }, [searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page])
+  }, [searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir])
 
   const filteredLists = useMemo(() => {
     let rows = filterByFacets(lists, facets, facetDefs)
@@ -147,16 +158,52 @@ export default function ClassicPricelistsPage() {
     return rows
   }, [lists, facets, facetDefs, tab, searchInput, columnFilters, selectableFilter])
 
+  // 点列头排序前，列表恒按 sequence（后端存的任意顺序）展示——名称一栏看着大小写
+  // 随机混排、Last Updated on 一栏也不按时间先后，就是因为从没真正排过序
+  // （20261002 客户反馈截图）。name 用 localeCompare + sensitivity:'base' 做大小写
+  // 不敏感比较，updatedAt 按真实时间戳比较，不是字符串字典序。
+  const sortedLists = useMemo(() => {
+    if (!sortKey) return filteredLists
+    const dir = sortDir === 'asc' ? 1 : -1
+    const rows = [...filteredLists]
+    rows.sort((a, b) => {
+      if (sortKey === 'name') return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) * dir
+      if (sortKey === 'updatedAt') return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * dir
+      return 0
+    })
+    return rows
+  }, [filteredLists, sortKey, sortDir])
+
   const pagedLists = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
-    return filteredLists.slice(start, start + PAGE_SIZE)
-  }, [filteredLists, page])
+    return sortedLists.slice(start, start + PAGE_SIZE)
+  }, [sortedLists, page])
+
+  async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
+    const pl = row as unknown as OdooPricelist
+    const payloadVal = key === 'name' ? String(newValue).trim() : newValue
+    if (key === 'name' && !payloadVal) {
+      toast.error(isEn ? 'Name cannot be empty' : '名称不能为空')
+      throw new Error('empty name')
+    }
+    try {
+      await apiPut(`/api/pricelists/${pl.id}`, { [key]: payloadVal })
+      setLists(prev => prev.map(row => row.id === pl.id ? { ...row, [key]: payloadVal } as OdooPricelist : row))
+      toast.success(isEn ? 'Saved' : '已保存')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+      throw e
+    }
+  }
 
   const columns: OdooColumn[] = [
     {
       key: 'name',
       label: 'Pricelist Name',
       filterType: 'text',
+      sortable: true,
+      editable: true,
+      editType: 'text',
       render: (v, row) => {
         const pl = row as unknown as OdooPricelist
         return (
@@ -170,6 +217,7 @@ export default function ClassicPricelistsPage() {
       key: 'updatedAt',
       label: 'Last Updated on',
       filterType: 'date-range',
+      sortable: true,
       render: (v) => (
         <span className="text-xs text-gray-500">
           {v ? formatDateTime(String(v)) : '—'}
@@ -180,6 +228,8 @@ export default function ClassicPricelistsPage() {
       key: 'currency',
       label: 'Currency',
       filterType: 'text',
+      editable: true,
+      editType: 'text',
       render: (v) => <span className="text-gray-700">{String(v ?? '')}</span>,
     },
     {
@@ -212,7 +262,8 @@ export default function ClassicPricelistsPage() {
         breadcrumb={isEn ? ['Sales', 'Pricelists'] : ['销售', '价格表']}
         permanentActions={[
           { label: isEn ? 'New' : '新建', onClick: handleCreate },
-          { label: 'Import', onClick: () => toast.info(isEn ? 'Import coming soon' : '导入功能即将推出') },
+          { label: 'Import', onClick: () => setImportOpen(true) },
+          { label: exportAction.label, onClick: exportAction.onClick },
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },
@@ -269,6 +320,13 @@ export default function ClassicPricelistsPage() {
           columns={columns}
           rows={pagedLists as unknown as Record<string, unknown>[]}
           loading={loading}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={key => {
+            if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+            else { setSortKey(key); setSortDir('asc') }
+            setPage(1)
+          }}
           selected={selected}
           onSelectAll={checked => {
             if (checked) setSelected(new Set(pagedLists.map(pl => pl.id)))
@@ -283,6 +341,8 @@ export default function ClassicPricelistsPage() {
             })
           }}
           onRowClick={row => router.push(`${prefix}/classic/operator/pricelists/${String(row.id)}`)}
+          inlineEditEnabled={editMode}
+          onCellEdit={handleCellEdit}
           emptyText={isEn ? 'No pricelist data' : '暂无价格表数据'}
           groupByField={groupBy === 'currency' ? 'currency' : ''}
           groupByFormatter={(key, count) => (
@@ -296,6 +356,26 @@ export default function ClassicPricelistsPage() {
         />
         <Pagination page={page} totalPages={Math.ceil(filteredLists.length / PAGE_SIZE)} onPageChange={setPage} />
       </div>
+
+      <BulkImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onDone={load}
+        templateFileName="pricelists-import-template"
+        endpoint="/api/pricelists/bulk"
+        title={{ zh: '批量导入价格表(CSV)', en: 'Bulk Import Pricelists (CSV)' }}
+        hint={{
+          zh: '第一行为表头。列名与价格表导出完全一致，导出的 CSV 改完可直接重新导入。一行 = 一条定价规则，同一个价格表的规则要把「价格表名称」填在每一行上。仅「价格表名称」必填。',
+          en: 'Row 1 is the header. Columns match the pricelist export exactly, so an exported CSV can be edited and re-imported. One row = one pricing rule; fill in Pricelist Name on every row for the same pricelist. Pricelist Name is the only required column.',
+        }}
+        extraHint={{
+          zh: <>按「ID → 名称」匹配已有价格表(都没匹配上则新建)。<b>规则 ID</b> 留空 = 新增一条规则;填了且匹配到已有规则 = 原地替换那一条。⛔ 不支持删除已有规则，导入只会新增/更新，不会清空。「适用范围」留空 = 这一行只改价格表本身的设置(名称/币种/启用/可选/排序)，不带规则。</>,
+          en: <>Matched by ID → Name (no match creates a new pricelist). Leave <b>Item ID</b> blank to add a new rule; fill a matching existing Item ID to replace that rule in place. ⛔ Deleting existing rules via CSV is not supported — import only adds/updates, never clears. Leave Apply On blank for a row that only updates the pricelist&apos;s own settings (name/currency/active/selectable/sequence), with no rule attached.</>,
+        }}
+        columns={pricelistImportColumns(isEn)}
+        exampleRows={PRICELIST_IMPORT_EXAMPLE_ROWS}
+      />
+      {exportAction.dialog}
     </div>
   )
 }

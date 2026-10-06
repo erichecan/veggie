@@ -4,17 +4,19 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPut } from '@/lib/api'
+import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import { applyFacets, groupFacets, localizeFacetFields, CUSTOMER_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
-import CsvImportDialog from '@/components/classic/CsvImportDialog'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
 import { type SortDir } from '@/components/shared/sort-th'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
+import { writeCustomerNavList } from '@/lib/customer-nav-list'
 
 const PAGE_SIZE = 20
 
@@ -43,6 +45,8 @@ export default function ClassicCustomersPage() {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [isVendorOnly, setIsVendorOnly] = useState(false)
   const [isReadMode, setIsReadMode] = useState(true)
+  const editMode = !isReadMode
+  const [deleting, setDeleting] = useState(false)
   // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
   const [facets, setFacets] = useState<Facet[]>([])
   // 列头排序：Customer Name / Salesperson / Pricelist / Price Type 均可点表头排序，
@@ -66,6 +70,7 @@ export default function ClassicCustomersPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   // Last Updated by 下拉选项：去重历史值，同商品页 /api/products/filter-options 的模式
   const [updatedByOptions, setUpdatedByOptions] = useState<string[]>([])
+  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
 
   // OdooTable 列 key → 后端 cfm_* 参数名（primaryPricelistId 是前端派生列，落地时映射回真实字段名）
   const CFM_PARAM_NAME: Record<string, string> = { primaryPricelistId: 'cfm_pricelistId', priceType: 'cfm_priceType' }
@@ -134,6 +139,9 @@ export default function ClassicCustomersPage() {
     loadPage(1, '', paymentFilter, includeArchived)
     apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d.filter(pl => pl.active) : [])).catch(() => {})
     apiGet<{ updatedBy: string[] }>('/api/customers/filter-options').then(d => setUpdatedByOptions(d.updatedBy ?? [])).catch(() => {})
+    apiGet<{ id: string; name: string; email: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
+      .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email }))))
+      .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeArchived])
 
@@ -148,6 +156,7 @@ export default function ClassicCustomersPage() {
     router.push(`${prefix}/classic/operator/customers/new`)
   }
   function openEdit(c: Customer) {
+    writeCustomerNavList(customers.map(customer => customer.id))
     router.push(`${prefix}/classic/operator/customers/${c.id}`)
   }
 
@@ -162,9 +171,60 @@ export default function ClassicCustomersPage() {
     loadPage(1, searchInput, paymentFilter, includeArchived, pageSize, next)
   }
 
+  // 客户有大量历史单据(订单/发票/对账单等)关联且无数据库级约束兜底，物理删除风险很高——
+  // 复用详情页已有的归档(isActive=false)机制作为这里的"删除"：客户立即从常规列表/下单选择里消失，
+  // 历史数据和关联单据完整保留，需要的话还能在详情页恢复（20261003 决定，见客户详情页 toggleActive）
+  async function handleDeleteSelected() {
+    if (selected.size === 0 || deleting) return
+    if (!confirm(isEn
+      ? `Archive ${selected.size} customer(s)? They will disappear from the regular list and from customer pickers on orders/quotations, but all history is kept and this can be undone from each customer's detail page.`
+      : `确认归档 ${selected.size} 个客户？归档后会从常规列表和下单/报价的客户选择中消失，但历史数据完整保留，可在客户详情页恢复。`)) return
+    setDeleting(true)
+    const ids = [...selected]
+    const results = await Promise.allSettled(ids.map(id => apiPut(`/api/customers/${id}`, { isActive: false })))
+    const successCount = results.filter(r => r.status === 'fulfilled').length
+    const failCount = results.filter(r => r.status === 'rejected').length
+    setDeleting(false)
+    setSelected(new Set())
+    if (failCount === 0) toast.success(isEn ? `Archived ${successCount} customer(s)` : `已归档 ${successCount} 个客户`)
+    else toast.warning(isEn ? `${successCount} succeeded, ${failCount} failed` : `成功 ${successCount} 个，失败 ${failCount} 个`)
+    loadPage(page, searchInput)
+  }
+
+  async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
+    const c = row as unknown as Customer
+    let payloadVal: unknown = newValue
+    if (key === 'creditLimit') {
+      if (newValue === '' || newValue == null) {
+        payloadVal = null
+      } else {
+        const n = Number(newValue)
+        if (!Number.isFinite(n) || n < 0) {
+          toast.error(isEn ? 'Please enter a valid non-negative number' : '请输入合法的非负数字')
+          throw new Error('invalid number')
+        }
+        payloadVal = n
+      }
+    }
+    try {
+      await apiPut(`/api/customers/${c.id}`, { [key]: payloadVal })
+      // key==='salesUserId' 时展示用的 row.salesman 是单独展平字段，不会跟着自动更新——
+      // 乐观更新里一并同步，否则要刷新整页才会显示新销售员的名字
+      const extra = key === 'salesUserId'
+        ? { salesman: salesUsers.find(u => u.id === payloadVal)?.name ?? null }
+        : {}
+      setCustomers(prev => prev.map(row => row.id === c.id ? { ...row, [key]: payloadVal, ...extra } as Customer : row))
+      toast.success(isEn ? 'Saved' : '已保存')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+      throw e
+    }
+  }
+
   const pricelistMap = new Map(pricelists.map(p => [p.id, p.name]))
 
   const columns: OdooColumn[] = [
+    { key: 'customerNo', label: isEn ? 'Customer No' : '客户编号', sortable: true },
     {
       key: 'name',
       label: isEn ? 'Customer Name' : '客户名称',
@@ -175,16 +235,31 @@ export default function ClassicCustomersPage() {
         </span>
       ),
     },
-    { key: 'address', label: isEn ? 'Address' : '地址', render: (v) => <span className="text-gray-600 text-xs">{String(v || '')}</span> },
     {
-      key: 'salesman',
+      key: 'address',
+      label: isEn ? 'Address' : '地址',
+      editable: true,
+      editType: 'text',
+      render: (v) => <span className="text-gray-600 text-xs">{String(v || '')}</span>,
+    },
+    {
+      // key 用 salesUserId（行内编辑要提交的真实字段），显示仍读 row.salesman（已展平的姓名）；
+      // sortKey 显式指回 'salesman'，后端按姓名排序的既有行为不受 key 改动影响
+      key: 'salesUserId',
+      sortKey: 'salesman',
       label: isEn ? 'Salesperson' : '销售员',
       sortable: true,
-      render: (v) => v ? String(v) : <span className="text-gray-400">—</span>,
+      editable: true,
+      editType: 'select',
+      editOptions: salesUsers.map(u => ({ value: u.id, label: u.name })),
+      render: (_v, row) => row.salesman ? String(row.salesman) : <span className="text-gray-400">—</span>,
     },
     {
       key: 'paymentTerm',
       label: isEn ? 'Payment Term' : '结算方式',
+      editable: true,
+      editType: 'select',
+      editOptions: PAYMENT_TERM_OPTIONS.map(o => ({ value: o.value, label: isEn ? o.labelEn : o.labelZh })),
       render: (v) => (
         <span className="inline-block px-2 py-0.5 rounded text-xs" style={{ background: '#f3eff5', color: '#6d4a66' }}>
           {PAYMENT_LABELS[String(v)] ?? String(v)}
@@ -209,6 +284,9 @@ export default function ClassicCustomersPage() {
       key: 'priceType',
       label: 'Price Type',
       sortable: true,
+      editable: true,
+      editType: 'select',
+      editOptions: Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => ({ value, label })),
       filterType: 'multi-select',
       filterOptions: Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => ({ value, label })),
       filterLabelGetter: (v) => PRICE_TYPE_LABELS[v] ?? v,
@@ -217,6 +295,8 @@ export default function ClassicCustomersPage() {
     {
       key: 'creditLimit',
       label: isEn ? 'Credit Limit' : '信用额度',
+      editable: true,
+      editType: 'number',
       render: (v) => v != null ? `€${Number(v).toLocaleString()}` : <span className="text-gray-400">{isEn ? 'No limit' : '无限额'}</span>,
     },
     {
@@ -248,7 +328,7 @@ export default function ClassicCustomersPage() {
   ]
 
   const activeFilters = [
-    ...groupFacets(facets).map(g => ({ label: g.chipLabel, onRemove: () => removeFacetGroup(g.key) })),
+    ...groupFacets(facets).map(g => ({ label: g.chipLabel, values: g.values, prefix: g.key === 'all' ? undefined : g.label, onRemove: () => removeFacetGroup(g.key) })),
     ...(paymentFilter ? [{ label: isEn ? `Payment Term: ${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}` : `结算方式：${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}`, onRemove: removePaymentFilter }] : []),
     ...(includeArchived ? [{ label: isEn ? 'Include Archived' : '包含已归档', onRemove: () => setIncludeArchived(false) }] : []),
     ...(isVendorOnly ? [{ label: isEn ? 'Vendors' : '供货商', onRemove: toggleVendorOnly }] : []),
@@ -274,7 +354,7 @@ export default function ClassicCustomersPage() {
           // 导出吃的是当前筛选参数（跟 selected 无关），所以常驻显示，不依赖勾选行
           exportAction,
           ...(selected.size > 0 ? [
-            { label: isEn ? `Delete (${selected.size})` : `删除 (${selected.size})`, onClick: () => toast.info(isEn ? 'Delete coming soon' : '删除功能即将推出') },
+            { label: deleting ? (isEn ? 'Archiving...' : '归档中...') : (isEn ? `Archive (${selected.size})` : `归档 (${selected.size})`), onClick: handleDeleteSelected, style: 'red' as const, disabled: deleting },
           ] : []),
         ]}
         searchValue={searchInput}
@@ -357,6 +437,8 @@ export default function ClassicCustomersPage() {
           }}
           columnFilters={columnFilters}
           onColumnFilterChange={(key, val) => setColumnFilters(prev => ({ ...prev, [key]: val }))}
+          inlineEditEnabled={editMode}
+          onCellEdit={handleCellEdit}
           loading={loading}
           selected={selected}
           onSelectAll={checked => {
@@ -386,15 +468,31 @@ export default function ClassicCustomersPage() {
         <Pagination page={page} totalPages={Math.ceil(total / pageSize)} onPageChange={p => loadPage(p, searchInput)} />
       </div>
 
-      <CsvImportDialog
+      <BulkImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title={isEn ? 'Bulk Import Customers (CSV)' : '批量导入客户(CSV)'}
-        templateName="customers-import-template"
+        templateFileName="customers-import-template"
         endpoint="/api/customers/bulk"
+        title={{ zh: '批量导入客户(CSV)', en: 'Bulk Import Customers (CSV)' }}
+        hint={{
+          zh: '第一行为表头。仅「名称」必填。',
+          en: 'Row 1 is the header. Name is the only required column.',
+        }}
+        extraHint={{
+          zh: <>优先按客户编号匹配更新，其次按 ID。新客户请留空编号，系统自动生成。个人/公司填写 individual 或 company。</>,
+          en: <>Match by Customer No first, then ID. Leave Customer No blank for new customers; it is generated automatically. Contact Type accepts individual or company.</>,
+        }}
         columns={[
-          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
+          { key: 'customerNo', label: isEn ? 'Customer No' : '客户编号' },
+          { key: 'externalId', label: isEn ? 'ID' : 'ID' },
+          { key: 'name', label: isEn ? 'Customer Name' : '客户名称', aliases: ['Name', '名称'], required: true },
           { key: 'phone', label: isEn ? 'Phone' : '电话' },
+          { key: 'individualOrCompany', label: isEn ? 'Contact Type' : '个人/公司' },
+          { key: 'mobile', label: isEn ? 'Mobile' : '手机' },
+          { key: 'street', label: isEn ? 'Street' : '街道' },
+          { key: 'street2', label: isEn ? 'Street 2' : '街道 2' },
+          { key: 'state', label: isEn ? 'State' : '州/省' },
+          { key: 'country', label: isEn ? 'Country' : '国家' },
           { key: 'email', label: isEn ? 'Email' : '邮箱' },
           { key: 'address', label: isEn ? 'Address' : '地址' },
           { key: 'city', label: isEn ? 'City' : '城市' },
@@ -403,6 +501,9 @@ export default function ClassicCustomersPage() {
           { key: 'salesman', label: isEn ? 'Salesperson' : '业务员' },
           { key: 'vatNumber', label: isEn ? 'VAT Number' : '税号' },
           { key: 'notes', label: isEn ? 'Notes' : '备注' },
+        ]}
+        exampleRows={[
+          ['', '', 'Demo Restaurant Ltd', '0851234567', 'company', '0857654321', '12 Main Street', 'Unit 2', 'Dublin', 'Ireland', 'demo@example.com', '12 Main Street', 'Dublin', 'D01', 'monthly', '', 'IE1234567T', ''],
         ]}
         onDone={() => loadPage(1, searchInput)}
       />

@@ -89,7 +89,7 @@ export default function PivotView({ range, isEn }: { range: DateRange; isEn: boo
     apiGet<Array<{ id: string; name: string }>>('/api/customers?slim=1')
       .then((rows) => setCustomers(rows.map((c) => ({ id: c.id, name: c.name }))))
       .catch((e) => toast.error(e.message))
-    apiGet<Array<{ id: string; name: string }>>('/api/users?role=SALES')
+    apiGet<Array<{ id: string; name: string }>>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
       .then((rows) => setSalesUsers(rows.map((u) => ({ id: u.id, name: u.name }))))
       .catch((e) => toast.error(e.message))
   }, [])
