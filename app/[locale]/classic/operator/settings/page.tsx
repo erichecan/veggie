@@ -4,12 +4,10 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
-import type { ProductCategory } from '@/lib/types'
+import ProductCategoryManager from '@/components/classic/ProductCategoryManager'
 import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { UOM_EXPORT_COLUMNS } from '@/lib/export/columns/uoms'
-import { PRODUCT_CATEGORY_EXPORT_COLUMNS } from '@/lib/export/columns/product-categories'
-import { buildCategoryTree, validateCategoryMove, type CategoryTreeNode } from '@/lib/product-category-tree'
 
 const PURPLE = '#875A7B'
 
@@ -487,234 +485,6 @@ function UomSection({ isEn }: { isEn: boolean }) {
 
 // ─── Product Category Section ─────────────────────────────────────────────────
 
-function ProductCategorySection({ isEn }: { isEn: boolean }) {
-  const [categories, setCategories] = useState<ProductCategory[]>([])
-  const [newParentId, setNewParentId] = useState('')
-  const [editParentId, setEditParentId] = useState('')
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const tree = buildCategoryTree(categories)
-  const allNodes: CategoryTreeNode<ProductCategory>[] = []
-  const visibleNodes: CategoryTreeNode<ProductCategory>[] = []
-  function collect(nodes: CategoryTreeNode<ProductCategory>[], visible: boolean) {
-    for (const node of nodes) {
-      allNodes.push(node)
-      if (visible) visibleNodes.push(node)
-      collect(node.children, visible && !collapsed.has(node.id))
-    }
-  }
-  collect(tree, true)
-  function parentOptions(id: string | null) {
-    return allNodes.filter(node => {
-      try { validateCategoryMove(categories, id, node.id); return true } catch { return false }
-    }).map(node => <option key={node.id} value={node.id}>{'— '.repeat(node.depth - 1)}{isEn ? node.name : node.nameZh || node.name}</option>)
-  }
-  const [loading, setLoading] = useState(true)
-  const [newName, setNewName] = useState('')
-  const [newNameZh, setNewNameZh] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editNameZh, setEditNameZh] = useState('')
-  const [importOpen, setImportOpen] = useState(false)
-  const exportAction = useCsvExport({ entity: 'product-categories', params: () => '', columns: PRODUCT_CATEGORY_EXPORT_COLUMNS })
-
-  async function load() {
-    try {
-      const cats = await apiGet<ProductCategory[]>('/api/product-categories?fresh=1')
-      setCategories(cats)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Load failed' : '加载失败'))
-    } finally {
-      setLoading(false)
-    }
-  }
-  useEffect(() => { load() }, [])
-
-  async function create() {
-    if (!newName.trim()) { toast.error(isEn ? 'Please enter a name' : '请输入分类名称'); return }
-    setSaving(true)
-    try {
-      await apiPost('/api/product-categories', { name: newName.trim(), nameZh: newNameZh.trim() || undefined, parentId: newParentId || null })
-      toast.success(isEn ? 'Category created' : '商品分类已创建')
-      setNewName(''); setNewNameZh(''); setNewParentId('')
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function saveEdit(id: string) {
-    if (!editName.trim()) { toast.error(isEn ? 'Name cannot be empty' : '名称不能为空'); return }
-    try {
-      await apiPut(`/api/product-categories/${id}`, { name: editName.trim(), nameZh: editNameZh.trim() || null, parentId: editParentId || null })
-      toast.success(isEn ? 'Saved' : '已保存')
-      setEditingId(null)
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
-    }
-  }
-
-  async function del(id: string, name: string) {
-    if (!confirm(isEn ? `Delete category "${name}"?` : `确认删除商品分类"${name}"？`)) return
-    try {
-      await apiDelete(`/api/product-categories/${id}`)
-      toast.success(isEn ? 'Deleted' : '已删除')
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Delete failed' : '删除失败'))
-    }
-  }
-
-  if (loading) return <div className="text-sm text-gray-400 py-4">{isEn ? 'Loading…' : '加载中…'}</div>
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <button onClick={() => setImportOpen(true)}
-          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
-          {isEn ? 'Import' : '导入'}
-        </button>
-        <button onClick={exportAction.onClick} disabled={exportAction.disabled}
-          className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
-          {exportAction.label}
-        </button>
-      </div>
-      <div className="border border-gray-200 rounded overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-200" style={{ background: '#f3eff5' }}>
-            <tr className="text-left text-xs text-gray-600">
-              <th className="px-4 py-2 font-medium">{isEn ? 'English Name' : '英文名'}</th>
-              <th className="px-4 py-2 font-medium">{isEn ? 'Chinese Name' : '中文名'}</th>
-              <th className="px-4 py-2 font-medium">{isEn ? 'Parent Category' : '父分类'}</th>
-              <th className="px-4 py-2 w-28"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {categories.length === 0 && (
-              <tr><td colSpan={4} className="px-4 py-6 text-center text-gray-400">{isEn ? 'No categories' : '暂无分类'}</td></tr>
-            )}
-            {visibleNodes.map(cat => (
-              <tr key={cat.id} className="hover:bg-gray-50">
-                {editingId === cat.id ? (
-                  <>
-                    <td className="px-4 py-2">
-                      <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                        className="border rounded px-2 py-1 text-sm w-full focus:outline-none focus:border-purple-400" autoFocus
-                        style={{ borderColor: PURPLE }} />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input type="text" value={editNameZh} onChange={e => setEditNameZh(e.target.value)}
-                        className="border rounded px-2 py-1 text-sm w-full focus:outline-none"
-                        style={{ borderColor: PURPLE }} />
-                    </td>
-                    <td className="px-4 py-2">
-                      <select aria-label={isEn ? 'Parent Category' : '父分类'} value={editParentId} onChange={event => setEditParentId(event.target.value)} className="border rounded p-2 max-w-48">
-                        <option value="">{isEn ? 'Top level' : '顶级分类'}</option>
-                        {parentOptions(cat.id)}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex gap-2">
-                        <button onClick={() => saveEdit(cat.id)}
-                          className="text-xs font-medium hover:underline" style={{ color: PURPLE }}>
-                          {isEn ? 'Save' : '保存'}
-                        </button>
-                        <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 hover:underline">
-                          {isEn ? 'Cancel' : '取消'}
-                        </button>
-                      </div>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="px-4 py-2 font-medium">
-                      <div className="flex items-center gap-2" style={{ paddingLeft: (cat.depth - 1) * 20 }}>
-                        {cat.children.length > 0 ? <button aria-label={`${collapsed.has(cat.id) ? (isEn ? 'Expand' : '展开') : (isEn ? 'Collapse' : '折叠')} ${cat.name}`} aria-expanded={!collapsed.has(cat.id)} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(cat.id)) next.delete(cat.id); else next.add(cat.id); return next })} className="w-8 h-8">{collapsed.has(cat.id) ? '▸' : '▾'}</button> : <span className="w-8 shrink-0" />}
-                        <span>{cat.name}</span><span className="text-xs text-gray-400">L{cat.depth}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-gray-500">{cat.nameZh || '-'}</td>
-                    <td className="px-4 py-2 text-gray-500">{categories.find(parent => parent.id === cat.parentId)?.name || (isEn ? 'Top level' : '顶级分类')}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex gap-2">
-                        <button onClick={() => { setEditingId(cat.id); setEditName(cat.name); setEditNameZh(cat.nameZh ?? ''); setEditParentId(cat.parentId ?? '') }}
-                          className="text-xs hover:underline" style={{ color: PURPLE }}>
-                          {isEn ? 'Edit' : '编辑'}
-                        </button>
-                        <button onClick={() => del(cat.id, cat.name)} className="text-xs text-red-500 hover:underline">
-                          {isEn ? 'Delete' : '删除'}
-                        </button>
-                      </div>
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="border border-gray-200 rounded p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'New Product Category' : '新建商品分类'}</h3>
-        <div className="flex items-end gap-3 flex-wrap">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1" htmlFor="new-category-parent">{isEn ? 'Parent Category (up to 3 levels)' : '父分类（最多三级）'}</label>
-            <select id="new-category-parent" value={newParentId} onChange={event => setNewParentId(event.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-sm max-w-64">
-              <option value="">{isEn ? 'Top level' : '顶级分类'}</option>
-              {parentOptions(null)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (EN)' : '英文名'}</label>
-            <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
-              placeholder={isEn ? 'e.g. Vegetables' : '如 Vegetables'}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-purple-400" />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (ZH, optional)' : '中文名（可选）'}</label>
-            <input type="text" value={newNameZh} onChange={e => setNewNameZh(e.target.value)}
-              placeholder={isEn ? 'optional' : '如 蔬菜'}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-purple-400" />
-          </div>
-          <button onClick={create} disabled={saving}
-            className="h-9 px-4 text-white text-sm rounded disabled:opacity-40"
-            style={{ background: PURPLE }}>
-            {saving ? (isEn ? 'Creating…' : '创建中…') : (isEn ? 'Create' : '创建')}
-          </button>
-        </div>
-      </div>
-
-      <BulkImportDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onDone={load}
-        templateFileName="product-categories-import-template"
-        endpoint="/api/product-categories/bulk"
-        title={{ zh: '批量导入商品分类(CSV)', en: 'Bulk Import Product Categories (CSV)' }}
-        hint={{
-          zh: '第一行为表头。仅「英文名」必填。',
-          en: 'Row 1 is the header. English Name is the only required column.',
-        }}
-        extraHint={{
-          zh: <>按「ID」精确匹配更新对应分类——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。「采购品类分组」「应放温区」填已有名称(中英文均可),查不到会留空(不阻断整行)。</>,
-          en: <>Matched by ID (exact match) updates that category — keep the ID column from an exported file to reliably update; otherwise a name collision is skipped, no match creates a new one. Purchase Group / Required Zone must match an existing name (English or Chinese); unmatched values are left unset, not blocking.</>,
-        }}
-        columns={[
-          { key: 'externalId', label: isEn ? 'ID' : 'ID' },
-          { key: 'name', label: isEn ? 'Name (EN)' : '英文名', required: true },
-          { key: 'nameZh', label: isEn ? 'Name (ZH)' : '中文名' },
-          { key: 'group', label: isEn ? 'Purchase Group' : '采购品类分组' },
-          { key: 'requiredZone', label: isEn ? 'Required Zone' : '应放温区' },
-        ]}
-        exampleRows={[['', 'Vegetables', '蔬菜', '', '']]}
-      />
-      {exportAction.dialog}
-    </div>
-  )
-}
 
 // ─── Product Type Section ─────────────────────────────────────────────────────
 
@@ -766,7 +536,7 @@ export default function ClassicOperatorSettingsPage() {
   ]
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       {/* Odoo-style breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
         <span style={{ color: PURPLE }}>{isEn ? 'Settings' : '设置'}</span>
@@ -777,12 +547,12 @@ export default function ClassicOperatorSettingsPage() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-0 mb-6 border-b border-gray-200">
+      <div className="flex gap-0 mb-6 overflow-x-auto border-b border-gray-200">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="px-5 py-2.5 text-sm font-medium border-b-2 transition-colors"
+            className="shrink-0 whitespace-nowrap px-4 sm:px-5 py-2.5 text-sm font-medium border-b-2 transition-colors"
             style={{
               color: activeTab === tab.id ? PURPLE : '#6b7280',
               borderBottomColor: activeTab === tab.id ? PURPLE : 'transparent',
@@ -794,7 +564,7 @@ export default function ClassicOperatorSettingsPage() {
       </div>
 
       {/* Content */}
-      <div className="bg-white rounded border border-gray-200 p-6">
+      <div className="bg-white rounded border border-gray-200 p-4 sm:p-6">
         {activeTab === 'uom' && (
           <>
             <h2 className="text-base font-semibold mb-1" style={{ color: PURPLE }}>
@@ -825,7 +595,7 @@ export default function ClassicOperatorSettingsPage() {
             <p className="text-sm text-gray-500 mb-5">
               {isEn ? 'Manage product categories used in product classification and pricelist rules.' : '管理商品分类，用于商品归类和价格表规则。'}
             </p>
-            <ProductCategorySection isEn={isEn} />
+            <ProductCategoryManager isEn={isEn} />
           </>
         )}
       </div>

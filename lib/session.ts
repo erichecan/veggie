@@ -42,6 +42,7 @@ export function logout(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem('veggie_user')
   localStorage.removeItem('veggie_token')
+  localStorage.removeItem('veggie_demo_store')
   // 历史遗留的 JS 版同名 cookie 也顺手清掉
   document.cookie = 'veggie_token=; max-age=0; path=/'
   fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})

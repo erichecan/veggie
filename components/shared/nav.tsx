@@ -2,7 +2,6 @@
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
-import { StoreAPI } from '@/lib/store'
 import { logout as clearSession } from '@/lib/session'
 import type { RoleSession } from '@/lib/types'
 import HelpDrawer from '@/components/onboarding/HelpDrawer'
@@ -49,7 +48,6 @@ export default function Nav({ session, links = [], onReplayTour }: NavProps) {
   }, [])
 
   function doLogout() {
-    StoreAPI.setRole(null)
     clearSession()
     // Redirect to enter page, preserving locale
     const enterPath = locale === routing.defaultLocale ? '/enter' : `/${locale}/enter`

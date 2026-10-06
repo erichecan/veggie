@@ -2,8 +2,8 @@
 set -euo pipefail
 
 npm run typecheck
-node --test --import=tsx tests/product-category-tree.test.ts tests/pricing-engine-formula.test.ts
-npx eslint lib/product-category-tree.ts lib/product-category-write.ts components/classic/OrderMobileList.tsx tests/product-category-tree.test.ts scripts/audit/verify-category-mobile.ts
+node --test --import=tsx tests/product-category-tree.test.ts tests/product-category-navigation.test.ts tests/pricing-engine-formula.test.ts
+npx eslint lib/product-category-tree.ts lib/product-category-navigation.ts lib/product-category-write.ts components/classic/OrderMobileList.tsx components/classic/ProductCategoryManager.tsx tests/product-category-tree.test.ts tests/product-category-navigation.test.ts scripts/audit/verify-category-mobile.ts
 git diff --check
 
 if [[ "${CATEGORY_MOBILE_BROWSER_CHECK:-0}" == "1" ]]; then

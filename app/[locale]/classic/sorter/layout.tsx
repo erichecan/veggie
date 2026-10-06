@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import OdooNav from '@/components/classic/OdooNav'
 import { getSession, toRoleSession } from '@/lib/session'
-import { hydrate } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -27,7 +26,6 @@ export default function ClassicSorterLayout({ children }: { children: React.Reac
       return
     }
     setSession(toRoleSession(user))
-    hydrate()
   }, [router, prefix])
 
   return (

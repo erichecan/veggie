@@ -9,7 +9,7 @@ import { PERMISSIONS } from '../../lib/rbac/catalog'
 config({ path: '.env.local', quiet: true })
 async function main() {
 const baseUrl = process.env.CATEGORY_MOBILE_PREVIEW_URL ?? 'http://localhost:3000'
-const output = 'docs/preview/20261005-category-mobile'
+const output = process.env.CATEGORY_MOBILE_PREVIEW_OUTPUT ?? 'docs/preview/20261005-category-mobile'
 await mkdir(output, { recursive: true })
 const session = { userId: 'preview-only', name: 'Preview', email: 'preview@example.invalid', role: 'OPERATOR', roles: ['OPERATOR'], pm: encodePermissions(PERMISSIONS.map(permission => permission.id)), ds: 'ALL' }
 const token = await new SignJWT(session).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('1h').sign(new TextEncoder().encode(process.env.JWT_SECRET))
@@ -38,6 +38,24 @@ try {
     if (route.request().method() !== 'GET') {
       mutations.push({ path: url.pathname, data: route.request().postDataJSON() })
       body = { ok: true }
+      if (url.pathname === '/api/product-categories' && route.request().method() === 'POST') {
+        const data = route.request().postDataJSON()
+        const category = { id: `new-category-${categories.length}`, ...data }
+        categories.push(category)
+        body = category
+      } else if (url.pathname.startsWith('/api/product-categories/')) {
+        const id = url.pathname.split('/').at(-1)
+        const index = categories.findIndex(category => category.id === id)
+        if (route.request().method() === 'DELETE' && id === 'other') {
+          await route.fulfill({ status: 409, json: { error: 'Move linked products before deleting' } })
+          return
+        }
+        if (route.request().method() === 'DELETE') categories.splice(index, 1)
+        else {
+          categories[index] = { ...categories[index], ...route.request().postDataJSON() }
+          body = categories[index]
+        }
+      }
     } else if (url.pathname === '/api/orders') {
       const rows = url.searchParams.has('pageSize') ? orders.map(order => ({ ...order, status: url.searchParams.get('status') === 'PENDING' ? 'PENDING' : order.status })) : orders
       body = url.searchParams.has('pageSize') ? { data: rows, total: rows.length, page: 1, pageSize: 50, totalPages: 1 } : rows
@@ -99,18 +117,92 @@ try {
   assert.ok(mutations.some(mutation => mutation.path === '/api/waves/preview-wave/unassign'))
   await page.goto(`${baseUrl}/en/classic/operator/settings`)
   await page.getByRole('button', { name: 'Product Categories', exact: true }).click()
+  await page.getByRole('region', { name: 'Level 1', exact: true }).getByRole('button', { name: /^Food/ }).click()
+  await page.getByRole('region', { name: 'Level 2', exact: true }).getByRole('button', { name: /^Vegetables/ }).click()
   await page.getByText('Leafy vegetables', { exact: true }).waitFor()
   await noOverflow('settings/390')
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.screenshot({ path: `${output}/en-category-tree-1440.png`, fullPage: true })
-  await page.getByRole('button', { name: 'Collapse Food', exact: true }).click()
-  assert.equal(await page.getByText('Leafy vegetables', { exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Expand Food', exact: true }).click()
-  const parentOptions = await page.locator('#new-category-parent option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))
+  await page.getByRole('button', { name: 'Edit Leafy vegetables', exact: true }).click()
+  const parentOptions = await page.getByRole('dialog').locator('select option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))
   assert.ok(parentOptions.includes('veg'))
   assert.ok(!parentOptions.includes('leaf'))
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
+
+  async function createCategory(level: number, name: string) {
+    await page.getByRole('button', { name: `Add level ${level}`, exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('heading', { name: `New level ${level} category`, exact: true }).waitFor()
+    await dialog.getByLabel('English name *', { exact: true }).fill(name)
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' })
+  }
+  await createCategory(1, 'New Root')
+  await createCategory(2, 'New Branch')
+  await createCategory(3, 'New Leaf')
+  const created = categories.filter(category => category.id.startsWith('new-category-'))
+  assert.equal(created.length, 3)
+  assert.equal(created[0].parentId, null)
+  assert.equal(created[1].parentId, created[0].id)
+  assert.equal(created[2].parentId, created[1].id)
+  assert.ok(await page.getByRole('button', { name: 'Delete New Root', exact: true }).isDisabled())
+  assert.equal(await page.getByRole('button', { name: 'Add child to New Leaf', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Edit New Leaf', exact: true }).click()
+  const editDialog = page.getByRole('dialog')
+  await editDialog.getByLabel('Parent category', { exact: true }).selectOption('other')
+  await editDialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await editDialog.waitFor({ state: 'hidden' })
+  assert.equal(categories.find(category => category.id === created[2].id)?.parentId, 'other')
+  await page.getByRole('button', { name: 'Delete New Leaf', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  assert.ok(!categories.some(category => category.id === created[2].id))
+  await page.getByRole('button', { name: 'Delete Other', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByText('Move linked products before deleting', { exact: true }).waitFor()
+  assert.ok(await page.getByRole('dialog').isVisible())
+  assert.ok(categories.some(category => category.id === 'other'))
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
+
+  for (const locale of ['en', 'zh']) {
+    await context.addCookies([{ name: 'NEXT_LOCALE', value: locale, url: baseUrl }])
+    const en = locale === 'en'
+    for (const width of [360, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto(`${baseUrl}${en ? '/en' : ''}/classic/operator/settings`)
+      await page.getByRole('button', { name: en ? 'Product Categories' : '商品分类', exact: true }).click()
+      const first = page.getByRole('region', { name: en ? 'Level 1' : '一级分类', exact: true })
+      await first.getByRole('button', { name: en ? /^Food/ : /^食品/ }).click()
+      const second = page.getByRole('region', { name: en ? 'Level 2' : '二级分类', exact: true })
+      await second.getByRole('button', { name: en ? /^Vegetables/ : /^蔬菜/ }).click()
+      await page.getByText(en ? 'Leafy vegetables' : '叶菜', { exact: true }).first().waitFor()
+      if (width < 768) assert.ok(!(await first.isVisible()))
+      else assert.ok(await first.isVisible())
+      await noOverflow(`category-manager/${locale}/${width}`)
+      await page.getByRole('textbox', { name: en ? 'Search categories' : '搜索分类', exact: true }).fill('Leafy')
+      await page.getByRole('region', { name: en ? 'Search results' : '搜索结果', exact: true }).getByRole('button', { name: /Leafy|叶菜/ }).click()
+      await page.getByRole('navigation', { name: en ? 'Category path' : '分类路径', exact: true }).getByRole('button', { name: en ? 'All categories' : '全部分类', exact: true }).click()
+      await first.waitFor()
+      if (width < 768) await first.getByRole('button', { name: en ? 'Add level 1' : '新增一级分类', exact: true }).click()
+      else await page.getByRole('button', { name: en ? 'Add level 1' : '新增一级分类', exact: true }).click()
+      await page.getByRole('dialog').waitFor()
+      await noOverflow(`category-dialog/${locale}/${width}`)
+      await page.getByRole('dialog').getByRole('button', { name: en ? 'Cancel' : '取消', exact: true }).click()
+    }
+  }
+  await context.addCookies([{ name: 'NEXT_LOCALE', value: 'en', url: baseUrl }])
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`${baseUrl}/en/classic/operator/settings`)
+  await page.getByRole('button', { name: 'Product Categories', exact: true }).click()
+  await createCategory(1, 'Mobile Root')
+  assert.ok(await page.getByRole('region', { name: 'Level 2', exact: true }).isVisible())
+  await createCategory(2, 'Mobile Branch')
+  assert.ok(await page.getByRole('region', { name: 'Level 3', exact: true }).isVisible())
+  await createCategory(3, 'Mobile Leaf')
+  assert.ok(await page.getByRole('region', { name: 'Level 3', exact: true }).getByText('Mobile Leaf', { exact: true }).isVisible())
+  await page.screenshot({ path: `${output}/en-category-manager-390.png`, fullPage: true })
   assert.deepEqual(errors, [])
-  console.log(`PASS: responsive lists (360/390/768/1440, EN/ZH), navigation, dispatch assignment, category tree; screenshots: ${output}`)
+  console.log(`PASS: responsive lists and category manager (360/390/768/1440, EN/ZH), navigation, dispatch, category creation/move/delete/search; screenshots: ${output}`)
 } finally {
   await browser.close()
 }

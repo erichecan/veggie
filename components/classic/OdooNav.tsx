@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { logout as clearSession, getSession } from '@/lib/session'
 import { decodePermissions } from '@/lib/rbac/bitmap'
-import { StoreAPI } from '@/lib/store'
 import type { RoleSession } from '@/lib/types'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -131,7 +130,6 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
   }, [session])
 
   function doLogout() {
-    StoreAPI.setRole(null)
     clearSession()
     const enterPath = locale === routing.defaultLocale ? '/enter' : `/${locale}/enter`
     router.push(enterPath)
