@@ -217,10 +217,10 @@ export default function OdooControlPanel({
       )}
 
       {/* 主控制行：左=按钮，右=搜索+筛选+分页 */}
-      <div className="px-4 py-2 flex items-center gap-2 min-h-[44px]">
+      <div className="px-3 md:px-4 py-2 flex flex-col md:flex-row md:items-center gap-2 min-h-[44px]">
 
         {/* 左侧：操作按钮组 */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0 min-w-0">
           {onNew && (
             <button
               onClick={onNew}
@@ -285,11 +285,11 @@ export default function OdooControlPanel({
         </div>
 
         {/* 右侧：搜索 + 筛选工具 + 分页 */}
-        <div className="flex items-center gap-1 flex-1 justify-end min-w-0">
+        <div className="flex flex-wrap items-center gap-1 flex-1 md:justify-end min-w-0 w-full md:w-auto">
 
           {/* 搜索框（含 active filter / facet chip） */}
-          <div ref={searchBoxRef} className="relative flex-1 max-w-xl min-w-[160px]">
-            <div className="flex items-center border border-gray-300 rounded h-8 bg-white overflow-hidden">
+          <div ref={searchBoxRef} className="relative basis-full md:basis-auto flex-1 md:max-w-xl min-w-0">
+            <div className="flex flex-wrap md:flex-nowrap items-center border border-gray-300 rounded min-h-8 md:h-8 bg-white overflow-hidden">
               {activeFilters.map((f, i) => {
                 const values = f.values && f.values.length > 0 ? f.values : [f.label]
                 return (

@@ -740,15 +740,6 @@ export default function ClassicProductsPage() {
         permanentActions={[
           { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
           exportActionLabeled,
-          ...(isReadMode
-            ? [
-                { label: 'Mode', onClick: () => setIsReadMode(false) },
-                { label: 'Read', onClick: () => {}, primary: true },
-              ]
-            : [
-                { label: 'Edit', onClick: () => {}, primary: true },
-                { label: 'Mode', onClick: () => setIsReadMode(true) },
-              ]),
         ]}
         actions={selected.size > 0 ? [
           { label: exportActionLabeled.label, onClick: exportActionLabeled.onClick, disabled: bulkRunning },

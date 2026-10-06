@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import type { Order, OrderStatus, Invoice } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
+import OrderMobileList from '@/components/classic/OrderMobileList'
 import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
@@ -575,7 +576,15 @@ export default function ClassicOrdersPage() {
         onPageSizeChange={setPageSize}
       />
 
-      <div className="overflow-auto relative">
+      <OrderMobileList orders={sorted} selected={selected} loading={loading} isEn={isEn} statusLabels={STATUS_LABEL} statusColors={STATUS_COLOR}
+        onSelect={(id, checked) => setSelected(previous => { const next = new Set(previous); if (checked) next.add(id); else next.delete(id); return next })}
+        filterControls={<>{(['deliveryDateFrom', 'deliveryDateTo'] as const).map((key, index) => <label key={key} className="flex flex-col gap-1">{isEn ? (index ? 'Delivery to' : 'Delivery from') : (index ? '交货截止' : '交货开始')}<input type="date" value={colFilters[key]} onChange={event => setCf(key, event.target.value)} className="min-h-11 border rounded px-2 w-full min-w-0" /></label>)}</>}
+        onOpen={order => router.push(`${prefix}/classic/operator/orders/${order.id}`)}
+        sortKey={sortField} sortDir={sortDir} onSort={(key, direction) => { setSortField(key); setSortDir(direction) }}
+        sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
+        renderExtra={order => <div className="text-sm text-gray-500 space-y-2"><p>{formatDriverSlotFromOrder(order) || '—'}</p>{!isReadMode && <select aria-label={isEn ? 'Driver / Batch' : '司机/批次'} value={pendingBatch[order.id] ?? (order as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? ''} onChange={event => stageBatch(order.id, event.target.value, (order as unknown as { assignedDriverSlotId?: string }).assignedDriverSlotId ?? '')} className="w-full min-h-11 border rounded px-2"><option value="">{isEn ? 'Unassigned' : '待分配'}</option>{driverSlots.map(slot => <option key={slot.id} value={slot.id}>{slot.batchNum} {slot.timeOfDay} {slot.driverName}</option>)}</select>}</div>}
+      />
+      <div className="hidden md:block overflow-auto relative">
         {loading && sorted.length > 0 && (
           <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-20">
             <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
@@ -634,7 +643,7 @@ export default function ClassicOrdersPage() {
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between px-2 py-3">
+      <div className="flex flex-wrap gap-2 items-center justify-between px-2 py-3">
         <span className="text-xs text-gray-400">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>

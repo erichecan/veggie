@@ -72,6 +72,7 @@ export async function GET(req: Request) {
     const sortKey = searchParams.get('sortKey') ?? ''
     const sortDir: 'asc' | 'desc' = searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
     const SIMPLE_SORT: Record<string, object> = {
+      customerNo: { customerNo: sortDir },
       name: { name: sortDir },
       priceType: { priceType: sortDir },
       updatedAt: { updatedAt: sortDir },
@@ -145,6 +146,7 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const { specialPrices, pricelistIds, ...data } = await req.json()
+      delete data.customerNo
       // Sage Account 是会计对账字段，纯销售角色不可见/不可填——即使绕过前端直接打接口也挡住
       if (isSalesOnly(user)) delete data.sageAccount
       if (typeof data.sageAccount === 'string') data.sageAccount = data.sageAccount.trim() || null

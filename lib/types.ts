@@ -224,6 +224,7 @@ export interface Product {
 
 // ─── 商品分类 ─────────────────────────────────────────────────────────────────
 export interface ProductCategory {
+  parentId?: string | null
   id: string
   name: string
   nameZh?: string
@@ -267,6 +268,9 @@ export interface CustomerPricelistLink {
 
 // ─── 客户 ───────────────────────────────────────────────────────────────────
 export interface Customer {
+  customerNo?: number
+  individualOrCompany?: 'individual' | 'company'
+  mobile?: string
   id: string
   name: string
   address: string

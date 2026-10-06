@@ -5,6 +5,15 @@
 import type { ExportColumn } from '../types'
 
 export interface CustomerExportRow {
+  customerNo?: number | null
+  individualOrCompany?: string | null
+  mobile?: string | null
+  street?: string | null
+  street2?: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+  country?: string | null
   name?: string | null
   address?: string | null
   phone?: string | null
@@ -31,6 +40,15 @@ const PAYMENT_LABEL_EN: Record<string, string> = { cash: 'Cash', weekly: 'Weekly
 const PRICE_TYPE_LABEL: Record<string, string> = { multi: 'Multi Price', default: 'Default Price', last: 'Last Purchase Price' }
 
 export const CUSTOMER_EXPORT_COLUMNS: readonly ExportColumn<CustomerExportRow>[] = [
+  { key: 'customerNo', header: '客户编号', headerEn: 'Customer No', get: r => r.customerNo ?? '' },
+  { key: 'individualOrCompany', header: '个人/公司', headerEn: 'Contact Type', get: r => r.individualOrCompany ?? 'company' },
+  { key: 'mobile', header: '手机', headerEn: 'Mobile', get: r => r.mobile ?? '' },
+  { key: 'street', header: '街道', headerEn: 'Street', get: r => r.street ?? '' },
+  { key: 'street2', header: '街道 2', headerEn: 'Street 2', get: r => r.street2 ?? '' },
+  { key: 'city', header: '城市', headerEn: 'City', get: r => r.city ?? '' },
+  { key: 'state', header: '州/省', headerEn: 'State', get: r => r.state ?? '' },
+  { key: 'zip', header: '邮编', headerEn: 'ZIP', get: r => r.zip ?? '' },
+  { key: 'country', header: '国家', headerEn: 'Country', get: r => r.country ?? '' },
   { key: 'name', header: '客户名称', headerEn: 'Customer Name', get: r => r.name ?? '' },
   { key: 'address', header: '地址', headerEn: 'Address', get: r => r.address ?? '' },
   { key: 'phone', header: '电话', headerEn: 'Phone', get: r => r.phone ?? '' },

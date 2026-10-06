@@ -7,6 +7,7 @@ import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 
 const TRACKED_FIELDS = [
+  'individualOrCompany', 'mobile',
   'name', 'address', 'street', 'street2', 'city', 'state', 'zip', 'country',
   'phone', 'email', 'vatNumber', 'paymentTerm', 'creditLimit',
   'commissionRate', 'commissionFixed', 'pricelistIds', 'priceType',

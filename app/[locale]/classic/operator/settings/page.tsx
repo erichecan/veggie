@@ -9,6 +9,7 @@ import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { UOM_EXPORT_COLUMNS } from '@/lib/export/columns/uoms'
 import { PRODUCT_CATEGORY_EXPORT_COLUMNS } from '@/lib/export/columns/product-categories'
+import { buildCategoryTree, validateCategoryMove, type CategoryTreeNode } from '@/lib/product-category-tree'
 
 const PURPLE = '#875A7B'
 
@@ -488,6 +489,25 @@ function UomSection({ isEn }: { isEn: boolean }) {
 
 function ProductCategorySection({ isEn }: { isEn: boolean }) {
   const [categories, setCategories] = useState<ProductCategory[]>([])
+  const [newParentId, setNewParentId] = useState('')
+  const [editParentId, setEditParentId] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const tree = buildCategoryTree(categories)
+  const allNodes: CategoryTreeNode<ProductCategory>[] = []
+  const visibleNodes: CategoryTreeNode<ProductCategory>[] = []
+  function collect(nodes: CategoryTreeNode<ProductCategory>[], visible: boolean) {
+    for (const node of nodes) {
+      allNodes.push(node)
+      if (visible) visibleNodes.push(node)
+      collect(node.children, visible && !collapsed.has(node.id))
+    }
+  }
+  collect(tree, true)
+  function parentOptions(id: string | null) {
+    return allNodes.filter(node => {
+      try { validateCategoryMove(categories, id, node.id); return true } catch { return false }
+    }).map(node => <option key={node.id} value={node.id}>{'— '.repeat(node.depth - 1)}{isEn ? node.name : node.nameZh || node.name}</option>)
+  }
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
   const [newNameZh, setNewNameZh] = useState('')
@@ -500,7 +520,7 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
 
   async function load() {
     try {
-      const cats = await apiGet<ProductCategory[]>('/api/product-categories')
+      const cats = await apiGet<ProductCategory[]>('/api/product-categories?fresh=1')
       setCategories(cats)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Load failed' : '加载失败'))
@@ -514,9 +534,9 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
     if (!newName.trim()) { toast.error(isEn ? 'Please enter a name' : '请输入分类名称'); return }
     setSaving(true)
     try {
-      await apiPost('/api/product-categories', { name: newName.trim(), nameZh: newNameZh.trim() || undefined })
+      await apiPost('/api/product-categories', { name: newName.trim(), nameZh: newNameZh.trim() || undefined, parentId: newParentId || null })
       toast.success(isEn ? 'Category created' : '商品分类已创建')
-      setNewName(''); setNewNameZh('')
+      setNewName(''); setNewNameZh(''); setNewParentId('')
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Create failed' : '创建失败'))
@@ -528,7 +548,7 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
   async function saveEdit(id: string) {
     if (!editName.trim()) { toast.error(isEn ? 'Name cannot be empty' : '名称不能为空'); return }
     try {
-      await apiPut(`/api/product-categories/${id}`, { name: editName.trim(), nameZh: editNameZh.trim() || undefined })
+      await apiPut(`/api/product-categories/${id}`, { name: editName.trim(), nameZh: editNameZh.trim() || null, parentId: editParentId || null })
       toast.success(isEn ? 'Saved' : '已保存')
       setEditingId(null)
       load()
@@ -562,20 +582,21 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
           {exportAction.label}
         </button>
       </div>
-      <div className="border border-gray-200 rounded overflow-hidden">
+      <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-gray-200" style={{ background: '#f3eff5' }}>
             <tr className="text-left text-xs text-gray-600">
               <th className="px-4 py-2 font-medium">{isEn ? 'English Name' : '英文名'}</th>
               <th className="px-4 py-2 font-medium">{isEn ? 'Chinese Name' : '中文名'}</th>
+              <th className="px-4 py-2 font-medium">{isEn ? 'Parent Category' : '父分类'}</th>
               <th className="px-4 py-2 w-28"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {categories.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400">{isEn ? 'No categories' : '暂无分类'}</td></tr>
+              <tr><td colSpan={4} className="px-4 py-6 text-center text-gray-400">{isEn ? 'No categories' : '暂无分类'}</td></tr>
             )}
-            {categories.map(cat => (
+            {visibleNodes.map(cat => (
               <tr key={cat.id} className="hover:bg-gray-50">
                 {editingId === cat.id ? (
                   <>
@@ -588,6 +609,12 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
                       <input type="text" value={editNameZh} onChange={e => setEditNameZh(e.target.value)}
                         className="border rounded px-2 py-1 text-sm w-full focus:outline-none"
                         style={{ borderColor: PURPLE }} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <select aria-label={isEn ? 'Parent Category' : '父分类'} value={editParentId} onChange={event => setEditParentId(event.target.value)} className="border rounded p-2 max-w-48">
+                        <option value="">{isEn ? 'Top level' : '顶级分类'}</option>
+                        {parentOptions(cat.id)}
+                      </select>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex gap-2">
@@ -603,11 +630,17 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
                   </>
                 ) : (
                   <>
-                    <td className="px-4 py-2 font-medium">{cat.name}</td>
+                    <td className="px-4 py-2 font-medium">
+                      <div className="flex items-center gap-2" style={{ paddingLeft: (cat.depth - 1) * 20 }}>
+                        {cat.children.length > 0 ? <button aria-label={`${collapsed.has(cat.id) ? (isEn ? 'Expand' : '展开') : (isEn ? 'Collapse' : '折叠')} ${cat.name}`} aria-expanded={!collapsed.has(cat.id)} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(cat.id)) next.delete(cat.id); else next.add(cat.id); return next })} className="w-8 h-8">{collapsed.has(cat.id) ? '▸' : '▾'}</button> : <span className="w-8 shrink-0" />}
+                        <span>{cat.name}</span><span className="text-xs text-gray-400">L{cat.depth}</span>
+                      </div>
+                    </td>
                     <td className="px-4 py-2 text-gray-500">{cat.nameZh || '-'}</td>
+                    <td className="px-4 py-2 text-gray-500">{categories.find(parent => parent.id === cat.parentId)?.name || (isEn ? 'Top level' : '顶级分类')}</td>
                     <td className="px-4 py-2">
                       <div className="flex gap-2">
-                        <button onClick={() => { setEditingId(cat.id); setEditName(cat.name); setEditNameZh(cat.nameZh ?? '') }}
+                        <button onClick={() => { setEditingId(cat.id); setEditName(cat.name); setEditNameZh(cat.nameZh ?? ''); setEditParentId(cat.parentId ?? '') }}
                           className="text-xs hover:underline" style={{ color: PURPLE }}>
                           {isEn ? 'Edit' : '编辑'}
                         </button>
@@ -627,6 +660,13 @@ function ProductCategorySection({ isEn }: { isEn: boolean }) {
       <div className="border border-gray-200 rounded p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">{isEn ? 'New Product Category' : '新建商品分类'}</h3>
         <div className="flex items-end gap-3 flex-wrap">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1" htmlFor="new-category-parent">{isEn ? 'Parent Category (up to 3 levels)' : '父分类（最多三级）'}</label>
+            <select id="new-category-parent" value={newParentId} onChange={event => setNewParentId(event.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-sm max-w-64">
+              <option value="">{isEn ? 'Top level' : '顶级分类'}</option>
+              {parentOptions(null)}
+            </select>
+          </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">{isEn ? 'Name (EN)' : '英文名'}</label>
             <input type="text" value={newName} onChange={e => setNewName(e.target.value)}

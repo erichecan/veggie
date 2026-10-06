@@ -19,6 +19,7 @@ import {
 export interface BulkImportColumn {
   /** CSV 表头文字，同时是下载模板时写入的表头 */
   label: string
+  aliases?: string[]
   /** 提交给 API 的 JSON 字段名；不填 = 这一列只读/忽略，不参与提交 */
   key?: string
   required?: boolean
@@ -91,7 +92,8 @@ export default function BulkImportDialog({
       // 两个都认，20261003 抽成这个通用组件时参照了商品弹窗的实现、漏掉了 key 这个回退，
       // 导致客户/供应商那种"表头直接写字段名"的历史文件(如 vatNumber/salesman)导入时
       // 整列静默对不上、没有任何报错提示(code review 发现)。
-      const idx = header.findIndex(h => h === c.label.toLowerCase() || h === c.key.toLowerCase())
+      const acceptedHeaders = [c.label, c.key, ...(c.aliases ?? [])].map(value => value.toLowerCase())
+      const idx = header.findIndex(h => acceptedHeaders.includes(h))
       if (idx >= 0) colIdx.set(c.key, idx)
     }
     const missing = importableColumns.filter(c => c.required && !colIdx.has(c.key))

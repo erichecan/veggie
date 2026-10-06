@@ -230,6 +230,9 @@ model User {
 }
 
 model ProductCategory {
+  parentId       String?
+  parent         ProductCategory? @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children       ProductCategory[] @relation("CategoryTree")
   id             String         @id @default(cuid())
   name           String
   nameZh         String?
@@ -244,6 +247,7 @@ model ProductCategory {
 
   @@index([groupId])
   @@index([requiredZoneId])
+  @@index([parentId])
 }
 
 enum ZoneKey {
@@ -470,6 +474,9 @@ model ProductSaleUom {
 }
 
 model Customer {
+  customerNo Int @unique @default(autoincrement())
+  individualOrCompany String @default("company")
+  mobile String @default("")
   id                  String                  @id @default(cuid())
   name                String
   /// 兼容旧数据：合并后的整体地址（仍由后端自动维护，前端不直接编辑）

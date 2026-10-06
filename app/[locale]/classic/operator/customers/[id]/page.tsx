@@ -16,6 +16,7 @@ import type { Customer, OdooPricelist } from '@/lib/types'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { getSession } from '@/lib/session'
+import { readCustomerNavList } from '@/lib/customer-nav-list'
 
 // Sage Account 是会计对账字段，纯销售（未兼任 OPERATOR/BOSS）不可见——与后端
 // app/api/customers/[id]/route.ts 的 isSalesOnly 同一套判断口径（服务端已经不会把
@@ -123,7 +124,7 @@ function customerToForm(c: Customer): FormState {
   const fallbackStreet = newStreet || (c.address ?? '')
   return {
     name: c.name,
-    individualOrCompany: 'company',
+    individualOrCompany: c.individualOrCompany ?? 'company',
     companyName: '',
     sageAccount: (cAny.sageAccount ?? '') as string,
     street: fallbackStreet,
@@ -135,7 +136,7 @@ function customerToForm(c: Customer): FormState {
     vatNumber: c.vatNumber ?? '',
     jobPosition: '',
     phone: c.phone ?? '',
-    mobile: '',
+    mobile: c.mobile ?? '',
     email: c.email ?? '',
     website: '',
     title: '',
@@ -226,6 +227,8 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
 
   const [form, setForm] = useState<FormState>(emptyForm())
   const [original, setOriginal] = useState<Customer | null>(null)
+  const [navIds, setNavIds] = useState<string[]>([])
+  const navIndex = navIds.indexOf(id)
   const [pricelists, setPricelists] = useState<OdooPricelist[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
   const [specialPrices, setSpecialPrices] = useState<CustomerSpecialPrice[]>([])
@@ -278,6 +281,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       .catch(() => {})
 
     if (!isNew) {
+      setIsEditing(false)
+      const savedIds = readCustomerNavList()
+      if (savedIds.includes(id)) setNavIds(savedIds)
+      else apiGet<Customer[]>('/api/customers?slim=1').then(rows => setNavIds(rows.map(row => row.id))).catch(() => {})
       setLoading(true)
       apiGet<Customer & { specialPrices?: CustomerSpecialPrice[] }>(`/api/customers/${id}`)
         .then(c => {
@@ -317,6 +324,8 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       .join(', ')
 
     const fields = {
+      individualOrCompany: form.individualOrCompany,
+      mobile: form.mobile.trim(),
       name: form.name.trim(),
       address: composedAddress,
       street,
@@ -505,6 +514,12 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
             >
               {isEn ? 'Edit' : '编辑'}
             </button>
+          )}
+          {!isNew && (
+            <div className="ml-auto flex gap-2">
+              <button disabled={isEditing || navIndex <= 0} onClick={() => router.push(`${prefix}/classic/operator/customers/${navIds[navIndex - 1]}`)} className="h-8 px-4 rounded border border-gray-300 disabled:opacity-40">{isEn ? 'Previous' : '上一个'}</button>
+              <button disabled={isEditing || navIndex < 0 || navIndex >= navIds.length - 1} onClick={() => router.push(`${prefix}/classic/operator/customers/${navIds[navIndex + 1]}`)} className="h-8 px-4 rounded border border-gray-300 disabled:opacity-40">{isEn ? 'Next' : '下一个'}</button>
+            </div>
           )}
         </div>
       </div>

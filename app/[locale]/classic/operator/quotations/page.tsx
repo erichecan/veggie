@@ -10,6 +10,7 @@ import { useCsvExport } from '@/hooks/use-csv-export'
 import { parseCsv, downloadCsv } from '@/lib/csv-export'
 import type { Order, OrderStatus, Invoice, Customer, Trip } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
+import OrderMobileList from '@/components/classic/OrderMobileList'
 import { DateWithDay } from '@/components/shared/date-with-day'
 import { formatDateTimeShort } from '@/lib/format-date'
 import { buildOrderHtml, CSS as PRINT_CSS } from '../../print/[id]/page'
@@ -1242,7 +1243,16 @@ ${orderSections}
       />
 
       {/* ── Table ── */}
-      <div className="overflow-x-auto relative">
+      <OrderMobileList orders={paginated} selected={selected} loading={loading} isEn={isEn} statusLabels={STATUS_LABEL} statusColors={STATUS_COLOR}
+        onSelect={(id, checked) => setSelected(previous => { const next = new Set(previous); if (checked) next.add(id); else next.delete(id); return next })}
+        filterControls={<>{([{ key: 'quotationDateFrom', en: 'Quotation from', zh: '报价开始' }, { key: 'quotationDateTo', en: 'Quotation to', zh: '报价截止' }, { key: 'deliveryDateFrom', en: 'Delivery from', zh: '交货开始' }, { key: 'deliveryDateTo', en: 'Delivery to', zh: '交货截止' }] as const).map(field => <label key={field.key} className="flex flex-col gap-1">{isEn ? field.en : field.zh}<input type="date" value={colFilters[field.key]} onChange={event => setCf(field.key, event.target.value)} className="min-h-11 border rounded px-2 w-full min-w-0" /></label>)}</>}
+        onOpen={order => router.push(`${prefix}/classic/operator/orders/${order.id}`)}
+        sortKey={sortField ?? 'code'} sortDir={sortDir} onSort={(key, direction) => { setSortField(key); setSortDir(direction) }}
+        sortOptions={[{ key: 'code', label: isEn ? 'Number' : '单号' }, { key: 'restaurantName', label: isEn ? 'Customer' : '客户' }, { key: 'deliveryDate', label: isEn ? 'Delivery Date' : '交货日期' }, { key: 'totalAmount', label: isEn ? 'Amount' : '金额' }, { key: 'status', label: isEn ? 'Status' : '状态' }]}
+        groupLabel={groupBy === 'none' ? undefined : order => Array.from(grouped?.entries() ?? []).find(([, groupOrders]) => groupOrders.some(item => item.id === order.id))?.[0] ?? ''}
+        renderExtra={order => <p className="text-xs text-gray-500 break-words">{getField(order, 'salesman')}{order.source === 'PORTAL' ? (isEn ? ' · Customer portal' : ' · 客户自助') : ''}</p>}
+      />
+      <div className="hidden md:block overflow-x-auto relative">
         {loading && filtered.length > 0 && (
           <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-20">
             <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
@@ -1313,7 +1323,7 @@ ${orderSections}
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between px-2 py-3">
+      <div className="flex flex-wrap gap-2 items-center justify-between px-2 py-3">
         <span className="text-xs text-gray-400">{isEn ? `${total} total, page ${page}/${Math.max(totalPages, 1)}` : `共 ${total} 条，第 ${page}/${Math.max(totalPages, 1)} 页`}</span>
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-0" />
       </div>

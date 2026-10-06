@@ -16,6 +16,7 @@ import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
 import { type SortDir } from '@/components/shared/sort-th'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
+import { writeCustomerNavList } from '@/lib/customer-nav-list'
 
 const PAGE_SIZE = 20
 
@@ -155,6 +156,7 @@ export default function ClassicCustomersPage() {
     router.push(`${prefix}/classic/operator/customers/new`)
   }
   function openEdit(c: Customer) {
+    writeCustomerNavList(customers.map(customer => customer.id))
     router.push(`${prefix}/classic/operator/customers/${c.id}`)
   }
 
@@ -222,6 +224,7 @@ export default function ClassicCustomersPage() {
   const pricelistMap = new Map(pricelists.map(p => [p.id, p.name]))
 
   const columns: OdooColumn[] = [
+    { key: 'customerNo', label: isEn ? 'Customer No' : '客户编号', sortable: true },
     {
       key: 'name',
       label: isEn ? 'Customer Name' : '客户名称',
@@ -351,7 +354,7 @@ export default function ClassicCustomersPage() {
           // 导出吃的是当前筛选参数（跟 selected 无关），所以常驻显示，不依赖勾选行
           exportAction,
           ...(selected.size > 0 ? [
-            { label: deleting ? (isEn ? 'Archiving...' : '归档中...') : (isEn ? `Delete (${selected.size})` : `删除 (${selected.size})`), onClick: handleDeleteSelected, style: 'red' as const, disabled: deleting },
+            { label: deleting ? (isEn ? 'Archiving...' : '归档中...') : (isEn ? `Archive (${selected.size})` : `归档 (${selected.size})`), onClick: handleDeleteSelected, style: 'red' as const, disabled: deleting },
           ] : []),
         ]}
         searchValue={searchInput}
@@ -476,13 +479,20 @@ export default function ClassicCustomersPage() {
           en: 'Row 1 is the header. Name is the only required column.',
         }}
         extraHint={{
-          zh: <>按「ID」精确匹配更新对应客户——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。</>,
-          en: <>Matched by ID (exact match) updates that customer — keep the ID column from an exported file to reliably update; otherwise a name collision is skipped, no match creates a new one.</>,
+          zh: <>优先按客户编号匹配更新，其次按 ID。新客户请留空编号，系统自动生成。个人/公司填写 individual 或 company。</>,
+          en: <>Match by Customer No first, then ID. Leave Customer No blank for new customers; it is generated automatically. Contact Type accepts individual or company.</>,
         }}
         columns={[
+          { key: 'customerNo', label: isEn ? 'Customer No' : '客户编号' },
           { key: 'externalId', label: isEn ? 'ID' : 'ID' },
-          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
+          { key: 'name', label: isEn ? 'Customer Name' : '客户名称', aliases: ['Name', '名称'], required: true },
           { key: 'phone', label: isEn ? 'Phone' : '电话' },
+          { key: 'individualOrCompany', label: isEn ? 'Contact Type' : '个人/公司' },
+          { key: 'mobile', label: isEn ? 'Mobile' : '手机' },
+          { key: 'street', label: isEn ? 'Street' : '街道' },
+          { key: 'street2', label: isEn ? 'Street 2' : '街道 2' },
+          { key: 'state', label: isEn ? 'State' : '州/省' },
+          { key: 'country', label: isEn ? 'Country' : '国家' },
           { key: 'email', label: isEn ? 'Email' : '邮箱' },
           { key: 'address', label: isEn ? 'Address' : '地址' },
           { key: 'city', label: isEn ? 'City' : '城市' },
@@ -493,7 +503,7 @@ export default function ClassicCustomersPage() {
           { key: 'notes', label: isEn ? 'Notes' : '备注' },
         ]}
         exampleRows={[
-          ['', 'Demo Restaurant Ltd', '0851234567', 'demo@example.com', '12 Main Street', 'Dublin', 'D01', 'monthly', '', 'IE1234567T', ''],
+          ['', '', 'Demo Restaurant Ltd', '0851234567', 'company', '0857654321', '12 Main Street', 'Unit 2', 'Dublin', 'Ireland', 'demo@example.com', '12 Main Street', 'Dublin', 'D01', 'monthly', '', 'IE1234567T', ''],
         ]}
         onDone={() => loadPage(1, searchInput)}
       />

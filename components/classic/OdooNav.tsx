@@ -74,6 +74,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
   // 改按权限位图判，与 lib/rbac/page-guard.ts 的 canEnterPage 同一套依据。
   const perms = decodePermissions(session ? getSession()?.pm : undefined)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [appSwitcherOpen, setAppSwitcherOpen] = useState(false)
   const [pwdOpen, setPwdOpen] = useState(false)
   const [oldPwd, setOldPwd] = useState('')
@@ -223,8 +224,21 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
 
   return (
     <>
+    <Dialog open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+      <DialogContent className="top-0 left-0 h-dvh w-80 max-w-[calc(100%-2rem)] translate-x-0 translate-y-0 rounded-none flex flex-col overflow-y-auto">
+        <DialogHeader><DialogTitle>{appName} · {isEn ? 'Navigation' : '导航'}</DialogTitle></DialogHeader>
+        <nav aria-label={isEn ? 'Mobile navigation' : '手机导航'} className="space-y-1">
+          {menuItems.map((item, index) => {
+            const renderLink = (leaf: MenuLeaf) => <Link key={leaf.href} href={leaf.href} target={leaf.newTab ? '_blank' : undefined} rel={leaf.newTab ? 'noopener noreferrer' : undefined} aria-current={pathname === leaf.href ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)} className={`block px-3 py-3 rounded text-sm break-words ${pathname === leaf.href || pathname.startsWith(leaf.href + '/') ? 'bg-purple-50 text-purple-800 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>{leaf.label}</Link>
+            if (isMenuGroup(item)) return <div key={item.label} className="border-t pt-2"><p className="px-3 text-xs text-gray-500">{item.label}</p>{item.items.map(renderLink)}</div>
+            return item.href ? renderLink(item) : <hr key={index} className="my-2" />
+          })}
+        </nav>
+      </DialogContent>
+    </Dialog>
     <header className="sticky top-0 z-40" style={{ background: '#875A7B' }}>
-      <div className="flex items-center h-11 px-4 gap-0">
+      <div className="flex items-center h-11 px-2 md:px-4 gap-0">
+        <button type="button" aria-label={isEn ? 'Open navigation' : '打开导航'} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)} className="md:hidden w-11 h-11 shrink-0 text-white text-xl">☰</button>
         {/* 应用切换器 */}
         <div className="relative mr-1" ref={appSwitcherRef}>
           <button
@@ -264,11 +278,11 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
         </div>
 
         {/* 应用名 */}
-        <span className="text-white font-semibold text-sm mr-6 whitespace-nowrap">{appName}</span>
+        <span className="text-white font-semibold text-sm mr-auto md:mr-6 whitespace-nowrap">{appName}</span>
 
         {/* 二级导航 */}
         <nav
-          className="flex items-center gap-0 flex-1 overflow-x-auto"
+          className="hidden md:flex items-center gap-0 flex-1 min-w-0 overflow-x-auto"
           onScroll={() => setOpenGroup(null)}
         >
           {menuItems.map((item, i) => {
@@ -495,7 +509,7 @@ export default function OdooNav({ session, appName, menuItems }: OdooNavProps) {
                 <circle cx="8" cy="5" r="3" fill="white" opacity="0.9"/>
                 <path d="M2 13c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.9"/>
               </svg>
-              <span>{session.name}</span>
+              <span className="max-w-20 md:max-w-none truncate">{session.name}</span>
               <svg className={`w-3 h-3 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 10 6">
                 <path d="M1 1l4 4 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>

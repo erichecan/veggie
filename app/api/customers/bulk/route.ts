@@ -25,6 +25,13 @@ function normalizeName(name: string): string {
 }
 
 interface ResolvedCustomerRow extends ContactCommonFields {
+  customerNo?: number
+  individualOrCompany?: string
+  mobile?: string
+  street?: string
+  street2?: string
+  state?: string
+  country?: string
   rowLabel: string
   name: string
   paymentTerm?: string
@@ -51,6 +58,7 @@ export async function POST(req: Request) {
       const salesUserByName = new Map(salesUsers.map(u => [normalizeName(u.name), u.id]))
 
       const matchKeys: MatchKeyDef<ResolvedCustomerRow>[] = [
+        { field: 'customerNo', get: r => r.customerNo },
         { field: 'externalId', get: r => r.externalId },
       ]
 
@@ -64,6 +72,25 @@ export async function POST(req: Request) {
           if (!name) { warn(`Row ${rowNo}: missing required 'name', skipped`); return null }
           const rowLabel = `Row ${rowNo} (${name})`
           const row: ResolvedCustomerRow = { rowLabel, name, ...resolveContactCommonFields(r) }
+          if (r.customerNo !== undefined) {
+            const customerNo = Number(r.customerNo)
+            if (!Number.isSafeInteger(customerNo) || customerNo <= 0) {
+              warn(`${rowLabel}: invalid customer number, skipped`)
+              return null
+            }
+            row.customerNo = customerNo
+          }
+          row.mobile = str(r.mobile, 50)
+          row.street = str(r.street, 500)
+          row.street2 = str(r.street2, 500)
+          row.state = str(r.state, 100)
+          row.country = str(r.country, 100)
+          const contactType = str(r.individualOrCompany, 30)?.toLowerCase()
+          if (contactType) {
+            const types: Record<string, string> = { individual: 'individual', company: 'company', '个人': 'individual', '公司': 'company' }
+            if (types[contactType]) row.individualOrCompany = types[contactType]
+            else warn(`${rowLabel}: contact type '${contactType}' not recognized, ignored`)
+          }
 
           const paymentTermRaw = str(r.paymentTerm, 20)?.toLowerCase()
           if (paymentTermRaw) {
@@ -82,9 +109,13 @@ export async function POST(req: Request) {
         },
 
         async findMatchCandidates(keyValues) {
-          if (!keyValues.externalId?.length) return []
+          const filters = [
+            ...(keyValues.customerNo?.length ? [{ customerNo: { in: keyValues.customerNo as number[] } }] : []),
+            ...(keyValues.externalId?.length ? [{ externalId: { in: keyValues.externalId as string[] } }] : []),
+          ]
+          if (!filters.length) return []
           const found = await prisma.customer.findMany({
-            where: { externalId: { in: keyValues.externalId as string[] } },
+            where: { OR: filters },
             orderBy: { createdAt: 'asc' },
           })
           return found as unknown as Array<Record<string, unknown> & { id: string }>
@@ -96,8 +127,16 @@ export async function POST(req: Request) {
         },
 
         async writeRow(tx, row, existingId) {
+          if (row.customerNo !== undefined && !existingId) {
+            throw new Error(`Customer No ${row.customerNo} not found; leave it blank to create a customer`)
+          }
+          const contactFields = Object.fromEntries(
+            ['individualOrCompany', 'mobile', 'street', 'street2', 'state', 'country']
+              .filter(key => row[key as keyof ResolvedCustomerRow] !== undefined)
+              .map(key => [key, row[key as keyof ResolvedCustomerRow]]),
+          )
           if (existingId) {
-            const updateData: Record<string, unknown> = { name: row.name, updatedBy: user.name || user.email }
+            const updateData: Record<string, unknown> = { ...contactFields, name: row.name, updatedBy: user.name || user.email }
             if (row.externalId !== undefined) updateData.externalId = row.externalId
             if (row.phone !== undefined) updateData.phone = row.phone
             if (row.email !== undefined) updateData.email = row.email
@@ -108,6 +147,11 @@ export async function POST(req: Request) {
             if (row.notes !== undefined) updateData.notes = row.notes
             if (row.paymentTerm !== undefined) updateData.paymentTerm = row.paymentTerm
             if (row.salesUserId !== undefined) updateData.salesUserId = row.salesUserId
+            if (['street', 'street2', 'city', 'state', 'zip', 'country'].some(key => row[key as keyof ResolvedCustomerRow] !== undefined)) {
+              const before = await tx.customer.findUniqueOrThrow({ where: { id: existingId } })
+              const merged = { ...before, ...updateData }
+              updateData.address = [merged.street, merged.street2, merged.city, merged.state, merged.zip, merged.country].filter(Boolean).join(', ')
+            }
             const updated = await tx.customer.update({
               where: { id: existingId },
               data: updateData as Parameters<typeof tx.customer.update>[0]['data'],
@@ -116,11 +160,14 @@ export async function POST(req: Request) {
           }
           const created = await tx.customer.create({
             data: {
+              ...contactFields,
               name: row.name,
               externalId: row.externalId ?? null,
               phone: row.phone ?? '',
               email: row.email ?? '',
-              address: row.address ?? '',
+              address: row.street || row.street2
+                ? [row.street, row.street2, row.city, row.state, row.zip, row.country].filter(Boolean).join(', ')
+                : row.address ?? '',
               city: row.city ?? null,
               zip: row.zip ?? '',
               vatNumber: row.vatNumber ?? '',
