@@ -174,8 +174,8 @@ export default function VendorsPage() {
           en: 'Row 1 is the header. Name is the only required column.',
         }}
         extraHint={{
-          zh: <>按「ID」精确匹配更新对应供应商——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称判重(撞了跳过,不覆盖),否则新建。</>,
-          en: <>Matched by ID (exact match) updates that vendor — keep the ID column from an exported file to reliably update; otherwise a name collision is skipped, no match creates a new one.</>,
+          zh: <>按「ID」精确匹配更新对应供应商——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称:已有同名<b>客户</b>(还不是供应商)的,直接把它标成供应商(客户资料不覆盖,只补空字段);已有同名供应商的跳过,不覆盖;都没有则新建。</>,
+          en: <>Matched by ID (exact match) updates that vendor — keep the ID column from an exported file to reliably update. Otherwise by name: an existing <b>customer</b> with the same name (not yet a vendor) is marked as a vendor too (its details are kept, only empty fields filled); an existing vendor with the same name is skipped, not overwritten; no match creates a new one.</>,
         }}
         columns={[
           { key: 'externalId', label: isEn ? 'ID' : 'ID' },

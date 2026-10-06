@@ -17,6 +17,13 @@ import { resolveContactCommonFields, describeContactRowError, type ContactCommon
  *
  * 新增能力(原来只会创建，撞名就跳过)：按 externalId 精确匹配更新已有供应商，都没
  * 匹配上则落回按名字判重，撞了跳过(不覆盖)。更新时只覆盖本行提供了非空值的字段。
+ *
+ * 同名的「纯客户」(20261006 客户反馈：导入供应商后列表还是原来那 20 个)：
+ * 客户和供应商是同一张表，从 Odoo 导出的供应商很多本来就作为客户存在(Odoo 里是同一个
+ * 联系人)。以前按名字判重时把它们一律当撞名跳过，又不打 isVendor 标记，于是整份导入
+ * 基本全进了"重名跳过"，供应商列表纹丝不动。现在：名字唯一对上一条还不是供应商的记录，
+ * 就把它标成供应商(同时仍是客户)，只补它空着的联系字段、不覆盖客户已有资料；同名记录
+ * 不止一条时不猜，跳过并提示用 ID 列指定；同名的已经是供应商 = 真重复，照旧跳过。
  */
 
 const MAX_ROWS_PER_REQUEST = 500
@@ -46,8 +53,37 @@ export async function POST(req: Request) {
       }
       const rowOffset = Number.isInteger(data.rowOffset) && data.rowOffset >= 0 ? data.rowOffset as number : 0
 
+      // ── 同名的纯客户(非供应商)：唯一一条才并入，见文件头说明 ──
+      const batchNameKeys = [...new Set(
+        (rawRows as Array<Record<string, unknown>>).map(r => str(r?.name, 200)?.toLowerCase()).filter((n): n is string => !!n),
+      )]
+      const sameNameRecords = batchNameKeys.length === 0 ? [] : await prisma.customer.findMany({
+        where: { name: { in: batchNameKeys, mode: 'insensitive' } },
+        select: { id: true, name: true, isVendor: true, isActive: true },
+        orderBy: { createdAt: 'asc' },
+      })
+      const recordsByName = new Map<string, typeof sameNameRecords>()
+      for (const c of sameNameRecords) {
+        const k = c.name.toLowerCase()
+        recordsByName.set(k, [...(recordsByName.get(k) ?? []), c])
+      }
+      /** nameKey → 可并入的那条纯客户 */
+      const customerOnlyByName = new Map<string, { id: string; isActive: boolean }>()
+      /** nameKey → 同名纯客户条数(>1 时不猜) */
+      const ambiguousNames = new Map<string, number>()
+      for (const [k, list] of recordsByName) {
+        if (list.some(c => c.isVendor)) continue // 已有同名供应商 = 真重复，交给引擎按撞名跳过
+        if (list.length === 1) customerOnlyByName.set(k, { id: list[0].id, isActive: list[0].isActive })
+        else ambiguousNames.set(k, list.length)
+      }
+      const nameMatchedIds = new Set([...customerOnlyByName.values()].map(c => c.id))
+      /** externalId 命中的记录 id —— 用来区分本行是按 ID 还是按名字匹配上的 */
+      const externalIdHitIds = new Map<string, string>()
+
       const matchKeys: MatchKeyDef<ResolvedSupplierRow>[] = [
         { field: 'externalId', get: r => r.externalId },
+        // 只给"确实有唯一同名纯客户"的行出值，否则引擎会对每个新供应商都报一条 not found
+        { field: 'customerNameKey', get: r => (customerOnlyByName.has(r.name.toLowerCase()) ? r.name.toLowerCase() : undefined) },
       ]
 
       const result = await runBulkImport<Record<string, unknown>, ResolvedSupplierRow>({
@@ -59,6 +95,10 @@ export async function POST(req: Request) {
           const name = str(r.name, 200)
           if (!name) { warn(`Row ${rowNo}: missing required 'name', skipped`); return null }
           const rowLabel = `Row ${rowNo} (${name})`
+          const dupCount = ambiguousNames.get(name.toLowerCase())
+          if (dupCount && !str(r.externalId, 100)) {
+            warn(`${rowLabel}: ${dupCount} existing customers are named '${name}', not sure which one this vendor is — skipped; fill the ID column to pick one`)
+          }
           const row: ResolvedSupplierRow = { rowLabel, name, ...resolveContactCommonFields(r) }
 
           const supplierPaymentTerm = str(r.supplierPaymentTerm, 100)
@@ -72,14 +112,22 @@ export async function POST(req: Request) {
         },
 
         async findMatchCandidates(keyValues) {
-          if (!keyValues.externalId?.length) return []
-          // 跟 customers/bulk 查同一张表(没有独立 Supplier 表)；externalId 全库唯一，
-          // 不会误匹配到纯客户记录。
-          const found = await prisma.customer.findMany({
-            where: { externalId: { in: keyValues.externalId as string[] } },
-            orderBy: { createdAt: 'asc' },
-          })
-          return found as unknown as Array<Record<string, unknown> & { id: string }>
+          const candidates: Array<Record<string, unknown> & { id: string }> = []
+          if (keyValues.externalId?.length) {
+            // 跟 customers/bulk 查同一张表(没有独立 Supplier 表)；externalId 全库唯一，
+            // 不会误匹配到纯客户记录。
+            const found = await prisma.customer.findMany({
+              where: { externalId: { in: keyValues.externalId as string[] } },
+              orderBy: { createdAt: 'asc' },
+            })
+            for (const c of found) if (c.externalId) externalIdHitIds.set(c.externalId, c.id)
+            candidates.push(...(found as unknown as Array<Record<string, unknown> & { id: string }>))
+          }
+          for (const k of (keyValues.customerNameKey ?? []) as string[]) {
+            const hit = customerOnlyByName.get(k)
+            if (hit) candidates.push({ id: hit.id, customerNameKey: k })
+          }
+          return candidates
         },
 
         async findExistingNames() {
@@ -89,6 +137,36 @@ export async function POST(req: Request) {
         },
 
         async writeRow(tx, row, existingId) {
+          const viaName = existingId !== null && nameMatchedIds.has(existingId)
+            && !(row.externalId && externalIdHitIds.get(row.externalId) === existingId)
+          if (existingId && viaName) {
+            // 按名字并入的纯客户：只打供应商标记 + 补空字段，客户已有的电话/地址等一律不动
+            const cur = await tx.customer.findUniqueOrThrow({
+              where: { id: existingId },
+              select: { name: true, isActive: true, externalId: true, phone: true, email: true, address: true, city: true, zip: true, vatNumber: true, notes: true },
+            })
+            const updateData: Record<string, unknown> = { isVendor: true, updatedBy: user.name || user.email }
+            if (row.externalId !== undefined && !cur.externalId) updateData.externalId = row.externalId
+            if (row.phone !== undefined && !cur.phone) updateData.phone = row.phone
+            if (row.email !== undefined && !cur.email) updateData.email = row.email
+            if (row.address !== undefined && !cur.address) updateData.address = row.address
+            if (row.city !== undefined && !cur.city) updateData.city = row.city
+            if (row.zip !== undefined && !cur.zip) updateData.zip = row.zip
+            if (row.vatNumber !== undefined && !cur.vatNumber) updateData.vatNumber = row.vatNumber
+            if (row.notes !== undefined && !cur.notes) updateData.notes = row.notes
+            // 采购专属字段，客户身份下本来就没有意义，有值就写
+            if (row.supplierPaymentTerm !== undefined) updateData.supplierPaymentTerm = row.supplierPaymentTerm
+            if (row.vendorTaxRate !== undefined) updateData.vendorTaxRate = row.vendorTaxRate
+            const updated = await tx.customer.update({
+              where: { id: existingId },
+              data: updateData as Parameters<typeof tx.customer.update>[0]['data'],
+            })
+            const archivedNote = cur.isActive ? '' : ' — it is archived, so it only shows under the Archived filter'
+            return {
+              id: updated.id,
+              warning: `${row.rowLabel}: existing customer '${cur.name}' marked as a vendor too (its customer details kept, only empty fields filled)${archivedNote}`,
+            }
+          }
           if (existingId) {
             const updateData: Record<string, unknown> = { name: row.name, isVendor: true, updatedBy: user.name || user.email }
             if (row.externalId !== undefined) updateData.externalId = row.externalId
