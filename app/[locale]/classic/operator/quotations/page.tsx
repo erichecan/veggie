@@ -647,6 +647,15 @@ export default function ClassicQuotationsPage() {
 
     return result
   }, [orders, activeTab, orderTodayActive, colFilters, invoicedIds, customerMap, orderDriverMap, today, sortField, sortDir, facets, myActive, timeKey, currentUser])
+  // 勾选只保留仍在筛选结果里的单据(跨页勾选保留)：筛选/搜索改了之后，被筛掉的单子不能还算"已选"，
+  // 否则批量确认/取消/删除会作用到看不见的单子上(20261007 客户列表同类反馈)
+  useEffect(() => {
+    const visible = new Set(filtered.map(o => o.id))
+    setSelected(prev => {
+      const next = new Set([...prev].filter(id => visible.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [filtered])
 
   // ── Group By ─────────────────────────────────────────────────────────────
 

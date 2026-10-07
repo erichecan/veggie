@@ -74,6 +74,13 @@ export default function VendorsPage() {
       if (archived) params.set('includeArchived', '1')
       const res = await apiGet<{ data: Customer[]; total: number; page: number }>(`/api/customers?${params}`)
       setVendors(res.data)
+      // 勾选只对当前看得见的行有效(20261007 客户反馈：搜索后只勾了 1 个，却提示删除 2 个——
+      // 之前勾过、已被筛出列表的那条还留在 selected 里，会被看不见地一起删掉)
+      setSelected(prev => {
+        const visible = new Set(res.data.map(r => r.id))
+        const next = new Set([...prev].filter(id => visible.has(id)))
+        return next.size === prev.size ? prev : next
+      })
       setTotal(res.total)
       setPage(res.page)
     } catch (e) {
