@@ -31,6 +31,8 @@ const MAX_ROWS_PER_REQUEST = 500
 interface ResolvedSupplierRow extends ContactCommonFields {
   rowLabel: string
   name: string
+  /** 供应商编号(= Customer.customerNo，与客户共用一个序列)，填了就按它精确匹配更新 */
+  customerNo?: number
   supplierPaymentTerm?: string
   vendorTaxRate?: number
 }
@@ -81,6 +83,7 @@ export async function POST(req: Request) {
       const externalIdHitIds = new Map<string, string>()
 
       const matchKeys: MatchKeyDef<ResolvedSupplierRow>[] = [
+        { field: 'customerNo', get: r => r.customerNo },
         { field: 'externalId', get: r => r.externalId },
         // 只给"确实有唯一同名纯客户"的行出值，否则引擎会对每个新供应商都报一条 not found
         { field: 'customerNameKey', get: r => (customerOnlyByName.has(r.name.toLowerCase()) ? r.name.toLowerCase() : undefined) },
@@ -100,6 +103,14 @@ export async function POST(req: Request) {
             warn(`${rowLabel}: ${dupCount} existing customers are named '${name}', not sure which one this vendor is — skipped; fill the ID column to pick one`)
           }
           const row: ResolvedSupplierRow = { rowLabel, name, ...resolveContactCommonFields(r) }
+          if (r.customerNo !== undefined) {
+            const customerNo = Number(r.customerNo)
+            if (!Number.isSafeInteger(customerNo) || customerNo <= 0) {
+              warn(`${rowLabel}: invalid vendor number '${String(r.customerNo)}', skipped`)
+              return null
+            }
+            row.customerNo = customerNo
+          }
 
           const supplierPaymentTerm = str(r.supplierPaymentTerm, 100)
           if (supplierPaymentTerm) row.supplierPaymentTerm = supplierPaymentTerm
@@ -113,6 +124,13 @@ export async function POST(req: Request) {
 
         async findMatchCandidates(keyValues) {
           const candidates: Array<Record<string, unknown> & { id: string }> = []
+          if (keyValues.customerNo?.length) {
+            const byNo = await prisma.customer.findMany({
+              where: { customerNo: { in: keyValues.customerNo as number[] } },
+              orderBy: { createdAt: 'asc' },
+            })
+            candidates.push(...(byNo as unknown as Array<Record<string, unknown> & { id: string }>))
+          }
           if (keyValues.externalId?.length) {
             // 跟 customers/bulk 查同一张表(没有独立 Supplier 表)；externalId 全库唯一，
             // 不会误匹配到纯客户记录。
@@ -137,7 +155,12 @@ export async function POST(req: Request) {
         },
 
         async writeRow(tx, row, existingId) {
+          // 填了编号却没对上 = 多半是填错了，不能悄悄当新供应商建一条(同 customers/bulk)
+          if (row.customerNo !== undefined && !existingId) {
+            throw new Error(`Vendor No ${row.customerNo} not found; leave it blank to create a vendor`)
+          }
           const viaName = existingId !== null && nameMatchedIds.has(existingId)
+            && row.customerNo === undefined
             && !(row.externalId && externalIdHitIds.get(row.externalId) === existingId)
           if (existingId && viaName) {
             // 按名字并入的纯客户：只打供应商标记 + 补空字段，客户已有的电话/地址等一律不动

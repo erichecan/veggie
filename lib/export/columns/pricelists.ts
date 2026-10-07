@@ -19,6 +19,8 @@ export interface PricelistExportRow {
   itemId?: string | null
   applyOn?: string | null
   categoryName?: string | null
+  /** 商品编号(Product.productNo)：给人看/匹配用的短号，比内部 id 友好(20261007) */
+  productNo?: number | null
   productName?: string | null
   minQty?: number | null
   dateStart?: string | null
@@ -51,6 +53,7 @@ export const PRICELIST_EXPORT_COLUMNS: readonly ExportColumn<PricelistExportRow>
   { key: 'itemId', header: '规则 ID', headerEn: 'Item ID', get: r => r.itemId ?? '' },
   { key: 'applyOn', header: '适用范围', headerEn: 'Apply On', get: r => r.applyOn ?? '' },
   { key: 'categoryName', header: '分类', headerEn: 'Category', get: r => r.categoryName ?? '' },
+  { key: 'productNo', header: '商品编号', headerEn: 'Product No', get: r => num(r.productNo) },
   { key: 'productName', header: '商品', headerEn: 'Product', get: r => r.productName ?? '' },
   { key: 'minQty', header: '最小数量', headerEn: 'Min. Quantity', get: r => num(r.minQty) },
   { key: 'dateStart', header: '开始日期', headerEn: 'Start Date', get: r => r.dateStart ?? '' },

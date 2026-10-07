@@ -4,9 +4,12 @@ import type { PricelistExportRow } from '../columns/pricelists'
 import type { PricelistItemInput } from '@/lib/pricelist-item'
 
 export async function loadPricelistsForExport(ctx: ExportLoadContext): Promise<ExportLoadResult<PricelistExportRow>> {
+  // pricelistId=xxx：价格表详情页的 Action → Export 只导出这一个价格表(20261007)
+  const onlyId = ctx.searchParams.get('pricelistId')
+  const where = onlyId ? { id: onlyId } : {}
   const [total, pricelists] = await Promise.all([
-    prisma.odooPricelist.count({}),
-    prisma.odooPricelist.findMany({ orderBy: { sequence: 'asc' }, take: ctx.limit }),
+    prisma.odooPricelist.count({ where }),
+    prisma.odooPricelist.findMany({ where, orderBy: { sequence: 'asc' }, take: ctx.limit }),
   ])
 
   // 规则里引用的商品/分类/单位/嵌套价格表 id —— 只查实际出现过的那些，不要把全库商品都捞出来
@@ -26,12 +29,13 @@ export async function loadPricelistsForExport(ctx: ExportLoadContext): Promise<E
   }
 
   const [products, categories, uoms, basedOnLists] = await Promise.all([
-    productIds.size ? prisma.product.findMany({ where: { id: { in: [...productIds] } }, select: { id: true, name: true } }) : [],
+    productIds.size ? prisma.product.findMany({ where: { id: { in: [...productIds] } }, select: { id: true, name: true, productNo: true } }) : [],
     categoryIds.size ? prisma.productCategory.findMany({ where: { id: { in: [...categoryIds] } }, select: { id: true, name: true } }) : [],
     uomIds.size ? prisma.uom.findMany({ where: { id: { in: [...uomIds] } }, select: { id: true, name: true } }) : [],
     pricelistIds.size ? prisma.odooPricelist.findMany({ where: { id: { in: [...pricelistIds] } }, select: { id: true, name: true } }) : [],
   ])
   const productName = new Map(products.map(p => [p.id, p.name]))
+  const productNo = new Map(products.map(p => [p.id, p.productNo]))
   const categoryName = new Map(categories.map(c => [c.id, c.name]))
   const uomName = new Map(uoms.map(u => [u.id, u.name]))
   const pricelistName = new Map(basedOnLists.map(p => [p.id, p.name]))
@@ -54,7 +58,7 @@ export async function loadPricelistsForExport(ctx: ExportLoadContext): Promise<E
     for (const it of items) {
       rows.push({
         ...base,
-        ...itemFields(it, { productName, categoryName, uomName, pricelistName }),
+        ...itemFields(it, { productName, productNo, categoryName, uomName, pricelistName }),
       })
     }
   }
@@ -63,11 +67,11 @@ export async function loadPricelistsForExport(ctx: ExportLoadContext): Promise<E
 
   function itemFields(
     it: PricelistItemInput | null,
-    maps?: { productName: Map<string, string>; categoryName: Map<string, string>; uomName: Map<string, string>; pricelistName: Map<string, string> },
+    maps?: { productName: Map<string, string>; productNo: Map<string, number>; categoryName: Map<string, string>; uomName: Map<string, string>; pricelistName: Map<string, string> },
   ) {
     if (!it || !maps) {
       return {
-        itemId: null, applyOn: null, categoryName: null, productName: null, minQty: null,
+        itemId: null, applyOn: null, categoryName: null, productNo: null, productName: null, minQty: null,
         dateStart: null, dateEnd: null, computeType: null, fixedPrice: null, percentDiscount: null,
         formulaBase: null, basedOnPricelistName: null, priceDiscount: null, priceSurcharge: null,
         priceMinMargin: null, priceMaxMargin: null, roundingMethod: null, itemSequence: null,
@@ -79,7 +83,10 @@ export async function loadPricelistsForExport(ctx: ExportLoadContext): Promise<E
       itemId: it.id ?? null,
       applyOn: it.applyOn,
       categoryName: it.categoryId ? (maps.categoryName.get(it.categoryId) ?? it.categoryId) : null,
-      productName: productId ? (maps.productName.get(productId) ?? productId) : null,
+      productNo: productId ? (maps.productNo.get(productId) ?? null) : null,
+      // 规则指向的商品已经不在商品表里(被删掉了)：以前这里直接吐内部 id，看起来像一串乱码。
+      // 现在明确标出来——这种规则不会命中任何商品，可以在价格表里删掉。
+      productName: productId ? (maps.productName.get(productId) ?? `[deleted product ${productId}]`) : null,
       minQty: it.minQty ?? 0,
       dateStart: it.dateStart ?? null,
       dateEnd: it.dateEnd ?? null,

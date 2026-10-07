@@ -16,6 +16,10 @@ import ActionLogPanel from '@/components/shared/action-log-panel'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
 import { DatePicker } from '@/components/ui/date-picker'
+import BulkImportDialog from '@/components/shared/BulkImportDialog'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { PRICELIST_EXPORT_COLUMNS } from '@/lib/export/columns/pricelists'
+import { pricelistImportColumns, PRICELIST_IMPORT_EXAMPLE_ROWS } from '../pricelist-import-columns'
 
 const PURPLE = '#875A7B'
 const PURPLE_LIGHT = '#f3eff5'
@@ -177,6 +181,15 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   // Print/Action dropdown
   const [printOpen, setPrintOpen] = useState(false)
   const [actionOpen, setActionOpen] = useState(false)
+  // 详情页的导出/导入(20261007)：导出只导这一个价格表；导入跟列表页同一个接口，关掉弹窗后重新加载
+  const [importOpen, setImportOpen] = useState(false)
+  const importedRef = useRef(false)
+  const exportAction = useCsvExport({
+    entity: 'pricelists',
+    params: () => new URLSearchParams({ pricelistId: id }),
+    fallbackFilename: 'pricelist.csv',
+    columns: PRICELIST_EXPORT_COLUMNS,
+  })
   const printRef = useRef<HTMLDivElement>(null)
   const actionRef = useRef<HTMLDivElement>(null)
 
@@ -512,8 +525,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               </button>
               {actionOpen && (
                 <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded border border-gray-200 shadow-lg py-1 z-30 text-sm">
-                  <button onClick={() => { toast.info(isEn ? 'Export feature coming soon' : '导出功能即将推出'); setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
-                    Export
+                  <button onClick={() => { setActionOpen(false); exportAction.onClick() }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                    {isEn ? 'Export' : '导出'}
+                  </button>
+                  <button onClick={() => { setActionOpen(false); importedRef.current = false; setImportOpen(true) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                    {isEn ? 'Import' : '导入'}
                   </button>
                   <button onClick={() => { if (confirm(isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)) { handleSave({ active: false }) } setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     Archive
@@ -756,6 +772,26 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           </div>
         )}
       </div>
+
+      {exportAction.dialog}
+      <BulkImportDialog
+        open={importOpen}
+        onClose={() => { setImportOpen(false); if (importedRef.current) window.location.reload() }}
+        onDone={() => { importedRef.current = true }}
+        templateFileName="pricelist-import-template"
+        endpoint="/api/pricelists/bulk"
+        title={{ zh: '导入价格表规则(CSV)', en: 'Import Pricelist Rules (CSV)' }}
+        hint={{
+          zh: '列名与价格表导出完全一致：先用 Action → 导出 拿到这个价格表的 CSV，改完直接导回来。每一行都要填「价格表名称」。',
+          en: 'Columns match the pricelist export: use Action → Export to get this pricelist as CSV, edit it and import it back. Fill Pricelist Name on every row.',
+        }}
+        extraHint={{
+          zh: <>商品优先按<b>商品编号</b>匹配，没填再按商品名称。<b>规则 ID</b>(Item ID)是每条定价规则的内部编号，用来定位要改的那一条，请原样保留;留空 = 新增一条规则。导入只会新增/更新规则，不会删除。</>,
+          en: <>Products are matched by <b>Product No</b> first, then by name. <b>Item ID</b> is the internal id of each pricing rule and tells the import which rule to update — keep it as exported; leave it blank to add a new rule. Import only adds/updates rules, never deletes.</>,
+        }}
+        columns={pricelistImportColumns(isEn)}
+        exampleRows={PRICELIST_IMPORT_EXAMPLE_ROWS}
+      />
 
       {/* ── Item dialog ── */}
       {dialogOpen && editingItem && (

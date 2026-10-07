@@ -337,7 +337,8 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       phone: form.phone.trim(),
       email: form.email.trim(),
       vatNumber: form.vatNumber.trim().toUpperCase(),
-      paymentTerm: form.paymentTerm || 'monthly',
+      // 新建默认月结；已有客户选空白就是真的清空(与列表 Edit 模式的空白选项一致)，不再悄悄改回月结
+      paymentTerm: isNew ? (form.paymentTerm || 'monthly') : form.paymentTerm,
       pricelistIds: form.pricelistIds,
       creditLimit,
       commissionRate,
@@ -891,6 +892,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                 <OdooField label="Payment Terms">
                   <select value={form.paymentTerm} onChange={e => setField('paymentTerm', e.target.value)} className={selectCls}>
                     <option value=""></option>
+                    {/* Odoo 遗留值(如 COD)不在标准选项里时原样列出来，不然下拉显示成空白、看不出现在是什么 */}
+                    {form.paymentTerm && !PAYMENT_TERM_OPTIONS.some(o => o.value === form.paymentTerm) && (
+                      <option value={form.paymentTerm}>{form.paymentTerm}</option>
+                    )}
                     {PAYMENT_TERM_OPTIONS.map(o => (
                       <option key={o.value} value={o.value}>{isEn ? o.labelEn : o.labelZh}</option>
                     ))}

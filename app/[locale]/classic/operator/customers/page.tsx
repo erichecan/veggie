@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -17,11 +17,52 @@ import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/expor
 import { type SortDir } from '@/components/shared/sort-th'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 import { writeCustomerNavList } from '@/lib/customer-nav-list'
+import { hasPermission, useAbility } from '@/lib/permissions'
+import { deleteCustomersFlow, DELETE_PERMISSION_HINT } from '@/components/customers/delete-customers'
 
 const PAGE_SIZE = 20
 
-const PAYMENT_LABELS_ZH: Record<string, string> = { cash: '现付', weekly: '周结', monthly: '月结' }
-const PAYMENT_LABELS_EN: Record<string, string> = { cash: 'Cash', weekly: 'Weekly', monthly: 'Monthly' }
+// 筛选/排序/分页状态持久化（20261007 客户反馈：筛出某个业务员的客户、点进去改完，
+// 点面包屑 Contacts 回来筛选全没了）。详情页是整页路由跳转，列表组件会被卸载，
+// 跟商品列表(products/page.tsx)同一个做法：sessionStorage 记一份，回到列表原样恢复；
+// 只在本标签页内有效，不会跨会话粘住。
+const CUSTOMERS_FILTER_STORAGE_KEY = 'customers-list-filters-v1'
+
+interface SavedCustomersListState {
+  searchInput: string
+  paymentFilter: string
+  includeArchived: boolean
+  isVendorOnly: boolean
+  facets: Facet[]
+  sortKey: string
+  sortDir: SortDir
+  columnMultiFilters: Record<string, string[]>
+  columnFilters: Record<string, string>
+  groupBy: string
+  page: number
+  pageSize: number
+}
+
+function readSavedCustomersListState(): Partial<SavedCustomersListState> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(CUSTOMERS_FILTER_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function writeSavedCustomersListState(state: SavedCustomersListState) {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.setItem(CUSTOMERS_FILTER_STORAGE_KEY, JSON.stringify(state))
+  } catch { /* 隐私模式/存储禁用——丢了就丢了，不是关键功能 */ }
+}
+
+// 账期显示名与详情页下拉同源(lib/payment-terms.ts)，以前这里只认 3 档，双周结/双月结显示成原始代码
+const PAYMENT_LABELS_ZH: Record<string, string> = Object.fromEntries(PAYMENT_TERM_OPTIONS.map(o => [o.value, o.labelZh]))
+const PAYMENT_LABELS_EN: Record<string, string> = Object.fromEntries(PAYMENT_TERM_OPTIONS.map(o => [o.value, o.labelEn]))
 // Price Type 沿用下单页(place-order)的说法，中英文界面下都不翻译——与那边保持一致
 const PRICE_TYPE_LABELS: Record<string, string> = { multi: 'Multi Price', default: 'Default Price', last: 'Last Purchase Price' }
 
@@ -35,26 +76,29 @@ export default function ClassicCustomersPage() {
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [pricelists, setPricelists] = useState<OdooPricelist[]>([])
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(PAGE_SIZE)
+  // 懒初始化时读一次上次留下的筛选状态(从详情页返回时恢复)
+  const [saved] = useState(readSavedCustomersListState)
+  const [page, setPage] = useState(saved?.page ?? 1)
+  const [pageSize, setPageSize] = useState(saved?.pageSize ?? PAGE_SIZE)
   const [total, setTotal] = useState(0)
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState(saved?.searchInput ?? '')
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [paymentFilter, setPaymentFilter] = useState('')
-  const [includeArchived, setIncludeArchived] = useState(false)
-  const [isVendorOnly, setIsVendorOnly] = useState(false)
+  const [paymentFilter, setPaymentFilter] = useState(saved?.paymentFilter ?? '')
+  const [includeArchived, setIncludeArchived] = useState(saved?.includeArchived ?? false)
+  const [isVendorOnly, setIsVendorOnly] = useState(saved?.isVendorOnly ?? false)
   const [isReadMode, setIsReadMode] = useState(true)
   const editMode = !isReadMode
   const [deleting, setDeleting] = useState(false)
+  const canDelete = hasPermission(useAbility(), 'master.customer.delete')
   // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
-  const [facets, setFacets] = useState<Facet[]>([])
+  const [facets, setFacets] = useState<Facet[]>(saved?.facets ?? [])
   // 列头排序：Customer Name / Salesperson / Pricelist / Price Type 均可点表头排序，
   // 与商品页(products/page.tsx)同一套约定——排序只在当前页内进行，与该页服务端分页的限制一致
-  const [sortKey, setSortKey] = useState('')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [sortKey, setSortKey] = useState(saved?.sortKey ?? '')
+  const [sortDir, setSortDir] = useState<SortDir>(saved?.sortDir ?? 'asc')
   // 列头多选筛选(Pricelist / Price Type)，转成 cfm_* 参数发给后端，与商品页同一套惯例
-  const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>({})
+  const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>(saved?.columnMultiFilters ?? {})
 
   function addFacet(key: string, value: string) {
     const field = CUSTOMER_FACET_FIELDS.find(f => f.key === key)
@@ -64,10 +108,10 @@ export default function ClassicCustomersPage() {
   function removeFacetGroup(key: string) {
     setFacets(prev => prev.filter(f => f.key !== key))
   }
-  const [groupBy, setGroupBy] = useState('')
+  const [groupBy, setGroupBy] = useState(saved?.groupBy ?? '')
   const [importOpen, setImportOpen] = useState(false)
   // 列头日期区间筛选(Last Updated on)，转成 cf_<key>_from/_to 参数，与商品页同一套惯例
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(saved?.columnFilters ?? {})
   // Last Updated by 下拉选项：去重历史值，同商品页 /api/products/filter-options 的模式
   const [updatedByOptions, setUpdatedByOptions] = useState<string[]>([])
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
@@ -130,27 +174,41 @@ export default function ClassicCustomersPage() {
     }
   }
 
+  // 挂载时只拉一次：用恢复出来的页码/筛选(没有就是第 1 页、无筛选)。下面几个按筛选
+  // 变化重拉的 effect 都跳过首次挂载，否则会用 page=1 把刚恢复的页码冲掉。
   useEffect(() => {
-    loadPage(1, searchInput, paymentFilter, includeArchived)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facets, columnMultiFilters, columnFilters, sortKey, sortDir])
-
-  useEffect(() => {
-    loadPage(1, '', paymentFilter, includeArchived)
+    loadPage(page, searchInput, paymentFilter, includeArchived, pageSize, isVendorOnly)
     apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d.filter(pl => pl.active) : [])).catch(() => {})
     apiGet<{ updatedBy: string[] }>('/api/customers/filter-options').then(d => setUpdatedByOptions(d.updatedBy ?? [])).catch(() => {})
     apiGet<{ id: string; name: string; email: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
       .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email }))))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeArchived])
+  }, [])
+
+  const filtersMountedRef = useRef(false)
+  useEffect(() => {
+    if (!filtersMountedRef.current) { filtersMountedRef.current = true; return }
+    loadPage(1, searchInput, paymentFilter, includeArchived)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facets, columnMultiFilters, columnFilters, sortKey, sortDir, includeArchived])
 
   // debounced search
+  const searchMountedRef = useRef(false)
   useEffect(() => {
+    if (!searchMountedRef.current) { searchMountedRef.current = true; return }
     const timer = setTimeout(() => loadPage(1, searchInput, paymentFilter, includeArchived), 400)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
+
+  useEffect(() => {
+    writeSavedCustomersListState({
+      searchInput, paymentFilter, includeArchived, isVendorOnly, facets, sortKey, sortDir,
+      columnMultiFilters, columnFilters, groupBy, page, pageSize,
+    })
+  }, [searchInput, paymentFilter, includeArchived, isVendorOnly, facets, sortKey, sortDir,
+      columnMultiFilters, columnFilters, groupBy, page, pageSize])
 
   function openAdd() {
     router.push(`${prefix}/classic/operator/customers/new`)
@@ -191,6 +249,19 @@ export default function ClassicCustomersPage() {
     loadPage(page, searchInput)
   }
 
+  // 真删除(20261007)：只删没有业务单据的客户，有单据的提示改归档，见 components/customers/delete-customers.ts
+  async function handleHardDeleteSelected() {
+    if (selected.size === 0 || deleting) return
+    if (!canDelete) { toast.error(isEn ? DELETE_PERMISSION_HINT.en : DELETE_PERMISSION_HINT.zh); return }
+    setDeleting(true)
+    try {
+      const changed = await deleteCustomersFlow([...selected], { isEn, noun: { zh: '客户', en: 'customer' } })
+      if (changed) { setSelected(new Set()); loadPage(page, searchInput) }
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
     const c = row as unknown as Customer
     let payloadVal: unknown = newValue
@@ -205,6 +276,23 @@ export default function ClassicCustomersPage() {
         }
         payloadVal = n
       }
+    }
+    if (key === 'primaryPricelistId') {
+      // 列表里只改「主价格表」(排第一的那个)，其余已挂的价格表原样保留在它后面；选空白 = 去掉主价格表
+      const current = (c.pricelists ?? []).slice().sort((a, b) => a.sequence - b.sequence).map(p => p.pricelistId)
+      const rest = current.slice(1).filter(id => id !== newValue)
+      const pricelistIds = newValue ? [String(newValue), ...rest] : rest
+      try {
+        await apiPut(`/api/customers/${c.id}`, { pricelistIds })
+        setCustomers(prev => prev.map(row => row.id === c.id
+          ? { ...row, pricelists: pricelistIds.map((pricelistId, idx) => ({ pricelistId, sequence: idx + 1 })) } as Customer
+          : row))
+        toast.success(isEn ? 'Saved' : '已保存')
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+        throw e
+      }
+      return
     }
     try {
       await apiPut(`/api/customers/${c.id}`, { [key]: payloadVal })
@@ -250,8 +338,8 @@ export default function ClassicCustomersPage() {
       label: isEn ? 'Salesperson' : '销售员',
       sortable: true,
       editable: true,
-      editType: 'select',
-      editOptions: salesUsers.map(u => ({ value: u.id, label: u.name })),
+      editType: 'search-select',
+      editOptions: [{ value: '', label: '' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))],
       render: (_v, row) => row.salesman ? String(row.salesman) : <span className="text-gray-400">—</span>,
     },
     {
@@ -259,17 +347,21 @@ export default function ClassicCustomersPage() {
       label: isEn ? 'Payment Term' : '结算方式',
       editable: true,
       editType: 'select',
-      editOptions: PAYMENT_TERM_OPTIONS.map(o => ({ value: o.value, label: isEn ? o.labelEn : o.labelZh })),
-      render: (v) => (
+      // 与详情页 Payment Terms 下拉同一份选项，第一项同样留空白
+      editOptions: [{ value: '', label: '' }, ...PAYMENT_TERM_OPTIONS.map(o => ({ value: o.value, label: isEn ? o.labelEn : o.labelZh }))],
+      render: (v) => v ? (
         <span className="inline-block px-2 py-0.5 rounded text-xs" style={{ background: '#f3eff5', color: '#6d4a66' }}>
           {PAYMENT_LABELS[String(v)] ?? String(v)}
         </span>
-      ),
+      ) : <span className="text-gray-400">—</span>,
     },
     {
       key: 'primaryPricelistId',
       label: isEn ? 'Pricelist' : '价格表',
       sortable: true,
+      editable: true,
+      editType: 'search-select',
+      editOptions: [{ value: '', label: '' }, ...pricelists.map(p => ({ value: p.id, label: p.name }))],
       filterType: 'multi-select',
       filterOptions: pricelists.map(p => ({ value: p.id, label: p.name })),
       filterLabelGetter: (v) => pricelistMap.get(v) ?? v,
@@ -354,7 +446,8 @@ export default function ClassicCustomersPage() {
           // 导出吃的是当前筛选参数（跟 selected 无关），所以常驻显示，不依赖勾选行
           exportAction,
           ...(selected.size > 0 ? [
-            { label: deleting ? (isEn ? 'Archiving...' : '归档中...') : (isEn ? `Archive (${selected.size})` : `归档 (${selected.size})`), onClick: handleDeleteSelected, style: 'red' as const, disabled: deleting },
+            { label: isEn ? `Archive (${selected.size})` : `归档 (${selected.size})`, onClick: handleDeleteSelected, disabled: deleting },
+            { label: deleting ? (isEn ? 'Working...' : '处理中...') : (isEn ? `Delete (${selected.size})` : `删除 (${selected.size})`), onClick: handleHardDeleteSelected, style: 'red' as const, disabled: deleting },
           ] : []),
         ]}
         searchValue={searchInput}
@@ -367,9 +460,7 @@ export default function ClassicCustomersPage() {
           { label: isEn ? 'Vendors' : '供货商', active: isVendorOnly, onClick: toggleVendorOnly },
         ]}
         filterOptions={[
-          { label: isEn ? 'Cash Customers' : '现付客户', value: 'cash' },
-          { label: isEn ? 'Weekly Customers' : '周结客户', value: 'weekly' },
-          { label: isEn ? 'Monthly Customers' : '月结客户', value: 'monthly' },
+          ...PAYMENT_TERM_OPTIONS.map(o => ({ label: isEn ? `${o.labelEn} Customers` : `${o.labelZh}客户`, value: o.value })),
           { label: isEn ? 'Include Archived' : '包含已归档', value: '__archived__' },
         ]}
         groupByOptions={[

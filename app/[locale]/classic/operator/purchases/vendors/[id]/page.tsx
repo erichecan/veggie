@@ -101,6 +101,7 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
   const isEn = locale !== routing.defaultLocale
 
   const [form, setForm] = useState<FormState>(emptyForm())
+  const [vendorNo, setVendorNo] = useState<number | null>(null)
   const [loading, setLoading] = useState(!isNew)
   const [saving, setSaving] = useState(false)
 
@@ -112,7 +113,7 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
     if (isNew) return
     setLoading(true)
     apiGet<Customer>(`/api/customers/${id}`)
-      .then(c => setForm(vendorToForm(c)))
+      .then(c => { setForm(vendorToForm(c)); setVendorNo(c.customerNo ?? null) })
       .catch(() => {
         toast.error(isEn ? 'Failed to load vendor' : '加载供应商失败')
         router.push(`${prefix}/classic/operator/purchases`)
@@ -196,6 +197,9 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
           </button>
           <span className="mx-1 text-gray-400">/</span>
           <span className="text-gray-700 font-medium">{isNew ? (isEn ? 'New' : '新建') : form.name}</span>
+          {!isNew && vendorNo != null && (
+            <span className="ml-2 text-xs text-gray-500 tabular-nums">{isEn ? 'Vendor No' : '供应商编号'} {vendorNo}</span>
+          )}
         </div>
         <div className="px-6 py-2.5 flex items-center gap-2">
           <button

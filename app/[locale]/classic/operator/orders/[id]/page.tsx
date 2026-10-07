@@ -1027,30 +1027,6 @@ export default function SalesOrderDetailPage() {
                 <div className="w-32 font-bold text-gray-700">Balance</div>
                 <div className={balance < 0 ? 'text-red-600' : 'text-gray-800'}>€ {balance.toFixed(2)}</div>
               </div>
-              <div className={`rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
-                <div className="flex border-b border-gray-200 mb-1">
-                  {(['internal', 'external'] as const).map(tab => (
-                    <button key={tab} onClick={() => setNoteTab(tab)}
-                      className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                      {tab === 'internal' ? (isEn ? 'Internal Note' : '内部备注') : (isEn ? 'External Note' : '外部备注')}
-                    </button>
-                  ))}
-                </div>
-                {noteTab === 'internal' ? (
-                  editing ? (
-                    <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
-                      rows={3} maxLength={500}
-                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
-                      placeholder={isEn ? 'Internal only, not printed for the customer' : '仅内部可见，不会打印给客户'} />
-                  ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
-                ) : (
-                  editing ? (
-                    <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
-                      rows={3} placeholder={isEn ? 'Printed on the quotation and delivery note, visible to the customer' : '会打印在报价单和送货单上，客户可见'}
-                      className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none" />
-                  ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{externalNote || '—'}</div>
-                )}
-              </div>
             </div>
 
             {/* Right col */}
@@ -1340,6 +1316,34 @@ export default function SalesOrderDetailPage() {
               }}
             />
           </>
+
+          {/* 备注(内部/外部)：20261007 客户要求从表头左栏挪到商品行下面，跟 Odoo 一样贴着明细写 */}
+          <div className="px-6 py-3 border-t border-gray-100">
+            <div className={`rounded ${editing ? 'bg-amber-50 border border-amber-200 px-2 py-1 -mx-2' : ''}`}>
+              <div className="flex border-b border-gray-200 mb-1">
+                {(['internal', 'external'] as const).map(tab => (
+                  <button key={tab} onClick={() => setNoteTab(tab)}
+                    className={`px-3 py-1 text-xs font-medium border-b-2 transition-colors ${noteTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                    {tab === 'internal' ? (isEn ? 'Internal Note' : '内部备注') : (isEn ? 'External Note' : '外部备注')}
+                  </button>
+                ))}
+              </div>
+              {noteTab === 'internal' ? (
+                editing ? (
+                  <textarea value={internalNote} onChange={e => setInternalNote(e.target.value)}
+                    rows={3} maxLength={500}
+                    className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none"
+                    placeholder={isEn ? 'Internal only, not printed for the customer' : '仅内部可见，不会打印给客户'} />
+                ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{internalNote || '—'}</div>
+              ) : (
+                editing ? (
+                  <textarea value={externalNote} onChange={e => setExternalNote(e.target.value)}
+                    rows={3} placeholder={isEn ? 'Printed on the quotation and delivery note, visible to the customer' : '会打印在报价单和送货单上，客户可见'}
+                    className="w-full border border-amber-400 rounded px-2 py-1 text-sm bg-white focus:outline-none resize-none" />
+                ) : <div className="text-sm text-gray-700 whitespace-pre-wrap">{externalNote || '—'}</div>
+              )}
+            </div>
+          </div>
 
           {/* 调整行：折扣/配送费/差价调整，不属于商品行，独立于 OrderLineEditor 之外 */}
           <OrderAdjustmentsPanel

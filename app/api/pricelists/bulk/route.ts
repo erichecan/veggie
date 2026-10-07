@@ -18,7 +18,7 @@ import { validateAndNormalizeItem, type PricelistItemInput } from '@/lib/priceli
  *
  * body: { rows: [{
  *   externalId?, pricelistName*, currency?, active?, selectable?, pricelistSequence?,
- *   itemId?, applyOn?, category?, product?, minQty?, dateStart?, dateEnd?, computeType?,
+ *   itemId?, applyOn?, category?, productNo?, product?, minQty?, dateStart?, dateEnd?, computeType?,
  *   fixedPrice?, percentDiscount?, formulaBase?, basedOnPricelist?, priceDiscount?,
  *   priceSurcharge?, priceMinMargin?, priceMaxMargin?, roundingMethod?, itemSequence?,
  *   uom?, badgeLabel?
@@ -26,6 +26,7 @@ import { validateAndNormalizeItem, type PricelistItemInput } from '@/lib/priceli
  *
  * 匹配：价格表按 externalId(精确) → 名称(大小写不敏感) 找已有的；都没找到就新建。
  * applyOn 留空 = 这一行只改价格表本身的设置(名称/币种/启用/可选/排序)，不带规则。
+ * 商品：先按 productNo(商品编号)精确匹配，没填/没对上再按商品名称(大小写不敏感)。
  * itemId 留空 = 新增一条规则(追加到 items 数组末尾)；itemId 命中已有规则 = 原地替换那一条。
  * ⛔ 不支持删除已有规则——CSV 只会新增/更新规则，误操作不会把价格表的定价规则清空。
  */
@@ -73,6 +74,20 @@ export async function POST(req: Request) {
       for (const r of rawRows as Record<string, unknown>[]) {
         const p = str(r.product, 200)
         if (p) referencedProductNames.add(p)
+      }
+      // 商品编号(productNo)优先：短、唯一、不怕重名或改名(20261007 客户：UUID 太长、按名字又怕重名)
+      const referencedProductNos = new Set<number>()
+      for (const r of rawRows as Record<string, unknown>[]) {
+        const raw = str(r.productNo, 20)
+        if (raw && /^\d{1,9}$/.test(raw)) referencedProductNos.add(Number(raw))
+      }
+      const productIdByNo = new Map<number, string>()
+      if (referencedProductNos.size > 0) {
+        const byNo = await prisma.product.findMany({
+          where: { productNo: { in: [...referencedProductNos] } },
+          select: { id: true, productNo: true },
+        })
+        for (const p of byNo) productIdByNo.set(p.productNo, p.id)
       }
       const productIdByName = new Map<string, string>()
       if (referencedProductNames.size > 0) {
@@ -135,8 +150,13 @@ export async function POST(req: Request) {
             if (!categoryId) warnings.push(`${rowLabel}: category '${categoryNameRaw}' not found, left unset`)
           }
           let productId: string | undefined
+          const productNoRaw = str(r.productNo, 20)
           const productNameRaw = str(r.product, 200)
-          if (productNameRaw) {
+          if (productNoRaw) {
+            productId = /^\d{1,9}$/.test(productNoRaw) ? productIdByNo.get(Number(productNoRaw)) : undefined
+            if (!productId) warnings.push(`${rowLabel}: product No '${productNoRaw}' not found${productNameRaw ? ', trying the product name' : ', left unset'}`)
+          }
+          if (!productId && productNameRaw) {
             productId = productIdByName.get(normalizeNameKey(productNameRaw))
             if (!productId) warnings.push(`${rowLabel}: product '${productNameRaw}' not found, left unset`)
           }
