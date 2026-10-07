@@ -121,15 +121,17 @@ export async function POST(req: Request) {
             ...(keyValues.externalId?.length ? [{ externalId: { in: keyValues.externalId as string[] } }] : []),
           ]
           if (!filters.length) return []
+          // 只在客户档案里找(客户/供应商彻底分开，20261007)：编号/ID 对上供应商档案按"没找到"处理
           const found = await prisma.customer.findMany({
-            where: { OR: filters },
+            where: { isCustomer: true, OR: filters },
             orderBy: { createdAt: 'asc' },
           })
           return found as unknown as Array<Record<string, unknown> & { id: string }>
         },
 
         async findExistingNames() {
-          const existing = await prisma.customer.findMany({ select: { name: true } })
+          // 只跟已有客户查重；与供应商同名不算重复
+          const existing = await prisma.customer.findMany({ where: { isCustomer: true }, select: { name: true } })
           return new Set(existing.map(c => c.name.toLowerCase()))
         },
 

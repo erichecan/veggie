@@ -456,9 +456,6 @@ export default function ClassicCustomersPage() {
         facetFields={localizeFacetFields(CUSTOMER_FACET_FIELDS, isEn)}
         onFacetAdd={addFacet}
         activeFilters={activeFilters}
-        toggleButtons={[
-          { label: isEn ? 'Vendors' : '供货商', active: isVendorOnly, onClick: toggleVendorOnly },
-        ]}
         filterOptions={[
           ...PAYMENT_TERM_OPTIONS.map(o => ({ label: isEn ? `${o.labelEn} Customers` : `${o.labelZh}客户`, value: o.value })),
           { label: isEn ? 'Include Archived' : '包含已归档', value: '__archived__' },

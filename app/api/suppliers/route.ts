@@ -70,8 +70,9 @@ export async function POST(req: Request) {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
-      // 已存在同名的 Partner 记录？如果存在 → 复用并把 isVendor 翻为 true（同一实体同时是客户+供应商）
-      const existing = await p.customer.findFirst({ where: { name } })
+      // 已存在同名的**供应商**档案 → 复用(更新)；跟客户同名不复用——客户/供应商彻底分开
+      // (20261007 客户要求)，以前这里会把同名客户直接翻成供应商，造成一条记录两种身份
+      const existing = await p.customer.findFirst({ where: { name, isVendor: true, isCustomer: false } })
       const payload: Record<string, unknown> = {
         name,
         address: String(data.address ?? '').trim().slice(0, 500),
@@ -83,7 +84,6 @@ export async function POST(req: Request) {
         supplierPaymentTerm: data.supplierPaymentTerm ?? null,
         vendorTaxRate: toNumOpt(data.vendorTaxRate) ?? null,
         isVendor: true,
-        isCustomer: existing?.isCustomer ?? Boolean(data.alsoCustomer ?? false),
       }
 
       let partner
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
           data: payload,
         })
       } else {
-        partner = await p.customer.create({ data: payload })
+        partner = await p.customer.create({ data: { ...payload, isCustomer: false } })
       }
 
       await writeLog({
