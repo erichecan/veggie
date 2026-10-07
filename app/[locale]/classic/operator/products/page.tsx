@@ -290,6 +290,13 @@ export default function ClassicProductsPage() {
         totalPages: number; alertCounts: { negative: number; low: number }
       }>(`/api/products?${params}`)
       const source = res.data ?? res.items ?? []
+      // 勾选只对当前看得见的行有效：换搜索/筛选/页后，被筛走的行不再算"已选"
+      // (否则按钮上显示的数量和实际看到的对不上，20261007 客户列表同类反馈)
+      setSelected(prev => {
+        const visible = new Set(source.map(t => t.id))
+        const next = new Set([...prev].filter(id => visible.has(id)))
+        return next.size === prev.size ? prev : next
+      })
       setTemplates(source.map(t => {
         const uom = (t as unknown as { uom?: { name: string; nameZh?: string | null } }).uom
         return {
