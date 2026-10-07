@@ -4,13 +4,14 @@ import { withAuth } from '@/lib/auth'
 import {
   runBulkImport, str, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine, type MatchKeyDef,
 } from '@/lib/import/bulk-import-engine'
-import { resolveContactCommonFields, describeContactRowError, type ContactCommonFields } from '@/lib/import/contact-fields'
+import { resolveContactCommonFields, describeContactRowError, parseActiveStatus, type ContactCommonFields } from '@/lib/import/contact-fields'
+import { parsePaymentTermInput } from '@/lib/payment-terms'
 
 /**
  * POST /api/customers/bulk — 客户批量导入(CSV，20261003 改走全站通用的
  * lib/import/bulk-import-engine.ts，与商品/供应商同款引擎)
  * body: { rows: [{ name*, externalId?, phone?, email?, address?, city?, zip?,
- *   paymentTerm?, salesman?, vatNumber?, notes? }], rowOffset? }
+ *   paymentTerm?, salesman?, vatNumber?, notes?, isActive?(Active/Inactive) }], rowOffset? }
  *
  * 新增能力(原来只会创建，撞名就跳过)：按 externalId 精确匹配更新已有客户——
  * 跟商品模块一致的"导出 → Excel 改 → 重新导入"路径。都没传/没匹配上则落回
@@ -18,7 +19,6 @@ import { resolveContactCommonFields, describeContactRowError, type ContactCommon
  */
 
 const MAX_ROWS_PER_REQUEST = 500
-const VALID_TERMS = new Set(['cash', 'weekly', 'monthly'])
 
 function normalizeName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ').replace(/\s*\(/g, '(')
@@ -36,6 +36,7 @@ interface ResolvedCustomerRow extends ContactCommonFields {
   name: string
   paymentTerm?: string
   salesUserId?: string | null
+  isActive?: boolean
 }
 
 export async function POST(req: Request) {
@@ -80,6 +81,9 @@ export async function POST(req: Request) {
             }
             row.customerNo = customerNo
           }
+          const status = parseActiveStatus(r.isActive)
+          if (status.invalid) warn(`${rowLabel}: status '${String(r.isActive)}' not recognized (use Active / Inactive), ignored`)
+          row.isActive = status.value
           row.mobile = str(r.mobile, 50)
           row.street = str(r.street, 500)
           row.street2 = str(r.street2, 500)
@@ -92,9 +96,12 @@ export async function POST(req: Request) {
             else warn(`${rowLabel}: contact type '${contactType}' not recognized, ignored`)
           }
 
-          const paymentTermRaw = str(r.paymentTerm, 20)?.toLowerCase()
+          // 五档账期都认，代码/中英文名/导出简称都行(以前只认 cash/weekly/monthly 三个代码，
+          // 中文导出的「月结」再导回来会被忽略)
+          const paymentTermRaw = str(r.paymentTerm, 40)
           if (paymentTermRaw) {
-            if (VALID_TERMS.has(paymentTermRaw)) row.paymentTerm = paymentTermRaw
+            const term = parsePaymentTermInput(paymentTermRaw)
+            if (term) row.paymentTerm = term
             else warn(`${rowLabel}: paymentTerm '${paymentTermRaw}' not recognized, ignored`)
           }
 
@@ -147,6 +154,7 @@ export async function POST(req: Request) {
             if (row.notes !== undefined) updateData.notes = row.notes
             if (row.paymentTerm !== undefined) updateData.paymentTerm = row.paymentTerm
             if (row.salesUserId !== undefined) updateData.salesUserId = row.salesUserId
+            if (row.isActive !== undefined) updateData.isActive = row.isActive
             if (['street', 'street2', 'city', 'state', 'zip', 'country'].some(key => row[key as keyof ResolvedCustomerRow] !== undefined)) {
               const before = await tx.customer.findUniqueOrThrow({ where: { id: existingId } })
               const merged = { ...before, ...updateData }
@@ -173,6 +181,7 @@ export async function POST(req: Request) {
               vatNumber: row.vatNumber ?? '',
               paymentTerm: row.paymentTerm ?? 'monthly',
               salesUserId: row.salesUserId ?? null,
+              isActive: row.isActive ?? true,
               notes: row.notes ?? null,
               updatedBy: user.name || user.email,
             },

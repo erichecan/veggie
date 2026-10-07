@@ -4,7 +4,7 @@ import { withAuth } from '@/lib/auth'
 import {
   runBulkImport, str, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine, type MatchKeyDef,
 } from '@/lib/import/bulk-import-engine'
-import { resolveContactCommonFields, describeContactRowError, type ContactCommonFields } from '@/lib/import/contact-fields'
+import { resolveContactCommonFields, describeContactRowError, parseActiveStatus, type ContactCommonFields } from '@/lib/import/contact-fields'
 
 /**
  * POST /api/suppliers/bulk — 供应商批量导入(CSV，20261003 改走全站通用的
@@ -33,6 +33,8 @@ interface ResolvedSupplierRow extends ContactCommonFields {
   name: string
   /** 供应商编号(= Customer.customerNo，与客户共用一个序列)，填了就按它精确匹配更新 */
   customerNo?: number
+  /** 状态列 Active/Inactive(停用 = 归档)；空 = 不改 */
+  isActive?: boolean
   supplierPaymentTerm?: string
   vendorTaxRate?: number
 }
@@ -112,6 +114,10 @@ export async function POST(req: Request) {
             row.customerNo = customerNo
           }
 
+          const status = parseActiveStatus(r.isActive)
+          if (status.invalid) warn(`${rowLabel}: status '${String(r.isActive)}' not recognized (use Active / Inactive), ignored`)
+          row.isActive = status.value
+
           const supplierPaymentTerm = str(r.supplierPaymentTerm, 100)
           if (supplierPaymentTerm) row.supplierPaymentTerm = supplierPaymentTerm
 
@@ -185,9 +191,11 @@ export async function POST(req: Request) {
               data: updateData as Parameters<typeof tx.customer.update>[0]['data'],
             })
             const archivedNote = cur.isActive ? '' : ' — it is archived, so it only shows under the Archived filter'
+            // 按名字并进来的是一条在用的客户档案：供应商表里的 Inactive 不顺手把客户也停掉
+            const statusNote = row.isActive === false ? '; status Inactive not applied because this record is also a customer — archive it from the vendor list if needed' : ''
             return {
               id: updated.id,
-              warning: `${row.rowLabel}: existing customer '${cur.name}' marked as a vendor too (its customer details kept, only empty fields filled)${archivedNote}`,
+              warning: `${row.rowLabel}: existing customer '${cur.name}' marked as a vendor too (its customer details kept, only empty fields filled)${archivedNote}${statusNote}`,
             }
           }
           if (existingId) {
@@ -202,6 +210,7 @@ export async function POST(req: Request) {
             if (row.notes !== undefined) updateData.notes = row.notes
             if (row.supplierPaymentTerm !== undefined) updateData.supplierPaymentTerm = row.supplierPaymentTerm
             if (row.vendorTaxRate !== undefined) updateData.vendorTaxRate = row.vendorTaxRate
+            if (row.isActive !== undefined) updateData.isActive = row.isActive
             const updated = await tx.customer.update({
               where: { id: existingId },
               data: updateData as Parameters<typeof tx.customer.update>[0]['data'],
@@ -223,6 +232,7 @@ export async function POST(req: Request) {
               notes: row.notes ?? null,
               isVendor: true,
               isCustomer: false,
+              isActive: row.isActive ?? true,
               updatedBy: user.name || user.email,
             },
           })
