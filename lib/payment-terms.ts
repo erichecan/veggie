@@ -82,3 +82,26 @@ export function paymentTermPrintLabel(
     immediate: isCod,
   }
 }
+
+/**
+ * 导入用：把表格里的账期文字认成标准代码（20261007）。
+ * 认代码(monthly)、详情页下拉的中英文名(Monthly / 月结 / Biweekly (2 Weeks))，
+ * 以及导出文件里写的简称(Cash / 现付)——保证「导出 → 改 → 再导入」原样认得回来。
+ * 认不出返回 undefined，由调用方给提示，不猜。
+ */
+const TERM_ALIASES: Record<string, PaymentTerm> = (() => {
+  const m: Record<string, PaymentTerm> = {}
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+  for (const o of PAYMENT_TERM_OPTIONS) {
+    m[norm(o.value)] = o.value
+    m[norm(o.labelEn)] = o.value
+    m[norm(o.labelZh)] = o.value
+  }
+  Object.assign(m, { cash: 'cash', '现付': 'cash', '现金': 'cash', immediate: 'cash', '2 weeks': 'biweekly', '2 months': 'bimonthly' })
+  return m
+})()
+
+export function parsePaymentTermInput(raw: string | null | undefined): PaymentTerm | undefined {
+  if (!raw) return undefined
+  return TERM_ALIASES[raw.trim().toLowerCase().replace(/\s+/g, ' ')]
+}

@@ -570,13 +570,13 @@ export default function ClassicCustomersPage() {
           en: 'Row 1 is the header. Name is the only required column.',
         }}
         extraHint={{
-          zh: <>优先按客户编号匹配更新，其次按 ID。新客户请留空编号，系统自动生成。个人/公司填写 individual 或 company。</>,
-          en: <>Match by Customer No first, then ID. Leave Customer No blank for new customers; it is generated automatically. Contact Type accepts individual or company.</>,
+          zh: <>优先按客户编号匹配更新，其次按 ID。新客户请留空编号，系统自动生成。个人/公司填写 individual 或 company。状态填 Active / Inactive(Inactive = 归档)，留空不改。</>,
+          en: <>Match by Customer No first, then ID. Leave Customer No blank for new customers; it is generated automatically. Contact Type accepts individual or company. Status accepts Active / Inactive (Inactive = archived); leave blank to keep it unchanged.</>,
         }}
         columns={[
           { key: 'customerNo', label: isEn ? 'Customer No' : '客户编号' },
-          { key: 'externalId', label: isEn ? 'ID' : 'ID' },
-          { key: 'name', label: isEn ? 'Customer Name' : '客户名称', aliases: ['Name', '名称'], required: true },
+          { key: 'externalId', label: isEn ? 'ID' : 'ID', aliases: ['External ID', '外部单号'] },
+          { key: 'name', label: isEn ? 'Customer Name' : '客户名称', aliases: ['Name', '名称', 'Customer Name', '客户名称'], required: true },
           { key: 'phone', label: isEn ? 'Phone' : '电话' },
           { key: 'individualOrCompany', label: isEn ? 'Contact Type' : '个人/公司' },
           { key: 'mobile', label: isEn ? 'Mobile' : '手机' },
@@ -588,13 +588,14 @@ export default function ClassicCustomersPage() {
           { key: 'address', label: isEn ? 'Address' : '地址' },
           { key: 'city', label: isEn ? 'City' : '城市' },
           { key: 'zip', label: isEn ? 'ZIP' : '邮编' },
-          { key: 'paymentTerm', label: isEn ? 'Payment Term' : '账期' },
-          { key: 'salesman', label: isEn ? 'Salesperson' : '业务员' },
+          { key: 'paymentTerm', label: isEn ? 'Payment Term' : '账期', aliases: ['Payment Term', 'Payment Terms', '结算方式', '账期'] },
+          { key: 'salesman', label: isEn ? 'Salesperson' : '业务员', aliases: ['Salesman', 'Salesperson', '业务员', '销售员'] },
           { key: 'vatNumber', label: isEn ? 'VAT Number' : '税号' },
-          { key: 'notes', label: isEn ? 'Notes' : '备注' },
+          { key: 'notes', label: isEn ? 'Notes' : '备注', aliases: ['Notes', 'Internal Notes', '内部备注'] },
+          { key: 'isActive', label: isEn ? 'Status' : '状态', aliases: ['Status', '状态'] },
         ]}
         exampleRows={[
-          ['', '', 'Demo Restaurant Ltd', '0851234567', 'company', '0857654321', '12 Main Street', 'Unit 2', 'Dublin', 'Ireland', 'demo@example.com', '12 Main Street', 'Dublin', 'D01', 'monthly', '', 'IE1234567T', ''],
+          ['', '', 'Demo Restaurant Ltd', '0851234567', 'company', '0857654321', '12 Main Street', 'Unit 2', 'Dublin', 'Ireland', '', '12 Main Street', 'Dublin', 'D01', 'monthly', '', 'IE1234567T', '', 'Active'],
         ]}
         onDone={() => loadPage(1, searchInput)}
       />

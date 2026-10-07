@@ -224,13 +224,14 @@ export default function VendorsPage() {
           en: 'Row 1 is the header. Name is the only required column.',
         }}
         extraHint={{
-          zh: <>按「供应商编号」或「ID」精确匹配更新对应供应商(新供应商编号留空，系统自动生成)——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称:已有同名<b>客户</b>(还不是供应商)的,直接把它标成供应商(客户资料不覆盖,只补空字段);已有同名供应商的跳过,不覆盖;都没有则新建。</>,
-          en: <>Matched by Vendor No or ID (exact match) updates that vendor (leave Vendor No blank for new vendors; it is generated automatically) — keep the ID column from an exported file to reliably update. Otherwise by name: an existing <b>customer</b> with the same name (not yet a vendor) is marked as a vendor too (its details are kept, only empty fields filled); an existing vendor with the same name is skipped, not overwritten; no match creates a new one.</>,
+          zh: <>按「供应商编号」或「ID」精确匹配更新对应供应商(新供应商编号留空，系统自动生成)——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称:已有同名<b>客户</b>(还不是供应商)的,直接把它标成供应商(客户资料不覆盖,只补空字段);已有同名供应商的跳过,不覆盖;都没有则新建。状态填 Active / Inactive(Inactive = 归档)，留空不改。</>,
+          en: <>Matched by Vendor No or ID (exact match) updates that vendor (leave Vendor No blank for new vendors; it is generated automatically) — keep the ID column from an exported file to reliably update. Otherwise by name: an existing <b>customer</b> with the same name (not yet a vendor) is marked as a vendor too (its details are kept, only empty fields filled); an existing vendor with the same name is skipped, not overwritten; no match creates a new one. Status accepts Active / Inactive (Inactive = archived); leave blank to keep it unchanged.</>,
         }}
         columns={[
           { key: 'customerNo', label: isEn ? 'Vendor No' : '供应商编号', aliases: ['Vendor No', '供应商编号', 'Customer No', '客户编号'] },
-          { key: 'externalId', label: isEn ? 'ID' : 'ID' },
-          { key: 'name', label: isEn ? 'Name' : '名称', required: true },
+          { key: 'externalId', label: isEn ? 'ID' : 'ID', aliases: ['External ID', '外部单号'] },
+          // 供应商导出沿用客户导出的列，名称列表头是 Customer Name / 客户名称，这里都认
+          { key: 'name', label: isEn ? 'Name' : '名称', aliases: ['Vendor Name', '供应商名称', 'Customer Name', '客户名称'], required: true },
           { key: 'phone', label: isEn ? 'Phone' : '电话' },
           { key: 'email', label: isEn ? 'Email' : '邮箱' },
           { key: 'address', label: isEn ? 'Address' : '地址' },
@@ -239,10 +240,11 @@ export default function VendorsPage() {
           { key: 'vatNumber', label: isEn ? 'VAT Number' : '税号' },
           { key: 'supplierPaymentTerm', label: isEn ? 'Payment Terms' : '付款条款' },
           { key: 'vendorTaxRate', label: isEn ? 'Vendor Tax Rate (0-1)' : '采购税率(0-1)' },
-          { key: 'notes', label: isEn ? 'Notes' : '备注' },
+          { key: 'notes', label: isEn ? 'Notes' : '备注', aliases: ['Internal Notes', '内部备注'] },
+          { key: 'isActive', label: isEn ? 'Status' : '状态', aliases: ['Status', '状态'] },
         ]}
         exampleRows={[
-          ['', '', 'Demo Supplier Ltd', '0851234567', '', '12 Main Street', 'Dublin', 'D01', 'IE1234567T', '30 days', '0.135', ''],
+          ['', '', 'Demo Supplier Ltd', '0851234567', '', '12 Main Street', 'Dublin', 'D01', 'IE1234567T', '30 days', '0.135', '', 'Active'],
         ]}
         onDone={() => loadPage(1, searchInput)}
       />

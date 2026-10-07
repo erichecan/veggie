@@ -38,3 +38,20 @@ export function describeContactRowError(resourceLabel: string, isUnique: boolean
   if (isTimeout) return 'database timed out, row not imported — please re-import this row'
   return 'unknown error'
 }
+
+/**
+ * 状态列(20261007 客户反馈：导入时 Status 填 Inactive 不起作用——以前导入根本没有这一列)。
+ * 认导出文件里写的 Active/Inactive、活跃/停用，以及常见的 Archived/归档、Y/N、true/false。
+ * 空 = 不改；认不出 = invalid(调用方提示并忽略)。
+ */
+const ACTIVE_WORDS = new Set(['active', '活跃', '启用', 'y', 'yes', 'true', '1', '是'])
+const INACTIVE_WORDS = new Set(['inactive', '停用', 'archived', '已归档', '归档', 'n', 'no', 'false', '0', '否', 'disabled'])
+
+export function parseActiveStatus(raw: unknown): { value: boolean | undefined; invalid: boolean } {
+  if (raw === undefined || raw === null) return { value: undefined, invalid: false }
+  const s = String(raw).trim().toLowerCase()
+  if (!s) return { value: undefined, invalid: false }
+  if (ACTIVE_WORDS.has(s)) return { value: true, invalid: false }
+  if (INACTIVE_WORDS.has(s)) return { value: false, invalid: false }
+  return { value: undefined, invalid: true }
+}
