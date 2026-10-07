@@ -65,3 +65,19 @@ test('导入的状态列与账期文字都认得出导出时写的值', async ()
   assert.equal(parsePaymentTermInput('现付'), 'cash')
   assert.equal(parsePaymentTermInput('COD'), undefined)
 })
+
+test('客户/供应商彻底分开：导入与新建供应商都不碰对方的档案', () => {
+  const supBulk = readFileSync('app/api/suppliers/bulk/route.ts', 'utf-8')
+  const cusBulk = readFileSync('app/api/customers/bulk/route.ts', 'utf-8')
+  const supPost = readFileSync('app/api/suppliers/route.ts', 'utf-8')
+  // 供应商导入：匹配与判重都只在供应商里，不再把同名客户"标成供应商"
+  assert.match(supBulk, /where: \{ isVendor: true, OR: filters \}/)
+  assert.match(supBulk, /findMany\(\{ where: \{ isVendor: true \}, select: \{ name: true \} \}\)/)
+  assert.doesNotMatch(supBulk, /isVendor: true, updatedBy/)
+  // 客户导入：只在客户里
+  assert.match(cusBulk, /where: \{ isCustomer: true, OR: filters \}/)
+  assert.match(cusBulk, /findMany\(\{ where: \{ isCustomer: true \}, select: \{ name: true \} \}\)/)
+  // 新建供应商：只复用纯供应商档案，新建的固定 isCustomer=false
+  assert.match(supPost, /where: \{ name, isVendor: true, isCustomer: false \}/)
+  assert.doesNotMatch(supPost, /existing\?\.isCustomer/)
+})
