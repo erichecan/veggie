@@ -116,13 +116,18 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
       .then(c => { setForm(vendorToForm(c)); setVendorNo(c.customerNo ?? null) })
       .catch(() => {
         toast.error(isEn ? 'Failed to load vendor' : '加载供应商失败')
-        router.push(`${prefix}/classic/operator/purchases`)
+        router.push(`${prefix}/classic/operator/purchases/vendors`)
       })
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
+  // 面包屑两级各去各的(20261007 客户反馈：以前「采购」「供应商」都回到采购首页)；
+  // 取消/返回回到供应商列表
   function goBack() {
+    router.push(`${prefix}/classic/operator/purchases/vendors`)
+  }
+  function goPurchases() {
     router.push(`${prefix}/classic/operator/purchases`)
   }
 
@@ -188,7 +193,7 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
     <div style={{ background: '#f3f4f5' }} className="min-h-full">
       <div className="bg-white border-b border-gray-200">
         <div className="px-6 pt-3 pb-1 text-xs text-gray-500">
-          <button onClick={goBack} className="hover:underline" style={{ color: PURPLE }}>
+          <button onClick={goPurchases} className="hover:underline" style={{ color: PURPLE }}>
             {isEn ? 'Purchases' : '采购'}
           </button>
           <span className="mx-1 text-gray-400">/</span>
