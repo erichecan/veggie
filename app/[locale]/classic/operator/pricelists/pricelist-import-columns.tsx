@@ -17,7 +17,8 @@ export function pricelistImportColumns(isEn: boolean): BulkImportColumn[] {
     { key: 'itemId', label: isEn ? 'Item ID' : '规则 ID' },
     { key: 'applyOn', label: isEn ? 'Apply On (global/category/product/variant)' : '适用范围(global/category/product/variant)' },
     { key: 'category', label: isEn ? 'Category' : '分类' },
-    { key: 'product', label: isEn ? 'Product' : '商品' },
+    { key: 'productNo', label: isEn ? 'Product No' : '商品编号', aliases: ['Product No', '商品编号'] },
+    { key: 'product', label: isEn ? 'Product' : '商品', aliases: ['Product', '商品'] },
     { key: 'minQty', label: isEn ? 'Min. Quantity' : '最小数量' },
     { key: 'dateStart', label: isEn ? 'Start Date (YYYY-MM-DD)' : '开始日期(YYYY-MM-DD)' },
     { key: 'dateEnd', label: isEn ? 'End Date (YYYY-MM-DD)' : '结束日期(YYYY-MM-DD)' },
@@ -39,6 +40,6 @@ export function pricelistImportColumns(isEn: boolean): BulkImportColumn[] {
 
 export const PRICELIST_IMPORT_EXAMPLE_ROWS: string[][] = [
   // 示例：一个价格表、两条规则(全场9折 + 单个商品固定价)
-  ['', 'Demo Wholesale 90%', 'EUR', 'Y', 'Y', '10', '', 'global', '', '', '0', '', '', 'percentage', '', '10', '', '', '', '', '', '', '0', '', '', ''],
-  ['', 'Demo Wholesale 90%', 'EUR', 'Y', 'Y', '10', '', 'product', '', 'Demo Potato 5kg Bag', '0', '', '', 'fixed', '5.50', '', '', '', '', '', '', '', '0', '', '', ''],
+  ['', 'Demo Wholesale 90%', 'EUR', 'Y', 'Y', '10', '', 'global', '', '', '', '0', '', '', 'percentage', '', '10', '', '', '', '', '', '', '0', '', '', ''],
+  ['', 'Demo Wholesale 90%', 'EUR', 'Y', 'Y', '10', '', 'product', '', '', 'Demo Potato 5kg Bag', '0', '', '', 'fixed', '5.50', '', '', '', '', '', '', '', '0', '', '', ''],
 ]

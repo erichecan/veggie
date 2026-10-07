@@ -82,7 +82,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '客户不存在' }, { status: 404 })
       }
 
-      await prisma.customerSpecialPrice.deleteMany({ where: { customerId: id } })
+      // ⛔ 只有请求里真带了 specialPrices 才整组替换。以前这里无条件先删——客户列表的
+      // 行内编辑(只传一个字段)、批量归档、供应商表单保存都会顺手把这个客户的专属价
+      // 全部清空(20261007 排查第 11 条时发现)。
+      if (specialPrices !== undefined) {
+        await prisma.customerSpecialPrice.deleteMany({ where: { customerId: id } })
+      }
       if (pricelistIds !== undefined) {
         await prisma.customerPricelist.deleteMany({ where: { customerId: id } })
       }

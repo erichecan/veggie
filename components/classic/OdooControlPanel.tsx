@@ -331,8 +331,9 @@ export default function OdooControlPanel({
                   }
                   if (!facetMode) { if (e.key === 'Enter') onSearchSubmit?.(); return }
                   if (!facetOpen || !facetFields) { if (e.key === 'Enter' && draft.trim()) commitFacet(0); return }
-                  if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, facetFields.length - 1)) }
-                  else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)) }
+                  // 上下键循环(20261007)：在第一项「全部」按 ↑ 跳到最后一项，在最后一项按 ↓ 回到第一项
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => (h + 1) % facetFields.length) }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => (h - 1 + facetFields.length) % facetFields.length) }
                   else if (e.key === 'Enter') { e.preventDefault(); commitFacet(highlight) }
                   else if (e.key === 'Escape') { setFacetOpen(false) }
                 }}

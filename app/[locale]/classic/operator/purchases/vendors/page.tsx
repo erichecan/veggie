@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPut } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import type { Customer } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
@@ -26,6 +26,12 @@ import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
+import { hasPermission, useAbility } from '@/lib/permissions'
+import { deleteCustomersFlow, DELETE_PERMISSION_HINT } from '@/components/customers/delete-customers'
+
+// 供应商与客户同表，编号就是同一个 customerNo 序列(20261007)；导出时表头换成「供应商编号」
+const VENDOR_EXPORT_COLUMNS = CUSTOMER_EXPORT_COLUMNS.map(c => c.key === 'customerNo' ? { ...c, header: '供应商编号', headerEn: 'Vendor No' } : c)
+const VENDOR_EXPORT_COLUMNS_EN = CUSTOMER_EXPORT_COLUMNS_EN.map(c => c.key === 'customerNo' ? { ...c, header: 'Vendor No', headerEn: 'Vendor No' } : c)
 
 const PAGE_SIZE = 20
 
@@ -42,6 +48,9 @@ export default function VendorsPage() {
   const [loading, setLoading] = useState(false)
   const [includeArchived, setIncludeArchived] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const canDelete = hasPermission(useAbility(), 'master.customer.delete')
 
   // 导出吃与列表请求相同的筛选参数，服务端 suppliers 实体已经强制 isVendor=1
   // （见 lib/export/registry.ts），这里不用再自己拼一次
@@ -54,7 +63,7 @@ export default function VendorsPage() {
       return params
     },
     fallbackFilename: isEn ? 'suppliers.csv' : '供应商.csv',
-    columns: isEn ? CUSTOMER_EXPORT_COLUMNS_EN : CUSTOMER_EXPORT_COLUMNS,
+    columns: isEn ? VENDOR_EXPORT_COLUMNS_EN : VENDOR_EXPORT_COLUMNS,
   })
 
   async function loadPage(p: number, q: string, archived = includeArchived) {
@@ -94,7 +103,36 @@ export default function VendorsPage() {
     router.push(`${prefix}/classic/operator/purchases/vendors/${v.id}`)
   }
 
+  async function handleArchiveSelected() {
+    if (selected.size === 0 || busy) return
+    if (!confirm(isEn
+      ? `Archive ${selected.size} vendor(s)? They disappear from the vendor list and purchase pickers; all history is kept and can be restored.`
+      : `确认归档 ${selected.size} 个供应商？归档后从供应商列表和采购选择中消失，历史完整保留，可恢复。`)) return
+    setBusy(true)
+    const results = await Promise.allSettled([...selected].map(id => apiPut(`/api/customers/${id}`, { isActive: false })))
+    const ok = results.filter(r => r.status === 'fulfilled').length
+    const fail = results.length - ok
+    setBusy(false)
+    setSelected(new Set())
+    if (fail === 0) toast.success(isEn ? `Archived ${ok} vendor(s)` : `已归档 ${ok} 个供应商`)
+    else toast.warning(isEn ? `${ok} succeeded, ${fail} failed` : `成功 ${ok} 个，失败 ${fail} 个`)
+    loadPage(page, searchInput)
+  }
+
+  async function handleDeleteSelected() {
+    if (selected.size === 0 || busy) return
+    if (!canDelete) { toast.error(isEn ? DELETE_PERMISSION_HINT.en : DELETE_PERMISSION_HINT.zh); return }
+    setBusy(true)
+    try {
+      const changed = await deleteCustomersFlow([...selected], { isEn, noun: { zh: '供应商', en: 'vendor' } })
+      if (changed) { setSelected(new Set()); loadPage(page, searchInput) }
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const columns: OdooColumn[] = [
+    { key: 'customerNo', label: isEn ? 'Vendor No' : '供应商编号', render: v => <span className="text-gray-500 tabular-nums">{v != null ? String(v) : ''}</span> },
     {
       key: 'name',
       label: isEn ? 'Vendor Name' : '供应商名称',
@@ -137,6 +175,10 @@ export default function VendorsPage() {
         permanentActions={[
           { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
           exportAction,
+          ...(selected.size > 0 ? [
+            { label: isEn ? `Archive (${selected.size})` : `归档 (${selected.size})`, onClick: handleArchiveSelected, disabled: busy },
+            { label: busy ? (isEn ? 'Working...' : '处理中...') : (isEn ? `Delete (${selected.size})` : `删除 (${selected.size})`), onClick: handleDeleteSelected, style: 'red' as const, disabled: busy },
+          ] : []),
         ]}
         searchValue={searchInput}
         onSearch={setSearchInput}
@@ -157,6 +199,14 @@ export default function VendorsPage() {
           columns={columns}
           rows={vendors as unknown as Record<string, unknown>[]}
           loading={loading}
+          selected={selected}
+          onSelectAll={checked => setSelected(checked ? new Set(vendors.map(v => v.id)) : new Set())}
+          onSelectRow={(id, checked) => setSelected(prev => {
+            const next = new Set(prev)
+            if (checked) next.add(id)
+            else next.delete(id)
+            return next
+          })}
           onRowClick={row => openEdit(row as unknown as Customer)}
           emptyText={isEn ? 'No vendors yet' : '暂无供应商'}
         />
@@ -174,10 +224,11 @@ export default function VendorsPage() {
           en: 'Row 1 is the header. Name is the only required column.',
         }}
         extraHint={{
-          zh: <>按「ID」精确匹配更新对应供应商——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称:已有同名<b>客户</b>(还不是供应商)的,直接把它标成供应商(客户资料不覆盖,只补空字段);已有同名供应商的跳过,不覆盖;都没有则新建。</>,
-          en: <>Matched by ID (exact match) updates that vendor — keep the ID column from an exported file to reliably update. Otherwise by name: an existing <b>customer</b> with the same name (not yet a vendor) is marked as a vendor too (its details are kept, only empty fields filled); an existing vendor with the same name is skipped, not overwritten; no match creates a new one.</>,
+          zh: <>按「供应商编号」或「ID」精确匹配更新对应供应商(新供应商编号留空，系统自动生成)——保留从导出文件带出的「ID」列可可靠更新;没传/没匹配上则按名称:已有同名<b>客户</b>(还不是供应商)的,直接把它标成供应商(客户资料不覆盖,只补空字段);已有同名供应商的跳过,不覆盖;都没有则新建。</>,
+          en: <>Matched by Vendor No or ID (exact match) updates that vendor (leave Vendor No blank for new vendors; it is generated automatically) — keep the ID column from an exported file to reliably update. Otherwise by name: an existing <b>customer</b> with the same name (not yet a vendor) is marked as a vendor too (its details are kept, only empty fields filled); an existing vendor with the same name is skipped, not overwritten; no match creates a new one.</>,
         }}
         columns={[
+          { key: 'customerNo', label: isEn ? 'Vendor No' : '供应商编号', aliases: ['Vendor No', '供应商编号', 'Customer No', '客户编号'] },
           { key: 'externalId', label: isEn ? 'ID' : 'ID' },
           { key: 'name', label: isEn ? 'Name' : '名称', required: true },
           { key: 'phone', label: isEn ? 'Phone' : '电话' },
@@ -191,7 +242,7 @@ export default function VendorsPage() {
           { key: 'notes', label: isEn ? 'Notes' : '备注' },
         ]}
         exampleRows={[
-          ['', 'Demo Supplier Ltd', '0851234567', 'demo@example.com', '12 Main Street', 'Dublin', 'D01', 'IE1234567T', '30 days', '0.135', ''],
+          ['', '', 'Demo Supplier Ltd', '0851234567', '', '12 Main Street', 'Dublin', 'D01', 'IE1234567T', '30 days', '0.135', ''],
         ]}
         onDone={() => loadPage(1, searchInput)}
       />

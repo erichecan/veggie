@@ -10,9 +10,11 @@
 import type { FacetDef } from '../facet-sql'
 
 const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
+/** 纯数字时顺带按客户/供应商编号精确匹配(20261007)：编号是给人记的短号，搜它应该能直达 */
+const byNo = (v: string) => (/^\d{1,9}$/.test(v.trim()) ? [{ customerNo: Number(v.trim()) }] : [])
 
 export const CUSTOMER_FACET_DEFS: FacetDef[] = [
-  { key: 'all',       label: '全部',   toClause: v => ({ OR: [{ name: like(v) }, { vatNumber: like(v) }, { email: like(v) }] }) },
+  { key: 'all',       label: '全部',   toClause: v => ({ OR: [{ name: like(v) }, { vatNumber: like(v) }, { email: like(v) }, ...byNo(v)] }) },
   { key: 'name',      label: '名称',   toClause: v => ({ name: like(v) }) },
   { key: 'city',      label: '城市',   toClause: v => ({ city: like(v) }) },
   { key: 'address',   label: '地址',   toClause: v => ({ OR: [{ address: like(v) }, { street: like(v) }, { street2: like(v) }] }) },

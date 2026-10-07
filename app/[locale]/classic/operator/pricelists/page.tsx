@@ -369,8 +369,8 @@ export default function ClassicPricelistsPage() {
           en: 'Row 1 is the header. Columns match the pricelist export exactly, so an exported CSV can be edited and re-imported. One row = one pricing rule; fill in Pricelist Name on every row for the same pricelist. Pricelist Name is the only required column.',
         }}
         extraHint={{
-          zh: <>按「ID → 名称」匹配已有价格表(都没匹配上则新建)。<b>规则 ID</b> 留空 = 新增一条规则;填了且匹配到已有规则 = 原地替换那一条。⛔ 不支持删除已有规则，导入只会新增/更新，不会清空。「适用范围」留空 = 这一行只改价格表本身的设置(名称/币种/启用/可选/排序)，不带规则。</>,
-          en: <>Matched by ID → Name (no match creates a new pricelist). Leave <b>Item ID</b> blank to add a new rule; fill a matching existing Item ID to replace that rule in place. ⛔ Deleting existing rules via CSV is not supported — import only adds/updates, never clears. Leave Apply On blank for a row that only updates the pricelist&apos;s own settings (name/currency/active/selectable/sequence), with no rule attached.</>,
+          zh: <>按「ID → 名称」匹配已有价格表(都没匹配上则新建)。商品优先按<b>商品编号</b>匹配，没填再按商品名称。<b>规则 ID</b>(Item ID)是系统给每条定价规则的内部编号，只用来定位要改哪一条，请原样保留、不用看懂;留空 = 新增一条规则;填了且匹配到已有规则 = 原地替换那一条。⛔ 不支持删除已有规则，导入只会新增/更新，不会清空。「适用范围」留空 = 这一行只改价格表本身的设置(名称/币种/启用/可选/排序)，不带规则。</>,
+          en: <>Matched by ID → Name (no match creates a new pricelist). Products are matched by <b>Product No</b> first, then by product name. <b>Item ID</b> is the system&apos;s internal id of each pricing rule — it only tells the import which rule to update, so keep it as exported. Leave Item ID blank to add a new rule; fill a matching existing Item ID to replace that rule in place. ⛔ Deleting existing rules via CSV is not supported — import only adds/updates, never clears. Leave Apply On blank for a row that only updates the pricelist&apos;s own settings (name/currency/active/selectable/sequence), with no rule attached.</>,
         }}
         columns={pricelistImportColumns(isEn)}
         exampleRows={PRICELIST_IMPORT_EXAMPLE_ROWS}

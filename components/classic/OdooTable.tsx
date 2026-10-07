@@ -1,6 +1,9 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
 import { DatePicker } from '@/components/ui/date-picker'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
+import InlineSearchSelect from './inline-search-select'
 
 /** 把列上的 width / minWidth 翻译成表格单元格样式：width 同时当上限用，避免被表头文字撑开 */
 function colSizeStyle(col: { width?: number; minWidth?: number }): React.CSSProperties {
@@ -29,9 +32,9 @@ export interface OdooColumn<T = Record<string, unknown>> {
   /** multi-select 选项固定列表：提供后不再从当前 rows 去重派生（服务端分页场景下 rows 只是当前页，无法枚举全量取值） */
   filterOptions?: { value: string; label: string }[]
   render?: (value: unknown, row: T) => React.ReactNode
-  /** 编辑态下用什么类型的输入控件 */
-  editType?: 'text' | 'number' | 'select'
-  /** editType=select 时使用的下拉选项 */
+  /** 编辑态下用什么类型的输入控件；search-select = 可打字筛选的下拉(选项多时用，如销售员/价格表) */
+  editType?: 'text' | 'number' | 'select' | 'search-select'
+  /** editType=select / search-select 时使用的下拉选项 */
   editOptions?: { value: string; label: string }[]
   /** 是否支持单击进入编辑态（必须配合 onCellEdit 才生效）；传函数可按行条件禁用
    *  （如「这一行背后没有可编辑的关联记录」），不满足条件的格子不进入编辑态、
@@ -100,6 +103,7 @@ export default function OdooTable<T extends Record<string, unknown>>({
   groupByField,
   groupByFormatter,
 }: OdooTableProps<T>) {
+  const isEnLocale = useLocale() !== routing.defaultLocale
   const showCheckbox = !!onSelectRow && !!selected
   // date-range 筛选已挪到列头点击弹窗（见下方 openDateKey），不再占用这一行，
   // 故这里只看 text 类型是否需要常驻筛选行。
@@ -174,10 +178,10 @@ export default function OdooTable<T extends Record<string, unknown>>({
     setEditValue(v == null ? '' : String(v))
   }
 
-  async function commitEdit(row: T, col: OdooColumn<T>) {
+  async function commitEdit(row: T, col: OdooColumn<T>, picked?: string) {
     if (!editing || !onCellEdit) return
     const original = row[col.key]
-    let newVal: unknown = editValue
+    let newVal: unknown = picked ?? editValue
     if (col.editType === 'number') {
       const n = Number(editValue)
       newVal = Number.isFinite(n) ? n : original
@@ -614,7 +618,16 @@ export default function OdooTable<T extends Record<string, unknown>>({
                         title={cellEditable ? '单击编辑（回车保存 / Esc 取消）' : disabledHint}
                       >
                         {isEditingCell ? (
-                          col.editType === 'select' ? (
+                          col.editType === 'search-select' ? (
+                            <InlineSearchSelect
+                              options={col.editOptions ?? []}
+                              value={editValue}
+                              disabled={savingCell}
+                              emptyText={isEnLocale ? 'No match' : '没有匹配项'}
+                              onPick={v => { setEditValue(v); commitEdit(row, col, v) }}
+                              onCancel={cancelEdit}
+                            />
+                          ) : col.editType === 'select' ? (
                             <select
                               autoFocus
                               value={editValue}

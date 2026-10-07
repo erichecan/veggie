@@ -1,4 +1,6 @@
 'use client'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import ChatterFeed from './chatter-feed'
 
 /**
@@ -22,10 +24,11 @@ interface Props {
 }
 
 export default function ActionLogPanel({ resource, resourceId }: Props) {
+  const isEn = useLocale() !== routing.defaultLocale
   return (
     <div className="mt-8 border-t border-gray-100 pt-4">
       <div className="flex items-baseline justify-between mb-3">
-        <p className="text-xs text-gray-400 font-medium">操作记录</p>
+        <p className="text-xs text-gray-400 font-medium">{isEn ? 'Activity' : '操作记录'}</p>
       </div>
       <ChatterFeed
         resource={resource ?? ''}

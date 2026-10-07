@@ -2,6 +2,9 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { apiGet } from '@/lib/api'
 import { formatDateTime } from '@/lib/format-date'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
+import { translateLogDetail, fieldLabel as fieldLabelI18n } from '@/lib/action-log-i18n'
 
 /**
  * Odoo Chatter 风格的活动日志：
@@ -27,11 +30,11 @@ interface ApiResponse {
   hasMore: boolean
 }
 
-const ACTION_VERB: Record<string, string> = {
-  CREATE: '创建了记录',
-  UPDATE: '修改了记录',
-  DELETE: '删除了记录',
-  LOGIN: '登录',
+const ACTION_VERB: Record<string, { zh: string; en: string }> = {
+  CREATE: { zh: '创建了记录', en: 'created the record' },
+  UPDATE: { zh: '修改了记录', en: 'updated the record' },
+  DELETE: { zh: '删除了记录', en: 'deleted the record' },
+  LOGIN: { zh: '登录', en: 'logged in' },
 }
 
 const ACTION_COLOR: Record<string, string> = {
@@ -41,54 +44,9 @@ const ACTION_COLOR: Record<string, string> = {
   LOGIN: '#2563eb',
 }
 
-// 字段名 → 中文 label
-const FIELD_LABEL: Record<string, string> = {
-  // product
-  name: '名称',
-  internalRef: '内部参考',
-  sequence: '序号',
-  saleDescription: '销售描述',
-  description: '描述',
-  listPrice: '销售价',
-  customerTaxRate: '客户税率',
-  standardPrice: '成本价',
-  vendorTaxRate: '供应商税率',
-  weight: '重量',
-  categoryId: '商品分类',
-  type: '商品类型',
-  commissionPrice: '佣金价格',
-  status: '状态',
-  canBeSold: '可售',
-  // customer
-  address: '地址',
-  street: '街道 1',
-  street2: '街道 2',
-  city: '城市',
-  state: '州/省',
-  zip: '邮编',
-  country: '国家',
-  phone: '电话',
-  email: '邮箱',
-  vatNumber: '税号',
-  paymentTerm: '付款条款',
-  creditLimit: '信用额度',
-  commissionRate: '佣金比率',
-  commissionFixed: '固定佣金',
-  pricelistId: '价格表',
-  priceType: '定价模式',
-  isActive: '是否启用',
-  isCustomer: '是客户',
-  isVendor: '是供应商',
-  notes: '备注',
-}
-
-function fieldLabel(k: string): string {
-  return FIELD_LABEL[k] ?? k
-}
-
-function formatVal(v: unknown): string {
-  if (v == null || v === '') return '（空）'
-  if (typeof v === 'boolean') return v ? '是' : '否'
+function formatVal(v: unknown, isEn: boolean): string {
+  if (v == null || v === '') return isEn ? '(empty)' : '（空）'
+  if (typeof v === 'boolean') return v ? (isEn ? 'Yes' : '是') : (isEn ? 'No' : '否')
   if (typeof v === 'number') return String(v)
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
@@ -105,22 +63,22 @@ function formatAbsolute(s: string): string {
   return formatDateTime(s)
 }
 
-function formatRelative(s: string): string {
+function formatRelative(s: string, isEn: boolean): string {
   const d = new Date(s)
   const diff = Math.floor((Date.now() - d.getTime()) / 1000)
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} 天前`
+  if (diff < 60) return isEn ? 'just now' : '刚刚'
+  if (diff < 3600) return isEn ? `${Math.floor(diff / 60)} min ago` : `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return isEn ? `${Math.floor(diff / 3600)} h ago` : `${Math.floor(diff / 3600)} 小时前`
+  if (diff < 86400 * 7) return isEn ? `${Math.floor(diff / 86400)} d ago` : `${Math.floor(diff / 86400)} 天前`
   return formatAbsolute(s).slice(0, 10)
 }
 
-function dayDivider(s: string): string {
+function dayDivider(s: string, isEn: boolean): string {
   const d = new Date(s)
   const now = new Date()
   const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000)
-  if (diffDays === 0) return '今天'
-  if (diffDays === 1) return '昨天'
+  if (diffDays === 0) return isEn ? 'Today' : '今天'
+  if (diffDays === 1) return isEn ? 'Yesterday' : '昨天'
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
@@ -141,6 +99,7 @@ export default function ChatterFeed({
   fallbackCreatedBy,
   isNew = false,
 }: Props) {
+  const isEn = useLocale() !== routing.defaultLocale
   const [logs, setLogs] = useState<ActionLog[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [total, setTotal] = useState(0)
@@ -194,7 +153,7 @@ export default function ChatterFeed({
   }
 
   if (loading && logs.length === 0) {
-    return <div className="text-xs text-gray-400 text-center py-4">加载日志中…</div>
+    return <div className="text-xs text-gray-400 text-center py-4">{isEn ? 'Loading activity…' : '加载日志中…'}</div>
   }
 
   // 没有日志时的兜底（用 fallbackCreatedAt + fallbackCreatedBy 模拟一条 "Created" 条目）
@@ -208,20 +167,20 @@ export default function ChatterFeed({
           action: 'CREATE',
           resource,
           resourceId,
-          detail: '创建了记录',
+          detail: isEn ? 'Created the record' : '创建了记录',
           changes: null,
           createdAt: fallbackCreatedAt,
         }]
       : [])
 
   if (displayLogs.length === 0) {
-    return <div className="text-xs text-gray-400 text-center py-4">暂无操作记录</div>
+    return <div className="text-xs text-gray-400 text-center py-4">{isEn ? 'No activity yet' : '暂无操作记录'}</div>
   }
 
   // 按 day bucket 分组
   const grouped: { bucket: string; items: ActionLog[] }[] = []
   for (const log of displayLogs) {
-    const bucket = dayDivider(log.createdAt)
+    const bucket = dayDivider(log.createdAt, isEn)
     let g = grouped.find(x => x.bucket === bucket)
     if (!g) { g = { bucket, items: [] }; grouped.push(g) }
     g.items.push(log)
@@ -241,7 +200,7 @@ export default function ChatterFeed({
           <div className="space-y-3">
             {items.map(log => {
               const initials = getInitials(log.userName)
-              const verb = ACTION_VERB[log.action] ?? log.action
+              const verb = ACTION_VERB[log.action] ? (isEn ? ACTION_VERB[log.action].en : ACTION_VERB[log.action].zh) : log.action
               const verbColor = ACTION_COLOR[log.action] ?? '#4b5563'
               const changeEntries = log.changes ? Object.entries(log.changes) : []
 
@@ -265,26 +224,26 @@ export default function ChatterFeed({
                         {verb}
                       </span>
                       {log.detail && (
-                        <span className="text-sm text-gray-500">— {log.detail}</span>
+                        <span className="text-sm text-gray-500">— {translateLogDetail(log.detail, isEn)}</span>
                       )}
                       {changeEntries.map(([field, { before, after }]) => (
                         <span key={field} className="text-xs text-gray-600 whitespace-nowrap">
-                          {fieldLabel(field)}：
-                          <span className="text-red-500 line-through" title={formatVal(before)}>{formatVal(before)}</span>
+                          {fieldLabelI18n(field, isEn)}{isEn ? ': ' : '：'}
+                          <span className="text-red-500 line-through" title={formatVal(before, isEn)}>{formatVal(before, isEn)}</span>
                           {' → '}
-                          <span className="text-green-700 font-medium" title={formatVal(after)}>{formatVal(after)}</span>
+                          <span className="text-green-700 font-medium" title={formatVal(after, isEn)}>{formatVal(after, isEn)}</span>
                         </span>
                       ))}
                       <span
                         className="text-xs text-gray-400 ml-auto whitespace-nowrap"
                         title={formatAbsolute(log.createdAt)}
                       >
-                        {formatRelative(log.createdAt)} · {formatAbsolute(log.createdAt)}
+                        {formatRelative(log.createdAt, isEn)} · {formatAbsolute(log.createdAt)}
                       </span>
                     </div>
                     {/* 没 diff 时如果是 UPDATE，至少提示一句 */}
                     {changeEntries.length === 0 && log.action === 'UPDATE' && !log.detail && (
-                      <p className="mt-1 text-xs text-gray-400">未跟踪到字段级变更（可能是关联子表或老日志）</p>
+                      <p className="mt-1 text-xs text-gray-400">{isEn ? 'No field-level changes tracked (related records or an older log entry)' : '未跟踪到字段级变更（可能是关联子表或老日志）'}</p>
                     )}
                   </div>
                 </div>
@@ -300,7 +259,7 @@ export default function ChatterFeed({
           disabled={loadingMore}
           className="mt-2 text-xs text-[#875A7B] hover:underline disabled:opacity-50"
         >
-          {loadingMore ? '加载中…' : `加载更多（${logs.length} / ${total}）`}
+          {loadingMore ? (isEn ? 'Loading…' : '加载中…') : (isEn ? `Load more (${logs.length} / ${total})` : `加载更多（${logs.length} / ${total}）`)}
         </button>
       )}
     </div>
