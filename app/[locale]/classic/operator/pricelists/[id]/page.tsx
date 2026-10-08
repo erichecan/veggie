@@ -116,7 +116,11 @@ function uomScopeLabel(item: OdooPricelistItem, uoms: Uom[], isEn: boolean): str
 function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: ProductCategory[], isEn: boolean): string {
   if (item.applyOn === 'global') return 'All Products'
   if (item.applyOn === 'product' || item.applyOn === 'variant') {
-    return products.find(p => p.id === scopedProductId(item))?.name ?? '-'
+    // products 传的是全部商品(含已归档)：归档商品以前也显示成「-」，看起来像无效规则(20261008)
+    const p = products.find(p => p.id === scopedProductId(item))
+    if (!p) return '-'
+    const archived = p.status?.toLowerCase() !== 'active' || p.active === false
+    return archived ? `${p.name} ${isEn ? '(archived)' : '(已归档)'}` : p.name
   }
   if (item.applyOn === 'category') {
     const c = categories.find(c => c.id === item.categoryId)
@@ -161,6 +165,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [originalPl, setOriginalPl] = useState<OdooPricelist | null>(null)
   const [allLists, setAllLists] = useState<OdooPricelist[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  /** 全部商品(含已归档)，只用来显示规则锁定的商品名；选品下拉仍只用启用中的 products */
+  const [allProductsForLabels, setAllProductsForLabels] = useState<Product[]>([])
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
 
@@ -212,6 +218,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           apiGet<Uom[]>('/api/uoms').catch(() => [] as Uom[]),
         ])
         setProducts(allProducts.filter(p => p.status?.toLowerCase() === 'active' && p.active !== false))
+        setAllProductsForLabels(allProducts)
         setCategories(allCategories)
         setUoms(allUoms)
         setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
@@ -416,7 +423,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   // 排序要用到的派生值（Cost/Price 等）跟渲染那份是同一套算法，这里先算一遍供 sort 用，
   // 渲染时把结果原样传给 ItemRow，不重复计算。
   const enrichedItems = itemsBySequence.map(item => {
-    const scopedProduct = products.find(p => p.id === scopedProductId(item))
+    const scopedProduct = allProductsForLabels.find(p => p.id === scopedProductId(item))
     const cost = scopedProduct?.standardPrice
     const publicPrice = scopedProduct?.listPrice
     const estimatedPrice = scopedProduct
@@ -427,7 +434,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       cost,
       publicPrice,
       estimatedPrice,
-      applyLabel: applyOnLabel(item, products, categories, isEn),
+      applyLabel: applyOnLabel(item, allProductsForLabels, categories, isEn),
       categoryLabel: productCategoryLabel(item, scopedProduct, categories, isEn),
       priceValue: estimatedPrice ?? item.fixedPrice ?? 0,
       priceDiscountValue: item.computeType === 'formula'
@@ -716,7 +723,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                       <ItemRow
                         key={item.id}
                         item={item}
-                        products={products}
+                        products={allProductsForLabels}
                         categories={categories}
                         uoms={uoms}
                         cost={row.cost}
