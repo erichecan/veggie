@@ -247,6 +247,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/customers/*/term-extension', methods: ['POST'], permission: 'master.customer.extend_term' },
   { pattern: '/api/customers/*/last-prices', permission: 'master.customer.read_last_prices' },
   { pattern: '/api/customers/*/prepayment-balance', permission: 'finance.payment.read' },
+  // 导入历史(20261008)：外层闸放行"能导入任一模块"的人，具体模块在路由里按同一个权限点再判
+  { pattern: '/api/import-history', methods: R, permission: ['master.product.update', 'master.customer.bulk_import', 'master.pricelist.update', 'master.uom.create', 'master.product_category.update', 'system.user.manage'] },
   { pattern: '/api/customers/bulk', permission: 'master.customer.bulk_import' },
   // 删除/批量删除(20261007)：只删没有业务单据的档案，见 lib/customer-delete.ts；供应商同表共用
   { pattern: '/api/customers/bulk-delete', methods: ['POST'], permission: 'master.customer.delete' },
@@ -283,6 +285,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 两者路径不同不会互相覆盖，都归在"查看价格历史"这同一个权限点下，语义上说得通，
   // 不另开权限点。
   { pattern: '/api/products/*/price-change-log', permission: 'master.product.read_price_history' },
+  { pattern: '/api/products/*/pricelist-rules', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/products/*/sale-uoms', methods: R, permission: 'master.product.read_detail' },
   { pattern: '/api/products/*/sale-uoms', methods: ['PUT'], permission: 'master.product.update' },
   // 单条可售单位行的局部修改（spec/sequence/grossWeight），与整份替换(PUT)同权限

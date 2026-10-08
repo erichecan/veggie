@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
+import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { Pagination } from '@/components/ui/pagination'
 import type { OdooPricelist, Product } from '@/lib/types'
 import { formatDateTime } from '@/lib/format-date'
@@ -72,7 +72,7 @@ export default function ClassicPricelistsPage() {
   const [sortKey, setSortKey] = useState(saved?.sortKey ?? '')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(saved?.sortDir ?? 'asc')
   const [importOpen, setImportOpen] = useState(false)
-  const exportAction = useCsvExport({ entity: 'pricelists', params: () => '', columns: PRICELIST_EXPORT_COLUMNS })
+  const [batchBusy, setBatchBusy] = useState(false)
 
   function handleTabChange(next: 'active' | 'archived') {
     setTab(next)
@@ -174,6 +174,66 @@ export default function ClassicPricelistsPage() {
     return rows
   }, [filteredLists, sortKey, sortDir])
 
+  // 勾选只认当前筛选下看得见的行(同客户/商品列表，20261008)：换了 Tab/筛选后，之前勾的
+  // 隐藏行不能被批量操作带上
+  const visibleSelected = useMemo(() => {
+    const visible = new Set(filteredLists.map(pl => pl.id))
+    return new Set([...selected].filter(id => visible.has(id)))
+  }, [selected, filteredLists])
+  const exportAction = useCsvExport({
+    entity: 'pricelists',
+    params: () => (visibleSelected.size > 0 ? `ids=${[...visibleSelected].map(encodeURIComponent).join(',')}` : ''),
+    columns: PRICELIST_EXPORT_COLUMNS,
+  })
+
+  /** 批量归档 / 取消归档：逐条 PUT active，失败的单独报出来 */
+  async function setActiveSelected(active: boolean) {
+    const targets = lists.filter(pl => visibleSelected.has(pl.id))
+    if (targets.length === 0 || batchBusy) return
+    const msg = active
+      ? (isEn ? `Unarchive ${targets.length} pricelist(s)?` : `确认恢复 ${targets.length} 个价格表？`)
+      : (isEn ? `Archive ${targets.length} pricelist(s)? Customers keep their links; archived pricelists can be restored from the Archived tab.` : `确认归档 ${targets.length} 个价格表？客户上的挂靠不变，可在「已停用」里恢复。`)
+    if (!confirm(msg)) return
+    setBatchBusy(true)
+    const failed: string[] = []
+    for (const pl of targets) {
+      try { await apiPut(`/api/pricelists/${pl.id}`, { active }) } catch { failed.push(pl.name) }
+    }
+    setBatchBusy(false)
+    setSelected(new Set())
+    if (failed.length) toast.error(isEn ? `Failed: ${failed.join(', ')}` : `失败：${failed.join('、')}`)
+    else toast.success(active ? (isEn ? `Unarchived ${targets.length}` : `已恢复 ${targets.length} 个`) : (isEn ? `Archived ${targets.length}` : `已归档 ${targets.length} 个`))
+    load()
+  }
+
+  /** 批量复制：名称加 (copy)，规则整份复制并换新的规则 id；不复制 externalId(唯一)和客户挂靠 */
+  async function duplicateSelected() {
+    const targets = lists.filter(pl => visibleSelected.has(pl.id))
+    if (targets.length === 0 || batchBusy) return
+    setBatchBusy(true)
+    const failed: string[] = []
+    for (const pl of targets) {
+      try {
+        await apiPost('/api/pricelists', {
+          name: `${pl.name} (copy)`,
+          currency: pl.currency,
+          sequence: pl.sequence,
+          selectable: pl.selectable,
+          active: true,
+          notes: (pl as unknown as { notes?: string | null }).notes ?? null,
+          // 去掉规则 id，服务端重新生成——副本和原表的规则 id 不能相同(导入按 Item ID 定位规则)
+          items: (pl.items ?? []).map(({ id: _id, ...it }) => it),
+        })
+      } catch { failed.push(pl.name) }
+    }
+    setBatchBusy(false)
+    setSelected(new Set())
+    if (failed.length) toast.error(isEn ? `Failed: ${failed.join(', ')}` : `失败：${failed.join('、')}`)
+    else toast.success(isEn ? `Duplicated ${targets.length} pricelist(s)` : `已复制 ${targets.length} 个价格表`)
+    if (tab !== 'active') setTab('active')
+    load()
+  }
+
   const pagedLists = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
     return sortedLists.slice(start, start + PAGE_SIZE)
@@ -263,7 +323,7 @@ export default function ClassicPricelistsPage() {
         permanentActions={[
           { label: isEn ? 'New' : '新建', onClick: handleCreate },
           { label: 'Import', onClick: () => setImportOpen(true) },
-          { label: exportAction.label, onClick: exportAction.onClick },
+          { label: visibleSelected.size > 0 ? (isEn ? `Export (${visibleSelected.size})` : `导出所选 (${visibleSelected.size})`) : exportAction.label, onClick: exportAction.onClick, disabled: exportAction.disabled },
           ...(isReadMode
             ? [
                 { label: 'Mode', onClick: () => setIsReadMode(false) },
@@ -273,14 +333,20 @@ export default function ClassicPricelistsPage() {
                 { label: 'Edit', onClick: () => {}, primary: true },
                 { label: 'Mode', onClick: () => setIsReadMode(true) },
               ]),
-          ...(selected.size > 0
-            ? [{ label: isEn ? `🖨 Print (${selected.size})` : `🖨 打印 (${selected.size})`, onClick: () => {
-                const ids = [...selected].join(',')
+          ...(visibleSelected.size > 0
+            ? [{ label: isEn ? `🖨 Print (${visibleSelected.size})` : `🖨 打印 (${visibleSelected.size})`, onClick: () => {
+                const ids = [...visibleSelected].join(',')
                 window.open(`${prefix}/classic/print/pricelist?ids=${ids}`, '_blank')
               }}]
             : [{ label: isEn ? '🖨 Print All' : '🖨 打印全部', onClick: () => window.open(`${prefix}/classic/print/pricelist`, '_blank') }]
           ),
         ]}
+        actions={visibleSelected.size > 0 ? [
+          { label: isEn ? `Duplicate (${visibleSelected.size})` : `复制 (${visibleSelected.size})`, onClick: duplicateSelected, disabled: batchBusy },
+          tab === 'active'
+            ? { label: isEn ? `Archive (${visibleSelected.size})` : `归档 (${visibleSelected.size})`, onClick: () => setActiveSelected(false), disabled: batchBusy }
+            : { label: isEn ? `Unarchive (${visibleSelected.size})` : `恢复 (${visibleSelected.size})`, onClick: () => setActiveSelected(true), disabled: batchBusy },
+        ] : []}
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => { setPage(1) }}
@@ -327,7 +393,7 @@ export default function ClassicPricelistsPage() {
             else { setSortKey(key); setSortDir('asc') }
             setPage(1)
           }}
-          selected={selected}
+          selected={visibleSelected}
           onSelectAll={checked => {
             if (checked) setSelected(new Set(pagedLists.map(pl => pl.id)))
             else setSelected(new Set())
@@ -362,7 +428,7 @@ export default function ClassicPricelistsPage() {
         onClose={() => setImportOpen(false)}
         onDone={load}
         templateFileName="pricelists-import-template"
-        endpoint="/api/pricelists/bulk"
+        endpoint="/api/pricelists/bulk" historyResource="pricelist"
         title={{ zh: '批量导入价格表(CSV)', en: 'Bulk Import Pricelists (CSV)' }}
         hint={{
           zh: '第一行为表头。列名与价格表导出完全一致，导出的 CSV 改完可直接重新导入。一行 = 一条定价规则，同一个价格表的规则要把「价格表名称」填在每一行上。仅「价格表名称」必填。',

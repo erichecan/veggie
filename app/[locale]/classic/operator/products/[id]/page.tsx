@@ -14,6 +14,7 @@ import {
   type SaleUomFormRow, type SaleUomApiRow,
 } from '@/lib/sale-uom'
 import SaleUomsEditor from '@/components/classic/SaleUomsEditor'
+import ProductPricelistRules from '@/components/classic/ProductPricelistRules'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { readProductNavList } from '@/lib/product-nav-list'
 import { formatDateTime } from '@/lib/format-date'
@@ -923,6 +924,12 @@ export default function ClassicProductDetailPage() {
               </p>
             )}
           </Section>
+
+          {!isNew && tmpl.id && (
+            <Section title={isEn ? 'Pricelists' : '价格表'}>
+              <ProductPricelistRules productId={tmpl.id} prefix={prefix} isEn={isEn} />
+            </Section>
+          )}
 
         </div>
       </div>

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import {
-  runBulkImport, str, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine, type MatchKeyDef,
+  runBulkImport, str, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine, type MatchKeyDef, importOptionsFromBody,
 } from '@/lib/import/bulk-import-engine'
 import { resolveContactCommonFields, describeContactRowError, parseActiveStatus, type ContactCommonFields } from '@/lib/import/contact-fields'
 
@@ -62,6 +62,8 @@ export async function POST(req: Request) {
       const result = await runBulkImport<Record<string, unknown>, ResolvedSupplierRow>({
         rawRows,
         rowOffset,
+        // 试运行 / 导入历史(20261008)：dryRun、importId、fileName、batch 由导入弹窗带上来
+        ...importOptionsFromBody(data),
         matchKeys,
 
         resolveRow(r, rowNo, warn) {

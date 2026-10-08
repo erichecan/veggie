@@ -459,7 +459,7 @@ function UomSection({ isEn }: { isEn: boolean }) {
         onClose={() => setImportOpen(false)}
         onDone={load}
         templateFileName="uoms-import-template"
-        endpoint="/api/uoms/bulk"
+        endpoint="/api/uoms/bulk" historyResource="uom"
         title={{ zh: '批量导入计量单位(CSV)', en: 'Bulk Import Units of Measure (CSV)' }}
         hint={{
           zh: '第一行为表头。「名称」「分类」必填。',

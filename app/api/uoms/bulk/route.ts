@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import {
   runBulkImport, str, bool, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine, normalizeNameKey,
-  type MatchKeyDef,
+  type MatchKeyDef, importOptionsFromBody,
 } from '@/lib/import/bulk-import-engine'
 
 /**
@@ -49,6 +49,8 @@ export async function POST(req: Request) {
       const result = await runBulkImport<Record<string, unknown>, ResolvedRow>({
         rawRows,
         rowOffset,
+        // 试运行 / 导入历史(20261008)：dryRun、importId、fileName、batch 由导入弹窗带上来
+        ...importOptionsFromBody(data),
         matchKeys,
 
         resolveRow(r, rowNo, warn) {

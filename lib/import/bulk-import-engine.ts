@@ -74,6 +74,14 @@ export interface BulkImportConfig<Raw, Resolved extends { rowLabel: string; name
    */
   onRowCommitted?: (resolved: Resolved, existingId: string | null, outcome: BulkImportRowOutcome<Data>) => Promise<void>
   rowTxTimeoutMs?: number
+  /**
+   * 试运行(20261008)：每一行照常在自己的事务里完整执行 writeRow(唯一约束、外键、业务校验
+   * 都真跑一遍)，然后主动回滚——结果计数和真导入一模一样，但数据库什么都不留。
+   * 试运行时不调 onRowCommitted、不写审计日志。
+   */
+  dryRun?: boolean
+  /** 导入历史用：同一次导入(弹窗里选一个文件点一次)的各批次共用一个 importId */
+  importMeta?: ImportMeta
   auditLog: {
     userId: string
     userEmail: string
@@ -93,6 +101,39 @@ export interface BulkImportResult {
   skipped: string[]
   failed: string[]
   warnings: string[]
+  /** 本次是试运行(什么都没写进数据库) */
+  dryRun?: boolean
+}
+
+export interface ImportMeta {
+  importId?: string
+  fileName?: string
+  /** 第几批(从 1 开始)，导入弹窗按 batchSize 分批提交 */
+  batch?: number
+}
+
+/** 从请求体里取试运行开关与导入历史元信息——各 bulk 路由统一用它，字段名只在这一处定义 */
+export function importOptionsFromBody(body: Record<string, unknown>): { dryRun: boolean; importMeta: ImportMeta } {
+  const s = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined)
+  return {
+    dryRun: body.dryRun === true,
+    importMeta: {
+      importId: s(body.importId, 64),
+      fileName: s(body.fileName, 200),
+      batch: Number.isInteger(body.batch) ? (body.batch as number) : undefined,
+    },
+  }
+}
+
+/** 导入历史留痕：写进 ActionLog.changes.import(结构见 /api/import-history) */
+export function importHistoryChanges(meta: ImportMeta | undefined, counts: { created: number; updated: number; skipped: number; failed: number }) {
+  if (!meta?.importId) return undefined
+  return { import: { before: null, after: { ...meta, ...counts } } }
+}
+
+/** 试运行时用来让单行事务回滚、同时把这一行的结果带出来 */
+class DryRunRollback<D> extends Error {
+  constructor(public readonly outcome: BulkImportRowOutcome<D>) { super('dry-run rollback') }
 }
 
 export async function runBulkImport<Raw, Resolved extends { rowLabel: string; name: string }, Data = unknown>(
@@ -112,7 +153,7 @@ export async function runBulkImport<Raw, Resolved extends { rowLabel: string; na
   })
 
   if (resolvedRows.length === 0) {
-    return { created: 0, updated: 0, skipped: [], failed: [], warnings }
+    return { created: 0, updated: 0, skipped: [], failed: [], warnings, ...(config.dryRun ? { dryRun: true } : {}) }
   }
 
   // ── 按匹配优先级键批量查候选 ──────────────────────────────────────────
@@ -180,20 +221,32 @@ export async function runBulkImport<Raw, Resolved extends { rowLabel: string; na
       reservedName = nameKey
     }
     try {
-      const outcome = await prisma.$transaction(
-        (tx) => writeRow(tx, row, existingId),
-        { timeout: rowTxTimeoutMs },
-      )
+      let outcome: BulkImportRowOutcome<Data>
+      try {
+        outcome = await prisma.$transaction(
+          async (tx) => {
+            const o = await writeRow(tx, row, existingId)
+            if (config.dryRun) throw new DryRunRollback(o)
+            return o
+          },
+          { timeout: rowTxTimeoutMs },
+        )
+      } catch (e) {
+        if (!(e instanceof DryRunRollback)) throw e
+        outcome = e.outcome as BulkImportRowOutcome<Data>
+      }
       if (outcome.warning) warnings.push(outcome.warning)
       if (existingId) updated++
       else created++
-      if (config.onRowCommitted) await config.onRowCommitted(row, existingId, outcome)
+      if (!config.dryRun && config.onRowCommitted) await config.onRowCommitted(row, existingId, outcome)
     } catch (e) {
       console.error(`[bulk-import] ${row.rowLabel}`, e)
       failed.push(`${row.rowLabel}: ${describeRowError(e, row)}`)
       if (reservedName) takenNames.delete(reservedName)
     }
   }
+
+  if (config.dryRun) return { created, updated, skipped, failed, warnings, dryRun: true }
 
   await writeLog({
     userId: auditLog.userId,
@@ -203,6 +256,7 @@ export async function runBulkImport<Raw, Resolved extends { rowLabel: string; na
     resource: auditLog.resource,
     resourceId: 'bulk',
     detail: `批量导入${auditLog.resourceLabel}：新建 ${created}，更新 ${updated}，重名跳过 ${skipped.length}，失败 ${failed.length}`,
+    changes: importHistoryChanges(config.importMeta, { created, updated, skipped: skipped.length, failed: failed.length }),
   })
 
   return { created, updated, skipped, failed, warnings }

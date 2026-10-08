@@ -584,7 +584,7 @@ export default function ClassicCustomersPage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         templateFileName="customers-import-template"
-        endpoint="/api/customers/bulk"
+        endpoint="/api/customers/bulk" historyResource="customer"
         title={{ zh: '批量导入客户(CSV)', en: 'Bulk Import Customers (CSV)' }}
         hint={{
           zh: '第一行为表头。仅「名称」必填。',

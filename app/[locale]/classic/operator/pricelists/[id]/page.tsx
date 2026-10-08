@@ -57,7 +57,7 @@ interface PriceReference {
 }
 
 /** Pricelist Items 表格可点击表头排序的列；点第三次回到默认的 sequence 顺序 */
-type ItemSortKey = 'applyOn' | 'minQty' | 'dateStart' | 'dateEnd' | 'category' | 'price' | 'priceDiscount' | 'cost' | 'publicPrice'
+type ItemSortKey = 'productNo' | 'applyOn' | 'minQty' | 'dateStart' | 'dateEnd' | 'category' | 'price' | 'priceDiscount' | 'cost' | 'publicPrice'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -174,6 +174,8 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [itemPage, setItemPage] = useState(1)
   const [itemPageSize, setItemPageSize] = useState(ITEMS_PAGE_SIZE_DEFAULT)
   const [itemSort, setItemSort] = useState<{ key: ItemSortKey; dir: 'asc' | 'desc' } | null>(null)
+  // 规则搜索(20261008)：按商品名/商品编号/分类名过滤明细行，规则多时不用翻页找
+  const [itemQuery, setItemQuery] = useState('')
   // 拖拽排序状态（与 OrderLineEditor 同一套：拖拽手柄按下才让 <tr draggable> 生效，
   // 不然整行文字选取/点击都会被 HTML5 drag 劫持）
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -431,6 +433,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       : undefined
     return {
       item,
+      productNo: scopedProduct?.productNo,
       cost,
       publicPrice,
       estimatedPrice,
@@ -445,10 +448,19 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     }
   })
 
+  const q = itemQuery.trim().toLowerCase()
+  const filteredItems = q
+    ? enrichedItems.filter(r =>
+        r.applyLabel.toLowerCase().includes(q)
+        || r.categoryLabel.toLowerCase().includes(q)
+        || (r.productNo != null && String(r.productNo) === q.replace(/^#/, '')))
+    : enrichedItems
+
   const sortedItems = itemSort
-    ? [...enrichedItems].sort((a, b) => {
+    ? [...filteredItems].sort((a, b) => {
         const dir = itemSort.dir === 'asc' ? 1 : -1
         switch (itemSort.key) {
+          case 'productNo': return ((a.productNo ?? Number.MAX_SAFE_INTEGER) - (b.productNo ?? Number.MAX_SAFE_INTEGER)) * dir
           case 'applyOn': return a.applyLabel.localeCompare(b.applyLabel) * dir
           case 'minQty': return (a.item.minQty - b.item.minQty) * dir
           case 'dateStart': return (a.item.dateStart ?? '').localeCompare(b.item.dateStart ?? '') * dir
@@ -461,7 +473,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           default: return 0
         }
       })
-    : enrichedItems
+    : filteredItems
 
   const totalItems = sortedItems.length
   const pagedItems = sortedItems.slice((itemPage - 1) * itemPageSize, itemPage * itemPageSize)
@@ -672,9 +684,19 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           {/* ── Pricelist Items ── */}
           <div>
             <div className="flex items-center justify-between px-5 py-2">
-              <span className="text-base font-semibold" style={{ color: PURPLE }}>
-                Pricelist Items
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-base font-semibold" style={{ color: PURPLE }}>
+                  Pricelist Items
+                </span>
+                <input
+                  type="search"
+                  value={itemQuery}
+                  onChange={e => { setItemQuery(e.target.value); setItemPage(1) }}
+                  placeholder={isEn ? 'Search product / No. / category…' : '搜索商品 / 编号 / 分类…'}
+                  className="border border-gray-300 rounded px-2 py-1 text-xs w-56 focus:outline-none focus:border-[#875A7B]"
+                />
+                {q && <span className="text-xs text-gray-400">{isEn ? `${totalItems} of ${enrichedItems.length}` : `${totalItems} / ${enrichedItems.length} 条`}</span>}
+              </div>
               {totalItems > 0 && (
                 <RowsPerPagePagination
                   total={totalItems}
@@ -693,6 +715,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         排在最后一列 Sale Price 之后，表格一宽就要横向滚很远才找得到，
                         看起来像"这个功能没有了"）。 */}
                     {editMode && <th className="w-16 px-2 py-2" />}
+                    <SortableTh sortKey="productNo" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2 w-16">{isEn ? 'Product No' : '商品编号'}</SortableTh>
                     <SortableTh sortKey="applyOn" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-4 py-2 min-w-[220px]">Applicable On</SortableTh>
                     <SortableTh sortKey="minQty" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Min. Quantity</SortableTh>
                     <SortableTh sortKey="dateStart" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Start Date</SortableTh>
@@ -709,7 +732,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 12 : 11} className="px-4 py-3 text-gray-400 italic text-xs">{isEn ? 'No items yet' : '暂无条目'}</td>
+                      <td colSpan={editMode ? 13 : 12} className="px-4 py-3 text-gray-400 italic text-xs">{q ? (isEn ? 'No matching items' : '没有匹配的条目') : (isEn ? 'No items yet' : '暂无条目')}</td>
                     </tr>
                   )}
                   {pagedItems.map(row => {
@@ -718,11 +741,16 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     // 拖拽排序只在默认 sequence 顺序下有意义——按某一列排序时，行的显示位置
                     // 跟 sequence 已经脱节，拖拽换的是"看起来的顺序"而不是真实存储顺序，
                     // 跟点表头第三次回到默认顺序才重新生效是同一个理由（原 ▲▼ 就是这个约束）。
-                    const canDrag = !itemSort
+                    // 搜索过滤时同理：看到的只是一部分行，拖拽位置对不上真实顺序
+                    const canDrag = !itemSort && !q
                     return (
                       <ItemRow
                         key={item.id}
                         item={item}
+                        productNo={row.productNo}
+                        inlineEdit={editMode}
+                        onInlineChange={patch => persistItems(pl.items.map(i => i.id === item.id ? { ...i, ...patch } : i))
+                          .then(ok => { if (ok) toast.success(isEn ? 'Price updated' : '价格已更新') })}
                         products={allProductsForLabels}
                         categories={categories}
                         uoms={uoms}
@@ -786,7 +814,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         onClose={() => { setImportOpen(false); if (importedRef.current) window.location.reload() }}
         onDone={() => { importedRef.current = true }}
         templateFileName="pricelist-import-template"
-        endpoint="/api/pricelists/bulk"
+        endpoint="/api/pricelists/bulk" historyResource="pricelist"
         title={{ zh: '导入价格表规则(CSV)', en: 'Import Pricelist Rules (CSV)' }}
         hint={{
           zh: '列名与价格表导出完全一致：先用 Action → 导出 拿到这个价格表的 CSV，改完直接导回来。每一行都要填「价格表名称」。',
@@ -919,8 +947,11 @@ function SortableTh({ sortKey, itemSort, onSort, className, children }: {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
+function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
   item: OdooPricelistItem
+  productNo: number | undefined
+  inlineEdit: boolean
+  onInlineChange: (patch: Partial<OdooPricelistItem>) => void
   products: Product[]
   categories: ProductCategory[]
   uoms: Uom[]
@@ -947,6 +978,10 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
 }) {
   const [hover, setHover] = useState(false)
   const scopedUom = uomScopeLabel(item, uoms, isEn)
+  // Edit 模式下固定价/百分比折扣可以直接在表格里改(20261008)，不用每条都点开弹窗
+  const inlineField: 'fixedPrice' | 'percentDiscount' | null = inlineEdit
+    ? (item.computeType === 'fixed' ? 'fixedPrice' : item.computeType === 'percentage' ? 'percentDiscount' : null)
+    : null
 
   // ⛔ 20260903 客户反馈：percentage/formula 模式下 Price 列只放公式文字（"5% 折扣"），
   // 实际卖多少钱藏在很靠右的 Preview Price 列——手机上要横向滚很远才看得到，
@@ -1004,6 +1039,7 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
           </div>
         </td>
       )}
+      <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">{productNo ?? ''}</td>
       <td className="px-4 py-1.5 text-gray-800">
         {applyOnLabel(item, products, categories, isEn)}
         {scopedUom && (
@@ -1021,7 +1057,23 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
       <td className="px-3 py-1.5 text-gray-500">{item.dateEnd ?? ''}</td>
       <td className="px-3 py-1.5 text-gray-500">{productCategoryLabel}</td>
       <td className="px-3 py-1.5 text-gray-800">
-        {item.computeType !== 'fixed' && estimatedPrice != null ? (
+        {inlineField ? (
+          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+            {inlineField === 'fixedPrice' && <span className="text-gray-400">€</span>}
+            <InlineNumber
+              value={Number(item[inlineField] ?? 0)}
+              min={inlineField === 'fixedPrice' ? 0 : -100}
+              max={inlineField === 'fixedPrice' ? 1_000_000 : 100}
+              onCommit={v => onInlineChange({ [inlineField]: v })}
+              isEn={isEn}
+            />
+            {inlineField === 'percentDiscount' && (
+              <span className="text-gray-400 whitespace-nowrap">
+                % {isEn ? 'off' : '折扣'}{estimatedPrice != null ? ` → €${estimatedPrice.toFixed(2)}` : ''}
+              </span>
+            )}
+          </div>
+        ) : item.computeType !== 'fixed' && estimatedPrice != null ? (
           <>
             <div className="font-medium text-gray-900">€{estimatedPrice.toFixed(2)}</div>
             <div className="text-[10px] text-gray-400">{priceText}</div>
@@ -1044,6 +1096,42 @@ function ItemRow({ item, products, categories, uoms, cost, publicPrice, estimate
         {publicPrice != null ? publicPrice.toFixed(2) : ''}
       </td>
     </tr>
+  )
+}
+
+/** 表格内的数字输入：失焦或回车才提交，Esc 还原；没改动/非法值不提交 */
+function InlineNumber({ value, min, max, onCommit, isEn }: {
+  value: number
+  min: number
+  max: number
+  onCommit: (v: number) => void
+  isEn: boolean
+}) {
+  const [draft, setDraft] = useState(String(value))
+  const [prevValue, setPrevValue] = useState(value)
+  if (prevValue !== value) { setPrevValue(value); setDraft(String(value)) }
+  function commit() {
+    const v = Number(draft)
+    if (draft.trim() === '' || !Number.isFinite(v) || v < min || v > max) {
+      toast.error(isEn ? `Enter a number between ${min} and ${max}` : `请输入 ${min} ~ ${max} 之间的数字`)
+      setDraft(String(value))
+      return
+    }
+    if (v !== value) onCommit(v)
+  }
+  return (
+    <input
+      type="number"
+      step="0.01"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        if (e.key === 'Escape') { setDraft(String(value)); (e.target as HTMLInputElement).blur() }
+      }}
+      className="w-20 border border-gray-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:border-[#875A7B]"
+    />
   )
 }
 

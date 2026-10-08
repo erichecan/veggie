@@ -2,11 +2,14 @@ import { prisma } from '@/lib/db'
 import type { ExportLoadContext, ExportLoadResult } from '../registry'
 import type { PricelistExportRow } from '../columns/pricelists'
 import type { PricelistItemInput } from '@/lib/pricelist-item'
+import { categoryPathMap } from '@/lib/category-path'
 
 export async function loadPricelistsForExport(ctx: ExportLoadContext): Promise<ExportLoadResult<PricelistExportRow>> {
   // pricelistId=xxx：价格表详情页的 Action → Export 只导出这一个价格表(20261007)
   const onlyId = ctx.searchParams.get('pricelistId')
-  const where = onlyId ? { id: onlyId } : {}
+  // ids=a,b,c：列表页勾选几条 → Action → 导出所选(20261008)
+  const ids = (ctx.searchParams.get('ids') ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const where = onlyId ? { id: onlyId } : ids.length > 0 ? { id: { in: ids } } : {}
   const [total, pricelists] = await Promise.all([
     prisma.odooPricelist.count({ where }),
     prisma.odooPricelist.findMany({ where, orderBy: { sequence: 'asc' }, take: ctx.limit }),
@@ -30,13 +33,14 @@ export async function loadPricelistsForExport(ctx: ExportLoadContext): Promise<E
 
   const [products, categories, uoms, basedOnLists] = await Promise.all([
     productIds.size ? prisma.product.findMany({ where: { id: { in: [...productIds] } }, select: { id: true, name: true, productNo: true } }) : [],
-    categoryIds.size ? prisma.productCategory.findMany({ where: { id: { in: [...categoryIds] } }, select: { id: true, name: true } }) : [],
+    // 分类导出完整路径(同名子分类区分得开，导入按路径对回去)——要整棵树才能拼出父级
+    categoryIds.size ? prisma.productCategory.findMany({ select: { id: true, name: true, parentId: true } }) : [],
     uomIds.size ? prisma.uom.findMany({ where: { id: { in: [...uomIds] } }, select: { id: true, name: true } }) : [],
     pricelistIds.size ? prisma.odooPricelist.findMany({ where: { id: { in: [...pricelistIds] } }, select: { id: true, name: true } }) : [],
   ])
   const productName = new Map(products.map(p => [p.id, p.name]))
   const productNo = new Map(products.map(p => [p.id, p.productNo]))
-  const categoryName = new Map(categories.map(c => [c.id, c.name]))
+  const categoryName = categoryPathMap(categories)
   const uomName = new Map(uoms.map(u => [u.id, u.name]))
   const pricelistName = new Map(basedOnLists.map(p => [p.id, p.name]))
 

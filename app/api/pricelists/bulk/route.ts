@@ -4,8 +4,12 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import {
   str, num, bool, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine, normalizeNameKey,
+  importOptionsFromBody, importHistoryChanges,
 } from '@/lib/import/bulk-import-engine'
 import { validateAndNormalizeItem, type PricelistItemInput } from '@/lib/pricelist-item'
+import { diffPricelistItems, type RuleChange } from '@/lib/pricelist-diff'
+import { buildCategoryResolver } from '@/lib/category-path'
+import { pricelistRuleLogChanges, writeProductRuleLogs } from '@/lib/pricelist-rule-log'
 
 /**
  * POST /api/pricelists/bulk — 价格表批量导入(CSV，20261003 补齐，此前"导入"是假按钮)
@@ -33,6 +37,11 @@ import { validateAndNormalizeItem, type PricelistItemInput } from '@/lib/priceli
  */
 
 const MAX_ROWS_PER_REQUEST = 500
+
+/** 试运行：让单行事务回滚，同时把这一行的结果带出来(同 lib/import/bulk-import-engine.ts) */
+class DryRunRollback<T> extends Error {
+  constructor(public readonly result: T) { super('dry-run rollback') }
+}
 
 /** 两条规则是不是"同一条"：variant/product 视为同一种(都锁定 Product.id，见 lib/pricing-engine.ts) */
 function sameRuleKey(a: PricelistItemInput, b: PricelistItemInput): boolean {
@@ -77,11 +86,11 @@ export async function POST(req: Request) {
       const rowOffset = Number.isInteger(data.rowOffset) && data.rowOffset >= 0 ? data.rowOffset as number : 0
 
       const [categories, uoms] = await Promise.all([
-        prisma.productCategory.findMany({ select: { id: true, name: true, nameZh: true } }),
+        prisma.productCategory.findMany({ select: { id: true, name: true, nameZh: true, parentId: true } }),
         prisma.uom.findMany({ select: { id: true, name: true, nameZh: true } }),
       ])
-      const categoryByName = new Map<string, string>()
-      for (const c of categories) { categoryByName.set(normalizeNameKey(c.name), c.id); if (c.nameZh) categoryByName.set(normalizeNameKey(c.nameZh), c.id) }
+      // 分类按完整路径匹配("All / Saleable / Fruit")，也兼容只写名字/末几段——重名时不猜(20261008)
+      const resolveCategory = buildCategoryResolver(categories)
       const uomByName = new Map<string, string>()
       for (const u of uoms) { uomByName.set(normalizeNameKey(u.name), u.id); if (u.nameZh) uomByName.set(normalizeNameKey(u.nameZh), u.id) }
 
@@ -164,8 +173,11 @@ export async function POST(req: Request) {
           let categoryId: string | undefined
           const categoryNameRaw = str(r.category, 200)
           if (categoryNameRaw) {
-            categoryId = categoryByName.get(normalizeNameKey(categoryNameRaw))
-            if (!categoryId) warnings.push(`${rowLabel}: category '${categoryNameRaw}' not found, left unset`)
+            const hit = resolveCategory(categoryNameRaw)
+            categoryId = hit.id
+            if ('reason' in hit && hit.reason === 'ambiguous') {
+              warnings.push(`${rowLabel}: category '${categoryNameRaw}' matches ${hit.candidates.length} categories (${hit.candidates.slice(0, 3).join('; ')}), use the full path — left unset`)
+            } else if (!hit.id) warnings.push(`${rowLabel}: category '${categoryNameRaw}' not found, left unset`)
           }
           let productId: string | undefined
           const productNoRaw = str(r.productNo, 20)
@@ -216,10 +228,16 @@ export async function POST(req: Request) {
       let created = 0
       let updated = 0
       const failed: string[] = []
+      const { dryRun, importMeta } = importOptionsFromBody(data)
+      // 试运行时新建的价格表会随事务回滚，同名后续行不能拿到它的 id；用名字记一下，只算一次"新建"
+      const dryRunNewNames = new Set<string>()
+      // 改价留痕：按价格表攒起这一批里真正改动的规则，循环结束后每个价格表写一条 chatter
+      const ruleChangesByPricelist = new Map<string, { name: string; changes: RuleChange[] }>()
 
       for (const row of resolvedRows) {
         try {
-          const outcome = await prisma.$transaction(async (tx) => {
+          type RowOutcome = { id: string; isNewPricelist: boolean; itemWarning?: string; ruleChanges?: RuleChange[] }
+          const runRow = async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]): Promise<RowOutcome> => {
             let pricelistId = row.externalId
               ? (await tx.odooPricelist.findUnique({ where: { externalId: row.externalId }, select: { id: true } }))?.id
               : undefined
@@ -252,9 +270,10 @@ export async function POST(req: Request) {
               pricelistId = createdPricelist.id
               isNewPricelist = true
             }
-            pricelistIdByName.set(normalizeNameKey(row.pricelistName), pricelistId)
+            if (!(dryRun && isNewPricelist)) pricelistIdByName.set(normalizeNameKey(row.pricelistName), pricelistId)
 
             let itemWarning: string | undefined
+            let ruleChanges: RuleChange[] | undefined
             if (row.hasItem && row.itemInput) {
               // basedOnPricelist 在这里(写入时、这一行自己的事务里)才解析——见上方"坑"的说明，
               // 此时前面的行都已经真正 commit 过了，能查到同一批里刚建出来的价格表。
@@ -265,6 +284,18 @@ export async function POST(req: Request) {
               }
               const { basedOnPricelistName: _ignored, ...itemFields } = row.itemInput
               const itemToValidate: PricelistItemInput = { ...itemFields, basedOnPricelistId }
+              // 商品/分类没对上(上面已有 not found / 重名 警告)：不能落一条没有目标的规则——
+              // 它不会命中任何商品，只会在详情页显示成「-」(20261008000002 清理过的就是这种)
+              const missingTarget =
+                (itemToValidate.applyOn === 'category' && !itemToValidate.categoryId)
+                || (itemToValidate.applyOn === 'product' && !itemToValidate.productTemplateId)
+                || (itemToValidate.applyOn === 'variant' && !itemToValidate.productVariantId)
+              if (missingTarget) {
+                return {
+                  id: pricelistId, isNewPricelist,
+                  itemWarning: `${row.rowLabel}: no ${itemToValidate.applyOn === 'category' ? 'category' : 'product'} to apply the rule to, item not added`,
+                }
+              }
 
               const current = await tx.odooPricelist.findUnique({ where: { id: pricelistId }, select: { items: true } })
               const items = ((current?.items as unknown as PricelistItemInput[]) ?? []).slice()
@@ -284,6 +315,7 @@ export async function POST(req: Request) {
               )
               try {
                 const normalized = validateAndNormalizeItem(itemToValidate, seenIds)
+                ruleChanges = diffPricelistItems(existingIdx >= 0 ? [items[existingIdx]] : [], [normalized])
                 if (existingIdx >= 0) items[existingIdx] = normalized
                 else items.push(normalized)
                 await tx.odooPricelist.update({ where: { id: pricelistId }, data: { items: items as unknown as object[] } })
@@ -292,12 +324,31 @@ export async function POST(req: Request) {
               }
             }
 
-            return { id: pricelistId, isNewPricelist, itemWarning }
-          })
+            return { id: pricelistId, isNewPricelist, itemWarning, ruleChanges }
+          }
+          let outcome: RowOutcome
+          try {
+            outcome = await prisma.$transaction(async (tx) => {
+              const r = await runRow(tx)
+              if (dryRun) throw new DryRunRollback(r)
+              return r
+            })
+          } catch (e) {
+            if (!(e instanceof DryRunRollback)) throw e
+            outcome = e.result as RowOutcome
+          }
 
           if (outcome.itemWarning) warnings.push(outcome.itemWarning)
-          if (outcome.isNewPricelist) created++
-          else updated++
+          if (!dryRun && outcome.ruleChanges?.length) {
+            const acc = ruleChangesByPricelist.get(outcome.id) ?? { name: row.pricelistName, changes: [] }
+            acc.changes.push(...outcome.ruleChanges)
+            ruleChangesByPricelist.set(outcome.id, acc)
+          }
+          const nameKey = normalizeNameKey(row.pricelistName)
+          if (outcome.isNewPricelist && !(dryRun && dryRunNewNames.has(nameKey))) {
+            created++
+            if (dryRun) dryRunNewNames.add(nameKey)
+          } else updated++
         } catch (e) {
           console.error(`[POST /api/pricelists/bulk] ${row.rowLabel}`, e)
           let reason: string
@@ -308,11 +359,23 @@ export async function POST(req: Request) {
         }
       }
 
+      if (dryRun) return NextResponse.json({ created, updated, skipped: [], failed, warnings, dryRun: true })
+
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'pricelist', resourceId: 'bulk',
         detail: `批量导入价格表：新建 ${created}，更新 ${updated}，失败 ${failed.length}`,
+        changes: importHistoryChanges(importMeta, { created, updated, skipped: 0, failed: failed.length }),
       })
+      for (const [pricelistId, { name, changes }] of ruleChangesByPricelist) {
+        await writeLog({
+          userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'UPDATE', resource: 'pricelist', resourceId: pricelistId,
+          detail: `批量导入更新价格表: ${name} (${changes.length} 条规则)`,
+          changes: await pricelistRuleLogChanges(changes),
+        })
+        await writeProductRuleLogs({ userId: user.userId, email: user.email, name: user.name }, name, changes, '批量导入')
+      }
 
       return NextResponse.json({ created, updated, skipped: [], failed, warnings })
     } catch (error) {
