@@ -154,6 +154,17 @@ export const FIELD_LABELS: Record<string, { zh: string; en: string }> = {
   supplierPaymentTerm: { zh: '供应商付款条款', en: 'Vendor Payment Terms' },
   settlementCycle: { zh: '对账周期', en: 'Settlement Cycle' },
   sageAccount: { zh: 'Sage 账号', en: 'Sage Account' },
+  // 订单/行程/商品等其它引用字段(值由 lib/action-log-refs.ts 换成名字)
+  restaurantId: { zh: '客户', en: 'Customer' },
+  customerId: { zh: '客户', en: 'Customer' },
+  supplierId: { zh: '供应商', en: 'Vendor' },
+  partnerId: { zh: '往来单位', en: 'Partner' },
+  driverSlotId: { zh: '司机班次', en: 'Driver Slot' },
+  driverId: { zh: '司机', en: 'Driver' },
+  currentZoneId: { zh: '库位区', en: 'Zone' },
+  orderIds: { zh: '订单', en: 'Orders' },
+  waveId: { zh: '拣货波次', en: 'Picking Wave' },
+  removedItems: { zh: '删除的规则', en: 'Removed rules' },
   // pricelist rule(lib/pricelist-diff.ts 写的 key 是「对象 · 字段」，这里翻「·」后面的字段)
   rule: { zh: '规则', en: 'Rule' },
   itemCount: { zh: '规则数', en: 'Rules' },

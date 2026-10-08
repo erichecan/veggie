@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { resolvePrice, computeItemPrice } from '@/lib/pricing-engine'
 import { ruleSummary } from '@/lib/pricelist-diff'
+import { humanizeLogRefs } from '@/lib/action-log-refs'
 import type { OdooPricelist, OdooPricelistItem, Product } from '@/lib/types'
 
 /**
@@ -85,6 +86,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       // 直接锁定这个商品的价格表排前面，其余按价格表自身顺序
       pricelists.sort((a, b) => Number(b.hasDirectRule) - Number(a.hasDirectRule))
 
+      await humanizeLogRefs(history)
       return NextResponse.json({ listPrice: product.listPrice ?? null, pricelists, history: serializeApi(history) })
     } catch (error) {
       console.error('[GET /api/products/[id]/pricelist-rules]', error)

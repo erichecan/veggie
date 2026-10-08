@@ -48,6 +48,7 @@ function formatVal(v: unknown, isEn: boolean): string {
   if (v == null || v === '') return isEn ? '(empty)' : '（空）'
   if (typeof v === 'boolean') return v ? (isEn ? 'Yes' : '是') : (isEn ? 'No' : '否')
   if (typeof v === 'number') return String(v)
+  if (Array.isArray(v) && v.every(x => x == null || typeof x !== 'object')) return v.length ? v.join(', ') : (isEn ? '(empty)' : '（空）')
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
 }

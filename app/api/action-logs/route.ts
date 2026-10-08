@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeApi } from '@/lib/api-serializer'
+import { humanizeLogRefs } from '@/lib/action-log-refs'
 
 const PAGE_SIZE = 20
 
@@ -27,6 +28,8 @@ export async function GET(req: Request) {
       prisma.actionLog.count({ where }),
     ])
 
+    // 引用字段(价格表/销售员/分类…)的 id 换成名字，老记录一起生效(见 lib/action-log-refs.ts)
+    await humanizeLogRefs(logs)
     return NextResponse.json(serializeApi({ logs, total, hasMore: skip + take < total }))
   } catch (error) {
     console.error('[GET /api/action-logs]', error)
