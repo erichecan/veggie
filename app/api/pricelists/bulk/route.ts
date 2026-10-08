@@ -27,11 +27,29 @@ import { validateAndNormalizeItem, type PricelistItemInput } from '@/lib/priceli
  * 匹配：价格表按 externalId(精确) → 名称(大小写不敏感) 找已有的；都没找到就新建。
  * applyOn 留空 = 这一行只改价格表本身的设置(名称/币种/启用/可选/排序)，不带规则。
  * 商品：先按 productNo(商品编号)精确匹配，没填/没对上再按商品名称(大小写不敏感)。
- * itemId 留空 = 新增一条规则(追加到 items 数组末尾)；itemId 命中已有规则 = 原地替换那一条。
+ * itemId 命中已有规则 = 原地替换那一条；itemId 留空/没对上时，按业务键(适用范围+商品/分类+最小数量+
+ * 单位+起止日期)找同一条规则原地替换，都没有才追加——重复导入同一份文件不会产生重复行。
  * ⛔ 不支持删除已有规则——CSV 只会新增/更新规则，误操作不会把价格表的定价规则清空。
  */
 
 const MAX_ROWS_PER_REQUEST = 500
+
+/** 两条规则是不是"同一条"：variant/product 视为同一种(都锁定 Product.id，见 lib/pricing-engine.ts) */
+function sameRuleKey(a: PricelistItemInput, b: PricelistItemInput): boolean {
+  const scope = (it: PricelistItemInput) => (it.applyOn === 'product' || it.applyOn === 'variant' ? 'product' : it.applyOn)
+  const target = (it: PricelistItemInput) =>
+    it.applyOn === 'variant' ? it.productVariantId ?? it.productTemplateId
+      : it.applyOn === 'product' ? it.productTemplateId ?? it.productVariantId
+        : it.applyOn === 'category' ? it.categoryId
+          : ''
+  const norm = (v: unknown) => (v === undefined || v === null ? '' : String(v))
+  return scope(a) === scope(b)
+    && norm(target(a)) === norm(target(b))
+    && Number(a.minQty ?? 0) === Number(b.minQty ?? 0)
+    && norm(a.uomId) === norm(b.uomId)
+    && norm(a.dateStart) === norm(b.dateStart)
+    && norm(a.dateEnd) === norm(b.dateEnd)
+}
 
 interface ResolvedRow {
   rowLabel: string
@@ -250,7 +268,13 @@ export async function POST(req: Request) {
 
               const current = await tx.odooPricelist.findUnique({ where: { id: pricelistId }, select: { items: true } })
               const items = ((current?.items as unknown as PricelistItemInput[]) ?? []).slice()
-              const existingIdx = row.itemId ? items.findIndex(it => it.id === row.itemId) : -1
+              // 先按 Item ID 找；没填/没对上，再按「同一条规则」的业务键找(适用范围 + 商品/分类 +
+              // 最小数量 + 限定单位 + 起止日期)——20261008 客户反馈：重新导入(没带 Item ID)会
+              // 把已有规则再追加一遍，同一商品出现重复行。对上了就原地更新，不再追加。
+              let existingIdx = row.itemId ? items.findIndex(it => it.id === row.itemId) : -1
+              if (existingIdx < 0) existingIdx = items.findIndex(it => sameRuleKey(it, itemToValidate))
+              // 按业务键对上的：沿用原规则的 id，导出 → 导入来回几次 Item ID 都不变
+              if (existingIdx >= 0 && !itemToValidate.id) itemToValidate.id = items[existingIdx].id
               // ⛔ seenIds 必须排除"正在被这一行原地替换"的那条规则自己的 id——否则
               // validateAndNormalizeItem 会把"这行传来的 id 跟库里已有的撞了"误判成真撞车，
               // 凭空把这条规则的 id 重新生成一个，而不是原地更新(实测复现：itemId 对不上导致
