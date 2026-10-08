@@ -47,6 +47,8 @@ export default function VendorsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [includeArchived, setIncludeArchived] = useState(false)
+  // 只看已归档(20261008，与客户/商品列表同款)；与「包含已归档」互斥
+  const [archivedOnly, setArchivedOnly] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -60,6 +62,7 @@ export default function VendorsPage() {
       const params = new URLSearchParams()
       if (searchInput) params.set('search', searchInput)
       if (includeArchived) params.set('includeArchived', '1')
+      if (archivedOnly) params.set('archivedOnly', '1')
       return params
     },
     fallbackFilename: isEn ? 'suppliers.csv' : '供应商.csv',
@@ -72,6 +75,7 @@ export default function VendorsPage() {
       const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE), isVendor: '1' })
       if (q) params.set('search', q)
       if (archived) params.set('includeArchived', '1')
+      if (archivedOnly) params.set('archivedOnly', '1')
       const res = await apiGet<{ data: Customer[]; total: number; page: number }>(`/api/customers?${params}`)
       setVendors(res.data)
       // 勾选只对当前看得见的行有效(20261007 客户反馈：搜索后只勾了 1 个，却提示删除 2 个——
@@ -93,7 +97,7 @@ export default function VendorsPage() {
   useEffect(() => {
     loadPage(1, searchInput, includeArchived)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeArchived])
+  }, [includeArchived, archivedOnly])
 
   useEffect(() => {
     const timer = setTimeout(() => loadPage(1, searchInput), 400)
@@ -171,6 +175,7 @@ export default function VendorsPage() {
 
   const activeFilters = [
     ...(includeArchived ? [{ label: isEn ? 'Include Archived' : '包含已归档', onRemove: () => setIncludeArchived(false) }] : []),
+    ...(archivedOnly ? [{ label: isEn ? 'Archived Only' : '仅已归档', onRemove: () => setArchivedOnly(false) }] : []),
   ]
 
   return (
@@ -193,8 +198,16 @@ export default function VendorsPage() {
         activeFilters={activeFilters}
         filterOptions={[
           { label: isEn ? 'Include Archived' : '包含已归档', value: '__archived__' },
+          { label: isEn ? 'Archived Only' : '仅已归档', value: '__archived_only__' },
         ]}
-        onFilterSelect={v => { if (v === '__archived__') setIncludeArchived(true) }}
+        activeFilterValues={[
+          ...(includeArchived ? ['__archived__'] : []),
+          ...(archivedOnly ? ['__archived_only__'] : []),
+        ]}
+        onFilterSelect={v => {
+          if (v === '__archived__') setIncludeArchived(prev => { const next = !prev; if (next) setArchivedOnly(false); return next })
+          else if (v === '__archived_only__') setArchivedOnly(prev => { const next = !prev; if (next) setIncludeArchived(false); return next })
+        }}
         total={total}
         page={page}
         pageSize={PAGE_SIZE}

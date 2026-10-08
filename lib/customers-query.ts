@@ -40,8 +40,12 @@ export async function buildCustomersWhere(
   const minOrderCount = parseInt(searchParams.get('minOrderCount') ?? '0', 10)
   const includeArchived = searchParams.get('includeArchived') === '1'
 
+  // archivedOnly=1：只看已归档(20261008 客户要求，与商品列表的 Archived only 同义)；优先于 includeArchived
+  const archivedOnly = searchParams.get('archivedOnly') === '1'
+
   const andConditions: Record<string, unknown>[] = []
-  if (!includeArchived) andConditions.push({ isActive: true })
+  if (archivedOnly) andConditions.push({ isActive: false })
+  else if (!includeArchived) andConditions.push({ isActive: true })
 
   const isVendorParam = searchParams.get('isVendor')
   if (isVendorParam === 'true' || isVendorParam === '1') {

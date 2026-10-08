@@ -32,6 +32,7 @@ interface SavedCustomersListState {
   searchInput: string
   paymentFilter: string
   includeArchived: boolean
+  archivedOnly?: boolean
   isVendorOnly: boolean
   facets: Facet[]
   sortKey: string
@@ -86,6 +87,8 @@ export default function ClassicCustomersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [paymentFilter, setPaymentFilter] = useState(saved?.paymentFilter ?? '')
   const [includeArchived, setIncludeArchived] = useState(saved?.includeArchived ?? false)
+  // 只看已归档(20261008 客户要求，与商品列表同款)；与「包含已归档」互斥
+  const [archivedOnly, setArchivedOnly] = useState(saved?.archivedOnly ?? false)
   const [isVendorOnly, setIsVendorOnly] = useState(saved?.isVendorOnly ?? false)
   const [isReadMode, setIsReadMode] = useState(true)
   const editMode = !isReadMode
@@ -138,6 +141,7 @@ export default function ClassicCustomersPage() {
       if (searchInput) params.set('search', searchInput)
       if (paymentFilter) params.set('paymentTerm', paymentFilter)
       if (includeArchived) params.set('includeArchived', '1')
+      if (archivedOnly) params.set('archivedOnly', '1')
       if (isVendorOnly) params.set('isVendor', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
@@ -155,6 +159,7 @@ export default function ClassicCustomersPage() {
       if (q) params.set('search', q)
       if (payTerm) params.set('paymentTerm', payTerm)
       if (archived) params.set('includeArchived', '1')
+      if (archivedOnly) params.set('archivedOnly', '1')
       if (vendorOnly) params.set('isVendor', '1')
       applyFacets(params, facets)
       applyColumnMultiFilters(params)
@@ -198,7 +203,7 @@ export default function ClassicCustomersPage() {
     if (!filtersMountedRef.current) { filtersMountedRef.current = true; return }
     loadPage(1, searchInput, paymentFilter, includeArchived)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facets, columnMultiFilters, columnFilters, sortKey, sortDir, includeArchived])
+  }, [facets, columnMultiFilters, columnFilters, sortKey, sortDir, includeArchived, archivedOnly])
 
   // debounced search
   const searchMountedRef = useRef(false)
@@ -211,10 +216,10 @@ export default function ClassicCustomersPage() {
 
   useEffect(() => {
     writeSavedCustomersListState({
-      searchInput, paymentFilter, includeArchived, isVendorOnly, facets, sortKey, sortDir,
+      searchInput, paymentFilter, includeArchived, archivedOnly, isVendorOnly, facets, sortKey, sortDir,
       columnMultiFilters, columnFilters, groupBy, page, pageSize,
     })
-  }, [searchInput, paymentFilter, includeArchived, isVendorOnly, facets, sortKey, sortDir,
+  }, [searchInput, paymentFilter, includeArchived, archivedOnly, isVendorOnly, facets, sortKey, sortDir,
       columnMultiFilters, columnFilters, groupBy, page, pageSize])
 
   function openAdd() {
@@ -430,6 +435,7 @@ export default function ClassicCustomersPage() {
     ...groupFacets(facets).map(g => ({ label: g.chipLabel, values: g.values, prefix: g.key === 'all' ? undefined : g.label, onRemove: () => removeFacetGroup(g.key) })),
     ...(paymentFilter ? [{ label: isEn ? `Payment Term: ${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}` : `结算方式：${PAYMENT_LABELS[paymentFilter] ?? paymentFilter}`, onRemove: removePaymentFilter }] : []),
     ...(includeArchived ? [{ label: isEn ? 'Include Archived' : '包含已归档', onRemove: () => setIncludeArchived(false) }] : []),
+    ...(archivedOnly ? [{ label: isEn ? 'Archived Only' : '仅已归档', onRemove: () => setArchivedOnly(false) }] : []),
     ...(isVendorOnly ? [{ label: isEn ? 'Vendors' : '供货商', onRemove: toggleVendorOnly }] : []),
   ]
 
@@ -466,27 +472,38 @@ export default function ClassicCustomersPage() {
         filterOptions={[
           ...PAYMENT_TERM_OPTIONS.map(o => ({ label: isEn ? `${o.labelEn} Customers` : `${o.labelZh}客户`, value: o.value })),
           { label: isEn ? 'Include Archived' : '包含已归档', value: '__archived__' },
+          { label: isEn ? 'Archived Only' : '仅已归档', value: '__archived_only__' },
         ]}
         groupByOptions={[
           { label: isEn ? 'Payment Term' : '结算方式', value: 'paymentTerm' },
           { label: isEn ? 'Pricelist' : '价格表', value: 'pricelist' },
         ]}
+        activeFilterValues={[
+          ...(paymentFilter ? [paymentFilter] : []),
+          ...(includeArchived ? ['__archived__'] : []),
+          ...(archivedOnly ? ['__archived_only__'] : []),
+        ]}
         onFilterSelect={v => {
           if (v === '__archived__') {
-            setIncludeArchived(true)
+            setIncludeArchived(prev => { const next = !prev; if (next) setArchivedOnly(false); return next })
+          } else if (v === '__archived_only__') {
+            setArchivedOnly(prev => { const next = !prev; if (next) setIncludeArchived(false); return next })
           } else {
-            setPaymentFilter(v as typeof paymentFilter)
-            loadPage(1, searchInput, v, includeArchived)
+            // 再点一次已勾选的结算方式 = 取消(菜单里有 ✓ 之后，用户会这样操作)
+            const next = paymentFilter === v ? '' : v
+            setPaymentFilter(next)
+            loadPage(1, searchInput, next, includeArchived)
           }
         }}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, paymentFilter, includeArchived, isVendorOnly, groupBy, facets, columnMultiFilters, columnFilters, sortKey, sortDir }}
+        favouriteState={{ searchInput, paymentFilter, includeArchived, archivedOnly, isVendorOnly, groupBy, facets, columnMultiFilters, columnFilters, sortKey, sortDir }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           const pf = String(s.paymentFilter ?? '')
           setPaymentFilter(pf)
           setIncludeArchived(Boolean(s.includeArchived))
+          setArchivedOnly(Boolean(s.archivedOnly))
           const vendorOnly = Boolean(s.isVendorOnly)
           setIsVendorOnly(vendorOnly)
           setGroupBy(String(s.groupBy ?? ''))
