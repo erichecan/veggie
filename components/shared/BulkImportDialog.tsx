@@ -199,8 +199,13 @@ export default function BulkImportDialog({
       if (n === null) return
       reasons.set(n, [...(reasons.get(n) ?? []), msg.replace(/^Row \d+( \([^)]*\))?:\s*/, '')])
     }
-    result.failed.forEach(add)
-    result.warnings.filter(w => PROBLEM_WARNING.test(w)).forEach(add)
+    // 先定哪些行是问题行(失败/跳过/规则未写入)，再把这些行的所有提示一起带上——
+    // 比如「分类重名，请写完整路径」才是「规则未写入」的真正原因
+    const problemRows = new Set(
+      [...result.failed, ...result.warnings.filter(w => PROBLEM_WARNING.test(w))]
+        .map(rowNoOf).filter((n): n is number => n !== null),
+    )
+    ;[...result.failed, ...result.warnings].filter(m => problemRows.has(rowNoOf(m) ?? -1)).forEach(add)
     const nums = [...reasons.keys()].sort((a, b) => a - b).filter(n => sourceRows[n - 1])
     if (nums.length === 0) {
       toast.info(isEn ? 'No rows with a row number to export' : '没有可导出的问题行')
