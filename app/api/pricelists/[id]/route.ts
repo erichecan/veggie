@@ -4,6 +4,8 @@ import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { normalizeItems } from '@/lib/pricelist-item'
+import { diffPricelistItems } from '@/lib/pricelist-diff'
+import { pricelistRuleLogChanges, writeProductRuleLogs } from '@/lib/pricelist-rule-log'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -26,7 +28,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
  *    - 缺 id 的自动生成；id 重复的去重（保留首次出现）
  *    - fixedPrice/percentDiscount/priceDiscount/priceSurcharge 范围校验
  *    - applyOn 必须是 4 个合法值之一；对应字段必填
- * 3. 写审计日志含 items count / name 变更
+ * 3. 写审计日志含 items count / name 变更，以及逐条规则的改价 before → after(lib/pricelist-diff.ts)
  */
 
 const ALLOWED_KEYS = new Set([
@@ -80,6 +82,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (beforeItems.length !== afterItems.length) {
         changed.itemCount = { before: beforeItems.length, after: afterItems.length }
       }
+      // 逐条规则的改价留痕(20261008)：价格表 chatter 记「商品 · 字段 before → after」，
+      // 商品页按商品 id 另查(resource='pricelist-rule')
+      const ruleChanges = cleaned.items !== undefined ? diffPricelistItems(beforeItems, afterItems) : []
+      Object.assign(changed, await pricelistRuleLogChanges(ruleChanges))
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
@@ -87,6 +93,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         detail: `更新价格表: ${pricelist.name || id} (items ${beforeItems.length} → ${afterItems.length})`,
         changes: Object.keys(changed).length > 0 ? changed : undefined,
       })
+      await writeProductRuleLogs({ userId: user.userId, email: user.email, name: user.name }, pricelist.name || id, ruleChanges)
       return NextResponse.json(serializeApi(pricelist))
     } catch (error: unknown) {
       const err = error as { status?: number; message?: string }

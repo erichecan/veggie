@@ -6,7 +6,7 @@ import { normalizeAndValidateSaleUomItems, upsertProductSaleUomRows } from '@/li
 import type { SaleUomItemInput } from '@/lib/sale-uom'
 import {
   runBulkImport, str, num, boundedNum, bool, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine,
-  normalizeNameKey, type MatchKeyDef,
+  normalizeNameKey, type MatchKeyDef, importOptionsFromBody,
 } from '@/lib/import/bulk-import-engine'
 
 /**
@@ -160,6 +160,8 @@ export async function POST(req: Request) {
       const result = await runBulkImport<Record<string, unknown>, ResolvedRow, { name: string; listPrice: unknown; standardPrice: unknown }>({
         rawRows,
         rowOffset,
+        // 试运行 / 导入历史(20261008)：dryRun、importId、fileName、batch 由导入弹窗带上来
+        ...importOptionsFromBody(data),
         matchKeys,
 
         resolveRow(r, rowNo, warn) {

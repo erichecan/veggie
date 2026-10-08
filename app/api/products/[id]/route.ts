@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { removeProductRulesInTx } from '@/lib/pricelist-rule-log'
+import { ruleChangesToLogChanges } from '@/lib/pricelist-diff'
 
 const PRODUCT_TRACKED_FIELDS = [
   'name', 'internalRef', 'listPrice', 'standardPrice', 'qtyOnHand',
@@ -93,7 +95,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const product = await prisma.product.findUnique({ where: { id }, select: { id: true, name: true } })
+      const product = await prisma.product.findUnique({ where: { id }, select: { id: true, name: true, productNo: true } })
       if (!product) return NextResponse.json({ error: '商品不存在' }, { status: 404 })
 
       // 删除前必须核实这个商品「没在销售和购进用过」（客户 20260904 要求：复制出来的商品，
@@ -136,10 +138,24 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         )
       }
 
-      await prisma.product.delete({ where: { id } })
+      // 价格表里锁定这个商品的规则一并删掉(20261008)，和删商品同一个事务；
+      // 规则日志的商品名要在删之前取，删了就查不到了
+      const removedRules = await prisma.$transaction(async (tx) => {
+        const touched = await removeProductRulesInTx(tx, id)
+        await tx.product.delete({ where: { id } })
+        return touched
+      })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'DELETE', resource: 'product', resourceId: id,
-        detail: `删除商品: ${product.name}` })
+        detail: `删除商品: ${product.name}`
+          + (removedRules.length > 0 ? `（同时移除 ${removedRules.reduce((n, t) => n + t.changes.length, 0)} 条价格规则）` : '') })
+      const label = () => `${product.name} [#${product.productNo}]`
+      for (const t of removedRules) {
+        await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
+          action: 'UPDATE', resource: 'pricelist', resourceId: t.id,
+          detail: `删除商品时移除: ${product.name} (${t.changes.length} 条规则)`,
+          changes: ruleChangesToLogChanges(t.changes, label) })
+      }
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/products/[id]]', error)

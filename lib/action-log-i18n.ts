@@ -41,6 +41,14 @@ const VERB: Record<string, string> = {
 const PHRASES: Array<[string, string]> = ([
   ['采购下单时快速建档', 'Quick-created from a purchase order'],
   ['批量导入更新商品价格', 'Price updated by bulk import'],
+  ['批量导入更新价格表', 'Bulk import updated pricelist'],
+  ['价格规则修改', 'Pricelist rule changed'],
+  ['价格规则新增', 'Pricelist rule added'],
+  ['价格规则删除', 'Pricelist rule removed'],
+  ['删除商品时移除', 'Removed on product deletion'],
+  ['条规则', 'rules'],
+  ['条价格规则', 'pricelist rules'],
+  ['同时移除', 'also removed'],
   ['批量导入创建用户', 'Created by bulk import: user'],
   ['批量导入', 'Bulk import'],
   ['库存调整', 'Stock adjustment'],
@@ -146,9 +154,34 @@ export const FIELD_LABELS: Record<string, { zh: string; en: string }> = {
   supplierPaymentTerm: { zh: '供应商付款条款', en: 'Vendor Payment Terms' },
   settlementCycle: { zh: '对账周期', en: 'Settlement Cycle' },
   sageAccount: { zh: 'Sage 账号', en: 'Sage Account' },
+  // pricelist rule(lib/pricelist-diff.ts 写的 key 是「对象 · 字段」，这里翻「·」后面的字段)
+  rule: { zh: '规则', en: 'Rule' },
+  itemCount: { zh: '规则数', en: 'Rules' },
+  computeType: { zh: '计价方式', en: 'Compute Price' },
+  fixedPrice: { zh: '固定价', en: 'Fixed Price' },
+  percentDiscount: { zh: '折扣%', en: 'Discount %' },
+  formulaBase: { zh: '公式基准', en: 'Based On' },
+  basedOnPricelistId: { zh: '基准价格表', en: 'Other Pricelist' },
+  priceDiscount: { zh: '公式折扣%', en: 'Price Discount %' },
+  priceSurcharge: { zh: '加价', en: 'Extra Fee' },
+  priceMinMargin: { zh: '最低利润', en: 'Min Margin' },
+  priceMaxMargin: { zh: '最高利润', en: 'Max Margin' },
+  roundingMethod: { zh: '舍入', en: 'Rounding' },
+  minQty: { zh: '最小数量', en: 'Min Qty' },
+  dateStart: { zh: '开始日期', en: 'Start Date' },
+  dateEnd: { zh: '结束日期', en: 'End Date' },
+  uomId: { zh: '单位', en: 'Unit' },
+  moreRuleChanges: { zh: '其余规则变更(条)', en: 'More rule changes' },
 }
 
 export function fieldLabel(key: string, isEn: boolean): string {
   const l = FIELD_LABELS[key]
-  return l ? (isEn ? l.en : l.zh) : key
+  if (l) return isEn ? l.en : l.zh
+  // 「对象 · 字段」(价格规则改价留痕)：只翻字段部分，对象名(商品/价格表名)原样
+  const sep = key.lastIndexOf(' · ')
+  if (sep > 0) {
+    const f = FIELD_LABELS[key.slice(sep + 3)]
+    if (f) return `${key.slice(0, sep)} · ${isEn ? f.en : f.zh}`
+  }
+  return key
 }

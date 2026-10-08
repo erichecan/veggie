@@ -237,7 +237,7 @@ export default function VendorsPage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         templateFileName="vendors-import-template"
-        endpoint="/api/suppliers/bulk"
+        endpoint="/api/suppliers/bulk" historyResource="supplier"
         title={{ zh: '批量导入供应商(CSV)', en: 'Bulk Import Vendors (CSV)' }}
         hint={{
           zh: '第一行为表头。仅「名称」必填。',

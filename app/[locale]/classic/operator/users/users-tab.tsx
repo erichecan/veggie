@@ -580,7 +580,7 @@ export default function UsersTab({
           templateFileName={isEn ? 'staff-import-template' : '员工导入模板'}
           columns={importColumns}
           exampleRows={[]}
-          endpoint="/api/users/bulk"
+          endpoint="/api/users/bulk" historyResource="user"
           batchSize={50}
           title={{ zh: '导入员工账号', en: 'Import Staff Accounts' }}
           hint={{

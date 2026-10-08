@@ -1050,7 +1050,7 @@ export default function ClassicProductsPage() {
         templateFileName="products-import-template"
         columns={PRODUCT_IMPORT_COLUMNS}
         exampleRows={PRODUCT_IMPORT_EXAMPLE_ROWS}
-        endpoint="/api/products/bulk"
+        endpoint="/api/products/bulk" historyResource="product"
         title={{ zh: '批量导入商品(CSV)', en: 'Bulk Import Products (CSV)' }}
         hint={PRODUCT_IMPORT_HINT}
         extraHint={PRODUCT_IMPORT_EXTRA_HINT}

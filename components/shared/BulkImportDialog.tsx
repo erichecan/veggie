@@ -1,9 +1,9 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { routing } from '@/i18n/routing'
-import { apiPost } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
 import { downloadCsv, parseCsv } from '@/lib/csv-export'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,6 +14,12 @@ import {
  * 全站通用批量导入对话框 —— 从 ProductImportDialog(20260930)抽出来的壳，各模块
  * 只传自己的列定义/示例行/接口地址/说明文案，循环控制(下载模板/解析/预览/分批提交/
  * 结果展示)统一在这里，行为与原商品导入弹窗逐一对应。
+ *
+ * 20261008 增加(全站所有导入弹窗同时生效)：
+ *   - 试运行：先完整跑一遍(服务端逐行事务执行后回滚)，看新建/更新/失败多少条，再决定正式导入
+ *   - 失败行下载：把失败/被跳过的原始行 + 原因下载成 CSV，改好直接再导入
+ *   - 直接读 Excel(.xlsx/.xls)，不用先另存 CSV
+ *   - 导入历史：谁、什么时候、哪个文件、各多少条(传了 historyResource 才显示)
  */
 
 export interface BulkImportColumn {
@@ -34,6 +40,19 @@ export interface BulkImportResult {
   failed: string[]
   warnings: string[]
   batchError?: string
+  dryRun?: boolean
+}
+
+interface ImportHistoryItem {
+  importId: string
+  fileName: string
+  userName: string
+  startedAt: string
+  batches: number
+  created: number
+  updated: number
+  skipped: number
+  failed: number
 }
 
 export interface BulkImportDialogProps {
@@ -53,10 +72,36 @@ export interface BulkImportDialogProps {
   extraHint?: { zh: React.ReactNode; en: React.ReactNode }
   /** 每批提交的行数，默认 100(见 ProductImportDialog 对 Neon/nginx 超时的注释) */
   batchSize?: number
+  /** 导入历史按哪个模块查(与服务端 auditLog.resource 一致，如 'product')；不传不显示历史 */
+  historyResource?: string
+}
+
+/** 从 "Row 12 (xxx): reason" 这类服务端提示里取出行号(整份文件里的第几条数据行，从 1 开始) */
+/** 哪些警告意味着「这一行(或这一行的规则)没写进去」——这些行也进「下载问题行」 */
+const PROBLEM_WARNING = /skipped|跳过|not added|not imported/i
+
+function rowNoOf(message: string): number | null {
+  const m = /^Row (\d+)\b/.exec(message)
+  return m ? Number(m[1]) : null
+}
+
+async function readSheet(file: File): Promise<string[][]> {
+  if (/\.(xlsx|xls)$/i.test(file.name)) {
+    // 按需加载：xlsx 库不小，只有真选了 Excel 文件才下载
+    const XLSX = await import('xlsx')
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+    const sheet = wb.Sheets[wb.SheetNames[0]]
+    if (!sheet) return []
+    // raw:false = 取单元格显示出来的文字(日期/数字按 Excel 里看到的格式)，与 CSV 口径一致
+    const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '', blankrows: false })
+    return aoa.map(r => r.map(v => (v === null || v === undefined ? '' : String(v))))
+  }
+  return parseCsv(await file.text())
 }
 
 export default function BulkImportDialog({
   open, onClose, onDone, templateFileName, columns, exampleRows, endpoint, title, hint, extraHint, batchSize = 100,
+  historyResource,
 }: BulkImportDialogProps) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
@@ -66,11 +111,23 @@ export default function BulkImportDialog({
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<BulkImportResult | null>(null)
+  /** 原始表头 + 与 rows 一一对应的原始行(下载失败行时原样写回去) */
+  const [sourceHeader, setSourceHeader] = useState<string[]>([])
+  const [sourceRows, setSourceRows] = useState<string[][]>([])
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<ImportHistoryItem[] | null>(null)
+
+  useEffect(() => {
+    if (!showHistory || !historyResource) return
+    apiGet<{ items: ImportHistoryItem[] }>(`/api/import-history?resource=${encodeURIComponent(historyResource)}`)
+      .then(r => setHistory(r.items))
+      .catch(() => setHistory([]))
+  }, [showHistory, historyResource, result])
 
   const importableColumns = columns.filter((c): c is BulkImportColumn & { key: string } => !!c.key)
 
   function reset() {
-    setRows([]); setFileName(''); setResult(null)
+    setRows([]); setFileName(''); setResult(null); setSourceHeader([]); setSourceRows([])
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -79,8 +136,13 @@ export default function BulkImportDialog({
   }
 
   async function pickFile(file: File) {
-    const text = await file.text()
-    const parsed = parseCsv(text)
+    let parsed: string[][]
+    try {
+      parsed = await readSheet(file)
+    } catch {
+      toast.error(isEn ? 'Could not read this file — please use .csv or .xlsx' : '读不了这个文件——请用 .csv 或 .xlsx')
+      return
+    }
     if (parsed.length < 2) {
       toast.error(isEn ? 'File needs a header row plus at least 1 data row' : '文件至少需要表头 + 1 行数据')
       return
@@ -102,37 +164,69 @@ export default function BulkImportDialog({
       return
     }
 
-    const dataRows = parsed.slice(1)
-      .map(r => {
-        const obj: Record<string, string> = {}
-        for (const c of importableColumns) {
-          const idx = colIdx.get(c.key)
-          if (idx === undefined) continue
-          const raw = (r[idx] ?? '').trim()
-          if (!raw) continue
-          obj[c.key] = c.parse ? c.parse(raw) : raw
-        }
-        return obj
-      })
-      .filter(o => Object.values(o).some(v => v))
+    const dataRows: Record<string, string>[] = []
+    const keptSource: string[][] = []
+    for (const r of parsed.slice(1)) {
+      const obj: Record<string, string> = {}
+      for (const c of importableColumns) {
+        const idx = colIdx.get(c.key)
+        if (idx === undefined) continue
+        const raw = (r[idx] ?? '').trim()
+        if (!raw) continue
+        obj[c.key] = c.parse ? c.parse(raw) : raw
+      }
+      if (!Object.values(obj).some(v => v)) continue
+      dataRows.push(obj)
+      keptSource.push(r)
+    }
     if (dataRows.length === 0) {
       toast.error(isEn ? 'No valid data rows' : '没有有效数据行')
       return
     }
     setFileName(file.name)
     setRows(dataRows)
+    setSourceHeader(parsed[0])
+    setSourceRows(keptSource)
     setResult(null)
   }
 
-  async function submit() {
+  /** 失败行 + 被跳过(缺必填等)的行，按原始列原样导出，末尾加一列原因 */
+  function downloadProblemRows() {
+    if (!result) return
+    const reasons = new Map<number, string[]>()
+    const add = (msg: string) => {
+      const n = rowNoOf(msg)
+      if (n === null) return
+      reasons.set(n, [...(reasons.get(n) ?? []), msg.replace(/^Row \d+( \([^)]*\))?:\s*/, '')])
+    }
+    result.failed.forEach(add)
+    result.warnings.filter(w => PROBLEM_WARNING.test(w)).forEach(add)
+    const nums = [...reasons.keys()].sort((a, b) => a - b).filter(n => sourceRows[n - 1])
+    if (nums.length === 0) {
+      toast.info(isEn ? 'No rows with a row number to export' : '没有可导出的问题行')
+      return
+    }
+    const base = fileName.replace(/\.(csv|xlsx|xls)$/i, '')
+    downloadCsv(
+      `${base}-${isEn ? 'failed-rows' : '失败行'}`,
+      [...sourceHeader, isEn ? 'Import Error' : '导入失败原因'],
+      nums.map(n => [...sourceRows[n - 1], (reasons.get(n) ?? []).join('; ')]),
+    )
+  }
+
+  async function submit(dryRun = false) {
     setBusy(true)
     setProgress(0)
-    const total: BulkImportResult = { created: 0, updated: 0, skipped: [], failed: [], warnings: [] }
+    const total: BulkImportResult = { created: 0, updated: 0, skipped: [], failed: [], warnings: [], dryRun }
+    // 同一次导入的各批共用一个 importId，导入历史按它合并成一行
+    const importId = dryRun ? undefined : (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`)
     try {
-      for (let start = 0; start < rows.length; start += batchSize) {
+      for (let start = 0, batch = 1; start < rows.length; start += batchSize, batch++) {
         const end = Math.min(start + batchSize, rows.length)
         try {
-          const r = await apiPost<BulkImportResult>(endpoint, { rows: rows.slice(start, end), rowOffset: start })
+          const r = await apiPost<BulkImportResult>(endpoint, {
+            rows: rows.slice(start, end), rowOffset: start, dryRun, importId, fileName, batch,
+          })
           total.created += r.created
           total.updated += r.updated
           total.skipped.push(...r.skipped)
@@ -149,6 +243,12 @@ export default function BulkImportDialog({
         setProgress(end)
       }
       setResult(total)
+      if (dryRun) {
+        toast.info(isEn
+          ? `Dry run: ${total.created} would be created, ${total.updated} updated, ${total.skipped.length} skipped, ${total.failed.length} failed — nothing was saved`
+          : `试运行:将新建 ${total.created},更新 ${total.updated},跳过 ${total.skipped.length},失败 ${total.failed.length}——没有写入任何数据`)
+        return
+      }
       const summary = isEn
         ? `${total.created} created, ${total.updated} updated, ${total.skipped.length} skipped, ${total.failed.length} failed`
         : `新建 ${total.created},更新 ${total.updated},跳过 ${total.skipped.length},失败 ${total.failed.length}`
@@ -188,7 +288,7 @@ export default function BulkImportDialog({
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
             onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }}
             className="block w-full text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-purple-50 file:text-purple-700 file:text-sm hover:file:bg-purple-100"
           />
@@ -224,10 +324,24 @@ export default function BulkImportDialog({
           )}
 
           {result && (
-            <div className="border border-green-200 bg-green-50 rounded-lg px-3 py-2 text-xs text-green-800">
-              {isEn
-                ? <>✅ <b>{result.created}</b> created, <b>{result.updated}</b> updated</>
-                : <>✅ 新建 <b>{result.created}</b> 条,更新 <b>{result.updated}</b> 条</>}
+            <div className={`border rounded-lg px-3 py-2 text-xs ${result.dryRun ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-green-200 bg-green-50 text-green-800'}`}>
+              {result.dryRun && (
+                <div className="mb-1 font-semibold">
+                  {isEn ? '🧪 Dry run — nothing was saved. Check the result, then click “Import” to do it for real.' : '🧪 试运行结果——没有写入任何数据。确认无误后点「导入」正式执行。'}
+                </div>
+              )}
+              {result.dryRun
+                ? (isEn
+                  ? <>Would create <b>{result.created}</b>, update <b>{result.updated}</b></>
+                  : <>将新建 <b>{result.created}</b> 条,更新 <b>{result.updated}</b> 条</>)
+                : (isEn
+                  ? <>✅ <b>{result.created}</b> created, <b>{result.updated}</b> updated</>
+                  : <>✅ 新建 <b>{result.created}</b> 条,更新 <b>{result.updated}</b> 条</>)}
+              {(result.failed.length > 0 || result.warnings.some(w => PROBLEM_WARNING.test(w))) && (
+                <button onClick={downloadProblemRows} className="ml-3 text-purple-700 hover:underline">
+                  {isEn ? '⬇ Download failed/skipped rows (CSV)' : '⬇ 下载失败/跳过的行(CSV)'}
+                </button>
+              )}
               {result.batchError && (
                 <div className="mt-2 border border-red-200 bg-red-50 rounded px-2 py-1.5 text-red-700">⛔ {result.batchError}</div>
               )}
@@ -235,8 +349,8 @@ export default function BulkImportDialog({
                 <div className="mt-2">
                   <div className="text-red-700 mb-1">
                     {isEn
-                      ? `⛔ ${result.failed.length} rows failed (not imported; all other rows were imported):`
-                      : `⛔ ${result.failed.length} 行导入失败(这些行没进去,其它行已正常导入):`}
+                      ? (result.dryRun ? `⛔ ${result.failed.length} rows would fail:` : `⛔ ${result.failed.length} rows failed (not imported; all other rows were imported):`)
+                      : (result.dryRun ? `⛔ ${result.failed.length} 行会失败:` : `⛔ ${result.failed.length} 行导入失败(这些行没进去,其它行已正常导入):`)}
                   </div>
                   <ul className="max-h-40 overflow-y-auto bg-white border border-red-200 rounded px-2 py-1.5 space-y-0.5 text-red-700">
                     {result.failed.map((f, i) => <li key={i}>· {f}</li>)}
@@ -262,16 +376,65 @@ export default function BulkImportDialog({
               )}
             </div>
           )}
+
+          {historyResource && (
+            <div className="text-xs">
+              <button onClick={() => setShowHistory(v => !v)} className="text-purple-700 hover:underline">
+                {showHistory ? '▾' : '▸'} {isEn ? 'Import history' : '导入历史'}
+              </button>
+              {showHistory && (
+                <div className="mt-1 border border-gray-200 rounded-lg overflow-x-auto max-h-48">
+                  {history === null ? (
+                    <div className="px-3 py-2 text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div>
+                  ) : history.length === 0 ? (
+                    <div className="px-3 py-2 text-gray-400">{isEn ? 'No imports recorded yet' : '还没有导入记录'}</div>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="bg-gray-50 text-gray-500 sticky top-0">
+                        <tr>
+                          <th className="text-left px-2 py-1">{isEn ? 'Time' : '时间'}</th>
+                          <th className="text-left px-2 py-1">{isEn ? 'By' : '操作人'}</th>
+                          <th className="text-left px-2 py-1">{isEn ? 'File' : '文件'}</th>
+                          <th className="text-right px-2 py-1">{isEn ? 'Created' : '新建'}</th>
+                          <th className="text-right px-2 py-1">{isEn ? 'Updated' : '更新'}</th>
+                          <th className="text-right px-2 py-1">{isEn ? 'Skipped' : '跳过'}</th>
+                          <th className="text-right px-2 py-1">{isEn ? 'Failed' : '失败'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {history.map(h => (
+                          <tr key={h.importId}>
+                            <td className="px-2 py-1 whitespace-nowrap">{new Date(h.startedAt).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                            <td className="px-2 py-1 whitespace-nowrap">{h.userName}</td>
+                            <td className="px-2 py-1 max-w-48 truncate" title={h.fileName}>{h.fileName || '—'}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{h.created}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{h.updated}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{h.skipped}</td>
+                            <td className={`px-2 py-1 text-right tabular-nums ${h.failed > 0 ? 'text-red-600' : ''}`}>{h.failed}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={() => { reset(); onClose() }}>{result ? (isEn ? 'Close' : '关闭') : (isEn ? 'Cancel' : '取消')}</Button>
-          {!result && (
-            <Button disabled={busy || rows.length === 0} onClick={submit}>
-              {busy
-                ? (isEn ? `Importing… ${progress}/${rows.length}` : `导入中… ${progress}/${rows.length}`)
-                : (isEn ? `Import ${rows.length} rows` : `导入 ${rows.length} 行`)}
-            </Button>
+          {(!result || result.dryRun) && (
+            <>
+              <Button variant="outline" disabled={busy || rows.length === 0} onClick={() => submit(true)}>
+                {isEn ? '🧪 Dry run' : '🧪 试运行'}
+              </Button>
+              <Button disabled={busy || rows.length === 0} onClick={() => submit(false)}>
+                {busy
+                  ? (isEn ? `Working… ${progress}/${rows.length}` : `处理中… ${progress}/${rows.length}`)
+                  : (isEn ? `Import ${rows.length} rows` : `导入 ${rows.length} 行`)}
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>

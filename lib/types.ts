@@ -171,6 +171,8 @@ export interface VariantAttributeValue {
 
 export interface Product {
   id: string
+  /** 自增商品编号(同 ProductTemplate.productNo)，/api/products 原样返回 */
+  productNo?: number
   name: string
   variantAttributes: VariantAttributeValue[]   // 空数组 = 单变体（20260825 合表重构后无变体场景，恒为空）
 
