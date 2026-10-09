@@ -65,6 +65,11 @@ export async function POST(
       if (!supplierId) {
         return NextResponse.json({ error: '请选择供应商' }, { status: 400 })
       }
+      // 准入闸门(同 lib/create-purchase-order.ts)：商品取消了 Can be Purchased 就不能再转采购单
+      const product = await p.product.findUnique({ where: { id: suggestion.productId }, select: { name: true, canBePurchased: true } })
+      if (product && product.canBePurchased === false) {
+        return NextResponse.json({ error: `商品「${product.name}」已设为不可采购（Can be Purchased 未勾选），不能转采购单` }, { status: 400 })
+      }
 
       // 计算金额
       const subtotalExTax = round2(qty * unitCost)
