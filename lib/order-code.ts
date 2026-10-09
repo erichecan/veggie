@@ -1,50 +1,17 @@
 /**
- * 订单业务编号生成
- * 格式：<INITIALS>-YYMMDD-NNN
- *   - INITIALS：创建者 first name 首字母 + last name 首字母（大写），例：Charles Jiang → CJ
+ * 订单业务编号生成（报价单/销售订单共用同一条 Order 记录的同一个号）
+ * 格式：D-YYMMDD-NNN，例：D-260424-001
+ *   - D：固定前缀，20261008 起统一改为 D 开头（此前是创建者缩写，如 CJ，按人不同而不同）
  *   - YYMMDD：订单创建当日（本地时区），例：260424
- *   - NNN：当天该缩写下的递增序号，从 001 开始，三位补零；超过 999 时位数自然变多
+ *   - NNN：当天的递增序号，从 001 开始，三位补零；超过 999 时位数自然变多
  *
- * 历史订单的 code 字段保持 NULL；显示时由 displayOrderCode() 兜底为 id 前 8 位。
+ * 历史订单的 code 字段保持原有的 <INITIALS>-YYMMDD-NNN 格式不回填，不影响既往单据。
+ * 历史订单的 code 字段也可能保持 NULL；显示时由 displayOrderCode() 兜底为 id 前 8 位。
  */
 import type { PrismaClient } from '@/lib/generated/prisma/client'
 import type * as Prisma from '@/lib/generated/prisma/internal/prismaNamespace'
 
-/**
- * 从姓名中取大写首字母组合。
- * - "Charles Jiang"  → "CJ"
- * - "Hong Xia"       → "HX"
- * - "Xiaohui Weng(Evelyn)" → "XW"（取空格前的两段）
- * - "Edwin"          → "ED"（单个 token 时取前两个字母补齐）
- * - 含中文：取前两个字符大写化，例 "张敏" → "张敏"（保留原样，避免空字符）
- */
-/**
- * 订单编码前缀：始终返回 2 位 ASCII（A-Z/0-9），永不含中文。
- * - ASCII 名 → 首/末两段首字母（"Xiaohui Weng" → "XW"，"Edwin" → "ED"）
- * - 中文名 → 回退用 email 本地部分前两个字母（"运营主管" + operator@… → "OP"）
- * - 都无 ASCII 字母可取 → "NA"
- */
-export function getInitials(rawName: string | null | undefined, fallbackEmail?: string | null): string {
-  const name = (rawName ?? '').trim()
-  // 去掉括号内容（"Xiaohui Weng(Evelyn)" → "Xiaohui Weng"）
-  const cleaned = name.replace(/\(.*?\)/g, '').trim()
-  // ASCII 姓名 → 取空格分割的前两段首字母
-  if (/^[A-Za-z][A-Za-z\s.'-]*$/.test(cleaned)) {
-    const parts = cleaned.split(/\s+/).filter(Boolean)
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-    }
-    return cleaned.slice(0, 2).toUpperCase().padEnd(2, 'X')
-  }
-  // 含非 ASCII（中文等）：回退用 email 本地部分的 ASCII 字母
-  const local = (fallbackEmail ?? '').split('@')[0]
-  const emailAlpha = (local.match(/[A-Za-z]/g) ?? []).join('')
-  if (emailAlpha.length >= 2) return emailAlpha.slice(0, 2).toUpperCase()
-  if (emailAlpha.length === 1) return (emailAlpha + 'X').toUpperCase()
-  // 最后兜底：名字里若有 ASCII 字母/数字取之，再不行 NA（绝不返回非 ASCII）
-  const nameAscii = (cleaned.match(/[A-Za-z0-9]/g) ?? []).join('')
-  return nameAscii ? nameAscii.slice(0, 2).toUpperCase().padEnd(2, 'X') : 'NA'
-}
+const ORDER_CODE_PREFIX = 'D'
 
 /** 把 Date 格式化为 YYMMDD（本地时区） */
 export function formatYYMMDD(date: Date): string {
@@ -60,10 +27,9 @@ export function formatYYMMDD(date: Date): string {
  */
 export async function nextOrderCode(
   client: PrismaClient | Prisma.TransactionClient,
-  initials: string,
   date: Date,
 ): Promise<string> {
-  const prefix = `${initials}-${formatYYMMDD(date)}-`
+  const prefix = `${ORDER_CODE_PREFIX}-${formatYYMMDD(date)}-`
   const existing = await client.order.findMany({
     where: { code: { startsWith: prefix } },
     select: { code: true },

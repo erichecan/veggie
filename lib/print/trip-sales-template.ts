@@ -63,11 +63,11 @@ function buildSalesOrderHtml(
   // 与拣货单堆叠顺序一致，客户拿着单子跟仓库出货顺序对得上。见 lib/print/line-sort.ts
   const lines = sortLinesByUomSequence<TripLine>(order.lines ?? [])
 
-  // 20260920 客户要求：销售单印发票号，客户拿这张纸直接交给会计进账。
-  // 号来自 Order.invoiceNo 或已开具的发票（见 lib/print/invoice-lookup.ts）；
-  // 万一没取到就退回订单号，纸上总得有个可追溯的编号，不能开天窗。
-  const invoiceNo = order.invoiceNo?.trim() || null
-  const orderCode = invoiceNo ?? order.code ?? order.id.slice(-8).toUpperCase()
+  // 20261008 客户要求（推翻 20260920 的"印 invoiceNo"口径）：标签继续叫 "Invoice No."，
+  // 但印出来的号码改回订单自己的业务编号（Order.code，报价单/销售订单同一个号，D-YYMMDD-NNN），
+  // 不再用 lib/invoice-number.ts 另外发的 V##### 号。Order.invoiceNo 字段与发号逻辑本身不动，
+  // 只是不再用于这张纸的展示。
+  const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
   const safeCode = orderCode.replace(/['"\\]/g, '')
 
   const customerAddr = customer
@@ -149,7 +149,7 @@ function buildSalesOrderHtml(
         </div>
       </td>
       <td class="barcode-cell">
-        <div class="info-head">${invoiceNo ? 'Invoice No.' : 'Sale Order NO'}</div>
+        <div class="info-head">Invoice No.</div>
         <svg class="barcode-svg bc-${safeCode}"></svg>
         <div class="barcode-code">${escapeHtml(orderCode)}</div>
       </td>
@@ -312,8 +312,7 @@ export function generateTripSalesHtml(data: TripPrintData, lang: PrintLang = 'zh
 
   const barcodeInits = orders.map(order => {
     // 条码必须和纸面上印的号一致，取值口径与页头保持同一套
-    const invoiceNo = order.invoiceNo?.trim() || null
-    const orderCode = invoiceNo ?? order.code ?? order.id.slice(-8).toUpperCase()
+    const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
     const safeCode = orderCode.replace(/['"\\]/g, '')
     // 长订单被 chunkOrderLinesForPrint 拆成多页时,每页都重画一次页头,同一订单的
     // 条码 svg 会出现多份——用 class 选择器一次性渲染到所有份(JsBarcode 支持

@@ -20,7 +20,7 @@ function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: strin
   return orders.map((o) => ({ ...o, salesman: o.salesUser?.name ?? null }))
 }
 import type { $Enums } from '@/lib/generated/prisma/client'
-import { getInitials, nextOrderCode } from '@/lib/order-code'
+import { nextOrderCode } from '@/lib/order-code'
 
 const PAYMENT_METHODS = new Set<$Enums.PaymentMethod>(['ONLINE', 'CASH'])
 
@@ -300,9 +300,8 @@ export async function POST(req: Request) {
       const stockMap = new Map(productsForStock.map((p) => [p.id, p]))
 
       // 3) 事务：仅创建订单，不扣库存（报价单阶段）
-      // 业务编号：创建者缩写-YYMMDD-NNN（CJ-260424-001）。
+      // 业务编号：D-YYMMDD-NNN（D-260424-001）。
       // 唯一索引 + P2002 重试，应对并发场景下两个事务计算到同一序号的极端情况。
-      const initials = getInitials(user.name, user.email)
       const now = new Date()
       const MAX_RETRY = 5
       let order: Awaited<ReturnType<typeof prisma.order.create>> | null = null
@@ -310,7 +309,7 @@ export async function POST(req: Request) {
       for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
         try {
           order = await prisma.$transaction(async (tx) => {
-            const code = await nextOrderCode(tx, initials, now)
+            const code = await nextOrderCode(tx, now)
             const orderCreated = await tx.order.create({
               data: {
                 code,

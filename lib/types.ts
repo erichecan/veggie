@@ -400,7 +400,7 @@ export interface OrderLine {
 
 export interface Order {
   id: string
-  /** 业务编号：创建者缩写-YYMMDD-NNN（例：CJ-260424-001），历史订单可能为空 */
+  /** 业务编号：D-YYMMDD-NNN（例：D-260424-001，20261008 起固定 D 前缀），历史订单可能是老的创建者缩写格式或为空 */
   code?: string | null
   /** 创建者用户 ID（历史订单可能为空） */
   createdById?: string | null

@@ -7,7 +7,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItemsList } from '@/lib/order-items'
 import { resolveOrderLines, toOrderItems } from '@/lib/server-pricing'
 import { toNum } from '@/lib/decimal-helpers'
-import { getInitials, nextOrderCode } from '@/lib/order-code'
+import { nextOrderCode } from '@/lib/order-code'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 
@@ -187,7 +187,6 @@ export async function POST(req: Request) {
       } = await resolveOrderLines({ prisma, restaurantId }, submittedItems)
 
       // 事务创建订单 + P2002 重试
-      const initials = getInitials(restaurantName, user.email)
       const now = new Date()
       const MAX_RETRY = 5
       let order: Awaited<ReturnType<typeof prisma.order.create>> | null = null
@@ -196,7 +195,7 @@ export async function POST(req: Request) {
       for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
         try {
           order = await prisma.$transaction(async (tx) => {
-            const code = await nextOrderCode(tx, initials, now)
+            const code = await nextOrderCode(tx, now)
             return tx.order.create({
               data: {
                 code,

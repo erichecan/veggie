@@ -26,7 +26,8 @@ import { writeLog } from '@/lib/action-log'
 import { syncOrderItemsSnapshot } from '@/lib/order-items'
 import { applyLineStockDelta } from '@/lib/order-line-stock'
 import { assertOrderNotPickLockedForLineEdit, WavePickLockedError } from '@/lib/wave-pick-lock'
-import { nextOrderCode, getInitials } from '@/lib/order-code'
+import { nextOrderCode } from '@/lib/order-code'
+import { isUniqueConstraintOn } from '@/lib/prisma-errors'
 import {
   formatShortageReason,
   parseShortageReason,
@@ -96,7 +97,6 @@ export async function POST(req: Request) {
       const blocked: Blocked[] = []
       /** customerId::date → 该客户的次日补送单 */
       const deferOrders = new Map<string, { id: string; code: string; date: string }>()
-      const initials = getInitials(user.name, user.email)
       const reasonSuffix = formatShortageReason({ reasonCode: reason.code, reasonNote: reason.note })
 
       for (const raw of items) {
@@ -173,7 +173,15 @@ export async function POST(req: Request) {
           : (order.deliveryDate ? addDays(order.deliveryDate, 1) : addDays(new Date(), 1)).toISOString().slice(0, 10)
 
         try {
-          const result = await prisma.$transaction(async (tx) => {
+          // 补送单沿用 D-YYMMDD-NNN 全局序号（lib/order-code.ts，20261008 起不再按创建者分区），
+          // 并发下任何人在同一天新建的单都可能撞同一个序号；事务整体重试是安全的——
+          // Prisma 事务失败即整体回滚，不会留下部分写入。
+          const MAX_RETRY = 5
+          let result: { id: string; code: string } | null = null
+          let lastErr: unknown = null
+          for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+          try {
+          result = await prisma.$transaction(async (tx) => {
             if (newQty === 0) {
               await tx.orderLine.delete({ where: { id: lineId } })
             } else {
@@ -217,7 +225,7 @@ export async function POST(req: Request) {
                 if (existing) {
                   target = { id: existing.id, code: existing.code ?? existing.id.slice(-6) }
                 } else {
-                  const code = await nextOrderCode(tx, initials, new Date())
+                  const code = await nextOrderCode(tx, new Date())
                   const created = await tx.order.create({
                     data: {
                       code,
@@ -309,6 +317,16 @@ export async function POST(req: Request) {
 
             return deferInfo
           })
+          break // 成功
+          } catch (e: unknown) {
+            lastErr = e
+            if (isUniqueConstraintOn(e, 'code')) continue
+            throw e
+          }
+          }
+          if (result === null && lastErr) {
+            throw lastErr
+          }
 
           const deferInfo = result
           await writeLog({

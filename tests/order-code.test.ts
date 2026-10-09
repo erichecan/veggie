@@ -1,31 +1,40 @@
 /**
- * 回归测试：订单编码前缀永远是 ASCII（不再出现中文），中文名回退用 email 前缀。
- * bug: 创建者名"运营主管"→ getInitials 取前两中文字"运营"→ 订单码含中文→条形码/编码问题。
+ * 回归测试：订单业务编号统一改为 D 前缀（20261008，客户要求 quotation/sale order 编号规则统一）。
+ * 不再按创建者缩写区分前缀，全局固定 "D-YYMMDD-NNN"。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getInitials } from '../lib/order-code'
+import { formatYYMMDD, nextOrderCode } from '../lib/order-code'
 
-test('ASCII 姓名 → 首末首字母', () => {
-  assert.equal(getInitials('Xiaohui Weng'), 'XW')
-  assert.equal(getInitials('Xiaohui Weng(Evelyn)'), 'XW')
-  assert.equal(getInitials('Edwin'), 'ED')
+function fakeClient(existingCodes: string[]) {
+  return {
+    order: {
+      findMany: async ({ where }: { where: { code: { startsWith: string } } }) =>
+        existingCodes
+          .filter((c) => c.startsWith(where.code.startsWith))
+          .map((code) => ({ code })),
+    },
+  } as unknown as Parameters<typeof nextOrderCode>[0]
+}
+
+test('formatYYMMDD：本地时区 YYMMDD', () => {
+  assert.equal(formatYYMMDD(new Date(2026, 3, 24)), '260424')
 })
 
-test('中文名 + email → 用 email 前缀', () => {
-  assert.equal(getInitials('运营主管', 'operator@veggie.com'), 'OP')
-  assert.equal(getInitials('老板', 'boss@veggie.com'), 'BO')
-  assert.equal(getInitials('李老板 - 川味居', 'restaurant2@veggie.com'), 'RE')
+test('nextOrderCode：当天无记录 → D-YYMMDD-001', async () => {
+  const date = new Date(2026, 3, 24)
+  const code = await nextOrderCode(fakeClient([]), date)
+  assert.equal(code, 'D-260424-001')
 })
 
-test('中文名无 email → 兜底 NA，绝不返回中文', () => {
-  const r = getInitials('运营主管')
-  assert.equal(r, 'NA')
-  assert.match(r, /^[A-Z0-9]{2}$/)
+test('nextOrderCode：已有记录 → 序号递增，不区分创建者', async () => {
+  const date = new Date(2026, 3, 24)
+  const code = await nextOrderCode(fakeClient(['D-260424-001', 'D-260424-002']), date)
+  assert.equal(code, 'D-260424-003')
 })
 
-test('输出恒为 2 位 ASCII', () => {
-  for (const [n, e] of [['运营', 'a@b.com'], ['张三', ''], ['', ''], ['A', '']] as const) {
-    assert.match(getInitials(n, e), /^[A-Z0-9]{2}$/)
-  }
+test('nextOrderCode：不同日期前缀互不干扰', async () => {
+  const date = new Date(2026, 3, 25)
+  const code = await nextOrderCode(fakeClient(['D-260424-005']), date)
+  assert.equal(code, 'D-260425-001')
 })
