@@ -8,7 +8,7 @@
  *
  * 支持的筛选参数（与列表页 UI 一一对应）：
  *   search        搜索框的「全部」维度（名称 / 内部编码 模糊），可重复传，多值之间 OR
- *   status        状态；canBeSold=1  可销售
+ *   status        状态；canBeSold=1/0  可销售/不可销售；canBePurchased=1/0  可采购/不可采购
  *   f_*           Odoo 式分面（同维度 OR、跨维度 AND，见 lib/facet-sql.ts）
  *   cf_<字段>     文本列筛选；cf_<日期字段>_from/_to  日期区间列筛选
  *   cfm_<字段>    多选列筛选（逗号分隔的精确值集合）
@@ -96,7 +96,14 @@ export async function buildProductTemplatesWhere(
   // 显式传 `status=all` 才会连归档一起返回（列表页的「显示已归档」开关走这条）。
   if (status && status !== 'all') where.status = status.toUpperCase()
   else if (!status) where.status = { not: 'ARCHIVED' }
-  if (searchParams.get('canBeSold') === '1') where.canBeSold = true
+  // 可售/可采购(20261009)：除了「只看可售」，也要能筛出「不可售」「不可采购」——客户反馈
+  // 取消 Can be Sold 后在开着「可售商品」筛选的列表里就找不到这个商品了，没法再勾回来
+  const canBeSold = searchParams.get('canBeSold')
+  if (canBeSold === '1') where.canBeSold = true
+  else if (canBeSold === '0') where.canBeSold = false
+  const canBePurchased = searchParams.get('canBePurchased')
+  if (canBePurchased === '1') where.canBePurchased = true
+  else if (canBePurchased === '0') where.canBePurchased = false
   // ── 分面搜索：同维度 OR、跨维度 AND。搜索框的「全部」维度也在其中（参数名 search），
   // 与 f_* 走同一条路 —— 此前它是路由手写的 get('search')，同维度第二个词会被静默丢掉。──
   const facetClauses = await buildFacetWhere(searchParams, PRODUCT_TEMPLATE_FACET_DEFS)

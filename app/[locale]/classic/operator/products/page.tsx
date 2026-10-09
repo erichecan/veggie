@@ -57,6 +57,8 @@ interface SavedProductsListState {
   columnFilters: Record<string, string>
   columnMultiFilters: Record<string, string[]>
   canBeSoldFilter: boolean
+  notSellableFilter: boolean
+  purchaseFilter: '' | 'yes' | 'no'
   productTypeFilter: string
   stockAlertFilter: StockAlertFilter
   showArchived: boolean
@@ -113,6 +115,10 @@ export default function ClassicProductsPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(savedFilterState?.columnFilters ?? {})
   const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>(savedFilterState?.columnMultiFilters ?? {})
   const [canBeSoldFilter, setCanBeSoldFilter] = useState(savedFilterState?.canBeSoldFilter ?? false)
+  // 「不可售」「可采购/不可采购」(20261009)：取消 Can be Sold 后，开着「可售商品」筛选的列表里
+  // 就看不到它了，得能反过来筛出不可售的，才找得回来重新勾上；采购同理
+  const [notSellableFilter, setNotSellableFilter] = useState(savedFilterState?.notSellableFilter ?? false)
+  const [purchaseFilter, setPurchaseFilter] = useState<'' | 'yes' | 'no'>(savedFilterState?.purchaseFilter ?? '')
   const [productTypeFilter, setProductTypeFilter] = useState(savedFilterState?.productTypeFilter ?? '')
   const [stockAlertFilter, setStockAlertFilter] = useState<StockAlertFilter>(savedFilterState?.stockAlertFilter ?? 'all')
   // 归档商品默认不显示（20260819）：客户曾在归档商品上配了半天规格，
@@ -150,6 +156,8 @@ export default function ClassicProductsPage() {
     if (archivedOnlyFilter) params.set('status', 'archived')
     else if (showArchived) params.set('status', 'all')
     if (canBeSoldFilter) params.set('canBeSold', '1')
+    else if (notSellableFilter) params.set('canBeSold', '0')
+    if (purchaseFilter) params.set('canBePurchased', purchaseFilter === 'yes' ? '1' : '0')
     if (stockAlertFilter !== 'all') params.set('stockAlert', stockAlertFilter)
     const typeSet = new Set([...(columnMultiFilters.type ?? []), ...(productTypeFilter ? [productTypeFilter] : [])])
     if (typeSet.size > 0) params.set('cfm_type', [...typeSet].join(','))
@@ -166,7 +174,7 @@ export default function ClassicProductsPage() {
     // 按 Last Updated on 排序时，同一天改的商品没有排在一起，散落在好几页里）
     if (sortKey) { params.set('sortKey', sortKey); params.set('sortDir', sortDir) }
     return params.toString()
-  }, [showArchived, archivedOnlyFilter, canBeSoldFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets, sortKey, sortDir])
+  }, [showArchived, archivedOnlyFilter, canBeSoldFilter, notSellableFilter, purchaseFilter, productTypeFilter, stockAlertFilter, columnFilters, columnMultiFilters, facets, sortKey, sortDir])
 
   // 导出：吃的就是 queryParams —— 与列表请求同一份筛选参数，同一份 where 构造，
   // 所以导出的是当前筛选下的**全部**结果，不是屏幕上这 50 条。
@@ -366,10 +374,10 @@ export default function ClassicProductsPage() {
   // 时原样恢复。写的时机在 mount 时也会跑一遍，属于无害的"原样写回"。
   useEffect(() => {
     writeSavedProductsListState({
-      searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, productTypeFilter,
+      searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, notSellableFilter, purchaseFilter, productTypeFilter,
       stockAlertFilter, showArchived, archivedOnlyFilter, sortKey, sortDir, facets, page, pageSize,
     })
-  }, [searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, productTypeFilter,
+  }, [searchInput, columnFilters, columnMultiFilters, canBeSoldFilter, notSellableFilter, purchaseFilter, productTypeFilter,
       stockAlertFilter, showArchived, archivedOnlyFilter, sortKey, sortDir, facets, page, pageSize])
 
   // 排序已经由后端做（按整个筛选结果集排序，见 loadPage 里的 sortKey/sortDir 参数，
@@ -766,6 +774,11 @@ export default function ClassicProductsPage() {
           ...(showArchived ? [{ label: isEn ? 'Incl. archived' : '含已归档', onRemove: () => setShowArchived(false) }] : []),
           ...(archivedOnlyFilter ? [{ label: isEn ? 'Archived Only' : '仅已归档', onRemove: () => setArchivedOnlyFilter(false) }] : []),
           ...(canBeSoldFilter ? [{ label: 'Can be Sold', onRemove: () => setCanBeSoldFilter(false) }] : []),
+          ...(notSellableFilter ? [{ label: isEn ? 'Cannot be Sold' : '不可售', onRemove: () => setNotSellableFilter(false) }] : []),
+          ...(purchaseFilter ? [{
+            label: purchaseFilter === 'yes' ? 'Can be Purchased' : (isEn ? 'Cannot be Purchased' : '不可采购'),
+            onRemove: () => setPurchaseFilter(''),
+          }] : []),
           ...(productTypeFilter ? [{ label: TYPE_LABEL[productTypeFilter] ?? productTypeFilter, onRemove: () => setProductTypeFilter('') }] : []),
           ...(stockAlertFilter !== 'all' ? [{
             label: stockAlertFilter === 'negative' ? (isEn ? '⚠ Negative Stock' : '⚠ 负库存') : (isEn ? '↓ Low Stock' : '↓ 低库存'),
@@ -775,6 +788,9 @@ export default function ClassicProductsPage() {
         ]}
         filterOptions={[
           { label: 'Can be Sold', value: 'canBeSold' },
+          { label: isEn ? 'Cannot be Sold' : '不可售 (Cannot be Sold)', value: 'notSellable' },
+          { label: 'Can be Purchased', value: 'purchasable' },
+          { label: isEn ? 'Cannot be Purchased' : '不可采购 (Cannot be Purchased)', value: 'notPurchasable' },
           { label: 'Storable Product', value: 'product' },
           { label: 'Consumable', value: 'consu' },
           { label: 'Service', value: 'service' },
@@ -782,11 +798,17 @@ export default function ClassicProductsPage() {
         ]}
         activeFilterValues={[
           ...(canBeSoldFilter ? ['canBeSold'] : []),
+          ...(notSellableFilter ? ['notSellable'] : []),
+          ...(purchaseFilter === 'yes' ? ['purchasable'] : purchaseFilter === 'no' ? ['notPurchasable'] : []),
           ...(productTypeFilter ? [productTypeFilter] : []),
           ...(archivedOnlyFilter ? ['archivedOnly'] : []),
         ]}
         onFilterSelect={(v) => {
-          if (v === 'canBeSold') setCanBeSoldFilter(prev => !prev)
+          // 可售/不可售、可采购/不可采购各自互斥：开一个关另一个
+          if (v === 'canBeSold') setCanBeSoldFilter(prev => { if (!prev) setNotSellableFilter(false); return !prev })
+          else if (v === 'notSellable') setNotSellableFilter(prev => { if (!prev) setCanBeSoldFilter(false); return !prev })
+          else if (v === 'purchasable') setPurchaseFilter(prev => prev === 'yes' ? '' : 'yes')
+          else if (v === 'notPurchasable') setPurchaseFilter(prev => prev === 'no' ? '' : 'no')
           else if (v === 'archivedOnly') setArchivedOnlyFilter(prev => { const next = !prev; if (next) setShowArchived(false); return next })
           else setProductTypeFilter(prev => prev === v ? '' : v)
         }}
@@ -796,12 +818,14 @@ export default function ClassicProductsPage() {
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
-        favouriteState={{ searchInput, showArchived, archivedOnlyFilter, canBeSoldFilter, productTypeFilter, stockAlertFilter, groupBy, facets, columnFilters, columnMultiFilters }}
+        favouriteState={{ searchInput, showArchived, archivedOnlyFilter, canBeSoldFilter, notSellableFilter, purchaseFilter, productTypeFilter, stockAlertFilter, groupBy, facets, columnFilters, columnMultiFilters }}
         onFavouriteApply={s => {
           setSearchInput(String(s.searchInput ?? ''))
           setShowArchived(Boolean(s.showArchived))
           setArchivedOnlyFilter(Boolean(s.archivedOnlyFilter))
           setCanBeSoldFilter(Boolean(s.canBeSoldFilter))
+          setNotSellableFilter(Boolean(s.notSellableFilter))
+          setPurchaseFilter(s.purchaseFilter === 'yes' || s.purchaseFilter === 'no' ? s.purchaseFilter : '')
           setProductTypeFilter(String(s.productTypeFilter ?? ''))
           setStockAlertFilter((s.stockAlertFilter as StockAlertFilter) ?? 'all')
           setGroupBy(String(s.groupBy ?? ''))
@@ -947,7 +971,7 @@ export default function ClassicProductsPage() {
           {/* 可售商品开关：与顶部筛选下拉的 Can be Sold 项共用同一个 state */}
           <button
             type="button"
-            onClick={() => setCanBeSoldFilter(v => !v)}
+            onClick={() => setCanBeSoldFilter(v => { if (!v) setNotSellableFilter(false); return !v })}
             className="h-7 px-2.5 text-xs rounded border transition-colors font-medium ml-1"
             style={canBeSoldFilter
               ? { background: '#d1fae5', borderColor: '#10b981', color: '#059669' }

@@ -33,7 +33,8 @@ export async function generateAnnualDryGoodsPlan(): Promise<AnnualPlanRow[]> {
   if (!group) return []
 
   const products = await prisma.product.findMany({
-    where: { active: true, status: 'ACTIVE', category: { groupId: group.id } },
+    // canBePurchased(20261009)：取消 Can be Purchased 的商品不出采购建议
+    where: { active: true, status: 'ACTIVE', canBePurchased: true, category: { groupId: group.id } },
     select: {
       id: true,
       name: true,

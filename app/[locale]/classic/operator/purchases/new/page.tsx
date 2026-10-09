@@ -337,7 +337,18 @@ export default function NewPurchaseOrderPage() {
       toast.info(isEn ? `${historyPo.name} has no line items to copy` : `${historyPo.name} 没有可复制的行项目`)
       return
     }
-    const newLines: DraftLine[] = historyPo.lines.map(hl => {
+    // 历史单里后来被取消 Can be Purchased(或已归档)的商品不再带进新采购单(20261009)——
+    // 选品下拉本来就只列可采购商品，复制历史不能成为绕过它的后门；保存时服务端也会拒绝
+    const allowed = new Set(purchaseProducts.map(p => p.id))
+    const blocked = purchaseProducts.length > 0 ? historyPo.lines.filter(hl => !allowed.has(hl.productId)) : []
+    const copyLines = blocked.length > 0 ? historyPo.lines.filter(hl => allowed.has(hl.productId)) : historyPo.lines
+    if (blocked.length > 0) {
+      toast.warning(isEn
+        ? `Skipped ${blocked.length} product(s) that can no longer be purchased: ${blocked.map(b => b.productName).join(', ')}`
+        : `已跳过 ${blocked.length} 个不可采购的商品：${blocked.map(b => b.productName).join('、')}`)
+      if (copyLines.length === 0) return
+    }
+    const newLines: DraftLine[] = copyLines.map(hl => {
       const product = purchaseProducts.find(p => p.id === hl.productId)
       const qty = Number(hl.orderedQty)
       const unitCost = Number(hl.unitCost)

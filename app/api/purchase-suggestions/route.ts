@@ -24,6 +24,14 @@ export async function GET(req: Request) {
       const where: Record<string, unknown> = {}
       if (status) where.status = status
       if (categoryGroupKey) where.categoryGroupKey = categoryGroupKey
+      // 生成建议之后才取消 Can be Purchased 的商品：待处理的建议不再显示，免得还能一键转成采购单
+      // (20261009 客户反馈：不可采购的商品在采购那边还能采购)；已转单/已拒绝的历史照常显示
+      if (!status || status === 'pending' || status === 'approved') {
+        const blocked = await prisma.product.findMany({ where: { canBePurchased: false }, select: { id: true } })
+        if (blocked.length > 0) {
+          where.AND = [{ OR: [{ status: { notIn: ['pending', 'approved'] } }, { productId: { notIn: blocked.map(b => b.id) } }] }]
+        }
+      }
 
       const [items, total] = await Promise.all([
         prisma.purchaseSuggestion.findMany({
@@ -63,8 +71,9 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       // 1. 查所有 active 产品
+      // 只对可采购商品出建议(20261009)：取消 Can be Purchased 的商品不该再被建议去采购
       const products = await prisma.product.findMany({
-        where: { active: true, status: 'ACTIVE' },
+        where: { active: true, status: 'ACTIVE', canBePurchased: true },
         select: {
           id: true,
           name: true,
