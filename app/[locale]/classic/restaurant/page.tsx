@@ -56,7 +56,8 @@ export default function ClassicRestaurantPage() {
         .then(cs => { const found = cs.find(c => c.id === cid); if (found) setCustomer(found) })
         .catch(() => {})
     }
-    apiGet<Product[]>('/api/products?slim=1')
+    // sellable=1：不可售商品不出现在餐馆下单选品里(同内部下单页)
+    apiGet<Product[]>('/api/products?slim=1&sellable=1')
       .then(ps => { setProducts(ps.filter(p => (p.status as string).toLowerCase() === 'active')); setPage(1) })
       .catch(() => {})
     apiGet<OdooPricelist[]>('/api/pricelists')

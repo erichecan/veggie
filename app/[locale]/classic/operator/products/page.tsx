@@ -547,6 +547,26 @@ export default function ClassicProductsPage() {
                 ✓
               </span>
             )}
+            {/* 不可售/不可采购的商品照样列在商品列表里，但要一眼看得出来(20261009 客户要求)；
+                下单/报价/客户门户的选品里不可售的不会出现，采购选品里不可采购的不会出现 */}
+            {t.canBeSold === false && (
+              <span
+                className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 whitespace-nowrap"
+                style={{ background: '#fee2e2', color: '#b91c1c' }}
+                title={isEn ? 'Cannot be Sold — not shown when placing orders / quotations' : '不可售——下单/报价时选不到'}
+              >
+                {isEn ? 'Not for sale' : '不可售'}
+              </span>
+            )}
+            {t.canBePurchased === false && (
+              <span
+                className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 whitespace-nowrap"
+                style={{ background: '#f3f4f6', color: '#4b5563' }}
+                title={isEn ? 'Cannot be Purchased — not shown in purchase orders' : '不可采购——采购单里选不到'}
+              >
+                {isEn ? 'No purchase' : '不可采购'}
+              </span>
+            )}
           </div>
         )
       },

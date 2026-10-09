@@ -177,6 +177,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '订单商品不能为空' }, { status: 400 })
       }
 
+      // 不可售商品不能下单(20261009，与内部下单 /api/orders 同一道闸门)——购物车里可能还留着
+      // 商品被取消 Can be Sold 之前加进去的
+      const notSellable = await prisma.product.findMany({
+        where: { id: { in: submittedItems.map((i: { productId?: string }) => String(i.productId ?? '')) }, canBeSold: false },
+        select: { name: true },
+      })
+      if (notSellable.length > 0) {
+        return NextResponse.json({
+          error: `以下商品已停售，请从购物车移除后再下单：${notSellable.map(p => p.name).join('、')}`,
+        }, { status: 400 })
+      }
+
       // 服务端权威定价
       const {
         lines,
