@@ -52,11 +52,18 @@ export async function POST(req: Request) {
 
       // salesman 列是导入文件里的姓名文本,需要匹配到真实的销售类用户账号(销售/销售助理/外聘销售)才能写 salesUserId
       const SALES_ROLES = ['OPERATOR', 'SALES', 'EXTERNAL_SALES'] as const
+      // ⛔ 只认启用的账号(20261009)：以前停用账号也参与按名字匹配，同名(如 Xuan Li 有一个停用的
+      // placeholder 账号)时 Map 里后来者覆盖先来者，客户可能被挂到停用账号上；
+      // 启用账号里仍有同名的，不猜，留空并提示
       const salesUsers = await prisma.user.findMany({
-        where: { OR: [{ role: { in: [...SALES_ROLES] } }, { roles: { hasSome: [...SALES_ROLES] } }] },
+        where: { isActive: true, OR: [{ role: { in: [...SALES_ROLES] } }, { roles: { hasSome: [...SALES_ROLES] } }] },
         select: { id: true, name: true },
       })
-      const salesUserByName = new Map(salesUsers.map(u => [normalizeName(u.name), u.id]))
+      const salesUserIdsByName = new Map<string, string[]>()
+      for (const u of salesUsers) {
+        const k = normalizeName(u.name)
+        salesUserIdsByName.set(k, [...(salesUserIdsByName.get(k) ?? []), u.id])
+      }
 
       const matchKeys: MatchKeyDef<ResolvedCustomerRow>[] = [
         { field: 'customerNo', get: r => r.customerNo },
@@ -109,9 +116,10 @@ export async function POST(req: Request) {
 
           const salesmanRaw = str(r.salesman, 100)
           if (salesmanRaw) {
-            const id = salesUserByName.get(normalizeName(salesmanRaw))
-            if (id) row.salesUserId = id
-            else warn(`${rowLabel}: salesman '${salesmanRaw}' not matched to a SALES user, left unset`)
+            const ids = salesUserIdsByName.get(normalizeName(salesmanRaw)) ?? []
+            if (ids.length === 1) row.salesUserId = ids[0]
+            else if (ids.length > 1) warn(`${rowLabel}: salesman '${salesmanRaw}' matches ${ids.length} active users with the same name, left unset`)
+            else warn(`${rowLabel}: salesman '${salesmanRaw}' not matched to an active SALES user, left unset`)
           }
 
           return row

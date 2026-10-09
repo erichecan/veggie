@@ -27,6 +27,7 @@ import { lineDescription } from '@/lib/order-line-description'
 import { applyGiftToggle, type GiftPriceSnapshot } from '@/lib/order-line-gift'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const LOW_STOCK_THRESHOLD = 20
@@ -288,7 +289,7 @@ export default function ClassicPlaceOrderPage() {
   const [orderDate, setOrderDate]     = useState(nowLocal)
   const [deliveryDate, setDeliveryDate] = useState(() => nowLocal().slice(0, 10))
   const [salesTeam, setSalesTeam]     = useState('')
-  const [salesUsers, setSalesUsers]   = useState<{ id: string; name: string }[]>([])
+  const [salesUsers, setSalesUsers]   = useState<PickerUser[]>([])
   const [pricelistId, setPricelistId] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('')
   const [priceType, setPriceType]     = useState<CustomerPriceType>('multi')
@@ -447,7 +448,7 @@ export default function ClassicPlaceOrderPage() {
       apiGet<Product[]>('/api/products?status=ACTIVE&sellable=1&slim=1').catch(() => []),
       apiGet<OdooPricelist[]>('/api/pricelists').catch(() => []),
       // role=SALES: 服务端过滤，只拉销售人员
-      apiGet<{ id: string; name: string; role: string; roles?: string[] }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').catch(() => []),
+      apiGet<(PickerUser & { role: string; roles?: string[] })[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').catch(() => []),
       apiGet<Record<string, number>>('/api/products/pending-demand').catch(() => ({})),
     ])
       .then(([cs, ps, pls, us, pd]) => {
@@ -1442,7 +1443,7 @@ export default function ClassicPlaceOrderPage() {
                 >
                   <SearchableDropdown
                     ref={salesRef}
-                    options={[{ value: '', label: isEn ? '— Select Salesperson —' : '— 选择业务员 —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
+                    options={[{ value: '', label: isEn ? '— Select Salesperson —' : '— 选择业务员 —' }, ...userPickerOptions(salesUsers, salesTeam, isEn)]}
                     value={salesTeam}
                     onChange={setSalesTeam}
                     placeholder={isEn ? '— Select Salesperson —' : '— 选择业务员 —'}
