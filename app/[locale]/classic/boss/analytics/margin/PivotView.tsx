@@ -7,6 +7,7 @@ import { downloadCsv } from '@/lib/csv-export'
 import { DIMENSION_OPTIONS } from '@/lib/analytics/pivot'
 import type { DateRange } from '@/components/boss/analytics-shared'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
 type Measure = 'revenueExTax' | 'grossProfit' | 'marginPct' | 'qty'
 
@@ -77,7 +78,7 @@ export default function PivotView({ range, isEn }: { range: DateRange; isEn: boo
   const [salesUserId, setSalesUserId] = useState('')
   const [categories, setCategories] = useState<LookupItem[]>([])
   const [customers, setCustomers] = useState<LookupItem[]>([])
-  const [salesUsers, setSalesUsers] = useState<LookupItem[]>([])
+  const [salesUsers, setSalesUsers] = useState<PickerUser[]>([])
   const [data, setData] = useState<PivotPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -89,8 +90,8 @@ export default function PivotView({ range, isEn }: { range: DateRange; isEn: boo
     apiGet<Array<{ id: string; name: string }>>('/api/customers?slim=1')
       .then((rows) => setCustomers(rows.map((c) => ({ id: c.id, name: c.name }))))
       .catch((e) => toast.error(e.message))
-    apiGet<Array<{ id: string; name: string }>>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
-      .then((rows) => setSalesUsers(rows.map((u) => ({ id: u.id, name: u.name }))))
+    apiGet<PickerUser[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
+      .then((rows) => setSalesUsers(rows.map((u) => ({ id: u.id, name: u.name, isActive: u.isActive }))))
       .catch((e) => toast.error(e.message))
   }, [])
 
@@ -198,7 +199,7 @@ export default function PivotView({ range, isEn }: { range: DateRange; isEn: boo
         />
         <SearchableDropdown
           className="w-40"
-          options={[{ value: '', label: isEn ? 'All Salespeople' : '全部业务员' }, ...salesUsers.map((u) => ({ value: u.id, label: u.name }))]}
+          options={[{ value: '', label: isEn ? 'All Salespeople' : '全部业务员' }, ...userPickerOptions(salesUsers, salesUserId, isEn, { includeInactive: true })]}
           value={salesUserId}
           onChange={setSalesUserId}
           placeholder={isEn ? 'All Salespeople' : '全部业务员'}

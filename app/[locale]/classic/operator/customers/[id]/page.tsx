@@ -17,6 +17,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { getSession } from '@/lib/session'
 import { readCustomerNavList } from '@/lib/customer-nav-list'
+import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
 // Sage Account 是会计对账字段，纯销售（未兼任 OPERATOR/BOSS）不可见——与后端
 // app/api/customers/[id]/route.ts 的 isSalesOnly 同一套判断口径（服务端已经不会把
@@ -240,7 +241,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   useEffect(() => {
     setSpQuery(products.find(p => p.id === editingSP.productId)?.name ?? '')
   }, [editingSP.productId, products])
-  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
+  const [salesUsers, setSalesUsers] = useState<PickerUser[]>([])
   const [driverSlots, setDriverSlots] = useState<{ id: string; driverName: string; timeOfDay: string; batchNum: number }[]>([])
   const [activeTab, setActiveTab] = useState<Tab>('contacts')
   const [saving, setSaving] = useState(false)
@@ -263,8 +264,8 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       .then(d => setPricelists(d.filter(p => p.active)))
       .catch(() => {})
 
-    apiGet<{ id: string; name: string; email: string; roles: string[] }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
-      .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email }))))
+    apiGet<(PickerUser & { roles: string[] })[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
+      .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email || u.id, isActive: u.isActive }))))
       .catch(() => {})
 
     apiGet<{ id: string; driverName: string; timeOfDay: string; batchNum: number }[]>('/api/driver-slots')
@@ -870,7 +871,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                 </OdooField>
                 <OdooField label="Salesperson">
                   <SearchableDropdown
-                    options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
+                    options={[{ value: '', label: '— none —' }, ...userPickerOptions(salesUsers, form.salesperson, isEn)]}
                     value={form.salesperson}
                     onChange={v => setField('salesperson', v)}
                     disabled={!isEditing}

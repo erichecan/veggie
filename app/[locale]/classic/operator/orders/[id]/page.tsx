@@ -31,6 +31,7 @@ import { applyGiftToggle, stripGiftSnapshot, type GiftPriceSnapshot } from '@/li
 import { getSession, type UserSession } from '@/lib/session'
 import CustomerPickerInline from '@/components/orders/customer-picker-inline'
 import { overrideCustomerPricing, repriceLinesForCustomer } from '@/lib/order-customer-switch'
+import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
 const PURPLE = '#875A7B'
 
@@ -137,8 +138,8 @@ export default function SalesOrderDetailPage() {
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
   const [deliveryDate, setDeliveryDate] = useState('')
   const [salesUserId, setSalesUserId] = useState('')
-  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
-  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').then(setSalesUsers).catch(() => {}) }, [])
+  const [salesUsers, setSalesUsers] = useState<PickerUser[]>([])
+  useEffect(() => { apiGet<PickerUser[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').then(setSalesUsers).catch(() => {}) }, [])
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
   const [pricelistId, setPricelistId] = useState('')
@@ -1017,7 +1018,7 @@ export default function SalesOrderDetailPage() {
                 {editing ? (
                   <SearchableDropdown
                     className="flex-1"
-                    options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
+                    options={[{ value: '', label: '— none —' }, ...userPickerOptions(salesUsers, salesUserId, isEn)]}
                     value={salesUserId}
                     onChange={setSalesUserId}
                   />

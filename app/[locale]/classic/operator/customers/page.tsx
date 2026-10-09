@@ -20,6 +20,7 @@ import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 import { writeCustomerNavList } from '@/lib/customer-nav-list'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import { deleteCustomersFlow, DELETE_PERMISSION_HINT } from '@/components/customers/delete-customers'
+import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
 const PAGE_SIZE = 20
 
@@ -118,7 +119,7 @@ export default function ClassicCustomersPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(saved?.columnFilters ?? {})
   // Last Updated by 下拉选项：去重历史值，同商品页 /api/products/filter-options 的模式
   const [updatedByOptions, setUpdatedByOptions] = useState<string[]>([])
-  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
+  const [salesUsers, setSalesUsers] = useState<PickerUser[]>([])
 
   // OdooTable 列 key → 后端 cfm_* 参数名（primaryPricelistId 是前端派生列，落地时映射回真实字段名）
   const CFM_PARAM_NAME: Record<string, string> = { primaryPricelistId: 'cfm_pricelistId', priceType: 'cfm_priceType' }
@@ -196,8 +197,8 @@ export default function ClassicCustomersPage() {
     // 而不是真实名字。筛选器下拉(filterOptions)另外单独过滤出 active 的，归档的不需要出现在那
     apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<{ updatedBy: string[] }>('/api/customers/filter-options').then(d => setUpdatedByOptions(d.updatedBy ?? [])).catch(() => {})
-    apiGet<{ id: string; name: string; email: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
-      .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email }))))
+    apiGet<PickerUser[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
+      .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email || u.id, isActive: u.isActive }))))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -356,7 +357,7 @@ export default function ClassicCustomersPage() {
       sortable: true,
       editable: true,
       editType: 'search-select',
-      editOptions: [{ value: '', label: '' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))],
+      editOptions: [{ value: '', label: '' }, ...userPickerOptions(salesUsers, null, isEn)],
       render: (_v, row) => row.salesman ? String(row.salesman) : <span className="text-gray-400">—</span>,
     },
     {

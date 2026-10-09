@@ -31,6 +31,7 @@ import CustomerPickerInline from '@/components/orders/customer-picker-inline'
 import { overrideCustomerPricing, repriceLinesForCustomer } from '@/lib/order-customer-switch'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -99,8 +100,8 @@ export default function QuotationDetailPage() {
   const [externalNote, setExternalNote] = useState('')
   const [noteTab, setNoteTab] = useState<'internal' | 'external'>('internal')
   const [salesUserId, setSalesUserId] = useState('')
-  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
-  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').then(setSalesUsers).catch(() => {}) }, [])
+  const [salesUsers, setSalesUsers] = useState<PickerUser[]>([])
+  useEffect(() => { apiGet<PickerUser[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES').then(setSalesUsers).catch(() => {}) }, [])
   const [deliveryDate, setDeliveryDate] = useState('')
   const [deliveryBatch, setDeliveryBatch] = useState('')
   const [driverSlotId, setDriverSlotId] = useState('')
@@ -892,7 +893,7 @@ export default function QuotationDetailPage() {
                 {editing ? (
                   <SearchableDropdown
                     className="flex-1"
-                    options={[{ value: '', label: '— none —' }, ...salesUsers.map(u => ({ value: u.id, label: u.name }))]}
+                    options={[{ value: '', label: '— none —' }, ...userPickerOptions(salesUsers, salesUserId, isEn)]}
                     value={salesUserId}
                     onChange={setSalesUserId}
                   />
