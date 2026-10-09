@@ -628,14 +628,24 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                 {pl.active ? 'Active' : 'Archived'}
               </button>
             ) : (
-              <span
+              <button
+                onClick={() => {
+                  const confirmMsg = pl.active
+                    ? (isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)
+                    : (isEn ? `Restore pricelist "${pl.name}" to active?` : `确认恢复价格表「${pl.name}」为启用状态？`)
+                  if (confirm(confirmMsg)) handleSave({ active: !pl.active })
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm font-medium"
                 style={pl.active
                   ? { borderColor: '#00a09d', color: '#00a09d', background: '#f0fafa' }
                   : { borderColor: '#adb5bd', color: '#6c757d', background: '#f8f9fa' }}
               >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <rect x="2" y="3" width="20" height="14" rx="2" strokeWidth={1.5} />
+                  <path d="M8 21h8M12 17v4" strokeWidth={1.5} strokeLinecap="round" />
+                </svg>
                 {pl.active ? 'Active' : 'Archived'}
-              </span>
+              </button>
             )}
           </div>
 

@@ -8,6 +8,7 @@ import { apiGet, apiPut } from '@/lib/api'
 import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import { applyFacets, groupFacets, localizeFacetFields, CUSTOMER_FACET_FIELDS, type Facet } from '@/lib/list-filters'
 import { Pagination } from '@/components/ui/pagination'
+import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
@@ -190,7 +191,10 @@ export default function ClassicCustomersPage() {
   // 变化重拉的 effect 都跳过首次挂载，否则会用 page=1 把刚恢复的页码冲掉。
   useEffect(() => {
     loadPage(page, searchInput, paymentFilter, includeArchived, pageSize, isVendorOnly)
-    apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d.filter(pl => pl.active) : [])).catch(() => {})
+    // 20261008 修复：这里不能只存 active 的——客户挂靠的价格表一旦被归档，
+    // 名字映射(pricelistMap)就会查不到，列表里显示成 pl_35 这种内部 id(Odoo 迁移遗留格式)
+    // 而不是真实名字。筛选器下拉(filterOptions)另外单独过滤出 active 的，归档的不需要出现在那
+    apiGet<OdooPricelist[]>('/api/pricelists').then(d => setPricelists(Array.isArray(d) ? d : [])).catch(() => {})
     apiGet<{ updatedBy: string[] }>('/api/customers/filter-options').then(d => setUpdatedByOptions(d.updatedBy ?? [])).catch(() => {})
     apiGet<{ id: string; name: string; email: string }[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
       .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email }))))
@@ -322,6 +326,7 @@ export default function ClassicCustomersPage() {
   }
 
   const pricelistMap = new Map(pricelists.map(p => [p.id, p.name]))
+  const activePricelists = pricelists.filter(p => p.active)
 
   const columns: OdooColumn[] = [
     { key: 'customerNo', label: isEn ? 'Customer No' : '客户编号', sortable: true },
@@ -375,13 +380,36 @@ export default function ClassicCustomersPage() {
       editType: 'search-select',
       editOptions: [{ value: '', label: '' }, ...pricelists.map(p => ({ value: p.id, label: p.name }))],
       filterType: 'multi-select',
-      filterOptions: pricelists.map(p => ({ value: p.id, label: p.name })),
+      filterOptions: activePricelists.map(p => ({ value: p.id, label: p.name })),
       filterLabelGetter: (v) => pricelistMap.get(v) ?? v,
       render: (_v, row) => {
         const links = (row.pricelists as { pricelistId: string }[] | undefined) ?? []
         if (links.length === 0) return <span className="text-gray-400">—</span>
         const primaryName = pricelistMap.get(links[0].pricelistId) ?? links[0].pricelistId
-        return links.length > 1 ? `${primaryName} (+${links.length - 1})` : primaryName
+        const label = links.length > 1 ? `${primaryName} (+${links.length - 1})` : primaryName
+        return (
+          <Popover>
+            <PopoverTrigger
+              className="underline decoration-dotted underline-offset-2 hover:text-[#00a09d]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {label}
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72" onClick={(e) => e.stopPropagation()}>
+              <PopoverHeader>
+                <PopoverTitle>{isEn ? 'Applied Pricelists' : '挂靠的价格表'}</PopoverTitle>
+              </PopoverHeader>
+              <ul className="flex flex-col gap-1">
+                {links.map((l, i) => (
+                  <li key={l.pricelistId} className="flex items-baseline gap-1.5 text-sm">
+                    <span className="text-gray-400 w-4 shrink-0 text-right">{i + 1}.</span>
+                    <span>{pricelistMap.get(l.pricelistId) ?? l.pricelistId}</span>
+                  </li>
+                ))}
+              </ul>
+            </PopoverContent>
+          </Popover>
+        )
       },
     },
     {
