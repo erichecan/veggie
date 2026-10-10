@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { formatDateWithDay } from '@/lib/format-date'
 import { DELIVERY_BATCHES, batchPeriod } from '@/lib/delivery-batches'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 const EXCEPTION_REASONS = ['品质问题', '数量错误', '客户拒收', '配送延误', '包装破损', '其他']
@@ -275,6 +276,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   useEffect(() => { load() }, [id])
+
+  // 这页没有常驻编辑态表单（动作全是弹窗提交即落库），没有"正在编辑内容会被冲掉"
+  // 的风险，整页 load 直接整体重跑；不接 M2——没有需要防抖保存的草稿内容
+  useRefetchOnFocus([load])
 
   async function openEdit() {
     if (!trip) return

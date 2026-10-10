@@ -8,6 +8,7 @@ import ProductCategoryManager from '@/components/classic/ProductCategoryManager'
 import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { UOM_EXPORT_COLUMNS } from '@/lib/export/columns/uoms'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 
@@ -243,6 +244,10 @@ function UomSection({ isEn }: { isEn: boolean }) {
   }
 
   useEffect(() => { load() }, [])
+
+  // 计量单位/分类本来就是这页管的，但也会被别的 tab（甚至同一个设置页开两个 tab）
+  // 改，切回来希望看到最新结果；行内编辑是 blur 时才提交，不会被这里整表重拉冲掉
+  useRefetchOnFocus([load])
 
   async function createUom() {
     if (!newUomName.trim()) { toast.error(isEn ? 'Please enter a unit name' : '请输入单位名称'); return }

@@ -5,6 +5,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import FieldTip from '@/components/ui/FieldTip'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -100,6 +101,15 @@ export default function DriversPage() {
   // 归档数据在挂载时就拉一次:新增撞归档要靠它判断是否「自动复活」并提示
   useEffect(() => { load(); loadDriverUsers(); loadArchived() }, [])
   useEffect(() => { if (showArchived) loadArchived() }, [showArchived])
+
+  // 司机档位在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 但这页是整行内联编辑(editing/dirty)，有行正在编辑时跳过 load()，
+  // 避免背景刷新把正在填的内容整表冲掉
+  useRefetchOnFocus([
+    () => { if (!rows.some(r => r.editing)) load() },
+    loadDriverUsers,
+    () => { if (showArchived) loadArchived() },
+  ])
 
   function addRow() {
     setRows(prev => [

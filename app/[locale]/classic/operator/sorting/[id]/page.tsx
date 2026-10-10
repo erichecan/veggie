@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
 import { formatDateTime } from '@/lib/format-date'
 import type { PickingWave, Order, WaveStatus } from '@/lib/types'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const STATUS_LABEL_ZH: Record<WaveStatus, string> = {
   pending:  '待拣货',
@@ -88,6 +89,10 @@ export default function ClassicSortingDetailPage({
   }
 
   useEffect(() => { load() }, [id])
+
+  // 这页没有常驻编辑态表单（只有状态推进按钮），没有"正在编辑内容会被冲掉"的
+  // 风险，整页 load 直接整体重跑；不接 M2——没有需要防抖保存的草稿内容
+  useRefetchOnFocus([load])
 
   async function advance(targetStatus: 'sorting' | 'sorted') {
     if (!wave || updating) return

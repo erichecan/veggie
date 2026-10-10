@@ -16,6 +16,7 @@ import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 // ─── Status display ───────────────────────────────────────────────────────────
 
@@ -121,7 +122,10 @@ export default function ClassicTripsPage() {
   const [creating, setCreating] = useState(false)
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
-  useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
+  async function loadDriverSlots() {
+    try { setDriverSlots(await apiGet<DriverSlotInfo[]>('/api/driver-slots')) } catch { /* ignore */ }
+  }
+  useEffect(() => { loadDriverSlots() }, [])
   // 拣货单客户展开开关：勾上后本页所有行程的拣货单都按客户逐行展开；
   // 默认关——只把带备注的客户摘出来，其余合并成一行，见 trip-picking-template.ts
   const [expandNote, setExpandNote] = useState(false)
@@ -140,6 +144,9 @@ export default function ClassicTripsPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // 行程列表/司机档位在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load, loadDriverSlots])
 
   // ── Modal: open ───────────────────────────────────────────────────────────
   async function openCreate() {

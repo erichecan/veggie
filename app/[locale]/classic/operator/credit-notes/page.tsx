@@ -13,6 +13,7 @@ import { useCsvExport } from '@/hooks/use-csv-export'
 import { creditNoteExportColumns } from '@/lib/export/columns/credit-notes'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 type CnStatus = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 
@@ -92,6 +93,9 @@ export default function CreditNotesPage() {
   }, [isEn])
 
   useEffect(() => { load() }, [load])
+
+  // 信用票在别的 tab（如行程/退货页生成）改了之后，切回来希望看到最新结果
+  useRefetchOnFocus([load])
 
   const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 

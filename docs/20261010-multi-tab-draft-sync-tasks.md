@@ -58,19 +58,19 @@
       证据：tsc 对 7 个文件合并检查无输出；build exit code 0。本单执行过程中撞上 claude.ai 会话用量限额中断，`products/[id]` 当时只加了三个 hook 的 import 还没真正接线（遗留 `setCategories(cats)` 死代码引用已清理的变量导致 tsc 报错），恢复后由我本人手动核对补完 M1(useRefetchOnFocus 包 fetchReferenceData)+M2(useDraftAutosave 存 tmpl+saleUoms，enabled 绑 editMode，save/discard 都 clearDraft，banner 渲在主卡片上方)，其余 6 个文件经核对确认是完整的，不是半成品；`git status --short` 确认改动精确落在这 7 个文件（另有 DEV-PLAN.md 本身的改动 + U0 遗留的未提交文件，均不属于本次改动范围）
       依赖：U0
 
-## U4 司机/分拣/其他 operator 组（7 页，含 2 个 M2）
+## U4 司机/分拣/其他 operator 组（7 页，实际 0 个 M2，详见偏离说明）
 
-- [ ] trips/[id]（M1+M2）
-- [ ] trips/page（M1）
-- [ ] sorting/[id]（M1+M2）
-- [ ] drivers/page（M1）
-- [ ] settings/page（M1）
-- [ ] credit-notes/page（M1）
-- [ ] returns/page（M1）
-      验收命令：`npx tsc --noEmit`
-      可看物：`docs/shots/20261010-u4-*.png`
-      定性状态：待你确认
-      证据：（回填）
+- [x] trips/[id]（M1 only，见下方偏离说明）
+- [x] trips/page（M1）
+- [x] sorting/[id]（M1 only，见下方偏离说明）
+- [x] drivers/page（M1，整表刷新对正在内联编辑的行跳过）
+- [x] settings/page（M1）
+- [x] credit-notes/page（M1）
+- [x] returns/page（M1）
+      验收命令：`npx tsc --noEmit`（7 文件合并跑，无输出）+ `npm run build`（exit 0，日志 /tmp/build-u4.log 无 error）；本机沙箱无可用 Chrome/Playwright 二进制，原定的 playwright e2e 命令跑不了，改成这两条
+      可看物：本机沙箱 Chrome/Playwright 不可用，无法截图/录屏；条状提示本单未新增（下方说明无 M2），实际刷新行为只能靠你自己打开 7 个页面点一遍验证
+      定性状态：待你确认（尤其是：切 tab 回来行程/分拣/司机/设置/信用票/退货列表有没有真的刷新；drivers/page 正在内联编辑一行时切走回来会不会被刷新打断）
+      证据：tsc 对 7 个文件合并检查无输出；build exit code 0；`git status --short` 确认本次改动精确落在这 7 个文件，无误带改动。偏离说明：trips/[id] 和 sorting/[id] 读代码确认后，整页都是只读详情+状态推进按钮/弹窗即时提交，没有常驻编辑态表单（trips/[id] 的编辑是弹窗打开即改即保存，不是"停留编辑一段时间"的页面级状态），没有需要防抖保存的草稿内容，所以只接了 M1（整页 load 直接重跑），未接 M2——跟 U2 的 purchases/vendors/[id]（M2 only，无 M1）是同一类"按实际代码形状而非按清单机械套用"的偏离，方向相反；drivers/page 是整表内联编辑(editing/dirty 字段)，M1 包的 load() 加了 `!rows.some(r => r.editing)` 判断，避免背景刷新把正在编辑的那一行冲掉
       依赖：U0
 
 ## U5 库存组（5 页，无 M2）

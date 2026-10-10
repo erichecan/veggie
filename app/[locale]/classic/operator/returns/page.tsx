@@ -13,6 +13,7 @@ import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { round2 } from '@/lib/decimal-helpers'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -619,6 +620,9 @@ export default function ClassicReturnsPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // 行程/退货数据在别的 tab 改了之后，切回来希望看到最新结果
+  useRefetchOnFocus([load])
 
   const allRows = flatten(trips)
 
