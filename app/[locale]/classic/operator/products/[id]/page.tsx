@@ -150,8 +150,9 @@ export default function ClassicProductDetailPage() {
     internalRef: '',
     listPrice: 0,
     standardPrice: 0,
-    customerTaxRate: 0.23,
-    type: 'consu',
+    customerTaxRate: 0,
+    vendorTaxRate: 0,
+    type: 'product',
     canBeSold: true,
     canBePurchased: true,
     isPackaging: false,
@@ -767,7 +768,7 @@ export default function ClassicProductDetailPage() {
                   </Row>
                 )}
                 <Row label="Internal Reference">
-                  <input value={tmpl.internalRef ?? ''} onChange={e => setField('internalRef', e.target.value || undefined)} className={fieldClass} style={{ ...focusStyle, color: '#875A7B' }} />
+                  <input value={tmpl.internalRef ?? ''} onChange={e => setField('internalRef', e.target.value)} className={fieldClass} style={{ ...focusStyle, color: '#875A7B' }} />
                 </Row>
                 <Row label="Product Type">
                   <select value={tmpl.type} onChange={e => setField('type', e.target.value as ProductTemplate['type'])} className={fieldClass} style={focusStyle}>
