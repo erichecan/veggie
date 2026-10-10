@@ -115,6 +115,28 @@
 
 ## U8 收尾
 
-- [ ] 全量 `npm run build` + verify.sh 新增段落跑通
-- [ ] DEV-REPORT.md 出报告（给你看的 + 存档用的两栏）
+- [x] `/security-review`：1 条 Medium（草稿退出登录后仍留在 localStorage，换人登录同浏览器可在 devtools 读到客户/供应商等敏感字段）→ 已修：新增 `clearDraftsForUser()` + `lib/session.ts` 的 `logout()` 接入 + 补单测，`tests/use-draft-autosave.test.ts` 9/9 通过
+- [x] `/code-review high`：10 条发现逐条处理，详见下方清单，全部 fixed 或写明不改理由
+- [x] 全量 `npx tsc --noEmit` + `npm run build` + `npm run test` 跑通（项目没有 `scripts/verify.sh` 这个文件，本仓库历史上一直用 tsc+build+test 三件套当验收标准，U1-U7 每单都是这么验收的，不在本单新造一个）
+      验收命令：见下方「最终验证」
+- [x] DEV-REPORT.md 出报告（给你看的 + 存档用的两栏）
       依赖：U0-U7 全部完成
+
+### 大改完成前置检查（CLAUDE.md 第十一节）结果清单
+
+1. **[fixed]** `lib/hooks/use-draft-autosave.ts`：防抖写入定时器触发时不检查 `pendingDraft` 是否还没被用户处理，会在用户看到"可恢复草稿"提示条之前，被当前（可能是刚挂载的空白表单）内容悄悄覆盖。已加 `pendingDraftRef` 判断，为 null 才真正写入。
+2. **[fixed]** `app/[locale]/classic/operator/purchases/vendors/[id]/page.tsx`：`useDraftAutosave` 没有等 `loading` 变量落地就启用，编辑已有供应商时会把 `loading===true` 期间的空白占位表单写进这个供应商 id 的草稿，冲掉之前真正保存的内容。已加 `enabled: !loading`。
+3. **[fixed]** `app/[locale]/classic/operator/products/[id]/page.tsx`：`fetchReferenceData()` 为下拉过滤掉 Length/Time 类计量单位后，`load()` 把这份过滤后的列表也当成查"商品自己绑定的基础单位"的数据源——若商品自己的单位恰好属于这两类，`uomName` 会显示空白（经 `git show` U3 原始 diff 核实：改动前 `load()` 用的是未过滤的原始列表，这确实是本次重构引入的回归，不是原有问题）。已改为 `fetchReferenceData()` 同时返回过滤后/未过滤两份列表，查自己单位用未过滤的那份。
+4. **[fixed]** `app/[locale]/classic/operator/trips/[id]/page.tsx`：编辑弹窗打开时 `editRestaurants` 是 `trip.restaurants` 的快照，`load()` 不会同步它；弹窗开着时背景刷新把 `trip` 换新，保存时仍用旧快照覆盖，可能把其间别的 tab 对同一行程的改动顶掉。已加 `if (!showEdit) load()` 判断。
+5. **[fixed]** `app/[locale]/classic/operator/purchases/annual-plan/page.tsx`：`load()` 每次都无条件全选，背景刷新会悄悄撤销操作员提交批量前刻意做的取消勾选。已改为仅首次加载全选，之后的刷新只同步掉已经不在列表里的行。
+6. **[fixed]** `app/[locale]/classic/operator/purchases/suggestions/page.tsx`：`load()` 每次都无条件清空 `selectedIds`，背景刷新会清空正在进行的批量勾选。已把"清空选择"从 `load()` 里拆出来，改成只在 `activeTab`/`page` 真正变化时才清空。
+7. **[fixed]** `app/[locale]/classic/restaurant/page.tsx`：商品加载成功的回调无条件 `setPage(1)`，背景刷新会把顾客翻到的页码弹回第一页。已改为只在首次加载时归 1。
+8. **[fixed]** `app/[locale]/classic/operator/quotations/[id]/page.tsx` 与 `orders/[id]/page.tsx`：草稿 `entity` 字段分别写死 `'quotation'`/`'order'`，而报价单确认后会变成同一条 id 的订单、改到 `/orders/[id]` 继续编辑——两边字段结构完全一致，却因为 entity 名不同导致确认前开始写的草稿在确认后永久找不到。已把 `quotations/[id]` 的 entity 统一改成 `'order'`（与底层记录类型对应，不是与路由对应）。
+9. **[fixed]** `app/[locale]/classic/operator/orders/page.tsx` 与 `quotations/page.tsx`：`useServerList` 本身已经自带 focus/visibilitychange 监听会调用 `fetchPage`，这次又把它的 `refresh` 包进新增的 `useRefetchOnFocus`，导致切回 tab 时同一份列表请求打两次。已从这两个页面的 `useRefetchOnFocus` 数组里去掉 `refresh`，只保留它没覆盖到的其它参考数据（司机档期候选/客户行程候选）。
+10. **[not fixed，已知债务]** `app/[locale]/classic/operator/place-order/page.tsx`（2293 行）、`pricelists/[id]/page.tsx`（1819 行）：CLAUDE.md 第八节"页面文件不超 150 行"，这两个文件在本次改动前就已经超限 10 倍以上，本次只是在已有结构上接线，没有让问题变得更严重；真正拆分是独立的大改，不在本任务范围内，留作已知技术债。
+
+### 最终验证（全部修复后重跑）
+
+- `npx tsc --noEmit`：无输出
+- `npm run build`：exit 0，`/tmp/build-final.log` 无 error
+- `npm run test`：961 条，951 通过，8 条失败——7 条是 role-reachability/rbac-gate 既有基线问题（`/api/auth/register` 匿名可达等，U0 验收时已记录，与本任务改动无关），1 条 `pricing-override.test.ts` 的"不传覆盖时使用客户档案默认价格表"失败原因是本机开发库里没有测试要用的 "ABCT" 客户数据（环境/种子数据问题，单独跑该文件复现同样的前置断言失败，跟本任务任何改动都无关）；跟改动前的基线（950/960，8 条同类失败）对比，净增的那 1 条 pass 是本次新加的 `clearDraftsForUser` 单测，没有引入新的失败

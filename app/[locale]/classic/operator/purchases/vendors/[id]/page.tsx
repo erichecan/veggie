@@ -137,6 +137,9 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
     userId: session?.userId,
     entity: 'vendor',
     recordKey: isNew ? draftId : id,
+    // loading 为真时 form 还是 emptyForm() 占位；编辑已有供应商时不等 apiGet 回来就启用，
+    // 会在短暂窗口内把这份空白表单写进真实供应商 id 的草稿，冲掉之前真正保存的内容
+    enabled: !loading,
     data: form,
   })
   function restoreDraft() {

@@ -151,7 +151,6 @@ export default function PurchaseSuggestionsPage() {
       const data = await apiGet<{ items: Suggestion[]; total: number }>(`/api/purchase-suggestions?${params}`)
       setItems(data.items ?? [])
       setTotal(data.total ?? 0)
-      setSelectedIds(new Set())
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {
@@ -160,6 +159,10 @@ export default function PurchaseSuggestionsPage() {
   }, [activeTab, page, isEn])
 
   useEffect(() => { load() }, [load])
+
+  // 切 tab/翻页时上一批的勾选已经不对应当前列表，清空；跟 load() 本身解绑是因为
+  // load 现在也被下面的焦点刷新复用，不能让"切回这个 tab"也触发同样的清空
+  useEffect(() => { setSelectedIds(new Set()) }, [activeTab, page])
 
   // 切去别的 tab 改了库存/需求/供应商数据后，切回来时刷新建议列表 + 供应商下拉（节流 30s）
   useRefetchOnFocus([load, fetchSuppliers])

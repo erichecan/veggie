@@ -226,7 +226,10 @@ export default function QuotationDetailPage() {
   }
   const draft = useDraftAutosave<OrderDraft>({
     userId: session?.userId,
-    entity: 'quotation',
+    // 报价单确认后会变成同一条 id 的订单、在 /orders/[id] 继续打开编辑——两边字段
+    // 结构完全一致，entity 统一用 'order' 这样草稿才跟着记录走，不会因为状态变化
+    // 换了路由就找不到（之前各用各的 entity 名，确认后再开会变成永久孤儿草稿）
+    entity: 'order',
     recordKey: order?.id ?? id,
     enabled: editing,
     data: { editLines, internalNote, externalNote, deliveryDate, deliveryBatch, driverSlotId, pricelistId, priceType, paymentTerm, salesUserId, restaurantId },

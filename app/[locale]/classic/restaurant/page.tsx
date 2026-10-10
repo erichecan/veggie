@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -47,6 +47,8 @@ export default function ClassicRestaurantPage() {
   const [payOpen, setPayOpen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('online')
   const [submitting, setSubmitting] = useState(false)
+  // 只有第一次加载才把页码归 1；背景刷新（切 tab 回来）不该把顾客翻到的那一页弹回首页
+  const hasLoadedOnceRef = useRef(false)
 
   function load() {
     const user = getSession()
@@ -59,7 +61,10 @@ export default function ClassicRestaurantPage() {
     }
     // sellable=1：不可售商品不出现在餐馆下单选品里(同内部下单页)
     apiGet<Product[]>('/api/products?slim=1&sellable=1')
-      .then(ps => { setProducts(ps.filter(p => (p.status as string).toLowerCase() === 'active')); setPage(1) })
+      .then(ps => {
+        setProducts(ps.filter(p => (p.status as string).toLowerCase() === 'active'))
+        if (!hasLoadedOnceRef.current) { setPage(1); hasLoadedOnceRef.current = true }
+      })
       .catch(() => {})
     apiGet<OdooPricelist[]>('/api/pricelists')
       .then(setAllPricelists)

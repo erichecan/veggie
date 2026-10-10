@@ -362,9 +362,10 @@ export default function ClassicQuotationsPage() {
 
   useEffect(() => { loadRefData() }, [])
 
-  // 列表本身(refresh)+客户/行程候选(loadRefData)，别的 tab 改了相关数据后，切回本页能看到
-  // 最新数据，不用手动刷新页面（共享 hook，见 lib/hooks/use-refetch-on-focus.ts）。
-  useRefetchOnFocus([refresh, loadRefData])
+  // 列表本身的焦点刷新 useServerList 内部已经自带(见 hooks/use-server-list.ts 的
+  // focus/visibilitychange 监听)，这里不重复接 refresh，否则每次切回 tab 会触发
+  // 两次同样的列表请求；只补客户/行程候选这一项它没有覆盖到的参考数据。
+  useRefetchOnFocus([loadRefData])
 
   // 开票状态只查当前这一页的订单。以前是 `/api/invoices?slim=1` 全表扫 148,285 张
   // （3.2 MB / 3.7 秒），而 invoicedIds 的唯一用途是给当前页打「待开票」标记。

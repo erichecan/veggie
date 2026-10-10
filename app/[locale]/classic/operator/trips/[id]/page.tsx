@@ -277,9 +277,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => { load() }, [id])
 
-  // 这页没有常驻编辑态表单（动作全是弹窗提交即落库），没有"正在编辑内容会被冲掉"
-  // 的风险，整页 load 直接整体重跑；不接 M2——没有需要防抖保存的草稿内容
-  useRefetchOnFocus([load])
+  // 编辑弹窗打开时 editRestaurants 是 trip.restaurants 的快照，load() 会重新 setTrip
+  // 但不会同步更新这份快照——弹窗开着时背景刷新把 trip 换新，保存时仍会拿着这份旧快照
+  // 覆盖掉期间别的 tab 对这趟行程做的改动，是丢更新风险；弹窗开着时跳过刷新
+  useRefetchOnFocus([() => { if (!showEdit) load() }])
 
   async function openEdit() {
     if (!trip) return

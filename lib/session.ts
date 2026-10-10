@@ -3,6 +3,7 @@
  * 读取登录后存储在 localStorage 的 JWT 用户信息
  * 替代原来的 StoreAPI.getRole() / StoreAPI.setRole()
  */
+import { clearDraftsForUser } from './hooks/use-draft-autosave'
 
 export interface UserSession {
   userId: string
@@ -40,6 +41,10 @@ export function getSession(): UserSession | null {
  */
 export function logout(): void {
   if (typeof window === 'undefined') return
+  // 退出前先把这个用户名下的未保存草稿扫掉——否则同一浏览器换人登录后，
+  // 草稿仍能在 devtools/localStorage 里读到客户/供应商等敏感字段，直到 3 天过期
+  const current = getSession()
+  if (current) clearDraftsForUser(localStorage, current.userId)
   localStorage.removeItem('veggie_user')
   localStorage.removeItem('veggie_token')
   localStorage.removeItem('veggie_demo_store')

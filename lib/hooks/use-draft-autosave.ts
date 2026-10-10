@@ -70,6 +70,22 @@ export function clearDraft(storage: StorageLike, key: string): void {
   storage.removeItem(key)
 }
 
+export interface EnumerableStorageLike extends StorageLike {
+  readonly length: number
+  key(index: number): string | null
+}
+
+/** 退出登录时调用：扫掉这个用户名下所有未保存草稿，不留到下次换人登录同一浏览器后仍可在 devtools 里读到 */
+export function clearDraftsForUser(storage: EnumerableStorageLike, userId: string): void {
+  const prefix = `${DRAFT_KEY_PREFIX}:${userId}:`
+  const keysToRemove: string[] = []
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i)
+    if (k && k.startsWith(prefix)) keysToRemove.push(k)
+  }
+  keysToRemove.forEach(k => storage.removeItem(k))
+}
+
 interface UseDraftAutosaveOptions<T> {
   /** 没登录用户 id 时不启用（无法安全隔离，整个 hook 直接跳过） */
   userId: string | null | undefined
@@ -106,6 +122,10 @@ export function useDraftAutosave<T>(options: UseDraftAutosaveOptions<T>): UseDra
   const key = userId && enabled ? draftStorageKey(userId, entity, recordKey) : null
   const [pendingDraft, setPendingDraft] = useState<T | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 定时器实际触发时才读这个值判断——不放进下面 effect 的依赖数组，否则用户在
+  // restore/discard 之前的每次按键都会被当成"已有决定"重新判断一次，意义不大
+  const pendingDraftRef = useRef<T | null>(null)
+  useEffect(() => { pendingDraftRef.current = pendingDraft }, [pendingDraft])
 
   // 挂载时（或 key 变化，如新建页第一次拿到草稿 id）读一次旧草稿
   useEffect(() => {
@@ -123,6 +143,10 @@ export function useDraftAutosave<T>(options: UseDraftAutosaveOptions<T>): UseDra
     if (!key || typeof window === 'undefined') return
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
+      // 旧草稿的恢复/丢弃提示条还没被用户处理时，不能用当前内容(可能是刚挂载、
+      // 还没来得及恢复的空白表单)覆盖它——否则提示条显示的那份"可恢复"的草稿,
+      // 会在用户点"恢复"之前就被这个防抖写入悄悄冲掉
+      if (pendingDraftRef.current !== null) return
       writeDraft(window.localStorage, key, data, Date.now())
     }, debounceMs)
     return () => {

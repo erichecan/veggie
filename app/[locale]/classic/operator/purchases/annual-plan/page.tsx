@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
@@ -43,6 +43,10 @@ export default function AnnualPlanPage() {
   const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [receipts, setReceipts] = useState<ReceiptEvent[]>([])
+  // 只有第一次加载默认全选；之后（包括切 tab 回来的背景刷新）只同步掉已经不在
+  // 列表里的行，不重新勾上用户已经手动取消的行——否则背景刷新会悄悄撤销操作员
+  // 提交批量前刻意做的取消勾选
+  const hasLoadedOnceRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -50,7 +54,13 @@ export default function AnnualPlanPage() {
       const data = await apiGet<{ items: PlanRow[] }>('/api/purchase-suggestions?status=pending&categoryGroupKey=DRY_GOODS&pageSize=200')
       const items = data.items ?? (data as unknown as PlanRow[])
       setRows(items)
-      setSelected(new Set(items.map(r => r.id)))
+      const ids = new Set(items.map(r => r.id))
+      if (!hasLoadedOnceRef.current) {
+        setSelected(ids)
+        hasLoadedOnceRef.current = true
+      } else {
+        setSelected(prev => new Set(Array.from(prev).filter(id => ids.has(id))))
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败'))
     } finally {

@@ -219,12 +219,15 @@ export default function ClassicProductDetailPage() {
     const filteredUoms = uomList.filter(u => !HIDDEN_CATEGORIES.includes(u.category?.name ?? ''))
     setUoms(filteredUoms)
     setCategories(cats)
-    return filteredUoms
+    // 下拉可选单位要过滤掉 Length/Time；但商品自己已经绑定的基础单位不受这条限制
+    // （历史数据里本来就可能是这两类），查自己的单位名字要用没过滤的全量表，否则
+    // 命中 Length/Time 的商品 uomName 会显示空白。
+    return { filteredUoms, allUoms: uomList }
   }
 
   async function load() {
     try {
-      const [found, uomList, orders] = await Promise.all([
+      const [found, { allUoms: uomList }, orders] = await Promise.all([
         isNew ? Promise.resolve(null) : apiGet<ProductTemplate>(`/api/products/${id}`),
         fetchReferenceData(),
         apiGet<Order[]>('/api/orders?include_lines=false'),
@@ -282,13 +285,10 @@ export default function ClassicProductDetailPage() {
     userId: session?.userId,
     entity: 'product',
     recordKey: isNew ? draftId : id,
-    enabled: editMode,
-    data: tmpl ? { tmpl, saleUoms } : { tmpl: {
-      id: 'new', name: '', internalRef: '', listPrice: 0, standardPrice: 0,
-      customerTaxRate: 0.23, type: 'consu', canBeSold: true, canBePurchased: true,
-      isPackaging: false, canBeExpensed: false, images: [], status: 'active',
-      createdAt: new Date().toISOString(), sequence: 0, commissionPrice: 0, weight: 0,
-    }, saleUoms: [] },
+    // tmpl 在编辑已有商品时初始为 null（等 load() 回来才有值）；不等它加载好就启用，
+    // 会在短暂窗口内把一份空白"新建商品"模板存进这个真实商品 id 的草稿里，把真内容冲掉
+    enabled: editMode && !!tmpl,
+    data: { tmpl: tmpl as ProductTemplate, saleUoms },
   })
   function restoreDraft() {
     const d = draft.restore()

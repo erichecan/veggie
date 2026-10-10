@@ -225,7 +225,7 @@ export default function NewPurchaseOrderPage() {
   }
   const draft = useDraftAutosave<NewPurchaseOrderDraft>({
     userId: session?.userId,
-    entity: 'purchase-order-new',
+    entity: 'purchase-order',
     recordKey: draftId,
     data: { supplierId, orderDate, expectedDate, notes, lines, currency, exchangeRate, freightAmount },
   })

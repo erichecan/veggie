@@ -208,9 +208,10 @@ export default function ClassicOrdersPage() {
     refresh,
   } = useServerList<Record<string, unknown>>({ url: baseUrl, pageSize: PAGE_SIZE })
 
-  // 列表本身(refresh)+筛选用的司机档期候选，别的 tab 改了订单/司机配置后，切回本页能看到最新数据，
-  // 不用手动刷新页面（共享 hook，见 lib/hooks/use-refetch-on-focus.ts）。
-  useRefetchOnFocus([refresh, fetchDriverSlots])
+  // 列表本身的焦点刷新 useServerList 内部已经自带(见 hooks/use-server-list.ts 的
+  // focus/visibilitychange 监听)，这里不重复接 refresh，否则每次切回 tab 会触发
+  // 两次同样的列表请求；只补筛选用的司机档期候选这一项它没有覆盖到的参考数据。
+  useRefetchOnFocus([fetchDriverSlots])
 
   const orders = useMemo(() =>
     rawOrders.map(o => ({
