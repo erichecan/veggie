@@ -8,6 +8,7 @@ import { apiGet, apiPost, apiUpload } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 const REMIND_AFTER_DAYS = 7
@@ -116,12 +117,17 @@ export default function CatalogPickingPage() {
       .catch(() => {})
   }, [])
 
-  useEffect(() => { loadLastByGroup() }, [loadLastByGroup])
-  useEffect(() => {
-    apiGet<{ items: Supplier[] }>('/api/customers?isVendor=true&limit=200')
+  const fetchSuppliers = useCallback(() => {
+    return apiGet<{ items: Supplier[] }>('/api/customers?isVendor=true&limit=200')
       .then(d => setSuppliers(d.items ?? (d as unknown as Supplier[])))
       .catch(() => {})
   }, [])
+
+  useEffect(() => { loadLastByGroup() }, [loadLastByGroup])
+  useEffect(() => { fetchSuppliers() }, [fetchSuppliers])
+
+  // 切去别的 tab 改了供应商/采购数据后，切回来时刷新上次下单日期 + 供应商下拉（节流 30s）
+  useRefetchOnFocus([loadLastByGroup, fetchSuppliers])
 
   function switchGroup(g: GroupKey) {
     setActiveGroup(g)

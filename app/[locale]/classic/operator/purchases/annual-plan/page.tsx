@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 
@@ -57,12 +58,17 @@ export default function AnnualPlanPage() {
     }
   }, [isEn])
 
-  useEffect(() => { load() }, [load])
-  useEffect(() => {
-    apiGet<ReceiptEvent[]>('/api/purchase-orders/receipts-by-group?groupKey=DRY_GOODS&months=12')
+  const fetchReceipts = useCallback(() => {
+    return apiGet<ReceiptEvent[]>('/api/purchase-orders/receipts-by-group?groupKey=DRY_GOODS&months=12')
       .then(setReceipts)
       .catch(() => {})
   }, [])
+
+  useEffect(() => { load() }, [load])
+  useEffect(() => { fetchReceipts() }, [fetchReceipts])
+
+  // 切去别的 tab 改了采购建议/到货数据后，切回来时刷新计划行 + 到货记录（节流 30s）
+  useRefetchOnFocus([load, fetchReceipts])
 
   async function handleGenerate() {
     setGenerating(true)

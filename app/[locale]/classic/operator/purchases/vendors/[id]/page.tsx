@@ -13,12 +13,15 @@
  * "UI 分离"再造一整套后端，本来就是同一个实体的两个不同字段子集。
  */
 import { useState, useEffect, use } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import { PURCHASE_TAX_RATES } from '@/lib/purchase/tax-rates'
+import { getSession, type UserSession } from '@/lib/session'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 import type { Customer } from '@/lib/types'
 
 const PURPLE = '#875A7B'
@@ -96,9 +99,25 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
   const isNew = id === 'new'
 
   const router = useRouter()
+  const searchParams = useSearchParams()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const isEn = locale !== routing.defaultLocale
+
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
+
+  // 新建页没有真实 id（路由参数固定是 'new'），草稿要靠一个稳定 key 跨刷新认出
+  // "是不是同一次没填完的单"——第一次渲染生成一个写进 URL 查询串，刷新页面时从 URL 读回。
+  const [draftId] = useState(() => searchParams.get('draftId') || `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  useEffect(() => {
+    if (!isNew) return
+    if (searchParams.get('draftId') === draftId) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.set('draftId', draftId)
+    router.replace(`?${next.toString()}`, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [form, setForm] = useState<FormState>(emptyForm())
   const [vendorNo, setVendorNo] = useState<number | null>(null)
@@ -107,6 +126,23 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
 
   function setField<K extends keyof FormState>(key: K, val: FormState[K]) {
     setForm(f => ({ ...f, [key]: val }))
+  }
+
+  // 整张表单本来就是"打开即编辑"没有独立查看态；这里只做表单字段的草稿防抖，
+  // 不接 useRefetchOnFocus——这张页面唯一的 apiGet 就是正在编辑的这条供应商记录本身，
+  // 跟 orders/[id] 的做法一致：参考数据(商品/价格表)才自动刷新，被编辑的记录本身不自动
+  // 刷新覆盖，否则会在用户没保存时把表单内容冲掉。
+  type VendorDraft = FormState
+  const draft = useDraftAutosave<VendorDraft>({
+    userId: session?.userId,
+    entity: 'vendor',
+    recordKey: isNew ? draftId : id,
+    data: form,
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setForm(d)
   }
 
   useEffect(() => {
@@ -167,11 +203,13 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
           isCustomer: false,
         })
         toast.success(isEn ? 'Vendor created' : '供应商已创建')
+        draft.clearDraft()
         router.replace(`${prefix}/classic/operator/purchases/vendors/${created.id}`)
       } else {
         // 编辑时不提交 isVendor/isCustomer，绝不改动这条记录的身份标记
         await apiPut(`/api/customers/${id}`, { ...fields, isActive: form.isActive })
         toast.success(isEn ? 'Saved successfully' : '保存成功')
+        draft.clearDraft()
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -226,6 +264,9 @@ export default function VendorDetailPage({ params }: { params: Promise<{ id: str
       </div>
 
       <div className="p-6">
+        {draft.pendingDraft && (
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
+        )}
         <div className="bg-white rounded border border-gray-200 shadow-sm p-6 max-w-2xl">
           <div className="grid grid-cols-2 gap-x-10">
             <div>

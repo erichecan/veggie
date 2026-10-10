@@ -15,6 +15,10 @@ import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { getSession, type UserSession } from '@/lib/session'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 
 async function openPurchaseOrderPdf(poId: string, isEn: boolean) {
   // JWT 存在 localStorage，直接 window.open API 路由不会带 Authorization 头会 401，
@@ -226,6 +230,9 @@ export default function PurchaseDetailPage() {
   const isEn = locale !== routing.defaultLocale
   const params = useParams<{ id: string }>()
   const id = params.id
+
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
 
   const [po, setPo] = useState<PurchaseOrder | null>(null)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -442,12 +449,40 @@ export default function PurchaseDetailPage() {
     }
   }
 
-  useEffect(() => { load() }, [id])
-  useEffect(() => {
-    apiGet<{ items: Supplier[] }>('/api/customers?isVendor=true&limit=200')
+  const fetchSuppliers = useCallback(() => {
+    return apiGet<{ items: Supplier[] }>('/api/customers?isVendor=true&limit=200')
       .then(d => setSuppliers(d.items ?? (d as unknown as Supplier[])))
       .catch(() => {})
   }, [])
+
+  useEffect(() => { load() }, [id])
+  useEffect(() => { fetchSuppliers() }, [fetchSuppliers])
+
+  // 商品/供应商在别的 tab 改了数据后，希望回到这个已打开的页面时能看到最新数据；
+  // 被编辑的采购单本身（load）不进这个刷新集合，避免冲掉正在编辑的内容，跟
+  // orders/[id] 的做法一致（见 lib/hooks/use-refetch-on-focus.ts）。
+  useRefetchOnFocus([loadPurchaseProducts, fetchSuppliers])
+
+  // 编辑态内容防抖存本地：切去别的 tab 被上面的 hook 自动刷新参考数据时，
+  // 不至于把正在填的内容也冲掉——保存成功/放弃编辑后清掉，不是永久草稿。
+  type PurchaseOrderDraft = {
+    editNotes: string; editExpectedDate: string; editSupplierId: string; editLines: POLine[]
+  }
+  const draft = useDraftAutosave<PurchaseOrderDraft>({
+    userId: session?.userId,
+    entity: 'purchase-order',
+    recordKey: po?.id ?? id,
+    enabled: editing,
+    data: { editNotes, editExpectedDate, editSupplierId, editLines },
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setEditNotes(d.editNotes)
+    setEditExpectedDate(d.editExpectedDate)
+    setEditSupplierId(d.editSupplierId)
+    setEditLines(d.editLines)
+  }
 
   function startEdit() {
     if (!po) return
@@ -462,6 +497,7 @@ export default function PurchaseDetailPage() {
   function discardEdit() {
     setEditing(false)
     setEditLines([])
+    draft.clearDraft()
   }
 
   function updateLine(idx: number, field: 'orderedQty' | 'unitCost' | 'taxRate', value: number) {
@@ -502,6 +538,7 @@ export default function PurchaseDetailPage() {
       setPo(updated)
       setEditing(false)
       setEditLines([])
+      draft.clearDraft()
       toast.success(isEn ? 'Saved successfully' : '保存成功')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -854,6 +891,9 @@ export default function PurchaseDetailPage() {
 
       {/* ── Main form card ───────────────────────────────── */}
       <div className="flex-1 p-6 overflow-auto">
+        {editing && draft.pendingDraft && (
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
+        )}
         {latestBill && (
           <div
             className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded text-sm"

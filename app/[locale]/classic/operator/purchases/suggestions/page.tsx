@@ -8,6 +8,7 @@ import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { formatDateTime } from '@/lib/format-date'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 interface Suggestion {
   id: string
@@ -128,15 +129,17 @@ export default function PurchaseSuggestionsPage() {
   const [batchConvertItems, setBatchConvertItems] = useState<Suggestion[]>([])
   const [batchConverting, setBatchConverting] = useState(false)
 
-  // Load suppliers once
-  useEffect(() => {
-    apiGet<{ items?: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
+  const fetchSuppliers = useCallback(() => {
+    return apiGet<{ items?: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
       .then(data => {
         const list = Array.isArray(data) ? data : (data.items ?? [])
         setSuppliers(list)
       })
       .catch(() => {})
   }, [])
+
+  // Load suppliers once
+  useEffect(() => { fetchSuppliers() }, [fetchSuppliers])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -157,6 +160,9 @@ export default function PurchaseSuggestionsPage() {
   }, [activeTab, page, isEn])
 
   useEffect(() => { load() }, [load])
+
+  // 切去别的 tab 改了库存/需求/供应商数据后，切回来时刷新建议列表 + 供应商下拉（节流 30s）
+  useRefetchOnFocus([load, fetchSuppliers])
 
   // Focus input when editing starts
   useEffect(() => {

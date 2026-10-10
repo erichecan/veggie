@@ -28,6 +28,7 @@ import { useCsvExport } from '@/hooks/use-csv-export'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import { deleteCustomersFlow, DELETE_PERMISSION_HINT } from '@/components/customers/delete-customers'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 // 供应商与客户同表，编号就是同一个 customerNo 序列(20261007)；导出时表头换成「供应商编号」
 const VENDOR_EXPORT_COLUMNS = CUSTOMER_EXPORT_COLUMNS.map(c => c.key === 'customerNo' ? { ...c, header: '供应商编号', headerEn: 'Vendor No' } : c)
@@ -104,6 +105,9 @@ export default function VendorsPage() {
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
+
+  // 切去别的 tab 改了供应商数据后，切回来时刷新当前这一页（节流 30s）
+  useRefetchOnFocus([() => loadPage(page, searchInput, includeArchived)])
 
   function openNew() {
     // 客户/供应商字段彻底分离(20260907)：不再复用 customers/[id] 那张表单，

@@ -1,11 +1,15 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { TrendingUp } from 'lucide-react'
 import { apiGet, apiPost } from '@/lib/api'
+import { getSession, type UserSession } from '@/lib/session'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import { lineDescription } from '@/lib/order-line-description'
@@ -113,9 +117,24 @@ function today() {
 
 export default function NewPurchaseOrderPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const isEn = locale !== routing.defaultLocale
+
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
+
+  // 新建页没有 id，草稿要靠一个稳定 key 跨刷新认出"是不是同一次没填完的单"——
+  // 第一次渲染生成一个写进 URL 查询串，刷新页面时从 URL 读回同一个 key（同 place-order 页）。
+  const [draftId] = useState(() => searchParams.get('draftId') || `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  useEffect(() => {
+    if (searchParams.get('draftId') === draftId) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.set('draftId', draftId)
+    router.replace(`?${next.toString()}`, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [supplierId, setSupplierId] = useState('')
@@ -169,16 +188,60 @@ export default function NewPurchaseOrderPage() {
     [],
   )
 
-  useEffect(() => {
-    apiGet<{ items: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
+  const fetchSuppliers = useCallback(() => {
+    return apiGet<{ items: Supplier[] } | Supplier[]>('/api/customers?isVendor=true&limit=200')
       .then(d => setSuppliers(Array.isArray(d) ? d : (d.items ?? [])))
       .catch(() => {})
-    // status=ACTIVE：已归档商品不该出现在采购单选品里，与下单/报价页同一套过滤（客户 20260904
-    // 反馈：销售单那边归档商品已经不出现了，采购单这边漏加了这个参数，归档商品照样能被搜出来）
-    apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1&status=ACTIVE').then(setPurchaseProducts).catch(() => {})
-    apiGet<Category[]>('/api/product-categories').then(setCategories).catch(() => {})
-    apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
   }, [])
+  // status=ACTIVE：已归档商品不该出现在采购单选品里，与下单/报价页同一套过滤（客户 20260904
+  // 反馈：销售单那边归档商品已经不出现了，采购单这边漏加了这个参数，归档商品照样能被搜出来）
+  const fetchPurchaseProducts = useCallback(() => {
+    return apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1&status=ACTIVE').then(setPurchaseProducts).catch(() => {})
+  }, [])
+  const fetchCategories = useCallback(() => {
+    return apiGet<Category[]>('/api/product-categories').then(setCategories).catch(() => {})
+  }, [])
+  const fetchUoms = useCallback(() => {
+    return apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetchSuppliers()
+    fetchPurchaseProducts()
+    fetchCategories()
+    fetchUoms()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 商品/供应商/分类在别的 tab 改了数据后，希望回到这个已打开的新建页时能看到最新数据
+  // （共享 hook，见 lib/hooks/use-refetch-on-focus.ts，同 orders/[id]、place-order 的做法）。
+  useRefetchOnFocus([fetchPurchaseProducts, fetchSuppliers, fetchCategories, fetchUoms])
+
+  // 新建页防抖存草稿：切去别的 tab 改参考数据被上面的 hook 自动刷新回来时，不至于把
+  // 正在填的新单内容冲掉；提交成功后清掉，不是永久草稿。
+  type NewPurchaseOrderDraft = {
+    supplierId: string; orderDate: string; expectedDate: string; notes: string; lines: DraftLine[]
+    currency: string; exchangeRate: number; freightAmount: number
+  }
+  const draft = useDraftAutosave<NewPurchaseOrderDraft>({
+    userId: session?.userId,
+    entity: 'purchase-order-new',
+    recordKey: draftId,
+    data: { supplierId, orderDate, expectedDate, notes, lines, currency, exchangeRate, freightAmount },
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setSupplierId(d.supplierId)
+    setOrderDate(d.orderDate)
+    setExpectedDate(d.expectedDate)
+    setNotes(d.notes)
+    setLines(d.lines)
+    setCurrency(d.currency)
+    setExchangeRate(d.exchangeRate)
+    setRateManuallyEdited(true)
+    setFreightAmount(d.freightAmount)
+  }
 
   const filteredSuppliers = useMemo(
     () => rankByRelevance(suppliers, supSearch, s => s.name),
@@ -558,6 +621,7 @@ export default function NewPurchaseOrderPage() {
         })),
       })
       toast.success(isEn ? 'Purchase order created' : '采购单已创建')
+      draft.clearDraft()
       router.push(`${prefix}/classic/operator/purchases/${result.id}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败'))
@@ -617,6 +681,9 @@ export default function NewPurchaseOrderPage() {
 
       {/* ── Main form card ───────────────────────────────── */}
       <div className="flex-1 p-6 overflow-auto">
+        {draft.pendingDraft && (
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
+        )}
         <div className="bg-white rounded border border-gray-200 shadow-sm">
           {/* Form header */}
           <div className="px-6 pt-5 pb-4">

@@ -12,6 +12,7 @@ import { parseCsv, downloadCsv } from '@/lib/csv-export'
 import { purchaseOrderExportColumns } from '@/lib/export/columns/purchase-orders'
 import { isValidPurchaseTaxRate, PURCHASE_TAX_RATES } from '@/lib/purchase/tax-rates'
 import { applyFacets, groupFacets, localizeFacetFields, PURCHASE_FACET_FIELDS, type Facet } from '@/lib/list-filters'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import ProcurementOverviewPage from './overview/page'
 import FreshDailySuggestionsPage from './fresh/page'
 import CatalogPickingPage from './catalog/page'
@@ -237,6 +238,9 @@ export default function PurchasesPage() {
   })
 
   useEffect(() => { load() }, [load])
+
+  // 切去别的 tab 改了采购单/供应商数据后，切回来时自动刷新列表（节流 30s，见 lib/hooks/use-refetch-on-focus.ts）
+  useRefetchOnFocus([load])
 
   // ── CSV import helpers ────────────────────────────────────────────────────
 

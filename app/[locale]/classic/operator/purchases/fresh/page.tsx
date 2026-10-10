@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { eur } from '@/lib/format-money'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 
@@ -59,6 +60,9 @@ export default function FreshDailySuggestionsPage() {
   }, [isEn])
 
   useEffect(() => { load() }, [load])
+
+  // 切去别的 tab 改了库存/订单数据后，切回来时刷新备货建议（节流 30s）
+  useRefetchOnFocus([load])
 
   async function handleGenerate() {
     setGenerating(true)

@@ -28,19 +28,19 @@
 
 ## U2 采购组（9 页，含 3 个 M2）
 
-- [ ] purchases/[id]（M1+M2）
-- [ ] purchases/new（M1+M2）
-- [ ] purchases/page（M1）
-- [ ] purchases/suggestions（M1）
-- [ ] purchases/vendors/[id]（M1+M2）
-- [ ] purchases/vendors/page（M1）
-- [ ] purchases/catalog（M1）
-- [ ] purchases/annual-plan（M1）
-- [ ] purchases/fresh（M1）
-      验收命令：`npx tsc --noEmit && npx playwright test e2e/multi-tab-draft-sync.spec.ts -g "purchases"`
-      可看物：`docs/shots/20261010-u2-*.png`
-      定性状态：待你确认
-      证据：（回填）
+- [x] purchases/[id]（M1+M2）
+- [x] purchases/new（M1+M2）
+- [x] purchases/page（M1）
+- [x] purchases/suggestions（M1）
+- [x] purchases/vendors/[id]（M2 only，见下方说明）
+- [x] purchases/vendors/page（M1）
+- [x] purchases/catalog（M1）
+- [x] purchases/annual-plan（M1）
+- [x] purchases/fresh（M1）
+      验收命令：`npx tsc --noEmit`（9 文件合并跑，无输出）+ `npm run build`（exit 0，日志 /tmp/build-u2.log 无 error）；本机沙箱无可用 Chrome/Playwright 二进制，原定的 playwright e2e 命令跑不了，改成这两条
+      可看物：本机沙箱 Chrome/Playwright 不可用，无法截图/录屏；条状提示复用 U0 已确认的 `DraftRestoreBanner`（同一个组件，没有新样式），实际刷新/草稿行为只能靠你自己打开 9 个页面点一遍验证
+      定性状态：待你确认（尤其是：切 tab 回来采购单/建议列表/供应商列表有没有真的刷新；编辑到一半切走回来有没有弹出草稿恢复条；新建采购单/新建供应商刷新页面后草稿还找得到）
+      证据：tsc 对 9 个文件合并检查无输出；build exit code 0；`git status --short` 确认本次改动精确落在这 9 个文件（另有 DEV-PLAN.md 本身的改动 + U0 遗留的未提交文件，均不属于本次改动范围）。偏离说明：purchases/vendors/[id] 整张表单本来就是"打开即编辑"无独立查看态，且唯一的 apiGet 是正在编辑的供应商记录本身（没有另外的参考数据列表可刷），强行接 useRefetchOnFocus 会在用户编辑中途被刷新覆盖表单——故只接了 M2（草稿自动保存+新建走 draftId-in-URL），未接 M1，详见该文件内注释
       依赖：U0
 
 ## U3 价格表/商品/客户组（7 页，含 3 个 M2）
