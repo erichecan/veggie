@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -151,6 +152,9 @@ export default function DiscrepanciesPage() {
   }, [statusFilter, isEn])
 
   useEffect(() => { load() }, [load])
+
+  // 缺货/差异记录在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   // Search orders for report dialog
   async function searchOrders() {

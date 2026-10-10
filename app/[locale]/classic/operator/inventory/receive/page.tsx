@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { formatDateOnly } from '@/lib/format-date'
 import { arrivalDelay, describeArrivalDelay, describeArrivalDelayEn } from '@/lib/receipt-linkage'
 import {
@@ -208,6 +209,11 @@ function ReceivePageInner() {
       .catch(() => {})
     apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
   }, [])
+
+  // 待收货采购单 / 收货历史在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 只刷列表/历史不碰 selectedPo/drafts，不会冲掉正在填的收货表单
+  useRefetchOnFocus([loadList])
+  useRefetchOnFocus([loadHistory], { enabled: viewMode === 'history' })
 
   const uomMap = useMemo(() => new Map(uoms.map(u => [u.id, u.name])), [uoms])
   const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s.name])), [suppliers])

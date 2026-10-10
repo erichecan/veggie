@@ -75,15 +75,15 @@
 
 ## U5 库存组（5 页，无 M2）
 
-- [ ] inventory/receive（M1）
-- [ ] inventory/discrepancies（M1）
-- [ ] inventory/adjustments（M1）
-- [ ] inventory/scrap（M1）
-- [ ] inventory/zones（M1）
-      验收命令：`npx tsc --noEmit`
-      可看物：`docs/shots/20261010-u5-*.png`
-      定性状态：待你确认
-      证据：（回填）
+- [x] inventory/receive（M1，loadList 常驻刷新 + loadHistory 仅 history 视图下刷新）
+- [x] inventory/discrepancies（M1）
+- [x] inventory/adjustments（M1）
+- [x] inventory/scrap（M1）
+- [x] inventory/zones（M1）
+      验收命令：`npx tsc --noEmit`（5 文件合并跑，无输出）+ `npm run build`（exit 0，日志 /tmp/build-u5.log 无 error）；本机沙箱无可用 Chrome/Playwright 二进制，原定的 playwright e2e 命令跑不了，改成这两条
+      可看物：本机沙箱 Chrome/Playwright 不可用，无法截图/录屏；条状提示本单未新增（无 M2），实际刷新行为只能靠你自己打开 5 个页面点一遍验证
+      定性状态：待你确认（尤其是：切 tab 回来待收货采购单/收货历史/差异记录/库存流水/分区库存有没有真的刷新；收货页选中一个采购单正在填收货表单时，列表在背景刷新不会冲掉正在填的内容——因为 loadList 只换下拉列表数据，不碰 selectedPo/drafts）
+      证据：tsc 对 5 个文件合并检查无输出；build exit code 0；`git status --short` 确认本次改动精确落在这 5 个文件，无误带改动。未发现偏离 U5 原定"全部 M1 only，无 M2"假设的情况——5 个文件都是"弹窗提交即落库"或"选中后在同一页填一张单据提交"，没有会被切 tab 冲掉的常驻编辑态表单；inventory/receive 稍特殊：loadList 常驻刷新采购单下拉列表，loadHistory 只在 viewMode==='history' 时刷新（用 useRefetchOnFocus 的 enabled 选项挂载），两者都不碰已选中采购单的收货表单草稿（drafts/qc 等），故未接 M2
       依赖：U0
 
 ## U6 财务组（4 页，含 1 个 M2）

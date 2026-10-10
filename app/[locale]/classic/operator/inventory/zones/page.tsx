@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPatch } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
@@ -72,6 +73,9 @@ export default function ZoneInventoryPage() {
   }, [isEn, locale])
 
   useEffect(() => { load() }, [load])
+
+  // 分区库存数据在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   async function confirmMove(m: ZoneMismatch) {
     setConfirmingId(m.productId)

@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
 import {
@@ -95,6 +96,9 @@ export default function ScrapPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // 报废记录在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   // 选择商品后，加载该商品的可用批次
   useEffect(() => {

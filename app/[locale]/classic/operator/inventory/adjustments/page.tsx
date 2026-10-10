@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { rankByRelevance } from '@/lib/search-rank'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 
@@ -109,6 +110,9 @@ export default function InventoryAdjustmentsPage() {
   }, [isEn])
 
   useEffect(() => { load() }, [load])
+
+  // 库存流水在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
