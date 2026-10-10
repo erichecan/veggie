@@ -1386,6 +1386,8 @@ model PurchaseOrder {
   /// 用于识别/预填本单的供应商 PDF 原件
   sourceDocumentUrl    String?
   sourceDocumentName   String?
+  /// 供应商订单参考号
+  vendorReference      String?
   /// 备注
   notes                String?
   createdBy            String?

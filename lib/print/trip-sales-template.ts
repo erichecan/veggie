@@ -33,23 +33,11 @@ import {
 } from './trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { giftMoneyCell } from './gift-mark'
-import { docBadge } from './doc-badge'
+import { DOCUMENT_HEADER_CSS, documentHeader, documentHeaderOverheadMm, paymentDetails } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
 import { displayUomName } from '@/lib/sale-uom'
 import type { PrintLang } from '@/lib/print/print-i18n'
-import { paymentTermPrintLabel } from '@/lib/payment-terms'
-
-const T = {
-  zh: {
-    customerNote: '客户备注',
-    orderNote: '订单备注',
-  },
-  en: {
-    customerNote: 'Customer Note',
-    orderNote: 'Order Note',
-  },
-} as const
 
 function buildSalesOrderHtml(
   order: TripOrder,
@@ -58,7 +46,6 @@ function buildSalesOrderHtml(
   lang: PrintLang,
   opts: { pageBreakAfter?: boolean } = {},
 ): string {
-  const t = T[lang]
   // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
   // 与拣货单堆叠顺序一致，客户拿着单子跟仓库出货顺序对得上。见 lib/print/line-sort.ts
   const lines = sortLinesByUomSequence<TripLine>(order.lines ?? [])
@@ -91,13 +78,6 @@ function buildSalesOrderHtml(
   const totalVat = Object.values(vatGroups).reduce((s, g) => s + g.vat, 0)
   const total = subtotal + totalVat
 
-  const paymentTerm = customer?.paymentTerm ?? ''
-  // 20260920：原来只认 cash/weekly/monthly，COD(生产库 37 家) 等一律印成空白；
-  // 现在统一走 paymentTermPrintLabel，未知值也原样印出，货到付款同样红色高亮
-  const { label: paymentLabel, immediate: isImmediatePayment } = paymentTermPrintLabel(paymentTerm, lang)
-  const paymentColor = isImmediatePayment ? '#dc2626' : '#15803d'
-  const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
-  const paymentBorder = isImmediatePayment ? '#ef4444' : '#16a34a'
 
   // 20260914 客户要求：可售单位与基础单位的换算关系提示、毛重都不再打印在这类客户单据上
   function renderLineRow(l: TripLine, i: number): string {
@@ -127,16 +107,7 @@ function buildSalesOrderHtml(
     </tr>`).join('')
 
   const headerBlockHtml = `
-  <div class="header">
-    <div>
-      ${docBadge('salesOrder')}
-      <div class="company-name" style="margin-top:2mm;">JohnstoneBros</div>
-    </div>
-    <div class="company-addr">
-      141 Slaney Close<br/>
-      Dublin 11, D11 C3NX
-    </div>
-  </div>
+  ${documentHeader('salesOrder')}
 
   <table class="info-table">
     <tr>
@@ -145,7 +116,6 @@ function buildSalesOrderHtml(
         <div class="info-val">
           <strong>${escapeHtml(order.customerName)}</strong><br/>
           ${customerAddr ? escapeHtml(customerAddr) + '<br/>' : ''}
-          ${driverLabel ? '<strong>Driver:</strong> ' + escapeHtml(driverLabel) : ''}
         </div>
       </td>
       <td class="barcode-cell">
@@ -157,12 +127,13 @@ function buildSalesOrderHtml(
         <div class="info-head">Delivery</div>
         <div class="info-val">
           ${deliveryDate}<br/>
+          ${driverLabel ? '<strong>Driver:</strong> ' + escapeHtml(driverLabel) : ''}
         </div>
       </td>
       <td>
         <div class="info-head">Payment</div>
         <div class="info-val">
-          ${paymentLabel ? `<div style="font-weight:bold;color:${paymentColor};font-size:9.5pt;">${escapeHtml(paymentLabel)}</div>` : '<div style="color:#999;">—</div>'}
+          ${paymentDetails(customer?.paymentTerm, [customer?.externalNote, order.externalNote], lang)}
         </div>
       </td>
     </tr>
@@ -183,26 +154,12 @@ function buildSalesOrderHtml(
     </table>
   </div>
 
-  ${paymentLabel ? `<div style="margin-bottom:6mm;padding:8px 14px;border-radius:6px;border:2px solid ${paymentBorder};background:${paymentBg};display:inline-block;">
-    <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">PAYMENT: ${escapeHtml(paymentLabel)}</span>
-  </div>` : ''}
+`
 
-  ${customer?.externalNote ? `<div class="note-box">
-    <div class="note-head">${t.customerNote}</div>
-    <div class="note-body">${escapeHtml(customer.externalNote)}</div>
-  </div>` : ''}
-  ${order.externalNote ? `<div class="note-box">
-    <div class="note-head">${t.orderNote}</div>
-    <div class="note-body">${escapeHtml(order.externalNote)}</div>
-  </div>` : ''}`
-
-  // Totals/Payment/备注只画在最后一块，但那块要放的东西比其它块多得多(实测 25 行长订单
-  // 会撑到 301mm，溢出成 2 张物理纸)——分块时必须把这块「额外内容」也当成预留高度算进去，
-  // 不然最后一块自己就会溢出单页，页脚跟着错位到下一张纸,失去"一页一页脚"的准确性。
-  // 预留按常见情况估(1个税率档+付款徽章)，宁可多分一页也不能真溢出。
-  const LAST_CHUNK_EXTRA_MM = 63
+  // 只有最后一页放合计，按税率档数给 VAT 小计留空间。
+  const LAST_CHUNK_EXTRA_MM = 35 + Object.keys(vatGroups).length * 5
   // LAST_CHUNK_EXTRA_MM 只压最后一页，不该让每一页都为它让地方（见 chunkOrderLinesForPrint）
-  const chunks = chunkOrderLinesForPrint(lines, undefined, LAST_CHUNK_EXTRA_MM)
+  const chunks = chunkOrderLinesForPrint(lines, undefined, LAST_CHUNK_EXTRA_MM, documentHeaderOverheadMm([customer?.externalNote, order.externalNote]))
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1
@@ -338,7 +295,8 @@ export function generateTripSalesHtml(data: TripPrintData, lang: PrintLang = 'zh
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Sales Orders</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
-<style>${CSS}</style>
+<style>${CSS}${DOCUMENT_HEADER_CSS}
+</style>
 </head>
 <body>
 ${noticeHtml}

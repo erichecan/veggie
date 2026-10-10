@@ -947,8 +947,8 @@ export default function ClassicProductDetailPage() {
                 baseCommissionPrice={tmpl.commissionPrice ?? null}
                 editMode={editMode}
                 isEn={isEn}
-                onSave={isNew ? undefined : saveSaleUoms}
-                saving={saleUomsSaving}
+                onSave={isNew ? handleSave : saveSaleUoms}
+                saving={isNew ? saving : saleUomsSaving}
               />
             </Section>
           )}

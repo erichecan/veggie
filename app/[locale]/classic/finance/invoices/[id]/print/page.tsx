@@ -6,37 +6,16 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { barcodeValue } from '@/lib/barcode'
-import type { Invoice } from '@/lib/types'
+import { DOCUMENT_HEADER_CSS, documentHeader, paymentDetails } from '@/lib/print/document-header'
+import type { Customer, Invoice } from '@/lib/types'
 import { formatDateOnly } from '@/lib/format-date'
 import { toInvoiceLineViews, isOrderBasedInvoice, formatMoney } from '@/lib/invoice-lines-view'
 import { GiftAmount } from '@/components/shared/gift-amount'
 
 const PURPLE = '#875A7B'
-
-const TERM_LABEL_ZH: Record<Invoice['paymentTerms'], string> = {
-  cash: '现付',
-  weekly: '周结',
-  monthly: '月结',
-}
-
-const TERM_LABEL_EN: Record<Invoice['paymentTerms'], string> = {
-  cash: 'Cash',
-  weekly: 'Weekly terms',
-  monthly: 'Monthly terms',
-}
-
-const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
-  draft: '草稿',
-  posted: '已确认',
-  paid: '已付款',
-  cancelled: '已取消',
-}
-
-const STATUS_LABEL_EN: Record<Invoice['status'], string> = {
-  draft: 'Draft',
-  posted: 'Posted',
-  paid: 'Paid',
-  cancelled: 'Cancelled',
+const STATUS_LABELS = {
+  en: { draft: 'Draft', posted: 'Posted', paid: 'Paid', cancelled: 'Cancelled' },
+  zh: { draft: '草稿', posted: '已确认', paid: '已付款', cancelled: '已取消' },
 }
 
 export default function InvoicePrintPage() {
@@ -45,9 +24,8 @@ export default function InvoicePrintPage() {
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const isEn = locale !== routing.defaultLocale
-  const TERM_LABEL = isEn ? TERM_LABEL_EN : TERM_LABEL_ZH
-  const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const [inv, setInv] = useState<Invoice | null>(null)
+  const [customer, setCustomer] = useState<Customer | null>(null)
   const [loaded, setLoaded] = useState(false)
   const barcodeRef = useRef<SVGSVGElement>(null)
 
@@ -61,7 +39,12 @@ export default function InvoicePrintPage() {
 
   useEffect(() => {
     apiGet<Invoice>(`/api/invoices/${params.id}`)
-      .then(found => setInv(found ? { ...found, status: (found.status?.toLowerCase() as Invoice['status']) ?? found.status } : null))
+      .then(async found => {
+        setInv(found ? { ...found, status: (found.status?.toLowerCase() as Invoice['status']) ?? found.status } : null)
+        if (found?.customerId) {
+          try { setCustomer(await apiGet<Customer>(`/api/customers/${found.customerId}`)) } catch { setCustomer(null) }
+        }
+      })
       .catch(() => setInv(null))
       .finally(() => setLoaded(true))
   }, [params.id])
@@ -107,6 +90,8 @@ export default function InvoicePrintPage() {
         /* 每页边距交给 @page：容器自己的 padding-bottom 只在整份文档末尾生效，
            middle page 会一直排到纸边（同 lib/order-pdf.ts 踩过的坑） */
         @page { size: A4; margin: 12mm 10mm; }
+        ${DOCUMENT_HEADER_CSS}
+        #invoice-print .info-table td { border:1px solid #bbb; width:25%; vertical-align:top; }
       `}</style>
 
       {/* 工具栏（不打印） */}
@@ -128,46 +113,15 @@ export default function InvoicePrintPage() {
 
       {/* 发票主体 */}
       <div id="invoice-print" className="max-w-3xl mx-auto bg-white p-10 my-6 text-gray-800">
-        {/* 抬头 */}
-        <div className="flex items-start justify-between border-b-2 pb-5 mb-6" style={{ borderColor: PURPLE }}>
-          <div>
-            <h1 className="text-2xl font-bold" style={{ color: PURPLE }}>{isEn ? 'Veggie Supply Chain' : 'Veggie 蔬菜供应链'}</h1>
-            <p className="text-xs text-gray-500 mt-1">Fresh Vegetable Supply Chain</p>
-          </div>
-          <div className="text-right">
-            <p className="text-xl font-bold text-gray-900">{isEn ? 'INVOICE' : '发票 INVOICE'}</p>
-            <p className="text-sm font-mono text-gray-600 mt-1">{inv.name}</p>
-            <div className="flex justify-end mt-1">
-              <svg ref={barcodeRef} style={{ maxWidth: 140, display: 'block' }} />
-            </div>
-            <span className="inline-block mt-2 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-              {STATUS_LABEL[inv.status]}
-            </span>
-          </div>
-        </div>
-
-        {/* 客户 + 日期 */}
-        <div className="grid grid-cols-2 gap-6 mb-8 text-sm">
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{isEn ? 'BILL TO' : '致客户 BILL TO'}</p>
-            <p className="font-semibold text-gray-900 text-base">{inv.customerName}</p>
-            <p className="text-gray-500 mt-1">{isEn ? 'Payment terms: ' : '结款方式：'}{TERM_LABEL[inv.paymentTerms]}</p>
-          </div>
-          <div className="text-right space-y-1">
-            <div className="flex justify-end gap-3">
-              <span className="text-gray-400">{isEn ? 'Invoice date' : '开票日期'}</span>
-              <span className="text-gray-800 w-28">{formatDateOnly(inv.createdAt)}</span>
-            </div>
-            <div className="flex justify-end gap-3">
-              <span className="text-gray-400">{isEn ? 'Due date' : '到期日'}</span>
-              <span className="font-medium text-gray-900 w-28">{formatDateOnly(inv.dueDate)}</span>
-            </div>
-            <div className="flex justify-end gap-3">
-              <span className="text-gray-400">{isEn ? 'Related orders' : '关联订单'}</span>
-              <span className="text-gray-600 w-28">{inv.saleOrderIds.length}{isEn ? '' : ' 个'}</span>
-            </div>
-          </div>
-        </div>
+        <div dangerouslySetInnerHTML={{ __html: documentHeader('invoice') }} />
+        <table className="info-table w-full border-collapse">
+          <tbody><tr>
+            <td><div className="info-head">{isEn ? 'Customer' : '客户'}</div><div className="info-val">{inv.customerName}<br/><span className="text-gray-500">{STATUS_LABELS[isEn ? 'en' : 'zh'][inv.status]}</span></div></td>
+            <td className="barcode-cell"><div className="info-head">{isEn ? 'Invoice No.' : '发票号'}</div><svg ref={barcodeRef} /><div className="barcode-code">{inv.name}</div></td>
+            <td><div className="info-head">{isEn ? 'Dates' : '日期'}</div><div className="info-val">{formatDateOnly(inv.createdAt)}<br/>{isEn ? 'Due: ' : '到期：'}{formatDateOnly(inv.dueDate)}<br/>{isEn ? 'Related orders: ' : '关联订单：'}{inv.saleOrderIds.length}</div></td>
+            <td><div className="info-head">{isEn ? 'Payment' : '付款方式'}</div><div className="info-val" dangerouslySetInnerHTML={{ __html: paymentDetails(inv.paymentTerms ?? customer?.paymentTerm, [customer?.externalNote], isEn ? 'en' : 'zh') }} /></td>
+          </tr></tbody>
+        </table>
 
         {/* 明细表：两种行结构共用一套视图模型，见 lib/invoice-lines-view.ts */}
         <table className="w-full text-xs mb-4">

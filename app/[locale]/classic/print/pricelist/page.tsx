@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
-import { docBadge } from '@/lib/print/doc-badge'
+import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
@@ -166,15 +166,7 @@ function buildPricelistHtml(pricelists: EnrichedPricelist[], lang: PrintLang = '
   }).join('')
 
   return `
-<div class="page-header">
-  <div class="company-name">JohnstoneBros</div>
-  <div class="company-addr">
-    JohnstoneBros Ltd<br/>
-    141 Slaney Close<br/>
-    Dublin 11, D11 C3NX
-  </div>
-</div>
-<hr class="header-rule"/>
+${documentHeader('pricelist')}
 
 <div class="content">
   ${sectionsHtml}
@@ -347,11 +339,11 @@ function PricelistPrintInner() {
 <head>
 <meta charset="UTF-8"/>
 <title>${title}</title>
-<style>${CSS}</style>
+<style>${CSS}
+${DOCUMENT_HEADER_CSS}</style>
 </head>
 <body>
 <div class="page-wrap">
-<div style="margin-bottom:4mm;">${docBadge('pricelist')}</div>
 ${body}
 </div>
 <script>

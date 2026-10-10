@@ -4,6 +4,9 @@
  */
 
 export type DocKind =
+  | 'quotation'
+  | 'purchaseOrder'
+  | 'rfq'
   | 'picking'        // 拣货单
   | 'delivery'       // 送货单
   | 'deliverySummary'// 送货汇总单
@@ -15,6 +18,9 @@ export type DocKind =
   | 'pricelist'      // 价格表
 
 const SPEC: Record<DocKind, { zh: string; en: string; color: string }> = {
+  quotation: { zh: '报价单', en: 'QUOTATION', color: '#875A7B' },
+  purchaseOrder: { zh: '采购订单', en: 'PURCHASE ORDER', color: '#875A7B' },
+  rfq: { zh: '采购询价单', en: 'REQUEST FOR QUOTATION', color: '#875A7B' },
   picking:         { zh: '拣货单',       en: 'PICKING LIST',      color: '#ea580c' },
   delivery:        { zh: '送货单',       en: 'DELIVERY NOTE',     color: '#2563eb' },
   deliverySummary: { zh: '送货汇总单',   en: 'DELIVERY SUMMARY',  color: '#16a34a' },

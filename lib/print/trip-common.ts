@@ -270,12 +270,13 @@ export function chunkOrderLinesForPrint<T extends { spec?: string | null; note?:
   lines: T[],
   footerOverheadMm: number = PRINT_FOOTER_OVERHEAD_MM,
   lastPageExtraMm: number = 0,
+  headerOverheadMm: number = PRINT_HEADER_OVERHEAD_MM,
 ): T[][] {
   const rowHeight = (l: T) =>
     PRINT_ROW_BASE_MM + ((l.spec ? 1 : 0) + (l.note ? 1 : 0)) * PRINT_ROW_EXTRA_LINE_MM
   const heightOf = (rows: T[]) => rows.reduce((sum, l) => sum + rowHeight(l), 0)
 
-  const available = PRINT_PAGE_USABLE_MM - PRINT_HEADER_OVERHEAD_MM - footerOverheadMm
+  const available = PRINT_PAGE_USABLE_MM - headerOverheadMm - footerOverheadMm
   const chunks = chunkRowsForPrint(lines, rowHeight, available)
   if (lastPageExtraMm <= 0 || chunks.length === 0) return chunks
 

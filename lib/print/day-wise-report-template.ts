@@ -1,3 +1,4 @@
+import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header'
 /**
  * 「日报（按客户）/明细清单/商品×星期汇总」三种打印报表的 HTML 构建函数——
  * 服务端 PDF 路由（app/api/print/day-wise-report-pdf）专用，server-safe（无 'use client'）。
@@ -6,7 +7,7 @@
  * 页头/页脚改成我们自己画：页头公司名旁放「Printed: 时间戳」(替换掉原来的公司地址)，
  * 页脚由 renderHtmlToPdf() 统一加"筛选摘要 - Page X/Y"。
  */
-import { docBadge, type DocKind } from './doc-badge'
+import { type DocKind } from './doc-badge'
 import { formatPrintTimestamp } from './trip-common'
 import { eur } from '@/lib/format-money'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
@@ -76,7 +77,6 @@ export interface ReportLine {
   productSequence: number
 }
 
-const COMPANY = 'JohnstoneBros'
 const COMPANY_COLOR = '#1a3a2a'
 
 export const CSS = `
@@ -314,13 +314,13 @@ export function wrapHtml(title: string, meta: string, body: string, lang: PrintL
 <head>
 <meta charset="UTF-8"/>
 <title>${title}</title>
-<style>${CSS}</style>
+<style>${CSS}${DOCUMENT_HEADER_CSS}
+</style>
 </head>
 <body>
 <div class="page">
-  <div style="margin-bottom:3mm;">${docBadge(badgeKind)}</div>
-  <div class="header">
-    <div class="co-name">${COMPANY}</div>
+  ${documentHeader(badgeKind)}
+  <div>
     <div class="printed-at">${t.printed} ${formatPrintTimestamp()}</div>
   </div>
   <div class="report-title">${title}</div>

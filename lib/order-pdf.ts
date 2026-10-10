@@ -1,3 +1,4 @@
+import { DOCUMENT_HEADER_CSS, documentHeader, paymentDetails } from '@/lib/print/document-header'
 import { barcodeValue } from './barcode'
 import { formatDateOnly } from './format-date'
 import { eur } from './format-money'
@@ -47,17 +48,21 @@ export interface OrderDocLine {
 }
 
 export interface OrderDocInput {
+  status?: string | null
   id: string
   code?: string | null
   restaurantName: string
   quotationDate?: unknown
   deliveryDate?: unknown
+  externalNote?: string | null
   internalNote?: string | null
   lines?: OrderDocLine[] | null
   salesUser?: { name: string } | null
 }
 
 export interface OrderDocCustomer {
+  paymentTerm?: string | null
+  externalNote?: string | null
   street?: string | null
   address?: string | null
   street2?: string | null
@@ -144,7 +149,6 @@ export function renderOrderHtml(
         <td class="total-value">${eur(vat)}</td>
       </tr>`).join('')
 
-  const internalNote = order.internalNote ?? ''
   const salesman = order.salesUser?.name ?? ''
 
   return `<!DOCTYPE html>
@@ -223,24 +227,14 @@ export function renderOrderHtml(
     .page { width: auto; min-height: auto; padding: 0; }
   }
   @page { size: A4; margin: 10mm 10mm 16mm; }
+${DOCUMENT_HEADER_CSS}
 </style>
 </head>
 <body>
 <div class="page">
 
   <!-- Header -->
-  <div class="header">
-    <div>
-      <div class="company-name">JohnstoneBros</div>
-      <div class="company-sub">Wholesale Fresh Produce &amp; Grocery</div>
-    </div>
-    <div class="company-addr">
-      Unit 1, Westgate Business Park, Ballymount<br/>
-      Dublin 24, D24 X0Y0, Ireland<br/>
-      Tel: +353 1 234 5678<br/>
-      VAT: IE1234567T
-    </div>
-  </div>
+  ${documentHeader(order.status === 'QUOTATION' ? 'quotation' : 'salesOrder')}
 
   <!-- Info table -->
   <table class="info-table">
@@ -250,7 +244,6 @@ export function renderOrderHtml(
         <div class="info-val">
           <strong>${order.restaurantName}</strong><br/>
           ${customerAddr ? customerAddr + '<br/>' : ''}
-          ${deliveryBatch ? 'Driver: ' + deliveryBatch : ''}
         </div>
       </td>
       <td class="barcode-cell">
@@ -263,12 +256,13 @@ export function renderOrderHtml(
         <div class="info-val">
           ${deliveryDate}<br/>
           ${invoiceDate !== deliveryDate ? 'Invoice: ' + invoiceDate + '<br/>' : ''}
-          ${salesman ? 'Salesman: ' + salesman : ''}
+          ${salesman ? 'Salesman: ' + salesman + '<br/>' : ''}
+          ${deliveryBatch ? 'Driver: ' + deliveryBatch : ''}
         </div>
       </td>
       <td>
-        <div class="info-head">Comment</div>
-        <div class="info-val">${internalNote || '—'}</div>
+        <div class="info-head">Payment</div>
+        <div class="info-val">${paymentDetails(customer?.paymentTerm, [customer?.externalNote, order.externalNote], 'en')}</div>
       </td>
     </tr>
   </table>

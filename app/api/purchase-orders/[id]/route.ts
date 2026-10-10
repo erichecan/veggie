@@ -15,7 +15,7 @@ import { sendPurchaseOrderRfq } from '@/lib/email'
 import { handleReceiveAction } from '@/lib/purchase/receive-purchase-order'
 import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 
-const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'notes', 'expectedDate', 'editApprovalRequired']
+const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'vendorReference', 'notes', 'expectedDate', 'editApprovalRequired']
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   DRAFT:       ['SENT', 'CONFIRMED', 'CANCELLED'],
@@ -28,7 +28,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   CANCELLED:   ['DRAFT'],
 }
 
-const PO_CONFIRMED_SAFE_FIELDS = ['notes', 'expectedDate']
+const PO_CONFIRMED_SAFE_FIELDS = ['notes', 'vendorReference', 'expectedDate']
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -75,9 +75,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '只有草稿/已发送状态可编辑' }, { status: 409 })
       }
 
-      const { notes, expectedDate, supplierId, exchangeRate: exchangeRateInput, lines: linesPayload } = data
+      const { notes, vendorReference, expectedDate, supplierId, exchangeRate: exchangeRateInput, lines: linesPayload } = data
 
       const headerUpdate: Record<string, unknown> = {}
+      if (vendorReference !== undefined) headerUpdate.vendorReference = String(vendorReference ?? '').trim() || null
       if (notes !== undefined) headerUpdate.notes = notes ? String(notes) : null
       if (expectedDate !== undefined) headerUpdate.expectedDate = expectedDate ? new Date(expectedDate) : null
       if (supplierId !== undefined) headerUpdate.supplierId = String(supplierId)

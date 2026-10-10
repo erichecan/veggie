@@ -1,3 +1,4 @@
+import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header'
 /**
  * Trip 汇总单 — 批次级订单清单（一个司机一个时段送哪些订单），按客户名字母序排列
  *
@@ -174,9 +175,11 @@ export function generateTripSummaryHtml(data: TripPrintData, lang: PrintLang = '
     body { padding: 0; }
     @page { margin: 12mm 10mm; }
   }
+${DOCUMENT_HEADER_CSS}
 </style>
 </head>
 <body>
+  ${documentHeader('deliverySummary')}
   <div class="page-header">
     <div class="left">Print at: ${now}</div>
     <div class="center">${escapeHtml(t.docTitle)}</div>

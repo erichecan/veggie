@@ -102,6 +102,7 @@ interface PurchaseOrder {
   orderDate: string
   expectedDate?: string | null
   notes?: string | null
+  vendorReference?: string | null
   lockedAt?: string | null
   editApprovalRequired?: boolean
   currency: string
@@ -243,6 +244,7 @@ export default function PurchaseDetailPage() {
   const [activeTab, setActiveTab] = useState<'products' | 'other'>('products')
 
   const [editNotes, setEditNotes] = useState('')
+  const [editVendorReference, setEditVendorReference] = useState('')
   const [editExpectedDate, setEditExpectedDate] = useState('')
   const [editSupplierId, setEditSupplierId] = useState('')
   const [editLines, setEditLines] = useState<POLine[]>([])
@@ -466,19 +468,20 @@ export default function PurchaseDetailPage() {
   // 编辑态内容防抖存本地：切去别的 tab 被上面的 hook 自动刷新参考数据时，
   // 不至于把正在填的内容也冲掉——保存成功/放弃编辑后清掉，不是永久草稿。
   type PurchaseOrderDraft = {
-    editNotes: string; editExpectedDate: string; editSupplierId: string; editLines: POLine[]
+    editVendorReference?: string; editNotes: string; editExpectedDate: string; editSupplierId: string; editLines: POLine[]
   }
   const draft = useDraftAutosave<PurchaseOrderDraft>({
     userId: session?.userId,
     entity: 'purchase-order',
     recordKey: po?.id ?? id,
     enabled: editing,
-    data: { editNotes, editExpectedDate, editSupplierId, editLines },
+    data: { editVendorReference, editNotes, editExpectedDate, editSupplierId, editLines },
   })
   function restoreDraft() {
     const d = draft.restore()
     if (!d) return
     setEditNotes(d.editNotes)
+    setEditVendorReference(d.editVendorReference ?? '')
     setEditExpectedDate(d.editExpectedDate)
     setEditSupplierId(d.editSupplierId)
     setEditLines(d.editLines)
@@ -488,6 +491,7 @@ export default function PurchaseDetailPage() {
     if (!po) return
     loadPickerData()
     setEditNotes(po.notes ?? '')
+    setEditVendorReference(po.vendorReference ?? '')
     setEditExpectedDate(toInputDate(po.expectedDate))
     setEditSupplierId(po.supplierId)
     setEditLines(po.lines.map(l => ({ ...l })))
@@ -524,6 +528,7 @@ export default function PurchaseDetailPage() {
       const linesToSave = editLines.filter(l => l.productId)
       const updated = await apiPut<PurchaseOrder>(`/api/purchase-orders/${id}`, {
         notes: editNotes || null,
+        vendorReference: editVendorReference.trim() || null,
         expectedDate: editExpectedDate || null,
         supplierId: editSupplierId,
         lines: linesToSave.map(l => ({
@@ -728,7 +733,7 @@ export default function PurchaseDetailPage() {
                   {isEn ? 'Edit' : '编辑'}
                 </button>
                 <button
-                  onClick={() => { router.push(`${prefix}/classic/operator/purchases`) }}
+                  onClick={() => { router.push(`${prefix}/classic/operator/purchases/new`) }}
                   className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50"
                   style={{ borderColor: '#d0d5dd', color: DARK }}
                 >
@@ -929,9 +934,9 @@ export default function PurchaseDetailPage() {
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Vendor Reference' : '供应商参考'}</label>
                   {editing ? (
-                    <input type="text" placeholder={isEn ? "Vendor's order reference" : '供应商的订单参考号'} className={`flex-1 ${inputCls}`} />
+                    <input type="text" value={editVendorReference} onChange={e => setEditVendorReference(e.target.value)} placeholder={isEn ? "Vendor's order reference" : '供应商的订单参考号'} className={`flex-1 ${inputCls}`} />
                   ) : (
-                    <span className="text-sm text-gray-400">—</span>
+                    <span className="text-sm text-gray-700">{po.vendorReference || '—'}</span>
                   )}
                 </div>
                 <div className="flex items-center min-h-[32px]">

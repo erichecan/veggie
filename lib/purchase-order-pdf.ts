@@ -1,3 +1,5 @@
+import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header'
+import { escapeHtml } from '@/lib/print/trip-common'
 /**
  * 采购单 → HTML 渲染（纯函数，无 I/O）
  * ============================================================================
@@ -30,6 +32,7 @@ export interface PurchaseOrderPdfData {
   createdAt: unknown
   expectedDate: unknown
   notes?: string | null
+  vendorReference?: string | null
   subtotalExTax: unknown
   totalTax: unknown
   totalIncTax: unknown
@@ -128,21 +131,14 @@ export function renderPurchaseOrderHtml(
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page { padding: 8mm 10mm 18mm; }
   }
+${DOCUMENT_HEADER_CSS}
 </style>
 </head>
 <body>
 <div class="page">
 
-  <div class="header">
-    <div>
-      <div class="company-name">JohnstoneBros</div>
-      <div class="company-sub">Wholesale Fresh Produce &amp; Grocery</div>
-    </div>
-    <div>
-      <div class="doc-title">${po.status === 'DRAFT' ? 'REQUEST FOR QUOTATION' : 'PURCHASE ORDER'}</div>
-      <div class="doc-sub">${po.name}</div>
-    </div>
-  </div>
+  ${documentHeader(po.status === 'DRAFT' ? 'rfq' : 'purchaseOrder')}
+  <div class="doc-sub">${po.name}</div>
 
   <table class="info-table">
     <tr>
@@ -162,6 +158,7 @@ export function renderPurchaseOrderHtml(
       <td>
         <div class="info-head">Expected Date</div>
         <div class="info-val">${expectedDate || '—'}</div>
+        ${po.vendorReference ? `<div class="info-head" style="margin-top:2mm">Vendor Reference</div><div class="info-val">${escapeHtml(po.vendorReference)}</div>` : ''}
       </td>
     </tr>
   </table>

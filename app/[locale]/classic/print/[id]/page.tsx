@@ -8,8 +8,7 @@ import type { Order, Customer } from '@/lib/types'
 import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
 import JsBarcode from 'jsbarcode'
 import { barcodeValue } from '@/lib/barcode'
-import { docBadge } from '@/lib/print/doc-badge'
-import { escapeHtml } from '@/lib/print/trip-common'
+import { DOCUMENT_HEADER_CSS, documentHeader, documentHeaderOverheadMm, paymentDetails } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
 import { eur } from '@/lib/format-money'
 import { chunkOrderLinesForPrint } from '@/lib/print/trip-common'
@@ -18,7 +17,6 @@ import { giftBadgeHtml, giftMoneyCell } from '@/lib/print/gift-mark'
 import { displayUomName } from '@/lib/sale-uom'
 import { formatVatRate } from '@/lib/order-pdf'
 import type { PrintLang } from '@/lib/print/print-i18n'
-import { paymentTermPrintLabel } from '@/lib/payment-terms'
 
 /**
  * 这个页面本来就是英文优先写的(发票/送货单/销售单面向英文客户)，默认语言是 'en'，
@@ -82,8 +80,7 @@ const T = {
 } as const
 
 /**
- * 最后一块除了富页脚(联系方式+页码)，还要放 Totals/Payment 徽章(sales/invoice)或最多 3 个
- * 备注框(delivery: 客户/订单/送货备注)——这些内容不算进行高预估，实测长订单会撑破单页
+ * 最后一块除了富页脚(联系方式+页码)，还要放合计(sales/invoice)或送货备注(delivery)——这些内容不算进行高预估，实测长订单会撑破单页
  * 变成 2 张物理纸，页脚跟着错位(同 trip-sales/delivery-template 的教训)。按两种 docType
  * 的最坏情况取更大值，宁可多分一页也不能真溢出。
  *
@@ -91,7 +88,7 @@ const T = {
  *    2026-08-18 之前它被当成每页的页脚开销传（第 2 个参数），于是每一页都少了 80mm，
  *    一页只印得下 19 行 —— 客户「一页至少 20 行」的抱怨有一半是这么来的。
  */
-const RICH_FOOTER_OVERHEAD_MM = 80
+const RICH_FOOTER_OVERHEAD_MM = 60
 
 // 预渲染 CODE128 条形码为内嵌 SVG（不依赖外部 CDN，规避 CSP 拦截）
 function barcodeSvg(code: string): string {
@@ -114,20 +111,8 @@ export function buildOrderHtml(
 ): string {
   const t = T[lang]
   const docType = opts.docType ?? 'invoice'
-  // 20260920：销售单印发票号（客户拿这张纸直接交给会计进账），标签随之变成「发票号」
-  //
-  // ⚠️ 现状：**没有任何入口往这两个页面传 `?doc=sales`**（实际只有 `?doc=delivery`
-  // 和不带参数两种，见 operator/orders/[id]、operator/quotations/[id]、ShortageHandler）。
-  // 客户手上那张销售单走的是打印中心那条路：dispatch-print-data → lib/print/trip-sales-template.ts，
-  // 号在取数时就发好了。所以下面这个分支目前恒为 false。
-  //
-  // ⛔ 将来真要给这里加 `doc=sales` 入口，**必须同时补发号**——否则这条路径只读
-  // `order.invoiceNo` 而从不分配，同一张单会出现「打印中心印 V59086、这里印订单号」
-  // 两种纸。发号入口见 lib/invoice-number.ts:ensureInvoiceNumbers（要新开一个写接口，
-  // 并按 lib/rbac/route-map.ts + lib/role-access.ts 两处登记，否则全员 403）。
-  const invoiceNo = (order as { invoiceNo?: string | null }).invoiceNo?.trim() || null
-  const useInvoiceNo = docType === 'sales' && !!invoiceNo
-  const docNoLabel = useInvoiceNo ? t.docNo.invoice : t.docNo[docType]
+  // 销售/送货订单统一打印订单业务编号（D-YYMMDD-NNN），与配送打印中心一致。
+  const docNoLabel = t.docNo[docType]
   // 送货单不含价格:隐藏单价/税/金额列与合计(价格在销售订单/发票上体现)
   const hidePrice = opts.docType === 'delivery'
   // 按装货顺序排（客户要求 2026-09-14，推翻 20260818 的"按商品目录 sequence"口径）：
@@ -153,7 +138,7 @@ export function buildOrderHtml(
   const total = subtotal + totalVat
 
   // 取不到发票号时退回订单号，纸上不能没有可追溯的编号
-  const orderCode = useInvoiceNo ? invoiceNo! : (order.code ?? order.id.slice(-8).toUpperCase())
+  const orderCode = order.code ?? order.id.slice(-8).toUpperCase()
 
   const customerAddr = [
     customer?.street || customer?.address,
@@ -166,12 +151,6 @@ export function buildOrderHtml(
   const salesman = order.salesman ?? ''
   const deliveryDate = formatDateOnly(order.deliveryDate ?? order.quotationDate)
 
-  const paymentTerm = customer?.paymentTerm ?? ''
-  // 20260920：与销售单同一口径（lib/payment-terms.ts），COD 等未知值也印出来
-  const { label: paymentLabel, immediate: isImmediatePayment } = paymentTermPrintLabel(paymentTerm, lang)
-  const paymentColor = isImmediatePayment ? '#dc2626' : '#15803d'
-  const paymentBg = isImmediatePayment ? '#fef2f2' : '#f0fdf4'
-  const paymentBorder = isImmediatePayment ? '#ef4444' : '#16a34a'
 
   function renderLineRow(l: (typeof lines)[number], i: number): string {
     const spec = (l as unknown as { spec?: string }).spec
@@ -204,16 +183,7 @@ export function buildOrderHtml(
     </tr>`).join('')
 
   const headerBlockHtml = `
-  <div class="header">
-    <div>
-      ${docBadge(opts.docType === 'delivery' ? 'delivery' : opts.docType === 'sales' ? 'salesOrder' : 'invoice')}
-      <div class="company-name" style="margin-top:6px;">JohnstoneBros</div>
-    </div>
-    <div class="company-addr">
-      141 Slaney Close<br/>
-      Dublin 11, D11 C3NX
-    </div>
-  </div>
+  ${documentHeader(opts.docType === 'delivery' ? 'delivery' : opts.docType === 'sales' ? 'salesOrder' : 'invoice')}
 
   <table class="info-table">
     <tr>
@@ -222,7 +192,6 @@ export function buildOrderHtml(
         <div class="info-val">
           <strong>${order.restaurantName}</strong><br/>
           ${customerAddr ? customerAddr + '<br/>' : ''}
-          ${deliveryBatch ? `<strong>${t.driver}</strong> ` + deliveryBatch : ''}
         </div>
       </td>
       <td class="barcode-cell">
@@ -234,13 +203,14 @@ export function buildOrderHtml(
         <div class="info-head">${t.delivery}</div>
         <div class="info-val">
           ${deliveryDate}<br/>
-          ${salesman ? `<strong>${t.salesman}</strong> ` + salesman : ''}
+          ${salesman ? `<strong>${t.salesman}</strong> ` + salesman + '<br/>' : ''}
+          ${deliveryBatch ? `<strong>${t.driver}</strong> ` + deliveryBatch : ''}
         </div>
       </td>
       <td>
         <div class="info-head">${t.payment}</div>
         <div class="info-val">
-          ${paymentLabel ? `<div style="font-weight:bold;color:${paymentColor};font-size:9.5pt;">${escapeHtml(paymentLabel)}</div>` : '<div style="color:#999;">—</div>'}
+          ${paymentDetails(customer?.paymentTerm, [customer?.externalNote, order.externalNote], lang)}
         </div>
       </td>
     </tr>
@@ -261,19 +231,7 @@ export function buildOrderHtml(
     </table>
   </div>`}
 
-  ${paymentLabel ? `<div style="margin-top:12px;padding:8px 14px;border-radius:6px;border:2px solid ${paymentBorder};background:${paymentBg};display:inline-block;">
-    <span style="font-size:12pt;font-weight:700;color:${paymentColor};letter-spacing:0.3px;">${t.paymentBadge}: ${escapeHtml(paymentLabel)}</span>
-  </div>` : ''}
 
-  ${(opts.docType === 'sales' || opts.docType === 'delivery') && customer?.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
-    <div style="font-weight:600;margin-bottom:4px;">${t.customerNote}</div>
-    <div style="white-space:pre-wrap;">${customer.externalNote}</div>
-  </div>` : ''}
-
-  ${order.externalNote ? `<div style="margin-top:16px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
-    <div style="font-weight:600;margin-bottom:4px;">${t.orderNote}</div>
-    <div style="white-space:pre-wrap;">${order.externalNote}</div>
-  </div>` : ''}
 
   ${opts.docType === 'delivery' && order.deliveryNote ? `<div style="margin-top:16px;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;font-size:12px;color:#374151;">
     <div style="font-weight:600;margin-bottom:4px;">${t.deliveryNote}</div>
@@ -285,7 +243,7 @@ export function buildOrderHtml(
   // position:fixed 图省事，那样整份文档只有一份内容，没法按块显示不同的当前页码。
   // 第 2 个参数是每页的页脚（默认小字页脚），第 3 个才是最后一页的尾部内容 ——
   // 改造前把 80mm 当成每页开销传，导致每页都白留 80mm、只印 19 行
-  const chunks = chunkOrderLinesForPrint(lines, undefined, RICH_FOOTER_OVERHEAD_MM)
+  const chunks = chunkOrderLinesForPrint(lines, undefined, RICH_FOOTER_OVERHEAD_MM, documentHeaderOverheadMm([customer?.externalNote, order.externalNote]))
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1
@@ -388,6 +346,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; 
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page { padding: 8mm 12mm 22mm; }
 }
+${DOCUMENT_HEADER_CSS}
 `
 
 export default function PrintPage() {

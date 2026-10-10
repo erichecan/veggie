@@ -28,7 +28,7 @@ import {
 } from './trip-common'
 import { sortLinesByUomSequence } from '@/lib/print/line-sort'
 import { giftBadgeHtml } from './gift-mark'
-import { docBadge } from './doc-badge'
+import { DOCUMENT_HEADER_CSS, documentHeader, documentHeaderOverheadMm, paymentDetails } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
 import { displayUomName } from '@/lib/sale-uom'
 import type { PrintLang } from '@/lib/print/print-i18n'
@@ -92,16 +92,7 @@ function buildDeliveryOrderHtml(
   const deliveryDate = formatDateOnly(order.deliveryDate)
 
   const headerBlockHtml = `
-  <div class="header">
-    <div>
-      ${docBadge('delivery')}
-      <div class="company-name" style="margin-top:2mm;">JohnstoneBros</div>
-    </div>
-    <div class="company-addr">
-      141 Slaney Close<br/>
-      Dublin 11, D11 C3NX
-    </div>
-  </div>
+  ${documentHeader('delivery')}
 
   <table class="info-table">
     <tr>
@@ -110,7 +101,6 @@ function buildDeliveryOrderHtml(
         <div class="info-val">
           <strong>${escapeHtml(order.customerName)}</strong><br/>
           ${customerAddr ? escapeHtml(customerAddr) + '<br/>' : ''}
-          ${driverLabel ? `<strong>${t.driverPrefix}</strong> ` + escapeHtml(driverLabel) : ''}
         </div>
       </td>
       <td class="barcode-cell">
@@ -122,24 +112,17 @@ function buildDeliveryOrderHtml(
         <div class="info-head">${t.delivery}</div>
         <div class="info-val">
           ${deliveryDate}<br/>
+          ${driverLabel ? `<strong>${t.driverPrefix}</strong> ` + escapeHtml(driverLabel) : ''}
         </div>
       </td>
       <td>
-        <div class="info-head">${t.comment}</div>
-        <div class="info-val">${escapeHtml(customerPhone) || '—'}</div>
+        <div class="info-head">${lang === 'en' ? 'Payment' : '付款方式'}</div>
+        <div class="info-val">${paymentDetails(customer?.paymentTerm, [customerPhone, customer?.externalNote, order.externalNote], lang)}</div>
       </td>
     </tr>
   </table>`
 
   const notesHtml = `
-  ${customer?.externalNote ? `<div class="note-box">
-    <div class="note-head">${t.customerNoteHead}</div>
-    <div class="note-body">${escapeHtml(customer.externalNote)}</div>
-  </div>` : ''}
-  ${order.externalNote ? `<div class="note-box">
-    <div class="note-head">${t.orderNoteHead}</div>
-    <div class="note-body">${escapeHtml(order.externalNote)}</div>
-  </div>` : ''}
   ${order.deliveryNote ? `<div class="note-box note-box-delivery">
     <div class="note-head">${t.deliveryNoteHead}</div>
     <div class="note-body">${escapeHtml(order.deliveryNote)}</div>
@@ -160,12 +143,10 @@ function buildDeliveryOrderHtml(
     </tr>`
   }
 
-  // 备注(客户/订单/送货，最多 3 个)只画在最后一块，那块要放的东西比其它块多——分块时
-  // 必须把这块「额外内容」也当成预留高度算进去，不然最后一块自己会溢出单页，页脚跟着
-  // 错位到下一张纸，失去"一页一页脚"的准确性(同 trip-sales-template 的教训)。
-  const LAST_CHUNK_EXTRA_MM = 68
+  // 客户/订单外部备注在页头；只有送货备注需要在最后一页预留空间。
+  const LAST_CHUNK_EXTRA_MM = order.deliveryNote ? 30 : 0
   // LAST_CHUNK_EXTRA_MM 只压最后一页，不该让每一页都为它让地方（见 chunkOrderLinesForPrint）
-  const chunks = chunkOrderLinesForPrint(lines, undefined, LAST_CHUNK_EXTRA_MM)
+  const chunks = chunkOrderLinesForPrint(lines, undefined, LAST_CHUNK_EXTRA_MM, documentHeaderOverheadMm([customer?.externalNote, order.externalNote]))
 
   return chunks.map((chunk, chunkIdx) => {
     const isLastChunk = chunkIdx === chunks.length - 1
@@ -299,7 +280,8 @@ export function generateTripDeliveryHtml(data: TripPrintData, lang: PrintLang = 
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${t.docTitle}</title>
 <script src="/vendor/JsBarcode.all.min.js"><\/script>
-<style>${CSS}</style>
+<style>${CSS}${DOCUMENT_HEADER_CSS}
+</style>
 </head>
 <body>
 ${noticeHtml}

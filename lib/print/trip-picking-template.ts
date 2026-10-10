@@ -1,3 +1,4 @@
+import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header'
 /**
  * Trip 拣货单 — 按商品汇总，区分整箱整袋/零散货，给拣货员使用
  *
@@ -572,9 +573,11 @@ export function generateTripPickingHtml(
     /* 整箱整袋 / 零散货 各自起新页：两批货由不同的人在不同区域拣 */
     .section-header.section-2nd{break-before:page;page-break-before:always}
   }
+${DOCUMENT_HEADER_CSS}
 </style>
 </head>
 <body>
+  ${documentHeader('picking')}
   <div class="page-header">
     <div class="print-at">Print at: ${formatPrintTimestamp()}</div>
   </div>

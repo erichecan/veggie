@@ -207,6 +207,9 @@ const FACET_DEFS: ClientFacetDef<SystemUser>[] = [
   { key: 'name',  label: '姓名', labelEn: 'Name',  values: r => [r.name] },
   { key: 'email', label: '邮箱', labelEn: 'Email', values: r => [r.email] },
   { key: 'role',  label: '角色', labelEn: 'Role',  values: r => (r.roles && r.roles.length > 0 ? r.roles : [r.role]) },
+  { key: 'manager', label: '上级', labelEn: 'Manager', values: r => [r.manager?.name ?? '—'] },
+  { key: 'status', label: '状态', labelEn: 'Status', values: r => [r.pendingApproval ? 'Pending' : r.isActive ? 'Active' : 'Inactive'] },
+  { key: 'created', label: '创建日期', labelEn: 'Created', values: r => [new Date(r.createdAt).toLocaleDateString('en-GB')] },
   // 用户编号(20261006)：整值匹配，搜 1 不会带出 10、11
   { key: 'userNo', label: '编号', labelEn: 'No.', values: r => [String(r.userNo)], exact: true },
 ]
@@ -227,6 +230,10 @@ export default function UsersTab({
 }) {
   const ROLE_LABEL = isEn ? ROLE_LABEL_EN : ROLE_LABEL_ZH
   const [searchInput, setSearchInput] = useState('')
+  const [sort, setSort] = useState<{ key: string; descending: boolean } | null>(null)
+  function toggleSort(key: string) {
+    setSort(prev => ({ key, descending: prev?.key === key ? !prev.descending : false }))
+  }
 
   const isRestaurantGroup = roleGroup === 'restaurant'
   // 一个账号的 roles[] 目前不会同时含 RESTAURANT 和内部角色（两类账号体系分开建），
@@ -376,7 +383,25 @@ export default function UsersTab({
   // 待审核的排最前面，不用另外做筛选器就能第一时间看到
   const filtered = filterByFacets(searched, facets, FACET_DEFS)
     .slice()
-    .sort((a, b) => Number(b.pendingApproval === true) - Number(a.pendingApproval === true))
+    .sort((a, b) => {
+      if (!sort) return Number(b.pendingApproval === true) - Number(a.pendingApproval === true)
+      const value = (u: SystemUser): string | number => {
+        switch (sort.key) {
+          case 'userNo': return u.userNo
+          case 'name': return u.name
+          case 'email': return u.email
+          case 'role': return rolesOf(u).map(r => ROLE_LABEL[r] ?? r).sort().join(', ')
+          case 'manager': return u.manager?.name ?? ''
+          case 'status': return u.pendingApproval ? 'Pending' : u.isActive ? 'Active' : 'Inactive'
+          case 'createdAt': return new Date(u.createdAt).getTime()
+          default: return ''
+        }
+      }
+      const av = value(a), bv = value(b)
+      const compared = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv : String(av).localeCompare(String(bv), isEn ? 'en' : 'zh', { numeric: true })
+      return (sort.descending ? -compared : compared) || a.userNo - b.userNo
+    })
 
   // ── 勾选 + 批量操作(20261006) ────────────────────────────────────────────
   // 批量操作只作用于"勾选了且当前看得见"的行：筛选条件变了以后被筛掉的行即使还勾着也不动，
@@ -443,7 +468,7 @@ export default function UsersTab({
   const statusText = (u: SystemUser) => u.pendingApproval
     ? (isEn ? 'Pending review' : '待审核')
     : u.isActive ? (isEn ? 'Active' : '启用') : (isEn ? 'Inactive' : '停用')
-  const rolesOf = (u: SystemUser) => (u.roles && u.roles.length > 0 ? u.roles : [u.role]) as UserRole[]
+  function rolesOf(u: SystemUser): UserRole[] { return (u.roles && u.roles.length > 0 ? u.roles : [u.role]) as UserRole[] }
   // 角色导出两列：角色代码(可直接回填导入) + 显示名(给人看)。导入只认代码，见 /api/users/bulk 注释。
   const exportColumns: ExportColumn<SystemUser>[] = [
     { key: 'userNo', header: '编号', headerEn: 'User No.', get: u => u.userNo },
@@ -528,13 +553,13 @@ export default function UsersTab({
                       style={{ accentColor: PURPLE }}
                     />
                   </th>
-                  <th className="text-left px-2 py-3 font-medium text-gray-600 w-14">{isEn ? 'No.' : '编号'}</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'User' : '用户'}</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Email' : '邮箱'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Roles' : '角色'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Manager' : '上级'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Created' : '创建时间'}</th>
+                  <th className="text-left px-2 py-3 font-medium text-gray-600 w-14" aria-sort={sort?.key === 'userNo' ? (sort.descending ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => toggleSort('userNo')} className="cursor-pointer hover:text-[#875A7B]">{isEn ? 'No.' : '编号'} <span aria-hidden="true">{sort?.key === 'userNo' ? (sort.descending ? '↓' : '↑') : '↕'}</span></button></th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600" aria-sort={sort?.key === 'name' ? (sort.descending ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => toggleSort('name')} className="cursor-pointer hover:text-[#875A7B]">{isEn ? 'User' : '用户'} <span aria-hidden="true">{sort?.key === 'name' ? (sort.descending ? '↓' : '↑') : '↕'}</span></button></th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600" aria-sort={sort?.key === 'email' ? (sort.descending ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => toggleSort('email')} className="cursor-pointer hover:text-[#875A7B]">{isEn ? 'Email' : '邮箱'} <span aria-hidden="true">{sort?.key === 'email' ? (sort.descending ? '↓' : '↑') : '↕'}</span></button></th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600" aria-sort={sort?.key === 'role' ? (sort.descending ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => toggleSort('role')} className="cursor-pointer hover:text-[#875A7B]">{isEn ? 'Roles' : '角色'} <span aria-hidden="true">{sort?.key === 'role' ? (sort.descending ? '↓' : '↑') : '↕'}</span></button></th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600" aria-sort={sort?.key === 'manager' ? (sort.descending ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => toggleSort('manager')} className="cursor-pointer hover:text-[#875A7B]">{isEn ? 'Manager' : '上级'} <span aria-hidden="true">{sort?.key === 'manager' ? (sort.descending ? '↓' : '↑') : '↕'}</span></button></th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600" aria-sort={sort?.key === 'status' ? (sort.descending ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => toggleSort('status')} className="cursor-pointer hover:text-[#875A7B]">{isEn ? 'Status' : '状态'} <span aria-hidden="true">{sort?.key === 'status' ? (sort.descending ? '↓' : '↑') : '↕'}</span></button></th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600" aria-sort={sort?.key === 'createdAt' ? (sort.descending ? 'descending' : 'ascending') : 'none'}><button type="button" onClick={() => toggleSort('createdAt')} className="cursor-pointer hover:text-[#875A7B]">{isEn ? 'Created' : '创建时间'} <span aria-hidden="true">{sort?.key === 'createdAt' ? (sort.descending ? '↓' : '↑') : '↕'}</span></button></th>
                   <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Actions' : '操作'}</th>
                 </tr>
               </thead>

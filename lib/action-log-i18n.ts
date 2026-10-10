@@ -147,6 +147,7 @@ export const FIELD_LABELS: Record<string, { zh: string; en: string }> = {
   isCustomer: { zh: '是客户', en: 'Is a Customer' },
   isVendor: { zh: '是供应商', en: 'Is a Vendor' },
   notes: { zh: '备注', en: 'Notes' },
+  vendorReference: { zh: '供应商参考', en: 'Vendor Reference' },
   externalNote: { zh: '外部备注', en: 'External Note' },
   salesUserId: { zh: '销售员', en: 'Salesperson' },
   defaultDriverSlotId: { zh: '默认司机', en: 'Default Driver' },
