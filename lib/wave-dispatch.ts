@@ -19,7 +19,7 @@ class DispatchRaceLostError extends Error {}
  * - 22 点自动兜底 cron（`/api/cron/auto-confirm-departure`，本函数直接调用，不经 HTTP）
  *
  * 库存口径（20260922 已与用户确认）：出发这一步**不改动 qtyOnHand**——库存在订单
- * CONFIRMED 时已作为预留扣过一次，这里不重复扣减，避免破坏 ATP/预测/毛利分析等
+ * CONFIRMED 时已作为预留扣过一次，这里不重复扣减，避免破坏 Forecast Quantity/预测/毛利分析等
  * 一切依赖"确认即扣库存"这个既有口径的报表。"已出库"这个状态直接由
  * `status=IN_DELIVERY` + `dispatchedAt` 承载，不新增字段。
  */

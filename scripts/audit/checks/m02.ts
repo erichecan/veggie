@@ -29,8 +29,8 @@ defineCheck({
     evidence.push(...soQuote.map(l => `报价页缺货: ${l.slice(0, 130)}`))
 
     // 缺货判定的数据来源接口是否真的活着
-    const atp = await api('/api/products/pending-demand')
-    evidence.push(`ATP/缺货数据源: ${atp.brief}`)
+    const forecastQuantity = await api('/api/products/pending-demand')
+    evidence.push(`Forecast Quantity/缺货数据源: ${forecastQuantity.brief}`)
 
     const hasDup = dup.length > 0
     const hasShortage = soPlace.length > 0 && soQuote.length > 0

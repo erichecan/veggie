@@ -5,8 +5,8 @@
  *
  * 采购要的不是一个总数，而是**一行一个商品、一列一天**的那张表：
  * 周一到周日每天走多少、手上还有多少、按现在的节奏还能撑几天。
- * 所以矩阵除了各列销量，还带 **当前库存** 与 **可承诺量 ATP = 库存 − 区间已订**
- * （与「按商品」查看方式的 ATP 同一个式子，不另起一套）。
+ * 所以矩阵除了各列销量，还带 **当前库存** 与 **预测数量 Forecast Quantity = 库存 − 区间已订**
+ * （与「按商品」查看方式的 Forecast Quantity 同一个式子，不另起一套）。
  *
  * 纯函数、不查库：屏幕表格与 CSV 导出共用同一份结果，
  * 「导出的和屏幕上看到的不一样」这种事从结构上就不可能发生。
@@ -48,8 +48,8 @@ export interface MatrixRow {
   totalQty: number
   totalAmount: number
   qtyOnHand: number
-  /** 可承诺量 = 当前库存 − 本区间已订量 */
-  atp: number
+  /** 预测数量 = 当前库存 − 本区间已订量 */
+  forecastQuantity: number
 }
 
 export interface SalesMatrix {
@@ -74,7 +74,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100
  * 汇总成矩阵。
  *
  * ⚠️ 按 **productId** 归并，不是按商品名 —— 原「商品×星期汇总」按名字归并，
- * 同名不同规格的商品会被并成一行（A1 走查记过这个坑），而库存与 ATP 是按
+ * 同名不同规格的商品会被并成一行（A1 走查记过这个坑），而库存与 Forecast Quantity 是按
  * 商品 id 的，并行之后那两列就没法解释。合计不受影响，只是行拆得更细。
  * 没有 productId 的历史行回退到用名字当键，不至于整批丢掉。
  */
@@ -104,7 +104,7 @@ export function buildSalesMatrix(
         totalQty: 0,
         totalAmount: 0,
         qtyOnHand: l.qtyOnHand,
-        atp: 0,
+        forecastQuantity: 0,
       }
       rowMap.set(key, row)
     }
@@ -122,7 +122,7 @@ export function buildSalesMatrix(
     r.amount = r.amount.map(round2)
     r.totalQty = round2(r.totalQty)
     r.totalAmount = round2(r.totalAmount)
-    r.atp = round2(r.qtyOnHand - r.totalQty)
+    r.forecastQuantity = round2(r.qtyOnHand - r.totalQty)
   }
 
   const grand = {
@@ -141,7 +141,7 @@ export interface MatrixCsvLabels {
   total: string
   amount: string
   onHand: string
-  atp: string
+  forecastQuantity: string
   grand: string
 }
 
@@ -162,7 +162,7 @@ export function matrixToCsvRows(
     labels.total,
     labels.amount,
     labels.onHand,
-    labels.atp,
+    labels.forecastQuantity,
   ]
   const rows: (string | number)[][] = matrix.rows.map(r => [
     r.productName,
@@ -171,7 +171,7 @@ export function matrixToCsvRows(
     r.totalQty,
     r.totalAmount,
     r.qtyOnHand,
-    r.atp,
+    r.forecastQuantity,
   ])
   rows.push([
     labels.grand,

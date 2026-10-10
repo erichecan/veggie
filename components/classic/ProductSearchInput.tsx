@@ -10,7 +10,7 @@ interface Props<P extends { id: string; name: string; internalRef?: string | nul
   products: P[]
   placeholder?: string
   inputClassName?: string
-  showAtp?: boolean
+  showForecastQuantity?: boolean
   portalDropdown?: boolean
   maxResults?: number
   showOnEmptyQuery?: boolean
@@ -30,7 +30,7 @@ export default function ProductSearchInput<
   products,
   placeholder = 'Search products…',
   inputClassName,
-  showAtp = false,
+  showForecastQuantity = false,
   portalDropdown = false,
   maxResults = 20,
   showOnEmptyQuery = true,
@@ -131,9 +131,9 @@ export default function ProductSearchInput<
       {p.purchaseUomSpec && <span className="ml-2 text-xs text-gray-500">({p.purchaseUomSpec})</span>}
       {p.internalRef && <span className="ml-2 text-[10px] text-gray-400">[{p.internalRef}]</span>}
       {p.category && <span className="ml-2 text-xs text-gray-400">{p.category}</span>}
-      {showAtp && p.qtyOnHand != null && (
+      {showForecastQuantity && p.qtyOnHand != null && (
         <span className={`ml-2 text-xs ${Number(p.qtyOnHand) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-          ATP: {Number(p.qtyOnHand).toFixed(0)}
+          Forecast quantity: {Number(p.qtyOnHand).toFixed(0)}
         </span>
       )}
     </button>

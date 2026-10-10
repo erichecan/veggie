@@ -288,7 +288,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
       .sort((a, b) => sortBySequence ? compareSequenceThenName(a.sequence, a.name, b.sequence, b.name) : b.amount - a.amount)
   }, [reportLines, sortBySequence])
 
-  // 查看方式③：按分类（分类 → 商品，带 ATP）—— 调度备货
+  // 查看方式③：按分类（分类 → 商品，带 Forecast Quantity）—— 调度备货
   const categoryReport = useMemo(() => {
     const catMap = new Map<string, Map<string, { productId: string; name: string; uomName: string; qty: number; qtyOnHand: number; sequence: number }>>()
     for (const l of reportLines) {
@@ -340,8 +340,8 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     const { headers, rows } = matrixToCsvRows(
       { ...salesMatrix, rows: matrixRowsSorted },
       isEn
-        ? { product: 'Product', uom: 'Unit', total: 'Total Qty', amount: 'Amount', onHand: 'On Hand', atp: 'ATP', grand: 'Grand Total' }
-        : { product: '产品', uom: '单位', total: '数量合计', amount: '金额合计', onHand: '当前库存', atp: '可承诺 ATP', grand: '合计' },
+        ? { product: 'Product', uom: 'Unit', total: 'Total Qty', amount: 'Amount', onHand: 'On Hand', forecastQuantity: 'Forecast Quantity', grand: 'Grand Total' }
+        : { product: '产品', uom: '单位', total: '数量合计', amount: '金额合计', onHand: '当前库存', forecastQuantity: '预测数量', grand: '合计' },
     )
     const kind = granularity === 'week' ? (isEn ? 'by-weekday' : '按星期') : (isEn ? 'by-day' : '按日')
     downloadCsv(`${isEn ? 'sales-matrix' : '销售矩阵'}-${kind}-${fromDate}_${toDate}`, headers, rows)
@@ -420,18 +420,18 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
               <th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">产品名称</th>
               <th style="text-align:center;padding:6px 8px;border-bottom:1px solid #e5e7eb;">单位</th>
               <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">数量</th>
-              <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">ATP</th>
+              <th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">Forecast Quantity</th>
             </tr>
           </thead>
           <tbody>
             ${cat.products.map(p => {
-              const atp = p.qtyOnHand - p.qty
-              const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#8B5CF6'
+              const forecastQuantity = p.qtyOnHand - p.qty
+              const color = forecastQuantity > 0 ? '#10B981' : forecastQuantity === 0 ? '#F59E0B' : '#8B5CF6'
               return `<tr style="border-bottom:1px solid #f3f4f6;">
                 <td style="padding:5px 8px;">${p.name}</td>
                 <td style="padding:5px 8px;text-align:center;color:#6b7280;">${p.uomName || '—'}</td>
                 <td style="padding:5px 8px;text-align:right;font-weight:500;">${fmtQty(p.qty)}</td>
-                <td style="padding:5px 8px;text-align:right;color:${color};font-weight:500;">${fmtQty(atp)}</td>
+                <td style="padding:5px 8px;text-align:right;color:${color};font-weight:500;">${fmtQty(forecastQuantity)}</td>
               </tr>`
             }).join('')}
           </tbody>
@@ -445,7 +445,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
     const dateLabel = '日期'
     const categoryLabel = '分类'
     const totalLabel = '合计'
-    const atpLegend = `ATP 色标：<span style="color:#10B981;">正数 = 有余量</span> · <span style="color:#F59E0B;">零 = 刚好用完</span> · <span style="color:#8B5CF6;">负数 ≠ 缺货（可能当天到货或可临时调货）</span>`
+    const forecastQuantityLegend = `预测数量色标：<span style="color:#10B981;">正数 = 有余量</span> · <span style="color:#F59E0B;">零 = 刚好用完</span> · <span style="color:#8B5CF6;">负数 ≠ 缺货（可能当天到货或可临时调货）</span>`
     w.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -454,7 +454,7 @@ export default function SalesStats({ refreshKey = 0 }: { refreshKey?: number }) 
 </head><body>
 <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px dashed #e5e7eb;font-size:12px;color:#6b7280;">
   <b style="font-size:15px;color:#111;">${titleLabel}</b>&nbsp;&nbsp;${dateLabel}：<b style="color:#111;">${fromDate}${toDate !== fromDate ? ' ~ ' + toDate : ''}</b>&nbsp;&nbsp;${categoryLabel}：<b style="color:#111;">${catLabel}</b>&nbsp;&nbsp;${totalLabel}：<b style="color:#111;">${categorySummary.sku} SKU · ${fmtQty(categorySummary.qty)} ${unitLabel}</b>
-  <div style="margin-top:4px;">${atpLegend}</div>
+  <div style="margin-top:4px;">${forecastQuantityLegend}</div>
 </div>
 ${catsHtml}
 <script>window.print();<\/script>
@@ -749,13 +749,13 @@ ${catsHtml}
                         <th className="px-3 py-2 text-left text-gray-400 font-normal">{isEn ? 'Product Name' : '产品名称'}</th>
                         <th className="px-3 py-2 text-center text-gray-400 font-normal w-16">{isEn ? 'Unit' : '单位'}</th>
                         <th className="px-3 py-2 text-right text-gray-400 font-normal w-20">{isEn ? 'Qty' : '数量'}</th>
-                        <th className="px-3 py-2 text-right text-gray-400 font-normal w-24">{isEn ? 'ATP Stock' : 'ATP 库存'}</th>
+                        <th className="px-3 py-2 text-right text-gray-400 font-normal w-24">{isEn ? 'Forecast Quantity' : '预测数量'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {cat.products.map(p => {
-                        const atp = p.qtyOnHand - p.qty
-                        const color = atp > 0 ? '#10B981' : atp === 0 ? '#F59E0B' : '#8B5CF6'
+                        const forecastQuantity = p.qtyOnHand - p.qty
+                        const color = forecastQuantity > 0 ? '#10B981' : forecastQuantity === 0 ? '#F59E0B' : '#8B5CF6'
                         return (
                           <tr key={p.productId || p.name} className="border-b border-gray-50 hover:bg-purple-50 transition-colors">
                             <td className="px-3 py-2 text-gray-800">{p.name}</td>
@@ -764,7 +764,7 @@ ${catsHtml}
                             <td className="px-3 py-2 text-right tabular-nums">
                               <span className="inline-flex items-center gap-1.5 justify-end">
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                                <span style={{ color }}>{fmtQty(atp)}</span>
+                                <span style={{ color }}>{fmtQty(forecastQuantity)}</span>
                               </span>
                             </td>
                           </tr>
@@ -779,16 +779,16 @@ ${catsHtml}
               <span>{isEn ? 'Total' : '合计'}：{categorySummary.sku} SKU · {fmtQty(categorySummary.qty)} {isEn ? 'units' : '件'}</span>
               <span className="text-gray-400">
                 {isEn ? (
-                  <>ATP color code: <span className="text-emerald-600">positive=surplus</span> · <span className="text-amber-500">zero=exactly used up</span> · <span className="text-violet-500">negative≠out of stock (may arrive same day or be sourced ad hoc)</span></>
+                  <>Forecast quantity color code: <span className="text-emerald-600">positive=surplus</span> · <span className="text-amber-500">zero=exactly used up</span> · <span className="text-violet-500">negative≠out of stock (may arrive same day or be sourced ad hoc)</span></>
                 ) : (
-                  <>ATP 色标：<span className="text-emerald-600">正数=有余量</span> · <span className="text-amber-500">零=刚好用完</span> · <span className="text-violet-500">负数≠缺货（可能当天到货或可临时调货）</span></>
+                  <>预测数量色标：<span className="text-emerald-600">正数=有余量</span> · <span className="text-amber-500">零=刚好用完</span> · <span className="text-violet-500">负数≠缺货（可能当天到货或可临时调货）</span></>
                 )}
               </span>
             </div>
           </div>
         ) : (
           /* 销售矩阵：商品 × 日期（按日）/ 商品 × 星期（按周）——台账 D9
-             星期口径与打印「商品×星期汇总」一致；额外带当前库存与 ATP，供采购判断补货 */
+             星期口径与打印「商品×星期汇总」一致；额外带当前库存与 Forecast Quantity，供采购判断补货 */
           <div>
             <div className="px-4 py-2 flex items-center gap-2 flex-wrap border-b border-gray-100 bg-white">
               <span className="text-xs text-gray-400">{isEn ? 'Granularity:' : '维度：'}</span>
@@ -835,7 +835,7 @@ ${catsHtml}
                     >{isEn ? 'Total Qty' : '数量合计'}{weekdaySortArrow('total')}</th>
                     <th className="px-3 py-2 text-right text-gray-400 font-medium w-24">{isEn ? 'Amount' : '金额合计'}</th>
                     <th className="px-3 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'On Hand' : '当前库存'}</th>
-                    <th className="px-3 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'ATP' : 'ATP'}</th>
+                    <th className="px-3 py-2 text-right text-gray-400 font-medium w-20">{isEn ? 'Forecast Quantity' : 'Forecast Quantity'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -848,7 +848,7 @@ ${catsHtml}
                       <td className="px-4 py-1.5 text-right tabular-nums font-medium text-gray-700">{fmtQty(r.totalQty)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{eur(r.totalAmount)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtQty(r.qtyOnHand)}</td>
-                      <td className={`px-3 py-1.5 text-right tabular-nums ${r.atp > 0 ? 'text-emerald-600' : r.atp === 0 ? 'text-amber-500' : 'text-violet-500'}`}>{fmtQty(r.atp)}</td>
+                      <td className={`px-3 py-1.5 text-right tabular-nums ${r.forecastQuantity > 0 ? 'text-emerald-600' : r.forecastQuantity === 0 ? 'text-amber-500' : 'text-violet-500'}`}>{fmtQty(r.forecastQuantity)}</td>
                     </tr>
                   ))}
                   <tr className="bg-[#875A7B]/10 font-bold text-gray-800">

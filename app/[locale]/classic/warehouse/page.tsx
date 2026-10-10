@@ -641,7 +641,7 @@ export default function ClassicWarehousePage() {
                   placeholder={isEn ? 'Search by name or code…' : '输入名称或编码搜索商品…'}
                   inputClassName="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
                   portalDropdown
-                  showAtp
+                  showForecastQuantity
                   maxResults={30}
                 />
               </div>

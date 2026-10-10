@@ -10,7 +10,7 @@ import {
 const DOW = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const CSV_LABELS = {
   product: '产品', uom: '单位', total: '数量合计', amount: '金额合计',
-  onHand: '当前库存', atp: '可承诺 ATP', grand: '合计',
+  onHand: '当前库存', forecastQuantity: '预测数量', grand: '合计',
 }
 
 function line(p: Partial<MatrixSourceLine> & { date: string; qty: number }): MatrixSourceLine {
@@ -100,20 +100,20 @@ describe('按日矩阵（区间内每个配送日一列）', () => {
   })
 })
 
-describe('库存与可承诺量', () => {
-  test('ATP = 当前库存 − 区间已订量', () => {
+describe('库存与预测数量', () => {
+  test('Forecast Quantity = 当前库存 − 区间已订量', () => {
     const m = buildSalesMatrix(
       [line({ date: '2026-08-10', qty: 30, qtyOnHand: 100 }), line({ date: '2026-08-11', qty: 20, qtyOnHand: 100 })],
       'day', DOW,
     )
     assert.equal(m.rows[0].qtyOnHand, 100)
     assert.equal(m.rows[0].totalQty, 50)
-    assert.equal(m.rows[0].atp, 50)
+    assert.equal(m.rows[0].forecastQuantity, 50)
   })
 
-  test('订得比库存多 → ATP 为负（负数不等于缺货，只是提示要补货）', () => {
+  test('订得比库存多 → Forecast Quantity 为负（负数不等于缺货，只是提示要补货）', () => {
     const m = buildSalesMatrix([line({ date: '2026-08-10', qty: 130, qtyOnHand: 100 })], 'day', DOW)
-    assert.equal(m.rows[0].atp, -30)
+    assert.equal(m.rows[0].forecastQuantity, -30)
   })
 
   test('⚠️ 按 productId 归并：同名不同商品分成两行，库存才解释得通', () => {
@@ -161,9 +161,9 @@ describe('CSV 行', () => {
     line({ date: '2026-08-12', qty: 5, amount: 10, qtyOnHand: 100 }),
   ], 'day', DOW)
 
-  test('表头 = 产品/单位 + 各列 + 合计/金额/库存/ATP', () => {
+  test('表头 = 产品/单位 + 各列 + 合计/金额/库存/Forecast Quantity', () => {
     const { headers } = matrixToCsvRows(m, CSV_LABELS)
-    assert.deepEqual(headers, ['产品', '单位', '08-10', '08-12', '数量合计', '金额合计', '当前库存', '可承诺 ATP'])
+    assert.deepEqual(headers, ['产品', '单位', '08-10', '08-12', '数量合计', '金额合计', '当前库存', '预测数量'])
   })
 
   test('数据行与表头列数一致（错位会让 Excel 里整列串位）', () => {

@@ -258,7 +258,7 @@ async function ensurePmSlots() {
   }
 }
 
-// 演示库存：CSV 导入的商品 qtyOnHand 全为 0，下单时 ATP(可承诺量)=0 触发缺货告警。
+// 演示库存：CSV 导入的商品 qtyOnHand 全为 0，下单时 Forecast Quantity(预测数量)=0 触发缺货告警。
 // 给在售商品补充健康库存（300–1500），仅补"库存不足 100"的，不覆盖已有健康库存。
 // 阈值参考：下单页 LOW_STOCK_THRESHOLD=20，待出取自未出库订单，故 300+ 足够稳。
 async function ensureDemoStock() {

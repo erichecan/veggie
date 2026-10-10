@@ -637,7 +637,7 @@ export default function QuotationDetailPage() {
   // 本单自己也在这些状态里，若不减掉会把"这单自己占的量"算成"跟自己抢库存"，出现假缺货
   const ownDemandMap = new Map<string, number>()
   for (const l of lines) if (l.productId) ownDemandMap.set(l.productId, (ownDemandMap.get(l.productId) ?? 0) + Number(l.orderedQty))
-  const atpDemand = (productId: string) => Math.max(0, (pendingDemand[productId] ?? 0) - (ownDemandMap.get(productId) ?? 0))
+  const forecastQuantityDemand = (productId: string) => Math.max(0, (pendingDemand[productId] ?? 0) - (ownDemandMap.get(productId) ?? 0))
   const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
   const displayTotal = editing
     ? displayLines.reduce((s, l) => s + Number(l.subtotal), 0)
@@ -1042,21 +1042,21 @@ export default function QuotationDetailPage() {
           {/* Region 5: order lines table */}
           <>
             {editing && (() => {
-              const withAtp = editLines
+              const withForecastQuantity = editLines
                 .filter(l => l.productId)
                 .map(l => {
                   const fc = forecastMap.get(l.productId)
-                  const atp = fc ? Number(fc.qtyOnHand) - atpDemand(l.productId) : null
-                  return { ...l, atp }
+                  const forecastQuantity = fc ? Number(fc.qtyOnHand) - forecastQuantityDemand(l.productId) : null
+                  return { ...l, forecastQuantity }
                 })
-              const outOfStockLines = withAtp.filter(l => l.atp != null && l.atp <= 0)
-              const lowStockLines = withAtp.filter(l => l.atp != null && l.atp > 0 && l.atp < LOW_STOCK_THRESHOLD)
+              const outOfStockLines = withForecastQuantity.filter(l => l.forecastQuantity != null && l.forecastQuantity <= 0)
+              const lowStockLines = withForecastQuantity.filter(l => l.forecastQuantity != null && l.forecastQuantity > 0 && l.forecastQuantity < LOW_STOCK_THRESHOLD)
               if (outOfStockLines.length === 0 && lowStockLines.length === 0) return null
               return (
                 <div className="mx-3 mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-start gap-3">
                   <span className="text-lg leading-none mt-0.5">🚨</span>
                   <div className="text-sm">
-                    <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on ATP): ' : '库存警告（基于可承诺量）：'}</span>
+                    <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on forecast quantity): ' : '库存警告（基于预测数量）：'}</span>
                     {outOfStockLines.length > 0 && (
                       <span className="text-red-600">
                         {isEn ? `${outOfStockLines.length} product(s) out of stock` : `${outOfStockLines.length} 个商品无可用库存`}
@@ -1072,7 +1072,7 @@ export default function QuotationDetailPage() {
                       <span className="text-amber-700">
                         {isEn ? `${lowStockLines.length} product(s) low stock` : `${lowStockLines.length} 个商品低库存`}
                         <span className="text-xs text-amber-600 ml-1">
-                          ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp!.toFixed(1)})`).join(isEn ? ', ' : '、')})
+                          ({lowStockLines.map(l => `${l.productName}(Forecast quantity: ${l.forecastQuantity!.toFixed(1)})`).join(isEn ? ', ' : '、')})
                         </span>
                       </span>
                     )}
@@ -1110,9 +1110,9 @@ export default function QuotationDetailPage() {
                 if (!editing || !l.productId) return undefined
                 const fc = forecastMap.get(l.productId)
                 if (!fc) return undefined
-                const atp = Number(fc.qtyOnHand) - atpDemand(l.productId)
-                if (atp <= 0) return { background: '#fee2e2' }
-                if (atp < LOW_STOCK_THRESHOLD) return { background: '#fffbeb' }
+                const forecastQuantity = Number(fc.qtyOnHand) - forecastQuantityDemand(l.productId)
+                if (forecastQuantity <= 0) return { background: '#fee2e2' }
+                if (forecastQuantity < LOW_STOCK_THRESHOLD) return { background: '#fffbeb' }
                 return undefined
               }}
               renderHeaders={() => (
@@ -1144,9 +1144,9 @@ export default function QuotationDetailPage() {
                 const cost = Number(costRaw ?? 0)
                 const taxPct = l.taxRate != null && Number(l.taxRate) > 0 ? Number(l.taxRate).toFixed(1) + '%' : '0%'
                 const isDuplicate = !!l.productId && (duplicateCounts.get(dupKey(l)) ?? 0) > 1
-                const atp = editing && fc ? Number(fc.qtyOnHand) - atpDemand(l.productId) : null
-                const isOutOfStock = atp != null && atp <= 0
-                const isLowStock = atp != null && atp > 0 && atp < LOW_STOCK_THRESHOLD
+                const forecastQuantity = editing && fc ? Number(fc.qtyOnHand) - forecastQuantityDemand(l.productId) : null
+                const isOutOfStock = forecastQuantity != null && forecastQuantity <= 0
+                const isLowStock = forecastQuantity != null && forecastQuantity > 0 && forecastQuantity < LOW_STOCK_THRESHOLD
                 return (
                   <>
                     <td className="px-2 py-2">

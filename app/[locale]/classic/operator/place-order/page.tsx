@@ -326,7 +326,7 @@ export default function ClassicPlaceOrderPage() {
   const [historyOrders, setHistoryOrders] = useState<HistoryOrder[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
-  // ── Pending demand (ATP) ────────────────────────────────────────────────────
+  // ── Pending demand (Forecast Quantity) ────────────────────────────────────────────────────
   // key = productId, value = 所有未出库订单已占用量
   const [pendingDemand, setPendingDemand] = useState<Record<string, number>>({})
 
@@ -762,11 +762,11 @@ export default function ClassicPlaceOrderPage() {
 
     const { unitPrice, priceLabel, priceLabelDetail } = computeLine(lastPrices)
 
-    // ATP 警告：库存不足时提示但不阻止添加
+    // Forecast Quantity 警告：库存不足时提示但不阻止添加
     const onHand = p.qtyOnHand ?? 0
     const demand = pendingDemand[p.id] ?? 0
-    const atp = onHand - demand
-    if (atp <= 0) {
+    const forecastQuantity = onHand - demand
+    if (forecastQuantity <= 0) {
       toast.warning(isEn ? '⚠ This product is out of stock. Added to order — please arrange stock.' : `⚠ 该产品库存不足，已添加至订单，请注意备货`, { duration: 5000 })
     }
 
@@ -1661,20 +1661,20 @@ export default function ClassicPlaceOrderPage() {
                 document.body,
               )}
 
-              {/* Low stock alert banner (based on ATP) */}
+              {/* Low stock alert banner (based on Forecast Quantity) */}
               {(() => {
-                const linesWithAtp = lines.filter(l => l.productId).map(l => ({
+                const linesWithForecastQuantity = lines.filter(l => l.productId).map(l => ({
                   ...l,
-                  atp: l.qtyOnHand - (pendingDemand[l.productId] ?? 0),
+                  forecastQuantity: l.qtyOnHand - (pendingDemand[l.productId] ?? 0),
                 }))
-                const outOfStockLines = linesWithAtp.filter(l => l.atp <= 0)
-                const lowStockLines = linesWithAtp.filter(l => l.atp > 0 && l.atp < LOW_STOCK_THRESHOLD)
+                const outOfStockLines = linesWithForecastQuantity.filter(l => l.forecastQuantity <= 0)
+                const lowStockLines = linesWithForecastQuantity.filter(l => l.forecastQuantity > 0 && l.forecastQuantity < LOW_STOCK_THRESHOLD)
                 if (outOfStockLines.length === 0 && lowStockLines.length === 0) return null
                 return (
                   <div className="mx-3 mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-start gap-3">
                     <span className="text-lg leading-none mt-0.5">🚨</span>
                     <div className="text-sm">
-                      <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on ATP): ' : '库存警告（基于可承诺量）：'}</span>
+                      <span className="font-semibold text-red-700">{isEn ? 'Stock Warning (based on forecast quantity): ' : '库存警告（基于预测数量）：'}</span>
                       {outOfStockLines.length > 0 && (
                         <span className="text-red-600">
                           {isEn ? `${outOfStockLines.length} product(s) out of stock` : `${outOfStockLines.length} 个商品无可用库存`}
@@ -1690,7 +1690,7 @@ export default function ClassicPlaceOrderPage() {
                         <span className="text-amber-700">
                           {isEn ? `${lowStockLines.length} product(s) low stock` : `${lowStockLines.length} 个商品低库存`}
                           <span className="text-xs text-amber-600 ml-1">
-                            ({lowStockLines.map(l => `${l.productName}(ATP: ${l.atp.toFixed(1)})`).join(isEn ? ', ' : '、')})
+                            ({lowStockLines.map(l => `${l.productName}(Forecast quantity: ${l.forecastQuantity.toFixed(1)})`).join(isEn ? ', ' : '、')})
                           </span>
                         </span>
                       )}
@@ -1731,14 +1731,14 @@ export default function ClassicPlaceOrderPage() {
                     <th className="px-2 py-2 text-left"  style={{ width: 70  }}>Taxes</th>
                     <th className="px-2 py-2 text-right" style={{ width: 100 }}>Total</th>
                     <th className="px-2 py-2 text-right" style={{ width: 100 }}>Forecast Qty</th>
-                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title={isEn ? 'ATP = On Hand − Pending Demand' : '可承诺量 = 在手量 - 待履行量'}>ATP</th>
+                    <th className="px-2 py-2 text-right" style={{ width: 100 }} title={isEn ? 'Forecast quantity = On Hand − Pending Demand' : '预测数量 = 在手量 - 待履行量'}>Forecast Quantity</th>
                   </tr>
                 )}
                 renderRow={(line, idx, opts) => {
                   const lineTotal = line.isGift ? 0 : line.unitPrice * line.orderedQty
-                  const lineAtp = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
-                  const isOutOfStock = line.productId && lineAtp <= 0
-                  const isLowStock   = line.productId && lineAtp > 0 && lineAtp < LOW_STOCK_THRESHOLD
+                  const lineForecastQuantity = line.productId ? line.qtyOnHand - (pendingDemand[line.productId] ?? 0) : line.qtyOnHand
+                  const isOutOfStock = line.productId && lineForecastQuantity <= 0
+                  const isLowStock   = line.productId && lineForecastQuantity > 0 && lineForecastQuantity < LOW_STOCK_THRESHOLD
                   const isDuplicate  = !!line.productId && (duplicateCounts.get(dupKey(line)) ?? 0) > 1
                   return (
                     <>
@@ -1932,21 +1932,21 @@ export default function ClassicPlaceOrderPage() {
                         {line.forecastQty != null ? line.forecastQty.toFixed(3) : '—'}
                       </td>
 
-                      {/* ATP */}
-                      <td className="px-2 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | ATP: ${lineAtp.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 可承诺: ${lineAtp.toFixed(1)}`) : ''}>
+                      {/* Forecast Quantity */}
+                      <td className="px-2 py-1 text-right" title={line.productId ? (isEn ? `On Hand: ${line.qtyOnHand.toFixed(1)} | Pending: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | Forecast quantity: ${lineForecastQuantity.toFixed(1)}` : `在手: ${line.qtyOnHand.toFixed(1)} | 待出: ${(pendingDemand[line.productId] ?? 0).toFixed(1)} | 预测数量: ${lineForecastQuantity.toFixed(1)}`) : ''}>
                         {isOutOfStock ? (
                           <span className="inline-flex items-center gap-1 text-red-600 font-semibold">
                             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                            {lineAtp.toFixed(1)}
+                            {lineForecastQuantity.toFixed(1)}
                           </span>
                         ) : isLowStock ? (
                           <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
                             <span className="w-2 h-2 rounded-full bg-amber-500" />
-                            {lineAtp.toFixed(1)}
+                            {lineForecastQuantity.toFixed(1)}
                           </span>
                         ) : (
                           <span className="text-gray-500">
-                            {lineAtp > 0 ? lineAtp.toFixed(1) : '—'}
+                            {lineForecastQuantity > 0 ? lineForecastQuantity.toFixed(1) : '—'}
                           </span>
                         )}
                       </td>
