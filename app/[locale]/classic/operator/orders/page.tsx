@@ -19,6 +19,7 @@ import { DriverSlotCombobox } from '@/components/shared/driver-slot-combobox'
 import { getSession } from '@/lib/session'
 import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
 import { downloadAuthedFile } from '@/lib/print/open-pdf'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PAGE_SIZE = 50
 
@@ -132,9 +133,10 @@ export default function ClassicOrdersPage() {
   const [savingBatch, setSavingBatch] = useState(false)
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
 
-  useEffect(() => {
-    apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
-  }, [])
+  function fetchDriverSlots() {
+    return apiGet<DriverSlotInfo[]>('/api/driver-slots').then(d => setDriverSlots(Array.isArray(d) ? d : [])).catch(() => {})
+  }
+  useEffect(() => { fetchDriverSlots() }, [])
   const [groupBy, setGroupBy] = useState('')
 
   // Build status param from active filter — changes trigger server refetch via useServerList
@@ -205,6 +207,10 @@ export default function ClassicOrdersPage() {
     search,
     refresh,
   } = useServerList<Record<string, unknown>>({ url: baseUrl, pageSize: PAGE_SIZE })
+
+  // 列表本身(refresh)+筛选用的司机档期候选，别的 tab 改了订单/司机配置后，切回本页能看到最新数据，
+  // 不用手动刷新页面（共享 hook，见 lib/hooks/use-refetch-on-focus.ts）。
+  useRefetchOnFocus([refresh, fetchDriverSlots])
 
   const orders = useMemo(() =>
     rawOrders.map(o => ({

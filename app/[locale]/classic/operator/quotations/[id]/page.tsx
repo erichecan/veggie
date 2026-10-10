@@ -32,6 +32,9 @@ import { overrideCustomerPricing, repriceLinesForCustomer } from '@/lib/order-cu
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -196,25 +199,53 @@ export default function QuotationDetailPage() {
       .catch(() => {})
   }
 
-  // 商品管理侧改了 canBeSold 等字段后，希望回到这个已经打开的页面时能看到最新数据，
-  // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案。
-  useEffect(() => {
-    let lastFetch = Date.now()
-    function refetchProducts() {
-      if (Date.now() - lastFetch < 30_000) return
-      lastFetch = Date.now()
-      fetchLatestProducts()
-    }
-    function onVisibility() {
-      if (document.visibilityState === 'visible') refetchProducts()
-    }
-    window.addEventListener('focus', refetchProducts)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      window.removeEventListener('focus', refetchProducts)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [])
+  function fetchLatestPricelists() {
+    return apiGet<Pricelist[]>('/api/pricelists')
+      .then(pls => {
+        setPricelists(pls)
+        const pid = pricelistId || order?.pricelistId
+        if (pid) setPricelist(pls.find(p => p.id === pid) ?? null)
+      }).catch(() => {})
+  }
+
+  function fetchLatestPendingDemand() {
+    return apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
+  }
+
+  // 商品/价格表管理侧在别的 tab 改了数据后，希望回到这个已经打开的页面时能看到最新数据，
+  // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案
+  // （共享 hook，见 lib/hooks/use-refetch-on-focus.ts，原三个订单页各自一份重复代码收口于此）。
+  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists, fetchLatestPendingDemand])
+
+  // 编辑态内容防抖存本地：切去别的 tab 改引用数据被这个 hook 自动刷新回来时，
+  // 不至于把正在填的内容也一起冲掉——保存成功/退出编辑后清掉，不是永久草稿。
+  type OrderDraft = {
+    editLines: EditLine[]; internalNote: string; externalNote: string; deliveryDate: string
+    deliveryBatch: string; driverSlotId: string; pricelistId: string; priceType: string
+    paymentTerm: string; salesUserId: string; restaurantId: string
+  }
+  const draft = useDraftAutosave<OrderDraft>({
+    userId: session?.userId,
+    entity: 'quotation',
+    recordKey: order?.id ?? id,
+    enabled: editing,
+    data: { editLines, internalNote, externalNote, deliveryDate, deliveryBatch, driverSlotId, pricelistId, priceType, paymentTerm, salesUserId, restaurantId },
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setEditLines(d.editLines)
+    setInternalNote(d.internalNote)
+    setExternalNote(d.externalNote)
+    setDeliveryDate(d.deliveryDate)
+    setDeliveryBatch(d.deliveryBatch)
+    setDriverSlotId(d.driverSlotId)
+    setPricelistId(d.pricelistId)
+    setPriceType(d.priceType)
+    setPaymentTerm(d.paymentTerm)
+    setSalesUserId(d.salesUserId)
+    setRestaurantId(d.restaurantId)
+  }
 
   // 缺货提醒(20260729)：编辑期间新增的行不在初次 load() 拉取的 forecastMap 里，单独补一条
   function ensureForecast(productId: string) {
@@ -486,6 +517,7 @@ export default function QuotationDetailPage() {
       }
       setEditing(false)
       setEditLines([])
+      draft.clearDraft()
       await load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed')
@@ -763,7 +795,7 @@ export default function QuotationDetailPage() {
                 <button onClick={handleSave}
                   className="h-8 px-4 text-sm rounded text-white font-medium"
                   style={{ background: PURPLE }}>Save</button>
-                <button onClick={() => { setEditing(false); setEditLines([]); load() }}
+                <button onClick={() => { setEditing(false); setEditLines([]); draft.clearDraft(); load() }}
                   className="h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Discard</button>
               </>
             )}
@@ -834,6 +866,9 @@ export default function QuotationDetailPage() {
 
       {/* Region 3: Main info card */}
       <div className="px-6 py-4">
+        {editing && draft.pendingDraft && (
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
+        )}
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
           <div className="flex items-start justify-between">
             <h1 className="text-3xl font-bold text-gray-800">{displayOrderCode(order)}</h1>

@@ -11,12 +11,15 @@ import { useSaleUomOptions } from '@/hooks/use-sale-uom-options'
 import { DuplicateProductAlert } from '@/components/classic/DuplicateProductAlert'
 import { round2 } from '@/lib/decimal-helpers'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
-import { getSession } from '@/lib/session'
+import { getSession, type UserSession } from '@/lib/session'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { rankByRelevance } from '@/lib/search-rank'
 import type { Product, Customer, OdooPricelist, CustomerPriceType } from '@/lib/types'
@@ -266,9 +269,25 @@ function QuotationContent({ customer, lines, orderDate, salesTeam, quotationNo, 
 
 export default function ClassicPlaceOrderPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const isEn = locale !== routing.defaultLocale
+
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
+
+  // 新建页没有 id，草稿要靠一个稳定 key 跨刷新认出"是不是同一次没填完的单"——
+  // 第一次渲染生成一个，写进 URL 查询串；刷新页面时从 URL 读回同一个 key，
+  // 否则每次刷新都生成新 key，草稿等于白存。
+  const [draftId] = useState(() => searchParams.get('draftId') || `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  useEffect(() => {
+    if (searchParams.get('draftId') === draftId) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.set('draftId', draftId)
+    router.replace(`?${next.toString()}`, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Raw data ──────────────────────────────────────────────────────────────
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -468,25 +487,45 @@ export default function ClassicPlaceOrderPage() {
       .catch(() => {})
   }
 
-  // 商品管理侧改了 canBeSold 等字段后，希望回到这个已经打开的页面时能看到最新数据，
-  // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案。
-  useEffect(() => {
-    let lastFetch = Date.now()
-    function refetchProducts() {
-      if (Date.now() - lastFetch < 30_000) return
-      lastFetch = Date.now()
-      fetchLatestProducts()
-    }
-    function onVisibility() {
-      if (document.visibilityState === 'visible') refetchProducts()
-    }
-    window.addEventListener('focus', refetchProducts)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      window.removeEventListener('focus', refetchProducts)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [])
+  function fetchLatestPricelists() {
+    return apiGet<OdooPricelist[]>('/api/pricelists').then(setPricelists).catch(() => {})
+  }
+
+  function fetchLatestPendingDemand() {
+    return apiGet<Record<string, number>>('/api/products/pending-demand').then(setPendingDemand).catch(() => {})
+  }
+
+  // 商品/价格表管理侧在别的 tab 改了数据后，希望回到这个已经打开的页面时能看到最新数据，
+  // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案
+  // （共享 hook，见 lib/hooks/use-refetch-on-focus.ts，原三个订单页各自一份重复代码收口于此）。
+  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists, fetchLatestPendingDemand])
+
+  // 新建页防抖存草稿：切去别的 tab 改引用数据被上面的 hook 自动刷新回来时，不至于把
+  // 正在填的新单内容冲掉；提交成功/主动放弃后清掉，不是永久草稿。
+  type PlaceOrderDraft = {
+    lines: QuotationLine[]; customerId: string; deliveryDate: string; salesTeam: string
+    pricelistId: string; paymentTerms: string; priceType: CustomerPriceType
+    internalNotes: string; externalNote: string
+  }
+  const draft = useDraftAutosave<PlaceOrderDraft>({
+    userId: session?.userId,
+    entity: 'place-order',
+    recordKey: draftId,
+    data: { lines, customerId, deliveryDate, salesTeam, pricelistId, paymentTerms, priceType, internalNotes, externalNote },
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setLines(d.lines)
+    setCustomerId(d.customerId)
+    setDeliveryDate(d.deliveryDate)
+    setSalesTeam(d.salesTeam)
+    setPricelistId(d.pricelistId)
+    setPaymentTerms(d.paymentTerms)
+    setPriceType(d.priceType)
+    setInternalNotes(d.internalNotes)
+    setExternalNote(d.externalNote)
+  }
 
   // ── Keyboard navigation handlers ──────────────────────────────────────────
   function handleCustKey(e: React.KeyboardEvent) {
@@ -1043,6 +1082,7 @@ export default function ClassicPlaceOrderPage() {
     try {
       const created = await apiPost<{ id: string }>('/api/orders', buildOrderPayload('pending'))
       toast.success(isEn ? 'Quotation saved' : '报价单已保存')
+      draft.clearDraft()
       router.push(
         created?.id
           ? `${prefix}/classic/operator/quotations/${created.id}`
@@ -1065,6 +1105,7 @@ export default function ClassicPlaceOrderPage() {
       const created = await apiPost<{ id: string }>('/api/orders', buildOrderPayload('confirmed'))
       setStatus('sale')
       toast.success(isEn ? 'Order confirmed' : '订单已确认')
+      draft.clearDraft()
       router.push(
         created?.id
           ? `${prefix}/classic/operator/quotations/${created.id}`
@@ -1079,6 +1120,7 @@ export default function ClassicPlaceOrderPage() {
 
   function handleDiscard() {
     if ((lines.length > 0 || customerId) && !confirm(isEn ? 'Discard current changes and return to the list?' : '放弃当前修改并返回列表？')) return
+    draft.clearDraft()
     router.push(`${prefix}/classic/operator/quotations`)
   }
 
@@ -1279,6 +1321,10 @@ export default function ClassicPlaceOrderPage() {
 
       {/* ══ Form body ════════════════════════════════════════════════════════ */}
       <div className="px-6 py-4">
+
+        {draft.pendingDraft && (
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
+        )}
 
         {/* Two-column header form */}
         <div className="bg-white rounded border border-gray-200 p-5 mb-4">

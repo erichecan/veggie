@@ -19,6 +19,7 @@ import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_
 import { useServerList } from '@/hooks/use-server-list'
 import { Pagination } from '@/components/ui/pagination'
 import { DatePicker } from '@/components/ui/date-picker'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PAGE_SIZE = 50
 
@@ -360,6 +361,10 @@ export default function ClassicQuotationsPage() {
   }
 
   useEffect(() => { loadRefData() }, [])
+
+  // 列表本身(refresh)+客户/行程候选(loadRefData)，别的 tab 改了相关数据后，切回本页能看到
+  // 最新数据，不用手动刷新页面（共享 hook，见 lib/hooks/use-refetch-on-focus.ts）。
+  useRefetchOnFocus([refresh, loadRefData])
 
   // 开票状态只查当前这一页的订单。以前是 `/api/invoices?slim=1` 全表扫 148,285 张
   // （3.2 MB / 3.7 秒），而 invoicedIds 的唯一用途是给当前页打「待开票」标记。
