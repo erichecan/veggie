@@ -11,6 +11,7 @@ import ActionLogPanel from '@/components/shared/action-log-panel'
 import { GiftAmount } from '@/components/shared/gift-amount'
 import Link from 'next/link'
 import { toInvoiceLineViews, isOrderBasedInvoice, formatMoney } from '@/lib/invoice-lines-view'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PURPLE = '#875A7B'
 
@@ -76,6 +77,11 @@ export default function ClassicInvoiceDetailPage() {
   }
 
   useEffect(() => { load() }, [params.id])
+
+  // 发票/收款记录在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 不接 M2——这页没有常驻编辑态表单，payAmount/payMethod/payNote 是记一笔付款就提交
+  // 的快捷小表单，load() 只换 inv/payments 不碰这几个 state，不会被背景刷新冲掉
+  useRefetchOnFocus([load])
 
   async function addPayment(amount: number) {
     if (!inv) return

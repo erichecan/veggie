@@ -11,6 +11,7 @@ import { useCsvExport } from '@/hooks/use-csv-export'
 import { formatDateOnly, formatDateTime } from '@/lib/format-date'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 interface Statement {
   id: string
@@ -172,6 +173,9 @@ export default function StatementsPage() {
   })
 
   useEffect(() => { load() }, [load])
+
+  // 对账单列表在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   useEffect(() => {
     apiGet<{ items: Customer[] }>('/api/customers?limit=500')

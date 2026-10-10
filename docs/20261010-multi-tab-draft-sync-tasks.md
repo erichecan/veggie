@@ -86,16 +86,16 @@
       证据：tsc 对 5 个文件合并检查无输出；build exit code 0；`git status --short` 确认本次改动精确落在这 5 个文件，无误带改动。未发现偏离 U5 原定"全部 M1 only，无 M2"假设的情况——5 个文件都是"弹窗提交即落库"或"选中后在同一页填一张单据提交"，没有会被切 tab 冲掉的常驻编辑态表单；inventory/receive 稍特殊：loadList 常驻刷新采购单下拉列表，loadHistory 只在 viewMode==='history' 时刷新（用 useRefetchOnFocus 的 enabled 选项挂载），两者都不碰已选中采购单的收货表单草稿（drafts/qc 等），故未接 M2
       依赖：U0
 
-## U6 财务组（4 页，含 1 个 M2）
+## U6 财务组（4 页，实际 0 个 M2，详见偏离说明）
 
-- [ ] finance/invoices/[id]（M1+M2）
-- [ ] finance/invoices/page（M1）
-- [ ] finance/statements/page（M1）
-- [ ] finance/vendor-bills/page（M1）
-      验收命令：`npx tsc --noEmit`
-      可看物：`docs/shots/20261010-u6-*.png`
-      定性状态：待你确认
-      证据：（回填）
+- [x] finance/invoices/[id]（M1 only，见下方偏离说明）
+- [x] finance/invoices/page（M1）
+- [x] finance/statements/page（M1）
+- [x] finance/vendor-bills/page（M1）
+      验收命令：`npx tsc --noEmit`（4 文件合并跑，无输出）+ `npm run build`（exit 0，日志 /tmp/build-u6.log 无 error）；本机沙箱无可用 Chrome/Playwright 二进制，原定的 playwright e2e 命令跑不了，改成这两条
+      可看物：本机沙箱 Chrome/Playwright 不可用，无法截图/录屏；条状提示本单未新增（下方说明无 M2），实际刷新行为只能靠你自己打开 4 个页面点一遍验证
+      定性状态：待你确认（尤其是：切 tab 回来发票/对账单/供应商账单列表有没有真的刷新；发票详情页切走回来再切回会不会把正在填的收款小表单冲掉——结论是不会，load() 不碰 payAmount/payMethod/payNote）
+      证据：tsc 对 4 个文件合并检查无输出；build exit code 0；`git status --short` 确认本次改动精确落在这 4 个文件，无误带改动。⚠️路径更正：台账原文写的 `finance/invoices/[id]` 等路径实际不在 `operator/` 目录下，真实路径是 `app/[locale]/classic/finance/...`（没有 operator 这一层），已核实后按真实路径改动。偏离说明：finance/invoices/[id] 读代码确认 state 只有 inv/payments（只读展示）+ payAmount/payMethod/payNote/payBusy（记一笔付款即提交的快捷小表单，立即 apiPost 落库），发票本身没有可编辑字段（status 变化靠 post/cancel 按钮直接调 API，不是表单保存），没有会被切 tab 冲掉的常驻编辑态内容，所以只接了 M1（整页 load 直接重跑），未接 M2——跟 U2 的 purchases/vendors/[id]、U4 的 trips/[id]/sorting/[id] 是同一类"按实际代码形状而非按清单机械套用"的偏离，第三次出现；finance/vendor-bills/page 点一行会打开带 refDraft（编辑供应商单号）的详情区，但 load() 只刷新 bills 数组不碰 detail/refDraft，背景刷新不会冲掉正在编辑的单号，故无需额外 enabled 判断
       依赖：U0
 
 ## U7 其余角色组（7 页，含 2 个 M2）

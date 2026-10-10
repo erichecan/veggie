@@ -19,6 +19,7 @@ import { filterByFacets } from '@/lib/facet-client'
 import { INVOICE_FACET_DEFS, fieldsOf } from '@/lib/facets/client-defs'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const STATUS_LABEL_ZH: Record<Invoice['status'], string> = {
   draft: '草稿',
@@ -214,6 +215,9 @@ export default function ClassicInvoicesPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // 发票列表在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   // 「该客户还没开票的已完成订单」。以前是拿全量发票在前端 some() 判断，现在只把
   // 这个客户的已完成订单 id 发过去精确反查 —— 判断 20 张单的开票状态不必扫全表。

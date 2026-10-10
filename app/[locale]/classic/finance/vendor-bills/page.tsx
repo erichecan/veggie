@@ -18,6 +18,7 @@ import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/
 import { SUPPLIER_INVOICE_REF_MAX_LEN } from '@/lib/vendor-bill-fields'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 type VbStatus = 'DRAFT' | 'POSTED' | 'PAID' | 'CANCELLED'
 
@@ -150,6 +151,10 @@ export default function VendorBillsPage() {
       .then(setSuppliers)
       .catch(() => {})
   }, [load])
+
+  // 供应商账单列表在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // load() 只换 bills 数组，不碰 detail/refDraft，不会冲掉正在编辑的供应商单号
+  useRefetchOnFocus([load])
 
   const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
 
