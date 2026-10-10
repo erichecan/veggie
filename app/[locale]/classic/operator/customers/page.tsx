@@ -21,6 +21,7 @@ import { writeCustomerNavList } from '@/lib/customer-nav-list'
 import { hasPermission, useAbility } from '@/lib/permissions'
 import { deleteCustomersFlow, DELETE_PERMISSION_HINT } from '@/components/customers/delete-customers'
 import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PAGE_SIZE = 20
 
@@ -190,8 +191,7 @@ export default function ClassicCustomersPage() {
 
   // 挂载时只拉一次：用恢复出来的页码/筛选(没有就是第 1 页、无筛选)。下面几个按筛选
   // 变化重拉的 effect 都跳过首次挂载，否则会用 page=1 把刚恢复的页码冲掉。
-  useEffect(() => {
-    loadPage(page, searchInput, paymentFilter, includeArchived, pageSize, isVendorOnly)
+  function fetchReferenceData() {
     // 20261008 修复：这里不能只存 active 的——客户挂靠的价格表一旦被归档，
     // 名字映射(pricelistMap)就会查不到，列表里显示成 pl_35 这种内部 id(Odoo 迁移遗留格式)
     // 而不是真实名字。筛选器下拉(filterOptions)另外单独过滤出 active 的，归档的不需要出现在那
@@ -200,8 +200,17 @@ export default function ClassicCustomersPage() {
     apiGet<PickerUser[]>('/api/users?role=OPERATOR,SALES,EXTERNAL_SALES')
       .then(users => setSalesUsers(users.map(u => ({ id: u.id, name: u.name || u.email || u.id, isActive: u.isActive }))))
       .catch(() => {})
+  }
+
+  useEffect(() => {
+    loadPage(page, searchInput, paymentFilter, includeArchived, pageSize, isVendorOnly)
+    fetchReferenceData()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 价格表/销售员在别的 tab 改了后，切回这个已打开的列表页希望看到最新结果；
+  // 列表本身也一并刷新，保持跟价格表映射同一节流节奏
+  useRefetchOnFocus([fetchReferenceData, () => loadPage(page, searchInput, paymentFilter, includeArchived, pageSize, isVendorOnly)])
 
   const filtersMountedRef = useRef(false)
   useEffect(() => {

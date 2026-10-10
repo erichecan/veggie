@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
@@ -18,6 +18,10 @@ import ProductPricelistRules from '@/components/classic/ProductPricelistRules'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { readProductNavList } from '@/lib/product-nav-list'
 import { formatDateTime } from '@/lib/format-date'
+import { getSession, type UserSession } from '@/lib/session'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 
 interface PriceHistoryEntry {
   value: number
@@ -111,8 +115,22 @@ export default function ClassicProductDetailPage() {
   const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const params = useParams()
+  const searchParams = useSearchParams()
   const id = params.id as string
   const isNew = id === 'new'
+
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
+
+  const [draftId] = useState(() => searchParams.get('draftId') || `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  useEffect(() => {
+    if (!isNew) return
+    if (searchParams.get('draftId') === draftId) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.set('draftId', draftId)
+    router.replace(`?${next.toString()}`, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 上一个/下一个翻页（20261001）：列表页点进来前存的那一页商品 id 顺序，只读一次——
   // 同一趟浏览（prev/next 互相跳转）用的都是同一份，不用每次 id 变了重新去读。
@@ -190,16 +208,27 @@ export default function ClassicProductDetailPage() {
   const [saleUoms, setSaleUoms] = useState<SaleUomFormRow[]>([])
   const [saleUomsSaving, setSaleUomsSaving] = useState(false)
 
+  // 分类/计量单位是别的 tab 也会改的参考数据；被下单销量统计用的 orders 列表和商品本身
+  // 不属于这类"参考数据"，不纳入 fetchReferenceData/焦点刷新，留在 load() 里按原节奏取。
+  async function fetchReferenceData() {
+    const [cats, uomList] = await Promise.all([
+      apiGet<ProductCategory[]>('/api/product-categories'),
+      apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]>('/api/uoms').catch(() => [] as { id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]),
+    ])
+    const HIDDEN_CATEGORIES = ['Length', 'Time']
+    const filteredUoms = uomList.filter(u => !HIDDEN_CATEGORIES.includes(u.category?.name ?? ''))
+    setUoms(filteredUoms)
+    setCategories(cats)
+    return filteredUoms
+  }
+
   async function load() {
     try {
-      const [found, cats, orders, uomList] = await Promise.all([
+      const [found, uomList, orders] = await Promise.all([
         isNew ? Promise.resolve(null) : apiGet<ProductTemplate>(`/api/products/${id}`),
-        apiGet<ProductCategory[]>('/api/product-categories'),
+        fetchReferenceData(),
         apiGet<Order[]>('/api/orders?include_lines=false'),
-        apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]>('/api/uoms').catch(() => [] as { id: string; name: string; nameZh?: string | null; categoryId?: string; factor?: number; type?: string; category?: { name: string } }[]),
       ])
-      const HIDDEN_CATEGORIES = ['Length', 'Time']
-      setUoms(uomList.filter(u => !HIDDEN_CATEGORIES.includes(u.category?.name ?? '')))
       if (!isNew) {
         if (!found) { router.push(`${prefix}/classic/operator/products`); return }
         const normalized = {
@@ -236,13 +265,37 @@ export default function ClassicProductDetailPage() {
           setSaleUoms(withBaseUomFallback(mapSaleUomApiRows(rows), found.uomId))
         } catch { setSaleUoms([]) }
       }
-      setCategories(cats)
     } catch {
       if (!isNew) router.push(`${prefix}/classic/operator/products`)
     }
   }
 
   useEffect(() => { load() }, [id])
+
+  // 分类/计量单位在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([fetchReferenceData])
+
+  // 编辑态内容防抖存本地：切去别的 tab 改参考数据被上面的 hook 自动刷新回来时，
+  // 不至于把正在填的内容也一起冲掉——保存成功/放弃编辑后清掉，不是永久草稿。
+  type ProductDraft = { tmpl: ProductTemplate; saleUoms: SaleUomFormRow[] }
+  const draft = useDraftAutosave<ProductDraft>({
+    userId: session?.userId,
+    entity: 'product',
+    recordKey: isNew ? draftId : id,
+    enabled: editMode,
+    data: tmpl ? { tmpl, saleUoms } : { tmpl: {
+      id: 'new', name: '', internalRef: '', listPrice: 0, standardPrice: 0,
+      customerTaxRate: 0.23, type: 'consu', canBeSold: true, canBePurchased: true,
+      isPackaging: false, canBeExpensed: false, images: [], status: 'active',
+      createdAt: new Date().toISOString(), sequence: 0, commissionPrice: 0, weight: 0,
+    }, saleUoms: [] },
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setTmpl(d.tmpl)
+    setSaleUoms(d.saleUoms)
+  }
 
   async function submitAdjust() {
     const vid = adjVariantId || variants[0]?.id
@@ -358,6 +411,7 @@ export default function ClassicProductDetailPage() {
           }
         }
         toast.success(isEn ? `Created "${created.name}"` : `已创建「${created.name}」`)
+        draft.clearDraft()
         router.push(`${prefix}/classic/operator/products/${created.id}`)
       } else {
         const updated = { ...tmpl, updatedAt: new Date().toISOString() }
@@ -365,6 +419,7 @@ export default function ClassicProductDetailPage() {
         setOriginal({ ...updated })
         setTmpl({ ...updated })
         setEditMode(false)
+        draft.clearDraft()
         toast.success(isEn ? `Saved "${updated.name}"` : `已保存「${updated.name}」`)
       }
     } catch (err) {
@@ -375,6 +430,7 @@ export default function ClassicProductDetailPage() {
   }
 
   function handleDiscard() {
+    draft.clearDraft()
     if (isNew) { router.push(`${prefix}/classic/operator/products`); return }
     if (original) { setTmpl({ ...original }) }
     setEditMode(false)
@@ -595,6 +651,12 @@ export default function ClassicProductDetailPage() {
           )}
         </div>
       </div>
+
+      {editMode && draft.pendingDraft && (
+        <div className="mx-4 mt-4">
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
+        </div>
+      )}
 
       {/* ── 主内容卡片 ───────────────────────────────────────────────────────── */}
       <div className="m-4 bg-white border border-gray-200 rounded">

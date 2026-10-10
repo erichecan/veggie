@@ -10,6 +10,7 @@ import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Pagination } from '@/components/ui/pagination'
 import RowsPerPagePagination from '@/components/shared/rows-per-page-pagination'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PAGE_SIZE = 50
 
@@ -82,6 +83,9 @@ export default function ProductsBySaleUnitPage() {
     const timer = setTimeout(() => loadPage(1, searchInput), 400)
     return () => clearTimeout(timer)
   }, [searchInput]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 商品列表页改了规格/毛重等字段后，切回这个已打开的 tab 希望看到最新结果
+  useRefetchOnFocus([() => loadPage(page, searchInput, sortKey, sortDir, pageSize)])
 
   function handleSort(key: string) {
     const nextDir = key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc'

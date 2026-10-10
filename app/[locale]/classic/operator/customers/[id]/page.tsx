@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo, use } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
@@ -15,9 +15,12 @@ import { PAYMENT_TERM_OPTIONS } from '@/lib/payment-terms'
 import type { Customer, OdooPricelist } from '@/lib/types'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
-import { getSession } from '@/lib/session'
+import { getSession, type UserSession } from '@/lib/session'
 import { readCustomerNavList } from '@/lib/customer-nav-list'
 import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 
 // Sage Account 是会计对账字段，纯销售（未兼任 OPERATOR/BOSS）不可见——与后端
 // app/api/customers/[id]/route.ts 的 isSalesOnly 同一套判断口径（服务端已经不会把
@@ -222,9 +225,25 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   const isNew = id === 'new'
 
   const router = useRouter()
+  const searchParams = useSearchParams()
   const locale = useLocale()
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const isEn = locale !== routing.defaultLocale
+
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
+
+  // 新建页没有真实 id（路由参数固定是 'new'），草稿要靠一个稳定 key 跨刷新认出
+  // "是不是同一次没填完的单"——第一次渲染生成一个写进 URL 查询串，刷新页面时从 URL 读回。
+  const [draftId] = useState(() => searchParams.get('draftId') || `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  useEffect(() => {
+    if (!isNew) return
+    if (searchParams.get('draftId') === draftId) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.set('draftId', draftId)
+    router.replace(`?${next.toString()}`, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [form, setForm] = useState<FormState>(emptyForm())
   const [original, setOriginal] = useState<Customer | null>(null)
@@ -259,7 +278,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
     setDirty(true)
   }
 
-  useEffect(() => {
+  // 价格表/销售员/司机档位/商品是"另一个 tab 可能改了"的参考数据，拆成独立函数
+  // 既供初始加载复用，也供下面 useRefetchOnFocus 在回到这个 tab 时单独刷新——
+  // 不碰 form/specialPrices/original，不会在用户编辑中途把表单内容冲掉。
+  function fetchReferenceData() {
     apiGet<OdooPricelist[]>('/api/pricelists')
       .then(d => setPricelists(d.filter(p => p.active)))
       .catch(() => {})
@@ -280,6 +302,10 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
         setProducts(raw)
       })
       .catch(() => {})
+  }
+
+  useEffect(() => {
+    fetchReferenceData()
 
     if (!isNew) {
       setIsEditing(false)
@@ -298,6 +324,26 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  // 价格表/销售员/司机档位/商品管理在别的 tab 改了数据后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([fetchReferenceData])
+
+  // 编辑态内容防抖存本地：切去别的 tab 改引用数据被上面的 hook 自动刷新回来时，
+  // 不至于把正在填的内容也一起冲掉——保存成功/退出编辑后清掉，不是永久草稿。
+  type CustomerDraft = { form: FormState; specialPrices: CustomerSpecialPrice[] }
+  const draft = useDraftAutosave<CustomerDraft>({
+    userId: session?.userId,
+    entity: 'customer',
+    recordKey: isNew ? draftId : id,
+    enabled: isEditing,
+    data: { form, specialPrices },
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setForm(d.form)
+    setSpecialPrices(d.specialPrices)
+  }
 
   async function handleSave() {
     if (saving) return
@@ -364,6 +410,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       if (isNew) {
         const created = await apiPost<Customer>('/api/customers', { ...fields, createdAt: new Date().toISOString() })
         toast.success(isEn ? 'Customer created' : '客户已创建')
+        draft.clearDraft()
         router.replace(`${prefix}/classic/operator/customers/${created.id}`)
       } else {
         const updated = await apiPut<Customer>(`/api/customers/${id}`, { ...original, ...fields })
@@ -371,6 +418,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
         toast.success(isEn ? 'Saved successfully' : '保存成功')
         setDirty(false)
         setIsEditing(false)
+        draft.clearDraft()
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -418,6 +466,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
   function handleDiscard() {
     if (isNew) {
       // 新建场景：直接退出回列表
+      draft.clearDraft()
       router.push(`${prefix}/classic/operator/customers`)
       return
     }
@@ -433,6 +482,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
       setDirty(false)
       toast.success(isEn ? 'Unsaved changes discarded' : '未保存的修改已撤销')
     }
+    draft.clearDraft()
     // 退出编辑态回到只读视图——按钮条本身的变化(Save/Discard → Edit)就是可见反馈，
     // 不需要再跳回列表
     setIsEditing(false)
@@ -534,6 +584,12 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
           ⚠️ {isEn
             ? 'This contact is archived — it will not appear in the regular list, or when picking a customer/supplier on order, quotation or purchase pages.'
             : '该联系人已归档 —— 不会出现在常规列表中，也不会出现在下单/报价/采购页面的客户或供应商选择中。'}
+        </div>
+      )}
+
+      {isEditing && draft.pendingDraft && (
+        <div className="mt-4 mx-auto" style={{ maxWidth: 1060 }}>
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
         </div>
       )}
 

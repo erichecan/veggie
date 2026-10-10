@@ -13,6 +13,7 @@ import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import type { Facet } from '@/lib/list-filters'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { PRICELIST_EXPORT_COLUMNS } from '@/lib/export/columns/pricelists'
@@ -97,6 +98,9 @@ export default function ClassicPricelistsPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // 价格表/商品管理在别的 tab 改了数据后，切回这个已打开的列表页希望看到最新结果
+  useRefetchOnFocus([load])
 
   function handleCreate() {
     // 详情页会以本地草稿态展示，真正落库推迟到用户点 Save，

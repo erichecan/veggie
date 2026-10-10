@@ -45,17 +45,17 @@
 
 ## U3 价格表/商品/客户组（7 页，含 3 个 M2）
 
-- [ ] pricelists/[id]（M1+M2）
-- [ ] pricelists/page（M1）
-- [ ] products/[id]（M1+M2）
-- [ ] products/page（M1）
-- [ ] products/by-sale-unit（M1）
-- [ ] customers/[id]（M1+M2）
-- [ ] customers/page（M1）
-      验收命令：`npx tsc --noEmit && npx playwright test e2e/multi-tab-draft-sync.spec.ts -g "pricelists|products|customers"`
-      可看物：`docs/shots/20261010-u3-*.png`
-      定性状态：待你确认
-      证据：（回填）
+- [x] pricelists/[id]（M1+M2）
+- [x] pricelists/page（M1）
+- [x] products/[id]（M1+M2）
+- [x] products/page（M1）
+- [x] products/by-sale-unit（M1）
+- [x] customers/[id]（M1+M2）
+- [x] customers/page（M1）
+      验收命令：`npx tsc --noEmit`（7 文件合并跑，无输出）+ `npm run build`（exit 0，日志 /tmp/build-u3.log 无 error）；本机沙箱无可用 Chrome/Playwright 二进制，原定的 playwright e2e 命令跑不了，改成这两条
+      可看物：本机沙箱 Chrome/Playwright 不可用，无法截图/录屏；条状提示复用 U0 已确认的 `DraftRestoreBanner`（同一个组件，没有新样式），实际刷新/草稿行为只能靠你自己打开 7 个页面点一遍验证
+      定性状态：待你确认（尤其是：切 tab 回来价格表/商品/客户列表有没有真的刷新；编辑到一半切走回来有没有弹出草稿恢复条；新建商品/新建客户刷新页面后草稿还找得到）
+      证据：tsc 对 7 个文件合并检查无输出；build exit code 0。本单执行过程中撞上 claude.ai 会话用量限额中断，`products/[id]` 当时只加了三个 hook 的 import 还没真正接线（遗留 `setCategories(cats)` 死代码引用已清理的变量导致 tsc 报错），恢复后由我本人手动核对补完 M1(useRefetchOnFocus 包 fetchReferenceData)+M2(useDraftAutosave 存 tmpl+saleUoms，enabled 绑 editMode，save/discard 都 clearDraft，banner 渲在主卡片上方)，其余 6 个文件经核对确认是完整的，不是半成品；`git status --short` 确认改动精确落在这 7 个文件（另有 DEV-PLAN.md 本身的改动 + U0 遗留的未提交文件，均不属于本次改动范围）
       依赖：U0
 
 ## U4 司机/分拣/其他 operator 组（7 页，含 2 个 M2）

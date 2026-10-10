@@ -20,6 +20,10 @@ import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { PRICELIST_EXPORT_COLUMNS } from '@/lib/export/columns/pricelists'
 import { pricelistImportColumns, PRICELIST_IMPORT_EXAMPLE_ROWS } from '../pricelist-import-columns'
+import { getSession, type UserSession } from '@/lib/session'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
+import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 
 const PURPLE = '#875A7B'
 const PURPLE_LIGHT = '#f3eff5'
@@ -170,6 +174,21 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [uoms, setUoms] = useState<Uom[]>([])
 
+  const [session, setSession] = useState<UserSession | null>(null)
+  useEffect(() => { setSession(getSession()) }, [])
+
+  // 新建页没有真实 id（路由参数固定是 'new'），草稿要靠一个稳定 key 跨刷新认出
+  // "是不是同一次没填完的单"——第一次渲染生成一个写进 URL 查询串，刷新页面时从 URL 读回。
+  const [draftId] = useState(() => searchParams.get('draftId') || `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  useEffect(() => {
+    if (id !== 'new') return
+    if (searchParams.get('draftId') === draftId) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.set('draftId', draftId)
+    router.replace(`?${next.toString()}`, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [editMode, setEditMode] = useState(id === 'new' || searchParams.get('new') === '1')
   const [itemPage, setItemPage] = useState(1)
   const [itemPageSize, setItemPageSize] = useState(ITEMS_PAGE_SIZE_DEFAULT)
@@ -210,33 +229,44 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // 商品/分类/价格表列表/单位是"另一个 tab 可能改了"的参考数据，拆成独立函数
+  // 既供初始加载复用，也供下面 useRefetchOnFocus 在回到这个 tab 时单独刷新——
+  // 不碰 pl/originalPl，不会在用户编辑中途把表单内容冲掉。
+  async function fetchReferenceData() {
+    try {
+      const [allProducts, allCategories, allPricelists, allUoms] = await Promise.all([
+        apiGet<Product[]>('/api/products'),
+        apiGet<ProductCategory[]>('/api/product-categories'),
+        apiGet<OdooPricelist[]>('/api/pricelists'),
+        apiGet<Uom[]>('/api/uoms').catch(() => [] as Uom[]),
+      ])
+      setProducts(allProducts.filter(p => p.status?.toLowerCase() === 'active' && p.active !== false))
+      setAllProductsForLabels(allProducts)
+      setCategories(allCategories)
+      setUoms(allUoms)
+      setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
+    } catch {
+      // 参考数据刷新失败静默忽略，不打断正在编辑的内容
+    }
+  }
+
   useEffect(() => {
-    async function loadAll() {
+    async function loadRecord() {
+      await fetchReferenceData()
+
+      // "new" 是本地草稿态，不落库——真正创建推迟到用户点 Save（见 handleSave），
+      // 避免"点了新建但没填名字就退出"在库里留下永久空名孤儿记录。
+      if (id === 'new') {
+        setPl({
+          id: 'new', name: '', currency: 'EUR', items: [], sequence: 99,
+          selectable: true, active: true, updatedAt: new Date().toISOString(), countryGroups: [],
+        })
+        setOriginalPl(null)
+        setEditMode(true)
+        return
+      }
+
       try {
-        const [allProducts, allCategories, allPricelists, allUoms] = await Promise.all([
-          apiGet<Product[]>('/api/products'),
-          apiGet<ProductCategory[]>('/api/product-categories'),
-          apiGet<OdooPricelist[]>('/api/pricelists'),
-          apiGet<Uom[]>('/api/uoms').catch(() => [] as Uom[]),
-        ])
-        setProducts(allProducts.filter(p => p.status?.toLowerCase() === 'active' && p.active !== false))
-        setAllProductsForLabels(allProducts)
-        setCategories(allCategories)
-        setUoms(allUoms)
-        setAllLists([...allPricelists].sort((a, b) => a.sequence - b.sequence))
-
-        // "new" 是本地草稿态，不落库——真正创建推迟到用户点 Save（见 handleSave），
-        // 避免"点了新建但没填名字就退出"在库里留下永久空名孤儿记录。
-        if (id === 'new') {
-          setPl({
-            id: 'new', name: '', currency: 'EUR', items: [], sequence: 99,
-            selectable: true, active: true, updatedAt: new Date().toISOString(), countryGroups: [],
-          })
-          setOriginalPl(null)
-          setEditMode(true)
-          return
-        }
-
         const found = await apiGet<OdooPricelist>(`/api/pricelists/${id}`)
         if (!found) {
           toast.error(isEn ? 'Pricelist not found' : '价格表不存在')
@@ -254,9 +284,34 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         router.push(`${prefix}/classic/operator/pricelists`)
       }
     }
-    loadAll()
+    loadRecord()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  // 商品/分类/价格表管理在别的 tab 改了数据后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([fetchReferenceData])
+
+  // 编辑态内容防抖存本地：切去别的 tab 改引用数据被上面的 hook 自动刷新回来时，
+  // 不至于把正在填的内容也一起冲掉——保存成功/退出编辑后清掉，不是永久草稿。
+  type PricelistDraft = {
+    name: string; currency: string; selectable: boolean; active: boolean
+    items: OdooPricelistItem[]; countryGroups: string[]
+  }
+  const draft = useDraftAutosave<PricelistDraft>({
+    userId: session?.userId,
+    entity: 'pricelist',
+    recordKey: id === 'new' ? draftId : id,
+    enabled: editMode,
+    data: pl ? {
+      name: pl.name, currency: pl.currency, selectable: pl.selectable, active: pl.active,
+      items: pl.items, countryGroups: pl.countryGroups ?? [],
+    } : { name: '', currency: 'EUR', selectable: true, active: true, items: [], countryGroups: [] },
+  })
+  function restoreDraft() {
+    const d = draft.restore()
+    if (!d) return
+    setPl(p => p ? { ...p, ...d } : p)
+  }
 
   function update<K extends keyof OdooPricelist>(key: K, val: OdooPricelist[K]) {
     setPl(p => p ? { ...p, [key]: val } : p)
@@ -274,6 +329,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
         const { id: _draftId, ...rest } = next
         const created = await apiPost<OdooPricelist>('/api/pricelists', { ...rest, updatedAt: new Date().toISOString() })
         toast.success(isEn ? 'Created' : '已创建')
+        draft.clearDraft()
         router.replace(`${prefix}/classic/operator/pricelists/${created.id}?new=1`)
         return
       }
@@ -283,6 +339,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       setPl({ ...updated })
       setOriginalPl({ ...updated })
       setEditMode(false)
+      draft.clearDraft()
       toast.success(isEn ? 'Saved' : '已保存')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : (isEn ? 'Save failed' : '保存失败'))
@@ -292,6 +349,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   async function handleDiscard() {
     if (id === 'new') {
       // 新建场景：还没落库，直接退出回列表，不留垃圾数据
+      draft.clearDraft()
       router.push(`${prefix}/classic/operator/pricelists`)
       return
     }
@@ -306,6 +364,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
       if (originalPl) setPl({ ...originalPl })
     }
     setEditMode(false)
+    draft.clearDraft()
   }
 
   function openNewItem() {
@@ -594,6 +653,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
 
       {/* ── Main card (centered on gray bg) ── */}
       <div className="p-6">
+        {editMode && draft.pendingDraft && (
+          <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
+        )}
         <div className="bg-white border border-gray-200 rounded-sm shadow-sm">
 
           {/* Name + Active toggle */}

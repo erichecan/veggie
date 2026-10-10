@@ -21,6 +21,7 @@ import { useCsvExport } from '@/hooks/use-csv-export'
 import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 import type { SaleUomFormRow } from '@/lib/sale-uom'
 import { writeProductNavList } from '@/lib/product-nav-list'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 
 const PAGE_SIZE = 50
 const LOW_STOCK_THRESHOLD = 10
@@ -338,17 +339,25 @@ export default function ClassicProductsPage() {
     }
   }
 
-  useEffect(() => {
+  function fetchReferenceData() {
     apiGet<ProductCategory[]>('/api/product-categories').then(setCategories).catch(() => {})
     apiGet<{ uomName: string[]; updatedBy: string[] }>('/api/products/filter-options')
       .then(setMultiSelectOptions).catch(() => {})
     apiGet<{ id: string; name: string; nameZh?: string | null; categoryId?: string }[]>('/api/uoms')
       .then(setUoms).catch(() => {})
+  }
+
+  useEffect(() => {
+    fetchReferenceData()
     // page/searchInput 这时已经是懒初始化时从 sessionStorage 恢复出来的值(如果有)，
     // 不再硬编码 loadPage(1, '')——否则从详情页返回时会先闪一下"未筛选的第 1 页"。
     loadPage(page, searchInput)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 商品分类/筛选选项/单位在别的 tab 改了后，切回这个已打开的列表页希望看到最新结果；
+  // 列表本身也一并刷新，保持跟分类/筛选项同一节流节奏
+  useRefetchOnFocus([fetchReferenceData, () => loadPage(page, searchInput)])
 
   // searchMountedRef 跳过首次挂载：上面那个 effect 已经用恢复出来的 page/searchInput
   // 拉过一次了，这里如果不跳过，400ms 后会用硬编码的 page=1 再拉一次，把刚恢复的页码
