@@ -96,9 +96,19 @@ export async function POST(req: Request) {
           // 归档只影响能不能被销售选中，不影响能不能被采购——
           // 只要 canBePurchased 还开着，供应商单据里的写法就该继续匹配得上。
           where: { canBePurchased: true },
-          select: { id: true, name: true, internalRef: true },
+          select: {
+            id: true, name: true, internalRef: true, purchaseUomId: true,
+            // 同名商品（如两种袋装规格）全靠这个区分，见 lib/purchase/product-match.ts
+            saleUoms: { select: { uomId: true, spec: true, isDefault: true } },
+          },
         }),
       ])
+      const matchableProducts = products.map(({ saleUoms, purchaseUomId, ...p }) => ({
+        ...p,
+        spec: saleUoms.find(su => su.uomId === purchaseUomId)?.spec
+          ?? saleUoms.find(su => su.isDefault)?.spec
+          ?? null,
+      }))
 
       let rows: ParsedRow[] = []
       let currency: string | null = null
@@ -215,12 +225,13 @@ export async function POST(req: Request) {
         if (alias) {
           const m: MatchedLine = {
             matchedProductId: alias.productId, matchedProductName: alias.productName,
-            confidence: 'exact', candidates: [{ id: alias.productId, name: alias.productName, score: 1 }],
+            confidence: 'exact',
+            candidates: [{ id: alias.productId, name: alias.productName, score: 1, spec: alias.productSpec }],
             ambiguous: false,
           }
           return { ...r, ...m, fromAlias: true }
         }
-        const m: MatchedLine = matchOne(r.productName, products)
+        const m: MatchedLine = matchOne(r.productName, matchableProducts)
         return { ...r, ...m, fromAlias: false }
       })
 

@@ -12,6 +12,8 @@ import { normalizeName } from './product-match'
 export interface AliasHit {
   productId: string
   productName: string
+  /** 按采购单位区分的规格（如 10KG/20KG）——同名商品全靠它区分 */
+  productSpec?: string | null
 }
 
 /**
@@ -28,7 +30,10 @@ export async function findAliasMatches(rawNames: string[]): Promise<Map<string, 
     select: {
       normalizedName: true,
       product: {
-        select: { id: true, name: true, canBePurchased: true },
+        select: {
+          id: true, name: true, canBePurchased: true, purchaseUomId: true,
+          saleUoms: { select: { uomId: true, spec: true, isDefault: true } },
+        },
       },
     },
   })
@@ -36,7 +41,11 @@ export async function findAliasMatches(rawNames: string[]): Promise<Map<string, 
   const map = new Map<string, AliasHit>()
   for (const row of rows) {
     if (!row.product.canBePurchased) continue
-    map.set(row.normalizedName, { productId: row.product.id, productName: row.product.name })
+    const { id, name, purchaseUomId, saleUoms } = row.product
+    const productSpec = saleUoms.find(su => su.uomId === purchaseUomId)?.spec
+      ?? saleUoms.find(su => su.isDefault)?.spec
+      ?? null
+    map.set(row.normalizedName, { productId: id, productName: name, productSpec })
   }
   return map
 }

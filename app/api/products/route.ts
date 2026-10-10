@@ -104,14 +104,22 @@ export async function GET(req: Request) {
           uomId: true, uom: { select: { id: true, name: true } },
           purchaseUomId: true, purchaseUom: { select: { id: true, name: true } },
           canBeSold: true, canBePurchased: true,
+          // 20261009：同名商品靠这个区分规格（如 10KG/20KG 两袋），
+          // 规格挂在按单位维度的 ProductSaleUom，不在 Product.spec（那个字段早清空了）
+          saleUoms: { select: { uomId: true, spec: true, isDefault: true } },
         },
       })
-      const slimResult = rows.map(({ category, uom, purchaseUom, ...p }) => ({
+      const slimResult = rows.map(({ category, uom, purchaseUom, saleUoms, purchaseUomId, ...p }) => ({
         ...p,
+        purchaseUomId,
         uomName: uom?.name ?? null,
         // 采购单位名——之前只取了裸 purchaseUomId 没 join 名字，采购单页面拿不到显示文本
         purchaseUomName: purchaseUom?.name ?? null,
         category: category?.name ?? null,
+        // 优先取跟采购单位同一个 UOM 的规格，没有就退回默认规格
+        purchaseUomSpec: saleUoms.find(su => su.uomId === purchaseUomId)?.spec
+          ?? saleUoms.find(su => su.isDefault)?.spec
+          ?? null,
       }))
       return NextResponse.json(serializeApi(slimResult))
     }

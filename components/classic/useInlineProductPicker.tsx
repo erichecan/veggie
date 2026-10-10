@@ -35,6 +35,8 @@ export interface InlineProductPickerProduct {
   id: string
   name: string
   internalRef?: string | null
+  /** 按采购单位区分的规格（如 10KG/20KG 两袋同名商品）——目前只有采购单页会传 */
+  purchaseUomSpec?: string | null
 }
 
 export interface UseInlineProductPickerOptions<P extends InlineProductPickerProduct> {
@@ -375,6 +377,9 @@ export function useInlineProductPicker<P extends InlineProductPickerProduct>({
                     }`}
                   >
                     <span className="font-medium text-gray-800 truncate flex-1">{p.name}</span>
+                    {p.purchaseUomSpec && (
+                      <span className="text-gray-500 text-[10px] shrink-0">({p.purchaseUomSpec})</span>
+                    )}
                     {p.internalRef && (
                       <span className="text-gray-400 text-[10px] shrink-0">[{p.internalRef}]</span>
                     )}

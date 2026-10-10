@@ -134,6 +134,9 @@ interface PurchaseProduct {
   price?: number | null
   /// 商品详情页"Vendor Taxes"——存的是小数(0/0.135/0.23)，采购单行 taxRate 存百分数(0/13.5/23)
   vendorTaxRate?: number | string | null
+  /// 按采购单位区分的规格（如 10KG/20KG 两袋同名商品）——来自 ProductSaleUom.spec，
+  /// 跟上面的 spec（Product.spec）是两张不同的表，Product.spec 早就清空了
+  purchaseUomSpec?: string | null
 }
 
 /** 采购单加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0（客户 20260904 反馈） */
@@ -298,7 +301,7 @@ export default function PurchaseDetailPage() {
         sequence: (prev[prev.length - 1]?.sequence ?? 0) + 10,
         productId: prod.id,
         productName: prod.name,
-        spec: lineDescription(prod) || null,
+        spec: lineDescription(prod, prod.purchaseUomSpec) || null,
         uomName: prod.uomName ?? null,
         orderedQty: 1,
         unitCost,
@@ -364,7 +367,7 @@ export default function PurchaseDetailPage() {
         ...l,
         productId: prod.id,
         productName: prod.name,
-        spec: lineDescription(prod) || null,
+        spec: lineDescription(prod, prod.purchaseUomSpec) || null,
         uomName: prod.uomName ?? null,
         orderedQty: qty,
         unitCost,

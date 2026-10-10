@@ -12,6 +12,8 @@ export interface MatchCandidate {
   id: string
   name: string
   score: number
+  /** 按采购单位区分的规格（如 10KG/20KG）——同名商品靠它区分，见 lib/purchase/product-match.ts */
+  spec?: string | null
 }
 
 export interface ExtractedLine {
@@ -35,6 +37,7 @@ export interface AliasProduct {
   name: string
   internalRef?: string | null
   category?: string | null
+  purchaseUomSpec?: string | null
 }
 
 export interface PdfExtractResult {
@@ -93,8 +96,11 @@ export default function PdfExtractDialog({ onApply, products }: {
   const [useAi, setUseAi] = useState(true)
   const [result, setResult] = useState<ParseApiResponse | null>(null)
   const [editableLines, setEditableLines] = useState<ExtractedLine[]>([])
-  const [searchingIndex, setSearchingIndex] = useState<number | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
+  /**
+   * 「匹配到的商品」输入框里的文字，按行索引记——每行独立（20261009 改为始终可搜索，
+   * 不再要先点🔍才换成搜索框）。没手动改过就跟着匹配结果/原文走，见 rowQueryOf。
+   */
+  const [rowQueries, setRowQueries] = useState<Record<number, string>>({})
   /** 识别出的原文，永远不随人工编辑 productName 而变——记忆表要记的是「单据本来写的什么」 */
   const originalNamesRef = useRef<string[]>([])
 
@@ -144,27 +150,40 @@ export default function PdfExtractDialog({ onApply, products }: {
     })
   }
 
-  /** 清空匹配，回到「未匹配，稍后新建」 */
+  /** 清空匹配，回到「未匹配，稍后新建」；输入框文字退回单据原文，方便重新搜 */
   function clearMatch(i: number) {
     setEditableLines(prev => {
       const next = [...prev]
       next[i] = { ...next[i], matchedProductId: null, matchedProductName: null, confidence: 'none', ambiguous: false, fromAlias: false }
       return next
     })
+    setRowQueries(prev => ({ ...prev, [i]: editableLines[i]?.productName ?? '' }))
+  }
+
+  /** 没手动改过搜索框文字时的默认值：已匹配就显示匹配到的商品名，否则显示单据原文 */
+  function rowQueryOf(i: number, l: ExtractedLine): string {
+    return rowQueries[i] ?? (l.matchedProductName ?? l.productName)
   }
 
   /**
-   * 人工选中商品（下拉候选或搜索均走这里）：置信度记为 exact —— 人挑的就是准的；
+   * 人工选中商品（原来分「下拉候选」/「🔍 搜索框」两条路，20261009 统一成一个
+   * 始终可搜索的输入框，只剩这一条路径）：置信度记为 exact —— 人挑的就是准的；
    * 同时把「单据原文 → 这个商品」记住（后台异步，不挡 UI），下次同样写法直接精确命中。
    */
-  function applyMatch(i: number, product: { id: string; name: string }) {
+  function applyMatch(i: number, product: { id: string; name: string; purchaseUomSpec?: string | null }) {
     setEditableLines(prev => {
       const next = [...prev]
-      next[i] = { ...next[i], matchedProductId: product.id, matchedProductName: product.name, confidence: 'exact', ambiguous: false, fromAlias: false }
+      next[i] = {
+        ...next[i],
+        matchedProductId: product.id,
+        matchedProductName: product.name,
+        confidence: 'exact',
+        ambiguous: false,
+        fromAlias: false,
+      }
       return next
     })
-    setSearchingIndex(null)
-    setSearchQuery('')
+    setRowQueries(prev => ({ ...prev, [i]: product.name }))
     const rawName = originalNamesRef.current[i]
     if (rawName) {
       apiPost('/api/purchase-orders/product-aliases', { rawName, productId: product.id }).catch(() => {})
@@ -291,76 +310,43 @@ export default function PdfExtractDialog({ onApply, products }: {
                         />
                       </td>
                       <td className="py-1 pr-2">
-                        {searchingIndex === i ? (
-                          <div className="flex items-center gap-1">
-                            <div className="flex-1">
-                              <ProductSearchInput
-                                products={products}
-                                value={searchQuery}
-                                onChange={setSearchQuery}
-                                onSelect={p => applyMatch(i, p)}
-                                placeholder={isEn ? 'Search product…' : '搜索商品…'}
-                                inputClassName="w-full border border-blue-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-blue-400"
-                                portalDropdown
-                                maxResults={8}
-                              />
-                            </div>
+                        <div className="flex items-center gap-1">
+                          <div className="flex-1 min-w-0">
+                            <ProductSearchInput
+                              products={products}
+                              value={rowQueryOf(i, l)}
+                              onChange={v => setRowQueries(prev => ({ ...prev, [i]: v }))}
+                              onSelect={p => applyMatch(i, p)}
+                              placeholder={isEn ? 'Search product…' : '搜索商品…'}
+                              inputClassName={`w-full border rounded px-1.5 py-0.5 text-xs focus:outline-none ${l.matchedProductId ? 'border-gray-300 focus:border-blue-400' : 'border-red-300 bg-red-50 focus:border-blue-400'}`}
+                              portalDropdown
+                            />
+                          </div>
+                          {l.matchedProductId && (
                             <button
                               type="button"
-                              onClick={() => { setSearchingIndex(null); setSearchQuery('') }}
-                              className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                              title={isEn ? 'Cancel search' : '取消搜索'}
+                              onClick={() => clearMatch(i)}
+                              className="text-gray-400 hover:text-red-600 flex-shrink-0"
+                              title={isEn ? 'Clear match' : '清空匹配'}
                             >
                               ✕
                             </button>
-                          </div>
+                          )}
+                        </div>
+                        {l.matchedProductId ? (
+                          <span className={`mt-0.5 inline-block px-1.5 py-0.5 rounded ${l.fromAlias ? ALIAS_STYLE : CONFIDENCE_STYLE[l.confidence]}`}>
+                            {l.fromAlias
+                              ? (isEn ? 'Remembered match' : '记忆匹配')
+                              : l.confidence === 'exact' ? (isEn ? 'Exact' : '精确')
+                                : l.confidence === 'strong' ? (isEn ? 'Strong' : '较可靠')
+                                  : (isEn ? 'Weak — verify' : '存疑，请核对')}
+                          </span>
                         ) : (
-                          <>
-                            <div className="flex items-center gap-1">
-                              {l.candidates.length > 0 ? (
-                                <select
-                                  value={l.matchedProductId ?? ''}
-                                  onChange={e => {
-                                    const id = e.target.value
-                                    if (!id) { clearMatch(i); return }
-                                    const hit = l.candidates.find(c => c.id === id)
-                                    if (hit) applyMatch(i, hit)
-                                  }}
-                                  className={`flex-1 min-w-0 border rounded px-1 py-0.5 text-xs ${l.matchedProductId ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
-                                >
-                                  <option value="">
-                                    {l.ambiguous
-                                      ? (isEn ? '— multiple matches, please pick —' : '— 命中多个，请选择 —')
-                                      : (isEn ? '— not matched, create later —' : '— 未匹配，稍后新建 —')}
-                                  </option>
-                                  {l.candidates.map(c => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className={`flex-1 min-w-0 inline-block px-1.5 py-0.5 rounded ${CONFIDENCE_STYLE.none}`}>
-                                  {isEn ? 'no candidate — create later' : '无候选，稍后新建'}
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => { setSearchingIndex(i); setSearchQuery(l.productName) }}
-                                className="text-gray-400 hover:text-blue-600 flex-shrink-0"
-                                title={isEn ? 'Search another product' : '搜索其他商品'}
-                              >
-                                🔍
-                              </button>
-                            </div>
-                            {l.matchedProductId && (
-                              <span className={`mt-0.5 inline-block px-1.5 py-0.5 rounded ${l.fromAlias ? ALIAS_STYLE : CONFIDENCE_STYLE[l.confidence]}`}>
-                                {l.fromAlias
-                                  ? (isEn ? 'Remembered match' : '记忆匹配')
-                                  : l.confidence === 'exact' ? (isEn ? 'Exact' : '精确')
-                                    : l.confidence === 'strong' ? (isEn ? 'Strong' : '较可靠')
-                                      : (isEn ? 'Weak — verify' : '存疑，请核对')}
-                              </span>
-                            )}
-                          </>
+                          <span className={`mt-0.5 inline-block px-1.5 py-0.5 rounded ${CONFIDENCE_STYLE.none}`}>
+                            {l.ambiguous
+                              ? (isEn ? 'multiple matches — search & pick' : '命中多个，请搜索选择')
+                              : (isEn ? 'no match — search or create later' : '未匹配，搜索选择或稍后新建')}
+                          </span>
                         )}
                       </td>
                       <td className="py-1 text-right">

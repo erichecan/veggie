@@ -64,6 +64,9 @@ interface PurchaseProduct {
   /// 优先取 saleDescription，商品还没填过时落回旧的 Product.spec）
   spec?: string | null
   saleDescription?: string | null
+  /// 按采购单位区分的规格（如 10KG/20KG 两袋同名商品）——来自 ProductSaleUom.spec，
+  /// 跟上面的 Product.spec 是两张不同的表，Product.spec 早就清空了（见 lib/order-line-description.ts）
+  purchaseUomSpec?: string | null
   /// 销售单位——仅作为采购单位缺失时的兜底，不是本页应该用的字段（见下方 purchaseUomId）
   uomId?: string | null
   uomName?: string | null
@@ -253,7 +256,7 @@ export default function NewPurchaseOrderPage() {
         productName: prod.name,
         // 20260827：Description 统一读 lib/order-line-description.ts（与 [id] 编辑页同源）；
         // 这里之前一直用 category，是采购侧唯一没跟上那次统一的分叉。
-        spec: lineDescription(prod) || null,
+        spec: lineDescription(prod, prod.purchaseUomSpec) || null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -318,7 +321,7 @@ export default function NewPurchaseOrderPage() {
         ...l,
         productId: prod.id,
         productName: prod.name,
-        spec: lineDescription(prod) || null,
+        spec: lineDescription(prod, prod.purchaseUomSpec) || null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -361,7 +364,7 @@ export default function NewPurchaseOrderPage() {
         id: newDraftLineId(),
         productId: hl.productId,
         productName: hl.productName,
-        spec: product ? (lineDescription(product) || null) : null,
+        spec: product ? (lineDescription(product, product.purchaseUomSpec) || null) : null,
         uomId: hl.uomId,
         uomName: uomRecord ? (isEn ? (uomRecord.name || uomRecord.nameZh) : (uomRecord.nameZh || uomRecord.name)) ?? null : null,
         orderedQty: qty,

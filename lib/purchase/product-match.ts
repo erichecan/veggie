@@ -56,6 +56,8 @@ export interface MatchCandidate {
   name: string
   /** 0–1，查询词被商品名覆盖的比例 */
   score: number
+  /** 按采购单位区分的规格（如 10KG/20KG）——同名商品（如两种袋装规格）全靠它区分 */
+  spec?: string | null
 }
 
 export interface MatchedLine {
@@ -72,6 +74,7 @@ export interface MatchableProduct {
   id: string
   name: string
   internalRef?: string | null
+  spec?: string | null
 }
 
 /** 覆盖率达到多少才算 strong（可自动填入，但仍标出来给人看） */
@@ -99,7 +102,7 @@ export function matchOne(rawName: string, products: MatchableProduct[]): Matched
   if (refHit) {
     return {
       matchedProductId: refHit.id, matchedProductName: refHit.name,
-      confidence: 'exact', candidates: [{ id: refHit.id, name: refHit.name, score: 1 }], ambiguous: false,
+      confidence: 'exact', candidates: [{ id: refHit.id, name: refHit.name, score: 1, spec: refHit.spec }], ambiguous: false,
     }
   }
 
@@ -107,14 +110,15 @@ export function matchOne(rawName: string, products: MatchableProduct[]): Matched
   if (exact.length === 1) {
     return {
       matchedProductId: exact[0].id, matchedProductName: exact[0].name,
-      confidence: 'exact', candidates: [{ id: exact[0].id, name: exact[0].name, score: 1 }], ambiguous: false,
+      confidence: 'exact', candidates: [{ id: exact[0].id, name: exact[0].name, score: 1, spec: exact[0].spec }], ambiguous: false,
     }
   }
   if (exact.length > 1) {
-    // 同名商品在生产库有 70 组，名字一样就是分不出来，必须交给人
+    // 同名商品在生产库有 70 组，名字一样就是分不出来，必须交给人——
+    // 这正是这类歧义该展示 spec 的地方，否则人也分不出来（见 KOBASUKI 10KG/20KG 一例）
     return {
       matchedProductId: null, matchedProductName: null, confidence: 'none',
-      candidates: exact.slice(0, 5).map(p => ({ id: p.id, name: p.name, score: 1 })),
+      candidates: exact.slice(0, 5).map(p => ({ id: p.id, name: p.name, score: 1, spec: p.spec })),
       ambiguous: true,
     }
   }
@@ -153,7 +157,7 @@ export function matchOne(rawName: string, products: MatchableProduct[]): Matched
     }
     if (score < WEAK_THRESHOLD) continue
     const unitHit = queryUnits.size > 0 && nameTokenList.some(t => queryUnits.has(t))
-    scored.push({ id: p.id, name: p.name, score, unitHit })
+    scored.push({ id: p.id, name: p.name, score, spec: p.spec, unitHit })
   }
 
   if (scored.length === 0) return none
@@ -178,7 +182,7 @@ export function matchOne(rawName: string, products: MatchableProduct[]): Matched
     matchedProductId: ambiguous ? null : top.id,
     matchedProductName: ambiguous ? null : top.name,
     confidence: ambiguous ? 'none' : confidence,
-    candidates: scored.slice(0, 5).map(({ id, name, score }) => ({ id, name, score })),
+    candidates: scored.slice(0, 5).map(({ id, name, score, spec }) => ({ id, name, score, spec })),
     ambiguous,
   }
 }

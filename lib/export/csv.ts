@@ -21,9 +21,14 @@ export function buildCsv(headers: readonly string[], rows: unknown[][]): string 
 }
 
 export function csvResponseHeaders(filename: string): HeadersInit {
+  // 中文文件名不能直接塞进 filename="..."：那个参数按 RFC 6266 只认 ISO-8859-1，
+  // 浏览器不会把里面的 %E9%87%87... 解码回中文，而是直接拿它当文件名存盘。
+  // 真正能让浏览器还原出中文名的是 filename*=UTF-8''<percent-encoded>，
+  // 旧版 filename= 留一个去掉非 ASCII 字符的兜底名，双保险。
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'") || 'export.csv'
   return {
     'Content-Type': 'text/csv; charset=utf-8',
-    'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+    'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
   }
 }
 
