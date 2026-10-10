@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPatch } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -75,6 +76,10 @@ export default function StockTakePage() {
     loadList()
     apiGet<Category[]>('/api/product-categories').then(setCategories).catch(() => {})
   }, [loadList])
+
+  // 盘点单列表在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 不接 M2——loadList 只换 list 数组，不碰 detail/counts（正在盘点填写的数量）
+  useRefetchOnFocus([loadList])
 
   async function openDetail(id: string) {
     try {

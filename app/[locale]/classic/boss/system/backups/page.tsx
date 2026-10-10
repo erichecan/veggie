@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost, ApiError } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import type { BackupJob } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -47,6 +48,9 @@ export default function BackupsPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // 备份列表在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   async function handleTrigger() {
     setTriggering(true)

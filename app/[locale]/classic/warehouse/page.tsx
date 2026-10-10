@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import type { Product, Order, PurchaseRecord } from '@/lib/types'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -93,6 +94,10 @@ export default function ClassicWarehousePage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // 仓库数据在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 不接 M2——采购/调整都是弹窗提交即落库，load() 不碰 purchaseForm/adjustForm
+  useRefetchOnFocus([load])
 
   const today = todayStart()
   const todayIncoming = purchases.filter(p => p.arrivedAt >= today)

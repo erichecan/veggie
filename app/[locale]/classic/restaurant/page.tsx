@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiPost, apiGet } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { getSession } from '@/lib/session'
 import { resolveCustomerPrice } from '@/lib/pricing-engine'
 import { fmtMoney } from '@/lib/format-money'
@@ -47,7 +48,7 @@ export default function ClassicRestaurantPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('online')
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
+  function load() {
     const user = getSession()
     if (user) {
       const cid = user.customerId ?? user.userId
@@ -63,9 +64,17 @@ export default function ClassicRestaurantPage() {
     apiGet<OdooPricelist[]>('/api/pricelists')
       .then(setAllPricelists)
       .catch(() => {})
+  }
+
+  useEffect(() => {
+    load()
     const saved = sessionStorage.getItem('cart')
     if (saved) setCart(JSON.parse(saved))
   }, [])
+
+  // 商品/客户/价格表在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 不接 M2——cart 单独存在 sessionStorage，load() 不碰 cart，不会冲掉购物车内容
+  useRefetchOnFocus([load])
 
   function saveCart(items: CartItem[]) {
     setCart(items)

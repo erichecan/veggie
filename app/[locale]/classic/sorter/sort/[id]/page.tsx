@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPut } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import type { PickingWave, Order } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { WaveStatusBadge } from '@/components/shared/status-badge'
@@ -51,6 +52,13 @@ export default function ClassicSortingExecutePage({ params }: { params: Promise<
   }
 
   useEffect(() => { load() }, [id])
+
+  // 波次在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 不接 M2——没有表单内容，但 r.done 是纯前端本地勾选状态（只在提交时整体
+  // 走 submitSorting，markRestDone 只 PUT wave.status，不落库每家餐馆的勾选进度），
+  // load() 会把 restaurants 整体重建、done 全部清空，所以背景刷新要跳过
+  // "已经勾了几家还没整体提交"的中间状态，避免冲掉分拣员的勾选进度
+  useRefetchOnFocus([() => { if (!restaurants.some(r => r.done)) load() }])
 
   async function markRestDone(rId: string) {
     setRestaurants(prev => prev.map(r => r.restaurantId === rId ? { ...r, done: !r.done } : r))

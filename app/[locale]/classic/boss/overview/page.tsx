@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { toast } from 'sonner'
 import { eur } from '@/lib/format-money'
 import {
@@ -68,6 +69,9 @@ export default function ClassicBossDashboard() {
     apiGet<{ items: Snapshot[] }>('/api/analytics/snapshots').then((d) => setTrend(d.items ?? [])).catch(() => {})
   }
   useEffect(() => { load() }, [])
+
+  // 看板数据在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果
+  useRefetchOnFocus([load])
 
   async function recompute() {
     if (recomputing) return

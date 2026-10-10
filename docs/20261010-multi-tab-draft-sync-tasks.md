@@ -100,17 +100,17 @@
 
 ## U7 其余角色组（7 页，含 2 个 M2）
 
-- [ ] driver/trip/[id]（M1+M2）
-- [ ] sorter/sort/[id]（M1+M2）
-- [ ] warehouse/page（M1）
-- [ ] warehouse/stock-take/page（M1）
-- [ ] boss/overview/page（M1）
-- [ ] boss/system/backups/page（M1）
-- [ ] restaurant/page（M1）
-      验收命令：`npx tsc --noEmit`
-      可看物：`docs/shots/20261010-u7-*.png`
+- [x] driver/trip/[id]（M1 only，见下方偏离说明）
+- [x] sorter/sort/[id]（M1 only，见下方偏离说明）
+- [x] warehouse/page（M1）
+- [x] warehouse/stock-take/page（M1）
+- [x] boss/overview/page（M1）
+- [x] boss/system/backups/page（M1）
+- [x] restaurant/page（M1）
+      验收命令：`npx tsc --noEmit`（7 文件合并跑，无输出）+ `npm run build`（exit 0）
+      可看物：本机沙箱无可用 Chrome/Playwright 二进制，截图/录屏跳过；实际刷新行为只能靠你自己打开 7 个页面点一遍验证
       定性状态：待你确认
-      证据：（回填）
+      证据：tsc 对 7 个文件合并检查无输出；build exit code 0；`git status --short` 确认本次改动精确落在这 7 个文件，无误带改动。偏离说明一（按清单套用但形状不符，跟 U2/U4/U6 同一类"按实际代码形状而非机械套用"的偏离，第五、六次出现）：driver/trip/[id] 的可编辑内容只有异常上报/签收弹窗，均是打开即填、提交即关闭，load() 不碰弹窗 state，不存在会被背景刷新冲掉的常驻编辑态，故只接 M1；sorter/sort/[id] 完全没有表单字段（只有勾选+提交），同样只接 M1。偏离说明二（本单新发现，超出原定清单预判）：sorter/sort/[id] 的 restaurants[].done 是纯前端本地勾选状态，仅在整体提交时走 submitSorting，markRestDone 只 PUT wave.status 不落库每家餐馆的勾选进度；naive 的 M1 直接 useRefetchOnFocus([load]) 会在背景刷新时把 restaurants 整体重建、done 全部清空，冲掉分拣员"已经勾了几家还没整体提交"的中间进度——这是本单执行中读代码才发现的，不在原定直接套用清单的范围内，已改用 U4 的 drivers/page.tsx 同款"风险态时跳过刷新"防护模式：`useRefetchOnFocus([() => { if (!restaurants.some(r => r.done)) load() }])`；restaurant/page 原本是把三个 apiGet（customer/products/pricelists）写在一个匿名 useEffect 里，没有具名函数可供 useRefetchOnFocus 调用，已抽成具名 load()，cart 的 sessionStorage 读取保留在 useEffect 里不进 load()，避免背景刷新冲掉购物车内容
       依赖：U0
 
 ## U8 收尾

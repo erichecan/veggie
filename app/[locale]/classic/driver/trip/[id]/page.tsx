@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import type { Trip, ReturnItem } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { NumericInput } from '@/components/ui/numeric-input'
@@ -66,6 +67,11 @@ export default function ClassicTripExecutePage({ params }: { params: Promise<{ i
   }
 
   useEffect(() => { load() }, [id])
+
+  // 行程在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
+  // 不接 M2——异常上报/签收都是弹窗打开即填即提交，load() 只换 trip，
+  // 不碰 exceptionModal/signModal 等弹窗 state，不会被背景刷新冲掉
+  useRefetchOnFocus([load])
 
   useEffect(() => {
     if (!trip || trip.restaurants.length === 0) return
