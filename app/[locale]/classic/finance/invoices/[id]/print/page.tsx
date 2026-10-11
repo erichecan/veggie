@@ -11,6 +11,7 @@ import type { Customer, Invoice } from '@/lib/types'
 import { formatDateOnly } from '@/lib/format-date'
 import { toInvoiceLineViews, isOrderBasedInvoice, formatMoney } from '@/lib/invoice-lines-view'
 import { GiftAmount } from '@/components/shared/gift-amount'
+import { formatPrintTimestamp } from '@/lib/print/trip-common'
 
 const PURPLE = '#875A7B'
 const STATUS_LABELS = {
@@ -90,6 +91,7 @@ export default function InvoicePrintPage() {
         /* 每页边距交给 @page：容器自己的 padding-bottom 只在整份文档末尾生效，
            middle page 会一直排到纸边（同 lib/order-pdf.ts 踩过的坑） */
         @page { size: A4; margin: 12mm 10mm; }
+        .print-at { position: fixed; right: 10mm; bottom: 3mm; font-size: 8pt; color: #555; }
         ${DOCUMENT_HEADER_CSS}
         #invoice-print .info-table td { border:1px solid #bbb; width:25%; vertical-align:top; }
       `}</style>
@@ -192,6 +194,7 @@ export default function InvoicePrintPage() {
             ? 'Thank you for your business · For any questions about this invoice, please contact the Veggie finance team · This invoice is generated automatically'
             : '感谢您的惠顾 · 如对本发票有疑问，请联系 Veggie 财务部 · 本发票由系统自动生成'}
         </div>
+        <div className="print-at">Print at: {formatPrintTimestamp()}</div>
       </div>
     </>
   )

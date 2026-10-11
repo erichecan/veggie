@@ -2,6 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { generateTripSalesHtml } from '../lib/print/trip-sales-template'
 import { generateTripDeliveryHtml } from '../lib/print/trip-delivery-template'
+import { generateTripPickingHtml } from '../lib/print/trip-picking-template'
+import { generateTripSummaryHtml } from '../lib/print/trip-summary-template'
 import { renderOrderHtml } from '../lib/order-pdf'
 import { paymentDetails } from '../lib/print/document-header'
 import type { TripPrintData } from '../lib/print/trip-common'
@@ -11,6 +13,17 @@ const data: TripPrintData = {
   orders: [{ id: 'order', code: 'D-261010-001', customerId: 'customer', customerName: 'Test Restaurant', totalAmount: 10, internalNote: null, externalNote: 'Gate code: 1234', deliveryNote: null, deliveryDate: '2026-10-10', invoiceNo: 'V12345', salesman: 'Sales Test', driverBatchLabel: 'Driver Test', lines: [{ productId: 'product', productName: 'Carrots', spec: null, uomId: 'unit', uomName: 'BAG', goodsType: 'BULK', note: null, orderedQty: 1, unitPrice: 10, taxRate: 0, subtotal: 10 }] }],
   customers: new Map([['customer', { id: 'customer', name: 'Test Restaurant', street: '1 Main St', street2: '', city: 'Dublin', state: '', zip: '', country: 'Ireland', phone: '01234567', vatNumber: '', paymentTerm: 'monthly', externalNote: 'Chef: <Alice> & 0891234567' }]]),
   signoffs: [],
+}
+
+for (const [name, render, timeClass] of [
+  ['picking', (d: TripPrintData) => generateTripPickingHtml(d, 'all', 'en'), 'page-print-at'],
+  ['summary', (d: TripPrintData) => generateTripSummaryHtml(d, 'en'), 'print-at'],
+] as const) {
+  test(`${name}: lists salespeople before drivers and prints timestamp at page bottom`, () => {
+    const html = render(data)
+    assert.ok(html.indexOf('Salesman:') < (html.indexOf('Driver/Batch:') >= 0 ? html.indexOf('Driver/Batch:') : html.indexOf('Driver:')))
+    assert.match(html, new RegExp(`class="${timeClass}">Print at: \\d{2}\\/\\d{2}\\/\\d{4}, \\d{2}:\\d{2}`))
+  })
 }
 
 for (const [name, render] of [['sales', generateTripSalesHtml], ['delivery', generateTripDeliveryHtml]] as const) {

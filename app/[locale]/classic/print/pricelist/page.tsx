@@ -6,6 +6,7 @@ import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { DOCUMENT_HEADER_CSS, documentHeader } from '@/lib/print/document-header'
 import { formatDateOnly } from '@/lib/format-date'
+import { formatPrintTimestamp } from '@/lib/print/trip-common'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
 const T = {
@@ -177,6 +178,7 @@ ${documentHeader('pricelist')}
   <div class="footer-info">
     Tel: (01) 830 8065 / 018308068 / 0879318299 &nbsp;|&nbsp; Mail: info@johnstonebros.ie &nbsp;|&nbsp; Web: https://m.johnstonebros.ie/ &nbsp;|&nbsp; VAT: IE9739451J
   </div>
+  <div class="footer-info" style="text-align:right">Print at: ${formatPrintTimestamp()}</div>
 </div>`
 }
 

@@ -202,7 +202,7 @@ ${DOCUMENT_HEADER_CSS}
 
 <div class="footer">
   <span>Tel: +353 1 234 5678 &nbsp;|&nbsp; info@johnstonebros.ie &nbsp;|&nbsp; www.johnstonebros.ie &nbsp;|&nbsp; VAT: IE1234567T</span>
-  <span>Page 1/1 &nbsp;|&nbsp; Printed: <span id="print-ts"></span></span>
+  <span>Page 1/1 &nbsp;|&nbsp; Print at: <span id="print-ts"></span></span>
 </div>
 
 <script>

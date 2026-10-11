@@ -25,6 +25,7 @@ const T = {
     saleNo: 'Sale No.',
     customer: 'Customer',
     driver: 'Driver',
+    salesman: 'Salesman',
     untaxedAmount: 'Untaxed Amount',
     totalVat: 'Total VAT',
     total: 'Total',
@@ -43,6 +44,7 @@ const T = {
     saleNo: '单号',
     customer: '客户',
     driver: '司机',
+    salesman: '业务员',
     untaxedAmount: '税前金额',
     totalVat: '税额合计',
     total: '总计',
@@ -73,6 +75,7 @@ export interface ReportLine {
   isGift?: boolean
   orderCode: string
   deliveryBatch: string
+  salesman?: string | null
   /** 商品目录/仓库拣货顺序号，勾选「按 sequence 排序」时用来排序；查不到的商品兜底 0 排最前 */
   productSequence: number
 }
@@ -144,6 +147,7 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
   const orderMap = new Map<string, {
     code: string
     customerName: string
+    salesman: string
     driver: string
     untaxed: number
     tax: number
@@ -158,6 +162,7 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
     orderMap.set(order.id, {
       code,
       customerName: order.restaurantName,
+      salesman: order.salesman ?? '',
       driver,
       untaxed,
       tax,
@@ -178,6 +183,7 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
     return `<tr class="order-row">
       <td>${o.code}</td>
       <td>${o.customerName}</td>
+      <td>${o.salesman}</td>
       <td>${o.driver}</td>
       <td class="r">${eur(o.untaxed)}</td>
       <td class="r">${eur(o.tax)}</td>
@@ -188,13 +194,13 @@ export function buildOrderSummaryHtml(lines: ReportLine[], orders: Order[], titl
   return wrapHtml(title, meta, `
     <table>
       <thead><tr>
-        <th>${t.saleNo}</th><th>${t.customer}</th><th>${t.driver}</th>
+        <th>${t.saleNo}</th><th>${t.customer}</th><th>${t.salesman}</th><th>${t.driver}</th>
         <th class="r">${t.untaxedAmount}</th><th class="r">${t.totalVat}</th><th class="r">${t.total}</th>
       </tr></thead>
       <tbody>
         ${rows}
         <tr class="grand-total">
-          <td colspan="3">${t.grandTotalOrders(sorted.length)}</td>
+          <td colspan="4">${t.grandTotalOrders(sorted.length)}</td>
           <td class="r">${eur(grandUntaxed)}</td>
           <td class="r">${eur(grandTax)}</td>
           <td class="r">${eur(grandTotal)}</td>
@@ -218,6 +224,8 @@ export function buildMultilineHtml(lines: ReportLine[], title: string, meta: str
     return `<tr class="flat-row">
       <td>${formatDateOnly(l.date)}</td>
       <td>${l.customerName}</td>
+      <td>${l.salesman ?? ''}</td>
+      <td>${l.deliveryBatch}</td>
       <td>${l.productName}</td>
       <td class="r">${l.qty.toFixed(2)}</td>
       <td class="r">${giftMoneyCell(l.isGift, eur(l.unitPrice))}</td>
@@ -228,13 +236,13 @@ export function buildMultilineHtml(lines: ReportLine[], title: string, meta: str
   return wrapHtml(title, meta, `
     <table>
       <thead><tr>
-        <th>${t.date}</th><th>${t.customer}</th><th>${t.product}</th>
+        <th>${t.date}</th><th>${t.customer}</th><th>${t.salesman}</th><th>${t.driver}</th><th>${t.product}</th>
         <th class="r">${t.qty}</th><th class="r">${t.unitPrice}</th><th class="r">${t.amount}</th>
       </tr></thead>
       <tbody>
         ${rows}
         <tr class="grand-total">
-          <td colspan="5">${t.grandTotal}</td>
+          <td colspan="7">${t.grandTotal}</td>
           <td class="r">${eur(grand)}</td>
         </tr>
       </tbody>

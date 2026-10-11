@@ -424,6 +424,8 @@ export interface Order {
   priceType?: CustomerPriceType
   /** 内部备注（仅内部可见，不打印在客户单据上） */
   internalNote?: string
+  /** 关联业务员姓名（只读展示，用于订单打印与报表） */
+  salesman?: string | null
   /** 外部备注（打印在报价单/送货单上，客户可见） */
   externalNote?: string
   /** 第三方送货备注（第三方替我们送货时的具体信息，打印在送货单上） */

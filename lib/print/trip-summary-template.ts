@@ -17,9 +17,10 @@ import {
   type TripPrintData,
   escapeHtml,
   formatTripDriverList,
+  formatPrintTimestamp,
   renderTripNoticeHtml,
 } from './trip-common'
-import { formatDateOnly, formatDateTime } from '@/lib/format-date'
+import { formatDateOnly } from '@/lib/format-date'
 import { fmtMoney } from '@/lib/format-money'
 import type { PrintLang } from '@/lib/print/print-i18n'
 
@@ -27,6 +28,7 @@ const T = {
   zh: {
     docTitle: 'Johnstone Bros Delivery Summary（汇总单）',
     deliveryDate: '配送日期：',
+    salesmen: '业务员：',
     driver: '司机：',
     colOrderNo: '订单号',
     colCustomer: '客户',
@@ -42,6 +44,7 @@ const T = {
   en: {
     docTitle: 'Johnstone Bros Delivery Summary',
     deliveryDate: 'Delivery Date:',
+    salesmen: 'Salesman:',
     driver: 'Driver:',
     colOrderNo: 'Order No.',
     colCustomer: 'Customer',
@@ -64,6 +67,7 @@ export function generateTripSummaryHtml(data: TripPrintData, lang: PrintLang = '
   // (dispatch-loader.ts multiMode 分支)，必须退回按订单 driverBatchLabel 去重取司机身份，
   // 否则 Driver 栏会空白——送货单/销售单/拣货单早就用这个 fallback了,汇总单漏了(20260716)。
   const driverStr = formatTripDriverList(trip, orders, lang)
+  const salesmenStr = [...new Set(orders.map(o => o.salesman?.trim()).filter((name): name is string => !!name))].join(lang === 'en' ? ', ' : '、')
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)
@@ -102,8 +106,6 @@ export function generateTripSummaryHtml(data: TripPrintData, lang: PrintLang = '
     </tr>`
   }).join('')
 
-  const now = formatDateTime(new Date().toISOString())
-
   return `<!doctype html>
 <html lang="${lang}">
 <head>
@@ -114,6 +116,7 @@ export function generateTripSummaryHtml(data: TripPrintData, lang: PrintLang = '
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { font-family: Arial, Helvetica, "Noto Sans CJK SC", "Noto Sans SC", sans-serif; font-size: 11px; color: #000; background: #fff; }
   body { padding: 18px 24px; }
+  .print-at { position: fixed; right: 10mm; bottom: 3mm; font-size: 10px; color: #555; }
 
   .page-header {
     display: flex;
@@ -181,7 +184,6 @@ ${DOCUMENT_HEADER_CSS}
 <body>
   ${documentHeader('deliverySummary')}
   <div class="page-header">
-    <div class="left">Print at: ${now}</div>
     <div class="center">${escapeHtml(t.docTitle)}</div>
     <div class="right"></div>
   </div>
@@ -190,8 +192,10 @@ ${DOCUMENT_HEADER_CSS}
 
   <div class="filter-row">
     <div class="item"><span class="label">${t.deliveryDate}</span>${formatDateOnly(startDate)}</div>
+    ${salesmenStr ? `<div class="item"><span class="label">${t.salesmen}</span>${escapeHtml(salesmenStr)}</div>` : ''}
     <div class="item"><span class="label">${t.driver}</span>${escapeHtml(driverStr)}</div>
   </div>
+  <div class="print-at">Print at: ${formatPrintTimestamp()}</div>
 
   <table class="summary">
     <thead>

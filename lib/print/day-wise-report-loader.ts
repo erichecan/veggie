@@ -42,7 +42,7 @@ export async function loadDayWiseReportData(p: DayWiseReportParams): Promise<{ l
 
   const rawOrders = await prisma.order.findMany({
     where,
-    include: { lines: { orderBy: { sequence: 'asc' } } },
+    include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
     orderBy: { restaurantName: 'asc' },
   })
 
@@ -87,6 +87,7 @@ export async function loadDayWiseReportData(p: DayWiseReportParams): Promise<{ l
         date,
         customerId: order.restaurantId,
         customerName: order.restaurantName,
+        salesman: order.salesUser?.name ?? '',
         productName: l.productName,
         qty: Number(l.orderedQty),
         unitPrice: Number(l.unitPrice),
@@ -100,5 +101,6 @@ export async function loadDayWiseReportData(p: DayWiseReportParams): Promise<{ l
     }
   }
 
-  return { lines, orders: filteredOrders as unknown as Order[] }
+  const reportOrders = filteredOrders.map(order => ({ ...order, salesman: order.salesUser?.name ?? '' }))
+  return { lines, orders: reportOrders as unknown as Order[] }
 }

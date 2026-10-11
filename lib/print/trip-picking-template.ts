@@ -40,6 +40,7 @@ const T = {
     consumableLabel: '零散货 CONSUMABLE',
     deliveryDate: '配送日期：',
     driverBatch: '司机/批次：',
+    salesmen: '业务员：',
     customerCount: '客户数：',
     legend: '📦 <b>装货顺序</b>：1＝最下面（最重/最不怕压，最先装）……8＝最上面（最轻/最怕压，最后装）　"—"＝普通商品，未特意分层',
     colSeq: '#',
@@ -61,6 +62,7 @@ const T = {
     consumableLabel: 'Loose Goods (CONSUMABLE)',
     deliveryDate: 'Delivery Date:',
     driverBatch: 'Driver/Batch:',
+    salesmen: 'Salesman:',
     customerCount: 'Customers:',
     legend: '📦 <b>Load Order</b>: 1 = bottom (heaviest, loaded first) … 8 = top (most fragile, loaded last) — "—" = ordinary item, no tier set',
     colSeq: '#',
@@ -183,6 +185,7 @@ export function generateTripPickingHtml(
   // 拣货单是按商品汇总的整趟车视角,没有"每单一页"的粒度可退回订单级司机——筛选打印/
   // 全部打印横跨多个司机时,trip 级司机身份是空的,退回按订单 driverBatchLabel 去重列出。
   const teamStr = formatTripDriverList(trip, orders, lang)
+  const salesmenStr = [...new Set(orders.map(o => o.salesman?.trim()).filter((name): name is string => !!name))].join(lang === 'en' ? ', ' : '、')
 
   const deliveryDates = orders
     .map(o => o.deliveryDate)
@@ -500,7 +503,7 @@ export function generateTripPickingHtml(
   body{padding:14px 20px}
 
   .page-header{margin-bottom:6px;padding-bottom:6px;border-bottom:2px solid #1a3a2a}
-  .page-header .print-at{font-size:10px;color:#333}
+  .page-print-at{position:fixed;right:8mm;bottom:3mm;font-size:9px;color:#555}
 
   .info-row{display:flex;gap:20px;margin-bottom:10px;font-size:11px;padding:6px 8px;background:#f5f5f5;border-radius:4px}
   .info-row .item .label{font-weight:700;color:#555}
@@ -578,14 +581,13 @@ ${DOCUMENT_HEADER_CSS}
 </head>
 <body>
   ${documentHeader('picking')}
-  <div class="page-header">
-    <div class="print-at">Print at: ${formatPrintTimestamp()}</div>
-  </div>
+  <div class="page-print-at">Print at: ${formatPrintTimestamp()}</div>
 
   ${renderTripNoticeHtml(trip.notice)}
 
   <div class="info-row">
     <div class="item"><span class="label">${t.deliveryDate}</span>${dateStr}</div>
+    ${salesmenStr ? `<div class="item"><span class="label">${t.salesmen}</span>${escapeHtml(salesmenStr)}</div>` : ''}
     <div class="item"><span class="label">${t.driverBatch}</span>${escapeHtml(teamStr)}</div>
     <div class="item"><span class="label">${t.customerCount}</span>${new Set(orders.map(o => o.customerId)).size}</div>
   </div>
