@@ -33,6 +33,33 @@ export function categoryPathMap(categories: CategoryPathNode[], field: 'name' | 
   return out
 }
 
+/** Find category IDs whose visible path contains the query, including descendants of matches. */
+export function categoryIdsMatchingPath(categories: CategoryPathNode[], query: string): string[] {
+  const needle = query.trim().toLocaleLowerCase()
+  if (!needle) return []
+  const enPaths = categoryPathMap(categories, 'name')
+  const zhPaths = categoryPathMap(categories, 'nameZh')
+  const children = new Map<string, string[]>()
+  for (const category of categories) {
+    if (!category.parentId) continue
+    const ids = children.get(category.parentId) ?? []
+    ids.push(category.id)
+    children.set(category.parentId, ids)
+  }
+  const stack = categories
+    .filter(category => enPaths.get(category.id)?.toLocaleLowerCase().includes(needle)
+      || zhPaths.get(category.id)?.toLocaleLowerCase().includes(needle))
+    .map(category => category.id)
+  const matched = new Set<string>()
+  while (stack.length > 0) {
+    const id = stack.pop()!
+    if (matched.has(id)) continue
+    matched.add(id)
+    stack.push(...(children.get(id) ?? []))
+  }
+  return [...matched]
+}
+
 function pathKey(raw: string): string[] {
   return raw.split('/').map(s => s.trim().toLowerCase()).filter(Boolean)
 }

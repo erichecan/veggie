@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildCategoryTree, CategoryTreeError, validateCategoryMove } from '../lib/product-category-tree'
+import { categoryIdsMatchingPath } from '../lib/category-path'
 
 const categories = [
   { id: 'food', name: 'Food', parentId: null },
@@ -38,4 +39,17 @@ test('rejects pre-existing cycles without an infinite recursion', () => {
   const cycle = [{ id: 'first', parentId: 'second' }, { id: 'second', parentId: 'first' }]
   assert.throws(() => validateCategoryMove(cycle, null, 'first'), CategoryTreeError)
   assert.throws(() => validateCategoryMove(cycle, 'first', null), CategoryTreeError)
+})
+
+test('category column search matches ancestor paths and includes descendant categories', () => {
+  const tree = [
+    { id: 'rice', name: 'Rice', nameZh: '米', parentId: null },
+    { id: 'jasmine', name: 'Jasmine', nameZh: '香米', parentId: 'rice' },
+    { id: 'premium', name: 'Premium', nameZh: '优质', parentId: 'jasmine' },
+    { id: 'long-grain', name: 'Long Grain', nameZh: '长粒米', parentId: 'rice' },
+    { id: 'veg', name: 'Vegetable', nameZh: '蔬菜', parentId: null },
+  ]
+  assert.deepEqual(new Set(categoryIdsMatchingPath(tree, 'rice')), new Set(['rice', 'jasmine', 'premium', 'long-grain']))
+  assert.deepEqual(new Set(categoryIdsMatchingPath(tree, 'Premium')), new Set(['premium']))
+  assert.deepEqual(new Set(categoryIdsMatchingPath(tree, '香米')), new Set(['jasmine', 'premium']))
 })

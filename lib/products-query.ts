@@ -22,6 +22,7 @@ import { buildFacetWhere } from '@/lib/facet-sql'
 import { PRODUCT_TEMPLATE_FACET_DEFS } from '@/lib/facets/product-templates'
 import { TTL_STATIC_MS } from '@/lib/http-cache'
 import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
+import { categoryIdsMatchingPath } from '@/lib/category-path'
 
 export const LOW_STOCK_THRESHOLD = 10
 
@@ -115,13 +116,13 @@ export async function buildProductTemplatesWhere(
     const v = searchParams.get(`cf_${field}`)?.trim()
     if (v) where[field] = { contains: v, mode: 'insensitive' }
   }
-  // 分类：列筛输入的是分类名(人看得懂的)，不是 categoryId，走 relation 匹配
+  // 分类列显示完整层级路径：父级搜索也必须命中关联到叶子分类的商品。
   const cfCategory = searchParams.get('cf_categoryId')?.trim()
   if (cfCategory) {
-    where.category = { OR: [
-      { name: { contains: cfCategory, mode: 'insensitive' } },
-      { nameZh: { contains: cfCategory, mode: 'insensitive' } },
-    ] }
+    const categories = await prisma.productCategory.findMany({
+      select: { id: true, name: true, nameZh: true, parentId: true },
+    })
+    where.categoryId = { in: categoryIdsMatchingPath(categories, cfCategory) }
   }
 
   // 数值字段的"子串"筛选：两步查(见 idsMatchingNumericSubstring)，与其它筛选取交集
