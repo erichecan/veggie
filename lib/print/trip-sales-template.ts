@@ -26,6 +26,7 @@ import {
   type TripLine,
   escapeHtml,
   formatTripDriverLabel,
+  formatPrintTimestamp,
   chunkOrderLinesForPrint,
   renderPageNumberFooter,
   renderTripNoticeHtml,
@@ -62,6 +63,7 @@ function buildSalesOrderHtml(
     : ''
 
   const deliveryDate = formatDateOnly(order.deliveryDate)
+  const salesman = order.salesman?.trim() ?? ''
 
   // 税前小计 subtotal 直接用(unitPrice×qty,SSOT 口径),按税率分组算 VAT
   const vatGroups: Record<string, { base: number; vat: number }> = {}
@@ -127,6 +129,7 @@ function buildSalesOrderHtml(
         <div class="info-head">Delivery</div>
         <div class="info-val">
           ${deliveryDate}<br/>
+          ${salesman ? '<strong>Salesman:</strong> ' + escapeHtml(salesman) + '<br/>' : ''}
           ${driverLabel ? '<strong>Driver:</strong> ' + escapeHtml(driverLabel) : ''}
         </div>
       </td>
@@ -187,6 +190,7 @@ function buildSalesOrderHtml(
 
   ${isLastChunk ? footerBlockHtml : ''}
   ${renderPageNumberFooter(orderCode, chunkIdx + 1, chunks.length)}
+  <div class="print-at">Print at: ${formatPrintTimestamp()}</div>
 </div>`
   }).join('')
 }
@@ -195,6 +199,7 @@ const CSS = `
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: Arial, Helvetica, "Noto Sans CJK SC", "Noto Sans SC", sans-serif; font-size: 10pt; color: #111; background:#fff; }
 .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm; position: relative; }
+.print-at { position: absolute; right: 12mm; bottom: 4mm; font-size: 8pt; color: #666; }
 
 .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7mm; padding-bottom: 3mm; border-bottom: 2px solid #1a3a2a; }
 .company-name { font-size: 26pt; font-weight: bold; font-style: italic; color: #1a3a2a; }

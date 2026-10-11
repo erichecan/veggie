@@ -207,7 +207,7 @@ export async function loadDispatchPrintData(
   // SSOT: 订单归属批次以 PickingWave.orderIds 为准（P0-1），driverSlotId/deliveryBatch 是历史遗留兜底字段。
   // 拖拽调度台只写 wave.orderIds，不回填 Order.driverSlotId，所以必须先查 wave。
   // 见 lib/wave-assign.ts、docs/20260624-data-ownership-audit.md。
-  let orders: Awaited<ReturnType<typeof prisma.order.findMany<{ include: { lines: true } }>>> = []
+  let orders: Awaited<ReturnType<typeof prisma.order.findMany<{ include: { lines: true; salesUser: { select: { name: true } } } }>>> = []
   if (multiMode) {
     // 筛选打印：只取选中波次的订单（union orderIds），与打印中心屏幕上可见批次一致
     const waves = await prisma.pickingWave.findMany({
@@ -218,7 +218,7 @@ export async function loadDispatchPrintData(
     orders = ids.length > 0
       ? await prisma.order.findMany({
           where: { id: { in: ids }, status: { in: statusFilter } },
-          include: { lines: { orderBy: { sequence: 'asc' } } },
+          include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
           orderBy: { restaurantName: 'asc' },
         })
       : []
@@ -237,7 +237,7 @@ export async function loadDispatchPrintData(
           { deliveryDate: { gte: rangeStart, lte: dayEnd } },
         ],
       },
-      include: { lines: { orderBy: { sequence: 'asc' } } },
+      include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
       orderBy: { restaurantName: 'asc' },
     })
   } else if (slot) {
@@ -255,7 +255,7 @@ export async function loadDispatchPrintData(
       if (palletOrderIds.length > 0) {
         orders = await prisma.order.findMany({
           where: { id: { in: palletOrderIds }, status: { in: statusFilter } },
-          include: { lines: { orderBy: { sequence: 'asc' } } },
+          include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
           orderBy: { restaurantName: 'asc' },
         })
       }
@@ -282,7 +282,7 @@ export async function loadDispatchPrintData(
           { OR: batchMatch },
         ],
       },
-      include: { lines: { orderBy: { sequence: 'asc' } } },
+      include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
       orderBy: { restaurantName: 'asc' },
     })
 
@@ -293,7 +293,7 @@ export async function loadDispatchPrintData(
           status: { in: statusFilter },
           OR: batchMatch,
         },
-        include: { lines: { orderBy: { sequence: 'asc' } } },
+        include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
         orderBy: { restaurantName: 'asc' },
       })
     }
@@ -382,6 +382,7 @@ export async function loadDispatchPrintData(
     deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
     deliveryDate: toIso(o.deliveryDate),
     invoiceNo: invoiceNoMap.get(o.id) ?? null,
+    salesman: o.salesUser?.name ?? null,
     driverBatchLabel: waveDisplayMap[o.id] ?? null,
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0

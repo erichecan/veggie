@@ -182,7 +182,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
   const orders = orderIds.length > 0
     ? await prisma.order.findMany({
         where: { id: { in: orderIds } },
-        include: { lines: { orderBy: { sequence: 'asc' } } },
+        include: { lines: { orderBy: { sequence: 'asc' } }, salesUser: { select: { name: true } } },
         orderBy: { restaurantName: 'asc' },
       })
     : []
@@ -241,6 +241,7 @@ export async function loadTripPrintData(tripId: string): Promise<TripPrintDataWi
     deliveryNote: (o as { deliveryNote?: string | null }).deliveryNote ?? null,
     deliveryDate: toIso(o.deliveryDate),
     invoiceNo: invoiceNoMap.get(o.id) ?? null,
+    salesman: o.salesUser?.name ?? null,
     driverBatchLabel: waveDisplayMap[o.id] ?? null,
     // 优先用 OrderLine；为空时回退到旧版 items JSON（历史迁移订单两者皆空 → []）
     lines: o.lines.length > 0

@@ -115,6 +115,8 @@ export interface TripOrder {
   deliveryDate: string | null
   /** 该订单已开具的发票号（Invoice.name），未开票为 null */
   invoiceNo: string | null
+  /** 订单所属业务员姓名 */
+  salesman?: string | null
   /**
    * 这一单实际所属的「批次号 时段 司机名」(如 "1 am AFZAAL")，来自 wave.orderIds 派生
    * (lib/wave-assign.ts SSOT，与销售单列表司机列同一口径)，查不到(未进任何波次)为 null。

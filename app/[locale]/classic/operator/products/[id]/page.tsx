@@ -9,6 +9,7 @@ import { NumericInput } from '@/components/ui/numeric-input'
 import ChatterFeed from '@/components/shared/chatter-feed'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
 import type { ProductTemplate, ProductCategory, Order } from '@/lib/types'
+import { categoryPathMap } from '@/lib/category-path'
 import {
   validateSaleUomItems, withBaseUomFallback, mapSaleUomApiRows,
   type SaleUomFormRow, type SaleUomApiRow,
@@ -526,7 +527,8 @@ export default function ClassicProductDetailPage() {
   const focusStyle = { '--tw-ring-color': '#875A7B' } as React.CSSProperties
   const btnBase = "h-8 px-3 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
   const selectedCategory = categories.find(c => c.id === tmpl.categoryId)
-  const catName = selectedCategory ? (isEn ? (selectedCategory.name || selectedCategory.nameZh) : (selectedCategory.nameZh ?? selectedCategory.name)) : undefined
+  const categoryPaths = categoryPathMap(categories, isEn ? 'name' : 'nameZh')
+  const catName = selectedCategory ? (categoryPaths.get(selectedCategory.id) ?? selectedCategory.name).replaceAll(' / ', ' › ') : undefined
   const isActive = tmpl.status === 'active'
   // Active 开关（20260821）：与 Edit/Create、Save/Discard 并排，点击立即生效，不需二次确认
   const activeToggle = !isNew && (
@@ -783,7 +785,7 @@ export default function ClassicProductDetailPage() {
                 </Row>
                 <Row label="Product Category">
                   <SearchableDropdown
-                    options={[{ value: '', label: '— All —' }, ...categories.map(c => ({ value: c.id, label: (isEn ? (c.name || c.nameZh) : (c.nameZh ?? c.name)) ?? '' }))]}
+                    options={[{ value: '', label: '— All —' }, ...categories.map(c => ({ value: c.id, label: (categoryPaths.get(c.id) ?? c.name).replaceAll(' / ', ' › ') }))]}
                     value={tmpl.categoryId ?? ''}
                     onChange={v => setField('categoryId', v || undefined)}
                   />

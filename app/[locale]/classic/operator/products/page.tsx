@@ -22,6 +22,7 @@ import { BUSINESS_TIMEZONE } from '@/lib/analytics/metrics'
 import type { SaleUomFormRow } from '@/lib/sale-uom'
 import { writeProductNavList } from '@/lib/product-nav-list'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { categoryPathMap } from '@/lib/category-path'
 
 const PAGE_SIZE = 50
 const LOW_STOCK_THRESHOLD = 10
@@ -100,6 +101,10 @@ export default function ClassicProductsPage() {
   // 与订单/报价单详情页用的是同一个接口、同一套口径。
   const [forecastMap, setForecastMap] = useState<Map<string, { forecast: number; qtyOnHand: number }>>(new Map())
   const [categories, setCategories] = useState<ProductCategory[]>([])
+  const categoryPaths = useMemo(
+    () => categoryPathMap(categories, isEn ? 'name' : 'nameZh'),
+    [categories, isEn],
+  )
   const [multiSelectOptions, setMultiSelectOptions] = useState<{ uomName: string[]; updatedBy: string[] }>({ uomName: [], updatedBy: [] })
   // 可售单位弹窗（20260908）：uoms 是弹窗里单位下拉的候选列表，跟商品详情页共用同一个 /api/uoms
   const [uoms, setUoms] = useState<{ id: string; name: string; nameZh?: string | null; categoryId?: string }[]>([])
@@ -723,7 +728,7 @@ export default function ClassicProductsPage() {
     },
     {
       key: 'categoryId',
-      width: 110,
+      width: 150,
       label: 'Product Category',
       filterType: 'text',
       // 排序按显示名称传参(categoryLabel)，而非裸 categoryId——后端映射成按 category 关系的 name 排序
@@ -733,12 +738,13 @@ export default function ClassicProductsPage() {
       editType: 'select',
       editOptions: [
         { value: '', label: '—' },
-        ...categories.map(c => ({ value: c.id, label: (isEn ? (c.name || c.nameZh) : (c.nameZh || c.name)) ?? c.name })),
+        ...categories.map(c => ({ value: c.id, label: (categoryPaths.get(c.id) ?? c.name).replaceAll(' / ', ' › ') })),
       ],
       render: (v) => {
         const cat = categories.find(c => c.id === String(v ?? ''))
-        const label = (isEn ? (cat?.name || cat?.nameZh) : (cat?.nameZh || cat?.name)) ?? (v ? String(v) : '—')
-        return <span className="text-xs text-gray-600">{label}</span>
+        const fullPath = cat ? categoryPaths.get(cat.id) ?? cat.name : (v ? String(v) : '—')
+        const shortPath = fullPath.split(' / ').slice(-2).join(' › ')
+        return <span className="block truncate text-xs text-gray-600" title={fullPath.replaceAll(' / ', ' › ')}>{shortPath}</span>
       },
     },
     {
@@ -772,7 +778,19 @@ export default function ClassicProductsPage() {
     },
   ]
 
-  const activeMultiCount = Object.values(columnMultiFilters).reduce((n, arr) => n + (arr?.length ?? 0), 0)
+  const activeColumnFilters = Object.entries(columnMultiFilters).flatMap(([key, values]) => {
+    const column = columns.find(col => col.key === key)
+    return (values ?? []).map(value => {
+      const optionLabel = column?.filterOptions?.find(option => option.value === value)?.label ?? (value || emptyLabel)
+      return {
+        label: `${column?.label ?? key}: ${optionLabel}`,
+        onRemove: () => setColumnMultiFilters(current => ({
+          ...current,
+          [key]: (current[key] ?? []).filter(selectedValue => selectedValue !== value),
+        })),
+      }
+    })
+  })
   const hasAlerts = alertCounts.negative > 0 || alertCounts.low > 0
 
   return (
@@ -813,7 +831,7 @@ export default function ClassicProductsPage() {
             label: stockAlertFilter === 'negative' ? (isEn ? '⚠ Negative Stock' : '⚠ 负库存') : (isEn ? '↓ Low Stock' : '↓ 低库存'),
             onRemove: () => setStockAlertFilter('all'),
           }] : []),
-          ...(activeMultiCount > 0 ? [{ label: isEn ? `Column filters (${activeMultiCount})` : `列筛选 (${activeMultiCount})`, onRemove: () => setColumnMultiFilters({}) }] : []),
+          ...activeColumnFilters,
         ]}
         filterOptions={[
           { label: 'Can be Sold', value: 'canBeSold' },
