@@ -8,7 +8,7 @@ import type { TripPrintData } from '../lib/print/trip-common'
 
 const data: TripPrintData = {
   trip: { id: 'trip', name: 'Morning', timeSlot: 'am', driverName: 'Driver Test', departTime: '08:00', createdAt: '2026-10-10' },
-  orders: [{ id: 'order', code: 'D-261010-001', customerId: 'customer', customerName: 'Test Restaurant', totalAmount: 10, internalNote: null, externalNote: 'Gate code: 1234', deliveryNote: null, deliveryDate: '2026-10-10', invoiceNo: 'V12345', driverBatchLabel: 'Driver Test', lines: [{ productId: 'product', productName: 'Carrots', spec: null, uomId: 'unit', uomName: 'BAG', goodsType: 'BULK', note: null, orderedQty: 1, unitPrice: 10, taxRate: 0, subtotal: 10 }] }],
+  orders: [{ id: 'order', code: 'D-261010-001', customerId: 'customer', customerName: 'Test Restaurant', totalAmount: 10, internalNote: null, externalNote: 'Gate code: 1234', deliveryNote: null, deliveryDate: '2026-10-10', invoiceNo: 'V12345', salesman: 'Sales Test', driverBatchLabel: 'Driver Test', lines: [{ productId: 'product', productName: 'Carrots', spec: null, uomId: 'unit', uomName: 'BAG', goodsType: 'BULK', note: null, orderedQty: 1, unitPrice: 10, taxRate: 0, subtotal: 10 }] }],
   customers: new Map([['customer', { id: 'customer', name: 'Test Restaurant', street: '1 Main St', street2: '', city: 'Dublin', state: '', zip: '', country: 'Ireland', phone: '01234567', vatNumber: '', paymentTerm: 'monthly', externalNote: 'Chef: <Alice> & 0891234567' }]]),
   signoffs: [],
 }
@@ -20,6 +20,8 @@ for (const [name, render] of [['sales', generateTripSalesHtml], ['delivery', gen
     assert.equal(cells.length, 4)
     assert.doesNotMatch(cells[0]!, /Driver Test/)
     assert.match(cells[2]!, /Driver Test/)
+    assert.ok(cells[2]!.indexOf('Salesman: Sales Test') < cells[2]!.indexOf('Driver Test'))
+    assert.match(html, /class="print-at">Print at: \d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}/)
     assert.match(cells[3]!, /Monthly/)
     assert.match(cells[3]!, /Chef: &lt;Alice&gt; &amp; 0891234567/)
     assert.match(cells[3]!, /Gate code: 1234/)
