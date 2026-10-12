@@ -122,6 +122,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 表现为功能整个 403（本条就是这么发现的），而不是敞开。
   { pattern: '/api/purchase-orders/*/return', methods: ['POST'], permission: 'purchase.order.receive' },
   { pattern: '/api/purchase-orders/*', methods: ['PUT', 'PATCH'], permission: 'purchase.order.update' },
+  { pattern: '/api/purchase-orders/*', methods: ['DELETE'], permission: 'purchase.order.update' },
   { pattern: '/api/purchases', methods: R, permission: 'purchase.legacy.read' },
   { pattern: '/api/purchases', methods: ['POST'], permission: 'purchase.legacy.create' },
   { pattern: '/api/purchases/*', methods: R, permission: 'purchase.legacy.read' },

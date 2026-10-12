@@ -16,7 +16,7 @@ export async function loadPurchaseOrdersForExport(
       where,
       orderBy: { createdAt: 'desc' },
       take: ctx.limit,
-      include: { lines: { select: { id: true } } },
+      include: { lines: { orderBy: { sequence: 'asc' } } },
     }),
   ])
 
@@ -33,13 +33,21 @@ export async function loadPurchaseOrdersForExport(
     ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true, email: true } })
     : []
   const creatorById = new Map(creators.map(u => [u.id, u.name || u.email]))
+  const productIds = [...new Set(rows.flatMap(r => ((r.lines ?? []) as Array<{ productId?: string }>).map(l => l.productId).filter((v): v is string => !!v)))]
+  const products = productIds.length ? await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, internalRef: true } }) : []
+  const productRefById = new Map(products.map(p => [p.id, p.internalRef]))
 
-  const out: PurchaseOrderExportRow[] = (serializeApi(rows) as Array<Record<string, unknown>>).map(r => ({
-    ...(r as unknown as PurchaseOrderExportRow),
-    supplierName: nameById.get(r.supplierId as string) ?? '',
-    createdByName: creatorById.get(r.createdBy as string) ?? '',
-    lineCount: ((r.lines ?? []) as unknown[]).length,
-  }))
+  const out: PurchaseOrderExportRow[] = (serializeApi(rows) as Array<Record<string, unknown>>).flatMap(r => {
+    const lines = (r.lines ?? []) as Array<Record<string, unknown>>
+    const header = { ...(r as unknown as PurchaseOrderExportRow), supplierName: nameById.get(r.supplierId as string) ?? '',
+      createdByName: creatorById.get(r.createdBy as string) ?? '', lineCount: lines.length }
+    return (lines.length ? lines : [null]).map(line => ({ ...header,
+      productName: line?.productName as string | undefined,
+      productRef: productRefById.get(String(line?.productId ?? '')) ?? '',
+      quantity: line?.orderedQty as number | undefined, unitCost: line?.unitCost as number | undefined,
+      taxRate: line?.taxRate as number | undefined, lineUntaxed: line?.subtotalExTax as number | undefined,
+    }))
+  })
 
   return { rows: out, total }
 }

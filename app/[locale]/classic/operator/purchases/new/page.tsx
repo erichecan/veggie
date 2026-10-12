@@ -984,7 +984,7 @@ export default function NewPurchaseOrderPage() {
             <div style={{ minWidth: '280px' }}>
               <div className="flex justify-between py-1 text-sm">
                 <span className="text-gray-500">{isEn ? 'Subtotal (Ex Tax)' : '税前金额'}</span>
-                <span className="text-gray-800 font-medium">{subtotalExTax.toFixed(2)}</span>
+                <span className="text-gray-800 font-medium">{(subtotalExTax + freightAmount).toFixed(2)}</span>
               </div>
               <div className="flex justify-between py-1 text-sm">
                 <span className="text-gray-500">{isEn ? 'Tax' : '税额'}</span>
@@ -992,7 +992,7 @@ export default function NewPurchaseOrderPage() {
               </div>
               <div className="border-t border-gray-300 mt-1 pt-2 flex justify-between">
                 <span className="text-sm font-semibold" style={{ color: DARK }}>{isEn ? 'Total' : '合计'}</span>
-                <span className="text-base font-bold" style={{ color: DARK }}>{currency} {totalIncTax.toFixed(2)}</span>
+                <span className="text-base font-bold" style={{ color: DARK }}>{currency} {(totalIncTax + freightAmount).toFixed(2)}</span>
               </div>
               {currency !== 'EUR' && (
                 <div className="flex justify-between py-1 text-sm">

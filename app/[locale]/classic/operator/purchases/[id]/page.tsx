@@ -246,6 +246,7 @@ export default function PurchaseDetailPage() {
   const [editNotes, setEditNotes] = useState('')
   const [editVendorReference, setEditVendorReference] = useState('')
   const [editExpectedDate, setEditExpectedDate] = useState('')
+  const [editFreightAmount, setEditFreightAmount] = useState(0)
   const [editSupplierId, setEditSupplierId] = useState('')
   const [editLines, setEditLines] = useState<POLine[]>([])
 
@@ -468,14 +469,14 @@ export default function PurchaseDetailPage() {
   // 编辑态内容防抖存本地：切去别的 tab 被上面的 hook 自动刷新参考数据时，
   // 不至于把正在填的内容也冲掉——保存成功/放弃编辑后清掉，不是永久草稿。
   type PurchaseOrderDraft = {
-    editVendorReference?: string; editNotes: string; editExpectedDate: string; editSupplierId: string; editLines: POLine[]
+    editVendorReference?: string; editNotes: string; editExpectedDate: string; editFreightAmount: number; editSupplierId: string; editLines: POLine[]
   }
   const draft = useDraftAutosave<PurchaseOrderDraft>({
     userId: session?.userId,
     entity: 'purchase-order',
     recordKey: po?.id ?? id,
     enabled: editing,
-    data: { editVendorReference, editNotes, editExpectedDate, editSupplierId, editLines },
+    data: { editVendorReference, editNotes, editExpectedDate, editFreightAmount, editSupplierId, editLines },
   })
   function restoreDraft() {
     const d = draft.restore()
@@ -483,6 +484,7 @@ export default function PurchaseDetailPage() {
     setEditNotes(d.editNotes)
     setEditVendorReference(d.editVendorReference ?? '')
     setEditExpectedDate(d.editExpectedDate)
+    setEditFreightAmount(d.editFreightAmount ?? 0)
     setEditSupplierId(d.editSupplierId)
     setEditLines(d.editLines)
   }
@@ -493,6 +495,7 @@ export default function PurchaseDetailPage() {
     setEditNotes(po.notes ?? '')
     setEditVendorReference(po.vendorReference ?? '')
     setEditExpectedDate(toInputDate(po.expectedDate))
+    setEditFreightAmount(Number(po.freightAmount ?? 0))
     setEditSupplierId(po.supplierId)
     setEditLines(po.lines.map(l => ({ ...l })))
     setEditing(true)
@@ -530,6 +533,7 @@ export default function PurchaseDetailPage() {
         notes: editNotes || null,
         vendorReference: editVendorReference.trim() || null,
         expectedDate: editExpectedDate || null,
+        freightAmount: editFreightAmount,
         supplierId: editSupplierId,
         lines: linesToSave.map(l => ({
           id: l.id,
@@ -680,11 +684,13 @@ export default function PurchaseDetailPage() {
   const isCancelled = po.status === 'CANCELLED'
   const displayLines = editing ? editLines : po.lines
 
-  const subtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotalExTax), 0)
+  const lineSubtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotalExTax), 0)
+  const freightAmount = editing ? editFreightAmount : Number(po.freightAmount ?? 0)
+  const subtotalExTax = lineSubtotalExTax + freightAmount
   const totalTax = displayLines.reduce((s, l) => s + Number(l.taxAmount), 0)
-  const totalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0)
+  const totalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0) + freightAmount
   // 参考成本/税前小计两列与新建页（purchases/new）对齐：运费按行 subtotal 占比分摊，只做展示，不落库。
-  const landedCosts = computeOrderLandedCosts({ freightAmount: po.freightAmount ?? 0, subtotalExTax }, displayLines)
+  const landedCosts = computeOrderLandedCosts({ freightAmount, subtotalExTax: lineSubtotalExTax }, displayLines)
 
   const supplier = suppliers.find(s => s.id === (editing ? editSupplierId : po.supplierId))
   const supplierName = supplier?.name ?? po.supplierName ?? po.supplierId
@@ -714,7 +720,7 @@ export default function PurchaseDetailPage() {
             {isEn ? 'Request for Quotation' : '询价单'}
           </button>
           <span className="mx-1 text-gray-400">/</span>
-          <span className="text-gray-700 font-medium">{po.name}</span>
+          <span className="text-gray-900 font-bold text-sm">{po.name}</span>
         </div>
 
         {/* Row 2: action buttons + pagination */}
@@ -765,9 +771,31 @@ export default function PurchaseDetailPage() {
               style={{ borderColor: '#d0d5dd', color: DARK }}>
               {isEn ? 'Print' : '打印'}
             </button>
-            <button className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50 flex items-center gap-1"
-              style={{ borderColor: '#d0d5dd', color: DARK }}>
-              {isEn ? 'Actions' : '操作'} <span className="text-xs leading-none">▾</span>
+            <button onClick={async () => {
+              if (!confirm(isEn ? 'Duplicate this purchase order as a draft?' : '复制此采购单为新草稿？')) return
+              try {
+                const created = await apiPost<PurchaseOrder>('/api/purchase-orders', {
+                  supplierId: po.supplierId, currency: po.currency, exchangeRate: po.exchangeRate,
+                  freightAmount: po.freightAmount ?? 0, expectedDate: po.expectedDate,
+                  notes: po.notes, lines: po.lines.map(l => ({ productId: l.productId, productName: l.productName,
+                    uomId: (l as POLine & { uomId?: string | null }).uomId, uomName: l.uomName,
+                    orderedQty: l.orderedQty, unitCost: l.unitCost, taxRate: l.taxRate, bestBefore: l.bestBefore }))
+                })
+                router.push(`${prefix}/classic/operator/purchases/${created.id}`)
+              } catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Duplicate failed' : '复制失败')) }
+            }} className="h-7 px-3 text-sm rounded border font-medium hover:bg-gray-50" style={{ borderColor: '#d0d5dd', color: DARK }}>
+              {isEn ? 'Duplicate' : '复制'}
+            </button>
+            <button onClick={async () => {
+              if (!confirm(isEn ? 'Delete this purchase order permanently?' : '确定永久删除此采购单？')) return
+              try {
+                const res = await fetch(`/api/purchase-orders/${po.id}`, { method: 'DELETE', headers: authHeaders() })
+                if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || `HTTP ${res.status}`) }
+                router.push(`${prefix}/classic/operator/purchases`)
+              }
+              catch (e) { toast.error(e instanceof Error ? e.message : (isEn ? 'Delete failed' : '删除失败')) }
+            }} className="h-7 px-3 text-sm rounded border font-medium text-red-600 hover:bg-red-50" style={{ borderColor: '#fecaca' }}>
+              {isEn ? 'Delete' : '删除'}
             </button>
           </div>
 
@@ -946,6 +974,10 @@ export default function PurchaseDetailPage() {
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Currency' : '货币'}</label>
                   <span className="text-sm text-gray-700">{po.currency}</span>
+                </div>
+                <div className="flex items-center min-h-[32px]">
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Freight' : '运费'}</label>
+                  {editing ? <input type="number" min="0" step="0.01" value={editFreightAmount} onChange={e => setEditFreightAmount(Number(e.target.value))} className={`${numInputCls} w-32`} /> : <span className="text-sm text-gray-700">{po.currency} {Number(po.freightAmount ?? 0).toFixed(2)}</span>}
                 </div>
               </div>
 

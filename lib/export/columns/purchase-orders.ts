@@ -18,6 +18,12 @@ export interface PurchaseOrderExportRow {
   totalIncTaxEur?: number | null
   freightAmount?: number | null
   lineCount?: number | null
+  productName?: string | null
+  productRef?: string | null
+  quantity?: number | null
+  unitCost?: number | null
+  taxRate?: number | null
+  lineUntaxed?: number | null
 }
 
 const STATUS_ZH: Record<string, string> = {
@@ -46,7 +52,12 @@ export function purchaseOrderExportColumns(isEn: boolean): readonly ExportColumn
     { key: 'createdByName', header: '录入人', headerEn: 'Created By', get: r => r.createdByName ?? '' },
     { key: 'orderDate', header: '下单日期', headerEn: 'Order Date', get: r => dateOnly(r.orderDate) },
     { key: 'expectedDate', header: '预计到货', headerEn: 'Expected Date', get: r => dateOnly(r.expectedDate) },
-    { key: 'lineCount', header: '行数', headerEn: 'Lines', get: r => r.lineCount ?? 0 },
+    { key: 'productName', header: '商品名称', headerEn: 'Product Name', get: r => r.productName ?? '' },
+    { key: 'productRef', header: '商品编号', headerEn: 'Product Ref', get: r => r.productRef ?? '' },
+    { key: 'quantity', header: '数量', headerEn: 'Quantity', get: r => r.quantity ?? '' },
+    { key: 'unitCost', header: '单价', headerEn: 'Unit Cost', get: r => money(r.unitCost) },
+    { key: 'taxRate', header: '税率', headerEn: 'Tax Rate (%)', get: r => r.taxRate ?? '' },
+    { key: 'lineUntaxed', header: '行未税金额', headerEn: 'Line Untaxed', get: r => money(r.lineUntaxed) },
     { key: 'currency', header: '币种', headerEn: 'Currency', get: r => r.currency ?? 'EUR' },
     { key: 'subtotalExTax', header: '未税金额', headerEn: 'Untaxed', get: r => money(r.subtotalExTax) },
     { key: 'totalTax', header: '税额', headerEn: 'Tax', get: r => money(r.totalTax) },

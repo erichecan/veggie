@@ -75,13 +75,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '只有草稿/已发送状态可编辑' }, { status: 409 })
       }
 
-      const { notes, vendorReference, expectedDate, supplierId, exchangeRate: exchangeRateInput, lines: linesPayload } = data
+      const { notes, vendorReference, expectedDate, supplierId, freightAmount: freightInput, exchangeRate: exchangeRateInput, lines: linesPayload } = data
 
       const headerUpdate: Record<string, unknown> = {}
       if (vendorReference !== undefined) headerUpdate.vendorReference = String(vendorReference ?? '').trim() || null
       if (notes !== undefined) headerUpdate.notes = notes ? String(notes) : null
       if (expectedDate !== undefined) headerUpdate.expectedDate = expectedDate ? new Date(expectedDate) : null
       if (supplierId !== undefined) headerUpdate.supplierId = String(supplierId)
+      if (freightInput !== undefined) {
+        const freightAmount = Number(freightInput)
+        if (!Number.isFinite(freightAmount) || freightAmount < 0) return NextResponse.json({ error: '运费无效' }, { status: 400 })
+        headerUpdate.freightAmount = Math.round(freightAmount * 100) / 100
+      }
 
       // 汇率可在 DRAFT/SENT 阶段补录/修正(币种下单后不可再改，见 lib/create-purchase-order.ts)；
       // 补上汇率后连带把行/表头的 *Eur 字段一起重算，不能只改 exchangeRate 留下陈旧的折算值(20260713)。
@@ -253,7 +258,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         headerUpdate.subtotalExTaxEur = eurAmount(subtotalExTax, effectiveRate)
         headerUpdate.totalTaxEur = eurAmount(totalTax, effectiveRate)
         headerUpdate.totalIncTaxEur = eurAmount(subtotalExTax + totalTax, effectiveRate)
-        headerUpdate.freightAmountEur = eurAmount(poBefore.freightAmount, effectiveRate, 2)
+        headerUpdate.freightAmountEur = eurAmount(headerUpdate.freightAmount ?? poBefore.freightAmount, effectiveRate, 2)
       } else if (rateProvided) {
         // 只补汇率、没有重提行数据：沿用现存行/表头的原币金额，按新汇率重算全部 *Eur 字段
         headerUpdate.subtotalExTaxEur = eurAmount(poBefore.subtotalExTax, effectiveRate)
@@ -296,6 +301,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     } catch (error) {
       console.error('[PUT /api/purchase-orders/:id]', error)
       return NextResponse.json({ error: '保存失败' }, { status: 500 })
+    }
+  }, { require: 'purchase.order.update' })
+}
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  return withAuth(req, async () => {
+    try {
+      const { id } = await params
+      const p = prisma as any
+      const po = await p.purchaseOrder.findUnique({ where: { id }, include: { receipts: true, bills: true } })
+      if (!po) return NextResponse.json({ error: '采购订单不存在' }, { status: 404 })
+      if (po.status !== 'DRAFT' || po.receipts.length || po.bills.length) {
+        return NextResponse.json({ error: '只有未发送且没有收货/账单的草稿采购单可以删除' }, { status: 409 })
+      }
+      await prisma.$transaction(async (tx: any) => {
+        await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: id } })
+        await tx.purchaseOrder.delete({ where: { id } })
+      })
+      return NextResponse.json({ ok: true })
+    } catch (error) {
+      console.error('[DELETE /api/purchase-orders/:id]', error)
+      return NextResponse.json({ error: '删除失败' }, { status: 500 })
     }
   }, { require: 'purchase.order.update' })
 }
