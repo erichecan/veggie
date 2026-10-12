@@ -148,6 +148,7 @@ export async function POST(req: Request) {
           : [],
         orderDate: data.orderDate ?? null,
         expectedDate: data.expectedDate ?? null,
+        vendorReference: data.vendorReference ?? null,
         currency: data.currency,
         exchangeRate: data.exchangeRate ?? null,
         freightAmount: data.freightAmount ?? null,

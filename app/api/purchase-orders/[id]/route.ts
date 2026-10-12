@@ -48,7 +48,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       select: { id: true, action: true, detail: true, userName: true, createdAt: true },
     })
 
-    return NextResponse.json(serializeApi({ ...po, activityLog }))
+    const lines = po.lines.map((line: Record<string, unknown>) => {
+      const description = line.description == null ? null : String(line.description)
+      const productSpec = line.productSpec == null ? null : String(line.productSpec)
+      const parts = [productSpec?.trim(), description?.trim()].filter(Boolean)
+      return { ...line, spec: parts.length ? parts.join(' · ') : null }
+    })
+    return NextResponse.json(serializeApi({ ...po, lines, activityLog }))
   } catch (error) {
     console.error('[GET /api/purchase-orders/:id]', error)
     return NextResponse.json({ error: '获取失败' }, { status: 500 })
@@ -158,7 +164,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         // saleDescription 取代优先级的旧字段 spec（写 spec 会被优先级更高的 saleDescription
         // 悄悄遮住，回写等于白改）。老行的 payload 不一定带 productId（见 [id]/page.tsx
         // handleSave），缺了就从改动前的行里补，同一商品出现多次以最后一行为准。
-        const specByProductId = new Map<string, string>()
+        const descriptionByProductId = new Map<string, string>()
 
         const lineOps = linesPayload.map((l: Record<string, unknown>) => {
           const orderedQty = Number(l.orderedQty)
@@ -178,9 +184,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             ? new Date(l.bestBefore as string)
             : null
 
-          if (l.spec !== undefined) {
+          if (l.description !== undefined || l.spec !== undefined) {
             const productId = String(l.productId ?? oldLines[String(l.id)]?.productId ?? '')
-            if (productId) specByProductId.set(productId, String(l.spec ?? '').trim())
+            const description = String(l.description ?? l.spec ?? '').trim()
+            if (productId && description) descriptionByProductId.set(productId, description)
           }
 
           if (isNewLine(l)) {
@@ -193,7 +200,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 purchaseOrderId: id,
                 productId,
                 productName: String(l.productName ?? ''),
+                description: l.description == null ? null : String(l.description).trim() || null,
+                productSpec: l.productSpec == null ? null : String(l.productSpec).trim() || null,
                 uomId: l.uomId ? String(l.uomId) : null,
+                uomName: l.uomName == null ? null : String(l.uomName).trim() || null,
                 orderedQty, unitCost, taxRate, subtotalExTax, taxAmount, subtotalIncTax,
                 unitCostEur: eurAmount(unitCost, effectiveRate, 4),
                 subtotalExTaxEur: eurAmount(subtotalExTax, effectiveRate),
@@ -225,6 +235,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             where: { id: lineId },
             data: {
               orderedQty, unitCost, taxRate, subtotalExTax, taxAmount, subtotalIncTax,
+              ...(l.description !== undefined && { description: String(l.description ?? '').trim() || null }),
+              ...(l.productSpec !== undefined && { productSpec: String(l.productSpec ?? '').trim() || null }),
+              ...(l.uomId !== undefined && { uomId: l.uomId ? String(l.uomId) : null }),
+              ...(l.uomName !== undefined && { uomName: l.uomName ? String(l.uomName).trim() : null }),
               unitCostEur: eurAmount(unitCost, effectiveRate, 4),
               subtotalExTaxEur: eurAmount(subtotalExTax, effectiveRate),
               taxAmountEur: eurAmount(taxAmount, effectiveRate),
@@ -242,8 +256,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
         await prisma.$transaction(lineOps)
 
-        for (const [productId, spec] of specByProductId) {
-          await p.product.update({ where: { id: productId }, data: { saleDescription: spec || null } })
+        for (const [productId, description] of descriptionByProductId) {
+          await p.product.update({ where: { id: productId }, data: { saleDescription: description } })
         }
 
         // Recalculate PO totals from the final line set (更新行 + 新增行，去掉被删的)

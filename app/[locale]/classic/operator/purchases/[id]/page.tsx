@@ -50,6 +50,9 @@ interface POLine {
   productId?: string | null
   productName: string
   spec?: string | null
+  description?: string | null
+  productSpec?: string | null
+  uomId?: string | null
   uomName?: string | null
   orderedQty: number
   receivedQty?: number
@@ -142,12 +145,18 @@ interface PurchaseProduct {
   /// 按采购单位区分的规格（如 10KG/20KG 两袋同名商品）——来自 ProductSaleUom.spec，
   /// 跟上面的 spec（Product.spec）是两张不同的表，Product.spec 早就清空了
   purchaseUomSpec?: string | null
+  purchaseUomId?: string | null
+  purchaseUomName?: string | null
 }
 
 /** 采购单加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0（客户 20260904 反馈） */
 function purchaseTaxRateOf(prod: PurchaseProduct): number {
   if (prod.vendorTaxRate == null) return 0
   return nearestPurchaseTaxRate(Number(prod.vendorTaxRate) * 100)
+}
+
+function productDescription(prod: PurchaseProduct): string | null {
+  return prod.saleDescription?.trim() || prod.spec?.trim() || null
 }
 
 interface Category {
@@ -313,7 +322,10 @@ export default function PurchaseDetailPage() {
         productId: prod.id,
         productName: prod.name,
         spec: lineDescription(prod, prod.purchaseUomSpec) || null,
-        uomName: prod.uomName ?? null,
+        description: productDescription(prod),
+        productSpec: prod.purchaseUomSpec?.trim() || null,
+        uomId: prod.purchaseUomId ?? prod.uomId ?? null,
+        uomName: prod.purchaseUomName ?? prod.uomName ?? null,
         orderedQty: 1,
         unitCost,
         taxRate,
@@ -352,6 +364,8 @@ export default function PurchaseDetailPage() {
         productId: '',
         productName: '',
         spec: null,
+        description: null,
+        productSpec: null,
         uomName: null,
         orderedQty: 1,
         unitCost: 0,
@@ -379,7 +393,10 @@ export default function PurchaseDetailPage() {
         productId: prod.id,
         productName: prod.name,
         spec: lineDescription(prod, prod.purchaseUomSpec) || null,
-        uomName: prod.uomName ?? null,
+        description: productDescription(prod),
+        productSpec: prod.purchaseUomSpec?.trim() || null,
+        uomId: prod.purchaseUomId ?? prod.uomId ?? null,
+        uomName: prod.purchaseUomName ?? prod.uomName ?? null,
         orderedQty: qty,
         unitCost,
         taxRate,

@@ -231,6 +231,18 @@ export async function GET(req: Request) {
       const sortDir: 'asc' | 'desc' = searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
       const sortKey = searchParams.get('sortKey')
       const where = await buildProductTemplatesWhere(searchParams)
+      const uomFilter = searchParams.get('uom')?.trim()
+      if (uomFilter) {
+        const clauses = Array.isArray(where.AND) ? where.AND as unknown[] : []
+        clauses.push({ saleUoms: { some: {
+          active: true,
+          uom: { OR: [
+            { name: { contains: uomFilter, mode: 'insensitive' } },
+            { nameZh: { contains: uomFilter, mode: 'insensitive' } },
+          ] },
+        } } })
+        where.AND = clauses
+      }
 
       let products: Awaited<ReturnType<typeof prisma.product.findMany<{ select: typeof DETAIL_SELECT }>>>
       let total: number
@@ -254,7 +266,12 @@ export async function GET(req: Request) {
         products = found
       }
 
-      const rows: SaleUnitRow[] = products.flatMap(flattenProduct)
+      const rows: SaleUnitRow[] = products.flatMap(flattenProduct).filter(row => {
+        if (!uomFilter) return true
+        const uomName = row.uom?.name ?? ''
+        const uomNameZh = row.uom?.nameZh ?? ''
+        return `${uomName} ${uomNameZh}`.toLocaleLowerCase().includes(uomFilter.toLocaleLowerCase())
+      })
 
       return NextResponse.json({
         data: rows, total, page, pageSize: limit, totalPages: Math.ceil(total / limit),

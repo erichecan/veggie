@@ -16,6 +16,8 @@ export interface ReportRequest {
   colDimensions?: DimensionSpec[]
   measures: string[]
   filters?: FilterSpec[]
+  /** Optional OR group. Every filter here may match; the group is ANDed with filters. */
+  orFilters?: FilterSpec[]
   limit?: number
   offset?: number
   orderBy?: { field: string; direction: 'asc' | 'desc' }[]

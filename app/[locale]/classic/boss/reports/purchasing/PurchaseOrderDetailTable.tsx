@@ -46,15 +46,16 @@ const num = (v: unknown) => {
 }
 
 export default function PurchaseOrderDetailTable({
-  isEn, supplierIds, productIds, from, to,
+  isEn, supplierIds, productIds, supplierTerms, from, to,
 }: {
   isEn: boolean
   supplierIds: string[]
   productIds: string[]
+  supplierTerms: string[]
   from: string
   to: string
 }) {
-  const scope = `${supplierIds.join(',')}|${productIds.join(',')}|${from}|${to}`
+  const scope = `${supplierIds.join(',')}|${productIds.join(',')}|${supplierTerms.join(',')}|${from}|${to}`
   const [loaded, setLoaded] = useState<{ scope: string; res: ApiResponse } | null>(null)
   const [failure, setFailure] = useState<{ scope: string; message: string } | null>(null)
 
@@ -76,10 +77,11 @@ export default function PurchaseOrderDetailTable({
       ],
       measures: ['subtotal_ex_tax', 'ordered_qty'],
       filters,
+      orFilters: supplierTerms.map((term) => ({ field: 'supplier_name', operator: 'like' as const, value: term })),
       orderBy: [{ field: 'confirmed_at', direction: 'desc' }],
       limit: ROW_LIMIT,
     }
-  }, [from, to, supplierIds, productIds])
+  }, [from, to, supplierIds, productIds, supplierTerms])
 
   useEffect(() => {
     let cancelled = false

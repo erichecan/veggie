@@ -1,6 +1,6 @@
 'use client'
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { apiPost } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
 import { eur, fmtMoney } from '@/lib/format-money'
 import { downloadCsv } from '@/lib/csv-export'
 import { bucketLabel } from '@/lib/reports/date-label'
@@ -56,6 +56,7 @@ const MEASURE_LABELS: Record<MeasureKey, { zh: string; en: string }> = {
 interface ApiRow {
   supplier_name?: string | null
   product_name?: string | null
+  product_id?: string | null
   order_date_month: string | null
   subtotal_ex_tax: string | number | null
   ordered_qty: string | number | null
@@ -94,11 +95,12 @@ const monthKey = (v: unknown): string => {
 const monthDate = (key: string) => (key ? `${key}-01T00:00:00.000Z` : '')
 
 export default function SupplierMonthMatrix({
-  isEn, supplierIds, productIds, from, to,
+  isEn, supplierIds, productIds, supplierTerms, from, to,
 }: {
   isEn: boolean
   supplierIds: string[]
   productIds: string[]
+  supplierTerms: string[]
   /** 'YYYY-MM-DD'，闭区间，两端都含 */
   from: string
   to: string
@@ -121,12 +123,12 @@ export default function SupplierMonthMatrix({
    */
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [productsBySupplier, setProductsBySupplier] = useState<
-    Record<string, Array<{ name: string; cells: Map<string, Cell> }> | 'loading' | 'error'>
+    Record<string, Array<{ id: string; name: string; forecast: number | null; cells: Map<string, Cell> }> | 'loading' | 'error'>
   >({})
 
   const supplierKey = supplierIds.join(',')
   const productKey = productIds.join(',')
-  const scope = `${supplierKey}|${productKey}|${from}|${to}`
+  const scope = `${supplierKey}|${productKey}|${supplierTerms.join(',')}|${from}|${to}`
   const scoped = (name: string) => `${scope}|${name}`
 
   /** 行/列以外的固定筛选。下钻子请求必须原样带上，否则父子两行对不上账 */
@@ -140,6 +142,7 @@ export default function SupplierMonthMatrix({
     if (productIds.length) f.push({ field: 'product_id', operator: 'in', value: productIds })
     return f
   }, [from, to, supplierIds, productIds])
+  const supplierOrFilters = supplierTerms.map((term) => ({ field: 'supplier_name', operator: 'like' as const, value: term }))
 
   useEffect(() => {
     let cancelled = false
@@ -149,6 +152,7 @@ export default function SupplierMonthMatrix({
       colDimensions: [{ field: 'order_date', interval: 'month' }],
       measures: ['subtotal_ex_tax', 'ordered_qty'],
       filters: baseFilters(),
+      orFilters: supplierOrFilters,
       limit: ROW_LIMIT,
     }
     apiPost<ApiResponse>('/api/reports/purchasing', body)
@@ -192,27 +196,43 @@ export default function SupplierMonthMatrix({
     if (!willExpand || (productsBySupplier[key] && productsBySupplier[key] !== 'error')) return
 
     setProductsBySupplier((prev) => ({ ...prev, [key]: 'loading' }))
+    let cancelled = false
     const body: ReportRequest = {
-      rowDimensions: [{ field: 'product_name' }],
+      rowDimensions: [{ field: 'product_name' }, { field: 'product_id' }],
       colDimensions: [{ field: 'order_date', interval: 'month' }],
       measures: ['subtotal_ex_tax', 'ordered_qty'],
       // 把这一行锁死成筛选条件 —— 这样"商品行各列之和 == 供应商行对应列"天然成立
       filters: [...baseFilters(), { field: 'supplier_name', operator: '=', value: name }],
+      orFilters: supplierOrFilters,
       limit: ROW_LIMIT,
     }
     apiPost<ApiResponse>('/api/reports/purchasing', body)
-      .then((res) => {
-        const byProduct = new Map<string, Map<string, Cell>>()
+      .then(async (res) => {
+        const byProduct = new Map<string, { id: string; name: string; cells: Map<string, Cell> }>()
         for (const r of res.rows) {
           const pname = r.product_name ?? '—'
-          if (!byProduct.has(pname)) byProduct.set(pname, new Map())
-          const cells = byProduct.get(pname)!
+          const id = r.product_id ?? ''
+          const productKey = `${pname}|${id}`
+          if (!byProduct.has(productKey)) byProduct.set(productKey, { id, name: pname, cells: new Map() })
+          const cells = byProduct.get(productKey)!.cells
           const mk = monthKey(r.order_date_month)
           if (!cells.has(mk)) cells.set(mk, emptyCell())
           addInto(cells.get(mk)!, { amount: num(r.subtotal_ex_tax), qty: num(r.ordered_qty) })
         }
-        const list = Array.from(byProduct.entries())
-          .map(([name2, cells]) => ({ name: name2, cells }))
+        const productRows = Array.from(byProduct.values())
+        const uniqueIds = Array.from(new Set(productRows.map((p) => p.id).filter(Boolean)))
+        const forecasts = new Map<string, number>()
+        for (let i = 0; i < uniqueIds.length; i += 200) {
+          const batch = uniqueIds.slice(i, i + 200)
+          try {
+            const fc = await apiGet<Array<{ productId: string; forecast: number }>>(`/api/products/forecast?ids=${batch.join(',')}`)
+            for (const row of fc) forecasts.set(row.productId, Number(row.forecast))
+          } catch {
+            // Keep the purchase drill-down usable if the live inventory forecast is unavailable.
+          }
+        }
+        const list = productRows
+          .map((p) => ({ ...p, forecast: forecasts.get(p.id) ?? null }))
           .sort((a, b) => totalOf(b.cells).amount - totalOf(a.cells).amount)
         setProductsBySupplier((prev) => ({ ...prev, [key]: list }))
       })
@@ -261,7 +281,7 @@ export default function SupplierMonthMatrix({
   const truncated = data.rows.length >= ROW_LIMIT || data.rows.length < (data.total ?? 0)
 
   const colSpanPerMonth = measures.length
-  const totalCols = 1 + (months.length + 1) * colSpanPerMonth
+  const totalCols = 2 + (months.length + 1) * colSpanPerMonth
 
   function cellFor(cells: Map<string, Cell>, m: string): Cell | undefined { return cells.get(m) }
 
@@ -296,7 +316,7 @@ export default function SupplierMonthMatrix({
   }
 
   function exportCsv() {
-    const headers = [isEn ? 'Supplier' : '供应商']
+    const headers = [isEn ? 'Supplier / Product' : '供应商 / 产品', isEn ? 'Current Forecast Qty' : '当前 Forecast QTY']
     for (const m of months) {
       const label = bucketLabel(monthDate(m), 'month', isEn)
       for (const k of measures) headers.push(`${label} · ${isEn ? MEASURE_LABELS[k].en : MEASURE_LABELS[k].zh}`)
@@ -304,7 +324,7 @@ export default function SupplierMonthMatrix({
     for (const k of measures) headers.push(`${isEn ? 'Total' : '合计'} · ${isEn ? MEASURE_LABELS[k].en : MEASURE_LABELS[k].zh}`)
 
     const line = (name: string, cells: Map<string, Cell>) => {
-      const row: string[] = [name]
+      const row: string[] = [name, '']
       const push = (c: Cell | undefined) => {
         for (const k of measures) {
           if (!c) { row.push(''); continue }
@@ -334,7 +354,11 @@ export default function SupplierMonthMatrix({
       rows.push(line(rowLabel(s), s.cells))
       const kids = productsBySupplier[scoped(s.key)]
       if (!expanded[scoped(s.key)] || !Array.isArray(kids)) continue
-      for (const p of kids) rows.push(line(`    ${p.name}`, p.cells))
+      for (const p of kids) {
+        const productRow = line(`    ${p.name}`, p.cells)
+        productRow[1] = p.forecast == null ? '' : String(p.forecast)
+        rows.push(productRow)
+      }
     }
 
     downloadCsv(`purchase-analysis-monthly-${new Date().toISOString().slice(0, 10)}`, headers, rows)
@@ -396,6 +420,9 @@ export default function SupplierMonthMatrix({
               <th rowSpan={2} className={`text-left px-3 py-3 font-semibold text-gray-600 align-bottom whitespace-nowrap ${STICKY_HEAD}`}>
                 {isEn ? 'Supplier' : '供应商'}
               </th>
+              <th rowSpan={2} className="text-right px-3 py-3 font-semibold text-gray-600 align-bottom whitespace-nowrap">
+                {isEn ? 'Current Forecast Qty' : '当前 Forecast QTY'}
+              </th>
               {months.map((m) => (
                 <th key={m} colSpan={colSpanPerMonth} className="text-center px-3 py-2 font-semibold text-gray-600 border-l border-gray-100 whitespace-nowrap">
                   {m ? bucketLabel(monthDate(m), 'month', isEn) : (isEn ? '(no date)' : '（无日期）')}
@@ -429,6 +456,7 @@ export default function SupplierMonthMatrix({
             {/* 总计行置顶，与销售分析一致 */}
             <tr className="border-b border-gray-100 bg-gray-50 font-bold">
               <td className={`px-3 py-2.5 text-gray-700 whitespace-nowrap ${STICKY_CELL} bg-gray-50`}>{isEn ? 'Total' : '总计'}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-gray-400">—</td>
               {months.flatMap((m) => {
                 const c = colTotals.get(m)!
                 return measures.map((k) => (
@@ -469,6 +497,7 @@ export default function SupplierMonthMatrix({
                       </span>
                       <span className={expandable ? '' : 'text-gray-400 italic'}>{rowLabel(s)}</span>
                     </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-gray-400">—</td>
                     {measureCells(s.cells, s.key, 'py-2.5 text-gray-800')}
                   </tr>
                   {isOpen && kids === 'loading' && (
@@ -483,6 +512,7 @@ export default function SupplierMonthMatrix({
                   {isOpen && Array.isArray(kids) && kids.map((p) => (
                     <tr key={`${s.key}|${p.name}`} className="border-b border-gray-50 text-gray-500">
                       <td className={`pl-10 pr-3 py-1.5 whitespace-nowrap ${STICKY_CELL} bg-white`}>{p.name}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{p.forecast == null ? '—' : Math.round(p.forecast * 1000) / 1000}</td>
                       {measureCells(p.cells, `${s.key}|${p.name}`, 'py-1.5')}
                     </tr>
                   ))}

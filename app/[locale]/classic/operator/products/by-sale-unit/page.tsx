@@ -37,16 +37,18 @@ export default function ProductsBySaleUnitPage() {
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [loading, setLoading] = useState(false)
   const [searchInput, setSearchInput] = useState('')
+  const [uomFilterInput, setUomFilterInput] = useState('')
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
-  async function loadPage(p: number, q: string, sk: string | null = sortKey, sd: 'asc' | 'desc' = sortDir, ps: number = pageSize) {
+  async function loadPage(p: number, q: string, sk: string | null = sortKey, sd: 'asc' | 'desc' = sortDir, ps: number = pageSize, uomFilter: string = uomFilterInput) {
     setLoading(true)
     try {
       const params = new URLSearchParams()
       params.set('page', String(p))
       params.set('pageSize', String(ps))
       if (q) params.set('search', q)
+      if (uomFilter.trim()) params.set('uom', uomFilter.trim())
       if (sk) { params.set('sortKey', sk); params.set('sortDir', sd) }
       const res = await apiGet<{ data: SaleUnitRow[]; total: number; page: number; totalPages: number; pageSize: number }>(
         `/api/products/by-sale-unit?${params}`,
@@ -83,6 +85,10 @@ export default function ProductsBySaleUnitPage() {
     const timer = setTimeout(() => loadPage(1, searchInput), 400)
     return () => clearTimeout(timer)
   }, [searchInput]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const timer = setTimeout(() => loadPage(1, searchInput, sortKey, sortDir, pageSize, uomFilterInput), 400)
+    return () => clearTimeout(timer)
+  }, [uomFilterInput]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 商品列表页改了规格/毛重等字段后，切回这个已打开的 tab 希望看到最新结果
   useRefetchOnFocus([() => loadPage(page, searchInput, sortKey, sortDir, pageSize)])
@@ -263,13 +269,21 @@ export default function ProductsBySaleUnitPage() {
       </div>
 
       <div className="px-4 pb-2 flex items-center justify-between">
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
           <input
             type="text"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             placeholder={isEn ? 'Search name / internal ref / spec...' : '搜索名称/内部编号/规格...'}
             className="h-8 w-72 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#875A7B] focus:ring-1 focus:ring-[#875A7B]"
+          />
+          <input
+            type="text"
+            value={uomFilterInput}
+            onChange={e => setUomFilterInput(e.target.value)}
+            placeholder={isEn ? 'Filter UoM (e.g. TRAY)' : '筛选单位（如 TRAY）'}
+            aria-label={isEn ? 'Filter by unit of measure' : '按销售单位筛选'}
+            className="h-8 w-44 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#875A7B] focus:ring-1 focus:ring-[#875A7B]"
           />
           <span className="ml-3 text-xs text-gray-400">
             {isEn ? `${total} products` : `共 ${total} 个商品`}

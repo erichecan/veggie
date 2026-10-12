@@ -11,12 +11,17 @@ export interface CreatePOLineInput {
   productId: string
   productName?: string
   uomId?: string | null
+  uomName?: string | null
   orderedQty: number
   unitCost: number
   taxRate?: number
   sequence?: number
   bestBefore?: string | Date | null
-  /// 商品描述（回传到 Product.spec，见下方"描述同步"）；未传/undefined 时不动商品库
+  /// 商品描述（回传到 Product.saleDescription，见下方"描述同步"）；未传/undefined 时不动商品库
+  description?: string | null
+  /// 采购单位规格快照，如每箱包含多少包。
+  productSpec?: string | null
+  /// 兼容旧调用方传入的组合描述。
   spec?: string | null
 }
 
@@ -25,6 +30,7 @@ export interface CreatePOInput {
   lines: CreatePOLineInput[]
   orderDate?: string | Date | null
   expectedDate?: string | Date | null
+  vendorReference?: string | null
   currency?: string
   /// currency→EUR 当日汇率快照，下单时锁定
   exchangeRate?: number | null
@@ -38,6 +44,14 @@ export interface CreatePOInput {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tx = any
+type ProductSnapshot = {
+  id: string
+  name: string
+  spec: string | null
+  saleDescription: string | null
+  canBePurchased: boolean
+  saleUoms: Array<{ uomId: string; spec: string | null }>
+}
 
 export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   const supplierId = input.supplierId.trim()
@@ -49,18 +63,30 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   // 这里之前还在 include: { template: ... } 查一个不存在的关系，Prisma 直接抛
   // "Unknown field `template`" 500，导致每一次新建采购单都保存不了(20260827 实测复现)。
   const productIds = [...new Set(input.lines.map(l => l.productId))]
-  if (productIds.length > 0) {
-    const products = await tx.product.findMany({
+  const productSnapshots: ProductSnapshot[] = productIds.length > 0
+    ? await tx.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, name: true, canBePurchased: true },
+      select: {
+        id: true, name: true, spec: true, saleDescription: true, canBePurchased: true,
+        saleUoms: { select: { uomId: true, spec: true } },
+      },
     })
+    : []
+  const productSnapshotById = new Map<string, ProductSnapshot>(productSnapshots.map(product => [product.id, product]))
+  if (productIds.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const notPurchasable = products.filter((p: any) => p.canBePurchased === false)
+    const notPurchasable = productSnapshots.filter((p: any) => p.canBePurchased === false)
     if (notPurchasable.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       throw Object.assign(new Error(`商品「${notPurchasable.map((p: any) => p.name).join('、')}」不可采购，无法加入采购单`), { status: 400 })
     }
   }
+
+  const uomIds = [...new Set(input.lines.map(line => line.uomId).filter((id): id is string => !!id))]
+  const uoms = uomIds.length > 0
+    ? await tx.uom.findMany({ where: { id: { in: uomIds } }, select: { id: true, name: true } })
+    : []
+  const uomNameById = new Map(uoms.map((uom: { id: string; name: string }) => [uom.id, uom.name]))
 
   const currency = (input.currency ?? 'EUR').toUpperCase()
   // 汇率解析：欧元恒为 1；非欧元有有效汇率就用，没有也不阻断下单——
@@ -71,6 +97,19 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
   let subtotalExTax = 0
   let totalTax = 0
   const recomputedLines = input.lines.map((raw, i) => {
+    const product = productSnapshotById.get(raw.productId)
+    const uomId = raw.uomId ?? null
+    const description = raw.description !== undefined
+      ? raw.description
+      : raw.spec !== undefined
+        ? raw.spec
+        : product?.saleDescription || product?.spec || null
+    const productSpec = raw.productSpec !== undefined
+      ? raw.productSpec
+      : product?.saleUoms?.find(saleUom => saleUom.uomId === uomId)?.spec ?? null
+    const uomName = raw.uomName !== undefined
+      ? raw.uomName
+      : (uomId ? uomNameById.get(uomId) : null) ?? null
     const qty = Number(raw.orderedQty)
     const unitCost = Number(raw.unitCost)
     const taxRate = Number(raw.taxRate ?? 0)
@@ -94,7 +133,10 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
     return {
       productId: raw.productId,
       productName: (raw.productName ?? '').trim().slice(0, 200),
-      uomId: raw.uomId ?? null,
+      description: description == null ? null : String(description).trim() || null,
+      productSpec: productSpec == null ? null : String(productSpec).trim() || null,
+      uomId,
+      uomName: uomName == null ? null : String(uomName).trim() || null,
       orderedQty: qty,
       receivedQty: 0,
       invoicedQty: 0,
@@ -130,6 +172,7 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
       status: 'DRAFT',
       orderDate: input.orderDate ? new Date(input.orderDate) : new Date(),
       expectedDate: input.expectedDate ? new Date(input.expectedDate) : null,
+      vendorReference: input.vendorReference?.trim() || null,
       currency,
       exchangeRate,
       exchangeRatePending,
@@ -150,7 +193,7 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
     include: { lines: true },
   })
 
-  await syncProductSpecFromLines(tx, input.lines)
+  await syncProductDescriptionFromLines(tx, input.lines)
 
   return po
 }
@@ -163,10 +206,11 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
  * spec（写 spec 会被 saleDescription 遮住，回写等于白改）。只回写"这次提交时真的带了
  * spec 字段"的行，同一单里同一商品出现多行时以最后一行为准。
  */
-async function syncProductSpecFromLines(tx: Tx, lines: CreatePOLineInput[]) {
+async function syncProductDescriptionFromLines(tx: Tx, lines: CreatePOLineInput[]) {
   const specByProductId = new Map<string, string>()
   for (const l of lines) {
-    if (l.spec !== undefined) specByProductId.set(l.productId, (l.spec ?? '').trim())
+    if (l.description !== undefined) specByProductId.set(l.productId, (l.description ?? '').trim())
+    else if (l.spec !== undefined) specByProductId.set(l.productId, (l.spec ?? '').trim())
   }
   for (const [productId, spec] of specByProductId) {
     await tx.product.update({ where: { id: productId }, data: { saleDescription: spec || null } })

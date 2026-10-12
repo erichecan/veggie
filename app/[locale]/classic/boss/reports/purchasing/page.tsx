@@ -9,9 +9,10 @@ import {
 import { DatePicker } from '@/components/ui/date-picker'
 import SupplierMonthMatrix from './SupplierMonthMatrix'
 import PurchaseOrderDetailTable from './PurchaseOrderDetailTable'
+import PurchaseHierarchyTable from './PurchaseHierarchyTable'
 
 const PURPLE = '#875A7B'
-type ViewMode = 'summary' | 'detail'
+type ViewMode = 'summary' | 'hierarchy' | 'detail'
 
 /**
  * 采购分析（数据中心导航里的第二项，与「销售分析」并排）
@@ -32,6 +33,8 @@ export default function PurchasingReportPage() {
 
   const [supplierFilter, setSupplierFilter] = useState<SearchOption[]>([])
   const [productFilter, setProductFilter] = useState<SearchOption[]>([])
+  const [supplierTermDraft, setSupplierTermDraft] = useState([''])
+  const [supplierTerms, setSupplierTerms] = useState<string[]>([])
   // 20260922 客户要求加时间段选择器：原来是"从 N 个月前到今天"的滚动窗口(monthsBack)，
   // 现在换成显式 from/to，与 procurement-analysis / sales-analysis 同款交互。
   // 默认给 180 天，接近原来 6 个月的默认窗口。
@@ -80,6 +83,7 @@ export default function PurchasingReportPage() {
         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
           {([
             ['summary', isEn ? 'Summary' : '汇总'],
+            ['hierarchy', isEn ? 'Drill-down' : '分层明细'],
             ['detail', isEn ? 'Detail' : '明细'],
           ] as const).map(([v, label]) => (
             <button
@@ -95,19 +99,55 @@ export default function PurchasingReportPage() {
         </div>
       </div>
 
+      <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 shadow-sm">
+        <div className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Custom supplier filters' : '自定义供应商筛选'}</div>
+        <div className="space-y-2">
+          {supplierTermDraft.map((term, index) => (
+            <div key={index} className="flex flex-wrap items-center gap-2">
+              {index > 0 && <span className="w-7 text-xs text-gray-500">{isEn ? 'or' : '或'}</span>}
+              <span className="text-sm text-gray-600">{isEn ? 'Supplier contains' : '供应商包含'}</span>
+              <input
+                value={term}
+                onChange={(e) => setSupplierTermDraft((old) => old.map((v, i) => i === index ? e.target.value : v))}
+                placeholder={isEn ? 'Enter keyword' : '输入关键词'}
+                className="border border-gray-200 rounded px-2 py-1 text-sm w-56"
+              />
+              {supplierTermDraft.length > 1 && <button type="button" onClick={() => setSupplierTermDraft((old) => old.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600" aria-label={isEn ? 'Remove condition' : '删除条件'}>×</button>}
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <button type="button" onClick={() => setSupplierTermDraft((old) => [...old, ''])} className="px-2.5 py-1 rounded border border-gray-200 text-xs text-gray-600">＋ {isEn ? 'Add condition' : '添加条件'}</button>
+          <button type="button" onClick={() => setSupplierTerms(supplierTermDraft.map((v) => v.trim()).filter(Boolean))} className="px-3 py-1 rounded text-xs text-white" style={{ background: PURPLE }}>{isEn ? 'Apply' : '应用'}</button>
+          {supplierTerms.length > 0 && <button type="button" onClick={() => { setSupplierTermDraft(['']); setSupplierTerms([]) }} className="px-2.5 py-1 text-xs text-gray-500">{isEn ? 'Clear' : '清除'}</button>}
+          {supplierTerms.length > 0 && <span className="text-xs text-gray-400">{isEn ? `Applied: ${supplierTerms.join(' OR ')}` : `已应用：${supplierTerms.join(' 或 ')}`}</span>}
+        </div>
+      </div>
+
       {view === 'summary' ? (
         <SupplierMonthMatrix
-          isEn={isEn}
-          supplierIds={supplierFilter.map((s) => s.id)}
-          productIds={productFilter.map((p) => p.id)}
-          from={range.from}
-          to={range.to}
+            isEn={isEn}
+            supplierIds={supplierFilter.map((s) => s.id)}
+            productIds={productFilter.map((p) => p.id)}
+            supplierTerms={supplierTerms}
+            from={range.from}
+            to={range.to}
         />
+      ) : view === 'hierarchy' ? (
+        <PurchaseHierarchyTable
+            isEn={isEn}
+            supplierIds={supplierFilter.map((s) => s.id)}
+            productIds={productFilter.map((p) => p.id)}
+            supplierTerms={supplierTerms}
+            from={range.from}
+            to={range.to}
+          />
       ) : (
         <PurchaseOrderDetailTable
           isEn={isEn}
           supplierIds={supplierFilter.map((s) => s.id)}
           productIds={productFilter.map((p) => p.id)}
+          supplierTerms={supplierTerms}
           from={range.from}
           to={range.to}
         />

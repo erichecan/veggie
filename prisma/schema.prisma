@@ -1419,8 +1419,14 @@ model PurchaseOrderLine {
   purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   productId         String
   productName       String
+  /// Purchase-time snapshots: keep the displayed description and unit-specific product spec
+  /// stable even if the product or its purchase UOM is edited later.
+  description       String?
+  productSpec       String?
   /// 采购 UoM ID（可空，兼容）
   uomId             String?
+  /// UOM label snapshot for historical display; uomId remains the relational identifier.
+  uomName           String?
   /// 订购数量（采购 UoM 下）
   orderedQty        Decimal       @db.Decimal(14, 3)
   /// 已收数量（采购 UoM 下）

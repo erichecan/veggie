@@ -84,6 +84,20 @@ export function buildReportSQL(
     }
   }
 
+  if (req.orFilters?.length) {
+    const clauses: string[] = []
+    for (const f of req.orFilters) {
+      const dimMeta = dimensionDefs[f.field]
+      const mesMeta = measureDefs[f.field]
+      const fieldName = dimMeta?.field ?? mesMeta?.field
+      if (!fieldName) throw new ReportRequestError(`无效筛选字段: ${f.field}`)
+      const clause = buildFilterClause(fieldName, f, params, paramIdx)
+      clauses.push(clause.sql)
+      paramIdx = clause.nextIdx
+    }
+    whereParts.push(`(${clauses.join(' OR ')})`)
+  }
+
   const whereStr = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : ''
 
   // ── ORDER BY ────────────────────────────────────────────────────────────────

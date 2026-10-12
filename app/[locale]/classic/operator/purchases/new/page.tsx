@@ -42,6 +42,8 @@ interface DraftLine {
   productId: string
   productName: string
   spec?: string | null
+  description?: string | null
+  productSpec?: string | null
   uomId?: string | null
   uomName?: string | null
   orderedQty: number
@@ -99,6 +101,10 @@ function purchaseUomOf(prod: PurchaseProduct): { uomId: string | null; uomName: 
   return { uomId: prod.uomId ?? null, uomName: prod.uomName ?? null }
 }
 
+function productDescription(prod: PurchaseProduct): string | null {
+  return prod.saleDescription?.trim() || prod.spec?.trim() || null
+}
+
 interface Category {
   id: string
   name: string
@@ -146,6 +152,7 @@ export default function NewPurchaseOrderPage() {
   const supListRef = useRef<HTMLDivElement>(null)
   const [orderDate, setOrderDate] = useState(today())
   const [expectedDate, setExpectedDate] = useState('')
+  const [vendorReference, setVendorReference] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -220,14 +227,14 @@ export default function NewPurchaseOrderPage() {
   // 新建页防抖存草稿：切去别的 tab 改参考数据被上面的 hook 自动刷新回来时，不至于把
   // 正在填的新单内容冲掉；提交成功后清掉，不是永久草稿。
   type NewPurchaseOrderDraft = {
-    supplierId: string; orderDate: string; expectedDate: string; notes: string; lines: DraftLine[]
+    supplierId: string; orderDate: string; expectedDate: string; vendorReference: string; notes: string; lines: DraftLine[]
     currency: string; exchangeRate: number; freightAmount: number
   }
   const draft = useDraftAutosave<NewPurchaseOrderDraft>({
     userId: session?.userId,
     entity: 'purchase-order',
     recordKey: draftId,
-    data: { supplierId, orderDate, expectedDate, notes, lines, currency, exchangeRate, freightAmount },
+    data: { supplierId, orderDate, expectedDate, vendorReference, notes, lines, currency, exchangeRate, freightAmount },
   })
   function restoreDraft() {
     const d = draft.restore()
@@ -235,6 +242,7 @@ export default function NewPurchaseOrderPage() {
     setSupplierId(d.supplierId)
     setOrderDate(d.orderDate)
     setExpectedDate(d.expectedDate)
+    setVendorReference(d.vendorReference ?? '')
     setNotes(d.notes)
     setLines(d.lines)
     setCurrency(d.currency)
@@ -320,6 +328,8 @@ export default function NewPurchaseOrderPage() {
         // 20260827：Description 统一读 lib/order-line-description.ts（与 [id] 编辑页同源）；
         // 这里之前一直用 category，是采购侧唯一没跟上那次统一的分叉。
         spec: lineDescription(prod, prod.purchaseUomSpec) || null,
+        description: productDescription(prod),
+        productSpec: prod.purchaseUomSpec?.trim() || null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -353,6 +363,8 @@ export default function NewPurchaseOrderPage() {
         productId: '',
         productName: '',
         spec: null,
+        description: null,
+        productSpec: null,
         uomId: null,
         uomName: null,
         orderedQty: 1,
@@ -385,6 +397,8 @@ export default function NewPurchaseOrderPage() {
         productId: prod.id,
         productName: prod.name,
         spec: lineDescription(prod, prod.purchaseUomSpec) || null,
+        description: productDescription(prod),
+        productSpec: prod.purchaseUomSpec?.trim() || null,
         uomId: uom.uomId,
         uomName: uom.uomName,
         orderedQty: qty,
@@ -428,6 +442,8 @@ export default function NewPurchaseOrderPage() {
         productId: hl.productId,
         productName: hl.productName,
         spec: product ? (lineDescription(product, product.purchaseUomSpec) || null) : null,
+        description: product ? productDescription(product) : null,
+        productSpec: product?.purchaseUomSpec?.trim() || null,
         uomId: hl.uomId,
         uomName: uomRecord ? (isEn ? (uomRecord.name || uomRecord.nameZh) : (uomRecord.nameZh || uomRecord.name)) ?? null : null,
         orderedQty: qty,
@@ -600,6 +616,7 @@ export default function NewPurchaseOrderPage() {
         supplierId,
         orderDate,
         expectedDate: expectedDate || undefined,
+        vendorReference: vendorReference.trim() || undefined,
         notes: notes || undefined,
         currency,
         // 待确认的汇率(未取到活体当日汇率、用户也没手动确认)不当真数字传给后端——
@@ -618,6 +635,9 @@ export default function NewPurchaseOrderPage() {
           taxRate: Number(l.taxRate),
           bestBefore: l.bestBefore,
           spec: l.spec ?? '',
+          description: l.description ?? '',
+          productSpec: l.productSpec ?? '',
+          uomName: l.uomName ?? null,
         })),
       })
       toast.success(isEn ? 'Purchase order created' : '采购单已创建')
@@ -769,6 +789,15 @@ export default function NewPurchaseOrderPage() {
                     onChange={setExpectedDate}
                     className={inputCls}
                     style={{ width: '180px' }}
+                  />
+                </div>
+                <div className="flex items-center min-h-[32px]">
+                  <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Vendor Reference' : '供应商参考'}</label>
+                  <input
+                    value={vendorReference}
+                    onChange={e => setVendorReference(e.target.value)}
+                    placeholder={isEn ? 'Supplier reference number' : '供应商提供的参考号'}
+                    className={`${inputCls} w-[180px]`}
                   />
                 </div>
                 <div className="flex items-center min-h-[32px]">

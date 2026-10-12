@@ -50,6 +50,7 @@ interface PurchaseOrder {
   status: POStatus
   supplierId: string
   supplierName?: string
+  vendorReference?: string | null
   createdBy?: string | null
   createdByName?: string | null
   orderDate: string
@@ -497,15 +498,7 @@ export default function PurchasesPage() {
             <div className="h-full w-1/3 animate-pulse" style={{ background: '#875A7B' }} />
           </div>
         )}
-        {loading && pos.length === 0 ? (
-          <div className="flex items-center justify-center py-24 text-gray-400">
-            <div className="w-5 h-5 border-2 border-gray-300 rounded-full animate-spin mr-3" style={{ borderTopColor: '#875A7B' }} />
-            {isEn ? 'Loading...' : '加载中...'}
-          </div>
-        ) : pos.length === 0 ? (
-          <div className="py-24 text-center text-gray-400 text-sm">{isEn ? 'No purchase orders' : '暂无采购单'}</div>
-        ) : (
-          <table className="w-full text-sm border-collapse bg-white">
+        <table className="w-full text-sm border-collapse bg-white">
             <thead>
               <tr className="border-b border-gray-200" style={{ background: '#f9f9f9' }}>
                 <th className="w-10 px-3 py-2.5 text-center">
@@ -536,7 +529,7 @@ export default function PurchasesPage() {
                   </span>
                 </th>
                 <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Expected Arrival' : '预计到货'}</th>
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Source Document' : '来源单据'}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Vendor Reference Number' : '供应商参考号'}</th>
                 <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Status' : '状态'}</th>
                 <th className="px-4 py-2.5 text-left font-medium text-gray-500 text-xs">{isEn ? 'Created By' : '录入人'}</th>
                 <th className="px-4 py-2.5 text-right font-medium text-gray-500 text-xs">{isEn ? 'Amount Ex. Tax' : '税前金额'}</th>
@@ -573,6 +566,15 @@ export default function PurchasesPage() {
               </tr>
             </thead>
             <tbody>
+              {pos.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-gray-400 text-sm">
+                    {loading
+                      ? (isEn ? 'Loading...' : '加载中...')
+                      : (isEn ? 'No purchase orders' : '暂无采购单')}
+                  </td>
+                </tr>
+              )}
               {(() => {
                 const GB_FIELD: Record<string, keyof PurchaseOrder> = {
                   supplier: 'supplierName',
@@ -604,7 +606,7 @@ export default function PurchasesPage() {
                     <td className="px-4 py-2.5 text-gray-500">
                       {po.expectedDate ? new Date(po.expectedDate).toLocaleDateString('en-GB') : '-'}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-400">-</td>
+                    <td className="px-4 py-2.5 text-gray-500">{po.vendorReference || '-'}</td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-block px-2 py-0.5 rounded-sm text-xs font-medium ${STATUS_COLOR[po.status]}`}>
                         {STATUS_LABEL[po.status]}
@@ -636,7 +638,6 @@ export default function PurchasesPage() {
               })()}
             </tbody>
           </table>
-        )}
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
 
