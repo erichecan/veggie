@@ -245,6 +245,7 @@ export default function PurchaseDetailPage() {
 
   const [editNotes, setEditNotes] = useState('')
   const [editVendorReference, setEditVendorReference] = useState('')
+  const [editOrderDate, setEditOrderDate] = useState('')
   const [editExpectedDate, setEditExpectedDate] = useState('')
   const [editFreightAmount, setEditFreightAmount] = useState(0)
   const [editSupplierId, setEditSupplierId] = useState('')
@@ -469,20 +470,21 @@ export default function PurchaseDetailPage() {
   // 编辑态内容防抖存本地：切去别的 tab 被上面的 hook 自动刷新参考数据时，
   // 不至于把正在填的内容也冲掉——保存成功/放弃编辑后清掉，不是永久草稿。
   type PurchaseOrderDraft = {
-    editVendorReference?: string; editNotes: string; editExpectedDate: string; editFreightAmount: number; editSupplierId: string; editLines: POLine[]
+    editVendorReference?: string; editNotes: string; editOrderDate?: string; editExpectedDate: string; editFreightAmount: number; editSupplierId: string; editLines: POLine[]
   }
   const draft = useDraftAutosave<PurchaseOrderDraft>({
     userId: session?.userId,
     entity: 'purchase-order',
     recordKey: po?.id ?? id,
     enabled: editing,
-    data: { editVendorReference, editNotes, editExpectedDate, editFreightAmount, editSupplierId, editLines },
+    data: { editVendorReference, editNotes, editOrderDate, editExpectedDate, editFreightAmount, editSupplierId, editLines },
   })
   function restoreDraft() {
     const d = draft.restore()
     if (!d) return
     setEditNotes(d.editNotes)
     setEditVendorReference(d.editVendorReference ?? '')
+    setEditOrderDate(d.editOrderDate ?? '')
     setEditExpectedDate(d.editExpectedDate)
     setEditFreightAmount(d.editFreightAmount ?? 0)
     setEditSupplierId(d.editSupplierId)
@@ -494,6 +496,7 @@ export default function PurchaseDetailPage() {
     loadPickerData()
     setEditNotes(po.notes ?? '')
     setEditVendorReference(po.vendorReference ?? '')
+    setEditOrderDate(toInputDate(po.orderDate ?? po.createdAt))
     setEditExpectedDate(toInputDate(po.expectedDate))
     setEditFreightAmount(Number(po.freightAmount ?? 0))
     setEditSupplierId(po.supplierId)
@@ -532,6 +535,7 @@ export default function PurchaseDetailPage() {
       const updated = await apiPut<PurchaseOrder>(`/api/purchase-orders/${id}`, {
         notes: editNotes || null,
         vendorReference: editVendorReference.trim() || null,
+        orderDate: editOrderDate || null,
         expectedDate: editExpectedDate || null,
         freightAmount: editFreightAmount,
         supplierId: editSupplierId,
@@ -985,7 +989,11 @@ export default function PurchaseDetailPage() {
               <div className="space-y-3">
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Order Date' : '订单日期'}</label>
-                  <span className="text-sm text-gray-800">{formatDateOnly(po.orderDate ?? po.createdAt)}</span>
+                  {editing ? (
+                    <DatePicker value={editOrderDate} onChange={setEditOrderDate} className={inputCls} style={{ width: '180px' }} />
+                  ) : (
+                    <span className="text-sm text-gray-800">{formatDateOnly(po.orderDate ?? po.createdAt)}</span>
+                  )}
                 </div>
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Expected Arrival' : '预期到货日期'}</label>

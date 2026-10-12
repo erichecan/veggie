@@ -75,11 +75,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '只有草稿/已发送状态可编辑' }, { status: 409 })
       }
 
-      const { notes, vendorReference, expectedDate, supplierId, freightAmount: freightInput, exchangeRate: exchangeRateInput, lines: linesPayload } = data
+      const { notes, vendorReference, orderDate, expectedDate, supplierId, freightAmount: freightInput, exchangeRate: exchangeRateInput, lines: linesPayload } = data
 
       const headerUpdate: Record<string, unknown> = {}
       if (vendorReference !== undefined) headerUpdate.vendorReference = String(vendorReference ?? '').trim() || null
       if (notes !== undefined) headerUpdate.notes = notes ? String(notes) : null
+      if (orderDate !== undefined) {
+        const parsedOrderDate = new Date(orderDate)
+        if (!orderDate || Number.isNaN(parsedOrderDate.getTime())) return NextResponse.json({ error: '订单日期无效' }, { status: 400 })
+        headerUpdate.orderDate = parsedOrderDate
+      }
       if (expectedDate !== undefined) headerUpdate.expectedDate = expectedDate ? new Date(expectedDate) : null
       if (supplierId !== undefined) headerUpdate.supplierId = String(supplierId)
       if (freightInput !== undefined) {
