@@ -109,6 +109,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
 
   // ── 采购 ────────────────────────────────────────────────────────────────
   { pattern: '/api/purchase-orders/*/pdf', permission: 'purchase.order.print' },
+  { pattern: '/api/purchase-orders/batch-pdf', methods: R, permission: 'purchase.order.print' },
   { pattern: '/api/purchase-orders/receipts-by-group', permission: 'purchase.order.read' },
   { pattern: '/api/purchase-orders/last-by-group', permission: 'purchase.order.read' },
   { pattern: '/api/purchase-orders/parse', permission: 'purchase.order.create' },

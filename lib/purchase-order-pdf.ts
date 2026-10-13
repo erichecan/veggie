@@ -215,3 +215,43 @@ ${DOCUMENT_HEADER_CSS}
 </body>
 </html>`
 }
+
+/**
+ * 多张采购单合成一份可打印 HTML(采购单列表 Action → 批量打印，20261013)。
+ * 每张单就是单张打印的那份版面原样搬过来，一张一页(break-after: page)；
+ * 单张版的页脚是 position:fixed(打印时每页都重复)，多张叠在一起会互相压住，
+ * 批量版改成跟在每张单后面的普通块；打印时间戳 id 改成 class，一次填满所有页。
+ */
+export function renderPurchaseOrdersBatchHtml(
+  items: Array<{ po: PurchaseOrderPdfData; supplier: PurchaseOrderPdfSupplier | null }>,
+): string {
+  const docs = items.map(({ po, supplier }) => renderPurchaseOrderHtml(po, supplier))
+  const first = docs[0] ?? renderPurchaseOrderHtml({
+    name: '', status: 'DRAFT', supplierId: '', orderDate: null, createdAt: null, expectedDate: null,
+    subtotalExTax: 0, totalTax: 0, totalIncTax: 0, lines: [],
+  }, null)
+  const head = first
+    .slice(first.indexOf('<head>'), first.indexOf('</head>') + '</head>'.length)
+    .replace(/<title>[\s\S]*?<\/title>/, `<title>Purchase Orders (${items.length})</title>`)
+    .replace('</style>', `
+  .po-batch-item { break-after: page; page-break-after: always; }
+  .po-batch-item:last-child { break-after: auto; page-break-after: auto; }
+  .po-batch-item .footer { position: static; margin: 4mm 12mm 0; }
+</style>`)
+  const bodies = docs.map(d => d
+    .slice(d.indexOf('<body>') + '<body>'.length, d.indexOf('<script>'))
+    .replace('id="print-ts"', 'class="print-ts"'))
+  return `<!DOCTYPE html>
+<html lang="en">
+${head}
+<body>
+${bodies.map(b => `<section class="po-batch-item">${b}</section>`).join('\n')}
+<script>
+  var ts = new Date();
+  var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
+  var text = pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() + ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
+  document.querySelectorAll('.print-ts').forEach(function(el){ el.textContent = text; });
+</script>
+</body>
+</html>`
+}
