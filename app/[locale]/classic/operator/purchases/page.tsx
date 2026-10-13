@@ -20,6 +20,7 @@ import CatalogPickingPage from './catalog/page'
 import AnnualPlanPage from './annual-plan/page'
 import VendorsPage from './vendors/page'
 import { DatePicker } from '@/components/ui/date-picker'
+import { writePurchaseNavParams } from '@/lib/purchase-nav-list'
 
 const PURPLE = '#875A7B'
 
@@ -219,6 +220,8 @@ export default function PurchasesPage() {
     setLoading(true)
     try {
       const params = buildParams()
+      // 记下当前筛选+排序，详情页的上一张/下一张按同一顺序走(lib/purchase-nav-list.ts)
+      writePurchaseNavParams(params.toString())
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String((page - 1) * PAGE_SIZE))
       const data = await apiGet<{ items: PurchaseOrder[]; total: number }>(`/api/purchase-orders?${params}`)

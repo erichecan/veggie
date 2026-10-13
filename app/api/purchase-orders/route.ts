@@ -70,6 +70,26 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p = prisma as any
 
+    // idsOnly=1：详情页「上一张/下一张」用(20261013)——同一筛选、同一排序下的全部 id，
+    // 只取 id 不带明细，翻页边界处也能接着往下走
+    if (searchParams.get('idsOnly') === '1') {
+      const IDS_MAX = 5000
+      if (sortFieldRaw === 'supplier') {
+        const slim: { id: string; supplierId: string }[] = await p.purchaseOrder.findMany({
+          where, select: { id: true, supplierId: true }, take: IDS_MAX,
+        })
+        const nameMap = await loadSupplierNames(p, slim.map(r => r.supplierId))
+        const dir = sortDir === 'asc' ? 1 : -1
+        slim.sort((a, b) => (nameMap.get(a.supplierId) ?? a.supplierId ?? '')
+          .localeCompare(nameMap.get(b.supplierId) ?? b.supplierId ?? '', 'en', { sensitivity: 'base' }) * dir)
+        return NextResponse.json({ ids: slim.map(r => r.id) })
+      }
+      const idRows: { id: string }[] = await p.purchaseOrder.findMany({
+        where, select: { id: true }, orderBy: [{ [sortField]: sortDir }, { id: 'asc' }], take: IDS_MAX,
+      })
+      return NextResponse.json({ ids: idRows.map(r => r.id) })
+    }
+
     let rows: Record<string, unknown>[]
     let total: number
 
@@ -107,7 +127,8 @@ export async function GET(req: Request) {
       ;[rows, total] = await Promise.all([
         p.purchaseOrder.findMany({
           where,
-          orderBy: { [orderField]: sortDir },
+          // id 兜底：同一天/同一供应商的单排序要稳定，翻页和详情页上一张/下一张(idsOnly)才对得上
+          orderBy: [{ [orderField]: sortDir }, { id: 'asc' }],
           skip: offset,
           take: limit,
           include: { lines: true },
