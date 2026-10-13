@@ -20,6 +20,7 @@ import { getSession } from '@/lib/session'
 import { type Facet, ORDER_FACET_FIELDS, applyFacets, localizeFacetFields, TIME_QUICK_OPTIONS, TIME_QUICK_LABEL, computeTimeRange, groupFacets } from '@/lib/list-filters'
 import { downloadAuthedFile } from '@/lib/print/open-pdf'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { writeRecordNavQuery, listNavQuery } from '@/lib/hooks/use-record-nav'
 
 const PAGE_SIZE = 50
 
@@ -207,6 +208,8 @@ export default function ClassicOrdersPage() {
     search,
     refresh,
   } = useServerList<Record<string, unknown>>({ url: baseUrl, pageSize: PAGE_SIZE })
+  // 详情页上一条/下一条按同一筛选+排序+搜索走(lib/hooks/use-record-nav.ts)
+  useEffect(() => { writeRecordNavQuery('orders', listNavQuery(baseUrl, search)) }, [baseUrl, search])
 
   // 列表本身的焦点刷新 useServerList 内部已经自带(见 hooks/use-server-list.ts 的
   // focus/visibilitychange 监听)，这里不重复接 refresh，否则每次切回 tab 会触发

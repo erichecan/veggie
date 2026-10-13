@@ -99,6 +99,25 @@ export async function GET(req: Request) {
       salesUser: { select: { id: true, name: true } },
     }
 
+    // idsOnly=1：销售单/报价单详情页「上一条/下一条」用(20261013)——与列表同一筛选、同一排序下
+    // 全部 id 的顺序，只取 id 不带明细，列表分页的边界处也能接着翻
+    if (searchParams.get('idsOnly') === '1') {
+      const IDS_MAX = 5000
+      if (sortFieldParam === 'deliveryBatch') {
+        // 司机列排序是内存里按派生显示值排的(同下方分页分支)，这里同口径
+        const allMatching = await prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, take: IDS_MAX, include })
+        const withWave = attachSalesmanDisplay(await attachWaveDisplay(deriveOrderItemsList(serializeApi(allMatching))))
+        withWave.sort((a, b) => {
+          const av = formatDriverSlotFromOrder(a)
+          const bv = formatDriverSlotFromOrder(b)
+          return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+        })
+        return NextResponse.json({ ids: withWave.map(o => String((o as { id: unknown }).id)) })
+      }
+      const idRows = await prisma.order.findMany({ where, orderBy: [orderBy, { id: 'asc' }], select: { id: true }, take: IDS_MAX })
+      return NextResponse.json({ ids: idRows.map(r => r.id) })
+    }
+
     if (paginated) {
       // deliveryBatch/司机列是 wave 派生展示字段(见 attachWaveDisplay),SQL 层没有直接可 ORDER BY
       // 的列,没法走下面 skip/take 那条路——之前直接放弃下推,排序退化成"只排当前页"(客户反馈:
@@ -129,7 +148,8 @@ export async function GET(req: Request) {
         prisma.order.count({ where }),
         prisma.order.findMany({
           where,
-          orderBy,
+          // id 兜底：同一天/同一客户的单排序稳定，翻页与详情页上一条/下一条(idsOnly)顺序一致
+          orderBy: [orderBy, { id: 'asc' }],
           skip: (page - 1) * pageSize,
           take: pageSize,
           include,
