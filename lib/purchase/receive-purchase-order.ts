@@ -3,6 +3,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { toStockQty } from '@/lib/inventory'
+import { nextLotNumbers } from '@/lib/lot-number'
 
 /**
  * 采购「确认收货」——全系统唯一真正改库存的采购侧动作(20260823 从库存收货台
@@ -42,8 +43,12 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
   const batchDate: Date = po.expectedDate ?? receivedAt
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await p.$transaction(async (tx: any) => {
-    let lotSeq = await tx.lot.count()
+  let result
+  try {
+  result = await p.$transaction(async (tx: any) => {
+    // 批次号取现有最大号往后排(lib/lot-number.ts)；不能用 count+1，有空号/自定义批次号就撞号
+    const lotNumbers = await nextLotNumbers(tx, planned.filter(x => x.qty > 0).length)
+    let lotIdx = 0
 
     for (const { line, qty } of planned) {
       if (qty <= 0) continue
@@ -72,8 +77,7 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
         data: { qtyOnHand: { increment: stockQty }, ...(newStd !== oldStd ? { standardPrice: newStd } : {}) },
       })
 
-      lotSeq++
-      const lotNumber = `LOT-${String(lotSeq).padStart(5, '0')}`
+      const lotNumber = lotNumbers[lotIdx++]
       const lot = await tx.lot.create({
         data: {
           lotNumber,
@@ -117,7 +121,19 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
       include: { lines: { orderBy: { sequence: 'asc' } } },
     })
     return updated
-  })
+  }, { maxWait: 10000, timeout: 30000 })
+  } catch (e) {
+    // 把真实原因带回界面，不再只剩一句 "Server temporarily unavailable"
+    const code = (e as { code?: string })?.code
+    console.error('[receive purchase order]', poId, e)
+    if (code === 'P2002') {
+      return NextResponse.json({ error: '批次号冲突，请重试一次；仍失败请联系管理员' }, { status: 409 })
+    }
+    if (code === 'P2028') {
+      return NextResponse.json({ error: '收货处理超时，请稍后重试' }, { status: 503 })
+    }
+    throw e
+  }
 
   const receivedDetail = planned.filter(x => x.qty > 0).map(x => `${x.line.productName} ×${x.qty}`).join('、')
   await writeLog({

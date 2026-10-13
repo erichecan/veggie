@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
+import { nextSequenceName } from '@/lib/sequence-number'
 
 /**
  * /api/stock-takes
@@ -77,8 +78,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: `范围过大（${products.length} 个商品），单张盘点单上限 500，请按分类拆分` }, { status: 400 })
       }
 
-      const count = await p.stockTake.count()
-      const name = `STK-${String(count + 1).padStart(5, '0')}`
+      // 现有最大号 + 1，不用 count+1(删过/有空号就撞号，见 lib/sequence-number.ts)
+      const name = await nextSequenceName(p, 'StockTake', 'STK-', 5)
       const takenAt = data.takenAt ? new Date(data.takenAt) : new Date()
 
       const created = await p.stockTake.create({

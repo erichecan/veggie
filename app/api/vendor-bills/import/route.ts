@@ -5,6 +5,7 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { round2 } from '@/lib/decimal-helpers'
 import { parseImportFile, matchProducts, matchStats } from '@/lib/import-parser'
+import { nextSequenceName } from '@/lib/sequence-number'
 
 /**
  * 供应商账单 PDF/Excel/CSV 导入
@@ -65,8 +66,8 @@ export async function POST(req: Request) {
         })
         const subtotalExTax = round2(lineCreates.reduce((s, l) => s + l.subtotalExTax, 0))
 
-        const count = await prisma.vendorBill.count()
-        const name = `VB-${String(count + 1).padStart(5, '0')}`
+        // 现有最大号 + 1，不用 count+1(删过/有空号就撞号，见 lib/sequence-number.ts)
+        const name = await nextSequenceName(prisma, 'VendorBill', 'VB-', 5)
 
         const bill = await prisma.vendorBill.create({
           data: {
