@@ -42,9 +42,9 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
   const receivedAt = new Date()
   const batchDate: Date = po.expectedDate ?? receivedAt
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let result
   try {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   result = await p.$transaction(async (tx: any) => {
     // 批次号取现有最大号往后排(lib/lot-number.ts)；不能用 count+1，有空号/自定义批次号就撞号
     const lotNumbers = await nextLotNumbers(tx, planned.filter(x => x.qty > 0).length)
