@@ -21,7 +21,7 @@ import PdfSidePanel from './_components/PdfSidePanel'
 import PriceHistoryModal from './_components/PriceHistoryModal'
 import CopyFromHistoryModal, { type HistoryPO } from './_components/CopyFromHistoryModal'
 import { rankByRelevance } from '@/lib/search-rank'
-import { PURCHASE_TAX_RATES, nearestPurchaseTaxRate } from '@/lib/purchase/tax-rates'
+import { PURCHASE_TAX_RATES, nearestPurchaseTaxRate, defaultPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 import { DatePicker } from '@/components/ui/date-picker'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 
@@ -59,6 +59,8 @@ interface Supplier {
   id: string
   name: string
   supplierPaymentTerm?: string | null
+  /// 供应商档案的 Vendor Tax(小数)；商品没设 Vendor Taxes 时用它兜底(lib/purchase/tax-rates.ts)
+  vendorTaxRate?: number | string | null
 }
 
 interface PurchaseProduct {
@@ -90,9 +92,9 @@ interface PurchaseProduct {
 /** 采购单新加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0——
  * 客户 20260904 反馈：新建采购单加商品，Tax % 应该自动带出商品自己配置的供应商税率，
  * 不该每次都要操作员手动选一遍。 */
-function purchaseTaxRateOf(prod: PurchaseProduct): number {
-  if (prod.vendorTaxRate == null) return 0
-  return nearestPurchaseTaxRate(Number(prod.vendorTaxRate) * 100)
+function purchaseTaxRateOf(prod: PurchaseProduct, supplierVendorTax?: unknown): number {
+  // 商品优先、供应商兜底、都没有为 0 —— 与服务端 createPurchaseOrder 的默认值同一个口径
+  return defaultPurchaseTaxRate(prod.vendorTaxRate, supplierVendorTax)
 }
 
 /** 采购单选品：优先用商品的采购单位，没配过才退回销售/基础单位 */
@@ -316,7 +318,7 @@ export default function NewPurchaseOrderPage() {
     const unitCost = overrides?.unitCost ?? Number(prod.standardPrice ?? prod.price ?? 0)
     const qty = overrides?.qty ?? 1
     const uom = purchaseUomOf(prod)
-    const taxRate = purchaseTaxRateOf(prod)
+    const taxRate = purchaseTaxRateOf(prod, suppliers.find(s => s.id === supplierId)?.vendorTaxRate)
     const subtotalExTax = qty * unitCost
     const taxAmount = subtotalExTax * taxRate / 100
     setLines(prev => [
@@ -386,7 +388,7 @@ export default function NewPurchaseOrderPage() {
     // 草稿行的 taxRate 是 addBlankLine 留下的 0（那时还没选商品），选好商品后要用它自己的
     // Vendor Taxes 覆盖——不能继续沿用草稿行的 0，否则"+ Add a product"这条路径（本页最常用
     // 的加行方式）永远读不到供应商税率（客户 20260904 反馈的正是这条路径）。
-    const taxRate = purchaseTaxRateOf(prod)
+    const taxRate = purchaseTaxRateOf(prod, suppliers.find(s => s.id === supplierId)?.vendorTaxRate)
     setLines(prev => prev.map(l => {
       if (l.id !== lineId) return l
       const qty = Number(l.orderedQty) || 1
@@ -432,8 +434,11 @@ export default function NewPurchaseOrderPage() {
       const product = purchaseProducts.find(p => p.id === hl.productId)
       const qty = Number(hl.orderedQty)
       const unitCost = Number(hl.unitCost)
-      // 历史单的税率可能是改这个坑之前存下的脏数据，四舍五入到最近的一档，不拦复制操作
-      const taxRate = nearestPurchaseTaxRate(Number(hl.taxRate))
+      // 税率按商品**当前**的 Vendor Taxes 带出(20261013 客户反馈：商品税率 23%→0% 后，复制历史单
+      // 还是 23%)；商品已不在可采购列表里才退回历史单上的税率(对齐到最近一档)
+      const taxRate = product
+        ? purchaseTaxRateOf(product, suppliers.find(s => s.id === supplierId)?.vendorTaxRate)
+        : nearestPurchaseTaxRate(Number(hl.taxRate))
       const subtotalExTax = qty * unitCost
       const taxAmount = subtotalExTax * taxRate / 100
       const uomRecord = uoms.find(u => u.id === hl.uomId)

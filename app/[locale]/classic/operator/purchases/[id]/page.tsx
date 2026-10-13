@@ -9,7 +9,7 @@ import { computeOrderLandedCosts } from '@/lib/purchase-landed-cost'
 import { formatDateOnly } from '@/lib/format-date'
 import { parseStoredQc, lineVerdict, formatQcSummary, QC_REJECT_REASON_LABELS, type QcRejectReason } from '@/lib/purchase/qc'
 import { lineDescription } from '@/lib/order-line-description'
-import { nearestPurchaseTaxRate } from '@/lib/purchase/tax-rates'
+import { defaultPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 import OrderLineEditor from '@/components/classic/OrderLineEditor'
 import { lineFieldKeyHandler } from '@/lib/order-line-keys'
 import SimilarProductAlert from '@/components/shared/similar-product-alert'
@@ -128,6 +128,8 @@ interface Supplier {
   id: string
   name: string
   supplierPaymentTerm?: string | null
+  /// 供应商档案的 Vendor Tax(小数)；商品没设 Vendor Taxes 时用它兜底(lib/purchase/tax-rates.ts)
+  vendorTaxRate?: number | string | null
 }
 
 interface PurchaseProduct {
@@ -151,9 +153,9 @@ interface PurchaseProduct {
 }
 
 /** 采购单加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0（客户 20260904 反馈） */
-function purchaseTaxRateOf(prod: PurchaseProduct): number {
-  if (prod.vendorTaxRate == null) return 0
-  return nearestPurchaseTaxRate(Number(prod.vendorTaxRate) * 100)
+function purchaseTaxRateOf(prod: PurchaseProduct, supplierVendorTax?: unknown): number {
+  // 商品优先、供应商兜底、都没有为 0 —— 与服务端 createPurchaseOrder 的默认值同一个口径
+  return defaultPurchaseTaxRate(prod.vendorTaxRate, supplierVendorTax)
 }
 
 function productDescription(prod: PurchaseProduct): string | null {
@@ -333,7 +335,7 @@ export default function PurchaseDetailPage() {
   function addProductLine(prod: PurchaseProduct) {
     newLineSeq.current += 1
     const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
-    const taxRate = purchaseTaxRateOf(prod)
+    const taxRate = purchaseTaxRateOf(prod, suppliers.find(s => s.id === editSupplierId)?.vendorTaxRate)
     const taxAmount = unitCost * taxRate / 100
     setEditLines(prev => [
       ...prev,
@@ -403,7 +405,7 @@ export default function PurchaseDetailPage() {
   /** 就地选品：把选中的商品填进已经插好的那一行（草稿行由 addBlankLine 建好） */
   function fillLineWithProduct(lineId: string, prod: PurchaseProduct) {
     const unitCost = Number(prod.standardPrice ?? prod.price ?? 0)
-    const taxRate = purchaseTaxRateOf(prod)
+    const taxRate = purchaseTaxRateOf(prod, suppliers.find(s => s.id === editSupplierId)?.vendorTaxRate)
     setEditLines(prev => prev.map(l => {
       if (l.id !== lineId) return l
       const qty = Number(l.orderedQty) || 1
