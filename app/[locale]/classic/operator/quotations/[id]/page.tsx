@@ -35,6 +35,8 @@ import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
 import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
+import RecordPager from '@/components/shared/RecordPager'
+import { useRecordNav } from '@/lib/hooks/use-record-nav'
 
 const PURPLE = '#875A7B'
 const LOW_STOCK_THRESHOLD = 20
@@ -72,6 +74,12 @@ export default function QuotationDetailPage() {
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const params = useParams<{ id: string }>()
   const id = params.id
+  // 上一条/下一条：顺序与报价单列表当时的筛选+排序一致(lib/hooks/use-record-nav.ts)；
+  // 以前这里是写死的「1 / 40」和两个没有点击事件的按钮
+  const recordNav = useRecordNav({
+    id, storageKey: 'quotations', endpoint: '/api/orders',
+    defaultQuery: 'status=PENDING&include_lines=false&sortField=createdAt&sortDir=desc',
+  })
 
   const [order, setOrder] = useState<Order | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -828,11 +836,8 @@ export default function QuotationDetailPage() {
               </>
             )}
           </div>
-          <div className="flex items-center gap-1 text-sm text-gray-500">
-            <span>1 / 40</span>
-            <button className="h-7 w-7 border border-gray-300 rounded ml-2">‹</button>
-            <button className="h-7 w-7 border border-gray-300 rounded">›</button>
-          </div>
+          <RecordPager nav={recordNav} locked={editing} isEn={isEn}
+            onGo={target => router.push(`${prefix}/classic/operator/quotations/${target}`)} />
         </div>
 
         {/* Region 2: secondary actions + status flow */}

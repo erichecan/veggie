@@ -35,6 +35,8 @@ import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
 import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
+import RecordPager from '@/components/shared/RecordPager'
+import { useRecordNav } from '@/lib/hooks/use-record-nav'
 
 const PURPLE = '#875A7B'
 
@@ -104,6 +106,11 @@ export default function SalesOrderDetailPage() {
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const params = useParams<{ id: string }>()
   const id = params.id
+  // 上一条/下一条：顺序与销售单列表当时的筛选+排序一致(lib/hooks/use-record-nav.ts)
+  const recordNav = useRecordNav({
+    id, storageKey: 'orders', endpoint: '/api/orders',
+    defaultQuery: 'status=CONFIRMED%2CWAVE_ASSIGNED%2CIN_DELIVERY%2CCOMPLETED&include_lines=false&sortField=createdAt&sortDir=desc',
+  })
 
   const [order, setOrder] = useState<Order | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -867,11 +874,15 @@ export default function SalesOrderDetailPage() {
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
       {/* Action bar */}
       <div className="bg-white border-b border-gray-200 px-6 pt-3 pb-2">
-        <div className="text-sm">
-          <button onClick={() => router.push(`${prefix}/classic/operator/orders`)}
-            className="hover:underline" style={{ color: PURPLE }}>{isEn ? 'Sales Orders' : '销售单'}</button>
-          <span className="text-gray-400 mx-1">/</span>
-          <span className="text-gray-700">{displayOrderCode(order)}</span>
+        <div className="text-sm flex items-center justify-between">
+          <div>
+            <button onClick={() => router.push(`${prefix}/classic/operator/orders`)}
+              className="hover:underline" style={{ color: PURPLE }}>{isEn ? 'Sales Orders' : '销售单'}</button>
+            <span className="text-gray-400 mx-1">/</span>
+            <span className="text-gray-700">{displayOrderCode(order)}</span>
+          </div>
+          <RecordPager nav={recordNav} locked={editing} isEn={isEn}
+            onGo={target => router.push(`${prefix}/classic/operator/orders/${target}`)} />
         </div>
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-2">

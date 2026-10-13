@@ -20,6 +20,7 @@ import { useServerList } from '@/hooks/use-server-list'
 import { Pagination } from '@/components/ui/pagination'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { writeRecordNavQuery, listNavQuery } from '@/lib/hooks/use-record-nav'
 
 const PAGE_SIZE = 50
 
@@ -341,6 +342,8 @@ export default function ClassicQuotationsPage() {
     search,
     refresh,
   } = useServerList<Record<string, unknown>>({ url: baseUrl, pageSize: PAGE_SIZE })
+  // 详情页上一条/下一条按同一筛选+排序+搜索走(lib/hooks/use-record-nav.ts)
+  useEffect(() => { writeRecordNavQuery('quotations', listNavQuery(baseUrl, search)) }, [baseUrl, search])
 
   const orders = useMemo(() => rawOrders.map(o => ({
     ...(o as unknown as Order),
