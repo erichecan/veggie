@@ -19,6 +19,7 @@ import { getSession, type UserSession } from '@/lib/session'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
 import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
+import { readPurchaseNavParams, DEFAULT_PURCHASE_NAV_PARAMS } from '@/lib/purchase-nav-list'
 
 async function openPurchaseOrderPdf(poId: string, isEn: boolean) {
   // JWT 存在 localStorage，直接 window.open API 路由不会带 Authorization 头会 401，
@@ -243,6 +244,26 @@ export default function PurchaseDetailPage() {
 
   const [session, setSession] = useState<UserSession | null>(null)
   useEffect(() => { setSession(getSession()) }, [])
+
+  // 上一张/下一张(20261013 客户反馈：这两个按钮以前是摆设，点了没反应)：
+  // 按列表当时的筛选+排序取整个结果集的 id 顺序；当前单不在其中(直接打开链接、或筛选后
+  // 单子状态变了)就退回默认口径(全部采购单，按创建时间倒序)
+  const [navIds, setNavIds] = useState<string[]>([])
+  useEffect(() => {
+    if (!id || id === 'new') return
+    let cancelled = false
+    const fetchIds = (q: string) => apiGet<{ ids: string[] }>(`/api/purchase-orders?${q}&idsOnly=1`).then(r => r.ids ?? [])
+    ;(async () => {
+      try {
+        const saved = readPurchaseNavParams()
+        let ids = saved ? await fetchIds(saved) : []
+        if (!ids.includes(id)) ids = await fetchIds(DEFAULT_PURCHASE_NAV_PARAMS)
+        if (!cancelled) setNavIds(ids.includes(id) ? ids : [])
+      } catch { if (!cancelled) setNavIds([]) }
+    })()
+    return () => { cancelled = true }
+  }, [id])
+  const navIdx = navIds.indexOf(id)
 
   const [po, setPo] = useState<PurchaseOrder | null>(null)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -820,14 +841,25 @@ export default function PurchaseDetailPage() {
             </button>
           </div>
 
-          {/* Pagination stub */}
+          {/* 上一张 / 下一张：顺序与列表一致；编辑中不允许跳走(未保存的改动会丢) */}
           <div className="flex items-center gap-1">
-            <button className="w-6 h-6 rounded border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-500 text-xs">
-              ‹
-            </button>
-            <button className="w-6 h-6 rounded border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-500 text-xs">
-              ›
-            </button>
+            {navIdx >= 0 && (
+              <span className="text-xs text-gray-500 mr-1 tabular-nums">{navIdx + 1} / {navIds.length}</span>
+            )}
+            {[
+              { label: '‹', target: navIdx > 0 ? navIds[navIdx - 1] : null, title: isEn ? 'Previous' : '上一张' },
+              { label: '›', target: navIdx >= 0 && navIdx < navIds.length - 1 ? navIds[navIdx + 1] : null, title: isEn ? 'Next' : '下一张' },
+            ].map(b => (
+              <button
+                key={b.label}
+                title={editing ? (isEn ? 'Save or discard your changes first' : '请先保存或放弃修改') : b.title}
+                disabled={!b.target || editing}
+                onClick={() => { if (b.target && !editing) router.push(`${prefix}/classic/operator/purchases/${b.target}`) }}
+                className="w-6 h-6 rounded border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-500 text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              >
+                {b.label}
+              </button>
+            ))}
           </div>
         </div>
 
