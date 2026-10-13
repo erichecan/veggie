@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPost } from '@/lib/api'
+import { apiGet, apiPost, apiPatch, apiDelete, authHeaders } from '@/lib/api'
+import { hasPermission, useAbility } from '@/lib/permissions'
 import { Pagination } from '@/components/ui/pagination'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
@@ -231,6 +232,87 @@ export default function PurchasesPage() {
   }, [buildParams, page, isEn])
 
   // 导出与列表同参（状态页签 + 搜索 + 分面），服务端复用同一个 buildPurchaseOrdersWhere
+  // ── 批量操作(20261013 客户需求：多选采购单 → Action → 批量确认/删除/打印) ──────────
+  // 逐张调用单张的接口，不另写一套：确认的审批权限、汇率待确认、状态流转，删除的
+  // 「只有没收货/没账单的草稿能删」，全部沿用单张的服务端校验，批量不会绕过任何一道闸门。
+  const ability = useAbility()
+  const canApprove = hasPermission(ability, 'purchase.order.approve')
+  const canUpdate = hasPermission(ability, 'purchase.order.update')
+  const canPrint = hasPermission(ability, 'purchase.order.print')
+  const [batchBusy, setBatchBusy] = useState(false)
+  // 勾选只认当前页看得见的行(翻页/换筛选后，之前勾的隐藏行不能被批量操作带上)
+  const visibleSelectedPos = pos.filter(p => selected.has(p.id))
+
+  async function runBatch(
+    label: { zh: string; en: string },
+    targets: PurchaseOrder[],
+    skipped: string[],
+    run: (po: PurchaseOrder) => Promise<unknown>,
+  ) {
+    setBatchBusy(true)
+    let ok = 0
+    const failed: string[] = []
+    for (const po of targets) {
+      try { await run(po); ok++ } catch (e) { failed.push(`${po.name}: ${e instanceof Error ? e.message : String(e)}`) }
+    }
+    setBatchBusy(false)
+    setSelected(new Set())
+    const problems = [...skipped, ...failed]
+    const head = isEn ? `${label.en}: ${ok} done` : `${label.zh}：成功 ${ok} 张`
+    if (problems.length === 0) toast.success(head)
+    else toast.warning(`${head}${isEn ? `, ${problems.length} not processed` : `，${problems.length} 张未处理`}`, {
+      description: problems.slice(0, 8).join(isEn ? '; ' : '；') + (problems.length > 8 ? ' …' : ''),
+      duration: 10000,
+    })
+    load()
+  }
+
+  async function batchConfirm() {
+    const rows = visibleSelectedPos
+    if (rows.length === 0 || batchBusy) return
+    const confirmable = rows.filter(p => p.status === 'DRAFT' || p.status === 'SENT' || p.status === 'TO_APPROVE')
+    const skipped = rows.filter(p => !confirmable.includes(p))
+      .map(p => `${p.name}: ${isEn ? `status is ${STATUS_LABEL[p.status] ?? p.status}` : `状态为「${STATUS_LABEL[p.status] ?? p.status}」，不能确认`}`)
+    if (confirmable.length === 0) {
+      toast.error(isEn ? 'None of the selected purchase orders can be confirmed (only Quotation / Sent / To Approve)' : '所选采购单都不能确认（只有询价单 / 已发送 / 待审批可以确认）')
+      return
+    }
+    if (!confirm(isEn ? `Confirm ${confirmable.length} purchase order(s)? Draft vendor bills will be created for them.` : `确认 ${confirmable.length} 张采购单？确认后会自动生成供应商账单草稿。`)) return
+    await runBatch({ zh: '批量确认', en: 'Batch confirm' }, confirmable, skipped,
+      po => apiPatch(`/api/purchase-orders/${po.id}`, { action: po.status === 'TO_APPROVE' ? 'approve' : 'confirm' }))
+  }
+
+  async function batchDelete() {
+    const rows = visibleSelectedPos
+    if (rows.length === 0 || batchBusy) return
+    const deletable = rows.filter(p => p.status === 'DRAFT')
+    const skipped = rows.filter(p => p.status !== 'DRAFT')
+      .map(p => `${p.name}: ${isEn ? 'only quotations (draft) can be deleted' : '只有询价单（草稿）可以删除'}`)
+    if (deletable.length === 0) {
+      toast.error(isEn ? 'Only quotations (draft) can be deleted; cancel confirmed orders instead' : '只有询价单（草稿）可以删除，已确认的请改用取消')
+      return
+    }
+    if (!confirm(isEn ? `Permanently delete ${deletable.length} quotation(s)? This cannot be undone.` : `永久删除 ${deletable.length} 张询价单？删除后不能恢复。`)) return
+    await runBatch({ zh: '批量删除', en: 'Batch delete' }, deletable, skipped,
+      po => apiDelete(`/api/purchase-orders/${po.id}`))
+  }
+
+  async function batchPrint() {
+    const rows = visibleSelectedPos
+    if (rows.length === 0) return
+    // JWT 在 localStorage，直接 window.open API 不带鉴权头会 401——先带头取回 HTML 再写进新窗口
+    const win = window.open('', '_blank')
+    try {
+      const res = await fetch(`/api/purchase-orders/batch-pdf?ids=${rows.map(p => encodeURIComponent(p.id)).join(',')}`, { headers: authHeaders() })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const html = await res.text()
+      if (win) { win.document.open(); win.document.write(html); win.document.close() }
+    } catch (e) {
+      win?.close()
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败'))
+    }
+  }
+
   const exportAction = useCsvExport({
     entity: 'purchase-orders',
     params: buildParams,
@@ -450,6 +532,11 @@ export default function PurchasesPage() {
           { label: isEn ? 'Import' : '导入', onClick: () => { setShowImportModal(true); setImportParsed([]); setImportResult(null) } },
           { label: isEn ? 'New' : '新建', onClick: () => router.push('purchases/new'), primary: true },
         ]}
+        actions={visibleSelectedPos.length > 0 ? [
+          ...(canApprove ? [{ label: isEn ? `Confirm (${visibleSelectedPos.length})` : `确认 (${visibleSelectedPos.length})`, onClick: batchConfirm, disabled: batchBusy }] : []),
+          ...(canPrint ? [{ label: isEn ? `🖨 Print (${visibleSelectedPos.length})` : `🖨 打印 (${visibleSelectedPos.length})`, onClick: batchPrint }] : []),
+          ...(canUpdate ? [{ label: isEn ? `Delete (${visibleSelectedPos.length})` : `删除 (${visibleSelectedPos.length})`, onClick: batchDelete, style: 'red' as const, disabled: batchBusy }] : []),
+        ] : []}
         searchValue={searchInput}
         onSearch={v => setSearchInput(v)}
         onSearchSubmit={() => { setSearch(searchInput); setPage(1) }}
