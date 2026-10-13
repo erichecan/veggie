@@ -33,8 +33,8 @@ export default function PurchasingReportPage() {
 
   const [supplierFilter, setSupplierFilter] = useState<SearchOption[]>([])
   const [productFilter, setProductFilter] = useState<SearchOption[]>([])
-  const [supplierTermDraft, setSupplierTermDraft] = useState([''])
   const [supplierTerms, setSupplierTerms] = useState<string[]>([])
+  const [productTerms, setProductTerms] = useState<string[]>([])
   // 20260922 客户要求加时间段选择器：原来是"从 N 个月前到今天"的滚动窗口(monthsBack)，
   // 现在换成显式 from/to，与 procurement-analysis / sales-analysis 同款交互。
   // 默认给 180 天，接近原来 6 个月的默认窗口。
@@ -63,6 +63,8 @@ export default function PurchasingReportPage() {
           onChange={setSupplierFilter}
           fetchOptions={searchSupplierOptions}
           isEn={isEn}
+          containsTerms={supplierTerms}
+          onContainsTermsChange={setSupplierTerms}
         />
         <SearchSelectDropdown
           label={isEn ? 'Products' : '产品'}
@@ -70,6 +72,8 @@ export default function PurchasingReportPage() {
           onChange={setProductFilter}
           fetchOptions={searchPurchasableProductOptions}
           isEn={isEn}
+          containsTerms={productTerms}
+          onContainsTermsChange={setProductTerms}
         />
         <div className="h-5 w-px bg-gray-200" />
         {/* 时间段 */}
@@ -99,37 +103,13 @@ export default function PurchasingReportPage() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 shadow-sm">
-        <div className="text-sm font-medium text-gray-700 mb-2">{isEn ? 'Custom supplier filters' : '自定义供应商筛选'}</div>
-        <div className="space-y-2">
-          {supplierTermDraft.map((term, index) => (
-            <div key={index} className="flex flex-wrap items-center gap-2">
-              {index > 0 && <span className="w-7 text-xs text-gray-500">{isEn ? 'or' : '或'}</span>}
-              <span className="text-sm text-gray-600">{isEn ? 'Supplier contains' : '供应商包含'}</span>
-              <input
-                value={term}
-                onChange={(e) => setSupplierTermDraft((old) => old.map((v, i) => i === index ? e.target.value : v))}
-                placeholder={isEn ? 'Enter keyword' : '输入关键词'}
-                className="border border-gray-200 rounded px-2 py-1 text-sm w-56"
-              />
-              {supplierTermDraft.length > 1 && <button type="button" onClick={() => setSupplierTermDraft((old) => old.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600" aria-label={isEn ? 'Remove condition' : '删除条件'}>×</button>}
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 mt-3">
-          <button type="button" onClick={() => setSupplierTermDraft((old) => [...old, ''])} className="px-2.5 py-1 rounded border border-gray-200 text-xs text-gray-600">＋ {isEn ? 'Add condition' : '添加条件'}</button>
-          <button type="button" onClick={() => setSupplierTerms(supplierTermDraft.map((v) => v.trim()).filter(Boolean))} className="px-3 py-1 rounded text-xs text-white" style={{ background: PURPLE }}>{isEn ? 'Apply' : '应用'}</button>
-          {supplierTerms.length > 0 && <button type="button" onClick={() => { setSupplierTermDraft(['']); setSupplierTerms([]) }} className="px-2.5 py-1 text-xs text-gray-500">{isEn ? 'Clear' : '清除'}</button>}
-          {supplierTerms.length > 0 && <span className="text-xs text-gray-400">{isEn ? `Applied: ${supplierTerms.join(' OR ')}` : `已应用：${supplierTerms.join(' 或 ')}`}</span>}
-        </div>
-      </div>
-
       {view === 'summary' ? (
         <SupplierMonthMatrix
             isEn={isEn}
             supplierIds={supplierFilter.map((s) => s.id)}
             productIds={productFilter.map((p) => p.id)}
             supplierTerms={supplierTerms}
+            productTerms={productTerms}
             from={range.from}
             to={range.to}
         />
@@ -139,6 +119,7 @@ export default function PurchasingReportPage() {
             supplierIds={supplierFilter.map((s) => s.id)}
             productIds={productFilter.map((p) => p.id)}
             supplierTerms={supplierTerms}
+            productTerms={productTerms}
             from={range.from}
             to={range.to}
           />
@@ -148,6 +129,7 @@ export default function PurchasingReportPage() {
           supplierIds={supplierFilter.map((s) => s.id)}
           productIds={productFilter.map((p) => p.id)}
           supplierTerms={supplierTerms}
+          productTerms={productTerms}
           from={range.from}
           to={range.to}
         />

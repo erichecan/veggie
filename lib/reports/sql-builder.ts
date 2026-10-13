@@ -84,9 +84,10 @@ export function buildReportSQL(
     }
   }
 
-  if (req.orFilters?.length) {
+  const orGroups = [...(req.orFilters?.length ? [req.orFilters] : []), ...(req.orFilterGroups ?? []).filter((group) => group.length > 0)]
+  for (const group of orGroups) {
     const clauses: string[] = []
-    for (const f of req.orFilters) {
+    for (const f of group) {
       const dimMeta = dimensionDefs[f.field]
       const mesMeta = measureDefs[f.field]
       const fieldName = dimMeta?.field ?? mesMeta?.field

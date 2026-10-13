@@ -1,5 +1,5 @@
 'use client'
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPost } from '@/lib/api'
 import { eur, fmtMoney } from '@/lib/format-money'
 import { downloadCsv } from '@/lib/csv-export'
@@ -95,12 +95,13 @@ const monthKey = (v: unknown): string => {
 const monthDate = (key: string) => (key ? `${key}-01T00:00:00.000Z` : '')
 
 export default function SupplierMonthMatrix({
-  isEn, supplierIds, productIds, supplierTerms, from, to,
+  isEn, supplierIds, productIds, supplierTerms, productTerms, from, to,
 }: {
   isEn: boolean
   supplierIds: string[]
   productIds: string[]
   supplierTerms: string[]
+  productTerms: string[]
   /** 'YYYY-MM-DD'，闭区间，两端都含 */
   from: string
   to: string
@@ -128,7 +129,7 @@ export default function SupplierMonthMatrix({
 
   const supplierKey = supplierIds.join(',')
   const productKey = productIds.join(',')
-  const scope = `${supplierKey}|${productKey}|${supplierTerms.join(',')}|${from}|${to}`
+  const scope = `${supplierKey}|${productKey}|${supplierTerms.join(',')}|${productTerms.join(',')}|${from}|${to}`
   const scoped = (name: string) => `${scope}|${name}`
 
   /** 行/列以外的固定筛选。下钻子请求必须原样带上，否则父子两行对不上账 */
@@ -142,7 +143,7 @@ export default function SupplierMonthMatrix({
     if (productIds.length) f.push({ field: 'product_id', operator: 'in', value: productIds })
     return f
   }, [from, to, supplierIds, productIds])
-  const supplierOrFilters = supplierTerms.map((term) => ({ field: 'supplier_name', operator: 'like' as const, value: term }))
+  const supplierOrFilters = useMemo(() => supplierTerms.map((term) => ({ field: 'supplier_name', operator: 'like' as const, value: term })), [supplierTerms])
 
   useEffect(() => {
     let cancelled = false
@@ -153,6 +154,7 @@ export default function SupplierMonthMatrix({
       measures: ['subtotal_ex_tax', 'ordered_qty'],
       filters: baseFilters(),
       orFilters: supplierOrFilters,
+      orFilterGroups: productTerms.length ? [productTerms.map((term) => ({ field: 'product_name', operator: 'like' as const, value: term }))] : [],
       limit: ROW_LIMIT,
     }
     apiPost<ApiResponse>('/api/reports/purchasing', body)
@@ -163,7 +165,7 @@ export default function SupplierMonthMatrix({
     return () => { cancelled = true }
     // scope 与 baseFilters 同源（都来自 supplierIds/productIds/from/to），
     // 列在依赖里只是为了让 reqScope 的捕获值可被 lint 校验
-  }, [baseFilters, scope])
+  }, [baseFilters, scope, supplierOrFilters, productTerms])
 
   const data = loaded?.res ?? null
   const error = failure?.scope === scope ? failure.message : null
@@ -196,7 +198,6 @@ export default function SupplierMonthMatrix({
     if (!willExpand || (productsBySupplier[key] && productsBySupplier[key] !== 'error')) return
 
     setProductsBySupplier((prev) => ({ ...prev, [key]: 'loading' }))
-    let cancelled = false
     const body: ReportRequest = {
       rowDimensions: [{ field: 'product_name' }, { field: 'product_id' }],
       colDimensions: [{ field: 'order_date', interval: 'month' }],
@@ -204,6 +205,7 @@ export default function SupplierMonthMatrix({
       // 把这一行锁死成筛选条件 —— 这样"商品行各列之和 == 供应商行对应列"天然成立
       filters: [...baseFilters(), { field: 'supplier_name', operator: '=', value: name }],
       orFilters: supplierOrFilters,
+      orFilterGroups: productTerms.length ? [productTerms.map((term) => ({ field: 'product_name', operator: 'like' as const, value: term }))] : [],
       limit: ROW_LIMIT,
     }
     apiPost<ApiResponse>('/api/reports/purchasing', body)

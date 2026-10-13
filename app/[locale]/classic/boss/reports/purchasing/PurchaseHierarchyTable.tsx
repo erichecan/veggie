@@ -26,25 +26,24 @@ function formatDate(key: string, isEn: boolean) {
 function numeric(v: unknown) { const n = Number(v ?? 0); return Number.isFinite(n) ? n : 0 }
 
 export default function PurchaseHierarchyTable({
-  isEn, supplierIds, productIds, supplierTerms, from, to,
+  isEn, supplierIds, productIds, supplierTerms, productTerms, from, to,
 }: {
   isEn: boolean
   supplierIds: string[]
   productIds: string[]
   supplierTerms: string[]
+  productTerms: string[]
   from: string
   to: string
 }) {
   const [layout, setLayout] = useState<Layout>('product-date')
-  const [productKeyword, setProductKeyword] = useState('')
   const [result, setResult] = useState<{ scope: string; rows: ApiRow[]; total: number } | null>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<{ scope: string; message: string } | null>(null)
   const [open, setOpen] = useState<Record<string, boolean>>({})
-  const scope = [layout, supplierIds.join(','), productIds.join(','), supplierTerms.join(','), productKeyword.trim(), from, to].join('|')
+  const scope = [layout, supplierIds.join(','), productIds.join(','), supplierTerms.join(','), productTerms.join(','), from, to].join('|')
 
   useEffect(() => {
     let cancelled = false
-    setError('')
     const filters: FilterSpec[] = [
       { field: 'order_date', operator: '>=', value: from },
       { field: 'order_date', operator: '<', value: nextDay(to) },
@@ -52,20 +51,20 @@ export default function PurchaseHierarchyTable({
     ]
     if (supplierIds.length) filters.push({ field: 'supplier_id', operator: 'in', value: supplierIds })
     if (productIds.length) filters.push({ field: 'product_id', operator: 'in', value: productIds })
-    if (productKeyword.trim()) filters.push({ field: 'product_name', operator: 'like', value: productKeyword.trim() })
     const dims = layout === 'product-date'
       ? [{ field: 'product_name' }, { field: 'order_date', interval: 'day' as const }]
       : [{ field: 'order_date', interval: 'day' as const }, { field: 'supplier_name' }, { field: 'product_name' }]
     const request: ReportRequest = {
       rowDimensions: dims, measures: ['subtotal_ex_tax', 'ordered_qty'], filters,
       orFilters: supplierTerms.map((term) => ({ field: 'supplier_name', operator: 'like', value: term })),
+      orFilterGroups: productTerms.length ? [productTerms.map((term) => ({ field: 'product_name', operator: 'like' as const, value: term }))] : [],
       limit: ROW_LIMIT,
     }
     apiPost<{ rows: ApiRow[]; total: number }>('/api/reports/purchasing', request)
       .then((res) => { if (!cancelled) setResult({ scope, rows: res.rows, total: res.total }) })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
+      .catch((e) => { if (!cancelled) setError({ scope, message: e instanceof Error ? e.message : String(e) }) })
     return () => { cancelled = true }
-  }, [scope, layout, supplierIds, productIds, productKeyword, from, to])
+  }, [scope, layout, supplierIds, productIds, supplierTerms, productTerms, from, to])
 
   const tree = useMemo(() => {
     if (result?.scope !== scope) return [] as Node[]
@@ -104,7 +103,8 @@ export default function PurchaseHierarchyTable({
     return materialize(root)
   }, [result, scope, layout, isEn])
 
-  const pending = result?.scope !== scope && !error
+  const errorMessage = error?.scope === scope ? error.message : ''
+  const pending = result?.scope !== scope && !errorMessage
   const totalAmount = tree.reduce((s, n) => s + n.amount, 0)
   const totalQty = tree.reduce((s, n) => s + n.qty, 0)
   const label = layout === 'product-date'
@@ -136,12 +136,9 @@ export default function PurchaseHierarchyTable({
         <span className="text-sm font-medium text-gray-700">{isEn ? 'Group by' : '分组方式'}</span>
         {(['product-date', 'date-supplier-product'] as const).map((value) => <button key={value} type="button" onClick={() => { setLayout(value); setOpen({}) }} className="px-3 py-1.5 rounded-lg border text-sm" style={layout === value ? { background: PURPLE, color: 'white', borderColor: PURPLE } : { background: 'white', color: '#4b5563' }}>{value === 'product-date' ? (isEn ? 'Product → Date' : '产品 → 日期') : (isEn ? 'Date → Supplier → Product' : '日期 → 供应商 → 产品')}</button>)}
       </div>
-      <div className="flex items-center gap-3">
-        <input value={productKeyword} onChange={(e) => setProductKeyword(e.target.value)} placeholder={isEn ? 'Search products by keyword' : '按关键词搜索产品'} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-52" />
-        <span className="text-xs text-gray-400">{isEn ? `By order date · ${label}` : `按下单日期统计 · ${label}`}</span>
-      </div>
+      <span className="text-xs text-gray-400">{isEn ? `By order date · ${label}` : `按下单日期统计 · ${label}`}</span>
     </div>
-    {pending ? <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div> : error ? <div className="py-12 text-center text-sm text-red-500">{error}</div> : <div className="overflow-auto max-h-[70vh]">
+    {pending ? <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div> : errorMessage ? <div className="py-12 text-center text-sm text-red-500">{errorMessage}</div> : <div className="overflow-auto max-h-[70vh]">
       <table className="w-full text-sm">
         <thead className="sticky top-0 z-10 bg-gray-50 text-gray-600"><tr>
           <th className="text-left px-3 py-2">{isEn ? 'Product / Date / Supplier' : '产品 / 日期 / 供应商'}</th><th className="text-right px-3 py-2">{isEn ? 'Amount' : '金额'}</th><th className="text-right px-3 py-2">{isEn ? 'Quantity' : '数量'}</th><th className="text-right px-3 py-2">{isEn ? 'Average Price' : '平均价格'}</th>

@@ -111,7 +111,7 @@ export async function searchSupplierOptions(q: string): Promise<SearchOption[]> 
 }
 
 export function SearchSelectDropdown({
-  label, selected, onChange, fetchOptions, multiple = true, isEn,
+  label, selected, onChange, fetchOptions, multiple = true, isEn, containsTerms = [], onContainsTermsChange,
 }: {
   label: string
   selected: SearchOption[]
@@ -119,11 +119,15 @@ export function SearchSelectDropdown({
   fetchOptions: (query: string) => Promise<SearchOption[]>
   multiple?: boolean
   isEn: boolean
+  /** Optional Odoo-style OR keyword conditions, embedded at the bottom of this dropdown. */
+  containsTerms?: string[]
+  onContainsTermsChange?: (terms: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [options, setOptions] = useState<SearchOption[]>([])
   const [loading, setLoading] = useState(false)
+  const [conditionDraft, setConditionDraft] = useState<string[]>([''])
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -155,15 +159,21 @@ export function SearchSelectDropdown({
     }
   }
 
+  function toggleOpen() {
+    if (!open && onContainsTermsChange) setConditionDraft(containsTerms.length ? [...containsTerms] : [''])
+    setOpen((value) => !value)
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:border-gray-400 bg-white max-w-[220px]"
       >
         <span className="truncate">
-          {selected.length === 0 ? label : selected.length === 1 ? selected[0].label : `${label} (${selected.length})`}
+          {selected.length > 0 ? (selected.length === 1 ? selected[0].label : `${label} (${selected.length})`) : label}
+          {containsTerms.length > 0 ? ` · ${containsTerms.length}` : ''}
         </span>
         <span className="text-gray-400">▾</span>
       </button>
@@ -206,6 +216,32 @@ export function SearchSelectDropdown({
               </button>
             ))}
           </div>
+          {onContainsTermsChange && (
+            <div className="border-t border-gray-100 mt-1 p-2">
+              <div className="text-xs font-medium text-gray-600 mb-2">{isEn ? `Custom ${label.toLowerCase()} filters` : `自定义${label}筛选`}</div>
+              <div className="space-y-1.5">
+                {conditionDraft.map((term, index) => (
+                  <div key={index} className="flex items-center gap-1.5">
+                    {index > 0 && <span className="w-5 text-[11px] text-gray-400">{isEn ? 'or' : '或'}</span>}
+                    <span className="text-[11px] text-gray-500 whitespace-nowrap">{isEn ? 'contains' : '包含'}</span>
+                    <input
+                      value={term}
+                      onChange={(e) => setConditionDraft((old) => old.map((value, i) => i === index ? e.target.value : value))}
+                      placeholder={isEn ? 'Keyword' : '输入关键词'}
+                      className="min-w-0 flex-1 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-gray-400"
+                    />
+                    {conditionDraft.length > 1 && <button type="button" onClick={() => setConditionDraft((old) => old.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600" aria-label={isEn ? 'Remove condition' : '删除条件'}>×</button>}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <button type="button" onClick={() => setConditionDraft((old) => [...old, ''])} className="px-2 py-1 rounded border border-gray-200 text-[11px] text-gray-600">＋ {isEn ? 'Add condition' : '添加条件'}</button>
+                <button type="button" onClick={() => onContainsTermsChange(conditionDraft.map((value) => value.trim()).filter(Boolean))} className="px-2.5 py-1 rounded text-[11px] text-white" style={{ background: PURPLE }}>{isEn ? 'Apply' : '应用'}</button>
+                {containsTerms.length > 0 && <button type="button" onClick={() => { setConditionDraft(['']); onContainsTermsChange([]) }} className="text-[11px] text-gray-500">{isEn ? 'Clear' : '清除'}</button>}
+              </div>
+              {containsTerms.length > 0 && <div className="mt-1.5 text-[10px] text-gray-400 truncate" title={containsTerms.join(' OR ')}>{isEn ? 'Applied: ' : '已应用：'}{containsTerms.join(isEn ? ' OR ' : ' 或 ')}</div>}
+            </div>
+          )}
         </div>
       )}
     </div>

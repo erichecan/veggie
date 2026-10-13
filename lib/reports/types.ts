@@ -18,6 +18,8 @@ export interface ReportRequest {
   filters?: FilterSpec[]
   /** Optional OR group. Every filter here may match; the group is ANDed with filters. */
   orFilters?: FilterSpec[]
+  /** Multiple OR groups; each group is ANDed with the other filters and groups. */
+  orFilterGroups?: FilterSpec[][]
   limit?: number
   offset?: number
   orderBy?: { field: string; direction: 'asc' | 'desc' }[]
