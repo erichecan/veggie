@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { createPurchaseOrder } from '@/lib/create-purchase-order'
+import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 
 /**
  * POST /api/purchase-suggestions/:id/convert
@@ -53,7 +55,13 @@ export async function POST(
 
       const qty = Number(body.qty ?? suggestion.suggestedQty)
       const unitCost = Number(body.unitCost ?? 0)
-      const taxRate = Number(body.taxRate ?? 0)
+      // 税率是百分数(0 / 13.5 / 23)，与采购单行同一单位；不传 = 按商品/供应商的 Vendor Tax 带出
+      // ⛔ 20261013 修：以前前端把供应商档案的小数 0.23 直接传进来、这里再按小数算税额，
+      // 采购单行存下 taxRate=0.23，采购单页面当百分数显示成 0.2%，金额也对不上
+      const taxRate = body.taxRate === undefined || body.taxRate === null || body.taxRate === '' ? undefined : Number(body.taxRate)
+      if (taxRate !== undefined && !isValidPurchaseTaxRate(taxRate)) {
+        return NextResponse.json({ error: '税率只能是 0 / 13.5 / 23（%）' }, { status: 400 })
+      }
       const supplierId = String(body.supplierId ?? suggestion.supplierId ?? '').trim()
 
       if (!Number.isFinite(qty) || qty <= 0) {
@@ -71,46 +79,20 @@ export async function POST(
         return NextResponse.json({ error: `商品「${product.name}」已设为不可采购（Can be Purchased 未勾选），不能转采购单` }, { status: 400 })
       }
 
-      // 计算金额
-      const subtotalExTax = round2(qty * unitCost)
-      const totalTax = round2(subtotalExTax * taxRate)
-      const totalIncTax = round2(subtotalExTax + totalTax)
-
       const po = await p.$transaction(async (tx: typeof p) => {
-        // 生成 PO 编号
-        const count = await tx.purchaseOrder.count()
-        const name = `PO-${String(count + 1).padStart(5, '0')}`
-
-        // 创建采购订单
-        const created = await tx.purchaseOrder.create({
-          data: {
-            name,
-            supplierId,
-            status: 'DRAFT',
-            orderDate: new Date(),
-            currency: 'EUR',
-            subtotalExTax,
-            totalTax,
-            totalIncTax,
-            notes: body.notes ?? null,
-            createdBy: user.userId,
-            lines: {
-              create: [{
-                productId: suggestion.productId,
-                productName: suggestion.productName ?? '',
-                orderedQty: qty,
-                receivedQty: 0,
-                invoicedQty: 0,
-                unitCost,
-                taxRate,
-                subtotalExTax,
-                taxAmount: totalTax,
-                subtotalIncTax: totalIncTax,
-                sequence: 10,
-              }],
-            },
-          },
-          include: { lines: true },
+        // 与新建采购单同一套 SSOT：编号、金额、默认税率、可采购闸门都在 createPurchaseOrder 里
+        const created = await createPurchaseOrder(tx, {
+          supplierId,
+          createdBy: user.userId,
+          notes: body.notes ?? null,
+          lines: [{
+            productId: suggestion.productId,
+            productName: suggestion.productName ?? '',
+            orderedQty: qty,
+            unitCost,
+            taxRate,
+            sequence: 10,
+          }],
         })
 
         // 更新建议状态
@@ -137,11 +119,13 @@ export async function POST(
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'purchase_order', resourceId: po.id,
-        detail: `采购建议转采购单 ${po.name}，商品 ${suggestion.productName}，数量 ${qty}，金额 €${totalIncTax}`,
+        detail: `采购建议转采购单 ${po.name}，商品 ${suggestion.productName}，数量 ${qty}，金额 €${Number(po.totalIncTax)}`,
       })
 
       return NextResponse.json(serializeApi(po), { status: 201 })
     } catch (error) {
+      const err = error as { status?: number; message?: string }
+      if (err.status && err.status >= 400 && err.status < 500) return NextResponse.json({ error: err.message }, { status: err.status })
       console.error('[POST /api/purchase-suggestions/[id]/convert]', error)
       return NextResponse.json({ error: '转采购单失败' }, { status: 500 })
     }

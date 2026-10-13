@@ -1,6 +1,6 @@
 import { round2 } from '@/lib/decimal-helpers'
 import { eurAmount, resolveExchangeRate } from '@/lib/fx-eur'
-import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
+import { isValidPurchaseTaxRate, defaultPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 
 /**
  * 采购单创建 SSOT —— POST /api/purchase-orders 和"采购建议转采购单"共用同一份
@@ -50,6 +50,7 @@ type ProductSnapshot = {
   spec: string | null
   saleDescription: string | null
   canBePurchased: boolean
+  vendorTaxRate: unknown
   saleUoms: Array<{ uomId: string; spec: string | null }>
 }
 
@@ -67,7 +68,7 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
     ? await tx.product.findMany({
       where: { id: { in: productIds } },
       select: {
-        id: true, name: true, spec: true, saleDescription: true, canBePurchased: true,
+        id: true, name: true, spec: true, saleDescription: true, canBePurchased: true, vendorTaxRate: true,
         saleUoms: { select: { uomId: true, spec: true } },
       },
     })
@@ -81,6 +82,12 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
       throw Object.assign(new Error(`商品「${notPurchasable.map((p: any) => p.name).join('、')}」不可采购，无法加入采购单`), { status: 400 })
     }
   }
+
+  // 调用方没给税率的行(采购建议批量转单、CSV 导入没填税率列…)按商品/供应商的 Vendor Tax 带出，
+  // 不再一律 0(lib/purchase/tax-rates.ts defaultPurchaseTaxRate)
+  const supplierRow: { vendorTaxRate: unknown } | null = input.lines.some(l => l.taxRate === undefined || l.taxRate === null)
+    ? await tx.customer.findUnique({ where: { id: supplierId }, select: { vendorTaxRate: true } })
+    : null
 
   const uomIds = [...new Set(input.lines.map(line => line.uomId).filter((id): id is string => !!id))]
   const uoms = uomIds.length > 0
@@ -112,7 +119,9 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
       : (uomId ? uomNameById.get(uomId) : null) ?? null
     const qty = Number(raw.orderedQty)
     const unitCost = Number(raw.unitCost)
-    const taxRate = Number(raw.taxRate ?? 0)
+    const taxRate = raw.taxRate === undefined || raw.taxRate === null
+      ? defaultPurchaseTaxRate(product?.vendorTaxRate, supplierRow?.vendorTaxRate)
+      : Number(raw.taxRate)
     if (!Number.isFinite(qty) || qty <= 0) {
       throw Object.assign(new Error(`采购行数量无效：${raw.productName ?? raw.productId}`), { status: 400 })
     }
@@ -162,8 +171,13 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
     throw Object.assign(new Error('运费无效'), { status: 400 })
   }
 
-  const count = await tx.purchaseOrder.count()
-  const name = `PO-${String(count + 1).padStart(5, '0')}`
+  // 编号取现有最大号 +1，**不能用 count+1**(20261013 修)：删过任何一张草稿后，count+1 会撞上
+  // 已存在的号(name 唯一)，之后每次新建采购单都 500，直到再删一张为止。批量删除上线后必然触发。
+  const maxRows: Array<{ max: number | null }> = await tx.$queryRaw`
+    SELECT MAX(CAST(SUBSTRING("name" FROM 4) AS INTEGER)) AS "max"
+    FROM "PurchaseOrder" WHERE "name" ~ '^PO-[0-9]+$'`
+  const nextNo = Number(maxRows[0]?.max ?? 0) + 1
+  const name = `PO-${String(nextNo).padStart(5, '0')}`
 
   const po = await tx.purchaseOrder.create({
     data: {

@@ -9,6 +9,7 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { formatDateTime } from '@/lib/format-date'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import { defaultPurchaseTaxRate, PURCHASE_TAX_RATES } from '@/lib/purchase/tax-rates'
 
 interface Suggestion {
   id: string
@@ -36,6 +37,7 @@ interface ConvertForm {
   supplierId: string
   supplierName: string
   unitCost: number
+  /** 百分数(0 / 13.5 / 23)，与采购单行同一单位 */
   taxRate: number
   notes: string
 }
@@ -202,9 +204,13 @@ export default function PurchaseSuggestionsPage() {
       unitCost: s.estimatedCost && s.suggestedQty > 0
         ? Number((s.estimatedCost / s.suggestedQty).toFixed(4))
         : 0,
-      taxRate: supplier?.vendorTaxRate ?? 0,
+      // 先按供应商档案给个初值，再取商品自己的 Vendor Taxes 覆盖(商品优先，同新建采购单)
+      taxRate: defaultPurchaseTaxRate(null, supplier?.vendorTaxRate),
       notes: '',
     })
+    apiGet<{ vendorTaxRate?: unknown }>(`/api/products/${s.productId}`)
+      .then(prod => setConvertForm(f => ({ ...f, taxRate: defaultPurchaseTaxRate(prod?.vendorTaxRate, supplier?.vendorTaxRate) })))
+      .catch(() => {})
   }
 
   /* ---------- Convert single suggestion to PO ---------- */
@@ -262,7 +268,7 @@ export default function PurchaseSuggestionsPage() {
           supplierId: s.supplierId ?? '',
           supplierName: s.supplierName ?? supplier?.name ?? '',
           unitCost,
-          taxRate: supplier?.vendorTaxRate ?? 0,
+          // 不传税率：服务端按商品/供应商的 Vendor Tax 带出(lib/create-purchase-order.ts)
         })
         success++
       } catch {
@@ -404,7 +410,7 @@ export default function PurchaseSuggestionsPage() {
 
   // Computed cost for convert modal
   const convertSubtotal = convertForm.qty * convertForm.unitCost
-  const convertTax = convertSubtotal * convertForm.taxRate
+  const convertTax = convertSubtotal * convertForm.taxRate / 100
   const convertTotal = convertSubtotal + convertTax
 
   return (
@@ -711,7 +717,7 @@ export default function PurchaseSuggestionsPage() {
                       ...f,
                       supplierId: v,
                       supplierName: sp?.name ?? '',
-                      taxRate: sp?.vendorTaxRate ?? f.taxRate,
+                      taxRate: f.taxRate,
                     }))
                   }}
                   placeholder={isEn ? '-- Select a supplier --' : '-- 请选择供应商 --'}
@@ -734,15 +740,13 @@ export default function PurchaseSuggestionsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{isEn ? 'Tax Rate' : '税率'}</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={convertForm.taxRate}
+                  <select
+                    value={String(convertForm.taxRate)}
                     onChange={e => setConvertForm(f => ({ ...f, taxRate: Number(e.target.value) }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400 bg-white"
+                  >
+                    {PURCHASE_TAX_RATES.map(r => <option key={r} value={String(r)}>{r}%</option>)}
+                  </select>
                 </div>
               </div>
 
@@ -766,7 +770,7 @@ export default function PurchaseSuggestionsPage() {
                 </div>
                 {convertForm.taxRate > 0 && (
                   <div className="flex justify-between mt-1">
-                    <span className="text-gray-500">{isEn ? 'Tax' : '税额'} ({(convertForm.taxRate * 100).toFixed(0)}%)</span>
+                    <span className="text-gray-500">{isEn ? 'Tax' : '税额'} ({convertForm.taxRate}%)</span>
                     <span className="font-medium">€{convertTax.toFixed(2)}</span>
                   </div>
                 )}

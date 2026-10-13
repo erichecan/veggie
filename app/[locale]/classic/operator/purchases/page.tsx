@@ -407,7 +407,7 @@ export default function PurchasesPage() {
       const vendor = vendors.find(v => norm(v.name) === norm(supplierName))
       if (!vendor) { errors.push(isEn ? `Supplier not found: ${supplierName}` : `找不到供应商: ${supplierName}`); continue }
 
-      const lines: Array<{ productId: string; productName: string; orderedQty: number; unitCost: number; taxRate: number }> = []
+      const lines: Array<{ productId: string; productName: string; orderedQty: number; unitCost: number; taxRate?: number }> = []
       const missingProducts: string[] = []
       const invalidRows: string[] = []
 
@@ -418,7 +418,8 @@ export default function PurchasesPage() {
         const quantity = parseFloat(row.quantity)
         const unitCost = parseFloat(row.unitCost)
         const taxRateRaw = row.taxRate?.trim()
-        const taxRate = taxRateRaw ? parseFloat(taxRateRaw) : 0
+        // 税率列留空 = 不传，服务端按商品/供应商的 Vendor Tax 带出(lib/create-purchase-order.ts)，不再一律 0
+        const taxRate = taxRateRaw ? parseFloat(taxRateRaw) : undefined
 
         if (!row.quantity?.trim() || !row.unitCost?.trim()) {
           invalidRows.push(isEn ? `${productName}: quantity and unit cost are required` : `${productName}: 数量和单价为必填项`)
@@ -428,7 +429,7 @@ export default function PurchasesPage() {
         // 统一把关——那里的报错信息本来就带商品名，直接透传比在这里另写一套校验话术更可靠。
         // 税率单独在这里先挡一道：它是枚举值而不是范围，服务端报错话术("税率只能是 0%/13.5%/23%")
         // 不点名是哪一行，客户端能拿到 productName 给出更精确的提示。
-        if (!isValidPurchaseTaxRate(taxRate)) {
+        if (taxRate !== undefined && !isValidPurchaseTaxRate(taxRate)) {
           invalidRows.push(isEn
             ? `${productName}: tax rate must be one of ${PURCHASE_TAX_RATES.join('/')}`
             : `${productName}: 税率只能是 ${PURCHASE_TAX_RATES.join('/')}`)
