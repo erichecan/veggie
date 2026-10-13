@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { nextLotNumbers } from '@/lib/lot-number'
 
 /**
  * /api/lots
@@ -63,8 +64,8 @@ export async function POST(req: Request) {
       if (lotName) {
         lotNumber = lotName.slice(0, 50)
       } else {
-        const count = await p.lot.count()
-        lotNumber = `LOT-${String(count + 1).padStart(5, '0')}`
+        // 取现有最大号往后排，不用 count+1(有空号/自定义批次号会撞号，见 lib/lot-number.ts)
+        lotNumber = (await nextLotNumbers(p, 1))[0]
       }
 
       const bestBefore = data.bestBefore ? new Date(data.bestBefore) : null
@@ -114,9 +115,12 @@ export async function POST(req: Request) {
       return NextResponse.json(serializeApi(lot), { status: 201 })
     } catch (error) {
       console.error('[POST /api/lots]', error)
-      const msg = error instanceof Error && error.message.includes('Unique constraint')
-        ? '批号已存在' : '创建批次失败'
-      return NextResponse.json({ error: msg }, { status: 500 })
+      // 批号重复是用户能改的输入问题(409 + 明确提示)，不是服务器故障；pg 适配器下 message 不一定含
+      // 'Unique constraint'，按错误码判断
+      if ((error as { code?: string })?.code === 'P2002' || (error instanceof Error && error.message.includes('Unique constraint'))) {
+        return NextResponse.json({ error: '批号已存在，请换一个批号' }, { status: 409 })
+      }
+      return NextResponse.json({ error: '创建批次失败' }, { status: 500 })
     }
   }, { require: 'stock.lot.manage' })
 }

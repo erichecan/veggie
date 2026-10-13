@@ -6,13 +6,15 @@
  * finance/会计后续在 vendor-bills 里核对、Post。
  * 幂等：一个采购单只生成一次账单（按 purchaseOrderId 查重）。
  */
+import { nextSequenceName } from '@/lib/sequence-number'
 
 type VendorBillTx = {
   vendorBill: {
     findFirst: (a: unknown) => Promise<{ id: string } | null>
-    count: (a?: unknown) => Promise<number>
     create: (a: unknown) => Promise<{ id: string; name: string }>
   }
+  /** 发号(lib/sequence-number.ts)用 */
+  $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<Array<{ max: number | null }>>
   purchaseOrder: {
     findUnique: (a: unknown) => Promise<{
       id: string
@@ -75,8 +77,8 @@ export async function createDraftVendorBillForPurchaseOrder(
     subtotalIncTax: Number(l.subtotalIncTaxEur ?? l.subtotalIncTax),
   }))
 
-  const count = await tx.vendorBill.count()
-  const name = `VB-${String(count + 1).padStart(5, '0')}`
+  // 现有最大号 + 1，不用 count+1(删过/有空号就撞号，采购单确认时自动建账单就会 500；见 lib/sequence-number.ts)
+  const name = await nextSequenceName(tx, 'VendorBill', 'VB-', 5)
   const totalIncTax = Number(po.totalIncTaxEur ?? po.totalIncTax)
 
   const bill = await tx.vendorBill.create({

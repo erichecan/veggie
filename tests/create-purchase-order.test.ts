@@ -24,7 +24,7 @@ function mockTx(
     },
     customer: { findUnique: async () => ({ vendorTaxRate: opts.supplierVendorTax ?? null }) },
     // 编号取现有最大号 +1(SELECT MAX(...))
-    $queryRaw: async () => [{ max: opts.maxPoNo ?? null }],
+    $queryRawUnsafe: async () => [{ max: opts.maxPoNo ?? null }],
     purchaseOrder: {
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'po_test', ...data }),
     },
@@ -60,7 +60,7 @@ test('商品模板缺失 canBePurchased 字段（undefined）→ 默认放行', 
   const tx = {
     product: { findMany: async () => [{ id: 'p1', name: '洋葱', canBePurchased: undefined }] },
     customer: { findUnique: async () => null },
-    $queryRaw: async () => [{ max: null }],
+    $queryRawUnsafe: async () => [{ max: null }],
     purchaseOrder: {
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'po_test', ...data }),
     },

@@ -1,6 +1,7 @@
 import { round2 } from '@/lib/decimal-helpers'
 import { eurAmount, resolveExchangeRate } from '@/lib/fx-eur'
 import { isValidPurchaseTaxRate, defaultPurchaseTaxRate } from '@/lib/purchase/tax-rates'
+import { nextSequenceName } from '@/lib/sequence-number'
 
 /**
  * 采购单创建 SSOT —— POST /api/purchase-orders 和"采购建议转采购单"共用同一份
@@ -173,11 +174,7 @@ export async function createPurchaseOrder(tx: Tx, input: CreatePOInput) {
 
   // 编号取现有最大号 +1，**不能用 count+1**(20261013 修)：删过任何一张草稿后，count+1 会撞上
   // 已存在的号(name 唯一)，之后每次新建采购单都 500，直到再删一张为止。批量删除上线后必然触发。
-  const maxRows: Array<{ max: number | null }> = await tx.$queryRaw`
-    SELECT MAX(CAST(SUBSTRING("name" FROM 4) AS INTEGER)) AS "max"
-    FROM "PurchaseOrder" WHERE "name" ~ '^PO-[0-9]+$'`
-  const nextNo = Number(maxRows[0]?.max ?? 0) + 1
-  const name = `PO-${String(nextNo).padStart(5, '0')}`
+  const name = await nextSequenceName(tx, 'PurchaseOrder', 'PO-', 5)
 
   const po = await tx.purchaseOrder.create({
     data: {

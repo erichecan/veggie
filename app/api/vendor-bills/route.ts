@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { normalizeSupplierInvoiceRef } from '@/lib/vendor-bill-fields'
+import { nextSequenceName } from '@/lib/sequence-number'
 
 /**
  * /api/vendor-bills
@@ -86,8 +87,8 @@ export async function POST(req: Request) {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = prisma as any
-      const count = await p.vendorBill.count()
-      const name = `VB-${String(count + 1).padStart(5, '0')}`
+      // 现有最大号 + 1，不用 count+1(删过/有空号就撞号，见 lib/sequence-number.ts)
+      const name = await nextSequenceName(p, 'VendorBill', 'VB-', 5)
 
       const bill = await p.vendorBill.create({
         data: {

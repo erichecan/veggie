@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum, round2 } from '@/lib/decimal-helpers'
+import { nextSequenceName } from '@/lib/sequence-number'
 
 /**
  * P0-3: CreditNote — 跨单合并退款单
@@ -97,14 +98,8 @@ export async function POST(req: Request) {
       // 生成编号 CN-YYYYMMDD-XXXX
       const today = new Date()
       const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '')
-      const count = await prisma.creditNote.count({
-        where: {
-          createdAt: {
-            gte: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-          },
-        },
-      })
-      const name = `CN-${dateStr}-${String(count + 1).padStart(4, '0')}`
+      // 当天同前缀(CN-日期-)下现有最大号 + 1，不用当天 count+1(删过/有空号就撞号，见 lib/sequence-number.ts)
+      const name = await nextSequenceName(prisma, 'CreditNote', `CN-${dateStr}-`, 4)
 
       const creditNote = await prisma.creditNote.create({
         data: {

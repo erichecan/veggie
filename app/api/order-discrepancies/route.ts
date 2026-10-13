@@ -4,10 +4,11 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { writeLog } from '@/lib/action-log'
+import { nextSequenceName } from '@/lib/sequence-number'
 
 async function nextDiscCode(): Promise<string> {
-  const count = await prisma.orderDiscrepancy.count()
-  return `DISC-${String(count + 1).padStart(5, '0')}`
+  // 现有最大号 + 1，不用 count+1(删过/有空号就撞号，见 lib/sequence-number.ts)
+  return nextSequenceName(prisma, 'OrderDiscrepancy', 'DISC-', 5)
 }
 
 export async function GET(req: NextRequest) {
