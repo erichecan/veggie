@@ -11,16 +11,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createPurchaseOrder } from '../lib/create-purchase-order'
 
-function mockTx(products: Array<{ id: string; name: string; canBePurchased: boolean }>) {
+function mockTx(
+  products: Array<{ id: string; name: string; canBePurchased: boolean; vendorTaxRate?: number | null }>,
+  opts: { maxPoNo?: number | null; supplierVendorTax?: number | null } = {},
+) {
   return {
     product: {
       findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
         products
           .filter(p => where.id.in.includes(p.id))
-          .map(p => ({ id: p.id, name: p.name, canBePurchased: p.canBePurchased })),
+          .map(p => ({ id: p.id, name: p.name, canBePurchased: p.canBePurchased, vendorTaxRate: p.vendorTaxRate ?? null })),
     },
+    customer: { findUnique: async () => ({ vendorTaxRate: opts.supplierVendorTax ?? null }) },
+    // 编号取现有最大号 +1(SELECT MAX(...))
+    $queryRaw: async () => [{ max: opts.maxPoNo ?? null }],
     purchaseOrder: {
-      count: async () => 0,
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'po_test', ...data }),
     },
   }
@@ -54,8 +59,9 @@ test('商品模板缺失 canBePurchased 字段（undefined）→ 默认放行', 
   // Prisma 默认值是 true；mock 里模拟"字段未取到"这种边界情况，不应误伤
   const tx = {
     product: { findMany: async () => [{ id: 'p1', name: '洋葱', canBePurchased: undefined }] },
+    customer: { findUnique: async () => null },
+    $queryRaw: async () => [{ max: null }],
     purchaseOrder: {
-      count: async () => 0,
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'po_test', ...data }),
     },
   }
@@ -64,4 +70,22 @@ test('商品模板缺失 canBePurchased 字段（undefined）→ 默认放行', 
     lines: [{ productId: 'p1', productName: '洋葱', orderedQty: 10, unitCost: 2 }],
   })
   assert.equal(po.id, 'po_test')
+})
+
+test('编号取现有最大号 +1：删过草稿(PO-00003 不在了，最大是 00004)也不会撞号', async () => {
+  const tx = mockTx([{ id: 'p1', name: '洋葱', canBePurchased: true }], { maxPoNo: 4 })
+  const po = await createPurchaseOrder(tx, { supplierId: 'sup_1', lines: [{ productId: 'p1', orderedQty: 1, unitCost: 2 }] })
+  assert.equal((po as unknown as { name: string }).name, 'PO-00005')
+})
+
+test('不传税率：按商品 Vendor Taxes 带出，商品没设再用供应商的', async () => {
+  const tx = mockTx([
+    { id: 'zero', name: '改成 0% 的商品', canBePurchased: true, vendorTaxRate: 0 },
+    { id: 'none', name: '没设税率的商品', canBePurchased: true, vendorTaxRate: null },
+  ], { supplierVendorTax: 0.23 })
+  const po = await createPurchaseOrder(tx, {
+    supplierId: 'sup_1',
+    lines: [{ productId: 'zero', orderedQty: 1, unitCost: 10 }, { productId: 'none', orderedQty: 1, unitCost: 10 }],
+  }) as unknown as { lines: { create: Array<{ taxRate: number }> } }
+  assert.deepEqual(po.lines.create.map(l => l.taxRate), [0, 23])
 })
