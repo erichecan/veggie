@@ -32,12 +32,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         // ⛔ salesUser.managerId 必须 select：isRowVisible 判 TEAM 范围靠它，
         //    不取的话 sales_manager 会被保守拒绝，看不到下属的单。
         select: {
-          id: true, restaurantId: true, salesUserId: true, status: true,
+          id: true, restaurantId: true, salesUserId: true, status: true, createdById: true,
           salesUser: { select: { managerId: true } },
         },
       })
       if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-      if (!isRowVisible(order, salesRowScope(user))) {
+      if (!isRowVisible(order, salesRowScope(user), r => (r as { createdById?: string | null }).createdById === user.userId)) {
         return NextResponse.json({ error: '订单不存在' }, { status: 404 })
       }
 
@@ -107,7 +107,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         },
       })
       if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-      if (!isRowVisible(order, salesRowScope(user))) {
+      if (!isRowVisible(order, salesRowScope(user), r => (r as { createdById?: string | null }).createdById === user.userId)) {
         return NextResponse.json({ error: '订单不存在' }, { status: 404 })
       }
 

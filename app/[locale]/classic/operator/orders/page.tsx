@@ -60,6 +60,7 @@ type ColFilters = {
   code: string
   deliveryDateFrom: string
   deliveryDateTo: string
+  createdBy: string
   customer: string
   salesman: string
   deliveryBatch: string
@@ -70,7 +71,7 @@ type ColFilters = {
 }
 
 const EMPTY_FILTERS: ColFilters = {
-  code: '', deliveryDateFrom: '', deliveryDateTo: '',
+  code: '', deliveryDateFrom: '', deliveryDateTo: '', createdBy: '',
   customer: '', salesman: '', deliveryBatch: '',
   invoiceStatus: '', status: '', createdAtFrom: '', createdAtTo: '',
 }
@@ -108,14 +109,14 @@ export default function ClassicOrdersPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [colFilters, setColFilters] = useState<ColFilters>(EMPTY_FILTERS)
-  // code/customer/salesman/driver 列筛选框下推到服务端查询(见 baseUrl),防抖 400ms 避免逐字符触发请求
-  const [debouncedColText, setDebouncedColText] = useState({ code: '', customer: '', salesman: '', driver: '' })
+  // code/customer/salesman/driver/createdBy 列筛选框下推到服务端查询(见 baseUrl),防抖 400ms 避免逐字符触发请求
+  const [debouncedColText, setDebouncedColText] = useState({ code: '', customer: '', salesman: '', driver: '', createdBy: '' })
   useEffect(() => {
     const t = setTimeout(() => {
-      setDebouncedColText({ code: colFilters.code, customer: colFilters.customer, salesman: colFilters.salesman, driver: colFilters.deliveryBatch })
+      setDebouncedColText({ code: colFilters.code, customer: colFilters.customer, salesman: colFilters.salesman, driver: colFilters.deliveryBatch, createdBy: colFilters.createdBy })
     }, 400)
     return () => clearTimeout(t)
-  }, [colFilters.code, colFilters.customer, colFilters.salesman, colFilters.deliveryBatch])
+  }, [colFilters.code, colFilters.customer, colFilters.salesman, colFilters.deliveryBatch, colFilters.createdBy])
   // 分面搜索 + 快捷筛选(My / 时间)
   const [facets, setFacets] = useState<Facet[]>([])
   const [myActive, setMyActive] = useState(false)
@@ -166,6 +167,7 @@ export default function ClassicOrdersPage() {
     if (debouncedColText.customer) params.set('colCustomer', debouncedColText.customer)
     if (debouncedColText.salesman) params.set('colSalesman', debouncedColText.salesman)
     if (debouncedColText.driver) params.set('colDriver', debouncedColText.driver)
+    if (debouncedColText.createdBy) params.set('colCreatedBy', debouncedColText.createdBy)
     // 表头排序 — deliveryBatch/司机列虽是 wave 派生展示字段,服务端也已改成整表内存排序后再切页
     // (见 /api/orders 的 sortField===deliveryBatch 分支),这里不再排除,统一下推
     params.set('sortField', sortField)
@@ -384,6 +386,7 @@ export default function ClassicOrdersPage() {
         <td className="pl-3 pr-1 py-1 text-gray-300">✎</td>
         <td className="px-2 py-1"><input value={colFilters.code}         onChange={e => setCf('code', e.target.value)}         className={inputCls} /></td>
         {dateLabelCell('deliveryDateFrom', 'deliveryDateTo')}
+        <td className="px-2 py-1"><input value={colFilters.createdBy}    onChange={e => setCf('createdBy', e.target.value)}    className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.customer}     onChange={e => setCf('customer', e.target.value)}     className={inputCls} /></td>
         <td className="px-2 py-1"><input value={colFilters.deliveryBatch} onChange={e => setCf('deliveryBatch', e.target.value)} className={inputCls} /></td>
         <td className="px-2 py-1" />
@@ -422,6 +425,7 @@ export default function ClassicOrdersPage() {
           <span className="text-sm" style={{ color: '#875A7B' }}>{displayOrderCode(o)}</span>
         </td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{o.deliveryDate ? <DateCell iso={o.deliveryDate} /> : <span className="text-gray-300">—</span>}</td>
+        <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap">{getField(o, 'createdByName') || '—'}</td>
         <td className="px-2 py-2 text-sm text-gray-800 max-w-[180px] truncate">{o.restaurantName}</td>
         <td className="px-2 py-2 text-sm text-gray-700 whitespace-nowrap" onClick={e => e.stopPropagation()}>
           {(() => {
@@ -611,6 +615,7 @@ export default function ClassicOrdersPage() {
                 [
                   { field: 'code',          label: 'Quotation\nNumber', right: false },
                   { field: 'deliveryDate',  label: 'Delivery\nDate',    right: false },
+                  { field: null,            label: isEn ? 'Created\nBy' : '创建人', right: false },
                   { field: 'restaurantName',label: 'Customer',          right: false },
                   { field: 'deliveryBatch', label: isEn ? 'Driver' : '司机', right: false },
                   { field: 'totalAmount',   label: 'Untaxed\nTotal',    right: true  },
@@ -644,10 +649,10 @@ export default function ClassicOrdersPage() {
           </thead>
           <tbody>
             {loading && sorted.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
+              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'Loading…' : '加载中…'}</td></tr>
             )}
             {!loading && sorted.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
+              <tr><td colSpan={11} className="text-center py-12 text-gray-400 text-sm">{isEn ? 'No orders' : '暂无订单数据'}</td></tr>
             )}
             {sorted.map(o => <Fragment key={o.id}>{renderRow(o)}</Fragment>)}
           </tbody>
