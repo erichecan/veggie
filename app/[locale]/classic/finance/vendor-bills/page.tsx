@@ -203,6 +203,21 @@ export default function VendorBillsPage() {
     } catch { setPayments([]) }
   }, [])
 
+  const openDetail = useCallback((b: VendorBill) => {
+    setDetail(b); setPayAmount(''); setPayNote(''); setPayments([]); setRefDraft(b.supplierInvoiceRef ?? ''); loadPayments(b.id)
+  }, [loadPayments])
+
+  // 深链 ?bill=<id>：采购单详情页的「已生成供应商账单 VB-xxxxx」点进来直接打开那张账单。
+  // 单独按 id 拉一次，不依赖列表加载完成，也不受当前筛选/分页影响。
+  // 读 window.location 而非 useSearchParams：后者要求外包 Suspense，这里只在挂载时读一次
+  useEffect(() => {
+    const billId = new URLSearchParams(window.location.search).get('bill')
+    if (!billId) return
+    apiGet<VendorBill>(`/api/vendor-bills/${encodeURIComponent(billId)}`)
+      .then(openDetail)
+      .catch(e => toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load bill' : '加载账单失败')))
+  }, [openDetail, isEn])
+
   async function registerPayment(bill: VendorBill) {
     const add = Number(payAmount)
     if (!Number.isFinite(add) || add <= 0) {
@@ -376,7 +391,7 @@ export default function VendorBillsPage() {
               )}
               {pageRows.map(b => (
                 <tr key={b.id} className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => { setDetail(b); setPayAmount(''); setPayNote(''); setPayments([]); setRefDraft(b.supplierInvoiceRef ?? ''); loadPayments(b.id) }}>
+                  onClick={() => openDetail(b)}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-700">{b.name}</td>
                   <td className="px-4 py-3 text-gray-800">{supplierName(b.supplierId)}</td>
                   <td className="px-4 py-3 text-center">

@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
@@ -179,6 +180,146 @@ function toInputDate(iso?: string | null) {
   try { return new Date(iso).toISOString().slice(0, 10) } catch { return '' }
 }
 
+/**
+ * 把「确认收货 / 采购退货」这两类 ActionLog 的 detail 拆回结构化的品项。
+ * 两条路都不建单据表，唯一的记录就是这条日志，格式由服务端固定写出：
+ *   确认收货 PO PO-00057：Carrot ×100、Celery ×5           （lib/purchase/receive-purchase-order.ts）
+ *   采购退货 PO-00057：Carrot ×2，应退金额 €11 - 坏了（…）  （api/purchase-orders/[id]/return）
+ * 解析不出品项（如「本次无入库数量」）时 items 为空，原文落到 note 里照样展示，不丢信息。
+ */
+function parseMovementLog(detail: string | null): { items: Array<{ name: string; qty: string }>; note: string } {
+  // 去掉「确认收货 PO PO-00057：」/「采购退货 PO-00057：」这段前缀（两边写法不一样，按第一个全角冒号切）
+  const text = (detail ?? '').replace(/^[^：（]*?(：|(?=（))/, '')
+  const comma = text.indexOf('，')
+  const itemsPart = comma >= 0 ? text.slice(0, comma) : text
+  const items = itemsPart.split('、').map(seg => {
+    const at = seg.lastIndexOf(' ×')
+    return at > 0 ? { name: seg.slice(0, at), qty: seg.slice(at + 2) } : null
+  })
+  if (items.length === 0 || items.some(x => x === null)) return { items: [], note: text }
+  return { items: items as Array<{ name: string; qty: string }>, note: comma >= 0 ? text.slice(comma + 1) : '' }
+}
+
+/** 一次入库 / 退货动作的卡片（数据来自 ActionLog，见 parseMovementLog） */
+function MovementLogCard({ log, kind, isEn }: { log: ActivityLogEntry; kind: 'in' | 'return'; isEn: boolean }) {
+  const { items, note } = parseMovementLog(log.detail)
+  const isReturn = kind === 'return'
+  return (
+    <div className={`border rounded p-3 text-sm ${isReturn ? 'border-red-100 bg-red-50/40' : 'border-gray-200'}`}>
+      <div className="flex items-center justify-between">
+        <span className={`font-medium ${isReturn ? 'text-red-700' : 'text-gray-800'}`}>
+          {isReturn ? (isEn ? 'Return to vendor' : '退货给供应商') : (isEn ? 'Received into stock' : '确认入库')}
+        </span>
+        <span className="text-gray-500 text-xs">
+          {new Date(log.createdAt).toLocaleString(isEn ? 'en-GB' : 'zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          {log.userName ? ` · ${log.userName}` : ''}
+        </span>
+      </div>
+      {items.length > 0 && (
+        <table className="w-full mt-2 text-xs">
+          <tbody>
+            {items.map((it, i) => (
+              <tr key={i} className="border-t border-gray-100">
+                <td className="py-1 text-gray-700">{it.name}</td>
+                <td className={`py-1 text-right tabular-nums w-24 ${isReturn ? 'text-red-700' : 'text-gray-800'}`}>
+                  {isReturn ? '−' : ''}{it.qty}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {note && <div className="text-xs text-gray-500 mt-1">{note}</div>}
+    </div>
+  )
+}
+
+/** 一张收货单（GoodsReceipt）的卡片：「其他信息」tab 与收货/退货快捷弹窗共用。
+ *  showLines=true 时额外列出每行商品与数量——弹窗是专门来看"到底收了什么"的 */
+function ReceiptCard({ gr, isEn, showLines = false }: { gr: GoodsReceiptRow; isEn: boolean; showLines?: boolean }) {
+  const damaged = gr.lines.filter(l => l.condition === 'damaged')
+  const rejected = gr.lines.filter(l => l.condition === 'rejected')
+  // 质检信息在采购单上可见（台账 F4 验收第二条）：只列**填过**的行，
+  // 没做质检的收货一个字都不多印
+  const checked = gr.lines
+    .map(l => ({ line: l, qc: parseStoredQc(l.qc) }))
+    .filter(x => x.qc || x.line.condition === 'rejected')
+  return (
+    <div className="border border-gray-200 rounded p-3 text-sm">
+      <div className="flex items-center justify-between">
+        <span className="font-medium text-gray-800">{gr.name}</span>
+        <span className="text-gray-500">{isEn ? 'Arrived' : '到货'} {formatDateOnly(gr.arrivedAt)}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}</span>
+      </div>
+      <div className="text-xs text-gray-500 mt-1">
+        {isEn ? `${gr.lines.length} item(s)` : `${gr.lines.length} 个品项`}
+        {damaged.length > 0 && (
+          <span className="text-red-600 ml-1">{isEn ? `· ${damaged.length} damaged` : `· ${damaged.length} 项有损坏`}</span>
+        )}
+        {rejected.length > 0 && (
+          <span className="text-red-700 ml-1 font-medium">{isEn ? `· ${rejected.length} rejected` : `· ${rejected.length} 项拒收`}</span>
+        )}
+      </div>
+      {showLines && gr.lines.length > 0 && (
+        <table className="w-full mt-2 text-xs">
+          <tbody>
+            {gr.lines.map((l, i) => (
+              <tr key={`${l.productId}-${i}`} className="border-t border-gray-100">
+                <td className="py-1 text-gray-700">{l.productName}</td>
+                <td className="py-1 text-right text-gray-800 tabular-nums w-24">{Number(l.qty).toFixed(3)}</td>
+                <td className="py-1 text-right w-16">
+                  {l.condition === 'damaged' && <span className="text-red-600">{isEn ? 'Damaged' : '损坏'}</span>}
+                  {l.condition === 'rejected' && <span className="text-red-700">{isEn ? 'Rejected' : '拒收'}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {checked.length > 0 && (
+        <div className="mt-2 rounded bg-gray-50 border border-gray-100 p-2 space-y-1">
+          <div className="text-xs font-medium text-gray-600">{isEn ? 'Quality check' : '质检记录'}</div>
+          {checked.map(({ line, qc }, i) => {
+            const isRejected = line.condition === 'rejected'
+            const verdict = lineVerdict(qc, isRejected ? Number(line.qty) : 0)
+            return (
+              <div key={`${line.productId}-${i}`} className="text-xs text-gray-600 flex items-start gap-1.5 flex-wrap">
+                <span className="text-gray-800">{line.productName}</span>
+                {verdict && (
+                  <span className={`px-1.5 py-0.5 rounded ${verdict === 'FAIL' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                    {verdict === 'FAIL' ? (isEn ? 'Failed' : '不合格') : (isEn ? 'Passed' : '合格')}
+                  </span>
+                )}
+                {isRejected && (
+                  <span className="text-red-700">
+                    {isEn ? `Rejected ${Number(line.qty)}` : `拒收 ${Number(line.qty)}`}
+                    {line.rejectReason ? `（${isEn ? QC_REJECT_REASON_LABELS[line.rejectReason].en : QC_REJECT_REASON_LABELS[line.rejectReason].zh}）` : ''}
+                  </span>
+                )}
+                <span className="text-gray-500">{formatQcSummary(qc, isEn ? 'en' : 'zh')}</span>
+              </div>
+            )
+          })}
+          {rejected.length > 0 && (
+            <div className="text-xs text-red-700">
+              {isEn
+                ? 'Rejected quantities are not counted as received — this PO stays open until the supplier replaces or credits them.'
+                : '拒收数量不计入已收 —— 本采购单会保持未收齐，直到供应商补货或退款。'}
+            </div>
+          )}
+        </div>
+      )}
+      {gr.notes && <div className="text-xs text-gray-500 mt-1">{gr.notes}</div>}
+      {(gr.photos?.length ?? 0) > 0 && (
+        <div className="flex gap-1.5 mt-2 flex-wrap">
+          {(gr.photos ?? []).map((src, i) => (
+            <img key={i} src={src} alt={isEn ? `${gr.name} photo ${i + 1}` : `${gr.name} 照片 ${i + 1}`} className="w-12 h-12 rounded object-cover border border-gray-200" />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OdooStatusBar({ status, isEn }: { status: POStatus; isEn: boolean }) {
   const steps = [
     { label: isEn ? 'Request for Quotation' : '询价单', statuses: ['DRAFT'] as POStatus[] },
@@ -294,6 +435,8 @@ export default function PurchaseDetailPage() {
 
   // 退货/修正数量弹窗
   const [showReturnModal, setShowReturnModal] = useState(false)
+  /** 收货/退货记录快捷查看（Odoo 式 smart button「N Receipt」） */
+  const [showReceiptsModal, setShowReceiptsModal] = useState(false)
   const [returnQtys, setReturnQtys] = useState<Record<string, string>>({})
   const [returnReason, setReturnReason] = useState('')
   const [returning, setReturning] = useState(false)
@@ -741,6 +884,19 @@ export default function PurchaseDetailPage() {
 
   const latestBill = [...(po.bills ?? [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
 
+  // 收货/退货快捷查看（smart button）的三类数据：
+  //   入库   —— 本页「确认收货」动作：真正加库存的那一步，不建单据表，只留一条 ActionLog（「确认收货 」开头）
+  //   退货   —— 「退货/修正数量」动作：同样只留一条 ActionLog（「采购退货 」开头）
+  //   到货登记 —— 库存「收货」工作台建的 GoodsReceipt：记到货时间/质检，本身不动库存
+  // 按钮上的数字是「入库」次数（对应 Odoo 的 Receipt），到货登记与退货在弹窗里一并列出
+  const newestFirst = (a: ActivityLogEntry, b: ActivityLogEntry) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  const stockInLogs = (po.activityLog ?? []).filter(l => l.detail?.startsWith('确认收货 ')).sort(newestFirst)
+  const returnLogs = (po.activityLog ?? []).filter(l => l.detail?.startsWith('采购退货 ')).sort(newestFirst)
+  const goodsReceiptCount = po.receipts?.length ?? 0
+  // 下单确认之后才会有收货；草稿/询价/取消阶段没东西可看，就不摆这个入口
+  const showReceiptsButton = stockInLogs.length > 0 || goodsReceiptCount > 0 || returnLogs.length > 0
+    || ['CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED'].includes(po.status)
+
   const timeline = [
     ...(po.activityLog ?? []).map(l => ({ id: l.id, text: l.detail || l.action, at: l.createdAt })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
@@ -982,14 +1138,47 @@ export default function PurchaseDetailPage() {
         {editing && draft.pendingDraft && (
           <DraftRestoreBanner onRestore={restoreDraft} onDiscard={draft.discard} />
         )}
-        {latestBill && (
-          <div
-            className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded text-sm"
-            style={{ background: '#e5f1e9', color: '#2e7d4f' }}
-          >
-            {isEn
-              ? <>✓ Vendor bill <b>{latestBill.name}</b> generated ({latestBill.totalIncTax.toFixed(2)}) · Finance role notified</>
-              : <>✓ 已生成供应商账单 <b>{latestBill.name}</b>（{latestBill.totalIncTax.toFixed(2)}）· 已通知财务角色</>}
+        {(latestBill || showReceiptsButton) && (
+          <div className="mb-4 flex items-stretch gap-2">
+            {latestBill ? (
+              <div
+                className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded text-sm"
+                style={{ background: '#e5f1e9', color: '#2e7d4f' }}
+              >
+                {(() => {
+                  // 账单号做成超链接：点进供应商账单页并直接打开这张账单（?bill= 深链）
+                  const billLink = (
+                    <Link href={`${prefix}/classic/finance/vendor-bills?bill=${latestBill.id}`}
+                      className="font-bold underline underline-offset-2 hover:opacity-80">
+                      {latestBill.name}
+                    </Link>
+                  )
+                  return isEn
+                    ? <>✓ Vendor bill {billLink} generated ({latestBill.totalIncTax.toFixed(2)}) · Finance role notified</>
+                    : <>✓ 已生成供应商账单 {billLink}（{latestBill.totalIncTax.toFixed(2)}）· 已通知财务角色</>
+                })()}
+              </div>
+            ) : <div className="flex-1" />}
+            {showReceiptsButton && (
+              <button
+                onClick={() => setShowReceiptsModal(true)}
+                className="flex items-center gap-2.5 px-4 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 text-left"
+                title={isEn ? 'View receipts & returns' : '查看收货/退货记录'}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="#4b5563" aria-hidden="true">
+                  <path d="M3 5h11v9H3zM14 8h4l3 3.5V14h-7zM6.5 18.5a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6zM17.5 18.5a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6zM3 14h18v1.5H3z" />
+                </svg>
+                <span className="flex flex-col leading-tight">
+                  <span className="text-sm font-semibold text-gray-800 tabular-nums">{stockInLogs.length}</span>
+                  <span className="text-xs text-gray-600">
+                    {isEn ? (stockInLogs.length === 1 ? 'Receipt' : 'Receipts') : '收货'}
+                    {returnLogs.length > 0 && (
+                      <span className="text-red-600">{isEn ? ` · ${returnLogs.length} return${returnLogs.length === 1 ? '' : 's'}` : ` · ${returnLogs.length} 退货`}</span>
+                    )}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
         )}
         <div className="bg-white rounded border border-gray-200 shadow-sm">
@@ -1315,73 +1504,7 @@ export default function PurchaseDetailPage() {
                   <div className="space-y-3">
                     {[...(po.receipts ?? [])]
                       .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
-                      .map(gr => {
-                        const damaged = gr.lines.filter(l => l.condition === 'damaged')
-                        const rejected = gr.lines.filter(l => l.condition === 'rejected')
-                        // 质检信息在采购单上可见（台账 F4 验收第二条）：只列**填过**的行，
-                        // 没做质检的收货一个字都不多印
-                        const checked = gr.lines
-                          .map(l => ({ line: l, qc: parseStoredQc(l.qc) }))
-                          .filter(x => x.qc || x.line.condition === 'rejected')
-                        return (
-                          <div key={gr.id} className="border border-gray-200 rounded p-3 text-sm">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium text-gray-800">{gr.name}</span>
-                              <span className="text-gray-500">{isEn ? 'Arrived' : '到货'} {formatDateOnly(gr.arrivedAt)}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}</span>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              {isEn ? `${gr.lines.length} item(s)` : `${gr.lines.length} 个品项`}
-                              {damaged.length > 0 && (
-                                <span className="text-red-600 ml-1">{isEn ? `· ${damaged.length} damaged` : `· ${damaged.length} 项有损坏`}</span>
-                              )}
-                              {rejected.length > 0 && (
-                                <span className="text-red-700 ml-1 font-medium">{isEn ? `· ${rejected.length} rejected` : `· ${rejected.length} 项拒收`}</span>
-                              )}
-                            </div>
-                            {checked.length > 0 && (
-                              <div className="mt-2 rounded bg-gray-50 border border-gray-100 p-2 space-y-1">
-                                <div className="text-xs font-medium text-gray-600">{isEn ? 'Quality check' : '质检记录'}</div>
-                                {checked.map(({ line, qc }, i) => {
-                                  const isRejected = line.condition === 'rejected'
-                                  const verdict = lineVerdict(qc, isRejected ? Number(line.qty) : 0)
-                                  return (
-                                    <div key={`${line.productId}-${i}`} className="text-xs text-gray-600 flex items-start gap-1.5 flex-wrap">
-                                      <span className="text-gray-800">{line.productName}</span>
-                                      {verdict && (
-                                        <span className={`px-1.5 py-0.5 rounded ${verdict === 'FAIL' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                          {verdict === 'FAIL' ? (isEn ? 'Failed' : '不合格') : (isEn ? 'Passed' : '合格')}
-                                        </span>
-                                      )}
-                                      {isRejected && (
-                                        <span className="text-red-700">
-                                          {isEn ? `Rejected ${Number(line.qty)}` : `拒收 ${Number(line.qty)}`}
-                                          {line.rejectReason ? `（${isEn ? QC_REJECT_REASON_LABELS[line.rejectReason].en : QC_REJECT_REASON_LABELS[line.rejectReason].zh}）` : ''}
-                                        </span>
-                                      )}
-                                      <span className="text-gray-500">{formatQcSummary(qc, isEn ? 'en' : 'zh')}</span>
-                                    </div>
-                                  )
-                                })}
-                                {rejected.length > 0 && (
-                                  <div className="text-xs text-red-700">
-                                    {isEn
-                                      ? 'Rejected quantities are not counted as received — this PO stays open until the supplier replaces or credits them.'
-                                      : '拒收数量不计入已收 —— 本采购单会保持未收齐，直到供应商补货或退款。'}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {gr.notes && <div className="text-xs text-gray-500 mt-1">{gr.notes}</div>}
-                            {(gr.photos?.length ?? 0) > 0 && (
-                              <div className="flex gap-1.5 mt-2 flex-wrap">
-                                {(gr.photos ?? []).map((src, i) => (
-                                  <img key={i} src={src} alt={isEn ? `${gr.name} photo ${i + 1}` : `${gr.name} 照片 ${i + 1}`} className="w-12 h-12 rounded object-cover border border-gray-200" />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                      .map(gr => <ReceiptCard key={gr.id} gr={gr} isEn={isEn} />)}
                   </div>
                 </div>
               )}
@@ -1489,6 +1612,70 @@ export default function PurchaseDetailPage() {
               <button onClick={submitReceive} disabled={receiving}
                 className="flex-1 py-2 rounded text-sm text-white disabled:opacity-50" style={{ background: PURPLE }}>
                 {receiving ? (isEn ? 'Confirming…' : '确认中…') : (isEn ? 'Confirm Receipt' : '确认收货')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReceiptsModal && po && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowReceiptsModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Receipts & Returns' : '收货/退货记录'} · {po.name}</h2>
+              <button onClick={() => setShowReceiptsModal(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+                aria-label={isEn ? 'Close' : '关闭'}>×</button>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                {isEn ? 'Receipts' : '入库记录'} <span className="text-gray-400 font-normal">({stockInLogs.length})</span>
+              </h3>
+              {stockInLogs.length === 0 ? (
+                <div className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded">
+                  {isEn ? 'Nothing received into stock yet' : '尚未确认收货入库'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {stockInLogs.map(l => <MovementLogCard key={l.id} log={l} kind="in" isEn={isEn} />)}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                {isEn ? 'Returns' : '退货记录'} <span className="text-gray-400 font-normal">({returnLogs.length})</span>
+              </h3>
+              {returnLogs.length === 0 ? (
+                <div className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded">
+                  {isEn ? 'No returns' : '暂无退货记录'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {returnLogs.map(l => <MovementLogCard key={l.id} log={l} kind="return" isEn={isEn} />)}
+                </div>
+              )}
+            </div>
+
+            {goodsReceiptCount > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                  {isEn ? 'Arrival & QC (warehouse)' : '到货登记/质检（仓库）'} <span className="text-gray-400 font-normal">({goodsReceiptCount})</span>
+                </h3>
+                <div className="space-y-3">
+                  {[...(po.receipts ?? [])]
+                    .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
+                    .map(gr => <ReceiptCard key={gr.id} gr={gr} isEn={isEn} showLines />)}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button onClick={() => setShowReceiptsModal(false)}
+                className="px-5 py-2 rounded border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">
+                {isEn ? 'Close' : '关闭'}
               </button>
             </div>
           </div>
