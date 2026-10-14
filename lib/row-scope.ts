@@ -73,14 +73,20 @@ export function salesRowScope(caller: ScopeCaller | null | undefined): RowScope 
  *
  * TEAM 用**关系过滤**而不是先查一遍下属 id 再 `in` —— 后者要多打一次库，
  * 而且下属列表变化时会有时间窗。关系过滤由数据库一次算完。
+ *
+ * `extraOwnFields`：资源自己的"即使不是归属人，但本人创建的也能看见"字段名列表
+ * （如 Order.createdById）——不是所有挂 salesRowScope 的资源都有这个字段
+ * （Customer 就没有），所以不写死在这里，由调用方按资源传。
  */
-export function scopeCondition(scope: RowScope): Record<string, unknown> | null {
+export function scopeCondition(scope: RowScope, extraOwnFields: string[] = []): Record<string, unknown> | null {
   if (!scope) return null
-  if (scope.kind === 'own') return { salesUserId: scope.userId }
+  const extra = extraOwnFields.map(f => ({ [f]: scope.userId }))
+  if (scope.kind === 'own') return extra.length > 0 ? { OR: [{ salesUserId: scope.userId }, ...extra] } : { salesUserId: scope.userId }
   return {
     OR: [
       { salesUserId: scope.userId },
       { salesUser: { managerId: scope.userId } },
+      ...extra,
     ],
   }
 }
@@ -95,8 +101,9 @@ export function scopeCondition(scope: RowScope): Record<string, unknown> | null 
 export function withRowScope(
   where: Record<string, unknown>,
   scope: RowScope,
+  extraOwnFields: string[] = [],
 ): Record<string, unknown> {
-  const cond = scopeCondition(scope)
+  const cond = scopeCondition(scope, extraOwnFields)
   if (!cond) return where
   const existing = Array.isArray(where.AND) ? where.AND as unknown[] : where.AND ? [where.AND] : []
   return { ...where, AND: [...existing, cond] }
@@ -145,14 +152,22 @@ export function withDriverScope(
 /**
  * 单条记录是否在可见范围内。详情/编辑接口用 —— 列表挡住了但详情没挡的话，
  * 拿到 id 依然能逐条读走（id 在打印单、CSV 导出里到处都是）。
+ *
+ * `ownMatch`：资源自己的"本人创建的即使不归属自己也能看见"判定（如 Order.createdById），
+ * 与 scopeCondition 的 extraOwnFields 是同一条口径，查询端(列表)和单条端(详情)必须一致，
+ * 否则列表放行、详情却 404，或反过来。
  */
+type VisibilityRecord = { salesUserId?: string | null; salesUser?: { managerId?: string | null } | null }
+
 export function isRowVisible(
-  record: { salesUserId?: string | null; salesUser?: { managerId?: string | null } | null } | null | undefined,
+  record: VisibilityRecord | null | undefined,
   scope: RowScope,
+  ownMatch?: (record: VisibilityRecord) => boolean,
 ): boolean {
   if (!scope) return true
   if (!record) return false
   if (record.salesUserId === scope.userId) return true
+  if (ownMatch?.(record)) return true
   if (scope.kind === 'own') return false
 
   // TEAM：还要看这单的业务员是不是我的下属。

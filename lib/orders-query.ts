@@ -156,14 +156,16 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
 
   const facetAnd: Record<string, unknown>[] = []
 
-  const colCode     = searchParams.get('colCode')?.trim()
-  const colCustomer = searchParams.get('colCustomer')?.trim()
-  const colSalesman = searchParams.get('colSalesman')?.trim()
-  const colDriver   = searchParams.get('colDriver')?.trim()
-  if (colCode)     where.code = { contains: colCode, mode: 'insensitive' }
-  if (colCustomer) where.restaurantName = { contains: colCustomer, mode: 'insensitive' }
-  if (colSalesman) where.salesUser = { name: { contains: colSalesman, mode: 'insensitive' } }
-  if (colDriver)   facetAnd.push(await driverNameClause(colDriver))
+  const colCode      = searchParams.get('colCode')?.trim()
+  const colCustomer  = searchParams.get('colCustomer')?.trim()
+  const colSalesman  = searchParams.get('colSalesman')?.trim()
+  const colDriver    = searchParams.get('colDriver')?.trim()
+  const colCreatedBy = searchParams.get('colCreatedBy')?.trim()
+  if (colCode)      where.code = { contains: colCode, mode: 'insensitive' }
+  if (colCustomer)  where.restaurantName = { contains: colCustomer, mode: 'insensitive' }
+  if (colSalesman)  where.salesUser = { name: { contains: colSalesman, mode: 'insensitive' } }
+  if (colDriver)    facetAnd.push(await driverNameClause(colDriver))
+  if (colCreatedBy) where.createdByName = { contains: colCreatedBy, mode: 'insensitive' }
 
   // 分面搜索：同一维度多值 OR、不同维度之间 AND（20260802 语义修正，此前是分面间 OR，
   // 导致"加一个筛选条件结果反而变多"）。规则集中在 lib/facet-sql.ts，各资源只声明维度。
@@ -195,5 +197,11 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   // `where.salesUserId = …`。原实现两个毛病：写在 `if (!salesUserId)` 分支里，
   // 只要请求带 `?salesUserId=别人的id` 隔离就整段跳过；即使进了分支也是直接赋值，
   // 会被同名参数覆盖。放在最后 + AND 包裹，才是谁也删不掉的。
-  return withRowScope(where, salesRowScope(await tryAuth(req)))
+  //
+  // extraOwnFields=['createdById']：下单时业务员可以手动改成别人（客户原话
+  // 2026-10-13：「虽然 sales man 是别人，但是自己也可以创建订单」），只按
+  // salesUserId 隔离会让本人创建、挂在别人名下的单对自己也不可见 —— 加上
+  // "本人创建的也算自己的"这条口径，跟详情/编辑/删除三处 isRowVisible 的
+  // ownMatch 必须保持一致（见 app/api/orders/[id]/route.ts）。
+  return withRowScope(where, salesRowScope(await tryAuth(req)), ['createdById'])
 }

@@ -69,9 +69,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       },
     })
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-    // 行级隔离：外部销售只看自己名下的订单。回 404 而不是 403 ——
-    // 403 等于告诉对方"这单存在，只是不给你看"。
-    if (!isRowVisible(order, salesRowScope(await tryAuth(_req)))) {
+    // 行级隔离：外部销售只看自己名下的订单，但本人创建、挂在别人名下的单也放行
+    // （与 lib/orders-query.ts 的 extraOwnFields=['createdById'] 同一条口径）。
+    // 回 404 而不是 403 —— 403 等于告诉对方"这单存在，只是不给你看"。
+    const caller = await tryAuth(_req)
+    if (!isRowVisible(order, salesRowScope(caller), r => (r as { createdById?: string | null }).createdById === caller?.userId)) {
       return NextResponse.json({ error: '订单不存在' }, { status: 404 })
     }
     // Flatten product fields onto each line so UI can read l.cost
@@ -119,7 +121,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const data = await req.json()
       const orderBefore = await prisma.order.findUnique({ where: { id } })
       if (!orderBefore) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-      if (!isRowVisible(orderBefore, salesRowScope(user))) {
+      if (!isRowVisible(orderBefore, salesRowScope(user), r => (r as { createdById?: string | null }).createdById === user.userId)) {
         return NextResponse.json({ error: '订单不存在' }, { status: 404 })
       }
 
@@ -1086,9 +1088,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params
   return withAuth(req, async (user) => {
     try {
-      const orderToDelete = await prisma.order.findUnique({ where: { id }, select: { status: true, code: true, salesUserId: true } })
+      const orderToDelete = await prisma.order.findUnique({ where: { id }, select: { status: true, code: true, salesUserId: true, createdById: true } })
       if (!orderToDelete) return NextResponse.json({ error: '订单不存在' }, { status: 404 })
-      if (!isRowVisible(orderToDelete, salesRowScope(user))) {
+      if (!isRowVisible(orderToDelete, salesRowScope(user), r => (r as { createdById?: string | null }).createdById === user.userId)) {
         return NextResponse.json({ error: '订单不存在' }, { status: 404 })
       }
       // 报价单(PENDING)从未扣过库存；已取消(CANCELLED)的订单若原来扣过库存，取消时已经恢复
