@@ -40,7 +40,18 @@ export async function GET(req: Request) {
       include: { lines: { orderBy: { sequence: 'asc' } } },
       orderBy: { createdAt: 'desc' },
     })
-    return NextResponse.json(serializeApi(creditNotes))
+    // 剩余可用 = 总额 − Σ 抵扣/退款（20261014 L1），列表直接显示，不用点进详情
+    const sums = creditNotes.length
+      ? await prisma.creditNoteAllocation.groupBy({
+          by: ['creditNoteId'], where: { creditNoteId: { in: creditNotes.map(c => c.id) } }, _sum: { amount: true },
+        })
+      : []
+    const used = new Map(sums.map(s => [s.creditNoteId, toNum(s._sum.amount ?? 0)]))
+    return NextResponse.json(serializeApi(creditNotes.map(c => ({
+      ...c,
+      amountAllocated: round2(used.get(c.id) ?? 0),
+      amountRemaining: round2(toNum(c.totalIncTax) - (used.get(c.id) ?? 0)),
+    }))))
   } catch (error) {
     console.error('[GET /api/credit-notes]', error)
     return NextResponse.json({ error: '获取退款单失败' }, { status: 500 })

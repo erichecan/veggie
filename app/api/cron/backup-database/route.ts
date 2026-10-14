@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { runBackup, cleanupExpiredBackups } from '@/lib/backup'
+import { runAndRecordLedgerCheck } from '@/lib/ledger-check'
 
 /**
  * /api/cron/backup-database — 每日自动全库备份
@@ -17,7 +18,17 @@ export async function POST(req: Request) {
   try {
     const backup = await runBackup('AUTO')
     const cleanup = await cleanupExpiredBackups()
-    return NextResponse.json({ backup, cleanup })
+    // 备份完顺带跑一遍账本核对（20261014 复式改造 L2）：droplet 上已有这个每日 timer，
+    // 不为核对另配定时器。核对失败不影响备份结果的返回码——备份才是这个 timer 的本职。
+    let ledgerCheck: { id: string; ok: boolean } | { error: string }
+    try {
+      const run = await runAndRecordLedgerCheck('AUTO')
+      ledgerCheck = { id: run.id, ok: run.ok }
+    } catch (e) {
+      console.error('[cron backup → ledger-check]', e)
+      ledgerCheck = { error: e instanceof Error ? e.message : String(e) }
+    }
+    return NextResponse.json({ backup, cleanup, ledgerCheck })
   } catch (error) {
     console.error('[POST /api/cron/backup-database]', error)
     const message = error instanceof Error ? error.message : '自动备份失败'

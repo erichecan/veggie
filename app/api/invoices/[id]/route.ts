@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
+import { recomputeInvoiceBalance } from '@/lib/finance/invoice-balance'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { fetchProductSequences } from '@/lib/print/product-sequence'
@@ -14,8 +15,13 @@ const INVOICE_TRACKED_FIELDS = [
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const invoice = await prisma.invoice.findUnique({ where: { id } })
-    if (!invoice) return NextResponse.json({ error: '发票不存在' }, { status: 404 })
+    const found = await prisma.invoice.findUnique({
+      where: { id },
+      // 贷记单抵扣明细（20261014 L1）：发票页「收款记录」里和收款一起列出来
+      include: { creditAllocations: { orderBy: { createdAt: 'asc' }, include: { creditNote: { select: { id: true, name: true } } } } },
+    })
+    if (!found) return NextResponse.json({ error: '发票不存在' }, { status: 404 })
+    const invoice = found
 
     // 发票行是 JSON 快照，里面没有商品 sequence；打印页要按它排序（客户要求
     // 2026-08-18），而打印页是纯前端渲染碰不到数据库，所以在这里回查一次附上。
@@ -61,9 +67,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const ALLOWED = ['name', 'customerName', 'paymentTerms', 'dueDate', 'subtotalExTax', 'totalTax', 'totalIncTax']
       const updateData: Record<string, unknown> = {}
       for (const k of ALLOWED) if (data[k] !== undefined) updateData[k] = data[k]
-      if (data.totalIncTax !== undefined) {
-        updateData.amountDue = Math.max(0, Number(data.totalIncTax) - Number(before.amountPaid))
-      }
       // 状态流转:过账走 /post(生成凭证+回写 invoicedQty)、收款走 /payments;
       // 本接口只允许取消(CANCELLED),不接受 POSTED/PAID,避免绕过凭证生成(P1-6)。
       if (data.status !== undefined) {
@@ -76,7 +79,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
         updateData.status = 'CANCELLED'
       }
-      const invoice = await prisma.invoice.update({ where: { id }, data: updateData })
+      const invoice = await prisma.$transaction(async tx => {
+        const u = await tx.invoice.update({ where: { id }, data: updateData })
+        // 改了总额 → 未付从明细重算（Payment + 贷记单抵扣），不再只减 amountPaid（20261014 L2）
+        return data.totalIncTax !== undefined ? recomputeInvoiceBalance(tx, id) : u
+      })
       const changes = diffChanges(
         before as unknown as Record<string, unknown>,
         invoice as unknown as Record<string, unknown>,

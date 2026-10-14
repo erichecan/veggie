@@ -306,6 +306,12 @@ export default function ClassicInvoiceDetailPage() {
               <span>€{Number(inv.amountPaid ?? 0).toFixed(2)}</span>
             </div>
           )}
+          {Number(inv.amountCredited ?? 0) > 0 && (
+            <div className="flex justify-between text-sm text-blue-600">
+              <span>{isEn ? 'Credit notes applied' : '贷记单抵扣'}</span>
+              <span>€{Number(inv.amountCredited ?? 0).toFixed(2)}</span>
+            </div>
+          )}
           <div className={`flex justify-between text-base font-bold ${Number(inv.amountDue ?? 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>
             <span>{isEn ? 'Amount Due' : '待收款'}</span>
             <span>€{Number(inv.amountDue ?? 0).toFixed(2)}</span>
@@ -324,6 +330,20 @@ export default function ClassicInvoiceDetailPage() {
           </span>
         </div>
 
+        {(inv.creditAllocations ?? []).length > 0 && (
+          <div className="px-5 py-2 border-b border-gray-100 text-xs" data-testid="invoice-credit-allocations">
+            {(inv.creditAllocations ?? []).map(a => (
+              <div key={a.id} className={`flex gap-4 py-1 ${Number(a.amount) < 0 ? 'text-gray-400' : 'text-blue-700'}`}>
+                <span className="w-40">{new Date(a.createdAt).toLocaleString('en-GB')}</span>
+                <span className="flex-1">
+                  {Number(a.amount) < 0 ? (isEn ? 'Credit reversal' : '撤销抵扣') : (isEn ? 'Credit note applied' : '贷记单抵扣')} · <span className="font-mono">{a.creditNote?.name}</span>
+                </span>
+                <span className="font-semibold">€{Number(a.amount).toFixed(2)}</span>
+                <span className="w-32 text-gray-500">{a.createdBy ?? '—'}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {payments.length === 0 ? (
           <div className="px-5 py-6 text-center text-sm text-gray-400">{isEn ? 'No payment records yet' : '暂无收款流水'}</div>
         ) : (

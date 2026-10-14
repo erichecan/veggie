@@ -225,6 +225,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/statements/*', methods: ['PUT'], permission: 'finance.statement.update' },
   { pattern: '/api/statements/*', methods: ['DELETE'], permission: 'finance.statement.delete' },
   { pattern: '/api/credit-notes/generate-from-returns', permission: 'finance.credit_note.create' },
+  { pattern: '/api/credit-notes/*/allocations/**', methods: ['POST'], permission: 'finance.credit_note.update', note: '贷记单抵扣发票/退款/撤销（20261014 复式改造 L1）' },
+  { pattern: '/api/credit-notes/*/allocations', methods: ['POST'], permission: 'finance.credit_note.update' },
   { pattern: '/api/credit-notes', methods: R, permission: 'finance.credit_note.read' },
   { pattern: '/api/credit-notes', methods: ['POST'], permission: 'finance.credit_note.create' },
   { pattern: '/api/credit-notes/*', methods: R, permission: 'finance.credit_note.read' },

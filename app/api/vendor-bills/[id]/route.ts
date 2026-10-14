@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
-import { postVendorBillToJournal, postVendorPaymentToJournal } from '@/lib/accounting'
+import { postVendorBillToJournal, postVendorPaymentToJournal, postVendorPaymentReversalToJournal } from '@/lib/accounting'
+import { recomputeVendorBillBalance } from '@/lib/finance/vendor-bill-balance'
 import { reconcileVendorBill, type ReconciliationBillLine, type ReconciliationPoLine } from '@/lib/vendor-bill-reconciliation'
 import { normalizeSupplierInvoiceRef } from '@/lib/vendor-bill-fields'
 
@@ -72,14 +73,16 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       const updateData: Record<string, unknown> = {}
       const totalIncTax = Number(existing.totalIncTax)
       const detail: string[] = []
+      // 目标「累计已付」。amountPaid/amountDue 本身不在这里写：差额落一笔 VendorPayment 流水，
+      // 余额由 recomputeVendorBillBalance 从流水重算（20261014 L2）
+      let targetPaid: number | null = null
 
       if (data.amountPaid !== undefined) {
         const paid = Number(data.amountPaid)
         if (!Number.isFinite(paid) || paid < 0 || paid > totalIncTax + 0.005) {
           return NextResponse.json({ error: '已付金额无效(0 ~ 含税总额)' }, { status: 400 })
         }
-        updateData.amountPaid = round2(paid)
-        updateData.amountDue = round2(totalIncTax - paid)
+        targetPaid = round2(paid)
         detail.push(`登记已付 €${round2(paid)}`)
       }
 
@@ -96,19 +99,11 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         updateData.status = s
         if (s === 'POSTED') updateData.postedAt = new Date()
         if (s === 'PAID') {
-          updateData.paidAt = new Date()
-          updateData.amountPaid = totalIncTax
-          updateData.amountDue = 0
+          // 「全额付清」：补一笔把累计已付拉到总额的流水，状态由重算推进
+          delete updateData.status
+          targetPaid = round2(totalIncTax)
         }
         detail.push(`状态 ${existing.status} → ${s}`)
-      } else if (data.amountPaid !== undefined && String(existing.status) === 'POSTED') {
-        // 付清自动转 PAID
-        const due = Number(updateData.amountDue)
-        if (due <= 0.005) {
-          updateData.status = 'PAID'
-          updateData.paidAt = new Date()
-          detail.push('已付清,自动转 PAID')
-        }
       }
 
       if (data.notes !== undefined) {
@@ -120,18 +115,22 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         detail.push(`供应商发票参考号 → ${updateData.supplierInvoiceRef ?? '(清空)'}`)
       }
 
-      if (Object.keys(updateData).length === 0) {
+      if (Object.keys(updateData).length === 0 && targetPaid === null) {
         return NextResponse.json({ error: '没有可更新的字段' }, { status: 400 })
       }
 
       // SSOT: 过账/付款同步生成总账凭证(此前 postVendorBillToJournal 是死函数,真实 AP 入账无凭证 — P1-6)
       const willPost = updateData.status === 'POSTED'
-      const oldPaid = Number(existing.amountPaid)
-      const newPaid = updateData.amountPaid !== undefined ? Number(updateData.amountPaid) : oldPaid
-      const paymentDelta = round2(newPaid - oldPaid)
-
       const bill = await p.$transaction(async (tx: typeof p) => {
-        const updated = await tx.vendorBill.update({ where: { id }, data: updateData })
+        let updated = Object.keys(updateData).length > 0
+          ? await tx.vendorBill.update({ where: { id }, data: updateData })
+          : existing
+        // 差额按**流水合计**算，不按缓存的 amountPaid（缓存可能已经漂了）
+        const paidSum = await tx.vendorPayment.aggregate({ where: { vendorBillId: id }, _sum: { amount: true } })
+        const paymentDelta = targetPaid === null ? 0 : round2(targetPaid - Number(paidSum._sum.amount ?? 0))
+        if (targetPaid !== null && Math.abs(paymentDelta) > 0.005 && !['POSTED', 'PAID'].includes(String(updated.status))) {
+          throw Object.assign(new Error('只有已过账的账单可以登记付款'), { status: 400 })
+        }
         if (willPost) {
           const e = await postVendorBillToJournal(tx, {
             id: existing.id, name: existing.name, supplierId: existing.supplierId,
@@ -157,6 +156,22 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
             id: vp.id, billName: existing.name, supplierId: existing.supplierId, amount: paymentDelta,
           }, user.userId)
           if (e) detail.push(`付款凭证 ${e.name}`)
+        } else if (paymentDelta < -0.005) {
+          // 调低累计已付 = 冲销一部分付款：落一笔负数流水 + 反向凭证（以前只改字段，流水和总账都不知道）
+          const vp = await tx.vendorPayment.create({
+            data: {
+              vendorBillId: id, supplierId: existing.supplierId, amount: paymentDelta,
+              method: 'other', note: '经账单更新接口调低已付（冲销）',
+              createdBy: user.name ?? user.email,
+            },
+          })
+          const e = await postVendorPaymentReversalToJournal(tx, {
+            id: vp.id, billName: existing.name, supplierId: existing.supplierId, amount: paymentDelta,
+          }, user.userId)
+          if (e) detail.push(`冲销凭证 ${e.name}`)
+        }
+        if (targetPaid !== null || updateData.status !== undefined) {
+          updated = await recomputeVendorBillBalance(tx, id)
         }
         return updated
       })
@@ -168,6 +183,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       })
       return NextResponse.json(serializeApi(bill))
     } catch (error) {
+      const st = (error as { status?: number })?.status
+      if (st && st >= 400 && st < 500) {
+        return NextResponse.json({ error: (error as Error).message }, { status: st })
+      }
       console.error('[PUT /api/vendor-bills/[id]]', error)
       return NextResponse.json({ error: '更新账单失败' }, { status: 500 })
     }
