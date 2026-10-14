@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { recomputeVendorBillBalance } from '@/lib/finance/vendor-bill-balance'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
@@ -84,15 +85,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           },
         })
 
-        const updated = await tx.vendorBill.update({
-          where: { id },
-          data: {
-            // amountPaid 由流水汇总而来 —— 不用 increment，避免它与流水各自漂移
-            amountPaid: plan.newPaid,
-            amountDue: plan.newDue,
-            ...(plan.fullyPaid ? { status: 'PAID' as const, paidAt: new Date() } : {}),
-          },
-        })
+        // amountPaid 由流水汇总而来 —— 统一走 recomputeVendorBillBalance（20261014 L2）
+        const updated = await recomputeVendorBillBalance(tx, id)
 
         // 凭证幂等键用 payment.id。原实现拼的是 `${billId}-pay-${累计金额}`，
         // 同一账单先付 100 → 冲销 → 再付 100 会撞出同一个 sourceId

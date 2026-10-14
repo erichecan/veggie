@@ -97,6 +97,7 @@ export async function POST(req: Request) {
         prisma,
         { marker, restaurants: [...byCustomer.values()] },
         actorName,
+        user.userId,
       )
 
       if (posting.paymentIds.length > 0) {

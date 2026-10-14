@@ -18,6 +18,9 @@
  *    不会重复记两笔钱；标记前缀由调用方指定（见 `driverCashConfirmationMarker`）。
  */
 
+import { recomputeInvoiceBalance } from './finance/invoice-balance'
+import { postPaymentToJournal } from './accounting'
+
 export interface InvoiceForAllocation {
   id: string
   name: string
@@ -252,6 +255,8 @@ export async function postCollections(
   /** 经手人显示名 —— 写进 `Payment.createdBy`，与 /api/payments 手工登记同语义。
    *  ⛔ 别传 userId：那一列会直接显示在对账单明细的「经手」列上 */
   actorName: string,
+  /** 出凭证用的操作人 userId（JournalEntry.createdBy）；不传记为 system */
+  actorUserId?: string,
 ): Promise<SettlementPostingResult> {
   const marker = source.marker
 
@@ -356,19 +361,16 @@ export async function postCollections(
       if (p.isHistoricalDebt) {
         historicalDebtInvoices.push({ name: p.invoiceName, amount: p.amount })
       }
-      const inv = await tx.invoice.update({
-        where: { id: p.invoiceId },
-        data: {
-          amountPaid: { increment: p.amount },
-          amountDue: { decrement: p.amount },
-        },
-        select: { amountDue: true, name: true },
-      })
-      // 结清了就推进状态，别让已付清的单继续挂在应收账龄里
-      if (Number(inv.amountDue) <= 0.004) {
-        await tx.invoice.update({ where: { id: p.invoiceId }, data: { status: 'PAID', amountDue: 0 } })
-        paidOff.push(inv.name)
-      }
+      // 余额从明细重算，付清自动转 PAID（20261014 L2：以前这里自己 increment/decrement）
+      const inv = await recomputeInvoiceBalance(tx, p.invoiceId)
+      if (String(inv.status) === 'PAID') paidOff.push(inv.name)
+      // 总账：Dr Bank / Cr AR。此前司机收款核销只写 Payment、不出凭证，总账应收一直虚高（20261014 L2 补）
+      await postPaymentToJournal(
+        tx,
+        { id: created.id, invoiceName: p.invoiceName, customerId: p.customerId, amount: p.amount },
+        actorUserId ?? 'system',
+        { narration: `Driver cash collected for ${p.invoiceName}` },
+      )
     })
   }
 

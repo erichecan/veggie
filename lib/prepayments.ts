@@ -9,6 +9,7 @@
 
 import { round2, toNum } from './decimal-helpers'
 import { postPaymentToJournal, postPrepaymentApplicationToJournal } from './accounting'
+import { recomputeInvoiceBalance } from './finance/invoice-balance'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbClient = any
@@ -139,18 +140,7 @@ export async function applyPrepaymentToInvoice(
     },
   })
 
-  const total = toNum(invoice.totalIncTax)
-  const newPaid = round2(toNum(invoice.amountPaid) + amount)
-  const newDue = round2(total - newPaid)
-  const fullyPaid = newDue <= 0.005
-  const invoiceAfter = await db.invoice.update({
-    where: { id: invoiceId },
-    data: {
-      amountPaid: newPaid,
-      amountDue: Math.max(0, newDue),
-      ...(fullyPaid ? { status: 'PAID', paidAt: new Date().toISOString() } : {}),
-    },
-  })
+  const invoiceAfter = await recomputeInvoiceBalance(db, invoiceId)
 
   const journalEntry = await postPrepaymentApplicationToJournal(
     db,

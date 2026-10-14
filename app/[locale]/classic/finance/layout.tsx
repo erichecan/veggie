@@ -29,6 +29,8 @@ export default function ClassicFinanceLayout({ children }: { children: React.Rea
     // 20260924：司机交账/司机对账两个独立入口下线，合并进「核销管理」页的钱/单两板块
     // 20260925：核销管理从独立顶层路由 /classic/accounting 搬进本模块，不再单独起一套导航
     { href: `${prefix}/classic/finance/accounting`, label: isEn ? 'Write-off' : '核销管理' },
+    // 20261014 复式改造 L2：每日按明细重算各类余额，和存着的值比对
+    { href: `${prefix}/classic/finance/ledger-check`, label: isEn ? 'Ledger Check' : '账本核对' },
   ]
 
   useEffect(() => {

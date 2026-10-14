@@ -163,28 +163,28 @@ enum JournalEntryStatus {
 }
 
 model User {
-  id           String    @id @default(cuid())
+  id              String    @id @default(cuid())
   /// 用户友好的自增编号（20261006），仅展示/搜索/导出用；cuid id 仍是主键和所有外键目标
-  userNo       Int       @unique @default(autoincrement())
-  email        String    @unique
-  passwordHash String
+  userNo          Int       @unique @default(autoincrement())
+  email           String    @unique
+  passwordHash    String
   /// 主角色（兼容旧字段；权限判断优先看 roles[]，roles[] 为空时回退此字段）
-  role         Role
+  role            Role
   /// 多角色集合 — 一个账号可同时是 OPERATOR + SALES 等。
   /// 字符串数组（不是 enum 数组），值必须是 Role 枚举的字符串形式。
-  roles        String[]  @default([])
-  name         String
-  customerId   String?
-  isActive     Boolean   @default(true)
+  roles           String[]  @default([])
+  name            String
+  customerId      String?
+  isActive        Boolean   @default(true)
   /// 自助注册（餐馆在 /register 提交）产生的账号先落在这，isActive 同时置 false；
   /// 内部人工审核通过后两个字段一起翻转。管理员手工建号的账号不经过这条路，恒为 false。
-  pendingApproval Boolean @default(false)
+  pendingApproval Boolean   @default(false)
   /// MFA 秘钥（TOTP base32），为空表示未启用
-  mfaSecret    String?
-  mfaEnabled   Boolean   @default(false)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  mfaSecret       String?
+  mfaEnabled      Boolean   @default(false)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   dailyReports DriverDailyReport[] @relation("DriverDailyReports")
 
@@ -233,18 +233,18 @@ model User {
 
 model ProductCategory {
   parentId       String?
-  parent         ProductCategory? @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  parent         ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
   children       ProductCategory[] @relation("CategoryTree")
-  id             String         @id @default(cuid())
+  id             String            @id @default(cuid())
   name           String
   nameZh         String?
-  externalId     String?        @unique
+  externalId     String?           @unique
   /// 归属的采购品类分组（干货/日韩/超市/生鲜冷冻），可空=未映射
   groupId        String?
-  group          CategoryGroup? @relation(fields: [groupId], references: [id])
+  group          CategoryGroup?    @relation(fields: [groupId], references: [id])
   /// 该类目商品业务上"应该"放哪个温区（业务规则），可空=未映射。与 Product.currentZoneId（实际放置）对比即可发现放错温区
   requiredZoneId String?
-  requiredZone   Zone?          @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
+  requiredZone   Zone?             @relation("CategoryRequiredZone", fields: [requiredZoneId], references: [id])
   products       Product[]
 
   @@index([groupId])
@@ -476,9 +476,9 @@ model ProductSaleUom {
 }
 
 model Customer {
-  customerNo Int @unique @default(autoincrement())
-  individualOrCompany String @default("company")
-  mobile String @default("")
+  customerNo          Int                     @unique @default(autoincrement())
+  individualOrCompany String                  @default("company")
+  mobile              String                  @default("")
   id                  String                  @id @default(cuid())
   name                String
   /// 兼容旧数据：合并后的整体地址（仍由后端自动维护，前端不直接编辑）
@@ -1125,24 +1125,35 @@ model Trip {
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  name          String
-  customerId    String
-  customerName  String
-  saleOrderIds  String[]
-  lines         Json          @default("[]")
-  subtotalExTax Decimal       @default(0) @db.Decimal(12, 2)
-  totalTax      Decimal       @default(0) @db.Decimal(12, 2)
-  totalIncTax   Decimal       @default(0) @db.Decimal(12, 2)
-  amountPaid    Decimal       @default(0) @db.Decimal(12, 2)
-  amountDue     Decimal       @default(0) @db.Decimal(12, 2)
-  status        InvoiceStatus @default(DRAFT)
-  paymentTerms  String        @default("monthly")
-  dueDate       String?
-  createdAt     DateTime      @default(now())
-  postedAt      String?
-  paidAt        String?
-  payments      Payment[]
+  id                String                 @id @default(cuid())
+  name              String
+  customerId        String
+  customerName      String
+  saleOrderIds      String[]
+  lines             Json                   @default("[]")
+  subtotalExTax     Decimal                @default(0) @db.Decimal(12, 2)
+  totalTax          Decimal                @default(0) @db.Decimal(12, 2)
+  totalIncTax       Decimal                @default(0) @db.Decimal(12, 2)
+  /// 已收款（Σ Payment，含预收款冲抵）。缓存值，只由 lib/finance/invoice-balance.ts 重算写入
+  amountPaid        Decimal                @default(0) @db.Decimal(12, 2)
+  /// 已用贷记单抵扣（Σ CreditNoteAllocation）。缓存值，同上 —— 20261014
+  amountCredited    Decimal                @default(0) @db.Decimal(12, 2)
+  /// 期初已收：复式改造前（Odoo 导入等）就记在发票上、但没有 Payment 明细的已收金额。
+  /// 由 20261014 迁移一次性算出，之后不再变。amountPaid = openingPaid + Σ Payment
+  openingPaid       Decimal                @default(0) @db.Decimal(12, 2)
+  /// 期初已冲减：同上，Odoo 里用退款单冲掉、但本系统没有抵扣明细的部分。
+  /// amountCredited = openingCredited + Σ CreditNoteAllocation
+  openingCredited   Decimal                @default(0) @db.Decimal(12, 2)
+  /// 未付 = totalIncTax − amountPaid − amountCredited。缓存值，同上
+  amountDue         Decimal                @default(0) @db.Decimal(12, 2)
+  status            InvoiceStatus          @default(DRAFT)
+  paymentTerms      String                 @default("monthly")
+  dueDate           String?
+  createdAt         DateTime               @default(now())
+  postedAt          String?
+  paidAt            String?
+  payments          Payment[]
+  creditAllocations CreditNoteAllocation[]
 
   @@unique([name])
   @@index([customerId])
@@ -1739,26 +1750,58 @@ model Statement {
 
 /// 贷记单 / Credit Note（P0-3：退货退款凭证，支持跨单合并）
 model CreditNote {
-  id            String           @id @default(cuid())
-  name          String           @unique
+  id            String                 @id @default(cuid())
+  name          String                 @unique
   customerId    String
   customerName  String
-  creditDate    DateTime         @default(now())
-  currency      String           @default("EUR")
-  subtotalExTax Decimal          @default(0) @db.Decimal(12, 2)
-  totalTax      Decimal          @default(0) @db.Decimal(12, 2)
-  totalIncTax   Decimal          @default(0) @db.Decimal(12, 2)
+  creditDate    DateTime               @default(now())
+  currency      String                 @default("EUR")
+  subtotalExTax Decimal                @default(0) @db.Decimal(12, 2)
+  totalTax      Decimal                @default(0) @db.Decimal(12, 2)
+  totalIncTax   Decimal                @default(0) @db.Decimal(12, 2)
   /// 状态：DRAFT / CONFIRMED / APPLIED / CANCELLED
-  status        String           @default("DRAFT")
+  status        String                 @default("DRAFT")
   notes         String?
   createdBy     String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
   lines         CreditNoteLine[]
+  allocations   CreditNoteAllocation[]
 
   @@index([customerId])
   @@index([status])
   @@index([creditDate])
+}
+
+/**
+ * 贷记单的去向（20261014，复式改造 L1）
+ * ================================================================================
+ * 贷记单确认时总账已经 Cr 1100 应收，但以前不关联任何发票，发票 amountDue 不减，
+ * 于是「总账应收 ≠ Σ 发票未付」。每一笔抵扣/退款在这里记一行：
+ * - INVOICE：抵扣某张发票（应收子账内部核销，不出凭证——确认贷记单时已贷记过 AR）
+ * - REFUND ：把剩余贷项退给客户（现金/转账），出凭证 Dr 1100 / Cr 1200
+ * 只追加不修改：撤销 = 追加一行负数并用 reversalOfId 指回原行。
+ * 贷记单剩余可用 = totalIncTax − Σ amount；发票 amountCredited = Σ 指向它的 INVOICE 行。
+ */
+model CreditNoteAllocation {
+  id           String     @id @default(cuid())
+  creditNoteId String
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Restrict)
+  /// INVOICE | REFUND
+  kind         String     @default("INVOICE")
+  invoiceId    String?
+  invoice      Invoice?   @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  /// 负数 = 冲正某一行
+  amount       Decimal    @db.Decimal(12, 2)
+  /// REFUND 时的退款方式：cash | transfer | other
+  method       String?
+  reversalOfId String?    @unique
+  note         String?
+  createdBy    String?
+  createdAt    DateTime   @default(now())
+
+  @@index([creditNoteId])
+  @@index([invoiceId])
 }
 
 /// 贷记单行项（退款明细，包含来源订单/行程引用）
@@ -2110,4 +2153,25 @@ model SavedAnalysisReport {
 
   @@unique([userId, name])
   @@index([userId])
+}
+
+/**
+ * 账本核对结果（20261014，复式改造 L2）
+ * ================================================================================
+ * lib/ledger-check.ts 每天按明细重算一遍缓存余额（发票/账单余额、库存、批次……），
+ * 与存着的值比对。只记录、只报警，**不自动修**——差异要人看过才知道该改哪边。
+ */
+model LedgerCheckRun {
+  id         String   @id @default(cuid())
+  /// AUTO（定时）| MANUAL（页面上点「立即核对」）
+  trigger    String   @default("AUTO")
+  /// 所有检查项都 0 差异
+  ok         Boolean
+  /// [{ key, label, diffCount, total, samples: [...] }]
+  results    Json
+  durationMs Int      @default(0)
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

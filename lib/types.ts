@@ -815,9 +815,19 @@ export interface Invoice {
   totalTax: number
   totalIncTax: number
   amountPaid: number
+  /** 贷记单抵扣合计（20261014 L1） */
+  amountCredited?: number
   amountDue: number
   status: InvoiceStatus
   paymentTerms: 'cash' | 'weekly' | 'monthly'
+  /** 详情接口附带：贷记单抵扣明细（负数 = 撤销） */
+  creditAllocations?: Array<{
+    id: string
+    amount: number
+    createdAt: string
+    createdBy?: string | null
+    creditNote?: { id: string; name: string } | null
+  }>
   dueDate?: string
   createdAt: string
   postedAt?: string

@@ -327,6 +327,109 @@ export async function postCreditNoteToJournal(
   })
 }
 
+/**
+ * 通用过账：按科目代码写一张借贷平衡的凭证 —— 20261014（复式改造）。
+ * 新增的自动凭证（贷记单退款、司机收款、存货估值）都走这里，不再每种复制一遍样板。
+ * 借贷不平、金额为 0、或任一科目不存在时返回 null（与上面各函数的行为一致：缺科目不阻断业务，
+ * 由 ledger-check 的「总账 vs 子账」检查报出来）。
+ */
+export interface JournalLineSpec {
+  code: string
+  debit?: number
+  credit?: number
+  description: string
+  partnerId?: string | null
+}
+
+export async function postJournalEntry(
+  tx: TxClient,
+  entry: { narration: string; sourceType: string; sourceId: string; date?: Date; lines: JournalLineSpec[] },
+  userId: string,
+): Promise<{ id: string; name: string } | null> {
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const lines = entry.lines
+    .map(l => ({ ...l, debit: r2(l.debit ?? 0), credit: r2(l.credit ?? 0) }))
+    .filter(l => l.debit !== 0 || l.credit !== 0)
+  const totalDebit = r2(lines.reduce((s, l) => s + l.debit, 0))
+  const totalCredit = r2(lines.reduce((s, l) => s + l.credit, 0))
+  if (lines.length < 2 || !(totalDebit > 0) || Math.abs(totalDebit - totalCredit) > 0.005) return null
+  const accounts = new Map<string, string>()
+  for (const code of new Set(lines.map(l => l.code))) {
+    const acc = await findAccountByCode(tx, code)
+    if (!acc) return null
+    accounts.set(code, acc.id)
+  }
+  const name = await genEntryName(tx)
+  return tx.journalEntry.create({
+    data: {
+      name,
+      ...(entry.date ? { date: entry.date } : {}),
+      narration: entry.narration,
+      sourceType: entry.sourceType,
+      sourceId: entry.sourceId,
+      status: 'POSTED',
+      totalDebit,
+      totalCredit,
+      createdBy: userId,
+      postedAt: new Date(),
+      lines: {
+        create: lines.map((l, i) => ({
+          accountId: accounts.get(l.code)!,
+          description: l.description,
+          debit: l.debit,
+          credit: l.credit,
+          ...(l.partnerId ? { partnerId: l.partnerId } : {}),
+          sequence: (i + 1) * 10,
+        })),
+      },
+    },
+    select: { id: true, name: true },
+  })
+}
+
+/** 贷记单剩余贷项退款给客户：Dr AR / Cr Bank（确认贷记单时已 Cr AR，退钱把客户的贷方余额冲平） */
+export async function postCreditNoteRefundToJournal(
+  tx: TxClient,
+  refund: { id: string; creditNoteName: string; customerId: string; amount: number },
+  userId: string,
+) {
+  const amt = refund.amount
+  const sign = amt >= 0 ? 1 : -1
+  const a = Math.abs(amt)
+  return postJournalEntry(tx, {
+    narration: `${sign > 0 ? 'Refund' : 'Refund reversal'} for ${refund.creditNoteName}`,
+    sourceType: 'credit_note_refund',
+    sourceId: refund.id,
+    lines: sign > 0
+      ? [
+          { code: '1100', debit: a, description: `AR refund - ${refund.creditNoteName}`, partnerId: refund.customerId },
+          { code: '1200', credit: a, description: `Bank - ${refund.creditNoteName}` },
+        ]
+      : [
+          { code: '1200', debit: a, description: `Bank - ${refund.creditNoteName}` },
+          { code: '1100', credit: a, description: `AR refund reversal - ${refund.creditNoteName}`, partnerId: refund.customerId },
+        ],
+  }, userId)
+}
+
+/** 供应商付款冲销（负数流水）：Dr Bank / Cr AP */
+export async function postVendorPaymentReversalToJournal(
+  tx: TxClient,
+  payment: { id: string; billName: string; supplierId: string; amount: number },
+  userId: string,
+) {
+  const a = Math.abs(payment.amount)
+  return postJournalEntry(tx, {
+    narration: `Vendor payment reversal for ${payment.billName}`,
+    sourceType: 'vendor_payment',
+    sourceId: payment.id,
+    lines: [
+      { code: '1200', debit: a, description: `Bank - ${payment.billName}` },
+      { code: '2100', credit: a, description: `AP reversal - ${payment.billName}`, partnerId: payment.supplierId },
+    ],
+  }, userId)
+}
+
 /** 预置标准会计科目（seed 用） */
 export const STANDARD_ACCOUNTS: Array<{ code: string; name: string; nameZh: string; type:
   'RECEIVABLE' | 'PAYABLE' | 'ASSET' | 'LIABILITY' | 'INCOME' | 'EXPENSE' | 'EQUITY'
@@ -342,6 +445,11 @@ export const STANDARD_ACCOUNTS: Array<{ code: string; name: string; nameZh: stri
   { code: '5000', name: 'Purchases / COGS',    nameZh: '采购成本', type: 'EXPENSE' },
   { code: '6000', name: 'Operating Expenses',  nameZh: '运营费用', type: 'EXPENSE', allowManual: true },
   { code: '2300', name: 'Customer Prepayments', nameZh: '客户预收款', type: 'LIABILITY' },
+  // 永续盘存（20261014 复式改造 L5）：库存金额进总账
+  { code: '1300', name: 'Inventory',           nameZh: '存货',     type: 'ASSET' },
+  { code: '2150', name: 'Goods Received Not Invoiced', nameZh: '已收货未开票', type: 'LIABILITY' },
+  { code: '5100', name: 'Cost of Goods Sold',  nameZh: '销售成本', type: 'EXPENSE' },
+  { code: '5200', name: 'Inventory Loss',      nameZh: '存货损耗', type: 'EXPENSE' },
 ]
 
 // 保持 PrismaClient 类型引用以避免 tsc "unused import" 提示

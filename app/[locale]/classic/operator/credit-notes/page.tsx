@@ -14,6 +14,7 @@ import { creditNoteExportColumns } from '@/lib/export/columns/credit-notes'
 import { useFacets } from '@/lib/use-facets'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
+import CreditNoteAllocations from '@/components/classic/CreditNoteAllocations'
 
 type CnStatus = 'DRAFT' | 'CONFIRMED' | 'SETTLED' | 'CANCELLED'
 
@@ -33,6 +34,8 @@ interface CreditNote {
   customerName: string
   creditDate: string
   totalIncTax: number
+  /** 剩余可抵扣/退款（20261014 L1） */
+  amountRemaining?: number
   status: CnStatus
   notes?: string | null
   lines: CreditNoteLine[]
@@ -215,6 +218,7 @@ export default function CreditNotesPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{isEn ? 'Customer' : '客户'}</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Status' : '状态'}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Amount (Inc. Tax)' : '含税金额'}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">{isEn ? 'Remaining' : '剩余可用'}</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Lines' : '行数'}</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">{isEn ? 'Refund Date' : '退款日期'}</th>
               </tr>
@@ -222,7 +226,7 @@ export default function CreditNotesPage() {
             <tbody className="divide-y divide-gray-100">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-gray-400">
+                  <td colSpan={7} className="text-center py-12 text-gray-400">
                     {isEn
                       ? 'No credit notes · approve returns on the Returns page, then click "Generate from Returns"'
                       : '暂无信用票 · 在退换货页批准退货后,点击「从退货生成」'}
@@ -239,6 +243,9 @@ export default function CreditNotesPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-900">€{Number(cn.totalIncTax).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">
+                    {['CONFIRMED', 'SETTLED'].includes(cn.status) && cn.amountRemaining != null ? `€${Number(cn.amountRemaining).toFixed(2)}` : '—'}
+                  </td>
                   <td className="px-4 py-3 text-center text-gray-600">{cn.lines.length}</td>
                   <td className="px-4 py-3 text-center text-xs text-gray-500">
                     {new Date(cn.creditDate).toLocaleDateString('en-GB')}
@@ -302,6 +309,17 @@ export default function CreditNotesPage() {
                 </div>
 
                 {detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes' : '备注'}：{detail.notes}</p>}
+
+                <CreditNoteAllocations
+                  key={detail.id}
+                  creditNoteId={detail.id}
+                  isEn={isEn}
+                  onChanged={() => {
+                    load()
+                    // 抵扣用完会自动变「已结算」，弹窗里的状态徽标跟着刷新
+                    apiGet<CreditNote>(`/api/credit-notes/${detail.id}`).then(d => setDetail(cur => cur && cur.id === d.id ? { ...cur, status: d.status } : cur)).catch(() => {})
+                  }}
+                />
               </div>
 
               <DialogFooter className="gap-2">
@@ -315,7 +333,6 @@ export default function CreditNotesPage() {
                 {detail.status === 'CONFIRMED' && (
                   <>
                     <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', '已作废', 'Cancelled')}>{isEn ? 'Cancel' : '作废'}</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'SETTLED', '已结算', 'Settled')}>{isEn ? 'Mark Settled' : '标记已结算'}</Button>
                   </>
                 )}
               </DialogFooter>

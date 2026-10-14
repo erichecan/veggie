@@ -6,6 +6,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { postPaymentToJournal } from '@/lib/accounting'
 import { recordPrepaymentReceived } from '@/lib/prepayments'
 import { toNum, round2 } from '@/lib/decimal-helpers'
+import { recomputeInvoiceBalance } from '@/lib/finance/invoice-balance'
 
 /**
  * /api/payments — 发票分笔收款 / 客户预收款登记
@@ -89,17 +90,19 @@ export async function POST(req: Request) {
       if (!invoiceId) return NextResponse.json({ error: 'invoiceId 必填' }, { status: 400 })
 
       const result = await prisma.$transaction(async tx => {
+        // 行锁：同一张发票的并发收款排队，否则都读到同一个未付额，超额校验会同时通过
+        await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${invoiceId} FOR UPDATE`
         const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } })
         if (!invoice) throw Object.assign(new Error('发票不存在'), { status: 404 })
         if (!['POSTED', 'PAID'].includes(String(invoice.status))) {
           throw Object.assign(new Error('仅已确认(POSTED)的发票可登记收款'), { status: 400 })
         }
 
-        const total = toNum(invoice.totalIncTax)
-        const alreadyPaid = toNum(invoice.amountPaid)
-        if (alreadyPaid + amount > total + 0.005) {
+        // 超额按「未付」判断：未付 = 总额 − 已收 − 贷记单抵扣（20261014 L1 起贷记单也会减未付）
+        const due = toNum(invoice.amountDue)
+        if (amount > due + 0.005) {
           throw Object.assign(
-            new Error(`收款超额:已付 €${alreadyPaid.toFixed(2)} + 本笔 €${amount.toFixed(2)} > 总额 €${total.toFixed(2)}`),
+            new Error(`收款超额:未付 €${due.toFixed(2)}，本笔 €${amount.toFixed(2)}`),
             { status: 400 },
           )
         }
@@ -116,19 +119,8 @@ export async function POST(req: Request) {
           },
         })
 
-        const newPaid = round2(alreadyPaid + amount)
-        const newDue = round2(total - newPaid)
-        const fullyPaid = newDue <= 0.005
-        const invoiceAfter = await tx.invoice.update({
-          where: { id: invoiceId },
-          data: {
-            amountPaid: newPaid,
-            amountDue: Math.max(0, newDue),
-            ...(fullyPaid
-              ? { status: 'PAID', paidAt: new Date().toISOString() }
-              : {}),
-          },
-        })
+        // 余额从明细重算（Payment + 贷记单抵扣），不在这里自己加减
+        const invoiceAfter = await recomputeInvoiceBalance(tx, invoiceId)
         // SSOT: 生成收款凭证 Dr Bank / Cr AR(此前缺失,致总账 AR 永久虚高 — P1-6)
         const entry = await postPaymentToJournal(
           tx as never,

@@ -1,0 +1,237 @@
+/**
+ * 账本核对（每日）—— 20261014（复式改造 L2，docs/20261014-double-entry-ledger-plan.md）
+ * ============================================================================
+ * 原则：余额 = Σ 明细。这里把每一种缓存余额按明细重算一遍，和存着的值比对。
+ * **只报告、不修复**——差异要人看过才知道该改哪边（是明细漏记，还是缓存被别处写坏）。
+ *
+ * severity:
+ *   - error：新系统里本不该出现的不一致（缓存 ≠ 明细、借贷不平……），有一条就算核对失败
+ *   - info ：口径/历史差异，给人看量级，不算失败（如 Odoo 导入的历史发票没有总账凭证，
+ *            总账应收和发票子账永远差一截）
+ *
+ * 触发：
+ *   - 定时：/api/cron/backup-database 备份完顺带跑（droplet 上已有每日 timer，不另加定时器）；
+ *     也可以单独 POST /api/cron/ledger-check（x-cron-secret）
+ *   - 手动：财务「账本核对」页「立即核对」
+ * 纯 SQL、只读；跑完写一行 LedgerCheckRun。
+ */
+import { prisma } from '@/lib/db'
+
+export type LedgerSeverity = 'error' | 'info'
+
+export interface LedgerCheckResult {
+  key: string
+  label: string
+  labelEn: string
+  severity: LedgerSeverity
+  /** 不一致的条数（info 类为涉及条数） */
+  diffCount: number
+  /** 涉及金额/数量合计（可选） */
+  amount?: number
+  /** 附加的汇总数字（如总账余额 vs 子账余额） */
+  figures?: Record<string, number>
+  /** 最多 20 条样本，供人点进去查 */
+  samples: Array<Record<string, unknown>>
+  note?: string
+}
+
+const SAMPLE = 20
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>
+const num = (v: unknown) => (v == null ? 0 : Number(v))
+
+async function q(sql: string): Promise<Row[]> {
+  return (await prisma.$queryRawUnsafe(sql)) as Row[]
+}
+
+function cleanSamples(rows: Row[]): Array<Record<string, unknown>> {
+  return rows.slice(0, SAMPLE).map(r => Object.fromEntries(
+    Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v && typeof v === 'object' && 'toNumber' in v ? Number(v) : v]),
+  ))
+}
+
+type Check = () => Promise<LedgerCheckResult>
+
+const invoiceBalance: Check = async () => {
+  const rows = await q(`
+    WITH p AS (SELECT "invoiceId", SUM(amount) s FROM "Payment" WHERE "invoiceId" IS NOT NULL GROUP BY 1),
+         a AS (SELECT "invoiceId", SUM(amount) s FROM "CreditNoteAllocation" WHERE kind = 'INVOICE' AND "invoiceId" IS NOT NULL GROUP BY 1)
+    SELECT i.id, i.name, i.status::text AS status, i."totalIncTax"::float AS total,
+           i."amountPaid"::float AS cached_paid, (i."openingPaid" + COALESCE(p.s, 0))::float AS ledger_paid,
+           i."amountCredited"::float AS cached_credited, (i."openingCredited" + COALESCE(a.s, 0))::float AS ledger_credited,
+           i."amountDue"::float AS cached_due,
+           GREATEST(0, i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0))::float AS ledger_due
+    FROM "Invoice" i LEFT JOIN p ON p."invoiceId" = i.id LEFT JOIN a ON a."invoiceId" = i.id
+    WHERE i.status IN ('POSTED', 'PAID') AND (
+      ABS(i."amountPaid" - i."openingPaid" - COALESCE(p.s, 0)) > 0.005
+      OR ABS(i."amountCredited" - i."openingCredited" - COALESCE(a.s, 0)) > 0.005
+      OR ABS(i."amountDue" - GREATEST(0, i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0))) > 0.005
+      OR (i.status = 'PAID' AND i."totalIncTax" - i."openingPaid" - COALESCE(p.s, 0) - i."openingCredited" - COALESCE(a.s, 0) > 0.005)
+    )
+    ORDER BY i."createdAt" DESC`)
+  return {
+    key: 'invoice_balance', label: '发票余额 = 期初 + 收款 + 贷记单抵扣', labelEn: 'Invoice balance = opening + payments + credit notes',
+    severity: 'error', diffCount: rows.length,
+    amount: rows.reduce((s, r) => s + Math.abs(num(r.cached_due) - num(r.ledger_due)), 0),
+    samples: cleanSamples(rows),
+  }
+}
+
+const vendorBillBalance: Check = async () => {
+  const rows = await q(`
+    WITH p AS (SELECT "vendorBillId", SUM(amount) s FROM "VendorPayment" GROUP BY 1)
+    SELECT b.id, b.name, b.status::text AS status, b."totalIncTax"::float AS total,
+           b."amountPaid"::float AS cached_paid, COALESCE(p.s, 0)::float AS ledger_paid,
+           b."amountDue"::float AS cached_due, GREATEST(0, b."totalIncTax" - COALESCE(p.s, 0))::float AS ledger_due
+    FROM "VendorBill" b LEFT JOIN p ON p."vendorBillId" = b.id
+    WHERE b.status IN ('POSTED', 'PAID') AND (
+      ABS(b."amountPaid" - COALESCE(p.s, 0)) > 0.005
+      OR ABS(b."amountDue" - GREATEST(0, b."totalIncTax" - COALESCE(p.s, 0))) > 0.005
+    )
+    ORDER BY b."createdAt" DESC`)
+  return {
+    key: 'vendor_bill_balance', label: '供应商账单余额 = Σ 付款流水', labelEn: 'Vendor bill balance = Σ vendor payments',
+    severity: 'error', diffCount: rows.length,
+    amount: rows.reduce((s, r) => s + Math.abs(num(r.cached_due) - num(r.ledger_due)), 0),
+    samples: cleanSamples(rows),
+  }
+}
+
+const creditNoteBounds: Check = async () => {
+  const rows = await q(`
+    SELECT c.id, c.name, c.status, c."totalIncTax"::float AS total, COALESCE(SUM(a.amount), 0)::float AS used
+    FROM "CreditNote" c JOIN "CreditNoteAllocation" a ON a."creditNoteId" = c.id
+    GROUP BY c.id
+    HAVING COALESCE(SUM(a.amount), 0) > c."totalIncTax" + 0.005 OR COALESCE(SUM(a.amount), 0) < -0.005
+       OR c.status NOT IN ('CONFIRMED', 'SETTLED')`)
+  return {
+    key: 'credit_note_bounds', label: '贷记单抵扣/退款不超额、只出现在已确认的贷记单上', labelEn: 'Credit note usage within total, only on confirmed notes',
+    severity: 'error', diffCount: rows.length, samples: cleanSamples(rows),
+  }
+}
+
+const journalBalanced: Check = async () => {
+  const rows = await q(`
+    SELECT e.id, e.name, e."sourceType", e."totalDebit"::float AS head_debit, e."totalCredit"::float AS head_credit,
+           COALESCE(SUM(l.debit), 0)::float AS line_debit, COALESCE(SUM(l.credit), 0)::float AS line_credit
+    FROM "JournalEntry" e LEFT JOIN "JournalEntryLine" l ON l."entryId" = e.id
+    WHERE e.status = 'POSTED'
+    GROUP BY e.id
+    HAVING ABS(COALESCE(SUM(l.debit), 0) - COALESCE(SUM(l.credit), 0)) > 0.005
+        OR ABS(COALESCE(SUM(l.debit), 0) - e."totalDebit") > 0.005`)
+  return {
+    key: 'journal_balanced', label: '每张凭证借贷平衡', labelEn: 'Every journal entry balances',
+    severity: 'error', diffCount: rows.length, samples: cleanSamples(rows),
+  }
+}
+
+const missingAccounts: Check = async () => {
+  const need = ['1100', '1110', '1200', '1300', '2100', '2150', '2200', '2300', '4000', '5000', '5100', '5200']
+  const rows = await q(`SELECT code FROM "Account" WHERE code IN (${need.map(c => `'${c}'`).join(',')})`)
+  const have = new Set(rows.map(r => String(r.code)))
+  const missing = need.filter(c => !have.has(c))
+  return {
+    key: 'accounts_present', label: '自动记账需要的科目都存在', labelEn: 'Accounts required by auto-posting exist',
+    severity: 'error', diffCount: missing.length, samples: missing.map(code => ({ code })),
+    note: '缺科目时自动凭证会被跳过，总账就会漏记',
+  }
+}
+
+const arGlVsSubledger: Check = async () => {
+  const [gl] = await q(`
+    SELECT COALESCE(SUM(l.debit - l.credit), 0)::float AS bal
+    FROM "JournalEntryLine" l JOIN "JournalEntry" e ON e.id = l."entryId" JOIN "Account" a ON a.id = l."accountId"
+    WHERE a.code = '1100' AND e.status = 'POSTED'`)
+  const [sub] = await q(`SELECT COALESCE(SUM("amountDue"), 0)::float AS due FROM "Invoice" WHERE status = 'POSTED'`)
+  const [cn] = await q(`
+    SELECT COALESCE(SUM(c."totalIncTax" - COALESCE(a.s, 0)), 0)::float AS unapplied
+    FROM "CreditNote" c LEFT JOIN (SELECT "creditNoteId", SUM(amount) s FROM "CreditNoteAllocation" GROUP BY 1) a ON a."creditNoteId" = c.id
+    WHERE c.status IN ('CONFIRMED', 'SETTLED')`)
+  const subledger = num(sub?.due) - num(cn?.unapplied)
+  const diff = Math.round((num(gl?.bal) - subledger) * 100) / 100
+  return {
+    key: 'ar_gl_vs_subledger', label: '总账应收(1100) vs 发票未付 − 未用贷项', labelEn: 'GL receivable (1100) vs open invoices − unapplied credits',
+    severity: 'info', diffCount: Math.abs(diff) > 0.005 ? 1 : 0, amount: diff,
+    figures: { glReceivable: num(gl?.bal), openInvoices: num(sub?.due), unappliedCredits: num(cn?.unapplied), difference: diff },
+    samples: [],
+    note: 'Odoo 导入的历史发票没有总账凭证，这一项会长期有差额；看的是差额是否随新业务继续变大',
+  }
+}
+
+const unappliedCreditNotes: Check = async () => {
+  const rows = await q(`
+    SELECT c.id, c.name, c."customerName", c.status, c."totalIncTax"::float AS total,
+           (c."totalIncTax" - COALESCE(a.s, 0))::float AS remaining, c."creditDate"
+    FROM "CreditNote" c LEFT JOIN (SELECT "creditNoteId", SUM(amount) s FROM "CreditNoteAllocation" GROUP BY 1) a ON a."creditNoteId" = c.id
+    WHERE c.status IN ('CONFIRMED', 'SETTLED') AND c."totalIncTax" - COALESCE(a.s, 0) > 0.005
+    ORDER BY c."creditDate"`)
+  return {
+    key: 'unapplied_credit_notes', label: '已确认但未抵扣/退款的贷记单', labelEn: 'Confirmed credit notes not yet applied or refunded',
+    severity: 'info', diffCount: rows.length, amount: rows.reduce((s, r) => s + num(r.remaining), 0),
+    samples: cleanSamples(rows),
+    note: '其中状态为 SETTLED 的是改造前手工「标记已结算」、去向没有记录的；请在贷记单页把它们抵扣到发票或登记退款',
+  }
+}
+
+const paymentsWithoutJournal: Check = async () => {
+  const rows = await q(`
+    SELECT p.id, p."invoiceId", p."customerId", p.amount::float AS amount, p.source, p.method, p."paidAt", p.note
+    FROM "Payment" p
+    WHERE NOT EXISTS (SELECT 1 FROM "JournalEntry" e WHERE e."sourceId" = p.id)
+    ORDER BY p."paidAt" DESC`)
+  return {
+    key: 'payments_without_journal', label: '没有总账凭证的收款', labelEn: 'Payments without a journal entry',
+    severity: 'info', diffCount: rows.length, amount: rows.reduce((s, r) => s + num(r.amount), 0),
+    samples: cleanSamples(rows),
+    note: '20261014 之前司机收款核销不出凭证；之后新增的收款若出现在这里说明还有路径漏记',
+  }
+}
+
+/** 其它模块（库存，L3）在这里登记自己的检查项 */
+const EXTRA_CHECKS: Check[] = []
+export function registerLedgerCheck(c: Check) { EXTRA_CHECKS.push(c) }
+
+export const FINANCE_CHECKS: Check[] = [
+  invoiceBalance, vendorBillBalance, creditNoteBounds, journalBalanced, missingAccounts,
+  arGlVsSubledger, unappliedCreditNotes, paymentsWithoutJournal,
+]
+
+export async function runLedgerChecks(): Promise<LedgerCheckResult[]> {
+  const out: LedgerCheckResult[] = []
+  for (const c of [...FINANCE_CHECKS, ...EXTRA_CHECKS]) {
+    try {
+      out.push(await c())
+    } catch (e) {
+      out.push({
+        key: c.name || 'unknown', label: '检查执行失败', labelEn: 'Check failed to run', severity: 'error',
+        diffCount: 1, samples: [{ error: e instanceof Error ? e.message : String(e) }],
+      })
+    }
+  }
+  return out
+}
+
+export function ledgerOk(results: LedgerCheckResult[]): boolean {
+  return results.every(r => r.severity !== 'error' || r.diffCount === 0)
+}
+
+/** 跑一遍、存一行 LedgerCheckRun；失败项给老板/财务发站内通知 */
+export async function runAndRecordLedgerCheck(trigger: 'AUTO' | 'MANUAL', createdBy?: string | null) {
+  const t0 = Date.now()
+  const results = await runLedgerChecks()
+  const ok = ledgerOk(results)
+  const run = await prisma.ledgerCheckRun.create({
+    data: { trigger, ok, results: results as never, durationMs: Date.now() - t0, createdBy: createdBy ?? null },
+  })
+  if (!ok) {
+    const failed = results.filter(r => r.severity === 'error' && r.diffCount > 0)
+    const { notifyRole } = await import('@/lib/notify')
+    await notifyRole(['BOSS', 'FINANCE'], {
+      type: 'ledger_check_failed',
+      title: '账本核对发现不一致',
+      body: failed.map(f => `${f.label}：${f.diffCount} 条`).join('；'),
+      data: { runId: run.id },
+    })
+  }
+  return run
+}
