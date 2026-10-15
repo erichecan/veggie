@@ -243,6 +243,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/vendor-bills/*', methods: ['PUT'], permission: 'finance.vendor_bill.update' },
   { pattern: '/api/accounts/**', methods: R, permission: 'finance.account.read' },
   { pattern: '/api/accounts/**', methods: W, permission: 'finance.account.manage' },
+  { pattern: '/api/finance/ledger-check/orders-without-stock', methods: ['POST'], permission: 'stock.move.create', note: '统一补扣会改库存（20261015），与手工调整库存同权限' },
   { pattern: '/api/finance/**', permission: 'finance.account.read' },
 
   // ── 基础档案 ────────────────────────────────────────────────────────────

@@ -70,6 +70,26 @@ export default function LedgerCheckPage() {
 
   useEffect(() => { load() }, [load])
 
+  // 统一补扣「已确认但从未占用库存」的订单（客户 20261015 确认），补完自动重新核对
+  async function fixOrdersWithoutStock(count: number) {
+    if (!window.confirm(isEn
+      ? `Deduct stock for ${count} confirmed order(s) that never took stock? On hand of those products will drop accordingly.`
+      : `为 ${count} 张已确认但从未占用库存的订单补扣库存？相关商品的在手量会相应减少（与确认订单时扣的一样）。`)) return
+    setBusy(true)
+    try {
+      const r = await apiPost<{ total: number; fixed: Array<{ code: string }>; failed: Array<{ code: string; error: string }> }>(
+        '/api/finance/ledger-check/orders-without-stock', {})
+      if (r.failed.length) toast.error(isEn ? `${r.failed.length} failed: ${r.failed.map(f => `${f.code} ${f.error}`).join('; ')}` : `${r.failed.length} 张失败：${r.failed.map(f => `${f.code} ${f.error}`).join('；')}`)
+      toast.success(isEn ? `Deducted stock for ${r.fixed.length} order(s)` : `已为 ${r.fixed.length} 张订单补扣库存`)
+      await apiPost('/api/finance/ledger-check', {})
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed' : '补扣失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function runNow() {
     setBusy(true)
     try {
@@ -139,6 +159,12 @@ export default function LedgerCheckPage() {
                     </div>
                   )}
                   {r.note && <p className="mt-1 text-xs text-gray-500">{r.note}</p>}
+                  {r.key === 'orders_without_stock' && r.diffCount > 0 && (
+                    <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="fix-orders-without-stock"
+                      onClick={() => fixOrdersWithoutStock(r.diffCount)}>
+                      {isEn ? `Deduct stock for all (${r.diffCount})` : `统一补扣库存（${r.diffCount} 张）`}
+                    </Button>
+                  )}
                   {open[r.key] && r.samples.length > 0 && (
                     <div className="mt-2 overflow-x-auto">
                       <table className="text-xs">

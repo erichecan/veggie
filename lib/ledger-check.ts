@@ -242,19 +242,52 @@ const locationBalances: Check = async () => {
   }
 }
 
-const ordersWithoutStock: Check = async () => {
-  const rows = await q(`
+/** 已确认（未送达）却从未占用库存的订单：改造前 Place Order 直接确认、没走扣减的单 */
+export async function findOrdersWithoutStock(): Promise<Row[]> {
+  return q(`
     SELECT o.id, o.code, o."restaurantName", o.status::text AS status, o."confirmationDate"
     FROM "Order" o
     WHERE o.status IN ('CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY')
       AND EXISTS (SELECT 1 FROM "OrderLine" l JOIN "Product" p ON p.id = l."productId" WHERE l."orderId" = o.id AND p.type = 'PRODUCT' AND l."orderedQty" > 0)
       AND NOT EXISTS (SELECT 1 FROM "StockMove" m WHERE m."sourceId" = o.id AND m."sourceType" IN ('ORDER', 'SO'))
     ORDER BY o."confirmationDate" DESC NULLS LAST`)
+}
+
+const ordersWithoutStock: Check = async () => {
+  const rows = await findOrdersWithoutStock()
   return {
     key: 'orders_without_stock', label: '已确认但从未占用库存的订单', labelEn: 'Confirmed orders that never took stock',
     severity: 'info', diffCount: rows.length, samples: cleanSamples(rows),
-    note: '20261014 之前 Place Order 页「确认」直接建成 CONFIRMED、不扣库存；这些单之后改行/取消时会按「目标 − 已拿」自动补齐',
+    note: '20261014 之前 Place Order 页「确认」直接建成 CONFIRMED、不扣库存。可点「统一补扣」按订单行一次补占库存（与确认订单同一套逻辑，可重复点，已补过的不会再扣）',
   }
+}
+
+/**
+ * 统一补扣（客户 20261015 确认）：对上面列出的每张单跑一次 syncOrderStock，
+ * 与确认订单同一套逻辑（单位换算、FEFO 扣批次、出库凭证）。每张单一个事务，单张失败不影响其它。
+ * 幂等：补过的单流水里已有记录，不会再出现在名单里。
+ */
+export async function fixOrdersWithoutStock(actor: { userId: string; name?: string | null }) {
+  const { syncOrderStock } = await import('@/lib/order-stock')
+  const rows = await findOrdersWithoutStock()
+  const fixed: Array<{ code: string; products: number }> = []
+  const failed: Array<{ code: string; error: string }> = []
+  const now = new Date()
+  for (const r of rows) {
+    const code = String(r.code ?? r.id)
+    try {
+      const res = await prisma.$transaction(tx => syncOrderStock(tx, String(r.id), {
+        reason: '补扣：改造前确认时未占用库存（20261015 统一补扣）',
+        movedAt: now,
+        userId: actor.userId,
+        createdBy: actor.name ?? null,
+      }), { maxWait: 10000, timeout: 60000 })
+      fixed.push({ code, products: res.changed.length })
+    } catch (e) {
+      failed.push({ code, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return { total: rows.length, fixed, failed }
 }
 
 const inventoryValue: Check = async () => {
