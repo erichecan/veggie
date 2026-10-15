@@ -7,6 +7,7 @@ import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import { reconcileSignatures, describeIssues } from '@/lib/trip-signature'
 import { driverRowScope } from '@/lib/row-scope'
+import { syncOrderStock } from '@/lib/order-stock'
 
 const TRIP_TRACKED_FIELDS = [
   'name', 'status', 'driverId', 'driverName', 'departTime', 'timeSlot',
@@ -128,11 +129,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             `UPDATE "OrderLine" SET "deliveredQty" = "orderedQty", "updatedAt" = NOW() WHERE "orderId" IN (${orderIds.map((_, i) => `$${i + 1}`).join(',')})`,
             ...orderIds,
           )
+          // 还没出库就直接完成的单（跳过了确认出发），完成这一刻出库
+          const shippingIds = (await prisma.order.findMany({
+            where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
+            select: { id: true },
+          })).map(o => o.id)
           // 同时把订单状态推进到 COMPLETED（行程完成即代表已交货）
           await prismaAny.order.updateMany({
             where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'] } },
             data: { status: 'COMPLETED' },
           }).catch((e: unknown) => console.error('[trip→order status]', e))
+          for (const oid of shippingIds) {
+            await prisma.$transaction(tx => syncOrderStock(tx, oid, {
+              shipping: true, reason: '行程完成出库', userId: user.userId, createdBy: user.name ?? user.email,
+            }), { maxWait: 10000, timeout: 60000 })
+          }
           // 完成即自动生成 DRAFT 发票(幂等),供 finance 应收口径用
           for (const oid of orderIds) {
             await createDraftInvoiceForOrder(prismaAny, oid).catch((e: unknown) => console.error('[auto draft invoice]', e))

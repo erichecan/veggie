@@ -395,8 +395,8 @@ export async function POST(req: Request) {
               },
             })
 
-            // 报价单（PENDING）不占库存；直接建成 CONFIRMED 的单在同一事务里按「目标 − 已拿」占用库存，
-            // 与 PUT 确认走同一个函数（lib/order-stock.ts），不再出现「确认了却没扣库存」
+            // 与 PUT 确认走同一个函数（lib/order-stock.ts）。20261015 起确认不扣在手量，货离仓才扣
+            // （与采购对称）；这里调用保证两条确认路径行为完全一致
             if (orderCreated.status === 'CONFIRMED') {
               await syncOrderStock(tx, orderCreated.id, {
                 movedAt: orderCreated.deliveryDate ?? now, userId: user.userId, createdBy: user.name ?? user.email,

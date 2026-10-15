@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { createTripFromWave } from '@/lib/trip-from-wave'
 import { toDayKey } from '@/lib/analytics/metrics'
+import { syncOrderStock } from '@/lib/order-stock'
 
 export type DispatchWaveResult =
   | { ok: true; waveId: string; updatedCount: number; tripId: string | null; deliveryDate: Date }
@@ -36,7 +37,7 @@ export async function dispatchWave(waveId: string, fallbackDateStr?: string): Pr
   if (!deliveryDate) return { ok: false, waveId, reason: '缺少排程日期，无法确定交货日期' }
 
   try {
-    const { updated, trip } = await prisma.$transaction(async (tx) => {
+    const { updated, trip, shippingIds } = await prisma.$transaction(async (tx) => {
       // 用「条件 updateMany」当互斥锁，而不是先查一次再单独 update：同一波次被并发调用两次
       // （比如22点 cron 撞上运营手工点「确认全部出发」）时，Postgres 对同一行的两个并发
       // UPDATE 会让后到者阻塞到先到者提交，再按 WHERE dispatchedAt IS NULL 重新核对——
@@ -53,8 +54,13 @@ export async function dispatchWave(waveId: string, fallbackDateStr?: string): Pr
       })
       if (lockUpd.count === 0) throw new DispatchRaceLostError()
 
-      const upd = await tx.order.updateMany({
+      // 这次真正从「待出库」变成「配送中」的单 —— 出发即货离仓，下面按订单行出库
+      const shippingIds = (await tx.order.findMany({
         where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
+        select: { id: true },
+      })).map(o => o.id)
+      const upd = await tx.order.updateMany({
+        where: { id: { in: shippingIds } },
         data: { deliveryDate, status: 'IN_DELIVERY' },
       })
       await tx.deliverySlip.updateMany({
@@ -62,8 +68,10 @@ export async function dispatchWave(waveId: string, fallbackDateStr?: string): Pr
         data: { deliveryDate },
       })
       const t = await createTripFromWave(tx as never, waveId)
-      return { updated: upd, trip: t }
+      return { updated: upd, trip: t, shippingIds }
     })
+    // 确认出发 = 货离仓：On Hand 在这一刻减少（与采购「收货才加 On Hand」对称，20261015）
+    await shipOrdersStock(shippingIds, '确认出发出库')
 
     return { ok: true, waveId, updatedCount: updated.count, tripId: trip?.id ?? null, deliveryDate }
   } catch (e) {
@@ -85,4 +93,13 @@ export async function dispatchWave(waveId: string, fallbackDateStr?: string): Pr
  */
 export function businessTodayDateOnly(): string {
   return toDayKey(new Date())
+}
+
+/** 货离仓（确认出发 / 完成）：这些单按订单行从仓库出库，与采购收货对称（lib/order-stock.ts，20261015） */
+async function shipOrdersStock(ids: string[], reason: string, actor?: { userId?: string | null; name?: string | null }) {
+  for (const oid of ids) {
+    await prisma.$transaction(tx => syncOrderStock(tx, oid, {
+      shipping: true, reason, userId: actor?.userId ?? null, createdBy: actor?.name ?? null,
+    }), { maxWait: 10000, timeout: 60000 })
+  }
 }

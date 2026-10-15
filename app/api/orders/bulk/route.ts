@@ -240,6 +240,12 @@ export async function POST(req: Request) {
           where: { id: { in: confirmedIds } },
           data: { status: 'IN_DELIVERY' },
         })
+        // 开始配送 = 货离仓：按订单行出库（lib/order-stock.ts，20261015）
+        for (const ordId of confirmedIds) {
+          await prisma.$transaction(tx => syncOrderStock(tx, ordId, {
+            shipping: true, reason: '批量开始配送出库', userId: user.userId, createdBy: user.name ?? user.email,
+          }), { maxWait: 10000, timeout: 60000 })
+        }
         detail = `批量开始配送 ${confirmedIds.length} 单`
         affectedOrders = confirmedOrders.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
 

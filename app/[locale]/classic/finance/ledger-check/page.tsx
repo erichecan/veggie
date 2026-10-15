@@ -73,8 +73,8 @@ export default function LedgerCheckPage() {
   // 统一补扣「已确认但从未占用库存」的订单（客户 20261015 确认），补完自动重新核对
   async function fixOrdersWithoutStock(count: number) {
     if (!window.confirm(isEn
-      ? `Deduct stock for ${count} confirmed order(s) that never took stock? On hand of those products will drop accordingly.`
-      : `为 ${count} 张已确认但从未占用库存的订单补扣库存？相关商品的在手量会相应减少（与确认订单时扣的一样）。`)) return
+      ? `Deduct stock for ${count} order(s) in delivery that never took stock? On hand of those products will drop accordingly.`
+      : `为 ${count} 张配送中但从未扣库存的订单补扣库存？相关商品的在手量会相应减少（与确认出发时扣的一样）。`)) return
     setBusy(true)
     try {
       const r = await apiPost<{ total: number; fixed: Array<{ code: string }>; failed: Array<{ code: string; error: string }> }>(

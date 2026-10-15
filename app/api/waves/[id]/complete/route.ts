@@ -6,6 +6,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { createDraftInvoiceForOrder, type InvoiceTx } from '@/lib/invoice-from-order'
 import { recalcOrderCommission } from '@/lib/commission'
+import { syncOrderStock } from '@/lib/order-stock'
 
 /** 波次完成时，处于这些在途状态的订单才推进到 COMPLETED（与 trips/[id]/route.ts 的 Trip 完成回写同一口径） */
 const ORDER_COMPLETABLE_STATUSES = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'] as const
@@ -35,10 +36,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           UPDATE "OrderLine" SET "deliveredQty" = "orderedQty", "updatedAt" = NOW()
           WHERE "orderId" IN (${Prisma.join(orderIds)})
         `
+        // 还没出库就直接完成的单（跳过了确认出发），完成这一刻出库（lib/order-stock.ts，20261015）
+        const shippingIds = (await prisma.order.findMany({
+          where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
+          select: { id: true },
+        })).map(o => o.id)
         await prisma.order.updateMany({
           where: { id: { in: orderIds }, status: { in: [...ORDER_COMPLETABLE_STATUSES] } },
           data: { status: 'COMPLETED' },
         })
+        for (const oid of shippingIds) {
+          await prisma.$transaction(tx => syncOrderStock(tx, oid, {
+            shipping: true, reason: '波次完成出库', userId: user.userId, createdBy: user.name ?? user.email,
+          }), { maxWait: 10000, timeout: 60000 })
+        }
         // createDraftInvoiceForOrder 的 InvoiceTx 是精简版结构类型，order.findUnique 那部分
         // 对不上真实 PrismaClient 的泛型重载（include/select 决定返回形状），只能在这断言，
         // 不是绕过类型检查——上面已用方法写法让其余方法免了这层断言（见该文件顶部注释）。
