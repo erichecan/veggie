@@ -21,6 +21,7 @@ import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
 import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
 import { readPurchaseNavParams, DEFAULT_PURCHASE_NAV_PARAMS } from '@/lib/purchase-nav-list'
+import StockMovesTable from '@/components/classic/StockMovesTable'
 
 async function openPurchaseOrderPdf(poId: string, isEn: boolean) {
   // JWT 存在 localStorage，直接 window.open API 路由不会带 Authorization 头会 401，
@@ -1621,12 +1622,22 @@ export default function PurchaseDetailPage() {
       {showReceiptsModal && po && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4"
           onClick={() => setShowReceiptsModal(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 space-y-4"
-            onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[85vh] overflow-y-auto p-6 space-y-4"
+            onClick={e => e.stopPropagation()} data-testid="po-receipts-modal">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Receipts & Returns' : '收货/退货记录'} · {po.name}</h2>
               <button onClick={() => setShowReceiptsModal(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none"
                 aria-label={isEn ? 'Close' : '关闭'}>×</button>
+            </div>
+
+            {/* 库存流水（20261014 复式改造 L3）：这张 PO 收货/退货在库存总账里的每一笔「从 → 到」 */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">{isEn ? 'Stock Moves' : '库存流水'}</h3>
+              <StockMovesTable
+                isEn={isEn}
+                filter={{ sourceId: po.id, sourceTypes: ['PURCHASE_RECEIVE', 'PURCHASE_RETURN'] }}
+                emptyText={isEn ? 'Nothing received into stock yet' : '尚未确认收货入库'}
+              />
             </div>
 
             <div>

@@ -3,19 +3,70 @@ import { prisma } from '@/lib/db'
 import { writeLog } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
+import { postStockMove, LOC, type StockMoveKind } from '@/lib/stock-ledger'
 
+/**
+ * GET /api/stock-moves —— 库存流水
+ *   不带 paged：保持旧行为，返回数组（?productId=&limit=）
+ *   paged=1（20261014 复式改造 L3「库存流水」页 / 单据上的流水区块）：
+ *     ?sourceId=&sourceTypes=A,B&productId=&lotId=&location=&from=&to=&q=&page=&pageSize=
+ *     返回 { items, total }，每笔带来源/去向库位名称
+ */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const productId = searchParams.get('productId')
-    const limit = Math.min(1000, Math.max(1, parseInt(searchParams.get('limit') ?? '1000', 10)))
-    const moves = await prisma.stockMove.findMany({
-      where: productId ? { productId } : undefined,
-      orderBy: { movedAt: 'desc' },
-      take: limit,
-      include: { lot: { select: { lotNumber: true, bestBefore: true } } },
-    })
-    return NextResponse.json(serializeApi(moves))
+    if (searchParams.get('paged') !== '1') {
+      const limit = Math.min(1000, Math.max(1, parseInt(searchParams.get('limit') ?? '1000', 10)))
+      const moves = await prisma.stockMove.findMany({
+        where: productId ? { productId } : undefined,
+        orderBy: { movedAt: 'desc' },
+        take: limit,
+        include: { lot: { select: { lotNumber: true, bestBefore: true } } },
+      })
+      return NextResponse.json(serializeApi(moves))
+    }
+    const where: Record<string, unknown> = {}
+    const and: Record<string, unknown>[] = []
+    if (productId) where.productId = productId
+    const sourceId = searchParams.get('sourceId')
+    if (sourceId) where.sourceId = sourceId
+    const sourceTypes = (searchParams.get('sourceTypes') ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    if (sourceTypes.length) where.sourceType = { in: sourceTypes }
+    const lotId = searchParams.get('lotId')
+    if (lotId) where.lotId = lotId
+    const type = searchParams.get('type')
+    if (type) where.type = type.toUpperCase()
+    const location = searchParams.get('location')
+    if (location) and.push({ OR: [{ fromLocationId: location }, { toLocationId: location }] })
+    const from = searchParams.get('from'), to = searchParams.get('to')
+    if (from || to) where.movedAt = { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lt: new Date(new Date(to).getTime() + 86400000) } : {}) }
+    const q = searchParams.get('q')?.trim()
+    if (q) and.push({ OR: [{ productName: { contains: q, mode: 'insensitive' } }, { sourceRef: { contains: q, mode: 'insensitive' } }, { note: { contains: q, mode: 'insensitive' } }] })
+    if (and.length) where.AND = and
+    const pageSize = Math.min(500, Math.max(1, parseInt(searchParams.get('pageSize') ?? '80', 10)))
+    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
+    const [items, total] = await Promise.all([
+      prisma.stockMove.findMany({
+        where,
+        orderBy: [{ movedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          lot: { select: { lotNumber: true, bestBefore: true } },
+          fromLocation: { select: { code: true, nameZh: true } },
+          toLocation: { select: { code: true, nameZh: true } },
+        },
+      }),
+      prisma.stockMove.count({ where }),
+    ])
+    const uomIds = [...new Set(items.map(i => i.uomId).filter((v): v is string => !!v))]
+    const uoms = uomIds.length ? await prisma.uom.findMany({ where: { id: { in: uomIds } }, select: { id: true, name: true } }) : []
+    const uomName = new Map(uoms.map(u => [u.id, u.name]))
+    return NextResponse.json(serializeApi({
+      items: items.map(i => ({ ...i, uomName: i.uomId ? uomName.get(i.uomId) ?? null : null })),
+      total,
+    }))
   } catch (error) {
     console.error('[GET /api/stock-moves]', error)
     return NextResponse.json({ error: '获取库存记录失败' }, { status: 500 })
@@ -67,51 +118,30 @@ export async function POST(req: Request) {
         }
       }
 
+      // 入账（lib/stock-ledger.ts，20261014 复式改造 L3）：手工调整一律走「盘点调整」虚拟库位，
+      // 报废走「报废」、退货走「客户」。指定批次则只动那一批；未指定批次的出库按 FEFO 扣批次
+      // （以前不扣批次，Lot.currentQty 与 qtyOnHand 会分叉）。
+      const counter = moveType === 'SCRAP' ? LOC.SCRAP : moveType === 'RETURN' ? LOC.CUSTOMERS : LOC.INVENTORY
+      const kind = (['IN', 'OUT', 'ADJUSTMENT', 'RETURN', 'SCRAP'].includes(moveType) ? moveType : 'ADJUSTMENT') as StockMoveKind
       const move = await p.$transaction(async (tx: typeof p) => {
-        const created = await tx.stockMove.create({
-          data: {
-            productId,
-            productName: productName || product.name || '未知商品',
-            qty,
-            note,
-            type: moveType,
-            movedAt,
-            lotId,
-            sourceType,
-            sourceId,
-            sourceRef,
-          },
+        const moves = await postStockMove(tx, {
+          productId,
+          productName: productName || product.name || '未知商品',
+          qty: Math.abs(qty),
+          from: qty > 0 ? counter : LOC.STOCK,
+          to: qty > 0 ? LOC.STOCK : counter,
+          type: kind,
+          lot: lotId ? { mode: 'lot', lotId, adjustLot: true } : qty < 0 ? { mode: 'fefo' } : { mode: 'none' },
+          note,
+          movedAt,
+          sourceType: sourceType ?? 'MANUAL',
+          sourceId,
+          sourceRef,
+          userId: user.userId,
+          createdBy: user.name ?? user.email,
         })
-
-        if (isConsumption) {
-          const absQty = Math.abs(qty)
-          const updated = await tx.lot.update({
-            where: { id: lotId },
-            data: { currentQty: { decrement: absQty } },
-          })
-          if (Number(updated.currentQty) <= 0) {
-            await tx.lot.update({
-              where: { id: lotId },
-              data: { status: 'DEPLETED' },
-            })
-          }
-        }
-
-        // 正向入库且指定了 lotId，增加 Lot.currentQty
-        if (lotId && qty > 0) {
-          await tx.lot.update({
-            where: { id: lotId },
-            data: { currentQty: { increment: qty } },
-          })
-        }
-
-        // 同步商品在手库存：move 数量正增负减（手动调整/入库/出库统一在此回写）
-        await tx.product.update({
-          where: { id: productId },
-          data: { qtyOnHand: { increment: qty } },
-        })
-
-        return created
+        if (moves.length === 0) throw Object.assign(new Error('只有实物商品可以调整库存'), { status: 400 })
+        return tx.stockMove.findUnique({ where: { id: moves[0].id } })
       })
 
       // resource 用 'product'+商品id，和商品详情页 ChatterFeed 的查询条件对齐，
@@ -122,6 +152,8 @@ export async function POST(req: Request) {
         detail: `库存调整: ${qty > 0 ? '+' : ''}${qty}${note ? `（${note}）` : ''}` })
       return NextResponse.json(serializeApi(move), { status: 201 })
     } catch (error) {
+      const st = (error as { status?: number })?.status
+      if (st && st >= 400 && st < 500) return NextResponse.json({ error: (error as Error).message }, { status: st })
       console.error('[POST /api/stock-moves]', error)
       return NextResponse.json({ error: '创建库存记录失败' }, { status: 500 })
     }

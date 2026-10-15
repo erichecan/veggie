@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { toNum } from '@/lib/decimal-helpers'
 import { addBusinessDays, businessTodayStart } from '@/lib/analytics/metrics'
+import { untakenOrderDemand } from '@/lib/order-stock'
 
 /**
  * 生鲜冷冻品类·每日备货建议
@@ -112,13 +113,17 @@ export async function generateFreshDailySuggestions(): Promise<FreshSuggestionRo
     inTransitMap.set(l.productId, (inTransitMap.get(l.productId) ?? 0) + remain)
   }
 
+  // ⛔ 20261014 修：已确认订单在确认时已从 qtyOnHand 扣过，need 里只能算**还没扣库存**的那部分，
+  // 否则同一批需求被减两次 → 建议采购量偏大。future 仍按原值展示给采购员看。
+  const untakenFuture = await untakenOrderDemand(prisma, productIds, { deliveryDate: { gte: todayStart } })
+
   const rows: FreshSuggestionRow[] = []
   for (const p of products) {
     const dailyAvg = Number(((outboundMap.get(p.id) ?? 0) / 3).toFixed(3))
     const future = futureMap.get(p.id) ?? 0
     const stock = toNum(p.qtyOnHand)
     const inTransit = inTransitMap.get(p.id) ?? 0
-    const need = dailyAvg + future
+    const need = dailyAvg + (untakenFuture.get(p.id) ?? 0)
     const suggestedQty = Math.max(0, Number((need - stock - inTransit).toFixed(3)))
     if (suggestedQty <= 0) continue
 
@@ -145,7 +150,7 @@ export async function generateFreshDailySuggestions(): Promise<FreshSuggestionRo
       supplierName: bestSupplier?.supplier.name ?? null,
       estimatedCost,
       priority,
-      reason: `近3日日均出货 ${dailyAvg} + 未来已确认订单 ${future} - 现有库存 ${stock} - 在途采购 ${inTransit}`,
+      reason: `近3日日均出货 ${dailyAvg} + 未来已确认订单中尚未扣库存的 ${untakenFuture.get(p.id) ?? 0}（已确认 ${future}，确认时已从库存扣除）- 现有库存 ${stock} - 在途采购 ${inTransit}`,
     })
   }
 

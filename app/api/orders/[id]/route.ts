@@ -6,7 +6,7 @@ import { withAuth, tryAuth, userHasPermission } from '@/lib/auth'
 import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
-import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
+import { syncOrderStock } from '@/lib/order-stock'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, getOrderWaveDriverSlotMap } from '@/lib/wave-assign'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum, round2 } from '@/lib/decimal-helpers'
@@ -258,11 +258,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await assertOrderNotPickLocked(id)
       }
 
-      // ── P0-1: CONFIRMED/WAVE_ASSIGNED 状态下编辑行需要计算库存差额（已扣过库存）──
-      const currentStatus = String(orderBefore.status).toUpperCase()
-      const postConfirmStatuses = new Set(['CONFIRMED', 'WAVE_ASSIGNED'])
-      const needStockDelta = postConfirmStatuses.has(currentStatus) && !newStatus && Array.isArray(data.lines)
-
       // Build update payload — only include defined values (never spread unknown fields)
       const updateData: Record<string, unknown> = {}
       if (newStatus) updateData.status = newStatus
@@ -323,11 +318,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // If lines are provided, replace all: update existing, create new, delete removed
       if (Array.isArray(linesPayload)) {
-        // ── IN_DELIVERY 状态修改行时，需要计算库存差额 ──────────────────────────
-        const isInDelivery = String(orderBefore.status).toUpperCase() === 'IN_DELIVERY'
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const prismaAnyLines = prisma as any
-
         const currentLineMap = new Map(currentLines.map(l => [l.id, l]))
 
         // 多单位销售(20260714)：新增行、以及编辑已有行时切换该行单位，都要校验单位合法——
@@ -507,127 +497,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
         if (txOps.length > 0) {
           await prisma.$transaction(txOps)
-        }
-
-        // ── P0-1 + IN_DELIVERY 库存差额调整 ──────────────────────────────────
-        // CONFIRMED/WAVE_ASSIGNED/IN_DELIVERY 状态下编辑行，均需计算库存差额
-        if (isInDelivery || needStockDelta) {
-          const statusLabel = isInDelivery ? '配货中' : '确认后'
-          // 被删除的行：释放全部库存
-          for (const deletedId of toDelete) {
-            const oldLine = currentLineMap.get(deletedId)
-            if (!oldLine || !oldLine.product || oldLine.product.type !== 'PRODUCT') continue
-            const releaseQty = toNum(oldLine.orderedQty)
-            if (releaseQty <= 0) continue
-            const stockReleaseQty = await toStockQty(prismaAnyLines, oldLine.productId, releaseQty, oldLine.uomId)
-            await prismaAnyLines.product.update({
-              where: { id: oldLine.productId },
-              data: { qtyOnHand: { increment: stockReleaseQty } },
-            })
-            await prismaAnyLines.stockMove.create({
-              data: {
-                productId: oldLine.productId,
-                productName: oldLine.productName ?? '',
-                type: 'IN',
-                qty: stockReleaseQty,
-                movedAt: orderMovedAt,
-                note: `订单 ${orderBefore.code ?? id} ${statusLabel}删除行释放`,
-                sourceType: 'ORDER',
-                sourceId: id,
-                sourceRef: orderBefore.code ?? id,
-              },
-            })
-          }
-
-          // 数量变更的行：计算差额
-          for (const l of linesPayload as Record<string, unknown>[]) {
-            if (!l.id) {
-              // 新增行：额外扣减库存
-              const productId = String(l.productId ?? '')
-              const qty = Number(l.orderedQty)
-              if (!productId || qty <= 0) continue
-              const prod = await prismaAnyLines.product.findUnique({
-                where: { id: productId },
-                select: { type: true },
-              })
-              if (!prod || prod.type !== 'PRODUCT') continue
-              const stockQty = await toStockQty(prismaAnyLines, productId, qty, l.uomId ? String(l.uomId) : undefined)
-              await prismaAnyLines.product.update({
-                where: { id: productId },
-                data: { qtyOnHand: { decrement: stockQty } },
-              })
-              await prismaAnyLines.stockMove.create({
-                data: {
-                  productId,
-                  productName: String(l.productName ?? ''),
-                  type: 'OUT',
-                  qty: -stockQty,
-                  movedAt: orderMovedAt,
-                  note: `订单 ${orderBefore.code ?? id} ${statusLabel}新增行扣减`,
-                  sourceType: 'ORDER',
-                  sourceId: id,
-                  sourceRef: orderBefore.code ?? id,
-                },
-              })
-            } else {
-              // 已有行：检查数量/单位变化(多单位销售 20260714 起，切单位也需要联动库存)
-              const oldLine = currentLineMap.get(String(l.id))
-              if (!oldLine || !oldLine.product || oldLine.product.type !== 'PRODUCT') continue
-              const oldQty = toNum(oldLine.orderedQty)
-              const newQty = Number(l.orderedQty)
-              const newUomId = l.uomId !== undefined ? (l.uomId ? String(l.uomId) : null) : oldLine.uomId
-              if (newQty === oldQty && newUomId === oldLine.uomId) continue
-              // 数量和单位可能同时变化，各自按自己的单位换算成库存记账单位后再相减，
-              // 不能再用"newQty-oldQty"直接相减(两个数字含义的单位可能不同)
-              const oldStockQty = await toStockQty(prismaAnyLines, oldLine.productId, oldQty, oldLine.uomId)
-              const newStockQty = await toStockQty(prismaAnyLines, oldLine.productId, newQty, newUomId)
-              const stockDelta = newStockQty - oldStockQty
-              if (stockDelta === 0) continue
-              const oldLabel = `${oldQty}${oldLine.uomName ?? ''}`
-              const newLabel = `${newQty}${(l.uomName ? String(l.uomName) : oldLine.uomName) ?? ''}`
-
-              if (stockDelta > 0) {
-                // 净消耗增加 → 额外扣减
-                await prismaAnyLines.product.update({
-                  where: { id: oldLine.productId },
-                  data: { qtyOnHand: { decrement: stockDelta } },
-                })
-                await prismaAnyLines.stockMove.create({
-                  data: {
-                    productId: oldLine.productId,
-                    productName: oldLine.productName ?? '',
-                    type: 'OUT',
-                    qty: -stockDelta,
-                    movedAt: orderMovedAt,
-                    note: `订单 ${orderBefore.code ?? id} ${statusLabel}增量 ${oldLabel}→${newLabel}`,
-                    sourceType: 'ORDER',
-                    sourceId: id,
-                    sourceRef: orderBefore.code ?? id,
-                  },
-                })
-              } else {
-                // 净消耗减少 → 释放差额
-                const release = Math.abs(stockDelta)
-                await prismaAnyLines.product.update({
-                  where: { id: oldLine.productId },
-                  data: { qtyOnHand: { increment: release } },
-                })
-                await prismaAnyLines.stockMove.create({
-                  data: {
-                    productId: oldLine.productId,
-                    productName: oldLine.productName ?? '',
-                    type: 'IN',
-                    qty: release,
-                    movedAt: orderMovedAt,
-                    note: `订单 ${orderBefore.code ?? id} ${statusLabel}减量 ${oldLabel}→${newLabel}`,
-                    sourceType: 'ORDER',
-                    sourceId: id,
-                    sourceRef: orderBefore.code ?? id,
-                  },
-                })
-              }
-            }
-          }
         }
 
         // SSOT: totalAmount 服务端重算 = Σ税前(line.subtotal=unitPrice×qty 税前,
@@ -851,65 +720,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         },
       })
 
-      // On CONFIRMED: 库存预留（扣减 qtyOnHand 作为预留代理；允许负库存，不阻断确认）
-      if (newStatus === 'CONFIRMED' && String(orderBefore.status) === 'PENDING') {
-        const confirmLines = await prisma.orderLine.findMany({
-          where: { orderId: id },
-          include: { product: { select: { type: true, qtyOnHand: true } } },
-        })
-
-        for (const line of confirmLines) {
-          if (!line.product || line.product.type !== 'PRODUCT') continue
-          const qty = toNum(line.orderedQty)
-          if (qty <= 0) continue
-          // 多单位销售：这行如果用的不是商品当前默认单位，换算成库存记账单位数量再扣
-          const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
-
-          const onHand = toNum(line.product.qtyOnHand)
-          if (onHand < stockQty) {
-            console.warn(`[order confirm] 库存不足（允许继续）: ${line.productName} 现有 ${onHand}，需要 ${stockQty}`)
-          }
-
-          await prismaAny.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { decrement: stockQty } },
-          })
-          // SSOT: 同步 FIFO 扣减批次余量,避免 Lot 虚高(P1-5)
-          const consumed = await consumeLotsFIFO(prismaAny, line.productId, stockQty)
-          // 按实际消耗的批次拆分 StockMove,lotId 落到批次级别 —— 批次追溯"这批卖给了谁"的数据基础
-          const consumedQty = consumed.reduce((s, c) => s + c.qty, 0)
-          const unmatched = round2(stockQty - consumedQty)
-          const moveRows = consumed.map(c => ({
-            productId: line.productId,
-            productName: line.productName ?? '',
-            type: 'OUT' as const,
-            qty: -c.qty,
-            lotId: c.lotId,
-            movedAt: orderMovedAt,
-            note: `订单 ${orderBefore.code ?? id} 确认预留（批次 ${c.lotNumber}）`,
-            sourceType: 'ORDER',
-            sourceId: id,
-            sourceRef: orderBefore.code ?? id,
-          }))
-          if (unmatched > 0) {
-            // 超卖部分无批次可扣，仍需一条不带 lotId 的move保证 qtyOnHand 有完整流水
-            moveRows.push({
-              productId: line.productId,
-              productName: line.productName ?? '',
-              type: 'OUT' as const,
-              qty: -unmatched,
-              lotId: undefined as unknown as string,
-              movedAt: orderMovedAt,
-              note: `订单 ${orderBefore.code ?? id} 确认预留（超卖，无批次）`,
-              sourceType: 'ORDER',
-              sourceId: id,
-              sourceRef: orderBefore.code ?? id,
-            })
-          }
-          for (const row of moveRows) {
-            await prismaAny.stockMove.create({ data: row })
-          }
-        }
+      // ── 库存：订单状态或行变了 → 按「目标 − 已拿」对账（20261014 复式改造 L3，lib/order-stock.ts）──
+      // 取代原先散在这里的确认扣减 / 改行差额 / 撤回释放 / 取消释放四段：那几段按 orderedQty 盲目加减，
+      // 从没扣过库存的单（Place Order 直接建成 CONFIRMED 的）取消/减量时会凭空多出库存。
+      if (newStatus || Array.isArray(linesPayload)) {
+        await prisma.$transaction(
+          tx => syncOrderStock(tx, id, { movedAt: orderMovedAt, userId: user.userId, createdBy: user.name ?? user.email }),
+          { maxWait: 10000, timeout: 60000 },
+        )
       }
 
       // 换客户后，确认订单时已生成的送货单抬头要跟着换 —— 它是 1:1 快照(customerId/
@@ -951,41 +769,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
-      // On WITHDRAWN (CONFIRMED/WAVE_ASSIGNED → PENDING): 恢复库存预留
-      if (newStatus === 'PENDING' && withdrawableFromStatuses.has(String(orderBefore.status))) {
-        const withdrawLines = await prisma.orderLine.findMany({
-          where: { orderId: id },
-          include: { product: { select: { type: true } } },
-        })
-
-        for (const line of withdrawLines) {
-          if (!line.product || line.product.type !== 'PRODUCT') continue
-          const qty = toNum(line.orderedQty)
-          if (qty <= 0) continue
-          const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
-
-          await prismaAny.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { increment: stockQty } },
-          })
-          // SSOT: 撤回时回补批次余量(P1-5)
-          await restoreLotsFIFO(prismaAny, line.productId, stockQty)
-          await prismaAny.stockMove.create({
-            data: {
-              productId: line.productId,
-              productName: line.productName ?? '',
-              type: 'IN',
-              qty: stockQty,
-              movedAt: orderMovedAt,
-              note: `订单 ${orderBefore.code ?? id} 撤回释放预留`,
-              sourceType: 'ORDER',
-              sourceId: id,
-              sourceRef: orderBefore.code ?? id,
-            },
-          })
-        }
-      }
-
       // On WITHDRAWN (CONFIRMED/WAVE_ASSIGNED → PENDING): cancel associated PENDING_ASSIGNMENT trips
       if (newStatus === 'PENDING' && withdrawableFromStatuses.has(String(orderBefore.status))) {
         await prismaAny.trip.updateMany({
@@ -997,42 +780,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }).catch((e: unknown) => console.error('[Trip cancel on withdraw]', e))
       }
 
-      // ── On CANCELLED: 恢复库存 + 取消关联 Trip ─────────────────────────────
+      // ── On CANCELLED: 取消关联 Trip ─────────────────────────────
       if (newStatus === 'CANCELLED') {
-        const prevStatus = String(orderBefore.status).toUpperCase()
-        // 只有 CONFIRMED / WAVE_ASSIGNED / IN_DELIVERY 已经扣过库存，需要恢复
-        const stockReservedStatuses = new Set(['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'])
-        if (stockReservedStatuses.has(prevStatus)) {
-          // 使用当前 orderLines（已经是最新的，可能被本次 PUT 修改过）恢复库存
-          const cancelLines = await prisma.orderLine.findMany({
-            where: { orderId: id },
-            include: { product: { select: { type: true } } },
-          })
-          for (const line of cancelLines) {
-            if (!line.product || line.product.type !== 'PRODUCT') continue
-            const qty = toNum(line.orderedQty)
-            if (qty <= 0) continue
-            const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
-            await prismaAny.product.update({
-              where: { id: line.productId },
-              data: { qtyOnHand: { increment: stockQty } },
-            })
-            await prismaAny.stockMove.create({
-              data: {
-                productId: line.productId,
-                productName: line.productName ?? '',
-                type: 'IN',
-                qty: stockQty,
-                movedAt: orderMovedAt,
-                note: `订单 ${orderBefore.code ?? id} 取消释放库存（原状态: ${prevStatus}）`,
-                sourceType: 'ORDER',
-                sourceId: id,
-                sourceRef: orderBefore.code ?? id,
-              },
-            })
-          }
-        }
-
+        // 库存释放已由上面的 syncOrderStock 统一处理（只释放这张单真正拿走过的量）
         // 取消关联的 Trip（任何未完成状态的 Trip）
         await prismaAny.trip.updateMany({
           where: {

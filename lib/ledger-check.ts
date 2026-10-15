@@ -187,7 +187,128 @@ const paymentsWithoutJournal: Check = async () => {
   }
 }
 
-/** 其它模块（库存，L3）在这里登记自己的检查项 */
+// ── 库存（20261014 复式改造 L3/L5）────────────────────────────────────────────
+
+const stockOnHand: Check = async () => {
+  const rows = await q(`
+    SELECT p.id, p.name, p."qtyOnHand"::float AS cached, COALESCE(m.s, 0)::float AS ledger
+    FROM "Product" p LEFT JOIN (SELECT "productId", SUM(qty) s FROM "StockMove" GROUP BY 1) m ON m."productId" = p.id
+    WHERE ABS(p."qtyOnHand" - COALESCE(m.s, 0)) > 0.0005
+    ORDER BY ABS(p."qtyOnHand" - COALESCE(m.s, 0)) DESC`)
+  return {
+    key: 'stock_on_hand', label: '商品在手量 = Σ 库存流水', labelEn: 'On hand = Σ stock moves',
+    severity: 'error', diffCount: rows.length, samples: cleanSamples(rows),
+  }
+}
+
+const lotBalance: Check = async () => {
+  const rows = await q(`
+    SELECT l.id, l."lotNumber", p.name AS product, l."currentQty"::float AS cached, COALESCE(m.s, 0)::float AS ledger
+    FROM "Lot" l JOIN "Product" p ON p.id = l."productId"
+    LEFT JOIN (SELECT "lotId", SUM(qty) s FROM "StockMove" WHERE "lotId" IS NOT NULL GROUP BY 1) m ON m."lotId" = l.id
+    WHERE ABS(l."currentQty" - COALESCE(m.s, 0)) > 0.0005`)
+  return {
+    key: 'lot_balance', label: '批次余量 = Σ 该批次流水', labelEn: 'Lot quantity = Σ lot moves',
+    severity: 'error', diffCount: rows.length, samples: cleanSamples(rows),
+  }
+}
+
+const moveLocations: Check = async () => {
+  const rows = await q(`
+    SELECT id, "productName", type::text AS type, qty::float AS qty, "sourceType", "sourceRef", "fromLocationId", "toLocationId", "movedAt"
+    FROM "StockMove"
+    WHERE "fromLocationId" IS NULL OR "toLocationId" IS NULL
+       OR (qty > 0 AND "toLocationId" <> 'loc_wh_stock')
+       OR (qty < 0 AND "fromLocationId" <> 'loc_wh_stock')
+       OR "fromLocationId" = "toLocationId"
+    ORDER BY "createdAt" DESC`)
+  return {
+    key: 'stock_move_locations', label: '每笔流水都有来源/去向库位，且方向与数量正负一致（复式）', labelEn: 'Every move has from/to locations consistent with its sign',
+    severity: 'error', diffCount: rows.length, samples: cleanSamples(rows),
+  }
+}
+
+const locationBalances: Check = async () => {
+  const rows = await q(`
+    SELECT loc.code, loc."nameZh",
+           (COALESCE((SELECT SUM(ABS(qty)) FROM "StockMove" WHERE "toLocationId" = loc.id), 0)
+          - COALESCE((SELECT SUM(ABS(qty)) FROM "StockMove" WHERE "fromLocationId" = loc.id), 0))::float AS balance
+    FROM "StockLocation" loc ORDER BY loc.code`)
+  const total = rows.reduce((s, r) => s + num(r.balance), 0)
+  return {
+    key: 'stock_location_balances', label: '各库位累计数量（全部库位相加应为 0）', labelEn: 'Quantity by location (sums to zero)',
+    severity: Math.abs(total) > 0.001 ? 'error' : 'info', diffCount: Math.abs(total) > 0.001 ? 1 : 0,
+    samples: cleanSamples(rows), note: '虚拟库位（客户、供应商、报废、期初）的余额是累计流向那里的量，WH/Stock 的余额就是全部商品的在手量合计',
+  }
+}
+
+const ordersWithoutStock: Check = async () => {
+  const rows = await q(`
+    SELECT o.id, o.code, o."restaurantName", o.status::text AS status, o."confirmationDate"
+    FROM "Order" o
+    WHERE o.status IN ('CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY')
+      AND EXISTS (SELECT 1 FROM "OrderLine" l JOIN "Product" p ON p.id = l."productId" WHERE l."orderId" = o.id AND p.type = 'PRODUCT' AND l."orderedQty" > 0)
+      AND NOT EXISTS (SELECT 1 FROM "StockMove" m WHERE m."sourceId" = o.id AND m."sourceType" IN ('ORDER', 'SO'))
+    ORDER BY o."confirmationDate" DESC NULLS LAST`)
+  return {
+    key: 'orders_without_stock', label: '已确认但从未占用库存的订单', labelEn: 'Confirmed orders that never took stock',
+    severity: 'info', diffCount: rows.length, samples: cleanSamples(rows),
+    note: '20261014 之前 Place Order 页「确认」直接建成 CONFIRMED、不扣库存；这些单之后改行/取消时会按「目标 − 已拿」自动补齐',
+  }
+}
+
+const inventoryValue: Check = async () => {
+  const [gl] = await q(`
+    SELECT COALESCE(SUM(l.debit - l.credit), 0)::float AS bal
+    FROM "JournalEntryLine" l JOIN "JournalEntry" e ON e.id = l."entryId" JOIN "Account" a ON a.id = l."accountId"
+    WHERE a.code = '1300' AND e.status = 'POSTED'`)
+  const [sv] = await q(`SELECT COALESCE(SUM(GREATEST("qtyOnHand", 0) * COALESCE("standardPrice", 0)), 0)::float AS v FROM "Product" WHERE type = 'PRODUCT'`)
+  const [grni] = await q(`
+    SELECT COALESCE(SUM(l.credit - l.debit), 0)::float AS bal
+    FROM "JournalEntryLine" l JOIN "JournalEntry" e ON e.id = l."entryId" JOIN "Account" a ON a.id = l."accountId"
+    WHERE a.code = '2150' AND e.status = 'POSTED'`)
+  const [nocost] = await q(`
+    SELECT COUNT(*)::int AS n FROM "StockMove"
+    WHERE "unitCost" IS NULL AND "sourceType" IS DISTINCT FROM 'OPENING' AND "createdBy" IS NOT NULL`)
+  const diff = Math.round((num(gl?.bal) - num(sv?.v)) * 100) / 100
+  return {
+    key: 'inventory_value', label: '总账存货(1300) vs 在手量 × 平均成本', labelEn: 'GL inventory (1300) vs on hand × average cost',
+    severity: 'info', diffCount: Math.abs(diff) > 0.005 ? 1 : 0, amount: diff,
+    figures: { glInventory: num(gl?.bal), stockValue: num(sv?.v), difference: diff, openGrni: num(grni?.bal), movesWithoutCost: num(nocost?.n) },
+    samples: [],
+    note: '出库按批次实际成本记，平均成本只是近似，这一项会有小额差；已收货未开票(2150)是收了货还没过账供应商账单的金额',
+  }
+}
+
+/**
+ * 采购行已收量 = Σ 收货/退货流水的业务单位数量（复式改造 L4）。
+ * 只核对「所有收退货流水都挂了采购行」的行；改造前收的货流水上没有 purchaseOrderLineId，跳过。
+ */
+const poLineReceived: Check = async () => {
+  const rows = await q(`
+    WITH mv AS (
+      SELECT "purchaseOrderLineId" AS lid, SUM(SIGN(qty) * COALESCE("uomQty", ABS(qty))) AS s
+      FROM "StockMove" WHERE "purchaseOrderLineId" IS NOT NULL GROUP BY 1
+    )
+    SELECT pol.id, po.name AS po, pol."productName", pol."receivedQty"::float AS cached, mv.s::float AS ledger
+    FROM "PurchaseOrderLine" pol
+    JOIN mv ON mv.lid = pol.id
+    JOIN "PurchaseOrder" po ON po.id = pol."purchaseOrderId"
+    WHERE NOT EXISTS (
+      SELECT 1 FROM "StockMove" m
+      WHERE m."sourceId" = pol."purchaseOrderId" AND m."productId" = pol."productId"
+        AND m."sourceType" IN ('PURCHASE_RECEIVE', 'PURCHASE_RETURN') AND m."purchaseOrderLineId" IS NULL
+    )
+    AND ABS(pol."receivedQty" - mv.s) > 0.0005`)
+  return {
+    key: 'po_line_received', label: '采购行已收量 = Σ 收货/退货流水', labelEn: 'PO line received qty = Σ receipt/return moves',
+    severity: 'error', diffCount: rows.length, samples: cleanSamples(rows),
+  }
+}
+
+const STOCK_CHECKS: Check[] = [stockOnHand, lotBalance, moveLocations, locationBalances, ordersWithoutStock, poLineReceived, inventoryValue]
+
+/** 其它模块在这里登记自己的检查项 */
 const EXTRA_CHECKS: Check[] = []
 export function registerLedgerCheck(c: Check) { EXTRA_CHECKS.push(c) }
 
@@ -198,7 +319,7 @@ export const FINANCE_CHECKS: Check[] = [
 
 export async function runLedgerChecks(): Promise<LedgerCheckResult[]> {
   const out: LedgerCheckResult[] = []
-  for (const c of [...FINANCE_CHECKS, ...EXTRA_CHECKS]) {
+  for (const c of [...FINANCE_CHECKS, ...STOCK_CHECKS, ...EXTRA_CHECKS]) {
     try {
       out.push(await c())
     } catch (e) {

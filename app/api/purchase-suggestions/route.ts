@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
+import { untakenOrderDemand } from '@/lib/order-stock'
 
 /**
  * P0-2: 采购建议
@@ -57,7 +58,9 @@ export async function GET(req: Request) {
  * 算法：
  *   1. 查所有 active Product
  *   2. 对每个 product，demand = SUM(orderLine.orderedQty) WHERE order.status IN (CONFIRMED, WAVE_ASSIGNED)
- *   3. shortage = max(0, demand - product.qtyOnHand)
+ *   3. shortage = max(0, 未扣库存的需求 − product.qtyOnHand)
+ *      ⛔ 20261014 修：已确认订单在确认时已从 qtyOnHand 扣过，以前再按 demand 减一次 → 重复建议采购。
+ *      qtyOnHand 为负（已超卖）就是要补的量。
  *   4. 如果 shortage > 0：
  *      - 找 ProductSupplierInfo（按 sequence ASC）的最佳供应商
  *      - suggestedQty = max(shortage, supplier.minQty)
@@ -86,7 +89,8 @@ export async function POST(req: Request) {
         },
       })
 
-      // 2. 查所有有效订单行的需求量（批量一次查出，避免 N+1）
+      // 2. 有效订单行的需求量（批量一次查出，避免 N+1）——只用来展示和算缺货率；
+      //    缺货量本身按「未扣库存的需求 − 在手」算（见上）
       const orderLines = await prisma.orderLine.findMany({
         where: {
           order: { status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
@@ -100,6 +104,7 @@ export async function POST(req: Request) {
         const existing = demandMap.get(line.productId) ?? 0
         demandMap.set(line.productId, existing + toNum(line.orderedQty))
       }
+      const untaken = await untakenOrderDemand(prisma, products.map(p => p.id), { status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } })
 
       // 3. 幂等：清除今天已有的 pending 建议
       const todayStart = new Date()
@@ -127,7 +132,7 @@ export async function POST(req: Request) {
       for (const product of products) {
         const demand = demandMap.get(product.id) ?? 0
         const stock = toNum(product.qtyOnHand)
-        const shortage = Math.max(0, demand - stock)
+        const shortage = Math.round(Math.max(0, (untaken.get(product.id) ?? 0) - stock) * 1000) / 1000
 
         if (shortage <= 0) continue
 
@@ -139,7 +144,7 @@ export async function POST(req: Request) {
           : null
 
         // 缺货率 → 优先级
-        const shortageRate = demand > 0 ? shortage / demand : 0
+        const shortageRate = demand > 0 ? Math.min(1, shortage / demand) : 1
         let priority = 'normal'
         if (shortageRate > 0.8) priority = 'critical'
         else if (shortageRate > 0.5) priority = 'high'

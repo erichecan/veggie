@@ -135,6 +135,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
           const e = await postVendorBillToJournal(tx, {
             id: existing.id, name: existing.name, supplierId: existing.supplierId,
             subtotalExTax: existing.subtotalExTax, totalTax: existing.totalTax, totalIncTax: existing.totalIncTax,
+            purchaseOrderId: existing.purchaseOrderId ?? null,
           }, user.userId)
           if (e) detail.push(`凭证 ${e.name}`)
         }

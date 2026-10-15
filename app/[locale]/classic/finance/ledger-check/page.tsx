@@ -41,6 +41,10 @@ const FIGURE_LABEL: Record<string, [string, string]> = {
   openInvoices: ['发票未付', 'Open invoices'],
   unappliedCredits: ['未用贷项', 'Unapplied credits'],
   difference: ['差额', 'Difference'],
+  glInventory: ['总账存货', 'GL inventory'],
+  stockValue: ['在手量×平均成本', 'On hand × avg cost'],
+  openGrni: ['已收货未开票', 'Received not invoiced'],
+  movesWithoutCost: ['无成本流水(笔)', 'Moves without cost'],
 }
 
 const fmt = (v: unknown) => {
@@ -131,7 +135,7 @@ export default function LedgerCheckPage() {
                   </div>
                   {r.figures && (
                     <div className="mt-1 text-xs text-gray-600 flex flex-wrap gap-x-4">
-                      {Object.entries(r.figures).map(([k, v]) => <span key={k}>{FIGURE_LABEL[k]?.[isEn ? 1 : 0] ?? k}: <b>€{Number(v).toFixed(2)}</b></span>)}
+                      {Object.entries(r.figures).map(([k, v]) => <span key={k}>{FIGURE_LABEL[k]?.[isEn ? 1 : 0] ?? k}: <b>{k === 'movesWithoutCost' ? Number(v) : `€${Number(v).toFixed(2)}`}</b></span>)}
                     </div>
                   )}
                   {r.note && <p className="mt-1 text-xs text-gray-500">{r.note}</p>}

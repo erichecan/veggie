@@ -26,7 +26,8 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
-import { consumeLotsFIFO, toStockQty } from '@/lib/inventory'
+import { toStockQty } from '@/lib/inventory'
+import { postStockMove, LOC } from '@/lib/stock-ledger'
 import { eurAmount } from '@/lib/fx-eur'
 
 export const runtime = 'nodejs'
@@ -124,52 +125,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // 退货量按采购单位记，库存按基准单位记 —— 与收货侧同一套换算（I3 修过的那个坑）
           const stockQty = await toStockQty(tx as never, p.productId, p.qty, p.uomId)
 
-          await tx.product.update({
-            where: { id: p.productId },
-            data: { qtyOnHand: { decrement: stockQty } },
+          // 入账：仓库 → 供应商（lib/stock-ledger.ts）。按 FEFO 扣批次并逐批拆流水（批次覆盖不到的部分记无批次流水），
+          // 按这张 PO 的采购价估值，冲回收货时的 Dr 1300 / Cr 2150
+          await postStockMove(tx, {
+            productId: p.productId,
+            productName: p.productName,
+            qty: stockQty,
+            from: LOC.STOCK,
+            to: LOC.VENDORS,
+            type: 'OUT',
+            lot: { mode: 'fefo' },
+            unitCost: stockQty > 0 && p.unitCost > 0 ? (p.unitCost * p.qty) / stockQty : null,
+            movedAt: new Date(),
+            note: `采购退货 PO ${po.name}${noteSuffix}`,
+            sourceType: 'PURCHASE_RETURN',
+            sourceId: id,
+            sourceRef: po.name,
+            purchaseOrderLineId: p.lineId,
+            partnerId: po.supplierId ?? null,
+            uomQty: p.qty,
+            uomId: p.uomId,
+            userId: user.userId,
+            createdBy: user.name ?? user.email,
           })
-          // 批次也要退：只扣 qtyOnHand 不动批次，Lot.currentQty 会系统性虚高（db:validate 第 2 项）
-          const consumed = await consumeLotsFIFO(tx as never, p.productId, stockQty)
-
-          // ⛔ 流水必须**按批次逐笔记**，不能只记一笔 lotId=null 的总额。
-          // 第一版就是那么写的，结果 `Lot.currentQty == Σ该批次流水` 当场被破坏：
-          // 批次余量扣到 26，而挂在它名下的流水仍只有收货那笔 +30。
-          // consumeLotsFIFO 返回的就是「扣到了哪几个批次各多少」，用它拆流水。
-          const consumedQty = consumed.reduce((sum, c) => sum + c.qty, 0)
-          for (const c of consumed) {
-            await tx.stockMove.create({
-              data: {
-                productId: p.productId,
-                productName: p.productName,
-                type: 'OUT',
-                qty: -c.qty,
-                lotId: c.lotId,
-                movedAt: new Date(),
-                note: `采购退货 PO ${po.name} / 批次 ${c.lotNumber}${noteSuffix}`,
-                sourceType: 'PURCHASE_RETURN',
-                sourceId: id,
-                sourceRef: po.name,
-              },
-            })
-          }
-          // 批次覆盖不到的部分（历史库存没有批次时）单记一笔无批次流水，
-          // 保证 qtyOnHand 与 Σ流水 仍然相等
-          const uncovered = Math.round((stockQty - consumedQty) * 1000) / 1000
-          if (uncovered > 0) {
-            await tx.stockMove.create({
-              data: {
-                productId: p.productId,
-                productName: p.productName,
-                type: 'OUT',
-                qty: -uncovered,
-                movedAt: new Date(),
-                note: `采购退货 PO ${po.name}（无批次部分）${noteSuffix}`,
-                sourceType: 'PURCHASE_RETURN',
-                sourceId: id,
-                sourceRef: po.name,
-              },
-            })
-          }
 
           // 回冲已收量：不冲的话「已收 = 订购」会让这单看起来收齐了，
           // 采购建议也会把退掉的货继续当成在途

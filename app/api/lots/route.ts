@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { nextLotNumbers } from '@/lib/lot-number'
+import { postStockMove, LOC } from '@/lib/stock-ledger'
 
 /**
  * /api/lots
@@ -85,22 +86,19 @@ export async function POST(req: Request) {
           },
         })
 
-        await tx.product.update({
-          where: { id: productId },
-          data: { qtyOnHand: { increment: qty } },
-        })
-
-        await tx.stockMove.create({
-          data: {
-            productId,
-            productName: product.name,
-            type: 'IN',
-            qty,
-            lotId: created.id,
-            movedAt: new Date(),
-            note: noteText ? `手动创建批次 ${lotNumber}: ${noteText}` : `手动创建批次 ${lotNumber}`,
-            sourceType: 'MANUAL',
-          },
+        // 入账：盘点调整 → 仓库（批次余量建批次时已设好，这里只挂 lotId）
+        await postStockMove(tx, {
+          productId,
+          productName: product.name,
+          qty,
+          from: LOC.INVENTORY,
+          to: LOC.STOCK,
+          type: 'IN',
+          lot: { mode: 'lot', lotId: created.id, adjustLot: false },
+          note: noteText ? `手动创建批次 ${lotNumber}: ${noteText}` : `手动创建批次 ${lotNumber}`,
+          sourceType: 'MANUAL',
+          userId: user.userId,
+          createdBy: user.name ?? user.email,
         })
 
         return created

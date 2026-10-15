@@ -116,6 +116,8 @@ export async function postVendorBillToJournal(
     subtotalExTax: unknown
     totalTax: unknown
     totalIncTax: unknown
+    /** 来源采购单：用来冲销它收货时记的「已收货未开票」(2150) */
+    purchaseOrderId?: string | null
   },
   userId: string,
 ): Promise<{ id: string; name: string } | null> {
@@ -127,6 +129,12 @@ export async function postVendorBillToJournal(
   const sub = Number(bill.subtotalExTax)
   const tax = Number(bill.totalTax)
   const total = Number(bill.totalIncTax)
+  // 永续盘存（20261014 复式改造 L5）：这张 PO 收货时已 Dr 1300 / Cr 2150，开票时把 2150 冲平，
+  // 账单金额与收货估值的差（价差、改造前收的货、非库存品）仍进 5000
+  const grni = bill.purchaseOrderId ? await openGrniForPurchaseOrder(tx, bill.purchaseOrderId) : 0
+  const grniAccount = grni !== 0 ? await findAccountByCode(tx, '2150') : null
+  const clearGrni = grniAccount ? grni : 0
+  const variance = Math.round((sub - clearGrni) * 100) / 100
 
   const name = await genEntryName(tx)
   const entry = await tx.journalEntry.create({
@@ -142,12 +150,19 @@ export async function postVendorBillToJournal(
       postedAt: new Date(),
       lines: {
         create: [
-          {
+          ...(grniAccount && clearGrni !== 0 ? [{
+            accountId: grniAccount.id,
+            description: `GRNI cleared - Bill ${bill.name}`,
+            debit: clearGrni > 0 ? clearGrni : 0, credit: clearGrni < 0 ? -clearGrni : 0,
+            partnerId: bill.supplierId,
+            sequence: 5,
+          }] : []),
+          ...(variance !== 0 ? [{
             accountId: purchase.id,
-            description: `Purchases - Bill ${bill.name}`,
-            debit: sub, credit: 0,
+            description: clearGrni !== 0 ? `Purchase price difference - Bill ${bill.name}` : `Purchases - Bill ${bill.name}`,
+            debit: variance > 0 ? variance : 0, credit: variance < 0 ? -variance : 0,
             sequence: 10,
-          },
+          }] : []),
           ...(tax > 0 ? [{
             accountId: vatIn.id,
             description: `VAT Input - Bill ${bill.name}`,
@@ -167,6 +182,26 @@ export async function postVendorBillToJournal(
     select: { id: true, name: true },
   })
   return entry
+}
+
+/**
+ * 某张采购单收货/退货在「已收货未开票」(2150) 上留下的未冲余额（贷方为正）。
+ * 只统计存货估值凭证（sourceType=stock_move）里指向这张 PO 流水的 2150 分录——
+ * 改造前收的货没有估值凭证，自然不计入，开票时全额进 5000，与改造前一致。
+ */
+export async function openGrniForPurchaseOrder(tx: TxClient, purchaseOrderId: string): Promise<number> {
+  const moves = await tx.stockMove.findMany({
+    where: { sourceId: purchaseOrderId, sourceType: { in: ['PURCHASE_RECEIVE', 'PURCHASE_RETURN'] } },
+    select: { id: true },
+  })
+  const ids = moves.map((m: { id: string }) => m.id)
+  if (ids.length === 0) return 0
+  const lines = await tx.journalEntryLine.findMany({
+    where: { account: { code: '2150' }, entry: { sourceType: 'stock_move', sourceId: { in: ids }, status: 'POSTED' } },
+    select: { debit: true, credit: true },
+  })
+  const bal = lines.reduce((s: number, l: { debit: unknown; credit: unknown }) => s + Number(l.credit) - Number(l.debit), 0)
+  return Math.round(bal * 100) / 100
 }
 
 /**

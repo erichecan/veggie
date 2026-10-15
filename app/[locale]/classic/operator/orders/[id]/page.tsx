@@ -1010,6 +1010,21 @@ export default function SalesOrderDetailPage() {
                   <div className="text-gray-500">Delivery</div>
                 </div>
               </button>
+              {/* 20261014 复式改造 L3：这张单在库存总账里的流水（确认占用、改量、取消释放……） */}
+              <button
+                type="button"
+                onClick={() => { if (order) router.push(`${prefix}/classic/operator/inventory?tab=moves&sourceId=${order.id}`) }}
+                disabled={!order}
+                title={isEn ? 'Stock moves of this order' : '这张订单的库存流水'}
+                data-testid="order-stock-moves"
+                className="flex items-center gap-2 px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-default"
+              >
+                <span className="text-xl">🔁</span>
+                <div className="text-xs text-left">
+                  <div className="font-bold text-gray-800">{isEn ? 'Moves' : '流水'}</div>
+                  <div className="text-gray-500">{isEn ? 'Stock' : '库存'}</div>
+                </div>
+              </button>
             </div>
           </div>
 

@@ -4,7 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writeLog } from '@/lib/action-log'
 import { toNum } from '@/lib/decimal-helpers'
-import { consumeLotsFIFO, restoreLotsFIFO } from '@/lib/inventory'
+import { postStockMove, LOC } from '@/lib/stock-ledger'
 
 /**
  * /api/stock-takes/[id]
@@ -99,28 +99,24 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             })
             if (diff !== 0) {
               adjustedLines++
-              await tx.stockMove.create({
-                data: {
-                  productId: line.productId,
-                  productName: line.productName,
-                  type: 'ADJUSTMENT',
-                  qty: diff,
-                  movedAt: st.takenAt,
-                  note: `盘点 ${st.name}：系统 ${toNum(line.systemQty)} → 实盘 ${toNum(line.countedQty)}`,
-                  sourceType: 'STOCK_TAKE',
-                  sourceId: st.id,
-                  sourceRef: st.name,
-                },
+              // 入账：盘盈「盘点调整 → 仓库」、盘亏「仓库 → 盘点调整」（lib/stock-ledger.ts）；
+              // 按 FEFO 扣/补批次并逐批拆流水，出凭证（盘亏 Dr 5200 / Cr 1300，盘盈反向）
+              await postStockMove(tx, {
+                productId: line.productId,
+                productName: line.productName,
+                qty: Math.abs(diff),
+                from: diff > 0 ? LOC.INVENTORY : LOC.STOCK,
+                to: diff > 0 ? LOC.STOCK : LOC.INVENTORY,
+                type: 'ADJUSTMENT',
+                lot: { mode: 'fefo' },
+                movedAt: st.takenAt,
+                note: `盘点 ${st.name}：系统 ${toNum(line.systemQty)} → 实盘 ${toNum(line.countedQty)}`,
+                sourceType: 'STOCK_TAKE',
+                sourceId: st.id,
+                sourceRef: st.name,
+                userId: user.userId,
+                createdBy: user.name ?? user.email,
               })
-              await tx.product.update({
-                where: { id: line.productId },
-                data: { qtyOnHand: { increment: diff } },
-              })
-              if (diff > 0) {
-                await restoreLotsFIFO(tx, line.productId, diff)
-              } else {
-                await consumeLotsFIFO(tx, line.productId, -diff)
-              }
             }
           }
           await tx.stockTake.update({ where: { id }, data: { status: 'DONE' } })
