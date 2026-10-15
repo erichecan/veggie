@@ -47,16 +47,21 @@ export async function notifyLowStockAfterConfirm(
     // 与 /api/products/forecast 的 belowSafetyStock 保持同一套字段来源
     const candidates = await prisma.product.findMany({
       where: { id: { in: productIds }, active: true },
-      select: { name: true, qtyOnHand: true, safetyStockMin: true },
+      select: { id: true, name: true, qtyOnHand: true, safetyStockMin: true },
     })
+    // 20261015 起确认订单不扣在手量（货离仓才扣），判断用「可用 = 在手 − 已确认待出库」，
+    // 与 /api/products/forecast 的口径一致；否则确认当下永远看不出库存偏低
+    const { untakenOrderDemand } = await import('@/lib/order-stock')
+    const pending = await untakenOrderDemand(prisma, candidates.map(p => p.id))
+    const avail = (p: { id: string; qtyOnHand: unknown }) => toNum(p.qtyOnHand) - (pending.get(p.id) ?? 0)
     const low = candidates.filter(p => {
       const safetyMin = toNum(p.safetyStockMin)
-      return safetyMin > 0 && toNum(p.qtyOnHand) < safetyMin
+      return safetyMin > 0 && avail(p) < safetyMin
     })
     if (low.length === 0) return
     const names = low
       .slice(0, 5)
-      .map(p => `${p.name}(剩 ${toNum(p.qtyOnHand)}, 安全库存 ${toNum(p.safetyStockMin)})`)
+      .map(p => `${p.name}(可用 ${Math.round(avail(p) * 1000) / 1000}, 安全库存 ${toNum(p.safetyStockMin)})`)
       .join('、')
     await notifyRole(['OPERATOR'], {
       type: 'shortage',

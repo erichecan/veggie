@@ -7,14 +7,21 @@
  *   - 这种从没扣过的单，之后取消/撤回/减量又按 orderedQty「释放」→ 凭空多出库存；
  *   - 取消时只加 qtyOnHand 不回补批次，批次余量与总数分叉。
  *
- * 现在只有一条规则：**订单应占用的库存 = 目标，流水里这张单已经拿走的 = 已拿，差多少补多少**。
- *   目标：状态在 CONFIRMED / WAVE_ASSIGNED / IN_DELIVERY → Σ 各实物行 orderedQty（换算成基础单位）；
- *         PENDING（报价）/ CANCELLED → 0。
+ * 现在只有一条规则：**订单应从仓库拿走的量 = 目标，流水里这张单已经拿走的 = 已拿，差多少补多少**。
+ *   目标：货已经出库（IN_DELIVERY 确认出发 / COMPLETED / LOCKED）→ Σ 各实物行 orderedQty（换算成基础单位）；
+ *         其余（PENDING 报价、CONFIRMED / WAVE_ASSIGNED 已确认待出库、CANCELLED）→ 0。
  *   已拿：Σ 流水（sourceType ORDER/SO、sourceId = 订单）—— 见 takenBySource。
  * 任何改了订单状态或行的地方，改完调一次 syncOrderStock；重复调用没有副作用（幂等）。
  *
- * COMPLETED / LOCKED 的单默认不动（货已经送出去了）；差异处理等送达后改行的场景传 allowCompleted，
- * 但只对**有过流水**的单生效——Odoo 导入的历史单从没有流水，不能因为改了一行就补扣全部（D1：历史不补）。
+ * ⛔ 20261015 起出库时点与采购对称（客户：「purchase 流程是对的，可以参考」，即 Odoo 口径）：
+ *   采购：确认 → Forecast 增加，On Hand 不变；收货 → On Hand 增加。
+ *   销售：确认 → Forecast 减少（未出库需求，见 untakenOrderDemand），On Hand 不变；
+ *         确认出发 / 完成（货离仓）→ On Hand 减少，Forecast 不再变。
+ *   20261014 版本是「确认即扣 On Hand」，那期间确认、还没出发的单流水里已经拿过库存；它们被再次同步时
+ *   （改行、撤回、出发……）会先按目标 0 还回去，出发时再扣，最终一致。
+ *
+ * 历史保护（D1：历史不补）：已出库状态的单如果流水里从没拿过，只有在**本次就是出库动作**（opts.shipping）
+ * 时才补扣；否则视为 Odoo 导入的历史单，不因为改了一行就补扣全部。
  */
 import { toStockQty } from '@/lib/inventory'
 import { postStockMove, takenBySource, LOC } from '@/lib/stock-ledger'
@@ -23,20 +30,28 @@ import { postStockMove, takenBySource, LOC } from '@/lib/stock-ledger'
 type Tx = any
 
 export const ORDER_STOCK_SOURCE_TYPES = ['ORDER', 'SO']
+/** 已确认、尚未完成的单：它们的需求要么还没出库（计入 Forecast 的「待出库」），要么正在配送 */
 export const ORDER_RESERVED_STATUSES: ReadonlySet<string> = new Set(['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'])
-const ORDER_DONE_STATUSES: ReadonlySet<string> = new Set(['COMPLETED', 'LOCKED'])
+/** 货已经离仓：从仓库扣走 On Hand 的状态 */
+export const ORDER_SHIPPED_STATUSES: ReadonlySet<string> = new Set(['IN_DELIVERY', 'COMPLETED', 'LOCKED'])
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000
 
 export interface OrderStockSyncResult {
   changed: Array<{ productId: string; delta: number }>
-  skipped?: 'completed' | 'legacy'
+  skipped?: 'legacy'
 }
 
 export async function syncOrderStock(
   tx: Tx,
   orderId: string,
-  opts: { reason?: string; movedAt?: Date; userId?: string | null; createdBy?: string | null; allowCompleted?: boolean } = {},
+  opts: {
+    reason?: string; movedAt?: Date; userId?: string | null; createdBy?: string | null
+    /** 本次调用就是出库动作（确认出发 / 完成 / 批量开始配送），历史单也要扣 */
+    shipping?: boolean
+    /** @deprecated 20261015 起不再需要，保留参数兼容旧调用 */
+    allowCompleted?: boolean
+  } = {},
 ): Promise<OrderStockSyncResult> {
   const order = await tx.order.findUnique({
     where: { id: orderId },
@@ -46,10 +61,8 @@ export async function syncOrderStock(
   const status = String(order.status).toUpperCase()
   const taken = await takenBySource(tx, ORDER_STOCK_SOURCE_TYPES, orderId)
 
-  if (ORDER_DONE_STATUSES.has(status)) {
-    if (!opts.allowCompleted) return { changed: [], skipped: 'completed' }
-    if (taken.size === 0) return { changed: [], skipped: 'legacy' }
-  }
+  const shipped = ORDER_SHIPPED_STATUSES.has(status)
+  if (shipped && taken.size === 0 && !opts.shipping) return { changed: [], skipped: 'legacy' }
 
   const lines: Array<{ id: string; productId: string; productName: string | null; orderedQty: unknown; uomId: string | null; uomName?: string | null; product: { type: string } | null }> =
     await tx.orderLine.findMany({
@@ -58,7 +71,7 @@ export async function syncOrderStock(
       orderBy: { id: 'asc' },
     })
 
-  const reserve = ORDER_RESERVED_STATUSES.has(status) || ORDER_DONE_STATUSES.has(status)
+  const reserve = shipped
   const target = new Map<string, number>()
   const lineOf = new Map<string, { id: string; name: string; uomQty: number; uomId: string | null }>()
   if (reserve) {
@@ -73,7 +86,8 @@ export async function syncOrderStock(
   }
 
   const ref = order.code ?? orderId
-  const movedAt = opts.movedAt ?? order.deliveryDate ?? new Date()
+  // 出库流水记实际发生时间（货离仓那一刻），不是计划交货日
+  const movedAt = opts.movedAt ?? new Date()
   const changed: OrderStockSyncResult['changed'] = []
   for (const productId of new Set([...target.keys(), ...taken.keys()])) {
     const delta = r3((target.get(productId) ?? 0) - (taken.get(productId) ?? 0))
@@ -94,7 +108,7 @@ export async function syncOrderStock(
       orderLineId: line?.id ?? null,
       partnerId: order.restaurantId,
       movedAt,
-      note: `订单 ${ref} ${opts.reason ?? (outbound ? '占用库存' : '释放库存')}（${status}）`,
+      note: `订单 ${ref} ${opts.reason ?? (outbound ? '出库' : '退回仓库')}（${status}）`,
       createdBy: opts.createdBy ?? null,
       userId: opts.userId ?? null,
     })
@@ -104,11 +118,10 @@ export async function syncOrderStock(
 }
 
 /**
- * 未送达订单里**还没从库存扣走**的需求（基础单位），按商品汇总。
- * ⛔ 缺货、补货建议、预测都要用它，而不是直接 Σ orderedQty：已确认订单在确认时已经从
- * qtyOnHand 扣掉了，再按 orderedQty 减一次就是重复扣减（20261014 排查 Forecast 时发现
- * 波次缺货、采购建议两处同样中招：库存 100、确认 60 → 在手 40，却报「缺 20」）。
- * 正常情况下这里全是 0；只有改造前绕过确认扣减建成 CONFIRMED 的单会有值。
+ * 已确认、还没从仓库出库的需求（基础单位），按商品汇总 = Forecast 里的「待出库」。
+ * = Σ 各未完成订单（目标需求 − 流水里已拿走）。20261015 起确认不扣 On Hand，已确认待出库的单
+ * 这里就是它的全部需求；正在配送的单已出库，这里为 0。按「目标 − 已拿」算而不是直接 Σ orderedQty，
+ * 是为了兼容 20261014 那一天「确认即扣」留下的流水，任何时候都不重复扣减。
  *   缺货量 = max(0, untaken − qtyOnHand)（qtyOnHand 为负 = 已超卖，同样计入）
  */
 export async function untakenOrderDemand(

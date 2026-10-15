@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import type { OrderItem, TripRestaurant } from '@/lib/types'
 import { driverRowScope, withDriverScope } from '@/lib/row-scope'
+import { syncOrderStock } from '@/lib/order-stock'
 
 /**
  * GET /api/trips — 行程列表，可选 driverId / waveId / status / settlementStatus 过滤
@@ -144,6 +145,7 @@ export async function POST(req: Request) {
           : `${timeSlot === 'AM' ? '上午' : '下午'} · ${tripDriverName} · ${restaurantCount}家餐馆`
 
         // 事务：创建 Trip + 更新订单状态
+        let shippingIds: string[] = []
         const trip = await prisma.$transaction(async (tx) => {
           const created = await tx.trip.create({
             data: {
@@ -157,12 +159,23 @@ export async function POST(req: Request) {
               restaurants: restaurants as never,
             },
           })
+          // 这次真正出库的单（之前还没出库的）
+          shippingIds = (await tx.order.findMany({
+            where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
+            select: { id: true },
+          })).map(o => o.id)
           await tx.order.updateMany({
             where: { id: { in: orderIds } },
             data: { status: 'IN_DELIVERY' },
           })
           return created
         })
+        // 建行程 = 货离仓：按订单行出库（lib/order-stock.ts，20261015）
+        for (const oid of shippingIds) {
+          await prisma.$transaction(tx => syncOrderStock(tx, oid, {
+            shipping: true, reason: '建行程出库', userId: user.userId, createdBy: user.name ?? user.email,
+          }), { maxWait: 10000, timeout: 60000 })
+        }
 
         await writeLog({
           userId: user.userId, userEmail: user.email, userName: user.name,

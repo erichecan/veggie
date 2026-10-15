@@ -242,12 +242,16 @@ const locationBalances: Check = async () => {
   }
 }
 
-/** 已确认（未送达）却从未占用库存的订单：改造前 Place Order 直接确认、没走扣减的单 */
+/**
+ * 已出库（配送中）却从没扣过库存的订单。20261015 起确认不扣、货离仓（确认出发）才扣；
+ * 出发前就已在配送中、且从没扣过的单（改造前绕过扣减的）在这里列出，可一键补扣。
+ * 已确认待出库的单本来就不该有出库流水，不在此列。
+ */
 export async function findOrdersWithoutStock(): Promise<Row[]> {
   return q(`
     SELECT o.id, o.code, o."restaurantName", o.status::text AS status, o."confirmationDate"
     FROM "Order" o
-    WHERE o.status IN ('CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY')
+    WHERE o.status IN ('IN_DELIVERY')
       AND EXISTS (SELECT 1 FROM "OrderLine" l JOIN "Product" p ON p.id = l."productId" WHERE l."orderId" = o.id AND p.type = 'PRODUCT' AND l."orderedQty" > 0)
       AND NOT EXISTS (SELECT 1 FROM "StockMove" m WHERE m."sourceId" = o.id AND m."sourceType" IN ('ORDER', 'SO'))
     ORDER BY o."confirmationDate" DESC NULLS LAST`)
@@ -256,9 +260,9 @@ export async function findOrdersWithoutStock(): Promise<Row[]> {
 const ordersWithoutStock: Check = async () => {
   const rows = await findOrdersWithoutStock()
   return {
-    key: 'orders_without_stock', label: '已确认但从未占用库存的订单', labelEn: 'Confirmed orders that never took stock',
+    key: 'orders_without_stock', label: '配送中但从未出库扣库存的订单', labelEn: 'Orders in delivery that never took stock',
     severity: 'info', diffCount: rows.length, samples: cleanSamples(rows),
-    note: '20261014 之前 Place Order 页「确认」直接建成 CONFIRMED、不扣库存。可点「统一补扣」按订单行一次补占库存（与确认订单同一套逻辑，可重复点，已补过的不会再扣）',
+    note: '货已离仓却没扣在手量（改造前绕过扣减的单）。可点「统一补扣」按订单行出库（与确认出发同一套逻辑，可重复点，已补过的不会再扣）',
   }
 }
 
@@ -277,8 +281,9 @@ export async function fixOrdersWithoutStock(actor: { userId: string; name?: stri
     const code = String(r.code ?? r.id)
     try {
       const res = await prisma.$transaction(tx => syncOrderStock(tx, String(r.id), {
-        reason: '补扣：改造前确认时未占用库存（20261015 统一补扣）',
+        reason: '补扣：已出库但改造前未扣库存（统一补扣）',
         movedAt: now,
+        shipping: true,
         userId: actor.userId,
         createdBy: actor.name ?? null,
       }), { maxWait: 10000, timeout: 60000 })

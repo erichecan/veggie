@@ -6,7 +6,7 @@ import { withAuth, tryAuth, userHasPermission } from '@/lib/auth'
 import { salesRowScope, isRowVisible } from '@/lib/row-scope'
 import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
-import { syncOrderStock } from '@/lib/order-stock'
+import { syncOrderStock, ORDER_SHIPPED_STATUSES } from '@/lib/order-stock'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, getOrderWaveDriverSlotMap } from '@/lib/wave-assign'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { toNum, round2 } from '@/lib/decimal-helpers'
@@ -131,10 +131,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // Determine new status
       const newStatus = status ? String(status).toUpperCase() : undefined
 
-      // 库存批次日期：优先用交付日期，无则用当前时间
-      const orderMovedAt: Date = deliveryDate ? new Date(deliveryDate)
-        : orderBefore.deliveryDate ? new Date(orderBefore.deliveryDate as unknown as string)
-        : new Date()
 
       // ── 状态流转守卫 ──────────────────────────────────────────────────────
       if (newStatus && newStatus !== String(orderBefore.status)) {
@@ -724,8 +720,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // 取代原先散在这里的确认扣减 / 改行差额 / 撤回释放 / 取消释放四段：那几段按 orderedQty 盲目加减，
       // 从没扣过库存的单（Place Order 直接建成 CONFIRMED 的）取消/减量时会凭空多出库存。
       if (newStatus || Array.isArray(linesPayload)) {
+        const shippedNow = !!newStatus && ORDER_SHIPPED_STATUSES.has(newStatus)
+          && !ORDER_SHIPPED_STATUSES.has(String(orderBefore.status).toUpperCase())
         await prisma.$transaction(
-          tx => syncOrderStock(tx, id, { movedAt: orderMovedAt, userId: user.userId, createdBy: user.name ?? user.email }),
+          tx => syncOrderStock(tx, id, {
+            shipping: shippedNow, reason: shippedNow ? `出库（${newStatus}）` : undefined,
+            userId: user.userId, createdBy: user.name ?? user.email,
+          }),
           { maxWait: 10000, timeout: 60000 },
         )
       }

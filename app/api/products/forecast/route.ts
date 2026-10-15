@@ -6,20 +6,18 @@ import { toStockQty } from '@/lib/inventory'
 import { ORDER_RESERVED_STATUSES, ORDER_STOCK_SOURCE_TYPES } from '@/lib/order-stock'
 
 /**
- * GET /api/products/forecast?ids=p1,p2,p3 —— 在手 / 预测库存（20261014 重写，复式改造 L3）
+ * GET /api/products/forecast?ids=p1,p2,p3 —— 在手 / 预测库存（20261015 改为与采购对称，即 Odoo 口径）
  * ============================================================================
- * 口径（订单确认即出库，计划 D2-①）：
- *   qtyOnHand      在手可用 = Product.qtyOnHand = Σ 库存流水。已确认订单在确认时就从这里扣掉了。
- *   lockedQty      已被未送达订单（CONFIRMED / WAVE_ASSIGNED / IN_DELIVERY）占用、货还在仓里的量
- *                  = 这些订单在流水里实际拿走的量（不是按 orderedQty 估）。
- *   physicalQty    仓里实物 = qtyOnHand + lockedQty
- *   inboundPending 采购在途 = 已确认 PO 未收数量，**换算成基础单位**（以前直接加采购单位的数，按箱采购会差箱规倍）
- *   outboundReserved 已确认但还没占用库存的需求（改造前 Place Order 直接确认、没扣库存的单）
- *   forecast       预测 = qtyOnHand + inboundPending − outboundReserved
+ *   qtyOnHand        在手 = 仓库实物 = Product.qtyOnHand = Σ 库存流水。
+ *                    采购收货时增加；销售在货离仓（确认出发 / 完成）时减少，确认订单时**不变**。
+ *   inboundPending   采购在途 = 已确认 PO 未收数量（换算成基础单位）
+ *   outboundReserved 待出库 = 已确认、还没出库的销售需求（换算成基础单位，见 untakenOrderDemand 的口径）
+ *   forecast         预测 = 在手 + 采购在途 − 待出库
+ *   availableQty     可用 = 在手 − 待出库
  *
- * ⛔ 以前的算法：forecast = qtyOnHand + 在途采购 − WAVE_ASSIGNED/IN_DELIVERY 的未送量。
- *    而这些单确认时已经扣过 qtyOnHand，又减一次 → 中途 forecast 被重复扣；送达（COMPLETED）后
- *    不再减，forecast 又「涨回去」。客户反馈「走完销售流程库存回到原值」看到的就是这条曲线。
+ * 对照：采购确认 → forecast +、在手不变；收货 → 在手 +。销售确认 → forecast −、在手不变；出库 → 在手 −。
+ * ⛔ 20261014 之前：forecast 只对 WAVE_ASSIGNED/IN_DELIVERY 减未送量、COMPLETED 后不减，
+ *    Place Order 直接确认又不扣在手，于是走完流程两个数都回到原值（客户 Pepper Green 截图）。
  */
 export async function GET(req: Request) {
   return withAuth(req, async () => {
@@ -58,12 +56,10 @@ export async function GET(req: Request) {
           })
         : []
       const taken = new Map(takenRows.map(r => [`${r.sourceId}|${r.productId}`, -toNum(r._sum.qty)]))
-      const lockedMap = new Map<string, number>()
       const notTakenMap = new Map<string, number>()
       for (const [k, t] of target) {
         const productId = k.split('|')[1]
         const got = Math.max(0, taken.get(k) ?? 0)
-        lockedMap.set(productId, (lockedMap.get(productId) ?? 0) + got)
         if (t - got > 0.0005) notTakenMap.set(productId, (notTakenMap.get(productId) ?? 0) + (t - got))
       }
 
@@ -86,14 +82,13 @@ export async function GET(req: Request) {
         const safetyMin = toNum(p.safetyStockMin)
         const inbound = r3(inboundMap.get(p.id) ?? 0)
         const outbound = r3(notTakenMap.get(p.id) ?? 0)
-        const locked = r3(lockedMap.get(p.id) ?? 0)
         const forecast = r3(onHand + inbound - outbound)
         return {
           productId: p.id,
           qtyOnHand: onHand,
-          physicalQty: r3(onHand + locked),
+          physicalQty: onHand,
           safetyStockMin: safetyMin,
-          lockedQty: locked,
+          lockedQty: outbound,
           availableQty: r3(onHand - outbound),
           inboundPending: inbound,
           outboundReserved: outbound,
