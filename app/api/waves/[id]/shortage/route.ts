@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
+import { toStockQty } from '@/lib/inventory'
+import { untakenOrderDemand } from '@/lib/order-stock'
 
 /**
  * P0-1: 批次级缺货预警
@@ -13,7 +15,10 @@ import { toNum } from '@/lib/decimal-helpers'
  *   2. 查这些订单中 status IN (CONFIRMED, WAVE_ASSIGNED) 的 OrderLine
  *   3. 按 productId 聚合 orderedQty（需求量）
  *   4. 查 Product.qtyOnHand（库存）
- *   5. shortageQty = max(0, demandQty - qtyOnHand)
+ *   5. shortageQty = min(需求, max(0, 未扣库存的需求 − qtyOnHand))
+ *      ⛔ 20261014 修：以前是 max(0, 需求 − qtyOnHand)。订单确认时已从 qtyOnHand 扣过，
+ *      再减一次 → 库存 100、确认 60 后在手 40，却报「缺 20」。qtyOnHand 为负（已超卖）才是真缺货。
+ *      需求也换算成基础单位（以前按箱下单的行直接加箱数）。
  *   6. 只返回 shortageQty > 0 的产品
  */
 export async function GET(
@@ -46,6 +51,7 @@ export async function GET(
           productId: true,
           productName: true,
           orderedQty: true,
+          uomId: true,
         },
       })
 
@@ -53,12 +59,13 @@ export async function GET(
       const demandMap = new Map<string, { productName: string; demandQty: number }>()
       for (const line of orderLines) {
         const existing = demandMap.get(line.productId)
+        const stockQty = await toStockQty(prisma as never, line.productId, toNum(line.orderedQty), line.uomId)
         if (existing) {
-          existing.demandQty += toNum(line.orderedQty)
+          existing.demandQty += stockQty
         } else {
           demandMap.set(line.productId, {
             productName: line.productName,
-            demandQty: toNum(line.orderedQty),
+            demandQty: stockQty,
           })
         }
       }
@@ -74,6 +81,7 @@ export async function GET(
         select: { id: true, name: true, qtyOnHand: true },
       })
       const stockMap = new Map(products.map(p => [p.id, toNum(p.qtyOnHand)]))
+      const untaken = await untakenOrderDemand(prisma, productIds, { id: { in: wave.orderIds } })
 
       // 5. 计算缺货
       const shortages: Array<{
@@ -87,7 +95,7 @@ export async function GET(
 
       for (const [productId, demand] of demandMap.entries()) {
         const stockQty = stockMap.get(productId) ?? 0
-        const shortageQty = Math.max(0, demand.demandQty - stockQty)
+        const shortageQty = Math.round(Math.min(demand.demandQty, Math.max(0, (untaken.get(productId) ?? 0) - stockQty)) * 1000) / 1000
         if (shortageQty > 0) {
           shortages.push({
             productId,

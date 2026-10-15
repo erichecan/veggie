@@ -21,12 +21,20 @@ function attachSalesmanDisplay<T extends { salesUser?: { id: string; name: strin
 }
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { nextOrderCode } from '@/lib/order-code'
+import { syncOrderStock } from '@/lib/order-stock'
+import { notifyLowStockAfterConfirm } from '@/lib/notify'
 
 const PAYMENT_METHODS = new Set<$Enums.PaymentMethod>(['ONLINE', 'CASH'])
 
+/**
+ * 新建订单只能是报价（PENDING）或直接确认（CONFIRMED，Place Order 页的「确认」按钮）。
+ * 20261014 修：以前接受任意状态（含 WAVE_ASSIGNED/COMPLETED），且建成 CONFIRMED 时不扣库存——
+ * 扣减只写在 PUT 的 PENDING→CONFIRMED 那段里，客户反馈「走完销售流程库存又回到原数」的根因。
+ */
+const CREATABLE_STATUSES = new Set<$Enums.OrderStatus>(['PENDING', 'CONFIRMED'])
 function normalizeStatus(raw: unknown): $Enums.OrderStatus {
   const u = String(raw ?? 'PENDING').toUpperCase() as $Enums.OrderStatus
-  return ORDER_STATUSES.has(u) ? u : 'PENDING'
+  return ORDER_STATUSES.has(u) && CREATABLE_STATUSES.has(u) ? u : 'PENDING'
 }
 function normalizePaymentMethod(raw: unknown): $Enums.PaymentMethod {
   const u = String(raw ?? 'ONLINE').toUpperCase() as $Enums.PaymentMethod
@@ -340,6 +348,7 @@ export async function POST(req: Request) {
                 items: toOrderItems(linesForPersist) as unknown as object,
                 totalAmount: giftAdjustedTotalAmount,
                 status: normalizeStatus(data.status),
+                ...(normalizeStatus(data.status) === 'CONFIRMED' ? { confirmationDate: now } : {}),
                 paymentMethod: normalizePaymentMethod(data.paymentMethod),
                 pricelistId,
                 priceType,
@@ -386,8 +395,13 @@ export async function POST(req: Request) {
               },
             })
 
-            // 报价单阶段不扣库存、不写 StockMove
-            // 库存预留在「确认订单」（PENDING→CONFIRMED）时处理
+            // 报价单（PENDING）不占库存；直接建成 CONFIRMED 的单在同一事务里按「目标 − 已拿」占用库存，
+            // 与 PUT 确认走同一个函数（lib/order-stock.ts），不再出现「确认了却没扣库存」
+            if (orderCreated.status === 'CONFIRMED') {
+              await syncOrderStock(tx, orderCreated.id, {
+                movedAt: orderCreated.deliveryDate ?? now, userId: user.userId, createdBy: user.name ?? user.email,
+              })
+            }
 
             return orderCreated
           })
@@ -405,6 +419,14 @@ export async function POST(req: Request) {
       }
       if (!order) {
         throw lastErr ?? new Error('生成订单编号失败')
+      }
+
+      // 直接确认的单：补上 PUT 确认时会做的送货单与低库存提醒（以前这条路径都漏了）
+      if (order.status === 'CONFIRMED') {
+        await prisma.deliverySlip.create({
+          data: { orderId: order.id, customerId: order.restaurantId, customerName: order.restaurantName, deliveryDate: order.deliveryDate ?? null },
+        }).catch((e: unknown) => console.error('[DeliverySlip create on POST confirm]', e))
+        await notifyLowStockAfterConfirm(linesForPersist.map(l => l.productId), order.code ?? order.id).catch(() => {})
       }
 
       // 写订单审计日志（action='created'）—— 时间线起点

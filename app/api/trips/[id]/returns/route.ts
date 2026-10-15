@@ -5,7 +5,8 @@ import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
-import { restoreLotsFIFO, toStockQty } from '@/lib/inventory'
+import { toStockQty } from '@/lib/inventory'
+import { postStockMove, LOC } from '@/lib/stock-ledger'
 import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
 import type { TripRestaurant, ReturnItem, OrderItem } from '@/lib/types'
 
@@ -284,14 +285,17 @@ export async function PUT(
         sourceType: string
         sourceId: string
         sourceRef: string | null
+        /** 原订单行的单位（换算成基础单位用） */
+        uomId: string | null
+        partnerId: string | null
+        /** 可再售：回补批次；报废/待报废：不碰批次 */
+        sellable: boolean
       }> = []
       const orderLineUpdates: Array<{
         orderId: string
         productId: string
         reduceQty: number
       }> = []
-      // 仅 SELLABLE 处置需要真正回补可售库存；SCRAP 处置货物不回可售库存，只留 StockMove 记账
-      const restockUpdates: Array<{ productId: string; qty: number; uomId: string | null }> = []
 
       let approvedCount = 0
       let rejectedCount = 0
@@ -336,9 +340,18 @@ export async function PUT(
           if (disposition === 'SELLABLE') sellableCount++
           else scrapCount++
 
+          // 原订单行的单位：退货数量按它换算成基础单位（20261014 修：以前只有可再售那笔换算，
+          // 流水记的是未换算的数，按箱退货时流水与 qtyOnHand 不一致）
+          const sourceLine = await prisma.orderLine.findFirst({
+            where: { orderId: { in: restaurant.orderIds }, productId: ret.productId },
+            select: { uomId: true },
+          })
           // P1-3: StockMove with source tracking; P1-4: decimal qty
-          // 客退入库记账：无论去向如何，先记一笔"货物回来了"
+          // 客退入库记账：无论去向如何，先记一笔"货物回来了"（客户 → 仓库）
           stockMoves.push({
+            uomId: sourceLine?.uomId ?? null,
+            partnerId: restaurant.restaurantId,
+            sellable: disposition === 'SELLABLE',
             productId: ret.productId,
             productName: ret.productName,
             type: 'RETURN',
@@ -349,19 +362,14 @@ export async function PUT(
             sourceRef: restaurant.orderIds?.[0] ?? null,
           })
 
-          if (disposition === 'SELLABLE') {
-            // 可再售：真正回补库存，供 FIFO 出库和批次台账使用
-            // 多单位销售(20260714)：退货按原订单行选用的单位换算成库存记账单位
-            const sourceLine = await prisma.orderLine.findFirst({
-              where: { orderId: { in: restaurant.orderIds }, productId: ret.productId },
-              select: { uomId: true },
-            })
-            restockUpdates.push({ productId: ret.productId, qty: returnQty, uomId: sourceLine?.uomId ?? null })
-          } else {
-            // 报废：不回补可售库存，额外记一笔报废损耗（计入损耗仪表盘 & 退货回收率）
+          if (disposition !== 'SELLABLE') {
+            // 报废：货回来了但不能再卖，紧接着一笔「仓库 → 报废」（计入损耗仪表盘 & 退货回收率）
             const reasonKey = review.scrapReason ?? 'CUSTOMER_RETURN_DAMAGED'
             const reasonLabel = SCRAP_REASON_LABEL[reasonKey] ?? reasonKey
             stockMoves.push({
+              uomId: sourceLine?.uomId ?? null,
+              partnerId: restaurant.restaurantId,
+              sellable: false,
               productId: ret.productId,
               productName: ret.productName,
               type: 'SCRAP',
@@ -414,35 +422,33 @@ export async function PUT(
           data: { restaurants: restaurants as never },
         })
 
-        // P1-3: 批量创建退货库存记录（含来源追踪）
-        if (stockMoves.length > 0) {
-          await tx.stockMove.createMany({
-            data: stockMoves.map(sm => ({
-              productId: sm.productId,
-              productName: sm.productName,
-              type: sm.type,
-              qty: sm.qty,
-              movedAt: new Date(),
-              note: sm.note,
-              lossStage: sm.lossStage ?? null,
-              lossReason: sm.lossReason ?? null,
-              sourceType: sm.sourceType,
-              sourceId: sm.sourceId,
-              sourceRef: sm.sourceRef,
-            })),
-          })
-        }
-
-        // SELLABLE 处置：真正回补 Product.qtyOnHand + FIFO 回补批次余量
+        // 退货库存入账（lib/stock-ledger.ts，20261014 复式改造 L3）：
+        //   每笔退货「客户 → 仓库」；报废的再接一笔「仓库 → 报废」。可再售的按 FEFO 反序回补批次。
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const txAny = tx as any
-        for (const r of restockUpdates) {
-          const stockQty = await toStockQty(txAny, r.productId, r.qty, r.uomId)
-          await tx.product.update({
-            where: { id: r.productId },
-            data: { qtyOnHand: { increment: stockQty } },
+        for (const sm of stockMoves) {
+          const stockQty = await toStockQty(txAny, sm.productId, Math.abs(sm.qty), sm.uomId)
+          const isScrap = sm.type === 'SCRAP'
+          await postStockMove(txAny, {
+            productId: sm.productId,
+            productName: sm.productName,
+            qty: stockQty,
+            from: isScrap ? LOC.STOCK : LOC.CUSTOMERS,
+            to: isScrap ? LOC.SCRAP : LOC.STOCK,
+            type: sm.type,
+            lot: sm.sellable ? { mode: 'fefo' } : { mode: 'none' },
+            note: sm.note,
+            lossStage: sm.lossStage ?? null,
+            lossReason: sm.lossReason ?? null,
+            sourceType: sm.sourceType,
+            sourceId: sm.sourceId,
+            sourceRef: sm.sourceRef,
+            partnerId: sm.partnerId,
+            uomQty: Math.abs(sm.qty),
+            uomId: sm.uomId,
+            userId: user.userId,
+            createdBy: user.name ?? user.email,
           })
-          await restoreLotsFIFO(txAny, r.productId, stockQty)
         }
 
         // P1-4: 逐条调整 OrderLine.deliveredQty（精确小数计算）

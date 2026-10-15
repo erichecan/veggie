@@ -16,6 +16,9 @@ const GUARDED: Record<string, string[]> = {
   amountPaid: ['lib/finance/invoice-balance.ts', 'lib/finance/vendor-bill-balance.ts'],
   amountDue: ['lib/finance/invoice-balance.ts', 'lib/finance/vendor-bill-balance.ts'],
   amountCredited: ['lib/finance/invoice-balance.ts'],
+  // 库存（20261014 复式改造 L3）：只有 lib/stock-ledger.ts 能改在手量和批次余量
+  qtyOnHand: ['lib/stock-ledger.ts'],
+  currentQty: ['lib/stock-ledger.ts', 'lib/inventory.ts'],
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -29,14 +32,19 @@ function walk(dir: string, out: string[] = []): string[] {
 
 function offenders(field: string, allowed: string[]): string[] {
   const out: string[] = []
-  const updateData = new RegExp(String.raw`\.(update|updateMany|upsert)\(\{[\s\S]{0,300}?\b(data|update):\s*\{[^{}]*?\b${field}\s*:`, 'g')
+  // 窗口不跨过本次调用的结尾 `})`，否则会误抓到紧随其后的另一条 create 语句
+  const updateData = new RegExp(String.raw`\.(update|updateMany|upsert)\(\{(?:(?!\}\))[\s\S]){0,300}?\b(data|update):\s*\{[^{}]*?\b${field}\s*:`, 'g')
   const incDec = new RegExp(String.raw`\b${field}\s*:\s*\{\s*(increment|decrement)`, 'g')
+  // 先拼对象再传给 update/create 的写法（updateData.qtyOnHand = …，商品导入以前就是这么绕过流水的）
+  const assign = new RegExp(String.raw`\b(updateData|createData|data)\.${field}\s*=(?!=)`, 'g')
   for (const file of [...walk('app'), ...walk('lib')]) {
     if (allowed.includes(file)) continue
     const src = readFileSync(file, 'utf8')
-    if (updateData.test(src) || incDec.test(src)) out.push(file)
+    const strictInit = field === 'qtyOnHand' && assign.test(src)
+    if (updateData.test(src) || incDec.test(src) || strictInit) out.push(file)
     updateData.lastIndex = 0
     incDec.lastIndex = 0
+    assign.lastIndex = 0
   }
   return out
 }
@@ -46,6 +54,17 @@ for (const [field, allowed] of Object.entries(GUARDED)) {
     assert.deepEqual(offenders(field, allowed), [], `${field} 应改为写明细后调用 ${allowed.join(' / ')}`)
   })
 }
+
+test('库存流水只能经 postStockMove 写入；批次 FEFO 扣补只能由它调用', () => {
+  const bad: string[] = []
+  for (const file of [...walk('app'), ...walk('lib')]) {
+    if (file === 'lib/stock-ledger.ts' || file === 'lib/inventory.ts') continue
+    const src = readFileSync(file, 'utf8')
+    if (/stockMove\.(create|createMany|update|updateMany|upsert)\(/.test(src)) bad.push(`${file}: stockMove 写入`)
+    if (/\b(consumeLotsFIFO|restoreLotsFIFO)\(/.test(src)) bad.push(`${file}: 直接扣/补批次`)
+  }
+  assert.deepEqual(bad, [], '改为调用 lib/stock-ledger.ts 的 postStockMove（或订单用 lib/order-stock.ts 的 syncOrderStock）')
+})
 
 test('发票余额 = 总额 − 收款 − 贷记单抵扣', () => {
   const b = computeInvoiceBalance({ totalIncTax: 100, payments: [30, 20], creditAllocations: [10] })

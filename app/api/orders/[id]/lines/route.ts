@@ -6,6 +6,7 @@ import { resolveOrderLines } from '@/lib/server-pricing'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { UNSET_UOM_LABEL } from '@/lib/sale-uom'
 import { findInvalidLineUom } from '@/lib/sale-uom-server'
+import { syncOrderStock } from '@/lib/order-stock'
 
 /**
  * POST /api/orders/:id/lines
@@ -139,6 +140,11 @@ export async function POST(
         where: { id },
         data: { totalAmount: Math.round(newTotal * 100) / 100 },
       })
+
+      // 已确认的单追加行要占用库存（以前这条路径不扣库存，订单删掉这行时又会「释放」——凭空多出库存）
+      await prisma.$transaction(tx => syncOrderStock(tx, id, {
+        reason: '追加行占用库存', userId: user.userId, createdBy: user.name ?? user.email,
+      }), { maxWait: 10000, timeout: 60000 })
 
       await writeLog({
         userId: user.userId,

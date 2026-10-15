@@ -15,23 +15,10 @@
  * （`PUT /api/orders/[id]` 的多行/换单位场景与这里语义相同但纠缠在整单 diff 里，
  * 暂未改写，见该文件 P0-1 段落 —— 两边的记账约定必须保持一致。）
  */
-import { toStockQty } from '@/lib/inventory'
+import { syncOrderStock } from '@/lib/order-stock'
 
-/** 只有实物商品(Product.type === 'PRODUCT')才记库存；服务/耗材不动 */
-const STOCKABLE_TYPE = 'PRODUCT'
-
-// 事务句柄的最小形状（项目里多处用 prismaAny 传进来）
-type TxClient = {
-  product: {
-    findUnique: (args: unknown) => Promise<{ type?: string } | null>
-    update: (args: unknown) => Promise<unknown>
-  }
-  // 多规格换算读的是**商品级** ProductSaleUom.factor，不再是全局 Uom.factor（20260819）
-  productSaleUom: {
-    findMany: (args: unknown) => Promise<Array<{ uomId: string; isDefault: boolean; factor: unknown }>>
-  }
-  stockMove: { create: (args: unknown) => Promise<unknown> }
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TxClient = any
 
 export interface LineStockChange {
   productId: string
@@ -50,44 +37,18 @@ export interface LineStockChange {
 }
 
 /**
- * 按行数量差额调整库存并记一笔流水。返回实际变动的库存数量（正=补回，负=多扣）。
- * 非实物商品、差额为 0、或换算后差额为 0 时不做任何事并返回 0。
+ * 行改量后的库存联动：调用方**先把行写进库**，再调这里。
+ * 20261014（复式改造 L3）起不再按 old/new 差额自己加减，而是委托 syncOrderStock 按
+ * 「订单应占用 − 流水里已拿」对账：报价单（PENDING）改量不再动库存，从没扣过库存的单减量
+ * 也不会凭空补回。返回该商品实际变动的库存数量（正 = 补回仓库，负 = 多扣）。
  */
 export async function applyLineStockDelta(tx: TxClient, c: LineStockChange): Promise<number> {
-  const product = await tx.product.findUnique({
-    where: { id: c.productId },
-    select: { type: true },
-  }) as { type?: string } | null
-  if (!product) return 0
-  if (product.type !== STOCKABLE_TYPE) return 0
-
-  // 新旧数量各自换算成库存记账单位再相减 —— 直接拿 oldQty-newQty 相减在按箱下单时
-  // 会少补回一个箱规倍数（I3 周期在收货侧修的是同一件事的另一半）
-  const oldStockQty = await toStockQty(tx, c.productId, c.oldQty, c.uomId)
-  const newStockQty = await toStockQty(tx, c.productId, c.newQty, c.uomId)
-  const release = oldStockQty - newStockQty
-  if (release === 0) return 0
-
-  await tx.product.update({
-    where: { id: c.productId },
-    data: release > 0
-      ? { qtyOnHand: { increment: release } }
-      : { qtyOnHand: { decrement: Math.abs(release) } },
+  const r = await syncOrderStock(tx, c.orderId, {
+    reason: `${c.reasonLabel} ${c.oldQty}→${c.newQty}`,
+    movedAt: c.movedAt,
+    // 缺货/差异处理发生在送货当天，单子可能已是 COMPLETED；只对有过流水的单生效（见 syncOrderStock）
+    allowCompleted: true,
   })
-  await tx.stockMove.create({
-    data: {
-      productId: c.productId,
-      productName: c.productName,
-      // 约定与 PUT /api/orders/[id] 一致：补回库存记 IN(正数)，多扣记 OUT(负数)，
-      // 净额恒等于 qtyOnHand 的变化量
-      type: release > 0 ? 'IN' : 'OUT',
-      qty: release,
-      movedAt: c.movedAt ?? new Date(),
-      note: `订单 ${c.orderCode} ${c.reasonLabel} ${c.oldQty}→${c.newQty}`,
-      sourceType: 'ORDER',
-      sourceId: c.orderId,
-      sourceRef: c.orderCode,
-    },
-  })
-  return release
+  const hit = r.changed.find(x => x.productId === c.productId)
+  return hit ? -hit.delta : 0
 }

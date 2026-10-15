@@ -4,6 +4,7 @@ import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { toStockQty } from '@/lib/inventory'
 import { nextLotNumbers } from '@/lib/lot-number'
+import { postStockMove, LOC } from '@/lib/stock-ledger'
 
 /**
  * 采购「确认收货」——全系统唯一真正改库存的采购侧动作(20260823 从库存收货台
@@ -72,10 +73,9 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
       const newStd = costPerBase > 0 && (oldQty + stockQty) > 0
         ? Math.round(((oldQty * oldStd + stockQty * costPerBase) / (oldQty + stockQty)) * 100) / 100
         : oldStd
-      await tx.product.update({
-        where: { id: line.productId },
-        data: { qtyOnHand: { increment: stockQty }, ...(newStd !== oldStd ? { standardPrice: newStd } : {}) },
-      })
+      if (newStd !== oldStd) {
+        await tx.product.update({ where: { id: line.productId }, data: { standardPrice: newStd } })
+      }
 
       const lotNumber = lotNumbers[lotIdx++]
       const lot = await tx.lot.create({
@@ -95,19 +95,28 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
         },
       })
 
-      await tx.stockMove.create({
-        data: {
-          productId: line.productId,
-          productName: line.productName,
-          type: 'IN',
-          qty: stockQty,
-          lotId: lot.id,
-          movedAt: batchDate,
-          note: `采购确认收货 PO ${po.name} / 批次 ${lotNumber}`,
-          sourceType: 'PURCHASE_RECEIVE',
-          sourceId: poId,
-          sourceRef: po.name,
-        },
+      // 入账：供应商 → 仓库（lib/stock-ledger.ts）。批次余量建批次时已设好，这里只挂 lotId；
+      // 按采购价估值，出凭证 Dr 1300 存货 / Cr 2150 已收货未开票
+      await postStockMove(tx, {
+        productId: line.productId,
+        productName: line.productName,
+        qty: stockQty,
+        from: LOC.VENDORS,
+        to: LOC.STOCK,
+        type: 'IN',
+        lot: { mode: 'lot', lotId: lot.id, adjustLot: false },
+        unitCost: costPerBase > 0 ? costPerBase : null,
+        movedAt: batchDate,
+        note: `采购确认收货 PO ${po.name} / 批次 ${lotNumber}`,
+        sourceType: 'PURCHASE_RECEIVE',
+        sourceId: poId,
+        sourceRef: po.name,
+        purchaseOrderLineId: line.id,
+        partnerId: po.supplierId ?? null,
+        uomQty: qty,
+        uomId: line.uomId ?? null,
+        userId: user.userId,
+        createdBy: user.name ?? user.email,
       })
     }
 

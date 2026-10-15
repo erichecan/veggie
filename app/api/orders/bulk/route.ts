@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { withAuth, effectiveRoles, userHasPermission } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
-import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
+import { syncOrderStock } from '@/lib/order-stock'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { removeOrderFromAllWaves } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
@@ -140,45 +140,16 @@ export async function POST(req: Request) {
         const cancellableIds = cancellable.map(o => o.id)
         affectedOrders = cancellable.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
 
-        // 恢复已扣库存的订单（CONFIRMED / WAVE_ASSIGNED / IN_DELIVERY）
-        const stockReservedStatuses = new Set(['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'])
-        const needsStockRestore = cancellable.filter(o => stockReservedStatuses.has(String(o.status).toUpperCase()))
-
-        for (const ord of needsStockRestore) {
-          const lines = await prisma.orderLine.findMany({
-            where: { orderId: ord.id },
-            include: { product: { select: { type: true } } },
-          })
-          for (const line of lines) {
-            if (!line.product || line.product.type !== 'PRODUCT') continue
-            const qty = toNum(line.orderedQty)
-            if (qty <= 0) continue
-            const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
-            await prismaAny.product.update({
-              where: { id: line.productId },
-              data: { qtyOnHand: { increment: stockQty } },
-            })
-            await restoreLotsFIFO(prismaAny, line.productId, stockQty)
-            await prismaAny.stockMove.create({
-              data: {
-                productId: line.productId,
-                productName: line.productName ?? '',
-                type: 'IN',
-                qty: stockQty,
-                movedAt: ord.deliveryDate ? new Date(ord.deliveryDate as unknown as string) : new Date(),
-                note: `批量取消订单释放库存`,
-                sourceType: 'ORDER',
-                sourceId: ord.id,
-                sourceRef: null,
-              },
-            })
-          }
-        }
-
         await prisma.order.updateMany({
           where: { id: { in: cancellableIds } },
           data: { status: 'CANCELLED' },
         })
+        // 库存：只释放每张单在流水里真正拿走过的量（lib/order-stock.ts，20261014 复式改造 L3）
+        for (const ordId of cancellableIds) {
+          await prisma.$transaction(tx => syncOrderStock(tx, ordId, {
+            reason: '批量取消释放库存', userId: user.userId, createdBy: user.name ?? user.email,
+          }), { maxWait: 10000, timeout: 60000 })
+        }
         detail = `批量取消 ${cancellableIds.length} 单${lockedIds.size > 0 ? `（${lockedIds.size} 单因波次已拣货锁定跳过）` : ''}`
 
         // Write audit logs for cancelled orders
@@ -231,62 +202,16 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: '选中订单中没有待处理状态的订单' }, { status: 400 })
         }
 
-        // P1-2: 批量确认时同时做库存预留（每单逐行扣减 qtyOnHand）
-        for (const ordId of pendingIds) {
-          const ord = before.find(o => o.id === ordId)
-          const bulkMovedAt = ord?.deliveryDate ? new Date(ord.deliveryDate) : new Date()
-          const lines = await prisma.orderLine.findMany({
-            where: { orderId: ordId },
-            include: { product: { select: { type: true } } },
-          })
-          for (const line of lines) {
-            if (!line.product || line.product.type !== 'PRODUCT') continue
-            const qty = toNum(line.orderedQty)
-            if (qty <= 0) continue
-            const stockQty = await toStockQty(prismaAny, line.productId, qty, line.uomId)
-            await prismaAny.product.update({
-              where: { id: line.productId },
-              data: { qtyOnHand: { decrement: stockQty } },
-            })
-            const consumed = await consumeLotsFIFO(prismaAny, line.productId, stockQty)
-            const consumedQty = consumed.reduce((s, c) => s + c.qty, 0)
-            const unmatched = round2(stockQty - consumedQty)
-            const moveRows = consumed.map(c => ({
-              productId: line.productId,
-              productName: line.productName ?? '',
-              type: 'OUT' as const,
-              qty: -c.qty,
-              lotId: c.lotId,
-              movedAt: bulkMovedAt,
-              note: `批量确认订单预留库存（批次 ${c.lotNumber}）`,
-              sourceType: 'ORDER',
-              sourceId: ordId,
-              sourceRef: null,
-            }))
-            if (unmatched > 0) {
-              moveRows.push({
-                productId: line.productId,
-                productName: line.productName ?? '',
-                type: 'OUT' as const,
-                qty: -unmatched,
-                lotId: undefined as unknown as string,
-                movedAt: bulkMovedAt,
-                note: `批量确认订单预留库存（超卖，无批次）`,
-                sourceType: 'ORDER',
-                sourceId: ordId,
-                sourceRef: null,
-              })
-            }
-            for (const row of moveRows) {
-              await prismaAny.stockMove.create({ data: row })
-            }
-          }
-        }
-
         await prisma.order.updateMany({
           where: { id: { in: pendingIds } },
           data: { status: 'CONFIRMED', confirmationDate: new Date() },
         })
+        // 库存占用与单单确认走同一个函数（lib/order-stock.ts）
+        for (const ordId of pendingIds) {
+          await prisma.$transaction(tx => syncOrderStock(tx, ordId, {
+            reason: '批量确认占用库存', userId: user.userId, createdBy: user.name ?? user.email,
+          }), { maxWait: 10000, timeout: 60000 })
+        }
         detail = `批量确认 ${pendingIds.length} 张报价单`
         affectedOrders = pendingOrders.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
 

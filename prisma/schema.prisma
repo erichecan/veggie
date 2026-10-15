@@ -1257,36 +1257,59 @@ model Lot {
 }
 
 model StockMove {
-  id          String        @id @default(cuid())
-  productId   String
-  productName String
-  type        StockMoveType
-  qty         Decimal       @db.Decimal(14, 3)
-  note        String?
+  id                  String         @id @default(cuid())
+  productId           String
+  productName         String
+  type                StockMoveType
+  qty                 Decimal        @db.Decimal(14, 3)
+  note                String?
   /// 来源单据类型：SO / PO / RETURN / ADJUSTMENT / CREDIT_NOTE
-  sourceType  String?
+  sourceType          String?
   /// 来源单据 ID
-  sourceId    String?
+  sourceId            String?
   /// 来源单据编号（如 SO-00001, PO-00003）
-  sourceRef   String?
+  sourceRef           String?
   /// 关联批次（报废/出库时指向消耗的 Lot）
-  lotId       String?
-  lot         Lot?          @relation(fields: [lotId], references: [id])
+  lotId               String?
+  lot                 Lot?           @relation(fields: [lotId], references: [id])
   /// 损耗归因 · 环节（台账 D4/E4）：SORTING/TRANSPORT/STORAGE/RECEIPT/CUSTOMER_RETURN/OTHER。
   /// 只对 SCRAP 类流水有意义；历史行为 null，看板按原因反推展示（见 lib/loss-attribution.ts）
-  lossStage   String?
+  lossStage           String?
   /// 损耗归因 · 原因（结构化，取值见 lib/scrap-reasons.ts）。
   /// 此前原因只存在 note 拼接串里，看板靠正则从文本里反解，改不动文案就会静默失真
-  lossReason  String?
+  lossReason          String?
   /// 业务日期（库存批次归属日期）：采购入库=PO.expectedDate或GR.arrivedAt，销售出库=订单交付日，手动调整=操作日
   /// 与 createdAt（记录创建时间）分开，确保库存按实际业务日期归批
-  movedAt     DateTime      @default(now())
-  createdAt   DateTime      @default(now())
+  movedAt             DateTime       @default(now())
+  createdAt           DateTime       @default(now())
+  /// ── 复式（20261014 改造 L3，lib/stock-ledger.ts）──────────────────────────
+  /// 从哪个库位到哪个库位。qty 仍是对 WH/Stock 的带符号净影响（与改造前读方兼容），
+  /// 方向由这两个字段表达；所有库位余额相加恒为 0。历史流水由迁移按 type/qty 符号回填。
+  fromLocationId      String?
+  fromLocation        StockLocation? @relation("StockMoveFrom", fields: [fromLocationId], references: [id])
+  toLocationId        String?
+  toLocation          StockLocation? @relation("StockMoveTo", fields: [toLocationId], references: [id])
+  /// 订单行 / 采购单行（新流水才有；历史流水为 null）
+  orderLineId         String?
+  purchaseOrderLineId String?
+  /// 业务单位下的原始数量（如 2 箱）与单位，只做展示；qty 是基础单位
+  uomQty              Decimal?       @db.Decimal(14, 3)
+  uomId               String?
+  /// 单位成本（批次成本优先，其次商品平均成本）与金额 = |qty| × unitCost，存货估值凭证用
+  unitCost            Decimal?       @db.Decimal(12, 4)
+  value               Decimal?       @db.Decimal(14, 2)
+  /// 客户/供应商
+  partnerId           String?
+  /// 经手人显示名
+  createdBy           String?
 
   @@index([productId])
   @@index([lotId])
   @@index([movedAt])
   @@index([createdAt])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+  @@index([purchaseOrderLineId])
   @@index([type])
   @@index([sourceType, sourceId])
   @@index([lossStage])
@@ -2174,4 +2197,26 @@ model LedgerCheckRun {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/**
+ * 库位（20261014 复式改造 L3）
+ * ================================================================================
+ * Odoo 式库位：每笔库存流水从一个库位到另一个库位。内部库位（usage=INTERNAL）是实物在仓里，
+ * 其余是虚拟库位（供应商、客户、报废、盘点调整、期初），它们的余额是「累计流向那里的量」。
+ * 固定 id 见 lib/stock-locations.ts；目前只有一个仓 WH/Stock，结构上支持以后加子库位/多仓。
+ */
+model StockLocation {
+  id        String   @id
+  code      String   @unique
+  name      String
+  nameZh    String?
+  /// INTERNAL | SUPPLIER | CUSTOMER | INVENTORY | SCRAP | OPENING
+  usage     String
+  parentId  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  movesFrom StockMove[] @relation("StockMoveFrom")
+  movesTo   StockMove[] @relation("StockMoveTo")
 }

@@ -4,6 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { normalizeAndValidateSaleUomItems, upsertProductSaleUomRows } from '@/lib/product-sale-uom-upsert'
 import type { SaleUomItemInput } from '@/lib/sale-uom'
+import { postStockMove, LOC } from '@/lib/stock-ledger'
 import {
   runBulkImport, str, num, boundedNum, bool, isUniqueConstraintError, isTransactionTimeoutError, lastErrorLine,
   normalizeNameKey, type MatchKeyDef, importOptionsFromBody,
@@ -313,7 +314,6 @@ export async function POST(req: Request) {
             if (row.weight !== undefined) updateData.weight = row.weight
             if (row.netWeight !== undefined) updateData.netWeight = row.netWeight
             if (row.volume !== undefined) updateData.volume = row.volume
-            if (row.qtyOnHand !== undefined) updateData.qtyOnHand = row.qtyOnHand
             if (row.uomId !== undefined) updateData.uomId = row.uomId
             if (row.purchaseUomId !== undefined) updateData.purchaseUomId = row.purchaseUomId
             if (row.tracking !== undefined) updateData.tracking = row.tracking
@@ -326,6 +326,19 @@ export async function POST(req: Request) {
             productId = updatedProduct.id
             finalUomId = updatedProduct.uomId
             committedPrice = { name: updatedProduct.name, listPrice: updatedProduct.listPrice, standardPrice: updatedProduct.standardPrice }
+            // 导入改在手量 = 一笔盘点调整（lib/stock-ledger.ts）：以前直接覆盖 qtyOnHand，库存和流水从此对不上
+            if (row.qtyOnHand !== undefined) {
+              const diff = Math.round((row.qtyOnHand - Number(updatedProduct.qtyOnHand ?? 0)) * 1000) / 1000
+              if (diff !== 0) {
+                await postStockMove(tx, {
+                  productId, productName: updatedProduct.name, qty: Math.abs(diff),
+                  from: diff > 0 ? LOC.INVENTORY : LOC.STOCK, to: diff > 0 ? LOC.STOCK : LOC.INVENTORY,
+                  type: 'ADJUSTMENT', lot: diff < 0 ? { mode: 'fefo' } : { mode: 'none' },
+                  note: `商品导入调整在手量 ${Number(updatedProduct.qtyOnHand ?? 0)} → ${row.qtyOnHand}`,
+                  sourceType: 'IMPORT', userId: user.userId, createdBy: user.name || user.email,
+                })
+              }
+            }
           } else {
             const createData: Record<string, unknown> = {
               name: row.name,
@@ -347,7 +360,6 @@ export async function POST(req: Request) {
               weight: row.weight ?? null,
               netWeight: row.netWeight ?? null,
               volume: row.volume ?? null,
-              qtyOnHand: row.qtyOnHand ?? 0,
               uomId: row.uomId,
               purchaseUomId: row.purchaseUomId,
               tracking: row.tracking ?? null,
@@ -360,6 +372,14 @@ export async function POST(req: Request) {
             })
             productId = createdProduct.id
             finalUomId = createdProduct.uomId
+            // 新建商品带期初在手量：记一笔「期初 → 仓库」，不再直接写 qtyOnHand
+            if (row.qtyOnHand && row.qtyOnHand > 0) {
+              await postStockMove(tx, {
+                productId, productName: createdProduct.name, qty: row.qtyOnHand,
+                from: LOC.OPENING, to: LOC.STOCK, type: 'ADJUSTMENT', lot: { mode: 'none' },
+                note: '商品导入期初在手量', sourceType: 'IMPORT', userId: user.userId, createdBy: user.name || user.email,
+              })
+            }
           }
 
           let saleUomWarning: string | undefined

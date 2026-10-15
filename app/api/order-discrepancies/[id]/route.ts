@@ -4,7 +4,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { toNum } from '@/lib/decimal-helpers'
 import { writeLog } from '@/lib/action-log'
-import { consumeLotsFIFO, restoreLotsFIFO, toStockQty } from '@/lib/inventory'
+import { syncOrderStock } from '@/lib/order-stock'
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -65,7 +65,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (!line) return NextResponse.json({ error: '关联订单行不存在' }, { status: 404 })
 
       const movedAt = order.deliveryDate ? new Date(order.deliveryDate as unknown as string) : new Date()
-      const isProduct = line.product && line.product.type === 'PRODUCT'
       const orderRef = order.code ?? disc.orderId
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,8 +72,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       if (resolution === 'ADJUST_QTY') {
         const newQty = toNum(disc.pickedQty)
-        const oldQty = toNum(line.orderedQty)
-        const releaseQty = oldQty - newQty
 
         await prisma.orderLine.update({
           where: { id: disc.orderLineId },
@@ -84,37 +81,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           },
         })
 
-        if (isProduct && releaseQty > 0) {
-          const stockReleaseQty = await toStockQty(px, line.productId, releaseQty, line.uomId)
-          await px.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { increment: stockReleaseQty } },
-          })
-          await restoreLotsFIFO(px, line.productId, stockReleaseQty)
-          await px.stockMove.create({
-            data: {
-              productId: line.productId,
-              productName: line.productName,
-              type: 'IN',
-              qty: stockReleaseQty,
-              movedAt,
-              note: `差异处理 ${disc.code}: 调整数量 ${oldQty}→${newQty}`,
-              sourceType: 'ORDER',
-              sourceId: disc.orderId,
-              sourceRef: orderRef,
-            },
-          })
-        }
-
         await recalcOrderTotal(disc.orderId)
       } else if (resolution === 'SUBSTITUTE') {
         if (!substituteProductId || !substituteProductName || !substituteQty || !substituteUnitPrice) {
           return NextResponse.json({ error: '替代商品信息不完整' }, { status: 400 })
         }
 
-        const oldQty = toNum(line.orderedQty)
         const pickedQty = toNum(disc.pickedQty)
-        const releaseQty = oldQty - pickedQty
 
         if (pickedQty > 0) {
           await prisma.orderLine.update({
@@ -127,33 +100,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         } else {
           await prisma.orderLine.delete({ where: { id: disc.orderLineId } })
         }
-
-        if (isProduct && releaseQty > 0) {
-          const stockReleaseQty = await toStockQty(px, line.productId, releaseQty, line.uomId)
-          await px.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { increment: stockReleaseQty } },
-          })
-          await restoreLotsFIFO(px, line.productId, stockReleaseQty)
-          await px.stockMove.create({
-            data: {
-              productId: line.productId,
-              productName: line.productName,
-              type: 'IN',
-              qty: stockReleaseQty,
-              movedAt,
-              note: `差异处理 ${disc.code}: 原商品释放 ${oldQty}→${pickedQty}`,
-              sourceType: 'ORDER',
-              sourceId: disc.orderId,
-              sourceRef: orderRef,
-            },
-          })
-        }
-
-        const subProduct = await px.product.findUnique({
-          where: { id: substituteProductId },
-          select: { type: true },
-        })
 
         const maxSeq = await prisma.orderLine.aggregate({
           where: { orderId: disc.orderId },
@@ -174,58 +120,22 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           },
         })
 
-        if (subProduct?.type === 'PRODUCT') {
-          await px.product.update({
-            where: { id: substituteProductId },
-            data: { qtyOnHand: { decrement: Number(substituteQty) } },
-          })
-          await consumeLotsFIFO(px, substituteProductId, Number(substituteQty))
-          await px.stockMove.create({
-            data: {
-              productId: substituteProductId,
-              productName: substituteProductName,
-              type: 'OUT',
-              qty: -Number(substituteQty),
-              movedAt,
-              note: `差异处理 ${disc.code}: 替代商品扣减`,
-              sourceType: 'ORDER',
-              sourceId: disc.orderId,
-              sourceRef: orderRef,
-            },
-          })
-        }
-
         await recalcOrderTotal(disc.orderId)
       } else if (resolution === 'CANCEL_LINE') {
-        const oldQty = toNum(line.orderedQty)
-
         await prisma.orderLine.delete({ where: { id: disc.orderLineId } })
-
-        if (isProduct && oldQty > 0) {
-          const stockQty = await toStockQty(px, line.productId, oldQty, line.uomId)
-          await px.product.update({
-            where: { id: line.productId },
-            data: { qtyOnHand: { increment: stockQty } },
-          })
-          await restoreLotsFIFO(px, line.productId, stockQty)
-          await px.stockMove.create({
-            data: {
-              productId: line.productId,
-              productName: line.productName,
-              type: 'IN',
-              qty: stockQty,
-              movedAt,
-              note: `差异处理 ${disc.code}: 取消订单行释放`,
-              sourceType: 'ORDER',
-              sourceId: disc.orderId,
-              sourceRef: orderRef,
-            },
-          })
-        }
 
         await recalcOrderTotal(disc.orderId)
       }
       // REPLENISH: 不修改订单，仅标记差异已处理
+
+      // 库存：行改完后按「订单应占用 − 流水已拿」对账（lib/order-stock.ts，20261014 复式改造 L3）。
+      // 以前这里三段各自按差额加减，替代商品还不做单位换算；从没扣过库存的单减量会凭空多出库存。
+      if (resolution !== 'REPLENISH') {
+        await prisma.$transaction(tx => syncOrderStock(tx, disc.orderId, {
+          reason: `差异处理 ${disc.code}（${resolution}）`, movedAt, allowCompleted: true,
+          userId: user.userId, createdBy: user.name ?? user.email,
+        }), { maxWait: 10000, timeout: 60000 })
+      }
 
       const updated = await prisma.orderDiscrepancy.update({
         where: { id },
