@@ -18,6 +18,11 @@
 
 ## 第二批：L3 复式库存流水 + L4 采购行已收核对 + L5 存货估值凭证 + On Hand / Forecast 修复
 
+- 合并：PR #40，main `1a16ca4f`。
+- 部署：Deploy to droplet run 38673419023，所有步骤 `success`。服务器端 `remote-deploy.sh` 依次执行 migrate、up、healthcheck，Deploy 步骤成功即三者都通过。
+- 沙箱出口代理不放行生产域名，无法从这里直接探活。
+- 发布前：`npm run build` exit 0。
+
 ### 根因：客户截图 Pepper Green「走完销售流程库存回到原值」
 
 - Place Order 页「确认」直接 `POST /api/orders` 建成 CONFIRMED。
