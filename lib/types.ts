@@ -189,6 +189,9 @@ export interface Product {
 
   // 旧版兼容（保持订单引用正常）
   spec?: string
+  /** 按采购单位区分的规格（如 10KG/20KG 两袋同名商品）——来自 ProductSaleUom.spec，
+   *  跟上面的 spec（Product.spec）是两张不同的表，那个字段早清空了（见 lib/order-line-description.ts） */
+  purchaseUomSpec?: string | null
   price?: number
   stock?: number
   status: ProductStatus

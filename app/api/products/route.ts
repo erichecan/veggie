@@ -130,12 +130,19 @@ export async function GET(req: Request) {
       include: {
         category: { select: { name: true } },
         uom: { select: { id: true, name: true } },
+        // 20261014：同名商品靠这个区分规格（价格表等页面展示商品名时要带规格），
+        // 跟 ?slim=1 分支同一套口径，见上方 20261009 注释
+        saleUoms: { select: { uomId: true, spec: true, isDefault: true } },
       },
     })
-    const result = products.map(({ category, uom, ...p }) => ({
+    const result = products.map(({ category, uom, saleUoms, purchaseUomId, ...p }) => ({
       ...p,
+      purchaseUomId,
       uomName: uom?.name ?? null,
       category: category?.name ?? null,
+      purchaseUomSpec: saleUoms.find(su => su.uomId === purchaseUomId)?.spec
+        ?? saleUoms.find(su => su.isDefault)?.spec
+        ?? null,
     }))
     return NextResponse.json(serializeApi(result))
   } catch (error) {

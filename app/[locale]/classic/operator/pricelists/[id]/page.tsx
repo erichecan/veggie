@@ -11,6 +11,7 @@ import type {
   Product, ProductCategory,
 } from '@/lib/types'
 import { resolvePrice, computeItemPrice } from '@/lib/pricing-engine'
+import { categoryPathMap } from '@/lib/category-path'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ActionLogPanel from '@/components/shared/action-log-panel'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
@@ -123,8 +124,10 @@ function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: 
     // products 传的是全部商品(含已归档)：归档商品以前也显示成「-」，看起来像无效规则(20261008)
     const p = products.find(p => p.id === scopedProductId(item))
     if (!p) return '-'
+    // 20261014：很多商品同名，名字后面带规格(如 "10KG"/"20KG")才分得清是哪一款
+    const name = p.purchaseUomSpec ? `${p.name} (${p.purchaseUomSpec})` : p.name
     const archived = p.status?.toLowerCase() !== 'active' || p.active === false
-    return archived ? `${p.name} ${isEn ? '(archived)' : '(已归档)'}` : p.name
+    return archived ? `${name} ${isEn ? '(archived)' : '(已归档)'}` : name
   }
   if (item.applyOn === 'category') {
     const c = categories.find(c => c.id === item.categoryId)
@@ -137,8 +140,8 @@ function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: 
  * Product Category 列——规则本身锁定的是"分类"（applyOn=category）时显示那个分类；
  * 锁定的是具体商品（product/variant）时，Odoo 显示的是**那个商品自己所属的分类**，
  * 不是规则的 categoryId（这类规则压根没有 categoryId）。
- * ⛔ 我们的分类是平的，没有父子层级，做不出截图里 "All / Stockable / Vegetable" 那种
- * 面包屑，只能显示叶子分类名。
+ * 20261014：显示完整路径（"父类目 / 子类目"），与导出列（lib/export/loaders/pricelists.ts）
+ * 口径保持一致，复用同一个 categoryPathMap。
  */
 function productCategoryLabel(
   item: OdooPricelistItem,
@@ -146,13 +149,12 @@ function productCategoryLabel(
   categories: ProductCategory[],
   isEn: boolean,
 ): string {
+  const paths = categoryPathMap(categories, isEn ? 'name' : 'nameZh')
   if (item.applyOn === 'category') {
-    const c = categories.find(c => c.id === item.categoryId)
-    return c ? (isEn ? (c.name || c.nameZh || '') : (c.nameZh || c.name)) : ''
+    return (item.categoryId && paths.get(item.categoryId)) || ''
   }
   if (!scopedProduct?.categoryId) return ''
-  const c = categories.find(c => c.id === scopedProduct.categoryId)
-  return c ? (isEn ? (c.name || c.nameZh || '') : (c.nameZh || c.name)) : ''
+  return paths.get(scopedProduct.categoryId) || ''
 }
 
 // ─── main page ────────────────────────────────────────────────────────────────
@@ -587,7 +589,7 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               </button>
               {printOpen && (
                 <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded border border-gray-200 shadow-lg py-1 z-30 text-sm">
-                  <button onClick={() => { toast.info(isEn ? 'Print feature coming soon' : '打印功能即将推出'); setPrintOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                  <button onClick={() => { window.open(`${prefix}/classic/print/pricelist?ids=${pl.id}`, '_blank'); setPrintOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     {isEn ? 'Print Pricelist' : '打印价格表'}
                   </button>
                 </div>
