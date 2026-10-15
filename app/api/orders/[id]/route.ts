@@ -386,6 +386,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         const effectivePriceType = priceType !== undefined
           ? String(priceType).toLowerCase()
           : orderBefore.priceType
+        // 只在这次真的改了 pricelistId 才校验 selectable——否则早先挂着的旧
+        // 价格表后来被取消勾选 Selectable，会连带把跟 pricelistId 无关的保存也挡掉。
+        const pricelistChanged = pricelistId !== undefined && effectivePricelistId !== (orderBefore.pricelistId ?? null)
         const linesArr = linesPayload as Record<string, unknown>[]
         const { lines: resolvedLines, warnings: resolvedWarnings } = await resolveOrderLines(
           { prisma, restaurantId: pricingRestaurantId },
@@ -407,6 +410,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             // 也会让提交价合法地对不上，硬失败会把正常保存一起挡掉。
             // 那种情况下 warnings 会说明「你填的没被采纳」，前端负责显示（X4）。
             allowManualPrice: userHasPermission(user, 'sales.order.override_price'),
+            requireSelectablePricelist: pricelistChanged,
           },
         )
         pricingWarnings = resolvedWarnings

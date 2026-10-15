@@ -294,6 +294,8 @@ export async function POST(req: Request) {
         // 手动改价（台账 X1/X2）：下单时谈好的价也要能填进来。此前下单同样静默丢弃 ——
         // 只是下单路径的表头是按落库值算的，所以只表现为"改不了价"，没有烂数据
         allowManualPrice: userHasPermission(user, 'sales.order.override_price'),
+        // 新建订单/报价单没有"沿用旧值"这回事，传了 pricelistId 就是本次新选的
+        requireSelectablePricelist: true,
       })
 
       // 赠品标记(20260913)：resolveOrderLines 算出的价格/小计/提成不知道 isGift。

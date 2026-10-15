@@ -283,6 +283,12 @@ export async function resolveOrderLines(
      * 无条件信任前端传值正是它当初要终结的东西（防金额被篡改/算错）。
      */
     allowManualPrice?: boolean
+    /**
+     * pricelistId 是否是本次「新选择」（而非沿用订单/报价单已有值）。
+     * 为 true 且目标价格表 selectable=false 时拒绝；默认 false，与改造前行为一致——
+     * 不然已挂着旧价格表(后来被取消勾选 Selectable)的订单，改其它字段保存时会被连带拦下。
+     */
+    requireSelectablePricelist?: boolean
   },
 ): Promise<{
   lines: ResolvedLine[]
@@ -324,6 +330,18 @@ export async function resolveOrderLines(
     active: p.active,
     updatedAt: p.updatedAt.toISOString(),
   }))
+
+  // 本单显式新选了一张价格表(非沿用旧值)时，拒绝 selectable=false 的——
+  // Selectable 在 Odoo 里管的是「能不能被挑选」，不管「已挂着的还能不能用」。
+  if (overrides?.requireSelectablePricelist && overrides.pricelistId) {
+    const chosen = allPricelists.find((p) => p.id === overrides.pricelistId)
+    if (chosen && chosen.selectable === false) {
+      throw Object.assign(
+        new Error(`价格表「${chosen.name}」已设为不可选（Selectable 未勾选），不能选用`),
+        { status: 400 },
+      )
+    }
+  }
 
   // 拉所有涉及的商品变体 + 模板（一次性，避免 N+1）
   const productIds = [...new Set(submittedItems.map((i) => i.productId))]

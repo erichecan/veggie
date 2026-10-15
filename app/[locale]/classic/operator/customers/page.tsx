@@ -388,7 +388,7 @@ export default function ClassicCustomersPage() {
       sortable: true,
       editable: true,
       editType: 'search-select',
-      editOptions: [{ value: '', label: '' }, ...pricelists.map(p => ({ value: p.id, label: p.name }))],
+      editOptions: [{ value: '', label: '' }, ...pricelists.filter(p => p.selectable !== false).map(p => ({ value: p.id, label: p.name }))],
       filterType: 'multi-select',
       filterOptions: activePricelists.map(p => ({ value: p.id, label: p.name })),
       filterLabelGetter: (v) => pricelistMap.get(v) ?? v,

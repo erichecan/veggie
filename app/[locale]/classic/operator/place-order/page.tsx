@@ -417,7 +417,7 @@ export default function ClassicPlaceOrderPage() {
   )
 
   const filteredPricelists = useMemo(() => {
-    const active = pricelists.filter(p => p.active !== false)
+    const active = pricelists.filter(p => p.active !== false && p.selectable !== false)
     return rankByRelevance(active, plSearch, p => p.name)
   }, [pricelists, plSearch])
 

@@ -1011,7 +1011,7 @@ export default function QuotationDetailPage() {
                 {editing ? (
                   <SearchableDropdown
                     className="flex-1"
-                    options={[{ value: '', label: '— none —' }, ...pricelists.map(p => ({ value: p.id, label: p.name }))]}
+                    options={[{ value: '', label: '— none —' }, ...pricelists.filter(p => p.selectable !== false || p.id === pricelistId).map(p => ({ value: p.id, label: p.name }))]}
                     value={pricelistId}
                     onChange={setPricelistId}
                   />
