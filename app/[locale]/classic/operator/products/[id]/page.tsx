@@ -18,7 +18,7 @@ import SaleUomsEditor from '@/components/classic/SaleUomsEditor'
 import ProductPricelistRules from '@/components/classic/ProductPricelistRules'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { readProductNavList } from '@/lib/product-nav-list'
-import { formatDateTime } from '@/lib/format-date'
+import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 import { getSession, type UserSession } from '@/lib/session'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
@@ -28,6 +28,16 @@ interface PriceHistoryEntry {
   value: number
   changedAt: string
   changedBy: string
+}
+
+interface PurchaseReceiptEntry {
+  supplierName: string | null
+  poName: string | null
+  confirmedAt: string | null
+  qty: number
+  unitCost: number | null
+  updatedBy: string | null
+  movedAt: string
 }
 
 // ── SVG Smart Button Icons ─────────────────────────────────────────────────────
@@ -174,6 +184,12 @@ export default function ClassicProductDetailPage() {
   // Smart button stats
   const [soldCount, setSoldCount] = useState(0)
   const [onHandQty, setOnHandQty] = useState(0)
+  // 预测库存(20261015 客户反馈)：复用 /api/products/forecast 既有口径(在手+采购在途-待出库)，
+  // 不读 Product.forecastQty——那是收货后不更新的死字段
+  const [forecastQty, setForecastQty] = useState<number | null>(null)
+  // 保质期(20261015)：只读展示"最近一批进货"的 Lot.bestBefore，没有商品级字段；
+  // 随每次收货变化，从没进过货/没登记过保质期都显示"暂无"
+  const [latestBestBefore, setLatestBestBefore] = useState<string | null>(null)
 
   // 手动库存调整（针对本商品的库存单元 variant）
   const [variants, setVariants] = useState<{ id: string; name: string; qtyOnHand: number; uomName?: string }[]>([])
@@ -190,10 +206,28 @@ export default function ClassicProductDetailPage() {
   const [priceHistoryField, setPriceHistoryField] = useState<'listPrice' | 'standardPrice' | null>(null)
   const [priceHistory, setPriceHistory] = useState<{ listPrice: PriceHistoryEntry[]; standardPrice: PriceHistoryEntry[] } | null>(null)
   const [priceHistoryLoading, setPriceHistoryLoading] = useState(false)
+  // Cost 旁的历史改成查"这批货哪个供应商/哪张单/确认日期/数量/经手人"(20261015 客户反馈)，
+  // 跟 Sales Price 的字段编辑历史数据源不同，分开一份 state/请求；Sales Price 不变
+  const [purchaseReceiptHistory, setPurchaseReceiptHistory] = useState<PurchaseReceiptEntry[] | null>(null)
+  const [purchaseReceiptHistoryLoading, setPurchaseReceiptHistoryLoading] = useState(false)
 
   async function openPriceHistory(field: 'listPrice' | 'standardPrice') {
     setPriceHistoryField(field)
-    if (priceHistory || priceHistoryLoading || isNew) return
+    if (isNew) return
+    if (field === 'standardPrice') {
+      if (purchaseReceiptHistory || purchaseReceiptHistoryLoading) return
+      setPurchaseReceiptHistoryLoading(true)
+      try {
+        const data = await apiGet<{ history: PurchaseReceiptEntry[] }>(`/api/products/${id}/purchase-receipt-history`)
+        setPurchaseReceiptHistory(data.history)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load receipt history' : '加载收货历史失败'))
+      } finally {
+        setPurchaseReceiptHistoryLoading(false)
+      }
+      return
+    }
+    if (priceHistory || priceHistoryLoading) return
     setPriceHistoryLoading(true)
     try {
       const data = await apiGet<{ listPrice: PriceHistoryEntry[]; standardPrice: PriceHistoryEntry[] }>(`/api/products/${id}/price-change-log`)
@@ -229,10 +263,12 @@ export default function ClassicProductDetailPage() {
 
   async function load() {
     try {
-      const [found, { allUoms: uomList }, orders] = await Promise.all([
+      const [found, { allUoms: uomList }, orders, forecastRows, lots] = await Promise.all([
         isNew ? Promise.resolve(null) : apiGet<ProductTemplate>(`/api/products/${id}`),
         fetchReferenceData(),
         apiGet<Order[]>('/api/orders?include_lines=false'),
+        isNew ? Promise.resolve([]) : apiGet<{ productId: string; forecast: number }[]>(`/api/products/forecast?ids=${id}`).catch(() => []),
+        isNew ? Promise.resolve([]) : apiGet<{ bestBefore: string | null; arrivedAt: string }[]>(`/api/lots?productId=${id}&status=ALL&limit=500`).catch(() => []),
       ])
       if (!isNew) {
         if (!found) { router.push(`${prefix}/classic/operator/products`); return }
@@ -253,6 +289,9 @@ export default function ClassicProductDetailPage() {
         // 在手库存/库存单元直接取这一条记录，不用再拉全量 /api/products 过滤。
         const qty = Number((found as unknown as { qtyOnHand?: number }).qtyOnHand ?? 0)
         setOnHandQty(qty)
+        setForecastQty(forecastRows.find(r => r.productId === found.id)?.forecast ?? null)
+        const sortedLots = [...lots].sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
+        setLatestBestBefore(sortedLots.find(l => l.bestBefore)?.bestBefore ?? null)
         const uom = uomList.find(u => u.id === found.uomId)
         setVariants([{
           id: found.id, name: found.name, qtyOnHand: qty,
@@ -790,6 +829,13 @@ export default function ClassicProductDetailPage() {
                     onChange={v => setField('categoryId', v || undefined)}
                   />
                 </Row>
+                {!isNew && (
+                  <Row label="BBD">
+                    <span className="text-sm text-gray-500" title={isEn ? 'Best-before date of the most recent incoming batch (read-only)' : '最近一批进货的保质期（只读，随每次进货变化）'}>
+                      {latestBestBefore ? formatDateOnly(latestBestBefore) : (isEn ? 'None yet' : '暂无')}
+                    </span>
+                  </Row>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
@@ -799,6 +845,12 @@ export default function ClassicProductDetailPage() {
                 <ReadField label="Barcode" value={tmpl.barcode} />
                 <ReadField label="Sequence" value={tmpl.sequence ?? 0} />
                 <ReadField label="Product Category" value={catName} />
+                {!isNew && (
+                  <ReadField
+                    label="BBD"
+                    value={latestBestBefore ? formatDateOnly(latestBestBefore) : undefined}
+                  />
+                )}
               </div>
             )}
           </Section>
@@ -859,6 +911,11 @@ export default function ClassicProductDetailPage() {
               <div className="mb-4 pb-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
                 <button onClick={() => setShowAdjust(true)} className="px-3 py-1.5 rounded text-sm font-medium text-white" style={{ background: '#875A7B' }}>{isEn ? '+ Manual Stock Adjustment' : '＋ 手动调整库存'}</button>
                 <span className="text-xs text-gray-400">{isEn ? `Total on hand ${onHandQty.toFixed(2)}` : `当前在手合计 ${onHandQty.toFixed(2)}`}</span>
+                {forecastQty != null && (
+                  <span className="text-xs text-gray-400" title={isEn ? 'On hand + inbound POs − unfulfilled sales orders' : '在手 + 采购在途 − 待出库销售单'}>
+                    {isEn ? `Forecast Qty ${forecastQty.toFixed(2)}` : `预测库存 ${forecastQty.toFixed(2)}`}
+                  </span>
+                )}
               </div>
             )}
             {editMode ? (
@@ -1069,43 +1126,87 @@ export default function ClassicProductDetailPage() {
               <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>
                 {priceHistoryField === 'listPrice'
                   ? (isEn ? `Sales Price History · ${tmpl?.name}` : `销售价历史 · ${tmpl?.name}`)
-                  : (isEn ? `Cost Price History · ${tmpl?.name}` : `成本价历史 · ${tmpl?.name}`)}
+                  : (isEn ? `Receipt History · ${tmpl?.name}` : `收货历史 · ${tmpl?.name}`)}
               </h2>
               <button onClick={() => setPriceHistoryField(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0 ml-2">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              {priceHistoryLoading ? (
-                <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
-              ) : (() => {
-                const entries = priceHistory?.[priceHistoryField] ?? []
-                if (entries.length === 0) {
+              {priceHistoryField === 'listPrice' ? (
+                priceHistoryLoading ? (
+                  <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
+                ) : (() => {
+                  const entries = priceHistory?.listPrice ?? []
+                  if (entries.length === 0) {
+                    return (
+                      <p className="text-sm text-gray-400">
+                        {isEn ? 'No price changes recorded yet.' : '暂无价格变更记录。'}
+                      </p>
+                    )
+                  }
                   return (
-                    <p className="text-sm text-gray-400">
-                      {isEn ? 'No price changes recorded yet.' : '暂无价格变更记录。'}
-                    </p>
-                  )
-                }
-                return (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                        <th className="pb-2 font-medium">{isEn ? 'Price' : '价格'}</th>
-                        <th className="pb-2 font-medium">{isEn ? 'Changed At' : '更新时间'}</th>
-                        <th className="pb-2 font-medium">{isEn ? 'Changed By' : '更新人'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {entries.map((e, i) => (
-                        <tr key={i} className="border-b border-gray-50 last:border-0">
-                          <td className="py-2 font-medium text-gray-800">€{e.value.toFixed(2)}</td>
-                          <td className="py-2 text-gray-500">{formatDateTime(e.changedAt)}</td>
-                          <td className="py-2 text-gray-500">{e.changedBy}</td>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                          <th className="pb-2 font-medium">{isEn ? 'Price' : '价格'}</th>
+                          <th className="pb-2 font-medium">{isEn ? 'Changed At' : '更新时间'}</th>
+                          <th className="pb-2 font-medium">{isEn ? 'Changed By' : '更新人'}</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )
-              })()}
+                      </thead>
+                      <tbody>
+                        {entries.map((e, i) => (
+                          <tr key={i} className="border-b border-gray-50 last:border-0">
+                            <td className="py-2 font-medium text-gray-800">€{e.value.toFixed(2)}</td>
+                            <td className="py-2 text-gray-500">{formatDateTime(e.changedAt)}</td>
+                            <td className="py-2 text-gray-500">{e.changedBy}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                })()
+              ) : (
+                purchaseReceiptHistoryLoading ? (
+                  <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
+                ) : (() => {
+                  const entries = purchaseReceiptHistory ?? []
+                  if (entries.length === 0) {
+                    return (
+                      <p className="text-sm text-gray-400">
+                        {isEn ? 'No purchase receipts recorded yet.' : '暂无收货记录。'}
+                      </p>
+                    )
+                  }
+                  return (
+                    <>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                            <th className="pb-2 font-medium">{isEn ? 'Supplier' : '供应商'}</th>
+                            <th className="pb-2 font-medium">{isEn ? 'Confirmed On' : '确认日期'}</th>
+                            <th className="pb-2 font-medium">{isEn ? 'Qty' : '数量'}</th>
+                            <th className="pb-2 font-medium">{isEn ? 'Updated By' : '更新人'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {entries.map((e, i) => (
+                            <tr key={i} className="border-b border-gray-50 last:border-0">
+                              <td className="py-2 font-medium text-gray-800">{e.supplierName ?? '—'}{e.poName ? <span className="text-gray-400"> · {e.poName}</span> : null}</td>
+                              <td className="py-2 text-gray-500">{e.confirmedAt ? formatDateTime(e.confirmedAt) : '—'}</td>
+                              <td className="py-2 text-gray-500">{e.qty.toFixed(2)}</td>
+                              <td className="py-2 text-gray-500">{e.updatedBy ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <p className="text-xs text-gray-400 mt-3">
+                        {isEn
+                          ? 'Supplier/qty/updated-by are blank for receipts recorded before 2026-10-14 (not tracked at the time).'
+                          : '2026-10-14 之前的收货记录当时没存供应商/数量/更新人，这几列会是空的，不是 bug。'}
+                      </p>
+                    </>
+                  )
+                })()
+              )}
             </div>
           </div>
         </div>

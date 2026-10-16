@@ -290,6 +290,9 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 两者路径不同不会互相覆盖，都归在"查看价格历史"这同一个权限点下，语义上说得通，
   // 不另开权限点。
   { pattern: '/api/products/*/price-change-log', permission: 'master.product.read_price_history' },
+  // 同一个 Cost 历史按钮(20261015)查的另一份数据：哪张采购单、哪个供应商收的这批货，
+  // 不是字段编辑历史，仍归在同一个权限点下
+  { pattern: '/api/products/*/purchase-receipt-history', permission: 'master.product.read_price_history' },
   { pattern: '/api/products/*/pricelist-rules', methods: R, permission: 'master.pricelist.read' },
   { pattern: '/api/products/*/sale-uoms', methods: R, permission: 'master.product.read_detail' },
   { pattern: '/api/products/*/sale-uoms', methods: ['PUT'], permission: 'master.product.update' },

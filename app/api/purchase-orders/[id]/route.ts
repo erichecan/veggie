@@ -77,8 +77,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: '已锁定的采购单不可编辑' }, { status: 409 })
       }
 
+      // CONFIRMED 之后整单不可再改，但预期到货日/备注/供应商参考号这几个「不影响金额与库存」的字段
+      // 在等货、已收货、已开票阶段仍需要能随时补录或修正，单独放行（20261015）
+      const PO_CONFIRMED_SAFE_EDIT_STATUSES = ['CONFIRMED', 'RECEIVED', 'INVOICED']
       if (!['DRAFT', 'SENT'].includes(poBefore.status)) {
-        return NextResponse.json({ error: '只有草稿/已发送状态可编辑' }, { status: 409 })
+        if (!PO_CONFIRMED_SAFE_EDIT_STATUSES.includes(poBefore.status)) {
+          return NextResponse.json({ error: '只有草稿/已发送状态可编辑' }, { status: 409 })
+        }
+        const disallowedKeys = Object.keys(data).filter(k => !PO_CONFIRMED_SAFE_FIELDS.includes(k))
+        if (disallowedKeys.length > 0) {
+          return NextResponse.json({ error: `当前状态下只能修改：${PO_CONFIRMED_SAFE_FIELDS.join('、')}` }, { status: 409 })
+        }
       }
 
       const { notes, vendorReference, orderDate, expectedDate, supplierId, freightAmount: freightInput, exchangeRate: exchangeRateInput, lines: linesPayload } = data

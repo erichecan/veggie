@@ -43,6 +43,12 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
   const receivedAt = new Date()
   const batchDate: Date = po.expectedDate ?? receivedAt
 
+  // firstArrivedAt/lastArrivedAt(台账 E7 准时率用)原本只由单独的「到货登记」工作台
+  // （POST /api/goods-receipts）回写；但仓库大多数时候直接在这里点「确认收货」，从不走
+  // 那个台账，导致这两个字段对大多数采购单一直是 null，准时率分析悄悄漏掉这些单(20261015)。
+  // 这里兜底补上——但只在没人做过到货登记时才写，避免盖掉更准的、仓库实际记录的到货时间。
+  const hasGoodsReceipt = (await p.goodsReceipt.count({ where: { purchaseOrderId: poId } })) > 0
+
   let result
   try {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -126,7 +132,10 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
     const allReceived = updatedLines.every((l: any) => toNum(l.receivedQty) >= toNum(l.orderedQty))
     const updated = await tx.purchaseOrder.update({
       where: { id: poId },
-      data: allReceived ? { status: 'RECEIVED' as const } : {},
+      data: {
+        ...(allReceived ? { status: 'RECEIVED' as const } : {}),
+        ...(hasGoodsReceipt ? {} : { firstArrivedAt: po.firstArrivedAt ?? receivedAt, lastArrivedAt: receivedAt }),
+      },
       include: { lines: { orderBy: { sequence: 'asc' } } },
     })
     return updated

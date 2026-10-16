@@ -107,6 +107,8 @@ interface PurchaseOrder {
   supplierName?: string
   orderDate: string
   expectedDate?: string | null
+  firstArrivedAt?: string | null
+  lastArrivedAt?: string | null
   notes?: string | null
   vendorReference?: string | null
   lockedAt?: string | null
@@ -415,6 +417,7 @@ export default function PurchaseDetailPage() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [acting, setActing] = useState(false)
+  const [savingExpectedDate, setSavingExpectedDate] = useState(false)
   const [activeTab, setActiveTab] = useState<'products' | 'other'>('products')
 
   const [editNotes, setEditNotes] = useState('')
@@ -761,6 +764,22 @@ export default function PurchaseDetailPage() {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
     } finally {
       setFixingRate(false)
+    }
+  }
+
+  // 确认采购之后整单锁死，但预期到货日还需要在等货/已收货/已开票阶段随时补录或修正——
+  // 单独走一次最小 PUT，不进整单编辑态（后端 PO_CONFIRMED_SAFE_FIELDS 放行此字段，20261015）
+  async function handleUpdateExpectedDate(value: string) {
+    if (!po) return
+    setSavingExpectedDate(true)
+    try {
+      const updated = await apiPut<PurchaseOrder>(`/api/purchase-orders/${id}`, { expectedDate: value || null })
+      setPo(updated)
+      toast.success(isEn ? 'Expected arrival updated' : '预期到货日期已更新')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
+    } finally {
+      setSavingExpectedDate(false)
     }
   }
 
@@ -1245,10 +1264,32 @@ export default function PurchaseDetailPage() {
                       className={inputCls}
                       style={{ width: '180px' }}
                     />
+                  ) : ['CONFIRMED', 'RECEIVED', 'INVOICED'].includes(po.status) ? (
+                    <DatePicker
+                      value={toInputDate(po.expectedDate)}
+                      onChange={handleUpdateExpectedDate}
+                      disabled={savingExpectedDate}
+                      className={inputCls}
+                      style={{ width: '180px' }}
+                    />
                   ) : (
                     <span className="text-sm text-gray-800">{formatDateOnly(po.expectedDate) || '—'}</span>
                   )}
                 </div>
+                {['CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED'].includes(po.status) && (
+                  <div className="flex items-center min-h-[32px]">
+                    <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Arrived Date' : '到货日期'}</label>
+                    <span className="text-sm text-gray-800">
+                      {formatDateOnly(po.lastArrivedAt) || (isEn ? 'Not yet arrived' : '尚未到货')}
+                    </span>
+                    {/* 分批到货：首批与最近一批不是同一天时额外标出，方便看出"拖了多久收齐" */}
+                    {po.firstArrivedAt && po.lastArrivedAt && po.firstArrivedAt !== po.lastArrivedAt && (
+                      <span className="text-xs text-gray-400 ml-2">
+                        {isEn ? `first ${formatDateOnly(po.firstArrivedAt)}` : `首批 ${formatDateOnly(po.firstArrivedAt)}`}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center min-h-[32px]">
                   <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Purchase Rep' : '采购代表'}</label>
                   <span className="text-sm text-gray-400">—</span>
