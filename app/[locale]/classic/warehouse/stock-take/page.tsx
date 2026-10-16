@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
@@ -51,10 +52,19 @@ const STATUS_LABEL_EN: Record<StockTake['status'], { text: string; cls: string }
 
 const num = (v: string | number | null | undefined) => (v === null || v === undefined ? null : Number(v))
 
+const STATUS_FILTERS = ['ALL', 'DRAFT', 'DONE', 'CANCELLED'] as const
+type StatusFilter = typeof STATUS_FILTERS[number]
+
 export default function StockTakePage() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
+  const sp = useSearchParams()
+  // 支持从库存总览页「待完成盘点」卡片带 ?status=DRAFT 跳转进来
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    const s = sp?.get('status')
+    return (STATUS_FILTERS as readonly string[]).includes(s ?? '') ? (s as StatusFilter) : 'ALL'
+  })
   const [list, setList] = useState<StockTake[]>([])
   const [detail, setDetail] = useState<StockTake | null>(null)
   const [counts, setCounts] = useState<Record<string, string>>({})
@@ -67,10 +77,11 @@ export default function StockTakePage() {
   const [creating, setCreating] = useState(false)
 
   const loadList = useCallback(() => {
-    apiGet<{ items: StockTake[] }>('/api/stock-takes')
+    const qs = statusFilter === 'ALL' ? '' : `?status=${statusFilter}`
+    apiGet<{ items: StockTake[] }>(`/api/stock-takes${qs}`)
       .then((d) => setList(d.items ?? []))
       .catch((e) => toast.error(e.message))
-  }, [])
+  }, [statusFilter])
 
   useEffect(() => {
     loadList()
@@ -277,6 +288,18 @@ export default function StockTakePage() {
         <Button style={{ backgroundColor: PURPLE }} className="text-white" onClick={() => setCreateOpen(true)}>
           {isEn ? 'New Stock Take' : '新建盘点单'}
         </Button>
+      </div>
+      <div className="flex gap-2 mb-3">
+        {STATUS_FILTERS.map((s) => (
+          <button
+            key={s}
+            className={`text-xs px-3 py-1 rounded border ${statusFilter === s ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-300'}`}
+            style={statusFilter === s ? { backgroundColor: PURPLE } : undefined}
+            onClick={() => setStatusFilter(s)}
+          >
+            {s === 'ALL' ? (isEn ? 'All' : '全部') : STATUS_LABEL[s].text}
+          </button>
+        ))}
       </div>
       {list.length === 0 ? (
         <div className="text-center text-gray-400 py-16 border rounded">

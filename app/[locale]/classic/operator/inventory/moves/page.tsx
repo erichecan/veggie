@@ -26,9 +26,10 @@ export default function StockMovesPage() {
   const sp = useSearchParams()
   const [q, setQ] = useState('')
   const [location, setLocation] = useState('')
-  const [type, setType] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  // type/from/to 支持从库存总览页「本月损耗率」卡片带条件跳转进来
+  const [type, setType] = useState(() => sp?.get('type') || '')
+  const [from, setFrom] = useState(() => sp?.get('from') || '')
+  const [to, setTo] = useState(() => sp?.get('to') || '')
   const [total, setTotal] = useState<number | null>(null)
 
   const filter: StockMoveFilter = useMemo(() => ({

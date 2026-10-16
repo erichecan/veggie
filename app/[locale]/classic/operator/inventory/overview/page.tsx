@@ -71,6 +71,16 @@ export default function InventoryOverviewPage() {
     router.push(`${prefix}${href}`)
   }
 
+  // 本地年月日拼接，避免 toISOString() 按 UTC 转换导致都柏林时区下早一天
+  function ymd(d: Date) {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+  const today = new Date()
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  const todayYMD = ymd(today)
+  const monthStartYMD = ymd(monthStart)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-gray-400">
@@ -108,21 +118,30 @@ export default function InventoryOverviewPage() {
             <div className="text-lg font-bold text-gray-900">{eur(kpis?.totalStockValue ?? 0)}</div>
             <div className="text-xs text-gray-400 mt-0.5">{isEn ? 'On-shelf products × cost price' : '在架商品 × 成本价'}</div>
           </div>
-          <div className="p-4">
+          <div
+            className="p-4 cursor-pointer hover:bg-gray-50"
+            onClick={() => go('/classic/operator/inventory/lots?expiring=1')}
+          >
             <div className="text-xs text-gray-500 flex items-center gap-1.5 mb-1">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#a3690e' }} />{isEn ? 'Expiring Lots' : '临期批次'}
             </div>
             <div className="text-lg font-bold" style={{ color: '#a3690e' }}>{kpis?.expiringLotCount ?? 0}</div>
             <div className="text-xs text-gray-400 mt-0.5">{isEn ? 'Due within 7 days (incl. expired)' : '7 天内到期（含已过期）'}</div>
           </div>
-          <div className="p-4">
+          <div
+            className="p-4 cursor-pointer hover:bg-gray-50"
+            onClick={() => go(`/classic/operator/inventory/moves?type=SCRAP&from=${monthStartYMD}&to=${todayYMD}`)}
+          >
             <div className="text-xs text-gray-500 flex items-center gap-1.5 mb-1">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#b6412a' }} />{isEn ? "This Month's Loss Rate" : '本月损耗率'}
             </div>
             <div className="text-lg font-bold" style={{ color: '#b6412a' }}>{kpis?.monthLossRate ?? 0}%</div>
             <div className="text-xs text-gray-400 mt-0.5">{isEn ? 'Scrapped qty / outbound qty' : '报废数量 / 出库数量'}</div>
           </div>
-          <div className="p-4">
+          <div
+            className="p-4 cursor-pointer hover:bg-gray-50"
+            onClick={() => go('/classic/warehouse/stock-take?status=DRAFT')}
+          >
             <div className="text-xs text-gray-500 flex items-center gap-1.5 mb-1">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#35618a' }} />{isEn ? 'Pending Stock Takes' : '待完成盘点'}
             </div>

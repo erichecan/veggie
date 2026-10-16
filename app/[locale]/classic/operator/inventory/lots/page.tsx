@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
@@ -11,7 +11,21 @@ import { formatQcSummary, type QcRecord } from '@/lib/purchase/qc'
 const PURPLE = '#875A7B'
 const BORDER = '#d4b8d0'
 
-type Mode = 'LEDGER' | 'TRACE'
+type Mode = 'LEDGER' | 'TRACE' | 'EXPIRING'
+
+// 跟库存总览页 KPI「临期批次」口径一致（lib/analytics/inventory-overview.ts 的
+// EXPIRY_CRITICAL_DAYS），从总览点进来看到的数字要跟卡片上的数字对得上
+const EXPIRING_DAYS = 7
+
+interface ExpiringLotRow {
+  id: string
+  lotNumber: string
+  currentQty: string | number
+  bestBefore: string
+  isExpired: boolean
+  daysRemaining: number
+  product?: { id: string; name: string; spec?: string | null }
+}
 
 interface ProductOption {
   id: string
@@ -150,12 +164,17 @@ function hasFefoViolation(lot: LotRow, allLots: LotRow[]): boolean {
 
 export default function LotsPage() {
   const router = useRouter()
+  const sp = useSearchParams()
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const moveTypeLabel = isEn ? MOVE_TYPE_LABEL_EN : MOVE_TYPE_LABEL_ZH
 
-  const [mode, setMode] = useState<Mode>('LEDGER')
+  const [mode, setMode] = useState<Mode>(() => (sp?.get('expiring') === '1' ? 'EXPIRING' : 'LEDGER'))
+
+  // ── Expiring mode state ────────────────────────────────────────────
+  const [expiringLots, setExpiringLots] = useState<ExpiringLotRow[]>([])
+  const [expiringLoading, setExpiringLoading] = useState(false)
 
   // ── Ledger mode state ──────────────────────────────────────────────
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -197,6 +216,16 @@ export default function LotsPage() {
       .then(data => setRecentLots(Array.isArray(data) ? data.slice().reverse() : []))
       .catch(() => setRecentLots([]))
   }, [mode])
+
+  // 临期模式：跨商品的临期批次清单，不要求先选商品
+  useEffect(() => {
+    if (mode !== 'EXPIRING') return
+    setExpiringLoading(true)
+    apiGet<ExpiringLotRow[]>(`/api/lots/expiring?days=${EXPIRING_DAYS}&limit=200`)
+      .then(data => setExpiringLots(Array.isArray(data) ? data : []))
+      .catch(() => toast.error(isEn ? 'Failed to load expiring lots' : '加载临期批次失败'))
+      .finally(() => setExpiringLoading(false))
+  }, [mode, isEn])
 
   // 选择商品后加载批次 + 一致性核对
   useEffect(() => {
@@ -283,6 +312,15 @@ export default function LotsPage() {
               : { background: '#fff', color: PURPLE, borderColor: BORDER }}
           >
             {isEn ? 'Trace by Lot Number' : '按批号追溯'}
+          </button>
+          <button
+            onClick={() => setMode('EXPIRING')}
+            className="px-4 py-2 rounded text-sm font-medium border"
+            style={mode === 'EXPIRING'
+              ? { background: PURPLE, color: '#fff', borderColor: PURPLE }
+              : { background: '#fff', color: PURPLE, borderColor: BORDER }}
+          >
+            {isEn ? 'Expiring Lots' : '临期批次'}
           </button>
         </div>
       </div>
@@ -686,6 +724,64 @@ export default function LotsPage() {
               {isEn ? 'Enter a lot number or pick from recent lots to view its full movement history' : '输入批号或从最近批次中选择，查看该批次的完整流转记录'}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ══════════════════════ EXPIRING MODE ══════════════════════ */}
+      {mode === 'EXPIRING' && (
+        <div className="space-y-4">
+          <p className="text-xs text-gray-400">
+            {isEn
+              ? `Lots due within ${EXPIRING_DAYS} days (including already expired), across all products — same cutoff as the "Expiring Lots" KPI on the overview page.`
+              : `展示所有商品中 ${EXPIRING_DAYS} 天内到期（含已过期）的批次——跟总览页「临期批次」卡片口径一致。`}
+          </p>
+          <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: BORDER }}>
+            <div
+              className="grid gap-3 px-4 py-2.5 text-xs font-semibold border-b"
+              style={{ borderColor: BORDER, color: PURPLE, background: '#faf5fb', gridTemplateColumns: '1.4fr 140px 90px 160px 100px' }}
+            >
+              <span>{isEn ? 'Product' : '商品'}</span>
+              <span>{isEn ? 'Lot #' : '批号'}</span>
+              <span className="text-right">{isEn ? 'Remaining Qty' : '剩余量'}</span>
+              <span>{isEn ? 'Best Before' : '保质期'}</span>
+              <span>{isEn ? 'Status' : '状态'}</span>
+            </div>
+
+            {expiringLoading && <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading...' : '加载中...'}</div>}
+
+            {!expiringLoading && expiringLots.length === 0 && (
+              <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'No expiring lots' : '暂无临期批次'}</div>
+            )}
+
+            {!expiringLoading && expiringLots.map(lot => (
+              <div
+                key={lot.id}
+                className="grid gap-3 px-4 py-3 border-b last:border-b-0 items-center"
+                style={{ borderColor: '#f0e4ee', gridTemplateColumns: '1.4fr 140px 90px 160px 100px' }}
+              >
+                <span className="text-sm text-gray-800">
+                  {lot.product?.name ?? (isEn ? 'Unknown product' : '未知商品')}
+                  {lot.product?.spec && <span className="ml-1 text-xs text-gray-400">({lot.product.spec})</span>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setMode('TRACE'); setLotNumberInput(lot.lotNumber); runTrace(lot.lotNumber) }}
+                  className="text-xs font-mono text-left hover:underline"
+                  style={{ color: PURPLE }}
+                  title={isEn ? 'Click to trace this lot' : '点击追溯该批次'}
+                >
+                  {lot.lotNumber}
+                </button>
+                <span className="text-sm font-mono text-right font-semibold" style={{ color: PURPLE }}>
+                  {Number(lot.currentQty).toFixed(2)}
+                </span>
+                <span className="text-xs text-gray-600">{formatDateOnly(lot.bestBefore)}</span>
+                {lot.isExpired
+                  ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium w-fit">{isEn ? `Expired ${Math.abs(lot.daysRemaining)}d ago` : `已过期 ${Math.abs(lot.daysRemaining)} 天`}</span>
+                  : <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium w-fit">{isEn ? `${lot.daysRemaining}d left` : `剩 ${lot.daysRemaining} 天`}</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

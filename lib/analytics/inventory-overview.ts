@@ -118,7 +118,7 @@ export async function getInventoryAttentionItems(limit = 8, isEn = false): Promi
         ? (isEn ? 'Out of stock, restock urgently' : '已缺货，需尽快补货')
         : (isEn ? 'Below the safety stock threshold' : '已低于安全库存下限'),
       actionLabel: isEn ? 'Handle →' : '去处理 →',
-      actionHref: '/classic/operator/inventory',
+      actionHref: `/classic/operator/products/${r.id}`,
     })
   }
 
