@@ -27,13 +27,20 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
     ? (body as { lines: ReceiveLineInput[] }).lines
     : []
   const overrideMap = new Map(rawLines.map(l => [String(l.lineId ?? ''), l.qty]))
+  // 批量收货(列表页 Action，20261016)：remaining=true 时默认数量改为「下单 − 已收」，
+  // 按服务端刚读出的 receivedQty 算，不信客户端列表里可能过期的数——
+  // 已分批收过一部分的单再被批量收货，不会把已收的部分重复入库。
+  const remainingMode = (body as { remaining?: unknown })?.remaining === true
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const planned: Array<{ line: any; qty: number }> = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const line of po.lines as any[]) {
     const override = overrideMap.has(line.id) ? Number(overrideMap.get(line.id)) : null
-    const qty = override !== null && Number.isFinite(override) ? override : toNum(line.orderedQty)
+    const defaultQty = remainingMode
+      ? Math.max(toNum(line.orderedQty) - toNum(line.receivedQty), 0)
+      : toNum(line.orderedQty)
+    const qty = override !== null && Number.isFinite(override) ? override : defaultQty
     if (qty < 0) {
       return NextResponse.json({ error: `确认数量不能为负数：${line.productName}` }, { status: 400 })
     }

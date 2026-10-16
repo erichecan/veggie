@@ -266,13 +266,13 @@ export default function OdooControlPanel({
                 {isEn ? 'Actions' : '操作'} <Chevron />
               </button>
               {actionsOpen && (
-                <div className="absolute left-0 top-full mt-1 w-36 bg-white rounded border border-gray-200 shadow-lg py-1 z-30 text-sm">
+                <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded border border-gray-200 shadow-lg py-1 z-30 text-sm">
                   {actions.map((a, i) => (
                     <button
                       key={i}
                       onClick={a.disabled ? undefined : () => { a.onClick(); setActionsOpen(false) }}
                       disabled={a.disabled}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                      className="w-full text-left px-4 py-2 whitespace-nowrap hover:bg-gray-50 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
                       style={{ color: a.style === 'red' ? '#dc2626' : '#374151' }}
                     >
                       {a.label}
