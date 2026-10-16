@@ -242,6 +242,7 @@ export default function PurchasesPage() {
   const canApprove = hasPermission(ability, 'purchase.order.approve')
   const canUpdate = hasPermission(ability, 'purchase.order.update')
   const canPrint = hasPermission(ability, 'purchase.order.print')
+  const canReceive = hasPermission(ability, 'purchase.order.receive')
   const [batchBusy, setBatchBusy] = useState(false)
   // 勾选只认当前页看得见的行(翻页/换筛选后，之前勾的隐藏行不能被批量操作带上)
   const visibleSelectedPos = pos.filter(p => selected.has(p.id))
@@ -283,6 +284,25 @@ export default function PurchasesPage() {
     if (!confirm(isEn ? `Confirm ${confirmable.length} purchase order(s)? Draft vendor bills will be created for them.` : `确认 ${confirmable.length} 张采购单？确认后会自动生成供应商账单草稿。`)) return
     await runBatch({ zh: '批量确认', en: 'Batch confirm' }, confirmable, skipped,
       po => apiPatch(`/api/purchase-orders/${po.id}`, { action: po.status === 'TO_APPROVE' ? 'approve' : 'confirm' }))
+  }
+
+  // 批量确认收货：只对「采购订单」状态的单生效，每行按下单数量全量入库
+  // （跟单据详情页「确认收货」弹窗默认值一致，DEV-PLAN 决策#2）；有差异的单请进详情页按实收数量逐行调整。
+  async function batchReceive() {
+    const rows = visibleSelectedPos
+    if (rows.length === 0 || batchBusy) return
+    const receivable = rows.filter(p => p.status === 'CONFIRMED')
+    const skipped = rows.filter(p => !receivable.includes(p))
+      .map(p => `${p.name}: ${isEn ? `status is ${STATUS_LABEL[p.status] ?? p.status}, not receivable` : `状态为「${STATUS_LABEL[p.status] ?? p.status}」，不能确认收货`}`)
+    if (receivable.length === 0) {
+      toast.error(isEn ? 'None of the selected purchase orders can receive stock (only Purchase Order status)' : '所选采购单都不能确认收货（只有「采购订单」状态可以）')
+      return
+    }
+    if (!confirm(isEn
+      ? `Confirm receipt for ${receivable.length} purchase order(s)? Each line will be received at its full ordered quantity. If actual quantities differ, adjust them individually on the order detail page instead.`
+      : `确认 ${receivable.length} 张采购单收货？每行均按下单数量全量入库。如实收数量有差异，请改到单据详情页逐行调整。`)) return
+    await runBatch({ zh: '批量确认收货', en: 'Batch confirm receipt' }, receivable, skipped,
+      po => apiPatch(`/api/purchase-orders/${po.id}`, { action: 'receive' }))
   }
 
   async function batchDelete() {
@@ -538,6 +558,7 @@ export default function PurchasesPage() {
         ]}
         actions={visibleSelectedPos.length > 0 ? [
           ...(canApprove ? [{ label: isEn ? `Confirm (${visibleSelectedPos.length})` : `确认 (${visibleSelectedPos.length})`, onClick: batchConfirm, disabled: batchBusy }] : []),
+          ...(canReceive ? [{ label: isEn ? `Confirm Receipt (${visibleSelectedPos.length})` : `确认收货 (${visibleSelectedPos.length})`, onClick: batchReceive, disabled: batchBusy }] : []),
           ...(canPrint ? [{ label: isEn ? `🖨 Print (${visibleSelectedPos.length})` : `🖨 打印 (${visibleSelectedPos.length})`, onClick: batchPrint }] : []),
           ...(canUpdate ? [{ label: isEn ? `Delete (${visibleSelectedPos.length})` : `删除 (${visibleSelectedPos.length})`, onClick: batchDelete, style: 'red' as const, disabled: batchBusy }] : []),
         ] : []}
