@@ -62,6 +62,9 @@ export const PURCHASING_DIMENSIONS: Record<string, DimensionMeta> = {
   supplier_city:   { field: 'supplier_city',    label: 'Supplier City', labelZh: '供应商城市', type: 'string' },
   product_name:    { field: 'product_name',     label: 'Product',       labelZh: '商品',       type: 'string' },
   product_id:      { field: 'product_id',        label: 'Product ID',    labelZh: '商品(内部ID)', type: 'string' },
+  // 20261015：下单时的行快照（PurchaseOrderLine.productSpec/description），不是 Product 实时值
+  product_spec:    { field: 'product_spec',      label: 'Spec',          labelZh: '规格',       type: 'string' },
+  description:     { field: 'description',       label: 'Description',   labelZh: '描述',       type: 'string' },
   category_name:   { field: 'category_name',    label: 'Category',      labelZh: '商品分类',   type: 'string' },
   // ⛔ 这里必须与 schema.prisma 的 PurchaseOrderStatus 对齐。原来只列了 4 个，
   // 漏掉 SENT / TO_APPROVE / LOCKED —— 筛选面板因此筛不到这三种状态的单，
