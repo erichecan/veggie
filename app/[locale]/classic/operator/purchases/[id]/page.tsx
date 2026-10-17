@@ -951,8 +951,12 @@ export default function PurchaseDetailPage() {
   const totalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0) + freightAmount
   // 分摊运费预览：跟服务端 confirm 分支用同一套算法（排除 SERVICE 行、尊重手动覆盖、
   // 按数量比例分给剩余行），让页面上看到的数字跟点 Confirm 之后真正落库的数字一致（20261017）。
+  // 分摊/落库字段（allocatedFreightEur 等）全是欧元口径，非欧元供应商单必须先把 freightAmount
+  // 折成欧元再喂给同一套算法，否则跟服务端（po.freightAmountEur ?? po.freightAmount）各算各的，
+  // 两边都「自洽」但数字不一致，手动覆盖还会被按错误汇率曲解（code-review 发现，20261017 补）。
+  const freightAmountEur = Math.round(freightAmount * Number(po.exchangeRate ?? 1) * 100) / 100
   const freightAllocationPreview = computeFreightAllocationForConfirm(
-    freightAmount,
+    freightAmountEur,
     displayLines.map(l => ({
       id: l.id,
       orderedQty: l.orderedQty,
@@ -962,16 +966,16 @@ export default function PurchaseDetailPage() {
   )
   const allocatedFreightById = new Map(freightAllocationPreview.map(a => [a.id, a.allocatedFreightEur]))
   const allocatedFreightTotal = Math.round(freightAllocationPreview.reduce((s, a) => s + a.allocatedFreightEur, 0) * 100) / 100
-  const freightAllocationDiff = Math.round((allocatedFreightTotal - freightAmount) * 100) / 100
-  const freightAllocationMismatch = freightAmount > 0 && Math.abs(freightAllocationDiff) > 0.01
+  const freightAllocationDiff = Math.round((allocatedFreightTotal - freightAmountEur) * 100) / 100
+  const freightAllocationMismatch = freightAmountEur > 0 && Math.abs(freightAllocationDiff) > 0.01
 
   // Confirm 按钮点击前的客户端同款校验（20261017）：服务端仍是最终把关，这里只是让用户不用
   // 点了才被 409 弹回来——分摊合计对不上就直接提示，不发请求
   function confirmFreightAllocationOk(): boolean {
     if (!freightAllocationMismatch) return true
     toast.error(isEn
-      ? `Allocated freight total (${allocatedFreightTotal.toFixed(2)}) does not match freight amount (${freightAmount.toFixed(2)}), diff ${freightAllocationDiff.toFixed(2)}`
-      : `分摊运费合计（${allocatedFreightTotal.toFixed(2)}）与运费总额（${freightAmount.toFixed(2)}）不一致，差额 ${freightAllocationDiff.toFixed(2)}，请检查手动调整的分摊金额后再确认`)
+      ? `Allocated freight total (€${allocatedFreightTotal.toFixed(2)}) does not match freight amount (€${freightAmountEur.toFixed(2)}), diff €${freightAllocationDiff.toFixed(2)}`
+      : `分摊运费合计（€${allocatedFreightTotal.toFixed(2)}）与运费总额（€${freightAmountEur.toFixed(2)}）不一致，差额 €${freightAllocationDiff.toFixed(2)}，请检查手动调整的分摊金额后再确认`)
     return false
   }
 
@@ -1186,7 +1190,7 @@ export default function PurchaseDetailPage() {
             )}
             {po.status === 'TO_APPROVE' && (
               <>
-                <button onClick={() => handleAction('approve')} disabled={acting}
+                <button onClick={() => { if (confirmFreightAllocationOk()) handleAction('approve') }} disabled={acting}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: '#16a34a' }}>
                   ✓ {isEn ? 'Approve' : '审批通过'}
@@ -1397,7 +1401,7 @@ export default function PurchaseDetailPage() {
             <div>
               {/* 分摊运费校验横幅（20261017）：确认前就能看出"分摊运费合计"跟"运费总额"是否对得上，
                   不用等点 Confirm 被服务端 409 弹回来才知道 */}
-              {freightAmount > 0 && !isLocked && !isCancelled && po.status !== 'RECEIVED' && po.status !== 'INVOICED' && (
+              {freightAmountEur > 0 && !isLocked && !isCancelled && po.status !== 'RECEIVED' && po.status !== 'INVOICED' && (
                 <div
                   className="mb-2 px-3 py-2 rounded text-xs flex items-center justify-between"
                   style={freightAllocationMismatch
@@ -1405,10 +1409,12 @@ export default function PurchaseDetailPage() {
                     : { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}
                 >
                   <span>
+                    {/* 分摊字段全是欧元口径，这里恒显示 €，不跟 po.currency 走（非欧元单两边
+                        都标本币符号会让人误以为单位一致，实际是两个不同的数）*/}
                     {isEn ? 'Allocated freight total: ' : '分摊运费合计：'}
-                    <strong>{po.currency === 'EUR' ? '€' : po.currency + ' '}{allocatedFreightTotal.toFixed(2)}</strong>
+                    <strong>€{allocatedFreightTotal.toFixed(2)}</strong>
                     {isEn ? ' / Freight amount: ' : ' / 运费总额：'}
-                    <strong>{po.currency === 'EUR' ? '€' : po.currency + ' '}{freightAmount.toFixed(2)}</strong>
+                    <strong>€{freightAmountEur.toFixed(2)}</strong>
                   </span>
                   {freightAllocationMismatch && (
                     <span>

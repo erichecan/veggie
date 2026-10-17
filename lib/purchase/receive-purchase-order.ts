@@ -71,7 +71,12 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
 
       // SSOT(成本): 收货按加权平均回写 standardPrice；单价与数量同步换算到基准单位，
       // 否则「60 包」按「每包 €20」计入加权，成本虚高 12 倍
-      const recvCost = Number(line.unitCostEur ?? 0)
+      // 20261017 运费分摊成本联动：confirm 时已把分摊运费算进 landedUnitCostEur 并推到
+      // standardPrice；若还用不含运费的 unitCostEur 做加权基数，首次收货（oldQty=0）算出来的
+      // newStd 会精确退化回 unitCostEur，把 confirm 刚写的运费成本悄悄冲掉——两步操作是采购单
+      // 正常流程的下一步，不是边缘情况。有落地成本就用落地成本做加权基数，没有（老单/SERVICE 行）
+      // 才退回 unitCostEur（code-review 发现，20261017 补）。
+      const recvCost = Number(line.landedUnitCostEur ?? line.unitCostEur ?? 0)
       const costPerBase = ratio !== 0 ? recvCost / ratio : recvCost
       const prod = await tx.product.findUnique({ where: { id: line.productId }, select: { qtyOnHand: true, standardPrice: true } })
       const oldQty = Math.max(Number(prod?.qtyOnHand ?? 0), 0)

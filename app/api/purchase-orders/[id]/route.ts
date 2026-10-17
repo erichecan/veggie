@@ -15,6 +15,7 @@ import { sendPurchaseOrderRfq } from '@/lib/email'
 import { handleReceiveAction } from '@/lib/purchase/receive-purchase-order'
 import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 import { computeFreightAllocationForConfirm, computeLandedUnitCost } from '@/lib/purchase-landed-cost'
+import type { Prisma } from '@/lib/generated/prisma/client'
 
 const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'vendorReference', 'notes', 'expectedDate', 'editApprovalRequired']
 
@@ -388,7 +389,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const p = prisma as any
       const po = await p.purchaseOrder.findUnique({
         where: { id },
-        include: { lines: true },
+        // 顺序必须按 sequence：下面分摊运费用「最后一行吸收尾差」，Prisma/PG 不保证无 orderBy
+        // 时的行序，跟前端预览（永远按 sequence 显示）对不上会导致尾差落到不同行（code-review 发现）
+        include: { lines: { orderBy: { sequence: 'asc' } } },
       })
       if (!po) return NextResponse.json({ error: '采购订单不存在' }, { status: 404 })
 
@@ -546,7 +549,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       // 运费分摊成本联动（20261017 客户需求 ①②③④）：确认采购这一刻，把运费按订购数量比例
       // 分摊进每行落地成本，并把落地成本推到 Product.standardPrice（客户截图字面要求"作用到 public
       // price"）。只在"这次真正跨入 CONFIRMED"时算一次，之后重复的状态查询/其它动作不会再碰这些字段。
-      let freightConfirmTx: null | ((tx: Record<string, unknown>) => Promise<unknown>) = null
+      let freightConfirmTx: null | ((tx: Prisma.TransactionClient) => Promise<unknown>) = null
       if (targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED') {
         const poLines = po.lines as Array<Record<string, unknown>>
         const productIds = [...new Set(poLines.map(l => String(l.productId)))]
@@ -574,15 +577,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             error: `分摊运费合计（${eur(allocationTotal)}）与运费总额（${eur(freightTotalEur)}）不一致，差额 ${eur(diff)}，请检查手动调整的分摊金额后再确认`,
           }, { status: 409 })
         }
+        // 手动覆盖之和若超过运费总额，剩余按比例分给未覆盖行时会算出负数——总额仍能对平（上面
+        // 的差额校验看不出来），但单行负成本没有业务意义，必须单独挡住（code-review 发现）
+        const negativeLine = allocations.find(a => a.allocatedFreightEur < 0)
+        if (negativeLine) {
+          return NextResponse.json({
+            error: `分摊运费不能为负（手动覆盖金额合计可能已超过运费总额 ${eur(freightTotalEur)}），请检查后再确认`,
+          }, { status: 409 })
+        }
         const allocationById = new Map(allocations.map(a => [a.id, a.allocatedFreightEur]))
 
         // 同一商品在本单里出现多行时，按行号顺序依次写 Product.standardPrice，最后一行的值生效——
         // 跟上面"采购单位跟着采购单走"回填 purchaseUomId 的"最后一行为准"规则保持一致。
         const linesBySequence = [...poLines].sort((a, b) => Number(a.sequence) - Number(b.sequence))
 
-        freightConfirmTx = async (tx: Record<string, unknown>) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const txAny = tx as any
+        freightConfirmTx = async (tx: Prisma.TransactionClient) => {
           for (const line of linesBySequence) {
             const lineId = String(line.id)
             const productId = String(line.productId)
@@ -594,29 +603,38 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
               : computeLandedUnitCost(line.subtotalExTaxEur, allocatedFreightEur, line.orderedQty)
             const standardPriceBeforeConfirmEur = isService ? null : toNum(product?.standardPrice)
 
-            await txAny.purchaseOrderLine.update({
+            await tx.purchaseOrderLine.update({
               where: { id: lineId },
               data: { allocatedFreightEur: isService ? 0 : allocatedFreightEur, landedUnitCostEur, standardPriceBeforeConfirmEur },
             })
 
             if (!isService && landedUnitCostEur !== null && landedUnitCostEur > 0) {
-              await txAny.product.update({ where: { id: productId }, data: { standardPrice: landedUnitCostEur } })
+              await tx.product.update({ where: { id: productId }, data: { standardPrice: landedUnitCostEur } })
             }
           }
         }
       }
 
       const updated = freightConfirmTx
-        ? await prisma.$transaction(async (tx: Record<string, unknown>) => {
+        ? await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           await freightConfirmTx!(tx)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return (tx as any).purchaseOrder.update({ where: { id }, data: updateData, include: { lines: true } })
+          return tx.purchaseOrder.update({ where: { id }, data: updateData, include: { lines: true } })
         })
-        : await p.purchaseOrder.update({
-          where: { id },
-          data: updateData,
-          include: { lines: true },
-        })
+        : action === 'reset_to_draft'
+          // 清掉上一轮确认留下的运费分摊快照，否则重新编辑后再次确认时会被
+          // computeFreightAllocationForConfirm 误当「操作员本轮手动覆盖」带偏新一轮分摊（code-review 发现）
+          ? await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+            await tx.purchaseOrderLine.updateMany({
+              where: { purchaseOrderId: id },
+              data: { allocatedFreightEur: null, landedUnitCostEur: null, standardPriceBeforeConfirmEur: null },
+            })
+            return tx.purchaseOrder.update({ where: { id }, data: updateData, include: { lines: true } })
+          })
+          : await p.purchaseOrder.update({
+            where: { id },
+            data: updateData,
+            include: { lines: true },
+          })
 
       // SSOT：库存只能通过实际收货（GoodsReceipt）增加，"确认采购"只代表供应商接单，
       // 不产生任何库存/批次副作用——避免和收货单重复计数（历史 bug，见 20260710 采购模块升级）。
