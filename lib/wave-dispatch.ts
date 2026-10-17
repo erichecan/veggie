@@ -24,7 +24,11 @@ class DispatchRaceLostError extends Error {}
  * 一切依赖"确认即扣库存"这个既有口径的报表。"已出库"这个状态直接由
  * `status=IN_DELIVERY` + `dispatchedAt` 承载，不新增字段。
  */
-export async function dispatchWave(waveId: string, fallbackDateStr?: string): Promise<DispatchWaveResult> {
+export async function dispatchWave(
+  waveId: string,
+  fallbackDateStr?: string,
+  actor?: { userId?: string | null; name?: string | null },
+): Promise<DispatchWaveResult> {
   const wave = await prisma.pickingWave.findUnique({ where: { id: waveId } })
   if (!wave) return { ok: false, waveId, reason: '波次不存在' }
   if (wave.dispatchedAt) return { ok: false, waveId, reason: '该批次已确认出发' }
@@ -71,7 +75,7 @@ export async function dispatchWave(waveId: string, fallbackDateStr?: string): Pr
       return { updated: upd, trip: t, shippingIds }
     })
     // 确认出发 = 货离仓：On Hand 在这一刻减少（与采购「收货才加 On Hand」对称，20261015）
-    await shipOrdersStock(shippingIds, '确认出发出库')
+    await shipOrdersStock(shippingIds, '确认出发出库', actor)
 
     return { ok: true, waveId, updatedCount: updated.count, tripId: trip?.id ?? null, deliveryDate }
   } catch (e) {

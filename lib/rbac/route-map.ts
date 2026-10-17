@@ -139,6 +139,8 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // ── 库存 ────────────────────────────────────────────────────────────────
   { pattern: '/api/goods-receipts/**', methods: R, permission: 'stock.receipt.read' },
   { pattern: '/api/goods-receipts/**', methods: ['POST'], permission: 'stock.receipt.create' },
+  // 订正到货日期复用创建权限，不另开权限点（20261016）
+  { pattern: '/api/goods-receipts/**', methods: ['PUT'], permission: 'stock.receipt.create' },
   { pattern: '/api/stock-moves/**', methods: R, permission: 'stock.move.read' },
   { pattern: '/api/stock-moves/**', methods: ['POST'], permission: 'stock.move.create' },
   { pattern: '/api/stock-takes', methods: R, permission: 'stock.take.read' },

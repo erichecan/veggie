@@ -19,7 +19,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     try {
       const body = (await req.json().catch(() => ({}))) as { date?: string }
 
-      const result = await dispatchWave(id, body.date)
+      const result = await dispatchWave(id, body.date, { userId: user.userId, name: user.name })
       if (!result.ok) {
         const status = result.reason === '波次不存在' ? 404 : 400
         return NextResponse.json({ error: result.reason }, { status })

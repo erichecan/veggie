@@ -133,7 +133,7 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/purchases/*', methods: READ },
     { pattern: '/api/purchase-orders/**', methods: READ },
     exportOf('purchase-orders'),
-    { pattern: '/api/goods-receipts/**', methods: ['GET', 'POST'] },
+    { pattern: '/api/goods-receipts/**', methods: ['GET', 'POST', 'PUT'] },
     { pattern: '/api/stock-moves/**', methods: ['GET', 'POST'] },
     { pattern: '/api/stock-takes', methods: ['GET', 'POST'] },
     { pattern: '/api/stock-takes/*', methods: ['GET', 'PATCH'] },

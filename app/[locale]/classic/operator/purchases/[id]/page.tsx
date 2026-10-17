@@ -238,8 +238,12 @@ function MovementLogCard({ log, kind, isEn }: { log: ActivityLogEntry; kind: 'in
 }
 
 /** 一张收货单（GoodsReceipt）的卡片：「其他信息」tab 与收货/退货快捷弹窗共用。
- *  showLines=true 时额外列出每行商品与数量——弹窗是专门来看"到底收了什么"的 */
-function ReceiptCard({ gr, isEn, showLines = false }: { gr: GoodsReceiptRow; isEn: boolean; showLines?: boolean }) {
+ *  showLines=true 时额外列出每行商品与数量——弹窗是专门来看"到底收了什么"的
+ *  onUpdated：订正到货日期成功后通知父级重新拉取 PO（firstArrivedAt/lastArrivedAt 要跟着重算） */
+function ReceiptCard({ gr, isEn, showLines = false, onUpdated }: { gr: GoodsReceiptRow; isEn: boolean; showLines?: boolean; onUpdated?: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [editDate, setEditDate] = useState('')
+  const [saving, setSaving] = useState(false)
   const damaged = gr.lines.filter(l => l.condition === 'damaged')
   const rejected = gr.lines.filter(l => l.condition === 'rejected')
   // 质检信息在采购单上可见（台账 F4 验收第二条）：只列**填过**的行，
@@ -247,11 +251,52 @@ function ReceiptCard({ gr, isEn, showLines = false }: { gr: GoodsReceiptRow; isE
   const checked = gr.lines
     .map(l => ({ line: l, qc: parseStoredQc(l.qc) }))
     .filter(x => x.qc || x.line.condition === 'rejected')
+
+  function startEdit() {
+    setEditDate(gr.arrivedAt ? new Date(gr.arrivedAt).toISOString().slice(0, 10) : '')
+    setEditing(true)
+  }
+
+  async function saveEdit() {
+    if (!editDate) {
+      toast.error(isEn ? 'Arrived date is required' : '到货日期不能为空')
+      return
+    }
+    setSaving(true)
+    try {
+      await apiPut(`/api/goods-receipts/${gr.id}`, { arrivedAt: editDate })
+      toast.success(isEn ? 'Arrived date corrected' : '到货日期已订正')
+      setEditing(false)
+      onUpdated?.()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="border border-gray-200 rounded p-3 text-sm">
       <div className="flex items-center justify-between">
         <span className="font-medium text-gray-800">{gr.name}</span>
-        <span className="text-gray-500">{isEn ? 'Arrived' : '到货'} {formatDateOnly(gr.arrivedAt)}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}</span>
+        {editing ? (
+          <span className="flex items-center gap-1.5">
+            <DatePicker value={editDate} onChange={setEditDate} className="border border-gray-300 rounded px-1.5 py-0.5 text-xs" style={{ width: '120px' }} />
+            <button type="button" onClick={saveEdit} disabled={saving} className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50">
+              {isEn ? 'Save' : '保存'}
+            </button>
+            <button type="button" onClick={() => setEditing(false)} disabled={saving} className="text-xs text-gray-400 hover:text-gray-600">
+              {isEn ? 'Cancel' : '取消'}
+            </button>
+          </span>
+        ) : (
+          <span className="text-gray-500">
+            {isEn ? 'Arrived' : '到货'} {formatDateOnly(gr.arrivedAt)}{gr.receivedBy ? ` · ${gr.receivedBy}` : ''}
+            <button type="button" onClick={startEdit} className="ml-1.5 text-xs text-gray-400 hover:text-blue-600 underline">
+              {isEn ? 'Edit' : '订正'}
+            </button>
+          </span>
+        )}
       </div>
       <div className="text-xs text-gray-500 mt-1">
         {isEn ? `${gr.lines.length} item(s)` : `${gr.lines.length} 个品项`}
@@ -1546,7 +1591,7 @@ export default function PurchaseDetailPage() {
                   <div className="space-y-3">
                     {[...(po.receipts ?? [])]
                       .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
-                      .map(gr => <ReceiptCard key={gr.id} gr={gr} isEn={isEn} />)}
+                      .map(gr => <ReceiptCard key={gr.id} gr={gr} isEn={isEn} onUpdated={load} />)}
                   </div>
                 </div>
               )}
@@ -1708,7 +1753,7 @@ export default function PurchaseDetailPage() {
                 <div className="space-y-3">
                   {[...(po.receipts ?? [])]
                     .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
-                    .map(gr => <ReceiptCard key={gr.id} gr={gr} isEn={isEn} showLines />)}
+                    .map(gr => <ReceiptCard key={gr.id} gr={gr} isEn={isEn} showLines onUpdated={load} />)}
                 </div>
               </div>
             )}
