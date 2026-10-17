@@ -6,7 +6,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet, apiPost, apiPut, apiPatch, authHeaders } from '@/lib/api'
-import { computeOrderLandedCosts } from '@/lib/purchase-landed-cost'
+import { computeFreightAllocationForConfirm, computeLandedUnitCost } from '@/lib/purchase-landed-cost'
 import { formatDateOnly } from '@/lib/format-date'
 import { parseStoredQc, lineVerdict, formatQcSummary, QC_REJECT_REASON_LABELS, type QcRejectReason } from '@/lib/purchase/qc'
 import { lineDescription } from '@/lib/order-line-description'
@@ -65,6 +65,11 @@ interface POLine {
   subtotalExTax: number
   taxAmount: number
   subtotalIncTax: number
+  /// 本行分摊运费手动覆盖值（20261017）：null=未手动指定，确认时按数量比例自动算；
+  /// 已确认的单子这里是服务端写入的真实分摊结果
+  allocatedFreightEur?: number | null
+  /// 落地成本（确认时写入，取消时用作回滚依据的来源字段），未确认之前恒为 null
+  landedUnitCostEur?: number | null
 }
 
 interface POBill {
@@ -154,6 +159,8 @@ interface PurchaseProduct {
   purchaseUomSpec?: string | null
   purchaseUomId?: string | null
   purchaseUomName?: string | null
+  /// SERVICE 类商品不参与运费分摊（20261017 客户需求）
+  type?: string | null
 }
 
 /** 采购单加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0（客户 20260904 反馈） */
@@ -778,6 +785,7 @@ export default function PurchaseDetailPage() {
           unitCost: Number(l.unitCost),
           taxRate: Number(l.taxRate),
           bestBefore: l.bestBefore || null,
+          allocatedFreightEur: l.allocatedFreightEur ?? null,
         })),
       })
       setPo(updated)
@@ -941,8 +949,31 @@ export default function PurchaseDetailPage() {
   const subtotalExTax = lineSubtotalExTax + freightAmount
   const totalTax = displayLines.reduce((s, l) => s + Number(l.taxAmount), 0)
   const totalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0) + freightAmount
-  // 参考成本/税前小计两列与新建页（purchases/new）对齐：运费按行 subtotal 占比分摊，只做展示，不落库。
-  const landedCosts = computeOrderLandedCosts({ freightAmount, subtotalExTax: lineSubtotalExTax }, displayLines)
+  // 分摊运费预览：跟服务端 confirm 分支用同一套算法（排除 SERVICE 行、尊重手动覆盖、
+  // 按数量比例分给剩余行），让页面上看到的数字跟点 Confirm 之后真正落库的数字一致（20261017）。
+  const freightAllocationPreview = computeFreightAllocationForConfirm(
+    freightAmount,
+    displayLines.map(l => ({
+      id: l.id,
+      orderedQty: l.orderedQty,
+      isService: purchaseProducts.find(p => p.id === l.productId)?.type === 'SERVICE',
+      manualAllocatedFreightEur: l.allocatedFreightEur,
+    })),
+  )
+  const allocatedFreightById = new Map(freightAllocationPreview.map(a => [a.id, a.allocatedFreightEur]))
+  const allocatedFreightTotal = Math.round(freightAllocationPreview.reduce((s, a) => s + a.allocatedFreightEur, 0) * 100) / 100
+  const freightAllocationDiff = Math.round((allocatedFreightTotal - freightAmount) * 100) / 100
+  const freightAllocationMismatch = freightAmount > 0 && Math.abs(freightAllocationDiff) > 0.01
+
+  // Confirm 按钮点击前的客户端同款校验（20261017）：服务端仍是最终把关，这里只是让用户不用
+  // 点了才被 409 弹回来——分摊合计对不上就直接提示，不发请求
+  function confirmFreightAllocationOk(): boolean {
+    if (!freightAllocationMismatch) return true
+    toast.error(isEn
+      ? `Allocated freight total (${allocatedFreightTotal.toFixed(2)}) does not match freight amount (${freightAmount.toFixed(2)}), diff ${freightAllocationDiff.toFixed(2)}`
+      : `分摊运费合计（${allocatedFreightTotal.toFixed(2)}）与运费总额（${freightAmount.toFixed(2)}）不一致，差额 ${freightAllocationDiff.toFixed(2)}，请检查手动调整的分摊金额后再确认`)
+    return false
+  }
 
   const supplier = suppliers.find(s => s.id === (editing ? editSupplierId : po.supplierId))
   const supplierName = supplier?.name ?? po.supplierName ?? po.supplierId
@@ -1100,7 +1131,7 @@ export default function PurchaseDetailPage() {
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
                   {isEn ? 'Print RFQ' : '打印询价单'}
                 </button>
-                <button onClick={() => handleAction('confirm')} disabled={acting || po.exchangeRatePending}
+                <button onClick={() => { if (confirmFreightAllocationOk()) handleAction('confirm') }} disabled={acting || po.exchangeRatePending}
                   title={po.exchangeRatePending ? (isEn ? 'Exchange rate pending, please fill it in below first' : '汇率待确认，请先在下方补充汇率') : undefined}
                   className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                   {isEn ? 'Confirm Purchase' : '确认采购'}
@@ -1113,7 +1144,7 @@ export default function PurchaseDetailPage() {
             )}
             {po.status === 'SENT' && (
               <>
-                <button onClick={() => handleAction('confirm')} disabled={acting || po.exchangeRatePending}
+                <button onClick={() => { if (confirmFreightAllocationOk()) handleAction('confirm') }} disabled={acting || po.exchangeRatePending}
                   title={po.exchangeRatePending ? (isEn ? 'Exchange rate pending, please fill it in below first' : '汇率待确认，请先在下方补充汇率') : undefined}
                   className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
                   style={{ background: PURPLE }}>
@@ -1364,6 +1395,28 @@ export default function PurchaseDetailPage() {
           {/* ── Products tab ── */}
           {activeTab === 'products' && (
             <div>
+              {/* 分摊运费校验横幅（20261017）：确认前就能看出"分摊运费合计"跟"运费总额"是否对得上，
+                  不用等点 Confirm 被服务端 409 弹回来才知道 */}
+              {freightAmount > 0 && !isLocked && !isCancelled && po.status !== 'RECEIVED' && po.status !== 'INVOICED' && (
+                <div
+                  className="mb-2 px-3 py-2 rounded text-xs flex items-center justify-between"
+                  style={freightAllocationMismatch
+                    ? { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }
+                    : { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}
+                >
+                  <span>
+                    {isEn ? 'Allocated freight total: ' : '分摊运费合计：'}
+                    <strong>{po.currency === 'EUR' ? '€' : po.currency + ' '}{allocatedFreightTotal.toFixed(2)}</strong>
+                    {isEn ? ' / Freight amount: ' : ' / 运费总额：'}
+                    <strong>{po.currency === 'EUR' ? '€' : po.currency + ' '}{freightAmount.toFixed(2)}</strong>
+                  </span>
+                  {freightAllocationMismatch && (
+                    <span>
+                      {isEn ? `Diff ${freightAllocationDiff.toFixed(2)} — adjust manual overrides before confirming` : `差额 ${freightAllocationDiff.toFixed(2)} — 请调整手动分摊金额后再确认`}
+                    </span>
+                  )}
+                </div>
+              )}
               {/* 就地选品 + Tab/Enter 走位与新建采购单页/quotation/sale order 共用同一套
                   （OrderLineEditor + useInlineProductPicker + lineFieldKeyHandler）——此前编辑页
                   是独立手写表格，Tab/Enter 行为对不上新建页，客户报过后收口到这里 */}
@@ -1388,7 +1441,7 @@ export default function PurchaseDetailPage() {
                   search: isEn ? 'Search product…' : '搜索商品…',
                 }}
                 onReady={handleEditorReady}
-                emptyColSpan={11}
+                emptyColSpan={12}
                 emptyMessage={isEn ? 'No lines yet' : '暂无明细行'}
                 tableClassName="w-full text-sm border-collapse"
                 renderHeaders={() => (
@@ -1398,8 +1451,11 @@ export default function PurchaseDetailPage() {
                     <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'Description' : '描述'}</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Qty' : '数量'}</th>
                     <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">{isEn ? 'UoM' : '单位'}</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Reference cost — last known cost price, not saved on this order' : '参考成本价——上次收货成本，仅供对比，不写入本单'}>
-                      {isEn ? 'Cost' : '参考成本'}
+                    <th className="w-8 px-2 py-2.5 text-center font-medium text-gray-600 text-xs" title={isEn ? 'Reference cost — last known cost price, not saved on this order' : '参考成本价——上次收货成本，仅供对比，不写入本单'}>
+                      ⓘ
+                    </th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Freight allocated to this line. Auto-split by ordered qty across non-service lines; type to override manually.' : '本行分摊到的运费，默认按订购数量比例在非服务行之间自动分摊，可手动改成别的数'}>
+                      {isEn ? 'Alloc. Freight' : '分摊运费'}
                     </th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
@@ -1411,7 +1467,8 @@ export default function PurchaseDetailPage() {
                 defaultRowCls="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
                 renderRow={(l, i, { deleteButton, focusSearch, productCell }) => {
                   const isLast = i === displayLines.length - 1
-                  const allocatedFreight = landedCosts[i]?.allocatedFreight ?? 0
+                  const isServiceLine = purchaseProducts.find(p => p.id === l.productId)?.type === 'SERVICE'
+                  const allocatedFreight = allocatedFreightById.get(l.id) ?? 0
                   return (
                     <>
                       <td className="px-2 py-2.5 text-center">{deleteButton}</td>
@@ -1435,11 +1492,41 @@ export default function PurchaseDetailPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs">{l.uomName || '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-400 text-xs">
+                      <td className="px-2 py-2.5 text-center">
                         {(() => {
                           const refCost = purchaseProducts.find(p => p.id === l.productId)?.standardPrice
-                          return refCost != null ? Number(refCost).toFixed(2) : '—'
+                          if (refCost == null) return <span className="text-gray-300 text-xs">—</span>
+                          return (
+                            <span
+                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] text-gray-400 border border-gray-300 cursor-help"
+                              title={isEn ? `Reference cost: ${Number(refCost).toFixed(2)}` : `历史参考成本：${Number(refCost).toFixed(2)}`}
+                            >
+                              ⓘ
+                            </span>
+                          )
                         })()}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {isServiceLine ? (
+                          <span className="text-gray-400 text-xs">—</span>
+                        ) : editing ? (
+                          <input type="number" step="0.01"
+                            className={numInputCls} style={{ width: '90px' }}
+                            placeholder={allocatedFreight.toFixed(2)}
+                            value={l.allocatedFreightEur ?? ''}
+                            onChange={e => {
+                              const raw = e.target.value
+                              setEditLines(prev => {
+                                const next = [...prev]
+                                next[i] = { ...next[i], allocatedFreightEur: raw === '' ? null : Number(raw) }
+                                return next
+                              })
+                            }}
+                            onFocus={e => e.target.select()}
+                            onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
+                        ) : (
+                          <span className="text-gray-800">{allocatedFreight.toFixed(2)}</span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         {editing ? (
