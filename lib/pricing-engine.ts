@@ -147,6 +147,9 @@ function resolveViaPricelistChain(
  * 不填 `item.uomId`（存量数据 / 不限定的规则）= 对该商品所有可售单位都生效，不受 `uomId` 影响。
  */
 function matchesItem(item: OdooPricelistItem, product: Product, uomId?: string): boolean {
+  // 20261017：标记为不可售的规则直接跳过，继续往下一条规则/回退牌价找——
+  // 季节性/运输原因暂停这条规则按表价卖，不是把它从表里删掉。
+  if (item.selectable === false) return false
   if (item.uomId && item.uomId !== uomId) return false
   switch (item.applyOn) {
     case 'global':

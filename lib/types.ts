@@ -739,6 +739,11 @@ export interface OdooPricelistItem {
   /** 20260926：客户门户促销角标文案（如"限时8折"）。填了才会在门户显示角标+划线原价；
    *  只建议配合 dateStart/dateEnd 一起填——永久生效的规则不该顶着"限时促销"的名义展示。 */
   badgeLabel?: string
+  /** 20261017：该条规则是否仍可售。缺省/未设为 true（向后兼容旧数据）；设为 false 时：
+   *  下单定价跳过这条规则（继续往下一条/回退牌价，见 lib/pricing-engine.ts matchesItem），
+   *  价格表打印/导出也不再列出这一行（见 app/api/pricelists/print/route.ts）。
+   *  季节性/运输原因导致某商品暂时不按这张表的价卖，但库存未必为零——不是"删规则"而是"暂停这条规则"。 */
+  selectable?: boolean
 }
 
 export interface OdooPricelist {

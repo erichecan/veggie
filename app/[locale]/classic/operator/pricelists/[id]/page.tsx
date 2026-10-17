@@ -797,16 +797,15 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                     <SortableTh sortKey="category" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2">Product Category</SortableTh>
                     <SortableTh sortKey="price" itemSort={itemSort} onSort={toggleItemSort} className="text-left px-3 py-2 min-w-[160px]">Price</SortableTh>
                     <SortableTh sortKey="priceDiscount" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Price Discount</SortableTh>
-                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Variant Cost</SortableTh>
-                    <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Template Cost</SortableTh>
                     <SortableTh sortKey="cost" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Public Cost Price</SortableTh>
                     <SortableTh sortKey="publicPrice" itemSort={itemSort} onSort={toggleItemSort} className="text-right px-3 py-2">Sale Price</SortableTh>
+                    <th className="text-center px-3 py-2">{isEn ? 'Selectable' : '可售'}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedItems.length === 0 && (
                     <tr>
-                      <td colSpan={editMode ? 13 : 12} className="px-4 py-3 text-gray-400 italic text-xs">{q ? (isEn ? 'No matching items' : '没有匹配的条目') : (isEn ? 'No items yet' : '暂无条目')}</td>
+                      <td colSpan={editMode ? 12 : 11} className="px-4 py-3 text-gray-400 italic text-xs">{q ? (isEn ? 'No matching items' : '没有匹配的条目') : (isEn ? 'No items yet' : '暂无条目')}</td>
                     </tr>
                   )}
                   {pagedItems.map(row => {
@@ -1161,13 +1160,22 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
         {cost != null ? cost.toFixed(2) : ''}
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500">
-        {cost != null ? cost.toFixed(2) : ''}
-      </td>
-      <td className="px-3 py-1.5 text-right text-gray-500">
-        {cost != null ? cost.toFixed(2) : ''}
-      </td>
-      <td className="px-3 py-1.5 text-right text-gray-500">
         {publicPrice != null ? publicPrice.toFixed(2) : ''}
+      </td>
+      <td className="px-3 py-1.5 text-center" onClick={e => e.stopPropagation()}>
+        {inlineEdit ? (
+          <input
+            type="checkbox"
+            checked={item.selectable !== false}
+            onChange={e => onInlineChange({ selectable: e.target.checked })}
+            className="w-4 h-4 cursor-pointer"
+            style={{ accentColor: PURPLE }}
+          />
+        ) : item.selectable !== false ? (
+          <span className="inline-flex w-4 h-4 items-center justify-center rounded-sm text-white text-xs" style={{ background: PURPLE }}>✓</span>
+        ) : (
+          <span className="inline-block w-4 h-4 border border-gray-300 rounded-sm" />
+        )}
       </td>
     </tr>
   )
@@ -1456,6 +1464,23 @@ function ItemDialog({
                   onChange={e => set('minQty', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
                 />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={item.selectable !== false}
+                    onChange={e => set('selectable', e.target.checked)}
+                    className="w-4 h-4 cursor-pointer"
+                    style={{ accentColor: PURPLE }}
+                  />
+                  <span className="text-xs font-medium text-gray-600">{isEn ? 'Selectable' : '可售'}</span>
+                </label>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  {isEn
+                    ? 'Uncheck to pause this rule (e.g. seasonal/transport shortage) without deleting it — ordering falls back to the next matching rule, and this row is hidden from printed/exported pricelists.'
+                    : '取消勾选＝暂停这条规则（如季节性/运输缺货），不用删掉；下单会回退到下一条匹配规则，打印/导出价格表也不再显示这一行。'}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>

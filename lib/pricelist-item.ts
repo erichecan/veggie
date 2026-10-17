@@ -30,6 +30,7 @@ export interface PricelistItemInput {
   sequence?: number
   uomId?: string
   badgeLabel?: string
+  selectable?: boolean
 }
 
 export function newPricelistItemId(): string {
@@ -86,7 +87,10 @@ export function validateAndNormalizeItem(rItem: PricelistItemInput, seenIds: Set
     ? rItem.uomId
     : undefined
 
-  return { ...rItem, id, minQty, applyOn, computeType: compute, uomId }
+  // 20261017：缺省/非 false 一律视为可售，老数据没有这个字段时保持原有行为不变
+  const selectable = rItem.selectable === false ? false : true
+
+  return { ...rItem, id, minQty, applyOn, computeType: compute, uomId, selectable }
 }
 
 /** 整份 items 数组校验+归一化(PUT /api/pricelists/[id] 用这个) */

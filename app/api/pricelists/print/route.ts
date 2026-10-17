@@ -81,7 +81,9 @@ export async function GET(req: NextRequest) {
 
     // Enrich items with product names
     const enriched = pricelists.map(pl => {
-      const items = (pl.items as unknown as OdooPricelistItem[]) ?? []
+      // 20261017：标记不可售的规则不出现在打印/导出结果里——这是价格表的「输出」，
+      // selectable=false 的规则当前不按这张表卖，不该出现在客户看到的报价单上。
+      const items = ((pl.items as unknown as OdooPricelistItem[]) ?? []).filter(item => item.selectable !== false)
       const enrichedItems = items.map(item => {
         const pid = resolveProductId(item)
         const product = pid ? productMap.get(pid) : undefined

@@ -10,11 +10,13 @@
  */
 import type { PricelistItemInput } from './pricelist-item'
 
-/** 影响成交价的字段；sequence / badgeLabel 这类纯展示字段不算改价 */
+/** 影响成交价的字段；sequence / badgeLabel 这类纯展示字段不算改价
+ *  20261017：selectable 也算——关掉它等同于把这条规则从定价里摘掉(lib/pricing-engine.ts
+ *  matchesItem 直接跳过)，效果跟删规则一样，必须留痕，否则客户成交价静默变了却查不到改价历史 */
 export const RULE_PRICE_FIELDS = [
   'computeType', 'fixedPrice', 'percentDiscount', 'formulaBase', 'basedOnPricelistId',
   'priceDiscount', 'priceSurcharge', 'priceMinMargin', 'priceMaxMargin', 'roundingMethod',
-  'minQty', 'dateStart', 'dateEnd', 'uomId',
+  'minQty', 'dateStart', 'dateEnd', 'uomId', 'selectable',
 ] as const
 
 export type RuleChangeKind = 'added' | 'removed' | 'changed'
