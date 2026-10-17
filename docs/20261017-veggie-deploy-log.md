@@ -55,3 +55,55 @@
   想要的那种"立即生效"，而不是"等到真正收货才生效"。状态：待你确认。
 - 技术观测：无需额外观测窗口——verify 脚本+手工补测已覆盖 confirm/cancel/receive 全链路核心路径，
   发布即生效，生产探活已通过。状态：已达成（技术侧）。
+
+## 2026-10-17 追加发布：ⓘ列查看态空白 + 分摊基数按基础单位换算（T8）
+
+- 代码提交：`4b5d6f30`，已推送 `main`，无新增迁移。
+- GitHub Actions `Deploy to droplet`：databaseId `39037781119`，结果 `success`。
+
+### 背景
+
+上一轮发布后的两处跟进问题（见上方"待观测"）：
+1. 客户反馈 ⓘ 参考成本列查看态（不点 Edit）是空白的，只有编辑态才有数据——根因是
+   `loadPurchaseProducts()` 只在进编辑态时才调用，查看态挂载时从未调用。
+2. 用户复述需求①把"总箱数"改成"基础单位"，经 `AskUserQuestion` 确认：同一单里下单单位不统一
+   （部分 CASE、部分 KG）时，分摊基数要先按各商品自己的换算系数折算成基础单位再比例分，不能直接
+   用下单数量裸数字比。详见 `docs/20261017-采购运费分摊成本联动-需求原话.md` 新增段落。
+
+### 改动内容
+
+- `app/[locale]/classic/operator/purchases/[id]/page.tsx`：挂载时无条件调用 `loadPurchaseProducts()`
+  （不再只在进编辑态时加载）。
+- `app/api/purchase-orders/[id]/route.ts` confirm 分支 + `app/api/products/route.ts`（`?slim=1`）+
+  `lib/purchase-landed-cost.ts`：分摊基数换算改用 `ProductSaleUom.factor`（按 productId+uomId 维度）。
+  ⚠️ 实现过程中一度错用全局 `Uom.factor`，读到 `app/api/uoms/route.ts` 自带的文档注释才发现该字段
+  自 20260823 起已是恒为 1 的中性默认值，真实系数挂在 `ProductSaleUom` 上，已改正，**未上线前就发现
+  并修复，未推送过错误版本**。
+
+### 验证结果
+
+- `npx tsc --noEmit` 零输出；`npm run lint` 对本次改动的文件零新增问题。
+- 真实混合单位端到端验证：开发库找到同一商品下真实存在两种 `ProductSaleUom`（CASE factor=1、
+  PKT factor=0.025）的商品，建测试单一行 10 CASE 一行 400 PKT（换算后基础量均为 10），confirm 后
+  两行 `allocatedFreightEur` 均为 €50（运费 €100 对半分）——若退化成直接用裸 `orderedQty` 比例分
+  会是 10:400≈€2.43:€97.57，与实测结果明显不同，证明基础单位换算确实生效。验证后 cancel 清理测试单。
+- `scripts/verify-po-freight-allocation.sh` 全绿（单一单位场景行为未受影响，无回归）。
+- 部署后 SSH 核对容器镜像：`ghcr.io/erichecan/veggie:4b5d6f303f0b089291f287ea5a06528ab0f0b2b6`，
+  与推送的 HEAD commit hash 完全一致。
+- 生产探活：`https://www.johnstonebros.ie/` → HTTP 200；`/api/health` → HTTP 200
+  （`"status":"ok","db":"ok"`，`uptimeSec` 个位数，确认是本次部署刚重启的容器而非旧容器缓存）。
+- `CI` 工作流本次失败（`39037781131`），读日志确认是既有的权限可达性快照测试
+  （`tests/role-reachability.test.ts`：匿名可达路由多出 `/api/auth/register`、`/api/cron/ledger-check`
+  两条），与本次改动的文件（purchases 详情页、products/purchase-orders 路由、运费分摊算法）完全无关——
+  上一个提交 `e990a493`（本次改动之前）同一个测试同样失败，证明是已存在、未被本次引入的问题。
+  本次未修，留作已知技术债，不在本轮范围内处理。
+
+### 待观测
+
+- 定性观测：真实浏览器打开一张混用 CASE/KG 等不同采购单位的采购单，确认页面上"分摊运费"列显示的
+  数字跟上述 curl 验证结果一致（本机 Chrome 二进制缺失，未能做真实点击/截图，接口层已验证）。
+  状态：待你确认。
+- 技术观测：已通过（SSH 核对镜像 tag + 生产探活 + 混合单位真实 confirm 测试）。
+- ⚠️ 遗留技术债（非本次引入，不阻塞本次发布）：CI `role-reachability` 测试检测到匿名可达路由多了
+  `/api/auth/register`、`/api/cron/ledger-check` 两条，跟之前"客户名册匿名泄露"是同一类风险模式
+  （见记忆 `api-customers-public-leak-fixed-20260802`），建议找时间单独核实这两条是否该匿名可达。
