@@ -54,6 +54,8 @@ export const SALES_MEASURES: Record<string, MeasureMeta> = {
 
 export const PURCHASING_DIMENSIONS: Record<string, DimensionMeta> = {
   po_name:         { field: 'po_name',         label: 'PO No.',        labelZh: '采购单号',   type: 'string' },
+  // 20261016：分层明细展开到采购单那一级，前端要拿这个 id 拼详情页链接（po_name 不是 PurchaseOrder 的主键）
+  purchase_order_id: { field: 'purchase_order_id', label: 'PO ID', labelZh: '采购单(内部ID)', type: 'string' },
   supplier_name:   { field: 'supplier_name',   label: 'Supplier',      labelZh: '供应商',     type: 'string' },
   // 20260920：供应商/商品的筛选下拉给的是**内部 id**，而不是名字。
   // 只放 *_name 的话，按名字筛会被重名档案串在一起（生产库历史上有重复壳记录）。

@@ -1,6 +1,8 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiPost } from '@/lib/api'
 import { eur } from '@/lib/format-money'
 import { bucketLabel } from '@/lib/reports/date-label'
@@ -13,7 +15,7 @@ const COUNTED_STATUSES = ['CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED']
 const ROW_LIMIT = 10000
 type Layout = 'product-date-supplier' | 'date-supplier-product'
 type ApiRow = Record<string, string | number | null | undefined>
-type Node = { key: string; label: string; amount: number; qty: number; children: Node[]; dateKey?: string; childMap?: Map<string, Node> }
+type Node = { key: string; label: string; amount: number; qty: number; children: Node[]; dateKey?: string; childMap?: Map<string, Node>; poId?: string }
 
 /**
  * 每一级分组怎么从扁平行里取值、怎么展示 —— 一个 level 可以对应多个 SQL 维度
@@ -23,7 +25,7 @@ type Node = { key: string; label: string; amount: number; qty: number; children:
 interface LevelDef {
   requestFields: { field: string; interval?: 'day' }[]
   isDate: boolean
-  resolve: (row: ApiRow, isEn: boolean) => { key: string; label: string; dateKey?: string }
+  resolve: (row: ApiRow, isEn: boolean) => { key: string; label: string; dateKey?: string; poId?: string }
 }
 
 function dateKey(value: unknown) {
@@ -66,11 +68,12 @@ const supplierLevel: LevelDef = {
   },
 }
 const poLevel: LevelDef = {
-  requestFields: [{ field: 'po_name' }],
+  requestFields: [{ field: 'po_name' }, { field: 'purchase_order_id' }],
   isDate: false,
   resolve: (row, isEn) => {
     const value = str(row.po_name)
-    return { key: `po:${value}`, label: value || (isEn ? '(no PO number)' : '（无单号）') }
+    const poId = str(row.purchase_order_id) || undefined
+    return { key: `po:${value}`, label: value || (isEn ? '(no PO number)' : '（无单号）'), poId }
   },
 }
 
@@ -99,6 +102,8 @@ export default function PurchaseHierarchyTable({
   const [result, setResult] = useState<{ scope: string; rows: ApiRow[]; total: number } | null>(null)
   const [error, setError] = useState<{ scope: string; message: string } | null>(null)
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const locale = useLocale()
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const scope = [layout, supplierIds.join(','), productIds.join(','), supplierTerms.join(','), productTerms.join(','), from, to].join('|')
   const levels = LAYOUTS[layout]
 
@@ -130,9 +135,9 @@ export default function PurchaseHierarchyTable({
     for (const row of result.rows) {
       let level = root
       levels.forEach((levelDef, index) => {
-        const { key, label, dateKey: dk } = levelDef.resolve(row, isEn)
+        const { key, label, dateKey: dk, poId } = levelDef.resolve(row, isEn)
         let node = level.get(key)
-        if (!node) { node = { key, label, amount: 0, qty: 0, children: [], dateKey: dk }; level.set(key, node) }
+        if (!node) { node = { key, label, amount: 0, qty: 0, children: [], dateKey: dk, poId }; level.set(key, node) }
         node.amount += numeric(row.subtotal_ex_tax)
         node.qty += numeric(row.ordered_qty)
         if (index < levels.length - 1) {
@@ -175,7 +180,9 @@ export default function PurchaseHierarchyTable({
         <tr className={`border-b border-gray-50 hover:bg-gray-50${topSeparator ? ' border-t-2 border-t-gray-300' : ''}`}>
           <td className="px-3 py-2 whitespace-nowrap" style={{ paddingLeft: 12 + depth * 24 }}>
             {expandable ? <button type="button" onClick={() => setOpen((old) => ({ ...old, [node.key]: !old[node.key] }))} className="w-5 text-purple-800">{expanded ? '−' : '+'}</button> : <span className="inline-block w-5" />}
-            {node.label}
+            {node.poId
+              ? <a href={`${prefix}/classic/operator/purchases/${node.poId}`} target="_blank" rel="noopener noreferrer" className="text-purple-700 hover:underline">{node.label}</a>
+              : node.label}
           </td>
           <td className="px-3 py-2 text-right tabular-nums">{eur(node.amount)}</td>
           <td className="px-3 py-2 text-right tabular-nums">{Math.round(node.qty * 1000) / 1000}</td>
