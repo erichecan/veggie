@@ -107,3 +107,56 @@
 - ⚠️ 遗留技术债（非本次引入，不阻塞本次发布）：CI `role-reachability` 测试检测到匿名可达路由多了
   `/api/auth/register`、`/api/cron/ledger-check` 两条，跟之前"客户名册匿名泄露"是同一类风险模式
   （见记忆 `api-customers-public-leak-fixed-20260802`），建议找时间单独核实这两条是否该匿名可达。
+
+## 2026-10-17 追加发布：价格表「可售」开关 + 隐藏重复成本列
+
+- 代码提交：`cf376761`，已推送 `main`，无新增迁移（`items` 是 Json 字段，加字段不用改 schema）。
+- GitHub Actions `Deploy to droplet`：结果 `success`。
+
+### 背景
+
+客户在价格表详情页截图（"M7M1N3干货-2"）手写批注：①Variant Cost/Template Cost 两列是否需要、
+建议隐藏；②每个产品需要一个可售/不可售开关，不可售时不出现在价格表输出里、下单也不按这张表的价
+格算；③背景说明——季节性/运输原因导致商品时有时没有，不是按库存判断能不能按这张表卖。需求原话逐
+字存档见 `docs/20261017-价格表可售开关与成本列精简-需求原话.md`。用户明确指示本次跳过 DEV-PLAN
+确认环节，直接实现+提交+部署。
+
+### 改动内容
+
+- `lib/types.ts`：`OdooPricelistItem` 新增 `selectable?: boolean`，缺省/未设视为 `true`。
+- `lib/pricelist-item.ts`：`validateAndNormalizeItem()`（PUT 与批量导入共用的唯一校验/归一化入口）
+  补上 `selectable` 的归一化。
+- `lib/pricing-engine.ts`：`matchesItem()` 对 `selectable===false` 的规则直接判不命中，下单定价
+  自动回退到下一条匹配规则/最终牌价——所有下单/客户门户定价调用链都经过这个函数，一处改全覆盖。
+- `app/api/pricelists/print/route.ts`：打印/导出结果过滤掉 `selectable===false` 的规则行。
+- `app/[locale]/classic/operator/pricelists/[id]/page.tsx`：表格删掉 Variant Cost/Template Cost
+  两列重复成本列（三列渲染的本就是同一个 `cost` 变量），只保留 Public Cost Price；表格行内+弹窗
+  都加了「可售」勾选框，复用既有 `onInlineChange`/`persistItems()` 保存路径。
+- `lib/pricelist-diff.ts`：`/code-review high` 发现 `RULE_PRICE_FIELDS`（改价留痕用的字段白名单）
+  漏了 `selectable`——切换可售状态效果等同于删规则，却不会在价格表 chatter / 商品页改价历史里
+  留痕，已补上。
+
+### 验证结果
+
+- `npx tsc --noEmit` 零输出；`npm run lint` 对本次改动的文件零新增问题（与改动前的基线逐一比对）。
+- 本机 dev server 实测前后对比（改动前先备份该价格表原始 JSON，验证后原样还原）：
+  把某条 `fixedPrice:0` 规则设为 `selectable=false` 后，`GET /api/products/[id]/pricelist-rules`
+  返回的该价格表 `effectivePrice` 从命中值变为 `null`（跳过生效，直接证明 `matchesItem()` 的新判断
+  在真实 `resolvePrice()` 调用链里生效）；`GET /api/pricelists/print?ids=...` 返回的 `items` 数量
+  从 2 条降为 1 条（直接证明打印/导出过滤生效）。
+- `/code-review high` 返回 1 条（上述 `RULE_PRICE_FIELDS` 漏字段），已修复并复测 tsc/lint 通过。
+- `/security-review` 自查无新增漏洞：新增字段全程只是布尔值，未进入 SQL/shell/模板，未改动任何
+  鉴权逻辑；唯一的数据可见性变化是打印接口"过滤掉更多行"（收窄暴露面，非扩大）。
+- 部署后 SSH 核对容器镜像：`ghcr.io/erichecan/veggie:cf37676162ed5f536e0d24d6a61bee68959dd032`，
+  与推送的 HEAD commit hash 完全一致，容器状态 `healthy`。
+- 生产探活：`https://www.johnstonebros.ie/` → HTTP 200；`/api/health` → `{"status":"ok","db":"ok"}`，
+  `uptimeSec` 个位数分钟级（刚重启容器，非旧容器缓存）。
+
+### 待观测
+
+- 定性观测：请打开任意一张价格表详情页，确认①Variant Cost/Template Cost 两列确实消失、只留
+  Public Cost Price；②表格行+弹窗里的「可售」勾选框长相和位置符合预期；③实际取消勾选某条规则后
+  打印/导出该价格表，确认那一行真的不出现了。本机 Chrome 可执行文件缺失（已知环境问题，见记忆
+  `chrome-binary-missing-for-browser-mcp-20261014`），本次只做了接口层验证，未做真实浏览器点击/
+  截图核对视觉效果。状态：待你确认。
+- 技术观测：已达成（SSH 核对镜像 tag + 生产探活 + 接口层前后对比实测）。
