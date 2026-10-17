@@ -6,14 +6,36 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
+import { formatDateOnly } from '@/lib/format-date'
+import StockMovesTable from '@/components/classic/StockMovesTable'
 
 const PURPLE = '#875A7B'
+
+type DetailTab = 'ATTENTION' | 'EXPIRING' | 'LOSS' | 'STOCKTAKE'
 
 interface KPIs {
   totalStockValue: number
   expiringLotCount: number
   monthLossRate: number
   pendingStockTakeCount: number
+}
+
+interface ExpiringLotRow {
+  id: string
+  lotNumber: string
+  currentQty: string | number
+  bestBefore: string
+  isExpired: boolean
+  daysRemaining: number
+  product?: { name: string; spec?: string | null }
+}
+
+interface DraftStockTake {
+  id: string
+  status: string
+  takenAt: string
+  notes?: string | null
+  _count?: { lines: number }
 }
 
 interface AttentionItem {
@@ -60,6 +82,13 @@ export default function InventoryOverviewPage() {
   const [groups, setGroups] = useState<GroupRow[]>([])
   const [loading, setLoading] = useState(true)
 
+  // 20261016：三张 KPI 卡片点击后不再跳页，改为在本页切换下方明细面板（客户反馈：点一下就跳走太重）
+  const [activeTab, setActiveTab] = useState<DetailTab>('ATTENTION')
+  const [expiringLots, setExpiringLots] = useState<ExpiringLotRow[] | null>(null)
+  const [expiringLoading, setExpiringLoading] = useState(false)
+  const [stockTakes, setStockTakes] = useState<DraftStockTake[] | null>(null)
+  const [stockTakeLoading, setStockTakeLoading] = useState(false)
+
   useEffect(() => {
     apiGet<{ kpis: KPIs; attention: AttentionItem[]; groups: GroupRow[] }>(`/api/analytics/inventory-overview?locale=${locale}`)
       .then(d => { setKpis(d.kpis); setAttention(d.attention); setGroups(d.groups) })
@@ -67,8 +96,29 @@ export default function InventoryOverviewPage() {
       .finally(() => setLoading(false))
   }, [locale, isEn])
 
+  useEffect(() => {
+    if (activeTab === 'EXPIRING' && expiringLots === null) {
+      setExpiringLoading(true)
+      apiGet<ExpiringLotRow[]>('/api/lots/expiring?days=7&limit=200')
+        .then(setExpiringLots)
+        .catch(e => toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败')))
+        .finally(() => setExpiringLoading(false))
+    }
+    if (activeTab === 'STOCKTAKE' && stockTakes === null) {
+      setStockTakeLoading(true)
+      apiGet<{ items: DraftStockTake[] }>('/api/stock-takes?status=DRAFT&limit=50')
+        .then(d => setStockTakes(d.items))
+        .catch(e => toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load' : '加载失败')))
+        .finally(() => setStockTakeLoading(false))
+    }
+  }, [activeTab, expiringLots, stockTakes, isEn])
+
   function go(href: string) {
     router.push(`${prefix}${href}`)
+  }
+
+  function toggleTab(tab: Exclude<DetailTab, 'ATTENTION'>) {
+    setActiveTab(prev => (prev === tab ? 'ATTENTION' : tab))
   }
 
   // 本地年月日拼接，避免 toISOString() 按 UTC 转换导致都柏林时区下早一天
@@ -120,7 +170,8 @@ export default function InventoryOverviewPage() {
           </div>
           <div
             className="p-4 cursor-pointer hover:bg-gray-50"
-            onClick={() => go('/classic/operator/inventory/lots?expiring=1')}
+            onClick={() => toggleTab('EXPIRING')}
+            style={activeTab === 'EXPIRING' ? { background: '#fbf3e6', boxShadow: 'inset 0 -3px 0 #a3690e' } : undefined}
           >
             <div className="text-xs text-gray-500 flex items-center gap-1.5 mb-1">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#a3690e' }} />{isEn ? 'Expiring Lots' : '临期批次'}
@@ -130,7 +181,8 @@ export default function InventoryOverviewPage() {
           </div>
           <div
             className="p-4 cursor-pointer hover:bg-gray-50"
-            onClick={() => go(`/classic/operator/inventory/moves?type=SCRAP&from=${monthStartYMD}&to=${todayYMD}`)}
+            onClick={() => toggleTab('LOSS')}
+            style={activeTab === 'LOSS' ? { background: '#fdf1ee', boxShadow: 'inset 0 -3px 0 #b6412a' } : undefined}
           >
             <div className="text-xs text-gray-500 flex items-center gap-1.5 mb-1">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#b6412a' }} />{isEn ? "This Month's Loss Rate" : '本月损耗率'}
@@ -140,7 +192,8 @@ export default function InventoryOverviewPage() {
           </div>
           <div
             className="p-4 cursor-pointer hover:bg-gray-50"
-            onClick={() => go('/classic/warehouse/stock-take?status=DRAFT')}
+            onClick={() => toggleTab('STOCKTAKE')}
+            style={activeTab === 'STOCKTAKE' ? { background: '#eef4fa', boxShadow: 'inset 0 -3px 0 #35618a' } : undefined}
           >
             <div className="text-xs text-gray-500 flex items-center gap-1.5 mb-1">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#35618a' }} />{isEn ? 'Pending Stock Takes' : '待完成盘点'}
@@ -150,34 +203,121 @@ export default function InventoryOverviewPage() {
           </div>
         </div>
 
-        {/* Attention list */}
+        {/* Detail panel：默认显示「需要关注」，点上面三张 KPI 卡片切到对应明细，不离开本页；再点一次切回默认 */}
         <div>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{isEn ? 'Needs Attention' : '需要关注'}</h2>
-          <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
-            {attention.length === 0 ? (
-              <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Nothing needs attention right now' : '暂时没有需要关注的事项'}</div>
-            ) : (
-              attention.map((item, i) => {
-                const style = SEVERITY_STYLE[item.severity]
-                return (
-                  <div
-                    key={i}
-                    onClick={() => go(item.actionHref)}
-                    className="grid grid-cols-[26px_1fr_auto] gap-3 items-center px-4 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer hover:bg-gray-50"
-                    style={{ borderLeft: `3px solid ${style.border}` }}
-                  >
-                    <span className="text-lg text-center">{item.icon}</span>
-                    <div>
-                      <span className="text-[11px] uppercase tracking-wide text-gray-400 mr-1.5">{item.categoryLabel}</span>
-                      <span className="font-semibold text-gray-800 text-sm">{item.title}</span>
-                      <div className="text-xs text-gray-500 mt-0.5">{item.desc}</div>
-                    </div>
-                    <span className="text-xs font-semibold whitespace-nowrap" style={{ color: PURPLE }}>{item.actionLabel}</span>
-                  </div>
-                )
-              })
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              {activeTab === 'ATTENTION' && (isEn ? 'Needs Attention' : '需要关注')}
+              {activeTab === 'EXPIRING' && (isEn ? 'Expiring Lots (within 7 days)' : '临期批次（7 天内）')}
+              {activeTab === 'LOSS' && (isEn ? "This Month's Scrap Moves" : '本月报废流水')}
+              {activeTab === 'STOCKTAKE' && (isEn ? 'Pending Stock Takes' : '待完成盘点')}
+            </h2>
+            {activeTab !== 'ATTENTION' && (
+              <button onClick={() => setActiveTab('ATTENTION')} className="text-xs hover:underline" style={{ color: PURPLE }}>
+                {isEn ? '← Back to Needs Attention' : '← 返回需要关注'}
+              </button>
             )}
           </div>
+
+          {activeTab === 'ATTENTION' && (
+            <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
+              {attention.length === 0 ? (
+                <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Nothing needs attention right now' : '暂时没有需要关注的事项'}</div>
+              ) : (
+                attention.map((item, i) => {
+                  const style = SEVERITY_STYLE[item.severity]
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => go(item.actionHref)}
+                      className="grid grid-cols-[26px_1fr_auto] gap-3 items-center px-4 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer hover:bg-gray-50"
+                      style={{ borderLeft: `3px solid ${style.border}` }}
+                    >
+                      <span className="text-lg text-center">{item.icon}</span>
+                      <div>
+                        <span className="text-[11px] uppercase tracking-wide text-gray-400 mr-1.5">{item.categoryLabel}</span>
+                        <span className="font-semibold text-gray-800 text-sm">{item.title}</span>
+                        <div className="text-xs text-gray-500 mt-0.5">{item.desc}</div>
+                      </div>
+                      <span className="text-xs font-semibold whitespace-nowrap" style={{ color: PURPLE }}>{item.actionLabel}</span>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          )}
+
+          {activeTab === 'EXPIRING' && (
+            <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
+              <div className="grid grid-cols-[1.4fr_120px_90px_120px_110px] gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-200">
+                <span>{isEn ? 'Product' : '商品'}</span>
+                <span>{isEn ? 'Lot #' : '批号'}</span>
+                <span className="text-right">{isEn ? 'Qty' : '数量'}</span>
+                <span>{isEn ? 'Best Before' : '保质期'}</span>
+                <span>{isEn ? 'Status' : '状态'}</span>
+              </div>
+              {expiringLoading && <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>}
+              {!expiringLoading && (expiringLots?.length ?? 0) === 0 && (
+                <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'No expiring lots' : '暂无临期批次'}</div>
+              )}
+              {!expiringLoading && expiringLots?.map(lot => (
+                <div key={lot.id} className="grid grid-cols-[1.4fr_120px_90px_120px_110px] gap-2 px-4 py-2.5 items-center border-b border-gray-100 last:border-b-0 text-sm">
+                  <span className="text-gray-800">
+                    {lot.product?.name ?? (isEn ? 'Unknown product' : '未知商品')}
+                    {lot.product?.spec && <span className="ml-1 text-xs text-gray-400">({lot.product.spec})</span>}
+                  </span>
+                  <span className="text-xs font-mono text-gray-600">{lot.lotNumber}</span>
+                  <span className="text-xs font-mono text-right">{Number(lot.currentQty).toFixed(2)}</span>
+                  <span className="text-xs text-gray-600">{formatDateOnly(lot.bestBefore)}</span>
+                  {lot.isExpired
+                    ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium w-fit">{isEn ? `Expired ${Math.abs(lot.daysRemaining)}d ago` : `已过期 ${Math.abs(lot.daysRemaining)} 天`}</span>
+                    : <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium w-fit">{isEn ? `${lot.daysRemaining}d left` : `剩 ${lot.daysRemaining} 天`}</span>}
+                </div>
+              ))}
+              <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+                <button onClick={() => go('/classic/operator/inventory/lots?expiring=1')} className="text-xs hover:underline" style={{ color: PURPLE }}>
+                  {isEn ? 'Open full lot ledger →' : '前往批次台账完整页面 →'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'LOSS' && (
+            <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden p-3">
+              <StockMovesTable
+                filter={{ type: 'SCRAP', from: monthStartYMD, to: todayYMD }}
+                isEn={isEn}
+                pageSize={10}
+                emptyText={isEn ? 'No scrap moves this month' : '本月暂无报废流水'}
+              />
+              <div className="pt-2 mt-2 border-t border-gray-100">
+                <button onClick={() => go(`/classic/operator/inventory/moves?type=SCRAP&from=${monthStartYMD}&to=${todayYMD}`)} className="text-xs hover:underline" style={{ color: PURPLE }}>
+                  {isEn ? 'Open full stock moves page →' : '前往库存流水完整页面 →'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'STOCKTAKE' && (
+            <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
+              {stockTakeLoading && <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'Loading...' : '加载中...'}</div>}
+              {!stockTakeLoading && (stockTakes?.length ?? 0) === 0 && (
+                <div className="py-10 text-center text-gray-400 text-sm">{isEn ? 'No pending stock takes' : '暂无待完成盘点'}</div>
+              )}
+              {!stockTakeLoading && stockTakes?.map(st => (
+                <div key={st.id} className="grid grid-cols-[120px_80px_1fr] gap-3 items-center px-4 py-2.5 border-b border-gray-100 last:border-b-0 text-sm">
+                  <span className="text-gray-600">{formatDateOnly(st.takenAt)}</span>
+                  <span className="text-gray-700">{st._count?.lines ?? '—'} {isEn ? 'items' : '项'}</span>
+                  <span className="text-xs text-gray-400 truncate">{st.notes ?? '—'}</span>
+                </div>
+              ))}
+              <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+                <button onClick={() => go('/classic/warehouse/stock-take?status=DRAFT')} className="text-xs hover:underline" style={{ color: PURPLE }}>
+                  {isEn ? 'Open stock take page to process →' : '前往盘点页面处理 →'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Category group table */}

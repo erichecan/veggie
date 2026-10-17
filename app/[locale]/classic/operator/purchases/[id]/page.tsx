@@ -1556,17 +1556,6 @@ export default function PurchaseDetailPage() {
 
         {/* ── Chatter / message area ────────────────────── */}
         <div className="mt-4 bg-white rounded border border-gray-200 shadow-sm p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <button className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
-              <span>✉</span> {isEn ? 'Send Message' : '发送消息'}
-            </button>
-            <button className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
-              <span>📝</span> {isEn ? 'Log Note' : '记录备注'}
-            </button>
-            <button className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
-              <span>📅</span> {isEn ? 'Schedule Activity' : '安排活动'}
-            </button>
-          </div>
           {timeline.length === 0 ? (
             <div className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded">
               {isEn ? 'No activity records yet' : '暂无操作记录'}
