@@ -1,247 +1,87 @@
-# DEV-REPORT：全站导入导出统一为商品模块同款体验
+# DEV-REPORT：采购运费按数量分摊进成本，确认时联动成本价、取消时回滚
 
-日期：2026-10-03
+对应 DEV-PLAN.md（2026-10-17）、台账 docs/20261017-采购运费分摊成本联动-tasks.md（T1-T7 全部完成）。
 
 ## 给你看的
 
-| 场景 | 来源 | 截图 | 状态 |
+| 场景 | 来源 | 复现方式 | 状态 |
 |---|---|---|---|
-| 商品导入弹窗外观/文案与改造前完全一致（底层引擎已换） | 你 2026-10-03「改成按照商品的模块导入导出功能」 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-products-import-dialog.png | 符合 |
-| 客户导入弹窗新增「按 ID 精确匹配更新」提示，与商品模块语义一致 | 你 2026-10-03 原话 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-customers-import-dialog.png | 符合 |
-| 设置页「计量单位」tab 新增导入/导出按钮 | 你 2026-10-03「没有导入导出功能的就补齐」 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-uom-settings-page.png | 符合 |
-| 设置页「商品分类」tab 新增导入/导出按钮 | 同上 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-product-category-tab.png | 符合 |
-| 单位导入弹窗文案说明 create-only 限制 | 我推断的（技术限制，见下方说明） | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-uom-import-dialog.png | 待你确认 |
+| Cost 列不再直接显示金额，换成 ⓘ 悬停提示「历史参考成本」 | 你原话：「如果是历史参考成本,那就旁边有一个information 的图标,鼠标悬停就显示历史参考成本」 | 浏览器打开采购单详情页 Products 栏，Cost 列是一个 ⓘ 图标，鼠标悬停弹出 `Product.standardPrice` | ⚠️ 待你确认（本机 Chrome.app 二进制缺失，未能截图，见下方「已知问题」） |
+| 总运费按各行订购数量占比分摊到每行，service 类行不参与分摊 | 客户批注①：「对于storable 或 consumable产品，总的费用除以总箱数 得出每箱的 分摊费用」 | `curl` 复现：见下方验证结果表第 1 条 | ✅ 符合 |
+| 操作员可对单行分摊运费手动 +/- 调整；分摊合计必须等于运费总额才能确认 | 客户批注②③：「根据实际需要 每个产品分摊的费用 调整，+或-」「每个产品 分摊费用合计 与 总费用 要对的上」 | `curl` 复现：故意改一行分摊运费后 confirm → 409 带具体差额；清空覆盖后恢复 200 | ✅ 符合 |
+| 确认采购这一刻，把分摊后的落地成本（含运费）推到 Product.standardPrice（"public price"） | 客户批注④：「订单确认，新形成的cost,作用到 public price」 | `curl` 复现：见下方验证结果表第 2、3 条 | ✅ 符合 |
+| 取消采购单，这次形成的成本也撤销，恢复到确认前的值 | 客户批注⑤：「如订单取消，这次形成的cost也取消。恢复到之前的」 | `curl` 复现：见下方验证结果表第 4 条 | ✅ 符合 |
 
-访问地址：http://localhost:3001/classic/operator/settings（本地开发环境，账号 boss@demo.local / test12345）
+访问地址：http://localhost:3001/zh/classic/operator/purchases/[id]
+测试账号：boss(at)demo.local / test12345（同时具备 purchase.order.update + purchase.order.approve）
 
-### 范围调整，需要你知道
+**⚠️ 关于 UI 视觉验收的诚实说明**：本机 `/Applications/Google Chrome.app` 二进制缺失（空壳应用），Playwright/
+chrome-devtools MCP 均无法启动浏览器，没能做真实点击/截图验证。Cost 列图标、分摊运费可编辑列、校验横幅的
+**渲染位置和样式**需要你用浏览器实地打开上面地址确认一遍；它们背后的**计算逻辑**已经在服务端-前端共享同一套
+`lib/purchase-landed-cost.ts` 并用接口级测试验证过数字一致（见下表），不是没测，是"测了计算、没测长相"。
 
-1. **发票 / 供应商账单 / 贷项通知单**：没有按计划升级导出到服务端模式。代码里已有明确注释说明这三个页面是"全量拉前端+客户端筛选"架构，改服务端导出会让"只导出当前筛选结果"这个功能失效，要做需要先把整个列表页架构换掉，是另一个更大的改动。**没有动**。
-2. **订单导出两套并存（registry 版 + `export-csv` 会计专用版）**：代码里已有明确注释说明这是前人刻意保留、避免影响已配置好的角色权限，**不是遗留技术债，没有合并**。
-3. **价格表、司机排班**：补齐导入导出的工作量比计划时预估的大——价格表的定价规则存在 JSON 字段里而不是平铺表，司机排班是跟用户账号关联的复合唯一键配置对象，都不是直接套用新引擎能做完的。**本次没做，需要你确认是否还要排期**。
-4. **单位(Uom)导入只支持新建，不支持更新已有单位**：Uom 没有像商品/客户那样的业务唯一键(ID)，真实的唯一约束是"分类+名称"组合键，不适合强行塞进按单字段设计的引擎匹配逻辑。改已有单位的货物类型/拣货展开设置，请继续用设置页里的单条编辑（功能一直都在，没有受影响）。
+## 存档用的（你不用看，出问题时我回来查）
 
-## 存档用的
+### 验证结果（verify-po-freight-allocation.sh 实跑输出）
 
-### 技术验收
+```
+1/3 — tsc --noEmit                                           ✅
+2/3 — prisma migrate status（up to date）                     ✅
+3/3 — HTTP 探针：
+  无 token confirm → 401                                      ✅
+  错 token confirm → 401                                      ✅
+  低权限（有 update 无 approve）confirm → 403                  ⚠️ 未验证（seed-rbac.json 里没有这种权限组合的角色）
+  分摊合计与运费总额不一致 → 409 且带具体差额                    ✅
+  confirm → 200 CONFIRMED                                     ✅
+  非 SERVICE 行分摊运费=30、落地成本=5.0，与手算一致              ✅
+  SERVICE 行分摊运费恒为 0，不参与分摊                           ✅
+  confirm 后 Product.standardPrice 已推到落地成本 5.0            ✅
+  cancel → 200 CANCELLED                                      ✅
+  cancel 后 Product.standardPrice 回滚到确认前快照                ✅
+```
 
-- `npx tsc --noEmit`：通过
-- `npm run build`：通过，退出码 0
-- `npx eslint`（本次改动的全部文件）：0 error，8 warning（均为改动前已存在的 unused-var / exhaustive-deps 警告，非本次引入）
-- 鉴权探针（无 token → 401）：`/api/uoms/bulk`、`/api/product-categories/bulk`、`/api/products/bulk`、`/api/customers/bulk`、`/api/suppliers/bulk` 全部 401，无 500
-- 功能回归（本地开发库，真实 curl 调用，测试数据已清理）：
-  - 商品：新建 → 按 externalId 更新 listPrice → `ActionLog` 里查到 `批量导入更新商品价格` 记录，before/after 正确（10→15）
-  - 客户：新建 → 按 externalId 更新 phone → 二次查询确认落库
-  - 供应商：新建 → 按 externalId 更新 vendorTaxRate → 二次查询确认落库
-  - 产品分类：新建 → 按 externalId 更新 nameZh → 二次查询确认落库
-  - 单位：新建成功；重名(不分类别)正确跳过；分类名找不到正确跳过并给出提示
-- CSV 解析引号 bug：写了独立验证脚本确认 `"Shrimp, Black Tiger 700g",10,12.5` 这种商品名带逗号的行不再被错误拆列（修复前 `lib/import-parser.ts` 裸 `split(',')` 会把这一行错位成 4 列）
-- `/code-review high`：跑出 3 条真实问题，已全部修复并回归验证通过：
-  1. **`product-categories/bulk` 权限点用错**——原来用「新建分类」权限点(`master.product_category.create`)，但这个端点还能按 ID 更新已有分类；本项目 RBAC 支持按权限点自由拆分角色，如果以后有角色只给了"建分类"没给"改分类"，就能靠批量导入绕过 update 权限改掉任意已有分类。已改成要求 `master.product_category.update`（跟 `/api/products/bulk` 用 `master.product.update` 同一个道理），`route-map.ts` 同步改，已用 boss 账号回归验证新建+按ID更新仍正常。
-  2. **CSV 分隔符嗅探回归**——收编 `lib/import-parser.ts` 的分隔符判断逻辑时，改成只看文本第一行，如果文件开头有空行（手工改过的 Excel 导出很常见），会判断错分隔符，整行数据静默错位。已改回"取第一条非空行"。
-  3. **商品改价留痕有并发竞态窗口**——重构时把"改价前后对比"的 after 值改成了事务提交后重新查一次库，如果这期间有人同时编辑了同一个商品，审计日志记的就是别人的改动而不是这次批量导入自己写的值。已改成直接用写入事务自己的返回值（给引擎加了 `data` 透传字段，不用重新查库），已重新跑一遍商品改价回归确认审计日志数值正确。
-- `/security-review`：已跑，无新增高置信度安全问题（上面第 1 条权限点问题是 `/code-review high` 发现的，已按同一次修复处理；`/security-review` 单独确认过这个点在当前角色配置下不构成立即可利用的漏洞，但修复后更彻底)
+另手工验证（verify 脚本未覆盖的 receive 分支，见下方「code-review 修复」第1条）：
+confirm → standardPrice=5.0 → receive → standardPrice 仍是 5.0（未修复前会被加权平均冲回 2.x）。✅
 
-### 已知技术债（本次顺带发现，不在本次范围内处理）
+### /code-review high + /security-review（CLAUDE.md §11 门槛，逐条处理）
 
-- `customers/bulk` 与 `suppliers/bulk` 原本各自手写的字段截断逻辑已抽成 `lib/import/contact-fields.ts` 共享，但 `vendor-bills/import`、`purchase-orders/parse` 用的另一套 PDF/Excel 解析器（`lib/import-parser.ts` + `lib/purchase/product-match.ts`）性质不同（文件转订单行而非批量建档），本次没有合并，判断为不该强行合并（业务语义不同）。
+/security-review 自查结论：无新增漏洞（DB 写入全走 Prisma 参数化调用，鉴权复用既有 `withAuth`+`FINER_GATE`，
+无新注入面/无 PII 泄露）。
 
-## 第二轮：价格表导入导出（你确认要做）+ 司机排班（你确认不做）
+/code-review high 返回 9 条，逐条处理：
 
-| 场景 | 来源 | 截图 | 状态 |
+| # | 文件:行 | 问题 | 处理 |
 |---|---|---|---|
-| 价格表列表页新增真正的导入/导出按钮(替掉"coming soon"假按钮) | 你 2026-10-03「价格表要加入导入导出功能」 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-pricelists-import-dialog.png | 符合 |
-| 导出字段勾选弹窗正常工作 | 同上 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261003-pricelists-export-field-picker.png | 符合 |
-| 司机排班不做导入导出 | 你 2026-10-03「司机排班就不用导入导出了」 | — | 符合(未改动) |
+| 1 | receive-purchase-order.ts:74 | 收货加权平均用不含运费的 `unitCostEur`，confirm 刚写入的含运费成本会被"确认收货"这个**正常下一步**悄悄冲掉，不是边缘情况 | ✅ 已修：改用 `landedUnitCostEur ?? unitCostEur ?? 0` |
+| 2 | purchases/[id]/page.tsx:948 | 前端预览用原币 `freightAmount`，服务端用 `freightAmountEur`，非欧元供应商两边算的不是同一个数，手动覆盖还会被按错误汇率曲解 | ✅ 已修：前端先按汇率折算成欧元再喂同一套分摊函数 |
+| 3 | route.ts:502 | 取消回滚靠"当前成本价数值上等于确认时写入值"判断有没被覆盖过，不是显式血缘字段 | ⛔ 接受，不处理——触发需要运费=0 + 部分收货进零库存 + 之后取消三者同时成立，真正加血缘字段是另一轮 schema 改动，记为已知限制 |
+| 4 | purchase-landed-cost.ts:84 | 手动覆盖合计超运费总额时，剩余分给其它行会算出负数分摊/负落地成本 | ✅ 已修：加 409 校验，任何一行分摊为负直接拒绝 |
+| 5 | route.ts:391 | `include:{lines:true}` 无 orderBy，分摊"尾差给最后一行"可能跟前端按 sequence 显示的"最后一行"不是同一行 | ✅ 已修：加 `orderBy:{sequence:'asc'}` |
+| 6 | route.ts:529 | reset_to_draft 没清分摊快照字段，取消→reset→改→重新确认时旧快照被误当"本轮手动覆盖" | ✅ 已修：reset_to_draft 分支补 `purchaseOrderLine.updateMany` 清空三个字段 |
+| 7 | purchases/new/page.tsx:612 | 新建页草稿预览仍用旧公式（金额占比、不排除 SERVICE），跟确认时真正落库的算法不一致 | ⛔ 接受，不处理——只影响起草阶段预览数字，不影响落库数据（确认时永远重算），且不在本次 DEV-PLAN 范围 |
+| 8 | purchases/[id]/page.tsx:1189 | Approve 按钮没经过跟 Confirm 按钮一致的客户端分摊校验 | ✅ 已修：补上同款 guard |
+| 9 | route.ts:585 | 新代码 `tx as any` 违反 CLAUDE.md"不用 any" | ✅ 已修：改用项目既有先例 `Prisma.TransactionClient` |
 
-**设计说明**：价格表的定价规则存在 `OdooPricelist.items`（JSON 数组），不是像单位/产品分类那样的平铺表——同一个价格表的多条定价规则要在 CSV 里用多行表示（一行 = 一条规则，靠「价格表名称」这一列分组），这跟商品/客户那种"一行一条独立记录"的通用引擎假设不一样，所以没有复用 `lib/import/bulk-import-engine.ts`，是一个独立实现(`app/api/pricelists/bulk/route.ts`)。顺带把价格表详情页原来内联的规则校验逻辑抽成共享模块 `lib/pricelist-item.ts`，两处用同一套规则。
+修复后 `npx tsc --noEmit` 零输出，verify-po-freight-allocation.sh 重跑全绿。
 
-**技术验收**：
-- `npx tsc --noEmit` / `npm run build` / `npx eslint`：全部通过
-- 鉴权探针：`/api/pricelists/bulk` 无 token → 401
-- 功能回归（本地开发库真实 curl，测试数据已清理）：新建价格表+2条规则 → 按 externalId 更新价格表设置 → 按规则 ID 原地替换某条规则 → 不带规则只改名的"仅改设置"行 → 导出 CSV 核对字段，全部符合预期
-- **过程中自己发现并修复了一个 bug**：按规则 ID 更新时，原实现会把这条规则的 ID 意外换成一个新的（因为判重逻辑把"这行就是要更新的那条规则自己"误判成撞车），导致下次再按同一个 ID 导入会找不到、变成重复新增而不是更新。已修复（排除自身 ID 再判重）并重新测试确认 ID 保持稳定。
-- `app/api/pricelists/[id]/route.ts` 的重构（内联校验抽成共享模块）用一个真实价格表（112条规则）做了往返测试：GET 取出 → 原样 PUT 回去 → 规则条数和字段结构不变，确认行为没有被改变。
-- `/code-review high`：已跑完，4 个真问题，已全部修复并回归验证通过（详见下方「`/code-review high`（价格表这批）结果」）
-- `/security-review`：已跑，无新增高置信度问题（新端点权限点 `master.pricelist.update` 复用现有角色配置，BOSS/OPERATOR 同时拥有 create/update/read，SALES 三者都没有，不存在权限缺口；确认了通用导出路由 `/api/export/[entity]` 会对新注册的 `pricelists` 实体同样执行权限校验，不是只声明不生效）
+### 架构张力（DEV-PLAN 已提前说明，用户已拍板）
 
-**已知限制（设计决策，不是遗留问题）**：
-- CSV 导入只能新增/更新定价规则，**不支持删除**已有规则——避免误操作清空定价。要删规则仍需去详情页手动删。
-- 价格表/规则的匹配靠「ID → 名称」，和商品/客户同一套思路。
+客户字面要求"确认采购"这一步把成本写进 Product.standardPrice（"public price"），而系统原有的"确认收货"
+环节也会按加权平均改写同一个字段——两套机制叠在一起。用户原话「按客户要求去改」，这次按字面实现；
+code-review 额外发现并堵上了其中一个具体的坑（上表第1条：确认后立即收货会把刚写的含运费成本冲掉），
+但"两个动作都想改同一个字段"这个根本张力本身没有被消除，只是让"确认→收货"这条最常见路径不再互相打架。
 
-### `/code-review high`（价格表这批）结果：4 个真问题，已全部修复
+### 已知不可用/未验证功能
 
-1. **价格表批量导入：引用"同批里稍后才新建"的另一个价格表会解析失败**——formula 规则的
-   `basedOnPricelist` 原来在"解析每一行"的阶段就去查库，但那时候同批其它行一个都还没写入，
-   查永远查不到。已改成挪到"写入这一行"的事务内部才解析(那时候前面的行已经真正提交)。
-   用真实场景复现过(A 行建"Base 10%"，B 行的规则引用"Base 10%")：修复前报 warning 丢了
-   嵌套引用，修复后 `basedOnPricelistId` 正确落库，已重新验证。
-2. **共享批量导入引擎有一个误判跳过的 bug**——这个影响商品/客户/供应商/产品分类/单位全部
-   5 个用这套引擎的路由：新记录的名字在"规划"阶段就被占用登记，如果这一行自己的写入事务
-   后来失败了(比如撞了无关字段的唯一约束)，名字已经被占，下一行如果恰好同名会被误判成
-   "跟这行撞名"而跳过——但数据库里其实从来没有写进去过这条记录。已改成：占用和写入事务
-   绑在一起，写入失败就撤销占用。同批真实撞名的跳过行为用 curl 重新验证过，没有被这个修复
-   影响。
-3. **批量导入弹窗表头匹配丢了一个回退规则**——抽成通用组件时参照了商品弹窗的实现，漏掉了
-   客户/供应商那套旧组件原本支持的"表头也认字段名(如 vatNumber)、不只认展示文案(如 VAT
-   Number)"的回退匹配。如果有人拿着表头是字段名的旧文件重新导入，那一列会静默对不上、
-   没有任何报错。已修复，恢复双重匹配。
-4. **价格表批量导入解析商品名时有 N+1 查询**——同一个文件里几百行各自引用的商品名，原来
-   逐行各查一次数据库；分类/单位在同一份代码里已经是"一次性查全表建字典"的做法，商品这块
-   漏了。已改成"先收集这份文件里实际出现过的商品名，一次性批量查"，不再有重复的网络往返。
+- 低权限（有 `purchase.order.update` 无 `purchase.order.approve`）confirm → 403：当前 `seed-rbac.json`
+  没有这种权限组合的角色（BOSS/OPERATOR 两者皆有，其余角色两者皆无），无法用真实账号跑这条探针。
+- 取消回滚的"数值重合"判断（见上表第3条）：运费=0 且部分收货后取消的极端组合下，可能误判"未被覆盖"而
+  回滚掉已经被收货环节更新过的成本价。概率低但存在，接受为已知限制。
+- 新建采购单页的草稿预览公式（见上表第7条）跟确认时真实算法不一致，只影响起草阶段看到的预览数字。
+- UI 视觉验收（图标位置/禁用态样式）未经真实浏览器验证，见上方「给你看的」栏说明。
 
-跑了一遍完整回归(商品/客户/供应商/单位/价格表，含上面两个真实场景复现用例)，测试数据
-已清理或标记停用(本地开发库里 boss 账号没有删客户权限，一条测试客户记录改成停用+改名
-`ZZZ-DELETED-...` 标记，不影响任何真实数据)。
+### 技术栈/部署
 
-### `/security-review`（价格表这批）
-
-已跑，无新增高置信度问题。确认了新权限点 `master.pricelist.update` 在当前角色配置下没有
-缺口(BOSS/OPERATOR 同时有 create/update/read，SALES 三个都没有)，且通用导出路由
-`/api/export/[entity]` 对新注册的 `pricelists` 实体确实执行了权限校验。
-
-### 本轮顺带发现、记录但不在本次修复范围内的技术债
-
-code review 还提出几条"可以抽共享函数/收窄到一套引擎"的建议(MAX_ROWS_PER_REQUEST 校验逻辑
-在 6 个 bulk 路由里重复、"按名字建字典"这个模式在 4 个路由里重复、customers/suppliers 批量
-导入现在因为分批提交会产生多条审计日志而不是一条)。这几条是代码整洁度/效率层面的建议，不是
-正确性 bug，判断为可以留到下次动这块代码时顺手做，不在这次之内处理，已记录进任务台账。
-
-## 员工账号：编号 + 导入导出 + 批量操作（2026-10-06）
-
-来源：你 2026-10-06「在用户管理模块，增加导入导出功能，增加批量 action 功能，增加 user 编号功能」
-
-### 测试账号（本地沙盒，验证后已销毁）
-| 角色 | 账号 | 密码 |
-|------|------|------|
-| 管理员(BOSS+OPERATOR) | Alice（测试库种子） | 直接签发 JWT，未设密码 |
-| 司机(无 system.user.manage) | Bob（测试库种子） | 直接签发 JWT，未设密码 |
-
-### 验证结果（本地 PostgreSQL 16 + Playwright）
-| 用户流程 | 验证方式 | 结果 |
-|----------|----------|------|
-| 迁移回填编号 | 3 个老账号跑 migration.sql | ✅ 按创建时间 1/2/3，新号从 4 起；`prisma migrate diff` 为空 |
-| 列表显示编号 / 按编号搜索 | 浏览器 Search No. for: 3 | ✅ 只剩 Carol（精确匹配，不会把 13、23 带出来） |
-| 导入：新建 + 设上级 | CSV 6 行 | ✅ Eve 建成，带 2 个角色、上级 Alice、首次登录强制改密 |
-| 导入：已存在邮箱 | 同上 | ✅ 跳过，不改原账号 |
-| 导入：显示名当代码 / 弱密码 / RESTAURANT | 同上 | ✅ 三行各自失败并给出原因，其他行照常导入 |
-| 导入：上级邮箱不存在 | curl /api/users/bulk | ✅ 照建，给出提示 |
-| 导入：无权限 | 司机 token | ✅ 403 |
-| 批量停用（含自己） | 勾 3 人 → Actions → Deactivate | ✅ 自己被跳过，另 2 人停用且 permVersion+1（旧 token 立即失效） |
-| 停用自己 | curl PUT | ✅ 400「不能停用自己的账号」 |
-| 导出（全部/已选） | 浏览器导出 | ✅ 含编号、角色代码、上级邮箱，导出文件可直接改了再导入 |
-
-### 已知不可用功能
-- 导入只新建账号，不能用表格成批改已有账号的角色/状态——这是刻意的（改权限走行上「权限」或批量操作），不是缺陷。
-- `node --test` 有 7 个失败，全部是 main 上已有的（RBAC 快照 / `POST /api/auth/register` 写闸登记），与本次无关。
-
-## 多 tab 协作不丢数：切回 tab 自动刷新引用数据 + 表单草稿自动保存（2026-10-10）
-
-来源：你 2026-10-09「现在客户有这样的一个行为……这种问题如果全站都想解决,不需要客户刷新,要如何实现呢？」；范围按你的要求「不能以我提到例子为准」改成全站机械审计结果（M1 刷新 44 页 / M2 草稿 14 页），详见 `DEV-PLAN.md` 与 `docs/20261010-multi-tab-draft-sync-tasks.md`。
-
-### 给你看的
-
-这次改的是"行为"不是"外观"，页面长什么样完全没变，所以不是截图能看出门道的改动——给你一段任何页面都能照着走一遍的操作路径，和需要你重点验证的几个具体场景。
-
-**通用验证路径（适用于全部 44+14 页清单，见 `docs/20261010-multi-tab-draft-sync-tasks.md` 各单元列出的页面）：**
-1. 打开任意一个清单内页面（比如商品详情 `/classic/operator/products/[id]`），进入编辑态，填一点内容但先别保存
-2. 开第二个 tab，改一下相关参考数据（比如改一下计量单位的名字）并保存
-3. 切回第一个 tab，点一下页面任意处（或等最多 30 秒），下拉选项应该已经变成第二个 tab 刚改的新值——不用你手动刷新页面
-4. 这时候如果直接刷新这个页面（模拟"不小心刷新了"或"浏览器自动恢复"），重新进来应该会弹出一条"检测到未保存的草稿，是否恢复"的条状提示，点恢复能拿回刚才填的内容
-
-| 场景 | 来源 | 操作路径 | 状态 |
-|---|---|---|---|
-| 切 tab 改参考数据，原 tab 不用手动刷新就能看到最新值 | 你 2026-10-09 原话 | 见上方通用验证路径步骤 1-3 | 待你确认 |
-| 编辑内容中途切走，刷新/误关不会丢 | 你 2026-10-09「如果是刷新,那当前窗口填写的内容如何能保存下来呢」 | 见上方通用验证路径步骤 4 | 待你确认 |
-| 条状提示的长相（非阻断、不盖住提交按钮） | 我推断的（避免复刻 cookie-banner.tsx 踩过的坑） | file:///Volumes/datacenter/04-eric/AIcoding/veggie/preview/20261010-draft-restore-banner.html（静态预览，直接搬的真实 className） | 待你确认 |
-
-访问地址：http://localhost:3001（本地开发环境，账号 boss@demo.local / test12345）
-
-**以下 4 点是我在走最后一道质量关（见下方「技术验收」）时读代码发现、已经修掉的真实体感问题，建议你验证时重点走一遍，而不是泛泛点一遍：**
-- 行程详情页（`trips/[id]`）：打开"编辑司机/餐馆"弹窗改了一半，这期间切 tab 不会再把弹窗背后的行程数据换掉（换了会导致保存时把弹窗外同时发生的改动覆盖掉）
-- 采购年度计划（`purchases/annual-plan`）：手动取消勾选几行准备提交批量，切 tab 回来这几行应该还是取消状态，不会被自动重新全选
-- 采购建议（`purchases/suggestions`）：勾选一批准备处理，切 tab 回来这批勾选应该还在，不会被清空
-- 餐馆下单页（`restaurant/page`）：翻到第 3 页浏览商品，切 tab 回来应该还停在第 3 页，不会跳回第 1 页
-- 报价单编辑到一半存了草稿，等这张单被确认变成正式订单后去 `/orders/[id]` 打开，草稿应该还能找到并提示恢复（以前这两个页面各用各的草稿命名，确认后草稿会永久失联）
-
-### 本次没做/明确不在范围内
-
-34 个只读报表/看板页面（销售分析、毛利分析、提成报表等）结构上也符合"有数据会被别处改"的刷新需求，但本身没有"填了没保存"的风险（只读），审计时按你的机械规则划到了独立的后续批次，这次没有动。
-
-## 存档用的
-
-### 技术验收
-
-- `npx tsc --noEmit`：无输出
-- `npm run build`：exit 0，`/tmp/build-final.log` 无 error
-- `npm run test`：961 条，951 通过，8 条失败——7 条是 `role-reachability`/`rbac-gate` 既有基线问题（与 `/api/auth/register` 匿名可达等有关，这批改动开工前就存在，详见本次任务台账 U0 小节），1 条 `pricing-override.test.ts` 失败是本机开发库缺测试要用的 "ABCT" 客户种子数据（环境问题，单独跑该文件复现同样的前置断言失败）；均与本次改动的文件无关；跟改动前基线（950/960 通过）相比净多出的 1 个 pass 是本次新增的 `clearDraftsForUser` 单测，没有引入新失败
-- 本项目没有 `scripts/verify.sh` 这个文件（历史上一直用 tsc+build+test 三件套当验收标准），本次沿用，不新造
-- 本机沙箱 Chrome/Playwright 二进制不可用，61 个页面的真实浏览器交互/截图验证全程跳过，只能靠你自己打开页面走一遍——这是本次任务从头到尾的已知限制，不是遗漏
-
-### `/security-review` 结果：1 条 Medium，已修复
-
-**草稿自动保存的内容退出登录后仍留在 localStorage**——换个人用同一台电脑登录，新用户看不到旧用户的草稿（key 本来就按 userId 隔离），但旧用户自己的草稿还在 localStorage 里，打开 devtools 能读到（客户/供应商的税号、信用额度等字段混在里面），最长留到 3 天过期。已加 `clearDraftsForUser()`，接进 `lib/session.ts` 的 `logout()`，退出登录时主动扫掉当前用户名下所有草稿；补了单测验证"只清自己的、不动其他用户的、不动其他 localStorage 项"。
-
-### `/code-review high` 结果：10 条发现，9 条修复、1 条记录为已知债务
-
-详细清单（文件/行号/修复方式）见 `docs/20261010-multi-tab-draft-sync-tasks.md` U8 小节「大改完成前置检查结果清单」，这里只列摘要：
-
-1. `use-draft-autosave.ts` 防抖写入会在用户看到"可恢复草稿"提示前就把它覆盖掉——已加 `pendingDraftRef` 判断，fixed
-2. `purchases/vendors/[id]` 没等 `loading` 落地就启用草稿，会把加载中的空白表单写进真实供应商的草稿——已加 `enabled: !loading`，fixed
-3. `products/[id]` 查商品自己绑定的基础单位时，误用了只给下拉菜单用的"过滤掉 Length/Time 类"列表，商品自己的单位若恰好是这两类会显示空白——经 `git show` 核实这是本次重构引入的真实回归（改动前用的是未过滤列表），已拆成两份列表分别用，fixed
-4. `trips/[id]` 编辑弹窗开着时背景刷新可能造成丢更新——已加 `if (!showEdit) load()`，fixed
-5. `purchases/annual-plan` 背景刷新会撤销用户手动取消的勾选（无条件全选）——已改成只首次加载全选，fixed
-6. `purchases/suggestions` 背景刷新会清空正在进行的批量勾选——已把"清空选择"从 `load()` 拆出来，只在筛选真正变化时触发，fixed
-7. `restaurant/page` 背景刷新会把顾客翻到的页码弹回第 1 页——已改成只首次加载归 1，fixed
-8. `quotations/[id]` 与 `orders/[id]` 草稿 `entity` 命名不一致，造成报价单确认转订单后草稿永久失联——已统一成 `'order'`，fixed
-9. `orders/page`/`quotations/page` 的 `useRefetchOnFocus` 跟 `useServerList` 自带的焦点刷新重复注册，切 tab 回来打两次同样的列表请求——已去掉重复的 `refresh` 注册，fixed
-10. `place-order/page.tsx`（2293 行）、`pricelists/[id]/page.tsx`（1819 行）早就超过 CLAUDE.md"页面文件不超 150 行"的限制，本次只是在已有结构上接线、没有让问题变得更严重——记录为已知债务，不在本次拆分
-
-全部 9 条修复后重跑 `npx tsc --noEmit`/`npm run build`/`npm run test`，结果见上方「技术验收」，无新增失败。
-
-### 已知不可用功能
-
-- 本机沙箱无可用 Chrome/Playwright 二进制，61 个页面（44 个 M1 + 14 个 M2，其中 7 页两者都接）的真实浏览器交互验证全程未做，所有「待你确认」状态都需要你自己打开页面验证
-- 34 个只读报表/看板页面本次未接入焦点刷新（见上方"本次没做"），留作后续批次
-- `place-order/page.tsx`、`pricelists/[id]/page.tsx` 两个超限页面文件本次未拆分
-
-### 下一步
-
-- 等你走一遍验证路径，尤其是上面点名的 5 个"背景刷新会冲掉未提交操作"场景和草稿恢复条的长相
-- 34 个只读报表页是否需要排期接入焦点刷新，待你决定
-- 本次积累的提交尚未推送到远程/部署，是否推送部署待你决定
-
-## 采购单详情：供应商账单号可点击 + 收货/退货快捷查看（2026-10-14）
-
-来源：你 2026-10-14 截图两条需求——①「VB-00048 变成超链接，跳转到相关的 bill」②「添加收货/退货记录，可以快捷查看」（参照 Odoo 的「2 Receipt」按钮）
-
-### 改了什么
-| 需求 | 做法 |
-|---|---|
-| 账单号超链接 | 绿色提示条里的 `VB-xxxxx` 改成链接，指向 `/classic/finance/vendor-bills?bill=<id>`；供应商账单页新增 `?bill=` 深链，进页即按 id 拉取并直接打开该账单详情弹窗（不受列表筛选/分页影响） |
-| 收货/退货快捷查看 | 提示条右侧加一个 Odoo 式按钮「🚚 N Receipts · M return」，点开弹窗分三块：**入库记录**（本页「确认收货」每次入库的品项与数量）、**退货记录**（「退货/修正数量」每次退的品项、应退金额、原因）、**到货登记/质检**（仓库「收货」工作台的 GR 单，带逐行数量与损坏/拒收标记） |
-
-按钮数字 = 「确认收货」入库次数（真正加库存的那一步，对应 Odoo 的 Receipt）。PO 确认后即显示（0 次也显示，方便确认"还没收"）；草稿/询价/取消阶段不显示。
-
-说明：「确认收货」和「退货」两条路**都没有单据表**，唯一的记录是操作日志（ActionLog）。弹窗是从日志里按服务端固定格式解析出品项，没有新增表、没有改 API。
-
-### 测试账号（本地沙盒 PostgreSQL 16，验证后丢弃）
-| 角色 | 账号 | 密码 |
-|------|------|------|
-| 老板(BOSS) | 种子脚本预置的 BOSS 账号 | 本地 `SEED_PASSWORD`（沙盒专用，未提交） |
-
-### 验证结果（本地 dev server + 真实 API + Playwright）
-| 用户流程 | 验证方式 | 结果 |
-|----------|----------|------|
-| 建 PO → 确认 → 分两次确认收货(60+40) → 退货 2 → 仓库登记 GR | curl 真实 API | ✅ 自动生成 VB-00001，日志 2 条入库 + 1 条退货，GR-00001 |
-| 详情页按钮 | Playwright | ✅ 显示「2 Receipts · 1 return」 |
-| 点按钮看弹窗 | Playwright | ✅ 入库 2 条（Carrot 40/60、Yellow Melon 3）、退货 1 条（Carrot −2，应退 €10 - damaged）、GR-00001 两行含「Damaged」 |
-| 关闭弹窗 | 点遮罩 / × / Close | ✅ |
-| 点 VB-00001 | Playwright | ✅ 跳到 `/en/classic/finance/vendor-bills?bill=…` 并自动打开 VB-00001 详情（Draft，€546.20） |
-| 浏览器控制台 / 服务端日志 | Playwright + dev.log | ✅ 0 error |
-| `npx tsc --noEmit` / eslint | 本地 | ✅ 0 error（2 条 warning 为改动前已存在） |
-
-### 已知不可用功能 / 限制
-- 退货记录里的附注（应退金额、原因说明）是日志原文，英文界面下仍显示中文——日志本身就是中文写入的，时间线里也一样。
-- 弹窗不响应 Esc 键（与本页另外两个弹窗一致），用 × / Close / 点遮罩关闭。
-- 有账单查看权限的人点链接才能看到账单；没有财务账单权限的角色点进去会被页面守卫拦下（权限规则未改）。
+本地开发库 Neon PostgreSQL（`.env.local`），迁移 `20261017003802_po_line_freight_allocation_cost`
+纯新增 3 列，无破坏性变更。生产部署走 push main → GitHub Actions → droplet 自动部署，部署后将按
+veggie 项目 CLAUDE.md 第九节「部署后效果闭环」补一条 `docs/20261017-veggie-deploy-log.md`。
