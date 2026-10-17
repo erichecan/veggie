@@ -14,6 +14,7 @@ import { renderHtmlToPdf } from '@/lib/print/render-pdf'
 import { sendPurchaseOrderRfq } from '@/lib/email'
 import { handleReceiveAction } from '@/lib/purchase/receive-purchase-order'
 import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
+import { computeFreightAllocationForConfirm, computeLandedUnitCost } from '@/lib/purchase-landed-cost'
 
 const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'vendorReference', 'notes', 'expectedDate', 'editApprovalRequired']
 
@@ -220,6 +221,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 subtotalIncTaxEur: eurAmount(subtotalIncTax, effectiveRate),
                 bestBefore,
                 sequence: nextSequence,
+                // 分摊运费手动覆盖值（20261017）：确认时若非 null 则按此值生效，不再按数量比例自动算
+                ...(l.allocatedFreightEur !== undefined && {
+                  allocatedFreightEur: l.allocatedFreightEur === null || l.allocatedFreightEur === '' ? null : Number(l.allocatedFreightEur),
+                }),
               },
             })
           }
@@ -253,6 +258,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               taxAmountEur: eurAmount(taxAmount, effectiveRate),
               subtotalIncTaxEur: eurAmount(subtotalIncTax, effectiveRate),
               ...(l.bestBefore !== undefined && { bestBefore }),
+              ...(l.allocatedFreightEur !== undefined && {
+                allocatedFreightEur: l.allocatedFreightEur === null || l.allocatedFreightEur === '' ? null : Number(l.allocatedFreightEur),
+              }),
             },
           })
         })
@@ -467,6 +475,51 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         }
       }
 
+      // 运费分摊成本联动的回滚（20261017 客户需求 ⑤）：只处理"确认了但还没进入 RECEIVED"就被取消的单子——
+      // 一旦收过货，库存/批次成本已经被收货环节的加权平均混合过，回滚 standardPrice 没意义也有风险（见
+      // DEV-PLAN「假设清单」第 3 条），所以只在 po.status === 'CONFIRMED' 时才回滚。
+      if (targetStatus === 'CANCELLED' && po.status === 'CONFIRMED') {
+        const linesWithSnapshot = (po.lines as Array<Record<string, unknown>>).filter(
+          l => l.standardPriceBeforeConfirmEur !== null && l.standardPriceBeforeConfirmEur !== undefined
+            && l.landedUnitCostEur !== null && l.landedUnitCostEur !== undefined,
+        )
+        if (linesWithSnapshot.length > 0) {
+          const productIds = [...new Set(linesWithSnapshot.map(l => String(l.productId)))]
+          const freshProducts = await p.product.findMany({ where: { id: { in: productIds } }, select: { id: true, standardPrice: true } })
+          const currentPriceById = new Map<string, number>(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            freshProducts.map((pr: any) => [String(pr.id), toNum(pr.standardPrice)] as [string, number]),
+          )
+
+          const toRollback: Array<{ productId: string; restoreTo: number }> = []
+          const skippedProductIds: string[] = []
+          for (const line of linesWithSnapshot) {
+            const productId = String(line.productId)
+            const current = currentPriceById.get(productId)
+            const landed = toNum(line.landedUnitCostEur)
+            // 竞态保护：只在当前成本价仍等于这行确认时写入的落地成本时才回滚——
+            // 如果已经被更晚的另一张单覆盖过，跳过并留审计日志，不强行回退（DEV-PLAN 风险点第 2 条）
+            if (current !== undefined && Math.abs(current - landed) < 0.0001) {
+              toRollback.push({ productId, restoreTo: toNum(line.standardPriceBeforeConfirmEur) })
+            } else {
+              skippedProductIds.push(productId)
+            }
+          }
+          if (toRollback.length > 0) {
+            await prisma.$transaction(
+              toRollback.map(r => p.product.update({ where: { id: r.productId }, data: { standardPrice: r.restoreTo } })),
+            )
+          }
+          if (skippedProductIds.length > 0) {
+            await writeLog({
+              userId: user.userId, userEmail: user.email, userName: user.name,
+              action: 'UPDATE', resource: 'purchase_order', resourceId: id,
+              detail: `取消 ${po.name}：${skippedProductIds.length} 个商品的成本价已被更晚的采购单覆盖，跳过回滚（productId: ${skippedProductIds.join('、')}）`,
+            })
+          }
+        }
+      }
+
       // Build update data
       const updateData: Record<string, unknown> = {
         status: targetStatus,
@@ -490,11 +543,80 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         updateData.lockedAt = new Date()
       }
 
-      const updated = await p.purchaseOrder.update({
-        where: { id },
-        data: updateData,
-        include: { lines: true },
-      })
+      // 运费分摊成本联动（20261017 客户需求 ①②③④）：确认采购这一刻，把运费按订购数量比例
+      // 分摊进每行落地成本，并把落地成本推到 Product.standardPrice（客户截图字面要求"作用到 public
+      // price"）。只在"这次真正跨入 CONFIRMED"时算一次，之后重复的状态查询/其它动作不会再碰这些字段。
+      let freightConfirmTx: null | ((tx: Record<string, unknown>) => Promise<unknown>) = null
+      if (targetStatus === 'CONFIRMED' && po.status !== 'CONFIRMED') {
+        const poLines = po.lines as Array<Record<string, unknown>>
+        const productIds = [...new Set(poLines.map(l => String(l.productId)))]
+        const products = await p.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, type: true, standardPrice: true },
+        })
+        const productById = new Map<string, { type: string; standardPrice: unknown }>(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          products.map((prod: any) => [String(prod.id), prod] as [string, { type: string; standardPrice: unknown }]),
+        )
+
+        const allocationInput = poLines.map(l => ({
+          id: String(l.id),
+          orderedQty: l.orderedQty,
+          isService: productById.get(String(l.productId))?.type === 'SERVICE',
+          manualAllocatedFreightEur: l.allocatedFreightEur,
+        }))
+        const freightTotalEur = toNum(po.freightAmountEur ?? po.freightAmount)
+        const allocations = computeFreightAllocationForConfirm(freightTotalEur, allocationInput)
+        const allocationTotal = Math.round(allocations.reduce((s, a) => s + a.allocatedFreightEur, 0) * 100) / 100
+        const diff = Math.round((allocationTotal - freightTotalEur) * 100) / 100
+        if (Math.abs(diff) > 0.01) {
+          return NextResponse.json({
+            error: `分摊运费合计（${eur(allocationTotal)}）与运费总额（${eur(freightTotalEur)}）不一致，差额 ${eur(diff)}，请检查手动调整的分摊金额后再确认`,
+          }, { status: 409 })
+        }
+        const allocationById = new Map(allocations.map(a => [a.id, a.allocatedFreightEur]))
+
+        // 同一商品在本单里出现多行时，按行号顺序依次写 Product.standardPrice，最后一行的值生效——
+        // 跟上面"采购单位跟着采购单走"回填 purchaseUomId 的"最后一行为准"规则保持一致。
+        const linesBySequence = [...poLines].sort((a, b) => Number(a.sequence) - Number(b.sequence))
+
+        freightConfirmTx = async (tx: Record<string, unknown>) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const txAny = tx as any
+          for (const line of linesBySequence) {
+            const lineId = String(line.id)
+            const productId = String(line.productId)
+            const product = productById.get(productId)
+            const isService = product?.type === 'SERVICE'
+            const allocatedFreightEur = Math.round((allocationById.get(lineId) ?? 0) * 100) / 100
+            const landedUnitCostEur = isService
+              ? null
+              : computeLandedUnitCost(line.subtotalExTaxEur, allocatedFreightEur, line.orderedQty)
+            const standardPriceBeforeConfirmEur = isService ? null : toNum(product?.standardPrice)
+
+            await txAny.purchaseOrderLine.update({
+              where: { id: lineId },
+              data: { allocatedFreightEur: isService ? 0 : allocatedFreightEur, landedUnitCostEur, standardPriceBeforeConfirmEur },
+            })
+
+            if (!isService && landedUnitCostEur !== null && landedUnitCostEur > 0) {
+              await txAny.product.update({ where: { id: productId }, data: { standardPrice: landedUnitCostEur } })
+            }
+          }
+        }
+      }
+
+      const updated = freightConfirmTx
+        ? await prisma.$transaction(async (tx: Record<string, unknown>) => {
+          await freightConfirmTx!(tx)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (tx as any).purchaseOrder.update({ where: { id }, data: updateData, include: { lines: true } })
+        })
+        : await p.purchaseOrder.update({
+          where: { id },
+          data: updateData,
+          include: { lines: true },
+        })
 
       // SSOT：库存只能通过实际收货（GoodsReceipt）增加，"确认采购"只代表供应商接单，
       // 不产生任何库存/批次副作用——避免和收货单重复计数（历史 bug，见 20260710 采购模块升级）。

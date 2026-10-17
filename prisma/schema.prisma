@@ -1408,7 +1408,8 @@ model PurchaseOrder {
   subtotalExTax        Decimal             @default(0) @db.Decimal(12, 2)
   totalTax             Decimal             @default(0) @db.Decimal(12, 2)
   totalIncTax          Decimal             @default(0) @db.Decimal(12, 2)
-  /// 本单运费（税前，原币），按行 subtotal 占比摊入各行落地成本，不回写 Product 成本
+  /// 本单运费（税前，原币）。确认采购时按行订购数量占比摊入各行落地成本，并回写
+  /// Product.standardPrice（取消时若还未进入 RECEIVED 会回滚，20261017 客户需求）
   freightAmount        Decimal             @default(0) @db.Decimal(14, 2)
   /// 以下 *Eur 字段 = 原币字段 × exchangeRate（币种为 EUR 时恒等于原字段）；
   /// 下游(收货成本回写/供应商账单/会计分录)一律只读这些字段，不再各自乘汇率——
@@ -1484,6 +1485,16 @@ model PurchaseOrderLine {
   bestBefore        DateTime?
   sequence          Int           @default(10)
   createdAt         DateTime      @default(now())
+
+  /// 本行分摊运费（折合欧元）。null=未手动指定，确认时按订购数量比例自动算；
+  /// 非 null=操作员手动覆盖过的值。仅 storable/consumable（Product.type != SERVICE）参与分摊，
+  /// service 行恒为 0 且不计入分摊基数(20261017 客户需求：采购运费分摊进成本)
+  allocatedFreightEur           Decimal? @db.Decimal(12, 2)
+  /// 落地成本 = (本行税前小计Eur + 分摊运费) / 订购数量；确认时写入并同步推到 Product.standardPrice
+  landedUnitCostEur             Decimal? @db.Decimal(12, 4)
+  /// 确认瞬间该商品 Product.standardPrice 的快照，取消时用于回滚；
+  /// 只有真正把成本推到 Product 的行才有值，service 行恒 null
+  standardPriceBeforeConfirmEur Decimal? @db.Decimal(12, 4)
 
   @@index([purchaseOrderId])
   @@index([productId])
