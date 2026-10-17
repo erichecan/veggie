@@ -562,9 +562,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           products.map((prod: any) => [String(prod.id), prod] as [string, { type: string; standardPrice: unknown }]),
         )
 
+        // 分摊基数要按基础单位换算（20261017 客户确认）：同一单里商品下单单位不统一（箱/公斤混用）时，
+        // 直接用 orderedQty 的数字比没有意义，必须先换算到基础单位再比例分。
+        // ⛔ 换算系数不能用全局 Uom.factor —— 同名 CASE 在不同商品里箱规不同，系数挂在
+        // ProductSaleUom（按 productId+uomId 维度）上，20260823 起 Uom.factor 恒为中性默认值 1。
+        const saleUoms = await p.productSaleUom.findMany({
+          where: { productId: { in: productIds } },
+          select: { productId: true, uomId: true, factor: true },
+        })
+        const factorByProductUom = new Map(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          saleUoms.map((su: any) => [`${su.productId}:${su.uomId}`, su.factor]),
+        )
+
         const allocationInput = poLines.map(l => ({
           id: String(l.id),
           orderedQty: l.orderedQty,
+          uomFactor: l.uomId ? factorByProductUom.get(`${String(l.productId)}:${String(l.uomId)}`) ?? 1 : 1,
           isService: productById.get(String(l.productId))?.type === 'SERVICE',
           manualAllocatedFreightEur: l.allocatedFreightEur,
         }))

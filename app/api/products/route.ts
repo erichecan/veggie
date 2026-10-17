@@ -108,7 +108,9 @@ export async function GET(req: Request) {
           canBeSold: true, canBePurchased: true,
           // 20261009：同名商品靠这个区分规格（如 10KG/20KG 两袋），
           // 规格挂在按单位维度的 ProductSaleUom，不在 Product.spec（那个字段早清空了）
-          saleUoms: { select: { uomId: true, spec: true, isDefault: true } },
+          // factor：采购运费分摊按基础单位换算要用（20261017）。⛔不能用全局 Uom.factor
+          // ——同名 CASE 在不同商品里箱规不同，换算系数是挂在 ProductSaleUom 上的（见 schema 注释）
+          saleUoms: { select: { uomId: true, spec: true, isDefault: true, factor: true } },
         },
       })
       const slimResult = rows.map(({ category, uom, purchaseUom, saleUoms, purchaseUomId, ...p }) => ({
@@ -122,6 +124,7 @@ export async function GET(req: Request) {
         purchaseUomSpec: saleUoms.find(su => su.uomId === purchaseUomId)?.spec
           ?? saleUoms.find(su => su.isDefault)?.spec
           ?? null,
+        saleUoms: saleUoms.map(su => ({ uomId: su.uomId, factor: su.factor })),
       }))
       return NextResponse.json(serializeApi(slimResult))
     }

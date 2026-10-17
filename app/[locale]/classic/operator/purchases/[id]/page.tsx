@@ -161,6 +161,9 @@ interface PurchaseProduct {
   purchaseUomName?: string | null
   /// SERVICE 类商品不参与运费分摊（20261017 客户需求）
   type?: string | null
+  /// 按采购单位换算到基础单位的系数（ProductSaleUom.factor）；运费分摊按基础单位换算要用。
+  /// ⛔ 不能用全局 Uom.factor —— 同名 CASE 在不同商品里箱规不同（见 schema 注释）
+  saleUoms?: { uomId: string; factor?: number | string | null }[]
 }
 
 /** 采购单加行的默认税率：读商品详情页设置的 Vendor Taxes，不再恒为 0（客户 20260904 反馈） */
@@ -523,12 +526,16 @@ export default function PurchaseDetailPage() {
     apiGet<PurchaseProduct[]>('/api/products?purchasable=1&slim=1&status=ACTIVE').then(setPurchaseProducts).catch(() => {})
   }
 
+  function loadUoms() {
+    apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
+  }
+
   async function loadPickerData() {
     if (productsLoaded.current) return
     productsLoaded.current = true
     loadPurchaseProducts()
     apiGet<Category[]>('/api/product-categories').then(setCategories).catch(() => {})
-    apiGet<Uom[]>('/api/uoms').then(setUoms).catch(() => {})
+    loadUoms()
   }
 
   function addProductLine(prod: PurchaseProduct) {
@@ -700,6 +707,9 @@ export default function PurchaseDetailPage() {
 
   useEffect(() => { load() }, [id])
   useEffect(() => { fetchSuppliers() }, [fetchSuppliers])
+  // ⓘ 参考成本列 + 运费分摊按基础单位换算（系数挂在 ProductSaleUom，随 purchaseProducts 一起来），
+  // 查看态也要显示（不只编辑态），否则光看单不点编辑的人永远看到空白 —— 20261017 客户反馈
+  useEffect(() => { loadPurchaseProducts() }, [])
 
   // 商品/供应商在别的 tab 改了数据后，希望回到这个已打开的页面时能看到最新数据；
   // 被编辑的采购单本身（load）不进这个刷新集合，避免冲掉正在编辑的内容，跟
@@ -957,12 +967,17 @@ export default function PurchaseDetailPage() {
   const freightAmountEur = Math.round(freightAmount * Number(po.exchangeRate ?? 1) * 100) / 100
   const freightAllocationPreview = computeFreightAllocationForConfirm(
     freightAmountEur,
-    displayLines.map(l => ({
-      id: l.id,
-      orderedQty: l.orderedQty,
-      isService: purchaseProducts.find(p => p.id === l.productId)?.type === 'SERVICE',
-      manualAllocatedFreightEur: l.allocatedFreightEur,
-    })),
+    displayLines.map((l) => {
+      const prod = purchaseProducts.find(p => p.id === l.productId)
+      return {
+        id: l.id,
+        orderedQty: l.orderedQty,
+        // ⛔ 不能用全局 Uom.factor —— 换算系数挂在 ProductSaleUom 上，同名 CASE 不同商品箱规不同
+        uomFactor: l.uomId ? prod?.saleUoms?.find(su => su.uomId === l.uomId)?.factor ?? 1 : 1,
+        isService: prod?.type === 'SERVICE',
+        manualAllocatedFreightEur: l.allocatedFreightEur,
+      }
+    }),
   )
   const allocatedFreightById = new Map(freightAllocationPreview.map(a => [a.id, a.allocatedFreightEur]))
   const allocatedFreightTotal = Math.round(freightAllocationPreview.reduce((s, a) => s + a.allocatedFreightEur, 0) * 100) / 100

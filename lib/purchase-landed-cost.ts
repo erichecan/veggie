@@ -46,6 +46,11 @@ export function computeOrderLandedCosts(order: LandedCostOrder, lines: LandedCos
 export interface FreightAllocationLine {
   id: string
   orderedQty: unknown
+  /** ProductSaleUom.factor（1 本单位 = factor 个基础单位，按 productId+uomId 维度，⛔不是全局 Uom.factor）；
+   * 同一采购单里各行下单单位不统一（箱/公斤混用）时，分摊基数必须先换算成基础单位再比例分，
+   * 否则「2 箱」和「10 公斤」被当成同一个数直接比没有意义（20261017 客户确认）。
+   * 缺失或 <=0 时按 1 处理（即退化为直接用 orderedQty，兼容历史没配 factor 的数据）。 */
+  uomFactor: unknown
   /** Product.type === 'SERVICE'：恒分摊 0，不进分摊基数 */
   isService: boolean
   /** 当前已持久化的 PurchaseOrderLine.allocatedFreightEur；非 null/undefined = 操作员手动覆盖过，按原值生效 */
@@ -78,7 +83,9 @@ export function computeFreightAllocationForConfirm(
       results.push({ id: line.id, allocatedFreightEur: manual })
       continue
     }
-    autoLines.push({ id: line.id, qty: toNum(line.orderedQty) })
+    const factor = toNum(line.uomFactor)
+    const baseQty = toNum(line.orderedQty) * (factor > 0 ? factor : 1)
+    autoLines.push({ id: line.id, qty: baseQty })
   }
 
   const remaining = round2(freight - manualTotal)
