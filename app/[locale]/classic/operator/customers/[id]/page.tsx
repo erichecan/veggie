@@ -1008,7 +1008,7 @@ export default function ClassicCustomerDetailPage({ params }: { params: Promise<
                       )
                     })}
                     <PricelistSearchInput
-                      pricelists={pricelists.filter(p => p.selectable !== false)}
+                      pricelists={pricelists.filter(p => p.active !== false && p.selectable !== false)}
                       excludeIds={form.pricelistIds}
                       onSelect={pl => {
                         if (!form.pricelistIds.includes(pl.id)) {
