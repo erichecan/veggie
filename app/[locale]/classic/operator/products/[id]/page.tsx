@@ -20,6 +20,7 @@ import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { readProductNavList } from '@/lib/product-nav-list'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
 import { getSession, type UserSession } from '@/lib/session'
+import { DatePicker } from '@/components/ui/date-picker'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { useDraftAutosave } from '@/lib/hooks/use-draft-autosave'
 import DraftRestoreBanner from '@/components/shared/DraftRestoreBanner'
@@ -187,9 +188,14 @@ export default function ClassicProductDetailPage() {
   // 预测库存(20261015 客户反馈)：复用 /api/products/forecast 既有口径(在手+采购在途-待出库)，
   // 不读 Product.forecastQty——那是收货后不更新的死字段
   const [forecastQty, setForecastQty] = useState<number | null>(null)
-  // 保质期(20261015)：只读展示"最近一批进货"的 Lot.bestBefore，没有商品级字段；
-  // 随每次收货变化，从没进过货/没登记过保质期都显示"暂无"
+  // 保质期(20261015 展示 / 20261016 可订正)：展示"最近一批进货"的 Lot.bestBefore，
+  // 没有商品级字段；随每次收货变化，从没进过货/没登记过保质期都显示"暂无"。
+  // 订正直接改这条 Lot 本身（PUT /api/lots/[id]），不是新开一个商品级字段。
   const [latestBestBefore, setLatestBestBefore] = useState<string | null>(null)
+  const [latestLotId, setLatestLotId] = useState<string | null>(null)
+  const [bbdEditing, setBbdEditing] = useState(false)
+  const [bbdDraft, setBbdDraft] = useState('')
+  const [bbdSaving, setBbdSaving] = useState(false)
 
   // 手动库存调整（针对本商品的库存单元 variant）
   const [variants, setVariants] = useState<{ id: string; name: string; qtyOnHand: number; uomName?: string }[]>([])
@@ -239,6 +245,26 @@ export default function ClassicProductDetailPage() {
     }
   }
 
+  function startBbdEdit() {
+    setBbdDraft(latestBestBefore ? new Date(latestBestBefore).toISOString().slice(0, 10) : '')
+    setBbdEditing(true)
+  }
+
+  async function saveBbd() {
+    if (!latestLotId) return
+    setBbdSaving(true)
+    try {
+      const updated = await apiPut<{ bestBefore: string | null }>(`/api/lots/${latestLotId}`, { bestBefore: bbdDraft || null })
+      setLatestBestBefore(updated.bestBefore)
+      setBbdEditing(false)
+      toast.success(isEn ? 'BBD updated' : 'BBD 已订正')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
+    } finally {
+      setBbdSaving(false)
+    }
+  }
+
   // 多单位销售(20260714 试点)：可售单位配置，挂在该商品模板下唯一/主变体 Product 上
   const [primaryProductId, setPrimaryProductId] = useState<string | null>(null)
   const [saleUoms, setSaleUoms] = useState<SaleUomFormRow[]>([])
@@ -268,7 +294,7 @@ export default function ClassicProductDetailPage() {
         fetchReferenceData(),
         apiGet<Order[]>('/api/orders?include_lines=false'),
         isNew ? Promise.resolve([]) : apiGet<{ productId: string; forecast: number }[]>(`/api/products/forecast?ids=${id}`).catch(() => []),
-        isNew ? Promise.resolve([]) : apiGet<{ bestBefore: string | null; arrivedAt: string }[]>(`/api/lots?productId=${id}&status=ALL&limit=500`).catch(() => []),
+        isNew ? Promise.resolve([]) : apiGet<{ id: string; bestBefore: string | null; arrivedAt: string }[]>(`/api/lots?productId=${id}&status=ALL&limit=500`).catch(() => []),
       ])
       if (!isNew) {
         if (!found) { router.push(`${prefix}/classic/operator/products`); return }
@@ -291,7 +317,8 @@ export default function ClassicProductDetailPage() {
         setOnHandQty(qty)
         setForecastQty(forecastRows.find(r => r.productId === found.id)?.forecast ?? null)
         const sortedLots = [...lots].sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime())
-        setLatestBestBefore(sortedLots.find(l => l.bestBefore)?.bestBefore ?? null)
+        setLatestBestBefore(sortedLots[0]?.bestBefore ?? null)
+        setLatestLotId(sortedLots[0]?.id ?? null)
         const uom = uomList.find(u => u.id === found.uomId)
         setVariants([{
           id: found.id, name: found.name, qtyOnHand: qty,
@@ -831,9 +858,12 @@ export default function ClassicProductDetailPage() {
                 </Row>
                 {!isNew && (
                   <Row label="BBD">
-                    <span className="text-sm text-gray-500" title={isEn ? 'Best-before date of the most recent incoming batch (read-only)' : '最近一批进货的保质期（只读，随每次进货变化）'}>
-                      {latestBestBefore ? formatDateOnly(latestBestBefore) : (isEn ? 'None yet' : '暂无')}
-                    </span>
+                    <BbdField
+                      isEn={isEn} value={latestBestBefore} editing={bbdEditing} draft={bbdDraft}
+                      saving={bbdSaving} canEdit={!!latestLotId}
+                      onStartEdit={startBbdEdit} onDraftChange={setBbdDraft}
+                      onSave={saveBbd} onCancel={() => setBbdEditing(false)}
+                    />
                   </Row>
                 )}
               </div>
@@ -848,7 +878,14 @@ export default function ClassicProductDetailPage() {
                 {!isNew && (
                   <ReadField
                     label="BBD"
-                    value={latestBestBefore ? formatDateOnly(latestBestBefore) : undefined}
+                    value={
+                      <BbdField
+                        isEn={isEn} value={latestBestBefore} editing={bbdEditing} draft={bbdDraft}
+                        saving={bbdSaving} canEdit={!!latestLotId}
+                        onStartEdit={startBbdEdit} onDraftChange={setBbdDraft}
+                        onSave={saveBbd} onCancel={() => setBbdEditing(false)}
+                      />
+                    }
                   />
                 )}
               </div>
@@ -987,6 +1024,12 @@ export default function ClassicProductDetailPage() {
                   tmpl.tracking === 'serial' ? 'By Serial Number' : 'No Tracking'
                 } />
                 {!isNew && <ReadField label={isEn ? 'Current Stock' : '当前库存'} value={onHandQty.toFixed(2)} />}
+                {!isNew && forecastQty != null && (
+                  <ReadField
+                    label={isEn ? 'Forecast Qty' : '预测库存'}
+                    value={<span title={isEn ? 'On hand + inbound POs − unfulfilled sales orders' : '在手 + 采购在途 − 待出库销售单'}>{forecastQty.toFixed(2)}</span>}
+                  />
+                )}
               </div>
             )}
           </Section>
@@ -1232,6 +1275,39 @@ function PriceHistoryButton({ onClick, isEn }: { onClick: () => void; isEn: bool
         <path d="M12 7v5l3 3"/>
       </svg>
     </button>
+  )
+}
+
+// BBD（最近一批进货的保质期）：订正的是那一条 Lot.bestBefore 本身，不是商品级字段
+// （20261016 客户反馈：原先只读展示，需要能改、要带日历组件）。
+function BbdField({ isEn, value, editing, draft, saving, canEdit, onStartEdit, onDraftChange, onSave, onCancel }: {
+  isEn: boolean
+  value: string | null
+  editing: boolean
+  draft: string
+  saving: boolean
+  canEdit: boolean
+  onStartEdit: () => void
+  onDraftChange: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <DatePicker value={draft} onChange={onDraftChange} className="border border-gray-300 rounded px-1.5 py-0.5 text-xs" style={{ width: '120px' }} />
+        <button type="button" onClick={onSave} disabled={saving} className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50">{isEn ? 'Save' : '保存'}</button>
+        <button type="button" onClick={onCancel} disabled={saving} className="text-xs text-gray-400 hover:text-gray-600">{isEn ? 'Cancel' : '取消'}</button>
+      </span>
+    )
+  }
+  return (
+    <span className="text-sm text-gray-500" title={isEn ? 'Best-before date of the most recent incoming batch' : '最近一批进货的保质期'}>
+      {value ? formatDateOnly(value) : (isEn ? 'None yet' : '暂无')}
+      {canEdit && (
+        <button type="button" onClick={onStartEdit} className="ml-1.5 text-xs text-gray-400 hover:text-blue-600 underline">{isEn ? 'Edit' : '订正'}</button>
+      )}
+    </span>
   )
 }
 
