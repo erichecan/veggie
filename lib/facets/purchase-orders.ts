@@ -33,5 +33,5 @@ export const PURCHASE_ORDER_FACET_DEFS: FacetDef[] = [
   { key: 'vendorReference', label: '供应商参考号', toClause: v => ({ vendorReference: like(v) }) },
   { key: 'supplier',        label: '供应商',     toClause: supplierClause },
   { key: 'product',         label: '商品',       toClause: v => ({ lines: { some: { productName: like(v) } } }) },
-  { key: 'notes',           label: '备注',       toClause: v => ({ notes: like(v) }) },
+  { key: 'notes',           label: '采购单备注', toClause: v => ({ notes: like(v) }) },
 ]
