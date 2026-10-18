@@ -511,6 +511,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
       // P0-1: Cancel check — reject if related documents exist
       if (targetStatus === 'CANCELLED') {
+        // goodsReceipt 是独立的"到货登记"工作台(拍照/质检)，20260823起已跟库存解耦，
+        // 正常收货流程(lib/purchase/receive-purchase-order.ts)根本不写这张表——只查它
+        // 挡不住"真正收过货、库存已经真实加过"的单(20261018 复核 Cancel 按钮新开放到
+        // RECEIVED/INVOICED 时发现)。真正的信号是行上 receivedQty，取消时没有任何代码
+        // 会冲正库存(批次/StockMove/qtyOnHand)，一旦收过货放行会导致账实不符。
+        const hasReceivedQty = (po.lines as Array<{ receivedQty: unknown }>)
+          .some(l => toNum(l.receivedQty) > 0)
+        if (hasReceivedQty) {
+          return NextResponse.json({ error: '已有收货数量，无法取消。库存已入账，取消不会回退库存，请改用退货/修正数量。' }, { status: 409 })
+        }
         const receiptCount = await p.goodsReceipt.count({ where: { purchaseOrderId: id } })
         if (receiptCount > 0) {
           return NextResponse.json({ error: '已有收货单，无法取消。请先删除收货单。' }, { status: 409 })
