@@ -891,6 +891,20 @@ ${orderSections}
     return f.key === 'all' ? f.value : `${f.label}: ${f.value}`
   }
 
+  // 一键清除（20261017 客户反馈"清不掉筛选条件"）
+  function clearAllFilters() {
+    setServerSearch('')
+    setFacets([])
+    setColFilters({ ...EMPTY_CF })
+    setActiveTab('all')
+    setOrderTodayActive(false)
+    setGroupBy('none')
+    setMyActive(false)
+    setTimeKey('')
+    setSortField(null)
+    setSortDir('asc')
+  }
+
   const hasActiveFilters = Object.values(colFilters).some(v => v !== '')
   const activeFiltersCount = Object.values(colFilters).filter(v => v !== '').length + (orderTodayActive ? 1 : 0)
 
@@ -1253,6 +1267,7 @@ ${orderSections}
           setMyActive(Boolean(s.myActive))
           setTimeKey(String(s.timeKey ?? ''))
         }}
+        onClearAll={clearAllFilters}
         total={total}
         page={page}
         pageSize={pageSize}

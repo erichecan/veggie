@@ -261,6 +261,19 @@ export default function ClassicOrdersPage() {
     return f.key === 'all' ? f.value : `${f.label}: ${f.value}`
   }
 
+  // 一键清除（20261017 客户反馈"清不掉筛选条件"）
+  function clearAllFilters() {
+    setServerSearch('')
+    setFacets([])
+    setActiveFilter('all')
+    setGroupBy('')
+    setMyActive(false)
+    setTimeKey('')
+    setColFilters(EMPTY_FILTERS)
+    setSortField('createdAt')
+    setSortDir('desc')
+  }
+
   // Client-side column filters applied to current page data
   const filtered = useMemo(() => {
     let result = [...orders]
@@ -583,6 +596,7 @@ export default function ClassicOrdersPage() {
           setColFilters({ ...EMPTY_FILTERS, ...(s.colFilters as Partial<ColFilters> ?? {}) })
         }}
         storageKey="classic_orders_favs"
+        onClearAll={clearAllFilters}
         total={total}
         page={page}
         pageSize={pageSize}
