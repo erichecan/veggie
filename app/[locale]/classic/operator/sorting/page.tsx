@@ -81,7 +81,17 @@ export default function ClassicSortingPage() {
 
   useEffect(() => { load() }, [])
 
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+
+  // 一键清除（20261017 客户反馈“清不掉筛选条件”）：本页全是前端 useMemo 过滤，
+  // 重置 state 后 filtered 自动重算，无需手动重拉
+  function clearAllFilters() {
+    setSearchInput('')
+    clearFacets()
+    setStatusFilter('')
+    setSortKey('createdAt')
+    setSortDir('desc')
+  }
 
   const filtered = useMemo(() => {
     const base = waves.filter(w => {
@@ -183,6 +193,7 @@ export default function ClassicSortingPage() {
           { label: isEn ? 'Sorting' : '分货中',   value: 'sorting' },
         ]}
         onFilterSelect={v => setStatusFilter(v as WaveStatus)}
+        onClearAll={clearAllFilters}
         total={filtered.length}
         page={1}
         pageSize={filtered.length || 1}

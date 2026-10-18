@@ -626,7 +626,16 @@ export default function ClassicReturnsPage() {
 
   const allRows = flatten(trips)
 
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, en))
+  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, en))
+
+  // 一键清除（20261017 客户反馈“清不掉筛选条件”）：本页全是前端过滤，
+  // 重置 state 后 filtered 自动重算，无需手动重拉
+  function clearAllFilters() {
+    setSearchInput('')
+    clearFacets()
+    setFilterStatus('ALL')
+    setPage(1)
+  }
 
   const filtered = filterByFacets(allRows, facets, FACET_DEFS).filter(r => {
     if (filterStatus !== 'ALL' && r.status !== filterStatus) return false
@@ -738,6 +747,7 @@ export default function ClassicReturnsPage() {
         searchValue={searchInput}
         onSearch={v => { setSearchInput(v); setPage(1) }}
         onSearchSubmit={() => setPage(1)}
+        onClearAll={clearAllFilters}
         total={filtered.length}
         page={page}
         pageSize={PAGE_SIZE}

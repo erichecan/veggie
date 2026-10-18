@@ -100,7 +100,16 @@ export default function CreditNotesPage() {
   // 信用票在别的 tab（如行程/退货页生成）改了之后，切回来希望看到最新结果
   useRefetchOnFocus([load])
 
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+
+  // 一键清除（20261017 客户反馈“清不掉筛选条件”）：本页全是前端 useMemo 过滤，
+  // 重置 state 后 filtered 自动重算，无需手动重拉
+  function clearAllFilters() {
+    setSearch('')
+    setStatusFilter('')
+    clearFacets()
+    setPage(1)
+  }
 
   const filtered = useMemo(() => {
     let rows = notes
@@ -203,6 +212,7 @@ export default function CreditNotesPage() {
           { label: isEn ? 'Cancelled' : '已作废', value: 'CANCELLED' },
         ]}
         onFilterSelect={v => { setStatusFilter(prev => prev === v ? '' : v as CnStatus); setPage(1) }}
+        onClearAll={clearAllFilters}
         total={filtered.length}
         page={page}
         pageSize={PAGE_SIZE}

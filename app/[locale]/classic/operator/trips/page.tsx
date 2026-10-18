@@ -250,7 +250,15 @@ export default function ClassicTripsPage() {
     : driverSlots
 
   // ── Filter ────────────────────────────────────────────────────────────────
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+
+  // 一键清除（20261017 客户反馈"清不掉筛选条件"）：本页全是前端过滤，
+  // 重置 state 后 filtered 自动重算，无需手动重拉
+  function clearAllFilters() {
+    setSearchInput('')
+    clearFacets()
+    setPage(1)
+  }
 
   const searched = searchInput
     ? trips.filter(t =>
@@ -389,6 +397,7 @@ export default function ClassicTripsPage() {
         searchValue={searchInput}
         onSearch={v => { setSearchInput(v); setPage(1) }}
         onSearchSubmit={() => setPage(1)}
+        onClearAll={clearAllFilters}
         total={filtered.length}
         page={page}
         pageSize={PAGE_SIZE}
