@@ -388,19 +388,65 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  return withAuth(req, async () => {
+  return withAuth(req, async (user) => {
     try {
       const { id } = await params
       const p = prisma as any
-      const po = await p.purchaseOrder.findUnique({ where: { id }, include: { receipts: true, bills: true } })
+      const po = await p.purchaseOrder.findUnique({
+        where: { id },
+        include: { lines: true, receipts: true, bills: { include: { payments: true } } },
+      })
       if (!po) return NextResponse.json({ error: '采购订单不存在' }, { status: 404 })
-      if (po.status !== 'DRAFT' || po.receipts.length || po.bills.length) {
-        return NextResponse.json({ error: '只有未发送且没有收货/账单的草稿采购单可以删除' }, { status: 409 })
+
+      if (po.status === 'DRAFT') {
+        if (po.receipts.length || po.bills.length) {
+          return NextResponse.json({ error: '只有未发送且没有收货/账单的草稿采购单可以删除' }, { status: 409 })
+        }
+      } else if (po.status === 'CANCELLED') {
+        // 硬删除重复单（客户需求 20261018）：客户要求把录错/重复的采购单彻底删掉，不只是留 CANCELLED
+        // 状态占着列表。只允许删掉「从没真正发生过」的单——任何真实库存/会计事件一律挡住，不连带删。
+        const hasReceivedQty = (po.lines as Array<{ receivedQty: unknown }>).some(l => toNum(l.receivedQty) > 0)
+        if (hasReceivedQty) {
+          return NextResponse.json({ error: '该采购单有收货数量，库存记录不可删除，无法删除。' }, { status: 409 })
+        }
+        const billIds = po.bills.map((b: { id: string }) => b.id)
+        const journalEntryCount = await p.journalEntry.count({
+          where: {
+            OR: [
+              { sourceType: 'purchase_order', sourceId: id },
+              ...(billIds.length ? [{ sourceType: 'vendor_bill', sourceId: { in: billIds } }] : []),
+            ],
+          },
+        })
+        if (journalEntryCount > 0) {
+          return NextResponse.json({ error: '已生成会计凭证，不可删除，请走冲销流程。' }, { status: 409 })
+        }
+        const blockedBill = po.bills.find(
+          (b: { status: string; payments: unknown[] }) => !['DRAFT', 'CANCELLED'].includes(b.status) || b.payments.length > 0,
+        )
+        if (blockedBill) {
+          return NextResponse.json({ error: '关联的供应商账单已过账或有付款记录，不可删除，请先处理账单。' }, { status: 409 })
+        }
+      } else {
+        return NextResponse.json({ error: '只有草稿或已取消的采购单可以删除' }, { status: 409 })
       }
+
       await prisma.$transaction(async (tx: any) => {
+        for (const bill of po.bills) {
+          await tx.vendorPayment.deleteMany({ where: { vendorBillId: bill.id } })
+        }
+        await tx.vendorBill.deleteMany({ where: { purchaseOrderId: id } })
+        await tx.goodsReceipt.deleteMany({ where: { purchaseOrderId: id } })
         await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: id } })
         await tx.purchaseOrder.delete({ where: { id } })
       })
+
+      await writeLog({
+        userId: user.userId, userEmail: user.email, userName: user.name,
+        action: 'DELETE', resource: 'purchase-order', resourceId: id,
+        detail: `硬删除采购单 ${po.name}（删除前状态 ${po.status}）：连带删除 ${po.lines.length} 行商品、${po.receipts.length} 张收货记录、${po.bills.length} 张账单；已逐项核实均无实际收货数量/会计凭证/付款记录`,
+      })
+
       return NextResponse.json({ ok: true })
     } catch (error) {
       console.error('[DELETE /api/purchase-orders/:id]', error)
