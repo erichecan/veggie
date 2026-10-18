@@ -81,6 +81,20 @@ export default function ClassicPricelistsPage() {
     setSelected(new Set())
   }
 
+  // 一键清除（20261017 客户反馈"清不掉筛选条件"）：本页全部是前端 useMemo 过滤，
+  // 重置 state 就会自动重新计算 filteredLists/sortedLists，不用手动重新拉数据
+  function clearAllFilters() {
+    setSearchInput('')
+    clearFacets()
+    setColumnFilters({})
+    setSelectableFilter(false)
+    setTab('active')
+    setGroupBy('')
+    setSortKey('')
+    setSortDir('asc')
+    setPage(1)
+  }
+
   async function load() {
     setLoading(true)
     try {
@@ -122,7 +136,7 @@ export default function ClassicPricelistsPage() {
     },
   ], [productNameById])
 
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(facetDefs, isEn), saved?.facets)
+  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(facetDefs, isEn), saved?.facets)
 
   // 搜索/筛选状态整体持久化，供从详情页返回时恢复（见 LIST_STATE_KEY 顶部注释）。
   useEffect(() => {
@@ -380,6 +394,7 @@ export default function ClassicPricelistsPage() {
           setPage(1)
         }}
         storageKey="classic_pricelists_favs"
+        onClearAll={clearAllFilters}
         total={filteredLists.length}
         page={page}
         pageSize={PAGE_SIZE}
