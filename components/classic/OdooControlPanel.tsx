@@ -73,6 +73,8 @@ interface OdooControlPanelProps {
   storageKey?: string
   favouriteState?: Record<string, unknown>
   onFavouriteApply?: (state: Record<string, unknown>) => void
+  /** 一键清除 search/筛选/排序/分组（20261017 客户反馈"清不掉筛选条件"）；传入后才渲染按钮 */
+  onClearAll?: () => void
   total?: number
   page?: number
   pageSize?: number
@@ -115,6 +117,7 @@ export default function OdooControlPanel({
   storageKey,
   favouriteState,
   onFavouriteApply,
+  onClearAll,
   total = 0,
   page = 1,
   pageSize = 20,
@@ -529,6 +532,17 @@ export default function OdooControlPanel({
                 </div>
               )}
             </div>
+          )}
+
+          {/* 一键清除 search/筛选/排序/分组 */}
+          {onClearAll && (
+            <button
+              onClick={onClearAll}
+              title={isEn ? 'Clear search, filters, sorting and grouping' : '清除搜索、筛选、排序和分组'}
+              className="h-8 px-2.5 text-xs rounded border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors whitespace-nowrap shrink-0"
+            >
+              {isEn ? '✕ Clear' : '✕ 清除'}
+            </button>
           )}
 
           {/* 记录数 + 翻页箭头 + 可编辑每页条数（仅在提供 onPageChange 时显示） */}

@@ -255,6 +255,21 @@ export default function ClassicCustomersPage() {
     loadPage(1, searchInput, paymentFilter, includeArchived, pageSize, next)
   }
 
+  function clearAllFilters() {
+    setSearchInput('')
+    setPaymentFilter('')
+    setIncludeArchived(false)
+    setArchivedOnly(false)
+    setIsVendorOnly(false)
+    setGroupBy('')
+    setFacets([])
+    setColumnMultiFilters({})
+    setColumnFilters({})
+    setSortKey('')
+    setSortDir('asc')
+    loadPage(1, '', '', false, pageSize, false)
+  }
+
   // 客户有大量历史单据(订单/发票/对账单等)关联且无数据库级约束兜底，物理删除风险很高——
   // 复用详情页已有的归档(isActive=false)机制作为这里的"删除"：客户立即从常规列表/下单选择里消失，
   // 历史数据和关联单据完整保留，需要的话还能在详情页恢复（20261003 决定，见客户详情页 toggleActive）
@@ -554,6 +569,7 @@ export default function ClassicCustomersPage() {
           loadPage(1, String(s.searchInput ?? ''), pf, Boolean(s.includeArchived), pageSize, vendorOnly)
         }}
         storageKey="classic_customers_favs"
+        onClearAll={clearAllFilters}
         total={total}
         page={page}
         pageSize={pageSize}
