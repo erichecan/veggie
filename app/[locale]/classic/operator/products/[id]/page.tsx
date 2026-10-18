@@ -218,11 +218,15 @@ export default function ClassicProductDetailPage() {
   // 跟 Sales Price 的字段编辑历史数据源不同，分开一份 state/请求；Sales Price 不变
   const [purchaseReceiptHistory, setPurchaseReceiptHistory] = useState<PurchaseReceiptEntry[] | null>(null)
   const [purchaseReceiptHistoryLoading, setPurchaseReceiptHistoryLoading] = useState(false)
+  // 收货历史抽屉自带的小搜索/排序，只作用于这 ≤20 行里，不触后端(20261018 客户要求改抽屉+加排序+加小搜索)
+  const [receiptSearch, setReceiptSearch] = useState('')
+  const [receiptSortDir, setReceiptSortDir] = useState<'asc' | 'desc'>('desc')
 
   async function openPriceHistory(field: 'listPrice' | 'standardPrice') {
     setPriceHistoryField(field)
     if (isNew) return
     if (field === 'standardPrice') {
+      setReceiptSearch('')
       if (purchaseReceiptHistory || purchaseReceiptHistoryLoading) return
       setPurchaseReceiptHistoryLoading(true)
       try {
@@ -1164,102 +1168,153 @@ export default function ClassicProductDetailPage() {
         </div>
       )}
 
-      {priceHistoryField && (
+      {priceHistoryField === 'listPrice' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPriceHistoryField(null)}>
           <div
             className="bg-white rounded-xl shadow-2xl w-full mx-4 max-h-[80vh] flex flex-col"
-            style={{ maxWidth: priceHistoryField === 'standardPrice' ? '600px' : '28rem' }}
+            style={{ maxWidth: '28rem' }}
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
               <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>
-                {priceHistoryField === 'listPrice'
-                  ? (isEn ? `Sales Price History · ${tmpl?.name}` : `销售价历史 · ${tmpl?.name}`)
-                  : (isEn ? `Receipt History · ${tmpl?.name}` : `收货历史 · ${tmpl?.name}`)}
+                {isEn ? `Sales Price History · ${tmpl?.name}` : `销售价历史 · ${tmpl?.name}`}
               </h2>
               <button onClick={() => setPriceHistoryField(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0 ml-2">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              {priceHistoryField === 'listPrice' ? (
-                priceHistoryLoading ? (
-                  <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
-                ) : (() => {
-                  const entries = priceHistory?.listPrice ?? []
-                  if (entries.length === 0) {
-                    return (
-                      <p className="text-sm text-gray-400">
-                        {isEn ? 'No price changes recorded yet.' : '暂无价格变更记录。'}
-                      </p>
-                    )
-                  }
+              {priceHistoryLoading ? (
+                <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
+              ) : (() => {
+                const entries = priceHistory?.listPrice ?? []
+                if (entries.length === 0) {
                   return (
+                    <p className="text-sm text-gray-400">
+                      {isEn ? 'No price changes recorded yet.' : '暂无价格变更记录。'}
+                    </p>
+                  )
+                }
+                return (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                        <th className="pb-2 font-medium">{isEn ? 'Price' : '价格'}</th>
+                        <th className="pb-2 font-medium">{isEn ? 'Changed At' : '更新时间'}</th>
+                        <th className="pb-2 font-medium">{isEn ? 'Changed By' : '更新人'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entries.map((e, i) => (
+                        <tr key={i} className="border-b border-gray-50 last:border-0">
+                          <td className="py-2 font-medium text-gray-800">€{e.value.toFixed(2)}</td>
+                          <td className="py-2 text-gray-500">{formatDateTime(e.changedAt)}</td>
+                          <td className="py-2 text-gray-500">{e.changedBy}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {priceHistoryField === 'standardPrice' && (
+        <div className="fixed inset-0 z-50" onClick={() => setPriceHistoryField(null)}>
+          <div className="absolute inset-0 bg-black/20" />
+          <div
+            className="absolute top-0 right-0 h-full w-full sm:w-[680px] max-w-full bg-white shadow-2xl border-l border-gray-200 flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
+              <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>
+                {isEn ? `Receipt History · ${tmpl?.name}` : `收货历史 · ${tmpl?.name}`}
+              </h2>
+              <button onClick={() => setPriceHistoryField(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0 ml-2">✕</button>
+            </div>
+            <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+              <input
+                value={receiptSearch}
+                onChange={e => setReceiptSearch(e.target.value)}
+                placeholder={isEn ? 'Search supplier / ref / PO / updated by…' : '搜索供应商 / 参考号 / 单号 / 更新人…'}
+                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm outline-none focus:border-[#875A7B]"
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {purchaseReceiptHistoryLoading ? (
+                <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
+              ) : (() => {
+                const all = purchaseReceiptHistory ?? []
+                if (all.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-400">
+                      {isEn ? 'No purchase receipts recorded yet.' : '暂无收货记录。'}
+                    </p>
+                  )
+                }
+                const term = receiptSearch.trim().toLowerCase()
+                const filtered = term
+                  ? all.filter(e =>
+                      (e.supplierName ?? '').toLowerCase().includes(term) ||
+                      (e.supplierRef ?? '').toLowerCase().includes(term) ||
+                      (e.poName ?? '').toLowerCase().includes(term) ||
+                      (e.updatedBy ?? '').toLowerCase().includes(term),
+                    )
+                  : all
+                const entries = [...filtered].sort((a, b) => {
+                  const ta = a.confirmedAt ? new Date(a.confirmedAt).getTime() : 0
+                  const tb = b.confirmedAt ? new Date(b.confirmedAt).getTime() : 0
+                  return receiptSortDir === 'desc' ? tb - ta : ta - tb
+                })
+                if (entries.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-400">
+                      {isEn ? 'No matching receipts.' : '没有匹配的记录。'}
+                    </p>
+                  )
+                }
+                return (
+                  <>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                          <th className="pb-2 font-medium">{isEn ? 'Price' : '价格'}</th>
-                          <th className="pb-2 font-medium">{isEn ? 'Changed At' : '更新时间'}</th>
-                          <th className="pb-2 font-medium">{isEn ? 'Changed By' : '更新人'}</th>
+                          <th className="pb-2 pr-3 font-medium">{isEn ? 'Supplier' : '供应商'}</th>
+                          <th className="pb-2 pr-3 font-medium">{isEn ? 'Supplier Ref' : '供应商参考号'}</th>
+                          <th className="pb-2 pr-3 font-medium text-right">{isEn ? 'Cost' : 'Cost'}</th>
+                          <th
+                            className="pb-2 pr-3 font-medium cursor-pointer select-none hover:text-gray-600"
+                            onClick={() => setReceiptSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                            title={isEn ? 'Click to sort' : '点击排序'}
+                          >
+                            {isEn ? 'Confirmed On' : '确认日期'} {receiptSortDir === 'desc' ? '↓' : '↑'}
+                          </th>
+                          <th className="pb-2 pr-3 font-medium">{isEn ? 'BBD' : '保质期'}</th>
+                          <th className="pb-2 pr-6 font-medium text-right">{isEn ? 'Qty' : '数量'}</th>
+                          <th className="pb-2 font-medium">{isEn ? 'Updated By' : '更新人'}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {entries.map((e, i) => (
                           <tr key={i} className="border-b border-gray-50 last:border-0">
-                            <td className="py-2 font-medium text-gray-800">€{e.value.toFixed(2)}</td>
-                            <td className="py-2 text-gray-500">{formatDateTime(e.changedAt)}</td>
-                            <td className="py-2 text-gray-500">{e.changedBy}</td>
+                            <td className="py-2 pr-3 font-medium text-gray-800">{e.supplierName ?? '—'}{e.poName ? <span className="text-gray-400"> · {e.poName}</span> : null}</td>
+                            <td className="py-2 pr-3 text-gray-500">{e.supplierRef ?? '—'}</td>
+                            <td className="py-2 pr-3 text-gray-500 text-right">{e.unitCost != null ? `€${e.unitCost.toFixed(2)}` : '—'}</td>
+                            <td className="py-2 pr-3 text-gray-500">{e.confirmedAt ? formatDateTime(e.confirmedAt) : '—'}</td>
+                            <td className="py-2 pr-3 text-gray-500">{e.bestBefore ? formatDateOnly(e.bestBefore) : '—'}</td>
+                            <td className="py-2 pr-6 text-gray-500 text-right">{e.qty.toFixed(2)}</td>
+                            <td className="py-2 text-gray-500">{e.updatedBy ?? '—'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                  )
-                })()
-              ) : (
-                purchaseReceiptHistoryLoading ? (
-                  <p className="text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</p>
-                ) : (() => {
-                  const entries = purchaseReceiptHistory ?? []
-                  if (entries.length === 0) {
-                    return (
-                      <p className="text-sm text-gray-400">
-                        {isEn ? 'No purchase receipts recorded yet.' : '暂无收货记录。'}
-                      </p>
-                    )
-                  }
-                  return (
-                    <>
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                            <th className="pb-2 pr-3 font-medium">{isEn ? 'Supplier' : '供应商'}</th>
-                            <th className="pb-2 pr-3 font-medium">{isEn ? 'Supplier Ref' : '供应商参考号'}</th>
-                            <th className="pb-2 pr-3 font-medium">{isEn ? 'Confirmed On' : '确认日期'}</th>
-                            <th className="pb-2 pr-3 font-medium">{isEn ? 'BBD' : '保质期'}</th>
-                            <th className="pb-2 pr-6 font-medium text-right">{isEn ? 'Qty' : '数量'}</th>
-                            <th className="pb-2 font-medium">{isEn ? 'Updated By' : '更新人'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {entries.map((e, i) => (
-                            <tr key={i} className="border-b border-gray-50 last:border-0">
-                              <td className="py-2 pr-3 font-medium text-gray-800">{e.supplierName ?? '—'}{e.poName ? <span className="text-gray-400"> · {e.poName}</span> : null}</td>
-                              <td className="py-2 pr-3 text-gray-500">{e.supplierRef ?? '—'}</td>
-                              <td className="py-2 pr-3 text-gray-500">{e.confirmedAt ? formatDateTime(e.confirmedAt) : '—'}</td>
-                              <td className="py-2 pr-3 text-gray-500">{e.bestBefore ? formatDateOnly(e.bestBefore) : '—'}</td>
-                              <td className="py-2 pr-6 text-gray-500 text-right">{e.qty.toFixed(2)}</td>
-                              <td className="py-2 text-gray-500">{e.updatedBy ?? '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <p className="text-xs text-gray-400 mt-3">
-                        {isEn
-                          ? 'Supplier/qty/updated-by are blank for receipts recorded before 2026-10-14 (not tracked at the time).'
-                          : '2026-10-14 之前的收货记录当时没存供应商/数量/更新人，这几列会是空的，不是 bug。'}
-                      </p>
-                    </>
-                  )
-                })()
-              )}
+                    <p className="text-xs text-gray-400 mt-3">
+                      {isEn
+                        ? 'Supplier/qty/updated-by are blank for receipts recorded before 2026-10-14 (not tracked at the time).'
+                        : '2026-10-14 之前的收货记录当时没存供应商/数量/更新人，这几列会是空的，不是 bug。'}
+                    </p>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>
