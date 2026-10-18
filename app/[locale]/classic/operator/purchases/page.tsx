@@ -202,6 +202,22 @@ export default function PurchasesPage() {
     setFacets(prev => prev.filter(f => f.key !== key))
   }
 
+  // 一键清除（20261017 客户反馈"清不掉筛选条件"）：search 只在 onSearchSubmit 时才生效，
+  // 要连 searchInput 和 search 一起清，否则地址栏输入框看着空了但上次提交的词还在生效
+  function clearAllFilters() {
+    setSearchInput('')
+    setSearch('')
+    setFacets([])
+    setActiveTab('all')
+    setGroupBy('')
+    setSortField('createdAt')
+    setSortDir('desc')
+    setColSupplier('')
+    setOrderDateFrom('')
+    setOrderDateTo('')
+    setPage(1)
+  }
+
   // 状态页签 + 搜索 + 分面 + 列筛选 + 排序。列表与导出共用，保证"导出的就是看到的"
   const buildParams = useCallback(() => {
     const params = new URLSearchParams()
@@ -597,6 +613,7 @@ export default function PurchasesPage() {
           setOrderDateTo(String(s.orderDateTo ?? ''))
         }}
         storageKey="classic_purchases_favs"
+        onClearAll={clearAllFilters}
         total={total}
         page={page}
         pageSize={PAGE_SIZE}

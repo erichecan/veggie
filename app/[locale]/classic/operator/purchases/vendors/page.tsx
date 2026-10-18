@@ -109,6 +109,14 @@ export default function VendorsPage() {
   // 切去别的 tab 改了供应商数据后，切回来时刷新当前这一页（节流 30s）
   useRefetchOnFocus([() => loadPage(page, searchInput, includeArchived)])
 
+  // 一键清除（20261017 客户反馈"清不掉筛选条件"）
+  function clearAllFilters() {
+    setSearchInput('')
+    setIncludeArchived(false)
+    setArchivedOnly(false)
+    loadPage(1, '', false)
+  }
+
   function openNew() {
     // 客户/供应商字段彻底分离(20260907)：不再复用 customers/[id] 那张表单，
     // 编辑/新建走独立的 purchases/vendors/[id]
@@ -212,6 +220,7 @@ export default function VendorsPage() {
           if (v === '__archived__') setIncludeArchived(prev => { const next = !prev; if (next) setArchivedOnly(false); return next })
           else if (v === '__archived_only__') setArchivedOnly(prev => { const next = !prev; if (next) setIncludeArchived(false); return next })
         }}
+        onClearAll={clearAllFilters}
         total={total}
         page={page}
         pageSize={PAGE_SIZE}
