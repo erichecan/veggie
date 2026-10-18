@@ -37,31 +37,40 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           createdBy: true,
           sourceId: true,
           sourceRef: true,
+          purchaseOrderLineId: true,
         },
       })
 
       const partnerIds = [...new Set(moves.map(m => m.partnerId).filter((v): v is string => !!v))]
       const poIds = [...new Set(moves.map(m => m.sourceId).filter((v): v is string => !!v))]
+      const poLineIds = [...new Set(moves.map(m => m.purchaseOrderLineId).filter((v): v is string => !!v))]
 
-      const [partners, purchaseOrders] = await Promise.all([
+      const [partners, purchaseOrders, poLines] = await Promise.all([
         partnerIds.length
           ? prisma.customer.findMany({ where: { id: { in: partnerIds } }, select: { id: true, name: true } })
           : Promise.resolve([]),
         poIds.length
-          ? prisma.purchaseOrder.findMany({ where: { id: { in: poIds } }, select: { id: true, name: true, confirmedAt: true } })
+          ? prisma.purchaseOrder.findMany({ where: { id: { in: poIds } }, select: { id: true, name: true, confirmedAt: true, vendorReference: true } })
+          : Promise.resolve([]),
+        poLineIds.length
+          ? prisma.purchaseOrderLine.findMany({ where: { id: { in: poLineIds } }, select: { id: true, bestBefore: true } })
           : Promise.resolve([]),
       ])
       const partnerNameById = new Map(partners.map(p => [p.id, p.name]))
       const poById = new Map(purchaseOrders.map(p => [p.id, p]))
+      const poLineById = new Map(poLines.map(l => [l.id, l]))
 
       const history = moves.map(m => {
         const po = m.sourceId ? poById.get(m.sourceId) : undefined
+        const poLine = m.purchaseOrderLineId ? poLineById.get(m.purchaseOrderLineId) : undefined
         return {
           supplierName: m.partnerId ? (partnerNameById.get(m.partnerId) ?? null) : null,
           poName: po?.name ?? m.sourceRef ?? null,
+          supplierRef: po?.vendorReference ?? null,
           confirmedAt: po?.confirmedAt?.toISOString() ?? null,
           qty: toNum(m.uomQty ?? m.qty),
           unitCost: m.unitCost != null ? toNum(m.unitCost) : null,
+          bestBefore: poLine?.bestBefore?.toISOString() ?? null,
           updatedBy: m.createdBy ?? null,
           movedAt: m.movedAt.toISOString(),
         }

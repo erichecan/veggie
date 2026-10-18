@@ -34,9 +34,11 @@ interface PriceHistoryEntry {
 interface PurchaseReceiptEntry {
   supplierName: string | null
   poName: string | null
+  supplierRef: string | null
   confirmedAt: string | null
   qty: number
   unitCost: number | null
+  bestBefore: string | null
   updatedBy: string | null
   movedAt: string
 }
@@ -1164,7 +1166,11 @@ export default function ClassicProductDetailPage() {
 
       {priceHistoryField && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPriceHistoryField(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full mx-4 max-h-[80vh] flex flex-col"
+            style={{ maxWidth: priceHistoryField === 'standardPrice' ? '600px' : '28rem' }}
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
               <h2 className="text-base font-semibold truncate" style={{ color: '#875A7B' }}>
                 {priceHistoryField === 'listPrice'
@@ -1224,18 +1230,22 @@ export default function ClassicProductDetailPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                            <th className="pb-2 font-medium">{isEn ? 'Supplier' : '供应商'}</th>
-                            <th className="pb-2 font-medium">{isEn ? 'Confirmed On' : '确认日期'}</th>
-                            <th className="pb-2 font-medium">{isEn ? 'Qty' : '数量'}</th>
+                            <th className="pb-2 pr-3 font-medium">{isEn ? 'Supplier' : '供应商'}</th>
+                            <th className="pb-2 pr-3 font-medium">{isEn ? 'Supplier Ref' : '供应商参考号'}</th>
+                            <th className="pb-2 pr-3 font-medium">{isEn ? 'Confirmed On' : '确认日期'}</th>
+                            <th className="pb-2 pr-3 font-medium">{isEn ? 'BBD' : '保质期'}</th>
+                            <th className="pb-2 pr-6 font-medium text-right">{isEn ? 'Qty' : '数量'}</th>
                             <th className="pb-2 font-medium">{isEn ? 'Updated By' : '更新人'}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {entries.map((e, i) => (
                             <tr key={i} className="border-b border-gray-50 last:border-0">
-                              <td className="py-2 font-medium text-gray-800">{e.supplierName ?? '—'}{e.poName ? <span className="text-gray-400"> · {e.poName}</span> : null}</td>
-                              <td className="py-2 text-gray-500">{e.confirmedAt ? formatDateTime(e.confirmedAt) : '—'}</td>
-                              <td className="py-2 text-gray-500">{e.qty.toFixed(2)}</td>
+                              <td className="py-2 pr-3 font-medium text-gray-800">{e.supplierName ?? '—'}{e.poName ? <span className="text-gray-400"> · {e.poName}</span> : null}</td>
+                              <td className="py-2 pr-3 text-gray-500">{e.supplierRef ?? '—'}</td>
+                              <td className="py-2 pr-3 text-gray-500">{e.confirmedAt ? formatDateTime(e.confirmedAt) : '—'}</td>
+                              <td className="py-2 pr-3 text-gray-500">{e.bestBefore ? formatDateOnly(e.bestBefore) : '—'}</td>
+                              <td className="py-2 pr-6 text-gray-500 text-right">{e.qty.toFixed(2)}</td>
                               <td className="py-2 text-gray-500">{e.updatedBy ?? '—'}</td>
                             </tr>
                           ))}

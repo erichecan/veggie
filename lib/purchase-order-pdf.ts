@@ -22,6 +22,9 @@ export interface PurchaseOrderPdfLine {
   unitCost: unknown
   taxRate: unknown
   subtotalIncTax: unknown
+  /** 行快照：商品规格 + 备注说明，20261018 客户要求询价单上也显示，跟 GET /api/purchase-orders/[id] 的合并口径一致 */
+  productSpec?: string | null
+  description?: string | null
 }
 
 export interface PurchaseOrderPdfData {
@@ -68,11 +71,15 @@ export function renderPurchaseOrderHtml(
   // （见 lib/print/line-sort.ts；PurchaseOrderLine.sequence 默认值恒为 10，靠它排等于不排）
   const linesHtml = sortLinesBySequence(po.lines).map((l, i) => {
     const taxRate = Number(l.taxRate ?? 0)
+    const spec = [l.productSpec?.trim(), l.description?.trim()].filter(Boolean).join(' · ')
     return `
       <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
         <td class="col-qty">${Number(l.orderedQty).toFixed(3)}</td>
         <td class="col-unit">${l.uomName ?? ''}</td>
-        <td class="col-desc">${l.productName}</td>
+        <td class="col-desc">
+          <div class="prod-name">${l.productName}</div>
+          ${spec ? `<div class="prod-spec">${spec}</div>` : ''}
+        </td>
         <td class="col-price">${eur(l.unitCost)}</td>
         <td class="col-vat">${taxRate > 0 ? formatVatRate(taxRate) : '0%'}</td>
         <td class="col-incl">${eur(l.subtotalIncTax)}</td>
@@ -114,6 +121,9 @@ export function renderPurchaseOrderHtml(
   .col-price { text-align: right; width: 13%; }
   .col-vat   { text-align: center; width: 7%; }
   .col-incl  { text-align: right; width: 13%; }
+
+  .prod-name { font-weight: 600; }
+  .prod-spec { color: #c00; font-size: 8pt; margin-top: 1px; }
 
   .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; }
   .totals-table { width: 220px; border-collapse: collapse; }
