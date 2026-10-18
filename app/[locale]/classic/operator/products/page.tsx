@@ -154,6 +154,26 @@ export default function ClassicProductsPage() {
     setFacets(prev => prev.filter(f => f.key !== key))
   }
 
+  // 一键清除（20261017 客户反馈"清不掉筛选条件"）：只重置 state，不手动调 loadPage——
+  // search 变化有自己的 400ms 防抖 effect，其余筛选都在 queryParams 依赖里，
+  // 任一变化都会触发已有的「筛选变化重新拉第 1 页」effect，跟手动改筛选走的是同一条路径。
+  function clearAllFilters() {
+    setSearchInput('')
+    setColumnFilters({})
+    setColumnMultiFilters({})
+    setCanBeSoldFilter(false)
+    setNotSellableFilter(false)
+    setPurchaseFilter('')
+    setProductTypeFilter('')
+    setStockAlertFilter('all')
+    setShowArchived(false)
+    setArchivedOnlyFilter(false)
+    setGroupBy('')
+    setSortKey('name')
+    setSortDir('asc')
+    setFacets([])
+  }
+
   // 所有筛选(库存告警/列筛选/Can be Sold/商品类型)都编码成请求参数交给后端做，
   // 后端两步查(聚合定位 id → 按 id 分页)，绝不一次性拉全量模板到前端。
   const queryParams = useMemo(() => {
@@ -884,6 +904,7 @@ export default function ClassicProductsPage() {
           setPage(1)
         }}
         storageKey="classic_products_favs"
+        onClearAll={clearAllFilters}
         total={total}
         page={page}
         pageSize={pageSize}
