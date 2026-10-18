@@ -156,7 +156,16 @@ export default function VendorBillsPage() {
   // load() 只换 bills 数组，不碰 detail/refDraft，不会冲掉正在编辑的供应商单号
   useRefetchOnFocus([load])
 
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+
+  // 一键清除（20261017 客户反馈“清不掉筛选条件”）：本页全是前端 useMemo 过滤，
+  // 重置 state 后 filtered 自动重算，无需手动重拉
+  function clearAllFilters() {
+    setSearch('')
+    setStatusFilter('')
+    clearFacets()
+    setPage(1)
+  }
 
   const filtered = useMemo(() => {
     let rows = bills
@@ -361,6 +370,7 @@ export default function VendorBillsPage() {
           { label: isEn ? 'Cancelled' : '已作废', value: 'CANCELLED' },
         ]}
         onFilterSelect={v => { setStatusFilter(prev => prev === v ? '' : v as VbStatus); setPage(1) }}
+        onClearAll={clearAllFilters}
         total={filtered.length}
         page={page}
         pageSize={PAGE_SIZE}

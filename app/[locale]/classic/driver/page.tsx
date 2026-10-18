@@ -79,7 +79,13 @@ export default function ClassicDriverPage() {
 
   useEffect(() => { load() }, [])
 
-  const { facets, chips, controlPanelProps } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
+
+  // 一键清除（20261017 客户反馈“清不掉筛选条件”）
+  function clearAllFilters() {
+    setSearchInput('')
+    clearFacets()
+  }
 
   const searched = searchInput
     ? trips.filter(t => t.id.toLowerCase().includes(searchInput.toLowerCase()))
@@ -96,6 +102,7 @@ export default function ClassicDriverPage() {
         searchValue={searchInput}
         onSearch={setSearchInput}
         onSearchSubmit={() => {}}
+        onClearAll={clearAllFilters}
         total={filtered.length}
         page={1}
         pageSize={filtered.length || 1}
