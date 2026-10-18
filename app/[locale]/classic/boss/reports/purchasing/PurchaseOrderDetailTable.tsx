@@ -247,34 +247,29 @@ export default function PurchaseOrderDetailTable({
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.confirmed_at ? formatDateOnly(r.confirmed_at) : <span className="text-gray-300">—</span>}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.vendor_bill_ref ?? <span className="text-gray-300">—</span>}</td>
                   </tr>
-                  {isOpen && (
+                  {isOpen && (!productState || productState.status === 'loading') && (
                     <tr className="border-b border-gray-100 bg-gray-50/60">
-                      <td colSpan={7} className="px-3 py-2">
-                        {!productState || productState.status === 'loading' ? (
-                          <div className="text-xs text-gray-400 py-2">{isEn ? 'Loading products…' : '加载商品明细中…'}</div>
-                        ) : productState.status === 'error' ? (
-                          <div className="text-xs text-red-500 py-2">{productState.message}</div>
-                        ) : (
-                          <table className="w-full text-xs">
-                            <tbody>
-                              {productState.rows.map((pr, pi) => {
-                                const pAmount = num(pr.subtotal_ex_tax)
-                                const pQty = num(pr.ordered_qty)
-                                return (
-                                  <tr key={`${poName}-p${pi}`} className="border-b border-gray-100 last:border-0">
-                                    <td className="py-1.5 pl-6 text-gray-700">{productLabel(pr.product_name ?? (isEn ? '(unknown product)' : '（未知产品）'), pr.product_spec, pr.description)}</td>
-                                    <td className="py-1.5 text-right tabular-nums text-gray-600 w-28">{eur(unitPrice(pAmount, pQty))}</td>
-                                    <td className="py-1.5 text-right tabular-nums text-gray-600 w-24">{Math.round(pQty * 1000) / 1000}</td>
-                                    <td className="py-1.5 text-right tabular-nums text-gray-600 w-28">{eur(pAmount)}</td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        )}
-                      </td>
+                      <td colSpan={7} className="px-3 py-2 text-xs text-gray-400">{isEn ? 'Loading products…' : '加载商品明细中…'}</td>
                     </tr>
                   )}
+                  {isOpen && productState?.status === 'error' && (
+                    <tr className="border-b border-gray-100 bg-gray-50/60">
+                      <td colSpan={7} className="px-3 py-2 text-xs text-red-500">{productState.message}</td>
+                    </tr>
+                  )}
+                  {isOpen && productState?.status === 'loaded' && productState.rows.map((pr, pi) => {
+                    const pAmount = num(pr.subtotal_ex_tax)
+                    const pQty = num(pr.ordered_qty)
+                    return (
+                      <tr key={`${poName}-p${pi}`} className="border-b border-gray-100 last:border-0 bg-gray-50/60">
+                        <td colSpan={2} className="px-3 py-1.5 pl-9 text-xs text-gray-700">{productLabel(pr.product_name ?? (isEn ? '(unknown product)' : '（未知产品）'), pr.product_spec, pr.description)}</td>
+                        <td className="text-right px-3 py-1.5 text-xs tabular-nums whitespace-nowrap text-gray-600">{eur(unitPrice(pAmount, pQty))}</td>
+                        <td className="text-right px-3 py-1.5 text-xs tabular-nums whitespace-nowrap text-gray-600">{Math.round(pQty * 1000) / 1000}</td>
+                        <td className="text-right px-3 py-1.5 text-xs tabular-nums whitespace-nowrap text-gray-600">{eur(pAmount)}</td>
+                        <td colSpan={2} className="px-3 py-1.5" />
+                      </tr>
+                    )
+                  })}
                 </Fragment>
               )
             })}
