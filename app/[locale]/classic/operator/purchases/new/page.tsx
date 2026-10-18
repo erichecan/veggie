@@ -920,17 +920,14 @@ export default function NewPurchaseOrderPage() {
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Ex-tax line total incl. allocated freight' : '税前小计 + 分摊运费'}>{isEn ? 'Untaxed Total' : '税前小计'}</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Tax-inclusive line total incl. allocated freight' : '含税总额 + 分摊运费'}>{isEn ? 'Subtotal' : '小计'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Quantity × unit price, ex tax' : '数量 × 单价（不含税）'}>{isEn ? 'Untaxed Total' : '税前小计'}</th>
+                  <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Untaxed total incl. tax' : '税前小计含税后的金额'}>{isEn ? 'Subtotal' : '小计'}</th>
                   <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
                 </tr>
               )}
               defaultRowCls="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
               renderRow={(l, i, { deleteButton, focusSearch, productCell }) => {
                 const isLast = i === lines.length - 1
-                const allocatedFreight = landedCosts[i]?.allocatedFreight ?? 0
-                const untaxedTotal = l.subtotalExTax + allocatedFreight
-                const inclTotal = untaxedTotal * (1 + Number(l.taxRate) / 100)
                 return (
                   <>
                     <td className="px-2 py-2.5 text-center">{deleteButton}</td>
@@ -983,10 +980,10 @@ export default function NewPurchaseOrderPage() {
                       </select>
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-700">
-                      {untaxedTotal.toFixed(2)}
+                      {l.subtotalExTax.toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium text-gray-800">
-                      {inclTotal.toFixed(2)}
+                      {l.subtotalIncTax.toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <DatePicker
@@ -1018,7 +1015,7 @@ export default function NewPurchaseOrderPage() {
             <div style={{ minWidth: '280px' }}>
               <div className="flex justify-between py-1 text-sm">
                 <span className="text-gray-500">{isEn ? 'Subtotal (Ex Tax)' : '税前金额'}</span>
-                <span className="text-gray-800 font-medium">{(subtotalExTax + freightAmount).toFixed(2)}</span>
+                <span className="text-gray-800 font-medium">{subtotalExTax.toFixed(2)}</span>
               </div>
               <div className="flex justify-between py-1 text-sm">
                 <span className="text-gray-500">{isEn ? 'Tax' : '税额'}</span>
@@ -1026,7 +1023,7 @@ export default function NewPurchaseOrderPage() {
               </div>
               <div className="border-t border-gray-300 mt-1 pt-2 flex justify-between">
                 <span className="text-sm font-semibold" style={{ color: DARK }}>{isEn ? 'Total' : '合计'}</span>
-                <span className="text-base font-bold" style={{ color: DARK }}>{currency} {(totalIncTax + freightAmount).toFixed(2)}</span>
+                <span className="text-base font-bold" style={{ color: DARK }}>{currency} {totalIncTax.toFixed(2)}</span>
               </div>
               {currency !== 'EUR' && (
                 <div className="flex justify-between py-1 text-sm">

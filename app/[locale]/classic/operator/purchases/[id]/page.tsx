@@ -955,11 +955,13 @@ export default function PurchaseDetailPage() {
   const displayLines = editing ? editLines : po.lines
 
   const lineSubtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotalExTax), 0)
+  const lineSubtotalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0)
   const totalOrderedQty = displayLines.reduce((s, l) => s + Number(l.orderedQty), 0)
   const freightAmount = editing ? editFreightAmount : Number(po.freightAmount ?? 0)
-  const subtotalExTax = lineSubtotalExTax + freightAmount
+  // ⛔ 运费不计入「合计」——这个数字要跟供应商报价单的合计核对，加了运费就对不上了(20261018)
+  const subtotalExTax = lineSubtotalExTax
   const totalTax = displayLines.reduce((s, l) => s + Number(l.taxAmount), 0)
-  const totalIncTax = displayLines.reduce((s, l) => s + Number(l.subtotalIncTax), 0) + freightAmount
+  const totalIncTax = lineSubtotalIncTax
   // 分摊运费预览：跟服务端 confirm 分支用同一套算法（排除 SERVICE 行、尊重手动覆盖、
   // 按数量比例分给剩余行），让页面上看到的数字跟点 Confirm 之后真正落库的数字一致（20261017）。
   // 分摊/落库字段（allocatedFreightEur 等）全是欧元口径，非欧元供应商单必须先把 freightAmount
@@ -1463,7 +1465,7 @@ export default function PurchaseDetailPage() {
                   search: isEn ? 'Search product…' : '搜索商品…',
                 }}
                 onReady={handleEditorReady}
-                emptyColSpan={12}
+                emptyColSpan={13}
                 emptyMessage={isEn ? 'No lines yet' : '暂无明细行'}
                 tableClassName="w-full text-sm border-collapse"
                 renderHeaders={() => (
@@ -1485,7 +1487,8 @@ export default function PurchaseDetailPage() {
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Quantity × unit price, ex tax' : '数量 × 单价（不含税）'}>{isEn ? 'Untaxed Total' : '税前小计'}</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Untaxed total incl. tax' : '税前小计含税后的金额'}>{isEn ? 'Subtotal' : '小计'}</th>
                   </tr>
                 )}
                 defaultRowCls="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
@@ -1611,8 +1614,11 @@ export default function PurchaseDetailPage() {
                           <span className="text-gray-600 text-xs">{formatDateOnly(l.bestBefore) || '—'}</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium text-gray-800">
+                      <td className="px-4 py-2.5 text-right text-gray-700">
                         {Number(l.subtotalExTax).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium text-gray-800">
+                        {Number(l.subtotalIncTax).toFixed(2)}
                       </td>
                     </>
                   )
@@ -1627,6 +1633,7 @@ export default function PurchaseDetailPage() {
                     <td colSpan={2} />
                     <td />
                     <td className="px-4 py-2 text-right font-semibold text-gray-700 text-xs">{lineSubtotalExTax.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-gray-700 text-xs">{lineSubtotalIncTax.toFixed(2)}</td>
                   </tr>
                 }
                 footer={
