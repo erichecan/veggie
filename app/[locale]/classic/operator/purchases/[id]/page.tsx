@@ -955,6 +955,7 @@ export default function PurchaseDetailPage() {
   const displayLines = editing ? editLines : po.lines
 
   const lineSubtotalExTax = displayLines.reduce((s, l) => s + Number(l.subtotalExTax), 0)
+  const totalOrderedQty = displayLines.reduce((s, l) => s + Number(l.orderedQty), 0)
   const freightAmount = editing ? editFreightAmount : Number(po.freightAmount ?? 0)
   const subtotalExTax = lineSubtotalExTax + freightAmount
   const totalTax = displayLines.reduce((s, l) => s + Number(l.taxAmount), 0)
@@ -1475,12 +1476,14 @@ export default function PurchaseDetailPage() {
                     <th className="w-8 px-2 py-2.5 text-center font-medium text-gray-600 text-xs" title={isEn ? 'Reference cost — last known cost price, not saved on this order' : '参考成本价——上次收货成本，仅供对比，不写入本单'}>
                       ⓘ
                     </th>
-                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Freight allocated to this line. Auto-split by ordered qty across non-service lines; type to override manually.' : '本行分摊到的运费，默认按订购数量比例在非服务行之间自动分摊，可手动改成别的数'}>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Freight per ordered unit for this line. Defaults to freight amount ÷ total ordered qty; type to override.' : '本行每单位（箱）运费，默认是运费总额 ÷ 总箱数，可手动改成别的数'}>
+                      {isEn ? 'Per Case Freight' : '每箱运费'}
+                    </th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Allocated freight = per case freight × ordered qty' : '分摊运费 = 每箱运费 × 数量，由左边一栏算出，不可直接编辑'}>
                       {isEn ? 'Alloc. Freight' : '分摊运费'}
                     </th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Unit Price' : '单价'}</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Tax %' : '税率%'}</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs" title={isEn ? 'Ex-tax line total incl. allocated freight' : '税前小计 + 分摊运费'}>{isEn ? 'Untaxed Total' : '税前小计'}</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">Best Before</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-600 text-xs">{isEn ? 'Subtotal' : '小计'}</th>
                   </tr>
@@ -1490,6 +1493,13 @@ export default function PurchaseDetailPage() {
                   const isLast = i === displayLines.length - 1
                   const isServiceLine = purchaseProducts.find(p => p.id === l.productId)?.type === 'SERVICE'
                   const allocatedFreight = allocatedFreightById.get(l.id) ?? 0
+                  const lineQty = Number(l.orderedQty) || 0
+                  // 每箱运费 = 分摊运费 / 数量；手动覆盖过 alloc freight 时同样按当前数量反推显示，
+                  // 编辑这一栏改的还是底层的 allocatedFreightEur（20261017 客户要求把编辑单元换成"每箱运费"）
+                  const perCaseFreight = lineQty > 0 ? allocatedFreight / lineQty : 0
+                  const perCaseFreightOverride = l.allocatedFreightEur != null && lineQty > 0
+                    ? Number(l.allocatedFreightEur) / lineQty
+                    : null
                   return (
                     <>
                       <td className="px-2 py-2.5 text-center">{deleteButton}</td>
@@ -1532,19 +1542,30 @@ export default function PurchaseDetailPage() {
                           <span className="text-gray-400 text-xs">—</span>
                         ) : editing ? (
                           <input type="number" step="0.01"
-                            className={numInputCls} style={{ width: '90px' }}
-                            placeholder={allocatedFreight.toFixed(2)}
-                            value={l.allocatedFreightEur ?? ''}
+                            className={numInputCls} style={{ width: '80px' }}
+                            placeholder={perCaseFreight.toFixed(2)}
+                            value={perCaseFreightOverride ?? ''}
                             onChange={e => {
                               const raw = e.target.value
                               setEditLines(prev => {
                                 const next = [...prev]
-                                next[i] = { ...next[i], allocatedFreightEur: raw === '' ? null : Number(raw) }
+                                const qty = Number(next[i].orderedQty) || 0
+                                next[i] = {
+                                  ...next[i],
+                                  allocatedFreightEur: raw === '' ? null : Math.round(Number(raw) * qty * 100) / 100,
+                                }
                                 return next
                               })
                             }}
                             onFocus={e => e.target.select()}
                             onKeyDown={lineFieldKeyHandler({ onNextRow: focusSearch })} />
+                        ) : (
+                          <span className="text-gray-800">{perCaseFreight.toFixed(2)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {isServiceLine ? (
+                          <span className="text-gray-400 text-xs">—</span>
                         ) : (
                           <span className="text-gray-800">{allocatedFreight.toFixed(2)}</span>
                         )}
@@ -1572,9 +1593,6 @@ export default function PurchaseDetailPage() {
                           <span className="text-gray-600 text-xs">{Number(l.taxRate ?? 0).toFixed(1)}%</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-gray-700">
-                        {(Number(l.subtotalExTax) + allocatedFreight).toFixed(2)}
-                      </td>
                       <td className="px-4 py-2.5 text-right">
                         {editing ? (
                           <DatePicker
@@ -1599,6 +1617,18 @@ export default function PurchaseDetailPage() {
                     </>
                   )
                 }}
+                footerRow={
+                  <tr style={{ background: '#fafafa', borderTop: '2px solid #e5e5e5' }}>
+                    <td colSpan={3} />
+                    <td className="px-4 py-2 text-right font-semibold text-gray-700 text-xs">{totalOrderedQty.toFixed(3)}</td>
+                    <td colSpan={2} />
+                    <td />
+                    <td className="px-4 py-2 text-right font-semibold text-gray-700 text-xs">{allocatedFreightTotal.toFixed(2)}</td>
+                    <td colSpan={2} />
+                    <td />
+                    <td className="px-4 py-2 text-right font-semibold text-gray-700 text-xs">{lineSubtotalExTax.toFixed(2)}</td>
+                  </tr>
+                }
                 footer={
                   editing ? (
                     <div className="px-4 py-2 border-t border-gray-100">

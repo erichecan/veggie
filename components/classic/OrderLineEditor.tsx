@@ -64,6 +64,9 @@ interface Props<
   renderHeaders: () => ReactNode
   renderRow: (line: L, index: number, opts: RowRenderOpts) => ReactNode
   rowStyle?: (line: L, index: number) => CSSProperties | undefined
+  /** 跟数据行同一张 table 里渲染的合计行（一个完整的 `<tr>`），列能跟表头精确对齐；
+   * 只在 lines 非空时显示。`footer` 是 table 外面的区块，两者不是一回事。 */
+  footerRow?: ReactNode
   footer?: ReactNode
   emptyColSpan?: number
   emptyMessage?: string
@@ -101,6 +104,7 @@ export default function OrderLineEditor<
   renderHeaders,
   renderRow,
   rowStyle,
+  footerRow,
   footer,
   emptyColSpan = 1,
   emptyMessage,
@@ -247,6 +251,8 @@ export default function OrderLineEditor<
                 </td>
               </tr>
             )}
+
+            {lines.length > 0 && footerRow}
 
           </tbody>
         </table>

@@ -321,6 +321,51 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         include: { lines: { orderBy: { sequence: 'asc' } } },
       })
 
+      // 保存即算"落地成本"快照（20261017 客户需求②：不等确认才有数字，保存完重新编辑也能再调）：
+      // 只在 DRAFT/SENT 阶段算，CONFIRMED 及之后这个 PUT 分支走的是安全字段白名单，不碰行/运费，
+      // 真正的确认快照（含 Product.standardPrice 联动）仍然只在 PATCH action=confirm 时发生——
+      // 这里写的 landedUnitCostEur 只是草稿期的参考数字，allocatedFreightEur 的
+      // null=自动/数字=手动覆盖 语义维持不变，不在这里改写。
+      if (poBefore.status === 'DRAFT' || poBefore.status === 'SENT') {
+        const poLines = po.lines as Array<Record<string, unknown>>
+        if (poLines.length > 0) {
+          const productIds = [...new Set(poLines.map((l: Record<string, unknown>) => String(l.productId)))]
+          const costProducts = await p.product.findMany({ where: { id: { in: productIds } }, select: { id: true, type: true } })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const typeByProductId = new Map(costProducts.map((prod: any) => [String(prod.id), prod.type]))
+          const costSaleUoms = await p.productSaleUom.findMany({
+            where: { productId: { in: productIds } },
+            select: { productId: true, uomId: true, factor: true },
+          })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const factorByProductUom = new Map(costSaleUoms.map((su: any) => [`${su.productId}:${su.uomId}`, su.factor]))
+
+          const costAllocationInput = poLines.map((l: Record<string, unknown>) => ({
+            id: String(l.id),
+            orderedQty: l.orderedQty,
+            uomFactor: l.uomId ? factorByProductUom.get(`${String(l.productId)}:${String(l.uomId)}`) ?? 1 : 1,
+            isService: typeByProductId.get(String(l.productId)) === 'SERVICE',
+            manualAllocatedFreightEur: l.allocatedFreightEur,
+          }))
+          const freightAmountEurForCost = toNum(po.freightAmountEur ?? po.freightAmount)
+          const costAllocations = computeFreightAllocationForConfirm(freightAmountEurForCost, costAllocationInput)
+          const allocatedByIdForCost = new Map(costAllocations.map(a => [a.id, a.allocatedFreightEur]))
+
+          await prisma.$transaction(
+            poLines.map((l: Record<string, unknown>) => {
+              const isService = typeByProductId.get(String(l.productId)) === 'SERVICE'
+              const landedUnitCostEur = isService
+                ? null
+                : computeLandedUnitCost(l.subtotalExTaxEur, allocatedByIdForCost.get(String(l.id)) ?? 0, l.orderedQty)
+              // 同步回填进待返回的 po.lines，否则这次保存的响应里这个字段还是更新前的旧值，
+              // 前端拿着响应覆盖本地状态后看到的「cost」就比数据库里晚了一步，必须刷新才对
+              l.landedUnitCostEur = landedUnitCostEur
+              return p.purchaseOrderLine.update({ where: { id: String(l.id) }, data: { landedUnitCostEur } })
+            }),
+          )
+        }
+      }
+
       const changes = diffChanges(
         poBefore as Record<string, unknown>,
         po as Record<string, unknown>,
