@@ -26,9 +26,12 @@ export async function supplierClause(term: string): Promise<Record<string, unkno
 export const PURCHASE_ORDER_FACET_DEFS: FacetDef[] = [
   // 'all' 此前根本没实现：采购列表页的搜索框把词发成了 ?search=，而 where 构造从不读它，
   // 于是「搜什么都返回全部」——比搜不到更难发现。
-  { key: 'all',      label: '全部',   toClause: async v => ({ OR: [{ name: like(v) }, await supplierClause(v)] }) },
-  { key: 'name',     label: '单号',   toClause: v => ({ name: like(v) }) },
-  { key: 'supplier', label: '供应商', toClause: supplierClause },
-  { key: 'product',  label: '商品',   toClause: v => ({ lines: { some: { productName: like(v) } } }) },
-  { key: 'notes',    label: '备注',   toClause: v => ({ notes: like(v) }) },
+  { key: 'all',             label: '全部',       toClause: async v => ({ OR: [{ name: like(v) }, await supplierClause(v)] }) },
+  { key: 'name',            label: '单号',       toClause: v => ({ name: like(v) }) },
+  // vendorReference = 供应商自己给的参考号(表格"Vendor Reference Number"列)，
+  // 跟上面的 name(本系统内部单号 PO-xxxxx) 是两个完全不同的字段，之前没有维度能搜它(20261018)。
+  { key: 'vendorReference', label: '供应商参考号', toClause: v => ({ vendorReference: like(v) }) },
+  { key: 'supplier',        label: '供应商',     toClause: supplierClause },
+  { key: 'product',         label: '商品',       toClause: v => ({ lines: { some: { productName: like(v) } } }) },
+  { key: 'notes',           label: '备注',       toClause: v => ({ notes: like(v) }) },
 ]
