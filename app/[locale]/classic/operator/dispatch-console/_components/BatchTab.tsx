@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPut, apiDelete } from '@/lib/api'
+import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { waveStage } from '@/lib/wave-stage'
 import { DRIVER_APP_ENABLED } from '@/lib/features'
 import { restaurantColor } from './colors'
@@ -145,6 +146,8 @@ export default function BatchTab({ date, onPickDate }: { date: string; onPickDat
   }, [date, isEn])
 
   useEffect(() => { load() }, [load])
+  // 调度台常年开着不换日期；司机被归档后，托盘 lane 不会自己消失，必须靠切回 tab 时静默重拉
+  useRefetchOnFocus([() => load({ silent: true })])
 
   // 拉 ±45 天内各 waveDate 的已排单量,排除当前日期,得到「其他日期还有单」提示。复用 driver-summary,不改后端。
   useEffect(() => {

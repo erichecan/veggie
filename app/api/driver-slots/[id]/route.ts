@@ -42,6 +42,9 @@ async function updateSlot(req: Request, { params }: { params: Promise<{ id: stri
       if (!before.archived && archived) {
         const result = await deletePalletForDriverSlot(before)
         unassignedOrderCount = result.unassignedOrderCount
+        // schema 的 onDelete:SetNull 只在硬删除时生效，归档走的是软更新，不会触发——
+        // 不手动清这个字段，客户档案会悄悄留着一个已归档司机的 id，保存时原样写回。
+        await prisma.customer.updateMany({ where: { defaultDriverSlotId: id }, data: { defaultDriverSlotId: null } })
       }
       const slot = await prisma.driverSlot.update({
         where: { id },
@@ -87,6 +90,7 @@ async function archiveSlot({ params }: { params: Promise<{ id: string }> }) {
     if (!slot) return NextResponse.json({ error: '托盘不存在' }, { status: 404 })
     // 同 PUT 归档分支：先清理再归档，避免拣货锁挡住清理时留下"已归档但订单孤儿挂着"的半成状态。
     const { unassignedOrderCount } = await deletePalletForDriverSlot(slot)
+    await prisma.customer.updateMany({ where: { defaultDriverSlotId: id }, data: { defaultDriverSlotId: null } })
     await prisma.driverSlot.update({ where: { id }, data: { archived: true } })
     return NextResponse.json({ ok: true, unassignedOrderCount })
   } catch (e) {

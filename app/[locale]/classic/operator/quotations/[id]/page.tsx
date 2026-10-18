@@ -120,7 +120,10 @@ export default function QuotationDetailPage() {
   const [priceType, setPriceType] = useState('multi')
   const [paymentTerm, setPaymentTerm] = useState('')
   const [driverSlots, setDriverSlots] = useState<DriverSlotInfo[]>([])
-  useEffect(() => { apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {}) }, [])
+  function fetchLatestDriverSlots() {
+    apiGet<DriverSlotInfo[]>('/api/driver-slots').then(setDriverSlots).catch(() => {})
+  }
+  useEffect(() => { fetchLatestDriverSlots() }, [])
 
   type EditLine = NonNullable<Order['lines']>[number]
   const [editLines, setEditLines] = useState<EditLine[]>([])
@@ -223,7 +226,7 @@ export default function QuotationDetailPage() {
   // 商品/价格表管理侧在别的 tab 改了数据后，希望回到这个已经打开的页面时能看到最新数据，
   // 但又不想引入 SWR/React Query —— 用「重新聚焦/切回本 tab 时刷新，节流 30s」这个轻量方案
   // （共享 hook，见 lib/hooks/use-refetch-on-focus.ts，原三个订单页各自一份重复代码收口于此）。
-  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists, fetchLatestPendingDemand])
+  useRefetchOnFocus([fetchLatestProducts, fetchLatestPricelists, fetchLatestPendingDemand, fetchLatestDriverSlots])
 
   // 编辑态内容防抖存本地：切去别的 tab 改引用数据被这个 hook 自动刷新回来时，
   // 不至于把正在填的内容也一起冲掉——保存成功/退出编辑后清掉，不是永久草稿。
