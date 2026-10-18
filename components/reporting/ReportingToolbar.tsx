@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeftRight, Download, X } from 'lucide-react'
+import { ArrowLeftRight, Download, X, Eraser } from 'lucide-react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { useReporting } from './ReportingContext'
@@ -84,6 +84,13 @@ export function ReportingToolbar() {
           title={isEn ? 'Export Excel' : '导出 Excel'}
         >
           <Download className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => dispatch({ type: 'RESET' })}
+          className="inline-flex items-center justify-center rounded-md border border-input bg-background h-8 w-8 text-sm ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={isEn ? 'Clear filters/sort' : '清除筛选/排序'}
+        >
+          <Eraser className="h-4 w-4" />
         </button>
 
         {/* spacer */}

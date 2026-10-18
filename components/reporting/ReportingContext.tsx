@@ -78,6 +78,7 @@ export type ReportingAction =
   | { type: 'DRILL_ERROR'; rowKey: string; error: string }
   | { type: 'DRILL_COLLAPSE'; rowKey: string }
   | { type: 'DRILL_RESET' }
+  | { type: 'RESET' }
 
 function reducer(state: ReportingState, action: ReportingAction): ReportingState {
   switch (action.type) {
@@ -152,6 +153,20 @@ function reducer(state: ReportingState, action: ReportingAction): ReportingState
     }
     case 'DRILL_RESET':
       return { ...state, drill: {} }
+    // 一键清除（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：回到这个 reportType
+    // 的出厂默认分组/度量，筛选/排序/下钻/翻页全清空；fetchData 的 useCallback 依赖含
+    // rowDimensions/colDimensions/activeMeasures/filters/orderBy，state 一变就反应式重拉
+    case 'RESET':
+      return {
+        ...state,
+        rowDimensions: REPORT_DEFAULTS[state.reportType].rowDimensions,
+        colDimensions: [],
+        activeMeasures: REPORT_DEFAULTS[state.reportType].measures,
+        filters: [],
+        orderBy: [],
+        offset: 0,
+        drill: {},
+      }
     default:
       return state
   }
