@@ -4,7 +4,8 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiPost } from '@/lib/api'
-import { eur } from '@/lib/format-money'
+import { eur, fmtMoney } from '@/lib/format-money'
+import { downloadCsv } from '@/lib/csv-export'
 import { bucketLabel } from '@/lib/reports/date-label'
 import type { FilterSpec, ReportRequest } from '@/lib/reports/types'
 import { nextDay } from './date-range'
@@ -171,6 +172,32 @@ export default function PurchaseHierarchyTable({
   // 顶层按商品分组时，客户要求商品之间加一条分隔线，方便一眼区分不同商品的区块
   const topLevelIsProduct = levels[0] === productLevel
 
+  function exportCsv() {
+    const headers = isEn
+      ? ['Product / Date / Supplier / PO', 'Amount', 'Quantity', 'Average Price']
+      : ['产品 / 日期 / 供应商 / 采购单', '金额', '数量', '平均价格']
+    const rows: string[][] = [[
+      isEn ? 'Total' : '总计',
+      fmtMoney(totalAmount),
+      String(Math.round(totalQty * 1000) / 1000),
+      fmtMoney(totalQty ? totalAmount / totalQty : 0),
+    ]]
+    // 只导出屏幕上看得到的：展开到哪一层，就导出到哪一层，跟界面保持一致
+    const walk = (nodes: Node[], depth: number) => {
+      for (const node of nodes) {
+        rows.push([
+          `${'    '.repeat(depth)}${node.label}`,
+          fmtMoney(node.amount),
+          String(Math.round(node.qty * 1000) / 1000),
+          fmtMoney(node.qty ? node.amount / node.qty : 0),
+        ])
+        if (open[node.key] && node.children.length) walk(node.children, depth + 1)
+      }
+    }
+    walk(tree, 0)
+    downloadCsv(`purchase-analysis-hierarchy-${layout}-${from}_${to}`, headers, rows)
+  }
+
   function renderNodes(nodes: Node[], depth = 0): React.ReactNode {
     return nodes.map((node, index) => {
       const expanded = !!open[node.key]
@@ -199,7 +226,17 @@ export default function PurchaseHierarchyTable({
         <span className="text-sm font-medium text-gray-700">{isEn ? 'Group by' : '分组方式'}</span>
         {(['product-date-supplier', 'date-supplier-product'] as const).map((value) => <button key={value} type="button" onClick={() => { setLayout(value); setOpen({}) }} className="px-3 py-1.5 rounded-lg border text-sm" style={layout === value ? { background: PURPLE, color: 'white', borderColor: PURPLE } : { background: 'white', color: '#4b5563' }}>{isEn ? LAYOUT_LABEL[value].en : LAYOUT_LABEL[value].zh}</button>)}
       </div>
-      <span className="text-xs text-gray-400">{isEn ? `By order date · ${label}` : `按下单日期统计 · ${label}`}</span>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-gray-400">{isEn ? `By order date · ${label}` : `按下单日期统计 · ${label}`}</span>
+        <button
+          type="button"
+          onClick={exportCsv}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white"
+          title={isEn ? 'Export what is on screen, including expanded rows' : '导出当前屏幕上的内容（含已展开的行）'}
+        >
+          ⬇ {isEn ? 'Download CSV' : '下载 CSV'}
+        </button>
+      </div>
     </div>
     {pending ? <div className="py-12 text-center text-sm text-gray-400">{isEn ? 'Loading…' : '加载中…'}</div> : errorMessage ? <div className="py-12 text-center text-sm text-red-500">{errorMessage}</div> : <div className="overflow-auto max-h-[70vh]">
       <table className="w-full text-sm">
