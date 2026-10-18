@@ -6,7 +6,7 @@ import { routing } from '@/i18n/routing'
 import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
 import { downloadCsv } from '@/lib/csv-export'
-import { defaultRange, SearchSelectDropdown, searchProductOptions, searchCustomerOptions, type SearchOption } from '@/components/boss/analytics-shared'
+import { defaultRange, SearchSelectDropdown, searchProductOptions, searchCustomerOptions, ClearFiltersButton, type SearchOption } from '@/components/boss/analytics-shared'
 import WeeklyDrilldown from './WeeklyDrilldown'
 import { DatePicker } from '@/components/ui/date-picker'
 
@@ -77,6 +77,15 @@ function SalesAnalysisInner() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [view, range, productIds, customerIds])
+
+  // 一键清除（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：view 是页面切换
+  // 不是叠加筛选，不清；本页全靠 useEffect/WeeklyDrilldown 的 props 反应式重拉，无需手动调用
+  function clearAllFilters() {
+    setProductFilter([])
+    setCustomerFilter([])
+    setWeekRange({ from: '', to: '' })
+    setRange(defaultRange(30))
+  }
 
   function exportDetailCsv() {
     if (!detailData) return
@@ -179,15 +188,18 @@ function SalesAnalysisInner() {
           </>
         )}
 
-        {view === 'detail' && (
-          <button
-            type="button"
-            onClick={exportDetailCsv}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white"
-          >
-            ⬇ {isEn ? 'Download CSV' : '下载 CSV'}
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {view === 'detail' && (
+            <button
+              type="button"
+              onClick={exportDetailCsv}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white"
+            >
+              ⬇ {isEn ? 'Download CSV' : '下载 CSV'}
+            </button>
+          )}
+          <ClearFiltersButton isEn={isEn} onClick={clearAllFilters} />
+        </div>
       </div>
 
       {/* ── Main Content ───────────────────────────────────────────────────── */}

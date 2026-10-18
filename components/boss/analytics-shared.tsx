@@ -37,6 +37,20 @@ const PRESETS_EN: Array<{ label: string; days: number }> = [
   { label: 'Last 90 days', days: 90 },
 ]
 
+/** 分析页共用「清除」按钮（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：
+ * 样式统一，具体清哪些 state 由各页自己的 onClick 决定 */
+export function ClearFiltersButton({ onClick, isEn }: { onClick: () => void; isEn: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-500 hover:border-gray-400 hover:text-gray-700 bg-white"
+    >
+      ✕ {isEn ? 'Clear' : '清除'}
+    </button>
+  )
+}
+
 /** 分析页共用的日期范围选择条（含快捷预设） */
 export function DateRangeBar({ value, onChange }: {
   value: DateRange

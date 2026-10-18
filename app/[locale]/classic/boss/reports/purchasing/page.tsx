@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import {
-  SearchSelectDropdown, searchPurchasableProductOptions, searchSupplierOptions, defaultRange, type SearchOption,
+  SearchSelectDropdown, searchPurchasableProductOptions, searchSupplierOptions, defaultRange, ClearFiltersButton, type SearchOption,
 } from '@/components/boss/analytics-shared'
 import { DatePicker } from '@/components/ui/date-picker'
 import SupplierMonthMatrix from './SupplierMonthMatrix'
@@ -42,6 +42,17 @@ export default function PurchasingReportPage() {
   // 20260922 客户要加一张明细表(按采购单逐行：审批日期/发票参考号/系统发票号/供应商/数量/金额)，
   // 跟原来的供应商×月矩阵是两种看法，做成 tab 切换而不是硬塞进同一张表。
   const [view, setView] = useState<ViewMode>('summary')
+
+  // 一键清除（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：view 是页面切换不清；
+  // 三个子表（SupplierMonthMatrix/PurchaseHierarchyTable/PurchaseOrderDetailTable）
+  // 都是靠 props 变化驱动 useEffect 反应式重拉，无需手动调用
+  function clearAllFilters() {
+    setSupplierFilter([])
+    setProductFilter([])
+    setSupplierTerms([])
+    setProductTerms([])
+    setRange(defaultRange(180))
+  }
 
   return (
     <div>
@@ -101,6 +112,7 @@ export default function PurchasingReportPage() {
             </button>
           ))}
         </div>
+        <ClearFiltersButton isEn={isEn} onClick={clearAllFilters} />
       </div>
 
       {view === 'summary' ? (

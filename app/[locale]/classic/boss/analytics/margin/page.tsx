@@ -4,7 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
-import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
+import { eur, DateRangeBar, defaultRange, ClearFiltersButton, type DateRange } from '@/components/boss/analytics-shared'
 import PivotView from './PivotView'
 
 type GroupBy = 'product' | 'category' | 'customer' | 'salesUser'
@@ -52,6 +52,17 @@ export default function MarginAnalyticsPage() {
   }, [])
   useEffect(() => { if (mode === 'single') load(range, groupBy) }, [load, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 一键清除（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：mode 是视图切换不清，
+  // 只管单维度模式自己的筛选；pivot 模式的清除按钮在 PivotView 自己里面；
+  // load 只在 range/groupBy 的事件回调里被显式调用，effect 不随之反应，这里必须手动再调一次
+  function clearAllFilters() {
+    const r = defaultRange()
+    setRange(r)
+    setGroupBy('product')
+    setSearch('')
+    load(r, 'product')
+  }
+
   const coverage = (data?.summary.costCoverageRate ?? 0) * 100
   const filtered = (data?.rows ?? []).filter((r) =>
     search.trim() === '' || r.name.toLowerCase().includes(search.trim().toLowerCase()),
@@ -74,6 +85,7 @@ export default function MarginAnalyticsPage() {
             ))}
           </div>
           <DateRangeBar value={range} onChange={(r) => { setRange(r); if (mode === 'single') load(r, groupBy) }} />
+          {mode === 'single' && <ClearFiltersButton isEn={isEn} onClick={clearAllFilters} />}
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
 import { downloadXlsx } from '@/lib/xlsx-export'
 import {
-  defaultRange, SearchSelectDropdown, searchProductOptions, searchSupplierOptions, type SearchOption,
+  defaultRange, SearchSelectDropdown, searchProductOptions, searchSupplierOptions, ClearFiltersButton, type SearchOption,
 } from '@/components/boss/analytics-shared'
 import { DatePicker } from '@/components/ui/date-picker'
 
@@ -96,6 +96,16 @@ export default function ProcurementAnalysisPage() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [view, groupBy, range, granularity, supplierFilter, productFilter])
+
+  // 一键清除（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：view(视图切换)、
+  // granularity(趋势图的时间粒度，属显示精度不是叠加筛选) 不清；groupBy 跟 invoices/
+  // pricelist 页同口径当筛选清；本页全靠 useEffect 依赖反应式重拉，无需手动调用
+  function clearAllFilters() {
+    setGroupBy('product')
+    setRange(defaultRange(30))
+    setSupplierFilter([])
+    setProductFilter([])
+  }
 
   function exportPurchaseExcel() {
     if (!data) return
@@ -217,16 +227,19 @@ export default function ProcurementAnalysisPage() {
           </div>
         )}
 
-        {view === 'purchase' && (
-          <button
-            type="button"
-            onClick={exportPurchaseExcel}
-            disabled={!data}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white disabled:opacity-40"
-          >
-            ⬇ {isEn ? 'Download Excel' : '下载 Excel'}
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {view === 'purchase' && (
+            <button
+              type="button"
+              onClick={exportPurchaseExcel}
+              disabled={!data}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white disabled:opacity-40"
+            >
+              ⬇ {isEn ? 'Download Excel' : '下载 Excel'}
+            </button>
+          )}
+          <ClearFiltersButton isEn={isEn} onClick={clearAllFilters} />
+        </div>
       </div>
 
       {/* ── Main Content ───────────────────────────────────────────────────── */}

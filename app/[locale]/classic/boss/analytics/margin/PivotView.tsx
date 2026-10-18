@@ -5,7 +5,7 @@ import { apiGet } from '@/lib/api'
 import { eur } from '@/lib/format-money'
 import { downloadCsv } from '@/lib/csv-export'
 import { DIMENSION_OPTIONS } from '@/lib/analytics/pivot'
-import type { DateRange } from '@/components/boss/analytics-shared'
+import { ClearFiltersButton, type DateRange } from '@/components/boss/analytics-shared'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { userPickerOptions, type PickerUser } from '@/lib/user-picker'
 
@@ -149,6 +149,19 @@ export default function PivotView({ range, isEn }: { range: DateRange; isEn: boo
     downloadCsv(`margin-pivot-${range.from}_${range.to}`, headers, rows)
   }
 
+  // 一键清除（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：透视模式自己的筛选面，
+  // 跟父页 margin/page.tsx 的单维度 clearAllFilters 各管各的；本组件全靠 load 的 useCallback
+  // 依赖反应式重拉，无需手动调用
+  function clearAllFilters() {
+    setRowBy('customer')
+    setColBy('month')
+    setMeasure('revenueExTax')
+    setCategoryId('')
+    setCustomerId('')
+    setSalesUserId('')
+    setSearch('')
+  }
+
   const coverage = (data?.summary.costCoverageRate ?? 0) * 100
 
   return (
@@ -210,14 +223,17 @@ export default function PivotView({ range, isEn }: { range: DateRange; isEn: boo
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button
-          className="border rounded px-3 py-1 text-white ml-auto disabled:opacity-40"
-          style={{ backgroundColor: '#875A7B' }}
-          disabled={!data}
-          onClick={exportCsv}
-        >
-          {isEn ? 'Export CSV' : '导出 CSV'}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            className="border rounded px-3 py-1 text-white disabled:opacity-40"
+            style={{ backgroundColor: '#875A7B' }}
+            disabled={!data}
+            onClick={exportCsv}
+          >
+            {isEn ? 'Export CSV' : '导出 CSV'}
+          </button>
+          <ClearFiltersButton isEn={isEn} onClick={clearAllFilters} />
+        </div>
       </div>
 
       {error && (

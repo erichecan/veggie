@@ -4,7 +4,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
-import { eur, DateRangeBar, defaultRange, type DateRange } from '@/components/boss/analytics-shared'
+import { eur, DateRangeBar, defaultRange, ClearFiltersButton, type DateRange } from '@/components/boss/analytics-shared'
 
 interface AbcRow {
   rank: number; customerId: string; customerName: string
@@ -44,6 +44,16 @@ export default function CustomersAnalyticsPage() {
   }, [])
   useEffect(() => { load(range) }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 一键清除（20261018 客户反馈"清不掉筛选条件"扩展到数据分析模块）：tab 是视图切换不清；
+  // load 只在 range.onChange 时被显式调用，effect 不随 range 反应，这里必须手动再调一次
+  function clearAllFilters() {
+    const r = defaultRange()
+    setRange(r)
+    setSearch('')
+    setKlassFilter('ALL')
+    load(r)
+  }
+
   const filtered = (data?.abc ?? []).filter((r) =>
     (klassFilter === 'ALL' || r.klass === klassFilter) &&
     (search.trim() === '' || r.customerName.toLowerCase().includes(search.trim().toLowerCase())),
@@ -53,7 +63,10 @@ export default function CustomersAnalyticsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">{isEn ? 'Customer Analysis' : '客户分析'}</h1>
-        <DateRangeBar value={range} onChange={(r) => { setRange(r); load(r) }} />
+        <div className="flex items-center gap-2">
+          <DateRangeBar value={range} onChange={(r) => { setRange(r); load(r) }} />
+          <ClearFiltersButton isEn={isEn} onClick={clearAllFilters} />
+        </div>
       </div>
 
       {!data ? (
