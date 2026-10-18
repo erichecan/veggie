@@ -1193,18 +1193,34 @@ export default function PurchaseDetailPage() {
               </>
             )}
             {po.status === 'RECEIVED' && (
-              <button onClick={() => handleAction('invoice')} disabled={acting}
-                className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
-                style={{ background: PURPLE }}>
-                {isEn ? 'Create Bill' : '创建账单'}
-              </button>
+              <>
+                <button onClick={() => handleAction('invoice')} disabled={acting}
+                  className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
+                  style={{ background: PURPLE }}>
+                  {isEn ? 'Create Bill' : '创建账单'}
+                </button>
+                {/* 已收货/已开票的单也可能是重复单/录错单，后端 ALLOWED_TRANSITIONS 本就允许
+                    RECEIVED/INVOICED → CANCELLED，之前两个状态分支只是没放按钮，导致这种情况下
+                    用户点 Delete 被拒后无路可走(20261018 客户反馈)。收过货的单取消不回滚成本，
+                    详见下方 PATCH 路由里 po.status === 'CONFIRMED' 才回滚那段注释。 */}
+                <button onClick={() => { if (confirm(isEn ? 'Cancel this purchase order?' : '确定取消此采购单？')) handleAction('cancel') }} disabled={acting}
+                  className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50">
+                  {isEn ? 'Cancel' : '取消'}
+                </button>
+              </>
             )}
             {po.status === 'INVOICED' && (
-              <button onClick={() => handleAction('lock')} disabled={acting}
-                className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
-                style={{ background: PURPLE }}>
-                🔒 {isEn ? 'Lock' : '锁定'}
-              </button>
+              <>
+                <button onClick={() => handleAction('lock')} disabled={acting}
+                  className="h-8 px-4 text-sm font-medium rounded text-white disabled:opacity-50"
+                  style={{ background: PURPLE }}>
+                  🔒 {isEn ? 'Lock' : '锁定'}
+                </button>
+                <button onClick={() => { if (confirm(isEn ? 'Cancel this purchase order?' : '确定取消此采购单？')) handleAction('cancel') }} disabled={acting}
+                  className="h-8 px-4 text-sm font-medium rounded border border-gray-300 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50">
+                  {isEn ? 'Cancel' : '取消'}
+                </button>
+              </>
             )}
             {po.status === 'TO_APPROVE' && (
               <>
