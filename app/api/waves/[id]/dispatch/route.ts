@@ -29,7 +29,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'picking-wave', resourceId: id,
-        detail: `确认出发：批次 ${fresh?.name ?? id}，${result.updatedCount} 个订单交货日期=${result.deliveryDate.toISOString().slice(0, 10)}、状态转 IN_DELIVERY（库存已在客户确认订单时预留扣减，此步不重复扣减）`,
+        detail: `确认出发：批次 ${fresh?.name ?? id}，${result.updatedCount} 个订单交货日期=${result.deliveryDate.toISOString().slice(0, 10)}、状态转 IN_DELIVERY（库存在此步真正扣减，确认订单时只预留不扣减）`,
       })
 
       return NextResponse.json(serializeApi({ ...fresh, dispatchedCount: result.updatedCount, tripId: result.tripId }))
