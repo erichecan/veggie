@@ -90,3 +90,56 @@ test('全部行 deliveredQty=0 时不生成发票，即使有调整行也不例�
   assert.equal(result, null)
   assert.equal(created.length, 0)
 })
+
+// ─ 20261020：发票号按数字取最大号 + 撞号重试（调度台「标记完成」后草稿发票静默没生成）
+const ONE_LINE = [{ id: 'l1', productId: 'p1', productName: '土豆', spec: null, deliveredQty: 1, unitPrice: 2, taxRate: 0 }]
+
+test('真实客户端走数字最大号：SQL 只认 INV-纯数字，结果补到 5 位', async () => {
+  const { tx, created } = mockTx({ orderLines: ONE_LINE, adjustments: [] })
+  const sqls: unknown[][] = []
+  const real = { ...tx, $queryRawUnsafe: async (...args: unknown[]) => { sqls.push(args); return [{ max: 148286 }] } }
+  await createDraftInvoiceForOrder(real, 'order_1')
+  assert.equal(created[0].name, 'INV-148287')
+  assert.match(String(sqls[0][0]), /\^\[0-9\]\{1,9\}\$/)
+  assert.equal(sqls[0][1], 'INV-')
+})
+
+test('撞唯一约束（并发取到同一个号）就重新取号，第二次成功', async () => {
+  const { tx, created } = mockTx({ orderLines: ONE_LINE, adjustments: [] })
+  let max = 7
+  let calls = 0
+  const real = {
+    ...tx,
+    $queryRawUnsafe: async () => [{ max: max++ }],
+    invoice: {
+      ...tx.invoice,
+      create: async (args: unknown) => {
+        if (calls++ === 0) throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+        return tx.invoice.create(args)
+      },
+    },
+  }
+  await createDraftInvoiceForOrder(real, 'order_1')
+  assert.equal(calls, 2)
+  assert.equal(created[0].name, 'INV-00009')
+})
+
+test('非撞号错误不重试，原样抛出', async () => {
+  const { tx } = mockTx({ orderLines: ONE_LINE, adjustments: [] })
+  let calls = 0
+  const real = {
+    ...tx,
+    $queryRawUnsafe: async () => [{ max: 1 }],
+    invoice: { ...tx.invoice, create: async () => { calls++; throw new Error('boom') } },
+  }
+  await assert.rejects(createDraftInvoiceForOrder(real, 'order_1'), /boom/)
+  assert.equal(calls, 1)
+})
+
+test('账期取客户档案并推出到期日（不再写死 monthly、到期日为空）', async () => {
+  const { tx, created } = mockTx({ orderLines: ONE_LINE, adjustments: [] })
+  const real = { ...tx, customer: { findUnique: async () => ({ name: '张记餐厅', paymentTerm: 'weekly' }) } }
+  await createDraftInvoiceForOrder(real, 'order_1')
+  assert.equal(created[0].paymentTerms, 'weekly')
+  assert.match(String(created[0].dueDate), /^\d{4}-\d{2}-\d{2}$/)
+})

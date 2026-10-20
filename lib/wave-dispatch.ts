@@ -19,10 +19,10 @@ class DispatchRaceLostError extends Error {}
  * - 「确认全部出发」批量按钮（前端对当天所有未出发波次逐个 apiPut 同一路由，见 BatchTab.tsx）
  * - 22 点自动兜底 cron（`/api/cron/auto-confirm-departure`，本函数直接调用，不经 HTTP）
  *
- * 库存口径（20260922 已与用户确认）：出发这一步**不改动 qtyOnHand**——库存在订单
- * CONFIRMED 时已作为预留扣过一次，这里不重复扣减，避免破坏 Forecast Quantity/预测/毛利分析等
- * 一切依赖"确认即扣库存"这个既有口径的报表。"已出库"这个状态直接由
- * `status=IN_DELIVERY` + `dispatchedAt` 承载，不新增字段。
+ * 库存口径（20261015 起，与采购「收货才加 On Hand」对称）：出发 = 货离仓，这一步按订单行出库、
+ * On Hand 减少（见下方 shipOrdersStock / lib/order-stock.ts）。出库在事务提交后逐单执行，个别失败时
+ * 订单仍是 IN_DELIVERY——「标记完成」（lib/delivery-complete.ts）会按「目标 − 已拿」幂等补扣。
+ * 20260922 版的「出发不动 qtyOnHand、确认即扣」口径已废弃。
  */
 export async function dispatchWave(
   waveId: string,
@@ -101,9 +101,15 @@ export function businessTodayDateOnly(): string {
 
 /** 货离仓（确认出发 / 完成）：这些单按订单行从仓库出库，与采购收货对称（lib/order-stock.ts，20261015） */
 async function shipOrdersStock(ids: string[], reason: string, actor?: { userId?: string | null; name?: string | null }) {
+  // 逐单独立：一张单出库失败（比如锁超时）不能让同车其余单都不扣、也不能让已经出发成功的
+  // 波次返回 500。漏扣的单「标记完成」时会补扣，账本核对也会列出来
   for (const oid of ids) {
-    await prisma.$transaction(tx => syncOrderStock(tx, oid, {
-      shipping: true, reason, userId: actor?.userId ?? null, createdBy: actor?.name ?? null,
-    }), { maxWait: 10000, timeout: 60000 })
+    try {
+      await prisma.$transaction(tx => syncOrderStock(tx, oid, {
+        shipping: true, reason, userId: actor?.userId ?? null, createdBy: actor?.name ?? null,
+      }), { maxWait: 10000, timeout: 60000 })
+    } catch (e) {
+      console.error('[wave dispatch: ship stock]', oid, e)
+    }
   }
 }

@@ -12,6 +12,7 @@ const NUMBERED_COLUMNS = {
   CreditNote: 'name',
   OrderDiscrepancy: 'code',
   Lot: 'lotNumber',
+  Invoice: 'name',
 } as const
 
 export type NumberedTable = keyof typeof NUMBERED_COLUMNS
