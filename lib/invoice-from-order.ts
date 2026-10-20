@@ -1,4 +1,6 @@
 import { round2 } from '@/lib/decimal-helpers'
+import { nextSequenceName } from '@/lib/sequence-number'
+import { computeDueDate } from '@/lib/payment-terms'
 
 /**
  * 订单完成自动生成 DRAFT 发票(P1-6/finance)
@@ -17,11 +19,21 @@ export type InvoiceTx = {
     create(a: unknown): Promise<{ id: string }>
   }
   order: { findUnique(a: unknown): Promise<{ restaurantId: string; restaurantName: string; lines: Array<{ id: string; productId: string; productName: string; spec: string | null; deliveredQty: unknown; unitPrice: unknown; taxRate: unknown; isGift?: boolean }> } | null> }
-  customer: { findUnique(a: unknown): Promise<{ name: string } | null> }
+  customer: { findUnique(a: unknown): Promise<{ name: string; paymentTerm?: string | null } | null> }
   orderAdjustment: { findMany(a: unknown): Promise<Array<{ id: string; type: string; label: string; amount: unknown }>> }
+  /** 真实 PrismaClient 有它：发票号按数字取最大号（见 nextInvoiceName）；单测的 mock 没有时退回 findFirst */
+  $queryRawUnsafe?(sql: string, ...values: unknown[]): Promise<unknown>
 }
 
-async function nextInvoiceName(tx: InvoiceTx): Promise<string> {
+/**
+ * 下一个发票号 INV-#####。
+ * ⛔ 20261020 修：原来是「按 name 字符串倒序取第一张 + 1」。生产上有两套号并存——
+ * 自动草稿是 5 位（INV-00012），发票页手动开票是 INV-${总数+1}（INV-148286）——字符串排序下
+ * 'INV-0010' > 'INV-00009'、任何非数字尾巴（INV-A）都会让「最大号」取错，撞上已有号（唯一约束），
+ * 而调用方 .catch 掉了错误：订单完成了，草稿发票却静默没生成。改成和其他单据一样按数字取最大号。
+ */
+export async function nextInvoiceName(tx: InvoiceTx): Promise<string> {
+  if (tx.$queryRawUnsafe) return nextSequenceName(tx, 'Invoice', 'INV-', 5)
   const last = await tx.invoice.findFirst({
     where: { name: { startsWith: 'INV-' } },
     orderBy: { name: 'desc' },
@@ -30,6 +42,8 @@ async function nextInvoiceName(tx: InvoiceTx): Promise<string> {
   const n = last?.name ? (parseInt(last.name.slice(4), 10) || 0) : 0
   return `INV-${String(n + 1).padStart(5, '0')}`
 }
+
+const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === 'P2002'
 
 export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string): Promise<{ id: string } | null> {
   // 幂等:已被任何发票引用则跳过
@@ -41,7 +55,7 @@ export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string)
     include: { lines: { orderBy: { sequence: 'asc' } } },
   })
   if (!order) return null
-  const cust = await tx.customer.findUnique({ where: { id: order.restaurantId }, select: { name: true } })
+  const cust = await tx.customer.findUnique({ where: { id: order.restaurantId }, select: { name: true, paymentTerm: true } })
 
   let subEx = 0
   let tax = 0
@@ -92,23 +106,35 @@ export async function createDraftInvoiceForOrder(tx: InvoiceTx, orderId: string)
   subEx = round2(subEx)
   tax = round2(tax)
   const inc = round2(subEx + tax)
-  const name = await nextInvoiceName(tx)
+  // 账期跟客户档案走、按账期推到期日（与 POST /api/invoices 同口径）。原来写死 monthly 且不填 dueDate，
+  // 逾期检测（lib/credit-check.ts）对自动草稿发票永远查不到
+  const paymentTerms = cust?.paymentTerm ?? 'monthly'
+  const dueDate = computeDueDate(new Date(), paymentTerms).toISOString().slice(0, 10)
 
-  return tx.invoice.create({
-    data: {
-      name,
-      customerId: order.restaurantId,
-      customerName: cust?.name ?? order.restaurantName,
-      saleOrderIds: [orderId],
-      lines: lines as never,
-      subtotalExTax: subEx,
-      totalTax: tax,
-      totalIncTax: inc,
-      amountPaid: 0,
-      amountDue: inc,
-      status: 'DRAFT',
-      paymentTerms: 'monthly',
-    },
-    select: { id: true },
-  })
+  // 两个人同时完成订单可能取到同一个号：撞唯一约束就重新取号，最多 3 次
+  for (let attempt = 0; ; attempt++) {
+    const name = await nextInvoiceName(tx)
+    try {
+      return await tx.invoice.create({
+        data: {
+          name,
+          customerId: order.restaurantId,
+          customerName: cust?.name ?? order.restaurantName,
+          saleOrderIds: [orderId],
+          lines: lines as never,
+          subtotalExTax: subEx,
+          totalTax: tax,
+          totalIncTax: inc,
+          amountPaid: 0,
+          amountDue: inc,
+          status: 'DRAFT',
+          paymentTerms,
+          dueDate,
+        },
+        select: { id: true },
+      })
+    } catch (e) {
+      if (!isUniqueViolation(e) || attempt >= 2) throw e
+    }
+  }
 }

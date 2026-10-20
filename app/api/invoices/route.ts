@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { writebackInvoicedQty } from '@/lib/invoice-invoiced-qty'
 import { computeDueDate } from '@/lib/payment-terms'
+import { nextInvoiceName, type InvoiceTx } from '@/lib/invoice-from-order'
 
 /**
  * 不分页调用的兜底上限。
@@ -111,10 +112,13 @@ export async function POST(req: Request) {
     try {
       const data = await req.json()
 
-      const name = String(data.name ?? '').trim().slice(0, 100)
+      // 发票号由服务端发（20261020）：发票页原来传 `INV-${总数+1}`，和订单完成自动生成的草稿发票
+      // （INV-##### 数字最大号 + 1）是两套算法，迟早撞号。没传、或传的是 INV-数字 这种序列号，都改由
+      // 服务端按数字最大号发；传了别的（如手工录的外部发票号）照用
+      const requestedName = String(data.name ?? '').trim().slice(0, 100)
+      const autoName = !requestedName || /^INV-\d+$/.test(requestedName)
       const customerId = String(data.customerId ?? '').trim()
       const customerName = String(data.customerName ?? '').trim().slice(0, 200)
-      if (!name) return NextResponse.json({ error: '发票号不能为空' }, { status: 400 })
       if (!customerId) return NextResponse.json({ error: '客户 ID 不能为空' }, { status: 400 })
 
       const rawLines = Array.isArray(data.lines) ? data.lines : []
@@ -178,32 +182,47 @@ export async function POST(req: Request) {
         ? data.dueDate
         : computeDueDate(new Date(), paymentTerms).toISOString().slice(0, 10)
 
-      // 事务：发票创建 + 回写 OrderLine.invoicedQty = deliveredQty
-      const invoice = await prisma.$transaction(async (tx) => {
-        const created = await tx.invoice.create({
-          data: {
-            name,
-            customerId,
-            customerName,
-            saleOrderIds,
-            lines: recomputedLines as unknown as object,
-            subtotalExTax,
-            totalTax,
-            totalIncTax,
-            amountPaid: 0,
-            amountDue: totalIncTax,
-            status: String(data.status ?? 'DRAFT').toUpperCase() as 'DRAFT',
-            paymentTerms,
-            dueDate,
-          },
+      // 事务：发票创建 + 回写 OrderLine.invoicedQty = deliveredQty。
+      // 自动发号时两人并发可能取到同一个号：撞唯一约束就整笔重来，最多 3 次
+      const createOnce = async () => {
+        const name = autoName ? await nextInvoiceName(prisma as unknown as InvoiceTx) : requestedName
+        return prisma.$transaction(async (tx) => {
+          const created = await tx.invoice.create({
+            data: {
+              name,
+              customerId,
+              customerName,
+              saleOrderIds,
+              lines: recomputedLines as unknown as object,
+              subtotalExTax,
+              totalTax,
+              totalIncTax,
+              amountPaid: 0,
+              amountDue: totalIncTax,
+              status: String(data.status ?? 'DRAFT').toUpperCase() as 'DRAFT',
+              paymentTerms,
+              dueDate,
+            },
+          })
+
+          // 回写：开票数量 = 已交货数量(B-2: 优先按发票行 orderLineId 精确到行,回退整单)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await writebackInvoicedQty(tx as any, recomputedLines, saleOrderIds)
+
+          return created
         })
-
-        // 回写：开票数量 = 已交货数量(B-2: 优先按发票行 orderLineId 精确到行,回退整单)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await writebackInvoicedQty(tx as any, recomputedLines, saleOrderIds)
-
-        return created
-      })
+      }
+      let invoice: Awaited<ReturnType<typeof createOnce>>
+      for (let attempt = 0; ; attempt++) {
+        try {
+          invoice = await createOnce()
+          break
+        } catch (e) {
+          const dup = (e as { code?: string })?.code === 'P2002'
+          if (dup && !autoName) return NextResponse.json({ error: `发票号 ${requestedName} 已存在` }, { status: 409 })
+          if (!dup || attempt >= 2) throw e
+        }
+      }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,

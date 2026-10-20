@@ -3,11 +3,10 @@ import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
-import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
+import { recalcTripDriverCommission } from '@/lib/commission'
+import { completeDeliveredOrders, describeFailures } from '@/lib/delivery-complete'
 import { reconcileSignatures, describeIssues } from '@/lib/trip-signature'
 import { driverRowScope } from '@/lib/row-scope'
-import { syncOrderStock } from '@/lib/order-stock'
 
 const TRIP_TRACKED_FIELDS = [
   'name', 'status', 'driverId', 'driverName', 'departTime', 'timeSlot',
@@ -121,38 +120,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           : []
         const orderIds = restaurants.flatMap(r => r.orderIds ?? [])
         if (orderIds.length > 0) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const prismaAny = prisma as any
-          // 把所有相关 OrderLine.deliveredQty 设为 orderedQty
-          // 用原生 SQL 一次完成（updateMany 不支持字段赋值给字段）
-          await prismaAny.$executeRawUnsafe(
-            `UPDATE "OrderLine" SET "deliveredQty" = "orderedQty", "updatedAt" = NOW() WHERE "orderId" IN (${orderIds.map((_, i) => `$${i + 1}`).join(',')})`,
-            ...orderIds,
-          )
-          // 还没出库就直接完成的单（跳过了确认出发），完成这一刻出库
-          const shippingIds = (await prisma.order.findMany({
-            where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED'] } },
-            select: { id: true },
-          })).map(o => o.id)
-          // 同时把订单状态推进到 COMPLETED（行程完成即代表已交货）
-          await prismaAny.order.updateMany({
-            where: { id: { in: orderIds }, status: { in: ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY'] } },
-            data: { status: 'COMPLETED' },
-          }).catch((e: unknown) => console.error('[trip→order status]', e))
-          for (const oid of shippingIds) {
-            await prisma.$transaction(tx => syncOrderStock(tx, oid, {
-              shipping: true, reason: '行程完成出库', userId: user.userId, createdBy: user.name ?? user.email,
-            }), { maxWait: 10000, timeout: 60000 })
-          }
-          // 完成即自动生成 DRAFT 发票(幂等),供 finance 应收口径用
-          for (const oid of orderIds) {
-            await createDraftInvoiceForOrder(prismaAny, oid).catch((e: unknown) => console.error('[auto draft invoice]', e))
-          }
-          // 送达冻结司机提成快照（deliveredQty 刚落到 orderedQty，status 已 COMPLETED）
-          for (const oid of orderIds) {
-            await recalcOrderCommission(oid, prisma).catch((e: unknown) => console.error('[commission freeze]', e))
-          }
+          // 实送量、COMPLETED、出库、草稿发票、提成：与调度台「标记完成」共用 lib/delivery-complete.ts
+          const { failures } = await completeDeliveredOrders(orderIds, {
+            reason: '行程完成出库', userId: user.userId, createdBy: user.name ?? user.email,
+          })
+          if (failures.length) console.error('[trip complete]', id, describeFailures(failures))
           await recalcTripDriverCommission(id, prisma).catch((e: unknown) => console.error('[trip commission sync]', e))
+        }
+        // 行程由波次出发生成（一波一条）：司机端完成了，调度台那张卡片也该收起（20261020）
+        if (before.waveId) {
+          await prisma.pickingWave.updateMany({
+            where: { id: before.waveId, dispatchedAt: { not: null }, completedAt: null },
+            data: { completedAt: new Date() },
+          }).catch((e: unknown) => console.error('[trip complete: wave completedAt]', e))
         }
       }
 
