@@ -29,6 +29,7 @@ import { toNum } from '@/lib/decimal-helpers'
 import { toStockQty } from '@/lib/inventory'
 import { postStockMove, LOC } from '@/lib/stock-ledger'
 import { eurAmount } from '@/lib/fx-eur'
+import { syncDraftVendorBillFromPurchaseOrder } from '@/lib/vendor-bill-from-po'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -83,6 +84,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       // 先全量校验再落库：一行不合法就整单拒绝，不做「前两行成功第三行失败」的半吊子结果
       const planned: Array<{
         lineId: string; productId: string; productName: string; qty: number
+        /** 退货里冲减下单数量 / 应付的那部分（扣掉先退的超收部分） */
+        billedQty: number
         uomId: string | null; unitCost: number
         orderedQty: number; nativeUnitCost: number; taxRate: number
       }> = []
@@ -103,11 +106,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             { status: 409 },
           )
         }
+        // 超收部分（已收 > 订购，20261020）：先退这部分，它既不在下单数量里、也从没进过账单，
+        // 退掉只是把多收的货还回去，下单数量和应付都不该动。原来一律按「下单量 − 退货量」下修，
+        // 订购 50 误收 500 再退 450，下单数量被减成 0、金额 €0，还报「应退 €2250」
+        const excess = Math.max(0, received - toNum(poLine.orderedQty))
+        const billedQty = Math.max(0, Math.round((qty - excess) * 1000) / 1000)
         planned.push({
           lineId: poLine.id,
           productId,
           productName: poLine.productName,
           qty,
+          billedQty,
           uomId: poLine.uomId ?? null,
           unitCost: toNum(poLine.unitCostEur ?? poLine.unitCost),
           orderedQty: toNum(poLine.orderedQty),
@@ -116,9 +125,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         })
       }
 
-      const refundExTax = Math.round(planned.reduce((s, p) => s + p.qty * p.unitCost, 0) * 100) / 100
+      const refundExTax = Math.round(planned.reduce((s, p) => s + p.billedQty * p.unitCost, 0) * 100) / 100
       const noteSuffix = reason ? ` - ${reason}` : ''
 
+      let draftBillSynced: string | null = null
       const moves = await prisma.$transaction(async (tx) => {
         const created: Array<{ productId: string; stockQty: number }> = []
         for (const p of planned) {
@@ -155,10 +165,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // 未开正式账单时（决策#3）顺带下修 orderedQty 并按原币重算行金额——
           // 用原生 unitCost/taxRate（不是 refundExTax 用的欧元折算价），
           // 与 PUT 编辑接口的算法保持一致。orderedQty 理论上不会退到负数
-          // （已校验 qty ≤ receivedQty ≤ orderedQty 的正常情形），Math.max(0, …) 只是兜底。
+          // （按 billedQty 下修，超收部分不动下单量），Math.max(0, …) 只是兜底。
           let lineAmountUpdate: Record<string, unknown> = {}
-          if (!hasIssuedBill) {
-            const newOrderedQty = Math.max(0, p.orderedQty - p.qty)
+          if (!hasIssuedBill && p.billedQty > 0) {
+            const newOrderedQty = Math.max(0, p.orderedQty - p.billedQty)
             const subtotalExTax = newOrderedQty * p.nativeUnitCost
             const taxAmount = subtotalExTax * p.taxRate / 100
             const subtotalIncTax = subtotalExTax + taxAmount
@@ -194,17 +204,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           })
         }
 
+        // 草稿账单跟着改（20261020）：PO 确认时自动生成的 DRAFT 账单是按当时的下单量开的，
+        // 下单量被退货下修后不同步，财务过账时就按旧数量付款
+        if (!hasIssuedBill && planned.some(p => p.billedQty > 0)) {
+          draftBillSynced = await syncDraftVendorBillFromPurchaseOrder(tx as never, id)
+        }
+
         return created
       })
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'UPDATE', resource: 'purchase_order', resourceId: id,
-        detail: `采购退货 ${po.name}：${planned.map(p => `${p.productName} ×${p.qty}`).join('、')}`
+        detail: `采购退货 ${po.name}：${planned.map(p => `${p.productName} ×${p.qty}${p.qty > p.billedQty ? `（其中超收 ${Math.round((p.qty - p.billedQty) * 1000) / 1000}）` : ''}`).join('、')}`
           + `，应退金额 €${refundExTax}${noteSuffix}`
-          + (hasIssuedBill
-            ? '（账单已开票，仅冲减库存，金额需财务手动处理）'
-            : '（已同步下修下单数量与金额）'),
+          + (!planned.some(p => p.billedQty > 0)
+            ? '（退回的都是超收部分，下单数量与金额不变）'
+            : hasIssuedBill
+              ? '（账单已开票，仅冲减库存，金额需财务手动处理）'
+              : `（已同步下修下单数量与金额${draftBillSynced ? `，草稿账单 ${draftBillSynced} 已同步` : ''}）`),
       })
 
       return NextResponse.json(serializeApi({

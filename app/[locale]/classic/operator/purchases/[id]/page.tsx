@@ -871,11 +871,19 @@ export default function PurchaseDetailPage() {
     }
   }
 
-  // 确认收货：默认按下单数量入库，可按行改成实收数量（DEV-PLAN 决策#2）
+  /** 这一行按当前填写的确认数量收完后，比订购多出来多少（0 = 没超收） */
+  function overReceiptOf(l: { id: string; orderedQty: unknown; receivedQty?: unknown }) {
+    const after = Number(l.receivedQty ?? 0) + Number(receiveQtys[l.id] ?? 0)
+    const extra = Math.round((after - Number(l.orderedQty)) * 1000) / 1000
+    return extra > 0 ? extra : 0
+  }
+
+  // 确认收货：默认按剩余未收数量入库，可按行改成实收数量（DEV-PLAN 决策#2）
   function openReceiveModal() {
     if (!po) return
     const init: Record<string, string> = {}
-    for (const l of po.lines) init[l.id] = String(Number(l.orderedQty))
+    // 默认填「剩余未收」：分批收货第二次打开时，原来又按整行下单量预填，直接点确认就超收（20261020）
+    for (const l of po.lines) init[l.id] = String(Math.max(0, Math.round((Number(l.orderedQty) - Number(l.receivedQty ?? 0)) * 1000) / 1000))
     setReceiveQtys(init)
     setShowReceiveModal(true)
   }
@@ -885,7 +893,15 @@ export default function PurchaseDetailPage() {
     setReceiving(true)
     try {
       const lines = po.lines.map(l => ({ lineId: l.id, qty: Number(receiveQtys[l.id] ?? 0) }))
-      await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action: 'receive', lines })
+      // 超收要二次确认（20261020 客户录屏：订购 50 箱手滑填成 500，一声不吭就收了 500 箱）
+      const over = po.lines.map(l => ({ l, extra: overReceiptOf(l) })).filter(x => x.extra > 0)
+      if (over.length > 0 && !window.confirm(isEn
+        ? `Receiving more than ordered:\n${over.map(x => `${x.l.productName}: ordered ${Number(x.l.orderedQty)}, +${x.extra} extra`).join('\n')}\n\nOnly continue if the supplier really delivered this much.`
+        : `收货数量超出订购数量：\n${over.map(x => `${x.l.productName}：订购 ${Number(x.l.orderedQty)}，多收 ${x.extra}`).join('\n')}\n\n确实多到了货才继续；如果是填错了，请点「取消」改数量。`)) {
+        setReceiving(false)
+        return
+      }
+      await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action: 'receive', lines, allowOverReceipt: over.length > 0 })
       await load()
       setShowReceiveModal(false)
       toast.success(isEn ? 'Receipt confirmed' : '确认收货成功')
@@ -1788,8 +1804,8 @@ export default function PurchaseDetailPage() {
             <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Confirm Receipt' : '确认收货'} · {po.name}</h2>
             <p className="text-xs text-gray-500">
               {isEn
-                ? 'Quantities default to the ordered amount and are added to stock once confirmed. Adjust if the actual receipt differs.'
-                : '数量默认按下单数量计入库存，如实收有差异可在此调整。'}
+                ? 'Quantities default to what is still outstanding and are added to stock once confirmed. Adjust if the actual receipt differs; receiving more than ordered asks for confirmation.'
+                : '数量默认按剩余未收数量计入库存，如实收有差异可在此调整；超出订购数量会要求再次确认。'}
             </p>
             <table className="w-full text-sm">
               <thead>
@@ -1814,7 +1830,13 @@ export default function PurchaseDetailPage() {
                       <input type="number" step="0.001" min="0"
                         value={receiveQtys[l.id] ?? ''}
                         onChange={e => setReceiveQtys(prev => ({ ...prev, [l.id]: e.target.value }))}
-                        className="border border-gray-300 rounded px-2 py-1 text-sm text-right w-24" />
+                        data-testid={`receive-qty-${l.id}`}
+                        className={`border rounded px-2 py-1 text-sm text-right w-24 ${overReceiptOf(l) > 0 ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-300'}`} />
+                      {overReceiptOf(l) > 0 && (
+                        <div className="text-[11px] text-red-600 mt-0.5" data-testid="over-receipt-hint">
+                          {isEn ? `+${overReceiptOf(l)} over ordered` : `超出订购 ${overReceiptOf(l)}`}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1935,13 +1957,14 @@ export default function PurchaseDetailPage() {
             <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Return / Adjust Quantity' : '退货/修正数量'} · {po.name}</h2>
             <p className="text-xs text-gray-500">
               {isEn
-                ? 'Enter the return quantity for the affected lines. Stock and received quantity are reversed immediately.'
-                : '填写需要退货的行数量，库存与已收数量会立即冲减。'}
+                ? 'Enter the return quantity for the affected lines. Stock and received quantity are reversed immediately. Over-received quantity is returned first and does not change the ordered quantity or amount.'
+                : '填写需要退货的行数量，库存与已收数量会立即冲减。超收的部分先退，不影响下单数量和金额。'}
             </p>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-gray-200">
                   <th className="text-left py-1.5">{isEn ? 'Product' : '商品'}</th>
+                  <th className="text-right py-1.5">{isEn ? 'Ordered' : '订购'}</th>
                   <th className="text-right py-1.5">{isEn ? 'Received' : '已收'}</th>
                   <th className="text-right py-1.5">{isEn ? 'Return qty' : '退货数量'}</th>
                 </tr>
@@ -1950,7 +1973,13 @@ export default function PurchaseDetailPage() {
                 {po.lines.filter(l => Number(l.receivedQty ?? 0) > 0).map(l => (
                   <tr key={l.id} className="border-b border-gray-100">
                     <td className="py-2 text-gray-800">{l.productName}</td>
-                    <td className="py-2 text-right text-gray-500">{Number(l.receivedQty ?? 0).toFixed(3)}</td>
+                    <td className="py-2 text-right text-gray-500">{Number(l.orderedQty).toFixed(3)}</td>
+                    <td className={`py-2 text-right ${Number(l.receivedQty ?? 0) > Number(l.orderedQty) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                      {Number(l.receivedQty ?? 0).toFixed(3)}
+                      {Number(l.receivedQty ?? 0) > Number(l.orderedQty) && (
+                        <div className="text-[11px]">{isEn ? `over-received ${Math.round((Number(l.receivedQty) - Number(l.orderedQty)) * 1000) / 1000}` : `超收 ${Math.round((Number(l.receivedQty) - Number(l.orderedQty)) * 1000) / 1000}`}</div>
+                      )}
+                    </td>
                     <td className="py-2 text-right">
                       <input type="number" step="0.001" min="0" max={Number(l.receivedQty ?? 0)}
                         value={returnQtys[l.id] ?? ''}
@@ -1960,7 +1989,7 @@ export default function PurchaseDetailPage() {
                   </tr>
                 ))}
                 {po.lines.every(l => Number(l.receivedQty ?? 0) <= 0) && (
-                  <tr><td colSpan={3} className="py-6 text-center text-gray-400">{isEn ? 'No received quantity to return yet' : '暂无已收数量可退'}</td></tr>
+                  <tr><td colSpan={4} className="py-6 text-center text-gray-400">{isEn ? 'No received quantity to return yet' : '暂无已收数量可退'}</td></tr>
                 )}
               </tbody>
             </table>

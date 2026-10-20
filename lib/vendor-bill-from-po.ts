@@ -7,6 +7,7 @@
  * 幂等：一个采购单只生成一次账单（按 purchaseOrderId 查重）。
  */
 import { nextSequenceName } from '@/lib/sequence-number'
+import { recomputeVendorBillBalance } from '@/lib/finance/vendor-bill-balance'
 
 type VendorBillTx = {
   vendorBill: {
@@ -47,6 +48,50 @@ type VendorBillTx = {
   }
 }
 
+type PoForBill = NonNullable<Awaited<ReturnType<VendorBillTx['purchaseOrder']['findUnique']>>>
+
+// 账单金额一律用折合欧元的字段：币种非欧元时 subtotalExTax 等原币字段只用于展示原始发票，
+// 应付账款/会计分录必须是欧元(20260713 汇率换算改造)
+function billLinesFromPo(po: PoForBill) {
+  return po.lines.map(l => ({
+    productId: l.productId ?? '',
+    productName: l.productName,
+    qty: Number(l.orderedQty),
+    unitCost: Number(l.unitCostEur ?? l.unitCost),
+    taxRate: Number(l.taxRate ?? 0),
+    subtotalExTax: Number(l.subtotalExTaxEur ?? l.subtotalExTax),
+    taxAmount: Number(l.taxAmountEur ?? l.taxAmount),
+    subtotalIncTax: Number(l.subtotalIncTaxEur ?? l.subtotalIncTax),
+  }))
+}
+
+/**
+ * 采购单下单量/金额变了（如退货下修，20261020）之后，把它的 DRAFT 账单按 PO 现状重算一遍。
+ * 只动草稿：已过账/已付的账单是财务凭证，差额由财务另开贷记单处理。返回被同步的账单号，没有草稿则 null。
+ */
+export async function syncDraftVendorBillFromPurchaseOrder(
+  tx: VendorBillTx & { vendorBill: { update: (a: unknown) => Promise<unknown> } },
+  purchaseOrderId: string,
+): Promise<string | null> {
+  const bill = await tx.vendorBill.findFirst({ where: { purchaseOrderId, status: 'DRAFT' }, select: { id: true, name: true } }) as { id: string; name?: string } | null
+  if (!bill) return null
+  const po = await tx.purchaseOrder.findUnique({ where: { id: purchaseOrderId }, include: { lines: true } })
+  if (!po || po.exchangeRatePending) return null
+  const totalIncTax = Number(po.totalIncTaxEur ?? po.totalIncTax)
+  await tx.vendorBill.update({
+    where: { id: bill.id },
+    data: {
+      lines: billLinesFromPo(po) as never,
+      subtotalExTax: Number(po.subtotalExTaxEur ?? po.subtotalExTax),
+      totalTax: Number(po.totalTaxEur ?? po.totalTax),
+      totalIncTax,
+    },
+  })
+  // 未付余额只由付款流水重算（lib/finance/vendor-bill-balance.ts），这里不直接写 amountDue
+  await recomputeVendorBillBalance(tx as never, bill.id)
+  return bill.name ?? bill.id
+}
+
 export async function createDraftVendorBillForPurchaseOrder(
   tx: VendorBillTx,
   purchaseOrderId: string,
@@ -64,18 +109,7 @@ export async function createDraftVendorBillForPurchaseOrder(
   // (正常不会走到这，PATCH action=confirm 已经挡在前面；这里是防御性兜底，20260713)。
   if (po.exchangeRatePending) return null
 
-  // 账单金额一律用折合欧元的字段：币种非欧元时 subtotalExTax 等原币字段只用于展示原始发票，
-  // 应付账款/会计分录必须是欧元(20260713 汇率换算改造)
-  const lines = po.lines.map(l => ({
-    productId: l.productId ?? '',
-    productName: l.productName,
-    qty: Number(l.orderedQty),
-    unitCost: Number(l.unitCostEur ?? l.unitCost),
-    taxRate: Number(l.taxRate ?? 0),
-    subtotalExTax: Number(l.subtotalExTaxEur ?? l.subtotalExTax),
-    taxAmount: Number(l.taxAmountEur ?? l.taxAmount),
-    subtotalIncTax: Number(l.subtotalIncTaxEur ?? l.subtotalIncTax),
-  }))
+  const lines = billLinesFromPo(po)
 
   // 现有最大号 + 1，不用 count+1(删过/有空号就撞号，采购单确认时自动建账单就会 500；见 lib/sequence-number.ts)
   const name = await nextSequenceName(tx, 'VendorBill', 'VB-', 5)
