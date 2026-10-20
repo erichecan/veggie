@@ -358,6 +358,19 @@ export default function PurchasesPage() {
     fallbackFilename: isEn ? 'purchase-orders.csv' : '采购单.csv',
     columns: (isEn: boolean) => purchaseOrderExportColumns(isEn),
   })
+  // 多选后只导出选中的采购单（20261020 客户要求），同样先弹字段勾选框
+  const exportSelectedAction = useCsvExport({
+    entity: 'purchase-orders',
+    params: () => {
+      const p = new URLSearchParams()
+      p.set('ids', pos.filter(x => selected.has(x.id)).map(x => x.id).join(','))
+      p.set('sortField', sortField)
+      p.set('sortDir', sortDir)
+      return p
+    },
+    fallbackFilename: isEn ? 'purchase-orders-selected.csv' : '采购单-选中.csv',
+    columns: (isEn: boolean) => purchaseOrderExportColumns(isEn),
+  })
 
   useEffect(() => { load() }, [load])
 
@@ -576,6 +589,7 @@ export default function PurchasesPage() {
           ...(canApprove ? [{ label: isEn ? `Confirm (${visibleSelectedPos.length})` : `确认 (${visibleSelectedPos.length})`, onClick: batchConfirm, disabled: batchBusy }] : []),
           ...(canReceive ? [{ label: isEn ? `Confirm Receipt (${visibleSelectedPos.length})` : `确认收货 (${visibleSelectedPos.length})`, onClick: batchReceive, disabled: batchBusy }] : []),
           ...(canPrint ? [{ label: isEn ? `🖨 Print (${visibleSelectedPos.length})` : `🖨 打印 (${visibleSelectedPos.length})`, onClick: batchPrint }] : []),
+          { label: isEn ? `⬇ Export (${visibleSelectedPos.length})` : `⬇ 导出 (${visibleSelectedPos.length})`, onClick: exportSelectedAction.onClick, disabled: exportSelectedAction.disabled },
           ...(canUpdate ? [{ label: isEn ? `Delete (${visibleSelectedPos.length})` : `删除 (${visibleSelectedPos.length})`, onClick: batchDelete, style: 'red' as const, disabled: batchBusy }] : []),
         ] : []}
         searchValue={searchInput}
@@ -771,6 +785,7 @@ export default function PurchasesPage() {
       </div>
 
       {exportAction.dialog}
+      {exportSelectedAction.dialog}
 
       {/* ── Import Modal ── */}
       {showImportModal && (

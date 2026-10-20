@@ -20,6 +20,8 @@ export interface PurchaseOrderExportRow {
   lineCount?: number | null
   productName?: string | null
   productRef?: string | null
+  /** 行上的保质期 BBD（Best Before Date） */
+  bestBefore?: string | Date | null
   quantity?: number | null
   unitCost?: number | null
   taxRate?: number | null
@@ -54,6 +56,8 @@ export function purchaseOrderExportColumns(isEn: boolean): readonly ExportColumn
     { key: 'expectedDate', header: '预计到货', headerEn: 'Expected Date', get: r => dateOnly(r.expectedDate) },
     { key: 'productName', header: '商品名称', headerEn: 'Product Name', get: r => r.productName ?? '' },
     { key: 'productRef', header: '商品编号', headerEn: 'Product Ref', get: r => r.productRef ?? '' },
+    // 20261020 客户要求：导出带上每行的 BBD（保质期）
+    { key: 'bestBefore', header: 'BBD（保质期）', headerEn: 'BBD', get: r => dateOnly(r.bestBefore) },
     { key: 'quantity', header: '数量', headerEn: 'Quantity', get: r => r.quantity ?? '' },
     { key: 'unitCost', header: '单价', headerEn: 'Unit Cost', get: r => money(r.unitCost) },
     { key: 'taxRate', header: '税率', headerEn: 'Tax Rate (%)', get: r => r.taxRate ?? '' },

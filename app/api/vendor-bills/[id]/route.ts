@@ -52,7 +52,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       )
       const reconciliation = reconcileVendorBill(poLines, billLines)
 
-      return NextResponse.json({ ...serializeApi(bill), reconciliation })
+      // 详情页（20261020，参照销售发票详情）要显示供应商名和来源采购单号，顺带查出来，省得前端再拉一遍供应商列表
+      const [supplier, purchaseOrder] = await Promise.all([
+        p.customer.findUnique({ where: { id: bill.supplierId }, select: { name: true } }),
+        bill.purchaseOrderId
+          ? p.purchaseOrder.findUnique({ where: { id: bill.purchaseOrderId }, select: { id: true, name: true } })
+          : null,
+      ])
+
+      return NextResponse.json({
+        ...serializeApi(bill),
+        reconciliation,
+        supplierName: supplier?.name ?? null,
+        purchaseOrder: purchaseOrder ?? null,
+      })
     } catch (error) {
       console.error('[GET /api/vendor-bills/[id]]', error)
       return NextResponse.json({ error: '获取账单失败' }, { status: 500 })
