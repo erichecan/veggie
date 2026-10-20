@@ -2,8 +2,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
+import { useRouter } from 'next/navigation'
 import { routing } from '@/i18n/routing'
-import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { apiGet, apiPost } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -12,8 +13,6 @@ import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import { vendorBillExportColumns } from '@/lib/export/columns/vendor-bills'
 import { useFacets } from '@/lib/use-facets'
-import { formatDateOnly } from '@/lib/format-date'
-import { VENDOR_PAYMENT_METHODS, VENDOR_PAYMENT_METHOD_LABELS } from '@/lib/finance/vendor-settlement'
 import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
 import { SUPPLIER_INVOICE_REF_MAX_LEN } from '@/lib/vendor-bill-fields'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -51,15 +50,6 @@ interface VendorBill {
 
 interface Supplier { id: string; name: string }
 
-interface VendorPaymentRow {
-  id: string
-  amount: number
-  method: string
-  paidAt: string
-  note: string | null
-  createdBy: string | null
-}
-
 const STATUS_LABEL_ZH: Record<VbStatus, string> = {
   DRAFT: '草稿',
   POSTED: '已入账',
@@ -93,24 +83,15 @@ const FACET_DEFS: ClientFacetDef<VendorBill>[] = [
 export default function VendorBillsPage() {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const router = useRouter()
   const STATUS_LABEL = isEn ? STATUS_LABEL_EN : STATUS_LABEL_ZH
   const [bills, setBills] = useState<VendorBill[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<VbStatus | ''>('')
   const [page, setPage] = useState(1)
-  const [detail, setDetail] = useState<VendorBill | null>(null)
   const [busy, setBusy] = useState(false)
-  const [payAmount, setPayAmount] = useState('')
-  const [payMethod, setPayMethod] = useState('bank')
-  const [payNote, setPayNote] = useState('')
-  /** 供应商发票参考号：账单大多是 PO 确认后自动生成的草稿，这个字段当时是空的，
-   *  要等财务收到供应商纸质/PDF发票核对后回填，所以详情弹窗里单独可编辑保存 */
-  const [refDraft, setRefDraft] = useState('')
-  const [savingRef, setSavingRef] = useState(false)
-  /** 该账单的付款流水（台账 G2）—— 「分批付款」的价值全在这张表上 */
-  const [payments, setPayments] = useState<VendorPaymentRow[]>([])
-
   const [createOpen, setCreateOpen] = useState(false)
   const [newSupplierId, setNewSupplierId] = useState('')
   const [newDueDate, setNewDueDate] = useState('')
@@ -153,7 +134,6 @@ export default function VendorBillsPage() {
   }, [load])
 
   // 供应商账单列表在别的 tab 改了之后，切回这个已打开的页面希望看到最新结果；
-  // load() 只换 bills 数组，不碰 detail/refDraft，不会冲掉正在编辑的供应商单号
   useRefetchOnFocus([load])
 
   const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, isEn))
@@ -191,68 +171,11 @@ export default function VendorBillsPage() {
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  async function changeStatus(bill: VendorBill, status: VbStatus, label: string) {
-    setBusy(true)
-    try {
-      await apiPut(`/api/vendor-bills/${bill.id}`, { status })
-      toast.success(`${bill.name} ${label}`)
-      setDetail(null)
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? `${label} failed` : `${label}失败`))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const loadPayments = useCallback(async (billId: string) => {
-    try {
-      const d = await apiGet<{ items: VendorPaymentRow[] }>(`/api/vendor-bills/${billId}/payments`)
-      setPayments(d.items ?? [])
-    } catch { setPayments([]) }
-  }, [])
-
-  const openDetail = useCallback((b: VendorBill) => {
-    setDetail(b); setPayAmount(''); setPayNote(''); setPayments([]); setRefDraft(b.supplierInvoiceRef ?? ''); loadPayments(b.id)
-  }, [loadPayments])
-
-  // 深链 ?bill=<id>：采购单详情页的「已生成供应商账单 VB-xxxxx」点进来直接打开那张账单。
-  // 单独按 id 拉一次，不依赖列表加载完成，也不受当前筛选/分页影响。
-  // 读 window.location 而非 useSearchParams：后者要求外包 Suspense，这里只在挂载时读一次
+  // 详情改为独立页面（20261020，参照销售发票详情）。旧深链 ?bill=<id>（采购单页、外部收藏）转过去
   useEffect(() => {
     const billId = new URLSearchParams(window.location.search).get('bill')
-    if (!billId) return
-    apiGet<VendorBill>(`/api/vendor-bills/${encodeURIComponent(billId)}`)
-      .then(openDetail)
-      .catch(e => toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to load bill' : '加载账单失败')))
-  }, [openDetail, isEn])
-
-  async function registerPayment(bill: VendorBill) {
-    const add = Number(payAmount)
-    if (!Number.isFinite(add) || add <= 0) {
-      toast.error(isEn ? 'Please enter a valid payment amount' : '请输入有效的付款金额')
-      return
-    }
-    setBusy(true)
-    try {
-      // ⛔ 传的是**本笔金额**，累计由服务端加（台账 G2）。
-      // 原先是前端读到已付再传累计值 —— 两个人同时各付一笔，后写的那次会把
-      // 前一笔覆盖掉，钱既不报错也不留痕，直接消失。
-      const res = await apiPost<{ bill: VendorBill }>(`/api/vendor-bills/${bill.id}/payments`, {
-        amount: add, method: payMethod, note: payNote || null,
-      })
-      toast.success(isEn ? `Payment of €${add.toFixed(2)} recorded` : `已登记付款 €${add.toFixed(2)}`)
-      setPayAmount('')
-      setPayNote('')
-      setDetail(res.bill)
-      loadPayments(bill.id)
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to record payment' : '登记付款失败'))
-    } finally {
-      setBusy(false)
-    }
-  }
+    if (billId) router.replace(`${prefix}/classic/finance/vendor-bills/${encodeURIComponent(billId)}`)
+  }, [router, prefix])
 
   async function createBill() {
     if (!newSupplierId) { toast.error(isEn ? 'Please select a supplier' : '请选择供应商'); return }
@@ -275,24 +198,6 @@ export default function VendorBillsPage() {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Creation failed' : '创建失败'))
     } finally {
       setBusy(false)
-    }
-  }
-
-  async function saveSupplierInvoiceRef(bill: VendorBill) {
-    const value = refDraft.trim()
-    setSavingRef(true)
-    try {
-      const res = await apiPut<VendorBill>(`/api/vendor-bills/${bill.id}`, { supplierInvoiceRef: value })
-      toast.success(isEn ? 'Reference saved' : '发票参考号已保存')
-      setDetail(res)
-      // 服务端会 slice(0, 100)——草稿框跟着回填成真正落库的值，
-      // 否则粘贴超长文本时按钮保存后立刻又变回可点，像是"没保存成功"
-      setRefDraft(res.supplierInvoiceRef ?? '')
-      load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
-    } finally {
-      setSavingRef(false)
     }
   }
 
@@ -401,7 +306,7 @@ export default function VendorBillsPage() {
               )}
               {pageRows.map(b => (
                 <tr key={b.id} className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => openDetail(b)}>
+                  onClick={() => router.push(`${prefix}/classic/finance/vendor-bills/${b.id}`)}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-700">{b.name}</td>
                   <td className="px-4 py-3 text-gray-800">{supplierName(b.supplierId)}</td>
                   <td className="px-4 py-3 text-center">
@@ -425,175 +330,6 @@ export default function VendorBillsPage() {
           </table>
         </div>
       </div>
-
-      {/* 详情 / 操作 */}
-      <Dialog open={!!detail} onOpenChange={open => { if (!open) setDetail(null) }}>
-        <DialogContent className="max-w-2xl">
-          {detail && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-3">
-                  <span className="font-mono">{detail.name}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status]}`}>
-                    {STATUS_LABEL[detail.status]}
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between text-gray-600">
-                  <span>{isEn ? 'Supplier: ' : '供应商：'}<b className="text-gray-900">{supplierName(detail.supplierId)}</b></span>
-                  <span>{isEn ? 'Paid ' : '已付 '}€{Number(detail.amountPaid).toFixed(2)} / {isEn ? 'Due ' : '未付 '}<b className="text-red-600">€{Number(detail.amountDue).toFixed(2)}</b></span>
-                </div>
-
-                {/* 供应商发票参考号：账单自动生成时是空的，等财务对着供应商纸质/PDF发票核对后回填 */}
-                <label className="block">
-                  <span className="text-xs text-gray-500">{isEn ? 'Supplier Invoice Ref.' : '供应商发票参考号'}</span>
-                  <div className="mt-1 flex items-center gap-2">
-                    <input
-                      value={refDraft}
-                      onChange={e => setRefDraft(e.target.value)}
-                      maxLength={SUPPLIER_INVOICE_REF_MAX_LEN}
-                      placeholder={isEn ? 'e.g. the number on the supplier’s own invoice' : '如：供应商发票上印的号'}
-                      className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={savingRef || refDraft.trim() === (detail.supplierInvoiceRef ?? '')}
-                      onClick={() => saveSupplierInvoiceRef(detail)}
-                    >
-                      {savingRef ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Save' : '保存')}
-                    </Button>
-                  </div>
-                </label>
-
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="text-left px-3 py-2 text-gray-500">{isEn ? 'Product' : '商品'}</th>
-                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Qty' : '数量'}</th>
-                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Unit Price' : '单价'}</th>
-                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Tax Rate' : '税率'}</th>
-                        <th className="text-right px-3 py-2 text-gray-500">{isEn ? 'Subtotal Inc. Tax' : '含税小计'}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {detail.lines.map((l, i) => (
-                        <tr key={i}>
-                          <td className="px-3 py-2 text-gray-800">{l.productName}</td>
-                          <td className="px-3 py-2 text-right">{Number(l.qty)}</td>
-                          <td className="px-3 py-2 text-right">€{Number(l.unitCost).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right">{(Number(l.taxRate) * 100).toFixed(1)}%</td>
-                          <td className="px-3 py-2 text-right font-medium">
-                            €{Number(l.subtotalIncTax ?? l.qty * l.unitCost * (1 + l.taxRate)).toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 border-t border-gray-200">
-                      <tr>
-                        <td colSpan={4} className="px-3 py-2 font-medium text-gray-600">{isEn ? 'Total Inc. Tax' : '含税合计'}</td>
-                        <td className="px-3 py-2 text-right font-bold text-gray-900">€{Number(detail.totalIncTax).toFixed(2)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                {detail.notes && <p className="text-xs text-gray-500">{isEn ? 'Notes: ' : '备注：'}{detail.notes}</p>}
-
-                {/* 付款流水（台账 G2）：一张账单分几笔付、哪天付的、谁付的 ——
-                    此前只有一个累计数字，这些全查不到 */}
-                {payments.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="px-3 py-2 bg-gray-50 text-xs font-medium text-gray-600">
-                      {isEn ? `Payment history (${payments.length})` : `付款记录（${payments.length} 笔）`}
-                    </div>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-gray-500 border-b border-gray-100">
-                          <th className="text-left px-3 py-1.5">{isEn ? 'Date' : '日期'}</th>
-                          <th className="text-left px-3 py-1.5">{isEn ? 'Method' : '方式'}</th>
-                          <th className="text-left px-3 py-1.5">{isEn ? 'By' : '经手'}</th>
-                          <th className="text-left px-3 py-1.5">{isEn ? 'Note' : '备注'}</th>
-                          <th className="text-right px-3 py-1.5">{isEn ? 'Amount' : '金额'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payments.map(p => (
-                          <tr key={p.id} className="border-b border-gray-50">
-                            <td className="px-3 py-1.5 text-gray-600">{formatDateOnly(p.paidAt)}</td>
-                            <td className="px-3 py-1.5 text-gray-600">
-                              {VENDOR_PAYMENT_METHOD_LABELS[p.method as keyof typeof VENDOR_PAYMENT_METHOD_LABELS]?.[isEn ? 'en' : 'zh'] ?? p.method}
-                            </td>
-                            <td className="px-3 py-1.5 text-gray-500">{p.createdBy ?? '—'}</td>
-                            <td className="px-3 py-1.5 text-gray-500">{p.note ?? '—'}</td>
-                            <td className="px-3 py-1.5 text-right text-gray-800">€{Number(p.amount).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="font-medium border-t border-gray-200">
-                          <td className="px-3 py-1.5 text-gray-600" colSpan={4}>{isEn ? 'Total paid' : '已付合计'}</td>
-                          <td className="px-3 py-1.5 text-right text-gray-900">
-                            €{payments.reduce((s2, p) => s2 + Number(p.amount), 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-
-                {detail.status === 'POSTED' && (
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex-wrap">
-                    <span className="text-xs text-amber-700 whitespace-nowrap">{isEn ? 'Record payment €' : '登记付款 €'}</span>
-                    <input
-                      type="number" min="0.01" step="0.01"
-                      value={payAmount}
-                      onChange={e => setPayAmount(e.target.value)}
-                      placeholder={Number(detail.amountDue).toFixed(2)}
-                      className="w-28 border border-amber-300 rounded px-2 py-1 text-sm"
-                    />
-                    <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-                      className="border border-amber-300 rounded px-2 py-1 text-sm bg-white">
-                      {VENDOR_PAYMENT_METHODS.map(m => (
-                        <option key={m} value={m}>{VENDOR_PAYMENT_METHOD_LABELS[m][isEn ? 'en' : 'zh']}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text" value={payNote} onChange={e => setPayNote(e.target.value)}
-                      placeholder={isEn ? 'Note (e.g. bank ref)' : '备注（如银行流水号）'}
-                      className="flex-1 min-w-[140px] border border-amber-300 rounded px-2 py-1 text-sm"
-                    />
-                    <Button size="sm" disabled={busy} onClick={() => registerPayment(detail)}>{isEn ? 'Record' : '登记'}</Button>
-                    <span className="text-[11px] text-amber-600 w-full">
-                      {isEn
-                        ? 'Enter the amount of THIS payment; the running total is computed on the server. Fully settled bills switch to "Paid" automatically.'
-                        : '填**本次**付款金额，累计由服务端计算；付清后自动转「已付款」。'}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <DialogFooter className="gap-2">
-                {detail.status === 'DRAFT' && (
-                  <>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', isEn ? 'Cancelled' : '已作废')}>{isEn ? 'Cancel' : '作废'}</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'POSTED', isEn ? 'Posted' : '已入账')}>{isEn ? 'Confirm Posting' : '确认入账'}</Button>
-                  </>
-                )}
-                {detail.status === 'POSTED' && (
-                  <>
-                    <Button variant="outline" disabled={busy} onClick={() => changeStatus(detail, 'CANCELLED', isEn ? 'Cancelled' : '已作废')}>{isEn ? 'Cancel' : '作废'}</Button>
-                    <Button disabled={busy} onClick={() => changeStatus(detail, 'PAID', isEn ? 'Paid in full' : '已全额付款')}>{isEn ? 'Pay in Full' : '全额付清'}</Button>
-                  </>
-                )}
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* 新建账单 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

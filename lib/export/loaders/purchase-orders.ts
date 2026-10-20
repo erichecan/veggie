@@ -8,7 +8,10 @@ import type { PurchaseOrderExportRow } from '../columns/purchase-orders'
 export async function loadPurchaseOrdersForExport(
   ctx: ExportLoadContext,
 ): Promise<ExportLoadResult<PurchaseOrderExportRow>> {
-  const where = await buildPurchaseOrdersWhere(ctx.searchParams)
+  const baseWhere = await buildPurchaseOrdersWhere(ctx.searchParams)
+  // 列表多选后「导出选中」（20261020）：?ids= 只导这几张，忽略分页
+  const ids = (ctx.searchParams.get('ids') ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const where = ids.length ? { AND: [baseWhere, { id: { in: ids } }] } : baseWhere
 
   const [total, rows] = await Promise.all([
     prisma.purchaseOrder.count({ where }),
@@ -44,6 +47,7 @@ export async function loadPurchaseOrdersForExport(
     return (lines.length ? lines : [null]).map(line => ({ ...header,
       productName: line?.productName as string | undefined,
       productRef: productRefById.get(String(line?.productId ?? '')) ?? '',
+      bestBefore: line?.bestBefore as string | undefined,
       quantity: line?.orderedQty as number | undefined, unitCost: line?.unitCost as number | undefined,
       taxRate: line?.taxRate as number | undefined, lineUntaxed: line?.subtotalExTax as number | undefined,
     }))

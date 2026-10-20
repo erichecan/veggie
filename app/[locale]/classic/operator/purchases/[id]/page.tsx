@@ -1282,7 +1282,7 @@ export default function PurchaseDetailPage() {
                 {(() => {
                   // 账单号做成超链接：点进供应商账单页并直接打开这张账单（?bill= 深链）
                   const billLink = (
-                    <Link href={`${prefix}/classic/finance/vendor-bills?bill=${latestBill.id}`}
+                    <Link href={`${prefix}/classic/finance/vendor-bills/${latestBill.id}`}
                       className="font-bold underline underline-offset-2 hover:opacity-80">
                       {latestBill.name}
                     </Link>
