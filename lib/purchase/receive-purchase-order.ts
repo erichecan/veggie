@@ -27,17 +27,37 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
     ? (body as { lines: ReceiveLineInput[] }).lines
     : []
   const overrideMap = new Map(rawLines.map(l => [String(l.lineId ?? ''), l.qty]))
+  const allowOverReceipt = (body as { allowOverReceipt?: unknown })?.allowOverReceipt === true
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const planned: Array<{ line: any; qty: number }> = []
+  const over: string[] = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const line of po.lines as any[]) {
+    const ordered = toNum(line.orderedQty)
+    const already = toNum(line.receivedQty)
+    // 默认收「剩余未收」而不是整行下单量（20261020）：分批收货第二次点确认时，
+    // 原来默认又按整行数量入库，已收 30/50 再收就成了 80
+    const remaining = Math.max(0, Math.round((ordered - already) * 1000) / 1000)
     const override = overrideMap.has(line.id) ? Number(overrideMap.get(line.id)) : null
-    const qty = override !== null && Number.isFinite(override) ? override : toNum(line.orderedQty)
+    const qty = override !== null && Number.isFinite(override) ? override : remaining
     if (qty < 0) {
       return NextResponse.json({ error: `确认数量不能为负数：${line.productName}` }, { status: 400 })
     }
+    const after = already + qty
+    if (after - ordered > 0.0005) {
+      over.push(`${line.productName} 收货后 ${Math.round(after * 1000) / 1000}，订购 ${ordered}（多 ${Math.round((after - ordered) * 1000) / 1000}）`)
+    }
     planned.push({ line, qty })
+  }
+  // 超收要明确确认（20261020 客户录屏：订购 50 箱，确认数量手滑成 500，系统一声不吭收了 500 箱、
+  // 库存和应付暂估都多了 10 倍）。真的多到了货（供应商多发）也允许，但得显式带 allowOverReceipt
+  if (over.length > 0 && !allowOverReceipt) {
+    return NextResponse.json({
+      error: `收货数量超出订购数量：${over.join('；')}。如确实多到货，请确认后再提交`,
+      code: 'OVER_RECEIPT',
+      overLines: over,
+    }, { status: 409 })
   }
 
   const receivedAt = new Date()
@@ -162,7 +182,7 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
   await writeLog({
     userId: user.userId, userEmail: user.email, userName: user.name,
     action: 'UPDATE', resource: 'purchase_order', resourceId: poId,
-    detail: `确认收货 PO ${po.name}${receivedDetail ? `：${receivedDetail}` : '（本次无入库数量）'}`,
+    detail: `确认收货 PO ${po.name}${receivedDetail ? `：${receivedDetail}` : '（本次无入库数量）'}${over.length ? `；⚠️ 超收已确认：${over.join('；')}` : ''}`,
   })
 
   return NextResponse.json(serializeApi(result))
