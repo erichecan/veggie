@@ -17,7 +17,7 @@ import { isValidPurchaseTaxRate } from '@/lib/purchase/tax-rates'
 import { computeFreightAllocationForConfirm, computeLandedUnitCost } from '@/lib/purchase-landed-cost'
 import type { Prisma } from '@/lib/generated/prisma/client'
 
-const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'vendorReference', 'notes', 'expectedDate', 'editApprovalRequired']
+const PO_TRACKED_FIELDS = ['status', 'confirmedAt', 'cancelledAt', 'lockedAt', 'vendorReference', 'notes', 'expectedDate', 'lastArrivedAt', 'editApprovalRequired']
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   DRAFT:       ['SENT', 'CONFIRMED', 'CANCELLED'],
@@ -30,7 +30,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   CANCELLED:   ['DRAFT'],
 }
 
-const PO_CONFIRMED_SAFE_FIELDS = ['notes', 'vendorReference', 'expectedDate']
+const PO_CONFIRMED_SAFE_FIELDS = ['notes', 'vendorReference', 'expectedDate', 'lastArrivedAt']
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -92,7 +92,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
-      const { notes, vendorReference, orderDate, expectedDate, supplierId, freightAmount: freightInput, exchangeRate: exchangeRateInput, lines: linesPayload } = data
+      const { notes, vendorReference, orderDate, expectedDate, lastArrivedAt, supplierId, freightAmount: freightInput, exchangeRate: exchangeRateInput, lines: linesPayload } = data
 
       const headerUpdate: Record<string, unknown> = {}
       if (vendorReference !== undefined) headerUpdate.vendorReference = String(vendorReference ?? '').trim() || null
@@ -103,6 +103,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         headerUpdate.orderDate = parsedOrderDate
       }
       if (expectedDate !== undefined) headerUpdate.expectedDate = expectedDate ? new Date(expectedDate) : null
+      // 事后纠正「到货日期」(20261020)：确认收货时点错了日期，补个修改口子。只纠正
+      // lastArrivedAt 本身（台账 E7 准时率用的那个值），不碰 firstArrivedAt——多批到货
+      // 的单，首批日期不该被最后一次修正带着变。有「到货登记」工作台记录的单不让走这里改，
+      // 避免两个修正入口打架；那种单请到收货历史弹窗里改（lib/purchase/receive-purchase-order.ts
+      // 同款判断逻辑：hasGoodsReceipt 为真时这两个字段改走那边）。
+      if (lastArrivedAt !== undefined) {
+        if (!poBefore.lastArrivedAt) {
+          return NextResponse.json({ error: '该采购单尚未收货，没有到货日期可改；请先确认收货' }, { status: 400 })
+        }
+        const receiptCountForArrival = await p.goodsReceipt.count({ where: { purchaseOrderId: id } })
+        if (receiptCountForArrival > 0) {
+          return NextResponse.json({ error: '该单有独立的到货登记记录，请在收货历史里修正日期，不要在这里改' }, { status: 409 })
+        }
+        const parsedArrivedAt = lastArrivedAt ? new Date(lastArrivedAt) : null
+        if (!parsedArrivedAt || Number.isNaN(parsedArrivedAt.getTime())) {
+          return NextResponse.json({ error: '到货日期无效' }, { status: 400 })
+        }
+        headerUpdate.lastArrivedAt = parsedArrivedAt
+        if (!poBefore.firstArrivedAt || poBefore.firstArrivedAt.getTime() === poBefore.lastArrivedAt.getTime()) {
+          headerUpdate.firstArrivedAt = parsedArrivedAt
+        }
+      }
       if (supplierId !== undefined) headerUpdate.supplierId = String(supplierId)
       if (freightInput !== undefined) {
         const freightAmount = Number(freightInput)

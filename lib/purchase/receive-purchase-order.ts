@@ -29,6 +29,18 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
   const overrideMap = new Map(rawLines.map(l => [String(l.lineId ?? ''), l.qty]))
   const allowOverReceipt = (body as { allowOverReceipt?: unknown })?.allowOverReceipt === true
 
+  // 实际到货日期由输单的人手动填（默认今天，可改）——不能用点「确认收货」这一刻的
+  // 系统时间：仓库可能隔一天才有空登记，那样台账 E7 准时率和批次到货日都会记错一天(20261020)
+  const arrivedAtRaw = (body as { arrivedAt?: unknown })?.arrivedAt
+  let receivedAt = new Date()
+  if (arrivedAtRaw != null && arrivedAtRaw !== '') {
+    const parsed = new Date(String(arrivedAtRaw))
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json({ error: '到货日期无效' }, { status: 400 })
+    }
+    receivedAt = parsed
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const planned: Array<{ line: any; qty: number }> = []
   const over: string[] = []
@@ -60,7 +72,6 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
     }, { status: 409 })
   }
 
-  const receivedAt = new Date()
   const batchDate: Date = po.expectedDate ?? receivedAt
 
   // firstArrivedAt/lastArrivedAt(台账 E7 准时率用)原本只由单独的「到货登记」工作台

@@ -491,6 +491,10 @@ export default function PurchaseDetailPage() {
   const [showReceiveModal, setShowReceiveModal] = useState(false)
   const [receiveQtys, setReceiveQtys] = useState<Record<string, string>>({})
   const [receiving, setReceiving] = useState(false)
+  // 实际到货日期（20261020）：点「确认收货」的系统时间 ≠ 货真正到的那天，仓库可能隔
+  // 一天才有空录入，所以这个日期要能让人手动填，默认今天但可改
+  const [receiveArrivedAt, setReceiveArrivedAt] = useState('')
+  const [savingArrivedDate, setSavingArrivedDate] = useState(false)
 
   // 退货/修正数量弹窗
   const [showReturnModal, setShowReturnModal] = useState(false)
@@ -846,6 +850,22 @@ export default function PurchaseDetailPage() {
     }
   }
 
+  // 事后纠正到货日期：确认收货时录错了，补个修改口子（20261020）；后端会拒绝
+  // 「没收过货」或「有独立到货登记记录」这两种情况，错误原样转给用户
+  async function handleUpdateArrivedDate(value: string) {
+    if (!po || !value) return
+    setSavingArrivedDate(true)
+    try {
+      const updated = await apiPut<PurchaseOrder>(`/api/purchase-orders/${id}`, { lastArrivedAt: value })
+      setPo(updated)
+      toast.success(isEn ? 'Arrived date corrected' : '到货日期已订正')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed to save' : '保存失败'))
+    } finally {
+      setSavingArrivedDate(false)
+    }
+  }
+
   const ACTION_LABELS: Record<string, { zh: string; en: string }> = {
     send: { zh: '发送', en: 'Send' },
     confirm: { zh: '确认采购', en: 'Confirm Purchase' },
@@ -885,11 +905,17 @@ export default function PurchaseDetailPage() {
     // 默认填「剩余未收」：分批收货第二次打开时，原来又按整行下单量预填，直接点确认就超收（20261020）
     for (const l of po.lines) init[l.id] = String(Math.max(0, Math.round((Number(l.orderedQty) - Number(l.receivedQty ?? 0)) * 1000) / 1000))
     setReceiveQtys(init)
+    // 默认今天，可改——点「确认收货」这一刻不一定就是货到的那天(20261020)
+    setReceiveArrivedAt(new Date().toISOString().slice(0, 10))
     setShowReceiveModal(true)
   }
 
   async function submitReceive() {
     if (!po) return
+    if (!receiveArrivedAt) {
+      toast.error(isEn ? 'Actual arrival date is required' : '实际到货日期不能为空')
+      return
+    }
     setReceiving(true)
     try {
       const lines = po.lines.map(l => ({ lineId: l.id, qty: Number(receiveQtys[l.id] ?? 0) }))
@@ -901,7 +927,7 @@ export default function PurchaseDetailPage() {
         setReceiving(false)
         return
       }
-      await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action: 'receive', lines, allowOverReceipt: over.length > 0 })
+      await apiPatch<PurchaseOrder>(`/api/purchase-orders/${id}`, { action: 'receive', lines, allowOverReceipt: over.length > 0, arrivedAt: receiveArrivedAt })
       await load()
       setShowReceiveModal(false)
       toast.success(isEn ? 'Receipt confirmed' : '确认收货成功')
@@ -1409,9 +1435,22 @@ export default function PurchaseDetailPage() {
                 {['CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED'].includes(po.status) && (
                   <div className="flex items-center min-h-[32px]">
                     <label className="w-36 text-sm text-gray-500 flex-shrink-0">{isEn ? 'Arrived Date' : '到货日期'}</label>
-                    <span className="text-sm text-gray-800">
-                      {formatDateOnly(po.lastArrivedAt) || (isEn ? 'Not yet arrived' : '尚未到货')}
-                    </span>
+                    {/* 点「确认收货」那一刻不一定是货真到的那天，仓库可能隔一天才登记；
+                        这里补一个事后修正口子（20261020）。有独立到货登记记录的单改走那边
+                        （ReceiptCard 的编辑），避免两个修正入口打架，这里退回只读 */}
+                    {po.status !== 'LOCKED' && po.lastArrivedAt && goodsReceiptCount === 0 ? (
+                      <DatePicker
+                        value={toInputDate(po.lastArrivedAt)}
+                        onChange={handleUpdateArrivedDate}
+                        disabled={savingArrivedDate}
+                        className={inputCls}
+                        style={{ width: '180px' }}
+                      />
+                    ) : (
+                      <span className="text-sm text-gray-800">
+                        {formatDateOnly(po.lastArrivedAt) || (isEn ? 'Not yet arrived' : '尚未到货')}
+                      </span>
+                    )}
                     {/* 分批到货：首批与最近一批不是同一天时额外标出，方便看出"拖了多久收齐" */}
                     {po.firstArrivedAt && po.lastArrivedAt && po.firstArrivedAt !== po.lastArrivedAt && (
                       <span className="text-xs text-gray-400 ml-2">
@@ -1807,6 +1846,18 @@ export default function PurchaseDetailPage() {
                 ? 'Quantities default to what is still outstanding and are added to stock once confirmed. Adjust if the actual receipt differs; receiving more than ordered asks for confirmation.'
                 : '数量默认按剩余未收数量计入库存，如实收有差异可在此调整；超出订购数量会要求再次确认。'}
             </p>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 flex-shrink-0">{isEn ? 'Actual Arrival Date' : '实际到货日期'}</label>
+              <DatePicker
+                value={receiveArrivedAt}
+                onChange={setReceiveArrivedAt}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+                style={{ width: '160px' }}
+              />
+              <span className="text-xs text-gray-400">
+                {isEn ? 'Goods may have arrived earlier than you confirm here — adjust if needed.' : '货可能比点这个按钮的时间更早到，跟实际不符请改掉。'}
+              </span>
+            </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-gray-200">
