@@ -1,8 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useLocale } from 'next-intl'
-import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
+import { openAuthedPdf } from '@/lib/print/open-pdf'
 import type { Order } from '@/lib/types'
 import type { ReturnRow } from '@/lib/accounting/returns'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
@@ -37,7 +36,7 @@ const isCash = (r: { paymentMethod: string }) => r.paymentMethod.toUpperCase() =
  *     还把已确认/已排波次（货根本没出仓）的单也算成「未回」。
  *   - 现在：「待核销」tab = 所有已出发（配送中/已完成/已锁定）、还没核销的单，不限日期；刚核销的在这里留 24 小时；
  *     「已核销」tab = 全部已核销，可按司机 / 送货日期筛选、按单号/客户搜索。数据见 lib/accounting/returns.ts。
- *   - 未核销清单可按日期或按司机分组打印（/classic/finance/accounting/print）。
+ *   - 未核销清单可按日期或按司机分组打印（服务端 PDF：/api/print/returns-pdf）。
  * 两步核销不变：扫中先标记「待确认」，会计再点「确认核销」才落库；单据有问题点「退回核实」写明原因。
  */
 export function WriteOffBoard({ businessDate }: { businessDate: string | null }) {
@@ -59,8 +58,6 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
 }
 
 function OpenReturns({ businessDate }: { businessDate: string | null }) {
-  const locale = useLocale()
-  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
   const [data, setData] = useState<ReturnsResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -256,7 +253,8 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
     if (filterTime) p.set('timeOfDay', filterTime)
     if (filterPayment) p.set('payment', filterPayment)
     p.set('status', filterStatus === 'PENDING' || filterStatus === 'ISSUE' ? filterStatus : 'PENDING,ISSUE')
-    window.open(`${prefix}/classic/finance/accounting/print?${p}`, '_blank')
+    // 服务端 PDF，与送货单 / 日报同一套打印模板（20261021 客户：打印要符合整体模板风格）
+    openAuthedPdf(`/api/print/returns-pdf?${p}`).catch(e => alert(e instanceof Error ? e.message : '生成打印失败'))
   }
 
   return (

@@ -313,10 +313,11 @@ export default function ClassicQuotationsPage() {
     applyFacets(params, facets)
     // My Quotations → 按当前登录用户(业务员)过滤
     if (myActive && currentUser?.userId) params.set('salesUserId', currentUser.userId)
-    // 时间快捷(Today/This Week…) → 按交货日期；若已手动设置交货日期列筛，以列筛为准，不重复覆盖
-    if (!colFilters.deliveryDateFrom && !colFilters.deliveryDateTo) {
+    // 时间快捷(Today/This Week…) → 按**报价日期**（20261021 客户反馈「Today 没有生效」：原来按交货日期筛，
+    // 报价单大多还没排交货日，今天新建的一张都筛不出来）。已手动设了报价日期列筛的以列筛为准
+    if (!colFilters.quotationDateFrom && !colFilters.quotationDateTo) {
       const range = timeKey ? computeTimeRange(timeKey) : null
-      if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
+      if (range) { params.set('dateField', 'quotationDate'); params.set('fromDate', range.from); params.set('toDate', range.to) }
     }
     return `/api/orders?${params.toString()}`
   }, [statusParam, colFilters.source, colFilters.quotationDateFrom, colFilters.quotationDateTo, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
@@ -566,14 +567,8 @@ export default function ClassicQuotationsPage() {
       result = result.filter(o => getField(o, 'salesUserId') === currentUser.userId)
     }
 
-    // 时间快捷(Today/This Week…) — 按交货日期 deliveryDate(与销售单口径一致；未排交货日的报价单不计入)
-    const timeRange = timeKey ? computeTimeRange(timeKey) : null
-    if (timeRange) {
-      result = result.filter(o => {
-        const d = getField(o, 'deliveryDate').slice(0, 10)
-        return d !== '' && d >= timeRange.from && d <= timeRange.to
-      })
-    }
+    // 时间快捷(Today/This Week…) 已由服务端按报价日期（都柏林业务日）筛好，这里不再二次过滤——
+    // 浏览器拿 ISO 字符串切日期是 UTC，零点后录的报价单会被误剔
 
     // 分面聚焦搜索：多个 chip 之间 OR(命中任一即可，如 司机:bao 或 单号:260)。
     // 产品/产品类目维度用服务端 xxxFacetIds 交集判定,其余客户端字段直接匹配。
