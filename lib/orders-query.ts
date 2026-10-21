@@ -4,6 +4,7 @@
  * 逐字迁移自 app/api/orders/route.ts 原 GET 内联逻辑，行为不变。
  */
 import { prisma } from '@/lib/db'
+import { RETURNS_FLOOR_DATE } from '@/lib/accounting/returns-constants'
 import { tryAuth } from '@/lib/auth'
 import { salesRowScope, withRowScope } from '@/lib/row-scope'
 import type { $Enums } from '@/lib/generated/prisma/client'
@@ -205,6 +206,14 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   if (searchParams.get('invoiceState') === 'to_invoice') {
     const ids = await findUninvoicedCompletedOrderIds()
     facetAnd.push({ status: 'COMPLETED' }, { id: { in: ids } })
+  }
+  // 未回单：货已离仓、签收单还没核销（核销管理页待核销同口径，见 lib/accounting/returns.ts）
+  if (searchParams.get('returnState') === 'open') {
+    facetAnd.push(
+      { status: { in: ['IN_DELIVERY', 'COMPLETED', 'LOCKED'] } },
+      { returnStatus: { in: ['PENDING', 'ISSUE'] } },
+      { deliveryDate: { gte: new Date(`${RETURNS_FLOOR_DATE}T00:00:00Z`) } },
+    )
   }
   if (facetAnd.length > 0) where.AND = facetAnd
 

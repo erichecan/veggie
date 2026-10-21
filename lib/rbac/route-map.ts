@@ -186,6 +186,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   // 入口下线，合并进会计核销页「钱」板块，见下面 /api/accounting/driver-cash/**
   { pattern: '/api/accounting/driver-cash', methods: R, permission: 'finance.settlement.read' },
   { pattern: '/api/accounting/driver-cash/confirm', methods: ['POST'], permission: 'finance.settlement.confirm' },
+  { pattern: '/api/accounting/returns', methods: R, permission: 'finance.settlement.read', note: '核销管理页回单清单（20261021）' },
   { pattern: '/api/trips/*/verify', methods: R, permission: 'dispatch.trip.read_verify' },
   { pattern: '/api/trips/*/verify', methods: ['POST'], permission: 'dispatch.trip.verify' },
   { pattern: '/api/trips/*/returns', methods: R, permission: 'dispatch.trip.read_returns' },
