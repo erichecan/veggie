@@ -11,7 +11,7 @@ import { postCollections, driverCashConfirmationMarker } from '@/lib/trip-settle
 import { ACTIVE_STATUSES } from '../route'
 
 /**
- * 会计核了一遍这个司机今天的现金/转账没问题，点「确认」——**真正入账**：
+ * 会计核了一遍这个司机某一天（body.businessDate，20261021 起可以是前几天）的现金/转账没问题，点「确认」——**真正入账**：
  * 生成 Payment、核销到发票上。不可撤销，写错了要走人工冲正，这里不提供反向操作
  * （见 DEV-PLAN 20260924 风险点 1）。金额由服务端重新计算，不信任客户端传的数字。
  */
@@ -56,9 +56,13 @@ export async function POST(req: Request) {
         },
       })
       const withDriver = await attachWaveDisplay(serializeApi(orders))
-      const mine = withDriver.filter(o => driverNameFromOrder(o) === driverName)
+      // 跨天之后（20261021）同一张单可能因改派司机出现在别人这一天的确认快照里，已入过账的不再计一次
+      const alreadyConfirmed = new Set((await prisma.driverCashConfirmation.findMany({
+        where: { businessDate }, select: { orderIds: true },
+      })).flatMap(c => c.orderIds))
+      const mine = withDriver.filter(o => driverNameFromOrder(o) === driverName && !alreadyConfirmed.has(o.id))
       if (mine.length === 0) {
-        return NextResponse.json({ error: '这个司机今天没有订单，没什么可确认的' }, { status: 400 })
+        return NextResponse.json({ error: `这个司机 ${businessDate} 没有待确认的已出车订单，没什么可确认的` }, { status: 400 })
       }
 
       // 按客户分组，拼成 postCollections 需要的 shape（每个客户一"站"）
