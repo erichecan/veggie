@@ -90,6 +90,46 @@ export default function LedgerCheckPage() {
     }
   }
 
+  // 统一补开草稿发票（「待开票」，客户 20261021）
+  async function fixUninvoiced(count: number) {
+    if (!window.confirm(isEn
+      ? `Create draft invoices for ${count} completed order(s) without one? Orders with no delivered quantity recorded are treated as fully delivered.`
+      : `为 ${count} 张已完成但没有发票的订单补开草稿发票？实送量没记过的单按全送补上。`)) return
+    setBusy(true)
+    try {
+      const r = await apiPost<{ total: number; fixed: Array<{ code: string }>; skipped: Array<{ code: string; reason: string }>; failed: Array<{ code: string; error: string }> }>(
+        '/api/finance/ledger-check/uninvoiced-orders', {})
+      if (r.failed.length) toast.error(isEn ? `${r.failed.length} failed: ${r.failed.map(f => `${f.code} ${f.error}`).join('; ')}` : `${r.failed.length} 张失败：${r.failed.map(f => `${f.code} ${f.error}`).join('；')}`)
+      if (r.skipped.length) toast.warning(isEn ? `${r.skipped.length} skipped (nothing to invoice): ${r.skipped.map(x => x.code).join(', ')}` : `${r.skipped.length} 张跳过（没有可开票的行）：${r.skipped.map(x => x.code).join('、')}`)
+      toast.success(isEn ? `Created ${r.fixed.length} draft invoice(s)` : `已补开 ${r.fixed.length} 张草稿发票`)
+      await apiPost('/api/finance/ledger-check', {})
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed' : '补开失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 统一补完成行程（波次已标记完成，20261021）
+  async function fixOpenTrips(count: number) {
+    if (!window.confirm(isEn
+      ? `Mark ${count} trip(s) of completed waves as completed and settle driver commission?`
+      : `把 ${count} 条（波次已标记完成的）行程补成已完成，并结算司机提成？`)) return
+    setBusy(true)
+    try {
+      const r = await apiPost<{ total: number; failed: Array<{ trip: string; error: string }> }>('/api/finance/ledger-check/open-trips', {})
+      if (r.failed.length) toast.error(isEn ? `${r.failed.length} commission update(s) failed` : `${r.failed.length} 条提成结算失败`)
+      toast.success(isEn ? `Completed ${r.total} trip(s)` : `已补完成 ${r.total} 条行程`)
+      await apiPost('/api/finance/ledger-check', {})
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed' : '补完成失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function runNow() {
     setBusy(true)
     try {
@@ -163,6 +203,18 @@ export default function LedgerCheckPage() {
                     <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="fix-orders-without-stock"
                       onClick={() => fixOrdersWithoutStock(r.diffCount)}>
                       {isEn ? `Deduct stock for all (${r.diffCount})` : `统一补扣库存（${r.diffCount} 张）`}
+                    </Button>
+                  )}
+                  {r.key === 'completed_without_invoice' && r.diffCount > 0 && (
+                    <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="fix-uninvoiced-orders"
+                      onClick={() => fixUninvoiced(r.diffCount)}>
+                      {isEn ? `Create draft invoices (${r.diffCount})` : `统一补开草稿发票（${r.diffCount} 张）`}
+                    </Button>
+                  )}
+                  {r.key === 'completed_wave_open_trips' && r.diffCount > 0 && (
+                    <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="fix-open-trips"
+                      onClick={() => fixOpenTrips(r.diffCount)}>
+                      {isEn ? `Complete trips (${r.diffCount})` : `统一补完成行程（${r.diffCount} 条）`}
                     </Button>
                   )}
                   {open[r.key] && r.samples.length > 0 && (

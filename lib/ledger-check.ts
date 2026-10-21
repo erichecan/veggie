@@ -295,6 +295,84 @@ export async function fixOrdersWithoutStock(actor: { userId: string; name?: stri
   return { total: rows.length, fixed, failed }
 }
 
+/**
+ * 已完成却没有发票的订单（20261021「待开票」）。完成时本该自动出草稿发票，以下几种情况漏掉了：
+ *   - 订单页直接改「已完成」不回填实送量，草稿发票按实送量 0 开不出来（已修，见 fillDeliveredQtyIfUnrecorded）；
+ *   - 发票号撞号失败被静默吞掉（20261020 已修）。
+ * Odoo 导入的历史单是 LOCKED，不在此列。
+ */
+export async function findUninvoicedCompletedOrders(): Promise<Row[]> {
+  return q(`
+    SELECT o.id, o.code, o."restaurantName", o."deliveryDate", o."totalAmount"::float AS "totalAmount",
+           NOT EXISTS (SELECT 1 FROM "OrderLine" l WHERE l."orderId" = o.id AND l."deliveredQty" > 0) AS "noDeliveredQty"
+    FROM "Order" o
+    WHERE o.status = 'COMPLETED'
+      AND o.id NOT IN (SELECT unnest("saleOrderIds") FROM "Invoice" WHERE status <> 'CANCELLED')
+    ORDER BY o."deliveryDate" DESC NULLS LAST`)
+}
+
+const uninvoicedOrders: Check = async () => {
+  const rows = await findUninvoicedCompletedOrders()
+  return {
+    key: 'completed_without_invoice', label: '已完成但没有发票的订单（待开票）', labelEn: 'Completed orders without an invoice',
+    severity: 'info', diffCount: rows.length, amount: rows.reduce((s, r) => s + num(r.totalAmount), 0), samples: cleanSamples(rows),
+    note: '可点「统一补开草稿发票」：实送量没记过的按全送补上，再按完成时同一套逻辑开草稿发票（可重复点，已开过的跳过）',
+  }
+}
+
+/** 统一补开草稿发票（客户 20261021）：每张单独立，单张失败不影响其它 */
+export async function fixUninvoicedOrders() {
+  const { fillDeliveredQtyIfUnrecorded } = await import('@/lib/delivery-complete')
+  const { createDraftInvoiceForOrder } = await import('@/lib/invoice-from-order')
+  const rows = await findUninvoicedCompletedOrders()
+  const fixed: Array<{ code: string; invoiceId: string; filledDeliveredQty: boolean }> = []
+  const skipped: Array<{ code: string; reason: string }> = []
+  const failed: Array<{ code: string; error: string }> = []
+  for (const r of rows) {
+    const id = String(r.id)
+    const code = String(r.code ?? r.id)
+    try {
+      const filled = await fillDeliveredQtyIfUnrecorded(id)
+      const inv = await createDraftInvoiceForOrder(prisma as never, id)
+      if (inv) fixed.push({ code, invoiceId: inv.id, filledDeliveredQty: filled })
+      else skipped.push({ code, reason: '没有可开票的行（全部为 0 数量）' })
+    } catch (e) {
+      failed.push({ code, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return { total: rows.length, fixed, skipped, failed }
+}
+
+/** 调度台已「标记完成」、出发时生成的行程却还没完成（20261020 之前的标记完成不回写行程） */
+export async function findCompletedWavesWithOpenTrips(): Promise<Row[]> {
+  return q(`
+    SELECT t.id, t.name, t."driverName", t.status::text AS status, w.name AS "waveName", w."completedAt"
+    FROM "Trip" t JOIN "PickingWave" w ON w.id = t."waveId"
+    WHERE w."completedAt" IS NOT NULL AND t.status <> 'COMPLETED'
+    ORDER BY w."completedAt" DESC`)
+}
+
+const openTripsOfCompletedWaves: Check = async () => {
+  const rows = await findCompletedWavesWithOpenTrips()
+  return {
+    key: 'completed_wave_open_trips', label: '波次已标记完成但行程未完成', labelEn: 'Completed waves whose trip is still open',
+    severity: 'info', diffCount: rows.length, samples: cleanSamples(rows),
+    note: '司机端还显示这一趟、司机提成没结。可点「统一补完成行程」（订单此前已随波次完成，这里只补行程状态与司机提成）',
+  }
+}
+
+export async function fixOpenTripsOfCompletedWaves() {
+  const { recalcTripDriverCommission } = await import('@/lib/commission')
+  const rows = await findCompletedWavesWithOpenTrips()
+  const ids = rows.map(r => String(r.id))
+  if (ids.length) await prisma.trip.updateMany({ where: { id: { in: ids } }, data: { status: 'COMPLETED' } })
+  const failed: Array<{ trip: string; error: string }> = []
+  for (const id of ids) {
+    try { await recalcTripDriverCommission(id, prisma) } catch (e) { failed.push({ trip: id, error: e instanceof Error ? e.message : String(e) }) }
+  }
+  return { total: ids.length, fixed: rows.map(r => String(r.name ?? r.id)), failed }
+}
+
 const inventoryValue: Check = async () => {
   const [gl] = await q(`
     SELECT COALESCE(SUM(l.debit - l.credit), 0)::float AS bal
@@ -352,7 +430,7 @@ export function registerLedgerCheck(c: Check) { EXTRA_CHECKS.push(c) }
 
 export const FINANCE_CHECKS: Check[] = [
   invoiceBalance, vendorBillBalance, creditNoteBounds, journalBalanced, missingAccounts,
-  arGlVsSubledger, unappliedCreditNotes, paymentsWithoutJournal,
+  arGlVsSubledger, unappliedCreditNotes, paymentsWithoutJournal, uninvoicedOrders, openTripsOfCompletedWaves,
 ]
 
 export async function runLedgerChecks(): Promise<LedgerCheckResult[]> {

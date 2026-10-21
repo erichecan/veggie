@@ -9,6 +9,7 @@ import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
 import { syncOrderStock, ORDER_SHIPPED_STATUSES } from '@/lib/order-stock'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, getOrderWaveDriverSlotMap } from '@/lib/wave-assign'
 import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
+import { fillDeliveredQtyIfUnrecorded } from '@/lib/delivery-complete'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
@@ -762,6 +763,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       // On COMPLETED: 自动生成 DRAFT 发票(幂等),保证每张完成单都有发票供应收口径用(finance)
       if (newStatus === 'COMPLETED') {
+        // 实送量没记过就按全送补上，否则下面的草稿发票按实送量 0 开不出来（20261021「待开票」）
+        await fillDeliveredQtyIfUnrecorded(id).catch((e: unknown) => console.error('[fill deliveredQty]', e))
         await createDraftInvoiceForOrder(prismaAny, id).catch((e: unknown) => console.error('[auto draft invoice]', e))
         // 送达冻结司机提成快照（个单完成路径，非经 Trip 批量完成）
         await recalcOrderCommission(id, prisma).catch((e: unknown) => console.error('[commission freeze]', e))

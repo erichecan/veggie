@@ -152,6 +152,9 @@ export default function ClassicOrdersPage() {
   // 避免"只筛/只排当前页"——匹配记录不在当前页时被误判为空,或翻页后排序断档(客户反馈)
   const baseUrl = useMemo(() => {
     const params = new URLSearchParams({ status: statusParam, include_lines: 'false' })
+    // 「待开票」下推服务端（20261021）：原来是拉一页 COMPLETED 再在浏览器里剔掉已开票的，
+    // 一页 20 条剩几条、总数却按全部已完成单算，翻页看起来像有空页
+    if (activeFilter === 'to_invoice' || colFilters.invoiceStatus === 'to_invoice') params.set('invoiceState', 'to_invoice')
     // 交货日期过滤走服务端分页分支认的参数:dateField=deliveryDate + fromDate/toDate
     if (colFilters.deliveryDateFrom || colFilters.deliveryDateTo) {
       params.set('dateField', 'deliveryDate')
@@ -180,7 +183,7 @@ export default function ClassicOrdersPage() {
     const range = timeKey ? computeTimeRange(timeKey) : null
     if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     return `/api/orders?${params.toString()}`
-  }, [statusParam, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, colFilters.createdAtFrom, colFilters.createdAtTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
+  }, [statusParam, activeFilter, colFilters.invoiceStatus, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, colFilters.createdAtFrom, colFilters.createdAtTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
 
   // 会计导出:跟列表当前筛选结果(baseUrl)完全同一套参数,只是换个路由+加 kind
   const [exporting, setExporting] = useState<'summary' | 'detail' | null>(null)
@@ -278,18 +281,16 @@ export default function ClassicOrdersPage() {
   const filtered = useMemo(() => {
     let result = [...orders]
 
-    if (activeFilter === 'to_invoice') {
-      result = result.filter(o => !invoicedOrderIds.has(o.id))
-    }
 
     const cf = colFilters
     // 交货日期/创建日期/单号/客户/销售员/司机已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
     // 避免"只筛当前页导致可见行数与分页总数对不上"(客户反馈:同一关键词每次搜到的页数/条数都不一样)
-    if (cf.invoiceStatus) result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
+    // to_invoice 已由服务端筛（invoiceState），其余两档仍按当前页标记过滤
+    if (cf.invoiceStatus && cf.invoiceStatus !== 'to_invoice') result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
     if (cf.status) result = result.filter(o => o.status === cf.status)
 
     return result
-  }, [orders, activeFilter, invoicedOrderIds, colFilters])
+  }, [orders, invoicedOrderIds, colFilters])
 
   // 排序(含 deliveryBatch/司机列)已下推服务端(见 baseUrl),数据到手时已是全局排好序的当页
   // 切片,不再客户端二次排序。

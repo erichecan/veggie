@@ -85,6 +85,21 @@ export async function completeDeliveredOrders(
   return { completedIds, failures }
 }
 
+/**
+ * 订单页直接把状态改成「已完成」（不经调度台 / 司机端，20261021）：原来不回填实送量，
+ * 草稿发票按实送量开（lib/invoice-from-order.ts），实送量全是 0 → 发票永远开不出来、提成也是 0，
+ * 这些单就一直挂在「待开票」里。按方案 C（默认全送）补上——只在整单一行实送量都没记过时才补，
+ * 已经按差异/退货流程记过实送量的单不覆盖。返回是否补了。
+ */
+export async function fillDeliveredQtyIfUnrecorded(orderId: string): Promise<boolean> {
+  const n = await prisma.$executeRaw`
+    UPDATE "OrderLine" SET "deliveredQty" = "orderedQty", "updatedAt" = NOW()
+    WHERE "orderId" = ${orderId}
+      AND NOT EXISTS (SELECT 1 FROM "OrderLine" x WHERE x."orderId" = ${orderId} AND x."deliveredQty" > 0)
+  `
+  return n > 0
+}
+
 export function describeFailures(failures: CompleteOrdersResult['failures']): string {
   if (failures.length === 0) return ''
   const label = { stock: '出库', invoice: '草稿发票', commission: '提成' } as const
