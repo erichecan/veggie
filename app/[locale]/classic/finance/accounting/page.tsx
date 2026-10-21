@@ -2,10 +2,9 @@
 import { useState } from 'react'
 import { DriverCashBoard } from '@/components/accounting/DriverCashBoard'
 import { WriteOffBoard } from '@/components/accounting/WriteOffBoard'
-import { MissingReturnsQuery } from '@/components/accounting/MissingReturnsQuery'
 
 const FLOW_STEPS = [
-  { step: 1, icon: '📋', title: '确认已送订单', desc: '查看当日所有已确认（CONFIRMED）的订单，这些货已出仓' },
+  { step: 1, icon: '📋', title: '看待核销清单', desc: '下方列出所有已出发（配送中/已完成）还没核销的单，不限日期；可按日期或司机打印交给司机追单' },
   { step: 2, icon: '🚚', title: '司机带回签收单/现金', desc: '司机送货回来后，签收单（纸质）与收款交到会计手里' },
   { step: 3, icon: '💰', title: '钱：核对后确认', desc: '按司机核对现金/转账金额，无误后点「确认」——真正入账，不可撤销' },
   { step: 4, icon: '📷', title: '单：扫码标记待确认', desc: '扫码枪逐单扫，比对今日所有送出去的单，扫中先标记「待确认」' },
@@ -18,6 +17,7 @@ const FLOW_STEPS = [
  * 20260925：从独立顶层路由 /classic/accounting 搬进 /classic/finance/accounting，
  * 跟发票/供应商账单/对账单共用同一套财务模块布局，不再有自己单独的导航栏
  * （之前每次从财务其它页面点过来都会整个导航条重新挂载，体验上像切去另一个系统）。
+ * 20261021：「单」板块改成常驻的待核销清单（不再只看今天），原「按时间段查漏单」并入其中，已删除。
  */
 export default function AccountingPage() {
   const [showGuide, setShowGuide] = useState(true)
@@ -48,7 +48,6 @@ export default function AccountingPage() {
 
       <DriverCashBoard onBusinessDate={setBusinessDate} />
       <WriteOffBoard businessDate={businessDate} />
-      {businessDate && <MissingReturnsQuery today={businessDate} />}
     </div>
   )
 }

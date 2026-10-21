@@ -1,43 +1,82 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useLocale } from 'next-intl'
+import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import type { Order } from '@/lib/types'
-import { formatDriverSlotFromOrder } from '@/lib/driver-slot'
+import type { ReturnRow } from '@/lib/accounting/returns'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
+import { DatePicker } from '@/components/ui/date-picker'
 
 const ACCENT = '#875A7B'
+const TIME_TEXT: Record<string, string> = { am: '上午', pm: '下午' }
 
-type SortKey = 'code' | 'deliveryDate' | 'restaurantName' | 'deliveryBatch' | 'totalAmount' | 'paymentMethod' | 'status' | 'returnStatus' | 'scanOrder'
-type CardKey = 'all' | 'returned' | 'issue' | 'pending' | 'cashPending' | 'pendingConfirm'
+type SortKey = 'code' | 'deliveryDate' | 'restaurantName' | 'timeOfDay' | 'driver' | 'amount' | 'paymentMethod' | 'returnStatus' | 'scanOrder' | 'daysOut'
+type CardKey = 'open' | 'returned' | 'issue' | 'pending' | 'cashPending' | 'pendingConfirm'
 
-function incTaxAmount(o: Order): number {
-  return o.totalAmountIncTax ?? o.totalAmount ?? 0
+interface ReturnsSummary {
+  pending: number
+  issue: number
+  returned: number
+  openAmount: number
+  cashOpenAmount: number
+  oldestDays: number
+  byDriver: Array<{ driver: string; count: number; amount: number; cash: number; oldestDays: number }>
+  drivers: string[]
 }
 
+interface ReturnsResponse { today: string; floor: string; rows: ReturnRow[]; summary: ReturnsSummary }
+
+const isCash = (r: { paymentMethod: string }) => r.paymentMethod.toUpperCase() === 'CASH'
+
 /**
- * 会计核销页「单」板块：扫码枪比对今日所有送出去的单，两步核销——
- * 扫中先标记「待确认」，会计再点一次「确认核销」才真正落库；单据有问题
- * 就点「退回核实」并写明原因，落成「有问题」第三态，不是简单的回/没回。
+ * 会计核销页「单」板块。
+ * 20261021 改造（客户：「列表要一直在，看得出还有多少单司机送出去了还没回来核销」）：
+ *   - 原来只看「今天送货日期」的单，当天没送货就是空的，前几天没回的单只能去最底下折叠的「查漏单」里翻；
+ *     还把已确认/已排波次（货根本没出仓）的单也算成「未回」。
+ *   - 现在：「待核销」tab = 所有已出发（配送中/已完成/已锁定）、还没核销的单，不限日期；刚核销的在这里留 24 小时；
+ *     「已核销」tab = 全部已核销，可按司机 / 送货日期筛选、按单号/客户搜索。数据见 lib/accounting/returns.ts。
+ *   - 未核销清单可按日期或按司机分组打印（/classic/finance/accounting/print）。
+ * 两步核销不变：扫中先标记「待确认」，会计再点「确认核销」才落库；单据有问题点「退回核实」写明原因。
  */
 export function WriteOffBoard({ businessDate }: { businessDate: string | null }) {
-  const [orders, setOrders] = useState<Order[]>([])
-  // 扫到的单不在今天的默认加载范围内时（比如司机昨天忘了回单，今天才来核销）落在这里，
-  // 跟 orders 分开存：这样 load() 重新拉今天的数据时不会把它们冲掉（20260925 用户反馈：
-  // 只能扫今天的单不合理）
-  const [extraOrders, setExtraOrders] = useState<Order[]>([])
-  const [scanSearching, setScanSearching] = useState(false)
-  // 初始 false：businessDate 来自「钱」板块的回调，若那次请求失败会永远不回调，
-  // 这里若默认 true 会在没有 businessDate 时永远卡在「加载中」（20260924 code-review 发现）
+  const [tab, setTab] = useState<'open' | 'returned'>('open')
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 border-b border-gray-200">
+        {([['open', '待核销'], ['returned', '已核销']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} data-testid={`writeoff-tab-${k}`}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === k ? 'text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            style={tab === k ? { borderColor: ACCENT, color: ACCENT } : {}}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'open' ? <OpenReturns businessDate={businessDate} /> : <ReturnedList />}
+    </div>
+  )
+}
+
+function OpenReturns({ businessDate }: { businessDate: string | null }) {
+  const locale = useLocale()
+  const prefix = locale === routing.defaultLocale ? '' : `/${locale}`
+  const [data, setData] = useState<ReturnsResponse | null>(null)
   const [loading, setLoading] = useState(false)
-  const [filterBatch, setFilterBatch] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [filterDriver, setFilterDriver] = useState('')
+  const [filterTime, setFilterTime] = useState('')
   const [filterPayment, setFilterPayment] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'PENDING' | 'RETURNED' | 'ISSUE'>('all')
+  const [printGroup, setPrintGroup] = useState<'date' | 'driver'>('date')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [scanInput, setScanInput] = useState('')
+  const [scanSearching, setScanSearching] = useState(false)
   const [scanMsg, setScanMsg] = useState<{ type: 'ok' | 'err' | 'warn'; text: string } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [sortKey, setSortKey] = useState<SortKey>('deliveryBatch')
+  const [sortKey, setSortKey] = useState<SortKey>('deliveryDate')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [flashId, setFlashId] = useState<string | null>(null)
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
@@ -48,21 +87,26 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const tableRef = useRef<HTMLDivElement>(null)
 
+  // 日期区间走服务端（送货日期）；司机/上午下午/付款方式/状态在已拉回的待核销单上筛——这批单量不大
   const load = useCallback(async () => {
-    if (!businessDate) return
     setLoading(true)
+    setLoadError('')
     try {
-      const data = await apiGet<Order[]>(
-        `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,COMPLETED,IN_DELIVERY&include_lines=false&deliveryFrom=${businessDate}&deliveryTo=${businessDate}&limit=5000`,
-      )
-      setOrders(data ?? [])
-      setSelected(new Set())
+      const p = new URLSearchParams({ tab: 'open' })
+      if (from) p.set('from', from)
+      if (to) p.set('to', to)
+      setData(await apiGet<ReturnsResponse>(`/api/accounting/returns?${p}`))
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '加载失败')
     } finally {
       setLoading(false)
     }
-  }, [businessDate])
+  }, [from, to])
 
   useEffect(() => { load() }, [load])
+
+  const rows = useMemo(() => data?.rows ?? [], [data])
+  const today = data?.today ?? businessDate
 
   function markScanned(ids: string[]) {
     setScanSeq(prev => {
@@ -81,18 +125,23 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     setTimeout(() => rowRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30)
   }
 
-  function selectFoundOrder(target: Order, prefixMsg?: string) {
-    if (target.returnStatus === 'RETURNED') {
-      setScanMsg({ type: 'warn', text: `${target.code} 已经核销过了` })
-    } else if (target.returnStatus === 'ISSUE') {
-      setScanMsg({ type: 'warn', text: `${target.code} 之前标记了「有问题」，点下方「重新核对」` })
-    } else {
+  // 连续扫码时上一条提示的计时器不能把新提示提前清掉
+  const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function flash(type: 'ok' | 'err' | 'warn', text: string, ms = 4500) {
+    setScanMsg({ type, text })
+    if (msgTimer.current) clearTimeout(msgTimer.current)
+    msgTimer.current = setTimeout(() => setScanMsg(null), ms)
+  }
+
+  function selectFound(target: ReturnRow) {
+    if (target.returnStatus === 'RETURNED') flash('warn', `${target.code} 已经核销过了`)
+    else if (target.returnStatus === 'ISSUE') flash('warn', `${target.code} 之前标记了「有问题」，点该行「重新核对」`)
+    else {
       setSelected(prev => new Set(prev).add(target.id))
       markScanned([target.id])
-      setScanMsg({ type: 'ok', text: `${prefixMsg ?? ''}✅ ${target.code} 已标记待确认` })
+      flash('ok', `✅ ${target.code} 已标记待确认`)
     }
     flashRow(target.id)
-    setTimeout(() => setScanMsg(null), 4500)
   }
 
   async function handleScan(e: React.FormEvent) {
@@ -100,55 +149,33 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     const code = scanInput.trim()
     if (!code) return
     const codeUpper = code.toUpperCase()
-    const local = todayOrders.find(o => o.code?.toUpperCase() === codeUpper) ?? (visible.length === 1 ? visible[0] : undefined)
+    const local = rows.find(o => o.code?.toUpperCase() === codeUpper) ?? (visible.length === 1 ? visible[0] : undefined)
     if (local) {
-      selectFoundOrder(local)
+      // 扫中的单如果被下拉筛选挡住了，清掉筛选让它露出来
+      setFilterDriver(''); setFilterTime(''); setFilterPayment(''); setFilterStatus('all'); setActiveCard(null)
+      selectFound(local)
       setScanInput('')
       return
     }
-    // 本地（今天）没找到——服务端按单号跨日期查一次，覆盖"司机昨天忘了回单，今天才来核销"
-    // 这种场景（不能只让核销卡死在"今天"这个范围里）
+    // 待核销里没有：要么已经核销超过 24 小时，要么货还没出仓，要么单号不存在——分别告诉会计
     setScanSearching(true)
-    let keepInput = false
     try {
-      const results = await apiGet<Order[]>(
-        `/api/orders?status=CONFIRMED,WAVE_ASSIGNED,COMPLETED,IN_DELIVERY&include_lines=false&colCode=${encodeURIComponent(code)}&limit=20`,
-      )
-      const list = results ?? []
-      const exact = list.filter(o => o.code?.toUpperCase() === codeUpper)
-      // 只输入一部分（比如 "mj"）时 exact 恒为空，但服务端 contains 搜索可能真的搜到了单——
-      // 之前只认 exact，搜到多条也一律回「找不到」，误导用户以为单不存在（20260926 用户反馈）
-      const candidates = exact.length > 0 ? exact : list
-      if (candidates.length === 1) {
-        const target = candidates[0]
-        const isExact = target.code?.toUpperCase() === codeUpper
-        setExtraOrders(prev => prev.some(o => o.id === target.id) ? prev : [...prev, target])
-        const day = target.deliveryDate ? target.deliveryDate.slice(0, 10) : '未知日期'
-        selectFoundOrder(target, isExact
-          ? `⚠️ 不是今天的单（送货日期 ${day}），已补进下方列表——`
-          : `⚠️ 按「${code}」模糊匹配到唯一一条（${target.code}，送货日期 ${day}），已补进下方列表——`)
-      } else if (candidates.length > 1) {
-        // 名副其实的"模糊搜索"：不能只甩一句话让用户自己去翻别的面板核对，
-        // 而是把匹配到的这些单直接补进列表——scanInput 保留不清空，下面表格的
-        // 实时筛选（第 173 行左右）会自己把范围收窄到这几条，用户直接点选正确的一条
-        // （20260926 用户反馈：之前只提示"到下方核对"其实没把结果摆出来，等于没做）
-        setExtraOrders(prev => {
-          const known = new Set(prev.map(o => o.id))
-          const additions = candidates.filter(o => !known.has(o.id))
-          return additions.length > 0 ? [...prev, ...additions] : prev
-        })
-        keepInput = true
-        setScanMsg({ type: 'warn', text: `按「${code}」模糊匹配到 ${candidates.length} 条，已列在下方，请点选正确的一条` })
-        setTimeout(() => setScanMsg(null), 5000)
-        setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+      const done = await apiGet<ReturnsResponse>(`/api/accounting/returns?tab=returned&q=${encodeURIComponent(code)}`)
+      const hit = done.rows.find(r => r.code?.toUpperCase() === codeUpper)
+      if (hit) {
+        flash('warn', `${hit.code} 已于 ${hit.returnConfirmedAt ? new Date(hit.returnConfirmedAt).toLocaleString('en-GB') : '之前'} 核销（见「已核销」tab）`)
       } else {
-        setScanMsg({ type: 'err', text: `找不到订单：${code}` })
-        setTimeout(() => setScanMsg(null), 3500)
+        const list = await apiGet<Order[]>(`/api/orders?include_lines=false&colCode=${encodeURIComponent(code)}&limit=5`)
+        const exact = (list ?? []).find(o => o.code?.toUpperCase() === codeUpper)
+        if (exact) flash('warn', `${exact.code} 当前状态「${exact.status}」，货还没出仓，不在核销范围`)
+        else flash('err', `找不到订单：${code}`, 3500)
       }
+    } catch (err) {
+      flash('err', err instanceof Error ? err.message : '查询失败', 3500)
     } finally {
       setScanSearching(false)
+      setScanInput('')
     }
-    if (!keepInput) setScanInput('')
   }
 
   function toggle(id: string) {
@@ -165,14 +192,10 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     setBulkLoading(true)
     try {
       await apiPost('/api/orders/bulk', { ids, action: 'mark_returned', status, note })
-      const patch = (o: Order) => ids.includes(o.id) ? { ...o, returnStatus: status, returnIssueNote: status === 'ISSUE' ? (note ?? null) : null } : o
-      setOrders(prev => prev.map(patch))
-      // extraOrders 是扫码跨日期补进来的单，applyStatus 后端写库不区分来源，这里也要同步更新，
-      // 否则跨日期核销的单会出现"数据库已改、界面没跟着变"的假象（20260925 实测踩过一次）
-      setExtraOrders(prev => prev.map(patch))
       setSelected(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next })
       setIssueMode(null)
       setIssueNote('')
+      await load()
     } catch (e) {
       alert(e instanceof Error ? e.message : '操作失败，请重试')
     } finally {
@@ -186,108 +209,152 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
     applyStatus(ids, 'ISSUE', issueNote.trim())
   }
 
-  // orders 是服务端按 businessDate 精确过滤的结果；extraOrders 是扫码补进来的跨日期单
-  const todayOrders = extraOrders.length > 0 ? [...orders, ...extraOrders] : orders
-  const visible = todayOrders.filter(o => {
-    if (scanInput.trim() && !o.code?.toUpperCase().includes(scanInput.trim().toUpperCase())) return false
-    if (filterBatch && !formatDriverSlotFromOrder(o).toLowerCase().includes(filterBatch.toLowerCase())) return false
-    if (filterPayment && String(o.paymentMethod).toUpperCase() !== filterPayment) return false
-    if (filterStatus !== 'all' && (o.returnStatus ?? 'PENDING') !== filterStatus) return false
+  const visible = rows.filter(o => {
+    if (scanInput.trim() && !o.code?.toUpperCase().includes(scanInput.trim().toUpperCase())
+      && !o.restaurantName.toUpperCase().includes(scanInput.trim().toUpperCase())) return false
+    if (filterDriver && (o.driver || '未分配') !== filterDriver) return false
+    if (filterTime && o.timeOfDay !== filterTime) return false
+    if (filterPayment && o.paymentMethod.toUpperCase() !== filterPayment) return false
+    if (filterStatus !== 'all' && o.returnStatus !== filterStatus) return false
     if (activeCard === 'pendingConfirm' && !selected.has(o.id)) return false
     return true
   })
 
-  const totalOrders = todayOrders.length
-  const returnedCount = todayOrders.filter(o => o.returnStatus === 'RETURNED').length
-  const issueCount = todayOrders.filter(o => o.returnStatus === 'ISSUE').length
-  const pendingCount = totalOrders - returnedCount - issueCount
-  const pendingConfirmCount = selected.size
-  const cashPending = todayOrders.filter(o => o.returnStatus !== 'RETURNED' && String(o.paymentMethod).toUpperCase() === 'CASH')
-    .reduce((s, o) => s + incTaxAmount(o), 0)
+  const s = data?.summary
+  const openCount = (s?.pending ?? 0) + (s?.issue ?? 0)
 
   function applyCardFilter(key: CardKey) {
     if (activeCard === key) { setActiveCard(null); setFilterStatus('all'); setFilterPayment(''); return }
     setActiveCard(key)
-    if (key === 'all') { setFilterStatus('all'); setFilterPayment('') }
-    else if (key === 'returned') { setFilterStatus('RETURNED'); setFilterPayment('') }
-    else if (key === 'issue') { setFilterStatus('ISSUE'); setFilterPayment('') }
-    else if (key === 'pending') { setFilterStatus('PENDING'); setFilterPayment('') }
+    setFilterPayment('')
+    if (key === 'open') setFilterStatus('all')
+    else if (key === 'returned') setFilterStatus('RETURNED')
+    else if (key === 'issue') setFilterStatus('ISSUE')
+    else if (key === 'pending') setFilterStatus('PENDING')
     else if (key === 'cashPending') { setFilterStatus('PENDING'); setFilterPayment('CASH') }
-    else if (key === 'pendingConfirm') { setFilterStatus('all'); setFilterPayment('') }
+    else setFilterStatus('all')
     setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
-  const withAmountSort = useMemo(() => visible.map(o => ({ ...o, _amount: incTaxAmount(o), _scanOrder: scanSeq[o.id] })), [visible, scanSeq])
-  const sortField = sortKey === 'totalAmount' ? '_amount' : sortKey === 'scanOrder' ? '_scanOrder' : sortKey
-  const sorted = sortRows(withAmountSort, sortField, sortDir)
+  const withScan = useMemo(() => visible.map(o => ({ ...o, scanOrder: scanSeq[o.id] })), [visible, scanSeq])
+  const sorted = sortRows(withScan, sortKey, sortDir)
 
   function toggleSort(k: SortKey) {
     if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(k); setSortDir('asc') }
   }
 
-  const selectableIds = sorted.filter(o => (o.returnStatus ?? 'PENDING') === 'PENDING').map(o => o.id)
+  const selectableIds = sorted.filter(o => o.returnStatus === 'PENDING').map(o => o.id)
   const visibleSelectedCount = visible.filter(o => selected.has(o.id)).length
   const allVisibleSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
+
+  function openPrint() {
+    const p = new URLSearchParams({ groupBy: printGroup })
+    if (from) p.set('from', from)
+    if (to) p.set('to', to)
+    if (filterDriver && filterDriver !== '未分配') p.set('driver', filterDriver)
+    if (filterTime) p.set('timeOfDay', filterTime)
+    if (filterPayment) p.set('payment', filterPayment)
+    p.set('status', filterStatus === 'PENDING' || filterStatus === 'ISSUE' ? filterStatus : 'PENDING,ISSUE')
+    window.open(`${prefix}/classic/finance/accounting/print?${p}`, '_blank')
+  }
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-6 gap-3">
-        <StatCard label="今日总单" value={totalOrders} active={activeCard === 'all'} onClick={() => applyCardFilter('all')} />
-        <StatCard label="已核销" value={returnedCount} active={activeCard === 'returned'} onClick={() => applyCardFilter('returned')} />
-        <StatCard label="待确认" value={pendingConfirmCount} urgent={pendingConfirmCount > 0} active={activeCard === 'pendingConfirm'} onClick={() => applyCardFilter('pendingConfirm')} />
-        <StatCard label="有问题" value={issueCount} urgent={issueCount > 0} active={activeCard === 'issue'} onClick={() => applyCardFilter('issue')} />
-        <StatCard label="未回" value={pendingCount} urgent={pendingCount > 0} active={activeCard === 'pending'} onClick={() => applyCardFilter('pending')} />
-        <StatCard label="现金未核（€）" value={cashPending.toFixed(2)} urgent={cashPending > 0} active={activeCard === 'cashPending'} onClick={() => applyCardFilter('cashPending')} />
+        <StatCard label="未核销合计" value={openCount} sub={s ? `€${s.openAmount.toFixed(2)}${s.oldestDays ? ` · 最久 ${s.oldestDays} 天` : ''}` : undefined} urgent={openCount > 0} active={activeCard === 'open'} onClick={() => applyCardFilter('open')} testId="card-open" />
+        <StatCard label="未回" value={s?.pending ?? 0} urgent={(s?.pending ?? 0) > 0} active={activeCard === 'pending'} onClick={() => applyCardFilter('pending')} testId="card-pending" />
+        <StatCard label="有问题" value={s?.issue ?? 0} urgent={(s?.issue ?? 0) > 0} active={activeCard === 'issue'} onClick={() => applyCardFilter('issue')} />
+        <StatCard label="待确认" value={selected.size} urgent={selected.size > 0} active={activeCard === 'pendingConfirm'} onClick={() => applyCardFilter('pendingConfirm')} />
+        <StatCard label="24 小时内已核销" value={s?.returned ?? 0} active={activeCard === 'returned'} onClick={() => applyCardFilter('returned')} />
+        <StatCard label="现金未核（€）" value={(s?.cashOpenAmount ?? 0).toFixed(2)} urgent={(s?.cashOpenAmount ?? 0) > 0} active={activeCard === 'cashPending'} onClick={() => applyCardFilter('cashPending')} />
       </div>
+
+      {s && s.byDriver.length > 0 && (
+        <div className="bg-white rounded border border-gray-200 shadow-sm px-5 py-3" data-testid="open-by-driver">
+          <div className="text-xs font-semibold text-gray-600 mb-2">按司机：还没回来核销的单（点一下只看这位司机）</div>
+          <div className="flex flex-wrap gap-2">
+            {s.byDriver.map(d => (
+              <button key={d.driver} onClick={() => { setFilterDriver(prev => prev === d.driver ? '' : d.driver); setActiveCard(null) }}
+                className={`text-xs px-2.5 py-1.5 rounded border ${filterDriver === d.driver ? 'bg-purple-50' : 'bg-white hover:bg-gray-50'}`}
+                style={filterDriver === d.driver ? { borderColor: ACCENT } : { borderColor: '#e5e7eb' }}>
+                <span className="font-semibold text-gray-800">{d.driver}</span>
+                <span className="ml-1.5 text-red-600 font-semibold">{d.count} 张</span>
+                <span className="ml-1.5 text-gray-600">€{d.amount.toFixed(2)}</span>
+                {d.cash > 0 && <span className="ml-1.5 text-red-500">现付 €{d.cash.toFixed(2)}</span>}
+                {d.oldestDays > 0 && <span className="ml-1.5 text-amber-600">最久 {d.oldestDays} 天</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded border border-gray-200 shadow-sm px-5 py-4">
         <div className="text-sm font-semibold text-gray-700 mb-1">📷 扫码枪 / 输入单号</div>
-        <div className="text-xs text-gray-400 mb-3">扫完整单号会把这一行标记「待确认」，还要再点「确认核销」才真正核销；只输入一部分会实时筛选下方列表；今天列表里没有的单号会自动按单号跨日期查一次（司机昨天忘了回单也能在这里核销）</div>
+        <div className="text-xs text-gray-400 mb-3">扫完整单号会把这一行标记「待确认」，还要再点「确认核销」才真正核销；只输入一部分会实时筛选下方列表（单号或客户）。下方列表是所有已出发、还没核销的单，不限日期</div>
         <form onSubmit={handleScan} className="flex gap-2">
           <input
             value={scanInput} onChange={e => setScanInput(e.target.value)}
             placeholder="扫描二维码或输入订单号"
             className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
-            autoFocus
+            autoFocus data-testid="writeoff-scan"
           />
           <button type="submit" disabled={scanSearching} className="px-4 py-2 text-white rounded text-sm font-medium disabled:opacity-50" style={{ background: ACCENT }}>{scanSearching ? '查询中…' : '标记选中'}</button>
         </form>
         {scanMsg && (
-          <div className={`mt-2 px-3 py-2 rounded text-sm font-medium ${scanMsg.type === 'ok' ? 'bg-green-50 text-green-700' : scanMsg.type === 'warn' ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-700'}`}>
+          <div className={`mt-2 px-3 py-2 rounded text-sm font-medium ${scanMsg.type === 'ok' ? 'bg-green-50 text-green-700' : scanMsg.type === 'warn' ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-700'}`} data-testid="writeoff-scan-msg">
             {scanMsg.text}
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-500">送货日期</span>
+        <DatePicker value={from} onChange={setFrom} className="border border-gray-300 rounded px-2 py-1.5 text-sm w-36" />
+        <span className="text-xs text-gray-400">至</span>
+        <DatePicker value={to} onChange={setTo} className="border border-gray-300 rounded px-2 py-1.5 text-sm w-36" />
+        {(from || to) && <button onClick={() => { setFrom(''); setTo('') }} className="text-xs text-gray-500 underline">全部日期</button>}
         <SearchableDropdown
-          options={[{ value: '', label: '全部批次/司机' }, ...[...new Set(todayOrders.map(o => formatDriverSlotFromOrder(o)).filter(Boolean))].map(b => ({ value: b, label: b }))]}
-          value={filterBatch} onChange={setFilterBatch}
+          options={[{ value: '', label: '全部司机' }, ...[...(s?.drivers ?? []), ...(rows.some(r => !r.driver) ? ['未分配'] : [])].map(d => ({ value: d, label: d }))]}
+          value={filterDriver} onChange={setFilterDriver}
         />
+        <select value={filterTime} onChange={e => setFilterTime(e.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white">
+          <option value="">上午 + 下午</option>
+          <option value="am">上午</option>
+          <option value="pm">下午</option>
+        </select>
         <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white">
           <option value="">全部付款方式</option>
           <option value="CASH">现付</option>
           <option value="ONLINE">转账</option>
         </select>
-        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value as typeof filterStatus); setActiveCard(null) }} className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white">
+        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value as typeof filterStatus); setActiveCard(null) }} className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white" data-testid="writeoff-status">
           <option value="all">全部回单状态</option>
-          <option value="RETURNED">仅已核销</option>
-          <option value="ISSUE">仅有问题</option>
           <option value="PENDING">仅未回</option>
+          <option value="ISSUE">仅有问题</option>
+          <option value="RETURNED">仅 24 小时内已核销</option>
         </select>
+        <div className="flex items-center gap-1 ml-2">
+          <select value={printGroup} onChange={e => setPrintGroup(e.target.value as 'date' | 'driver')} className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white" data-testid="print-group">
+            <option value="date">按日期分组</option>
+            <option value="driver">按司机分组</option>
+          </select>
+          <button onClick={openPrint} className="px-3 py-1.5 border rounded text-sm font-medium bg-white hover:bg-gray-50" style={{ borderColor: ACCENT, color: ACCENT }} data-testid="print-open">
+            🖨 打印未核销清单
+          </button>
+        </div>
 
         {selected.size > 0 ? (
           <div className="ml-auto flex items-center gap-2">
             <span className="text-sm text-gray-600 font-medium">已选 {visibleSelectedCount} / {visible.length} 张</span>
-            <button onClick={() => applyStatus([...selected], 'RETURNED')} disabled={bulkLoading} className="px-3 py-1.5 text-white rounded text-sm font-medium disabled:opacity-50" style={{ background: ACCENT }}>
+            <button onClick={() => applyStatus([...selected], 'RETURNED')} disabled={bulkLoading} className="px-3 py-1.5 text-white rounded text-sm font-medium disabled:opacity-50" style={{ background: ACCENT }} data-testid="writeoff-confirm">
               {bulkLoading ? '处理中…' : '✅ 确认核销'}
             </button>
             <button onClick={() => setIssueMode('batch')} disabled={bulkLoading} className="px-3 py-1.5 rounded text-sm font-medium bg-amber-50 text-amber-700 disabled:opacity-50">❗ 退回核实</button>
             <button onClick={() => setSelected(new Set())} className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-500 bg-white">取消选择</button>
           </div>
         ) : (
-          <span className="ml-auto text-xs text-gray-400">共 {visible.length} 条 · {businessDate}</span>
+          <span className="ml-auto text-xs text-gray-400">共 {visible.length} 条{today ? ` · 今天 ${today}` : ''}</span>
         )}
       </div>
 
@@ -301,15 +368,17 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
         </div>
       )}
 
-      {!businessDate ? (
-        <div className="text-center py-16 text-gray-400">等待「钱」板块加载日期…（若一直不出现，请检查上方是否报错）</div>
-      ) : loading ? (
+      {loadError ? (
+        <div className="text-center py-16 text-red-500">{loadError}</div>
+      ) : loading && !data ? (
         <div className="text-center py-16 text-gray-400">加载中…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-center py-16 text-green-600">✅ 所有已出发的单都已核销{from || to ? '（当前日期范围内）' : ''}</div>
       ) : visible.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">没有匹配的订单</div>
+        <div className="text-center py-16 text-gray-400">没有匹配的订单（共 {rows.length} 张待核销，被筛选条件挡住了）</div>
       ) : (
-        <div ref={tableRef} className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden scroll-mt-6">
-          <table className="w-full text-sm">
+        <div ref={tableRef} className="bg-white rounded border border-gray-200 shadow-sm overflow-x-auto scroll-mt-6">
+          <table className="w-full text-sm" data-testid="writeoff-table">
             <thead className="bg-gray-50 border-b text-xs text-gray-500">
               <tr>
                 <th className="px-3 py-2.5 text-center w-8">
@@ -324,11 +393,14 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
                     style={{ accentColor: ACCENT }} />
                 </th>
                 <SortTh label="扫描顺序" sk="scanOrder" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
+                <SortTh label="送货日期" sk="deliveryDate" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
                 <SortTh label="订单号" sk="code" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
                 <SortTh label="客户" sk="restaurantName" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
-                <SortTh label="批次/司机" sk="deliveryBatch" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
-                <SortTh label="含税金额" sk="totalAmount" cur={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
+                <SortTh label="上午/下午" sk="timeOfDay" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" />
+                <SortTh label="司机" sk="driver" cur={sortKey} dir={sortDir} onClick={toggleSort} align="left" />
+                <SortTh label="含税金额" sk="amount" cur={sortKey} dir={sortDir} onClick={toggleSort} align="right" />
                 <SortTh label="付款方式" sk="paymentMethod" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" />
+                <SortTh label="已送出" sk="daysOut" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" />
                 <SortTh label="状态" sk="returnStatus" cur={sortKey} dir={sortDir} onClick={toggleSort} align="center" />
                 <th className="px-4 py-2.5 text-center">操作</th>
               </tr>
@@ -336,15 +408,14 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
             <tbody className="divide-y divide-gray-100">
               {sorted.map(o => (
                 <WriteOffRow
-                  key={o.id} order={o} businessDate={businessDate}
+                  key={o.id} row={o}
                   isSelected={selected.has(o.id)} isFlashing={flashId === o.id}
                   scanOrder={scanSeq[o.id]}
                   rowRef={el => { rowRefs.current[o.id] = el }}
                   onToggle={() => toggle(o.id)}
                   onConfirm={() => applyStatus([o.id], 'RETURNED')}
                   onReturn={() => setIssueMode(o.id)}
-                  onUndo={() => applyStatus([o.id], 'PENDING')}
-                  onReopen={() => applyStatus([o.id], 'PENDING')}
+                  onReset={() => applyStatus([o.id], 'PENDING')}
                 />
               ))}
             </tbody>
@@ -352,19 +423,18 @@ export function WriteOffBoard({ businessDate }: { businessDate: string | null })
         </div>
       )}
 
-      {pendingCount > 0 && (
+      {(s?.pending ?? 0) > 0 && (
         <div className="bg-red-50 border border-red-200 rounded px-5 py-4">
-          <div className="font-semibold text-red-700 mb-1">⚠️ 今日共有 {pendingCount} 张送货单未回</div>
-          <div className="text-sm text-red-600">请立即联系对应司机追查签收单。现付漏单风险最高，优先处理现付订单。</div>
+          <div className="font-semibold text-red-700 mb-1">⚠️ 共有 {s!.pending} 张已送出的单还没回来核销{s!.oldestDays > 0 ? `，最久的已送出 ${s!.oldestDays} 天` : ''}</div>
+          <div className="text-sm text-red-600">请联系对应司机追回签收单，可打印清单交给司机。现付漏单风险最高，优先处理现付订单。</div>
         </div>
       )}
     </div>
   )
 }
 
-function WriteOffRow({ order: o, businessDate, isSelected, isFlashing, scanOrder, rowRef, onToggle, onConfirm, onReturn, onUndo, onReopen }: {
-  order: Order
-  businessDate: string | null
+function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onToggle, onConfirm, onReturn, onReset }: {
+  row: ReturnRow
   isSelected: boolean
   isFlashing: boolean
   scanOrder: number | undefined
@@ -372,50 +442,54 @@ function WriteOffRow({ order: o, businessDate, isSelected, isFlashing, scanOrder
   onToggle: () => void
   onConfirm: () => void
   onReturn: () => void
-  onUndo: () => void
-  onReopen: () => void
+  onReset: () => void
 }) {
-  const status = o.returnStatus ?? 'PENDING'
-  const orderDay = o.deliveryDate ? o.deliveryDate.slice(0, 10) : null
-  const isOtherDay = !!orderDay && !!businessDate && orderDay !== businessDate
-  const isCash = String(o.paymentMethod).toUpperCase() === 'CASH'
+  const status = o.returnStatus
+  const cash = isCash(o)
   let rowBg = ''
   if (isFlashing) rowBg = 'bg-purple-50 transition-colors duration-500'
   else if (isSelected) rowBg = 'bg-purple-50/50'
   else if (status === 'ISSUE') rowBg = 'bg-amber-50'
-  else if (status === 'PENDING' && isCash) rowBg = 'bg-red-50'
+  else if (status === 'PENDING' && cash) rowBg = 'bg-red-50'
   else if (status === 'PENDING') rowBg = 'bg-yellow-50'
 
   return (
-    <tr ref={rowRef} className={`hover:bg-gray-50 transition-colors ${rowBg}`}>
+    <tr ref={rowRef} className={`hover:bg-gray-50 transition-colors ${rowBg}`} data-testid={`writeoff-row-${o.code}`}>
       <td className="px-3 py-2.5 text-center">
         <input type="checkbox" checked={isSelected} onChange={onToggle} disabled={status !== 'PENDING'}
           style={{ accentColor: ACCENT }} className="disabled:opacity-40 disabled:cursor-not-allowed" />
       </td>
       <td className="px-4 py-2.5 text-gray-500 text-xs">{scanOrder != null ? `#${scanOrder}` : <span className="text-gray-300">—</span>}</td>
-      <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
-        {o.code ?? o.id.slice(-8)}
-        {isOtherDay && <div className="font-sans text-[10px] text-amber-600 mt-0.5">⚠️ {orderDay}</div>}
-      </td>
-      <td className="px-4 py-2.5 text-gray-800 max-w-[140px] truncate">{o.restaurantName}</td>
-      <td className="px-4 py-2.5 text-gray-600">{formatDriverSlotFromOrder(o) || <span className="text-gray-300">未分配</span>}</td>
-      <td className="px-4 py-2.5 text-right font-semibold text-gray-800">€{incTaxAmount(o).toFixed(2)}</td>
+      <td className="px-4 py-2.5 text-gray-700 text-xs whitespace-nowrap">{o.deliveryDate ?? '—'}</td>
+      <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{o.code ?? o.id.slice(-8)}</td>
+      <td className="px-4 py-2.5 text-gray-800 max-w-[160px] truncate" title={o.restaurantName}>{o.restaurantName}</td>
+      <td className="px-4 py-2.5 text-center text-xs text-gray-600">{TIME_TEXT[o.timeOfDay] ?? <span className="text-gray-300">—</span>}</td>
+      <td className="px-4 py-2.5 text-gray-700">{o.driver || <span className="text-gray-300">未分配</span>}</td>
+      <td className="px-4 py-2.5 text-right font-semibold text-gray-800">€{o.amount.toFixed(2)}</td>
       <td className="px-4 py-2.5 text-center">
-        <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">{isCash ? '现付' : '转账'}</span>
+        <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">{cash ? '现付' : '转账'}</span>
+      </td>
+      <td className={`px-4 py-2.5 text-center text-xs ${status !== 'RETURNED' && o.daysOut >= 2 ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+        {status === 'RETURNED' ? '—' : o.daysOut === 0 ? '今天' : `${o.daysOut} 天`}
       </td>
       <td className="px-4 py-2.5 text-center">
-        {status === 'RETURNED' && <span className="text-green-600 font-semibold text-xs">✅ 已核销</span>}
+        {status === 'RETURNED' && (
+          <div>
+            <span className="text-green-600 font-semibold text-xs">✅ 已核销</span>
+            {o.returnConfirmedAt && <div className="text-[10px] text-gray-400 mt-0.5">{new Date(o.returnConfirmedAt).toLocaleString('en-GB')}{o.returnConfirmedBy ? ` · ${o.returnConfirmedBy}` : ''}</div>}
+          </div>
+        )}
         {status === 'ISSUE' && (
           <div>
             <span className="text-amber-600 font-semibold text-xs">❗ 有问题</span>
             {o.returnIssueNote && <div className="text-[11px] text-amber-600 mt-0.5">{o.returnIssueNote}</div>}
           </div>
         )}
-        {status === 'PENDING' && <span className="text-red-500 font-semibold text-xs animate-pulse">⚠️ 未回</span>}
+        {status === 'PENDING' && <span className="text-red-500 font-semibold text-xs">⚠️ 未回</span>}
       </td>
       <td className="px-4 py-2.5 text-center">
-        {status === 'RETURNED' && <button onClick={onUndo} className="text-xs text-gray-400 hover:text-red-500 underline">撤销</button>}
-        {status === 'ISSUE' && <button onClick={onReopen} className="text-xs text-gray-400 hover:text-purple-600 underline">重新核对</button>}
+        {status === 'RETURNED' && <button onClick={onReset} className="text-xs text-gray-400 hover:text-red-500 underline">撤销</button>}
+        {status === 'ISSUE' && <button onClick={onReset} className="text-xs text-gray-400 hover:text-purple-600 underline">重新核对</button>}
         {status === 'PENDING' && isSelected && (
           <div className="flex gap-1 justify-center">
             <button onClick={onConfirm} className="px-2 py-1 text-white text-xs rounded font-medium" style={{ background: ACCENT }}>确认核销</button>
@@ -428,13 +502,132 @@ function WriteOffRow({ order: o, businessDate, isSelected, isFlashing, scanOrder
   )
 }
 
-function StatCard({ label, value, urgent, active, onClick }: { label: string; value: number | string; urgent?: boolean; active?: boolean; onClick?: () => void }) {
+const RETURNED_PAGE_SIZE = 50
+
+/** 「已核销」tab：全部已核销的单，按送货日期 / 司机筛选、按单号或客户搜索（20261021） */
+function ReturnedList() {
+  const [from, setFrom] = useState(() => new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10))
+  const [to, setTo] = useState('')
+  const [driver, setDriver] = useState('')
+  const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [data, setData] = useState<ReturnsResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  useEffect(() => { const t = setTimeout(() => setDebouncedQ(q.trim()), 400); return () => clearTimeout(t) }, [q])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const p = new URLSearchParams({ tab: 'returned' })
+      if (from) p.set('from', from)
+      if (to) p.set('to', to)
+      if (driver) p.set('driver', driver)
+      if (debouncedQ) p.set('q', debouncedQ)
+      setData(await apiGet<ReturnsResponse>(`/api/accounting/returns?${p}`))
+      setPage(1)
+    } finally {
+      setLoading(false)
+    }
+  }, [from, to, driver, debouncedQ])
+
+  useEffect(() => { load() }, [load])
+
+  async function undo(r: ReturnRow) {
+    if (!confirm(`撤销 ${r.code} 的核销？它会回到「待核销」的未回状态。`)) return
+    setBusyId(r.id)
+    try {
+      await apiPost('/api/orders/bulk', { ids: [r.id], action: 'mark_returned', status: 'PENDING' })
+      await load()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '撤销失败')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const rows = [...(data?.rows ?? [])].sort((a, b) => (b.returnConfirmedAt ?? '').localeCompare(a.returnConfirmedAt ?? ''))
+  const pageRows = rows.slice((page - 1) * RETURNED_PAGE_SIZE, page * RETURNED_PAGE_SIZE)
+  const pages = Math.max(1, Math.ceil(rows.length / RETURNED_PAGE_SIZE))
+  const total = rows.reduce((s, r) => s + r.amount, 0)
+
   return (
-    <button type="button" onClick={onClick}
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-500">送货日期</span>
+        <DatePicker value={from} onChange={setFrom} className="border border-gray-300 rounded px-2 py-1.5 text-sm w-36" />
+        <span className="text-xs text-gray-400">至</span>
+        <DatePicker value={to} onChange={setTo} className="border border-gray-300 rounded px-2 py-1.5 text-sm w-36" />
+        <SearchableDropdown
+          options={[{ value: '', label: '全部司机' }, ...(data?.summary.drivers ?? []).map(d => ({ value: d, label: d }))]}
+          value={driver} onChange={setDriver}
+        />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索单号 / 客户"
+          className="border border-gray-300 rounded px-3 py-1.5 text-sm w-56" data-testid="returned-search" />
+        <span className="ml-auto text-xs text-gray-400">{loading ? '加载中…' : `共 ${rows.length} 张已核销 · €${total.toFixed(2)}`}</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">{loading ? '加载中…' : '这段时间没有已核销的单'}</div>
+      ) : (
+        <div className="bg-white rounded border border-gray-200 shadow-sm overflow-x-auto">
+          <table className="w-full text-sm" data-testid="returned-table">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500">
+              <tr>
+                <th className="px-4 py-2.5 text-left">送货日期</th>
+                <th className="px-4 py-2.5 text-left">订单号</th>
+                <th className="px-4 py-2.5 text-left">客户</th>
+                <th className="px-4 py-2.5 text-center">上午/下午</th>
+                <th className="px-4 py-2.5 text-left">司机</th>
+                <th className="px-4 py-2.5 text-right">含税金额</th>
+                <th className="px-4 py-2.5 text-center">付款方式</th>
+                <th className="px-4 py-2.5 text-left">核销时间</th>
+                <th className="px-4 py-2.5 text-left">核销人</th>
+                <th className="px-4 py-2.5 text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {pageRows.map(r => (
+                <tr key={r.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 text-xs text-gray-700 whitespace-nowrap">{r.deliveryDate ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-gray-700">{r.code ?? r.id.slice(-8)}</td>
+                  <td className="px-4 py-2 text-gray-800 max-w-[180px] truncate" title={r.restaurantName}>{r.restaurantName}</td>
+                  <td className="px-4 py-2 text-center text-xs text-gray-600">{TIME_TEXT[r.timeOfDay] ?? '—'}</td>
+                  <td className="px-4 py-2 text-gray-700">{r.driver || '—'}</td>
+                  <td className="px-4 py-2 text-right font-semibold text-gray-800">€{r.amount.toFixed(2)}</td>
+                  <td className="px-4 py-2 text-center text-xs">{isCash(r) ? '现付' : '转账'}</td>
+                  <td className="px-4 py-2 text-xs text-gray-600 whitespace-nowrap">{r.returnConfirmedAt ? new Date(r.returnConfirmedAt).toLocaleString('en-GB') : '—'}</td>
+                  <td className="px-4 py-2 text-xs text-gray-600">{r.returnConfirmedBy ?? '—'}</td>
+                  <td className="px-4 py-2 text-center">
+                    <button onClick={() => undo(r)} disabled={busyId === r.id} className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-50">撤销</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {pages > 1 && (
+            <div className="flex items-center justify-end gap-2 px-4 py-2 border-t text-xs text-gray-600">
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-2 py-1 border rounded disabled:opacity-40">‹</button>
+              <span>{page} / {pages}</span>
+              <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="px-2 py-1 border rounded disabled:opacity-40">›</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatCard({ label, value, sub, urgent, active, onClick, testId }: { label: string; value: number | string; sub?: string; urgent?: boolean; active?: boolean; onClick?: () => void; testId?: string }) {
+  return (
+    <button type="button" onClick={onClick} data-testid={testId}
       className={`text-left w-full rounded border px-4 py-3 transition-all bg-white ${active ? 'shadow-md' : 'border-gray-200 hover:shadow-md hover:border-gray-300'}`}
       style={active ? { borderColor: ACCENT, boxShadow: '0 0 0 2px #e8d5f0' } : {}}>
       <div className="text-xs font-medium text-gray-500 flex items-center gap-1">{label}<span className="text-[10px] opacity-60">{active ? '●' : '›'}</span></div>
       <div className="text-2xl font-bold mt-1" style={{ color: urgent ? '#dc2626' : active ? ACCENT : '#1f2937' }}>{value}</div>
+      {sub && <div className="text-[11px] text-gray-500 mt-0.5">{sub}</div>}
     </button>
   )
 }

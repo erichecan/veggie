@@ -54,7 +54,7 @@ const STATUS_COLOR: Record<OrderStatus, string> = {
   cancelled:     'bg-red-50 text-red-600',
 }
 
-type ActiveFilter = 'all' | 'to_invoice' | OrderStatus
+type ActiveFilter = 'all' | 'to_invoice' | 'return_open' | OrderStatus
 
 type ColFilters = {
   code: string
@@ -144,6 +144,7 @@ export default function ClassicOrdersPage() {
   // Build status param from active filter — changes trigger server refetch via useServerList
   const statusParam = useMemo(() => {
     if (activeFilter === 'to_invoice') return 'COMPLETED'
+    if (activeFilter === 'return_open') return 'IN_DELIVERY,COMPLETED,LOCKED'
     if (activeFilter === 'all') return 'CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY,COMPLETED'
     return activeFilter.toUpperCase()
   }, [activeFilter])
@@ -155,6 +156,8 @@ export default function ClassicOrdersPage() {
     // 「待开票」下推服务端（20261021）：原来是拉一页 COMPLETED 再在浏览器里剔掉已开票的，
     // 一页 20 条剩几条、总数却按全部已完成单算，翻页看起来像有空页
     if (activeFilter === 'to_invoice' || colFilters.invoiceStatus === 'to_invoice') params.set('invoiceState', 'to_invoice')
+    // 「未回单」：货已离仓、签收单还没交回核销（与核销管理页待核销同口径，20261021）
+    if (activeFilter === 'return_open') params.set('returnState', 'open')
     // 交货日期过滤走服务端分页分支认的参数:dateField=deliveryDate + fromDate/toDate
     if (colFilters.deliveryDateFrom || colFilters.deliveryDateTo) {
       params.set('dateField', 'deliveryDate')
@@ -482,8 +485,14 @@ export default function ClassicOrdersPage() {
             <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
               {STATUS_LABEL[o.status] ?? String(o.status)}
             </span>
-            {o.returnStatus === 'RETURNED' && (
-              <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-600 font-medium">{isEn ? 'Has Return' : '有退货'}</span>
+            {/* 回单（签收单）核销状态（20261021）：原来把 RETURNED 印成「有退货」——意思反了，
+                RETURNED 是签收单已交回会计核销；未回 / 有问题根本不显示。只对货已离仓的单显示 */}
+            {['in_delivery', 'completed', 'locked'].includes(String(o.status)) && (
+              o.returnStatus === 'RETURNED'
+                ? <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-green-50 text-green-700 font-medium" data-testid="return-badge">{isEn ? 'Receipt ✓' : '回单已核销'}</span>
+                : o.returnStatus === 'ISSUE'
+                  ? <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700 font-medium" data-testid="return-badge" title={o.returnIssueNote ?? ''}>{isEn ? 'Receipt issue' : '回单有问题'}</span>
+                  : <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-red-50 text-red-600 font-medium" data-testid="return-badge">{isEn ? 'No receipt' : '未回单'}</span>
             )}
           </div>
         </td>
@@ -557,6 +566,7 @@ export default function ClassicOrdersPage() {
           { label: myActive ? '✓ My Sales Order' : 'My Sales Order', value: '__my__' },
           ...TIME_QUICK_OPTIONS.map(o => ({ label: timeKey === o.value ? `✓ ${o.label}` : o.label, value: `__time__${o.value}` })),
           { label: isEn ? 'To Invoice' : '待开票', value: 'to_invoice' },
+          { label: isEn ? 'Receipt not returned' : '未回单', value: 'return_open' },
           { label: STATUS_LABEL.confirmed, value: 'confirmed' },
           { label: STATUS_LABEL.wave_assigned, value: 'wave_assigned' },
           { label: STATUS_LABEL.in_delivery, value: 'in_delivery' },
@@ -574,7 +584,7 @@ export default function ClassicOrdersPage() {
           ...(myActive ? [{ label: 'My Sales Order', onRemove: () => setMyActive(false) }] : []),
           ...(timeKey ? [{ label: TIME_QUICK_LABEL[timeKey] ?? timeKey, onRemove: () => setTimeKey('') }] : []),
           ...(activeFilter !== 'all' ? [{
-            label: activeFilter === 'to_invoice' ? (isEn ? 'To Invoice' : '待开票') : (STATUS_LABEL[activeFilter as OrderStatus] ?? activeFilter),
+            label: activeFilter === 'to_invoice' ? (isEn ? 'To Invoice' : '待开票') : activeFilter === 'return_open' ? (isEn ? 'Receipt not returned' : '未回单') : (STATUS_LABEL[activeFilter as OrderStatus] ?? activeFilter),
             onRemove: () => setActiveFilter('all'),
           }] : []),
         ]}

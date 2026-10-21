@@ -173,6 +173,9 @@ export async function POST(req: Request) {
           data: {
             returnStatus: status,
             returnIssueNote: status === 'ISSUE' ? note!.trim() : null,
+            // 核销时间/人：核销管理页「已核销的在主列表留 24 小时」靠它；撤销/退回时清空（20261021）
+            returnConfirmedAt: status === 'RETURNED' ? new Date() : null,
+            returnConfirmedBy: status === 'RETURNED' ? (user.name ?? user.email) : null,
           },
         })
         const label = status === 'RETURNED' ? '核销' : status === 'ISSUE' ? '退回核实' : '重置为未回'

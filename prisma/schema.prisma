@@ -831,6 +831,10 @@ model Order {
   returnStatus          OrderReturnStatus @default(PENDING)
   /// 「退回核实」时会计填的问题说明（少货/字迹不清等），仅 returnStatus=ISSUE 时有意义
   returnIssueNote       String?
+  /// 回单确认核销的时间 / 人（20261021）：核销管理页「已核销的在主列表留 24 小时，之后移到『已核销』tab」靠它判断；
+  /// 撤销核销时清空
+  returnConfirmedAt     DateTime?
+  returnConfirmedBy     String?
   /// 配送批次+司机，格式 "1 am BAO" / "2 pm AFZAAL"（旧合并字段，逐步弃用）
   deliveryBatch         String?
   /// 关联 DriverSlot（拆分后的配送批次），替代 deliveryBatch 字符串
@@ -876,6 +880,7 @@ model Order {
   /// AI 问数 v2 明细钻取/quotation 域按日期范围直查此字段；此前只靠 status 索引筛小
   /// 再 join OrderLine，明细钻取绕过 status 收窄时在 133 万行 OrderLine 上有全表扫风险
   @@index([confirmationDate])
+  @@index([returnStatus, returnConfirmedAt])
 }
 
 /// 订单行（Odoo 对齐）— 每条记录对应一种商品的一行明细，含 ordered/delivered/invoiced 三个数量
