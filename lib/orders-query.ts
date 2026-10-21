@@ -103,6 +103,15 @@ async function driverNameClause(term: string): Promise<Record<string, unknown>> 
   return { id: { in: rows.map((r) => r.id) } }
 }
 
+/** 已完成、且没被任何未作废发票引用的订单 id（「待开票」） */
+export async function findUninvoicedCompletedOrderIds(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT o.id FROM "Order" o
+    WHERE o.status = 'COMPLETED'
+      AND o.id NOT IN (SELECT unnest("saleOrderIds") FROM "Invoice" WHERE status <> 'CANCELLED')`
+  return rows.map(r => r.id)
+}
+
 export async function buildOrdersWhere(req: Request, searchParams: URLSearchParams): Promise<Record<string, unknown>> {
   const restaurantId = searchParams.get('restaurantId')
   const restaurantIdsParam = searchParams.get('restaurantIds')
@@ -190,6 +199,12 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
     if (createdAtFrom) range.gte = dublinDayStart(createdAtFrom)
     if (createdAtTo) range.lt = addBusinessDays(dublinDayStart(createdAtTo), 1)
     facetAnd.push({ createdAt: range })
+  }
+  // 待开票：已完成、且没被任何未作废发票引用（与工作台「已完成未开票」同口径）。
+  // Odoo 导入的历史单是 LOCKED，不在此列，已完成单量很小，先取 id 再 in 即可
+  if (searchParams.get('invoiceState') === 'to_invoice') {
+    const ids = await findUninvoicedCompletedOrderIds()
+    facetAnd.push({ status: 'COMPLETED' }, { id: { in: ids } })
   }
   if (facetAnd.length > 0) where.AND = facetAnd
 
