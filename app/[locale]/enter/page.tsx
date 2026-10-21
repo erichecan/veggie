@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { Eye, EyeOff } from 'lucide-react'
 import { routing } from '@/i18n/routing'
 import { getDefaultLandingPath } from '@/lib/rbac/page-guard'
+import { ROLE_HOME } from '@/lib/role-access'
 
 export default function EnterPage() {
   const router = useRouter()
@@ -28,6 +29,14 @@ export default function EnterPage() {
     setPermissionChanged(reason === 'permission-changed')
   }, [])
 
+  // 从 /shop 匿名浏览页点"登录查看价格"过来的，登录成功后直接进 customer-portal
+  // 下单，而不是走各角色默认落地页——只加这一个分支，不改其它角色的跳转逻辑。
+  const [fromShop, setFromShop] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setFromShop(new URLSearchParams(window.location.search).get('from') === 'shop')
+  }, [])
+
   async function doLogin(loginEmail: string, loginPassword: string, tag: string) {
     setError('')
     setLoading(tag)
@@ -48,6 +57,14 @@ export default function EnterPage() {
       // PASSWORD_CHANGE_REQUIRED），这里跳转只是别让人先看到一屏 403
       if (data.user.mustChangePassword) {
         router.replace(`${prefix}/change-password?forced=1`)
+        return
+      }
+      // 从 /shop 登录的意图很明确：就是来下单的，不走 getDefaultLandingPath
+      // 的「有 quotations 权限就先去 quotations」那条优先级（避免恰好兼有
+      // operator 权限的餐厅账号被送错地方）。取 ROLE_HOME.RESTAURANT 而不是
+      // 写死路径字符串，这样落地页改了这里不用跟着改。
+      if (fromShop && data.user.role === 'RESTAURANT') {
+        router.replace(`${prefix}${ROLE_HOME.RESTAURANT}`)
         return
       }
       router.replace(getDefaultLandingPath(data.user, prefix))

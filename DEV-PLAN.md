@@ -1,145 +1,119 @@
-# DEV-PLAN：采购运费按数量分摊进成本，确认时联动成本价、取消时回滚
+# DEV-PLAN：餐厅自助下单——新增匿名可浏览入口（不显价/不显库存），登录后看价下单
 
-日期：2026-10-17
+日期：2026-10-20
 
 ## 读取了哪些文档
 
-本次无项目内 PRD 文件改动。需求来源是客户在采购单页面截图上的手写批注，逐字存档见
-`docs/20261017-采购运费分摊成本联动-需求原话.md`。
+项目根目录无专门的 PRD/需求文档命中（`ls *.md` 只有 README/CLAUDE/AGENTS/DEV-PLAN/DEV-REPORT）。需求来源是用户口头描述，逐字存档见
+`docs/20261020-veggie-需求原话.md`。
 
 ## 现状排查（技术决策依据，不用你看）
 
-调研了三轮代码（成本字段、确认/取消路由、收货加权平均算法），关键发现：
+1. **已存在的客户自助下单门户**：`app/[locale]/customer-portal/**`，功能完整（商品网格、分类导航、促销角标、购物车、下单、我的订单、常购/收藏），但要求登录且 `role==='RESTAURANT'`（`customer-portal/layout.tsx:21`），没有任何匿名可看的部分。
+2. **账号体系已经是独立的一套**：不是新建数据表，是同一张 `User` 表里 `role='RESTAURANT'`，通过 `/register` 自助注册（创建 Customer+User，`isActive=false, pendingApproval=true`，人工审核后才能登录）。这跟内部调度员/业务员等角色完全分开，已验证（你的要求，已到生产库核实）。
+3. **还有一套孤立的 Demo 旧页面** `app/[locale]/classic/restaurant/**`：功能更简陋，付款是假的（"🔔 Demo 演示·点击确认即模拟付款成功"），没有任何导航链接指向它（只有自己内部互相引用），最近一次改动是 2026-10-10 的批量质量修复带过的，不是本次要动的东西——**本次不碰，不整合，不删除**。
+4. **商品价格因客户而异**：`resolveCustomerPrice()`（`lib/pricing-engine.ts:320`）需要一个具体 Customer 才能算价。匿名访客没有 Customer，所以匿名接口**不能**调用现有的 `buildCustomerProductCards`（那个函数设计上就是要算价的），必须另写一个不算价、只读基础字段的函数，而不是"算完价格再在返回前删掉"——后者容易因为漏删某个字段（如 `lastPrice`/`originalPrice`）造成价格泄露。
+5. **当前没有任何真正公开的页面**：根路径 `/` 直接判断 localStorage 有无 session，没有就跳 `/enter`；`/enter` 登录页没有 `returnTo` 机制，登录后固定跳 `getDefaultLandingPath`。本次要新加"匿名浏览→点击登录→登录后跳回原流程/直接进 customer-portal"。
+6. **公开 API 白名单是生产踩过真坑的地方**（2026-08-02 `/api/customers` 匿名泄露 1605 条客户全量数据的事故，见 `lib/public-routes.ts` 顶部注释与 `tests/public-api-routes.test.ts` 快照锁定）。新增白名单条目必须专门为匿名场景新写、从查询层就不触碰价格/客户/财务数据的接口，不能把现有接口改成可选鉴权后直接扔进白名单。
+7. **分类导航**现有实现 `app/api/customer-portal/categories/route.ts` 要求登录（`withAuth`），且过滤了一批内部测试类目（`all/stockable/saleable/test` 等，历史 Odoo 导入遗留），匿名版本要复用这个过滤名单，否则客户会看到内部类目。
 
-1. **"Cost"列现状**：采购单详情页的 Cost 列显示的是 `Product.standardPrice`（历史参考成本），有
-   tooltip 说明"不写入本单"——跟客户左①批注完全吻合，只是客户想把它从"一直显示"改成"hover 显示"。
-2. **真正写成本价的不是"确认采购"，是"确认收货"**：`action=confirm`（RFQ→Purchase Order）现在只写
-   `confirmedAt`、回填采购单位、自动生成草稿供应商账单，完全不碰任何成本字段。真正把成本写进
-   `Product.standardPrice` 的是后面"确认收货"（`action=receive`，在 `lib/purchase/receive-purchase-order.ts`），
-   用的是**移动加权平均**：`新成本=(原库存量×原成本+本次到货量×本次成本)/总量`，且**不含运费**，`Lot`
-   批次成本也是收货时一次性记录、之后不再变。
-3. **运费分摊逻辑已存在但是"现算不落库"**：`lib/purchase-landed-cost.ts` 已经有一个分摊函数，但按
-   **行金额占比**分摊（不是按数量），且 schema 注释明确写着"不回写 Product 成本"——这是此前一次改造时
-   刻意做的设计决定，客户这次的要求等于要推翻它。
-4. 运费字段（`PurchaseOrder.freightAmount`）已存在，且只在 `DRAFT/SENT` 状态可编辑，`CONFIRMED` 之后后端
-   会拒绝改——这意味着点"确认采购"那一刻运费金额已经是终值，可以放心拿它去算分摊。
-5. Product 用 `type` 字段区分 `PRODUCT`(storable)/`CONSU`(consumable)/`SERVICE`，客户截图的
-   "storable或consumable" 对应 `type !== 'SERVICE'`。
-6. PO 状态机：`DRAFT/SENT/TO_APPROVE → CONFIRMED → RECEIVED → INVOICED → LOCKED`，`CANCELLED` 可从多个
-   状态进入。现有"取消"校验依据的是一张"到货登记"台账（`GoodsReceipt`），而真正改库存的"确认收货"动作根本
-   不写这张表——换句话说，一张已经走完"确认收货"（库存、批次成本都已经改过）的单子，理论上还能被取消却
-   不会被拦下来。这是**预先存在的缺口，不是本次需求引入的**，本次只做一道防御（见下文"风险点"第3条），
-   不在本次范围内彻底修。
+## 场景清单（这是你说的/客户说的/我推断的，逐条标来源）
 
-## 核心冲突 + 处理方式（已跟你确认，按客户字面要求执行）
+- [你说的] 餐厅自助下单要有一个单独的入口，不是现在藏在登录后面的 `/customer-portal`。
+- [你说的] 不登录也能浏览商品，但看不到价格。
+- [你说的] 登录后能看到价格（并继续下单）。
+- [你说的] 账号体系沿用已经存在的、跟内部调度员分开的那一套（RESTAURANT 角色 + 自助注册审核），不新建。
+- [你说的] 未登录时商品名+图片+分类都显示，价格和库存都不显示。
+- [我推断的] 未登录状态下点"查看价格/加入购物车"时，引导去登录，登录成功后直接进已有的 `/customer-portal`（复用现成的下单/购物车全流程），而不是在匿名页里重新做一套下单逻辑——这是为了不重复造轮子，但"是不是你想要的交互"需要你看了截图再确认。
+- [我推断的] 新入口的 URL 定为 `/shop`（默认命名，你想叫别的名字随时改，不影响实现）。
+- [我推断的] 匿名页不展示促销角标/新品角标/常购清单/再来一单——这些都依赖登录态和历史订单数据，未登录状态下没有意义，直接不做。
+- [我推断的] 已登录的 RESTAURANT 用户如果手动访问 `/shop`，直接跳转到 `/customer-portal`（避免同一个人看到两套长得像但不一样的商品页，造成困惑）。
 
-"确认采购"写入的成本（含运费、确认时点）和"确认收货"写入的成本（不含运费、加权平均、收货时点）口径不同，
-会对同一批货写两次成本。按你"按客户要求去改"的拍板，两边都保留，不改收货环节的算法——这是预期行为，
-写进风险点，不包装成"待你判断"的问题。
+## 范围：这次不做
+
+- 不碰、不整合 `classic/restaurant` 那套孤立 Demo 旧页面。
+- 不改注册审核流程（`/register` 现状保留）。
+- 不做匿名下单（必须登录才能真正下单，匿名页只能看不能买）。
+- 不做"匿名加购物车、登录后恢复购物车"这种跨会话购物车合并——复杂度与收益不成比例，匿名页纯浏览，加购/下单一律引导登录后在 customer-portal 里重新操作。
 
 ## 模块拆解
 
-1. **Schema**：`PurchaseOrderLine` 新增 3 个字段（分摊运费、落地成本、回滚快照）
-2. **分摊算法**：`lib/purchase-landed-cost.ts` 把"按金额占比"换成"按订购数量占比"，支持手动覆盖 + 服务类排除
-3. **确认流程**：`app/api/purchase-orders/[id]/route.ts` 的 `CONFIRMED` 分支里，校验分摊合计、写落地成本到
-   行、写成本价到 Product、整段包进事务（现有代码没用事务，这次因为要跨表写 Product 必须原子化）
-4. **取消流程**：同文件 `CANCELLED` 分支，带竞态保护的回滚（只在"自确认后没被更晚的单子覆盖过"时才回滚）
-5. **UI**：Cost 列改 info 图标；新增可编辑"分摊运费"列；分摊合计校验横幅（红/绿）；Confirm 按钮前置校验
-6. **verify.sh**：新增确认/取消/校验三组探针
+1. **新匿名浏览页面** `app/[locale]/shop/page.tsx` + `layout.tsx`
+   - 商品网格（名称+图片+分类，无价格无库存角标）、分类筛选、分页。
+   - 页面顶部/每个商品卡片上有"登录查看价格"引导按钮。
+   - 已登录 RESTAURANT 用户访问自动跳 `/customer-portal`。
+
+2. **新匿名只读 API**
+   - `GET /api/public/products`：复用 `status=ACTIVE` + `sellable` 过滤，只 select `id/name/spec/images/categoryId`，不 join 价格表、不碰 `Customer`。
+   - `GET /api/public/categories`：复制现有分类聚合逻辑（含 `HIDDEN_CATEGORY_NAMES` 过滤），去掉 `withAuth`。
+
+3. **登录跳转补一个 returnTo**
+   - `/enter` 页面加一个可选 query 参数（如 `?from=shop`），登录成功后如果带这个参数就跳 `/customer-portal`，否则维持现状 `getDefaultLandingPath`。只加这一个分支，不改其他角色的登录行为。
+
+4. **路由保护登记**
+   - `middleware.ts` 页面分支：`/shop` 加入匿名放行名单（跟 `/enter`、`/register` 同一处判断）。
+   - `lib/public-routes.ts`：新增 `/api/public/products`、`/api/public/categories` 两条，写清楚"只读商品名/图片/分类，不含价格、库存、客户、财务数据"的理由。
+   - `tests/public-api-routes.test.ts` 快照同步更新。
 
 ## Schema 设计
 
-```prisma
-model PurchaseOrderLine {
-  ...
-  /// 本行分摊运费（折合欧元）。null=未手动指定，确认时按订购数量比例自动算；
-  /// 非 null=操作员手动覆盖过的值。仅 storable/consumable（Product.type != SERVICE）参与分摊，
-  /// service 行恒为 0 且不计入分摊基数(20261017 客户需求：采购运费分摊进成本)
-  allocatedFreightEur           Decimal? @db.Decimal(12, 2)
-  /// 落地成本 = (本行税前小计Eur + 分摊运费) / 订购数量；确认时写入并同步推到 Product.standardPrice
-  landedUnitCostEur             Decimal? @db.Decimal(12, 4)
-  /// 确认瞬间该商品 Product.standardPrice 的快照，取消时用于回滚；
-  /// 只有真正把成本推到 Product 的行才有值，service 行恒 null
-  standardPriceBeforeConfirmEur Decimal? @db.Decimal(12, 4)
-}
-```
+不需要新表、不需要新字段。全部复用现有 `Product`、`ProductCategory` 表的现有字段。
 
-`PurchaseOrder` 表上那条"运费按行 subtotal 占比摊入...不回写 Product 成本"的注释要同步改掉，避免跟新行为对不上。
+## 路由清单
 
-## 路由 / 函数清单
-
-| 文件 | 改动 |
-|---|---|
-| `prisma/schema.prisma` | 加 3 字段 + 改 1 条过时注释，`prisma migrate dev` 生成迁移 |
-| `lib/purchase-landed-cost.ts` | 分摊算法从"金额占比"改"数量占比"；加 `computeFreightAllocationForConfirm(freightAmountEur, lines)`：区分手动覆盖/自动行，自动行按订购数量比例分摊，整除不尽的余数由最后一行吸收；service 行强制 0 且不进分母 |
-| `app/api/purchase-orders/[id]/route.ts` | `CONFIRMED` 分支：分摊合计校验（不等于 freightAmountEur 则 409，带具体差额）→ 写 `allocatedFreightEur`/`landedUnitCostEur`/`standardPriceBeforeConfirmEur` → 写 `Product.standardPrice`；全部包进 `$transaction`。`CANCELLED` 分支：仅当 `po.status==='CONFIRMED'`（未进入 RECEIVED）时按行回滚，且只在当前 `Product.standardPrice` 仍等于 `landedUnitCostEur`（没被更晚的单子覆盖）时才真正回滚，否则跳过+写审计日志 |
-| `app/[locale]/classic/operator/purchases/[id]/page.tsx` | Cost 列单元格→ info 图标 + tooltip；新增"分摊运费"可编辑列（复用现有 `editLines`/`updateLine` 模式，`SERVICE` 类行禁用显示"—"）；表格上方加分摊校验横幅；Confirm 按钮点击前做客户端同款校验（服务端仍是最终把关） |
-| `scripts/verify.sh` | 新增确认/取消/分摊校验三组探针（见附录 A） |
-
-## 假设清单（我的技术判断，不再找你确认，写在这里留痕）
-
-1. **public price = `Product.standardPrice`**（页面上标"成本价/参考成本"的那个字段），不是 `listPrice`（牌价/
-   售价）——运费分摊讲的是成本，不是售价；Pricelist 的售价公式本身读 `standardPrice` 算出来，成本变了售价
-   会自动联动，不是我去直接改售价字段。
-2. **分摊基准统一按订购数量（`orderedQty`）比例**，不做"箱"的物理换算。截图例子单位全是 CASE，字面说
-   "总箱数"，但系统商品单位可以 KG/个/箱混用，没法做真的箱数换算，所以退化成按数量比例——这跟 UoM 全为
-   CASE 时的效果等价。
-3. **RECEIVED 之后取消不回滚成本**：一旦"确认收货"跑过（库存、批次成本已经被加权平均混合），回滚
-   `standardPrice` 既没意义也有风险，这次只处理"确认但未收货就取消"这一种场景。
-4. **不修复"已收货单仍可被取消"的历史缺口**（见"现状排查"第 6 条），只在成本回滚这一步加防御，不动
-   `goodsReceipt` 计数那道拦截逻辑本身。
+| 路径 | 访问权限 | 说明 |
+|---|---|---|
+| `GET /shop` | 匿名 | 新增，商品浏览 |
+| `GET /api/public/products` | 匿名 | 新增 |
+| `GET /api/public/categories` | 匿名 | 新增 |
+| `GET /customer-portal` | 需登录(RESTAURANT) | 现状不变，登录后下单仍在这里完成 |
 
 ## 风险点
 
-1. 确认采购和确认收货两次写成本、口径不同，是预期行为（见"核心冲突"），不是本次要修的 bug。
-2. 回滚竞态：两张不同的 PO 确认了同一个商品，后取消先确认的那张时，不会把后一张刚写的新成本覆盖掉——
-   跳过并留日志，不强行回退。
-3. 分摊合计校验是硬性拦截（409），不会静默放行也不会自动"抹平"差额（除非完全没手动改过，那种情况自动
-   分摊本来就不会有余数）。
+1. **白名单扩面是真事故区**：新接口从查询层就不 select 价格/客户字段，不是"返回前删字段"，避免重复 2026-08-02 的坑。
+2. **分类污染**：必须复用 `HIDDEN_CATEGORY_NAMES` 过滤名单，否则内部测试类目("TEST"等)会被客户看到。
+3. **两套商品页混淆**：已登录用户手动输入 `/shop` 网址会被强制跳到 `/customer-portal`，避免看到两份长得不一样的商品列表。
+4. **`/enter` 改动范围要收窄**：只加一个 query 参数分支，不能动到其它角色（BOSS/OPERATOR/SALES 等）现有的登录跳转逻辑。
 
-## 附录 A：技术验收标准（verify.sh，我自证，你不用看）
+## 执行顺序（先出可看物，不是先写后端）
 
-- `npx tsc --noEmit`、`npm run build`、`npx prisma migrate status` 全过
-- 迁移探针：新 3 字段迁移成功应用到开发库
-- 路由探针：对一张测试 PO 执行 `action=confirm`，断言涉及商品 `Product.standardPrice` 更新为预期落地成本
-  （(税前小计+分摊运费)/订购数量）；再执行 `action=cancel`，断言 `standardPrice` 恢复为确认前快照
-- 鉴权探针：`confirm`/`cancel` 分别用「无 token / 错 token / 低权限（无 purchase.order.approve）」请求，
-  断言 401/401/403（复用现有权限位，不新增权限点）
-- 校验探针：故意让分摊合计差 0.01，断言 `confirm` 返回 409 且错误信息带具体差额
-- service 类型探针：单子里混一个 `SERVICE` 行，断言该行 `allocatedFreightEur` 恒为 0 且不占分摊基数
-- 查询/性能：本次改动不涉及列表接口，不新增 N+1 风险
+1. 先出 `/shop` 静态页截图（真实文案+假数据+能点，不接真实 API）给你确认长什么样、交互对不对——这一步不动数据库和后端。
+2. 你确认后，接 `/api/public/products`、`/api/public/categories` 真实数据。
+3. 接登录引导 + `returnTo` 跳转，打通"浏览→登录→进 customer-portal 下单"整条链路。
+4. 跑 `scripts/verify.sh` + 补充本次新增路由的鉴权探针（匿名访问 `/api/public/*` 应 200 且不含价格字段；匿名访问 `/customer-portal/*` 应 302/401）。
+5. `/code-review high` + `/security-review`（本次属于新路由+鉴权变更的大改，按 CLAUDE.md 十一节必须跑）。
 
-verify.sh 不过不写完成报告；无命令输出的条目标 ⚠️ 未验证，不标 ✅。
+## 附录 A：技术验收标准（我负责，你不用看）
 
----
+`scripts/verify.sh` 本次新增断言：
 
-📋 计划已生成。三块内容，只有第 1 块需要你判断：
+- `npx tsc --noEmit`、`npm run build` 通过
+- 路由探针：`GET /shop` 匿名 200；`GET /api/public/products` 匿名 200；`GET /api/public/categories` 匿名 200
+- 鉴权探针：
+  - `GET /api/public/products` 匿名返回的商品对象里**不含**任何价格字段（`customerPrice`/`price`/`listPrice`/`lastPrice`/`originalPrice`）和库存字段（`outOfStock`/`qtyOnHand`）——断言 JSON 里这些 key 不存在，不是断言值为 null
+  - `GET /customer-portal` 匿名访问应被 middleware 重定向到 `/enter`（302）
+  - `GET /api/customer-portal/products` 无 token 应仍 401（确认本次改动没有顺手放宽现有接口）
+- `tests/public-api-routes.test.ts` 快照更新且通过
+- 查询探针：`/api/public/products` 不 N+1、分页合理
 
-【需要你判断 — 场景清单】
-用你的话描述做完之后是什么样，逐条标注来源：
-- [客户说的] 采购单详情页，Cost 列旁边（或下面）新增一列"分摊运费"，默认按每行订购数量占比自动算出建议值，可以手动改成别的数
-- [客户说的] 页面上能看到"分摊运费合计"和"运费总额"是否对得上的提示，对不上点不了"Confirm Purchase"
-- [客户说的] 点 Confirm Purchase 后，这批商品的成本价变成这次算出来的落地成本（原单价+分摊运费）
-- [客户说的] 如果这张单后来被取消（且还没走到"确认收货"），成本价恢复成确认前的值
-- [你说的] Cost 列改成一个 info 图标，鼠标悬停才显示历史参考成本，不占着一整列空间常驻显示
-- [我推断的] 只对非 SERVICE 类型的商品做分摊和成本联动，SERVICE 类型商品该列显示"—"，不参与分摊
-- [我推断的] "public price" 落在成本价字段（`standardPrice`），不是售价/牌价字段（`listPrice`）；售价会因为
-  Pricelist 公式读成本价而间接联动，不是我直接改售价
-- [我推断的] 分摊基准按订购数量比例，不做"箱"的物理单位换算（截图例子单位全是 CASE，混合单位时按数量比例是
-  最接近字面意思的实现）
-- [我推断的] 一旦这张单已经走到"确认收货"，取消时不再回滚成本价（库存/批次成本那时已经被收货环节的加权
-  平均混合过，回滚没意义还可能把后续更新的成本带错）
+铁律：verify.sh 不过不写完成报告；没有命令输出的条目标 ⚠️ 未验证，不标 ✅。
 
-推断项最容易错，请重点看这几条，尤其是 public price 落在哪个字段这一条。
+### 实际验收结果（2026-10-20，本次会话内重跑，证据见 DEV-REPORT.md「存档用的」）
 
-【我负责 — 你不用看】
-技术验收标准与 verify.sh 见附录 A。性能、鉴权、类型、查询效率由我定标准、我自证、我贴证据。
-（本次不涉及新建数据库/部署目标，沿用项目现有 Neon 开发库 + DigitalOcean 生产部署）
+- ✅ `npx tsc --noEmit` 通过（exit 0，无输出）
+- ✅ `npm run build` 通过（路由树含 `/shop`，无 error/failed）
+- ✅ 路由探针：`/shop`→200、`/api/public/products`→200、`/api/public/categories`→200
+- ✅ 鉴权探针：抽样 20 条商品 key 集合仅 `categoryId/id/images/name/saleDescription/spec`，不含任何价格/库存字段；`/customer-portal`匿名→307（本项目用 intl 中间件统一走 307 而非 302，效果等价）；`/api/customer-portal/products` 无 token→401（未被顺手放宽）
+- ✅ `tests/public-api-routes.test.ts` 4/4 通过
+- ✅ 查询探针：`/api/public/products?page=1&pageSize=3` 返回 `total:1735, totalPages:579`，确认分页生效（修复前 `pageSize=100` 单次拉取会截断 94% 商品）
+- ✅ 限流：65 连发同一限流桶，60×200 后 5×429，约 60 秒后恢复
+- ⚠️ 浏览器真实点击/视觉验收未完成（本机 Chrome 二进制缺失，Playwright/chrome-devtools MCP 打不开页面），已用 curl + 真实登录 + DB 回读替代，但页面交互手感仍待你本人在浏览器里确认
 
-【一次性告知 — 不同意就说】
-- 歧义清单：确认采购 vs 确认收货两处都会写成本价、口径不同，按你的决定两边都保留，不是 bug
-- 假设清单：见上方"假设清单"4 条
-- 已知缺口（不在本次范围）：已收货单理论上仍可能被取消却不报错——这是本次调研中发现的历史缺口，不是
-  这次新功能引入的，这次只加了"RECEIVED 后不回滚成本"这一道防御，没有去补更大的那个缺口
+## 附录 B：登录问题排查进度（已暂停，留档待续）
 
-回复"确认"后我不再就实现细节打断你。
+你要求先搁置，已排查到的结论（避免下次重新来一遍）：
+- 生产 `JWT_SECRET` 已正确设置，不是用兜底假密钥
+- 生产镜像是最新的，历史"Cookie 横幅挡住登录按钮"修复已生效
+- 你的账号 `erichecan@gmail.com` 在生产库状态正常（role=BOSS, isActive=true）
+- 你描述的现象是"感觉跳转了一下，又被弹回登录页"，用手机自带浏览器直接打开网址——这个模式历史上出现过（`middleware.ts:95` 注释记录的"同名 cookie 多份残留"问题），代码里已有逐个验签兜底，但不能排除你手机上这份残留比较复杂
+- 下一步（恢复排查时直接执行）：先让你清一次手机浏览器里这个网站的数据再登录测试，确认是否是残留 cookie 问题

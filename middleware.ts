@@ -83,8 +83,10 @@ export async function middleware(req: NextRequest) {
 
   // /register：餐馆自助注册，匿名可访问；提交走 /api/auth/register（后续单独加进
   // lib/public-routes.ts 的 API 白名单，页面白名单在这里单独判断，两处互不共用逻辑）
+  // /shop：餐厅自助下单的匿名浏览入口（20261020），只读商品名/图片/分类，不含价格/库存
   if (barePath === '/' || barePath === '/enter' || barePath.startsWith('/enter')
-    || barePath === '/register' || barePath.startsWith('/register')) {
+    || barePath === '/register' || barePath.startsWith('/register')
+    || barePath === '/shop' || barePath.startsWith('/shop')) {
     return intlMiddleware(req)
   }
 

@@ -822,6 +822,7 @@ export default function ClassicProductsPage() {
         permanentActions={[
           { label: isEn ? 'Import' : '导入', onClick: () => setImportOpen(true) },
           exportActionLabeled,
+          { label: isEn ? 'Bulk Upload Images' : '批量上传图片', onClick: () => router.push(`${prefix}/classic/operator/products/bulk-images`) },
         ]}
         actions={selected.size > 0 ? [
           { label: exportActionLabeled.label, onClick: exportActionLabeled.onClick, disabled: bulkRunning },

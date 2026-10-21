@@ -31,6 +31,8 @@ const EXPECTED_PUBLIC: Record<string, string> = {
   '/api/cron/generate-statements': '定时任务，自带 CRON_SECRET 校验，不走 JWT（与 backup-database 同类）',
   '/api/cron/ledger-check': '定时账本核对（20261014），自带 CRON_SECRET 校验，不走 JWT；只读，不返回业务明细',
   '/api/cron/auto-confirm-departure': '定时任务，自带 CRON_SECRET 校验，不走 JWT（与 backup-database 同类）',
+  '/api/public/products': '餐厅自助下单匿名浏览入口（/shop，20261020），只 select 名称/图片/规格/分类，查询层不碰价格/库存字段',
+  '/api/public/categories': '/shop 的分类导航，只回类目名+数量，复用 customer-portal/categories 的过滤名单但去掉鉴权',
 }
 
 /** 扫 app/api，把每个 route.ts 还原成 URL 路径 */

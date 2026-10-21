@@ -30,6 +30,14 @@ export const PUBLIC_API_ROUTES = [
   '/api/tile',
   /** 定时任务入口，自带 CRON_SECRET 校验（见各 route.ts 首行），不走 JWT */
   '/api/cron',
+  /**
+   * 餐厅自助下单匿名浏览入口（/shop，20261020）。两条都是从查询层就只 select
+   * 名称/图片/规格/分类几个字段，不碰价格（listPrice/price/standardPrice）、
+   * 库存（qtyOnHand）、客户、财务数据——不是"算完再删字段"，是查询本身就没碰。
+   * 见 app/api/public/products/route.ts、app/api/public/categories/route.ts 首行注释。
+   */
+  '/api/public/products',
+  '/api/public/categories',
 ] as const
 
 /** middleware 的放行判定。与 middleware.ts 共用同一份实现，避免两处逻辑漂移。 */

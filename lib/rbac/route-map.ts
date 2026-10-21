@@ -279,6 +279,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
 
   { pattern: '/api/products/quick-create', permission: 'master.product.create' },
   { pattern: '/api/products/bulk', permission: 'master.product.update' },
+  { pattern: '/api/products/bulk-images', methods: ['POST'], permission: 'master.product.update' },
   { pattern: '/api/products/forecast', permission: 'master.product.read_detail' },
   { pattern: '/api/products/pending-demand', permission: 'master.product.read_detail' },
   { pattern: '/api/products/similar', permission: 'master.product.read_detail' },
