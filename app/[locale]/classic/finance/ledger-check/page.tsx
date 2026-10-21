@@ -130,6 +130,25 @@ export default function LedgerCheckPage() {
     }
   }
 
+  // 统一退回已确认（「已排波次」却不在任何司机车上的订单，20261021）
+  async function fixOrphanWaves(count: number) {
+    if (!window.confirm(isEn
+      ? `Move ${count} order(s) back to Confirmed? They are marked wave-assigned but sit on no dated wave, so the dispatch console never shows them. Schedule them again in the dispatch console afterwards.`
+      : `把 ${count} 张「已排波次」但不在任何司机车上的订单退回「已确认」？之后请到调度台按日期重新拖给司机。`)) return
+    setBusy(true)
+    try {
+      const r = await apiPost<{ total: number; fixed: string[]; failed: Array<{ code: string; error: string }> }>('/api/finance/ledger-check/orphan-wave-orders', {})
+      if (r.failed.length) toast.error(isEn ? `${r.failed.length} failed: ${r.failed.map(f => `${f.code} ${f.error}`).join('; ')}` : `${r.failed.length} 张失败：${r.failed.map(f => `${f.code} ${f.error}`).join('；')}`)
+      toast.success(isEn ? `Moved ${r.fixed.length} order(s) back to Confirmed` : `已退回 ${r.fixed.length} 张订单为「已确认」`)
+      await apiPost('/api/finance/ledger-check', {})
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Failed' : '退回失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function runNow() {
     setBusy(true)
     try {
@@ -209,6 +228,12 @@ export default function LedgerCheckPage() {
                     <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="fix-uninvoiced-orders"
                       onClick={() => fixUninvoiced(r.diffCount)}>
                       {isEn ? `Create draft invoices (${r.diffCount})` : `统一补开草稿发票（${r.diffCount} 张）`}
+                    </Button>
+                  )}
+                  {r.key === 'orphan_wave_orders' && r.diffCount > 0 && (
+                    <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="fix-orphan-waves"
+                      onClick={() => fixOrphanWaves(r.diffCount)}>
+                      {isEn ? `Move back to Confirmed (${r.diffCount})` : `统一退回已确认（${r.diffCount} 张）`}
                     </Button>
                   )}
                   {r.key === 'completed_wave_open_trips' && r.diffCount > 0 && (

@@ -373,6 +373,50 @@ export async function fixOpenTripsOfCompletedWaves() {
   return { total: ids.length, fixed: rows.map(r => String(r.name ?? r.id)), failed }
 }
 
+/**
+ * 状态是「已排波次 / Driver Assigned」，却不在任何有排程日期的波次里的订单（20261021）。
+ * 来源：销售单列表原「生成拣货波次」按钮建的波次没有日期也没有司机，调度台按日期看不到它，
+ * 22 点自动出发也不管，单子就悬着（按钮已改成跳调度台排车，POST /api/waves 也不再接受无日期带单）。
+ */
+export async function findOrphanWaveOrders(): Promise<Row[]> {
+  return q(`
+    SELECT o.id, o.code, o."restaurantName", o."deliveryDate",
+           (SELECT string_agg(w.name, ', ') FROM "PickingWave" w WHERE o.id = ANY(w."orderIds")) AS "waves"
+    FROM "Order" o
+    WHERE o.status = 'WAVE_ASSIGNED'
+      AND NOT EXISTS (SELECT 1 FROM "PickingWave" w WHERE w."waveDate" IS NOT NULL AND o.id = ANY(w."orderIds"))
+    ORDER BY o."deliveryDate" NULLS LAST, o.code`)
+}
+
+const orphanWaveOrders: Check = async () => {
+  const rows = await findOrphanWaveOrders()
+  return {
+    key: 'orphan_wave_orders', label: '显示「已排波次」但不在任何司机车上的订单', labelEn: 'Orders marked wave-assigned but on no dated wave',
+    severity: 'info', diffCount: rows.length, samples: cleanSamples(rows),
+    note: '调度台哪天都看不到这些单、也不会自动出发。可点「统一退回已确认」，再到调度台按日期拖给司机',
+  }
+}
+
+/** 统一退回已确认：移出这些没有日期的波次，状态 WAVE_ASSIGNED → CONFIRMED（与调度台「移出」同一套逻辑） */
+export async function fixOrphanWaveOrders() {
+  const { removeOrderFromAllWaves } = await import('@/lib/wave-assign')
+  const rows = await findOrphanWaveOrders()
+  const fixed: string[] = []
+  const failed: Array<{ code: string; error: string }> = []
+  for (const r of rows) {
+    const code = String(r.code ?? r.id)
+    try {
+      await removeOrderFromAllWaves(String(r.id))
+      // 一个波次都不在、只是状态停在 WAVE_ASSIGNED 的，removeOrderFromAllWaves 不会改状态，这里补上
+      await prisma.order.updateMany({ where: { id: String(r.id), status: 'WAVE_ASSIGNED' }, data: { status: 'CONFIRMED' } })
+      fixed.push(code)
+    } catch (e) {
+      failed.push({ code, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return { total: rows.length, fixed, failed }
+}
+
 const inventoryValue: Check = async () => {
   const [gl] = await q(`
     SELECT COALESCE(SUM(l.debit - l.credit), 0)::float AS bal
@@ -422,7 +466,7 @@ const poLineReceived: Check = async () => {
   }
 }
 
-const STOCK_CHECKS: Check[] = [stockOnHand, lotBalance, moveLocations, locationBalances, ordersWithoutStock, poLineReceived, inventoryValue]
+const STOCK_CHECKS: Check[] = [stockOnHand, lotBalance, moveLocations, locationBalances, ordersWithoutStock, orphanWaveOrders, poLineReceived, inventoryValue]
 
 /** 其它模块在这里登记自己的检查项 */
 const EXTRA_CHECKS: Check[] = []
