@@ -16,6 +16,7 @@ import {
 } from '@/lib/sale-uom'
 import SaleUomsEditor from '@/components/classic/SaleUomsEditor'
 import ProductPricelistRules from '@/components/classic/ProductPricelistRules'
+import ProductLotMoveDrawer from '@/components/classic/ProductLotMoveDrawer'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { readProductNavList } from '@/lib/product-nav-list'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
@@ -48,6 +49,14 @@ function IconSales() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 9m12-9l2 9M9 22a1 1 0 100-2 1 1 0 000 2zm6 0a1 1 0 100-2 1 1 0 000 2z"/>
+    </svg>
+  )
+}
+
+function IconLotMove() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7l9-4 9 4-9 4-9-4z M3 7v10l9 4 9-4V7 M12 11v10"/>
     </svg>
   )
 }
@@ -186,6 +195,9 @@ export default function ClassicProductDetailPage() {
 
   // Smart button stats
   const [soldCount, setSoldCount] = useState(0)
+  // 「Lot/Move」智能按钮（20261021 客户需求：在商品页看这个商品的批次 / 库存流水完整信息）
+  const [moveCount, setMoveCount] = useState<number | null>(null)
+  const [showLotMove, setShowLotMove] = useState(false)
   const [onHandQty, setOnHandQty] = useState(0)
   // 预测库存(20261015 客户反馈)：复用 /api/products/forecast 既有口径(在手+采购在途-待出库)，
   // 不读 Product.forecastQty——那是收货后不更新的死字段
@@ -317,6 +329,9 @@ export default function ClassicProductDetailPage() {
           if (matching.length > 0) count++
         }
         setSoldCount(count)
+        apiGet<{ total: number }>(`/api/stock-moves?paged=1&pageSize=1&productId=${encodeURIComponent(found.id)}`)
+          .then(r => setMoveCount(r.total))
+          .catch(() => setMoveCount(null))
         // 20260825 合表重构：Product 自己就是唯一的库存单元(不再有"模板下多个变体"这层)，
         // 在手库存/库存单元直接取这一条记录，不用再拉全量 /api/products 过滤。
         const qty = Number((found as unknown as { qtyOnHand?: number }).qtyOnHand ?? 0)
@@ -817,6 +832,13 @@ export default function ClassicProductDetailPage() {
             {!isNew && (
               <div className="flex flex-wrap gap-2 justify-end flex-shrink-0 max-w-sm">
                 <SmartButton
+                  icon={<IconLotMove />}
+                  value={moveCount ?? '—'}
+                  label="Lot/Move"
+                  title={isEn ? 'View all lots and stock moves of this product' : '查看这个商品的全部批次和库存流水'}
+                  onClick={() => setShowLotMove(true)}
+                />
+                <SmartButton
                   icon={<IconSales />}
                   value={soldCount}
                   label="Sales"
@@ -1217,6 +1239,10 @@ export default function ClassicProductDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showLotMove && tmpl && (
+        <ProductLotMoveDrawer productId={tmpl.id} productName={tmpl.name} isEn={isEn} prefix={prefix} onClose={() => setShowLotMove(false)} />
       )}
 
       {priceHistoryField === 'standardPrice' && (
