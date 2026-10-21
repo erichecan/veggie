@@ -98,6 +98,7 @@ export default function CustomerProductsPage() {
             <ProductGrid
               products={p.products} cart={p.cart} addToCart={p.addToCart} setQty={p.setQty}
               page={p.page} totalPages={p.totalPages} setPage={p.setPage} activeSearch={p.activeSearch} isEn={isEn}
+              loadError={p.loadError}
             />
           )}
         </div>

@@ -29,6 +29,8 @@ export interface CreateUserInput {
   /** 单角色(旧客户端)；与 roles[] 至少给一个，role 作为主角色 */
   role?: unknown
   roles?: unknown
+  /** 餐馆账号(RESTAURANT)必填：登录客户门户后按它找客户档案、算专属价、下单挂客户 */
+  customerId?: unknown
 }
 
 export interface CreateUserOptions {
@@ -45,6 +47,8 @@ export interface ValidNewUser {
   password: string
   primaryRole: string
   roles: string[]
+  /** 只有餐馆账号才有；员工账号恒为 null */
+  customerId: string | null
 }
 
 export interface CreatedUser {
@@ -87,7 +91,15 @@ export function validateNewUser(
   const invalid = roles.find(r => !allowed.includes(r))
   if (invalid) return { ok: false, error: `无效角色: ${invalid}` }
 
-  return { ok: true, value: { name: name.slice(0, 100), email: email.slice(0, 200), password, primaryRole, roles } }
+  // 20261021：管理员在「餐馆账号」tab 手工建号从来不挂客户，建出来的号登录门户后
+  // /api/customer-portal/products 403「未找到关联客户信息」——分类能看到、商品一个都没有。
+  // 餐馆账号没有客户档案就是个空壳，建号时就必须挑一个客户。
+  const isRestaurant = roles.includes('RESTAURANT')
+  const customerId = isRestaurant && typeof input.customerId === 'string' && input.customerId.trim()
+    ? input.customerId.trim() : null
+  if (isRestaurant && !customerId) return { ok: false, error: '餐馆账号必须关联一个客户' }
+
+  return { ok: true, value: { name: name.slice(0, 100), email: email.slice(0, 200), password, primaryRole, roles, customerId } }
 }
 
 /** bcrypt 故意慢(~250ms)；单个建号时放在事务外，免得占着事务连接 */
@@ -112,6 +124,7 @@ export async function insertUserAccount(
       isActive: true,
       mustChangePassword: options.mustChangePassword === true,
       managerId: options.managerId ?? null,
+      customerId: value.customerId,
     },
     select: { id: true, userNo: true, email: true, name: true, role: true, roles: true, isActive: true, createdAt: true, updatedAt: true },
   })
@@ -141,6 +154,10 @@ export async function createUserAccount(input: CreateUserInput, options: CreateU
 
   const existing = await prisma.user.findUnique({ where: { email: v.value.email }, select: { id: true } })
   if (existing) return { ok: false, status: 409, error: '该邮箱已被注册' }
+  if (v.value.customerId) {
+    const customer = await prisma.customer.findUnique({ where: { id: v.value.customerId }, select: { id: true } })
+    if (!customer) return { ok: false, status: 400, error: '关联的客户不存在' }
+  }
 
   const passwordHash = await hashNewPassword(v.value.password)
   const user = await prisma.$transaction(

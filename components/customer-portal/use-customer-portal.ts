@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { apiGet, apiPost } from '@/lib/api'
+import { apiGet, apiPost, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import { eur } from '@/lib/format-money'
 import { loadCart, saveCart, toPercent, mergeCartItems, type CartItem } from './cart-utils'
@@ -41,6 +41,8 @@ function mockCapacityWarning(dateStr: string, isEn: boolean): string | null {
 export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) {
   const [products, setProducts] = useState<Product[]>([])
   const [gridLoading, setGridLoading] = useState(true)
+  /** 商品目录加载失败的原因，商品网格的空状态直接显示它（不再只有一句笼统的 toast） */
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [searchInput, setSearchInput] = useState('')
@@ -96,8 +98,20 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
         setProducts(d.products || [])
         setPaymentTerm(d.paymentTerm ?? null)
         setTotalPages(d.totalPages || 1)
+        setLoadError(null)
       })
-      .catch(() => { if (!cancelled) toast.error(isEn ? 'Failed to load products' : '加载商品失败') })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        // 20261021：账号没关联客户档案时，原来只弹「加载商品失败」，客户和管理员都看不出是哪出了问题
+        const msg = e instanceof ApiError && e.details?.reason === 'NO_LINKED_CUSTOMER'
+          ? (isEn
+            ? 'This account is not linked to a customer yet, so no products can be shown. Please contact us to link your account.'
+            : '这个账号还没有关联客户档案，暂时看不到商品，请联系我们为账号关联客户。')
+          : `${isEn ? 'Failed to load products' : '加载商品失败'}${e instanceof Error && e.message ? `：${e.message}` : ''}`
+        setProducts([])
+        setLoadError(msg)
+        toast.error(msg)
+      })
       .finally(() => { if (!cancelled) setGridLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -236,7 +250,7 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
   const capacityWarning = mockCapacityWarning(deliveryDate, isEn)
 
   return {
-    products, gridLoading, page, setPage, totalPages,
+    products, gridLoading, loadError, page, setPage, totalPages,
     searchInput, setSearchInput, activeSearch, paymentTerm,
     categoryId, selectCategory, categories, banners, handleBannerClick,
     frequent, cart, submitting, showCart, setShowCart,

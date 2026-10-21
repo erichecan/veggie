@@ -8,7 +8,7 @@ const PURPLE = '#875A7B'
 
 export function ProductGrid({
   products, cart, addToCart, setQty,
-  page, totalPages, setPage, activeSearch, isEn,
+  page, totalPages, setPage, activeSearch, isEn, loadError,
 }: {
   products: Product[]
   cart: CartItem[]
@@ -19,6 +19,8 @@ export function ProductGrid({
   setPage: (p: number) => void
   activeSearch: string
   isEn: boolean
+  /** 加载失败的原因（如账号未关联客户）；有它时空状态显示原因，而不是「暂无商品」 */
+  loadError?: string | null
 }) {
   return (
     <>
@@ -95,7 +97,12 @@ export function ProductGrid({
         })}
       </div>
 
-      {products.length === 0 && (
+      {products.length === 0 && loadError && (
+        <div className="max-w-md mx-auto my-12 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-800" data-testid="portal-load-error">
+          {loadError}
+        </div>
+      )}
+      {products.length === 0 && !loadError && (
         <div className="text-center py-16 text-gray-400">
           {activeSearch
             ? (isEn ? `No products found for "${activeSearch}"` : `没有找到 "${activeSearch}" 相关商品`)

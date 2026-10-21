@@ -7,7 +7,7 @@ import { forgetPermVersions } from '@/lib/rbac/perm-version'
 import { assessNewPassword } from '@/lib/password-policy'
 import bcrypt from 'bcryptjs'
 
-const USER_TRACKED_FIELDS = ['name', 'role', 'isActive']
+const USER_TRACKED_FIELDS = ['name', 'role', 'isActive', 'customerId']
 
 // PUT /api/users/[id] — 修改姓名、角色、isActive、newPassword（仅 OPERATOR）
 /**
@@ -58,7 +58,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   return withAuth(req, async (me) => {
     try {
       const body = await req.json()
-      const { name, role, roles, isActive, newPassword, managerId, approve, reject } = body
+      const { name, role, roles, isActive, newPassword, managerId, customerId, approve, reject } = body
 
       // 待审核餐馆账号的批准 / 拒绝——跟下面的通用字段更新分开处理，早返回。
       if (approve === true || reject === true) {
@@ -158,9 +158,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       }
       const before = await prisma.user.findUnique({
         where: { id },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: { id: true, email: true, name: true, role: true, roles: true, isActive: true, customerId: true },
       })
       if (!before) return NextResponse.json({ error: '用户不存在' }, { status: 404 })
+
+      // 餐馆账号关联的客户（20261021）：门户的商品目录/专属价/下单全靠它找客户档案，
+      // 没挂客户的餐馆账号登录后商品一个都看不到。只允许给餐馆账号挂，且不能清空。
+      if (customerId !== undefined) {
+        const accountRoles = Array.isArray(updateData.roles)
+          ? updateData.roles as string[]
+          : (before.roles.length > 0 ? before.roles : [String(before.role)])
+        if (!accountRoles.includes('RESTAURANT')) {
+          return NextResponse.json({ error: '只有餐馆账号才能关联客户' }, { status: 400 })
+        }
+        const next = typeof customerId === 'string' ? customerId.trim() : ''
+        if (!next) return NextResponse.json({ error: '餐馆账号必须关联一个客户' }, { status: 400 })
+        const exists = await prisma.customer.findUnique({ where: { id: next }, select: { id: true } })
+        if (!exists) return NextResponse.json({ error: '关联的客户不存在' }, { status: 400 })
+        updateData.customerId = next
+      }
 
       // ⛔ 这条路走的是**管理员替别人设密码**，比自助改密更危险，校验却一度更松
       //    （只看 length >= 6）。两条路必须过同一个 assessNewPassword ——
@@ -179,7 +195,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const user = await prisma.user.update({
         where: { id },
         data: updateData,
-        select: { id: true, email: true, name: true, role: true, isActive: true, updatedAt: true },
+        select: { id: true, email: true, name: true, role: true, isActive: true, customerId: true, updatedAt: true },
       })
 
       // ⛔ 过渡期同步：权限判定的真相是 UserRoleLink（20260807 起），而这个页面改的
