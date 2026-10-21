@@ -16,6 +16,8 @@ export interface SystemUser {
   /** 自助注册（/register）产生、尚未内部审核通过的账号；管理员手工建号恒为 false */
   pendingApproval?: boolean
   customerId?: string | null
+  /** 餐馆账号关联的客户（列表接口附带）；customerId 指向的客户已不存在时也是 null */
+  customer?: { id: string; name: string } | null
   /** 上级。数据范围为「本人及下属」的角色靠这条链决定能看到谁的单据 */
   managerId?: string | null
   manager?: { id: string; name: string } | null

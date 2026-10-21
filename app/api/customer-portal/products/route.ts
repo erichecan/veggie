@@ -39,7 +39,8 @@ export async function GET(req: Request) {
       const customer = await loadCustomerFromRestaurantId(prisma, user.userId)
       if (!customer) {
         return NextResponse.json(
-          { error: '未找到关联客户信息，请联系管理员' },
+          // reason 给门户前端认：要明确告诉客户「账号没关联客户」，而不是笼统的「加载商品失败」（20261021）
+          { error: '未找到关联客户信息，请联系管理员', reason: 'NO_LINKED_CUSTOMER' },
           { status: 403 },
         )
       }

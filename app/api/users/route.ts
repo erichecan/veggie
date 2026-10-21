@@ -35,10 +35,19 @@ export async function GET(req: Request) {
           // passwordHash 永远不返回给前端
         },
       })
+      // 餐馆账号关联的客户名（User.customerId 没建 Prisma relation，单独查一次）：
+      // 列表上要能一眼看出哪个餐馆账号没挂客户——没挂的登录门户看不到商品（20261021）
+      const customerIds = [...new Set(users.map(u => u.customerId).filter((x): x is string => !!x))]
+      const customerNames = new Map(customerIds.length === 0 ? [] : (await prisma.customer.findMany({
+        where: { id: { in: customerIds } },
+        select: { id: true, name: true },
+      })).map(c => [c.id, c.name]))
       // 老数据 roles 为空时，回填一份 [role] 给前端，避免分散判断逻辑
       const normalized = users.map(u => ({
         ...u,
         roles: Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [String(u.role)],
+        customer: u.customerId && customerNames.has(u.customerId)
+          ? { id: u.customerId, name: customerNames.get(u.customerId)! } : null,
       }))
       const filtered = roleFilterSet
         ? normalized.filter(u => u.roles.some(r => roleFilterSet.has(r.toUpperCase())))

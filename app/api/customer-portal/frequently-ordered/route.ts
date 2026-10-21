@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     try {
       const customer = await loadCustomerFromRestaurantId(prisma, user.userId)
       if (!customer) {
-        return NextResponse.json({ error: '未找到关联客户信息，请联系管理员' }, { status: 403 })
+        return NextResponse.json({ error: '未找到关联客户信息，请联系管理员', reason: 'NO_LINKED_CUSTOMER' }, { status: 403 })
       }
 
       // 与 lib/server-pricing.ts 的 queryLastSoldPricesDetailed 同一套 restaurantId 解析逻辑：

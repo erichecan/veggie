@@ -9,6 +9,7 @@ import type { SystemUser, UserRole } from '@/lib/types'
 import type { ExportColumn } from '@/lib/export/types'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import BulkImportDialog, { type BulkImportColumn } from '@/components/shared/BulkImportDialog'
+import CustomerSearchInput from '@/components/classic/CustomerSearchInput'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -75,10 +76,13 @@ interface FormState {
   email: string
   role: UserRole
   password: string
+  /** 餐馆账号关联的客户（必填）：门户的商品目录/专属价/下单都按它找客户档案 */
+  customer: { id: string; name: string } | null
+  customerQuery: string
 }
 
 function emptyForm(): FormState {
-  return { name: '', email: '', role: 'RESTAURANT', password: '' }
+  return { name: '', email: '', role: 'RESTAURANT', password: '', customer: null, customerQuery: '' }
 }
 
 function userInitials(name: string): string {
@@ -127,7 +131,21 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, selected, onSelect, onEdi
           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${ROLE_COLOR[u.role]}`}>
             {userInitials(u.name)}
           </div>
-          <span className="font-medium text-gray-900">{u.name}</span>
+          <div className="min-w-0">
+            <span className="font-medium text-gray-900">{u.name}</span>
+            {allRoles.includes('RESTAURANT') && (
+              u.customer ? (
+                <div className="text-xs text-gray-500 truncate" data-testid={`user-customer-${u.id}`}>
+                  {isEn ? 'Customer: ' : '客户：'}{u.customer.name}
+                </div>
+              ) : (
+                <div className="text-xs text-red-600 font-medium" data-testid={`user-no-customer-${u.id}`}
+                  title={isEn ? 'Without a linked customer this account sees no products in the portal — use Edit to link one' : '没有关联客户，登录门户后看不到任何商品——点「编辑」关联客户'}>
+                  {isEn ? '⚠ No linked customer' : '⚠ 未关联客户'}
+                </div>
+              )
+            )}
+          </div>
         </div>
       </td>
       <td className="px-4 py-3 text-gray-500 font-mono text-xs">{u.email}</td>
@@ -206,6 +224,7 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, selected, onSelect, onEdi
 const FACET_DEFS: ClientFacetDef<SystemUser>[] = [
   { key: 'name',  label: '姓名', labelEn: 'Name',  values: r => [r.name] },
   { key: 'email', label: '邮箱', labelEn: 'Email', values: r => [r.email] },
+  { key: 'customer', label: '关联客户', labelEn: 'Customer', values: r => [r.customer?.name ?? '—'] },
   { key: 'role',  label: '角色', labelEn: 'Role',  values: r => (r.roles && r.roles.length > 0 ? r.roles : [r.role]) },
   { key: 'manager', label: '上级', labelEn: 'Manager', values: r => [r.manager?.name ?? '—'] },
   { key: 'status', label: '状态', labelEn: 'Status', values: r => [r.pendingApproval ? 'Pending' : r.isActive ? 'Active' : 'Inactive'] },
@@ -267,7 +286,7 @@ export default function UsersTab({
 
   function openEdit(u: SystemUser) {
     setEditingId(u.id)
-    setForm({ name: u.name, email: u.email, role: u.role, password: '' })
+    setForm({ name: u.name, email: u.email, role: u.role, password: '', customer: u.customer ?? null, customerQuery: '' })
     setDialogOpen(true)
   }
 
@@ -275,6 +294,10 @@ export default function UsersTab({
     if (saving) return
     if (!form.name.trim()) { toast.error(isEn ? 'Name cannot be empty' : '姓名不能为空'); return }
     if (!form.email.trim()) { toast.error(isEn ? 'Email cannot be empty' : '邮箱不能为空'); return }
+    if (isRestaurantGroup && !form.customer) {
+      toast.error(isEn ? 'Please link a customer — without one the account sees no products in the portal' : '请选择关联客户——没有客户档案，登录门户后看不到任何商品')
+      return
+    }
     // 与后端同一个 assessNewPassword —— 前端只是提前告知，判定权仍在后端。
     // 之前这里写死 6 位，而后端要 10 位且有黑名单：填了 6 位前端放行、后端打回。
     if (!editingId) {
@@ -291,6 +314,7 @@ export default function UsersTab({
         // 角色改动已并入行上的「权限」入口（多角色/个人例外/上级都在那），这里只改姓名
         await apiPut<SystemUser>(`/api/users/${editingId}`, {
           name: form.name.trim(),
+          ...(isRestaurantGroup && form.customer ? { customerId: form.customer.id } : {}),
         })
         toast.success(isEn ? 'User info updated' : '用户信息已更新')
       } else {
@@ -299,6 +323,7 @@ export default function UsersTab({
           email: form.email.trim().toLowerCase(),
           role: form.role,
           password: form.password,
+          ...(isRestaurantGroup && form.customer ? { customerId: form.customer.id } : {}),
         })
         toast.success(isEn ? 'User created' : '用户已创建')
       }
@@ -482,6 +507,7 @@ export default function UsersTab({
     { key: 'userNo', header: '编号', headerEn: 'User No.', get: u => u.userNo },
     { key: 'name', header: '姓名', headerEn: 'Name', get: u => u.name },
     { key: 'email', header: '邮箱', headerEn: 'Email', get: u => u.email },
+    ...(isRestaurantGroup ? [{ key: 'customer', header: '关联客户', headerEn: 'Customer', get: (u: SystemUser) => u.customer?.name ?? '' }] : []),
     { key: 'roles', header: '角色代码', headerEn: 'Roles', get: u => rolesOf(u).join('; ') },
     { key: 'roleNames', header: '角色', headerEn: 'Role Names', get: u => rolesOf(u).map(r => ROLE_LABEL[r] ?? r).join('; ') },
     { key: 'managerEmail', header: '上级邮箱', headerEn: 'Manager Email', get: u => (u.managerId ? usersById.get(u.managerId)?.email ?? '' : '') },
@@ -674,6 +700,34 @@ export default function UsersTab({
                 <Label>{isEn ? 'Email' : '邮箱'}</Label>
                 <p className="mt-1 text-sm text-gray-500 font-mono">{form.email}</p>
                 <p className="text-xs text-gray-400">{isEn ? 'Email cannot be changed after creation' : '邮箱创建后不可修改'}</p>
+              </div>
+            )}
+            {isRestaurantGroup && (
+              <div>
+                <Label>{isEn ? 'Customer *' : '关联客户 *'}</Label>
+                {form.customer ? (
+                  <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm" data-testid="user-form-customer">
+                    <span className="truncate font-medium text-gray-800">{form.customer.name}</span>
+                    <button type="button" onClick={() => setForm(f => ({ ...f, customer: null }))} className="text-xs underline shrink-0" style={{ color: PURPLE }}>
+                      {isEn ? 'Change' : '更换'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-1">
+                    <CustomerSearchInput<{ id: string; name: string; city?: string | null }>
+                      value={form.customerQuery}
+                      onChange={v => setForm(f => ({ ...f, customerQuery: v }))}
+                      onSelect={c => setForm(f => ({ ...f, customer: { id: c.id, name: c.name }, customerQuery: '' }))}
+                      placeholder={isEn ? 'Search customer by name…' : '输入客户名搜索…'}
+                      inputClassName="w-full h-9 rounded-md border border-gray-200 px-3 text-sm outline-none focus:border-[#875A7B]"
+                    />
+                  </div>
+                )}
+                <p className="text-[11px] text-gray-400 mt-1">
+                  {isEn
+                    ? 'The portal shows this customer’s products and prices, and orders are placed under this customer.'
+                    : '登录门户后按这个客户算专属价、看商品，下单也挂在这个客户名下。'}
+                </p>
               </div>
             )}
             {!editingId && roleOptions.length > 1 && (
