@@ -6,7 +6,7 @@ import { WriteOffBoard } from '@/components/accounting/WriteOffBoard'
 const FLOW_STEPS = [
   { step: 1, icon: '📋', title: '看待核销清单', desc: '下方列出所有已出发（配送中/已完成）还没核销的单，不限日期；可按日期或司机打印交给司机追单' },
   { step: 2, icon: '🚚', title: '司机带回签收单/现金', desc: '司机送货回来后，签收单（纸质）与收款交到会计手里' },
-  { step: 3, icon: '💰', title: '钱：核对后确认', desc: '按司机核对现金/转账金额，无误后点「确认」——真正入账，不可撤销' },
+  { step: 3, icon: '💰', title: '钱：核对后确认', desc: '按司机 × 送货日核对现金/转账金额（前几天没确认的也一直列着），无误后点「确认」——真正入账，不可撤销' },
   { step: 4, icon: '📷', title: '单：扫码标记待确认', desc: '扫码枪逐单扫，比对今日所有送出去的单，扫中先标记「待确认」' },
   { step: 5, icon: '✅', title: '单：确认核销 / 退回核实', desc: '核对无误点「确认核销」；单据有问题点「退回核实」并写明原因' },
 ]
