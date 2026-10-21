@@ -34,6 +34,13 @@ export async function POST(req: Request) {
     try {
       const data = await req.json()
 
+      // 带订单的波次必须有排程日期（20261021）：调度台、22 点自动出发都按 waveDate 找波次，
+      // 没日期的波次哪天都看不到，里面的单却被标成 Driver Assigned，就此悬空（原销售单列表
+      // 「生成拣货波次」按钮就是这么造出孤儿单的，已改成跳调度台排车）
+      if (Array.isArray(data.orderIds) && data.orderIds.length > 0 && !data.waveDate) {
+        return NextResponse.json({ error: '带订单的波次必须指定排程日期（waveDate），请到调度台按日期排车' }, { status: 400 })
+      }
+
       // Auto-populate zones from order items when creating a new wave
       let zones = data.zones ?? []
       if (data.orderIds?.length > 0 && zones.length === 0) {

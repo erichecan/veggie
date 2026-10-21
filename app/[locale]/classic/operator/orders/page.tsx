@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { apiGet, apiPut } from '@/lib/api'
 import type { Order, OrderStatus, Invoice } from '@/lib/types'
 import { displayOrderCode } from '@/lib/order-code'
 import OrderMobileList from '@/components/classic/OrderMobileList'
@@ -126,7 +126,6 @@ export default function ClassicOrdersPage() {
   const [sortField, setSortField] = useState('createdAt')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [generatingWave, setGeneratingWave] = useState(false)
   const [isReadMode, setIsReadMode] = useState(true)
   const [editBatchId, setEditBatchId] = useState<string | null>(null)
   const [editBatchVal, setEditBatchVal] = useState('')
@@ -354,24 +353,19 @@ export default function ClassicOrdersPage() {
     setPendingBatch({})
   }
 
-  async function generateBatchWave() {
-    if (generatingWave) return
-    // check status only against current page orders
-    const confirmedIds = Array.from(selected).filter(id => orders.find(x => x.id === id)?.status === 'confirmed')
-    if (confirmedIds.length === 0) { toast.error(isEn ? 'Please select confirmed sales orders first' : '请先选择已确认的销售单'); return }
-    setGeneratingWave(true)
-    try {
-      // waves POST 已在事务内原子回写订单状态(CONFIRMED→WAVE_ASSIGNED)，无需再逐个 PUT。
-      await apiPost('/api/waves', { orderIds: confirmedIds, status: 'PENDING' })
-      toast.success(isEn ? `Pick wave generated with ${confirmedIds.length} orders` : `拣货波次已生成，包含 ${confirmedIds.length} 张订单`)
-      setSelected(new Set())
-      // 分配统一在「配送调度中心」进行（波次管理列表页已废弃）。
-      router.push(`${prefix}/classic/operator/dispatch-console`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (isEn ? 'Generation failed' : '生成失败'))
-    } finally {
-      setGeneratingWave(false)
+  // 「去调度台排车」（20261021，替换原「生成拣货波次」）：原按钮建出来的波次既没有日期也没有司机，
+  // 调度台按日期显示波次，这种波次哪天都看不到；订单却被改成 Driver Assigned，22 点自动出发也不管它，
+  // 单子就悬在那里。现在排车统一在调度台按「日期 × 司机」拖，这里只负责带着送货日期跳过去。
+  function goDispatchConsole() {
+    const picked = sorted.filter(o => selected.has(o.id) && o.status === 'confirmed')
+    if (picked.length === 0) { toast.error(isEn ? 'Please select confirmed sales orders first' : '请先选择已确认的销售单'); return }
+    const days = [...new Set(picked.map(o => (o.deliveryDate ?? '').slice(0, 10)).filter(Boolean))].sort()
+    if (days.length > 1) {
+      toast.info(isEn
+        ? `Selected orders are for ${days.length} different delivery dates; opening ${days[0]} first`
+        : `所选订单分属 ${days.length} 个送货日期，先打开 ${days[0]}（其余日期在调度台顶部「其他日期」里切换）`)
     }
+    router.push(`${prefix}/classic/operator/dispatch-console${days[0] ? `?date=${days[0]}` : ''}`)
   }
 
   const allSelected = sorted.length > 0 && sorted.every(o => selected.has(o.id))
@@ -380,7 +374,9 @@ export default function ClassicOrdersPage() {
     else setSelected(prev => { const n = new Set(prev); sorted.forEach(o => n.add(o.id)); return n })
   }
 
-  const selectedConfirmedCount = Array.from(selected).filter(id => orders.find(x => x.id === id)?.status === 'confirmed').length
+  // 只数当前看得见的勾选（20261021）：切换筛选后被筛掉的行仍留在 selected 里，原来按钮照样把它们算进去，
+  // 屏幕上一张都看不到却显示 (1)
+  const selectedConfirmedCount = sorted.filter(o => selected.has(o.id) && o.status === 'confirmed').length
 
   const inputCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
   const selectCls = 'w-full border border-gray-300 rounded bg-white text-xs px-1.5 py-0.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-200'
@@ -551,8 +547,8 @@ export default function ClassicOrdersPage() {
                 { label: 'Mode', onClick: exitEditMode },
               ]),
           ...(selectedConfirmedCount > 0 ? [{
-            label: generatingWave ? (isEn ? 'Generating…' : '生成中…') : (isEn ? `Generate Pick Wave (${selectedConfirmedCount})` : `生成拣货波次 (${selectedConfirmedCount})`),
-            onClick: generateBatchWave,
+            label: isEn ? `Schedule in Dispatch Console (${selectedConfirmedCount})` : `去调度台排车 (${selectedConfirmedCount})`,
+            onClick: goDispatchConsole,
           }] : []),
           { label: exporting === 'summary' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Export Summary' : '导出汇总'), onClick: () => exportCsv('summary') },
           { label: exporting === 'detail' ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Export Detail' : '导出明细'), onClick: () => exportCsv('detail') },

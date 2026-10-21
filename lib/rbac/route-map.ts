@@ -250,6 +250,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/finance/ledger-check/orders-without-stock', methods: ['POST'], permission: 'stock.move.create', note: '统一补扣会改库存（20261015），与手工调整库存同权限' },
   { pattern: '/api/finance/ledger-check/uninvoiced-orders', methods: ['POST'], permission: 'finance.invoice.create', note: '统一补开草稿发票（20261021），与手工开票同权限' },
   { pattern: '/api/finance/ledger-check/open-trips', methods: ['POST'], permission: 'dispatch.trip.update', note: '统一补完成行程（20261021），与改行程同权限' },
+  { pattern: '/api/finance/ledger-check/orphan-wave-orders', methods: ['POST'], permission: 'dispatch.wave.update', note: '统一退回已确认（20261021），与调度台移出订单同权限' },
   { pattern: '/api/finance/**', permission: 'finance.account.read' },
 
   // ── 基础档案 ────────────────────────────────────────────────────────────
