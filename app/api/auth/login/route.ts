@@ -59,12 +59,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: '邮箱或密码错误' }, { status: 401 })
     }
 
-    // 自助注册（/register）尚未审核通过的账号：跟"被管理员停用"是两回事，
-    // 不能共用一句话——前者是"还没轮到你"，后者是"你被停了"，弄混了会让人以为
-    // 自己做错了什么事被封号。必须先判这条，pendingApproval 的账号 isActive 恒为 false。
-    if ((user as unknown as { pendingApproval?: boolean }).pendingApproval === true) {
-      return NextResponse.json({ error: '账号审核中，请等待管理员审核通过后再登录' }, { status: 403 })
-    }
+    // 20261021 起自助注册不再卡人工审核（见 app/api/auth/register/route.ts 头部注释）：
+    // pendingApproval 现在只是"运营是否已跟进配置价格表"的待办标记，不再挡登录。
     // 检查账号是否被停用
     if (user.isActive === false) {
       return NextResponse.json({ error: '账号已停用，请联系管理员' }, { status: 403 })
