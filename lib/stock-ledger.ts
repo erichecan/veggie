@@ -19,7 +19,7 @@
  * ⛔ 别处不要直接写 qtyOnHand / Lot.currentQty、也不要直接 stockMove.create，
  *    tests/ledger-balance-writers.test.ts 会扫描代码，漏网直接测试失败。
  */
-import { consumeLotsFIFO, restoreLotsFIFO, type LotMovement } from '@/lib/inventory'
+import { consumeLotsFIFO, consumeLotsPreferring, restoreLotsFIFO, type LotMovement } from '@/lib/inventory'
 import { postStockValuation } from '@/lib/stock-valuation'
 import { INTERNAL_LOCATIONS } from '@/lib/stock-locations'
 
@@ -28,8 +28,9 @@ export { LOC, INTERNAL_LOCATIONS, type LocationId } from '@/lib/stock-locations'
 export type StockMoveKind = 'IN' | 'OUT' | 'ADJUSTMENT' | 'RETURN' | 'SCRAP'
 
 export type LotMode =
-  /** 出库按 FEFO 扣批次；入库（退回/撤销）按 FEFO 反序回补 */
-  | { mode: 'fefo' }
+  /** 出库按 FEFO 扣批次；入库（退回/撤销）按 FEFO 反序回补。
+   *  preferLotIds（只对出库生效）：先扣这些批次，不够再 FEFO——采购退货先退这张单自己收进来的批次 */
+  | { mode: 'fefo'; preferLotIds?: string[] }
   /** 指定批次：adjustLot=true 时按方向增减该批次余量（报废指定批次、手工调整）；false 只记 lotId（新建批次时余量已在建批次时设好） */
   | { mode: 'lot'; lotId: string; adjustLot: boolean }
   /** 不涉及批次 */
@@ -109,7 +110,9 @@ export async function postStockMove(tx: Tx, p: StockPosting): Promise<PostedMove
   const lot = p.lot ?? { mode: 'none' as const }
   if (lot.mode === 'fefo') {
     const moved: LotMovement[] = sign < 0
-      ? await consumeLotsFIFO(tx, p.productId, qty)
+      ? (lot.preferLotIds?.length
+          ? await consumeLotsPreferring(tx, p.productId, qty, lot.preferLotIds)
+          : await consumeLotsFIFO(tx, p.productId, qty))
       : await restoreLotsFIFO(tx, p.productId, qty)
     const costs = moved.length
       ? new Map<string, number | null>((await tx.lot.findMany({

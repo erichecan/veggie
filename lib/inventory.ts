@@ -105,6 +105,43 @@ export async function consumeLotsFIFO(client: LotClient, productId: string, qty:
   return consumed
 }
 
+/**
+ * 先扣指定批次（按 preferLotIds 的顺序），不够再按 FEFO 扣其余批次。
+ * 采购退货用（20261022 客户：「50 箱误收成 500 箱进了 LOT-01106，退 450 箱应该从 LOT-01106 退，
+ * 不是先退旧批次 LOT-01105」）：退回供应商的就是这张单收进来的那批货，按 FEFO 会先扣到别的
+ * 采购单收进来的老批次，老批次被凭空扣掉、这张单的批次反倒留着退不掉的余量。
+ */
+export async function consumeLotsPreferring(
+  client: LotClient, productId: string, qty: number, preferLotIds: string[],
+): Promise<LotMovement[]> {
+  if (!(qty > 0)) return []
+  let remaining = qty
+  const consumed: LotMovement[] = []
+  const ids = [...new Set(preferLotIds)]
+  if (ids.length > 0) {
+    const rows = await client.lot.findMany({
+      where: { id: { in: ids }, productId, status: 'AVAILABLE', currentQty: { gt: 0 } },
+    })
+    const byId = new Map(rows.map(l => [l.id, l]))
+    for (const id of ids) {
+      const lot = byId.get(id)
+      if (!lot || remaining <= 0) continue
+      const take = Math.min(n(lot.currentQty), remaining)
+      if (take <= 0) continue
+      const depleted = n(lot.currentQty) - take <= 0
+      await client.lot.update({
+        where: { id: lot.id },
+        data: { currentQty: { decrement: take }, ...(depleted ? { status: 'DEPLETED' } : {}) },
+      })
+      consumed.push({ lotId: lot.id, lotNumber: lot.lotNumber, qty: take })
+      remaining -= take
+    }
+  }
+  // 指定批次扣完（已被销售出库用掉一部分）才动别的批次；被扣空的指定批次已是 DEPLETED，FEFO 不会重复扣
+  if (remaining > 1e-9) consumed.push(...await consumeLotsFIFO(client, productId, remaining))
+  return consumed
+}
+
 /** 回补批次余量(撤回/退货)。按 consumeLotsFIFO 的消耗顺序反着回补——保质期最晚的批次最可能是最后才被扣到的，优先还给它，不超过各批 initialQty 上限。返回实际回补的批次明细。 */
 export async function restoreLotsFIFO(client: LotClient, productId: string, qty: number): Promise<LotMovement[]> {
   if (!(qty > 0)) return []
