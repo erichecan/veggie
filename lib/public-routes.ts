@@ -19,9 +19,11 @@ export const PUBLIC_API_ROUTES = [
   '/api/auth/logout',
   /**
    * 餐馆自助注册（/register 页面）。这条是白名单里唯一的匿名**写**接口——
-   * 但响应只回 { ok: true } 或校验错误文案，不回显任何已存在的客户/用户数据，
-   * 新建的账号也是 isActive=false + pendingApproval=true，提交后立即被锁死，
-   * 不满足「只放不含业务数据的端点」字面意思，但满足其精神：不会把任何数据读出去。
+   * 但响应只回 { ok: true } 或校验错误文案，不回显任何已存在的客户/用户数据。
+   * 20261021 起新建账号 isActive=true（提交后即可登录下单），安全边界改为靠
+   * paymentTerm 强制 'cash' + 自助下单路径的信用校验（lib/credit-check.ts）兜底，
+   * 不再靠"锁死等人工审核"这道闸；不满足「只放不含业务数据的端点」字面意思，
+   * 但满足其精神：不会把任何数据读出去。
    */
   '/api/auth/register',
   /** 健康检查，只回 {ok:true}+时间戳，无业务数据 */

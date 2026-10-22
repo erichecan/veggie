@@ -100,7 +100,7 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, selected, onSelect, onEdi
   onChangePwd: () => void
   onToggle: () => void
   onPerms: () => void
-  /** 只有「餐馆账号」tab 会传，待审核行才用得到 */
+  /** 只有「餐馆账号」tab 会传，待跟进配置的行才用得到 */
   onApprove?: () => void
   onReject?: () => void
 }) {
@@ -164,7 +164,7 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, selected, onSelect, onEdi
       <td className="px-4 py-3 text-center">
         {pending ? (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300">
-            {isEn ? 'Pending review' : '待审核'}
+            {isEn ? 'Needs setup' : '待跟进配置'}
           </span>
         ) : u.isActive ? (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
@@ -183,11 +183,11 @@ function UserRow({ u, isEn, roleLabel, canManagePerms, selected, onSelect, onEdi
         {pending ? (
           <div className="flex items-center justify-center gap-2">
             <button onClick={onApprove} className="text-xs font-medium hover:underline text-green-600">
-              {isEn ? 'Approve' : '批准'}
+              {isEn ? 'Mark followed up' : '标记已跟进'}
             </button>
             <span className="text-gray-300">|</span>
             <button onClick={onReject} className="text-xs font-medium hover:underline text-red-500">
-              {isEn ? 'Reject' : '拒绝'}
+              {isEn ? 'Delete' : '删除'}
             </button>
           </div>
         ) : (
@@ -379,7 +379,7 @@ export default function UsersTab({
   async function handleApprove(u: SystemUser) {
     try {
       await apiPut<SystemUser>(`/api/users/${u.id}`, { approve: true })
-      toast.success(isEn ? `${u.name} approved` : `${u.name} 已批准，可以登录下单了`)
+      toast.success(isEn ? `${u.name} marked as followed up` : `${u.name} 已标记为已跟进`)
       onReload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败'))
@@ -387,10 +387,10 @@ export default function UsersTab({
   }
 
   async function handleReject(u: SystemUser) {
-    if (!confirm(isEn ? `Reject and delete "${u.name}"? This also deletes the customer record created with it.` : `拒绝并删除「${u.name}」这条待审核记录？会连同一起新建的客户档案一并删除，不可恢复。`)) return
+    if (!confirm(isEn ? `Delete "${u.name}"? This also deletes the customer record created with it.` : `删除「${u.name}」这条注册记录？会连同一起新建的客户档案一并删除，不可恢复。`)) return
     try {
       await apiPut(`/api/users/${u.id}`, { reject: true })
-      toast.success(isEn ? `${u.name} rejected` : `${u.name} 已拒绝并删除`)
+      toast.success(isEn ? `${u.name} deleted` : `${u.name} 已删除`)
       onReload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Operation failed' : '操作失败'))
@@ -413,7 +413,7 @@ export default function UsersTab({
         u.email.toLowerCase().includes(searchInput.toLowerCase())
       )
     : scoped
-  // 待审核的排最前面，不用另外做筛选器就能第一时间看到
+  // 待跟进配置的排最前面，不用另外做筛选器就能第一时间看到
   const filtered = filterByFacets(searched, facets, FACET_DEFS)
     .slice()
     .sort((a, b) => {
@@ -458,7 +458,7 @@ export default function UsersTab({
   async function bulkSetActive(active: boolean) {
     if (bulkRunning || selectedUsers.length === 0) return
     const myId = getSession()?.userId
-    // 待审核的餐馆账号要走「批准」，不能被批量启用绕过审核；停用不能停自己(会把自己锁在外面)
+    // 待跟进的餐馆账号要走「标记已跟进」，批量启用不替它清掉这个待办标记；停用不能停自己(会把自己锁在外面)
     const targets = selectedUsers.filter(u =>
       active ? (!u.isActive && u.pendingApproval !== true) : (u.isActive && u.id !== myId))
     const skippedPending = active ? selectedUsers.filter(u => u.pendingApproval === true).length : 0
@@ -483,7 +483,7 @@ export default function UsersTab({
     }
     setBulkRunning(false)
     const notes = [
-      skippedPending > 0 ? (isEn ? `${skippedPending} pending account(s) skipped — use Approve` : `${skippedPending} 个待审核账号已跳过（请用「批准」）`) : '',
+      skippedPending > 0 ? (isEn ? `${skippedPending} account(s) still needing setup were skipped` : `${skippedPending} 个待跟进配置的账号已跳过`) : '',
       skippedSelf ? (isEn ? 'your own account was skipped' : '已跳过你自己的账号') : '',
     ].filter(Boolean).join(isEn ? '; ' : '；')
     const verb = active ? (isEn ? 'activated' : '已启用') : (isEn ? 'deactivated' : '已停用')
@@ -499,7 +499,7 @@ export default function UsersTab({
   // ── 导出(浏览器本地生成，导出的就是屏幕上筛出来的行；勾选了就只导出勾选的) ──
   const usersById = new Map(users.map(u => [u.id, u]))
   const statusText = (u: SystemUser) => u.pendingApproval
-    ? (isEn ? 'Pending review' : '待审核')
+    ? (isEn ? 'Needs setup' : '待跟进配置')
     : u.isActive ? (isEn ? 'Active' : '启用') : (isEn ? 'Inactive' : '停用')
   function rolesOf(u: SystemUser): UserRole[] { return (u.roles && u.roles.length > 0 ? u.roles : [u.role]) as UserRole[] }
   // 角色导出两列：角色代码(可直接回填导入) + 显示名(给人看)。导入只认代码，见 /api/users/bulk 注释。

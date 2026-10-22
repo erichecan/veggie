@@ -1,7 +1,7 @@
 'use client'
 /**
- * 餐馆自助注册：提交后新建一条「待审核」客户档案 + 登录账号，
- * 不能立即登录下单，等内部人工审核通过才激活（见 DEV-PLAN.md 20260926）。
+ * 餐馆自助注册：提交后立即可登录下单（默认现结账期），不再等人工审核
+ * （20261021 起，见 app/api/auth/register/route.ts 头部注释）。
  */
 import { useState } from 'react'
 import { PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
@@ -109,12 +109,12 @@ export default function RegisterPage() {
     return (
       <div className="min-h-screen flex items-start sm:items-center justify-center px-4 pt-12 pb-8 sm:py-8" style={{ background: '#f5f0f8' }}>
         <div className="w-full max-w-sm text-center rounded-2xl shadow-sm border p-6 space-y-3" style={{ background: 'white', borderColor: BORDER }}>
-          <div className="text-4xl">📝</div>
-          <h1 className="text-lg font-bold" style={{ color: '#4a2545' }}>注册申请已提交</h1>
+          <div className="text-4xl">✅</div>
+          <h1 className="text-lg font-bold" style={{ color: '#4a2545' }}>注册成功</h1>
           <p className="text-sm text-gray-500 leading-relaxed">
-            我们会尽快核实「{form.restaurantName}」的信息，通过后会发邮件到 <span className="font-medium" style={{ color: PURPLE }}>{form.email}</span> 通知您，届时即可用此邮箱登录下单。
+            「{form.restaurantName}」已注册成功，现在就可以用 <span className="font-medium" style={{ color: PURPLE }}>{form.email}</span> 登录下单。
           </p>
-          <p className="text-xs text-gray-400">审核期间暂时无法登录，请耐心等待。</p>
+          <p className="text-xs text-gray-400">默认现结账期，如需月结等账期请联系客服开通。</p>
         </div>
       </div>
     )
@@ -126,7 +126,7 @@ export default function RegisterPage() {
         <div className="text-center">
           <div className="text-4xl mb-3">🟣</div>
           <h1 className="text-2xl font-bold" style={{ color: '#4a2545' }}>餐馆账号注册</h1>
-          <p className="text-sm mt-1" style={{ color: '#7c5a8e' }}>提交后需内部审核通过才能登录下单</p>
+          <p className="text-sm mt-1" style={{ color: '#7c5a8e' }}>提交后立即可登录下单（默认现结账期）</p>
         </div>
 
         <form

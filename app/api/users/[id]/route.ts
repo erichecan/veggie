@@ -60,7 +60,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const body = await req.json()
       const { name, role, roles, isActive, newPassword, managerId, customerId, approve, reject } = body
 
-      // 待审核餐馆账号的批准 / 拒绝——跟下面的通用字段更新分开处理，早返回。
+      // 新餐馆注册待办的"标记已跟进" / "拒绝（删除误注册）"——跟下面的通用字段更新分开处理，早返回。
+      // 20261021 起 pendingApproval 不再挡登录（注册即可下单），approve 分支只是把
+      // "运营待跟进配置价格表"这个标记清掉，不再动 isActive（早已是 true）。
       if (approve === true || reject === true) {
         const pending = await prisma.user.findUnique({
           where: { id },
@@ -68,24 +70,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         })
         if (!pending) return NextResponse.json({ error: '用户不存在' }, { status: 404 })
         if (!pending.pendingApproval) {
-          return NextResponse.json({ error: '这个账号不在待审核状态' }, { status: 400 })
+          return NextResponse.json({ error: '这个账号没有待跟进标记' }, { status: 400 })
         }
 
         if (approve === true) {
+          // isActive: true 对 20261021 之后注册的账号是 no-op（注册时已经是 true）；
+          // 对这之前遗留的、还卡在 isActive=false 的待审核积压账号，这是它们唯一能
+          // 变回可登录的入口——这一行一删，那批历史积压就永久卡死，谁都点不动。
           const user = await prisma.user.update({
             where: { id },
-            data: { isActive: true, pendingApproval: false },
+            data: { pendingApproval: false, isActive: true },
             select: { id: true, email: true, name: true, isActive: true, updatedAt: true },
           })
           await writeLog({
             userId: me.userId, userEmail: me.email, userName: me.name,
             action: 'UPDATE', resource: 'user', resourceId: id,
-            detail: `批准餐馆账号 ${user.name}（${user.email}）`,
+            detail: `标记餐馆账号已跟进配置 ${user.name}（${user.email}）`,
           })
           return NextResponse.json(serializeApi(user))
         }
 
-        // 拒绝：连同注册时一起新建的 Customer 一并删除。删除前必须显式确认这个
+        // 拒绝：连同注册时一起新建的 Customer 一并删除（误注册/测试注册清理）。删除前必须显式确认这个
         // Customer 名下没有任何订单/发票——不能只假设"待审核期间不可能有单"，
         // 万一日后有别的流程给它挂了数据，级联删就会把真实业务数据也删没。
         if (pending.customerId) {

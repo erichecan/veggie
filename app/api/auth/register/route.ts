@@ -4,14 +4,22 @@ import { prisma } from '@/lib/db'
 import { assessNewPassword } from '@/lib/password-policy'
 import { rateLimit } from '@/lib/rate-limit'
 import { writeLog } from '@/lib/action-log'
+import { notifyRole } from '@/lib/notify'
 
 /**
  * POST /api/auth/register — 餐馆自助注册（唯一允许匿名写入的接口）。
  *
- * 提交即新建一条 Customer（仅基础联系信息）+ 一个 pendingApproval=true / isActive=false
- * 的 User（role=RESTAURANT），两者都不能立即使用——内部人工审核通过（PUT /api/users/[id]
- * { approve: true }）后才翻转成可登录。信用额度/价格表/税号等业务字段这里不填，
- * 留给审核人员在客户详情页补齐（见 DEV-PLAN.md 20260926）。
+ * 20261021 起：提交后立即可登录下单，不再卡人工审核（客户反馈：没人审批也不影响
+ * 其他餐馆下单/系统运行，不必为此让新客户空等）。但两件事必须同时做到，否则
+ * "无人把关"就是真的无人把关：
+ *   1. paymentTerm 显式写死 'cash'（不吃 schema 默认的 'monthly'）——新客户第一天
+ *      就能登录下单，赊账权限必须由运营后续手动开通，不能自助拿到。
+ *   2. 自助下单路径（/api/customer-portal/orders）必须过 lib/credit-check.ts
+ *      的信用校验——否则 paymentTerm 改了也只是摆设。
+ * pendingApproval 字段保留，但语义从"是否允许登录"改成"运营是否已跟进配置价格表/
+ * 业务员"，仅用于站内通知/后台待办（PUT /api/users/[id] { approve: true } 现在只是
+ * 把这个标记清掉，不再动 isActive）。信用额度/价格表/税号等业务字段这里不填，
+ * 留给运营在客户详情页补齐。
  *
  * ⛔ 匿名可达，必须只返回「提交成功」这类无业务数据的信息，不能回显任何已存在的
  * 客户/用户数据——否则等于给了一个匿名可查询客户库的接口（历史教训见
@@ -73,8 +81,11 @@ export async function POST(req: Request) {
           phone: phone.slice(0, 50),
           email: email.slice(0, 200),
           address: address.slice(0, 500),
+          // 自助注册没有人工审核把关，不能继承 schema 默认的 'monthly'（赊账）——
+          // 现结是唯一安全的起点，赊账账期必须由运营核实后手动开通
+          paymentTerm: 'cash',
         },
-        select: { id: true },
+        select: { id: true, name: true },
       })
       const user = await tx.user.create({
         data: {
@@ -84,12 +95,22 @@ export async function POST(req: Request) {
           role: 'RESTAURANT',
           roles: ['RESTAURANT'],
           customerId: customer.id,
-          isActive: false,
+          isActive: true,
+          // 不再挡登录，仅作"运营待跟进"标记
           pendingApproval: true,
         },
         select: { id: true, email: true, name: true },
       })
       return { user, customer }
+    })
+
+    // 通知运营：新餐馆已经能直接下单了，价格表/业务员等配置需要尽快跟进
+    // （旁路，失败不影响注册本身）
+    await notifyRole(['OPERATOR'], {
+      type: 'new_restaurant_registered',
+      title: `新餐馆注册：${customer.name}`,
+      body: `${customer.name} 已自助注册并可直接登录下单（默认现结账期），请尽快去客户档案配置价格表、业务员等信息。`,
+      data: { customerId: customer.id, userId: user.id },
     })
 
     // 权限位图判定走 UserRoleLink（20260807 起），跟 app/api/users/route.ts 的建号
@@ -103,7 +124,7 @@ export async function POST(req: Request) {
     await writeLog({
       userId: 'anonymous', userEmail: email, userName: contactName,
       action: 'CREATE', resource: 'user-self-register', resourceId: user.id,
-      detail: `餐馆自助注册待审核：${restaurantName}（customerId=${customer.id}）`,
+      detail: `餐馆自助注册并已激活（现结账期）：${restaurantName}（customerId=${customer.id}）`,
     })
 
     return NextResponse.json({ ok: true }, { status: 201 })

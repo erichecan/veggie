@@ -10,6 +10,7 @@ import { toNum } from '@/lib/decimal-helpers'
 import { nextOrderCode } from '@/lib/order-code'
 import type { $Enums } from '@/lib/generated/prisma/client'
 import { isUniqueConstraintOn } from '@/lib/prisma-errors'
+import { checkCustomerCredit } from '@/lib/credit-check'
 
 /**
  * P1-2: 客户小程序 — 订单管理
@@ -164,13 +165,32 @@ export async function POST(req: Request) {
       // 客户只能给自己下单
       const restaurantId = user.userId
 
-      // 拉客户信息（名称 + 默认司机）
+      // 拉客户信息（名称 + 默认司机 + 信用管控所需字段）
       const customer = await prisma.customer.findUnique({
         where: { id: restaurantId },
-        select: { name: true, defaultDriverSlotId: true },
+        select: {
+          name: true, defaultDriverSlotId: true,
+          paymentTerm: true, creditLimit: true, termExtendedUntil: true,
+        },
       })
       const restaurantName = customer?.name ?? user.name ?? '客户'
       const resolvedDriverSlotId = customer?.defaultDriverSlotId ?? null
+
+      // 20261021 补齐：此前只有内部员工下单（/api/orders）过信用管控，自助下单完全
+      // 不查，客户逾期/超信用额度也能一直下单。这里没有"角色特批"口子——下单人就是
+      // 客户自己，被拦了只能联系客服/财务处理账期，不能像内部员工那样靠 BOSS/FINANCE
+      // 身份绕过。
+      if (customer) {
+        const credit = await checkCustomerCredit(prisma, {
+          customerId: restaurantId,
+          paymentTerm: customer.paymentTerm,
+          creditLimit: customer.creditLimit,
+          termExtendedUntil: customer.termExtendedUntil,
+        })
+        if (credit.blocked) {
+          return NextResponse.json({ error: '账户信用状态异常，暂时无法下单，请联系客服处理账期或欠款' }, { status: 403 })
+        }
+      }
 
       const submittedItems = Array.isArray(data.items) ? data.items : []
       if (submittedItems.length === 0) {
