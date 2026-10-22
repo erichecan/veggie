@@ -294,10 +294,8 @@ export default function UsersTab({
     if (saving) return
     if (!form.name.trim()) { toast.error(isEn ? 'Name cannot be empty' : '姓名不能为空'); return }
     if (!form.email.trim()) { toast.error(isEn ? 'Email cannot be empty' : '邮箱不能为空'); return }
-    if (isRestaurantGroup && !form.customer) {
-      toast.error(isEn ? 'Please link a customer — without one the account sees no products in the portal' : '请选择关联客户——没有客户档案，登录门户后看不到任何商品')
-      return
-    }
+    // 20261022 起不再强制要求挑一个已有客户：留空交给后端自动新建同名客户档案
+    // (lib/user-account.ts insertUserAccount)，跟前台自助注册同一模式。
     // 与后端同一个 assessNewPassword —— 前端只是提前告知，判定权仍在后端。
     // 之前这里写死 6 位，而后端要 10 位且有黑名单：填了 6 位前端放行、后端打回。
     if (!editingId) {
@@ -704,7 +702,7 @@ export default function UsersTab({
             )}
             {isRestaurantGroup && (
               <div>
-                <Label>{isEn ? 'Customer *' : '关联客户 *'}</Label>
+                <Label>{isEn ? 'Customer' : '关联客户'}</Label>
                 {form.customer ? (
                   <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm" data-testid="user-form-customer">
                     <span className="truncate font-medium text-gray-800">{form.customer.name}</span>
@@ -724,9 +722,13 @@ export default function UsersTab({
                   </div>
                 )}
                 <p className="text-[11px] text-gray-400 mt-1">
-                  {isEn
-                    ? 'The portal shows this customer’s products and prices, and orders are placed under this customer.'
-                    : '登录门户后按这个客户算专属价、看商品，下单也挂在这个客户名下。'}
+                  {editingId
+                    ? (isEn
+                        ? 'Only search and pick here if you need to re-link this account to a different existing customer. Leave it blank to keep the current link unchanged.'
+                        : '只有要把这个账号改挂到另一个已有客户时才需要在这里搜索选择；留空不动，保持现有关联不变。')
+                    : (isEn
+                        ? 'Leave this blank to auto-create a new customer with the same name — that’s what the portal uses for pricing, products and orders. Only search and pick here if an existing customer record (e.g. imported from Odoo) should be reused instead.'
+                        : '留空将自动新建一个同名客户档案——门户的专属价、商品目录、下单都靠它。只有这个客户档案已经存在（比如 Odoo 导入过）需要复用时，才需要在这里搜索选择。')}
                 </p>
               </div>
             )}

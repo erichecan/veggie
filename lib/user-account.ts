@@ -29,7 +29,7 @@ export interface CreateUserInput {
   /** 单角色(旧客户端)；与 roles[] 至少给一个，role 作为主角色 */
   role?: unknown
   roles?: unknown
-  /** 餐馆账号(RESTAURANT)必填：登录客户门户后按它找客户档案、算专属价、下单挂客户 */
+  /** 餐馆账号(RESTAURANT)可选：显式传已有客户 id 则关联它；留空自动新建同名客户档案 */
   customerId?: unknown
 }
 
@@ -91,13 +91,14 @@ export function validateNewUser(
   const invalid = roles.find(r => !allowed.includes(r))
   if (invalid) return { ok: false, error: `无效角色: ${invalid}` }
 
-  // 20261021：管理员在「餐馆账号」tab 手工建号从来不挂客户，建出来的号登录门户后
+  // 20261021 发现的缺口：管理员在「餐馆账号」tab 手工建号从来不挂客户，建出来的号登录门户后
   // /api/customer-portal/products 403「未找到关联客户信息」——分类能看到、商品一个都没有。
-  // 餐馆账号没有客户档案就是个空壳，建号时就必须挑一个客户。
+  // 20261022 改：不再在这里拦截（那样等于逼管理员先去客户模块建档案、建号体验比前台自助注册还差）。
+  // customerId 留空交给 insertUserAccount 自动新建一个同名客户档案一起落地，跟 /api/auth/register
+  // 自助注册同一模式；只有管理员显式搜索勾了一个已有客户时才往下传，那种情况仍会校验它存在。
   const isRestaurant = roles.includes('RESTAURANT')
   const customerId = isRestaurant && typeof input.customerId === 'string' && input.customerId.trim()
     ? input.customerId.trim() : null
-  if (isRestaurant && !customerId) return { ok: false, error: '餐馆账号必须关联一个客户' }
 
   return { ok: true, value: { name: name.slice(0, 100), email: email.slice(0, 200), password, primaryRole, roles, customerId } }
 }
@@ -114,6 +115,21 @@ export async function insertUserAccount(
   passwordHash: string,
   options: Pick<CreateUserOptions, 'mustChangePassword' | 'managerId'> = {},
 ): Promise<CreatedUser> {
+  // 餐馆账号没挑一个已有客户 → 自动新建一个同名客户档案一起落地，跟自助注册
+  // (app/api/auth/register/route.ts) 同一模式，不再要求管理员先去客户模块建档案。
+  // 新档案是空壳(没税号/地址/价格表)，标 pendingApproval=true 复用现有「待跟进配置」
+  // 提醒，让运营知道要去配一下价格表——跟自助注册的语义完全一致。
+  let customerId = value.customerId
+  let autoCreatedCustomer = false
+  if (!customerId && value.roles.includes('RESTAURANT')) {
+    const customer = await tx.customer.create({
+      data: { name: value.name, paymentTerm: 'cash' },
+      select: { id: true },
+    })
+    customerId = customer.id
+    autoCreatedCustomer = true
+  }
+
   const created = await tx.user.create({
     data: {
       name: value.name,
@@ -124,7 +140,8 @@ export async function insertUserAccount(
       isActive: true,
       mustChangePassword: options.mustChangePassword === true,
       managerId: options.managerId ?? null,
-      customerId: value.customerId,
+      customerId,
+      pendingApproval: autoCreatedCustomer,
     },
     select: { id: true, userNo: true, email: true, name: true, role: true, roles: true, isActive: true, createdAt: true, updatedAt: true },
   })
