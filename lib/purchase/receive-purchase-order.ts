@@ -198,3 +198,22 @@ export async function handleReceiveAction(p: any, po: any, poId: string, user: {
 
   return NextResponse.json(serializeApi(result))
 }
+
+/**
+ * 某采购行收货收进来的批次，最近一次收货的排最前——采购退货先扣这些（lib/inventory.ts consumeLotsPreferring）。
+ * 主依据是收货流水上的 purchaseOrderLineId + lotId；老数据流水没挂行的，补上 sourceId = 这张 PO 的同商品批次。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function lotsReceivedForPurchaseLine(tx: any, line: { id: string; productId: string; purchaseOrderId: string }): Promise<string[]> {
+  const moves: Array<{ lotId: string | null }> = await tx.stockMove.findMany({
+    where: { purchaseOrderLineId: line.id, sourceType: 'PURCHASE_RECEIVE', lotId: { not: null }, qty: { gt: 0 } },
+    orderBy: [{ movedAt: 'desc' }, { createdAt: 'desc' }],
+    select: { lotId: true },
+  })
+  const lots: Array<{ id: string }> = await tx.lot.findMany({
+    where: { sourceId: line.purchaseOrderId, productId: line.productId },
+    orderBy: [{ arrivedAt: 'desc' }, { createdAt: 'desc' }],
+    select: { id: true },
+  })
+  return [...new Set([...moves.map(m => m.lotId as string), ...lots.map(l => l.id)])]
+}

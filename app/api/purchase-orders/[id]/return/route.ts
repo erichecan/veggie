@@ -7,7 +7,7 @@
  *
  * 做最小闭环，不新建单据表：
  *   1. 校验退货量 ≤ 该行已收量（不能退比收到的还多）
- *   2. 扣减 Product.qtyOnHand + 记一笔 OUT 流水（负数），FIFO 回退批次余量
+ *   2. 扣减 Product.qtyOnHand + 记一笔 OUT 流水（负数），先扣这张单收进来的批次，不够再 FEFO 扣别的批次
  *   3. 回冲 PurchaseOrderLine.receivedQty —— 这样「已收 / 应付」两边才对得上，
  *      也让采购建议的在途计算不会把退掉的货算成还在路上
  *
@@ -30,6 +30,7 @@ import { toStockQty } from '@/lib/inventory'
 import { postStockMove, LOC } from '@/lib/stock-ledger'
 import { eurAmount } from '@/lib/fx-eur'
 import { syncDraftVendorBillFromPurchaseOrder } from '@/lib/vendor-bill-from-po'
+import { lotsReceivedForPurchaseLine } from '@/lib/purchase/receive-purchase-order'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -135,8 +136,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // 退货量按采购单位记，库存按基准单位记 —— 与收货侧同一套换算（I3 修过的那个坑）
           const stockQty = await toStockQty(tx as never, p.productId, p.qty, p.uomId)
 
-          // 入账：仓库 → 供应商（lib/stock-ledger.ts）。按 FEFO 扣批次并逐批拆流水（批次覆盖不到的部分记无批次流水），
+          // 入账：仓库 → 供应商（lib/stock-ledger.ts）。先扣这一行收货收进来的批次（最近一次收货的先扣），
+          // 不够——这批货已被卖掉一部分——再 FEFO 扣别的批次；逐批拆流水（批次覆盖不到的部分记无批次流水）。
+          // 20261022 前一律 FEFO：误收 500 箱进 LOT-01106 再退 450，扣的却是更早的 LOT-01105。
           // 按这张 PO 的采购价估值，冲回收货时的 Dr 1300 / Cr 2150
+          const ownLots = await lotsReceivedForPurchaseLine(tx, { id: p.lineId, productId: p.productId, purchaseOrderId: id })
           await postStockMove(tx, {
             productId: p.productId,
             productName: p.productName,
@@ -144,7 +148,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             from: LOC.STOCK,
             to: LOC.VENDORS,
             type: 'OUT',
-            lot: { mode: 'fefo' },
+            lot: { mode: 'fefo', preferLotIds: ownLots },
             unitCost: stockQty > 0 && p.unitCost > 0 ? (p.unitCost * p.qty) / stockQty : null,
             movedAt: new Date(),
             note: `采购退货 PO ${po.name}${noteSuffix}`,
