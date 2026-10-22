@@ -7,7 +7,7 @@ import { createUserAccount } from '@/lib/user-account'
 
 // GET /api/users — 用户列表（OPERATOR / BOSS / FINANCE）
 export async function GET(req: Request) {
-  return withAuth(req, async (me) => {
+  return withAuth(req, async () => {
     try {
       const { searchParams } = new URL(req.url)
       // role 支持逗号分隔多值，如 role=OPERATOR,SALES,EXTERNAL_SALES
