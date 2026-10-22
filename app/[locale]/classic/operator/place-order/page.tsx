@@ -63,8 +63,14 @@ type QuotationLine = {
   uomId?: string
   unitPrice: number
   cost: number
-  priceLabel: string       // 'Price' | 'PriceList' | 'Last' | 'Special'
+  priceLabel: string       // 'Price' | 'PriceList' | 'Last' | 'Special' | 'Manual'
   priceLabelDetail?: string   // PriceList 命中的价格表名字；Last 命中的最近成交时间(ISO)
+  /**
+   * 单价被手动改过（20261022 客户反馈：Carrot 手改成 16.5，再加别的商品价格就变回 3）。
+   * 改过的行不再被自动重算覆盖——加商品后拉回最近成交价、改数量、切价格表/价格口径都不动它；
+   * 切单位按换算系数折算（同编辑页 switchLineUnit）；换客户/换商品才重新询价。
+   */
+  priceManual?: boolean
   taxRate: number          // %
   /** 赠品标记(20260913)：勾选后单价锁定为 0，不计入销售额/毛利/提成，仍正常扣库存+拣货单 */
   isGift?: boolean
@@ -608,6 +614,8 @@ export default function ClassicPlaceOrderPage() {
     if (c.salesUserId) setSalesTeam(c.salesUserId)
     // 切客户必须清空 lastPrice 缓存，否则会把旧客户的成交价用到新客户身上
     setLastPrices({})
+    // 换客户 = 换价格体系，手改过的价也按新客户重新询价（那个价是跟上一个客户谈的；同编辑页 selectCustomer）
+    setLines(prev => prev.some(l => l.priceManual) ? prev.map(l => (l.priceManual ? { ...l, priceManual: false } : l)) : prev)
     setCreditInfo(null)
     // 异步拉取含 specialPrices 的完整客户对象，供定价引擎使用
     apiGet<Customer>(`/api/customers/${c.id}`)
@@ -728,12 +736,17 @@ export default function ClassicPlaceOrderPage() {
     const stillThere = lines.find(l => l.id === lineId)
     if (!stillThere || stillThere.productId !== p.id) return
 
-    const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, stillThere.orderedQty, uomId, cache, matchedUom)
+    const computed = computeLinePrice(p, stillThere.orderedQty, uomId, cache, matchedUom)
     // Cost 要跟着单位换算，不然切到非默认单位后 Cost 列还是整箱成本、
     // Unit Price 已经是按公斤算的，两者分母对不上，看起来像"卖亏了"（客户 20260827 反馈）。
     const opts = saleUomOptions[p.id] ?? []
     const rows = opts.map(o => ({ uomId: o.uomId, isDefault: !!o.isDefault, factor: o.factor, priceOverride: o.priceOverride ?? null }))
     const cost = round2((p.standardPrice ?? 0) * factorOf(rows, uomId))
+    // 手改过的价：保留改价意图，按「旧单价 ÷ 旧系数 × 新系数」折算，不套定价引擎（同编辑页）
+    const oldFactor = factorOf(rows, stillThere.uomId ?? p.uomId ?? uomId) || 1
+    const { unitPrice, priceLabel, priceLabelDetail } = stillThere.priceManual
+      ? { unitPrice: round2(stillThere.unitPrice / oldFactor * factorOf(rows, uomId)), priceLabel: stillThere.priceLabel, priceLabelDetail: stillThere.priceLabelDetail }
+      : computed
     // 产品规格(20260905)跟着单位走：只在这一行的描述还是"派生值"(没被手动改过)时才刷新，
     // 否则用户手打的规格描述会被切单位悄悄覆盖(同一套"只覆盖未手改内容"的约定，见 quotations/orders 编辑页同名注释)。
     const oldUnitSpec = opts.find(o => o.uomId === stillThere.uomId)?.spec ?? null
@@ -804,6 +817,7 @@ export default function ClassicPlaceOrderPage() {
               cost:        Math.round((p.standardPrice ?? 0) * uomFactor * 100) / 100,
               priceLabel,
               priceLabelDetail,
+              priceManual: false,
               taxRate:     (p.customerTaxRate ?? 0) * 100,
             },
       )
@@ -813,7 +827,8 @@ export default function ClassicPlaceOrderPage() {
       void fetchLastPrices([p.id]).then(merged => {
         const recomputed = computeLine(merged)
         if (recomputed.unitPrice !== unitPrice || recomputed.priceLabel !== priceLabel) {
-          patchLine(lineId, recomputed)
+          // 拉价期间用户已经手改了这一行（或这一行已换成别的商品），就别再覆盖
+          setLines(prev => prev.map(l => (l.id === lineId && l.productId === p.id && !l.priceManual ? { ...l, ...recomputed } : l)))
         }
       })
     }
@@ -881,7 +896,7 @@ export default function ClassicPlaceOrderPage() {
     if (effectiveCustomer && ids.length > 0) {
       void fetchLastPrices(ids).then(merged => {
         setLines(prev => prev.map(l => {
-          if (!ids.includes(l.productId)) return l
+          if (!ids.includes(l.productId) || l.priceManual) return l
           const p = products.find(pp => pp.id === l.productId)
           if (!p || !effectiveCustomer) return l
           const { unitPrice, priceLabel, priceLabelDetail } = computeLinePrice(p, l.orderedQty, l.uomId, merged)
@@ -970,7 +985,8 @@ export default function ClassicPlaceOrderPage() {
     const line = lines.find(l => l.id === lineId)
     if (!line) return
     let unitPrice = line.unitPrice
-    if (effectiveCustomer && line.productId) {
+    // 手改过的价不随数量（阶梯价）重算
+    if (effectiveCustomer && line.productId && !line.priceManual) {
       const p = products.find(pp => pp.id === line.productId)
       if (p) unitPrice = computeLinePrice(p, qty, line.uomId).unitPrice
     }
@@ -989,7 +1005,9 @@ export default function ClassicPlaceOrderPage() {
       if (prev.length === 0) return prev
       let changed = false
       const next = prev.map(l => {
-        if (!l.productId) return l
+        // 手改过的价不重算：原来加一个新商品 → 拉回它的最近成交价 → lastPrices 变了 → 这里把
+        // 所有行（包括手改成 16.5 的那行）全部按定价引擎覆盖回去（20261022 客户反馈）
+        if (!l.productId || l.priceManual) return l
         const p = products.find(pp => pp.id === l.productId)
         if (!p) return l
         const { unitPrice, priceLabel: newLabel, priceLabelDetail: newDetail } = computeLinePrice(p, l.orderedQty || 1, l.uomId)
@@ -1865,7 +1883,7 @@ export default function ClassicPlaceOrderPage() {
                           value={line.isGift ? 0 : line.unitPrice}
                           disabled={!!line.isGift}
                           title={line.isGift ? (isEn ? 'Gift line — price locked at 0' : '赠品行——单价锁定为 0') : undefined}
-                          onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0 })}
+                          onChange={e => patchLine(line.id, { unitPrice: parseFloat(e.target.value) || 0, priceManual: true, priceLabel: 'Manual', priceLabelDetail: undefined })}
                           onFocus={e => e.target.select()}
                           onKeyDown={e => handleFieldKey(e)}
                           className="w-full text-right px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-gray-200 focus:border-[#875A7B] focus:outline-none bg-transparent"
@@ -1890,7 +1908,9 @@ export default function ClassicPlaceOrderPage() {
                                       : (isEn ? 'Last transaction price' : '最近成交价'))
                                   : line.priceLabel === 'Special'
                                     ? (isEn ? 'Customer special price' : '客户专属特殊价格')
-                                    : (isEn ? 'Default list price' : '直接牌价')
+                                    : line.priceLabel === 'Manual'
+                                      ? (isEn ? 'Price entered manually — kept when other lines change' : '手动改价——加商品、改数量都不会再被自动覆盖')
+                                      : (isEn ? 'Default list price' : '直接牌价')
                             }
                             className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-medium cursor-help ${
                             line.priceLabel === 'Special'
@@ -1899,7 +1919,9 @@ export default function ClassicPlaceOrderPage() {
                                 ? 'bg-blue-100 text-blue-700'
                                 : line.priceLabel === 'Last'
                                   ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-gray-100 text-gray-600'
+                                  : line.priceLabel === 'Manual'
+                                    ? 'bg-purple-100 text-purple-700'
+                                    : 'bg-gray-100 text-gray-600'
                           }`}>
                             {line.priceLabel}
                           </span>
