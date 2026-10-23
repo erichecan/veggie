@@ -758,6 +758,8 @@ export interface OdooPricelist {
   selectable: boolean
   active: boolean
   updatedAt: string
+  /** 最后更新人（用户名/邮箱快照）；历史上没记录的为 null */
+  updatedBy?: string | null
   /** 促销码 */
   promotionalCode?: string
   /** 备注 */

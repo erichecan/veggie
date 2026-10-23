@@ -141,7 +141,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       // 价格表里锁定这个商品的规则一并删掉(20261008)，和删商品同一个事务；
       // 规则日志的商品名要在删之前取，删了就查不到了
       const removedRules = await prisma.$transaction(async (tx) => {
-        const touched = await removeProductRulesInTx(tx, id)
+        const touched = await removeProductRulesInTx(tx, id, user.name || user.email)
         await tx.product.delete({ where: { id } })
         return touched
       })

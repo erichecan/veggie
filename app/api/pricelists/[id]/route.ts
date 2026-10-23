@@ -59,8 +59,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         cleaned.items = normalizeItems(cleaned.items)
       }
 
-      // 强制 updatedAt = now
+      // 强制 updatedAt = now；updatedBy 只认登录身份(不在白名单里，客户端传了也会被滤掉)
       cleaned.updatedAt = new Date()
+      cleaned.updatedBy = user.name || user.email
 
       // 取旧数据做 diff（审计）
       const before = await prisma.odooPricelist.findUnique({ where: { id } })

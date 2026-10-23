@@ -1,90 +1,107 @@
-# DEV-REPORT：餐厅自助下单匿名浏览入口（/shop）+ 商品图片批量上传
+# DEV-REPORT（20261023）：价格表「最后更新人」+ 客户列表直接增加/减少/替换价格表
 
-对应 DEV-PLAN.md（2026-10-20）、需求原话 docs/20261020-veggie-需求原话.md。
-登录 bug 排查按用户指示暂停，未动，见 DEV-PLAN.md 附录 B。
+本轮两个需求，同一个 PR：
+1. 「价格表里需要增加最后更新人，然后都要有筛选功能，排序功能」
+2. 客户列表截图：「浮层错位了」+ 标注「价格表的修改，增加/减少/替换 价格表」（已确认是新需求，一起做）
+
+---
+
+# 二、客户列表：价格表一格可增加 / 减少 / 替换，修复浮层错位
 
 ## 给你看的
 
-| 场景 | 来源 | 截图/复现方式 | 状态 |
-| --- | --- | --- | --- |
-| 未登录也能浏览商品（看名字/图片/分类），看不到价格和库存 | 原话第 1、2 条 | file:///Volumes/datacenter/04-eric/AIcoding/veggie/docs/shots/20261020-shop-mobile.png | 符合 |
-| 点"登录查看价格"后，按 RESTAURANT 账号体系登录，直接进客户门户下单 | 原话第 2 条（用户已查证生产库，账号体系确认沿用现有 RESTAURANT） | 访问 http://localhost:3000/shop → 点右上角"登录/注册"→ `?from=shop` → 登录成功后跳 `/customer-portal`（非走角色默认落地页） | 符合 |
-| /shop 接入真实商品数据，不是假数据 | 原话第 5 条 | curl `http://localhost:3000/api/public/products` 返回数据库里真实商品（见下方存档证据），不是写死的 mock | 符合 |
-| 批量上传商品图片，要支持逐张人工指定商品（不能按文件名自动匹配） | 原话第 6 条 | 商品列表页「批量上传图片」按钮 → `/classic/operator/products/bulk-images`，选图后每张单独点出下拉搜索框指定商品，跟下单页选商品同一套交互组件 | 符合（已端到端验证，见存档） |
+| 场景 | 复现方式 | 状态 |
+| --- | --- | --- |
+| Edit 模式点客户的「价格表」格子，弹出编辑面板，紧贴在这一格下面 | 客户 → Mode 切到 Edit → 点价格表 | 符合 |
+| **替换**：点面板里某个价格表的名字 → 搜索 → 选新的 | 面板内 | 符合 |
+| **减少**：点 × 移除 | 面板内 | 符合 |
+| **增加**：「+ 添加价格表」→ 搜索 → 回车/点选；没挂价格表的客户点开直接进入添加 | 面板内 | 符合 |
+| 调优先级：↑ / ↓（1 = 优先级最高，跟客户详情页同一套顺序） | 面板内 | 符合 |
+| 改完点「保存」一次提交；「取消」/ Esc / 点外面 = 不保存 | 面板内 | 符合 |
+| 同一价格表不能挂两次（搜索列表里自动排除已挂的） | 面板内 | 符合 |
+| Read 模式仍是原来的只读「挂靠的价格表」列表 | Mode 切回 Read | 符合 |
 
-**待你确认的点（不是功能没做，是数据现状，需要你看一眼判断是否符合预期）：**
-- 现在生产库商品的 `images` 字段几乎全是空的（抽样确认），所以 `/shop` 页面目前看到的大多是 🥬 占位图而不是真实商品图——这是预期中的"接好了接口，等你用批量上传工具把图片传上去"的状态，不是 bug。
-- `/shop` 默认排序沿用了 customer-portal 同款的 `sequence asc, createdAt desc`，前几条会出现"vest "、"test AA"、"test BB" 这类测试/演示脏数据商品（历史遗留，非本次引入）。这个排序问题不在本次范围内，若要处理需要你先确认：是清理这批脏数据，还是改排序规则，还是都不动先放着。
-- ⚠️ 本机 Chrome 浏览器二进制缺失（Playwright/chrome-devtools MCP 打不开页面，是本机环境问题，非功能问题），这一轮没能在浏览器里真实点击/截图验收最终接真实数据后的页面；上面截图是接数据前静态版本的截图。已改用 curl 对接口返回的真实数据、字段白名单、分页数、鉴权边界逐条验证（见下方存档），但"页面长什么样"这件事严格说还差一次真人眼验收。建议你自己打开 http://localhost:3000/shop 看一眼布局和分类标签是否顺眼。
+**「浮层错位」是什么、怎么修的**：以前 Edit 模式下这一格点文字弹的是只读浮层（改不了），点空白处才进编辑，
+进编辑时格子里换成输入框，整张表重新排版、各列横向跳动（实测「价格表」列 x 从 1058 跳到 1015，「地址」列也跟着动）。
+现在 Edit 模式只有一个编辑面板，浮在表格上方、对齐这一格，单元格本身尺寸不变，打开/保存前后各列位置完全不动
+（实测 地址/价格表/Price Type 列 x 始终 459/1074/1275）。
 
-访问地址：http://localhost:3000/shop （本机本地环境，尚未部署到生产）
+**顺带修的一个隐患**：保存客户时，旧代码先单独删掉客户的全部价格表、再更新客户。
+更新一旦失败（比如 Sage Account 撞号返回 409），客户的价格表就全没了。现在删旧+建新跟客户更新放在同一次写入里，失败就整体不动。
+
+## 验证结果
+
+| 用户流程 | 验证方式 | 结果 |
+| --- | --- | --- |
+| Edit 模式点开面板，表格不重排 | Playwright 量三列列头 x 坐标：打开前/打开后/保存后 | ✅ 完全一致 |
+| 面板位置 | Playwright：触发格下沿 y=235 → 面板顶 y=239，左边对齐 | ✅ |
+| 替换 + 移除 + 添加 + 上移 后保存 | Playwright 操作 Achara（TAKEAWAY菜价/MUSASHI/TAKEAWAY-2菜价）→ 查库 | ✅ 库里变成 1.TAKEAWAY菜价 2.LINKEE 3.CITY CENTRE菜价，提示「已保存」，最后修改人=运营主管 |
+| 取消 / Esc | Playwright | ✅ 不提交，格子不变 |
+| 空客户添加 | Playwright 操作 Bamboo Garden | ✅ 挂上 MUSASHI |
+| Edit ↔ Read 来回切后只读浮层仍能打开 | Playwright | ✅（开发中发现切换后打不开 + 控制台报 controlled/uncontrolled，已修） |
+| 重复 id / 空 id | curl PUT `["pl_42","pl_42","pl_35",""]` | ✅ 存成 pl_42、pl_35 两条 |
+| 更新失败不丢价格表 | curl PUT 价格表 + 撞号 Sage Account | ✅ 409，价格表原样保留 |
+| 清空 / 只改别的字段 | curl PUT `[]` / 只传 creditLimit | ✅ 清空 / 价格表不动 |
+| 浏览器控制台 | Playwright pageerror + console.error | ✅ 无错误 |
+| tsc / eslint / npm test | 本地 | ✅ tsc 0 error；npm test 996 条中 8 条失败，与 main 上完全相同（权限快照，见 PR 说明），本轮未新增 |
+
+**涉及文件**：新增 `components/classic/PricelistLinksEditor.tsx`；改 `app/[locale]/classic/operator/customers/page.tsx`、`app/api/customers/[id]/route.ts`。
+
+---
+
+# 一、价格表列表新增「最后更新人」列，所有列可筛选、可排序
+
+## 给你看的
+
+| 场景 | 截图/复现方式 | 状态 |
+| --- | --- | --- |
+| 价格表列表新增 **Last Updated by** 列（在 Last Updated on 右边） | 销售 → 价格表 | 符合 |
+| 谁改了价格表就记谁：详情页保存、列表行内编辑、新建/复制、CSV 批量导入、删除商品连带移除价格规则 | 改任意价格表后回列表看该列 | 符合 |
+| Last Updated by 可筛选：列头 ▼ 下拉勾选人名（含「（空）」）；Filters 面板也可按最后更新人筛选；Group By 可按最后更新人分组 | 列头 ▼ | 符合 |
+| 每一列都能排序：Pricelist Name / Last Updated on / Last Updated by / Currency / Selectable | 点列头 | 符合（新增后三列的排序） |
+| 每一列都能筛选：名称、币种（文本框）、更新时间（📅 日期区间）、最后更新人、Selectable（▼ 是/否） | 列头 | 符合（新增后两列的筛选） |
+
+**待你确认的点（数据现状，不是功能缺失）：**
+- 历史价格表此前从没记录过修改人。迁移只回填**能从操作日志证实**的：该价格表最近一条日志恰好写在它当前更新时间之后 10 分钟以内的才认。
+  截图里那一大批「08/10/2026 19:08」的价格表是当时数据迁移/脚本统一改的，没有对应的人，**会显示为「—」**；之后有人再改一次就会正常显示。这是刻意不编造身份（同 Product.updatedBy 的做法）。
+- 排序时没有更新人的行，不论升降序都排在最后。
+
+## 测试账号（本地验证库，非生产）
+
+| 角色 | 账号 | 密码 |
+| --- | --- | --- |
+| 运营主管 | `prisma/seed.ts` 里的 OPERATOR 种子账号 | Test12345678（SEED_PASSWORD） |
+| 老板 | `prisma/seed.ts` 里的 BOSS 种子账号 | Test12345678（SEED_PASSWORD） |
+
+本地库：`prisma db push`（改动前 schema）→ 手动执行新迁移 SQL → `prisma/seed.ts`（97 个价格表）→ `scripts/rbac/apply-data-migrations.ts`。
+
+## 验证结果
+
+| 用户流程 | 验证方式 | 结果 |
+| --- | --- | --- |
+| 迁移回填规则 | 构造 6 个价格表 + 操作日志后执行迁移 SQL | ✅ 日志晚 2s → Alice；userName 为空 → 用邮箱 bob@x；两条日志 → 取最新的 Dave；日志早于更新时间 / 晚 20 分钟 / 无日志 → 空 |
+| 列表接口带出 updatedBy | curl GET /api/pricelists | ✅ |
+| 详情页保存记更新人 | curl PUT /api/pricelists/:id（故意传 updatedBy=HACKER） | ✅ 记为登录人「运营主管」，客户端传的被忽略 |
+| 新建/复制记更新人 | curl POST /api/pricelists（故意传 updatedBy=HACKER） | ✅ 记为「运营主管」 |
+| CSV 批量导入记更新人 | curl POST /api/pricelists/bulk（老板账号，1 更新 + 1 新建） | ✅ 两条都记为「老板」 |
+| 不存在的价格表 | curl PUT /api/pricelists/nope | ✅ 404「价格表不存在」 |
+| 未登录修改 | curl PUT 不带 token | ✅「未授权访问」 |
+| 列头 ▼ 筛选最后更新人 | Playwright 勾选「老板」 | ✅ 只剩 MUSASHI、Bulk brand new 两行 |
+| 按最后更新人升序/降序 | Playwright 点列头两次 | ✅ 有名字的按名字排，空的排最后 |
+| Selectable / Currency 排序、Selectable ▼ 是/否 | Playwright | ✅ |
+| Group By 最后更新人 | Playwright | ✅ 按人分组，空的归「（空）」 |
+| 浏览器控制台 / dev 服务器日志 | Playwright pageerror + console.error；grep dev.log | ✅ 无错误 |
+| 类型检查 / lint | `tsc --noEmit`；eslint 改动文件 | ✅ 0 error（仅与原代码同类的未使用变量 warning） |
+
+## 已知不可用功能
+
+无。
 
 ## 存档用的
 
-### Stream B：/shop 匿名浏览 + 真实数据接入（大改）
-
-**涉及文件**：新增 `app/[locale]/shop/page.tsx`、`app/api/public/products/route.ts`、`app/api/public/categories/route.ts`、`lib/customer-facing-categories.ts`；改动 `middleware.ts`（放行 `/shop` 页面）、`lib/public-routes.ts`（放行两个 `/api/public/*` 接口）、`app/[locale]/enter/page.tsx`（`?from=shop` 登录后跳转）、`app/api/customer-portal/categories/route.ts`（改用共享的分类过滤函数）、`tests/public-api-routes.test.ts`（白名单快照更新）。
-
-**`/code-review high` 结果处理**（5 条，4 条已修复，1 条确认是误报）：
-
-| # | 问题 | 处理 |
-| --- | --- | --- |
-| 1 | `/shop` 原来一次性拉 `pageSize=100`，而实际商品总数 1735 条，列表会被静默截断 | 改成真分页（`page`/`totalPages`）+「加载更多」按钮，`PAGE_SIZE=60` |
-| 2 | 说 `/api/public/categories` 缺 `canBeSold: true` 过滤 | 核实代码，该过滤条件在上一轮就已经加上了，这条是误报，未改动 |
-| 3 | 两个新匿名接口没有限流 | 接入 `lib/rate-limit.ts`，共享 `public-catalog` 桶，60 次/分钟 |
-| 4 | 登录后跳转路径写死 `'/customer-portal'`，和 `lib/role-access.ts` 的 `ROLE_HOME.RESTAURANT` 重复一份真相 | 改成引用 `ROLE_HOME.RESTAURANT` |
-| 5 | customer-portal 和 /shop 两处分类过滤/聚合逻辑各抄一份，容易改一处漏另一处 | 抽成 `lib/customer-facing-categories.ts` 共享，各自保留原本的过滤差异（/shop 多一个 `canBeSold`） |
-
-**验证证据**（本次会话内重跑，均为刚产生的命令输出，非历史记录）：
-
-```
-$ npx tsc --noEmit
-（无输出，exit 0）
-
-$ npx tsx --test tests/public-api-routes.test.ts
-✔ app/api 下能扫到路由（扫描逻辑本身没坏）
-✔ 匿名可达的 API 路由集合与快照完全一致
-✔ 客户/订单/商品/财务等敏感前缀绝不在白名单里
-✔ 白名单里每一条都在快照里有书面理由
-tests 4 / pass 4 / fail 0
-
-$ npm run build
-（成功，路由树含 /shop，无 error/failed）
-
-$ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/shop
-200
-$ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/classic/operator/products/bulk-images   # 匿名
-307
-$ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/customer-portal   # 匿名
-307
-$ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/customer-portal/products   # 匿名
-401
-
-$ curl -s "http://localhost:3000/api/public/products?page=1&pageSize=3"
-{"products":[...3条真实商品...],"total":1735,"page":1,"pageSize":3,"totalPages":579}
-# total=1735 印证了修复前 pageSize=100 会截断 94% 的商品，现已用分页解决
-
-# 字段白名单检查（20 条抽样，Python 脚本核对 key 集合）
-实际 key: ['categoryId','id','images','name','saleDescription','spec']
-未出现任何价格/库存字段（price/listPrice/standardPrice/qtyOnHand 等）
-
-# 限流突发测试：连续 65 次请求同一个 public-catalog 桶
-60 次 200，随后 5 次 429；约 60 秒后恢复 200
-```
-
-**Stream A：商品图片批量上传（小改，4 文件，无 schema 变更）**
-
-改了什么：新建 `app/api/products/bulk-images/route.ts`（后端，鉴权 `master.product.update`，限流 10/分钟，`FormData` 按 `image:<productId>` 键写入 `Product.images`）、`app/[locale]/classic/operator/products/bulk-images/page.tsx`（前端，选图后用 `useInlineProductPicker` 逐张指定商品）；改动 `lib/rbac/route-map.ts`（登记新路由）、`app/[locale]/classic/operator/products/page.tsx`（列表页加入口按钮）。
-
-端到端验证（真实登录 + 真实数据库写入 + 回读确认 + 清理）：
-```
-登录 boss@demo.local → 拿到 JWT
-POST /api/products/bulk-images（1x1 测试 PNG，productId=cmqn90vbz02nfdmyli3w876kp）
-→ 200 {"results":[{"productId":"...","ok":true,"url":"/uploads/products/..."}]}
-→ 回读 /api/public/products 确认该商品 images 字段已更新
-→ 测试完成后 PUT 该商品 images:[] 还原，确认恢复为 []（未留测试脏数据）
-```
-
-**已知不可用功能 / 环境限制（不隐瞒）：**
-- 本机开发环境没有把 `/uploads/*` 挂载出去（生产环境靠 `deploy/droplet/nginx-veggie.conf` 的 `location /uploads/` 直接读磁盘文件），所以本机上传成功后直接访问图片 URL 会 404。这是本机 dev 环境的固有缺口，老功能"单张上传商品图片"（`/api/upload-image`）一样会 404，不是这次新功能引入的问题，生产环境不受影响。
-- 浏览器端真实点击验收本轮未能完成（本机 Chrome 二进制缺失），改用 curl + 真实登录 + DB 回读的方式验证了后端行为，但页面交互手感（点击、下拉选品框弹出位置、拖拽体验）还没有真人在浏览器里走过一遍，建议你抽空用真实浏览器点一下 `/classic/operator/products/bulk-images` 和 `/shop`。
+**涉及文件**：
+- `prisma/schema.prisma`、`prisma/migrations/20261023000001_pricelist_updated_by/migration.sql`：`OdooPricelist.updatedBy TEXT` + 有据回填
+- `app/api/pricelists/route.ts`（POST）、`app/api/pricelists/[id]/route.ts`（PUT）、`app/api/pricelists/bulk/route.ts`（导入）：写入 `user.name || user.email`，不信客户端
+- `lib/pricelist-rule-log.ts`、`app/api/products/[id]/route.ts`：删商品连带删价格规则时记删商品的人
+- `app/[locale]/classic/operator/pricelists/page.tsx`：新列、列头多选筛选（状态随 sessionStorage 保存、「清除」一并清掉）、全部列排序、Filters/Group By 增加最后更新人；行内编辑后用服务端返回值刷新更新时间/更新人
+- `lib/types.ts`：`OdooPricelist.updatedBy`

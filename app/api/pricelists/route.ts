@@ -18,13 +18,19 @@ export async function GET() {
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
-      const { id: _ignoredId, ...data } = await req.json()
+      // updatedBy 只认登录身份，不信客户端传来的(列表页「复制」会把整行带过来)
+      const { id: _ignoredId, updatedBy: _ignoredUpdatedBy, ...data } = await req.json()
       if (!data.name || !String(data.name).trim()) {
         return NextResponse.json({ error: '价格表名称不能为空' }, { status: 400 })
       }
       // items 走跟 PUT 同一套校验+归一化(缺 id 的补上)——列表页「复制」只传规则内容不带 id
       const pricelist = await prisma.odooPricelist.create({
-        data: { ...data, externalId: data.externalId || null, items: normalizeItems(data.items ?? []) as unknown as object[] },
+        data: {
+          ...data,
+          externalId: data.externalId || null,
+          items: normalizeItems(data.items ?? []) as unknown as object[],
+          updatedBy: user.name || user.email,
+        },
       })
       await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
         action: 'CREATE', resource: 'pricelist', resourceId: pricelist.id,

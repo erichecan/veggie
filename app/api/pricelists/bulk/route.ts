@@ -84,6 +84,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: `单次请求最多 ${MAX_ROWS_PER_REQUEST} 行(导入弹窗会自动分批提交)` }, { status: 400 })
       }
       const rowOffset = Number.isInteger(data.rowOffset) && data.rowOffset >= 0 ? data.rowOffset as number : 0
+      // 每个被这次导入写到的价格表都记上导入人(价格表列表页 Last Updated by 列)
+      const updatedBy = user.name || user.email
 
       const [categories, uoms] = await Promise.all([
         prisma.productCategory.findMany({ select: { id: true, name: true, nameZh: true, parentId: true } }),
@@ -248,7 +250,7 @@ export async function POST(req: Request) {
 
             let isNewPricelist = false
             if (pricelistId) {
-              const settingsUpdate: Record<string, unknown> = { name: row.pricelistName }
+              const settingsUpdate: Record<string, unknown> = { name: row.pricelistName, updatedBy }
               if (row.externalId !== undefined) settingsUpdate.externalId = row.externalId
               if (row.currency !== undefined) settingsUpdate.currency = row.currency
               if (row.active !== undefined) settingsUpdate.active = row.active
@@ -265,6 +267,7 @@ export async function POST(req: Request) {
                   selectable: row.selectable ?? true,
                   sequence: row.pricelistSequence ?? 10,
                   items: [],
+                  updatedBy,
                 },
               })
               pricelistId = createdPricelist.id
@@ -318,7 +321,7 @@ export async function POST(req: Request) {
                 ruleChanges = diffPricelistItems(existingIdx >= 0 ? [items[existingIdx]] : [], [normalized])
                 if (existingIdx >= 0) items[existingIdx] = normalized
                 else items.push(normalized)
-                await tx.odooPricelist.update({ where: { id: pricelistId }, data: { items: items as unknown as object[] } })
+                await tx.odooPricelist.update({ where: { id: pricelistId }, data: { items: items as unknown as object[], updatedBy } })
               } catch (e) {
                 itemWarning = `${row.rowLabel}: ${e instanceof Error ? e.message : 'invalid item'}, item not added`
               }

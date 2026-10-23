@@ -88,9 +88,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (specialPrices !== undefined) {
         await prisma.customerSpecialPrice.deleteMany({ where: { customerId: id } })
       }
-      if (pricelistIds !== undefined) {
-        await prisma.customerPricelist.deleteMany({ where: { customerId: id } })
-      }
       // 关于 street/street2/state/zip/country 这五个字段：
       // schema.prisma 已新增，但 prisma generate 需要在用户本地 macOS 执行。
       // 这里用 Record<string, unknown> 兜底，如果客户端尚未 generate，
@@ -102,8 +99,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         specialPrices: specialPrices?.length
           ? { create: specialPrices.map(({ id: _id, customerId: _cid, ...sp }: Record<string, unknown>) => sp) }
           : undefined,
-        pricelists: pricelistIds?.length
-          ? { create: pricelistIds.map((pricelistId: string, idx: number) => ({ pricelistId, sequence: idx + 1 })) }
+        // 传了 pricelistIds 就整组替换：删旧 + 建新放在同一个嵌套写里，跟客户本身的更新同进同退——
+        // 以前先单独 deleteMany 再 update，update 一失败（如 Sage Account 撞号 409）客户的价格表就全没了。
+        // 去重：同一价格表挂两次会撞 (customerId, pricelistId) 唯一约束
+        pricelists: Array.isArray(pricelistIds)
+          ? {
+              deleteMany: {},
+              create: [...new Set(pricelistIds.map(String).filter(Boolean))]
+                .map((pricelistId, idx) => ({ pricelistId, sequence: idx + 1 })),
+            }
           : undefined,
       }
       // Prisma 7：同一次 update 里一旦出现 pricelists 这类关系嵌套写法，整个 data 对象就按

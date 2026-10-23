@@ -32,6 +32,8 @@ interface SavedListState {
   searchInput: string
   facets: Facet[]
   columnFilters: Record<string, string>
+  /** 列头多选筛选（Last Updated by / Selectable），老版本存的状态里没有这个字段 */
+  columnMultiFilters?: Record<string, string[]>
   selectableFilter: boolean
   tab: 'active' | 'archived'
   groupBy: string
@@ -50,6 +52,13 @@ function readSavedListState(): SavedListState | null {
   }
 }
 
+/** 列头多选筛选用的取值：updatedBy 为空记作 ''，selectable 记作 'true'/'false' */
+function multiFilterValue(pl: OdooPricelist, key: string): string {
+  if (key === 'updatedBy') return pl.updatedBy ?? ''
+  if (key === 'selectable') return String(!!pl.selectable)
+  return String((pl as unknown as Record<string, unknown>)[key] ?? '')
+}
+
 export default function ClassicPricelistsPage() {
   const router = useRouter()
   const locale = useLocale()
@@ -62,6 +71,7 @@ export default function ClassicPricelistsPage() {
   const [searchInput, setSearchInput] = useState(saved?.searchInput ?? '')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(saved?.columnFilters ?? {})
+  const [columnMultiFilters, setColumnMultiFilters] = useState<Record<string, string[]>>(saved?.columnMultiFilters ?? {})
   const [isReadMode, setIsReadMode] = useState(true)
   const editMode = !isReadMode
   const [page, setPage] = useState(saved?.page ?? 1)
@@ -87,6 +97,7 @@ export default function ClassicPricelistsPage() {
     setSearchInput('')
     clearFacets()
     setColumnFilters({})
+    setColumnMultiFilters({})
     setSelectableFilter(false)
     setTab('active')
     setGroupBy('')
@@ -125,6 +136,7 @@ export default function ClassicPricelistsPage() {
   const facetDefs = useMemo<ClientFacetDef<OdooPricelist>[]>(() => [
     { key: 'name',     label: '名称', labelEn: 'Name',     values: r => [r.name] },
     { key: 'currency', label: '货币', labelEn: 'Currency', values: r => [r.currency] },
+    { key: 'updatedBy', label: '最后更新人', labelEn: 'Last Updated by', values: r => r.updatedBy ? [r.updatedBy] : [] },
     {
       key: 'product', label: '产品', labelEn: 'Product',
       // OdooPricelistItem 只存 productTemplateId/productVariantId，没有商品名快照，
@@ -141,9 +153,9 @@ export default function ClassicPricelistsPage() {
   // 搜索/筛选状态整体持久化，供从详情页返回时恢复（见 LIST_STATE_KEY 顶部注释）。
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const state: SavedListState = { searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir }
+    const state: SavedListState = { searchInput, facets, columnFilters, columnMultiFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir }
     try { sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(state)) } catch { /* 存储不可用时静默跳过,不影响筛选本身 */ }
-  }, [searchInput, facets, columnFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir])
+  }, [searchInput, facets, columnFilters, columnMultiFilters, selectableFilter, tab, groupBy, page, sortKey, sortDir])
 
   const filteredLists = useMemo(() => {
     let rows = filterByFacets(lists, facets, facetDefs)
@@ -173,20 +185,49 @@ export default function ClassicPricelistsPage() {
         })
       }
     }
+    // 列头多选：值统一转成字符串比较——updatedBy 为空记作 ''（「（空）」选项），selectable 记作 'true'/'false'
+    for (const [key, vals] of Object.entries(columnMultiFilters)) {
+      if (!vals?.length) continue
+      const wanted = new Set(vals)
+      rows = rows.filter(pl => wanted.has(multiFilterValue(pl, key)))
+    }
     return rows
-  }, [lists, facets, facetDefs, tab, searchInput, columnFilters, selectableFilter])
+  }, [lists, facets, facetDefs, tab, searchInput, columnFilters, columnMultiFilters, selectableFilter])
+
+  // 列头多选的候选项从当前 Tab 的全部价格表里取，而不是 OdooTable 默认的「只看当前页 rows」
+  const updatedByOptions = useMemo(() => {
+    const names = new Set<string>()
+    let hasEmpty = false
+    for (const pl of lists) {
+      if (pl.active !== (tab === 'active')) continue
+      if (pl.updatedBy) names.add(pl.updatedBy)
+      else hasEmpty = true
+    }
+    return [
+      ...[...names].map(n => ({ value: n, label: n })),
+      ...(hasEmpty ? [{ value: '', label: isEn ? '(Empty)' : '（空）' }] : []),
+    ]
+  }, [lists, tab, isEn])
 
   // 点列头排序前，列表恒按 sequence（后端存的任意顺序）展示——名称一栏看着大小写
   // 随机混排、Last Updated on 一栏也不按时间先后，就是因为从没真正排过序
   // （20261002 客户反馈截图）。name 用 localeCompare + sensitivity:'base' 做大小写
   // 不敏感比较，updatedAt 按真实时间戳比较，不是字符串字典序。
+  // 20261023 起每一列都可排序；updatedBy 为空（历史数据无记录）的不论升降序都排在最后。
   const sortedLists = useMemo(() => {
     if (!sortKey) return filteredLists
     const dir = sortDir === 'asc' ? 1 : -1
     const rows = [...filteredLists]
+    const text = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: 'base' }) * dir
     rows.sort((a, b) => {
-      if (sortKey === 'name') return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) * dir
+      if (sortKey === 'name') return text(a.name, b.name)
       if (sortKey === 'updatedAt') return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * dir
+      if (sortKey === 'updatedBy') {
+        if (!a.updatedBy || !b.updatedBy) return (a.updatedBy ? 0 : 1) - (b.updatedBy ? 0 : 1)
+        return text(a.updatedBy, b.updatedBy)
+      }
+      if (sortKey === 'currency') return text(a.currency ?? '', b.currency ?? '')
+      if (sortKey === 'selectable') return (Number(a.selectable) - Number(b.selectable)) * dir
       return 0
     })
     return rows
@@ -265,8 +306,11 @@ export default function ClassicPricelistsPage() {
       throw new Error('empty name')
     }
     try {
-      await apiPut(`/api/pricelists/${pl.id}`, { [key]: payloadVal })
-      setLists(prev => prev.map(row => row.id === pl.id ? { ...row, [key]: payloadVal } as OdooPricelist : row))
+      const res = await apiPut<OdooPricelist>(`/api/pricelists/${pl.id}`, { [key]: payloadVal })
+      // 行内改完同步把 Last Updated on/by 换成服务端刚写的值，不用等整表重新拉
+      setLists(prev => prev.map(row => row.id === pl.id
+        ? { ...row, [key]: payloadVal, updatedAt: res?.updatedAt ?? row.updatedAt, updatedBy: res?.updatedBy ?? row.updatedBy } as OdooPricelist
+        : row))
       toast.success(isEn ? 'Saved' : '已保存')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
@@ -303,9 +347,20 @@ export default function ClassicPricelistsPage() {
       ),
     },
     {
+      key: 'updatedBy',
+      label: 'Last Updated by',
+      filterType: 'multi-select',
+      filterOptions: updatedByOptions,
+      sortable: true,
+      render: (v) => v
+        ? <span className="text-xs text-gray-500">{String(v)}</span>
+        : <span className="text-xs text-gray-300">—</span>,
+    },
+    {
       key: 'currency',
       label: 'Currency',
       filterType: 'text',
+      sortable: true,
       editable: true,
       editType: 'text',
       render: (v) => <span className="text-gray-700">{String(v ?? '')}</span>,
@@ -313,6 +368,12 @@ export default function ClassicPricelistsPage() {
     {
       key: 'selectable',
       label: 'Selectable',
+      filterType: 'multi-select',
+      filterOptions: [
+        { value: 'true', label: isEn ? 'Yes' : '是' },
+        { value: 'false', label: isEn ? 'No' : '否' },
+      ],
+      sortable: true,
       render: (v) => v
         ? <span className="inline-flex w-4 h-4 items-center justify-center rounded-sm text-white text-xs" style={{ background: '#875A7B' }}>✓</span>
         : <span className="inline-block w-4 h-4 border border-gray-300 rounded-sm" />,
@@ -382,6 +443,7 @@ export default function ClassicPricelistsPage() {
         }}
         groupByOptions={[
           { label: isEn ? 'Currency' : '货币', value: 'currency' },
+          { label: isEn ? 'Last Updated by' : '最后更新人', value: 'updatedBy' },
         ]}
         groupByValue={groupBy}
         onGroupByChange={v => setGroupBy(prev => prev === v ? '' : v)}
@@ -429,7 +491,7 @@ export default function ClassicPricelistsPage() {
           inlineEditEnabled={editMode}
           onCellEdit={handleCellEdit}
           emptyText={isEn ? 'No pricelist data' : '暂无价格表数据'}
-          groupByField={groupBy === 'currency' ? 'currency' : ''}
+          groupByField={groupBy === 'currency' || groupBy === 'updatedBy' ? groupBy : ''}
           groupByFormatter={(key, count) => (
             <>{key || (isEn ? '(Empty)' : '（空）')} <span className="font-normal text-xs ml-1" style={{ color: '#a07898' }}>({count})</span></>
           )}
@@ -437,6 +499,11 @@ export default function ClassicPricelistsPage() {
           onColumnFilterChange={(key, val) => {
             setPage(1)
             setColumnFilters(prev => ({ ...prev, [key]: val }))
+          }}
+          columnMultiFilters={columnMultiFilters}
+          onColumnMultiFilterChange={(key, vals) => {
+            setPage(1)
+            setColumnMultiFilters(prev => ({ ...prev, [key]: vals }))
           }}
         />
         <Pagination page={page} totalPages={Math.ceil(filteredLists.length / PAGE_SIZE)} onPageChange={setPage} />
