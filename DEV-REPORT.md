@@ -1,3 +1,48 @@
+# DEV-REPORT（20261023 续）：权限快照追平 + 按可售单位查看商品（搜索 / 基础价快速修改）
+
+## 三、权限快照（CI 红了一个多月的 8 条权限守卫）
+
+| 项 | 处理 | 结果 |
+| --- | --- | --- |
+| 4 个匿名入口（register、public/products、public/categories、cron/ledger-check） | 用户确认有意公开；逐个核对：register 限流 5 次/分钟只建 RESTAURANT 账号，public/* 不 select 价格库存且限流，cron 校验 x-cron-secret | 进匿名白名单并写明理由 |
+| 39 个新 handler 不在快照/基线里 | 用仓库自带脚本只做加法；脚本跑完逐格比对新旧 JSON | 已有格 0 处变化 |
+| `/api/products/[id]/pricelist-rules` | handler 没挂 require，旧 token 的仓库/外部销售能读价格规则 | 补 `require: master.pricelist.read` |
+| 旧 token 白名单缺导出/新页面入口 | 按「列表与导出成对」补齐，只追平新体系已发的权限 | — |
+| 5 格旧 token 比新体系严 | 登记例外：签 token 只有 login 一处，仓库首个提交起一律带 pm，7 天过期 | — |
+| `npm test` | 本地全量 | ✅ 996 条 0 失败（7 条需真实库跳过） |
+
+⚠️ 留给你决定的：新权限体系里 DRIVER 持有 `dispatch.trip.update`，因此也能调「统一补完成行程」（会把所有已标记完成波次的行程补成完成并结提成）。这是权限设计问题，本次没改。
+
+## 四、按可售单位查看商品：搜索 + 基础售价/成本/毛重/装货顺序快速修改
+
+截图红字需求：1. 搜索：产品名、description、产品分类、product spec；2. 产品的基础售价和 cost、毛重、装货顺序，快速修改。
+
+| 场景 | 复现方式 | 状态 |
+| --- | --- | --- |
+| 搜索框按 名称 / 内部编号 / 描述 / 产品分类（中英文名）/ 产品规格（商品 spec + 各可售单位 spec）任一命中 | 商品 → 按可售单位查看商品 → 搜索框 | 符合（商品列表页的搜索口径不变） |
+| 新增「基础售价」「基础成本」两列，每个商品第一行可直接改（= 商品的 listPrice / standardPrice） | 点第一行的基础售价/基础成本 | 符合 |
+| 改完基础价，各单位的售价/成本按新基础价自动换算 | 改完看同一商品其它行 | 符合 |
+| 毛重：有可售单位的改该单位；没配可售单位的商品也能改（写商品自己的毛重） | 点毛重 | 符合 |
+| 装货顺序：有可售单位的行可改（原本就支持）；没配可售单位的商品没有可存的位置，悬停有提示 | 点装货顺序 | 符合 |
+
+## 验证结果（第四部分）
+
+| 用户流程 | 验证方式 | 结果 |
+| --- | --- | --- |
+| 搜索 8 个词（pepper / 彩椒 / 中式蔬菜 / Chinese / 10*200g / 5kg / 4*500 / zzz） | curl GET /api/products/by-sale-unit?search= | ✅ 分别命中名称/描述/分类中英文/商品规格/单位规格，zzz 0 条 |
+| 改基础售价 4.60→5.00、基础成本 3.00→3.20 | Playwright | ✅ BAG(×5) 售价 23→25、成本 15→16；100克 0.46→0.50、0.30→0.32；库里 listPrice/standardPrice 已更新，最后更新人=运营主管 |
+| 第二行基础价不可改 | Playwright 读悬停提示 | ✅「基础售价/成本是整个商品共用的，请在这个商品的第一行修改」 |
+| 没配可售单位商品改毛重 2.10→2.35 | Playwright + 查库 | ✅ Product.weight=2.35 |
+| 有可售单位的改毛重 5.20→5.40 | Playwright + 查库 | ✅ ProductSaleUom.grossWeight=5.40 |
+| 输入 -3 | Playwright | ✅ 提示「请输入合法的非负数字」，不提交 |
+| 按基础售价排序 | Playwright | ✅ 5.00 → 14 → 31 → 125 |
+| 浏览器控制台 / dev 日志 | Playwright + grep | ✅ 无错误 |
+| tsc / eslint / npm test | 本地 | ✅ 0 error；996 条 0 失败 |
+
+**涉及文件**：`app/api/products/by-sale-unit/route.ts`、`app/[locale]/classic/operator/products/by-sale-unit/page.tsx`、`lib/types.ts`、`app/api/products/[id]/route.ts`（变更日志补记 weight）。
+
+---
+
 # DEV-REPORT（20261023）：价格表「最后更新人」+ 客户列表直接增加/减少/替换价格表
 
 本轮两个需求，同一个 PR：
