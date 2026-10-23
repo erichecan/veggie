@@ -51,15 +51,20 @@ test('可达性矩阵与快照一致', () => {
   )
 })
 
-test('⛔ 匿名可达的必须只有这 7 条 —— 泄露客户名册那次就是这里破的', () => {
+test('⛔ 匿名可达的必须只有这 11 条 —— 泄露客户名册那次就是这里破的', () => {
   const now = buildReachabilityMatrix()
   const anon = Object.entries(now)
     .filter(([, row]) => row.BOSS === 'anon')
     .map(([k]) => k.split(' ')[1])
   // logout 只删自己浏览器的登录 cookie，不吐任何业务数据；
-  // auto-confirm-departure/generate-statements/backup-database 同类，走 CRON_SECRET 共享密钥而非角色
+  // auto-confirm-departure/generate-statements/backup-database/ledger-check 同类，走 CRON_SECRET 共享密钥而非角色；
+  // register = 餐馆自助注册（只建 RESTAURANT 账号，rateLimit 5 次/分钟）；
+  // public/products、public/categories = /shop 匿名商品目录（不 select 任何价格/库存字段，rateLimit 60 次/分钟）。
+  // 后三条 20261023 经用户确认是有意公开。
   assert.deepEqual([...new Set(anon)].sort(), [
-    '/api/auth/login', '/api/auth/logout', '/api/cron/auto-confirm-departure', '/api/cron/backup-database', '/api/cron/generate-statements', '/api/health', '/api/tile',
+    '/api/auth/login', '/api/auth/logout', '/api/auth/register',
+    '/api/cron/auto-confirm-departure', '/api/cron/backup-database', '/api/cron/generate-statements', '/api/cron/ledger-check',
+    '/api/health', '/api/public/categories', '/api/public/products', '/api/tile',
   ])
 })
 

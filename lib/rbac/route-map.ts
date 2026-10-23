@@ -56,6 +56,7 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/notifications/**', permission: null, note: '读改自己的通知，无需权限' },
   { pattern: '/api/mfa/**', permission: 'system.mfa.enroll' },
   { pattern: '/api/cron/**', permission: null, note: '由 CRON_SECRET 把关，不走角色' },
+  { pattern: '/api/public/**', methods: ['GET'], permission: null, note: '/shop 匿名商品目录：只出名称/图片/规格/分类，不含价格库存，自带 rateLimit' },
 
   // ── 信息广场：内部员工都能读写，不做角色差异化，只用一个权限点把 ───────
   // RESTAURANT 客户门户账号结构性挡在路由表这层（不能只靠 handler 内部判断，
