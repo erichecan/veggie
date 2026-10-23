@@ -66,8 +66,9 @@ type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
  * 删除商品时，把各价格表里锁定这个商品的规则(applyOn=product/variant)一并去掉 —— 20261008。
  * 以前商品删了规则还留着，详情页显示成「-」，只能靠 20261008000002 那种迁移事后清理。
  * 在调用方的事务里执行，和删商品同进同退；返回每个被改动的价格表及删掉的规则，供写日志。
+ * updatedBy 记到被改动的价格表上(删商品的人)，价格表列表页 Last Updated by 列据此显示。
  */
-export async function removeProductRulesInTx(tx: Tx, productId: string): Promise<Array<{ id: string; name: string; changes: RuleChange[] }>> {
+export async function removeProductRulesInTx(tx: Tx, productId: string, updatedBy: string): Promise<Array<{ id: string; name: string; changes: RuleChange[] }>> {
   const pricelists = await tx.odooPricelist.findMany({ select: { id: true, name: true, items: true } })
   const touched: Array<{ id: string; name: string; changes: RuleChange[] }> = []
   for (const pl of pricelists) {
@@ -79,7 +80,7 @@ export async function removeProductRulesInTx(tx: Tx, productId: string): Promise
       return true
     })
     if (kept.length === items.length) continue
-    await tx.odooPricelist.update({ where: { id: pl.id }, data: { items: kept as unknown as object[] } })
+    await tx.odooPricelist.update({ where: { id: pl.id }, data: { items: kept as unknown as object[], updatedBy } })
     touched.push({ id: pl.id, name: pl.name, changes: diffPricelistItems(items, kept) })
   }
   return touched
