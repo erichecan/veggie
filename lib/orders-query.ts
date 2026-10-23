@@ -177,6 +177,16 @@ export async function buildOrdersWhere(req: Request, searchParams: URLSearchPara
   if (colDriver)    facetAnd.push(await driverNameClause(colDriver))
   if (colCreatedBy) where.createdByName = { contains: colCreatedBy, mode: 'insensitive' }
 
+  // 列筛选里的状态（单选），跟顶部 Filters 下拉的 statusFilter（多选）是 AND 关系，
+  // 不是替换——此前这个值只在前端对当前页二次过滤，分页 total 没跟着收窄，导致
+  // "筛完还是显示共146条/第1/3页"。与 statusFilter 冲突（不在其允许集合内）时结果应为空。
+  const colStatus = searchParams.get('colStatus')?.trim().toUpperCase()
+  if (colStatus && ORDER_STATUSES.has(colStatus as $Enums.OrderStatus)) {
+    where.status = (statusFilter && statusFilter.length > 0 && !statusFilter.includes(colStatus as $Enums.OrderStatus))
+      ? { in: [] }
+      : colStatus
+  }
+
   // 分面搜索：同一维度多值 OR、不同维度之间 AND（20260802 语义修正，此前是分面间 OR，
   // 导致"加一个筛选条件结果反而变多"）。规则集中在 lib/facet-sql.ts，各资源只声明维度。
   facetAnd.push(...await buildFacetWhere(searchParams, ORDER_FACET_DEFS))

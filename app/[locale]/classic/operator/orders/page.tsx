@@ -167,6 +167,9 @@ export default function ClassicOrdersPage() {
     // 翻页/总数会对不上，见 lib/orders-query.ts 的同名参数)
     if (colFilters.createdAtFrom) params.set('createdAtFrom', colFilters.createdAtFrom)
     if (colFilters.createdAtTo) params.set('createdAtTo', colFilters.createdAtTo)
+    // 状态列筛选 → colStatus，走服务端(此前只在前端对当前页二次过滤，分页 total 没跟着收窄，
+    // 客户反馈"筛完还是显示共146条/第1/3页")
+    if (colFilters.status) params.set('colStatus', colFilters.status.toUpperCase())
     // 单号/客户/销售员/司机列筛选框(与分面 chip 独立,AND 语义) → colCode/colCustomer/colSalesman/colDriver
     if (debouncedColText.code) params.set('colCode', debouncedColText.code)
     if (debouncedColText.customer) params.set('colCustomer', debouncedColText.customer)
@@ -185,7 +188,7 @@ export default function ClassicOrdersPage() {
     const range = timeKey ? computeTimeRange(timeKey) : null
     if (range) { params.set('deliveryFrom', range.from); params.set('deliveryTo', range.to) }
     return `/api/orders?${params.toString()}`
-  }, [statusParam, activeFilter, colFilters.invoiceStatus, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, colFilters.createdAtFrom, colFilters.createdAtTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
+  }, [statusParam, activeFilter, colFilters.invoiceStatus, colFilters.status, colFilters.deliveryDateFrom, colFilters.deliveryDateTo, colFilters.createdAtFrom, colFilters.createdAtTo, debouncedColText, sortField, sortDir, facets, myActive, currentUser, timeKey])
 
   // 会计导出:跟列表当前筛选结果(baseUrl)完全同一套参数,只是换个路由+加 kind
   const [exporting, setExporting] = useState<'summary' | 'detail' | null>(null)
@@ -285,11 +288,10 @@ export default function ClassicOrdersPage() {
 
 
     const cf = colFilters
-    // 交货日期/创建日期/单号/客户/销售员/司机已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
+    // 交货日期/创建日期/单号/客户/销售员/司机/状态已由服务端过滤(见 baseUrl),此处不再客户端二次筛选,
     // 避免"只筛当前页导致可见行数与分页总数对不上"(客户反馈:同一关键词每次搜到的页数/条数都不一样)
-    // to_invoice 已由服务端筛（invoiceState），其余两档仍按当前页标记过滤
+    // to_invoice 已由服务端筛（invoiceState），剩这一档仍按当前页标记过滤
     if (cf.invoiceStatus && cf.invoiceStatus !== 'to_invoice') result = result.filter(o => invoiceStatusFor(o, invoicedOrderIds) === cf.invoiceStatus)
-    if (cf.status) result = result.filter(o => o.status === cf.status)
 
     return result
   }, [orders, invoicedOrderIds, colFilters])
