@@ -87,10 +87,16 @@ export interface SaleUnitRow {
   sequence: number | null
   spec: string | null
   uom: { name: string; nameZh?: string | null } | null
+  /** 商品基础售价 Product.listPrice——只在该商品第一行有值，其余单位行为 null */
+  baseSalePrice: number | null
+  /** 商品基础成本 Product.standardPrice——同上，只在第一行有值 */
+  baseCost: number | null
+  /** 按该单位换算/公式得出的展示售价 */
   salePrice: number
   customerTaxRate: number | null
   costPrice: number
   vendorTaxRate: number | null
+  /** 有可售单位行时是 ProductSaleUom.grossWeight；没配可售单位的商品是 Product.weight */
   grossWeight: number | null
   qtyOnHand: number | null
   qtyForecast: number | null

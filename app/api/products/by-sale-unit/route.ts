@@ -27,6 +27,8 @@ import type { SaleUnitRow } from '@/lib/types'
 const DIRECT_SORT: Record<string, (dir: 'asc' | 'desc') => object> = {
   internalRef: (dir) => ({ internalRef: dir }),
   name: (dir) => ({ name: dir }),
+  baseSalePrice: (dir) => ({ listPrice: dir }),
+  baseCost: (dir) => ({ standardPrice: dir }),
   saleDescription: (dir) => ({ saleDescription: dir }),
   customerTaxRate: (dir) => ({ customerTaxRate: dir }),
   vendorTaxRate: (dir) => ({ vendorTaxRate: dir }),
@@ -62,7 +64,7 @@ interface DefaultRowLite {
 
 function derivedSortValue(
   sortKey: string,
-  p: { listPrice: unknown; standardPrice: unknown; commissionPrice: unknown; saleUoms: DefaultRowLite[] },
+  p: { listPrice: unknown; standardPrice: unknown; commissionPrice: unknown; weight: unknown; saleUoms: DefaultRowLite[] },
 ): string | number {
   const basePrice = toNum(p.listPrice)
   const baseCost = toNumOpt(p.standardPrice) ?? 0
@@ -73,7 +75,8 @@ function derivedSortValue(
       case 'salePrice': return basePrice
       case 'costPrice': return baseCost
       case 'commissionPrice': return baseCommission ?? -Infinity
-      case 'grossWeight': return -Infinity
+      // 没配可售单位的商品，毛重一列显示的是商品自己的 weight（见 flattenProduct）
+      case 'grossWeight': return toNumOpt(p.weight) ?? -Infinity
       case 'packSequence': return Infinity
       case 'suUpdatedAt': return -Infinity
       default: return '' // spec/uomName/updatedBy
@@ -113,7 +116,7 @@ async function sortedProductIdsByDerivedKey(
   const products = await prisma.product.findMany({
     where,
     select: {
-      id: true, listPrice: true, standardPrice: true, commissionPrice: true,
+      id: true, listPrice: true, standardPrice: true, commissionPrice: true, weight: true,
       saleUoms: {
         where: { active: true },
         orderBy: [{ isDefault: 'desc' }, { sequence: 'asc' }],
@@ -134,7 +137,7 @@ async function sortedProductIdsByDerivedKey(
 
 const DETAIL_SELECT = {
   id: true, internalRef: true, name: true, saleDescription: true, sequence: true,
-  listPrice: true, standardPrice: true, commissionPrice: true,
+  listPrice: true, standardPrice: true, commissionPrice: true, weight: true,
   customerTaxRate: true, vendorTaxRate: true, qtyOnHand: true,
   uom: { select: { name: true, nameZh: true } },
   category: { select: { name: true, nameZh: true } },
@@ -153,7 +156,7 @@ const DETAIL_SELECT = {
 
 function flattenProduct(p: {
   id: string; internalRef: string | null; name: string; saleDescription: string | null; sequence: number | null
-  listPrice: unknown; standardPrice: unknown; commissionPrice: unknown
+  listPrice: unknown; standardPrice: unknown; commissionPrice: unknown; weight: unknown
   customerTaxRate: unknown; vendorTaxRate: unknown; qtyOnHand: unknown
   uom: { name: string; nameZh: string | null } | null
   category: { name: string; nameZh: string | null } | null
@@ -174,9 +177,11 @@ function flattenProduct(p: {
       sequence: p.sequence,
       spec: null,
       uom: p.uom ? { name: p.uom.name, nameZh: p.uom.nameZh } : null,
+      baseSalePrice: basePrice, baseCost,
       salePrice: basePrice, customerTaxRate: toNumOpt(p.customerTaxRate) ?? null,
       costPrice: baseCost, vendorTaxRate: toNumOpt(p.vendorTaxRate) ?? null,
-      grossWeight: null,
+      // 没有可售单位行可挂毛重，显示/编辑商品自己的 weight（商品列表页「Weight」列，基础单位层级的毛重）
+      grossWeight: toNumOpt(p.weight) ?? null,
       qtyOnHand: toNum(p.qtyOnHand), qtyForecast: null,
       category, packSequence: null,
       commissionPrice: baseCommission,
@@ -192,8 +197,11 @@ function flattenProduct(p: {
     commissionPriceMode: u.commissionPriceMode, commissionDiscountPct: toNumOpt(u.commissionDiscountPct) ?? 0, commissionSurcharge: toNumOpt(u.commissionSurcharge) ?? 0,
   }))
 
-  return p.saleUoms.map(u => {
+  return p.saleUoms.map((u, idx) => {
     const factor = toNum(u.factor) || 1
+    // 基础售价/成本（Product.listPrice/standardPrice）是商品级的，只在这个商品的第一行显示一次，
+    // 跟库存同理——每个单位行都重复一遍会像是"每个单位各有一个基础价"
+    const isFirst = idx === 0
     return {
       rowId: `${p.id}::${u.uomId}`,
       productId: p.id, uomId: u.uomId, isDefault: u.isDefault,
@@ -202,6 +210,8 @@ function flattenProduct(p: {
       sequence: p.sequence,
       spec: u.spec,
       uom: { name: u.uom.name, nameZh: u.uom.nameZh },
+      baseSalePrice: isFirst ? basePrice : null,
+      baseCost: isFirst ? baseCost : null,
       salePrice: priceOf(calcRows, u.uomId, basePrice),
       customerTaxRate: toNumOpt(p.customerTaxRate) ?? null,
       costPrice: round2(baseCost * factor),
@@ -230,7 +240,25 @@ export async function GET(req: Request) {
       const limit = Math.min(200, Math.max(1, parseInt(rawSize, 10)))
       const sortDir: 'asc' | 'desc' = searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
       const sortKey = searchParams.get('sortKey')
-      const where = await buildProductTemplatesWhere(searchParams)
+      // 搜索框（20261023 客户需求）：产品名 / 内部编号 / 描述 / 产品分类 / 产品规格 任一命中即可。
+      // 商品列表页的「全部」维度（lib/facets/product-templates.ts）不含分类和规格，这一页单独放宽，
+      // 不动商品列表页的搜索口径。规格两处都要搜：商品自己的 spec 和各可售单位行的 spec（表里显示的是后者）。
+      const searchTerms = searchParams.getAll('search').map(s => s.trim()).filter(Boolean)
+      const baseParams = new URLSearchParams(searchParams)
+      baseParams.delete('search')
+      const where = await buildProductTemplatesWhere(baseParams)
+      if (searchTerms.length > 0) {
+        const like = (v: string) => ({ contains: v, mode: 'insensitive' as const })
+        const clauses = Array.isArray(where.AND) ? where.AND as unknown[] : []
+        clauses.push({ OR: searchTerms.flatMap(v => [
+          { name: like(v) }, { internalRef: like(v) },
+          { description: like(v) }, { saleDescription: like(v) },
+          { category: { OR: [{ name: like(v) }, { nameZh: like(v) }] } },
+          { spec: like(v) },
+          { saleUoms: { some: { active: true, spec: like(v) } } },
+        ]) })
+        where.AND = clauses
+      }
       const uomFilter = searchParams.get('uom')?.trim()
       if (uomFilter) {
         const clauses = Array.isArray(where.AND) ? where.AND as unknown[] : []
