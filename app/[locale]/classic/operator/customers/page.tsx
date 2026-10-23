@@ -13,6 +13,7 @@ import type { Customer, OdooPricelist } from '@/lib/types'
 import OdooControlPanel from '@/components/classic/OdooControlPanel'
 import { useCsvExport } from '@/hooks/use-csv-export'
 import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
+import PricelistLinksEditor from '@/components/classic/PricelistLinksEditor'
 import BulkImportDialog from '@/components/shared/BulkImportDialog'
 import { CUSTOMER_EXPORT_COLUMNS, CUSTOMER_EXPORT_COLUMNS_EN } from '@/lib/export/columns/customers'
 import { type SortDir } from '@/components/shared/sort-th'
@@ -95,6 +96,8 @@ export default function ClassicCustomersPage() {
   const [isVendorOnly, setIsVendorOnly] = useState(saved?.isVendorOnly ?? false)
   const [isReadMode, setIsReadMode] = useState(true)
   const editMode = !isReadMode
+  /** Edit 模式下正在编辑哪个客户的价格表（同一时间只开一个编辑面板） */
+  const [pricelistEditId, setPricelistEditId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const canDelete = hasPermission(useAbility(), 'master.customer.delete')
   // Odoo 式分面：同维度多值 OR、跨维度 AND（后端 buildFacetWhere）
@@ -303,6 +306,25 @@ export default function ClassicCustomersPage() {
     }
   }
 
+  /** 价格表编辑面板保存：整组 pricelistIds（按优先级）一次提交，增加/减少/替换/调顺序都走这里 */
+  async function saveCustomerPricelists(c: Customer, pricelistIds: string[]) {
+    try {
+      const res = await apiPut<Customer>(`/api/customers/${c.id}`, { pricelistIds })
+      setCustomers(prev => prev.map(row => row.id === c.id
+        ? {
+            ...row,
+            pricelists: res?.pricelists ?? pricelistIds.map((pricelistId, idx) => ({ pricelistId, sequence: idx + 1 })),
+            updatedAt: res?.updatedAt ?? row.updatedAt,
+            updatedBy: res?.updatedBy ?? row.updatedBy,
+          } as Customer
+        : row))
+      toast.success(isEn ? 'Saved' : '已保存')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+      throw e
+    }
+  }
+
   async function handleCellEdit(row: Record<string, unknown>, key: string, newValue: unknown) {
     const c = row as unknown as Customer
     let payloadVal: unknown = newValue
@@ -317,23 +339,6 @@ export default function ClassicCustomersPage() {
         }
         payloadVal = n
       }
-    }
-    if (key === 'primaryPricelistId') {
-      // 列表里只改「主价格表」(排第一的那个)，其余已挂的价格表原样保留在它后面；选空白 = 去掉主价格表
-      const current = (c.pricelists ?? []).slice().sort((a, b) => a.sequence - b.sequence).map(p => p.pricelistId)
-      const rest = current.slice(1).filter(id => id !== newValue)
-      const pricelistIds = newValue ? [String(newValue), ...rest] : rest
-      try {
-        await apiPut(`/api/customers/${c.id}`, { pricelistIds })
-        setCustomers(prev => prev.map(row => row.id === c.id
-          ? { ...row, pricelists: pricelistIds.map((pricelistId, idx) => ({ pricelistId, sequence: idx + 1 })) } as Customer
-          : row))
-        toast.success(isEn ? 'Saved' : '已保存')
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
-        throw e
-      }
-      return
     }
     try {
       await apiPut(`/api/customers/${c.id}`, { [key]: payloadVal })
@@ -401,19 +406,51 @@ export default function ClassicCustomersPage() {
       key: 'primaryPricelistId',
       label: isEn ? 'Pricelist' : '价格表',
       sortable: true,
-      editable: true,
-      editType: 'search-select',
-      editOptions: [{ value: '', label: '' }, ...pricelists.filter(p => p.active !== false && p.selectable !== false).map(p => ({ value: p.id, label: p.name }))],
+      // 不走 OdooTable 的单值行内编辑：客户可以挂多个价格表，Edit 模式下由 render 里的
+      // PricelistLinksEditor 浮层负责增加/减少/替换/调顺序（20261023）
       filterType: 'multi-select',
       filterOptions: activePricelists.map(p => ({ value: p.id, label: p.name })),
       filterLabelGetter: (v) => pricelistMap.get(v) ?? v,
       render: (_v, row) => {
-        const links = (row.pricelists as { pricelistId: string }[] | undefined) ?? []
-        if (links.length === 0) return <span className="text-gray-400">—</span>
-        const primaryName = pricelistMap.get(links[0].pricelistId) ?? links[0].pricelistId
+        const links = ((row.pricelists as { pricelistId: string; sequence: number }[] | undefined) ?? [])
+          .slice().sort((a, b) => a.sequence - b.sequence)
+        const primaryName = links.length > 0 ? (pricelistMap.get(links[0].pricelistId) ?? links[0].pricelistId) : ''
         const label = links.length > 1 ? `${primaryName} (+${links.length - 1})` : primaryName
+        if (editMode) {
+          // 编辑面板走 Portal 浮在表格上方、对齐这一格——不改单元格内容尺寸，表格不会重排错位
+          const c = row as unknown as Customer
+          return (
+            // key 区分两种模式：编辑态是受控 Popover、只读态是非受控，切 Mode 时必须重新挂载，
+            // 否则 React 复用同一个实例，只读浮层会卡住打不开
+            <Popover
+              key="edit"
+              open={pricelistEditId === c.id}
+              onOpenChange={open => setPricelistEditId(open ? c.id : null)}
+            >
+              <PopoverTrigger
+                className="block w-full min-h-6 text-left px-1 -mx-1 rounded cursor-cell"
+                style={{ background: 'rgba(135, 90, 123, 0.08)', borderBottom: '1px dashed rgba(135, 90, 123, 0.4)' }}
+                title={isEn ? 'Click to add / remove / replace pricelists' : '点击增加 / 减少 / 替换价格表'}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {label || <span className="text-gray-400">—</span>}
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80" onClick={(e) => e.stopPropagation()}>
+                <PricelistLinksEditor
+                  value={links.map(l => l.pricelistId)}
+                  options={pricelists.filter(p => p.active !== false && p.selectable !== false).map(p => ({ value: p.id, label: p.name }))}
+                  nameOf={id => pricelistMap.get(id) ?? id}
+                  isEn={isEn}
+                  onSave={ids => saveCustomerPricelists(c, ids)}
+                  onClose={() => setPricelistEditId(null)}
+                />
+              </PopoverContent>
+            </Popover>
+          )
+        }
+        if (links.length === 0) return <span className="text-gray-400">—</span>
         return (
-          <Popover>
+          <Popover key="read">
             <PopoverTrigger
               className="underline decoration-dotted underline-offset-2 hover:text-[#00a09d]"
               onClick={(e) => e.stopPropagation()}
