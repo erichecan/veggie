@@ -7,12 +7,20 @@
  *
  * 做最小闭环，不新建单据表：
  *   1. 校验退货量 ≤ 该行已收量（不能退比收到的还多）
- *   2. 扣减 Product.qtyOnHand + 记一笔 OUT 流水（负数），先扣这张单收进来的批次，不够再 FEFO 扣别的批次
+ *   2. 扣减 Product.qtyOnHand + 记一笔 OUT 流水（负数）：默认先扣这张单自己收进来的批次，
+ *      不够（已被卖掉一部分）再 FEFO 扣别的批次；operator 在退货弹窗里显式选了 lotId
+ *      时精确冲减那一批（自动判断不了/判断错了的兜底，不与默认逻辑二选一）
  *   3. 回冲 PurchaseOrderLine.receivedQty —— 这样「已收 / 应付」两边才对得上，
  *      也让采购建议的在途计算不会把退掉的货算成还在路上
  *
  * ⛔ 不动**已出正式账单**的金额：账单一旦过账/已付，是财务凭证，退货后的抵扣该由财务
  *    开负数账单/贷记单处理，在这里偷偷改金额会让已过账的凭证与账面对不上。
+ *
+ * 20261022 补两道：①默认行为改成先扣这张单自己收进来的批次（lib/purchase/receive-purchase-order.ts
+ * lotsReceivedForPurchaseLine 按收货流水/sourceId 反查），不够才 FEFO 扣别的批次——此前恒为 FEFO，
+ * 误收 500 箱进 LOT-01106 再退 450 会先扣无关的旧批次 LOT-01105。②lines[].lotId 仍保留为显式
+ * 兜底：前端在能唯一确定"这批货就是本张 PO 自己收的"时自动预选，自动判断不了/判断错了操作员
+ * 可以自己选，这时精确冲减那一批，不再走①的自动判断。
  *
  * 20260823 补（DEV-PLAN 决策#3）：PO 还没出正式账单（没有 VendorBill，或只有 DRAFT/CANCELLED
  * 状态的）时，退货**顺带下修对应行的 orderedQty 并重算金额**——用户原话「修正采购单的数量」
@@ -42,6 +50,10 @@ interface ReturnLineInput {
   productId?: unknown
   qty?: unknown
   reason?: unknown
+  /** 指定要从哪个批次退（精确冲减该批次 Lot.currentQty）。不传则按 FEFO 自动扣最旧批次——
+   *  这对"退回刚刚这张 PO 收错的那一批"是错的：FEFO 会先扣无关的旧批次，把它的批次余量
+   *  也搞错，20261022 客户报的 LOT-01105/LOT-01106 串批就是这样来的 */
+  lotId?: unknown
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -89,16 +101,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         billedQty: number
         uomId: string | null; unitCost: number
         orderedQty: number; nativeUnitCost: number; taxRate: number
+        lotId: string | null
       }> = []
       for (const raw of rawLines) {
         const productId = String(raw.productId ?? '')
         const qty = Number(raw.qty)
+        const lotId = typeof raw.lotId === 'string' && raw.lotId.trim() ? raw.lotId.trim() : null
         const poLine = po.lines.find(l => l.productId === productId)
         if (!poLine) {
           return NextResponse.json({ error: `采购单里没有这个商品：${productId}` }, { status: 400 })
         }
         if (!Number.isFinite(qty) || qty <= 0) {
           return NextResponse.json({ error: `退货数量无效：${raw.qty}` }, { status: 400 })
+        }
+        if (lotId) {
+          const lot = await prisma.lot.findUnique({ where: { id: lotId }, select: { productId: true, currentQty: true } })
+          if (!lot || lot.productId !== productId) {
+            return NextResponse.json({ error: `批次不存在或不属于该商品：${poLine.productName}` }, { status: 400 })
+          }
+          // 指定批次退货必须退得出来——按批次精确冲减(adjustLot:true)不像 FEFO 会自动落到无批次流水垫底，
+          // 退多了会把这一批的余量按出去，批次余量从此失真，这正是本来要修的那类问题
+          const stockQty = await toStockQty(prisma as never, productId, qty, poLine.uomId ?? null)
+          if (stockQty > toNum(lot.currentQty)) {
+            return NextResponse.json(
+              { error: `该批次剩余 ${toNum(lot.currentQty)}，退货量 ${stockQty} 超过批次余量（${poLine.productName}）` },
+              { status: 409 },
+            )
+          }
         }
         const received = toNum(poLine.receivedQty)
         if (qty > received) {
@@ -123,6 +152,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           orderedQty: toNum(poLine.orderedQty),
           nativeUnitCost: toNum(poLine.unitCost),
           taxRate: toNum(poLine.taxRate),
+          lotId,
         })
       }
 
@@ -136,11 +166,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // 退货量按采购单位记，库存按基准单位记 —— 与收货侧同一套换算（I3 修过的那个坑）
           const stockQty = await toStockQty(tx as never, p.productId, p.qty, p.uomId)
 
-          // 入账：仓库 → 供应商（lib/stock-ledger.ts）。先扣这一行收货收进来的批次（最近一次收货的先扣），
-          // 不够——这批货已被卖掉一部分——再 FEFO 扣别的批次；逐批拆流水（批次覆盖不到的部分记无批次流水）。
+          // 入账：仓库 → 供应商（lib/stock-ledger.ts）。operator 显式选了 lotId 就精确冲减那一批；
+          // 没选则默认先扣这一行收货收进来的批次（最近一次收货的先扣），不够——这批货已被卖掉
+          // 一部分——再 FEFO 扣别的批次；逐批拆流水（批次覆盖不到的部分记无批次流水）。
           // 20261022 前一律 FEFO：误收 500 箱进 LOT-01106 再退 450，扣的却是更早的 LOT-01105。
           // 按这张 PO 的采购价估值，冲回收货时的 Dr 1300 / Cr 2150
-          const ownLots = await lotsReceivedForPurchaseLine(tx, { id: p.lineId, productId: p.productId, purchaseOrderId: id })
+          const ownLots = p.lotId ? [] : await lotsReceivedForPurchaseLine(tx, { id: p.lineId, productId: p.productId, purchaseOrderId: id })
           await postStockMove(tx, {
             productId: p.productId,
             productName: p.productName,
@@ -148,7 +179,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             from: LOC.STOCK,
             to: LOC.VENDORS,
             type: 'OUT',
-            lot: { mode: 'fefo', preferLotIds: ownLots },
+            lot: p.lotId ? { mode: 'lot', lotId: p.lotId, adjustLot: true } : { mode: 'fefo', preferLotIds: ownLots },
             unitCost: stockQty > 0 && p.unitCost > 0 ? (p.unitCost * p.qty) / stockQty : null,
             movedAt: new Date(),
             note: `采购退货 PO ${po.name}${noteSuffix}`,
@@ -240,6 +271,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         orderedQtyAdjusted: !hasIssuedBill,
       }), { status: 201 })
     } catch (error) {
+      const err = error as { status?: number; message?: string }
+      if (err.status && err.status >= 400 && err.status < 500) {
+        return NextResponse.json({ error: err.message ?? '请求有误' }, { status: err.status })
+      }
       console.error('[POST /api/purchase-orders/[id]/return]', error)
       return NextResponse.json({ error: '采购退货失败' }, { status: 500 })
     }
