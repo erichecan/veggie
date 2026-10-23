@@ -22,7 +22,9 @@ const PAGE_SIZE = 50
  * 售价/成本价/提成价是按该单位实际换算出来的展示值（GET /api/products/by-sale-unit
  * 已经用 lib/sale-uom.ts 的 priceOf/commissionPriceOf 算好），这里不重算、不可编辑——
  * 那几个字段背后是 priceMode 三态公式，编辑入口仍然是商品列表页点开的可售单位弹窗。
- * 这一页只能行内编辑三个无歧义的单值字段：规格(spec)/毛重(grossWeight)/装货顺序(sequence)。
+ * 这一页只能行内编辑无歧义的单值字段：规格(spec)/毛重(grossWeight)/装货顺序(sequence)，
+ * 以及 20261023 客户要求的「基础售价 / 基础成本」(Product.listPrice/standardPrice，只在
+ * 每个商品第一行可改；改完重新拉这一页，让各单位按新基础价重新换算)。
  */
 export default function ProductsBySaleUnitPage() {
   const router = useRouter()
@@ -125,6 +127,41 @@ export default function ProductsBySaleUnitPage() {
       }
       return
     }
+    // 基础售价/基础成本（商品级 listPrice/standardPrice），以及没配可售单位的商品的毛重（Product.weight）：
+    // 都走商品自身的 PUT。改基础价会影响同一商品所有单位行的换算售价/成本，保存后整页重拉，不在前端重算公式。
+    const productField = key === 'baseSalePrice' ? 'listPrice'
+      : key === 'baseCost' ? 'standardPrice'
+      : key === 'grossWeight' && !r.uomId ? 'weight'
+      : null
+    if (productField) {
+      let n: number | null
+      if (newValue === '' || newValue == null) {
+        if (productField !== 'weight') {
+          toast.error(isEn ? 'Price cannot be empty' : '价格不能为空')
+          throw new Error('empty price')
+        }
+        n = null
+      } else {
+        n = Number(newValue)
+        if (!Number.isFinite(n) || n < 0) {
+          toast.error(isEn ? 'Please enter a valid non-negative number' : '请输入合法的非负数字')
+          throw new Error('invalid number')
+        }
+      }
+      try {
+        await apiPut(`/api/products/${r.productId}`, { [productField]: n })
+        toast.success(isEn ? 'Saved' : '已保存')
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+        throw e
+      }
+      if (productField === 'weight') {
+        setRows(prev => prev.map(row2 => row2.rowId === r.rowId ? { ...row2, grossWeight: n } : row2))
+      } else {
+        await loadPage(page, searchInput, sortKey, sortDir, pageSize)
+      }
+      return
+    }
     if (!r.uomId) {
       toast.error(isEn ? 'This product has no configured sale unit to edit' : '该商品还没配置可售单位，无法在这里编辑')
       throw new Error('no uomId')
@@ -202,6 +239,10 @@ export default function ProductsBySaleUnitPage() {
   const noUomHint = () => (isEn
     ? 'This product has no configured sale unit yet — open "Sellable Units" on the product list page first'
     : '该商品还没配置可售单位，请先在商品列表页的「可售单位」弹窗里添加')
+  const isFirstRow = (row: Record<string, unknown>) => (row as unknown as SaleUnitRow).baseSalePrice != null
+  const notFirstRowHint = () => (isEn
+    ? 'Base price/cost is per product — edit it on the first row of this product'
+    : '基础售价/成本是整个商品共用的，请在这个商品的第一行修改')
 
   const columns: OdooColumn<Record<string, unknown>>[] = [
     // Product.sequence——商品本身的排序位置，跟下面的「装货顺序」(ProductSaleUom.sequence)
@@ -222,15 +263,23 @@ export default function ProductsBySaleUnitPage() {
         const label = uom ? (isEn ? (uom.name ?? uom.nameZh) : (uom.nameZh ?? uom.name)) : null
         return label ? <span className="text-xs font-medium">{label}</span> : emptyDash
       } },
+    // 基础售价/基础成本：商品级，只在每个商品第一行显示、可改（见 handleCellEdit）
+    { key: 'baseSalePrice', label: isEn ? 'Base Sale Price' : '基础售价', width: 80, sortable: true,
+      editable: isFirstRow, editDisabledHint: notFirstRowHint, editType: 'number',
+      render: v => v != null ? <span className="text-xs font-medium">€{Number(v).toFixed(2)}</span> : null },
     { key: 'salePrice', label: isEn ? 'Sale Price' : '售价', width: 80, sortable: true,
       render: v => <span className="text-xs">€{Number(v).toFixed(2)}</span> },
     { key: 'customerTaxRate', label: isEn ? 'Customer Tax' : '客户税率', width: 70, sortable: true,
       render: v => v != null ? <span className="text-xs">{(Number(v) * 100).toFixed(1)}%</span> : emptyDash },
+    { key: 'baseCost', label: isEn ? 'Base Cost' : '基础成本', width: 80, sortable: true,
+      editable: isFirstRow, editDisabledHint: notFirstRowHint, editType: 'number',
+      render: v => v != null ? <span className="text-xs font-medium">€{Number(v).toFixed(2)}</span> : null },
     { key: 'costPrice', label: isEn ? 'Cost Price' : '成本价', width: 80, sortable: true,
       render: v => <span className="text-xs text-gray-500">€{Number(v).toFixed(2)}</span> },
     { key: 'vendorTaxRate', label: isEn ? 'Vendor Tax' : '供应商税率', width: 70, sortable: true,
       render: v => v != null ? <span className="text-xs">{(Number(v) * 100).toFixed(1)}%</span> : emptyDash },
-    { key: 'grossWeight', label: isEn ? 'Gross Weight (kg)' : '毛重(kg)', width: 90, sortable: true, editable: hasUom, editDisabledHint: noUomHint, editType: 'number',
+    // 毛重所有行都能改：有可售单位的写该单位行，没配可售单位的写商品自己的 weight（见 handleCellEdit）
+    { key: 'grossWeight', label: isEn ? 'Gross Weight (kg)' : '毛重(kg)', width: 90, sortable: true, editable: true, editType: 'number',
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(2)}</span> : emptyDash },
     { key: 'qtyOnHand', label: isEn ? 'QTY On Hand' : '现有库存', width: 80, sortable: true,
       render: v => v != null ? <span className="text-xs">{Number(v).toFixed(1)}</span> : emptyDash },
@@ -274,7 +323,7 @@ export default function ProductsBySaleUnitPage() {
             type="text"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
-            placeholder={isEn ? 'Search name / internal ref / spec...' : '搜索名称/内部编号/规格...'}
+            placeholder={isEn ? 'Search name / description / category / spec...' : '搜索名称/描述/分类/规格...'}
             className="h-8 w-72 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#875A7B] focus:ring-1 focus:ring-[#875A7B]"
           />
           <input

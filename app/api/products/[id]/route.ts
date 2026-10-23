@@ -9,7 +9,7 @@ import { ruleChangesToLogChanges } from '@/lib/pricelist-diff'
 const PRODUCT_TRACKED_FIELDS = [
   'name', 'internalRef', 'listPrice', 'standardPrice', 'qtyOnHand',
   'active', 'categoryId', 'customerTaxRate', 'commissionPrice', 'status',
-  'variantAttributes', 'images',
+  'variantAttributes', 'images', 'weight',
 ]
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {

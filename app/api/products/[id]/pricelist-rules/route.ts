@@ -92,5 +92,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[GET /api/products/[id]/pricelist-rules]', error)
       return NextResponse.json({ error: '获取价格表规则失败' }, { status: 500 })
     }
-  })
+  // 与 route-map 同一权限点。以前这里不带 require，只靠 middleware：新 token 被 route-map 挡住，
+  // 无位图的旧 token 却会落到 role-access 的 /api/products/** 读权限上，仓库/外部销售能读到价格规则
+  }, { require: 'master.pricelist.read' })
 }

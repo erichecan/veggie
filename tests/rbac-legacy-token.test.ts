@@ -71,6 +71,17 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
   // 旧 token 不存在。
   'POST /api/orders/bulk [FINANCE]':
     '20260924000002 发权限时已 bump permVersion 强制重登，旧 token 不存在',
+  // 20261023 补基线时发现的 5 格：都是 10 月新增的接口，旧 token 判 n、新体系判 y（只会更严，不会多看到数据）。
+  // 依据不是 permVersion bump，而是「无位图的旧 token 已经不可能存在」：签 token 的只有
+  // app/api/auth/login/route.ts 一处，从本仓库第一个提交（b60b91b，2026-09-22）起就一律带 pm，
+  // token 7 天过期（lib/auth.ts setExpirationTime('7d')），所以 2026-09-29 之后不存在没有 pm 的 token。
+  // ⚠️ 只适用于「旧 token 更严」的格；旧 token 更宽的必须修代码（同日修了 pricelist-rules 漏挂 require）。
+  'POST /api/finance/ledger-check/open-trips [DISPATCH]':
+    '10 月新增接口；2026-09-29 起已不存在无 pm 的旧 token（见上方说明），且旧 token 只会更严',
+  'POST /api/finance/ledger-check/open-trips [DRIVER]': '同上',
+  'POST /api/finance/ledger-check/orders-without-stock [WAREHOUSE]': '同上',
+  'POST /api/finance/ledger-check/orphan-wave-orders [DISPATCH]': '同上',
+  'PUT /api/lots/[id] [WAREHOUSE]': '同上',
 }
 
 /** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */

@@ -121,10 +121,12 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/product-templates/**', methods: READ },
     exportOf('product-templates'),
     { pattern: '/api/product-categories/**', methods: READ },
+    exportOf('product-categories'),
     { pattern: '/api/lots/**', methods: READ },
     { pattern: '/api/lots', methods: ['POST'] },
     { pattern: '/api/zones/**', methods: READ },
     { pattern: '/api/uoms/**', methods: READ },
+    exportOf('uoms'),
     { pattern: '/api/uom-categories/**', methods: READ },
     { pattern: '/api/orders', methods: READ },
     exportOf('orders'),
@@ -181,6 +183,8 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     // （新体系用 finance.settlement.* 权限点判定，旧 token 走这条兜底名单）
     { pattern: '/api/accounting/driver-cash', methods: READ },
     { pattern: '/api/accounting/driver-cash/confirm', methods: ['POST'] },
+    // 20261021 核销管理页的回单清单（新体系 finance.settlement.read，同上走兜底名单）
+    { pattern: '/api/accounting/returns', methods: READ },
     { pattern: '/api/driver-slots', methods: READ },
     { pattern: '/api/users', methods: READ },
     // 打印状态查询：这两个角色本来就能调 /api/print/** 打单，能打印却看不到
@@ -246,9 +250,14 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/product-templates/**', methods: READ },
     exportOf('product-templates'),
     { pattern: '/api/product-categories/**', methods: READ },
+    exportOf('product-categories'),
     { pattern: '/api/pricelists/**', methods: READ },
+    exportOf('pricelists'),
+    // 轮播图列表（新体系挂在 master.pricelist.read 下，销售本来就有）
+    { pattern: '/api/banners', methods: READ },
     { pattern: '/api/invoices/**', methods: READ },
     { pattern: '/api/uoms/**', methods: READ },
+    exportOf('uoms'),
     { pattern: '/api/users', methods: READ },          // 列表页按业务员筛选
     { pattern: '/api/print/**', methods: READ },
     // 打印状态查询：这两个角色本来就能调 /api/print/** 打单，能打印却看不到
@@ -283,7 +292,9 @@ export const ROLE_API_SCOPE: Record<string, readonly ApiScope[]> = {
     { pattern: '/api/product-templates/**', methods: READ },
     exportOf('product-templates'),
     { pattern: '/api/product-categories/**', methods: READ },
+    exportOf('product-categories'),
     { pattern: '/api/uoms/**', methods: READ },
+    exportOf('uoms'),
     { pattern: '/api/print/**', methods: READ },
     { pattern: '/api/bulletin-posts/**' },
   ],
