@@ -63,5 +63,7 @@ test('本单批次已被卖掉一部分、不够退：先扣光本单批次，�
 test('采购退货接口按本单批次优先扣，不是纯 FEFO', () => {
   const src = readFileSync('app/api/purchase-orders/[id]/return/route.ts', 'utf-8')
   assert.match(src, /lotsReceivedForPurchaseLine\(/)
-  assert.match(src, /lot:\s*\{\s*mode:\s*'fefo',\s*preferLotIds:\s*ownLots\s*\}/)
+  // operator 显式选了 lotId 时精确冲减那一批，是额外的手工兜底，不影响"没选时默认按本单批次优先"
+  // 这条断言——所以不锁 `lot:` 前缀是不是紧跟 `{`，只锁 fefo+preferLotIds: ownLots 这一对必须同时出现
+  assert.match(src, /mode:\s*'fefo',\s*preferLotIds:\s*ownLots/)
 })
