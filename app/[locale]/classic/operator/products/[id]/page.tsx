@@ -936,7 +936,8 @@ export default function ClassicProductDetailPage() {
                   </div>
                 </Row>
                 <Row label="Customer Taxes">
-                  <select value={String(tmpl.customerTaxRate)} onChange={e => setField('customerTaxRate', parseFloat(e.target.value))} className={fieldClass} style={focusStyle}>
+                  <select value={String(tmpl.customerTaxRate ?? '')} onChange={e => setField('customerTaxRate', e.target.value ? parseFloat(e.target.value) : undefined)} className={fieldClass} style={focusStyle}>
+                    <option value="">— None —</option>
                     {TAX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </Row>
@@ -964,7 +965,7 @@ export default function ClassicProductDetailPage() {
                     <PriceHistoryButton onClick={() => openPriceHistory('standardPrice')} isEn={isEn} />
                   </div>
                 } />
-                <ReadField label="Customer Taxes" value={TAX_LABEL[String(tmpl.customerTaxRate)] ?? `${(tmpl.customerTaxRate * 100).toFixed(0)}%`} />
+                <ReadField label="Customer Taxes" value={tmpl.customerTaxRate != null ? (TAX_LABEL[String(tmpl.customerTaxRate)] ?? `${(tmpl.customerTaxRate * 100).toFixed(0)}%`) : undefined} />
                 <ReadField label="Vendor Taxes" value={tmpl.vendorTaxRate != null ? (TAX_LABEL[String(tmpl.vendorTaxRate)] ?? `${(tmpl.vendorTaxRate * 100).toFixed(0)}%`) : undefined} />
                 <ReadField label="Commission Price" value={tmpl.commissionPrice != null ? `€${tmpl.commissionPrice.toFixed(2)}` : undefined} />
               </div>

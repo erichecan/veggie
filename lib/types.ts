@@ -123,7 +123,7 @@ export interface ProductTemplate {
   saleUoms?: ProductSaleUomSummary[]
   listPrice: number          // 默认销售单价
   standardPrice: number      // 默认成本价
-  customerTaxRate: number    // 客户税率 0.135 / 0.23 / 0
+  customerTaxRate?: number   // 客户税率 0.135 / 0.23 / 0，可为空（未填写）
   type: ProductType
   canBeSold: boolean
   canBePurchased: boolean
