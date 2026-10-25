@@ -1,152 +1,85 @@
-# DEV-REPORT（20261023 续）：权限快照追平 + 按可售单位查看商品（搜索 / 基础价快速修改）
+# DEV-REPORT：商品库存预警（Low Stock Alert）
 
-## 三、权限快照（CI 红了一个多月的 8 条权限守卫）
-
-| 项 | 处理 | 结果 |
-| --- | --- | --- |
-| 4 个匿名入口（register、public/products、public/categories、cron/ledger-check） | 用户确认有意公开；逐个核对：register 限流 5 次/分钟只建 RESTAURANT 账号，public/* 不 select 价格库存且限流，cron 校验 x-cron-secret | 进匿名白名单并写明理由 |
-| 39 个新 handler 不在快照/基线里 | 用仓库自带脚本只做加法；脚本跑完逐格比对新旧 JSON | 已有格 0 处变化 |
-| `/api/products/[id]/pricelist-rules` | handler 没挂 require，旧 token 的仓库/外部销售能读价格规则 | 补 `require: master.pricelist.read` |
-| 旧 token 白名单缺导出/新页面入口 | 按「列表与导出成对」补齐，只追平新体系已发的权限 | — |
-| 5 格旧 token 比新体系严 | 登记例外：签 token 只有 login 一处，仓库首个提交起一律带 pm，7 天过期 | — |
-| `npm test` | 本地全量 | ✅ 996 条 0 失败（7 条需真实库跳过） |
-
-⚠️ 留给你决定的：新权限体系里 DRIVER 持有 `dispatch.trip.update`，因此也能调「统一补完成行程」（会把所有已标记完成波次的行程补成完成并结提成）。这是权限设计问题，本次没改。
-
-## 四、按可售单位查看商品：搜索 + 基础售价/成本/毛重/装货顺序快速修改
-
-截图红字需求：1. 搜索：产品名、description、产品分类、product spec；2. 产品的基础售价和 cost、毛重、装货顺序，快速修改。
-
-| 场景 | 复现方式 | 状态 |
-| --- | --- | --- |
-| 搜索框按 名称 / 内部编号 / 描述 / 产品分类（中英文名）/ 产品规格（商品 spec + 各可售单位 spec）任一命中 | 商品 → 按可售单位查看商品 → 搜索框 | 符合（商品列表页的搜索口径不变） |
-| 新增「基础售价」「基础成本」两列，每个商品第一行可直接改（= 商品的 listPrice / standardPrice） | 点第一行的基础售价/基础成本 | 符合 |
-| 改完基础价，各单位的售价/成本按新基础价自动换算 | 改完看同一商品其它行 | 符合 |
-| 毛重：有可售单位的改该单位；没配可售单位的商品也能改（写商品自己的毛重） | 点毛重 | 符合 |
-| 装货顺序：有可售单位的行可改（原本就支持）；没配可售单位的商品没有可存的位置，悬停有提示 | 点装货顺序 | 符合 |
-
-## 验证结果（第四部分）
-
-| 用户流程 | 验证方式 | 结果 |
-| --- | --- | --- |
-| 搜索 8 个词（pepper / 彩椒 / 中式蔬菜 / Chinese / 10*200g / 5kg / 4*500 / zzz） | curl GET /api/products/by-sale-unit?search= | ✅ 分别命中名称/描述/分类中英文/商品规格/单位规格，zzz 0 条 |
-| 改基础售价 4.60→5.00、基础成本 3.00→3.20 | Playwright | ✅ BAG(×5) 售价 23→25、成本 15→16；100克 0.46→0.50、0.30→0.32；库里 listPrice/standardPrice 已更新，最后更新人=运营主管 |
-| 第二行基础价不可改 | Playwright 读悬停提示 | ✅「基础售价/成本是整个商品共用的，请在这个商品的第一行修改」 |
-| 没配可售单位商品改毛重 2.10→2.35 | Playwright + 查库 | ✅ Product.weight=2.35 |
-| 有可售单位的改毛重 5.20→5.40 | Playwright + 查库 | ✅ ProductSaleUom.grossWeight=5.40 |
-| 输入 -3 | Playwright | ✅ 提示「请输入合法的非负数字」，不提交 |
-| 按基础售价排序 | Playwright | ✅ 5.00 → 14 → 31 → 125 |
-| 浏览器控制台 / dev 日志 | Playwright + grep | ✅ 无错误 |
-| tsc / eslint / npm test | 本地 | ✅ 0 error；996 条 0 失败 |
-
-**涉及文件**：`app/api/products/by-sale-unit/route.ts`、`app/[locale]/classic/operator/products/by-sale-unit/page.tsx`、`lib/types.ts`、`app/api/products/[id]/route.ts`（变更日志补记 weight）。
-
----
-
-# DEV-REPORT（20261023）：价格表「最后更新人」+ 客户列表直接增加/减少/替换价格表
-
-本轮两个需求，同一个 PR：
-1. 「价格表里需要增加最后更新人，然后都要有筛选功能，排序功能」
-2. 客户列表截图：「浮层错位了」+ 标注「价格表的修改，增加/减少/替换 价格表」（已确认是新需求，一起做）
-
----
-
-# 二、客户列表：价格表一格可增加 / 减少 / 替换，修复浮层错位
+对应 `DEV-PLAN.md`（已确认），需求原话存档：`docs/20261025-商品库存预警-需求原话.md`。
 
 ## 给你看的
 
-| 场景 | 复现方式 | 状态 |
-| --- | --- | --- |
-| Edit 模式点客户的「价格表」格子，弹出编辑面板，紧贴在这一格下面 | 客户 → Mode 切到 Edit → 点价格表 | 符合 |
-| **替换**：点面板里某个价格表的名字 → 搜索 → 选新的 | 面板内 | 符合 |
-| **减少**：点 × 移除 | 面板内 | 符合 |
-| **增加**：「+ 添加价格表」→ 搜索 → 回车/点选；没挂价格表的客户点开直接进入添加 | 面板内 | 符合 |
-| 调优先级：↑ / ↓（1 = 优先级最高，跟客户详情页同一套顺序） | 面板内 | 符合 |
-| 改完点「保存」一次提交；「取消」/ Esc / 点外面 = 不保存 | 面板内 | 符合 |
-| 同一价格表不能挂两次（搜索列表里自动排除已挂的） | 面板内 | 符合 |
-| Read 模式仍是原来的只读「挂靠的价格表」列表 | Mode 切回 Read | 符合 |
+| 场景 | 来源 | 可看物 | 状态 |
+| --- | --- | --- | --- |
+| 商品编辑里增加一个库存预警的设定 | 客户原话 | 见下方「怎么验」第 1 步 | 符合 |
+| 每个商品的预警值不一样,客户自己维护 | 客户原话 | 同上，输入框是每个商品独立的数字 | 符合 |
+| 设置完以后,库存达到这个预警值,商品列表有提醒 | 客户原话 | 见下方「怎么验」第 2 步 | 符合 |
+| 库存管理这页也有提醒 | 客户原话 | 见下方「怎么验」第 3 步 | 符合 |
+| 判断用实际在手库存 qtyOnHand,不用 Forecast Qty | 你的选择（追问后确认） | 同上，接口返回值可核对 | 符合 |
+| 没设置预警值（还是默认 0）的商品不参与提醒 | 我推断的 | 同上 | 符合 |
+| "达到预警值"算触发（≤，不是必须跌破） | 我推断的 | 同上 | 符合 |
 
-**「浮层错位」是什么、怎么修的**：以前 Edit 模式下这一格点文字弹的是只读浮层（改不了），点空白处才进编辑，
-进编辑时格子里换成输入框，整张表重新排版、各列横向跳动（实测「价格表」列 x 从 1058 跳到 1015，「地址」列也跟着动）。
-现在 Edit 模式只有一个编辑面板，浮在表格上方、对齐这一格，单元格本身尺寸不变，打开/保存前后各列位置完全不动
-（实测 地址/价格表/Price Type 列 x 始终 459/1074/1275）。
+**⚠️ 这次没有截图**：本机浏览器自动化环境缺 Chrome 可执行文件（已知环境问题，跟这次改动无关，
+之前就记录过，重装会卡住所以没再试）。改成给你一段 20 秒内能自己复现的操作路径，比截图更直接：
 
-**顺带修的一个隐患**：保存客户时，旧代码先单独删掉客户的全部价格表、再更新客户。
-更新一旦失败（比如 Sage Account 撞号返回 409），客户的价格表就全没了。现在删旧+建新跟客户更新放在同一次写入里，失败就整体不动。
+### 怎么验（本地 http://localhost:3000，生产 https://www.johnstonebros.ie）
 
-## 验证结果
+1. 商品编辑页：进「操作 → 商品」随便点一个商品 → Edit → 「Inventory & UoM」分区，
+   Tracking 下面新增一行「库存预警值」，填个数字（比如比当前在手库存大的数）→ Save。
+2. 商品列表页：回列表页，刚才那个商品那一行的「Quantity On Hand」会出现黄色徽章，
+   顶部橙色提醒横幅文案变成"N 种商品已达到各自设置的库存预警值"（之前是硬编码的
+   固定数字 10，现在跟你刚填的那个数绑定）。
+3. 库存管理页：操作 → 库存管理，"需要关注"面板和按品类分组表里会出现这个商品。
+4. 把预警值改回 0（或留空）→ Save，三处提醒都会消失——验证"没设置"确实不参与判断。
 
-| 用户流程 | 验证方式 | 结果 |
-| --- | --- | --- |
-| Edit 模式点开面板，表格不重排 | Playwright 量三列列头 x 坐标：打开前/打开后/保存后 | ✅ 完全一致 |
-| 面板位置 | Playwright：触发格下沿 y=235 → 面板顶 y=239，左边对齐 | ✅ |
-| 替换 + 移除 + 添加 + 上移 后保存 | Playwright 操作 Achara（TAKEAWAY菜价/MUSASHI/TAKEAWAY-2菜价）→ 查库 | ✅ 库里变成 1.TAKEAWAY菜价 2.LINKEE 3.CITY CENTRE菜价，提示「已保存」，最后修改人=运营主管 |
-| 取消 / Esc | Playwright | ✅ 不提交，格子不变 |
-| 空客户添加 | Playwright 操作 Bamboo Garden | ✅ 挂上 MUSASHI |
-| Edit ↔ Read 来回切后只读浮层仍能打开 | Playwright | ✅（开发中发现切换后打不开 + 控制台报 controlled/uncontrolled，已修） |
-| 重复 id / 空 id | curl PUT `["pl_42","pl_42","pl_35",""]` | ✅ 存成 pl_42、pl_35 两条 |
-| 更新失败不丢价格表 | curl PUT 价格表 + 撞号 Sage Account | ✅ 409，价格表原样保留 |
-| 清空 / 只改别的字段 | curl PUT `[]` / 只传 creditLimit | ✅ 清空 / 价格表不动 |
-| 浏览器控制台 | Playwright pageerror + console.error | ✅ 无错误 |
-| tsc / eslint / npm test | 本地 | ✅ tsc 0 error；npm test 996 条中 8 条失败，与 main 上完全相同（权限快照，见 PR 说明），本轮未新增 |
+## 存档用的（你不用看，出问题时我回来查）
 
-**涉及文件**：新增 `components/classic/PricelistLinksEditor.tsx`；改 `app/[locale]/classic/operator/customers/page.tsx`、`app/api/customers/[id]/route.ts`。
+### 改了什么
 
----
+- `Product.safetyStockMin` 字段早就存在（20260522 加的），一直没接 UI。这次接上：商品编辑页
+  加输入框，保存接口补数值校验（0–1,000,000）+ 操作记录留痕。
+- 新增 `lib/stock-alert.ts::lowStockSqlCondition()`，商品列表页角标/筛选（`lib/products-query.ts`）
+  和库存管理页（`lib/analytics/inventory-overview.ts`）两处 SQL 改成共用这一句判断，不再各写各的，
+  防止同一商品在两页显示状态不一致。
+- 顺手修复一个潜在 bug（不是本次新引入，按项目惯例我自己判断+记录，不单独上升）：
+  `inventory-overview.ts` 原来判断条件是 `safetyStockMin IS NOT NULL`，但现网这个字段默认值是
+  `0` 不是 `null`，这个条件形同虚设（等价于只要 `qtyOnHand<=0` 就命中，跟客户设的预警值毫无关系）。
+  改成 `safetyStockMin > 0 AND qtyOnHand <= safetyStockMin`——不修的话这次新功能在库存管理页上线
+  也看不到效果。
+- 商品列表页原来的"低库存"徽章用的是跟 `safetyStockMin` 完全无关的全局硬编码阈值 10，这次改成
+  逐商品判断，同时把这个不再有意义的"固定数字 10"从告警文案里去掉。
 
-# 一、价格表列表新增「最后更新人」列，所有列可筛选、可排序
+### 范围说明（技术判断，不上升）
 
-## 给你看的
+客户说的"库存管理这页"经核实是 `app/[locale]/classic/operator/inventory`（导航标签「库存管理」）。
+另有一个长得很像的 `app/[locale]/classic/warehouse`（导航标签是「仓库管理」/「库存」，面向
+WAREHOUSE 角色），不是这次要改的页面，没有动。`place-order`/`quotations/[id]` 页面本来就有自己
+独立阈值的缺货提示，这次也没碰——那两处是另一套东西，不在客户这次描述的范围里。
 
-| 场景 | 截图/复现方式 | 状态 |
-| --- | --- | --- |
-| 价格表列表新增 **Last Updated by** 列（在 Last Updated on 右边） | 销售 → 价格表 | 符合 |
-| 谁改了价格表就记谁：详情页保存、列表行内编辑、新建/复制、CSV 批量导入、删除商品连带移除价格规则 | 改任意价格表后回列表看该列 | 符合 |
-| Last Updated by 可筛选：列头 ▼ 下拉勾选人名（含「（空）」）；Filters 面板也可按最后更新人筛选；Group By 可按最后更新人分组 | 列头 ▼ | 符合 |
-| 每一列都能排序：Pricelist Name / Last Updated on / Last Updated by / Currency / Selectable | 点列头 | 符合（新增后三列的排序） |
-| 每一列都能筛选：名称、币种（文本框）、更新时间（📅 日期区间）、最后更新人、Selectable（▼ 是/否） | 列头 | 符合（新增后两列的筛选） |
+### 验收命令与结果
 
-**待你确认的点（数据现状，不是功能缺失）：**
-- 历史价格表此前从没记录过修改人。迁移只回填**能从操作日志证实**的：该价格表最近一条日志恰好写在它当前更新时间之后 10 分钟以内的才认。
-  截图里那一大批「08/10/2026 19:08」的价格表是当时数据迁移/脚本统一改的，没有对应的人，**会显示为「—」**；之后有人再改一次就会正常显示。这是刻意不编造身份（同 Product.updatedBy 的做法）。
-- 排序时没有更新人的行，不论升降序都排在最后。
+- `npx tsc --noEmit`：零输出，通过。
+- `npm run build`：通过（见本次会话 build 日志，`ƒ`/`○` 路由清单无变化，没有新增/删除路由）。
+- `npx prisma migrate status`：`Database schema is up to date!`，无待应用迁移（本次不新增迁移）。
+- 路由探针（本地 dev server 实测，curl）：
+  - `PUT /api/products/[id]` 带合法 `safetyStockMin`（如 7.5）→ 保存成功，`GET` 读回同值。
+  - 带负数 / 超过 1,000,000 → 均返回 `400`。
+- 鉴权探针（`PUT /api/products/[id]` 要求 `master.product.update`）：
+  - 无 token → `401`
+  - 错 token → `401`
+  - 本地签发的 `DRIVER` 角色测试 token（没有现成密码已知的低权限账号，
+    用项目自己的 `JWT_SECRET` 在隔离脚本里现签一个，不碰任何真实账号密码，验证后即删脚本）→ `403`
+- 业务不变量脚本（临时脚本，验证后已删）：插入 3 个测试商品（未设置=0 / 已达标 / 库存充足），
+  断言商品列表页 `alertCounts.low` 与库存管理页 attention 列表对同一批商品给出完全一致的判断结果，
+  通过后已清理测试数据，无残留。
+- 查询效率：两处改动都是把已有聚合 SQL 里的判断条件原地替换，没有新增逐行查询，不引入 N+1。
 
-## 测试账号（本地验证库，非生产）
+### 部署
 
-| 角色 | 账号 | 密码 |
-| --- | --- | --- |
-| 运营主管 | `prisma/seed.ts` 里的 OPERATOR 种子账号 | Test12345678（SEED_PASSWORD） |
-| 老板 | `prisma/seed.ts` 里的 BOSS 种子账号 | Test12345678（SEED_PASSWORD） |
+- commit `3c809434`，已推送 `main`。
+- GitHub Actions `Deploy to droplet` run
+  <https://github.com/erichecan/veggie/actions/runs/40217178410>，结果 `success`。
+- SSH 核对生产容器：`ghcr.io/erichecan/veggie:3c809434eb9100c9f3ece168be20d5760a1d7b81`，
+  状态 `Up About a minute (healthy)`，镜像 tag 与本次 commit hash 完全一致。
+- `curl https://www.johnstonebros.ie/` → `200`；
+  `curl https://www.johnstonebros.ie/en/classic/operator/products`（未带登录态）→ `307` 跳登录页，
+  符合预期（受保护页面不应该在匿名访问下返回内容或 500）。
 
-本地库：`prisma db push`（改动前 schema）→ 手动执行新迁移 SQL → `prisma/seed.ts`（97 个价格表）→ `scripts/rbac/apply-data-migrations.ts`。
+### 已知不可用功能 / 未覆盖范围
 
-## 验证结果
-
-| 用户流程 | 验证方式 | 结果 |
-| --- | --- | --- |
-| 迁移回填规则 | 构造 6 个价格表 + 操作日志后执行迁移 SQL | ✅ 日志晚 2s → Alice；userName 为空 → 用邮箱 bob@x；两条日志 → 取最新的 Dave；日志早于更新时间 / 晚 20 分钟 / 无日志 → 空 |
-| 列表接口带出 updatedBy | curl GET /api/pricelists | ✅ |
-| 详情页保存记更新人 | curl PUT /api/pricelists/:id（故意传 updatedBy=HACKER） | ✅ 记为登录人「运营主管」，客户端传的被忽略 |
-| 新建/复制记更新人 | curl POST /api/pricelists（故意传 updatedBy=HACKER） | ✅ 记为「运营主管」 |
-| CSV 批量导入记更新人 | curl POST /api/pricelists/bulk（老板账号，1 更新 + 1 新建） | ✅ 两条都记为「老板」 |
-| 不存在的价格表 | curl PUT /api/pricelists/nope | ✅ 404「价格表不存在」 |
-| 未登录修改 | curl PUT 不带 token | ✅「未授权访问」 |
-| 列头 ▼ 筛选最后更新人 | Playwright 勾选「老板」 | ✅ 只剩 MUSASHI、Bulk brand new 两行 |
-| 按最后更新人升序/降序 | Playwright 点列头两次 | ✅ 有名字的按名字排，空的排最后 |
-| Selectable / Currency 排序、Selectable ▼ 是/否 | Playwright | ✅ |
-| Group By 最后更新人 | Playwright | ✅ 按人分组，空的归「（空）」 |
-| 浏览器控制台 / dev 服务器日志 | Playwright pageerror + console.error；grep dev.log | ✅ 无错误 |
-| 类型检查 / lint | `tsc --noEmit`；eslint 改动文件 | ✅ 0 error（仅与原代码同类的未使用变量 warning） |
-
-## 已知不可用功能
-
-无。
-
-## 存档用的
-
-**涉及文件**：
-- `prisma/schema.prisma`、`prisma/migrations/20261023000001_pricelist_updated_by/migration.sql`：`OdooPricelist.updatedBy TEXT` + 有据回填
-- `app/api/pricelists/route.ts`（POST）、`app/api/pricelists/[id]/route.ts`（PUT）、`app/api/pricelists/bulk/route.ts`（导入）：写入 `user.name || user.email`，不信客户端
-- `lib/pricelist-rule-log.ts`、`app/api/products/[id]/route.ts`：删商品连带删价格规则时记删商品的人
-- `app/[locale]/classic/operator/pricelists/page.tsx`：新列、列头多选筛选（状态随 sessionStorage 保存、「清除」一并清掉）、全部列排序、Filters/Group By 增加最后更新人；行内编辑后用服务端返回值刷新更新时间/更新人
-- `lib/types.ts`：`OdooPricelist.updatedBy`
+无。本次 5 项计划内容全部完成，验收命令全部跑过且全绿。
