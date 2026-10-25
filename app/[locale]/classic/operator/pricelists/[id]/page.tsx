@@ -321,6 +321,26 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     setPl(p => p ? { ...p, [key]: val } : p)
   }
 
+  /** 复制：名称加 (copy)，规则整份复制并换新的规则 id；不带 externalId(唯一)和客户挂靠，与列表页批量复制同一套规则 */
+  async function handleDuplicate() {
+    if (!pl) return
+    try {
+      const created = await apiPost<OdooPricelist>('/api/pricelists', {
+        name: `${pl.name} (copy)`,
+        currency: pl.currency,
+        sequence: pl.sequence,
+        selectable: pl.selectable,
+        active: true,
+        notes: pl.notes ?? null,
+        items: (pl.items ?? []).map(({ id: _id, ...it }) => it),
+      })
+      toast.success(isEn ? 'Duplicated' : '已复制')
+      router.push(`${prefix}/classic/operator/pricelists/${created.id}`)
+    } catch {
+      toast.error(isEn ? 'Duplicate failed' : '复制失败')
+    }
+  }
+
   async function handleSave(overrides?: Partial<OdooPricelist>) {
     if (!pl) return
     const next = overrides ? { ...pl, ...overrides } : pl
@@ -612,6 +632,9 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                   </button>
                   <button onClick={() => { setActionOpen(false); importedRef.current = false; setImportOpen(true) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     {isEn ? 'Import' : '导入'}
+                  </button>
+                  <button onClick={() => { setActionOpen(false); handleDuplicate() }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
+                    {isEn ? 'Duplicate' : '复制'}
                   </button>
                   <button onClick={() => { if (confirm(isEn ? `Archive pricelist "${pl.name}"?` : `确认归档价格表「${pl.name}」？`)) { handleSave({ active: false }) } setActionOpen(false) }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50">
                     Archive
