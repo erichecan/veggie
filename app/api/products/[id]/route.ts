@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { writeLog, diffChanges } from '@/lib/action-log'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
-import { removeProductRulesInTx } from '@/lib/pricelist-rule-log'
+import { removeProductRulesInTx, uomLabelMap } from '@/lib/pricelist-rule-log'
 import { ruleChangesToLogChanges } from '@/lib/pricelist-diff'
 
 const PRODUCT_TRACKED_FIELDS = [
@@ -154,7 +154,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         await writeLog({ userId: user.userId, userEmail: user.email, userName: user.name,
           action: 'UPDATE', resource: 'pricelist', resourceId: t.id,
           detail: `删除商品时移除: ${product.name} (${t.changes.length} 条规则)`,
-          changes: ruleChangesToLogChanges(t.changes, label) })
+          changes: ruleChangesToLogChanges(t.changes, label, await uomLabelMap(t.changes)) })
       }
       return NextResponse.json({ ok: true })
     } catch (error) {

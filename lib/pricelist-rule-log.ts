@@ -6,10 +6,20 @@ import { prisma } from './db'
 import { categoryPathMap } from './category-path'
 import {
   diffPricelistItems, ruleChangesToLogChanges, ruleLogsByProduct, productRuleLogDetail,
-  type RuleChange, type RuleTargetLabeler,
+  type RuleChange, type RuleTargetLabeler, type UomLabeler,
 } from './pricelist-diff'
 
 interface LogUser { userId: string; email: string; name: string }
+
+/** 查出规则涉及的单位名，供 ruleSummary 把「CASE」「PACK」带进摘要——
+ *  不然同一商品的两条规则(不同 uomId)改价描述文字完全相同，chatter 里分不出改的是哪条(20261024)。 */
+export async function uomLabelMap(changes: RuleChange[]): Promise<UomLabeler> {
+  const uomIds = [...new Set(changes.flatMap(c => [c.after?.uomId, c.before?.uomId]).filter((v): v is string => !!v))]
+  if (uomIds.length === 0) return () => undefined
+  const uoms = await prisma.uom.findMany({ where: { id: { in: uomIds } }, select: { id: true, name: true, nameZh: true } })
+  const map = new Map(uoms.map(u => [u.id, u.nameZh || u.name]))
+  return (uomId) => map.get(uomId)
+}
 
 /** 查出变化涉及的商品/分类名，做成 chatter 字段前缀 */
 export async function ruleTargetLabeler(changes: RuleChange[]): Promise<RuleTargetLabeler> {
@@ -32,7 +42,8 @@ export async function ruleTargetLabeler(changes: RuleChange[]): Promise<RuleTarg
 /** 价格表 chatter 用的 changes(没有规则变化时返回空对象) */
 export async function pricelistRuleLogChanges(changes: RuleChange[]): Promise<Record<string, { before: unknown; after: unknown }>> {
   if (changes.length === 0) return {}
-  return ruleChangesToLogChanges(changes, await ruleTargetLabeler(changes))
+  const [label, uomLabel] = await Promise.all([ruleTargetLabeler(changes), uomLabelMap(changes)])
+  return ruleChangesToLogChanges(changes, label, uomLabel)
 }
 
 /**
@@ -40,7 +51,8 @@ export async function pricelistRuleLogChanges(changes: RuleChange[]): Promise<Re
  * 商品页「价格表」区块按商品 id 查改价历史。永不抛错(同 writeLog)。
  */
 export async function writeProductRuleLogs(user: LogUser, pricelistName: string, changes: RuleChange[], via?: string): Promise<void> {
-  const logs = ruleLogsByProduct(changes, pricelistName)
+  if (changes.length === 0) return
+  const logs = ruleLogsByProduct(changes, pricelistName, await uomLabelMap(changes))
   if (logs.length === 0) return
   try {
     await prisma.actionLog.createMany({

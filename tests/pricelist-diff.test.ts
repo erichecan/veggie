@@ -30,7 +30,7 @@ test('ruleChangesToLogChanges：同一商品多条规则不互相覆盖，超限
   const out = ruleChangesToLogChanges(changes, () => 'Apple [#1]')
   assert.deepEqual(Object.keys(out), ['Apple [#1] · fixedPrice', 'Apple [#1] (2) · fixedPrice'])
   const many = diffPricelistItems([], Array.from({ length: 5 }, (_, i) => fixed(`x${i}`, `p${i}`, i)))
-  const cut = ruleChangesToLogChanges(many, c => c.productId ?? '', 3)
+  const cut = ruleChangesToLogChanges(many, c => c.productId ?? '', undefined, 3)
   assert.deepEqual(cut.moreRuleChanges, { before: null, after: 2 })
 })
 
@@ -51,4 +51,14 @@ test('ruleSummary 与 fieldLabel 翻译「对象 · 字段」', () => {
   assert.equal(fieldLabel('Apple [#1] · fixedPrice', true), 'Apple [#1] · Fixed Price')
   assert.equal(fieldLabel('Apple [#1] · fixedPrice', false), 'Apple [#1] · 固定价')
   assert.equal(fieldLabel('random key', true), 'random key')
+})
+
+test('ruleSummary：同商品 CASE/PACK 两条规则参数一样时，带上 uomLabel 才能分清改的是哪条', () => {
+  const uomLabel = (id: string) => ({ u_case: 'CASE', u_pack: 'PACK' } as Record<string, string>)[id]
+  const caseRule = { computeType: 'formula', formulaBase: 'list_price', minQty: 1, uomId: 'u_case' } as const
+  const packRule = { computeType: 'formula', formulaBase: 'list_price', minQty: 1, uomId: 'u_pack' } as const
+  assert.equal(ruleSummary(caseRule), 'Formula: list_price (≥1) · u_case', '不传 uomLabel 时退化成显示原始 uomId，仍不会和别的单位撞文字')
+  assert.equal(ruleSummary(packRule), 'Formula: list_price (≥1) · u_pack')
+  assert.equal(ruleSummary(caseRule, uomLabel), 'Formula: list_price (≥1) · CASE')
+  assert.equal(ruleSummary(packRule, uomLabel), 'Formula: list_price (≥1) · PACK')
 })
