@@ -200,6 +200,11 @@ export interface Product {
   /** 按采购单位区分的规格（如 10KG/20KG 两袋同名商品）——来自 ProductSaleUom.spec，
    *  跟上面的 spec（Product.spec）是两张不同的表，那个字段早清空了（见 lib/order-line-description.ts） */
   purchaseUomSpec?: string | null
+  /** 20261025：GET /api/products（非分页、非 slim）带的逐单位规格摘要，只含这三个字段——
+   *  价格表规则按自己限定的单位(uomId)取规格要用这个，不能恒用 purchaseUomSpec（那是采购/箱规
+   *  那一个单位的规格，规则限定成别的单位时用它会显示错单位）。完整的可售单位配置仍要另查
+   *  /api/products/[id]/sale-uoms，这里只是省一次往返的轻量摘要。 */
+  saleUoms?: { uomId: string; spec: string | null; isDefault: boolean }[]
   price?: number
   stock?: number
   status: ProductStatus

@@ -148,6 +148,10 @@ export async function GET(req: Request) {
       purchaseUomSpec: saleUoms.find(su => su.uomId === purchaseUomId)?.spec
         ?? saleUoms.find(su => su.isDefault)?.spec
         ?? null,
+      // 20261025：之前这里只算出 purchaseUomSpec（采购/箱规那个单位的规格）就把 saleUoms 丢了，
+      // 价格表列表想按规则自己限定的单位（item.uomId，可能是罐/袋等非采购单位）显示规格就没数据可查，
+      // 导致不管规则限定成哪个单位都显示成箱规（客户反馈：选了 can 列表却还写着 6*2950g 的箱规）。
+      saleUoms: saleUoms.map(su => ({ uomId: su.uomId, spec: su.spec, isDefault: su.isDefault })),
     }))
     return NextResponse.json(serializeApi(result))
   } catch (error) {

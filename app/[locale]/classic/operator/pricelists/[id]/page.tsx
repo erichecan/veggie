@@ -11,6 +11,7 @@ import type {
   Product, ProductCategory,
 } from '@/lib/types'
 import { resolvePrice, computeItemPrice } from '@/lib/pricing-engine'
+import { priceOf, type SaleUomPriceMode } from '@/lib/sale-uom'
 import { categoryPathMap } from '@/lib/category-path'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ActionLogPanel from '@/components/shared/action-log-panel'
@@ -44,6 +45,11 @@ interface SaleUomOption {
   factor: number
   /** 该单位的规格说明（如"500g/包"），存在 ProductSaleUom.spec，加订单行/打印价格表都读它 */
   spec: string | null
+  /** 下面四个字段只为了喂 priceOf()，算"这个单位自己卖多少钱"（20261025 Public Price 换算修复） */
+  priceMode: SaleUomPriceMode
+  priceOverride: number | null
+  priceDiscountPct: number
+  priceSurcharge: number
 }
 
 interface PriceReferenceEntry {
@@ -126,8 +132,17 @@ function applyOnLabel(item: OdooPricelistItem, products: Product[], categories: 
     // products 传的是全部商品(含已归档)：归档商品以前也显示成「-」，看起来像无效规则(20261008)
     const p = products.find(p => p.id === scopedProductId(item))
     if (!p) return '-'
-    // 20261014：很多商品同名，名字后面带规格(如 "10KG"/"20KG")才分得清是哪一款
-    const name = p.purchaseUomSpec ? `${p.name} (${p.purchaseUomSpec})` : p.name
+    // 20261014：很多商品同名，名字后面带规格(如 "10KG"/"20KG")才分得清是哪一款。
+    // 20261025 改正：规格必须按这条规则自己限定的单位(item.uomId)取，不能恒用 purchaseUomSpec
+    // (采购/箱规那个单位的规格)——否则规则选了 can，名字后面却接着写箱规"6*2950g"，
+    // 看着像这一行卖的是一箱而不是一罐。没限定单位(item.uomId 为空)时才退回默认单位的规格，
+    // 跟 /api/pricelists/print 的口径一致(该路由按 productId:uomId 精确匹配、否则落默认单位)。
+    const scopedSpec = item.uomId
+      ? p.saleUoms?.find(su => su.uomId === item.uomId)?.spec
+        ?? p.saleUoms?.find(su => su.isDefault)?.spec
+        ?? null
+      : p.purchaseUomSpec
+    const name = scopedSpec ? `${p.name} (${scopedSpec})` : p.name
     const archived = p.status?.toLowerCase() !== 'active' || p.active === false
     return archived ? `${name} ${isEn ? '(archived)' : '(已归档)'}` : name
   }
@@ -1285,7 +1300,12 @@ function ItemDialog({
   useEffect(() => {
     if (!saleUomProductId) { setSaleUomOptions([]); return }
     let cancelled = false
-    apiGet<Array<{ uomId: string; isDefault: boolean; active: boolean; factor: number; spec: string | null; uom: { name: string; nameZh?: string | null } }>>(
+    apiGet<Array<{
+      uomId: string; isDefault: boolean; active: boolean; factor: number; spec: string | null
+      priceMode?: SaleUomPriceMode; priceOverride?: number | null
+      priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null
+      uom: { name: string; nameZh?: string | null }
+    }>>(
       `/api/products/${saleUomProductId}/sale-uoms`,
     )
       .then(rows => {
@@ -1294,6 +1314,10 @@ function ItemDialog({
           rows.filter(r => r.active).map(r => ({
             uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor) || 1, spec: r.spec,
             uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
+            priceMode: r.priceMode ?? 'AUTO',
+            priceOverride: r.priceOverride ?? null,
+            priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
+            priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
           })),
         )
       })
@@ -1388,6 +1412,11 @@ function ItemDialog({
   // "基准单位成本 ÷ 这个单位的价"算出一个没有意义的数字（同类问题在订单侧 20260827 修过）。
   const uomFactor = item.uomId ? (saleUomOptions.find(o => o.uomId === item.uomId)?.factor ?? 1) : 1
   const scopedCostVal = templateCostVal * uomFactor
+  // Public Price 这一行只是给人看的参考，不喂进 computeItemPrice（那边决策#6 要求 formula/
+  // percentage 规则永远拿未换算的牌价去算折扣）——所以这里单独用 priceOf() 算"选中单位自己卖多少钱"，
+  // 跟上面 Cost 那行放在一起才不会出现"成本是一罐的价，牌价却是一箱的价"这种对不上的错觉
+  // (20261025 客户反馈：Snapzy 截图里 cost 按 can 换算了、public price 没换算)。
+  const scopedPublicPriceVal = item.uomId ? priceOf(saleUomOptions, item.uomId, templatePublicPriceVal) : templatePublicPriceVal
   const estimatedPrice = scopedProduct
     ? computeItemPrice(item, scopedProduct, templatePublicPriceVal, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
     : undefined
@@ -1480,7 +1509,12 @@ function ItemDialog({
               </div>
               <div className="flex items-center gap-4 text-sm mt-1">
                 <span className="text-gray-600">Public Price</span>
-                <span className="text-gray-800">{templatePublicPriceVal.toFixed(2)}</span>
+                <span className="text-gray-800">{scopedPublicPriceVal.toFixed(2)}</span>
+                {item.uomId && (
+                  <span className="text-[11px] text-gray-400">
+                    {isEn ? '(scaled to selected unit)' : '（已按选定单位换算）'}
+                  </span>
+                )}
               </div>
 
               {(item.applyOn === 'product' || item.applyOn === 'variant') && (
