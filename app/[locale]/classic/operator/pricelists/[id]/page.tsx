@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut, apiPost } from '@/lib/api'
+import { apiGet, apiPut, apiPost, apiPatch } from '@/lib/api'
 import type {
   OdooPricelist, OdooPricelistItem,
   PricelistApplyOn, PricelistComputeType, PricelistFormulaBase,
@@ -42,6 +42,8 @@ interface SaleUomOption {
   isDefault: boolean
   /** 1 个此单位 = factor 个基础单位；换算 Cost 到该单位用，跟单价换算同一套系数 */
   factor: number
+  /** 该单位的规格说明（如"500g/包"），存在 ProductSaleUom.spec，加订单行/打印价格表都读它 */
+  spec: string | null
 }
 
 interface PriceReferenceEntry {
@@ -1260,14 +1262,14 @@ function ItemDialog({
   useEffect(() => {
     if (!saleUomProductId) { setSaleUomOptions([]); return }
     let cancelled = false
-    apiGet<Array<{ uomId: string; isDefault: boolean; active: boolean; factor: number; uom: { name: string; nameZh?: string | null } }>>(
+    apiGet<Array<{ uomId: string; isDefault: boolean; active: boolean; factor: number; spec: string | null; uom: { name: string; nameZh?: string | null } }>>(
       `/api/products/${saleUomProductId}/sale-uoms`,
     )
       .then(rows => {
         if (cancelled) return
         setSaleUomOptions(
           rows.filter(r => r.active).map(r => ({
-            uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor) || 1,
+            uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor) || 1, spec: r.spec,
             uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
           })),
         )
@@ -1294,6 +1296,38 @@ function ItemDialog({
   // 优先用刚加载的该商品可售单位列表（更准确、也是同一份数据源），全局 uoms 只是兜底
   // （比如商品还没加载出可售单位列表、但 item.uomId 已经存在于历史数据里的情况）
   const scopedUomLabel = saleUomOptions.find(o => o.uomId === item.uomId)?.uomName ?? uomScopeLabel(item, uoms, isEn)
+
+  // 20261024：产品规格（ProductSaleUom.spec）inline 编辑——没限定单位（item.uomId 为空）时
+  // 编这条规则实际对应的基准单位的规格，跟这条规则限定了某单位时编那个单位的规格是同一个输入框。
+  // 改了直接 PATCH 回商品的可售单位配置，不随价格表这条规则一起保存/撤销。
+  const targetSpecUom = item.uomId
+    ? saleUomOptions.find(o => o.uomId === item.uomId)
+    : saleUomOptions.find(o => o.isDefault)
+  const [specDraft, setSpecDraft] = useState('')
+  const [specSaving, setSpecSaving] = useState(false)
+  useEffect(() => {
+    setSpecDraft(targetSpecUom?.spec ?? '')
+  }, [targetSpecUom?.uomId, targetSpecUom?.spec])
+
+  async function saveSpec() {
+    if (!saleUomProductId || !targetSpecUom) return
+    const trimmed = specDraft.trim()
+    if (trimmed === (targetSpecUom.spec ?? '')) return
+    setSpecSaving(true)
+    try {
+      const updated = await apiPatch<{ spec: string | null }>(
+        `/api/products/${saleUomProductId}/sale-uoms/${targetSpecUom.uomId}`,
+        { spec: trimmed },
+      )
+      setSaleUomOptions(prev => prev.map(o => o.uomId === targetSpecUom.uomId ? { ...o, spec: updated.spec } : o))
+      toast.success(isEn ? 'Saved' : '已保存')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Save failed' : '保存失败'))
+      setSpecDraft(targetSpecUom.spec ?? '')
+    } finally {
+      setSpecSaving(false)
+    }
+  }
 
   // 20260823：这个价改了，商品配置的其他可售单位（AUTO/FORMULA 两种模式）会自动跟着联动——
   // 这已经是事实（priceOf() 每次都拿"当下"的基准价现算，不是存快照），这里只是把它说清楚，
@@ -1449,6 +1483,28 @@ function ItemDialog({
                       ? 'Pick a unit only if this product/variant needs a different price than its base-unit price × conversion factor.'
                       : '只有当这个商品/变体需要"这个单位单独定价"而不是"基准价 × 换算系数"时才需要选。'}
                   </p>
+
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      {targetSpecUom
+                        ? (isEn ? `Product Spec (${targetSpecUom.uomName})` : `产品规格（${targetSpecUom.uomName}）`)
+                        : (isEn ? 'Product Spec' : '产品规格')}
+                    </label>
+                    <input
+                      type="text"
+                      value={specDraft}
+                      onChange={e => setSpecDraft(e.target.value)}
+                      onBlur={saveSpec}
+                      disabled={!targetSpecUom || specSaving}
+                      placeholder={isEn ? 'e.g. 500g/pack, 10 packs per case' : '例如：500g/包，一箱10包'}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B] disabled:bg-gray-50 disabled:text-gray-400"
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {isEn
+                        ? "Shown on order lines and the printed pricelist for this unit. Saves directly to the product's sale-unit setup — not part of this rule, and not tied to this pricelist's own Save."
+                        : '会显示在订单行和打印版价格表上。直接存回该商品的可售单位配置，不属于这条规则本身，也不需要点这张价格表的保存。'}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
