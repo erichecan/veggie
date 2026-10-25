@@ -11,7 +11,7 @@ import type {
   Product, ProductCategory,
 } from '@/lib/types'
 import { resolvePrice, computeItemPrice } from '@/lib/pricing-engine'
-import { priceOf, type SaleUomPriceMode } from '@/lib/sale-uom'
+import { priceOf, factorOf, type SaleUomPriceMode } from '@/lib/sale-uom'
 import { categoryPathMap } from '@/lib/category-path'
 import { NumericInput } from '@/components/ui/numeric-input'
 import ActionLogPanel from '@/components/shared/action-log-panel'
@@ -524,11 +524,23 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   // 渲染时把结果原样传给 ItemRow，不重复计算。
   const enrichedItems = itemsBySequence.map(item => {
     const scopedProduct = allProductsForLabels.find(p => p.id === scopedProductId(item))
-    const cost = scopedProduct?.standardPrice
-    const publicPrice = scopedProduct?.listPrice
+    const baseCost = scopedProduct?.standardPrice
+    const basePublicPrice = scopedProduct?.listPrice
+    // computeItemPrice 必须吃未换算的牌价（决策#6：formula/percentage 规则永远拿基础单位
+    // 牌价算折扣），只有下面两列"给人看"的参考数字才按规则自己的 uomId 换算。
     const estimatedPrice = scopedProduct
-      ? computeItemPrice(item, scopedProduct, publicPrice ?? 0, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
+      ? computeItemPrice(item, scopedProduct, basePublicPrice ?? 0, allLists, item.minQty || 1, undefined, 0, item.uomId) ?? undefined
       : undefined
+    // 20261025 客户反馈：同一商品 CASE 规则和 PACK 规则，Public Cost Price/Sale Price
+    // 两列显示成一模一样的数字——因为之前这两列恒读商品主档基础单位的值，不看 item.uomId。
+    // 跟编辑弹窗里"定价参考"面板用同一套换算（priceOf/factorOf），口径对齐。
+    const saleUomRows = scopedProduct?.saleUoms
+    const cost = item.uomId && saleUomRows && baseCost != null
+      ? baseCost * factorOf(saleUomRows, item.uomId)
+      : baseCost
+    const publicPrice = item.uomId && saleUomRows && basePublicPrice != null
+      ? priceOf(saleUomRows, item.uomId, basePublicPrice)
+      : basePublicPrice
     return {
       item,
       productNo: scopedProduct?.productNo,

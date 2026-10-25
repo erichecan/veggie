@@ -137,7 +137,15 @@ export async function GET(req: Request) {
         uom: { select: { id: true, name: true } },
         // 20261014：同名商品靠这个区分规格（价格表等页面展示商品名时要带规格），
         // 跟 ?slim=1 分支同一套口径，见上方 20261009 注释
-        saleUoms: { select: { uomId: true, spec: true, isDefault: true } },
+        // 20261025 补 factor/priceMode/priceOverride/priceDiscountPct/priceSurcharge：
+        // 价格表列表(Public Cost Price/Sale Price 两列)要按规则自己限定的单位换算显示，
+        // 不能恒显示基础单位的值——这几个字段跟 priceOf() 要的 SaleUomRow 形状一致。
+        saleUoms: {
+          select: {
+            uomId: true, spec: true, isDefault: true, factor: true,
+            priceMode: true, priceOverride: true, priceDiscountPct: true, priceSurcharge: true,
+          },
+        },
       },
     })
     const result = products.map(({ category, uom, saleUoms, purchaseUomId, ...p }) => ({
@@ -151,7 +159,13 @@ export async function GET(req: Request) {
       // 20261025：之前这里只算出 purchaseUomSpec（采购/箱规那个单位的规格）就把 saleUoms 丢了，
       // 价格表列表想按规则自己限定的单位（item.uomId，可能是罐/袋等非采购单位）显示规格就没数据可查，
       // 导致不管规则限定成哪个单位都显示成箱规（客户反馈：选了 can 列表却还写着 6*2950g 的箱规）。
-      saleUoms: saleUoms.map(su => ({ uomId: su.uomId, spec: su.spec, isDefault: su.isDefault })),
+      // factor/priceMode 等同理：主表格 Public Cost Price/Sale Price 两列同一个商品所有规则
+      // 共享基础单位的值，CASE 规则和 PACK 规则显示成一样的价（客户反馈：要分别做一箱和一包的价）。
+      saleUoms: saleUoms.map(su => ({
+        uomId: su.uomId, spec: su.spec, isDefault: su.isDefault, factor: Number(su.factor) || 1,
+        priceMode: su.priceMode, priceOverride: su.priceOverride != null ? Number(su.priceOverride) : null,
+        priceDiscountPct: Number(su.priceDiscountPct) || 0, priceSurcharge: Number(su.priceSurcharge) || 0,
+      })),
     }))
     return NextResponse.json(serializeApi(result))
   } catch (error) {
