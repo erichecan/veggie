@@ -23,8 +23,7 @@ import { PRODUCT_TEMPLATE_FACET_DEFS } from '@/lib/facets/product-templates'
 import { TTL_STATIC_MS } from '@/lib/http-cache'
 import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
 import { categoryIdsMatchingPath } from '@/lib/category-path'
-
-export const LOW_STOCK_THRESHOLD = 10
+import { lowStockSqlCondition } from '@/lib/stock-alert'
 
 /**
  * 把日期筛选框里的 "YYYY-MM-DD" 转成**都柏林日历日**的起点（真实 UTC 时刻）。
@@ -69,9 +68,8 @@ export async function productStockAlertCounts(): Promise<{ negative: number; low
   }
   const [counts] = await prisma.$queryRawUnsafe<{ negative: number; low: number }[]>(
     `SELECT count(*) FILTER (WHERE "qtyOnHand" < 0)::int AS negative,
-            count(*) FILTER (WHERE "qtyOnHand" >= 0 AND "qtyOnHand" < $1)::int AS low
+            count(*) FILTER (WHERE ${lowStockSqlCondition()})::int AS low
      FROM "Product"`,
-    LOW_STOCK_THRESHOLD,
   )
   const value = { negative: counts?.negative ?? 0, low: counts?.low ?? 0 }
   stockAlertCountsCache = { value, expiresAt: now + TTL_STATIC_MS }
@@ -168,9 +166,16 @@ export async function buildProductTemplatesWhere(
   }
 
   // ── 库存告警(negative/low) ────────────────────────────────────────────
+  // low 是逐商品 safetyStockMin 跟 qtyOnHand 的列间比较，Prisma 的 where 对象表达不出
+  // "跟另一列比较"，走跟上面数值子串筛选同一套两步查(id 收窄后取交集)。
   const stockAlert = searchParams.get('stockAlert')
   if (stockAlert === 'negative') where.qtyOnHand = { lt: 0 }
-  else if (stockAlert === 'low') where.qtyOnHand = { gte: 0, lt: LOW_STOCK_THRESHOLD }
+  else if (stockAlert === 'low') {
+    const lowStockRows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM "Product" WHERE ${lowStockSqlCondition()}`,
+    )
+    restrictToIds = intersect(restrictToIds, lowStockRows.map(r => r.id))
+  }
 
   if (restrictToIds !== null) where.id = { in: [...restrictToIds] }
 

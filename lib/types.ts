@@ -168,6 +168,8 @@ export interface ProductTemplate {
   barcode?: string
   /** 实时在手库存，来自 /api/product-templates 逐行附加，非模型本身字段 */
   qtyOnHand?: number
+  /** 库存预警值：qtyOnHand ≤ 此值时触发低库存提醒；≤0（含默认值 0）视为未设置，不参与告警 */
+  safetyStockMin?: number
 }
 
 // ─── 商品变体（对应 Odoo product.product）────────────────────────────────────
@@ -247,6 +249,8 @@ export interface Product {
   createdBy?: string
   updatedBy?: string
   barcode?: string
+  /** 库存预警值：qtyOnHand ≤ 此值时触发低库存提醒；≤0（含默认值 0）视为未设置，不参与告警 */
+  safetyStockMin?: number
 }
 
 // ─── 商品分类 ─────────────────────────────────────────────────────────────────

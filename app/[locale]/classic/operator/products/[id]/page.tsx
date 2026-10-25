@@ -1032,6 +1032,16 @@ export default function ClassicProductDetailPage() {
                     <option value="serial">By Serial Number</option>
                   </select>
                 </Row>
+                <Row label={isEn ? 'Low Stock Alert Threshold' : '库存预警值'}>
+                  <div>
+                    <NumericInput step="0.001" min={0} value={tmpl.safetyStockMin ?? 0} onChange={e => setField('safetyStockMin', parseFloat(e.target.value) || 0)} className={fieldClass} style={focusStyle} />
+                    <p className="text-xs text-gray-400 mt-1">
+                      {isEn
+                        ? 'When on-hand stock reaches or falls below this number, the product is flagged on the product list and the Inventory page. Leave as 0 to disable the alert for this product.'
+                        : '在手库存达到或低于这个数字时，会在商品列表和库存管理页标出来。留 0 表示这个商品不参与库存预警。'}
+                    </p>
+                  </div>
+                </Row>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-x-12 gap-y-2 max-w-3xl">
@@ -1051,6 +1061,11 @@ export default function ClassicProductDetailPage() {
                 <ReadField label="Tracking" value={
                   tmpl.tracking === 'lot' ? 'By Lot' :
                   tmpl.tracking === 'serial' ? 'By Serial Number' : 'No Tracking'
+                } />
+                <ReadField label={isEn ? 'Low Stock Alert Threshold' : '库存预警值'} value={
+                  tmpl.safetyStockMin != null && tmpl.safetyStockMin > 0
+                    ? tmpl.safetyStockMin.toFixed(2)
+                    : (isEn ? 'Not set' : '未设置')
                 } />
                 {!isNew && <ReadField label={isEn ? 'Current Stock' : '当前库存'} value={onHandQty.toFixed(2)} />}
                 {!isNew && forecastQty != null && (

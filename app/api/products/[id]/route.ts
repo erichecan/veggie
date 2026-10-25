@@ -9,7 +9,7 @@ import { ruleChangesToLogChanges } from '@/lib/pricelist-diff'
 const PRODUCT_TRACKED_FIELDS = [
   'name', 'internalRef', 'listPrice', 'standardPrice', 'qtyOnHand',
   'active', 'categoryId', 'customerTaxRate', 'commissionPrice', 'status',
-  'variantAttributes', 'images', 'weight',
+  'variantAttributes', 'images', 'weight', 'safetyStockMin',
 ]
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -48,6 +48,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         const standardPrice = Number(data.standardPrice)
         if (!Number.isFinite(standardPrice) || standardPrice < 0 || standardPrice > 1000000) {
           return NextResponse.json({ error: '成本价必须在 0–1,000,000 之间' }, { status: 400 })
+        }
+      }
+      if (data.safetyStockMin !== undefined && data.safetyStockMin !== null) {
+        const safetyStockMin = Number(data.safetyStockMin)
+        if (!Number.isFinite(safetyStockMin) || safetyStockMin < 0 || safetyStockMin > 1000000) {
+          return NextResponse.json({ error: '库存预警值必须在 0–1,000,000 之间' }, { status: 400 })
         }
       }
 
