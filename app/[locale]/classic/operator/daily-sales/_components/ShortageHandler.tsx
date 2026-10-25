@@ -1,15 +1,40 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { apiGet, apiPost } from '@/lib/api'
 import { SHORTAGE_REASON_CODES, SHORTAGE_REASON_LABELS, type ShortageReasonCode } from '@/lib/shortage-reason'
 import { formatDateTime } from '@/lib/format-date'
-import type { Order } from '@/lib/types'
+import type { Order, Customer } from '@/lib/types'
 import type { DriverSlotInfo } from '@/lib/driver-slot'
 import { today } from './shared'
 import ProductSearchInput from '@/components/classic/ProductSearchInput'
 import { DatePicker } from '@/components/ui/date-picker'
+import { buildOrderHtml, CSS } from '../../../print/[id]/page'
+import type { PrintLang } from '@/lib/print/print-i18n'
+
+// buildOrderHtml 的订单参数类型比 Order 本身更严格（这几个字段不接受 null），
+// batch/page.tsx 已有同名类型按同一约定声明，这里跟它保持一致
+type PrintOrder = Order & { code?: string; deliveryDate?: string; internalNote?: string; externalNote?: string; salesman?: string; deliveryBatch?: string }
+
+// 打印不走 window.open 导航到 /classic/print/batch——弹窗拦截器会把它当广告拦掉（见下方
+// printOrders 的注释），改成跟 PrintCenter.tsx 的 PrintQueue 一样：直接拿 buildOrderHtml/CSS
+// 现生成 HTML，灌进隐藏 iframe 的 srcDoc，不发起任何新窗口/新标签页。
+const HIDDEN_PRINT_IFRAME_STYLE: React.CSSProperties = {
+  position: 'fixed', top: 0, left: '-10000px', width: 900, height: 1200, border: 0,
+}
+
+interface PrintJob { id: number; html: string }
+
+function PrintQueue({ jobs }: { jobs: PrintJob[] }) {
+  return (
+    <>
+      {jobs.map(job => (
+        <iframe key={job.id} srcDoc={job.html} style={HIDDEN_PRINT_IFRAME_STYLE} title={`print-${job.id}`} />
+      ))}
+    </>
+  )
+}
 
 // SSOT：订单归属司机/时段以 PickingWave.orderIds 为准（拖拽调度不回填 Order.driverSlotId），
 // 与配送调度中心、打印中心口径一致；只看 Order.driverSlot 会漏掉只拖拽分配的司机。
@@ -25,6 +50,8 @@ interface ProductOption {
   id: string
   name: string
   internalRef?: string | null
+  category?: string | null
+  qtyOnHand?: number | null
 }
 
 interface FlatLine {
@@ -81,6 +108,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const [productQuery, setProductQuery] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [newQtys, setNewQtys] = useState<Record<string, string>>({})
   const [savedLineIds, setSavedLineIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
@@ -92,8 +120,17 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const [reasonNote, setReasonNote] = useState('')
   const [blockedRows, setBlockedRows] = useState<Array<{ orderCode: string; message: string }>>([])
   const [deferInfo, setDeferInfo] = useState<Array<{ code: string; date: string }>>([])
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(true)
   const [history, setHistory] = useState<ActionLog[]>([])
+  // 商品搜索候选池只有 id/name（派生自订单行，见 searchableProducts 注释），本身不带
+  // internalRef/category/qtyOnHand——之前占位文案写着"支持 Internal Reference 搜索"
+  // 但字段从没填过，搜内部编码必然搜不到。这里单独拉一份全量商品目录（不筛 status，
+  // 已下架商品也要能查到，呼应 searchableProducts 的"已下架但当天仍有缺货行照样能搜"）
+  // 只用来补充这三个展示/搜索字段，候选池本身的构成仍然只认订单行。
+  const [productCatalog, setProductCatalog] = useState<Map<string, { internalRef: string | null; category: string | null; qtyOnHand: number | null }>>(new Map())
+  // 打印队列：隐藏 iframe 累积挂着不卸载，见下方 printOrders 注释
+  const [printJobs, setPrintJobs] = useState<PrintJob[]>([])
+  const printJobSeq = useRef(0)
   const [historyLoading, setHistoryLoading] = useState(false)
   // 操作记录引用的订单信息（订单号+客户名），按日志 resourceId 直接拉取，
   // 不依赖当天缺货订单列表，保证记录里一定能显示是哪个订单、并可点击进详情。
@@ -102,6 +139,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const loadOrders = useCallback(() => {
     if (!date) return
     setLoading(true)
+    setLoadError(false)
     setNewQtys({})
     setSavedLineIds(new Set())
     setSaveMsg(null)
@@ -114,10 +152,13 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
         `/api/orders?include_lines=true&status=CONFIRMED,WAVE_ASSIGNED,IN_DELIVERY&dateField=deliveryDate&fromDate=${date}&toDate=${date}`
       )
         .then(d => setOrders(Array.isArray(d) ? d : []))
-        .catch(() => setOrders([])),
+        // 以前这里吞错误后直接清空订单，跟"当天真的没单"长得一模一样——商品搜索池
+        // (searchableProducts) 派生自订单行，一旦这里悄悄空了，操作员打什么都搜不到，
+        // 看起来就是"输入商品名不起作用"，却查不出是接口挂了还是真没数据。
+        .catch(() => { setOrders([]); setLoadError(true) }),
       apiGet<Wave[]>(`/api/waves?date=${date}`)
         .then(d => setWaves(Array.isArray(d) ? d : []))
-        .catch(() => setWaves([])),
+        .catch(() => { setWaves([]); setLoadError(true) }),
     ]).finally(() => setLoading(false))
   }, [date])
 
@@ -133,6 +174,18 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     apiGet<DriverSlotInfo[]>('/api/driver-slots')
       .then(d => setSlots(Array.isArray(d) ? d : []))
       .catch(() => setSlots([]))
+  }, [])
+
+  useEffect(() => {
+    apiGet<Array<{ id: string; internalRef?: string | null; category?: string | null; qtyOnHand?: number | null }>>('/api/products?slim=1')
+      .then(d => {
+        const m = new Map<string, { internalRef: string | null; category: string | null; qtyOnHand: number | null }>()
+        for (const p of Array.isArray(d) ? d : []) {
+          m.set(p.id, { internalRef: p.internalRef ?? null, category: p.category ?? null, qtyOnHand: p.qtyOnHand ?? null })
+        }
+        setProductCatalog(m)
+      })
+      .catch(() => {})
   }, [])
 
   // orderId → 司机/时段（按 wave 归属，SSOT）；覆盖只拖拽分配、未回填 Order.driverSlotId 的订单
@@ -201,10 +254,18 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const searchableProducts = useMemo(() => {
     const map = new Map<string, ProductOption>()
     for (const l of allLines) {
-      if (!map.has(l.productId)) map.set(l.productId, { id: l.productId, name: l.productName })
+      if (map.has(l.productId)) continue
+      const meta = productCatalog.get(l.productId)
+      map.set(l.productId, {
+        id: l.productId,
+        name: l.productName,
+        internalRef: meta?.internalRef ?? null,
+        category: meta?.category ?? null,
+        qtyOnHand: meta?.qtyOnHand ?? null,
+      })
     }
     return Array.from(map.values())
-  }, [allLines])
+  }, [allLines, productCatalog])
 
   const availableDrivers = useMemo(() => {
     const set = new Set<string>()
@@ -342,17 +403,55 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     }
   }
 
-  function handlePrint() {
-    // 一次点击里连开多个 window.open 会被浏览器弹窗拦截器拦掉，只剩第一个，
-    // 所以改成单个 window.open 打开批量打印页，一份文档内按订单分页打印全部
+  // 之前用 window.open 导航到 /classic/print/batch，装了隐私类插件的浏览器会把"点击→开新
+  // 窗口"当成弹窗广告拦掉（反馈截图里的"浏览器拦截了弹出窗口"就是这个）。改成跟 PrintCenter.tsx
+  // 的 PrintQueue 同一套做法：现取数据、用已导出的 buildOrderHtml/CSS 现生成 HTML，灌进本页内
+  // 一个隐藏 iframe 的 srcDoc 直接触发打印，完全不开新窗口，自然不会被拦。
+  async function printOrders(docType: 'delivery' | 'sales') {
     const orderIds = [...new Set(
       filteredLines.filter(l => savedLineIds.has(l.lineId)).map(l => l.orderId)
     )]
     if (orderIds.length === 0) return
-    // noopener：切断与本页的 opener 关系，避免打印页里的 window.print() 连带把本页卡住
-    const win = window.open(`${prefix}/classic/print/batch?ids=${orderIds.join(',')}&doc=delivery`, '_blank', 'noopener,noreferrer')
-    if (!win) {
-      setSaveMsg({ ok: false, text: isEn ? 'Browser blocked the popup window, please allow popups and retry' : '浏览器拦截了弹出窗口，请允许弹窗后重试' })
+    try {
+      const [fetchedOrders, customers] = await Promise.all([
+        Promise.all(orderIds.map(id => apiGet<PrintOrder>(`/api/orders/${id}`).catch(() => null))),
+        apiGet<Customer[]>('/api/customers').catch(() => [] as Customer[]),
+      ])
+      const validOrders = fetchedOrders.filter((o): o is PrintOrder => o != null)
+      if (validOrders.length === 0) {
+        setSaveMsg({ ok: false, text: isEn ? 'Failed to load orders for printing' : '加载打印订单失败' })
+        return
+      }
+      const lang: PrintLang = isEn ? 'en' : 'zh'
+      const bodyHtml = validOrders
+        .map((order, i) => {
+          const customer = customers.find(c => c.id === order.restaurantId) ?? null
+          return buildOrderHtml(order, customer, { docType, pageBreakAfter: i < validOrders.length - 1 }, lang)
+        })
+        .join('\n')
+      const html = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>${CSS}</style>
+</head>
+<body>
+${bodyHtml}
+<script>
+  var ts = new Date();
+  var pad = function(n){ return n < 10 ? '0'+n : ''+n; };
+  var stamp = pad(ts.getDate()) + '/' + pad(ts.getMonth()+1) + '/' + ts.getFullYear() +
+    ' ' + pad(ts.getHours()) + ':' + pad(ts.getMinutes());
+  document.querySelectorAll('.print-ts').forEach(function(el){ el.textContent = stamp; });
+  window.print();
+<\/script>
+</body>
+</html>`
+      printJobSeq.current += 1
+      setPrintJobs(prev => [...prev, { id: printJobSeq.current, html }])
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e instanceof Error ? e.message : (isEn ? 'Print failed' : '打印失败') })
     }
   }
 
@@ -409,6 +508,18 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
 
   return (
     <div className="space-y-4">
+      {loadError && (
+        <div className="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-sm text-red-600 flex items-center justify-between">
+          <span>
+            {isEn
+              ? 'Failed to load today\'s orders — product search has no data to match against. Try refreshing.'
+              : '当天订单加载失败，商品搜索池是空的所以打什么都搜不到，不是搜索坏了。请点"刷新"重试。'}
+          </span>
+          <button onClick={loadOrders} className="text-xs underline shrink-0 ml-3">
+            {isEn ? 'Retry' : '重试'}
+          </button>
+        </div>
+      )}
       {/* Filter bar */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
         <div className="flex items-center gap-4 flex-wrap">
@@ -484,6 +595,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
             placeholder={isEn ? 'Search by product name / Internal Reference' : '输入商品名 / Internal Reference 搜索'}
             inputClassName="border border-gray-300 rounded px-2 py-0.5 text-xs w-56 focus:outline-none focus:border-[#875A7B]"
             showOnEmptyQuery={false}
+            showOnHandQuantity
             selectOnTab
           />
           {selectedProducts.length > 0 && (
@@ -662,11 +774,19 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
               : (isEn ? `Defer shortfall to next day (${targetLines.length})` : `转单到次日（${targetLines.length} 条）`)}
           </button>
           <button
-            onClick={handlePrint}
+            onClick={() => printOrders('delivery')}
             disabled={printableOrderCount === 0}
             className="px-4 py-1.5 text-sm font-medium rounded border border-[#875A7B] text-[#875A7B] hover:bg-[#f3edf7] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {isEn ? 'Batch Print Updated Delivery Note' : '批量打印更新版 Delivery Note'}
+            {printableOrderCount > 0 && (isEn ? ` (${printableOrderCount} orders)` : `（${printableOrderCount} 单）`)}
+          </button>
+          <button
+            onClick={() => printOrders('sales')}
+            disabled={printableOrderCount === 0}
+            className="px-4 py-1.5 text-sm font-medium rounded border border-[#875A7B] text-[#875A7B] hover:bg-[#f3edf7] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {isEn ? 'Batch Print Updated Sales Order' : '批量打印更新版 Sales Order'}
             {printableOrderCount > 0 && (isEn ? ` (${printableOrderCount} orders)` : `（${printableOrderCount} 单）`)}
           </button>
           {saveMsg && (
@@ -759,6 +879,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
           </div>
         )}
       </div>
+      <PrintQueue jobs={printJobs} />
     </div>
   )
 }
