@@ -14,8 +14,8 @@ export function CartPanel({
   cart: CartItem[]
   cartTotal: number
   cartTax: number
-  setQty: (productId: string, qty: number) => void
-  removeFromCart: (productId: string) => void
+  setQty: (productId: string, qty: number, uomName?: string | null) => void
+  removeFromCart: (productId: string, uomName?: string | null) => void
   deliveryDate: string
   setDeliveryDate: (v: string) => void
   minDate: string
@@ -37,7 +37,7 @@ export function CartPanel({
         <>
           <div className="divide-y">
             {cart.map((c) => (
-              <div key={c.productId} className="flex items-center justify-between py-3">
+              <div key={`${c.productId}__${c.uomName ?? ''}`} className="flex items-center justify-between py-3">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{c.name}</p>
                   <p className="text-xs text-gray-400">
@@ -45,15 +45,15 @@ export function CartPanel({
                   </p>
                 </div>
                 <div className="flex items-center gap-2 ml-3">
-                  <button onClick={() => setQty(c.productId, c.quantity - 1)}
+                  <button onClick={() => setQty(c.productId, c.quantity - 1, c.uomName)}
                     className="w-7 h-7 rounded border text-sm flex items-center justify-center hover:bg-gray-100">−</button>
                   <input type="number" value={c.quantity} min={0} step={0.5}
-                    onChange={(e) => setQty(c.productId, parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setQty(c.productId, parseFloat(e.target.value) || 0, c.uomName)}
                     className="w-14 text-center border rounded text-sm py-1" />
-                  <button onClick={() => setQty(c.productId, c.quantity + 1)}
+                  <button onClick={() => setQty(c.productId, c.quantity + 1, c.uomName)}
                     className="w-7 h-7 rounded border text-sm flex items-center justify-center hover:bg-gray-100">+</button>
                   <span className="text-sm font-medium w-16 text-right">{eur(c.price * c.quantity)}</span>
-                  <button onClick={() => removeFromCart(c.productId)} className="text-red-400 hover:text-red-600 text-sm ml-1">✕</button>
+                  <button onClick={() => removeFromCart(c.productId, c.uomName)} className="text-red-400 hover:text-red-600 text-sm ml-1">✕</button>
                 </div>
               </div>
             ))}

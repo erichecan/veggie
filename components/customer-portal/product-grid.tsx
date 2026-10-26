@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { eur } from '@/lib/format-money'
 import { Pagination } from '@/components/ui/pagination'
 import type { CartItem } from './cart-utils'
@@ -13,7 +14,7 @@ export function ProductGrid({
   products: Product[]
   cart: CartItem[]
   addToCart: (p: Product) => void
-  setQty: (productId: string, qty: number) => void
+  setQty: (productId: string, qty: number, uomName?: string | null) => void
   page: number
   totalPages: number
   setPage: (p: number) => void
@@ -22,11 +23,21 @@ export function ProductGrid({
   /** 加载失败的原因（如账号未关联客户）；有它时空状态显示原因，而不是「暂无商品」 */
   loadError?: string | null
 }) {
+  // 商品配了多个可售单位（如 CASE + PACK）时，每张卡片各自记自己当前选中的单位；
+  // key 是 productId，没选过（或该商品只有 1 个单位）时按 saleUoms 里的默认单位走
+  const [selectedUom, setSelectedUom] = useState<Record<string, string>>({})
+
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {products.map((p, idx) => {
-          const inCart = cart.find((c) => c.productId === p.id)
+          const saleUoms = p.saleUoms ?? null
+          const activeUnit = saleUoms
+            ? saleUoms.find((u) => u.uomId === selectedUom[p.id]) ?? saleUoms.find((u) => u.isDefault) ?? saleUoms[0]
+            : null
+          const effectiveUomName = activeUnit?.uomName ?? p.uomName
+          const effectivePrice = activeUnit?.price ?? p.customerPrice
+          const inCart = cart.find((c) => c.productId === p.id && c.uomName === effectiveUomName)
           // 原型演示：起订量提示——真实规则(哪些商品有起订量、门槛多少)还没定，只在第一页第一张卡片上演示样式
           const showMoqDemo = idx === 0 && page === 1 && !activeSearch
           return (
@@ -54,9 +65,20 @@ export function ProductGrid({
                 <h3 className="font-medium text-sm">{p.name}</h3>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {p.spec && <span>{p.spec} · </span>}
-                  {p.uomName || (isEn ? 'unit' : '个')}
+                  {!saleUoms && (p.uomName || (isEn ? 'unit' : '个'))}
                   {p.internalRef && <span> · {p.internalRef}</span>}
                 </p>
+                {saleUoms && saleUoms.length > 1 && (
+                  <select
+                    value={activeUnit?.uomId ?? ''}
+                    onChange={(e) => setSelectedUom((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                    className="mt-1 text-xs border rounded px-1.5 py-1 w-full"
+                  >
+                    {saleUoms.map((u) => (
+                      <option key={u.uomId} value={u.uomId}>{u.uomName || (isEn ? 'unit' : '个')}</option>
+                    ))}
+                  </select>
+                )}
                 {showMoqDemo && (
                   <p className="text-xs text-amber-600 mt-1 border border-dashed border-amber-300 bg-amber-50 rounded px-2 py-0.5 inline-block">
                     {isEn ? '[Prototype] Min order: 5 units' : '【原型演示】最小起订 5 件'}
@@ -69,20 +91,20 @@ export function ProductGrid({
                     <span className="text-xs text-gray-400 line-through">{eur(p.originalPrice)}</span>
                   )}
                   <span className="text-lg font-bold" style={{ color: PURPLE }}>
-                    {p.customerPrice != null ? eur(p.customerPrice) : (isEn ? 'Price on request' : '询价')}
+                    {effectivePrice != null ? eur(effectivePrice) : (isEn ? 'Price on request' : '询价')}
                   </span>
                 </span>
-                {p.customerPrice != null ? (
+                {effectivePrice != null ? (
                   inCart ? (
                     <div className="flex items-center gap-1.5">
-                      <button onClick={() => setQty(p.id, inCart.quantity - 1)}
+                      <button onClick={() => setQty(p.id, inCart.quantity - 1, effectiveUomName)}
                         className="w-7 h-7 rounded border text-sm flex items-center justify-center hover:bg-gray-100">−</button>
                       <span className="text-sm font-medium w-8 text-center">{inCart.quantity}</span>
-                      <button onClick={() => setQty(p.id, inCart.quantity + 1)}
+                      <button onClick={() => setQty(p.id, inCart.quantity + 1, effectiveUomName)}
                         className="w-7 h-7 rounded border text-sm flex items-center justify-center hover:bg-gray-100">+</button>
                     </div>
                   ) : (
-                    <button onClick={() => addToCart(p)}
+                    <button onClick={() => addToCart(activeUnit ? { ...p, uomId: activeUnit.uomId, uomName: activeUnit.uomName, customerPrice: activeUnit.price } : p)}
                       className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-colors"
                       style={{ background: PURPLE }}>
                       {isEn ? 'Add to Cart' : '加入购物车'}

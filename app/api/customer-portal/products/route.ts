@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { loadCustomerFromRestaurantId } from '@/lib/server-pricing'
-import { buildCustomerProductCards } from '@/lib/customer-portal-products'
+import { buildCustomerProductCards, CUSTOMER_PRODUCT_SALE_UOM_INCLUDE } from '@/lib/customer-portal-products'
 
 const DEFAULT_PAGE_SIZE = 24
 const MAX_PAGE_SIZE = 100
@@ -17,7 +17,10 @@ function parsePositiveInt(raw: string | null, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
 
-const PRODUCT_INCLUDE = { uom: { select: { id: true, name: true } as const } } as const
+const PRODUCT_INCLUDE = {
+  uom: { select: { id: true, name: true } as const },
+  saleUoms: CUSTOMER_PRODUCT_SALE_UOM_INCLUDE,
+} as const
 
 /**
  * P1-2: 客户小程序 — 商品目录（含客户专属价格）

@@ -2,6 +2,9 @@ export interface CartItem {
   productId: string
   name: string
   spec: string | null
+  /** 20261026：下单传给后端用于按单位精确算价（见 resolveOrderLines）；旧的"再来一单"等
+   *  历史路径查不出来时留空，后端 uomId 不传等价于按基准单位算，不是新 bug */
+  uomId?: string | null
   uomName: string | null
   price: number
   quantity: number

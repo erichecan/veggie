@@ -144,7 +144,10 @@ export default function CustomerOrderDetailPage() {
         <div className="px-5 py-3 border-b">
           <h2 className="font-bold text-sm" style={{ color: PURPLE }}>{isEn ? 'Order Lines' : '商品明细'}</h2>
         </div>
-        <table className="w-full text-sm">
+        {/* 20261026：overflow-hidden 会把窄屏下撑不开的列直接裁掉且不可滚动看到，
+            改成内层 overflow-x-auto + 表格最小宽度，窄屏横向滚动就能看到完整金额列 */}
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs">
             <tr>
               <th className="text-left px-5 py-2.5">{isEn ? 'Product' : '商品'}</th>
@@ -198,6 +201,7 @@ export default function CustomerOrderDetailPage() {
             )}
           </tfoot>
         </table>
+        </div>
       </div>
     </div>
   )

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { serializeApi } from '@/lib/api-serializer'
 import { loadCustomerFromRestaurantId } from '@/lib/server-pricing'
-import { buildCustomerProductCards } from '@/lib/customer-portal-products'
+import { buildCustomerProductCards, CUSTOMER_PRODUCT_SALE_UOM_INCLUDE } from '@/lib/customer-portal-products'
 import { toNum } from '@/lib/decimal-helpers'
 
 const TOP_N = 8
@@ -65,7 +65,7 @@ export async function GET(req: Request) {
       // 那种 join 会随机丢商品（见本次改动背景）。
       const products = await prisma.product.findMany({
         where: { id: { in: topStats.map((s) => s.productId) }, canBeSold: true },
-        include: { uom: { select: { id: true, name: true } } },
+        include: { uom: { select: { id: true, name: true } }, saleUoms: CUSTOMER_PRODUCT_SALE_UOM_INCLUDE },
       })
       const cards = await buildCustomerProductCards(prisma, customer, products)
       const cardById = new Map(cards.map((c) => [c.id, c]))

@@ -184,7 +184,7 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
   const addToCart = useCallback((p: Product, qty = 1) => {
     setCart((prev) => {
       const next = mergeCartItems(prev, [{
-        productId: p.id, name: p.name, spec: p.spec, uomName: p.uomName,
+        productId: p.id, name: p.name, spec: p.spec, uomId: p.uomId ?? undefined, uomName: p.uomName,
         price: p.customerPrice ?? 0, quantity: qty, taxRate: toPercent(p.customerTaxRate),
       }])
       saveCart(next)
@@ -202,16 +202,20 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
     setShowCart(true)
   }, [])
 
-  function setQty(productId: string, qty: number) {
+  // uomName 是可选的消歧参数：同一商品可能同时有两条不同单位的购物车行（如 CASE + PACK），
+  // 不传时按原行为只匹配 productId（历史上商品永远只有一行，调用方不用都改）；
+  // 传了就必须 productId+uomName 都对上才动，否则会把另一个单位的行也改了/删了。
+  function setQty(productId: string, qty: number, uomName?: string | null) {
+    const matches = (c: CartItem) => c.productId === productId && (uomName === undefined || c.uomName === uomName)
     if (qty <= 0) {
-      updateCart(cart.filter((c) => c.productId !== productId))
+      updateCart(cart.filter((c) => !matches(c)))
     } else {
-      updateCart(cart.map((c) => (c.productId === productId ? { ...c, quantity: qty } : c)))
+      updateCart(cart.map((c) => (matches(c) ? { ...c, quantity: qty } : c)))
     }
   }
 
-  function removeFromCart(productId: string) {
-    updateCart(cart.filter((c) => c.productId !== productId))
+  function removeFromCart(productId: string, uomName?: string | null) {
+    updateCart(cart.filter((c) => !(c.productId === productId && (uomName === undefined || c.uomName === uomName))))
   }
 
   const cartTotal = cart.reduce((s, c) => s + c.price * c.quantity, 0)
@@ -223,7 +227,11 @@ export function useCustomerPortal(isEn: boolean, orderDetailPathPrefix: string) 
     setSubmitting(true)
     try {
       const body: Record<string, unknown> = {
-        items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity, price: c.price })),
+        items: cart.map((c) => ({
+          productId: c.productId, quantity: c.quantity, price: c.price,
+          ...(c.uomId ? { uomId: c.uomId } : {}),
+          ...(c.uomName ? { uomName: c.uomName } : {}),
+        })),
         paymentMethod,
       }
       if (deliveryDate) body.deliveryDate = deliveryDate

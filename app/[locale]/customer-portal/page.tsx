@@ -89,7 +89,7 @@ export default function CustomerProductsPage() {
         />
       )}
 
-      <div className="flex gap-4 items-start">
+      <div className="lg:flex lg:gap-4 lg:items-start">
         <CategorySidebar categories={p.categories} activeCategoryId={p.categoryId} onSelect={p.selectCategory} isEn={isEn} />
         <div className="flex-1 min-w-0">
           {p.gridLoading ? (
