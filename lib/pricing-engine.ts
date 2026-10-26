@@ -178,6 +178,13 @@ function matchesItem(item: OdooPricelistItem, product: Product, uomId?: string):
  * 计算逻辑，不能在页面上照公式另抄一份——否则会重蹈 scaleAuthoritativePrice 那种
  * "两份实现算出两个数字"的覆辙（20260826）。
  */
+/** item.uomId 限定的规则，折扣/加价的基准必须是该单位自己的价（factor 换算），不是商品基准单位的价 */
+function getSaleUomFactor(product: Product, uomId: string): number {
+  const row = product.saleUoms?.find(s => s.uomId === uomId)
+  const factor = row ? Number(row.factor) : 1
+  return factor > 0 ? factor : 1
+}
+
 export function computeItemPrice(
   item: OdooPricelistItem,
   product: Product,
@@ -188,17 +195,26 @@ export function computeItemPrice(
   depth: number,
   uomId?: string,
 ): number | null {
+  // 20261025：命中 uomId 限定规则时，basePrice/formulaBase 传进来的一直是商品基准单位
+  // （比如一箱）的价格，折扣/加价却要按 Sellable Unit（比如一箱 4 包里的 1 包）来算，
+  // 漏了按 ProductSaleUom.factor 换算这一步，导致算出来的价格偏大了 factor 倍
+  // （40.50 = 整箱价 30.5 + 10，而不是单包价 9.5 + 10 = 19.50）。
+  const uomFactor = item.uomId ? getSaleUomFactor(product, item.uomId) : 1
+
   switch (item.computeType) {
     case 'fixed':
       return item.fixedPrice ?? null
 
     case 'percentage': {
       const discount = item.percentDiscount ?? 0
-      return basePrice * (1 - discount / 100)
+      return basePrice * uomFactor * (1 - discount / 100)
     }
 
     case 'formula': {
       let formulaBase: number
+      // 嵌套 pricelist 如果已经命中了同一个 uomId 限定规则，拿到的已经是该单位的最终价，
+      // 不能再乘一次 uomFactor（对应 matchedUomId 那条"不能二次换算"的约定）。
+      let alreadyScaled = false
       switch (item.formulaBase) {
         case 'list_price':
           formulaBase = basePrice
@@ -215,11 +231,14 @@ export function computeItemPrice(
           const nestedResult = resolvePrice(product, nested, allPricelists, qty, date, uomId, depth + 1)
           if (nestedResult.isFallback) return null  // If nested call fell back, we should too
           formulaBase = nestedResult.price
+          alreadyScaled = nestedResult.matchedUomId === item.uomId
           break
         }
         default:
           formulaBase = basePrice
       }
+
+      if (!alreadyScaled) formulaBase *= uomFactor
 
       // Odoo 的 price_limit：**基准价本身**，在折扣/加价之前捕获。
       // 下面两条 margin 都相对它，而不是相对商品进价。
