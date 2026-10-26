@@ -75,7 +75,7 @@ export default function StockMovesPage() {
         <span className="text-gray-400">–</span>
         <input type="date" className={ctl} value={to} onChange={e => setTo(e.target.value)} />
       </div>
-      <StockMovesTable filter={filter} isEn={isEn} pageSize={100} onLoaded={setTotal} />
+      <StockMovesTable filter={filter} isEn={isEn} pageSize={100} showValue={false} onLoaded={setTotal} />
     </div>
   )
 }

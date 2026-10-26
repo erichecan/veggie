@@ -1,5 +1,6 @@
 'use client'
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { apiPost } from '@/lib/api'
 import { eur, fmtMoney } from '@/lib/format-money'
 import { formatDateOnly } from '@/lib/format-date'
@@ -34,6 +35,14 @@ const COUNTED_STATUSES = ['CONFIRMED', 'RECEIVED', 'INVOICED', 'LOCKED']
 const ROW_LIMIT = 3000
 /** 单个 PO 展开后的产品行数上限，足够覆盖正常单据 */
 const PRODUCT_ROW_LIMIT = 500
+/**
+ * CSV 导出按"PO × 产品"展开后的行数上限（接口 limit 硬顶 10000，见 /api/reports/[type]）。
+ * 20261026 修复：exportCsv 原先只导出 PO 级汇总行（data.rows），从不读已展开的 products
+ * state——不管用户有没有点开某个 PO 看产品明细，下载的 CSV 永远没有产品列。改成下载时
+ * 单独发一次请求，把 product_name/spec/description 一并加进 rowDimensions，一次性拿到
+ * "PO × 产品"颗粒度的数据，不依赖 UI 是否展开过，也不用对每个 PO 各发一次请求。
+ */
+const CSV_ROW_LIMIT = 10000
 
 interface ApiRow {
   po_name: string | null
@@ -80,6 +89,7 @@ export default function PurchaseOrderDetailTable({
   const [failure, setFailure] = useState<{ scope: string; message: string } | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [products, setProducts] = useState<Record<string, { status: 'loading' | 'loaded' | 'error'; rows: ProductRow[]; message?: string }>>({})
+  const [exporting, setExporting] = useState(false)
 
   const buildBody = useCallback((): ReportRequest => {
     const filters: FilterSpec[] = [
@@ -153,24 +163,53 @@ export default function PurchaseOrderDetailTable({
   const grandAmount = num(data.totals?.subtotal_ex_tax)
   const grandQty = num(data.totals?.ordered_qty)
 
-  function exportCsv() {
+  async function exportCsv() {
     const headers = isEn
-      ? ['PO No.', 'Supplier', 'Price', 'Qty', 'Amount', 'Date Approved', 'Supplier Invoice Ref.']
-      : ['采购单号', '供应商', '价格', '数量', '金额', '审批日期', '供应商发票参考号']
-    const csvRows = rows.map((r) => {
-      const amount = num(r.subtotal_ex_tax)
-      const qty = num(r.ordered_qty)
-      return [
-        r.po_name ?? '',
-        r.supplier_name ?? '',
-        fmtMoney(unitPrice(amount, qty)),
-        String(qty),
-        fmtMoney(amount),
-        r.confirmed_at ? formatDateOnly(r.confirmed_at) : '',
-        r.vendor_bill_ref ?? '',
-      ]
-    })
-    downloadCsv(`purchase-analysis-detail-${from}_${to}`, headers, csvRows)
+      ? ['PO No.', 'Supplier', 'Product', 'Price', 'Qty', 'Amount', 'Date Approved', 'Supplier Invoice Ref.']
+      : ['采购单号', '供应商', '产品', '价格', '数量', '金额', '审批日期', '供应商发票参考号']
+    setExporting(true)
+    try {
+      // 按"PO × 产品"颗粒度单独取一次数据，不依赖页面上是否已经展开过某个 PO
+      const request: ReportRequest = {
+        ...buildBody(),
+        rowDimensions: [
+          { field: 'po_name' },
+          { field: 'supplier_name' },
+          { field: 'confirmed_at' },
+          { field: 'vendor_bill_ref' },
+          { field: 'product_name' },
+          { field: 'product_spec' },
+          { field: 'description' },
+        ],
+        orderBy: [{ field: 'confirmed_at', direction: 'desc' }, { field: 'product_name', direction: 'asc' }],
+        limit: CSV_ROW_LIMIT,
+      }
+      const res = await apiPost<{ rows: (ApiRow & ProductRow)[]; total: number }>('/api/reports/purchasing', request)
+      const csvRows = res.rows.map((r) => {
+        const amount = num(r.subtotal_ex_tax)
+        const qty = num(r.ordered_qty)
+        return [
+          r.po_name ?? '',
+          r.supplier_name ?? '',
+          productLabel(r.product_name ?? (isEn ? '(unknown product)' : '（未知产品）'), r.product_spec, r.description),
+          fmtMoney(unitPrice(amount, qty)),
+          String(qty),
+          fmtMoney(amount),
+          r.confirmed_at ? formatDateOnly(r.confirmed_at) : '',
+          r.vendor_bill_ref ?? '',
+        ]
+      })
+      downloadCsv(`purchase-analysis-detail-${from}_${to}`, headers, csvRows)
+      if (res.total > csvRows.length) {
+        toast.warning(isEn
+          ? `Too many rows (${res.total}), only the first ${csvRows.length} were exported. Narrow the filters or shorten the period.`
+          : `行数过多（共 ${res.total} 行），仅导出前 ${csvRows.length} 行，请缩小筛选范围或缩短时间段。`)
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (isEn ? 'Export failed' : '导出失败'))
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -184,9 +223,10 @@ export default function PurchaseOrderDetailTable({
         <button
           type="button"
           onClick={exportCsv}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white"
+          disabled={exporting}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:border-gray-400 bg-white disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          ⬇ {isEn ? 'Download CSV' : '下载 CSV'}
+          ⬇ {exporting ? (isEn ? 'Exporting…' : '导出中…') : (isEn ? 'Download CSV' : '下载 CSV')}
         </button>
       </div>
 

@@ -68,12 +68,13 @@ export function buildStockMoveQuery(f: StockMoveFilter, page: number, pageSize: 
   return `/api/stock-moves?${p.toString()}`
 }
 
-export default function StockMovesTable({ filter, isEn, pageSize = 80, showProduct = true, showReference = true, emptyText, onLoaded }: {
+export default function StockMovesTable({ filter, isEn, pageSize = 80, showProduct = true, showReference = true, showValue = true, emptyText, onLoaded }: {
   filter: StockMoveFilter
   isEn: boolean
   pageSize?: number
   showProduct?: boolean
   showReference?: boolean
+  showValue?: boolean
   emptyText?: string
   onLoaded?: (total: number) => void
 }) {
@@ -115,7 +116,7 @@ export default function StockMovesTable({ filter, isEn, pageSize = 80, showProdu
               <th className="text-left px-2 py-1.5 font-medium">{isEn ? 'From' : '从'}</th>
               <th className="text-left px-2 py-1.5 font-medium">{isEn ? 'To' : '到'}</th>
               <th className="text-right px-2 py-1.5 font-medium">{isEn ? 'Quantity' : '数量'}</th>
-              <th className="text-right px-2 py-1.5 font-medium">{isEn ? 'Value' : '金额'}</th>
+              {showValue && <th className="text-right px-2 py-1.5 font-medium">{isEn ? 'Value' : '金额'}</th>}
               <th className="text-left px-2 py-1.5 font-medium">{isEn ? 'By' : '经手'}</th>
             </tr>
           </thead>
@@ -144,7 +145,7 @@ export default function StockMovesTable({ filter, isEn, pageSize = 80, showProdu
                       <span className="ml-1 text-gray-400 font-normal">({fmtQty(Math.abs(uomQty))} {r.uomName})</span>
                     )}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{value != null ? `€${value.toFixed(2)}` : '—'}</td>
+                  {showValue && <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{value != null ? `€${value.toFixed(2)}` : '—'}</td>}
                   <td className="px-2 py-1.5 text-gray-500">{r.createdBy ?? '—'}</td>
                 </tr>
               )
