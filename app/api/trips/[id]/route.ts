@@ -120,7 +120,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           : []
         const orderIds = restaurants.flatMap(r => r.orderIds ?? [])
         if (orderIds.length > 0) {
-          // 实送量、COMPLETED、出库、草稿发票、提成：与调度台「标记完成」共用 lib/delivery-complete.ts
+          // 实送量、COMPLETED、出库：与调度台「标记完成」共用 lib/delivery-complete.ts；
+          // 开票/提成冻结挪到会计核销确认后（20261026）
           const { failures } = await completeDeliveredOrders(orderIds, {
             reason: '行程完成出库', userId: user.userId, createdBy: user.name ?? user.email,
           })

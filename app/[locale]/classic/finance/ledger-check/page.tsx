@@ -93,8 +93,8 @@ export default function LedgerCheckPage() {
   // 统一补开草稿发票（「待开票」，客户 20261021）
   async function fixUninvoiced(count: number) {
     if (!window.confirm(isEn
-      ? `Create draft invoices for ${count} completed order(s) without one? Orders with no delivered quantity recorded are treated as fully delivered.`
-      : `为 ${count} 张已完成但没有发票的订单补开草稿发票？实送量没记过的单按全送补上。`)) return
+      ? `Create draft invoices for ${count} written-off order(s) without one? Orders with no delivered quantity recorded are treated as fully delivered.`
+      : `为 ${count} 张已核销但没有发票的订单补开草稿发票？实送量没记过的单按全送补上。`)) return
     setBusy(true)
     try {
       const r = await apiPost<{ total: number; fixed: Array<{ code: string }>; skipped: Array<{ code: string; reason: string }>; failed: Array<{ code: string; error: string }> }>(

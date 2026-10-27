@@ -82,6 +82,16 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
   'POST /api/finance/ledger-check/orders-without-stock [WAREHOUSE]': '同上',
   'POST /api/finance/ledger-check/orphan-wave-orders [DISPATCH]': '同上',
   'PUT /api/lots/[id] [WAREHOUSE]': '同上',
+  // 20261026：核销触发开票任务里顺带发现 bulk-invoice 与 [id]/lines 两条路由
+  // 从创建起就漏登记 lib/rbac/route-map.ts（新 token 位图判定 required===undefined
+  // 直接拒绝），今天补登记前**对任何人（新 token 也一样）都是 403，功能从未可用。
+  // 旧 token 的回退路径 lib/role-access.ts 的 ROLE_API_SCOPE 只收了精确路径
+  // `/api/accounting/returns`，没覆盖这两条子路径，所以旧 token 现在仍是 n ——
+  // 不是「本来能、现在不能」的收紧，是「本来就不能、现在仍不能」，不存在真实用户
+  // 受影响面。新 token 侧已用 scripts/rbac/update-parity-baseline.ts 核实为 y。
+  'GET /api/accounting/returns/[id]/lines [FINANCE]':
+    '20261026 补登记 route-map 前对新旧 token 都是 403（从未可用）；role-access.ts 旧表未覆盖该子路径，旧 token 现在仍判 n，不是收紧',
+  'POST /api/accounting/returns/bulk-invoice [FINANCE]': '同上',
 }
 
 /** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */

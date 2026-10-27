@@ -153,3 +153,44 @@ export async function listReturns(query: ReturnQuery, now = new Date()) {
   }
   return { today, floor: RETURNS_FLOOR_DATE, rows: filtered, summary }
 }
+
+export interface ReturnOrderLineRow {
+  id: string
+  productName: string
+  spec: string | null
+  uomName: string | null
+  orderedQty: number
+  deliveredQty: number
+  isGift: boolean
+}
+
+/**
+ * 核销弹窗「核对数量」用——单订单的行明细，默认 deliveredQty 展示用 orderedQty
+ * 兜底（标记完成时已经批量写成 orderedQty，但以防万一仍为 0 的历史单，不在弹窗里让会计
+ * 看见一堆要改成 0 的假差异）。20261026。
+ *
+ * ⛔ 20261026 code-review 修复：兜底必须按整单判断，不能按单行判断。之前写成
+ * `deliveredQty || orderedQty`，单行的 0 会被当成"没记过"直接吃掉——但差异/退货流程
+ * （trips/[id]/returns、trips/[id]/discrepancy）会把某一行真实改成 0（整行拒收/退货），
+ * 同单其它行仍是正常送达量。这种"一张单里有的行 0、有的行非 0"正是 fillDeliveredQtyIfUnrecorded
+ * （lib/delivery-complete.ts）自己判断"是否整单都没记过"用的同一条件：只要整单里还有任意一行
+ * > 0，就说明这单已经走过送达/差异流程，其余行的 0 是真的 0，不该再兜底成下单量。
+ */
+export async function getReturnOrderLines(orderId: string): Promise<ReturnOrderLineRow[]> {
+  const lines = await prisma.orderLine.findMany({
+    where: { orderId },
+    select: { id: true, productName: true, spec: true, uomName: true, orderedQty: true, deliveredQty: true, isGift: true },
+    orderBy: { sequence: 'asc' },
+  })
+  // 整单一行送达量都没记过（historic 单），才整单兜底成下单量；否则逐行照实际值显示
+  const noneRecorded = lines.every(l => Number(l.deliveredQty) <= 0)
+  return lines.map(l => ({
+    id: l.id,
+    productName: l.productName,
+    spec: l.spec,
+    uomName: l.uomName,
+    orderedQty: Number(l.orderedQty),
+    deliveredQty: noneRecorded ? Number(l.orderedQty) : Number(l.deliveredQty),
+    isGift: l.isGift,
+  }))
+}

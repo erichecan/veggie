@@ -5,8 +5,9 @@ import { fixUninvoicedOrders } from '@/lib/ledger-check'
 
 /**
  * POST /api/finance/ledger-check/uninvoiced-orders —— 统一补开草稿发票（客户 20261021「待开票」）
- * 对「已完成但没有发票」的订单：实送量没记过的按全送补上，再按完成时同一套逻辑开草稿发票。
- * 会建发票，权限与手工开票相同（finance.invoice.create）。可重复调用，已开过的单不会再开。
+ * 对「已核销但没有发票」的订单：实送量没记过的按全送补上，再按核销确认时同一套逻辑开草稿发票
+ * （20261026：findUninvoicedCompletedOrders 已加 returnStatus=RETURNED 条件，不会提前对还没
+ * 核销的单开票）。会建发票，权限与手工开票相同（finance.invoice.create）。可重复调用，已开过的单不会再开。
  */
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {

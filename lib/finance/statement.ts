@@ -20,6 +20,10 @@
  * ④ **首张对账单期初恒为 0**：原实现只认"上一张对账单的期末"，没有上一张就当 0。
  *    可这正是本任务的场景 —— 生产库一张对账单都没有。客户明明欠着钱，第一张单
  *    却从 0 起算，期末余额直接错。改为无上期时**从历史派生**（期前销售 − 期前收款）。
+ *
+ * ⑤ **20261026 再改一次口径**：对账单从 confirmationDate 改成按 deliveryDate 分期——
+ *    客户对"这期账"的认知是"这段时间送了多少货"，不是"系统哪天敲的确认"；
+ *    二者之前就有过因导入/补录造成的偏差（见项目记忆 sales-analysis-delivery-date-basis）。
  */
 
 import { businessDayStart, addBusinessDays } from '@/lib/analytics/metrics'
@@ -55,8 +59,8 @@ export function resolveStatementPeriod(startInput: unknown, endInput: unknown): 
 export interface StatementOrderRow {
   id: string
   code?: string | null
-  /** 销售确认时间（口径 SSOT）；未确认的单不该进对账单 */
-  confirmationDate?: Date | string | null
+  /** 送货日期（分期口径 SSOT，20261026 起不再用 confirmationDate） */
+  deliveryDate?: Date | string | null
   /** 含税金额 */
   incTaxTotal: number
 }
