@@ -106,6 +106,7 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
   const [waves, setWaves] = useState<Wave[]>([])
   const [selectedProducts, setSelectedProducts] = useState<ProductOption[]>([])
   const [productQuery, setProductQuery] = useState('')
+  const [orderQuery, setOrderQuery] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
@@ -275,17 +276,19 @@ export default function ShortageHandler({ refreshKey = 0 }: { refreshKey?: numbe
     return Array.from(set).sort()
   }, [allLines])
 
-  // 缺货商品由仓库报上来，必须先搜索选中商品才展示对应订单行
+  // 缺货商品由仓库报上来，必须先搜索选中商品、或输入订单号才展示对应订单行
   // allLines 已按 orderId+productId 合并去重，这里只需按条件过滤
   const filteredLines = useMemo(() => {
-    if (selectedProducts.length === 0) return []
+    const q = orderQuery.trim().toLowerCase()
+    if (selectedProducts.length === 0 && !q) return []
     return allLines.filter(l => {
       if (timeFilter !== 'all' && l.timeOfDay !== timeFilter) return false
       if (selectedDrivers.length > 0 && (!l.driverName || !selectedDrivers.includes(l.driverName))) return false
-      if (!selectedProducts.some(p => p.id === l.productId)) return false
+      if (selectedProducts.length > 0 && !selectedProducts.some(p => p.id === l.productId)) return false
+      if (q && !l.orderCode.toLowerCase().includes(q)) return false
       return true
     })
-  }, [allLines, timeFilter, selectedDrivers, selectedProducts])
+  }, [allLines, timeFilter, selectedDrivers, selectedProducts, orderQuery])
 
   // 已保存成功的行要排除在外，否则 newQtys 里的旧值会在下次点「保存修改」时被重新提交一遍
   // （若该行当时是清零删行，重复提交会因行已不存在而报错，污染这次保存的失败计数）
@@ -604,6 +607,22 @@ ${bodyHtml}
             </button>
           )}
         </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 shrink-0">{isEn ? 'Order No.' : '订单号'}</span>
+          <input
+            type="text"
+            value={orderQuery}
+            onChange={e => setOrderQuery(e.target.value)}
+            placeholder={isEn ? 'Search by order number' : '按订单号搜索'}
+            className="border border-gray-300 rounded px-2 py-0.5 text-xs w-56 focus:outline-none focus:border-[#875A7B]"
+          />
+          {orderQuery.trim() !== '' && (
+            <button onClick={() => setOrderQuery('')} className="text-xs text-gray-400 hover:text-gray-600">
+              {isEn ? 'Clear' : '清除'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Lines table */}
@@ -612,11 +631,11 @@ ${bodyHtml}
           <div className="px-4 py-10 text-center text-gray-400 text-sm">
             {loading
               ? (isEn ? 'Loading...' : '加载中...')
-              : selectedProducts.length === 0
+              : selectedProducts.length === 0 && orderQuery.trim() === ''
                 ? (isEn
-                  ? 'Search and select out-of-stock products above (supports product name / Internal Reference); once selected, order lines for that product today will be shown'
-                  : '请先在上方搜索并选择缺货商品（支持商品名 / Internal Reference），选中后显示当天订购该商品的订单行')
-                : (isEn ? 'No order lines for the selected products today' : '当天没有订购所选商品的订单行')}
+                  ? 'Search and select out-of-stock products above (supports product name / Internal Reference), or search by order number; matching order lines for today will be shown'
+                  : '请先在上方搜索并选择缺货商品（支持商品名 / Internal Reference），或直接按订单号搜索，显示当天匹配的订单行')
+                : (isEn ? 'No matching order lines today' : '当天没有符合条件的订单行')}
           </div>
         ) : (
           <div className="overflow-x-auto">

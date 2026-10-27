@@ -69,6 +69,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
   const [filterStatus, setFilterStatus] = useState<'all' | 'PENDING' | 'RETURNED' | 'ISSUE'>('all')
   const [printGroup, setPrintGroup] = useState<'date' | 'driver'>('date')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [scanInput, setScanInput] = useState('')
   const [scanSearching, setScanSearching] = useState(false)
   const [scanMsg, setScanMsg] = useState<{ type: 'ok' | 'err' | 'warn'; text: string } | null>(null)
@@ -197,6 +198,27 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
       alert(e instanceof Error ? e.message : '操作失败，请重试')
     } finally {
       setBulkLoading(false)
+    }
+  }
+
+  async function generateInvoices(ids: string[]) {
+    if (ids.length === 0) return
+    setInvoiceLoading(true)
+    try {
+      const r = await apiPost<{
+        total: number
+        created: Array<{ code: string; invoiceId: string }>
+        skipped: Array<{ code: string; reason: string }>
+        failed: Array<{ code: string; error: string }>
+      }>('/api/accounting/returns/bulk-invoice', { ids })
+      const parts = [`成功生成 ${r.created.length} 张`]
+      if (r.skipped.length) parts.push(`跳过 ${r.skipped.length} 张（已开过票/无可开票数量）`)
+      if (r.failed.length) parts.push(`失败 ${r.failed.length} 张`)
+      flash(r.failed.length ? 'warn' : 'ok', parts.join('，'), 6000)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '批量生成发票失败，请重试')
+    } finally {
+      setInvoiceLoading(false)
     }
   }
 
@@ -349,6 +371,9 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
               {bulkLoading ? '处理中…' : '✅ 确认核销'}
             </button>
             <button onClick={() => setIssueMode('batch')} disabled={bulkLoading} className="px-3 py-1.5 rounded text-sm font-medium bg-amber-50 text-amber-700 disabled:opacity-50">❗ 退回核实</button>
+            <button onClick={() => generateInvoices([...selected])} disabled={invoiceLoading} className="px-3 py-1.5 border rounded text-sm font-medium bg-white disabled:opacity-50" style={{ borderColor: ACCENT, color: ACCENT }} data-testid="writeoff-bulk-invoice">
+              {invoiceLoading ? '生成中…' : '🧾 批量生成 Invoice'}
+            </button>
             <button onClick={() => setSelected(new Set())} className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-500 bg-white">取消选择</button>
           </div>
         ) : (
@@ -459,7 +484,7 @@ function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onTogg
       </td>
       <td className="px-4 py-2.5 text-gray-500 text-xs">{scanOrder != null ? `#${scanOrder}` : <span className="text-gray-300">—</span>}</td>
       <td className="px-4 py-2.5 text-gray-700 text-xs whitespace-nowrap">{o.deliveryDate ?? '—'}</td>
-      <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{o.code ?? o.id.slice(-8)}</td>
+      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 whitespace-nowrap">{o.code ?? o.id.slice(-8)}</td>
       <td className="px-4 py-2.5 text-gray-800 max-w-[160px] truncate" title={o.restaurantName}>{o.restaurantName}</td>
       <td className="px-4 py-2.5 text-center text-xs text-gray-600">{TIME_TEXT[o.timeOfDay] ?? <span className="text-gray-300">—</span>}</td>
       <td className="px-4 py-2.5 text-gray-700">{o.driver || <span className="text-gray-300">未分配</span>}</td>
@@ -590,7 +615,7 @@ function ReturnedList() {
               {pageRows.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2 text-xs text-gray-700 whitespace-nowrap">{r.deliveryDate ?? '—'}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-gray-700">{r.code ?? r.id.slice(-8)}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-gray-700 whitespace-nowrap">{r.code ?? r.id.slice(-8)}</td>
                   <td className="px-4 py-2 text-gray-800 max-w-[180px] truncate" title={r.restaurantName}>{r.restaurantName}</td>
                   <td className="px-4 py-2 text-center text-xs text-gray-600">{TIME_TEXT[r.timeOfDay] ?? '—'}</td>
                   <td className="px-4 py-2 text-gray-700">{r.driver || '—'}</td>
