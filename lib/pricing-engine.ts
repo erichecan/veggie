@@ -2,9 +2,13 @@
  * Odoo Pricelist 定价引擎（完整复刻）
  *
  * 优先级：
- *   1. 按 sequence 排序的 items，第一个匹配的条目生效
- *   2. applyOn: 'variant' > 'product' > 'category' > 'global'（sequence 保证顺序）
- *   3. minQty 过滤
+ *   1. 按"适用目标"（targetKeyOf：applyOn+productId/categoryId+uomId）分组
+ *   2. 组间：取各组最小 sequence 排序，最小的那组生效——不同目标（variant/product/
+ *      category/global）之间谁优先完全由 sequence 决定，不隐含"谁更具体谁优先"
+ *   3. 组内（同一目标下的多条 minQty 阶梯规则）：自动挑"仍满足 qty>=minQty 的最大
+ *      minQty"那一档，minQty 相同才退回 sequence/数组顺序裁决（20261026 改动，
+ *      之前组内也是纯 sequence 优先，新建条目默认 sequence 都是 10 时极易排错导致
+ *      阶梯价形同虚设）
  *   4. dateStart / dateEnd 过滤
  *   5. formulaBase='pricelist' 时递归求价，最多深度 5 防循环
  *
@@ -78,33 +82,64 @@ export function resolvePrice(
     }
   }
 
-  const items = [...pricelist.items].sort((a, b) => a.sequence - b.sequence)
-
-  for (const item of items) {
-    if (qty < item.minQty) continue
-    if (item.dateStart && today < item.dateStart) continue
-    if (item.dateEnd && today > item.dateEnd) continue
-    if (!matchesItem(item, product, uomId)) continue
+  // 20261026：候选条目先按"适用目标"（targetKeyOf）分组——同一个目标下的多条 minQty
+  // 阶梯规则，不再要求运营手工把 sequence 从大到小精确排成"minQty 越大 sequence 越小"
+  // 才能生效（新建条目默认 sequence 全是 10，极易排错，导致阶梯价形同虚设，见
+  // docs/*pricelist-sequence* 相关记录）。组内改为照抄 CustomerSpecialPrice 的做法，
+  // 自动挑"仍满足 qty>=minQty 的最大 minQty"那一档；minQty 相同时才用 sequence/数组
+  // 顺序裁决（tests/pricing-engine-priority.test.ts 锁死的行为）。
+  // 不同目标（variant/product/category/global）之间的优先级则继续完全由 sequence 决定
+  // （用该目标下最小的 sequence 代表这一组在列表里的位置），不隐含"谁更具体谁优先"，
+  // 跟改动前的语义保持一致。
+  const candidates = pricelist.items.filter(item => {
+    if (item.dateStart && today < item.dateStart) return false
+    if (item.dateEnd && today > item.dateEnd) return false
+    if (!matchesItem(item, product, uomId)) return false
     // 防止嵌套递归超过深度限制：当已接近深度限制时，跳过引用其他价格表的项
-    if (_depth >= 5 && item.computeType === 'formula' && item.formulaBase === 'pricelist') continue
+    if (_depth >= 5 && item.computeType === 'formula' && item.formulaBase === 'pricelist') return false
+    return true
+  })
 
-    const computed = computeItemPrice(item, product, basePrice, allPricelists, qty, date, _depth, uomId)
-    if (computed === null) continue
+  const groups = new Map<string, OdooPricelistItem[]>()
+  for (const item of candidates) {
+    const key = targetKeyOf(item)
+    const arr = groups.get(key)
+    if (arr) arr.push(item)
+    else groups.set(key, [item])
+  }
 
-    const roundedComputed = round2(computed)
+  let winner: { item: OdooPricelistItem; computed: number; groupSequence: number } | undefined
+  for (const groupItems of groups.values()) {
+    const groupSequence = Math.min(...groupItems.map(i => i.sequence))
+    const eligible = groupItems
+      .filter(i => qty >= i.minQty)
+      .sort((a, b) => b.minQty - a.minQty || a.sequence - b.sequence)
+
+    for (const candidate of eligible) {
+      const computed = computeItemPrice(candidate, product, basePrice, allPricelists, qty, date, _depth, uomId)
+      if (computed === null) continue
+      if (!winner || groupSequence < winner.groupSequence) {
+        winner = { item: candidate, computed, groupSequence }
+      }
+      break // 组内第一个算得出价的候选（已按 minQty 降序排好）即为这一组的代表
+    }
+  }
+
+  if (winner) {
+    const roundedComputed = round2(winner.computed)
     // 20260926（code-review 发现）：badgeLabel 只代表"这条规则想营销"，不代表算出来的价真的比牌价低——
     // formula 类规则可能因为 priceMinMargin 夹取反而比牌价贵。角标+划线原价只在真降价时才展示，
     // 否则客户会看到一个"划线原价比现价还低"的诡异促销角标。
-    const isRealDiscount = item.badgeLabel && roundedComputed < round2(basePrice)
+    const isRealDiscount = winner.item.badgeLabel && roundedComputed < round2(basePrice)
 
     return {
       price: roundedComputed,
       pricelistName: pricelist.name,
-      itemDesc: describeItem(item),
+      itemDesc: describeItem(winner.item),
       isFallback: false,
       sourceType: 'pricelist',
-      matchedUomId: item.uomId,
-      ...(isRealDiscount ? { promoLabel: item.badgeLabel, originalPrice: round2(basePrice) } : {}),
+      matchedUomId: winner.item.uomId,
+      ...(isRealDiscount ? { promoLabel: winner.item.badgeLabel, originalPrice: round2(basePrice) } : {}),
     }
   }
 
@@ -166,6 +201,26 @@ function matchesItem(item: OdooPricelistItem, product: Product, uomId?: string):
       return item.categoryId !== undefined && item.categoryId === product.categoryId
     default:
       return false
+  }
+}
+
+/**
+ * 条目的"适用目标"标识：同一目标下的多条 minQty 阶梯规则属于同一组，由 resolvePrice
+ * 自动按 minQty 挑最合适档位；不同目标之间仍由 sequence 决定优先级，不在这里混在一起。
+ * 带 `item.uomId` 的单位限定规则单独成组，不与不限定单位的通用规则合并阶梯。
+ */
+function targetKeyOf(item: OdooPricelistItem): string {
+  const uomPart = item.uomId ?? ''
+  switch (item.applyOn) {
+    case 'product':
+      return `product:${item.productTemplateId}:${uomPart}`
+    case 'variant':
+      return `variant:${item.productVariantId}:${uomPart}`
+    case 'category':
+      return `category:${item.categoryId}:${uomPart}`
+    case 'global':
+    default:
+      return `global:${uomPart}`
   }
 }
 

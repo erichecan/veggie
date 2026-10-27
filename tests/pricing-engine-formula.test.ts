@@ -250,6 +250,27 @@ test('minQty：按购买数量匹配不同档位', () => {
   assert.equal(resolvePrice(tierProduct, p, [p], 4).price, 20, 'qty=4 不够 minQty=5，退回最低档')
 })
 
+// 20261026 Bug 回归：客户反馈"买 5 个以上应该更便宜，但下单还是按原价"——
+// 根因是运营在价格表 UI 新建条目，sequence 全部默认 10（emptyItem() 行为），
+// 旧引擎组内也是纯 sequence 优先，sequence 相同就按数组顺序，先到先得地命中
+// minQty=1 那条，minQty=5 那条永远排不上，阶梯价形同虚设。
+test('minQty：同目标下 sequence 相同（UI 新建条目的真实默认值）时，仍按 qty 自动挑最高档，不再先到先得（Bug 回归）', () => {
+  const p = pl('pl-tier-same-seq', [
+    item({ applyOn: 'variant', productVariantId: 'p-tier', sequence: 10, minQty: 1, computeType: 'fixed', fixedPrice: 17.5 }),
+    item({ applyOn: 'variant', productVariantId: 'p-tier', sequence: 10, minQty: 5, computeType: 'fixed', fixedPrice: 15.5 }),
+  ])
+  assert.equal(resolvePrice(tierProduct, p, [p], 1).price, 17.5, '买 1 个只够 minQty=1 这档')
+  assert.equal(resolvePrice(tierProduct, p, [p], 5).price, 15.5, '买 5 个应该命中 minQty=5 更便宜那档，不能被 minQty=1 先到先得抢走')
+})
+
+test('minQty：sequence 顺序与 minQty 大小倒挂（minQty 更大但 sequence 更小）时，仍按 qty 自动挑最高档（Bug 回归）', () => {
+  const p = pl('pl-tier-inverted-seq', [
+    item({ applyOn: 'variant', productVariantId: 'p-tier', sequence: 1, minQty: 5, computeType: 'fixed', fixedPrice: 15.5 }),
+    item({ applyOn: 'variant', productVariantId: 'p-tier', sequence: 2, minQty: 1, computeType: 'fixed', fixedPrice: 17.5 }),
+  ])
+  assert.equal(resolvePrice(tierProduct, p, [p], 5).price, 15.5, 'minQty=5 的 sequence 更小也不该影响结果，买够 5 个就该拿 minQty=5 的价')
+})
+
 // ─── dateStart / dateEnd ─────────────────────────────────────────────────────
 
 test('dateStart/dateEnd：促销价只在有效期内生效', () => {
