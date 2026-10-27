@@ -10,7 +10,7 @@ import type {
   PricelistApplyOn, PricelistComputeType, PricelistFormulaBase,
   Product, ProductCategory,
 } from '@/lib/types'
-import { resolvePrice, computeItemPrice } from '@/lib/pricing-engine'
+import { resolvePrice, computeItemPrice, targetKeyOf } from '@/lib/pricing-engine'
 import { priceOf, factorOf, type SaleUomPriceMode } from '@/lib/sale-uom'
 import { categoryPathMap } from '@/lib/category-path'
 import { NumericInput } from '@/components/ui/numeric-input'
@@ -174,6 +174,44 @@ function productCategoryLabel(
   return paths.get(scopedProduct.categoryId) || ''
 }
 
+/**
+ * 20261026：从 ItemDialog 抽出来给新的「阶梯价格」弹窗（TierPriceDialog）复用——
+ * 两处都要"选定商品后查它有哪些可售单位"，口径必须是同一份代码。
+ */
+function useSaleUomOptions(
+  productId: string | undefined, isEn: boolean,
+): [SaleUomOption[], React.Dispatch<React.SetStateAction<SaleUomOption[]>>] {
+  const [options, setOptions] = useState<SaleUomOption[]>([])
+  useEffect(() => {
+    if (!productId) { setOptions([]); return }
+    let cancelled = false
+    apiGet<Array<{
+      uomId: string; isDefault: boolean; active: boolean; factor: number; spec: string | null
+      priceMode?: SaleUomPriceMode; priceOverride?: number | null
+      priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null
+      uom: { name: string; nameZh?: string | null }
+    }>>(
+      `/api/products/${productId}/sale-uoms`,
+    )
+      .then(rows => {
+        if (cancelled) return
+        setOptions(
+          rows.filter(r => r.active).map(r => ({
+            uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor) || 1, spec: r.spec,
+            uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
+            priceMode: r.priceMode ?? 'AUTO',
+            priceOverride: r.priceOverride ?? null,
+            priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
+            priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
+          })),
+        )
+      })
+      .catch(() => { if (!cancelled) setOptions([]) })
+    return () => { cancelled = true }
+  }, [productId, isEn])
+  return [options, setOptions]
+}
+
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export default function ClassicPricelistDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -223,6 +261,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<OdooPricelistItem | null>(null)
   const [isNewItem, setIsNewItem] = useState(false)
+
+  // 阶梯价格弹窗(20261026)：同一个商品+单位的多档 minQty/价格一次性编辑，不用再逐条加规则。
+  const [tierDialogOpen, setTierDialogOpen] = useState(false)
+  // 打开时这个目标下已有的全部阶梯条目（新开一组时为空数组）
+  const [tierSeedItems, setTierSeedItems] = useState<OdooPricelistItem[]>([])
 
   // Print/Action dropdown
   const [printOpen, setPrintOpen] = useState(false)
@@ -416,6 +459,36 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
     setEditingItem({ ...item })
     setIsNewItem(false)
     setDialogOpen(true)
+  }
+
+  function openNewTierGroup() {
+    setTierSeedItems([])
+    setTierDialogOpen(true)
+  }
+
+  /** 把"这条规则所在的整组阶梯"都找出来喂给弹窗——分组标准必须跟算价引擎（targetKeyOf）一致 */
+  function openEditTierGroup(item: OdooPricelistItem) {
+    if (!pl) return
+    const key = targetKeyOf(item)
+    setTierSeedItems(pl.items.filter(i => i.computeType === 'fixed' && targetKeyOf(i) === key))
+    setTierDialogOpen(true)
+  }
+
+  /**
+   * 阶梯弹窗保存：先按 targetKeyOf 删掉这个目标下原有的全部 fixed 阶梯条目，再整组换成
+   * 弹窗交回来的最终列表——弹窗内部已经把"沿用旧行"（保留原 id/dateStart/dateEnd/
+   * badgeLabel/selectable）和"新增档位"（emptyItem 式默认值）都处理好了，这里不用再判断。
+   */
+  async function saveTierGroup(nextTierItems: OdooPricelistItem[]) {
+    if (!pl) return
+    if (nextTierItems.length === 0) return
+    const key = targetKeyOf(nextTierItems[0])
+    const rest = pl.items.filter(i => !(i.computeType === 'fixed' && targetKeyOf(i) === key))
+    const ok = await persistItems([...rest, ...nextTierItems])
+    if (ok) {
+      toast.success(isEn ? 'Tiers saved' : '阶梯价格已保存')
+      setTierDialogOpen(false)
+    }
   }
 
   /**
@@ -886,6 +959,11 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
                         showDelete={editMode}
                         onEdit={() => openEditItem(item)}
                         onDelete={() => handleDeleteItem(item.id)}
+                        onEditTiers={
+                          item.computeType === 'fixed' && (item.applyOn === 'variant' || item.applyOn === 'product')
+                            ? () => openEditTierGroup(item)
+                            : undefined
+                        }
                         canDrag={canDrag}
                         isDragging={dragIndex === globalIdx}
                         isOver={canDrag && overIndex === globalIdx && dragIndex !== null && dragIndex !== globalIdx}
@@ -913,13 +991,20 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
               </table>
             </div>
             {editMode && (
-              <div className="px-4 py-2">
+              <div className="px-4 py-2 flex items-center gap-4">
                 <button
                   onClick={openNewItem}
                   className="text-xs hover:underline"
                   style={{ color: PURPLE }}
                 >
                   Add a line
+                </button>
+                <button
+                  onClick={openNewTierGroup}
+                  className="text-xs hover:underline"
+                  style={{ color: PURPLE }}
+                >
+                  {isEn ? '+ Tiered pricing' : '+ 阶梯价格'}
                 </button>
               </div>
             )}
@@ -970,6 +1055,17 @@ export default function ClassicPricelistDetailPage({ params }: { params: Promise
           allLists={allLists.filter(l => l.id !== pl.id)}
           isNew={isNewItem}
           scopeTitle={applyScopeTitle(editingItem, products, categories, isEn)}
+          isEn={isEn}
+        />
+      )}
+
+      {/* ── Tiered pricing dialog ── */}
+      {tierDialogOpen && (
+        <TierPriceDialog
+          seedItems={tierSeedItems}
+          onSave={saveTierGroup}
+          onDiscard={() => setTierDialogOpen(false)}
+          products={products}
           isEn={isEn}
         />
       )}
@@ -1072,7 +1168,7 @@ function SortableTh({ sortKey, itemSort, onSort, className, children }: {
 
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
+function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, categories, uoms, cost, publicPrice, estimatedPrice, productCategoryLabel, showDelete, onEdit, onDelete, onEditTiers, canDrag, isDragging, isOver, handleActive, onHandleDown, onHandleUp, onDragStartRow, onDragOverRow, onDropRow, onDragEndRow, isEn }: {
   item: OdooPricelistItem
   productNo: number | undefined
   inlineEdit: boolean
@@ -1087,6 +1183,8 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
   showDelete: boolean
   onEdit: () => void
   onDelete: () => void
+  /** 只对"单商品+固定价"的规则有意义——点开阶梯价格弹窗编辑这一整组 minQty 档位 */
+  onEditTiers?: () => void
   /** 20260907 客户反馈改用拖拽排序，不要 ▲▼ 箭头——与
       components/classic/OrderLineEditor.tsx（报价单/订单/采购单行编辑）同一套交互 */
   canDrag: boolean
@@ -1155,6 +1253,13 @@ function ItemRow({ item, productNo, inlineEdit, onInlineChange, products, catego
                 onMouseUp={onHandleUp}
                 className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none leading-none"
               >☰</span>
+            )}
+            {onEditTiers && (
+              <span
+                onClick={onEditTiers}
+                title={isEn ? 'Edit quantity tiers' : '编辑阶梯价格'}
+                className="text-gray-300 hover:text-[#875A7B] text-base leading-none cursor-pointer select-none"
+              >☷</span>
             )}
             <span
               onClick={onDelete}
@@ -1308,34 +1413,7 @@ function ItemDialog({
 
   const saleUomProductId = scopedProductId(item)
 
-  const [saleUomOptions, setSaleUomOptions] = useState<SaleUomOption[]>([])
-  useEffect(() => {
-    if (!saleUomProductId) { setSaleUomOptions([]); return }
-    let cancelled = false
-    apiGet<Array<{
-      uomId: string; isDefault: boolean; active: boolean; factor: number; spec: string | null
-      priceMode?: SaleUomPriceMode; priceOverride?: number | null
-      priceDiscountPct?: number | string | null; priceSurcharge?: number | string | null
-      uom: { name: string; nameZh?: string | null }
-    }>>(
-      `/api/products/${saleUomProductId}/sale-uoms`,
-    )
-      .then(rows => {
-        if (cancelled) return
-        setSaleUomOptions(
-          rows.filter(r => r.active).map(r => ({
-            uomId: r.uomId, isDefault: r.isDefault, factor: Number(r.factor) || 1, spec: r.spec,
-            uomName: isEn ? r.uom.name : (r.uom.nameZh ?? r.uom.name),
-            priceMode: r.priceMode ?? 'AUTO',
-            priceOverride: r.priceOverride ?? null,
-            priceDiscountPct: r.priceDiscountPct != null ? Number(r.priceDiscountPct) : 0,
-            priceSurcharge: r.priceSurcharge != null ? Number(r.priceSurcharge) : 0,
-          })),
-        )
-      })
-      .catch(() => { if (!cancelled) setSaleUomOptions([]) })
-    return () => { cancelled = true }
-  }, [saleUomProductId, isEn])
+  const [saleUomOptions, setSaleUomOptions] = useSaleUomOptions(saleUomProductId, isEn)
 
   // 定价参考数据(20260902)：用这条价格表的客户们最近的真实成交价 + 该商品最近一次采购成本。
   // 只在弹窗打开、选好商品之后拉——不是列表页每行都查，避免价格表条目一多就 N+1。
@@ -1948,6 +2026,200 @@ function ItemDialog({
               Remove
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── TierPriceDialog ────────────────────────────────────────────────────────────
+// 20261026：单商品阶梯卡——选一个商品（+可选限定单位），把它的多档 minQty/价格放在
+// 一个表格里一次编完一起保存，不用再逐条进 ItemDialog 各加一条规则（见客户反馈）。
+// 只处理 computeType==='fixed' 的阶梯（本来就是"买够量用这个固定价"场景的唯一形态）。
+
+interface TierRow {
+  key: string
+  minQty: number
+  price: number
+  /** 这档沿用的原有规则——保存时要保留它的 id/dateStart/dateEnd/badgeLabel/selectable/sequence */
+  existing?: OdooPricelistItem
+}
+
+function TierPriceDialog({ seedItems, onSave, onDiscard, products, isEn }: {
+  seedItems: OdooPricelistItem[]
+  onSave: (items: OdooPricelistItem[]) => void
+  onDiscard: () => void
+  products: Product[]
+  isEn: boolean
+}) {
+  const seedProductId = seedItems[0] ? scopedProductId(seedItems[0]) : undefined
+  const [productId, setProductId] = useState<string | undefined>(seedProductId)
+  const [productQuery, setProductQuery] = useState(
+    () => products.find(p => p.id === seedProductId)?.name ?? '',
+  )
+  const [uomId, setUomId] = useState<string | undefined>(seedItems[0]?.uomId)
+  const [rows, setRows] = useState<TierRow[]>(() =>
+    seedItems.length > 0
+      ? [...seedItems]
+          .sort((a, b) => a.minQty - b.minQty)
+          .map(it => ({ key: it.id, minQty: it.minQty, price: it.fixedPrice ?? 0, existing: it }))
+      : [{ key: crypto.randomUUID(), minQty: 1, price: 0 }],
+  )
+
+  const [saleUomOptions] = useSaleUomOptions(productId, isEn)
+  const isEditingExistingGroup = seedItems.length > 0
+
+  function addRow() {
+    setRows(prev => [...prev, { key: crypto.randomUUID(), minQty: 0, price: 0 }])
+  }
+  function removeRow(key: string) {
+    setRows(prev => prev.filter(r => r.key !== key))
+  }
+  function updateRow(key: string, patch: Partial<Pick<TierRow, 'minQty' | 'price'>>) {
+    setRows(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)))
+  }
+
+  function handleSave() {
+    if (!productId) {
+      toast.error(isEn ? 'Please select a product first' : '请先选择一个产品')
+      return
+    }
+    if (rows.length === 0) {
+      toast.error(isEn ? 'Add at least one tier' : '请至少添加一档')
+      return
+    }
+    const minQtys = rows.map(r => r.minQty)
+    if (new Set(minQtys).size !== minQtys.length) {
+      toast.error(isEn ? 'Minimum quantities must be unique' : '起订量不能重复')
+      return
+    }
+    if (rows.some(r => !Number.isFinite(r.minQty) || r.minQty < 0 || !Number.isFinite(r.price) || r.price < 0)) {
+      toast.error(isEn ? 'Please fill in a valid quantity and price for every tier' : '请为每一档填写有效的起订量与价格')
+      return
+    }
+    const items: OdooPricelistItem[] = rows.map(r => r.existing
+      ? { ...r.existing, applyOn: 'variant', productVariantId: productId, productTemplateId: undefined, uomId, minQty: r.minQty, fixedPrice: r.price }
+      : { ...emptyItem(), applyOn: 'variant', productVariantId: productId, uomId, minQty: r.minQty, computeType: 'fixed', fixedPrice: r.price })
+    onSave(items)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onDiscard} />
+      <div className="relative bg-white rounded shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto" style={{ border: '1px solid #ddd' }}>
+        <div className="flex items-center justify-between px-6 py-3" style={{ borderBottom: '1px solid #e5e5e5' }}>
+          <h2 className="text-sm font-medium text-gray-700">
+            {isEn ? 'Tiered Pricing' : '阶梯价格'}
+          </h2>
+          <button onClick={onDiscard} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{isEn ? 'Product' : '商品'}</label>
+            <ProductSearchInput<Product>
+              value={productQuery}
+              onChange={v => {
+                setProductQuery(v)
+                if (!v.trim()) { setProductId(undefined); setUomId(undefined) }
+              }}
+              onSelect={p => { setProductQuery(p.name); setProductId(p.id); setUomId(undefined) }}
+              products={products}
+              placeholder={isEn ? 'Type to search a product…' : '输入关键词搜索商品…'}
+              inputClassName="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B]"
+              portalDropdown
+              maxResults={30}
+            />
+            {isEditingExistingGroup && (
+              <p className="text-[11px] text-gray-400 mt-1">
+                {isEn ? 'Changing the product starts a new tier group; it won’t merge with the one you opened.' : '换了商品会另起一组阶梯，不会跟原来打开的这组合并。'}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{isEn ? 'Sellable Unit (optional)' : '限定可售单位（可选）'}</label>
+            <select
+              value={uomId ?? ''}
+              onChange={e => setUomId(e.target.value || undefined)}
+              disabled={!productId}
+              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#875A7B] disabled:bg-gray-50 disabled:text-gray-400"
+            >
+              <option value="">{isEn ? '(all units — follows the base unit price)' : '（不限定 — 所有可售单位跟随基准价联动）'}</option>
+              {saleUomOptions.map(o => (
+                <option key={o.uomId} value={o.uomId}>
+                  {o.uomName}{o.isDefault ? (isEn ? ' (base unit)' : '（基准单位）') : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">{isEn ? 'Quantity tiers' : '阶梯价格'}</label>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500">
+                  <th className="text-left pb-1.5 font-medium">{isEn ? 'Min. Quantity (≥)' : '起订量(≥)'}</th>
+                  <th className="text-left pb-1.5 font-medium">{isEn ? 'Price (€)' : '价格(€)'}</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(row => (
+                  <tr key={row.key}>
+                    <td className="pr-2 py-1">
+                      <NumericInput
+                        min={0}
+                        step="any"
+                        value={row.minQty}
+                        onChange={e => updateRow(row.key, { minQty: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) })}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#875A7B]"
+                      />
+                    </td>
+                    <td className="pr-2 py-1">
+                      <NumericInput
+                        min={0}
+                        step="0.01"
+                        value={row.price}
+                        onChange={e => updateRow(row.key, { price: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) })}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#875A7B]"
+                      />
+                    </td>
+                    <td className="py-1 text-center">
+                      <span
+                        onClick={() => removeRow(row.key)}
+                        title={isEn ? 'Remove tier' : '删除此档'}
+                        className="text-gray-300 hover:text-red-400 cursor-pointer select-none"
+                      >🗑</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button
+              onClick={addRow}
+              className="mt-2 text-xs hover:underline"
+              style={{ color: PURPLE }}
+            >
+              {isEn ? '+ Add a tier' : '+ 添加一档'}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 px-6 py-3" style={{ borderTop: '1px solid #e5e5e5' }}>
+          <button
+            onClick={handleSave}
+            className="px-4 py-1.5 text-white text-sm rounded font-medium hover:opacity-90"
+            style={{ background: PURPLE }}
+          >
+            {isEn ? 'Save all tiers' : '保存全部档位'}
+          </button>
+          <button
+            onClick={onDiscard}
+            className="px-4 py-1.5 text-gray-600 text-sm border border-gray-300 rounded hover:bg-gray-50"
+          >
+            {isEn ? 'Cancel' : '取消'}
+          </button>
         </div>
       </div>
     </div>

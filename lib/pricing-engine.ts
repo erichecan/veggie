@@ -208,8 +208,11 @@ function matchesItem(item: OdooPricelistItem, product: Product, uomId?: string):
  * 条目的"适用目标"标识：同一目标下的多条 minQty 阶梯规则属于同一组，由 resolvePrice
  * 自动按 minQty 挑最合适档位；不同目标之间仍由 sequence 决定优先级，不在这里混在一起。
  * 带 `item.uomId` 的单位限定规则单独成组，不与不限定单位的通用规则合并阶梯。
+ *
+ * 20261026：导出给价格表编辑页的"阶梯价格"弹窗复用，判定"这几条是不是同一组阶梯"——
+ * 跟这里算价时分组的标准必须是同一份代码，不能各写一套各判各的。
  */
-function targetKeyOf(item: OdooPricelistItem): string {
+export function targetKeyOf(item: OdooPricelistItem): string {
   const uomPart = item.uomId ?? ''
   switch (item.applyOn) {
     case 'product':
