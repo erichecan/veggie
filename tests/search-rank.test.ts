@@ -62,3 +62,27 @@ describe('相关性分层不变', () => {
     assert.equal(r.length, 1)
   })
 })
+
+describe('第 4 层：多词乱序全部命中（20261021 加）', () => {
+  it('词序和文本不一致时仍能搜到，且排在前三层之后', () => {
+    const items: P[] = [
+      { name: 'Prawn Tiger 31/40' },
+      { name: 'Tiger Prawn Cooked' },
+    ]
+    const r = rankByRelevance(items, 'tiger prawn', get)
+    assert.equal(r.length, 2)
+    // 整串前缀命中的排第一层，乱序命中的排在它后面
+    assert.equal(r[0].name, 'Tiger Prawn Cooked')
+    assert.equal(r[1].name, 'Prawn Tiger 31/40')
+  })
+
+  it('单个词不触发第 4 层（避免跟第 2/3 层重复判定、拖慢单词查询）', () => {
+    const r = rankByRelevance([{ name: 'Prawn Tiger 31/40' }], 'prawn', get)
+    assert.equal(r.length, 1)
+  })
+
+  it('乱序词里有一个词文本里完全没有，仍然搜不到', () => {
+    const r = rankByRelevance([{ name: 'Prawn Tiger 31/40' }], 'tiger salmon', get)
+    assert.equal(r.length, 0)
+  })
+})
