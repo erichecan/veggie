@@ -16,7 +16,7 @@
  */
 import { decodePermissions } from './bitmap'
 import { PAGE_ROUTE_RULES, requiredPermissionsFor } from './route-map'
-import { ROLE_HOME } from '../role-access'
+import { homeFor } from '../role-access'
 
 export interface GuardSession {
   role?: string | null
@@ -81,7 +81,14 @@ export function getDefaultLandingPath(
     return `${pagePrefix}${QUOTATIONS_PATH}`
   }
 
-  const role = session.role ? String(session.role) : undefined
-  const home = role ? ROLE_HOME[role] : undefined
-  return `${pagePrefix}${home ?? UNIVERSAL_FALLBACK_PATH}`
+  // 多角色账号按 homeFor 的既定优先级（RESTAURANT 等粘性角色优先，否则按 roles[] 顺序）落地，
+  // 不再只看 session.role 单值 —— 单值兜底会让兼任角色的落地页随机漂移到主角色的主页
+  const roles =
+    Array.isArray(session.roles) && session.roles.length > 0
+      ? session.roles.map(String)
+      : session.role
+        ? [String(session.role)]
+        : []
+  const home = homeFor(roles)
+  return `${pagePrefix}${home === '/enter' ? UNIVERSAL_FALLBACK_PATH : home}`
 }
