@@ -4660,5 +4660,61 @@
     "DRIVER": "n",
     "RESTAURANT": "n",
     "OTHER": "n"
+  },
+  "PUT /api/order-returns/[id]/review": {
+    "BOSS": "n",
+    "OPERATOR": "y",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "y",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "PUT /api/order-returns/[id]/warehouse-verify": {
+    "BOSS": "n",
+    "OPERATOR": "n",
+    "FINANCE": "n",
+    "WAREHOUSE": "y",
+    "DISPATCH": "n",
+    "SALES": "n",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "GET /api/order-returns": {
+    "BOSS": "n",
+    "OPERATOR": "y",
+    "FINANCE": "n",
+    "WAREHOUSE": "y",
+    "DISPATCH": "n",
+    "SALES": "y",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
+  },
+  "POST /api/order-returns": {
+    "BOSS": "n",
+    "OPERATOR": "y",
+    "FINANCE": "n",
+    "WAREHOUSE": "n",
+    "DISPATCH": "n",
+    "SALES": "y",
+    "EXTERNAL_SALES": "n",
+    "SORTER": "n",
+    "PICKER": "n",
+    "DRIVER": "n",
+    "RESTAURANT": "n",
+    "OTHER": "n"
   }
 }

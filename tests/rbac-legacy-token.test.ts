@@ -92,6 +92,17 @@ const LEGACY_TOKEN_EXEMPT: Record<string, string> = {
   'GET /api/accounting/returns/[id]/lines [FINANCE]':
     '20261026 补登记 route-map 前对新旧 token 都是 403（从未可用）；role-access.ts 旧表未覆盖该子路径，旧 token 现在仍判 n，不是收紧',
   'POST /api/accounting/returns/bulk-invoice [FINANCE]': '同上',
+  // 20261027230000_dispatch_goods_return_grant（退货/报废整合）：新增 dispatch.goods_return.*，
+  // WAREHOUSE 发 warehouse_verify，OPERATOR/SALES 发 register + review；migration 末尾对
+  // warehouse、operator、sales 三个角色下的全部用户 bump 了 permVersion 强制重登，旧 token 不存在。
+  // 旧体系 ROLE_API_SCOPE 对 WAREHOUSE/SALES 没有 /api/order-returns/**，只有旧 token 这条路径判 n
+  // （OPERATOR 是 UNSCOPED_ROLES，不受收窄，所以不在这里）。只会更严，不会多看到数据。
+  'GET /api/order-returns [WAREHOUSE]':
+    '20261027230000 发权限时已 bump permVersion 强制重登，旧 token 不存在',
+  'PUT /api/order-returns/[id]/warehouse-verify [WAREHOUSE]': '同上',
+  'GET /api/order-returns [SALES]': '同上',
+  'POST /api/order-returns [SALES]': '同上',
+  'PUT /api/order-returns/[id]/review [SALES]': '同上',
 }
 
 /** 逐格比对旧 token 的最终可达性与基线，返回全部差异（不过滤例外） */
