@@ -19,6 +19,7 @@ import { formatDriverSlotFromOrder, parseDriverSlotKey } from '@/lib/driver-slot
 import { toDayKey } from '@/lib/analytics/metrics'
 
 import { RETURNS_FLOOR_DATE, RETURNED_STAY_HOURS } from '@/lib/accounting/returns-constants'
+import { getGoodsReturnFlags, type GoodsReturnFlag } from '@/lib/accounting/goods-return-flags'
 
 export { RETURNS_FLOOR_DATE, RETURNED_STAY_HOURS }
 export const SHIPPED_ORDER_STATUSES = ['IN_DELIVERY', 'COMPLETED', 'LOCKED'] as const
@@ -42,6 +43,7 @@ export interface ReturnRow {
   timeOfDay: string
   amount: number
   daysOut: number
+  goodsReturn: GoodsReturnFlag | null
 }
 
 export interface ReturnQuery {
@@ -100,6 +102,7 @@ export async function listReturns(query: ReturnQuery, now = new Date()) {
   })
 
   const today = toDayKey(now)
+  const goodsReturnFlags = await getGoodsReturnFlags(orders.map(o => o.id))
   const rows: ReturnRow[] = (await attachWaveDisplay(serializeApi(orders) as Array<typeof orders[number] & { id: string; deliveryBatchDisplay?: string | null }>))
     .map(o => {
       const batch = formatDriverSlotFromOrder(o as never)
@@ -121,6 +124,7 @@ export async function listReturns(query: ReturnQuery, now = new Date()) {
         timeOfDay: slot.time,
         amount: round2(orderIncTaxTotal((o.lines ?? []) as never)),
         daysOut: day ? dayDiff(day, today) : 0,
+        goodsReturn: goodsReturnFlags.get(o.id) ?? null,
       }
     })
 
