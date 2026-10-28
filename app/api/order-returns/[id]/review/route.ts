@@ -68,24 +68,35 @@ export async function PUT(
       }
 
       if (action === 'reject') {
-        const [updated] = await prisma.$transaction(async (tx) => {
-          const updatedRet = await tx.orderReturn.update({
-            where: { id },
+        const updated = await prisma.$transaction(async (tx) => {
+          // updateMany + 状态锁定 where，防止两个并发审核请求都越过上面的前置检查、都执行一遍副作用
+          const { count } = await tx.orderReturn.updateMany({
+            where: { id, status: 'PENDING_REVIEW' },
             data: {
               status: 'REJECTED',
               approvedById: user.userId,
               approvedByName: user.name,
               approvedAt: new Date(),
+              // 复用 warehouseNote 承载"最近一次处置备注"：OrderReturn 没有单独的审核备注列，
+              // 到审核这一步仓库核实阶段的备注已经没有展示价值，这里覆盖是预期行为
+              ...(note?.trim() ? { warehouseNote: note.trim() } : {}),
             },
           })
+          if (count === 0) return null
           await syncOrderGoodsReturnStatus(tx, [{
             orderId: ret.orderId,
             status: 'REJECTED',
             productName: ret.productName,
             quantity: toNum(ret.quantity),
           }], user)
-          return [updatedRet]
+          return tx.orderReturn.findUnique({ where: { id } })
         })
+        if (!updated) {
+          return NextResponse.json(
+            { error: '该退货记录已被处理，请刷新后重试', status: 'RACED' },
+            { status: 409 },
+          )
+        }
         await writeLog({
           userId: user.userId, userEmail: user.email, userName: user.name,
           action: 'UPDATE', resource: 'order_return', resourceId: id,
@@ -115,9 +126,10 @@ export async function PUT(
         sourceRef: order.code,
       })
 
-      const [updated] = await prisma.$transaction(async (tx) => {
-        const updatedRet = await tx.orderReturn.update({
-          where: { id },
+      const updated = await prisma.$transaction(async (tx) => {
+        // updateMany + 状态锁定 where，防止两个并发审核请求都越过上面的前置检查、都执行一遍副作用
+        const { count } = await tx.orderReturn.updateMany({
+          where: { id, status: 'PENDING_REVIEW' },
           data: {
             status: 'APPROVED',
             disposition,
@@ -126,6 +138,7 @@ export async function PUT(
             approvedAt: new Date(),
           },
         })
+        if (count === 0) return null
 
         await postReturnStockMoves(tx, stockMoves, user)
         await applyReturnOrderLineReduction(tx, [{ orderId: ret.orderId, productId: ret.productId, reduceQty: quantity }])
@@ -137,8 +150,15 @@ export async function PUT(
           disposition: disposition as 'SELLABLE' | 'SCRAP',
         }], user)
 
-        return [updatedRet]
+        return tx.orderReturn.findUnique({ where: { id } })
       })
+
+      if (!updated) {
+        return NextResponse.json(
+          { error: '该退货记录已被处理，请刷新后重试', status: 'RACED' },
+          { status: 409 },
+        )
+      }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,

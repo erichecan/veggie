@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
+import { hasPermission, useAbility } from '@/lib/permissions'
 import PrintCenter from './_components/PrintCenter'
 import ShortageHandler from './_components/ShortageHandler'
 import SalesStats from './_components/SalesStats'
@@ -13,6 +14,10 @@ export default function DailySalesPage() {
   const [tab, setTab] = useState<Tab>('print')
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
+  const ability = useAbility()
+  // BOSS/EXTERNAL_SALES 有 page.operator.access 能进这个页面，但 seed-rbac.json 没发
+  // dispatch.goods_return.register；没这道门它们点进去填完表单才会被后端 403，体验很差
+  const canRegisterReturn = hasPermission(ability, 'dispatch.goods_return.register')
   // 页头统一刷新：递增 refreshKey → 当前挂载的 Tab 重新拉取数据（保留其日期/筛选）
   const [refreshKey, setRefreshKey] = useState(0)
 
@@ -44,7 +49,9 @@ export default function DailySalesPage() {
             <button className={tabCls('print')} onClick={() => setTab('print')}>{isEn ? 'Print Center' : '打印中心'}</button>
             <button className={tabCls('shortage')} onClick={() => setTab('shortage')}>{isEn ? 'Shortage Handling' : '缺货处理'}</button>
             <button className={tabCls('stats')} onClick={() => setTab('stats')}>{isEn ? 'Sales Stats' : '销售统计'}</button>
-            <button className={tabCls('register')} onClick={() => setTab('register')}>{isEn ? 'Return Registration' : '退货登记'}</button>
+            {canRegisterReturn && (
+              <button className={tabCls('register')} onClick={() => setTab('register')}>{isEn ? 'Return Registration' : '退货登记'}</button>
+            )}
           </div>
         </div>
       </div>
@@ -52,7 +59,7 @@ export default function DailySalesPage() {
         {tab === 'print' && <PrintCenter refreshKey={refreshKey} onRefresh={() => setRefreshKey(k => k + 1)} />}
         {tab === 'shortage' && <ShortageHandler refreshKey={refreshKey} />}
         {tab === 'stats' && <SalesStats refreshKey={refreshKey} />}
-        {tab === 'register' && <ReturnRegistration refreshKey={refreshKey} />}
+        {tab === 'register' && canRegisterReturn && <ReturnRegistration refreshKey={refreshKey} />}
       </div>
     </div>
   )

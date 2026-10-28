@@ -3,6 +3,7 @@ import { toStockQty } from '@/lib/inventory'
 import { postStockMove, LOC } from '@/lib/stock-ledger'
 import { SCRAP_REASON_LABEL } from '@/lib/scrap-reasons'
 import { recalcOrderCommission } from '@/lib/commission'
+import { Prisma } from '@/lib/generated/prisma/client'
 
 /**
  * 退货处置共用逻辑（20261027 从 app/api/trips/[id]/returns/route.ts 抽取）。
@@ -96,9 +97,8 @@ export function buildReturnStockMoves(input: ReturnDispositionInput): ReturnStoc
 }
 
 /** 把一批 StockMove 计划落库（必须在事务里调用）。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function postReturnStockMoves(
-  tx: any,
+  tx: Prisma.TransactionClient,
   moves: ReturnStockMovePlan[],
   user: { userId: string; name?: string | null; email: string },
 ) {
@@ -138,9 +138,8 @@ export interface OrderLineReduction {
  * 调整 OrderLine.deliveredQty（货物已不在客户手上，不算已送达）并重算受影响订单的司机提成快照。
  * 必须在事务里调用。返回受影响的 orderId 列表，调用方可据此做进一步回写（如 Order.goodsReturnStatus）。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function applyReturnOrderLineReduction(
-  tx: any,
+  tx: Prisma.TransactionClient,
   updates: OrderLineReduction[],
 ): Promise<string[]> {
   for (const upd of updates) {
@@ -179,9 +178,8 @@ export interface GoodsReturnOrderSync {
  * 只读展示最近一次处置结果，不是账本；同一订单极少会有第二条独立退货记录，
  * 真出现了也是后写覆盖前写，与 Order.returnStatus（核销对账）各管各的不冲突。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function syncOrderGoodsReturnStatus(
-  tx: any,
+  tx: Prisma.TransactionClient,
   updates: GoodsReturnOrderSync[],
   user: { userId: string },
 ) {

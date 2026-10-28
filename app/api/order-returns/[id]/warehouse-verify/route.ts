@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { withAuth } from '@/lib/auth'
 import { writeLog } from '@/lib/action-log'
 import { serializeApi } from '@/lib/api-serializer'
+import { toNum } from '@/lib/decimal-helpers'
+import { syncOrderGoodsReturnStatus } from '@/lib/returns-engine'
 
 /**
  * 仓库核实（退货/报废整合 M3，对齐 app/api/trips/[id]/returns/warehouse-verify 的既有规则）：
@@ -41,16 +43,41 @@ export async function PUT(
         )
       }
 
-      const updated = await prisma.orderReturn.update({
-        where: { id },
-        data: {
-          status: action === 'verify' ? 'PENDING_REVIEW' : 'REJECTED',
-          warehouseVerifiedById: user.userId,
-          warehouseVerifiedByName: user.name,
-          warehouseVerifiedAt: new Date(),
-          warehouseNote: note?.trim() || undefined,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        // updateMany + 状态锁定 where，防止两个并发核实请求都越过上面的前置检查、都执行一遍副作用
+        // （原来这里连事务都没有，是本次 code-review 补的）
+        const { count } = await tx.orderReturn.updateMany({
+          where: { id, status: 'WAREHOUSE_PENDING' },
+          data: {
+            status: action === 'verify' ? 'PENDING_REVIEW' : 'REJECTED',
+            warehouseVerifiedById: user.userId,
+            warehouseVerifiedByName: user.name,
+            warehouseVerifiedAt: new Date(),
+            warehouseNote: note?.trim() || undefined,
+          },
+        })
+        if (count === 0) return null
+
+        // 核实不通过是终态（REJECTED），跟 review 路由拒绝分支一样要回写 Order 角标；
+        // 原来这里漏了，角标会一直停在"无退货"，看不出这单曾经报过退货又被仓库打回
+        if (action === 'reject') {
+          await syncOrderGoodsReturnStatus(tx, [{
+            orderId: ret.orderId,
+            status: 'REJECTED',
+            productName: ret.productName,
+            quantity: toNum(ret.quantity),
+          }], user)
+        }
+
+        return tx.orderReturn.findUnique({ where: { id } })
       })
+
+      if (!updated) {
+        return NextResponse.json(
+          { error: '该退货记录已被处理，请刷新后重试', status: 'RACED' },
+          { status: 409 },
+        )
+      }
 
       await writeLog({
         userId: user.userId, userEmail: user.email, userName: user.name,

@@ -38,9 +38,13 @@ export interface LotMovement {
 const n = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0)) || 0
 
 // 多单位销售(ProductSaleUom)换算用的最小 client 形状
+// 方法签名（非箭头函数属性）故意用方法写法：TS 对方法参数是双变检查，箭头函数属性是
+// 逆变检查——用箭头写法会导致真实 Prisma.TransactionClient 的 findMany（参数类型
+// 比 unknown 更窄）传不进来（20261027 lib/returns-engine.ts 把 tx 从 any 改成
+// Prisma.TransactionClient 后在这里炸出来，不是新引入的问题，是把 any 的漏检显形了）
 type StockQtyClient = {
   productSaleUom: {
-    findMany: (args: unknown) => Promise<Array<{ uomId: string; isDefault: boolean; factor: unknown }>>
+    findMany(args: unknown): Promise<Array<{ uomId: string; isDefault: boolean; factor: unknown }>>
   }
 }
 

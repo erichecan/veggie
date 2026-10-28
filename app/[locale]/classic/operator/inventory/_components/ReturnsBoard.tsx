@@ -5,7 +5,7 @@ import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
 import { apiGet } from '@/lib/api'
 import type { Trip, OrderReturn } from '@/lib/types'
-import { getSession } from '@/lib/session'
+import { hasPermission, useAbility } from '@/lib/permissions'
 import { Dialog } from '@/components/ui/dialog'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { flattenPending, VerifyReturnDialog, type PendingReturn } from '@/components/warehouse/VerifyReturnDialog'
@@ -65,13 +65,12 @@ export default function ReturnsBoard() {
   const [loading, setLoading] = useState(false)
   const [dialog, setDialog] = useState<DialogState>(null)
 
-  // dispatch.goods_return.warehouse_verify 只发给 WAREHOUSE，review 只发给 OPERATOR/SALES
-  // （RBAC 单元既定），这里只做 UX 层面的按钮显隐，真正的拦截在后端 withAuth
-  const session = getSession()
-  const effectiveRoles = session ? (session.roles && session.roles.length > 0 ? session.roles : [session.role]) : []
-  const rolesUpper = effectiveRoles.map(r => r.toUpperCase())
-  const canVerify = rolesUpper.includes('WAREHOUSE')
-  const canReview = rolesUpper.includes('OPERATOR') || rolesUpper.includes('SALES')
+  // 这里只做 UX 层面的按钮显隐，真正的拦截在后端 withAuth；
+  // 按权限点而不是按角色名判断——角色名匹配对管理员新建的自定义角色会误判
+  // （即便该角色已被授予对应权限点，字符串匹配仍判它没有，20261027 code-review 改）
+  const ability = useAbility()
+  const canVerify = hasPermission(ability, 'dispatch.goods_return.warehouse_verify')
+  const canReview = hasPermission(ability, 'dispatch.goods_return.review')
 
   async function load() {
     setLoading(true)

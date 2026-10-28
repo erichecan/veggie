@@ -28,21 +28,31 @@ export async function GET(req: Request) {
       if (status) where.status = status
       if (orderId) where.orderId = orderId
 
-      const returns = await prisma.orderReturn.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          order: { select: { code: true, restaurantId: true, restaurantName: true } },
-        },
-      })
+      // 看板不传 status/orderId，读全表；随着历史记录增多查询数据量会线性增长。
+      // 计数走 groupBy 聚合（不受 take 限制，恒等于真实总数），列表本身限额 300 条——
+      // 待核实/待审核两栏天然是活跃数据不会很大，截断只影响"已处理"栏的历史尾巴，
+      // 不影响看板该展示的内容（20261027 code-review 补）
+      const RETURNS_LIST_CAP = 300
+      const [grouped, returns] = await Promise.all([
+        prisma.orderReturn.groupBy({ by: ['status'], where, _count: { _all: true } }),
+        prisma.orderReturn.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: RETURNS_LIST_CAP,
+          include: {
+            order: { select: { code: true, restaurantId: true, restaurantName: true } },
+          },
+        }),
+      ])
+      const countOf = (s: string) => grouped.find(g => g.status === s)?._count._all ?? 0
 
       return NextResponse.json(serializeApi({
-        total: returns.length,
-        warehousePendingCount: returns.filter(r => r.status === 'WAREHOUSE_PENDING').length,
-        pendingReviewCount: returns.filter(r => r.status === 'PENDING_REVIEW').length,
-        approvedCount: returns.filter(r => r.status === 'APPROVED').length,
-        rejectedCount: returns.filter(r => r.status === 'REJECTED').length,
-        settledCount: returns.filter(r => r.status === 'SETTLED').length,
+        total: grouped.reduce((sum, g) => sum + g._count._all, 0),
+        warehousePendingCount: countOf('WAREHOUSE_PENDING'),
+        pendingReviewCount: countOf('PENDING_REVIEW'),
+        approvedCount: countOf('APPROVED'),
+        rejectedCount: countOf('REJECTED'),
+        settledCount: countOf('SETTLED'),
         returns,
       }))
     } catch (error) {
