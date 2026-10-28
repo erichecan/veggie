@@ -6,6 +6,8 @@ import { syncOrderStock } from '@/lib/order-stock'
 import { toNum, round2 } from '@/lib/decimal-helpers'
 import { removeOrderFromAllWaves } from '@/lib/wave-assign'
 import { WavePickLockedError } from '@/lib/wave-pick-lock'
+import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
+import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 
 /**
  * POST /api/orders/bulk
@@ -31,7 +33,7 @@ export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     try {
       const body = await req.json()
-      const { ids, action, value, fields, status, note } = body as {
+      const { ids, action, value, fields, status, note, lines } = body as {
         ids: string[]
         action: BulkAction
         value?: boolean
@@ -40,6 +42,8 @@ export async function POST(req: Request) {
         status?: 'PENDING' | 'RETURNED' | 'ISSUE'
         /** mark_returned=ISSUE 时必填：问题说明 */
         note?: string
+        /** mark_returned=RETURNED 专用，可选：核销时顺手修正实际送达数量（只能单订单操作，20261026） */
+        lines?: Array<{ orderLineId: string; deliveredQty: number }>
       }
 
       if (!Array.isArray(ids) || ids.length === 0) {
@@ -77,6 +81,28 @@ export async function POST(req: Request) {
         const need = status === 'ISSUE' ? 'finance.write_off.return' : 'finance.write_off.confirm'
         if (!userHasPermission(user, need)) {
           return NextResponse.json({ error: '权限不足' }, { status: 403 })
+        }
+        // ⛔ 20261026：核销时修正实际送达数量——发票/提成都按核销时的数量算，不能在核销前
+        // 先判断"有没有差异"（核销本身才是核对的那一步，鸡生蛋），所以放这里；只对单订单生效，
+        // 批量核销走默认送达量，有差异的单必须逐单打开编辑。
+        if (lines !== undefined) {
+          if (status !== 'RETURNED' || ids.length !== 1) {
+            return NextResponse.json({ error: '修正送达数量只能在单张订单核销确认时进行' }, { status: 400 })
+          }
+          if (!Array.isArray(lines) || lines.length === 0) {
+            return NextResponse.json({ error: 'lines 格式不正确' }, { status: 400 })
+          }
+          const orderLines = await prisma.orderLine.findMany({ where: { orderId: ids[0] }, select: { id: true } })
+          const validLineIds = new Set(orderLines.map(l => l.id))
+          for (const l of lines) {
+            if (!validLineIds.has(l.orderLineId)) {
+              return NextResponse.json({ error: `订单行不存在: ${l.orderLineId}` }, { status: 400 })
+            }
+            const qty = Number(l.deliveredQty)
+            if (!Number.isFinite(qty) || qty < 0) {
+              return NextResponse.json({ error: `实际送达数量不合法: ${l.deliveredQty}` }, { status: 400 })
+            }
+          }
         }
       } else if (!isOperatorOrBoss) {
         return NextResponse.json({ error: '权限不足' }, { status: 403 })
@@ -178,8 +204,13 @@ export async function POST(req: Request) {
             returnConfirmedBy: status === 'RETURNED' ? (user.name ?? user.email) : null,
           },
         })
+        if (lines !== undefined) {
+          for (const l of lines) {
+            await prisma.orderLine.update({ where: { id: l.orderLineId }, data: { deliveredQty: l.deliveredQty } })
+          }
+        }
         const label = status === 'RETURNED' ? '核销' : status === 'ISSUE' ? '退回核实' : '重置为未回'
-        detail = `批量${label} ${ids.length} 单`
+        detail = `批量${label} ${ids.length} 单${lines !== undefined ? `（已修正 ${lines.length} 行送达数量）` : ''}`
         affectedOrders = before.map(o => ({ id: o.id, statusBefore: String(o.status), restaurantName: o.restaurantName }))
 
         // Write audit logs for mark_returned
@@ -197,6 +228,32 @@ export async function POST(req: Request) {
             },
           }).catch((e: unknown) => console.error('[BulkAudit mark_returned]', e))
         ))
+
+        // ⛔ 20261026：核销确认(RETURNED)才是"核对过了"的那一刻——开票按核销时(可能已修正)的
+        // deliveredQty 生成，提成冻结同步跟上；标记完成时不再做这两件事（见 lib/delivery-complete.ts）。
+        // 失败只记日志不回滚核销本身：核销是真实的物理动作，发票/提成失败可以用「补开漏开的发票」补。
+        if (status === 'RETURNED') {
+          const invoiceFailed: string[] = []
+          for (const o of before) {
+            try {
+              await createDraftInvoiceForOrder(prisma as never, o.id)
+              await recalcOrderCommission(o.id, prisma)
+              const ownerTrip = await prismaAny.trip.findFirst({
+                where: { restaurants: { path: '$[*].orderIds[*]', array_contains: o.id } },
+                select: { id: true },
+              }).catch(() => null)
+              if (ownerTrip) {
+                await recalcTripDriverCommission(ownerTrip.id, prisma).catch((e: unknown) => console.error('[write-off: trip commission sync]', e))
+              }
+            } catch (e) {
+              console.error('[write-off: invoice/commission]', o.id, e)
+              invoiceFailed.push(o.restaurantName ?? o.id.slice(-8))
+            }
+          }
+          if (invoiceFailed.length > 0) {
+            detail += `；⚠️ ${invoiceFailed.length} 单开票/提成失败（${invoiceFailed.join('、')}），可用「补开漏开的发票」补`
+          }
+        }
 
       } else if (action === 'confirm') {
         const pendingOrders = before.filter(o => String(o.status).toUpperCase() === 'PENDING')

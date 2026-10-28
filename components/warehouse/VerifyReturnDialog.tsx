@@ -43,7 +43,7 @@ export function flattenPending(trips: Trip[]): PendingReturn[] {
   return rows.sort((a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime())
 }
 
-export function VerifyReturnDialog({ item, onClose, onSaved }: { item: PendingReturn; onClose: () => void; onSaved: () => void }) {
+export function VerifyReturnDialog({ item, onClose, onSaved, readOnly }: { item: PendingReturn; onClose: () => void; onSaved: () => void; readOnly?: boolean }) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
   const [note, setNote] = useState('')
@@ -121,26 +121,35 @@ export function VerifyReturnDialog({ item, onClose, onSaved }: { item: PendingRe
           <p className="text-xs text-gray-400">{isEn ? 'No driver signature (reported before this feature shipped)' : '无司机签名（此功能上线前提交的记录）'}</p>
         )}
 
-        <div className="space-y-1">
-          <label className="text-xs text-gray-500 font-medium">{isEn ? 'Note (required to fail check)' : '核实备注（核实不通过时必填）'}</label>
-          <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            rows={2}
-            placeholder={isEn ? 'e.g. goods actually still on the van, driver mis-reported' : '例如：货其实还在车上，司机记录有误'}
-            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-400 resize-none"
-          />
-        </div>
+        {!readOnly && (
+          <div className="space-y-1">
+            <label className="text-xs text-gray-500 font-medium">{isEn ? 'Note (required to fail check)' : '核实备注（核实不通过时必填）'}</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              rows={2}
+              placeholder={isEn ? 'e.g. goods actually still on the van, driver mis-reported' : '例如：货其实还在车上，司机记录有误'}
+              className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-400 resize-none"
+            />
+          </div>
+        )}
+        {readOnly && (
+          <p className="text-xs text-gray-400">{isEn ? 'View only — your role cannot perform the warehouse check' : '仅查看——你的角色没有仓库核实权限'}</p>
+        )}
       </div>
 
       <DialogFooter className="gap-2">
         <Button variant="outline" onClick={onClose} disabled={saving}>{isEn ? 'Cancel' : '取消'}</Button>
-        <Button onClick={() => act('reject')} disabled={saving} variant="outline" className="border-red-200 text-red-600 hover:bg-red-50">
-          {isEn ? 'Check Failed' : '核实不通过'}
-        </Button>
-        <Button onClick={() => act('verify')} disabled={saving} style={{ background: PURPLE, borderColor: PURPLE }} className="text-white hover:opacity-90">
-          {saving ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Verified' : '核实通过')}
-        </Button>
+        {!readOnly && (
+          <>
+            <Button onClick={() => act('reject')} disabled={saving} variant="outline" className="border-red-200 text-red-600 hover:bg-red-50">
+              {isEn ? 'Check Failed' : '核实不通过'}
+            </Button>
+            <Button onClick={() => act('verify')} disabled={saving} style={{ background: PURPLE, borderColor: PURPLE }} className="text-white hover:opacity-90">
+              {saving ? (isEn ? 'Saving…' : '保存中…') : (isEn ? 'Verified' : '核实通过')}
+            </Button>
+          </>
+        )}
       </DialogFooter>
     </DialogContent>
   )

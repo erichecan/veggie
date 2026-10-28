@@ -20,8 +20,14 @@ export async function GET(req: Request) {
     try {
       const { searchParams } = new URL(req.url)
       const showArchived = searchParams.get('archived') === 'true'
+      // 默认过滤掉绑定了已停用账号的档位(选司机/配送批次的下拉用)；
+      // 司机配置管理页需要看到全部才能重新绑定或归档，传 includeInactiveUser=true 绕开过滤
+      const includeInactiveUser = searchParams.get('includeInactiveUser') === 'true'
       const slots = await prisma.driverSlot.findMany({
-        where: { archived: showArchived },
+        where: {
+          archived: showArchived,
+          ...(includeInactiveUser ? {} : { OR: [{ userId: null }, { driverUser: { isActive: true } }] }),
+        },
         orderBy: [{ timeOfDay: 'asc' }, { batchNum: 'asc' }],
       })
       return NextResponse.json(slots)

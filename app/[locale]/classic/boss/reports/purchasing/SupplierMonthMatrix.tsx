@@ -6,6 +6,7 @@ import { downloadCsv } from '@/lib/csv-export'
 import { bucketLabel } from '@/lib/reports/date-label'
 import type { FilterSpec, ReportRequest } from '@/lib/reports/types'
 import { nextDay } from './date-range'
+import { productLabel } from './product-label'
 
 /**
  * 采购分析：供应商（行）× 下单月份（列）
@@ -57,6 +58,8 @@ interface ApiRow {
   supplier_name?: string | null
   product_name?: string | null
   product_id?: string | null
+  product_spec?: string | null
+  description?: string | null
   order_date_month: string | null
   subtotal_ex_tax: string | number | null
   ordered_qty: string | number | null
@@ -124,7 +127,7 @@ export default function SupplierMonthMatrix({
    */
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [productsBySupplier, setProductsBySupplier] = useState<
-    Record<string, Array<{ id: string; name: string; forecast: number | null; cells: Map<string, Cell> }> | 'loading' | 'error'>
+    Record<string, Array<{ id: string; name: string; spec: string | null; description: string | null; forecast: number | null; cells: Map<string, Cell> }> | 'loading' | 'error'>
   >({})
 
   const supplierKey = supplierIds.join(',')
@@ -199,7 +202,7 @@ export default function SupplierMonthMatrix({
 
     setProductsBySupplier((prev) => ({ ...prev, [key]: 'loading' }))
     const body: ReportRequest = {
-      rowDimensions: [{ field: 'product_name' }, { field: 'product_id' }],
+      rowDimensions: [{ field: 'product_name' }, { field: 'product_id' }, { field: 'product_spec' }, { field: 'description' }],
       colDimensions: [{ field: 'order_date', interval: 'month' }],
       measures: ['subtotal_ex_tax', 'ordered_qty'],
       // 把这一行锁死成筛选条件 —— 这样"商品行各列之和 == 供应商行对应列"天然成立
@@ -210,12 +213,14 @@ export default function SupplierMonthMatrix({
     }
     apiPost<ApiResponse>('/api/reports/purchasing', body)
       .then(async (res) => {
-        const byProduct = new Map<string, { id: string; name: string; cells: Map<string, Cell> }>()
+        const byProduct = new Map<string, { id: string; name: string; spec: string | null; description: string | null; cells: Map<string, Cell> }>()
         for (const r of res.rows) {
           const pname = r.product_name ?? '—'
           const id = r.product_id ?? ''
           const productKey = `${pname}|${id}`
-          if (!byProduct.has(productKey)) byProduct.set(productKey, { id, name: pname, cells: new Map() })
+          if (!byProduct.has(productKey)) {
+            byProduct.set(productKey, { id, name: pname, spec: r.product_spec ?? null, description: r.description ?? null, cells: new Map() })
+          }
           const cells = byProduct.get(productKey)!.cells
           const mk = monthKey(r.order_date_month)
           if (!cells.has(mk)) cells.set(mk, emptyCell())
@@ -357,7 +362,7 @@ export default function SupplierMonthMatrix({
       const kids = productsBySupplier[scoped(s.key)]
       if (!expanded[scoped(s.key)] || !Array.isArray(kids)) continue
       for (const p of kids) {
-        const productRow = line(`    ${p.name}`, p.cells)
+        const productRow = line(`    ${productLabel(p.name, p.spec, p.description)}`, p.cells)
         productRow[1] = p.forecast == null ? '' : String(p.forecast)
         rows.push(productRow)
       }
@@ -512,8 +517,8 @@ export default function SupplierMonthMatrix({
                     <tr><td colSpan={totalCols} className="px-3 py-2 text-center text-xs text-gray-400">{isEn ? 'No products' : '这家供应商下面没有商品明细'}</td></tr>
                   )}
                   {isOpen && Array.isArray(kids) && kids.map((p) => (
-                    <tr key={`${s.key}|${p.name}`} className="border-b border-gray-50 text-gray-500">
-                      <td className={`pl-10 pr-3 py-1.5 whitespace-nowrap ${STICKY_CELL} bg-white`}>{p.name}</td>
+                    <tr key={`${s.key}|${p.name}|${p.id}`} className="border-b border-gray-100 last:border-0 text-gray-500 bg-gray-50/60">
+                      <td className={`pl-10 pr-3 py-1.5 whitespace-nowrap ${STICKY_CELL} bg-gray-50/60`}>{productLabel(p.name, p.spec, p.description)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{p.forecast == null ? '—' : Math.round(p.forecast * 1000) / 1000}</td>
                       {measureCells(p.cells, `${s.key}|${p.name}`, 'py-1.5')}
                     </tr>

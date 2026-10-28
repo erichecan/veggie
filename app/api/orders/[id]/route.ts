@@ -8,10 +8,8 @@ import { serializeApi } from '@/lib/api-serializer'
 import { deriveOrderItems, buildOrderItemsSnapshot } from '@/lib/order-items'
 import { syncOrderStock, ORDER_SHIPPED_STATUSES } from '@/lib/order-stock'
 import { assignOrderToWave, removeOrderFromAllWaves, getOrderWaveDisplayMap, getOrderWaveDriverSlotMap } from '@/lib/wave-assign'
-import { createDraftInvoiceForOrder } from '@/lib/invoice-from-order'
 import { fillDeliveredQtyIfUnrecorded } from '@/lib/delivery-complete'
 import { toNum, round2 } from '@/lib/decimal-helpers'
-import { recalcOrderCommission, recalcTripDriverCommission } from '@/lib/commission'
 import { assertOrderNotPickLocked, WavePickLockedError } from '@/lib/wave-pick-lock'
 import { WaveDispatchedError } from '@/lib/wave-dispatch-lock'
 import { resolveOrderLines } from '@/lib/server-pricing'
@@ -761,20 +759,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
       }
 
-      // On COMPLETED: 自动生成 DRAFT 发票(幂等),保证每张完成单都有发票供应收口径用(finance)
+      // On COMPLETED：只补实送量默认值（全送），不在这里开票/冻结提成了。
+      // ⛔ 20261026：开票与提成冻结挪到会计「核销确认」之后触发（app/api/orders/bulk/route.ts
+      // mark_returned=RETURNED），标记完成只代表「货送到了」，不代表「核对过了」。
       if (newStatus === 'COMPLETED') {
-        // 实送量没记过就按全送补上，否则下面的草稿发票按实送量 0 开不出来（20261021「待开票」）
         await fillDeliveredQtyIfUnrecorded(id).catch((e: unknown) => console.error('[fill deliveredQty]', e))
-        await createDraftInvoiceForOrder(prismaAny, id).catch((e: unknown) => console.error('[auto draft invoice]', e))
-        // 送达冻结司机提成快照（个单完成路径，非经 Trip 批量完成）
-        await recalcOrderCommission(id, prisma).catch((e: unknown) => console.error('[commission freeze]', e))
-        const ownerTrip = await prismaAny.trip.findFirst({
-          where: { restaurants: { path: '$[*].orderIds[*]', array_contains: id } },
-          select: { id: true },
-        }).catch(() => null)
-        if (ownerTrip) {
-          await recalcTripDriverCommission(ownerTrip.id, prisma).catch((e: unknown) => console.error('[trip commission sync]', e))
-        }
       }
 
       // On WITHDRAWN (CONFIRMED/WAVE_ASSIGNED → PENDING): cancel associated PENDING_ASSIGNMENT trips

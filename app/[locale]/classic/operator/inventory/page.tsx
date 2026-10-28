@@ -5,7 +5,7 @@ import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import InventoryOverviewPage from './overview/page'
 import ReceivePage from './receive/page'
-import ClassicReturnsPage from '../returns/page'
+import ReturnsBoard from './_components/ReturnsBoard'
 import StockMovesPage from './moves/page'
 
 const PURPLE = '#875A7B'
@@ -60,7 +60,7 @@ function InventoryPageInner() {
       {tab === 'overview' && <InventoryOverviewPage />}
       {tab === 'moves' && <StockMovesPage />}
       {tab === 'receive' && <ReceivePage />}
-      {tab === 'returns' && <ClassicReturnsPage />}
+      {tab === 'returns' && <ReturnsBoard />}
     </div>
   )
 }

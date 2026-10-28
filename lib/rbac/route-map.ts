@@ -188,6 +188,10 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/accounting/driver-cash', methods: R, permission: 'finance.settlement.read' },
   { pattern: '/api/accounting/driver-cash/confirm', methods: ['POST'], permission: 'finance.settlement.confirm' },
   { pattern: '/api/accounting/returns', methods: R, permission: 'finance.settlement.read', note: '核销管理页回单清单（20261021）' },
+  // ⛔ 20261026 补登：这两条路由上线时漏登记，未登记=默认拒绝（见 canAccessApi 注释），
+  // 之前所有角色一直 403，功能等于没上线；本次借核销改数量顺手发现并修。
+  { pattern: '/api/accounting/returns/bulk-invoice', methods: ['POST'], permission: 'finance.invoice.create', note: '核销页补开漏开的发票（20261026）' },
+  { pattern: '/api/accounting/returns/*/lines', methods: R, permission: 'finance.settlement.read', note: '核销弹窗行明细（20261026）' },
   { pattern: '/api/print/returns-pdf', methods: R, permission: 'finance.settlement.read', note: '未核销回单清单 PDF（20261021）' },
   { pattern: '/api/trips/*/verify', methods: R, permission: 'dispatch.trip.read_verify' },
   { pattern: '/api/trips/*/verify', methods: ['POST'], permission: 'dispatch.trip.verify' },
@@ -197,6 +201,14 @@ export const API_ROUTE_RULES: readonly RouteRule[] = [
   { pattern: '/api/trips/*/returns', methods: ['POST'], permission: ['dispatch.trip.report_return', 'dispatch.trip.returns'] },
   { pattern: '/api/trips/*/returns', methods: ['PUT'], permission: 'dispatch.trip.returns' },
   { pattern: '/api/trips/*/returns/warehouse-verify', methods: ['PUT'], permission: 'dispatch.trip.warehouse_verify' },
+  // 20261027（退货/报废整合）：日销售中心手动登记退货，OrderReturn 表，
+  // 与上面 Trip/ReturnItem 是两条入口，共用 lib/returns-engine.ts 的处置规则，
+  // 权限点各自独立（见 lib/rbac/catalog.ts dispatch.goods_return 模块说明）。
+  // 列表不单设 read 权限点（DEV-PLAN 路由清单原文）：谁能核实或审核，就能看列表。
+  { pattern: '/api/order-returns', methods: R, permission: ['dispatch.goods_return.warehouse_verify', 'dispatch.goods_return.review'] },
+  { pattern: '/api/order-returns', methods: ['POST'], permission: 'dispatch.goods_return.register' },
+  { pattern: '/api/order-returns/*/warehouse-verify', methods: ['PUT'], permission: 'dispatch.goods_return.warehouse_verify' },
+  { pattern: '/api/order-returns/*/review', methods: ['PUT'], permission: 'dispatch.goods_return.review' },
   { pattern: '/api/trips/*/discrepancy', methods: R, permission: 'dispatch.trip.read_discrepancy' },
   { pattern: '/api/trips/*/discrepancy', methods: ['PUT'], permission: 'dispatch.trip.discrepancy' },
   { pattern: '/api/trips/*/signature-correction', permission: 'dispatch.trip.correct_signature' },
@@ -458,6 +470,10 @@ export const PAGE_ROUTE_RULES: readonly RouteRule[] = [
   // 单开这条子路径，两个权限点任一即可，不把整个运营后台（客户/商品/采购等）
   // 一并开给财务。
   { pattern: '/classic/operator/orders/**', permission: ['page.operator.access', 'page.finance.access'] },
+  // 20261027（退货/报废整合 M1/M2）：operator/inventory 的「退换货」tab 合并了
+  // warehouse/returns 的三段审核看板，WAREHOUSE 角色原本就在管这段流程
+  // （page.warehouse.access），不能因为页面挂在 operator 模块下就把人挡在外面。
+  { pattern: '/classic/operator/inventory/**', permission: ['page.operator.access', 'page.warehouse.access'] },
   { pattern: '/classic/operator/**', permission: 'page.operator.access' },
   { pattern: '/classic/boss/**', permission: 'page.boss.access' },
 ]

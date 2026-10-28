@@ -502,6 +502,13 @@ function BatchCard({
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
                   <span className="text-xs font-mono text-gray-500 w-36">{o.code ?? o.id.slice(-6)}</span>
                   <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
+                  {/* 客退货物处置角标，只读展示（20261027 M5） */}
+                  {o.goodsReturnStatus === 'APPROVED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
+                  )}
+                  {o.goodsReturnStatus === 'REJECTED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-500 font-medium" data-testid="goods-return-badge">{isEn ? 'Return rejected' : '退货已拒绝'}</span>
+                  )}
                   <span className="text-sm font-medium text-gray-900 w-24 text-right">
                     €{fmtMoney(Number(o.totalAmount))}
                   </span>
@@ -518,6 +525,12 @@ function BatchCard({
                 <div key={o.id} className="flex items-center gap-3 pl-8 pr-5 py-2 hover:bg-gray-50 border-b border-gray-50">
                   <span className="text-xs font-mono text-gray-500 w-36">{o.code ?? o.id.slice(-6)}</span>
                   <span className="flex-1 text-sm text-gray-800">{o.restaurantName}</span>
+                  {o.goodsReturnStatus === 'APPROVED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 font-medium" data-testid="goods-return-badge">{isEn ? 'Goods returned' : '有退货'}</span>
+                  )}
+                  {o.goodsReturnStatus === 'REJECTED' && (
+                    <span className="inline-block whitespace-nowrap px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-500 font-medium" data-testid="goods-return-badge">{isEn ? 'Return rejected' : '退货已拒绝'}</span>
+                  )}
                   <span className="text-sm font-medium text-gray-900 w-24 text-right">
                     €{fmtMoney(Number(o.totalAmount))}
                   </span>
@@ -892,12 +905,23 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
   }, [waveGroups, driverFilter, timeFilter, batchFilter])
 
   const batchGroups: BatchGroup[] = useMemo(() => {
-    const groups = filteredWaveGroups.map(g => ({
-      ...g,
-      totalAmount: g.orders.reduce((s, o) => s + Number(o.totalAmount), 0),
-      untaxTotal: g.orders.reduce((s, o) => s + (o.lines ?? []).reduce((ls, l) => ls + lineUntax(l), 0), 0),
-      totalWeight: g.orders.reduce((s, o) => s + (o.lines ?? []).reduce((ls, l) => ls + lineWeight(l as BatchLine), 0), 0),
-    }))
+    // filteredWaveGroups 只做了「wave 级别」的存在性过滤（命中任一 batch 就整个 wave 保留，
+    // 见 filteredWaveGroups 注释），这里还要在 wave 内部按 batchFilter 裁剪 pallets 子分组，
+    // 否则勾了「批次 2」，batch 1 的子分组和金额/件数汇总照样会带出来（20261026 客户反馈）
+    const groups = filteredWaveGroups.map(g => {
+      const pallets = batchFilter.length > 0 ? g.pallets.filter(p => batchFilter.includes(String(p.seq))) : g.pallets
+      const unassignedOrders = batchFilter.length > 0 ? [] : g.unassignedOrders
+      const orders = batchFilter.length > 0 ? pallets.flatMap(p => p.orders) : g.orders
+      return {
+        ...g,
+        pallets,
+        unassignedOrders,
+        orders,
+        totalAmount: orders.reduce((s, o) => s + Number(o.totalAmount), 0),
+        untaxTotal: orders.reduce((s, o) => s + (o.lines ?? []).reduce((ls, l) => ls + lineUntax(l), 0), 0),
+        totalWeight: orders.reduce((s, o) => s + (o.lines ?? []).reduce((ls, l) => ls + lineWeight(l as BatchLine), 0), 0),
+      }
+    })
 
     return groups.sort((a, b) => {
       const aNum = a.pallets[0]?.seq ?? 0
@@ -906,7 +930,7 @@ export default function PrintCenter({ refreshKey = 0, onRefresh }: { refreshKey?
       if (sortMode === 'time') return a.timeOfDay.localeCompare(b.timeOfDay) || aNum - bNum || a.driverName.localeCompare(b.driverName)
       return a.driverName.localeCompare(b.driverName) || aNum - bNum
     })
-  }, [filteredWaveGroups, sortMode])
+  }, [filteredWaveGroups, sortMode, batchFilter])
 
   // 顶部「全部打印」跟随筛选：无筛选=整日全部；有筛选=只打屏幕上可见的这批波次（传 waveIds）。
   // 客户/商品筛选同样要落进 waveIds —— 不带的话服务端走「整日全部批次」分支，

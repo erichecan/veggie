@@ -864,12 +864,19 @@ model Order {
   driverCommissionTotal Decimal?          @db.Decimal(10, 2)
   /// 提成冻结时间（写入 driverCommissionTotal 时回填）
   commissionFrozenAt    DateTime?
+  /// 退换货只读角标（20261027）：源头永远是 ReturnItem（Trip.restaurants[].returns）或 OrderReturn，
+  /// 不在订单页直接改。故意不叫 returnStatus / 不复用 OrderReturnStatus 枚举——那个字段是「送货单回收
+  /// /核销对账」语义，20261021 刚修过一次把 RETURNED 误读成"有退货"的坑，这里必须用不同的名字和值域
+  /// 避免重蹈覆辙。值域：'PENDING' | 'APPROVED' | 'REJECTED'，null = 无退货。
+  goodsReturnStatus     String?
+  goodsReturnedAt       DateTime?
 
   auditLogs     OrderAuditLog[]
   deliverySlip  DeliverySlip?
   lines         OrderLine[]
   discrepancies OrderDiscrepancy[]
   adjustments   OrderAdjustment[]
+  goodsReturns  OrderReturn[]
 
   @@index([restaurantId])
   @@index([status])
@@ -1131,6 +1138,56 @@ model Trip {
   @@index([waveId])
   @@index([timeSlot])
   @@index([settlementStatus])
+}
+
+enum GoodsReturnStatus {
+  WAREHOUSE_PENDING
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SETTLED
+}
+
+enum GoodsReturnDisposition {
+  SELLABLE
+  SCRAP
+}
+
+/// 日销售中心「退货登记」手动入口专用（20261027）。司机现场上报的退货仍走
+/// Trip.restaurants[].returns（ReturnItem），两套互不迁移、互不冲突；operator/inventory 的
+/// 「退换货」统一看板会同时查两边、共用 lib/returns-engine.ts 同一套核实/审核/处置函数。
+/// 与 Trip 版本相比直接挂 orderId，不用再按 restaurantId+productId 反查订单。
+model OrderReturn {
+  id                      String                   @id @default(cuid())
+  orderId                 String
+  order                   Order                    @relation(fields: [orderId], references: [id])
+  productId               String
+  productName             String
+  quantity                Decimal                  @db.Decimal(12, 3)
+  reason                  String?
+  /// return=退货 / exchange=换货（换货一律新开单，不在本记录里维护第二套商品明细，
+  /// 对齐 ReturnItem.exchangeOrderId 的既有拍板）
+  actionType              String                   @default("return")
+  exchangeOrderId         String?
+  status                  GoodsReturnStatus        @default(WAREHOUSE_PENDING)
+  /// 审批通过时必填：货物去向。SELLABLE=可再售(回补库存)，SCRAP=报废(计入损耗)。审批前为空
+  disposition             GoodsReturnDisposition?
+  /// 报废去向对应的批次消耗，便于批次追溯反查
+  scrapLotId              String?
+  warehouseVerifiedById   String?
+  warehouseVerifiedByName String?
+  warehouseVerifiedAt     DateTime?
+  warehouseNote           String?
+  approvedById            String?
+  approvedByName          String?
+  approvedAt              DateTime?
+  settledAt               DateTime?
+  registeredById          String
+  registeredByName        String?
+  createdAt               DateTime                 @default(now())
+
+  @@index([orderId])
+  @@index([status])
 }
 
 model Invoice {

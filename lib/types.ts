@@ -1,4 +1,5 @@
 import type { GiftPriceSnapshot } from './order-line-gift'
+import type { SaleUomPriceMode } from './sale-uom'
 
 // ─── 系统用户 ─────────────────────────────────────────────────────────────────
 export type UserRole = 'OPERATOR' | 'RESTAURANT' | 'PICKER' | 'SORTER' | 'DRIVER' | 'BOSS' | 'FINANCE' | 'WAREHOUSE' | 'SALES' | 'EXTERNAL_SALES' | 'DISPATCH' | 'OTHER'
@@ -123,7 +124,7 @@ export interface ProductTemplate {
   saleUoms?: ProductSaleUomSummary[]
   listPrice: number          // 默认销售单价
   standardPrice: number      // 默认成本价
-  customerTaxRate: number    // 客户税率 0.135 / 0.23 / 0
+  customerTaxRate?: number   // 客户税率 0.135 / 0.23 / 0，可为空（未填写）
   type: ProductType
   canBeSold: boolean
   canBePurchased: boolean
@@ -167,6 +168,8 @@ export interface ProductTemplate {
   barcode?: string
   /** 实时在手库存，来自 /api/product-templates 逐行附加，非模型本身字段 */
   qtyOnHand?: number
+  /** 库存预警值：qtyOnHand ≤ 此值时触发低库存提醒；≤0（含默认值 0）视为未设置，不参与告警 */
+  safetyStockMin?: number
 }
 
 // ─── 商品变体（对应 Odoo product.product）────────────────────────────────────
@@ -200,6 +203,17 @@ export interface Product {
   /** 按采购单位区分的规格（如 10KG/20KG 两袋同名商品）——来自 ProductSaleUom.spec，
    *  跟上面的 spec（Product.spec）是两张不同的表，那个字段早清空了（见 lib/order-line-description.ts） */
   purchaseUomSpec?: string | null
+  /** 20261025：GET /api/products（非分页、非 slim）带的逐单位规格+定价摘要——
+   *  价格表规则按自己限定的单位(uomId)取规格/换算 Cost、Sale Price 要用这个，不能恒用
+   *  purchaseUomSpec/商品主档的基础单位值（那是采购/箱规那一个单位的，规则限定成别的单位时
+   *  用它会显示错单位、或者不同单位的规则在列表里显示成一样的价）。factor/priceMode 等四个
+   *  字段跟 lib/sale-uom.ts 的 SaleUomRow 形状一致，可直接喂 priceOf()。完整可售单位配置仍要
+   *  另查 /api/products/[id]/sale-uoms，这里只是省一次往返的轻量摘要。 */
+  saleUoms?: {
+    uomId: string; spec: string | null; isDefault: boolean; factor: number
+    priceMode: SaleUomPriceMode; priceOverride: number | null
+    priceDiscountPct: number; priceSurcharge: number
+  }[]
   price?: number
   stock?: number
   status: ProductStatus
@@ -235,6 +249,8 @@ export interface Product {
   createdBy?: string
   updatedBy?: string
   barcode?: string
+  /** 库存预警值：qtyOnHand ≤ 此值时触发低库存提醒；≤0（含默认值 0）视为未设置，不参与告警 */
+  safetyStockMin?: number
 }
 
 // ─── 商品分类 ─────────────────────────────────────────────────────────────────
@@ -485,6 +501,10 @@ export interface Order {
   driverCommissionTotal?: number | null
   /** 提成冻结时间 */
   commissionFrozenAt?: string | null
+  /** 退换货只读角标（源头是 ReturnItem 或 OrderReturn，不在订单页直接改）：'APPROVED' 已退货/'REJECTED' 已拒绝，null 无退货 */
+  goodsReturnStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+  /** 退货处置通过时间，goodsReturnStatus=APPROVED 时有值 */
+  goodsReturnedAt?: string | null
 }
 
 // ─── 订单审计日志 ────────────────────────────────────────────────────────────
@@ -567,7 +587,7 @@ export interface ReturnItem {
   /// WAREHOUSE_PENDING（20260922 新增）= 司机刚上报，待仓库核实实物；仓库核实通过后
   /// 转 PENDING_REVIEW 才进入现有销售/运营审核队列。此前已存在的记录不受影响——
   /// 没有回填迁移，各调用点缺失时仍按 `?? 'PENDING_REVIEW'` 兜底（如
-  /// `app/[locale]/classic/operator/returns/page.tsx` 的 `flatten()`）
+  /// `app/[locale]/classic/operator/inventory/_components/ReturnsBoard.tsx` 的 `flattenTripReturns()`）
   status?: 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
   restaurantId?: string
   restaurantName?: string
@@ -591,6 +611,36 @@ export interface ReturnItem {
   driverSignedAt?: string
   /// 换货场景关联的新开订单 id（20260922 拍板：换货一律新开单，不在本记录里维护第二套商品明细）
   exchangeOrderId?: string
+}
+
+/**
+ * 日销售中心「退货登记」手动入口（20261027，退货/报废整合 M3），直接挂 orderId，
+ * 与司机上报的 ReturnItem 是两套互不迁移的数据源，状态机/核实/审核/处置规则完全一致
+ * （共用 `lib/returns-engine.ts`），在 M1 看板里合并展示。字段比 ReturnItem 少很多——
+ * 没有退款相关字段，审核只需选 disposition，不涉及退款金额/比例。
+ */
+export interface OrderReturn {
+  id: string
+  orderId: string
+  order?: { code: string; restaurantId: string; restaurantName: string }
+  productId: string
+  productName: string
+  quantity: number
+  reason?: string
+  actionType: 'return' | 'exchange'
+  exchangeOrderId?: string
+  status: 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
+  disposition?: 'SELLABLE' | 'SCRAP'
+  warehouseVerifiedById?: string
+  warehouseVerifiedByName?: string
+  warehouseVerifiedAt?: string
+  warehouseNote?: string
+  approvedById?: string
+  approvedByName?: string
+  approvedAt?: string
+  registeredById: string
+  registeredByName?: string
+  createdAt: string
 }
 
 export interface TripRestaurant {

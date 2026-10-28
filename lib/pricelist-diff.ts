@@ -49,17 +49,23 @@ function norm(v: unknown): unknown {
   return v
 }
 
-/** 规则的价格一句话描述：「Fixed 12.5」「-10%」「Formula: list_price -5% +0.5」 */
-export function ruleSummary(it: Partial<PricelistItemInput> | null | undefined): string {
+/** uomId -> 单位名(如 "CASE")的查找函数；不传时退化成不显示单位(旧行为) */
+export type UomLabeler = (uomId: string) => string | undefined
+
+/** 规则的价格一句话描述：「Fixed 12.5」「-10%」「Formula: list_price -5% +0.5」
+ *  20261024：同一商品的 CASE 规则和 PACK 规则只要公式参数一样，摘要文字就完全相同，
+ *  操作记录里分不出改的是哪条(客户反馈：「看不出来改了什么」)。uomLabel 能解析时把单位名带上。 */
+export function ruleSummary(it: Partial<PricelistItemInput> | null | undefined, uomLabel?: UomLabeler): string {
   if (!it) return ''
   const minQty = Number(it.minQty ?? 0)
   const qty = minQty > 0 ? ` (≥${minQty})` : ''
-  if (it.computeType === 'fixed') return `Fixed ${Number(it.fixedPrice ?? 0)}${qty}`
-  if (it.computeType === 'percentage') return `${-Number(it.percentDiscount ?? 0)}%${qty}`
+  const unit = it.uomId ? ` · ${uomLabel?.(it.uomId) ?? it.uomId}` : ''
+  if (it.computeType === 'fixed') return `Fixed ${Number(it.fixedPrice ?? 0)}${qty}${unit}`
+  if (it.computeType === 'percentage') return `${-Number(it.percentDiscount ?? 0)}%${qty}${unit}`
   const parts = [`Formula: ${it.formulaBase ?? 'list_price'}`]
   if (Number(it.priceDiscount ?? 0) !== 0) parts.push(`${-Number(it.priceDiscount)}%`)
   if (Number(it.priceSurcharge ?? 0) !== 0) parts.push(`${Number(it.priceSurcharge) > 0 ? '+' : ''}${Number(it.priceSurcharge)}`)
-  return parts.join(' ') + qty
+  return parts.join(' ') + qty + unit
 }
 
 /** 单条规则的价格字段 diff(只含变化的字段) */
@@ -126,6 +132,7 @@ export type RuleTargetLabeler = (c: Pick<RuleChange, 'applyOn' | 'productId' | '
 export function ruleChangesToLogChanges(
   changes: RuleChange[],
   label: RuleTargetLabeler,
+  uomLabel?: UomLabeler,
   limit = 60,
 ): Record<string, { before: unknown; after: unknown }> {
   const out: Record<string, { before: unknown; after: unknown }> = {}
@@ -134,7 +141,7 @@ export function ruleChangesToLogChanges(
   for (const c of changes) {
     const entries: Array<[string, { before: unknown; after: unknown }]> = c.kind === 'changed'
       ? Object.entries(c.fields)
-      : [['rule', c.kind === 'added' ? { before: null, after: ruleSummary(c.after) } : { before: ruleSummary(c.before), after: null }]]
+      : [['rule', c.kind === 'added' ? { before: null, after: ruleSummary(c.after, uomLabel) } : { before: ruleSummary(c.before, uomLabel), after: null }]]
     for (const [field, v] of entries) {
       if (n >= limit) { truncated++; continue }
       let key = `${label(c)} · ${field}`
@@ -158,7 +165,7 @@ export interface ProductRuleLog {
  * 按商品分组，给商品页的改价历史用：每个商品一条日志，key 是「价格表名 · 字段」。
  * 分类/全场规则不落到具体商品上(一改就是几千个商品，写不过来)，只记在价格表自己的 chatter。
  */
-export function ruleLogsByProduct(changes: RuleChange[], pricelistName: string): ProductRuleLog[] {
+export function ruleLogsByProduct(changes: RuleChange[], pricelistName: string, uomLabel?: UomLabeler): ProductRuleLog[] {
   const byProduct = new Map<string, ProductRuleLog>()
   for (const c of changes) {
     if (!c.productId) continue
@@ -169,7 +176,7 @@ export function ruleLogsByProduct(changes: RuleChange[], pricelistName: string):
     const prefix = qty > 0 ? `${pricelistName} (≥${qty})` : pricelistName
     const entries: Array<[string, { before: unknown; after: unknown }]> = c.kind === 'changed'
       ? Object.entries(c.fields)
-      : [['rule', c.kind === 'added' ? { before: null, after: ruleSummary(c.after) } : { before: ruleSummary(c.before), after: null }]]
+      : [['rule', c.kind === 'added' ? { before: null, after: ruleSummary(c.after, uomLabel) } : { before: ruleSummary(c.before, uomLabel), after: null }]]
     for (const [field, v] of entries) {
       let key = `${prefix} · ${field}`
       for (let i = 2; key in entry.changes; i++) key = `${prefix} (${i}) · ${field}`

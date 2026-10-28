@@ -1,9 +1,13 @@
 import { prisma } from '@/lib/db'
 import { toNum, round2 } from '@/lib/decimal-helpers'
+import { lowStockSqlCondition } from '@/lib/stock-alert'
 
 /**
  * 库存总览页数据 SSOT —— 聚合库存模块现有真实信号（Product/Lot/StockMove/StockTake）。
- * 不新造字段，不硬编码阈值：低库存判定统一用 Product.safetyStockMin（可空=未设置阈值，跳过）。
+ * 不新造字段，不硬编码阈值：低库存判定统一用 Product.safetyStockMin，逐商品由客户自行维护
+ * （<=0 含现网默认值 0 = 未设置，跳过——跟商品列表页共用 lib/stock-alert.ts 同一句判断，
+ * 不是各写一份；20261025 之前这里写的是 `safetyStockMin IS NOT NULL`，但该字段迁移时已把
+ * 全部现网数据默认填成 0 而不是 null，这个条件实际上形同虚设）。
  */
 
 // 临期批次分两档：紧急(7天内，KPI 卡片用这个口径，避免一下子把"远期也算"的大数字
@@ -102,7 +106,7 @@ export async function getInventoryAttentionItems(limit = 8, isEn = false): Promi
      FROM "Product" p
      LEFT JOIN "ProductCategory" pc ON pc.id = p."categoryId"
      LEFT JOIN "CategoryGroup" cg ON cg.id = pc."groupId"
-     WHERE p.status = 'ACTIVE' AND p."safetyStockMin" IS NOT NULL AND p."qtyOnHand" <= p."safetyStockMin"
+     WHERE p.status = 'ACTIVE' AND ${lowStockSqlCondition('p')}
      ORDER BY p."qtyOnHand" ASC
      LIMIT 20`
   )) as Array<{ id: string; name: string; qty_on_hand: number; safety_stock_min: number; category_label: string }>
@@ -281,7 +285,7 @@ export async function getInventoryByCategoryGroup(): Promise<GroupInventoryRow[]
       `SELECT cg.id AS group_id,
               COUNT(p.id)::int AS sku_count,
               COALESCE(SUM(p."qtyOnHand" * COALESCE(p."standardPrice", 0)), 0)::float AS total_value,
-              COUNT(*) FILTER (WHERE p."safetyStockMin" IS NOT NULL AND p."qtyOnHand" <= p."safetyStockMin")::int AS low_stock_count
+              COUNT(*) FILTER (WHERE ${lowStockSqlCondition('p')})::int AS low_stock_count
        FROM "Product" p
        LEFT JOIN "ProductCategory" pc ON pc.id = p."categoryId"
        LEFT JOIN "CategoryGroup" cg ON cg.id = pc."groupId"

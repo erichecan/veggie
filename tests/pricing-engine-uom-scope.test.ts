@@ -19,6 +19,17 @@ const uomProduct: Product = {
   variantAttributes: [], qtyOnHand: 0, active: true, images: [], createdAt: '', updatedAt: '',
 } as unknown as Product
 
+/** 带真实 factor 的商品：uom-case 是基准单位（factor 1），uom-pack 是 1/4 箱（factor 0.25） */
+const uomScaledProduct: Product = {
+  id: 'p-uom-scaled', templateId: 't-uom-scaled', name: 'UoM Scaled Test Product',
+  listPrice: 100, standardPrice: 50, price: 100,
+  saleUoms: [
+    { uomId: 'uom-case', isDefault: true, factor: 1, active: true, sequence: 1, spec: null, uom: { name: 'Case' } },
+    { uomId: 'uom-pack', isDefault: false, factor: 0.25, active: true, sequence: 2, spec: null, uom: { name: 'Pack' } },
+  ],
+  variantAttributes: [], qtyOnHand: 0, active: true, images: [], createdAt: '', updatedAt: '',
+} as unknown as Product
+
 function pl(id: string, items: OdooPricelistItem[]): OdooPricelist {
   return { id, name: id, currency: 'EUR', sequence: 1, selectable: true, active: true, updatedAt: '', items } as unknown as OdooPricelist
 }
@@ -104,4 +115,50 @@ test('formula 计算方式也能被单位限定：折扣基于牌价，命中后
   const r = resolvePrice(uomProduct, p, [p], 1, undefined, 'uom-case')
   assert.equal(r.price, 90, 'listPrice 100 打九折')
   assert.equal(r.matchedUomId, 'uom-case')
+})
+
+test('20261025修复：formula 命中的 uomId 对应的 factor != 1 时，基准价要先按 factor 换算，不能直接拿商品基准单位的价算', () => {
+  const p = pl('pl-8', [
+    item({
+      sequence: 1, applyOn: 'variant', productVariantId: 'p-uom-scaled', uomId: 'uom-pack',
+      computeType: 'formula', formulaBase: 'list_price', priceDiscount: 0, priceSurcharge: 10,
+    }),
+  ])
+  const r = resolvePrice(uomScaledProduct, p, [p], 1, undefined, 'uom-pack')
+  // 整箱 listPrice 100，uom-pack factor 0.25 → 单包基准价 25，+10 加价 = 35
+  // 改之前的 bug：直接拿整箱 100 + 10 = 110
+  assert.equal(r.price, 35, 'PACK 基准价应该是 100*0.25=25，不是整箱 100')
+  assert.equal(r.matchedUomId, 'uom-pack')
+})
+
+test('20261025修复：percentage 命中的 uomId 对应的 factor != 1 时，折扣基准价也要先按 factor 换算', () => {
+  const p = pl('pl-9', [
+    item({
+      sequence: 1, applyOn: 'variant', productVariantId: 'p-uom-scaled', uomId: 'uom-pack',
+      computeType: 'percentage', percentDiscount: 10,
+    }),
+  ])
+  const r = resolvePrice(uomScaledProduct, p, [p], 1, undefined, 'uom-pack')
+  // 单包基准价 25，打九折 = 22.5；改之前的 bug：拿整箱 100 打九折 = 90
+  assert.equal(r.price, 22.5, 'PACK 基准价应该是 100*0.25=25 打九折，不是整箱 100 打九折')
+  assert.equal(r.matchedUomId, 'uom-pack')
+})
+
+test('20261025修复：formulaBase=pricelist 嵌套命中同一个 uomId 时已经是最终价，不能再乘一次 factor', () => {
+  const base = pl('pl-10-base', [
+    item({
+      sequence: 1, applyOn: 'variant', productVariantId: 'p-uom-scaled', uomId: 'uom-pack',
+      computeType: 'formula', formulaBase: 'list_price', priceDiscount: 0, priceSurcharge: 0,
+    }),
+  ])
+  const outer = pl('pl-10-outer', [
+    item({
+      sequence: 1, applyOn: 'variant', productVariantId: 'p-uom-scaled', uomId: 'uom-pack',
+      computeType: 'formula', formulaBase: 'pricelist', basedOnPricelistId: 'pl-10-base',
+      priceDiscount: 0, priceSurcharge: 0,
+    }),
+  ])
+  const r = resolvePrice(uomScaledProduct, outer, [base, outer], 1, undefined, 'uom-pack')
+  // base 已经算出 PACK 最终价 25（100*0.25），outer 不该再乘一次 factor 变成 6.25
+  assert.equal(r.price, 25, '嵌套命中同一 uomId 后已是最终价，不能二次换算')
 })

@@ -25,7 +25,14 @@ import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { categoryPathMap } from '@/lib/category-path'
 
 const PAGE_SIZE = 50
-const LOW_STOCK_THRESHOLD = 10
+
+// 低库存判定：客户逐商品自行维护 safetyStockMin，<=0(含未设置时的默认值 0) 不参与判断；
+// 跟库存管理页(lib/analytics/inventory-overview.ts)、商品列表角标接口(lib/products-query.ts
+// 的 productStockAlertCounts/stockAlert 筛选) 必须是同一句判断，不能各写各的阈值。
+function isLowStock(t: Pick<ProductTemplate, 'qtyOnHand' | 'safetyStockMin'>): boolean {
+  const min = t.safetyStockMin ?? 0
+  return min > 0 && (t.qtyOnHand ?? 0) <= min
+}
 
 const TYPE_LABEL: Record<string, string> = {
   product: 'Storable Product',
@@ -475,7 +482,7 @@ export default function ClassicProductsPage() {
     const t = row as unknown as ProductTemplate
     const qty = t.qtyOnHand ?? 0
     if (qty < 0) return { background: '#fff1f2' }
-    if (qty < LOW_STOCK_THRESHOLD) return { background: '#fffbeb' }
+    if (isLowStock(t)) return { background: '#fffbeb' }
     return undefined
   }
 
@@ -723,7 +730,7 @@ export default function ClassicProductsPage() {
             </span>
           )
         }
-        if (qty < LOW_STOCK_THRESHOLD) {
+        if (isLowStock(t)) {
           return (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-700">
               ↓ {qty.toFixed(1)}
@@ -931,7 +938,7 @@ export default function ClassicProductsPage() {
               {alertCounts.low > 0 && (
                 <>
                   <span className="font-semibold text-amber-600">{alertCounts.low}</span>
-                  <span>{isEn ? ` products below safety stock (<${LOW_STOCK_THRESHOLD})` : ` 种商品低于安全库存（<${LOW_STOCK_THRESHOLD}）`}</span>
+                  <span>{isEn ? ' products at or below their own alert threshold' : ' 种商品已达到各自设置的库存预警值'}</span>
                 </>
               )}
             </span>

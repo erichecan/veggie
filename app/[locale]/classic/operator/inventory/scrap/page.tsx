@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { apiGet, apiPost } from '@/lib/api'
 import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { formatDateTime, formatDateOnly } from '@/lib/format-date'
-import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
+import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN, MANUAL_SCRAP_REASONS } from '@/lib/scrap-reasons'
 import {
   LOSS_STAGES,
   LOSS_STAGE_HINT,
@@ -48,14 +48,6 @@ interface LotOption {
   sourceRef?: string | null
   bestBefore?: string | null
 }
-
-const SCRAP_REASON_KEYS = [
-  'CUSTOMER_RETURN_EXPIRED',
-  'CUSTOMER_RETURN_DAMAGED',
-  'WAREHOUSE_EXPIRY',
-  'WAREHOUSE_DAMAGE',
-  'OTHER',
-] as const
 
 export default function ScrapPage() {
   const router = useRouter()
@@ -376,7 +368,7 @@ export default function ScrapPage() {
                   className="w-full border rounded px-3 py-2 text-sm outline-none"
                   style={{ borderColor: BORDER }}
                 >
-                  {SCRAP_REASON_KEYS.map(key => (
+                  {MANUAL_SCRAP_REASONS.map(key => (
                     <option key={key} value={key}>{isEn ? SCRAP_REASON_LABEL_EN[key] : SCRAP_REASON_LABEL[key]}</option>
                   ))}
                 </select>

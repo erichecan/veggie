@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { apiGet, apiPost } from '@/lib/api'
 import { openAuthedPdf } from '@/lib/print/open-pdf'
 import type { Order } from '@/lib/types'
-import type { ReturnRow } from '@/lib/accounting/returns'
+import type { ReturnRow, ReturnOrderLineRow } from '@/lib/accounting/returns'
 import { SearchableDropdown } from '@/components/shared/searchable-dropdown'
 import { SortTh, sortRows, type SortDir } from '@/components/shared/sort-th'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -69,6 +69,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
   const [filterStatus, setFilterStatus] = useState<'all' | 'PENDING' | 'RETURNED' | 'ISSUE'>('all')
   const [printGroup, setPrintGroup] = useState<'date' | 'driver'>('date')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [scanInput, setScanInput] = useState('')
   const [scanSearching, setScanSearching] = useState(false)
   const [scanMsg, setScanMsg] = useState<{ type: 'ok' | 'err' | 'warn'; text: string } | null>(null)
@@ -79,6 +80,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
   const [issueMode, setIssueMode] = useState<'batch' | string | null>(null)
   const [issueNote, setIssueNote] = useState('')
+  const [qtyEditRow, setQtyEditRow] = useState<ReturnRow | null>(null)
   const scanSeqCounter = useRef(0)
   const [scanSeq, setScanSeq] = useState<Record<string, number>>({})
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
@@ -184,19 +186,41 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
     })
   }
 
-  async function applyStatus(ids: string[], status: 'PENDING' | 'RETURNED' | 'ISSUE', note?: string) {
+  async function applyStatus(ids: string[], status: 'PENDING' | 'RETURNED' | 'ISSUE', note?: string, lines?: Array<{ orderLineId: string; deliveredQty: number }>) {
     if (ids.length === 0) return
     setBulkLoading(true)
     try {
-      await apiPost('/api/orders/bulk', { ids, action: 'mark_returned', status, note })
+      await apiPost('/api/orders/bulk', { ids, action: 'mark_returned', status, note, lines })
       setSelected(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next })
       setIssueMode(null)
       setIssueNote('')
+      setQtyEditRow(null)
       await load()
     } catch (e) {
       alert(e instanceof Error ? e.message : '操作失败，请重试')
     } finally {
       setBulkLoading(false)
+    }
+  }
+
+  async function generateInvoices(ids: string[]) {
+    if (ids.length === 0) return
+    setInvoiceLoading(true)
+    try {
+      const r = await apiPost<{
+        total: number
+        created: Array<{ code: string; invoiceId: string }>
+        skipped: Array<{ code: string; reason: string }>
+        failed: Array<{ code: string; error: string }>
+      }>('/api/accounting/returns/bulk-invoice', { ids })
+      const parts = [`成功生成 ${r.created.length} 张`]
+      if (r.skipped.length) parts.push(`跳过 ${r.skipped.length} 张（已开过票/无可开票数量）`)
+      if (r.failed.length) parts.push(`失败 ${r.failed.length} 张`)
+      flash(r.failed.length ? 'warn' : 'ok', parts.join('，'), 6000)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '批量生成发票失败，请重试')
+    } finally {
+      setInvoiceLoading(false)
     }
   }
 
@@ -345,10 +369,13 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
         {selected.size > 0 ? (
           <div className="ml-auto flex items-center gap-2">
             <span className="text-sm text-gray-600 font-medium">已选 {visibleSelectedCount} / {visible.length} 张</span>
-            <button onClick={() => applyStatus([...selected], 'RETURNED')} disabled={bulkLoading} className="px-3 py-1.5 text-white rounded text-sm font-medium disabled:opacity-50" style={{ background: ACCENT }} data-testid="writeoff-confirm">
+            <button onClick={() => applyStatus([...selected], 'RETURNED')} disabled={bulkLoading} className="px-3 py-1.5 text-white rounded text-sm font-medium disabled:opacity-50" style={{ background: ACCENT }} data-testid="writeoff-confirm" title="批量确认核销按默认送达数量（全送）；如果某张单数量有差异，取消多选后单独点那一行的「核对数量」">
               {bulkLoading ? '处理中…' : '✅ 确认核销'}
             </button>
             <button onClick={() => setIssueMode('batch')} disabled={bulkLoading} className="px-3 py-1.5 rounded text-sm font-medium bg-amber-50 text-amber-700 disabled:opacity-50">❗ 退回核实</button>
+            <button onClick={() => generateInvoices([...selected])} disabled={invoiceLoading} className="px-3 py-1.5 border rounded text-sm font-medium bg-white disabled:opacity-50" style={{ borderColor: ACCENT, color: ACCENT }} data-testid="writeoff-bulk-invoice" title="核销确认时已自动开票，这里只用于补开当时失败/遗漏的发票">
+              {invoiceLoading ? '生成中…' : '🧾 补开漏开的发票'}
+            </button>
             <button onClick={() => setSelected(new Set())} className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-500 bg-white">取消选择</button>
           </div>
         ) : (
@@ -414,11 +441,21 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
                   onConfirm={() => applyStatus([o.id], 'RETURNED')}
                   onReturn={() => setIssueMode(o.id)}
                   onReset={() => applyStatus([o.id], 'PENDING')}
+                  onEditQty={() => setQtyEditRow(o)}
                 />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {qtyEditRow && (
+        <QtyEditDialog
+          row={qtyEditRow}
+          busy={bulkLoading}
+          onCancel={() => setQtyEditRow(null)}
+          onConfirm={lines => applyStatus([qtyEditRow.id], 'RETURNED', undefined, lines)}
+        />
       )}
 
       {(s?.pending ?? 0) > 0 && (
@@ -431,7 +468,7 @@ function OpenReturns({ businessDate }: { businessDate: string | null }) {
   )
 }
 
-function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onToggle, onConfirm, onReturn, onReset }: {
+function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onToggle, onConfirm, onReturn, onReset, onEditQty }: {
   row: ReturnRow
   isSelected: boolean
   isFlashing: boolean
@@ -441,6 +478,7 @@ function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onTogg
   onConfirm: () => void
   onReturn: () => void
   onReset: () => void
+  onEditQty: () => void
 }) {
   const status = o.returnStatus
   const cash = isCash(o)
@@ -459,7 +497,7 @@ function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onTogg
       </td>
       <td className="px-4 py-2.5 text-gray-500 text-xs">{scanOrder != null ? `#${scanOrder}` : <span className="text-gray-300">—</span>}</td>
       <td className="px-4 py-2.5 text-gray-700 text-xs whitespace-nowrap">{o.deliveryDate ?? '—'}</td>
-      <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{o.code ?? o.id.slice(-8)}</td>
+      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 whitespace-nowrap">{o.code ?? o.id.slice(-8)}</td>
       <td className="px-4 py-2.5 text-gray-800 max-w-[160px] truncate" title={o.restaurantName}>{o.restaurantName}</td>
       <td className="px-4 py-2.5 text-center text-xs text-gray-600">{TIME_TEXT[o.timeOfDay] ?? <span className="text-gray-300">—</span>}</td>
       <td className="px-4 py-2.5 text-gray-700">{o.driver || <span className="text-gray-300">未分配</span>}</td>
@@ -491,12 +529,110 @@ function WriteOffRow({ row: o, isSelected, isFlashing, scanOrder, rowRef, onTogg
         {status === 'PENDING' && isSelected && (
           <div className="flex gap-1 justify-center">
             <button onClick={onConfirm} className="px-2 py-1 text-white text-xs rounded font-medium" style={{ background: ACCENT }}>确认核销</button>
+            <button onClick={onEditQty} className="px-2 py-1 text-xs rounded font-medium border" style={{ borderColor: ACCENT, color: ACCENT }} title="数量跟实际送达的不一样？打开核对，改过的数量按改过的开票">核对数量</button>
             <button onClick={onReturn} className="px-2 py-1 text-xs rounded font-medium bg-amber-50 text-amber-700">退回</button>
           </div>
         )}
         {status === 'PENDING' && !isSelected && <span className="text-gray-300 text-xs">扫码后可操作</span>}
       </td>
     </tr>
+  )
+}
+
+/**
+ * 核销弹窗「核对数量」—— 20261026。默认按下单量全送（后端已经这么写了），
+ * 这里只在真的有差异（少送/缺货/客户拒收部分）时才需要改；改完点「确认核销」
+ * 带着改过的 deliveredQty 一起提交，开票/提成就按改过的算，不是先核对完再核销两步走。
+ */
+function QtyEditDialog({ row, busy, onCancel, onConfirm }: {
+  row: ReturnRow
+  busy: boolean
+  onCancel: () => void
+  onConfirm: (lines: Array<{ orderLineId: string; deliveredQty: number }>) => void
+}) {
+  const [lines, setLines] = useState<ReturnOrderLineRow[] | null>(null)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    apiGet<{ lines: ReturnOrderLineRow[] }>(`/api/accounting/returns/${row.id}/lines`)
+      .then(r => { if (!cancelled) setLines(r.lines) })
+      .catch(e => { if (!cancelled) setLoadError(e instanceof Error ? e.message : '加载订单行失败') })
+    return () => { cancelled = true }
+  }, [row.id])
+
+  function setQty(lineId: string, v: string) {
+    const n = Number(v)
+    setLines(prev => prev?.map(l => l.id === lineId ? { ...l, deliveredQty: Number.isFinite(n) && n >= 0 ? n : l.deliveredQty } : l) ?? prev)
+  }
+
+  const hasDiff = lines?.some(l => l.deliveredQty !== l.orderedQty) ?? false
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onCancel}>
+      <div className="bg-white rounded shadow-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b flex items-center justify-between">
+          <div>
+            <div className="font-semibold text-gray-800">核对送达数量 · {row.code ?? row.id.slice(-8)}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{row.restaurantName}</div>
+          </div>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+        <div className="px-5 py-4">
+          {loadError ? (
+            <div className="text-red-500 text-sm py-6 text-center">{loadError}</div>
+          ) : !lines ? (
+            <div className="text-gray-400 text-sm py-6 text-center">加载中…</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-xs text-gray-500 border-b">
+                <tr>
+                  <th className="text-left py-2">商品</th>
+                  <th className="text-center py-2 w-20">单位</th>
+                  <th className="text-right py-2 w-24">下单数量</th>
+                  <th className="text-right py-2 w-28">实际送达</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {lines.map(l => (
+                  <tr key={l.id} className={l.deliveredQty !== l.orderedQty ? 'bg-amber-50' : ''}>
+                    <td className="py-2 text-gray-800">
+                      {l.productName}
+                      {l.isGift && <span className="ml-1.5 text-[10px] text-green-600">赠品</span>}
+                      {l.spec && <div className="text-[11px] text-gray-400">{l.spec}</div>}
+                    </td>
+                    <td className="py-2 text-center text-gray-600">{l.uomName ?? '—'}</td>
+                    <td className="py-2 text-right text-gray-600">{l.orderedQty}</td>
+                    <td className="py-2 text-right">
+                      <input
+                        type="number" min={0} step="0.001" value={l.deliveredQty}
+                        onChange={e => setQty(l.id, e.target.value)}
+                        className="w-24 text-right border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+                        style={l.deliveredQty !== l.orderedQty ? { borderColor: ACCENT } : {}}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t flex items-center justify-between">
+          <span className="text-xs text-gray-400">{hasDiff ? '有行改过数量，开票/提成会按改过的算' : '没有改动，按下单量全送核销'}</span>
+          <div className="flex gap-2">
+            <button onClick={onCancel} className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-500 bg-white">取消</button>
+            <button
+              onClick={() => lines && onConfirm(lines.map(l => ({ orderLineId: l.id, deliveredQty: l.deliveredQty })))}
+              disabled={!lines || busy}
+              className="px-3 py-1.5 text-white rounded text-sm font-medium disabled:opacity-50"
+              style={{ background: ACCENT }}
+            >
+              {busy ? '处理中…' : '✅ 确认核销'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -590,7 +726,7 @@ function ReturnedList() {
               {pageRows.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2 text-xs text-gray-700 whitespace-nowrap">{r.deliveryDate ?? '—'}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-gray-700">{r.code ?? r.id.slice(-8)}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-gray-700 whitespace-nowrap">{r.code ?? r.id.slice(-8)}</td>
                   <td className="px-4 py-2 text-gray-800 max-w-[180px] truncate" title={r.restaurantName}>{r.restaurantName}</td>
                   <td className="px-4 py-2 text-center text-xs text-gray-600">{TIME_TEXT[r.timeOfDay] ?? '—'}</td>
                   <td className="px-4 py-2 text-gray-700">{r.driver || '—'}</td>

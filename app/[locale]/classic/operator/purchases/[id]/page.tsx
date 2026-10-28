@@ -72,6 +72,16 @@ interface POLine {
   landedUnitCostEur?: number | null
 }
 
+/** /api/lots 返回的批次，退货弹窗里选"从哪一批退"用 */
+interface ReturnLotOption {
+  id: string
+  lotNumber: string
+  currentQty: number
+  sourceId?: string | null
+  sourceRef?: string | null
+  arrivedAt: string
+}
+
 interface POBill {
   id: string
   name: string
@@ -503,6 +513,11 @@ export default function PurchaseDetailPage() {
   const [returnQtys, setReturnQtys] = useState<Record<string, string>>({})
   const [returnReason, setReturnReason] = useState('')
   const [returning, setReturning] = useState(false)
+  /** 按商品缓存的可选批次（库存余量 > 0）；退货默认 FEFO，但能唯一确定"这批货就是本张 PO
+   *  自己收的"时自动预选——20261022 客户报的串批问题就是退货永远不知道该冲哪一批 */
+  const [returnLotOptions, setReturnLotOptions] = useState<Record<string, ReturnLotOption[]>>({})
+  /** lineId → 选中的批次 id；空字符串 = FEFO 自动 */
+  const [returnLotSelections, setReturnLotSelections] = useState<Record<string, string>>({})
 
   // ── 选品 / 快速建档 ──
   const [purchaseProducts, setPurchaseProducts] = useState<PurchaseProduct[]>([])
@@ -939,19 +954,45 @@ export default function PurchaseDetailPage() {
   }
 
   // 退货/修正数量：默认全部填 0，采购员按实际退货量填写
-  function openReturnModal() {
+  async function openReturnModal() {
     if (!po) return
     const init: Record<string, string> = {}
     for (const l of po.lines) init[l.id] = ''
     setReturnQtys(init)
     setReturnReason('')
     setShowReturnModal(true)
+
+    const returnableLines = po.lines.filter(l => l.productId && Number(l.receivedQty ?? 0) > 0)
+    const productIds = Array.from(new Set(returnableLines.map(l => l.productId as string)))
+    const lotsByProduct: Record<string, ReturnLotOption[]> = {}
+    await Promise.all(productIds.map(async pid => {
+      try {
+        lotsByProduct[pid] = await apiGet<ReturnLotOption[]>(`/api/lots?productId=${pid}&status=AVAILABLE`)
+      } catch {
+        lotsByProduct[pid] = []
+      }
+    }))
+    setReturnLotOptions(lotsByProduct)
+
+    // 能唯一确定"这批货就是本张 PO 自己收的"才自动预选；有多批同源或查不到就留给操作员自己选，
+    // 宁可多问一句，也不要猜错——猜错正是这次要修的 bug
+    const defaults: Record<string, string> = {}
+    for (const l of returnableLines) {
+      const lots = lotsByProduct[l.productId as string] ?? []
+      const ownLots = lots.filter(lot => lot.sourceId === po.id)
+      if (ownLots.length === 1) defaults[l.id] = ownLots[0].id
+    }
+    setReturnLotSelections(defaults)
   }
 
   async function submitReturn() {
     if (!po) return
     const lines = po.lines
-      .map(l => ({ productId: l.productId, qty: Number(returnQtys[l.id] ?? 0) }))
+      .map(l => ({
+        productId: l.productId,
+        qty: Number(returnQtys[l.id] ?? 0),
+        lotId: returnLotSelections[l.id] || undefined,
+      }))
       .filter(l => l.productId && l.qty > 0)
     if (lines.length === 0) {
       toast.error(isEn ? 'Please enter a return quantity for at least one line' : '请至少填写一行退货数量')
@@ -2004,7 +2045,7 @@ export default function PurchaseDetailPage() {
 
       {showReturnModal && po && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-base font-semibold text-gray-800">{isEn ? 'Return / Adjust Quantity' : '退货/修正数量'} · {po.name}</h2>
             <p className="text-xs text-gray-500">
               {isEn
@@ -2018,10 +2059,13 @@ export default function PurchaseDetailPage() {
                   <th className="text-right py-1.5">{isEn ? 'Ordered' : '订购'}</th>
                   <th className="text-right py-1.5">{isEn ? 'Received' : '已收'}</th>
                   <th className="text-right py-1.5">{isEn ? 'Return qty' : '退货数量'}</th>
+                  <th className="text-left py-1.5 pl-3">{isEn ? 'From lot' : '从哪一批退'}</th>
                 </tr>
               </thead>
               <tbody>
-                {po.lines.filter(l => Number(l.receivedQty ?? 0) > 0).map(l => (
+                {po.lines.filter(l => Number(l.receivedQty ?? 0) > 0).map(l => {
+                  const lots = (l.productId && returnLotOptions[l.productId]) || []
+                  return (
                   <tr key={l.id} className="border-b border-gray-100">
                     <td className="py-2 text-gray-800">{l.productName}</td>
                     <td className="py-2 text-right text-gray-500">{Number(l.orderedQty).toFixed(3)}</td>
@@ -2037,10 +2081,26 @@ export default function PurchaseDetailPage() {
                         onChange={e => setReturnQtys(prev => ({ ...prev, [l.id]: e.target.value }))}
                         className="border border-gray-300 rounded px-2 py-1 text-sm text-right w-24" />
                     </td>
+                    <td className="py-2 pl-3">
+                      <select
+                        value={returnLotSelections[l.id] ?? ''}
+                        onChange={e => setReturnLotSelections(prev => ({ ...prev, [l.id]: e.target.value }))}
+                        className="border border-gray-300 rounded px-2 py-1 text-xs w-full max-w-[220px]"
+                      >
+                        <option value="">{isEn ? 'FEFO (auto, oldest expiry first)' : 'FEFO（自动，按效期从旧到新扣）'}</option>
+                        {lots.map(lot => (
+                          <option key={lot.id} value={lot.id}>
+                            {lot.lotNumber} · {isEn ? 'remaining' : '余'} {Number(lot.currentQty).toFixed(0)}
+                            {lot.sourceRef ? ` · ${lot.sourceRef}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                   </tr>
-                ))}
+                  )
+                })}
                 {po.lines.every(l => Number(l.receivedQty ?? 0) <= 0) && (
-                  <tr><td colSpan={4} className="py-6 text-center text-gray-400">{isEn ? 'No received quantity to return yet' : '暂无已收数量可退'}</td></tr>
+                  <tr><td colSpan={5} className="py-6 text-center text-gray-400">{isEn ? 'No received quantity to return yet' : '暂无已收数量可退'}</td></tr>
                 )}
               </tbody>
             </table>

@@ -50,9 +50,9 @@ export async function generateStatement(
   })
   if (duplicate) return { ok: false, reason: 'duplicate', existingId: duplicate.id, status: duplicate.status }
 
-  const orderSelect = { id: true, code: true, confirmationDate: true, lines: { select: { subtotal: true, taxRate: true } } }
-  const toRow = (o: { id: string; code?: string | null; confirmationDate?: Date | null; lines: Array<{ subtotal: unknown; taxRate: unknown }> }): StatementOrderRow =>
-    ({ id: o.id, code: o.code ?? null, confirmationDate: o.confirmationDate ?? null, incTaxTotal: orderIncTaxTotal(o.lines) })
+  const orderSelect = { id: true, code: true, deliveryDate: true, lines: { select: { subtotal: true, taxRate: true } } }
+  const toRow = (o: { id: string; code?: string | null; deliveryDate?: Date | null; lines: Array<{ subtotal: unknown; taxRate: unknown }> }): StatementOrderRow =>
+    ({ id: o.id, code: o.code ?? null, deliveryDate: o.deliveryDate ?? null, incTaxTotal: orderIncTaxTotal(o.lines) })
 
   const lastStatement = await prisma.statement.findFirst({
     where: { customerId, periodEnd: { lt: start } },
@@ -67,7 +67,7 @@ export async function generateStatement(
   } else {
     const [priorOrders, priorPayments] = await Promise.all([
       prisma.order.findMany({
-        where: { restaurantId: customerId, status: { in: BILLABLE_STATUSES as never[] }, confirmationDate: { lt: start } },
+        where: { restaurantId: customerId, status: { in: BILLABLE_STATUSES as never[] }, deliveryDate: { lt: start } },
         select: orderSelect,
       }),
       prisma.payment.findMany({ where: { customerId, paidAt: { lt: start } }, select: { amount: true } }),
@@ -79,8 +79,8 @@ export async function generateStatement(
   }
 
   const orders = await prisma.order.findMany({
-    where: { restaurantId: customerId, status: { in: BILLABLE_STATUSES as never[] }, confirmationDate: { gte: start, lt: endExclusive } },
-    orderBy: { confirmationDate: 'asc' },
+    where: { restaurantId: customerId, status: { in: BILLABLE_STATUSES as never[] }, deliveryDate: { gte: start, lt: endExclusive } },
+    orderBy: { deliveryDate: 'asc' },
     select: orderSelect,
   })
 

@@ -2,8 +2,12 @@
  * 下拉搜索的相关性排序。
  *
  * 在保持"子串匹配"的前提下，按相关度分层排序，让"更像你输入的"排在前面：
- *   0 完全等于   →   1 整串前缀   →   2 单词前缀   →   3 中间包含
+ *   0 完全等于   →   1 整串前缀   →   2 单词前缀   →   3 中间包含   →   4 多词乱序全部命中
  * 同层内按主文本字母序。不匹配的项被过滤掉；query 为空时原样返回（不排序）。
+ *
+ * 第 4 层（20261021 加）：输入里的每个词都在文本里能找到，但词的顺序跟文本不一样
+ * （如文本是「Prawn Tiger 31/40」，输入「tiger prawn」）——此前这种查法前三层全不中，
+ * 直落 0 结果，操作员会觉得"打了名字搜不到"。这一层只在前面全不命中时才补一刀，纯增量。
  *
  * getTexts 可返回单个字符串，或多个候选字符串（如商品名 + 内部编号），取最优层级。
  */
@@ -36,6 +40,8 @@ export function rankByRelevance<T>(
     if (n.startsWith(q)) return 1
     if (n.split(WORD_SEP).some(w => w.startsWith(q))) return 2
     if (n.includes(q)) return 3
+    const qWords = q.split(WORD_SEP).filter(Boolean)
+    if (qWords.length > 1 && qWords.every(w => n.includes(w))) return 4
     return 99
   }
 

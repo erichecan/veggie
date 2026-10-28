@@ -353,7 +353,17 @@ export async function resolveOrderLines(
   // 单位名快照：与 taxRate 同理，此前 uomName 完全听客户端的，客户端不传就是 NULL。
   // 后果落在拣货单/送货单上——纸面只有「2」，仓库看不出是 2 箱还是 2 包。
   // 单位名必须**落库快照**而不是打印时联表取：单位改名后，历史单据要保持当时的叫法。
-  const lineUomIds = [...new Set(submittedItems.map((i) => i.uomId).filter((x): x is string => !!x))]
+  //
+  // ⛔ 20261027 修：客户门户下单（如购物车里存着 20261026 多单位上线前就加进去、
+  // 没带 uomId 的旧行）没传 uomId 时，下面只回落了"按基准单位算价"，却从没把
+  // 商品自己的基准 uomId/uomName 落到行上——行上的 uomId/uomName 直接留空，
+  // 报价单/订单详情页显示单位时把空值当成"没配单位"，渲染成 ⚠ Unit(s) 警告，
+  // 即便商品本身配得明明白白（如 Mushroom/MUC 配的是 CASE）。这里把每个商品
+  // 自己的基准 uomId 也纳入批量查名单，好让没传 uomId 的行也能落回商品真实的基准单位名。
+  const lineUomIds = [...new Set([
+    ...submittedItems.map((i) => i.uomId),
+    ...products.map((p) => p.uomId),
+  ].filter((x): x is string => !!x))]
   const uomNameMap = new Map<string, string>(
     lineUomIds.length > 0
       ? (await ctx.prisma.uom.findMany({ where: { id: { in: lineUomIds } }, select: { id: true, name: true } }))
@@ -553,6 +563,11 @@ export async function resolveOrderLines(
     )
     const unitCost = round2(scaleCost(dbProduct.id, dbProduct.uomId, item.uomId, productForEngine.standardPrice ?? 0))
 
+    // 客户端没传 uomId（如门户购物车里的旧行）时落回商品自己的基准单位——价格/提成/成本
+    // 本来就是这么算的（上面几个 scaleXxx 函数 `!lineUomId` 时直接用基准值），
+    // 落库的 uomId/uomName 不该是空的，否则显示层会把"沿用基准单位"误判成"没配单位"。
+    const effectiveUomId = item.uomId ?? dbProduct.uomId ?? undefined
+
     lines.push({
       productId: dbProduct.id,
       productName: (item.productName ?? dbProduct.name).trim().slice(0, 200),
@@ -567,9 +582,9 @@ export async function resolveOrderLines(
       subtotal,
       resolution,
       lastPriceDate: resolution.sourceType === 'last' ? lastPriceDate : undefined,
-      uomId: item.uomId,
+      uomId: effectiveUomId,
       // 优先用服务端按 uomId 查出的正式名称；客户端传的仅作回落
-      uomName: (item.uomId ? uomNameMap.get(item.uomId) : undefined) ?? item.uomName,
+      uomName: (effectiveUomId ? uomNameMap.get(effectiveUomId) : undefined) ?? item.uomName,
       // SSOT 护栏(A-1): OrderLine.taxRate 一律存百分数(如 23)。历史小数(0.23)与
       // 前端偶发小数在此归一;IE VAT 档位 0/4.8/9/13.5/23 在 (0,1) 无合法值,判别无歧义。
       //

@@ -514,19 +514,64 @@ export default function OdooTable<T extends Record<string, unknown>>({
           {hasFilters && (
             <tr style={{ background: '#fff', borderBottom: '1px solid #e0e0e0' }}>
               {showCheckbox && <td className="w-8 px-2 py-1" />}
-              {columns.map(col => (
-                <td key={`filter-${col.key}`} className="px-2 py-1 align-top" style={colSizeStyle(col)}>
-                  {col.filterType === 'text' && onColumnFilterChange && (
-                    <input
-                      type="text"
-                      value={columnFilters?.[col.key] ?? ''}
-                      onChange={e => onColumnFilterChange(col.key, e.target.value)}
-                      className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
-                      style={{ fontSize: '11px' }}
-                    />
-                  )}
-                </td>
-              ))}
+              {columns.map(col => {
+                // multi-select / date-range 这两种列的筛选入口在列头的 ▼/📅 图标上，不在这一行；
+                // 但这一行是跟文本筛选框混排的常驻行，不放点东西的话这一格就是纯空白——
+                // 跟旁边能打字的文本框长得一样，用户会以为能点/能打字，点了没反应
+                // （20261025 客户反馈"Customer Taxes 筛选不好用"，查下来是点了这格而不是列头▼）。
+                // 放一个同样可点击、文案指向列头图标的提示，点击直接帮用户把该列的下拉打开。
+                const multiCount = columnMultiFilters?.[col.key]?.length ?? 0
+                const dateActive = !!(columnFilters?.[`${col.key}_from`] || columnFilters?.[`${col.key}_to`])
+                // 下面 date-range 分支只是打开下拉、不直接调用 onColumnFilterChange，
+                // 改用这个布尔值做守卫——避免 TS 把 text 分支里对 onColumnFilterChange
+                // 的真值判断错误地当成"这个函数全程都存在"而在第二处判断上报误报。
+                const hasColumnFilterChange = !!onColumnFilterChange
+                return (
+                  <td key={`filter-${col.key}`} className="px-2 py-1 align-top" style={colSizeStyle(col)}>
+                    {col.filterType === 'text' && onColumnFilterChange && (
+                      <input
+                        type="text"
+                        value={columnFilters?.[col.key] ?? ''}
+                        onChange={e => onColumnFilterChange(col.key, e.target.value)}
+                        className="w-full border border-gray-300 rounded bg-white px-1 py-0.5 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                        style={{ fontSize: '11px' }}
+                      />
+                    )}
+                    {col.filterType === 'multi-select' && onColumnMultiFilterChange && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenMultiKey(prev => prev === col.key ? null : col.key)}
+                        className="w-full text-left rounded px-1 py-0.5 border truncate"
+                        style={{
+                          fontSize: '11px',
+                          color: multiCount > 0 ? '#875A7B' : '#9ca3af',
+                          borderColor: multiCount > 0 ? '#875A7B' : '#d1d5db',
+                          background: multiCount > 0 ? '#f6effa' : 'white',
+                        }}
+                        title={isEnLocale ? 'Click to filter' : '点击筛选'}
+                      >
+                        {multiCount > 0 ? `${isEnLocale ? 'Selected' : '已选'} ${multiCount} ▾` : `${isEnLocale ? 'Filter' : '点击筛选'} ▾`}
+                      </button>
+                    )}
+                    {col.filterType === 'date-range' && hasColumnFilterChange && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenDateKey(prev => prev === col.key ? null : col.key)}
+                        className="w-full text-left rounded px-1 py-0.5 border truncate"
+                        style={{
+                          fontSize: '11px',
+                          color: dateActive ? '#875A7B' : '#9ca3af',
+                          borderColor: dateActive ? '#875A7B' : '#d1d5db',
+                          background: dateActive ? '#f6effa' : 'white',
+                        }}
+                        title={isEnLocale ? 'Click to filter by date' : '点击筛选日期'}
+                      >
+                        {isEnLocale ? 'Filter 📅' : '点击筛选 📅'}
+                      </button>
+                    )}
+                  </td>
+                )
+              })}
             </tr>
           )}
         </thead>

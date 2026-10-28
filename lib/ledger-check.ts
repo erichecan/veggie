@@ -296,10 +296,17 @@ export async function fixOrdersWithoutStock(actor: { userId: string; name?: stri
 }
 
 /**
- * 已完成却没有发票的订单（20261021「待开票」）。完成时本该自动出草稿发票，以下几种情况漏掉了：
+ * 已完成且已核销确认却没有发票的订单（20261021「待开票」）。本该在核销确认时自动出草稿发票
+ * （见 app/api/orders/bulk/route.ts mark_returned），以下几种情况漏掉了：
  *   - 订单页直接改「已完成」不回填实送量，草稿发票按实送量 0 开不出来（已修，见 fillDeliveredQtyIfUnrecorded）；
- *   - 发票号撞号失败被静默吞掉（20261020 已修）。
+ *   - 发票号撞号失败被静默吞掉（20261020 已修）；
+ *   - 核销确认时触发开票本身失败（20261026，mark_returned 里失败只记日志不回滚核销）。
  * Odoo 导入的历史单是 LOCKED，不在此列。
+ *
+ * ⛔ 20261026 code-review 修复：加 returnStatus=RETURNED 条件。20261026 之前这里只看
+ * status=COMPLETED，开票本来就挂在"标记完成"那一步；改成挂在"核销确认"之后，COMPLETED
+ * 但还没核销的单（新增的、设计内的中间状态）会被这条探针误判成"漏开票"，「统一补开草稿
+ * 发票」会在会计核对送达量之前就按下单量全送把发票开出来，正是这次改动要防的场景。
  */
 export async function findUninvoicedCompletedOrders(): Promise<Row[]> {
   return q(`
@@ -307,6 +314,7 @@ export async function findUninvoicedCompletedOrders(): Promise<Row[]> {
            NOT EXISTS (SELECT 1 FROM "OrderLine" l WHERE l."orderId" = o.id AND l."deliveredQty" > 0) AS "noDeliveredQty"
     FROM "Order" o
     WHERE o.status = 'COMPLETED'
+      AND o."returnStatus" = 'RETURNED'
       AND o.id NOT IN (SELECT unnest("saleOrderIds") FROM "Invoice" WHERE status <> 'CANCELLED')
     ORDER BY o."deliveryDate" DESC NULLS LAST`)
 }
@@ -314,9 +322,9 @@ export async function findUninvoicedCompletedOrders(): Promise<Row[]> {
 const uninvoicedOrders: Check = async () => {
   const rows = await findUninvoicedCompletedOrders()
   return {
-    key: 'completed_without_invoice', label: '已完成但没有发票的订单（待开票）', labelEn: 'Completed orders without an invoice',
+    key: 'completed_without_invoice', label: '已核销但没有发票的订单（待开票）', labelEn: 'Written-off orders without an invoice',
     severity: 'info', diffCount: rows.length, amount: rows.reduce((s, r) => s + num(r.totalAmount), 0), samples: cleanSamples(rows),
-    note: '可点「统一补开草稿发票」：实送量没记过的按全送补上，再按完成时同一套逻辑开草稿发票（可重复点，已开过的跳过）',
+    note: '可点「统一补开草稿发票」：实送量没记过的按全送补上，再按核销确认时同一套逻辑开草稿发票（可重复点，已开过的跳过）',
   }
 }
 

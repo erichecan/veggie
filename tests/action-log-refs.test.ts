@@ -24,7 +24,7 @@ function walk(dir: string, out: string[] = []): string[] {
 function trackedIdFields(): Map<string, string> {
   const found = new Map<string, string>()
   const idLike = /^[a-z][A-Za-z]*Ids?$/
-  for (const file of walk('app/api')) {
+  for (const file of [...walk('app/api'), ...walk('lib')]) {
     const src = readFileSync(file, 'utf8')
     // const XXX_TRACKED_FIELDS = [ ... ]
     for (const m of src.matchAll(/TRACKED_FIELDS[^=]*=\s*\[([\s\S]*?)\]/g)) {

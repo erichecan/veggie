@@ -83,10 +83,13 @@ export async function POST(req: Request) {
         if (driverId) {
           const driver = await prisma.user.findUnique({
             where: { id: driverId },
-            select: { id: true, name: true, role: true },
+            select: { id: true, name: true, role: true, isActive: true },
           })
           if (!driver || driver.role !== 'DRIVER') {
             return NextResponse.json({ error: '司机不存在或角色不匹配' }, { status: 400 })
+          }
+          if (!driver.isActive) {
+            return NextResponse.json({ error: '该司机账号已停用，无法建立行程' }, { status: 400 })
           }
           tripDriverId = driver.id
           tripDriverName = driver.name

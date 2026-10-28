@@ -1,7 +1,8 @@
 {
   "retired": [
     71,
-    137
+    137,
+    194
   ],
   "keys": {
     "sales.order.read": 0,
@@ -82,6 +83,9 @@
     "dispatch.trip.read_discrepancy": 168,
     "dispatch.trip.discrepancy": 145,
     "dispatch.trip.correct_signature": 146,
+    "dispatch.goods_return.register": 195,
+    "dispatch.goods_return.warehouse_verify": 196,
+    "dispatch.goods_return.review": 197,
     "dispatch.driver_slot.read": 47,
     "dispatch.driver_slot.manage": 48,
     "dispatch.driver_summary.read": 147,
@@ -110,6 +114,9 @@
     "finance.account.manage": 69,
     "finance.settlement.read": 70,
     "finance.settlement.confirm": 72,
+    "finance.write_off.read": 191,
+    "finance.write_off.confirm": 192,
+    "finance.write_off.return": 193,
     "master.customer.read": 73,
     "master.customer.create": 74,
     "master.customer.update": 75,
@@ -192,9 +199,6 @@
     "system.mfa.enroll": 179,
     "system.notification.create": 180,
     "system.settings.read": 115,
-    "system.settings.manage": 116,
-    "finance.write_off.read": 191,
-    "finance.write_off.confirm": 192,
-    "finance.write_off.return": 193
+    "system.settings.manage": 116
   }
 }

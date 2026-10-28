@@ -1,29 +1,26 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useLocale } from 'next-intl'
 import { routing } from '@/i18n/routing'
 import { toast } from 'sonner'
-import { apiGet, apiPut } from '@/lib/api'
-import { Pagination } from '@/components/ui/pagination'
+import { apiPut } from '@/lib/api'
 import type { Trip, ReturnItem as CanonicalReturnItem, OrderItem } from '@/lib/types'
-import OdooControlPanel from '@/components/classic/OdooControlPanel'
-import { useFacets } from '@/lib/use-facets'
-import { filterByFacets, localizeClientFacetDefs, type ClientFacetDef } from '@/lib/facet-client'
-import OdooTable, { OdooColumn } from '@/components/classic/OdooTable'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { SCRAP_REASON_LABEL, SCRAP_REASON_LABEL_EN } from '@/lib/scrap-reasons'
-import { useRefetchOnFocus } from '@/lib/hooks/use-refetch-on-focus'
 import { round2 } from '@/lib/decimal-helpers'
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+/**
+ * 退货/报废整合 M1：从 `operator/returns/page.tsx`（已删除）搬过来的销售/运营审核弹窗，
+ * 只服务 Trip/ReturnItem 来源（司机上报）。逻辑原样保留，没有在搬迁时顺手改行为——
+ * 这段是生产已验证过的既有流程（17/17 探针），改坏了就是制造新 bug。
+ */
 
-type ReturnStatus = 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
-type FilterStatus = 'ALL' | ReturnStatus
+export type ReturnStatus = 'WAREHOUSE_PENDING' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED'
 
-interface FlatReturn extends CanonicalReturnItem {
+export interface FlatReturn extends CanonicalReturnItem {
   id: string
-  /** 真实的 ReturnItem.id（后端审核接口按它精确匹配）；`id` 字段被下面复用成表格行 key，
+  /** 真实的 ReturnItem.id（后端审核接口按它精确匹配）；`id` 字段被复用成行 key，
    *  两者不是一回事——历史遗留记录没有 id，这里可能是 undefined，交给后端退回 productId 匹配 */
   returnId?: string
   tripId: string
@@ -37,9 +34,7 @@ interface FlatReturn extends CanonicalReturnItem {
   status: ReturnStatus
 }
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
-const STATUS_LABELS_ZH: Record<ReturnStatus, string> = {
+export const TRIP_STATUS_LABELS_ZH: Record<ReturnStatus, string> = {
   WAREHOUSE_PENDING: '待仓库核实',
   PENDING_REVIEW: '待审核',
   APPROVED: '已批准',
@@ -47,7 +42,7 @@ const STATUS_LABELS_ZH: Record<ReturnStatus, string> = {
   SETTLED: '已结算',
 }
 
-const STATUS_LABELS_EN: Record<ReturnStatus, string> = {
+export const TRIP_STATUS_LABELS_EN: Record<ReturnStatus, string> = {
   WAREHOUSE_PENDING: 'Pending Warehouse Check',
   PENDING_REVIEW: 'Pending Review',
   APPROVED: 'Approved',
@@ -55,7 +50,7 @@ const STATUS_LABELS_EN: Record<ReturnStatus, string> = {
   SETTLED: 'Settled',
 }
 
-const STATUS_COLORS: Record<ReturnStatus, string> = {
+export const TRIP_STATUS_COLORS: Record<ReturnStatus, string> = {
   WAREHOUSE_PENDING: 'bg-gray-100 text-gray-500',
   PENDING_REVIEW: 'bg-yellow-50 text-yellow-700',
   APPROVED: 'bg-green-50 text-green-700',
@@ -65,9 +60,7 @@ const STATUS_COLORS: Record<ReturnStatus, string> = {
 
 const PCT_PRESETS = [5, 10, 20, 30, 40, 50, 100]
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-
-function flatten(trips: Trip[]): FlatReturn[] {
+export function flattenTripReturns(trips: Trip[]): FlatReturn[] {
   const rows: FlatReturn[] = []
   for (const trip of trips) {
     for (let ri = 0; ri < (trip.restaurants ?? []).length; ri++) {
@@ -93,8 +86,6 @@ function flatten(trips: Trip[]): FlatReturn[] {
   }
   return rows.sort((a, b) => new Date(b.tripCreatedAt).getTime() - new Date(a.tripCreatedAt).getTime())
 }
-
-// ─── Restaurant return profile aggregation ─────────────────────────────────────
 
 interface ReturnProfile {
   totalCount: number
@@ -162,19 +153,18 @@ async function submitReview(
   })
 }
 
-// ─── Review Dialog ─────────────────────────────────────────────────────────────
-
-interface ReviewDialogProps {
+export interface TripReturnReviewDialogProps {
   item: FlatReturn
   allTrips: Trip[]
   onClose: () => void
   onSaved: () => void
+  readOnly?: boolean
 }
 
-function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
+export function TripReturnReviewDialog({ item, allTrips, onClose, onSaved, readOnly }: TripReturnReviewDialogProps) {
   const locale = useLocale()
   const isEn = locale !== routing.defaultLocale
-  const STATUS_LABELS = isEn ? STATUS_LABELS_EN : STATUS_LABELS_ZH
+  const STATUS_LABELS = isEn ? TRIP_STATUS_LABELS_EN : TRIP_STATUS_LABELS_ZH
   const scrapLabels = isEn ? SCRAP_REASON_LABEL_EN : SCRAP_REASON_LABEL
 
   const [mode, setMode] = useState<'pct' | 'fixed'>(item.refundMode ?? 'pct')
@@ -196,19 +186,15 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
     ? round2((baseTotal * pct) / 100)
     : fixed
 
-  // All returns for this restaurant in this trip (including current)
   const tripRest = item._tripRef.restaurants[item._restIdx]
   const allReturns = (tripRest.returns ?? []) as Array<CanonicalReturnItem & Record<string, unknown>>
 
-  // All ordered items for this restaurant in this trip
   const orderedItems: OrderItem[] = tripRest.items ?? []
   const ORDERS_INITIAL_SHOW = 5
   const hiddenOrderCount = Math.max(0, orderedItems.length - ORDERS_INITIAL_SHOW)
   const visibleOrders = ordersExpanded ? orderedItems : orderedItems.slice(0, ORDERS_INITIAL_SHOW)
 
-  // Return profile (all history)
   const profile = buildReturnProfile(item.restaurantId, allTrips)
-  const historicalReturns = profile.history.filter(h => h.tripId !== item.tripId)
 
   async function act(action: 'approve' | 'reject') {
     setSaving(true)
@@ -241,10 +227,10 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
       <DialogHeader>
         <DialogTitle style={{ color: '#875A7B' }}>
           {isEn ? 'Review Return/Exchange' : '审核退换货'} — {item.restaurantName}
+          <span className="ml-2 text-xs font-normal text-blue-500">{isEn ? '🚚 Driver-reported' : '🚚 司机上报'}</span>
         </DialogTitle>
       </DialogHeader>
 
-      {/* ── Section 1: 本次退货商品（高亮在最上方）──────────────────────────── */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{isEn ? 'Items in This Return' : '本次退货商品'}</p>
         <div className="rounded-lg border border-orange-200 bg-orange-50 divide-y divide-orange-100">
@@ -264,7 +250,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0 text-right">
                     <span className="text-orange-700 font-semibold">×{ret.quantity ?? '—'}</span>
-                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[(ret.status as ReturnStatus) ?? 'PENDING_REVIEW']}`}>
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${TRIP_STATUS_COLORS[(ret.status as ReturnStatus) ?? 'PENDING_REVIEW']}`}>
                       {STATUS_LABELS[(ret.status as ReturnStatus) ?? 'PENDING_REVIEW']}
                     </span>
                   </div>
@@ -284,21 +270,20 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         </div>
       </div>
 
-      {/* ── Section 2: 本次配送的全部订单商品 ──────────────────────────────── */}
       {orderedItems.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
             {isEn ? `All Items in This Delivery (${orderedItems.length} items)` : `本次订单全部商品（共 ${orderedItems.length} 件）`}
           </p>
           <div className="rounded-lg border border-gray-200 bg-gray-50 divide-y divide-gray-100">
-            {visibleOrders.map((item, i) => (
+            {visibleOrders.map((o, i) => (
               <div key={i} className="px-3 py-2 text-sm flex justify-between items-center">
-                <span className="text-gray-700 truncate flex-1 mr-2">{item.productName}</span>
+                <span className="text-gray-700 truncate flex-1 mr-2">{o.productName}</span>
                 <div className="flex items-center gap-3 flex-shrink-0 text-right">
-                  <span className="text-gray-500">×{item.quantity}</span>
-                  {item.subtotal != null && (
+                  <span className="text-gray-500">×{o.quantity}</span>
+                  {o.subtotal != null && (
                     <span className="text-gray-600 font-medium w-16 text-right">
-                      €{item.subtotal.toFixed(2)}
+                      €{o.subtotal.toFixed(2)}
                     </span>
                   )}
                 </div>
@@ -318,7 +303,6 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         </div>
       )}
 
-      {/* ── Section 3: 照片 ──────────────────────────────────────────────── */}
       {item.photo && (
         <div className="space-y-1">
           <p className="text-xs text-gray-500 font-medium">{isEn ? 'Photo Evidence' : '现场照片'}</p>
@@ -331,7 +315,6 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         </div>
       )}
 
-      {/* ── Section 3.2: 换货关联新单号（20260922 拍板：换货一律新开单，不在本记录里维护第二套商品明细）── */}
       {item.actionType === 'exchange' && (
         <div className="space-y-1">
           <p className="text-sm font-medium text-gray-700">{isEn ? 'Linked Exchange Order' : '关联的换货新单号'}</p>
@@ -347,7 +330,6 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         </div>
       )}
 
-      {/* ── Section 3.5: 货物去向（批准时必选）──────────────────────────── */}
       {item.status === 'PENDING_REVIEW' && (
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-700">{isEn ? 'Disposition' : '货物去向'} <span className="text-red-500">*</span></p>
@@ -388,7 +370,6 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         </div>
       )}
 
-      {/* ── Section 4: 退款方式 ───────────────────────────────────────────── */}
       <div className="space-y-3">
         <p className="text-sm font-medium text-gray-700">{isEn ? 'Refund Method' : '退款方式'}</p>
         <div className="flex gap-2">
@@ -473,7 +454,6 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         </div>
       </div>
 
-      {/* ── Section 5: 退货档案 ───────────────────────────────────────────── */}
       <div className="rounded-lg border border-red-100 bg-red-50 overflow-hidden">
         <button
           onClick={() => setProfileExpanded(v => !v)}
@@ -508,7 +488,7 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-gray-500">{new Date(h.date).toLocaleDateString('en-GB')}</span>
-                        <span className={`px-1 py-0.5 rounded text-[10px] ${STATUS_COLORS[h.status]}`}>
+                        <span className={`px-1 py-0.5 rounded text-[10px] ${TRIP_STATUS_COLORS[h.status]}`}>
                           {STATUS_LABELS[h.status]}
                         </span>
                       </div>
@@ -532,7 +512,12 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
         <Button variant="outline" onClick={onClose} disabled={saving}>
           {isEn ? 'Cancel' : '取消'}
         </Button>
-        {item.status === 'PENDING_REVIEW' && (
+        {item.status === 'PENDING_REVIEW' && readOnly && (
+          <span className="text-xs text-gray-400 self-center">
+            {isEn ? 'View only — your role cannot review this' : '仅查看——你的角色没有审核权限'}
+          </span>
+        )}
+        {item.status === 'PENDING_REVIEW' && !readOnly && (
           <>
             <Button
               onClick={() => act('reject')}
@@ -566,309 +551,10 @@ function ReviewDialog({ item, allTrips, onClose, onSaved }: ReviewDialogProps) {
   )
 }
 
-// ─── Page ──────────────────────────────────────────────────────────────────────
-
-const FILTER_TABS_ZH: { key: FilterStatus; label: string }[] = [
-  { key: 'ALL', label: '全部' },
-  { key: 'WAREHOUSE_PENDING', label: '待仓库核实' },
-  { key: 'PENDING_REVIEW', label: '待审核' },
-  { key: 'APPROVED', label: '已批准' },
-  { key: 'REJECTED', label: '已拒绝' },
-  { key: 'SETTLED', label: '已结算' },
-]
-
-const FILTER_TABS_EN: { key: FilterStatus; label: string }[] = [
-  { key: 'ALL', label: 'All' },
-  { key: 'WAREHOUSE_PENDING', label: 'Pending Warehouse Check' },
-  { key: 'PENDING_REVIEW', label: 'Pending Review' },
-  { key: 'APPROVED', label: 'Approved' },
-  { key: 'REJECTED', label: 'Rejected' },
-  { key: 'SETTLED', label: 'Settled' },
-]
-
-const FACET_DEFS: ClientFacetDef<FlatReturn>[] = [
-  { key: 'customer', label: '客户', labelEn: 'Customer', values: r => [r.restaurantName] },
-  { key: 'product',  label: '商品', labelEn: 'Product',  values: r => [r.productName] },
-  { key: 'driver',   label: '司机', labelEn: 'Driver',   values: r => [r.driverName] },
-  { key: 'status',   label: '状态', labelEn: 'Status',   values: r => [r.status] },
-]
-
-export default function ClassicReturnsPage() {
-  const locale = useLocale()
-  const en = locale !== routing.defaultLocale
-  const STATUS_LABELS = en ? STATUS_LABELS_EN : STATUS_LABELS_ZH
-  const FILTER_TABS = en ? FILTER_TABS_EN : FILTER_TABS_ZH
-
-  const [trips, setTrips] = useState<Trip[]>([])
-  const [loading, setLoading] = useState(false)
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL')
-  const [searchInput, setSearchInput] = useState('')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [reviewing, setReviewing] = useState<FlatReturn | null>(null)
-  const [page, setPage] = useState(1)
-
-  async function load() {
-    setLoading(true)
-    try {
-      const data = await apiGet<Record<string, unknown>[]>('/api/trips')
-      setTrips(data as unknown as Trip[])
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (en ? 'Failed to load data' : '加载数据失败'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { load() }, [])
-
-  // 行程/退货数据在别的 tab 改了之后，切回来希望看到最新结果
-  useRefetchOnFocus([load])
-
-  const allRows = flatten(trips)
-
-  const { facets, chips, controlPanelProps, clear: clearFacets } = useFacets(localizeClientFacetDefs(FACET_DEFS, en))
-
-  // 一键清除（20261017 客户反馈“清不掉筛选条件”）：本页全是前端过滤，
-  // 重置 state 后 filtered 自动重算，无需手动重拉
-  function clearAllFilters() {
-    setSearchInput('')
-    clearFacets()
-    setFilterStatus('ALL')
-    setPage(1)
-  }
-
-  const filtered = filterByFacets(allRows, facets, FACET_DEFS).filter(r => {
-    if (filterStatus !== 'ALL' && r.status !== filterStatus) return false
-    if (searchInput) {
-      const q = searchInput.toLowerCase()
-      if (
-        !r.restaurantName.toLowerCase().includes(q) &&
-        !(r.productName ?? '').toLowerCase().includes(q) &&
-        !r.driverName.toLowerCase().includes(q)
-      ) return false
-    }
-    return true
-  })
-
-  const PAGE_SIZE = 20
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
-  const counts: Record<FilterStatus, number> = {
-    ALL: allRows.length,
-    WAREHOUSE_PENDING: allRows.filter(r => r.status === 'WAREHOUSE_PENDING').length,
-    PENDING_REVIEW: allRows.filter(r => r.status === 'PENDING_REVIEW').length,
-    APPROVED: allRows.filter(r => r.status === 'APPROVED').length,
-    REJECTED: allRows.filter(r => r.status === 'REJECTED').length,
-    SETTLED: allRows.filter(r => r.status === 'SETTLED').length,
-  }
-
-  const columns: OdooColumn[] = [
-    {
-      key: 'tripCreatedAt',
-      label: en ? 'Date' : '时间',
-      render: (v) => (
-        <span className="text-xs text-gray-500">
-          {v ? new Date(v as string).toLocaleDateString('en-GB') : '—'}
-        </span>
-      ),
-    },
-    {
-      key: 'driverName',
-      label: en ? 'Driver' : '司机',
-      render: (v) => <span className="text-sm">{String(v ?? '—')}</span>,
-    },
-    {
-      key: 'restaurantName',
-      label: en ? 'Restaurant' : '餐厅',
-      render: (v) => <span className="font-medium text-sm">{String(v ?? '—')}</span>,
-    },
-    {
-      key: 'productName',
-      label: en ? 'Product' : '商品',
-      render: (v) => <span className="text-sm">{String(v ?? '—')}</span>,
-    },
-    {
-      key: 'quantity',
-      label: en ? 'Qty' : '数量',
-      render: (v) => (
-        <span className="text-sm">{v != null ? String(v) : '—'}</span>
-      ),
-    },
-    {
-      key: 'refundAmount',
-      label: en ? 'Refund' : '退款金额',
-      render: (v, row) => {
-        const item = row as unknown as FlatReturn
-        if (item.status === 'PENDING_REVIEW') return <span className="text-gray-400 text-xs">{en ? 'Pending Review' : '待审核'}</span>
-        if (v == null) return <span className="text-gray-400">—</span>
-        return <span className="text-sm font-medium">€{Number(v).toFixed(2)}</span>
-      },
-    },
-    {
-      key: 'status',
-      label: en ? 'Status' : '状态',
-      render: (v) => {
-        const s = (v as ReturnStatus) ?? 'PENDING_REVIEW'
-        return (
-          <span className={`inline-block px-2 py-0.5 rounded text-xs ${STATUS_COLORS[s]}`}>
-            {STATUS_LABELS[s]}
-          </span>
-        )
-      },
-    },
-    {
-      key: 'productId',
-      label: en ? 'Action' : '操作',
-      render: (_, row) => {
-        const item = row as unknown as FlatReturn
-        const canAct = item.status === 'PENDING_REVIEW' || item.status === 'APPROVED'
-        return (
-          <button
-            onClick={e => { e.stopPropagation(); setReviewing(item) }}
-            className="text-xs px-2 py-1 rounded border transition-colors"
-            style={canAct
-              ? { borderColor: '#875A7B', color: '#875A7B' }
-              : { borderColor: '#d1d5db', color: '#6b7280' }}
-          >
-            {canAct ? (en ? 'Review' : '审核') : (en ? 'View' : '查看')}
-          </button>
-        )
-      },
-    },
-  ]
-
+export function TripReturnReviewDialogWrapper({ item, allTrips, onClose, onSaved, readOnly }: TripReturnReviewDialogProps) {
   return (
-    <div>
-      <OdooControlPanel
-        {...controlPanelProps}
-        activeFilters={chips}
-        breadcrumb={[en ? 'Returns' : '退换货', en ? 'Returns Management' : '退换货管理']}
-        permanentActions={[{ label: en ? 'Refresh' : '刷新', onClick: load }]}
-        searchValue={searchInput}
-        onSearch={v => { setSearchInput(v); setPage(1) }}
-        onSearchSubmit={() => setPage(1)}
-        onClearAll={clearAllFilters}
-        total={filtered.length}
-        page={page}
-        pageSize={PAGE_SIZE}
-        onPageChange={setPage}
-      />
-
-      <div className="p-4 space-y-3">
-        {/* Process flow guide */}
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-          <p className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">
-            {en ? 'Returns Process' : '退换货流程'}
-          </p>
-          <div className="flex items-start gap-0 overflow-x-auto">
-            {[
-              {
-                emoji: '🚚',
-                step: 1,
-                title: en ? 'Driver Returns' : '司机带回',
-                who: en ? 'Driver' : '司机',
-                whoColor: 'bg-blue-100 text-blue-700',
-                desc: en ? 'Driver brings goods back from restaurant' : '司机从餐馆带回退货商品',
-              },
-              {
-                emoji: '🔍',
-                step: 2,
-                title: en ? 'Salesperson Reviews' : '销售审核',
-                who: en ? 'Salesperson' : '销售',
-                whoColor: 'bg-purple-100 text-purple-700',
-                desc: en ? 'Set refund % or fixed amount per item' : '为每件商品设定退款比例或固定金额',
-              },
-              {
-                emoji: '✅',
-                step: 3,
-                title: en ? 'Approve / Reject' : '批准 / 拒绝',
-                who: en ? 'Salesperson' : '销售',
-                whoColor: 'bg-purple-100 text-purple-700',
-                desc: en ? 'Approve or reject the return request' : '审批通过或拒绝退货申请',
-              },
-              {
-                emoji: '💰',
-                step: 4,
-                title: en ? 'Finance Settles' : '会计结算',
-                who: en ? 'Finance' : '会计',
-                whoColor: 'bg-green-100 text-green-700',
-                desc: en ? 'Finance completes the refund settlement' : '财务完成退款结算',
-              },
-            ].map((s, i, arr) => (
-              <div key={s.step} className="flex items-start flex-shrink-0">
-                <div className="flex flex-col items-center w-36">
-                  <div className="flex items-center justify-center w-9 h-9 rounded-full text-lg mb-1.5" style={{ background: '#f3eff5' }}>
-                    {s.emoji}
-                  </div>
-                  <span className="text-xs font-semibold text-gray-800 text-center leading-tight mb-1">{s.title}</span>
-                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium mb-1 ${s.whoColor}`}>{s.who}</span>
-                  <span className="text-[10px] text-gray-500 text-center leading-snug">{s.desc}</span>
-                </div>
-                {i < arr.length - 1 && (
-                  <div className="flex items-center mt-4 mx-1 text-gray-300 text-lg flex-shrink-0">→</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Status filter tabs */}
-        <div className="flex gap-1 flex-wrap">
-          {FILTER_TABS.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => { setFilterStatus(tab.key); setPage(1) }}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
-                filterStatus === tab.key ? 'text-white' : 'border-gray-200 text-gray-600 hover:border-purple-300'
-              }`}
-              style={filterStatus === tab.key ? { background: '#875A7B', borderColor: '#875A7B' } : {}}
-            >
-              {tab.label}
-              {counts[tab.key] > 0 && (
-                <span className={`ml-1 px-1 rounded-full text-xs ${
-                  filterStatus === tab.key ? 'bg-white/30 text-white' : 'bg-gray-100 text-gray-500'
-                }`}>
-                  {counts[tab.key]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <OdooTable
-          columns={columns}
-          rows={pageRows as unknown as Record<string, unknown>[]}
-          loading={loading}
-          selected={selected}
-          onSelectAll={checked => {
-            if (checked) setSelected(new Set(pageRows.map(r => r.id)))
-            else setSelected(new Set())
-          }}
-          onSelectRow={(id, checked) => {
-            setSelected(prev => {
-              const next = new Set(prev)
-              if (checked) next.add(id)
-              else next.delete(id)
-              return next
-            })
-          }}
-          onRowClick={row => setReviewing(row as unknown as FlatReturn)}
-          emptyText={en ? 'No return records' : '暂无退换货记录'}
-        />
-        <Pagination page={page} totalPages={Math.ceil(filtered.length / PAGE_SIZE)} onPageChange={setPage} />
-      </div>
-
-      {/* Review Dialog */}
-      <Dialog open={!!reviewing} onOpenChange={open => { if (!open) setReviewing(null) }}>
-        {reviewing && (
-          <ReviewDialog
-            item={reviewing}
-            allTrips={trips}
-            onClose={() => setReviewing(null)}
-            onSaved={load}
-          />
-        )}
-      </Dialog>
-    </div>
+    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
+      <TripReturnReviewDialog item={item} allTrips={allTrips} onClose={onClose} onSaved={onSaved} readOnly={readOnly} />
+    </Dialog>
   )
 }

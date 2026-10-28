@@ -61,6 +61,7 @@ export async function humanizeLogRefs<T extends LogLike>(logs: T[]): Promise<T[]
           const pid = it.productVariantId || it.productTemplateId
           if (pid) productIds.add(pid)
           if (it.categoryId) want.category.add(it.categoryId)
+          if (it.uomId) want.uom.add(it.uomId)
         }
       }
     }
@@ -109,7 +110,8 @@ export async function humanizeLogRefs<T extends LogLike>(logs: T[]): Promise<T[]
       ? `Category ${it.categoryId ? names.category.get(it.categoryId) ?? '?' : '?'}`
       : it.applyOn === 'global' ? 'All Products'
         : pid ? productName.get(pid) ?? `${pid} (deleted)` : 'Product ?'
-    return `${target}: ${ruleSummary(it)}`
+    // 20261024：不传 uomLabel 时 CASE/PACK 等不同单位的同参数规则摘要文字完全相同，看不出改的是哪条
+    return `${target}: ${ruleSummary(it, (uomId) => names.uom.get(uomId))}`
   }).join('; ')
 
   for (const log of logs) {

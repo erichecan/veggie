@@ -52,7 +52,7 @@ export async function GET(req: Request) {
  * 算法：
  *   1. openingBalance —— 优先取上一张对账单的期末（账簿连续性）；
  *      **没有上一张就从历史派生**（期前销售 − 期前收款），不再默认 0
- *   2. 期内已确认订单（按 confirmationDate，销售口径 SSOT）→ totalSales（含税）
+ *   2. 期内已确认订单（按 deliveryDate 分期，20261026 起不再用 confirmationDate）→ totalSales（含税）
  *   3. 期内 Payment 流水（按 paidAt）→ totalPayments，含司机交账核销的现金
  *   4. closingBalance = openingBalance + totalSales − totalPayments
  *
