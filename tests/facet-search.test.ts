@@ -175,7 +175,19 @@ test('发票维度：同维度 OR、跨维度 AND 与服务端一致', () => {
 })
 
 test('fieldsOf 从 defs 派生下拉项，key/label 与 defs 一致', () => {
-  assert.deepEqual(fieldsOf(INVOICE_FACET_DEFS).map(f => f.key), ['name', 'customer', 'status', 'terms'])
+  assert.deepEqual(fieldsOf(INVOICE_FACET_DEFS).map(f => f.key), ['name', 'saleOrder', 'customer', 'status', 'terms'])
+})
+
+// 20261028 客户需求：发票页按关联销售单号（SO number）搜索
+test('发票「销售单号」分面按关联订单号包含匹配，一张发票任一 SO 命中即保留', () => {
+  const inv = (name: string, saleOrderCodes: string[]) =>
+    ({ name, customerName: 'C', status: 'draft', paymentTerms: 'monthly', saleOrderCodes }) as never
+  const rows = [inv('INV-1', ['D-261028-001', 'D-261028-007']), inv('INV-2', ['D-261027-003']), inv('INV-3', [])]
+  const hit = (v: string) => filterByFacets(rows, [{ key: 'saleOrder', label: 'Sales Order', value: v }], INVOICE_FACET_DEFS)
+    .map((r: { name: string }) => r.name)
+  assert.deepEqual(hit('261028-007'), ['INV-1'])
+  assert.deepEqual(hit('d-2610'), ['INV-1', 'INV-2'])
+  assert.deepEqual(hit('999'), [])
 })
 
 // ── 'all'（全部）维度：曾经是唯一一个不走 buildFacetWhere 的维度 ─────────────

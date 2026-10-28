@@ -19,6 +19,9 @@ export function fieldsOf<T>(defs: ClientFacetDef<T>[], isEn = false): { key: str
 // ── 发票 ────────────────────────────────────────────────────────────────────
 export const INVOICE_FACET_DEFS: ClientFacetDef<Invoice>[] = [
   { key: 'name',     label: '发票号', labelEn: 'Invoice #',    values: r => [r.name] },
+  // 关联销售单号（20261028）。发票页只加载最近 200 张，这个维度有值时页面会另向服务端
+  // 按 ?saleOrder= 拉命中集合（见 finance/invoices/page.tsx），再在这里做同一套包含匹配
+  { key: 'saleOrder', label: '销售单号', labelEn: 'Sales Order', values: r => r.saleOrderCodes ?? [] },
   { key: 'customer', label: '客户',   labelEn: 'Customer',     values: r => [r.customerName] },
   { key: 'status',   label: '状态',   labelEn: 'Status',       values: r => [r.status] },
   { key: 'terms',    label: '结算方式', labelEn: 'Payment Term', values: r => [r.paymentTerms] },
