@@ -1,10 +1,10 @@
 /**
- * 日销售管理中心「销售统计 · 按客户」的列排序（20261028 客户需求：加订单号 / 批次 / 司机 /
- * AM-PM 列，并能按列排序）。纯函数，屏幕表格专用；单测见 tests/sales-stats-sort.test.ts。
+ * 日销售管理中心表格的列排序（20261028 客户需求：加订单号 / 批次 / 司机 / AM-PM 列，并能按列排序）。
+ * 「销售统计 · 按客户」与「缺货处理」共用。纯函数，屏幕表格专用；单测见 tests/sales-stats-sort.test.ts。
  */
 
 /** 可排序的列。默认（未选排序键）时屏幕按 日期 → 客户 分组，不走这里 */
-export type CustomerSortKey = 'product' | 'order' | 'batch' | 'driver' | 'time' | 'qty' | 'amount'
+export type CustomerSortKey = 'customer' | 'product' | 'order' | 'batch' | 'driver' | 'time' | 'qty' | 'amount'
 
 export interface SortableLine {
   customerName: string
@@ -24,6 +24,7 @@ const timeRank = (t: string) => (t === 'am' ? 0 : t === 'pm' ? 1 : 2)
 
 function compareBy(a: SortableLine, b: SortableLine, key: CustomerSortKey): number {
   switch (key) {
+    case 'customer': return a.customerName.localeCompare(b.customerName)
     case 'product': return a.productName.localeCompare(b.productName)
     case 'order': return a.orderCode.localeCompare(b.orderCode, undefined, { numeric: true })
     // 批次号相同再按 AM/PM、司机——「#1 AM」与「#1 PM」是两车货
