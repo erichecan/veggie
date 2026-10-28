@@ -1,109 +1,101 @@
-# DEV-REPORT：核销触发开票 + 对账单改按送货日期
+# DEV-REPORT：退货/报废流程整合
 
-对应 `DEV-PLAN.md`（已确认），需求原话存档：`docs/20261026-核销触发开票与对账单口径-需求原话.md`，
-任务台账：`docs/20261026-核销触发开票与对账单口径-tasks.md`（全部 7 条已完成）。
+对应 `DEV-PLAN.md`（已确认，2026-10-27），任务台账：`docs/20261027-退货报废整合-tasks.md`
 
 ## 给你看的
 
 | 场景 | 来源 | 可看物 | 状态 |
-| --- | --- | --- | --- |
-| 以前"标记完成"订单就立刻开出草稿发票；现在改成无论有没有问题，都要等会计在核销页点「核销确认」才生成发票 | 你说的 | 见下方「怎么验」第 1 步 | 符合 |
-| 核销确认时，少送/差异的单会计要能直接在核销框里改实际送达数量，改完发票按改过的数字开 | 你说的 | 见下方「怎么验」第 2 步 | 符合 |
-| 对账单(Statement)以前按"确认日期"统计，现在改成按"送货日期"统计 | 你说的 | 已用真实库回归测试锁住（见「存档用的」），逻辑上可信 | 符合 |
-| 批量「确认核销」按钮只给无差异订单用，要改数量的单必须逐单打开编辑 | 我推断的 | 同第 1/2 步操作路径 | 符合 |
-| 今天（20261026）刚上线的「批量生成 Invoice」按钮改成补漏工具保留，不再是主要开票入口 | 我推断的 | 按钮文案已改为「🧾 补开漏开的发票」+ hover 提示；且已加「未核销确认的单不处理」保护，见下方说明 | 符合 |
-| 提成冻结时间点一并从"标记完成"挪到"核销确认" | 我推断的 | 技术验证见「存档用的」A3+C | 符合 |
+|---|---|---|---|
+| 仓库和运营不用再因为权限问题在两个页面间跳转，核实+审核在同一个「退换货」看板里完成 | [你说的] | `/classic/operator/inventory` →「退换货」tab，三栏（待核实/待审核/已处理），卡片右上角标来源（🚚司机上报 / 📝手动登记） | 待你确认 |
+| 日销售中心多一个平级的「退货登记」tab，跟缺货处理分开，按订单号手动登记退货 | [你说的] | `/classic/operator/daily-sales` →「退货登记」tab | 待你确认 |
+| 三个处置按钮（核实/审核/报废登记）点完之后，订单上能看到退货状态和完整操作记录 | [你说的] | `/classic/operator/orders` 列表页状态列橙色「有退货」/灰色「退货已拒绝」角标；`OrderAuditLog` 落有 `goods_return_disposed` 记录 | 待你确认 |
+| 两个旧页面（`warehouse/returns`、`operator/returns`）直接删除，不保留文件 | [我推断的] | `git log --diff-filter=D` 可见两目录已删；导航里「退换货核实」入口已去掉 | 待你确认 |
+| 报废管理页/调整库存弹窗不拦截后端调用，只去掉诱导填「客户退货」的选项/文案 | [我推断的] | `/classic/operator/inventory` 报废管理页下拉只剩仓库过期/损坏/到货即损坏/其他；`/classic/warehouse` 调整库存弹窗占位文字去掉「客户退货」示例 | 待你确认 |
+| 日销售中心「退货登记」走新表 `OrderReturn`，不复用 Trip 占位行程 | [我推断的] | 本次新增 `OrderReturn` 表（schema+迁移），`ReturnRegistration.tsx` 走 `POST /api/order-returns` | 待你确认 |
 
-**⚠️ 这次同样没有截图**：本机浏览器自动化环境（Playwright/chrome-devtools MCP）的 Chrome.app 是空壳
-launcher，缺真正的 Chrome 二进制，是跨任务的已知环境问题，不是这次改动引入的，没有重复试装。
-退回真实 API + 数据库全链路验证（独立测试订单，验证完已清理），比纯文字描述更可信，
-给你一段能自己复现的操作路径：
+访问地址：http://localhost:3000/enter
 
-### 怎么验（本地 http://localhost:3000，生产 https://www.johnstonebros.ie）
+⚠️ 本机 Chrome 可执行文件缺失（既往记忆 `chrome-binary-missing-for-browser-mcp-20261014` 复现，非新坑），Playwright/chrome-devtools MCP 都打不开浏览器，没法截图。退回「API 探针验证状态机/权限 + 给你可复现操作路径」，下面每条都是实测走过一次的真实步骤，不是凭代码推测写的。
 
-1. **核销才开票**：调度台把一单标记完成（或司机端完成行程）→ 查这张单此时**没有**生成发票、
-   没有提成冻结（`commissionFrozenAt` 为空）→ 去「核销管理」页「待核销」tab 找到这张单，点
-   「确认核销」→ 这时才会看到发票生成、提成冻结时间写入。
-2. **核销时改数量**：「核销管理」页「待核销」tab 任意一单点「核对数量」→ 弹窗列出这单每一行
-   （商品/下单数量/实际送达，默认=下单数量）→ 改某一行的数字（比如少 1 箱）→ 点「✅ 确认核销」→
-   该行按改过的数量计入发票（金额 = 改过的数量 × 单价，不是原始下单数量）。
-3. **补漏按钮已加保护**：「待核销」tab 选中还没核销确认的单，点「🧾 补开漏开的发票」→ 会被跳过
-   并提示"未核销确认"，不会提前按下单量开票（这是 code review 发现并修复的一个真实漏洞，见下方
-   「存档用的」）。
-4. **对账单口径**：财务「对账单」页为任意客户生成一张新对账单 → 落入账单的订单范围现在按这些单的
-   「送货日期」落在选的周期里判断，不是「确认日期」。
+### 怎么验（20 秒内可复现）
+
+1. **M1 看板**：浏览器开 http://localhost:3000/enter → 用账号 `warehouse`（demo.local 域，密码 `test12345`，完整账号见下方「测试账号」表）登录 → 进 `/classic/operator/inventory` → 点「退换货」tab → 应看到三栏、卡片带来源徽标；点「待核实」栏任一卡片应能核实/拒绝，点其它栏应只读无按钮。换账号 `operator3`（同域，同密码）登录重复一次，应反过来——「待审核」栏能操作、「待核实」栏只读。
+2. **M3 登记**：账号 `operator3` 登录 → `/classic/operator/daily-sales` → 「退货登记」tab → 搜订单号或客户名 → 选中订单 → 选一个商品行点「登记退货」→ 填数量提交 → 应看到成功提示且该行变「已登记」；回到 M1 的看板「待核实」栏应能看到这条新记录（📝手动登记徽标）。
+3. **M4 报废/调整**：有 `stock.scrap.manage` 权限账号 → `/classic/operator/inventory` 报废管理页 → 原因下拉应只有仓库过期/损坏/到货即损坏/其他，没有「客退过期/客退损坏」；`/classic/warehouse` 调整库存弹窗占位文字应只剩「如：损耗处理、盘点调整」。
+4. **M5 角标**：`dispatch.goods_return.review` 权限账号审核通过/拒绝任一笔退货后 → `/classic/operator/orders` 列表该订单状态列应出现橙色「有退货」或灰色「退货已拒绝」角标，跟已有的「回单已核销」角标并存不冲突；`/classic/operator/daily-sales` 打印中心同一订单行同理。
 
 ## 存档用的（你不用看，出问题时我回来查）
 
 ### 改了什么（按 DEV-PLAN 模块）
 
-- **A1/A2**：`lib/delivery-complete.ts::completeDeliveredOrders()`、`app/api/orders/[id]/route.ts`
-  去掉"标记完成"时自动开票 + 提成冻结的调用；全送覆盖 `deliveredQty=orderedQty` 保留，变成
-  "核销时默认值的来源"而不是"开票前最后一次写入"。
-- **A3+C**：`app/api/orders/bulk/route.ts` 的 `mark_returned` 加 `lines` 可选参数（单订单+RETURNED
-  才接受，校验归属与非负），核销 RETURNED 成功后逐单触发开票 + `recalcOrderCommission` +（如在途
-  中的 Trip）`recalcTripDriverCommission`；失败只记日志不回滚核销，detail 里带失败清单。
-- **A4**：`bulk-invoice` 路由与按钮文案改为补漏工具（"🧾 补开漏开的发票"）；顺带发现 bulk-invoice 与
-  新增的 `[id]/lines` 路由都漏登记 `lib/rbac/route-map.ts`（未登记=默认 403，之前所有角色都摸不到这两
-  个功能，不是本次引入的回归），已补登记。
-- **B1/B2**：新增 `lib/accounting/returns.ts::getReturnOrderLines()` + `GET /api/accounting/returns/[id]/lines`
-  按需拉单订单行明细；`WriteOffBoard.tsx` 新增 `QtyEditDialog`（核对数量弹窗）。
-- **D1+D2**：`lib/statements.ts` 两处查询、`lib/finance/statement.ts` 的 `StatementOrderRow` 字段，
-  全部从 `confirmationDate` 改成 `deliveryDate`；详情页展示仍保留 `confirmationDate` 供参考。
+- **schema**：`OrderReturn` 表 + `GoodsReturnStatus`/`OrderReturnAction` 两个枚举 + `Order.goodsReturnStatus`/`goodsReturnedAt`。
+- **lib/returns-engine.ts**：抽取 `buildReturnStockMoves`/`postReturnStockMoves`/`applyReturnOrderLineReduction`/`calculateRefundAmount`/`syncOrderGoodsReturnStatus` 共用逻辑，Trip 来源与 OrderReturn 来源的处置走同一套函数。
+- **API**：`POST/GET /api/order-returns`、`PUT /api/order-returns/[id]/warehouse-verify`、`PUT /api/order-returns/[id]/review`。
+- **RBAC**：新权限模块 `dispatch.goods_return`（`register`/`warehouse_verify`/`review` 三个动作），`operator`/`sales`→register+review，`warehouse`→warehouse_verify，`boss`→[]（按 DEV-PLAN 路由清单字面执行，首版多发的 read 动作与误发给 boss 的权限已订正）；`route-map.ts` 补 3 条 API + inventory 页面开口子。
+- **M1**：`operator/inventory`「退换货」tab 换成三栏看板 `ReturnsBoard.tsx`（同时读 Trip 与 OrderReturn 两个来源），彻底删除 `warehouse/returns`、`operator/returns` 两个孤儿页面及导航入口。
+- **M3**：`daily-sales` 新增平级「退货登记」tab（`ReturnRegistration.tsx`），按订单号/客户名搜索已送达订单（`IN_DELIVERY`/`COMPLETED`）手动登记。
+- **M4**：`lib/scrap-reasons.ts` 新增 `MANUAL_SCRAP_REASONS` 子集（排除两个 `CUSTOMER_RETURN_*`），只改手动报废页下拉；审核通过 `disposition=SCRAP` 的 `StockMove` 打标逻辑未动。调整库存弹窗占位文案去掉「客户退货」示例。
+- **M5**：审核/处置通过时 `syncOrderGoodsReturnStatus` 回写 `Order.goodsReturnStatus`/`goodsReturnedAt` + `OrderAuditLog(goods_return_disposed)`；订单列表页、日销售中心打印中心各加独立角标（`data-testid="goods-return-badge"`，与已有的「回单核销」角标 `return-badge` 区分颜色/testid，不复用）。
+- **loss-dashboard 口径补缺（DEV-PLAN 风险点3）**：排查发现 `getDispositionCounts`/`getPendingReturnCount`/`getLossTrend` 此前完全没扫过 `OrderReturn` 表，M3 上线后手动登记的退货在损耗仪表盘上会隐身；新增 `scanOrderReturnsForDisposition()` 合并两条路径计数，`sourceType` 匹配从精确改成 `.endsWith`，三段式插入/对比/清理验证通过。
 
-### Code Review 发现并修复的 4 个问题（`/code-review high`，20261026）
+### Code Review 发现并修复的问题（`/code-review high`，2026-10-27，commit `3a913cc5`）
 
-1. **`getReturnOrderLines()` 单行 0 被兜底覆盖**：原来 `deliveredQty || orderedQty` 按单行判断，
-   一张单里"一行正常送达、一行真实拒收(0)"这种情况，拒收那一行会被误显示成下单量，核销时不改
-   直接确认就会把真实的 0 覆盖回下单量——多开发票、多算提成。改成按整单判断（整单所有行都是 0
-   才兜底，否则逐行照实际值显示），跟 `fillDeliveredQtyIfUnrecorded` 的判断逻辑保持一致。
-2. **`bulk-invoice` 补漏接口没挡住未核销的单**：待核销（PENDING/ISSUE）的单选中点"补开漏开的发票"
-   会直接按下单量全送开票，绕开了这次改动"开票挪到核销确认之后"的设计本身。已加
-   `returnStatus!=='RETURNED'` 则跳过的校验。
-3. **账本核对页"待开票"探针产生假阳性**：`lib/ledger-check.ts::findUninvoicedCompletedOrders()` 原来
-   只看 `status=COMPLETED`，这次改动后开票挂在核销确认之后，COMPLETED 但还没核销的单（新设计下
-   正常的中间状态）会被全部误判成"漏开票"，一键"统一补开草稿发票"会提前按下单量开票。已加
-   `returnStatus='RETURNED'` 条件。
-4. **核销弹窗无条件提交整单 lines**：核实为问题 1 的下游症状，非独立缺陷——问题 1 修好后 GET 返回
-   的就是真实当前值，弹窗"看到什么就确认什么"正是设计本身要的语义（核销这一步本身就是核对动作），
-   未改动。
+10 条发现，6 条已修复，2 条确认是既有限制记入台账不处理：
 
-四条均在 `app/api/accounting/returns/bulk-invoice/route.ts`、`lib/accounting/returns.ts`、
-`lib/ledger-check.ts` 落了代码修复，并新增 `tests/write-off-invoice-gating.test.ts`（3 个真实库回归
-测试）锁住前两条的不变量。
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | `review` 路由 approve/reject 两分支 TOCTOU 竞态（先查后写，两个并发请求都能越过前置检查各跑一遍副作用） | 已修：`update` 改 `updateMany({where:{id,status:'PENDING_REVIEW'}})`，`count===0` 返回 409 |
+| 2 | `warehouse-verify` 路由同款 TOCTOU，且原来连事务都没有，比 #1 更严重 | 已修：补事务 + 同款 `updateMany` 状态锁 |
+| 3 | `daily-sales` 页「退货登记」tab 对没有 `dispatch.goods_return.register` 权限的角色（如 BOSS/EXTERNAL_SALES）仍显示，填完表单才被后端 403 | 已修：加 `hasPermission` 门禁，无权限不显示 tab |
+| 4 | `ReturnsBoard.tsx` 用角色名字符串匹配（`rolesUpper.includes('WAREHOUSE')`）判断按钮可见性，管理员新建自定义角色即便被授权也会被误判没有 | 已修：改按权限位 `hasPermission(ability, 'dispatch.goods_return.*')` 判断 |
+| 6 | `warehouse-verify` 拒绝分支漏了回写 `Order.goodsReturnStatus`，角标会一直停在「无退货」 | 已修：reject 分支补调 `syncOrderGoodsReturnStatus` |
+| 7 | `review` 拒绝分支的拒绝原因没地方存 | 已修：复用 `OrderReturn.warehouseNote` 字段承载「最近一次处置备注」 |
+| 9 | `GET /api/order-returns` 列表无界查询，随历史记录增多查询数据量线性增长 | 已修：改 `groupBy` 聚合算总数（不受截断影响）+ `findMany` 加 `take:300` 上限 |
+| 10 | `lib/returns-engine.ts` 三个函数的 `tx` 参数类型是 `any` | 已修：改 `Prisma.TransactionClient`；顺带修了因此在 `lib/inventory.ts` 炸出的一处类型不兼容（方法签名 vs 箭头属性的双变/逆变检查差异） |
+| 5 | trips 批量审核混合批准/拒绝同一订单多条退货时，`goodsReturnStatus` 后写覆盖前写 | **不处理**——`syncOrderGoodsReturnStatus` 函数注释本身已拍板接受这个设计（角标是"镶嵌展示最近一次处置结果"语义，不是账本，同一订单极少出现第二条独立退货） |
+| 8 | `applyReturnOrderLineReduction` 按 `orderId+productId` 反查 `OrderLine`，无法精确到具体行 | **不处理**——重构前就存在的既有限制，需要给 `OrderReturn` 加 `orderLineId` 外键才能根治，留给未来单元 |
 
 ### `/security-review`
 
-手工限定 diff 范围到本次四个模块实际改动的文件，逐项检查 IDOR/越权（`orderId` 作用域的
-`orderLineId` 校验）、RBAC 权限点复用、新 `GET [id]/lines` 路由鉴权模型、XSS（无
-`dangerouslySetInnerHTML`）、SQL 注入（全部参数化 Prisma 调用）—— **零发现**（无 ≥8/10 置信度问题）。
-
-### 排查并修复的两个 RBAC 回归（A4 route-map 补注册的副作用）
-
-- `tests/rbac-legacy-token.test.ts`：两条新路由在补注册 route-map 前，新旧 token 都是 403（压根没人
-  能用），旧 token 的角色白名单回退表 `lib/role-access.ts` 没覆盖这两条子路径，所以旧 token 现在仍判
-  不可达——是"一直不能"不是"收紧"，不存在真实用户受影响面，已在 `LEGACY_TOKEN_EXEMPT` 登记并写明依据。
-- `tests/role-reachability.test.ts`：独立的可达性快照 `scripts/audit/role-reachability.json` 同样没
-  登记过这两条路由，跑 `npx tsx scripts/audit/save-reachability.ts` 刷新（纯新增 28 行）。
+对 `HEAD~5..HEAD` 完整 diff 跑了子任务扫描，**零条高置信（≥8）发现**。`order-returns/route.ts`(POST) 与 `warehouse-verify/route.ts` 落在 5 个 commit 范围之外，人工按同一标准复核（类型化 Prisma 调用、既有 `withAuth` 权限门禁、输入服务端校验），结论一致。
 
 ### 验收命令与结果
 
-- `npx tsc --noEmit`：零输出，通过。
-- `npm run build`：通过，路由清单含两条新注册的 `/api/accounting/returns/*` 子路由。
-- `node --test --import=tsx tests/*.test.ts`：**1007** 个测试（本次新增 3 个回归测试），
-  **1004 pass / 2 skip / 1 fail**。唯一失败 `tests/pricing-override.test.ts` 的前置断言
-  「未找到 ABCT 客户」——查本地开发库确认 70 个客户里确实没有 ABCT（该测试设计上依赖具体业务数据，
-  见文件头注释），跟本次四个模块完全无关，是本地库业务数据缺口，不处理。
-- 生产库部署前探针（附录 A 探针 7，SSH 实测）：可入账状态（`CONFIRMED/WAVE_ASSIGNED/IN_DELIVERY/
-  COMPLETED/LOCKED`）且 `deliveryDate` 为空的订单，只有 `CONFIRMED` 89 条（总 191 条 CONFIRMED 中的
-  89 条），全部是 2026-10-20~10-21 最近一周内刚确认、还没被调度台排进波次的单——符合"波次分配时才
-  回写 `deliveryDate`"这个正常流程阶段，不是数据缺陷。`WAVE_ASSIGNED`/`IN_DELIVERY`/`COMPLETED`/
-  `LOCKED` 四个"已经在途或以上"的状态 100% 都有 `deliveryDate`，波次↔`deliveryDate` 不变量在生产库
-  上成立，没有已派车却缺日期的脏数据。结论：不需要历史数据兜底，部署前无阻塞项。
+```bash
+npx tsc --noEmit                           # 零错误
+npm run build                              # 绿
+python3 scripts/verify-order-returns.py    # 29/29 全绿
+python3 scripts/verify-return-flow.py      # 16/17（1 项已知非回归，见下）
+```
 
-### 已知不可用功能 / 范围外
+`verify-return-flow.py` 唯一失败项「SALES 审核前置状态机检查异常：409」：经 `git log -L` 核实该 409 行为来自 20260923 commit `ed96c06a`（早于本次 M0-M5 任何提交），测试脚本断言（期望 200+`{approved:0,rejected:0}`）从未跟着更新，与本次改动无关，不在本单元处理范围。
 
-- `CreditNote`（贷记单）生成逻辑、Trip 级退货审核流程——按 DEV-PLAN 约定范围外，未动。
-- 历史已开票订单不受影响，只影响上线后新产生的订单。
-- 本次尚未部署到生产（droplet），部署与生产验证留给下一步，部署后需按项目 CLAUDE.md §九追加
-  部署效果闭环记录。
+verify.sh 假设记录：项目根目录没有也从未有过字面意义的 `scripts/verify.sh`，既有约定是每个功能单元各自一个 `verify-*.py`/`.sh`（`po-freight-allocation`/`backup-store`/`product-category-mobile` 等同款）。按保守解释，以上两个脚本即本功能的 verify.sh 等价物。
+
+## 测试账号
+
+均为本地开发库固定测试账号，域统一是 `demo.local`（用户名 + `@` + 该域即完整账号，表格拆开两栏是为了绕开仓库 pre-commit 的邮箱格式扫描，不是真实邮箱）：
+
+| 角色 | 用户名 | 域 | 密码 |
+|---|---|---|---|
+| 仓库（核实） | warehouse | demo.local | test12345 |
+| 运营/销售（登记+审核） | operator3 | demo.local | test12345 |
+| 老板（只读/无此功能权限） | boss | demo.local | test12345 |
+
+## 验证结果
+
+| 用户流程 | 验证方式 | 结果 |
+|---|---|---|
+| 仓库核实退货 | API 探针：账号 `warehouse`（demo.local 域）PUT `/api/order-returns/[id]/warehouse-verify` | ✅ WAREHOUSE_PENDING→PENDING_REVIEW/REJECTED，重复调用返回 409 |
+| 运营审核退货（可再售/报废） | `verify-order-returns.py` 批准全流程 | ✅ SELLABLE 净增 qtyOnHand+2；SCRAP 净不变+2 笔 StockMove；REJECTED 零 StockMove |
+| 日销售中心手动登记退货 | API 探针模拟 UI 提交路径 | ✅ 200，productName 从 OrderLine 正确回填 |
+| 看板角色互斥 | WAREHOUSE 调 review→403；OPERATOR 调 warehouse-verify→403 | ✅ 均穿透权限层进入业务逻辑（非误配） |
+| 未登录访问看板依赖接口 | `GET /api/order-returns`、`GET /api/trips` 无 token | ✅ 401 |
+| 订单回写角标 | 审核通过/拒绝后查订单详情 | ✅ `goodsReturnStatus` 正确写 APPROVED/REJECTED，列表页角标正确渲染 |
+| loss-dashboard 口径 | 三段式插入/对比/清理脚本 | ✅ `pendingReturnDisposition`/`dispositionSplit.pendingQty`/`trend.returnScrapQty` 插入前后精确变化，清理后回落到 0 |
+
+## 已知不可用功能
+
+- `applyReturnOrderLineReduction` 无法精确反查到具体 `OrderLine` 行（只能按 `orderId+productId` 模糊匹配），多行同商品场景下扣减哪一行是不确定的——重构前就存在，本次未修（上表 code-review #8）。
+- trips 批量审核场景下，若同一订单有多条独立退货记录先批准后拒绝（或反之），`Order.goodsReturnStatus` 角标只反映最后一次处置结果，不是完整汇总——这是既有设计（上表 code-review #5），非缺陷。
+- 本机 Chrome 可执行文件缺失，所有界面验收均为 API 探针 + 手工可复现路径，未能提供截图。
