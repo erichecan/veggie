@@ -89,6 +89,7 @@ export async function loadDayWiseReportData(p: DayWiseReportParams): Promise<{ l
         customerName: order.restaurantName,
         salesman: order.salesUser?.name ?? '',
         productName: l.productName,
+        spec: l.spec?.trim() ?? '',
         qty: Number(l.orderedQty),
         unitPrice: Number(l.unitPrice),
         amount: Number(l.subtotal),
