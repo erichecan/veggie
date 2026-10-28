@@ -5,8 +5,9 @@ import { routing } from '@/i18n/routing'
 import PrintCenter from './_components/PrintCenter'
 import ShortageHandler from './_components/ShortageHandler'
 import SalesStats from './_components/SalesStats'
+import ReturnRegistration from './_components/ReturnRegistration'
 
-type Tab = 'print' | 'shortage' | 'stats'
+type Tab = 'print' | 'shortage' | 'stats' | 'register'
 
 export default function DailySalesPage() {
   const [tab, setTab] = useState<Tab>('print')
@@ -28,7 +29,7 @@ export default function DailySalesPage() {
         <div className="px-6 pt-5 pb-0">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-semibold text-gray-900">{isEn ? 'Daily Sales Center' : '日销售管理中心'}</h1>
-            {tab !== 'print' && (
+            {tab !== 'print' && tab !== 'register' && (
               <button
                 onClick={() => setRefreshKey(k => k + 1)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
@@ -43,6 +44,7 @@ export default function DailySalesPage() {
             <button className={tabCls('print')} onClick={() => setTab('print')}>{isEn ? 'Print Center' : '打印中心'}</button>
             <button className={tabCls('shortage')} onClick={() => setTab('shortage')}>{isEn ? 'Shortage Handling' : '缺货处理'}</button>
             <button className={tabCls('stats')} onClick={() => setTab('stats')}>{isEn ? 'Sales Stats' : '销售统计'}</button>
+            <button className={tabCls('register')} onClick={() => setTab('register')}>{isEn ? 'Return Registration' : '退货登记'}</button>
           </div>
         </div>
       </div>
@@ -50,6 +52,7 @@ export default function DailySalesPage() {
         {tab === 'print' && <PrintCenter refreshKey={refreshKey} onRefresh={() => setRefreshKey(k => k + 1)} />}
         {tab === 'shortage' && <ShortageHandler refreshKey={refreshKey} />}
         {tab === 'stats' && <SalesStats refreshKey={refreshKey} />}
+        {tab === 'register' && <ReturnRegistration refreshKey={refreshKey} />}
       </div>
     </div>
   )
