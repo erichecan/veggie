@@ -52,6 +52,7 @@ export async function GET(req: Request) {
       weekdays: searchParams.get('weekdays')?.split(',').map(Number).filter(n => !isNaN(n)) ?? [],
       categoryIds: searchParams.get('categoryIds')?.split(',').filter(Boolean) ?? [],
       salesUserId: searchParams.get('salesUserId') ?? '',
+      orderCodes: searchParams.get('orderCodes')?.split(',').filter(Boolean) ?? [],
     })
 
     const rangeTag = fromDate === toDate ? fromDate : `${fromDate}_${toDate}`

@@ -23,6 +23,8 @@ export interface DayWiseReportParams {
   weekdays: number[]
   categoryIds: string[]
   salesUserId: string
+  /** 订单号筛选（20261028）：小写关键词，命中任一（包含匹配）即保留，与屏幕 SalesStats 同口径；可省略 */
+  orderCodes?: string[]
 }
 
 const STATUS_FILTER = ['CONFIRMED', 'WAVE_ASSIGNED', 'IN_DELIVERY', 'COMPLETED'] as const
@@ -62,7 +64,9 @@ export async function loadDayWiseReportData(p: DayWiseReportParams): Promise<{ l
   const productMap = new Map(products.map(pr => [pr.id, pr]))
 
   const categorySet = new Set(p.categoryIds)
+  const orderTerms = (p.orderCodes ?? []).map(t => t.toLowerCase()).filter(Boolean)
   const filteredOrders = rawOrders.filter(order => {
+    if (orderTerms.length > 0 && !orderTerms.some(t => (order.code ?? '').toLowerCase().includes(t))) return false
     if (p.drivers.length > 0 || p.times.length > 0 || p.batchNums.length > 0) {
       const parsed = parseDriverSlotKey(formatDriverSlotFromOrder(order as unknown as Order))
       if (p.drivers.length > 0 && !p.drivers.includes(parsed.driver)) return false
