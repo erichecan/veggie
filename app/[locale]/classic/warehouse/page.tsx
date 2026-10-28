@@ -664,7 +664,7 @@ export default function ClassicWarehousePage() {
                 className="mt-1"
                 value={adjustForm.note}
                 onChange={e => setAdjustForm(f => ({ ...f, note: e.target.value }))}
-                placeholder={isEn ? 'e.g. spoilage, stock take adjustment, customer return' : '如：损耗处理、盘点调整、客户退货'}
+                placeholder={isEn ? 'e.g. spoilage, stock take adjustment' : '如：损耗处理、盘点调整'}
               />
             </div>
           </div>

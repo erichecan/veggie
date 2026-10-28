@@ -10,6 +10,13 @@ export const SCRAP_REASONS = [
 
 export type ScrapReason = (typeof SCRAP_REASONS)[number]
 
+/** 手动报废页面（operator/inventory/scrap）专用子集：排除客退相关两项，引导客退走
+ *  退换货正式入口（M1 看板/M3 登记）；不改 SCRAP_REASONS 本身——审核通过
+ *  disposition=SCRAP 时仍要用这两项给 StockMove 打标，删常量会连带打断正式流程 */
+export const MANUAL_SCRAP_REASONS = SCRAP_REASONS.filter(
+  r => r !== 'CUSTOMER_RETURN_EXPIRED' && r !== 'CUSTOMER_RETURN_DAMAGED'
+)
+
 export const SCRAP_REASON_LABEL: Record<string, string> = {
   CUSTOMER_RETURN_EXPIRED: '客退过期',
   CUSTOMER_RETURN_DAMAGED: '客退损坏',
